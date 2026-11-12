@@ -311,12 +311,13 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
         // No `comments`: the note's own comment stream is dropped at scan time (YAZ-1472, 🔒 D5).
       },
       aliases: ['Canon', 'Spaced Alias', '[[Not A Link]]'],
-      tags: ['alpha', 'beta', 'gamma', 'tag/nested'],
+      // A note card's text is Markdown (YAZ-4960 D17): its links and tags count; any other fence's do not.
+      tags: ['alpha', 'beta', 'gamma', 'tag/nested', 'card-tag'],
       // `[[Not A Link]]` sits under `aliases`, so it is a NAME, never an outgoing link (GRO-2214).
       // A whole-value link in a folder's block of `in` is a link (D19).
       // Words that only LOOK like an ID keep both page sides (YAZ-4954): the resolver picks, where the notes are known.
       // A file is always the page, whatever its words look like (YAZ-4954 part 2).
-      links: ['Ref', 'Folder Ref', 'Note One', 'Note Two', 'Covid notes|COVID-19', 'chart.pdf'],
+      links: ['Ref', 'Folder Ref', 'Note One', 'Note Two', 'Covid notes|COVID-19', 'chart.pdf', 'Card Link'],
       embeds: ['img.png', 'photo.png'],
       cards: [{ id: 'CAN-3', off: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }] }],
     },

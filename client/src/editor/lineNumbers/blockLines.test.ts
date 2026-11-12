@@ -281,3 +281,15 @@ describe('a table with settings (YAZ-3758, rule 41a)', () => {
     expect(blockLines('***\n\n<!-- table: stripes -->\n').kinds).toBe('rp')
   })
 })
+
+describe('blockLines: a note card (YAZ-4960, idea 29)', () => {
+  it('reads the card line as the card block\'s own comment: no block of its own, and every line number after it stays', () => {
+    const card = ['```card', 'Front {{word}}', '---', 'Back', '```', '<!-- card: WIKI-512, 2026-11-12T14:05Z good -->', '', 'After.']
+    expect(ranges(...card)).toEqual(['1–6', '8'])
+    expect(index(...card).kinds).toBe('cp')
+    // In a bullet, as the editor writes it there.
+    expect(ranges('- item', '  ```card', '  Front', '  ```', '  <!-- card: WIKI-1 -->', '- next')).toEqual(['1', '2–5', '6'])
+    // A card line under another language's block is that block's no comment: an HTML block of its own.
+    expect(ranges('```js', 'x', '```', '<!-- card: WIKI-1 -->')).toEqual(['1–3', '4'])
+  })
+})

@@ -1,3 +1,4 @@
+import { splitFrontmatter } from './frontmatter'
 import { canonicalNoteId, isNumberId } from './noteId'
 
 /**
@@ -51,7 +52,8 @@ export interface NoteCardRecord {
 
 /** `<!-- card: … -->` on one line, any spaces inside the delimiters. */
 const LINE_RE = /^<!--[ \t]*card:[ \t]*(.*?)[ \t]*-->$/
-const REVIEW_RE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z)[ \t]+(again|hard|good|easy)$/
+/** A review part: a real UTC minute (month, day, hour and minute in range) and an FSRS rating. */
+const REVIEW_RE = /^(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\dZ)[ \t]+(again|hard|good|easy)$/
 
 /** A review time as the line writes it: UTC, to the minute (`2026-11-12T14:05Z`). */
 export const cardTime = (ms: number): string => `${new Date(ms).toISOString().slice(0, 16)}Z`
@@ -65,7 +67,7 @@ export function parseCardLine(value: string): CardLine | null {
   for (const text of body.split(/[ \t]*,[ \t]*/)) {
     if (text === '') continue
     const review = REVIEW_RE.exec(text)
-    if (review !== null && !Number.isNaN(Date.parse(review[1]))) parts.push({ kind: 'review', review: { at: review[1], rating: review[2] as CardRating } })
+    if (review !== null) parts.push({ kind: 'review', review: { at: review[1], rating: review[2] as CardRating } })
     else if (text === 'off') parts.push({ kind: 'off' })
     else if (!id && isNumberId(text)) {
       id = true
@@ -156,7 +158,7 @@ export function findCards(text: string): CardBlock[] {
   const lines = text.split('\n')
   const cards: CardBlock[] = []
   for (let i = 0; i < lines.length; i++) {
-    const open = FENCE_RE.exec(lines[i])
+    const open = mayFence(lines[i]) ? FENCE_RE.exec(lines[i]) : null
     if (open === null) continue
     const fence = open[1]
     const card = CARD_FENCE_RE.exec(lines[i])
@@ -165,18 +167,35 @@ export function findCards(text: string): CardBlock[] {
     // A card fence that is never closed is no card yet: its line would land inside the block.
     if (card !== null && close < lines.length) {
       const indent = card[1]
-      const body = lines.slice(i + 1, close).map((l) => (l.startsWith(indent) ? l.slice(indent.length) : l.trimStart()))
+      const from = i + 1
+      const to = close
       const next = close + 1 < lines.length ? parseCardLine(lines[close + 1]) : null
-      cards.push({ open: i, close, lineAt: next === null ? null : close + 1, indent, text: body.join('\n'), line: next ?? EMPTY_CARD_LINE })
+      cards.push({
+        open: i,
+        close,
+        lineAt: next === null ? null : close + 1,
+        indent,
+        // Built when asked: the index reads only the line (D4).
+        get text() {
+          return lines
+            .slice(from, to)
+            .map((l) => (l.startsWith(indent) ? l.slice(indent.length) : l.trimStart()))
+            .join('\n')
+        },
+        line: next ?? EMPTY_CARD_LINE,
+      })
     }
     i = close
   }
   return cards
 }
 
+/** A cheap first test before the fence pattern: a fence line holds a backtick or a tilde. */
+const mayFence = (line: string): boolean => line.includes('`') || line.includes('~')
+
 /** Does `line` close a code block opened by `fence`? Same character, at least as long, nothing after it. */
 function closes(line: string, fence: string): boolean {
-  const m = FENCE_RE.exec(line)
+  const m = mayFence(line) ? FENCE_RE.exec(line) : null
   return m !== null && m[1][0] === fence[0] && m[1].length >= fence.length && line.trim() === m[1]
 }
 
@@ -205,6 +224,16 @@ export function rewriteCardLines(text: string, change: (card: CardBlock, index: 
   return lines.join('\n')
 }
 
+/** The cards of a whole page (a Markdown file's text): those of its body, as the index reads them (`cardRecords` of the body). */
+export const pageCards = (content: string): CardBlock[] => findCards(splitFrontmatter(content).body)
+
+/** `rewriteCardLines` over a whole page: its properties block is never read for cards, and is kept byte for byte. */
+export function rewritePageCards(content: string, change: (card: CardBlock, index: number) => CardLine | undefined): string {
+  const { frontmatter, body } = splitFrontmatter(content)
+  const next = rewriteCardLines(body, change)
+  return next === body ? content : frontmatter + next
+}
+
 /** Thrown when a page holds no card with the ID asked for: the card was deleted, or the page changed under the caller. */
 export class CardNotFoundError extends Error {
   constructor(readonly id: string) {
@@ -214,12 +243,12 @@ export class CardNotFoundError extends Error {
 }
 
 /**
- * `text` with the card line of card `id` changed by `change` — for the Inbox, the card window and the ⋯ menu:
- * `transformFile(path, (c) => changeCard(c, 'WIKI-512', (l) => withCardReview(l, { at: cardTime(Date.now()), rating: 'good' })))`.
+ * The page `content` with the card line of card `id` changed by `change` — for the Inbox, the card window and the ⋯
+ * menu: `transformFile(path, (c) => changeCard(c, 'WIKI-512', (l) => withCardReview(l, { at: cardTime(Date.now()), rating: 'good' })))`.
  * Throws `CardNotFoundError` when no card holds `id`. Two cards with one ID (a copy the sweep has not met): the first.
  */
-export function changeCard(text: string, id: string, change: (line: CardLine) => CardLine): string {
-  const at = findCards(text).findIndex((card) => cardIdOf(card.line) === id)
+export function changeCard(content: string, id: string, change: (line: CardLine) => CardLine): string {
+  const at = pageCards(content).findIndex((card) => cardIdOf(card.line) === id)
   if (at === -1) throw new CardNotFoundError(id)
-  return rewriteCardLines(text, (card, n) => (n === at ? change(card.line) : undefined))
+  return rewritePageCards(content, (card, n) => (n === at ? change(card.line) : undefined))
 }

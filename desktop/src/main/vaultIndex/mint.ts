@@ -247,16 +247,21 @@ async function saveDefaultLetters(root: string): Promise<VaultIds | undefined> {
 }
 
 /**
- * The highest number among `notes`' IDs that are IDs of the vault with `letters` (R5); 0 when none is. An old ID has
- * no number (S20), and nor does a kept one (YAZ-4922 D2): its numbers are apart from the current letters'.
+ * The highest number among `notes`' IDs that are IDs of the vault with `letters` (R5) — the note's own, and each of
+ * its note cards' (YAZ-4960 D2: one counter for notes, boards and cards); 0 when none is. An old ID has no number
+ * (S20), and nor does a kept one (YAZ-4922 D2): its numbers are apart from the current letters'.
  */
-export function highestNumber(notes: Iterable<{ id?: string }>, letters: readonly string[]): number {
+export function highestNumber(notes: Iterable<{ id?: string; cards?: readonly { id: string | null }[] }>, letters: readonly string[]): number {
   let top = 0
   const current = `${letters[0]}-`
-  for (const { id } of notes) {
-    const own = id === undefined ? undefined : vaultNoteId(id, letters)
+  const count = (id: string | null | undefined): void => {
+    const own = id == null ? undefined : vaultNoteId(id, letters)
     const number = own?.startsWith(current) === true ? noteIdNumber(own) : undefined
     if (number !== undefined && number > top) top = number
+  }
+  for (const { id, cards } of notes) {
+    count(id)
+    if (cards !== undefined) for (const card of cards) count(card.id)
   }
   return top
 }

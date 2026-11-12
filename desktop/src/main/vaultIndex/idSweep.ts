@@ -1,5 +1,6 @@
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
+import { cardIdOf, pageCards, rewritePageCards, withCardId, withoutCardReviews } from '@shared/cardLine'
 import { moveFolderValues } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, noteIdNumber, vaultNoteId } from '@shared/noteId'
@@ -41,6 +42,25 @@ export interface SweepOptions {
    * the index and in the diary, so the notice can list each link it leaves (S44, S45).
    */
   indexed?: () => Promise<unknown>
+  /**
+   * WHERE A CARD ID ON TWO PAGES WAITS (YAZ-4960): each page that took a card ID another page still holds, keyed
+   * `<path>\n<id>`, with the time the sweep first saw it. A cut from one page and a paste into another hold the ID on
+   * both for a moment; only after `CARD_MOVE_WAIT_MS` is the second page's card a copy. With NO map the caller is
+   * the user: a copy is settled at once.
+   */
+  cardWaits?: Map<string, number>
+  /** The keys of `cardWaits` whose wait is over (the live index's timer took them out of the map): settled in this pass. */
+  cardOver?: ReadonlySet<string>
+}
+
+/** How long one card ID on two pages waits before the newer page's card counts as a copy (YAZ-4960): a cut and paste is done by then. */
+export const CARD_MOVE_WAIT_MS = 60 * 1000
+
+/** One note card the sweep gives a new number: its place among its page's cards, the ID it must still hold (null: none), and whether its history stays. */
+export interface CardFix {
+  index: number
+  held: string | null
+  history: boolean
 }
 
 /** What one sweep did about notes that share an ID. A note that only needed an ID is not reported. */
@@ -163,7 +183,7 @@ export function sweepIds(
   const held = queue
   const asked = { paths: new Set(among.map((r) => r.path)), knew }
   const waiting = held.waiting
-  if (waiting !== undefined && opts.waits !== undefined && waiting.opts.waits === opts.waits && waiting.records === records) {
+  if (waiting !== undefined && opts.waits !== undefined && opts.cardOver === undefined && waiting.opts.waits === opts.waits && waiting.records === records) {
     waiting.among.push(...among)
     waiting.dirs.push(...dirs)
     waiting.knews.push(asked)
@@ -183,7 +203,7 @@ export function sweepIds(
   return mine.then(() => pass.result)
 }
 
-async function sweep(root: string, { records, among: events, knews, dirs: asked, opts: { waits, indexed }, result }: Pass): Promise<void> {
+async function sweep(root: string, { records, among: events, knews, dirs: asked, opts: { waits, indexed, cardWaits, cardOver }, result }: Pass): Promise<void> {
   const { answer, letters } = await vaultIds(root)
   if (answer !== true) return
   const now = Date.now()
@@ -288,25 +308,44 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
     const needing = await Promise.all(batch.map(({ file, held }) => needs(file, held)))
     needy.push(...batch.filter((_, j) => needing[j]))
   }
-  // R31: a Mac that is not first leaves each of them for the first Mac, for `ID_WAIT_MS`.
+  // The note cards of the pass that need a number (YAZ-4960); each write checks the bytes again.
+  const cardWork = (await cardsToFix(records, among.filter(takes), own, mine, now, cardWaits, cardOver)).filter((w) => !(refused.has(w.record.path) && refused.get(w.record.path) === w.record.mtime))
+  // R31: a Mac that is not first leaves each of them for the first Mac, for `ID_WAIT_MS` — a page whose cards need numbers too.
   let going = needy
+  let cardsGoing = cardWork
   if (waits !== undefined) {
-    const waiting = needy.some((w) => w.now !== true) && sweepWaits(await countFiles())
-    going = needy.filter((w) => {
-      if (!waiting || w.now === true) return true
-      const since = waits.get(w.file)
-      if (since === undefined) waits.set(w.file, now)
+    const waiting = (needy.some((w) => w.now !== true) || cardWork.length > 0) && sweepWaits(await countFiles())
+    const goes = (file: string): boolean => {
+      if (!waiting) return true
+      const since = waits.get(file)
+      if (since === undefined) waits.set(file, now)
       return since !== undefined && now - since >= ID_WAIT_MS
-    })
+    }
+    going = needy.filter((w) => w.now === true || goes(w.file))
+    cardsGoing = cardWork.filter((w) => goes(w.record.path))
     // Whatever this pass saw and does not leave waits no more: it has its number, or is given it now.
-    const left = new Set(needy.filter((w) => !going.includes(w)).map((w) => w.file))
+    const left = new Set([...needy.filter((w) => !going.includes(w)).map((w) => w.file), ...cardWork.filter((w) => !cardsGoing.includes(w)).map((w) => w.record.path)])
     for (const file of [...among.map((r) => r.path), ...dirs.map((dir) => path.join(dir, FOLDER_SETTINGS_FILE))]) if (!left.has(file)) waits.delete(file)
   }
-  if (going.length === 0) return
-  // The numbers of the whole pass, saved with one write before any note is written (R18, R19).
-  // Higher than each number in the vault, so none is an id some indexed note holds (YAZ-2378).
-  const numbers = await mintIds(root, going.length, highestNumber(records.values(), letters)).catch(() => null)
+  const cardCount = cardsGoing.reduce((n, w) => n + w.fixes.length, 0)
+  if (going.length === 0 && cardCount === 0) return
+  // The numbers of the whole pass — notes, folders and cards — saved with one write before any file is written (R18, R19).
+  // Higher than each number in the vault, so none is an id some indexed note or card holds (YAZ-2378).
+  const numbers = await mintIds(root, going.length + cardCount, highestNumber(records.values(), letters)).catch(() => null)
   if (numbers === null) return
+  let next = going.length
+  for (const { record, fixes } of cardsGoing) {
+    if (!(await givesIds(root))) return
+    const ids = numbers.slice(next, (next += fixes.length))
+    const given = await inTurn(() => giveCardIds(record.path, fixes, ids)).catch(async (err: unknown) => {
+      if (!(err instanceof BridgeFailure && err.code === 'CONFLICT')) {
+        if (refused.size >= REFUSED_MAX) refused.clear()
+        refused.set(record.path, (await stat(record.path).catch(() => null))?.mtimeMs)
+      }
+      return false
+    })
+    if (given) fixes.forEach((fix, i) => fix.held !== null && !fix.history && result.copies.push({ title: `a note card on "${record.title}"`, id: ids[i] }))
+  }
   for (const [i, { file, held, record }] of going.entries()) {
     // Asked before every write, so a no stops a pass that is running (YAZ-2523 🔒 V4).
     if (!(await givesIds(root))) return
@@ -318,6 +357,112 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
     if (!given && held !== undefined) result.later.push(held)
     if (record !== undefined) for (const copy of carried) if (file.startsWith(copy.dir + path.sep)) await carryNote(file, copy.from, copy.to)
   }
+}
+
+/** A page whose note cards the sweep gives new numbers (YAZ-4960). */
+interface CardWork {
+  record: IndexRecord
+  fixes: CardFix[]
+}
+
+/**
+ * THE CARD RULES OF THE SWEEP (YAZ-4960 D2). For each card of the pages in `among`, in page order:
+ * - no ID: the next number;
+ * - an ID that is no ID of this vault (another vault's letters, `BUS-12` in a `WIKI` vault): a new number, history kept;
+ * - an ID a card before it on the same page holds: a COPY — a new number and an empty history;
+ * - an ID a note holds: a new number, history kept (links point at the note);
+ * - an ID a card on ANOTHER page holds on disk: a cut and paste, or a copy. The page that took it last — the one this
+ *   pass sweeps, or of two it sweeps the second in path order — waits `CARD_MOVE_WAIT_MS` (`cardWaits`), so a cut
+ *   from the other page lands first. Still on both after the wait: a copy, settled once per ID in a pass.
+ */
+async function cardsToFix(
+  records: ReadonlyMap<string, IndexRecord>,
+  among: readonly IndexRecord[],
+  own: (id: string | undefined) => string | undefined,
+  mine: (p: string) => Promise<boolean>,
+  now: number,
+  cardWaits: Map<string, number> | undefined,
+  cardOver: ReadonlySet<string> | undefined,
+): Promise<CardWork[]> {
+  const pages = among.filter((r) => r.cards !== undefined && r.cards.length > 0 && !isFolderSettingsPath(r.path)).sort((a, b) => (a.path < b.path ? -1 : 1))
+  if (pages.length === 0) return []
+  const swept = new Set(pages.map((r) => r.path))
+  // Who holds each ID, by the index: the notes, and the pages of the cards. Read once, and only for a pass with cards.
+  const notes = new Set<string>()
+  const holders = new Map<string, string[]>()
+  for (const r of records.values()) {
+    const id = own(r.id)
+    if (id !== undefined && !isFolderSettingsPath(r.path)) notes.add(id)
+    for (const card of r.cards ?? []) {
+      const cardId = own(card.id ?? undefined)
+      if (cardId !== undefined) holders.set(cardId, [...(holders.get(cardId) ?? []), r.path])
+    }
+  }
+  /** Does the page at `p` hold a card with `id` on disk now? The index can be a moment behind (a cut just saved). */
+  const holds = async (p: string, id: string): Promise<boolean> =>
+    (await mine(p)) && (await readPage(p).then(({ content }) => pageCards(content).some((card) => own(cardIdOf(card.line) ?? undefined) === id), () => false))
+  const settled = new Set<string>()
+  const work: CardWork[] = []
+  for (const record of pages) {
+    const fixes: CardFix[] = []
+    const seen = new Set<string>()
+    for (const [index, card] of record.cards!.entries()) {
+      const id = own(card.id ?? undefined)
+      if (card.id === null || id === undefined) {
+        fixes.push({ index, held: card.id, history: true })
+        continue
+      }
+      if (seen.has(id)) {
+        fixes.push({ index, held: card.id, history: false })
+        continue
+      }
+      seen.add(id)
+      if (notes.has(id)) {
+        fixes.push({ index, held: card.id, history: true })
+        continue
+      }
+      const key = `${record.path}\n${id}`
+      const others = (holders.get(id) ?? []).filter((p) => p !== record.path)
+      const onDisk: string[] = []
+      for (const p of new Set(others)) if (await holds(p, id)) onDisk.push(p)
+      // The page keeps the card when no other page holds it now, or when a page this pass sweeps comes first.
+      const keeps = onDisk.length === 0 || (onDisk.some((p) => swept.has(p)) && !onDisk.some((p) => swept.has(p) && p < record.path))
+      if (keeps || settled.has(id)) {
+        cardWaits?.delete(key)
+        continue
+      }
+      if (cardWaits !== undefined && cardOver?.has(key) !== true) {
+        const since = cardWaits.get(key)
+        if (since === undefined) cardWaits.set(key, now)
+        if (since === undefined || now - since < CARD_MOVE_WAIT_MS) continue
+        cardWaits.delete(key)
+      }
+      settled.add(id)
+      fixes.push({ index, held: card.id, history: false })
+    }
+    if (fixes.length > 0) work.push({ record, fixes })
+  }
+  return work
+}
+
+/**
+ * The note cards of the page at `file` take the IDs `ids` (one for each of `fixes`, in order), but only while each
+ * still holds what it held: a compare-and-set on the page's bytes and mtime, as `giveId`. A copy's card loses its
+ * reviews (`history: false`); every other part of its line stays. False when nothing was written.
+ */
+export async function giveCardIds(file: string, fixes: readonly CardFix[], ids: readonly string[]): Promise<boolean> {
+  const { content, mtime } = await readFile(file)
+  const cards = pageCards(content)
+  if (fixes.some((fix) => cards[fix.index] === undefined || cardIdOf(cards[fix.index].line) !== fix.held)) return false
+  const given = new Map(fixes.map((fix, i) => [fix.index, { fix, id: ids[i] }]))
+  const next = rewritePageCards(content, (card, n) => {
+    const give = given.get(n)
+    if (give === undefined) return undefined
+    const line = withCardId(card.line, give.id)
+    return give.fix.history ? line : withoutCardReviews(line)
+  })
+  await writeFile({ path: file, content: next, expectedMtime: mtime })
+  return true
 }
 
 /**

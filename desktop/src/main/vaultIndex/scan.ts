@@ -1,6 +1,6 @@
 import { readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { cardRecords } from '@shared/cardLine'
+import { cardRecords, isCardFence } from '@shared/cardLine'
 import { COMMENTS_KEY } from '@shared/comments'
 import { isDrawing } from '@shared/fileKind'
 import { folderBlocks } from '@shared/folderValues'
@@ -127,18 +127,27 @@ const URL_RE = /https?:\/\/\S+/g
 /**
  * Body with fenced code blocks (``` / ~~~) and inline code spans blanked out — the one pre-pass
  * shared by the tag, link and embed extractors, since Obsidian's cache ignores all three there.
+ * A note card's text is Markdown (YAZ-4960 D17): only its two fence lines are blanked, so its
+ * links, embeds and tags count. `maskCode` in `shared/linkRewrite.ts` mirrors this.
  */
 function stripCode(body: string): string {
   const lines = body.split('\n')
   let fence: string | null = null
+  let card = false
   for (let i = 0; i < lines.length; i++) {
     const m = FENCE_RE.exec(lines[i])
+    let edge = false
     if (fence === null) {
-      if (m) fence = m[1]
+      if (m) {
+        fence = m[1]
+        card = isCardFence(lines[i])
+        edge = true
+      }
     } else if (m && m[1][0] === fence[0] && m[1].length >= fence.length && lines[i].trim() === m[1]) {
       fence = null
+      edge = true
     }
-    if (fence !== null || m) lines[i] = ''
+    if (edge || (fence !== null && !card) || (m && !card)) lines[i] = ''
   }
   return lines.join('\n').replace(CODE_SPAN_RE, ' ')
 }

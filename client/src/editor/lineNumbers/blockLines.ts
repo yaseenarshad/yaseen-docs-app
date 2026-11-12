@@ -1,5 +1,6 @@
 import { parse, postprocess, preprocess } from 'micromark'
 import { gfm } from 'micromark-extension-gfm'
+import { isCardFence, parseCardLine } from '@shared/cardLine'
 import { parseCodeComment } from '../code/codeComment'
 import { parseLineComment } from '../line/lineComment'
 import { parseTableComment } from '../table/tableComment'
@@ -17,7 +18,8 @@ import { parseTableComment } from '../table/tableComment'
  * a `table` and the `<!-- table: … -->` right after it (`tableStyleRemark`), and the table's entry
  * ends on the comment. A code block's comment too (YAZ-4783): the editor joins a fenced or an indented
  * code block and the `<!-- code: … -->` after it (`codeWidthRemark`), and the code's entry ends on the
- * comment. Any other HTML block is a block, as before. A footnote is no block: its
+ * comment. A note card's card line too (YAZ-4960): the editor joins a ```card block and its `<!-- card: … -->`.
+ * Any other HTML block is a block, as before. A footnote is no block: its
  * blocks are (a cell note's too, YAZ-3818), and a footnote with none (`[^1]:`) is one empty
  * paragraph on its line, as the editor fills it.
  */
@@ -33,7 +35,7 @@ const KIND: Record<string, string> = {
 }
 const LISTS = new Set(['listOrdered', 'listUnordered'])
 /** The kinds whose next HTML block may be their comment, and its reader. */
-const COMMENTS: Record<string, (value: string) => unknown> = { r: parseLineComment, t: parseTableComment, c: parseCodeComment, i: parseCodeComment }
+const COMMENTS: Record<string, (value: string) => unknown> = { r: parseLineComment, t: parseTableComment, c: parseCodeComment, i: parseCodeComment, card: parseCardLine }
 
 /**
  * An HTML block's text as remark gives it to the editor: its `htmlFlowData` lines joined by a line
@@ -119,7 +121,9 @@ export function blockLines(text: string): BlockLines {
       after = null
       continue
     }
-    after = kind in COMMENTS ? kind : null
+    // A note card (YAZ-4960, idea 29): a ```card fence, whose comment is its card line, not a code comment.
+    const card = type === 'codeFenced' && isCardFence(text.slice(start.offset, text.indexOf('\n', start.offset) >>> 0))
+    after = card ? 'card' : kind in COMMENTS ? kind : null
     add(start.line, last, kind)
   }
   return { lines, ends, kinds }

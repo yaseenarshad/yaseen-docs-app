@@ -15,6 +15,7 @@
  * folder's settings come through their own module (`folderSettingsLinks.ts`, YAZ-864).
  */
 import { ALSO_IN_KEY, alsoInEntries } from './alsoIn'
+import { isCardFence } from './cardLine'
 import { mapFolderSettingsLinks } from './folderSettingsLinks'
 import { FOLDER_VALUES_KEY, folderBlocks, moveFolderValues } from './folderValues'
 import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
@@ -41,14 +42,22 @@ const CODE_SPAN_RE = /(`+)[\s\S]*?\1/g
 export function maskCode(body: string): string {
   const lines = body.split('\n')
   let fence: string | null = null
+  // A note card's text is Markdown (YAZ-4960 D17): only its fence lines are masked, so a rename rewrites its links.
+  let card = false
   for (let i = 0; i < lines.length; i++) {
     const m = FENCE_RE.exec(lines[i])
+    let edge = false
     if (fence === null) {
-      if (m) fence = m[1]
+      if (m) {
+        fence = m[1]
+        card = isCardFence(lines[i])
+        edge = true
+      }
     } else if (m && m[1][0] === fence[0] && m[1].length >= fence.length && lines[i].trim() === m[1]) {
       fence = null
+      edge = true
     }
-    if (fence !== null || m) lines[i] = ' '.repeat(lines[i].length)
+    if (edge || (fence !== null && !card) || (m && !card)) lines[i] = ' '.repeat(lines[i].length)
   }
   return lines.join('\n').replace(CODE_SPAN_RE, (span) => ' '.repeat(span.length))
 }

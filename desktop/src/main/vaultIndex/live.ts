@@ -10,7 +10,7 @@ import { subscribe } from '../fs/watchers'
 import { writeConfig } from '../vaultConfig'
 import { checkLine, fixNotice, type ClashFix } from './clash'
 import { see } from './diary'
-import { ID_WAIT_MS, restoreFolderId, sweepIds, type SweepResult } from './idSweep'
+import { CARD_MOVE_WAIT_MS, ID_WAIT_MS, restoreFolderId, sweepIds, type SweepResult } from './idSweep'
 import { loadIndexCache, schedulePersist } from './cache'
 import { changeIds, highestFrom, highestNumber, seenFrom, vaultIds } from './mint'
 import { reconcile, SCAN_CONCURRENCY, type ColdStartDiff } from './reconcile'
@@ -31,7 +31,9 @@ interface Entry {
   ids: boolean
   /** Each file this Mac left for the vault's first Mac to number, with the time it first left it (YAZ-2677 R31). Gone with the entry: a restart starts the wait again (S66). */
   waits: Map<string, number>
-  /** The ONE timer of this vault that sweeps the files in `waits` again when their wait is over (R34). */
+  /** Each page that took a card ID another page still holds, keyed `<path>\n<id>`, with the time first seen (YAZ-4960 `SweepOptions.cardWaits`). Gone with the entry. */
+  cardWaits: Map<string, number>
+  /** The ONE timer of this vault that sweeps the files in `waits` and `cardWaits` again when their wait is over (R34). */
   wait?: NodeJS.Timeout
   /** Each ID two Macs gave that two notes still hold, and the path of the note that keeps it (YAZ-2677 S46): the index hands the ID out for that note only. */
   kept: Map<string, string>
@@ -95,6 +97,7 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
       const id = isFolderSettingsPath(ev.path) ? entry.records.get(ev.path)?.id : undefined
       entry.records.delete(ev.path)
       entry.waits.delete(ev.path)
+      for (const key of entry.cardWaits.keys()) if (key.startsWith(`${ev.path}\n`)) entry.cardWaits.delete(key)
       schedulePersist(root, entry.records)
       if (id !== undefined) void restoreFolderId(root, ev.path, id)
       return
@@ -104,6 +107,7 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
       const prefix = ev.path + path.sep
       for (const p of entry.records.keys()) if (p.startsWith(prefix)) entry.records.delete(p)
       for (const p of entry.waits.keys()) if (p.startsWith(prefix)) entry.waits.delete(p)
+      for (const key of entry.cardWaits.keys()) if (key.startsWith(prefix)) entry.cardWaits.delete(key)
       // The windows read the index again for a folder that went (`useIndex`): its boards go with it, with no word.
       for (const p of entry.boards.keys()) if (p.startsWith(prefix)) entry.boards.delete(p)
       entry.dirs = entry.dirs.filter((dir) => dir !== ev.path && !dir.startsWith(prefix))
@@ -227,8 +231,16 @@ export function onIdFixes(listener: FixListener | undefined): void {
  * so one whose numbers wait on a Mac that is not the vault's first (YAZ-2677 🔒 D8, R31). What the
  * USER asks for sweeps with no `waits` (`giveIdsNow`, `checkDuplicates`, R32).
  */
-function sweep(root: string, entry: Entry, among: readonly IndexRecord[], knew: (path: string) => string | undefined, dirs: readonly string[] = [], over: readonly string[] = []): Promise<void> {
-  return sweepIds(root, entry.records, among, knew, dirs, { waits: entry.waits, indexed: () => Promise.all([...entry.inFlight]) }).then((result) => {
+function sweep(
+  root: string,
+  entry: Entry,
+  among: readonly IndexRecord[],
+  knew: (path: string) => string | undefined,
+  dirs: readonly string[] = [],
+  over: readonly string[] = [],
+  cardOver?: ReadonlySet<string>,
+): Promise<void> {
+  return sweepIds(root, entry.records, among, knew, dirs, { waits: entry.waits, indexed: () => Promise.all([...entry.inFlight]), cardWaits: entry.cardWaits, ...(cardOver !== undefined && { cardOver }) }).then((result) => {
     // `over` are the files whose wait was over when this sweep started: whatever it did, they wait no more, so the timer never runs for one file two times.
     for (const file of over) entry.waits.delete(file)
     armWait(root, entry)
@@ -249,16 +261,21 @@ function report(root: string, entry: Entry, { fixes, kept }: SweepResult, notice
  * its number if it still needs one — and is set again for the next. There is no timer for a file.
  */
 function armWait(root: string, entry: Entry): void {
-  if (entry.wait !== undefined || entry.waits.size === 0 || entries.get(root) !== entry) return
+  if (entry.wait !== undefined || (entry.waits.size === 0 && entry.cardWaits.size === 0) || entries.get(root) !== entry) return
   let first = Infinity
-  for (const since of entry.waits.values()) first = Math.min(first, since)
+  for (const since of entry.waits.values()) first = Math.min(first, since + ID_WAIT_MS)
+  for (const since of entry.cardWaits.values()) first = Math.min(first, since + CARD_MOVE_WAIT_MS)
   entry.wait = setTimeout(() => {
     entry.wait = undefined
     const due = [...entry.waits].filter(([, since]) => Date.now() - since >= ID_WAIT_MS).map(([file]) => file)
-    const among = due.flatMap((file) => entry.records.get(file) ?? [])
+    // A card ID on two pages whose wait is over (YAZ-4960): out of the map before the pass, so it never fires again for one key.
+    const cardOver = new Set([...entry.cardWaits].filter(([, since]) => Date.now() - since >= CARD_MOVE_WAIT_MS).map(([key]) => key))
+    for (const key of cardOver) entry.cardWaits.delete(key)
+    const files = new Set([...due, ...[...cardOver].map((key) => key.slice(0, key.indexOf('\n')))])
+    const among = [...files].flatMap((file) => entry.records.get(file) ?? [])
     const dirs = due.filter((file) => isFolderSettingsPath(file) && !entry.records.has(file)).map((file) => path.dirname(file))
-    void sweep(root, entry, among, (p) => entry.records.get(p)?.id, dirs, due)
-  }, Math.max(0, first + ID_WAIT_MS - Date.now()))
+    void sweep(root, entry, among, (p) => entry.records.get(p)?.id, dirs, due, cardOver)
+  }, Math.max(0, first - Date.now()))
   entry.wait.unref()
 }
 
@@ -309,7 +326,7 @@ async function ownPart(root: string, entry: Entry): Promise<{ records: Map<strin
 
 async function build(root: string): Promise<Entry> {
   const dirs: string[] = []
-  const entry: Entry = { records: new Map(), unsubscribe: () => undefined, inFlight: new Set(), dirs, ids: false, waits: new Map(), kept: new Map(), boards: new Map(), formerIds: new Map(), answers: new Map() }
+  const entry: Entry = { records: new Map(), unsubscribe: () => undefined, inFlight: new Set(), dirs, ids: false, waits: new Map(), cardWaits: new Map(), kept: new Map(), boards: new Map(), formerIds: new Map(), answers: new Map() }
   const files: string[] = []
   const boards: string[] = []
   // Persistent cache (GRO-2223): loaded BEFORE subscribing, overlapped with the walk — the cache
@@ -372,6 +389,7 @@ function evict(root: string): void {
   clearTimeout(entry.wait)
   entry.wait = undefined
   entry.waits.clear()
+  entry.cardWaits.clear()
   // Flush-ish: one last persist so an evicted index leaves a fresh cache behind (GRO-2223).
   schedulePersist(root, entry.records)
   entry.unsubscribe()
@@ -528,8 +546,11 @@ seenFrom((root, letters) => {
   return entry === undefined ? undefined : highestNumber(entry.records.values(), letters)
 })
 
-/** A record as a vault that does not use IDs hands it out (YAZ-2523 🔒 V12): no id, its file name as its title. `id` and `title` stay among its properties. */
-function plain({ id: _id, ...r }: IndexRecord): IndexRecord {
+/**
+ * A record as a vault that does not use IDs hands it out (YAZ-2523 🔒 V12): no id, its file name as its title. `id` and `title` stay among its properties.
+ * No note cards either (YAZ-4946 D8: only a vault that gives IDs has cards): a ```` ```card ```` block there is a code block.
+ */
+function plain({ id: _id, cards: _cards, ...r }: IndexRecord): IndexRecord {
   r.title = fileTitle(r)
   return r
 }
