@@ -26,6 +26,7 @@ import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
 import { BacklinksSection } from '../links/BacklinksSection'
+import { savedFirst } from '../lib/renameContinuity'
 import { storage } from '../lib/storage'
 
 /** The vault the note is in: what its links resolve against. */
@@ -88,7 +89,10 @@ export function ExploreNote({ path, mode, title, vault, style, onOpenLink, rende
     if (mode !== 'read') return
     let live = true
     setContent({ kind: 'loading' })
-    api.readFile(path).then(
+    // A save of this note still on its way (an editor's flush, YAZ-3685 F5) lands first: the read sees the typed text.
+    Promise.resolve(savedFirst(path))
+      .then(() => api.readFile(path))
+      .then(
       (file) => {
         if (!live) return
         readRef.current = file.content

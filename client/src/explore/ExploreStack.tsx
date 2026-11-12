@@ -15,6 +15,7 @@ import { fileKind } from '@shared/fileKind'
 import { rootOfPath, type CommentsOrder } from '@shared/types'
 import type { LinkActions } from '../editor/linkMenu'
 import { focusOpenDocument } from '../lib/focusHandoff'
+import { flushRenamedPath } from '../lib/renameContinuity'
 import type { SearchCandidate } from '../search/searchCandidates'
 import { useSearchCandidates, type SearchVault } from '../search/useSearchResults'
 import { ContextMenu } from '../sidebar/ContextMenu'
@@ -70,6 +71,17 @@ const inField = (target: EventTarget | null): boolean => target instanceof Eleme
 
 export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, linkActions, openInTab, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose }: ExploreStackProps) {
   const [layers, setLayers] = useState<readonly ExploreLayer[]>([])
+  const layersRef = useRef(layers)
+  layersRef.current = layers
+  /**
+   * A layer in edit on its way out (a close, ⌘↵, a menu row that closes the stack): its editor's pending save goes
+   * through the one flush door first, so a read of the note anywhere (`savedFirst`) waits for it. The unmount's own
+   * flush writes too, but tells no reader.
+   */
+  const flushEdits = useCallback(() => {
+    for (const l of layersRef.current) if (l.kind === 'note' && l.mode === 'edit') void flushRenamedPath(l.path)
+  }, [])
+
   /** The layers on their way out (the exit motion), by id: still drawn, no keys, gone after the motion. */
   const [leaving, setLeaving] = useState<ReadonlySet<number>>(() => new Set())
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>())
@@ -91,9 +103,12 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
         linkActions: doors.current.linkActions,
         onRenameFile: doors.current.onRenameFile,
         onNotice: (m) => doors.current.onNotice(m),
-        closeStack: () => doors.current.onClose(),
+        closeStack: () => {
+          flushEdits()
+          doors.current.onClose()
+        },
       }),
-    [],
+    [flushEdits],
   )
 
   const push = useCallback((layer: ExploreLayer): boolean => {
@@ -135,6 +150,7 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
     const live = layers.filter((l) => !leaving.has(l.id))
     const top = live[live.length - 1]
     if (top === undefined) return
+    if (top.kind === 'note' && top.mode === 'edit') void flushRenamedPath(top.path)
     if (live.length === 1) {
       doors.current.onClose()
       return
@@ -160,15 +176,29 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
   const live = useMemo(() => layers.filter((l) => !leaving.has(l.id)), [layers, leaving])
   const top = live[live.length - 1]
 
-  /** A note layer's mode flips (item 5): Edit / E to edit; Done / Esc back to reading, the note saved as typed. */
-  const toggleEdit = useCallback((id: number) => setLayers((prev) => prev.map((l) => (l.id === id && l.kind === 'note' ? { ...l, mode: l.mode === 'read' ? 'edit' : 'read' } : l))), [])
+  const setMode = useCallback((id: number, mode: 'read' | 'edit') => setLayers((prev) => prev.map((l) => (l.id === id && l.kind === 'note' && l.mode !== mode ? { ...l, mode } : l))), [])
+  /**
+   * A note layer's mode flips (item 5): Edit / E to edit; Done / Esc back to reading. Leaving edit FIRST flushes the
+   * editor's pending save (`flushRenamedPath`: the flush a tab close and a mini-window step take) and waits for it, THEN
+   * reads: the reading view shows what was typed, never the file from before the save.
+   */
+  const toggleEdit = useCallback(
+    (id: number) => {
+      const layer = layersRef.current.find((l) => l.id === id)
+      if (layer === undefined || layer.kind !== 'note') return
+      if (layer.mode === 'read') return setMode(id, 'edit')
+      void flushRenamedPath(layer.path).finally(() => setMode(id, 'read'))
+    },
+    [setMode],
+  )
 
   const toTab = useCallback(() => {
     const note = topNote(live)
     if (note === null) return
+    flushEdits()
     doors.current.openInTab(note.path)
     doors.current.onClose()
-  }, [live])
+  }, [live, flushEdits])
 
   // The editor of the top layer takes the caret when it mounts (E); the stack's root otherwise, so the keys are heard.
   useEffect(() => {

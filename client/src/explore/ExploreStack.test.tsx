@@ -16,6 +16,7 @@ import type { SearchVault } from '../search/useSearchResults'
 import { NO_FOLDER_PAGE_NOTICE } from './exploreMenu'
 import { resetExploreRecents } from './exploreRecents'
 import { onNoteWindowRequest } from '../views/noteWindowRequest'
+import { registerRenameContinuity } from '../lib/renameContinuity'
 import { ExploreStack, FULL_NOTICE, type ExploreStackProps } from './ExploreStack'
 import { MAX_LAYERS } from './layers'
 
@@ -459,6 +460,47 @@ describe('the explore stack', () => {
     const before = layers().length
     key(el.querySelector('.ctx-menu [role="menuitem"]') as Element, { key: 'Escape' })
     expect(layers()).toHaveLength(before)
+  })
+
+  it('leaving edit flushes the editor\'s pending save FIRST and reads after it: Esc at once shows the typed text; a close in edit flushes too', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    key(document.activeElement as Element, { key: 'e' })
+    await flush()
+    expect(top().querySelector('.explore__mode')?.textContent).toBe('Editing')
+    // The editor's autosave handle, as `useAutosave` registers it: the typed text reaches the disk only when flushed, a tick later.
+    const disk = { content: '# /v/alpha.md\n\nthe body of /v/alpha.md\n' }
+    readFile.mockImplementation(async (path) => ({ path, content: path === '/v/alpha.md' ? disk.content : `# ${path}\n`, mtime: 1, size: 1 }))
+    const order: string[] = []
+    const off = registerRenameContinuity('/v/alpha.md', {
+      flush: async () => {
+        await new Promise((r) => setTimeout(r, 0))
+        disk.content = '# /v/alpha.md\n\ntyped at once\n'
+        order.push('flushed')
+      },
+      capture: () => null,
+      retire: () => undefined,
+    })
+    readFile.mockClear()
+    escape()
+    // Still editing while the save is on its way: no read yet.
+    expect(readFile).not.toHaveBeenCalled()
+    for (let i = 0; i < 4; i++) await act(async () => await new Promise((r) => setTimeout(r, 0)))
+    readFile.mock.calls.forEach(() => order.push('read'))
+    expect(order).toEqual(['flushed', 'read'])
+    expect(top().querySelector('.explore__mode')?.textContent).toBe('Reading')
+    expect(crepes.at(-1)?.opts.defaultValue).toContain('typed at once')
+    expect(disk.content).toContain('typed at once')
+    // A close while editing goes through the same flush door.
+    key(document.activeElement as Element, { key: 'e' })
+    await flush()
+    const flushes = order.length
+    escape()
+    for (let i = 0; i < 3; i++) await act(async () => await new Promise((r) => setTimeout(r, 0)))
+    expect(order.filter((o) => o === 'flushed')).toHaveLength(2)
+    expect(order.length).toBeGreaterThan(flushes)
+    off()
   })
 
   it('with motion on, a leaving layer plays its exit (150 ms for a note) and is gone after it; the keys go on to the layer under it at once', async () => {
