@@ -22,7 +22,7 @@ import { usePickFolder } from './hooks/usePickFolder'
 import { vaultDirs } from './links/folderLinks'
 import { countLinkReferences, linkingNotes, renameNotice, updateLinksAfterRename, type RenameRewriteSummary } from './links/renameLinks'
 import type { Move } from './links/shortcuts'
-import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep } from './lib/moveHistory'
+import { createMoveHistory, invertMoves, isMoveStep, type DeleteStep, type MovedGesture, type RenameStep, type UndoStep } from './lib/moveHistory'
 import { playGestureSound } from './lib/gestureSound'
 import { holdColResize } from './lib/colResize'
 import { dropIndex } from './lib/dragSlot'
@@ -1224,7 +1224,7 @@ export function App() {
     if (vaults.length === 0) return
     const title = dailyNoteName(now.dailyNoteFormat, new Date()).trim()
     void dailyVault(vaults, now.dailyNoteFolder)
-      .then(({ vault, tree }) => {
+      .then(async ({ vault, tree }): Promise<string | null> => {
         const index = scopeOf(vault).wikilinks
         // Until the index lands the vault's kind is not known (YAZ-2523 🔒 V5), and it decides what is written.
         if (index.resolve === null) throw new Error('the vault index is still loading — try again in a moment')
@@ -1233,7 +1233,10 @@ export function App() {
         const held = dailyMaking.current?.key === key ? dailyMaking.current : null
         const found = todaysNote({ records: index.records, tree, folder: now.dailyNoteFolder, title, dayFolder: now.dailyNoteDayFolder, made: held?.path })
         if (found !== null) return found
+        // Today's note is a New note: a read-only vault asks first (YAZ-4985). Opening one that is there never asks.
+        if ((held === null || held.path !== undefined) && !(await allowFileAction(vault))) return null
         // One note at a time for a key: a press while it is made waits for it. Made but gone from the tree: made again (D16).
+        if (dailyMaking.current?.key === key && dailyMaking.current.path === undefined && held === null) return dailyMaking.current.note
         if (held === null || held.path !== undefined) {
           // A fresh tree before the row is shown: the sidebar hears it (`onTree`), so the new note's row is there to show.
           const note = api.makeDailyNote(vault).then(async ({ path }) => {
@@ -1251,6 +1254,7 @@ export function App() {
       })
       .then(
         (path) => {
+          if (path === null) return
           if (background) return openBehindSidebar.current(path)
           if (sidebarCollapsedRef.current) toggleSidebar()
           openAsSidebar.current(path)
@@ -1260,7 +1264,7 @@ export function App() {
         },
         (err: unknown) => notify(`Can't open today's daily note: ${err instanceof Error ? err.message : String(err)}`, 'error'),
       )
-  }, [scopeOf, dailyVault, toggleSidebar, revealInFiles, notify])
+  }, [scopeOf, dailyVault, toggleSidebar, revealInFiles, notify, allowFileAction])
 
   // ⌘D (YAZ-3556 D9): the place of `settings.goTo`, in the active tab's vault. A tab shows. A folder shows in Files, open,
   // with the keyboard on its row. A file opens as a sidebar click opens it, and its row shows. A hidden sidebar shows
@@ -2723,6 +2727,16 @@ export function App() {
   }, [nameOf, notify, stepToast])
 
   /**
+   * An undo or a redo changes the vault's files as the gesture did (YAZ-4985): it asks the read-only door of each vault
+   * the step touches, once each, as `trashMany` does. Main's own writes never come here.
+   */
+  const allowStep = useCallback(async (entry: UndoStep): Promise<boolean> => {
+    const paths = isMoveStep(entry) ? entry.moves.flatMap((move) => [move.oldPath, move.newPath]) : entry.step === 'rename' ? [entry.path] : entry.items.map((item) => item.path)
+    for (const vault of new Set(paths.flatMap((path) => scopeOf(path).root ?? []))) if (!(await allowFileAction(vault))) return false
+    return true
+  }, [scopeOf, allowFileAction])
+
+  /**
    * ⌘Z (YAZ-3255 D10, S33): the newest gesture moves back, all its items, newest first, through
    * `runMoves` — so links follow. A move clears no value (YAZ-4713 C9), so none has to come back. What moved back goes on the redo list. One
    * that moved nothing stays on the undo list, so the next ⌘Z tries again — unless every item moved
@@ -2736,6 +2750,8 @@ export function App() {
     replaying.current = true
     void (async () => {
       try {
+        // A read-only vault asks first (YAZ-4985), as the gesture did: a Cancel keeps the step on the undo list.
+        if (!(await allowStep(entry))) return moveHistory.current.redone(entry)
         // A rename or a delete (YAZ-3268 D17): the same list, newest first (S65).
         if (!isMoveStep(entry)) return await (entry.step === 'rename' ? replayRename(entry, 'undo') : putBackStep(entry))
         const back = await runMoves(invertMoves(entry.moves), { record: false })
@@ -2757,7 +2773,7 @@ export function App() {
       }
     })()
     return true
-  }, [runMoves, notify, stepToast, replayRename, putBackStep])
+  }, [runMoves, notify, stepToast, replayRename, putBackStep, allowStep])
 
   /**
    * ⌘⇧Z (YAZ-3255 D10 amended, S37): the newest undone gesture runs forward again through
@@ -2771,6 +2787,8 @@ export function App() {
     replaying.current = true
     void (async () => {
       try {
+        // A read-only vault asks first (YAZ-4985): a Cancel keeps the step on the redo list.
+        if (!(await allowStep(entry))) return moveHistory.current.undone(entry)
         if (!isMoveStep(entry)) return await (entry.step === 'rename' ? replayRename(entry, 'redo') : deleteAgain(entry))
         const run = await runMoves(entry.moves, { record: false })
         if (run.moves.length > 0) moveHistory.current.redone({ moves: run.moves })
@@ -2789,7 +2807,7 @@ export function App() {
       }
     })()
     return true
-  }, [runMoves, notify, stepToast, replayRename, deleteAgain])
+  }, [runMoves, notify, stepToast, replayRename, deleteAgain, allowStep])
   moveReplay.current = { undo: undoMove, redo: redoMove }
 
   /**
