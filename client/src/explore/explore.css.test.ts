@@ -39,6 +39,19 @@ describe('the Arrange popover (YAZ-4949)', () => {
     expect(name['text-align']).toBe('center')
   })
 
+  it('YAZ-4949 round 2: each name has room for one line in the 384 px popover ("Grid + centre" is 69.0 px at 11 px in the app)', () => {
+    const px = (v: string | undefined) => Number.parseFloat(v ?? 'NaN')
+    const box = rule('.explore__arrange')
+    const button = rule('.explore__layout')
+    const [, padX = '0'] = button['padding']!.split(/\s+/)
+    // The popover's width, less its padding and border (border-box), shared by five tracks and four gaps.
+    const track = (px(box['width']) - 2 * px(box['padding']) - 2 - 4 * px(rule('.explore__layouts')['gap'])) / 5
+    // A button's room for its name: the track, less its side padding and its 1 px border.
+    const room = track - 2 * px(padX) - 2
+    const widest = (69.0 * px(button['font-size'])) / 11
+    expect(room).toBeGreaterThanOrEqual(widest + 1)
+  })
+
   it('the popover has room for the five names on one line at the default width, and never passes the window', () => {
     const box = rule('.explore__arrange')
     expect(Number.parseInt(box['width']!, 10)).toBeGreaterThanOrEqual(380)

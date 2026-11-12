@@ -491,7 +491,7 @@
   top: 52px;
   left: 50%;
   z-index: 21;
-  /* YAZ-4949: room for the five layout names on one line (the row needs 348 px); a narrower window shrinks it. */
+  /* YAZ-4949: room for the five layout names on one line (see `.explore__layouts`); a narrower window shrinks it. */
   width: 384px;
   max-width: calc(100% - 32px);
   padding: 12px;
@@ -512,7 +512,8 @@
   display: grid;
   /* YAZ-4949: a 1fr track does not go below its content; minmax(0, 1fr) keeps the row inside the popover. */
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;
+  /* YAZ-4949 round 2: a 2 px gap, no side padding and 10.5 px names: "Grid + centre" (66 px) fits its 68 px on one line. */
+  gap: 2px;
 }
 .explore__layout {
   display: flex;
@@ -520,9 +521,9 @@
   align-items: center;
   min-width: 0;
   gap: 4px;
-  padding: 6px 2px;
+  padding: 6px 0;
   font: inherit;
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--fg-muted);
   background: transparent;
   border: 1px solid transparent;
