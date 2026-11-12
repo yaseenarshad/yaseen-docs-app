@@ -26,6 +26,7 @@ import type { MenuSection } from '../sidebar/menuSections'
 import { hrefTarget } from '../editor/pathPaste'
 import type { WikilinkCandidateSource } from '../editor/wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import type { ViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
 import { BacklinksSection } from '../links/BacklinksSection'
 import { savedFirst } from '../lib/renameContinuity'
@@ -36,6 +37,8 @@ export interface ExploreVault {
   root: string
   wikilinks: WikilinkResolveSource
   wikilinkCandidates: WikilinkCandidateSource
+  /** The vault's catalog of files that are no notes: a board embed and a link to a drawing resolve through it. */
+  viewOnlyLinks?: ViewOnlyLinkSource
 }
 
 interface ExploreNoteProps {
@@ -118,7 +121,7 @@ export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenL
   const body = mode === 'read' && content.kind === 'body' ? content.body : null
   const switches = content.kind === 'body' ? content.switches : undefined
   // The vault's three parts, not the object: App hands a new object each render, and the Crepe is built once per body.
-  const { root, wikilinks, wikilinkCandidates } = vault
+  const { root, wikilinks, wikilinkCandidates, viewOnlyLinks } = vault
   useEffect(() => {
     const parent = mountRef.current
     if (body === null || parent === null) return
@@ -138,6 +141,8 @@ export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenL
       wikilinks,
       foldingOn: () => foldingOn,
       find: findChannel,
+      // A board embed, a link to a drawing or a PDF: the vault's view-only catalog, as in the note tab (else "Missing drawing").
+      viewOnlyLinks,
       // The pills' icons, and a board embed as its window, read only (round 1, item 2): what the note tab draws.
       linkLook: { icon: (target, folder) => fileIconDecoration(icons, target, folder) },
       boardEmbeds: { root },
@@ -165,7 +170,7 @@ export function ExploreNote({ path, mode, gone = 0, title, vault, style, onOpenL
     }
     // `icons` is read at each link draw; a change of the icon rules redraws no preview (the preview panel's rule).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [body, switches, path, root, wikilinks, wikilinkCandidates, findChannel])
+  }, [body, switches, path, root, wikilinks, wikilinkCandidates, viewOnlyLinks, findChannel])
 
   // The fold-all button (round 1, item 4): the note tab's own button and command on this layer's Crepe.
   const subscribeFolds = useCallback(

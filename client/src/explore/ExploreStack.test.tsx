@@ -86,6 +86,7 @@ const watch: WatchSource = { subscribe: () => () => undefined }
 const wikilinks = createWikilinkResolveSource()
 const vaults: SearchVault[] = [{ root: '/v', watch, dirs: ['/v/sub'], files: [] }]
 const candidates = { candidates: [], subscribe: () => () => undefined }
+const viewOnly = { resolve: null, subscribe: () => () => undefined } as unknown as import('../editor/wikilink/viewOnlyLinkSource').ViewOnlyLinkSource
 
 let root: Root | null = null
 let el: HTMLElement
@@ -141,7 +142,7 @@ beforeEach(() => {
   props = {
     request: 1,
     vaults,
-    vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: candidates }),
+    vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly }),
     nameOf: (path) => path.slice(3, -3),
     textVarsFor: () => ({}),
     renderEditor: (path): ReactNode => {
@@ -366,6 +367,8 @@ describe('the explore stack', () => {
     await openResult()
     const opts = crepes[0].opts
     expect(opts.boardEmbeds).toEqual({ root: '/v' })
+    // The vault's view-only catalog: a board embed resolves its drawing through it (else "Missing drawing").
+    expect(opts.viewOnlyLinks).toBe(viewOnly)
     expect(typeof (opts.linkLook as { icon: unknown }).icon).toBe('function')
     expect(opts.image).toEqual({ root: '/v', notePath: '/v/alpha.md' })
     expect(under.comments.at(-1)).toMatchObject({ path: '/v/alpha.md', order: 'oldest' })

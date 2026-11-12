@@ -1311,7 +1311,7 @@ export function App() {
   const exploreVaults = useMemo<readonly SearchVault[]>(() => (!exploreOpen ? [] : roots.map((vault, i) => ({ root: vault, watch: live.current.vaults[i].watch, dirs: allDirs(exploreTrees[i]?.tree ?? []), files: [] }))), [exploreOpen, roots, exploreTrees])
   const exploreVaultOf = useCallback((path: string) => {
     const scope = scopeOf(path)
-    return { root: scope.root ?? '', wikilinks: scope.wikilinks, wikilinkCandidates: scope.wikilinkCandidates }
+    return { root: scope.root ?? '', wikilinks: scope.wikilinks, wikilinkCandidates: scope.wikilinkCandidates, viewOnlyLinks: scope.viewOnlyLinks }
   }, [scopeOf])
   // The notes opened most recently, for the stack's empty search: the active tab's note counts.
   useEffect(() => {
