@@ -5,7 +5,7 @@
  * keeps the list in state and the DOM keeps each layer's scroll.
  */
 
-export type ExploreLayer = { id: number; kind: 'search' } | { id: number; kind: 'note'; path: string; mode: 'read' | 'edit'; wide: boolean; /** Bumped when the note was deleted under the layer: the layer reads again and says it is gone. */ gone?: number }
+export type ExploreLayer = { id: number; kind: 'search' } | { id: number; kind: 'note'; path: string; mode: 'read' | 'edit'; /** Bumped when the note was deleted under the layer: the layer reads again and says it is gone. */ gone?: number }
 
 /** The most layers the stack holds (the recommendation on YAZ-2571): a 13th push is refused with a notice. */
 export const MAX_LAYERS = 12
@@ -13,27 +13,7 @@ export const MAX_LAYERS = 12
 /** The widths of the two panels in CSS px (Mochi's 500 for search; a note reads at the preview panel's 720), and the gap kept to the window's edges. */
 export const SEARCH_WIDTH = 500
 export const NOTE_WIDTH = 720
-/** A wide note layer (YAZ-4927): room for a table or a board; cut to the window as the others are. */
-export const WIDE_NOTE_WIDTH = 1100
 export const EDGE_GAP = 72
-
-/** The remembered choice of YAZ-4927: wide or narrow for the next note layers, across restarts, in this window's localStorage. */
-const WIDE_KEY = 'explore:wide'
-export function preferWide(): boolean {
-  try {
-    return localStorage.getItem(WIDE_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-export function setPreferWide(on: boolean): void {
-  try {
-    if (on) localStorage.setItem(WIDE_KEY, '1')
-    else localStorage.removeItem(WIDE_KEY)
-  } catch {
-    // No storage: the choice lasts the stack.
-  }
-}
 
 /** Each layer sits this much right of the one under it; the first one also this much lower (Mochi's desktop offsets). */
 export const LAYER_STEP = 15
@@ -60,16 +40,16 @@ export function topNote(layers: readonly ExploreLayer[]): Extract<ExploreLayer, 
   return null
 }
 
-/** A panel's width in a window `windowWidth` wide: its own (a note's wide one with `wide`), cut to leave `EDGE_GAP` at each side. */
-export const panelWidth = (kind: ExploreLayer['kind'], windowWidth: number, wide = false): number => Math.max(240, Math.min(kind === 'search' ? SEARCH_WIDTH : wide ? WIDE_NOTE_WIDTH : NOTE_WIDTH, windowWidth - 2 * EDGE_GAP))
+/** A panel's width in a window `windowWidth` wide: its own, cut to leave `EDGE_GAP` at each side. */
+export const panelWidth = (kind: ExploreLayer['kind'], windowWidth: number): number => Math.max(240, Math.min(kind === 'search' ? SEARCH_WIDTH : NOTE_WIDTH, windowWidth - 2 * EDGE_GAP))
 
 /**
  * Where layer `index` stands: `left` from the window's left edge, in CSS px, and `top` added to the 10vh margin. The
  * offset is `index × 15` right and `min(index, 1) × 15` down, clamped so the panel keeps 8 px to the window's right
  * edge: a narrow window gets a smaller offset, never a panel off screen.
  */
-export function layerPlace(kind: ExploreLayer['kind'], index: number, windowWidth: number, wide = false): { left: number; top: number; width: number } {
-  const width = panelWidth(kind, windowWidth, wide)
+export function layerPlace(kind: ExploreLayer['kind'], index: number, windowWidth: number): { left: number; top: number; width: number } {
+  const width = panelWidth(kind, windowWidth)
   const centred = Math.max(0, Math.floor((windowWidth - width) / 2))
   const room = Math.max(0, windowWidth - 8 - width - centred)
   return { left: centred + Math.min(index * LAYER_STEP, room), top: Math.min(index, 1) * LAYER_STEP, width }

@@ -25,7 +25,7 @@ import { exploreNoteSections } from './exploreMenu'
 import { exploreRecents, onExploreMove, rememberExploreRecent } from './exploreRecents'
 import { ExploreSearch } from './ExploreSearch'
 import { textCandidates } from './exploreRows'
-import { layerPlace, MAX_LAYERS, NOTE_MS, newLayerId, preferWide, pushLayer, SEARCH_MS, setPreferWide, topNote, type ExploreLayer } from './layers'
+import { layerPlace, MAX_LAYERS, NOTE_MS, newLayerId, pushLayer, SEARCH_MS, topNote, type ExploreLayer } from './layers'
 import './explore.css'
 
 export interface ExploreStackProps {
@@ -153,7 +153,7 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
     if (request === served.current) return
     served.current = request
     if (requestNote === null) push({ id: newLayerId(), kind: 'search' })
-    else if (push({ id: newLayerId(), kind: 'note', path: requestNote, mode: 'read', wide: preferWide() })) rememberExploreRecent(requestNote)
+    else if (push({ id: newLayerId(), kind: 'note', path: requestNote, mode: 'read' })) rememberExploreRecent(requestNote)
   }, [request, requestNote, push])
 
   /** A note goes on top for reading; a folder or another file opens in a tab and the stack closes. */
@@ -164,7 +164,7 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
         doors.current.onClose()
         return
       }
-      if (push({ id: newLayerId(), kind: 'note', path, mode: 'read', wide: preferWide() })) rememberExploreRecent(path)
+      if (push({ id: newLayerId(), kind: 'note', path, mode: 'read' })) rememberExploreRecent(path)
     },
     [push],
   )
@@ -227,14 +227,6 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
     },
     [setMode],
   )
-
-  /** Wide or narrow (YAZ-4927): this layer flips, and the choice is kept for the next note layers. */
-  const toggleWide = useCallback((id: number) => {
-    const layer = layersRef.current.find((l) => l.id === id)
-    if (layer === undefined || layer.kind !== 'note') return
-    setPreferWide(!layer.wide)
-    setLayers((prev) => prev.map((l) => (l.id === id && l.kind === 'note' ? { ...l, wide: !l.wide } : l)))
-  }, [])
 
   const toTab = useCallback(() => {
     const note = topNote(live)
@@ -326,7 +318,7 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
         </nav>
       )}
       {layers.map((layer, index) => {
-        const place = layerPlace(layer.kind, index, windowWidth, layer.kind === 'note' && layer.wide)
+        const place = layerPlace(layer.kind, index, windowWidth)
         const covered = layer !== top
         const out = leaving.has(layer.id)
         const style = { left: place.left, top: `calc(10vh + ${place.top}px)`, width: place.width, '--explore-ms': `${layer.kind === 'search' ? SEARCH_MS : NOTE_MS}ms` } as CSSProperties
@@ -357,8 +349,6 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
                 linkActions={linkActions}
                 onNotice={onNotice}
                 onToggleEdit={() => toggleEdit(layer.id)}
-                wide={layer.wide}
-                onToggleWide={() => toggleWide(layer.id)}
                 commentsOrder={commentsOrder}
                 onChangeCommentsOrder={onChangeCommentsOrder}
                 onOpenInTab={toTab}

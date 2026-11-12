@@ -4,7 +4,7 @@ import { exploreRecents, MAX_EXPLORE_RECENTS, moveExploreRecent, rememberExplore
 import { EDGE_GAP, LAYER_STEP, layerPlace, MAX_LAYERS, newLayerId, NOTE_WIDTH, panelWidth, pushLayer, SEARCH_WIDTH, topNote, type ExploreLayer } from './layers'
 
 const search = (): ExploreLayer => ({ id: newLayerId(), kind: 'search' })
-const note = (path: string): ExploreLayer => ({ id: newLayerId(), kind: 'note', path, mode: 'read', wide: false })
+const note = (path: string): ExploreLayer => ({ id: newLayerId(), kind: 'note', path, mode: 'read' })
 
 describe('the layer list', () => {
   it('pushes on top, 12 at most: a 13th is refused and the list stays', () => {
