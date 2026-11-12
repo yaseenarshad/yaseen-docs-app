@@ -153,11 +153,32 @@ const captured = vi.hoisted(() => ({
   /** One entry per Editor stub render, with the vault it was handed (YAZ-2602): its root, its index source, the window's new-note folder — and the table of contents setting with its door (YAZ-2700 D2). */
   /** Each main tab's zoom door (YAZ-3647 D2), by tab id, as the newest Editor stub render was handed it. */
   zoomDoors: new Map<string, (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void>(),
+  /** The note card flow mounts the REAL note editor (`./editor/Editor`); every other test the stub. */
+  realEditor: false,
+  crepes: [] as import('@milkdown/crepe').Crepe[],
   editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }[],
 }))
 
-vi.mock('./editor/Editor', () => ({
-  Editor: ({ root, path, onOpenFile, onOpenFileBackground, onOpenLink, viewOnlyLinks, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView, tabId, onZoom }: { tabId?: string; onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void; root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; onOpenLink?: (path: string, where?: 'thisTab' | 'newTab' | 'backgroundTab') => void; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }) => {
+vi.mock('./editor/Editor', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./editor/Editor')>()
+  return {
+  /** The REAL note editor while `captured.realEditor` is on (the note card flow), else the stub. */
+  Editor: (props: Parameters<typeof real.Editor>[0]) => (captured.realEditor ? <real.Editor {...props} /> : <EditorStub {...(props as unknown as Parameters<typeof EditorStub>[0])} />),
+  }
+})
+/** Each real editor's Crepe, newest last (the note card flow drives its ProseMirror view). */
+vi.mock('./editor/createCrepe', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./editor/createCrepe')>()
+  return {
+    ...real,
+    createCrepe: (opts: Parameters<typeof real.createCrepe>[0]) => {
+      const crepe = real.createCrepe(opts)
+      captured.crepes.push(crepe)
+      return crepe
+    },
+  }
+})
+const EditorStub = ({ root, path, onOpenFile, onOpenFileBackground, onOpenLink, viewOnlyLinks, onRetitle, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView, tabId, onZoom }: { tabId?: string; onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void; root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; onOpenLink?: (path: string, where?: 'thisTab' | 'newTab' | 'backgroundTab') => void; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }) => {
     captured.editors.push({ path, root, wikilinks, sync, newNoteFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView })
     if (tabId !== undefined && onZoom !== undefined) captured.zoomDoors.set(tabId, onZoom)
     captured.editorOpeners.push({ path, open: onOpenFile })
@@ -170,8 +191,7 @@ vi.mock('./editor/Editor', () => ({
         <button type="button" data-open-right-background onClick={() => onOpenFileBackground?.('/v/d.md')} />
       </div>
     )
-  },
-}))
+  }
 // The new tab page reads the favorites and the trees itself (StartPage.test.tsx): here it is a stub that shows whether App mounts it.
 vi.mock('./workspace/StartPage', async () => {
   const { useEffect } = await import('react')
@@ -203,6 +223,11 @@ vi.mock('./sidebar/Sidebar', () => ({
 
 import { App, preloadTabBoard, replayNotice } from './App'
 import { NOTE_CARD_OPEN } from './editor/noteCard/noteCardView'
+import { editorViewCtx } from '@milkdown/kit/core'
+import { TextSelection } from '@milkdown/kit/prose/state'
+import { cardRecords } from '@shared/cardLine'
+import { splitFrontmatter } from '@shared/frontmatter'
+import { getMarkdownForSave } from './editor/createCrepe'
 import { dropAllNoteWindows, keepNoteWindow, noteWindowKey, noteWindowMemory, openNoteWindow } from './views/view/NoteWindow'
 import { MOVE_ROW_TITLE_MAX } from './tabs/windowLabel'
 
@@ -682,6 +707,8 @@ afterEach(() => {
   captured.linkOpeners = []
   captured.viewOnlyLinks = []
   captured.editors = []
+  captured.realEditor = false
+  captured.crepes = []
   history.replaceState(null, '', '/')
   delete document.documentElement.dataset.theme
   document.getElementById(CREPE_THEME_STYLE_ID)?.remove()
@@ -5261,6 +5288,96 @@ describe('App: the note card flow (YAZ-4962)', () => {
     expect(layer.querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('Reviews (1)')
     expect(layer.querySelector('.note-card-strip__fact')?.textContent).toBe('Remembered')
   })
+})
+
+/**
+ * THE WHOLE FLOW (YAZ-4965's verification plan) through the REAL note editor: `/card` in the open page takes its ID at
+ * once → the page saves → the index reads the save (the watcher) → the Inbox counts and shows it → Remembered writes the
+ * review → ⌘Z takes it off. The page stays OPEN in its tab with unsaved typing elsewhere in it while the Inbox writes
+ * (the outside-edit merge, YAZ-3704): the typing and the review both reach the file, and the answer lands QUIETLY in
+ * the open page — no outside-change bar, no glow (the app's own write, `announcedWrite`).
+ */
+describe('App: the note card flow from /card, through the real editor (YAZ-4965)', () => {
+  const PAGE = '/v/cards.md'
+  const scan = (path: string, content: string): IndexRecord => ({
+    path, name: path.slice(3), basename: path.slice(3, -3), title: path.slice(3, -3), folder: '', ext: 'md', size: content.length, ctime: 1, mtime: 1,
+    properties: {}, aliases: [], tags: [], links: [], embeds: [], cards: cardRecords(splitFrontmatter(content).body),
+  })
+
+  it('/card → ID at insert → save → index → Inbox → Remembered writes the line, the open page keeps its typing, quietly → ⌘Z', async () => {
+    captured.realEditor = true
+    const files: Record<string, { content: string; mtime: number }> = { [PAGE]: { content: '# Cards\n\nIntro\n\nx\n', mtime: 1 } }
+    const watchers = new Set<(ev: { type: string; path: string; mtime: number }) => void>()
+    const { el, bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: PAGE, tabs: [PAGE] }, files, (b) => {
+      b.bridge.index.mockImplementation(async () => ({ root: '/v', records: Object.entries(files).map(([p, f]) => scan(p, f.content)), folders: [], generatedAt: Date.now(), ids: true }))
+      b.bridge.watch.mockImplementation((_root?: string, listener?: unknown) => {
+        watchers.add(listener as (ev: { type: string; path: string; mtime: number }) => void)
+        return () => watchers.delete(listener as (ev: { type: string; path: string; mtime: number }) => void)
+      })
+      ;(b.bridge as unknown as { mintNoteId: (path: string) => Promise<string> }).mintNoteId = vi.fn(async () => 'WIKI-9')
+    })
+    // The watcher tells each write, as main's does (the editor skips its own by mtime; the index reads it again).
+    bridge.writeFile.mockImplementation(async ({ path, content }: { path: string; content: string }) => {
+      files[path] = { content, mtime: (files[path]?.mtime ?? 0) + 1 }
+      const mtime = files[path].mtime
+      setTimeout(() => watchers.forEach((l) => l({ type: 'change', path, mtime })), 30)
+      return { path, mtime, size: content.length }
+    })
+    await vi.waitFor(() => expect(captured.crepes.length).toBeGreaterThan(0), { timeout: SLOW_RUNNER_MS })
+    const crepe = captured.crepes.at(-1)!
+    await vi.waitFor(() => expect(el.querySelector('.ProseMirror')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    view.hasFocus = () => true
+    // `/card` on the last line: the "Note card" row inserts an empty card, and the door's ID lands at once.
+    const last = view.state.doc.content.size - 1
+    await act(async () => {
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, last - 1, last)).insertText('/card'))
+      await new Promise((r) => setTimeout(r, 20))
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.doc.content.size - 1)))
+    })
+    await vi.waitFor(() => expect([...document.querySelectorAll('.milkdown-slash-menu .menu-group li')].map((li) => li.textContent?.trim())).toContain('Note card'), { timeout: SLOW_RUNNER_MS })
+    await act(async () => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+    // The user writes the card (its text, as Edit card's code editor puts it in the block).
+    let at = -1
+    view.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'code_block' && node.attrs.language === 'card') at = pos
+      return at === -1
+    })
+    expect(at).toBeGreaterThan(-1)
+    await act(async () => void view.dispatch(view.state.tr.insertText('Capital of {{France}}\n---\nParis', at + 1)))
+    // The autosave writes the card with the ID the door gave at insert, before any sweep.
+    await vi.waitFor(() => expect(files[PAGE].content).toBe('# Cards\n\nIntro\n\n```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'), { timeout: SLOW_RUNNER_MS })
+    // The index reads the save: the Inbox row counts the new card.
+    await vi.waitFor(() => expect(captured.sidebar?.dueCount).toBe(1), { timeout: SLOW_RUNNER_MS })
+    // Unsaved typing in the open page, elsewhere than the card ("Intro" → "Intro, typed").
+    let intro = -1
+    view.state.doc.descendants((node, pos) => {
+      if (intro === -1 && node.textContent === 'Intro') intro = pos + 1 + 'Intro'.length
+      return intro === -1
+    })
+    await act(async () => void view.dispatch(view.state.tr.insertText(', typed', intro)))
+    act(() => captured.sidebar?.onOpenInbox())
+    const inbox = () => el.querySelector<HTMLElement>('.note-card-inbox')
+    await vi.waitFor(() => expect(inbox()?.querySelector('.note-card__side')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
+    const press = (key: string, init: KeyboardEventInit = {}) => act(async () => void inbox()?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })))
+    for (let i = 0; i < 3; i++) await press(' ')
+    await vi.waitFor(() => expect(el.querySelectorAll('.note-card-inbox__answer')).toHaveLength(2))
+    await press('2')
+    const reviewed = /^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\dZ good -->$/m
+    await vi.waitFor(() => expect(files[PAGE].content).toMatch(reviewed), { timeout: SLOW_RUNNER_MS })
+    // The open page took the review, and its next save writes the typing with it: both are in the file.
+    await vi.waitFor(() => expect(files[PAGE].content).toContain('Intro, typed'), { timeout: SLOW_RUNNER_MS })
+    expect(files[PAGE].content).toMatch(reviewed)
+    expect(getMarkdownForSave(crepe)).toMatch(reviewed)
+    // The answer is the app's own write: no outside-change bar in the open page, nothing glows.
+    expect(el.querySelector('.outside-changes-bar')).toBeNull()
+    expect(el.querySelector('.outside-change, [data-outside-change]')).toBeNull()
+    // ⌘Z in the Inbox takes the review off the line; the typing stays.
+    await press('z', { metaKey: true })
+    await vi.waitFor(() => expect(files[PAGE].content).toBe('# Cards\n\nIntro, typed\n\n```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'), { timeout: SLOW_RUNNER_MS })
+    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toContain('<!-- card: WIKI-9 -->'))
+    expect(el.querySelector('.outside-changes-bar')).toBeNull()
+  }, 30_000)
 })
 
 /**
