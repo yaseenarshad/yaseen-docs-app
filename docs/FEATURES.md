@@ -161,6 +161,8 @@ When a card is next due is worked out with FSRS (`ts-fsrs` 5.4.2) from its revie
 
 For agents: `yaseendocs card add "<page.md>" --body <text | -> [--after <heading>]` adds a card with a real ID (never write the card line by hand), and `yaseendocs due "<folder>"` lists the cards due now, each by its day, ID, title and page; `yaseendocs due "<page.md>"` lists every card on a page. Page upkeep review (YAZ-2322) is gone: a page's `reviews:` frontmatter is an ordinary property now.
 
+The sidebar's **Inbox** row counts the cards due now, with no number when none is due. Right-click a folder for **Review this folder**, or a page with cards for **Review this page**. Folder tables can show two more columns, **Cards** and **Due**, from Columns ⚙'s hidden rows: how many cards each page has and how many are due now, blank where there are none. Settings › Review holds the settings above, for the vault that is open.
+
 ## Two kinds of vault
 
 A vault is one of two kinds. A folder you open is a **plain** vault: the app asks nothing and writes nothing you did not ask for. IDs are a setting, for the vault where you want them: Settings › Files & Links › **Give this vault's notes IDs**.
