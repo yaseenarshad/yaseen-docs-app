@@ -696,3 +696,80 @@ describe('the window', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 })
+
+describe('Explore`s board layer: fill mode (YAZ-4943)', () => {
+  const SPOT = { x: 400, y: 200, width: 200, height: 100, inner: 'DNS basics', wiki: true }
+  const layer = (over: Partial<BoardWindowHost> = {}) => {
+    const onLink = vi.fn()
+    const onPages = vi.fn()
+    const made = mount({ editable: false, options: null, fill: true, columnWidth: () => 1000, onOptions: undefined, onOpen: undefined, onSelect: undefined, onLink, onPages, ...over })
+    return { ...made, onLink, onPages }
+  }
+
+  it('fills its box (no px size), never locked although not editable, never rests; pan and zoom are free and nothing is written', async () => {
+    const onOptions = vi.fn()
+    const { win } = layer({ onOptions })
+    await settle()
+    expect(win.dom.classList.contains('board-window--fill')).toBe(true)
+    expect([win.dom.style.width, win.dom.style.height]).toEqual(['', ''])
+    expect(win.dom.classList.contains('board-window--locked')).toBe(false)
+    const before = transformOf(win)
+    vi.advanceTimersByTime(31_000)
+    expect(win.dom.classList.contains('board-window--resting')).toBe(false)
+    expect(wheel(win, { deltaY: 40 }).defaultPrevented).toBe(true)
+    wheel(win, { deltaY: -10, ctrlKey: true, clientX: 100, clientY: 100 })
+    mouse(win.dom, 'mousedown', 100, 100)
+    mouse(document, 'mousemove', 150, 130)
+    mouse(document, 'mouseup', 150, 130)
+    await settle()
+    expect(transformOf(win)).not.toEqual(before)
+    // ⌘0 and Shift+1 work while it has the keyboard (the layer selects it).
+    win.setSelected(true)
+    win.dom.dispatchEvent(new KeyboardEvent('keydown', { key: '0', metaKey: true, bubbles: true, cancelable: true }))
+    await settle()
+    expect(transformOf(win).zoom).toBe(1)
+    vi.advanceTimersByTime(5_000)
+    expect(onOptions).not.toHaveBeenCalled()
+    // Escape is the layer's (it closes the layer): the window leaves it.
+    const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    win.dom.dispatchEvent(esc)
+    expect(esc.defaultPrevented).toBe(false)
+  })
+
+  it('a click on a link spot opens it (with the keys held); a click elsewhere or a drag opens nothing', async () => {
+    pictures.picture = { ...BOARD, links: [SPOT] }
+    const { win, onLink } = layer()
+    await settle()
+    // Fitted: the board's centre (500, 250) is the window's centre (500, 240).
+    mouse(win.dom, 'mousedown', 500, 240, { metaKey: true })
+    mouse(document, 'mouseup', 500, 240)
+    expect(onLink).toHaveBeenCalledTimes(1)
+    expect(onLink.mock.calls[0][0]).toEqual(SPOT)
+    expect(onLink.mock.calls[0][1]).toMatchObject({ metaKey: true, altKey: false })
+    mouse(win.dom, 'mousedown', 5, 5)
+    mouse(document, 'mouseup', 5, 5)
+    mouse(win.dom, 'mousedown', 500, 240)
+    mouse(document, 'mousemove', 560, 260)
+    mouse(document, 'mouseup', 560, 260)
+    expect(onLink).toHaveBeenCalledTimes(1)
+    // A pointer over a spot shows the hand.
+    mouse(win.dom, 'mousemove', 500, 240)
+    expect(win.dom.classList.contains('board-window--on-link')).toBe(true)
+    mouse(win.dom, 'mousemove', 5, 5)
+    expect(win.dom.classList.contains('board-window--on-link')).toBe(false)
+  })
+
+  it('a diagram tells the layer its pages and the page shown; showPage draws that page, fitted, and writes nothing', async () => {
+    pictures.picture = { ...BOARD, pages: [{ id: 'p0', name: 'Overview' }, { id: 'p1', name: 'Detail' }], page: 'p0' }
+    const onOptions = vi.fn()
+    const { win, onPages } = layer({ ref: { root: '/v', path: 'C.drawio', kind: 'diagram', name: 'C', vault: null }, onOptions })
+    await settle()
+    expect(onPages).toHaveBeenLastCalledWith(pictures.picture.pages, 'p0')
+    pictures.picture = { ...pictures.picture, key: 'k2', page: 'p1' }
+    win.showPage('p1')
+    await settle()
+    expect(vi.mocked(loadPicture)).toHaveBeenLastCalledWith({ root: '/v', path: 'C.drawio' }, 'p1')
+    expect(onPages).toHaveBeenLastCalledWith(pictures.picture.pages, 'p1')
+    expect(onOptions).not.toHaveBeenCalled()
+  })
+})

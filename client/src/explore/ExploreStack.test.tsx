@@ -16,7 +16,7 @@ import type { SearchVault } from '../search/useSearchResults'
 import { FindBar } from '../editor/find/FindBar'
 import { createFindChannel } from '../editor/find/findChannel'
 import { NO_FOLDER_PAGE_NOTICE } from './exploreMenu'
-import { moveExploreRecent, rememberExploreRecent, resetExploreRecents } from './exploreRecents'
+import { exploreRecents as exploreRecentsNow, moveExploreRecent, rememberExploreRecent, resetExploreRecents } from './exploreRecents'
 import { onNoteWindowRequest } from '../views/noteWindowRequest'
 import { registerRenameContinuity } from '../lib/renameContinuity'
 import { requestZoom } from '../editor/zoomRequest'
@@ -56,6 +56,22 @@ vi.mock('../editor/outline/foldAllHotkeys', () => ({
     folds.runs.push(collapse)
     return true
   },
+}))
+/** The board embed's window (YAZ-4943), stood in: each mount records its host; the handle records what the layer asks. */
+type FakeBoard = { host: import('../editor/embed/types').BoardWindowHost; dom: HTMLElement; destroy: Mock; showPage: Mock; handleKey: Mock; setSelected: Mock }
+const boards = vi.hoisted(() => ({ made: [] as FakeBoard[] }))
+vi.mock('../editor/embed/types', () => ({
+  loadBoardWindow: () =>
+    Promise.resolve({
+      mountBoardWindow: (host: FakeBoard['host']) => {
+        const dom = document.createElement('div')
+        dom.className = 'board-window board-window--fill'
+        dom.tabIndex = -1
+        const made: FakeBoard = { host, dom, destroy: vi.fn(), showPage: vi.fn(), handleKey: vi.fn(() => true), setSelected: vi.fn() }
+        boards.made.push(made)
+        return { dom, update: vi.fn(), setSelected: made.setSelected, handleKey: made.handleKey, setFolded: vi.fn(), setFoldable: vi.fn(), menuRows: () => [], fit: vi.fn(), showPage: made.showPage, flush: vi.fn(), destroy: made.destroy }
+      },
+    }),
 }))
 /** The comment stream and Linked mentions (round 1, item 3), stood in: each says what it was handed, and a mention click opens its note. */
 const under = vi.hoisted(() => ({ comments: [] as Array<{ path: string; content: string; order: string }>, backlinks: [] as string[] }))
@@ -134,6 +150,7 @@ async function openResult() {
 beforeEach(() => {
   resetExploreRecents()
   crepes.length = 0
+  boards.made.length = 0
   editors.length = 0
   readFile.mockReset().mockImplementation(async (path) => ({ path, content: `# ${path}\n\nthe body of ${path}\n`, mtime: 1, size: 1 }))
   index.mockReset().mockResolvedValue({ root: '/v', records: RECORDS, folders: [], generatedAt: 1, ids: false, size: 3 })
@@ -251,8 +268,8 @@ describe('the explore stack', () => {
     expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'note', 'note'])
     expect(top().querySelector('.explore__title')?.textContent).toBe('beta')
     expect(crepes).toHaveLength(2)
-    act(() => crepes[1].opts.markdownLinkNav?.openPath('/v/sketch.excalidraw', 'thisTab'))
-    expect(props.openInTab).toHaveBeenCalledExactlyOnceWith('/v/sketch.excalidraw')
+    act(() => crepes[1].opts.markdownLinkNav?.openPath('/v/paper.pdf', 'thisTab'))
+    expect(props.openInTab).toHaveBeenCalledExactlyOnceWith('/v/paper.pdf')
     expect(props.onClose).toHaveBeenCalledOnce()
   })
 
@@ -1332,5 +1349,192 @@ describe('round 6: layers act like windows (YAZ-2571): a click on a layer behind
     expect([...seen].some((e) => note.contains(e))).toBe(true)
     key(document.activeElement as Element, { key: 'Tab', shiftKey: true })
     expect(search.contains(document.activeElement)).toBe(false)
+  })
+})
+
+describe('YAZ-4943: drawings and diagrams open as reading layers', () => {
+  const SKETCH = '/v/alpha-sketch.excalidraw'
+  const FLOW = '/v/beta-flow.drawio'
+  /** The board pills resolve here: a note and a board by name. */
+  const boardLinks = createWikilinkResolveSource()
+  const BY_NAME: Record<string, string> = { beta: '/v/beta.md', flow: FLOW }
+  boardLinks.update((name) => BY_NAME[name] ?? null)
+  const head = () => top().querySelector('.explore__head') as HTMLElement
+  const buttons = () => [...head().querySelectorAll('button')].map((b) => b.getAttribute('aria-label') ?? b.textContent)
+  const press = (target: Element) => act(() => void target.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 })))
+  const board = (i = boards.made.length - 1) => boards.made[i]
+  beforeEach(() => {
+    localStorage.removeItem('explore:box:board')
+    localStorage.removeItem('explore:box:search')
+    props = { ...props, nameOf: (p) => p.slice(p.lastIndexOf('/') + 1).replace(/\.(md|excalidraw|drawio)$/, ''), vaults: [{ ...vaults[0], files: [SKETCH, FLOW, '/v/paper.pdf'] }], vaultOf: () => ({ root: '/v', wikilinks: boardLinks, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly }) }
+  })
+
+  it('a search result opens a drawing as a board layer (↵) and a diagram (a click): the view-only window fills it, read only, writing nothing', async () => {
+    await mount()
+    await typeQuery('sketch')
+    expect(rows()).toContain('alpha-sketch.excalidraw')
+    await openResult()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'board'])
+    expect(props.openInTab).not.toHaveBeenCalled()
+    const host = board().host
+    expect(host).toMatchObject({ ref: { root: '/v', path: SKETCH, kind: 'drawing', name: 'alpha-sketch', vault: null }, options: null, editable: false, fill: true })
+    expect(host.onOptions).toBeUndefined()
+    expect(top().querySelector('[data-explore-board] .explore__board')?.firstChild).toBe(board().dom)
+    // The board is never read as text: no file read for it.
+    expect(readFile).not.toHaveBeenCalledWith(SKETCH)
+    await escape()
+    await typeQuery('flow')
+    act(() => (top().querySelector('.search-results__row') as HTMLElement).click())
+    await flush()
+    await flush()
+    expect(top().dataset.kind).toBe('board')
+    expect(board().host.ref).toMatchObject({ path: FLOW, kind: 'diagram' })
+    // A PDF still opens in a tab.
+    await escape()
+    await typeQuery('paper')
+    await openResult()
+    expect(props.openInTab).toHaveBeenCalledExactlyOnceWith('/v/paper.pdf')
+  })
+
+  it('the head: title, ‹ n/m ›, Reading, ↗, × — no Edit and no zoom pill; E does nothing; ⌘↵ and ↗ open the board in a tab', async () => {
+    await mount()
+    await typeQuery('sketch')
+    await openResult()
+    expect(head().querySelector('.explore__title')?.textContent).toBe('alpha-sketch')
+    expect(head().querySelector('.explore__count')?.textContent).toBe('1/1')
+    expect(head().querySelector('.explore__mode')?.textContent).toBe('Reading')
+    expect(buttons()).toEqual(['Previous search result', 'Next search result', 'Open in a tab', 'Close this layer'])
+    expect(head().querySelector('.document-zoom')).toBeNull()
+    expect(head().textContent).not.toContain('Edit')
+    key(board().dom, { key: 'e' })
+    await flush()
+    expect(top().dataset.kind).toBe('board')
+    expect(editors).toEqual([])
+    expect(top().querySelector('.explore__mode')?.textContent).toBe('Reading')
+    key(board().dom, { key: 'Enter', metaKey: true })
+    expect(props.openInTab).toHaveBeenCalledExactlyOnceWith(SKETCH)
+    expect(props.onClose).toHaveBeenCalledOnce()
+    act(() => (head().querySelector('[aria-label="Open in a tab"]') as HTMLElement).click())
+    expect(props.openInTab).toHaveBeenLastCalledWith(SKETCH)
+  })
+
+  it('‹ › step through notes AND boards in the search`s order, in the SAME layer; the count follows (a board row in the list)', async () => {
+    await mount()
+    await typeQuery('a')
+    const all = [...top().querySelectorAll('.search-results__row')].map((r) => r.getAttribute('title'))
+    const shown = all.filter((p) => p !== '/v/paper.pdf' && p !== '/v/sub')
+    expect(shown).toEqual(expect.arrayContaining(['/v/alpha.md', SKETCH, FLOW]))
+    await openResult()
+    const layer = top()
+    for (let n = 1; n < shown.length; n++) {
+      key(layer.querySelector('.explore__body, [data-explore-board]') as HTMLElement, { key: 'ArrowRight', code: 'ArrowRight' })
+      await flush()
+      await flush()
+      expect(top()).toBe(layer)
+      expect(layer.dataset.kind).toBe(shown[n]!.endsWith('.md') ? 'note' : 'board')
+      expect(layer.querySelector('.explore__title')?.textContent).toBe(props.nameOf(shown[n]!))
+      expect(layer.querySelector('.explore__count')?.textContent).toBe(`${all.indexOf(shown[n]!) + 1}/${all.length}`)
+    }
+    // And back, through the boards, to the first.
+    for (let n = shown.length - 2; n >= 0; n--) {
+      key(layer.querySelector('.explore__body, [data-explore-board]') as HTMLElement, { key: 'ArrowLeft', code: 'ArrowLeft' })
+      await flush()
+      await flush()
+      expect(layer.querySelector('.explore__title')?.textContent).toBe(props.nameOf(shown[n]!))
+    }
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'note'])
+  })
+
+  it('from Explore`s recents and from a link pill in a note layer; a board pill opens a note or a board on top, an address goes to the system', async () => {
+    rememberExploreRecent(FLOW)
+    await mount()
+    expect(rows()).toEqual(['beta-flow.drawio'])
+    await openResult()
+    expect(top().dataset.kind).toBe('board')
+    // A pill on the board, to a note: a note layer on top; to a board: a board layer.
+    const spot = { x: 0, y: 0, width: 1, height: 1 }
+    act(() => board().host.onLink?.({ ...spot, inner: 'beta', wiki: true }, { metaKey: false, ctrlKey: false, altKey: false, shiftKey: false }))
+    await flush()
+    await flush()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'board', 'note'])
+    expect(top().querySelector('.explore__title')?.textContent).toBe('beta')
+    // A link pill in that note to a board: a board layer.
+    act(() => crepes[crepes.length - 1].opts.wikilinkNav?.openCurrent(SKETCH))
+    await flush()
+    await flush()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'board', 'note', 'board'])
+    act(() => board().host.onLink?.({ ...spot, inner: 'flow', wiki: true }, { metaKey: true, ctrlKey: false, altKey: false, shiftKey: false }))
+    await flush()
+    await flush()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'board', 'note', 'board', 'board'])
+    act(() => board().host.onLink?.({ ...spot, inner: 'https://example.com', wiki: false }, { metaKey: false, ctrlKey: false, altKey: false, shiftKey: false }))
+    expect(openLink).toHaveBeenCalledWith({ href: 'https://example.com', sourcePath: FLOW })
+    act(() => board().host.onLink?.({ ...spot, inner: 'Nowhere', wiki: true }, { metaKey: false, ctrlKey: false, altKey: false, shiftKey: false }))
+    expect(props.onNotice).toHaveBeenLastCalledWith('"Nowhere" is not in this vault')
+    // Each board loaded its window once; covered boards keep theirs.
+    expect(boards.made).toHaveLength(3)
+    expect(boards.made.every((b) => b.destroy.mock.calls.length === 0)).toBe(true)
+    // The recents now list the boards too.
+    // A push from outside React's events is counted at once: no false "12 layers" notice (the gotcha of YAZ-4943).
+    expect(props.onNotice).not.toHaveBeenCalledWith(FULL_NOTICE)
+    expect(exploreRecentsNow().slice(0, 3)).toEqual([FLOW, SKETCH, '/v/beta.md'])
+  })
+
+  it('a diagram`s page tabs: the pages the window tells, the page shown selected; a click shows that page', async () => {
+    rememberExploreRecent(FLOW)
+    await mount()
+    await openResult()
+    expect(top().querySelector('.explore__pages')).toBeNull()
+    act(() => board().host.onPages?.([{ id: 'p0', name: 'Overview' }, { id: 'p1', name: 'Detail' }], 'p0'))
+    const tabs = () => [...top().querySelectorAll<HTMLButtonElement>('.explore__page')]
+    expect(tabs().map((t) => [t.textContent, t.getAttribute('aria-selected')])).toEqual([
+      ['Overview', 'true'],
+      ['Detail', 'false'],
+    ])
+    act(() => tabs()[1].click())
+    expect(board().showPage).toHaveBeenCalledWith('p1')
+  })
+
+  it('board layers act like windows: × closes it only, Esc closes the front one, a press raises it, its trail chip; the menu`s ⌘+ zooms the board, not the note zoom', async () => {
+    await mount()
+    await typeQuery('sketch')
+    await openResult()
+    render(2)
+    await flush()
+    await typeQuery('flow')
+    await openResult()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'board', 'search', 'board'])
+    expect([...el.querySelectorAll('.explore__chip')].map((c) => c.textContent)).toEqual(['Search', 'alpha-sketch', 'Search', 'beta-flow'])
+    const [, first, , second] = layers()
+    // A press on the first board brings it to the front.
+    press(first.querySelector('.explore__board') as Element)
+    await flush()
+    expect(Number(first.style.zIndex)).toBeGreaterThan(Number(second.style.zIndex))
+    // ⌘+ from the menu: the front board's own zoom; the note zoom is untouched.
+    act(() => requestZoom(1, vi.fn()))
+    expect(boards.made[0].handleKey).toHaveBeenCalledTimes(1)
+    expect(boards.made[0].handleKey.mock.calls[0][0]).toMatchObject({ key: '=', metaKey: true })
+    expect(localStorage.getItem('explore:zoom')).toBeNull()
+    // × on the second board closes it alone; its window goes.
+    act(() => (second.querySelector('[aria-label="Close this layer"]') as HTMLElement).click())
+    await flush()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'board', 'search'])
+    expect(boards.made[1].destroy).toHaveBeenCalledOnce()
+    // Esc closes the front layer (the first board, raised), then the next.
+    await escape()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'search'])
+    expect(boards.made[0].destroy).toHaveBeenCalledOnce()
+  })
+
+  it('a board opened as the first layer keeps its own box: a drag of its head is saved under the board`s kind', async () => {
+    props = { ...props, requestNote: FLOW }
+    await mount()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['board'])
+    const mouse = (target: EventTarget, type: string, x: number, y: number) => act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y })))
+    mouse(head(), 'mousedown', 100, 100)
+    mouse(window, 'mousemove', 130, 120)
+    mouse(window, 'mouseup', 130, 120)
+    expect(JSON.parse(localStorage.getItem('explore:box:board') ?? 'null')).toMatchObject({ width: expect.any(Number) })
+    expect(localStorage.getItem('explore:box:note')).toBeNull()
   })
 })

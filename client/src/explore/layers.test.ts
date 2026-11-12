@@ -1,7 +1,7 @@
 /** The explore stack's model (YAZ-2571): the layer list, its cap, the top note, and where each layer stands. */
 import { describe, expect, it } from 'vitest'
 import { exploreRecents, MAX_EXPLORE_RECENTS, moveExploreRecent, rememberExploreRecent, resetExploreRecents } from './exploreRecents'
-import { EDGE_GAP, frontOrder, LAYER_STEP, layerBoxes, layerPlace, MAX_LAYERS, MIN_BOX_HEIGHT, MIN_BOX_WIDTH, newLayerId, NOTE_WIDTH, panelWidth, pushLayer, raiseLayer, savedLayerBox, saveLayerBox, SEARCH_WIDTH, stepPlace, stepResult, topNote, type ExploreLayer, type LayerBox } from './layers'
+import { EDGE_GAP, frontOrder, LAYER_STEP, layerBoxes, layerPlace, MAX_LAYERS, MIN_BOX_HEIGHT, MIN_BOX_WIDTH, newLayerId, NOTE_WIDTH, panelWidth, pushLayer, raiseLayer, savedLayerBox, saveLayerBox, SEARCH_WIDTH, layerKindOf, stepPlace, stepResult, topNote, type ExploreLayer, type LayerBox } from './layers'
 
 const search = (): ExploreLayer => ({ id: newLayerId(), kind: 'search' })
 const note = (path: string): ExploreLayer => ({ id: newLayerId(), kind: 'note', path, mode: 'read' })
@@ -22,6 +22,13 @@ describe('the layer list', () => {
     expect(topNote([search(), a, search()])).toBe(a)
     expect(topNote([search()])).toBeNull()
     expect(topNote([])).toBeNull()
+    // YAZ-4943: a board layer is opened in a tab by ⌘↵ too.
+    const board: ExploreLayer = { id: newLayerId(), kind: 'board', path: '/v/d.drawio' }
+    expect(topNote([search(), a, board, search()])).toBe(board)
+  })
+
+  it('YAZ-4943: a note opens as a note layer, a drawing or a diagram as a board layer; anything else in a tab', () => {
+    expect(['/v/a.md', '/v/b.excalidraw', '/v/C.DRAWIO', '/v/folder', '/v/p.pdf', '/v/x.png'].map(layerKindOf)).toEqual(['note', 'board', 'board', null, null, null])
   })
 })
 
@@ -73,12 +80,14 @@ describe('where a layer stands (Mochi\'s offsets, clamped to the window)', () =>
 })
 
 describe('‹ › through the search (round 3)', () => {
-  const rows = [{ path: '/v/a.md' }, { path: '/v/folder' }, { path: '/v/b.md' }, { path: '/v/c.md' }, { path: '/v/draw.excalidraw' }]
+  const rows = [{ path: '/v/a.md' }, { path: '/v/folder' }, { path: '/v/b.md' }, { path: '/v/c.md' }, { path: '/v/draw.excalidraw' }, { path: '/v/p.pdf' }]
 
-  it('steps to the next note row in the search\'s order, a folder or a drawing skipped; null at either end', () => {
+  it('steps to the next note or board row in the search\'s order (YAZ-4943: boards too), a folder or another file skipped; null at either end', () => {
     expect(stepResult(rows, 0, '/v/a.md', 1)).toEqual({ at: 2, path: '/v/b.md' })
     expect(stepResult(rows, 2, '/v/b.md', 1)).toEqual({ at: 3, path: '/v/c.md' })
-    expect(stepResult(rows, 3, '/v/c.md', 1)).toBeNull()
+    expect(stepResult(rows, 3, '/v/c.md', 1)).toEqual({ at: 4, path: '/v/draw.excalidraw' })
+    expect(stepResult(rows, 4, '/v/draw.excalidraw', 1)).toBeNull()
+    expect(stepResult(rows, 4, '/v/draw.excalidraw', -1)).toEqual({ at: 3, path: '/v/c.md' })
     expect(stepResult(rows, 3, '/v/c.md', -1)).toEqual({ at: 2, path: '/v/b.md' })
     expect(stepResult(rows, 2, '/v/b.md', -1)).toEqual({ at: 0, path: '/v/a.md' })
     expect(stepResult(rows, 0, '/v/a.md', -1)).toBeNull()

@@ -5,6 +5,9 @@
  * import it eagerly while the window itself stays in a lazy chunk.
  */
 import type { EmbedOptions } from '@shared/embedOptions'
+import type { MouseMods } from '@shared/keys'
+import type { DiagramPageRef } from '../../diagrams/renderDiagram'
+import type { BoardLinkSpot } from './boardLinks'
 
 export type BoardKind = 'drawing' | 'diagram'
 
@@ -49,6 +52,15 @@ export interface BoardWindowHost {
   onSelect?: () => void
   /** The round fold arrow (D13); absent = the arrow never shows. */
   onFold?: () => void
+  /**
+   * Explore's board layer (YAZ-4943): the window fills its box and follows its size; it is never locked and never
+   * rests; no lock, fold, name pill or handles. With no `onOptions` it writes nothing.
+   */
+  fill?: boolean
+  /** A click on one of the board's links (fill): the spot, and the keys held. */
+  onLink?: (spot: BoardLinkSpot, mods: MouseMods) => void
+  /** A picture came (fill): a diagram's pages and the page shown, for the layer's page tabs. */
+  onPages?: (pages: readonly DiagramPageRef[], page: string | null) => void
 }
 
 /** One row the window adds to its embed's menu (D12). `children` makes a flyout (Page ▸, Frame ▸). */
@@ -79,6 +91,8 @@ export interface BoardWindowHandle {
   menuRows(): WindowMenuRow[]
   /** Fit the board in the window (Shift+1, the zoom % click, the menu). */
   fit(): void
+  /** Show page `id` of a diagram, fitted (the layer's page tabs, YAZ-4943); written only as a page change is. */
+  showPage(id: string): void
   /** A view still waiting for its 800 ms write goes to `onOptions` now (A8): the note saves, or goes. */
   flush(): void
   destroy(): void

@@ -2,11 +2,12 @@
  * The board window (YAZ-4824) — classes applied by boardWindow.ts.
  *
  * Every rule sits under `.milkdown` (Crepe's reset: `.milkdown * { margin: 0; padding: 0 }` loads after this file at
- * the same specificity), or under `.board-window-overlay` for View full size, which is outside the editor. Every
+ * the same specificity), or under `.board-window-overlay` for View full size, or under `.explore__board` for Explore's
+ * board layer (YAZ-4943), both outside the editor. Every
  * colour is a theme token, so light and dark both read. The handles are the image's (`imageView.css`).
  */
 
-:is(.milkdown, .board-window-overlay) .board-window {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window {
   position: relative;
   display: block;
   box-sizing: border-box;
@@ -20,7 +21,7 @@
   user-select: none;
 }
 
-:is(.milkdown, .board-window-overlay) .board-window__stage {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__stage {
   position: absolute;
   inset: 0;
   overflow: hidden;
@@ -28,11 +29,11 @@
   cursor: grab;
 }
 
-:is(.milkdown, .board-window-overlay) .board-window--panning .board-window__stage {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window--panning .board-window__stage {
   cursor: grabbing;
 }
 
-:is(.milkdown, .board-window-overlay) :is(.board-window--locked, .board-window--resting) .board-window__stage {
+:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window--locked, .board-window--resting) .board-window__stage {
   cursor: default;
 }
 
@@ -41,7 +42,7 @@
  * left it at the left. `.milkdown .ProseMirror` inside the `:is()` lifts this rule to (0,3,0), so it wins, with no
  * `!important` (`boardWindow.css.test.ts`).
  */
-:is(.milkdown .ProseMirror, .milkdown, .board-window-overlay) .board-window__img {
+:is(.milkdown .ProseMirror, .milkdown, .board-window-overlay, .explore__board) .board-window__img {
   position: absolute;
   left: 0;
   top: 0;
@@ -51,16 +52,16 @@
 }
 
 /* Loading is an empty box at the size (item 12); missing, broken (A4) and empty show their words instead of the picture. */
-:is(.milkdown, .board-window-overlay) :is(.board-window--loading, .board-window--missing, .board-window--broken, .board-window--empty) .board-window__img {
+:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window--loading, .board-window--missing, .board-window--broken, .board-window--empty) .board-window__img {
   visibility: hidden;
 }
 
 /* `will-change` only while a gesture runs, so the picture redraws sharp after it. */
-:is(.milkdown, .board-window-overlay) .board-window--moving .board-window__img {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window--moving .board-window__img {
   will-change: transform;
 }
 
-:is(.milkdown, .board-window-overlay) .board-window__message {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__message {
   position: absolute;
   inset: 0;
   display: none;
@@ -72,18 +73,18 @@
   text-align: center;
 }
 
-:is(.milkdown, .board-window-overlay) :is(.board-window--missing, .board-window--broken, .board-window--empty) .board-window__message {
+:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window--missing, .board-window--broken, .board-window--empty) .board-window__message {
   display: flex;
 }
 
-:is(.milkdown, .board-window-overlay) .board-window.is-selected {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window.is-selected {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
 /* ── Hover chrome: only on hover or selection, never over the picture at rest. ── */
 
-:is(.milkdown, .board-window-overlay) :is(.board-window__lock, .board-window__fold, .board-window__pill, .board-window__zoom) {
+:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window__lock, .board-window__fold, .board-window__pill, .board-window__zoom) {
   position: absolute;
   z-index: 2;
   display: flex;
@@ -103,69 +104,69 @@
   transition: opacity 0.12s;
 }
 
-:is(.milkdown, .board-window-overlay) :is(.board-window:hover, .board-window.is-selected) > :is(.board-window__lock, .board-window__pill, .board-window__zoom) {
+:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window:hover, .board-window.is-selected) > :is(.board-window__lock, .board-window__pill, .board-window__zoom) {
   opacity: 1;
   pointer-events: auto;
 }
 
-:is(.milkdown, .board-window-overlay) :is(.board-window__lock, .board-window__fold, .board-window__pill, .board-window__zoom):hover {
+:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window__lock, .board-window__fold, .board-window__pill, .board-window__zoom):hover {
   color: var(--accent);
   border-color: var(--accent);
 }
 
-:is(.milkdown, .board-window-overlay) :is(.board-window__lock, .board-window__fold) {
+:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window__lock, .board-window__fold) {
   width: 24px;
   padding: 0;
   justify-content: center;
 }
 
-:is(.milkdown, .board-window-overlay) :is(.board-window__lock, .board-window__fold, .board-window__unfold) svg {
+:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window__lock, .board-window__fold, .board-window__unfold) svg {
   width: 14px;
   height: 14px;
 }
 
-:is(.milkdown, .board-window-overlay) .board-window__lock { top: 6px; right: 6px; }
-:is(.milkdown, .board-window-overlay) .board-window__fold { top: 6px; left: 6px; display: none; }
-:is(.milkdown, .board-window-overlay) .board-window__pill { bottom: 6px; left: 6px; max-width: calc(100% - 90px); }
-:is(.milkdown, .board-window-overlay) .board-window__zoom { bottom: 6px; right: 6px; font-variant-numeric: tabular-nums; }
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__lock { top: 6px; right: 6px; }
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__fold { top: 6px; left: 6px; display: none; }
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__pill { bottom: 6px; left: 6px; max-width: calc(100% - 90px); }
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__zoom { bottom: 6px; right: 6px; font-variant-numeric: tabular-nums; }
 
 /* A locked window shows its lock at all times: it says why nothing moves. */
-:is(.milkdown, .board-window-overlay) .board-window--locked > .board-window__lock {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window--locked > .board-window__lock {
   opacity: 1;
   pointer-events: auto;
   color: var(--accent);
 }
 
 /* The fold arrow (D13): only where the host says the embed folds (a bullet). */
-:is(.milkdown, .board-window-overlay) .board-window--foldable > .board-window__fold {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window--foldable > .board-window__fold {
   display: flex;
 }
 
-:is(.milkdown, .board-window-overlay) .board-window--foldable:is(:hover, .is-selected) > .board-window__fold {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window--foldable:is(:hover, .is-selected) > .board-window__fold {
   opacity: 1;
   pointer-events: auto;
 }
 
-:is(.milkdown, .board-window-overlay) :is(.board-window__pill, .board-window__line) .board-window__name {
+:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window__pill, .board-window__line) .board-window__name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--fg);
 }
 
-:is(.milkdown, .board-window-overlay) .board-window__vault {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__vault {
   color: var(--fg-muted);
   white-space: nowrap;
 }
 
-:is(.milkdown, .board-window-overlay) .board-window__icon {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__icon {
   display: inline-flex;
   flex: none;
   width: 14px;
   height: 14px;
 }
 
-:is(.milkdown, .board-window-overlay) .board-window__icon svg {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__icon svg {
   width: 14px;
   height: 14px;
 }
@@ -173,12 +174,12 @@
 /* The file's own icon (YAZ-4905): `app.css` draws it on the span's `::before` as a 14px box with a 6px right margin,
    the sidebar's gap before a name. In this 14px flex box that margin squeezed the box to 8px and cut the icon on both
    sides. The box keeps its 14px; the margin overflows into the pill's own gap, where it shows nothing. */
-:is(.milkdown, .board-window-overlay) .board-window__icon::before {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__icon::before {
   flex: none;
 }
 
 /* Resting (D9): a quiet note on hover; one click wakes the window. */
-:is(.milkdown, .board-window-overlay) .board-window__rest {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__rest {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -193,18 +194,18 @@
   pointer-events: none;
 }
 
-:is(.milkdown, .board-window-overlay) .board-window--resting:not(.board-window--locked):hover > .board-window__rest {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window--resting:not(.board-window--locked):hover > .board-window__rest {
   display: block;
 }
 
 /* YAZ-4863: a window with no picture (loading, missing, can't show, empty) has nothing to move or zoom. */
-:is(.milkdown .ProseMirror, .milkdown, .board-window-overlay) .board-window:is(.board-window--loading, .board-window--missing, .board-window--broken, .board-window--empty) > :is(.board-window__rest, .board-window__zoom) {
+:is(.milkdown .ProseMirror, .milkdown, .board-window-overlay, .explore__board) .board-window:is(.board-window--loading, .board-window--missing, .board-window--broken, .board-window--empty) > :is(.board-window__rest, .board-window__zoom) {
   display: none;
 }
 
 /* ── Resize handles (D11): the image's look; shown when selected and editable. ── */
 
-:is(.milkdown, .board-window-overlay) .board-window__handle {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__handle {
   position: absolute;
   z-index: 3;
   width: 10px;
@@ -215,35 +216,35 @@
   display: none;
 }
 
-:is(.milkdown, .board-window-overlay) :is(.board-window.is-selected, .board-window--resizing):not(.board-window--readonly) > .board-window__handle {
+:is(.milkdown, .board-window-overlay, .explore__board) :is(.board-window.is-selected, .board-window--resizing):not(.board-window--readonly) > .board-window__handle {
   display: block;
 }
 
-:is(.milkdown, .board-window-overlay) .board-window__handle--nw { top: -6px; left: -6px; cursor: nwse-resize; }
-:is(.milkdown, .board-window-overlay) .board-window__handle--se { bottom: -6px; right: -6px; cursor: nwse-resize; }
-:is(.milkdown, .board-window-overlay) .board-window__handle--ne { top: -6px; right: -6px; cursor: nesw-resize; }
-:is(.milkdown, .board-window-overlay) .board-window__handle--sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
-:is(.milkdown, .board-window-overlay) .board-window__handle--n { top: -6px; left: calc(50% - 5px); cursor: ns-resize; }
-:is(.milkdown, .board-window-overlay) .board-window__handle--s { bottom: -6px; left: calc(50% - 5px); cursor: ns-resize; }
-:is(.milkdown, .board-window-overlay) .board-window__handle--w { left: -6px; top: calc(50% - 5px); cursor: ew-resize; }
-:is(.milkdown, .board-window-overlay) .board-window__handle--e { right: -6px; top: calc(50% - 5px); cursor: ew-resize; }
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__handle--nw { top: -6px; left: -6px; cursor: nwse-resize; }
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__handle--se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__handle--ne { top: -6px; right: -6px; cursor: nesw-resize; }
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__handle--sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__handle--n { top: -6px; left: calc(50% - 5px); cursor: ns-resize; }
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__handle--s { bottom: -6px; left: calc(50% - 5px); cursor: ns-resize; }
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__handle--w { left: -6px; top: calc(50% - 5px); cursor: ew-resize; }
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__handle--e { right: -6px; top: calc(50% - 5px); cursor: ew-resize; }
 
 /* ── Folded (D13): the pill line, the arrow pointing down. ── */
 
-:is(.milkdown, .board-window-overlay) .board-window--folded {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window--folded {
   display: inline-flex;
   border: 0;
   background: none;
   margin: 0;
 }
 
-:is(.milkdown, .board-window-overlay) .board-window__line {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__line {
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
 
-:is(.milkdown, .board-window-overlay) .board-window__unfold {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__unfold {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -257,12 +258,12 @@
   cursor: pointer;
 }
 
-:is(.milkdown, .board-window-overlay) .board-window--folded:not(.board-window--foldable) .board-window__unfold {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window--folded:not(.board-window--foldable) .board-window__unfold {
   /* A pill line with no bullet to unfold: an embed in a table cell (the checker's round 1). */
   display: none;
 }
 
-:is(.milkdown, .board-window-overlay) .board-window__unfold:hover {
+:is(.milkdown, .board-window-overlay, .explore__board) .board-window__unfold:hover {
   color: var(--accent);
   border-color: var(--accent);
 }
@@ -300,5 +301,35 @@
   background: rgba(0, 0, 0, 0.5);
   color: #fff;
   font-size: 16px;
+  cursor: pointer;
+}
+
+/* ── Explore's board layer (YAZ-4943, `fill`): the window is the layer's body. Pan and zoom are free, so no lock; no
+   fold, name pill (the head has the name) or handles (the layer resizes). The zoom % stays: it fits. ── */
+
+.explore__board .board-window--fill {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.explore__board .board-window--fill.is-selected {
+  outline: none;
+}
+
+.explore__board .board-window--fill > :is(.board-window__lock, .board-window__fold, .board-window__pill, .board-window__handle) {
+  display: none;
+}
+
+.explore__board .board-window--fill:not(.board-window--loading, .board-window--missing, .board-window--broken, .board-window--empty) > .board-window__zoom {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* A link under the pointer: a click opens it as a layer. */
+.explore__board .board-window--on-link .board-window__stage {
   cursor: pointer;
 }

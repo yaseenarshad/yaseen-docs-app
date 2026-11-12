@@ -18,6 +18,14 @@ export type ExploreLayer =
       /** Bumped when the note was deleted under the layer: the layer reads again and says it is gone. */
       gone?: number
     }
+  | {
+      id: number
+      /** A drawing or a diagram, for READING (YAZ-4943): the board embed's view-only window fills the layer; no edit. */
+      kind: 'board'
+      path: string
+      /** As a note's: the search it came from, so ‹ › step through it (a step may turn it into a note layer). */
+      from?: { search: number; at: number }
+    }
 
 /** The most layers the stack holds (the recommendation on YAZ-2571): a 13th push is refused with a notice. */
 export const MAX_LAYERS = 12
@@ -43,13 +51,22 @@ export function pushLayer(layers: readonly ExploreLayer[], layer: ExploreLayer):
   return layers.length >= MAX_LAYERS ? null : [...layers, layer]
 }
 
-/** The note layer nearest the top, or null: what ⌘↵ opens in a tab. */
-export function topNote(layers: readonly ExploreLayer[]): Extract<ExploreLayer, { kind: 'note' }> | null {
+/** A layer that shows a file: a note or a board. */
+export type FileLayer = Extract<ExploreLayer, { kind: 'note' | 'board' }>
+
+/** The note or board layer nearest the top, or null: what ⌘↵ opens in a tab. */
+export function topNote(layers: readonly ExploreLayer[]): FileLayer | null {
   for (let i = layers.length - 1; i >= 0; i--) {
     const layer = layers[i]
-    if (layer.kind === 'note') return layer
+    if (layer.kind !== 'search') return layer
   }
   return null
+}
+
+/** The layer a file opens as (YAZ-4943): a note, a board (a drawing or a diagram), or none (a folder, a PDF: a tab). */
+export function layerKindOf(path: string): 'note' | 'board' | null {
+  const kind = fileKind(path)
+  return kind === 'markdown' ? 'note' : kind === 'drawing' || kind === 'diagram' ? 'board' : null
 }
 
 /* ---------- layers act like windows (round 6) ---------- */
@@ -98,14 +115,14 @@ export function layerPlace(kind: ExploreLayer['kind'], index: number, windowWidt
 
 /**
  * The row ‹ › go to from the note at `at` (its place when it opened or last stepped) in the search's `rows`, one step
- * `dir`: the next note row in that direction, a folder or another file skipped (they open in a tab, never in a
- * layer). A note no longer at `at` is found again; one gone from the rows steps from `at` as the mini window does.
- * Null at the end of the list.
+ * `dir`: the next note or board row in that direction (YAZ-4943), a folder or another file skipped (they open in a
+ * tab, never in a layer). A note no longer at `at` is found again; one gone from the rows steps from `at` as the mini
+ * window does. Null at the end of the list.
  */
 export function stepResult(rows: readonly { path: string }[], at: number, path: string, dir: -1 | 1): { at: number; path: string } | null {
   const here = rows[at]?.path === path ? at : rows.findIndex((r) => r.path === path)
   let i = here === -1 ? (dir === 1 ? at : at - 1) : here + dir
-  for (; i >= 0 && i < rows.length; i += dir) if (fileKind(rows[i].path) === 'markdown') return { at: i, path: rows[i].path }
+  for (; i >= 0 && i < rows.length; i += dir) if (layerKindOf(rows[i].path) !== null) return { at: i, path: rows[i].path }
   return null
 }
 

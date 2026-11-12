@@ -13,7 +13,7 @@ vi.mock('./boardWindow', () => {
       chunk.hosts.push(host)
       const dom = document.createElement('div')
       const noop = () => {}
-      return { dom, update: noop, setSelected: noop, handleKey: () => false, setFolded: noop, setFoldable: noop, menuRows: () => [], fit: noop, flush: noop, destroy: noop }
+      return { dom, update: noop, setSelected: noop, handleKey: () => false, setFolded: noop, setFoldable: noop, menuRows: () => [], fit: noop, showPage: noop, flush: noop, destroy: noop }
     },
   }
 })

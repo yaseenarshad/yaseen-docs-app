@@ -32,7 +32,7 @@ import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { focusOpenDocument } from './lib/focusHandoff'
 import { osVerbs } from './lib/osVerbs'
 import { dragOutText, gestureNotice, namedItems, noticeMs, onDisk, shows, unlessFailed, type DragOutAsk, type NamedItem, type Notice, type NoticeKind, type NoticeType } from './lib/notice'
-import { allDirs, treeHasPath } from './lib/treeState'
+import { allDirs, otherFiles, treeHasPath } from './lib/treeState'
 import { NoticeToast } from './components/NoticeToast'
 import { absFrom, basename, dirname, relTo, stripExt } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
@@ -119,6 +119,11 @@ const FolderHomeSheet = lazy(() => import('./vault/FolderHomeSheet'))
 /** Version history (YAZ-1897 D4, YAZ-3039): lazy, so a window that never opens it loads none of it. */
 const VersionHistory = lazy(() => import('./history/VersionHistory').then((m) => ({ default: m.VersionHistory })))
 /** The explore stack (YAZ-2571): lazy, loaded on the first ⌘⇧F. */
+/** A drawing or a diagram: Explore opens it as a reading layer (YAZ-4943). */
+const isBoardFile = (path: string): boolean => {
+  const kind = fileKind(path)
+  return kind === 'drawing' || kind === 'diagram'
+}
 const ExploreStack = lazy(() => import('./explore/ExploreStack').then((m) => ({ default: m.ExploreStack })))
 
 /**
@@ -1362,7 +1367,8 @@ export function App() {
     if (from instanceof HTMLElement && from.isConnected) from.focus()
     else focusOpenDocument()
   }, [])
-  // The stack's search vaults: each vault's folders from the tree the window already holds; no other files (it reads notes).
+  // The stack's search vaults: each vault's folders from the tree the window already holds, and its drawings and diagrams
+  // (YAZ-4943: they open as reading layers); no other files.
   // Built when the stack opens and when a tree lands, not per render: a watcher is one object for a vault's life (`live`).
   const exploreTrees = useLatestTrees(roots)
   const exploreOpen = exploreRequest > 0
@@ -1375,7 +1381,8 @@ export function App() {
         : roots.map((vault, i) => {
             const folder = storage.folderIn(vault)
             const dirs = allDirs(exploreTrees[i]?.tree ?? [])
-            return { root: vault, watch: live.current.vaults[i].watch, dirs: folder === null ? dirs : dirs.filter((dir) => inPlace(folder, dir)), files: [], idsInSearch: live.current.vaults[i].showIds.inSearch, idsInTitle: live.current.vaults[i].showIds.inTitle, ...(folder !== null && { folder }) }
+            const boards = otherFiles(exploreTrees[i]?.tree ?? []).filter(isBoardFile)
+            return { root: vault, watch: live.current.vaults[i].watch, dirs: folder === null ? dirs : dirs.filter((dir) => inPlace(folder, dir)), files: folder === null ? boards : boards.filter((path) => inPlace(folder, path)), idsInSearch: live.current.vaults[i].showIds.inSearch, idsInTitle: live.current.vaults[i].showIds.inTitle, ...(folder !== null && { folder }) }
           }),
     [exploreOpen, roots, exploreTrees],
   )
@@ -1383,9 +1390,9 @@ export function App() {
     const scope = scopeOf(path)
     return { root: scope.root ?? '', wikilinks: scope.wikilinks, wikilinkCandidates: scope.wikilinkCandidates, viewOnlyLinks: scope.viewOnlyLinks }
   }, [scopeOf])
-  // The notes opened most recently, for the stack's empty search: the active tab's note counts.
+  // The notes opened most recently, for the stack's empty search: the active tab's note, drawing or diagram counts (YAZ-4943).
   useEffect(() => {
-    if (file !== null && fileKind(file) === 'markdown') rememberExploreRecent(file)
+    if (file !== null && (fileKind(file) === 'markdown' || isBoardFile(file))) rememberExploreRecent(file)
   }, [file])
 
   // The keys of this tab (YAZ-3564 K11): Help › Keys of This Tab…, its App key, and ? on a drawing (`requestKeySheet`).

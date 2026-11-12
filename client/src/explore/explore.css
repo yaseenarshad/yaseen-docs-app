@@ -32,7 +32,8 @@
   overflow: hidden;
   outline: none;
 }
-.explore__layer--note {
+.explore__layer--note,
+.explore__layer--board {
   height: 80vh;
 }
 /* The 8 resize grips (round 3), inside the edges (the layer clips at its rounded corners). */
@@ -373,4 +374,57 @@
 /* The pill in the head, at the head's size. */
 .explore__head .document-zoom {
   flex: none;
+}
+
+/* A board layer (YAZ-4943): the board embed's window fills the body (no scroll, no padding: the board pans inside
+   itself); a diagram's page tabs stand under it. */
+.explore__body--board {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+.explore__board {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.explore__board > .board-window {
+  position: absolute;
+  inset: 0;
+}
+.explore__board .editor-msg {
+  padding: 16px 24px;
+}
+.explore__pages {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 4px 8px;
+  overflow-x: auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg-side);
+}
+.explore__page {
+  flex: none;
+  max-width: 200px;
+  padding: 3px 10px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.explore__page:hover {
+  color: var(--fg);
+}
+.explore__page[aria-selected='true'] {
+  border-color: var(--border);
+  background: var(--bg);
+  color: var(--fg);
 }

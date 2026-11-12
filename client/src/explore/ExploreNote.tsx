@@ -69,7 +69,7 @@ interface ExploreNoteProps {
    * ‹ › (round 3): the note's place among the rows of the search under it ("2/3"), whether a step each way exists,
    * and the step. A note opened from a link has no search under it, so no ‹ ›.
    */
-  steps?: { place: number; count: number; prev: boolean; next: boolean; onStep: (dir: -1 | 1) => void }
+  steps?: LayerSteps
   /** The head's drag (round 3): the layer moves with the pointer; a double click puts it back in its stack place. */
   onHeadDown?: (event: ReactMouseEvent) => void
   onHeadReset?: (event: ReactMouseEvent) => void
@@ -86,6 +86,33 @@ interface ExploreNoteProps {
   onClose: () => void
   /** This layer is the top one: the body takes the focus, so E and Esc are heard. */
   active: boolean
+}
+
+/** ‹ n/m › of a layer opened from a search (round 3): its place among the rows, whether a step each way exists, the step. */
+export interface LayerSteps {
+  place: number
+  count: number
+  prev: boolean
+  next: boolean
+  onStep: (dir: -1 | 1) => void
+}
+
+/** A press on a head button keeps the keyboard where it is (the reading body, the editor, the board). */
+export const keepFocus = (event: ReactMouseEvent) => event.preventDefault()
+
+/** ‹ n/m › in a layer's head (a note's, a board's: YAZ-4943). */
+export function ExploreSteps({ steps }: { steps: LayerSteps }) {
+  return (
+    <span className="explore__steps">
+      <button type="button" className="explore__step" title="Previous search result (← or ⌘⌥↑)" aria-label="Previous search result" disabled={!steps.prev} onMouseDown={keepFocus} onClick={() => steps.onStep(-1)}>
+        ‹
+      </button>
+      <span className="explore__count">{steps.place === 0 ? '' : `${steps.place}/${steps.count}`}</span>
+      <button type="button" className="explore__step" title="Next search result (→ or ⌘⌥↓)" aria-label="Next search result" disabled={!steps.next} onMouseDown={keepFocus} onClick={() => steps.onStep(1)}>
+        ›
+      </button>
+    </span>
+  )
 }
 
 /** The note editor's features minus the two that exist to edit blocks (the preview panel's set). */
@@ -219,8 +246,6 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
   }, [active, mode])
 
   const note = fileKind(path) === 'markdown'
-  /** A press on a head button keeps the keyboard where it is (the reading body, the editor). */
-  const keep = (event: ReactMouseEvent) => event.preventDefault()
   /** The text formatting of the vault, and the zoom as the note tab's scroller carries it (`--document-zoom`, app.css): the same rules scale the note's content. */
   const bodyStyle = { ...style, '--document-zoom': zoom / 100 } as CSSProperties
   return (
@@ -238,17 +263,7 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
           {title}
         </span>
         {noteId !== undefined && <span className="explore__id">{noteId}</span>}
-        {steps !== undefined && (
-          <span className="explore__steps">
-            <button type="button" className="explore__step" title="Previous search result (← or ⌘⌥↑)" aria-label="Previous search result" disabled={!steps.prev} onMouseDown={keep} onClick={() => steps.onStep(-1)}>
-              ‹
-            </button>
-            <span className="explore__count">{steps.place === 0 ? '' : `${steps.place}/${steps.count}`}</span>
-            <button type="button" className="explore__step" title="Next search result (→ or ⌘⌥↓)" aria-label="Next search result" disabled={!steps.next} onMouseDown={keep} onClick={() => steps.onStep(1)}>
-              ›
-            </button>
-          </span>
-        )}
+        {steps !== undefined && <ExploreSteps steps={steps} />}
         {/* The page zoom's pill (round 4): one value for every note layer; a press on it is the pill's, not a drag. */}
         <DocumentZoom value={zoom} onChange={onZoom} />
         {foldAll}

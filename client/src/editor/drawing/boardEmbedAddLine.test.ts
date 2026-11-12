@@ -30,6 +30,7 @@ vi.mock('../embed/types', async (original) => ({
         menuRows: () => [],
         flush: () => {},
         fit: () => {},
+        showPage: () => {},
         destroy: () => {},
       }),
     }),

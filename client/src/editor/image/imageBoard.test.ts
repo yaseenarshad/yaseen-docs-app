@@ -44,6 +44,7 @@ vi.mock('../embed/types', async (original) => ({
           menuRows: () => [{ label: 'Lock view', run: () => {} }],
           flush: () => fake.calls.push(['flush', null]),
           fit: () => {},
+          showPage: () => {},
           destroy: () => {
             fake.destroyed = true
           },

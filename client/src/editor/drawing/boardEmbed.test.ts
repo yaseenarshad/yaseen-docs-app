@@ -62,6 +62,7 @@ vi.mock('../embed/types', async (original) => ({
             fake.onFlush?.()
           },
           fit: () => fake.calls.push(['fit', null]),
+          showPage: () => undefined,
           destroy: () => {
             fake.destroyed = true
           },

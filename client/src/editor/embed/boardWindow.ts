@@ -37,6 +37,7 @@ import { holdFrames } from '../../lib/colResize'
 import { storage } from '../../lib/storage'
 import { setEmbedPictureSweep } from './pictureStats'
 import { currentKey, dropPicturesExcept, loadPicture, peekPicture, watchBoard, type BoardBounds, type BoardPicture } from './boardPictures'
+import { spotAt, type BoardLinkSpot } from './boardLinks'
 import { firstWindowSize, MIN_WIDTH } from './hostWindow'
 import type { BoardWindowHandle, BoardWindowHost, WindowMenuRow } from './types'
 import './boardWindow.css'
@@ -297,7 +298,7 @@ class BoardWindow implements BoardWindowHandle {
       this.fitted = false
     }
 
-    this.dom = el('div', full ? 'board-window board-window--loading board-window--full' : 'board-window board-window--loading')
+    this.dom = el('div', `board-window board-window--loading${full ? ' board-window--full' : ''}${host.fill === true ? ' board-window--fill' : ''}`)
     this.dom.setAttribute('contenteditable', 'false')
     this.dom.tabIndex = -1
     this.dom.dataset.kind = host.ref.kind
@@ -329,6 +330,7 @@ class BoardWindow implements BoardWindowHandle {
     this.dom.addEventListener('keydown', this.onKey)
     this.dom.addEventListener('contextmenu', this.onContextMenu)
     this.dom.addEventListener('pointerenter', this.onPointerEnter)
+    if (host.fill === true) this.dom.addEventListener('mousemove', this.onHover)
     this.lockButton.addEventListener('click', (e) => {
       e.stopPropagation()
       this.setLocked(!this.locked)
@@ -469,6 +471,7 @@ class BoardWindow implements BoardWindowHandle {
   private show(picture: BoardPicture): void {
     const first = this.picture === null
     this.picture = picture
+    this.host.onPages?.(picture.pages, picture.page)
     if (picture.url === '' || picture.bounds === null) {
       this.img.removeAttribute('src')
       this.setStatus('empty')
@@ -478,7 +481,7 @@ class BoardWindow implements BoardWindowHandle {
     this.img.style.width = `${picture.bounds.width}px`
     this.img.style.height = `${picture.bounds.height}px`
     // A window with no height of its own takes the board's shape (D11, A6, A7), once, before anything moved.
-    if (first && (this.host.options?.height ?? null) === null && this.fitted) {
+    if (first && (this.host.options?.height ?? null) === null && this.fitted && this.host.fill !== true) {
       const size = firstWindowSize(this.host.options, picture.bounds, this.host.columnWidth())
       this.width = size.width
       this.height = size.height
@@ -584,7 +587,7 @@ class BoardWindow implements BoardWindowHandle {
     clearTimeout(this.restTimer)
     this.restTimer = undefined
     const seconds = storage.getSettings().embedRestSeconds
-    if (!seconds || this.destroyed) return
+    if (!seconds || this.destroyed || this.host.fill === true) return
     this.restTimer = setTimeout(() => {
       this.restTimer = undefined
       this.resting = true
@@ -604,6 +607,10 @@ class BoardWindow implements BoardWindowHandle {
     this.locked = on
     this.renderLock()
     this.writeNow()
+  }
+
+  showPage(id: string): void {
+    this.setPage(id)
   }
 
   private setPage(page: string): void {
@@ -707,7 +714,7 @@ class BoardWindow implements BoardWindowHandle {
     if (e.target instanceof Element && e.target.closest('.board-window__handle') !== null) return
     e.preventDefault()
     // In a note the EDITOR keeps the focus (A3): a pan must leave the caret and the keys where they were.
-    if (this.full) this.dom.focus({ preventScroll: true })
+    if (this.full || this.host.fill === true) this.dom.focus({ preventScroll: true })
     const startX = e.clientX
     const startY = e.clientY
     const from = this.view
@@ -740,6 +747,12 @@ class BoardWindow implements BoardWindowHandle {
         this.scheduleWrite()
         return
       }
+      // A click on a link (Explore's board layer, YAZ-4943): it opens.
+      const spot = this.host.onLink === undefined ? null : this.spotUnder(startX, startY)
+      if (spot !== null) {
+        this.host.onLink!(spot, { metaKey: e.metaKey, ctrlKey: e.ctrlKey, altKey: e.altKey, shiftKey: e.shiftKey })
+        return
+      }
       // A click (D12): it wakes a resting window and selects the embed.
       this.wake()
       this.setSelected(true)
@@ -749,6 +762,21 @@ class BoardWindow implements BoardWindowHandle {
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
     window.addEventListener('blur', onUp)
+  }
+
+  /** The link spot under a window point (client px), or null. */
+  private spotUnder(clientX: number, clientY: number): BoardLinkSpot | null {
+    const spots = this.picture?.links
+    const view = this.view
+    if (spots === undefined || spots.length === 0 || view === null || this.status !== 'ready') return null
+    const rect = this.dom.getBoundingClientRect()
+    return spotAt(spots, view.x + (clientX - rect.left) / view.zoom, view.y + (clientY - rect.top) / view.zoom)
+  }
+
+  /** The hand over a link (fill): one hit test per move, over this board's spots only. */
+  private readonly onHover = (e: MouseEvent): void => {
+    if (this.endDrag !== null) return
+    this.dom.classList.toggle('board-window--on-link', this.spotUnder(e.clientX, e.clientY) !== null)
   }
 
   private readonly onDoubleClick = (e: MouseEvent): void => {
@@ -845,7 +873,7 @@ class BoardWindow implements BoardWindowHandle {
   // ── Render ──
 
   private renderSize(): void {
-    if (this.folded) {
+    if (this.folded || this.host.fill === true) {
       this.dom.style.removeProperty('width')
       this.dom.style.removeProperty('height')
       return
@@ -865,7 +893,7 @@ class BoardWindow implements BoardWindowHandle {
 
   /** A read-only host's window starts locked (YAZ-2571 round 7); View full size never does. */
   private readOnlyLock(): boolean {
-    return !this.host.editable && !this.full
+    return !this.host.editable && !this.full && this.host.fill !== true
   }
 
   private renderEditable(): void {

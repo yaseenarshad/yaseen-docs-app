@@ -34,6 +34,7 @@ import { readDrawingForPicture } from '../../drawings/drawingScene'
 import { createPreviewCache } from '../../lib/previewCache'
 import { storage } from '../../lib/storage'
 import { appliedTheme } from '../../lib/theme'
+import { diagramLinkSpots, drawingLinkSpots, type BoardLinkSpot } from './boardLinks'
 import { setEmbedPictureStats } from './pictureStats'
 
 export type { BoardBounds, DiagramPageRef }
@@ -73,6 +74,8 @@ export interface BoardPicture {
   frames: BoardFrame[]
   /** The SVG text's length: the Memory page's estimate. */
   bytes: number
+  /** Where its links are, in board units (YAZ-4943, `boardLinks.ts`): Explore's board layer opens them. Absent = none. */
+  links?: readonly BoardLinkSpot[]
 }
 
 /** What a picture is asked for by. `path` is vault-relative or absolute under `root`. */
@@ -121,7 +124,9 @@ function whenIdle(): Promise<void> {
 async function drawDiagram(root: string, path: string, theme: 'light' | 'dark', darkColors: DiagramDarkColors, page: string | null): Promise<Drawn> {
   const { xml } = await api.diagram.load({ root, path })
   const drawn = await renderDiagramPage(xml, page, theme, darkColors)
-  return { svg: drawn.picture, bounds: drawn.picture === '' ? null : drawn.bounds, pages: drawn.pages, page: drawn.page, frames: [] }
+  // Its links (YAZ-4943), read once with the picture: an XML read of the page drawn.
+  const links = drawn.picture === '' ? [] : await diagramLinkSpots(xml, drawn.page)
+  return { svg: drawn.picture, bounds: drawn.picture === '' ? null : drawn.bounds, pages: drawn.pages, page: drawn.page, frames: [], links }
 }
 
 interface SceneElement {
@@ -133,6 +138,8 @@ interface SceneElement {
   height: number
   name?: string | null
   frameId?: string | null
+  text?: string
+  link?: string | null
 }
 
 /** The frames of a drawing, in scene order (item 1); a frame with no name gets the engine's default. */
@@ -159,7 +166,7 @@ async function drawDrawing(root: string, path: string, theme: 'light' | 'dark'):
   const roots = elements.filter((e) => frameIds.has(e.id) || !e.frameId || !frameIds.has(e.frameId))
   const [, , maxX, maxY] = engine.getCommonBounds(roots as never)
   const [, , width, height] = (svgEl.getAttribute('viewBox') ?? '0 0 0 0').split(/\s+/).map(Number)
-  return { svg, bounds: { x: maxX + DRAWING_PADDING - width, y: maxY + DRAWING_PADDING - height, width, height }, pages: [], page: null, frames: framesOf(elements) }
+  return { svg, bounds: { x: maxX + DRAWING_PADDING - width, y: maxY + DRAWING_PADDING - height, width, height }, pages: [], page: null, frames: framesOf(elements), links: drawingLinkSpots(elements) }
 }
 
 /** Each settled key's facts; an entry leaves with its picture. */
@@ -176,7 +183,7 @@ async function drawPicture(key: string): Promise<string> {
   const url = drawn.svg === '' ? '' : URL.createObjectURL(new Blob([drawn.svg], { type: 'image/svg+xml' }))
   const old = meta.get(key)
   if (old !== undefined) totalBytes -= old.bytes
-  meta.set(key, { key, url, bounds: drawn.bounds, pages: drawn.pages, page: drawn.page, frames: drawn.frames, bytes: drawn.svg.length })
+  meta.set(key, { key, url, bounds: drawn.bounds, pages: drawn.pages, page: drawn.page, frames: drawn.frames, bytes: drawn.svg.length, links: drawn.links })
   totalBytes += drawn.svg.length
   report()
   return url
