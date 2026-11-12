@@ -1893,7 +1893,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
           reviewField('retention', RETENTION_FIELD, 'Remember rate', 'How sure you want to be to remember a card when it comes back. Higher means shorter waits. 70 to 99.', '%'),
           reviewField('maxDays', wholeField('maxDays'), 'Longest wait', 'A card never waits longer than this.', 'days'),
-          reviewField('newPerDay', wholeField('newPerDay'), 'New cards a day', 'How many cards you have never answered the Inbox shows each day.', 'cards'),
+          reviewField('newPerDay', wholeField('newPerDay'), 'New cards a day', 'How many new cards the Inbox shows each day.', 'cards'),
           {
             id: 'fuzz',
             label: 'Spread due dates',

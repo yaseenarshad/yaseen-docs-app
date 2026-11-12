@@ -44,7 +44,7 @@ export function UnitWordControl({ unitWord, hasNoteCards = false }: { unitWord: 
       <Segmented options={CHOICES} value={settings.unit} onChange={(unit) => save({ unit, own: settings.own })} ariaLabel="Call a note a" />
       {clashesWithNoteCards(settings, hasNoteCards) && (
         <p className="settings__error" role="status">
-          This vault has note cards. With the word Card, its pages and its note cards are both cards. Note cards keep the name Note card.
+          Pages and note cards would both be called cards.
         </p>
       )}
       {settings.unit === 'own' && (

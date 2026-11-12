@@ -703,7 +703,11 @@ describe('note cards: due and card add (YAZ-4963)', () => {
     await writeFile(path.join(root, VAULT_CONFIG_DIR, 'review.json'), JSON.stringify({ newPerDay: 2 }))
     expect(JSON.parse((await run(['due', root, '--json'])).out).map((r: { id: string }) => r.id)).toEqual(['YAZ-10', 'YAZ-12'])
     await writeFile(path.join(root, VAULT_CONFIG_DIR, 'review.json'), JSON.stringify({ enabled: false }))
-    expect((await run(['due', root])).out).toBe(`nothing is due under ${root}\n`)
+    expect((await run(['due', root])).out).toBe(`review is off for this vault (Settings › Review › Review cards): no card is due\n`)
+    // One page with review off for the vault: one line says so; `off` stays the card's own.
+    const offPage = await run(['due', deck])
+    expect(offPage.err).toBe('review is off for this vault (Settings › Review › Review cards): no card is due\n')
+    expect(offPage.out.trimEnd().split('\n').map((l) => l.slice(0, 10).trim())).toEqual([expect.stringMatching(/^\d{4}-/), expect.stringMatching(/^\d{4}-/), 'new', 'off'])
     await rm(path.join(root, VAULT_CONFIG_DIR, 'review.json'))
     // One page: every card, with its day, new or off.
     const page = (await run(['due', deck])).out.trimEnd().split('\n')

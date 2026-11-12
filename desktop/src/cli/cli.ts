@@ -362,10 +362,12 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
     const root = await cardVault(dirname(target), target)
     const settings = await reviewSettings(root)
     const titles = await cardTitles(target)
+    // `off` is the card's own review (HELP). With review off for the whole vault, ONE line says so, and each card keeps its day.
     const rows = ((await scanFile(root, target)).cards ?? []).map((card, i) => {
       const state = cardState(card.reviews, settings)
-      return { id: card.id, page: target, title: titles[i] ?? '', due: card.off || !settings.enabled ? null : state.isNew ? iso(now) : iso(state.due!), isNew: state.isNew, off: card.off }
+      return { id: card.id, page: target, title: titles[i] ?? '', due: card.off ? null : state.isNew ? iso(now) : iso(state.due!), isNew: state.isNew, off: card.off }
     })
+    if (!settings.enabled && rows.length > 0) io.stderr(`review is off for this vault (Settings › Review › Review cards): no card is due\n`)
     if (json) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
     else
       io.stdout(
@@ -387,6 +389,7 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
   for (const { path } of queue) if (!titles.has(path)) titles.set(path, await cardTitles(path))
   const rows = queue.map((q) => ({ id: q.id, page: q.path, title: titles.get(q.path)?.[q.index] ?? '', due: iso(q.due), isNew: q.isNew }))
   if (json) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
+  else if (!settings.enabled) io.stdout(`review is off for this vault (Settings › Review › Review cards): no card is due\n`)
   else io.stdout(rows.length === 0 ? `nothing is due under ${target}\n` : rows.map((r) => `${r.isNew ? 'new       ' : day(Date.parse(r.due))}  ${r.id}  ${r.title}  ${r.page}\n`).join(''))
 }
 

@@ -392,6 +392,16 @@
   border-color: var(--danger);
 }
 
+/* A review list (the FSRS weights, YAZ-4946): the whole list shows, wrapped; no second gap under the hint. */
+.settings__input--list {
+  margin-top: 0;
+  resize: vertical;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 /* A review number (YAZ-2322): the same field, a few digits wide, on the row beside its unit. */
 .settings__input--number {
   width: 64px;

@@ -48,7 +48,7 @@ interface ReviewNumberControlProps {
   label: string
   unit?: string
   review: ReviewSettingsState
-  /** A wide text field (the weights) in place of a short number one. */
+  /** A list (the weights): a wrapping box under the text, in place of a short number field. */
   wide?: boolean
 }
 
@@ -65,12 +65,31 @@ export function ReviewNumberControl({ field, label, unit, review, wide = false }
     else if (draft !== stored) review.save(next)
   }
 
+  // The weights: a box that wraps, so all 21 numbers show (a one-line field cut them at the edge); Enter saves, as in a field.
+  if (wide)
+    return (
+      <textarea
+        className={`settings__input settings__input--list${invalid ? ' settings__input--error' : ''}`}
+        rows={2}
+        spellCheck={false}
+        aria-label={label}
+        aria-invalid={invalid}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter') return
+          e.preventDefault()
+          commit()
+        }}
+        onBlur={commit}
+      />
+    )
   return (
     <>
       <input
         type="text"
-        inputMode={wide ? 'text' : 'decimal'}
-        className={`settings__input${wide ? '' : ' settings__input--number'}${invalid ? ' settings__input--error' : ''}`}
+        inputMode="decimal"
+        className={`settings__input settings__input--number${invalid ? ' settings__input--error' : ''}`}
         aria-label={label}
         aria-invalid={invalid}
         value={draft}

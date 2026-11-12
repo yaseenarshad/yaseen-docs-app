@@ -15,6 +15,7 @@ import { CrepeFeature } from '../crepe'
 import { features } from '../featureConfig'
 import { NOTE_CARD_OPEN, noteCardLanguage, noteCardViewAt, type NoteCardOpenRequest } from './noteCardView'
 import { refreshNoteCardLook, renderNoteCard } from './noteCardRender'
+import { pageCards } from '@shared/cardLine'
 
 /** A read-only page's ⋯ writes the card line to the file (`changeCardLine`): here it is only heard. */
 const fileWrites = vi.hoisted(() => [] as Array<{ path: string; id: string; index: number | undefined; line: string | null }>)
@@ -159,6 +160,16 @@ describe('the card line (load and save)', () => {
     ])
     expect(view.dom.querySelectorAll('.milkdown-html-block, [data-type="html"]')).toHaveLength(0)
     expect(getMarkdownForSave(crepe)).toBe(md)
+  })
+})
+
+describe('a card fence never closed (the look-by-eye item 1)', () => {
+  it('draws as a card, and the first save writes its closing fence: then the index reads it as a card and the sweep gives its ID', async () => {
+    const { crepe, root } = await mount('Intro\n\n```card\nFront\n---\nBack')
+    expect(root.querySelector('.note-card')).not.toBeNull()
+    const saved = getMarkdownForSave(crepe)
+    expect(saved).toBe('Intro\n\n```card\nFront\n---\nBack\n```\n')
+    expect(pageCards(saved).map((c) => c.text)).toEqual(['Front\n---\nBack'])
   })
 })
 

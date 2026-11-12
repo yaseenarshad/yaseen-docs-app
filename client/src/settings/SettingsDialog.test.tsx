@@ -99,8 +99,8 @@ const pane = (el: HTMLElement) => el.querySelector<HTMLElement>('.settings-pane'
 const sections = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('[data-section]')]
 
 /** Drive a CONTROLLED input like a user: native value setter + input event. */
-function type(input: HTMLInputElement, value: string) {
-  const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+function type(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const set = Object.getOwnPropertyDescriptor((input instanceof HTMLTextAreaElement ? window.HTMLTextAreaElement : window.HTMLInputElement).prototype, 'value')?.set
   act(() => {
     set?.call(input, value)
     input.dispatchEvent(new Event('input', { bubbles: true }))

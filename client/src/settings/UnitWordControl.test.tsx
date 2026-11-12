@@ -24,12 +24,12 @@ function show(settings: UnitWordSettings, hasNoteCards: boolean): HTMLElement {
 
 describe('the unit word row and note cards', () => {
   it('warns only when a vault with note cards calls its pages cards', () => {
-    expect(show({ ...DEFAULT_UNIT_WORD, unit: 'card' }, true).textContent).toContain('This vault has note cards')
+    expect(show({ ...DEFAULT_UNIT_WORD, unit: 'card' }, true).textContent).toContain('Pages and note cards would both be called cards.')
     act(() => root?.unmount())
-    expect(show({ ...DEFAULT_UNIT_WORD, unit: 'own', own: { one: 'Card', many: 'Cards' } }, true).textContent).toContain('This vault has note cards')
+    expect(show({ ...DEFAULT_UNIT_WORD, unit: 'own', own: { one: 'Card', many: 'Cards' } }, true).textContent).toContain('Pages and note cards would both be called cards.')
     act(() => root?.unmount())
-    expect(show({ ...DEFAULT_UNIT_WORD, unit: 'card' }, false).textContent).not.toContain('note cards')
+    expect(show({ ...DEFAULT_UNIT_WORD, unit: 'card' }, false).textContent).not.toContain('would both be called cards')
     act(() => root?.unmount())
-    expect(show({ ...DEFAULT_UNIT_WORD, unit: 'page' }, true).textContent).not.toContain('note cards')
+    expect(show({ ...DEFAULT_UNIT_WORD, unit: 'page' }, true).textContent).not.toContain('would both be called cards')
   })
 })
