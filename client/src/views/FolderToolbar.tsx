@@ -180,7 +180,7 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
       choiceRow('Links', 'Rest the mouse on a link pill in a cell to see the linked note.', hoverLinks, onChangeHoverLinks),
     ]),
     ...section('Safety', [
-      { label: 'Read only', readOnlySlot: true, inline: true, hint: "Locks this folder page: its title, its views and its settings. Each note keeps its own Read only." },
+      { label: 'Read only', readOnlySlot: true, inline: true, hint: "Locks this folder page: its title, its columns and its settings. Sort, filter and the other view changes still work. Each note keeps its own Read only." },
       ...(onChangeConfirmChanges === undefined ? [] : [choiceRow('Confirm changes', 'A change to a note from this page (a typed cell, Delete, Paste, a drag to another group or day, a rename) asks first.', confirmChanges, onChangeConfirmChanges)]),
     ]),
   ]

@@ -38,6 +38,11 @@ export interface AutosaveHandle {
   onSaveRefused: (listener: (diskMtime: number) => void) => () => void
   /** Save now, with the live content (YAZ-4939: a timed "Allow edits" saves at zero, then locks). A retired editor does nothing. */
   flushNow: () => void
+  /**
+   * The live content counts as saved (YAZ-4939: a table section collapsed in a read-only note is a view change), so no
+   * flush writes it; the next edit's save writes it with the edit. Nothing happens while an edit is still unsaved.
+   */
+  keepAsSaved: () => void
 }
 
 /** Owns the Autosave controller for one open file (`path`): debounce, flush on unmount and window close. */
@@ -113,6 +118,12 @@ export function useAutosave(path: string): AutosaveHandle {
     // The listener plugin debounces markdownUpdated by 200ms; pull the live content so nothing is lost.
     s.autosave.update(s.getContent())
     void s.autosave.flush()
+  }, [])
+
+  const keepAsSaved = useCallback(() => {
+    const s = ref.current
+    if (s === null || retiredRef.current || s.autosave.dirty) return
+    s.autosave.reset(s.getContent(), s.autosave.mtime)
   }, [])
 
   useEffect(() => {
@@ -197,5 +208,5 @@ export function useAutosave(path: string): AutosaveHandle {
     }
   }, [])
 
-  return { status, conflictMtime, attach, keepMine, markReloaded, reportConflict: setConflictMtime, absorbFrontmatterOnly, diskParts, onSaveRefused, flushNow }
+  return { status, conflictMtime, attach, keepMine, markReloaded, reportConflict: setConflictMtime, absorbFrontmatterOnly, diskParts, onSaveRefused, flushNow, keepAsSaved }
 }

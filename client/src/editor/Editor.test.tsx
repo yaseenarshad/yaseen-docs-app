@@ -28,6 +28,7 @@ import type { Row } from '../views/engine'
 import { readPageView } from '../lib/pageView'
 import { writeProperty } from '../views/writeProperty'
 import type { NoticeKind } from '../lib/notice'
+import { VIEW_ONLY_CHANGE } from './readOnlyEdit'
 
 /**
  * Render counters for the note's heavy sections (YAZ-2196): each is the REAL component, called
@@ -3127,5 +3128,62 @@ describe('Read only for the whole vault, with a timed "Allow edits" (YAZ-4939)',
     const spy = vi.spyOn(fake, 'setReadonly')
     for (let i = 0; i < 20; i++) type(`# Hello\n\nkey ${i}\n`)
     expect(spy).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * A table section collapsed in a read-only note (YAZ-4939): a view change. The editor tells the host (`VIEW_ONLY_CHANGE`
+ * on its DOM, `tableSubhead.ts`), and the host takes the live text as saved: nothing is written while the note is locked
+ * — not by the autosave, the unmount, the window's close nor a cog key — and an unlocked page's next save writes it.
+ */
+describe('a table collapse in a read-only note is a view change (YAZ-4939)', () => {
+  const LOCKED_FM = '---\nstatus: draft\nreadonly: true\n---\n'
+  const TABLE = '| A |\n| - |\n| s |\n| r |\n\n<!-- table: subhead 3 -->\n'
+  const FOLDED = '| A |\n| - |\n| s |\n| r |\n\n<!-- table: fold 4, subhead 3 -->\n'
+  let view: { state: null; dispatch: () => void; dom: HTMLElement }
+  beforeEach(() => {
+    view = { state: null, dispatch: () => undefined, dom: document.createElement('div') }
+    vi.mocked(editorViewOf).mockReturnValue(view as never)
+  })
+  afterEach(() => vi.mocked(editorViewOf).mockImplementation(emptyView as never))
+  /** The editor collapsed a section in a view that is not editable: the doc holds the fold, and the host is told. */
+  const collapse = () =>
+    act(() => {
+      crepe().md = FOLDED
+      view.dom.dispatchEvent(new Event(VIEW_ONLY_CHANGE))
+    })
+
+  it('a note’s own Read only: the collapse is never written — not by the autosave, the window’s close or the unmount', async () => {
+    const el = await mount(LOCKED_FM + TABLE)
+    collapse()
+    await pastDebounce()
+    expect(el.querySelector('.save-indicator--saved')).not.toBeNull()
+    await act(async () => void (await Promise.all(flushListeners.map((l) => l()))))
+    act(() => root?.unmount())
+    root = null
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('the vault’s Read only: a cog key after a collapse writes the key over the disk’s body; after "Allow edits" the next save writes the collapse with the text', async () => {
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 20, size: body.content.length }))
+    const el = await mount(FM + TABLE, 1, { vaultReadOnly: true })
+    collapse()
+    clickCog(el)
+    diskHas(FM + TABLE, 1)
+    await act(async () => {
+      menuSwitch(el, 'Guide lines').click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await settle()
+    expect(writeFile.mock.calls.map(([body]) => body.content)).toEqual(['---\nstatus: draft\nguide-lines: false\n---\n' + TABLE])
+    clickCog(el)
+    act(() => el.querySelector<HTMLButtonElement>('.read-only-chip__button')!.click())
+    await act(async () => {
+      [...el.querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === '10 minutes')!.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    type(FOLDED.replace('| r |', '| x |'))
+    await pastDebounce()
+    expect(writeFile.mock.calls.at(-1)![0].content).toBe('---\nstatus: draft\nguide-lines: false\n---\n' + FOLDED.replace('| r |', '| x |'))
   })
 })

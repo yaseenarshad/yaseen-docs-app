@@ -52,6 +52,7 @@ import { CODE_WIDTH_KEY, noteBlockWidth, noteFindFolds, noteOutsideGlow, notePag
 import { watchBlockRoom } from './blockRoom'
 import { undo } from '@milkdown/kit/prose/history'
 import { CODE_WIDTH_DRAGGED, codeBlockCount, codeWidthsToNote, type CodeWidthDragged } from './code/codeWidth'
+import { VIEW_ONLY_CHANGE } from './readOnlyEdit'
 import { isNoteReadOnly, setNoteReadOnly } from '@shared/readOnly'
 import { stepZoomByKey } from './DocumentZoom'
 import { FoldAllButton } from './FoldAllButton'
@@ -1333,6 +1334,16 @@ function CrepeHost({
     view.dom.addEventListener(CODE_WIDTH_DRAGGED, onDragged)
     return () => view.dom.removeEventListener(CODE_WIDTH_DRAGGED, onDragged)
   }, [readyCrepe, onNotice, writeOwnKey])
+  // A table section collapsed while the note is locked (YAZ-4939, `VIEW_ONLY_CHANGE`): a view change, so the live text
+  // counts as saved and no flush writes it while locked. An unlocked note's next save writes it with the text.
+  const keepAsSaved = autosave.keepAsSaved
+  useEffect(() => {
+    const crepe = readyCrepe
+    if (crepe === null || crepeRef.current !== crepe) return
+    const dom = editorViewOf(crepe).dom
+    dom.addEventListener(VIEW_ONLY_CHANGE, keepAsSaved)
+    return () => dom.removeEventListener(VIEW_ONLY_CHANGE, keepAsSaved)
+  }, [readyCrepe, keepAsSaved])
   useEffect(() => {
     const crepe = readyCrepe
     if (!lineNumbersOn || crepe === null) return
