@@ -53,6 +53,9 @@ interface ExploreNoteProps {
   onNotice: (message: string) => void
   /** Edit (reading) / Done (editing): the layer's mode flips; E and Esc reach it too (`ExploreStack`). */
   onToggleEdit: () => void
+  /** Wide or narrow (YAZ-4927): the head's button flips it; the stack keeps the choice for the next layers. */
+  wide: boolean
+  onToggleWide: () => void
   /** The comment stream's order (YAZ-1515), the setting, and its toggle: as every page layer has them. */
   commentsOrder: CommentsOrder
   onChangeCommentsOrder: (order: CommentsOrder) => void
@@ -70,7 +73,7 @@ const readFeatures = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeatu
 
 type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches } | { kind: 'empty' } | { kind: 'gone' }
 
-export function ExploreNote({ path, mode, title, vault, style, onOpenLink, renderEditor, createFolder, linkActions, onNotice, onToggleEdit, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
+export function ExploreNote({ path, mode, title, vault, style, onOpenLink, renderEditor, createFolder, linkActions, onNotice, onToggleEdit, wide, onToggleWide, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
   const bodyRef = useRef<HTMLDivElement>(null)
   /** Where the read-only Crepe mounts: its own box ABOVE the comment stream and the mentions, as the note tab stacks them. */
   const mountRef = useRef<HTMLDivElement>(null)
@@ -200,6 +203,9 @@ export function ExploreNote({ path, mode, title, vault, style, onOpenLink, rende
         <span className="explore__title" title={path}>
           {title}
         </span>
+        <button type="button" className="explore__button explore__wide" onClick={onToggleWide} title={wide ? 'Narrow layer' : 'Wide layer'} aria-label={wide ? 'Narrow layer' : 'Wide layer'} aria-pressed={wide}>
+          {wide ? '⇥⇤' : '⇤⇥'}
+        </button>
         {foldAll}
         {mode === 'read' ? (
           <>

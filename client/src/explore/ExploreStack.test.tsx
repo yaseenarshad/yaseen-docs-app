@@ -223,7 +223,7 @@ describe('the explore stack', () => {
     await flush()
     await typeQuery('beta')
     await openResult()
-    act(() => top().querySelector<HTMLButtonElement>('.explore__button')?.click())
+    act(() => [...top().querySelectorAll<HTMLButtonElement>('.explore__button')].find((b) => b.textContent?.startsWith('Edit'))?.click())
     await flush()
     expect([...new Set(editors)]).toEqual(['/v/alpha.md', '/v/beta.md'])
     // E inside the editor's field is a letter, not the stack's key.
@@ -548,6 +548,35 @@ describe('the explore stack', () => {
     expect(flushed).toEqual(['beta'])
     // The stack itself is App's to unmount: its layers are still here until then, none popped by the ⇧Esc.
     expect(layers()).toHaveLength(4)
+  })
+
+  it('YAZ-4927: the head\'s button makes the layer wide, the choice is kept for the next layers (and across restarts), and a wide layer still fits a narrow window', async () => {
+    try {
+      localStorage.removeItem('explore:wide')
+    } catch {
+      // no storage
+    }
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    expect(top().style.width).toBe('720px')
+    const wideButton = () => top().querySelector<HTMLButtonElement>('.explore__wide') as HTMLButtonElement
+    expect(wideButton().getAttribute('aria-pressed')).toBe('false')
+    act(() => wideButton().click())
+    // jsdom's window is 1024 px wide: 1100 is cut to 1024 − 2 × 72.
+    expect(top().style.width).toBe(`${Math.min(1100, window.innerWidth - 144)}px`)
+    expect(wideButton().getAttribute('aria-pressed')).toBe('true')
+    expect(localStorage.getItem('explore:wide')).toBe('1')
+    // The next note layer opens wide too; the search layer keeps its own width.
+    render(2)
+    await flush()
+    expect(top().style.width).toBe('500px')
+    await typeQuery('beta')
+    await openResult()
+    expect(top().style.width).toBe(`${Math.min(1100, window.innerWidth - 144)}px`)
+    act(() => wideButton().click())
+    expect(top().style.width).toBe('720px')
+    expect(localStorage.getItem('explore:wide')).toBeNull()
   })
 
   it('with motion on, a leaving layer plays its exit (150 ms for a note) and is gone after it; the keys go on to the layer under it at once', async () => {
