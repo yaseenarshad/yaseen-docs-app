@@ -240,3 +240,20 @@ describe('applyExternalMarkdown tells the change list too (YAZ-3704 D3)', () => 
     expect(seen[1].getMeta(OUTSIDE_RANGES_META)).toBeUndefined()
   })
 })
+
+describe('the save after a merge (YAZ-4964: an Inbox answer in an open page with typing)', () => {
+  it('the update the listener sends 200 ms after the typing carries the merged doc, not the doc of the typing alone', async () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const updates: string[] = []
+    const crepe = createCrepe({ root, defaultValue: BASE, onMarkdownUpdated: (md) => updates.push(md) })
+    await crepe.create()
+    mounted.push({ crepe, root })
+    typeBefore(crepe, 'Second', 'typed ')
+    // Within the listener's 200 ms: an outside write lands as a merge (out of the history).
+    expect(mergeExternalMarkdown(crepe, BASE, BASE.replace('Leaf tail', 'Leaf tail, from outside'), true)).toBe('merged')
+    await vi.waitFor(() => expect(updates.length).toBeGreaterThan(0))
+    expect(updates.at(-1)).toContain('typed Second')
+    expect(updates.at(-1)).toContain('Leaf tail, from outside')
+  })
+})

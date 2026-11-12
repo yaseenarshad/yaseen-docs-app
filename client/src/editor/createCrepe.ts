@@ -897,13 +897,35 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(visibleTypeOver)
   if (opts.onMarkdownUpdated) {
     const cb = opts.onMarkdownUpdated
+    /**
+     * Did a change OUT of the undo history (an outside merge: an Inbox answer, an agent's edit) land after the last
+     * edit the listener heard? Milkdown's listener serializes the doc of the last edit IN the history, 200 ms later:
+     * after such a merge that doc is stale, and its save would drop what the merge brought until the next edit.
+     */
+    let outsideLast = false
+    crepe.editor.use(
+      $prose(
+        () =>
+          new Plugin({
+            key: new PluginKey('mdapp-outside-last'),
+            state: {
+              init: () => null,
+              apply: (tr, v) => {
+                if (tr.docChanged) outsideLast = tr.getMeta('addToHistory') === false
+                return v
+              },
+            },
+          }),
+      ),
+    )
     crepe.on((listener) => {
       listener.markdownUpdated((ctx, markdown, prev) => {
         // Compared as it would be SAVED. Crepe's trailing empty paragraph (added on start-up to any
         // document ending in a list) differs raw but vanishes in `postProcessMarkdown`, and an
         // update the file would not notice is not an update (YAZ-968's save-path contract). An empty
-        // cell note is left out, as `getMarkdownForSave` leaves it out (YAZ-3818 D15).
-        const next = postProcessMarkdown(savedMarkdown(ctx) ?? markdown)
+        // cell note is left out, as `getMarkdownForSave` leaves it out (YAZ-3818 D15). After an outside
+        // merge, the doc as it is NOW (see `outsideLast`).
+        const next = postProcessMarkdown(savedMarkdown(ctx) ?? (outsideLast ? ctx.get(serializerCtx)(ctx.get(editorViewCtx).state.doc) : markdown))
         if (next !== postProcessMarkdown(prev)) cb(next)
       })
     })
