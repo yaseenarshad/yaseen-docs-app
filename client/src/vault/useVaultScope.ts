@@ -11,7 +11,7 @@ import type { NoticeKind } from '../lib/notice'
 import { attentionCopy, type AttentionCopy } from '../lib/syncAttention'
 import { useVaultName } from '../lib/useVaultName'
 import { useExternalRenames, type ExternalRenames } from '../links/useExternalRenames'
-import { useReview, type ReviewApi } from '../review/useReview'
+import { useCardReview, type CardReviewApi } from '../review/useCardReview'
 import { useReviewSettings, type ReviewSettingsState } from '../review/useReviewSettings'
 import { useLinkClick, type LinkClickState } from '../explore/linkClick'
 import { useShowIds, type ShowIdsState } from '../search/showIds'
@@ -56,7 +56,7 @@ export interface VaultScope {
   textFormatting: TextFormattingState
   /** How every link pill of this vault looks (YAZ-4924): `.yaseendocs/link-pills.json`. Each page layer reads its CSS variables; `wikilinks` carries the pieces a pill gains. */
   linkPills: LinkPillsState
-  review: ReviewApi
+  review: CardReviewApi
   renames: ExternalRenames
   /**
    * The vault's IDs as its last snapshot said them (YAZ-2523 🔒 V5),
@@ -135,9 +135,9 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   // The look's text pieces and the vault's name reach every editor of the vault through its resolve source (YAZ-4924):
   // one object the editors already subscribe to, so a change draws the pills again without a prop on each editor.
   useEffect(() => wikilinks.setLook(linkPills.pills, name), [wikilinks, linkPills.pills, name])
-  // Upkeep review (YAZ-2322): the Inbox count and the vault's review session, read off the SAME
+  // Note card review (YAZ-4967): the Inbox count and the vault's review session, read off the SAME
   // index source the wikilinks use. The window shows one session at a time; `App` sees to that.
-  const review = useReview(root, wikilinks, reviewSettings.settings, notify)
+  const review = useCardReview(root, wikilinks, reviewSettings.settings, notify)
 
   // External rename/move resilience (Links E1c, GRO-2242 — locked: confirm-first, NEVER
   // automatic, never a dialog): ONE detector per vault, fed by the cold-start reconcile diff and

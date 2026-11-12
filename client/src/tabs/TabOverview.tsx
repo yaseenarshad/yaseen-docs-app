@@ -109,8 +109,6 @@ export interface TabOverviewProps {
   onSetName?: (id: string, name: string | null) => void
   onShowInSidebar?: (path: string) => void
   onNotice?: (message: string) => void
-  reviewState?: (path: string) => boolean | null
-  onSetReview?: (path: string, on: boolean) => void
   /**
    * Focus and Favorites on a card (YAZ-3264 D4): where a page stands in this window's lists — null
    * for a vault this window does not show, which hides both items — and the two toggles. A vault's
@@ -364,7 +362,7 @@ type Gesture =
  * end of the top row, is about every tab the board is about, whatever the filter shows; the board only asks:
  * App owns the sheet and the close.
  */
-export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, windowId, asleep = NONE_ASLEEP, darkColors = 'adapt', leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveTargets, onDropToWindow, onMoveToNewWindowQuietly, onMoveTab, onMoveToSlot, onTakeAt, onAskVault, onHighlightWindow, onDuplicate, onSetName, onShowInSidebar, onNotice, reviewState, onSetReview, listState, onToggleFocus, onToggleFavorite, hoverPreview = false, previewScope, onCloseWindow, onNewWindow, onOpenTabHere, filesWindow = false }: TabOverviewProps) {
+export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, windowId, asleep = NONE_ASLEEP, darkColors = 'adapt', leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveTargets, onDropToWindow, onMoveToNewWindowQuietly, onMoveTab, onMoveToSlot, onTakeAt, onAskVault, onHighlightWindow, onDuplicate, onSetName, onShowInSidebar, onNotice, listState, onToggleFocus, onToggleFavorite, hoverPreview = false, previewScope, onCloseWindow, onNewWindow, onOpenTabHere, filesWindow = false }: TabOverviewProps) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState<string | null>(active)
   const [pageMenu, setPageMenu] = useState<TabMenuAt | null>(null)
@@ -831,7 +829,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       menuOn(e, () =>
         live.current.picked.has(id) && live.current.pick.length > 1
           ? setPickMenu({ x: e.clientX, y: e.clientY })
-          : setPageMenu({ x: e.clientX, y: e.clientY, id, path: card.page.path, review: reviewState?.(card.page.path) ?? null, named: card.page.named, lists: listState?.(card.page.path) ?? null }),
+          : setPageMenu({ x: e.clientX, y: e.clientY, id, path: card.page.path, named: card.page.named, lists: listState?.(card.page.path) ?? null }),
       )
     },
     hover: (id: string) => {
@@ -1680,7 +1678,6 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
           onRename={menuCard.mine && onSetName === undefined ? undefined : setRenaming}
           onResetName={(id) => setCardName(id, null)}
           onShowInSidebar={menuCard.mine ? onShowInSidebar : () => askTab(pageMenu.id, { kind: 'show-in-sidebar' })}
-          onSetReview={menuCard.mine ? onSetReview : (_path, on) => askTab(pageMenu.id, { kind: 'set-review', on })}
           // The tab row's two items, in its places and with its glyphs (YAZ-3264 D2, D4, D6): this window writes them for any card of a vault it shows.
           onToggleFocus={onToggleFocus}
           onToggleFavorite={onToggleFavorite}

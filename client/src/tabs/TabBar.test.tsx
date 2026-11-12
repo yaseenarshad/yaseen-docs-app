@@ -770,21 +770,6 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     }
   })
 
-  it.each([
-    [true, 'Turn review off'],
-    [false, 'Turn review on'],
-  ])('a note whose review state is %s gets "%s" under Copy path, and it asks for the opposite (YAZ-2322)', (state, label) => {
-    const reviewState = vi.fn(() => state)
-    const onSetReview = vi.fn()
-    const el = mount({ ...props, reviewState, onSetReview })
-    rightClick(tabAt(el, 1))
-    expect(reviewState).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md')
-    expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', label, 'Reveal in Finder', 'Open in VS Code'])
-    act(() => items(el)[2]?.click())
-    expect(onSetReview).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md', !state)
-    expect(menuOf(el)).toBeNull()
-  })
-
   it('YAZ-3264 D2, S14: the tab\'s list state is read when the menu opens; "Add to focus" and "Remove from favorites" toggle THAT path with it', () => {
     const listState = vi.fn(() => ({ focus: false, favorite: true }))
     const [onToggleFocus, onToggleFavorite] = [vi.fn(), vi.fn()]
@@ -800,9 +785,9 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     expect(onToggleFavorite).toHaveBeenCalledExactlyOnceWith(['/vault/sub/Deep Note.md'], true)
   })
 
-  it('a tab with no review state — a folder, a PDF, a note the index has not seen, any note with upkeep off — gets no review item', () => {
-    const el = mount({ ...props, reviewState: () => null, onSetReview: vi.fn() })
-    rightClick(tabAt(el, 0))
+  it('a tab menu has no review item: a card is turned off on the card (YAZ-4967, D6)', () => {
+    const el = mount(props)
+    rightClick(tabAt(el, 1))
     expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
   })
 

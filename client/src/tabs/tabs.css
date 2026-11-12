@@ -37,8 +37,7 @@
 
 /* The strip's outer row (YAZ-721): the nav buttons, the scrolling tablist, the "+" and the tail.
    The look is Linear's bar (YAZ-2656 D12, as the owner changed it): a tall row, every tab a
-   rounded pill centred in it, in three fills — inactive, hover, active — set per theme above.
-   The review bar wears this row too (reviewBar.css), so it is as tall and as tinted. */
+   rounded pill centred in it, in three fills — inactive, hover, active — set per theme above. */
 .tabbar-row {
   display: flex;
   align-items: center;

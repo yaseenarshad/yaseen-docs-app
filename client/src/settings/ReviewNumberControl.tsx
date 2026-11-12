@@ -1,44 +1,76 @@
 /**
- * One number of the vault's review settings (YAZ-2322) — the dialog's only number field, on the
- * folder input's draft + commit pattern (NewNoteLocationControl): Enter or blur saves a valid
- * draft; one the rules refuse is marked while it stands and gives way to the stored value on
- * commit. The rules are `sanitizeUpkeepSettings`' alone — a draft is valid when the sanitiser
- * keeps it — so "whole days", "growth from 1" and "the longest wait is never under the first" are
- * said in one place. A change from elsewhere (another window, a sync) resets the draft.
+ * One typed field of the vault's note card review settings (YAZ-4967, D14) — on the folder input's draft + commit
+ * pattern (NewNoteLocationControl): Enter or blur saves a valid draft; one the rules refuse is marked while it stands
+ * and gives way to the stored value on commit. The rules are `sanitizeReviewSettings`' alone — a draft is valid when
+ * the sanitiser keeps it as it is — so "70 to 99 %", "whole days" and "21 weights" are said in one place. A change
+ * from elsewhere (another window, a sync) resets the draft.
  */
 import { useEffect, useState } from 'react'
-import { sanitizeUpkeepSettings } from '../review/upkeepLegacy'
+import { sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
 
-export type ReviewNumberField = 'baseDays' | 'growth' | 'maxDays'
-
-interface ReviewNumberControlProps {
-  field: ReviewNumberField
-  label: string
-  unit: string
-  review: ReviewSettingsState
+/** How a field reads as text, and the settings a draft makes (null: no such value). */
+export interface ReviewField {
+  show: (s: ReviewSettings) => string
+  parse: (text: string, s: ReviewSettings) => ReviewSettings | null
 }
 
-export function ReviewNumberControl({ field, label, unit, review }: ReviewNumberControlProps) {
-  const stored = review.settings[field]
-  const [draft, setDraft] = useState(String(stored))
-  useEffect(() => setDraft(String(stored)), [stored])
+const numberOf = (text: string): number | null => (text.trim() === '' ? null : Number(text))
 
-  const value = Number(draft)
-  const next = { ...review.settings, [field]: value }
-  const invalid = sanitizeUpkeepSettings(next)[field] !== value
+/** A whole number field, as the file holds it: Longest wait, New cards a day. */
+export const wholeField = (field: 'maxDays' | 'newPerDay'): ReviewField => ({
+  show: (s) => String(s[field]),
+  parse: (text, s) => {
+    const n = numberOf(text)
+    return n === null ? null : { ...s, [field]: n }
+  },
+})
+
+/** Remember rate: a percent on screen, a fraction in the file (90 ↔ 0.9). */
+export const RETENTION_FIELD: ReviewField = {
+  show: (s) => String(Math.round(s.retention * 1000) / 10),
+  parse: (text, s) => {
+    const n = numberOf(text)
+    return n === null ? null : { ...s, retention: Math.round(n * 10) / 1000 }
+  },
+}
+
+/** Weights: the numbers, comma-separated. */
+export const WEIGHTS_FIELD: ReviewField = {
+  show: (s) => s.weights.join(', '),
+  parse: (text, s) => ({ ...s, weights: text.split(',').map((part) => numberOf(part) ?? Number.NaN) }),
+}
+
+const kept = (next: ReviewSettings): boolean => JSON.stringify(sanitizeReviewSettings(next)) === JSON.stringify(next)
+
+interface ReviewNumberControlProps {
+  field: ReviewField
+  label: string
+  unit?: string
+  review: ReviewSettingsState
+  /** A wide text field (the weights) in place of a short number one. */
+  wide?: boolean
+}
+
+export function ReviewNumberControl({ field, label, unit, review, wide = false }: ReviewNumberControlProps) {
+  const stored = field.show(review.settings)
+  const [draft, setDraft] = useState(stored)
+  useEffect(() => setDraft(stored), [stored])
+
+  const next = field.parse(draft, review.settings)
+  const invalid = next === null || !kept(next)
 
   const commit = (): void => {
-    if (invalid) setDraft(String(stored))
-    else if (value !== stored) review.save(next)
+    if (invalid) setDraft(stored)
+    else if (draft !== stored) review.save(next)
   }
 
   return (
     <>
       <input
         type="text"
-        inputMode="decimal"
-        className={`settings__input settings__input--number${invalid ? ' settings__input--error' : ''}`}
+        inputMode={wide ? 'text' : 'decimal'}
+        className={`settings__input${wide ? '' : ' settings__input--number'}${invalid ? ' settings__input--error' : ''}`}
         aria-label={label}
         aria-invalid={invalid}
         value={draft}

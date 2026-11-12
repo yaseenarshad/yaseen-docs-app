@@ -723,11 +723,11 @@ describe('registerWindowIpc', () => {
       const REF0 = { path: '/v/a.md', copy: 0 }
       expect(await act({ sender }, 'w2', REF0, { kind: 'set-name', name: '  Plan  ' })).toEqual(ok(undefined))
       expect(manager.tabAction).toHaveBeenLastCalledWith('w2', REF0, { kind: 'set-name', name: 'Plan' })
-      for (const action of [{ kind: 'duplicate' }, { kind: 'show-in-sidebar' }, { kind: 'set-review', on: true }, { kind: 'set-name', name: null }]) {
+      for (const action of [{ kind: 'duplicate' }, { kind: 'show-in-sidebar' }, { kind: 'set-name', name: null }]) {
         expect(await act({ sender }, 'w2', REF0, action)).toEqual(ok(undefined))
         expect(manager.tabAction).toHaveBeenLastCalledWith('w2', REF0, action)
       }
-      for (const action of [null, { kind: 'delete' }, { kind: 'set-review' }, { kind: 'set-name', name: 3 }]) expect(await act({ sender }, 'w2', REF0, action)).toEqual(bad('BAD_REQUEST'))
+      for (const action of [null, { kind: 'delete' }, { kind: 'set-review', on: true }, { kind: 'set-name', name: 3 }]) expect(await act({ sender }, 'w2', REF0, action)).toEqual(bad('BAD_REQUEST'))
       manager.tabAction.mockReturnValueOnce(false)
       expect(await act({ sender }, 'w2', REF0, { kind: 'duplicate' })).toEqual(bad('NOT_FOUND'))
     })

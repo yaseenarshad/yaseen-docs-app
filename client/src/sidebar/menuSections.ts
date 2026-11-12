@@ -187,8 +187,8 @@ export interface MenuHandlers {
   onToggleFavorite: (paths: string[], isOn: boolean) => void
   /** "Review this folder" (YAZ-2322): the folder's absolute path; the caller starts the session. */
   onReviewFolder: (dir: string) => void
-  /** "Turn review off" / "Turn review on" (YAZ-2322): the note and the state to SET. */
-  onSetReview: (path: string, on: boolean) => void
+  /** "Review this page" (YAZ-4967, idea 4): the page's absolute path; the caller starts the session over its cards. */
+  onReviewPage: (path: string) => void
   /** "Add note shortcut" on a folder row (YAZ-2290 D2): the caller opens the picker for that folder. */
   onAddShortcut: (dir: string) => void
   /** "Remove shortcut" on a shortcut row (YAZ-2290 E5): the note, and the folder it stops appearing in. */
@@ -470,14 +470,13 @@ const reviewFolder: Leaf = (t, h) => {
 }
 
 /**
- * The review toggle (YAZ-2322 🔒 D6): ONE state-aware item, both directions, on a NOTE row only —
- * the caller's null target hides it for a folder, blank space and any file the index does not hold.
+ * "Review this page" (YAZ-4967, idea 4): a PAGE row that holds a note card, either lens — a review session over that
+ * page's due cards alone. Beside "Review this folder"; the caller's null target hides it.
  */
-const toggleReview: Leaf = (t, h) => {
-  const path = t.reviewPath
+const reviewPage: Leaf = (t, h) => {
+  const path = t.reviewPage
   if (path === null) return null
-  const isOn = t.reviewIsOn
-  return { id: 'toggle-review', label: isOn ? 'Turn review off' : 'Turn review on', onSelect: () => h.onSetReview(path, !isOn) }
+  return { id: 'review-page', label: 'Review this page', onSelect: () => h.onReviewPage(path) }
 }
 
 /** Rename — a concrete row only, NEVER blank space: main refuses to rename a window's own vault root (E1b, GRO-2241). */
@@ -704,7 +703,7 @@ const CLOSED_GROUP: readonly Item[] = [forgetClosed, clearClosed]
 const OPEN_GROUP: readonly Item[] = [showInSidebar, open, openInNewTabs, openInNewWindow, focus]
 const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath]
 const CREATE_GROUP: readonly Item[] = [newNoteMenu, newDrawingMenu, newFolderMenu]
-const ROW_GROUP: readonly Item[] = [reviewFolder, toggleReview, rename, changeIcon]
+const ROW_GROUP: readonly Item[] = [reviewFolder, reviewPage, rename, changeIcon]
 const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, addShortcut, openAlone, openIn, addVault]
 const DELETE_GROUP: readonly Item[] = [share, history, info, del, removeShortcut, removeVault]
 

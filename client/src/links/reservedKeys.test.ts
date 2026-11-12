@@ -7,7 +7,6 @@ import { NOTE_ID_KEY } from '@shared/noteId'
 import { TITLE_KEY } from '@shared/noteName'
 import { CODE_WIDTH_KEY, FIND_FOLDS_KEY, OUTSIDE_GLOW_KEY, PAGE_SWITCH_KEYS, TABLE_WIDTH_KEY } from '@shared/pageSwitches'
 import { READ_ONLY_KEY } from '@shared/readOnly'
-import { REVIEW_KEY, REVIEWS_KEY } from '../review/upkeepLegacy'
 import { reservedKeys } from './reservedKeys'
 
 /** The keys the app owns where the vault uses IDs. */
@@ -26,13 +25,10 @@ describe('reserved keys: the folders’ values (D19)', () => {
   })
 })
 
-describe('reserved keys: review (YAZ-2322)', () => {
-  it('the review log is Reserved: the panel shows it with no editor', () => {
-    expect(RESERVED_KEYS.has(REVIEWS_KEY)).toBe(true)
-  })
-
-  it('the on/off flag is an ordinary property, the user\'s to edit', () => {
-    expect(RESERVED_KEYS.has(REVIEW_KEY)).toBe(false)
+describe('reserved keys: review (YAZ-4967, D6)', () => {
+  it('page upkeep is gone: `reviews` and `review` are ordinary properties, the user\'s to edit', () => {
+    expect(RESERVED_KEYS.has('reviews')).toBe(false)
+    expect(RESERVED_KEYS.has('review')).toBe(false)
   })
 })
 
@@ -55,12 +51,12 @@ describe('reserved keys: a vault that does not use IDs (YAZ-2523 V12)', () => {
   it('`id`, `title`, `also_in` and `in` are ordinary properties there; the comments store, the review log, the read-only switch and the page switches are still the app\u2019s', () => {
     const plain = reservedKeys(false)
     for (const key of [NOTE_ID_KEY, TITLE_KEY, ALSO_IN_KEY, FOLDER_VALUES_KEY]) expect(plain.has(key)).toBe(false)
-    expect([...plain].sort()).toEqual([COMMENTS_KEY, REVIEWS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, ...FOLDER_PAGE_KEYS].sort())
+    expect([...plain].sort()).toEqual([COMMENTS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, ...FOLDER_PAGE_KEYS].sort())
   })
 
   // The folder page cog's keys (FOLDER_PAGE_KEYS) are the app's too: the cog sets them (`show_new_buttons`, YAZ-3746 13BL, the latest).
   it('a vault that uses IDs owns all twenty-two', () => {
-    expect([...RESERVED_KEYS].sort()).toEqual([ALSO_IN_KEY, COMMENTS_KEY, NOTE_ID_KEY, FOLDER_VALUES_KEY, REVIEWS_KEY, TITLE_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, ...FOLDER_PAGE_KEYS].sort())
+    expect([...RESERVED_KEYS].sort()).toEqual([ALSO_IN_KEY, COMMENTS_KEY, NOTE_ID_KEY, FOLDER_VALUES_KEY, TITLE_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, ...FOLDER_PAGE_KEYS].sort())
   })
 })
 

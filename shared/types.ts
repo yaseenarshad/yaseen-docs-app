@@ -2998,7 +2998,8 @@ export type FilesAction =
   // `copy` (YAZ-3943 5B): a ⌘-click's background tab, a copy when the page is open; the daily note's background open has none
   | { kind: 'open'; path: string; how: FilesOpenHow; copy?: true }
   | { kind: 'history' | 'share'; path: string }
-  | { kind: 'review'; dir: string }
+  // `page` (YAZ-4967, "Review this page"): `dir` is the page's path, and the review takes that page's cards alone
+  | { kind: 'review'; dir: string; page?: true }
   | { kind: 'inbox'; root: string }
   | { kind: 'session'; id: string }
 
@@ -3321,7 +3322,7 @@ export interface TabRef {
  * A tab action ANOTHER window's board asks of this window's tab (YAZ-3343 D31: one card menu for every card):
  * the owner runs it itself. `show-in-sidebar` also raises the owner.
  */
-export type TabAction = { kind: 'duplicate' } | { kind: 'set-name'; name: string | null } | { kind: 'show-in-sidebar' } | { kind: 'set-review'; on: boolean }
+export type TabAction = { kind: 'duplicate' } | { kind: 'set-name'; name: string | null } | { kind: 'show-in-sidebar' }
 
 /** The two layouts of the board (YAZ-3343 D8): this window in folder groups, or every window in its own frame. */
 export type CanvasLayout = 'folder' | 'window'
