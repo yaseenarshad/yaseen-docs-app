@@ -2014,6 +2014,8 @@ describe('SettingsDialog: ID letters (YAZ-2677 D5, S79, S80, S83, S85)', () => {
     const { el, idsState, reletter } = await withIds(true)
     expect(row(el, 'idLetters')?.closest('.settings-group')?.querySelector('.settings-group__title')?.textContent).toBe('This vault')
     expect(row(el, 'idLetters')?.querySelector('.setting__label')?.textContent).toBe('ID letters')
+    // The hint says what a change reaches (YAZ-4922, "Yes, leave them"): this vault's IDs, their file names and the links to them; a link out stays.
+    expect(row(el, 'idLetters')?.querySelector('.setting__hint:not([role])')?.textContent).toBe('The letters in front of each number, like the YAZ in YAZ-12. A change reaches each ID in this vault, its file name and each link to it. A link to a note outside this vault stays as it is.')
     expect(idsState).toHaveBeenCalledTimes(1)
     expect(line(el)).toBe("This vault's ID letters are YAZ.")
     expect(buttons(el).map((b) => b.textContent)).toEqual(['Change letters'])

@@ -1816,7 +1816,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'idLetters',
             label: 'ID letters',
-            hint: 'The letters in front of each number, like the YAZ in YAZ-12. A change reaches every note, link and file name.',
+            hint: 'The letters in front of each number, like the YAZ in YAZ-12. A change reaches each ID in this vault, its file name and each link to it. A link to a note outside this vault stays as it is.',
             keywords: ['letters', 'prefix', 'ids', 'rename', 'change'],
             wide: true,
             available: (ctx) => ctx.ids?.enabled === true,
