@@ -214,6 +214,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
           onNew={onNewInGroup === undefined || !groupTakesNew(view, at.level, settings.columns) ? undefined : () => onNewInGroup(g, undefined, at)}
           resolve={resolve}
           level={at.level}
+          gk={gk}
         />
         {!isCollapsed && (g.children === undefined ? items(g.rows) : (g.direct?.length ?? 0) > 0 && items(g.direct ?? []))}
         {!isCollapsed && g.children?.map((child) => section(child, childSpot(g, at)))}

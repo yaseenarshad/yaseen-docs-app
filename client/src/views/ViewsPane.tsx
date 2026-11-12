@@ -12,7 +12,7 @@ import { isMentionsColumn, mentionsColumns } from './mentionsColumn'
 import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
 import { type ViewSet, type ViewDef, type ParsedViews, folderColumnOf, groupDepthOf, hidesSubfolderNotes, parseViews, rewriteViews, serializeViews, showsFolderRows, updateViews } from './viewSchema'
-import { type GroupLevelStepActions, type LevelNode, GroupLevelStepsContext, levelSteps } from './groupLevelSteps'
+import { type GroupLevelStepActions, type LevelNode, GroupLevelStepsContext, branchSteps, levelSteps } from './groupLevelSteps'
 import { type Group, type Row, propertyKeys, propertyLabel, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
 import { type ColumnDecl, type FolderSettings, pageColumnKeys, rebaseSettings } from './folderSettings'
@@ -656,15 +656,25 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const allGroupKeys = groupKeys.length > MAX_COLLAPSED_GROUP_KEYS ? [] : groupKeys
   // One level at a time (YAZ-3746 13AT, S8): offered while the view has two levels or more, and the store can hold its keys.
   const nodesOf = (list: readonly Group[], at: GroupSpot): LevelNode[] =>
-    list.map((g) => ({ key: spotKey(g, at), ...(g.children === undefined ? {} : { children: nodesOf(g.children, childSpot(g, at)) }) }))
+    list.map((g) => ({ key: spotKey(g, at), ...(g.nested === true ? { nested: true as const } : {}), ...(g.children === undefined ? {} : { children: nodesOf(g.children, childSpot(g, at)) }) }))
   // A nested Folder level is levels too (YAZ-4918, `groupDepthOf`).
-  const steps = configuredGroups !== null && allGroupKeys.length > 0 && groupDepthOf(view) >= 2 ? levelSteps(nodesOf(configuredGroups, TOP_SPOT), collapsed) : null
+  const levelNodes = configuredGroups !== null && allGroupKeys.length > 0 && groupDepthOf(view) >= 2 ? nodesOf(configuredGroups, TOP_SPOT) : null
+  const steps = levelNodes === null ? null : levelSteps(levelNodes, collapsed)
   const levelActions: GroupLevelStepActions | null =
-    steps === null
+    steps === null || levelNodes === null
       ? null
       : {
           ...(steps.collapseOne === null ? {} : { collapseOne: () => writeCollapsed(steps.collapseOne!) }),
           ...(steps.expandOne === null ? {} : { expandOne: () => writeCollapsed(steps.expandOne!) }),
+          // A nested Folder group's "Expand all" / "Collapse all" (YAZ-4928): worked out when that header's menu opens.
+          branch: (key) => {
+            const b = branchSteps(levelNodes, key, collapsed)
+            if (b === null) return undefined
+            return {
+              ...(b.expandAll === null ? {} : { expandAll: () => writeCollapsed(b.expandAll!) }),
+              ...(b.collapseAll === null ? {} : { collapseAll: () => writeCollapsed(b.collapseAll!) }),
+            }
+          },
         }
 
   // ⌘F (YAZ-4613, D64): the note's find bar over the view's rows as shown, the search box's narrowing included. Read at
