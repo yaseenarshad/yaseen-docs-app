@@ -239,6 +239,8 @@ export function ExploreStack({ request, vaults, vaultOf, nameOf, textVarsFor, re
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (top === undefined) return
+    // A key inside an IME composition (Japanese input; keyCode 229 on some keyboards) is the composition's: Esc cancels it, nothing else.
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return
     const el = rootRef.current?.querySelector<HTMLElement>(`[data-layer="${top.id}"]`) ?? null
     if (event.key === 'Escape') {
       // The note menu's own Esc (the `ContextMenu` closes itself) and a menu's: nothing else closes.

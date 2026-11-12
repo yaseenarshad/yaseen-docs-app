@@ -579,6 +579,23 @@ describe('the explore stack', () => {
     expect(localStorage.getItem('explore:wide')).toBeNull()
   })
 
+  it('check 22: Esc during an IME composition (Japanese input) cancels the composition only, never a layer', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    expect(layers()).toHaveLength(2)
+    // A composing Esc: `isComposing` true (keyCode 229 on some keyboards): the IME takes it.
+    const composing = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true, isComposing: true })
+    act(() => void (document.activeElement as Element).dispatchEvent(composing))
+    expect(layers()).toHaveLength(2)
+    expect(composing.defaultPrevented).toBe(false)
+    const code229 = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true, keyCode: 229 } as KeyboardEventInit)
+    act(() => void (document.activeElement as Element).dispatchEvent(code229))
+    expect(layers()).toHaveLength(2)
+    escape()
+    expect(layers()).toHaveLength(1)
+  })
+
   it('with motion on, a leaving layer plays its exit (150 ms for a note) and is gone after it; the keys go on to the layer under it at once', async () => {
     Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: false }), configurable: true, writable: true })
     vi.useFakeTimers()
