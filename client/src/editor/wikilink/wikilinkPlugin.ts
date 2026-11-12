@@ -21,6 +21,8 @@
  *  - an ID of this vault that no note has (YAZ-3905 S10) shows "Missing note · YAS-466" in place of
  *    the id, a widget as the title is; an ID of another vault of the window (S23) shows its vault after
  *    it, "INL-4 (In-harness-lab)", a widget too. Both stay dimmed (`wikilink--unresolved`),
+ *  - the vault's link pills look (YAZ-4924, `source.pills`) adds a head and a tail piece, widgets, to every pill
+ *    (`pillEnds`): the text before and after, the vault's name, the ID, the folder. Look only: the file keeps `[[Name]]`,
  *  - a match whose display would be EMPTY (`[[Note|]]`, `[[|]]`, `[[#]]`) stays raw — no
  *    decorations at all, so nothing ever collapses to a zero-width invisible run (FN12,
  *    GRO-2197),
@@ -52,9 +54,11 @@ import { isBoardTarget } from '@shared/embedOptions'
 import { WIKILINK_RE } from '@shared/linkRewrite'
 import { isNoteId, isNumberId, vaultNoteId } from '@shared/noteId'
 import { boardBaseName, fileKind } from '@shared/fileKind'
+import { NO_LINK_PILLS, type LinkPills } from '@shared/linkPills'
 import { basename, type IndexRecord } from '@shared/types'
 import { fileLabel, pageLabel, pathTitles, type PathTitles } from '../../lib/pageLabel'
 import { boardEmbedName, boardEmbedTarget, isIdTarget } from '../drawing/boardEmbedText'
+import { headKey, headSpan, pathInfo, pillParts, pillsNeedInfo, tailKey, tailSpan, type PillMeta } from './linkPillLook'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
 import './wikilink.css'
 
@@ -100,7 +104,15 @@ export interface WikilinkResolveSource {
    * it does not use IDs. `vaultNoteId` reads a link target with them: other `LETTERS-NUMBER` text is a name (R6).
    */
   readonly letters: readonly string[]
-  /** Wakes subscribed editors (decoration recompute) whenever `resolve` is swapped. */
+  /**
+   * The vault's link pills look (YAZ-4924, `.yaseendocs/link-pills.json`): what text a pill gains at its ends
+   * (`linkPillLook.ts` `pillParts`). `NO_LINK_PILLS` until the vault's file is read, and for a vault that changed nothing.
+   * The look's colours and shape are CSS variables on the vault's layers, not read here.
+   */
+  readonly pills: LinkPills
+  /** What the app calls the vault (the sidebar's name), for a look that names it on every pill; null while unknown. */
+  readonly vault: string | null
+  /** Wakes subscribed editors (decoration recompute) whenever `resolve` is swapped, or the look changes. */
   subscribe(listener: () => void): () => void
 }
 
@@ -112,6 +124,8 @@ export interface MutableWikilinkResolveSource extends WikilinkResolveSource {
    * `null` forgets the vault (a change of root): no index has landed for the new one yet.
    */
   update(resolve: ResolveLink | null, records?: readonly IndexRecord[], folders?: readonly IndexRecord[], ids?: boolean, letters?: readonly string[]): void
+  /** The vault's look and name (YAZ-4924), and every subscriber is woken: each editor draws its pills again. Nothing happens when both are as they were. */
+  setLook(pills: LinkPills, vault: string | null): void
 }
 
 const NO_RECORDS: readonly IndexRecord[] = []
@@ -123,8 +137,22 @@ export function createWikilinkResolveSource(): MutableWikilinkResolveSource {
   let settings: readonly IndexRecord[] = NO_RECORDS
   let usesIds = false
   let idLetters = NO_LETTERS
+  let look: LinkPills = NO_LINK_PILLS
+  let vaultName: string | null = null
   const listeners = new Set<() => void>()
   return {
+    get pills() {
+      return look
+    },
+    get vault() {
+      return vaultName
+    },
+    setLook(pills, vault) {
+      if (pills === look && vault === vaultName) return
+      look = pills
+      vaultName = vault
+      listeners.forEach((l) => l())
+    },
     get resolve() {
       return current
     },
@@ -357,15 +385,21 @@ export function linkIsResolved(inner: string, source: WikilinkResolveSource, vie
 }
 
 /**
- * The DOM of a vault's name at a link's end, " (In-harness-lab)", with `cls` and `link-pill__vault`: a pill into another
- * vault (D22, YAZ-3738 D4, `markdownLink.ts`) and an ID of another vault (YAZ-3905 S23). A piece of the pill, never text.
+ * The pieces a pill gains at its ends under the vault's look (YAZ-4924, `pillParts`): its head at `innerStart` and its
+ * tail at `end`, each `side: -1`, so the head draws before the link's hidden text and the tail after everything the
+ * link draws (an ID link's title stands at `end` too, pushed before it). Both are widgets, never text, with the pill's
+ * classes: pieces of the pill, so a click on one is a click on the pill (`linkPosAtDOM` reads a widget as the position
+ * before it, inside the link), and the caret at the link's end shows after the whole pill (YAZ-3738 D4). Today's look
+ * gives only the vault's name of an ID of another vault (YAZ-3905 S23), at the tail, as `vaultSpan` drew it.
  */
-export function vaultSpan(cls: string, vault: string): HTMLElement {
-  const span = document.createElement('span')
-  span.className = `${cls} link-pill__vault`
-  span.spellcheck = false
-  span.textContent = ` (${vault})`
-  return span
+function pillEnds(out: Decoration[], innerStart: number, end: number, cls: string, inner: string, resolved: boolean, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined, otherVault: string | null): void {
+  const { pills } = source
+  if (pills === NO_LINK_PILLS && otherVault === null) return
+  const path = resolved && pillsNeedInfo(pills) ? linkPath(inner, source, viewOnly) : null
+  const meta: PillMeta = { info: path === null ? undefined : pathInfo(source.records, source.folders).get(path), otherVault }
+  const { head, tail } = pillParts(pills, meta, source.vault)
+  if (head !== null) out.push(Decoration.widget(innerStart, () => headSpan(cls, head), { side: -1, key: headKey(head) }))
+  if (tail !== null) out.push(Decoration.widget(end, () => tailSpan(cls, tail), { side: -1, key: tailKey(tail) }))
 }
 
 /** Decorations for one collapsed match: `[[inner]]` starting at `start`. */
@@ -379,6 +413,8 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   const resolved = linkIsResolved(inner, source, viewOnly)
   const cls = resolved ? WIKILINK_CLASS : `${WIKILINK_CLASS} ${WIKILINK_UNRESOLVED_CLASS}`
   const icon = resolved ? linkIcon(inner, source, viewOnly, look) : undefined
+  /** The vault an unresolved ID of another vault names (YAZ-3905 S23), drawn at the pill's tail; null otherwise. */
+  let otherVault: string | null = null
   /**
    * The first shown text: its own span carries the file's icon on its `::before`, so icon and text are one box
    * (YAZ-3648) and the text stays real text, which find highlights and the caret walks (YAZ-3657).
@@ -433,7 +469,7 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
           if (trail > 0 && boardBaseName(name) !== name)
             out.push(Decoration.inline(at + part.length - trail, at + part.length, { class: `${cls} name-ending`, spellcheck: 'false' }, { syntax: true }))
           else hide(out, at + part.length - trail, at + part.length)
-          if (other !== null) out.push(Decoration.widget(at + part.length, () => vaultSpan(cls, other.vault ?? 'another vault'), { side: -1, key: `vault:${other.vault ?? ''}` }))
+          if (other !== null) otherVault = other.vault ?? 'another vault'
         } else if (segments === 0) shown(at, at + part.length)
         else out.push(Decoration.inline(at, at + part.length, { class: `${cls} ${WIKILINK_SUB_CLASS}`, spellcheck: 'false' }))
         segments++
@@ -442,6 +478,7 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
     }
   }
   hide(out, end - 2, end) // ]]
+  pillEnds(out, innerStart, end, cls, inner, resolved, source, viewOnly, otherVault)
 }
 
 /** True when the selection touches [from, to] with inclusive boundaries — the reveal rule. */

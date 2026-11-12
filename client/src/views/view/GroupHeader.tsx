@@ -12,6 +12,8 @@ import { DateValue, ErrorValue, FileValue, LinkValue, type Resolver, type Value,
 import { formatDateValue, formatNumber } from '../columnFormat'
 import { WIKILINK_RE } from '@shared/linkRewrite'
 import '../../editor/wikilink/wikilink.css'
+import { pillParts, type PathInfo } from '../../editor/wikilink/linkPillLook'
+import { PillHead, PillLook, PillTail } from '../../editor/wikilink/LinkPillParts'
 import { summarize } from '../summaries'
 import { FolderIcon, ShortcutIcon } from './icons'
 import { HoverTip } from '../../components/HoverTip'
@@ -81,13 +83,30 @@ function LinkChip({ link, resolve }: { link: LinkValue | FileValue; resolve?: Re
         {text}
       </span>
     )
-  const path = link instanceof FileValue ? link.record.path : resolve?.(link.target)?.record.path
-  return path === undefined ? (
+  const record = link instanceof FileValue ? link.record : resolve?.(link.target)?.record
+  return record === undefined ? (
     <span className="wikilink wikilink--unresolved view-link-pill" title={text}>
-      {text}
+      <PillEnds text={text} />
     </span>
   ) : (
-    <PillWithIcon path={path} text={text} />
+    <PillWithIcon path={record.path} text={text} info={record.id === undefined ? { folder: record.folder } : { id: record.id, folder: record.folder }} />
+  )
+}
+
+/**
+ * A pill's text with the pieces the vault's look adds at its ends (YAZ-4924, `pillParts`): the text before and after,
+ * the vault's name, the ID and the folder, as the note editor's widgets draw them. A cell's pill is the vault's own, so
+ * it is never a pill into another vault.
+ */
+function PillEnds({ text, info }: { text: string; info?: PathInfo }) {
+  const { pills, vault } = useContext(PillLook)
+  const { head, tail } = pillParts(pills, { info, otherVault: null }, vault)
+  return (
+    <>
+      {head !== null && <PillHead head={head} />}
+      {text}
+      {tail !== null && <PillTail tail={tail} />}
+    </>
   )
 }
 
@@ -96,7 +115,7 @@ function LinkChip({ link, resolve }: { link: LinkValue | FileValue; resolve?: Re
  * D13): the icon's attributes on the pill, drawn on its `::before`. Settings › File icons reach it through the app's
  * CSS (`data-sidebar-file-icons`) and `IconsContext`, as they reach the note's pills.
  */
-function PillWithIcon({ path, text }: { path: string; text: string }) {
+function PillWithIcon({ path, text, info }: { path: string; text: string; info?: PathInfo }) {
   const icons = useContext(IconsContext)
   // A folder resolves to its directory, the editor's rule (no file kind); a folder row's page is its `.folder.md`.
   const settings = isFolderSettingsPath(path)
@@ -104,7 +123,7 @@ function PillWithIcon({ path, text }: { path: string; text: string }) {
   const { style, ...attrs } = fileIconAttrs(icons, settings ? dirname(path) : path, folder)
   return (
     <span {...attrs} style={style} className={`wikilink view-link-pill file-icon file-icon--${folder ? 'dir' : 'file'}`} data-link-path={path} title={text}>
-      {text}
+      <PillEnds text={text} info={info} />
     </span>
   )
 }

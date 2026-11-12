@@ -42,6 +42,7 @@ import { EditableCell } from '../views/view/EditableCell'
 import { ImageVault } from '../views/view/imageCell'
 import { ColumnSearch } from '../views/view/ColumnSearch'
 import { LinkPills, cellContent } from '../views/view/GroupHeader'
+import { PillLook, usePillLook } from './wikilink/LinkPillParts'
 import { openByGesture, type OpenHandlers } from '../lib/openGesture'
 import { PropertiesIcon } from '../views/view/icons'
 import { readForWrite, trackFileWrite, transformFile, type ContentTransform } from '../views/writeProperty'
@@ -188,9 +189,13 @@ export const PropertiesOpenMemory = createContext<{ current: boolean | null } | 
 
 /** A link value is the note editor's pill here too, as in a folder page's cells (YAZ-4544 4G): one look for links. */
 export function FrontmatterPanel(props: FrontmatterPanelProps) {
+  // The vault's link pills look (YAZ-4924): a link value's pill gains the same pieces a note's does.
+  const pillLook = usePillLook(props.wikilinks)
   return (
     <LinkPills.Provider value={true}>
-      <Panel {...props} />
+      <PillLook.Provider value={pillLook}>
+        <Panel {...props} />
+      </PillLook.Provider>
     </LinkPills.Provider>
   )
 }

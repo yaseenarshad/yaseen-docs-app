@@ -43,6 +43,7 @@ import { columnReservedKeys } from '../links/reservedKeys'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 import type { ViewHover } from './view/viewHover'
 import { ColumnDecls, FolderPages, type FolderPagesValue, LinkPills } from './view/GroupHeader'
+import { PillLook, usePillLook } from '../editor/wikilink/LinkPillParts'
 import { ImageVault } from './view/imageCell'
 import { TextLinkPicker } from './view/EditableCell'
 import { openByGesture } from '../lib/openGesture'
@@ -1337,17 +1338,21 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       )}
     </div>
   )
+  // The vault's link pills look (YAZ-4924): the pieces a cell's pill gains, from the vault's resolve source.
+  const pillLook = usePillLook(folder.wikilinks)
   // The Folder column's chips and the Folder group headers' ↗ read the page's folders (YAZ-4564); the cells show links as pills (YAZ-4601).
   return (
     <ViewDefaults.Provider value={defaults}>
       <LinkFoldersContext.Provider value={linkFolders}>
       <FolderPages.Provider value={folderPages}>
         <LinkPills.Provider value={true}>
+          <PillLook.Provider value={pillLook}>
           <TextLinkPicker.Provider value={true}>
             <GroupLevelStepsContext.Provider value={levelActions}>
               <OtherFilesFolderMove.Provider value={viewFolderTray}>{pane}</OtherFilesFolderMove.Provider>
             </GroupLevelStepsContext.Provider>
           </TextLinkPicker.Provider>
+          </PillLook.Provider>
         </LinkPills.Provider>
       </FolderPages.Provider>
       </LinkFoldersContext.Provider>

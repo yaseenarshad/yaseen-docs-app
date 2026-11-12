@@ -1876,3 +1876,46 @@
   font-size: 12px;
   color: var(--danger, #d14343);
 }
+
+/* Settings › Link pills (YAZ-4924): the preview sentence wears the vault's look as a note does, in the note's text size. */
+.link-pills-preview-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.link-pills-preview {
+  max-width: 440px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--fg);
+}
+
+/* A row's controls wrap: the segments, then the swatches or the strength on the next line when the card is narrow. */
+.settings__pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.settings__pill-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.settings__pill-input {
+  width: 72px;
+}
+
+.settings__pill-style .settings__option {
+  min-width: 32px;
+}

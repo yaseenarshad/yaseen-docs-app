@@ -1405,8 +1405,8 @@
   cursor: pointer;
 }
 .wikilink.view-link-pill:not(.wikilink--unresolved) {
-  padding: 0 4px;
-  border-radius: 4px;
+  padding: 0 var(--pill-pad, 4px);
+  border-radius: var(--pill-radius, 4px);
 }
 .wikilink--unresolved.view-link-pill {
   cursor: inherit;
@@ -1420,7 +1420,12 @@
    (`.wikilink + .wikilink`, wikilink.css, `!important`); a Multi-link cell's next pill is another link, so it keeps its own. */
 .wikilink.view-link-pill + .wikilink.view-link-pill.file-icon::before {
   content: '' !important;
-  display: inline-block !important;
+  display: var(--pill-icon-display, inline-block) !important;
+}
+/* The pieces the vault's look adds (YAZ-4924, `LinkPillParts.tsx`) are inside the pill's span here: no sibling rules to join. */
+.view-link-pill .link-pill__head,
+.view-link-pill .link-pill__tail {
+  display: inline;
 }
 /* The table cell owns the mouse (`pointer-events: none` on its editable value): a pill takes its own clicks and hovers. */
 .view-table tbody td .view-link-pill {

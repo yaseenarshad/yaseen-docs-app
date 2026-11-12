@@ -31,7 +31,9 @@ import { linkClickAction } from './linkGesture'
 import { fileLabel } from '../lib/pageLabel'
 import { copyText, linkMenuRows, openMenuAt, placeRows, type LinkActions, type LinkMenu } from './linkMenu'
 import { followDrag, nearerEdge } from './wikilink/wikilinkClick'
-import { WIKILINK_CLASS, vaultSpan } from './wikilink/wikilinkPlugin'
+import { NO_LINK_PILLS } from '@shared/linkPills'
+import { headKey, headSpan, pathInfo, pillParts, pillsNeedInfo, tailKey, tailSpan, type PillMeta } from './wikilink/linkPillLook'
+import { WIKILINK_CLASS, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 
 /** The link menu's place rows (YAZ-3740: `showInSidebar`, Focus and Favorites, "Open in ▸") are App's `LinkActions`: absent, no row. */
 export interface MarkdownLinkNav extends LinkActions {
@@ -148,7 +150,7 @@ function linkHit(view: EditorView, ctx: Ctx, target: EventTarget | null): LinkHi
  * replaced: each run of one link mark whose path is in a vault of the window. The first piece of a run
  * carries the icon; a bold or code piece inside the link is part of the same pill, with no second icon (YAZ-3656).
  */
-function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: MarkdownLinkNav, set: DecorationSet): DecorationSet {
+function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: MarkdownLinkNav, set: DecorationSet, source: WikilinkResolveSource | undefined): DecorationSet {
   const stale: Decoration[] = []
   const fresh: Decoration[] = []
   doc.nodesBetween(Math.max(0, from), Math.min(doc.content.size, Math.max(from, to)), (block, pos) => {
@@ -164,17 +166,25 @@ function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: 
         const icon = nav.icon(path, fileKind(name) === null && !name.includes('.'))
         const last = run.pieces.length - 1
         const vault = nav.vaultTag?.(path) ?? null
+        // The pieces the vault's look adds at the pill's ends (YAZ-4924, `pillParts`): with today's look, only the
+        // vault's name of a pill into another vault (D22). The ID and the folder are this vault's index's: a pill into
+        // another vault shows none.
+        const pills = source?.pills ?? NO_LINK_PILLS
+        const meta: PillMeta = { info: source !== undefined && pillsNeedInfo(pills) ? pathInfo(source.records, source.folders).get(path) : undefined, otherVault: vault }
+        const { head, tail } = pillParts(pills, meta, source?.vault ?? null)
         // One object for the pill's pieces: `markdownPillsAround` finds the whole pill from any piece (YAZ-4021).
         const pill = {}
         run.pieces.forEach(([start, end], i) => {
-          const edges = `${i === 0 ? ' link-pill--first' : ''}${i === last ? ' link-pill--last' : ''}`
+          const edges = `${i === 0 && head === null ? ' link-pill--first' : ''}${i === last && tail === null ? ' link-pill--last' : ''}`
           const attrs: Record<string, string> = i === 0 ? { ...icon, class: `wikilink link-pill${edges} ${icon.class}`, spellcheck: 'false' } : { class: `wikilink link-pill${edges}`, spellcheck: 'false' }
           fresh.push(Decoration.inline(start, end, attrs, { pill }))
         })
-        // Its vault's name is the pill's last piece (YAZ-3738 D4): drawn before the caret at the link's end, so the
-        // caret shows after the whole pill. Inside the link's anchor: a click on it opens the link, as on the text.
+        // The head and the tail are the pill's first and last pieces (YAZ-3738 D4): the tail is drawn before the caret
+        // at the link's end, so the caret shows after the whole pill. Inside the link's anchor: a click on either opens
+        // the link, as on the text.
         const mark = run.mark
-        if (vault !== null) fresh.push(Decoration.widget(run.pieces[last]![1], () => vaultSpan('wikilink link-pill link-pill--last', vault), { side: -1, marks: [mark], key: `vault:${vault}` }))
+        if (head !== null) fresh.push(Decoration.widget(run.pieces[0]![0], () => headSpan('wikilink link-pill link-pill--first', head), { side: -1, marks: [mark], key: headKey(head) }))
+        if (tail !== null) fresh.push(Decoration.widget(run.pieces[last]![1], () => tailSpan('wikilink link-pill link-pill--last', tail), { side: -1, marks: [mark], key: tailKey(tail) }))
       }
       run = null
     }
@@ -243,7 +253,8 @@ export const noPreviewOnPills = (ctx: Ctx) => {
   })
 }
 
-export const createMarkdownLink = (nav: MarkdownLinkNav) =>
+/** `source`: the vault's resolve source (YAZ-4924), for the look its pills wear and the ID and folder a pill may show; the pills draw again when it changes. */
+export const createMarkdownLink = (nav: MarkdownLinkNav, source?: WikilinkResolveSource) =>
   $prose((ctx) => {
     let close = () => {}
     /** A paste event is running: Milkdown's own paste dispatches with no `paste` meta. Only the paste's own change may
@@ -278,11 +289,11 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
       // typing next to it (YAZ-3655) work as on any text, and the caret stays out of it (YAZ-4021). The look follows the
       // path, not the index.
       state: {
-        init: (_, state) => (nav.vaultPath === undefined ? DecorationSet.empty : pillsIn(state.doc, 0, state.doc.content.size, type, nav, DecorationSet.empty)),
+        init: (_, state) => (nav.vaultPath === undefined ? DecorationSet.empty : pillsIn(state.doc, 0, state.doc.content.size, type, nav, DecorationSet.empty, source)),
         apply: (tr, set, before, state) => {
           if (nav.vaultPath === undefined) return set
           // The window's vaults changed (YAZ-3664): every link of the note is a pill, or not, again.
-          if (tr.getMeta(markdownLinkKey) === REDRAW) return pillsIn(state.doc, 0, state.doc.content.size, type, nav, set)
+          if (tr.getMeta(markdownLinkKey) === REDRAW) return pillsIn(state.doc, 0, state.doc.content.size, type, nav, set, source)
           if (!tr.docChanged) return set
           const mapped = set.map(tr.mapping, tr.doc)
           // Only the lines the change touched are drawn again: the step ranges, and the doc diff (a mark step maps no positions).
@@ -300,7 +311,7 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
             from = Math.min(from, diff)
             to = Math.max(to, before.doc.content.findDiffEnd(state.doc.content)?.b ?? diff)
           }
-          return from > to ? mapped : pillsIn(state.doc, from, to, type, nav, mapped)
+          return from > to ? mapped : pillsIn(state.doc, from, to, type, nav, mapped, source)
         },
       },
       props: {
@@ -382,11 +393,22 @@ export const createMarkdownLink = (nav: MarkdownLinkNav) =>
         }
         document.addEventListener('click', onPreviewClick, true)
         document.addEventListener('auxclick', onPreviewClick, true)
+        // The vault's look changed (YAZ-4924): every pill draws again. An index snapshot wakes the source too; the
+        // pills follow the path, not the index, so only a changed look or vault name pays the redraw.
+        let seenPills = source?.pills
+        let seenVault = source?.vault
+        const unsubscribe = source?.subscribe(() => {
+          if (source.pills === seenPills && source.vault === seenVault) return
+          seenPills = source.pills
+          seenVault = source.vault
+          if (nav.vaultPath !== undefined) redrawLinkPills(editorView)
+        })
         return {
           update: (view, previousState) => {
             if (view.state.doc !== previousState.doc) close()
           },
           destroy: () => {
+            unsubscribe?.()
             addLinkOf.delete(editorView)
             document.removeEventListener('click', onPreviewClick, true)
             document.removeEventListener('auxclick', onPreviewClick, true)

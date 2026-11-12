@@ -1,6 +1,7 @@
 import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
+import type { LinkPills } from '@shared/linkPills'
 import type { TextFormatting } from '@shared/textFormatting'
 import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, headerRowAttrs, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, subheaderRowAttrs, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
@@ -72,6 +73,7 @@ import { ReviewAnswers, ReviewBar, ReviewMessage } from './review/ReviewBar'
 import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { textVars } from './settings/headingStyles'
+import { linkPillVars } from './editor/wikilink/linkPillLook'
 import { DEFAULT_NEW_NOTE_TITLE, plainEntryName, renderTitleTemplate } from './sidebar/createEntry'
 import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import { newItemFolder, placePath, resolveGoTo } from './sidebar/goToPlace'
@@ -255,12 +257,15 @@ const RetainedEditor = memo(Editor)
  * the same formatting hands React the same style, and a change costs one style update on the
  * layers of that vault only.
  */
-const layerStyles = new WeakMap<TextFormatting, CSSProperties>()
-function layerStyleOf(formatting: TextFormatting): CSSProperties {
-  let style = layerStyles.get(formatting)
+const layerStyles = new WeakMap<TextFormatting, WeakMap<LinkPills, CSSProperties>>()
+/** The vault's link pills look rides the same style (YAZ-4924): the `--pill-*` variables, cached by both objects. */
+function layerStyleOf(formatting: TextFormatting, pills: LinkPills): CSSProperties {
+  let byPills = layerStyles.get(formatting)
+  if (byPills === undefined) layerStyles.set(formatting, (byPills = new WeakMap()))
+  let style = byPills.get(pills)
   if (style === undefined) {
-    style = textVars(formatting) as CSSProperties
-    layerStyles.set(formatting, style)
+    style = { ...textVars(formatting), ...linkPillVars(pills) } as CSSProperties
+    byPills.set(pills, style)
   }
   return style
 }
@@ -819,7 +824,7 @@ export function App() {
    * that shows it: two vaults in one window look different. Each variable is there only for a
    * changed field; app.css and bullets.css fall back to the app's look.
    */
-  const textVarsFor = (path: string): CSSProperties => layerStyleOf(scopeOf(path).textFormatting.formatting)
+  const textVarsFor = (path: string): CSSProperties => layerStyleOf(scopeOf(path).textFormatting.formatting, scopeOf(path).linkPills.pills)
   /**
    * Settings › Text formatting (YAZ-3068 D15): every vault of the window, in its order, and the active
    * tab's vault, where the "Vault" dropdown starts. None in the Welcome window, so the group is not there.
@@ -3304,7 +3309,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkPills: root === null ? undefined : active.linkPills, ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Note (D7). */}
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
       {keySheetOpen && <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}

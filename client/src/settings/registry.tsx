@@ -61,6 +61,8 @@ import { IconRulesControl } from './IconRulesControl'
 import { MEMORY_SECTION } from './memorySection'
 import { NOTIFICATIONS_SECTION } from './notificationsSection'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
+import { LinkPillsPreview, PillBackgroundControl, PillBeforeAfterControl, PillFolderControl, PillIconControl, PillIdControl, PillShapeControl, PillStyleControl, PillTextControl, PillVaultControl } from './LinkPillsControl'
+import type { LinkPillsState } from './useLinkPills'
 import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
@@ -308,6 +310,8 @@ export interface SettingsCtx {
   sync?: { status: GithubSyncStatus | null; setEnabled: (enabled: boolean) => void }
   /** This vault's review settings (YAZ-2322); absent with no vault open. */
   review?: ReviewSettingsState
+  /** This vault's link pills look (YAZ-4924, Settings › Link pills); absent with no vault open. */
+  linkPills?: LinkPillsState
   /**
    * This vault's IDs (YAZ-2523 🔒 V4); absent until a vault's index has loaded. `enabled` is its
    * answer, and no answer reads as no. `held`: a note holds an ID. `ask`: what a yes would write,
@@ -557,6 +561,20 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
       )}
     </>
   )
+}
+
+const LINK_PILL_WORDS = ['link', 'links', 'pill', 'pills', 'wikilink', 'look', 'style', 'vault', 'preview', 'plain', 'reset']
+
+/** One row of Settings › Link pills (YAZ-4924): there with a vault open, its control on the vault's look. */
+function linkPillRow(id: string, label: string, hint: string, keywords: string[], render: (look: LinkPillsState) => ReactNode): SettingDef {
+  return {
+    id,
+    label,
+    hint,
+    keywords: [...LINK_PILL_WORDS, ...keywords],
+    available: (ctx) => ctx.linkPills !== undefined,
+    render: ({ linkPills }) => linkPills && render(linkPills),
+  }
 }
 
 const HOVER_WORDS = ['hover', 'preview', 'note', 'markdown', 'drawing', 'diagram', 'board', 'excalidraw', 'draw.io', 'mouse']
@@ -1707,6 +1725,31 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             available: (ctx) => ctx.ids?.enabled === true && (ctx.ids.old > 0 || ctx.ids.unfinished),
             render: ({ ids, vaultName }) => ids && <OldIdsControl ids={ids} vault={vaultName} />,
           },
+        ],
+      },
+      {
+        // YAZ-4924: how every link pill of this vault looks, saved in the vault. Every default is today's look.
+        title: 'Link pills',
+        vault: true,
+        items: [
+          {
+            id: 'linkPills',
+            label: 'Link pills',
+            hint: "Saved in this vault and synced with it. Every link to a page shows this way in this vault's notes, folder pages and the explore stack. The look changes no note: it keeps its [[Name]].",
+            keywords: LINK_PILL_WORDS,
+            wide: true,
+            available: (ctx) => ctx.linkPills !== undefined,
+            render: ({ linkPills, ids, textFormatting }) => linkPills && <LinkPillsPreview look={linkPills} vault={textFormatting?.vaults.find((v) => v.root === textFormatting.activeRoot)?.name ?? null} ids={ids?.enabled === true} />,
+          },
+          linkPillRow('linkPillBackground', 'Background', 'The light tint of today, none, or a colour from the table palette at a strength.', ['colour', 'color', 'tint', 'fill', 'strength'], (look) => <PillBackgroundControl look={look} />),
+          linkPillRow('linkPillTextColour', 'Text colour', '"Same as text" takes the colour of the words around the link. A missing note keeps its own grey.', ['colour', 'color', 'text'], (look) => <PillTextControl look={look} />),
+          linkPillRow('linkPillIcon', 'Icon', "The page's file icon before the name.", ['icon', 'file icon'], (look) => <PillIconControl look={look} />),
+          linkPillRow('linkPillStyle', 'Style', 'Bold, italic and underline on the name.', ['bold', 'italic', 'underline', 'style'], (look) => <PillStyleControl look={look} />),
+          { ...linkPillRow('linkPillBeforeAfter', 'Before and after', 'Up to 8 characters drawn before and after the name, like ( ) or an arrow. The note keeps [[Name]].', ['before', 'after', 'brackets', 'parentheses', 'arrow', 'text'], (look) => <PillBeforeAfterControl look={look} />), wide: true },
+          linkPillRow('linkPillVault', 'Vault name', 'Today a pill into another vault names that vault after its text. Always names this vault too; Before puts it first, "Wiki › Name".', ['vault', 'name', 'other vault'], (look) => <PillVaultControl look={look} />),
+          { ...linkPillRow('linkPillId', 'ID', "The note's ID, small and muted, after the name.", ['id', 'ids', 'number'], (look) => <PillIdControl look={look} />), available: (ctx) => ctx.linkPills !== undefined && ctx.ids?.enabled === true },
+          linkPillRow('linkPillFolder', 'Folder', "The page's folder, small and muted, after the name: its parent folder, or the whole path from the vault.", ['folder', 'path', 'parent'], (look) => <PillFolderControl look={look} />),
+          linkPillRow('linkPillShape', 'Shape', 'Pill is the rounded box of today. Underline only draws no box, a line under the name.', ['shape', 'square', 'rounded', 'underline', 'box'], (look) => <PillShapeControl look={look} />),
         ],
       },
     ],
