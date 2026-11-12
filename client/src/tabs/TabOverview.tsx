@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { MAX_WINDOW_ROOTS, rootOfPath, type CanvasCard, type TabAction, type CanvasLayout, type TabCanvasPatch, type DiagramDarkColors, type StoredTab, type TabRef, type WindowEntry } from '@shared/types'
+import { MAX_WINDOW_ROOTS, placeVault, rootOfPath, type CanvasCard, type TabAction, type CanvasLayout, type TabCanvasPatch, type DiagramDarkColors, type StoredTab, type TabRef, type WindowEntry } from '@shared/types'
 import { api } from '../api'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { isFolderPath, pageLabel, useLatestTrees, type PathTitles } from '../lib/pageLabel'
@@ -16,7 +16,7 @@ import { useTabHeads } from './useTabHeads'
 import { useCamera } from './useCamera'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from './cardPreview'
 import { useHiddenWindows, useMinimizedWindows } from './hiddenWindows'
-import { TabSearchPanel } from './TabSearchPanel'
+import { TabSearchPanel, type SearchPlace } from './TabSearchPanel'
 import { autoWindowLabel, windowLabel } from './windowLabel'
 import { AsleepIcon } from '../views/view/icons'
 import './tabs.css'
@@ -149,6 +149,8 @@ const NO_WINDOWS: readonly WindowEntry[] = []
 const WAYS: Record<string, Way> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }
 const tabCount = (n: number): string => (n === 1 ? '1 tab' : `${n} tabs`)
 const noSubscribe = (): (() => void) => () => undefined
+/** A vault of a window and the folder it shows of it (YAZ-4922 D3): none where it is the vault itself. */
+const placeIn = (vault: string, folder: string | null): SearchPlace => (folder === null || folder === vault ? { root: vault } : { root: vault, folder })
 const noWindows = (): readonly WindowEntry[] => NO_WINDOWS
 
 /**
@@ -487,6 +489,12 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
   const aspect = view !== null && view.w > 0 && view.h > 0 ? view.w / view.h : undefined
   const plan: CanvasPlan = useMemo(() => layoutCanvas(allWindows ? model.frames : model.frames.slice(0, 1), { by: layout, wrapW, stored: canvas.cards, anchors: frameAnchors, aspect }), [model, allWindows, layout, wrapW, canvas, frameAnchors, aspect])
   const { windows, info, byWin } = model
+  // "Open tabs here…" (D22) for a "folder of <vault>" window (YAZ-4922 🔒 D3): each vault with the folder it shows, so the
+  // panel finds only what is under it. This window's roots are vaults (its folder is `storage.folderIn`); another's are
+  // its places, read as their vaults. A window not in the state yet shows this window's. Kept while the roots stand.
+  const searchWin = searchFor === null ? undefined : byWin.get(searchFor)
+  const searchRoots = searchWin === undefined || searchWin.mine ? null : searchWin.roots
+  const searchPlaces = useMemo<readonly SearchPlace[]>(() => (searchRoots === null ? roots.map((root) => placeIn(root, storage.folderIn(root))) : searchRoots.map((place) => placeIn(placeVault(storage.getFolders(), place), place))), [searchRoots, roots])
   const shownWindows = useMemo(() => (allWindows ? windows : windows.slice(0, 1)), [windows, allWindows])
   const posOf = (id: string): { x: number; y: number } | undefined => ghosts.get(id) ?? plan.cards.get(id)
   const groupsByKey = new Map(plan.groups.map((group) => [group.key, group]))
@@ -1815,7 +1823,7 @@ export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, 
       {searchFor !== null && (
         <TabSearchPanel
           key={searchFor}
-          roots={byWin.get(searchFor)?.roots ?? roots}
+          places={searchPlaces}
           label={byWin.get(searchFor)?.label ?? 'the new window'}
           at={searchAt(searchFor)}
           watchOf={watchOf}
