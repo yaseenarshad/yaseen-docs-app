@@ -23,10 +23,15 @@ export function onExploreMove(listener: (from: string, to: string | null) => voi
 
 /** A note that is gone (App's `file:deleted`) or moved (`file:renamed`, `to` its new path): the list follows, and the stack. */
 export function moveExploreRecent(from: string, to: string | null): void {
-  const at = (path: string) => path === from || path.startsWith(`${from}/`)
-  if (to === null) recents = recents.filter((p) => !at(p))
-  else recents = recents.map((p) => (at(p) ? to + p.slice(from.length) : p))
+  recents = movedPaths(recents, from, to)
   for (const tell of [...movers]) tell(from, to)
+}
+
+/** `paths` after a move of `from` (a note or a folder) to `to`, or without it when it is gone; the same list when it holds none. */
+export function movedPaths(paths: readonly string[], from: string, to: string | null): string[] {
+  const at = (path: string) => path === from || path.startsWith(`${from}/`)
+  if (!paths.some(at)) return paths as string[]
+  return to === null ? paths.filter((p) => !at(p)) : paths.map((p) => (at(p) ? to + p.slice(from.length) : p))
 }
 
 /** For tests. */

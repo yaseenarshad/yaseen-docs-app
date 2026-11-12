@@ -894,6 +894,68 @@ describe('round 3: ‹ › through the search, and layers that move like a cell 
     expect([top().style.left, top().style.top]).toEqual([`${start.left}px`, `${start.top}px`])
     expect(localStorage.getItem('explore:box:search')).toBeNull()
   })
+
+  /** Six notes opened before, newest first: `/v/n1.md` … `/v/n6.md`, the empty search's list. */
+  const SIX = ['/v/n1.md', '/v/n2.md', '/v/n3.md', '/v/n4.md', '/v/n5.md', '/v/n6.md']
+  const rememberSix = () => [...SIX].reverse().forEach((p) => rememberExploreRecent(p))
+
+  it('YAZ-2571 bug: from the Recent list (no query) the ‹ n/m › count follows each step: 2/6 → 3/6 → 4/6, ‹ back to 3/6; the list does not move under the note', async () => {
+    rememberSix()
+    await mount()
+    expect(rows()).toEqual(['n1', 'n2', 'n3', 'n4', 'n5', 'n6'])
+    key(input(), { key: 'ArrowDown' })
+    await openResult()
+    expect(title()).toBe('n2')
+    expect(count()).toBe('2/6')
+    key(body(), { key: 'ArrowRight', code: 'ArrowRight' })
+    await flush()
+    await flush()
+    expect(title()).toBe('n3')
+    expect(count()).toBe('3/6')
+    act(() => stepButtons()[1].click())
+    await flush()
+    await flush()
+    expect(title()).toBe('n4')
+    expect(count()).toBe('4/6')
+    key(body(), { key: 'ArrowLeft', code: 'ArrowLeft' })
+    await flush()
+    await flush()
+    expect(title()).toBe('n3')
+    expect(count()).toBe('3/6')
+    // The list under it kept its order; Esc returns to the row you stopped on.
+    await escape()
+    expect(rows()).toEqual(['n1', 'n2', 'n3', 'n4', 'n5', 'n6'])
+    expect(top().querySelector('.search-results__row--active')?.getAttribute('title')).toBe('/v/n3.md')
+    // A new search lists the notes opened most recently, the stepped ones first.
+    render(2)
+    await flush()
+    expect(rows().slice(0, 3)).toEqual(['n3', 'n4', 'n2'])
+  })
+
+  const TITLE_PATH_QUERY: Record<string, string> = { '/v/alpha.md': 'alp', '/v/beta.md': 'beta', '/v/conjecture.md': 'conj' }
+  it('YAZ-2571 bug: the count follows a change of the rows under the note (the search raised and typed in): it is never one render late', async () => {
+    await mount()
+    await typeQuery('a')
+    const paths = rows().map((t) => TITLE_PATH[t])
+    key(input(), { key: 'ArrowDown' })
+    key(input(), { key: 'ArrowDown' })
+    await openResult()
+    const note = top()
+    expect(count()).toBe('3/3')
+    // The search to the front, a query that keeps only the note: its count reads 1/1 at once.
+    const search = layers()[0]
+    act(() => void search.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 })))
+    await flush()
+    const field = search.querySelector('.explore__input') as HTMLInputElement
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(field, TITLE_PATH_QUERY[paths[2]])
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await flush()
+    const shown = [...search.querySelectorAll('.search-results__row')].map((r) => r.getAttribute('title'))
+    expect(shown.length).toBeLessThan(3)
+    expect(note.querySelector('.explore__count')?.textContent).toBe(`${shown.indexOf(paths[2]) + 1}/${shown.length}`)
+  })
 })
 
 describe('round 4: zoom in a note layer', () => {

@@ -16,6 +16,7 @@ import { useResultKeys } from '../sidebar/hooks/useSidebarSearch'
 import { FolderIcon } from '../views/view/icons'
 import { exploreRows } from './exploreRows'
 import { shownId, type IdsInSearch } from '../search/showIds'
+import { movedPaths, onExploreMove } from './exploreRecents'
 
 /**
  * The stack's side of a search layer (round 3): the layer writes its rows here at each render, so the note layer
@@ -23,6 +24,8 @@ import { shownId, type IdsInSearch } from '../search/showIds'
  */
 export interface SearchLink {
   rows: readonly SearchCandidate[]
+  /** The rows changed while a note from this search is open (YAZ-2571 bug): the stack draws that note's ‹ n/m › again. */
+  changed?: () => void
 }
 
 interface ExploreSearchProps {
@@ -30,7 +33,11 @@ interface ExploreSearchProps {
   link: SearchLink
   /** The note over this layer that came from it (round 3): its path and its place in the rows. The row is marked and scrolled into view, so Esc returns to it. */
   markedRow: { path: string; at: number } | null
-  /** The notes opened most recently, newest first: the list with no text. */
+  /**
+   * The notes opened most recently, newest first: the list with no text. The layer keeps the list it showed when it
+   * opened (YAZ-2571 bug: an open and a step put their note first, so the list moved under ‹ ›); a rename or a delete
+   * still changes its row, and clearing the text reads the list again.
+   */
   recent: readonly string[]
   /** The window's vault roots: a recent row's folder is read against its vault. */
   roots: readonly string[]
@@ -50,18 +57,33 @@ export function ExploreSearch({ candidates, link, markedRow, recent, roots, name
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const typed = query.trim() !== ''
+  const recentNow = useRef(recent)
+  recentNow.current = recent
+  const [shownRecent, setShownRecent] = useState(recent)
+  useEffect(() => onExploreMove((from, to) => setShownRecent((prev) => movedPaths(prev, from, to))), [])
   const recentRows = useMemo(
     () =>
-      recent.map((path): SearchCandidate => {
+      shownRecent.map((path): SearchCandidate => {
         const name = nameOf(path)
         const root = rootOfPath(roots, path)
         return { kind: 'file', name, lower: name.toLowerCase(), label: name, path, folder: root === null ? '' : relTo(root, dirname(path)) }
       }),
-    [recent, roots, nameOf],
+    [shownRecent, roots, nameOf],
   )
   const rows = useMemo(() => (typed ? exploreRows(candidates, query) : recentRows), [candidates, query, typed, recentRows])
   const needle = useMemo(() => (typed ? readNeedle(query) : undefined), [query, typed])
   link.rows = rows
+  // The stack read these rows in its render, before this one wrote them: a note over this search counts again (YAZ-2571 bug).
+  const noteOver = useRef(false)
+  noteOver.current = markedRow !== null
+  const firstRows = useRef(true)
+  useEffect(() => {
+    if (firstRows.current) {
+      firstRows.current = false
+      return
+    }
+    if (noteOver.current) link.changed?.()
+  }, [rows, link])
   const { sel, setSelected, onKeys } = useResultKeys(rows, (row) => onOpen(row, rows.indexOf(row)))
   const selectedRow = useRef<HTMLLIElement | null>(null)
   useEffect(() => {
@@ -98,6 +120,8 @@ export function ExploreSearch({ candidates, link, markedRow, recent, roots, name
         spellCheck={false}
         value={query}
         onChange={(e) => {
+          // Back to no text: the notes opened most recently, as they are now.
+          if (e.target.value.trim() === '' && typed) setShownRecent(recentNow.current)
           setQuery(e.target.value)
           setSelected(0)
         }}

@@ -118,10 +118,12 @@ export function ExploreStack({ request, requestNote = null, vaults, vaultOf, nam
   }, [])
   /** Each search layer's rows (round 3), by layer id: what the note over it steps through. Dropped with the layer. */
   const links = useRef(new Map<number, SearchLink>())
+  /** Bumped when a search's rows change under a note from it (YAZ-2571 bug): the note's ‹ n/m › is drawn again with the new rows. */
+  const [, setRowsSeen] = useState(0)
   const linkOf = (id: number): SearchLink => {
     let link = links.current.get(id)
     if (link === undefined) {
-      link = { rows: [] }
+      link = { rows: [], changed: () => setRowsSeen((n) => n + 1) }
       links.current.set(id, link)
     }
     return link
