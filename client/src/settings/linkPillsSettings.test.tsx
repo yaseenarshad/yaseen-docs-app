@@ -317,6 +317,11 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     expect(save).toHaveBeenLastCalledWith({ format: '{name}{mark}', parts: { name: { color: 'blue' }, mark: { icon: 'diamond', color: 'accent' } } })
   })
 
+  it("the row says it is the default, and where one link is styled (round 5): \"The default look of every link in this vault. Right-click a link to style that one.\"", () => {
+    const { row } = mount(NO_LINK_PILLS)
+    expect(row.textContent).toContain('The default look of every link in this vault. Right-click a link to style that one.')
+  })
+
   it('an old look reaches the row converted: the format box shows version 1 as a format', () => {
     const { row } = mount({ format: '({icon}{name} ({vault}))', parts: { text: { color: 'accent', size: 'normal' } } })
     expect(formatBox(row).value).toBe('({icon}{name} ({vault}))')

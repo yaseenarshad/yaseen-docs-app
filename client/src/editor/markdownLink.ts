@@ -35,6 +35,7 @@ import { followDrag, nearerEdge } from './wikilink/wikilinkClick'
 import { NO_LINK_PILLS } from '@shared/linkPills'
 import { headKey, headSpan, pathInfo, pillIconPlace, pillParts, pillsNeedInfo, tailKey, tailSpan, type PillMeta } from './wikilink/linkPillLook'
 import { WIKILINK_CLASS, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { pillStyleRow } from './wikilink/pillStyle'
 
 /** The link menu's place rows (YAZ-3740: `showInSidebar`, Focus and Favorites, "Open in ▸") are App's `LinkActions`: absent, no row. */
 export interface MarkdownLinkNav extends LinkActions {
@@ -216,7 +217,7 @@ function pillsIn(doc: ProseNode, from: number, to: number, type: MarkType, nav: 
  * has the place rows (Show in sidebar, Copy path, Focus, Favorites, "Open in ▸"). Any other link opens only through
  * the OS, and "Copy address" copies its href.
  */
-function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, follow: (href: string, where: LinkWhere) => void): LinkMenu {
+function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, follow: (href: string, where: LinkWhere) => void, keep: (run: () => void) => () => void): LinkMenu {
   const path = nav.vaultPath?.(hit.href) ?? null
   // The page's name as the sidebar shows it (YAZ-3778 D2): no `.md`, no drawing's or diagram's extension.
   const name = path === null ? null : fileLabel(path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1))
@@ -236,6 +237,8 @@ function menuOf(view: EditorView, hit: LinkHit, ctx: Ctx, nav: MarkdownLinkNav, 
     // A drawing's or a diagram's link (YAZ-4829 D8): the image node of the same address, `![name](href)` — a window (2B).
     // Not in a table cell: embeds there are out of scope (the checker's round 1).
     showAsEmbed: view.editable && path !== null && isBoardSrc(hit.href) && !inCellOrNote(view.state.doc.resolve(hit.from)) ? () => view.dispatch(view.state.tr.replaceWith(hit.from, hit.to, imageSchema.type(ctx).create({ src: hit.href, alt: name ?? '', title: '' }))) : undefined,
+    // This pill's own style (YAZ-4924 round 5): the toolbar's marks around the whole link. A web link is no pill: none.
+    pillStyle: path === null ? undefined : pillStyleRow(view, hit.from, hit.to, keep),
     edit: view.editable ? () => ctx.get(linkTooltipAPI.key).editLink(hit.mark, hit.from, hit.to) : undefined,
     remove: view.editable ? () => ctx.get(linkTooltipAPI.key).removeLink(hit.from, hit.to) : undefined,
   }
@@ -265,6 +268,16 @@ export const noPreviewOnPills = (ctx: Ctx) => {
 export const createMarkdownLink = (nav: MarkdownLinkNav, source?: WikilinkResolveSource) =>
   $prose((ctx) => {
     let close = () => {}
+    // True while a "Pill style" pick runs: its own change to the note keeps the menu open (YAZ-4924 round 5).
+    let holding = false
+    const keep = (run: () => void) => () => {
+      holding = true
+      try {
+        run()
+      } finally {
+        holding = false
+      }
+    }
     /** A paste event is running: Milkdown's own paste dispatches with no `paste` meta. Only the paste's own change may
      * count, so the flag ends with the event, and at the first change of any kind (YAZ-4038). */
     let pasting = false
@@ -371,7 +384,8 @@ export const createMarkdownLink = (nav: MarkdownLinkNav, source?: WikilinkResolv
             if (parent === null) return false
             event.preventDefault()
             close()
-            close = openMenuAt(parent, event.clientX, event.clientY, linkMenuRows(menuOf(view, hit, ctx, nav, follow)))
+            const rows = () => linkMenuRows(menuOf(view, hit, ctx, nav, follow, keep))
+            close = openMenuAt(parent, event.clientX, event.clientY, rows(), rows)
             return true
           },
         },
@@ -414,7 +428,7 @@ export const createMarkdownLink = (nav: MarkdownLinkNav, source?: WikilinkResolv
         })
         return {
           update: (view, previousState) => {
-            if (view.state.doc !== previousState.doc) close()
+            if (view.state.doc !== previousState.doc && !holding) close()
           },
           destroy: () => {
             unsubscribe?.()

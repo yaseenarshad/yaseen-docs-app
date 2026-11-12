@@ -346,7 +346,7 @@ describe('right-click menu', () => {
     })
     mouse(anchorOf(root), 'contextmenu', { button: 2 })
     // No App doors here: of the place rows only Copy path (YAZ-3740; with the doors: `linkMenu.test.ts`).
-    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Open', 'Open in new tab', 'Copy name', 'Copy path', 'Edit link', 'Remove link'])
+    expect(rowsOf(view).map((row) => row.textContent)).toEqual(['Open', 'Open in new tab', 'Copy name', 'Copy path', 'Pill style', 'Edit link', 'Remove link'])
     expect(rowsOf(view).some((row) => row.disabled)).toBe(false)
     rowNamed(view, 'Open in new tab').click()
     mouse(anchorOf(root), 'contextmenu', { button: 2 })

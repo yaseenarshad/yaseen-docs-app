@@ -112,7 +112,7 @@ function border(current: TableAttrs['border'], half: 'px' | 'darkness', value: n
 }
 
 /** A colour's swatch as a row's glyph (YAZ-4774), the cell palette's colour. */
-const swatchIcon = (background: string) => (): SVGElement => {
+export const swatchIcon = (background: string) => (): SVGElement => {
   const template = document.createElement('template')
   template.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="0.5" y="0.5" width="13" height="13" rx="3" stroke="currentColor" stroke-opacity="0.2"/></svg>'
   const svg = template.content.firstElementChild as SVGElement

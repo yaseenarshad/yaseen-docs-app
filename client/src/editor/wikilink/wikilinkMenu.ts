@@ -29,6 +29,7 @@ import { fileKind } from '@shared/fileKind'
 import { linkPosAtDOM, wikilinkMatchAt, type LinkFollow, type WikilinkNav } from './wikilinkClick'
 import { WIKILINK_CLASS, idLinkTitle, linkDisplayText, linkIsResolved, linkNoteId, linkPageName, linkPath, missingId, nameAndId, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './viewOnlyLinkSource'
+import { pillStyleRow } from './pillStyle'
 
 const wikilinkMenuKey = new PluginKey('mdapp-wikilink-menu')
 
@@ -50,7 +51,7 @@ function idOf(inner: string, source: WikilinkResolveSource): string | null {
 }
 
 /** The one link menu of the `[[inner]]` at `from`..`to` (YAZ-3740, YAZ-3905). */
-function menuOf(view: EditorView, from: number, to: number, inner: string, source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly: ViewOnlyLinkSource | undefined, vaultsOf: VaultsOfLetters | undefined): LinkMenu {
+function menuOf(view: EditorView, from: number, to: number, inner: string, source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly: ViewOnlyLinkSource | undefined, vaultsOf: VaultsOfLetters | undefined, keep: (run: () => void) => () => void): LinkMenu {
   // The page side of the link, on either side of the `|` (`splitLink`, YAZ-4935).
   const { head: target, pipe, pageFirst } = splitLink(inner)
   // The caret inside the raw `[[…]]`, its target selected: the link shows as text to type over.
@@ -65,6 +66,8 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
   // The text the link shows stays, as plain text: the same rule as the pill's (YAZ-3778 D2, D3, S12).
   const remove = view.editable ? (text: string) => view.dispatch(view.state.tr.insertText(text, from, to)) : undefined
   const menu = linkMenuOf(inner, source, nav, follow, viewOnly, vaultsOf, edit, remove)
+  // This link's own style (YAZ-4924 round 5): the toolbar's marks around the whole `[[…]]`.
+  menu.pillStyle = pillStyleRow(view, from, to, keep)
   // A drawing's or a diagram's link (YAZ-4829 D8): `!` before it, and an alias goes, as the embed shows the board's name.
   // Not in a table cell: embeds there are out of scope (the checker's round 1).
   // An id link to a board (YAZ-4920) is one too: the host's check says so.
@@ -116,6 +119,16 @@ export function linkMenuOf(inner: string, source: WikilinkResolveSource, nav: Wi
 export function createWikilinkMenu(source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly?: ViewOnlyLinkSource, vaultsOf?: VaultsOfLetters) {
   return $prose(() => {
     let close = () => {}
+    // True while a "Pill style" pick runs: its own change to the note keeps the menu open (the flyout stays).
+    let holding = false
+    const keep = (run: () => void) => () => {
+      holding = true
+      try {
+        run()
+      } finally {
+        holding = false
+      }
+    }
     return new Plugin({
       key: wikilinkMenuKey,
       props: {
@@ -133,14 +146,15 @@ export function createWikilinkMenu(source: WikilinkResolveSource, nav: WikilinkN
             event.preventDefault()
             close()
             const { from, to, inner } = hit
-            close = openMenuAt(parent, event.clientX, event.clientY, linkMenuRows(menuOf(view, from, to, inner, source, nav, follow, viewOnly, vaultsOf)))
+            const rows = () => linkMenuRows(menuOf(view, from, to, inner, source, nav, follow, viewOnly, vaultsOf, keep))
+            close = openMenuAt(parent, event.clientX, event.clientY, rows(), rows)
             return true
           },
         },
       },
       view: () => ({
         update: (view, previousState) => {
-          if (view.state.doc !== previousState.doc) close()
+          if (view.state.doc !== previousState.doc && !holding) close()
         },
         destroy: () => close(),
       }),

@@ -142,7 +142,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
       'Open', 'Open in new tab', 'Show in sidebar', '──',
       'Copy name and ID', 'Copy ID', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
-      'Edit link', 'Remove link',
+      'Pill style ▸', 'Edit link', 'Remove link',
     ])
     expect(shape(flyoutOf(menu))).toEqual(OPEN_IN)
   })
@@ -154,7 +154,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
       'Open', 'Open in new tab', 'Show in sidebar', '──',
       'Copy name', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
-      'Edit link', 'Remove link',
+      'Pill style ▸', 'Edit link', 'Remove link',
     ])
     expect(shape(flyoutOf(menu))).toEqual(OPEN_IN)
   })
@@ -180,7 +180,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
       'Open', 'Open in new tab', 'Show in sidebar', '──',
       'Copy name', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
-      'Edit link', 'Remove link',
+      'Pill style ▸', 'Edit link', 'Remove link',
     ])
     expect(shape(flyoutOf(menu))).toEqual(['VS Code', 'Default app', '──', 'Reveal in Finder'])
   })
@@ -201,7 +201,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
       'Open', 'Open in new tab', 'Show in sidebar', '──',
       'Copy name', 'Copy path', '──',
       'Remove from favorites', 'Add to focus', 'Open in ▸', '──',
-      'Edit link', 'Remove link',
+      'Pill style ▸', 'Edit link', 'Remove link',
     ])
     expect(shape(flyoutOf(menu))).toEqual(OPEN_IN)
   })
@@ -218,7 +218,7 @@ describe('the one link menu, for each kind of link (YAZ-3740)', () => {
       '(ID: YAS-466)', '──', // only what the pill hides (YAZ-3747 demo)
       'Open', 'Open in new tab', '──',
       'Copy name and ID', 'Copy ID', 'Copy path', '──',
-      'Edit link', 'Remove link',
+      'Pill style ▸', 'Edit link', 'Remove link',
     ])
   })
 })
@@ -381,7 +381,7 @@ describe('the menus of a missing note and an ID of another vault (YAZ-3905; thei
   it('S10: its menu says what it can, and copies the ID', async () => {
     const { root, view, onNotice } = await mount('pad [[YAS-999]] tail\n')
     const menu = menuOf(root, view, 'Missing note · YAS-999')
-    expect(shape(menu)).toEqual(['(Missing note · YAS-999)', '──', 'Copy ID', '──', 'Edit link', 'Remove link'])
+    expect(shape(menu)).toEqual(['(Missing note · YAS-999)', '──', 'Copy ID', '──', 'Pill style ▸', 'Edit link', 'Remove link'])
     rowOf(menu, 'Copy ID').click()
     expect(writeText).toHaveBeenCalledExactlyOnceWith('YAS-999')
     await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith('Copied: YAS-999'))
@@ -389,16 +389,16 @@ describe('the menus of a missing note and an ID of another vault (YAZ-3905; thei
 
   it('S23: an ID with another open vault\'s letters: its menu says whose ID it is', async () => {
     const { root, view } = await mount('pad [[INL-4]] tail\n')
-    expect(shape(menuOf(root, view, 'INL-4'))).toEqual(['(INL-4 · ID from the In-harness-lab vault)', '──', 'Copy ID', '──', 'Edit link', 'Remove link'])
+    expect(shape(menuOf(root, view, 'INL-4'))).toEqual(['(INL-4 · ID from the In-harness-lab vault)', '──', 'Copy ID', '──', 'Pill style ▸', 'Edit link', 'Remove link'])
   })
 
   it('S23: letters that two open vaults share name no vault: "another vault"', async () => {
     const { root, view } = await mount('pad [[TWO-3]] tail\n')
-    expect(shape(menuOf(root, view, 'TWO-3'))).toEqual(['(TWO-3 · ID from another vault)', '──', 'Copy ID', '──', 'Edit link', 'Remove link'])
+    expect(shape(menuOf(root, view, 'TWO-3'))).toEqual(['(TWO-3 · ID from another vault)', '──', 'Copy ID', '──', 'Pill style ▸', 'Edit link', 'Remove link'])
   })
 
   it('S23: letters no open vault has stay a name link, with a name link\'s menu', async () => {
     const plain = await mount('pad [[GPT-4]] tail\n')
-    expect(shape(menuOf(plain.root, plain.view, 'GPT-4'))).toEqual(['Open', 'Open in new tab', '──', 'Copy name', '──', 'Edit link', 'Remove link'])
+    expect(shape(menuOf(plain.root, plain.view, 'GPT-4'))).toEqual(['Open', 'Open in new tab', '──', 'Copy name', '──', 'Pill style ▸', 'Edit link', 'Remove link'])
   })
 })
