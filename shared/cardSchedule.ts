@@ -167,7 +167,10 @@ export interface DueCard {
   /** When it is due (ms); a new card is due `now`. */
   due: number
   isNew: boolean
-  /** Up next (the line's `next`, YAZ-4999 D3): shown before every other card. */
+  /**
+   * In today's Up next (YAZ-4999 D3; YAZ-5028: as New cards, only the day's places): shown before every other card,
+   * and under the Inbox's Up next row. A marked card past "Up next a day" keeps its line's `next` but is false here.
+   */
   next: boolean
 }
 
@@ -275,10 +278,12 @@ function idAge(id: string, letters: readonly string[] | undefined): number {
  * The cards due now (D11), in this order:
  *  1. UP NEXT (YAZ-4999 D3): each card whose line holds `next`, due or not, new or not, by ID number (the time of the
  *     mark is not in the file). They are outside the new-card limit, and are due now. `upNextPerDay` (YAZ-5028; null:
- *     all of them) caps how many go here each day, less `upNextTaken`: the marks an answer took off today (the line
- *     keeps no trace of them, so the caller counts them). The others keep the mark (`DueCard.next`, the Up next
- *     filter) and wait in their normal place: a reviewed one among 2 by its due date (now, when not due yet), a new
- *     one among 3 by ID number, still outside the new-card limit.
+ *     all of them) caps them as "New cards a day" caps new cards: the vault's first N marked cards by ID number, less
+ *     `upNextTaken`, the card IDs whose mark an answer took off today (the line keeps no trace of them, so the caller
+ *     keeps them; an ID still marked in `records`, an index that has not caught up with the answer, is not counted:
+ *     it holds its own place). Only those are today's Up next (`DueCard.next`, the Up next row). The other marked
+ *     cards keep the mark in the file and wait in their normal place, not Up next today: a reviewed one among 2 by its
+ *     due date (now, when not due yet), a new one among 3 by ID number, still outside the new-card limit.
  *  2. Each card with reviews whose due date is before local midnight tonight, or in its same-day steps (YAZ-5020),
  *     most overdue first.
  *  3. New cards, by ID number (`newOrder`: the oldest or the newest first, D2; an ID of other letters last), as many as
@@ -290,9 +295,11 @@ function idAge(id: string, letters: readonly string[] | undefined): number {
  * (a copy the sweep has not settled yet) is left out until it has its own ID: the Inbox never shows one card twice.
  * `letters`: the vault's ID letters (`hasLetters`), so an ID of other letters sorts last.
  */
-export function cardQueue(records: readonly CardPage[], s: ReviewSettings, now: number, folder = '', page?: string, letters?: readonly string[], upNextTaken = 0): DueCard[] {
+export function cardQueue(records: readonly CardPage[], s: ReviewSettings, now: number, folder = '', page?: string, letters?: readonly string[], upNextTaken: readonly string[] = []): DueCard[] {
   if (!s.enabled) return []
   const next: DueCard[] = []
+  // YAZ-5028: every marked card of the vault (the day's places are the vault's, as the new-card limit is).
+  const marked: DueCard[] = []
   const due: DueCard[] = []
   const fresh: DueCard[] = []
   let startedToday = 0
@@ -308,9 +315,11 @@ export function cardQueue(records: readonly CardPage[], s: ReviewSettings, now: 
     ;(r.cards ?? []).forEach((card, index) => {
       const { due: at, inSteps: steps, first } = facts[index]
       if (first !== null && first >= today && first < tomorrow) startedToday++
-      if (!mine || card.off || card.id === null || ids.has(card.id)) return
+      if (card.off || card.id === null || ids.has(card.id)) return
       ids.add(card.id)
       const isNew = first === null
+      if (card.next === true) marked.push({ path: r.path, index, id: card.id, due: isNew ? now : Math.min(at, now), isNew, next: true })
+      if (!mine) return
       if (card.next === true) next.push({ path: r.path, index, id: card.id, due: isNew ? now : Math.min(at, now), isNew, next: true })
       else if (isNew) fresh.push({ path: r.path, index, id: card.id, due: now, isNew: true, next: false })
       else if (isCardDue(at, now, steps)) due.push({ path: r.path, index, id: card.id, due: at, isNew: false, next: false })
@@ -329,16 +338,24 @@ export function cardQueue(records: readonly CardPage[], s: ReviewSettings, now: 
       return sign * (x - y)
     }
   next.sort(byAge(1))
-  // YAZ-5028: the day's Up next places; the others wait in their normal place, the new ones outside the new-card limit.
-  const front = s.upNextPerDay === null ? next.length : Math.max(0, s.upNextPerDay - upNextTaken)
-  const waiting = next.slice(front)
+  // YAZ-5028: today's Up next is the vault's first N marked cards, less those an answer took today; the scope keeps
+  // its own of them. The others are not Up next today: they wait in their normal place, the new ones outside the limit.
+  let upNext = next
+  let waiting: DueCard[] = []
+  if (s.upNextPerDay !== null) {
+    const still = new Set(marked.map((c) => c.id))
+    const taken = new Set(upNextTaken.filter((id) => !still.has(id))).size
+    const places = new Set(marked.sort(byAge(1)).slice(0, Math.max(0, s.upNextPerDay - taken)).map((c) => `${c.path}\n${c.id}`))
+    upNext = next.filter((c) => places.has(`${c.path}\n${c.id}`))
+    waiting = next.filter((c) => !places.has(`${c.path}\n${c.id}`)).map((c) => ({ ...c, next: false }))
+  }
   for (const card of waiting) if (!card.isNew) due.push(card)
   due.sort((a, b) => a.due - b.due || place(a, b))
   const order = byAge(s.newOrder === 'newest' ? -1 : 1)
   fresh.sort(order)
   const newToday = s.newPerDay === null ? fresh : fresh.slice(0, Math.max(0, s.newPerDay - startedToday))
   const waitingNew = waiting.filter((card) => card.isNew)
-  return [...next.slice(0, front), ...due, ...(waitingNew.length === 0 ? newToday : [...newToday, ...waitingNew].sort(order))]
+  return [...upNext, ...due, ...(waitingNew.length === 0 ? newToday : [...newToday, ...waitingNew].sort(order))]
 }
 
 /** Today's review work (YAZ-5033, the Inbox's "Today: 31 cards · 9 min"): the cards answered, and their seconds. */

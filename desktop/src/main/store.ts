@@ -111,6 +111,7 @@ import {
   addOpen,
   addRecentRoot,
   cleanVaultKey,
+  cleanUpNextTaken,
   cleanVaultName,
   isZoomKey,
   defaultAppState,
@@ -1049,6 +1050,8 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     key: cleanVaultKey(raw.key),
     // "A folder of <vault>" (YAZ-4922 D3): kept only as an absolute path; whether it holds the bucket is `sanitizeFolders`'.
     ...(typeof raw.in === 'string' && isAbsolute(raw.in) && { in: stripSlash(raw.in) }),
+    // "Up next a day" (YAZ-5028): today's taken marks; a junk entry is none.
+    ...(cleanUpNextTaken(raw.upNext) !== null && { upNext: cleanUpNextTaken(raw.upNext)! }),
   }
 }
 
@@ -1401,6 +1404,8 @@ export function createStore(filePath: string): Store {
         ...(key !== undefined ? { key } : {}),
         // "A folder of <vault>" (YAZ-4922 D3): an absolute folder strictly inside the vault, else nothing; null ends it.
         ...(patch.in !== undefined ? { in: typeof patch.in === 'string' && isAbsolute(patch.in) && root.startsWith(`${stripSlash(patch.in)}/`) ? stripSlash(patch.in) : null } : {}),
+        // "Up next a day" (YAZ-5028): the renderer hands in the whole day's list; a junk one changes nothing.
+        ...(patch.upNext !== undefined && cleanUpNextTaken(patch.upNext) !== null ? { upNext: cleanUpNextTaken(patch.upNext)! } : {}),
       }
       // One vault per number (YAZ-2555 D2): the same commit takes it from the vault that had it.
       commit({ ...state, folders: { ...(key == null ? state.folders : freeVaultKey(state.folders, key)), [root]: next } })

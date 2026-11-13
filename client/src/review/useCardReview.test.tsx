@@ -11,6 +11,8 @@ import { cardState } from '@shared/cardSchedule'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import { useCardReview, type CardReviewApi } from './useCardReview'
+import { api } from '../api'
+import { storage } from '../lib/storage'
 
 const S: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS }
 const NOW = new Date(2026, 10, 12, 9, 0).getTime()
@@ -80,6 +82,8 @@ vi.mock('../api', async (importOriginal) => {
         if (content === undefined) throw new real.BridgeRequestError('NOT_FOUND', 'gone')
         return { path, content, mtime: 1 }
       }),
+      // YAZ-5028: the day's Up next list goes to the app state (`state.setFolder`), never to the browser.
+      state: { setFolder: vi.fn(async () => undefined) },
     },
   }
 })
@@ -119,7 +123,8 @@ beforeEach(() => {
   held.clear()
   waiting = []
   notices.length = 0
-  localStorage.clear() // YAZ-5028: the day's Up next count
+  storage.setUpNextTaken(ROOT, { day: '2000-1-1', cards: [] }) // YAZ-5028: the day's Up next list, of no day
+  vi.mocked(api.state.setFolder).mockClear()
   // Due: answered "good" 30 days ago (still in its steps). Not due: two "good" an hour ago (out of its steps, YAZ-5020:
   // a new card needs two). New: no review. Off: never.
   page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, 2026-11-12T07:00Z good, 2026-11-12T07:01Z good'])
@@ -290,7 +295,7 @@ describe('useCardReview', () => {
     expect(review.session?.counts.all).toBeGreaterThan(0)
   })
 
-  it('YAZ-5028: Up next a day — only that many marked cards go first; the others wait in their place and stay in Up next; an answer uses a place for the day', async () => {
+  it('YAZ-5028: Up next a day — only that many marked cards are Up next today, first; the others keep the mark and wait in their place; an answer uses a place for the day', async () => {
     // WIKI-1 due, WIKI-3 new (beforeEach); marked: WIKI-5 and WIKI-6 new, WIKI-2 reviewed and not due.
     page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, next, 2026-11-12T07:00Z good, 2026-11-12T07:01Z good'])
     page('Bio/More.md', ['A {{fifth}} card', 'WIKI-5, next'], ['A {{sixth}} card', 'WIKI-6, next'])
@@ -306,9 +311,9 @@ describe('useCardReview', () => {
       return ids
     }
     await act(async () => review.start())
-    // One place: WIKI-2 first; WIKI-5 and WIKI-6 among the new cards by ID, outside the new-card limit.
+    // One place: WIKI-2 first, and the one Up next; WIKI-5 and WIKI-6 among the new cards by ID, outside the new-card limit.
     expect(await order()).toEqual(['WIKI-2', 'WIKI-1', 'WIKI-3', 'WIKI-5', 'WIKI-6'])
-    expect(review.session?.counts).toMatchObject({ all: 5, next: 3 })
+    expect(review.session?.counts).toMatchObject({ all: 5, next: 1 })
     // ⌘Z of an answer that took the mark off gives the place back.
     await act(async () => review.start())
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
@@ -316,12 +321,52 @@ describe('useCardReview', () => {
     await step(() => review.undo())
     await act(async () => review.start())
     expect(review.session?.card?.id).toBe('WIKI-2')
-    // WIKI-2 answered: its mark goes, and the day's one place is used. A new Inbox puts no marked card first.
+    expect(review.session?.counts.next).toBe(1)
+    // WIKI-2 answered: its mark goes, and the day's one place is used. A new Inbox has no Up next today.
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
     await step(() => review.answer('good'))
     await act(async () => review.start())
     expect(await order()).toEqual(['WIKI-1', 'WIKI-3', 'WIKI-5', 'WIKI-6'])
+    expect(review.session?.counts.next).toBe(0)
+  })
+
+  it('YAZ-5028 Decision ("so it kinda works like new?"): Up next a day 2 with 3 marked — the Up next row says 2 and lists 2, first in All cards; empty, 3', async () => {
+    page('Up.md', ['A {{one}}', 'WIKI-5, next'], ['A {{two}}', 'WIKI-6, next'], ['A {{three}}', 'WIKI-7, next'])
+    await mount({ ...S, upNextPerDay: 2 })
+    await act(async () => review.start())
     expect(review.session?.counts.next).toBe(2)
+    expect(review.session?.card?.id).toBe('WIKI-5')
+    act(() => review.setFilter('next'))
+    expect(review.session).toMatchObject({ filter: 'next', position: 1, total: 2, card: { id: 'WIKI-5' } })
+    act(() => review.move(1))
+    expect(review.session).toMatchObject({ position: 2, total: 2, card: { id: 'WIKI-6' }, canNext: false })
+    // The third keeps its mark in the file, and waits among the new cards.
+    expect(vault.get(`${ROOT}/Up.md`)).toContain('WIKI-7, next')
+    // Empty (no limit): all three.
+    act(() => root?.render(<Probe settings={{ ...S, upNextPerDay: null }} />))
+    await act(async () => review.start())
+    expect(review.session?.counts.next).toBe(3)
+  })
+
+  it('YAZ-5028: the day\'s Up next list lives in the app state (the vault\'s folder bucket, `state.setFolder`), not in the browser; ⌘Z takes the card out again', async () => {
+    page('Up.md', ['A {{one}}', 'WIKI-5, next'], ['A {{two}}', 'WIKI-6, next'])
+    await mount({ ...S, upNextPerDay: 1 })
+    await act(async () => review.start())
+    await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
+    await step(() => review.answer('good'))
+    expect(storage.getUpNextTaken(ROOT)).toEqual({ day: '2026-11-12', cards: ['WIKI-5'] })
+    expect(api.state.setFolder).toHaveBeenLastCalledWith(ROOT, { upNext: { day: '2026-11-12', cards: ['WIKI-5'] } })
+    expect(localStorage.length).toBe(0)
+    await step(() => review.undo())
+    expect(storage.getUpNextTaken(ROOT)).toEqual({ day: '2026-11-12', cards: [] })
+    // The list another window wrote (its broadcast lands in the same cache) holds here too: no place left today.
+    storage.setUpNextTaken(ROOT, { day: '2026-11-12', cards: ['WIKI-0'] })
+    await act(async () => review.start())
+    expect(review.session?.counts.next).toBe(0)
+    // A list of an older day is none.
+    storage.setUpNextTaken(ROOT, { day: '2026-11-11', cards: ['WIKI-6'] })
+    await act(async () => review.start())
+    expect(review.session?.counts.next).toBe(1)
   })
 
   describe('YAZ-5031: Up next follows the marks on the card lines', () => {

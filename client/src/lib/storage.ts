@@ -33,6 +33,7 @@ import {
   type TabCanvasPatch,
   type TabCanvasState,
   type TocSource,
+  type UpNextTaken,
   type VaultEntry,
   type Session,
   type VaultSet,
@@ -315,6 +316,14 @@ export const storage = {
     const name = clean === basename(root) ? null : clean
     patchFolder(root, { name })
     send('state.setFolder', () => api.state.setFolder(root, { name }))
+  },
+
+  /** "Up next a day" (YAZ-5028): the vault's marks an answer took off, and their day; null when none was kept. */
+  getUpNextTaken: (root: string): UpNextTaken | null => folderOf(root).upNext ?? null,
+  /** The vault's whole list for the day (YAZ-5028): the cache at once, then main's store (`state.setFolder`), as the vault's name. */
+  setUpNextTaken(root: string, upNext: UpNextTaken): void {
+    patchFolder(root, { upNext })
+    send('state.setFolder', () => api.state.setFolder(root, { upNext }))
   },
 
   /** A vault's number, 1–9, or null (YAZ-2555 D2): ⌘<key> goes to it. */
