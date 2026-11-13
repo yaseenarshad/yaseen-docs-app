@@ -28,8 +28,11 @@ export function noteCardDate(ms: number, now = Date.now()): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: date.getFullYear() === new Date(now).getFullYear() ? undefined : 'numeric' })
 }
 
-/** A wait as the screens say it: "today" for 0 (Forgot brings the card back the same day), else "9 days". */
-export const noteCardWait = (days: number): string => (days === 0 ? 'today' : dayCount(days))
+/**
+ * A wait as the screens say it: "later today" for a card in its same-day steps (YAZ-5020: it comes back in this
+ * session), "today" for 0, else "9 days".
+ */
+export const noteCardWait = (days: number, inSteps = false): string => (inSteps ? 'later today' : days === 0 ? 'today' : dayCount(days))
 
 /** The card ID in a head (D20): small and grey, FIRST in the head; a click copies it. The page's card block has the same (`noteCardView.ts`). */
 /** `brackets`: "(DEMO-59)", after the page name in the Inbox head (YAZ-5012); the click still copies the bare ID. */

@@ -16,14 +16,14 @@ const page = (name: string, cards?: NoteCardRecord[]): IndexRecord => ({
   properties: {}, aliases: [], tags: [], links: [], embeds: [], ...(cards !== undefined && { cards }),
 })
 const RECORDS = [
-  // Due (a review long ago), new, answered an hour ago (not due), turned off.
+  // Due (a review long ago), new, learned an hour ago (two Remembered, out of its steps: not due), turned off.
   page('Mixed', [
     { id: 'V-1', off: false, next: false, reviews: [{ at: '2025-01-01T09:00Z', rating: 'good' }] },
     { id: 'V-2', off: false, next: false, reviews: [] },
-    { id: 'V-3', off: false, next: false, reviews: [{ at: '2026-11-12T07:00Z', rating: 'good' }] },
+    { id: 'V-3', off: false, next: false, reviews: [{ at: '2026-11-12T07:00Z', rating: 'good' }, { at: '2026-11-12T07:01Z', rating: 'good' }] },
     { id: 'V-4', off: true, next: false, reviews: [] },
   ]),
-  page('Learned', [{ id: 'V-5', off: false, next: false, reviews: [{ at: '2026-11-12T07:00Z', rating: 'good' }] }]),
+  page('Learned', [{ id: 'V-5', off: false, next: false, reviews: [{ at: '2026-11-12T07:00Z', rating: 'good' }, { at: '2026-11-12T07:01Z', rating: 'good' }] }]),
   page('Plain'),
 ]
 const VIEW = { type: 'table' as const, name: 'T', order: ['file.name', 'file.cards', 'file.due'] }

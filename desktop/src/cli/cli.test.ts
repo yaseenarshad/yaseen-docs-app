@@ -678,9 +678,11 @@ describe('note cards: due and card add (YAZ-4963)', () => {
 
   it('due lists the cards due now and the new ones, not one that is not due nor one turned off; a page lists each card with its day', async () => {
     const long = minute(Date.now() - 400 * DAY)
+    const long2 = minute(Date.now() - 400 * DAY + 60_000)
     const now = minute(Date.now() - 60_000)
+    // YAZ-5020: a new card needs two Remembered to leave its same-day steps; YAZ-15, a known card Forgot a minute ago, is in them.
     const root = await vault('cards', {
-      'deck.md': `---\nid: YAZ-1\n---\n# Deck\n\n${card('**Overdue** {{word}}', `YAZ-10, ${long} good`)}\n${card('Just learned', `YAZ-11, ${now} good`)}\n${card('Brand new', 'YAZ-12')}\n${card('Turned off', `YAZ-13, off, ${long} good`)}`,
+      'deck.md': `---\nid: YAZ-1\n---\n# Deck\n\n${card('**Overdue** {{word}}', `YAZ-10, ${long} good, ${long2} good`)}\n${card('Just learned', `YAZ-11, ${now} good, ${now} good`)}\n${card('Brand new', 'YAZ-12')}\n${card('Turned off', `YAZ-13, off, ${long} good`)}\n${card('Forgot again', `YAZ-15, ${long} good, ${long2} good, ${now} again`)}`,
       'sub/other.md': `---\nid: YAZ-2\n---\n${card('In a subfolder', 'YAZ-14')}`,
     })
     const deck = path.join(root, 'deck.md')
@@ -688,30 +690,33 @@ describe('note cards: due and card add (YAZ-4963)', () => {
     const listed = await run(['due', root])
     expect(listed.code).toBe(0)
     const lines = listed.out.trimEnd().split('\n')
-    expect(lines).toHaveLength(3)
+    expect(lines).toHaveLength(4)
     expect(lines[0]).toMatch(new RegExp(`^\\d{4}-\\d{2}-\\d{2}  YAZ-10  Overdue word  ${deck}$`))
-    expect(lines.slice(1)).toEqual([`new         YAZ-12  Brand new  ${deck}`, `new         YAZ-14  In a subfolder  ${other}`])
-    const json = JSON.parse((await run(['due', root, '--json'])).out) as { id: string; page: string; title: string; due: string; isNew: boolean }[]
-    expect(json.map(({ id, page, title, isNew }) => ({ id, page, title, isNew }))).toEqual([
-      { id: 'YAZ-10', page: deck, title: 'Overdue word', isNew: false },
-      { id: 'YAZ-12', page: deck, title: 'Brand new', isNew: true },
-      { id: 'YAZ-14', page: other, title: 'In a subfolder', isNew: true },
+    expect(lines.slice(1)).toEqual([`steps       YAZ-15  Forgot again  ${deck}`, `new         YAZ-12  Brand new  ${deck}`, `new         YAZ-14  In a subfolder  ${other}`])
+    const json = JSON.parse((await run(['due', root, '--json'])).out) as { id: string; page: string; title: string; due: string; isNew: boolean; inSteps: boolean }[]
+    expect(json.map(({ id, page, title, isNew, inSteps }) => ({ id, page, title, isNew, inSteps }))).toEqual([
+      { id: 'YAZ-10', page: deck, title: 'Overdue word', isNew: false, inSteps: false },
+      { id: 'YAZ-15', page: deck, title: 'Forgot again', isNew: false, inSteps: true },
+      { id: 'YAZ-12', page: deck, title: 'Brand new', isNew: true, inSteps: false },
+      { id: 'YAZ-14', page: other, title: 'In a subfolder', isNew: true, inSteps: false },
     ])
+    // Its step ends a minute after the Forgot: minutes, not a day.
+    expect(Date.parse(json[1].due) - Date.parse(now)).toBe(60_000)
     expect(Date.parse(json[0].due)).toBeLessThan(Date.now())
     // A folder keeps its own cards; the vault's "new cards a day" counts the whole vault (YAZ-11 began today).
     expect(JSON.parse((await run(['due', path.join(root, 'sub'), '--json'])).out).map((r: { id: string }) => r.id)).toEqual(['YAZ-14'])
     await writeFile(path.join(root, VAULT_CONFIG_DIR, 'review.json'), JSON.stringify({ newPerDay: 2 }))
-    expect(JSON.parse((await run(['due', root, '--json'])).out).map((r: { id: string }) => r.id)).toEqual(['YAZ-10', 'YAZ-12'])
+    expect(JSON.parse((await run(['due', root, '--json'])).out).map((r: { id: string }) => r.id)).toEqual(['YAZ-10', 'YAZ-15', 'YAZ-12'])
     await writeFile(path.join(root, VAULT_CONFIG_DIR, 'review.json'), JSON.stringify({ enabled: false }))
     expect((await run(['due', root])).out).toBe(`review is off for this vault (Settings › Review › Review cards): no card is due\n`)
     // One page with review off for the vault: one line says so; `off` stays the card's own.
     const offPage = await run(['due', deck])
     expect(offPage.err).toBe('review is off for this vault (Settings › Review › Review cards): no card is due\n')
-    expect(offPage.out.trimEnd().split('\n').map((l) => l.slice(0, 10).trim())).toEqual([expect.stringMatching(/^\d{4}-/), expect.stringMatching(/^\d{4}-/), 'new', 'off'])
+    expect(offPage.out.trimEnd().split('\n').map((l) => l.slice(0, 10).trim())).toEqual([expect.stringMatching(/^\d{4}-/), expect.stringMatching(/^\d{4}-/), 'new', 'off', 'steps'])
     await rm(path.join(root, VAULT_CONFIG_DIR, 'review.json'))
     // One page: every card, with its day, new or off.
     const page = (await run(['due', deck])).out.trimEnd().split('\n')
-    expect(page.map((l) => l.replace(/^\d{4}-\d{2}-\d{2}/, 'DAY'))).toEqual(['DAY  YAZ-10  Overdue word', 'DAY  YAZ-11  Just learned', 'new         YAZ-12  Brand new', 'off         YAZ-13  Turned off'])
+    expect(page.map((l) => l.replace(/^\d{4}-\d{2}-\d{2}/, 'DAY'))).toEqual(['DAY  YAZ-10  Overdue word', 'DAY  YAZ-11  Just learned', 'new         YAZ-12  Brand new', 'off         YAZ-13  Turned off', 'steps       YAZ-15  Forgot again'])
     expect(day(Date.parse((JSON.parse((await run(['due', deck, '--json'])).out) as { due: string }[])[1].due))).not.toBe(day(Date.now()))
   })
 

@@ -2074,3 +2074,32 @@
   margin-left: auto;
   color: var(--fg-muted);
 }
+
+/* Settings › Review › How cards come back (YAZ-5020): a quiet line that opens; small, muted text. */
+.review-how {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--fg-muted);
+}
+.review-how > summary {
+  cursor: pointer;
+  color: var(--fg-muted);
+  width: max-content;
+}
+.review-how > summary:hover {
+  color: var(--fg);
+}
+.review-how ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.review-how li + li {
+  margin-top: 2px;
+}
+.review-how b {
+  font-weight: 600;
+  color: var(--fg);
+}
+.review-how p {
+  margin: 6px 0 0;
+}
