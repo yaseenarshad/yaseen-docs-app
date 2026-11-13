@@ -2483,32 +2483,30 @@ describe('the card window (YAZ-4962)', () => {
     expect(strip()).toEqual(['cards', 'New'])
     expect(top().querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('0 Reviews')
     expect(top().querySelector('.note-card-reviews__table')).toBeNull()
-    expect(tableRows()).toEqual([['', '', new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }), '--']])
+    expect(tableRows()).toEqual([['Next review · today', '']])
   })
 
-  it('a card with reviews: the strip says the last answer, the wait, the next due date and the recall chance (YAZ-5032: Mochi\'s glyphs, each named in its hover); each row of the table deletes its review', async () => {
+  it('a card with reviews: the strip says the last answer, the next review and the recall chance in one line of words (YAZ-5032), with one (i); the table has Yaseen\'s columns; each row deletes its review', async () => {
     files[PAGE] = page('<!-- card: WIKI-9, 2026-01-02T09:00Z good, 2026-01-10T09:00Z again, 2026-01-11T09:00Z good -->')
     props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
     await mount()
     await flush()
     const facts = strip()
     expect(facts[0]).toBe('cards')
-    // The last answer is its glyph; the word and the date are its hover.
-    expect(factText(1).querySelector('.note-card-answer')?.getAttribute('title')).toBe('Last answer: Remembered, Jan 11')
-    expect(factText(1).querySelector('.note-card-answer svg')).not.toBeNull()
-    // YAZ-5020: good, again, good is a new card still in its steps (it needs two Remembered in a row): "later today".
-    expect(factText(2).getAttribute('title')).toBe('Interval')
-    expect(factText(2).textContent).toBe('later today')
-    // Overdue (the reviews are from January): the table's own words (YAZ-4964 look by eye round 2, item 7).
-    expect(factText(3).textContent).toMatch(/^Overdue · /)
-    expect(factText(4).textContent).toMatch(/^\d+%$/)
+    // Overdue (the reviews are from January, a step of a day gone by): the date and how long ago, in red.
+    expect(facts[1]).toMatch(/^Last: Remembered · Next review Jan 11, 2026 \(\d+ days ago\) · \d+% you remember it now$/)
+    expect(factText(1).querySelector('.note-card-strip__next')?.hasAttribute('data-overdue')).toBe(true)
+    expect(factText(1).querySelector('svg')).toBeNull()
+    expect(factText(1).querySelector('.note-card-strip__info')?.getAttribute('title')).toBe("FSRS's guess of your chance to remember this card today. It falls as the card waits.")
     expect(top().querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('3 Reviews')
     const rows = tableRows()
-    // The answers are glyphs; their words are the hover.
-    expect([...top().querySelectorAll('.note-card-reviews__table tbody tr .note-card-answer')].map((a) => a.getAttribute('title'))).toEqual(['Remembered', 'Forgot', 'Remembered'])
-    // # of days: since the review before, blank for the first; dates in full.
-    expect(rows.map((r) => r[1])).toEqual(['', '8 days', '1 day', 'later today'])
-    expect(rows[0][2]).toBe('Jan 2, 2026')
+    expect([...top().querySelectorAll('.note-card-reviews__table th')].map((th) => th.textContent)).toEqual(['Reviewed on', 'Answer', 'Gap', 'Time', 'Next due', ''])
+    expect(rows.slice(0, 3)).toEqual([
+      ['Jan 2, 2026', 'Remembered', '', '—'],
+      ['Jan 10, 2026', 'Forgot', '8 days', '—'],
+      ['Jan 11, 2026', 'Remembered', '1 day', '—'],
+    ])
+    expect(rows[3][0]).toMatch(/^Next review · Jan 11, 2026 · \d+ days ago$/)
     const deletes = top().querySelectorAll<HTMLButtonElement>('.note-card-reviews__table .note-card-reviews__delete')
     expect(deletes).toHaveLength(3)
     act(() => deletes[1].click())
@@ -2625,7 +2623,7 @@ describe('the card window (YAZ-4962)', () => {
     feed(2)
     await flush()
     await flush()
-    expect(factText(1).querySelector('.note-card-answer')?.getAttribute('title')).toBe('Last answer: Remembered, Jan 2')
+    expect(factText(1).textContent).toMatch(/^Last: Remembered · Next review /)
     expect(tableRows()).toHaveLength(2)
   })
 

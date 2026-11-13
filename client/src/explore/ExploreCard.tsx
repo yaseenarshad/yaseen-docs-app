@@ -8,9 +8,9 @@
  *    Reset history (D13, the card line through `changeCardLine`, the app's own write), Copy card ID.
  *  - The card, everything shown (`renderNoteCard`), its pills and links live: a click opens the page on top, a bound
  *    gesture (⌘-click) a tab.
- *  - The strip: the page's name (a click opens the page on top, landed on the card), then Mochi's quiet line of glyphs
- *    (YAZ-5032): the last answer, the interval, the next due date, the recall badge ("83%", idea 11), each named in its
- *    hover. A card with no review says "New".
+ *  - The strip: the page's name (a click opens the page on top, landed on the card), then one calm line of words
+ *    (YAZ-5032): "Last: Remembered · Next review Apr 28, 2027 (in 183 days) · 99% you remember it now", the recall
+ *    chance with a small (i) (idea 11). A card with no review says "New".
  *  - "4 Reviews": the full table, closed until asked for (the strip says the state; D13 "a footer lets the table
  *    expand"), a bin on each row (`deleteReview`, with Undo in its notice).
  *  - TITLE ON THE FRONT (YAZ-5030): the ⋯ row "Title on the front" (Show / Hide, the card line's `notitle`); while Hide,
@@ -345,9 +345,9 @@ function NoteCardBacklinks({ id, vault, onOpen }: { id: string; vault: ExploreVa
 }
 
 /**
- * The strip under the card (D13, idea 11; Mochi's look, YAZ-5032): the page, then what review knows as one quiet
- * line of glyphs (`NoteCardFacts`: the last answer, the interval, the next due date, the recall badge), each fact's
- * name in its hover. A card with no review is "New"; a card with review off says so.
+ * The strip under the card (D13, idea 11; YAZ-5032): the page, then what review knows as one calm line of words
+ * (`NoteCardFacts`: the last answer, the next review and how far it is, the recall chance with its (i)). A card with
+ * no review is "New"; a card with review off says so.
  */
 function NoteCardStrip({ card, pageName, vault, onOpenPage }: { card: CardAtPage; pageName: string; vault: ExploreVault; onOpenPage: () => void }) {
   const settings = vault.review?.settings

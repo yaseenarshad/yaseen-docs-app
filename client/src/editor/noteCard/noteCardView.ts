@@ -33,7 +33,7 @@
  * `.ProseMirror`; App's listener opens the card window. ⌘↵ anywhere else is unchanged.
  *
  * REVIEWS (YAZ-5000, YAZ-5032): a card with reviews has "✓ 4 Reviews" at its bottom, closed, and on the same row the
- * card window's strip of glyphs (`NoteCardFacts`: last answer, interval, next due, recall), so the facts show without
+ * card window's strip in words (`NoteCardFacts`: last answer, next review, recall), so the facts show without
  * opening; a card with none has no section (silence). A click opens the card window's own table
  * (`NoteCardReviewsTable`, `review/noteCardParts.tsx`). Both are React roots, loaded the first time a card with
  * reviews draws. Open or closed is UI
@@ -130,7 +130,7 @@ type ReviewsFactsProps = { reviews: readonly CardReview[]; settings: ReviewSetti
 interface ReviewsTableKit {
   createRoot: typeof import('react-dom/client').createRoot
   draw: (props: ReviewsTableProps) => import('react').ReactElement
-  /** The card window's strip of glyphs (`NoteCardFacts`, YAZ-5032), on the Reviews row. */
+  /** The card window's strip in words (`NoteCardFacts`, YAZ-5032), on the Reviews row. */
   facts: (props: ReviewsFactsProps) => import('react').ReactElement
 }
 /** React and the card window's table and strip, loaded the first time a card with reviews draws: a page with none loads neither. */
@@ -146,7 +146,7 @@ const SVG = 'http://www.w3.org/2000/svg'
 
 /**
  * "4 Reviews" (YAZ-5032): the card window's toggle (`NoteCardReviews`), the same classes and ✓, drawn without React; on
- * the same row, the card window's strip of glyphs (`NoteCardFacts`), so the facts show while the section is closed.
+ * the same row, the card window's strip in words (`NoteCardFacts`), so the facts show while the section is closed.
  */
 function reviewsFooter(): { section: HTMLElement; header: HTMLButtonElement; title: HTMLElement; facts: HTMLElement } {
   const section = document.createElement('section')
@@ -415,7 +415,7 @@ export class NoteCardView implements NodeView {
     else void loadTableKit().then(mount)
   }
 
-  /** The strip of glyphs on the Reviews row, drawn again only when the reviews or the settings change. */
+  /** The strip in words on the Reviews row, drawn again only when the reviews or the settings change. */
   private showFacts(): void {
     const door = this.deps.reviews
     const footer = this.footer

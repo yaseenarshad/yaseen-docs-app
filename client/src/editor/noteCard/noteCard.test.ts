@@ -475,12 +475,13 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     expect(header(root)?.querySelector('svg')).not.toBeNull()
     expect(header(root)?.getAttribute('aria-expanded')).toBe('false')
     expect(root.querySelector('.note-card-reviews__table')).toBeNull()
-    // Closed, the facts show: the last answer's glyph, the interval, the next due date, the recall badge.
-    await vi.waitFor(() => expect(cards[0].querySelectorAll('.note-card-reviews__facts > .note-card-strip__fact')).toHaveLength(4))
+    // Closed, the facts show as one line of words (YAZ-5032): the last answer, the next review, the recall chance with its (i).
+    await vi.waitFor(() => expect(cards[0].querySelector('.note-card-reviews__facts .note-card-strip__line')).not.toBeNull())
     const facts = cards[0].querySelector('.note-card-reviews__facts')!
-    expect(facts.querySelector('.note-card-answer')?.getAttribute('title')).toBe('Last answer: Remembered, Nov 6')
-    expect(facts.querySelector('[title="Interval"]')?.textContent).not.toBe('')
-    expect(facts.querySelector('.note-card-strip__recall')?.textContent).toMatch(/^\d+%$/)
+    expect(facts.textContent).toMatch(/^Last: Remembered · Next review (today|later today|[A-Z][a-z]{2} \d{1,2}, \d{4} \((in \d+ days?|\d+ days? ago)\)) · \d+% you remember it now$/)
+    expect(facts.querySelector('.note-card-strip__info')?.getAttribute('title')).toBe("FSRS's guess of your chance to remember this card today. It falls as the card waits.")
+    expect(facts.querySelectorAll('[title]')).toHaveLength(2) // the (i), and the last answer's date: no other hover to puzzle out
+    expect(facts.querySelector('svg')).toBeNull()
     expect(cards[1].querySelector('.note-card-reviews')).toBeNull()
     const preview = await mount(PAGE, { noteCards: { path: '/v/Page.md' } })
     expect(preview.root.querySelector('.note-card-reviews')).toBeNull()
@@ -492,20 +493,20 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     press(header(root)!)
     await vi.waitFor(() => expect(rows(root)).toEqual(['Remembered', 'Forgot', 'Remembered', '']))
     expect(header(root)?.getAttribute('aria-expanded')).toBe('true')
-    // YAZ-5032: icons, "# of days" with its unit (blank for the first), dates in full; the review to come is muted,
-    // "-- " under Next due, and has no delete.
+    // YAZ-5032, Yaseen's columns: Reviewed on · Answer · Gap · Time · Next due. Dates in full; the answer's glyph and
+    // word; the Gap blank for the first, "Same day" for 0; the review to come in words, with no delete.
+    expect([...root.querySelectorAll('.note-card-reviews__table th')].map((th) => th.textContent)).toEqual(['Reviewed on', 'Answer', 'Gap', 'Time', 'Next due', ''])
     const table = cells(root)
-    expect(table.map((r) => r[1])).toEqual(['', '4 days', '1 day', expect.stringMatching(/^(\d+ days?|later today)$/)])
-    expect(table[0][2]).toBe('Nov 1, 2026')
-    expect(table[0][3]).toMatch(/^[A-Z][a-z]{2} \d{1,2}, \d{4}$/)
-    expect(table[3][2]).toMatch(/^[A-Z][a-z]{2} \d{1,2}, \d{4}$/)
-    expect(table[3][3]).toBe('--')
+    expect(table.slice(0, 3).map((r) => r.slice(0, 4))).toEqual([
+      ['Nov 1, 2026', 'Remembered', '', '—'],
+      ['Nov 5, 2026', 'Forgot', '4 days', '13 s'],
+      ['Nov 6, 2026', 'Remembered', '1 day', '1 min 4 s'],
+    ])
+    expect(table[0][4]).toMatch(/^[A-Z][a-z]{2} \d{1,2}, \d{4}$/)
+    expect(table[3][0]).toMatch(/^Next review · (today|later today|[A-Z][a-z]{2} \d{1,2}, \d{4} · (in \d+ days?|\d+ days? ago))$/)
     const trs = root.querySelectorAll('.note-card-reviews__table tbody tr')
     expect([...trs].map((tr) => tr.querySelector('button')?.getAttribute('title') ?? null)).toEqual(['Delete this review', 'Delete this review', 'Delete this review', null])
     expect(trs[3].classList.contains('note-card-reviews__next')).toBe(true)
-    expect([...root.querySelectorAll('.note-card-reviews__table th')].map((th) => th.textContent)).toEqual(['Answer', '# of days', 'Review date', 'Next due', 'Time', ''])
-    // YAZ-5033: how long each answer took; "—" for a review made before the timer; nothing for the review to come.
-    expect(table.map((r) => r[4])).toEqual(['—', '13 s', '1 min 4 s', ''])
     expect(view.state.doc).toBe(doc)
     expect(undoDepth(view.state)).toBe(0)
     expect(root.querySelector('.note-card')?.classList.contains('ProseMirror-selectednode')).toBe(false)
