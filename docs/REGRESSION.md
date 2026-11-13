@@ -713,6 +713,20 @@ The dev app (`npm run dev`), on the vault `$G` of the scenario above, with IDs o
 6. On the demo setup, with the clash that the script prepared (the two vault folders stand for two Macs; "Foo" and "Bar" both hold `YAZ-101`, and "Plan" on the second Mac links to it): start the app of the SECOND profile. One notice says `YAZ-101 was used on two Macs. "Bar" is now YAZ-102. 1 link updated.` `Plan` holds `[[YAZ-102]]` and the file of "Bar" is `bar-yaz-102.md`. In the app of the FIRST profile, before the sync brings that fix, "Check for duplicates" reads `YAZ-101 is on two notes. The Mac that made "Bar" fixes it when its app runs.`, and no file of that vault changed.
 7. On the demo vault that holds notes with an old ID: Settings shows the row "Old IDs" with the count and "Give them numbers". The box says the count and `First sync this vault and close the app on your other Macs`, and only the vault's letters start it. After it, each of those notes holds a number ID, its file name ends in it, each link to it opens the same note as before, the row is gone, and `.yaseendocs/ids-backfill.json` is not there. A vault with no old ID never shows the row.
 
+### Card files (YAZ-5037)
+
+The dev app on a vault with IDs and Settings › Review on (the demo vault's "Card files demo" folder has made-up card files).
+
+1. Right-click a folder › **New card**. A tab opens in Edit card with "Title" selected. Type `Capital of France`, then `---`, `Paris`, and press ⌘↵. `ls` shows `capital-of-france-<id>.md`; its properties hold `kind: card` and no `id:` line, and the panel shows no `kind` row.
+2. In a page, type `![[<that ID>]]`. The card shows with "Embedded from "Capital of France" · <ID>". Click Edit card, change the back, and Done: the card file has the change.
+3. Page ⋯ in the sidebar › Review this page: the embedded card is in the session one time.
+4. In the embed ⋯ › **Put back into this page**: the card block is in the page with its card line; the card file is in the Trash. On the card's ⋯ › **Move to its own file**: the card file comes back with the same ID and reviews, and the page holds `![[<ID>]]`.
+5. Search `capital`: the card file shows with the card icon. A card inside a page shows under its page. Type filter › Cards lists only cards.
+6. Add a second card to the card file in a text editor. The tab shows "This card file holds 2 cards." › Split into 2 card files: a new card file holds the second card with its ID.
+7. Settings › Review › Off: New card, the Cards filter and the cards in search are gone; the card file still opens in its tab.
+8. `yaseendocs card new "<folder>" --title "Test" --json` prints `id`, `path` and `title`; `yaseendocs card add <that file> --body x` says "This is a card file. Use `card new`."
+9. YAZ-5056: duplicate a page that holds a card as `<name> (conflict Mac-B, 2026-11-13).md`. After a few seconds the original keeps the card's ID and reviews; the copy's card has a new ID, no reviews, and "Archived".
+
 ### Notifications (YAZ-3303)
 
 The dev app (`npm run dev`) will do, on an isolated profile (`YASEEN_DOCS_USER_DATA_DIR`) with a scratch vault: a folder `Inbox` with `Todo.md`, `Plan.md` and `Budget.md`, and a folder `Archive` with its own `Plan.md`.

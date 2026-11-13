@@ -194,6 +194,19 @@ The sidebar's **Inbox** row counts the cards due now, with no number when none i
 
 A key typed in a field, or while Explore, a dialog or a menu is open, is not the Inbox's. The hint row at the bottom shows a key only while it does something; the digits are on the buttons. Folder tables can show three more columns, **Cards**, **Due** and **Archived** (YAZ-5046), from Columns ⚙'s hidden rows: how many cards each page has, how many of its cards with reviews are due now (a new card is not counted: the new cards a day are for the whole vault), and how many are archived; blank where there are none. They sort and filter as any number column. Settings › Review holds the settings above, for the vault that is open.
 
+### Card files (YAZ-5037)
+
+A card can be its **own file**, next to pages, drawings and diagrams, in a vault that gives IDs, while Settings › Review is on. It is a normal `.md` file with `kind: card` in its properties (hidden in the panel) and one card. The card's ID is the file's ID, its first line is the title, and its name is `<title>-<id>.md`, as a page's.
+
+- **New card**: right-click a folder (or the "New …" menu) › **New card**, after New page. The file opens in its own tab in Edit card with "Title" selected; on Done the file takes its name from the title ("Ask before renaming" applies). Rename in the sidebar or a table changes the card's first line.
+- **The tab**: the title, the ID and the state, the card with **Edit card** (E) and ⋯ (Archive, Put at top of Inbox, Title on the front, Reset history, Copy card ID, Copy card link, Turn into a page), the history, Linked mentions and **Embedded in**. A file that holds 2 cards, text outside the card or no card shows one notice with its fix (Split, Move into the card, Make a card from the text, Turn into a page). Nothing is deleted.
+- **Embed it**: `![[GEO-140]]` shows any card (from a card file or a page) under the head ↗ "Embedded from "Capital of France" · GEO-140", with Edit card (it changes the original) and ⋯ (Open card, Show as link, Put back into this page, Archive, Copy card ID). Paste a card link and pick **Embed**, or use **Show as embed** on a card pill. Review this page and Review this folder include the cards they embed, each one time.
+- **Convert**: a card's ⋯ in a page › **Move to its own file**; an embed › **Put back into this page**; a card file › **Turn into a page**; a page with one card and nothing else › ⚙ › **Turn into a card file**. The ID, the history and every link stay.
+- **Find it**: the card icon shows in the tree, tabs, search, Recents and the hover preview. Search lists cards (card files and cards in pages) next to pages, drawings and diagrams; its **Type** filter has Pages, Cards, Drawings, Diagrams, Folders, Images, PDFs and Other. Folder tables have a **Type** column (Page, Card, Folder), off by default.
+- **The Inbox head** reads "Title · ID", plus "in <page>" for a card in a page; O opens the page, or the card file ("Open card").
+- **The command**: `yaseendocs card new <folder> --title "<text>" [--body "<text>"] [--json]`.
+- A sync conflict copy (`<name> (conflict <host>, <date>).md`) never takes a card from the real page (YAZ-5056): its copy of the card gets a new ID, no history, and is archived.
+
 ## Two kinds of vault
 
 A vault is one of two kinds. A folder you open is a **plain** vault: the app asks nothing and writes nothing you did not ask for. IDs are a setting, for the vault where you want them: Settings › Files & Links › **Give this vault's notes IDs**.
