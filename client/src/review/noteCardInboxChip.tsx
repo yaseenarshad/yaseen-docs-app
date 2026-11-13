@@ -3,7 +3,8 @@
  * card never reviewed; "Due today", or "Due · 3 days ago" for a card past its day, with a clock.
  */
 import type { CardRating } from '@shared/cardLine'
-import { dayCount, type DueCard } from '@shared/cardSchedule'
+import { answerLabel, dayCount, type DueCard } from '@shared/cardSchedule'
+import type { ReviewSettings } from '@shared/reviews'
 import { AgainIcon, ClockIcon, EasyIcon, ForgotIcon, HardIcon, NewIcon, RememberedIcon } from './noteCardInboxIcons'
 
 const DAY = 86_400_000
@@ -30,4 +31,16 @@ export function answerIcon(rating: CardRating, buttons: 2 | 4) {
   if (rating === 'hard') return <HardIcon />
   if (rating === 'easy') return <EasyIcon />
   return <RememberedIcon />
+}
+
+/** The glyph of each answer in words (the toast is text): ✕ / ✓, or ↺ ~ ✓ ⇈ with four buttons. */
+const ANSWER_MARK: Record<CardRating, [string, string]> = { again: ['✕', '↺'], hard: ['~', '~'], good: ['✓', '✓'], easy: ['✓', '⇈'] }
+
+/**
+ * The answer's toast (YAZ-5025), in the button hover's words: "✓ Remembered · back in 9 days", "✕ Forgot · back later
+ * today"; four buttons use their own names ("⇈ Easy · back in 20 days").
+ */
+export function answerToast(rating: CardRating, interval: number, s: ReviewSettings): string {
+  const mark = ANSWER_MARK[rating][s.buttons === 4 ? 1 : 0]
+  return `${mark} ${answerLabel(rating, s)} · back ${interval === 0 ? 'later today' : `in ${dayCount(interval)}`}`
 }

@@ -11,7 +11,7 @@ import type { CardAnswer } from '@shared/cardSchedule'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { NoteCardInbox, type NoteCardInboxProps } from './NoteCardInbox'
-import { noteCardStateText } from './noteCardInboxChip'
+import { answerToast, noteCardStateText } from './noteCardInboxChip'
 import { foldHints } from './NoteCardInboxHints'
 import { CARD_MIN_WIDTH, clampCardWidth, inboxCardWidth, setInboxCardWidth } from './inboxCardWidth'
 import { useReadOnlyVault } from '../vault/readOnlyVault'
@@ -632,5 +632,41 @@ describe('the Inbox screen (YAZ-4962)', () => {
       room.mockRestore()
       vi.unstubAllGlobals()
     }
+  })
+
+  it('YAZ-5025: an answer that lands shows the app`s toast in the hover`s words with Undo (the hook`s undo, as ⌘Z), fading; a failed answer shows none; the next answer sends a new toast', async () => {
+    mount(TWO_SIDES)
+    await flush()
+    press('2')
+    expect(review.answer).toHaveBeenCalledExactlyOnceWith('good')
+    // Not yet counted by the session (the write runs): no toast.
+    expect(props.onNotice).not.toHaveBeenCalled()
+    session = { ...session, answered: ['good'], canUndo: true }
+    render()
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('✓ Remembered · back in 3 days', 'info', 'undo', { label: 'Undo', run: expect.any(Function), fades: true })
+    const undo = vi.mocked(props.onNotice).mock.calls[0][3]!
+    act(() => undo.run())
+    expect(review.undo).toHaveBeenCalledOnce()
+    // A failed write: the session counts nothing, so no toast (the hook shows its error).
+    act(() => buttons()[0].click())
+    expect(review.answer).toHaveBeenLastCalledWith('again')
+    render()
+    expect(props.onNotice).toHaveBeenCalledOnce()
+    // The next answer that lands: a new toast, which replaces the last (App holds one toast).
+    session = { ...session, answered: ['good', 'again'] }
+    render()
+    expect(props.onNotice).toHaveBeenLastCalledWith('✕ Forgot · back later today', 'info', 'undo', expect.objectContaining({ label: 'Undo', fades: true }))
+    expect(props.onNotice).toHaveBeenCalledTimes(2)
+    // The toast does not take the keyboard: ⌘Z still goes to the Inbox.
+    press('z', { metaKey: true })
+    expect(review.undo).toHaveBeenCalledTimes(2)
+  })
+
+  it('YAZ-5025: the toast`s words with four buttons use their own names and glyphs', () => {
+    const four = { ...DEFAULT_REVIEW_SETTINGS, buttons: 4 as const }
+    expect(answerToast('again', 0, four)).toBe('↺ Again · back later today')
+    expect(answerToast('hard', 1, four)).toBe('~ Hard · back in 1 day')
+    expect(answerToast('easy', 20, four)).toBe('⇈ Easy · back in 20 days')
+    expect(answerToast('again', 0, DEFAULT_REVIEW_SETTINGS)).toBe('✕ Forgot · back later today')
   })
 })
