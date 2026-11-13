@@ -222,6 +222,16 @@
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
+/* Up next's count (YAZ-5028) in the Up next chip's colours; any count of 0 grey and faint. */
+.note-card-inbox__count[data-filter='next'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.note-card-inbox__count[data-empty] {
+  background: var(--bg-hover);
+  color: var(--fg-muted);
+  opacity: 0.6;
+}
 /* The Inbox tab behind a page tab (YAZ-5011): mounted, so it keeps its card and step, but not drawn. */
 .note-card-inbox[hidden] {
   display: none;

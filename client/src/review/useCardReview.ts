@@ -25,7 +25,8 @@ import { changeCardLine, deleteCardReview, isCardGone, readCard, restoreCardRevi
  *
  * The filter (YAZ-5017, as Mochi's "All cards ▾"): All cards, Due today (cards with reviews, due now) or New cards
  * (never reviewed, within today's new-card limit: the queue's own). The queue stays whole; the filter picks which of its
- * cards show, and "3 of 12" counts only those.
+ * cards show, and "3 of 12" counts only those. Up next (YAZ-5028): the cards marked `next` at start, new or reviewed
+ * (`off` cards are never in the queue); an answer takes a card out of it, as the repeat it may leave is no longer up next.
  *
  * `answered` (YAZ-5020, the progress bar) is each answer of the session, in order; ⌘Z takes the last one back. The
  * bar's whole is the cards the session started with, plus any it took since. A new session (or the Inbox tab closed)
@@ -39,10 +40,11 @@ import { changeCardLine, deleteCardReview, isCardGone, readCard, restoreCardRevi
  */
 
 /** Which cards of the session show (YAZ-5017). */
-export type CardFilter = 'all' | 'due' | 'new'
+export type CardFilter = 'all' | 'next' | 'due' | 'new'
 
-/** Whether `card` shows under `filter`: due = reviewed before (due now), new = never reviewed. */
-export const matchesFilter = (card: DueCard, filter: CardFilter): boolean => filter === 'all' || (filter === 'new') === card.isNew
+/** Whether `card` shows under `filter`: next = marked up next (YAZ-5028), due = reviewed before (due now), new = never reviewed. */
+export const matchesFilter = (card: DueCard, filter: CardFilter): boolean =>
+  filter === 'all' || (filter === 'next' ? card.next : (filter === 'new') === card.isNew)
 
 /** What a session reviews: the vault (nothing), a folder (root-relative, "Review this folder") or one page (its absolute path, "Review this page"). */
 export interface CardReviewScope {
@@ -134,7 +136,7 @@ interface Session {
   /** YAZ-5017: which cards show; `at` is always a card that matches it, or past the end when none does. */
   filter: CardFilter
   /** The cards with reviews and the new cards at start, plus the repeats (YAZ-5020): each filter's "of 12". */
-  totals: { due: number; new: number }
+  totals: { due: number; new: number; next: number }
   /** YAZ-5020: each answer, in order (the progress bar); ⌘Z takes the last back. */
   answered: CardRating[]
 }
@@ -168,7 +170,7 @@ const stepFrom = (s: Session, delta: -1 | 1): number => {
 }
 const countOf = (queue: readonly DueCard[]): Record<CardFilter, number> => {
   const fresh = queue.filter((c) => c.isNew).length
-  return { all: queue.length, due: queue.length - fresh, new: fresh }
+  return { all: queue.length, next: queue.filter((c) => c.next).length, due: queue.length - fresh, new: fresh }
 }
 
 /** The session with the card at `at` gone from its queue (answered elsewhere, its page gone, review off): the next one shows. */
@@ -261,9 +263,9 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       if (!settings.enabled) return
       const queue = cardQueue(records, settings, Date.now(), scope.folder, scope.page, source.letters)
       const label = scope.page !== undefined ? titleOf(records, scope.page) : scope.folder ? folderTitle(source.folders, `${root}/${scope.folder}`) : 'Inbox'
-      const { due, new: fresh } = countOf(queue)
+      const { due, new: fresh, next } = countOf(queue)
       // A new scope starts on All cards (YAZ-5017), with an empty bar (YAZ-5020).
-      setSession((s) => ({ label, scope, queue, at: 0, total: queue.length, turn: (s?.turn ?? 0) + 1, undo: [], filter: 'all', totals: { due, new: fresh }, answered: [] }))
+      setSession((s) => ({ label, scope, queue, at: 0, total: queue.length, turn: (s?.turn ?? 0) + 1, undo: [], filter: 'all', totals: { due, new: fresh, next }, answered: [] }))
     },
     [root, source],
   )

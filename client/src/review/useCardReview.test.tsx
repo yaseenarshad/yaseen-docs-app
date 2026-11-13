@@ -227,6 +227,29 @@ describe('useCardReview', () => {
     expect(review.session?.from).toEqual(['Cells'])
   })
 
+  it('YAZ-5028: Up next — only the cards marked `next`, new or reviewed, never `off`; "n of m" follows it; an answer takes the card out', async () => {
+    // WIKI-2 (reviewed, not due) and WIKI-5 (new) are up next; WIKI-7 is `off` and `next`: off wins.
+    page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, next, 2026-11-12T07:00Z good, 2026-11-12T07:01Z good'])
+    page('Bio/More.md', ['A {{second}} new card', 'WIKI-5, next'], ['Off {{one}}', 'WIKI-7, off, next'])
+    await mount()
+    await act(async () => review.start())
+    expect(review.session).toMatchObject({ filter: 'all', counts: { all: 4, next: 2, due: 2, new: 2 } })
+    await act(async () => review.setFilter('next'))
+    expect(review.session).toMatchObject({ filter: 'next', position: 1, total: 2, card: { id: 'WIKI-2', next: true, isNew: false }, canNext: true })
+    act(() => review.move(1))
+    expect(review.session).toMatchObject({ position: 2, total: 2, card: { id: 'WIKI-5', next: true, isNew: true }, canNext: false })
+    act(() => review.move(-1))
+    await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
+    await step(() => review.answer('good'))
+    // WIKI-2 answered: out of Up next (`next` gone), "2 of 2".
+    await vi.waitFor(() => expect(review.session).toMatchObject({ position: 2, total: 2, counts: { next: 1 }, card: { id: 'WIKI-5' } }))
+    await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
+    // A new card's first Remembered keeps it in its steps: the repeat is not up next, so Up next is done.
+    await step(() => review.answer('good'))
+    expect(review.session).toMatchObject({ card: null, counts: { next: 0 } })
+    expect(review.session?.counts.all).toBeGreaterThan(0)
+  })
+
   it('YAZ-5020: the progress bar`s answers — each answer in order (a Forgot is `again`), ⌘Z takes the last back; its whole is the session`s size at start; a new session starts empty', async () => {
     await mount()
     await act(async () => review.start())

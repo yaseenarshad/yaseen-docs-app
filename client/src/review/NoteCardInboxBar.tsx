@@ -1,6 +1,6 @@
 /**
- * The Inbox's top row (YAZ-5017, as Mochi's): on the left the filter menu "All cards ▾" (All cards, Due today, New
- * cards, each with how many are left), then where the cards come from as a quiet path (the vault, "Folder / Sub", or
+ * The Inbox's top row (YAZ-5017, as Mochi's): on the left the filter menu "All cards ▾" (All cards, Up next (YAZ-5028),
+ * Due today, New cards, each with how many are left; Up next's count in the Up next chip's colours, grey at 0), then where the cards come from as a quiet path (the vault, "Folder / Sub", or
  * the page); on the right "3 of 12", which counts the filter's cards. Under it the progress bar (YAZ-5020, as
  * Mochi's): it fills as the session's cards are answered, a Forgot in red, a Remembered in grey.
  */
@@ -8,7 +8,7 @@ import { useRef, useState, type ReactElement } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import type { CardRating } from '@shared/cardLine'
 import type { CardFilter, CardReviewSession } from './useCardReview'
-import { ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, VaultIcon } from './noteCardInboxIcons'
+import { ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './noteCardInboxIcons'
 
 /** The filters in menu order, with their names and glyphs. */
 export const CARD_FILTERS: readonly {
@@ -17,6 +17,7 @@ export const CARD_FILTERS: readonly {
   icon: () => ReactElement
 }[] = [
   { id: 'all', label: 'All cards', icon: InboxTrayIcon },
+  { id: 'next', label: 'Up next', icon: UpNextIcon },
   { id: 'due', label: 'Due today', icon: DueIcon },
   { id: 'new', label: 'New cards', icon: () => <NewIcon /> },
 ]
@@ -102,7 +103,9 @@ export function NoteCardInboxBar({ session, setFilter }: NoteCardInboxBarProps) 
                   <f.icon />
                   {f.label}
                 </span>
-                <span className="note-card-inbox__count">{session.counts[f.id]}</span>
+                <span className="note-card-inbox__count" data-filter={f.id} data-empty={session.counts[f.id] === 0 || undefined}>
+                  {session.counts[f.id]}
+                </span>
               </button>
             ))}
           </ContextMenuSurface>
