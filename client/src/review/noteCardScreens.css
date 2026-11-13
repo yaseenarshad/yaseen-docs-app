@@ -166,22 +166,6 @@
 .note-card-inbox__card .note-card__rule {
   margin: 14px 0;
 }
-.note-card-inbox__space {
-  margin: 18px 0 0;
-  text-align: center;
-  font-size: 13px;
-  color: var(--fg-muted);
-}
-.note-card-inbox__space kbd {
-  margin: 0 2px;
-  padding: 1px 6px;
-  font-family: inherit;
-  font-size: 11px;
-  color: var(--fg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
-}
 /* The buttons row (YAZ-5004, as in Mochi): ← → on the left, the answers in the middle, ⋯ on the right. */
 .note-card-inbox__actions {
   display: grid;

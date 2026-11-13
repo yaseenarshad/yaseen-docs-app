@@ -225,7 +225,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
   it('YAZ-5010: 1 and 2 answer at any step — before the first Space, with words still hidden', async () => {
     mount(TWO_SIDES)
     await flush()
-    expect(el.querySelector('.note-card-inbox__space')?.textContent).toBe('Press Space to show the next hidden word')
+    expect(shown()).toEqual([])
     press('1')
     expect(review.answer).toHaveBeenCalledExactlyOnceWith('again')
     act(() => buttons()[1].click())
@@ -364,22 +364,16 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(el.textContent).not.toContain('Reviews')
   })
 
-  it('YAZ-5002: the buttons sit under the card, outside its panel; the Space hint sits between them while words are hidden; the key row is last', async () => {
+  it('YAZ-5002: the buttons sit under the card, outside its panel; the key row is last; YAZ-5021: no "Press Space" line over the buttons at any step (the key row says Space)', async () => {
     mount(TWO_SIDES)
     const column = el.querySelector('.note-card-inbox__column')!
     const panel = column.querySelector('.note-card-inbox__panel')!
-    const hint = () => column.querySelector('.note-card-inbox__space')
-    expect(hint()?.textContent).toBe('Press Space to show the next hidden word')
-    expect(hint()?.querySelector('kbd')?.textContent).toBe('Space')
-    expect(panel.contains(hint())).toBe(false)
-    press(' ')
-    // France shows: the front has no more hidden words; the next Space shows the back.
-    expect(hint()?.textContent).toBe('Press Space to show the next side')
-    press(' ')
-    press(' ')
-    press(' ')
     await flush()
-    expect(hint()).toBeNull()
+    expect(column.querySelector('.note-card-inbox__space')).toBeNull()
+    expect(column.textContent).not.toContain('Press')
+    expect(column.querySelector('.note-card-inbox__hints')?.textContent).toContain('Space Show')
+    press(' ')
+    expect(column.querySelector('.note-card-inbox__space')).toBeNull()
     const answers = column.querySelector('.note-card-inbox__actions')!
     expect(answers.querySelectorAll('.note-card-inbox__answer')).toHaveLength(2)
     expect(panel.contains(answers)).toBe(false)

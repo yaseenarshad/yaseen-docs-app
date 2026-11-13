@@ -20,8 +20,8 @@
  *    Edit card is blocked as in the page), ← → (YAZ-5004: the card before or after, no answer), ⌘↵ (the page in a
  *    background tab: the review stays), Esc (only the ⋯ row; then the Esc order goes on, YAZ-5011). A key typed in a field, or while a dialog or a menu
  *    is open (Explore is a dialog), is not the Inbox's; a key with the keyboard elsewhere (the sidebar) neither.
- *  - Under the card, OUTSIDE its frame, as in Mochi (YAZ-5002): while Space has more to show, a quiet "Press Space to
- *    show the next hidden word" (or "the next side"); then the answer buttons; the key hint row last, at the bottom.
+ *  - Under the card, OUTSIDE its frame, as in Mochi (YAZ-5002): the answer buttons; the key hint row last, at the bottom.
+ *    No "Press Space" line over the buttons (YAZ-5021): the key row already says Space.
  *  - The buttons row (YAZ-5004, as in Mochi): ← → on its left, the answers in the middle, ⋯ on its right. ⋯ opens a
  *    small row of icons, each with the app's hover box (its name and key): Undo last review (⌘Z), Turn review off,
  *    Put at top of Inbox / Remove from top of Inbox, Open card. They are the hook's own actions.
@@ -204,9 +204,6 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
           { id: 'card', label: 'Open card', icon: ICON_CARD, disabled: false, run: () => openCard(card.path, card.id, card.index, false) },
         ]
 
-  // What the next Space shows, said between the card and the buttons (YAZ-5002); nothing once the buttons show.
-  const spaceShows = card?.page == null || done ? null : step.shown < hiddenUpTo(step.sides) ? 'the next hidden word' : 'the next side'
-
   return (
     <div ref={rootRef} className="note-card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`}>
       <div className="note-card-inbox__column">
@@ -260,12 +257,8 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
             )}
           </div>
         </div>
-        {/* Under the card, outside its frame, as in Mochi (YAZ-5002): what Space does next, the answer buttons, then the keys. */}
-        {spaceShows !== null && (
-          <p className="note-card-inbox__space">
-            Press <kbd>Space</kbd> to show {spaceShows}
-          </p>
-        )}
+        {/* Under the card, outside its frame, as in Mochi (YAZ-5002): the answer buttons, then the keys. No "Press Space"
+            line between them (YAZ-5021): the key row at the bottom already says Space. */}
         {card !== null && (
           <div className="note-card-inbox__actions">
             <div className="note-card-inbox__moves">
