@@ -42,7 +42,9 @@
  * card window, so it works read only and in Explore's read layer too.
  *
  * THE ⋯ MENU (D13): Put at top of Inbox / Remove from top of Inbox (`withCardNext`, YAZ-4999 D3), Archive card /
- * Unarchive card (`withCardOff`, YAZ-5046: the line's `off`), Reset history (`withoutCardReviews`), Copy card ID, Open card. Each change is ONE transaction on the node's `cardLine` attribute (`changeNoteCardLine`): one ⌘Z, saved as
+ * Unarchive card (`withCardOff`, YAZ-5046: the line's `off`), Reset history (`withoutCardReviews`), Copy card ID, Open card, and
+ * with the host's convert door Move to its own file (YAZ-5037: a card file in the page's folder, `![[GEO-140]]` in its
+ * place; a card with no ID yet is not offered). Each line change is ONE transaction on the node's `cardLine` attribute (`changeNoteCardLine`): one ⌘Z, saved as
  * any edit. The ID at insert (`noteCardRow`) is a transaction out of the undo history, saved by `NOTE_CARD_ID_META`.
  */
 import { EditorSelection, Prec, type Extension } from '@codemirror/state'
@@ -117,6 +119,21 @@ export interface NoteCardHost {
   mintId?: (path: string) => Promise<string>
   /** Done (its button, Esc or ⌘↵) with the card's text (YAZ-5003: the card window's Edit card saves it to the page). */
   onEditDone?: (text: string) => void
+  /** The convert actions of this page (YAZ-5037): absent → none (a preview, the card editor). */
+  convert?: CardConvertDoor
+}
+
+/**
+ * The convert actions a page's cards offer (YAZ-5037 phase 5), run by the page's host (`Editor`): it asks the vault's
+ * Read only first, writes through `review/cardConvert.ts` and says what failed. There is no ⌘Z: the reverse is the undo.
+ */
+export interface CardConvertDoor {
+  /** May a card of this page go to its own file now? The vault's Review is on (card files are a card feature). */
+  canMove: () => boolean
+  /** "Move to its own file": card `id`, the one at `index` among the page's cards. */
+  move: (id: string, index: number) => void
+  /** "Put back into this page": the `nth` lone embed `![[inner]]` of this page becomes card `id` of the card file `path`. */
+  putBack: (card: { id: string; path: string }, inner: string, nth: number) => void
 }
 
 /** What a card view needs of its editor, made once in `createCrepe`. */
@@ -702,8 +719,13 @@ export class NoteCardView implements NodeView {
     const id = cardIdOf(line)
     const editable = this.canChangeLine
     const onNotice = this.deps.onNotice ?? (() => {})
+    const convert = this.deps.host?.convert
+    const pos = this.pos
+    // A card with no ID yet is not offered: its card file's name and its embed need the ID (the door gives it at once).
+    const move = id !== null && pos !== null && convert?.canMove() === true ? { label: 'Move to its own file', run: () => convert.move(id, cardIndex(this.view.state.doc, pos)) } : null
     return [
       { label: 'Open card', hint: '⌘↵', run: () => this.open() },
+      ...(move === null ? [] : [move]),
       { label: isCardNext(line) ? 'Remove from top of Inbox' : 'Put at top of Inbox', disabled: !editable, divider: true, run: () => this.change((l) => withCardNext(l, !isCardNext(l))) },
       { label: isCardOff(line) ? 'Unarchive card' : 'Archive card', disabled: !editable, run: () => this.change((l) => withCardOff(l, !isCardOff(l))) },
       // ONE toggle row (YAZ-5030): its hint is the state now; a click turns it to the other.

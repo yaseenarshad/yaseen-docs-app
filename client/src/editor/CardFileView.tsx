@@ -14,6 +14,9 @@
  *  - A FILE THAT IS NOT VALID (`cardFileShape`) stays a card file: one notice at the top (`CardFileNotice`), and
  *    nothing is deleted. 2+ cards: "This card file holds 3 cards.", the first card under it (each one stays in review).
  *    Text outside the card: the notice, and that text below it, muted. No card: the notice, and the file's text.
+ *  - THE CONVERT ACTIONS (YAZ-5037 phase 5, `review/cardConvert.ts`), in a vault with IDs and on a file that is not
+ *    `readonly: true`: ⋯ › Turn into a page; the notice's fixes, "Split into 3 card files", "Move into the card", and
+ *    with no card "Make a card from the text" and "Turn into a page". The vault's Read only asks first.
  *  - ON DISK: the tab reads the file again on each new index version, as the card window does. A file that lost
  *    `kind: card` goes back to the page view (`onPage`, with the bytes just read); a second card is the notice above.
  */
@@ -38,6 +41,7 @@ import { ContextMenu } from '../sidebar/ContextMenu'
 import type { MenuSection } from '../sidebar/menuSections'
 import { VaultReadOnly } from '../vault/readOnlyVault'
 import { CardFileNotice } from './CardFileNotice'
+import { runConvert } from './useCardConvert'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
@@ -62,6 +66,8 @@ export interface CardFileViewProps {
   onPage: (file: FileResponse) => void
   /** The title edit door (YAZ-2420 🔒 D16, App's): Done that changes the card's title names the file after it. Absent: no rename. */
   onRetitle?: (path: string, title: string, kind: 'file') => void
+  /** The tab's own convert ended (YAZ-5037 phase 5: Turn into a page): the editor reads the file again, with no notice. */
+  onReread?: () => void
 }
 
 const NO_CANDIDATES: WikilinkCandidateSource = { candidates: [], subscribe: () => () => undefined }
@@ -85,11 +91,13 @@ function folderOf(root: string, path: string): string {
   return folder === '' ? base.slice(base.lastIndexOf('/') + 1) : folder.split('/').join(' / ')
 }
 
-export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle }: CardFileViewProps) {
+export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle, onReread }: CardFileViewProps) {
   const path = file.path
   const [content, setContent] = useState<string | null>(file.content)
-  const onPageRef = useRef(onPage)
-  onPageRef.current = onPage
+  /** "Turn into a page" runs: the file losing `kind: card` is this tab's own doing, and says nothing. */
+  const turning = useRef(false)
+  const onPageRef = useRef<(next: FileResponse) => void>(onPage)
+  onPageRef.current = (next) => (turning.current && onReread !== undefined ? onReread() : onPage(next))
 
   /** Reads the file again: a card file shows; one that lost its mark goes to the page view; a deleted one says so. */
   const read = useCallback(() => {
@@ -126,7 +134,8 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const settings = useVaultReviewSettings(root)
   const reviewOn = settings?.enabled === true
   const door = useContext(CardReviewDoor)
-  const vaultLocked = useContext(VaultReadOnly).on
+  const vaultScope = useContext(VaultReadOnly)
+  const vaultLocked = vaultScope.on
   const canEdit = card !== null && content !== null && !vaultLocked && !isNoteReadOnly(content)
   const vault = useMemo(
     (): ExploreVault => ({ root, wikilinks, wikilinkCandidates: wikilinkCandidates ?? NO_CANDIDATES, viewOnlyLinks, readOnly: vaultLocked, review: door === null || settings === undefined ? undefined : { settings, deleteReview: door.deleteReview } }),
@@ -176,14 +185,44 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const notice = shapeNotice(shape.problem, shape.cards.length)
   const outside = [shape.before, shape.after].filter((text) => text !== '')
   const state = card === null ? null : card.off ? 'Archived' : !reviewOn || settings === undefined ? null : cardDue(card.reviews, settings)
+  // The convert actions (YAZ-5037 phase 5): only in a vault with IDs (D8), never on a `readonly: true` file. Each is a
+  // file action: the vault's Read only asks first. The tab reads the file again on the next index version.
+  const converts = wikilinks.ids && !isNoteReadOnly(content)
+  const convert = (failure: string, action: Parameters<typeof runConvert>[4]) => void runConvert(root, vaultScope.allowFileAction, onNotice, failure, action)
+  const toPage = () => {
+    turning.current = true
+    void runConvert(root, vaultScope.allowFileAction, onNotice, 'turn the card file into a page', (a) => a.turnIntoPage(path)).then((done) => {
+      if (done) onReread?.()
+      else turning.current = false
+    })
+  }
   const sections = (): MenuSection[] => [
     ...cardMenuSections(card, id, writes.changeLine, onNotice, { inbox: reviewOn, link: true }),
-    // Phase 5 (YAZ-5037): "Turn into a page" goes here, as its own last section.
+    ...(converts ? [[{ id: 'to-page', label: 'Turn into a page', onSelect: toPage }]] : []),
   ]
+  const fixes =
+    !converts ? null : shape.problem === 'many' ? (
+      <button type="button" onClick={() => convert('split the card file', (a) => a.splitIntoCardFiles(path))}>
+        Split into {shape.cards.length} card files
+      </button>
+    ) : shape.problem === 'outside' ? (
+      <button type="button" onClick={() => convert('move the text into the card', (a) => a.moveIntoCard(path))}>
+        Move into the card
+      </button>
+    ) : shape.problem === 'none' ? (
+      <>
+        <button type="button" onClick={() => convert('make a card from the text', (a) => a.makeCardFromText(path))}>
+          Make a card from the text
+        </button>
+        <button type="button" onClick={toPage}>
+          Turn into a page
+        </button>
+      </>
+    ) : null
 
   return (
     <>
-      {notice !== null && <CardFileNotice text={notice} />}
+      {notice !== null && <CardFileNotice text={notice}>{fixes}</CardFileNotice>}
       <div ref={bodyRef} className="card-file" tabIndex={-1} data-card-file data-card-file-body onKeyDown={onKeyDown}>
         <div className="card-file__page">
           <header className="card-file__head">

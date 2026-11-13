@@ -869,6 +869,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
                 hotkeys: cardDeps.hotkeys,
                 openHref: cardDeps.openHref,
                 onNotice: cardDeps.onNotice,
+                putBack: opts.noteCards?.convert?.putBack,
               },
       }),
     )

@@ -1548,19 +1548,21 @@ button {
   border-bottom: 1px solid var(--notice-border);
 }
 
-.conflict-bar button {
+.conflict-bar button,
+.card-file-notice button {
   padding: 3px 10px;
   border: 1px solid var(--notice-btn-border);
   border-radius: 4px;
   background: var(--notice-btn-bg);
 }
 
-.conflict-bar button:hover {
+.conflict-bar button:hover,
+.card-file-notice button:hover {
   background: var(--notice-btn-bg-hover);
 }
 
-/* A card file's notice (YAZ-5037, `CardFileNotice.tsx`): the conflict bar's colours, one line, an actions slot after
-   the words for the fixes to come. */
+/* A card file's notice (YAZ-5037, `CardFileNotice.tsx`): the conflict bar's colours and buttons, one line, the fixes
+   after the words. */
 .card-file-notice {
   display: flex;
   align-items: center;

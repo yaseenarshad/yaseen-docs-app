@@ -16,8 +16,9 @@
  *  - EDIT CARD: the card editor (YAZ-5026, `mountCardEditor`, through `doors.edit`) in the box, with the page card's key row. Done writes the
  *    ORIGINAL file, one `transformFile` (`changeCardTextIn`, the app's own write: an open tab of that file takes it
  *    quietly). The page that embeds it does not change. Read only: no Edit card (the card's text is locked, as in the page).
- *  - ⋯ (`cardEmbedMenuRows`): Open card (the card window), Show as link, Archive / Unarchive card (the original's card
- *    line, as the page card's row: shown in a read-only page too), Copy card ID.
+ *  - ⋯ (`cardEmbedMenuRows`): Open card (the card window), Show as link, Put back into this page (YAZ-5037 phase 5:
+ *    a card file's card, from an embed alone on its line; the page's convert door writes it), Archive / Unarchive card
+ *    (the original's card line, as the page card's row: shown in a read-only page too), Copy card ID.
  *  - MISSING: an ID of this vault that names nothing (`missingId`) says "Missing card · GEO-140", quietly. A pill keeps
  *    its own look ("Missing note · …").
  *
@@ -122,13 +123,23 @@ const button = (className: string, label: string): HTMLButtonElement => {
 }
 
 /** The ⋯ rows of a card embed (YAZ-5037). `editable`: the page, for Show as link; the review rows write the original as the page card's do. */
-export function cardEmbedMenuRows(o: { card: CardLink; off: boolean; editable: boolean; target: string; from: EventTarget; replace: (text: string) => void; onNotice: (message: string) => void }): MenuRow[] {
+export function cardEmbedMenuRows(o: {
+  card: CardLink
+  off: boolean
+  editable: boolean
+  target: string
+  from: EventTarget
+  replace: (text: string) => void
+  onNotice: (message: string) => void
+  /** "Put back into this page" (YAZ-5037 phase 5): the card is in a card file, the embed stands alone on its line, and the page's door is there. Else null. */
+  putBack?: (() => void) | null
+}): MenuRow[] {
   const { card, off } = o
   const failed = (err: unknown) => o.onNotice(`Can't change the card: ${err instanceof Error ? err.message : String(err)}`)
   const rows: Array<MenuRow | null> = [
     { label: 'Open card', run: () => openCardWindow(card.path, card.id, card.index, o.from) },
     o.editable ? { label: 'Show as link', run: () => o.replace(`[[${o.target}]]`) } : null,
-    // Phase 5 of YAZ-5037: "Put back into this page" goes here, for a card file's card only (`kind: card`).
+    o.putBack == null ? null : { label: 'Put back into this page', run: o.putBack },
     { label: off ? 'Unarchive card' : 'Archive card', divider: true, run: () => void changeCardLine(card.path, card.id, (l) => withCardOff(l, !off), card.index).catch(failed) },
     { label: 'Copy card ID', divider: true, run: () => copyText(card.id, 'card ID', o.onNotice, undefined, true) },
   ]
@@ -280,7 +291,10 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     const c = card
     if (c === null) return
     closeMenu?.()
-    const close = openMenuAt(host.menuParent(), x, y, cardEmbedMenuRows({ card: c, off: off(c), editable: host.editable(), target: host.target, from: dom, replace: host.replace, onNotice }))
+    // Put back: only a card file's card (a card in a page stays where it is), and only from an embed alone on its line.
+    const place = doors.putBack !== undefined && recordAt(source.records, c.path)?.kind === 'card' ? host.place() : null
+    const putBack = place === null ? null : () => doors.putBack!({ id: c.id, path: c.path }, place.inner, place.nth)
+    const close = openMenuAt(host.menuParent(), x, y, cardEmbedMenuRows({ card: c, off: off(c), editable: host.editable(), target: host.target, from: dom, replace: host.replace, onNotice, putBack }))
     closeMenu = () => {
       close()
       closeMenu = null
