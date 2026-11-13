@@ -90,6 +90,22 @@ describe('open', () => {
     expect(popupOf(view)).toBeNull()
   })
 
+  it('a menu taller than the window gets the window\'s height and scrolls, and its own scroll keeps it open (YAZ-4970)', async () => {
+    const { view, item } = await mount(twoRows)
+    const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const height = this.classList.contains('ctx-menu') ? 1000 : 0
+      return { width: 160, height, left: 0, top: 0, right: 160, bottom: height, x: 0, y: 0, toJSON: () => ({}) } as DOMRect
+    })
+    contextmenu(item)
+    spy.mockRestore()
+    const popup = popupOf(view)!
+    expect(popup.style.maxHeight).toBe(`${window.innerHeight - 16}px`)
+    expect(popup.style.overflowY).toBe('auto')
+    expect(popup.style.top).toBe('8px')
+    popup.dispatchEvent(new Event('scroll'))
+    expect(popupOf(view)).not.toBeNull()
+  })
+
   it('ignores a contextmenu on a paragraph', async () => {
     const { view } = await mount(twoRows)
     const e = contextmenu(view.dom.querySelector('p')!)

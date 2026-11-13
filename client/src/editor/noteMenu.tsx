@@ -24,10 +24,10 @@ import { bulletToCopy, copyVisibleNext, forgetCopyVisible } from './clipboardCop
 import { addLinkOn } from './markdownLink'
 import { HEADING_TOGGLE_CLASS } from './outline/headingFolding'
 import { OUTLINE_TOGGLE_CLASS } from './outline/outlineFolding'
-import { isInTable } from '@milkdown/kit/prose/tables'
+import { CellSelection, isInTable } from '@milkdown/kit/prose/tables'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { CELL_NOTE_ASK, type CellNoteAsk } from './table/cellNoteGuard'
-import { TABLE_HANDLE_MENU, tableMenuSections } from './table/tableMenu'
+import { TABLE_HANDLE_MENU, handleKind, tableMenuSections, type TableMenuKind } from './table/tableMenu'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import type { MenuEntry, MenuSection } from '../sidebar/menuSections'
 
@@ -142,7 +142,11 @@ function selectedWords(view: EditorView): { from: number; to: number } {
  * `reading` (the explore stack's reading layer, YAZ-2571 round 1): the note cannot change, so the rows that would
  * change it are left out instead of greyed: Cut, Paste and Paste as. Copy and Copy as stay.
  */
-export function noteMenuSections(view: EditorView, misspelling: Misspelling | null, run: (action: NoteMenuAction, word?: string) => void, pointer: number | null = null, reading = false): MenuSection[] {
+/**
+ * `table` (YAZ-4970): what a table menu opened on, a cell (a right-click) or a row or column handle (`handleKind`). In a
+ * table the copy and paste rows stand in one group, and the Table part shows only what applies to it.
+ */
+export function noteMenuSections(view: EditorView, misspelling: Misspelling | null, run: (action: NoteMenuAction, word?: string) => void, pointer: number | null = null, reading = false, table: TableMenuKind = 'cells'): MenuSection[] {
   const editable = view.editable
   const empty = nothingSelected(view)
   const inBullet = pointer !== null && bulletToCopy(view.state, pointer) !== null
@@ -164,9 +168,9 @@ export function noteMenuSections(view: EditorView, misspelling: Misspelling | nu
             : misspelling.suggestions.map((word, index) => ({ id: `guess-${index}`, label: word, disabled: !editable, onSelect: replace(misspelling.from, misspelling.to, word) }))),
           { id: 'add-word', label: 'Add to dictionary', onSelect: () => run('add-word', misspelling.word) },
         ]
-  return [
-    spelling,
-    [
+  // The Table part (YAZ-3769 D5): a right-click in a cell of an editable note.
+  const tableSections = tableMenuSections(view, pointer, table)
+  const copyRows: MenuSection = [
       ...(reading ? [] : [{ id: 'cut', label: 'Cut', hint: '⌘X', disabled: empty || !editable, onSelect: () => run('cut') }]),
       { id: 'copy', label: 'Copy', hint: '⌘C', disabled: empty, onSelect: () => run('copy') },
       {
@@ -180,8 +184,8 @@ export function noteMenuSections(view: EditorView, misspelling: Misspelling | nu
           [{ id: 'copy-visible', label: 'Without folded lines', disabled: empty && !inBullet, onSelect: () => run('copy-visible') }],
         ],
       },
-    ],
-    reading ? [] : [
+    ]
+  const pasteRows: MenuSection = reading ? [] : [
       { id: 'paste', label: 'Paste', hint: '⌘V', disabled: !editable, onSelect: () => run('paste') },
       {
         id: 'paste-as',
@@ -195,12 +199,20 @@ export function noteMenuSections(view: EditorView, misspelling: Misspelling | nu
           [{ id: 'paste-cells', label: 'Cells only', disabled: !editable || !inTable, onSelect: () => run('paste-cells') }],
         ],
       },
-    ],
-    // The Table part (YAZ-3769 D5): a right-click in a cell of an editable note.
-    ...tableMenuSections(view, pointer),
-    // Selected words can become a link (YAZ-3609 D17): a web address or a path. Only where the note can change.
+    ]
+  // YAZ-4970: in a table, Cut, Copy, Paste, then Copy as › and Paste as ›, in one group.
+  const leaves = (rows: MenuSection) => rows.filter((row) => row.children === undefined)
+  const parents = (rows: MenuSection) => rows.filter((row) => row.children !== undefined)
+  const clipboard: MenuSection[] = tableSections.length === 0 ? [copyRows, pasteRows] : [[...leaves(copyRows), ...leaves(pasteRows), ...parents(copyRows), ...parents(pasteRows)]]
+  // Selected words can become a link (YAZ-3609 D17): a web address or a path. Only where the note can change. Selected
+  // cells are not words (YAZ-4970: a row or column handle selects its cells).
+  const noWords = empty || view.state.selection instanceof CellSelection
+  return [
+    spelling,
+    ...clipboard,
+    ...tableSections,
     // After the menu closes and gives the note its focus back, so the link box keeps the focus it takes.
-    empty || !editable ? [] : [{ id: 'add-link', label: 'Add link…', onSelect: () => void window.setTimeout(() => addLinkOn(view, words)) }],
+    noWords || !editable ? [] : [{ id: 'add-link', label: 'Add link…', onSelect: () => void window.setTimeout(() => addLinkOn(view, words)) }],
   ]
 }
 
@@ -231,6 +243,8 @@ interface OpenMenu {
   selection: Selection
   /** What held the focus at the right-click: the note, or a code block inside it. */
   focused: HTMLElement | null
+  /** What a table menu opened on (YAZ-4970): a cell, or the row or column a handle selected. */
+  table: TableMenuKind
 }
 
 export { TABLE_HANDLE_MENU }
@@ -297,6 +311,7 @@ export function NoteMenu({ view, extra, reading = false }: { view: EditorView | 
           doc,
           selection: before,
           focused: active instanceof HTMLElement && view.dom.contains(active) ? active : null,
+          table: 'cells',
         })
       }
       const word = image === null ? wordAt(view, event.clientX, event.clientY) : null
@@ -319,7 +334,8 @@ export function NoteMenu({ view, extra, reading = false }: { view: EditorView | 
     const onHandleMenu = (event: Event) => {
       const { x, y, pos } = (event as CustomEvent<{ x: number; y: number; pos: number }>).detail
       const active = document.activeElement
-      setMenu({ x, y, image: null, misspelling: null, pointer: pos + 1, doc: view.state.doc, selection: view.state.selection, focused: active instanceof HTMLElement && view.dom.contains(active) ? active : null })
+      // YAZ-4970: the row or column the handle selected names the menu: row actions, or column actions.
+      setMenu({ x, y, image: null, misspelling: null, pointer: pos + 1, doc: view.state.doc, selection: view.state.selection, focused: active instanceof HTMLElement && view.dom.contains(active) ? active : null, table: handleKind(view.state.selection) })
     }
     view.dom.addEventListener('mousedown', onMouseDown, true)
     view.dom.addEventListener('contextmenu', onContextMenu)
@@ -370,7 +386,7 @@ export function NoteMenu({ view, extra, reading = false }: { view: EditorView | 
       console.error('Menu action failed', error)
     })
   }
-  const [spelling, ...rest] = noteMenuSections(view, menu.misspelling, run, pointer, reading)
+  const [spelling, ...rest] = noteMenuSections(view, menu.misspelling, run, pointer, reading, menu.table)
   const more = extra?.() ?? []
   return (
     <ContextMenu

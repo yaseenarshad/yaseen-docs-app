@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { FlyoutParent, useFlyout } from '../components/Flyout'
+import { fitMenu } from '../lib/fitMenu'
 import type { MenuAction, MenuEntry, MenuParent, MenuStrip } from './menuSections'
 
 export { SWITCH_MS } from '../components/Flyout'
@@ -231,15 +232,25 @@ export function ContextMenu({ x, y, sections, onClose }: ContextMenuProps) {
   }, [onClose, openId, openNow])
 
   // Viewport clamping (GRO-2204): render at the cursor, then measure and pull the menu back
-  // inside the window instead of spilling off an edge.
+  // inside the window instead of spilling off an edge. YAZ-4970: a menu taller than the window (the table's row menu)
+  // was only moved to the top, its last rows below the window and out of reach; now it fits the window and scrolls,
+  // as `ContextMenuSurface` does (`lib/fitMenu.ts`).
   const menuRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ left: x, top: y })
 
   useLayoutEffect(() => {
     const el = menuRef.current
     if (el === null) return
-    const r = el.getBoundingClientRect()
-    setPos({ left: Math.max(0, Math.min(x, window.innerWidth - r.width)), top: Math.max(0, Math.min(y, window.innerHeight - r.height)) })
+    const place = () => {
+      const at = fitMenu(el, x, y)
+      setPos((was) => (was.left === at.left && was.top === at.top ? was : at))
+    }
+    place()
+    // A menu whose rows change while it is open is placed again; the observer fires only on a change of its own size.
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(place)
+    observer.observe(el)
+    return () => observer.disconnect()
   }, [x, y])
 
   return (
@@ -251,7 +262,17 @@ export function ContextMenu({ x, y, sections, onClose }: ContextMenuProps) {
         onClose()
       }}
     >
-      <div ref={menuRef} className={`ctx-menu${glyphs ? ' ctx-menu--glyphs' : ''}`} style={{ left: pos.left, top: pos.top }} onMouseDown={(e) => e.stopPropagation()} role="menu">
+      <div
+        ref={menuRef}
+        className={`ctx-menu${glyphs ? ' ctx-menu--glyphs' : ''}`}
+        style={{ left: pos.left, top: pos.top }}
+        onMouseDown={(e) => e.stopPropagation()}
+        // A flyout stands beside the row it opened from; the menu scrolled under it (YAZ-4970) would leave it astray.
+        onScroll={(e) => {
+          if (e.target === e.currentTarget && openId !== null) openNow(null)
+        }}
+        role="menu"
+      >
         <Groups
           sections={sections}
           render={(item) =>

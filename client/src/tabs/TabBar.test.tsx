@@ -768,7 +768,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
       const el = mount(props)
       rightClick(tabAt(el, 0), 1000, 700)
       expect(menuOf(el)?.style.left).toBe('864px')
-      expect(menuOf(el)?.style.top).toBe('588px')
+      expect(menuOf(el)?.style.top).toBe('580px') // 768 - 8 - 180: the window's edge keeps 8 px (YAZ-4970)
     } finally {
       rect.mockRestore()
     }

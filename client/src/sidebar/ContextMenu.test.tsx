@@ -88,7 +88,15 @@ describe('menu clamping (GRO-2204)', () => {
     boxes = { 'ctx-menu': { width: 160, height: 180 } }
     const el = mount(1000, 700)
     expect(menu(el).style.left).toBe('864px') // 1024 - 160
-    expect(menu(el).style.top).toBe('588px') // 768 - 180
+    expect(menu(el).style.top).toBe('580px') // 768 - 8 - 180: the window's edge keeps 8 px (YAZ-4970, `lib/fitMenu.ts`)
+  })
+
+  it('a menu taller than the window gets the window\'s height and scrolls (YAZ-4970: the table\'s row menu ran off the bottom)', () => {
+    boxes = { 'ctx-menu': { width: 160, height: 1000 } }
+    const el = mount(100, 500)
+    expect(menu(el).style.maxHeight).toBe('752px') // 768 - 2 × 8
+    expect(menu(el).style.overflowY).toBe('auto')
+    expect(menu(el).style.top).toBe('8px')
   })
 })
 
