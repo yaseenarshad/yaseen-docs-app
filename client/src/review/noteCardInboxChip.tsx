@@ -1,5 +1,5 @@
 /**
- * The card's state chip (YAZ-5018, as Mochi's), first in the Inbox card's head: "New card" with a dashed circle for a
+ * The card's state chip (YAZ-5018, as Mochi's), right above the Inbox card (YAZ-5027): "New card" with a dashed circle for a
  * card never reviewed; "Due today", or "Due · 3 days ago" for a card past its day, with a clock.
  */
 import type { CardRating } from '@shared/cardLine'

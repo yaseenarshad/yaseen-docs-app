@@ -116,8 +116,6 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(el.querySelector('.explore__title')).toBeNull()
     const head = [...el.querySelector('.note-card-inbox__head')!.children].map((c) => [c.className, c.textContent])
     expect(head).toEqual([
-      // YAZ-5018: the state chip at the card's top left, as Mochi's.
-      ['note-card-inbox__state', 'New card'],
       ['note-card-strip__page note-card-inbox__page', 'Cards'],
       ['note-card__id', '(WIKI-9)'],
     ])
@@ -392,7 +390,29 @@ describe('the Inbox screen (YAZ-4962)', () => {
     const answers = column.querySelector('.note-card-inbox__actions')!
     expect(answers.querySelectorAll('.note-card-inbox__answer')).toHaveLength(2)
     expect(panel.contains(answers)).toBe(false)
-    expect([...column.children].map((c) => c.className)).toEqual(['note-card-inbox__panel', 'note-card-inbox__actions', 'explore__foot note-card-inbox__hints'])
+    expect([...column.children].map((c) => c.className)).toEqual(['note-card-inbox__above', 'note-card-inbox__panel', 'note-card-inbox__actions', 'explore__foot note-card-inbox__hints'])
+  })
+
+  it('YAZ-5027: the state chip sits right above the card, outside its head and its frame; the head starts with the page name, for a new and a due card; the row stays with no card', () => {
+    mount(TWO_SIDES)
+    const check = (words: string) => {
+      const chip = el.querySelector('.note-card-inbox__state')!
+      const head = el.querySelector('.note-card-inbox__head')!
+      expect(chip.textContent).toBe(words)
+      expect(head.contains(chip)).toBe(false)
+      expect(el.querySelector('.note-card-inbox__panel')!.contains(chip)).toBe(false)
+      expect(chip.parentElement!.matches('.note-card-inbox__column > .note-card-inbox__above:first-child')).toBe(true)
+      expect(head.firstElementChild!.matches('.note-card-inbox__page')).toBe(true)
+      expect(head.firstElementChild!.textContent).toBe('Cards')
+    }
+    check('New card')
+    session = { ...session, card: { ...session.card!, isNew: false, due: Date.now() - 3 * 86_400_000 } }
+    render()
+    check('Due · 3 days ago')
+    session = { ...session, card: null }
+    render()
+    expect(el.querySelector('.note-card-inbox__state')).toBeNull()
+    expect(el.querySelector('.note-card-inbox__column > .note-card-inbox__above:first-child')).not.toBeNull()
   })
 
   it('YAZ-5004: ← → (buttons and keys) move to the card before or after with no answer; each is off at its end; the key row says so', () => {

@@ -8,7 +8,8 @@
  *    closes as any tab does (its ✕, ⌘W): no × of its own, and Esc does not close it.
  *  - The top row (YAZ-5017, `NoteCardInboxBar`): the filter "All cards ▾" (All cards, Due today, New cards, with counts),
  *    where the cards come from (the vault, "Folder / Sub", the page), and "3 of 12" of the filter's cards on the right.
- *  - Head: the state chip (YAZ-5018, as Mochi's: "New card", "Due today", "Due · 3 days ago"), the page's name (O), the card ID in brackets, small and grey (a click copies it, D20), the chip "Up next ×"
+ *  - Above the card, outside its frame (YAZ-5027): the state chip (YAZ-5018, as Mochi's: "New card", "Due today",
+ *    "Due · 3 days ago"). Head: the page's name (O), the card ID in brackets, small and grey (a click copies it, D20), the chip "Up next ×"
  *    for a card at the top of the Inbox (YAZ-4999 D3). No card title: the card is right below it.
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
  *    Space shows the next side, whose hidden words then show one by one. The answer buttons show from the moment the
@@ -251,6 +252,9 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
     <div ref={rootRef} className="note-card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`}>
       <NoteCardInboxBar session={session} setFilter={review.setFilter} />
       <div ref={columnRef} className="note-card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
+        {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height
+            with no chip (the done screen), so the card does not move; the page name always starts at the head's left. */}
+        <div className="note-card-inbox__above">{card !== null && <NoteCardStateChip card={card} />}</div>
         <div className="note-card-inbox__panel">
           {/* The card's edges (YAZ-5019): a drag of either sizes the card, centred. */}
           <div className="note-card-inbox__edge" data-side="left" role="separator" aria-orientation="vertical" aria-label="Card width" onPointerDown={startDrag(-1)} />
@@ -262,7 +266,6 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
               <span className="explore__title">{session.label}</span>
             ) : (
               <>
-                <NoteCardStateChip card={card} />
                 <button type="button" className="note-card-strip__page note-card-inbox__page" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(card.path)}>
                   {nameOf(card.path)}
                 </button>

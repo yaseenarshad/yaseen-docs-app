@@ -236,6 +236,16 @@
   min-height: 0;
   margin-top: 5vh;
 }
+/* YAZ-5027: the row above the card holds the state chip, on the card's left edge. Its fixed height keeps the card in
+   place between cards, also with no chip. */
+.note-card-inbox__above {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  height: 20px;
+  margin-bottom: 6px;
+}
 .note-card-inbox__panel {
   position: relative;
   display: flex;
@@ -293,7 +303,7 @@ body.note-card-inbox--sizing {
   cursor: ew-resize;
   user-select: none;
 }
-/* YAZ-5018 polish: the head is part of the card, as in Mochi: no rule under it, the chip at its top left. */
+/* YAZ-5018 polish: the head is part of the card, as in Mochi: no rule under it. The chip sits above the card (YAZ-5027). */
 .note-card-inbox__head {
   padding: 12px 14px 0;
   border-bottom: 0;
