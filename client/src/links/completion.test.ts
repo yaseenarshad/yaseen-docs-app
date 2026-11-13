@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { resolverFor } from '../views/engine'
-import { MAX_SUGGESTIONS, titleCandidates, linkCandidates, matchLinkCandidates, matchRanges, mergeLinkCandidates, nameCandidate, readNeedle, trailingLinkFragment } from './completion'
+import { MAX_SUGGESTIONS, titleCandidates, linkCandidates, matchLinkCandidates, matchLinks, matchRanges, mergeLinkCandidates, nameCandidate, readNeedle, trailingLinkFragment } from './completion'
 
 const rec = (path: string, aliases: string[] = []): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -273,7 +273,7 @@ describe('linkCandidates: a note with an id is linked BY it (YAZ-2293)', () => {
 
   it('the name row is still typed and read as the name, and inserts the id', () => {
     expect(linkCandidates([{ ...rec(CAC), id: ID }])).toEqual([
-      { name: 'Customer Acquisition Cost', insert: ID, label: 'Customer Acquisition Cost', lower: 'customer acquisition cost', path: CAC },
+      { name: 'Customer Acquisition Cost', insert: ID, label: 'Customer Acquisition Cost', lower: 'customer acquisition cost', path: CAC, id: ID },
     ])
   })
 
@@ -321,7 +321,7 @@ describe('linkCandidates: rows are typed and read as TITLES (YAZ-2420 D17)', () 
   it('E: the row of a note with a title matches and reads as the title, and inserts the id; so does its alias row', () => {
     const rows = linkCandidates([{ ...abdul(['Abdul R']), id: ID }])
     expect(rows).toEqual([
-      { name: 'UP-001 - Abdul', insert: ID, label: 'UP-001 - Abdul', lower: 'up-001 - abdul', path: ABDUL },
+      { name: 'UP-001 - Abdul', insert: ID, label: 'UP-001 - Abdul', lower: 'up-001 - abdul', path: ABDUL, id: ID },
       { name: 'Abdul R', insert: ID, label: 'Abdul R — UP-001 - Abdul', lower: 'abdul r', path: ABDUL },
     ])
     expect(matchLinkCandidates(rows, 'up-001 -').map((c) => c.label)).toEqual(['UP-001 - Abdul'])
@@ -351,7 +351,7 @@ describe('titleCandidates (the cell editors, YAZ-2293)', () => {
   it('E: offers a note with a title by the title, and writes its id — its title when it has none (YAZ-2420 D17)', () => {
     const titled = { ...rec('/vault/candidates/up-001-abdul-k3m9x2pq7abc.md'), title: 'UP-001 - Abdul' }
     expect(titleCandidates([{ ...titled, id: 'k3m9x2pq7abc' }, titled])).toEqual([
-      { name: 'UP-001 - Abdul', insert: 'k3m9x2pq7abc', label: 'UP-001 - Abdul', lower: 'up-001 - abdul' },
+      { name: 'UP-001 - Abdul', insert: 'k3m9x2pq7abc', label: 'UP-001 - Abdul', lower: 'up-001 - abdul', id: 'k3m9x2pq7abc' },
       { name: 'UP-001 - Abdul', insert: 'UP-001 - Abdul', label: 'UP-001 - Abdul', lower: 'up-001 - abdul' },
     ])
   })
@@ -361,7 +361,7 @@ describe('titleCandidates (the cell editors, YAZ-2293)', () => {
     const records = [rec('/vault/Note.md', ['Alias']), { ...rec('/vault/a/Note.md'), id: 'k3m9x2pq7abc' }]
     expect(titleCandidates(records)).toEqual([
       { name: 'Note', insert: 'Note', label: 'Note', lower: 'note' },
-      { name: 'Note', insert: 'k3m9x2pq7abc', label: 'Note', lower: 'note' },
+      { name: 'Note', insert: 'k3m9x2pq7abc', label: 'Note', lower: 'note', id: 'k3m9x2pq7abc' },
     ])
   })
 })
@@ -421,5 +421,21 @@ describe('mergeLinkCandidates (YAZ-1310)', () => {
   it('keeps a note NAMED like a view-only file once it links by id: the id is no view-only spelling (YAZ-2293)', () => {
     const records = [{ ...rec('/vault/report.pdf.md', ['Q3']), id: 'k3m9x2pq7abc' }, rec('/vault/data.json.md')]
     expect(mergeLinkCandidates(linkCandidates(records), []).map((candidate) => candidate.label)).toEqual(['report.pdf', 'Q3 — report.pdf'])
+  })
+})
+
+describe('matchLinks: a page found by its ID (YAZ-4992)', () => {
+  const records = [{ ...rec('/vault/Redis.md'), id: 'WIKI-40' }, { ...rec('/vault/Kafka.md'), id: 'WIKI-400' }, rec('/vault/Top 40.md')]
+
+  it('the cell editors find a page by its ID as the [[ picker does, the ID first and shown; a name finds what it always found', () => {
+    expect(matchLinks(titleCandidates(records), '40').map((c) => [c.label, c.insert])).toEqual([['WIKI-40 — Redis', 'WIKI-40'], ['WIKI-400 — Kafka', 'WIKI-400'], ['Top 40', 'Top 40']])
+    expect(matchLinks(titleCandidates(records), 'wiki 40').map((c) => c.label)).toEqual(['WIKI-40 — Redis'])
+    expect(matchLinks(titleCandidates(records), 'red')).toEqual(matchLinkCandidates(titleCandidates(records), 'red'))
+  })
+
+  it('an old ID with no number (k3m9x2pq7abc) is held whole, and its row reads as its title, as in the search box', () => {
+    const old = titleCandidates([{ ...rec('/vault/Old.md'), id: 'k3m9x2pq7abc' }, rec('/vault/Other.md')])
+    expect(matchLinks(old, 'k3m9x2pq7abc').map((c) => c.label)).toEqual(['Old'])
+    expect(matchLinks(old, 'k3m9').map((c) => c.label)).toEqual([])
   })
 })
