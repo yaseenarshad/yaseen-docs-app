@@ -4193,6 +4193,23 @@ export interface MovedTab extends PopOutCarry {
   path: string
 }
 
+/** The Inbox's filters (YAZ-5017, YAZ-5046), as `useCardReview`'s `CardFilter`. */
+export const INBOX_FILTERS = ['all', 'next', 'due', 'new', 'archived'] as const
+export type InboxFilter = (typeof INBOX_FILTERS)[number]
+
+/**
+ * An Inbox tab that goes to another window (YAZ-5054): its vault, what it reviews (a folder, root-relative, or one page,
+ * absolute; neither = the whole vault), its filter and the card on show. The window that takes it opens its own review
+ * of that scope, on that filter, at that card when it is still in the queue. Absent filter: All cards. Never stored.
+ */
+export interface InboxCarry {
+  root: string
+  folder?: string
+  page?: string
+  filter?: InboxFilter
+  card?: { path: string; id: string }
+}
+
 export interface OpenWindowOptions {
   root: string | null
   file: string | null

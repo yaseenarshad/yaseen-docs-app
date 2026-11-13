@@ -246,6 +246,31 @@ describe('TabBar', () => {
     expect(noop.onClose).not.toHaveBeenCalled()
   })
 
+  it('YAZ-5054: the Inbox tab\'s menu moves it as a page tab moves — "Move to new window" and "Move to ▸" the other windows (no Right panel); still no file item', () => {
+    const moveTargets = vi.fn(() => [{ id: 'w2', label: 'Work · 2 tabs' }])
+    const inbox = { label: 'Inbox', active: true, at: 1, onActivate: vi.fn(), onClose: vi.fn(), onCloseOthers: vi.fn(), onCloseToRight: vi.fn(), onMoveToNewWindow: vi.fn(), moveTargets, onMoveToWindow: vi.fn() }
+    const onHighlightWindow = vi.fn()
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', inbox, ...noop, onMoveToRight: vi.fn(), onHighlightWindow, ...noNav })
+    const items = () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+    const open = () => act(() => void el.querySelector('.tabbar__tab--inbox')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    expect(moveTargets).not.toHaveBeenCalled() // read when the menu opens
+    open()
+    expect(items().map((item) => item.textContent)).toEqual(['Move to new window', 'Move to', 'Close tab', 'Close other tabs', 'Close tabs to the right'])
+    for (const file of ['Copy path', 'Reveal in Finder', 'Open in VS Code', 'Rename file', 'Show in sidebar', 'Set display name', 'Duplicate tab']) expect(el.querySelector('.ctx-menu')?.textContent).not.toContain(file)
+    act(() => items()[0].click())
+    expect(inbox.onMoveToNewWindow).toHaveBeenCalledOnce()
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    open()
+    act(() => items().find((item) => item.textContent === 'Move to')?.click())
+    expect([...el.querySelectorAll('.ctx-menu__sub [role="group"]')].map((g) => g.textContent)).toEqual(['Work · 2 tabs'])
+    act(() => items().find((item) => item.textContent === 'Work · 2 tabs')?.click())
+    expect(inbox.onMoveToWindow).toHaveBeenCalledExactlyOnceWith('w2')
+    // With no other window, no "Move to".
+    moveTargets.mockReturnValue([])
+    open()
+    expect(items().map((item) => item.textContent)).toEqual(['Move to new window', 'Close tab', 'Close other tabs', 'Close tabs to the right'])
+  })
+
   it('the blank tab (YAZ-2655 D10) is the last tab, named "New tab", and the active one while it shows: its ✕ and a middle click close it, it does not drag and has no menu; the "+" stands after the tabs, outside the scroller (S87)', () => {
     const onNewTab = vi.fn()
     const onCloseBlank = vi.fn()

@@ -87,6 +87,12 @@ export interface CardReviewScope {
   page?: string
 }
 
+/** Where a moved Inbox picks up (YAZ-5054): its filter, and the card it showed. */
+export interface CardReviewResume {
+  filter?: CardFilter
+  card?: { path: string; id: string }
+}
+
 /** The card a session shows. */
 export interface ShownCard extends DueCard {
   /** The card as its page holds it now; null while the page is read. */
@@ -98,6 +104,8 @@ export interface CardReviewSession {
   label: string
   /** What the session reviews: the done screen says what is true for it (a page done is not the Inbox done). */
   scope: 'vault' | 'folder' | 'page'
+  /** The same as `start` was given it (YAZ-5054): the folder or the page, so the Inbox can open again in another window. */
+  cards?: CardReviewScope
   /** The card showing; null once nothing is left (the done screen). */
   card: ShownCard | null
   /** The showing card's place among the `total` the session started with. */
@@ -139,7 +147,8 @@ export interface CardReviewApi {
   /** The vault's review settings (`answerRatings`, `answerLabel`, `cardHistory` read them). */
   settings: ReviewSettings
   session: CardReviewSession | null
-  start: (scope?: CardReviewScope) => void
+  /** A new session of `scope`; `resume` (YAZ-5054, a moved Inbox) starts it on that filter, at that card while it is in the queue. */
+  start: (scope?: CardReviewScope, resume?: CardReviewResume) => void
   /** Fixes and returns each button's outcome for the card showing; the same array until that card goes. Null with no card loaded. */
   showAnswers: () => CardAnswer[] | null
   /**
@@ -589,14 +598,17 @@ export function useCardReview(root: string | null, source: IndexSource, settings
   }, [queue, at, filter, records, cached, readInto])
 
   const start = useCallback(
-    (scope: CardReviewScope = {}) => {
+    (scope: CardReviewScope = {}, resume: CardReviewResume = {}) => {
       const { records, settings } = live.current
       if (!settings.enabled) return
       const queue = cardPlan(records, settings, Date.now(), scope.folder, scope.page, source.letters, root === null ? NO_TAKEN : upNextTakenToday(root), root === null ? NO_ADDED : cardsAddedToday(root)).queue
       const label = scope.page !== undefined ? titleOf(records, scope.page) : scope.folder ? folderTitle(source.folders, `${root}/${scope.folder}`) : 'Inbox'
       const { due, new: fresh, next } = countOf(queue)
-      // A new scope starts on All cards (YAZ-5017), with an empty bar (YAZ-5020).
-      setSession((s) => ({ id: (s?.id ?? 0) + 1, label, scope, queue, at: 0, total: queue.length, turn: (s?.turn ?? 0) + 1, undo: [], filter: 'all', totals: { due, new: fresh, next }, answered: [], marks: markedIn(queue) }))
+      // A new scope starts on All cards (YAZ-5017), with an empty bar (YAZ-5020); a moved Inbox on its filter, at its
+      // card when that is still in the queue, else on the filter's first card (YAZ-5054).
+      const filter = resume.filter ?? 'all'
+      const at = resume.card === undefined ? -1 : queue.findIndex((c) => c.path === resume.card?.path && c.id === resume.card.id)
+      setSession((s) => fitted({ id: (s?.id ?? 0) + 1, label, scope, queue, at: Math.max(at, 0), total: queue.length, turn: (s?.turn ?? 0) + 1, undo: [], filter, totals: { due, new: fresh, next }, answered: [], marks: markedIn(queue) }))
     },
     [root, source],
   )
@@ -839,6 +851,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     return {
       label: session.label,
       scope: scope.page !== undefined ? 'page' : scope.folder ? 'folder' : 'vault',
+      cards: scope,
       card: shownCard,
       position: filter === 'archived' ? 0 : Math.max(1, Math.min(total - counts[filter] + 1 + before, total)),
       total,

@@ -359,6 +359,8 @@ interface SidebarProps {
   onReviewPage: (path: string) => void
   /** An Inbox row was clicked (YAZ-2602 R5): App opens the review of THAT vault, or closes it when it is the one open. */
   onInbox: (root: string) => void
+  /** An Inbox row's "Open in new window" (YAZ-5054): App opens that vault's Inbox in a new window. Absent: no such item. */
+  onInboxNewWindow?: (root: string) => void
 }
 
 /** One "open the row menu of this path at this point" gesture (YAZ-2663 D6): the reveal request's idiom. */
@@ -727,6 +729,7 @@ export function Sidebar({
   onReviewFolder,
   onReviewPage,
   onInbox,
+  onInboxNewWindow,
   width,
   asideRef,
   onHistoryFile,
@@ -800,6 +803,8 @@ export function Sidebar({
   const [menu, setMenu] = useState<MenuTargets | null>(null)
   /** The sort menu (YAZ-3227 D4): the tab it sorts and where its button is, while it is open. */
   const [sortMenu, setSortMenu] = useState<{ tab: SortMenuTab | 'recents'; x: number; y: number } | null>(null)
+  /** An Inbox row's own menu (YAZ-5054): the vault whose row was right-clicked, and where. */
+  const [inboxMenu, setInboxMenu] = useState<{ root: string; x: number; y: number } | null>(null)
   // The open sort menu's tab, while it is the tab that shows (a tab switch leaves it unmounted).
   const sortTab = sortMenu !== null && sortMenu.tab !== 'recents' && sortMenu.tab === sortedTab ? sortMenu.tab : null
   /** The focus folder whose name field is open (YAZ-4460 F3): "+ Folder" opens a new one's at once. */
@@ -1811,6 +1816,12 @@ export function Sidebar({
             aria-pressed={vault.reviewing}
             aria-label={vault.dueCount > 0 ? `${label}, ${vault.dueCount} due` : label}
             onClick={() => onInbox(vault.root)}
+            // Its own menu (YAZ-5054), as a page row's "Open in new tab" / "Open in new window" — never the text menu.
+            onContextMenu={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setInboxMenu({ root: vault.root, x: e.clientX, y: e.clientY })
+            }}
           >
             {label}
             {vault.dueCount > 0 && <span className="tree__count">{vault.dueCount}</span>}
@@ -2240,6 +2251,15 @@ export function Sidebar({
           })(),
           document.body,
         )}
+      {/* An Inbox row's menu (YAZ-5054): "Open in new tab" goes to the window's Inbox (one per window), or opens it. */}
+      {inboxMenu !== null && (
+        <ContextMenu
+          x={inboxMenu.x}
+          y={inboxMenu.y}
+          sections={[[{ id: 'open-tabs', label: 'Open in new tab', onSelect: () => onInbox(inboxMenu.root) }, ...(onInboxNewWindow === undefined ? [] : [{ id: 'open-window', label: 'Open in new window', onSelect: () => onInboxNewWindow(inboxMenu.root) }])]]}
+          onClose={() => setInboxMenu(null)}
+        />
+      )}
       {/* The sort menu (YAZ-3227 D4): it sorts the tab it opened on, and a tab switch leaves it unmounted. */}
       {sortMenu !== null && sortTab !== null && sort !== undefined && (
         <ContextMenu

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import type { FilesAction, MovedTab, TabAction, TabRef } from '@shared/types'
+import type { FilesAction, InboxCarry, MovedTab, TabAction, TabRef } from '@shared/types'
 import { api } from '../api'
 
 interface UseLinkEventsOptions {
@@ -27,6 +27,8 @@ interface UseLinkEventsOptions {
   onTabAction?: (req: { ref: TabRef; action: TabAction }) => void
   /** A Files window asked this window to act (YAZ-3357 D2): run the matching callback here. Main raised the window by the action's rule. */
   onOpenFromFiles?: (action: FilesAction) => void
+  /** Another window's Inbox moved here, or a new window opened on one (YAZ-5054): open it, or go to the one open. */
+  onTakeInbox?: (carry: InboxCarry) => void
 }
 
 /**
@@ -35,7 +37,7 @@ interface UseLinkEventsOptions {
  * D3, D13). Every listener is on BEFORE `link.ready`: main sends what it held at that call, and a push with no
  * listener is lost. The board's seven are optional: a window without them hears nothing of the board.
  */
-export function useLinkEvents({ onOpenFile, onNotice, onTakeTab, onFocusTab, onCloseTabs, onSendTab, onSetRoots, onPopOutTab, onAddVaultAndTake, onHighlightTab, onTabAction, onOpenFromFiles }: UseLinkEventsOptions): void {
+export function useLinkEvents({ onOpenFile, onNotice, onTakeTab, onFocusTab, onCloseTabs, onSendTab, onSetRoots, onPopOutTab, onAddVaultAndTake, onHighlightTab, onTabAction, onOpenFromFiles, onTakeInbox }: UseLinkEventsOptions): void {
   useEffect(() => {
     const offs = [
       api.link.onOpenFile(onOpenFile),
@@ -50,11 +52,12 @@ export function useLinkEvents({ onOpenFile, onNotice, onTakeTab, onFocusTab, onC
       ...(onHighlightTab === undefined ? [] : [api.link.onHighlightTab(onHighlightTab)]),
       ...(onTabAction === undefined ? [] : [api.link.onTabAction(onTabAction)]),
       ...(onOpenFromFiles === undefined ? [] : [api.link.onOpenFromFiles(onOpenFromFiles)]),
+      ...(onTakeInbox === undefined ? [] : [api.link.onTakeInbox(onTakeInbox)]),
     ]
     // Main holds a link push until this window can hear it (YAZ-2589 A2): a page that is still loading hears nothing.
     void api.link.ready()
     return () => {
       for (const off of offs) off()
     }
-  }, [onOpenFile, onNotice, onTakeTab, onFocusTab, onCloseTabs, onSendTab, onSetRoots, onPopOutTab, onAddVaultAndTake, onHighlightTab, onTabAction, onOpenFromFiles])
+  }, [onOpenFile, onNotice, onTakeTab, onFocusTab, onCloseTabs, onSendTab, onSetRoots, onPopOutTab, onAddVaultAndTake, onHighlightTab, onTabAction, onOpenFromFiles, onTakeInbox])
 }

@@ -11,7 +11,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { dailyNoteName } from '@shared/dailyNote'
 import { IDS_FILE } from '@shared/noteId'
 import { TEXT_FORMATTING_FILE } from '@shared/textFormatting'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type FocusFolder, type ListScope, type IndexRecord, type IndexResponse, type MovedTab, type MemoryTabFacts, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type FocusFolder, type InboxCarry, type ListScope, type IndexRecord, type IndexResponse, type MovedTab, type MemoryTabFacts, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -125,6 +125,8 @@ interface SidebarStubProps {
   onOpenInbox: () => void
   /** An Inbox row's click (YAZ-2602 R5): the vault whose row it is. */
   onInbox: (root: string) => void
+  // YAZ-5054: an Inbox row's "Open in new window".
+  onInboxNewWindow?: (root: string) => void
   /** "Review this folder" (YAZ-2322): the sidebar hands the folder's ABSOLUTE path. */
   onReviewFolder: (dirPath: string) => void
   /** "Review this page" (YAZ-4967): the page's absolute path. */
@@ -287,6 +289,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const linkHighlightTab = new Set<(ref: TabRef | null) => void>()
   const linkTabAction = new Set<(req: { ref: TabRef; action: TabAction }) => void>()
   const linkFromFiles = new Set<(action: FilesAction) => void>()
+  const linkTakeInbox = new Set<(carry: InboxCarry) => void>()
   const fileRenamed = new Set<(ev: { oldPath: string; newPath: string; kind?: 'file' | 'dir' }) => void>()
   const fileDeleted = new Set<(ev: { path: string; kind: 'file' | 'dir' }) => void>()
   const dragLanded = new Set<(ev: { paths: string[] }) => void>()
@@ -365,6 +368,9 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       noteClosed: vi.fn(async (_files: readonly string[]) => undefined),
       // A tab's "Move to ▸ <window>" (YAZ-3091 D1): main hands the tab to that window; the tab leaves this one after.
       moveTo: vi.fn(async (_to: string, _path: string, _carry?: { view?: PageView; name?: string }) => undefined),
+      // The Inbox tab's moves (YAZ-5054): main opens the window or hands it on; the Inbox leaves this one after.
+      inboxToNewWindow: vi.fn(async (_carry: InboxCarry) => undefined),
+      moveInboxTo: vi.fn(async (_to: string, _carry: InboxCarry) => undefined),
       closeSelf: vi.fn(async () => undefined),
       // "Move to ▸" (YAZ-3091 D8): a row under the pointer lights up its window; another window's row lights up this one.
       highlight: vi.fn(async (_to: string | null) => undefined),
@@ -505,6 +511,11 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         linkFromFiles.add(l)
         return () => linkFromFiles.delete(l)
       }),
+      // Another window's Inbox moved here (YAZ-5054).
+      onTakeInbox: vi.fn((l: (carry: InboxCarry) => void) => {
+        linkTakeInbox.add(l)
+        return () => linkTakeInbox.delete(l)
+      }),
       ready: vi.fn(async () => undefined),
     },
     // In-app rename (Links E1, GRO-2194) + external repair (E1c, GRO-2242): App subscribes to
@@ -642,6 +653,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitHighlightTab: (ref: TabRef | null) => linkHighlightTab.forEach((l) => l(ref)),
     emitTabAction: (req: { ref: TabRef; action: TabAction }) => linkTabAction.forEach((l) => l(req)),
     emitFromFiles: (action: FilesAction) => linkFromFiles.forEach((l) => l(action)),
+    emitTakeInbox: (carry: InboxCarry) => linkTakeInbox.forEach((l) => l(carry)),
     emitFileRenamed: (oldPath: string, newPath: string, kind?: 'file' | 'dir') => fileRenamed.forEach((l) => l({ oldPath, newPath, kind })),
     emitDragLanded: (paths: string[]) => dragLanded.forEach((l) => l({ paths })),
     emitFileDeleted: (path: string, kind: 'file' | 'dir' = 'file') => fileDeleted.forEach((l) => l({ path, kind })),
@@ -5546,11 +5558,11 @@ describe('App note card review (YAZ-4967)', () => {
     expect(strip()).toEqual(['Inbox', 'a', 'b*'])
     openInbox()
     expect(strip()).toEqual(['Inbox*', 'a', 'b'])
-    // Its menu: only the tab's own items. "Close other tabs" closes the page tabs, and the Inbox tab stays in front.
+    // Its menu: only the tab's own items (YAZ-5054: "Move to new window" too; no other window, so no "Move to"). "Close other tabs" closes the page tabs, and the Inbox tab stays in front.
     act(() => void tabEl('Inbox').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
     const items = [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
-    expect(items.map((item) => item.textContent)).toEqual(['Close tab', 'Close other tabs', 'Close tabs to the right'])
-    act(() => items[1].click())
+    expect(items.map((item) => item.textContent)).toEqual(['Move to new window', 'Close tab', 'Close other tabs', 'Close tabs to the right'])
+    act(() => items[2].click())
     expect(strip()).toEqual(['Inbox*'])
     expect(el.querySelector<HTMLElement>('.note-card-inbox')?.hidden).toBe(false)
     // Closed, then opened again with page tabs open: at the end, as a new tab.
@@ -5559,6 +5571,56 @@ describe('App note card review (YAZ-4967)', () => {
     expect(strip()).toEqual(['a*'])
     openInbox()
     expect(strip()).toEqual(['a', 'Inbox*'])
+  })
+
+  it('YAZ-5054: the Inbox tab moves to a new window with its scope, filter and card, and closes here; "Move to ▸" another window the same; the sidebar row opens one in a new window and keeps this one', async () => {
+    const win = (id: string, tabs: string[]): WindowEntry => ({ id, root: '/v', roots: ['/v'], file: tabs.at(-1) ?? null, tabs, rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
+    const { el, bridge } = await mount({ ...defaultAppState(), windows: [win('w1', ['/v/a.md', '/v/b.md']), win('w2', ['/v/x.md'])] }, TABS, {}, withIndex(RECORDS()))
+    const strip = () => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => `${t.textContent}${t.getAttribute('aria-selected') === 'true' ? '*' : ''}`)
+    const menu = () => {
+      act(() => void el.querySelector('.tabbar__tab--inbox')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+      return [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+    }
+    await act(async () => captured.sidebar?.onReviewFolder('/v/Work'))
+    await vi.waitFor(() => expect(el.querySelector('.tabstack .note-card-inbox')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
+    expect(strip()).toEqual(['a', 'b', 'Inbox · Work*'])
+    const toNew = menu().find((item) => item.textContent === 'Move to new window')!
+    await act(async () => toNew.click())
+    // The card on show goes too (the hook's test); this fixture's page has no card text, so the done screen shows and there is none.
+    expect(bridge.window.inboxToNewWindow).toHaveBeenCalledExactlyOnceWith({ root: '/v', folder: 'Work', filter: 'all' })
+    await vi.waitFor(() => expect(strip()).toEqual(['a', 'b*']))
+    expect(captured.sidebar?.reviewing).toBe(false)
+    // "Move to ▸" the other window that shows the vault.
+    openInbox()
+    await vi.waitFor(() => expect(strip()).toEqual(['a', 'b', 'Inbox*']))
+    const moveTo = menu().find((item) => item.textContent === 'Move to')!
+    act(() => moveTo.click())
+    const row = [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu__sub [role="menuitem"]')][0]
+    await act(async () => row.click())
+    expect(bridge.window.moveInboxTo).toHaveBeenCalledExactlyOnceWith('w2', expect.objectContaining({ root: '/v', filter: 'all' }))
+    await vi.waitFor(() => expect(strip()).toEqual(['a', 'b*']))
+    // The sidebar row's "Open in new window": a fresh Inbox there; nothing closes here.
+    openInbox()
+    await act(async () => captured.sidebar?.onInboxNewWindow?.('/v'))
+    expect(bridge.window.inboxToNewWindow).toHaveBeenLastCalledWith({ root: '/v' })
+    expect(strip()).toEqual(['a', 'b', 'Inbox*'])
+  })
+
+  it('YAZ-5054: an Inbox moved here opens on its scope, filter and card once the index is in; a window that has its own Inbox goes to it instead', async () => {
+    const { el, emitTakeInbox } = await mount(defaultAppState(), TABS, {}, withIndex(RECORDS()))
+    const strip = () => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => `${t.textContent}${t.getAttribute('aria-selected') === 'true' ? '*' : ''}`)
+    act(() => emitTakeInbox({ root: '/v', filter: 'new', card: { path: '/v/Work/p.md', id: 'V-3' } }))
+    await vi.waitFor(() => expect(strip()).toEqual(['a', 'b', 'Inbox*']), { timeout: SLOW_RUNNER_MS })
+    await vi.waitFor(() => expect(el.querySelector('.note-card-inbox')?.textContent).toContain('New cards'), { timeout: SLOW_RUNNER_MS })
+    // Its own Inbox stays as it is: the moved one goes to it.
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')][0].click())
+    expect(strip()).toEqual(['a*', 'b', 'Inbox'])
+    act(() => emitTakeInbox({ root: '/v', folder: 'Work' }))
+    await vi.waitFor(() => expect(strip()).toEqual(['a', 'b', 'Inbox*']))
+    // A vault this window does not show: nothing opens.
+    act(() => el.querySelector<HTMLButtonElement>('.tabbar [aria-label="Close Inbox"]')!.click())
+    act(() => emitTakeInbox({ root: '/elsewhere' }))
+    expect(strip()).toEqual(['a*', 'b'])
   })
 
   it('"Review this folder" and "Review this page" start a session over that scope: its first card\'s page is read', async () => {

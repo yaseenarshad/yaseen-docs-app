@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
-import { MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, normalizeFilesZoom, placeVaults, rootOfPath, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type PageView, type RestoreSessionResult, type PopOutCarry, type RightPanelIdentity, type ScreenPoint, type SidebarLens, type StoredTab, type TabAction, type TabRef, type WindowEntry, type WindowIdentity } from '@shared/types'
+import { INBOX_FILTERS, MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, normalizeFilesZoom, placeVaults, rootOfPath, stripSlash, type FilesAction, type FilesPreviewRequest, type InboxCarry, type OpenSetResult, type PageView, type RestoreSessionResult, type PopOutCarry, type RightPanelIdentity, type ScreenPoint, type SidebarLens, type StoredTab, type TabAction, type TabRef, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { isFiniteNumber, isRecord } from '@shared/guards'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
@@ -113,6 +113,23 @@ function optionalPopOutCarry(v: unknown): PopOutCarry {
   // A quiet move (YAZ-3343 D13): only `true` is one; anything else is the ordinary move.
   const at = optionalSlot(v.at)
   return { ...(view === undefined ? {} : { view }), ...(name === null ? {} : { name }), ...(v.background === true ? { background: true as const } : {}), ...(at === undefined ? {} : { at }) }
+}
+
+/**
+ * An Inbox tab's carry (YAZ-5054): an object with an absolute vault `root` that the caller's window shows. A `folder`
+ * (root-relative), a `page` (absolute, in that vault), a known `filter` and a `card` `{ path, id }` are kept when well
+ * formed; anything else is left out, never an error.
+ */
+function requireInboxCarry(v: unknown, roots: readonly string[]): InboxCarry {
+  if (!isRecord(v)) throw new BridgeFailure('BAD_REQUEST', "'carry' must be an object")
+  const root = requireAbsPath(v.root, 'root')
+  const shown = roots.find((r) => stripSlash(r) === stripSlash(root))
+  if (shown === undefined) throw new BridgeFailure('BAD_REQUEST', 'that vault is not in this window')
+  const page = typeof v.page === 'string' && rootOfPath([shown], v.page) !== null ? v.page : undefined
+  const folder = typeof v.folder === 'string' && !v.folder.startsWith('/') && !v.folder.split('/').includes('..') ? v.folder : undefined
+  const filter = INBOX_FILTERS.find((f) => f === v.filter)
+  const card = isRecord(v.card) && typeof v.card.path === 'string' && typeof v.card.id === 'string' ? { path: v.card.path, id: v.card.id } : undefined
+  return { root: shown, ...(folder === undefined ? {} : { folder }), ...(page === undefined ? {} : { page }), ...(filter === undefined ? {} : { filter }), ...(card === undefined ? {} : { card }) }
 }
 
 /** Where a drag was let go (YAZ-3637 D1): `{ x, y }`, two finite numbers. */
@@ -306,6 +323,22 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     const target = requireAbsPath(path, 'path')
     if (id === from.id) throw new BridgeFailure('BAD_REQUEST', 'a tab cannot move to its own window')
     if (!windows.moveTo(id, target, optionalPopOutCarry(carry))) throw new BridgeFailure('NOT_FOUND', 'that window is closed or shows no vault of this page')
+  })
+
+  // `window:inbox-to-new-window` (YAZ-5054): the Inbox tab's "Move to new window" and the Inbox row's "Open in new
+  // window". Main copies the CALLER's window, as `pop-out`: an Inbox of a vault it does not show is no Inbox of it.
+  handleWithEvent(CONTRACT.window.inboxToNewWindow, async (e, carry: unknown) => {
+    const from = entryFor(e)
+    windows.inboxToNewWindow(from, requireInboxCarry(carry, vaultsOf(from)))
+  })
+
+  // `window:move-inbox-to` (YAZ-5054): the Inbox tab's "Move to ▸ <window>". A window that closed, or that does not
+  // show the vault, refuses, and the source keeps its Inbox.
+  handleWithEvent(CONTRACT.window.moveInboxTo, async (e, to: unknown, carry: unknown) => {
+    const from = entryFor(e)
+    const id = requireString(to, 'to')
+    if (id === from.id) throw new BridgeFailure('BAD_REQUEST', 'the Inbox cannot move to its own window')
+    if (!windows.moveInboxTo(id, requireInboxCarry(carry, vaultsOf(from)))) throw new BridgeFailure('NOT_FOUND', 'that window is closed or does not show this vault')
   })
 
   // The tab board's doors to other windows (YAZ-3343 D3): `window:focus-tab` raises `to` and makes its tab active,

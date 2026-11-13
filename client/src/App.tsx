@@ -3,7 +3,7 @@ import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
 import type { LinkPills } from '@shared/linkPills'
 import type { TextFormatting } from '@shared/textFormatting'
-import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, headerRowAttrs, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, subheaderRowAttrs, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
+import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, headerRowAttrs, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, subheaderRowAttrs, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
@@ -72,7 +72,7 @@ import { toolbarPrefs } from './editor/toolbarPrefs'
 import { setUsedHighlightColors, setUsedHighlightColorsSaver } from './editor/highlightUsed'
 import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
-import type { CardReviewScope, CardReviewSession } from './review/useCardReview'
+import type { CardReviewResume, CardReviewScope, CardReviewSession } from './review/useCardReview'
 import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { textVars } from './settings/headingStyles'
@@ -1578,11 +1578,12 @@ export function App() {
     setInboxFront(true)
   }, [closeBlank])
   /** The Inbox tab with this scope ("Review this page / folder" replace the scope of an open one), on show. */
-  const startReview = useCallback((scope: VaultScope, cards?: CardReviewScope) => {
+  const startReview = useCallback((scope: VaultScope, cards?: CardReviewScope, resume?: CardReviewResume) => {
     // A new Inbox tab opens at the end, as a new tab does (YAZ-5016); an open one keeps its place for the new scope.
     if (live.current.vaults.every((vault) => vault.review.session === null)) setInboxAfter(now.current.tabs.at(-1)?.id ?? null)
     for (const vault of live.current.vaults) if (vault !== scope) vault.review.close()
-    scope.review.start(cards)
+    // `resume`: an Inbox moved here from another window (YAZ-5054) picks up its filter and card.
+    scope.review.start(cards, resume)
     showInbox()
   }, [showInbox])
   /** The sidebar's Inbox row: opens the Inbox tab, or goes to it when it is open (one per window). */
@@ -2127,6 +2128,70 @@ export function App() {
     api.window.highlight(to).catch(() => undefined)
   }, [])
   /**
+   * THE INBOX TAB GOES TO ANOTHER WINDOW (YAZ-5054, Yaseen: "ability right click inbox tab and open in new tab and open
+   * in new window both the left side panel one and the tab itself?"): what it takes along — its vault, what it reviews,
+   * its filter and the card on show. The window that takes it starts its own review of that (`takeInbox`). Null: no Inbox.
+   */
+  const inboxCarry = useCallback((): InboxCarry | null => {
+    const at = live.current.vaults.findIndex((vault) => vault.review.session !== null)
+    const open = at === -1 ? null : live.current.vaults[at].review.session
+    if (open === null) return null
+    const { folder, page } = open.cards ?? {}
+    return { root: live.current.roots[at], ...(folder ? { folder } : {}), ...(page === undefined ? {} : { page }), filter: open.filter, ...(open.card === null ? {} : { card: { path: open.card.path, id: open.card.id } }) }
+  }, [])
+  /**
+   * The Inbox leaves, as a page tab does (`sendTabAway`): main opens the window or hands it on, and only then does the
+   * Inbox close here. "Move to ▸" from a window with nothing else open takes the window with it (YAZ-3091 D6). A
+   * refusal leaves it where it is, with a notice.
+   */
+  const sendInboxAway = useCallback((send: (carry: InboxCarry) => Promise<void>, failed: string, closeEmptyWindow: boolean) => {
+    const carry = inboxCarry()
+    if (carry === null) return
+    send(carry)
+      .then(() => {
+        const { tabs: all, right, blank: newTab } = now.current
+        if (closeEmptyWindow && all.length === 0 && right === 0 && !newTab) void api.window.closeSelf()
+        else closeReview()
+      })
+      .catch((err: unknown) => notify(`${failed}: ${err instanceof Error ? err.message : String(err)}`))
+  }, [inboxCarry, closeReview, notify])
+  /** The Inbox tab's "Move to new window" (YAZ-5054). */
+  const moveInboxToNewWindow = useCallback(() => sendInboxAway((carry) => api.window.inboxToNewWindow(carry), "Can't move to a new window", false), [sendInboxAway])
+  /** The Inbox tab's "Move to ▸ <window>" (YAZ-5054). */
+  const moveInboxToWindow = useCallback((to: string) => sendInboxAway((carry) => api.window.moveInboxTo(to, carry), "Can't move to that window", true), [sendInboxAway])
+  /** The Inbox tab's "Move to ▸" (YAZ-5054): the other full windows that show its vault, named as a page tab's rows. */
+  const inboxMoveTargets = useCallback((): MoveTarget[] => {
+    const root = inboxCarry()?.root
+    if (root === undefined) return []
+    return storage.getOtherWindows()
+      .filter((w) => w.roots.some((r) => stripSlash(r) === stripSlash(root)))
+      .map((w) => ({ id: w.id, label: windowLabel(w, titles) }))
+  }, [inboxCarry, titles])
+  /** The sidebar Inbox row's "Open in new window" (YAZ-5054): that vault's Inbox, fresh, in a new window; this window keeps its own. */
+  const openInboxInNewWindow = useCallback((root: string) => {
+    api.window.inboxToNewWindow({ root }).catch((err: unknown) => notify(`Can't open a new window: ${err instanceof Error ? err.message : String(err)}`))
+  }, [notify])
+  /**
+   * An Inbox moved here, or opened in this new window (YAZ-5054): held until its vault's index is in, so the queue is
+   * read off real cards. One Inbox per window (YAZ-5011): a window with its own goes to it, and the moved one is not
+   * opened. A vault this window does not show opens nothing.
+   */
+  const [inboxArrival, setInboxArrival] = useState<InboxCarry | null>(null)
+  const takeInbox = useCallback((carry: InboxCarry) => setInboxArrival(carry), [])
+  useEffect(() => {
+    if (inboxArrival === null) return
+    const at = roots.findIndex((r) => stripSlash(r) === stripSlash(inboxArrival.root))
+    if (at === -1) return setInboxArrival(null)
+    if (vaults.some((vault) => vault.review.session !== null)) {
+      setInboxArrival(null)
+      return showInbox()
+    }
+    if (vaults[at].ids === undefined) return
+    setInboxArrival(null)
+    const { folder, page, filter, card } = inboxArrival
+    startReview(vaults[at], page !== undefined ? { page } : folder !== undefined ? { folder } : undefined, { filter, card })
+  }, [inboxArrival, roots, vaults, showInbox, startReview])
+  /**
    * "Duplicate tab" (YAZ-2940 D5–D7), on a tab of the strip and on a page of the board: a copy of the tab
    * opens right after it and shows — under the board it shows on the board beside its source, and the
    * board stays (S5: a menu action is no trip to a page, R30). The copy starts with its source's page view
@@ -2271,7 +2336,7 @@ export function App() {
       if (added) moveBoardTab(from, storage.getWindowId(), ref)
     })
   }, [addVault, moveBoardTab])
-  useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles })
+  useLinkEvents({ onOpenFile: openPage, onNotice: notify, onTakeTab: takeTab, onFocusTab: focusTabHere, onCloseTabs: closeTabsHere, onSendTab: sendTabHere, onSetRoots: setRootsHere, onPopOutTab: popOutTabHere, onAddVaultAndTake: addVaultAndTakeHere, onHighlightTab: highlightTabHere, onTabAction: tabActionHere, onOpenFromFiles: openFromFiles, onTakeInbox: takeInbox })
   /** This window's card let go on the tab strip (YAZ-3808 D1): its tab moves to the slot, as a drag along the strip does. */
   const moveBoardCardToSlot = useCallback((id: string, slot: number) => {
     const from = now.current.tabs.findIndex((t) => t.id === id)
@@ -3770,6 +3835,8 @@ export function App() {
           onReviewPage={filesDoors?.reviewPage ?? ((path) => startReview(scopeOf(path), { page: path }))}
           // An Inbox row (YAZ-4967), one per vault with review on that gives IDs (YAZ-2602 R5): it opens ITS vault's review, and closes it when it is the one open.
           onInbox={filesDoors?.inbox ?? toggleInbox}
+          // Its "Open in new window" (YAZ-5054): main opens the window, from a Files window too.
+          onInboxNewWindow={openInboxInNewWindow}
         />
       )}
       {root !== null && !sidebarCollapsed && !filesWindow && <div className={`sidebar-resize${resizing ? ' sidebar-resize--active' : ''}`} aria-hidden onMouseDown={startSidebarResize} />}
@@ -3816,7 +3883,7 @@ export function App() {
             onActivate={overviewOpen ? leaveOverview : activateFromStrip}
             // The Inbox tab (YAZ-5011): in the strip while a review session is open.
             // It stands where it was put (YAZ-5016): `inboxAt`, moved by a drag along the strip.
-            inbox={session === null ? undefined : { label: inboxLabel(session), active: inboxShown, at: inboxAt, onActivate: showInbox, onClose: closeReview, onMove: setInboxAfter, onCloseOthers: () => closeAroundInbox(false), onCloseToRight: () => closeAroundInbox(true) }}
+            inbox={session === null ? undefined : { label: inboxLabel(session), active: inboxShown, at: inboxAt, onActivate: showInbox, onClose: closeReview, onMove: setInboxAfter, onCloseOthers: () => closeAroundInbox(false), onCloseToRight: () => closeAroundInbox(true), onMoveToNewWindow: moveInboxToNewWindow, moveTargets: inboxMoveTargets, onMoveToWindow: moveInboxToWindow }}
             onKeep={keep}
             onClose={overviewOpen ? closeOneUnderOverview : closeTab}
             onMove={moveTab}

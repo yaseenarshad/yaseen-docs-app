@@ -1688,6 +1688,45 @@ describe('createWindowManager: moveTo hands a tab to an open window (YAZ-3091 D1
   })
 })
 
+describe('createWindowManager: the Inbox tab goes to another window (YAZ-5054)', () => {
+  function seed() {
+    store.upsertWindow({ id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md'], tabStrip: [{ path: '/a/x.md', name: 'Named' }], rightPanel: { open: true, width: 560, items: ['/a/r.md'], expanded: null }, sidebarCollapsed: false, sidebarLens: 'focus', bounds: { x: 10, y: 10, width: 800, height: 600 } })
+    store.upsertWindow({ id: 'w2', root: '/c', roots: ['/c'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 40, y: 40, width: 800, height: 600 } })
+    const { host, created } = makeHost()
+    const manager = createWindowManager(store, host)
+    manager.restore('all')
+    return { manager, created, w1: created[0].win, w2: created[1].win }
+  }
+  const carry = { root: '/a', folder: 'notes', filter: 'next' as const, card: { path: '/a/notes/c.md', id: 'A-1' } }
+
+  it('a new window on the caller\'s vaults with NO page tab, the sidebar hidden, the right panel empty, cascaded; link:take-inbox waits until its page listens', () => {
+    const { manager, created } = seed()
+    const from = store.get().windows.find((w) => w.id === 'w1')!
+    const id = manager.inboxToNewWindow(from, carry)
+    const made = created.at(-1)!
+    expect(made.entry).toEqual({ id, root: '/a', roots: ['/a', '/b'], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: true, sidebarLens: 'focus', bounds: { x: 10 + WINDOW_CASCADE_PX, y: 10 + WINDOW_CASCADE_PX, width: 800, height: 600 } })
+    expect(made.entry.roots).not.toBe(from.roots)
+    expect(made.win.webContents.send).not.toHaveBeenCalled()
+    manager.handleLinkReady(made.win.webContents)
+    expect(made.win.webContents.send.mock.calls).toEqual([[CONTRACT.link.onTakeInbox.channel, carry]])
+    // The source is untouched: it closes its own Inbox tab once the new window is there.
+    expect(store.get().windows.find((w) => w.id === 'w1')).toEqual(from)
+  })
+
+  it('"Move to ▸ <window>": raises the live window that shows the vault and pushes link:take-inbox; any other is refused, nothing sent', () => {
+    const { manager, w1, w2 } = seed()
+    for (const c of [w1, w2]) manager.handleLinkReady(c.webContents)
+    w1.minimized = true
+    expect(manager.moveInboxTo('w1', { root: '/b/' })).toBe(true)
+    expect([w1.isMinimized(), w1.focusCount]).toEqual([false, 1])
+    expect(w1.webContents.send).toHaveBeenLastCalledWith(CONTRACT.link.onTakeInbox.channel, { root: '/b/' })
+    expect(manager.moveInboxTo('w2', carry)).toBe(false) // w2 shows only /c
+    expect(manager.moveInboxTo('nope', carry)).toBe(false)
+    expect(w2.webContents.send).not.toHaveBeenCalledWith(CONTRACT.link.onTakeInbox.channel, expect.anything())
+    expect(w2.focusCount).toBe(0)
+  })
+})
+
 describe('createWindowManager: a popped-out window gets its page view once (YAZ-2951 D2, S17, S20; ⌘⇧N no longer, YAZ-3343 D35)', () => {
   const VIEW: PageView = { scrollTop: 420, zoomKey: 'l2 a:1', folds: ['abc:0', 'h:def:0'], magnification: 125 }
   const from: WindowEntry = { id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md', '/b/y.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 100, y: 100, width: 800, height: 600 } }
