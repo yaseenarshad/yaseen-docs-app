@@ -1447,7 +1447,8 @@ export function App() {
   /** The Inbox's O and E (YAZ-4962): the page on top, landed on the card, in edit mode for E. */
   const openPageAtCard = useCallback((path: string, card: number, edit: boolean) => openExploreWith({ kind: 'note', path, card, edit }), [openExploreWith])
   /** The Inbox's E (YAZ-5003, in Edit card) and ⋯ › Open card (YAZ-5004): the card window on top. */
-  const openCardWindow = useCallback((path: string, cardId: string, index: number, edit: boolean) => openExploreWith({ kind: 'card', path, cardId, index, ...(edit && { edit }) }), [openExploreWith])
+  // The Inbox's card window (E, ⋯ › Open card): ⌘↵ while reading goes back to the Inbox (YAZ-5009).
+  const openCardWindow = useCallback((path: string, cardId: string, index: number, edit: boolean) => openExploreWith({ kind: 'card', path, cardId, index, fromInbox: true, ...(edit && { edit }) }), [openExploreWith])
   // The card window (YAZ-4962, D13): every editor sends `mdapp:note-card-open` from its card (a click on the title,
   // ⋯ › Open card, ⌘↵); it bubbles to the document. A preview that does not know its page sends no path: nothing opens.
   useEffect(() => {

@@ -43,8 +43,6 @@ export interface NoteCardInboxMoment {
   /** Space has no more to show (the answer buttons show from the start, YAZ-5010). */
   answering: boolean
   canUndo: boolean
-  /** The card can be edited (not a read-only vault): E opens it in the card window, in Edit card (YAZ-5003). */
-  editable: boolean
   /** ← or → has a card to go to (YAZ-5004). */
   moves?: boolean
 }
@@ -54,11 +52,12 @@ export interface NoteCardInboxMoment {
  * answer digits are on the buttons, so the row does not say them again. No Esc (YAZ-5011): the Inbox is a tab, and
  * closes as one (its ✕, ⌘W).
  */
-export const noteCardInboxHints = ({ card, answering, canUndo, editable, moves = false }: NoteCardInboxMoment): { keys: string; label: string }[] => [
+export const noteCardInboxHints = ({ card, answering, canUndo, moves = false }: NoteCardInboxMoment): { keys: string; label: string }[] => [
   ...(card && !answering ? [{ keys: 'Space', label: 'Show' }] : []),
   ...(card && moves ? [{ keys: '← →', label: 'Other cards' }] : []),
   ...(canUndo ? [{ keys: '⌘Z', label: 'Undo' }] : []),
   ...(card ? [{ keys: 'O', label: 'Open page' }] : []),
-  ...(card && editable ? [{ keys: 'E', label: 'Edit card' }] : []),
+  // E in every vault (YAZ-5009): a read-only one unlocks the card's text alone, for the one edit.
+  ...(card ? [{ keys: 'E', label: 'Edit card' }] : []),
   ...(card ? [{ keys: '⌘↵', label: 'Open page in a new tab' }] : []),
 ]

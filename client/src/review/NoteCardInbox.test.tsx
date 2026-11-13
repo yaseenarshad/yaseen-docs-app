@@ -146,7 +146,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(props.onNotice).toHaveBeenCalledWith('Copied: WIKI-9')
   })
 
-  it('YAZ-5009 root cause, over the app\'s real wiring (`useReadOnlyVault` → `exploreVaultOf`): E follows the vault\'s `read-only.json` — shown with no file or `"on": false`, hidden with `"on": true`', async () => {
+  it('YAZ-5009, over the app\'s real wiring (`useReadOnlyVault` → `exploreVaultOf`): E shows in every vault — no `read-only.json`, `"on": false`, and `"on": true`', async () => {
     mount(TWO_SIDES)
     const hasE = () => [...el.querySelectorAll('.note-card-inbox__hints span')].map((h) => h.textContent).includes('E Edit card')
     const plain = props.vaultOf
@@ -164,7 +164,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
       await flush()
       seen[vault] = hasE()
     }
-    expect(seen).toEqual({ '/no-file': true, '/off': true, '/on': false })
+    expect(seen).toEqual({ '/no-file': true, '/off': true, '/on': true })
   })
 
   it('YAZ-5009: the key row shows "E Edit card" at every step — before Space, between the hidden words, after the last — and on a moved-to card', async () => {
@@ -184,15 +184,21 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(props.openCard).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', 0, true)
   })
 
-  it('YAZ-5003: a read-only vault blocks Edit card, as the page does: E opens nothing, and the hint row does not offer E', () => {
+  it('YAZ-5009: in a read-only vault the row offers "E Edit card", and E opens the card window in Edit card at once (no ask); the Inbox keeps its card and step under it', () => {
     mount(TWO_SIDES)
     const plain = props.vaultOf
     props.vaultOf = (path) => ({ ...plain(path), readOnly: true })
     render()
-    expect([...el.querySelectorAll('.note-card-inbox__hints kbd')].map((k) => k.textContent)).not.toContain('E')
+    press(' ')
+    expect(shown()).toEqual(['France'])
+    expect([...el.querySelectorAll('.note-card-inbox__hints span')].map((h) => h.textContent)).toContain('E Edit card')
     press('e')
-    expect(props.openCard).not.toHaveBeenCalled()
+    expect(props.openCard).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', 0, true)
     expect(props.openPage).not.toHaveBeenCalled()
+    // Back from the card window (the stack closed): the same card, the same step.
+    render()
+    expect(shown()).toEqual(['France'])
+    expect(el.querySelector('.note-card-inbox__place')?.textContent).toBe('3 of 12')
   })
 
   it('Space (D18): the next hidden word, one at a time, in page order; then the next side, whose words show one by one; YAZ-5010: the buttons show from the moment the card shows, and showAnswers is called exactly then', async () => {

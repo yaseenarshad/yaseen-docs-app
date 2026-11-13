@@ -33,8 +33,10 @@ export type ExploreLayer =
       cardId: string | null
       /** Its place among the page's cards (`pageCards` order). */
       index: number
-      /** Opened in Edit card (the Inbox's E, YAZ-5003): Done closes the layer, back to the Inbox. */
+      /** Opened in Edit card (the Inbox's E, YAZ-5003; also in a read-only vault, YAZ-5009): Done goes back to reading. */
       edit?: boolean
+      /** Opened from the Inbox (YAZ-5009): ⌘↵ while reading goes back to the Inbox, not to a tab. */
+      fromInbox?: boolean
     }
   | {
       id: number
@@ -73,7 +75,7 @@ export function pushLayer(layers: readonly ExploreLayer[], layer: ExploreLayer):
 export type FileLayer = Extract<ExploreLayer, { kind: 'note' | 'board' | 'card' }>
 
 /** What App asks the stack to open (YAZ-4962): a page (landing on a card, or in edit mode), or a card window. */
-export type ExploreRequest = { kind: 'note'; path: string; card?: number; edit?: boolean } | { kind: 'card'; path: string; cardId: string | null; index: number; edit?: boolean }
+export type ExploreRequest = { kind: 'note'; path: string; card?: number; edit?: boolean } | { kind: 'card'; path: string; cardId: string | null; index: number; edit?: boolean; fromInbox?: boolean }
 
 /** The note, board or card layer nearest the top, or null: what ⌘↵ opens in a tab (a card's page). */
 export function topNote(layers: readonly ExploreLayer[]): FileLayer | null {

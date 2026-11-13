@@ -16,8 +16,13 @@
  * EDIT CARD (YAZ-5003): E on the card window (or the Inbox's E, which opens it so) shows the page card's own editor:
  * a small Crepe that holds the card block alone, with the card view's Edit card on (`noteCardView.ts`: Crepe's code
  * block, the card language). Done, Esc or ⌘↵ there writes the text into the page (`changeCardTextIn`, the app's own
- * write) and goes back to reading; opened in Edit card (from the Inbox), the layer closes: back to the Inbox at the
- * same card and step. A read-only vault blocks Edit card, as the page does: E does nothing.
+ * write) and goes back to reading. A read-only vault blocks E here, as the page does.
+ *
+ * FROM THE INBOX (YAZ-5009, Yaseen: "e should go directly into edit mode ... then esc and or CMD enter should go back
+ * to read only mode and then another CMD enter would take u back to inbox"): the Inbox's E opens the window in Edit
+ * card at once, also in a read-only vault, with no "Allow edits?" box. The exception is this card's own write, for
+ * this one edit: not the vault's timed allowance, and the rest of the vault stays locked. Done, Esc or ⌘↵ save and go
+ * back to reading, locked again; then ⌘↵ (the stack) or Esc goes back to the Inbox at the same card and step.
  *
  * The card is read from its page (`readCardAt`: by ID, or by its place while it has none) and read again whenever the
  * index has a new version of the page: an answer in the Inbox or a delete elsewhere shows here at once.
@@ -44,8 +49,10 @@ interface ExploreCardProps {
   path: string
   cardId: string | null
   index: number
-  /** Opened in Edit card (the Inbox's E, YAZ-5003): Done saves and closes the layer. */
+  /** Opened in Edit card (the Inbox's E, YAZ-5003): also in a read-only vault, for this one edit (YAZ-5009). Done reads. */
   startInEdit?: boolean
+  /** Opened from the Inbox (YAZ-5009): ⌘↵ while reading goes back to the Inbox, so ↗ does not say ⌘↵. */
+  fromInbox?: boolean
   /** The page's name, for the strip. */
   pageName: string
   vault: ExploreVault
@@ -66,7 +73,7 @@ interface ExploreCardProps {
 
 type Loaded = { kind: 'loading' } | { kind: 'card'; card: CardAtPage } | { kind: 'gone' }
 
-export function ExploreCard({ path, cardId, index, startInEdit = false, pageName, vault, onOpenPage, onOpenLink, onOpenTab, onOpenInTab, onNotice, onHeadDown, onHeadReset, onClose, active }: ExploreCardProps) {
+export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbox = false, pageName, vault, onOpenPage, onOpenLink, onOpenTab, onOpenInTab, onNotice, onHeadDown, onHeadReset, onClose, active }: ExploreCardProps) {
   const headRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLSpanElement>(null)
   useCompactHead(headRef, titleRef)
@@ -115,12 +122,12 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, pageName
 
   const review = vault.review
   const card = loaded.kind === 'card' ? loaded.card : null
-  // Edit card (YAZ-5003): blocked in a read-only vault, as in the page.
-  const [editing, setEditing] = useState(startInEdit && !vault.readOnly)
+  // Edit card (YAZ-5003): E blocks it in a read-only vault, as in the page. The Inbox's E opens it in any vault
+  // (YAZ-5009): only this edit of this card; once it ends, the card reads, locked again.
+  const [editing, setEditing] = useState(startInEdit)
   const editDone = (text: string) => {
     if (card === null) return
     const after = () => {
-      if (startInEdit) return onClose()
       setEditing(false)
       bodyRef.current?.focus({ preventScroll: true })
     }
@@ -174,7 +181,7 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, pageName
         </span>
         {/* ↗ folds into ⋯ in a narrow layer (YAZ-4986); the card ID, the title and × stay. */}
         <span className="explore__fold">
-          <HoverTip text="Open page in a new tab (⌘↵)" data-fold-part="open">
+          <HoverTip text={fromInbox ? 'Open page in a new tab' : 'Open page in a new tab (⌘↵)'} data-fold-part="open">
             <button type="button" className="explore__button" onMouseDown={keepFocus} onClick={onOpenInTab} aria-label="Open page in a new tab">
               ↗
             </button>
@@ -186,7 +193,7 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, pageName
           sections={() => [
             [
               { id: 'open-page', label: 'Open page', onSelect: () => onOpenPage(card?.index ?? index) },
-              { id: 'open-tab', label: 'Open page in a new tab', hint: '⌘↵', onSelect: onOpenInTab },
+              { id: 'open-tab', label: 'Open page in a new tab', ...(!fromInbox && { hint: '⌘↵' }), onSelect: onOpenInTab },
             ],
             ...(card === null || card.id === null
               ? []

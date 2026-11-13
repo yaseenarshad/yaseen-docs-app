@@ -2597,6 +2597,24 @@ describe('the card window (YAZ-4962)', () => {
     expect(props.openInTab).toHaveBeenCalledExactlyOnceWith(PAGE)
   })
 
+  it('YAZ-5009: a card window from the Inbox, reading: ⌘↵ goes back to the Inbox (the stack closes), no tab', async () => {
+    props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0, fromInbox: true }
+    await mount()
+    await flush()
+    key(document.activeElement ?? top(), { key: 'Enter', metaKey: true })
+    expect(props.onClose).toHaveBeenCalledOnce()
+    expect(props.openInTab).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-5009: Esc on a card window from the Inbox, reading, goes back to the Inbox too', async () => {
+    props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0, fromInbox: true }
+    await mount()
+    await flush()
+    escape()
+    expect(props.onClose).toHaveBeenCalledOnce()
+    expect(props.openInTab).not.toHaveBeenCalled()
+  })
+
   it('a card that is gone says so', async () => {
     props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-404', index: 0 }
     await mount()

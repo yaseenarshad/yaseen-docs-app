@@ -15,9 +15,9 @@
  *  - The buttons (D5): Forgot · Remembered, or Again · Hard · Good · Easy, by the setting; the hover says when the
  *    card comes back ("Remembered · 9 days").
  *  - The keys (`noteCardInboxKeys.ts`): Space, 1–2 / 1–4 (at any step, YAZ-5010), ⌘Z, O (the page on top, landed on
- *    the card; Esc there comes back to this card at the same step), E (YAZ-5003: the CARD WINDOW on top, in Edit card;
- *    Done, Esc or ⌘↵ there saves and comes back to this card at the same step; nothing in a read-only vault, where
- *    Edit card is blocked as in the page), ← → (YAZ-5004: the card before or after, no answer), ⌘↵ (the page in a
+ *    the card; Esc there comes back to this card at the same step), E (YAZ-5003: the CARD WINDOW on top, in Edit card, in
+ *    every vault, YAZ-5009: also a read-only one, with no "Allow edits?" box — only this card's text unlocks, for this
+ *    edit; Done, Esc or ⌘↵ there saves and reads, locked again; then ⌘↵ or Esc comes back to this card at the same step), ← → (YAZ-5004: the card before or after, no answer), ⌘↵ (the page in a
  *    background tab: the review stays), Esc (only the ⋯ row; then the Esc order goes on, YAZ-5011). A key typed in a field, or while a dialog or a menu
  *    is open (Explore is a dialog), is not the Inbox's; a key with the keyboard elsewhere (the sidebar) neither.
  *  - Under the card, OUTSIDE its frame, as in Mochi (YAZ-5002): while Space has more to show, a quiet "Press Space to
@@ -176,21 +176,19 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
         return
       }
       if (key.kind === 'open') return openPage(card.path, card.index, false)
-      // E edits only the card (YAZ-5003): the card window in Edit card. Read only blocks Edit card, as in the page.
-      if (key.kind === 'edit') {
-        if (!vaultOf(card.path).readOnly) openCard(card.path, card.id, card.index, true)
-        return
-      }
+      // E edits only the card (YAZ-5003): the card window in Edit card, in every vault (YAZ-5009, Yaseen: "e should go
+      // directly into edit mode"). A read-only vault unlocks this card's text alone, for this edit (`ExploreCard`).
+      if (key.kind === 'edit') return openCard(card.path, card.id, card.index, true)
       if (key.kind === 'tab') return openInTab(card.path)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [advance, openPage, openCard, openInTab, vaultOf])
+  }, [advance, openPage, openCard, openInTab])
 
   const doors = useMemo(() => ({ openLayer, openTab: openLinkIn, onNotice }), [openLayer, openLinkIn, onNotice])
   // The rest of the vault, after a review of one page or one folder: the way on.
   const more = session.scope === 'vault' ? 0 : review.dueCount
-  const hints = noteCardInboxHints({ card: card !== null, answering: done, canUndo: session.canUndo, editable: card !== null && !vaultOf(card.path).readOnly, moves: session.canBack || session.canNext })
+  const hints = noteCardInboxHints({ card: card !== null, answering: done, canUndo: session.canUndo, moves: session.canBack || session.canNext })
   /** The ⋯ row's actions (YAZ-5004): the hook's own, with their names and keys for the hover box. */
   const moreActions =
     card === null
