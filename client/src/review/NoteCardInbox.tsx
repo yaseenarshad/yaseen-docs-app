@@ -10,15 +10,17 @@
  *    with what is under review by it ("· in spanish-words"), then the CURRENT card's place, vault › folder › page, each
  *    part a link (`openPlace`: the folder page, or the page in a tab), and "3 of 12" of the filter's cards on the right.
  *  - Above the card, outside its frame (YAZ-5027): the state chip (YAZ-5018, as Mochi's: "New card", "Due today",
- *    "Due · 3 days ago"), then (YAZ-5051: the card frame holds only the card) the page's name (O), the card ID in
- *    brackets, small and grey (a click copies it, D20), the chip "Up next ×" for a card at the top of the Inbox
- *    (YAZ-4999 D3). No card title: the card is right below it. A card of more than one side says "Side 1 of 2" on the
- *    row's right (YAZ-5048), and the key row's Space says "Next side" when the next Space shows a side.
+ *    "Due · 3 days ago"), then (YAZ-5051: the card frame holds only the card) THE HEAD (YAZ-5044): "Title · ID", the
+ *    card ID small and grey (a click copies it, D20); a card in a page adds a quiet "in <page>", a link that opens the
+ *    page (O too); a card file (YAZ-5037) adds nothing, its title is the link, and it and O open the card file's tab
+ *    ("Open card"). Then the chip "Up next ×" for a card at the top of the Inbox (YAZ-4999 D3). A card of more than one
+ *    side says "Side 1 of 2" on the row's right (YAZ-5048), and the key row's Space says "Next side" when the next Space shows a side.
  *  - SCROLL (YAZ-5049): the word a Space shows, or the side it adds, comes into view with ⌘F's least scroll
  *    (`editor/find/leastScroll.ts`): none while it shows, else just enough, gliding; never centred.
  *  - TITLE ON THE FRONT: HIDE (YAZ-5030, the card line's `notitle`): the front is drawn without its title line (its
- *    first line, `cardWithoutTitle`), so the title is never a Space step, nor any hidden word in it. Once the card is
- *    fully shown the title shows as a small label in the row above the card, after the chip: which card it was.
+ *    first line, `cardWithoutTitle`), so the title is never a Space step, nor any hidden word in it. The head shows the
+ *    ID only until the card is fully shown, then the title: which card it was. A title that holds a hidden word waits
+ *    the same way, also on the front: shown early, it would tell the answer.
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
  *    Space shows the next side, whose hidden words then show one by one. The answer buttons show from the moment the
  *    card shows (YAZ-5010, Yaseen: "Should always be there"): `showAnswers()` fixes what each one writes then (the
@@ -70,6 +72,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
 import { cardSides, cardTitle, cardWithoutTitle, hiddenCount } from '@shared/cardText'
+import { recordAt } from '../editor/noteCard/embedCard'
 import type { GestureAction } from '@shared/keys'
 import type { CardRating } from '@shared/cardLine'
 import type { ExploreVault } from '../explore/ExploreNote'
@@ -98,6 +101,8 @@ export interface NoteCardInboxProps {
   nameOf: (path: string) => string
   /** O and the page name: the page on top as an Explore layer, at its TOP (YAZ-5022: no scroll to the card). */
   openPage: (path: string) => void
+  /** O and the title of a card FILE (YAZ-5037, "Open card"): the card file's own tab. Absent: `openPage`. */
+  openTab?: (path: string) => void
   /** The card window on top (⋯ › Open card); `edit` in Edit card (E, YAZ-5003). */
   openCard: (path: string, id: string, index: number, edit: boolean) => void
   /** ⌘↵: the page in a background tab. */
@@ -203,17 +208,25 @@ interface Step {
   shown: number
 }
 
-export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, openPage, openCard, openInTab, openLinkIn, openLayer, onNotice, openPlace }: NoteCardInboxProps) {
+export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, openPage, openTab, openCard, openInTab, openLinkIn, openLayer, onNotice, openPlace }: NoteCardInboxProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
   const { width, startDrag } = useInboxCardWidth(columnRef, rootRef)
   const card = session.card
   const pageText = card?.page?.text ?? null
   // "Title on the front: Hide" (YAZ-5030): the front is drawn without its title line, so the title is never a Space
-  // step (nor a hidden word in it); once the card is fully shown, the title shows as a small label above it.
+  // step (nor a hidden word in it); once the card is fully shown, the head shows it (YAZ-5044).
   const hideTitle = card?.page?.notitle === true
   const text = useMemo(() => (pageText !== null && hideTitle ? cardWithoutTitle(pageText) : pageText), [pageText, hideTitle])
-  const hiddenTitle = pageText !== null && hideTitle ? cardTitle(pageText) : ''
+  // The head's title (YAZ-5044), and whether it waits for the card's last step: hidden on the front, or holding a hidden word.
+  const title = useMemo(() => {
+    if (pageText === null) return { text: '', waits: false }
+    const tells = hiddenCount(cardSides(pageText)[0]) > hiddenCount(cardSides(cardWithoutTitle(pageText))[0])
+    return { text: cardTitle(pageText), waits: hideTitle || tells }
+  }, [pageText, hideTitle])
+  // A card FILE (YAZ-5037): its own tab is where it lives. One look in the index the card's vault already holds.
+  const cardFile = card !== null && recordAt(vaultOf(card.path).wikilinks.records, card.path)?.kind === 'card'
+  const open = useCallback((path: string): void => (cardFile ? (openTab ?? openPage)(path) : openPage(path)), [cardFile, openTab, openPage])
   const cardKey = card === null ? null : `${session.position}\n${card.path}\n${card.id}`
   // YAZ-5033: the active seconds on this card, from the moment its text shows; read at the answer.
   const answerSeconds = useAnswerTimer(card?.page == null ? null : cardKey, shown, review.settings.pauseAfter)
@@ -334,7 +347,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
         if (card.page !== null && rating !== undefined && !event.repeat) answerWith(rating)
         return
       }
-      if (key.kind === 'open') return openPage(card.path)
+      if (key.kind === 'open') return open(card.path)
       // E edits only the card (YAZ-5003): the card window in Edit card, in every vault (YAZ-5009, Yaseen: "e should go
       // directly into edit mode"). A read-only vault unlocks this card's text alone, for this edit (`ExploreCard`).
       if (key.kind === 'edit') return openCard(card.path, card.id, card.index, true)
@@ -342,7 +355,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [advance, answerWith, openPage, openCard, openInTab])
+  }, [advance, answerWith, open, openCard, openInTab])
 
   const doors = useMemo(() => ({ openLayer, openTab: openLinkIn, onNotice }), [openLayer, openLinkIn, onNotice])
   // YAZ-5042: the kinds that wait past today's number, with an add; under a filter, only that filter's kind.
@@ -360,7 +373,9 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
   const waits = addKinds.length > 0 && <p className="note-card-inbox__done-line">{waitingLine(session.more, addKinds)}</p>
   // The rest of the vault, after a review of one page or one folder: the way on.
   const more = session.scope === 'vault' ? 0 : review.dueCount
-  const hints = noteCardInboxHints({ card: card !== null, answering: done, canUndo: session.canUndo, moves: session.canBack || session.canNext, audio: text !== null && textHasAudio(cardSides(text).slice(0, step.sides).join('\n')), nextSide })
+  // The head's title (YAZ-5044): once the card is fully shown where it waits (`notitle`, or a hidden word in it).
+  const headTitle = title.waits && !done ? '' : title.text
+  const hints = noteCardInboxHints({ card: card !== null, cardFile, answering: done, canUndo: session.canUndo, moves: session.canBack || session.canNext, audio: text !== null && textHasAudio(cardSides(text).slice(0, step.sides).join('\n')), nextSide })
   /** The ⋯ row's actions (YAZ-5004): the hook's own, with their names and keys for the hover box. */
   const moreActions =
     card === null
@@ -379,26 +394,41 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
       <NoteCardInboxBar session={session} setFilter={review.setFilter} addCards={review.addCards} openPlace={openPlace} />
       <div ref={columnRef} className="note-card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
         {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height
-            with no chip (the done screen), so the card does not move; the page name always starts at the head's left. */}
-        {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height
             with no chip (the done screen), so the card does not move. YAZ-5051 (Yaseen: "so that the card is just pure"):
-            the page's name (O opens it) and the ID in brackets (a click copies it) sit here too, after the chip, with
-            "Up next ×"; the card frame holds only the card. A long page name gives way first. */}
+            the head sits here too, after the chip — YAZ-5044 "Title · ID" (a click on the ID copies it), "in <page>" for
+            a card in a page (O opens it) — with "Up next ×"; the card frame holds only the card. A long name gives way first. */}
         <div className="note-card-inbox__above">
           {card !== null && (
             <>
               <NoteCardStateChip card={card} />
               <span className="note-card-inbox__head">
-                <button type="button" className="note-card-strip__page note-card-inbox__page" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(card.path)}>
-                  {nameOf(card.path)}
-                </button>
-                <NoteCardId id={card.id} onNotice={onNotice} brackets />
+                {headTitle !== '' && (
+                  <>
+                    {cardFile ? (
+                      <button type="button" className="note-card-inbox__name note-card-inbox__name--link" onMouseDown={(e) => e.preventDefault()} onClick={() => open(card.path)}>
+                        {headTitle}
+                      </button>
+                    ) : (
+                      <span className="note-card-inbox__name">{headTitle}</span>
+                    )}
+                    <span className="note-card-inbox__dot" aria-hidden>
+                      ·
+                    </span>
+                  </>
+                )}
+                <NoteCardId id={card.id} onNotice={onNotice} />
+                {!cardFile && (
+                  <span className="note-card-inbox__in">
+                    {'in '}
+                    <button type="button" className="note-card-strip__page note-card-inbox__page" onMouseDown={(e) => e.preventDefault()} onClick={() => open(card.path)}>
+                      {nameOf(card.path)}
+                    </button>
+                  </span>
+                )}
                 {card.page?.next === true && <NoteCardNextChip onRemove={() => void review.setNext(card.path, card.id, false)} />}
               </span>
             </>
           )}
-          {/* A hidden title (YAZ-5030) shows here once the card is fully shown: which card it was. */}
-          {done && hiddenTitle !== '' && <span className="note-card-inbox__title">{hiddenTitle}</span>}
           {/* YAZ-5048: a card of more than one side says where you are, quietly, on the right; one side says nothing. */}
           {card !== null && text !== null && counts.length > 1 && <span className="note-card-inbox__sides">{`Side ${Math.min(step.sides, counts.length)} of ${counts.length}`}</span>}
         </div>

@@ -521,14 +521,40 @@
   margin-bottom: 8px;
   padding: 0 2px;
 }
-/* A title hidden on the front (YAZ-5030): after the card is fully shown, a small quiet label after the chip. */
-.note-card-inbox__title {
+/* YAZ-5044: the head's card title, "Title · ID": the head's one strong word. A long title ends in "…" first. A card
+   file's (YAZ-5037) is a link to its tab, in the same look. */
+.note-card-inbox__name {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  color: var(--fg-muted);
-  font-size: 12px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.note-card-inbox__name--link {
+  cursor: pointer;
+}
+.note-card-inbox__name--link:hover {
+  text-decoration: underline;
+}
+.note-card-inbox__dot {
+  flex: none;
+  color: var(--fg-muted);
+}
+/* "in <page>" (YAZ-5044): quiet, after the ID; the page name is the link and gives way before the title. */
+.note-card-inbox__in {
+  display: inline-flex;
+  flex: 0 2 auto;
+  align-items: center;
+  min-width: 0;
+  margin-left: 4px;
+  color: var(--fg-muted);
+  white-space: pre;
 }
 .note-card-inbox__panel {
   position: relative;
@@ -587,7 +613,7 @@ body.note-card-inbox--sizing {
   cursor: ew-resize;
   user-select: none;
 }
-/* YAZ-5051: the page name and the ID, out of the card frame, in the row above it after the state chip. */
+/* YAZ-5051, YAZ-5044: the head, "Title · ID in <page>", out of the card frame, in the row above it after the state chip. */
 .note-card-inbox__head {
   display: inline-flex;
   align-items: center;
@@ -933,15 +959,14 @@ body.note-card-inbox--sizing {
 .note-card-inbox__archived-unarchive:hover {
   background: var(--bg-hover);
 }
-/* YAZ-5012: the page's name first, then the ID; a long name ends in "…" before the ID "(DEMO-59)" after it gives way
-   (the ID is `flex: none`). YAZ-5051: in the row above the card, quiet, so the card is the first thing you read. */
+/* The page of a card in a page (YAZ-5044 "in <page>"): a long name ends in "…" before the ID gives way (the ID is
+   `flex: none`). YAZ-5051: in the row above the card, quiet, so the card is the first thing you read. */
 .note-card-inbox__page {
   flex: 0 1 auto;
   max-width: none;
   padding: 0 2px;
   color: var(--fg-muted);
   font-size: 12px;
-  font-weight: 500;
 }
 /* ONE line at any width (YAZ-5024): no wrap; a key that does not fit folds (`NoteCardInboxHints`), laid out off the
    row so it can still be measured. */

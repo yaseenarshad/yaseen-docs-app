@@ -39,6 +39,8 @@ export interface SearchVault {
   idsInTitle?: () => boolean
   /** "A folder of" the vault (YAZ-4922 🔒 D3): the vault's index is read, and only the notes under this folder are found (`placeOnly`). */
   folder?: string
+  /** The vault's Review is on (YAZ-5037): its cards are rows, each a Card (`searchCandidates`). Absent: none is. */
+  cards?: boolean
 }
 
 type Snapshot = Readonly<{ records: readonly IndexRecord[]; folders: readonly IndexRecord[]; letters?: readonly string[] }>
@@ -56,7 +58,7 @@ function scoped(snapshot: Snapshot, folder: string | undefined): Snapshot {
 }
 
 /** One vault's rows as they were last built, with what each part was built from. */
-type Rows = Snapshot & { dirs: readonly string[]; files: readonly string[]; folderRows: SearchCandidate[]; noteRows: SearchCandidate[]; fileRows: SearchCandidate[]; extra?: (records: readonly IndexRecord[]) => SearchCandidate[]; extraRows: SearchCandidate[]; all: SearchCandidate[] }
+type Rows = Snapshot & { dirs: readonly string[]; files: readonly string[]; cards: boolean; folderRows: SearchCandidate[]; noteRows: SearchCandidate[]; fileRows: SearchCandidate[]; extra?: (records: readonly IndexRecord[]) => SearchCandidate[]; extraRows: SearchCandidate[]; all: SearchCandidate[] }
 const NO_ROWS: SearchCandidate[] = []
 
 /**
@@ -135,17 +137,17 @@ export function useSearchCandidates(vaults: readonly SearchVault[], activated: b
   const built = useRef(new Map<string, Rows>())
   return useMemo(() => {
     const next = new Map<string, Rows>()
-    for (const { root, dirs, files, folder } of vaults) {
+    for (const { root, dirs, files, folder, cards = false } of vaults) {
       // `letters` arrive with the snapshot they belong to (YAZ-2677 D9, S77), so the rows built from it carry them.
       const { records, folders, letters } = scoped(snapshots.get(root) ?? NO_SNAPSHOT, folder)
       const last = built.current.get(root)
       const folderRows = last !== undefined && last.dirs === dirs && last.folders === folders ? last.folderRows : folderCandidates(root, dirs, folders, letters)
-      const noteRows = last !== undefined && last.records === records ? last.noteRows : searchCandidates(records, letters)
+      const noteRows = last !== undefined && last.records === records && last.cards === cards ? last.noteRows : searchCandidates(records, letters, cards)
       const fileRows = last !== undefined && last.files === files ? last.fileRows : fileCandidates(root, files)
       // The extra rows (YAZ-2571) follow the records, as the note rows do, and the function: a new one builds anew.
       const extraRows = extra === undefined ? NO_ROWS : last !== undefined && last.records === records && last.extra === extra ? last.extraRows : extra(records)
       const same = last !== undefined && last.folderRows === folderRows && last.noteRows === noteRows && last.fileRows === fileRows && last.extraRows === extraRows
-      next.set(root, { dirs, files, records, folders, folderRows, noteRows, fileRows, extra, extraRows, all: same ? last.all : [...folderRows, ...noteRows, ...fileRows, ...extraRows] })
+      next.set(root, { dirs, files, cards, records, folders, folderRows, noteRows, fileRows, extra, extraRows, all: same ? last.all : [...folderRows, ...noteRows, ...fileRows, ...extraRows] })
     }
     built.current = next
     const lists = [...next.values()].map((rows) => rows.all)

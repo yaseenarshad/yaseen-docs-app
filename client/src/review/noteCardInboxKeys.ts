@@ -41,6 +41,8 @@ export function noteCardInboxKey(event: KeyPress): NoteCardInboxKey | null {
 export interface NoteCardInboxMoment {
   /** A card shows (not the done screen). */
   card: boolean
+  /** The card is a card FILE (YAZ-5037): O opens its tab. */
+  cardFile?: boolean
   /** Space has no more to show (the answer buttons show from the start, YAZ-5010). */
   answering: boolean
   canUndo: boolean
@@ -57,13 +59,14 @@ export interface NoteCardInboxMoment {
  * answer digits are on the buttons, so the row does not say them again. No Esc (YAZ-5011): the Inbox is a tab, and
  * closes as one (its ✕, ⌘W).
  */
-export const noteCardInboxHints = ({ card, answering, canUndo, moves = false, audio = false, nextSide = false }: NoteCardInboxMoment): { keys: string; label: string }[] => [
+export const noteCardInboxHints = ({ card, cardFile = false, answering, canUndo, moves = false, audio = false, nextSide = false }: NoteCardInboxMoment): { keys: string; label: string }[] => [
   // What Space does next (YAZ-5048, Yaseen: "no way to know there is another side"): a word, or the next side.
   ...(card && !answering ? [{ keys: 'Space', label: nextSide ? 'Next side' : 'Show' }] : []),
   ...(card && audio ? [{ keys: 'P', label: 'Play' }] : []),
   ...(card && moves ? [{ keys: '← →', label: 'Other cards' }] : []),
   ...(canUndo ? [{ keys: '⌘Z', label: 'Undo' }] : []),
-  ...(card ? [{ keys: 'O', label: 'Open page' }] : []),
+  // A card file (YAZ-5037) opens its own tab: "Open card".
+  ...(card ? [{ keys: 'O', label: cardFile ? 'Open card' : 'Open page' }] : []),
   // E in every vault (YAZ-5009): a read-only one unlocks the card's text alone, for the one edit.
   ...(card ? [{ keys: 'E', label: 'Edit card' }] : []),
   // Short (YAZ-5024): the row is one line.

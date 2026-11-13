@@ -114,13 +114,13 @@ afterEach(() => {
 })
 
 describe('the Inbox screen (YAZ-4962)', () => {
-  it('YAZ-5012: the head reads "Cards (WIKI-9)": the page name first, then the ID in brackets — no card title (the card is below); the hint row shows only keys that act now', async () => {
+  it('YAZ-5044: the head reads "WIKI-9 in Cards" while the title holds a hidden word (it would tell the answer), then "Capital of France · WIKI-9 in Cards"; the hint row shows only keys that act now', async () => {
     mount(TWO_SIDES)
     expect(el.querySelector('.explore__title')).toBeNull()
-    const head = [...el.querySelector('.note-card-inbox__head')!.children].map((c) => [c.className, c.textContent])
-    expect(head).toEqual([
-      ['note-card-strip__page note-card-inbox__page', 'Cards'],
-      ['note-card__id', '(WIKI-9)'],
+    const head = () => [...el.querySelector('.note-card-inbox__head')!.children].map((c) => [c.className, c.textContent])
+    expect(head()).toEqual([
+      ['note-card__id', 'WIKI-9'],
+      ['note-card-inbox__in', 'in Cards'],
     ])
     // YAZ-5017: "3 of 12" moved to the top row, on the right.
     expect(el.querySelector('.note-card-inbox__bar .note-card-inbox__place')?.textContent).toBe('3 of 12')
@@ -129,8 +129,14 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(hints()).toEqual(['Space Show', 'O Open page', 'E Edit card', 'Cmd + Enter New tab'])
     for (let i = 0; i < 4; i++) press(' ')
     await flush()
-    // The last step: Space has nothing more to show.
+    // The last step: Space has nothing more to show, and the title shows.
     expect(hints()).toEqual(['O Open page', 'E Edit card', 'Cmd + Enter New tab'])
+    expect(head()).toEqual([
+      ['note-card-inbox__name', 'Capital of France'],
+      ['note-card-inbox__dot', '·'],
+      ['note-card__id', 'WIKI-9'],
+      ['note-card-inbox__in', 'in Cards'],
+    ])
   })
 
   it('YAZ-4999: an up-next card shows the chip "Up next" after the ID; its × removes the mark (setNext)', () => {
@@ -139,13 +145,13 @@ describe('the Inbox screen (YAZ-4962)', () => {
     const card = session.card!
     session = { ...session, card: { ...card, next: true, page: { ...card.page!, next: true } } }
     render()
-    const chip = el.querySelector('.note-card-inbox__head > .note-card-inbox__page + .note-card__id + .note-card__next')!
+    const chip = el.querySelector('.note-card-inbox__head > .note-card__id + .note-card-inbox__in + .note-card__next')!
     expect(chip.textContent).toBe('Up next×')
     act(() => chip.querySelector<HTMLButtonElement>('[aria-label="Remove from top of Inbox"]')!.click())
     expect(review.setNext).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', false)
   })
 
-  it('YAZ-5012: a click on "(WIKI-9)" copies the bare ID, not the brackets', async () => {
+  it('YAZ-5012: a click on the ID copies the bare ID', async () => {
     const writeText = vi.fn(async () => {})
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     mount(TWO_SIDES)
@@ -455,7 +461,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect([...column.children].map((c) => c.className)).toEqual(['note-card-inbox__above', 'note-card-inbox__panel', 'note-card-inbox__actions', 'note-card-inbox__last', 'explore__foot note-card-inbox__hints'])
   })
 
-  it('YAZ-5027: the state chip sits right above the card, outside its head and its frame; the head starts with the page name, for a new and a due card; the row stays with no card', () => {
+  it('YAZ-5027: the state chip sits right above the card, outside its head and its frame; the head ends with "in" and the page name, for a new and a due card; the row stays with no card', () => {
     mount(TWO_SIDES)
     const check = (words: string) => {
       const chip = el.querySelector('.note-card-inbox__state')!
@@ -464,8 +470,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
       expect(head.contains(chip)).toBe(false)
       expect(el.querySelector('.note-card-inbox__panel')!.contains(chip)).toBe(false)
       expect(chip.parentElement!.matches('.note-card-inbox__column > .note-card-inbox__above:first-child')).toBe(true)
-      expect(head.firstElementChild!.matches('.note-card-inbox__page')).toBe(true)
-      expect(head.firstElementChild!.textContent).toBe('Cards')
+      expect(head.querySelector('.note-card-inbox__in > .note-card-inbox__page')!.textContent).toBe('Cards')
     }
     check('New card')
     session = { ...session, card: { ...session.card!, isNew: false, due: Date.now() - 3 * 86_400_000 } }
@@ -836,10 +841,11 @@ describe('the title on the front (YAZ-5030)', () => {
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, notitle } } }
     render()
   }
-  const label = () => el.querySelector('.note-card-inbox__title')?.textContent ?? null
+  /** The title in the head (YAZ-5044): "Title · ID". */
+  const label = () => el.querySelector('.note-card-inbox__head .note-card-inbox__name')?.textContent ?? null
   const text = () => el.querySelector('.note-card-inbox__card')?.textContent ?? ''
 
-  it('Hide: the front draws no title, and the title is NEVER a Space step (its hidden word neither); after the card is fully shown the title shows as a small label', async () => {
+  it('Hide: the front draws no title, and the title is NEVER a Space step (its hidden word neither); the head shows the ID only until the card is fully shown, then the title (YAZ-5044)', async () => {
     withLine(true)
     await flush()
     expect(text()).not.toContain('Capital of France')
@@ -854,12 +860,14 @@ describe('the title on the front (YAZ-5030)', () => {
     expect(label()).toBeNull()
     press(' ')
     expect(shown()).toEqual(['France', 'Paris'])
-    // Fully shown: the label says which card it was; the card itself still has no title.
+    // Fully shown: the head says which card it was; the card itself still has no title.
     expect(label()).toBe('Capital of France')
+    expect(el.querySelector('.note-card-inbox__head')!.textContent).toBe('Capital of France·WIKI-9in Cards')
+    expect(el.querySelectorAll('.note-card-inbox__title')).toHaveLength(0)
     expect(text()).not.toContain('Capital of France')
   })
 
-  it('Show (an old card, no part): the title is part of the front as before, its hidden word the first Space step; no label', async () => {
+  it('Show (an old card, no part): the title is part of the front as before, its hidden word the first Space step; the head waits for the last step to show it, as the title tells the answer (YAZ-5044)', async () => {
     withLine(false)
     await flush()
     expect(blanks()).toBe(2)
@@ -869,7 +877,7 @@ describe('the title on the front (YAZ-5030)', () => {
     press(' ')
     press(' ')
     expect(shown()).toEqual(['Capital of France', 'France', 'Paris'])
-    expect(label()).toBeNull()
+    expect(label()).toBe('Capital of France')
   })
 
   it('the answer line names the card by its title, a hidden title too (the answer is given)', async () => {
@@ -879,6 +887,63 @@ describe('the title on the front (YAZ-5030)', () => {
     session = { ...session, answered: ['good'], canUndo: true }
     render()
     expect(el.querySelector('.note-card-inbox__last')?.textContent).toBe('✓ Remembered · Capital of France (WIKI-9) · back in 3 days · Undo Cmd + Z')
+  })
+})
+
+describe('YAZ-5044 the Inbox head: "Title · ID", "in <page>" for a card in a page, "Open card" for a card file', () => {
+  const PLAIN = 'Capital of France\n\nWhat is the capital of {{France}}?'
+  const headText = () => el.querySelector('.note-card-inbox__head')!.textContent
+  const hints = () => [...el.querySelectorAll('.note-card-inbox__hints span')].map((h) => h.textContent)
+  /** The card's file is a card file (`kind: card`), as the index says. */
+  const asCardFile = () => {
+    const record = { path: PATH, name: 'cards.md', basename: 'cards', title: 'Capital of France', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: { kind: 'card' }, aliases: [], tags: [], links: [], embeds: [], kind: 'card' as const }
+    const wikilinks = createWikilinkResolveSource()
+    wikilinks.update(() => null, [record])
+    props = { ...props, vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: { candidates: [], subscribe: () => () => undefined } as never }), openTab: vi.fn() }
+    render()
+  }
+
+  it('a card in a page: "Capital of France · WIKI-9 in Cards" from the start (no hidden word in its title); "in Cards" is quiet and a link, and O opens the page', () => {
+    mount(PLAIN)
+    expect(headText()).toBe('Capital of France·WIKI-9in Cards')
+    expect(el.querySelector('.note-card-inbox__name')!.tagName).toBe('SPAN')
+    act(() => el.querySelector<HTMLButtonElement>('.note-card-inbox__in > .note-card-inbox__page')!.click())
+    expect(props.openPage).toHaveBeenCalledExactlyOnceWith(PATH)
+    press('o')
+    expect(props.openPage).toHaveBeenCalledTimes(2)
+    expect(hints()).toContain('O Open page')
+  })
+
+  it('a card file adds nothing: "Capital of France · WIKI-9"; its title is the link, and it and O open the card file`s tab ("Open card")', () => {
+    mount(PLAIN)
+    asCardFile()
+    expect(headText()).toBe('Capital of France·WIKI-9')
+    expect(el.querySelector('.note-card-inbox__in')).toBeNull()
+    expect(hints()).toContain('O Open card')
+    expect(hints()).not.toContain('O Open page')
+    act(() => el.querySelector<HTMLButtonElement>('.note-card-inbox__name')!.click())
+    expect(props.openTab).toHaveBeenCalledExactlyOnceWith(PATH)
+    press('o')
+    expect(props.openTab).toHaveBeenCalledTimes(2)
+    expect(props.openPage).not.toHaveBeenCalled()
+  })
+
+  it('a card file with `notitle`: the ID only until the card is fully shown, then the title; O opens its tab all along', async () => {
+    mount(PLAIN)
+    asCardFile()
+    session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, notitle: true } } }
+    render()
+    await flush()
+    expect(headText()).toBe('WIKI-9')
+    press('o')
+    expect(props.openTab).toHaveBeenCalledOnce()
+    press(' ')
+    expect(headText()).toBe('Capital of France·WIKI-9')
+  })
+
+  it('while the card`s page is still read: the ID and the page, no title yet', () => {
+    mount(null)
+    expect(headText()).toBe('WIKI-9in Cards')
   })
 })
 
@@ -1294,12 +1359,12 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
     expect(hints()[0]).toBe('Space Next side')
   })
 
-  it('YAZ-5051: the page name and the ID sit in the row above the card, after the state chip; the card frame holds only the card', () => {
+  it('YAZ-5051: the head (YAZ-5044: the ID and "in" the page) sits in the row above the card, after the state chip; the card frame holds only the card', () => {
     mount(TWO_SIDES)
     const above = el.querySelector('.note-card-inbox__above')!
     const panel = el.querySelector('.note-card-inbox__panel')!
     expect([...above.children].map((c) => c.className).slice(0, 2)).toEqual(['note-card-inbox__state', 'note-card-inbox__head'])
-    expect([...above.querySelector('.note-card-inbox__head')!.children].map((c) => c.textContent)).toEqual(['Cards', '(WIKI-9)'])
+    expect([...above.querySelector('.note-card-inbox__head')!.children].map((c) => c.textContent)).toEqual(['WIKI-9', 'in Cards'])
     expect(panel.querySelector('.note-card-inbox__head, .explore__head, .note-card-inbox__page, .note-card__id')).toBeNull()
   })
 

@@ -3,11 +3,11 @@ import { Fragment } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { MenuAction, MenuParent } from '../sidebar/menuSections'
 import type { SearchCandidate } from './searchCandidates'
-import { filterSection, filterTest, NO_FILTER, timeStart, typeOf } from './searchFilter'
+import { filterSection, filterTest, NO_FILTER, timeStart, typeChip, typeOf } from './searchFilter'
 
-const row = (path: string, kind: 'file' | 'dir' = 'file'): SearchCandidate => {
+const row = (path: string, kind: 'file' | 'dir' = 'file', card = false): SearchCandidate => {
   const name = path.slice(path.lastIndexOf('/') + 1)
-  return { kind, name, lower: name.toLowerCase(), label: name, path, folder: '' }
+  return { kind, name, lower: name.toLowerCase(), label: name, path, folder: '', ...(card && { card: true as const }) }
 }
 // Wednesday Oct 28 2026, 15:30 local time.
 const NOW = new Date(2026, 9, 28, 15, 30).getTime()
@@ -17,10 +17,10 @@ describe('typeOf (YAZ-3511 D13)', () => {
   it('a folder by its kind; a file by its kind, the extension case-blind (edge cases 40 to 43)', () => {
     expect(typeOf(row('/v/Plans', 'dir'))).toBe('folders')
     expect(typeOf(row('/v/Plans.md', 'dir'))).toBe('folders')
-    expect(typeOf(row('/v/plan.md'))).toBe('markdown')
-    expect(typeOf(row('/v/plan.markdown'))).toBe('markdown')
-    expect(typeOf(row('/v/board.excalidraw'))).toBe('excalidraw')
-    expect(typeOf(row('/v/Flow.DRAWIO'))).toBe('drawio')
+    expect(typeOf(row('/v/plan.md'))).toBe('pages')
+    expect(typeOf(row('/v/plan.markdown'))).toBe('pages')
+    expect(typeOf(row('/v/board.excalidraw'))).toBe('drawings')
+    expect(typeOf(row('/v/Flow.DRAWIO'))).toBe('diagrams')
     expect(typeOf(row('/v/shot.JPG'))).toBe('images')
     expect(typeOf(row('/v/logo.svg'))).toBe('images')
     expect(typeOf(row('/v/spec.pdf'))).toBe('pdfs')
@@ -28,6 +28,11 @@ describe('typeOf (YAZ-3511 D13)', () => {
     expect(typeOf(row('/v/script.py'))).toBe('other')
     expect(typeOf(row('/v/.env'))).toBe('other')
     expect(typeOf(row('/v/Makefile'))).toBe('other')
+  })
+
+  it('YAZ-5047: a card by the index`s `kind` (the row`s `card` mark), not the extension: a card file`s `.md` is a Card; with no mark (Review off) a page', () => {
+    expect(typeOf(row('/v/capital-of-france-geo-140.md', 'file', true))).toBe('cards')
+    expect(typeOf(row('/v/capital-of-france-geo-140.md'))).toBe('pages')
   })
 })
 
@@ -79,7 +84,7 @@ describe('filterTest (YAZ-3511 D13, D14, D16)', () => {
 
   it('a type alone reads no time', () => {
     const read = vi.fn(() => 0)
-    expect(filterTest({ type: 'markdown', time: 'any' }, read, undefined)!(row('/v/a.md'))).toBe(true)
+    expect(filterTest({ type: 'pages', time: 'any' }, read, undefined)!(row('/v/a.md'))).toBe(true)
     expect(read).not.toHaveBeenCalled()
   })
 })
@@ -88,9 +93,9 @@ describe('filterSection (YAZ-3511 D13, D14)', () => {
   const labels = (parent: MenuParent) => parent.children.map((group) => group.map((item) => `${item.label}${item.hint ?? ''}`))
 
   it('Type ▸ and Time ▸, each its "all" choice apart, ✓ on the pick, the pick as the row hint (edge cases 39, 44, 59)', () => {
-    const [type, time] = filterSection({ type: 'markdown', time: 'any' }, vi.fn()) as MenuParent[]
-    expect([type.label, type.hint, time.label, time.hint]).toEqual(['Type', 'Markdown', 'Time', 'Any time'])
-    expect(labels(type)).toEqual([['All types'], ['Markdown✓', 'Excalidraw', 'draw.io', 'Folders', 'Images', 'PDFs', 'Other']])
+    const [type, time] = filterSection({ type: 'pages', time: 'any' }, vi.fn()) as MenuParent[]
+    expect([type.label, type.hint, time.label, time.hint]).toEqual(['Type', 'Pages', 'Time', 'Any time'])
+    expect(labels(type)).toEqual([['All types'], ['Pages✓', 'Drawings', 'Diagrams', 'Folders', 'Images', 'PDFs', 'Other']])
     expect(labels(time)).toEqual([['Any time✓'], ['Today', 'This week', 'This month', 'This year']])
   })
 
@@ -107,6 +112,32 @@ describe('filterSection (YAZ-3511 D13, D14)', () => {
   })
 })
 
+describe('YAZ-5047: Cards in the Type list, only while Review is on', () => {
+  const labels = (parent: MenuParent) => parent.children.map((group) => group.map((item) => item.label))
+
+  it('Review on: All types, Pages, Cards, Drawings, Diagrams, Folders, Images, PDFs, Other; a pick of Cards keeps the cards alone', () => {
+    const set = vi.fn()
+    const [type] = filterSection(NO_FILTER, set, true) as MenuParent[]
+    expect(labels(type)).toEqual([['All types'], ['Pages', 'Cards', 'Drawings', 'Diagrams', 'Folders', 'Images', 'PDFs', 'Other']])
+    ;(type.children[1][1] as MenuAction).onSelect()
+    expect(set).toHaveBeenLastCalledWith({ type: 'cards', time: 'any' })
+    const keep = filterTest({ type: 'cards', time: 'any' }, () => 0, undefined)!
+    expect(keep(row('/v/geo-140.md', 'file', true))).toBe(true)
+    expect(keep(row('/v/page.md'))).toBe(false)
+  })
+
+  it('Review off: no Cards (the default)', () => {
+    const [type] = filterSection(NO_FILTER, vi.fn()) as MenuParent[]
+    expect(labels(type).flat()).not.toContain('Cards')
+  })
+
+  it('the chip of Cards says "Cards", with the card icon', () => {
+    const chip = typeChip('cards')!
+    expect(chip.label).toBe('Cards')
+    expect(renderToStaticMarkup(<>{chip.icon}</>)).toContain('card-icon')
+  })
+})
+
 describe('the Type list\'s icons (YAZ-3511 D13)', () => {
   it('each type but All types shows the icon a tree row of its kind shows', () => {
     const [type] = filterSection(NO_FILTER, vi.fn()) as MenuParent[]
@@ -114,5 +145,9 @@ describe('the Type list\'s icons (YAZ-3511 D13)', () => {
     expect(shown[0]).toBeUndefined()
     const html = renderToStaticMarkup(<>{shown.slice(1).map((icon, at) => <Fragment key={at}>{icon}</Fragment>)}</>)
     expect([...html.matchAll(/data-kind="([a-z]+)"/g)].map((m) => m[1])).toEqual(['markdown', 'drawing', 'diagram', 'folder', 'image', 'pdf', 'other'])
+    // YAZ-5047: with Review on, Cards shows the `[[` picker's card icon, second.
+    const [cards] = filterSection(NO_FILTER, vi.fn(), true) as MenuParent[]
+    const second = renderToStaticMarkup(<>{(cards.children[1][1] as MenuAction).icon}</>)
+    expect(second).toContain('class="card-icon"')
   })
 })

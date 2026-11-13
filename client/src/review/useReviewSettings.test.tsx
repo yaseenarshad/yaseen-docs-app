@@ -8,7 +8,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, type ReviewSettings } from '@shared/reviews'
 import type { VaultConfigChange } from '@shared/types'
-import { useReviewSettings, useVaultReviewSettings, type ReviewSettingsState } from './useReviewSettings'
+import { useReviewOnRoots, useReviewSettings, useVaultReviewSettings, type ReviewSettingsState } from './useReviewSettings'
 
 let listeners: Array<(c: VaultConfigChange) => void> = []
 
@@ -38,9 +38,13 @@ let root: Root | null = null
 let state: ReviewSettingsState
 let seen: ReviewSettings | undefined
 
+let onRoots: ReadonlySet<string> = new Set()
+const ROOTS = ['/vault', '/other']
+
 function Probe({ vault }: { vault: string | null }) {
   state = useReviewSettings(vault, notice)
   seen = useVaultReviewSettings('/vault')
+  onRoots = useReviewOnRoots(ROOTS)
   return null
 }
 
@@ -111,6 +115,18 @@ describe('useReviewSettings', () => {
     root = null
     await mount(null)
     expect(seen).toBeUndefined()
+  })
+
+  it('YAZ-5037: `useReviewOnRoots` names the vaults whose Review is on — the search lists their cards — and keeps the same Set while that stays', async () => {
+    read.mockResolvedValue({ enabled: false })
+    await mount('/vault')
+    expect([...onRoots]).toEqual([])
+    read.mockResolvedValue({ enabled: true })
+    await changed()
+    const held = onRoots
+    expect([...held]).toEqual(['/vault'])
+    await act(async () => state.save({ ...state.settings, newPerDay: 7 }))
+    expect(onRoots).toBe(held)
   })
 
   it('a review.json that stops being valid JSON mid-session: the settings stay and a save is refused with a notice, until the file parses again', async () => {

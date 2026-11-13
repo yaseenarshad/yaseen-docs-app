@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import { isRecord } from '@shared/guards'
 import { BridgeRequestError, api } from '../api'
@@ -110,3 +110,12 @@ export function useReviewSettings(root: string | null, onNotice: (text: string, 
  * Cards type in search, the Card type, the Inbox — shows only while it is (YAZ-5037). A card file still opens without it.
  */
 export const useReviewOn = (root: string | null | undefined): boolean => useVaultReviewSettings(root)?.enabled === true
+
+/**
+ * The roots of `roots` whose Review is on (YAZ-5037): the search of a window of many vaults lists the cards of these.
+ * The same Set while the answer stays, so a list built from it is not built again.
+ */
+export function useReviewOnRoots(roots: readonly string[]): ReadonlySet<string> {
+  const on = useSyncExternalStore(subscribe, () => roots.filter((root) => published.get(root)?.enabled === true).join('\n'))
+  return useMemo(() => new Set(on === '' ? [] : on.split('\n')), [on])
+}

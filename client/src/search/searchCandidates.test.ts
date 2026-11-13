@@ -483,3 +483,35 @@ describe('`#5` finds a note by its ID number alone (YAZ-2571 round 5)', () => {
     expect(idNeedle(byTitle!, '5')).toBeUndefined()
   })
 })
+
+describe('YAZ-5037 card files in search (YAZ-5047)', () => {
+  /** A card file as the index holds it: `kind: 'card'`, its card's title, no page ID, its card's ID in `cards` and in its name. */
+  const cardFile = (path: string, title: string, id: string, pageId?: string): IndexRecord => ({
+    ...rec(path, [], title),
+    properties: { kind: 'card' },
+    kind: 'card',
+    cards: [{ id, off: false, next: false, reviews: [], title }],
+    ...(pageId !== undefined && { id: pageId }),
+  })
+  const geo = cardFile('/vault/geo/capital-of-france-geo-140.md', 'Capital of France', 'GEO-140')
+
+  it('Review on: ONE row, a Card, found by its title and by its card`s ID; its name (`<title>-<id>.md`) adds no row', () => {
+    const rows = searchCandidates([geo], [], true)
+    expect(rows).toEqual([{ kind: 'file', name: 'Capital of France', lower: 'capital of france', label: 'Capital of France', path: geo.path, folder: 'geo', id: 'GEO-140', card: true }])
+    expect(searchRows(rows, 'geo-140').map((c) => c.path)).toEqual([geo.path])
+    expect(searchRows(rows, 'capital').map((c) => c.path)).toEqual([geo.path])
+  })
+
+  it('Review off: the same ONE row, a page (no card mark), found by its title', () => {
+    const rows = searchCandidates([geo], [], false)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].card).toBeUndefined()
+    expect(searchRows(rows, 'capital').map((c) => c.path)).toEqual([geo.path])
+  })
+
+  it('a page turned into a card file keeps its page ID: its card`s ID finds it while Review is on (the card`s ID is the file`s)', () => {
+    const turned = cardFile('/vault/capital-of-france-geo-140.md', 'Capital of France', 'GEO-140', 'GEO-7')
+    expect(searchCandidates([turned], [], true)[0].id).toBe('GEO-140')
+    expect(searchCandidates([turned], [], false)[0].id).toBe('GEO-7')
+  })
+})

@@ -67,6 +67,8 @@ export interface FileRecordLike {
   tags: string[]
   links: string[]
   embeds: string[]
+  /** `card` for a card file (YAZ-5037, `IndexRecord.kind`): `file.kind` reads it. */
+  kind?: 'card'
 }
 
 export class FileValue {

@@ -19,6 +19,7 @@ import type { MovedGesture } from '../lib/moveHistory'
 import { ancestorDirs, favoriteRoots, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile } from '../lib/treeState'
 import { SEARCH_CAP } from '../search/searchCandidates'
 import { filterOn, filterSection, NO_FILTER, typeChip, typeFlyout, type SearchFilter, type SearchType } from '../search/searchFilter'
+import { useReviewOnRoots } from '../review/useReviewSettings'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ContextMenu } from './ContextMenu'
@@ -967,9 +968,11 @@ export function Sidebar({
   vaultsNow.current = vaults
   // A folder of a vault (YAZ-4922 D3): the search reads the vault's index and finds the folder's notes only.
   const searchFolders = useSameList(vaults.map((vault) => vault.folder))
+  // The vaults whose Review is on (YAZ-5037): their cards are search rows, and the Type menu offers Cards.
+  const reviewRoots = useReviewOnRoots(roots)
   const searchVaults = useMemo(
-    () => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i], idsInSearch: () => vaultsNow.current.find((v) => v.root === vault)?.idsInSearch?.() ?? 'match', ...(searchFolders[i] !== undefined && { folder: searchFolders[i] }) })),
-    [roots, watches, dirsByVault, filesByVault, searchFolders],
+    () => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i], idsInSearch: () => vaultsNow.current.find((v) => v.root === vault)?.idsInSearch?.() ?? 'match', ...(searchFolders[i] !== undefined && { folder: searchFolders[i] }), ...(reviewRoots.has(vault) && { cards: true }) })),
+    [roots, watches, dirsByVault, filesByVault, searchFolders, reviewRoots],
   )
   // The Search tab (YAZ-2638 D2): its body is the search, and the query stays while another tab shows.
   const searching = lens === 'search'
@@ -2274,7 +2277,7 @@ export function Sidebar({
             (next) => onChangeSettings(sortTab === 'search' ? { ...settings, searchSort: next } : { ...settings, sidebarSort: { ...settings.sidebarSort, [sortTab]: next } }),
             // The tab's date switch (YAZ-3511 D7, D10), and on Search its filters (D13, D14).
             { on: settings.rowDates[sortTab], set: (on) => onChangeSettings({ ...settings, rowDates: { ...settings.rowDates, [sortTab]: on } }) },
-            sortTab === 'search' ? filterSection(searchFilter, setSearchFilter) : undefined,
+            sortTab === 'search' ? filterSection(searchFilter, setSearchFilter, reviewRoots.size > 0) : undefined,
             // YAZ-4450 D4: each list's own switch, in a window with two or more vaults only.
             multi && (sortTab === 'focus' || sortTab === 'favorites') ? workspaceRow(sortTab) : undefined,
           )}

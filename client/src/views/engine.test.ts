@@ -851,11 +851,11 @@ describe('runView: subfolder rows (YAZ-4579 D31/D33)', () => {
   const titles = (r: ViewResult): string[] => r.rows.map(row => row.record.title)
   const byName: Partial<ViewDef> = { sort: [{ property: 'file.name', direction: 'ASC' }] }
 
-  it('`file.kind` is `folder` for a folder row and `note` for a note, under the label "Kind"; a filter on it keeps one kind', () => {
+  it('`file.kind` is `folder` for a folder row and `note` for a note, under the label "Type" (YAZ-5047, was "Kind"); a filter on it keeps one kind', () => {
     expect(table({ order: ['file.name', 'file.kind'] }).rows.map(row => row.values['file.kind'])).toEqual(['folder', 'folder', 'note', 'note'])
     expect(titles(table({ filters: 'file.kind == "folder"' }))).toEqual(['Users', 'Orders'])
     expect(titles(table({ filters: 'file.kind == "note"' }))).toEqual(['Apple', 'Zoo'])
-    expect(defaultLabel('file.kind')).toBe('Kind')
+    expect(defaultLabel('file.kind')).toBe('Type')
   })
 
   it('Folders first (D33), the default: folder rows before the notes, each part in the view’s sort — or, with none, as handed in', () => {
