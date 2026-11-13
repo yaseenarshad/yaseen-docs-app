@@ -6,8 +6,10 @@
  *  - THE INBOX IS A TAB (YAZ-5011): App draws this screen for the window's Inbox tab, over the tab stack. Behind a page
  *    tab it stays mounted, hidden (`shown` false), so it comes back at its card and step; hidden, it hears no key. It
  *    closes as any tab does (its ✕, ⌘W): no × of its own, and Esc does not close it.
- *  - Head: the card ID first, small and grey (a click copies it, D20; its place in the page's card and the card window
- *    too), the chip "Up next ×" for a card at the top of the Inbox (YAZ-4999 D3), the page's name (O), "3 of 12". No card title: the card is right below it.
+ *  - The top row (YAZ-5017, `NoteCardInboxBar`): the filter "All cards ▾" (All cards, Due today, New cards, with counts),
+ *    where the cards come from (the vault, "Folder / Sub", the page), and "3 of 12" of the filter's cards on the right.
+ *  - Head: the page's name (O), the card ID in brackets, small and grey (a click copies it, D20), the chip "Up next ×"
+ *    for a card at the top of the Inbox (YAZ-4999 D3). No card title: the card is right below it.
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
  *    Space shows the next side, whose hidden words then show one by one. The answer buttons show from the moment the
  *    card shows (YAZ-5010, Yaseen: "Should always be there"): `showAnswers()` fixes what each one writes then (the
@@ -38,6 +40,7 @@ import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { NoteCardBody, NoteCardId, NoteCardNextChip, noteCardWait } from './noteCardParts'
 import { noteCardInboxHints, noteCardInboxKey } from './noteCardInboxKeys'
 import { HoverTip } from '../components/HoverTip'
+import { CARD_FILTERS, NoteCardInboxBar } from './NoteCardInboxBar'
 import '../explore/explore.css'
 
 export interface NoteCardInboxProps {
@@ -206,6 +209,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
 
   return (
     <div ref={rootRef} className="note-card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`}>
+      <NoteCardInboxBar session={session} setFilter={review.setFilter} />
       <div className="note-card-inbox__column">
         <div className="note-card-inbox__panel">
           <div className="explore__head note-card-inbox__head">
@@ -220,16 +224,21 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
                 </button>
                 <NoteCardId id={card.id} onNotice={onNotice} brackets />
                 {card.page?.next === true && <NoteCardNextChip onRemove={() => void review.setNext(card.path, card.id, false)} />}
-                <span className="note-card-inbox__place">
-                  {session.position} of {session.total}
-                </span>
               </>
             )}
           </div>
           <div className="note-card-inbox__body">
             {card === null ? (
               <div className="note-card-inbox__done" role="status">
-                {session.scope === 'vault' ? (
+                {session.filter !== 'all' && session.counts.all > 0 ? (
+                  // The filter's cards are done, others are left (YAZ-5017): the way back to All cards.
+                  <>
+                    <p className="note-card-inbox__done-title">{session.filter === 'due' ? 'No due cards left.' : 'No new cards left.'}</p>
+                    <button type="button" className="note-card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={() => review.setFilter('all')}>
+                      {session.counts.all} more in {CARD_FILTERS[0].label}
+                    </button>
+                  </>
+                ) : session.scope === 'vault' ? (
                   <>
                     <p className="note-card-inbox__done-title">Inbox complete.</p>
                     <p className="note-card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>

@@ -105,12 +105,95 @@
   inset: 0;
   z-index: 30;
   display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding: 8vh 16px 16px;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 16px 16px;
   overflow: auto;
   background: var(--bg-side);
   outline: none;
+}
+/* The top row (YAZ-5017, as Mochi's): the filter, the scope's path, and "3 of 12" on the right; it stays on top. */
+.note-card-inbox__bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  flex: none;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 4px 8px;
+  background: var(--bg-side);
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.note-card-inbox__glyph {
+  flex: none;
+}
+.note-card-inbox__filter {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.note-card-inbox__filter:hover,
+.note-card-inbox__filter[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--fg) 6%, var(--bg));
+}
+.note-card-inbox__filter > .note-card-inbox__glyph:last-child {
+  color: var(--fg-muted);
+}
+.note-card-inbox__from {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.note-card-inbox__from-part {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.note-card-inbox__from-sep {
+  margin-right: 6px;
+  opacity: 0.6;
+}
+.note-card-inbox__bar > .note-card-inbox__place {
+  margin-left: auto;
+  padding-right: 4px;
+}
+/* The filter menu: the app's menu, each row its glyph, its name and a small count pill. */
+.note-card-inbox__filter-menu {
+  min-width: 190px;
+}
+.note-card-inbox__filter-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.note-card-inbox__filter-item[aria-checked='true'] {
+  font-weight: 600;
+}
+.note-card-inbox__count {
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--fg-muted);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 /* The Inbox tab behind a page tab (YAZ-5011): mounted, so it keeps its card and step, but not drawn. */
 .note-card-inbox[hidden] {
@@ -118,12 +201,13 @@
 }
 /* The card's panel, then under it, outside its frame (YAZ-5002, as in Mochi): the Space hint, the buttons, the keys. */
 .note-card-inbox__column {
+  flex: 0 1 auto;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   width: min(640px, 100%);
-  max-height: 100%;
   min-height: 0;
+  margin-top: 5vh;
 }
 .note-card-inbox__panel {
   display: flex;
@@ -280,9 +364,6 @@
   color: var(--fg);
   font-size: 13px;
   font-weight: 600;
-}
-.note-card-inbox__head > .note-card-inbox__place {
-  margin-left: auto;
 }
 .note-card-inbox__hints {
   flex-wrap: wrap;

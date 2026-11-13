@@ -43,7 +43,7 @@ let review: CardReviewApi
 let props: NoteCardInboxProps
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, due: 9, new: 3 }, from: ['Vault'], ...over }
 }
 
 function render() {
@@ -70,6 +70,7 @@ function mount(text: string | null, settings: ReviewSettings = DEFAULT_REVIEW_SE
     setNext: vi.fn(async () => {}),
     move: vi.fn(),
     turnOff: vi.fn(async () => {}),
+    setFilter: vi.fn(),
   }
   const wikilinks = createWikilinkResolveSource()
   props = {
@@ -106,15 +107,16 @@ afterEach(() => {
 })
 
 describe('the Inbox screen (YAZ-4962)', () => {
-  it('YAZ-5012: the head reads "Cards (WIKI-9) … 3 of 12": the page name first, then the ID in brackets, the place last — no card title (the card is below); the hint row shows only keys that act now', async () => {
+  it('YAZ-5012: the head reads "Cards (WIKI-9)": the page name first, then the ID in brackets — no card title (the card is below); the hint row shows only keys that act now', async () => {
     mount(TWO_SIDES)
     expect(el.querySelector('.explore__title')).toBeNull()
     const head = [...el.querySelector('.note-card-inbox__head')!.children].map((c) => [c.className, c.textContent])
     expect(head).toEqual([
       ['note-card-strip__page note-card-inbox__page', 'Cards'],
       ['note-card__id', '(WIKI-9)'],
-      ['note-card-inbox__place', '3 of 12'],
     ])
+    // YAZ-5017: "3 of 12" moved to the top row, on the right.
+    expect(el.querySelector('.note-card-inbox__bar .note-card-inbox__place')?.textContent).toBe('3 of 12')
     const hints = () => [...el.querySelectorAll('.note-card-inbox__hints span')].map((h) => h.textContent)
     // Nothing to undo; the digits are on the buttons.
     expect(hints()).toEqual(['Space Show', 'O Open page', 'E Edit card', '⌘↵ Open page in a new tab'])
@@ -439,5 +441,36 @@ describe('the Inbox screen (YAZ-4962)', () => {
     run('Open card')
     expect(props.openCard).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', 0, false)
     expect(actions()).toEqual([])
+  })
+
+  it('YAZ-5017: the top row — "All cards ▾" opens All cards / Due today / New cards with their counts; a pick sets the filter; the scope shows as a quiet path; the filter`s done screen leads back to All cards', () => {
+    mount(TWO_SIDES)
+    session = { ...session, from: ['Spanish', 'Verbs'] }
+    render()
+    const bar = el.querySelector('.note-card-inbox__bar')!
+    const filter = bar.querySelector<HTMLButtonElement>('.note-card-inbox__filter')!
+    expect(filter.textContent).toBe('All cards')
+    expect(bar.querySelector('.note-card-inbox__from')?.textContent).toBe('Spanish/Verbs')
+    expect(bar.querySelector('.note-card-inbox__from')?.getAttribute('title')).toBe('Spanish / Verbs')
+    act(() => filter.click())
+    const rows = () => [...document.querySelectorAll<HTMLButtonElement>('.note-card-inbox__filter-item')]
+    expect(rows().map((r) => [r.textContent, r.getAttribute('aria-checked')])).toEqual([
+      ['All cards12', 'true'],
+      ['Due today9', 'false'],
+      ['New cards3', 'false'],
+    ])
+    // The menu is open: the Inbox's keys are not taken (a menu owns them).
+    press('1')
+    expect(review.answer).not.toHaveBeenCalled()
+    act(() => rows()[1].click())
+    expect(review.setFilter).toHaveBeenCalledExactlyOnceWith('due')
+    expect(rows()).toHaveLength(0)
+    // The due cards are done, new cards are left.
+    session = { ...session, filter: 'due', card: null, counts: { all: 3, due: 0, new: 3 } }
+    render()
+    expect(el.querySelector('.note-card-inbox__filter')?.textContent).toBe('Due today')
+    expect(el.querySelector('.note-card-inbox__done-title')?.textContent).toBe('No due cards left.')
+    act(() => el.querySelector<HTMLButtonElement>('.note-card-inbox__done-more')!.click())
+    expect(review.setFilter).toHaveBeenLastCalledWith('all')
   })
 })
