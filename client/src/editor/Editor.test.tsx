@@ -18,6 +18,7 @@ import { Editor } from './Editor'
 import { created } from '../code/monacoTestKit'
 // Loaded up front, so `Editor`'s lazy import of the code tab resolves within a settle.
 import '../code/CodeEditor'
+import './CardFileView'
 import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import * as frontmatter from '@shared/frontmatter'
@@ -121,6 +122,15 @@ vi.mock('../drawings/DrawingEditor', () => ({
   DrawingEditor: (props: Record<string, unknown>) => {
     drawingTab.props = props
     return <section className="editor editor--drawing" />
+  },
+}))
+
+/** The card file tab (YAZ-5037): a stand-in that records what Editor hands it; its own suite is CardFileView.test.tsx. */
+const cardTab = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }))
+vi.mock('./CardFileView', () => ({
+  CardFileView: (props: Record<string, unknown>) => {
+    cardTab.props = props
+    return <div data-card-file-stub />
   },
 }))
 
@@ -300,6 +310,41 @@ afterEach(() => {
   // reset (not clear): a failing test must not leak queued mockResolvedValueOnce reads into the next mount.
   vi.resetAllMocks()
   vi.useRealTimers()
+})
+
+describe('the card file route (YAZ-5037 phase 3)', () => {
+  const CARD_FILE = '---\nkind: card\n---\n```card\nCapital of {{France}}\n```\n<!-- card: WIKI-9 -->\n'
+  beforeEach(() => {
+    cardTab.props = null
+  })
+
+  it('a file with `kind: card` gets the card file tab, with the ONE read`s file: no second read, no page editor', async () => {
+    const view = await mount(CARD_FILE)
+    expect(view.querySelector('[data-card-file-stub]')).not.toBeNull()
+    expect(readFile).toHaveBeenCalledTimes(1)
+    expect((cardTab.props?.file as FileResponse).content).toBe(CARD_FILE)
+    expect(createCrepeMock).not.toHaveBeenCalled()
+  })
+
+  it('a page (another `kind`, or none) still gets the page editor', async () => {
+    const view = await mount('---\nkind: note\n---\n```card\nQ\n```\n')
+    expect(view.querySelector('[data-card-file-stub]')).toBeNull()
+    expect(createCrepeMock).toHaveBeenCalledTimes(1)
+    expect(view.querySelector('.card-file-notice')).toBeNull()
+  })
+
+  it('`kind: card` gone on disk: the page view, on the file the tab read, under the notice "This file is no longer a card file."', async () => {
+    const view = await mount(CARD_FILE)
+    const page = CARD_FILE.replace('kind: card\n', 'tags: geo\n')
+    const onPage = cardTab.props?.onPage as (file: FileResponse) => void
+    await act(async () => onPage({ path: PATH, content: page, mtime: 2, size: page.length }))
+    await settle()
+    expect(view.querySelector('[data-card-file-stub]')).toBeNull()
+    expect(view.querySelector('.card-file-notice')?.textContent).toBe('This file is no longer a card file.')
+    expect(createCrepeMock).toHaveBeenCalledTimes(1)
+    expect(crepe().md).toBe('```card\nCapital of {{France}}\n```\n<!-- card: WIKI-9 -->\n')
+    expect(readFile).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('Editor file-kind dispatch (YAZ-1299)', () => {

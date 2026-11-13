@@ -97,6 +97,8 @@ import { CardReviewDoor } from '../review/cardReviewDoor'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { CardReview } from '@shared/cardLine'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
+import { isCardFileContent } from '@shared/cardFileFormat'
+import { CardFileNotice } from './CardFileNotice'
 
 /**
  * A drawing tab (YAZ-3028 D2): its chrome arrives with the first drawing a window opens, in its own
@@ -107,6 +109,8 @@ const DrawingEditor = lazy(() => import('../drawings/DrawingEditor').then((m) =>
 const DrawioEditor = lazy(() => import('../diagrams/DrawioEditor').then((m) => ({ default: m.DrawioEditor })))
 /** A code tab (YAZ-3448, D1/D2): the same rule — its host in its own chunk, and Monaco in the next (`code/monaco.ts`). */
 const CodeEditor = lazy(() => import('../code/CodeEditor').then((m) => ({ default: m.CodeEditor })))
+/** A card file's tab (YAZ-5037): the same rule — the card view and its card editor in their own chunk. */
+const CardFileView = lazy(() => import('./CardFileView').then((m) => ({ default: m.CardFileView })))
 
 /**
  * A save flips the chip unsaved → saving → saved, and each flip re-renders CrepeHost; these sections
@@ -410,16 +414,36 @@ interface FolderPageMode {
   inFolderPage?: boolean
 }
 
-/** Markdown-only owner: loading, Crepe, autosave, frontmatter, comments, and backlinks. */
+/**
+ * Markdown-only owner: loading, Crepe, autosave, frontmatter, comments, and backlinks.
+ *
+ * A CARD FILE (YAZ-5037): after the ONE read, a file whose properties hold `kind: card` gets the card view
+ * (`CardFileView`), which takes the file it read and reads again on each new index version. When it reads a file that
+ * lost `kind: card`, it hands that file back: the page view mounts on it, under the notice "This file is no longer a
+ * card file.", until the tab reads the file again. A second card is the card view's own notice, never the page. A
+ * folder page's Page tab is never a card file.
+ */
 function MarkdownEditor({ inFolderPage = false, drawingSettings, root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, idInTitle, linkActions, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, onUserEdit, startView, tabId, zoomKey, onZoom, onOpenBullet, diagramDarkColors = 'adapt', hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, findFolds, outsideListPinned, onChangeOutsideListPinned }: EditorProps & FolderPageMode & { drawingSettings: DrawingAppSettings }) {
   const state = useFile(path)
   const titles = usePathTitles(wikilinks)
-  const file = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
+  const read = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
+  // The file the card view handed back once it was no longer a card file: the page, until the next read of this tab.
+  const [noLongerCard, setNoLongerCard] = useState<{ from: FileResponse; file: FileResponse } | null>(null)
+  const wasCard = noLongerCard !== null && noLongerCard.from === read
+  const file = wasCard ? noLongerCard.file : read
+  const cardFile = useMemo(() => !inFolderPage && !wasCard && read !== null && isCardFileContent(read.content), [inFolderPage, wasCard, read])
+  const toPage = useCallback((next: FileResponse) => read !== null && setNoLongerCard({ from: read, file: next }), [read])
   const content = (
     <>
       {state.status === 'loading' && file === null && <p className="editor-msg">Loading…</p>}
       {state.status === 'error' && <p className="editor-msg editor-msg--error">{state.message}</p>}
-      {file !== null && (
+      {wasCard && <CardFileNotice text="This file is no longer a card file." />}
+      {file !== null && cardFile && (
+        <Suspense fallback={null}>
+          <CardFileView key={file.path} file={file} root={root} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} viewOnlyLinks={viewOnlyLinks} onOpenFile={onOpenFile} onOpenLink={onOpenLink} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} onNotice={onNotice} onPage={toPage} />
+        </Suspense>
+      )}
+      {file !== null && !cardFile && (
         <CrepeHost key={file.path} inFolderPage={inFolderPage} {...drawingSettings} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} idInTitle={idInTitle} linkActions={linkActions} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} bulletThreadingOnByDefault={bulletThreadingOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} onUserEdit={onUserEdit} startView={startView} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} folderPages={folderPages} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} />
       )}
     </>
