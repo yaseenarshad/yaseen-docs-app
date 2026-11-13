@@ -7,6 +7,7 @@ import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { folderTitle } from '../links/shortcuts'
 import { storage } from '../lib/storage'
 import { changeCardLine, deleteCardReview, isCardGone, readCard, restoreCardReview, undoCardAnswer, writeCardAnswer, type CardOnPage } from './cardFile'
+import { setUpNextTaken, upNextTakenToday } from './upNextTaken'
 
 /**
  * Note card review as App sees it (YAZ-4967): how many cards are due, and the one review
@@ -27,6 +28,10 @@ import { changeCardLine, deleteCardReview, isCardGone, readCard, restoreCardRevi
  * (never reviewed, within today's new-card limit: the queue's own). The queue stays whole; the filter picks which of its
  * cards show, and "3 of 12" counts only those. Up next (YAZ-5028): the cards marked `next`, new or reviewed (`off` cards
  * are never in the queue); an answer takes a card out of it, as the repeat it may leave is no longer up next.
+ *
+ * Up next a day (YAZ-5028): the queue a session starts with puts only the day's Up next places first (`cardQueue`,
+ * less `upNextTakenToday`: an answer that takes a card's mark off counts it, its ⌘Z gives it back). Only `start`
+ * passes the count: the other queues here are read for which cards are in them, not for their order.
  *
  * The marks follow the index (YAZ-5031): a card marked `next` while the session is open (the page's ⋯, the card
  * window, another window, the command line) joins Up next and comes right after the card on show; a mark taken off
@@ -441,7 +446,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     (scope: CardReviewScope = {}) => {
       const { records, settings } = live.current
       if (!settings.enabled) return
-      const queue = cardQueue(records, settings, Date.now(), scope.folder, scope.page, source.letters)
+      const queue = cardQueue(records, settings, Date.now(), scope.folder, scope.page, source.letters, root === null ? 0 : upNextTakenToday(root))
       const label = scope.page !== undefined ? titleOf(records, scope.page) : scope.folder ? folderTitle(source.folders, `${root}/${scope.folder}`) : 'Inbox'
       const { due, new: fresh, next } = countOf(queue)
       // A new scope starts on All cards (YAZ-5017), with an empty bar (YAZ-5020).
@@ -486,6 +491,8 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       busy.current = false
       forget(card.path) // also a read begun while it wrote
       if (written === 'failed') return
+      // YAZ-5028: the answer took the mark off: one of today's Up next places is used.
+      if (written !== 'gone' && written.next >= 0 && root !== null) setUpNextTaken(root, card.id, true)
       setSession((s) => {
         if (s === null || !showing(s, card)) return s
         // Still in its steps (YAZ-5020): back at the end of this session, no longer new or up next.
@@ -502,7 +509,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
         return fitted({ ...s, queue, at: after.length > 0 ? s.at : 0, total: s.total + (repeat ? 1 : 0), totals, turn: s.turn + 1, undo, answered })
       })
     },
-    [fixAnswers, onNotice, settle, forget],
+    [fixAnswers, onNotice, settle, forget, root],
   )
 
   const undo = useCallback(async () => {
@@ -519,6 +526,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     )
     busy.current = false
     forget(last.card.path)
+    if (undone && last.next >= 0 && root !== null) setUpNextTaken(root, last.card.id, false)
     // The card back at its place (YAZ-5020), its repeat out of the queue and the session one smaller again; it shows
     // also under a filter that would hide it: then All cards (YAZ-5017). Its answer leaves the bar (YAZ-5020).
     if (undone)
@@ -533,7 +541,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
         const filter = matchesFilter(card, s.filter) ? s.filter : 'all'
         return { ...s, queue: [...rest.slice(0, at), card, ...rest.slice(at)], at, total: s.total - (last.repeat ? 1 : 0), totals, turn: s.turn + 1, undo: s.undo.slice(0, -1), filter, answered: s.answered.slice(0, -1) }
       })
-  }, [onNotice, forget])
+  }, [onNotice, forget, root])
 
   const close = useCallback(() => setSession(null), [])
 

@@ -248,6 +248,34 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
     expect(q).toHaveLength(6)
   })
 
+  it('YAZ-5028: Up next a day — only that many marked cards first, less the ones taken today; the others keep the mark and wait in their place', () => {
+    const now = new Date(2026, 5, 15, 12, 0).getTime()
+    const at = (ms: number): string => cardTime(ms)
+    const card = (id: string, over: { next?: boolean; reviews?: CardReview[] } = {}) => ({ id, off: false, next: false, reviews: [] as CardReview[], ...over })
+    const learned: CardReview[] = [{ at: at(now - 3 * DAY), rating: 'good' }, { at: at(now - 3 * DAY + 60_000), rating: 'good' }] // not due today
+    const overdue = (days: number): CardReview[] => [{ at: at(now - days * DAY), rating: 'good' }]
+    // Five marked: WI-1, WI-3, WI-5 new; WI-2 overdue; WI-4 not due. Not marked: WI-6 more overdue, WI-7 and WI-8 new.
+    const records = [
+      { path: '/v/a.md', folder: '', cards: [card('WI-1', { next: true }), card('WI-2', { next: true, reviews: overdue(100) }), card('WI-3', { next: true })] },
+      { path: '/v/b.md', folder: '', cards: [card('WI-4', { next: true, reviews: learned }), card('WI-5', { next: true }), card('WI-6', { reviews: overdue(400) }), card('WI-7'), card('WI-8')] },
+    ]
+    const s = { ...DEFAULT_REVIEW_SETTINGS, newPerDay: 1 }
+    const ids = (upNextPerDay: number | null, taken = 0) => cardQueue(records, { ...s, upNextPerDay }, now, '', undefined, undefined, taken).map((q) => (q.next ? `${q.id}*` : q.id))
+    // Limit 2: WI-1 and WI-2 first; WI-4 among the due cards (not due yet: now), WI-3 and WI-5 among the new cards by ID,
+    // outside the one new card a day (WI-7). The Up next filter still has all five.
+    expect(ids(2)).toEqual(['WI-1*', 'WI-2*', 'WI-6', 'WI-4*', 'WI-3*', 'WI-5*', 'WI-7'])
+    expect(ids(2).filter((id) => id.endsWith('*'))).toHaveLength(5)
+    // Empty (no limit, the default): all five first, as before.
+    expect(ids(null)).toEqual(['WI-1*', 'WI-2*', 'WI-3*', 'WI-4*', 'WI-5*', 'WI-6', 'WI-7'])
+    expect(DEFAULT_REVIEW_SETTINGS.upNextPerDay).toBeNull()
+    // One taken today: one place left, so WI-2 waits by its due date, after WI-6. Two taken, or a limit of 0: none first.
+    expect(ids(2, 1)).toEqual(['WI-1*', 'WI-6', 'WI-2*', 'WI-4*', 'WI-3*', 'WI-5*', 'WI-7'])
+    expect(ids(2, 2)).toEqual(ids(0))
+    expect(ids(0)).toEqual(['WI-6', 'WI-2*', 'WI-4*', 'WI-1*', 'WI-3*', 'WI-5*', 'WI-7'])
+    // The count is the same whatever the limit: every marked card is in the queue.
+    expect(new Set([ids(null).length, ids(2).length, ids(0).length])).toEqual(new Set([7]))
+  })
+
   it('YAZ-4999: `next` reads, writes and goes back to its place byte for byte', () => {
     const text = '<!-- card: WIKI-512, next, 2026-11-12T14:05Z good -->'
     const line = parseCardLine(text)!
@@ -350,7 +378,7 @@ describe('YAZ-5020: same-day steps — cards come back in the same session (Yase
 
 describe('the settings (D14)', () => {
   it('defaults to two buttons, 90%, 365 days, 10 new a day, fuzz on and the Mochi weights; each bad field falls back alone', () => {
-    expect(sanitizeReviewSettings(undefined)).toEqual({ enabled: true, buttons: 2, retention: 0.9, maxDays: 365, newPerDay: 10, newOrder: 'oldest', fuzz: true, weights: [...DEFAULT_CARD_WEIGHTS] })
+    expect(sanitizeReviewSettings(undefined)).toEqual({ enabled: true, buttons: 2, retention: 0.9, maxDays: 365, newPerDay: 10, upNextPerDay: null, newOrder: 'oldest', fuzz: true, weights: [...DEFAULT_CARD_WEIGHTS] })
     expect(DEFAULT_CARD_WEIGHTS).toHaveLength(21)
     const weights = Array.from({ length: 19 }, (_, i) => i / 10)
     expect(sanitizeReviewSettings({ enabled: false, buttons: 4, retention: 0.85, maxDays: 30, newPerDay: 0, fuzz: false, weights, algorithm: 'upkeep', baseDays: 3 })).toEqual({
@@ -359,6 +387,7 @@ describe('the settings (D14)', () => {
       retention: 0.85,
       maxDays: 30,
       newPerDay: 0,
+      upNextPerDay: null,
       newOrder: 'oldest',
       fuzz: false,
       weights,
@@ -366,6 +395,8 @@ describe('the settings (D14)', () => {
     expect(sanitizeReviewSettings({ enabled: 'yes', buttons: 3, retention: 1.5, maxDays: 0.5, newPerDay: -1, newOrder: 'random', fuzz: 1, weights: [1, 2, 3] })).toEqual(sanitizeReviewSettings(null))
     // YAZ-4999 D1, D2: an emptied box is `null`, no limit — a missing field (no file) keeps 10; the order is oldest or newest.
     expect([sanitizeReviewSettings({ newPerDay: null }).newPerDay, sanitizeReviewSettings({}).newPerDay, sanitizeReviewSettings({ newPerDay: '' }).newPerDay]).toEqual([null, 10, 10])
+    // YAZ-5028: Up next a day the same way, but a missing field is no limit.
+    expect([sanitizeReviewSettings({ upNextPerDay: 3 }).upNextPerDay, sanitizeReviewSettings({ upNextPerDay: null }).upNextPerDay, sanitizeReviewSettings({}).upNextPerDay, sanitizeReviewSettings({ upNextPerDay: -1 }).upNextPerDay, sanitizeReviewSettings({ upNextPerDay: 1.5 }).upNextPerDay]).toEqual([3, null, null, null, null])
     expect([sanitizeReviewSettings({ newOrder: 'newest' }).newOrder, sanitizeReviewSettings({ newOrder: 'NEWEST' }).newOrder]).toEqual(['newest', 'oldest'])
     expect(sanitizeReviewSettings({ weights: [...DEFAULT_CARD_WEIGHTS.slice(0, 20), Number.NaN] }).weights).toEqual([...DEFAULT_CARD_WEIGHTS])
   })

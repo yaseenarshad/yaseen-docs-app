@@ -119,6 +119,7 @@ beforeEach(() => {
   held.clear()
   waiting = []
   notices.length = 0
+  localStorage.clear() // YAZ-5028: the day's Up next count
   // Due: answered "good" 30 days ago (still in its steps). Not due: two "good" an hour ago (out of its steps, YAZ-5020:
   // a new card needs two). New: no review. Off: never.
   page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, 2026-11-12T07:00Z good, 2026-11-12T07:01Z good'])
@@ -290,6 +291,40 @@ describe('useCardReview', () => {
     await step(() => review.answer('good'))
     expect(review.session).toMatchObject({ card: null, counts: { next: 0 } })
     expect(review.session?.counts.all).toBeGreaterThan(0)
+  })
+
+  it('YAZ-5028: Up next a day — only that many marked cards go first; the others wait in their place and stay in Up next; an answer uses a place for the day', async () => {
+    // WIKI-1 due, WIKI-3 new (beforeEach); marked: WIKI-5 and WIKI-6 new, WIKI-2 reviewed and not due.
+    page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, next, 2026-11-12T07:00Z good, 2026-11-12T07:01Z good'])
+    page('Bio/More.md', ['A {{fifth}} card', 'WIKI-5, next'], ['A {{sixth}} card', 'WIKI-6, next'])
+    await mount({ ...S, upNextPerDay: 1 })
+    // The queue, card by card with → (each read before the next: a card not read yet leaves the one before on show).
+    const order = async (): Promise<(string | undefined)[]> => {
+      const ids = [review.session?.card?.id]
+      while (review.session?.canNext) {
+        act(() => review.move(1))
+        await vi.waitFor(() => expect(review.session?.card?.id).not.toBe(ids.at(-1)))
+        ids.push(review.session?.card?.id)
+      }
+      return ids
+    }
+    await act(async () => review.start())
+    // One place: WIKI-2 first; WIKI-5 and WIKI-6 among the new cards by ID, outside the new-card limit.
+    expect(await order()).toEqual(['WIKI-2', 'WIKI-1', 'WIKI-3', 'WIKI-5', 'WIKI-6'])
+    expect(review.session?.counts).toMatchObject({ all: 5, next: 3 })
+    // ⌘Z of an answer that took the mark off gives the place back.
+    await act(async () => review.start())
+    await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
+    await step(() => review.answer('good'))
+    await step(() => review.undo())
+    await act(async () => review.start())
+    expect(review.session?.card?.id).toBe('WIKI-2')
+    // WIKI-2 answered: its mark goes, and the day's one place is used. A new Inbox puts no marked card first.
+    await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
+    await step(() => review.answer('good'))
+    await act(async () => review.start())
+    expect(await order()).toEqual(['WIKI-1', 'WIKI-3', 'WIKI-5', 'WIKI-6'])
+    expect(review.session?.counts.next).toBe(2)
   })
 
   describe('YAZ-5031: Up next follows the marks on the card lines', () => {

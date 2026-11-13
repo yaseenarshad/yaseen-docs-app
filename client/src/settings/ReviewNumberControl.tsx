@@ -32,6 +32,12 @@ export const NEW_PER_DAY_FIELD: ReviewField = {
   parse: (text, s) => ({ ...s, newPerDay: numberOf(text) }),
 }
 
+/** Up next a day (YAZ-5028): the same box, `upNextPerDay`. */
+export const UP_NEXT_PER_DAY_FIELD: ReviewField = {
+  show: (s) => (s.upNextPerDay === null ? '' : String(s.upNextPerDay)),
+  parse: (text, s) => ({ ...s, upNextPerDay: numberOf(text) }),
+}
+
 /** Remember rate: a percent on screen, a fraction in the file (90 ↔ 0.9). */
 export const RETENTION_FIELD: ReviewField = {
   show: (s) => String(Math.round(s.retention * 1000) / 10),

@@ -19,6 +19,10 @@ export function ReviewHowCardsComeBack() {
         </li>
         <li>Then FSRS sets the wait in days, from your weights and your remember rate.</li>
         <li>If you close the Inbox first, these cards show when you open it again.</li>
+        <li>
+          <b>Up next:</b> marked cards show first. With a number in <b>Up next a day</b>, only that many go first each day; the others wait in their normal place
+          and still show under Up next.
+        </li>
       </ul>
       <p>
         Why: FSRS plans in days. A repeat on the same day is a short step; the step is one minute, so this session decides, not a clock. Anki advises few steps,
