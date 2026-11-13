@@ -4609,6 +4609,38 @@ body.drag-held iframe {
   font-variant-numeric: tabular-nums;
 }
 
+/* The vault's name keeps priority (YAZ-4964 round 2, item 6). While file changes are allowed, the lock is a size
+   container whose width the header gives it: its full width while there is room ("🔒 9:52" + "Lock now"), and it
+   shrinks FIRST (flex-shrink 1000 against the name's 1) down to the short form ("🔒 10m"). Only then is the name cut
+   to "…". The name's button takes its text's width as its base (`flex-basis: auto`), so it can claim that room; it
+   still takes all the space left over. The widths are in `ch` of the lock's 12px: the long form is the button
+   (2px border + 14px padding + 12px icon + 4px gap) with "10:00", the 4px gap, and "Lock now" with its 16px frame. */
+.sidebar__header:has(.vault-lock--allowed) .sidebar__root {
+  flex: 1 1 auto;
+}
+
+.vault-lock.vault-lock--allowed {
+  container: vault-lock / inline-size;
+  flex: 0 1000 calc(52px + 14ch);
+  min-width: calc(32px + 4ch);
+  font-size: 12px;
+}
+
+.vault-lock .vault-lock__time--short {
+  display: none;
+}
+
+@container vault-lock (max-width: calc(52px + 14ch - 1px)) {
+  .vault-lock .vault-lock__time--long,
+  .vault-lock .read-only-chip__lock {
+    display: none;
+  }
+
+  .vault-lock .vault-lock__time--short {
+    display: inline;
+  }
+}
+
 .vault-lock__ask {
   z-index: 30;
 }

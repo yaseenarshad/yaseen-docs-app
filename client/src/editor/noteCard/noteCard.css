@@ -109,9 +109,14 @@
   margin-left: auto;
 }
 
+/* `white-space: normal` (YAZ-4964): in the page the body inherits ProseMirror's `break-spaces`, and the render's
+   `"\n"` text node after each side's last block (marked's output) then draws a blank line under the side. The Inbox
+   and the card window are outside the editor and have `normal` already; the rule makes the page the same. A code
+   block in a side keeps its own `pre` spacing. */
 .note-card .note-card__body {
   padding: 10px 16px 12px;
   overflow-wrap: anywhere;
+  white-space: normal;
 }
 .note-card--editing .note-card__body {
   display: none;

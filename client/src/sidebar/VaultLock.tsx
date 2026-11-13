@@ -9,6 +9,12 @@
  *
  * The box closes on Cancel, Esc, a press outside it (capture `pointerdown`, as the chip's) and the window's blur. The
  * hover text is the app's own box (`HoverTip`): a native `title` shows nothing in the app.
+ *
+ * The vault's name keeps priority in the header (YAZ-4964 round 2, item 6). While the allowance runs, the lock holds
+ * two forms of its time: the long one ("9:52", with "Lock now" beside it) and a short one ("10m", "58s"). The CSS
+ * (`.vault-lock--allowed` in app.css) shows the long form while the header has room; when it does not, the lock
+ * shrinks first, to the short form with no "Lock now" beside it, and only then is the name cut. So the box also offers
+ * "Lock now" while the allowance runs.
  */
 import { choiceKey } from '../components/choiceKeys'
 import { useEffect, useReducer, useRef, useState } from 'react'
@@ -29,6 +35,12 @@ export interface VaultLockProps {
 export function timeLeft(until: number, now: number): string {
   const left = Math.max(0, Math.ceil((until - now) / 1000))
   return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`
+}
+
+/** The time left in a few letters, for a narrow header: whole minutes up ("10m", "1m"), then seconds ("58s"). */
+export function shortTimeLeft(until: number, now: number): string {
+  const left = Math.max(0, Math.ceil((until - now) / 1000))
+  return left >= 60 ? `${Math.ceil(left / 60)}m` : `${left}s`
 }
 
 export function VaultLock({ name, until, onAllow, onLock }: VaultLockProps) {
@@ -64,7 +76,7 @@ export function VaultLock({ name, until, onAllow, onLock }: VaultLockProps) {
   return (
     <div
       ref={rootRef}
-      className="read-only-chip vault-lock"
+      className={`read-only-chip vault-lock${allowed ? ' vault-lock--allowed' : ''}`}
       onKeyDown={(event) => {
         // ↓ ↑ Tab ⇧Tab move through the choices, Cancel included; Enter picks the focused one (YAZ-4989).
         if (asking && choiceKey(event, rootRef.current?.querySelector('.read-only-chip__ask') ?? null)) return
@@ -88,7 +100,12 @@ export function VaultLock({ name, until, onAllow, onLock }: VaultLockProps) {
           onClick={() => setAsking((open) => !open)}
         >
           <LockIcon size={12} />
-          {allowed && <span>{timeLeft(until, Date.now())}</span>}
+          {allowed && (
+            <>
+              <span className="vault-lock__time vault-lock__time--long">{timeLeft(until, Date.now())}</span>
+              <span className="vault-lock__time vault-lock__time--short" aria-hidden="true">{shortTimeLeft(until, Date.now())}</span>
+            </>
+          )}
         </button>
       </HoverTip>
       {allowed && (
@@ -104,6 +121,18 @@ export function VaultLock({ name, until, onAllow, onLock }: VaultLockProps) {
             <button type="button" onClick={() => allow('ten')}>10 minutes</button>
           </div>
           <div className="read-only-chip__actions">
+            {allowed && (
+              // The narrow header hides the "Lock now" beside the lock: here it is always at hand.
+              <button
+                type="button"
+                onClick={() => {
+                  setAsking(false)
+                  onLock()
+                }}
+              >
+                Lock now
+              </button>
+            )}
             <button type="button" onClick={() => setAsking(false)}>Cancel</button>
           </div>
         </div>

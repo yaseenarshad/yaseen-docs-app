@@ -66,11 +66,12 @@ export function ReviewNumberControl({ field, label, unit, review, wide = false }
   }
 
   // The weights: a box that wraps, so all 21 numbers show (a one-line field cut them at the edge); Enter saves, as in a field.
+  // It grows to its text (`field-sizing: content` in settings.css, YAZ-4964); `rows` is the floor, 3 lines at 960 px.
   if (wide)
     return (
       <textarea
         className={`settings__input settings__input--list${invalid ? ' settings__input--error' : ''}`}
-        rows={2}
+        rows={3}
         spellCheck={false}
         aria-label={label}
         aria-invalid={invalid}

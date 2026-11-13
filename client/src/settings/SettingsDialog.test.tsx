@@ -1401,6 +1401,8 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(rowButtons(el, 'buttons').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Two', 'true'], ['Four', 'false']])
     expect(['retention', 'maxDays', 'newPerDay'].map((id) => input(el, id).value)).toEqual(['90', '365', '10'])
     expect(input(el, 'weights').value).toBe(DEFAULT_REVIEW_SETTINGS.weights.join(', '))
+    // A box that grows to its text (YAZ-4964, `settings.css.test.ts`), 3 lines at the least: the 21 numbers need 3 at 960 px.
+    expect([input(el, 'weights').tagName, input(el, 'weights').getAttribute('rows')]).toEqual(['TEXTAREA', '3'])
     expect(el.querySelector('#settings-review .settings-section__note')).not.toBeNull()
     rerender(REVIEW_OFF)
     expect(reviewRows(el)).toEqual(['enabled'])

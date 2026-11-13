@@ -10,7 +10,9 @@ import {
   rewritePageCards,
   withCardId,
   withCardOff,
+  cardReviewIndex,
   withCardReview,
+  withCardReviewAt,
   withoutCardReview,
   withoutCardReviews,
   type CardReview,
@@ -39,6 +41,17 @@ describe('the card line (D3)', () => {
     expect(formatCardLine(withCardOff(withCardOff(line, true), false))).toBe(text)
     expect(formatCardLine(withoutCardReviews(line))).toBe('<!-- card: WIKI-512, mochi hneK1PH8, later-thing -->')
     expect(formatCardLine(withCardId(line, 'WIKI-900'))).toBe(text.replace('WIKI-512', 'WIKI-900'))
+
+    // The undo of a delete (YAZ-4964): the review goes back to its own place, so the line is the same bytes again.
+    const mixed = '<!-- card: WIKI-7, off, 2026-09-01T08:00Z good, mochi x1, 2026-10-02T09:30Z hard, 2026-08-03T10:00Z again -->'
+    for (const at of ['2026-09-01T08:00Z', '2026-10-02T09:30Z', '2026-08-03T10:00Z']) {
+      const before = parseCardLine(mixed)!
+      const index = cardReviewIndex(before, at)
+      const review = before.parts.flatMap((p) => (p.kind === 'review' && p.review.at === at ? [p.review] : []))[0]
+      expect(formatCardLine(withCardReviewAt(withoutCardReview(before, at), review, index))).toBe(mixed)
+    }
+    expect(cardReviewIndex(line, '1999-01-01T00:00Z')).toBe(-1)
+    expect(formatCardLine(withCardReviewAt(parseCardLine('<!-- card: WIKI-7 -->')!, { at: '2026-09-01T08:00Z', rating: 'good' }, 9))).toBe('<!-- card: WIKI-7, 2026-09-01T08:00Z good -->')
 
     // A card with no ID: the first part is a review, and the sweep's ID goes in front.
     const bare = parseCardLine('<!--card:2026-11-12T14:05Z good,,-->')!
