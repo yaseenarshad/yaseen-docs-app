@@ -3,7 +3,7 @@
  * round-trip risks of the scope on YAZ-5026, one test each, then the hidden word, the sides, the mirror and Done's one
  * undo step, the keys and the card's on/off list.
  */
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
@@ -17,8 +17,9 @@ import { NOTE_CARD_MIRROR_MS, noteCardViewAt, setNoteCardEditorKind, type NoteCa
 import { joinCardParts, splitCardText } from './cardEditorText'
 import { SIDE_BREAK } from './cardEditor'
 
+// The page's editor is Edit card's default (YAZ-5026); the raw-text fallback is one switch away.
 beforeAll(() => setNoteCardEditorKind('page'))
-afterAll(() => setNoteCardEditorKind('code'))
+afterAll(() => setNoteCardEditorKind('page'))
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 afterEach(async () => {
@@ -327,6 +328,8 @@ describe('the mirror, Done and the page`s undo', () => {
     expect(view.state.selection.from).toBe(cardPos(view))
     expect(card.dom.classList.contains('note-card--editing')).toBe(true)
     expect(card.dom.classList.contains('ProseMirror-selectednode')).toBe(false)
+    // The key row under the editor (YAZ-5034), kept.
+    expect(card.dom.querySelector('.note-card__editor + .note-card__keys')?.textContent).toBe('Cmd + L hide wordCmd + Shift + Enter new sideCmd + Enter / Esc Done')
     const before = view.state.doc
     type(inner, ' more')
     await tick(20)
@@ -335,23 +338,109 @@ describe('the mirror, Done and the page`s undo', () => {
   })
 })
 
+describe('an outside change of the card`s text while it is edited', () => {
+  it('says so; Done writes ours, and ⌘Z in the page brings theirs back', async () => {
+    const notices: string[] = []
+    const { view } = await mount(page('Front\n---\nBack'), { wikilinkNav: { onNotice: (m: string) => notices.push(m) } as never })
+    const { card, inner } = await edit(view)
+    // An agent writes the card (an outside merge: out of the undo history).
+    const pos = cardPos(view)
+    view.dispatch(view.state.tr.insertText('Theirs ', pos + 1).setMeta('addToHistory', false))
+    expect(notices).toHaveLength(1)
+    caretAfter(inner, 'Back')
+    type(inner, '!')
+    card.done()
+    expect(cardText(view)).toBe('Front\n---\nBack!')
+    undo(view.state, view.dispatch)
+    expect(cardText(view)).toBe('Theirs Front\n---\nBack')
+  })
+})
+
 describe('the card editor`s own on/off list (YAZ-5026 description)', () => {
-  it('a card in a card is a code block; no highlight buttons or check list; "Hide word" in the toolbar and "New side" in the `/` menu', async () => {
+  it('a card in a card is a code block: no card view, its text kept', async () => {
     const { view } = await mount(page('Front\n\n```card\nInner\n```'))
     const { card, inner } = await edit(view)
     expect(inner.dom.querySelector('.note-card')).toBeNull()
     expect(inner.state.doc.content.content.some((n) => n.type.name === 'code_block' && n.attrs.language === 'card')).toBe(true)
-    // The toolbar and the `/` menu are drawn by Crepe beside the inner view.
-    const host = inner.dom.parentElement!
-    inner.dispatch(inner.state.tr.setSelection(TextSelection.create(inner.state.doc, 1, 6)))
-    await tick(50)
-    const buttons = [...host.querySelectorAll<HTMLElement>('.milkdown-toolbar [data-toolbar-item]')].map((b) => b.dataset.toolbarItem)
-    if (buttons.length > 0) {
-      expect(buttons).toContain('cloze')
-      expect(buttons).not.toContain('highlight')
-      expect(buttons).not.toContain('checklist')
-    }
     card.done()
     expect(cardText(view)).toBe('Front\n\n```card\nInner\n```')
+  })
+
+  it('the selection toolbar has "Hide word" and no highlight colours or check list', async () => {
+    const { view } = await mount(page('Paris is in France'))
+    const { card, inner } = await edit(view)
+    inner.focus()
+    inner.dispatch(inner.state.tr.setSelection(TextSelection.create(inner.state.doc, 1, 6)))
+    const host = inner.dom.parentElement!
+    await vi.waitFor(() => expect(host.querySelectorAll('.milkdown-toolbar [data-toolbar-item]').length).toBeGreaterThan(0))
+    const buttons = [...host.querySelectorAll<HTMLElement>('.milkdown-toolbar [data-toolbar-item]')].map((b) => b.dataset.toolbarItem)
+    expect(buttons).toContain('cloze')
+    expect(buttons).toContain('bold')
+    for (const off of ['highlight', 'highlight-green', 'highlight-blue', 'highlight-more', 'checklist']) expect(buttons).not.toContain(off)
+    // The button is ⌘L.
+    host.querySelector<HTMLElement>('.milkdown-toolbar [data-toolbar-item="cloze"]')!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }))
+    expect(inner.dom.querySelector('.note-card__cloze')?.textContent).toBe('Paris')
+    card.done()
+    expect(cardText(view)).toBe('{{Paris}} is in France')
+  })
+
+  it('the `/` menu has "New side" (`/side`) and no task list, calendar table, note card or drawing; Esc closes the menu first, then is Done', async () => {
+    const { view } = await mount(page('Front'), { drawing: { create: async () => null } as never })
+    const { card, inner } = await edit(view)
+    const host = inner.dom.parentElement!
+    caretAfter(inner, 'Front')
+    inner.dispatch(inner.state.tr.split(inner.state.selection.from))
+    type(inner, '/')
+    const menu = () => host.querySelector<HTMLElement>('.milkdown-slash-menu')
+    await vi.waitFor(() => expect(menu()?.dataset.show).toBe('true'))
+    await tick()
+    const rows = [...menu()!.querySelectorAll('.menu-group li')].map((li) => li.textContent?.trim())
+    expect(rows).toContain('New side')
+    expect(rows).toContain('Table')
+    expect(rows).toContain('Code')
+    for (const off of ['Task List', 'Calendar table', 'Note card', 'Drawing', 'Diagram']) expect(rows).not.toContain(off)
+    // Esc: the menu closes (it hears the key on the window first), the card stays in Edit card.
+    key(inner.dom, 'Escape')
+    expect(card.editing).toBe(true)
+    // `/side` + Enter: a new side.
+    type(inner, 'side')
+    await vi.waitFor(() => expect(menu()?.dataset.show).toBe('true'))
+    await tick()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await vi.waitFor(() => expect(inner.state.doc.content.content.map((n) => n.type.name)).toContain(SIDE_BREAK))
+    type(inner, 'Back')
+    key(inner.dom, 'Escape')
+    expect(card.editing).toBe(false)
+    expect(cardText(view)).toBe('Front\n---\nBack')
+  })
+})
+
+describe('`/card` with the page`s editor', () => {
+  it('the new card opens in the card editor with "Title" selected; typing replaces it; Done; ⌘Z takes the text back, the next ⌘Z the card', async () => {
+    const { crepe, root, view } = await mount('x\n', { noteCards: { path: '/v/Page.md', mintId: () => Promise.resolve('WIKI-512') } })
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, view.state.doc.firstChild!.nodeSize - 1)).insertText('/card'))
+    await tick(10)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 6)))
+    await vi.waitFor(() => expect([...root.querySelectorAll('.milkdown-slash-menu .menu-group li')].map((li) => li.textContent?.trim())).toEqual(['Note card']))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await vi.waitFor(() => expect(cardPos(view)).toBe(0))
+    const card = noteCardViewAt(view, 0)!
+    expect(card.editing).toBe(true)
+    await card.cardEditor!.ready
+    const inner = card.cardEditor!.view()!
+    expect(inner.state.doc.textBetween(inner.state.selection.from, inner.state.selection.to)).toBe('Title')
+    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toBe('```card\nTitle\n```\n<!-- card: WIKI-512 -->\n'))
+    type(inner, 'Capital of {{France}}')
+    key(inner.dom, 'Enter', { metaKey: true, shiftKey: true })
+    type(inner, 'Paris')
+    // The mirror wrote the text into the page meanwhile (out of the undo history).
+    await tick(NOTE_CARD_MIRROR_MS + 50)
+    expect(cardText(view)).toBe('Capital of {{France}}\n---\nParis')
+    card.done()
+    expect(getMarkdownForSave(crepe)).toBe('```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-512 -->\n')
+    undo(view.state, view.dispatch)
+    expect(cardText(view)).toBe('Title')
+    undo(view.state, view.dispatch)
+    expect(cardPos(view)).toBeUndefined()
   })
 })

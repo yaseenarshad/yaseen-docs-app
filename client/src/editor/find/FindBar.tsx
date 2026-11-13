@@ -98,6 +98,8 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
       // Find's key as it is now (YAZ-3564 K4): the setting is read at each keydown.
       if (!isNoteKey(event, 'note.find', storage.getSettings()?.hotkeys)) return
       const active = document.activeElement
+      // In a card's editor (YAZ-5026: the card's own list has no find), ⌘F is not the page's.
+      if (active instanceof Element && active.closest('.note-card__editor') !== null) return
       // checkVisibility is absent under jsdom, where nothing is ever hidden — hence the ?? true.
       const shown = (el: Element | null): boolean => el instanceof HTMLElement && (el.checkVisibility?.() ?? true)
       // Never from a code tab (YAZ-3451, YAZ-3464): its ⌘F is Monaco's find box. A note or a Page tab in the other place would take it first.
