@@ -1,7 +1,8 @@
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { isCardFileContent } from '@shared/cardFileFormat'
-import { cardIdOf, pageCards, rewritePageCards, settleCardCopy, withCardId, type CardLine } from '@shared/cardLine'
+import { isSyncConflictCopy } from '@shared/syncConflict'
+import { cardIdOf, pageCards, rewritePageCards, settleCardCopy, withCardId, withCardOff, type CardLine } from '@shared/cardLine'
 import { moveFolderValues } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, noteIdNumber, vaultNoteId } from '@shared/noteId'
@@ -70,6 +71,8 @@ export interface CardFix {
   history: boolean
   copyOf?: number
   keeper?: string
+  /** The card is on a sync conflict copy (YAZ-5056): it is archived as it gives up its ID, so it is never in the Inbox. */
+  off?: true
 }
 
 /** What one sweep did about notes that share an ID. A note that only needed an ID is not reported. */
@@ -301,7 +304,10 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
     // A copy (R30): the note the index knew first keeps the id — said at the first sight of the pair
     // and kept in the diary (`myNote`), for the index holds both from then on — else the first in
     // path order, the same on every Mac. Each other note of this sweep gets its own.
-    const keeper = makers.length >= 2 && !atOnce ? undefined : (myNote(book, pair, now) ?? sharing.find((o) => own(knew(o.path)) === id) ?? sharing[0])
+    let keeper = makers.length >= 2 && !atOnce ? undefined : (myNote(book, pair, now) ?? sharing.find((o) => own(knew(o.path)) === id) ?? sharing[0])
+    // A sync conflict copy never keeps the ID while a file at its own path holds it (YAZ-5056).
+    const real = sharing.filter((o) => !isSyncConflictCopy(o.path))
+    if (keeper !== undefined && isSyncConflictCopy(keeper.path) && real.length > 0) keeper = real.find((o) => own(knew(o.path)) === id) ?? real[0]
     if (book.dirty) saveDiarySoon(root)
     if (keeper === undefined) continue
     for (const r of swept) if (r.path !== keeper.path && sharing.includes(r) && takes(r)) wanted.push({ file: r.path, held: id, record: r, ...(atOnce && { now: true }) })
@@ -390,6 +396,9 @@ interface CardWork {
  *   from the other page lands first. Still on both after the wait: a copy, settled once per ID in a pass, by the same
  *   text rule as on one page (`giveCardIds`): the keeper page takes the union first.
  */
+/** The order in which pages keep a card they share: a page at its own path before a sync conflict copy (YAZ-5056), then path order. */
+const cardOrder = (a: string, b: string): number => Number(isSyncConflictCopy(a)) - Number(isSyncConflictCopy(b)) || (a < b ? -1 : a > b ? 1 : 0)
+
 async function cardsToFix(
   records: ReadonlyMap<string, IndexRecord>,
   among: readonly IndexRecord[],
@@ -441,13 +450,19 @@ async function cardsToFix(
       const others = (holders.get(id) ?? []).filter((p) => p !== record.path)
       const onDisk: string[] = []
       for (const p of new Set(others)) if (await holds(p, id)) onDisk.push(p)
-      // The page keeps the card when no other page holds it now, or when a page this pass sweeps comes first.
-      const keeps = onDisk.length === 0 || (onDisk.some((p) => swept.has(p)) && !onDisk.some((p) => swept.has(p) && p < record.path))
+      // A sync conflict copy (YAZ-5056) never keeps the card while a page at its own path holds it, and such a page
+      // always does: the copy is no cut and paste, so it waits for nothing.
+      const copyHere = isSyncConflictCopy(record.path)
+      const real = onDisk.filter((p) => !isSyncConflictCopy(p))
+      const conflict = copyHere && real.length > 0
+      // The page keeps the card when no other page holds it now, when only conflict copies do, or when no page this
+      // pass sweeps comes before it (`cardOrder`: a page at its own path first, then path order).
+      const keeps = !conflict && (onDisk.length === 0 || (!copyHere && real.length === 0) || (onDisk.some((p) => swept.has(p)) && !onDisk.some((p) => swept.has(p) && cardOrder(p, record.path) < 0)))
       if (keeps || settled.has(id)) {
         cardWaits?.delete(key)
         continue
       }
-      if (cardWaits !== undefined && cardOver?.has(key) !== true) {
+      if (!conflict && cardWaits !== undefined && cardOver?.has(key) !== true) {
         const since = cardWaits.get(key)
         if (since === undefined) cardWaits.set(key, now)
         if (since === undefined || now - since < CARD_MOVE_WAIT_MS) continue
@@ -455,8 +470,9 @@ async function cardsToFix(
       }
       settled.add(id)
       // The page that keeps the card: of the pages this pass sweeps, the first in path order; else the first on disk.
-      const keeper = [...onDisk].sort().find((p) => swept.has(p) && p < record.path) ?? [...onDisk].sort()[0]
-      fixes.push({ index, held: card.id, history: false, keeper })
+      const order = [...onDisk].sort(cardOrder)
+      const keeper = order.find((p) => swept.has(p) && cardOrder(p, record.path) < 0) ?? order[0]
+      fixes.push({ index, held: card.id, history: false, keeper, ...(conflict && { off: true as const }) })
     }
     if (fixes.length > 0) work.push({ record, fixes })
   }
@@ -505,9 +521,10 @@ export async function giveCardIds(file: string, fixes: readonly CardFix[], ids: 
     lines[fix.index] = done.copy
   }
   const given = new Map(settled.map((fix, i) => [fix.index, ids[i]]))
+  const archived = new Set(settled.filter((fix) => fix.off === true).map((fix) => fix.index))
   const next = rewritePageCards(content, (_card, n) => {
     const id = given.get(n)
-    if (id !== undefined) return withCardId(lines[n], id)
+    if (id !== undefined) return withCardId(archived.has(n) ? withCardOff(lines[n], true) : lines[n], id)
     return lines[n] === cards[n].line ? undefined : lines[n]
   })
   await writeFile({ path: file, content: next, expectedMtime: mtime })

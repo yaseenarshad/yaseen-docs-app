@@ -138,6 +138,63 @@ describe('card files (YAZ-5037): the card\'s ID is the file\'s ID', () => {
   })
 })
 
+describe('a sync conflict copy never keeps a card (YAZ-5056)', () => {
+  // GitHub AutoSync keeps both sides of a conflict: `P.md` and `P (conflict <host>, <day>).md`. A space sorts before a
+  // dot, so the copy is FIRST in path order.
+  const mine = '2026-11-01T09:00Z good, 2026-11-05T09:00Z again'
+  const theirs = '2026-11-01T09:00Z good, 2026-11-06T09:00Z good'
+  const union = [
+    { at: '2026-11-01T09:00Z', rating: 'good' },
+    { at: '2026-11-05T09:00Z', rating: 'again' },
+    { at: '2026-11-06T09:00Z', rating: 'good' },
+  ]
+
+  it('`P.md` keeps the ID and the union of reviews; the copy\'s card takes a new ID, no reviews, and `off`', async () => {
+    const copyName = 'P (conflict Host, 2026-11-13).md'
+    const records = await vault({ 'P.md': `---\nid: YAZ-1\n---\n${card('Same text', `YAZ-7, ${mine}`)}`, [copyName]: `---\nid: YAZ-1\n---\n${card('Same text', `YAZ-7, ${theirs}`)}` })
+    expect([...records.keys()].sort()[0]).toBe(at(copyName))
+    await sweepIds(root, records, [...records.values()], () => undefined)
+    expect(await cardsIn('P.md')).toEqual([{ id: 'YAZ-7', off: false, next: false, reviews: union }])
+    const [copied] = await cardsIn(copyName)
+    expect(copied.id).not.toBe('YAZ-7')
+    expect(copied).toMatchObject({ off: true, next: false, reviews: [] })
+    // The page's own ID follows the same rule: `P.md` keeps YAZ-1, the copy takes a new one.
+    expect(await read('P.md')).toMatch(/^---\nid: YAZ-1\n---\n/)
+    expect(await read(copyName)).not.toMatch(/^---\nid: YAZ-1\n/)
+  })
+
+  it('a numbered conflict copy and a card file follow the rule too', async () => {
+    const copyName = 'Capital (conflict Mac-B, 2026-11-13 2).md'
+    const records = await vault({ 'Capital.md': `---\nkind: card\n---\n${card('Capital of France', `YAZ-9, ${mine}`)}`, [copyName]: `---\nkind: card\n---\n${card('Capital of France', `YAZ-9, ${theirs}`)}` })
+    await sweepIds(root, records, [...records.values()], () => undefined)
+    expect(await cardsIn('Capital.md')).toEqual([{ id: 'YAZ-9', off: false, next: false, reviews: union }])
+    expect(await cardsIn(copyName)).toMatchObject([{ off: true, reviews: [] }])
+    expect((await cardsIn(copyName))[0].id).not.toBe('YAZ-9')
+  })
+
+  it('the original swept alone keeps its card; two conflict copies with no original settle by path order', async () => {
+    const copyName = 'P (conflict Host, 2026-11-13).md'
+    const P = `---\nid: YAZ-1\n---\n${card('Same text', `YAZ-7, ${mine}`)}`
+    const records = await vault({ 'P.md': P, [copyName]: `---\nid: YAZ-2\n---\n${card('Same text', `YAZ-7, ${theirs}`)}` })
+    await sweepIds(root, records, [records.get(at('P.md'))!], () => undefined, [], { cardWaits: new Map() })
+    expect(await read('P.md')).toBe(P)
+    const a = 'Q (conflict A, 2026-11-13).md'
+    const b = 'Q (conflict B, 2026-11-13).md'
+    const more = await vault({ [a]: card('Q', 'YAZ-20'), [b]: card('Q', 'YAZ-20') })
+    await sweepIds(root, more, [...more.values()], () => undefined)
+    expect((await cardsIn(a))[0].id).toBe('YAZ-20')
+    expect((await cardsIn(b))[0].id).not.toBe('YAZ-20')
+  })
+
+  it('a conflict copy alone (the original was deleted) keeps its card as it is', async () => {
+    const copyName = 'P (conflict Host, 2026-11-13).md'
+    const bytes = `---\nid: YAZ-1\n---\n${card('Same text', `YAZ-7, ${mine}`)}`
+    const records = await vault({ [copyName]: bytes })
+    await sweepIds(root, records, [...records.values()], () => undefined)
+    expect(await read(copyName)).toBe(bytes)
+  })
+})
+
 describe('one card ID on two pages (YAZ-4960): a cut and paste keeps the card, a copy does not', () => {
   const A = `---\nid: YAZ-1\n---\n# A\n\n${card('Moving card', `YAZ-7, ${HISTORY}`)}`
   const B = `---\nid: YAZ-2\n---\n# B\n\n${card('Moving card', `YAZ-7, ${HISTORY}`)}`
