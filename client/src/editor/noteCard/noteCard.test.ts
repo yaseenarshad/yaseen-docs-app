@@ -274,15 +274,19 @@ describe('the card in the page', () => {
       row.click()
     }
     const line = () => getMarkdownForSave(crepe).split('\n').find((l) => l.startsWith('<!-- card'))
-    run('Turn review off')
+    run('Archive card')
     expect(line()).toBe('<!-- card: WIKI-7, off, 2026-11-12T14:05Z good, kept -->')
-    expect(root.querySelector('.note-card__state')?.textContent).toBe('Review off')
+    // YAZ-5046: an archived card says "Archived" in its head and looks muted.
+    expect(root.querySelector('.note-card__state')?.textContent).toBe('Archived')
+    expect(root.querySelector('.note-card')?.classList.contains('note-card--off')).toBe(true)
     run('Reset history')
     expect(line()).toBe('<!-- card: WIKI-7, off, kept -->')
     undo(view.state, view.dispatch)
     expect(line()).toBe('<!-- card: WIKI-7, off, 2026-11-12T14:05Z good, kept -->')
-    run('Turn review on')
+    run('Unarchive card')
     expect(line()).toBe('<!-- card: WIKI-7, 2026-11-12T14:05Z good, kept -->')
+    expect(root.querySelector('.note-card__state')?.textContent).toBe('')
+    expect(root.querySelector('.note-card')?.classList.contains('note-card--off')).toBe(false)
     const writeText = vi.fn(() => Promise.resolve())
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     run('Copy card ID')
@@ -347,7 +351,7 @@ describe('the card in the page', () => {
     expect(fileWrites).toEqual([{ path: '/v/Page.md', id: 'WIKI-7', index: 0, line: '<!-- card: WIKI-7, 2026-11-12T14:05Z good -->' }])
   })
 
-  it('read only locks the card`s text, not its review: no Edit card; ⋯ Turn review off and Reset history write the FILE', async () => {
+  it('read only locks the card`s text, not its review: no Edit card; ⋯ Archive card and Reset history write the FILE', async () => {
     fileWrites.length = 0
     const { crepe, root } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05Z good -->\n`, { noteCards: { path: '/v/Page.md' } })
     crepe.setReadonly(true)
@@ -357,7 +361,7 @@ describe('the card in the page', () => {
       expect(row.disabled).toBe(false)
       row.click()
     }
-    run('Turn review off')
+    run('Archive card')
     run('Reset history')
     await tick()
     expect(fileWrites).toEqual([

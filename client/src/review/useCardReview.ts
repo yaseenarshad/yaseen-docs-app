@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { isCardSeconds, withCardNext, withCardOff, type CardRating, type CardReview } from '@shared/cardLine'
-import { addStep, cardPlan, previewAnswers, reviewedToday, type AddKind, type CardAnswer, type CardPlan, type CardsAddedToday, type DueCard, type ReviewedToday } from '@shared/cardSchedule'
+import { addStep, archivedCards, cardPlan, previewAnswers, reviewedToday, type AddKind, type ArchivedCard, type CardAnswer, type CardPlan, type CardsAddedToday, type DueCard, type ReviewedToday } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
@@ -22,8 +22,13 @@ import { cardsAddedToday, setCardsAdded, subscribeCardsAdded } from './cardsAdde
  * same write (YAZ-4999 D3), and its undo puts it back.
  *
  * ← → (YAZ-5004) move the card showing through the queue with no answer: `at` is the one new piece of state, the
- * place of the card showing; a card you leave stays in the queue. `turnOff` (the Inbox ⋯) writes `off` and takes the
- * card out of the queue.
+ * place of the card showing; a card you leave stays in the queue. `turnOff` (the Inbox ⋯'s Archive card) writes `off`
+ * and takes the card out of the queue.
+ *
+ * Archived (YAZ-5046, Yaseen: "I think we should just call that archive"): the cards with `off` in the open scope, from
+ * the index (`archivedCards`), to look at, not to review. The filter `archived` shows them as a list (no card on show:
+ * `at` is past the queue's end); `unarchive` takes `off` away, the history stays, and the index takes the card off the
+ * list. The review's own counts and queue never hold an archived card.
  *
  * The filter (YAZ-5017, as Mochi's "All cards ▾"): All cards, Due today (cards with reviews, due now) or New cards
  * (never reviewed, within today's new-card limit: the queue's own). The queue stays whole; the filter picks which of its
@@ -67,12 +72,14 @@ import { cardsAddedToday, setCardsAdded, subscribeCardsAdded } from './cardsAdde
  * the added cards not answered yet leave the session.
  */
 
-/** Which cards of the session show (YAZ-5017). */
-export type CardFilter = 'all' | 'next' | 'due' | 'new'
+/** Which cards of the session show (YAZ-5017); `archived` (YAZ-5046): the archived cards' list, no card to review. */
+export type CardFilter = 'all' | 'next' | 'due' | 'new' | 'archived'
+/** The filters that review: each has a count of the session's queue. */
+export type ReviewFilter = Exclude<CardFilter, 'archived'>
 
-/** Whether `card` shows under `filter`: next = marked up next (YAZ-5028), due = reviewed before (due now), new = never reviewed. */
+/** Whether `card` shows under `filter`: next = marked up next (YAZ-5028), due = reviewed before (due now), new = never reviewed; archived: none of the queue. */
 export const matchesFilter = (card: DueCard, filter: CardFilter): boolean =>
-  filter === 'all' || (filter === 'next' ? card.next : (filter === 'new') === card.isNew)
+  filter === 'all' || (filter === 'archived' ? false : filter === 'next' ? card.next : (filter === 'new') === card.isNew)
 
 /** What a session reviews: the vault (nothing), a folder (root-relative, "Review this folder") or one page (its absolute path, "Review this page"). */
 export interface CardReviewScope {
@@ -105,7 +112,9 @@ export interface CardReviewSession {
   /** The filter on show (YAZ-5017). */
   filter: CardFilter
   /** The cards left in the session under each filter: the menu's counts. */
-  counts: Record<CardFilter, number>
+  counts: Record<ReviewFilter, number>
+  /** The scope's archived cards (YAZ-5046), from the index: the Archived row's count and list. */
+  archived: ArchivedCard[]
   /** Where the cards come from (YAZ-5017): the vault's name; the folder's parts; the page's name. Shown by the filter ("· in …"). */
   from: string[]
   /** The card showing's place (YAZ-5017 round 2): vault › folders › page, each with what a click opens. Empty with no card. */
@@ -151,9 +160,11 @@ export interface CardReviewApi {
   setNext: (path: string, id: string, on: boolean) => Promise<void>
   /** ← (-1) and → (+1), YAZ-5004: the card before or after, with no answer; the card left stays in the queue. */
   move: (delta: -1 | 1) => void
-  /** The Inbox ⋯'s Turn review off (YAZ-5004): `off` on the card showing's line, and the card out of the queue. */
+  /** The Inbox ⋯'s Archive card (YAZ-5004, YAZ-5046): `off` on the card showing's line, and the card out of the queue. */
   turnOff: () => Promise<void>
-  /** All cards, Due today or New cards (YAZ-5017): which of the session's cards show. */
+  /** Unarchive card `id` of `path` (YAZ-5046, the Archived list): `off` off its line; its history stays. */
+  unarchive: (path: string, id: string) => Promise<void>
+  /** All cards, Due today, New cards (YAZ-5017) or the Archived list (YAZ-5046): which of the session's cards show. */
   setFilter: (filter: CardFilter) => void
   /** Adds `session.adds[kind]` cards of `kind` for today (YAZ-5042); `undo` takes it back. */
   addCards: (kind: AddKind) => void
@@ -259,7 +270,7 @@ const stepFrom = (s: Session, delta: -1 | 1): number => {
   for (let i = s.at + delta; i >= 0 && i < s.queue.length; i += delta) if (matchesFilter(s.queue[i], s.filter)) return i
   return -1
 }
-const countOf = (queue: readonly DueCard[]): Record<CardFilter, number> => {
+const countOf = (queue: readonly DueCard[]): Record<ReviewFilter, number> => {
   const fresh = queue.filter((c) => c.isNew).length
   return { all: queue.length, next: queue.filter((c) => c.next).length, due: queue.length - fresh, new: fresh }
 }
@@ -771,6 +782,18 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     [root, source],
   )
 
+  const unarchive = useCallback(
+    async (path: string, id: string) => {
+      forget(path)
+      await changeCardLine(path, id, (l) => withCardOff(l, false)).then(
+        () => undefined,
+        (err: unknown) => onNotice(`Can't change the card: ${reason(err)}`, 'error'),
+      )
+      forget(path)
+    },
+    [onNotice, forget],
+  )
+
   const turnOff = useCallback(async () => {
     const s0 = live.current.session
     const card = s0?.queue[s0.at]
@@ -794,6 +817,8 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     () => (scope === undefined || (!scope.folder && scope.page === undefined) ? vaultPlan : cardPlan(records, settings, Date.now(), scope.folder, scope.page, letters, taken, added)),
     [scope, vaultPlan, records, settings, letters, taken, added],
   )
+  // YAZ-5046: the open scope's archived cards, from the index.
+  const archived = useMemo(() => (scope === undefined ? [] : archivedCards(records, scope.folder, scope.page)), [scope, records])
   // YAZ-5029: the last card shown with its text, and its session: on show while the next card is read.
   const lastShown = useRef<{ session: number; card: ShownCard } | null>(null)
   const shownSession = useMemo<CardReviewSession | null>(() => {
@@ -807,7 +832,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     const counts = countOf(queue)
     const lastStep = session.undo.at(-1)
     // "3 of 12" under the filter (YAZ-5017): its cards at start, those gone since, and the place among those left.
-    const total = filter === 'all' ? totals.due + totals.new : totals[filter]
+    const total = filter === 'all' ? totals.due + totals.new : filter === 'archived' ? archived.length : totals[filter]
     const before = queue.slice(0, session.at).filter((c) => matchesFilter(c, filter)).length
     const vault = vaultName ?? (root === null ? 'Inbox' : storage.vaultName(root))
     const from = scope.page !== undefined ? [session.label] : scope.folder ? scope.folder.split('/').filter(Boolean) : [vault]
@@ -815,7 +840,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       label: session.label,
       scope: scope.page !== undefined ? 'page' : scope.folder ? 'folder' : 'vault',
       card: shownCard,
-      position: Math.max(1, Math.min(total - counts[filter] + 1 + before, total)),
+      position: filter === 'archived' ? 0 : Math.max(1, Math.min(total - counts[filter] + 1 + before, total)),
       total,
       canBack: stepFrom(session, -1) !== -1,
       canNext: stepFrom(session, 1) !== -1,
@@ -824,6 +849,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       canUndo: session.undo.length > 0,
       filter,
       counts,
+      archived,
       from,
       place: shownCard === null || root === null ? [] : cardPlace(root, vault, folders, records, shownCard.path),
       answered: session.answered,
@@ -834,7 +860,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       lastAdd: lastStep?.kind === 'add' ? { kind: lastStep.what, count: lastStep.count } : null,
     }
     // `records`: a cached page is good only at its page's mtime.
-  }, [session, loaded, fixed, turnKey, root, vaultName, cached, records, folders, today, scopePlan, settings])
+  }, [session, loaded, fixed, turnKey, root, vaultName, cached, records, folders, today, scopePlan, settings, archived])
 
-  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, move, turnOff, setFilter, addCards }
+  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, move, turnOff, unarchive, setFilter, addCards }
 }

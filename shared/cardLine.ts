@@ -61,7 +61,7 @@ export interface CardLine {
 export interface NoteCardRecord {
   /** The card's ID as the line holds it (canonical form, `WIKI-512`); null before the sweep gives one. */
   id: string | null
-  /** Review is off for this card (the line's `off` part). */
+  /** The card is archived (the line's `off` part, YAZ-5046): out of review, its history kept. */
   off: boolean
   /** The card is up next (the line's `next` part, YAZ-4999 D3): the Inbox shows it first. */
   next: boolean
@@ -149,7 +149,7 @@ export function withCardId(line: CardLine, id: string): CardLine {
   return { parts: at === -1 ? [part, ...line.parts] : line.parts.map((p, i) => (i === at ? part : p)) }
 }
 
-/** Review on or off for the card (the ⋯ menu's "Turn review off"): `off` goes right after the ID, or first. */
+/** The card archived or not (the ⋯ menu's "Archive card", YAZ-5046; the line's `off`): `off` goes right after the ID, or first. */
 export function withCardOff(line: CardLine, off: boolean): CardLine {
   if (isCardOff(line) === off) return line
   if (!off) return { parts: line.parts.filter((p) => p.kind !== 'off') }

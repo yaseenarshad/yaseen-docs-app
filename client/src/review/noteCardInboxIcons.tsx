@@ -12,6 +12,8 @@ const glyph = (body: ReactElement, size = 14): ReactElement => (
 
 /** All cards: an inbox tray, as Mochi's menu draws it. */
 export const InboxTrayIcon = () => glyph(<path d="M2.5 9.5 4 3.5h8l1.5 6v3h-11zM2.5 9.5h3.2l.8 1.5h3l.8-1.5h3.2" />)
+/** Archived (YAZ-5046): an archive box, the Inbox ⋯'s Archive card glyph. */
+export const ArchiveIcon = () => glyph(<path d="M2.5 3.5h11v3h-11zM3.5 6.5v6h9v-6M6.5 9h3" />)
 /** Up next (YAZ-5028): the ⋯ row's "Put at top of Inbox" arrow, a line with an arrow up to it. */
 export const UpNextIcon = () => glyph(<path d="M3 2.5h10M8 13.5V5.5M5 8.5l3-3 3 3" />)
 /** Due today: a circle with a check. */

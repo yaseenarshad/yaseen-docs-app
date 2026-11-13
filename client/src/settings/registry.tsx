@@ -482,7 +482,7 @@ function iconColourRow(kind: SidebarIconKind): SettingDef {
 }
 
 /** What the section title does not say: the feature's name, and where its cards turn up. */
-const REVIEW_KEYWORDS = ['note cards', 'cards', 'flashcards', 'inbox', 'spaced repetition', 'fsrs']
+const REVIEW_KEYWORDS = ['note cards', 'cards', 'flashcards', 'inbox', 'spaced repetition', 'fsrs', 'archive', 'archived']
 
 /** Every Review row but the switch is there only while review is on. */
 const reviewOn = ({ review }: SettingsCtx): boolean => review?.settings.enabled === true
@@ -1869,7 +1869,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'enabled',
             label: 'Review cards',
-            hint: 'Note cards in this vault come back in the Inbox when they are due.',
+            hint: 'Note cards in this vault come back in the Inbox when they are due. An archived card does not: unarchive it from its ⋯ menu, or from the Inbox\'s Archived list.',
             keywords: REVIEW_KEYWORDS,
             render: ({ review }) => review && <Segmented options={ON_OFF_OPTIONS} value={review.settings.enabled} onChange={(enabled) => review.save({ ...review.settings, enabled })} ariaLabel="Review cards" />,
           },

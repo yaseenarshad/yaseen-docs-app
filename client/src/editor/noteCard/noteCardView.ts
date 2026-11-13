@@ -7,7 +7,7 @@
  * `app://` image sources and every listener, it draws only once the block's CodeMirror is made (off the screen a
  * block shows its raw text), and it draws again only on a text change. "Finding (agent)" on YAZ-4961.
  *
- * THE CARD: a head (the card ID first, small and grey, a click copies it, D20; "Review off" when the line says `off`;
+ * THE CARD: a head (the card ID first, small and grey, a click copies it, D20; "Archived" when the line says `off`, and the card muted, YAZ-5046;
  * the chip "Up next ×" when it says `next`, YAZ-4999 D3 — its × removes the mark; Edit card; ⋯) and the sides, `renderNoteCard` (the Inbox's function too). The head does not repeat the card's first
  * line: the text is right below it (say each thing once). Hidden words show highlighted (idea 21 is later). A
  * `[[link]]` is the page's pill: a click opens it in Explore, a bound gesture (⌘-click by default) in a tab, as the
@@ -16,7 +16,7 @@
  * draw again (`refreshNoteCardLook`). In a vault that gives no IDs a ```` ```card ```` block is a code block (D8).
 
  * READ ONLY (a read-only page or vault): the card's TEXT is locked — no Edit card — but its review is not. The ⋯
- * menu's Turn review off / on and Reset history write the card line to the FILE (`changeCardLine`, the app's own
+ * menu's Archive card / Unarchive card and Reset history write the card line to the FILE (`changeCardLine`, the app's own
  * write), as the Inbox does; the open page takes it quietly.
  *
  * EDIT CARD (idea 8, idea 25): Crepe's own `CodeMirrorBlock`, made only then, from Crepe's factory in `nodeViewCtx`,
@@ -41,8 +41,8 @@
  * vault's `deleteReview` (`deps.reviews`): a write of the card line to the FILE, with Undo in its notice, as in the
  * card window, so it works read only and in Explore's read layer too.
  *
- * THE ⋯ MENU (D13): Put at top of Inbox / Remove from top of Inbox (`withCardNext`, YAZ-4999 D3), Turn review off /
- * on (`withCardOff`), Reset history (`withoutCardReviews`), Copy card ID, Open card. Each change is ONE transaction on the node's `cardLine` attribute (`changeNoteCardLine`): one ⌘Z, saved as
+ * THE ⋯ MENU (D13): Put at top of Inbox / Remove from top of Inbox (`withCardNext`, YAZ-4999 D3), Archive card /
+ * Unarchive card (`withCardOff`, YAZ-5046: the line's `off`), Reset history (`withoutCardReviews`), Copy card ID, Open card. Each change is ONE transaction on the node's `cardLine` attribute (`changeNoteCardLine`): one ⌘Z, saved as
  * any edit. The ID at insert (`noteCardRow`) is a transaction out of the undo history, saved by `NOTE_CARD_ID_META`.
  */
 import { EditorSelection, Prec, type Extension } from '@codemirror/state'
@@ -275,7 +275,7 @@ export class NoteCardView implements NodeView {
   /** The card ID, first in the head (D20): a click copies it. Hidden while the card has none. */
   private readonly idButton: HTMLButtonElement
   private readonly state: HTMLElement
-  /** "Title hidden in review" (YAZ-5030): shown while the line holds `notitle`; quiet, as "Review off" is. */
+  /** "Title hidden in review" (YAZ-5030): shown while the line holds `notitle`; quiet, as "Archived" is. */
   private readonly notitle: HTMLElement
   /** The "Up next" chip (YAZ-4999 D3): shown while the line holds `next`; its × removes the mark. */
   private readonly next: HTMLElement
@@ -368,7 +368,7 @@ export class NoteCardView implements NodeView {
     const id = cardIdOf(line)
     this.idButton.textContent = id ?? ''
     this.idButton.hidden = id === null
-    this.state.textContent = isCardOff(line) ? 'Review off' : ''
+    this.state.textContent = isCardOff(line) ? 'Archived' : ''
     this.notitle.hidden = !isCardNoTitle(line)
     this.dom.classList.toggle('note-card--off', isCardOff(line))
     this.next.hidden = !isCardNext(line)
@@ -704,7 +704,7 @@ export class NoteCardView implements NodeView {
     return [
       { label: 'Open card', hint: '⌘↵', run: () => this.open() },
       { label: isCardNext(line) ? 'Remove from top of Inbox' : 'Put at top of Inbox', disabled: !editable, divider: true, run: () => this.change((l) => withCardNext(l, !isCardNext(l))) },
-      { label: isCardOff(line) ? 'Turn review on' : 'Turn review off', disabled: !editable, run: () => this.change((l) => withCardOff(l, !isCardOff(l))) },
+      { label: isCardOff(line) ? 'Unarchive card' : 'Archive card', disabled: !editable, run: () => this.change((l) => withCardOff(l, !isCardOff(l))) },
       // ONE toggle row (YAZ-5030): its hint is the state now; a click turns it to the other.
       { label: 'Title on the front', hint: isCardNoTitle(line) ? 'Hide' : 'Show', disabled: !editable, run: () => this.change((l) => withCardNoTitle(l, !isCardNoTitle(l))) },
       { label: 'Reset history', disabled: !editable || cardReviewsOf(line).length === 0, danger: true, run: () => this.change(withoutCardReviews) },

@@ -37,7 +37,7 @@
  *    hover waits for the card's answers. The hook reads the cards around this one ahead and keeps the card before on show
  *    until the next one's text is ready, so the card never empties and nothing under it moves.
  *  - The buttons row (YAZ-5004, as in Mochi): ← → on its left, the answers in the middle, ⋯ on its right. ⋯ opens a
- *    small row of icons, each with the app's hover box (its name and key): Undo last review (⌘Z), Turn review off,
+ *    small row of icons, each with the app's hover box (its name and key): Undo last review (⌘Z), Archive card (YAZ-5046),
  *    Put at top of Inbox / Remove from top of Inbox, Open card. They are the hook's own actions.
  *  - THE LAST ANSWER'S LINE (YAZ-5025 round 2; no toast): one quiet line, centred under the answer buttons, "✓ Remembered ·
  *    DEMO-51 · back in 9 days · Undo ⌘Z" (a Forgot in red), in the button hover's words. It stays until the next answer
@@ -59,6 +59,9 @@
  *    button; nothing waiting, the screen is as before. The cards menu has the same Add (`NoteCardInboxBar`). The add's
  *    line takes the last answer's line, "+ Added 10 new cards for today · Undo ⌘Z": its Undo, and ⌘Z, take the add
  *    back while it is the last thing done (the hook's own undo).
+ *  - ARCHIVED (YAZ-5046, Yaseen: "We need a way to be able to then have a toggle"): the cards menu's last row lists the
+ *    scope's archived cards in the card's place, to look at, not to review: each its title and its page; a click opens
+ *    the card window (as ⋯ › Open card), and "Unarchive" brings it back to review, its history kept. No answer buttons.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
@@ -129,7 +132,7 @@ const icon = (d: string) => (
     <path d={d} />
   </svg>
 )
-/** The ⋯ row's icons (YAZ-5004): undo, an archive box (review off), up to the top, a card window. */
+/** The ⋯ row's icons (YAZ-5004): undo, an archive box (Archive card, YAZ-5046), up to the top, a card window. */
 const ICON_UNDO = icon('M6 4 3 7l3 3M3 7h7a3 3 0 0 1 0 6H8')
 const ICON_OFF = icon('M2.5 3.5h11v3h-11zM3.5 6.5v6h9v-6M6.5 9h3')
 const ICON_TOP = icon('M3 2.5h10M8 13.5V5.5M5 8.5l3-3 3 3')
@@ -154,6 +157,39 @@ export const addLabel = (kind: AddKind, n: number): string => (kind === 'new' ? 
 
 /** The add's line (YAZ-5042), after its "+": "Added 10 new cards for today". */
 export const addedLine = (kind: AddKind, n: number): string => `Added ${n} ${kind === 'new' ? 'new' : 'Up next'} card${n === 1 ? '' : 's'} for today`
+
+/**
+ * The Archived list (YAZ-5046): the scope's archived cards, to look at. Each row: its title (a click opens the card
+ * window), its page, quiet, and Unarchive. None: one quiet line and the way back to All cards.
+ */
+function ArchivedList({ session, nameOf, openCard, unarchive, backToAll }: { session: CardReviewSession; nameOf: (path: string) => string; openCard: NoteCardInboxProps['openCard']; unarchive: CardReviewApi['unarchive']; backToAll: () => void }) {
+  if (session.archived.length === 0)
+    return (
+      <div className="note-card-inbox__done" role="status">
+        <p className="note-card-inbox__done-line note-card-inbox__archived-empty">No archived cards.</p>
+        {session.counts.all > 0 && (
+          <button type="button" className="note-card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={backToAll}>
+            {session.counts.all} more in {CARD_FILTERS[0].label}
+          </button>
+        )}
+      </div>
+    )
+  return (
+    <ul className="note-card-inbox__archived" aria-label="Archived cards">
+      {session.archived.map((c) => (
+        <li key={`${c.path}\n${c.id}`} className="note-card-inbox__archived-row">
+          <button type="button" className="note-card-inbox__archived-open" onMouseDown={(e) => e.preventDefault()} onClick={() => openCard(c.path, c.id, c.index, false)}>
+            <span className={`note-card-inbox__archived-title${c.title === undefined ? ' note-card__title--empty' : ''}`}>{c.title ?? 'New note card'}</span>
+            <span className="note-card-inbox__archived-page">{nameOf(c.path)}</span>
+          </button>
+          <button type="button" className="explore__button note-card-inbox__archived-unarchive" onMouseDown={(e) => e.preventDefault()} onClick={() => void unarchive(c.path, c.id)}>
+            Unarchive
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
+}
 
 /** The step a card is at (D18): how many sides show, and how many hidden words, in page order over the card. */
 interface Step {
@@ -310,7 +346,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
       ? []
       : [
           { id: 'undo', label: 'Undo last review', keys: '⌘Z', icon: ICON_UNDO, disabled: !session.canUndo, run: () => void review.undo() },
-          { id: 'off', label: 'Turn review off', icon: ICON_OFF, disabled: card.page === null, run: () => void review.turnOff() },
+          { id: 'off', label: 'Archive card', icon: ICON_OFF, disabled: card.page === null, run: () => void review.turnOff() },
           card.page?.next === true
             ? { id: 'next', label: 'Remove from top of Inbox', icon: ICON_TOP, disabled: false, run: () => void review.setNext(card.path, card.id, false) }
             : { id: 'next', label: 'Put at top of Inbox', icon: ICON_TOP, disabled: card.page === null, run: () => void review.setNext(card.path, card.id, true) },
@@ -348,7 +384,9 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
             )}
           </div>
           <div className="note-card-inbox__body">
-            {card === null ? (
+            {session.filter === 'archived' ? (
+              <ArchivedList session={session} nameOf={nameOf} openCard={openCard} unarchive={review.unarchive} backToAll={() => review.setFilter('all')} />
+            ) : card === null ? (
               <div className="note-card-inbox__done" role="status">
                 {/* YAZ-5033: today's work across the vault, under whatever the screen says. */}
                 {session.filter !== 'all' && session.counts.all > 0 ? (

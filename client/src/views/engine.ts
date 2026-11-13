@@ -120,7 +120,7 @@ export interface RunOptions {
   byFileName?: (property: string) => boolean
   /**
    * The vault's note card review settings (YAZ-4967, idea 2): the "Due" column (`file.due`) counts with them. Absent
-   * (a vault no scope has open), "Due" is blank; "Cards" (`file.cards`) needs none.
+   * (a vault no scope has open), "Due" is blank; "Cards" (`file.cards`) and "Archived" (`file.archived`, YAZ-5046) need none.
    */
   cardSettings?: ReviewSettings
   /**
@@ -234,6 +234,8 @@ function makeGetter(key: string, def: ViewSet, errors: EngineError[], cardSettin
   // The note card counts (YAZ-4967, idea 2): read off the index's `cards`, no file read. Blank, not 0, where there are none.
   if (key === 'file.cards') return (scope) => cardCount(scope.file, null, 0)
   if (key === 'file.due') return (scope) => (cardSettings === undefined ? null : cardCount(scope.file, cardSettings, scope.now ?? Date.now()))
+  // YAZ-5046: the page's archived cards (the line's `off`); no settings needed, as "Cards".
+  if (key === 'file.archived') return (scope) => archivedCount(scope.file)
   if (key.startsWith('file.')) {
     const expr = member('file', key.slice(5))
     return scope => evaluate(expr, scope)
@@ -257,6 +259,12 @@ function cardCount(file: FileValue | null, s: ReviewSettings | null, now: number
   const cards = (file?.record as IndexRecord | undefined)?.cards
   if (cards === undefined || cards.length === 0) return null
   const n = s === null ? cards.length : pageCardCounts(file!.record as IndexRecord, s, now).due
+  return n === 0 ? null : n
+}
+
+/** A page's archived cards (YAZ-5046); null (a blank cell) for none. */
+function archivedCount(file: FileValue | null): Value {
+  const n = (file?.record as IndexRecord | undefined)?.cards?.filter((c) => c.off).length ?? 0
   return n === 0 ? null : n
 }
 
@@ -442,6 +450,7 @@ const FILE_FIELD_LABELS: Readonly<Record<string, string>> = {
   // The note card counts (YAZ-4967, idea 2).
   'file.cards': 'Cards',
   'file.due': 'Due',
+  'file.archived': 'Archived',
 }
 
 /** `def.properties[key].displayName` (looked up as written, bare and `note.`-prefixed), else `defaultLabel(key)`. */

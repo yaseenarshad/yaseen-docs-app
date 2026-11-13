@@ -892,3 +892,34 @@ describe('YAZ-5033: the answer saves how long it took; today`s total', () => {
     expect(review.session?.today).toEqual({ cards: 2, reviews: 3, seconds: 13 })
   })
 })
+
+describe('YAZ-5046: archived cards, to look at (not to review)', () => {
+  it('the session lists the scope`s archived cards in page order with their titles; Archived shows no card to review; unarchive takes `off` away, keeps the history, and the card leaves the list', async () => {
+    page('Old.md', ['Old fact', 'WIKI-8, off, 2025-01-01T09:00Z good'], ['Kept', 'WIKI-9'])
+    await mount()
+    await act(async () => review.start())
+    await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
+    expect(review.session?.archived).toEqual([
+      { path: `${ROOT}/Bio/Cells.md`, index: 1, id: 'WIKI-4', title: 'Off card' },
+      { path: `${ROOT}/Old.md`, index: 0, id: 'WIKI-8', title: 'Old fact' },
+    ])
+    // The review's own counts are unchanged: an archived card is never in the queue.
+    expect(review.session?.counts).toEqual({ all: 3, next: 0, due: 1, new: 2 })
+    act(() => review.setFilter('archived'))
+    expect(review.session).toMatchObject({ filter: 'archived', card: null })
+    await step(() => review.unarchive(`${ROOT}/Old.md`, 'WIKI-8'))
+    expect(vault.get(`${ROOT}/Old.md`)).toContain('<!-- card: WIKI-8, 2025-01-01T09:00Z good -->')
+    await vi.waitFor(() => expect(review.session?.archived.map((c) => c.id)).toEqual(['WIKI-4']))
+    expect(review.dueCount).toBe(4)
+    // Back on All cards, the review goes on where it was.
+    act(() => review.setFilter('all'))
+    expect(review.session?.card).not.toBeNull()
+  })
+
+  it('a folder`s review lists only that folder`s archived cards', async () => {
+    page('Old.md', ['Old fact', 'WIKI-8, off'])
+    await mount()
+    await act(async () => review.start({ folder: 'Bio' }))
+    expect(review.session?.archived.map((c) => c.id)).toEqual(['WIKI-4'])
+  })
+})

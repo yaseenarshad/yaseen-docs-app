@@ -17,7 +17,7 @@ afterEach(async () => {
   }
 })
 
-it('⋯ Turn review off, on again, then an outside answer, then ⌘Z: the answer stays in the file', async () => {
+it('⋯ Archive card, Unarchive card, then an outside answer, then ⌘Z: the answer stays in the file', async () => {
   const root = document.createElement('div')
   document.body.appendChild(root)
   const base = 'Intro\n\n```card\nQ\n---\nA\n```\n'
@@ -30,7 +30,7 @@ it('⋯ Turn review off, on again, then an outside answer, then ⌘Z: the answer
     if (pos === -1 && n.type.name === 'code_block') pos = p
     return pos === -1
   })
-  // The user turns review off and on again in the ⋯ menu (two steps in the page's undo history).
+  // The user archives the card and unarchives it again in the ⋯ menu (two steps in the page's undo history).
   view.dispatch(changeNoteCardLine(view.state, pos, (l) => withCardOff(l, true))!)
   await new Promise((r) => setTimeout(r, 600))
   view.dispatch(changeNoteCardLine(view.state, pos, (l) => withCardOff(l, false))!)
@@ -38,7 +38,7 @@ it('⋯ Turn review off, on again, then an outside answer, then ⌘Z: the answer
   const answered = `${base}<!-- card: WIKI-9, 2026-11-01T09:00Z good, 2026-11-12T10:00Z good -->\n`
   expect(applyExternalMarkdown(crepe, answered)).toBe('applied')
   expect(getMarkdownForSave(crepe)).toContain('2026-11-12T10:00Z good')
-  // ⌘Z in the page undoes the user's last step ("Turn review on").
+  // ⌘Z in the page undoes the user's last step ("Unarchive card").
   undo(view.state, view.dispatch)
   expect(getMarkdownForSave(crepe)).toContain('2026-11-12T10:00Z good')
 })

@@ -147,7 +147,7 @@ for today (all of them when that box is empty). A line is the day it was due (\`
 \`new\` for a new card, \`steps\` for a card in its same-day steps: Forgot, or a new card not yet Remembered
 twice; it is due now, minutes after its last answer), the card's id, its title (its first line) and its page.
 Given a page, \`due\` lists every card on it, each with the day it is next due, \`next\`, \`new\`, \`steps\`, or
-\`off\` (review turned off). The app works the dates out from each card's reviews with FSRS and never writes
+\`off\` (archived: the app's "Archive card"). The app works the dates out from each card's reviews with FSRS and never writes
 them, so this is the place to read them. \`--json\` gives \`id\`, \`page\`, \`title\`, \`due\` (ISO time; the
 minute a step ends), \`isNew\`, \`next\` and \`inSteps\` (and \`off\` for a page).
 
@@ -161,7 +161,7 @@ marks; case does not count). It prints \`added <id> to <page>\`; \`--json\` give
 line gets the part \`next\`, and the Inbox shows the card first, due or not and outside the new cards a
 day, until it is answered one time (the answer removes \`next\`). \`--off\` removes it ("Remove from top of
 Inbox"). The card is found by its id in the vault of \`<folder>\` (the current folder when none is given).
-A card with review off stays out of the Inbox. It prints \`<id> is up next (<page>)\` or \`<id> is not up
+An archived card stays out of the Inbox. It prints \`<id> is up next (<page>)\` or \`<id> is not up
 next (<page>)\`; \`--json\` gives \`id\`, \`page\` and \`next\`.
 
 \`vaults\` lists the vaults the app knows: the recent ones, last used first, then each other vault
@@ -377,7 +377,7 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
     const root = await cardVault(dirname(target), target)
     const settings = await reviewSettings(root)
     const titles = await cardTitles(target)
-    // `off` is the card's own review (HELP). With review off for the whole vault, ONE line says so, and each card keeps its day.
+    // `off` is the card's own archive (HELP, YAZ-5046). With review off for the whole vault, ONE line says so, and each card keeps its day.
     const rows = ((await scanFile(root, target)).cards ?? []).map((card, i) => {
       const state = cardState(card.reviews, settings)
       return { id: card.id, page: target, title: titles[i] ?? '', due: card.off ? null : state.isNew || card.next ? iso(now) : iso(state.due!), isNew: state.isNew, next: card.next, off: card.off, inSteps: state.inSteps }
@@ -617,7 +617,7 @@ async function cardNext(ref: string, from: string, flags: Map<string, string | t
   if (record === undefined) throw new Error(`no note card ${id} in ${root}`)
   const on = !flags.has('--off')
   await transformOnDisk(record.path, (content) => changeCard(content, id, (line) => withCardNext(line, on)))
-  if (on && record.cards?.find((card) => card.id === id)?.off === true) io.stderr(`review is off for ${id}: it shows in the Inbox once its review is on again\n`)
+  if (on && record.cards?.find((card) => card.id === id)?.off === true) io.stderr(`${id} is archived: it shows in the Inbox once it is unarchived\n`)
   io.stdout(flags.has('--json') ? `${JSON.stringify({ id, page: record.path, next: on }, null, 2)}\n` : `${id} is ${on ? '' : 'not '}up next (${record.path})\n`)
 }
 

@@ -27,8 +27,12 @@
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+/* An archived card (YAZ-5046, the line's `off`): muted; its head says "Archived". */
 .note-card--off {
-  opacity: 0.75;
+  opacity: 0.6;
+}
+.note-card--off .note-card__head {
+  background: transparent;
 }
 
 .note-card .note-card__head {

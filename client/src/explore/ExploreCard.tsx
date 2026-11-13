@@ -4,7 +4,7 @@
  *  - Head: the card ID first, small and grey (a click copies it, D20) — its place in the page's card and the Inbox
  *    too —, then the card title (`cardTitle`, the layer's name, as every layer has one; "New note card" for an empty
  *    card), ↗, ⋯ and ×; the chip "Up next ×" after the ID while the card is at the top of the Inbox (YAZ-4999 D3). The
- *    ⋯ menu: Open page, Open page in a new tab, Put at top of Inbox / Remove from top of Inbox, Turn review off / on,
+ *    ⋯ menu: Open page, Open page in a new tab, Put at top of Inbox / Remove from top of Inbox, Archive card / Unarchive card (YAZ-5046),
  *    Reset history (D13, the card line through `changeCardLine`, the app's own write), Copy card ID.
  *  - The card, everything shown (`renderNoteCard`), its pills and links live: a click opens the page on top, a bound
  *    gesture (⌘-click) a tab.
@@ -216,7 +216,7 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
               : [
                   [
                     { id: 'next', label: card.next ? 'Remove from top of Inbox' : 'Put at top of Inbox', onSelect: () => changeLine((l) => withCardNext(l, !card.next)) },
-                    { id: 'review-off', label: card.off ? 'Turn review on' : 'Turn review off', onSelect: () => changeLine((l) => withCardOff(l, !card.off)) },
+                    { id: 'review-off', label: card.off ? 'Unarchive card' : 'Archive card', onSelect: () => changeLine((l) => withCardOff(l, !card.off)) },
                     // ONE toggle row (YAZ-5030): the hint is the state now; a click turns it to the other.
                     { id: 'title-front', label: 'Title on the front', hint: card.notitle === true ? 'Hide' : 'Show', onSelect: () => changeLine((l) => withCardNoTitle(l, card.notitle !== true)) },
                     ...(card.reviews.length === 0 ? [] : [{ id: 'reset', label: 'Reset history', danger: true, onSelect: () => changeLine(withoutCardReviews) }]),
@@ -347,7 +347,7 @@ function NoteCardBacklinks({ id, vault, onOpen }: { id: string; vault: ExploreVa
 /**
  * The strip under the card (D13, idea 11; YAZ-5032): the page, then what review knows as one calm line of words
  * (`NoteCardFacts`: the last answer, the next review and how far it is, the recall chance with its (i)). A card with
- * no review is "New"; a card with review off says so.
+ * no review is "New"; an archived card (the line's `off`, YAZ-5046) says "Archived".
  */
 function NoteCardStrip({ card, pageName, vault, onOpenPage }: { card: CardAtPage; pageName: string; vault: ExploreVault; onOpenPage: () => void }) {
   const settings = vault.review?.settings
@@ -357,7 +357,7 @@ function NoteCardStrip({ card, pageName, vault, onOpenPage }: { card: CardAtPage
       <button type="button" className="note-card-strip__page" onMouseDown={keepFocus} onClick={onOpenPage}>
         {pageName}
       </button>
-      {card.off && <span className="note-card-strip__fact">Review off</span>}
+      {card.off && <span className="note-card-strip__fact">Archived</span>}
       {isNew && <span className="note-card-strip__fact">New</span>}
       {settings !== undefined && !isNew && <NoteCardFacts reviews={card.reviews} settings={settings} />}
     </div>

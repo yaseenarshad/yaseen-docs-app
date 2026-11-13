@@ -30,6 +30,28 @@ const VIEW = { type: 'table' as const, name: 'T', order: ['file.name', 'file.car
 const cells = (opts: Parameters<typeof runView>[3]) =>
   runView({ views: [VIEW] }, VIEW, RECORDS, { now: NOW, ...opts }).rows.map((r) => [r.values['file.name'], r.values['file.cards'], r.values['file.due']])
 
+describe('YAZ-5046: the Archived column', () => {
+  const AV = { type: 'table' as const, name: 'T', order: ['file.name', 'file.archived'] }
+  const archived = (view: typeof AV & { sort?: unknown }) => runView({ views: [view as never] }, view as never, RECORDS, { now: NOW }).rows.map((r) => [r.values['file.name'], r.values['file.archived']])
+
+  it('counts each page\'s archived cards (the line\'s `off`), with or without review settings; none: blank; its name is "Archived"', () => {
+    expect(archived(AV)).toEqual([['Mixed', 1], ['Learned', null], ['Plain', null]])
+    expect(defaultLabel('file.archived')).toBe('Archived')
+  })
+
+  it('sorts as the Cards and Due columns do: by the number', () => {
+    const recs = [...RECORDS, page('Two', [{ id: 'V-8', off: true, next: false, reviews: [] }, { id: 'V-9', off: true, next: false, reviews: [] }])]
+    const view = { ...AV, sort: [{ property: 'file.archived', direction: 'DESC' as const }] }
+    expect(runView({ views: [view] }, view, recs, { now: NOW }).rows.slice(0, 2).map((r) => [r.values['file.name'], r.values['file.archived']])).toEqual([['Two', 2], ['Mixed', 1]])
+  })
+
+  it('is offered as a hidden column only where a row holds a card, as Cards and Due are', () => {
+    const plain = { type: 'table' as const, name: 'T' }
+    expect(allPropertyKeys({ views: [plain] }, plain, RECORDS)).toEqual(expect.arrayContaining(['file.cards', 'file.due', 'file.archived']))
+    expect(allPropertyKeys({ views: [plain] }, plain, [page('Plain')])).not.toContain('file.archived')
+  })
+})
+
 describe('Cards and Due columns (YAZ-4967, idea 2)', () => {
   it('count each page\'s cards and its reviewed cards due now (a new card is not "due": the daily limit is the vault\'s); none: blank', () => {
     expect(cells({ cardSettings: DEFAULT_REVIEW_SETTINGS })).toEqual([

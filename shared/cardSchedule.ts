@@ -273,6 +273,36 @@ export function pageCardCounts(r: CardPage, s: ReviewSettings, now: number): Pag
   return { cards: cards.length, due }
 }
 
+/** An archived card (YAZ-5046: the line's `off`): what the Inbox's Archived list shows of it, from the index. */
+export interface ArchivedCard {
+  path: string
+  /** Its place among the page's cards. */
+  index: number
+  id: string
+  /** Its title (its first line); absent for an empty card. */
+  title?: string
+}
+
+/**
+ * The archived cards (YAZ-5046) of the vault, of `folder` (root-relative, and its subfolders) or of `page` (its
+ * absolute path), by path and then in page order. Only a card with an ID: Unarchive finds it by its ID. A copy whose ID
+ * a card before it on the same page holds is left out, as `cardPlan` leaves it out.
+ */
+export function archivedCards(records: readonly CardPage[], folder = '', page?: string): ArchivedCard[] {
+  const out: ArchivedCard[] = []
+  const sorted = records.filter((r) => r.cards !== undefined && r.cards.some((c) => c.off)).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+  for (const r of sorted) {
+    if (page === undefined ? !inFolder(r.folder, folder) : r.path !== page) continue
+    const ids = new Set<string>()
+    ;(r.cards ?? []).forEach((card, index) => {
+      if (card.id === null || ids.has(card.id)) return
+      ids.add(card.id)
+      if (card.off) out.push({ path: r.path, index, id: card.id, ...(card.title !== undefined && { title: card.title }) })
+    })
+  }
+  return out
+}
+
 /**
  * A card's place in the vault's time (YAZ-4999 D2): its ID number, the vault's one counter, so a lower number is an
  * older card. An ID with letters that are not the vault's (`letters` given: a pasted card the sweep has not given a

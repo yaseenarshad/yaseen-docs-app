@@ -12,6 +12,9 @@
  * wait past today's number, "38 more", and "Add 10" adds one more day of the Settings number for today only; the menu
  * stays open, so the row's count grows (10 → 20) and "28 more · Add 10" stays while cards wait. A row with nothing
  * waiting (or no limit) is as before. In a narrow window "38 more" goes first; "Add 10" stays.
+ *
+ * Archived (YAZ-5046): the last row, under a line, with how many cards of the scope are archived. It is no review: its
+ * pick shows the archived cards as a list, to look at, each with Unarchive (`NoteCardInbox`).
  */
 import { Fragment, useRef, useState, type ReactElement } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
@@ -19,7 +22,7 @@ import type { CardRating } from '@shared/cardLine'
 import type { AddKind } from '@shared/cardSchedule'
 import type { CardFilter, CardReviewSession } from './useCardReview'
 import { todayWork } from './reviewTime'
-import { ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './noteCardInboxIcons'
+import { ArchiveIcon, ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './noteCardInboxIcons'
 
 /** The filters in menu order, with their names and glyphs. */
 export const CARD_FILTERS: readonly {
@@ -31,6 +34,7 @@ export const CARD_FILTERS: readonly {
   { id: 'next', label: 'Up next', icon: UpNextIcon },
   { id: 'due', label: 'Due today', icon: DueIcon },
   { id: 'new', label: 'New cards', icon: () => <NewIcon /> },
+  { id: 'archived', label: 'Archived', icon: ArchiveIcon },
 ]
 
 /** The bar's parts (YAZ-5020): each run of the same answer as one part, so a long session draws a few boxes, not one per card. */
@@ -124,37 +128,42 @@ export function NoteCardInboxBar({ session, setFilter, addCards, openPlace }: No
               // YAZ-5042: the cards that wait past today's number, on the two rows that have a number a day.
               const kind: AddKind | null = f.id === 'new' ? 'new' : f.id === 'next' ? 'next' : null
               const add = kind === null || addCards === undefined ? 0 : session.adds[kind]
+              const count = f.id === 'archived' ? session.archived.length : session.counts[f.id]
               return (
-                <div key={f.id} className="note-card-inbox__filter-row" role="none">
-                  <button
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={f.id === session.filter}
-                    className="ctx-menu__item note-card-inbox__filter-item"
-                    data-filter={f.id}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      setMenu(null)
-                      setFilter(f.id)
-                    }}
-                  >
-                    <span className="note-card-inbox__filter-name">
-                      <f.icon />
-                      {f.label}
-                    </span>
-                    <span className="note-card-inbox__count" data-filter={f.id} data-empty={session.counts[f.id] === 0 || undefined}>
-                      {session.counts[f.id]}
-                    </span>
-                  </button>
-                  {kind !== null && add > 0 && (
-                    <>
-                      <span className="note-card-inbox__waiting">{session.more[kind]} more</span>
-                      <button type="button" role="menuitem" className="note-card-inbox__add" data-kind={kind} aria-label={`Add ${add} ${kind === 'new' ? 'new cards' : 'Up next cards'} for today`} onMouseDown={(e) => e.preventDefault()} onClick={() => addCards?.(kind)}>
-                        Add {add}
-                      </button>
-                    </>
-                  )}
-                </div>
+                <Fragment key={f.id}>
+                  {/* YAZ-5046: a line sets Archived apart: its cards are to look at, not to review. */}
+                  {f.id === 'archived' && <div className="note-card-inbox__filter-sep" role="separator" />}
+                  <div className="note-card-inbox__filter-row" role="none">
+                    <button
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={f.id === session.filter}
+                      className="ctx-menu__item note-card-inbox__filter-item"
+                      data-filter={f.id}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        setMenu(null)
+                        setFilter(f.id)
+                      }}
+                    >
+                      <span className="note-card-inbox__filter-name">
+                        <f.icon />
+                        {f.label}
+                      </span>
+                      <span className="note-card-inbox__count" data-filter={f.id} data-empty={count === 0 || undefined}>
+                        {count}
+                      </span>
+                    </button>
+                    {kind !== null && add > 0 && (
+                      <>
+                        <span className="note-card-inbox__waiting">{session.more[kind]} more</span>
+                        <button type="button" role="menuitem" className="note-card-inbox__add" data-kind={kind} aria-label={`Add ${add} ${kind === 'new' ? 'new cards' : 'Up next cards'} for today`} onMouseDown={(e) => e.preventDefault()} onClick={() => addCards?.(kind)}>
+                          Add {add}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </Fragment>
               )
             })}
           </ContextMenuSurface>
