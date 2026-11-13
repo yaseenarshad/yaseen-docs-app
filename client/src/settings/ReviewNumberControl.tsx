@@ -17,14 +17,20 @@ export interface ReviewField {
 
 const numberOf = (text: string): number | null => (text.trim() === '' ? null : Number(text))
 
-/** A whole number field, as the file holds it: Longest wait, New cards a day. */
-export const wholeField = (field: 'maxDays' | 'newPerDay'): ReviewField => ({
+/** A whole number field, as the file holds it: Longest wait. */
+export const wholeField = (field: 'maxDays'): ReviewField => ({
   show: (s) => String(s[field]),
   parse: (text, s) => {
     const n = numberOf(text)
     return n === null ? null : { ...s, [field]: n }
   },
 })
+
+/** New cards a day (YAZ-4999 D1): a whole number, or an empty box for no limit (`null` in the file). */
+export const NEW_PER_DAY_FIELD: ReviewField = {
+  show: (s) => (s.newPerDay === null ? '' : String(s.newPerDay)),
+  parse: (text, s) => ({ ...s, newPerDay: numberOf(text) }),
+}
 
 /** Remember rate: a percent on screen, a fraction in the file (90 ↔ 0.9). */
 export const RETENTION_FIELD: ReviewField = {

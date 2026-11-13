@@ -12,6 +12,9 @@ export const REVIEW_SETTINGS_FILE = 'review.json'
 /** How many answer buttons a review shows (D5): Forgot and Remembered, or Again, Hard, Good and Easy. */
 export type ReviewButtons = 2 | 4
 
+/** Which new cards the Inbox takes first (YAZ-4999 D2), by the card's ID number: the vault's counter grows with time. */
+export type NewCardOrder = 'oldest' | 'newest'
+
 export interface ReviewSettings {
   /** Review cards in this vault: off, no card is due and the Inbox shows none. */
   enabled: boolean
@@ -21,8 +24,10 @@ export interface ReviewSettings {
   retention: number
   /** The longest wait, in days. */
   maxDays: number
-  /** How many new cards the Inbox shows in one day. */
-  newPerDay: number
+  /** How many new cards the Inbox shows in one day; null for no limit (YAZ-4999 D1: the user emptied the box). */
+  newPerDay: number | null
+  /** Which new cards come first: the oldest (the lowest ID number) or the newest. */
+  newOrder: NewCardOrder
   /** Spread due dates (FSRS fuzz): cards made together do not all come back on one day. */
   fuzz: boolean
   /** The FSRS weights: 21 numbers (FSRS-6); 17 or 19 are read too (ts-fsrs fills in the rest). */
@@ -40,6 +45,7 @@ export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = Object.freeze({
   retention: 0.9,
   maxDays: 365,
   newPerDay: 10,
+  newOrder: 'oldest',
   fuzz: true,
   weights: [...DEFAULT_CARD_WEIGHTS],
 }) as ReviewSettings
@@ -56,7 +62,9 @@ export function sanitizeReviewSettings(raw: unknown): ReviewSettings {
     buttons: r.buttons === 2 || r.buttons === 4 ? r.buttons : d.buttons,
     retention: typeof r.retention === 'number' && r.retention >= 0.7 && r.retention <= 0.99 ? r.retention : d.retention,
     maxDays: wholeIn(r.maxDays, 1, 36500) ? r.maxDays : d.maxDays,
-    newPerDay: wholeIn(r.newPerDay, 0, 9999) ? r.newPerDay : d.newPerDay,
+    // `null` is written only when the user empties the box: no limit. A missing field (no file) keeps the default.
+    newPerDay: r.newPerDay === null || wholeIn(r.newPerDay, 0, 9999) ? r.newPerDay : d.newPerDay,
+    newOrder: r.newOrder === 'oldest' || r.newOrder === 'newest' ? r.newOrder : d.newOrder,
     fuzz: typeof r.fuzz === 'boolean' ? r.fuzz : d.fuzz,
     weights: isWeights(r.weights) ? [...r.weights] : [...d.weights],
   }

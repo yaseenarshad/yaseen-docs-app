@@ -16,7 +16,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { redo, undo } from '@milkdown/kit/prose/history'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { cardIdOf, cardReviewsOf, pageCards, settleCardCopy, type CardLine } from '@shared/cardLine'
+import { cardIdOf, cardReviewsOf, formatCardLine, isCardNext, pageCards, settleCardCopy, withCardNext, type CardLine } from '@shared/cardLine'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { IDS_FILE } from '@shared/noteId'
 import type { IndexRecord } from '@shared/types'
@@ -226,5 +226,18 @@ describe('settleCardCopy, the one rule', () => {
   it('nothing to add: the keeper is the same object, so no caller writes it', () => {
     const keeper = { line: line('A'), text: 'Q' }
     expect(settleCardCopy(keeper, { line: line('A'), text: 'Q' }).keeper).toBe(keeper.line)
+  })
+  it('up next (YAZ-4999): an emptied copy keeps no `next`; the keeper keeps its own and takes none; a copy that keeps its history keeps its `next`', () => {
+    const next = (l: CardLine) => withCardNext(l, true)
+    // The copy is up next, the keeper is not: the copy empties and loses `next`; the keeper does not take it.
+    const one = settleCardCopy({ line: line('A'), text: 'Q' }, { line: next(line('A', 'B')), text: 'Q' })
+    expect([isCardNext(one.keeper!), isCardNext(one.copy), one.emptied]).toEqual([false, false, true])
+    // Both up next: the keeper keeps its own `next`; the emptied copy keeps none.
+    const both = settleCardCopy({ line: next(line('A')), text: 'Q' }, { line: next(line('A', 'B')), text: 'Q' })
+    expect([isCardNext(both.keeper!), isCardNext(both.copy), keys(both.keeper)]).toEqual([true, false, ['A', 'B']])
+    expect(formatCardLine(both.copy)).toBe('<!-- card: WIKI-9 -->')
+    // Another text: the copy is a card of its own and keeps its history and its `next`.
+    const own = settleCardCopy({ line: line('A'), text: 'Q2' }, { line: next(line('B')), text: 'Q' })
+    expect([isCardNext(own.keeper!), isCardNext(own.copy), own.emptied]).toEqual([false, true, false])
   })
 })

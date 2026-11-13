@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import type { CardRating, CardReview } from '@shared/cardLine'
+import { withCardNext, type CardRating, type CardReview } from '@shared/cardLine'
 import { cardQueue, previewAnswers, type CardAnswer, type DueCard } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { folderTitle } from '../links/shortcuts'
-import { deleteCardReview, isCardGone, readCard, restoreCardReview, writeCardReview, type CardOnPage } from './cardFile'
+import { changeCardLine, deleteCardReview, isCardGone, readCard, restoreCardReview, undoCardAnswer, writeCardAnswer, type CardOnPage } from './cardFile'
 
 /**
  * Note card review as App sees it (YAZ-4967): how many cards are due, and the one review
@@ -15,7 +15,8 @@ import { deleteCardReview, isCardGone, readCard, restoreCardReview, writeCardRev
  *
  * The hover is the truth (D13): `showAnswers` fixes each button's review — its time to the minute, so its fuzz — and
  * `answer` writes exactly that review, so "Remembered · 9 days" is what the file gets. `undo` (⌘Z, idea 5) removes
- * the last answer's review and shows that card again.
+ * the last answer's review and shows that card again. The first answer to an up-next card removes its `next` in the
+ * same write (YAZ-4999 D3), and its undo puts it back.
  */
 
 /** What a session reviews: the vault (nothing), a folder (root-relative, "Review this folder") or one page (its absolute path, "Review this page"). */
@@ -64,6 +65,8 @@ export interface CardReviewApi {
    * Its notice has Undo, which writes the review back (the app's undo of a file move is a notice the same way).
    */
   deleteReview: (path: string, id: string, review: CardReview) => Promise<void>
+  /** Up next on or off for card `id` of `path` (YAZ-4999 D3, the Inbox head's chip ×): one write of the file, then the card read again. */
+  setNext: (path: string, id: string, on: boolean) => Promise<void>
 }
 
 /** How many answers ⌘Z can take back in one session. */
@@ -77,12 +80,15 @@ interface Session {
   total: number
   /** Bumped each time the card at the head is put there: its page is read again, its answers fixed again. */
   turn: number
-  undo: { card: DueCard; review: CardReview }[]
+  /** Each answer: the card, its review, and the place its `next` had (-1: none), so the undo puts the file back as it was. */
+  undo: { card: DueCard; review: CardReview; next: number }[]
 }
 
 interface IndexSource {
   readonly records: readonly IndexRecord[]
   readonly folders: readonly IndexRecord[]
+  /** The vault's ID letters: a card ID of other letters sorts last among the new cards (`cardQueue`). */
+  readonly letters?: readonly string[]
   subscribe(listener: () => void): () => void
 }
 
@@ -107,7 +113,8 @@ export function useCardReview(root: string | null, source: IndexSource, settings
   useEffect(() => setSession(null), [root, settings.enabled])
 
   // The replay of each card is cached by its log (`cardDueAt`), so a new snapshot costs a join per reviewed card.
-  const dueCount = useMemo(() => cardQueue(records, settings, Date.now()).length, [records, settings, day])
+  const letters = source.letters
+  const dueCount = useMemo(() => cardQueue(records, settings, Date.now(), '', undefined, letters).length, [records, settings, day, letters])
 
   // The callbacks read the latest state at call time; their identities stay stable for memoised children.
   const live = useRef({ records, settings, session, loaded, fixed })
@@ -117,10 +124,10 @@ export function useCardReview(root: string | null, source: IndexSource, settings
   /** Drops the cards at the head of `queue` that are no longer due by the live index: their turn came. */
   const settle = useCallback((queue: DueCard[], scope: CardReviewScope): DueCard[] => {
     const { records, settings } = live.current
-    const due = cardQueue(records, settings, Date.now(), scope.folder, scope.page)
+    const due = cardQueue(records, settings, Date.now(), scope.folder, scope.page, source.letters)
     const first = queue.findIndex((card) => due.some((d) => sameCard(d, card)))
     return first === -1 ? [] : queue.slice(first)
-  }, [])
+  }, [source])
 
   const head = session?.queue[0]
   const turnKey = session === null || head === undefined ? null : `${session.turn}\n${head.path}\n${head.id}`
@@ -154,7 +161,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     (scope: CardReviewScope = {}) => {
       const { records, settings } = live.current
       if (!settings.enabled) return
-      const queue = cardQueue(records, settings, Date.now(), scope.folder, scope.page)
+      const queue = cardQueue(records, settings, Date.now(), scope.folder, scope.page, source.letters)
       const label = scope.page !== undefined ? titleOf(records, scope.page) : scope.folder ? folderTitle(source.folders, `${root}/${scope.folder}`) : 'Inbox'
       setSession((s) => ({ label, scope, queue, total: queue.length, turn: (s?.turn ?? 0) + 1, undo: [] }))
     },
@@ -180,8 +187,8 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       const chosen = fixAnswers()?.find((a) => a.review.rating === rating)
       if (card === undefined || chosen === undefined || busy.current) return
       busy.current = true
-      const written = await writeCardReview(card.path, card.id, chosen.review).then(
-        () => 'written' as const,
+      const written = await writeCardAnswer(card.path, card.id, chosen.review).then(
+        (next) => ({ next }),
         (err: unknown) => {
           if (isCardGone(err)) return 'gone' as const
           onNotice(`Can't save the answer: ${reason(err)}`, 'error')
@@ -192,7 +199,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       if (written === 'failed') return
       setSession((s) => {
         if (s === null || s.queue[0] !== card) return s
-        const undo = written === 'written' ? [...s.undo, { card, review: chosen.review }].slice(-UNDO_DEPTH) : s.undo
+        const undo = written !== 'gone' ? [...s.undo, { card, review: chosen.review, next: written.next }].slice(-UNDO_DEPTH) : s.undo
         return { ...s, queue: settle(s.queue.slice(1), s.scope), turn: s.turn + 1, undo }
       })
     },
@@ -203,7 +210,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     const last = live.current.session?.undo.at(-1)
     if (last === undefined || busy.current) return
     busy.current = true
-    const undone = await deleteCardReview(last.card.path, last.card.id, last.review.at).then(
+    const undone = await undoCardAnswer(last.card.path, last.card.id, last.review.at, last.next).then(
       () => true,
       (err: unknown) => {
         onNotice(`Can't undo the answer: ${reason(err)}`, 'error')
@@ -244,6 +251,20 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     [onNotice, readAgain],
   )
 
+  const setNext = useCallback(
+    async (path: string, id: string, on: boolean) => {
+      const written = await changeCardLine(path, id, (l) => withCardNext(l, on)).then(
+        () => true,
+        (err: unknown) => {
+          onNotice(`Can't change the card: ${reason(err)}`, 'error')
+          return false
+        },
+      )
+      if (written) readAgain(path, id)
+    },
+    [onNotice, readAgain],
+  )
+
   const shownSession = useMemo<CardReviewSession | null>(() => {
     if (session === null) return null
     const card = session.queue[0]
@@ -258,5 +279,5 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     }
   }, [session, loaded, fixed, turnKey])
 
-  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview }
+  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext }
 }

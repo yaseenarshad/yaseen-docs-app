@@ -5444,7 +5444,7 @@ describe('App note card review (YAZ-4967)', () => {
   /** A page of `cards`: each `[id, reviews]`, as the index hands them (D4). */
   const page = (name: string, folder: string, ...cards: [string, { at: string; rating: 'again' | 'good' }[]][]): IndexRecord => ({
     path: `/v/${folder === '' ? '' : `${folder}/`}${name}.md`, name: `${name}.md`, basename: name, title: name, folder, ext: 'md', size: 1, ctime: 1, mtime: 1,
-    properties: {}, aliases: [], tags: [], links: [], embeds: [], cards: cards.map(([id, reviews]) => ({ id, off: false, reviews })),
+    properties: {}, aliases: [], tags: [], links: [], embeds: [], cards: cards.map(([id, reviews]) => ({ id, off: false, next: false, reviews })),
   })
   const hourAgo = () => [{ at: new Date(Date.now() - H).toISOString().slice(0, 16) + 'Z', rating: 'good' as const }]
   const RECORDS = () => [
@@ -5509,7 +5509,7 @@ describe('App: the note card flow (YAZ-4962)', () => {
   const page = (line: string) => `# Cards\n\n\`\`\`card\nCapital of {{France}}\n---\n{{Paris}}\n\`\`\`\n${line}\n`
   const record = (): IndexRecord => ({
     path: PAGE, name: 'cards.md', basename: 'cards', title: 'Cards', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1,
-    properties: {}, aliases: [], tags: [], links: [], embeds: [], cards: [{ id: 'WIKI-9', off: false, reviews: [] }],
+    properties: {}, aliases: [], tags: [], links: [], embeds: [], cards: [{ id: 'WIKI-9', off: false, next: false, reviews: [] }],
   })
   const TABS: IdentityFixture = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }
   const inbox = (el: HTMLElement) => el.querySelector<HTMLElement>('.note-card-inbox')
@@ -5970,7 +5970,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     return { path, name, basename: name.replace(/\.md$/i, ''), title: name.replace(/\.md$/i, ''), folder: '', ext: 'md', size: 7, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...over }
   }
   /** A page with one new note card: due at once (YAZ-4967). */
-  const due = (path: string, folder = ''): IndexRecord => note(path, { folder, cards: [{ id: `C-${path}`, off: false, reviews: [] }] })
+  const due = (path: string, folder = ''): IndexRecord => note(path, { folder, cards: [{ id: `C-${path}`, off: false, next: false, reviews: [] }] })
   /** Vault `/v` first, `/w` second, one tab in each; the `/v` tab is the active one. */
   const TWO: IdentityFixture = { id: 'w1', root: '/v', roots: ['/v', '/w'], file: '/v/a.md', tabs: ['/v/a.md', '/w/b.md'] }
   /** Each vault's own index answer. */

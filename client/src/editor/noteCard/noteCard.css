@@ -87,6 +87,38 @@
 .note-card__state:empty {
   display: none;
 }
+/* "Up next" (YAZ-4999 D3): a small chip after the ID in the page, the card window and the Inbox; its × removes the mark. */
+:is(.note-card, .explore__head) .note-card__next {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 2px 0 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.note-card__next[hidden] {
+  display: none;
+}
+:is(.note-card, .explore__head) .note-card__next-remove {
+  flex: none;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 16px;
+  cursor: pointer;
+}
+:is(.note-card, .explore__head) .note-card__next-remove:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
 .note-card__head .note-card__edit,
 .note-card__head .note-card__more {
   flex: none;

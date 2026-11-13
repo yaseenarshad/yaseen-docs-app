@@ -8652,7 +8652,7 @@ describe('review menu items (YAZ-2322)', () => {
 
   it('"Review this page" sits on a PAGE row that holds a card, beside "Review this folder"\'s place, and hands App the page (YAZ-4967)', async () => {
     const indexSource = indexFor(true)
-    indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), cards: [{ id: 'V-1', off: false, reviews: [] }] }, indexRecord('/v/sub/b.md')], [], true)
+    indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), cards: [{ id: 'V-1', off: false, next: false, reviews: [] }] }, indexRecord('/v/sub/b.md')], [], true)
     const { el, props } = await mount({ review: true, indexSource })
     rightClick(el, '.tree__row--file')
     const labels = menuItems(el).map((b) => b.textContent)
@@ -8665,7 +8665,7 @@ describe('review menu items (YAZ-2322)', () => {
   it('no "Review this page" on a page with no card, with review off, or in a vault that gives no IDs', async () => {
     const withCard = (ids: boolean) => {
       const source = indexFor(ids)
-      source.update(() => null, [{ ...indexRecord('/v/a.md'), cards: [{ id: 'V-1', off: false, reviews: [] }] }], [], ids)
+      source.update(() => null, [{ ...indexRecord('/v/a.md'), cards: [{ id: 'V-1', off: false, next: false, reviews: [] }] }], [], ids)
       return source
     }
     for (const over of [{ review: true }, { review: false, indexSource: withCard(true) }, { review: true, indexSource: withCard(false) }]) {

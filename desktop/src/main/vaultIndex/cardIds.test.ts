@@ -61,11 +61,11 @@ describe('the sweep gives note cards their IDs (YAZ-4960 D2)', () => {
       { at: '2026-11-05T09:00Z', rating: 'again' },
     ]
     expect(await cardsIn('deck.md')).toEqual([
-      { id: 'YAZ-52', off: false, reviews: [] },
-      { id: 'YAZ-53', off: false, reviews },
-      { id: 'YAZ-54', off: false, reviews },
-      { id: 'YAZ-50', off: true, reviews },
-      { id: 'YAZ-55', off: true, reviews: [] },
+      { id: 'YAZ-52', off: false, next: false, reviews: [] },
+      { id: 'YAZ-53', off: false, next: false, reviews },
+      { id: 'YAZ-54', off: false, next: false, reviews },
+      { id: 'YAZ-50', off: true, next: false, reviews },
+      { id: 'YAZ-55', off: true, next: false, reviews: [] },
     ])
     // The note's own ID is untouched; the note with none took the first number, above the card's YAZ-50.
     expect(await read('deck.md')).toMatch(/^---\nid: YAZ-1\n---\n# Deck\n\n```card\nFresh\n```\n<!-- card: YAZ-52 -->\n/)
@@ -102,7 +102,7 @@ describe('one card ID on two pages (YAZ-4960): a cut and paste keeps the card, a
     await writeFile(at('a.md'), '---\nid: YAZ-1\n---\n# A\n\nCut.\n')
     await sweepIds(root, records, [b], () => undefined, [], { cardWaits: waits, cardOver: new Set(waits.keys()) })
     expect(await read('b.md')).toBe(B)
-    expect(await cardsIn('b.md')).toEqual([{ id: 'YAZ-7', off: false, reviews: [{ at: '2026-11-01T09:00Z', rating: 'good' }, { at: '2026-11-05T09:00Z', rating: 'again' }] }])
+    expect(await cardsIn('b.md')).toEqual([{ id: 'YAZ-7', off: false, next: false, reviews: [{ at: '2026-11-01T09:00Z', rating: 'good' }, { at: '2026-11-05T09:00Z', rating: 'again' }] }])
   })
 
   it('still on both pages after the wait: a copy — the page that took it last gets a new ID and an empty history; of two swept together, the second in path order', async () => {
@@ -112,12 +112,12 @@ describe('one card ID on two pages (YAZ-4960): a cut and paste keeps the card, a
     await sweepIds(root, records, [b], () => undefined, [], { cardWaits: waits })
     await sweepIds(root, records, [b], () => undefined, [], { cardWaits: waits, cardOver: new Set(waits.keys()) })
     expect(await read('a.md')).toBe(A)
-    expect(await cardsIn('b.md')).toEqual([{ id: 'YAZ-8', off: false, reviews: [] }])
+    expect(await cardsIn('b.md')).toEqual([{ id: 'YAZ-8', off: false, next: false, reviews: [] }])
     // A cold start that sweeps both (the user's "Check for duplicates": no waits) keeps the first in path order.
     const both = await vault({ 'c.md': B.replace('YAZ-2', 'YAZ-3'), 'd.md': B.replace('YAZ-2', 'YAZ-4') })
     const result = await sweepIds(root, both, [...both.values()], () => undefined)
     expect((await cardsIn('c.md')).map((c) => c.id)).toEqual(['YAZ-7'])
-    expect(await cardsIn('d.md')).toEqual([{ id: 'YAZ-9', off: false, reviews: [] }])
+    expect(await cardsIn('d.md')).toEqual([{ id: 'YAZ-9', off: false, next: false, reviews: [] }])
     expect(result.copies).toEqual([{ title: 'd', id: 'YAZ-9' }].map(({ id }) => ({ title: 'a note card on "d"', id })))
   })
 
@@ -267,6 +267,6 @@ describe('links inside cards (YAZ-4960 D17)', () => {
     const renamed = rewriteNoteLinks(page, (t) => t === 'Old Name', () => 'New Name')
     expect(renamed).toBe(page.replace('[[Old Name|words]]', '[[New Name|words]]'))
     const records = await vault({ 'deck.md': page })
-    expect(records.get(at('deck.md'))).toMatchObject({ links: ['Outside', 'Old Name'], embeds: ['pic.png'], tags: ['card-tag'], cards: [{ id: 'YAZ-3', off: false, reviews: [] }] })
+    expect(records.get(at('deck.md'))).toMatchObject({ links: ['Outside', 'Old Name'], embeds: ['pic.png'], tags: ['card-tag'], cards: [{ id: 'YAZ-3', off: false, next: false, reviews: [] }] })
   })
 })

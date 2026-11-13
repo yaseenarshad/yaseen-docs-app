@@ -3,8 +3,9 @@
  *
  *  - Head: the card ID first, small and grey (a click copies it, D20) — its place in the page's card and the Inbox
  *    too —, then the card title (`cardTitle`, the layer's name, as every layer has one; "New note card" for an empty
- *    card), ↗, ⋯ and ×. The ⋯ menu: Open page, Open page in a new tab, Turn review off / on, Reset history (D13, the
- *    card line through `changeCardLine`, the app's own write), Copy card ID.
+ *    card), ↗, ⋯ and ×; the chip "Up next ×" after the ID while the card is at the top of the Inbox (YAZ-4999 D3). The
+ *    ⋯ menu: Open page, Open page in a new tab, Put at top of Inbox / Remove from top of Inbox, Turn review off / on,
+ *    Reset history (D13, the card line through `changeCardLine`, the app's own write), Copy card ID.
  *  - The card, everything shown (`renderNoteCard`), its pills and links live: a click opens the page on top, a bound
  *    gesture (⌘-click) a tab.
  *  - The strip: the page's name (a click opens the page on top, landed on the card), then each fact with a quiet label:
@@ -19,10 +20,10 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouse
 import { answerLabel, cardState, recallChance } from '@shared/cardSchedule'
 import { cardTitle } from '@shared/cardText'
 import type { GestureAction } from '@shared/keys'
-import { withCardOff, withoutCardReviews, type CardReview } from '@shared/cardLine'
+import { withCardNext, withCardOff, withoutCardReviews, type CardReview } from '@shared/cardLine'
 import { changeCardLine, readCardAt, type CardAtPage } from '../review/cardFile'
 import { HoverTip } from '../components/HoverTip'
-import { NoteCardBody, NoteCardId, NoteCardReviews, noteCardDate, noteCardDue, noteCardOverdue, noteCardWait } from '../review/noteCardParts'
+import { NoteCardBody, NoteCardId, NoteCardNextChip, NoteCardReviews, noteCardDate, noteCardDue, noteCardOverdue, noteCardWait } from '../review/noteCardParts'
 import { copyText } from '../editor/linkMenu'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { keepFocus, type ExploreVault } from './ExploreNote'
@@ -127,6 +128,7 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
         onDoubleClick={onHeadReset}
       >
         {id !== null && <NoteCardId id={id} onNotice={onNotice} />}
+        {card?.next === true && <NoteCardNextChip onRemove={card.id === null ? undefined : () => changeLine((l) => withCardNext(l, false))} />}
         <span ref={titleRef} className={`explore__title${title === '' ? ' note-card__title--empty' : ''}`}>
           {loaded.kind === 'loading' ? '' : title === '' ? 'New note card' : title}
         </span>
@@ -150,6 +152,7 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
               ? []
               : [
                   [
+                    { id: 'next', label: card.next ? 'Remove from top of Inbox' : 'Put at top of Inbox', onSelect: () => changeLine((l) => withCardNext(l, !card.next)) },
                     { id: 'review-off', label: card.off ? 'Turn review on' : 'Turn review off', onSelect: () => changeLine((l) => withCardOff(l, !card.off)) },
                     ...(card.reviews.length === 0 ? [] : [{ id: 'reset', label: 'Reset history', danger: true, onSelect: () => changeLine(withoutCardReviews) }]),
                   ],

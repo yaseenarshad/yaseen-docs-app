@@ -183,7 +183,8 @@ describe('the card in the page', () => {
     const card = view.dom.querySelector<HTMLElement>('.note-card')!
     // The head does not repeat the card's first line: the text is right below it.
     expect(card.querySelector('.note-card__title')).toBeNull()
-    expect(card.querySelector('.note-card__head')?.textContent).toBe('Edit card⋯')
+    const shown = (el: Element | null) => [...(el?.children ?? [])].filter((c) => !(c as HTMLElement).hidden).map((c) => c.textContent).join('')
+    expect(shown(card.querySelector('.note-card__head'))).toBe('Edit card⋯')
     expect([...card.querySelectorAll('.note-card__side')].map((side) => side.textContent?.trim())).toEqual(['What is the capital of France (France, Gone)?', 'Paris'])
     expect(card.querySelector('.note-card__rule')).not.toBeNull()
     expect(card.querySelector('.note-card__hidden')?.textContent).toBe('France')
@@ -242,6 +243,37 @@ describe('the card in the page', () => {
     document.addEventListener(NOTE_CARD_OPEN, (e) => opened.push((e as CustomEvent<NoteCardOpenRequest>).detail), { once: true })
     run('Open card')
     expect(opened).toEqual([{ path: '/v/Page.md', cardId: 'WIKI-7', index: 0 }])
+  })
+
+  it('YAZ-4999: ⋯ Put at top of Inbox and the chip`s × set and remove `next`, each in one undo step; read only, they write the FILE', async () => {
+    const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05Z good -->\n`, { noteCards: { path: '/v/Page.md' } })
+    const rowOf = (label: string) => {
+      root.querySelector<HTMLElement>('.note-card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+      return [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent?.startsWith(label))
+    }
+    const line = () => getMarkdownForSave(crepe).split('\n').find((l) => l.startsWith('<!-- card'))
+    const chip = () => root.querySelector<HTMLElement>('.note-card__next')!
+    const remove = () => chip().querySelector('.note-card__next-remove')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    expect(chip().hidden).toBe(true)
+    rowOf('Put at top of Inbox')!.click()
+    expect(line()).toBe('<!-- card: WIKI-7, next, 2026-11-12T14:05Z good -->')
+    expect([chip().hidden, chip().textContent]).toEqual([false, 'Up next×'])
+    expect(chip().querySelector('button')?.getAttribute('aria-label')).toBe('Remove from top of Inbox')
+    undo(view.state, view.dispatch)
+    expect([line(), chip().hidden]).toEqual(['<!-- card: WIKI-7, 2026-11-12T14:05Z good -->', true])
+    rowOf('Put at top of Inbox')!.click()
+    expect(rowOf('Remove from top of Inbox')).toBeDefined()
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    remove()
+    expect([line(), chip().hidden]).toEqual(['<!-- card: WIKI-7, 2026-11-12T14:05Z good -->', true])
+    undo(view.state, view.dispatch)
+    expect(line()).toBe('<!-- card: WIKI-7, next, 2026-11-12T14:05Z good -->')
+    // Read only: the mark is review, not text — the file is written (no question asked).
+    fileWrites.length = 0
+    crepe.setReadonly(true)
+    remove()
+    await tick()
+    expect(fileWrites).toEqual([{ path: '/v/Page.md', id: 'WIKI-7', index: 0, line: '<!-- card: WIKI-7, 2026-11-12T14:05Z good -->' }])
   })
 
   it('read only locks the card`s text, not its review: no Edit card; ⋯ Turn review off and Reset history write the FILE', async () => {

@@ -65,7 +65,7 @@ import type { PlaceVault } from '../sidebar/PlacePicker'
 import { IconRulesControl } from './IconRulesControl'
 import { MEMORY_SECTION } from './memorySection'
 import { NOTIFICATIONS_SECTION } from './notificationsSection'
-import { RETENTION_FIELD, ReviewNumberControl, WEIGHTS_FIELD, wholeField, type ReviewField } from './ReviewNumberControl'
+import { NEW_PER_DAY_FIELD, RETENTION_FIELD, ReviewNumberControl, WEIGHTS_FIELD, wholeField, type ReviewField } from './ReviewNumberControl'
 import { LinkPillsControl } from './LinkPillsControl'
 import type { LinkPillsState } from './useLinkPills'
 import { SettingsFolderControl } from './SettingsFolderControl'
@@ -1893,7 +1893,27 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
           reviewField('retention', RETENTION_FIELD, 'Remember rate', 'How sure you want to be to remember a card when it comes back. Higher means shorter waits. 70 to 99.', '%'),
           reviewField('maxDays', wholeField('maxDays'), 'Longest wait', 'A card never waits longer than this.', 'days'),
-          reviewField('newPerDay', wholeField('newPerDay'), 'New cards a day', 'How many new cards the Inbox shows each day.', 'cards'),
+          reviewField('newPerDay', NEW_PER_DAY_FIELD, 'New cards a day', 'How many new cards the Inbox shows each day. Empty means no limit.', 'cards'),
+          {
+            // YAZ-4999 D2: by the card's ID number, which grows as cards are made.
+            id: 'newOrder',
+            label: 'New cards first',
+            hint: 'Which new cards the Inbox shows first: the cards you made first, or the cards you made last.',
+            keywords: [...REVIEW_KEYWORDS, 'order', 'oldest', 'newest'],
+            available: reviewOn,
+            render: ({ review }) =>
+              review && (
+                <Segmented
+                  options={[
+                    { label: 'Oldest first', value: 'oldest' as const },
+                    { label: 'Newest first', value: 'newest' as const },
+                  ]}
+                  value={review.settings.newOrder}
+                  onChange={(newOrder) => review.save({ ...review.settings, newOrder })}
+                  ariaLabel="New cards first"
+                />
+              ),
+          },
           {
             id: 'fuzz',
             label: 'Spread due dates',

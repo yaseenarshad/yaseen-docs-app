@@ -97,6 +97,10 @@ describe('useReviewSettings', () => {
     await act(async () => state.save(next))
     expect(state.settings).toEqual(next)
     expect(write).toHaveBeenCalledWith('/vault', REVIEW_SETTINGS_FILE, { later: 'kept', newPerDay: 3, maxDays: 90 })
+    // YAZ-4999 D1: an emptied "New cards a day" is written as null (no limit), and stays null once read back.
+    await act(async () => state.save({ ...state.settings, newPerDay: null }))
+    expect(write).toHaveBeenLastCalledWith('/vault', REVIEW_SETTINGS_FILE, { later: 'kept', newPerDay: null, maxDays: 90 })
+    expect(state.settings.newPerDay).toBeNull()
   })
 
   it('publishes the settings by root for the folder tables, and takes them back when the vault closes', async () => {

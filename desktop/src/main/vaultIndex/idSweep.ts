@@ -468,7 +468,7 @@ async function cardsToFix(
  * editor's rule too). A copy with the text of the card that keeps its ID (`copyOf`, `keeper`) gives that card each
  * review it lacks (the union: each review one time, in time order), then loses its own (`history: false`). A copy with
  * another text keeps its history (`history: true`): the sweep cannot tell which card is the original, and both
- * histories stay. A copy's other parts (`off`, unknown parts) stay on it. The keeper on ANOTHER page is written FIRST,
+ * histories stay. A copy's other parts (`off`, unknown parts) stay on it; an emptied copy loses its `next` (YAZ-4999). The keeper on ANOTHER page is written FIRST,
  * with its own compare-and-set; this page only after it. A write that fails between the two leaves a review on two
  * cards, never on none, and the next pass settles it (the union of a review it holds adds nothing).
  */

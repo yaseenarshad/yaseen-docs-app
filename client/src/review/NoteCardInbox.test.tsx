@@ -29,7 +29,7 @@ let review: CardReviewApi
 let props: NoteCardInboxProps
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false } }, position: 3, total: 12, answers: null, canUndo: false, ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, ...over }
 }
 
 function render() {
@@ -53,6 +53,7 @@ function mount(text: string | null, settings: ReviewSettings = DEFAULT_REVIEW_SE
     undo: vi.fn(async () => {}),
     close: vi.fn(),
     deleteReview: vi.fn(async () => {}),
+    setNext: vi.fn(async () => {}),
   }
   const wikilinks = createWikilinkResolveSource()
   props = {
@@ -101,6 +102,18 @@ describe('the Inbox screen (YAZ-4962)', () => {
     await flush()
     // The last step: Space has nothing more to show.
     expect(hints()).toEqual(['O Open page', 'E Edit page', '⌘↵ Open page in a new tab', 'Esc Close'])
+  })
+
+  it('YAZ-4999: an up-next card shows the chip "Up next" after the ID; its × removes the mark (setNext)', () => {
+    mount(TWO_SIDES)
+    expect(el.querySelector('.note-card__next')).toBeNull()
+    const card = session.card!
+    session = { ...session, card: { ...card, next: true, page: { ...card.page!, next: true } } }
+    render()
+    const chip = el.querySelector('.note-card-inbox__head > .note-card__id + .note-card__next')!
+    expect(chip.textContent).toBe('Up next×')
+    act(() => chip.querySelector<HTMLButtonElement>('[aria-label="Remove from top of Inbox"]')!.click())
+    expect(review.setNext).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', false)
   })
 
   it('a read-only vault: E opens the page to read (no edit mode), and the hint row does not offer E', () => {
