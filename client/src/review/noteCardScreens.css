@@ -101,12 +101,21 @@
   background: var(--bg-side);
   outline: none;
 }
+/* The card's panel, then under it, outside its frame (YAZ-5002, as in Mochi): the Space hint, the buttons, the keys. */
+.note-card-inbox__column {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: min(640px, 100%);
+  max-height: 100%;
+  min-height: 0;
+}
 .note-card-inbox__panel {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  width: min(640px, 100%);
-  max-height: 100%;
+  width: 100%;
+  min-height: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
@@ -142,16 +151,38 @@
 .note-card-inbox__card .note-card__rule {
   margin: 14px 0;
 }
+.note-card-inbox__space {
+  margin: 18px 0 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.note-card-inbox__space kbd {
+  margin: 0 2px;
+  padding: 1px 6px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+}
 .note-card-inbox__answers {
   display: flex;
   justify-content: center;
   gap: 10px;
-  margin-top: 20px;
+  margin-top: 18px;
 }
-.note-card-inbox__answer {
-  min-width: 110px;
-  padding: 6px 14px;
+/* Outside the panel, on the Inbox's side colour: each button is a small card of the page colour (light and dark tokens). */
+.note-card-inbox__answers .note-card-inbox__answer {
+  min-width: 120px;
+  padding: 8px 16px;
   font-size: 13px;
+  background: var(--bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.note-card-inbox__answers .note-card-inbox__answer:hover {
+  background: color-mix(in srgb, var(--fg) 8%, var(--bg));
 }
 /* Forgot and Remembered tell apart at a glance: a quiet colour on the word, the button stays the Explore button. */
 .note-card-inbox__answer[data-rating='again'] {
@@ -196,6 +227,8 @@
 .note-card-inbox__hints {
   flex-wrap: wrap;
   justify-content: center;
+  margin-top: 20px;
+  border-top: 0;
 }
 
 /* A card window of an empty card: "New note card", quiet. */

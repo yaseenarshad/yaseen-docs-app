@@ -256,4 +256,26 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(el.querySelector('.note-card-reviews')).toBeNull()
     expect(el.textContent).not.toContain('Reviews')
   })
+
+  it('YAZ-5002: the buttons sit under the card, outside its panel; the Space hint sits between them while words are hidden; the key row is last', async () => {
+    mount(TWO_SIDES)
+    const column = el.querySelector('.note-card-inbox__column')!
+    const panel = column.querySelector('.note-card-inbox__panel')!
+    const hint = () => column.querySelector('.note-card-inbox__space')
+    expect(hint()?.textContent).toBe('Press Space to show the next hidden word')
+    expect(hint()?.querySelector('kbd')?.textContent).toBe('Space')
+    expect(panel.contains(hint())).toBe(false)
+    press(' ')
+    // France shows: the front has no more hidden words; the next Space shows the back.
+    expect(hint()?.textContent).toBe('Press Space to show the next side')
+    press(' ')
+    press(' ')
+    press(' ')
+    await flush()
+    expect(hint()).toBeNull()
+    const answers = column.querySelector('.note-card-inbox__answers')!
+    expect(answers.querySelectorAll('.note-card-inbox__answer')).toHaveLength(2)
+    expect(panel.contains(answers)).toBe(false)
+    expect([...column.children].map((c) => c.className)).toEqual(['note-card-inbox__panel', 'note-card-inbox__answers', 'explore__foot note-card-inbox__hints'])
+  })
 })

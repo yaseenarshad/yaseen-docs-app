@@ -16,6 +16,8 @@
  *    vault — read only locks the text, not the review), ⌘↵ (the page in a
  *    background tab: the review stays), Esc (the review closes). A key typed in a field, or while a dialog or a menu
  *    is open (Explore is a dialog), is not the Inbox's; a key with the keyboard elsewhere (the sidebar) neither.
+ *  - Under the card, OUTSIDE its frame, as in Mochi (YAZ-5002): while Space has more to show, a quiet "Press Space to
+ *    show the next hidden word" (or "the next side"); then the answer buttons; the key hint row last, at the bottom.
  *  - The hint row shows a key only while it does something; the digits are on the buttons.
  *  - No Reviews section (YAZ-5000: it lives only under the card in the page, and in the card window). Nothing left: "Inbox complete." for the vault; for one page or
  *    folder "This page is done." and, quiet, "21 more in the Inbox", which starts the vault's review.
@@ -146,78 +148,87 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
   const more = session.scope === 'vault' ? 0 : review.dueCount
   const hints = noteCardInboxHints({ card: card !== null, answering: done, canUndo: session.canUndo, editable: card !== null && !vaultOf(card.path).readOnly })
 
+  // What the next Space shows, said between the card and the buttons (YAZ-5002); nothing once the buttons show.
+  const spaceShows = card?.page == null || done ? null : step.shown < hiddenUpTo(step.sides) ? 'the next hidden word' : 'the next side'
+
   return (
     <div ref={rootRef} className="note-card-inbox" tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`}>
-      <div className="note-card-inbox__panel">
-        <div className="explore__head note-card-inbox__head">
-          {/* The ID first, then the page (O opens it); no card title: the card is right below (say each thing once). */}
-          {card === null ? (
-            <span className="explore__title">{session.label}</span>
-          ) : (
-            <>
-              <NoteCardId id={card.id} onNotice={onNotice} />
-              {card.page?.next === true && <NoteCardNextChip onRemove={() => void review.setNext(card.path, card.id, false)} />}
-              <button type="button" className="note-card-strip__page note-card-inbox__page" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(card.path, card.index, false)}>
-                {nameOf(card.path)}
-              </button>
-              <span className="note-card-inbox__place">
-                {session.position} of {session.total}
-              </span>
-            </>
-          )}
-          <button type="button" className="explore__button" onMouseDown={(e) => e.preventDefault()} onClick={review.close} aria-label="Close the review">
-            ×
-          </button>
-        </div>
-        <div className="note-card-inbox__body">
-          {card === null ? (
-            <div className="note-card-inbox__done" role="status">
-              {session.scope === 'vault' ? (
-                <>
-                  <p className="note-card-inbox__done-title">Inbox complete.</p>
-                  <p className="note-card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
-                </>
-              ) : (
-                <>
-                  <p className="note-card-inbox__done-title">{session.scope === 'page' ? 'This page is done.' : 'This folder is done.'}</p>
-                  {more > 0 ? (
-                    <button type="button" className="note-card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={() => review.start({})}>
-                      {more} more in the Inbox
-                    </button>
-                  ) : (
-                    <p className="note-card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
-                  )}
-                </>
-              )}
-            </div>
-          ) : (
-            text !== null &&
-            card.page !== null && (
+      <div className="note-card-inbox__column">
+        <div className="note-card-inbox__panel">
+          <div className="explore__head note-card-inbox__head">
+            {/* The ID first, then the page (O opens it); no card title: the card is right below (say each thing once). */}
+            {card === null ? (
+              <span className="explore__title">{session.label}</span>
+            ) : (
               <>
+                <NoteCardId id={card.id} onNotice={onNotice} />
+                {card.page?.next === true && <NoteCardNextChip onRemove={() => void review.setNext(card.path, card.id, false)} />}
+                <button type="button" className="note-card-strip__page note-card-inbox__page" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(card.path, card.index, false)}>
+                  {nameOf(card.path)}
+                </button>
+                <span className="note-card-inbox__place">
+                  {session.position} of {session.total}
+                </span>
+              </>
+            )}
+            <button type="button" className="explore__button" onMouseDown={(e) => e.preventDefault()} onClick={review.close} aria-label="Close the review">
+              ×
+            </button>
+          </div>
+          <div className="note-card-inbox__body">
+            {card === null ? (
+              <div className="note-card-inbox__done" role="status">
+                {session.scope === 'vault' ? (
+                  <>
+                    <p className="note-card-inbox__done-title">Inbox complete.</p>
+                    <p className="note-card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="note-card-inbox__done-title">{session.scope === 'page' ? 'This page is done.' : 'This folder is done.'}</p>
+                    {more > 0 ? (
+                      <button type="button" className="note-card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={() => review.start({})}>
+                        {more} more in the Inbox
+                      </button>
+                    ) : (
+                      <p className="note-card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : (
+              text !== null &&
+              card.page !== null && (
                 <div className="note-card note-card-screen note-card-inbox__card" onClick={(e) => e.target instanceof Element && e.target.closest('a[href], [data-note-card-link]') === null && advance()}>
                   <NoteCardBody text={text} path={card.path} vault={vaultOf(card.path)} show={{ sides: step.sides, shown: step.shown }} doors={doors} />
                 </div>
-                {done && session.answers !== null && (
-                  <div className="note-card-inbox__answers">
-                    {session.answers.map((a, i) => {
-                      const label = answerLabel(a.review.rating, review.settings)
-                      // The app's own hover box (a native title shows nothing in the app, YAZ-4772): when the card comes back.
-                      const comesBack = `${label} · ${noteCardWait(a.interval)}`
-                      return (
-                        <HoverTip key={a.review.rating} text={comesBack}>
-                          <button type="button" className="explore__button note-card-inbox__answer" data-rating={a.review.rating} aria-description={comesBack} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.answer(a.review.rating)}>
-                            {label}
-                            <kbd>{i + 1}</kbd>
-                          </button>
-                        </HoverTip>
-                      )
-                    })}
-                  </div>
-                )}
-              </>
-            )
-          )}
+              )
+            )}
+          </div>
         </div>
+        {/* Under the card, outside its frame, as in Mochi (YAZ-5002): what Space does next, the answer buttons, then the keys. */}
+        {spaceShows !== null && (
+          <p className="note-card-inbox__space">
+            Press <kbd>Space</kbd> to show {spaceShows}
+          </p>
+        )}
+        {done && session.answers !== null && (
+          <div className="note-card-inbox__answers">
+            {session.answers.map((a, i) => {
+              const label = answerLabel(a.review.rating, review.settings)
+              // The app's own hover box (a native title shows nothing in the app, YAZ-4772): when the card comes back.
+              const comesBack = `${label} · ${noteCardWait(a.interval)}`
+              return (
+                <HoverTip key={a.review.rating} text={comesBack}>
+                  <button type="button" className="explore__button note-card-inbox__answer" data-rating={a.review.rating} aria-description={comesBack} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.answer(a.review.rating)}>
+                    {label}
+                    <kbd>{i + 1}</kbd>
+                  </button>
+                </HoverTip>
+              )
+            })}
+          </div>
+        )}
         <div className="explore__foot note-card-inbox__hints" aria-hidden="true">
           {hints.map((h) => (
             <span key={h.label}>
