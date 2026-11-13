@@ -212,16 +212,17 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
       <div className="note-card-inbox__column">
         <div className="note-card-inbox__panel">
           <div className="explore__head note-card-inbox__head">
-            {/* The ID first, then the page (O opens it); no card title: the card is right below (say each thing once). */}
+            {/* YAZ-5012: the page first, on the left (O opens it), then the ID in brackets, small and grey (a click copies it);
+                no card title: the card is right below (say each thing once). A long page name gives way before the ID. */}
             {card === null ? (
               <span className="explore__title">{session.label}</span>
             ) : (
               <>
-                <NoteCardId id={card.id} onNotice={onNotice} />
-                {card.page?.next === true && <NoteCardNextChip onRemove={() => void review.setNext(card.path, card.id, false)} />}
                 <button type="button" className="note-card-strip__page note-card-inbox__page" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(card.path, card.index, false)}>
                   {nameOf(card.path)}
                 </button>
+                <NoteCardId id={card.id} onNotice={onNotice} brackets />
+                {card.page?.next === true && <NoteCardNextChip onRemove={() => void review.setNext(card.path, card.id, false)} />}
                 <span className="note-card-inbox__place">
                   {session.position} of {session.total}
                 </span>

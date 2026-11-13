@@ -11,10 +11,24 @@ import type { CardAnswer } from '@shared/cardSchedule'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { NoteCardInbox, type NoteCardInboxProps } from './NoteCardInbox'
+import { useReadOnlyVault } from '../vault/readOnlyVault'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-vi.mock('../api', () => ({ api: { shell: { openLink: vi.fn() } } }))
+/** Each vault's `.yaseendocs/read-only.json` for the real `useReadOnlyVault` (YAZ-5009): no entry = no file. */
+const vaultFiles = vi.hoisted(() => new Map<string, unknown>())
+vi.mock('../api', () => ({
+  api: {
+    shell: { openLink: vi.fn() },
+    vaultConfig: {
+      read: vi.fn(async (root: string) => {
+        if (!vaultFiles.has(root)) throw new Error('ENOENT')
+        return vaultFiles.get(root)
+      }),
+      onChange: () => () => undefined,
+    },
+  },
+}))
 
 const PATH = '/v/cards.md'
 const TWO_SIDES = 'Capital of {{France}}\n---\n{{Paris}} on the {{Seine}}'
@@ -92,12 +106,15 @@ afterEach(() => {
 })
 
 describe('the Inbox screen (YAZ-4962)', () => {
-  it('the head: the grey card ID first, the page name, "3 of 12" — no card title (the card is below); the hint row shows only keys that act now', async () => {
+  it('YAZ-5012: the head reads "Cards (WIKI-9) … 3 of 12": the page name first, then the ID in brackets, the place last — no card title (the card is below); the hint row shows only keys that act now', async () => {
     mount(TWO_SIDES)
     expect(el.querySelector('.explore__title')).toBeNull()
-    expect(el.querySelector('.note-card-inbox__head > .note-card__id:first-child')?.textContent).toBe('WIKI-9')
-    expect(el.querySelector('.note-card-inbox__place')?.textContent).toBe('3 of 12')
-    expect(el.querySelector('.note-card-strip__page')?.textContent).toBe('Cards')
+    const head = [...el.querySelector('.note-card-inbox__head')!.children].map((c) => [c.className, c.textContent])
+    expect(head).toEqual([
+      ['note-card-strip__page note-card-inbox__page', 'Cards'],
+      ['note-card__id', '(WIKI-9)'],
+      ['note-card-inbox__place', '3 of 12'],
+    ])
     const hints = () => [...el.querySelectorAll('.note-card-inbox__hints span')].map((h) => h.textContent)
     // Nothing to undo; the digits are on the buttons.
     expect(hints()).toEqual(['Space Show', 'O Open page', 'E Edit card', '⌘↵ Open page in a new tab'])
@@ -113,10 +130,41 @@ describe('the Inbox screen (YAZ-4962)', () => {
     const card = session.card!
     session = { ...session, card: { ...card, next: true, page: { ...card.page!, next: true } } }
     render()
-    const chip = el.querySelector('.note-card-inbox__head > .note-card__id + .note-card__next')!
+    const chip = el.querySelector('.note-card-inbox__head > .note-card-inbox__page + .note-card__id + .note-card__next')!
     expect(chip.textContent).toBe('Up next×')
     act(() => chip.querySelector<HTMLButtonElement>('[aria-label="Remove from top of Inbox"]')!.click())
     expect(review.setNext).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', false)
+  })
+
+  it('YAZ-5012: a click on "(WIKI-9)" copies the bare ID, not the brackets', async () => {
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    mount(TWO_SIDES)
+    act(() => el.querySelector<HTMLButtonElement>('.note-card-inbox__head [aria-label="Copy card ID"]')!.click())
+    await flush()
+    expect(writeText).toHaveBeenCalledExactlyOnceWith('WIKI-9')
+    expect(props.onNotice).toHaveBeenCalledWith('Copied: WIKI-9')
+  })
+
+  it('YAZ-5009 root cause, over the app\'s real wiring (`useReadOnlyVault` → `exploreVaultOf`): E follows the vault\'s `read-only.json` — shown with no file or `"on": false`, hidden with `"on": true`', async () => {
+    mount(TWO_SIDES)
+    const hasE = () => [...el.querySelectorAll('.note-card-inbox__hints span')].map((h) => h.textContent).includes('E Edit card')
+    const plain = props.vaultOf
+    // As App builds it: the vault's scope, `readOnly: scope.readOnlyVault.settings.on`.
+    function Wired({ root: vault }: { root: string }) {
+      const readOnly = useReadOnlyVault(vault)
+      return <NoteCardInbox {...props} review={review} session={session} vaultOf={(path) => ({ ...plain(path), root: vault, readOnly: readOnly.settings.on })} />
+    }
+    const seen: Record<string, boolean> = {}
+    for (const [vault, file] of [['/no-file', undefined], ['/off', { on: false }], ['/on', { on: true }]] as const) {
+      vaultFiles.clear()
+      if (file !== undefined) vaultFiles.set(vault, file)
+      act(() => root?.render(<Wired key={vault} root={vault} />))
+      await flush()
+      await flush()
+      seen[vault] = hasE()
+    }
+    expect(seen).toEqual({ '/no-file': true, '/off': true, '/on': false })
   })
 
   it('YAZ-5009: the key row shows "E Edit card" at every step — before Space, between the hidden words, after the last — and on a moved-to card', async () => {

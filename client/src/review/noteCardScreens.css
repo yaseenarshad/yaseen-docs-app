@@ -288,9 +288,17 @@
   color: var(--fg);
   background: var(--bg-hover);
 }
-/* The page's name in the Inbox head takes the room the title had. */
+/* YAZ-5012: the page's name first in the Inbox head, in the title's look; a long name ends in "…" before the ID
+   "(DEMO-59)" after it gives way (the ID is `flex: none`). "6 of 25" stays on the right. */
 .note-card-inbox__page {
-  margin-right: auto;
+  flex: 0 1 auto;
+  max-width: none;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+}
+.note-card-inbox__head > .note-card-inbox__place {
+  margin-left: auto;
 }
 .note-card-inbox__hints {
   flex-wrap: wrap;
