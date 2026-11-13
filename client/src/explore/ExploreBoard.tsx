@@ -152,10 +152,10 @@ export function ExploreBoard({ path, title, idInTitle = false, vault, steps, onO
           {title}
         </span>
         {noteId !== undefined && <span className="explore__id">{noteId}</span>}
-        {/* The parts a narrow layer folds into ⋯ (YAZ-4956); `display: contents`, so a wide head is laid out as before. */}
+        {/* The parts a narrow layer folds into ⋯ one by one (YAZ-4956, YAZ-4986), the ID stays; `display: contents`, so a wide head is laid out as before. */}
         <span className="explore__fold">
           {steps !== undefined && <ExploreSteps steps={steps} />}
-          <button type="button" className="explore__button" onMouseDown={keepFocus} onClick={onOpenInTab} title="Open in a tab to edit it, and close the stack (⌘↵)" aria-label="Open in a tab">
+          <button type="button" className="explore__button" data-fold-part="open" onMouseDown={keepFocus} onClick={onOpenInTab} title="Open in a tab to edit it, and close the stack (⌘↵)" aria-label="Open in a tab">
             ↗
           </button>
         </span>

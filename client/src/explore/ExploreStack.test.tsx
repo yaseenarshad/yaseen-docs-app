@@ -24,6 +24,7 @@ import { ExploreStack, FULL_NOTICE, type ExploreStackProps } from './ExploreStac
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { layerPlace, MAX_LAYERS } from './layers'
 import { tileCells } from './tile'
+import { TITLE_ROOM } from './ExploreHeadMore'
 import { ago } from './recentSections'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -346,6 +347,38 @@ describe('the explore stack', () => {
     expect(props.openInTab).toHaveBeenCalledExactlyOnceWith('/v/alpha.md')
   })
 
+  it('YAZ-4984: ⌘↵ in the search opens the HIGHLIGHTED row in a tab (the footer says so), not the note under the search', async () => {
+    await mount()
+    // Alone in the stack: the highlighted row opens in a tab, and the stack closes.
+    await typeQuery('alp')
+    key(input(), { key: 'Enter', metaKey: true })
+    expect(props.openInTab).toHaveBeenCalledExactlyOnceWith('/v/alpha.md')
+    expect(props.onClose).toHaveBeenCalledOnce()
+    // A search over a note: the row ↓ highlights opens, not the note under the search.
+    vi.mocked(props.openInTab).mockClear()
+    await openResult()
+    render(2)
+    await flush()
+    await typeQuery('e')
+    const second = rows()[1]
+    expect(second).not.toBe(rows()[0])
+    key(input(), { key: 'ArrowDown' })
+    key(input(), { key: 'Enter', ctrlKey: true })
+    expect(props.openInTab).toHaveBeenCalledExactlyOnceWith(RECORDS.find((r) => r.title === second)?.path)
+    // No layer opens on the way (the old workaround was ↵, then ⌘↵): the search, the note, the search.
+    expect(live()).toHaveLength(3)
+  })
+
+  it('YAZ-4984: ⌘↵ on a folder row opens the folder\'s page in a tab, as Enter does', async () => {
+    await mount()
+    await typeQuery('sub')
+    expect(rows()).toContain('sub')
+    while (top().querySelector('.search-results__row--active')?.classList.contains('search-results__row--dir') === false) key(input(), { key: 'ArrowDown' })
+    key(input(), { key: 'Enter', metaKey: true })
+    expect(props.openInTab).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(props.onClose).toHaveBeenCalledOnce()
+  })
+
   it('12 layers at most: a 13th says so and opens nothing; the recent notes show with no query', async () => {
     await mount()
     for (let n = 2; n <= MAX_LAYERS; n++) {
@@ -420,7 +453,7 @@ describe('the explore stack', () => {
     // The fold-all button, the note tab's own, in the head: its command runs on this layer's view.
     const fold = top().querySelector<HTMLButtonElement>('.explore__head .fold-all__trigger')
     expect(fold).not.toBeNull()
-    expect(fold?.nextElementSibling?.textContent).toContain('Edit')
+    expect(fold?.closest('[data-fold-part]')?.nextElementSibling?.textContent).toContain('Edit')
     act(() => fold?.click())
     await flush()
     expect(folds.runs).toEqual([true])
@@ -1794,6 +1827,83 @@ describe('YAZ-4945: the empty box shows Opened and Edited', () => {
   })
 })
 
+describe('YAZ-4988: ⌘↵ in an edit layer goes back to reading', () => {
+  /** What the editor itself heard (its own ⌘↵: a task box, a line below a table, Open card). */
+  const heard: string[] = []
+  beforeEach(() => {
+    heard.length = 0
+    props = {
+      ...props,
+      renderEditor: (path): ReactNode => {
+        editors.push(path)
+        return (
+          <div className="editor" data-editor={path}>
+            <div
+              className="ProseMirror"
+              contentEditable
+              suppressContentEditableWarning
+              ref={(pm) => {
+                if (pm === null || pm.dataset.wired === 'yes') return
+                pm.dataset.wired = 'yes'
+                pm.addEventListener('keydown', (e) => heard.push((e.target as HTMLElement).className))
+              }}
+            >
+              <p className="text">text</p>
+              <div className="cm-editor">
+                <div className="cm-content code">code</div>
+              </div>
+              <div className="note-card">
+                <div className="cm-editor">
+                  <div className="cm-content card">card</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      },
+    }
+  })
+  const editing = () => top().querySelector('.explore__body--edit') !== null
+  async function edit() {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    key(document.activeElement as Element, { key: 'e' })
+    await flush()
+    expect(editing()).toBe(true)
+  }
+  const cmdEnter = async (selector: string) => {
+    key(top().querySelector(selector) as Element, { key: 'Enter', metaKey: true })
+    await flush()
+    await flush()
+  }
+
+  it('in the text: the layer reads again and the editor never hears the key; the tab opens on the next ⌘↵', async () => {
+    await edit()
+    await cmdEnter('.text')
+    expect(editing()).toBe(false)
+    expect(heard).toEqual([])
+    expect(props.openInTab).not.toHaveBeenCalled()
+    key(document.activeElement ?? top(), { key: 'Enter', metaKey: true })
+    expect(props.openInTab).toHaveBeenCalledExactlyOnceWith('/v/alpha.md')
+  })
+
+  it('in a code block the key stays the code\'s (a new line): the layer stays in edit, no tab', async () => {
+    await edit()
+    await cmdEnter('.code')
+    expect(editing()).toBe(true)
+    expect(heard).toEqual(['cm-content code'])
+    expect(props.openInTab).not.toHaveBeenCalled()
+  })
+
+  it('on a note card (its editor too) the layer reads again: Open card stays in ⋯ and in reading', async () => {
+    await edit()
+    await cmdEnter('.card')
+    expect(editing()).toBe(false)
+    expect(heard).toEqual([])
+  })
+})
+
 describe('YAZ-4939: a note layer in a Read only vault', () => {
   const unlockedArgs: boolean[] = []
   beforeEach(() => {
@@ -1863,6 +1973,54 @@ describe('YAZ-4939: a note layer in a Read only vault', () => {
     await flush()
     expect(top().querySelector('.explore__body--edit')).toBeNull()
     expect(chip()?.textContent).toBe('Read only')
+  })
+
+  it('YAZ-4989: in the E box ↓ and Tab move through the choices (the stack\'s Tab does not take them), Enter picks the focused one', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    key(document.activeElement as Element, { key: 'e' })
+    await flush()
+    expect(document.activeElement?.textContent).toBe('Allow edits for 1 minute')
+    key(document.activeElement as Element, { key: 'ArrowDown' })
+    expect(document.activeElement?.textContent).toBe('10 minutes')
+    key(document.activeElement as Element, { key: 'Tab' })
+    key(document.activeElement as Element, { key: 'Tab' })
+    expect(document.activeElement?.textContent).toBe('Cancel')
+    key(document.activeElement as Element, { key: 'ArrowUp' })
+    key(document.activeElement as Element, { key: 'ArrowUp' })
+    expect(document.activeElement?.textContent).toBe('10 minutes')
+    key(document.activeElement as Element, { key: 'Enter' })
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).not.toBeNull()
+    expect(chip()?.textContent).toMatch(/^Editing · (9|10):\d\d$/)
+  })
+
+  it('YAZ-4988: ⌘↵ in edit saves, locks again at once (as Lock now) and reads; a second ⌘↵ opens the tab', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    key(document.activeElement as Element, { key: 'e' })
+    await flush()
+    act(() => choice('10 minutes').click())
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).not.toBeNull()
+    // The edit head shows the key beside Done's Esc.
+    expect([...head().querySelectorAll('.explore__button kbd')].map((k) => k.textContent)).toContain('⌘↵')
+    key(top().querySelector('[data-editor]') as Element, { key: 'Enter', metaKey: true })
+    await flush()
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).toBeNull()
+    expect(chip()?.textContent).toBe('Read only')
+    expect(props.openInTab).not.toHaveBeenCalled()
+    // Locked again: E asks once more.
+    key(document.activeElement as Element, { key: 'e' })
+    await flush()
+    expect(ask()).not.toBeNull()
+    key(choice('Allow edits for 1 minute'), { key: 'Escape' })
+    await flush()
+    key(document.activeElement ?? top(), { key: 'Enter', metaKey: true })
+    expect(props.openInTab).toHaveBeenCalledExactlyOnceWith('/v/alpha.md')
   })
 
   it('at the end of the minute the layer saves and reads again, locked', async () => {
@@ -1938,15 +2096,37 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
   const head = (layer: HTMLElement = top()) => layer.querySelector('.explore__head') as HTMLElement
   const titleEl = (layer: HTMLElement = top()) => head(layer).querySelector('.explore__title') as HTMLElement
   const compact = (layer: HTMLElement = top()) => head(layer).hasAttribute('data-compact')
-  /** The head laid out `width` px wide, its parts other than the title `rest` px: the title gets what is left (0 at least). */
+  /** Each part's width in the stand-in layout, the chip's word apart (inside the chip); ⋯'s width once it shows. */
+  const PART = 40
+  const WORD = 30
+  const MORE = 28
+  /**
+   * The head laid out `width` px wide; its parts other than the title take `rest` px when nothing is folded. Each fold
+   * part takes `PART` px (the chip `PART` + `WORD`, its word `WORD`) while it shows, nothing once folded (CSS
+   * `[data-folded]`); ⋯ takes `MORE` px while the head is folded; the rest (padding, the ID, ×) stays. The title gets
+   * what is left (0 at least).
+   */
   const layout = (width: number, rest: number, layer: HTMLElement = top()) => {
     const h = head(layer)
     const t = titleEl(layer)
+    const parts = [...h.querySelectorAll<HTMLElement>('[data-fold-part]')]
+    const word = h.querySelector<HTMLElement>('[data-fold-part="chip"] .read-only-chip__button > span')
+    const own = (e: HTMLElement) => (e.dataset.foldPart === 'chip' && word !== null ? PART + WORD : PART)
+    const fixed = rest - parts.reduce((sum, e) => sum + own(e), 0)
+    const shown = (e: HTMLElement) => !e.hasAttribute('data-folded')
+    const wordShown = () => word !== null && shown(word) && shown(word.closest<HTMLElement>('[data-fold-part]')!)
+    for (const e of parts) Object.defineProperty(e, 'offsetWidth', { get: () => (shown(e) ? own(e) - (e.dataset.foldPart === 'chip' && word !== null && !shown(word) ? WORD : 0) : 0), configurable: true })
+    if (word !== null) Object.defineProperty(word, 'offsetWidth', { get: () => (wordShown() ? WORD : 0), configurable: true })
+    const m = h.querySelector<HTMLElement>('.explore__more')
+    if (m !== null) Object.defineProperty(m, 'offsetWidth', { get: () => (h.hasAttribute('data-compact') ? MORE : 0), configurable: true })
+    const others = () => fixed + parts.reduce((sum, e) => sum + e.offsetWidth, 0) + (m?.offsetWidth ?? 0)
     Object.defineProperty(h, 'clientWidth', { value: width, configurable: true })
-    Object.defineProperty(h, 'scrollWidth', { value: Math.max(width, rest), configurable: true })
-    Object.defineProperty(t, 'offsetWidth', { value: Math.max(0, width - rest), configurable: true })
+    Object.defineProperty(h, 'scrollWidth', { get: () => Math.max(width, others()), configurable: true })
+    Object.defineProperty(t, 'offsetWidth', { get: () => Math.max(0, width - others()), configurable: true })
     act(() => observers.filter((o) => o.watched.includes(t)).forEach((o) => o.run()))
   }
+  /** The parts folded now, in the head's order. */
+  const folded = (layer: HTMLElement = top()) => [...head(layer).querySelectorAll<HTMLElement>('[data-folded]')].map((e) => e.dataset.foldPart ?? 'chip-word')
   const more = () => head().querySelector<HTMLButtonElement>('.explore__more') as HTMLButtonElement
   const menu = () => el.querySelector<HTMLElement>('.explore > .ctx-overlay .ctx-menu, .explore .ctx-menu')
   const items = () => [...(menu()?.querySelectorAll<HTMLElement>('.ctx-menu__heading, .ctx-menu__item') ?? [])].map((e) => (e.classList.contains('ctx-menu__heading') ? `# ${e.textContent}` : `${e.textContent}${e.dataset.hint ? ` [${e.dataset.hint}]` : ''}${(e as HTMLButtonElement).disabled ? ' (off)' : ''}`))
@@ -1971,9 +2151,9 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
     const flips: string[] = []
     const watch = new MutationObserver((records) => records.forEach((r) => flips.push(r.oldValue === null ? 'folded' : 'full')))
     watch.observe(head(), { attributes: true, attributeFilter: ['data-compact'], attributeOldValue: true })
-    for (let w = 800; w >= 260; w -= 10) layout(w, compact() ? 120 : 410)
+    for (let w = 800; w >= 260; w -= 10) layout(w, 410)
     expect(compact()).toBe(true)
-    for (let w = 260; w <= 800; w += 10) layout(w, compact() ? 120 : 410)
+    for (let w = 260; w <= 800; w += 10) layout(w, 410)
     await Promise.resolve()
     watch.disconnect()
     expect(flips).toEqual(['folded', 'full'])
@@ -2058,7 +2238,7 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
     expect(props.openInTab).toHaveBeenCalledExactlyOnceWith(paths[1])
   })
 
-  it('a note ID: Copy ID in ⋯ (the ID is folded too)', async () => {
+  it('YAZ-4986: a note ID stays in the narrowest head (Yaseen: "esp i need to see the id please"); Copy ID is in ⋯ too', async () => {
     const withIds = createWikilinkResolveSource()
     withIds.update(() => null, RECORDS, [], true)
     props.vaultOf = () => ({ root: '/v', wikilinks: withIds, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly })
@@ -2069,6 +2249,10 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
     await mount()
     layout(300, 420)
     expect(compact()).toBe(true)
+    const id = head().querySelector<HTMLElement>('.explore__id')
+    expect(id?.textContent).toBe('EMB-1')
+    expect(id?.hasAttribute('data-folded')).toBe(false)
+    expect(id?.hasAttribute('data-fold-part')).toBe(false)
     act(() => more().click())
     expect(items()).toContain('Copy ID [EMB-1]')
     act(() => [...(menu()?.querySelectorAll<HTMLButtonElement>('.ctx-menu__item') ?? [])].find((b) => b.textContent === 'Copy ID')?.click())
@@ -2119,6 +2303,78 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
     } finally {
       proto.checkVisibility = was
     }
+  })
+
+  it('YAZ-4986: the parts leave ONE BY ONE as the layer narrows, least important first: zoom, Collapse all, ‹ › , ↗, the chip\'s word, the chip, Edit last', async () => {
+    props = { ...props, vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, readOnly: true }) }
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    // Six parts (‹ ›, zoom, fold-all, chip with its word, Edit, ↗): 40 px each, the word 30 more; 120 px the rest.
+    const rest = 120 + 6 * PART + WORD
+    const full = rest + TITLE_ROOM
+    layout(full, rest)
+    expect(folded()).toEqual([])
+    expect(compact()).toBe(false)
+    // Each step narrower by one part's width (and ⋯'s, once) folds exactly the next part in the order.
+    const seen: string[][] = []
+    for (const w of [full - 1, full - PART - 1 + MORE, full - 2 * PART - 1 + MORE, full - 3 * PART - 1 + MORE, full - 4 * PART - 1 + MORE, full - 4 * PART - WORD - 1 + MORE, full - 5 * PART - WORD - 1 + MORE]) {
+      layout(w, rest)
+      seen.push(folded())
+    }
+    expect(seen.map((f) => f.join(' '))).toEqual([
+      'zoom',
+      'zoom fold-all',
+      'steps zoom fold-all',
+      'steps zoom fold-all open',
+      'steps zoom fold-all chip-word open',
+      'steps zoom fold-all chip chip-word open',
+      'steps zoom fold-all chip chip-word edit open',
+    ])
+    // The chip's lock stays alone before the chip goes: its word folded, the chip still shown.
+    layout(full - 4 * PART - 1 + MORE, rest)
+    expect(head().querySelector('[data-fold-part="chip"]')?.hasAttribute('data-folded')).toBe(false)
+    expect(head().querySelector('.read-only-chip__button > span')?.hasAttribute('data-folded')).toBe(true)
+    // ⋯ shows from the first fold, and still holds every action.
+    expect(compact()).toBe(true)
+    act(() => more().click())
+    expect(items()).toEqual(expect.arrayContaining(['Zoom in [⌘+]', 'Edit [E]', 'Open in a tab [⌘↵]', 'Allow edits…']))
+    act(() => more().click())
+    // Wide again: everything back, in one step.
+    layout(full + 50, rest)
+    expect(folded()).toEqual([])
+    expect(compact()).toBe(false)
+  })
+
+  it('YAZ-4964 round 2, item 1: the card window\'s ⋯ is there at every width (its own rows: review, history, Copy card ID); a note\'s ⋯ only when folded', async () => {
+    const PAGE = '/v/cards.md'
+    readFile.mockImplementation(async (path) => ({ path, content: '# Cards\n\n```card\nQ\n```\n<!-- card: WIKI-9 -->\n', mtime: 1, size: 1 }))
+    const source = createWikilinkResolveSource()
+    source.update(() => null, [rec(PAGE, 'Cards', { mtime: 1 })], [], true)
+    props.vaultOf = () => ({ root: '/v', wikilinks: source, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly })
+    props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
+    await mount()
+    await flush()
+    layout(700, 200)
+    expect(compact()).toBe(false)
+    expect(more().classList.contains('explore__more--always')).toBe(true)
+  })
+
+  it('YAZ-4986: a card layer keeps its card ID; ↗ folds into ⋯', async () => {
+    const PAGE = '/v/cards.md'
+    readFile.mockImplementation(async (path) => ({ path, content: '# Cards\n\n```card\nCapital of {{France}}\n---\n{{Paris}}\n```\n<!-- card: WIKI-9 -->\n', mtime: 1, size: 1 }))
+    const source = createWikilinkResolveSource()
+    source.update(() => null, [rec(PAGE, 'Cards', { mtime: 1 })], [], true)
+    props.vaultOf = () => ({ root: '/v', wikilinks: source, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly })
+    props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
+    await mount()
+    await flush()
+    layout(200, 260)
+    expect(folded()).toEqual(['open'])
+    expect(compact()).toBe(true)
+    const id = head().querySelector<HTMLElement>('.note-card__id')
+    expect(id?.textContent).toContain('WIKI-9')
+    expect(id?.closest('[data-folded]')).toBeNull()
   })
 
   it('a board layer folds too: ⋯ has Previous / Next result and Open in a tab', async () => {
@@ -2195,10 +2451,12 @@ describe('the card window (YAZ-4962)', () => {
     const facts = strip()
     expect(facts[0]).toBe('cards')
     // Each fact has a quiet label in the reader's words.
-    expect([...top().querySelectorAll('.note-card-strip__label')].map((l) => l.textContent)).toEqual(['Last answer', 'Interval', 'Due', 'Recall'])
+    // Overdue (the reviews are from January): no "Due" label, the table's own words (YAZ-4964 look by eye round 2, item 7).
+    expect([...top().querySelectorAll('.note-card-strip__label')].map((l) => l.textContent)).toEqual(['Last answer', 'Interval', 'Recall'])
     expect(facts[1]).toBe('Last answerRemembered, Jan 11')
     expect(factText(2).lastChild?.textContent).toMatch(/^\d+ days?$|^today$/)
-    expect(factText(3).textContent).toMatch(/^Due/)
+    expect(factText(3).textContent).toMatch(/^Overdue · /)
+    expect(tableRows().at(-1)?.[3]).toBe(factText(3).textContent)
     expect(factText(4).lastChild?.textContent).toMatch(/^\d+%$/)
     expect(top().querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('Reviews (3)')
     const rows = tableRows()
@@ -2276,5 +2534,126 @@ describe('the card window (YAZ-4962)', () => {
     await mount()
     await flush()
     expect(top().querySelector('.editor-msg')?.textContent).toBe('This card is no longer there')
+  })
+})
+
+/**
+ * YAZ-4990, the small version (Yaseen: "ok lets go with 1, the small version"): the search highlight stays on its note;
+ * a page deleted outside the app says it is gone in its read layer; a read layer reads its page again when the index
+ * says the page changed, with its scroll place and its folds.
+ */
+describe('YAZ-4990: Explore follows a page that changes', () => {
+  const listeners: Array<(ev: import('@shared/types').WatchEvent) => void> = []
+  const liveWatch: WatchSource = {
+    subscribe: (l) => {
+      listeners.push(l)
+      return () => void listeners.splice(listeners.indexOf(l), 1)
+    },
+  }
+  const emit = (ev: import('@shared/types').WatchEvent) => act(() => listeners.slice().forEach((l) => l(ev)))
+  beforeEach(() => {
+    listeners.length = 0
+  })
+
+  it('the highlight follows its NOTE: a row added above keeps it on that note; a note that leaves the rows leaves the highlight at its place', async () => {
+    props = { ...props, vaults: [{ ...vaults[0], watch: liveWatch }] }
+    await mount()
+    await typeQuery('e')
+    key(input(), { key: 'ArrowDown' })
+    const active = () => top().querySelector('.search-results__row--active .explore__name')?.textContent
+    const picked = active()
+    expect(picked).toBeDefined()
+    const at = rows().indexOf(picked!)
+    // A new page ranks first: the rows move down by one, the highlight stays on its note.
+    index.mockResolvedValue({ root: '/v', records: [rec('/v/e.md', 'e'), ...RECORDS], folders: [], generatedAt: 2, ids: false, size: 4 })
+    emit({ type: 'add', path: '/v/e.md', mtime: 2 })
+    await flush()
+    await flush()
+    expect(rows()[0]).toBe('e')
+    expect(rows().indexOf(picked!)).toBe(at + 1)
+    expect(active()).toBe(picked)
+    // That note is deleted: the highlight stays at its place in the list.
+    const place = rows().indexOf(picked!)
+    index.mockResolvedValue({ root: '/v', records: [rec('/v/e.md', 'e'), ...RECORDS.filter((r) => r.title !== picked)], folders: [], generatedAt: 3, ids: false, size: 3 })
+    // (`ready` reads at once: a second event this soon would wait for the burst's end.)
+    emit({ type: 'ready', root: '/v' })
+    await flush()
+    await flush()
+    expect(rows()).not.toContain(picked)
+    expect(top().querySelectorAll('.search-results__row')[Math.min(place, rows().length - 1)]?.classList.contains('search-results__row--active')).toBe(true)
+  })
+
+  describe('a read layer', () => {
+    let source: ReturnType<typeof createWikilinkResolveSource>
+    const files: Record<string, string> = {}
+    const feed = (records: IndexRecord[]) => act(() => source.update(() => null, records, [], true))
+    beforeEach(() => {
+      files['/v/alpha.md'] = '# Alpha\n\nfirst text\n'
+      readFile.mockImplementation(async (path) => (files[path] === undefined ? Promise.reject(new Error('gone')) : { path, content: files[path], mtime: 1, size: 1 }))
+      source = createWikilinkResolveSource()
+      source.update(() => null, [rec('/v/alpha.md', 'Alpha', { mtime: 1, size: 10 }), rec('/v/beta.md', 'Beta', { mtime: 1 })], [], true)
+      props = { ...props, vaultOf: () => ({ root: '/v', wikilinks: source, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly }), requestLayer: { kind: 'note', path: '/v/alpha.md' } }
+    })
+    const body = () => top().querySelector<HTMLElement>('.explore__body') as HTMLElement
+    const shown = () => [...top().querySelectorAll('.explore__mount .ProseMirror')].map((e) => e.textContent)
+
+    it('reads its page again when the index says it changed: the new text, the scroll place and the folds stay; another page\'s change reads nothing', async () => {
+      await mount()
+      expect(shown()).toEqual(['# Alpha\n\nfirst text\n'])
+      const first = crepes.at(-1)!
+      // The reader folded a heading and a bullet, and scrolled down.
+      act(() => {
+        ;(first.opts.folding as { onCollapsedKeysChange: (k: string[]) => void }).onCollapsedKeysChange(['b:one'])
+        ;(first.opts.headingFolding as { onCollapsedKeysChange: (k: string[]) => void }).onCollapsedKeysChange(['h:two'])
+      })
+      body().scrollTop = 420
+      const reads = readFile.mock.calls.length
+      // Another page changes: nothing is read.
+      feed([rec('/v/alpha.md', 'Alpha', { mtime: 1, size: 10 }), rec('/v/beta.md', 'Beta', { mtime: 2 })])
+      await flush()
+      expect(readFile.mock.calls.length).toBe(reads)
+      // This page changes (an agent, a sync, another tab): read again, shown in place.
+      files['/v/alpha.md'] = '# Alpha\n\nsecond text\n'
+      feed([rec('/v/alpha.md', 'Alpha', { mtime: 2, size: 11 }), rec('/v/beta.md', 'Beta', { mtime: 2 })])
+      await flush()
+      await flush()
+      await flush()
+      expect(readFile.mock.calls.length).toBe(reads + 1)
+      expect(shown()).toEqual(['# Alpha\n\nsecond text\n'])
+      expect(first.destroy).toHaveBeenCalled()
+      expect(body().scrollTop).toBe(420)
+      const next = crepes.at(-1)!
+      expect([...(next.opts.folding as { seedCollapsedKeys: () => Set<string> }).seedCollapsedKeys()]).toEqual(['b:one'])
+      expect([...(next.opts.headingFolding as { seedCollapsedKeys: () => Set<string> }).seedCollapsedKeys()]).toEqual(['h:two'])
+      // Never "loading" on the way: the head's fold-all button stayed.
+      expect(top().querySelector('.explore__head .fold-all__trigger')).not.toBeNull()
+    })
+
+    it('deleted outside the app: after a short wait it reads again, then says it is gone; a save through a temporary file does not', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      try {
+        await mount()
+        // A tool saves through a temporary file: the page leaves the index, and is back before the wait ends.
+        feed([rec('/v/beta.md', 'Beta')])
+        files['/v/alpha.md'] = '# Alpha\n\nsaved by a tool\n'
+        feed([rec('/v/alpha.md', 'Alpha', { mtime: 3, size: 12 }), rec('/v/beta.md', 'Beta')])
+        act(() => void vi.advanceTimersByTime(400))
+        await flush()
+        await flush()
+        expect(top().querySelector('.editor-msg')).toBeNull()
+        expect(shown()).toEqual(['# Alpha\n\nsaved by a tool\n'])
+        // Deleted for real: nothing yet, then after the wait the layer says so.
+        delete files['/v/alpha.md']
+        feed([rec('/v/beta.md', 'Beta')])
+        await flush()
+        expect(top().querySelector('.editor-msg')).toBeNull()
+        act(() => void vi.advanceTimersByTime(300))
+        await flush()
+        await flush()
+        expect(top().querySelector('.editor-msg')?.textContent).toMatch(/no longer there/)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
 })

@@ -65,13 +65,19 @@ describe('the folded head of a narrow layer (YAZ-4956)', () => {
     expect(rule('.explore__more')['display']).toBe('none')
   })
 
-  it('folded: ⋯ shows; the ID and every part in the fold hide; the title keeps a least width', () => {
+  it('folded (YAZ-4986): ⋯ shows; a folded part hides, one by one; the ID never folds; the title keeps a least width', () => {
     expect(rule('.explore__head[data-compact] .explore__more')['display']).toBe('block')
-    expect(rule('.explore__head[data-compact] > .explore__id,\n.explore__head[data-compact] .explore__fold > *')['display']).toBe('none')
+    expect(rule('.explore__head [data-folded]')['display']).toBe('none')
+    expect(css).not.toMatch(/\[data-compact\][^{]*\.explore__id[^{]*\{[^}]*display:\s*none/)
+    expect(rule('.explore__head > .explore__id,\n.explore__head > .note-card__id')['flex']).toBe('none')
     expect(rule('.explore__head[data-compact] .explore__title')['min-width']).toBe('48px')
   })
 
   it('folded: the Read only chip shows again while its "Allow edits?" box is open or it has the keyboard', () => {
-    expect(rule('.explore__head[data-compact] .explore__fold > .explore__lock:is(:focus-within, :has(.read-only-chip__ask))')['display']).toBe('revert')
+    expect(rule('.explore__head .explore__lock[data-folded]:is(:focus-within, :has(.read-only-chip__ask))')['display']).toBe('revert')
+  })
+
+  it('YAZ-4964 round 2, item 1: a ⋯ that holds rows of its own (the card window\'s) shows at every width', () => {
+    expect(rule('.explore__head .explore__more--always')['display']).toBe('block')
   })
 })

@@ -42,10 +42,29 @@ export function resultKeys<T>(results: readonly T[], sel: number, move: (at: num
 /**
  * A flat result list's highlight, held by its POSITION, and its keys (the shortcut picker's). Every
  * reader clamps, since an index refresh can shrink the list under the keyboard's index (YAZ-808).
+ *
+ * With `keyOf` (Explore's search, YAZ-4990) the highlight follows its ROW when the list changes under it: a row added
+ * or removed above it keeps it on the same note. A row that leaves the list leaves the highlight at its place (the
+ * nearest row). A move by the keys, a click or a new query (`setSelected`) is a place, as before.
  */
-export function useResultKeys<T>(results: readonly T[], activate: (hit: T, e: KeyboardEvent) => void) {
-  const [selected, setSelected] = useState(0)
-  const sel = Math.max(0, Math.min(selected, results.length - 1))
+export function useResultKeys<T>(results: readonly T[], activate: (hit: T, e: KeyboardEvent) => void, keyOf?: (hit: T) => string) {
+  const [selected, setSelectedState] = useState(0)
+  /** The highlighted row's key and the list it was read from (only with `keyOf`). */
+  const held = useRef<{ key: string | null; results: readonly T[] }>({ key: null, results })
+  let at = selected
+  if (keyOf !== undefined && held.current.results !== results && held.current.key !== null) {
+    const found = results.findIndex((r) => keyOf(r) === held.current.key)
+    if (found !== -1) at = found
+  }
+  const sel = Math.max(0, Math.min(at, results.length - 1))
+  // The list moved the row: the place is the row's new one (React's update during render, for this component only).
+  if (keyOf !== undefined && sel !== selected && held.current.results !== results) setSelectedState(sel)
+  if (keyOf !== undefined) held.current = { key: results[sel] === undefined ? null : keyOf(results[sel]), results }
+  const setSelected = useCallback((next: number | ((prev: number) => number)) => {
+    // A place chosen now (a key, a click, a new query): no row to follow until the list is drawn with it.
+    held.current = { key: null, results: held.current.results }
+    setSelectedState(next)
+  }, [])
   return { sel, setSelected, onKeys: resultKeys(results, sel, setSelected, activate) }
 }
 

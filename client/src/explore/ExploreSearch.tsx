@@ -47,6 +47,8 @@ interface ExploreSearchProps {
   nameOf: (path: string) => string
   /** Enter or a click on a row: a note opens over this layer, with the row's place for ‹ ›; a folder or another file opens in a tab. */
   onOpen: (row: SearchCandidate, at: number) => void
+  /** ⌘↵ on the highlighted row (YAZ-4984): that row in a tab, and the stack closes. */
+  onOpenInTab: (row: SearchCandidate) => void
   /** A right-click on a row (round 1, item 6): the note menu for it, at the pointer. */
   onRowMenu: (row: SearchCandidate, x: number, y: number) => void
   /** The vault's "Show IDs in search" for a row's path (YAZ-4940): Always, or only on a row found by its ID. */
@@ -55,7 +57,10 @@ interface ExploreSearchProps {
   active: boolean
 }
 
-export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, roots, nameOf, onOpen, onRowMenu, idsInSearch, active }: ExploreSearchProps) {
+/** A row's identity: its file, and its name (a text row of the same file is its own row). */
+const rowKey = (row: SearchCandidate): string => `${row.path}␟${row.name}`
+
+export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, roots, nameOf, onOpen, onOpenInTab, onRowMenu, idsInSearch, active }: ExploreSearchProps) {
   const unit = useVaultUnit(roots[0] ?? null)
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -102,7 +107,8 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
     }
     if (noteOver.current) link.changed?.()
   }, [rows, link])
-  const { sel, setSelected, onKeys } = useResultKeys(rows, (row) => onOpen(row, rows.indexOf(row)))
+  // The highlight follows its row's note (YAZ-4990): a page added or deleted above it does not move it to another note.
+  const { sel, setSelected, onKeys } = useResultKeys(rows, (row) => onOpen(row, rows.indexOf(row)), rowKey)
   const selectedRow = useRef<HTMLLIElement | null>(null)
   useEffect(() => {
     selectedRow.current?.scrollIntoView?.({ block: 'nearest' })
@@ -121,8 +127,16 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
   }, [active])
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
-    // ⌘↵ is the stack's (open in a tab): it goes up.
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) return
+    // ⌘↵ (YAZ-4984): the highlighted row in a tab, as the footer says (the same as ↵, then ⌘↵). With no row it goes up:
+    // the stack opens the note under this search.
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      const row = rows[sel]
+      if (row === undefined || e.altKey) return
+      e.preventDefault()
+      e.stopPropagation()
+      onOpenInTab(row)
+      return
+    }
     onKeys(e)
   }
 

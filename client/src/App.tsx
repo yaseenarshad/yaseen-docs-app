@@ -29,7 +29,7 @@ import { dropIndex } from './lib/dragSlot'
 import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './links/viewOnlyCatalog'
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
-import { focusOpenDocument } from './lib/focusHandoff'
+import { focusOpenDocument, giveFocusBack } from './lib/focusHandoff'
 import { osVerbs } from './lib/osVerbs'
 import { dragOutText, gestureNotice, namedItems, noticeMs, onDisk, shows, unlessFailed, type DragOutAsk, type NamedItem, type Notice, type NoticeKind, type NoticeType } from './lib/notice'
 import { allDirs, otherFiles, treeHasPath } from './lib/treeState'
@@ -1422,8 +1422,8 @@ export function App() {
     setExploreRequest(0)
     const from = exploreFrom.current
     exploreFrom.current = null
-    if (from instanceof HTMLElement && from.isConnected) from.focus()
-    else focusOpenDocument()
+    // In place (YAZ-4971): the page stays where it was scrolled, not at its caret.
+    giveFocusBack(from)
   }, [])
   // The stack's search vaults: each vault's folders from the tree the window already holds, and its drawings and diagrams
   // (YAZ-4943: they open as reading layers); no other files.
@@ -3816,13 +3816,15 @@ export function App() {
           onCancel={() => setPendingRename(null)}
         />
       )}
-      {/* A file action in a read-only vault (YAZ-4939, YAZ-4985): Enter is "Just this once", Esc is Cancel. */}
+      {/* A file action in a read-only vault (YAZ-4939, YAZ-4985): Enter is "Just this once" (or the choice ↓ ↑ moved to), Esc is Cancel. */}
       {readOnlyAsk !== null && (
         <ConfirmSheet
           labelId="confirm-read-only-vault-text"
           text={`This vault (${storage.vaultName(readOnlyAsk.root)}) is read only. Allow this file change?`}
           confirmLabel="Just this once"
           focusConfirm
+          // ↓ ↑ Tab move through Just this once · 1 minute · 10 minutes · Cancel; Enter picks the focused one (YAZ-4989).
+          choices
           onConfirm={() => answerReadOnly(null)}
           onCancel={() => answerReadOnly(false)}
           other={

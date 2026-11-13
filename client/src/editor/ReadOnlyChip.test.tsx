@@ -63,8 +63,8 @@ const lockNow = () => container.querySelector<HTMLButtonElement>('.read-only-chi
 const box = () => container.querySelector<HTMLElement>('.read-only-chip__ask')
 const button = (name: string) => [...(box()?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent === name)!
 const click = (element: Element) => act(() => void element.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-const press = (element: Element, key: string) => {
-  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+const press = (element: Element, key: string, init: KeyboardEventInit = {}) => {
+  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })
   act(() => void element.dispatchEvent(event))
   return event
 }
@@ -102,6 +102,43 @@ describe('ReadOnlyChip', () => {
     mount()
     click(chip()!)
     expect(document.activeElement).toBe(button('Allow edits for 1 minute'))
+  })
+
+  it('YAZ-4989: ↓ ↑ Tab ⇧Tab move through every choice, Cancel included, round at both ends; the page never hears them', () => {
+    mount()
+    click(chip()!)
+    const beyond = vi.fn()
+    document.addEventListener('keydown', beyond)
+    const at = () => (document.activeElement as HTMLElement).textContent
+    const seen: (string | null)[] = []
+    for (let i = 0; i < 5; i++) {
+      press(document.activeElement!, 'ArrowDown')
+      seen.push(at())
+    }
+    expect(seen).toEqual(['10 minutes', 'Until I close this tab', 'Turn Read only off', 'Cancel', 'Allow edits for 1 minute'])
+    press(document.activeElement!, 'ArrowUp')
+    expect(at()).toBe('Cancel')
+    press(document.activeElement!, 'Tab')
+    expect(at()).toBe('Allow edits for 1 minute')
+    press(document.activeElement!, 'Tab', { shiftKey: true })
+    expect(at()).toBe('Cancel')
+    document.removeEventListener('keydown', beyond)
+    expect(beyond).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-4989: Enter picks the focused choice, not always 1 minute; on Cancel it cancels', () => {
+    mount()
+    click(chip()!)
+    press(document.activeElement!, 'ArrowDown')
+    press(document.activeElement!, 'Enter')
+    expect(allowed).toHaveBeenCalledExactlyOnceWith('ten')
+    act(() => lockNow()!.click())
+    click(chip()!)
+    press(document.activeElement!, 'ArrowUp')
+    expect(document.activeElement?.textContent).toBe('Cancel')
+    press(document.activeElement!, 'Enter')
+    expect(box()).toBeNull()
+    expect(allowed).toHaveBeenCalledOnce()
   })
 
   it('S46: Esc cancels, keeps the key from the page, and puts the focus on the chip', () => {

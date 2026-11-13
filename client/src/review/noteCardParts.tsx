@@ -132,6 +132,15 @@ interface NoteCardReviewsProps {
   now?: number
 }
 
+/** The next due date in words, the same in the table and the card window's strip: "Overdue · Oct 18" when that day is past, "Today", else the date. */
+export function noteCardDue(due: number, now: number): string {
+  const today = new Date(now).setHours(0, 0, 0, 0)
+  return due < today ? `Overdue · ${noteCardDate(due, now)}` : isCardDue(due, now) ? 'Today' : noteCardDate(due, now)
+}
+
+/** The day `due` is past (the strip then says "Overdue · …" with no "Due" label). */
+export const noteCardOverdue = (due: number, now: number): boolean => due < new Date(now).setHours(0, 0, 0, 0)
+
 /**
  * "Reviews (n)" (D3, D13): the full table, one row per review in time order — Answer, Days (since the review before),
  * Review date, Next due, a delete — and a last row for the review to come: its due date under Next due ("Overdue ·
@@ -144,8 +153,7 @@ export function NoteCardReviews({ reviews, settings, onDelete, now = Date.now() 
   const rows = cardHistory(reviews, settings)
   const last = rows.at(-1)
   const next = last?.due ?? now
-  const today = new Date(now).setHours(0, 0, 0, 0)
-  const nextDue = next < today ? `Overdue · ${noteCardDate(next, now)}` : isCardDue(next, now) ? 'Today' : noteCardDate(next, now)
+  const nextDue = noteCardDue(next, now)
   return (
     <section className="note-card-reviews">
       <button type="button" className="backlinks__header" aria-expanded={open} onClick={() => setOpen((o) => !o)} onMouseDown={(e) => e.preventDefault()}>

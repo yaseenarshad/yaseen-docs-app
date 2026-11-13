@@ -3483,7 +3483,8 @@
    tinted foot with the pauses. */
 .change-ask {
   position: fixed;
-  z-index: 60;
+  /* Over an Explore layer in edit, whose cell asks (YAZ-4987). */
+  z-index: var(--z-sheet);
   width: 372px;
   max-width: calc(100vw - 16px);
   overflow: hidden;

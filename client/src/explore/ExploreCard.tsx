@@ -22,7 +22,7 @@ import type { GestureAction } from '@shared/keys'
 import { withCardOff, withoutCardReviews, type CardReview } from '@shared/cardLine'
 import { changeCardLine, readCardAt, type CardAtPage } from '../review/cardFile'
 import { HoverTip } from '../components/HoverTip'
-import { NoteCardBody, NoteCardId, NoteCardReviews, noteCardDate, noteCardWait } from '../review/noteCardParts'
+import { NoteCardBody, NoteCardId, NoteCardReviews, noteCardDate, noteCardDue, noteCardOverdue, noteCardWait } from '../review/noteCardParts'
 import { copyText } from '../editor/linkMenu'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { keepFocus, type ExploreVault } from './ExploreNote'
@@ -130,14 +130,17 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
         <span ref={titleRef} className={`explore__title${title === '' ? ' note-card__title--empty' : ''}`}>
           {loaded.kind === 'loading' ? '' : title === '' ? 'New note card' : title}
         </span>
+        {/* ↗ folds into ⋯ in a narrow layer (YAZ-4986); the card ID, the title and × stay. */}
         <span className="explore__fold">
-          <HoverTip text="Open page in a new tab (⌘↵)">
+          <HoverTip text="Open page in a new tab (⌘↵)" data-fold-part="open">
             <button type="button" className="explore__button" onMouseDown={keepFocus} onClick={onOpenInTab} aria-label="Open page in a new tab">
               ↗
             </button>
           </HoverTip>
         </span>
+        {/* ⋯ at every width (YAZ-4964 round 2, item 1): its rows are the card's own (D13), not only a narrow head's. */}
         <HeadMore
+          always
           sections={() => [
             [
               { id: 'open-page', label: 'Open page', onSelect: () => onOpenPage(card?.index ?? index) },
@@ -193,7 +196,8 @@ function NoteCardStrip({ card, pageName, vault, onOpenPage }: { card: CardAtPage
       const chance = recallChance(card.reviews, settings, now)
       facts.push({ key: 'last', label: 'Last answer', text: `${answerLabel(last.rating, settings)}, ${noteCardDate(Date.parse(last.at), now)}` })
       facts.push({ key: 'wait', label: 'Interval', text: noteCardWait(state.interval) })
-      if (state.due !== null) facts.push({ key: 'due', label: 'Due', text: noteCardDate(state.due, now) })
+      // The table's words (YAZ-4964 look by eye round 2, item 7): "Overdue · Oct 17" says it alone; else "Due" and the date.
+      if (state.due !== null) facts.push(noteCardOverdue(state.due, now) ? { key: 'due', text: noteCardDue(state.due, now) } : { key: 'due', label: 'Due', text: noteCardDate(state.due, now) })
       if (chance !== null) facts.push({ key: 'recall', label: 'Recall', text: `${Math.round(chance * 100)}%` })
     }
   }

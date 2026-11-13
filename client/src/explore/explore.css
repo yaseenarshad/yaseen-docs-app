@@ -4,7 +4,8 @@
 .explore {
   position: fixed;
   inset: 0;
-  z-index: 70;
+  /* Under a sheet and a toast App draws while it shows (YAZ-4987, app.css `:root`). */
+  z-index: var(--z-explore);
   /* The workspace shows through a light dim: the trail stays readable. */
   background: rgba(0, 0, 0, 0.28);
 }
@@ -381,11 +382,18 @@
   flex: none;
 }
 
-/* YAZ-4956: a layer narrower than its head (a tiled cell, a drag) folds the head. The observer in
-   `ExploreHeadMore.tsx` writes `data-compact`. Folded: the title (cut with "…") and × stay; the ID and the parts in
-   `.explore__fold` hide, and ⋯ holds them. The fold box is `display: contents`, so a full head is laid out as before. */
+/* YAZ-4956, YAZ-4986: a layer narrower than its head folds the head's parts ONE BY ONE, the least important first
+   (`FOLD_ORDER` in `ExploreHeadMore.tsx`): the zoom pill, the fold-all button, ‹ n/m ›, ↗, the Read only chip's word
+   (its lock stays), the chip, Edit / Done. The title (cut with "…"), the ID and × never fold. The observer writes
+   `data-folded` on a part and `data-compact` on the head while any part is folded; ⋯ then shows and holds them all.
+   The fold box is `display: contents`, so a full head is laid out as before. */
 .explore__fold {
   display: contents;
+}
+.explore__part {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
 }
 .explore__more {
   display: none;
@@ -393,15 +401,24 @@
 .explore__head[data-compact] .explore__more {
   display: block;
 }
-.explore__head[data-compact] > .explore__id,
-.explore__head[data-compact] .explore__fold > * {
+/* The card window's ⋯ has rows of its own (D13: review, history, Copy card ID): it shows at every width (YAZ-4964). */
+.explore__head .explore__more--always {
+  display: block;
+}
+.explore__head [data-folded] {
   display: none;
+}
+/* The ID stays (Yaseen: "esp i need to see the id please"): the title gives way first. */
+.explore__head > .explore__id,
+.explore__head > .note-card__id {
+  flex: none;
+  white-space: nowrap;
 }
 .explore__head[data-compact] .explore__title {
   min-width: 48px;
 }
 /* The Read only chip shows again while its "Allow edits?" box is open (E, or ⋯ › Allow edits…) or it has the keyboard. */
-.explore__head[data-compact] .explore__fold > .explore__lock:is(:focus-within, :has(.read-only-chip__ask)) {
+.explore__head .explore__lock[data-folded]:is(:focus-within, :has(.read-only-chip__ask)) {
   display: revert;
 }
 

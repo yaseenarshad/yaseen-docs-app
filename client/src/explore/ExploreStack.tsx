@@ -7,7 +7,7 @@
  * One stack per window, in its own chunk (App lazy-loads it on the first ⌘⇧F). The list of layers is state
  * (`layers.ts`); the DOM keeps each layer's scroll. The rows of every search layer come from ONE candidate
  * feed (`useSearchCandidates`): a nested search adds no index read. The keys are read on the stack's root: Esc,
- * E (read → edit), ⌘↵ (the top note in a tab, the stack closes), and ‹ › (round 3: a note opened from a search
+ * E (read → edit), ⌘↵ (the top note in a tab, the stack closes; on a search, its highlighted row, YAZ-4984), and ‹ › (round 3: a note opened from a search
  * steps through that search's rows in place, ← / → while reading, ⌘⌥↑ / ⌘⌥↓ in any mode; `shared/keys/explore.ts`).
  * A menu, a picker or a pop-up that takes Esc keeps it (the mini window's rule, YAZ-4547). At most 12 layers; a
  * 13th says so and opens nothing. Each layer moves like a cell note (round 3, `layerBoxes.ts`). The layers act like
@@ -452,6 +452,15 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     if (from instanceof HTMLElement && from.isConnected) from.focus({ preventScroll: true })
   }, [])
 
+  /** ⌘↵ on a search row (YAZ-4984): that row in a tab (a note, a board, a folder's page), and the stack closes. */
+  const rowToTab = useCallback(
+    (row: SearchCandidate) => {
+      flushEdits()
+      doors.current.openInTab(row.path)
+      doors.current.onClose()
+    },
+    [flushEdits],
+  )
   const toTab = useCallback(() => {
     const note = topNote(live)
     if (note === null) return
@@ -477,6 +486,24 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
       timers.current.add(timer)
     }
   }, [top])
+
+  /**
+   * ⌘↵ in an edit layer (YAZ-4988, Yaseen: "CMD enter kinda acts as your way to put it back into read mode"): back to
+   * reading, locked again at once in a Read only vault; the next ⌘↵ opens the tab. Heard in the capture phase, ahead of
+   * the editor's own ⌘↵ (a task box, a line below a table or an embed, Open card): the layer's key wins in the text and
+   * on a note card. Inside a code block's editor the key stays the code's (a new line): a key typed into code keeps its meaning.
+   */
+  const onKeyDownCapture = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (top === undefined || top.kind !== 'note' || top.mode !== 'edit') return
+    if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.nativeEvent.isComposing) return
+    const target = event.target instanceof Element ? event.target : null
+    const layer = rootRef.current?.querySelector(`[data-layer="${top.id}"]`) ?? null
+    if (target === null || layer === null || !layer.contains(target)) return
+    if (target.closest('.cm-editor') !== null && target.closest('.note-card') === null) return
+    event.preventDefault()
+    event.stopPropagation()
+    setLayers((prev) => prev.map((l) => (l.id === top.id && l.kind === 'note' ? { ...l, leaveAsk: (l.leaveAsk ?? 0) + 1 } : l)))
+  }
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (top === undefined) return
@@ -519,7 +546,8 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
       return
     }
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.altKey) {
-      if (topNote(live) === null) return
+      // In edit, the layer's ⌘↵ went back to reading (`onKeyDownCapture`); a code block's ⌘↵ is the code's.
+      if (topNote(live) === null || (top.kind === 'note' && top.mode === 'edit')) return
       event.preventDefault()
       event.stopPropagation()
       toTab()
@@ -592,7 +620,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   }
 
   return (
-    <div ref={rootRef} className="explore" role="dialog" aria-modal="true" aria-label="Explore the vault" onKeyDown={onKeyDown} onMouseDown={onBackdropMouseDown} onPointerDownCapture={onPointerDownCapture}>
+    <div ref={rootRef} className="explore" role="dialog" aria-modal="true" aria-label="Explore the vault" onKeyDown={onKeyDown} onKeyDownCapture={onKeyDownCapture} onMouseDown={onBackdropMouseDown} onPointerDownCapture={onPointerDownCapture}>
       {/* The trail (YAZ-4925): one chip per layer from two layers on, in the open order, the front one bold; a click brings that layer to the front (round 6). */}
       {live.length > 1 && (
         <nav className="explore__trail" aria-label="Layers">
@@ -663,7 +691,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
               <>
                 {/* The search moves by its top edge (round 3): the input keeps its text selection. */}
                 <div className="explore__grab" title="Drag to move; double-click to put back" onMouseDown={(e) => gestures.onHeadDown(layer.id, e)} onDoubleClick={(e) => gestures.reset(layer.id, e)} />
-                <ExploreSearch candidates={candidates} link={linkOf(layer.id)} markedRow={marked} recent={recent} rowOf={rowOf} roots={roots} nameOf={nameOf} onOpen={(row, at) => openRow(layer.id, row, at)} onRowMenu={(row, x, y) => setMenu({ x, y, path: row.path })} idsInSearch={idsInSearch} active={!covered} />
+                <ExploreSearch candidates={candidates} link={linkOf(layer.id)} markedRow={marked} recent={recent} rowOf={rowOf} roots={roots} nameOf={nameOf} onOpen={(row, at) => openRow(layer.id, row, at)} onOpenInTab={rowToTab} onRowMenu={(row, x, y) => setMenu({ x, y, path: row.path })} idsInSearch={idsInSearch} active={!covered} />
               </>
             ) : layer.kind === 'card' ? (
               <ExploreCard
@@ -716,6 +744,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
                 onNotice={onNotice}
                 onToggleEdit={() => toggleEdit(layer.id)}
                 editAsk={layer.editAsk}
+                leaveAsk={layer.leaveAsk}
                 card={layer.card}
                 steps={steps}
                 zoom={zoom}

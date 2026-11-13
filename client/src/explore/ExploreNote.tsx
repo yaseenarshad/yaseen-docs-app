@@ -85,6 +85,8 @@ interface ExploreNoteProps {
   onToggleEdit: () => void
   /** Bumped by the stack's E in a Read only vault (YAZ-4939): the layer asks first, or edits while its unlock runs. */
   editAsk?: number
+  /** Bumped by ⌘↵ in edit (YAZ-4988): save, lock again at once while the timed unlock runs (Lock now), and read. */
+  leaveAsk?: number
   /** The note card to land on once the page shows (YAZ-4962): its place among the page's cards. */
   card?: number
   /**
@@ -125,7 +127,7 @@ export const keepFocus = (event: ReactMouseEvent) => event.preventDefault()
 /** ‹ n/m › in a layer's head (a note's, a board's: YAZ-4943). */
 export function ExploreSteps({ steps }: { steps: LayerSteps }) {
   return (
-    <span className="explore__steps">
+    <span className="explore__steps" data-fold-part="steps">
       <button type="button" className="explore__step" title="Previous search result (← or ⌘⌥↑)" aria-label="Previous search result" disabled={!steps.prev} onMouseDown={keepFocus} onClick={() => steps.onStep(-1)}>
         ‹
       </button>
@@ -154,12 +156,21 @@ export function openRows(onOpenInTab: () => void, noteId: string | undefined, on
   ]
 }
 
+/** How long a page that left the index waits before it is read again and said gone (YAZ-4990): a save through a temporary file is back by then. */
+export const GONE_CHECK_MS = 300
+
+/** A read-only Crepe goes: out of the page at once, destroyed once it is up. */
+function retire({ crepe, el, up }: { crepe: ReturnType<typeof createCrepe>; el: HTMLElement; up: Promise<void> }): void {
+  el.remove()
+  void up.then(() => crepe.destroy())
+}
+
 /** The note editor's features minus the two that exist to edit blocks (the preview panel's set). */
 const readFeatures = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeature.Toolbar]: false }
 
 type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches } | { kind: 'empty' } | { kind: 'gone' }
 
-export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, vault, style, onOpenLink, renderEditor, createFolder, onFileAction, linkActions, onNotice, onToggleEdit, editAsk = 0, card, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
+export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, vault, style, onOpenLink, renderEditor, createFolder, onFileAction, linkActions, onNotice, onToggleEdit, editAsk = 0, leaveAsk = 0, card, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, noteMenu, onClose, active }: ExploreNoteProps) {
   // The layer's vault's word for a note (YAZ-4938), for its own words and for every panel inside it.
   const unit = useVaultUnit(vault.root)
   const noteId = useNoteId(idInTitle ? vault.wikilinks : undefined, path)
@@ -182,11 +193,20 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
 
   /** The whole file as read, frontmatter included: the comment stream's truth. */
   const readRef = useRef('')
-  // Reading: the saved text, read once per mount (the preview panel's rule). Back from edit, it is read again: the editor saved.
+  /**
+   * Bumped when the index says this page changed (YAZ-4990, the small version): the layer reads it again in place, with
+   * no "loading" between. `rereading` says the next read is such a read again.
+   */
+  const [reread, setReread] = useState(0)
+  const rereading = useRef(false)
+  // Reading: the saved text, read once per mount (the preview panel's rule). Back from edit, it is read again: the editor
+  // saved. Again when the page changes on disk (YAZ-4990): the same text keeps the same Crepe.
   useEffect(() => {
     if (mode !== 'read') return
     let live = true
-    setContent({ kind: 'loading' })
+    const again = rereading.current
+    rereading.current = false
+    if (!again) setContent({ kind: 'loading' })
     // A save of this note still on its way (an editor's flush, YAZ-3685 F5) lands first: the read sees the typed text.
     Promise.resolve(savedFirst(path))
       .then(() => api.readFile(path))
@@ -195,24 +215,74 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
         if (!live) return
         readRef.current = file.content
         const body = splitFrontmatter(file.content).body
-        setContent(body.trim() === '' ? { kind: 'empty' } : { kind: 'body', body, switches: notePageSwitches(file.content) })
+        const switches = notePageSwitches(file.content)
+        setContent((prev) =>
+          body.trim() === '' ? { kind: 'empty' } : prev.kind === 'body' && prev.body === body && JSON.stringify(prev.switches) === JSON.stringify(switches) ? prev : { kind: 'body', body, switches },
+        )
       },
       () => live && setContent({ kind: 'gone' }),
     )
     return () => {
       live = false
     }
-  }, [path, mode, gone])
+  }, [path, mode, gone, reread])
+  // The page changes outside this layer while it reads (YAZ-4990): an agent, a sync, another tab, the Inbox. The index
+  // says so (the card layer's way, `ExploreCard`): a new mtime or size of this page reads it again; another page's
+  // change does nothing. A page that leaves the index is read again after a short wait: deleted, the layer says it is
+  // gone; a save through a temporary file (delete, then create) is back by then and reads as a change.
+  const { wikilinks: indexOfVault } = vault
+  useEffect(() => {
+    if (mode !== 'read') return
+    const recordOf = () => indexOfVault.records.find((r) => r.path === path)
+    let seen = recordOf()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const off = indexOfVault.subscribe(() => {
+      const now = recordOf()
+      const same = now === seen || (now !== undefined && seen !== undefined && now.mtime === seen.mtime && now.size === seen.size)
+      seen = now
+      if (same) return
+      clearTimeout(timer)
+      timer = setTimeout(
+        () => {
+          rereading.current = true
+          setReread((n) => n + 1)
+        },
+        now === undefined ? GONE_CHECK_MS : 0,
+      )
+    })
+    return () => {
+      off()
+      clearTimeout(timer)
+    }
+  }, [mode, path, indexOfVault])
 
   const body = mode === 'read' && content.kind === 'body' ? content.body : null
   const switches = content.kind === 'body' ? content.switches : undefined
   // The vault's three parts, not the object: App hands a new object each render, and the Crepe is built once per body.
   const { root, wikilinks, wikilinkCandidates, viewOnlyLinks } = vault
+  /**
+   * The folds of the page (YAZ-4990): kept here, so a Crepe built again for the new text of the SAME page opens with
+   * them (the fold plugins' seed, by their keys). A step to another page starts with none.
+   */
+  const folds = useRef({ path, outline: new Set<string>() as ReadonlySet<string>, heading: new Set<string>() as ReadonlySet<string> })
+  /** The Crepe on show while the next one for the same page is built (YAZ-4990): it goes in the same frame the new one shows. */
+  const shownCrepe = useRef<{ path: string; crepe: ReturnType<typeof createCrepe>; el: HTMLElement; up: Promise<void> } | null>(null)
   useEffect(() => {
     const parent = mountRef.current
+    const prev = shownCrepe.current
+    // Another page, or no text to show: the old Crepe goes now, as before.
+    if (prev !== null && (body === null || parent === null || prev.path !== path)) {
+      shownCrepe.current = null
+      retire(prev)
+      setReady(null)
+    }
     if (body === null || parent === null) return
+    if (folds.current.path !== path) folds.current = { path, outline: new Set(), heading: new Set() }
     const el = document.createElement('div')
     el.className = 'editor-instance'
+    // The same page read again (YAZ-4990): built out of sight, under the one on show, and swapped when it is up.
+    const swap = shownCrepe.current
+    if (swap !== null) el.style.cssText = 'position: absolute; inset: 0 0 auto 0; visibility: hidden; pointer-events: none'
     if (switches?.['guide-lines'] !== undefined) el.dataset.guideLines = switches['guide-lines'] ? 'on' : 'off'
     if (switches?.folding !== undefined) el.dataset.folding = switches.folding ? 'on' : 'off'
     if (switches?.['bullet-threading'] !== undefined) el.dataset.threading = switches['bullet-threading'] ? 'on' : 'off'
@@ -243,20 +313,42 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
       },
       // Pictures resolve against the note's folder, as in its page (YAZ-1656).
       image: { root, notePath: path },
+      // The folds, kept for a read again of this page (YAZ-4990).
+      folding: { seedCollapsedKeys: () => folds.current.outline, onCollapsedKeysChange: (keys) => (folds.current = { ...folds.current, outline: new Set(keys) }) },
+      headingFolding: { seedCollapsedKeys: () => folds.current.heading, onCollapsedKeysChange: (keys) => (folds.current = { ...folds.current, heading: new Set(keys) }) },
     })
     let live = true
-    const up = crepe.create().then(() => {
+    const mine = { path, crepe, el, up: Promise.resolve() }
+    mine.up = crepe.create().then(() => {
       crepe.setReadonly(true)
-      if (live) setReady(crepe)
+      if (!live) return
+      // The swap (YAZ-4990): the old Crepe out and the new one in, and the scroll place put back, in one task: no frame
+      // shows the page empty or at another place.
+      const scroller = bodyRef.current
+      const top = scroller?.scrollTop ?? 0
+      if (swap !== null && shownCrepe.current === swap) retire(swap)
+      el.style.cssText = ''
+      if (scroller !== null && scroller.scrollTop !== top) scroller.scrollTop = top
+      shownCrepe.current = mine
+      setReady(crepe)
     })
     return () => {
       live = false
-      setReady(null)
-      void up.then(() => crepe.destroy()).finally(() => el.remove())
+      // A Crepe on show stays until the next one is up (or the next run takes it away); one never shown goes now.
+      if (shownCrepe.current !== mine) retire(mine)
     }
     // `icons` is read at each link draw; a change of the icon rules redraws no preview (the preview panel's rule).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [body, switches, path, root, wikilinks, wikilinkCandidates, viewOnlyLinks, findChannel])
+
+  // The layer closes: the Crepe on show goes with it (declared after the Crepe's effect, so its cleanup runs last).
+  useEffect(
+    () => () => {
+      if (shownCrepe.current !== null) retire(shownCrepe.current)
+      shownCrepe.current = null
+    },
+    [],
+  )
 
   // The fold-all button (round 1, item 4): the note tab's own button and command on this layer's Crepe.
   const subscribeFolds = useCallback(
@@ -329,9 +421,19 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
   useEffect(() => {
     if (editAsk > 0) editRef.current()
   }, [editAsk])
+  /** ⌘↵ in edit (YAZ-4988): Lock now while the unlock runs (it saves and reads, `useTimedUnlock`'s `beforeLock`), else Done. */
+  const leaveEdit = () => {
+    if (unlocked) unlock.lock()
+    else if (mode === 'edit') onToggleEdit()
+  }
+  const leaveRef = useRef(leaveEdit)
+  leaveRef.current = leaveEdit
+  useEffect(() => {
+    if (leaveAsk > 0) leaveRef.current()
+  }, [leaveAsk])
   const chip = locked && (
     // A press in the chip or its box is not the head's drag, and a double click is not its reset.
-    <span className="explore__lock" onMouseDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+    <span className="explore__lock" data-fold-part="chip" onMouseDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
       <ReadOnlyChip
         asking={asking}
         onAsk={() => setAsking(true)}
@@ -387,18 +489,25 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
           {title}
         </span>
         {noteId !== undefined && <span className="explore__id">{noteId}</span>}
-        {/* The parts a narrow layer folds into ⋯ (YAZ-4956); `display: contents`, so a wide head is laid out as before. */}
+        {/* The parts a narrow layer folds into ⋯ one by one (YAZ-4956, YAZ-4986: `data-fold-part`, `FOLD_ORDER`); the
+            title, the ID and × stay. `display: contents`, so a wide head is laid out as before. */}
         <span className="explore__fold">
           {steps !== undefined && <ExploreSteps steps={steps} />}
           {/* The page zoom's pill (round 4): one value for every note layer; a press on it is the pill's, not a drag. */}
-          <DocumentZoom value={zoom} onChange={onZoom} />
-          {foldAll}
+          <span className="explore__part" data-fold-part="zoom">
+            <DocumentZoom value={zoom} onChange={onZoom} />
+          </span>
+          {foldAll !== false && (
+            <span className="explore__part" data-fold-part="fold-all">
+              {foldAll}
+            </span>
+          )}
           {/* No "Reading" label (YAZ-4944): reading is the normal state; "Edit E" says what you can do. */}
           {mode === 'read' ? (
             <>
               {note && chip}
               {note && (
-                <button type="button" className="explore__button" onClick={edit} title={unit('Edit this note here (E)')}>
+                <button type="button" className="explore__button" data-fold-part="edit" onClick={edit} title={unit('Edit this note here (E)')}>
                   Edit<kbd>E</kbd>
                 </button>
               )}
@@ -406,14 +515,19 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
           ) : (
             <>
               {/* In a Read only vault the chip says it: "Editing · 0:58" with Lock now. */}
-              {chip || <span className="explore__mode">Editing</span>}
-              {/* Done (item 5): back to reading, as Esc does; the note saved as you typed. */}
-              <button type="button" className="explore__button" onClick={onToggleEdit} title="Back to reading (Esc)">
+              {chip || (
+                <span className="explore__mode" data-fold-part="chip">
+                  Editing
+                </span>
+              )}
+              {/* Done (item 5): back to reading, as Esc does; the note saved as you typed. ⌘↵ (YAZ-4988) reads too, and locks again at once in a Read only vault. */}
+              <button type="button" className="explore__button" data-fold-part="edit" onClick={onToggleEdit} title={locked ? 'Back to reading (Esc); ⌘↵ also locks again' : 'Back to reading (Esc or ⌘↵)'}>
                 Done<kbd>esc</kbd>
+                <kbd>⌘↵</kbd>
               </button>
             </>
           )}
-          <button type="button" className="explore__button" onClick={onOpenInTab} title="Open in a tab and close the stack (⌘↵)" aria-label="Open in a tab">
+          <button type="button" className="explore__button" data-fold-part="open" onClick={onOpenInTab} title="Open in a tab and close the stack (⌘↵)" aria-label="Open in a tab">
             ↗
           </button>
         </span>
