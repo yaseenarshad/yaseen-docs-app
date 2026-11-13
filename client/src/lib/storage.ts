@@ -34,6 +34,7 @@ import {
   type TabCanvasState,
   type TocSource,
   type UpNextTaken,
+  type CardsAdded,
   type VaultEntry,
   type Session,
   type VaultSet,
@@ -324,6 +325,14 @@ export const storage = {
   setUpNextTaken(root: string, upNext: UpNextTaken): void {
     patchFolder(root, { upNext })
     send('state.setFolder', () => api.state.setFolder(root, { upNext }))
+  },
+
+  /** "Add more for today" (YAZ-5042): the vault's added numbers, and their day; null when none was kept. */
+  getCardsAdded: (root: string): CardsAdded | null => folderOf(root).added ?? null,
+  /** The vault's added numbers for the day (YAZ-5042): the cache at once, then main's store (`state.setFolder`). */
+  setCardsAdded(root: string, added: CardsAdded): void {
+    patchFolder(root, { added })
+    send('state.setFolder', () => api.state.setFolder(root, { added }))
   },
 
   /** A vault's number, 1–9, or null (YAZ-2555 D2): ⌘<key> goes to it. */

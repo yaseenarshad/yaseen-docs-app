@@ -177,7 +177,8 @@ export interface DueCard {
   isNew: boolean
   /**
    * In today's Up next (YAZ-4999 D3; YAZ-5028: as New cards, only the day's places): shown before every other card,
-   * and under the Inbox's Up next row. A marked card past "Up next a day" keeps its line's `next` but is false here.
+   * and under the Inbox's Up next row. A marked card past "Up next a day" keeps its line's `next` but is false here
+   * (it is in the queue only when due anyway, YAZ-5042).
    */
   next: boolean
 }
@@ -283,6 +284,45 @@ function idAge(id: string, letters: readonly string[] | undefined): number {
 }
 
 /**
+ * The cards added for today (YAZ-5042): how many more of each kind today takes, past the Settings number. The
+ * Settings number never changes; the Inbox keeps these per vault and day (`client/src/review/cardsAdded.ts`).
+ */
+export interface CardsAddedToday {
+  newCards: number
+  upNext: number
+}
+
+export const NOTHING_ADDED: CardsAddedToday = Object.freeze({ newCards: 0, upNext: 0 })
+
+/** The two kinds of card a day has a number of (YAZ-5042): new cards, and Up next. */
+export type AddKind = 'new' | 'next'
+
+/** The step when the Settings number is 0 (YAZ-5042): an add still adds some. */
+export const ADD_STEP_AT_ZERO = 10
+
+/**
+ * One click's add (YAZ-5042): one more day of the Settings number (`perDay`), 10 when it is 0; null with no limit
+ * (every card is in today already). The Inbox adds no more than what waits.
+ */
+export const addStep = (perDay: number | null): number | null => (perDay === null ? null : perDay > 0 ? perDay : ADD_STEP_AT_ZERO)
+
+/** Today's cards of a scope (YAZ-5042): the queue, the cards that wait past today's number, and how to add them. */
+export interface CardPlan {
+  queue: DueCard[]
+  /**
+   * The cards of the scope past today's number, of each kind: new cards past "New cards a day", marked cards past "Up
+   * next a day" (with the added numbers). 0 with no limit.
+   */
+  more: Record<AddKind, number>
+  /**
+   * How much the added number of `kind` must grow so that the next `n` waiting cards of the scope come today (`n` at
+   * most `more[kind]`). More than `n` when today used more than its number (new cards begun past it; Up next places
+   * taken), or for Up next when the vault's places go to marked cards of another scope first.
+   */
+  grow: (kind: AddKind, n: number) => number
+}
+
+/**
  * The cards due now (D11), in this order:
  *  1. UP NEXT (YAZ-4999 D3): each card whose line holds `next`, due or not, new or not, by ID number (the time of the
  *     mark is not in the file). They are outside the new-card limit, and are due now. `upNextPerDay` (YAZ-5028; null:
@@ -290,12 +330,14 @@ function idAge(id: string, letters: readonly string[] | undefined): number {
  *     `upNextTaken`, the card IDs whose mark an answer took off today (the line keeps no trace of them, so the caller
  *     keeps them; an ID still marked in `records`, an index that has not caught up with the answer, is not counted:
  *     it holds its own place). Only those are today's Up next (`DueCard.next`, the Up next row). The other marked
- *     cards keep the mark in the file and wait in their normal place, not Up next today: a reviewed one among 2 by its
- *     due date (now, when not due yet), a new one among 3 by ID number, still outside the new-card limit.
+ *     cards keep the mark in the file and WAIT FOR ANOTHER DAY (YAZ-5042 Decision 1, which replaces the YAZ-5028 rule
+ *     where they came today in their normal place): a marked card past the number comes today only if it is due
+ *     anyway, among the due cards by its due date, not as Up next. A new one, or one not due, is not in today's queue.
  *  2. Each card with reviews whose due date is before local midnight tonight, or in its same-day steps (YAZ-5020),
  *     most overdue first.
  *  3. New cards, by ID number (`newOrder`: the oldest or the newest first, D2; an ID of other letters last), as many as
  *     `newPerDay` leaves today (a card counts as new on the day of its first review); `newPerDay` null: all of them (D1).
+ * `added` (YAZ-5042): today's added numbers, on top of `newPerDay` and `upNextPerDay` (not with no limit).
  * Only a card in review shows: it has an ID, and is not `off` (`off` wins over `next`). None while the vault has
  * review off. `folder` (root-relative, '' = the vault) keeps the cards of that folder and its subfolders; `page` (a
  * page's absolute path, "Review this page", idea 4) keeps that page's cards alone. Either way the new cards begun today
@@ -303,11 +345,13 @@ function idAge(id: string, letters: readonly string[] | undefined): number {
  * (a copy the sweep has not settled yet) is left out until it has its own ID: the Inbox never shows one card twice.
  * `letters`: the vault's ID letters (`hasLetters`), so an ID of other letters sorts last.
  */
-export function cardQueue(records: readonly CardPage[], s: ReviewSettings, now: number, folder = '', page?: string, letters?: readonly string[], upNextTaken: readonly string[] = []): DueCard[] {
-  if (!s.enabled) return []
+export function cardPlan(records: readonly CardPage[], s: ReviewSettings, now: number, folder = '', page?: string, letters?: readonly string[], upNextTaken: readonly string[] = [], added: CardsAddedToday = NOTHING_ADDED): CardPlan {
+  if (!s.enabled) return { queue: [], more: { new: 0, next: 0 }, grow: () => 0 }
   const next: DueCard[] = []
   // YAZ-5028: every marked card of the vault (the day's places are the vault's, as the new-card limit is).
   const marked: DueCard[] = []
+  // YAZ-5042: a marked reviewed card's own due date, and whether it is in its steps: is it due anyway?
+  const dueOf = new Map<DueCard, { at: number; steps: boolean }>()
   const due: DueCard[] = []
   const fresh: DueCard[] = []
   let startedToday = 0
@@ -328,8 +372,11 @@ export function cardQueue(records: readonly CardPage[], s: ReviewSettings, now: 
       const isNew = first === null
       if (card.next === true) marked.push({ path: r.path, index, id: card.id, due: isNew ? now : Math.min(at, now), isNew, next: true })
       if (!mine) return
-      if (card.next === true) next.push({ path: r.path, index, id: card.id, due: isNew ? now : Math.min(at, now), isNew, next: true })
-      else if (isNew) fresh.push({ path: r.path, index, id: card.id, due: now, isNew: true, next: false })
+      if (card.next === true) {
+        const c: DueCard = { path: r.path, index, id: card.id, due: isNew ? now : Math.min(at, now), isNew, next: true }
+        if (!isNew) dueOf.set(c, { at, steps })
+        next.push(c)
+      } else if (isNew) fresh.push({ path: r.path, index, id: card.id, due: now, isNew: true, next: false })
       else if (isCardDue(at, now, steps)) due.push({ path: r.path, index, id: card.id, due: at, isNew: false, next: false })
     })
   }
@@ -346,25 +393,51 @@ export function cardQueue(records: readonly CardPage[], s: ReviewSettings, now: 
       return sign * (x - y)
     }
   next.sort(byAge(1))
-  // YAZ-5028: today's Up next is the vault's first N marked cards, less those an answer took today; the scope keeps
-  // its own of them. The others are not Up next today: they wait in their normal place, the new ones outside the limit.
+  // YAZ-5028: today's Up next is the vault's first N marked cards (N: the number plus today's added, YAZ-5042), less
+  // those an answer took today; the scope keeps its own of them. The others wait for another day (YAZ-5042 Decision
+  // 1); one due anyway comes among the due cards.
   let upNext = next
-  let waiting: DueCard[] = []
+  let nextBase = Number.POSITIVE_INFINITY
+  /** Each waiting marked card's place among the vault's marked cards (0 first): what an add must reach. */
+  let ranks: number[] = []
   if (s.upNextPerDay !== null) {
     const still = new Set(marked.map((c) => c.id))
     const taken = new Set(upNextTaken.filter((id) => !still.has(id))).size
-    const places = new Set(marked.sort(byAge(1)).slice(0, Math.max(0, s.upNextPerDay - taken)).map((c) => `${c.path}\n${c.id}`))
-    upNext = next.filter((c) => places.has(`${c.path}\n${c.id}`))
-    waiting = next.filter((c) => !places.has(`${c.path}\n${c.id}`)).map((c) => ({ ...c, next: false }))
+    nextBase = s.upNextPerDay + added.upNext - taken
+    const rankOf = new Map(marked.sort(byAge(1)).map((c, i) => [`${c.path}\n${c.id}`, i]))
+    const places = Math.max(0, nextBase)
+    upNext = []
+    for (const c of next) {
+      const rank = rankOf.get(`${c.path}\n${c.id}`) ?? Number.POSITIVE_INFINITY
+      if (rank < places) {
+        upNext.push(c)
+        continue
+      }
+      ranks.push(rank)
+      const own = dueOf.get(c)
+      if (own !== undefined && isCardDue(own.at, now, own.steps)) due.push({ ...c, next: false })
+    }
+    ranks = ranks.sort((a, b) => a - b)
   }
-  for (const card of waiting) if (!card.isNew) due.push(card)
   due.sort((a, b) => a.due - b.due || place(a, b))
-  const order = byAge(s.newOrder === 'newest' ? -1 : 1)
-  fresh.sort(order)
-  const newToday = s.newPerDay === null ? fresh : fresh.slice(0, Math.max(0, s.newPerDay - startedToday))
-  const waitingNew = waiting.filter((card) => card.isNew)
-  return [...upNext, ...due, ...(waitingNew.length === 0 ? newToday : [...newToday, ...waitingNew].sort(order))]
+  fresh.sort(byAge(s.newOrder === 'newest' ? -1 : 1))
+  const newBase = s.newPerDay === null ? Number.POSITIVE_INFINITY : s.newPerDay + added.newCards - startedToday
+  const newToday = s.newPerDay === null ? fresh : fresh.slice(0, Math.max(0, newBase))
+  return {
+    queue: [...upNext, ...due, ...newToday],
+    more: { new: fresh.length - newToday.length, next: ranks.length },
+    grow: (kind, n) => {
+      if (n <= 0) return 0
+      if (kind === 'new') return s.newPerDay === null ? 0 : n + Math.max(0, -newBase)
+      const rank = ranks[Math.min(n, ranks.length) - 1]
+      return rank === undefined ? 0 : rank + 1 - nextBase
+    },
+  }
 }
+
+/** The cards due now: `cardPlan`'s queue (the order is there). */
+export const cardQueue = (records: readonly CardPage[], s: ReviewSettings, now: number, folder = '', page?: string, letters?: readonly string[], upNextTaken: readonly string[] = [], added: CardsAddedToday = NOTHING_ADDED): DueCard[] =>
+  cardPlan(records, s, now, folder, page, letters, upNextTaken, added).queue
 
 /** Today's review work (YAZ-5033, the Inbox's "Today: 31 cards · 9 min"): the cards answered, and their seconds. */
 export interface ReviewedToday {

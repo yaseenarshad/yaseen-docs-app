@@ -3198,6 +3198,12 @@ export interface FolderState {
    * the mark, so this Mac keeps it; another Mac does not see it. Persisted, per machine. Additive: absent = none.
    */
   upNext?: UpNextTaken
+  /**
+   * "Add more for today" (YAZ-5042): how many new cards and Up next cards the Inbox added past the Settings numbers on
+   * local day `day` (`YYYY-M-D`). The Settings numbers never change; an added number of another day is none (it resets
+   * at midnight). Persisted, per machine; another Mac does not see it. Additive: absent = none.
+   */
+  added?: CardsAdded
 }
 
 /** The Up next marks an answer took off on one day (YAZ-5028): at most `MAX_UP_NEXT_TAKEN` card IDs. */
@@ -3217,8 +3223,26 @@ export function cleanUpNextTaken(raw: unknown): UpNextTaken | null {
   return { day, cards: ids.slice(0, MAX_UP_NEXT_TAKEN) }
 }
 
+/** The numbers the Inbox added for one day (YAZ-5042): whole numbers, 0 to `MAX_CARDS_ADDED`. */
+export interface CardsAdded {
+  day: string
+  newCards: number
+  upNext: number
+}
+
+export const MAX_CARDS_ADDED = 100_000
+
+/** Pure (the store and the bridge): a valid `CardsAdded`, or null — a day of `YYYY-M-D` and two whole numbers in range. */
+export function cleanCardsAdded(raw: unknown): CardsAdded | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const { day, newCards, upNext } = raw as { day?: unknown; newCards?: unknown; upNext?: unknown }
+  const whole = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= MAX_CARDS_ADDED
+  if (typeof day !== 'string' || !/^\d{4}-\d{1,2}-\d{1,2}$/.test(day) || !whole(newCards) || !whole(upNext)) return null
+  return { day, newCards, upNext }
+}
+
 /** What `state.setFolder` may merge into a bucket — every other field has its own targeted mutator. */
-export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name' | 'key' | 'in' | 'upNext'>>
+export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name' | 'key' | 'in' | 'upNext' | 'added'>>
 
 /** Pure: `folders` with `key` taken from the vault that has it (YAZ-2555 D2: one vault per number) — shared by the client cache and the main store. */
 export function freeVaultKey(folders: Record<string, FolderState>, key: number): Record<string, FolderState> {

@@ -21,7 +21,7 @@ import {
   withoutCardReviews,
   type CardReview,
 } from '@shared/cardLine'
-import { CARD_LEARNING_STEPS, CARD_RELEARNING_STEPS, CARD_STEP, answerLabel, answerRatings, cardHistory, cardQueue, cardState, isCardDue, pageCardCounts, previewAnswers, recallChance } from '@shared/cardSchedule'
+import { CARD_LEARNING_STEPS, CARD_RELEARNING_STEPS, CARD_STEP, addStep, answerLabel, answerRatings, cardHistory, cardPlan, cardQueue, cardState, isCardDue, pageCardCounts, previewAnswers, recallChance } from '@shared/cardSchedule'
 import { FSRS, Rating, createEmptyCard, generatorParameters } from 'ts-fsrs'
 import { cardPieces, cardSides, cardTitle, hiddenCount, markHidden } from '@shared/cardText'
 import { DEFAULT_CARD_WEIGHTS, DEFAULT_REVIEW_SETTINGS, sanitizeReviewSettings } from '@shared/reviews'
@@ -248,7 +248,7 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
     expect(q).toHaveLength(6)
   })
 
-  it('YAZ-5028: Up next a day — only that many marked cards first, less the ones taken today; the others keep the mark and wait in their place', () => {
+  it('YAZ-5028, changed by YAZ-5042 Decision 1: Up next a day — only that many marked cards first, less the ones taken today; the others keep the mark and wait for another day, unless due anyway', () => {
     const now = new Date(2026, 5, 15, 12, 0).getTime()
     const at = (ms: number): string => cardTime(ms)
     const card = (id: string, over: { next?: boolean; reviews?: CardReview[] } = {}) => ({ id, off: false, next: false, reviews: [] as CardReview[], ...over })
@@ -261,22 +261,23 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
     ]
     const s = { ...DEFAULT_REVIEW_SETTINGS, newPerDay: 1 }
     const ids = (upNextPerDay: number | null, taken: readonly string[] = []) => cardQueue(records, { ...s, upNextPerDay }, now, '', undefined, undefined, taken).map((q) => (q.next ? `${q.id}*` : q.id))
-    // Limit 2 (YAZ-5028 Decision, "so it kinda works like new?"): today's Up next is WI-1 and WI-2, first. The others
-    // keep the mark in the file but are not Up next today: WI-4 among the due cards (not due yet: now), WI-3 and WI-5
-    // among the new cards by ID, outside the one new card a day (WI-7).
-    expect(ids(2)).toEqual(['WI-1*', 'WI-2*', 'WI-6', 'WI-4', 'WI-3', 'WI-5', 'WI-7'])
+    // Limit 2 (YAZ-5028 Decision, "so it kinda works like new?"): today's Up next is WI-1 and WI-2, first. YAZ-5042
+    // Decision 1 ("yes extra up next should wait for another day"): the others keep the mark in the file and wait for
+    // another day — WI-4 (not due) and WI-3, WI-5 (new) are not in today's queue. The one new card a day is WI-7.
+    expect(ids(2)).toEqual(['WI-1*', 'WI-2*', 'WI-6', 'WI-7'])
     // Empty (no limit, the default): all five first, all five Up next.
     expect(ids(null)).toEqual(['WI-1*', 'WI-2*', 'WI-3*', 'WI-4*', 'WI-5*', 'WI-6', 'WI-7'])
     expect(DEFAULT_REVIEW_SETTINGS.upNextPerDay).toBeNull()
-    // One taken today (an answer took WI-0's mark off): one place left, so WI-2 waits by its due date, after WI-6. Two
-    // taken, or a limit of 0: none first.
-    expect(ids(2, ['WI-0'])).toEqual(['WI-1*', 'WI-6', 'WI-2', 'WI-4', 'WI-3', 'WI-5', 'WI-7'])
+    // One taken today (an answer took WI-0's mark off): one place left. WI-2 is past the number but due anyway: it
+    // comes today, by its due date after WI-6, not as Up next. Two taken, or a limit of 0: none first.
+    expect(ids(2, ['WI-0'])).toEqual(['WI-1*', 'WI-6', 'WI-2', 'WI-7'])
     expect(ids(2, ['WI-0', 'WI-00'])).toEqual(ids(0))
-    expect(ids(0)).toEqual(['WI-6', 'WI-2', 'WI-4', 'WI-1', 'WI-3', 'WI-5', 'WI-7'])
+    expect(ids(0)).toEqual(['WI-6', 'WI-2', 'WI-7'])
     // A taken ID still marked (the index has not caught up with the answer) holds its own place: nothing moves.
     expect(ids(2, ['WI-1'])).toEqual(ids(2))
-    // The count is the same whatever the limit: every marked card is in the queue.
-    expect(new Set([ids(null).length, ids(2).length, ids(0).length])).toEqual(new Set([7]))
+    // The count of cards that wait (YAZ-5042): the marked cards past today's number.
+    const more = (upNextPerDay: number | null) => cardPlan(records, { ...s, upNextPerDay }, now).more
+    expect([more(null).next, more(2).next, more(0).next]).toEqual([0, 3, 5])
     // The places are the vault's: a folder's Inbox shows its own of the vault's first two (b.md has none of them).
     const vault = [{ ...records[0], folder: 'a' }, { ...records[1], folder: 'b' }]
     expect(cardQueue(vault, { ...s, upNextPerDay: 2 }, now, 'b').filter((q) => q.next)).toEqual([])
@@ -290,6 +291,88 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
     const upNext = (upNextPerDay: number | null) => cardQueue(records, { ...DEFAULT_REVIEW_SETTINGS, upNextPerDay }, now).filter((q) => q.next).map((q) => q.id)
     expect(upNext(2)).toEqual(['UP-1', 'UP-2'])
     expect(upNext(null)).toEqual(['UP-1', 'UP-2', 'UP-3'])
+  })
+
+  describe('YAZ-5042: more cards for today, past the Settings number', () => {
+    const now = new Date(2026, 5, 15, 12, 0).getTime()
+    const at = (ms: number): string => cardTime(ms)
+    const card = (id: string, over: { next?: boolean; reviews?: CardReview[] } = {}) => ({ id, off: false, next: false, reviews: [] as CardReview[], ...over })
+    // 15 new cards (NW-1..15), 5 marked new cards (UP-1..5), one due card.
+    const fresh = Array.from({ length: 15 }, (_, i) => card(`NW-${i + 1}`))
+    const marked = Array.from({ length: 5 }, (_, i) => card(`UP-${i + 1}`, { next: true }))
+    const records = [{ path: '/v/a.md', folder: '', cards: [...fresh, ...marked, card('DU-1', { reviews: [{ at: at(now - 40 * DAY), rating: 'good' }] })] }]
+    const s = { ...DEFAULT_REVIEW_SETTINGS, newPerDay: 4, upNextPerDay: 2 }
+    const kinds = (q: readonly { id: string; next: boolean; isNew: boolean }[]) => ({ next: q.filter((c) => c.next).length, new: q.filter((c) => c.isNew && !c.next).length, all: q.length })
+
+    it('the queue with an added number: the Settings number plus today\'s added number; the count of cards that wait goes down', () => {
+      const plan = (added?: { newCards: number; upNext: number }) => cardPlan(records, s, now, '', undefined, undefined, [], added)
+      expect(kinds(plan().queue)).toEqual({ next: 2, new: 4, all: 7 })
+      expect(plan().more).toEqual({ new: 11, next: 3 })
+      expect(kinds(plan({ newCards: 4, upNext: 0 }).queue)).toEqual({ next: 2, new: 8, all: 11 })
+      expect(plan({ newCards: 4, upNext: 0 }).more).toEqual({ new: 7, next: 3 })
+      expect(kinds(plan({ newCards: 0, upNext: 2 }).queue)).toEqual({ next: 4, new: 4, all: 9 })
+      expect(plan({ newCards: 0, upNext: 2 }).more).toEqual({ new: 11, next: 1 })
+      // The added cards come in the queue's own order: the next new cards by ID, the next marked cards by ID.
+      expect(plan({ newCards: 4, upNext: 2 }).queue.map((c) => c.id)).toEqual(['UP-1', 'UP-2', 'UP-3', 'UP-4', 'DU-1', 'NW-1', 'NW-2', 'NW-3', 'NW-4', 'NW-5', 'NW-6', 'NW-7', 'NW-8'])
+      // Past every card: nothing waits, and no card shows twice.
+      expect(plan({ newCards: 99, upNext: 99 }).more).toEqual({ new: 0, next: 0 })
+      expect(kinds(plan({ newCards: 99, upNext: 99 }).queue)).toEqual({ next: 5, new: 15, all: 21 })
+      // `cardQueue` is the plan's queue.
+      expect(cardQueue(records, s, now, '', undefined, undefined, [], { newCards: 4, upNext: 0 })).toEqual(plan({ newCards: 4, upNext: 0 }).queue)
+    })
+
+    it('the add step: one more day of the Settings number; 10 when it is 0; none with no limit', () => {
+      expect([addStep(4), addStep(2), addStep(0), addStep(null)]).toEqual([4, 2, 10, null])
+    })
+
+    it('`grow`: how much the added number must grow so that n more cards come — also when today used more than its number', () => {
+      // 6 new cards begun today (each one review): the limit 4 is used past its end, so 0 new cards come.
+      const begun = Array.from({ length: 6 }, (_, i) => card(`BG-${i + 1}`, { reviews: [{ at: at(now - 60 * 60_000), rating: 'good' }, { at: at(now - 59 * 60_000), rating: 'good' }] }))
+      const vault = [...records, { path: '/v/b.md', folder: '', cards: begun }]
+      const plan = cardPlan(vault, s, now)
+      expect(kinds(plan.queue).new).toBe(0)
+      // 4 more need 6: 2 to make up the day's overuse, then 4.
+      expect(plan.grow('new', 4)).toBe(6)
+      expect(kinds(cardPlan(vault, s, now, '', undefined, undefined, [], { newCards: 6, upNext: 0 }).queue).new).toBe(4)
+      // Up next: one place taken today by an answer (UP-0); the 2 places hold one card now; 2 more need 2.
+      const taken = cardPlan(records, s, now, '', undefined, undefined, ['UP-0'])
+      expect(kinds(taken.queue).next).toBe(1)
+      expect(taken.grow('next', 2)).toBe(2)
+      expect(kinds(cardPlan(records, s, now, '', undefined, undefined, ['UP-0'], { newCards: 0, upNext: 2 }).queue).next).toBe(3)
+      // With no limit nothing waits, and nothing grows.
+      const open = cardPlan(records, { ...s, newPerDay: null, upNextPerDay: null }, now)
+      expect([open.more, open.grow('new', 4), open.grow('next', 2)]).toEqual([{ new: 0, next: 0 }, 0, 0])
+    })
+
+    it('setting 0: no card of that kind today, every one waits; an add brings them', () => {
+      const zero = { ...s, newPerDay: 0, upNextPerDay: 0 }
+      const plan = cardPlan(records, zero, now)
+      expect(kinds(plan.queue)).toEqual({ next: 0, new: 0, all: 1 })
+      expect(plan.more).toEqual({ new: 15, next: 5 })
+      expect(kinds(cardPlan(records, zero, now, '', undefined, undefined, [], { newCards: 10, upNext: 5 }).queue)).toEqual({ next: 5, new: 10, all: 16 })
+    })
+
+    it('folder or page review: counts that scope\'s cards; the add uses the vault\'s number and brings that scope\'s cards', () => {
+      // a/: NW-1..15 and DU-1; b/: UP-1..5 and NB-1..3. The vault's marked cards are all in b/.
+      const vault = [
+        { path: '/v/a/x.md', folder: 'a', cards: [...fresh, card('DU-1', { reviews: [{ at: at(now - 40 * DAY), rating: 'good' }] })] },
+        { path: '/v/b/y.md', folder: 'b', cards: [...marked, card('NB-1'), card('NB-2'), card('NB-3')] },
+      ]
+      expect(cardPlan(vault, s, now, 'a').more).toEqual({ new: 11, next: 0 })
+      expect(cardPlan(vault, s, now, 'b').more).toEqual({ new: 0, next: 3 })
+      expect(cardPlan(vault, s, now, '', '/v/b/y.md').more).toEqual({ new: 0, next: 3 })
+      // Page review of b/y.md: Up next 2 more by the vault's number.
+      const page = (added?: { newCards: number; upNext: number }) => cardPlan(vault, s, now, '', '/v/b/y.md', undefined, [], added)
+      expect(page().grow('next', 2)).toBe(2)
+      expect(kinds(page({ newCards: 0, upNext: 2 }).queue).next).toBe(4)
+      // The vault's places go first to the vault's first marked cards: in a/, with marked cards past them in b/, an
+      // add of 1 for a/ grows past b/'s cards (UP-3..5) to reach a/'s first waiting one.
+      const mixed = [{ ...vault[0], cards: [...vault[0].cards, card('UP-9', { next: true })] }, vault[1]]
+      const a = cardPlan(mixed, s, now, 'a')
+      expect(a.more.next).toBe(1)
+      expect(a.grow('next', 1)).toBe(4)
+      expect(cardPlan(mixed, s, now, 'a', undefined, undefined, [], { newCards: 0, upNext: 4 }).queue.filter((c) => c.next).map((c) => c.id)).toEqual(['UP-9'])
+    })
   })
 
   it('YAZ-4999: `next` reads, writes and goes back to its place byte for byte', () => {

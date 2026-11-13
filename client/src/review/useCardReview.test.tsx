@@ -124,6 +124,7 @@ beforeEach(() => {
   waiting = []
   notices.length = 0
   storage.setUpNextTaken(ROOT, { day: '2000-1-1', cards: [] }) // YAZ-5028: the day's Up next list, of no day
+  storage.setCardsAdded(ROOT, { day: '2000-1-1', newCards: 0, upNext: 0 }) // YAZ-5042: the day's added numbers, of no day
   vi.mocked(api.state.setFolder).mockClear()
   // Due: answered "good" 30 days ago (still in its steps). Not due: two "good" an hour ago (out of its steps, YAZ-5020:
   // a new card needs two). New: no review. Off: never.
@@ -295,7 +296,7 @@ describe('useCardReview', () => {
     expect(review.session?.counts.all).toBeGreaterThan(0)
   })
 
-  it('YAZ-5028: Up next a day — only that many marked cards are Up next today, first; the others keep the mark and wait in their place; an answer uses a place for the day', async () => {
+  it('YAZ-5028, changed by YAZ-5042 Decision 1: Up next a day — only that many marked cards are Up next today, first; the others keep the mark and wait for another day; an answer uses a place for the day', async () => {
     // WIKI-1 due, WIKI-3 new (beforeEach); marked: WIKI-5 and WIKI-6 new, WIKI-2 reviewed and not due.
     page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, next, 2026-11-12T07:00Z good, 2026-11-12T07:01Z good'])
     page('Bio/More.md', ['A {{fifth}} card', 'WIKI-5, next'], ['A {{sixth}} card', 'WIKI-6, next'])
@@ -311,9 +312,10 @@ describe('useCardReview', () => {
       return ids
     }
     await act(async () => review.start())
-    // One place: WIKI-2 first, and the one Up next; WIKI-5 and WIKI-6 among the new cards by ID, outside the new-card limit.
-    expect(await order()).toEqual(['WIKI-2', 'WIKI-1', 'WIKI-3', 'WIKI-5', 'WIKI-6'])
-    expect(review.session?.counts).toMatchObject({ all: 5, next: 1 })
+    // One place: WIKI-2 first, and the one Up next. WIKI-5 and WIKI-6 wait for another day (YAZ-5042 Decision 1).
+    expect(await order()).toEqual(['WIKI-2', 'WIKI-1', 'WIKI-3'])
+    expect(review.session?.counts).toMatchObject({ all: 3, next: 1 })
+    expect(review.session?.more).toEqual({ new: 0, next: 2 })
     // ⌘Z of an answer that took the mark off gives the place back.
     await act(async () => review.start())
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
@@ -326,8 +328,9 @@ describe('useCardReview', () => {
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
     await step(() => review.answer('good'))
     await act(async () => review.start())
-    expect(await order()).toEqual(['WIKI-1', 'WIKI-3', 'WIKI-5', 'WIKI-6'])
+    expect(await order()).toEqual(['WIKI-1', 'WIKI-3'])
     expect(review.session?.counts.next).toBe(0)
+    expect(vault.get(`${ROOT}/Bio/More.md`)).toContain('WIKI-5, next')
   })
 
   it('YAZ-5028 Decision ("so it kinda works like new?"): Up next a day 2 with 3 marked — the Up next row says 2 and lists 2, first in All cards; empty, 3', async () => {
@@ -340,7 +343,7 @@ describe('useCardReview', () => {
     expect(review.session).toMatchObject({ filter: 'next', position: 1, total: 2, card: { id: 'WIKI-5' } })
     act(() => review.move(1))
     expect(review.session).toMatchObject({ position: 2, total: 2, card: { id: 'WIKI-6' }, canNext: false })
-    // The third keeps its mark in the file, and waits among the new cards.
+    // The third keeps its mark in the file, and waits for another day (YAZ-5042 Decision 1).
     expect(vault.get(`${ROOT}/Up.md`)).toContain('WIKI-7, next')
     // Empty (no limit): all three.
     act(() => root?.render(<Probe settings={{ ...S, upNextPerDay: null }} />))
@@ -367,6 +370,134 @@ describe('useCardReview', () => {
     storage.setUpNextTaken(ROOT, { day: '2026-11-11', cards: ['WIKI-6'] })
     await act(async () => review.start())
     expect(review.session?.counts.next).toBe(1)
+  })
+
+  describe('YAZ-5042: add more cards for today, from the Inbox', () => {
+    // WIKI-1 due, WIKI-3 new (beforeEach); five more new cards, WIKI-10..14. New cards a day 2: WIKI-3 and WIKI-10 today.
+    const fiveNew = () => page('New.md', ...[10, 11, 12, 13, 14].map((n): [string, string] => [`New {{${n}}}`, `WIKI-${n}`]))
+    const read = () => vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
+    const ids = () => review.session?.counts
+    // No new card begun today (beforeEach's WIKI-2 was first answered today: it takes one of the day's new cards).
+    beforeEach(() => page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good']))
+
+    it('the counts: the cards that wait past today\'s number, and the add (one more day of the number); the add joins the session, grows the count, and keeps the Settings number', async () => {
+      fiveNew()
+      const settings = { ...S, newPerDay: 2 }
+      await mount(settings)
+      expect(review.dueCount).toBe(3)
+      await act(async () => review.start())
+      expect(review.session).toMatchObject({ counts: { all: 3, new: 2 }, more: { new: 4, next: 0 }, adds: { new: 2, next: 0 }, lastAdd: null, total: 3 })
+      act(() => review.addCards('new'))
+      // The two next new cards by ID join today; the count grows; 2 still wait.
+      expect(review.session).toMatchObject({ counts: { all: 5, new: 4 }, more: { new: 2 }, adds: { new: 2 }, lastAdd: { kind: 'new', count: 2 }, canUndo: true, total: 5, card: { id: 'WIKI-1' } })
+      expect(review.dueCount).toBe(5)
+      // Kept in the app state for today, per vault; never the Settings number.
+      expect(storage.getCardsAdded(ROOT)).toEqual({ day: '2026-11-12', newCards: 2, upNext: 0 })
+      expect(api.state.setFolder).toHaveBeenLastCalledWith(ROOT, { added: { day: '2026-11-12', newCards: 2, upNext: 0 } })
+      expect(settings.newPerDay).toBe(2)
+      // Once nothing waits, no Add: a click adds nothing.
+      act(() => review.addCards('new'))
+      expect(review.session).toMatchObject({ counts: { all: 7, new: 6 }, more: { new: 0 }, adds: { new: 0 } })
+      act(() => review.addCards('new'))
+      expect(review.session).toMatchObject({ counts: { all: 7, new: 6 } })
+      expect(storage.getCardsAdded(ROOT)?.newCards).toBe(4)
+      expect(localStorage.length).toBe(0)
+    })
+
+    it('undo (the line\'s Undo and Cmd + Z both call `undo`): takes back the added cards not answered yet, while the add is the last thing done', async () => {
+      fiveNew()
+      await mount({ ...S, newPerDay: 2 })
+      await act(async () => review.start())
+      await read()
+      act(() => review.addCards('new'))
+      await step(() => review.undo())
+      expect(review.session).toMatchObject({ counts: { all: 3, new: 2 }, more: { new: 4 }, lastAdd: null, canUndo: false, total: 3 })
+      expect(storage.getCardsAdded(ROOT)).toEqual({ day: '2026-11-12', newCards: 0, upNext: 0 })
+      // An answer after the add: Cmd + Z undoes the answer first; the add is the last thing again, and the next undo takes it.
+      act(() => review.addCards('new'))
+      await read()
+      await step(() => review.answer('again'))
+      expect(review.session?.lastAdd).toBeNull()
+      await step(() => review.undo())
+      expect(review.session).toMatchObject({ card: { id: 'WIKI-1' }, lastAdd: { kind: 'new', count: 2 }, counts: { new: 4 } })
+      expect(reviewsOn('Geo.md', 'WIKI-1')).toHaveLength(1)
+      await step(() => review.undo())
+      expect(review.session).toMatchObject({ lastAdd: null, canUndo: false, counts: { all: 3, new: 2 } })
+    })
+
+    it('the done screen: an add shows the first added card at once, also under a filter that would hide it (then All cards)', async () => {
+      page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'])
+      page('Bio/Cells.md', ['What is a {{cell}}?', 'WIKI-3'], ['A {{second}} one', 'WIKI-6'])
+      page('Up.md', ['A {{one}}', 'WIKI-8, next'], ['A {{two}}', 'WIKI-9, next'])
+      await mount({ ...S, newPerDay: 0, upNextPerDay: 0 })
+      await act(async () => review.start())
+      await read()
+      await step(() => review.answer('good'))
+      // Setting 0: the step is 10, never more than what waits.
+      expect(review.session).toMatchObject({ card: null, more: { new: 2, next: 2 }, adds: { new: 2, next: 2 } })
+      act(() => review.setFilter('due'))
+      act(() => review.addCards('new'))
+      await vi.waitFor(() => expect(review.session?.card?.id).toBe('WIKI-3'))
+      expect(review.session).toMatchObject({ filter: 'all', card: { id: 'WIKI-3', isNew: true }, counts: { all: 2, new: 2 }, lastAdd: { kind: 'new', count: 2 } })
+      // With a card on show, it stays; the Up next cards come right after it.
+      act(() => review.addCards('next'))
+      expect(review.session).toMatchObject({ card: { id: 'WIKI-3' }, counts: { all: 4, next: 2 }, lastAdd: { kind: 'next', count: 2 } })
+      act(() => review.move(1))
+      await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-8', next: true }))
+    })
+
+    it('Up next: the add joins the next marked cards right after the card on show, as Up next', async () => {
+      page('Up.md', ['A {{one}}', 'WIKI-5, next'], ['A {{two}}', 'WIKI-6, next'], ['A {{three}}', 'WIKI-7, next'])
+      await mount({ ...S, upNextPerDay: 1 })
+      await act(async () => review.start())
+      await read()
+      expect(review.session).toMatchObject({ card: { id: 'WIKI-5', next: true }, counts: { next: 1 }, more: { next: 2 }, adds: { next: 1 } })
+      act(() => review.addCards('next'))
+      expect(review.session).toMatchObject({ card: { id: 'WIKI-5' }, counts: { next: 2 }, more: { next: 1 }, lastAdd: { kind: 'next', count: 1 } })
+      act(() => review.move(1))
+      await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-6', next: true }))
+      expect(storage.getCardsAdded(ROOT)).toEqual({ day: '2026-11-12', newCards: 0, upNext: 1 })
+    })
+
+    it('resets at midnight: an added number of another day is none', async () => {
+      fiveNew()
+      storage.setCardsAdded(ROOT, { day: '2026-11-11', newCards: 4, upNext: 0 })
+      await mount({ ...S, newPerDay: 2 })
+      expect(review.dueCount).toBe(3)
+      act(() => {
+        review.start()
+      })
+      act(() => review.addCards('new'))
+      expect(review.dueCount).toBe(5)
+      // The next day: the add is gone, the Settings number again.
+      vi.setSystemTime(new Date(2026, 10, 13, 0, 1).getTime())
+      await act(async () => review.start())
+      expect(review.session).toMatchObject({ counts: { new: 2 }, more: { new: 4 } })
+    })
+
+    it('folder or page review: counts that folder\'s cards; the add uses the vault\'s number', async () => {
+      fiveNew()
+      page('Bio/More.md', ['Bio {{a}}', 'WIKI-20'], ['Bio {{b}}', 'WIKI-21'], ['Bio {{c}}', 'WIKI-22'])
+      await mount({ ...S, newPerDay: 2 })
+      await act(async () => review.start({ folder: 'Bio' }))
+      // Bio: WIKI-3 and WIKI-20 today; WIKI-21, 22 wait.
+      expect(review.session).toMatchObject({ scope: 'folder', counts: { new: 2 }, more: { new: 2 }, adds: { new: 2 } })
+      act(() => review.addCards('new'))
+      expect(review.session).toMatchObject({ counts: { new: 4 }, more: { new: 0 }, adds: { new: 0 } })
+      // The added number is the vault's: a page review after it takes 4 a day too, so 1 of New.md's 5 waits.
+      await act(async () => review.start({ page: `${ROOT}/New.md` }))
+      expect(review.session).toMatchObject({ scope: 'page', counts: { new: 4 }, more: { new: 1 } })
+    })
+
+    it('no limit (an empty box): nothing waits, no add', async () => {
+      fiveNew()
+      await mount({ ...S, newPerDay: null, upNextPerDay: null })
+      await act(async () => review.start())
+      expect(review.session).toMatchObject({ more: { new: 0, next: 0 }, adds: { new: 0, next: 0 } })
+      act(() => review.addCards('new'))
+      expect(storage.getCardsAdded(ROOT)).toEqual({ day: '2000-1-1', newCards: 0, upNext: 0 })
+      expect(ids()?.new).toBe(6)
+    })
   })
 
   describe('YAZ-5031: Up next follows the marks on the card lines', () => {

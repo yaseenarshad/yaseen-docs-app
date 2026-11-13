@@ -1,4 +1,4 @@
-import { MAX_CANVAS_CARDS, MAX_CANVAS_FRAMES, cleanUpNextTaken, isTocSource, type CanvasCard, type CanvasFrame, type FolderPatch, type TabCanvasPatch } from '@shared/types'
+import { MAX_CANVAS_CARDS, MAX_CANVAS_FRAMES, cleanCardsAdded, cleanUpNextTaken, isTocSource, type CanvasCard, type CanvasFrame, type FolderPatch, type TabCanvasPatch } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
@@ -10,7 +10,7 @@ import { createSystemHotkeys } from '../systemHotkeys'
 import { broadcastAll } from './broadcast'
 import { handle, handleWithEvent } from './envelope'
 
-/** The patch crosses IPC from a sandboxed renderer: only `expanded` / `lastFile` / `name` / `key` / `in`, each type-checked. */
+/** The patch crosses IPC from a sandboxed renderer: only `expanded` / `lastFile` / `name` / `key` / `in` / `upNext` / `added`, each type-checked. */
 function requireFolderPatch(raw: unknown): FolderPatch {
   if (!isRecord(raw)) throw new BridgeFailure('BAD_REQUEST', 'patch must be an object')
   const patch: FolderPatch = {}
@@ -39,6 +39,12 @@ function requireFolderPatch(raw: unknown): FolderPatch {
     const upNext = cleanUpNextTaken(raw.upNext)
     if (upNext === null) throw new BridgeFailure('BAD_REQUEST', "'upNext' must be { day, cards }")
     patch.upNext = upNext
+  }
+  // "Add more for today" (YAZ-5042): the day and its two numbers.
+  if (raw.added !== undefined) {
+    const added = cleanCardsAdded(raw.added)
+    if (added === null) throw new BridgeFailure('BAD_REQUEST', "'added' must be { day, newCards, upNext }")
+    patch.added = added
   }
   return patch
 }

@@ -151,6 +151,21 @@ describe('"Up next a day" (YAZ-5028): `FolderState.upNext`, the day\'s taken mar
   })
 })
 
+describe('"Add more for today" (YAZ-5042): `FolderState.added`, the day\'s added numbers in the app state', () => {
+  it('is merged whole by setFolder, kept over a reload, and a junk value changes nothing or is dropped on load', async () => {
+    const store = createStore(file)
+    store.setFolder('/v', { added: { day: '2026-11-13', newCards: 10, upNext: 2 } })
+    expect(store.get().folders['/v'].added).toEqual({ day: '2026-11-13', newCards: 10, upNext: 2 })
+    store.setFolder('/v', { added: { day: '2026-11-13', newCards: -1, upNext: 2 } as never })
+    store.setFolder('/v', { added: { day: 'today', newCards: 1, upNext: 0 } as never })
+    expect(store.get().folders['/v'].added).toEqual({ day: '2026-11-13', newCards: 10, upNext: 2 })
+    await store.flush()
+    expect(createStore(file).get().folders['/v'].added).toEqual({ day: '2026-11-13', newCards: 10, upNext: 2 })
+    await seed(valid({ folders: { '/w': { lastFile: null, added: { day: '2026-11-13', newCards: 1.5, upNext: 'x' } } } }))
+    expect(createStore(file).get().folders['/w'].added).toBeUndefined()
+  })
+})
+
 describe('createStore: loading', () => {
   it('a missing file yields the defaults and creates nothing until the first change', () => {
     const store = createStore(file)

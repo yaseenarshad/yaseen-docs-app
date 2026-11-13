@@ -202,6 +202,11 @@ describe('registerStateIpc', () => {
     expect(store.get().folders['/u'].upNext).toEqual({ day: '2026-11-13', cards: ['DEMO-1'] })
     expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/u', { upNext: { day: 'x', cards: [] } })).toEqual(bad('BAD_REQUEST'))
     expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/u', { upNext: 3 })).toEqual(bad('BAD_REQUEST'))
+    // "Add more for today" (YAZ-5042): the day and two whole numbers, nothing else.
+    expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/u', { added: { day: '2026-11-13', newCards: 10, upNext: 0 } })).toEqual(ok(undefined))
+    expect(store.get().folders['/u'].added).toEqual({ day: '2026-11-13', newCards: 10, upNext: 0 })
+    expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/u', { added: { day: '2026-11-13', newCards: '10', upNext: 0 } })).toEqual(bad('BAD_REQUEST'))
+    expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/u', { added: 3 })).toEqual(bad('BAD_REQUEST'))
     // The vault's display name (YAZ-1974 D3): a string (cleaned by the store) or null, nothing else.
     expect(await registered(CONTRACT.state.setFolder.channel)({ sender }, '/v', { name: '  Business Wiki ' })).toEqual(ok(undefined))
     expect(store.get().folders['/v'].name).toBe('Business Wiki')

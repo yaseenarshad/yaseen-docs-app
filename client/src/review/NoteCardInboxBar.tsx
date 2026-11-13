@@ -7,10 +7,16 @@
  * it — each part a link (its folder page: `openPlace`, the folder chips' door); a long path gives way in the middle, "…".
  * On the right today's work across the vault, quiet ("Today: 31 cards · 9 min", YAZ-5033), then "3 of 12", which counts the filter's cards. Under it the progress bar (YAZ-5020, as
  * Mochi's): it fills as the session's cards are answered, a Forgot in red, a Remembered in grey.
+ *
+ * Add more for today (YAZ-5042): the counts stay in this one menu. The Up next and New cards rows say how many cards
+ * wait past today's number, "38 more", and "Add 10" adds one more day of the Settings number for today only; the menu
+ * stays open, so the row's count grows (10 → 20) and "28 more · Add 10" stays while cards wait. A row with nothing
+ * waiting (or no limit) is as before. In a narrow window "38 more" goes first; "Add 10" stays.
  */
 import { Fragment, useRef, useState, type ReactElement } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import type { CardRating } from '@shared/cardLine'
+import type { AddKind } from '@shared/cardSchedule'
 import type { CardFilter, CardReviewSession } from './useCardReview'
 import { todayWork } from './reviewTime'
 import { ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './noteCardInboxIcons'
@@ -42,11 +48,13 @@ export function progressRuns(answered: readonly CardRating[]): { missed: boolean
 interface NoteCardInboxBarProps {
   session: CardReviewSession
   setFilter: (filter: CardFilter) => void
+  /** Add more for today (YAZ-5042): the Up next or New cards row's Add. */
+  addCards?: (kind: AddKind) => void
   /** A click on a part of the card's place: the folder page of the vault or a folder, or the page, in a tab. */
   openPlace?: (path: string) => void
 }
 
-export function NoteCardInboxBar({ session, setFilter, openPlace }: NoteCardInboxBarProps) {
+export function NoteCardInboxBar({ session, setFilter, addCards, openPlace }: NoteCardInboxBarProps) {
   const button = useRef<HTMLButtonElement>(null)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const current = CARD_FILTERS.find((f) => f.id === session.filter) ?? CARD_FILTERS[0]
@@ -112,29 +120,43 @@ export function NoteCardInboxBar({ session, setFilter, openPlace }: NoteCardInbo
         )}
         {menu !== null && (
           <ContextMenuSurface x={menu.x} y={menu.y} onClose={() => setMenu(null)} className="note-card-inbox__filter-menu">
-            {CARD_FILTERS.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                role="menuitemradio"
-                aria-checked={f.id === session.filter}
-                className="ctx-menu__item note-card-inbox__filter-item"
-                data-filter={f.id}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  setMenu(null)
-                  setFilter(f.id)
-                }}
-              >
-                <span className="note-card-inbox__filter-name">
-                  <f.icon />
-                  {f.label}
-                </span>
-                <span className="note-card-inbox__count" data-filter={f.id} data-empty={session.counts[f.id] === 0 || undefined}>
-                  {session.counts[f.id]}
-                </span>
-              </button>
-            ))}
+            {CARD_FILTERS.map((f) => {
+              // YAZ-5042: the cards that wait past today's number, on the two rows that have a number a day.
+              const kind: AddKind | null = f.id === 'new' ? 'new' : f.id === 'next' ? 'next' : null
+              const add = kind === null || addCards === undefined ? 0 : session.adds[kind]
+              return (
+                <div key={f.id} className="note-card-inbox__filter-row" role="none">
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={f.id === session.filter}
+                    className="ctx-menu__item note-card-inbox__filter-item"
+                    data-filter={f.id}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setMenu(null)
+                      setFilter(f.id)
+                    }}
+                  >
+                    <span className="note-card-inbox__filter-name">
+                      <f.icon />
+                      {f.label}
+                    </span>
+                    <span className="note-card-inbox__count" data-filter={f.id} data-empty={session.counts[f.id] === 0 || undefined}>
+                      {session.counts[f.id]}
+                    </span>
+                  </button>
+                  {kind !== null && add > 0 && (
+                    <>
+                      <span className="note-card-inbox__waiting">{session.more[kind]} more</span>
+                      <button type="button" role="menuitem" className="note-card-inbox__add" data-kind={kind} aria-label={`Add ${add} ${kind === 'new' ? 'new cards' : 'Up next cards'} for today`} onMouseDown={(e) => e.preventDefault()} onClick={() => addCards?.(kind)}>
+                        Add {add}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )
+            })}
           </ContextMenuSurface>
         )}
       </div>

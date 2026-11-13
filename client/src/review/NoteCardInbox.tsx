@@ -53,9 +53,15 @@
  *    across the vault, "Today: 31 cards · 9 min" (`session.today`, from the index), and the done screen says it too.
  *  - No Reviews section (YAZ-5000: it lives only under the card in the page, and in the card window). Nothing left: "Inbox complete." for the vault; for one page or
  *    folder "This page is done." and, quiet, "21 more in the Inbox", which starts the vault's review.
+ *  - ADD MORE FOR TODAY (YAZ-5042, Yaseen: "instead of having to go settings"): the done screen says what waits past
+ *    today's number, "38 new cards and 3 Up next cards wait for another day.", with one button for each kind, "Add 10
+ *    new cards" and "Add 2 Up next" (the first added card shows at once); a filter's done screen has its own kind's
+ *    button; nothing waiting, the screen is as before. The cards menu has the same Add (`NoteCardInboxBar`). The add's
+ *    line takes the last answer's line, "+ Added 10 new cards for today · Undo ⌘Z": its Undo, and ⌘Z, take the add
+ *    back while it is the last thing done (the hook's own undo).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { answerLabel, answerRatings } from '@shared/cardSchedule'
+import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
 import { cardSides, cardTitle, cardWithoutTitle, hiddenCount } from '@shared/cardText'
 import type { GestureAction } from '@shared/keys'
 import type { CardRating } from '@shared/cardLine'
@@ -135,6 +141,19 @@ interface AnswerLine {
   rating: CardRating
   count: number
 }
+
+/** What waits past today's number (YAZ-5042), as the done screen says it: "38 new cards and 3 Up next cards wait for another day." */
+export function waitingLine(more: Record<AddKind, number>, kinds: readonly AddKind[]): string {
+  const parts = kinds.map((k) => `${more[k]} ${k === 'new' ? 'new' : 'Up next'} card${more[k] === 1 ? '' : 's'}`)
+  const one = kinds.length === 1 && more[kinds[0]] === 1
+  return `${parts.join(' and ')} ${one ? 'waits' : 'wait'} for another day.`
+}
+
+/** An add's button (YAZ-5042): "Add 10 new cards", "Add 2 Up next". */
+export const addLabel = (kind: AddKind, n: number): string => (kind === 'new' ? `Add ${n} new card${n === 1 ? '' : 's'}` : `Add ${n} Up next`)
+
+/** The add's line (YAZ-5042), after its "+": "Added 10 new cards for today". */
+export const addedLine = (kind: AddKind, n: number): string => `Added ${n} ${kind === 'new' ? 'new' : 'Up next'} card${n === 1 ? '' : 's'} for today`
 
 /** The step a card is at (D18): how many sides show, and how many hidden words, in page order over the card. */
 interface Step {
@@ -269,6 +288,19 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
   }, [advance, answerWith, openPage, openCard, openInTab])
 
   const doors = useMemo(() => ({ openLayer, openTab: openLinkIn, onNotice }), [openLayer, openLinkIn, onNotice])
+  // YAZ-5042: the kinds that wait past today's number, with an add; under a filter, only that filter's kind.
+  const addKinds = (['new', 'next'] as const).filter((k) => session.adds[k] > 0 && (session.filter === 'all' || session.filter === k))
+  const addButtons =
+    addKinds.length === 0 ? null : (
+      <div className="note-card-inbox__done-adds">
+        {addKinds.map((k) => (
+          <button key={k} type="button" className="explore__button note-card-inbox__done-add" data-kind={k} onMouseDown={(e) => e.preventDefault()} onClick={() => review.addCards(k)}>
+            {addLabel(k, session.adds[k])}
+          </button>
+        ))}
+      </div>
+    )
+  const waits = addKinds.length > 0 && <p className="note-card-inbox__done-line">{waitingLine(session.more, addKinds)}</p>
   // The rest of the vault, after a review of one page or one folder: the way on.
   const more = session.scope === 'vault' ? 0 : review.dueCount
   const hints = noteCardInboxHints({ card: card !== null, answering: done, canUndo: session.canUndo, moves: session.canBack || session.canNext, audio: text !== null && textHasAudio(cardSides(text).slice(0, step.sides).join('\n')) })
@@ -287,7 +319,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
 
   return (
     <div ref={rootRef} className="note-card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`}>
-      <NoteCardInboxBar session={session} setFilter={review.setFilter} openPlace={openPlace} />
+      <NoteCardInboxBar session={session} setFilter={review.setFilter} addCards={review.addCards} openPlace={openPlace} />
       <div ref={columnRef} className="note-card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
         {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height
             with no chip (the done screen), so the card does not move; the page name always starts at the head's left. */}
@@ -323,6 +355,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
                   // The filter's cards are done, others are left (YAZ-5017): the way back to All cards.
                   <>
                     <p className="note-card-inbox__done-title">{session.filter === 'due' ? 'No due cards left.' : session.filter === 'next' ? 'No Up next cards left.' : 'No new cards left.'}</p>
+                    {addButtons}
                     <button type="button" className="note-card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={() => review.setFilter('all')}>
                       {session.counts.all} more in {CARD_FILTERS[0].label}
                     </button>
@@ -330,17 +363,19 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
                 ) : session.scope === 'vault' ? (
                   <>
                     <p className="note-card-inbox__done-title">Inbox complete.</p>
-                    <p className="note-card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
+                    {addButtons === null ? <p className="note-card-inbox__done-line">Nothing else is due today. Enjoy your day!</p> : [waits, addButtons]}
                   </>
                 ) : (
                   <>
                     <p className="note-card-inbox__done-title">{session.scope === 'page' ? 'This page is done.' : 'This folder is done.'}</p>
+                    {waits}
+                    {addButtons}
                     {more > 0 ? (
                       <button type="button" className="note-card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={() => review.start({})}>
                         {more} more in the Inbox
                       </button>
                     ) : (
-                      <p className="note-card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
+                      addButtons === null && <p className="note-card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
                     )}
                   </>
                 )}
@@ -423,8 +458,18 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
           </div>
         )}
         {/* The last answer's line (YAZ-5025 round 2): centred under the buttons; the row keeps its height when empty. */}
-        <div className="note-card-inbox__last" role="status" aria-live="polite" data-rating={line?.rating}>
-          {line !== null && (
+        <div className="note-card-inbox__last" role="status" aria-live="polite" data-rating={session.lastAdd === null ? line?.rating : undefined} data-kind={session.lastAdd === null ? undefined : 'add'}>
+          {session.lastAdd !== null ? (
+            // YAZ-5042: the add, while it is the last thing done; its Undo is the hook's undo, as ⌘Z.
+            <>
+              <span className="note-card-inbox__last-mark">+</span>
+              <span className="note-card-inbox__last-text"> {addedLine(session.lastAdd.kind, session.lastAdd.count)} · </span>
+              <button type="button" className="note-card-inbox__last-undo" disabled={!session.canUndo} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.undo()}>
+                Undo <KeyCaps keys="⌘Z" />
+              </button>
+            </>
+          ) : (
+            line !== null && (
             <>
               <span className="note-card-inbox__last-mark">{line.text.slice(0, line.text.indexOf(' '))}</span>
               <span className="note-card-inbox__last-text">{line.text.slice(line.text.indexOf(' '))} · </span>
@@ -432,6 +477,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
                 Undo <KeyCaps keys="⌘Z" />
               </button>
             </>
+            )
           )}
         </div>
         <NoteCardInboxHints hints={hints} />

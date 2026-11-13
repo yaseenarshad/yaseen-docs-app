@@ -112,6 +112,7 @@ import {
   addRecentRoot,
   cleanVaultKey,
   cleanUpNextTaken,
+  cleanCardsAdded,
   cleanVaultName,
   isZoomKey,
   defaultAppState,
@@ -1052,6 +1053,8 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     ...(typeof raw.in === 'string' && isAbsolute(raw.in) && { in: stripSlash(raw.in) }),
     // "Up next a day" (YAZ-5028): today's taken marks; a junk entry is none.
     ...(cleanUpNextTaken(raw.upNext) !== null && { upNext: cleanUpNextTaken(raw.upNext)! }),
+    // "Add more for today" (YAZ-5042): the day's added numbers; a junk entry is none.
+    ...(cleanCardsAdded(raw.added) !== null && { added: cleanCardsAdded(raw.added)! }),
   }
 }
 
@@ -1406,6 +1409,8 @@ export function createStore(filePath: string): Store {
         ...(patch.in !== undefined ? { in: typeof patch.in === 'string' && isAbsolute(patch.in) && root.startsWith(`${stripSlash(patch.in)}/`) ? stripSlash(patch.in) : null } : {}),
         // "Up next a day" (YAZ-5028): the renderer hands in the whole day's list; a junk one changes nothing.
         ...(patch.upNext !== undefined && cleanUpNextTaken(patch.upNext) !== null ? { upNext: cleanUpNextTaken(patch.upNext)! } : {}),
+        // "Add more for today" (YAZ-5042): the renderer hands in the day's numbers whole; a junk value changes nothing.
+        ...(patch.added !== undefined && cleanCardsAdded(patch.added) !== null ? { added: cleanCardsAdded(patch.added)! } : {}),
       }
       // One vault per number (YAZ-2555 D2): the same commit takes it from the vault that had it.
       commit({ ...state, folders: { ...(key == null ? state.folders : freeVaultKey(state.folders, key)), [root]: next } })
