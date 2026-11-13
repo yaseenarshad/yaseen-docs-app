@@ -7,9 +7,9 @@ interface UseMenuEventsOptions {
   onOpenFolder: () => void
   /** File › Open Recent chose `path` for this window: switch the root in place. */
   onOpenRoot: (path: string) => void
-  /** File › Search Vault (⌘K): show the sidebar's Search tab and focus its bar (YAZ-2638 D2), un-collapsing the sidebar first (YAZ-804). */
+  /** File › Search Vault (⌘K): show the sidebar's Search tab and focus its bar (YAZ-2638 D2), un-collapsing the sidebar first (YAZ-804); again with the search open, back to the page (YAZ-4994). */
   onSearch: () => void
-  /** File › Explore Vault… (⌘⇧F, YAZ-2571): open the explore stack, or add a search layer on top (`explore/ExploreStack`). */
+  /** File › Explore Vault… (⌘⇧F, YAZ-2571): open the explore stack, or close all of it while it shows (YAZ-4994). */
   onExplore: () => void
   /** File › Switch Vault… (⌘O): open the sidebar header's vault switcher, un-collapsing the sidebar first (YAZ-1767 D8). */
   onSwitchVault: () => void

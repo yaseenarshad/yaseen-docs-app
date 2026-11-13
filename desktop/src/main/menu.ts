@@ -43,7 +43,7 @@ export interface MenuHandlers {
   goToVault(path: string, name: string): void
   /** File › Search Vault (⌘K, YAZ-804): the focused window's renderer focuses its sidebar search bar. */
   search(): void
-  /** File › Explore Vault… (⌘⇧F, YAZ-2571): the focused window's renderer opens its explore stack, or adds a search layer to it. */
+  /** File › Explore Vault… (⌘⇧F, YAZ-2571): the focused window's renderer opens its explore stack, or closes all of it while it shows (YAZ-4994). */
   explore(): void
   /** Yaseen Docs › Settings… (⌘,, YAZ-1679): the focused window's renderer opens its settings dialog. */
   settings(): void

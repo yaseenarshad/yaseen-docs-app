@@ -1099,6 +1099,30 @@ export function App() {
     if (sidebarCollapsed) toggleSidebar()
     changeLens('search')
   }, [exploreRequest, sidebarCollapsed, toggleSidebar, changeLens])
+  /**
+   * The search key is a toggle (YAZ-4994, Yaseen: "clicking the hotkey again should close it and go back to just the
+   * page"). The menu sends this one event for whatever key the user bound (Settings › Hotkeys), so each binding
+   * toggles. "Open" is the Search tab on show with the keyboard in the sidebar: a search tab left on show while you
+   * type in the page is not open, and the key takes you back into it. Closing puts the sidebar back as the key found
+   * it: the last lens, collapsed again if the key opened it, and the keyboard back where it was, with no scroll (YAZ-4971).
+   */
+  const searchFrom = useRef<{ from: Element | null; opened: boolean } | null>(null)
+  const toggleSearch = useCallback(() => {
+    const active = document.activeElement
+    const inSidebar = active !== null && sidebarRef.current?.contains(active) === true
+    if (exploreRequest === 0 && !sidebarCollapsed && sidebarLens === 'search' && inSidebar) {
+      const was = searchFrom.current
+      searchFrom.current = null
+      changeLens(storage.getSidebarLens())
+      if (was?.opened === true && !sidebarCollapsedRef.current) toggleSidebar()
+      giveFocusBack(was?.from ?? null)
+      return
+    }
+    // The page the keyboard was on: under Explore, the one Explore came from.
+    const from = exploreRequest > 0 ? exploreFrom.current : active === document.body ? null : active
+    searchFrom.current = { from: from !== null && sidebarRef.current?.contains(from) === true ? null : from, opened: sidebarCollapsed }
+    openSearch()
+  }, [exploreRequest, sidebarCollapsed, sidebarLens, toggleSidebar, changeLens, openSearch])
 
   // ⌘O (YAZ-1767 D8): the ⌘K handshake for the vault switcher — un-collapse first, then bump a
   // request counter the sidebar header's panel consumes. The request is pinned to the sidebar it was
@@ -1395,6 +1419,16 @@ export function App() {
       return n + 1
     })
   }, [hasVault, filesWindow])
+  /**
+   * The Explore key is a toggle (YAZ-4994): with Explore open it closes ALL of Explore, whatever is on top (searches,
+   * notes, boards, a note in edit, saved first), and the page has the keyboard back with no scroll. One rule: the key
+   * that opens Explore closes it. Esc still goes back one layer at a time.
+   */
+  const [exploreCloseAsk, setExploreCloseAsk] = useState(0)
+  const toggleExplore = useCallback(() => {
+    if (exploreRequest > 0) setExploreCloseAsk((n) => n + 1)
+    else openExplore()
+  }, [exploreRequest, openExplore])
   const openExploreWith = useCallback((ask: ExploreRequest) => {
     if (!hasVault || filesWindow) return
     exploreNote.current = ask
@@ -2257,8 +2291,8 @@ export function App() {
   useMenuEvents({
     onOpenFolder: pick,
     onOpenRoot: openVault,
-    onSearch: openSearch,
-    onExplore: openExplore,
+    onSearch: toggleSearch,
+    onExplore: toggleExplore,
     onSwitchVault: openVaultSwitcher,
     onSettings: openSettings,
     onToggleSidebar: toggleSidebar,
@@ -3465,7 +3499,7 @@ export function App() {
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
-          <ExploreStack request={exploreRequest} requestLayer={exploreNote.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newNoteFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} />
+          <ExploreStack request={exploreRequest} requestLayer={exploreNote.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} closeAsk={exploreCloseAsk} renderEditor={renderExploreEditor} createFolder={newNoteFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} />
         </Suspense>
       )}
       {whatsNewOpen && (
