@@ -6,16 +6,18 @@
  *  - THE INBOX IS A TAB (YAZ-5011): App draws this screen for the window's Inbox tab, over the tab stack. Behind a page
  *    tab it stays mounted, hidden (`shown` false), so it comes back at its card and step; hidden, it hears no key. It
  *    closes as any tab does (its ✕, ⌘W): no × of its own, and Esc does not close it.
- *  - Head: the card ID first, small and grey (a click copies it, D20; its place in the page's card and the card window
- *    too), the chip "Up next ×" for a card at the top of the Inbox (YAZ-4999 D3), the page's name (O), "3 of 12". No card title: the card is right below it.
+ *  - The top row (YAZ-5017, `NoteCardInboxBar`): the filter "All cards ▾" (All cards, Due today, New cards, with counts),
+ *    where the cards come from (the vault, "Folder / Sub", the page), and "3 of 12" of the filter's cards on the right.
+ *  - Head: the state chip (YAZ-5018, as Mochi's: "New card", "Due today", "Due · 3 days ago"), the page's name (O), the card ID in brackets, small and grey (a click copies it, D20), the chip "Up next ×"
+ *    for a card at the top of the Inbox (YAZ-4999 D3). No card title: the card is right below it.
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
  *    Space shows the next side, whose hidden words then show one by one. The answer buttons show from the moment the
  *    card shows (YAZ-5010, Yaseen: "Should always be there"): `showAnswers()` fixes what each one writes then (the
  *    hover is the truth, D13), and 1–2 / 1–4 answer at any step.
- *  - The buttons (D5): Forgot · Remembered, or Again · Hard · Good · Easy, by the setting; the hover says when the
- *    card comes back ("Remembered · 9 days").
- *  - The keys (`noteCardInboxKeys.ts`): Space, 1–2 / 1–4 (at any step, YAZ-5010), ⌘Z, O (the page on top, landed on
- *    the card; Esc there comes back to this card at the same step), E (YAZ-5003: the CARD WINDOW on top, in Edit card, in
+ *  - The buttons (D5): ✕ Forgot · ✓ Remembered, or ↺ Again · ~ Hard · ✓ Good · ⇈ Easy, by the setting, round as
+ *    Mochi's (YAZ-5018); the hover says when the card comes back ("Remembered · 9 days").
+ *  - The keys (`noteCardInboxKeys.ts`): Space, 1–2 / 1–4 (at any step, YAZ-5010), ⌘Z, O (the page on top, at its top,
+ *    YAZ-5022; Esc there comes back to this card at the same step), E (YAZ-5003: the CARD WINDOW on top, in Edit card, in
  *    every vault, YAZ-5009: also a read-only one, with no "Allow edits?" box — only this card's text unlocks, for this
  *    edit; Done, Esc or ⌘↵ there saves and reads, locked again; then ⌘↵ or Esc comes back to this card at the same step), ← → (YAZ-5004: the card before or after, no answer), ⌘↵ (the page in a
  *    background tab: the review stays), Esc (only the ⋯ row; then the Esc order goes on, YAZ-5011). A key typed in a field, or while a dialog or a menu
@@ -23,12 +25,14 @@
  *  - P (YAZ-5014): plays or stops the first sound of the sides that show. Nothing plays by itself; the next card (an
  *    answer, ← →, ⌘Z), a hidden Inbox and its close stop it. "P Play" is in the hint row only while a side that shows
  *    has a sound. A board's picture (YAZ-5015) opens the board on top; Esc there comes back to this card and step.
- *  - Under the card, OUTSIDE its frame, as in Mochi (YAZ-5002): while Space has more to show, a quiet "Press Space to
- *    show the next hidden word" (or "the next side"); then the answer buttons; the key hint row last, at the bottom.
+ *  - Under the card, OUTSIDE its frame, as in Mochi (YAZ-5002): the answer buttons; the key hint row last, at the bottom.
+ *    No "Press Space" line over the buttons (YAZ-5021): the key row already says Space.
  *  - The buttons row (YAZ-5004, as in Mochi): ← → on its left, the answers in the middle, ⋯ on its right. ⋯ opens a
  *    small row of icons, each with the app's hover box (its name and key): Undo last review (⌘Z), Turn review off,
  *    Put at top of Inbox / Remove from top of Inbox, Open card. They are the hook's own actions.
  *  - The hint row shows a key only while it does something; the digits are on the buttons.
+ *  - THE WIDTH (YAZ-5019): the card's left or right edge drags it wider or narrower, centred (`inboxCardWidth.ts`): at
+ *    least 420 px, at most the tab's width less its margins; the width stays for the app's run, in memory only.
  *  - No Reviews section (YAZ-5000: it lives only under the card in the page, and in the card window). Nothing left: "Inbox complete." for the vault; for one page or
  *    folder "This page is done." and, quiet, "21 more in the Inbox", which starts the vault's review.
  */
@@ -42,6 +46,9 @@ import { NoteCardBody, NoteCardId, NoteCardNextChip, noteCardWait } from './note
 import { noteCardInboxHints, noteCardInboxKey } from './noteCardInboxKeys'
 import { NOTE_CARD_MEDIA, NOTE_CARD_OPENS, stopCardAudio, textHasAudio, toggleCardAudio } from '../editor/noteCard/noteCardMedia'
 import { HoverTip } from '../components/HoverTip'
+import { CARD_FILTERS, NoteCardInboxBar } from './NoteCardInboxBar'
+import { NoteCardStateChip, answerIcon } from './noteCardInboxChip'
+import { useInboxCardWidth } from './inboxCardWidth'
 import '../explore/explore.css'
 
 export interface NoteCardInboxProps {
@@ -51,8 +58,8 @@ export interface NoteCardInboxProps {
   session: CardReviewSession
   vaultOf: (path: string) => ExploreVault
   nameOf: (path: string) => string
-  /** The page on top as an Explore layer, landed on card `index` (O). */
-  openPage: (path: string, index: number, edit: boolean) => void
+  /** O and the page name: the page on top as an Explore layer, at its TOP (YAZ-5022: no scroll to the card). */
+  openPage: (path: string) => void
   /** The card window on top (⋯ › Open card); `edit` in Edit card (E, YAZ-5003). */
   openCard: (path: string, id: string, index: number, edit: boolean) => void
   /** ⌘↵: the page in a background tab. */
@@ -105,6 +112,8 @@ interface Step {
 
 export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, openPage, openCard, openInTab, openLinkIn, openLayer, onNotice }: NoteCardInboxProps) {
   const rootRef = useRef<HTMLDivElement>(null)
+  const columnRef = useRef<HTMLDivElement>(null)
+  const { width, startDrag } = useInboxCardWidth(columnRef, rootRef)
   const card = session.card
   const text = card?.page?.text ?? null
   const cardKey = card === null ? null : `${session.position}\n${card.path}\n${card.id}`
@@ -185,7 +194,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
         if (card.page !== null && rating !== undefined && !event.repeat) void review.answer(rating)
         return
       }
-      if (key.kind === 'open') return openPage(card.path, card.index, false)
+      if (key.kind === 'open') return openPage(card.path)
       // E edits only the card (YAZ-5003): the card window in Edit card, in every vault (YAZ-5009, Yaseen: "e should go
       // directly into edit mode"). A read-only vault unlocks this card's text alone, for this edit (`ExploreCard`).
       if (key.kind === 'edit') return openCard(card.path, card.id, card.index, true)
@@ -212,13 +221,14 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
           { id: 'card', label: 'Open card', icon: ICON_CARD, disabled: false, run: () => openCard(card.path, card.id, card.index, false) },
         ]
 
-  // What the next Space shows, said between the card and the buttons (YAZ-5002); nothing once the buttons show.
-  const spaceShows = card?.page == null || done ? null : step.shown < hiddenUpTo(step.sides) ? 'the next hidden word' : 'the next side'
-
   return (
     <div ref={rootRef} className="note-card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`}>
-      <div className="note-card-inbox__column">
+      <NoteCardInboxBar session={session} setFilter={review.setFilter} />
+      <div ref={columnRef} className="note-card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
         <div className="note-card-inbox__panel">
+          {/* The card's edges (YAZ-5019): a drag of either sizes the card, centred. */}
+          <div className="note-card-inbox__edge" data-side="left" role="separator" aria-orientation="vertical" aria-label="Card width" onPointerDown={startDrag(-1)} />
+          <div className="note-card-inbox__edge" data-side="right" role="separator" aria-orientation="vertical" aria-label="Card width" onPointerDown={startDrag(1)} />
           <div className="explore__head note-card-inbox__head">
             {/* YAZ-5012: the page first, on the left (O opens it), then the ID in brackets, small and grey (a click copies it);
                 no card title: the card is right below (say each thing once). A long page name gives way before the ID. */}
@@ -226,21 +236,27 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
               <span className="explore__title">{session.label}</span>
             ) : (
               <>
-                <button type="button" className="note-card-strip__page note-card-inbox__page" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(card.path, card.index, false)}>
+                <NoteCardStateChip card={card} />
+                <button type="button" className="note-card-strip__page note-card-inbox__page" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(card.path)}>
                   {nameOf(card.path)}
                 </button>
                 <NoteCardId id={card.id} onNotice={onNotice} brackets />
                 {card.page?.next === true && <NoteCardNextChip onRemove={() => void review.setNext(card.path, card.id, false)} />}
-                <span className="note-card-inbox__place">
-                  {session.position} of {session.total}
-                </span>
               </>
             )}
           </div>
           <div className="note-card-inbox__body">
             {card === null ? (
               <div className="note-card-inbox__done" role="status">
-                {session.scope === 'vault' ? (
+                {session.filter !== 'all' && session.counts.all > 0 ? (
+                  // The filter's cards are done, others are left (YAZ-5017): the way back to All cards.
+                  <>
+                    <p className="note-card-inbox__done-title">{session.filter === 'due' ? 'No due cards left.' : 'No new cards left.'}</p>
+                    <button type="button" className="note-card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={() => review.setFilter('all')}>
+                      {session.counts.all} more in {CARD_FILTERS[0].label}
+                    </button>
+                  </>
+                ) : session.scope === 'vault' ? (
                   <>
                     <p className="note-card-inbox__done-title">Inbox complete.</p>
                     <p className="note-card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
@@ -268,12 +284,8 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
             )}
           </div>
         </div>
-        {/* Under the card, outside its frame, as in Mochi (YAZ-5002): what Space does next, the answer buttons, then the keys. */}
-        {spaceShows !== null && (
-          <p className="note-card-inbox__space">
-            Press <kbd>Space</kbd> to show {spaceShows}
-          </p>
-        )}
+        {/* Under the card, outside its frame, as in Mochi (YAZ-5002): the answer buttons, then the keys. No "Press Space"
+            line between them (YAZ-5021): the key row at the bottom already says Space. */}
         {card !== null && (
           <div className="note-card-inbox__actions">
             <div className="note-card-inbox__moves">
@@ -297,7 +309,8 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
                   return (
                     <HoverTip key={a.review.rating} text={comesBack}>
                       <button type="button" className="explore__button note-card-inbox__answer" data-rating={a.review.rating} aria-description={comesBack} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.answer(a.review.rating)}>
-                        {label}
+                        {answerIcon(a.review.rating, review.settings.buttons)}
+                        <span className="note-card-inbox__answer-label">{label}</span>
                         <kbd>{i + 1}</kbd>
                       </button>
                     </HoverTip>

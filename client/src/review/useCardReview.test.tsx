@@ -197,6 +197,51 @@ describe('useCardReview', () => {
     expect(review.session).toMatchObject({ total: 1, card: { id: 'WIKI-1' } })
   })
 
+  it('YAZ-5017: the filter — counts per filter (Due today = reviewed and due, New cards = never reviewed), the queue and "n of m" follow it, ← → stay inside it; the path says where the cards come from', async () => {
+    page('Bio/More.md', ['A {{second}} new card', 'WIKI-5'], ['Old {{one}}', 'WIKI-6, 2026-10-01T09:00Z good'])
+    await mount()
+    await act(async () => review.start())
+    // Due: WIKI-6 (most overdue first), WIKI-1; new: WIKI-3, WIKI-5.
+    expect(review.session).toMatchObject({ filter: 'all', counts: { all: 4, due: 2, new: 2 }, position: 1, total: 4, from: ['vault'], card: { id: 'WIKI-6' } })
+    await act(async () => review.setFilter('new'))
+    expect(review.session).toMatchObject({ filter: 'new', position: 1, total: 2, card: { id: 'WIKI-3', isNew: true }, canBack: false, canNext: true })
+    act(() => review.move(1))
+    expect(review.session).toMatchObject({ position: 2, total: 2, card: { id: 'WIKI-5' }, canNext: false })
+    await act(async () => review.setFilter('due'))
+    expect(review.session).toMatchObject({ position: 1, total: 2, card: { id: 'WIKI-6', isNew: false } })
+    await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
+    await step(() => review.answer('good'))
+    // One due card answered: "2 of 2", the counts drop by one, the new cards stay.
+    await vi.waitFor(() => expect(review.session).toMatchObject({ position: 2, total: 2, counts: { all: 3, due: 1, new: 2 }, card: { id: 'WIKI-1' } }))
+    await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
+    await step(() => review.answer('good'))
+    // No due card left: no card under the filter, the new cards still counted.
+    expect(review.session).toMatchObject({ card: null, counts: { all: 2, due: 0, new: 2 } })
+    await act(async () => review.setFilter('all'))
+    expect(review.session).toMatchObject({ card: { id: 'WIKI-3' }, position: 3, total: 4 })
+    // The scope's path: the folder's parts, the page's name.
+    await act(async () => review.start({ folder: 'Bio' }))
+    expect(review.session).toMatchObject({ filter: 'all', from: ['Bio'] })
+    await act(async () => review.start({ page: `${ROOT}/Bio/Cells.md` }))
+    expect(review.session?.from).toEqual(['Cells'])
+  })
+
+  it('YAZ-5020: the progress bar`s answers — each answer in order (a Forgot is `again`), ⌘Z takes the last back; its whole is the session`s size at start; a new session starts empty', async () => {
+    await mount()
+    await act(async () => review.start())
+    expect(review.session).toMatchObject({ answered: [], size: 2 })
+    await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
+    await step(() => review.answer('again'))
+    expect(review.session).toMatchObject({ answered: ['again'], size: 2 })
+    await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
+    await step(() => review.answer('good'))
+    expect(review.session).toMatchObject({ card: null, answered: ['again', 'good'], size: 2 })
+    await step(() => review.undo())
+    expect(review.session).toMatchObject({ answered: ['again'], size: 2 })
+    await act(async () => review.start())
+    expect(review.session?.answered).toEqual([])
+  })
+
   it('a card whose page is gone when its turn comes is passed over; review off has no count and no session', async () => {
     await mount()
     await act(async () => review.start())

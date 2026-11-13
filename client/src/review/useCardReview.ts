@@ -5,6 +5,7 @@ import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { folderTitle } from '../links/shortcuts'
+import { storage } from '../lib/storage'
 import { changeCardLine, deleteCardReview, isCardGone, readCard, restoreCardReview, undoCardAnswer, writeCardAnswer, type CardOnPage } from './cardFile'
 
 /**
@@ -21,7 +22,21 @@ import { changeCardLine, deleteCardReview, isCardGone, readCard, restoreCardRevi
  * ← → (YAZ-5004) move the card showing through the queue with no answer: `at` is the one new piece of state, the
  * place of the card showing; a card you leave stays in the queue. `turnOff` (the Inbox ⋯) writes `off` and takes the
  * card out of the queue.
+ *
+ * The filter (YAZ-5017, as Mochi's "All cards ▾"): All cards, Due today (cards with reviews, due now) or New cards
+ * (never reviewed, within today's new-card limit: the queue's own). The queue stays whole; the filter picks which of its
+ * cards show, and "3 of 12" counts only those.
+ *
+ * `answered` (YAZ-5020, the progress bar) is each answer of the session, in order; ⌘Z takes the last one back. The
+ * bar's whole is the cards the session started with, plus any it took since. A new session (or the Inbox tab closed)
+ * starts it empty.
  */
+
+/** Which cards of the session show (YAZ-5017). */
+export type CardFilter = 'all' | 'due' | 'new'
+
+/** Whether `card` shows under `filter`: due = reviewed before (due now), new = never reviewed. */
+export const matchesFilter = (card: DueCard, filter: CardFilter): boolean => filter === 'all' || (filter === 'new') === card.isNew
 
 /** What a session reviews: the vault (nothing), a folder (root-relative, "Review this folder") or one page (its absolute path, "Review this page"). */
 export interface CardReviewScope {
@@ -51,6 +66,16 @@ export interface CardReviewSession {
   /** Each button's outcome, fixed by `showAnswers` for the card showing (in button order); null until then. */
   answers: CardAnswer[] | null
   canUndo: boolean
+  /** The filter on show (YAZ-5017). */
+  filter: CardFilter
+  /** The cards left in the session under each filter: the menu's counts. */
+  counts: Record<CardFilter, number>
+  /** Where the cards come from, as a quiet path (YAZ-5017): the vault's name; the folder's parts; the page's name. */
+  from: string[]
+  /** Each answer of the session, in order (YAZ-5020): a Forgot ('again') or a Remembered (any other). */
+  answered: CardRating[]
+  /** The progress bar's whole (YAZ-5020): the cards the session started with, plus any it took since. */
+  size: number
 }
 
 export interface CardReviewApi {
@@ -78,6 +103,8 @@ export interface CardReviewApi {
   move: (delta: -1 | 1) => void
   /** The Inbox ⋯'s Turn review off (YAZ-5004): `off` on the card showing's line, and the card out of the queue. */
   turnOff: () => Promise<void>
+  /** All cards, Due today or New cards (YAZ-5017): which of the session's cards show. */
+  setFilter: (filter: CardFilter) => void
 }
 
 /** How many answers ⌘Z can take back in one session. */
@@ -95,6 +122,12 @@ interface Session {
   turn: number
   /** Each answer: the card, its review, and the place its `next` had (-1: none), so the undo puts the file back as it was. */
   undo: { card: DueCard; review: CardReview; next: number }[]
+  /** YAZ-5017: which cards show; `at` is always a card that matches it, or past the end when none does. */
+  filter: CardFilter
+  /** The cards with reviews and the new cards at start: each filter's "of 12". */
+  totals: { due: number; new: number }
+  /** YAZ-5020: each answer, in order (the progress bar); ⌘Z takes the last back. */
+  answered: CardRating[]
 }
 
 interface IndexSource {
@@ -105,16 +138,37 @@ interface IndexSource {
   subscribe(listener: () => void): () => void
 }
 
+/**
+ * `at` on a card the filter shows (YAZ-5017): this one, else the next one, else the first; past the end when none
+ * does (the done screen).
+ */
+const fitted = (s: Session): Session => {
+  const ok = (i: number) => s.queue[i] !== undefined && matchesFilter(s.queue[i], s.filter)
+  if (ok(s.at)) return s
+  let at = s.queue.findIndex((c, i) => i > s.at && matchesFilter(c, s.filter))
+  if (at === -1) at = s.queue.findIndex((c) => matchesFilter(c, s.filter))
+  return { ...s, at: at === -1 ? s.queue.length : at }
+}
+/** The place of the card the filter shows next before (-1) or after (+1) `at`; -1 when there is none. */
+const stepFrom = (s: Session, delta: -1 | 1): number => {
+  for (let i = s.at + delta; i >= 0 && i < s.queue.length; i += delta) if (matchesFilter(s.queue[i], s.filter)) return i
+  return -1
+}
+const countOf = (queue: readonly DueCard[]): Record<CardFilter, number> => {
+  const fresh = queue.filter((c) => c.isNew).length
+  return { all: queue.length, due: queue.length - fresh, new: fresh }
+}
+
 /** The session with the card at `at` gone from its queue (answered elsewhere, its page gone, review off): the next one shows. */
 const without = (s: Session, at: number): Session => {
   const queue = [...s.queue.slice(0, at), ...s.queue.slice(at + 1)]
-  return { ...s, queue, at: at < queue.length ? at : 0, turn: s.turn + 1 }
+  return fitted({ ...s, queue, at: at < queue.length ? at : 0, turn: s.turn + 1 })
 }
 const reason = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 const sameCard = (a: DueCard, b: DueCard): boolean => a.path === b.path && a.id === b.id
 const titleOf = (records: readonly IndexRecord[], path: string): string => records.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '')
 
-export function useCardReview(root: string | null, source: IndexSource, settings: ReviewSettings, onNotice: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void): CardReviewApi {
+export function useCardReview(root: string | null, source: IndexSource, settings: ReviewSettings, onNotice: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void, vaultName?: string | null): CardReviewApi {
   const records = useSyncExternalStore(source.subscribe, () => source.records)
   const [session, setSession] = useState<Session | null>(null)
   // The card showing, read from its page, and its fixed answers: each for one turn (`turnKey`).
@@ -192,7 +246,9 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       if (!settings.enabled) return
       const queue = cardQueue(records, settings, Date.now(), scope.folder, scope.page, source.letters)
       const label = scope.page !== undefined ? titleOf(records, scope.page) : scope.folder ? folderTitle(source.folders, `${root}/${scope.folder}`) : 'Inbox'
-      setSession((s) => ({ label, scope, queue, at: 0, total: queue.length, turn: (s?.turn ?? 0) + 1, undo: [] }))
+      const { due, new: fresh } = countOf(queue)
+      // A new scope starts on All cards (YAZ-5017), with an empty bar (YAZ-5020).
+      setSession((s) => ({ label, scope, queue, at: 0, total: queue.length, turn: (s?.turn ?? 0) + 1, undo: [], filter: 'all', totals: { due, new: fresh }, answered: [] }))
     },
     [root, source],
   )
@@ -233,7 +289,8 @@ export function useCardReview(root: string | null, source: IndexSource, settings
         const undo = written !== 'gone' ? [...s.undo, { card, review: chosen.review, next: written.next }].slice(-UNDO_DEPTH) : s.undo
         // The cards before (passed over with →) stay; the ones after are settled, as the head was before ← →.
         const queue = [...s.queue.slice(0, s.at), ...settle(s.queue.slice(s.at + 1), s.scope)]
-        return { ...s, queue, at: s.at < queue.length ? s.at : 0, turn: s.turn + 1, undo }
+        const answered = written !== 'gone' ? [...s.answered, rating] : s.answered
+        return fitted({ ...s, queue, at: s.at < queue.length ? s.at : 0, turn: s.turn + 1, undo, answered })
       })
     },
     [fixAnswers, onNotice, settle],
@@ -251,7 +308,13 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       },
     )
     busy.current = false
-    if (undone) setSession((s) => (s === null || s.undo.at(-1) !== last ? s : { ...s, queue: [last.card, ...s.queue.filter((c) => !sameCard(c, last.card))], at: 0, turn: s.turn + 1, undo: s.undo.slice(0, -1) }))
+    // The card shows again, also under a filter that would hide it: then All cards (YAZ-5017). Its answer leaves the bar (YAZ-5020).
+    if (undone)
+      setSession((s) =>
+        s === null || s.undo.at(-1) !== last
+          ? s
+          : { ...s, queue: [last.card, ...s.queue.filter((c) => !sameCard(c, last.card))], at: 0, turn: s.turn + 1, undo: s.undo.slice(0, -1), filter: matchesFilter(last.card, s.filter) ? s.filter : 'all', answered: s.answered.slice(0, -1) },
+      )
   }, [onNotice])
 
   const close = useCallback(() => setSession(null), [])
@@ -302,9 +365,13 @@ export function useCardReview(root: string | null, source: IndexSource, settings
   const move = useCallback((delta: -1 | 1) => {
     setSession((s) => {
       if (s === null) return s
-      const at = s.at + delta
-      return at < 0 || at >= s.queue.length ? s : { ...s, at, turn: s.turn + 1 }
+      const at = stepFrom(s, delta)
+      return at === -1 ? s : { ...s, at, turn: s.turn + 1 }
     })
+  }, [])
+
+  const setFilter = useCallback((filter: CardFilter) => {
+    setSession((s) => (s === null || s.filter === filter ? s : fitted({ ...s, filter, at: 0, turn: s.turn + 1 })))
   }, [])
 
   const turnOff = useCallback(async () => {
@@ -324,18 +391,29 @@ export function useCardReview(root: string | null, source: IndexSource, settings
   const shownSession = useMemo<CardReviewSession | null>(() => {
     if (session === null) return null
     const card = session.queue[session.at]
+    const { filter, queue, totals, scope } = session
+    const counts = countOf(queue)
+    // "3 of 12" under the filter (YAZ-5017): its cards at start, those gone since, and the place among those left.
+    const total = filter === 'all' ? totals.due + totals.new : totals[filter]
+    const before = queue.slice(0, session.at).filter((c) => matchesFilter(c, filter)).length
+    const from = scope.page !== undefined ? [session.label] : scope.folder ? scope.folder.split('/').filter(Boolean) : [vaultName ?? (root === null ? 'Inbox' : storage.vaultName(root))]
     return {
       label: session.label,
-      scope: session.scope.page !== undefined ? 'page' : session.scope.folder ? 'folder' : 'vault',
+      scope: scope.page !== undefined ? 'page' : scope.folder ? 'folder' : 'vault',
       card: card === undefined ? null : { ...card, page: loaded?.key === turnKey ? loaded.page : null },
-      position: Math.min(session.total - session.queue.length + 1 + session.at, session.total),
-      total: session.total,
-      canBack: session.at > 0,
-      canNext: session.at < session.queue.length - 1,
+      position: Math.max(1, Math.min(total - counts[filter] + 1 + before, total)),
+      total,
+      canBack: stepFrom(session, -1) !== -1,
+      canNext: stepFrom(session, 1) !== -1,
       answers: fixed?.key === turnKey ? fixed.answers : null,
       canUndo: session.undo.length > 0,
+      filter,
+      counts,
+      from,
+      answered: session.answered,
+      size: Math.max(session.total, session.answered.length + queue.length),
     }
-  }, [session, loaded, fixed, turnKey])
+  }, [session, loaded, fixed, turnKey, root, vaultName])
 
-  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, move, turnOff }
+  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, move, turnOff, setFilter }
 }

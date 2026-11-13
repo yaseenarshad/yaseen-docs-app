@@ -137,7 +137,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   useEffect(() => wikilinks.setLook(linkPills.pills, name), [wikilinks, linkPills.pills, name])
   // Note card review (YAZ-4967): the Inbox count and the vault's review session, read off the SAME
   // index source the wikilinks use. The window shows one session at a time; `App` sees to that.
-  const review = useCardReview(root, wikilinks, reviewSettings.settings, notify)
+  const review = useCardReview(root, wikilinks, reviewSettings.settings, notify, name)
 
   // External rename/move resilience (Links E1c, GRO-2242 — locked: confirm-first, NEVER
   // automatic, never a dialog): ONE detector per vault, fed by the cold-start reconcile diff and

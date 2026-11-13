@@ -5583,9 +5583,8 @@ describe('App: the note card flow (YAZ-4962)', () => {
     expect(captured.sidebar?.dueCount).toBe(1)
     act(() => captured.sidebar?.onOpenInbox())
     await vi.waitFor(() => expect(el.querySelector('.note-card-inbox .note-card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
-    // The head: the ID first and the page; the card's first line is not said again above the card.
+    // The head: the page and the ID in brackets (YAZ-5012); the card's first line is not said again above the card.
     expect(el.querySelector('.note-card-inbox .explore__title')).toBeNull()
-    // YAZ-5012: the ID in brackets, after the page name.
     expect(el.querySelector('.note-card-inbox .note-card__id')?.textContent).toBe('(WIKI-9)')
     expect(el.querySelector('.note-card-inbox__place')?.textContent).toBe('1 of 1')
     // The page under the Inbox stays where it was: its tab layer is still mounted.
