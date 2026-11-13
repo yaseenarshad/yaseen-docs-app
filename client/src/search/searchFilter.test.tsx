@@ -82,6 +82,12 @@ describe('filterTest (YAZ-3511 D13, D14, D16)', () => {
     expect(keep(row('/v/new.md'))).toBe(false)
   })
 
+  it('YAZ-5037: a card in a page has its page`s time', () => {
+    const keep = filterTest({ type: 'cards', time: 'today' }, timeOf, timeStart('today', NOW))!
+    expect(keep({ ...row('/v/new.md#GEO-1', 'file', true), page: '/v/new.md' })).toBe(true)
+    expect(keep({ ...row('/v/old.md#GEO-2', 'file', true), page: '/v/old.md' })).toBe(false)
+  })
+
   it('a type alone reads no time', () => {
     const read = vi.fn(() => 0)
     expect(filterTest({ type: 'pages', time: 'any' }, read, undefined)!(row('/v/a.md'))).toBe(true)

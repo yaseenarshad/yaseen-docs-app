@@ -1,7 +1,9 @@
-import { memo, type CSSProperties } from 'react'
+import { Fragment, memo, type CSSProperties, type ReactElement } from 'react'
 import type { TabSort, TreeNode } from '@shared/types'
 import type { Needle } from '../links/completion'
 import { marked } from '../search/marked'
+import { CardIcon } from '../search/CardIcon'
+import type { SearchCandidate } from '../search/searchCandidates'
 import type { PathIds } from '../search/showIds'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { CreateInline } from './CreateInline'
@@ -314,6 +316,13 @@ interface TreeProps {
    * matched folder — is drawn dim. Without it a tree draws, and re-renders, exactly as before.
    */
   marks?: TreeMarks
+  /**
+   * Search only (YAZ-5037): the cards inside pages that the search found, by the page's path. Each is a row right under
+   * its page, one level in, with the card icon: no row on disk (no drag, no menu); a click opens the page at the card
+   * (`onOpenCard`, ⌘ in a background tab). Its highlight is the search's, by the card row's own path (`cardRowPath`).
+   */
+  cardRows?: ReadonlyMap<string, readonly SearchCandidate[]>
+  onOpenCard?: (row: SearchCandidate, background: boolean) => void
   /** The way to the new tab page from a row of Files, Focus or Favorites (YAZ-2663 D8): → on a file row asks it. An open folder's → goes to its first row since YAZ-3440 D12. The top level's alone. */
   onLeaveToPage?: () => boolean
   /** The top row this level stands under (YAZ-2845 D1); none at the top level. It tells the copies of a row that shows twice apart. */
@@ -386,6 +395,8 @@ function TreeLevel({
   scores,
   keepTop,
   marks,
+  cardRows,
+  onOpenCard,
   onLeaveToPage,
   top,
   onHoverFile,
@@ -396,7 +407,7 @@ function TreeLevel({
   shift = 0,
 }: TreeProps) {
   const level = depth + shift
-  const recurse = { shift, vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, pageRows, onOpenPage, titles, ids, marks, onHoverFile, tooLarge, shareBadges, icons, sort, dates, scores }
+  const recurse = { shift, vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, pageRows, onOpenPage, titles, ids, marks, cardRows, onOpenCard, onHoverFile, tooLarge, shareBadges, icons, sort, dates, scores }
   /** A board or note row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
     onHoverFile === undefined || !hasHoverPreview(path) ? {} : {
@@ -480,6 +491,37 @@ function TreeLevel({
     const id = marks?.ids?.get(path)
     return id === undefined ? null : <>{marked(id, marks?.idMarks?.get(path))} — </>
   }
+  /** A page row and, right under it, the rows of its cards that Search found (YAZ-5037, `cardRows`); any other row as it is. */
+  const withCards = (node: TreeNode, row: ReactElement): ReactElement => {
+    const cards = node.type === 'file' ? cardRows?.get(node.path) : undefined
+    if (cards === undefined) return row
+    return (
+      <Fragment key={node.path}>
+        {row}
+        {cards.map((card) => (
+          <li key={card.path} role="treeitem" aria-selected={selection.paths.has(card.path)}>
+            <button
+              type="button"
+              className={`tree__row tree__row--file tree__row--card${selection.paths.has(card.path) ? ' tree__row--selected' : ''}`}
+              style={{ paddingLeft: 8 + level * 14 + 28 }}
+              title={card.name}
+              onClick={(e) => {
+                selection.set(card.path)
+                onOpenCard?.(card, e.metaKey)
+              }}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              <span className="tree__label">
+                <CardIcon />
+                {idFor(card.path)}
+                {marked(card.name, needleFor(card.path))}
+              </span>
+            </button>
+          </li>
+        ))}
+      </Fragment>
+    )
+  }
   return (
     // The arrows, Home and End are the whole tree's, taken once at its top (YAZ-2662 D11, YAZ-3440 D12) — not a search tree's, whose keys are the search bar's.
     // A held Enter is stopped there too, in each tree.
@@ -514,7 +556,7 @@ function TreeLevel({
         </li>
       )}
       {rows.map((node) =>
-        node.type === 'dir' ? (
+        withCards(node, node.type === 'dir' ? (
           // `data-renaming`: the row is the input, so app.css draws no coloured chevron on it (YAZ-3309 D7, bug YAZ-3342).
           <li key={node.path} role="treeitem" aria-expanded={expanded.has(foldOf(node))} aria-selected={isActive(node) || isSelected(node)} data-renaming={renamesHere(node) ? '' : undefined}>
             {renaming !== null && renaming.path === node.path && inCopy(renaming.top, node) ? (
@@ -699,7 +741,7 @@ function TreeLevel({
             {/* A New … picked on this pinned row (YAZ-4782): its name field right under it, where the item will stand. */}
             {pending !== null && placedUnder(node) && <PlacedCreate pending={pending} level={level} />}
           </li>
-        ),
+        )),
       )}
     </ul>
   )

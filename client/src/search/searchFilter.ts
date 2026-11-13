@@ -82,7 +82,8 @@ export function timeStart(time: SearchTime, now: number): number | undefined {
  */
 export function filterTest(filter: SearchFilter, timeOf: (path: string) => number, from: number | undefined): ((row: SearchCandidate) => boolean) | undefined {
   if (!filterOn(filter)) return undefined
-  return (row) => (filter.type === 'all' || typeOf(row) === filter.type) && (from === undefined || timeOf(row.path) >= from)
+  // A card in a page (YAZ-5037) has its page's time.
+  return (row) => (filter.type === 'all' || typeOf(row) === filter.type) && (from === undefined || timeOf(row.page ?? row.path) >= from)
 }
 
 /** No times: a search with no time range reads none. */

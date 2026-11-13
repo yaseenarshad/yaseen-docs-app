@@ -44,9 +44,17 @@ export interface SearchCandidate {
   was?: readonly string[]
   /** A text row of the explore search (YAZ-2571, `explore/exploreRows.ts`): the matched tag or frontmatter value, shown under the title. */
   snippet?: string
-  /** A card (YAZ-5037): a card file's row, while its vault's Review is on. The Cards type (`typeOf`) and the card icon read it. */
+  /** A card (YAZ-5037): a card file's row, or a card's in a page, while its vault's Review is on. The Cards type (`typeOf`) and the card icon read it. */
   card?: true
+  /**
+   * A card inside a page (YAZ-5037): the page's absolute path. Its row's own `path` is `cardRowPath(page, id)`, so each
+   * row keyed by path stays one; it opens the page at the card, and it stands under its page in the search tree.
+   */
+  page?: string
 }
+
+/** A card-in-a-page row's own path (YAZ-5037): its page's, `#`, its ID. No file has it: it keys the row, never a read. */
+export const cardRowPath = (page: string, id: string): string => `${page}#${id}`
 
 /** Result cap for title search — scrollable results, not the `[[` picker's MAX_SUGGESTIONS popup. The sidebar says so when it is reached (🔒 D6, YAZ-2620). */
 export const SEARCH_CAP = 50
@@ -61,7 +69,9 @@ export const SEARCH_CAP = 50
  * (`IndexResponse.letters`): the ones it had before ride on each row that has an id.
  *
  * `cards`: the vault's Review is on (YAZ-5037). A card file's row is then a card (`card`), and its card's ID finds it,
- * the file's ID; with Review off it is a page's row, as before. One row either way.
+ * the file's ID; with Review off it is a page's row, as before. One row either way. And each card INSIDE a page that
+ * has an ID is one more row (YAZ-5047 pick 3), off the index's `cards` (its title and ID, no file read): found by its
+ * title, or by its exact ID; a card with no title reads as its ID.
  */
 export function searchCandidates(records: readonly IndexRecord[], letters: readonly string[] = [], cards = false): SearchCandidate[] {
   const was = lettersBefore(letters)
@@ -72,6 +82,13 @@ export function searchCandidates(records: readonly IndexRecord[], letters: reado
     const head = card ? { ...row(r.title, r.title), id: cardFileId(r) ?? r.id, ...was, card: true as const } : { ...row(r.title, r.title), id: r.id, ...was }
     const rows = [head, ...aliases.map((alias) => row(alias, `${alias} — ${r.title}`))]
     if (ownFileName(r)) rows.push(row(r.basename, `${r.basename} — ${r.title}`))
+    if (cards && !card && r.cards !== undefined) {
+      for (const c of r.cards) {
+        if (c.id === null) continue
+        const name = c.title ?? c.id
+        rows.push({ kind: 'file', name, lower: name.toLowerCase(), label: name, path: cardRowPath(r.path, c.id), folder: r.folder, id: c.id, ...was, card: true, page: r.path })
+      }
+    }
     return rows
   })
 }

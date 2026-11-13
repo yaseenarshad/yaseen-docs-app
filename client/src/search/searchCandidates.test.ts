@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
-import { SEARCH_CAP, fileCandidates, folderCandidates, idQuery, numberRows, searchCandidates, searchRows, searchTitles } from './searchCandidates'
+import { SEARCH_CAP, cardRowPath, fileCandidates, folderCandidates, idQuery, numberRows, searchCandidates, searchRows, searchTitles } from './searchCandidates'
 import { idNeedle } from './marked'
 
 const rec = (path: string, aliases: string[] = [], title?: string): IndexRecord => {
@@ -513,5 +513,41 @@ describe('YAZ-5037 card files in search (YAZ-5047)', () => {
     const turned = cardFile('/vault/capital-of-france-geo-140.md', 'Capital of France', 'GEO-140', 'GEO-7')
     expect(searchCandidates([turned], [], true)[0].id).toBe('GEO-140')
     expect(searchCandidates([turned], [], false)[0].id).toBe('GEO-7')
+  })
+})
+
+describe('YAZ-5037 cards inside pages in search (YAZ-5047 pick 3)', () => {
+  const page: IndexRecord = {
+    ...rec('/vault/geo/Geography.md'),
+    cards: [
+      { id: 'GEO-140', off: false, next: false, reviews: [], title: 'Capital of France' },
+      { id: 'GEO-141', off: true, next: false, reviews: [], title: 'River of Paris' },
+      { id: null, off: false, next: false, reviews: [], title: 'Not swept yet' },
+    ],
+  }
+
+  it('Review on: one row per card with an ID, under its title, from the index alone; its own path (the page`s, `#`, the ID), its page, a Card', () => {
+    const rows = searchCandidates([page], [], true)
+    expect(rows.slice(1)).toEqual([
+      { kind: 'file', name: 'Capital of France', lower: 'capital of france', label: 'Capital of France', path: '/vault/geo/Geography.md#GEO-140', folder: 'geo', id: 'GEO-140', card: true, page: '/vault/geo/Geography.md' },
+      { kind: 'file', name: 'River of Paris', lower: 'river of paris', label: 'River of Paris', path: '/vault/geo/Geography.md#GEO-141', folder: 'geo', id: 'GEO-141', card: true, page: '/vault/geo/Geography.md' },
+    ])
+    expect(cardRowPath('/vault/geo/Geography.md', 'GEO-140')).toBe(rows[1].path)
+  })
+
+  it('Review off: no card row', () => {
+    expect(searchCandidates([page], [], false)).toHaveLength(1)
+  })
+
+  it('a card is found by its title next to pages, and by its exact ID first', () => {
+    const rows = searchCandidates([page, rec('/vault/Capitals.md')], [], true)
+    expect(searchRows(rows, 'capital').map((c) => c.label).sort()).toEqual(['Capital of France', 'Capitals'])
+    expect(searchRows(rows, 'geo-140').map((c) => c.label)[0]).toBe('GEO-140 — Capital of France')
+  })
+
+  it('a card with no title is found by its ID, and reads as it', () => {
+    const rows = searchCandidates([{ ...page, cards: [{ id: 'GEO-9', off: false, next: false, reviews: [] }] }], [], true)
+    expect(rows[1].label).toBe('GEO-9')
+    expect(searchRows(rows, 'geo-9').map((c) => c.path)).toEqual(['/vault/geo/Geography.md#GEO-9'])
   })
 })

@@ -17,7 +17,8 @@ import { countLinkReferences, linkingNotes } from '../links/renameLinks'
 import { addShortcut, removeShortcut, type Move } from '../links/shortcuts'
 import type { MovedGesture } from '../lib/moveHistory'
 import { ancestorDirs, favoriteRoots, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile } from '../lib/treeState'
-import { SEARCH_CAP } from '../search/searchCandidates'
+import { SEARCH_CAP, type SearchCandidate } from '../search/searchCandidates'
+import { landOnCard } from '../editor/noteCard/noteCardOpen'
 import { filterOn, filterSection, NO_FILTER, typeChip, typeFlyout, type SearchFilter, type SearchType } from '../search/searchFilter'
 import { useReviewOnRoots } from '../review/useReviewSettings'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
@@ -958,6 +959,21 @@ export function Sidebar({
       if (row.path === activeFile) focusOpenDocument()
     }
   }
+  /**
+   * A card inside a page, from Search (YAZ-5037): its page opens landed on the card (`landOnCard`, as a card link's
+   * ⌘-click does); ⌘ is a background tab, and Shift shows the page in Files.
+   */
+  const openSearchCard = (row: SearchCandidate, background: boolean, reveal = false) => {
+    const page = row.page ?? row.path
+    if (!background && reveal) return onRevealInFiles(page, true)
+    if (row.id !== undefined) landOnCard(page, row.id)
+    if (background) onOpenFileBackground(page)
+    else onOpenFile(page)
+  }
+  // The search tree's door to it, the same function for the tree's life (YAZ-2194: a render that changes nothing for the search re-renders no row).
+  const searchCardNow = useRef(openSearchCard)
+  searchCardNow.current = openSearchCard
+  const openTreeCard = useCallback((row: SearchCandidate, background: boolean) => searchCardNow.current(row, background), [])
   // The search covers every vault of the window (YAZ-2602 R2): each one's index, read by its own
   // watcher, its own folders and its own files that are no notes. The tree it cuts is the one Files
   // draws — the forest, with two or more vaults (A9).
@@ -1101,7 +1117,7 @@ export function Sidebar({
       keepsOrder(depth, searchSort, { keepTop: top, vaults: vaultRows.size > 0 }) ? nodes : sortLevel(nodes, searchSort, shownLabel(titles), scores),
     [vaultRows, searchSort, titles],
   )
-  const { searchInput, query, results, typed, found, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, searchLevel, searchSort.by === 'best', searchFilter, setSearchFilter, pendingSearchClear)
+  const { searchInput, query, results, typed, found, cardRows, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, searchLevel, searchSort.by === 'best', searchFilter, setSearchFilter, pendingSearchClear, openSearchCard)
   // A new query moves the results under a still pointer: the panel of the row that was there goes (YAZ-3403).
   useEffect(() => closePreview(), [query, closePreview])
   // The row whose menu is open wears the selected style beside the highlight, as on Files (S30): a
@@ -1722,7 +1738,7 @@ export function Sidebar({
     dates: sortedTab !== null && settings.rowDates[sortedTab],
   }
   // A search tree's own (YAZ-2620): its folds, its highlight and its marks; nothing in it creates, renames or drags. Its IDs are "Show IDs in search"'s (`marks`), not the files list's.
-  const searchTreeProps = { ...treeProps, ids: undefined, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, pageRows: NO_PAGE_ROWS, marks, sort: searchSort, dates: settings.rowDates.search, scores }
+  const searchTreeProps = { ...treeProps, ids: undefined, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, pageRows: NO_PAGE_ROWS, marks, cardRows, onOpenCard: openTreeCard, sort: searchSort, dates: settings.rowDates.search, scores }
 
   // A vault that could not be read says so on every tab: one line per vault, its own (YAZ-2602).
   const errorLines = errors.map((message, at) => (

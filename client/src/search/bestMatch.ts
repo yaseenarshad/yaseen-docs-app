@@ -29,7 +29,11 @@ export function bestScores(results: readonly SearchCandidate[], query: string, t
   const digits = idQuery(query)
   const scoreOf = (r: SearchCandidate): number => (digits !== null && r.id !== undefined && r.label.startsWith(`${r.id} — `) ? (r.id.endsWith(`-${digits}`) ? 0 : 1) : matchScore(r, needle, holds))
   const own = new Map<string, number>()
-  for (const r of results) own.set(r.path, Math.min(own.get(r.path) ?? Infinity, scoreOf(r)))
+  // A card in a page (YAZ-5037) scores for its page too, which the tree draws it under.
+  for (const r of results) {
+    own.set(r.path, Math.min(own.get(r.path) ?? Infinity, scoreOf(r)))
+    if (r.page !== undefined) own.set(r.page, Math.min(own.get(r.page) ?? Infinity, scoreOf(r)))
+  }
   const out = new Map<string, number>()
   const score = (node: TreeNode): number => {
     let best = own.get(node.path) ?? Infinity

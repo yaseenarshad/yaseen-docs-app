@@ -20,6 +20,7 @@ import { searchTree } from '../../search/searchTree'
 import { rootOfPath } from '@shared/types'
 import { shownId } from '../../search/showIds'
 import { useSearchResults, type SearchVault } from '../../search/useSearchResults'
+import type { SearchCandidate } from '../../search/searchCandidates'
 import type { ListFold } from '../listFold'
 import type { TreeMarks, TreeSelection } from '../Tree'
 
@@ -76,6 +77,9 @@ const NO_FOLDS: ReadonlySet<string> = new Set()
 const NO_CURSOR: ReadonlySet<string> = new Set()
 /** No match (YAZ-3511 D2): no cut, and one object, so a save while Search is off screen walks nothing and the memos below keep their values. */
 const NO_FOUND = { top: [] as TreeNode[], rest: [] as TreeNode[], open: new Set<string>(), order: [] as string[] }
+/** No card inside a page among the matches (YAZ-5037): one object, so the tree's levels see nothing new. */
+const NO_CARD_ROWS: ReadonlyMap<string, readonly SearchCandidate[]> = new Map()
+const NO_CARDS: { rows: ReadonlyMap<string, readonly SearchCandidate[]>; nodes: ReadonlyMap<string, TreeNode> } = { rows: NO_CARD_ROWS, nodes: new Map() }
 /** A search has no multi-select (S29, YAZ-2620): shift-click on its tree toggles nothing. */
 const noToggle = (): void => undefined
 
@@ -107,6 +111,8 @@ export function useSidebarSearch(
   onFilter: (next: SearchFilter) => void,
   /** With the focus flag: a NEW search (YAZ-2663 D10). A new tab (⌘T) asks it, and the bar is emptied; ⌘K does not, and keeps its text. */
   pendingSearchClear = false,
+  /** Enter on a card inside a page (YAZ-5037): its page opens at the card; `background` is ⌘, and `reveal` is Shift. */
+  openCard: (row: SearchCandidate, background: boolean, reveal: boolean) => void = () => undefined,
 ) {
   // The search bar's query (YAZ-801). It lives HERE rather than in the bar because the bar is
   // drawn on the Search tab only (YAZ-2638 D2) and the query stays while a different tab shows;
@@ -133,6 +139,26 @@ export function useSidebarSearch(
   // like any folder (YAZ-2602 A9): no row of the ranking is a vault, so it is never a match, and it
   // stands open over its matches whatever its fold on the Files tab.
   const hits = useMemo(() => new Set(results.map((r) => r.path)), [results])
+  // The cards inside pages among the matches (YAZ-5037): each stands right under its page (`Tree`'s `cardRows`), so the
+  // cut keeps the page as a parent of a match — drawn dim unless it matched itself. Each card is a stop of the keys, a
+  // node of its own row's path. Built once per ranking, from the matches alone (at most SEARCH_CAP).
+  const cards = useMemo(() => {
+    let rows: Map<string, SearchCandidate[]> | null = null
+    const nodes = new Map<string, TreeNode>()
+    for (const r of results) {
+      if (r.page === undefined) continue
+      rows ??= new Map()
+      const held = rows.get(r.page)
+      if (held === undefined) rows.set(r.page, [r])
+      else held.push(r)
+      nodes.set(r.path, { type: 'file', name: r.name, path: r.path, size: 0, mtime: 0, kind: 'markdown' })
+    }
+    return rows === null ? NO_CARDS : { rows, nodes }
+  }, [results])
+  const cardOf = useMemo(() => new Map([...cards.rows.values()].flat().map((r) => [r.path, r])), [cards])
+  const cut = useMemo(() => (cards === NO_CARDS ? hits : new Set([...hits, ...cards.rows.keys()])), [hits, cards])
+  /** The file the preview panel shows for a stop: a card's page (YAZ-5037), else the row itself. */
+  const pageOf = (path: string): string => cardOf.get(path)?.page ?? path
   // A folder of `full` shows ALL that it holds (YAZ-2662 D6): Space or → put it there, and it lasts
   // as long as its query, as a fold does.
   const [full, setFull] = useState<ReadonlySet<string>>(NO_FOLDS)
@@ -144,11 +170,11 @@ export function useSidebarSearch(
   // cut tree (S21). A row is in one group only, so the two share one set of open folders and one order.
   const found = useMemo(() => {
     // No match, no cut (YAZ-3511 D2): a save that patches one time while Search is not on screen walks no tree here.
-    if (hits.size === 0) return NO_FOUND
-    const top = searchTree(pinned, hits, full)
-    const rest = searchTree(withoutPaths(tree, new Set(top.nodes.map((node) => node.path))), hits, full)
+    if (cut.size === 0) return NO_FOUND
+    const top = searchTree(pinned, cut, full)
+    const rest = searchTree(withoutPaths(tree, new Set(top.nodes.map((node) => node.path))), cut, full)
     return { top: top.nodes, rest: rest.nodes, open: new Set([...top.open, ...rest.open]), order: [...top.order, ...rest.order] }
-  }, [tree, pinned, hits, full])
+  }, [tree, pinned, cut, full])
   // What that tree marks (🔒 D5): the matches, and the typed text as the matcher reads it (S40).
   // And the full ID of each row found by its number (YAZ-2677 S70): `searchRows` puts it in front of that row's label.
   // "Show IDs in search" (YAZ-4940): with Always, every row's ID; with "Only when it matches", the rows found by their ID.
@@ -192,13 +218,15 @@ export function useSidebarSearch(
     const walk = (nodes: readonly TreeNode[], depth: number, all: boolean, top: boolean): void => {
       for (const node of level(nodes, depth, top, scores)) {
         if (all || hits.has(node.path)) shown.push(node)
+        // A page's cards (YAZ-5037), right under it as the tree draws them.
+        for (const card of cards.rows.get(node.path) ?? []) shown.push(cards.nodes.get(card.path) as TreeNode)
         if (node.type === 'dir' && searchOpen.has(node.path)) walk(node.children, depth + 1, all || full.has(node.path), false)
       }
     }
     walk(found.top, 0, false, true)
     walk(found.rest, 0, false, false)
     return shown
-  }, [found, searchOpen, hits, full, level, scores])
+  }, [found, searchOpen, hits, cards, full, level, scores])
   // Every stop of the cut (`searchTree`'s `order`) in the order on screen, the rows below a closed folder too: where the
   // highlight goes when its row folds away (S21). The cut's own order is the walk's, not the Search sort's (YAZ-3511 D4).
   const order = useMemo(() => {
@@ -207,13 +235,14 @@ export function useSidebarSearch(
     const walk = (nodes: readonly TreeNode[], depth: number, top: boolean): void => {
       for (const node of level(nodes, depth, top, scores)) {
         if (stops.has(node.path)) out.push(node.path)
+        for (const card of cards.rows.get(node.path) ?? []) out.push(card.path)
         if (node.type === 'dir') walk(node.children, depth + 1, false)
       }
     }
     walk(found.top, 0, true)
     walk(found.rest, 0, false)
     return out
-  }, [found, level, scores])
+  }, [found, cards, level, scores])
   // The highlight is held by its PATH (`null`: nobody moved it yet), so a fold that moves rows in or
   // out above it leaves it on its match. Unmoved, it is on the BEST match — the ranking's first, a
   // pinned match when there is one (YAZ-2662 S23) — wherever the tree draws it (S19); once its match
@@ -241,7 +270,8 @@ export function useSidebarSearch(
   // With the preview on, the panel follows the highlight (S32): a file shows `PREVIEW_FOLLOW_MS`
   // after the last move, and the earlier file stays until then. On a folder no panel is drawn, at once (S38).
   const followed = previewing ? rows[sel] : undefined
-  const followedPath = followed?.path
+  // A card's stop shows its page (YAZ-5037).
+  const followedPath = followed === undefined ? undefined : pageOf(followed.path)
   const followsFile = followed?.type === 'file'
   useEffect(() => {
     if (followedPath === undefined || followedPath === previewPath) return
@@ -317,7 +347,9 @@ export function useSidebarSearch(
   // Enter. Opening leaves the results up.
   const onKeys = resultKeys(rows, sel, (at) => setPicked(rows[at].path), (row, e) => {
     if (previewing) stopPreview() // Enter does its own work and closes the preview panel (YAZ-2662 S36)
-    activate(row, e.metaKey, e.shiftKey)
+    const card = cardOf.get(row.path)
+    if (card !== undefined) openCard(card, e.metaKey, e.shiftKey)
+    else activate(row, e.metaKey, e.shiftKey)
   })
 
   // The list keys (YAZ-2662 D7): Space, → and ← act on the highlight once ↑ or ↓ moved it. Until
@@ -334,7 +366,7 @@ export function useSidebarSearch(
     // Space on a file shows the preview panel on it, at once, and Space again closes the panel (D5, S33).
     if (row?.type === 'file' && e.key === ' ') {
       if (previewing) stopPreview()
-      else onPreview(row.path)
+      else onPreview(pageOf(row.path))
       e.preventDefault()
       return true
     }
@@ -383,5 +415,5 @@ export function useSidebarSearch(
   // and it is on the first row. The bar then hands ↑ to the tabs of the panel. The FIRST ↑ on a
   // highlight that nobody moved is still the search's: it makes the list keys work (YAZ-2662 D7).
   const atTop = rows.length === 0 || (picked !== null && sel === 0)
-  return { query, searchInput, results, typed, found, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop }
+  return { query, searchInput, results, typed, found, cardRows: cards.rows, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop }
 }

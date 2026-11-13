@@ -167,7 +167,8 @@ export function useSearchResults(vaults: readonly SearchVault[], query: string, 
   const candidates = useSearchCandidates(vaults, activated)
   // The rows that rank first (YAZ-2662 D4): the path of each row that is a pinned item or is inside
   // one. Built when the rows or a list changes, so a keystroke pays one look in it for each match (R1).
-  const first = useMemo(() => (pinned.size === 0 ? pinned : new Set(candidates.flatMap((c) => (atOrBelow(pinned, c.path) ? [c.path] : [])))), [candidates, pinned])
+  // A card in a page (YAZ-5037) is where its page is.
+  const first = useMemo(() => (pinned.size === 0 ? pinned : new Set(candidates.flatMap((c) => (atOrBelow(pinned, c.page ?? c.path) ? [c.path] : [])))), [candidates, pinned])
   // The rows the filters keep, built when the rows or the filters change, not on each keystroke (D16).
   const kept = useMemo(() => (keep === undefined ? candidates : candidates.filter(keep)), [candidates, keep])
   // An empty query matches EVERYTHING through the shared matcher (`indexOf('')` is 0), so the

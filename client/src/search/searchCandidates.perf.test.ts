@@ -105,6 +105,34 @@ describe('searchCandidates', () => {
     for (const run of [title, number, id, was, none]) expect(run.ms).toBeLessThan(budgetMs(25))
   })
 
+  it('perf smoke (YAZ-5037): 5,000 cards inside 1,000 pages and 500 card files, Review on. The rows come from the index alone, and a search by title, by an exact ID and with no match each stay well under a keystroke', () => {
+    const card = (n: number) => ({ id: `YAZ-${n}`, off: false, next: false, reviews: [], title: `Capital ${n}` })
+    const pages = Array.from({ length: 1000 }, (_, i) => ({ ...rec(`/vault/folder${i % 50}/Deck ${i}.md`), id: `YAZ-${i + 1}`, cards: Array.from({ length: 5 }, (_, j) => card(10_000 + i * 5 + j)) }))
+    const cardFiles = Array.from({ length: 500 }, (_, i) => ({ ...rec(`/vault/folder${i % 50}/capital-${20_000 + i}-yaz-${20_000 + i}.md`), title: `Capital ${20_000 + i}`, kind: 'card' as const, cards: [card(20_000 + i)] }))
+    const records = [...pages, ...cardFiles]
+    const { ms: derive, result: candidates } = warmMedian(() => searchCandidates(records, ['YAZ'], true))
+    // One row per page, per card inside a page, and per card file: a card file is one row.
+    expect(candidates).toHaveLength(1000 + 5000 + 500)
+    const time = (query: string): { ms: number; first: string | undefined } => {
+      const { ms, result: first } = warmMedian(() => {
+        let first: string | undefined
+        for (let i = 0; i < 10; i++) first = searchRows(candidates, query)[0]?.label
+        return first
+      })
+      return { ms: ms / 10, first }
+    }
+    const title = time('Capital 12345')
+    const id = time('yaz-12345')
+    const none = time('capital xyzzy')
+    expect(title.first).toBe('Capital 12345')
+    expect(id.first).toBe('YAZ-12345 — Capital 12345')
+    expect(none.first).toBeUndefined()
+    console.log(`search perf: 5000 cards in 1000 pages + 500 card files (${candidates.length} candidates), built in ${derive.toFixed(1)} ms; one search: by title ${title.ms.toFixed(2)} ms, by ID ${id.ms.toFixed(2)} ms, no match ${none.ms.toFixed(2)} ms`)
+    // Built once per index snapshot, never per keystroke.
+    expect(derive).toBeLessThan(budgetMs(50))
+    for (const run of [title, id, none]) expect(run.ms).toBeLessThan(budgetMs(25))
+  })
+
   // The two groups (YAZ-2662 D2, D4, R2): the same vault with pinned items. What a keystroke pays
   // is the ranking with one look in a set for each match, the cut of the pinned items, and the cut
   // of the tree without those that the top group draws; the set is built when a list or the tree changes (R1).
