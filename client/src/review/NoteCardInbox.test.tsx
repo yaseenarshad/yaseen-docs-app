@@ -207,6 +207,24 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(el.querySelector('.note-card-inbox__place')?.textContent).toBe('3 of 12')
   })
 
+  it('YAZ-5031: an up-next card in a read-only vault is answered by the same door as in any vault (`answer`, which takes `next` out in the same write): no ask, no other path', async () => {
+    for (const readOnly of [false, true]) {
+      mount(TWO_SIDES)
+      session = { ...session, card: { ...session.card!, next: true, page: { ...session.card!.page!, next: true } }, counts: { ...session.counts, next: 1 } }
+      const plain = props.vaultOf
+      props.vaultOf = (path) => ({ ...plain(path), readOnly })
+      render()
+      await flush()
+      press('2')
+      expect(review.answer).toHaveBeenCalledExactlyOnceWith('good')
+      expect(review.setNext).not.toHaveBeenCalled()
+      if (!readOnly) {
+        act(() => root?.unmount())
+        el.remove()
+      }
+    }
+  })
+
   it('Space (D18): the next hidden word, one at a time, in page order; then the next side, whose words show one by one; YAZ-5010: the buttons show from the moment the card shows, and showAnswers is called exactly then', async () => {
     mount(TWO_SIDES)
     expect([sides(), shown(), blanks()]).toEqual([1, [], 1])
