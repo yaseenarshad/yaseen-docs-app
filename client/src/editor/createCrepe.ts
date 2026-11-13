@@ -1119,6 +1119,36 @@ export function getCaretOf(crepe: Crepe): { anchor: number; head: number } {
   return { anchor, head }
 }
 
+/** The selection a page kept while a box over it had the keyboard (YAZ-4997 round 2), and the document it was in. */
+export interface KeptCaret {
+  selection: Selection
+  doc: unknown
+}
+
+/** Keep the note's caret or selection as it is now, for `giveCaretBack`. */
+export function keepCaretOf(crepe: Crepe): KeptCaret {
+  const { selection, doc } = editorViewOf(crepe).state
+  return { selection, doc }
+}
+
+/**
+ * The keyboard back to the note (YAZ-4997 round 2, Yaseen: "return the caret to where I was previously or where I was
+ * selecting"): the kept selection, exactly (a node or a cell selection too), when the document is the same; cut to it
+ * when the document changed meanwhile (an outside change). Then the focus, with no scroll: the page stays where it is.
+ * No `kept`: the focus alone, the caret where it is. Locked or not, `view.focus` lands in the body (`focusReadOnlyBody`).
+ */
+export function giveCaretBack(crepe: Crepe, kept: KeptCaret | null): void {
+  const view = editorViewOf(crepe)
+  if (view.isDestroyed) return
+  if (kept !== null) {
+    const { doc } = view.state
+    const pos = (n: number) => doc.resolve(Math.max(0, Math.min(n, doc.content.size)))
+    const selection = kept.doc === doc ? kept.selection : TextSelection.between(pos(kept.selection.anchor), pos(kept.selection.head))
+    if (!selection.eq(view.state.selection)) view.dispatch(view.state.tr.setSelection(selection))
+  }
+  view.focus()
+}
+
 /** The drilled-in bullet's zoom key, or null (YAZ-2951 D4): the page view reader asks once, on a copy action. */
 export function getZoomKeyOf(crepe: Crepe): string | null {
   return crepe.editor.action((ctx) => getZoomKey(ctx.get(editorViewCtx).state))

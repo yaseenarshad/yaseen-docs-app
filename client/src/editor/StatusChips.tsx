@@ -21,6 +21,8 @@ export interface ReadOnlyChipState {
   onLock?: () => void
   /** ⌘↵ and Esc lock the page again (YAZ-4997): the chip's hover says so. */
   lockKeys?: boolean
+  /** The keyboard back to the page after the box or Lock now (YAZ-4997 round 2, `ReadOnlyChipProps.onReturn`). */
+  onReturn?: (to: 'ask' | 'lock') => void
 }
 
 /**
@@ -43,7 +45,7 @@ export function StatusChips({ children, zoom, onZoom, readOnly, sync, onSyncNow,
     <div className="status-chips">
       {children}
       <DocumentZoom value={zoom} onChange={onZoom} />
-      {readOnly !== null && <ReadOnlyChip asking={readOnly.asking} onAsk={readOnly.onAsk} onAllow={readOnly.onAllow} onCancel={readOnly.onCancel} onTurnOff={readOnly.onTurnOff} editingUntil={readOnly.editingUntil} onLock={readOnly.onLock} lockKeys={readOnly.lockKeys} />}
+      {readOnly !== null && <ReadOnlyChip asking={readOnly.asking} onAsk={readOnly.onAsk} onAllow={readOnly.onAllow} onCancel={readOnly.onCancel} onTurnOff={readOnly.onTurnOff} editingUntil={readOnly.editingUntil} onLock={readOnly.onLock} lockKeys={readOnly.lockKeys} onReturn={readOnly.onReturn} />}
       {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
       <SaveIndicator status={save} />
     </div>

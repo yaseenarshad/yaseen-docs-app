@@ -18,7 +18,7 @@ import { placeRows, type LinkActions } from './linkMenu'
 import { redrawLinkPills } from './markdownLink'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { takeNoteId } from '../views/scaffold'
-import { createCrepe, editorViewOf, focusEditor, getCaretOf, getMarkdownForSave, getPlainText, getZoomKeyOf, getZoomLabelOf, moveCaretIntoZoom, placeCaret, setMarkdown, zoomPageTo } from './createCrepe'
+import { createCrepe, editorViewOf, focusEditor, getCaretOf, giveCaretBack, keepCaretOf, type KeptCaret, getMarkdownForSave, getPlainText, getZoomKeyOf, getZoomLabelOf, moveCaretIntoZoom, placeCaret, setMarkdown, zoomPageTo } from './createCrepe'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { mergeExternalMarkdown } from './external/mergeExternal'
 import { FindBar } from './find/FindBar'
@@ -801,6 +801,22 @@ function CrepeHost({
     if (!lockedBase) setAskingUnlock(false)
   }, [lockedBase])
   /**
+   * The caret or selection the page had when the box opened (YAZ-4997 round 2, Yaseen: "return the caret to where I was
+   * previously or where I was selecting"): the box takes the keyboard, and its choice, Cancel or Esc gives both back.
+   */
+  const keptCaret = useRef<KeptCaret | null>(null)
+  const askUnlock = () => {
+    const crepe = crepeRef.current
+    keptCaret.current = crepe !== null && crepe === readyCrepe ? keepCaretOf(crepe) : null
+    setAskingUnlock(true)
+  }
+  const caretBack = (to: 'ask' | 'lock') => {
+    const crepe = crepeRef.current
+    const kept = to === 'ask' ? keptCaret.current : null
+    keptCaret.current = null
+    if (crepe !== null && crepe === readyCrepe) giveCaretBack(crepe, kept)
+  }
+  /**
    * Counts the outside changes that landed in this editor (YAZ-2643): a reload, a frontmatter-only
    * absorb. `disk` cannot say it — it does not follow this editor's own saves, so a file put back
    * to the bytes `disk` still holds is no change to it.
@@ -1484,10 +1500,10 @@ function CrepeHost({
           own: it hands its fold-all button, cog and save state to the folder page's toolbar (YAZ-4584 D38, 10D, below). */}
       {/* The chip's box (YAZ-4939): a time choice unlocks this tab; "Turn Read only off" writes the note's own switch, and is not there while the vault's lock would keep the page locked anyway. */}
       {!inFolderPage && (
-        <StatusChips zoom={documentZoom} onZoom={changeZoom} readOnly={lockedBase ? { asking: askingUnlock, onAsk: () => setAskingUnlock(true), onAllow: (choice) => { setAskingUnlock(false); unlock.allow(choice) }, onCancel: () => setAskingUnlock(false), onTurnOff: diskReadOnly && !vaultLocked ? () => { setAskingUnlock(false); void setReadOnly(false) } : undefined, editingUntil: unlock.until, onLock: unlock.lock, lockKeys: true } : null} sync={sync} onSyncNow={onSyncNow} save={autosave.status}>
+        <StatusChips zoom={documentZoom} onZoom={changeZoom} readOnly={lockedBase ? { asking: askingUnlock, onAsk: askUnlock, onAllow: (choice) => { setAskingUnlock(false); unlock.allow(choice) }, onCancel: () => setAskingUnlock(false), onTurnOff: diskReadOnly && !vaultLocked ? () => { setAskingUnlock(false); void setReadOnly(false) } : undefined, editingUntil: unlock.until, onLock: unlock.lock, lockKeys: true, onReturn: caretBack } : null} sync={sync} onSyncNow={onSyncNow} save={autosave.status}>
           {foldAllButton}
           {/* The cog's row reads the page's lock; a click while a timed unlock runs is "Lock now". */}
-          <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : setAskingUnlock(true)) : void setReadOnly(true))} {...cog} />
+          <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : askUnlock()) : void setReadOnly(true))} {...cog} />
         </StatusChips>
       )}
       {/* The one-line note of outside changes (YAZ-3704 D6) takes the conflict bar's place and hides while it shows. */}

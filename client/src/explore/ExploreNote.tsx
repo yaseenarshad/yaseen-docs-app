@@ -454,6 +454,11 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
         editingUntil={unlock.until}
         onLock={unlock.lock}
         lockKeys
+        // Back to the reading layer after Cancel or Esc (YAZ-4997 round 2), so E and Esc are heard again; a choice opens
+        // the editor, which takes the caret itself.
+        onReturn={() => {
+          if (mode === 'read') bodyRef.current?.focus({ preventScroll: true })
+        }}
       />
     </span>
   )

@@ -92,6 +92,9 @@ vi.mock('./createCrepe', () => {
     // The fake has no ProseMirror: a page view test says where the caret is (YAZ-3737 D3).
     getCaretOf: vi.fn(() => ({ anchor: 0, head: 0 })),
     placeCaret: vi.fn(),
+    // The "Allow edits?" box keeps the caret and gives it back (YAZ-4997 round 2): the real pair is in caretBack.test.tsx.
+    keepCaretOf: vi.fn(() => ({ kept: 'the caret' })),
+    giveCaretBack: vi.fn(),
   }
 })
 
@@ -138,7 +141,7 @@ import { api, BridgeRequestError } from '../api'
 import { storage } from '../lib/storage'
 import { fetchTree } from '../lib/treeFeed'
 import { setAllDocumentFolds } from './outline/foldAllHotkeys'
-import { createCrepe, editorViewOf, focusEditor, getCaretOf, getPlainText, getZoomKeyOf, moveCaretIntoZoom, placeCaret, setMarkdown, zoomPageTo, type CreateCrepeOptions } from './createCrepe'
+import { createCrepe, editorViewOf, focusEditor, getCaretOf, getPlainText, giveCaretBack, getZoomKeyOf, moveCaretIntoZoom, placeCaret, setMarkdown, zoomPageTo, type CreateCrepeOptions } from './createCrepe'
 import { _resetRenameContinuity, carryEditorAcrossRename, registerRenameContinuity, retireDeletedPath } from '../lib/renameContinuity'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { mergeExternalMarkdown } from './external/mergeExternal'
@@ -3095,6 +3098,26 @@ describe('Read only for the whole vault, with a timed "Allow edits" (YAZ-4939)',
     expect(readonlyOf()).toBe(true)
     expect(chipButton(el)?.textContent).toBe('Read only')
     expect(lockAgain()).toBe(false)
+  })
+
+  it('YAZ-4997 round 2: the box keeps the caret as it opens; a choice and Esc give it back to the note, Lock now the focus alone', async () => {
+    const el = await mount(FM + BODY, 1, { vaultReadOnly: true })
+    const back = vi.mocked(giveCaretBack)
+    back.mockClear()
+    act(() => chipButton(el)!.click())
+    act(() => void askBox(el)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(askBox(el)).toBeNull()
+    expect(back.mock.calls).toEqual([[crepe(), { kept: 'the caret' }]])
+    expect(readonlyOf()).toBe(true)
+    await allow(el, 'Allow edits for 1 minute')
+    expect(back.mock.calls.at(-1)).toEqual([crepe(), { kept: 'the caret' }])
+    expect(readonlyOf()).toBe(false)
+    await act(async () => {
+      lockNow(el)!.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(back.mock.calls.at(-1)).toEqual([crepe(), null])
+    expect(back).toHaveBeenCalledTimes(3)
   })
 
   it('YAZ-4997: in a vault that is not read only, a page without its own Read only has nothing to lock: Esc and ⌘↵ keep their meaning', async () => {

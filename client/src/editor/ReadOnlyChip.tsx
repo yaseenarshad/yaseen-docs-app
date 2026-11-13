@@ -61,6 +61,13 @@ export interface ReadOnlyChipProps {
   onLock?: () => void
   /** The host's ⌘↵ and Esc lock the page again while it is unlocked (YAZ-4997): the hover of the chip and of Lock now says so. */
   lockKeys?: boolean
+  /**
+   * The keyboard goes back to the page (YAZ-4997 round 2): after a choice, Turn Read only off, Cancel or Esc in the box
+   * (`'ask'`: the caret or selection the page had when the box opened), and after Lock now (`'lock'`: where it is). Run
+   * once the box is gone and the page is unlocked or locked. A press outside or the window's blur gives nothing back: the
+   * keyboard is where that went. Absent: Esc focuses the chip.
+   */
+  onReturn?: (to: 'ask' | 'lock') => void
 }
 
 /** The chip's words while an unlock runs: "Editing · mm:ss", or "until close". */
@@ -70,7 +77,7 @@ export function editingLabel(until: number, now: number): string {
   return `Editing · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`
 }
 
-export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, editingUntil = null, onLock, lockKeys = false }: ReadOnlyChipProps) {
+export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, editingUntil = null, onLock, lockKeys = false, onReturn }: ReadOnlyChipProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const chipRef = useRef<HTMLButtonElement>(null)
   const cancelRef = useRef(onCancel)
@@ -78,6 +85,7 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, edit
   const askRef = useRef(onAsk)
   askRef.current = onAsk
   const message = useReadOnlyMessage(rootRef, chipRef, asking)
+  const giveBack = useGiveBack(onReturn)
   useEnterAsks(rootRef, message !== null && !asking, askRef)
   // The vault's word for a note (YAZ-4938): "This card is Read only." in a vault of cards.
   const unit = useUnit()
@@ -104,6 +112,12 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, edit
     }
   }, [asking])
 
+  /** An answer in the box, then the keyboard back to where it was when the box opened. */
+  const answer = (run: () => void) => {
+    run()
+    giveBack('ask')
+  }
+
   return (
     <div ref={rootRef} className="read-only-chip"
       onKeyDown={(event) => {
@@ -115,14 +129,18 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, edit
         event.preventDefault()
         event.stopPropagation()
         onCancel()
-        chipRef.current?.focus()
+        if (onReturn !== undefined) giveBack('ask')
+        else chipRef.current?.focus()
       }}>
       <button ref={chipRef} type="button" className={`read-only-chip__button${editing ? ' read-only-chip__button--editing' : ''}${message === null ? '' : ' read-only-chip__button--pulse'}`} title={editing ? `Edits are allowed for now. Click for another time.${lockKeys ? ' ⌘↵ or Esc locks it again.' : ''}` : 'Click to allow edits'} aria-haspopup="dialog" aria-expanded={asking} onClick={asking ? onCancel : onAsk}>
         {editing ? <EditingIcon /> : <LockIcon size={12} />}
         <span>{editing ? editingLabel(editingUntil, Date.now()) : 'Read only'}</span>
       </button>
       {editing && onLock !== undefined && (
-        <button type="button" className="read-only-chip__lock" title={lockKeys ? 'Lock this page again now (⌘↵ or Esc)' : 'Lock this page again now'} onClick={onLock}>Lock now</button>
+        <button type="button" className="read-only-chip__lock" title={lockKeys ? 'Lock this page again now (⌘↵ or Esc)' : 'Lock this page again now'} onClick={() => {
+          onLock()
+          giveBack('lock')
+        }}>Lock now</button>
       )}
       <div className="read-only-message" role="status">
         {message !== null && (
@@ -146,13 +164,13 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, edit
         <div className="read-only-chip__ask" role="dialog" aria-label="Allow edits">
           <p>Allow edits?</p>
           <div className="read-only-chip__times">
-            <button type="button" className="read-only-chip__allow" autoFocus onClick={() => onAllow('minute')}>Allow edits for 1 minute</button>
-            <button type="button" onClick={() => onAllow('ten')}>10 minutes</button>
-            <button type="button" onClick={() => onAllow('close')}>Until I close this tab</button>
+            <button type="button" className="read-only-chip__allow" autoFocus onClick={() => answer(() => onAllow('minute'))}>Allow edits for 1 minute</button>
+            <button type="button" onClick={() => answer(() => onAllow('ten'))}>10 minutes</button>
+            <button type="button" onClick={() => answer(() => onAllow('close'))}>Until I close this tab</button>
           </div>
           <div className="read-only-chip__actions">
-            {onTurnOff !== undefined && <button type="button" onClick={onTurnOff}>Turn Read only off</button>}
-            <button type="button" onClick={onCancel}>Cancel</button>
+            {onTurnOff !== undefined && <button type="button" onClick={() => answer(onTurnOff)}>Turn Read only off</button>}
+            <button type="button" onClick={() => answer(onCancel)}>Cancel</button>
           </div>
         </div>
       )}
@@ -167,6 +185,41 @@ const EditingIcon = () => (
     <path d="M13.5 6.5l4 4" />
   </svg>
 )
+
+/**
+ * The keyboard back to the page (YAZ-4997 round 2, `onReturn`): asked in the handler of the answer, run in an effect
+ * once React has drawn it, so the box is gone and the host's lock or unlock has landed (its editor is editable, or
+ * not). The Enter that answered may be held: its repeats would type new lines in the page now unlocked, so each one is
+ * dropped until that Enter is let go (a held Enter is no answer, YAZ-3076).
+ */
+function useGiveBack(onReturn: ((to: 'ask' | 'lock') => void) | undefined): (to: 'ask' | 'lock') => void {
+  const [back, setBack] = useState<{ to: 'ask' | 'lock' } | null>(null)
+  const returnRef = useRef(onReturn)
+  returnRef.current = onReturn
+  useEffect(() => {
+    if (back === null) return
+    returnRef.current?.(back.to)
+    const held = (event: KeyboardEvent) => {
+      if (event.key === 'Enter' && event.repeat) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+    }
+    const done = (event: KeyboardEvent) => {
+      if (event.key === 'Enter') stop()
+    }
+    const stop = () => {
+      window.removeEventListener('keydown', held, true)
+      window.removeEventListener('keyup', done, true)
+    }
+    window.addEventListener('keydown', held, true)
+    window.addEventListener('keyup', done, true)
+    return stop
+  }, [back])
+  return (to) => {
+    if (returnRef.current !== undefined) setBack({ to })
+  }
+}
 
 /**
  * Enter while the card shows (YAZ-4997): the "Allow edits?" box, at once. Only an Enter in the card's own page, not in a
