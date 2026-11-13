@@ -207,6 +207,28 @@ describe('TabBar', () => {
     expect(onToggleOverview).toHaveBeenCalledTimes(1)
   })
 
+  it('YAZ-5011: the Inbox tab stands after the page tabs; while it is on show no page tab is active; a click brings it to the front; its ✕ and a middle click close it; it has no menu', () => {
+    const onActivate = vi.fn()
+    const onClose = vi.fn()
+    const inbox = { label: 'Inbox', active: true, onActivate: vi.fn(), onClose: vi.fn() }
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', inbox, ...noop, onActivate, onClose, ...noNav })
+    const tabs = [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')]
+    expect(tabs.map((t) => [t.textContent, t.getAttribute('aria-selected')])).toEqual([['a', 'false'], ['b', 'false'], ['Inbox', 'true']])
+    const tab = tabs[2].closest<HTMLElement>('.tabbar__tab')!
+    expect(tab.className).toContain('tabbar__tab--active')
+    act(() => tabs[2].click())
+    expect(inbox.onActivate).toHaveBeenCalledOnce()
+    act(() => tab.querySelector<HTMLButtonElement>('[aria-label="Close Inbox"]')?.click())
+    act(() => void tabs[2].dispatchEvent(new MouseEvent('auxclick', { bubbles: true, button: 1 })))
+    expect(inbox.onClose).toHaveBeenCalledTimes(2)
+    expect(onClose).not.toHaveBeenCalled()
+    act(() => void tab.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+    expect(el.querySelector('.ctx-menu')).toBeNull()
+    // Behind a page tab: the page tab is the active one again.
+    act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={['/v/a.md', '/v/b.md']} active="/v/a.md" inbox={{ ...inbox, active: false }} {...noop} onActivate={onActivate} onClose={onClose} {...noNav} />))
+    expect([...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false'])
+  })
+
   it('the blank tab (YAZ-2655 D10) is the last tab, named "New tab", and the active one while it shows: its ✕ and a middle click close it, it does not drag and has no menu; the "+" stands after the tabs, outside the scroller (S87)', () => {
     const onNewTab = vi.fn()
     const onCloseBlank = vi.fn()

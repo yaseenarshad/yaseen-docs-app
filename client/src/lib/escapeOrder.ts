@@ -6,12 +6,14 @@
  *  2. A dialog or a sheet (each its own Esc; `useModalKeys` takes the key in the capture phase).
  *  3. An Explore layer, one at a time (`ExploreStack`), and an unlocked page's lock (YAZ-4997: Esc in its text saves and
  *     locks it again, `createCrepe`'s Esc and the Explore edit layer).
- *  4. The Inbox (`NoteCardInbox`).
- *  5. The sidebar's search: back to the tab it came from, the keyboard on its row (`Sidebar`, or `escapeStep` here).
- *  6. The left sidebar closes. Only when nothing above is open.
+ *  4. The sidebar's search: back to the tab it came from, the keyboard on its row (`Sidebar`, or `escapeStep` here).
+ *  5. The left sidebar closes. Only when nothing above is open.
  *
- * Steps 1 to 4 are many surfaces with an Esc of their own (some 90 of them): each one closes itself and takes the key.
- * This file is the LAST word, App's one listener for what is left (steps 5 and 6), and it is the one place that knows
+ * The Inbox is no step (YAZ-5011): it is a tab, and closes as one (its ✕, ⌘W). Esc in it closes only its ⋯ row (a
+ * menu, step 1); then the key goes on to steps 4 and 5, as from a page tab.
+ *
+ * Steps 1 to 3 are many surfaces with an Esc of their own (some 90 of them): each one closes itself and takes the key.
+ * This file is the LAST word, App's one listener for what is left (steps 4 and 5), and it is the one place that knows
  * the order. So that a surface which closed on this Esc without saying so (no `preventDefault`) is not followed by a
  * second close, the facts are read in the CAPTURE phase, before any surface runs: what was open when the key came, not
  * after it. Then, in the bubble phase, it acts only on a key no one took.
@@ -31,8 +33,6 @@ export interface EscapeFacts {
   owner: boolean
   /** The Explore stack showed (step 3). */
   explore: boolean
-  /** The Inbox showed (step 4). */
-  inbox: boolean
   /** The keyboard was in text: a field, a note's body (an unlocked page's too: its own Esc, YAZ-4997), or the page's selection. */
   inText: boolean
   /** The sidebar shows. */
@@ -45,7 +45,7 @@ export interface EscapeFacts {
 
 /** The order above, for what is left after the surfaces: one step, or none. */
 export function escapeStep(f: EscapeFacts): EscapeStep {
-  if (f.owner || f.explore || f.inbox) return null
+  if (f.owner || f.explore) return null
   if (f.inText || !f.sidebarShown) return null
   if (f.searchShown) return 'leaveSearch'
   return f.canClose ? 'closeSidebar' : null
@@ -73,7 +73,6 @@ export function readEscapeFacts(event: KeyboardEvent, sidebar: SidebarFacts): Es
   return {
     owner,
     explore: doc.querySelector('.explore') !== null,
-    inbox: doc.querySelector('.note-card-inbox') !== null,
     inText: (target !== null && target.closest(FIELD) !== null) || pageHoldsKeys(target),
     sidebarShown: sidebar.aside?.isConnected === true,
     searchShown: sidebar.searchShown,
@@ -82,7 +81,7 @@ export function readEscapeFacts(event: KeyboardEvent, sidebar: SidebarFacts): Es
 }
 
 /**
- * App's last Esc (steps 5 and 6). `sidebar` is read at each Esc; `act` runs the step. A key with a modifier (⇧Esc is
+ * App's last Esc (steps 4 and 5). `sidebar` is read at each Esc; `act` runs the step. A key with a modifier (⇧Esc is
  * Explore's), one in an IME composition, and one a surface took (`defaultPrevented`, or stopped before the window) do nothing.
  */
 export function useEscapeLast(sidebar: () => SidebarFacts, act: (step: Exclude<EscapeStep, null>) => void): void {

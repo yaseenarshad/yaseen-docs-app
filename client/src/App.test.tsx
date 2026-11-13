@@ -5473,27 +5473,43 @@ describe('App note card review (YAZ-4967)', () => {
     expect(captured.sidebar?.reviewing).toBe(false)
   })
 
-  it('the Inbox row opens the Inbox screen over the tab stack and a second click closes it; the strip stays', async () => {
+  it('YAZ-5011: the Inbox row opens the Inbox as its own tab, last in the strip; a page tab brings its page to the front and the Inbox stays open behind; the row goes back to it; its ✕ closes it', async () => {
     const { el } = await mount(defaultAppState(), TABS, {}, withIndex(RECORDS()))
+    const strip = () => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => `${t.textContent}${t.getAttribute('aria-selected') === 'true' ? '*' : ''}`)
     openInbox()
     expect(captured.sidebar?.reviewing).toBe(true)
     await vi.waitFor(() => expect(el.querySelector('.tabstack .note-card-inbox')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
-    expect([...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)).toEqual(['a', 'b'])
+    expect(strip()).toEqual(['a', 'b', 'Inbox*'])
+    // A second click goes to the open Inbox tab: one per window, and it stays open.
     openInbox()
+    expect(strip()).toEqual(['a', 'b', 'Inbox*'])
+    // The active page's tab, under the Inbox: its page comes to the front; the Inbox tab stays, hidden.
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')][1].click())
+    expect(strip()).toEqual(['a', 'b*', 'Inbox'])
     expect(captured.sidebar?.reviewing).toBe(false)
+    expect(el.querySelector<HTMLElement>('.note-card-inbox')?.hidden).toBe(true)
+    openInbox()
+    expect(strip()).toEqual(['a', 'b', 'Inbox*'])
+    expect(el.querySelector<HTMLElement>('.note-card-inbox')?.hidden).toBe(false)
+    act(() => el.querySelector<HTMLButtonElement>('.tabbar [aria-label="Close Inbox"]')!.click())
+    expect(strip()).toEqual(['a', 'b*'])
     expect(el.querySelector('.note-card-inbox')).toBeNull()
   })
 
   it('"Review this folder" and "Review this page" start a session over that scope: its first card\'s page is read', async () => {
-    const { bridge } = await mount(defaultAppState(), TABS, {}, withIndex(RECORDS()))
+    const { bridge, el } = await mount(defaultAppState(), TABS, {}, withIndex(RECORDS()))
+    const inboxTabs = () => [...el.querySelectorAll('.tabbar .tabbar__tab--inbox [role="tab"]')].map((t) => t.textContent)
     bridge.readFile.mockClear()
     await act(async () => captured.sidebar?.onReviewFolder('/v/Work'))
     expect(captured.sidebar?.reviewing).toBe(true)
     expect(bridge.readFile).toHaveBeenCalledWith('/v/Work/p.md')
+    expect(inboxTabs()).toEqual(['Inbox · Work'])
     bridge.readFile.mockClear()
     await act(async () => captured.sidebar?.onReviewPage('/v/x.md'))
     expect(bridge.readFile).toHaveBeenCalledWith('/v/x.md')
     expect(bridge.readFile).not.toHaveBeenCalledWith('/v/Work/p.md')
+    // YAZ-5011: the same Inbox tab, with the new scope.
+    expect(inboxTabs()).toEqual(['Inbox · x'])
   })
 
   it('review off in review.json: no Inbox, nothing due, no session', async () => {
@@ -5546,7 +5562,8 @@ describe('App: the note card flow (YAZ-4962)', () => {
     expect([sides(el), hidden(el)]).toEqual([1, ['France']])
     await press(el, ' ')
     expect([sides(el), hidden(el)]).toEqual([2, ['France']])
-    expect(el.querySelector('.note-card-inbox__answer')).toBeNull()
+    // YAZ-5010: the buttons show from the moment the card shows.
+    expect(el.querySelectorAll('.note-card-inbox__answer')).toHaveLength(2)
     await press(el, ' ')
     expect([sides(el), hidden(el)]).toEqual([2, ['France', 'Paris']])
     await vi.waitFor(() => expect(el.querySelectorAll('.note-card-inbox__answer')).toHaveLength(2))
@@ -5563,10 +5580,12 @@ describe('App: the note card flow (YAZ-4962)', () => {
     await vi.waitFor(() => expect(files[PAGE].content).toBe(page('<!-- card: WIKI-9 -->')))
     await vi.waitFor(() => expect(sides(el)).toBe(1))
     expect(hidden(el)).toEqual([])
-    // Esc closes the review.
+    // YAZ-5011: Esc does not close the Inbox (a tab; the Esc order goes on to the sidebar); its tab's ✕ does.
     await press(el, 'Escape')
-    expect(captured.sidebar?.reviewing).toBe(false)
+    expect(inbox(el)).not.toBeNull()
+    act(() => el.querySelector<HTMLButtonElement>('.tabbar [aria-label="Close Inbox"]')!.click())
     expect(inbox(el)).toBeNull()
+    expect(el.querySelector('.tabbar [aria-label="Close Inbox"]')).toBeNull()
   })
 
   it('the card window opens from the editor\'s open-card hook (`mdapp:note-card-open`): a card layer of the page, the card read-only; a hook with no page opens nothing', async () => {
@@ -6272,7 +6291,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(reviewing()).toEqual([true, false]) // the review of /w is not waiting under it
   })
 
-  it('the sidebar is handed each vault\'s own Inbox — review, count, state — and a row\'s click opens ITS vault\'s review, closes the other vault\'s, and closes its own when it is the one open (R5, S41)', async () => {
+  it('the sidebar is handed each vault\'s own Inbox — review, count, state — and a row\'s click opens ITS vault\'s review and closes the other vault\'s; on its own open one it stays (YAZ-5011: the Inbox tab, one per window) (R5, S41)', async () => {
     await mount(defaultAppState(), { ...TWO, roots: ['/v', '/w', '/x'] }, {}, (b) => {
       cardReview({ '/v': true, '/w': true })(b)
       feed({ '/v': { records: [due('/v/x.md')] }, '/w': { records: [due('/w/p.md'), due('/w/q.md')] }, '/x': { records: [due('/x/z.md')] } })(b)
@@ -6284,7 +6303,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     await act(async () => captured.sidebar?.onInbox('/v'))
     expect(rows()?.map(([, , , reviewing]) => reviewing)).toEqual([true, false, false])
     await act(async () => captured.sidebar?.onInbox('/v'))
-    expect(rows()?.map(([, , , reviewing]) => reviewing)).toEqual([false, false, false])
+    expect(rows()?.map(([, , , reviewing]) => reviewing)).toEqual([true, false, false])
   })
 
   it('each vault syncs as in its own window: the attention banner is the vault\'s that has a problem, and its prompt names that vault (S43)', async () => {

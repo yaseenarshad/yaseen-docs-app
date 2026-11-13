@@ -1204,7 +1204,7 @@ export function App() {
     return went
   }, [])
   /**
-   * The last Esc (YAZ-4995, `lib/escapeOrder.ts`): what no menu, dialog, Explore layer or Inbox took. The sidebar's
+   * The last Esc (YAZ-4995, `lib/escapeOrder.ts`): what no menu, dialog or Explore layer took (the Inbox is a tab, YAZ-5011). The sidebar's
    * search goes back to its tab; then the sidebar closes, and the keyboard goes from it to the page, in place.
    */
   useEscapeLast(
@@ -1519,21 +1519,39 @@ export function App() {
   // because the sidebar that shows the count unmounts while collapsed.
   const reviewer = vaults.find((vault) => vault.review.session !== null) ?? null
   const review = (reviewer ?? first).review
+  /**
+   * THE INBOX TAB (YAZ-5011, Yaseen: "inbox should actually be its own tab"): the window's one review session IS the
+   * Inbox tab — open while a session is, last in the strip, its label the session's. `inboxFront` says whether it is
+   * the tab on show; a page tab of the strip, a sidebar open, ⌃Tab or ⌘T bring a page to the front and the Inbox stays
+   * open behind, at its card and step. Its ✕ and ⌘W (while it shows) close it: the session ends. Like the blank tab,
+   * it is session-only: nothing of it is stored, so a restart does not bring it back.
+   */
+  const [inboxFront, setInboxFront] = useState(false)
+  const inboxShown = reviewer !== null && inboxFront
+  /** The Inbox tab to the front: the blank tab, unused, goes (YAZ-2655 S73), and the tab board gives way. */
+  const showInbox = useCallback(() => {
+    closeBlank()
+    setOverview(OVERVIEW_CLOSED)
+    setInboxFront(true)
+  }, [closeBlank])
+  /** The Inbox tab with this scope ("Review this page / folder" replace the scope of an open one), on show. */
   const startReview = useCallback((scope: VaultScope, cards?: CardReviewScope) => {
     for (const vault of live.current.vaults) if (vault !== scope) vault.review.close()
     scope.review.start(cards)
-  }, [])
+    showInbox()
+  }, [showInbox])
+  /** The sidebar's Inbox row: opens the Inbox tab, or goes to it when it is open (one per window). */
   const toggleInbox = useCallback((vault: string) => {
     const scope = live.current.vaults[live.current.roots.indexOf(vault)]
     if (scope.review.session === null) startReview(scope)
-    else scope.review.close()
-  }, [startReview])
+    else showInbox()
+  }, [startReview, showInbox])
   // A link clicked in a tab's page opens in that tab (`navigate`, YAZ-2648 D3: the sidebar's click
   // goes to the preview tab, a page's own link does not). While a review is open it opens in a
   // background tab instead: the review stays in front and the active tab under it does not move.
   // Ref-backed, because a new `onOpenFile` identity would rebuild every mounted editor.
   const reviewing = useRef(false)
-  reviewing.current = reviewer !== null
+  reviewing.current = inboxShown
   const openFromPage = useCallback((path: string) => (reviewing.current ? openBackground : navigate)(path), [openBackground, navigate])
   /**
    * A ⌘-click's background tab (YAZ-3943 5B): always a new tab, a copy when the page is open, as browsers do. The doors: a
@@ -1555,15 +1573,24 @@ export function App() {
     else if (where === 'newWindow') linkActions.openNewWindow?.(path)
     else navigate(path)
   }, [openBackground, openBackgroundCopy, navigate, openKept, linkActions])
-  // Going to a tab — a sidebar click, ⌃Tab — ends the review: the page asked for must not open unseen under it.
+  // The Inbox tab's ✕, and ⌘W while it shows (YAZ-5011): the session ends, and the page tab under it shows.
+  const closeReview = useCallback(() => {
+    setInboxFront(false)
+    live.current.vaults.forEach((vault) => vault.review.close())
+  }, [])
+  // Going to a tab — a sidebar click, ⌃Tab — brings that page to the front: the Inbox tab stays open behind (YAZ-5011).
   // A trip to another copy of the same file (YAZ-2940) moves `activeTab` and not `file`, so both are watched.
-  const closeReview = useCallback(() => live.current.vaults.forEach((vault) => vault.review.close()), [])
-  useEffect(() => closeReview(), [activeTab, file, closeReview])
+  useEffect(() => setInboxFront(false), [activeTab, file])
+  /** A page tab of the strip: to the front, also the active one under the Inbox tab (no `activeTab` move then). */
+  const activateFromStrip = useCallback((id: string) => {
+    setInboxFront(false)
+    activate(id)
+  }, [activate])
 
   // The tab board (YAZ-2648 D5): every open tab as a small page, in the tab stack's place. Whether
   // it shows is this window's, for the session, like the settings dialog: nothing is stored. The
-  // grid button and ⌘⇧M both open it and close it. A review is not a tab and stands in the same
-  // place, so the board does not open over one, and a review that starts closes it. The Welcome
+  // grid button and ⌘⇧M both open it and close it. The Inbox tab (YAZ-5011) is no page of the board: the
+  // board does not open while it shows, and the Inbox tab coming to the front closes it. The Welcome
   // window has no tabs and no board.
   //
   // `open` remembers the tab (by id) it opened from (`from`): that tab's layer is the one that zooms out
@@ -1586,7 +1613,7 @@ export function App() {
   // board made ITSELF is no such trip, and says so here first: the page it zooms into, and the
   // heir of an active tab it closed or sent to the right panel, after which it stays open.
   const ownChange = useRef(false)
-  const inReview = reviewer !== null
+  const inReview = inboxShown
   // A trip to another copy of the same file (YAZ-2940) moves `activeTab` and not `file`, so both are watched.
   useEffect(() => {
     if (ownChange.current) ownChange.current = false
@@ -1629,10 +1656,12 @@ export function App() {
   // board itself: the page ALREADY open is a trip too, and it must show (S46).
   const openPage = useCallback((path: string) => {
     setOverview(OVERVIEW_CLOSED)
+    setInboxFront(false)
     openCurrent(path)
   }, [openCurrent])
   const openKeptPage = useCallback((path: string) => {
     setOverview(OVERVIEW_CLOSED)
+    setInboxFront(false)
     openKept(path)
   }, [openKept])
   // The mini window's ↗ (YAZ-3746 13I): the note in a NEW tab, a copy when another tab shows it (the "New tab" rule of
@@ -1643,10 +1672,12 @@ export function App() {
   }, [openKept])
   const toNextTab = useCallback(() => {
     setOverview(OVERVIEW_CLOSED)
+    setInboxFront(false)
     nextTab()
   }, [nextTab])
   const toPrevTab = useCallback(() => {
     setOverview(OVERVIEW_CLOSED)
+    setInboxFront(false)
     prevTab()
   }, [prevTab])
   // ⌘⌥← / ⌘⌥→ (YAZ-3647 D7), as ⌃Tab: a step to another page closes the tab board. The ‹ › buttons and a row of their
@@ -1747,11 +1778,13 @@ export function App() {
   // active, over the empty page — and the caret goes to the sidebar's search bar, by the door ⌘K
   // uses, because a new empty tab has one job: to pick a page. The next page opened fills it as a
   // kept tab (the workspace's rule). Again while it shows, it only takes the caret back to the bar.
-  // A review is not a tab and stands in the strip's place, so ⌘T does nothing during one (R21);
+  // From the Inbox tab (YAZ-5011, it was R21's "⌘T does nothing during a review") the blank tab comes to the front;
   // the Welcome window has no strip. The board gives way to it at once: the blank tab is no page of it.
   const newTab = useCallback(() => {
-    if (reviewing.current || live.current.roots.length === 0) return
+    if (live.current.roots.length === 0) return
     setOverview(OVERVIEW_CLOSED)
+    // The Inbox is a tab (YAZ-5011): the blank tab comes to the front, and the Inbox stays open behind.
+    setInboxFront(false)
     openBlank()
     openSearch()
     setPendingSearchClear(true)
@@ -2304,7 +2337,7 @@ export function App() {
     onSwitchVault: openVaultSwitcher,
     onSettings: openSettings,
     onToggleSidebar: toggleSidebar,
-    onCloseTab: reviewer === null ? closeTabOrWindow : closeReview,
+    onCloseTab: inboxShown ? closeReview : closeTabOrWindow,
     onNextTab: toNextTab,
     onPrevTab: toPrevTab,
     onTabOverview: toggleOverview,
@@ -2324,7 +2357,7 @@ export function App() {
     onKeySheet: openKeySheet,
     onExportImage: exportImage,
     // A board under the Inbox is not on show: its export key does nothing while a review is open.
-    onExportDrawing: reviewer === null ? exportDrawing : () => undefined,
+    onExportDrawing: inboxShown ? () => undefined : exportDrawing,
     onShareLink: shareActiveBoard,
     onCanvasBackground: setCanvasBackground,
   })
@@ -2431,7 +2464,7 @@ export function App() {
         return restoreSavedSession(action.id)
       case 'inbox': {
         const at = live.current.roots.indexOf(action.root)
-        if (at !== -1 && live.current.vaults[at].review.session === null) startReview(live.current.vaults[at])
+        if (at !== -1) toggleInbox(action.root)
       }
     }
   }
@@ -3561,7 +3594,7 @@ export function App() {
           key={sidebarKey.current}
           // The folders' shortcut rows (YAZ-2290 D2) read the SAME index source of each vault
           // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
-          vaults={vaults.map((vault, i) => ({ root: roots[i], ...folderShown(roots[i]), name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, idsInFiles: vault.showIds.settings.files, index: vault.wikilinks, review: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null, tooLarge: vault.sync.status?.tooLarge, readOnly: vault.readOnlyVault.settings.on, fileChangesUntil: vault.readOnlyVault.allowedUntil }))}
+          vaults={vaults.map((vault, i) => ({ root: roots[i], ...folderShown(roots[i]), name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, idsInFiles: vault.showIds.settings.files, index: vault.wikilinks, review: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null && inboxFront, tooLarge: vault.sync.status?.tooLarge, readOnly: vault.readOnlyVault.settings.on, fileChangesUntil: vault.readOnlyVault.allowedUntil }))}
           lists={lists}
           icons={vaultIcons}
           recentVault={recentPick}
@@ -3703,7 +3736,9 @@ export function App() {
             reserveEnd={!rightPanel.open}
             // Under the board the strip acts as the pages do: a tab — the active one too — is zoomed
             // into, and a tab's ✕ leaves the board open.
-            onActivate={overviewOpen ? leaveOverview : activate}
+            onActivate={overviewOpen ? leaveOverview : activateFromStrip}
+            // The Inbox tab (YAZ-5011): last in the strip while a review session is open.
+            inbox={session === null ? undefined : { label: session.scope === 'vault' ? 'Inbox' : `Inbox · ${session.label}`, active: inboxShown, onActivate: showInbox, onClose: closeReview }}
             onKeep={keep}
             onClose={overviewOpen ? closeOneUnderOverview : closeTab}
             onMove={moveTab}
@@ -3753,7 +3788,7 @@ export function App() {
           />
           <div className="tabstack">
             {/* The new tab page (YAZ-2663 D3): of a window with no tabs, and of the blank tab (YAZ-2655 D10), under which every visited tab's layer stays mounted, hidden, until it sleeps (YAZ-3737 5A). Mounted only while it shows (R1). */}
-            {(mounted.length === 0 || blank) && session === null && <StartPage roots={roots} favorites={startFavorites} openTabs={tabPaths} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBack={backFromPage} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} hoverPreview={hoverOn(settings, 'newTab')} previewScope={boardPreviewScope} diagramDarkColors={settings.diagramDarkColors} />}
+            {(mounted.length === 0 || blank) && !inboxShown && <StartPage roots={roots} favorites={startFavorites} openTabs={tabPaths} titles={titles} onOpen={openCurrent} onOpenBackground={openBackground} onShowInFiles={showRowInFiles} onRowMenu={showRowMenu} onBack={backFromPage} onBackToSearch={openSearch} focusRef={startPageFocus} previewPath={pagePreviewPath} onPreview={setPagePreviewPath} onNotice={notify} hoverPreview={hoverOn(settings, 'newTab')} previewScope={boardPreviewScope} diagramDarkColors={settings.diagramDarkColors} />}
             {mounted.map((id) => {
               const path = pathOf.get(id)
               if (path === undefined) return null
@@ -3788,14 +3823,15 @@ export function App() {
                 </div>
               )
             })}
-            {/* The Inbox screen (YAZ-4962): the session of the vault in review, over the tab stack; the page under it stays as it was. */}
+            {/* The Inbox tab's screen (YAZ-4962, YAZ-5011): the session of the vault in review, over the tab stack; the page
+                under it stays as it was. Behind a page tab it stays mounted, hidden, so it comes back at its card and step. */}
             {session !== null && (
               <Suspense fallback={null}>
-                <NoteCardInbox review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openPageAtCard} openCard={openCardWindow} openInTab={openBackgroundCopy} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} />
+                <NoteCardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openPageAtCard} openCard={openCardWindow} openInTab={openBackgroundCopy} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} />
               </Suspense>
             )}
             {/* The tab board (YAZ-2648 D5) covers the stack while it shows; a review never has one over it. */}
-            {overview.phase !== 'closed' && session === null && tabBoard()}
+            {overview.phase !== 'closed' && !inboxShown && tabBoard()}
             {/* The preview panel of the search (YAZ-2662 D5), over the page area — over the empty page of the blank tab too (S45). No layer of the stack: it is no tab and no page. */}
             {panelPath !== null && <QuickLook path={panelPath} title={nameOf(panelPath)} watch={scopeOf(panelPath).watch} wikilinks={scopeOf(panelPath).wikilinks} root={scopeOf(panelPath).root} darkColors={settings.diagramDarkColors} style={textVarsFor(panelPath)} onClose={closePreview} />}
           </div>

@@ -40,7 +40,7 @@ export function noteCardInboxKey(event: KeyPress): NoteCardInboxKey | null {
 export interface NoteCardInboxMoment {
   /** A card shows (not the done screen). */
   card: boolean
-  /** The buttons show: Space has no more to show. */
+  /** Space has no more to show (the answer buttons show from the start, YAZ-5010). */
   answering: boolean
   canUndo: boolean
   /** The card can be edited (not a read-only vault): E opens it in the card window, in Edit card (YAZ-5003). */
@@ -51,7 +51,8 @@ export interface NoteCardInboxMoment {
 
 /**
  * The hint row (D18): each key once, quiet, in the order a review uses them, and only while it does something. The
- * answer digits are on the buttons, so the row does not say them again.
+ * answer digits are on the buttons, so the row does not say them again. No Esc (YAZ-5011): the Inbox is a tab, and
+ * closes as one (its ✕, ⌘W).
  */
 export const noteCardInboxHints = ({ card, answering, canUndo, editable, moves = false }: NoteCardInboxMoment): { keys: string; label: string }[] => [
   ...(card && !answering ? [{ keys: 'Space', label: 'Show' }] : []),
@@ -60,5 +61,4 @@ export const noteCardInboxHints = ({ card, answering, canUndo, editable, moves =
   ...(card ? [{ keys: 'O', label: 'Open page' }] : []),
   ...(card && editable ? [{ keys: 'E', label: 'Edit card' }] : []),
   ...(card ? [{ keys: '⌘↵', label: 'Open page in a new tab' }] : []),
-  { keys: 'Esc', label: 'Close' },
 ]

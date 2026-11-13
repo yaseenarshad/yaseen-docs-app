@@ -112,6 +112,10 @@
   background: var(--bg-side);
   outline: none;
 }
+/* The Inbox tab behind a page tab (YAZ-5011): mounted, so it keeps its card and step, but not drawn. */
+.note-card-inbox[hidden] {
+  display: none;
+}
 /* The card's panel, then under it, outside its frame (YAZ-5002, as in Mochi): the Space hint, the buttons, the keys. */
 .note-card-inbox__column {
   display: flex;
