@@ -30,9 +30,11 @@
  * bubbling DOM event, `NOTE_CARD_OPEN` (`mdapp:note-card-open`, detail `NoteCardOpenRequest`), from its
  * `.ProseMirror`; App's listener opens the card window. ⌘↵ anywhere else is unchanged.
  *
- * REVIEWS (YAZ-5000): a card with reviews has "Reviews (n)" at its bottom, closed; a card with none has no section
- * (silence). A click opens the card window's own table (`NoteCardReviewsTable`, `review/noteCardParts.tsx`), loaded
- * and mounted in a React root only then: a closed section costs its count, no history replay. Open or closed is UI
+ * REVIEWS (YAZ-5000, YAZ-5032): a card with reviews has "✓ 4 Reviews" at its bottom, closed, and on the same row the
+ * card window's strip of glyphs (`NoteCardFacts`: last answer, interval, next due, recall), so the facts show without
+ * opening; a card with none has no section (silence). A click opens the card window's own table
+ * (`NoteCardReviewsTable`, `review/noteCardParts.tsx`). Both are React roots, loaded the first time a card with
+ * reviews draws. Open or closed is UI
  * state (`openReviews`, by page and ID, so a page read again keeps it), never a transaction. The table's delete is the
  * vault's `deleteReview` (`deps.reviews`): a write of the card line to the FILE, with Undo in its notice, as in the
  * card window, so it works read only and in Explore's read layer too.
@@ -128,43 +130,51 @@ const views = new WeakMap<HTMLElement, NoteCardView>()
 const openReviews = new Set<string>()
 
 type ReviewsTableProps = { reviews: readonly CardReview[]; settings: ReviewSettings; onDelete?: (review: CardReview) => void }
+type ReviewsFactsProps = { reviews: readonly CardReview[]; settings: ReviewSettings }
 interface ReviewsTableKit {
   createRoot: typeof import('react-dom/client').createRoot
   draw: (props: ReviewsTableProps) => import('react').ReactElement
+  /** The card window's strip of glyphs (`NoteCardFacts`, YAZ-5032), on the Reviews row. */
+  facts: (props: ReviewsFactsProps) => import('react').ReactElement
 }
-/** React and the card window's table, loaded the first time a section opens: a page of closed sections loads neither. */
+/** React and the card window's table and strip, loaded the first time a card with reviews draws: a page with none loads neither. */
 let tableKit: ReviewsTableKit | null = null
 let tableKitLoad: Promise<ReviewsTableKit> | null = null
 const loadTableKit = (): Promise<ReviewsTableKit> =>
   (tableKitLoad ??= Promise.all([import('react'), import('react-dom/client'), import('../../review/noteCardParts')]).then(([react, dom, parts]) => {
-    tableKit = { createRoot: dom.createRoot, draw: (props) => react.createElement(parts.NoteCardReviewsTable, props) }
+    tableKit = { createRoot: dom.createRoot, draw: (props) => react.createElement(parts.NoteCardReviewsTable, props), facts: (props) => react.createElement(parts.NoteCardFacts, props) }
     return tableKit
   }))
 
 const SVG = 'http://www.w3.org/2000/svg'
 
-/** "Reviews (n)": the card window's section title (`NoteCardReviews`), the same classes, drawn without React. */
-function reviewsFooter(): { section: HTMLElement; header: HTMLButtonElement; count: HTMLElement } {
+/**
+ * "4 Reviews" (YAZ-5032): the card window's toggle (`NoteCardReviews`), the same classes and ✓, drawn without React; on
+ * the same row, the card window's strip of glyphs (`NoteCardFacts`), so the facts show while the section is closed.
+ */
+function reviewsFooter(): { section: HTMLElement; header: HTMLButtonElement; title: HTMLElement; facts: HTMLElement } {
   const section = document.createElement('section')
   section.className = 'note-card-reviews'
+  const bar = document.createElement('div')
+  bar.className = 'note-card-reviews__bar'
   const header = document.createElement('button')
   header.type = 'button'
-  header.className = 'backlinks__header'
+  header.className = 'backlinks__header note-card-reviews__toggle'
   header.setAttribute('aria-expanded', 'false')
-  const chevron = document.createElementNS(SVG, 'svg')
-  chevron.setAttribute('class', 'backlinks__chevron')
-  for (const [k, v] of Object.entries({ width: '14', height: '14', viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' })) chevron.setAttribute(k, v)
+  const check = document.createElementNS(SVG, 'svg')
+  check.setAttribute('class', 'note-card-inbox__glyph')
+  for (const [k, v] of Object.entries({ width: '13', height: '13', viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.3', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' })) check.setAttribute(k, v)
   const path = document.createElementNS(SVG, 'path')
-  path.setAttribute('d', 'm4 6 4 4 4-4')
-  chevron.append(path)
+  path.setAttribute('d', 'm3 8.5 3.25 3.25L13 4.75')
+  check.append(path)
   const title = document.createElement('span')
   title.className = 'backlinks__title'
-  const count = document.createElement('span')
-  count.className = 'backlinks__count'
-  title.append('Reviews ', count)
-  header.append(chevron, title)
-  section.append(header)
-  return { section, header, count }
+  header.append(check, title)
+  const facts = document.createElement('span')
+  facts.className = 'note-card-strip note-card-reviews__facts'
+  bar.append(header, facts)
+  section.append(bar)
+  return { section, header, title, facts }
 }
 
 /** The card view that draws the card at `pos` in `view`, or null. */
@@ -230,6 +240,8 @@ export class NoteCardView implements NodeView {
   private closeMenu: (() => void) | null = null
   /** "Reviews (n)" (YAZ-5000): made only for a card with reviews. */
   private footer: ReturnType<typeof reviewsFooter> | null = null
+  /** The strip on the Reviews row (YAZ-5032): its React root once the kit is loaded, and what it last drew. */
+  private facts: { root: import('react-dom/client').Root | null; props: ReviewsFactsProps; key: string } | null = null
   /** The open table: its host, its React root once the kit is loaded, and what it draws. */
   private table: { host: HTMLElement; root: import('react-dom/client').Root | null; props: ReviewsTableProps } | null = null
 
@@ -320,6 +332,7 @@ export class NoteCardView implements NodeView {
     const count = door === undefined ? 0 : cardReviewsOf(line).length
     if (count === 0) {
       this.closeTable()
+      this.closeFacts()
       this.footer?.section.remove()
       this.footer = null
       return
@@ -328,7 +341,9 @@ export class NoteCardView implements NodeView {
       this.footer = reviewsFooter()
       this.dom.append(this.footer.section)
     }
-    this.footer.count.textContent = `(${count})`
+    // `reviewsTitle` (`noteCardParts.tsx`): "1 Review", "4 Reviews".
+    this.footer.title.textContent = `${count} Review${count === 1 ? '' : 's'}`
+    this.showFacts()
     const open = this.reviewsOpen
     this.footer.header.setAttribute('aria-expanded', String(open))
     if (open) this.showTable()
@@ -374,6 +389,39 @@ export class NoteCardView implements NodeView {
     }
     if (tableKit !== null) mount(tableKit)
     else void loadTableKit().then(mount)
+  }
+
+  /** The strip of glyphs on the Reviews row, drawn again only when the reviews or the settings change. */
+  private showFacts(): void {
+    const door = this.deps.reviews
+    const footer = this.footer
+    if (door === undefined || footer === null) return
+    const reviews = cardReviewsOf(noteCardLineOf(this.node))
+    const props: ReviewsFactsProps = { reviews, settings: door.settings() }
+    const key = reviews.map((r) => `${r.at} ${r.rating}`).join(',')
+    if (this.facts !== null) {
+      if (this.facts.key === key && this.facts.props.settings === props.settings) return
+      this.facts.props = props
+      this.facts.key = key
+      this.facts.root?.render(tableKit!.facts(props))
+      return
+    }
+    const facts: NonNullable<NoteCardView['facts']> = { root: null, props, key }
+    this.facts = facts
+    const mount = (kit: ReviewsTableKit) => {
+      if (this.facts !== facts) return
+      facts.root = kit.createRoot(footer.facts)
+      facts.root.render(kit.facts(facts.props))
+    }
+    if (tableKit !== null) mount(tableKit)
+    else void loadTableKit().then(mount)
+  }
+
+  private closeFacts(): void {
+    const facts = this.facts
+    if (facts === null) return
+    this.facts = null
+    if (facts.root !== null) queueMicrotask(() => facts.root?.unmount())
   }
 
   private closeTable(): void {
@@ -588,6 +636,7 @@ export class NoteCardView implements NodeView {
 
   destroy(): void {
     this.closeTable()
+    this.closeFacts()
     this.closeMenu?.()
     this.unsubscribe?.()
     this.code?.destroy?.()

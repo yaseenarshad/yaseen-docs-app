@@ -8,10 +8,11 @@
  *    Reset history (D13, the card line through `changeCardLine`, the app's own write), Copy card ID.
  *  - The card, everything shown (`renderNoteCard`), its pills and links live: a click opens the page on top, a bound
  *    gesture (⌘-click) a tab.
- *  - The strip: the page's name (a click opens the page on top, landed on the card), then each fact with a quiet label:
- *    Last answer, Interval, Due, Recall ("83%", idea 11). A card with no review says "New", with no label.
- *  - "Reviews (n)": the full table, closed until asked for (the strip says the state; D13 "a footer lets the table
- *    expand"), a delete on each row (`deleteReview`, with Undo in its notice).
+ *  - The strip: the page's name (a click opens the page on top, landed on the card), then Mochi's quiet line of glyphs
+ *    (YAZ-5032): the last answer, the interval, the next due date, the recall badge ("83%", idea 11), each named in its
+ *    hover. A card with no review says "New".
+ *  - "4 Reviews": the full table, closed until asked for (the strip says the state; D13 "a footer lets the table
+ *    expand"), a bin on each row (`deleteReview`, with Undo in its notice).
  *
  * EDIT CARD (YAZ-5003): E on the card window (or the Inbox's E, which opens it so) shows the page card's own editor:
  * a small Crepe that holds the card block alone, with the card view's Edit card on (`noteCardView.ts`: Crepe's code
@@ -28,7 +29,7 @@
  * index has a new version of the page: an answer in the Inbox or a delete elsewhere shows here at once.
  */
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
-import { answerLabel, cardState, recallChance } from '@shared/cardSchedule'
+import { cardState } from '@shared/cardSchedule'
 import { cardTitle } from '@shared/cardText'
 import type { GestureAction } from '@shared/keys'
 import { cardBlock, EMPTY_CARD_LINE, withCardNext, withCardOff, withoutCardReviews, type CardReview } from '@shared/cardLine'
@@ -40,7 +41,7 @@ import { features } from '../editor/featureConfig'
 import { isNoteCardNode } from '../editor/noteCard/noteCardLine'
 import { noteCardViewAt } from '../editor/noteCard/noteCardView'
 import { HoverTip } from '../components/HoverTip'
-import { NoteCardBody, NoteCardId, NoteCardNextChip, NoteCardReviews, noteCardDate, noteCardDue, noteCardOverdue, noteCardWait } from '../review/noteCardParts'
+import { NoteCardBody, NoteCardFacts, NoteCardId, NoteCardNextChip, NoteCardReviews } from '../review/noteCardParts'
 import { copyText } from '../editor/linkMenu'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { keepFocus, type ExploreVault } from './ExploreNote'
@@ -288,38 +289,21 @@ function NoteCardEditor({ text, path, vault, onDone }: { text: string; path: str
 }
 
 /**
- * The strip under the card (D13, idea 11): the page, then what review knows, each said once with a quiet label in the
- * reader's words. A card with no review is "New"; a card with review off says so.
+ * The strip under the card (D13, idea 11; Mochi's look, YAZ-5032): the page, then what review knows as one quiet
+ * line of glyphs (`NoteCardFacts`: the last answer, the interval, the next due date, the recall badge), each fact's
+ * name in its hover. A card with no review is "New"; a card with review off says so.
  */
 function NoteCardStrip({ card, pageName, vault, onOpenPage }: { card: CardAtPage; pageName: string; vault: ExploreVault; onOpenPage: () => void }) {
   const settings = vault.review?.settings
-  const facts: { key: string; label?: string; text: string }[] = []
-  if (card.off) facts.push({ key: 'off', text: 'Review off' })
-  if (settings !== undefined) {
-    const state = cardState(card.reviews, settings)
-    const last = state.lastReview === null ? null : card.reviews.filter((r) => r.at === state.lastReview).at(-1)
-    if (state.isNew || last == null) facts.push({ key: 'new', text: 'New' })
-    else {
-      const now = Date.now()
-      const chance = recallChance(card.reviews, settings, now)
-      facts.push({ key: 'last', label: 'Last answer', text: `${answerLabel(last.rating, settings)}, ${noteCardDate(Date.parse(last.at), now)}` })
-      facts.push({ key: 'wait', label: 'Interval', text: noteCardWait(state.interval, state.inSteps) })
-      // The table's words (YAZ-4964 look by eye round 2, item 7): "Overdue · Oct 17" says it alone; else "Due" and the date.
-      if (state.due !== null) facts.push(noteCardOverdue(state.due, now) ? { key: 'due', text: noteCardDue(state.due, now) } : { key: 'due', label: 'Due', text: noteCardDate(state.due, now) })
-      if (chance !== null) facts.push({ key: 'recall', label: 'Recall', text: `${Math.round(chance * 100)}%` })
-    }
-  }
+  const isNew = settings !== undefined && cardState(card.reviews, settings).isNew
   return (
     <div className="note-card-strip">
       <button type="button" className="note-card-strip__page" onMouseDown={keepFocus} onClick={onOpenPage}>
         {pageName}
       </button>
-      {facts.map((f) => (
-        <span key={f.key} className="note-card-strip__fact">
-          {f.label !== undefined && <span className="note-card-strip__label">{f.label}</span>}
-          {f.text}
-        </span>
-      ))}
+      {card.off && <span className="note-card-strip__fact">Review off</span>}
+      {isNew && <span className="note-card-strip__fact">New</span>}
+      {settings !== undefined && !isNew && <NoteCardFacts reviews={card.reviews} settings={settings} />}
     </div>
   )
 }

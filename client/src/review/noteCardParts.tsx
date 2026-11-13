@@ -6,7 +6,7 @@
  */
 import { useCallback, useContext, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import type { CardReview } from '@shared/cardLine'
-import { answerLabel, cardHistory, dayCount, isCardDue } from '@shared/cardSchedule'
+import { answerLabel, cardHistory, cardState, dayCount, isCardDue, recallChance } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { GestureAction } from '@shared/keys'
 import { api } from '../api'
@@ -19,6 +19,8 @@ import { linkPath } from '../editor/wikilink/wikilinkPlugin'
 import type { ExploreVault } from '../explore/ExploreNote'
 import { storage } from '../lib/storage'
 import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
+import { answerIcon } from './noteCardInboxChip'
+import { DueTrayIcon, IntervalIcon, ReviewsIcon, TrashIcon } from './noteCardInboxIcons'
 import '../editor/noteCard/noteCard.css'
 import './noteCardScreens.css'
 
@@ -176,45 +178,115 @@ export function noteCardDue(due: number, now: number): string {
 /** The day `due` is past (the strip then says "Overdue · …" with no "Due" label). */
 export const noteCardOverdue = (due: number, now: number): boolean => due < new Date(now).setHours(0, 0, 0, 0)
 
+/** A date in full, as the Reviews table says it (YAZ-5032, as Mochi's): "Sep 24, 2026". */
+export const noteCardFullDate = (ms: number): string => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+
+/** The toggle's words (YAZ-5032, as Mochi's): "1 Review", "4 Reviews". The page's card block says the same (`noteCardView.ts`). */
+export const reviewsTitle = (n: number): string => `${n} Review${n === 1 ? '' : 's'}`
+
+/** What review knows of a card, for the strip (YAZ-5032): its last answer, the wait it set, when it is due, the recall chance. Null for a new card. */
+export interface NoteCardFactsData {
+  last: CardReview
+  interval: number
+  inSteps: boolean
+  due: number
+  recall: number | null
+}
+
+export function noteCardFacts(reviews: readonly CardReview[], settings: ReviewSettings, now: number): NoteCardFactsData | null {
+  const state = cardState(reviews, settings)
+  const last = state.lastReview === null ? undefined : reviews.filter((r) => r.at === state.lastReview).at(-1)
+  if (state.isNew || last === undefined || state.due === null) return null
+  return { last, interval: state.interval, inSteps: state.inSteps, due: state.due, recall: recallChance(reviews, settings, now) }
+}
+
+/** An answer as its glyph (YAZ-5032): ✓ Remembered / ✕ Forgot (↺ ~ ✓ ⇈ with four buttons, YAZ-5018); the word is the hover. */
+function NoteCardAnswer({ review, settings, hover }: { review: CardReview; settings: ReviewSettings; hover?: string }) {
+  const word = answerLabel(review.rating, settings)
+  return (
+    <span className="note-card-answer" data-rating={review.rating} title={hover ?? word} aria-label={word} role="img">
+      {answerIcon(review.rating, settings.buttons)}
+    </span>
+  )
+}
+
 /**
- * "Reviews (n)" (D3, D13): a section with a title, as "Linked mentions" is, CLOSED until asked for: the strip says the
- * state ("a footer lets the table expand", D13). Open, the full table (`NoteCardReviewsTable`). The card window has
- * it; the page's card block draws the same title and mounts the same table when opened (`noteCardView.ts`, YAZ-5000).
+ * The quiet one-line strip (YAZ-5032, as Mochi's): the last answer's glyph · the interval ("20 DAYS") · the next due
+ * date ("DEC 17") · the recall chance as a small badge ("100%"). Each fact's name is its hover. A fragment: the card
+ * window's strip holds it after the page name; the page's card block holds it on the Reviews row, closed or open.
+ */
+export function NoteCardFacts({ reviews, settings, now = Date.now() }: { reviews: readonly CardReview[]; settings: ReviewSettings; now?: number }) {
+  const facts = noteCardFacts(reviews, settings, now)
+  if (facts === null) return null
+  const { last, interval, inSteps, due, recall } = facts
+  return (
+    <>
+      <span className="note-card-strip__fact note-card-strip__fact--answer">
+        <NoteCardAnswer review={last} settings={settings} hover={`Last answer: ${answerLabel(last.rating, settings)}, ${noteCardDate(Date.parse(last.at), now)}`} />
+      </span>
+      <span className="note-card-strip__fact" title="Interval">
+        <IntervalIcon />
+        {noteCardWait(interval, inSteps)}
+      </span>
+      <span className="note-card-strip__fact" title="Next due" data-overdue={noteCardOverdue(due, now) || undefined}>
+        <DueTrayIcon />
+        {noteCardDue(due, now)}
+      </span>
+      {recall !== null && (
+        <span className="note-card-strip__fact note-card-strip__recall" title="Chance to remember it now">
+          {`${Math.round(recall * 100)}%`}
+        </span>
+      )}
+    </>
+  )
+}
+
+/**
+ * "4 Reviews" (D3, D13, YAZ-5032): a toggle with a ✓, as Mochi's, CLOSED until asked for: the strip above it says the
+ * state. Open, the full table (`NoteCardReviewsTable`). The card window has it; the page's card block draws the same
+ * toggle and mounts the same table when opened (`noteCardView.ts`, YAZ-5000).
  */
 export function NoteCardReviews({ reviews, settings, onDelete, now }: NoteCardReviewsProps) {
   const [open, setOpen] = useState(false)
   return (
     <section className="note-card-reviews">
-      <button type="button" className="backlinks__header" aria-expanded={open} onClick={() => setOpen((o) => !o)} onMouseDown={(e) => e.preventDefault()}>
-        <svg className="backlinks__chevron" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="m4 6 4 4 4-4" />
-        </svg>
-        <span className="backlinks__title">
-          Reviews <span className="backlinks__count">({reviews.length})</span>
-        </span>
-      </button>
+      <div className="note-card-reviews__bar">
+        <button type="button" className="backlinks__header note-card-reviews__toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)} onMouseDown={(e) => e.preventDefault()}>
+          <ReviewsIcon />
+          <span className="backlinks__title">{reviewsTitle(reviews.length)}</span>
+        </button>
+      </div>
       {open && <NoteCardReviewsTable reviews={reviews} settings={settings} onDelete={onDelete} now={now} />}
     </section>
   )
 }
 
+/** "**4** days": the number bold, the unit muted (YAZ-5032, as Mochi's). */
+function Days({ n }: { n: number }) {
+  return (
+    <>
+      <b className="note-card-reviews__num">{n}</b> <span className="note-card-reviews__unit">{n === 1 ? 'day' : 'days'}</span>
+    </>
+  )
+}
+
 /**
- * The full table (D3, D13): one row per review in time order — Answer, Days (since the review before), Review date,
- * Next due, a delete — and a last row for the review to come: its due date under Next due ("Overdue · Oct 18" when
- * that day is past). The history is replayed only here, so a closed section costs nothing but its count.
+ * The full table (D3, D13; the look is Mochi's, YAZ-5032): one row per review in time order — the answer's glyph, the
+ * days since the review before ("**4** days"; blank for the first), the review date and the next due date in full
+ * ("Sep 24, 2026"), a bin to delete — and a last, muted row for the review to come: the wait, the day it comes due,
+ * "--", no delete. The history is replayed only here, so a closed section costs nothing but its count.
  */
 export function NoteCardReviewsTable({ reviews, settings, onDelete, now = Date.now() }: NoteCardReviewsProps) {
   // One replay: each row is a review's step; the last row's step is the card's state.
   const rows = cardHistory(reviews, settings)
   const last = rows.at(-1)
   const next = last?.due ?? now
-  const nextDue = noteCardDue(next, now)
   return (
     <table className="note-card-reviews__table">
       <thead>
         <tr>
           <th>Answer</th>
-          <th>Days</th>
+          <th># of days</th>
           <th>Review date</th>
           <th>Next due</th>
           <th aria-label="Delete" />
@@ -224,25 +296,27 @@ export function NoteCardReviewsTable({ reviews, settings, onDelete, now = Date.n
         {/* Keyed by place: two reviews in one minute are two rows (`withoutCardReview` takes the last of them). */}
         {rows.map((row, i) => (
           <tr key={i}>
-            <td>{answerLabel(row.review.rating, settings)}</td>
-            <td>{row.elapsed}</td>
-            <td>{noteCardDate(Date.parse(row.review.at), now)}</td>
-            <td>{noteCardDate(row.due, now)}</td>
+            <td>
+              <NoteCardAnswer review={row.review} settings={settings} />
+            </td>
+            <td>{i === 0 ? '' : <Days n={row.elapsed} />}</td>
+            <td>{noteCardFullDate(Date.parse(row.review.at))}</td>
+            <td>{noteCardFullDate(row.due)}</td>
             <td>
               {onDelete !== undefined && (
-                <button type="button" className="comments__action comments__action--danger" aria-label={`Delete the review of ${noteCardDate(Date.parse(row.review.at), now)}`} onMouseDown={(e) => e.preventDefault()} onClick={() => onDelete(row.review)}>
-                  ×
+                <button type="button" className="note-card-reviews__delete" title="Delete this review" aria-label={`Delete the review of ${noteCardFullDate(Date.parse(row.review.at))}`} onMouseDown={(e) => e.preventDefault()} onClick={() => onDelete(row.review)}>
+                  <TrashIcon />
                 </button>
               )}
             </td>
           </tr>
         ))}
-        {/* The review to come: no answer and no review date yet; when it is due. */}
+        {/* The review to come: no answer yet; the wait, the day it comes due, no next due, no delete. */}
         <tr className="note-card-reviews__next">
-          <td>Next</td>
-          <td>{last === undefined ? '' : last.interval}</td>
           <td />
-          <td>{nextDue}</td>
+          <td>{last === undefined ? '' : last.inSteps ? 'later today' : <Days n={last.interval} />}</td>
+          <td>{noteCardFullDate(next)}</td>
+          <td>--</td>
           <td />
         </tr>
       </tbody>

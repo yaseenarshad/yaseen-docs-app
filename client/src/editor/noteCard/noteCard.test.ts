@@ -436,15 +436,24 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
   const settings = () => DEFAULT_REVIEW_SETTINGS
   const header = (root: HTMLElement) => root.querySelector<HTMLButtonElement>('.note-card .note-card-reviews .backlinks__header')
   const press = (el: Element) => el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
-  const rows = (root: HTMLElement) => [...root.querySelectorAll('.note-card-reviews__table tbody tr')].map((tr) => tr.querySelector('td')?.textContent)
+  /** Each row's answer (its glyph's word, the hover) — '' for the review to come. */
+  const rows = (root: HTMLElement) => [...root.querySelectorAll('.note-card-reviews__table tbody tr')].map((tr) => tr.querySelector('.note-card-answer')?.getAttribute('title') ?? '')
+  const cells = (root: HTMLElement) => [...root.querySelectorAll('.note-card-reviews__table tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent))
 
-  it('a card with reviews shows "Reviews (n)" closed, with no table; a card with none shows no section; a preview with no door shows none', async () => {
+  it('a card with reviews shows "✓ 3 Reviews" closed, with no table, and the strip on the same row (YAZ-5032); a card with none shows no section; a preview with no door shows none', async () => {
     const { root } = await mount(`${PAGE}\n\`\`\`card\nAnother\n\`\`\`\n<!-- card: WIKI-8 -->\n`, { noteCards: { path: '/v/Page.md' }, noteCardReviews: { settings, deleteReview: vi.fn() } })
     const cards = root.querySelectorAll('.note-card')
     expect(cards).toHaveLength(2)
-    expect(cards[0].querySelector('.note-card-reviews')?.textContent).toBe('Reviews (3)')
+    expect(header(root)?.textContent).toBe('3 Reviews')
+    expect(header(root)?.querySelector('svg')).not.toBeNull()
     expect(header(root)?.getAttribute('aria-expanded')).toBe('false')
     expect(root.querySelector('.note-card-reviews__table')).toBeNull()
+    // Closed, the facts show: the last answer's glyph, the interval, the next due date, the recall badge.
+    await vi.waitFor(() => expect(cards[0].querySelectorAll('.note-card-reviews__facts > .note-card-strip__fact')).toHaveLength(4))
+    const facts = cards[0].querySelector('.note-card-reviews__facts')!
+    expect(facts.querySelector('.note-card-answer')?.getAttribute('title')).toBe('Last answer: Remembered, Nov 6')
+    expect(facts.querySelector('[title="Interval"]')?.textContent).not.toBe('')
+    expect(facts.querySelector('.note-card-strip__recall')?.textContent).toMatch(/^\d+%$/)
     expect(cards[1].querySelector('.note-card-reviews')).toBeNull()
     const preview = await mount(PAGE, { noteCards: { path: '/v/Page.md' } })
     expect(preview.root.querySelector('.note-card-reviews')).toBeNull()
@@ -454,8 +463,20 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     const { crepe, root, view } = await mount(PAGE, { noteCards: { path: '/v/Page-open.md' }, noteCardReviews: { settings, deleteReview: vi.fn() } })
     const doc = view.state.doc
     press(header(root)!)
-    await vi.waitFor(() => expect(rows(root)).toEqual(['Remembered', 'Forgot', 'Remembered', 'Next']))
+    await vi.waitFor(() => expect(rows(root)).toEqual(['Remembered', 'Forgot', 'Remembered', '']))
     expect(header(root)?.getAttribute('aria-expanded')).toBe('true')
+    // YAZ-5032: icons, "# of days" with its unit (blank for the first), dates in full; the review to come is muted,
+    // "-- " under Next due, and has no delete.
+    const table = cells(root)
+    expect(table.map((r) => r[1])).toEqual(['', '4 days', '1 day', expect.stringMatching(/^(\d+ days?|later today)$/)])
+    expect(table[0][2]).toBe('Nov 1, 2026')
+    expect(table[0][3]).toMatch(/^[A-Z][a-z]{2} \d{1,2}, \d{4}$/)
+    expect(table[3][2]).toMatch(/^[A-Z][a-z]{2} \d{1,2}, \d{4}$/)
+    expect(table[3][3]).toBe('--')
+    const trs = root.querySelectorAll('.note-card-reviews__table tbody tr')
+    expect([...trs].map((tr) => tr.querySelector('button')?.getAttribute('title') ?? null)).toEqual(['Delete this review', 'Delete this review', 'Delete this review', null])
+    expect(trs[3].classList.contains('note-card-reviews__next')).toBe(true)
+    expect([...root.querySelectorAll('.note-card-reviews__table th')].map((th) => th.textContent)).toEqual(['Answer', '# of days', 'Review date', 'Next due', ''])
     expect(view.state.doc).toBe(doc)
     expect(undoDepth(view.state)).toBe(0)
     expect(root.querySelector('.note-card')?.classList.contains('ProseMirror-selectednode')).toBe(false)
@@ -482,8 +503,8 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     await vi.waitFor(() => expect(disk.get(path)).toBe(PAGE.replace(' 2026-11-05T09:00Z again,', '')))
     // The app merges its own write into the open page: the section counts again, and the open table shows the new rows.
     expect(applyExternalMarkdown(crepe, disk.get(path)!)).toBe('applied')
-    await vi.waitFor(() => expect(rows(root)).toEqual(['Remembered', 'Remembered', 'Next']))
-    expect(root.querySelector('.note-card-reviews')?.querySelector('.backlinks__title')?.textContent).toBe('Reviews (2)')
+    await vi.waitFor(() => expect(rows(root)).toEqual(['Remembered', 'Remembered', '']))
+    expect(root.querySelector('.note-card-reviews')?.querySelector('.backlinks__title')?.textContent).toBe('2 Reviews')
     await undoDelete!()
     expect(disk.get(path)).toBe(PAGE)
   })

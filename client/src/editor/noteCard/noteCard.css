@@ -358,31 +358,61 @@
   cursor: pointer;
 }
 
-/* "Reviews (n)" at the bottom of a card with reviews (YAZ-5000): the card window's section, quiet, closed until
-   clicked; its table is the card window's (`review/noteCardScreens.css`), with room inside the card. Hidden while
-   the card is edited. */
+/* The Reviews toggle (YAZ-5032, as Mochi's tab), the page's and the card window's: here, so the page draws it before
+   the card window's styles load. */
+.note-card-reviews__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.note-card-reviews .note-card-reviews__toggle {
+  flex: none;
+  width: auto;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.note-card-reviews .note-card-reviews__toggle:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.note-card-reviews .note-card-reviews__toggle[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
+}
+.note-card-reviews__toggle .backlinks__title {
+  font-weight: 500;
+}
+
+/* "✓ 4 Reviews" at the bottom of a card with reviews (YAZ-5000, YAZ-5032): the card window's toggle and, on the same
+   row, its strip of glyphs (`review/noteCardScreens.css`), so the facts show while closed; the table opens under it,
+   with room inside the card. Hidden while the card is edited. */
 .note-card .note-card-reviews {
   margin: 0;
-  padding: 0 12px;
+  padding: 4px 8px;
   border-top: 1px solid var(--border);
   user-select: none;
 }
-.note-card .note-card-reviews .backlinks__header {
-  padding: 4px 0;
-  border: 0;
-  background: none;
-  font: inherit;
+.note-card .note-card-reviews__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 26px;
+}
+.note-card .note-card-reviews .note-card-reviews__toggle {
   font-size: 12px;
-  cursor: pointer;
+}
+.note-card .note-card-reviews__facts {
+  margin: 0 4px 0 auto;
 }
 .note-card .note-card-reviews .note-card-reviews__table {
-  margin: 0 0 10px 20px;
-}
-.note-card .note-card-reviews__table th {
-  padding: 2px 16px 4px 0;
-}
-.note-card .note-card-reviews__table td {
-  padding: 3px 16px 3px 0;
+  margin: 4px 0 6px;
 }
 .note-card--editing .note-card-reviews {
   display: none;

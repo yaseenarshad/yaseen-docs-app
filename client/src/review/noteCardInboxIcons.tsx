@@ -54,3 +54,20 @@ export const RememberedIcon = () => answerGlyph(<path d="m3 8.5 3.25 3.25L13 4.7
 export const AgainIcon = () => answerGlyph(<path d="M3.5 3.5v3.25h3.25M3.9 6.6A4.75 4.75 0 1 1 3.4 9.5" />)
 export const HardIcon = () => answerGlyph(<path d="M2.75 8.75c1.3-2 2.6-2 3.9 0s2.6 2 3.9 0 2.05-1.6 2.7-.9" />)
 export const EasyIcon = () => answerGlyph(<path d="m4 8.25 4-4 4 4M4 12.25l4-4 4 4" />)
+
+/** The interval (YAZ-5032, as Mochi's strip): rings round a point, the wait the last answer set. */
+export const IntervalIcon = ({ size = 13 }: { size?: number }) =>
+  glyph(
+    <>
+      <circle cx="8" cy="8" r="5.75" />
+      <circle cx="8" cy="8" r="3" />
+      <circle cx="8" cy="8" r="0.6" fill="currentColor" />
+    </>,
+    size,
+  )
+/** The next due date (YAZ-5032, as Mochi's strip): the Inbox's tray, as the card comes back to it. */
+export const DueTrayIcon = ({ size = 13 }: { size?: number }) => glyph(<path d="M2.5 9.5 4 3.5h8l1.5 6v3h-11zM2.5 9.5h3.2l.8 1.5h3l.8-1.5h3.2" />, size)
+/** Delete a review (YAZ-5032): a bin. */
+export const TrashIcon = ({ size = 14 }: { size?: number }) => glyph(<path d="M2.75 4.25h10.5M6.25 4.25v-1.5h3.5v1.5M4 4.25l.6 8.5a1 1 0 0 0 1 .95h4.8a1 1 0 0 0 1-.95l.6-8.5M6.75 7v4M9.25 7v4" />, size)
+/** The Reviews toggle (YAZ-5032, as Mochi's "✓ 4 Reviews"): a plain check, the text colour. */
+export const ReviewsIcon = ({ size = 13 }: { size?: number }) => glyph(<path d="m3 8.5 3.25 3.25L13 4.75" />, size)

@@ -5632,8 +5632,8 @@ describe('App: the note card flow (YAZ-4962)', () => {
     const layer = document.querySelector<HTMLElement>('.explore__layer[data-kind="card"]')!
     expect(layer.querySelector('.explore__title')?.textContent).toBe('Capital of France')
     expect(layer.querySelector('.note-card__id')?.textContent).toBe('WIKI-9')
-    expect(layer.querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('Reviews (1)')
-    expect(layer.querySelector('.note-card-strip__fact')?.textContent).toBe('Last answerRemembered, Jan 2')
+    expect(layer.querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('1 Review')
+    expect(layer.querySelector('.note-card-strip .note-card-answer')?.getAttribute('title')).toBe('Last answer: Remembered, Jan 2')
   })
 
   /**

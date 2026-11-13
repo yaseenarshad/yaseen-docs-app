@@ -2481,33 +2481,35 @@ describe('the card window (YAZ-4962)', () => {
     expect([...top().querySelectorAll('.note-card__hidden')].map((s) => s.textContent)).toEqual(['France', 'Paris'])
     expect(top().querySelector('.note-card__blank')).toBeNull()
     expect(strip()).toEqual(['cards', 'New'])
-    expect(top().querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('Reviews (0)')
+    expect(top().querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('0 Reviews')
     expect(top().querySelector('.note-card-reviews__table')).toBeNull()
-    expect(tableRows()).toEqual([['Next', '', '', 'Today']])
+    expect(tableRows()).toEqual([['', '', new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }), '--']])
   })
 
-  it('a card with reviews: the strip says the last answer, the wait, the next due date and the recall chance; each row of the table deletes its review', async () => {
+  it('a card with reviews: the strip says the last answer, the wait, the next due date and the recall chance (YAZ-5032: Mochi\'s glyphs, each named in its hover); each row of the table deletes its review', async () => {
     files[PAGE] = page('<!-- card: WIKI-9, 2026-01-02T09:00Z good, 2026-01-10T09:00Z again, 2026-01-11T09:00Z good -->')
     props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
     await mount()
     await flush()
     const facts = strip()
     expect(facts[0]).toBe('cards')
-    // Each fact has a quiet label in the reader's words.
-    // Overdue (the reviews are from January): no "Due" label, the table's own words (YAZ-4964 look by eye round 2, item 7).
-    expect([...top().querySelectorAll('.note-card-strip__label')].map((l) => l.textContent)).toEqual(['Last answer', 'Interval', 'Recall'])
-    expect(facts[1]).toBe('Last answerRemembered, Jan 11')
+    // The last answer is its glyph; the word and the date are its hover.
+    expect(factText(1).querySelector('.note-card-answer')?.getAttribute('title')).toBe('Last answer: Remembered, Jan 11')
+    expect(factText(1).querySelector('.note-card-answer svg')).not.toBeNull()
     // YAZ-5020: good, again, good is a new card still in its steps (it needs two Remembered in a row): "later today".
-    expect(factText(2).lastChild?.textContent).toBe('later today')
+    expect(factText(2).getAttribute('title')).toBe('Interval')
+    expect(factText(2).textContent).toBe('later today')
+    // Overdue (the reviews are from January): the table's own words (YAZ-4964 look by eye round 2, item 7).
     expect(factText(3).textContent).toMatch(/^Overdue · /)
-    expect(tableRows().at(-1)?.[3]).toBe(factText(3).textContent)
-    expect(factText(4).lastChild?.textContent).toMatch(/^\d+%$/)
-    expect(top().querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('Reviews (3)')
+    expect(factText(4).textContent).toMatch(/^\d+%$/)
+    expect(top().querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('3 Reviews')
     const rows = tableRows()
-    expect(rows.map((r) => r[0])).toEqual(['Remembered', 'Forgot', 'Remembered', 'Next'])
-    // Days: since the review before.
-    expect(rows.map((r) => r[1]).slice(0, 3)).toEqual(['0', '8', '1'])
-    const deletes = top().querySelectorAll<HTMLButtonElement>('.note-card-reviews__table .comments__action--danger')
+    // The answers are glyphs; their words are the hover.
+    expect([...top().querySelectorAll('.note-card-reviews__table tbody tr .note-card-answer')].map((a) => a.getAttribute('title'))).toEqual(['Remembered', 'Forgot', 'Remembered'])
+    // # of days: since the review before, blank for the first; dates in full.
+    expect(rows.map((r) => r[1])).toEqual(['', '8 days', '1 day', 'later today'])
+    expect(rows[0][2]).toBe('Jan 2, 2026')
+    const deletes = top().querySelectorAll<HTMLButtonElement>('.note-card-reviews__table .note-card-reviews__delete')
     expect(deletes).toHaveLength(3)
     act(() => deletes[1].click())
     expect(deleteReview).toHaveBeenCalledExactlyOnceWith(PAGE, 'WIKI-9', { at: '2026-01-10T09:00Z', rating: 'again' })
@@ -2577,8 +2579,8 @@ describe('the card window (YAZ-4962)', () => {
     feed(2)
     await flush()
     await flush()
-    expect(strip()[1]).toBe('Last answerRemembered, Jan 2')
-    expect(tableRows().map((r) => r[0])).toEqual(['Remembered', 'Next'])
+    expect(factText(1).querySelector('.note-card-answer')?.getAttribute('title')).toBe('Last answer: Remembered, Jan 2')
+    expect(tableRows()).toHaveLength(2)
   })
 
   it('a card with no ID yet opens by its place; the strip\'s page name opens the page on top, landed on the card; ⌘↵ opens the page in a tab', async () => {
