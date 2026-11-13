@@ -1,4 +1,4 @@
-import { MAX_CANVAS_CARDS, MAX_CANVAS_FRAMES, isTocSource, type CanvasCard, type CanvasFrame, type FolderPatch, type TabCanvasPatch } from '@shared/types'
+import { MAX_CANVAS_CARDS, MAX_CANVAS_FRAMES, cleanUpNextTaken, isTocSource, type CanvasCard, type CanvasFrame, type FolderPatch, type TabCanvasPatch } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
@@ -33,6 +33,12 @@ function requireFolderPatch(raw: unknown): FolderPatch {
   if (raw.in !== undefined) {
     if (raw.in !== null && typeof raw.in !== 'string') throw new BridgeFailure('BAD_REQUEST', "'in' must be a string or null")
     patch.in = raw.in
+  }
+  // "Up next a day" (YAZ-5028): the day and its card IDs.
+  if (raw.upNext !== undefined) {
+    const upNext = cleanUpNextTaken(raw.upNext)
+    if (upNext === null) throw new BridgeFailure('BAD_REQUEST', "'upNext' must be { day, cards }")
+    patch.upNext = upNext
   }
   return patch
 }

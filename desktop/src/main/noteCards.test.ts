@@ -260,20 +260,36 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
       { path: '/v/b.md', folder: '', cards: [card('WI-4', { next: true, reviews: learned }), card('WI-5', { next: true }), card('WI-6', { reviews: overdue(400) }), card('WI-7'), card('WI-8')] },
     ]
     const s = { ...DEFAULT_REVIEW_SETTINGS, newPerDay: 1 }
-    const ids = (upNextPerDay: number | null, taken = 0) => cardQueue(records, { ...s, upNextPerDay }, now, '', undefined, undefined, taken).map((q) => (q.next ? `${q.id}*` : q.id))
-    // Limit 2: WI-1 and WI-2 first; WI-4 among the due cards (not due yet: now), WI-3 and WI-5 among the new cards by ID,
-    // outside the one new card a day (WI-7). The Up next filter still has all five.
-    expect(ids(2)).toEqual(['WI-1*', 'WI-2*', 'WI-6', 'WI-4*', 'WI-3*', 'WI-5*', 'WI-7'])
-    expect(ids(2).filter((id) => id.endsWith('*'))).toHaveLength(5)
-    // Empty (no limit, the default): all five first, as before.
+    const ids = (upNextPerDay: number | null, taken: readonly string[] = []) => cardQueue(records, { ...s, upNextPerDay }, now, '', undefined, undefined, taken).map((q) => (q.next ? `${q.id}*` : q.id))
+    // Limit 2 (YAZ-5028 Decision, "so it kinda works like new?"): today's Up next is WI-1 and WI-2, first. The others
+    // keep the mark in the file but are not Up next today: WI-4 among the due cards (not due yet: now), WI-3 and WI-5
+    // among the new cards by ID, outside the one new card a day (WI-7).
+    expect(ids(2)).toEqual(['WI-1*', 'WI-2*', 'WI-6', 'WI-4', 'WI-3', 'WI-5', 'WI-7'])
+    // Empty (no limit, the default): all five first, all five Up next.
     expect(ids(null)).toEqual(['WI-1*', 'WI-2*', 'WI-3*', 'WI-4*', 'WI-5*', 'WI-6', 'WI-7'])
     expect(DEFAULT_REVIEW_SETTINGS.upNextPerDay).toBeNull()
-    // One taken today: one place left, so WI-2 waits by its due date, after WI-6. Two taken, or a limit of 0: none first.
-    expect(ids(2, 1)).toEqual(['WI-1*', 'WI-6', 'WI-2*', 'WI-4*', 'WI-3*', 'WI-5*', 'WI-7'])
-    expect(ids(2, 2)).toEqual(ids(0))
-    expect(ids(0)).toEqual(['WI-6', 'WI-2*', 'WI-4*', 'WI-1*', 'WI-3*', 'WI-5*', 'WI-7'])
+    // One taken today (an answer took WI-0's mark off): one place left, so WI-2 waits by its due date, after WI-6. Two
+    // taken, or a limit of 0: none first.
+    expect(ids(2, ['WI-0'])).toEqual(['WI-1*', 'WI-6', 'WI-2', 'WI-4', 'WI-3', 'WI-5', 'WI-7'])
+    expect(ids(2, ['WI-0', 'WI-00'])).toEqual(ids(0))
+    expect(ids(0)).toEqual(['WI-6', 'WI-2', 'WI-4', 'WI-1', 'WI-3', 'WI-5', 'WI-7'])
+    // A taken ID still marked (the index has not caught up with the answer) holds its own place: nothing moves.
+    expect(ids(2, ['WI-1'])).toEqual(ids(2))
     // The count is the same whatever the limit: every marked card is in the queue.
     expect(new Set([ids(null).length, ids(2).length, ids(0).length])).toEqual(new Set([7]))
+    // The places are the vault's: a folder's Inbox shows its own of the vault's first two (b.md has none of them).
+    const vault = [{ ...records[0], folder: 'a' }, { ...records[1], folder: 'b' }]
+    expect(cardQueue(vault, { ...s, upNextPerDay: 2 }, now, 'b').filter((q) => q.next)).toEqual([])
+    expect(cardQueue(vault, { ...s, upNextPerDay: 2 }, now, 'a').filter((q) => q.next).map((q) => q.id)).toEqual(['WI-1', 'WI-2'])
+  })
+
+  it('YAZ-5028 Decision: with Up next a day = 2 and 3 marked, today\'s Up next is 2 (the menu row and its cards); empty, all 3', () => {
+    const now = new Date(2026, 5, 15, 12, 0).getTime()
+    const card = (id: string, over: { next?: boolean } = {}) => ({ id, off: false, next: false, reviews: [] as CardReview[], ...over })
+    const records = [{ path: '/v/a.md', folder: '', cards: [card('UP-1', { next: true }), card('UP-2', { next: true }), card('UP-3', { next: true }), card('UP-4')] }]
+    const upNext = (upNextPerDay: number | null) => cardQueue(records, { ...DEFAULT_REVIEW_SETTINGS, upNextPerDay }, now).filter((q) => q.next).map((q) => q.id)
+    expect(upNext(2)).toEqual(['UP-1', 'UP-2'])
+    expect(upNext(null)).toEqual(['UP-1', 'UP-2', 'UP-3'])
   })
 
   it('YAZ-4999: `next` reads, writes and goes back to its place byte for byte', () => {

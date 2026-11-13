@@ -9,8 +9,8 @@
   width: 100%;
 }
 
-/* The strip (D13; Mochi's look, YAZ-5032): the page's name, then one quiet line of glyphs in small caps — the last
-   answer, the interval, the next due date, the recall badge. Each fact's name is its hover. */
+/* The strip (D13; YAZ-5032, Yaseen's pick): the page's name, then one calm line of words — "Last: Remembered ·
+   Next review Apr 28, 2027 (in 183 days) · 99% you remember it now". The values emphasised, the words muted. */
 .note-card-strip {
   display: flex;
   flex-wrap: wrap;
@@ -37,32 +37,54 @@
   color: var(--fg);
   text-decoration: underline;
 }
-.note-card-strip__page + .note-card-strip__fact--answer {
+.note-card-strip__page + .note-card-strip__line {
   margin-left: auto;
 }
 .note-card-strip__fact {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 12px;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.note-card-strip__fact[data-overdue] {
+.note-card-strip__line {
+  flex-wrap: wrap;
+}
+.note-card-strip__value {
+  font-weight: 600;
+  color: var(--fg);
+}
+.note-card-strip__dot {
+  white-space: pre;
+  opacity: 0.6;
+}
+.note-card-strip__next[data-overdue],
+.note-card-strip__next[data-overdue] .note-card-strip__value {
   color: var(--danger);
 }
-/* The recall chance (idea 11): a small badge, Mochi's green outline. */
-.note-card-strip__recall {
-  padding: 0 5px;
-  border: 1px solid color-mix(in srgb, var(--ok) 55%, transparent);
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--ok) 10%, transparent);
-  color: var(--ok);
-  letter-spacing: 0.02em;
-  line-height: 16px;
+/* The recall chance's one help (YAZ-5032): a small (i); its words are the hover. */
+.note-card-strip__info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  margin-left: 4px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 9px;
+  font-style: italic;
+  font-weight: 600;
+  line-height: 1;
+  opacity: 0.7;
+  cursor: help;
+  vertical-align: middle;
+}
+.note-card-strip__info::before {
+  content: 'i';
+}
+.note-card-strip__info:hover {
+  opacity: 1;
 }
 
 /* An answer's glyph (YAZ-5032): ✓ green-ish, ✕ red-ish (four buttons: ↺ red, ~ amber, ✓ ⇈ green); the word is the hover. */
@@ -139,8 +161,9 @@
   border-radius: 0 6px 6px 0;
   text-align: right;
 }
-.note-card-reviews__table td:first-child .note-card-answer {
-  padding-left: 4px;
+.note-card-reviews__answer .note-card-answer {
+  margin-right: 4px;
+  vertical-align: -2px;
 }
 .note-card-reviews__num {
   font-weight: 600;

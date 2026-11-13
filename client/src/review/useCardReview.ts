@@ -7,7 +7,7 @@ import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { folderTitle } from '../links/shortcuts'
 import { storage } from '../lib/storage'
 import { changeCardLine, deleteCardReview, isCardGone, readCard, restoreCardReview, undoCardAnswer, writeCardAnswer, type CardOnPage } from './cardFile'
-import { setUpNextTaken, upNextTakenToday } from './upNextTaken'
+import { setUpNextTaken, subscribeUpNextTaken, upNextTakenToday } from './upNextTaken'
 
 /**
  * Note card review as App sees it (YAZ-4967): how many cards are due, and the one review
@@ -29,9 +29,11 @@ import { setUpNextTaken, upNextTakenToday } from './upNextTaken'
  * cards show, and "3 of 12" counts only those. Up next (YAZ-5028): the cards marked `next`, new or reviewed (`off` cards
  * are never in the queue); an answer takes a card out of it, as the repeat it may leave is no longer up next.
  *
- * Up next a day (YAZ-5028): the queue a session starts with puts only the day's Up next places first (`cardQueue`,
- * less `upNextTakenToday`: an answer that takes a card's mark off counts it, its ⌘Z gives it back). Only `start`
- * passes the count: the other queues here are read for which cards are in them, not for their order.
+ * Up next a day (YAZ-5028, Yaseen: "so it kinda works like new?"): only the day's N places are Up next — they go first,
+ * and the Up next row counts and shows those alone; the other marked cards wait in their normal place (`cardQueue`,
+ * less `upNextTakenToday`: an answer that takes a card's mark off counts it, its ⌘Z gives it back). Every queue here
+ * passes the same list, so the marks the session follows (YAZ-5031) are today's Up next, not every marked card. The
+ * list lives in the app state (`upNextTaken.ts`), and a change of it is read as a change of the index.
  *
  * The marks follow the index (YAZ-5031): a card marked `next` while the session is open (the page's ⋯, the card
  * window, another window, the command line) joins Up next and comes right after the card on show; a mark taken off
@@ -219,6 +221,8 @@ const countOf = (queue: readonly DueCard[]): Record<CardFilter, number> => {
   return { all: queue.length, next: queue.filter((c) => c.next).length, due: queue.length - fresh, new: fresh }
 }
 
+const NO_TAKEN: readonly string[] = []
+
 const markedIn = (live: readonly DueCard[]): Set<string> => new Set(live.filter((c) => c.next).map(cardKey))
 
 /**
@@ -321,7 +325,9 @@ export function useCardReview(root: string | null, source: IndexSource, settings
 
   // The replay of each card is cached by its log (`cardDueAt`), so a new snapshot costs a join per reviewed card.
   const letters = source.letters
-  const vaultQueue = useMemo(() => cardQueue(records, settings, Date.now(), '', undefined, letters), [records, settings, day, letters])
+  // YAZ-5028: today's taken Up next places, from the app state; one array while it holds still.
+  const taken = useSyncExternalStore(subscribeUpNextTaken, () => (root === null ? NO_TAKEN : upNextTakenToday(root)))
+  const vaultQueue = useMemo(() => cardQueue(records, settings, Date.now(), '', undefined, letters, taken), [records, settings, day, letters, taken])
   const dueCount = vaultQueue.length
   // YAZ-5033: today's reviews across the vault, from the index: the new answer counts once the index has its write.
   const today = useMemo(() => reviewedToday(records, Date.now()), [records, day])
@@ -331,13 +337,13 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     setSession((s) => {
       if (s === null || !settings.enabled) return s
       const vault = !s.scope.folder && s.scope.page === undefined
-      return withMarks(s, vault ? vaultQueue : cardQueue(records, settings, Date.now(), s.scope.folder, s.scope.page, letters))
+      return withMarks(s, vault ? vaultQueue : cardQueue(records, settings, Date.now(), s.scope.folder, s.scope.page, letters, taken))
     })
-  }, [vaultQueue, records, settings, letters])
+  }, [vaultQueue, records, settings, letters, taken])
 
   // The callbacks read the latest state at call time; their identities stay stable for memoised children.
-  const live = useRef({ records, settings, session, loaded, fixed })
-  live.current = { records, settings, session, loaded, fixed }
+  const live = useRef({ records, settings, session, loaded, fixed, taken })
+  live.current = { records, settings, session, loaded, fixed, taken }
   const busy = useRef(false)
 
   /**
@@ -345,8 +351,8 @@ export function useCardReview(root: string | null, source: IndexSource, settings
    * (YAZ-5020) stays: this session put it back, and the index may not have its new answer yet.
    */
   const settle = useCallback((queue: QueueCard[], scope: CardReviewScope): QueueCard[] => {
-    const { records, settings } = live.current
-    const due = cardQueue(records, settings, Date.now(), scope.folder, scope.page, source.letters)
+    const { records, settings, taken } = live.current
+    const due = cardQueue(records, settings, Date.now(), scope.folder, scope.page, source.letters, taken)
     const first = queue.findIndex((card) => card.repeat === true || due.some((d) => sameCard(d, card)))
     return first === -1 ? [] : queue.slice(first)
   }, [source])
@@ -457,7 +463,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     (scope: CardReviewScope = {}) => {
       const { records, settings } = live.current
       if (!settings.enabled) return
-      const queue = cardQueue(records, settings, Date.now(), scope.folder, scope.page, source.letters, root === null ? 0 : upNextTakenToday(root))
+      const queue = cardQueue(records, settings, Date.now(), scope.folder, scope.page, source.letters, root === null ? NO_TAKEN : upNextTakenToday(root))
       const label = scope.page !== undefined ? titleOf(records, scope.page) : scope.folder ? folderTitle(source.folders, `${root}/${scope.folder}`) : 'Inbox'
       const { due, new: fresh, next } = countOf(queue)
       // A new scope starts on All cards (YAZ-5017), with an empty bar (YAZ-5020).
@@ -504,8 +510,9 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       busy.current = false
       forget(card.path) // also a read begun while it wrote
       if (written === 'failed') return
-      // YAZ-5028: the answer took the mark off: one of today's Up next places is used.
-      if (written !== 'gone' && written.next >= 0 && root !== null) setUpNextTaken(root, card.id, true)
+      // YAZ-5028: the answer took the mark off a card of today's Up next: one of the day's places is used. A marked
+      // card past the day's places (`card.next` false) loses its mark too, but it held no place.
+      if (written !== 'gone' && written.next >= 0 && card.next && root !== null) setUpNextTaken(root, card.id, true)
       setSession((s) => {
         if (s === null || !showing(s, card)) return s
         // Still in its steps (YAZ-5020): back at the end of this session, no longer new or up next.
@@ -539,7 +546,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     )
     busy.current = false
     forget(last.card.path)
-    if (undone && last.next >= 0 && root !== null) setUpNextTaken(root, last.card.id, false)
+    if (undone && last.next >= 0 && last.card.next && root !== null) setUpNextTaken(root, last.card.id, false)
     // The card back at its place (YAZ-5020), its repeat out of the queue and the session one smaller again; it shows
     // also under a filter that would hide it: then All cards (YAZ-5017). Its answer leaves the bar (YAZ-5020).
     if (undone)
@@ -549,8 +556,9 @@ export function useCardReview(root: string | null, source: IndexSource, settings
         const at = Math.min(last.at, rest.length)
         const side = last.card.isNew ? 'new' : 'due'
         const totals = last.repeat ? { ...s.totals, [side]: s.totals[side] - 1 } : s.totals
-        // Up next again when the answer took the mark off (the file has it back).
-        const card = last.next >= 0 && !last.card.next ? { ...last.card, next: true } : last.card
+        // As it was (YAZ-5028): Up next again when it was in today's Up next; a marked card past the day's places
+        // gets its mark back in the file, and waits in its normal place again.
+        const card = last.card
         const filter = matchesFilter(card, s.filter) ? s.filter : 'all'
         return { ...s, queue: [...rest.slice(0, at), card, ...rest.slice(at)], at, total: s.total - (last.repeat ? 1 : 0), totals, turn: s.turn + 1, undo: s.undo.slice(0, -1), filter, answered: s.answered.slice(0, -1) }
       })

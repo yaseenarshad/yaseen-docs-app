@@ -3192,10 +3192,33 @@ export interface FolderState {
    * Absent (or null) for a vault. Persisted, per machine. Additive within version 1: an old build drops the key.
    */
   in?: string | null
+  /**
+   * "Up next a day" (YAZ-5028): the card IDs of this vault whose Up next mark an answer took off on local day `day`
+   * (`YYYY-M-D`), so the day's places hold over an Inbox closed and the app restarted. The card line keeps no trace of
+   * the mark, so this Mac keeps it; another Mac does not see it. Persisted, per machine. Additive: absent = none.
+   */
+  upNext?: UpNextTaken
+}
+
+/** The Up next marks an answer took off on one day (YAZ-5028): at most `MAX_UP_NEXT_TAKEN` card IDs. */
+export interface UpNextTaken {
+  day: string
+  cards: string[]
+}
+
+export const MAX_UP_NEXT_TAKEN = 1000
+
+/** Pure (the store and the bridge): a valid `UpNextTaken`, or null — a day of `YYYY-M-D`, the string IDs kept once, cut at the limit. */
+export function cleanUpNextTaken(raw: unknown): UpNextTaken | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const { day, cards } = raw as { day?: unknown; cards?: unknown }
+  if (typeof day !== 'string' || !/^\d{4}-\d{1,2}-\d{1,2}$/.test(day) || !Array.isArray(cards)) return null
+  const ids = [...new Set(cards.filter((id): id is string => typeof id === 'string' && id.length > 0 && id.length <= 200))]
+  return { day, cards: ids.slice(0, MAX_UP_NEXT_TAKEN) }
 }
 
 /** What `state.setFolder` may merge into a bucket — every other field has its own targeted mutator. */
-export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name' | 'key' | 'in'>>
+export type FolderPatch = Partial<Pick<FolderState, 'expanded' | 'lastFile' | 'name' | 'key' | 'in' | 'upNext'>>
 
 /** Pure: `folders` with `key` taken from the vault that has it (YAZ-2555 D2: one vault per number) — shared by the client cache and the main store. */
 export function freeVaultKey(folders: Record<string, FolderState>, key: number): Record<string, FolderState> {
