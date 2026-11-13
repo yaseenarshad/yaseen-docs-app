@@ -8678,6 +8678,21 @@ describe('review menu items (YAZ-2322)', () => {
     expect(props.onReviewPage).toHaveBeenCalledExactlyOnceWith('/v/a.md')
   })
 
+  it('"Review this page" also sits on a page with no card of its own that embeds a card (YAZ-5037); an embed of no card is not one', async () => {
+    const indexSource = indexFor(true)
+    const holder = { ...indexRecord('/v/sub/b.md'), cards: [{ id: 'V-140', off: false, next: false, reviews: [] }] }
+    indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), embeds: ['v-140'] }, holder], [], true)
+    const { el, props } = await mount({ review: true, indexSource })
+    rightClick(el, '.tree__row--file')
+    act(() => itemByLabel(el, 'Review this page')?.click())
+    expect(props.onReviewPage).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    const none = indexFor(true)
+    none.update(() => null, [{ ...indexRecord('/v/a.md'), embeds: ['V-404', 'Sketch.excalidraw'] }, holder], [], true)
+    const other = await mount({ review: true, indexSource: none })
+    rightClick(other.el, '.tree__row--file')
+    expect(itemByLabel(other.el, 'Review this page')).toBeUndefined()
+  })
+
   it('no "Review this page" on a page with no card, with review off, or in a vault that gives no IDs', async () => {
     const withCard = (ids: boolean) => {
       const source = indexFor(ids)

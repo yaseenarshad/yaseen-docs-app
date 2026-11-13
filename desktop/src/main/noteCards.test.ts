@@ -504,3 +504,48 @@ describe('the settings (D14)', () => {
     expect(sanitizeReviewSettings({ weights: [...DEFAULT_CARD_WEIGHTS.slice(0, 20), Number.NaN] }).weights).toEqual([...DEFAULT_CARD_WEIGHTS])
   })
 })
+
+describe('YAZ-5037: "Review this page" and "Review this folder" include the cards their pages embed, each card one time', () => {
+  const now = new Date(2026, 10, 13, 12, 0).getTime()
+  const card = (id: string) => ({ id, off: false, next: false, reviews: [] as CardReview[] })
+  const s = { ...DEFAULT_REVIEW_SETTINGS, newPerDay: null }
+  // geo/europe.md holds GEO-1 and embeds GEO-140 (a card file) and GEO-2 (its own card); notes/plan.md embeds GEO-140
+  // and GEO-7 (a card in another folder's page); GEO-140 is a card file in cards/; other/x.md holds GEO-7 and GEO-8.
+  const records = [
+    { path: '/v/cards/capital-of-france-geo-140.md', folder: 'cards', kind: 'card' as const, cards: [card('GEO-140')], embeds: [] },
+    { path: '/v/geo/europe.md', folder: 'geo', cards: [card('GEO-1'), card('GEO-2')], embeds: ['GEO-140', 'geo-2', 'Some page'] },
+    { path: '/v/notes/plan.md', folder: 'notes', embeds: ['GEO-140', 'GEO-7'] },
+    { path: '/v/notes/deep/more.md', folder: 'notes/deep', embeds: ['geo-140|its title', 'GEO-404'] },
+    { path: '/v/other/x.md', folder: 'other', cards: [card('GEO-7'), card('GEO-8')], embeds: [] },
+  ]
+  const ids = (folder: string, page?: string) => cardQueue(records, s, now, folder, page, ['GEO']).map((c) => c.id)
+
+  it('a page: its own cards, then the cards it embeds (by ID, any case); a card on the page and embedded there is one', () => {
+    expect(ids('', '/v/geo/europe.md').sort()).toEqual(['GEO-1', 'GEO-140', 'GEO-2'])
+    // A page with no card of its own that embeds two: both, from where they live, new cards by ID number.
+    expect(cardQueue(records, s, now, '', '/v/notes/plan.md', ['GEO'])).toEqual([
+      expect.objectContaining({ id: 'GEO-7', path: '/v/other/x.md', index: 0 }),
+      expect.objectContaining({ id: 'GEO-140', path: '/v/cards/capital-of-france-geo-140.md', index: 0 }),
+    ])
+  })
+
+  it('a folder: its pages\' cards and every card they embed, a card embedded on 3 pages one time; an ID no card has adds nothing', () => {
+    expect(ids('notes').sort()).toEqual(['GEO-140', 'GEO-7'])
+    expect(ids('geo').sort()).toEqual(['GEO-1', 'GEO-140', 'GEO-2'])
+    expect(ids('notes/deep')).toEqual(['GEO-140'])
+  })
+
+  it('the vault and its counts do not change: every card one time; the new-card limit is the vault\'s', () => {
+    expect(ids('').sort()).toEqual(['GEO-1', 'GEO-140', 'GEO-2', 'GEO-7', 'GEO-8'])
+    const limited = { ...s, newPerDay: 1 }
+    // A card begun today elsewhere uses the vault's one new card: the page review of plan.md gets none of its embeds.
+    const begun = [...records, { path: '/v/z.md', folder: '', cards: [{ ...card('GEO-9'), reviews: [{ at: cardTime(now - 60_000), rating: 'good' as const }] }] }]
+    expect(cardQueue(begun, limited, now, '', '/v/notes/plan.md', ['GEO'])).toEqual([])
+    expect(cardPlan(records, limited, now, '', '/v/notes/plan.md', ['GEO']).more.new).toBe(1)
+  })
+
+  it('an archived card stays out, embedded or not', () => {
+    const off = records.map((r) => (r.path === '/v/other/x.md' ? { ...r, cards: [{ ...card('GEO-7'), off: true }, card('GEO-8')] } : r))
+    expect(cardQueue(off, s, now, '', '/v/notes/plan.md', ['GEO']).map((c) => c.id)).toEqual(['GEO-140'])
+  })
+})

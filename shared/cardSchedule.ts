@@ -1,5 +1,6 @@
 import { FSRS, Rating, State, createEmptyCard, generatorParameters, type Card, type Grade, type StepUnit } from 'ts-fsrs'
 import { cardReviewsOf, cardTime, withoutCardReview, type CardRating, type CardReview, type NoteCardRecord } from './cardLine'
+import { embeddedCards, makeCardResolver } from './cardLinks'
 import { hasLetters, noteIdNumber } from './noteId'
 import type { ReviewSettings } from './reviews'
 import { inFolder } from './types'
@@ -223,8 +224,8 @@ interface CardFacts {
   first: string | null
 }
 
-/** A page as the index hands it: `mtime` and `size` say its bytes did not change. */
-type CardPage = { path: string; folder: string; mtime?: number; size?: number; cards?: readonly NoteCardRecord[] }
+/** A page as the index hands it: `mtime` and `size` say its bytes did not change; `embeds`, its `![[…]]` targets. */
+type CardPage = { path: string; folder: string; mtime?: number; size?: number; cards?: readonly NoteCardRecord[]; embeds?: readonly string[] }
 
 /** Each page's facts by its PATH, with the mtime and size they are for: one entry per page, never per save. */
 const pageCache = new WeakMap<ReviewSettings, Map<string, { mtime: number; size: number; facts: readonly CardFacts[] }>>()
@@ -353,6 +354,21 @@ export interface CardPlan {
 }
 
 /**
+ * The cards the scope's pages embed (YAZ-5037, Q3 and open decision 5: you review what you see there): each card's ID
+ * in lowercase → the page it lives on (`embeddedCards`), so a card is one card however many pages embed it, and a copy
+ * of its ID the sweep has not settled is not taken for it. Empty for the vault's scope, which holds every card already.
+ */
+function embeddedInScope(records: readonly CardPage[], folder: string, page: string | undefined, letters: readonly string[] | undefined): ReadonlyMap<string, string> {
+  if (page === undefined && folder === '') return NO_EMBEDS
+  const targets: string[] = []
+  for (const r of records) if (r.embeds !== undefined && r.embeds.length > 0 && (page === undefined ? inFolder(r.folder, folder) : r.path === page)) targets.push(...r.embeds)
+  // Most scopes embed no card: no resolver is made.
+  if (targets.length === 0) return NO_EMBEDS
+  return new Map(embeddedCards(targets, makeCardResolver(records, letters)).map((card) => [card.id.toLowerCase(), card.path]))
+}
+const NO_EMBEDS: ReadonlyMap<string, string> = new Map()
+
+/**
  * The cards due now (D11), in this order:
  *  1. UP NEXT (YAZ-4999 D3): each card whose line holds `next`, due or not, new or not, by ID number (the time of the
  *     mark is not in the file). They are outside the new-card limit, and are due now. `upNextPerDay` (YAZ-5028; null:
@@ -370,7 +386,8 @@ export interface CardPlan {
  * `added` (YAZ-5042): today's added numbers, on top of `newPerDay` and `upNextPerDay` (not with no limit).
  * Only a card in review shows: it has an ID, and is not `off` (`off` wins over `next`). None while the vault has
  * review off. `folder` (root-relative, '' = the vault) keeps the cards of that folder and its subfolders; `page` (a
- * page's absolute path, "Review this page", idea 4) keeps that page's cards alone. Either way the new cards begun today
+ * page's absolute path, "Review this page", idea 4) keeps that page's cards. Both also keep the cards the scope's pages
+ * embed (`![[GEO-140]]`, YAZ-5037), each card one time: it is still read where it lives. Either way the new cards begun today
  * are counted over the whole vault: the limit is the vault's. A card whose ID a card before it on the same page holds
  * (a copy the sweep has not settled yet) is left out until it has its own ID: the Inbox never shows one card twice.
  * `letters`: the vault's ID letters (`hasLetters`), so an ID of other letters sorts last.
@@ -390,8 +407,9 @@ export function cardPlan(records: readonly CardPage[], s: ReviewSettings, now: n
   const tomorrow = cardTime(new Date(now).setHours(24, 0, 0, 0))
   // Only the pages with cards: most pages have none, and the sort is the loop's one cost per page.
   const sorted = records.filter((r) => r.cards !== undefined && r.cards.length > 0).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+  const embedded = embeddedInScope(records, folder, page, letters)
   for (const r of sorted) {
-    const mine = page === undefined ? inFolder(r.folder, folder) : r.path === page
+    const scoped = page === undefined ? inFolder(r.folder, folder) : r.path === page
     const facts = cardFacts(r, s)
     const ids = new Set<string>()
     ;(r.cards ?? []).forEach((card, index) => {
@@ -401,7 +419,7 @@ export function cardPlan(records: readonly CardPage[], s: ReviewSettings, now: n
       ids.add(card.id)
       const isNew = first === null
       if (card.next === true) marked.push({ path: r.path, index, id: card.id, due: isNew ? now : Math.min(at, now), isNew, next: true })
-      if (!mine) return
+      if (!scoped && (embedded.size === 0 || embedded.get(card.id.toLowerCase()) !== r.path)) return
       if (card.next === true) {
         const c: DueCard = { path: r.path, index, id: card.id, due: isNew ? now : Math.min(at, now), isNew, next: true }
         if (!isNew) dueOf.set(c, { at, steps })

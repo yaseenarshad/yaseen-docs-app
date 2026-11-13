@@ -7,6 +7,7 @@ import { api } from '../api'
 import { osVerbs } from '../lib/osVerbs'
 import { CalendarIcon, GridIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import { embeddedCards, makeCardResolver } from '@shared/cardLinks'
 import type { WatchSource } from '../hooks/useWatch'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { pageName, useAllPathTitles } from '../lib/pageLabel'
@@ -1325,9 +1326,11 @@ export function Sidebar({
       const home = node === null ? vaultsRef.current[0] : vaultOf(node.path)
       // Blank space is the vault ROOT (GRO-2273) — of a window with one vault. With two or more it is no one vault's (S10).
       const blank = multi ? null : root.replace(/\/+$/, '')
-      // "Review this page" (YAZ-4967): a page row whose index record holds a card, read ONCE here like every other target this menu pins.
+      // "Review this page" (YAZ-4967): a page row whose index record holds a card, or embeds one (YAZ-5037), read ONCE
+      // here like every other target this menu pins. The card resolver is made only for a page with embeds.
       const cardsOn = home.review && home.index.ids
-      const reviewPage = cardsOn && plural === null && filePath !== null && vaultRow === null && (home.index.records.find((r) => r.path === filePath)?.cards?.length ?? 0) > 0 ? filePath : null
+      const pageRecord = cardsOn && plural === null && filePath !== null && vaultRow === null ? home.index.records.find((r) => r.path === filePath) : undefined
+      const reviewPage = pageRecord !== undefined && ((pageRecord.cards?.length ?? 0) > 0 || (pageRecord.embeds.length > 0 && embeddedCards(pageRecord.embeds, makeCardResolver(home.index.records, home.index.letters)).length > 0)) ? pageRecord.path : null
       // Only a ROW opens a menu on the Search tab (blank space there offers none), and a search row is a disk row.
       const asSearch = searching || outside
       const menuLens: SidebarLens = asSearch ? 'files' : lens
