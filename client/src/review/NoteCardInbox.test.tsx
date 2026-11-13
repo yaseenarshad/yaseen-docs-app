@@ -47,7 +47,7 @@ let review: CardReviewApi
 let props: NoteCardInboxProps
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, due: 9, new: 3 }, from: ['Vault'], answered: [], size: 12, ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], answered: [], size: 12, ...over }
 }
 
 function render() {
@@ -468,22 +468,45 @@ describe('the Inbox screen (YAZ-4962)', () => {
     const rows = () => [...document.querySelectorAll<HTMLButtonElement>('.note-card-inbox__filter-item')]
     expect(rows().map((r) => [r.textContent, r.getAttribute('aria-checked')])).toEqual([
       ['All cards12', 'true'],
+      ['Up next0', 'false'],
       ['Due today9', 'false'],
       ['New cards3', 'false'],
     ])
     // The menu is open: the Inbox's keys are not taken (a menu owns them).
     press('1')
     expect(review.answer).not.toHaveBeenCalled()
-    act(() => rows()[1].click())
+    act(() => rows()[2].click())
     expect(review.setFilter).toHaveBeenCalledExactlyOnceWith('due')
     expect(rows()).toHaveLength(0)
     // The due cards are done, new cards are left.
-    session = { ...session, filter: 'due', card: null, counts: { all: 3, due: 0, new: 3 } }
+    session = { ...session, filter: 'due', card: null, counts: { all: 3, next: 0, due: 0, new: 3 } }
     render()
     expect(el.querySelector('.note-card-inbox__filter')?.textContent).toBe('Due today')
     expect(el.querySelector('.note-card-inbox__done-title')?.textContent).toBe('No due cards left.')
     act(() => el.querySelector<HTMLButtonElement>('.note-card-inbox__done-more')!.click())
     expect(review.setFilter).toHaveBeenLastCalledWith('all')
+  })
+
+  it('YAZ-5028: the menu`s second row is Up next with its count in the chip`s colours (grey at 0); a pick sets the filter; its done screen leads back to All cards', () => {
+    mount(TWO_SIDES)
+    session = { ...session, counts: { all: 12, next: 2, due: 9, new: 3 } }
+    render()
+    act(() => el.querySelector<HTMLButtonElement>('.note-card-inbox__filter')!.click())
+    const rows = () => [...document.querySelectorAll<HTMLButtonElement>('.note-card-inbox__filter-item')]
+    expect(rows().map((r) => r.textContent)).toEqual(['All cards12', 'Up next2', 'Due today9', 'New cards3'])
+    const count = rows()[1].querySelector('.note-card-inbox__count')!
+    expect([count.getAttribute('data-filter'), count.hasAttribute('data-empty')]).toEqual(['next', false])
+    act(() => rows()[1].click())
+    expect(review.setFilter).toHaveBeenCalledExactlyOnceWith('next')
+    // The Up next cards are done, others are left.
+    session = { ...session, filter: 'next', card: null, counts: { all: 10, next: 0, due: 7, new: 3 } }
+    render()
+    expect(el.querySelector('.note-card-inbox__filter')?.textContent).toBe('Up next')
+    expect(el.querySelector('.note-card-inbox__done-title')?.textContent).toBe('No Up next cards left.')
+    act(() => el.querySelector<HTMLButtonElement>('.note-card-inbox__done-more')!.click())
+    expect(review.setFilter).toHaveBeenLastCalledWith('all')
+    act(() => el.querySelector<HTMLButtonElement>('.note-card-inbox__filter')!.click())
+    expect(rows()[1].querySelector('.note-card-inbox__count')?.hasAttribute('data-empty')).toBe(true)
   })
 
   it('YAZ-5018: the buttons wear their glyphs — ✕ Forgot and ✓ Remembered; with four buttons ↺ Again, ~ Hard, ✓ Good, ⇈ Easy — each a round pill with its digit', async () => {

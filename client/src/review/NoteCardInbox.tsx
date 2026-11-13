@@ -277,7 +277,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
                 {session.filter !== 'all' && session.counts.all > 0 ? (
                   // The filter's cards are done, others are left (YAZ-5017): the way back to All cards.
                   <>
-                    <p className="note-card-inbox__done-title">{session.filter === 'due' ? 'No due cards left.' : 'No new cards left.'}</p>
+                    <p className="note-card-inbox__done-title">{session.filter === 'due' ? 'No due cards left.' : session.filter === 'next' ? 'No Up next cards left.' : 'No new cards left.'}</p>
                     <button type="button" className="note-card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={() => review.setFilter('all')}>
                       {session.counts.all} more in {CARD_FILTERS[0].label}
                     </button>
