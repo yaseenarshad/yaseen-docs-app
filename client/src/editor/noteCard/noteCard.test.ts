@@ -290,6 +290,29 @@ describe('the card in the page', () => {
     expect(opened).toEqual([{ path: '/v/Page.md', cardId: 'WIKI-7', index: 0 }])
   })
 
+  it('YAZ-5030: ⋯ "Title on the front" Show / Hide sets and removes `notitle` in one undo step; the head says "Title hidden in review"; the card still shows its title', async () => {
+    const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05Z good -->\n`, { noteCards: { path: '/v/Page.md' } })
+    const rowOf = () => {
+      root.querySelector<HTMLElement>('.note-card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+      return [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent?.startsWith('Title on the front'))!
+    }
+    const line = () => getMarkdownForSave(crepe).split('\n').find((l) => l.startsWith('<!-- card'))
+    const mark = () => root.querySelector<HTMLElement>('.note-card__notitle')!
+    expect(mark().hidden).toBe(true)
+    const row = rowOf()
+    expect(row.dataset.hint).toBe('Show')
+    row.click()
+    expect(line()).toBe('<!-- card: WIKI-7, notitle, 2026-11-12T14:05Z good -->')
+    expect([mark().hidden, mark().textContent]).toEqual([false, 'Title hidden in review'])
+    // The page shows the whole card, its first line too.
+    expect(root.querySelector('.note-card__body')?.textContent).toContain('What is the capital of')
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    expect(rowOf().dataset.hint).toBe('Hide')
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    undo(view.state, view.dispatch)
+    expect([line(), mark().hidden]).toEqual(['<!-- card: WIKI-7, 2026-11-12T14:05Z good -->', true])
+  })
+
   it('YAZ-4999: ⋯ Put at top of Inbox and the chip`s × set and remove `next`, each in one undo step; read only, they write the FILE', async () => {
     const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05Z good -->\n`, { noteCards: { path: '/v/Page.md' } })
     const rowOf = (label: string) => {

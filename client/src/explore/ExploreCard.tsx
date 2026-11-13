@@ -242,8 +242,8 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
               </div>
             )}
             <NoteCardStrip card={card} pageName={pageName} vault={vault} onOpenPage={() => onOpenPage(card.index)} />
-            {card.id !== null && <NoteCardBacklinks id={card.id} vault={vault} onOpen={onOpenLink} />}
             {review !== undefined && <NoteCardReviews reviews={card.reviews} settings={review.settings} onDelete={deleteReview} />}
+            {card.id !== null && <NoteCardBacklinks id={card.id} vault={vault} onOpen={onOpenLink} />}
           </>
         )}
       </div>
@@ -315,7 +315,7 @@ function NoteCardBacklinks({ id, vault, onOpen }: { id: string; vault: ExploreVa
   const [open, setOpen] = useState<boolean | null>(null)
   const shown = open ?? pages.length > 0
   return (
-    <section className="note-card-reviews note-card-backlinks">
+    <section className="note-card-backlinks">
       <button type="button" className="backlinks__header" aria-expanded={shown} onClick={() => setOpen(!shown)} onMouseDown={(e) => e.preventDefault()}>
         <svg className="backlinks__chevron" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="m4 6 4 4 4-4" />

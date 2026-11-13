@@ -46,10 +46,12 @@
 }
 
 /* "Reviews (n)": the "Linked mentions" header, then the table. */
-.note-card-reviews {
+.note-card-reviews,
+.note-card-backlinks {
   margin-top: 16px;
 }
-.note-card-reviews .backlinks__header {
+.note-card-reviews .backlinks__header,
+.note-card-backlinks .backlinks__header {
   border: 0;
   background: none;
   font: inherit;

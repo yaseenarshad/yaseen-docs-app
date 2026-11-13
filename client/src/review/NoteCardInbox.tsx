@@ -188,7 +188,9 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
     const { session, review, card } = live.current
     // The answers as the hook fixed them (a digit can come before the buttons show: they are fixed now, as `answer` would).
     const fixed = (session.answers ?? review.showAnswers())?.find((a) => a.review.rating === rating)
-    pendingLine.current = fixed === undefined || card === null ? null : { text: answerLine(rating, card.id, fixed.interval, fixed.inSteps, review.settings), rating, count: session.answered.length + 1 }
+    // The card by its title (YAZ-5030), a title hidden in review too: the answer is given.
+    const title = card?.page == null ? '' : cardTitle(card.page.text)
+    pendingLine.current = fixed === undefined || card === null ? null : { text: answerLine(rating, card.id, fixed.interval, fixed.inSteps, review.settings, title), rating, count: session.answered.length + 1 }
     void review.answer(rating)
   }, [])
   const answeredCount = session.answered.length

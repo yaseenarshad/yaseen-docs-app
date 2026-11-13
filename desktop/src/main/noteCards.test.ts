@@ -104,8 +104,8 @@ describe('the card line (D3)', () => {
       [8, 12, null, '  ', 'Two {{word}}\n---\nBack'],
     ])
     expect(cardRecords(page)).toEqual([
-      { id: 'WIKI-1', off: false, next: false, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }] },
-      { id: null, off: false, next: false, reviews: [] },
+      { id: 'WIKI-1', off: false, next: false, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }], title: 'One' },
+      { id: null, off: false, next: false, reviews: [], title: 'Two word' },
     ])
     const given = rewritePageCards(page, (card, i) => (i === 1 ? withCardId(card.line, 'WIKI-2') : undefined))
     expect(given).toBe(page.replace('  Back\n  ```\n', '  Back\n  ```\n  <!-- card: WIKI-2 -->\n'))
@@ -252,7 +252,7 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
     const text = '<!-- card: WIKI-512, next, 2026-11-12T14:05Z good -->'
     const line = parseCardLine(text)!
     expect([isCardNext(line), cardNextIndex(line), formatCardLine(line)]).toEqual([true, 1, text])
-    expect(cardRecords(`\`\`\`card\nQ\n\`\`\`\n${text}`)).toEqual([{ id: 'WIKI-512', off: false, next: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }] }])
+    expect(cardRecords(`\`\`\`card\nQ\n\`\`\`\n${text}`)).toEqual([{ id: 'WIKI-512', off: false, next: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }], title: 'Q' }])
     const plain = parseCardLine('<!-- card: WIKI-512, off, 2026-11-12T14:05Z good -->')!
     expect(formatCardLine(withCardNext(plain, true))).toBe('<!-- card: WIKI-512, off, next, 2026-11-12T14:05Z good -->')
     expect(formatCardLine(withCardNext(EMPTY_CARD_LINE, true))).toBe('<!-- card: next -->')

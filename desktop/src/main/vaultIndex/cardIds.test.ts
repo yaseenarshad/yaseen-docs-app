@@ -27,7 +27,8 @@ afterEach(async () => {
 
 const at = (...p: string[]) => path.join(root, ...p)
 const read = (rel: string) => readFile(at(rel), 'utf8')
-const cardsIn = async (rel: string) => cardRecords(splitFrontmatter(await read(rel)).body)
+/** The cards' IDs and histories (the sweep's business): each card's title (YAZ-5030) left out. */
+const cardsIn = async (rel: string) => cardRecords(splitFrontmatter(await read(rel)).body).map(({ title: _title, ...rest }) => rest)
 const card = (text: string, line?: string) => `\`\`\`card\n${text}\n\`\`\`\n${line === undefined ? '' : `<!-- card: ${line} -->\n`}`
 const HISTORY = '2026-11-01T09:00Z good, 2026-11-05T09:00Z again'
 

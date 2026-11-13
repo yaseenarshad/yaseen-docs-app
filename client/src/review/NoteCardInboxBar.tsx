@@ -1,9 +1,10 @@
 /**
  * The Inbox's top row (YAZ-5017, as Mochi's): on the left the filter menu "All cards ▾" (All cards, Up next (YAZ-5028),
  * Due today, New cards, each with how many are left; Up next's count in the Up next chip's colours, grey at 0), then what
- * is under review, quiet, by it ("· in spanish-words": the vault, "Folder / Sub", or the page); then the CURRENT card's
- * place (YAZ-5017 round 2), one card at a time: vault › folder › page, each part a link (the vault or folder opens its
- * folder page, the page opens in a tab: `openPlace`, the folder chips' door); a long path gives way in the middle, "…".
+ * is under review, quiet, by it ("· in spanish-words": "Folder / Sub", or the page) ONLY when the review is narrower than
+ * the vault (Review this folder / page; YAZ-5017 round 2, Yaseen: "isnt this redundant?"); then the CURRENT card's place,
+ * one card at a time: the vault and its folders, "Note Cards Demo › spanish-words" — no page name, the card's head shows
+ * it — each part a link (its folder page: `openPlace`, the folder chips' door); a long path gives way in the middle, "…".
  * On the right "3 of 12", which counts the filter's cards. Under it the progress bar (YAZ-5020, as
  * Mochi's): it fills as the session's cards are answered, a Forgot in red, a Remembered in grey.
  */
@@ -74,11 +75,14 @@ export function NoteCardInboxBar({ session, setFilter, openPlace }: NoteCardInbo
           <span>{current.label}</span>
           <ChevronIcon />
         </button>
-        <span className="note-card-inbox__from" title={`Reviewing ${session.from.join(' / ')}`}>
-          <span className="note-card-inbox__from-sep">·</span>
-          <ScopeIcon />
-          <span className="note-card-inbox__from-part">in {session.from.join(' / ')}</span>
-        </span>
+        {/* The scope only when narrower than the vault (YAZ-5017 round 2): the whole vault says nothing here. */}
+        {session.scope !== 'vault' && (
+          <span className="note-card-inbox__from" title={`Reviewing ${session.from.join(' / ')}`}>
+            <span className="note-card-inbox__from-sep">·</span>
+            <ScopeIcon />
+            <span className="note-card-inbox__from-part">in {session.from.join(' / ')}</span>
+          </span>
+        )}
         {session.place.length > 0 && (
           <nav className="note-card-inbox__path" aria-label="Card's place" title={session.place.map((p) => p.label).join(' › ')}>
             {session.place.map((part, i) => (
