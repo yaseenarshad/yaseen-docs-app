@@ -6,7 +6,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { TextSelection } from '@milkdown/kit/prose/state'
+import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state'
 import { undo, undoDepth } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { cardSides } from '@shared/cardText'
@@ -338,6 +338,33 @@ describe('the mirror, Done and the page`s undo', () => {
   })
 })
 
+describe('a selection in the card editor shows (YAZ-5026 round 2: "double click highlight doesnt work")', () => {
+  it('a card selected before Edit card loses the selected look while edited, so a double click, a drag or ⇧+arrows shows; Done gives the look back', async () => {
+    const { view } = await mount(page('A bookshop is la librería'))
+    // A click on the card selects it whole first; Edit card (or E) then opens it.
+    view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, cardPos(view))))
+    const card = noteCardViewAt(view, cardPos(view))!
+    // The page's look of a selected block, `.milkdown .ProseMirror .ProseMirror-selectednode ::selection { background: transparent }`
+    // (Crepe's reset), reaches every word inside the card: the inner editor's selection could not show.
+    expect(card.dom.classList.contains('ProseMirror-selectednode')).toBe(true)
+    const { inner } = await edit(view)
+    expect(card.dom.classList.contains('ProseMirror-selectednode')).toBe(false)
+    inner.dispatch(inner.state.tr.setSelection(TextSelection.create(inner.state.doc, 3, 11)))
+    expect(inner.dom.closest('.ProseMirror-selectednode')).toBeNull()
+    card.done()
+    expect(view.state.selection instanceof NodeSelection && view.state.selection.from === cardPos(view)).toBe(true)
+    expect(card.dom.classList.contains('ProseMirror-selectednode')).toBe(true)
+  })
+
+  it('a card not selected before Edit card is drawn selected after Done', async () => {
+    const { view } = await mount(page('Front'))
+    const { card } = await edit(view)
+    expect(card.dom.classList.contains('ProseMirror-selectednode')).toBe(false)
+    card.done()
+    expect(card.dom.classList.contains('ProseMirror-selectednode')).toBe(true)
+  })
+})
+
 describe('an outside change of the card`s text while it is edited', () => {
   it('says so; Done writes ours, and ⌘Z in the page brings theirs back', async () => {
     const notices: string[] = []
@@ -377,6 +404,8 @@ describe('the card editor`s own on/off list (YAZ-5026 description)', () => {
     expect(buttons).toContain('cloze')
     expect(buttons).toContain('bold')
     for (const off of ['highlight', 'highlight-green', 'highlight-blue', 'highlight-more', 'checklist']) expect(buttons).not.toContain(off)
+    // "Hide word" sits right after the heading buttons (YAZ-5026 round 2: Yaseen's mark on the strip), not last.
+    expect(buttons.indexOf('cloze')).toBe(buttons.indexOf('text') + 1)
     // The button is ⌘L.
     host.querySelector<HTMLElement>('.milkdown-toolbar [data-toolbar-item="cloze"]')!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }))
     expect(inner.dom.querySelector('.note-card__cloze')?.textContent).toBe('Paris')

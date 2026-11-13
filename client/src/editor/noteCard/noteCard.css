@@ -186,6 +186,23 @@
 .note-card .note-card__keys > span {
   flex: none;
 }
+/* The row's own look (YAZ-5026 round 2): `.explore__foot` is in `explore.css`, which loads only with the card window or
+   the Inbox; in a page before either opened the row ran together ("hide wordCmd"). The same values, here. */
+.note-card .note-card__keys {
+  display: flex;
+  gap: 14px;
+  padding: 7px 14px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  border-top: 1px solid var(--border);
+}
+.note-card .note-card__keys kbd {
+  padding: 0 4px;
+  font-family: inherit;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
 /* Edit card has the writing look (YAZ-5007, Yaseen's decision): the page's font, no line numbers or fold arrows, the
    rendered card's padding (`.note-card__body`), so Edit card / Done does not jump. Other code blocks keep the code look.
    The marks on other copies of the selected word are off in `noteCardEdit.ts`. */
@@ -282,6 +299,81 @@
 }
 .note-card__side p {
   margin: 0.4em 0;
+}
+/* A card's lists, read (YAZ-5026 round 2: "is this following the global settings?"): the page's look, from the same
+   settings — Settings › Editor › Outline › Bullet indent and Bullet gap (`--note-bullet-indent`, `--note-bullet-gap` on
+   `.app`, set only when changed) — in the page, the card window and the Inbox. The values are the page's
+   (`outline/bullets.css`): the dot's column is fixed, the text starts after it and the gap, and a child level's dot
+   steps in by the indent from its parent's. The dots are the page's ● ○ ■ by level, the numbers its right-aligned
+   ones, in the marker colour. Edit card is the page's editor inside `.editor-instance`: it follows them already. */
+.note-card__side {
+  --card-list-gap: var(--note-bullet-gap, 10px);
+  --card-list-indent: var(--note-bullet-indent, 2.15em);
+  --card-list-gutter: calc(2.15em - 10px);
+  --card-list-row: var(--edit-block-gap, 4px);
+  --card-list-dot: 0.42em;
+  --card-list-marker: color-mix(in srgb, currentColor 78%, transparent);
+}
+.note-card .note-card__side :is(ul, ol) {
+  margin: 0.4em 0;
+  padding: 0;
+  list-style: none;
+}
+.note-card .note-card__side li {
+  position: relative;
+  margin: 0;
+  padding: var(--card-list-row) 0 var(--card-list-row) calc(var(--card-list-gutter) + var(--card-list-gap));
+}
+.note-card .note-card__side li > :is(ul, ol) {
+  margin: 0 0 calc(-1 * var(--card-list-row));
+  margin-left: calc(var(--card-list-indent) - var(--card-list-gutter) - var(--card-list-gap));
+}
+.note-card .note-card__side li > p {
+  margin: 0;
+}
+.note-card .note-card__side li::before {
+  position: absolute;
+  box-sizing: border-box;
+  color: var(--card-list-marker);
+}
+/* Levels 1 and 4: a solid dot, in the middle of the dot's column and of the first line. */
+.note-card .note-card__side ul > li::before,
+.note-card .note-card__side :is(ul, ol) :is(ul, ol) :is(ul, ol) ul > li::before {
+  content: '';
+  left: calc((var(--card-list-gutter) - var(--card-list-dot)) / 2);
+  top: calc(var(--card-list-row) + (1lh - var(--card-list-dot)) / 2);
+  width: var(--card-list-dot);
+  height: var(--card-list-dot);
+  border: 0;
+  border-radius: 50%;
+  background: var(--card-list-marker);
+}
+/* Levels 2 and 5: a ring. */
+.note-card .note-card__side :is(ul, ol) ul > li::before,
+.note-card .note-card__side :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) ul > li::before {
+  border: max(1px, 0.094em) solid var(--card-list-marker);
+  border-radius: 50%;
+  background: transparent;
+}
+/* Levels 3 and 6: a small square. */
+.note-card .note-card__side :is(ul, ol) :is(ul, ol) ul > li::before,
+.note-card .note-card__side :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) ul > li::before {
+  left: calc((var(--card-list-gutter) - 0.38em) / 2);
+  top: calc(var(--card-list-row) + (1lh - 0.38em) / 2);
+  width: 0.38em;
+  height: 0.38em;
+  border: 0;
+  border-radius: 0.04em;
+  background: var(--card-list-marker);
+}
+/* Numbers: right-aligned in the dot's column, as the page's; `list-item` counts from the list's `start`. */
+.note-card .note-card__side ol > li::before {
+  content: counter(list-item) '.';
+  left: 0;
+  top: var(--card-list-row);
+  width: var(--card-list-gutter);
+  text-align: right;
+  white-space: nowrap;
 }
 .note-card__side img {
   max-width: 100%;
