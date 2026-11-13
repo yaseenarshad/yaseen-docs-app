@@ -88,6 +88,8 @@ export const EMPTY_CARD_LINE: CardLine = { parts: [] }
 
 export const cardIdOf = (line: CardLine): string | null => line.parts.find((p) => p.kind === 'id')?.id ?? null
 export const isCardOff = (line: CardLine): boolean => line.parts.some((p) => p.kind === 'off')
+/** The line with no ID part (a copy before its new ID); every other part stays. */
+export const withoutCardId = (line: CardLine): CardLine => ({ parts: line.parts.filter((p) => p.kind !== 'id') })
 export const cardReviewsOf = (line: CardLine): CardReview[] => line.parts.flatMap((p) => (p.kind === 'review' ? [p.review] : []))
 const cardRecordOf = (line: CardLine): NoteCardRecord => ({ id: cardIdOf(line), off: isCardOff(line), reviews: cardReviewsOf(line) })
 
@@ -154,6 +156,42 @@ export function withCardReviewAt(line: CardLine, review: CardReview, index: numb
 
 /** No reviews: the ⋯ menu's "Reset history", and the history of a copy. Every other part stays. */
 export const withoutCardReviews = (line: CardLine): CardLine => ({ parts: line.parts.filter((p) => p.kind !== 'review') })
+
+/** One card as the no-drop rule reads it: its line and its text (the lines between its fences). */
+export interface CardSide {
+  line: CardLine
+  text: string
+}
+
+/** What `settleCardCopy` decided: the keeper's line (null: no keeper was given), the copy's line, and whether the copy's history emptied. */
+export interface CardCopySettled {
+  keeper: CardLine | null
+  copy: CardLine
+  emptied: boolean
+}
+
+/**
+ * THE NO-DROP RULE (YAZ-4998, from Yaseen's decision on YAZ-4948): no step empties a card's history, or drops a review,
+ * unless each review it holds is already on the card that keeps the ID, or is written onto that card in the SAME step.
+ * The ONE copy of the rule: the editor's copy rule (`noteCardCopies`, one transaction) and the sweep (`giveCardIds`,
+ * the keeper written first) both settle each copy here, and write both lines it returns.
+ *
+ * `copy` gives up its ID because `keeper` holds it (the caller gives the copy a new ID; this rule reads only reviews):
+ * - no keeper (null: the card that keeps the ID is not in this document): the copy keeps its history;
+ * - another text: the copy keeps its history and the keeper is unchanged — each card keeps its own reviews, as two cards
+ *   of their own (the decision on YAZ-4993, kept by Yaseen on YAZ-4998);
+ * - the same text: the keeper takes each review of the copy that it lacks (`withCardReviews`: each review one time, in
+ *   time order), and only then does the copy's history empty.
+ * Nothing to add: the keeper's line is the same object, so a caller writes nothing for it.
+ */
+export function settleCardCopy(keeper: CardSide | null, copy: CardSide): CardCopySettled {
+  if (keeper === null || keeper.text !== copy.text) return { keeper: keeper?.line ?? null, copy: copy.line, emptied: false }
+  const union = withCardReviews(keeper.line, cardReviewsOf(copy.line))
+  const has = new Set(cardReviewsOf(union).map((r) => `${r.at} ${r.rating}`))
+  // The rule's own check: never empty a history whose reviews the keeper does not hold now.
+  if (!cardReviewsOf(copy.line).every((r) => has.has(`${r.at} ${r.rating}`))) return { keeper: keeper.line, copy: copy.line, emptied: false }
+  return { keeper: union, copy: withoutCardReviews(copy.line), emptied: true }
+}
 
 // ---------- cards in a page ----------
 
