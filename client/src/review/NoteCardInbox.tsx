@@ -20,6 +20,9 @@
  *    edit; Done, Esc or ⌘↵ there saves and reads, locked again; then ⌘↵ or Esc comes back to this card at the same step), ← → (YAZ-5004: the card before or after, no answer), ⌘↵ (the page in a
  *    background tab: the review stays), Esc (only the ⋯ row; then the Esc order goes on, YAZ-5011). A key typed in a field, or while a dialog or a menu
  *    is open (Explore is a dialog), is not the Inbox's; a key with the keyboard elsewhere (the sidebar) neither.
+ *  - P (YAZ-5014): plays or stops the first sound of the sides that show. Nothing plays by itself; the next card (an
+ *    answer, ← →, ⌘Z), a hidden Inbox and its close stop it. "P Play" is in the hint row only while a side that shows
+ *    has a sound. A board's picture (YAZ-5015) opens the board on top; Esc there comes back to this card and step.
  *  - Under the card, OUTSIDE its frame, as in Mochi (YAZ-5002): while Space has more to show, a quiet "Press Space to
  *    show the next hidden word" (or "the next side"); then the answer buttons; the key hint row last, at the bottom.
  *  - The buttons row (YAZ-5004, as in Mochi): ← → on its left, the answers in the middle, ⋯ on its right. ⋯ opens a
@@ -37,6 +40,7 @@ import type { ExploreVault } from '../explore/ExploreNote'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { NoteCardBody, NoteCardId, NoteCardNextChip, noteCardWait } from './noteCardParts'
 import { noteCardInboxHints, noteCardInboxKey } from './noteCardInboxKeys'
+import { NOTE_CARD_MEDIA, NOTE_CARD_OPENS, stopCardAudio, textHasAudio, toggleCardAudio } from '../editor/noteCard/noteCardMedia'
 import { HoverTip } from '../components/HoverTip'
 import '../explore/explore.css'
 
@@ -111,6 +115,8 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
   const step = stepState.key === cardKey ? stepState : { key: cardKey, sides: 1, shown: 0 }
   // A card that goes and comes back (⌘Z after the last answer) starts again from its first step.
   useEffect(() => setStep((s) => (s.key === cardKey ? s : { key: cardKey, sides: 1, shown: 0 })), [cardKey])
+  // The card's sound never outlives it (YAZ-5014): the next card, a hidden Inbox and its close stop it.
+  useEffect(() => stopCardAudio, [cardKey, shown])
   const hiddenUpTo = (sides: number): number => counts.slice(0, sides).reduce((a, b) => a + b, 0)
   const done = text !== null && step.sides >= counts.length && step.shown >= hiddenUpTo(counts.length)
 
@@ -165,6 +171,10 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
       }
       if (card === null) return
       if (key.kind === 'step') return advance()
+      if (key.kind === 'play') {
+        if (!event.repeat) toggleCardAudio(rootRef.current?.querySelector('.note-card-inbox__card') ?? null)
+        return
+      }
       if (key.kind === 'move') {
         if (key.delta < 0 ? session.canBack : session.canNext) review.move(key.delta)
         return
@@ -188,7 +198,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
   const doors = useMemo(() => ({ openLayer, openTab: openLinkIn, onNotice }), [openLayer, openLinkIn, onNotice])
   // The rest of the vault, after a review of one page or one folder: the way on.
   const more = session.scope === 'vault' ? 0 : review.dueCount
-  const hints = noteCardInboxHints({ card: card !== null, answering: done, canUndo: session.canUndo, moves: session.canBack || session.canNext })
+  const hints = noteCardInboxHints({ card: card !== null, answering: done, canUndo: session.canUndo, moves: session.canBack || session.canNext, audio: text !== null && textHasAudio(cardSides(text).slice(0, step.sides).join('\n')) })
   /** The ⋯ row's actions (YAZ-5004): the hook's own, with their names and keys for the hover box. */
   const moreActions =
     card === null
@@ -251,7 +261,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
             ) : (
               text !== null &&
               card.page !== null && (
-                <div className="note-card note-card-screen note-card-inbox__card" onClick={(e) => e.target instanceof Element && e.target.closest('a[href], [data-note-card-link]') === null && advance()}>
+                <div className="note-card note-card-screen note-card-inbox__card" onClick={(e) => e.target instanceof Element && e.target.closest(`a[href], ${NOTE_CARD_OPENS}, ${NOTE_CARD_MEDIA}`) === null && advance()}>
                   <NoteCardBody text={text} path={card.path} vault={vaultOf(card.path)} show={{ sides: step.sides, shown: step.shown }} doors={doors} />
                 </div>
               )

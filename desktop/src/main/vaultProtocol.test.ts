@@ -171,3 +171,58 @@ describe('revealVaultImage', () => {
     expect(reveal).not.toHaveBeenCalled()
   })
 })
+
+describe('sound files (YAZ-5014)', () => {
+  const MP3 = Buffer.from('ID3-0123456789')
+  beforeAll(async () => {
+    await mkdir(path.join(root, 'assets', 'audio'), { recursive: true })
+    await Promise.all([writeFile(path.join(root, 'assets', 'audio', 'tone.mp3'), MP3), writeFile(path.join(root, 'voice.M4A'), MP3), writeFile(path.join(root, 'a.wav'), MP3), writeFile(path.join(root, 'b.ogg'), MP3)])
+  })
+  const fetcher = () => vi.fn(async (_fileUrl: string) => new Response('never'))
+
+  it('serves mp3, m4a, wav and ogg with their audio type and Accept-Ranges, the whole file read from disk', async () => {
+    for (const [ref, mime] of [['assets/audio/tone.mp3', 'audio/mpeg'], ['voice.m4a', 'audio/mp4'], ['a.wav', 'audio/wav'], ['b.ogg', 'audio/ogg']] as const) {
+      const res = await serveVaultImage(new Request(vaultUrl(root, ref)), fetcher())
+      expect(res.status, ref).toBe(200)
+      expect(res.headers.get('Content-Type'), ref).toBe(mime)
+      expect(res.headers.get('Accept-Ranges')).toBe('bytes')
+      expect(res.headers.get('Content-Length')).toBe(String(MP3.length))
+      expect(Buffer.from(await res.arrayBuffer()).equals(MP3)).toBe(true)
+    }
+  })
+
+  it('`![[tone.mp3]]` lands by its name alone (the basename walk), as an image does', async () => {
+    expect(await resolveVaultUrl(vaultUrl(root, 'tone.mp3'))).toEqual({ path: path.join(root, 'assets', 'audio', 'tone.mp3'), mime: 'audio/mpeg' })
+  })
+
+  it('a range answers 206 with its Content-Range and only its bytes (the player seeks); past the end is 416', async () => {
+    const url = vaultUrl(root, 'assets/audio/tone.mp3')
+    const part = await serveVaultImage(new Request(url, { headers: { Range: 'bytes=3-6' } }), fetcher())
+    expect(part.status).toBe(206)
+    expect(part.headers.get('Content-Range')).toBe(`bytes 3-6/${MP3.length}`)
+    expect(part.headers.get('Content-Length')).toBe('4')
+    expect(await part.text()).toBe('-012')
+    const open = await serveVaultImage(new Request(url, { headers: { Range: 'bytes=10-' } }), fetcher())
+    expect(await open.text()).toBe(MP3.subarray(10).toString())
+    const tail = await serveVaultImage(new Request(url, { headers: { Range: 'bytes=-2' } }), fetcher())
+    expect(await tail.text()).toBe('89')
+    const past = await serveVaultImage(new Request(url, { headers: { Range: `bytes=${MP3.length}-` } }), fetcher())
+    expect(past.status).toBe(416)
+    expect(past.headers.get('Content-Range')).toBe(`bytes */${MP3.length}`)
+  })
+
+  it('a sound outside the vault is refused: 404, nothing read', async () => {
+    const outside = path.join(root, '..', 'escaped-yaz5014.mp3')
+    await writeFile(outside, MP3)
+    try {
+      const f = fetcher()
+      for (const url of [vaultUrl(root, '../escaped-yaz5014.mp3'), vaultUrl(root, '..%2Fescaped-yaz5014.mp3'), vaultUrl(root, 'missing.mp3'), vaultUrl(root, 'x.flac')]) {
+        expect((await serveVaultImage(new Request(url), f)).status, url).toBe(404)
+      }
+      expect(await resolveVaultUrl(vaultUrl(root, 'escaped-yaz5014.mp3', '..'))).toBeNull()
+      expect(f).not.toHaveBeenCalled()
+    } finally {
+      await rm(outside, { force: true })
+    }
+  })
+})

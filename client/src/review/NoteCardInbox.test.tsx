@@ -9,6 +9,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { CardAnswer } from '@shared/cardSchedule'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import { createViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { NoteCardInbox, type NoteCardInboxProps } from './NoteCardInbox'
 import { useReadOnlyVault } from '../vault/readOnlyVault'
@@ -450,5 +451,80 @@ describe('the Inbox screen (YAZ-4962)', () => {
     run('Open card')
     expect(props.openCard).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', 0, false)
     expect(actions()).toEqual([])
+  })
+})
+
+describe('sound and boards in the Inbox (YAZ-5014, YAZ-5015)', () => {
+  /** jsdom has no media engine: `play` and `pause` move `paused`. */
+  beforeEach(() => {
+    vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined)
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (this: HTMLMediaElement) {
+      Object.defineProperty(this, 'paused', { value: false, configurable: true })
+      return Promise.resolve()
+    })
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(function (this: HTMLMediaElement) {
+      Object.defineProperty(this, 'paused', { value: true, configurable: true })
+    })
+    vi.stubGlobal('IntersectionObserver', class { observe() {} unobserve() {} disconnect() {} })
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+  const hints = () => [...el.querySelectorAll('.note-card-inbox__hints span')].map((h) => h.textContent)
+
+  it('nothing plays by itself; P plays and stops; P typed in a field is not the Inbox`s; the next card stops it', async () => {
+    const { cardAudioPlaying } = await import('../editor/noteCard/noteCardMedia')
+    mount('Hear it ![[tone.mp3]]\n---\nA tone')
+    expect(el.querySelector('.note-card__audio')).not.toBeNull()
+    expect(cardAudioPlaying()).toBe(false)
+    press('p')
+    expect(cardAudioPlaying()).toBe(true)
+    press('P')
+    expect(cardAudioPlaying()).toBe(false)
+    const field = document.createElement('input')
+    el.querySelector('.note-card-inbox')!.append(field)
+    press('p', {}, field)
+    expect(cardAudioPlaying()).toBe(false)
+    field.remove()
+    press('p')
+    expect(cardAudioPlaying()).toBe(true)
+    // ← → or an answer: another card comes, and the sound stops.
+    session = { ...sessionOf('Next card'), position: 4 }
+    render()
+    expect(cardAudioPlaying()).toBe(false)
+  })
+
+  it('a click on the player plays and does not step the card; "P Play" is in the key row only while a side that shows has a sound', async () => {
+    const { cardAudioPlaying, stopCardAudio } = await import('../editor/noteCard/noteCardMedia')
+    mount('Front {{word}}\n---\n![](assets/audio/tone.mp3)')
+    expect(hints()).not.toContain('P Play')
+    press(' ')
+    press(' ')
+    expect(el.querySelector('.note-card__audio')).not.toBeNull()
+    expect(hints()).toContain('P Play')
+    const before = shown()
+    act(() => el.querySelector<HTMLButtonElement>('.note-card__audio-play')!.click())
+    expect(cardAudioPlaying()).toBe(true)
+    expect(shown()).toEqual(before)
+    stopCardAudio()
+    session = { ...sessionOf('No sound'), position: 9 }
+    render()
+    expect(hints()).not.toContain('P Play')
+  })
+
+  it('a board`s picture shows; a click opens the board on top (the Explore layer), never a step', () => {
+    mount('Loading')
+    const viewOnlyLinks = createViewOnlyLinkSource()
+    viewOnlyLinks.update({ entries: [], resolve: (t: string) => (t === 'Card pipeline.drawio' ? '/v/Card pipeline.drawio' : null) } as never)
+    const base = props.vaultOf
+    props = { ...props, vaultOf: (p) => ({ ...base(p), viewOnlyLinks }) }
+    session = { ...sessionOf('A diagram\n---\n![[Card pipeline.drawio]]'), position: 5 }
+    render()
+    press(' ')
+    const board = el.querySelector<HTMLElement>('.note-card__board')!
+    expect(board.querySelector('img')?.getAttribute('loading')).toBe('lazy')
+    act(() => void board.querySelector('img')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 })))
+    expect(props.openLayer).toHaveBeenCalledWith('/v/Card pipeline.drawio')
   })
 })

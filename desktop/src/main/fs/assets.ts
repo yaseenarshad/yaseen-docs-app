@@ -28,6 +28,11 @@ const MIME: Record<string, string> = {
   svg: 'image/svg+xml',
   avif: 'image/avif',
   bmp: 'image/bmp',
+  // Sound (YAZ-5014): served by the `app://vault` protocol only; `READABLE` keeps them out of `readAsset`.
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
   // Excalidraw scene JSON (YAZ-852): a drawing is a JSON document, not an image.
   excalidraw: 'application/json',
 }

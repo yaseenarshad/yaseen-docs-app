@@ -405,6 +405,13 @@ export interface ImageResponse {
 export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp'] as const
 
 /**
+ * The sound extensions the `app://vault` protocol serves (no dot, YAZ-5014): a note card's one-line player. Over the
+ * protocol only, with the image rules (the same resolver and vault edge) and byte ranges for seeking; never through
+ * `readAsset` or `writeAsset`.
+ */
+export const AUDIO_EXTENSIONS = ['mp3', 'm4a', 'wav', 'ogg'] as const
+
+/**
  * Drawing sidecars the asset pipe reads AND writes (Excalidraw embed, YAZ-852 / YAZ-876): scene
  * JSON standing on its own in the vault (`assets/drawings/` by default), a note holding only
  * `![[<name>.excalidraw]]`. Since YAZ-3028 D2 the same file is also the `drawing` FileKind: the

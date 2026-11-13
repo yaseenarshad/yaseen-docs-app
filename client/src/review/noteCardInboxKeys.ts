@@ -5,7 +5,7 @@
  */
 
 /** What a key press is in the Inbox, or null when it is not one of its keys. */
-export type NoteCardInboxKey = { kind: 'step' } | { kind: 'answer'; button: number } | { kind: 'undo' } | { kind: 'open' } | { kind: 'tab' } | { kind: 'edit' } | { kind: 'close' } | { kind: 'move'; delta: -1 | 1 }
+export type NoteCardInboxKey = { kind: 'step' } | { kind: 'answer'; button: number } | { kind: 'undo' } | { kind: 'open' } | { kind: 'tab' } | { kind: 'edit' } | { kind: 'close' } | { kind: 'move'; delta: -1 | 1 } | { kind: 'play' }
 
 interface KeyPress {
   key: string
@@ -15,7 +15,7 @@ interface KeyPress {
   shiftKey: boolean
 }
 
-/** The key's meaning: Space, 1–4, ⌘Z, O, ⌘↵, E, Esc, ← → (YAZ-5004). ⌃ stands for ⌘ off a Mac. */
+/** The key's meaning: Space, 1–4, ⌘Z, O, ⌘↵, E, Esc, ← → (YAZ-5004), P (the card's sound, YAZ-5014). ⌃ stands for ⌘ off a Mac. */
 export function noteCardInboxKey(event: KeyPress): NoteCardInboxKey | null {
   const mod = event.metaKey || event.ctrlKey
   if (event.altKey) return null
@@ -30,6 +30,7 @@ export function noteCardInboxKey(event: KeyPress): NoteCardInboxKey | null {
   if (/^[1-4]$/.test(event.key)) return { kind: 'answer', button: Number(event.key) - 1 }
   if (event.key === 'o' || event.key === 'O') return { kind: 'open' }
   if (event.key === 'e' || event.key === 'E') return { kind: 'edit' }
+  if (event.key === 'p' || event.key === 'P') return { kind: 'play' }
   if (event.key === 'Escape') return { kind: 'close' }
   if (event.key === 'ArrowLeft') return { kind: 'move', delta: -1 }
   if (event.key === 'ArrowRight') return { kind: 'move', delta: 1 }
@@ -45,6 +46,8 @@ export interface NoteCardInboxMoment {
   canUndo: boolean
   /** ← or → has a card to go to (YAZ-5004). */
   moves?: boolean
+  /** A side that shows has a sound (YAZ-5014): P plays or stops it. */
+  audio?: boolean
 }
 
 /**
@@ -52,8 +55,9 @@ export interface NoteCardInboxMoment {
  * answer digits are on the buttons, so the row does not say them again. No Esc (YAZ-5011): the Inbox is a tab, and
  * closes as one (its ✕, ⌘W).
  */
-export const noteCardInboxHints = ({ card, answering, canUndo, moves = false }: NoteCardInboxMoment): { keys: string; label: string }[] => [
+export const noteCardInboxHints = ({ card, answering, canUndo, moves = false, audio = false }: NoteCardInboxMoment): { keys: string; label: string }[] => [
   ...(card && !answering ? [{ keys: 'Space', label: 'Show' }] : []),
+  ...(card && audio ? [{ keys: 'P', label: 'Play' }] : []),
   ...(card && moves ? [{ keys: '← →', label: 'Other cards' }] : []),
   ...(canUndo ? [{ keys: '⌘Z', label: 'Undo' }] : []),
   ...(card ? [{ keys: 'O', label: 'Open page' }] : []),
