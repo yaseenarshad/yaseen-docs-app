@@ -228,6 +228,7 @@ vi.mock('./sidebar/Sidebar', () => ({
 
 import { App, preloadTabBoard, replayNotice } from './App'
 import { NOTE_CARD_OPEN } from './editor/noteCard/noteCardView'
+import { EditorView as CodeMirrorView } from '@codemirror/view'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { cardRecords } from '@shared/cardLine'
@@ -5552,7 +5553,8 @@ describe('App: the note card flow (YAZ-4962)', () => {
     await vi.waitFor(() => expect(el.querySelector('.note-card-inbox .note-card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
     // The head: the ID first and the page; the card's first line is not said again above the card.
     expect(el.querySelector('.note-card-inbox .explore__title')).toBeNull()
-    expect(el.querySelector('.note-card-inbox .note-card__id')?.textContent).toBe('WIKI-9')
+    // YAZ-5012: the ID in brackets, after the page name.
+    expect(el.querySelector('.note-card-inbox .note-card__id')?.textContent).toBe('(WIKI-9)')
     expect(el.querySelector('.note-card-inbox__place')?.textContent).toBe('1 of 1')
     // The page under the Inbox stays where it was: its tab layer is still mounted.
     expect(el.querySelector('.tabstack__layer [data-editor][data-path="/v/a.md"]')).not.toBeNull()
@@ -5601,6 +5603,63 @@ describe('App: the note card flow (YAZ-4962)', () => {
     expect(layer.querySelector('.note-card__id')?.textContent).toBe('WIKI-9')
     expect(layer.querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('Reviews (1)')
     expect(layer.querySelector('.note-card-strip__fact')?.textContent).toBe('Last answerRemembered, Jan 2')
+  })
+
+  /**
+   * YAZ-5009 round 2 (Yaseen: "esc again doesnt take me back to inbox"): the whole round trip over App's real wiring —
+   * the Inbox tab, its window keys, the Explore stack's keys on its root, the card window's real Edit card (Crepe and
+   * CodeMirror), and App's last Esc (`escapeOrder`). Each key goes where the browser sends it: to the element that
+   * has the keyboard (`document.activeElement`), not to a chosen component.
+   */
+  describe.each([
+    ['Esc', { key: 'Escape' }],
+    ['⌘↵', { key: 'Enter', metaKey: true }],
+  ] as const)('YAZ-5009: Inbox › E › Edit card › %s › read › the same key › back to the Inbox', (_name, done) => {
+    const typed = (init: KeyboardEventInit) => act(async () => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })))
+    const layer = () => document.querySelector<HTMLElement>('.explore__layer[data-kind="card"]')
+
+    it.each([
+      ['the same text', ''],
+      ['a changed text', ' (Seine)'],
+    ])('with %s: the second key closes the card window, the Inbox tab is active, at the same card and step', async (_what, added) => {
+      const files = { [PAGE]: { content: page('<!-- card: WIKI-9 -->'), mtime: 1 }, '/v/a.md': { content: '# A\n', mtime: 1 } }
+      const { el } = await mount(defaultAppState(), TABS, files, (b) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [record()], folders: [], generatedAt: 1, ids: true }))
+      act(() => captured.sidebar?.onOpenInbox())
+      await vi.waitFor(() => expect(el.querySelector('.note-card-inbox .note-card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+      await vi.waitFor(() => expect(inbox(el)?.contains(document.activeElement)).toBe(true))
+      // One Space: the front's hidden word shows. That is the step to come back to.
+      await typed({ key: ' ' })
+      expect([sides(el), hidden(el)]).toEqual([1, ['France']])
+      // E: the card window, in Edit card at once, the caret in its text.
+      await typed({ key: 'e' })
+      await vi.waitFor(() => expect(layer()?.querySelector('[data-explore-card-edit] .cm-content')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
+      await vi.waitFor(() => expect(layer()?.querySelector('[data-explore-card-edit] .cm-content')?.contains(document.activeElement)).toBe(true))
+      if (added !== '') {
+        const cm = CodeMirrorView.findFromDOM(layer()!.querySelector<HTMLElement>('[data-explore-card-edit] .cm-content')!)!
+        act(() => cm.dispatch({ changes: { from: cm.state.doc.length, insert: added } }))
+      }
+      // The first key: Done, the card window reads (it stays open), the keyboard still in the layer.
+      await typed(done)
+      await vi.waitFor(() => expect(layer()?.querySelector('[data-explore-card-edit]')).toBeNull())
+      await vi.waitFor(() => expect(layer()?.querySelector('.note-card-screen')?.textContent).toContain(`Paris${added}`))
+      if (added !== '') await vi.waitFor(() => expect(files[PAGE].content).toContain(`{{Paris}}${added}`))
+      await act(async () => {})
+      expect(layer()?.contains(document.activeElement)).toBe(true)
+      // The second key: the card window closes, back to the Inbox tab, at the same card and step.
+      await typed(done)
+      await vi.waitFor(() => expect(document.querySelector('.explore')).toBeNull())
+      const active = el.querySelector('.tabbar [role="tab"][aria-selected="true"]')
+      expect(active?.textContent).toBe('Inbox')
+      expect(inbox(el)?.hidden).toBe(false)
+      expect(el.querySelector('.note-card-inbox .note-card__id')?.textContent).toContain('WIKI-9')
+      expect([sides(el), hidden(el)]).toEqual([1, ['France']])
+      // The keyboard is back in the Inbox: the next Space is the Inbox's.
+      expect(inbox(el)?.contains(document.activeElement)).toBe(true)
+      await typed({ key: ' ' })
+      expect(sides(el)).toBe(2)
+      // No tab was opened by the ⌘↵ (the card window from the Inbox goes back, YAZ-5009).
+      expect([...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)).toEqual(['a', 'Inbox'])
+    })
   })
 })
 
@@ -5709,8 +5768,8 @@ describe('App: the note card flow from /card, through the real editor (YAZ-4965)
     act(() => captured.sidebar?.onOpenInbox())
     const inbox = () => el.querySelector<HTMLElement>('.note-card-inbox')
     await vi.waitFor(() => expect(inbox()?.querySelector('.note-card__side')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
-    // No "Edit page" in a read-only vault.
-    expect([...el.querySelectorAll('.note-card-inbox__hints kbd')].map((k) => k.textContent)).not.toContain('E')
+    // E Edit card in every vault (YAZ-5009): a read-only one unlocks the card's text alone, for the one edit.
+    expect([...el.querySelectorAll('.note-card-inbox__hints kbd')].map((k) => k.textContent)).toContain('E')
     const press = (key: string) => act(async () => void inbox()?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })))
     await press(' ')
     await vi.waitFor(() => expect(el.querySelectorAll('.note-card-inbox__answer')).toHaveLength(2))
