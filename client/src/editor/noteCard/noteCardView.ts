@@ -20,11 +20,12 @@
  *
  * EDIT CARD (idea 8, idea 25): Crepe's own `CodeMirrorBlock`, made only then, from Crepe's factory in `nodeViewCtx`,
  * so the code editor, its keys, theme and extensions are every code block's; the `card` language is Markdown with
- * spell check (`noteCardLanguage`). "Done" (or Esc in the editor) destroys it and draws the card again. A card that
+ * spell check (`noteCardLanguage`). "Done" (or Esc, or ⌘↵ in the editor, YAZ-5001) destroys it and draws the card
+ * again; the head says the keys, as Explore's Done does ("Done esc ⌘↵"). A card that
  * is not being edited has no CodeMirror at all, and a caret that arrives in its text becomes the card's node
  * selection (`noteCardSelection`), so no key types into text that does not show.
  *
- * OPEN CARD (D13): the ⋯ menu's "Open card", or ⌘↵ with the card selected or the caret in it. The editor sends ONE
+ * OPEN CARD (D13): the ⋯ menu's "Open card", or ⌘↵ with the card selected (not while it is edited: there ⌘↵ is Done). The editor sends ONE
  * bubbling DOM event, `NOTE_CARD_OPEN` (`mdapp:note-card-open`, detail `NoteCardOpenRequest`), from its
  * `.ProseMirror`; App's listener opens the card window. ⌘↵ anywhere else is unchanged.
  *
@@ -201,6 +202,12 @@ const button = (className: string, label: string, text: string): HTMLButtonEleme
   return b
 }
 
+const kbd = (text: string): HTMLElement => {
+  const k = document.createElement('kbd')
+  k.textContent = text
+  return k
+}
+
 export class NoteCardView implements NodeView {
   dom: HTMLElement
   /** The card ID, first in the head (D20): a click copies it. Hidden while the card has none. */
@@ -279,7 +286,9 @@ export class NoteCardView implements NodeView {
     this.state.textContent = isCardOff(line) ? 'Review off' : ''
     this.dom.classList.toggle('note-card--off', isCardOff(line))
     this.next.hidden = !isCardNext(line)
-    this.editButton.textContent = this.code === null ? 'Edit card' : 'Done'
+    // Done says its keys, as Explore's head does (YAZ-5001).
+    if (this.code === null) this.editButton.textContent = 'Edit card'
+    else if (this.editButton.firstChild?.textContent !== 'Done') this.editButton.replaceChildren('Done', kbd('esc'), kbd('⌘↵'))
     this.editButton.setAttribute('aria-label', this.code === null ? 'Edit card' : 'Done')
     this.dom.classList.toggle('note-card--editing', this.code !== null)
     this.drawReviews()
@@ -654,8 +663,8 @@ const cardOfCodeMirror = (cm: CodeMirrorView): NoteCardView | null => {
 }
 
 /**
- * In every code block's CodeMirror (`createCrepe.ts`), highest: in a card's editor ⌘↵ opens the card (before
- * `addLineCodeKeys` and Crepe's exit-code) and Esc is "Done". In any other code block both decline.
+ * In every code block's CodeMirror (`createCrepe.ts`), highest: in a card's editor ⌘↵ and Esc are "Done" (YAZ-5001;
+ * before `addLineCodeKeys` and Crepe's exit-code). In any other code block both decline: ⌘↵ still adds a line.
  */
 export const noteCardCodeKeys: Extension = Prec.highest(
   keymap.of([
@@ -663,7 +672,7 @@ export const noteCardCodeKeys: Extension = Prec.highest(
       key: 'Mod-Enter',
       run: (cm) => {
         const card = cardOfCodeMirror(cm)
-        card?.open()
+        card?.done()
         return card !== null
       },
     },

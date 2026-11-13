@@ -310,20 +310,30 @@ describe('the card in the page', () => {
     expect(getMarkdownForSave(crepe)).toContain('<!-- card: WIKI-7, 2026-11-12T14:05Z good -->')
   })
 
-  it('Edit card is Crepe\'s code editor (made only then); ⌘↵ there opens the card, while ⌘↵ in another code block still adds a line; Done draws again', async () => {
+  it('Edit card is Crepe\'s code editor (made only then); YAZ-5001: ⌘↵ there is Done, while ⌘↵ in another code block still adds a line; the head says "Done esc ⌘↵"', async () => {
     const { root, view } = await mount(`${CARD}<!-- card: WIKI-8 -->\n\n\`\`\`js\nx\n\`\`\`\n`, { noteCards: { path: '/v/Page.md' } })
     const card = root.querySelector<HTMLElement>('.note-card')!
-    card.querySelector('.note-card__edit')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    const edit = () => card.querySelector('.note-card__edit')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    edit()
     const cm = card.querySelector<HTMLElement>('.cm-content')!
     expect(cm.textContent).toContain('What is the capital of {{France}}?')
+    expect([...card.querySelectorAll('.note-card__edit kbd')].map((k) => k.textContent)).toEqual(['esc', '⌘↵'])
+    expect(card.querySelector('.note-card__edit')?.textContent).toBe('Doneesc⌘↵')
     // The card language: Markdown with spell check (idea 8), once the language loads.
     await vi.waitFor(() => expect(cm.getAttribute('spellcheck')).toBe('true'))
     const opened: NoteCardOpenRequest[] = []
     const listen = (e: Event) => opened.push((e as CustomEvent<NoteCardOpenRequest>).detail)
     document.addEventListener(NOTE_CARD_OPEN, listen)
     const modEnter = (el: HTMLElement) => el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true, cancelable: true }))
+    const doc = view.state.doc
     modEnter(cm)
-    expect(opened).toEqual([{ path: '/v/Page.md', cardId: 'WIKI-8', index: 0 }])
+    // Done: the card draws again, selected; nothing opens and the text is the same.
+    expect(card.querySelector('.cm-editor')).toBeNull()
+    expect(card.querySelector('.note-card__edit')?.textContent).toBe('Edit card')
+    expect(card.querySelector('.note-card__hidden')?.textContent).toBe('France')
+    expect(view.state.doc.eq(doc)).toBe(true)
+    expect(view.state.selection.from).toBe(0)
+    expect(opened).toEqual([])
     // Another code block keeps its ⌘↵: a line below it (YAZ-4800).
     view.focus()
     const js = [...root.querySelectorAll<HTMLElement>('.milkdown-code-block')].find((b) => !card.contains(b))!
@@ -337,16 +347,16 @@ describe('the card in the page', () => {
     modEnter(js.querySelector<HTMLElement>('.cm-content')!)
     expect(view.state.doc.childCount).toBe(blocks + 1)
     expect(view.state.selection.$from.parent.type.name).toBe('paragraph')
-    expect(opened).toHaveLength(1)
-    document.removeEventListener(NOTE_CARD_OPEN, listen)
-    card.querySelector('.note-card__edit')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    expect(opened).toEqual([])
+    // Done by its button draws the card again too; then the card selected, ⌘↵ in the page opens it (D13).
+    edit()
+    expect(card.querySelector('.cm-editor')).not.toBeNull()
+    edit()
     expect(card.querySelector('.cm-editor')).toBeNull()
-    expect(card.querySelector('.note-card__hidden')?.textContent).toBe('France')
-    // The card is selected whole: ⌘↵ in the page opens it too.
     expect(view.state.selection.from).toBe(0)
-    document.addEventListener(NOTE_CARD_OPEN, listen, { once: true })
     modEnter(view.dom)
-    expect(opened).toHaveLength(2)
+    expect(opened).toEqual([{ path: '/v/Page.md', cardId: 'WIKI-8', index: 0 }])
+    document.removeEventListener(NOTE_CARD_OPEN, listen)
   })
 
   it('draws the same in a read-only preview (idea 10: the hover preview, QuickLook, read-only notes mount this editor), with no Edit card', async () => {

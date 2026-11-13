@@ -127,6 +127,12 @@
 .note-card__head .note-card__edit {
   margin-left: auto;
 }
+/* "Done esc ⌘↵" (YAZ-5001): the keys, quiet, as in Explore's head (`.explore__button kbd`). */
+.note-card__head .note-card__edit kbd {
+  margin-left: 4px;
+  font-family: inherit;
+  color: var(--fg-muted);
+}
 .note-card__more {
   font-size: 1.2em;
   line-height: 1.3;
