@@ -2130,6 +2130,11 @@ export interface SettingsState {
   sectionStep: number
   /** Section indent (YAZ-2709): the grey section lines show always, or only while the pointer is over the note. */
   sectionLines: SectionLines
+  /**
+   * A note card's shown hidden word (YAZ-5005): highlighted (the default) or underlined, in the page, the Inbox and
+   * the card window. How the app looks, for every vault: `data-shown-hidden-words` on `.app`. The blanks do not change.
+   */
+  shownHiddenWords: ShownHiddenWords
   /** The table of contents at a note's right edge (YAZ-2700): how you READ, global, never part of a note. Settings › "Pin default"; the card's "Pin" and "Unpin" write it too. */
   tableOfContents: TableOfContents
   /** Settings › "Table of contents default" (YAZ-3558 D2): on or off for each page that made no choice in its cog: a note's choice is its `toc` key (YAZ-4094 G4), a code file's is in `tocSwitches`. A page's choice wins. */
@@ -2455,6 +2460,8 @@ export const SECTION_STEPS: readonly number[] = [24, 30, 36]
 /** Section indent (YAZ-2709): when the grey section lines show. */
 export type SectionLines = 'always' | 'hover'
 export const SECTION_LINES: readonly SectionLines[] = ['always', 'hover']
+export type ShownHiddenWords = 'highlight' | 'underline'
+export const SHOWN_HIDDEN_WORDS: readonly ShownHiddenWords[] = ['highlight', 'underline']
 
 /** Guide lines (YAZ-4094 G2): when they show — `near` is while the mouse is over the note. */
 export type GuideLinesShow = 'always' | 'near'
@@ -2842,6 +2849,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   vaultOpensOn: 'blank',
   sectionStep: 30,
   sectionLines: 'always',
+  shownHiddenWords: 'highlight',
   tableOfContents: 'auto',
   tocOnByDefault: true,
   tableOfContentsWidth: TOC_DEFAULT_W,

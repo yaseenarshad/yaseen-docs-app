@@ -1386,6 +1386,17 @@ describe('App section indent settings (YAZ-2709)', () => {
   })
 })
 
+describe('App shown hidden words (YAZ-5005)', () => {
+  it('puts Settings › Review › Shown hidden words on the app container: Highlight by default, Underline live from a change, with no card drawn again', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    const app = el.querySelector<HTMLElement>('.app')!
+    expect(app.getAttribute('data-shown-hidden-words')).toBe('highlight')
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, shownHiddenWords: 'underline' } }))
+    expect(el.querySelector<HTMLElement>('.app')).toBe(app)
+    expect(app.getAttribute('data-shown-hidden-words')).toBe('underline')
+  })
+})
+
 describe('App guide lines and folding defaults (YAZ-4094, YAZ-4119 fix 3)', () => {
   it('puts Settings › "Bullet threading default" on <html> as `data-threading`, off by default, and not on `.app`: each note pane decides on its own host (YAZ-4432)', async () => {
     const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })

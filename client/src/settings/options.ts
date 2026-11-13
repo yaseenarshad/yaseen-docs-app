@@ -5,7 +5,7 @@
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
 import type { UnitText } from '../vault/unitWord'
-import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyNoteOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableNewStyle, type TableTextInCells, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyNoteOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type ShownHiddenWords, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableNewStyle, type TableTextInCells, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -133,6 +133,12 @@ export const GUIDE_LINE_DARKNESS_PRESETS: readonly Option<number>[] = [
   { label: 'Light', value: 15 },
   { label: 'Medium', value: 25 },
   { label: 'Strong', value: 35 },
+]
+
+/** A note card's shown hidden word (YAZ-5005): the card CSS reads it as `data-shown-hidden-words` on `.app`. */
+export const SHOWN_HIDDEN_WORDS_OPTIONS: readonly Option<ShownHiddenWords>[] = [
+  { label: 'Highlight', value: 'highlight' },
+  { label: 'Underline', value: 'underline' },
 ]
 
 /** Section indent (YAZ-2709): when the grey section lines show; the editor reads it as `data-section-lines` on `.app`. */

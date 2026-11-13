@@ -202,6 +202,17 @@
   padding: 0 2px;
   background: var(--mark-bg);
 }
+/* Settings › Review › Shown hidden words: Underline (YAZ-5005, app-wide, on `.app`): no highlight, a line under the
+   word in the accent colour, light and dark. The blanks (words not shown yet) do not change. */
+[data-shown-hidden-words='underline'] .note-card .note-card__hidden {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
 .note-card__blank {
   display: inline-block;
   height: 1em;
