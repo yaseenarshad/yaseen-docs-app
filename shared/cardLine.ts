@@ -15,7 +15,8 @@ import { cardTitle } from './cardText'
  *   <!-- card: WIKI-512, 2026-11-12T14:05Z good, 2026-11-20T09:00Z again -->
  *
  * The line holds the card's ID (the vault's counter, D2), then each review: a UTC time to the minute and the FSRS
- * rating (`again | hard | good | easy`, D5). `off` takes the card out of review. `next` puts it at the top of the Inbox
+ * rating (`again | hard | good | easy`, D5), and how long the answer took when that is known (YAZ-5033: whole active
+ * seconds, `2026-11-12T14:05Z good 13s`; an older review has none). `off` takes the card out of review. `next` puts it at the top of the Inbox
  * (YAZ-4999 D3, "Up next"): its first answer removes it, in the same write. `notitle` hides the card's title (its
  * first line, `cardTitle`) on the Inbox's front (YAZ-5030, "Title on the front: Hide"); absent, the title shows, as on
  * every card before it. A card takes its ID when it is
@@ -35,7 +36,15 @@ export interface CardReview {
   /** UTC to the minute, `2026-11-12T14:05Z`: it sorts as a string. */
   at: string
   rating: CardRating
+  /**
+   * How long the answer took, in whole seconds of activity (YAZ-5033: the Inbox's timer, idle time never counts), 0 to
+   * `CARD_SECONDS_MAX`; absent for a review made before it, or by anything that did not time it. FSRS never reads it.
+   */
+  seconds?: number
 }
+
+/** The longest time a review part holds: one day, in seconds (YAZ-5033). */
+export const CARD_SECONDS_MAX = 86400
 
 /** One part of a card line, in the order the line holds them. */
 export type CardPart = { kind: 'id'; id: string } | { kind: 'review'; review: CardReview } | { kind: 'off' } | { kind: 'next' } | { kind: 'notitle' } | { kind: 'other'; text: string }
@@ -66,8 +75,12 @@ export interface NoteCardRecord {
 
 /** `<!-- card: … -->` on one line, any spaces inside the delimiters. */
 const LINE_RE = /^<!--[ \t]*card:[ \t]*(.*?)[ \t]*-->$/
-/** A review part: a real UTC minute (month, day, hour and minute in range) and an FSRS rating. */
-const REVIEW_RE = /^(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\dZ)[ \t]+(again|hard|good|easy)$/
+/**
+ * A review part: a real UTC minute (month, day, hour and minute in range) and an FSRS rating, then the answer's
+ * seconds when known (YAZ-5033): ` <n>s`, a whole number in its one written form (no leading zero, no sign), at most
+ * `CARD_SECONDS_MAX`. Any other ending (`13.5s`, `013s`, `90000s`) makes the part unknown: kept as its text.
+ */
+const REVIEW_RE = /^(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\dZ)[ \t]+(again|hard|good|easy)(?:[ \t]+(0|[1-9]\d{0,4})s)?$/
 
 /** A review time as the line writes it: UTC, to the minute (`2026-11-12T14:05Z`). */
 export const cardTime = (ms: number): string => `${new Date(ms).toISOString().slice(0, 16)}Z`
@@ -81,7 +94,9 @@ export function parseCardLine(value: string): CardLine | null {
   for (const text of body.split(/[ \t]*,[ \t]*/)) {
     if (text === '') continue
     const review = REVIEW_RE.exec(text)
-    if (review !== null) parts.push({ kind: 'review', review: { at: review[1], rating: review[2] as CardRating } })
+    const seconds = review?.[3] === undefined ? undefined : Number(review[3])
+    if (review !== null && (seconds === undefined || seconds <= CARD_SECONDS_MAX))
+      parts.push({ kind: 'review', review: seconds === undefined ? { at: review[1], rating: review[2] as CardRating } : { at: review[1], rating: review[2] as CardRating, seconds } })
     else if (text === 'off') parts.push({ kind: 'off' })
     else if (text === 'next') parts.push({ kind: 'next' })
     else if (text === 'notitle') parts.push({ kind: 'notitle' })
@@ -93,9 +108,21 @@ export function parseCardLine(value: string): CardLine | null {
   return { parts }
 }
 
+/** Is `n` seconds a review part can hold (YAZ-5033): a whole number, 0 to `CARD_SECONDS_MAX`? */
+export const isCardSeconds = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= CARD_SECONDS_MAX
+
+/** A review part as the line writes it: `2026-11-12T14:05Z good`, and ` 13s` only when its seconds are known (YAZ-5033). */
+export const formatCardReview = (r: CardReview): string => (isCardSeconds(r.seconds) ? `${r.at} ${r.rating} ${r.seconds}s` : `${r.at} ${r.rating}`)
+
+/**
+ * The key of a review: its time and its rating (YAZ-4993: each review ONE time). Its seconds are no part of it
+ * (YAZ-5033): two copies of one review, one timed and one not, are the same review.
+ */
+export const cardReviewKey = (r: CardReview): string => `${r.at} ${r.rating}`
+
 /** The card line for `line`, or null when it holds no part (a card with no ID and no review writes no line). */
 export function formatCardLine(line: CardLine): string | null {
-  const parts = line.parts.map((p) => (p.kind === 'id' ? p.id : p.kind === 'review' ? `${p.review.at} ${p.review.rating}` : p.kind === 'other' ? p.text : p.kind))
+  const parts = line.parts.map((p) => (p.kind === 'id' ? p.id : p.kind === 'review' ? formatCardReview(p.review) : p.kind === 'other' ? p.text : p.kind))
   return parts.length === 0 ? null : `<!-- card: ${parts.join(', ')} -->`
 }
 
@@ -173,17 +200,27 @@ export function withoutCardReview(line: CardLine, at: string): CardLine {
 }
 
 /**
- * The line with each review of `add` that it does not hold yet (a review is its time and its rating; each one ONE time),
- * and its reviews in time order (YAZ-4993: the card that keeps an ID takes the union of its copies' histories). The
- * reviews fill the line's review places in time order, the new ones after the last of them (else at the end); the ID,
- * `off` and unknown parts stay where they are. Nothing new to add: the same line.
+ * The line with each review of `add` that it does not hold yet (a review is its time and its rating, `cardReviewKey`;
+ * each one ONE time), and its reviews in time order (YAZ-4993: the card that keeps an ID takes the union of its copies'
+ * histories). The reviews fill the line's review places in time order, the new ones after the last of them (else at the
+ * end); the ID, `off` and unknown parts stay where they are. A review the line holds with no seconds takes them from
+ * the same review in `add` (YAZ-5033: the timed copy is kept); a review with seconds keeps its own. Nothing new to add
+ * and no seconds to take: the same line.
  */
 export function withCardReviews(line: CardLine, add: readonly CardReview[]): CardLine {
-  const held = cardReviewsOf(line)
-  const key = (r: CardReview) => `${r.at} ${r.rating}`
-  const seen = new Set(held.map(key))
-  const fresh = add.filter((r) => !seen.has(key(r)) && (seen.add(key(r)), true))
-  if (fresh.length === 0) return line
+  const timed = new Map<string, CardReview>()
+  for (const r of add) if (isCardSeconds(r.seconds) && !timed.has(cardReviewKey(r))) timed.set(cardReviewKey(r), r)
+  let upgraded = false
+  const held = cardReviewsOf(line).map((r) => {
+    const better = isCardSeconds(r.seconds) ? undefined : timed.get(cardReviewKey(r))
+    if (better === undefined) return r
+    upgraded = true
+    return { ...r, seconds: better.seconds }
+  })
+  const seen = new Set(held.map(cardReviewKey))
+  // Of two new copies of one review, the timed one (YAZ-5033).
+  const fresh = add.filter((r) => !seen.has(cardReviewKey(r)) && (seen.add(cardReviewKey(r)), true)).map((r) => timed.get(cardReviewKey(r)) ?? r)
+  if (fresh.length === 0 && !upgraded) return line
   const all = [...held, ...fresh].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
   let n = 0
   const parts: CardPart[] = line.parts.map((p) => (p.kind === 'review' ? { kind: 'review', review: all[n++] } : p))
@@ -232,16 +269,17 @@ export interface CardCopySettled {
  * - another text: the copy keeps its history and the keeper is unchanged — each card keeps its own reviews, as two cards
  *   of their own (the decision on YAZ-4993, kept by Yaseen on YAZ-4998);
  * - the same text: the keeper takes each review of the copy that it lacks (`withCardReviews`: each review one time, in
- *   time order), and only then does the copy's history empty. The emptied copy also loses its `next` (YAZ-4999 D3):
+ *   time order; of the same review with and without seconds, the one with them, YAZ-5033), and only then does the
+ *   copy's history empty. The emptied copy also loses its `next` (YAZ-4999 D3):
  *   it is a new card now, not the one put at the top of the Inbox. The keeper keeps its own `next`, and takes none.
  * Nothing to add: the keeper's line is the same object, so a caller writes nothing for it.
  */
 export function settleCardCopy(keeper: CardSide | null, copy: CardSide): CardCopySettled {
   if (keeper === null || keeper.text !== copy.text) return { keeper: keeper?.line ?? null, copy: copy.line, emptied: false }
   const union = withCardReviews(keeper.line, cardReviewsOf(copy.line))
-  const has = new Set(cardReviewsOf(union).map((r) => `${r.at} ${r.rating}`))
+  const has = new Set(cardReviewsOf(union).map(cardReviewKey))
   // The rule's own check: never empty a history whose reviews the keeper does not hold now.
-  if (!cardReviewsOf(copy.line).every((r) => has.has(`${r.at} ${r.rating}`))) return { keeper: keeper.line, copy: copy.line, emptied: false }
+  if (!cardReviewsOf(copy.line).every((r) => has.has(cardReviewKey(r)))) return { keeper: keeper.line, copy: copy.line, emptied: false }
   return { keeper: union, copy: withCardNext(withoutCardReviews(copy.line), false), emptied: true }
 }
 

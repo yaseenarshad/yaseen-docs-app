@@ -47,7 +47,7 @@ let review: CardReviewApi
 let props: NoteCardInboxProps
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], size: 12, ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], size: 12, today: { cards: 0, reviews: 0, seconds: 0 }, ...over }
 }
 
 function render() {
@@ -217,7 +217,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
       render()
       await flush()
       press('2')
-      expect(review.answer).toHaveBeenCalledExactlyOnceWith('good')
+      expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', expect.any(Number))
       expect(review.setNext).not.toHaveBeenCalled()
       if (!readOnly) {
         act(() => root?.unmount())
@@ -250,7 +250,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     press(' ')
     expect(review.showAnswers).toHaveBeenCalledOnce()
     press('2')
-    expect(review.answer).toHaveBeenCalledExactlyOnceWith('good')
+    expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', expect.any(Number))
   })
 
   it('YAZ-5010: 1 and 2 answer at any step — before the first Space, with words still hidden', async () => {
@@ -258,9 +258,9 @@ describe('the Inbox screen (YAZ-4962)', () => {
     await flush()
     expect(shown()).toEqual([])
     press('1')
-    expect(review.answer).toHaveBeenCalledExactlyOnceWith('again')
+    expect(review.answer).toHaveBeenCalledExactlyOnceWith('again', expect.any(Number))
     act(() => buttons()[1].click())
-    expect(review.answer).toHaveBeenLastCalledWith('good')
+    expect(review.answer).toHaveBeenLastCalledWith('good', expect.any(Number))
   })
 
   it('YAZ-5010, YAZ-5029: while the page of the card is still read, the buttons stay in their place — but no digit and no click answers', async () => {
@@ -320,7 +320,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(buttons().map((b) => b.getAttribute('aria-description'))).toEqual(['Again · later today', 'Hard · 3 days', 'Good · 9 days', 'Easy · 20 days'])
     expect([...el.querySelectorAll('.note-card-inbox__hints kbd')].map((k) => k.textContent)).not.toContain('1–4')
     press('3')
-    expect(review.answer).toHaveBeenCalledExactlyOnceWith('good')
+    expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', expect.any(Number))
   })
 
   it('the key guard: a key typed in a field, or while a dialog or a menu is open (the Explore stack is a dialog), is not the Inbox\'s', async () => {
@@ -752,7 +752,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     // The row is there, empty, before any answer (no jump when the line comes).
     expect(last().textContent).toBe('')
     press('2')
-    expect(review.answer).toHaveBeenCalledExactlyOnceWith('good')
+    expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', expect.any(Number))
     // Not yet counted by the session (the write runs): no line.
     expect(last().textContent).toBe('')
     session = { ...session, answered: ['good'], canUndo: true }
@@ -769,7 +769,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(last().textContent).toBe('')
     // A failed write: the session counts nothing, so no line (the hook shows its error).
     act(() => buttons()[0].click())
-    expect(review.answer).toHaveBeenLastCalledWith('again')
+    expect(review.answer).toHaveBeenLastCalledWith('again', expect.any(Number))
     render()
     expect(last().textContent).toBe('')
     // The next answer that lands: its line, in red (a Forgot).
@@ -951,5 +951,165 @@ describe('sound and boards in the Inbox (YAZ-5014, YAZ-5015)', () => {
     expect(board.querySelector('img')?.getAttribute('loading')).toBe('lazy')
     act(() => void board.querySelector('img')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 })))
     expect(props.openLayer).toHaveBeenCalledWith('/v/Card pipeline.drawio')
+  })
+})
+
+describe('YAZ-5033: how long each answer took — the timer pauses when you are idle; no cap', () => {
+  const T0 = new Date(2026, 10, 13, 10, 0).getTime()
+  const tick = (ms: number) => act(() => void vi.advanceTimersByTime(ms))
+  /** `seconds` of work: each second a mouse move, as a hand on the mouse. */
+  const work = (seconds: number, kind: 'mousemove' | 'wheel' | 'pointerdown' = 'mousemove') => {
+    for (let i = 0; i < seconds; i++) {
+      tick(1000)
+      act(() => void window.dispatchEvent(kind === 'wheel' ? new WheelEvent('wheel') : new MouseEvent(kind)))
+    }
+  }
+  const secondsOfAnswer = () => vi.mocked(review.answer).mock.calls.at(-1)?.[1]
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(T0)
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('10 s of work, 90 s with no key or mouse, 5 s of work → 15 s with the 60 s setting: the idle stretch counts nothing', async () => {
+    mount(TWO_SIDES)
+    await flush()
+    work(10)
+    tick(90_000)
+    act(() => void window.dispatchEvent(new MouseEvent('mousemove'))) // back at the desk: the time goes on from here
+    work(5)
+    press('2')
+    expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', 15)
+  })
+
+  it('the setting decides what is idle: 10 s, 45 s still, 5 s → 15 s with 30 s, 60 s with 60 s (a long think counts in full: no cap)', async () => {
+    for (const [pauseAfter, want] of [
+      [30, 15],
+      [60, 60],
+    ] as const) {
+      mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, pauseAfter })
+      await flush()
+      work(10)
+      tick(45_000)
+      act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift' })))
+      work(5, 'wheel')
+      press('1')
+      expect(secondsOfAnswer()).toBe(want)
+      act(() => root?.unmount())
+      el.remove()
+      root = null
+      vi.clearAllMocks()
+    }
+    mount(TWO_SIDES) // for afterEach
+  })
+
+  it('no touch at all still counts while it is no idle stretch: 40 s reading, then the answer key → 40 s', async () => {
+    mount(TWO_SIDES)
+    await flush()
+    tick(40_000)
+    press('2')
+    expect(secondsOfAnswer()).toBe(40)
+  })
+
+  it('a blurred window pauses it: a mouse over the window in the background counts nothing; focus goes on', async () => {
+    mount(TWO_SIDES)
+    await flush()
+    work(5)
+    act(() => void window.dispatchEvent(new FocusEvent('blur')))
+    work(30)
+    act(() => void window.dispatchEvent(new FocusEvent('focus')))
+    work(3, 'pointerdown')
+    press('2')
+    expect(secondsOfAnswer()).toBe(8)
+  })
+
+  it('a hidden window pauses it (visibilitychange)', async () => {
+    mount(TWO_SIDES)
+    await flush()
+    work(4)
+    const state = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    act(() => void document.dispatchEvent(new Event('visibilitychange')))
+    work(20)
+    state.mockReturnValue('visible')
+    act(() => void document.dispatchEvent(new Event('visibilitychange')))
+    work(2)
+    state.mockRestore()
+    press('2')
+    expect(secondsOfAnswer()).toBe(6)
+  })
+
+  it('the Inbox tab behind a page tab pauses it; in front again it goes on', async () => {
+    mount(TWO_SIDES)
+    await flush()
+    work(7)
+    props = { ...props, shown: false }
+    render()
+    work(50)
+    props = { ...props, shown: true }
+    render()
+    work(3)
+    press('2')
+    expect(secondsOfAnswer()).toBe(10)
+  })
+
+  it('it starts again from 0 when a card shows — the next card, and the card ⌘Z shows again', async () => {
+    mount(TWO_SIDES)
+    await flush()
+    work(20)
+    // The next card (a new place in the session): from zero.
+    session = sessionOf(TWO_SIDES, { position: 4 })
+    render()
+    await flush()
+    work(3)
+    press('2')
+    expect(secondsOfAnswer()).toBe(3)
+    // ⌘Z shows the first card again: from zero again, not its old 20 s.
+    session = sessionOf(TWO_SIDES, { position: 3 })
+    render()
+    await flush()
+    work(2)
+    press('1')
+    expect(secondsOfAnswer()).toBe(2)
+  })
+
+  it('a click on an answer button writes the seconds too', async () => {
+    mount(TWO_SIDES)
+    await flush()
+    work(12, 'pointerdown')
+    act(() => buttons()[1].click())
+    expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', 12)
+  })
+})
+
+describe("YAZ-5033: today's total — the top row and the done screen", () => {
+  it('the top row says "Today: N cards · M min" before "3 of 12"; nothing with no card answered today', () => {
+    mount(TWO_SIDES)
+    expect(el.querySelector('.note-card-inbox__today')).toBeNull()
+    session = { ...session, today: { cards: 31, reviews: 35, seconds: 9 * 60 + 10 } }
+    render()
+    const bar = el.querySelector('.note-card-inbox__bar')!
+    expect(bar.querySelector('.note-card-inbox__today')?.textContent).toBe('Today: 31 cards · 9 min')
+    expect(bar.querySelector('.note-card-inbox__today + .note-card-inbox__place')?.textContent).toBe('3 of 12')
+    session = { ...session, today: { cards: 1, reviews: 1, seconds: 13 } }
+    render()
+    expect(bar.querySelector('.note-card-inbox__today')?.textContent).toBe('Today: 1 card · 13 s')
+    // Only old reviews (no seconds) today: the cards alone.
+    session = { ...session, today: { cards: 2, reviews: 2, seconds: 0 } }
+    render()
+    expect(bar.querySelector('.note-card-inbox__today')?.textContent).toBe('Today: 2 cards')
+  })
+
+  it('the done screen says today`s total under "Inbox complete."', () => {
+    mount(TWO_SIDES)
+    session = { ...session, card: null, today: { cards: 12, reviews: 14, seconds: 4 * 60 + 31 } }
+    render()
+    const done = el.querySelector('.note-card-inbox__done')!
+    expect(done.querySelector('.note-card-inbox__done-title')?.textContent).toBe('Inbox complete.')
+    expect(done.querySelector('.note-card-inbox__done-today')?.textContent).toBe('Today: 12 cards · 5 min')
+    // Still shown on a page's done screen.
+    session = { ...session, scope: 'page' }
+    render()
+    expect(el.querySelector('.note-card-inbox__done-today')?.textContent).toBe('Today: 12 cards · 5 min')
   })
 })

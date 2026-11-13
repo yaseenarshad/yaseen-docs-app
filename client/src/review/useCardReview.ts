@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { withCardNext, withCardOff, type CardRating, type CardReview } from '@shared/cardLine'
-import { cardQueue, previewAnswers, type CardAnswer, type DueCard } from '@shared/cardSchedule'
+import { isCardSeconds, withCardNext, withCardOff, type CardRating, type CardReview } from '@shared/cardLine'
+import { cardQueue, previewAnswers, reviewedToday, type CardAnswer, type DueCard, type ReviewedToday } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
@@ -103,6 +103,8 @@ export interface CardReviewSession {
   answered: CardRating[]
   /** The progress bar's whole (YAZ-5020): the cards the session started with, plus any it took since. */
   size: number
+  /** Today's review work across the vault, from the index (YAZ-5033): the top row's and the done screen's "Today: …". */
+  today: ReviewedToday
 }
 
 export interface CardReviewApi {
@@ -114,8 +116,12 @@ export interface CardReviewApi {
   start: (scope?: CardReviewScope) => void
   /** Fixes and returns each button's outcome for the card showing; the same array until that card goes. Null with no card loaded. */
   showAnswers: () => CardAnswer[] | null
-  /** Writes the fixed review of `rating`'s button (fixing it now if `showAnswers` was not called), then the next card. */
-  answer: (rating: CardRating) => Promise<void>
+  /**
+   * Writes the fixed review of `rating`'s button (fixing it now if `showAnswers` was not called), then the next card.
+   * `seconds` (YAZ-5033): how long the answer took, by the Inbox's timer; the review part ends with ` <n>s`. Absent:
+   * none is written.
+   */
+  answer: (rating: CardRating, seconds?: number) => Promise<void>
   /** Removes the last answer's review and shows that card again. */
   undo: () => Promise<void>
   close: () => void
@@ -317,6 +323,8 @@ export function useCardReview(root: string | null, source: IndexSource, settings
   const letters = source.letters
   const vaultQueue = useMemo(() => cardQueue(records, settings, Date.now(), '', undefined, letters), [records, settings, day, letters])
   const dueCount = vaultQueue.length
+  // YAZ-5033: today's reviews across the vault, from the index: the new answer counts once the index has its write.
+  const today = useMemo(() => reviewedToday(records, Date.now()), [records, day])
 
   // YAZ-5031: the open session follows the index's `next` marks (`withMarks`); the vault's queue serves the vault's session.
   useEffect(() => {
@@ -476,11 +484,13 @@ export function useCardReview(root: string | null, source: IndexSource, settings
   }, [cached])
 
   const answer = useCallback(
-    async (rating: CardRating) => {
+    async (rating: CardRating, seconds?: number) => {
       const s0 = live.current.session
       const card = s0?.queue[s0.at]
-      const chosen = fixAnswers()?.find((a) => a.review.rating === rating)
-      if (card === undefined || chosen === undefined || busy.current) return
+      const fixedAnswer = fixAnswers()?.find((a) => a.review.rating === rating)
+      if (card === undefined || fixedAnswer === undefined || busy.current) return
+      // The hover's review, with how long the answer took (YAZ-5033) when the Inbox timed it.
+      const chosen = isCardSeconds(seconds) ? { ...fixedAnswer, review: { ...fixedAnswer.review, seconds } } : fixedAnswer
       busy.current = true
       forget(card.path)
       const written = await writeCardAnswer(card.path, card.id, chosen.review).then(
@@ -654,9 +664,10 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       place: shownCard === null || root === null ? [] : cardPlace(root, vault, folders, records, shownCard.path),
       answered: session.answered,
       size: Math.max(session.total, session.answered.length + queue.length),
+      today,
     }
     // `records`: a cached page is good only at its page's mtime.
-  }, [session, loaded, fixed, turnKey, root, vaultName, cached, records, folders])
+  }, [session, loaded, fixed, turnKey, root, vaultName, cached, records, folders, today])
 
   return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, move, turnOff, setFilter }
 }

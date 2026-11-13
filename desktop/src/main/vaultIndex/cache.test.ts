@@ -248,6 +248,13 @@ describe('index cache: a bad file never throws, only degrades', () => {
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
   })
 
+  it('YAZ-5033: a snapshot of version 13 read `… good 13s` as an unknown part, with no review → version-mismatch, so a timed review is never served as missing', async () => {
+    expect(CACHE_VERSION).toBeGreaterThanOrEqual(14)
+    const cards = [{ id: 'DEMO-105', off: false, next: false, reviews: [] }]
+    await writeFile(file, JSON.stringify({ version: 13, root: '/vault', records: [record('/vault/a.md', { cards } as never)] }))
+    expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
+  })
+
   it("another root's payload at this filename → miss (not this vault's cache)", async () => {
     await writeFile(file, JSON.stringify({ version: CACHE_VERSION, root: '/elsewhere', records: [] }))
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'miss' })
@@ -294,12 +301,12 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
     '```card',
     'A card links [[Card Link]] and #card-tag',
     '```',
-    '<!-- card: CAN-3, off, next, notitle, 2026-11-12T14:05Z good -->',
+    '<!-- card: CAN-3, off, next, notitle, 2026-11-12T14:05Z good, 2026-11-13T09:00Z again 13s -->',
     '',
   ].join('\n')
 
   const FINGERPRINT = {
-    cacheVersion: 13,
+    cacheVersion: 14,
     maxFileBytes: 10 * 1024 * 1024,
     /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
     recordKeys: ['aliases', 'basename', 'cards', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'links', 'mtime', 'name', 'path', 'properties', 'size', 'tags', 'title'],
@@ -327,7 +334,8 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
       links: ['Ref', 'Folder Ref', 'Note One', 'Note Two', 'Covid notes|COVID-19', 'chart.pdf', 'Card Link'],
       embeds: ['img.png', 'photo.png'],
       // A card's title (its first line, as plain text) and its `notitle` part ride on the record (YAZ-5030): a card link shows the title.
-      cards: [{ id: 'CAN-3', off: true, next: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }], title: 'A card links Card Link and #card-tag', notitle: true }],
+      // A review's seconds (YAZ-5033, CACHE_VERSION 14) ride on it: today's total reads them off the index.
+      cards: [{ id: 'CAN-3', off: true, next: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }, { at: '2026-11-13T09:00Z', rating: 'again', seconds: 13 }], title: 'A card links Card Link and #card-tag', notitle: true }],
     },
   }
 

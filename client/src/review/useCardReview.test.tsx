@@ -675,3 +675,44 @@ describe('useCardReview: fast ← → (YAZ-5029)', () => {
     await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-12', page: { text: 'Card {{two}}' } }))
   })
 })
+
+describe('YAZ-5033: the answer saves how long it took; today`s total', () => {
+  it('answer(rating, seconds) writes `<time> good 13s`, and its undo puts the file back byte for byte (with `next` and an older timed review)', async () => {
+    page('Geo.md', ['Capital of {{Peru}}?', 'WIKI-2, mochi x1, next, 2026-11-12T07:00Z good 40s'])
+    const before = vault.get(`${ROOT}/Geo.md`)!
+    await mount()
+    await act(async () => review.start())
+    await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-2', page: { next: true } }))
+    await step(() => review.answer('good', 13))
+    expect(vault.get(`${ROOT}/Geo.md`)).toContain(`<!-- card: WIKI-2, mochi x1, 2026-11-12T07:00Z good 40s, ${cardTime(NOW)} good 13s -->`)
+    expect(reviewsOn('Geo.md', 'WIKI-2').at(-1)).toEqual({ at: cardTime(NOW), rating: 'good', seconds: 13 })
+    await step(() => review.undo())
+    expect(vault.get(`${ROOT}/Geo.md`)).toBe(before)
+  })
+
+  it('no seconds (or a value a part cannot hold): the review is written as before, with none', async () => {
+    await mount()
+    await act(async () => review.start())
+    await vi.waitFor(() => expect(review.session?.card?.id).toBe('WIKI-1'))
+    await step(() => review.answer('again', 1.5))
+    expect(vault.get(`${ROOT}/Geo.md`)).toContain(`<!-- card: WIKI-1, 2026-10-13T09:00Z good, ${cardTime(NOW)} again -->`)
+    await vi.waitFor(() => expect(review.session?.card?.id).toBe('WIKI-3'))
+    await step(() => review.answer('good'))
+    expect(reviewsOn('Bio/Cells.md', 'WIKI-3')).toEqual([{ at: cardTime(NOW), rating: 'good' }])
+  })
+
+  it('session.today: the cards answered today across the vault, from the index, with their seconds; it follows each answer', async () => {
+    // WIKI-2 was answered twice today, an hour ago, with no seconds: one card, 0 s. (Local times: any time zone.)
+    page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', `WIKI-2, ${cardTime(NOW - 3_600_000)} good, ${cardTime(NOW - 3_540_000)} good`])
+    await mount()
+    await act(async () => review.start())
+    expect(review.session?.today).toEqual({ cards: 1, reviews: 2, seconds: 0 })
+    await step(() => review.answer('good', 13))
+    expect(review.session?.today).toEqual({ cards: 2, reviews: 3, seconds: 13 })
+    await vi.waitFor(() => expect(review.session?.card?.id).toBe('WIKI-3'))
+    await step(() => review.answer('again', 50))
+    expect(review.session?.today).toEqual({ cards: 3, reviews: 4, seconds: 63 })
+    await step(() => review.undo())
+    expect(review.session?.today).toEqual({ cards: 2, reviews: 3, seconds: 13 })
+  })
+})

@@ -1925,6 +1925,28 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             available: reviewOn,
             render: ({ review }) => review && <Segmented options={ON_OFF_OPTIONS} value={review.settings.fuzz} onChange={(fuzz) => review.save({ ...review.settings, fuzz })} ariaLabel="Spread due dates" />,
           },
+          {
+            // YAZ-5033 (Yaseen's decision: "the time pauses when you are idle; no cap"): the answer timer's idle pause.
+            id: 'pauseAfter',
+            label: 'Pause the timer after',
+            hint: 'With no key or mouse. The Inbox saves how long each answer took; a longer stretch with no key or mouse does not count.',
+            keywords: [...REVIEW_KEYWORDS, 'timer', 'time', 'idle', 'seconds', 'minutes', 'how long'],
+            available: reviewOn,
+            render: ({ review }) =>
+              review && (
+                <Segmented
+                  options={[
+                    { label: '30 s', value: 30 as const },
+                    { label: '60 s', value: 60 as const },
+                    { label: '2 min', value: 120 as const },
+                    { label: '5 min', value: 300 as const },
+                  ]}
+                  value={review.settings.pauseAfter}
+                  onChange={(pauseAfter) => review.save({ ...review.settings, pauseAfter })}
+                  ariaLabel="Pause the timer after"
+                />
+              ),
+          },
           reviewField('weights', WEIGHTS_FIELD, 'Weights', 'The 21 FSRS numbers, separated by commas. Change them only if you know FSRS.', undefined, true),
           {
             // YAZ-5005: how the app looks, for every vault (the app's settings, not review.json): `data-shown-hidden-words` on `.app`.

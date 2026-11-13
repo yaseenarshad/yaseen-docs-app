@@ -12,6 +12,10 @@ export const REVIEW_SETTINGS_FILE = 'review.json'
 /** How many answer buttons a review shows (D5): Forgot and Remembered, or Again, Hard, Good and Easy. */
 export type ReviewButtons = 2 | 4
 
+/** The choices of "Pause the timer after" (YAZ-5033), in seconds with no key or mouse. */
+export const PAUSE_AFTER_CHOICES = [30, 60, 120, 300] as const
+export type PauseAfter = (typeof PAUSE_AFTER_CHOICES)[number]
+
 /** Which new cards the Inbox takes first (YAZ-4999 D2), by the card's ID number: the vault's counter grows with time. */
 export type NewCardOrder = 'oldest' | 'newest'
 
@@ -35,6 +39,11 @@ export interface ReviewSettings {
   newOrder: NewCardOrder
   /** Spread due dates (FSRS fuzz): cards made together do not all come back on one day. */
   fuzz: boolean
+  /**
+   * The answer timer's idle pause, in seconds (YAZ-5033, Settings › Review › "Pause the timer after"): a stretch this
+   * long with no key, click, scroll or mouse move counts nothing toward how long an answer took. 30, 60, 120 or 300.
+   */
+  pauseAfter: PauseAfter
   /** The FSRS weights: 21 numbers (FSRS-6); 17 or 19 are read too (ts-fsrs fills in the rest). */
   weights: number[]
 }
@@ -53,6 +62,7 @@ export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = Object.freeze({
   upNextPerDay: null,
   newOrder: 'oldest',
   fuzz: true,
+  pauseAfter: 60,
   weights: [...DEFAULT_CARD_WEIGHTS],
 }) as ReviewSettings
 
@@ -74,6 +84,7 @@ export function sanitizeReviewSettings(raw: unknown): ReviewSettings {
     upNextPerDay: r.upNextPerDay === null || wholeIn(r.upNextPerDay, 0, 9999) ? r.upNextPerDay : d.upNextPerDay,
     newOrder: r.newOrder === 'oldest' || r.newOrder === 'newest' ? r.newOrder : d.newOrder,
     fuzz: typeof r.fuzz === 'boolean' ? r.fuzz : d.fuzz,
+    pauseAfter: (PAUSE_AFTER_CHOICES as readonly unknown[]).includes(r.pauseAfter) ? (r.pauseAfter as PauseAfter) : d.pauseAfter,
     weights: isWeights(r.weights) ? [...r.weights] : [...d.weights],
   }
 }

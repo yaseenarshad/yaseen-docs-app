@@ -21,6 +21,7 @@ import type { ExploreVault } from '../explore/ExploreNote'
 import { storage } from '../lib/storage'
 import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
 import { answerIcon } from './noteCardInboxChip'
+import { reviewDuration } from './reviewTime'
 import { DueTrayIcon, IntervalIcon, ReviewsIcon, TrashIcon } from './noteCardInboxIcons'
 import '../editor/noteCard/noteCard.css'
 import './noteCardScreens.css'
@@ -281,8 +282,8 @@ function Days({ n }: { n: number }) {
 /**
  * The full table (D3, D13; the look is Mochi's, YAZ-5032): one row per review in time order — the answer's glyph, the
  * days since the review before ("**4** days"; blank for the first), the review date and the next due date in full
- * ("Sep 24, 2026"), a bin to delete — and a last, muted row for the review to come: the wait, the day it comes due,
- * "--", no delete. The history is replayed only here, so a closed section costs nothing but its count.
+ * ("Sep 24, 2026"), how long the answer took ("13 s", "1 min 4 s"; "—" for a review made before YAZ-5033), a bin to
+ * delete — and a last, muted row for the review to come: the wait, the day it comes due, "--", no time, no delete. The history is replayed only here, so a closed section costs nothing but its count.
  */
 export function NoteCardReviewsTable({ reviews, settings, onDelete, now = Date.now() }: NoteCardReviewsProps) {
   // One replay: each row is a review's step; the last row's step is the card's state.
@@ -297,6 +298,7 @@ export function NoteCardReviewsTable({ reviews, settings, onDelete, now = Date.n
           <th># of days</th>
           <th>Review date</th>
           <th>Next due</th>
+          <th>Time</th>
           <th aria-label="Delete" />
         </tr>
       </thead>
@@ -310,6 +312,7 @@ export function NoteCardReviewsTable({ reviews, settings, onDelete, now = Date.n
             <td>{i === 0 ? '' : <Days n={row.elapsed} />}</td>
             <td>{noteCardFullDate(Date.parse(row.review.at))}</td>
             <td>{noteCardFullDate(row.due)}</td>
+            <td className="note-card-reviews__time">{reviewDuration(row.review.seconds)}</td>
             <td>
               {onDelete !== undefined && (
                 <button type="button" className="note-card-reviews__delete" title="Delete this review" aria-label={`Delete the review of ${noteCardFullDate(Date.parse(row.review.at))}`} onMouseDown={(e) => e.preventDefault()} onClick={() => onDelete(row.review)}>
@@ -325,6 +328,7 @@ export function NoteCardReviewsTable({ reviews, settings, onDelete, now = Date.n
           <td>{last === undefined ? '' : last.inSteps ? 'later today' : <Days n={last.interval} />}</td>
           <td>{noteCardFullDate(next)}</td>
           <td>--</td>
+          <td />
           <td />
         </tr>
       </tbody>
