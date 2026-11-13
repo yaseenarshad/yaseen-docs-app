@@ -10,6 +10,7 @@ import { LIFT_PX } from './hooks/rowGestures'
 import { PlacedCreate, rowArrows, type PendingCreate } from './Tree'
 import type { EntryKind } from './createEntry'
 import { scopeGroup } from './menuSections'
+import { NewKindIcon } from './FileIcon'
 
 /** Two clicks on a name inside this gap rename it, as on a session (YAZ-3147, YAZ-4460 F3). */
 const RENAME_CLICK_GAP_MS = 300
@@ -258,9 +259,10 @@ export function FocusFolderList({ kind, folders, roots, renderItems, editing, on
               return paths.length === 0 ? [] : [{ id: 'focus-folder-open-all', label: 'Open all in tabs', tip: 'Open each item of this folder in a tab of its own. A folder opens as its folder page.', onSelect: () => onOpenAll(paths) }]
             })()], ...(onNew === undefined ? [] : [[
               // YAZ-4782: the tree menu's New rows, in its order; the item is made in a vault's root and joins this folder.
-              { id: 'focus-folder-new-note', label: unit('New note'), onSelect: () => newIn(menu.id, 'file') },
-              { id: 'focus-folder-new-drawing', label: 'New drawing', onSelect: () => newIn(menu.id, 'drawing') },
-              { id: 'focus-folder-new-folder', label: 'New folder', onSelect: () => newIn(menu.id, 'dir') },
+              // YAZ-5100: each with the icon of what it makes, as the tree menu's.
+              { id: 'focus-folder-new-note', label: unit('New note'), icon: <NewKindIcon kind="file" />, onSelect: () => newIn(menu.id, 'file') },
+              { id: 'focus-folder-new-drawing', label: 'New drawing', icon: <NewKindIcon kind="drawing" />, onSelect: () => newIn(menu.id, 'drawing') },
+              { id: 'focus-folder-new-folder', label: 'New folder', icon: <NewKindIcon kind="dir" />, onSelect: () => newIn(menu.id, 'dir') },
             ]]), [{ id: 'focus-folder-rename', label: 'Rename', onSelect: () => onEdit(menu.id) }, ...(only === menu.id ? [] : [{ id: 'focus-folder-only', label: 'Hide all others', onSelect: () => onHideOthers(menu.id) }])], scopeGroup(kind, scopesOf(menu.id), (to, on) => onSetScope(menu.id, to, on), { scope, ask: () => leave(menu.id) }), [{ id: 'focus-folder-delete', label: kind === 'focus' ? 'Delete focus folder' : 'Delete favorite folder', danger: true, onSelect: () => setDeleting(folders.find((f) => f.id === menu.id) ?? null) }]]}
             onClose={() => setMenu(null)}
           />,
