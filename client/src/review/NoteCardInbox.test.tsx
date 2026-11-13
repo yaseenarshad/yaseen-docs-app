@@ -124,11 +124,11 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(el.querySelector('.note-card-inbox__bar .note-card-inbox__place')?.textContent).toBe('3 of 12')
     const hints = () => [...el.querySelectorAll('.note-card-inbox__hints span')].map((h) => h.textContent)
     // Nothing to undo; the digits are on the buttons.
-    expect(hints()).toEqual(['Space Show', 'O Open page', 'E Edit card', '⌘↵ New tab'])
+    expect(hints()).toEqual(['Space Show', 'O Open page', 'E Edit card', 'Cmd + Enter New tab'])
     for (let i = 0; i < 4; i++) press(' ')
     await flush()
     // The last step: Space has nothing more to show.
-    expect(hints()).toEqual(['O Open page', 'E Edit card', '⌘↵ New tab'])
+    expect(hints()).toEqual(['O Open page', 'E Edit card', 'Cmd + Enter New tab'])
   })
 
   it('YAZ-4999: an up-next card shows the chip "Up next" after the ID; its × removes the mark (setNext)', () => {
@@ -408,7 +408,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     render()
     expect(el.querySelector('.note-card-inbox__done-title')?.textContent).toBe('Inbox complete.')
     expect(el.querySelector('.note-card-inbox__done-line')?.textContent).toBe('Nothing else is due today. Enjoy your day!')
-    expect([...el.querySelectorAll('.note-card-inbox__hints kbd')].map((k) => k.textContent)).toEqual(['⌘Z'])
+    expect([...el.querySelectorAll('.note-card-inbox__hints kbd')].map((k) => k.textContent)).toEqual(['Cmd', 'Z'])
     press(' ')
     press('o')
     expect(props.openPage).not.toHaveBeenCalled()
@@ -484,7 +484,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     session = { ...session, canNext: true }
     render()
     expect(moves().map((b) => b.disabled)).toEqual([true, false])
-    expect([...el.querySelectorAll('.note-card-inbox__hints span')].map((h) => h.textContent)).toContain('← → Other cards')
+    expect([...el.querySelectorAll('.note-card-inbox__hints span')].map((h) => h.textContent)).toContain('Left / Right Other cards')
     press('ArrowRight')
     act(() => moves()[1].click())
     expect(vi.mocked(review.move).mock.calls).toEqual([[1], [1]])
@@ -758,7 +758,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     session = { ...session, answered: ['good'], canUndo: true }
     render()
     // YAZ-5030: the card by its title, the ID after it.
-    expect(last().textContent).toBe('✓ Remembered · Capital of France (WIKI-9) · back in 3 days · Undo ⌘Z')
+    expect(last().textContent).toBe('✓ Remembered · Capital of France (WIKI-9) · back in 3 days · Undo Cmd + Z')
     expect(last().dataset.rating).toBe('good')
     expect(props.onNotice).not.toHaveBeenCalled()
     // Undo in the line: the hook's own undo; the session takes the answer off, and the line clears.
@@ -775,7 +775,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     // The next answer that lands: its line, in red (a Forgot).
     session = { ...session, answered: ['again'], canUndo: true }
     render()
-    expect(last().textContent).toBe('✕ Forgot · Capital of France (WIKI-9) · back later today · Undo ⌘Z')
+    expect(last().textContent).toBe('✕ Forgot · Capital of France (WIKI-9) · back later today · Undo Cmd + Z')
     expect(last().dataset.rating).toBe('again')
     // ⌘Z is the same undo; once the session drops the answer, the line clears.
     press('z', { metaKey: true })
@@ -875,7 +875,7 @@ describe('the title on the front (YAZ-5030)', () => {
     press('2')
     session = { ...session, answered: ['good'], canUndo: true }
     render()
-    expect(el.querySelector('.note-card-inbox__last')?.textContent).toBe('✓ Remembered · Capital of France (WIKI-9) · back in 3 days · Undo ⌘Z')
+    expect(el.querySelector('.note-card-inbox__last')?.textContent).toBe('✓ Remembered · Capital of France (WIKI-9) · back in 3 days · Undo Cmd + Z')
   })
 })
 

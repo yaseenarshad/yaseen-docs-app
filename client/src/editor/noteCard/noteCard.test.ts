@@ -372,8 +372,8 @@ describe('the card in the page', () => {
     edit()
     const cm = card.querySelector<HTMLElement>('.cm-content')!
     expect(cm.textContent).toContain('What is the capital of {{France}}?')
-    expect([...card.querySelectorAll('.note-card__edit kbd')].map((k) => k.textContent)).toEqual(['esc', '⌘↵'])
-    expect(card.querySelector('.note-card__edit')?.textContent).toBe('Doneesc⌘↵')
+    expect([...card.querySelectorAll('.note-card__edit kbd')].map((k) => k.textContent)).toEqual(['Esc', 'Cmd', 'Enter'])
+    expect(card.querySelector('.note-card__edit')?.textContent).toBe('DoneEscCmd + Enter')
     // The card language: Markdown with spell check (idea 8), once the language loads.
     await vi.waitFor(() => expect(cm.getAttribute('spellcheck')).toBe('true'))
     const opened: NoteCardOpenRequest[] = []

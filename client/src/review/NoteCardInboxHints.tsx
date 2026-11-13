@@ -2,9 +2,12 @@
  * The Inbox's key row (YAZ-5024, Yaseen: "this should only ever be one line"): ONE line at any card width (YAZ-5019's
  * drag too). Short labels first ("New tab"); when the row still does not fit, the least important keys fold, from the
  * end: ⌘↵, then O (then P, ← →, ⌘Z, only in a very narrow tab). Space and E never fold. The row's width is measured by
- * a ResizeObserver, and each key's width once per set of keys: no work per frame.
+ * a ResizeObserver, and each key's width once per set of keys: no work per frame. The keys show in words (YAZ-5035,
+ * `KeyCaps`: "Cmd + Enter", "Left / Right"); `data-keys` keeps the binding, so the fold order is the same, and a
+ * narrow row folds sooner as the words are wider.
  */
 import { useLayoutEffect, useRef, useState } from 'react'
+import { KeyCaps } from '../keys/KeyCaps'
 
 /** The keys that fold, the first to go first. Any key not here (Space, E) stays. */
 export const HINT_FOLD_ORDER: readonly string[] = ['⌘↵', 'O', 'P', '← →', '⌘Z']
@@ -64,7 +67,7 @@ export function NoteCardInboxHints({ hints }: { hints: readonly { keys: string; 
     <div ref={row} className="explore__foot note-card-inbox__hints" aria-hidden="true">
       {hints.map((h) => (
         <span key={h.label} data-keys={h.keys} data-folded={folded.has(h.keys) || undefined}>
-          <kbd>{h.keys}</kbd> {h.label}
+          <KeyCaps keys={h.keys} /> {h.label}
         </span>
       ))}
     </div>

@@ -216,3 +216,66 @@ describe('YAZ-5008: ⌘L toggles a hidden word in Edit card', () => {
     expect(cm.state.doc.toString().startsWith('test {{one}}')).toBe(true)
   })
 })
+
+describe('YAZ-5034: Edit card`s key row, and ⌘⇧↵ for a new side', () => {
+  const shiftModEnter = (cm: CodeMirrorView) =>
+    cm.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, metaKey: true, shiftKey: true, bubbles: true, cancelable: true }))
+
+  it('the key row shows only in Edit card, in words (YAZ-5035); the head`s Done too', async () => {
+    const { root, view, pos } = await mount()
+    const card = () => root.querySelector<HTMLElement>('.note-card')!
+    expect(card().querySelector('.note-card__keys')).toBeNull()
+    await editCard(root, view, pos)
+    const row = card().querySelector<HTMLElement>('.note-card__keys')!
+    expect(row.textContent).toBe('Cmd + L hide word' + 'Cmd + Shift + Enter new side' + 'Cmd + Enter / Esc Done')
+    expect(row.previousElementSibling?.classList.contains('note-card__code')).toBe(true)
+    expect(card().querySelector('.note-card__edit')!.textContent).toBe('DoneEscCmd + Enter')
+    noteCardViewAt(view, pos)!.done()
+    expect(card().querySelector('.note-card__keys')).toBeNull()
+  })
+
+  it('⌘⇧↵ at the middle, end and start of a line: `---` alone on its line, the caret at the new side; saved; one ⌘Z', async () => {
+    const { crepe, root, view, pos } = await mount()
+    const cm = await editCard(root, view, pos)
+    const at = (offset: number) => cm.dispatch({ selection: EditorSelection.cursor(offset) })
+    const caretLine = () => cm.state.doc.lineAt(cm.state.selection.main.head)
+    // Middle: "test one" splits after "test" (the space goes).
+    at(4)
+    shiftModEnter(cm)
+    expect(cm.state.doc.toString()).toBe('test\n---\none\ntest two\n---\nA')
+    expect(caretLine().text).toBe('one')
+    expect(cm.state.selection.main.head).toBe(caretLine().from)
+    expect(getMarkdownForSave(crepe)).toContain('```card\ntest\n---\none\ntest two\n---\nA\n```')
+    // One ⌘Z (the page's undo) takes the break off.
+    undo(view.state, view.dispatch)
+    expect(cm.state.doc.toString()).toBe('test one\ntest two\n---\nA')
+    // End of a line: a new, empty side after it.
+    at(8)
+    shiftModEnter(cm)
+    expect(cm.state.doc.toString()).toBe('test one\n---\n\ntest two\n---\nA')
+    expect(cm.state.selection.main.head).toBe(13)
+    undo(view.state, view.dispatch)
+    // Start of a line: no empty line before `---`.
+    at(9)
+    shiftModEnter(cm)
+    expect(cm.state.doc.toString()).toBe('test one\n---\ntest two\n---\nA')
+    expect(caretLine().text).toBe('test two')
+    expect(getMarkdownForSave(crepe)).toContain('```card\ntest one\n---\ntest two\n---\nA\n```')
+  })
+
+  it('⌘⇧↵ in a normal code block keeps its meaning: a line above the block', async () => {
+    const { crepe, root, view } = await mount()
+    let jsPos = -1
+    view.state.doc.forEach((node, p) => {
+      if (node.attrs.language === 'js') jsPos = p
+    })
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, jsPos + 2)))
+    let js: HTMLElement | undefined
+    await expect.poll(() => (js = [...root.querySelectorAll<HTMLElement>('.cm-content')].find((c) => c.closest('.note-card') === null))).toBeTruthy()
+    const before = view.state.doc.childCount
+    shiftModEnter(CodeMirrorView.findFromDOM(js!)!)
+    expect(view.state.doc.childCount).toBe(before + 1)
+    expect(getMarkdownForSave(crepe)).toContain('```js\ntest\ntest\n```')
+    expect(getMarkdownForSave(crepe)).not.toContain('---\ntest')
+  })
+})

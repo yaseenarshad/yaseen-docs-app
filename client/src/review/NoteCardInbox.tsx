@@ -66,6 +66,7 @@ import { CARD_FILTERS, NoteCardInboxBar } from './NoteCardInboxBar'
 import { NoteCardStateChip, answerIcon, answerLine } from './noteCardInboxChip'
 import { useInboxCardWidth } from './inboxCardWidth'
 import { NoteCardInboxHints } from './NoteCardInboxHints'
+import { KeyCaps } from '../keys/KeyCaps'
 import '../explore/explore.css'
 
 export interface NoteCardInboxProps {
@@ -418,7 +419,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
               <span className="note-card-inbox__last-mark">{line.text.slice(0, line.text.indexOf(' '))}</span>
               <span className="note-card-inbox__last-text">{line.text.slice(line.text.indexOf(' '))} · </span>
               <button type="button" className="note-card-inbox__last-undo" disabled={!session.canUndo} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.undo()}>
-                Undo <kbd>⌘Z</kbd>
+                Undo <KeyCaps keys="⌘Z" />
               </button>
             </>
           )}

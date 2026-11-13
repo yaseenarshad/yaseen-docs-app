@@ -2048,8 +2048,8 @@ describe('YAZ-4939: a note layer in a Read only vault', () => {
     act(() => choice('10 minutes').click())
     await flush()
     expect(top().querySelector('.explore__body--edit')).not.toBeNull()
-    // The edit head shows the key beside Done's Esc.
-    expect([...head().querySelectorAll('.explore__button kbd')].map((k) => k.textContent)).toContain('⌘↵')
+    // The edit head shows the key beside Done's Esc, in words (YAZ-5035): "Done Esc Cmd + Enter".
+    expect([...head().querySelectorAll('.explore__button kbd')].map((k) => k.textContent)).toEqual(expect.arrayContaining(['Esc', 'Cmd', 'Enter']))
     key(top().querySelector('[data-editor]') as Element, { key: 'Enter', metaKey: true })
     await flush()
     await flush()

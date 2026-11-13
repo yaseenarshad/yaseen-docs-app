@@ -68,7 +68,7 @@ describe('Edit card in the card window (YAZ-5003)', () => {
     const cm = await codeMirror()
     expect(cm.textContent).toContain('Capital of {{France}}')
     // The card's head keeps Done and its keys (the window's head has the ID).
-    expect(el.querySelector('[data-explore-card-edit] .note-card__edit')?.textContent).toBe('Doneesc⌘↵')
+    expect(el.querySelector('[data-explore-card-edit] .note-card__edit')?.textContent).toBe('DoneEscCmd + Enter')
     const view = CodeMirrorView.findFromDOM(cm)!
     act(() => view.dispatch({ changes: { from: view.state.doc.length, insert: ' (Seine)' } }))
     key(cm, { key: 'Enter', metaKey: true })

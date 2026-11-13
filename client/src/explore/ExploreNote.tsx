@@ -43,6 +43,7 @@ import { editingLabel, ReadOnlyChip } from '../editor/ReadOnlyChip'
 import { useTimedUnlock } from '../editor/useTimedUnlock'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { landOn } from '../editor/toc/tocPlugin'
+import { KeyCaps } from '../keys/KeyCaps'
 
 /** The vault the note is in: what its links resolve against. */
 export interface ExploreVault {
@@ -536,8 +537,10 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
               )}
               {/* Done (item 5): back to reading, as Esc and ⌘↵ (YAZ-4988) do; the note saved as you typed. In a Read only vault all three lock again at once (YAZ-4997). */}
               <button type="button" className="explore__button" data-fold-part="edit" onClick={leaveEdit} title={locked ? 'Save, lock again and read (Esc or ⌘↵)' : 'Back to reading (Esc or ⌘↵)'}>
-                Done<kbd>esc</kbd>
-                <kbd>⌘↵</kbd>
+                {/* The keys in words (YAZ-5035): "Done Esc Cmd + Enter". The title keeps the symbols, as a menu does. */}
+                Done
+                <KeyCaps keys="esc" />
+                <KeyCaps keys="⌘↵" />
               </button>
             </>
           )}

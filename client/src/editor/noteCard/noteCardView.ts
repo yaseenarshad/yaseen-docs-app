@@ -22,7 +22,9 @@
  * EDIT CARD (idea 8, idea 25): Crepe's own `CodeMirrorBlock`, made only then, from Crepe's factory in `nodeViewCtx`,
  * so the code editor, its keys, theme and extensions are every code block's; the `card` language is Markdown with
  * spell check (`noteCardLanguage`). "Done" (or Esc, or ⌘↵ in the editor, YAZ-5001) destroys it and draws the card
- * again; the head says the keys, as Explore's Done does ("Done esc ⌘↵"). A card that
+ * again; the head says the keys, as Explore's Done does ("Done esc ⌘↵"). Under the editor, only while it is open, a
+ * quiet key row (YAZ-5034, `noteCardKeyRow`): "⌘L hide word · ⌘⇧↵ new side · ⌘↵ / esc Done". ⌘⇧↵ puts a side break
+ * (`---` on its own line) at the caret (`insertSideBreak`). The card window's Edit card is this view, so it has both. A card that
  * is not being edited has no CodeMirror at all, and a caret that arrives in its text becomes the card's node
  * selection (`noteCardSelection`), so no key types into text that does not show.
  *
@@ -43,7 +45,7 @@
  * on (`withCardOff`), Reset history (`withoutCardReviews`), Copy card ID, Open card. Each change is ONE transaction on the node's `cardLine` attribute (`changeNoteCardLine`): one ⌘Z, saved as
  * any edit. The ID at insert (`noteCardRow`) is a transaction out of the undo history, saved by `NOTE_CARD_ID_META`.
  */
-import { Prec, type Extension } from '@codemirror/state'
+import { EditorSelection, Prec, type Extension } from '@codemirror/state'
 import { isHistoryTransaction } from '@milkdown/kit/prose/history'
 import { ReplaceAroundStep, ReplaceStep } from '@milkdown/kit/prose/transform'
 import type { Fragment } from '@milkdown/kit/prose/model'
@@ -61,6 +63,7 @@ import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
 import { codeWidthSchema } from '../code/codeWidth'
+import { keyCapsDom } from '../../keys/keyWords'
 import { copyText, openMenuAt } from '../linkMenu'
 import type { MenuRow } from '../blockHandleMenu'
 import type { SlashRow } from '../slashMenu'
@@ -209,10 +212,28 @@ const button = (className: string, label: string, text: string): HTMLButtonEleme
   return b
 }
 
-const kbd = (text: string): HTMLElement => {
-  const k = document.createElement('kbd')
-  k.textContent = text
-  return k
+/** The keys of Edit card (YAZ-5034), in the row under its editor. */
+export const NOTE_CARD_EDIT_KEYS: ReadonlyArray<{ keys: string; label: string }> = [
+  { keys: '⌘L', label: 'hide word' },
+  { keys: '⌘⇧↵', label: 'new side' },
+  { keys: '⌘↵ / esc', label: 'Done' },
+]
+
+/**
+ * The quiet key row under Edit card's editor, on one line, keycaps as the Inbox's (`.explore__foot kbd`), in words
+ * (YAZ-5035, `keyCapsDom`): "Cmd + L hide word · Cmd + Shift + Enter new side · Cmd + Enter / Esc Done".
+ */
+function noteCardKeyRow(): HTMLElement {
+  const row = document.createElement('div')
+  row.className = 'explore__foot note-card__keys'
+  row.contentEditable = 'false'
+  row.setAttribute('aria-hidden', 'true')
+  for (const { keys, label } of NOTE_CARD_EDIT_KEYS) {
+    const part = document.createElement('span')
+    part.append(keyCapsDom(keys), ` ${label}`)
+    row.append(part)
+  }
+  return row
 }
 
 export class NoteCardView implements NodeView {
@@ -229,6 +250,8 @@ export class NoteCardView implements NodeView {
   private readonly body: HTMLElement
   /** Crepe's code block while the card is edited, else null. */
   private code: NodeView | null = null
+  /** The key row under the editor (YAZ-5034): in the card only while it is edited. */
+  private keyRow: HTMLElement | null = null
   /** What the body last drew: redrawn only when it changes. */
   private drawn: string | null = null
   private readonly unsubscribe: (() => void) | undefined
@@ -303,9 +326,9 @@ export class NoteCardView implements NodeView {
     this.notitle.hidden = !isCardNoTitle(line)
     this.dom.classList.toggle('note-card--off', isCardOff(line))
     this.next.hidden = !isCardNext(line)
-    // Done says its keys, as Explore's head does (YAZ-5001).
+    // Done says its keys, as Explore's head does (YAZ-5001), in words (YAZ-5035): "Done Esc Cmd + Enter".
     if (this.code === null) this.editButton.textContent = 'Edit card'
-    else if (this.editButton.firstChild?.textContent !== 'Done') this.editButton.replaceChildren('Done', kbd('esc'), kbd('⌘↵'))
+    else if (this.editButton.firstChild?.textContent !== 'Done') this.editButton.replaceChildren('Done', keyCapsDom('esc'), keyCapsDom('⌘↵'))
     this.editButton.setAttribute('aria-label', this.code === null ? 'Edit card' : 'Done')
     this.dom.classList.toggle('note-card--editing', this.code !== null)
     this.drawReviews()
@@ -447,7 +470,8 @@ export class NoteCardView implements NodeView {
     if (this.code !== null || this.makeCode === null || pos === null || !this.view.editable) return
     this.code = this.makeCode(this.node)
     this.code.dom.classList.add('note-card__code')
-    this.dom.append(this.code.dom)
+    this.keyRow ??= noteCardKeyRow()
+    this.dom.append(this.code.dom, this.keyRow)
     this.draw()
     // The caret at the end, or `select` (offsets in the card's text: `/card`'s "Title" placeholder, YAZ-5030).
     const size = this.node.content.size
@@ -463,6 +487,7 @@ export class NoteCardView implements NodeView {
     if (this.code === null) return
     this.code.destroy?.()
     this.code.dom.remove()
+    this.keyRow?.remove()
     this.code = null
     this.draw()
     this.deps.host?.onEditDone?.(this.node.textContent)
@@ -813,8 +838,33 @@ const cardOfCodeMirror = (cm: CodeMirrorView): NoteCardView | null => {
 }
 
 /**
+ * ⌘⇧↵ in Edit card (YAZ-5034): a side break, `---` on its own line, at each caret (a selection is replaced). Mid-line,
+ * the line splits there; spaces at the split go. At the start of a line no empty line comes before `---`. The caret
+ * goes to the start of the new side. ONE change, so one ⌘Z takes it off.
+ */
+export function insertSideBreak(cm: CodeMirrorView): boolean {
+  const { state } = cm
+  const change = state.changeByRange((range) => {
+    const line = state.doc.lineAt(range.from)
+    const before = state.sliceDoc(line.from, range.from)
+    const end = state.doc.lineAt(range.to)
+    const after = state.sliceDoc(range.to, end.to)
+    const from = range.from - (before.length - before.trimEnd().length)
+    const to = range.to + (after.length - after.trimStart().length)
+    const insert = (before.trim() === '' ? '' : '\n') + '---\n'
+    // Spaces only before the caret: they go too, so `---` starts its line.
+    const start = before.trim() === '' ? line.from : from
+    return { changes: { from: start, to, insert }, range: EditorSelection.cursor(start + insert.length) }
+  })
+  cm.dispatch(state.update(change, { scrollIntoView: true, userEvent: 'input' }))
+  return true
+}
+
+/**
  * In every code block's CodeMirror (`createCrepe.ts`), highest: in a card's editor ⌘↵ and Esc are "Done" (YAZ-5001;
- * before `addLineCodeKeys` and Crepe's exit-code). In any other code block both decline: ⌘↵ still adds a line.
+ * before `addLineCodeKeys` and Crepe's exit-code), and ⌘⇧↵ is a new side (YAZ-5034, `insertSideBreak`). In any other
+ * code block all three decline: ⌘↵ / ⌘⇧↵ still add a line below / above (`addLineCodeKeys`). Not `Prec.high` in the card
+ * language: `addLineCodeKeys` is `Prec.highest`, so the card's ⌘⇧↵ must be here, before it, to win.
  */
 export const noteCardCodeKeys: Extension = Prec.highest(
   keymap.of([
@@ -833,6 +883,10 @@ export const noteCardCodeKeys: Extension = Prec.highest(
         card?.done()
         return card !== null
       },
+    },
+    {
+      key: 'Mod-Shift-Enter',
+      run: (cm) => cardOfCodeMirror(cm) !== null && insertSideBreak(cm),
     },
   ]),
 )

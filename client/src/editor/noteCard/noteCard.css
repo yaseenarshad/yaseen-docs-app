@@ -127,7 +127,7 @@
 .note-card__head .note-card__edit {
   margin-left: auto;
 }
-/* "Done esc ⌘↵" (YAZ-5001): the keys, quiet, as in Explore's head (`.explore__button kbd`). */
+/* "Done Esc Cmd + Enter" (YAZ-5001, in words YAZ-5035): the keys, quiet, as in Explore's head (`.explore__button kbd`). */
 .note-card__head .note-card__edit kbd {
   margin-left: 4px;
   font-family: inherit;
@@ -168,11 +168,23 @@
 .milkdown .note-card .milkdown-code-block .tools {
   display: none;
 }
-/* Crepe's code block, while the card is edited: flush inside the card. */
+/* Crepe's code block, while the card is edited: flush inside the card. The key row is under it (YAZ-5034). */
 .note-card .note-card__code {
   margin: 0;
-  border-radius: 0 0 7px 7px;
+  border-radius: 0;
   width: auto;
+}
+/* Edit card's key row (YAZ-5034): quiet, ONE line at the bottom of the card frame, keycaps as the Inbox's
+   (`.explore__foot kbd`). In the card only while it is edited (`noteCardKeyRow`). */
+.note-card .note-card__keys {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  white-space: nowrap;
+  border-radius: 0 0 7px 7px;
+  user-select: none;
+}
+.note-card .note-card__keys > span {
+  flex: none;
 }
 /* Edit card has the writing look (YAZ-5007, Yaseen's decision): the page's font, no line numbers or fold arrows, the
    rendered card's padding (`.note-card__body`), so Edit card / Done does not jump. Other code blocks keep the code look.
