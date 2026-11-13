@@ -21,7 +21,7 @@ export function ReviewHowCardsComeBack() {
         <li>If you close the Inbox first, these cards show when you open it again.</li>
         <li>
           <b>Up next:</b> marked cards show first. With a number in <b>Up next a day</b>, only that many are Up next each day: they go first, and the Up next row
-          shows just those. The others keep the mark and wait in their normal place. Empty the box to see every marked card under Up next.
+          shows just those. The others keep the mark and wait for another day. One that is due anyway still comes today, with the due cards. Empty the box to see every marked card under Up next.
         </li>
       </ul>
       <p>

@@ -32,7 +32,7 @@ export interface ReviewSettings {
   newPerDay: number | null
   /**
    * How many Up next cards jump to the front of the Inbox in one day; null for no limit (YAZ-5028, the default). The
-   * others keep the mark and wait in their normal place (`cardQueue`).
+   * others keep the mark and wait for another day, unless due anyway (YAZ-5042; `cardQueue`).
    */
   upNextPerDay: number | null
   /** Which new cards come first: the oldest (the lowest ID number) or the newest. */

@@ -1896,7 +1896,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           reviewField('maxDays', wholeField('maxDays'), 'Longest wait', 'A card never waits longer than this.', 'days'),
           reviewField('newPerDay', NEW_PER_DAY_FIELD, 'New cards a day', 'How many new cards the Inbox shows each day. Empty means no limit.', 'cards'),
           // YAZ-5028: beside New cards a day, the same box.
-          reviewField('upNextPerDay', UP_NEXT_PER_DAY_FIELD, 'Up next a day', 'How many Up next cards go first in the Inbox each day. The others wait in their normal place. Empty means no limit.', 'cards'),
+          reviewField('upNextPerDay', UP_NEXT_PER_DAY_FIELD, 'Up next a day', 'How many Up next cards go first in the Inbox each day. The others wait for another day. Empty means no limit.', 'cards'),
           {
             // YAZ-4999 D2: by the card's ID number, which grows as cards are made.
             id: 'newOrder',
