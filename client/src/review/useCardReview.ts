@@ -90,8 +90,10 @@ export interface CardReviewSession {
   filter: CardFilter
   /** The cards left in the session under each filter: the menu's counts. */
   counts: Record<CardFilter, number>
-  /** Where the cards come from, as a quiet path (YAZ-5017): the vault's name; the folder's parts; the page's name. */
+  /** Where the cards come from (YAZ-5017): the vault's name; the folder's parts; the page's name. Shown by the filter ("· in …"). */
   from: string[]
+  /** The card showing's place (YAZ-5017 round 2): vault › folders › page, each with what a click opens. Empty with no card. */
+  place: CardPlacePart[]
   /** Each answer of the session, in order (YAZ-5020): a Forgot ('again') or a Remembered (any other). */
   answered: CardRating[]
   /** The progress bar's whole (YAZ-5020): the cards the session started with, plus any it took since. */
@@ -125,6 +127,13 @@ export interface CardReviewApi {
   turnOff: () => Promise<void>
   /** All cards, Due today or New cards (YAZ-5017): which of the session's cards show. */
   setFilter: (filter: CardFilter) => void
+}
+
+/** One part of a card's place (YAZ-5017 round 2): its name, and the path a click opens (the vault's or a folder's page, or the page). */
+export interface CardPlacePart {
+  kind: 'vault' | 'folder' | 'page'
+  label: string
+  path: string
 }
 
 /** How many answers ⌘Z can take back in one session. */
@@ -269,6 +278,16 @@ const sameCard = (a: DueCard, b: DueCard): boolean => a.path === b.path && a.id 
 const showing = (s: Session, card: DueCard): boolean => s.queue[s.at] !== undefined && sameCard(s.queue[s.at], card)
 const cardKey = (card: DueCard): string => `${card.path}\n${card.id}`
 const titleOf = (records: readonly IndexRecord[], path: string): string => records.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '')
+
+/** The place of the page at `path` (YAZ-5017 round 2): the vault, each folder down to the page's (by its title), the page. */
+export function cardPlace(root: string, vault: string, folders: readonly IndexRecord[], records: readonly IndexRecord[], path: string): CardPlacePart[] {
+  const dirs = (path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path).split('/').slice(0, -1)
+  const inside = dirs.map((_, i): CardPlacePart => {
+    const dir = `${root}/${dirs.slice(0, i + 1).join('/')}`
+    return { kind: 'folder', label: folderTitle(folders, dir), path: dir }
+  })
+  return [{ kind: 'vault', label: vault, path: root }, ...inside, { kind: 'page', label: titleOf(records, path), path }]
+}
 
 export function useCardReview(root: string | null, source: IndexSource, settings: ReviewSettings, onNotice: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void, vaultName?: string | null): CardReviewApi {
   const records = useSyncExternalStore(source.subscribe, () => source.records)
@@ -590,6 +609,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     if (written) setSession((s) => (s === null || !showing(s, card) ? s : without(s, s.at)))
   }, [onNotice, forget])
 
+  const folders = source.folders
   // YAZ-5029: the last card shown with its text, and its session: on show while the next card is read.
   const lastShown = useRef<{ session: number; card: ShownCard } | null>(null)
   const shownSession = useMemo<CardReviewSession | null>(() => {
@@ -604,7 +624,8 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     // "3 of 12" under the filter (YAZ-5017): its cards at start, those gone since, and the place among those left.
     const total = filter === 'all' ? totals.due + totals.new : totals[filter]
     const before = queue.slice(0, session.at).filter((c) => matchesFilter(c, filter)).length
-    const from = scope.page !== undefined ? [session.label] : scope.folder ? scope.folder.split('/').filter(Boolean) : [vaultName ?? (root === null ? 'Inbox' : storage.vaultName(root))]
+    const vault = vaultName ?? (root === null ? 'Inbox' : storage.vaultName(root))
+    const from = scope.page !== undefined ? [session.label] : scope.folder ? scope.folder.split('/').filter(Boolean) : [vault]
     return {
       label: session.label,
       scope: scope.page !== undefined ? 'page' : scope.folder ? 'folder' : 'vault',
@@ -619,11 +640,12 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       filter,
       counts,
       from,
+      place: shownCard === null || root === null ? [] : cardPlace(root, vault, folders, records, shownCard.path),
       answered: session.answered,
       size: Math.max(session.total, session.answered.length + queue.length),
     }
     // `records`: a cached page is good only at its page's mtime.
-  }, [session, loaded, fixed, turnKey, root, vaultName, cached, records])
+  }, [session, loaded, fixed, turnKey, root, vaultName, cached, records, folders])
 
   return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, move, turnOff, setFilter }
 }
