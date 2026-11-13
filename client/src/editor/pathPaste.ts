@@ -19,6 +19,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { linkSchema } from '@milkdown/kit/preset/commonmark'
 import { isBoardTarget, newEmbed, newEmbedAlt } from '@shared/embedOptions'
 import { inCellOrNote } from './table/cellBlocks'
+import { cardCheckOf } from './drawing/boardEmbedScan'
 import { fileKind } from '@shared/fileKind'
 import { parseFileLink } from '@shared/links'
 import { fileLabel } from '../lib/pageLabel'
@@ -258,12 +259,14 @@ export function pastePathLinks(view: EditorView, ctx: Ctx, options: PathPasteOpt
   const slice = Slice.maxOpen(ctx.get(parserCtx)(link).content)
   view.dispatch(closeHistory(view.state.tr).replace(to - raw.length, to, slice).scrollIntoView())
   // A drawing or a diagram can be an embed too (YAZ-4829 D8): `!` before the link as it is written. A `[[link]]` stays
-  // text under the host's decorations; a Markdown link parses as the image node (another vault, 2B).
+  // text under the host's decorations; a Markdown link parses as the image node (another vault, 2B). So can a card
+  // (YAZ-5037): a link that names one (a card file's) becomes the card's embed by its ID, `![[GEO-140]]`.
   // Not in a table cell: embeds there are out of scope (the checker's round 1).
   const path = pastedPath(raw)
+  const card = link.startsWith('[[') ? (cardCheckOf(view.state)?.cardOf(link.slice(2, -2)) ?? null) : null
   // A new embed's view starts locked (YAZ-2571 round 7): `![[x|locked]]`, or `![name|locked](href)` into another vault.
-  const embedText = () => (link.startsWith('[[') ? newEmbed(link.slice(2, -2)) : `!${link.replace(/^\[((?:\\.|[^\]])*)\]/, (_, name: string) => `[${newEmbedAlt(name)}]`)}`)
-  const embed = path !== null && isBoardTarget(path) && !inCellOrNote(view.state.doc.resolve(to - raw.length)) ? Slice.maxOpen(ctx.get(parserCtx)(embedText()).content) : undefined
+  const embedText = () => (card !== null ? `![[${card.id}]]` : link.startsWith('[[') ? newEmbed(link.slice(2, -2)) : `!${link.replace(/^\[((?:\\.|[^\]])*)\]/, (_, name: string) => `[${newEmbedAlt(name)}]`)}`)
+  const embed = (card !== null || (path !== null && isBoardTarget(path))) && !inCellOrNote(view.state.doc.resolve(to - raw.length)) ? Slice.maxOpen(ctx.get(parserCtx)(embedText()).content) : undefined
   // No chip after a paste over words (K5): ⌘Z gives the words back.
   if (empty) offerKeepAsPath(view, to - raw.length, to - raw.length + slice.size, raw, embed)
   return true

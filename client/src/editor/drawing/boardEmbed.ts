@@ -9,7 +9,11 @@
  *   - `Decoration.widget` at the match START (`side: -1`) holding the window's box, `contenteditable="false"`.
  *     `stopEvent` gives the window every event in it: ProseMirror and the link plugins (click, menu, hover) see none.
  *
- * ONLY board targets (`.excalidraw`, `.drawio`, `boardEmbedTarget`): every other embed and every link passes through.
+ * ONLY board targets (`.excalidraw`, `.drawio`, `boardEmbedTarget`) and, with `cards`, an ID that names a card (YAZ-5037,
+ * `noteCard/cardEmbed.ts`: the card's box in the same widget) or names nothing ("Missing card"): every other embed and
+ * every link passes through. The host's check (`isBoard`, on the plugin's spec) says yes to all three, so the scan,
+ * the caret, ⌘F, the fold and "Add line" treat a card's box as a board's window; `cardOf` (on the spec too) tells the
+ * card from the board for the link menu and the paste chip.
  *
  * THE TYPING PATH (D1): a key or a caret move can only change the embeds of the textblocks it touched. The set is
  * mapped and only those blocks are scanned again — the wikilink plugin's `updateDecorations` rule. A block with no
@@ -39,17 +43,18 @@ import { $prose } from '@milkdown/kit/utils'
 import { optionsSuffix, parseEmbedOptions, type EmbedOptions } from '@shared/embedOptions'
 import { fileKind } from '@shared/fileKind'
 import type { MenuRow } from '../blockHandleMenu'
-import { menuRowOf, mountInBox, onFlush } from '../embed/hostWindow'
+import { BOX_BROKEN_CLASS, menuRowOf, mountInBox, onFlush } from '../embed/hostWindow'
 import type { BoardRef, BoardWindowHandle, OpenHow } from '../embed/types'
 import { linkMenuRows, openMenuAt, type LinkMenu } from '../linkMenu'
 import { embedFolds, toggleOutlineFold } from '../outline/outlineFolding'
 import { inCellOrNote } from '../table/cellBlocks'
 import { OPEN_ID_LINK } from '../wikilink/idLinkCaret'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
-import { linkPath, type LinkLook, type WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
-import { boardEmbedAt, boardEmbedKey, boardEmbedsIn, embedRevealed, type BoardEmbedMatch } from './boardEmbedScan'
+import { linkPath, missingId, type LinkLook, type WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
+import { boardEmbedAt, boardEmbedKey, boardEmbedsIn, embedRevealed, type BoardEmbedMatch, type CardCheck } from './boardEmbedScan'
 import { boardEmbedName, hasIdEmbed, isIdTarget, type BoardCheck } from './boardEmbedText'
 import { isBoardTarget } from '@shared/embedOptions'
+import { embedCard, loadCardEmbed, type CardEmbedDoors, type CardEmbedHandle } from '../noteCard/embedCard'
 import './boardEmbed.css'
 
 export { boardEmbedKey }
@@ -76,6 +81,14 @@ export interface BoardEmbedOptions {
   linkMenu?: (inner: string) => LinkMenu
   /** "Edit in a popup" for a drawing (D7): Editor's `DrawingModal`. Absent → no row. */
   onEditInPopup?: (target: string) => void
+  /** Card embeds (YAZ-5037): the page card's doors. Absent (the card editor, a vault with no cards) → `![[GEO-140]]` stays text. */
+  cards?: CardEmbedDoors
+}
+
+/** The card box's chunk would not load (YAZ-5037): one quiet line in its place, as a window's "Can't show …". */
+function cantShowCard(box: HTMLElement): void {
+  box.classList.add(BOX_BROKEN_CLASS)
+  box.textContent = "Can't show this card"
 }
 
 /** Counts, for the typing tests: the textblocks scanned, and the fold passes over every mount (A9), since the start. */
@@ -103,6 +116,10 @@ interface Mount {
   target: string
   options: string | null
   handle: BoardWindowHandle | null
+  /** A card's embed (YAZ-5037) in place of a window: never a `handle`. */
+  isCard: boolean
+  /** The card's box once its chunk is there. */
+  card: CardEmbedHandle | null
   refKey: string
   selected: boolean
   fold: { foldable: boolean; folded: boolean }
@@ -117,10 +134,19 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
     const mounts = new Map<HTMLElement, Mount>()
     const byId = new Map<number, Mount>()
     let closeMenu = () => {}
-    /** An id link's kind (YAZ-4920): the id resolves to a board file. The scan, the find, the caret and the menus ask it. */
+    /** An id embed's card (YAZ-5037), or null: none, or no card embeds here. */
+    const cardOf = (target: string) => (opts.cards === undefined ? null : embedCard(target, opts.source, opts.viewOnly))
+    /** An id embed the host draws as "Missing card" (YAZ-5037): an ID of this vault that names nothing. */
+    const isMissing = (target: string): boolean => opts.cards !== undefined && missingId(target, opts.source) !== undefined
+    /** A card's box, a missing card's line, or a window: what an id embed is drawn as. */
+    const isCardEmbed = (target: string): boolean => cardOf(target) !== null || isMissing(target)
+    /**
+     * An id link's kind (YAZ-4920): the id resolves to a board file — or, with `cards`, to a card or to nothing (YAZ-5037).
+     * The scan, the find, the caret and the menus ask it.
+     */
     const isBoard: BoardCheck = (target) => {
       const path = linkPath(target, opts.source, opts.viewOnly)
-      return path !== null && isBoardTarget(path)
+      return (path !== null && isBoardTarget(path)) || isCardEmbed(target)
     }
     /** The note has shown an id-shaped embed (resolved or not): the resolver's next change scans the note again. */
     let sawIdEmbed = false
@@ -242,7 +268,7 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
     }
 
     const writeOptions = (view: EditorView, mount: Mount, next: EmbedOptions): void => {
-      if (!view.editable) return
+      if (!view.editable || mount.isCard) return
       const m = matchOf(view, mount)
       if (m === null) return
       // After the alias, if any (`x.drawio|My name|640x360`): only the options part changes.
@@ -308,8 +334,9 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
       dom.className = BOARD_EMBED_CLASS
       dom.contentEditable = 'false'
       const latest = pending.get(fact.id) ?? fact
+      if (opts.cards !== undefined && isCardEmbed(latest.target.split('#')[0]!.trim())) return cardBoxFor(view, dom, getPos, fact.id, latest, opts.cards)
       const ref = refOf(latest.target)
-      const mount: Mount = { id: fact.id, dom, getPos, target: latest.target, options: latest.options, handle: null, refKey: keyOf(ref), selected: false, fold: firstFold(latest.cell), cell: latest.cell }
+      const mount: Mount = { id: fact.id, dom, getPos, target: latest.target, options: latest.options, handle: null, isCard: false, card: null, refKey: keyOf(ref), selected: false, fold: firstFold(latest.cell), cell: latest.cell }
       mounts.set(dom, mount)
       byId.set(fact.id, mount)
       const columnWidth = () => view.dom.clientWidth
@@ -337,6 +364,43 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
       return dom
     }
 
+    /**
+     * A card's box (YAZ-5037, `cardEmbed.ts`) in the widget, once its chunk is there: its head from the index, its card
+     * read when near the screen. The selection and the fold the host knew meanwhile apply then; a cell's starts folded,
+     * as a window shows its pill line there.
+     */
+    const cardBoxFor = (view: EditorView, dom: HTMLElement, getPos: () => number | undefined, id: number, fact: EmbedFact, doors: CardEmbedDoors): HTMLElement => {
+      const mount: Mount = { id, dom, getPos, target: fact.target, options: fact.options, handle: null, isCard: true, card: null, refKey: '', selected: false, fold: firstFold(fact.cell), cell: fact.cell }
+      mounts.set(dom, mount)
+      byId.set(id, mount)
+      void loadCardEmbed().then(
+        (mod) => {
+          if (mounts.get(dom) !== mount) return
+          const card = mod.mountCardEmbed({
+            target: fact.target.split('#')[0]!.trim(),
+            source: opts.source,
+            viewOnly: opts.viewOnly,
+            doors,
+            editable: () => view.editable,
+            select: () => select(view, mount),
+            replace: (text) => {
+              const now = matchOf(view, mount)
+              if (now !== null && view.editable) view.dispatch(view.state.tr.insertText(text, now.from, now.to))
+            },
+            menuParent: () => view.dom.parentElement ?? document.body,
+          })
+          mount.card = card
+          if (mount.fold.folded) card.setFolded(true)
+          if (mount.selected) card.setSelected(true)
+          dom.replaceChildren(card.dom)
+        },
+        () => {
+          if (mounts.get(dom) === mount) cantShowCard(dom)
+        },
+      )
+      return dom
+    }
+
     const unmount = (dom: HTMLElement): void => {
       const mount = mounts.get(dom)
       if (mount === undefined) return
@@ -344,11 +408,17 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
       if (byId.get(mount.id) === mount) byId.delete(mount.id)
       mount.handle?.destroy()
       mount.handle = null
+      mount.card?.destroy()
+      mount.card = null
     }
 
-    /** The resolver changed: each window whose board now resolves elsewhere hears its new ref. */
+    /** The resolver changed: each window whose board now resolves elsewhere hears its new ref; each card's box looks again. */
     const resolved = (): void => {
       for (const mount of mounts.values()) {
+        if (mount.isCard) {
+          mount.card?.refresh()
+          continue
+        }
         const ref = refOf(mount.target)
         const key = keyOf(ref)
         if (key === mount.refKey) continue
@@ -370,6 +440,8 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
       key: boardEmbedKey,
       // The scan's board check, for the find, the caret, the menus and the embed's own line (`boardCheckOf`).
       isBoard,
+      // The card a link or an embed names (YAZ-5037, `cardCheckOf`): the link menu's and the paste chip's "embed".
+      cards: opts.cards === undefined ? undefined : ({ cardOf, isMissing } satisfies CardCheck),
       state: {
         init: (_, state) => build(state),
         apply: (tr, set, oldState, state) => (tr.getMeta(BOARD_RESCAN) === true ? rescan(set, state) : tr.docChanged || tr.selectionSet ? update(set, tr, oldState, state) : set),
@@ -415,7 +487,10 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
             const entry = pos === undefined ? undefined : folds.get(pos)
             const next = { foldable: entry !== undefined, folded: entry?.folded === true }
             if (next.foldable !== mount.fold.foldable) mount.handle?.setFoldable(next.foldable)
-            if (next.folded !== mount.fold.folded) mount.handle?.setFolded(next.folded)
+            if (next.folded !== mount.fold.folded) {
+              mount.handle?.setFolded(next.folded)
+              mount.card?.setFolded(next.folded)
+            }
             mount.fold = next
           }
         }
@@ -434,6 +509,7 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
                 mount.fold = firstFold(fact.cell)
                 mount.handle?.setFoldable(false)
                 mount.handle?.setFolded(fact.cell)
+                mount.card?.setFolded(fact.cell)
               }
               if (mount.options !== fact.options) {
                 mount.options = fact.options
@@ -444,6 +520,8 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
             if (view.editable !== editable) {
               editable = view.editable
               for (const mount of mounts.values()) mount.handle?.update({ editable })
+              // A card's box: Edit card and Show as link follow the page (YAZ-5037).
+              for (const mount of mounts.values()) mount.card?.refresh()
             }
             const now = selectedId(view.state)
             if (now !== selected) {
@@ -451,12 +529,14 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
               if (before !== undefined) {
                 before.selected = false
                 before.handle?.setSelected(false)
+                before.card?.setSelected(false)
               }
               selected = now
               const after = now === null ? undefined : byId.get(now)
               if (after !== undefined) {
                 after.selected = true
                 after.handle?.setSelected(true)
+                after.card?.setSelected(true)
               }
             }
             const nextFolds = embedFolds(view.state)

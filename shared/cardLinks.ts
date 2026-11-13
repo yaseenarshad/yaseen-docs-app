@@ -27,8 +27,11 @@ export interface CardLink {
 /** Link target → the card it names, or null: no card holds that ID. */
 export type CardResolve = (target: string) => CardLink | null
 
+/** What a card look-up reads of a record: its path and its cards. */
+type CardHolder = { path: string; cards?: readonly NonNullable<IndexRecord['cards']>[number][] }
+
 /** Every card with an ID in `records`, by its ID in lowercase (and as the current letters read it, `idKey`). */
-export function cardsById(records: readonly IndexRecord[], letters?: readonly string[]): Map<string, CardLink> {
+export function cardsById(records: readonly CardHolder[], letters?: readonly string[]): Map<string, CardLink> {
   const byId = new Map<string, CardLink>()
   for (const r of records) {
     if (r.cards === undefined) continue
@@ -45,7 +48,7 @@ export function cardsById(records: readonly IndexRecord[], letters?: readonly st
 }
 
 /** The card resolver of one index snapshot: a target that is a card's ID → that card. */
-export function makeCardResolver(records: readonly IndexRecord[], letters?: readonly string[]): CardResolve {
+export function makeCardResolver(records: readonly CardHolder[], letters?: readonly string[]): CardResolve {
   const byId = cardsById(records, letters)
   if (byId.size === 0) return () => null
   return (target) => {
@@ -53,6 +56,19 @@ export function makeCardResolver(records: readonly IndexRecord[], letters?: read
     if (key === '') return null
     return byId.get(idKey(key, letters)) ?? byId.get(key) ?? null
   }
+}
+
+/**
+ * The cards a page embeds (YAZ-5037: `![[GEO-140]]` shows the card, wherever it lives): each `embeds` target the card
+ * resolver reads as a card, in order, each card one time. A board, a page and an ID no card has are none.
+ */
+export function embeddedCards(embeds: readonly string[], resolveCard: CardResolve): CardLink[] {
+  const out = new Map<string, CardLink>()
+  for (const target of embeds) {
+    const card = resolveCard(target)
+    if (card !== null && !out.has(card.id.toLowerCase())) out.set(card.id.toLowerCase(), card)
+  }
+  return [...out.values()]
 }
 
 /**

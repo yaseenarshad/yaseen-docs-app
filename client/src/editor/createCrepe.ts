@@ -359,9 +359,10 @@ import { cardLinkTitle, createWikilink, createWikilinkResolveSource, linkCard, l
 import { languages as codeLanguages } from '@codemirror/language-data'
 import { basename } from '@shared/types'
 import { imageSrc, noteDirRel } from './image/imageSrc'
-import { flushNoteCardEditor, NOTE_CARD_ID_META, NOTE_CARD_MIRROR_META, noteCardCodeKeys, noteCardLanguage, noteCardPlugins, noteCardRow, type NoteCardDeps, type NoteCardHost, type NoteCardReviewDoor } from './noteCard/noteCardView'
+import { flushNoteCardEditor, NOTE_CARD_ID_META, NOTE_CARD_MIRROR_META, noteCardCodeKeys, noteCardKeyRow, noteCardLanguage, noteCardPlugins, noteCardRow, type NoteCardDeps, type NoteCardHost, type NoteCardReviewDoor } from './noteCard/noteCardView'
 import type { NoteCardLook } from './noteCard/noteCardRender'
 import { cardEditorOptions } from './noteCard/cardEditorFeatures'
+import { mountCardEditor } from './noteCard/cardEditor'
 import { changeCardLine } from '../review/cardFile'
 import { createIdLinkCaret } from './wikilink/idLinkCaret'
 import { createPillSelection } from './wikilink/pillSelection'
@@ -837,7 +838,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
   // Note cards (YAZ-4961): a ```card block draws as a card in every editor that has code blocks (idea 10: the hover
   // preview, QuickLook, read-only notes and Explore too); its pills, images and links as the note's.
-  if ({ ...features, ...opts.features }[CrepeFeature.CodeMirror] !== false && opts.noteCardBlocks !== false) crepe.editor.use(noteCardPlugins(noteCardDeps(opts, wikilinks, viewOnlyLinks, follow)))
+  const cardsHere = { ...features, ...opts.features }[CrepeFeature.CodeMirror] !== false && opts.noteCardBlocks !== false
+  const cardDeps = cardsHere ? noteCardDeps(opts, wikilinks, viewOnlyLinks, follow) : undefined
+  if (cardDeps !== undefined) crepe.editor.use(noteCardPlugins(cardDeps))
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav, wikilinks)).config(noPreviewOnPills)
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), wikilinks, opts.wikilinkNav, opts.linkLook))
   if (opts.boardEmbeds !== undefined) {
@@ -851,6 +854,22 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
         look: opts.linkLook,
         follow,
         linkMenu: nav === undefined || follow === undefined ? undefined : (inner) => linkMenuOf(inner, wikilinks, nav, follow, viewOnlyLinks, opts.vaultsOfLetters, undefined, undefined),
+        // Card embeds (YAZ-5037) wherever a card draws as a card (not in the card editor: no card in a card), with the
+        // page card's doors; the card's images by its own page.
+        cards:
+          cardDeps === undefined
+            ? undefined
+            : {
+                look: (path) => noteCardLook(wikilinks, viewOnlyLinks, opts.image === undefined ? undefined : { ...opts.image, notePath: path }, opts.linkLook),
+                edit:
+                  cardDeps.editor === undefined
+                    ? undefined
+                    : (root, text, done) => ({ editor: mountCardEditor({ root, text, make: cardDeps.editor!, doors: { done, changed: () => {} } }), keys: noteCardKeyRow() }),
+                follow,
+                hotkeys: cardDeps.hotkeys,
+                openHref: cardDeps.openHref,
+                onNotice: cardDeps.onNotice,
+              },
       }),
     )
   }
