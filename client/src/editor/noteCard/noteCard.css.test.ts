@@ -58,3 +58,14 @@ it('YAZ-5013: a blank and a shown word have ONE box model — inline, the same h
   expect(rules(cardCss, '.note-card__blank > .note-card__word').some((r) => /visibility:\s*hidden/.test(r.body))).toBe(true)
   expect(rules(cardCss, '.note-card__blank').some((r) => /user-select:\s*none/.test(r.body))).toBe(true)
 })
+
+it("YAZ-5008: Edit card's selection shows — the code look's current-line band (opaque `--bg-hover`, drawn over CodeMirror's selection layer) is off in a card's editor", () => {
+  const theme = read('../codeTheme.ts')
+  // The code look marks the focused editor's current line with an opaque colour; the selection layer is under the line.
+  expect(theme).toMatch(/'&\.cm-focused \.cm-activeLine, &\.cm-focused \.cm-activeLineGutter': \{ backgroundColor: 'var\(--bg-hover\)' \}/)
+  const focusedLine: [number, number, number] = [0, 3, 0] // `.ͼo.cm-focused .cm-activeLine`, as CodeMirror's theme scopes it
+  const off = rules(cardCss, '.note-card .note-card__code').filter((r) => r.selector.includes('.cm-activeLine') && /background(-color)?:\s*transparent/.test(r.body))
+  expect(off).toHaveLength(1)
+  expect(beats(specificity(off[0].selector), focusedLine)).toBe(true)
+  expect(off[0].body).not.toContain('!important')
+})
