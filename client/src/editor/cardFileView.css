@@ -1,0 +1,83 @@
+/*
+ * A card file's tab (YAZ-5037, `CardFileView.tsx`): the card in a page-wide column, as a page's text sits — the
+ * folder path small and muted, the title at a page title's size, the ID and the state under it, then the card, its
+ * Reviews, "Linked mentions" and "Embedded in". Quiet: one emphasis (the title). Light and dark from the app's tokens.
+ */
+.card-file {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  outline: none;
+}
+.card-file__page {
+  width: 100%;
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  padding: 8px 48px 64px;
+}
+.card-file__path {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.card-file__title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.card-file__title {
+  flex: 1;
+  min-width: 0;
+  margin: 2px 0 0;
+  font-size: calc(16px * 1.802);
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.card-file__title--empty {
+  color: var(--fg-muted);
+}
+.card-file__button {
+  flex: none;
+  padding: 3px 9px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.card-file__button:hover {
+  background: var(--bg-hover);
+}
+.card-file__button kbd {
+  margin-left: 4px;
+  font-family: inherit;
+  color: var(--fg-muted);
+}
+.card-file__facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 4px 0 16px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.card-file__state {
+  font-variant-numeric: tabular-nums;
+}
+/* The text outside the card of a file that is not valid: shown, never deleted, muted under the notice. */
+.card-file__outside {
+  margin: 0 0 16px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--border);
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+}
+.card-file__outside p {
+  margin: 0;
+}
+.card-file__outside p + p {
+  margin-top: 8px;
+}

@@ -79,3 +79,12 @@ export function cardBacklinks(records: readonly IndexRecord[], id: string, resol
   const wanted = id.toLowerCase()
   return records.filter((r) => r.links.some((target) => resolveCard(target)?.id.toLowerCase() === wanted))
 }
+
+/**
+ * The pages that EMBED card `id` (YAZ-5037: a card file tab's "Embedded in"), in records order: each record one of
+ * whose `![[…]]` targets the card resolver reads as that card. A link to the card is a mention, not an embed.
+ */
+export function cardEmbedders(records: readonly IndexRecord[], id: string, resolveCard: CardResolve): IndexRecord[] {
+  const wanted = id.toLowerCase()
+  return records.filter((r) => r.embeds.some((target) => resolveCard(target)?.id.toLowerCase() === wanted))
+}

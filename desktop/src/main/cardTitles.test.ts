@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { cardRecords, formatCardLine, isCardNoTitle, parseCardLine, withCardNoTitle, EMPTY_CARD_LINE } from '@shared/cardLine'
-import { cardBacklinks, makeCardResolver } from '@shared/cardLinks'
+import { cardBacklinks, cardEmbedders, makeCardResolver } from '@shared/cardLinks'
 import { cardPieces, cardSides, cardTitle, cardWithoutTitle, hiddenCount } from '@shared/cardText'
 import { makeResolver } from '@shared/linkResolver'
 import type { IndexRecord } from '@shared/types'
@@ -93,5 +93,14 @@ describe('links to a card: `[[DEMO-127]]` (YAZ-5030, D7)', () => {
     const resolve = makeCardResolver(records, ['DEMO'])
     expect(cardBacklinks(records, 'DEMO-127', resolve).map((r) => r.path)).toEqual(['/v/notes.md', '/v/words.md'])
     expect(cardBacklinks(records, 'DEMO-126', resolve)).toEqual([])
+  })
+
+  it('YAZ-5037: a card`s embedders ("Embedded in"): the pages whose `![[ID]]` names it, any case and old letters, never its links', () => {
+    const all = [...records, rec('/v/a.md', { embeds: ['demo-127'] }), rec('/v/b.md', { embeds: ['OLD-127', 'Other'] }), rec('/v/c.md', { embeds: ['DEMO-126'] })]
+    const resolve = makeCardResolver(all, ['DEMO', 'OLD'])
+    expect(cardEmbedders(all, 'DEMO-127', resolve).map((r) => r.path)).toEqual(['/v/a.md', '/v/b.md'])
+    // A page that only LINKS to the card is a mention, not an embedder.
+    expect(cardEmbedders(all, 'DEMO-127', resolve).some((r) => r.path === '/v/notes.md')).toBe(false)
+    expect(cardEmbedders(all, 'DEMO-9', resolve)).toEqual([])
   })
 })

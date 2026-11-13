@@ -65,7 +65,7 @@ export async function readCardAt(path: string, id: string | null, index: number)
   return cardInContent(path, content, id, index)
 }
 
-/** `readCardAt` on bytes already read (a card embed's one read per file version, YAZ-5037): the same choice of card. */
+/** `readCardAt` on bytes already read (a card embed's one read per file version, and a card file's tab, which holds its file's bytes: YAZ-5037): the same choice of card. */
 export function cardInContent(path: string, content: string, id: string | null, index: number): CardAtPage | null {
   const cards = pageCards(content)
   const at = id === null || (cards[index] !== undefined && cardIdOf(cards[index].line) === id) ? index : cards.findIndex((c) => cardIdOf(c.line) === id)

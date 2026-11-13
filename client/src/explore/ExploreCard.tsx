@@ -31,27 +31,19 @@
  *
  * The card is read from its page (`readCardAt`: by ID, or by its place while it has none) and read again whenever the
  * index has a new version of the page: an answer in the Inbox or a delete elsewhere shows here at once.
+ *
+ * The body (the card or its editor, Reviews, "Linked mentions"), the writes and the card's ⋯ rows are the card
+ * file tab's too (`review/cardPane.tsx`, YAZ-5037); the head and the strip speak of the page, and are the window's own.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { cardState } from '@shared/cardSchedule'
 import { cardTitle } from '@shared/cardText'
 import type { GestureAction } from '@shared/keys'
-import { cardBlock, EMPTY_CARD_LINE, withCardNext, withCardNoTitle, withCardOff, withoutCardReviews, type CardReview } from '@shared/cardLine'
-import { cardBacklinks } from '@shared/cardLinks'
-import type { IndexRecord } from '@shared/types'
-import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
-import { cardResolverOf } from '../editor/wikilink/wikilinkPlugin'
-import { pageLabel, pathTitles } from '../lib/pageLabel'
-import { editorViewCtx } from '@milkdown/kit/core'
-import { changeCardLine, changeCardTextIn, readCardAt, type CardAtPage } from '../review/cardFile'
-import { createCrepe } from '../editor/createCrepe'
-import { CrepeFeature } from '../editor/crepe'
-import { features } from '../editor/featureConfig'
-import { isNoteCardNode } from '../editor/noteCard/noteCardLine'
-import { noteCardViewAt } from '../editor/noteCard/noteCardView'
+import { withCardNext } from '@shared/cardLine'
+import { readCardAt, type CardAtPage } from '../review/cardFile'
+import { CardPane, cardMenuSections, cardWrites, isCardEditKey, onIndexVersion } from '../review/cardPane'
 import { HoverTip } from '../components/HoverTip'
-import { NoteCardBody, NoteCardFacts, NoteCardId, NoteCardNextChip, NoteCardReviews } from '../review/noteCardParts'
-import { copyText } from '../editor/linkMenu'
+import { NoteCardFacts, NoteCardId, NoteCardNextChip } from '../review/noteCardParts'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { keepFocus, type ExploreVault } from './ExploreNote'
 
@@ -112,11 +104,7 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
   // Read on open, and again on each new version of the page in the index (its mtime): the strip and the table stay live.
   useEffect(() => {
     let cancel = read()
-    let seen = wikilinks.records.find((r) => r.path === path)?.mtime
-    const unsubscribe = wikilinks.subscribe(() => {
-      const mtime = wikilinks.records.find((r) => r.path === path)?.mtime
-      if (mtime === seen) return
-      seen = mtime
+    const unsubscribe = onIndexVersion(wikilinks, path, () => {
       cancel()
       cancel = read()
     })
@@ -143,43 +131,18 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
     if (wasEditing.current && !editing) bodyRef.current?.focus({ preventScroll: true })
     wasEditing.current = editing
   }, [editing])
-  const editDone = (text: string) => {
-    if (card === null) return
-    const after = () => setEditing(false)
-    if (text.replace(/\n+$/, '') === card.text) return after()
-    changeCardTextIn(path, card.id, text, card.index).then(
-      () => {
-        read()
-        after()
-      },
-      (err: unknown) => onNotice(`Can't save the card: ${err instanceof Error ? err.message : String(err)}`),
-    )
-  }
+  const writes = cardWrites(path, card, read, onNotice, review)
+  const changeLine = writes.changeLine
+  const editDone = (text: string) => writes.editDone(text, () => setEditing(false))
   /** E on the card window: Edit card (YAZ-5003), as the page's Edit card. Not in a field, not read only. */
   const onBodyKey = (event: React.KeyboardEvent) => {
-    if (editing || card === null || vault.readOnly === true || event.metaKey || event.ctrlKey || event.altKey || (event.key !== 'e' && event.key !== 'E')) return
-    if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]') !== null) return
+    if (editing || card === null || vault.readOnly === true || !isCardEditKey(event)) return
     event.preventDefault()
     event.stopPropagation()
     setEditing(true)
   }
   const id = card?.id ?? cardId
   const title = card === null ? '' : cardTitle(card.text)
-  const deleteReview =
-    review === undefined || card === null || card.id === null
-      ? undefined
-      : (gone: CardReview) => {
-          const cardIdNow = card.id
-          if (cardIdNow !== null) void review.deleteReview(path, cardIdNow, gone).then(() => read())
-        }
-  /** A ⋯ change of the card line (D13): a write of the file as the app's own, then the card read again. */
-  const changeLine = (change: Parameters<typeof changeCardLine>[2]) => {
-    if (card === null || card.id === null) return
-    changeCardLine(path, card.id, change, card.index).then(
-      () => read(),
-      (err: unknown) => onNotice(`Can't change the card: ${err instanceof Error ? err.message : String(err)}`),
-    )
-  }
 
   return (
     <>
@@ -211,18 +174,7 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
               { id: 'open-page', label: 'Open page', onSelect: () => onOpenPage(card?.index ?? index) },
               { id: 'open-tab', label: 'Open page in a new tab', ...(!fromInbox && { hint: '⌘↵' }), onSelect: onOpenInTab },
             ],
-            ...(card === null || card.id === null
-              ? []
-              : [
-                  [
-                    { id: 'next', label: card.next ? 'Remove from top of Inbox' : 'Put at top of Inbox', onSelect: () => changeLine((l) => withCardNext(l, !card.next)) },
-                    { id: 'review-off', label: card.off ? 'Unarchive card' : 'Archive card', onSelect: () => changeLine((l) => withCardOff(l, !card.off)) },
-                    // ONE toggle row (YAZ-5030): the hint is the state now; a click turns it to the other.
-                    { id: 'title-front', label: 'Title on the front', hint: card.notitle === true ? 'Hide' : 'Show', onSelect: () => changeLine((l) => withCardNoTitle(l, card.notitle !== true)) },
-                    ...(card.reviews.length === 0 ? [] : [{ id: 'reset', label: 'Reset history', danger: true, onSelect: () => changeLine(withoutCardReviews) }]),
-                  ],
-                ]),
-            ...(id === null ? [] : [[{ id: 'copy-id', label: 'Copy card ID', hint: id, onSelect: () => copyText(id, 'card ID', onNotice, undefined, true) }]]),
+            ...cardMenuSections(card, id, changeLine, onNotice, { inbox: true, link: false }),
           ]}
         />
         <HoverTip text="Close (Esc)">
@@ -234,113 +186,21 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
       <div ref={bodyRef} className="explore__body explore__body--card" tabIndex={-1} data-explore-card onKeyDown={onBodyKey}>
         {loaded.kind === 'gone' && <p className="editor-msg">This card is no longer there</p>}
         {card !== null && (
-          <>
-            {editing ? (
-              <NoteCardEditor key={`${card.index}`} text={card.text} path={path} vault={vault} onDone={editDone} />
-            ) : (
-              <div className="note-card note-card-screen">
-                <NoteCardBody text={card.text} path={path} vault={vault} doors={{ openLayer: onOpenLink, openTab: onOpenTab, onNotice }} />
-              </div>
-            )}
-            <NoteCardStrip card={card} pageName={pageName} vault={vault} onOpenPage={() => onOpenPage(card.index)} />
-            {review !== undefined && <NoteCardReviews reviews={card.reviews} settings={review.settings} onDelete={deleteReview} />}
-            {card.id !== null && <NoteCardBacklinks id={card.id} vault={vault} onOpen={onOpenLink} />}
-          </>
+          <CardPane
+            card={card}
+            path={path}
+            vault={vault}
+            editing={editing}
+            onEditDone={editDone}
+            doors={{ openLayer: onOpenLink, openTab: onOpenTab, onNotice }}
+            onOpenPage={onOpenLink}
+            strip={<NoteCardStrip card={card} pageName={pageName} vault={vault} onOpenPage={() => onOpenPage(card.index)} />}
+            reviews={review?.settings}
+            onDeleteReview={writes.deleteReview}
+          />
         )}
       </div>
     </>
-  )
-}
-
-/** The page card's editor without the editing of blocks around it: the card block is all the document holds. */
-const CARD_EDIT_FEATURES = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeature.Toolbar]: false }
-
-/**
- * Edit card in the card window (YAZ-5003): the page card's own view, in a small Crepe of the card block alone, with
- * Edit card on at once — Crepe's code block, the card language, its Done (button, Esc, ⌘↵). Done hands the text over.
- * Made once per edit: the text it starts from is the card's when Edit card began.
- */
-function NoteCardEditor({ text, path, vault, onDone }: { text: string; path: string; vault: ExploreVault; onDone: (text: string) => void }) {
-  const hostRef = useRef<HTMLDivElement>(null)
-  const doneRef = useRef(onDone)
-  doneRef.current = onDone
-  const start = useRef({ text, path, vault })
-  useEffect(() => {
-    const host = hostRef.current
-    if (host === null) return
-    const { text, path, vault } = start.current
-    const el = document.createElement('div')
-    el.className = 'editor-instance'
-    host.appendChild(el)
-    const crepe = createCrepe({
-      root: el,
-      defaultValue: `${cardBlock(text, EMPTY_CARD_LINE)}\n`,
-      features: CARD_EDIT_FEATURES,
-      wikilinks: vault.wikilinks,
-      viewOnlyLinks: vault.viewOnlyLinks,
-      image: { root: vault.root, notePath: path },
-      noteCards: { path, onEditDone: (t) => doneRef.current(t) },
-    })
-    let live = true
-    void crepe.create().then(() => {
-      if (!live) return
-      const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
-      let pos = -1
-      view.state.doc.descendants((node, at) => {
-        if (pos === -1 && isNoteCardNode(node)) pos = at
-        return pos === -1
-      })
-      if (pos >= 0) noteCardViewAt(view, pos)?.edit()
-    })
-    return () => {
-      live = false
-      void crepe.destroy()
-      el.remove()
-    }
-  }, [])
-  return <div ref={hostRef} className="explore-card__edit" data-explore-card-edit />
-}
-
-/**
- * "Linked mentions (n)" of a card (YAZ-5030): the pages whose links name the card's ID, from the index (`cardBacklinks`),
- * live with it; each row is the page's name, and a click opens the page on top. Open while there are any.
- */
-function NoteCardBacklinks({ id, vault, onOpen }: { id: string; vault: ExploreVault; onOpen: (path: string) => void }) {
-  const { wikilinks } = vault
-  const feed = useIndexFeed(wikilinks)
-  const pages = useMemo((): IndexRecord[] => {
-    const resolve = feed.resolve === null ? null : cardResolverOf(wikilinks)
-    return resolve === null ? [] : cardBacklinks(feed.records, id, resolve)
-  }, [feed, id, wikilinks])
-  const titles = pathTitles(feed.records, feed.folders)
-  const [open, setOpen] = useState<boolean | null>(null)
-  const shown = open ?? pages.length > 0
-  return (
-    <section className="note-card-backlinks">
-      <button type="button" className="backlinks__header" aria-expanded={shown} onClick={() => setOpen(!shown)} onMouseDown={(e) => e.preventDefault()}>
-        <svg className="backlinks__chevron" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="m4 6 4 4 4-4" />
-        </svg>
-        <span className="backlinks__title">
-          Linked mentions <span className="backlinks__count">({pages.length})</span>
-        </span>
-      </button>
-      {shown && (
-        <ul className="note-card-backlinks__list">
-          {pages.length === 0 ? (
-            <li className="note-card-backlinks__none">No page links to this card yet.</li>
-          ) : (
-            pages.map((page) => (
-              <li key={page.path}>
-                <button type="button" className="note-card-strip__page note-card-backlinks__page" onMouseDown={keepFocus} onClick={() => onOpen(page.path)}>
-                  {pageLabel(page.path, false, titles)}
-                </button>
-              </li>
-            ))
-          )}
-        </ul>
-      )}
-    </section>
   )
 }
 

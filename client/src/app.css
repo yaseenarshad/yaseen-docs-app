@@ -1555,6 +1555,26 @@ button {
   background: var(--notice-btn-bg-hover);
 }
 
+/* A card file's notice (YAZ-5037, `CardFileNotice.tsx`): the conflict bar's colours, one line, an actions slot after
+   the words for the fixes to come. */
+.card-file-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--notice-fg);
+  background: var(--notice-bg);
+  border-bottom: 1px solid var(--notice-border);
+}
+.card-file-notice__actions {
+  display: flex;
+  gap: 8px;
+}
+.card-file-notice__actions:empty {
+  display: none;
+}
+
 /* ---------- link notice (E1): the window's one passive toast, self-dismissing ----------
    BOTTOM-LEFT since YAZ-1674 (D10), in the context menu's own language — surface, border,
    radius, shadow — instead of the amber warning family: it confirms as often as it warns
