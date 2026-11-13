@@ -2497,7 +2497,8 @@ describe('the card window (YAZ-4962)', () => {
     // Overdue (the reviews are from January): no "Due" label, the table's own words (YAZ-4964 look by eye round 2, item 7).
     expect([...top().querySelectorAll('.note-card-strip__label')].map((l) => l.textContent)).toEqual(['Last answer', 'Interval', 'Recall'])
     expect(facts[1]).toBe('Last answerRemembered, Jan 11')
-    expect(factText(2).lastChild?.textContent).toMatch(/^\d+ days?$|^today$/)
+    // YAZ-5020: good, again, good is a new card still in its steps (it needs two Remembered in a row): "later today".
+    expect(factText(2).lastChild?.textContent).toBe('later today')
     expect(factText(3).textContent).toMatch(/^Overdue · /)
     expect(tableRows().at(-1)?.[3]).toBe(factText(3).textContent)
     expect(factText(4).lastChild?.textContent).toMatch(/^\d+%$/)

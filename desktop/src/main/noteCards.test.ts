@@ -21,7 +21,8 @@ import {
   withoutCardReviews,
   type CardReview,
 } from '@shared/cardLine'
-import { answerLabel, answerRatings, cardHistory, cardQueue, cardState, isCardDue, previewAnswers, recallChance } from '@shared/cardSchedule'
+import { CARD_LEARNING_STEPS, CARD_RELEARNING_STEPS, CARD_STEP, answerLabel, answerRatings, cardHistory, cardQueue, cardState, isCardDue, pageCardCounts, previewAnswers, recallChance } from '@shared/cardSchedule'
+import { FSRS, Rating, createEmptyCard, generatorParameters } from 'ts-fsrs'
 import { cardPieces, cardSides, cardTitle, hiddenCount, markHidden } from '@shared/cardText'
 import { DEFAULT_CARD_WEIGHTS, DEFAULT_REVIEW_SETTINGS, sanitizeReviewSettings } from '@shared/reviews'
 
@@ -165,11 +166,15 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
     // Fuzz moves the date only within its range: off, the same log may land on another day, but near.
     const plain = cardState(log, { ...DEFAULT_REVIEW_SETTINGS, fuzz: false })
     expect(Math.abs(plain.interval - first.interval)).toBeLessThanOrEqual(Math.max(2, Math.ceil(plain.interval * 0.15)))
-    // Days, not minutes (enable_short_term: false): "again" brings a card back in a day or two, never in ten minutes.
-    const waits = cardHistory(log, fuzzed).map((r) => r.interval)
-    expect(waits[2]).toBeGreaterThanOrEqual(1)
-    expect(waits[2]).toBeLessThan(waits[1])
-    expect(cardHistory(log, fuzzed).map((r) => r.elapsed)).toEqual([0, 3, 16, 1])
+    // Same-day steps (YAZ-5020): the first Remembered of a new card and a Forgot are steps (0 days, back in this
+    // session); a Remembered at the end of the steps gives days.
+    const rows = cardHistory(log, fuzzed)
+    expect(rows.map((r) => r.inSteps)).toEqual([true, false, true, false])
+    expect(rows[0].interval).toBe(0)
+    expect(rows[2].interval).toBe(0)
+    expect(rows[1].interval).toBeGreaterThanOrEqual(1)
+    expect(rows[3].interval).toBeGreaterThanOrEqual(1)
+    expect(rows.map((r) => r.elapsed)).toEqual([0, 3, 16, 1])
   })
 
   it('two-button and four-button logs both schedule; a longer wait for easy than for hard; the preview is what the replay gives', () => {
@@ -188,7 +193,7 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
     expect(chance).toBeGreaterThan(0)
     expect(chance).toBeLessThan(1)
     expect(recallChance([], four, now)).toBeNull()
-    expect(cardState([], four)).toEqual({ isNew: true, due: null, interval: 0, lastReview: null, lapses: 0 })
+    expect(cardState([], four)).toEqual({ isNew: true, due: null, interval: 0, lastReview: null, lapses: 0, inSteps: false })
   })
 
   it('the queue: due cards most overdue first, then new cards up to what newPerDay leaves today; off, ID-less and other folders left out', () => {
@@ -198,11 +203,11 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
     const records = [
       { path: '/v/a.md', folder: '', cards: [{ id: 'V-1', off: false, next: false, reviews: [{ at: at(now - 400 * DAY), rating: 'good' as const }] }, { id: 'V-2', off: false, next: false, reviews: [] }] },
       { path: '/v/sub/b.md', folder: 'sub', cards: [{ id: 'V-3', off: false, next: false, reviews: [] }, { id: 'V-4', off: true, next: false, reviews: [] }, { id: null, off: false, next: false, reviews: [] }, { id: 'V-5', off: false, next: false, reviews: [] }] },
-      // Started today: it counts against newPerDay, and is not due again today.
+      // Started today: it counts against newPerDay, and it is due again (YAZ-5020: a new card needs a second Remembered).
       { path: '/v/c.md', folder: '', cards: [{ id: 'V-6', off: false, next: false, reviews: [{ at: at(now - 60_000), rating: 'good' as const }] }] },
     ]
     const queue = cardQueue(records, s, now)
-    expect(queue.map((q) => [q.id, q.isNew])).toEqual([['V-1', false], ['V-2', true]])
+    expect(queue.map((q) => [q.id, q.isNew])).toEqual([['V-1', false], ['V-6', false], ['V-2', true]])
     expect(isCardDue(queue[0].due, now)).toBe(true)
     expect(cardQueue(records, s, now, 'sub').map((q) => q.id)).toEqual(['V-3'])
     expect(cardQueue(records, { ...s, newPerDay: 10 }, now, 'sub').map((q) => [q.id, q.index])).toEqual([['V-3', 0], ['V-5', 3]])
@@ -216,7 +221,7 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
     const now = new Date(2026, 5, 15, 12, 0).getTime()
     const at = (ms: number): string => cardTime(ms)
     const card = (id: string, over: { off?: boolean; next?: boolean; reviews?: CardReview[] } = {}) => ({ id, off: false, next: false, reviews: [] as CardReview[], ...over })
-    const learned: CardReview[] = [{ at: at(now - 2 * DAY), rating: 'good' }] // due in days: not due today
+    const learned: CardReview[] = [{ at: at(now - 3 * DAY), rating: 'good' }, { at: at(now - 3 * DAY + 60_000), rating: 'good' }] // due in days: not due today
     const overdue: CardReview[] = [{ at: at(now - 400 * DAY), rating: 'good' }]
     const records = [
       // Page order is not the order: the ID number is (D2). V-9 is the oldest new card, though last in path order.
@@ -256,6 +261,90 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
     // The undo of an answer: back at the place it had.
     const odd = parseCardLine('<!-- card: WIKI-512, 2026-11-12T14:05Z good, next, kept -->')!
     expect(formatCardLine(withCardNext(withCardNext(odd, false), true, cardNextIndex(odd)))).toBe(formatCardLine(odd))
+  })
+})
+
+describe('YAZ-5020: same-day steps — cards come back in the same session (Yaseen\'s 21 weights, retention 0.9, no fuzz)', () => {
+  const s = { ...DEFAULT_REVIEW_SETTINGS, fuzz: false }
+  const t0 = new Date(2026, 5, 15, 9, 0).getTime()
+  /** A log of answers, each `[minutes after t0, rating]`, as the line holds them (to the minute). */
+  const log = (...answers: [number, CardReview['rating']][]): CardReview[] => answers.map(([m, rating]) => ({ at: cardTime(t0 + m * 60_000), rating }))
+  const steps = (l: CardReview[]) => cardHistory(l, s).map((r) => r.inSteps)
+  const lastWait = (l: CardReview[]) => cardHistory(l, s).at(-1)!.interval
+  /** The old days-only mode (D5, `enable_short_term: false`), for the trap: the same log through ts-fsrs. */
+  const daysOnly = (l: CardReview[]): number => {
+    const f = new FSRS(generatorParameters({ w: s.weights, request_retention: s.retention, maximum_interval: s.maxDays, enable_fuzz: false, enable_short_term: false }))
+    let card = createEmptyCard(new Date(Date.parse(l[0].at)))
+    for (const r of l) card = f.next(card, new Date(Date.parse(r.at)), r.rating === 'again' ? Rating.Again : Rating.Good).card
+    return card.scheduled_days
+  }
+  const D = 1440
+
+  it('the step is one minute, the smallest ts-fsrs takes: two for a new card, one after a Forgot', () => {
+    expect(CARD_STEP).toBe('1m')
+    expect(CARD_LEARNING_STEPS).toEqual(['1m', '1m'])
+    expect(CARD_RELEARNING_STEPS).toEqual(['1m'])
+    expect(s.weights).toEqual([...DEFAULT_CARD_WEIGHTS])
+    expect(s.weights).toHaveLength(21)
+  })
+
+  it('new → Remembered → Remembered: the first is a step (back in this session), the second leaves with 4 days; also both in one minute', () => {
+    const rr = log([0, 'good'], [1, 'good'])
+    expect(steps(rr)).toEqual([true, false])
+    expect(cardHistory(rr, s).map((r) => r.interval)).toEqual([0, 4])
+    const same = log([0, 'good'], [0, 'good'])
+    expect(same[0].at).toBe(same[1].at)
+    expect(steps(same)).toEqual([true, false])
+    expect(lastWait(same)).toBe(4)
+  })
+
+  it('the trap: new → Forgot → Remembered → Remembered leaves with 1 day — days-only mode gives 3 for Forgot → Remembered', () => {
+    const frr = log([0, 'again'], [1, 'good'], [2, 'good'])
+    // Each Forgot starts the count again: the first Remembered after it is still a step.
+    expect(steps(frr)).toEqual([true, true, false])
+    expect(lastWait(frr)).toBe(1)
+    expect(daysOnly(log([0, 'again'], [10, 'good']))).toBe(3)
+  })
+
+  it('new → Remembered → Forgot → Remembered → Remembered leaves after the second Remembered that follows the Forgot', () => {
+    const l = log([0, 'good'], [1, 'again'], [2, 'good'], [3, 'good'])
+    expect(steps(l)).toEqual([true, true, true, false])
+    expect(lastWait(l)).toBe(1)
+    expect(cardState(l, s).lapses).toBe(0) // a Forgot in the learning steps is not a lapse
+  })
+
+  it('known → Forgot → Remembered: one Remembered leaves the steps, a lapse, days again — shorter than days-only mode', () => {
+    const known: [number, CardReview['rating']][] = [[0, 'good'], [1, 'good'], [3 * D, 'good'], [15 * D, 'good'], [55 * D, 'good']]
+    expect(cardHistory(log(...known), s).at(-1)!.interval).toBeGreaterThan(30)
+    const fr = log(...known, [95 * D, 'again'], [95 * D + 1, 'good'])
+    expect(steps(fr).slice(-2)).toEqual([true, false])
+    expect(cardState(fr, s)).toMatchObject({ lapses: 1, inSteps: false, interval: 6 })
+    expect(lastWait(fr)).toBeLessThan(daysOnly(log(...known, [95 * D, 'again'], [95 * D + 10, 'good'])))
+  })
+
+  it('the replay stays deterministic: the same log gives the same state; two answers in one minute replay in line order', () => {
+    const l = log([0, 'good'], [1, 'again'], [1, 'good'])
+    expect(cardState(l, { ...s })).toEqual(cardState(l, { ...s }))
+    expect(steps(l)).toEqual([true, true, true])
+    expect(steps(log([0, 'good'], [1, 'good'], [1, 'again']))).toEqual([true, false, true])
+  })
+
+  it('a card in its steps is due now (whatever its minute, also past midnight); the queue and the page count show it; the hover says so', () => {
+    expect(isCardDue(t0 + 2 * DAY, t0, true)).toBe(true)
+    expect(isCardDue(t0 + 2 * DAY, t0)).toBe(false)
+    // Answered one second before midnight: its step ends after midnight, it is still due tonight.
+    const late = new Date(2026, 5, 15, 23, 59).getTime()
+    const lateLog: CardReview[] = [{ at: cardTime(late), rating: 'again' }]
+    expect(cardState(lateLog, s).due).toBeGreaterThanOrEqual(new Date(2026, 5, 16).getTime())
+    const page = { path: '/v/a.md', folder: '', cards: [{ id: 'V-1', off: false, next: false, reviews: lateLog }, { id: 'V-2', off: false, next: false, reviews: log([0, 'good'], [1, 'good']) }] }
+    expect(cardQueue([page], s, late).map((q) => q.id)).toEqual(['V-1'])
+    expect(pageCardCounts(page, s, late).due).toBe(1)
+    // Reopened in the same minute: a new card answered once is due again (its second Remembered).
+    const once = { path: '/v/b.md', folder: '', cards: [{ id: 'V-3', off: false, next: false, reviews: log([0, 'good']) }] }
+    expect(cardQueue([once], s, t0).map((q) => [q.id, q.isNew])).toEqual([['V-3', false]])
+    // The buttons of a new card: both keep it in the steps; of a learning card at its last step, Remembered leaves.
+    expect(previewAnswers([], s, t0).map((a) => [a.review.rating, a.inSteps, a.interval])).toEqual([['again', true, 0], ['good', true, 0]])
+    expect(previewAnswers(log([0, 'good']), s, t0 + 60_000).map((a) => [a.inSteps, a.interval])).toEqual([[true, 0], [false, 4]])
   })
 })
 

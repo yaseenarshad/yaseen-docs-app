@@ -15,7 +15,8 @@
  *    card shows (YAZ-5010, Yaseen: "Should always be there"): `showAnswers()` fixes what each one writes then (the
  *    hover is the truth, D13), and 1–2 / 1–4 answer at any step.
  *  - The buttons (D5): ✕ Forgot · ✓ Remembered, or ↺ Again · ~ Hard · ✓ Good · ⇈ Easy, by the setting, round as
- *    Mochi's (YAZ-5018); the hover says when the card comes back ("Remembered · 9 days").
+ *    Mochi's (YAZ-5018); the hover says when the card comes back ("Remembered · 9 days"; "Forgot · later today" while
+ *    the answer keeps it in its same-day steps, YAZ-5020: it comes back at the end of this session).
  *  - The keys (`noteCardInboxKeys.ts`): Space, 1–2 / 1–4 (at any step, YAZ-5010), ⌘Z, O (the page on top, at its top,
  *    YAZ-5022; Esc there comes back to this card at the same step), E (YAZ-5003: the CARD WINDOW on top, in Edit card, in
  *    every vault, YAZ-5009: also a read-only one, with no "Allow edits?" box — only this card's text unlocks, for this
@@ -330,7 +331,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
                 session.answers.map((a, i) => {
                   const label = answerLabel(a.review.rating, review.settings)
                   // The app's own hover box (a native title shows nothing in the app, YAZ-4772): when the card comes back.
-                  const comesBack = `${label} · ${noteCardWait(a.interval)}`
+                  const comesBack = `${label} · ${noteCardWait(a.interval, a.inSteps)}`
                   return (
                     <HoverTip key={a.review.rating} text={comesBack}>
                       <button type="button" className="explore__button note-card-inbox__answer" data-rating={a.review.rating} aria-description={comesBack} onMouseDown={(e) => e.preventDefault()} onClick={() => answerWith(a.review.rating)}>

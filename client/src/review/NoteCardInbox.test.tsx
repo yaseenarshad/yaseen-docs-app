@@ -38,7 +38,7 @@ const PATH = '/v/cards.md'
 const TWO_SIDES = 'Capital of {{France}}\n---\n{{Paris}} on the {{Seine}}'
 const AT = '2026-11-12T14:05Z'
 const answersOf = (s: ReviewSettings): CardAnswer[] =>
-  (s.buttons === 4 ? (['again', 'hard', 'good', 'easy'] as const) : (['again', 'good'] as const)).map((rating, i) => ({ review: { at: AT, rating }, interval: [0, 3, 9, 20][i], due: 0 }))
+  (s.buttons === 4 ? (['again', 'hard', 'good', 'easy'] as const) : (['again', 'good'] as const)).map((rating, i) => ({ review: { at: AT, rating }, interval: [0, 3, 9, 20][i], due: 0, inSteps: rating === 'again' }))
 
 let root: Root | null = null
 let el: HTMLElement
@@ -216,7 +216,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.showAnswers).toHaveBeenCalledOnce()
     await flush()
     expect(buttons().map((b) => [b.textContent, b.getAttribute('aria-description')])).toEqual([
-      ['Forgot1', 'Forgot · today'],
+      ['Forgot1', 'Forgot · later today'],
       ['Remembered2', 'Remembered · 3 days'],
     ])
     press(' ')
@@ -259,7 +259,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     mount('Just a fact', { ...DEFAULT_REVIEW_SETTINGS, buttons: 4 })
     expect(review.showAnswers).toHaveBeenCalledOnce()
     await flush()
-    expect(buttons().map((b) => b.getAttribute('aria-description'))).toEqual(['Again · today', 'Hard · 3 days', 'Good · 9 days', 'Easy · 20 days'])
+    expect(buttons().map((b) => b.getAttribute('aria-description'))).toEqual(['Again · later today', 'Hard · 3 days', 'Good · 9 days', 'Easy · 20 days'])
     expect([...el.querySelectorAll('.note-card-inbox__hints kbd')].map((k) => k.textContent)).not.toContain('1–4')
     press('3')
     expect(review.answer).toHaveBeenCalledExactlyOnceWith('good')

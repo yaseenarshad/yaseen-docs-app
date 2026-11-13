@@ -66,6 +66,7 @@ import { IconRulesControl } from './IconRulesControl'
 import { MEMORY_SECTION } from './memorySection'
 import { NOTIFICATIONS_SECTION } from './notificationsSection'
 import { NEW_PER_DAY_FIELD, RETENTION_FIELD, ReviewNumberControl, WEIGHTS_FIELD, wholeField, type ReviewField } from './ReviewNumberControl'
+import { ReviewHowCardsComeBack } from './ReviewHowCardsComeBack'
 import { LinkPillsControl } from './LinkPillsControl'
 import type { LinkPillsState } from './useLinkPills'
 import { SettingsFolderControl } from './SettingsFolderControl'
@@ -1933,6 +1934,20 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             render: ({ settings, onChange }) => (
               <Segmented options={SHOWN_HIDDEN_WORDS_OPTIONS} value={settings.shownHiddenWords} onChange={(shownHiddenWords) => onChange({ ...settings, shownHiddenWords })} ariaLabel="Shown hidden words" />
             ),
+          },
+        ],
+      },
+      {
+        // YAZ-5020: the same-day rules in plain words, closed by default.
+        items: [
+          {
+            id: 'howCardsComeBack',
+            label: 'How cards come back',
+            hint: 'Forgot brings a card back later in this session until you remember it. A new card needs two Remembered in a row. Then FSRS sets the wait in days.',
+            keywords: [...REVIEW_KEYWORDS, 'forgot', 'again', 'same day', 'session', 'steps', 'learning', 'relearning', 'anki', 'mochi'],
+            bare: true,
+            available: reviewOn,
+            render: () => <ReviewHowCardsComeBack />,
           },
         ],
       },

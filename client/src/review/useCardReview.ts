@@ -30,6 +30,12 @@ import { changeCardLine, deleteCardReview, isCardGone, readCard, restoreCardRevi
  * `answered` (YAZ-5020, the progress bar) is each answer of the session, in order; ⌘Z takes the last one back. The
  * bar's whole is the cards the session started with, plus any it took since. A new session (or the Inbox tab closed)
  * starts it empty.
+ *
+ * Same-day steps (YAZ-5020): an answer that leaves the card in its steps (`CardAnswer.inSteps`: a Forgot; a new card's
+ * first Remembered) puts it back at the END of this session's queue, and the session grows by one ("3 of 13"). It
+ * comes back until the scheduler lets it go: a new card after two Remembered in a row, a known card after one. Closed
+ * and opened again, the Inbox shows it at once: a card in its steps is due now (`cardQueue`). ⌘Z takes the repeat
+ * out again and puts the card back at its place.
  */
 
 /** Which cards of the session show (YAZ-5017). */
@@ -114,21 +120,27 @@ interface Session {
   label: string
   scope: CardReviewScope
   /** Cards still to show; the one at `at` is the one showing. */
-  queue: DueCard[]
+  queue: QueueCard[]
   /** The place of the card showing in `queue` (YAZ-5004: ← → move it); 0 until then. */
   at: number
   total: number
   /** Bumped each time the card at the head is put there: its page is read again, its answers fixed again. */
   turn: number
-  /** Each answer: the card, its review, and the place its `next` had (-1: none), so the undo puts the file back as it was. */
-  undo: { card: DueCard; review: CardReview; next: number }[]
+  /**
+   * Each answer: the card, its review, the place its `next` had (-1: none), so the undo puts the file back as it was;
+   * its place in the queue, and whether it went back at the end (YAZ-5020), so the undo puts the queue back too.
+   */
+  undo: { card: DueCard; review: CardReview; next: number; at: number; repeat: boolean }[]
   /** YAZ-5017: which cards show; `at` is always a card that matches it, or past the end when none does. */
   filter: CardFilter
-  /** The cards with reviews and the new cards at start: each filter's "of 12". */
+  /** The cards with reviews and the new cards at start, plus the repeats (YAZ-5020): each filter's "of 12". */
   totals: { due: number; new: number }
   /** YAZ-5020: each answer, in order (the progress bar); ⌘Z takes the last back. */
   answered: CardRating[]
 }
+
+/** A card of a session's queue; `repeat` (YAZ-5020): put back at the end by an answer that left it in its steps. */
+type QueueCard = DueCard & { repeat?: boolean }
 
 interface IndexSource {
   readonly records: readonly IndexRecord[]
@@ -193,11 +205,14 @@ export function useCardReview(root: string | null, source: IndexSource, settings
   live.current = { records, settings, session, loaded, fixed }
   const busy = useRef(false)
 
-  /** Drops the cards at the head of `queue` that are no longer due by the live index: their turn came. */
-  const settle = useCallback((queue: DueCard[], scope: CardReviewScope): DueCard[] => {
+  /**
+   * Drops the cards at the head of `queue` that are no longer due by the live index: their turn came. A repeat
+   * (YAZ-5020) stays: this session put it back, and the index may not have its new answer yet.
+   */
+  const settle = useCallback((queue: QueueCard[], scope: CardReviewScope): QueueCard[] => {
     const { records, settings } = live.current
     const due = cardQueue(records, settings, Date.now(), scope.folder, scope.page, source.letters)
-    const first = queue.findIndex((card) => due.some((d) => sameCard(d, card)))
+    const first = queue.findIndex((card) => card.repeat === true || due.some((d) => sameCard(d, card)))
     return first === -1 ? [] : queue.slice(first)
   }, [source])
 
@@ -286,11 +301,18 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       if (written === 'failed') return
       setSession((s) => {
         if (s === null || s.queue[s.at] !== card) return s
-        const undo = written !== 'gone' ? [...s.undo, { card, review: chosen.review, next: written.next }].slice(-UNDO_DEPTH) : s.undo
+        // Still in its steps (YAZ-5020): back at the end of this session, no longer new or up next.
+        const repeat = written !== 'gone' && chosen.inSteps
+        const undo = written !== 'gone' ? [...s.undo, { card, review: chosen.review, next: written.next, at: s.at, repeat }].slice(-UNDO_DEPTH) : s.undo
         // The cards before (passed over with →) stay; the ones after are settled, as the head was before ← →.
-        const queue = [...s.queue.slice(0, s.at), ...settle(s.queue.slice(s.at + 1), s.scope)]
+        const after = settle(s.queue.slice(s.at + 1), s.scope)
+        // The repeat keeps the filter it showed under (YAZ-5017): a new card's second Remembered is still under New cards.
+        const queue = [...s.queue.slice(0, s.at), ...after, ...(repeat ? [{ ...card, due: chosen.due, next: false, repeat: true }] : [])]
         const answered = written !== 'gone' ? [...s.answered, rating] : s.answered
-        return fitted({ ...s, queue, at: s.at < queue.length ? s.at : 0, turn: s.turn + 1, undo, answered })
+        // A repeat adds one to the session ("3 of 13", the progress bar's size).
+        const totals = repeat ? { ...s.totals, [card.isNew ? 'new' : 'due']: s.totals[card.isNew ? 'new' : 'due'] + 1 } : s.totals
+        // The next card is the one after; past the last, the first (a card passed over with →, or the repeat).
+        return fitted({ ...s, queue, at: after.length > 0 ? s.at : 0, total: s.total + (repeat ? 1 : 0), totals, turn: s.turn + 1, undo, answered })
       })
     },
     [fixAnswers, onNotice, settle],
@@ -308,13 +330,18 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       },
     )
     busy.current = false
-    // The card shows again, also under a filter that would hide it: then All cards (YAZ-5017). Its answer leaves the bar (YAZ-5020).
+    // The card back at its place (YAZ-5020), its repeat out of the queue and the session one smaller again; it shows
+    // also under a filter that would hide it: then All cards (YAZ-5017). Its answer leaves the bar (YAZ-5020).
     if (undone)
-      setSession((s) =>
-        s === null || s.undo.at(-1) !== last
-          ? s
-          : { ...s, queue: [last.card, ...s.queue.filter((c) => !sameCard(c, last.card))], at: 0, turn: s.turn + 1, undo: s.undo.slice(0, -1), filter: matchesFilter(last.card, s.filter) ? s.filter : 'all', answered: s.answered.slice(0, -1) },
-      )
+      setSession((s) => {
+        if (s === null || s.undo.at(-1) !== last) return s
+        const rest = s.queue.filter((c) => !sameCard(c, last.card))
+        const at = Math.min(last.at, rest.length)
+        const side = last.card.isNew ? 'new' : 'due'
+        const totals = last.repeat ? { ...s.totals, [side]: s.totals[side] - 1 } : s.totals
+        const filter = matchesFilter(last.card, s.filter) ? s.filter : 'all'
+        return { ...s, queue: [...rest.slice(0, at), last.card, ...rest.slice(at)], at, total: s.total - (last.repeat ? 1 : 0), totals, turn: s.turn + 1, undo: s.undo.slice(0, -1), filter, answered: s.answered.slice(0, -1) }
+      })
   }, [onNotice])
 
   const close = useCallback(() => setSession(null), [])
