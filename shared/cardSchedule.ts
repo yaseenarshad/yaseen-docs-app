@@ -274,7 +274,11 @@ function idAge(id: string, letters: readonly string[] | undefined): number {
 /**
  * The cards due now (D11), in this order:
  *  1. UP NEXT (YAZ-4999 D3): each card whose line holds `next`, due or not, new or not, by ID number (the time of the
- *     mark is not in the file). They are outside the new-card limit, and are due now.
+ *     mark is not in the file). They are outside the new-card limit, and are due now. `upNextPerDay` (YAZ-5028; null:
+ *     all of them) caps how many go here each day, less `upNextTaken`: the marks an answer took off today (the line
+ *     keeps no trace of them, so the caller counts them). The others keep the mark (`DueCard.next`, the Up next
+ *     filter) and wait in their normal place: a reviewed one among 2 by its due date (now, when not due yet), a new
+ *     one among 3 by ID number, still outside the new-card limit.
  *  2. Each card with reviews whose due date is before local midnight tonight, or in its same-day steps (YAZ-5020),
  *     most overdue first.
  *  3. New cards, by ID number (`newOrder`: the oldest or the newest first, D2; an ID of other letters last), as many as
@@ -286,7 +290,7 @@ function idAge(id: string, letters: readonly string[] | undefined): number {
  * (a copy the sweep has not settled yet) is left out until it has its own ID: the Inbox never shows one card twice.
  * `letters`: the vault's ID letters (`hasLetters`), so an ID of other letters sorts last.
  */
-export function cardQueue(records: readonly CardPage[], s: ReviewSettings, now: number, folder = '', page?: string, letters?: readonly string[]): DueCard[] {
+export function cardQueue(records: readonly CardPage[], s: ReviewSettings, now: number, folder = '', page?: string, letters?: readonly string[], upNextTaken = 0): DueCard[] {
   if (!s.enabled) return []
   const next: DueCard[] = []
   const due: DueCard[] = []
@@ -325,7 +329,14 @@ export function cardQueue(records: readonly CardPage[], s: ReviewSettings, now: 
       return sign * (x - y)
     }
   next.sort(byAge(1))
+  // YAZ-5028: the day's Up next places; the others wait in their normal place, the new ones outside the new-card limit.
+  const front = s.upNextPerDay === null ? next.length : Math.max(0, s.upNextPerDay - upNextTaken)
+  const waiting = next.slice(front)
+  for (const card of waiting) if (!card.isNew) due.push(card)
   due.sort((a, b) => a.due - b.due || place(a, b))
-  fresh.sort(byAge(s.newOrder === 'newest' ? -1 : 1))
-  return [...next, ...due, ...(s.newPerDay === null ? fresh : fresh.slice(0, Math.max(0, s.newPerDay - startedToday)))]
+  const order = byAge(s.newOrder === 'newest' ? -1 : 1)
+  fresh.sort(order)
+  const newToday = s.newPerDay === null ? fresh : fresh.slice(0, Math.max(0, s.newPerDay - startedToday))
+  const waitingNew = waiting.filter((card) => card.isNew)
+  return [...next.slice(0, front), ...due, ...(waitingNew.length === 0 ? newToday : [...newToday, ...waitingNew].sort(order))]
 }

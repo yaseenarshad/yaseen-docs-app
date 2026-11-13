@@ -65,7 +65,7 @@ import type { PlaceVault } from '../sidebar/PlacePicker'
 import { IconRulesControl } from './IconRulesControl'
 import { MEMORY_SECTION } from './memorySection'
 import { NOTIFICATIONS_SECTION } from './notificationsSection'
-import { NEW_PER_DAY_FIELD, RETENTION_FIELD, ReviewNumberControl, WEIGHTS_FIELD, wholeField, type ReviewField } from './ReviewNumberControl'
+import { NEW_PER_DAY_FIELD, RETENTION_FIELD, ReviewNumberControl, UP_NEXT_PER_DAY_FIELD, WEIGHTS_FIELD, wholeField, type ReviewField } from './ReviewNumberControl'
 import { ReviewHowCardsComeBack } from './ReviewHowCardsComeBack'
 import { LinkPillsControl } from './LinkPillsControl'
 import type { LinkPillsState } from './useLinkPills'
@@ -1895,6 +1895,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           reviewField('retention', RETENTION_FIELD, 'Remember rate', 'How sure you want to be to remember a card when it comes back. Higher means shorter waits. 70 to 99.', '%'),
           reviewField('maxDays', wholeField('maxDays'), 'Longest wait', 'A card never waits longer than this.', 'days'),
           reviewField('newPerDay', NEW_PER_DAY_FIELD, 'New cards a day', 'How many new cards the Inbox shows each day. Empty means no limit.', 'cards'),
+          // YAZ-5028: beside New cards a day, the same box.
+          reviewField('upNextPerDay', UP_NEXT_PER_DAY_FIELD, 'Up next a day', 'How many Up next cards go first in the Inbox each day. The others wait in their normal place. Empty means no limit.', 'cards'),
           {
             // YAZ-4999 D2: by the card's ID number, which grows as cards are made.
             id: 'newOrder',

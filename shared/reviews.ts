@@ -26,6 +26,11 @@ export interface ReviewSettings {
   maxDays: number
   /** How many new cards the Inbox shows in one day; null for no limit (YAZ-4999 D1: the user emptied the box). */
   newPerDay: number | null
+  /**
+   * How many Up next cards jump to the front of the Inbox in one day; null for no limit (YAZ-5028, the default). The
+   * others keep the mark and wait in their normal place (`cardQueue`).
+   */
+  upNextPerDay: number | null
   /** Which new cards come first: the oldest (the lowest ID number) or the newest. */
   newOrder: NewCardOrder
   /** Spread due dates (FSRS fuzz): cards made together do not all come back on one day. */
@@ -45,6 +50,7 @@ export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = Object.freeze({
   retention: 0.9,
   maxDays: 365,
   newPerDay: 10,
+  upNextPerDay: null,
   newOrder: 'oldest',
   fuzz: true,
   weights: [...DEFAULT_CARD_WEIGHTS],
@@ -64,6 +70,8 @@ export function sanitizeReviewSettings(raw: unknown): ReviewSettings {
     maxDays: wholeIn(r.maxDays, 1, 36500) ? r.maxDays : d.maxDays,
     // `null` is written only when the user empties the box: no limit. A missing field (no file) keeps the default.
     newPerDay: r.newPerDay === null || wholeIn(r.newPerDay, 0, 9999) ? r.newPerDay : d.newPerDay,
+    // YAZ-5028: as newPerDay; a missing field is the default, no limit.
+    upNextPerDay: r.upNextPerDay === null || wholeIn(r.upNextPerDay, 0, 9999) ? r.upNextPerDay : d.upNextPerDay,
     newOrder: r.newOrder === 'oldest' || r.newOrder === 'newest' ? r.newOrder : d.newOrder,
     fuzz: typeof r.fuzz === 'boolean' ? r.fuzz : d.fuzz,
     weights: isWeights(r.weights) ? [...r.weights] : [...d.weights],
