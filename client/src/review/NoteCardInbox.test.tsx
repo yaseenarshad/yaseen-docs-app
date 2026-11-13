@@ -459,7 +459,9 @@ describe('the Inbox screen (YAZ-4962)', () => {
     const answers = column.querySelector('.note-card-inbox__actions')!
     expect(answers.querySelectorAll('.note-card-inbox__answer')).toHaveLength(2)
     expect(panel.contains(answers)).toBe(false)
-    expect([...column.children].map((c) => c.className)).toEqual(['note-card-inbox__above', 'note-card-inbox__panel', 'note-card-inbox__actions', 'note-card-inbox__last', 'explore__foot note-card-inbox__hints'])
+    expect([...column.children].map((c) => c.className)).toEqual(['note-card-inbox__above', 'note-card-inbox__panel', 'note-card-inbox__dock', 'explore__foot note-card-inbox__hints'])
+    // YAZ-5049 round 2: the buttons and their line in one band, which stays at the bottom of the view.
+    expect([...column.querySelector('.note-card-inbox__dock')!.children].map((c) => c.className)).toEqual(['note-card-inbox__actions', 'note-card-inbox__last'])
   })
 
   it('YAZ-5027: the state chip sits right above the card, outside its head and its frame; the head ends with "in" and the page name, for a new and a due card; the row stays with no card', () => {
@@ -1432,53 +1434,75 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
     expect(panel.querySelector('.note-card-inbox__head, .explore__head, .note-card-inbox__page, .note-card__id')).toBeNull()
   })
 
-  describe('YAZ-5049: Space brings the word it shows into view, as ⌘F does', () => {
+  describe('YAZ-5049: Space brings the word it shows into view (round 2: one long page, with room below the word)', () => {
     const box = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 100, width: 100, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
     let place: Record<string, [number, number]>
     let scrollTo: ReturnType<typeof vi.fn>
+    // The view 0–600; its sticky top row ends at 100, its sticky buttons start at 400: the room is 100–400.
     beforeEach(() => {
       place = {}
       vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-        if (this.classList.contains('note-card-inbox__body')) return box(100, 300)
+        if (this.classList.contains('note-card-inbox')) return box(0, 600)
+        if (this.classList.contains('note-card-inbox__top')) return box(0, 100)
+        if (this.classList.contains('note-card-inbox__dock')) return box(400, 480)
         const key = this.dataset.hidden !== undefined ? `word${this.dataset.hidden}` : this.dataset.side !== undefined ? `side${this.dataset.side}` : ''
         const [top, bottom] = place[key] ?? [150, 170]
         return box(top, bottom)
       })
     })
     afterEach(() => vi.restoreAllMocks())
-    const scroller = () => {
-      const body = el.querySelector<HTMLElement>('.note-card-inbox__body')!
+    /** The Inbox's own view scrolls (round 2): the card has no scroll bar of its own. */
+    const scroller = (scrollTop = 0) => {
+      const view = el.querySelector<HTMLElement>('.note-card-inbox')!
       scrollTo = vi.fn()
-      body.scrollTo = scrollTo as never
-      return body
+      view.scrollTo = scrollTo as never
+      view.scrollTop = scrollTop
+      return view
     }
 
-    it('a word on screen: no movement', () => {
+    it('a word in the top two thirds of the room: no movement', () => {
       mount(TWO_SIDES)
       scroller()
+      place.word0 = [270, 290]
       press(' ')
       expect(scrollTo).not.toHaveBeenCalled()
     })
 
-    it('a word below the card: the least scroll that shows it, never centred', () => {
+    it('a word in the lower third, or below the view: it comes up to a third of the way down (never the centre), so what comes next shows', () => {
       mount(TWO_SIDES)
       scroller()
-      place.word0 = [400, 420]
+      place.word0 = [320, 340]
       press(' ')
-      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 420 - 300 + 6 }))
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 320 - 200 }))
+      // Below the view: the same place.
+      mount(TWO_SIDES)
+      scroller()
+      place.word0 = [700, 720]
+      press(' ')
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 200 }))
     })
 
-    it('a new side below the card comes in by its top; a new card does not scroll', () => {
+    it('a word above the view (scrolled past): the least scroll that shows it, a small gap kept', () => {
+      mount(TWO_SIDES)
+      scroller(300)
+      place.word0 = [40, 60]
+      press(' ')
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 300 + 40 - 100 - 6 }))
+    })
+
+    it('a new side low in the view comes up by its top; a new card starts at its top, with no glide', () => {
       mount(TWO_SIDES)
       scroller()
       press(' ')
       place.side1 = [350, 900]
       press(' ')
-      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 350 - 100 - 6 }))
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 350 - 200 }))
       scrollTo.mockClear()
-      session = { ...sessionOf(TWO_SIDES), position: 4 }
+      const view = scroller(500)
+      session = { ...sessionOf(TWO_SIDES), position: 4, card: { ...sessionOf(TWO_SIDES).card!, id: 'WIKI-10' } }
       render()
       expect(scrollTo).not.toHaveBeenCalled()
+      expect(view.scrollTop).toBe(0)
     })
   })
 })

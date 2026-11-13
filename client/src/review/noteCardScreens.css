@@ -528,14 +528,16 @@
 .note-card-inbox[hidden] {
   display: none;
 }
-/* The card's panel, then under it, outside its frame (YAZ-5002, as in Mochi): the Space hint, the buttons, the keys. */
+/* The card's panel, then under it, outside its frame (YAZ-5002, as in Mochi): the Space hint, the buttons, the keys.
+   YAZ-5049 round 2 (Yaseen: "with mochi, they dont have a scroll bar, they move the entire thing up and down it becomes
+   a long page"): the column is as tall as its card — it does not shrink to the window — so the Inbox's own view
+   scrolls the whole card as one page, and the card has no scroll bar of its own. */
 .note-card-inbox__column {
-  flex: 0 1 auto;
+  flex: none;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   width: min(640px, 100%);
-  min-height: 0;
   margin-top: 5vh;
 }
 /* YAZ-5027: the row above the card holds the state chip, on the card's left edge. Its fixed height keeps the card in
@@ -686,10 +688,29 @@ body.note-card-inbox--sizing {
   font-variant-numeric: tabular-nums;
 }
 .note-card-inbox__body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
+  flex: none;
   padding: 24px 28px 28px;
+}
+/* The buttons and their line (YAZ-5049 round 2): at the bottom of the view while a long card scrolls under them, so
+   an answer is always one click away; under a short card, where they always were. The page colour, fading in at the
+   top, hides the card's text under them. */
+.note-card-inbox__dock {
+  position: sticky;
+  bottom: -16px;
+  z-index: 2;
+  padding-bottom: 16px;
+}
+/* Its page colour reaches over the card's shadow (into the view's side padding), and fades out at its ends, so the
+   card goes under it with no hard edge. */
+.note-card-inbox__dock::before {
+  content: '';
+  position: absolute;
+  inset: 0 -16px;
+  z-index: -1;
+  background: linear-gradient(to bottom, transparent, var(--bg-side) 22px);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 16px, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 16px, #000 calc(100% - 16px), transparent);
+  pointer-events: none;
 }
 /* The card: no frame of its own inside the panel, a little larger. */
 .note-card-inbox__card {

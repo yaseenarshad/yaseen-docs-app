@@ -15,8 +15,10 @@
  *    page (O too); a card file (YAZ-5037) adds nothing, its title is the link, and it and O open the card file's tab
  *    ("Open card"). Then the chip "Up next ×" for a card at the top of the Inbox (YAZ-4999 D3). A card of more than one
  *    side says "Side 1 of 2" on the row's right (YAZ-5048), and the key row's Space says "Next side" when the next Space shows a side.
- *  - SCROLL (YAZ-5049): the word a Space shows, or the side it adds, comes into view with ⌘F's least scroll
- *    (`editor/find/leastScroll.ts`): none while it shows, else just enough, gliding; never centred.
+ *  - SCROLL (YAZ-5049): the word a Space shows, or the side it adds, comes into view, gliding; never centred. Round 2
+ *    (as Mochi): the card is one long page — no scroll bar of its own; the Inbox's view scrolls, the top row stays on
+ *    top and the buttons at the bottom — and a word that reaches the view's lower third comes up to its upper third,
+ *    so what comes next shows (`inboxScroll.ts`).
  *  - TITLE ON THE FRONT: HIDE (YAZ-5030, the card line's `notitle`): the front is drawn without its title line (its
  *    first line, `cardWithoutTitle`), so the title is never a Space step, nor any hidden word in it. The head shows the
  *    ID only until the card is fully shown, then the title: which card it was. A title that holds a hidden word waits
@@ -90,7 +92,8 @@ import { KeyCaps } from '../keys/KeyCaps'
 import { AddMoreField } from './AddMoreField'
 import { useAnswerTimer } from './answerTimer'
 import { todayWork } from './reviewTime'
-import { revealInScroller } from '../editor/find/leastScroll'
+import { cssZoom } from '../lib/cssZoom'
+import { inboxRoom, readingScroll } from './inboxScroll'
 import '../explore/explore.css'
 
 export interface NoteCardInboxProps {
@@ -246,17 +249,35 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
   const nextSide = !done && text !== null && step.shown >= hiddenUpTo(step.sides)
 
   // YAZ-5049 (Yaseen: "kinda like we have in the app our CMD F search"): the word a Space shows, or the side it adds,
-  // comes into view with ⌘F's least scroll — none while it shows, else just enough, gliding; never centred. Only a
-  // step of the same card moves it: a new card is not scrolled. The card's render (`NoteCardBody`) runs first.
+  // comes into view, gliding; never centred. Only a step of the same card moves it. The card's render runs first.
+  // Round 2: the card is one long page, as in Mochi (no scroll bar of its own: the Inbox's view scrolls, the top row
+  // and the buttons stay), and the rule keeps room below the word, to see what comes next (`inboxScroll.ts`). A new
+  // card starts at its top, at once.
   const bodyRef = useRef<HTMLDivElement>(null)
   const lastStep = useRef<Step | null>(null)
   useEffect(() => {
     const before = lastStep.current
     lastStep.current = { key: step.key, sides: step.sides, shown: step.shown }
     const body = bodyRef.current
-    if (before === null || before.key !== step.key || !shown || body === null) return
-    const target = step.sides > before.sides ? body.querySelector(`.note-card__side[data-side="${step.sides - 1}"]`) : step.shown > before.shown ? body.querySelector(`[data-hidden="${step.shown - 1}"]`) : null
-    if (target !== null) revealInScroller(target, body, { smooth: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches !== true })
+    const view = rootRef.current
+    if (!shown || body === null || view === null) return
+    if (before !== null && before.key !== step.key) {
+      view.scrollTop = 0
+      return
+    }
+    if (before === null) return
+    const side = step.sides > before.sides ? body.querySelector(`.note-card__side[data-side="${step.sides - 1}"]`) : null
+    const target = side ?? (step.shown > before.shown ? body.querySelector(`[data-hidden="${step.shown - 1}"]`) : null)
+    if (target === null) return
+    const r = target.getBoundingClientRect()
+    // A side by its top: its first line, the line between the sides above it.
+    const thing = side === null ? { start: r.top, end: r.bottom } : { start: r.top, end: r.top }
+    const dy = readingScroll(thing, inboxRoom(view))
+    if (dy === 0) return
+    const top = view.scrollTop + dy / cssZoom(view)
+    const smooth = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches !== true
+    if (typeof view.scrollTo === 'function') view.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' })
+    else view.scrollTop = top
   }, [step.key, step.sides, step.shown, shown])
 
   // The buttons show with the card (YAZ-5010): their reviews are fixed now, so the hover and the write agree (D13). Again after a delete re-reads the card.
@@ -484,6 +505,8 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
         </div>
         {/* Under the card, outside its frame, as in Mochi (YAZ-5002): the answer buttons, then the keys. No "Press Space"
             line between them (YAZ-5021): the key row at the bottom already says Space. */}
+        {/* YAZ-5049 round 2: the buttons and their line stay at the bottom of the view while a long card scrolls under them. */}
+        <div className="note-card-inbox__dock">
         {card !== null && (
           <div className="note-card-inbox__actions">
             <div className="note-card-inbox__moves">
@@ -570,6 +593,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
             </>
             )
           )}
+        </div>
         </div>
         <NoteCardInboxHints hints={hints} />
       </div>

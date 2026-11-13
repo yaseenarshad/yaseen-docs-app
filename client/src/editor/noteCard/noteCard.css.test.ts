@@ -170,3 +170,17 @@ it('YAZ-5053 round 2: Box never reaches into the next line, at any line spacing 
   const edit = rules(cardCss, "[data-shown-hidden-words='box'] .note-card .note-card__editor .note-card__cloze")[0]!
   expect(edit.body).toMatch(/0 50% \/ 100%\s+min\(100%, calc\(var\(--nc-box-line\) - var\(--nc-box-em\) \* 0\.2\)\) no-repeat/)
 })
+
+it('YAZ-5049 round 2: the Inbox card is one long page, as Mochi — no scroll bar of its own (the Inbox view scrolls), the top row stays on top, the buttons stay at the bottom', () => {
+  const screens = read('../../review/noteCardScreens.css')
+  const body = rules(screens, '.note-card-inbox__body').find((r) => r.selector === '.note-card-inbox__body')!
+  expect(body.body).not.toMatch(/overflow/)
+  const column = rules(screens, '.note-card-inbox__column').find((r) => r.selector === '.note-card-inbox__column')!
+  expect(column.body).toMatch(/flex:\s*none/)
+  expect(column.body).not.toMatch(/min-height:\s*0/)
+  expect(rules(screens, '.note-card-inbox').find((r) => r.selector === '.note-card-inbox')!.body).toMatch(/overflow:\s*auto/)
+  expect(rules(screens, '.note-card-inbox__top').find((r) => r.selector === '.note-card-inbox__top')!.body).toMatch(/position:\s*sticky;\s*top:\s*0/)
+  const dock = rules(screens, '.note-card-inbox__dock').find((r) => r.selector === '.note-card-inbox__dock')!
+  expect(dock.body).toMatch(/position:\s*sticky/)
+  expect(dock.body).toMatch(/bottom:/)
+})

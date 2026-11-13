@@ -1,5 +1,5 @@
 /**
- * ⌘F's scroll rule, in ONE place (YAZ-3746 13BA, `views/view/viewFind.ts`; YAZ-5049, the Inbox's hidden words): a
+ * ⌘F's scroll rule, in ONE place (YAZ-3746 13BA, `views/view/viewFind.ts`; the Inbox keeps room below a word instead, `review/inboxScroll.ts`, YAZ-5049 round 2): a
  * thing that shows whole does not move; one that does not comes in with the LEAST scroll, at the nearest edge, a small
  * gap kept; never centred. A thing taller than the room comes in by its top.
  */
