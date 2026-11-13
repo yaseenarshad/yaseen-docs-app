@@ -33,6 +33,7 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { fitFlyout, fitMenu } from '../lib/fitMenu'
 import { SWITCH_MS } from '../sidebar/ContextMenu'
 import { bulletDotTarget, handleTargetPos, isOwnHandleGrab, isTaskBox, type HandleTarget } from './blockHandleTarget'
 
@@ -552,10 +553,10 @@ function renderParent(row: MenuRow, menu: HTMLElement, close: () => void, refres
       })
       flyout.style.visibility = 'hidden'
       wrap.appendChild(flyout)
-      const r = flyout.getBoundingClientRect()
-      const p = button.getBoundingClientRect()
-      flyout.style.left = `${p.right + r.width > window.innerWidth ? Math.max(0, p.left - r.width) : p.right}px`
-      flyout.style.top = `${Math.max(0, Math.min(p.top, window.innerHeight - r.height))}px`
+      // YAZ-4970: a flyout taller than the window fits it and scrolls, as the right-click menu's (`lib/fitMenu.ts`).
+      const at = fitFlyout(flyout, button.getBoundingClientRect())
+      flyout.style.left = `${at.left}px`
+      flyout.style.top = `${at.top}px`
       flyout.style.visibility = ''
       button.setAttribute('aria-expanded', 'true')
     }
@@ -676,6 +677,18 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
           let openTarget: HandleTarget | null = null
           // True while a `stay` strip's own change runs: that doc change keeps the menu.
           let holding = false
+          // Where the open menu was opened (screen px): a menu drawn again is fitted from there.
+          let openAt = { x: 0, y: 0 }
+          const place = (menu: HTMLElement) => {
+            const at = fitMenu(menu, openAt.x, openAt.y)
+            menu.style.left = `${at.left}px`
+            menu.style.top = `${at.top}px`
+          }
+          // A scroll closes the menu, but not the menu's own scroll (YAZ-4970): a menu taller than the window scrolls.
+          const onScroll = (e: Event) => {
+            if (popup !== null && e.target instanceof Node && popup.contains(e.target)) return
+            close()
+          }
 
           const close = () => {
             // Something in the menu had the focus: it goes back to the editor, not to the page.
@@ -716,9 +729,10 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
             close()
             openTarget = target
             popup = renderMenu(view.dom.parentElement, items, close, refresh)
-            const r = popup.getBoundingClientRect()
-            popup.style.left = `${Math.max(0, Math.min(e.clientX, window.innerWidth - r.width))}px`
-            popup.style.top = `${Math.max(0, Math.min(e.clientY, window.innerHeight - r.height))}px`
+            // YAZ-4970: a menu taller than the window was only moved to the top, its last rows out of reach; now it fits
+            // the window and scrolls (`lib/fitMenu.ts`, the right-click menu's rule).
+            openAt = { x: e.clientX, y: e.clientY }
+            place(popup)
           }
           // A `stay` click (a strip, a flyout's child, a picker's choice): run it, then draw the menu again in its place
           // from the new state, the flyout or picker panel that was open opened again (YAZ-4774 demo).
@@ -739,6 +753,8 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
             popup = items.length === 0 ? null : renderMenu(view.dom.parentElement, items, close, refresh)
             if (popup === null) return
             Object.assign(popup.style, { left, top })
+            // Drawn again, it may be taller or shorter (a picker's row opened): it fits the window again.
+            place(popup)
             if (flyout !== null) [...popup.querySelectorAll<HTMLButtonElement>('.ctx-menu__item--parent')].find((b) => b.textContent === flyout)?.click()
             if (picker !== null)
               [...popup.querySelectorAll('.block-menu-picker')].find((p) => p.querySelector('.block-menu-picker__label')?.textContent === picker)?.querySelector<HTMLButtonElement>('.block-menu-picker__value')?.click()
@@ -762,7 +778,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
           document.addEventListener('mousedown', onMouseDown, true)
           document.addEventListener('mouseup', onMouseUp, true)
           document.addEventListener('contextmenu', onContextMenu, true)
-          document.addEventListener('scroll', close, true)
+          document.addEventListener('scroll', onScroll, true)
           window.addEventListener('keydown', onKeyDown)
           document.addEventListener('keydown', onTab, true)
           window.addEventListener('blur', close)
@@ -776,7 +792,7 @@ export const createBlockHandleMenu = (rows: RowProvider) =>
               document.removeEventListener('mousedown', onMouseDown, true)
               document.removeEventListener('mouseup', onMouseUp, true)
               document.removeEventListener('contextmenu', onContextMenu, true)
-              document.removeEventListener('scroll', close, true)
+              document.removeEventListener('scroll', onScroll, true)
               window.removeEventListener('keydown', onKeyDown)
               document.removeEventListener('keydown', onTab, true)
               window.removeEventListener('blur', close)

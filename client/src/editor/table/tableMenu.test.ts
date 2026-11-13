@@ -10,9 +10,10 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import type { MenuAction, MenuItem, MenuSection } from '../../sidebar/menuSections'
+import type { MenuAction, MenuItem, MenuParent, MenuSection } from '../../sidebar/menuSections'
 import { getMarkdownForSave } from '../createCrepe'
 import { noteMenuSections } from '../noteMenu'
+import { handleKind } from './tableMenu'
 import { cellDOM, cellPos, mountNote as mount, unmountAll } from './tableTestKit'
 import { setStickyHeaderSetting } from './timeFormatSetting'
 
@@ -47,23 +48,65 @@ const tableAttrs = (view: EditorView) => {
 }
 
 describe('the Table part', () => {
-  it('shows after the paste rows when the right-click is in a cell, in six groups (YAZ-3820, YAZ-3818 D8, Merge cells YAZ-4792)', async () => {
+  /** Each group's top-level labels; a parent with its rows, " | " between its groups. */
+  const shape = (sections: MenuSection[]) =>
+    sections.filter((s) => s.length > 0).map((s) => s.map((item) => (item.children === undefined || item.panel !== undefined ? item.label : `${item.label} [${item.children.map((g) => g.map((c) => c.label).join(', ')).join(' | ')}]`)))
+  const CLIPBOARD = ['Cut', 'Copy', 'Paste', 'Copy as [Plain text, Markdown | Without folded lines]', 'Paste as [Plain text, Markdown | Cells only]']
+  const FREEZE = 'Freeze [Freeze up to this row, Freeze up to this column | Unfreeze rows, Unfreeze columns]'
+
+  it('YAZ-4970: a right-click on cells: the clipboard in one group, then Insert ›, Duplicate ›, Delete ›, the cell note, Format ›, the row state, Freeze ›', async () => {
     const { view } = await mount(TABLE)
-    const sections = sectionsAt(view, 1, 0).filter((s) => s.length > 0)
-    const labels = sections.map((s) => s.map((item) => (item.children === undefined ? item.label : `${item.label} [${item.children.map((g) => g.map((c) => c.label).join(', ')).join(' | ')}]`)))
-    const colours = 'Red, Orange, Yellow, Green, Teal, Blue, Purple, Pink, Grey, Brown'
-    expect(labels.slice(-6)).toEqual([
+    expect(shape(sectionsAt(view, 1, 0))).toEqual([
+      CLIPBOARD,
+      ['Insert [Insert row above, Insert row below | Insert column left, Insert column right]', 'Duplicate [Duplicate row, Duplicate column]', 'Delete [Delete row, Delete column]', 'Clear cells', 'Merge cells'],
       ['Add cell note', 'Move to cell note'],
-      ['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Duplicate row', 'Duplicate column'],
-      ['Delete row', 'Delete column', 'Clear cells', 'Merge cells'],
-      ['Align [Left, Center, Right | Top, Middle, Bottom]', `Fill [No fill | ${colours} | Custom colour…]`, `Text colour [Default colour | ${colours} | Custom colour…]`, "Text in this column [Table's choice, Wrap, Clip]"],
-      ['Sort A to Z', 'Sort Z to A', 'Make subheader row'],
-      ['Freeze up to this row', 'Freeze up to this column', 'Unfreeze rows', 'Unfreeze columns'],
+      ['Format', 'Sort [Sort A to Z, Sort Z to A]'],
+      ['Make subheader row'],
+      [FREEZE],
     ])
-    expect(labels.at(-7)?.[0]).toBe('Paste')
+    // Format ›: the six-dot menu's tabbed panel, its rows the old Align ›, Fill ›, Text colour › and Text in this column ›.
+    const format = sectionsAt(view, 1, 0).flat().find((item) => item.id === 'table-format') as MenuParent
+    const host = document.createElement('div')
+    format.panel!(host, () => undefined)
+    expect([...host.querySelectorAll('.fill-target > .fill-target__opt')].map((b) => b.textContent)).toEqual(['Align', 'Fill', 'Text colour', 'Wrap'])
+    expect(format.children.flat().map((item) => item.id)).toEqual(expect.arrayContaining(['table-align-left', 'table-fill-teal', 'table-color-red', 'table-text-clip']))
     // The palettes' swatches, as the cell toolbar's.
     const teal = row(view, 1, 0, 'table-fill-teal').icon as { props: { style: { background: string } } }
     expect(teal.props.style.background).toBe('var(--table-fill-solid-teal)')
+  })
+
+  it('YAZ-4970: a row handle\'s menu holds row actions only; a column handle\'s, column actions only', async () => {
+    const { view } = await mount(TABLE)
+    view.dispatch(view.state.tr.setSelection(CellSelection.rowSelection(view.state.doc.resolve(cellPos(view, 1, 0)))))
+    expect(handleKind(view.state.selection)).toBe('row')
+    expect(shape(noteMenuSections(view, null, vi.fn(), inCell(view, 1, 0), false, 'row'))).toEqual([
+      CLIPBOARD,
+      ['Insert row above', 'Insert row below', 'Duplicate row'],
+      ['Delete row', 'Clear cells', 'Merge cells'],
+      ['Format'],
+      ['Make subheader row'],
+      [FREEZE],
+    ])
+    view.dispatch(view.state.tr.setSelection(CellSelection.colSelection(view.state.doc.resolve(cellPos(view, 0, 1)))))
+    expect(handleKind(view.state.selection)).toBe('column')
+    expect(shape(noteMenuSections(view, null, vi.fn(), inCell(view, 0, 1), false, 'column'))).toEqual([
+      CLIPBOARD,
+      ['Insert column left', 'Insert column right', 'Duplicate column'],
+      ['Delete column', 'Clear cells', 'Merge cells'],
+      ['Format', 'Sort [Sort A to Z, Sort Z to A]', 'Header row style'],
+      [FREEZE],
+    ])
+    // Selected cells are not words: no Add link….
+    expect(all(noteMenuSections(view, null, vi.fn(), inCell(view, 0, 1), false, 'column')).map((item) => item.id)).not.toContain('add-link')
+  })
+
+  it('YAZ-4970: "Insert 3 columns left" is in Insert › of a 3-column cell selection, and inserts 3', async () => {
+    const { view } = await mount('| h1 | h2 | h3 | h4 |\n| -- | -- | -- | -- |\n| a | b | c | d |\n| e | f | g | h |\n')
+    view.dispatch(view.state.tr.setSelection(CellSelection.create(view.state.doc, cellPos(view, 1, 1), cellPos(view, 2, 3))))
+    const insert = sectionsAt(view, 1, 1).flat().find((item) => item.id === 'table-insert') as MenuParent
+    expect(insert.children.map((g) => g.map((c) => c.label))).toEqual([['Insert 2 rows above', 'Insert 2 rows below'], ['Insert 3 columns left', 'Insert 3 columns right']])
+    insert.children[1]![0]!.onSelect()
+    expect(texts(view)[0]).toEqual(['h1', '', '', '', 'h2', 'h3', 'h4'])
   })
 
   it('is absent outside a table and in a read-only note', async () => {
@@ -366,9 +409,12 @@ describe('freeze (S3)', () => {
 const WIDE = '| h1 | h2 | h3 | h4 |\n| -- | -- | -- | -- |\n| a | b | c | d |\n| e | f | g | h |\n| i | j | k | l |\n'
 const selectCells = (view: EditorView, from: [number, number], to: [number, number]) =>
   view.dispatch(view.state.tr.setSelection(CellSelection.create(view.state.doc, cellPos(view, ...from), cellPos(view, ...to))))
-/** The Table part's insert, delete, clear and fill rows: not its cell note rows. */
+/** The Table part's insert, delete, clear and fill rows: not its cell note rows. Insert ›, Duplicate ›, Delete › and Sort › by their rows (YAZ-4970). */
 const labelsOf = (view: EditorView, r: number, c: number) =>
-  sectionsAt(view, r, c).flat().filter((item) => item.id.startsWith('table-') && !item.id.includes('freeze') && !item.id.includes('note')).map((item) => item.label)
+  sectionsAt(view, r, c)
+    .flat()
+    .filter((item) => item.id.startsWith('table-') && !item.id.includes('freeze') && !item.id.includes('note'))
+    .flatMap((item) => (item.children === undefined || item.id === 'table-format' ? [item.label] : item.children.flat().map((child) => child.label)))
 
 describe('whole rows and whole columns count what is selected, as any cells (the YAZ-4163 demo)', () => {
   const selectRows = (view: EditorView, from: number, to: number) =>
@@ -377,7 +423,7 @@ describe('whole rows and whole columns count what is selected, as any cells (the
   it('rows 2 to 3 of a 4-column table: 2 rows and 4 columns; Insert 4 columns right adds 4', async () => {
     const { view } = await mount(WIDE)
     selectRows(view, 1, 2)
-    expect(labelsOf(view, 1, 1)).toEqual(['Insert 2 rows above', 'Insert 2 rows below', 'Insert 4 columns left', 'Insert 4 columns right', 'Duplicate 2 rows', 'Duplicate 4 columns', 'Delete 2 rows', 'Delete 4 columns', 'Clear cells', 'Merge cells', 'Align', 'Fill', 'Text colour', 'Text in these columns', 'Sort A to Z', 'Sort Z to A', 'Fold 2 rows', 'Make 2 subheader rows'])
+    expect(labelsOf(view, 1, 1)).toEqual(['Insert 2 rows above', 'Insert 2 rows below', 'Insert 4 columns left', 'Insert 4 columns right', 'Duplicate 2 rows', 'Duplicate 4 columns', 'Delete 2 rows', 'Delete 4 columns', 'Clear cells', 'Merge cells', 'Format', 'Sort A to Z', 'Sort Z to A', 'Fold 2 rows', 'Make 2 subheader rows'])
     row(view, 1, 1, 'table-insert-col-right').onSelect()
     expect(texts(view)[0]).toEqual(['h1', 'h2', 'h3', 'h4', '', '', '', ''])
   })
@@ -386,12 +432,12 @@ describe('whole rows and whole columns count what is selected, as any cells (the
 describe('the labels count the selection (YAZ-3801)', () => {
   it('one cell: the labels as before', async () => {
     const { view } = await mount(WIDE)
-    expect(labelsOf(view, 1, 0)).toEqual(['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Duplicate row', 'Duplicate column', 'Delete row', 'Delete column', 'Clear cells', 'Merge cells', 'Align', 'Fill', 'Text colour', 'Text in this column', 'Sort A to Z', 'Sort Z to A', 'Make subheader row'])
+    expect(labelsOf(view, 1, 0)).toEqual(['Insert row above', 'Insert row below', 'Insert column left', 'Insert column right', 'Duplicate row', 'Duplicate column', 'Delete row', 'Delete column', 'Clear cells', 'Merge cells', 'Format', 'Sort A to Z', 'Sort Z to A', 'Make subheader row'])
   })
 
   it.each<[[number, number], [number, number], string[]]>([
-    [[1, 0], [2, 1], ['Insert 2 rows above', 'Insert 2 rows below', 'Insert 2 columns left', 'Insert 2 columns right', 'Duplicate 2 rows', 'Duplicate 2 columns', 'Delete 2 rows', 'Delete 2 columns', 'Clear cells', 'Merge cells', 'Align', 'Fill', 'Text colour', 'Text in these columns', 'Sort A to Z', 'Sort Z to A', 'Fold 2 rows', 'Make 2 subheader rows']],
-    [[1, 1], [1, 3], ['Insert row above', 'Insert row below', 'Insert 3 columns left', 'Insert 3 columns right', 'Duplicate row', 'Duplicate 3 columns', 'Delete row', 'Delete 3 columns', 'Clear cells', 'Merge cells', 'Align', 'Fill', 'Text colour', 'Text in these columns', 'Sort A to Z', 'Sort Z to A', 'Make subheader row']],
+    [[1, 0], [2, 1], ['Insert 2 rows above', 'Insert 2 rows below', 'Insert 2 columns left', 'Insert 2 columns right', 'Duplicate 2 rows', 'Duplicate 2 columns', 'Delete 2 rows', 'Delete 2 columns', 'Clear cells', 'Merge cells', 'Format', 'Sort A to Z', 'Sort Z to A', 'Fold 2 rows', 'Make 2 subheader rows']],
+    [[1, 1], [1, 3], ['Insert row above', 'Insert row below', 'Insert 3 columns left', 'Insert 3 columns right', 'Duplicate row', 'Duplicate 3 columns', 'Delete row', 'Delete 3 columns', 'Clear cells', 'Merge cells', 'Format', 'Sort A to Z', 'Sort Z to A', 'Make subheader row']],
   ])('cells %j to %j', async (from, to, labels) => {
     const { view } = await mount(WIDE)
     selectCells(view, from, to)
@@ -472,7 +518,12 @@ describe('Text in this column › (YAZ-4900): the target columns\' own Wrap or C
     expect(row(view, 2, 0, 'table-text-table').radio?.on).toBe(true)
     // Mixed columns light no pick, and the label counts them.
     selectCells(view, [1, 0], [1, 1])
-    expect(sectionsAt(view, 1, 0).flat().find((item) => item.id === 'table-text')?.label).toBe('Text in these columns')
+    // YAZ-4970: the Format panel's Wrap tab names the columns.
+    const format = sectionsAt(view, 1, 0).flat().find((item) => item.id === 'table-format') as MenuParent
+    const host = document.createElement('div')
+    format.panel!(host, () => undefined)
+    ;[...host.querySelectorAll('button')].find((b) => b.textContent === 'Wrap')!.click()
+    expect(host.querySelector('.ctx-menu__heading')?.textContent).toBe('Text in these columns')
     expect([row(view, 1, 0, 'table-text-table'), row(view, 1, 0, 'table-text-clip')].map((r) => r.radio?.on)).toEqual([false, false])
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, inCell(view, 1, 1))))
     row(view, 1, 1, 'table-text-table').onSelect()

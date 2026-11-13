@@ -118,8 +118,9 @@ describe('the menus, one undo step each', () => {
   it('Align ▸ has a second group Top · Middle · Bottom; a column handle\'s pick sets the whole column', async () => {
     const { crepe, view } = await mountNote(TABLE)
     const before = getMarkdownForSave(crepe)
-    const align = noteMenuSections(view, null, vi.fn(), cellPos(view, 1, 0) + 2).flat().find((item) => item.id === 'table-align')!
-    expect(align.children!.map((group) => group.map((item) => item.label))).toEqual([['Left', 'Center', 'Right'], ['Top', 'Middle', 'Bottom']])
+    // YAZ-4970: Align is Format ›'s first tab; its rows lead Format's.
+    const format = noteMenuSections(view, null, vi.fn(), cellPos(view, 1, 0) + 2).flat().find((item) => item.id === 'table-format')!
+    expect(format.children!.slice(0, 2).map((group) => group.map((item) => item.label))).toEqual([['Left', 'Center', 'Right'], ['Top', 'Middle', 'Bottom']])
     view.dispatch(view.state.tr.setSelection(CellSelection.colSelection(view.state.doc.resolve(cellPos(view, 0, 1)))))
     menuItem(view, 0, 1, 'table-align-middle').onSelect()
     expect(valigns(view)).toEqual([[null, 'middle'], [null, 'middle'], [null, 'middle']])

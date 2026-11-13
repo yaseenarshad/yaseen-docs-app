@@ -221,11 +221,12 @@ describe('the right-click (YAZ-3653)', () => {
     pointAt(view, cellPos(view, 0, 1) + 2)
     await rightClick(view.dom.querySelectorAll('th')[1]!)
     const fromCell = labels()
-    expect(fromCell).toContain('Sort A to Z')
+    expect(fromCell).toEqual(expect.arrayContaining(['Insert', 'Duplicate', 'Delete', 'Format', 'Sort']))
     act(() => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     expect(document.querySelector('.ctx-menu')).toBeNull()
     act(() => void view.dom.dispatchEvent(new CustomEvent(TABLE_HANDLE_MENU, { bubbles: true, detail: { x: 70, y: 80, pos: cellPos(view, 0, 1) } })))
-    expect(labels()).toEqual(fromCell)
+    // YAZ-4970: the handle's menu is the column's: its column actions at the top level, no row actions.
+    expect(labels()).toEqual(['Cut', 'Copy', 'Paste', 'Copy as', 'Paste as', 'Insert column left', 'Insert column right', 'Duplicate column', 'Delete column', 'Clear cells', 'Merge cells', 'Format', 'Sort', 'Header row style', 'Freeze'])
     const menu = document.querySelector<HTMLElement>('.ctx-menu')!
     expect([menu.style.left, menu.style.top]).toEqual(['70px', '80px'])
     // An item acts on the cells the handle selected: the whole column goes.
@@ -249,7 +250,7 @@ describe('the right-click (YAZ-3653)', () => {
     const handle = view.dom.querySelector<HTMLElement>('.milkdown-table-block [data-role="col-drag-handle"]')!
     act(() => void handle.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 7, clientY: 9 })))
     const labels = [...document.querySelectorAll('.ctx-menu [role=menuitem]')].map((b) => b.textContent)
-    expect(labels).toContain('Sort A to Z')
+    expect(labels).toContain('Sort')
     expect(labels).toContain('Delete column')
     expect((view.state.selection as CellSelection).isColSelection()).toBe(true)
   })
