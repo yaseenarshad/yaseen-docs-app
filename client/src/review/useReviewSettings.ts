@@ -104,3 +104,9 @@ export function useReviewSettings(root: string | null, onNotice: (text: string, 
 
   return { settings, save }
 }
+
+/**
+ * Is the vault at `root`'s Review on (`review.json` `enabled`, Settings › Review)? Every card feature — New card, the
+ * Cards type in search, the Card type, the Inbox — shows only while it is (YAZ-5037). A card file still opens without it.
+ */
+export const useReviewOn = (root: string | null | undefined): boolean => useVaultReviewSettings(root)?.enabled === true
