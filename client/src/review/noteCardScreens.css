@@ -210,6 +210,7 @@
   margin-top: 5vh;
 }
 .note-card-inbox__panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -223,6 +224,47 @@
     0 1px 2px rgba(0, 0, 0, 0.04),
     0 10px 30px rgba(0, 0, 0, 0.1);
   overflow: hidden;
+}
+/* The card's edges (YAZ-5019): a thin strip on each side drags the width; a faint line shows on hover and while it drags. */
+.note-card-inbox__edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 8px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.note-card-inbox__edge[data-side='left'] {
+  left: 0;
+}
+.note-card-inbox__edge[data-side='right'] {
+  right: 0;
+}
+.note-card-inbox__edge::after {
+  content: '';
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+.note-card-inbox__edge[data-side='left']::after {
+  left: 2px;
+}
+.note-card-inbox__edge[data-side='right']::after {
+  right: 2px;
+}
+.note-card-inbox__edge:hover::after,
+.note-card-inbox--sizing .note-card-inbox__edge::after {
+  opacity: 0.5;
+}
+body.note-card-inbox--sizing {
+  cursor: ew-resize;
+  user-select: none;
 }
 /* YAZ-5018 polish: the head is part of the card, as in Mochi: no rule under it, the chip at its top left. */
 .note-card-inbox__head {

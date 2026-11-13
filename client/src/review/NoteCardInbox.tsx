@@ -28,6 +28,8 @@
  *    small row of icons, each with the app's hover box (its name and key): Undo last review (⌘Z), Turn review off,
  *    Put at top of Inbox / Remove from top of Inbox, Open card. They are the hook's own actions.
  *  - The hint row shows a key only while it does something; the digits are on the buttons.
+ *  - THE WIDTH (YAZ-5019): the card's left or right edge drags it wider or narrower, centred (`inboxCardWidth.ts`): at
+ *    least 420 px, at most the tab's width less its margins; the width stays for the app's run, in memory only.
  *  - No Reviews section (YAZ-5000: it lives only under the card in the page, and in the card window). Nothing left: "Inbox complete." for the vault; for one page or
  *    folder "This page is done." and, quiet, "21 more in the Inbox", which starts the vault's review.
  */
@@ -42,6 +44,7 @@ import { noteCardInboxHints, noteCardInboxKey } from './noteCardInboxKeys'
 import { HoverTip } from '../components/HoverTip'
 import { CARD_FILTERS, NoteCardInboxBar } from './NoteCardInboxBar'
 import { NoteCardStateChip, answerIcon } from './noteCardInboxChip'
+import { useInboxCardWidth } from './inboxCardWidth'
 import '../explore/explore.css'
 
 export interface NoteCardInboxProps {
@@ -105,6 +108,8 @@ interface Step {
 
 export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, openPage, openCard, openInTab, openLinkIn, openLayer, onNotice }: NoteCardInboxProps) {
   const rootRef = useRef<HTMLDivElement>(null)
+  const columnRef = useRef<HTMLDivElement>(null)
+  const { width, startDrag } = useInboxCardWidth(columnRef, rootRef)
   const card = session.card
   const text = card?.page?.text ?? null
   const cardKey = card === null ? null : `${session.position}\n${card.path}\n${card.id}`
@@ -211,8 +216,11 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
   return (
     <div ref={rootRef} className="note-card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`}>
       <NoteCardInboxBar session={session} setFilter={review.setFilter} />
-      <div className="note-card-inbox__column">
+      <div ref={columnRef} className="note-card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
         <div className="note-card-inbox__panel">
+          {/* The card's edges (YAZ-5019): a drag of either sizes the card, centred. */}
+          <div className="note-card-inbox__edge" data-side="left" role="separator" aria-orientation="vertical" aria-label="Card width" onPointerDown={startDrag(-1)} />
+          <div className="note-card-inbox__edge" data-side="right" role="separator" aria-orientation="vertical" aria-label="Card width" onPointerDown={startDrag(1)} />
           <div className="explore__head note-card-inbox__head">
             {/* YAZ-5012: the page first, on the left (O opens it), then the ID in brackets, small and grey (a click copies it);
                 no card title: the card is right below (say each thing once). A long page name gives way before the ID. */}

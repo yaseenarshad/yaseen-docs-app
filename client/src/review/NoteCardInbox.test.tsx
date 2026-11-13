@@ -12,6 +12,7 @@ import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { NoteCardInbox, type NoteCardInboxProps } from './NoteCardInbox'
 import { noteCardStateText } from './noteCardInboxChip'
+import { CARD_MIN_WIDTH, clampCardWidth, inboxCardWidth, setInboxCardWidth } from './inboxCardWidth'
 import { useReadOnlyVault } from '../vault/readOnlyVault'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -508,5 +509,52 @@ describe('the Inbox screen (YAZ-4962)', () => {
     render()
     const chip = el.querySelector('.note-card-inbox__state')!
     expect([chip.textContent, chip.getAttribute('data-state')]).toEqual(['Due today', 'due'])
+  })
+
+  it('YAZ-5019: the width clamps between 420 px and the room the tab leaves', () => {
+    expect(clampCardWidth(300, 1000)).toBe(CARD_MIN_WIDTH)
+    expect(clampCardWidth(700.4, 1000)).toBe(700)
+    expect(clampCardWidth(1400, 1000)).toBe(1000)
+    // A tab narrower than the minimum: the minimum (CSS then caps the card at the tab's width).
+    expect(clampCardWidth(800, 380)).toBe(CARD_MIN_WIDTH)
+  })
+
+  it('YAZ-5019: a drag of the right edge widens the card by twice the move (it stays centred), the left edge the same the other way; clamped to the tab; the width stays across a card change and the Inbox closed and opened again', async () => {
+    setInboxCardWidth(null)
+    mount(TWO_SIDES)
+    const column = () => el.querySelector<HTMLElement>('.note-card-inbox__column')!
+    expect(column().style.width).toBe('')
+    const inbox = el.querySelector<HTMLElement>('.note-card-inbox')!
+    Object.defineProperty(inbox, 'clientWidth', { configurable: true, value: 1032 }) // 1000 px of room
+    column().getBoundingClientRect = () => ({ width: 640 }) as DOMRect
+    const drag = (side: 'left' | 'right', from: number, to: number) => {
+      const edge = el.querySelector<HTMLElement>(`.note-card-inbox__edge[data-side="${side}"]`)!
+      expect(edge.getAttribute('role')).toBe('separator')
+      act(() => void edge.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: from, button: 0 })))
+      expect(document.body.classList.contains('note-card-inbox--sizing')).toBe(true)
+      act(() => void window.dispatchEvent(new MouseEvent('pointermove', { clientX: to })))
+      act(() => void window.dispatchEvent(new MouseEvent('pointerup', { clientX: to })))
+      expect(document.body.classList.contains('note-card-inbox--sizing')).toBe(false)
+    }
+    drag('right', 900, 950)
+    expect(inboxCardWidth()).toBe(740)
+    expect(column().style.width).toBe('min(740px, 100%)')
+    column().getBoundingClientRect = () => ({ width: 740 }) as DOMRect
+    drag('left', 300, 400) // the left edge in: narrower by 200
+    expect(inboxCardWidth()).toBe(540)
+    drag('left', 300, 0) // far out: the room
+    expect(inboxCardWidth()).toBe(1000)
+    drag('right', 900, 0) // far in: the minimum
+    expect(inboxCardWidth()).toBe(CARD_MIN_WIDTH)
+    // Another card: the same width.
+    session = { ...session, position: 4, card: { ...session.card!, id: 'WIKI-10', page: { ...session.card!.page!, id: 'WIKI-10' } } }
+    render()
+    expect(column().style.width).toBe(`min(${CARD_MIN_WIDTH}px, 100%)`)
+    // The Inbox tab closed and opened again (the app still runs): the same width.
+    act(() => root?.unmount())
+    el.remove()
+    mount(TWO_SIDES)
+    expect(column().style.width).toBe(`min(${CARD_MIN_WIDTH}px, 100%)`)
+    setInboxCardWidth(null)
   })
 })
