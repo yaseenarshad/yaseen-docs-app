@@ -1,10 +1,13 @@
 /**
  * The Inbox's top row (YAZ-5017, as Mochi's): on the left the filter menu "All cards ▾" (All cards, Up next (YAZ-5028),
- * Due today, New cards, each with how many are left; Up next's count in the Up next chip's colours, grey at 0), then where the cards come from as a quiet path (the vault, "Folder / Sub", or
- * the page); on the right "3 of 12", which counts the filter's cards. Under it the progress bar (YAZ-5020, as
+ * Due today, New cards, each with how many are left; Up next's count in the Up next chip's colours, grey at 0), then what
+ * is under review, quiet, by it ("· in spanish-words": the vault, "Folder / Sub", or the page); then the CURRENT card's
+ * place (YAZ-5017 round 2), one card at a time: vault › folder › page, each part a link (the vault or folder opens its
+ * folder page, the page opens in a tab: `openPlace`, the folder chips' door); a long path gives way in the middle, "…".
+ * On the right "3 of 12", which counts the filter's cards. Under it the progress bar (YAZ-5020, as
  * Mochi's): it fills as the session's cards are answered, a Forgot in red, a Remembered in grey.
  */
-import { useRef, useState, type ReactElement } from 'react'
+import { Fragment, useRef, useState, type ReactElement } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import type { CardRating } from '@shared/cardLine'
 import type { CardFilter, CardReviewSession } from './useCardReview'
@@ -37,9 +40,11 @@ export function progressRuns(answered: readonly CardRating[]): { missed: boolean
 interface NoteCardInboxBarProps {
   session: CardReviewSession
   setFilter: (filter: CardFilter) => void
+  /** A click on a part of the card's place: the folder page of the vault or a folder, or the page, in a tab. */
+  openPlace?: (path: string) => void
 }
 
-export function NoteCardInboxBar({ session, setFilter }: NoteCardInboxBarProps) {
+export function NoteCardInboxBar({ session, setFilter, openPlace }: NoteCardInboxBarProps) {
   const button = useRef<HTMLButtonElement>(null)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const current = CARD_FILTERS.find((f) => f.id === session.filter) ?? CARD_FILTERS[0]
@@ -69,15 +74,27 @@ export function NoteCardInboxBar({ session, setFilter }: NoteCardInboxBarProps) 
           <span>{current.label}</span>
           <ChevronIcon />
         </button>
-        <span className="note-card-inbox__from" title={session.from.join(' / ')}>
+        <span className="note-card-inbox__from" title={`Reviewing ${session.from.join(' / ')}`}>
+          <span className="note-card-inbox__from-sep">·</span>
           <ScopeIcon />
-          {session.from.map((part, i) => (
-            <span key={i} className="note-card-inbox__from-part">
-              {i > 0 && <span className="note-card-inbox__from-sep">/</span>}
-              {part}
-            </span>
-          ))}
+          <span className="note-card-inbox__from-part">in {session.from.join(' / ')}</span>
         </span>
+        {session.place.length > 0 && (
+          <nav className="note-card-inbox__path" aria-label="Card's place" title={session.place.map((p) => p.label).join(' › ')}>
+            {session.place.map((part, i) => (
+              <Fragment key={part.path}>
+                {i > 0 && (
+                  <span className="note-card-inbox__path-sep" aria-hidden="true">
+                    ›
+                  </span>
+                )}
+                <button type="button" className="note-card-inbox__path-part" data-kind={part.kind} disabled={openPlace === undefined} onMouseDown={(e) => e.preventDefault()} onClick={() => openPlace?.(part.path)}>
+                  {part.label}
+                </button>
+              </Fragment>
+            ))}
+          </nav>
+        )}
         {session.card !== null && (
           <span className="note-card-inbox__place">
             {session.position} of {session.total}

@@ -169,21 +169,69 @@
 .note-card-inbox__filter > .note-card-inbox__glyph:last-child {
   color: var(--fg-muted);
 }
+/* What is under review (YAZ-5017 round 2): quiet, right by the filter, "· in spanish-words". */
 .note-card-inbox__from {
+  flex: 0 1 auto;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
+  max-width: 30%;
+  margin-left: -4px;
   overflow: hidden;
   white-space: nowrap;
+  font-size: 12px;
 }
 .note-card-inbox__from-part {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .note-card-inbox__from-sep {
-  margin-right: 6px;
   opacity: 0.6;
+}
+/* The card's place (YAZ-5017 round 2): vault › folder › page, each a quiet link; the middle parts give way first ("…"),
+   the page keeps its name. */
+.note-card-inbox__path {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.note-card-inbox__path-sep {
+  flex: none;
+  font-size: 11px;
+  opacity: 0.6;
+}
+.note-card-inbox__path-part {
+  flex: 0 1 auto;
+  min-width: 1.8em;
+  padding: 2px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.note-card-inbox__path-part[data-kind='vault'] {
+  flex-shrink: 0.4;
+}
+.note-card-inbox__path-part[data-kind='page'] {
+  flex-shrink: 0;
+  max-width: 60%;
+  color: var(--fg);
+}
+.note-card-inbox__path-part:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
+}
+.note-card-inbox__path-part:disabled {
+  cursor: default;
 }
 .note-card-inbox__bar > .note-card-inbox__place {
   margin-left: auto;
@@ -482,6 +530,66 @@ body.note-card-inbox--sizing {
 .note-card-inbox__answer[data-rating='good'] .note-card-inbox__answer-icon,
 .note-card-inbox__answer[data-rating='easy'] .note-card-inbox__answer-icon {
   color: var(--ok);
+}
+/* The last answer's line (YAZ-5025 round 2): one quiet line, centred under the buttons; a Forgot in red. The row keeps
+   its height when empty, so nothing under it moves (YAZ-5029). */
+.note-card-inbox__last {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  margin-top: 10px;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.note-card-inbox__last-mark {
+  flex: none;
+  margin-right: 1px;
+  color: var(--ok);
+}
+.note-card-inbox__last[data-rating='hard'] .note-card-inbox__last-mark {
+  color: var(--warn);
+}
+.note-card-inbox__last[data-rating='again'],
+.note-card-inbox__last[data-rating='again'] .note-card-inbox__last-mark {
+  color: var(--danger);
+}
+.note-card-inbox__last-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+.note-card-inbox__last-undo {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  padding: 1px 5px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.note-card-inbox__last-undo:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
+}
+.note-card-inbox__last-undo:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.note-card-inbox__last-undo kbd {
+  font-size: 11px;
+  opacity: 0.8;
+  text-decoration: none;
 }
 .note-card-inbox__done {
   padding: 48px 0 40px;

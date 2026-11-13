@@ -241,6 +241,13 @@ describe('index cache: a bad file never throws, only degrades', () => {
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
   })
 
+  it('YAZ-5031: a snapshot of version 11 held card records with no `next` (YAZ-4999 added it, CACHE_VERSION 12) → version-mismatch, so a marked card is never served as unmarked', async () => {
+    expect(CACHE_VERSION).toBeGreaterThanOrEqual(12)
+    const cards = [{ id: 'DEMO-105', off: false, reviews: [] }]
+    await writeFile(file, JSON.stringify({ version: 11, root: '/vault', records: [record('/vault/a.md', { cards } as never)] }))
+    expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
+  })
+
   it("another root's payload at this filename → miss (not this vault's cache)", async () => {
     await writeFile(file, JSON.stringify({ version: CACHE_VERSION, root: '/elsewhere', records: [] }))
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'miss' })

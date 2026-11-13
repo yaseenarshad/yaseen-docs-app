@@ -33,14 +33,16 @@ export function answerIcon(rating: CardRating, buttons: 2 | 4) {
   return <RememberedIcon />
 }
 
-/** The glyph of each answer in words (the toast is text): ✕ / ✓, or ↺ ~ ✓ ⇈ with four buttons. */
+/** The glyph of each answer in words: ✕ / ✓, or ↺ ~ ✓ ⇈ with four buttons. */
 const ANSWER_MARK: Record<CardRating, [string, string]> = { again: ['✕', '↺'], hard: ['~', '~'], good: ['✓', '✓'], easy: ['✓', '⇈'] }
 
 /**
- * The answer's toast (YAZ-5025), in the button hover's words: "✓ Remembered · back in 9 days", "✕ Forgot · back later
- * today"; four buttons use their own names ("⇈ Easy · back in 20 days").
+ * The last answer's line (YAZ-5025 round 2), in the button hover's words: "✓ Remembered · DEMO-51 · back in 9 days",
+ * "✕ Forgot · DEMO-51 · back later today"; four buttons use their own names ("⇈ Easy · … · back in 20 days").
  */
-export function answerToast(rating: CardRating, interval: number, s: ReviewSettings): string {
+export function answerLine(rating: CardRating, id: string, interval: number, inSteps: boolean, s: ReviewSettings): string {
   const mark = ANSWER_MARK[rating][s.buttons === 4 ? 1 : 0]
-  return `${mark} ${answerLabel(rating, s)} · back ${interval === 0 ? 'later today' : `in ${dayCount(interval)}`}`
+  // `noteCardWait`'s words (the hover's): "later today" in the same-day steps, "today", else the days.
+  const back = inSteps ? 'later today' : interval === 0 ? 'today' : `in ${dayCount(interval)}`
+  return `${mark} ${answerLabel(rating, s)} · ${id} · back ${back}`
 }

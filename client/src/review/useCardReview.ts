@@ -25,8 +25,13 @@ import { changeCardLine, deleteCardReview, isCardGone, readCard, restoreCardRevi
  *
  * The filter (YAZ-5017, as Mochi's "All cards ▾"): All cards, Due today (cards with reviews, due now) or New cards
  * (never reviewed, within today's new-card limit: the queue's own). The queue stays whole; the filter picks which of its
- * cards show, and "3 of 12" counts only those. Up next (YAZ-5028): the cards marked `next` at start, new or reviewed
- * (`off` cards are never in the queue); an answer takes a card out of it, as the repeat it may leave is no longer up next.
+ * cards show, and "3 of 12" counts only those. Up next (YAZ-5028): the cards marked `next`, new or reviewed (`off` cards
+ * are never in the queue); an answer takes a card out of it, as the repeat it may leave is no longer up next.
+ *
+ * The marks follow the index (YAZ-5031): a card marked `next` while the session is open (the page's ⋯, the card
+ * window, another window, the command line) joins Up next and comes right after the card on show; a mark taken off
+ * leaves it, and the card goes when nothing else keeps it due. Only a CHANGE of the index's marks moves the session
+ * (`marks`, the marks it last saw), so a snapshot that has not caught up with an answer yet never brings its card back.
  *
  * `answered` (YAZ-5020, the progress bar) is each answer of the session, in order; ⌘Z takes the last one back. The
  * bar's whole is the cards the session started with, plus any it took since. A new session (or the Inbox tab closed)
@@ -85,8 +90,10 @@ export interface CardReviewSession {
   filter: CardFilter
   /** The cards left in the session under each filter: the menu's counts. */
   counts: Record<CardFilter, number>
-  /** Where the cards come from, as a quiet path (YAZ-5017): the vault's name; the folder's parts; the page's name. */
+  /** Where the cards come from (YAZ-5017): the vault's name; the folder's parts; the page's name. Shown by the filter ("· in …"). */
   from: string[]
+  /** The card showing's place (YAZ-5017 round 2): vault › folders › page, each with what a click opens. Empty with no card. */
+  place: CardPlacePart[]
   /** Each answer of the session, in order (YAZ-5020): a Forgot ('again') or a Remembered (any other). */
   answered: CardRating[]
   /** The progress bar's whole (YAZ-5020): the cards the session started with, plus any it took since. */
@@ -120,6 +127,13 @@ export interface CardReviewApi {
   turnOff: () => Promise<void>
   /** All cards, Due today or New cards (YAZ-5017): which of the session's cards show. */
   setFilter: (filter: CardFilter) => void
+}
+
+/** One part of a card's place (YAZ-5017 round 2): its name, and the path a click opens (the vault's or a folder's page, or the page). */
+export interface CardPlacePart {
+  kind: 'vault' | 'folder' | 'page'
+  label: string
+  path: string
 }
 
 /** How many answers ⌘Z can take back in one session. */
@@ -158,6 +172,8 @@ interface Session {
   totals: { due: number; new: number; next: number }
   /** YAZ-5020: each answer, in order (the progress bar); ⌘Z takes the last back. */
   answered: CardRating[]
+  /** YAZ-5031: the cards of the scope the index last marked `next` (`cardKey`): a change of them moves the session. */
+  marks: ReadonlySet<string>
 }
 
 /** A card of a session's queue; `repeat` (YAZ-5020): put back at the end by an answer that left it in its steps. */
@@ -192,6 +208,65 @@ const countOf = (queue: readonly DueCard[]): Record<CardFilter, number> => {
   return { all: queue.length, next: queue.filter((c) => c.next).length, due: queue.length - fresh, new: fresh }
 }
 
+const markedIn = (live: readonly DueCard[]): Set<string> => new Set(live.filter((c) => c.next).map(cardKey))
+
+/**
+ * The session after the index's marks changed (YAZ-5031): `live` is the scope's queue now (`cardQueue`). A card newly
+ * marked is up next and comes right after the card on show (it joins the session when it was not in it); one whose
+ * mark went is no longer up next, and leaves the queue when it is not due either (the card on show stays). Unchanged
+ * marks: the same session.
+ */
+const withMarks = (s: Session, live: readonly DueCard[]): Session => {
+  const marks = markedIn(live)
+  const added = [...marks].filter((k) => !s.marks.has(k))
+  const gone = [...s.marks].filter((k) => !marks.has(k))
+  if (added.length === 0 && gone.length === 0) return s
+  const on = new Set(added)
+  const off = new Set(gone)
+  const due = new Set(live.map(cardKey))
+  const head = s.queue[s.at]
+  const totals = { ...s.totals }
+  let total = s.total
+  let shown: QueueCard | undefined = head
+  const rest: QueueCard[] = []
+  const moved = new Map<string, QueueCard>()
+  for (const card of s.queue) {
+    const key = cardKey(card)
+    if (on.has(key) && !card.next) {
+      totals.next++
+      const marked = { ...card, next: true }
+      if (card === head) rest.push((shown = marked))
+      else moved.set(key, marked)
+    } else if (off.has(key) && card.next) {
+      totals.next--
+      if (card !== head && card.repeat !== true && !due.has(key)) {
+        totals[card.isNew ? 'new' : 'due']--
+        total--
+      } else if (card === head) rest.push((shown = { ...card, next: false }))
+      else rest.push({ ...card, next: false })
+    } else rest.push(card)
+  }
+  // The newly marked in the index's order (by ID number): those of the session moved, the others joining it.
+  const inSession = new Set(s.queue.map(cardKey))
+  const joining: QueueCard[] = []
+  for (const card of live) {
+    const key = cardKey(card)
+    if (!on.has(key)) continue
+    const mine = moved.get(key)
+    if (mine !== undefined) joining.push(mine)
+    else if (!inSession.has(key)) {
+      joining.push(card)
+      totals.next++
+      totals[card.isNew ? 'new' : 'due']++
+      total++
+    }
+  }
+  const place = shown === undefined ? rest.length : rest.indexOf(shown) + 1
+  const queue = [...rest.slice(0, place), ...joining, ...rest.slice(place)]
+  const at = shown === undefined ? place : place - 1
+  return fitted({ ...s, queue, at, total, totals, marks, turn: shown === head ? s.turn : s.turn + 1 })
+}
+
 /** The session with the card at `at` gone from its queue (answered elsewhere, its page gone, review off): the next one shows. */
 const without = (s: Session, at: number): Session => {
   const queue = [...s.queue.slice(0, at), ...s.queue.slice(at + 1)]
@@ -199,8 +274,20 @@ const without = (s: Session, at: number): Session => {
 }
 const reason = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 const sameCard = (a: DueCard, b: DueCard): boolean => a.path === b.path && a.id === b.id
+/** Is `card` the one on show? By path and ID: a mark the index changed (YAZ-5031) gives the card a new object. */
+const showing = (s: Session, card: DueCard): boolean => s.queue[s.at] !== undefined && sameCard(s.queue[s.at], card)
 const cardKey = (card: DueCard): string => `${card.path}\n${card.id}`
 const titleOf = (records: readonly IndexRecord[], path: string): string => records.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '')
+
+/** The place of the page at `path` (YAZ-5017 round 2): the vault, each folder down to the page's (by its title), the page. */
+export function cardPlace(root: string, vault: string, folders: readonly IndexRecord[], records: readonly IndexRecord[], path: string): CardPlacePart[] {
+  const dirs = (path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path).split('/').slice(0, -1)
+  const inside = dirs.map((_, i): CardPlacePart => {
+    const dir = `${root}/${dirs.slice(0, i + 1).join('/')}`
+    return { kind: 'folder', label: folderTitle(folders, dir), path: dir }
+  })
+  return [{ kind: 'vault', label: vault, path: root }, ...inside, { kind: 'page', label: titleOf(records, path), path }]
+}
 
 export function useCardReview(root: string | null, source: IndexSource, settings: ReviewSettings, onNotice: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void, vaultName?: string | null): CardReviewApi {
   const records = useSyncExternalStore(source.subscribe, () => source.records)
@@ -220,7 +307,17 @@ export function useCardReview(root: string | null, source: IndexSource, settings
 
   // The replay of each card is cached by its log (`cardDueAt`), so a new snapshot costs a join per reviewed card.
   const letters = source.letters
-  const dueCount = useMemo(() => cardQueue(records, settings, Date.now(), '', undefined, letters).length, [records, settings, day, letters])
+  const vaultQueue = useMemo(() => cardQueue(records, settings, Date.now(), '', undefined, letters), [records, settings, day, letters])
+  const dueCount = vaultQueue.length
+
+  // YAZ-5031: the open session follows the index's `next` marks (`withMarks`); the vault's queue serves the vault's session.
+  useEffect(() => {
+    setSession((s) => {
+      if (s === null || !settings.enabled) return s
+      const vault = !s.scope.folder && s.scope.page === undefined
+      return withMarks(s, vault ? vaultQueue : cardQueue(records, settings, Date.now(), s.scope.folder, s.scope.page, letters))
+    })
+  }, [vaultQueue, records, settings, letters])
 
   // The callbacks read the latest state at call time; their identities stay stable for memoised children.
   const live = useRef({ records, settings, session, loaded, fixed })
@@ -300,12 +397,12 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       (page) => {
         if (!on) return
         if (page !== null) return setLoaded({ key: turnKey, page })
-        setSession((s) => (s === null || s.queue[s.at] !== head ? s : without(s, s.at)))
+        setSession((s) => (s === null || !showing(s, head) ? s : without(s, s.at)))
       },
       (err: unknown) => {
         if (!on) return
         notice.current(`Can't read the card: ${reason(err)}`, 'error')
-        setSession((s) => (s === null || s.queue[s.at] !== head ? s : without(s, s.at)))
+        setSession((s) => (s === null || !showing(s, head) ? s : without(s, s.at)))
       },
     )
     return () => {
@@ -348,7 +445,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       const label = scope.page !== undefined ? titleOf(records, scope.page) : scope.folder ? folderTitle(source.folders, `${root}/${scope.folder}`) : 'Inbox'
       const { due, new: fresh, next } = countOf(queue)
       // A new scope starts on All cards (YAZ-5017), with an empty bar (YAZ-5020).
-      setSession((s) => ({ id: (s?.id ?? 0) + 1, label, scope, queue, at: 0, total: queue.length, turn: (s?.turn ?? 0) + 1, undo: [], filter: 'all', totals: { due, new: fresh, next }, answered: [] }))
+      setSession((s) => ({ id: (s?.id ?? 0) + 1, label, scope, queue, at: 0, total: queue.length, turn: (s?.turn ?? 0) + 1, undo: [], filter: 'all', totals: { due, new: fresh, next }, answered: [], marks: markedIn(queue) }))
     },
     [root, source],
   )
@@ -390,7 +487,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       forget(card.path) // also a read begun while it wrote
       if (written === 'failed') return
       setSession((s) => {
-        if (s === null || s.queue[s.at] !== card) return s
+        if (s === null || !showing(s, card)) return s
         // Still in its steps (YAZ-5020): back at the end of this session, no longer new or up next.
         const repeat = written !== 'gone' && chosen.inSteps
         const undo = written !== 'gone' ? [...s.undo, { card, review: chosen.review, next: written.next, at: s.at, repeat }].slice(-UNDO_DEPTH) : s.undo
@@ -431,8 +528,10 @@ export function useCardReview(root: string | null, source: IndexSource, settings
         const at = Math.min(last.at, rest.length)
         const side = last.card.isNew ? 'new' : 'due'
         const totals = last.repeat ? { ...s.totals, [side]: s.totals[side] - 1 } : s.totals
-        const filter = matchesFilter(last.card, s.filter) ? s.filter : 'all'
-        return { ...s, queue: [...rest.slice(0, at), last.card, ...rest.slice(at)], at, total: s.total - (last.repeat ? 1 : 0), totals, turn: s.turn + 1, undo: s.undo.slice(0, -1), filter, answered: s.answered.slice(0, -1) }
+        // Up next again when the answer took the mark off (the file has it back).
+        const card = last.next >= 0 && !last.card.next ? { ...last.card, next: true } : last.card
+        const filter = matchesFilter(card, s.filter) ? s.filter : 'all'
+        return { ...s, queue: [...rest.slice(0, at), card, ...rest.slice(at)], at, total: s.total - (last.repeat ? 1 : 0), totals, turn: s.turn + 1, undo: s.undo.slice(0, -1), filter, answered: s.answered.slice(0, -1) }
       })
   }, [onNotice, forget])
 
@@ -507,9 +606,10 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       },
     )
     forget(card.path)
-    if (written) setSession((s) => (s === null || s.queue[s.at] !== card ? s : without(s, s.at)))
+    if (written) setSession((s) => (s === null || !showing(s, card) ? s : without(s, s.at)))
   }, [onNotice, forget])
 
+  const folders = source.folders
   // YAZ-5029: the last card shown with its text, and its session: on show while the next card is read.
   const lastShown = useRef<{ session: number; card: ShownCard } | null>(null)
   const shownSession = useMemo<CardReviewSession | null>(() => {
@@ -524,7 +624,8 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     // "3 of 12" under the filter (YAZ-5017): its cards at start, those gone since, and the place among those left.
     const total = filter === 'all' ? totals.due + totals.new : totals[filter]
     const before = queue.slice(0, session.at).filter((c) => matchesFilter(c, filter)).length
-    const from = scope.page !== undefined ? [session.label] : scope.folder ? scope.folder.split('/').filter(Boolean) : [vaultName ?? (root === null ? 'Inbox' : storage.vaultName(root))]
+    const vault = vaultName ?? (root === null ? 'Inbox' : storage.vaultName(root))
+    const from = scope.page !== undefined ? [session.label] : scope.folder ? scope.folder.split('/').filter(Boolean) : [vault]
     return {
       label: session.label,
       scope: scope.page !== undefined ? 'page' : scope.folder ? 'folder' : 'vault',
@@ -539,11 +640,12 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       filter,
       counts,
       from,
+      place: shownCard === null || root === null ? [] : cardPlace(root, vault, folders, records, shownCard.path),
       answered: session.answered,
       size: Math.max(session.total, session.answered.length + queue.length),
     }
     // `records`: a cached page is good only at its page's mtime.
-  }, [session, loaded, fixed, turnKey, root, vaultName, cached, records])
+  }, [session, loaded, fixed, turnKey, root, vaultName, cached, records, folders])
 
   return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, move, turnOff, setFilter }
 }
