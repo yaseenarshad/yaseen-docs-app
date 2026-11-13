@@ -16,7 +16,7 @@
 import { execFile } from 'node:child_process'
 import { readFile as readRaw, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import {
   addComment,
   deleteComment,
@@ -41,11 +41,15 @@ import { cardBlock, changeCard, pageCards, withCardNext } from '@shared/cardLine
 import { lineKinds } from '@shared/fences'
 import { cardQueue, cardState } from '@shared/cardSchedule'
 import { cardTitle } from '@shared/cardText'
+import { cardFileContent, cardFileName, isCardFileContent } from '@shared/cardFileFormat'
+import { makeCardResolver } from '@shared/cardLinks'
+import { isSkipped } from '@shared/fileKind'
 import { REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import { AGENT_HANDLE, VAULT_CONFIG_DIR, defaultAppState, isFolderSettingsPath, listVaults, type AppState, type IndexRecord, type SettingsState } from '@shared/types'
 import { makeResolver } from '@shared/linkResolver'
 import { mentionsOf } from '@shared/mentions'
 import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
+import { createFile } from '../main/fs/create'
 import { readFile, writeFile } from '../main/fs/file'
 import { dailyNote } from '../main/notes/daily'
 import { newNote } from '../main/notes/note'
@@ -77,6 +81,7 @@ export const USAGE = `usage:
   yaseendocs mentions <page.md> [--json]
   yaseendocs due      <page.md | folder> [--json]
   yaseendocs card add <page.md> --body <text | -> [--title <text>] [--after <heading>] [--json]
+  yaseendocs card new <folder> --title <text> [--body <text | ->] [--json]
   yaseendocs card next <id> [<folder>] [--off] [--json]
   yaseendocs vaults   [--json]
   yaseendocs daily    <vault> [--date today | tomorrow | yesterday | YYYY-MM-DD] [--find] [--open] [--json]
@@ -117,8 +122,9 @@ and the id (\`<kebab-title>-<id>.md\`). A link between pages is written \`[[<id>
 shows the page's current title in its place. \`id\` prints a page's id — a page that has none, or
 an \`id\` some other tool wrote, is given one first, exactly as the app would, and only inside a
 vault that gives its notes IDs. \`links\` lists every id on a page — its links, and the
-folders it is also in — with the title and path of the page or folder that id names now, or
-\`(missing)\` (\`--json\` for the raw shape). To find a page from an id, search the vault's file
+folders it is also in — with the title and path of the page, card or folder that id names now, or
+\`(missing)\` (\`--json\` for the raw shape: \`kind\` is \`note\`, \`card\`, \`folder\` or \`missing\`). A card's
+path is the file that holds it: its card file, or its page. To find a page from an id, search the vault's file
 names for it; a file the app did not name is found by its \`id: <id>\` line.
 
 A page's value for a column is a top-level field of its frontmatter (\`domain: Billing\`), one value per
@@ -131,14 +137,14 @@ folders of those blocks after the links, each by id and the title and path of th
 \`mentions\` lists every note and folder that links to a page: the page's Linked mentions in the app, in
 a vault with IDs or without. A line is the title and the path of the note, or of the folder with a
 \`/\` after it; a link in a folder's page or settings counts for that folder. \`--json\` gives
-\`title\`, \`path\` (from the vault's folder) and \`kind\` (\`note\` or \`folder\`). A link counts as
+\`title\`, \`path\` (from the vault's folder) and \`kind\` (\`note\`, \`card\` or \`folder\`; \`card\` is a card file). A link counts as
 the app counts it: by id, path, title, file name or alias, in the body or the properties.
 
 A note card is a spaced-repetition card inside a page: a \`\`\`card\` fence with its text, and the card
 line under it, \`<!-- card: <id>, <time> <answer>, ... -->\`, which holds the card's id and each review.
 \`---\` alone on a line splits the front from the back, and \`{{word}}\` hides a word. Only a vault that
 gives its notes IDs has cards, and \`due\` and \`card\` are refused in any other. Never write or change a
-card line by hand: \`card add\` writes it, and the app writes each review.
+card line by hand: \`card add\` and \`card new\` write it, and the app writes each review.
 
 \`due\` lists the note cards due now under a folder (the whole vault for its root), as the app's Inbox
 shows them: first the cards up next (see \`card next\`), then the cards due today, most overdue first, then
@@ -149,13 +155,21 @@ twice; it is due now, minutes after its last answer), the card's id, its title (
 Given a page, \`due\` lists every card on it, each with the day it is next due, \`next\`, \`new\`, \`steps\`, or
 \`off\` (archived: the app's "Archive card"). The app works the dates out from each card's reviews with FSRS and never writes
 them, so this is the place to read them. \`--json\` gives \`id\`, \`page\`, \`title\`, \`due\` (ISO time; the
-minute a step ends), \`isNew\`, \`next\` and \`inSteps\` (and \`off\` for a page).
+minute a step ends), \`isNew\`, \`next\` and \`inSteps\` (and \`off\` for a page), and \`cardFile: true\` for a card that lives in a card file.
 
 \`card add\` adds a note card to a page, with a new id from the vault's counter, as the app gives one:
 \`--body\` (\`--body -\` for stdin) is the card's text, and \`--title\` (one line) its first line: a card's
 first line is its title, what the app and a \`[[<card id>]]\` link to the card show. It goes at the end of
 the page, or with \`--after\` at the end of that heading's section (the heading's text, without the \`#\`
-marks; case does not count). It prints \`added <id> to <page>\`; \`--json\` gives \`id\`, \`page\` and \`title\`.
+marks; case does not count). It prints \`added <id> to <page>\`; \`--json\` gives \`id\`, \`page\` and \`title\`. A card file is refused:
+"This is a card file. Use \`card new\`."
+
+A card file is a card on its own: a page whose properties hold \`kind: card\` and whose body is one card and
+its card line, nothing else. The card's id is the file's id (the file has no \`id:\` line), the card's first line
+is its title, and its name is \`<kebab-title>-<id>.md\`. \`card new\` makes one in a folder, with a new id from
+the vault's counter: \`--title\` (one line) is the card's first line, and \`--body\` (\`--body -\` for stdin) the
+rest, after a blank line. A name that is already taken is refused. It prints \`made <path>\`; \`--json\` gives
+\`id\`, \`path\` and \`title\`.
 
 \`card next <id>\` puts a card at the top of the Inbox, as the app's "Put at top of Inbox" does: the card
 line gets the part \`next\`, and the Inbox shows the card first, due or not and outside the new cards a
@@ -204,6 +218,7 @@ Make a note with its first text:
 
 Make a note card, and see what is due:
   printf 'The capital of {{France}}\\n---\\nParis' | yaseendocs card add "/vault/Geography.md" --after "Cards" --body -
+  yaseendocs card new "/vault/Geography" --title "Capital of France" --body "{{Paris}}"
   yaseendocs due /vault --json
   yaseendocs card next WIKI-512 /vault                  → WIKI-512 shows first in the Inbox
 `
@@ -362,6 +377,9 @@ async function cardTitles(page: string): Promise<string[]> {
   return pageCards((await readPage(page)).content).map((card) => cardTitle(card.text))
 }
 
+/** `cardFile: true` for a card that lives in a card file (YAZ-5037), nothing for a card in a page: a row's own key. */
+const inCardFile = (record: IndexRecord | undefined): { cardFile?: true } => (record?.kind === 'card' ? { cardFile: true } : {})
+
 /**
  * `due` (YAZ-4963, idea 12): the note cards due now, or every card of one page with the day it is next due. The date
  * is computed by the same `shared/cardSchedule.ts` the Inbox uses, from the same scan, so the two agree. A card in its
@@ -378,9 +396,10 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
     const settings = await reviewSettings(root)
     const titles = await cardTitles(target)
     // `off` is the card's own archive (HELP, YAZ-5046). With review off for the whole vault, ONE line says so, and each card keeps its day.
-    const rows = ((await scanFile(root, target)).cards ?? []).map((card, i) => {
+    const record = await scanFile(root, target)
+    const rows = (record.cards ?? []).map((card, i) => {
       const state = cardState(card.reviews, settings)
-      return { id: card.id, page: target, title: titles[i] ?? '', due: card.off ? null : state.isNew || card.next ? iso(now) : iso(state.due!), isNew: state.isNew, next: card.next, off: card.off, inSteps: state.inSteps }
+      return { id: card.id, page: target, title: titles[i] ?? '', due: card.off ? null : state.isNew || card.next ? iso(now) : iso(state.due!), isNew: state.isNew, next: card.next, off: card.off, inSteps: state.inSteps, ...inCardFile(record) }
     })
     if (!settings.enabled && rows.length > 0) io.stderr(`review is off for this vault (Settings › Review › Review cards): no card is due\n`)
     if (json) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
@@ -404,7 +423,7 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
   for (const { path } of queue) if (!titles.has(path)) titles.set(path, await cardTitles(path))
   const byPath = new Map(records.map((r) => [r.path, r]))
   const inSteps = (q: (typeof queue)[number]): boolean => !q.isNew && cardState(byPath.get(q.path)?.cards?.[q.index]?.reviews ?? [], settings).inSteps
-  const rows = queue.map((q) => ({ id: q.id, page: q.path, title: titles.get(q.path)?.[q.index] ?? '', due: iso(q.due), isNew: q.isNew, next: q.next, inSteps: inSteps(q) }))
+  const rows = queue.map((q) => ({ id: q.id, page: q.path, title: titles.get(q.path)?.[q.index] ?? '', due: iso(q.due), isNew: q.isNew, next: q.next, inSteps: inSteps(q), ...inCardFile(byPath.get(q.path)) }))
   if (json) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
   else if (!settings.enabled) io.stdout(`review is off for this vault (Settings › Review › Review cards): no card is due\n`)
   else io.stdout(rows.length === 0 ? `nothing is due under ${target}\n` : rows.map((r) => `${r.next ? 'next      ' : r.isNew ? 'new       ' : r.inSteps ? 'steps     ' : day(Date.parse(r.due))}  ${r.id}  ${r.title}  ${r.page}\n`).join(''))
@@ -459,6 +478,9 @@ export function dayOf(text: string | undefined, now = new Date()): Date {
   return day
 }
 
+/** A note's path from its vault's folder, as `links` and `mentions` print it. */
+const vaultPath = (r: IndexRecord): string => (r.folder === '' ? r.name : `${r.folder}/${r.name}`)
+
 const byPath = (a: IndexRecord, b: IndexRecord): number => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
 
 /**
@@ -492,7 +514,7 @@ async function mentions(page: string, json: boolean, io: Io): Promise<void> {
   const resolveNote = makeResolver(records.map((record) => ({ record })), root, { folders, letters })
   const found = mentionsOf(records, folders, (target) => resolveNote(target)?.record.path ?? null).get(page) ?? []
   const rows = found.map((r) =>
-    isFolderSettingsPath(r.path) ? { title: r.title, path: r.folder, kind: 'folder' as const } : { title: r.title, path: r.folder === '' ? r.name : `${r.folder}/${r.name}`, kind: 'note' as const },
+    isFolderSettingsPath(r.path) ? { title: r.title, path: r.folder, kind: 'folder' as const } : { title: r.title, path: vaultPath(r), kind: r.kind === 'card' ? ('card' as const) : ('note' as const) },
   )
   if (json) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
   else io.stdout(rows.length === 0 ? `nothing links to ${page}\n` : rows.map((r) => `${r.title}  ${r.kind === 'folder' ? `${r.path}/` : r.path}\n`).join(''))
@@ -565,26 +587,38 @@ function cardPlace(body: string, after: string | undefined): number {
   return end === undefined ? lines.length : end.at
 }
 
+/** A card file holds one card (YAZ-5037): `card add` never puts a second one in it. */
+const CARD_FILE_REFUSED = 'This is a card file. Use `card new`.'
+
+/** The title flag of `card add` and `card new` (YAZ-5030: a card's first line): one line of text, '' when not given. */
+function cardTitleFlag(flags: Map<string, string | true>): string {
+  const titleFlag = flags.get('--title')
+  if (titleFlag === true) throw new Usage('--title needs a text')
+  const titleLine = titleFlag?.trim() ?? ''
+  if (titleFlag !== undefined && (titleLine === '' || /[\r\n]/.test(titleLine))) throw new Usage('--title needs one line of text')
+  return titleLine
+}
+
 /** `card add` (YAZ-4963, idea 16): a note card with a real ID from the vault's counter, written atomically. */
 async function cardAdd(page: string, flags: Map<string, string | true>, io: Io): Promise<void> {
   onlyFlags('card add', flags, ['--body', '--title', '--after', '--json'])
   const body = (await bodyOf(flags, io)).replace(/\r\n/g, '\n').replace(/^\n+|\s+$/g, '')
   if (body === '') throw new Usage('card add needs a --body with text')
   // The title is the card's first line (YAZ-5030): one line, before the body.
-  const titleFlag = flags.get('--title')
-  if (titleFlag === true) throw new Usage('--title needs a text')
-  const titleLine = titleFlag?.trim() ?? ''
-  if (titleFlag !== undefined && (titleLine === '' || /[\r\n]/.test(titleLine))) throw new Usage('--title needs one line of text')
+  const titleLine = cardTitleFlag(flags)
   const text = titleLine === '' ? body : `${titleLine}\n${body}`
   const root = await cardVault(dirname(page), page)
   const after = str(flags, '--after')
   // The page and the heading are checked before a number is taken: a refusal costs no number.
-  cardPlace(splitFrontmatter((await readFile(page)).content).body, after)
+  const content = (await readFile(page)).content
+  if (isCardFileContent(content)) throw new Error(CARD_FILE_REFUSED)
+  cardPlace(splitFrontmatter(content).body, after)
   // The door (YAZ-2677 D4): the count file is on disk before the card is written (R18), the app's own number.
   const id = (await mintIds(root, 1))?.[0]
   if (id === undefined) throw new Error(`${page}'s vault does not give its notes IDs, so it has no note cards`)
   const block = cardBlock(text, { parts: [{ kind: 'id', id }] })
   await transformOnDisk(page, (fresh) => {
+    if (isCardFileContent(fresh)) throw new Error(CARD_FILE_REFUSED)
     const { frontmatter, body } = splitFrontmatter(fresh)
     const lines = body.split('\n')
     const at = cardPlace(body, after)
@@ -598,6 +632,33 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io):
   })
   const title = cardTitle(text)
   io.stdout(flags.has('--json') ? `${JSON.stringify({ id, page, title }, null, 2)}\n` : `added ${id} to ${page}\n`)
+}
+
+/**
+ * `card new` (YAZ-5037): a card file in `dir` — `kind: card` and one card, its text the title line, then a blank line
+ * and the body when one is given — with a new ID from the vault's counter, named `<kebab-title>-<id>.md` as a page is.
+ * The folder is checked before a number is taken. The create never writes over a file: a name that is taken is refused
+ * (the number is spent, as the app's New note spends one on a create that fails).
+ */
+async function cardNew(dir: string, flags: Map<string, string | true>, io: Io): Promise<void> {
+  onlyFlags('card new', flags, ['--title', '--body', '--json'])
+  const title = cardTitleFlag(flags)
+  if (title === '') throw new Usage('card new needs --title')
+  const body = flags.has('--body') ? (await bodyOf(flags, io)).replace(/\r\n/g, '\n').replace(/^\n+|\s+$/g, '') : ''
+  const at = await stat(dir).catch(() => null)
+  if (at === null) throw new Error(`no folder ${dir}`)
+  if (!at.isDirectory()) throw new Error(`${dir} is not a folder`)
+  const root = await cardVault(dir, dir)
+  // A folder the vault does not show (`.trash`, `.yaseendocs`, node_modules) is outside it: the index never reads its files.
+  if (relative(root, dir).split(sep).some((name) => name !== '' && isSkipped(name))) throw new Error(`${dir} is not a folder the vault shows`)
+  const id = (await mintIds(root, 1))?.[0]
+  if (id === undefined) throw new Error(`${dir}'s vault does not give its notes IDs, so it has no note cards`)
+  const path = join(dir, cardFileName(title, id))
+  // No door: a card file carries no page `id:` (its card's ID is the file's), so the content is written as it is.
+  await createFile({ path, content: cardFileContent(body === '' ? title : `${title}\n\n${body}`, { parts: [{ kind: 'id', id }] }) }, null).catch((err: unknown) => {
+    throw err instanceof BridgeFailure && err.code === 'ALREADY_EXISTS' ? new Error(`${path} is already there`) : err
+  })
+  io.stdout(flags.has('--json') ? `${JSON.stringify({ id, path, title }, null, 2)}\n` : `made ${path}\n`)
 }
 
 /**
@@ -642,7 +703,11 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       if (args[1] === undefined) throw new Usage('card next needs a card id')
       return cardNext(args[1], resolve(args[2] ?? '.'), flags, io)
     }
-    if (args[0] !== 'add') throw new Usage(args[0] === undefined ? 'card needs add or next' : `unknown card command: ${args[0]}`)
+    if (args[0] === 'new') {
+      if (args[1] === undefined) throw new Usage('card new needs a folder')
+      return cardNew(resolve(args[1]), flags, io)
+    }
+    if (args[0] !== 'add') throw new Usage(args[0] === undefined ? 'card needs add, new or next' : `unknown card command: ${args[0]}`)
     if (args[1] === undefined) throw new Usage('card add needs a page')
     const page = resolve(args[1])
     requireMarkdownFile(page)
@@ -754,16 +819,23 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       const files: string[] = []
       if (ids.length > 0 || held.length > 0) await walk(root, files)
       const records = [...(await scanAll(root, files)).values()].sort((a, b) => (a.path < b.path ? -1 : 1))
+      // A card's ID names the card (YAZ-5030), in a card file or in a page; IDs come from one counter, so a page's own ID is never a card's.
+      const resolveCard = makeCardResolver(records, letters)
       // Each id with the title (YAZ-2420 🔒 D14) and the real path of what it names now.
-      const rows = ids.map((id): { id: string; kind: 'note' | 'folder' | 'missing'; title?: string; path?: string } => {
+      const rows = ids.map((id): { id: string; kind: 'note' | 'card' | 'folder' | 'missing'; title?: string; path?: string } => {
         const r = records.find((o) => vaultNoteId(o.id, letters) === id)
-        if (r === undefined) return { id, kind: 'missing' }
+        if (r === undefined) {
+          const card = resolveCard(id)
+          const holder = card === null ? undefined : records.find((o) => o.path === card.path)
+          return card === null || holder === undefined ? { id, kind: 'missing' } : { id, kind: 'card', title: card.title, path: vaultPath(holder) }
+        }
         // A folder's id is carried by its `.folder.md`; what it names is the folder.
         if (isFolderSettingsPath(r.path)) return { id, kind: 'folder', title: r.title, path: r.folder }
-        return { id, kind: 'note', title: r.title, path: r.folder === '' ? r.name : `${r.folder}/${r.name}` }
+        // A page turned into a card file keeps its `id:` (YAZ-5037 pick 6): that ID names the card file.
+        return { id, kind: r.kind === 'card' ? 'card' : 'note', title: r.title, path: vaultPath(r) }
       })
       const line = (r: (typeof rows)[number]) =>
-        `${r.id}  ${r.kind === 'missing' ? '(missing)' : `${r.title}  ${r.kind === 'note' ? r.path : `${r.path}/${linked.includes(r.id) ? '' : '  (also in)'}`}`}`
+        `${r.id}  ${r.kind === 'missing' ? '(missing)' : `${r.title}  ${r.kind !== 'folder' ? r.path : `${r.path}/${linked.includes(r.id) ? '' : '  (also in)'}`}`}`
       // The folders the page holds values for (`in`, D19), apart from its links: a block whose id no folder has is its id alone.
       const blocks = held.map((id): { id: string; title?: string; path?: string } => {
         const folder = records.find((o) => o.id !== undefined && vaultNoteId(o.id, letters) === vaultNoteId(id, letters) && isFolderSettingsPath(o.path))
