@@ -29,6 +29,9 @@
  *    has a sound. A board's picture (YAZ-5015) opens the board on top; Esc there comes back to this card and step.
  *  - Under the card, OUTSIDE its frame, as in Mochi (YAZ-5002): the answer buttons; the key hint row last, at the bottom.
  *    No "Press Space" line over the buttons (YAZ-5021): the key row already says Space.
+ *  - FAST ← → (YAZ-5029): the buttons are the setting's, always mounted, the same size from card to card; only their
+ *    hover waits for the card's answers. The hook reads the cards around this one ahead and keeps the card before on show
+ *    until the next one's text is ready, so the card never empties and nothing under it moves.
  *  - The buttons row (YAZ-5004, as in Mochi): ← → on its left, the answers in the middle, ⋯ on its right. ⋯ opens a
  *    small row of icons, each with the app's hover box (its name and key): Undo last review (⌘Z), Turn review off,
  *    Put at top of Inbox / Remove from top of Inbox, Open card. They are the hook's own actions.
@@ -140,10 +143,12 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
   const done = text !== null && step.sides >= counts.length && step.shown >= hiddenUpTo(counts.length)
 
   // The buttons show with the card (YAZ-5010): their reviews are fixed now, so the hover and the write agree (D13). Again after a delete re-reads the card.
+  // The page object, not its text (YAZ-5029): a card read again with the same text is a new page, and fixes again.
   const { showAnswers } = review
+  const page = card?.page ?? null
   useEffect(() => {
-    if (text !== null && session.answers === null) showAnswers()
-  }, [text, session.answers, showAnswers])
+    if (page !== null && session.answers === null) showAnswers()
+  }, [page, session.answers, showAnswers])
 
   // The keyboard comes to the Inbox when it opens and with each card; back from the Explore stack, App gives it back here.
   useEffect(() => {
@@ -330,21 +335,23 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
               </HoverTip>
             </div>
             <div className="note-card-inbox__answers">
-              {session.answers !== null &&
-                session.answers.map((a, i) => {
-                  const label = answerLabel(a.review.rating, review.settings)
-                  // The app's own hover box (a native title shows nothing in the app, YAZ-4772): when the card comes back.
-                  const comesBack = `${label} · ${noteCardWait(a.interval, a.inSteps)}`
-                  return (
-                    <HoverTip key={a.review.rating} text={comesBack}>
-                      <button type="button" className="explore__button note-card-inbox__answer" data-rating={a.review.rating} aria-description={comesBack} onMouseDown={(e) => e.preventDefault()} onClick={() => answerWith(a.review.rating)}>
-                        {answerIcon(a.review.rating, review.settings.buttons)}
-                        <span className="note-card-inbox__answer-label">{label}</span>
-                        <kbd>{i + 1}</kbd>
-                      </button>
-                    </HoverTip>
-                  )
-                })}
+              {/* YAZ-5029: the buttons are the setting's, always there — never only once the card's answers are fixed, so
+                  fast ← → never takes them away for a frame. The hover says when the card comes back once it is known. */}
+              {ratings.map((rating, i) => {
+                const a = session.answers?.find((x) => x.review.rating === rating)
+                const label = answerLabel(rating, review.settings)
+                // The app's own hover box (a native title shows nothing in the app, YAZ-4772): when the card comes back.
+                const comesBack = a === undefined ? label : `${label} · ${noteCardWait(a.interval, a.inSteps)}`
+                return (
+                  <HoverTip key={rating} text={comesBack}>
+                    <button type="button" className="explore__button note-card-inbox__answer" data-rating={rating} aria-description={comesBack} onMouseDown={(e) => e.preventDefault()} onClick={() => live.current.card?.page != null && answerWith(rating)}>
+                      {answerIcon(rating, review.settings.buttons)}
+                      <span className="note-card-inbox__answer-label">{label}</span>
+                      <kbd>{i + 1}</kbd>
+                    </button>
+                  </HoverTip>
+                )
+              })}
             </div>
             <div className="note-card-inbox__more">
               {moreOpen && (

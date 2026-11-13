@@ -17,6 +17,16 @@ const NOW = new Date(2026, 10, 12, 9, 0).getTime()
 const ROOT = '/vault'
 
 let vault = new Map<string, string>()
+/** YAZ-5029: the pages whose reads wait, and the reads waiting. */
+const held = new Set<string>()
+let waiting: { path: string; resolve: () => void }[] = []
+/** The waiting reads of `path` go on, in the order given (`order` 'last first': the newest read first). */
+const release = async (path: string, order: 'in turn' | 'last first' = 'in turn'): Promise<void> => {
+  const go = waiting.filter((w) => w.path === path)
+  waiting = waiting.filter((w) => w.path !== path)
+  held.delete(path)
+  for (const w of order === 'in turn' ? go : go.reverse()) await act(async () => w.resolve())
+}
 let records: IndexRecord[] = []
 let listeners: Array<() => void> = []
 const source = {
@@ -64,6 +74,8 @@ vi.mock('../api', async (importOriginal) => {
     ...real,
     api: {
       readFile: vi.fn(async (path: string) => {
+        // YAZ-5029: a held page is read late, as a slow disk: the read waits until `release`, then reads the vault.
+        if (held.has(path)) await new Promise<void>((resolve) => waiting.push({ path, resolve }))
         const content = vault.get(path)
         if (content === undefined) throw new real.BridgeRequestError('NOT_FOUND', 'gone')
         return { path, content, mtime: 1 }
@@ -104,6 +116,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(NOW)
   vault = new Map()
+  held.clear()
+  waiting = []
   notices.length = 0
   // Due: answered "good" 30 days ago (still in its steps). Not due: two "good" an hour ago (out of its steps, YAZ-5020:
   // a new card needs two). New: no review. Off: never.
@@ -414,5 +428,85 @@ describe('useCardReview: same-day steps (YAZ-5020)', () => {
     await shown('WIKI-6')
     expect(place()).toEqual(['WIKI-6', 2, 2])
     expect(review.session).toMatchObject({ canBack: true, canNext: false })
+  })
+})
+
+describe('useCardReview: fast ← → (YAZ-5029)', () => {
+  /** Five cards on five pages, so each read is its own page's. */
+  beforeEach(() => {
+    vault = new Map()
+    for (let i = 1; i <= 5; i++) page(`P${i}.md`, [`Card {{${i}}}`, `WIKI-${10 + i}`])
+  })
+  /** Each card the session hands out, after every render: the Inbox draws exactly these. */
+  const seen: (string | null)[] = []
+  function Watch() {
+    review = useCardReview(ROOT, source, S, (text) => void notices.push(text))
+    const card = review.session?.card
+    seen.push(card === undefined || card === null ? null : card.page === null ? `${card.id}:empty` : `${card.id}:${card.page.id}`)
+    return null
+  }
+  const mountWatch = async () => {
+    reindex()
+    root = createRoot(document.createElement('div'))
+    await act(async () => root?.render(<Watch />))
+  }
+
+  it('the next and the previous cards are read ahead: → shows the next card at once, with its text — no frame without it', async () => {
+    await mountWatch()
+    await act(async () => review.start())
+    await vi.waitFor(() => expect(review.session?.card?.page?.id).toBe('WIKI-11'))
+    // The neighbours are read while the first card shows.
+    await act(async () => await Promise.resolve())
+    seen.length = 0
+    act(() => review.move(1))
+    expect(review.session?.card).toMatchObject({ id: 'WIKI-12', page: { id: 'WIKI-12', text: 'Card {{2}}' } })
+    act(() => review.move(1))
+    expect(review.session?.card).toMatchObject({ id: 'WIKI-13', page: { text: 'Card {{3}}' } })
+    act(() => review.move(-1))
+    expect(review.session?.card).toMatchObject({ id: 'WIKI-12', page: { text: 'Card {{2}}' } })
+    expect(seen.filter((c) => c === null || c.endsWith(':empty'))).toEqual([])
+  })
+
+  it('a card read late: the card before stays, whole, until its text is ready — never an empty card; then the new one shows', async () => {
+    held.add(`${ROOT}/P2.md`)
+    await mountWatch()
+    await act(async () => review.start())
+    await vi.waitFor(() => expect(review.session?.card?.page?.id).toBe('WIKI-11'))
+    seen.length = 0
+    act(() => review.move(1))
+    // "2 of 5" at once; the card on show is still the first, with its own text (its head and its text agree).
+    expect(review.session?.position).toBe(2)
+    expect(review.session?.card).toMatchObject({ id: 'WIKI-11', page: { id: 'WIKI-11' } })
+    expect(review.session?.answers).toBeNull()
+    await release(`${ROOT}/P2.md`)
+    expect(review.session?.card).toMatchObject({ id: 'WIKI-12', page: { id: 'WIKI-12', text: 'Card {{2}}' } })
+    expect(seen.filter((c) => c === null || c.endsWith(':empty'))).toEqual([])
+  })
+
+  it('a stale read never wins: → then ← before the slow page is read, and its late read does not replace the card showing', async () => {
+    held.add(`${ROOT}/P2.md`)
+    await mountWatch()
+    await act(async () => review.start())
+    await vi.waitFor(() => expect(review.session?.card?.page?.id).toBe('WIKI-11'))
+    act(() => review.move(1))
+    act(() => review.move(-1))
+    expect(review.session?.card).toMatchObject({ id: 'WIKI-11', page: { id: 'WIKI-11' } })
+    await release(`${ROOT}/P2.md`, 'last first')
+    expect(review.session?.card).toMatchObject({ id: 'WIKI-11', page: { id: 'WIKI-11', text: 'Card {{1}}' } })
+    expect(review.session?.position).toBe(1)
+  })
+
+  it('a page changed on disk after it was read ahead is read again: the cached text never outlives its file', async () => {
+    await mountWatch()
+    await act(async () => review.start())
+    await vi.waitFor(() => expect(review.session?.card?.page?.id).toBe('WIKI-11'))
+    await act(async () => await Promise.resolve())
+    vault.set(`${ROOT}/P2.md`, vault.get(`${ROOT}/P2.md`)!.replace('Card {{2}}', 'Card {{two}}'))
+    await act(async () => {
+      records = [...vault].map(([path, content]) => ({ ...scan(path, content), mtime: path.endsWith('P2.md') ? 7 : 0 }))
+      listeners.forEach((l) => l())
+    })
+    act(() => review.move(1))
+    await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-12', page: { text: 'Card {{two}}' } }))
   })
 })

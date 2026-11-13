@@ -244,13 +244,54 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.answer).toHaveBeenLastCalledWith('good')
   })
 
-  it('YAZ-5010: while the page of the card is still read, no button shows and no digit answers', async () => {
+  it('YAZ-5010, YAZ-5029: while the page of the card is still read, the buttons stay in their place — but no digit and no click answers', async () => {
     mount(null)
     await flush()
     expect(review.showAnswers).not.toHaveBeenCalled()
-    expect(buttons()).toHaveLength(0)
+    expect(buttons().map((b) => [b.textContent, b.getAttribute('aria-description')])).toEqual([
+      ['Forgot1', 'Forgot'],
+      ['Remembered2', 'Remembered'],
+    ])
     press('2')
+    act(() => buttons()[0].click())
     expect(review.answer).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-5029: fast ← → — the buttons, the ← → row and the key row are the SAME elements from card to card (never unmounted, never a smaller row), while the answers are fixed again and the next page is read', async () => {
+    mount(TWO_SIDES)
+    await flush()
+    session = { ...session, canNext: true, canBack: true }
+    render()
+    const nodes = () => ({ actions: el.querySelector('.note-card-inbox__actions'), moves: el.querySelector('.note-card-inbox__moves'), hints: el.querySelector('.note-card-inbox__hints'), buttons: buttons() })
+    const before = nodes()
+    expect(before.buttons).toHaveLength(2)
+    const card = session.card!
+    // → : a new card, its answers not fixed yet, and its page not read yet; then the page; then its answers.
+    for (const next of [
+      { ...session, position: 4, answers: null, card: { ...card, id: 'WIKI-10', page: null } },
+      { ...session, position: 4, answers: null, card: { ...card, id: 'WIKI-10', page: { ...card.page!, id: 'WIKI-10', text: 'Next {{card}}' } } },
+    ]) {
+      session = next
+      render()
+      const now = nodes()
+      expect(now.actions).toBe(before.actions)
+      expect(now.moves).toBe(before.moves)
+      expect(now.hints).toBe(before.hints)
+      expect(now.buttons).toHaveLength(2)
+      now.buttons.forEach((b, i) => expect(b).toBe(before.buttons[i]))
+    }
+    await flush()
+    expect(buttons().map((b) => b.getAttribute('aria-description'))).toEqual(['Forgot · later today', 'Remembered · 3 days'])
+    buttons().forEach((b, i) => expect(b).toBe(before.buttons[i]))
+  })
+
+  it('YAZ-5029: the same card read again with the same text (a new page) fixes its answers again', async () => {
+    mount(TWO_SIDES)
+    await flush()
+    expect(review.showAnswers).toHaveBeenCalledOnce()
+    session = { ...session, answers: null, card: { ...session.card!, page: { ...session.card!.page! } } }
+    render()
+    expect(review.showAnswers).toHaveBeenCalledTimes(2)
   })
 
   it('a card with one side and no hidden word shows its buttons at once; four buttons by the setting, 1–4', async () => {

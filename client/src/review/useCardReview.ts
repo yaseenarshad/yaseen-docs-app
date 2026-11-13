@@ -36,6 +36,13 @@ import { changeCardLine, deleteCardReview, isCardGone, readCard, restoreCardRevi
  * comes back until the scheduler lets it go: a new card after two Remembered in a row, a known card after one. Closed
  * and opened again, the Inbox shows it at once: a card in its steps is due now (`cardQueue`). ⌘Z takes the repeat
  * out again and puts the card back at its place.
+ *
+ * Fast ← → (YAZ-5029, Yaseen: "why does these two things jump and show like a small version of them like latency?"):
+ * the cards around the one showing (`AHEAD` each way, under the filter) are read ahead into a small cache, so the next
+ * card shows with its text in the same render as the move. A card not read yet leaves the card before on show, whole
+ * (its head and its text agree), until its text is ready: the session never hands out an empty card between two cards.
+ * A cached page is good while its index `mtime` is the one it was read at; every write of this hook drops its page's
+ * entries, and a read that started before such a write is not kept. A read for a card left already never shows.
  */
 
 /** Which cards of the session show (YAZ-5017). */
@@ -115,8 +122,20 @@ export interface CardReviewApi {
 
 /** How many answers ⌘Z can take back in one session. */
 export const UNDO_DEPTH = 20
+/** YAZ-5029: how many cards each way of the one showing are read ahead. */
+export const AHEAD = 3
+/** YAZ-5029: the most cards the read-ahead cache holds; the oldest go first. */
+const CACHE_SIZE = 48
+
+/** A page read ahead (YAZ-5029): the card as read, at the index `mtime` its read started at. */
+interface CachedCard {
+  page: CardOnPage
+  mtime: number | undefined
+}
 
 interface Session {
+  /** YAZ-5029: one per `start`: the card left on show while the next is read is only ever this session's. */
+  id: number
   label: string
   scope: CardReviewScope
   /** Cards still to show; the one at `at` is the one showing. */
@@ -178,6 +197,7 @@ const without = (s: Session, at: number): Session => {
 }
 const reason = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 const sameCard = (a: DueCard, b: DueCard): boolean => a.path === b.path && a.id === b.id
+const cardKey = (card: DueCard): string => `${card.path}\n${card.id}`
 const titleOf = (records: readonly IndexRecord[], path: string): string => records.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '')
 
 export function useCardReview(root: string | null, source: IndexSource, settings: ReviewSettings, onNotice: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void, vaultName?: string | null): CardReviewApi {
@@ -216,6 +236,39 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     return first === -1 ? [] : queue.slice(first)
   }, [source])
 
+  // YAZ-5029: the read-ahead cache, by card; `epoch` per page, bumped by each write here, so a read begun before it is dropped.
+  const cache = useRef(new Map<string, CachedCard>())
+  const epoch = useRef(new Map<string, number>())
+  const mtimeOf = useCallback((path: string): number | undefined => live.current.records.find((r) => r.path === path)?.mtime, [])
+  const cached = useCallback(
+    (card: DueCard): CardOnPage | null => {
+      const hit = cache.current.get(cardKey(card))
+      return hit !== undefined && hit.mtime === mtimeOf(card.path) ? hit.page : null
+    },
+    [mtimeOf],
+  )
+  /** Reads card `card` and keeps it in the cache, unless its page was written since the read began. */
+  const readInto = useCallback(
+    async (card: DueCard): Promise<CardOnPage | null> => {
+      const from = epoch.current.get(card.path) ?? 0
+      const mtime = mtimeOf(card.path)
+      const page = await readCard(card.path, card.id)
+      const key = cardKey(card)
+      if (page !== null && (epoch.current.get(card.path) ?? 0) === from) {
+        cache.current.delete(key)
+        cache.current.set(key, { page, mtime })
+        if (cache.current.size > CACHE_SIZE) cache.current.delete(cache.current.keys().next().value!)
+      }
+      return page
+    },
+    [mtimeOf],
+  )
+  /** A write of `path` here: its cached cards go, and reads of it already begun are not kept. */
+  const forget = useCallback((path: string) => {
+    epoch.current.set(path, (epoch.current.get(path) ?? 0) + 1)
+    for (const [key, hit] of cache.current) if (hit.page.path === path) cache.current.delete(key)
+  }, [])
+
   const head = session?.queue[session.at]
   const turnKey = session === null || head === undefined ? null : `${session.turn}\n${head.path}\n${head.id}`
 
@@ -237,8 +290,11 @@ export function useCardReview(root: string | null, source: IndexSource, settings
   // Read the card showing from its page; a page or card that is gone passes it over.
   useEffect(() => {
     if (turnKey === null || head === undefined) return
+    // Read ahead (YAZ-5029): the card is in the cache, at its page's mtime — no read, no frame without it.
+    const hit = cached(head)
+    if (hit !== null) return setLoaded((l) => (l?.key === turnKey && l.page === hit ? l : { key: turnKey, page: hit }))
     let on = true
-    readCard(head.path, head.id).then(
+    readInto(head).then(
       (page) => {
         if (!on) return
         if (page !== null) return setLoaded({ key: turnKey, page })
@@ -253,7 +309,34 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     return () => {
       on = false
     }
-  }, [turnKey, head, reread])
+  }, [turnKey, head, reread, cached, readInto])
+
+  // Read ahead (YAZ-5029): the cards around the one showing, under the filter, so ← → find their text ready. A read
+  // already on its way is not begun again; a failed one is left to the card's own read, when its turn comes.
+  const reading = useRef(new Set<string>())
+  const filter = session?.filter
+  const queue = session?.queue
+  const at = session?.at
+  useEffect(() => {
+    if (queue === undefined || at === undefined || filter === undefined) return
+    const near: DueCard[] = []
+    for (const delta of [1, -1] as const) {
+      let left = AHEAD
+      for (let i = at + delta; left > 0 && i >= 0 && i < queue.length; i += delta) {
+        if (!matchesFilter(queue[i], filter)) continue
+        near.push(queue[i])
+        left--
+      }
+    }
+    for (const card of near) {
+      const key = cardKey(card)
+      if (cached(card) !== null || reading.current.has(key)) continue
+      reading.current.add(key)
+      void readInto(card)
+        .catch(() => null)
+        .finally(() => reading.current.delete(key))
+    }
+  }, [queue, at, filter, records, cached, readInto])
 
   const start = useCallback(
     (scope: CardReviewScope = {}) => {
@@ -263,7 +346,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       const label = scope.page !== undefined ? titleOf(records, scope.page) : scope.folder ? folderTitle(source.folders, `${root}/${scope.folder}`) : 'Inbox'
       const { due, new: fresh } = countOf(queue)
       // A new scope starts on All cards (YAZ-5017), with an empty bar (YAZ-5020).
-      setSession((s) => ({ label, scope, queue, at: 0, total: queue.length, turn: (s?.turn ?? 0) + 1, undo: [], filter: 'all', totals: { due, new: fresh }, answered: [] }))
+      setSession((s) => ({ id: (s?.id ?? 0) + 1, label, scope, queue, at: 0, total: queue.length, turn: (s?.turn ?? 0) + 1, undo: [], filter: 'all', totals: { due, new: fresh }, answered: [] }))
     },
     [root, source],
   )
@@ -273,14 +356,17 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     const { session, loaded, fixed, settings } = live.current
     const shown = session?.queue[session.at]
     const key = session === null || shown === undefined ? null : `${session.turn}\n${shown.path}\n${shown.id}`
-    if (key === null || loaded?.key !== key) return null
+    if (key === null || shown === undefined) return null
+    // The card's page: read this turn, or read ahead (YAZ-5029) — the one the Inbox shows.
+    const page = loaded?.key === key ? loaded.page : cached(shown)
+    if (page === null) return null
     if (fixed?.key === key) return fixed.answers
-    const answers = previewAnswers(loaded.page.reviews, settings, Date.now())
+    const answers = previewAnswers(page.reviews, settings, Date.now())
     const next = { key, answers }
     live.current.fixed = next
     setFixed(next)
     return answers
-  }, [])
+  }, [cached])
 
   const answer = useCallback(
     async (rating: CardRating) => {
@@ -289,6 +375,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       const chosen = fixAnswers()?.find((a) => a.review.rating === rating)
       if (card === undefined || chosen === undefined || busy.current) return
       busy.current = true
+      forget(card.path)
       const written = await writeCardAnswer(card.path, card.id, chosen.review).then(
         (next) => ({ next }),
         (err: unknown) => {
@@ -298,6 +385,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
         },
       )
       busy.current = false
+      forget(card.path) // also a read begun while it wrote
       if (written === 'failed') return
       setSession((s) => {
         if (s === null || s.queue[s.at] !== card) return s
@@ -315,13 +403,14 @@ export function useCardReview(root: string | null, source: IndexSource, settings
         return fitted({ ...s, queue, at: after.length > 0 ? s.at : 0, total: s.total + (repeat ? 1 : 0), totals, turn: s.turn + 1, undo, answered })
       })
     },
-    [fixAnswers, onNotice, settle],
+    [fixAnswers, onNotice, settle, forget],
   )
 
   const undo = useCallback(async () => {
     const last = live.current.session?.undo.at(-1)
     if (last === undefined || busy.current) return
     busy.current = true
+    forget(last.card.path)
     const undone = await undoCardAnswer(last.card.path, last.card.id, last.review.at, last.next).then(
       () => true,
       (err: unknown) => {
@@ -330,6 +419,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       },
     )
     busy.current = false
+    forget(last.card.path)
     // The card back at its place (YAZ-5020), its repeat out of the queue and the session one smaller again; it shows
     // also under a filter that would hide it: then All cards (YAZ-5017). Its answer leaves the bar (YAZ-5020).
     if (undone)
@@ -342,16 +432,17 @@ export function useCardReview(root: string | null, source: IndexSource, settings
         const filter = matchesFilter(last.card, s.filter) ? s.filter : 'all'
         return { ...s, queue: [...rest.slice(0, at), last.card, ...rest.slice(at)], at, total: s.total - (last.repeat ? 1 : 0), totals, turn: s.turn + 1, undo: s.undo.slice(0, -1), filter, answered: s.answered.slice(0, -1) }
       })
-  }, [onNotice])
+  }, [onNotice, forget])
 
   const close = useCallback(() => setSession(null), [])
 
   /** The card showing, when it is card `id` of `path`, is read again, and its answers fixed again, on its new log. */
   const readAgain = useCallback((path: string, id: string) => {
+    forget(path)
     const s0 = live.current.session
     const shown = s0?.queue[s0.at]
     if (shown !== undefined && shown.path === path && shown.id === id) setSession((s) => (s === null ? s : { ...s, turn: s.turn + 1 }))
-  }, [])
+  }, [forget])
 
   const deleteReview = useCallback(
     async (path: string, id: string, review: CardReview) => {
@@ -405,6 +496,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     const s0 = live.current.session
     const card = s0?.queue[s0.at]
     if (card === undefined) return
+    forget(card.path)
     const written = await changeCardLine(card.path, card.id, (l) => withCardOff(l, true)).then(
       () => true,
       (err: unknown) => {
@@ -412,12 +504,19 @@ export function useCardReview(root: string | null, source: IndexSource, settings
         return false
       },
     )
+    forget(card.path)
     if (written) setSession((s) => (s === null || s.queue[s.at] !== card ? s : without(s, s.at)))
-  }, [onNotice])
+  }, [onNotice, forget])
 
+  // YAZ-5029: the last card shown with its text, and its session: on show while the next card is read.
+  const lastShown = useRef<{ session: number; card: ShownCard } | null>(null)
   const shownSession = useMemo<CardReviewSession | null>(() => {
     if (session === null) return null
     const card = session.queue[session.at]
+    const page = card === undefined ? null : loaded?.key === turnKey ? loaded.page : cached(card)
+    let shownCard: ShownCard | null = card === undefined ? null : { ...card, page }
+    if (shownCard !== null && page === null && lastShown.current?.session === session.id) shownCard = lastShown.current.card
+    else if (shownCard !== null && page !== null) lastShown.current = { session: session.id, card: shownCard }
     const { filter, queue, totals, scope } = session
     const counts = countOf(queue)
     // "3 of 12" under the filter (YAZ-5017): its cards at start, those gone since, and the place among those left.
@@ -427,12 +526,13 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     return {
       label: session.label,
       scope: scope.page !== undefined ? 'page' : scope.folder ? 'folder' : 'vault',
-      card: card === undefined ? null : { ...card, page: loaded?.key === turnKey ? loaded.page : null },
+      card: shownCard,
       position: Math.max(1, Math.min(total - counts[filter] + 1 + before, total)),
       total,
       canBack: stepFrom(session, -1) !== -1,
       canNext: stepFrom(session, 1) !== -1,
-      answers: fixed?.key === turnKey ? fixed.answers : null,
+      // The card before, still on show (YAZ-5029), has no answers: none of its buttons writes to the card under it.
+      answers: fixed?.key === turnKey && page !== null ? fixed.answers : null,
       canUndo: session.undo.length > 0,
       filter,
       counts,
@@ -440,7 +540,8 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       answered: session.answered,
       size: Math.max(session.total, session.answered.length + queue.length),
     }
-  }, [session, loaded, fixed, turnKey, root, vaultName])
+    // `records`: a cached page is good only at its page's mtime.
+  }, [session, loaded, fixed, turnKey, root, vaultName, cached, records])
 
   return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, move, turnOff, setFilter }
 }
