@@ -392,10 +392,17 @@
   border-color: var(--danger);
 }
 
-/* A review list (the FSRS weights, YAZ-4946): the whole list shows, wrapped; no second gap under the hint. */
+/* A review list (the FSRS weights, YAZ-4946): the whole list shows, wrapped; no second gap under the hint. The box
+   grows to its text (`field-sizing: content`, YAZ-4964): 21 numbers take 3 lines at 960 px, more in a narrow window,
+   and a fixed `rows` cut the last line. Its width stays the row's (`.settings__input`'s 100%), so it never runs past
+   the panel's side. */
 .settings__input--list {
   margin-top: 0;
-  resize: vertical;
+  field-sizing: content;
+  max-width: 100%;
+  /* A floor of 3 lines (with the field's padding and border); the text grows it past that. */
+  min-height: calc(3lh + 14px);
+  resize: none;
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 12px;
   line-height: 1.5;
