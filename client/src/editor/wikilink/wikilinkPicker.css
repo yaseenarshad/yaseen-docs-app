@@ -52,3 +52,15 @@
 .wikilink-picker__item--create {
   font-style: italic;
 }
+
+/* A note card's row (YAZ-5030): the card icon of a card pill (`wikilink.css`), before the title. */
+.wikilink-picker__card-icon {
+  display: inline-block;
+  flex: none;
+  width: 1em;
+  height: 1em;
+  margin-right: 6px;
+  vertical-align: -0.125em;
+  background-color: var(--fg-muted);
+  mask: var(--card-link-icon) center / 0.9em 0.9em no-repeat;
+}

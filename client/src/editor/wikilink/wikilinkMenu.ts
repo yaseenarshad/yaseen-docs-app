@@ -27,7 +27,7 @@ import { OPEN_ID_LINK } from './idLinkCaret'
 import { fileKind } from '@shared/fileKind'
 import { newEmbed } from '@shared/embedOptions'
 import { linkPosAtDOM, wikilinkMatchAt, type LinkFollow, type WikilinkNav } from './wikilinkClick'
-import { WIKILINK_CLASS, idLinkTitle, linkDisplayText, linkIsResolved, linkNoteId, linkPageName, linkPath, linkSplit, missingId, nameAndId, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
+import { WIKILINK_CLASS, cardLinkTitle, cardResolverOf, idLinkTitle, linkDisplayText, linkIsResolved, linkNoteId, linkPageName, linkPath, linkSplit, missingId, nameAndId, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './viewOnlyLinkSource'
 import { pillStyleRow } from './pillStyle'
 
@@ -82,7 +82,12 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
 export function linkMenuOf(inner: string, source: WikilinkResolveSource, nav: WikilinkNav, follow: LinkFollow, viewOnly: ViewOnlyLinkSource | undefined, vaultsOf: VaultsOfLetters | undefined, edit: (() => void) | undefined, removeWith: ((text: string) => void) | undefined): LinkMenu {
   const page = linkPageName(inner, source)
   const titles = pathTitles(source.records, source.folders)
-  const titleOf = (target: string) => idLinkTitle(target, source.resolve, titles)
+  const cards = cardResolverOf(source)
+  // A card's ID names the card (YAZ-5030): its title, not its page's.
+  const titleOf = (target: string) => {
+    const card = cards?.(target) ?? null
+    return card === null ? idLinkTitle(target, source.resolve, titles) : cardLinkTitle(card)
+  }
   const named = () => linkIsResolved(inner, source, viewOnly)
   const remove = removeWith === undefined ? undefined : () => removeWith(linkDisplayText(inner, titleOf, named, source))
   const copyIdRow = (id: string) => () => copyText(id, 'ID', nav.onNotice, undefined, true)

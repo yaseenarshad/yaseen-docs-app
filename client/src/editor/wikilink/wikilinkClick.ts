@@ -31,6 +31,10 @@
  * different note wearing its name — the click says the note is gone and does nothing else. A resolving one opens
  * from its title widget, which carries `.wikilink` and sits inside the match, so the hit-test below finds it like any
  * segment. `[[#h]]` (same-file, empty target) is a no-op — the heading jump is GRO-2239.
+ *
+ * A LINK TO A NOTE CARD (YAZ-5030, `linkCard`): a plain click opens the CARD WINDOW (the Explore card layer, through
+ * the one open hook, `openCardWindow`), in an editable note too, and "Open in this tab" does the same; any tab gesture
+ * (⌘-click: a background tab, by default) opens the card's PAGE there, landed on the card (`landOnCard`).
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
@@ -42,7 +46,8 @@ import type { GestureAction } from '@shared/keys'
 import { createFromLink } from './createFromLink'
 import { linkClickAction, trackLinkHand } from '../linkGesture'
 import type { LinkActions } from '../linkMenu'
-import { WIKILINK_CLASS, WIKILINK_RE, eachPlainRun, linkPageName, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
+import { WIKILINK_CLASS, WIKILINK_RE, eachPlainRun, linkCard, linkPageName, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
+import { landOnCard, openCardWindow } from '../noteCard/noteCardOpen'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
 
 /**
@@ -152,6 +157,14 @@ export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav
       const viewPath = viewSource.resolve(viewTarget.page)
       if (viewPath === null) nav.onNotice(`Can't open "${viewTarget.page}": file not found`)
       else open(viewPath)
+      return
+    }
+    // A note card (YAZ-5030): its window, or its page in a tab, landed on it.
+    const card = linkCard(inner, source)
+    if (card !== null) {
+      if (where === 'explore' || where === 'thisTab') return openCardWindow(card.path, card.id, card.index)
+      landOnCard(card.path, card.id)
+      open(card.path)
       return
     }
     const resolve = source.resolve

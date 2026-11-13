@@ -14,7 +14,7 @@ import { useIndex } from '../../views/useIndex'
 import type { WatchSource } from '../../hooks/useWatch'
 import { useViewOnlyCatalog } from '../../hooks/useViewOnlyCatalog'
 import { onTree } from '../../lib/treeFeed'
-import { linkCandidates, mergeLinkCandidates, type LinkCandidate } from '../../links/completion'
+import { cardLinkCandidates, linkCandidates, mergeLinkCandidates, type LinkCandidate } from '../../links/completion'
 import { folderLinkCandidates, linkResolver, vaultDirs } from '../../links/folderLinks'
 import type { MutableWikilinkCandidateSource } from './wikilinkPicker'
 import type { MutableWikilinkResolveSource } from './wikilinkPlugin'
@@ -66,15 +66,16 @@ export function WikilinkIndexBridge({ root, watch, source, candidates, viewOnly,
   // loaded, as resolved (source.resolve null) — never flashing everything unresolved.
   const ready = !rootChanged && status === 'ready'
   // ONE resolver per snapshot and folder list, and the semantic picker rows it names: the
-  // notes, then the folders — after them, so a note wins an equal match (D10).
+  // notes, then the note cards of a vault with IDs (YAZ-5030: a page before a card of the same rank), then the
+  // folders — after them, so a note wins an equal match (D10).
   const semantic = useMemo(() => {
     if (!ready) return null
     const dirs = dirList === '' ? [] : dirList.split('\n')
     const resolve = linkResolver(records, root, dirs, folders, letters, boards)
     // A board's ID by its path (YAZ-3943 4C): its picker row inserts it.
     const boardIds = new Map(boards.map((board) => [board.path, board.id]))
-    return { resolve, boardIds, rows: [...linkCandidates(records), ...folderLinkCandidates(root, dirs, resolve, folders)] }
-  }, [ready, records, folders, letters, boards, root, dirList])
+    return { resolve, boardIds, rows: [...linkCandidates(records), ...(ids ? cardLinkCandidates(records) : []), ...folderLinkCandidates(root, dirs, resolve, folders)] }
+  }, [ready, records, folders, letters, boards, root, dirList, ids])
   useEffect(() => {
     if (semantic === null) return
     // The snapshot rides ALONG with the resolver (Links D, GRO-2193): the backlinks section

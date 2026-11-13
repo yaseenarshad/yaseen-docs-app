@@ -15,7 +15,8 @@ import { copyText } from '../editor/linkMenu'
 import { NOTE_CARD_BOARD_ATTR, NOTE_CARD_MEDIA, NOTE_CARD_OPENS } from '../editor/noteCard/noteCardMedia'
 import { NOTE_CARD_LINK_ATTR, noteCardLinkWhere, refreshNoteCardLook, renderNoteCard, type NoteCardShow } from '../editor/noteCard/noteCardRender'
 import { hrefTarget } from '../editor/pathPaste'
-import { linkPath } from '../editor/wikilink/wikilinkPlugin'
+import { linkCard, linkPath } from '../editor/wikilink/wikilinkPlugin'
+import { landOnCard, openCardWindow } from '../editor/noteCard/noteCardOpen'
 import type { ExploreVault } from '../explore/ExploreNote'
 import { storage } from '../lib/storage'
 import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
@@ -137,6 +138,13 @@ export function NoteCardBody({ text, path, vault, show, doors }: NoteCardBodyPro
       const where = noteCardLinkWhere(event, storage.getSettings()?.hotkeys)
       if (where === null) return
       const inner = pill.getAttribute(NOTE_CARD_LINK_ATTR) ?? pill.getAttribute(NOTE_CARD_BOARD_ATTR) ?? ''
+      // A link to a note card (YAZ-5030): its card window on top; a tab gesture, its page there, landed on the card.
+      const card = pill.hasAttribute(NOTE_CARD_LINK_ATTR) ? linkCard(inner, wikilinks) : null
+      if (card !== null) {
+        if (where === 'explore' || where === 'thisTab') return openCardWindow(card.path, card.id, card.index, event.currentTarget)
+        landOnCard(card.path, card.id)
+        return openTab(card.path, where)
+      }
       const to = linkPath(inner, wikilinks, viewOnlyLinks)
       if (to === null) return onNotice(`"${inner}" is not in this vault`)
       if (where === 'explore' || where === 'thisTab') openLayer(to)

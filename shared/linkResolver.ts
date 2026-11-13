@@ -130,9 +130,15 @@ export function idKey(key: string, letters?: readonly string[]): string {
  * path of TITLES (YAZ-2478, `ResolverOptions.folders`), and finally a
  * frontmatter ALIAS (E2, GRO-2214), by the same shallowest-then-first rule, so a real name
  * always beats an alias. Case-insensitive; `[[…]]`, `|alias` and `#heading` are stripped.
+ *
+ * A NOTE CARD's ID (YAZ-5030, `cardLinks.ts`) finds the page the card is on, right after the notes' own ids: a link to
+ * a card is a link into its page, as `[[Page#heading]]` is. Which card it names is `makeCardResolver`'s to say. Not
+ * with `ids: false` (the rename probe): an ID link names the card itself, so no rename of its page rewrites it.
  */
 export function makeResolver<F extends Resolvable>(files: readonly F[], root?: string, opts: ResolverOptions = {}): (target: string) => F | null {
   const byId = new Map<string, F>()
+  /** A note card's ID in lowercase (YAZ-5030) → the page the card is on; the first page in the given order. */
+  const byCard = new Map<string, F>()
   const byPath = new Map<string, F>()
   const byRel = new Map<string, F>()
   const byTitle = new Map<string, { file: F; depth: number }>()
@@ -150,6 +156,14 @@ export function makeResolver<F extends Resolvable>(files: readonly F[], root?: s
     // By the id in lowercase: a target is read in any case (YAZ-2677 R1, S17), and its key is lowercase.
     const id = opts.ids === false ? undefined : r.id?.toLowerCase()
     if (id !== undefined && !byId.has(id)) byId.set(id, f)
+    if (opts.ids !== false && r.cards !== undefined)
+      for (const card of r.cards) {
+        const key = card.id?.toLowerCase()
+        if (key === undefined) continue
+        if (!byCard.has(key)) byCard.set(key, f)
+        const current = idKey(key, opts.letters)
+        if (!byCard.has(current)) byCard.set(current, f)
+      }
     byPath.set(r.path.toLowerCase(), f)
     const rel = normalise(r.folder ? `${r.folder}/${r.basename}` : r.basename)
     if (!byRel.has(rel)) byRel.set(rel, f)
@@ -173,7 +187,8 @@ export function makeResolver<F extends Resolvable>(files: readonly F[], root?: s
   }
   const find = (key: string): F | null => {
     if (!key) return null
-    let found = byId.get(idKey(key, opts.letters)) ?? byPath.get(key) ?? null
+    const asId = idKey(key, opts.letters)
+    let found = byId.get(asId) ?? (byCard.size === 0 ? undefined : (byCard.get(asId) ?? byCard.get(key))) ?? byPath.get(key) ?? null
     if (!found) {
       const rel = normalise(rootKey && key.startsWith(rootKey) ? key.slice(rootKey.length) : key)
       found = byRel.get(rel) ?? byTitle.get(key)?.file ?? (rel.includes('/') ? titledPath(rel) : byBase.get(rel)?.file ?? null)

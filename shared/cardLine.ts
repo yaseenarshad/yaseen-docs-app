@@ -1,6 +1,7 @@
 import { splitFrontmatter } from './frontmatter'
 import { closesFence, fenceOf } from './fences'
 import { canonicalNoteId, isNumberId } from './noteId'
+import { cardTitle } from './cardText'
 
 /**
  * NOTE CARDS (YAZ-4946, YAZ-4959 D3): a note card is a ```` ```card ```` fence in a Markdown page, and its ONE card line
@@ -15,7 +16,9 @@ import { canonicalNoteId, isNumberId } from './noteId'
  *
  * The line holds the card's ID (the vault's counter, D2), then each review: a UTC time to the minute and the FSRS
  * rating (`again | hard | good | easy`, D5). `off` takes the card out of review. `next` puts it at the top of the Inbox
- * (YAZ-4999 D3, "Up next"): its first answer removes it, in the same write. A card takes its ID when it is
+ * (YAZ-4999 D3, "Up next"): its first answer removes it, in the same write. `notitle` hides the card's title (its
+ * first line, `cardTitle`) on the Inbox's front (YAZ-5030, "Title on the front: Hide"); absent, the title shows, as on
+ * every card before it. A card takes its ID when it is
  * made (`/card` asks the vault's door, `yaseendocs card add` too); one that has none (an agent's text, a paste) gets
  * it from the index's sweep (YAZ-4960). The due date is never written: `cardSchedule.ts` replays the reviews.
  *
@@ -35,14 +38,17 @@ export interface CardReview {
 }
 
 /** One part of a card line, in the order the line holds them. */
-export type CardPart = { kind: 'id'; id: string } | { kind: 'review'; review: CardReview } | { kind: 'off' } | { kind: 'next' } | { kind: 'other'; text: string }
+export type CardPart = { kind: 'id'; id: string } | { kind: 'review'; review: CardReview } | { kind: 'off' } | { kind: 'next' } | { kind: 'notitle' } | { kind: 'other'; text: string }
 
 /** What a card line holds. `parts` keeps every part in place; the getters below read it. */
 export interface CardLine {
   parts: CardPart[]
 }
 
-/** What the index keeps of each card (`IndexRecord.cards`, D4), in page order: no card text. */
+/**
+ * What the index keeps of each card (`IndexRecord.cards`, D4), in page order: no card text but its title (YAZ-5030:
+ * what a link to the card shows, and what the `[[` picker finds it by).
+ */
 export interface NoteCardRecord {
   /** The card's ID as the line holds it (canonical form, `WIKI-512`); null before the sweep gives one. */
   id: string | null
@@ -52,6 +58,10 @@ export interface NoteCardRecord {
   next: boolean
   /** The reviews, in the order the line holds them. */
   reviews: CardReview[]
+  /** The card's title (`cardTitle`: its first line, as plain text); absent for an empty card. */
+  title?: string
+  /** The title is hidden on the Inbox's front (the line's `notitle` part, YAZ-5030); absent: it shows. */
+  notitle?: true
 }
 
 /** `<!-- card: … -->` on one line, any spaces inside the delimiters. */
@@ -74,6 +84,7 @@ export function parseCardLine(value: string): CardLine | null {
     if (review !== null) parts.push({ kind: 'review', review: { at: review[1], rating: review[2] as CardRating } })
     else if (text === 'off') parts.push({ kind: 'off' })
     else if (text === 'next') parts.push({ kind: 'next' })
+    else if (text === 'notitle') parts.push({ kind: 'notitle' })
     else if (!id && isNumberId(text)) {
       id = true
       parts.push({ kind: 'id', id: canonicalNoteId(text) })
@@ -84,7 +95,7 @@ export function parseCardLine(value: string): CardLine | null {
 
 /** The card line for `line`, or null when it holds no part (a card with no ID and no review writes no line). */
 export function formatCardLine(line: CardLine): string | null {
-  const parts = line.parts.map((p) => (p.kind === 'id' ? p.id : p.kind === 'review' ? `${p.review.at} ${p.review.rating}` : p.kind === 'off' ? 'off' : p.kind === 'next' ? 'next' : p.text))
+  const parts = line.parts.map((p) => (p.kind === 'id' ? p.id : p.kind === 'review' ? `${p.review.at} ${p.review.rating}` : p.kind === 'other' ? p.text : p.kind))
   return parts.length === 0 ? null : `<!-- card: ${parts.join(', ')} -->`
 }
 
@@ -97,7 +108,12 @@ export const withoutCardId = (line: CardLine): CardLine => ({ parts: line.parts.
 export const cardReviewsOf = (line: CardLine): CardReview[] => line.parts.flatMap((p) => (p.kind === 'review' ? [p.review] : []))
 /** Is the card up next (YAZ-4999 D3)? */
 export const isCardNext = (line: CardLine): boolean => line.parts.some((p) => p.kind === 'next')
-const cardRecordOf = (line: CardLine): NoteCardRecord => ({ id: cardIdOf(line), off: isCardOff(line), next: isCardNext(line), reviews: cardReviewsOf(line) })
+/** Is the card's title hidden on the Inbox's front (YAZ-5030)? */
+export const isCardNoTitle = (line: CardLine): boolean => line.parts.some((p) => p.kind === 'notitle')
+const cardRecordOf = (line: CardLine, text: string): NoteCardRecord => {
+  const title = cardTitle(text)
+  return { id: cardIdOf(line), off: isCardOff(line), next: isCardNext(line), reviews: cardReviewsOf(line), ...(title !== '' && { title }), ...(isCardNoTitle(line) && { notitle: true as const }) }
+}
 
 /** The line with `id` as its ID: the ID part changes in place, or comes first. */
 export function withCardId(line: CardLine, id: string): CardLine {
@@ -126,6 +142,18 @@ export function withCardNext(line: CardLine, on: boolean, at?: number): CardLine
   if (line.parts[i]?.kind === 'off') i++
   if (at !== undefined) i = Math.max(0, Math.min(at, line.parts.length))
   return { parts: [...line.parts.slice(0, i), { kind: 'next' }, ...line.parts.slice(i)] }
+}
+
+/**
+ * The title hidden on the Inbox's front or shown (YAZ-5030, the ⋯ menu's "Title on the front"): `notitle` goes after
+ * the ID and any `off` / `next` right after it, or first; Show removes every `notitle`.
+ */
+export function withCardNoTitle(line: CardLine, hide: boolean): CardLine {
+  if (isCardNoTitle(line) === hide) return line
+  if (!hide) return { parts: line.parts.filter((p) => p.kind !== 'notitle') }
+  let i = line.parts.findIndex((p) => p.kind === 'id') + 1
+  while (line.parts[i]?.kind === 'off' || line.parts[i]?.kind === 'next') i++
+  return { parts: [...line.parts.slice(0, i), { kind: 'notitle' }, ...line.parts.slice(i)] }
 }
 
 /** The place among the line's parts of its `next` part, or -1 when the card is not up next. */
@@ -268,7 +296,7 @@ export function findCards(text: string): CardBlock[] {
         close,
         lineAt: next === null ? null : close + 1,
         indent,
-        // Built when asked: the index reads only the line (D4).
+        // Built when asked: the sweep and the command read only the line; the index reads the title too (YAZ-5030).
         get text() {
           return lines
             .slice(from, to)
@@ -283,8 +311,8 @@ export function findCards(text: string): CardBlock[] {
   return cards
 }
 
-/** What the index keeps of a page's cards (D4): one entry per card, in page order. */
-export const cardRecords = (text: string): NoteCardRecord[] => findCards(text).map((c) => cardRecordOf(c.line))
+/** What the index keeps of a page's cards (D4, YAZ-5030 its title): one entry per card, in page order. */
+export const cardRecords = (text: string): NoteCardRecord[] => findCards(text).map((c) => cardRecordOf(c.line, c.text))
 
 /**
  * `text` with the card line of each card `change` names rewritten: `change` gets each card in page order and returns

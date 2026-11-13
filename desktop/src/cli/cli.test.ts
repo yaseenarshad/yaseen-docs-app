@@ -739,6 +739,22 @@ describe('note cards: due and card add (YAZ-4963)', () => {
     expect(JSON.parse((await run(['due', geo, '--json'])).out).map((r: { id: string; isNew: boolean }) => [r.id, r.isNew])).toEqual([['YAZ-21', true], ['YAZ-22', true], ['YAZ-23', true]])
   })
 
+  it('YAZ-5030: card add --title writes the title as the card\'s first line; due --json gives it as the title', async () => {
+    const root = await vault('cards', { 'geo.md': '---\nid: YAZ-5\n---\n# Geography\n' })
+    const geo = path.join(root, 'geo.md')
+    const added = await run(['card', 'add', geo, '--title', 'Capital of France', '--body', 'The capital of {{France}}\n---\nParis', '--json'])
+    expect(JSON.parse(added.out)).toEqual({ id: 'YAZ-6', page: geo, title: 'Capital of France' })
+    expect(await readFile(geo, 'utf8')).toBe('---\nid: YAZ-5\n---\n# Geography\n\n```card\nCapital of France\nThe capital of {{France}}\n---\nParis\n```\n<!-- card: YAZ-6 -->\n')
+    // The index holds the title (YAZ-5030): what a `[[YAZ-6]]` link shows.
+    expect((await scanFile(root, geo)).cards?.[0]).toMatchObject({ id: 'YAZ-6', title: 'Capital of France' })
+    expect(JSON.parse((await run(['due', geo, '--json'])).out).map((r: { id: string; title: string }) => [r.id, r.title])).toEqual([['YAZ-6', 'Capital of France']])
+    expect(JSON.parse((await run(['due', root, '--json'])).out).map((r: { id: string; title: string }) => [r.id, r.title])).toEqual([['YAZ-6', 'Capital of France']])
+    // One line, with text: a refusal takes no number.
+    expect((await run(['card', 'add', geo, '--title', 'Two\nlines', '--body', 'x'])).code).toBe(2)
+    expect((await run(['card', 'add', geo, '--title', ' ', '--body', 'x'])).code).toBe(2)
+    expect((await scanFile(root, geo)).cards?.map((c) => c.id)).toEqual(['YAZ-6'])
+  })
+
   it('YAZ-4999: card next writes the part `next` (--off removes it); due lists the card first and marks it', async () => {
     const now = minute(Date.now() - 60_000)
     const root = await vault('cards', {
@@ -777,7 +793,8 @@ describe('note cards: due and card add (YAZ-4963)', () => {
     expect((await run(['card', 'add', geo])).code).toBe(2)
     expect((await run(['card', 'add'])).code).toBe(2)
     expect((await run(['card', 'remove', geo])).code).toBe(2)
-    expect((await run(['card', 'add', geo, '--body', 'x', '--title', 'y'])).code).toBe(2)
+    // `--title` is card add's own (YAZ-5030); another command's flag is refused.
+    expect((await run(['card', 'add', geo, '--body', 'x', '--reply-to', 'y'])).code).toBe(2)
     expect((await run(['due', path.join(root, 'nope.md')])).code).toBe(1)
     expect((await run(['due'])).code).toBe(2)
     expect(await readFile(geo, 'utf8')).toBe('---\nid: YAZ-5\n---\n# Geo\n')

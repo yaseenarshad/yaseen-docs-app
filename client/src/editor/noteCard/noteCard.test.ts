@@ -14,7 +14,7 @@ import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { createViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import { CrepeFeature } from '../crepe'
 import { features } from '../featureConfig'
-import { NOTE_CARD_OPEN, noteCardLanguage, noteCardViewAt, type NoteCardOpenRequest } from './noteCardView'
+import { NOTE_CARD_OPEN, NOTE_CARD_TITLE_PLACEHOLDER, noteCardLanguage, noteCardViewAt, type NoteCardOpenRequest } from './noteCardView'
 import { refreshNoteCardLook, renderNoteCard } from './noteCardRender'
 import { pageCards } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
@@ -93,7 +93,7 @@ function cardPos(view: EditorView): number {
 const CARD = '```card\nWhat is the capital of {{France}}?\n---\nParis\n```\n'
 
 describe('the "Note card" slash row (D1, idea 9)', () => {
-  it('/card and /notecard find one row in a vault with IDs; it inserts a card that takes its ID at once, and one ⌘Z removes it', async () => {
+  it('/card and /notecard find one row in a vault with IDs; it inserts a card that starts with its title line and takes its ID at once, and one ⌘Z removes it', async () => {
     let mint = (_path: string): Promise<string> => Promise.resolve('WIKI-512')
     const mintId = vi.fn((path: string) => mint(path))
     const { crepe, root, view } = await mount('x\n', { wikilinks: vault(true), noteCards: { path: '/v/Page.md', mintId } })
@@ -107,8 +107,11 @@ describe('the "Note card" slash row (D1, idea 9)', () => {
     // The card is edited at once: Crepe's code editor in the card, the caret in its text.
     expect(noteCardViewAt(view, 0)?.editing).toBe(true)
     expect(view.state.selection.$from.parent.attrs.language).toBe('card')
+    // YAZ-5030: the card starts with its title line, "Title", selected whole, so typing replaces it.
+    expect(view.state.doc.textBetween(view.state.selection.from, view.state.selection.to)).toBe(NOTE_CARD_TITLE_PLACEHOLDER)
+    expect(view.state.selection.from).toBe(1)
     // The ID lands without any sweep, on the line under the fence.
-    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toBe('```card\n```\n<!-- card: WIKI-512 -->\n'))
+    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toBe('```card\nTitle\n```\n<!-- card: WIKI-512 -->\n'))
     // The ID is out of the undo history: one ⌘Z takes the card away whole.
     undo(view.state, view.dispatch)
     expect(cardPos(view)).toBe(-1)

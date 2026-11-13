@@ -76,7 +76,7 @@ export const USAGE = `usage:
   yaseendocs links    <page.md> [--json]
   yaseendocs mentions <page.md> [--json]
   yaseendocs due      <page.md | folder> [--json]
-  yaseendocs card add <page.md> --body <text | -> [--after <heading>] [--json]
+  yaseendocs card add <page.md> --body <text | -> [--title <text>] [--after <heading>] [--json]
   yaseendocs card next <id> [<folder>] [--off] [--json]
   yaseendocs vaults   [--json]
   yaseendocs daily    <vault> [--date today | tomorrow | yesterday | YYYY-MM-DD] [--find] [--open] [--json]
@@ -152,9 +152,10 @@ them, so this is the place to read them. \`--json\` gives \`id\`, \`page\`, \`ti
 minute a step ends), \`isNew\`, \`next\` and \`inSteps\` (and \`off\` for a page).
 
 \`card add\` adds a note card to a page, with a new id from the vault's counter, as the app gives one:
-\`--body\` (\`--body -\` for stdin) is the card's text. It goes at the end of the page, or with \`--after\` at
-the end of that heading's section (the heading's text, without the \`#\` marks; case does not count). It
-prints \`added <id> to <page>\`; \`--json\` gives \`id\`, \`page\` and \`title\`.
+\`--body\` (\`--body -\` for stdin) is the card's text, and \`--title\` (one line) its first line: a card's
+first line is its title, what the app and a \`[[<card id>]]\` link to the card show. It goes at the end of
+the page, or with \`--after\` at the end of that heading's section (the heading's text, without the \`#\`
+marks; case does not count). It prints \`added <id> to <page>\`; \`--json\` gives \`id\`, \`page\` and \`title\`.
 
 \`card next <id>\` puts a card at the top of the Inbox, as the app's "Put at top of Inbox" does: the card
 line gets the part \`next\`, and the Inbox shows the card first, due or not and outside the new cards a
@@ -566,9 +567,15 @@ function cardPlace(body: string, after: string | undefined): number {
 
 /** `card add` (YAZ-4963, idea 16): a note card with a real ID from the vault's counter, written atomically. */
 async function cardAdd(page: string, flags: Map<string, string | true>, io: Io): Promise<void> {
-  onlyFlags('card add', flags, ['--body', '--after', '--json'])
-  const text = (await bodyOf(flags, io)).replace(/\r\n/g, '\n').replace(/^\n+|\s+$/g, '')
-  if (text === '') throw new Usage('card add needs a --body with text')
+  onlyFlags('card add', flags, ['--body', '--title', '--after', '--json'])
+  const body = (await bodyOf(flags, io)).replace(/\r\n/g, '\n').replace(/^\n+|\s+$/g, '')
+  if (body === '') throw new Usage('card add needs a --body with text')
+  // The title is the card's first line (YAZ-5030): one line, before the body.
+  const titleFlag = flags.get('--title')
+  if (titleFlag === true) throw new Usage('--title needs a text')
+  const titleLine = titleFlag?.trim() ?? ''
+  if (titleFlag !== undefined && (titleLine === '' || /[\r\n]/.test(titleLine))) throw new Usage('--title needs one line of text')
+  const text = titleLine === '' ? body : `${titleLine}\n${body}`
   const root = await cardVault(dirname(page), page)
   const after = str(flags, '--after')
   // The page and the heading are checked before a number is taken: a refusal costs no number.

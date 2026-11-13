@@ -56,6 +56,19 @@
   font-size: 13px;
   cursor: pointer;
 }
+/* The card window's "Linked mentions" (YAZ-5030): one page name a row, as the strip's page name. */
+.note-card-backlinks__list {
+  margin: 4px 0 0;
+  padding: 0 0 0 20px;
+  list-style: none;
+  font-size: 13px;
+}
+.note-card-backlinks__list li {
+  padding: 2px 0;
+}
+.note-card-backlinks__none {
+  color: var(--fg-muted);
+}
 .note-card-reviews__table {
   margin-left: 20px;
   border-collapse: collapse;
@@ -255,6 +268,16 @@
   justify-content: flex-start;
   height: 20px;
   margin-bottom: 6px;
+}
+/* A title hidden on the front (YAZ-5030): after the card is fully shown, a small quiet label after the chip. */
+.note-card-inbox__title {
+  min-width: 0;
+  margin-left: 8px;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .note-card-inbox__panel {
   position: relative;
