@@ -801,6 +801,112 @@ describe('note cards: due and card add (YAZ-4963)', () => {
   })
 })
 
+/**
+ * YAZ-5037 card files: a card on its own, `kind: card` in its properties and one card in its body. `card new` makes one
+ * with the vault's next number; `card add` refuses one; `due`, `links` and `mentions` say what is a card.
+ */
+describe('card files (YAZ-5037)', () => {
+  const card = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->\n`
+
+  it('card new writes a card file: kind: card, one card whose first line is the title, a blank line, then the body; the next number; named <kebab-title>-<id>.md', async () => {
+    const root = await vault('cards', { 'geo/deck.md': `---\nid: YAZ-5\n---\n${card('In a page', 'YAZ-9')}` })
+    const geo = path.join(root, 'geo')
+    const made = await run(['card', 'new', geo, '--title', 'Capital of France', '--body', '-'], 'The capital of {{France}}\n---\nParis\n')
+    const file = path.join(geo, 'capital-of-france-yaz-10.md')
+    expect(made).toEqual({ code: 0, out: `made ${file}\n`, err: '' })
+    expect(await readFile(file, 'utf8')).toBe('---\nkind: card\n---\n```card\nCapital of France\n\nThe capital of {{France}}\n---\nParis\n```\n<!-- card: YAZ-10 -->\n')
+    // The index reads it as a card file: no page id, the card's title, its card.
+    expect(await scanFile(root, file)).toMatchObject({ kind: 'card', title: 'Capital of France', cards: [expect.objectContaining({ id: 'YAZ-10' })] })
+    expect((await scanFile(root, file)).id).toBeUndefined()
+    // No --body: the title alone. --json gives the id, the path and the title.
+    const json = await run(['card', 'new', geo, '--title', 'Lone', '--json'])
+    expect(JSON.parse(json.out)).toEqual({ id: 'YAZ-11', path: path.join(geo, 'lone-yaz-11.md'), title: 'Lone' })
+    expect(await readFile(path.join(geo, 'lone-yaz-11.md'), 'utf8')).toBe('---\nkind: card\n---\n```card\nLone\n```\n<!-- card: YAZ-11 -->\n')
+    // The placeholder title of a new card keeps the `<id>.md` name, as the app's New card does.
+    expect(JSON.parse((await run(['card', 'new', geo, '--title', 'Title', '--json'])).out).path).toBe(path.join(geo, 'yaz-12.md'))
+  })
+
+  it('card new refuses a vault without IDs, a folder that is not there, a file, a folder the vault does not show, a name that is taken, and bad usage; nothing is written', async () => {
+    const plain = await vault('plain', { 'a.md': 'Text.\n' }, false)
+    const refused = await run(['card', 'new', plain, '--title', 'X'])
+    expect(refused.code).toBe(1)
+    expect(refused.err).toMatch(/does not give its notes IDs, so it has no note cards/)
+    expect(await readdir(plain)).toEqual(expect.arrayContaining(['a.md', VAULT_CONFIG_DIR]))
+    expect(await readdir(plain)).toHaveLength(2)
+    const root = await vault('cards', { 'geo.md': '---\nid: YAZ-5\n---\n# Geo\n', '.trash/old.md': '', 'taken-yaz-6.md': 'Mine.\n' })
+    expect(await run(['card', 'new', path.join(root, 'nope'), '--title', 'X'])).toMatchObject({ code: 1, err: `no folder ${path.join(root, 'nope')}\n` })
+    expect(await run(['card', 'new', path.join(root, 'geo.md'), '--title', 'X'])).toMatchObject({ code: 1, err: `${path.join(root, 'geo.md')} is not a folder\n` })
+    for (const hidden of [path.join(root, '.trash'), path.join(root, VAULT_CONFIG_DIR)]) {
+      expect(await run(['card', 'new', hidden, '--title', 'X'])).toMatchObject({ code: 1, err: `${hidden} is not a folder the vault shows\n` })
+    }
+    // The name the title and the new number give is there already: refused, and the file is kept (the number is spent).
+    expect(await run(['card', 'new', root, '--title', 'Taken'])).toEqual({ code: 1, out: '', err: `${path.join(root, 'taken-yaz-6.md')} is already there\n` })
+    expect(await readFile(path.join(root, 'taken-yaz-6.md'), 'utf8')).toBe('Mine.\n')
+    for (const argv of [
+      ['card', 'new'],
+      ['card', 'new', root],
+      ['card', 'new', root, '--title', ' '],
+      ['card', 'new', root, '--title', 'Two\nlines'],
+      ['card', 'new', root, '--title', 'X', '--after', 'Cards'],
+    ]) expect((await run(argv)).code, argv.join(' ')).toBe(2)
+    expect((await readdir(root)).sort()).toEqual(['.trash', VAULT_CONFIG_DIR, 'geo.md', 'taken-yaz-6.md'].sort())
+  })
+
+  it('card add refuses a card file: "This is a card file. Use `card new`." and nothing is written', async () => {
+    const root = await vault('cards', { 'one-yaz-3.md': `---\nkind: Card\n---\n${card('One', 'YAZ-3')}` })
+    const file = path.join(root, 'one-yaz-3.md')
+    const before = await readFile(file, 'utf8')
+    expect(await run(['card', 'add', file, '--body', 'Two'])).toEqual({ code: 1, out: '', err: 'This is a card file. Use `card new`.\n' })
+    expect(await readFile(file, 'utf8')).toBe(before)
+    // No number was taken: the next card gets the next one.
+    expect(JSON.parse((await run(['card', 'new', root, '--title', 'Next', '--json'])).out).id).toBe('YAZ-4')
+  })
+
+  it('due --json marks a card that lives in a card file `cardFile: true`, for a folder and for the file; a card in a page has no such key', async () => {
+    const root = await vault('cards', {
+      'deck.md': `---\nid: YAZ-1\n---\n${card('In a page', 'YAZ-2')}`,
+      'own-yaz-3.md': `---\nkind: card\n---\n${card('Own', 'YAZ-3')}`,
+    })
+    const rows = JSON.parse((await run(['due', root, '--json'])).out) as Record<string, unknown>[]
+    expect(rows.map((r) => [r.id, r.cardFile])).toEqual([['YAZ-2', undefined], ['YAZ-3', true]])
+    expect(rows[0]).not.toHaveProperty('cardFile')
+    expect(JSON.parse((await run(['due', path.join(root, 'own-yaz-3.md'), '--json'])).out)).toEqual([expect.objectContaining({ id: 'YAZ-3', title: 'Own', cardFile: true })])
+    expect(JSON.parse((await run(['due', path.join(root, 'deck.md'), '--json'])).out)[0]).not.toHaveProperty('cardFile')
+  })
+
+  it('links names a card by its id — in a card file or in a page — as kind `card`, with its title and the path of its file; mentions gives a card file kind `card`', async () => {
+    const root = await vault('cards', {
+      'home.md': '---\nid: YAZ-1\n---\nSee [[YAZ-3]], [[yaz-2|the card]], [[YAZ-4]] and [[YAZ-99]].\n',
+      'Decks/deck-yaz-4.md': `---\nid: YAZ-4\ntitle: Deck\n---\n${card('In a page', 'YAZ-2')}`,
+      'Decks/own-yaz-3.md': `---\nkind: card\n---\n${card('Own card\nback [[YAZ-4]]', 'YAZ-3')}`,
+    })
+    const home = path.join(root, 'home.md')
+    expect(await run(['links', home])).toEqual({
+      code: 0,
+      err: '',
+      out: 'YAZ-3  Own card  Decks/own-yaz-3.md\nYAZ-2  In a page  Decks/deck-yaz-4.md\nYAZ-4  Deck  Decks/deck-yaz-4.md\nYAZ-99  (missing)\n',
+    })
+    expect(JSON.parse((await run(['links', home, '--json'])).out).links).toEqual([
+      { id: 'YAZ-3', kind: 'card', title: 'Own card', path: 'Decks/own-yaz-3.md' },
+      { id: 'YAZ-2', kind: 'card', title: 'In a page', path: 'Decks/deck-yaz-4.md' },
+      { id: 'YAZ-4', kind: 'note', title: 'Deck', path: 'Decks/deck-yaz-4.md' },
+      { id: 'YAZ-99', kind: 'missing' },
+    ])
+    // The card file links to the deck: a mention of kind `card`. The home page links to the card file's card: a mention of it.
+    expect(JSON.parse((await run(['mentions', path.join(root, 'Decks/deck-yaz-4.md'), '--json'])).out)).toEqual([
+      { title: 'Own card', path: 'Decks/own-yaz-3.md', kind: 'card' },
+      { title: 'home', path: 'home.md', kind: 'note' },
+    ])
+    expect((await run(['mentions', path.join(root, 'Decks/deck-yaz-4.md')])).out).toBe('Own card  Decks/own-yaz-3.md\nhome  home.md\n')
+    expect(JSON.parse((await run(['mentions', path.join(root, 'Decks/own-yaz-3.md'), '--json'])).out)).toEqual([{ title: 'home', path: 'home.md', kind: 'note' }])
+  })
+
+  it('the contract names `card new`, the card file, `cardFile` and the kind `card`', () => {
+    const help = HELP.replace(/\s+/g, ' ')
+    for (const said of ['yaseendocs card new <folder> --title <text> [--body <text | ->] [--json]', '`kind: card`', 'This is a card file. Use `card new`.', '`cardFile: true`', '(`note`, `card` or `folder`;', '`kind` is `note`, `card`, `folder` or `missing`']) expect(help).toContain(said)
+  })
+})
+
 describe('vaults (YAZ-2556 D2)', () => {
   /** The app's state file, in a profile of its own: the temp dir stands in for the user-data folder (S13), so no test reads the real one. */
   let stateFile: string
