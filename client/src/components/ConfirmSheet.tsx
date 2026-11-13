@@ -94,7 +94,7 @@ export function ConfirmSheet({ labelId, text, confirmLabel, cancelLabel = 'Cance
       }}
       onKeyDown={keys === 'window' ? undefined : onKey}
     >
-      <div ref={sheetRef} className="confirm" role="dialog" aria-modal="true" aria-labelledby={labelId} onMouseDown={(e) => e.stopPropagation()}>
+      <div ref={sheetRef} className={choices ? 'confirm confirm--choices' : 'confirm'} role="dialog" aria-modal="true" aria-labelledby={labelId} onMouseDown={(e) => e.stopPropagation()}>
         <p className="confirm__text" id={labelId}>
           {text}
         </p>

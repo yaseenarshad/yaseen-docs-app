@@ -3196,6 +3196,16 @@ body.drag-held iframe {
   flex-wrap: wrap;
 }
 
+/* A sheet of choices (YAZ-4989; "This vault is read only": Just this once · 1 minute · 10 minutes · Cancel): the four
+   fit on one row (YAZ-4964 round 2, item 3: at 340 px "1 minute" stood 48 px out of the sheet); a narrow window wraps them. */
+.confirm.confirm--choices {
+  width: min(460px, calc(100vw - 24px));
+}
+
+.confirm--choices .confirm__actions {
+  flex-wrap: wrap;
+}
+
 .confirm__actions > .confirm__btn {
   white-space: nowrap;
 }

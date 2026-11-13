@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { ConfirmSheet } from './ConfirmSheet'
+import appCss from '../app.css?inline'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -176,5 +177,18 @@ describe('YAZ-4989: a sheet of choices (the "This vault is read only" ask)', () 
     act(() => buttons(el)[0].focus())
     key('Enter')
     expect(calls()).toEqual([1, 0])
+  })
+})
+
+describe('YAZ-4964 round 2, item 3: the four choices of "This vault is read only" fit in the sheet', () => {
+  const body = (selector: string): string => [...appCss.replace(/\/\*.*?\*\//gs, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].find(([, sel]) => sel.trim() === selector)?.[2] ?? ''
+  it('a sheet of choices is wider than a two-button sheet, and never wider than the window; its row wraps in a narrow window', () => {
+    host = document.createElement('div')
+    document.body.appendChild(host)
+    root = createRoot(host)
+    act(() => root?.render(<ConfirmSheet labelId="t" text="Text" confirmLabel="Just this once" choices onConfirm={() => {}} onCancel={() => {}} other={<button type="button" className="confirm__btn">1 minute</button>} />))
+    expect(host.querySelector('.confirm')?.classList.contains('confirm--choices')).toBe(true)
+    expect(body('.confirm.confirm--choices')).toMatch(/width:\s*min\(460px, calc\(100vw - 24px\)\)/)
+    expect(body('.confirm--choices .confirm__actions')).toMatch(/flex-wrap:\s*wrap/)
   })
 })
