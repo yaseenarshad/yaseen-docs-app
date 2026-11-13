@@ -3,11 +3,11 @@
  * properties panel (`GroupHeader.tsx` `LinkChip`) and the Settings preview (`LinkPillsControl.tsx`). `PillLook`
  * carries the look and the vault's name down from the pane that knows the vault's resolve source (`usePillLook`),
  * and `PillHead` / `PillTail` draw the same pieces the editor's widgets draw (`linkPillLook.ts` `pillParts`,
- * `endSpan`), inside the pill's own span: each text piece in its part's class, an icon piece as the given `icon`.
+ * `endSpan`), inside the pill's own span: each text piece in its part's class, an icon piece as the given `icon`, the mark as its mask.
  */
-import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from 'react'
+import { createContext, useContext, useMemo, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { NO_LINK_PILLS, type LinkPills } from '@shared/linkPills'
-import { LINK_PILL_MARK_SVG, pillIconPlace, pillParts, type PathInfo, type PillEnd } from './linkPillLook'
+import { LINK_PILL_MARK_MASK, pillIconPlace, pillParts, type PathInfo, type PillEnd } from './linkPillLook'
 import type { WikilinkResolveSource } from './wikilinkPlugin'
 
 export interface PillLookValue {
@@ -27,7 +27,7 @@ export function usePillLook(source: WikilinkResolveSource | undefined): PillLook
   return useMemo(() => (pills === NO_LINK_PILLS && vault === null ? NO_PILL_LOOK : { pills, vault }), [pills, vault])
 }
 
-/** The pieces of one end, in order. `icon`: what an icon piece draws (a `FileIcon`); nothing when the pill has none. The mark is its static SVG. */
+/** The pieces of one end, in order. `icon`: what an icon piece draws (a `FileIcon`); nothing when the pill has none. The mark is its icon as a mask (`LINK_PILL_MARK_MASK`). */
 function Pieces({ end, icon }: { end: PillEnd; icon?: ReactNode }) {
   return (
     <>
@@ -37,7 +37,7 @@ function Pieces({ end, icon }: { end: PillEnd; icon?: ReactNode }) {
             {icon}
           </span>
         ) : piece.part === 'mark' ? (
-          <span key={i} className="link-pill__mark" data-mark={piece.icon} dangerouslySetInnerHTML={{ __html: LINK_PILL_MARK_SVG[piece.icon] }} />
+          <span key={i} className="link-pill__mark" data-mark={piece.icon} style={{ '--pill-mark-icon': LINK_PILL_MARK_MASK[piece.icon] } as CSSProperties} />
         ) : (
           <span key={i} className={`link-pill__${piece.part}`}>
             {piece.text}

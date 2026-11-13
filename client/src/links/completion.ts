@@ -31,6 +31,7 @@
  */
 import type { IndexRecord } from '@shared/types'
 import { isViewOnly } from '@shared/fileKind'
+import { holdsId } from '@shared/noteId'
 
 /** Suggestion cap shared by every completion surface (was EditableCell's local constant). */
 export const MAX_SUGGESTIONS = 8
@@ -55,6 +56,11 @@ export interface LinkCandidate {
    * resolving them, and both are wrong in a way that only shows up on a duplicate basename.
    */
   path?: string
+  /**
+   * The page's ID, on its name row only (YAZ-4992): what `matchLinks` finds it by (`[[40`, `[[wiki-40`). Absent on a
+   * page without one, on an alias row (the page is one row) and on hand-built rows.
+   */
+  id?: string
 }
 
 /** A plain link name as a candidate: it matches, inserts and reads as itself. */
@@ -71,7 +77,7 @@ export function mergeLinkCandidates(markdown: readonly LinkCandidate[], viewOnly
   return [
     ...markdown.filter((candidate) => !isViewOnly(candidate.insert.split('|', 1)[0].trim())),
     // A board with an ID is inserted by it, as a note is (YAZ-3943 4C): the picker, a pasted path and a drop write `[[ID]]`.
-    ...(boardIds === undefined || boardIds.size === 0 ? viewOnly : viewOnly.map((row) => (row.path !== undefined && boardIds.has(row.path) ? { ...row, insert: boardIds.get(row.path)! } : row))),
+    ...(boardIds === undefined || boardIds.size === 0 ? viewOnly : viewOnly.map((row) => (row.path !== undefined && boardIds.has(row.path) ? { ...row, insert: boardIds.get(row.path)!, id: boardIds.get(row.path)! } : row))),
   ]
 }
 
@@ -205,6 +211,46 @@ export function matchLinkCandidates<T extends { name: string; lower?: string }>(
 }
 
 /**
+ * The rows found by their ID (YAZ-4992), as the search box finds a page (`searchRows`, YAZ-2420 🔒 D32, YAZ-2571): first
+ * each row whose ID the text holds whole (`holdsId`: `40`, `WIKI-40` in any case, `wiki 40`, `wiki40`, and `OLD-40` when
+ * `was`, the vault's letters, has OLD), then, for digits alone, each row whose ID's number starts with them, in number
+ * order (`4`: WIKI-40, WIKI-41, WIKI-400). Only rows with an `id`; none when the text can hold no ID, which costs one
+ * read of the text and no scan, so typing a name pays nothing.
+ */
+export function matchLinkIds<T extends { id?: string }>(candidates: readonly T[], fragment: string, was?: readonly string[]): T[] {
+  const holds = holdsId(fragment)
+  if (holds === null) return []
+  const text = fragment.trim()
+  const digits = /^\d{1,15}$/.test(text) ? text : null
+  const exact: T[] = []
+  const longer: { row: T; number: number }[] = []
+  for (const c of candidates) {
+    const id = c.id
+    if (id === undefined) continue
+    if (holds(id, was)) exact.push(c)
+    else if (digits !== null) {
+      const dash = id.indexOf('-')
+      if (dash !== -1 && id.startsWith(digits, dash + 1)) longer.push({ row: c, number: Number(id.slice(dash + 1)) })
+    }
+  }
+  return [...exact, ...longer.sort((a, b) => a.number - b.number).map((held) => held.row)]
+}
+
+/**
+ * Link completion (the `[[` picker, a drawing's, the cell editors): the rows found by their ID first (`matchLinkIds`),
+ * each of a number ID read `ID — label` so the match shows, then the name matches (`matchLinkCandidates`) without the pages already
+ * shown, capped at `cap`. A vault without IDs has no row with an `id`: its rows are the name matches alone, as before.
+ */
+export function matchLinks(candidates: readonly LinkCandidate[], fragment: string, was?: readonly string[], cap: number = MAX_SUGGESTIONS): LinkCandidate[] {
+  const byId = matchLinkIds(candidates, fragment, was).slice(0, cap)
+  if (byId.length === 0) return matchLinkCandidates(candidates, fragment, cap)
+  const held = new Set(byId.map((c) => c.insert))
+  const named = matchLinkCandidates(candidates, fragment, cap + byId.length).filter((c) => !held.has(c.insert))
+  // A number ID reads first, as in the search box; an old ID (no number) is no word to read, and its row reads as it was.
+  return [...byId.map((c) => (c.id?.includes('-') === true ? { ...c, label: `${c.id} — ${c.label}` } : c)), ...named].slice(0, cap)
+}
+
+/**
  * `label` lowercased, with a way back from a [start, end) range of the lowercased text to the same letters of `label`
  * (YAZ-3748 B7). Nearly every label keeps its length, so the range is its own. A few letters grow (Turkish `İ` is `i̇`,
  * two code units): then the label is lowered one character at a time, and each code unit keeps where its character stands.
@@ -263,7 +309,7 @@ const depthOf = (r: IndexRecord): number => (r.folder === '' ? 0 : r.folder.spli
  * when it has one, else the title, the basename of a note that has none.
  */
 export const titleCandidates = (records: readonly IndexRecord[]): LinkCandidate[] =>
-  records.map((r) => ({ ...nameCandidate(r.title), insert: r.id ?? r.title }))
+  records.map((r) => ({ ...nameCandidate(r.title), insert: r.id ?? r.title, ...(r.id === undefined ? {} : { id: r.id }) }))
 
 /**
  * Candidates for one index snapshot, in records order (i.e. path-sorted): per record its name —
@@ -297,6 +343,6 @@ export function linkCandidates(records: readonly IndexRecord[]): LinkCandidate[]
     const aliases = r.aliases.filter((alias) => alias.toLowerCase() !== name.toLowerCase() && !/[[\]]/.test(alias))
     // The record rides along (YAZ-957) — added HERE, where it is known, so `nameCandidate` keeps
     // its single argument and `names.map(nameCandidate)` can never pass an index as a path.
-    return [{ ...nameCandidate(name), insert: r.id ?? target, path: r.path }, ...aliases.map(alias => aliasCandidate(alias, name, target, r.path, r.id))]
+    return [{ ...nameCandidate(name), insert: r.id ?? target, path: r.path, ...(r.id === undefined ? {} : { id: r.id }) }, ...aliases.map(alias => aliasCandidate(alias, name, target, r.path, r.id))]
   })
 }

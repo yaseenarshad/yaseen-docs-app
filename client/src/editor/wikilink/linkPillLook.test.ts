@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { LINK_PILL_MARKS, LINK_PILL_PARTS, NO_LINK_PILLS, type LinkPills } from '@shared/linkPills'
-import { LINK_PILL_MARK_SVG, headSpan, linkPillVars, pathInfo, pillIconPlace, pillParts, pillsNeedInfo, pillsShowVault, tailKey, tailSpan, type PillEnd } from './linkPillLook'
+import { LINK_PILL_MARK_MASK, LINK_PILL_MARK_SVG, headSpan, linkPillVars, pathInfo, pillIconPlace, pillParts, pillsNeedInfo, pillsShowVault, tailKey, tailSpan, type PillEnd } from './linkPillLook'
 
 const rec = (path: string, folder: string, id?: string): IndexRecord =>
   ({ path, name: path.slice(path.lastIndexOf('/') + 1), basename: 'x', title: 'x', folder, ext: 'md', size: 0, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [], ...(id !== undefined && { id }) }) as IndexRecord
@@ -175,19 +175,21 @@ describe('the {number} and {mark} tokens on a pill (YAZ-4924 round 5)', () => {
     expect(linkPillVars({ parts: { mark: { icon: 'star' } } })).toEqual({})
   })
 
-  it('each of the eight marks draws a small static SVG icon: no text, the line\'s size (em), the pill\'s colour (currentColor), hidden from screen readers', () => {
+  it('each of the eight marks draws a small static SVG icon: no text, the line\'s size (em), the pill\'s colour (currentColor), hidden from screen readers; a pill wears it as a mask, not an svg in the line (YAZ-4991)', () => {
     expect(Object.keys(LINK_PILL_MARK_SVG)).toEqual([...LINK_PILL_MARKS])
     expect(new Set(Object.values(LINK_PILL_MARK_SVG)).size).toBe(8)
     for (const icon of LINK_PILL_MARKS) {
       const { tail } = pillParts({ format: '{name}{mark}', parts: { mark: { icon } } }, { otherVault: null }, 'Mine')
       const t = tailSpan('wikilink link-pill', tail!)
       const mark = t.querySelector(':scope > .link-pill__mark') as HTMLElement
-      const svg = mark.querySelector('svg') as SVGSVGElement
-      expect([mark.textContent, mark.dataset.mark, svg.getAttribute('width'), svg.getAttribute('height'), svg.getAttribute('aria-hidden')]).toEqual(['', icon, '1em', '1em', 'true'])
-      expect(svg.querySelector('path, circle')).not.toBeNull()
-      const parsed = document.createElement('template')
-      parsed.innerHTML = LINK_PILL_MARK_SVG[icon]
-      expect(mark.innerHTML).toBe(parsed.innerHTML)
+      // No element in the line: an svg is an atomic inline box, and a line may break on either side of one (YAZ-4991).
+      expect([mark.textContent, mark.dataset.mark, mark.children.length, mark.style.getPropertyValue('--pill-mark-icon')]).toEqual(['', icon, 0, LINK_PILL_MARK_MASK[icon]])
+      // The mask is the same svg, standalone (its namespace), as a data URL.
+      const url = LINK_PILL_MARK_MASK[icon]
+      expect(url.startsWith('url("data:image/svg+xml,') && url.endsWith('")')).toBe(true)
+      const parsed = new DOMParser().parseFromString(decodeURIComponent(url.slice(24, -2)), 'image/svg+xml').documentElement
+      expect([parsed.namespaceURI, parsed.getAttribute('width'), parsed.getAttribute('height'), parsed.getAttribute('aria-hidden'), parsed.querySelector('path, circle') !== null]).toEqual(['http://www.w3.org/2000/svg', '1em', '1em', 'true', true])
+      expect(decodeURIComponent(url.slice(24, -2))).toBe(LINK_PILL_MARK_SVG[icon].replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" '))
       expect(LINK_PILL_MARK_SVG[icon]).not.toMatch(/\bpx\b|[0-9]px/)
     }
     // Two icons are two keys: a change of icon redraws the tail; the same icon redraws nothing.
@@ -205,7 +207,9 @@ describe("a pill's size follows its line: a pill in a heading is as big as the h
   const pillRules = (css: string) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => [m[1].trim(), m[2]] as const).filter(([sel]) => /link-pill|wikilink/.test(sel))
 
   it('no pill rule sets a fixed font size: each part is the line\'s size (inherit) or a share of it (em)', () => {
-    const sizes = [...pillRules(wikilinkCss), ...pillRules(viewsCss)].flatMap(([sel, body]) => [...body.matchAll(/font-size:\s*([^;]+);/g)].map((m) => `${sel} → ${m[1].trim()}`))
+    // The file icon's `::before` is app.css's fixed 14px glyph, no text: its own 14px font only places it (YAZ-4991).
+    const text = (sel: string) => !sel.split(',').every((s) => /file-icon::before$/.test(s.trim()))
+    const sizes = [...pillRules(wikilinkCss), ...pillRules(viewsCss)].filter(([sel]) => text(sel)).flatMap(([sel, body]) => [...body.matchAll(/font-size:\s*([^;]+);/g)].map((m) => `${sel} → ${m[1].trim()}`))
     expect(sizes.length).toBeGreaterThan(0)
     for (const size of sizes) expect(size).not.toMatch(/\d(px|pt|rem)\b/)
   })
@@ -222,8 +226,26 @@ describe("a pill's size follows its line: a pill in a heading is as big as the h
     }
   })
 
+  it('a pill holds the punctuation next to it (YAZ-4991): no piece of a pill is an atomic inline box', () => {
+    // A line may break before and after an atomic inline box (an inline-block, an svg) even next to a period or a
+    // bracket: `Example: [[Redis]].` left the period alone on the next line. Measured in Electron: see YAZ-4991.
+    const rules = [...pillRules(wikilinkCss), ...pillRules(viewsCss)]
+    expect(rules.filter(([, body]) => /display:\s*inline-(block|flex|grid)|display:\s*block/.test(body)).map(([sel]) => sel)).toEqual([])
+    const icon = rules.find(([sel]) => sel.split(',').map((s) => s.trim()).includes('.wikilink.file-icon::before'))
+    expect(icon?.[0].split(',').map((s) => s.trim())).toEqual(['.wikilink.file-icon::before', '.wikilink .file-icon::before'])
+    expect(icon?.[1]).toMatch(/display:\s*inline !important;[^}]*padding-left:\s*14px;/)
+    expect(wikilinkCss).toMatch(/\.link-pill__icon\s*\{\s*display:\s*inline;\s*\}/)
+    // The mark is its icon as a mask on an inline span, not an svg; no pill rule draws an svg.
+    // Named by the head or the tail it stands in: Crepe's reset (`.milkdown *`, one class) must not take its padding.
+    expect(wikilinkCss).toMatch(/:is\(\.link-pill__head, \.link-pill__tail\) \.link-pill__mark\s*\{[^}]*padding-left:\s*1em;[^}]*background-color:\s*currentColor;[^}]*mask:\s*var\(--pill-mark-icon\) center \/ 1em 1em no-repeat;/)
+    expect(rules.map(([sel]) => sel).filter((sel) => /\bsvg\b/.test(sel))).toEqual([])
+    // A piece with no letter of its own (the mark, an icon piece) has a word joiner for one: an empty inline box stays at
+    // the end of the line before when the line breaks right after it (measured in Electron, YAZ-4991).
+    expect(wikilinkCss).toMatch(/\.link-pill__mark::after,\s*\.link-pill__icon::after\s*\{\s*content:\s*'\\2060';\s*\}/)
+  })
+
   it("the mark's icon is 1em square: the size of its line, in a paragraph or a heading", () => {
-    expect(wikilinkCss).toMatch(/\.link-pill__mark svg\s*\{[^}]*width:\s*1em;[^}]*height:\s*1em;/)
+    expect(wikilinkCss).toMatch(/\.link-pill__mark\s*\{[^}]*padding-left:\s*1em;[^}]*center \/ 1em 1em/)
   })
 })
 

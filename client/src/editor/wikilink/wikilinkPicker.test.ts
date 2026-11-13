@@ -25,7 +25,7 @@ vi.mock('../../api', async (importOriginal) => ({
 }))
 const createFile = vi.mocked(api.createFile)
 const mintNoteId = vi.mocked(api.mintNoteId)
-import { linkCandidates, nameCandidate } from '../../links/completion'
+import { MAX_SUGGESTIONS, linkCandidates, nameCandidate } from '../../links/completion'
 import { folderLinkCandidates, linkResolver } from '../../links/folderLinks'
 import { resolverFor } from '../../views/engine'
 import { WIKILINK_CLASS, createWikilinkResolveSource, type WikilinkResolveSource } from './wikilinkPlugin'
@@ -33,6 +33,7 @@ import {
   WIKILINK_PICKER_CLASS,
   WIKILINK_PICKER_CREATE_CLASS,
   createWikilinkCandidateSource,
+  rowsFor,
   type MutableWikilinkCandidateSource,
 } from './wikilinkPicker'
 
@@ -878,5 +879,62 @@ describe('wikilink picker: a row reads as the sidebar names the page (YAZ-3778 S
     ])
     press(crepe, 'Enter')
     expect(getMarkdownForSave(crepe)).toBe('X[[LN Scenarios Diagram.drawio]]\n')
+  })
+})
+
+describe('wikilink picker: a page found by its ID (YAZ-4992)', () => {
+  const page = (path: string, id?: string, aliases: string[] = []): IndexRecord => {
+    const name = path.slice(path.lastIndexOf('/') + 1)
+    return { path, name, basename: name.replace(/\.md$/, ''), title: name.replace(/\.md$/, ''), folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases, tags: [], links: [], embeds: [], ...(id === undefined ? {} : { id }) }
+  }
+  // Redis is WIKI-40; the others start with 4 or hold "40" in their title. The vault was OLD before it was WIKI.
+  const records = [
+    page('/vault/Redis.md', 'WIKI-40', ['Remote dictionary']),
+    page('/vault/Postgres.md', 'WIKI-4'),
+    page('/vault/Kafka.md', 'WIKI-400'),
+    page('/vault/Mongo.md', 'WIKI-41'),
+    page('/vault/Top 40 songs.md', 'WIKI-7'),
+    page('/vault/Memcached.md', 'WIKI-140'),
+  ]
+  const candidates = linkCandidates(records)
+  const shown = (fragment: string, was?: readonly string[]) => rowsFor(fragment, candidates, was).map((row) => (row.create ? `Create "${row.label}"` : `${row.label} → ${row.insert}`))
+
+  it('the number alone: the exact ID first, then the IDs whose number starts with it in number order, then the title matches; Create stays last', () => {
+    expect(shown('40')).toEqual(['WIKI-40 — Redis → WIKI-40', 'WIKI-400 — Kafka → WIKI-400', 'Top 40 songs → WIKI-7', 'Create \"40\"'])
+    // WIKI-140 holds a 4 but does not start with it: no row.
+    expect(shown('4')).toEqual(['WIKI-4 — Postgres → WIKI-4', 'WIKI-40 — Redis → WIKI-40', 'WIKI-41 — Mongo → WIKI-41', 'WIKI-400 — Kafka → WIKI-400', 'Top 40 songs → WIKI-7', 'Create \"4\"'])
+  })
+
+  it('the full ID in any letter case, with a space or no hyphen, and the old letters of the vault', () => {
+    for (const typed of ['WIKI-40', 'wiki-40', 'Wiki 40', 'wiki40']) expect(shown(typed)[0], typed).toBe('WIKI-40 — Redis → WIKI-40')
+    expect(shown('OLD-40', ['WIKI', 'OLD'])[0]).toBe('WIKI-40 — Redis → WIKI-40')
+    expect(shown('OLD-40')[0]).toBe('Create \"OLD-40\"')
+    // An ID is held whole: WIKI-4 does not find WIKI-40.
+    expect(shown('wiki-4')).toEqual(['WIKI-4 — Postgres → WIKI-4', 'Create \"wiki-4\"'])
+  })
+
+  it('a page is one row: its alias row does not show again under its ID; the rows stay at the cap', () => {
+    expect(shown('40').filter((row) => row.includes('Redis'))).toEqual(['WIKI-40 — Redis → WIKI-40'])
+    const many = linkCandidates(Array.from({ length: 30 }, (_, i) => page(`/vault/N${i}.md`, `WIKI-${i + 1}`)))
+    expect(rowsFor('1', many).filter((row) => !row.create)).toHaveLength(MAX_SUGGESTIONS)
+  })
+
+  it('a vault without IDs is unchanged: a number finds titles only', () => {
+    const plain = linkCandidates(records.map(({ id: _id, ...r }) => r as IndexRecord))
+    expect(rowsFor('40', plain)).toEqual(rowsFor('40', plain.map(({ id: _id, ...c }) => c)))
+    expect(rowsFor('40', plain).map((row) => row.label)).toEqual(['Top 40 songs', '40'])
+  })
+
+  it('in a note: [[40 lists Redis at the top, and Enter links it by its ID', async () => {
+    const s = createWikilinkCandidateSource()
+    s.update(candidates)
+    const { crepe } = await mount('X\n', s)
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, ' [[40')
+    await tick()
+    expect(rows()[0]).toBe('WIKI-40 — Redis')
+    expect(rows().at(-1)).toBe('Create "40"')
+    expect(press(crepe, 'Enter')).toBe(true)
+    expect(getMarkdownForSave(crepe)).toBe('X [[WIKI-40]]\n')
   })
 })

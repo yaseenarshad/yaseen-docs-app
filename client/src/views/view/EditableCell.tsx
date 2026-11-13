@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import { type LinkCandidate, matchLinkCandidates, trailingLinkFragment } from '../../links/completion'
+import { type LinkCandidate, matchLinks, trailingLinkFragment } from '../../links/completion'
 import { type EditorKind } from '../editorType'
 import { LinkValue, type Resolver, type Value, fromYaml, render } from '../expr'
 import { ColumnDecls, cellContent } from './GroupHeader'
@@ -274,7 +274,7 @@ function ChipsEditor({ initial, label, titles, resolve, onCommit, onDone }: Chip
   const dirty = useRef(false)
 
   const fragment = titles === undefined ? null : trailingLinkFragment(text)
-  const matches = fragment === null ? [] : matchLinkCandidates(titles ?? [], fragment)
+  const matches = fragment === null ? [] : matchLinks(titles ?? [], fragment)
 
   const change = (next: string[]) => {
     dirty.current = true
@@ -405,7 +405,7 @@ function LinkEditor({ initial, titles, label, onCommit, onDone }: LinkEditorProp
   const done = useRef(false)
 
   const fragment = trailingLinkFragment(text)
-  const matches = fragment === null ? [] : matchLinkCandidates(titles, fragment)
+  const matches = fragment === null ? [] : matchLinks(titles, fragment)
 
   const finish = (commit: boolean) => {
     if (done.current) return

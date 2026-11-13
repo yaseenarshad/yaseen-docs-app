@@ -36,7 +36,7 @@
  * What the row inserts does not change.
  *
  * Matching is the shared `links/completion.ts` (one matcher with the Bases cell editors —
- * locked ruling): case-insensitive, by text and then by words (YAZ-3748 D1), cap 8. A note
+ * locked ruling): case-insensitive, by text and then by words (YAZ-3748 D1), cap 8; a page's ID first (YAZ-4992). A note
  * with frontmatter aliases (E2, GRO-2214) is offered twice — under its name (inserting
  * `[[Name]]`) and under each alias, which READS `CAC — Customer Acquisition Cost` and INSERTS
  * the piped `[[Customer Acquisition Cost|CAC]]`, so the link targets the note and displays the
@@ -62,7 +62,7 @@ import { splitLink } from '@shared/linkParts'
 import { basename } from '@shared/types'
 import { api } from '../../api'
 import { fileLabel } from '../../lib/pageLabel'
-import { matchLinkCandidates, trailingLinkFragment, type LinkCandidate } from '../../links/completion'
+import { matchLinks, trailingLinkFragment, type LinkCandidate } from '../../links/completion'
 import { createFromLink } from './createFromLink'
 import type { WikilinkNav } from './wikilinkClick'
 import { linkPageName, type LinkLook, type WikilinkResolveSource } from './wikilinkPlugin'
@@ -173,12 +173,13 @@ function findContext(state: EditorState): { from: number; to: number; fragment: 
 
 /**
  * Matches through the shared matcher, then Create for a non-empty fragment that no matched row is NAMED (trimmed, any
- * case; YAZ-3748 B1). The word tiers find more rows than the text did, so "nothing matched" no longer means "no page has
+ * case; YAZ-3748 B1). A page is found by its ID too (YAZ-4992, `matchLinks`): `[[40` lists WIKI-40 first, read
+ * `WIKI-40 — Redis`; `was` is the vault's ID letters, so an old one (`OLD-40`) finds it as the search box does. The word tiers find more rows than the text did, so "nothing matched" no longer means "no page has
  * this name": `q4 meeting notes` finds `Meeting notes Q4` and still offers to create its own page. An exact name ranks
  * first (tier 0), so it is among the matches whenever one exists.
  */
-export function rowsFor(fragment: string, candidates: readonly LinkCandidate[]): PickerRow[] {
-  const matches = matchLinkCandidates(candidates, fragment)
+export function rowsFor(fragment: string, candidates: readonly LinkCandidate[], was?: readonly string[]): PickerRow[] {
+  const matches = matchLinks(candidates, fragment, was)
   // A view-only file reads as the sidebar names it (YAZ-3778 S14): `LN Scenarios Diagram.drawio` → `LN Scenarios Diagram`.
   const rows = matches.map(({ label, insert, path }): PickerRow => ({ label: isViewOnly(insert) ? fileLabel(label) : label, insert, create: false, path }))
   const typed = fragment.trim().toLowerCase()
@@ -199,12 +200,12 @@ function waitingAfter(prev: readonly Waiting[], tr: Transaction | null, meta: Pi
   return waiting
 }
 
-function compute(state: EditorState, prev: PickerState | null, tr: Transaction | null, source: WikilinkCandidateSource): PickerState {
+function compute(state: EditorState, prev: PickerState | null, tr: Transaction | null, source: WikilinkCandidateSource, links: WikilinkResolveSource): PickerState {
   const meta = tr?.getMeta(pickerKey) as PickerMeta | undefined
-  return { ...session(state, prev, tr, meta, source), waiting: waitingAfter(prev?.waiting ?? NO_WAITING, tr, meta) }
+  return { ...session(state, prev, tr, meta, source, links), waiting: waitingAfter(prev?.waiting ?? NO_WAITING, tr, meta) }
 }
 
-function session(state: EditorState, prev: PickerState | null, tr: Transaction | null, meta: PickerMeta | undefined, source: WikilinkCandidateSource): Pick<PickerState, 'session' | 'dismissed'> {
+function session(state: EditorState, prev: PickerState | null, tr: Transaction | null, meta: PickerMeta | undefined, source: WikilinkCandidateSource, links: WikilinkResolveSource): Pick<PickerState, 'session' | 'dismissed'> {
   let dismissed = prev === null || prev.dismissed === null ? null : tr?.docChanged ? tr.mapping.map(prev.dismissed) : prev.dismissed
   if (meta?.type === 'dismiss' && prev?.session != null) dismissed = prev.session.from
   const ctx = findContext(state)
@@ -215,7 +216,7 @@ function session(state: EditorState, prev: PickerState | null, tr: Transaction |
   // passes anyway, and when it did not the positions are already comparable.
   const sameOpen = prev?.session != null && prev.session.from === ctx.from
   if (!sameOpen && tr?.docChanged !== true) return { session: null, dismissed }
-  const rows = rowsFor(ctx.fragment, source.candidates)
+  const rows = rowsFor(ctx.fragment, source.candidates, links.letters)
   if (rows.length === 0) return { session: null, dismissed }
   const held =
     prev?.session != null && tr !== null && !tr.docChanged && prev.session.from === ctx.from && prev.session.fragment === ctx.fragment
@@ -418,9 +419,9 @@ export function createWikilinkPicker(source: WikilinkCandidateSource, links: Wik
       new Plugin<PickerState>({
         key: pickerKey,
         state: {
-          init: (_, state) => compute(state, null, null, source),
+          init: (_, state) => compute(state, null, null, source, links),
           apply: (tr, value, _old, state) =>
-            tr.docChanged || tr.selectionSet || tr.getMeta(pickerKey) !== undefined ? compute(state, value, tr, source) : value,
+            tr.docChanged || tr.selectionSet || tr.getMeta(pickerKey) !== undefined ? compute(state, value, tr, source, links) : value,
         },
         view: (editorView) => {
           const popup = buildPopup(editorView, links, nav, look)

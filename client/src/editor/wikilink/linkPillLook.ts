@@ -58,7 +58,7 @@ export function linkPillVars(pills: LinkPills): Record<string, string> {
 /**
  * The mark's icons (`{mark}`, round 5): small static SVG, built once at load, 1em square so the mark is its line's
  * size (a heading's in a heading), stroked or filled in `currentColor` so it takes the mark's colour. No text: a screen
- * reader skips it. Drawn by `endSpan` and `LinkPillParts.tsx`, and by the style panel's Icon row.
+ * reader skips it. Drawn as is by the style panel's Icon row; a pill draws it as a mask (`LINK_PILL_MARK_MASK`).
  */
 const svg = (inner: string): string =>
   `<svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`
@@ -73,6 +73,16 @@ export const LINK_PILL_MARK_SVG: Readonly<Record<LinkPillMark, string>> = {
   bookmark: svg('<path d="M6 3.5h12V21l-6-4-6 4z"/>'),
 }
 
+
+/**
+ * Each mark's icon as a CSS image, built once at load: a pill's mark (`endSpan`, `LinkPillParts.tsx`) is an inline span
+ * that wears it as its mask over `currentColor`, on 1em of padding (`wikilink.css`). Not an svg in the line (YAZ-4991):
+ * an svg is an atomic inline box, and the browser may break a line before and after one even next to a period or a
+ * bracket, so `Example: [[Redis]].` with the mark at the tail's end left the period alone on the next line.
+ */
+export const LINK_PILL_MARK_MASK = Object.fromEntries(
+  Object.entries(LINK_PILL_MARK_SVG).map(([mark, icon]) => [mark, `url("data:image/svg+xml,${encodeURIComponent(icon.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" '))}")`]),
+) as Readonly<Record<LinkPillMark, string>>
 /** What the index knows of a page: its ID (a note with one) and its root-relative folder ('' at the root). */
 export interface PathInfo {
   id?: string
@@ -318,7 +328,7 @@ function endSpan(cls: string, end: PillEnd, icon: Record<string, string> | undef
     } else if (piece.part === 'mark') {
       el.className = 'link-pill__mark'
       el.dataset.mark = piece.icon
-      el.innerHTML = LINK_PILL_MARK_SVG[piece.icon]
+      el.style.setProperty('--pill-mark-icon', LINK_PILL_MARK_MASK[piece.icon])
     } else {
       el.className = `link-pill__${piece.part}`
       el.textContent = piece.text

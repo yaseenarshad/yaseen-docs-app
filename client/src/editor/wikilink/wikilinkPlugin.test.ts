@@ -878,9 +878,9 @@ describe("the vault's link pills look (YAZ-4924)", () => {
     const md = 'A [[Roadmap]] B [[Nope]] C\n'
     const { crepe, root, source, view } = await mountLook(md)
     source.setLook({ format: '{icon}{name} #{number}{mark}' }, 'Mine')
-    const tails = () => Array.from(root.querySelectorAll<HTMLElement>('.link-pill__tail')).map((el) => [...el.children].map((c) => `${c.className}:${c.textContent}${c.querySelector('svg') !== null ? ':svg' : ''}`))
+    const tails = () => Array.from(root.querySelectorAll<HTMLElement>('.link-pill__tail')).map((el) => [...el.children].map((c) => `${c.className}:${c.textContent}${c.getAttribute('style')?.includes('--pill-mark-icon') === true ? ':icon' : ''}`))
     // The missing note has no ID: "#" and the number go; the mark stays.
-    expect(tails()).toEqual([['link-pill__text: #', 'link-pill__number:12', 'link-pill__mark::svg'], ['link-pill__mark::svg']])
+    expect(tails()).toEqual([['link-pill__text: #', 'link-pill__number:12', 'link-pill__mark::icon'], ['link-pill__mark::icon']])
     const tail = root.querySelector('.link-pill__tail')
     view.dispatch(view.state.tr.insertText('Z', 1, 1))
     expect(root.querySelector('.link-pill__tail')).toBe(tail)
@@ -888,6 +888,26 @@ describe("the vault's link pills look (YAZ-4924)", () => {
     expect(Array.from(root.querySelectorAll<HTMLElement>('.link-pill__mark')).map((el) => el.dataset.mark)).toEqual(['star', 'star'])
     expect(getMarkdownForSave(crepe)).toBe('ZA [[Roadmap]] B [[Nope]] C\n')
     expect(view.state.doc.textContent).not.toContain('#')
+  })
+
+  it('a pill and the punctuation next to it (YAZ-4991): a mark at either end is no svg, the punctuation stands right against it; the file and a copy are unchanged', async () => {
+    // An svg is an atomic inline box: a line may break on either side of one, even before a period. The mark is a span
+    // that wears its icon as a mask (`wikilink.css`); the pill and the punctuation next to it hold like a word and its period.
+    const md = 'Example: [[Roadmap]]. Then ([[Roadmap]]) and “[[Roadmap]]”, end\n'
+    const { crepe, root, source, view } = await mountLook(md)
+    source.setLook({ format: '{mark}{icon}{name} ({id}){mark}' }, 'Mine')
+    const paragraph = root.querySelector('.ProseMirror p') as HTMLElement
+    // Each pill's last shown box is its tail, whose last piece is the mark; the next visible text starts with the punctuation.
+    const after = Array.from(root.querySelectorAll<HTMLElement>('.link-pill__tail')).map((tail) => {
+      let next = tail.nextSibling
+      while (next !== null && next instanceof HTMLElement && next.classList.contains(WIKILINK_SYNTAX_CLASS)) next = next.nextSibling
+      return [tail.lastElementChild?.className, next?.textContent?.[0]]
+    })
+    expect(after).toEqual([['link-pill__mark', '.'], ['link-pill__mark', ')'], ['link-pill__mark', '”']])
+    expect(Array.from(root.querySelectorAll<HTMLElement>('.link-pill__head')).map((head) => head.firstElementChild?.className)).toEqual(['link-pill__mark', 'link-pill__mark', 'link-pill__mark'])
+    expect(paragraph.querySelectorAll('svg, img')).toHaveLength(0)
+    expect(copyOf(view).text).toBe('Example: Roadmap. Then (Roadmap) and “Roadmap”, end')
+    expect(getMarkdownForSave(crepe)).toBe(md)
   })
 
   it('a pill whose note goes missing draws its tail again with the missing class, so its mark turns grey with the name', async () => {
