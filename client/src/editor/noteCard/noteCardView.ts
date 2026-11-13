@@ -28,6 +28,13 @@
  * bubbling DOM event, `NOTE_CARD_OPEN` (`mdapp:note-card-open`, detail `NoteCardOpenRequest`), from its
  * `.ProseMirror`; App's listener opens the card window. ⌘↵ anywhere else is unchanged.
  *
+ * REVIEWS (YAZ-5000): a card with reviews has "Reviews (n)" at its bottom, closed; a card with none has no section
+ * (silence). A click opens the card window's own table (`NoteCardReviewsTable`, `review/noteCardParts.tsx`), loaded
+ * and mounted in a React root only then: a closed section costs its count, no history replay. Open or closed is UI
+ * state (`openReviews`, by page and ID, so a page read again keeps it), never a transaction. The table's delete is the
+ * vault's `deleteReview` (`deps.reviews`): a write of the card line to the FILE, with Undo in its notice, as in the
+ * card window, so it works read only and in Explore's read layer too.
+ *
  * THE ⋯ MENU (D13): Put at top of Inbox / Remove from top of Inbox (`withCardNext`, YAZ-4999 D3), Turn review off /
  * on (`withCardOff`), Reset history (`withoutCardReviews`), Copy card ID, Open card. Each change is ONE transaction on the node's `cardLine` attribute (`changeNoteCardLine`): one ⌘Z, saved as
  * any edit. The ID at insert (`noteCardRow`) is a transaction out of the undo history, saved by `NOTE_CARD_ID_META`.
@@ -47,6 +54,8 @@ import { clearTextInCurrentBlockCommand, setBlockTypeCommand } from '@milkdown/k
 import { $prose, $shortcut, $view } from '@milkdown/kit/utils'
 import { cardIdOf, cardReviewsOf, formatCardLine, isCardNext, isCardOff, settleCardCopy, withCardId, withCardNext, withCardOff, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
+import type { CardReview } from '@shared/cardLine'
+import type { ReviewSettings } from '@shared/reviews'
 import { codeWidthSchema } from '../code/codeWidth'
 import { copyText, openMenuAt } from '../linkMenu'
 import type { MenuRow } from '../blockHandleMenu'
@@ -97,9 +106,61 @@ export interface NoteCardDeps {
   /** A Markdown link's open (`markdownLinkNav`). Absent → a click on it does nothing. */
   openHref?: (href: string) => void
   onNotice?: (message: string) => void
+  /** The vault's card review (YAZ-5000): "Reviews (n)" under a card with reviews. Absent (a hover preview): no section. */
+  reviews?: NoteCardReviewDoor
+}
+
+/** What the Reviews section under a card needs of its vault (YAZ-5000): the card window's settings and delete. */
+export interface NoteCardReviewDoor {
+  settings: () => ReviewSettings
+  /** Removes `review` from card `id` of `path` in the FILE; its notice has Undo (`useCardReview.deleteReview`). */
+  deleteReview: (path: string, id: string, review: CardReview) => Promise<void>
 }
 
 const views = new WeakMap<HTMLElement, NoteCardView>()
+
+/** The cards whose Reviews section is open, by page and ID: UI state, kept when the page is read again (YAZ-5000). */
+const openReviews = new Set<string>()
+
+type ReviewsTableProps = { reviews: readonly CardReview[]; settings: ReviewSettings; onDelete?: (review: CardReview) => void }
+interface ReviewsTableKit {
+  createRoot: typeof import('react-dom/client').createRoot
+  draw: (props: ReviewsTableProps) => import('react').ReactElement
+}
+/** React and the card window's table, loaded the first time a section opens: a page of closed sections loads neither. */
+let tableKit: ReviewsTableKit | null = null
+let tableKitLoad: Promise<ReviewsTableKit> | null = null
+const loadTableKit = (): Promise<ReviewsTableKit> =>
+  (tableKitLoad ??= Promise.all([import('react'), import('react-dom/client'), import('../../review/noteCardParts')]).then(([react, dom, parts]) => {
+    tableKit = { createRoot: dom.createRoot, draw: (props) => react.createElement(parts.NoteCardReviewsTable, props) }
+    return tableKit
+  }))
+
+const SVG = 'http://www.w3.org/2000/svg'
+
+/** "Reviews (n)": the card window's section title (`NoteCardReviews`), the same classes, drawn without React. */
+function reviewsFooter(): { section: HTMLElement; header: HTMLButtonElement; count: HTMLElement } {
+  const section = document.createElement('section')
+  section.className = 'note-card-reviews'
+  const header = document.createElement('button')
+  header.type = 'button'
+  header.className = 'backlinks__header'
+  header.setAttribute('aria-expanded', 'false')
+  const chevron = document.createElementNS(SVG, 'svg')
+  chevron.setAttribute('class', 'backlinks__chevron')
+  for (const [k, v] of Object.entries({ width: '14', height: '14', viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' })) chevron.setAttribute(k, v)
+  const path = document.createElementNS(SVG, 'path')
+  path.setAttribute('d', 'm4 6 4 4 4-4')
+  chevron.append(path)
+  const title = document.createElement('span')
+  title.className = 'backlinks__title'
+  const count = document.createElement('span')
+  count.className = 'backlinks__count'
+  title.append('Reviews ', count)
+  header.append(chevron, title)
+  section.append(header)
+  return { section, header, count }
+}
 
 /** The card view that draws the card at `pos` in `view`, or null. */
 export function noteCardViewAt(view: EditorView, pos: number): NoteCardView | null {
@@ -156,6 +217,10 @@ export class NoteCardView implements NodeView {
   private drawn: string | null = null
   private readonly unsubscribe: (() => void) | undefined
   private closeMenu: (() => void) | null = null
+  /** "Reviews (n)" (YAZ-5000): made only for a card with reviews. */
+  private footer: ReturnType<typeof reviewsFooter> | null = null
+  /** The open table: its host, its React root once the kit is loaded, and what it draws. */
+  private table: { host: HTMLElement; root: import('react-dom/client').Root | null; props: ReviewsTableProps } | null = null
 
   constructor(
     private node: ProseNode,
@@ -180,6 +245,7 @@ export class NoteCardView implements NodeView {
     this.body = document.createElement('div')
     this.body.className = 'note-card__body'
     this.dom.append(head, this.body)
+    if (deps.reviews !== undefined) this.dom.classList.add('note-card--reviews')
     this.dom.addEventListener('mousedown', this.onMouseDown)
     this.dom.addEventListener('click', this.onClick)
     this.dom.addEventListener('dblclick', this.onDoubleClick)
@@ -216,9 +282,94 @@ export class NoteCardView implements NodeView {
     this.editButton.textContent = this.code === null ? 'Edit card' : 'Done'
     this.editButton.setAttribute('aria-label', this.code === null ? 'Edit card' : 'Done')
     this.dom.classList.toggle('note-card--editing', this.code !== null)
+    this.drawReviews()
     if (this.code !== null || this.drawn === text) return
     this.drawn = text
     this.body.replaceChildren(text.trim() === '' ? this.emptyHint() : renderNoteCard(text, {}, this.deps.look()))
+  }
+
+  /** The key of this card's open state: its page and ID; null before it has both. */
+  private get reviewsKey(): string | null {
+    const id = cardIdOf(noteCardLineOf(this.node))
+    const path = this.path
+    return id === null || path === null ? null : `${path}\n${id}`
+  }
+
+  get reviewsOpen(): boolean {
+    const key = this.reviewsKey
+    return key !== null && openReviews.has(key)
+  }
+
+  /** "Reviews (n)" at the bottom of a card with reviews, and its table while open; nothing for a card with none. */
+  private drawReviews(): void {
+    const door = this.deps.reviews
+    const line = noteCardLineOf(this.node)
+    const count = door === undefined ? 0 : cardReviewsOf(line).length
+    if (count === 0) {
+      this.closeTable()
+      this.footer?.section.remove()
+      this.footer = null
+      return
+    }
+    if (this.footer === null) {
+      this.footer = reviewsFooter()
+      this.dom.append(this.footer.section)
+    }
+    this.footer.count.textContent = `(${count})`
+    const open = this.reviewsOpen
+    this.footer.header.setAttribute('aria-expanded', String(open))
+    if (open) this.showTable()
+    else this.closeTable()
+  }
+
+  /** A click on "Reviews (n)": open or closed, UI state only (no transaction, nothing in the undo history). */
+  toggleReviews(): void {
+    const key = this.reviewsKey
+    if (key === null) return
+    if (openReviews.has(key)) openReviews.delete(key)
+    else openReviews.add(key)
+    this.drawReviews()
+  }
+
+  /** The card window's table, mounted on the first open; drawn again with the card line's reviews. */
+  private showTable(): void {
+    const door = this.deps.reviews
+    const footer = this.footer
+    if (door === undefined || footer === null) return
+    const line = noteCardLineOf(this.node)
+    const id = cardIdOf(line)
+    const path = this.path
+    const props: ReviewsTableProps = {
+      reviews: cardReviewsOf(line),
+      settings: door.settings(),
+      onDelete: id === null || path === null ? undefined : (review) => void door.deleteReview(path, id, review),
+    }
+    if (this.table !== null) {
+      this.table.props = props
+      this.table.root?.render(tableKit!.draw(props))
+      return
+    }
+    const host = document.createElement('div')
+    host.className = 'note-card-reviews__body'
+    footer.section.append(host)
+    const table: NonNullable<NoteCardView['table']> = { host, root: null, props }
+    this.table = table
+    const mount = (kit: ReviewsTableKit) => {
+      if (this.table !== table) return
+      table.root = kit.createRoot(host)
+      table.root.render(kit.draw(table.props))
+    }
+    if (tableKit !== null) mount(tableKit)
+    else void loadTableKit().then(mount)
+  }
+
+  private closeTable(): void {
+    const table = this.table
+    if (table === null) return
+    this.table = null
+    table.host.remove()
+    // Not in the middle of a React commit (an editor that closes in an effect's cleanup): after it.
+    if (table.root !== null) queueMicrotask(() => table.root?.unmount())
   }
 
   private emptyHint(): HTMLElement {
@@ -328,6 +479,14 @@ export class NoteCardView implements NodeView {
     const target = event.target instanceof Element ? event.target : null
     // CodeMirror's own presses while the card is edited.
     if (target === null || event.button !== 0 || (this.code !== null && this.code.dom.contains(target))) return
+    // "Reviews (n)" opens or closes; the table's own buttons are React's. Neither selects the card.
+    if (this.footer?.section.contains(target) === true) {
+      if (this.footer.header.contains(target)) {
+        event.preventDefault()
+        this.toggleReviews()
+      }
+      return
+    }
     if (target.closest('.note-card__more') !== null) {
       event.preventDefault()
       this.openMenu()
@@ -411,6 +570,7 @@ export class NoteCardView implements NodeView {
   }
 
   destroy(): void {
+    this.closeTable()
     this.closeMenu?.()
     this.unsubscribe?.()
     this.code?.destroy?.()

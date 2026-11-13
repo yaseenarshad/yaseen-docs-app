@@ -1,7 +1,8 @@
 /**
  * The pieces the card window (`explore/ExploreCard.tsx`) and the Inbox (`NoteCardInbox.tsx`) share (YAZ-4962): the
  * card drawn read-only (`renderNoteCard`, the page's own function) with its pills and links live, the grey card ID
- * that copies on a click (D20), and the Reviews section with the full table (D3, D13).
+ * that copies on a click (D20), and the Reviews section with the full table (D3, D13). The table is the page card's
+ * too (`noteCardView.ts`, YAZ-5000); the Inbox has no Reviews section.
  */
 import { useCallback, useContext, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import type { CardReview } from '@shared/cardLine'
@@ -168,18 +169,12 @@ export function noteCardDue(due: number, now: number): string {
 export const noteCardOverdue = (due: number, now: number): boolean => due < new Date(now).setHours(0, 0, 0, 0)
 
 /**
- * "Reviews (n)" (D3, D13): the full table, one row per review in time order — Answer, Days (since the review before),
- * Review date, Next due, a delete — and a last row for the review to come: its due date under Next due ("Overdue ·
- * Oct 18" when that day is past). A section with a title, as "Linked mentions" is, CLOSED until asked for: the strip
- * and the Inbox say the state ("a footer lets the table expand", D13).
+ * "Reviews (n)" (D3, D13): a section with a title, as "Linked mentions" is, CLOSED until asked for: the strip says the
+ * state ("a footer lets the table expand", D13). Open, the full table (`NoteCardReviewsTable`). The card window has
+ * it; the page's card block draws the same title and mounts the same table when opened (`noteCardView.ts`, YAZ-5000).
  */
-export function NoteCardReviews({ reviews, settings, onDelete, now = Date.now() }: NoteCardReviewsProps) {
+export function NoteCardReviews({ reviews, settings, onDelete, now }: NoteCardReviewsProps) {
   const [open, setOpen] = useState(false)
-  // One replay: each row is a review's step; the last row's step is the card's state.
-  const rows = cardHistory(reviews, settings)
-  const last = rows.at(-1)
-  const next = last?.due ?? now
-  const nextDue = noteCardDue(next, now)
   return (
     <section className="note-card-reviews">
       <button type="button" className="backlinks__header" aria-expanded={open} onClick={() => setOpen((o) => !o)} onMouseDown={(e) => e.preventDefault()}>
@@ -190,45 +185,59 @@ export function NoteCardReviews({ reviews, settings, onDelete, now = Date.now() 
           Reviews <span className="backlinks__count">({reviews.length})</span>
         </span>
       </button>
-      {open && (
-        <table className="note-card-reviews__table">
-          <thead>
-            <tr>
-              <th>Answer</th>
-              <th>Days</th>
-              <th>Review date</th>
-              <th>Next due</th>
-              <th aria-label="Delete" />
-            </tr>
-          </thead>
-          <tbody>
-            {/* Keyed by place: two reviews in one minute are two rows (`withoutCardReview` takes the last of them). */}
-            {rows.map((row, i) => (
-              <tr key={i}>
-                <td>{answerLabel(row.review.rating, settings)}</td>
-                <td>{row.elapsed}</td>
-                <td>{noteCardDate(Date.parse(row.review.at), now)}</td>
-                <td>{noteCardDate(row.due, now)}</td>
-                <td>
-                  {onDelete !== undefined && (
-                    <button type="button" className="comments__action comments__action--danger" aria-label={`Delete the review of ${noteCardDate(Date.parse(row.review.at), now)}`} onMouseDown={(e) => e.preventDefault()} onClick={() => onDelete(row.review)}>
-                      ×
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {/* The review to come: no answer and no review date yet; when it is due. */}
-            <tr className="note-card-reviews__next">
-              <td>Next</td>
-              <td>{last === undefined ? '' : last.interval}</td>
-              <td />
-              <td>{nextDue}</td>
-              <td />
-            </tr>
-          </tbody>
-        </table>
-      )}
+      {open && <NoteCardReviewsTable reviews={reviews} settings={settings} onDelete={onDelete} now={now} />}
     </section>
+  )
+}
+
+/**
+ * The full table (D3, D13): one row per review in time order — Answer, Days (since the review before), Review date,
+ * Next due, a delete — and a last row for the review to come: its due date under Next due ("Overdue · Oct 18" when
+ * that day is past). The history is replayed only here, so a closed section costs nothing but its count.
+ */
+export function NoteCardReviewsTable({ reviews, settings, onDelete, now = Date.now() }: NoteCardReviewsProps) {
+  // One replay: each row is a review's step; the last row's step is the card's state.
+  const rows = cardHistory(reviews, settings)
+  const last = rows.at(-1)
+  const next = last?.due ?? now
+  const nextDue = noteCardDue(next, now)
+  return (
+    <table className="note-card-reviews__table">
+      <thead>
+        <tr>
+          <th>Answer</th>
+          <th>Days</th>
+          <th>Review date</th>
+          <th>Next due</th>
+          <th aria-label="Delete" />
+        </tr>
+      </thead>
+      <tbody>
+        {/* Keyed by place: two reviews in one minute are two rows (`withoutCardReview` takes the last of them). */}
+        {rows.map((row, i) => (
+          <tr key={i}>
+            <td>{answerLabel(row.review.rating, settings)}</td>
+            <td>{row.elapsed}</td>
+            <td>{noteCardDate(Date.parse(row.review.at), now)}</td>
+            <td>{noteCardDate(row.due, now)}</td>
+            <td>
+              {onDelete !== undefined && (
+                <button type="button" className="comments__action comments__action--danger" aria-label={`Delete the review of ${noteCardDate(Date.parse(row.review.at), now)}`} onMouseDown={(e) => e.preventDefault()} onClick={() => onDelete(row.review)}>
+                  ×
+                </button>
+              )}
+            </td>
+          </tr>
+        ))}
+        {/* The review to come: no answer and no review date yet; when it is due. */}
+        <tr className="note-card-reviews__next">
+          <td>Next</td>
+          <td>{last === undefined ? '' : last.interval}</td>
+          <td />
+          <td>{nextDue}</td>
+          <td />
+        </tr>
+      </tbody>
+    </table>
   )
 }

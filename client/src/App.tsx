@@ -3234,6 +3234,9 @@ export function App() {
       // The vault's Read only (YAZ-4939), and the door a file action asks through.
       vaultReadOnly: scope.readOnlyVault.settings.on,
       onFileAction: allowFileAction,
+      // The vault's card review (YAZ-5000): "Reviews (n)" under each card in the page, the card window's table.
+      cardReviewSettings: scope.review.settings,
+      onDeleteCardReview: scope.review.deleteReview,
       properties: scope.properties,
       onOpenFileRight: openRight,
       // YAZ-4564: a folder page's Folder chips and ↗ open a subfolder's page as the sidebar's "Open folder page" does.

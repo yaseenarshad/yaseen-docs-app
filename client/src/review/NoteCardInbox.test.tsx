@@ -246,11 +246,14 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.start).toHaveBeenCalledExactlyOnceWith({})
   })
 
-  it('the Reviews section under the card starts closed (silence) and opens with the full table', () => {
+  it('YAZ-5000: no Reviews section, also for a card with reviews: only the card, the steps and the answer buttons', async () => {
     mount('Just a fact')
-    expect(el.querySelector('.note-card-reviews .backlinks__header')?.getAttribute('aria-expanded')).toBe('false')
-    expect(el.querySelector('.note-card-reviews__table')).toBeNull()
-    act(() => el.querySelector<HTMLButtonElement>('.note-card-reviews .backlinks__header')?.click())
-    expect(el.querySelector('.note-card-reviews__table')).not.toBeNull()
+    session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }] } } }
+    render()
+    await flush()
+    expect(el.querySelector('.note-card-inbox__card')).not.toBeNull()
+    expect(el.querySelectorAll('.note-card-inbox__answer')).toHaveLength(2)
+    expect(el.querySelector('.note-card-reviews')).toBeNull()
+    expect(el.textContent).not.toContain('Reviews')
   })
 })

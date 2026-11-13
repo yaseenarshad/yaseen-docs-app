@@ -17,7 +17,7 @@
  *    background tab: the review stays), Esc (the review closes). A key typed in a field, or while a dialog or a menu
  *    is open (Explore is a dialog), is not the Inbox's; a key with the keyboard elsewhere (the sidebar) neither.
  *  - The hint row shows a key only while it does something; the digits are on the buttons.
- *  - Under the card, "Reviews (n)", closed (silence). Nothing left: "Inbox complete." for the vault; for one page or
+ *  - No Reviews section (YAZ-5000: it lives only under the card in the page, and in the card window). Nothing left: "Inbox complete." for the vault; for one page or
  *    folder "This page is done." and, quiet, "21 more in the Inbox", which starts the vault's review.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -26,7 +26,7 @@ import { cardSides, hiddenCount } from '@shared/cardText'
 import type { GestureAction } from '@shared/keys'
 import type { ExploreVault } from '../explore/ExploreNote'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
-import { NoteCardBody, NoteCardId, NoteCardNextChip, NoteCardReviews, noteCardWait } from './noteCardParts'
+import { NoteCardBody, NoteCardId, NoteCardNextChip, noteCardWait } from './noteCardParts'
 import { noteCardInboxHints, noteCardInboxKey } from './noteCardInboxKeys'
 import { HoverTip } from '../components/HoverTip'
 import '../explore/explore.css'
@@ -214,7 +214,6 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
                     })}
                   </div>
                 )}
-                <NoteCardReviews key={cardKey ?? ''} reviews={card.page.reviews} settings={review.settings} onDelete={(gone) => void review.deleteReview(card.path, card.id, gone)} />
               </>
             )
           )}

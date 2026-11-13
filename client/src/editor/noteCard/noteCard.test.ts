@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
-import { undo } from '@milkdown/kit/prose/history'
+import { undo, undoDepth } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave, noteCardLook, type CreateCrepeOptions } from '../createCrepe'
 import { applyExternalMarkdown } from '../external/applyExternalMarkdown'
@@ -16,6 +16,8 @@ import { features } from '../featureConfig'
 import { NOTE_CARD_OPEN, noteCardLanguage, noteCardViewAt, type NoteCardOpenRequest } from './noteCardView'
 import { refreshNoteCardLook, renderNoteCard } from './noteCardRender'
 import { pageCards } from '@shared/cardLine'
+import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
+
 
 /** A read-only page's ⋯ writes the card line to the file (`changeCardLine`): here it is only heard. */
 const fileWrites = vi.hoisted(() => [] as Array<{ path: string; id: string; index: number | undefined; line: string | null }>)
@@ -24,6 +26,17 @@ vi.mock('../../review/cardFile', async (importOriginal) => ({
   changeCardLine: async (path: string, id: string, change: (l: import('@shared/cardLine').CardLine) => import('@shared/cardLine').CardLine, index?: number) => {
     const { formatCardLine, parseCardLine } = await import('@shared/cardLine')
     fileWrites.push({ path, id, index, line: formatCardLine(change(parseCardLine('<!-- card: WIKI-7, 2026-11-12T14:05Z good -->')!)) })
+  },
+}))
+
+/** The page's file for the Reviews delete (YAZ-5000): the real card-line transforms, on bytes in memory. */
+const disk = vi.hoisted(() => new Map<string, string>())
+vi.mock('../../views/writeProperty', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../views/writeProperty')>()),
+  transformFile: async (path: string, transform: (content: string) => string) => {
+    const next = transform(disk.get(path) ?? '')
+    disk.set(path, next)
+    return { mtime: 1, content: next }
   },
 }))
 
@@ -356,6 +369,65 @@ describe('the card in the page', () => {
     expect(getMarkdownForSave(crepe)).toBe(`# Page\n\nSome text above the card.\n\n${CARD}<!-- card: WIKI-9 -->\n\nMore text below.\n`)
     expect(view.state.doc.nodeAt(cardPos(view))?.attrs.cardLine).toBe('<!-- card: WIKI-9 -->')
     expect(view.dom.querySelector('.note-card__side')?.textContent).toContain('capital')
+  })
+})
+
+describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
+  const LINE = '<!-- card: WIKI-7, 2026-11-01T09:00Z good, 2026-11-05T09:00Z again, 2026-11-06T09:00Z good -->'
+  const PAGE = `# Page\n\n${CARD}${LINE}\n\nAfter.\n`
+  const settings = () => DEFAULT_REVIEW_SETTINGS
+  const header = (root: HTMLElement) => root.querySelector<HTMLButtonElement>('.note-card .note-card-reviews .backlinks__header')
+  const press = (el: Element) => el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
+  const rows = (root: HTMLElement) => [...root.querySelectorAll('.note-card-reviews__table tbody tr')].map((tr) => tr.querySelector('td')?.textContent)
+
+  it('a card with reviews shows "Reviews (n)" closed, with no table; a card with none shows no section; a preview with no door shows none', async () => {
+    const { root } = await mount(`${PAGE}\n\`\`\`card\nAnother\n\`\`\`\n<!-- card: WIKI-8 -->\n`, { noteCards: { path: '/v/Page.md' }, noteCardReviews: { settings, deleteReview: vi.fn() } })
+    const cards = root.querySelectorAll('.note-card')
+    expect(cards).toHaveLength(2)
+    expect(cards[0].querySelector('.note-card-reviews')?.textContent).toBe('Reviews (3)')
+    expect(header(root)?.getAttribute('aria-expanded')).toBe('false')
+    expect(root.querySelector('.note-card-reviews__table')).toBeNull()
+    expect(cards[1].querySelector('.note-card-reviews')).toBeNull()
+    const preview = await mount(PAGE, { noteCards: { path: '/v/Page.md' } })
+    expect(preview.root.querySelector('.note-card-reviews')).toBeNull()
+  })
+
+  it('a click opens the card window`s table with each review and the upcoming row; open and closed are no change of the page and no undo step', async () => {
+    const { crepe, root, view } = await mount(PAGE, { noteCards: { path: '/v/Page-open.md' }, noteCardReviews: { settings, deleteReview: vi.fn() } })
+    const doc = view.state.doc
+    press(header(root)!)
+    await vi.waitFor(() => expect(rows(root)).toEqual(['Remembered', 'Forgot', 'Remembered', 'Next']))
+    expect(header(root)?.getAttribute('aria-expanded')).toBe('true')
+    expect(view.state.doc).toBe(doc)
+    expect(undoDepth(view.state)).toBe(0)
+    expect(root.querySelector('.note-card')?.classList.contains('ProseMirror-selectednode')).toBe(false)
+    press(header(root)!)
+    expect(root.querySelector('.note-card-reviews__table')).toBeNull()
+    expect(getMarkdownForSave(crepe)).toBe(PAGE)
+  })
+
+  it('works read only: × deletes through the vault`s door (the file), the open table follows the new line, and Undo puts the file back byte for byte', async () => {
+    const path = '/v/Page-delete.md'
+    disk.set(path, PAGE)
+    let undoDelete: (() => Promise<unknown>) | null = null
+    const { deleteCardReview, restoreCardReview } = await import('../../review/cardFile')
+    const deleteReview = vi.fn(async (p: string, id: string, review: import('@shared/cardLine').CardReview) => {
+      const at = await deleteCardReview(p, id, review.at)
+      undoDelete = () => restoreCardReview(p, id, review, at)
+    })
+    const { crepe, root } = await mount(PAGE, { noteCards: { path }, noteCardReviews: { settings, deleteReview } })
+    crepe.setReadonly(true)
+    press(header(root)!)
+    await vi.waitFor(() => expect(rows(root)).toHaveLength(4))
+    root.querySelectorAll<HTMLButtonElement>('.note-card-reviews__table tbody button')[1].click()
+    expect(deleteReview).toHaveBeenCalledWith(path, 'WIKI-7', { at: '2026-11-05T09:00Z', rating: 'again' })
+    await vi.waitFor(() => expect(disk.get(path)).toBe(PAGE.replace(' 2026-11-05T09:00Z again,', '')))
+    // The app merges its own write into the open page: the section counts again, and the open table shows the new rows.
+    expect(applyExternalMarkdown(crepe, disk.get(path)!)).toBe('applied')
+    await vi.waitFor(() => expect(rows(root)).toEqual(['Remembered', 'Remembered', 'Next']))
+    expect(root.querySelector('.note-card-reviews')?.querySelector('.backlinks__title')?.textContent).toBe('Reviews (2)')
+    await undoDelete!()
+    expect(disk.get(path)).toBe(PAGE)
   })
 })
 

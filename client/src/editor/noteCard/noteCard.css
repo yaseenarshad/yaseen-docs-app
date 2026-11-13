@@ -206,3 +206,33 @@
 .note-card [data-note-card-link] {
   cursor: pointer;
 }
+
+/* "Reviews (n)" at the bottom of a card with reviews (YAZ-5000): the card window's section, quiet, closed until
+   clicked; its table is the card window's (`review/noteCardScreens.css`), with room inside the card. Hidden while
+   the card is edited. */
+.note-card .note-card-reviews {
+  margin: 0;
+  padding: 0 12px;
+  border-top: 1px solid var(--border);
+  user-select: none;
+}
+.note-card .note-card-reviews .backlinks__header {
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.note-card .note-card-reviews .note-card-reviews__table {
+  margin: 0 0 10px 20px;
+}
+.note-card .note-card-reviews__table th {
+  padding: 2px 16px 4px 0;
+}
+.note-card .note-card-reviews__table td {
+  padding: 3px 16px 3px 0;
+}
+.note-card--editing .note-card-reviews {
+  display: none;
+}

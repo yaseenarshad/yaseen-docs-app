@@ -359,7 +359,7 @@ import { createWikilink, createWikilinkResolveSource, linkIsResolved, linkPath, 
 import { languages as codeLanguages } from '@codemirror/language-data'
 import { basename } from '@shared/types'
 import { imageSrc, noteDirRel } from './image/imageSrc'
-import { NOTE_CARD_ID_META, noteCardCodeKeys, noteCardLanguage, noteCardPlugins, noteCardRow, type NoteCardDeps, type NoteCardHost } from './noteCard/noteCardView'
+import { NOTE_CARD_ID_META, noteCardCodeKeys, noteCardLanguage, noteCardPlugins, noteCardRow, type NoteCardDeps, type NoteCardHost, type NoteCardReviewDoor } from './noteCard/noteCardView'
 import type { NoteCardLook } from './noteCard/noteCardRender'
 import { changeCardLine } from '../review/cardFile'
 import { createIdLinkCaret } from './wikilink/idLinkCaret'
@@ -470,6 +470,8 @@ export interface CreateCrepeOptions {
    * draws (a preview, a read layer). The row also hides while the vault gives no IDs (idea 9, `wikilinks.ids`).
    */
   noteCards?: NoteCardHost
+  /** The vault's card review (YAZ-5000): "Reviews (n)" under each card with reviews. Absent (a hover preview) → no section. */
+  noteCardReviews?: NoteCardReviewDoor
 }
 
 /** The slice of Crepe's GroupBuilder `buildToolbar` hands over — structural, since Crepe exports the item type but not the builder class. */
@@ -1021,6 +1023,7 @@ function noteCardDeps(opts: CreateCrepeOptions, wikilinks: WikilinkResolveSource
             else void nav.open(href)
           },
     onNotice: opts.wikilinkNav?.onNotice ?? nav?.onNotice,
+    reviews: opts.noteCardReviews,
   }
 }
 
