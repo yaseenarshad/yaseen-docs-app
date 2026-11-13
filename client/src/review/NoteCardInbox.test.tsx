@@ -12,6 +12,7 @@ import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { NoteCardInbox, type NoteCardInboxProps } from './NoteCardInbox'
 import { noteCardStateText } from './noteCardInboxChip'
+import { foldHints } from './NoteCardInboxHints'
 import { CARD_MIN_WIDTH, clampCardWidth, inboxCardWidth, setInboxCardWidth } from './inboxCardWidth'
 import { useReadOnlyVault } from '../vault/readOnlyVault'
 
@@ -123,11 +124,11 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(el.querySelector('.note-card-inbox__bar .note-card-inbox__place')?.textContent).toBe('3 of 12')
     const hints = () => [...el.querySelectorAll('.note-card-inbox__hints span')].map((h) => h.textContent)
     // Nothing to undo; the digits are on the buttons.
-    expect(hints()).toEqual(['Space Show', 'O Open page', 'E Edit card', '⌘↵ Open page in a new tab'])
+    expect(hints()).toEqual(['Space Show', 'O Open page', 'E Edit card', '⌘↵ New tab'])
     for (let i = 0; i < 4; i++) press(' ')
     await flush()
     // The last step: Space has nothing more to show.
-    expect(hints()).toEqual(['O Open page', 'E Edit card', '⌘↵ Open page in a new tab'])
+    expect(hints()).toEqual(['O Open page', 'E Edit card', '⌘↵ New tab'])
   })
 
   it('YAZ-4999: an up-next card shows the chip "Up next" after the ID; its × removes the mark (setNext)', () => {
@@ -575,5 +576,61 @@ describe('the Inbox screen (YAZ-4962)', () => {
     render()
     expect(parts()).toEqual([['grey', '12.5%'], ['red', '25%'], ['grey', '25%']])
     expect([bar().getAttribute('aria-valuenow'), bar().getAttribute('aria-valuemax')]).toEqual(['5', '8'])
+  })
+
+  it('YAZ-5024: the key row folds the least important keys when it does not fit — ⌘↵ first, then O; Space and E stay', () => {
+    const keys = ['Space', '⌘Z', 'O', 'E', '⌘↵']
+    const widths = [80, 60, 80, 70, 60]
+    // All fit: 350 + 4 gaps of 16 = 414.
+    expect([...foldHints(keys, widths, 16, 414)]).toEqual([])
+    expect([...foldHints(keys, widths, 16, 413)]).toEqual(['⌘↵'])
+    expect([...foldHints(keys, widths, 16, 300)]).toEqual(['⌘↵', 'O'])
+    // Very narrow: ⌘Z too; Space and E never.
+    expect([...foldHints(keys, widths, 16, 100)]).toEqual(['⌘↵', 'O', '⌘Z'])
+  })
+
+  it('YAZ-5024: the key row measures its room with a ResizeObserver and folds ⌘↵ when "⌘Z Undo" joins it; the row never wraps', async () => {
+    let fire: () => void = () => undefined
+    const observed: Element[] = []
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          fire = cb
+        }
+        observe(el: Element) {
+          observed.push(el)
+        }
+        disconnect() {}
+      },
+    )
+    const width = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.dataset.keys === undefined ? 0 : 70
+    })
+    const room = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('note-card-inbox__hints') ? 340 : 0
+    })
+    try {
+      mount(TWO_SIDES)
+      const row = el.querySelector<HTMLElement>('.note-card-inbox__hints')!
+      expect(observed).toContain(row)
+      const folded = () => [...row.querySelectorAll<HTMLElement>('[data-folded]')].map((s) => s.dataset.keys)
+      // Space, O, E, ⌘↵: 4 × 70 = 280 (jsdom lays out no gap), in a row of 340 less its padding (28): all fit.
+      expect(folded()).toEqual([])
+      session = { ...session, canUndo: true }
+      render()
+      // ⌘Z joins: 5 × 70 = 350 does not fit in 312: ⌘↵ folds first.
+      expect(folded()).toEqual(['⌘↵'])
+      // The card made wider (YAZ-5019): the observer says so, and the row has room for all.
+      room.mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains('note-card-inbox__hints') ? 600 : 0
+      })
+      act(() => fire())
+      expect(folded()).toEqual([])
+    } finally {
+      width.mockRestore()
+      room.mockRestore()
+      vi.unstubAllGlobals()
+    }
   })
 })

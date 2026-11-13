@@ -60,5 +60,6 @@ export const noteCardInboxHints = ({ card, answering, canUndo, editable, moves =
   ...(canUndo ? [{ keys: '⌘Z', label: 'Undo' }] : []),
   ...(card ? [{ keys: 'O', label: 'Open page' }] : []),
   ...(card && editable ? [{ keys: 'E', label: 'Edit card' }] : []),
-  ...(card ? [{ keys: '⌘↵', label: 'Open page in a new tab' }] : []),
+  // Short (YAZ-5024): the row is one line.
+  ...(card ? [{ keys: '⌘↵', label: 'New tab' }] : []),
 ]

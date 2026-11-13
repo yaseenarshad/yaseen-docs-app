@@ -477,12 +477,25 @@ body.note-card-inbox--sizing {
   font-size: 13px;
   font-weight: 600;
 }
+/* ONE line at any width (YAZ-5024): no wrap; a key that does not fit folds (`NoteCardInboxHints`), laid out off the
+   row so it can still be measured. */
 .note-card-inbox__hints {
-  flex-wrap: wrap;
+  position: relative;
+  flex-wrap: nowrap;
   justify-content: center;
-  gap: 6px 16px;
+  gap: 16px;
   margin-top: 26px;
+  overflow: hidden;
   border-top: 0;
+  white-space: nowrap;
+}
+.note-card-inbox__hints > span {
+  flex: none;
+}
+.note-card-inbox__hints > span[data-folded] {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
 }
 .note-card-inbox__hints kbd {
   margin-right: 2px;

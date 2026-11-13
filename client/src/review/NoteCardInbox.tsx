@@ -27,7 +27,8 @@
  *  - The buttons row (YAZ-5004, as in Mochi): ← → on its left, the answers in the middle, ⋯ on its right. ⋯ opens a
  *    small row of icons, each with the app's hover box (its name and key): Undo last review (⌘Z), Turn review off,
  *    Put at top of Inbox / Remove from top of Inbox, Open card. They are the hook's own actions.
- *  - The hint row shows a key only while it does something; the digits are on the buttons.
+ *  - The hint row shows a key only while it does something; the digits are on the buttons. It is ONE line at any width
+ *    (YAZ-5024, `NoteCardInboxHints`): ⌘↵ folds first, then O; Space and E stay.
  *  - THE WIDTH (YAZ-5019): the card's left or right edge drags it wider or narrower, centred (`inboxCardWidth.ts`): at
  *    least 420 px, at most the tab's width less its margins; the width stays for the app's run, in memory only.
  *  - No Reviews section (YAZ-5000: it lives only under the card in the page, and in the card window). Nothing left: "Inbox complete." for the vault; for one page or
@@ -45,6 +46,7 @@ import { HoverTip } from '../components/HoverTip'
 import { CARD_FILTERS, NoteCardInboxBar } from './NoteCardInboxBar'
 import { NoteCardStateChip, answerIcon } from './noteCardInboxChip'
 import { useInboxCardWidth } from './inboxCardWidth'
+import { NoteCardInboxHints } from './NoteCardInboxHints'
 import '../explore/explore.css'
 
 export interface NoteCardInboxProps {
@@ -340,13 +342,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
             </div>
           </div>
         )}
-        <div className="explore__foot note-card-inbox__hints" aria-hidden="true">
-          {hints.map((h) => (
-            <span key={h.label}>
-              <kbd>{h.keys}</kbd> {h.label}
-            </span>
-          ))}
-        </div>
+        <NoteCardInboxHints hints={hints} />
       </div>
     </div>
   )
