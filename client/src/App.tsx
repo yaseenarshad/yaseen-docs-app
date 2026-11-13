@@ -73,6 +73,7 @@ import { setUsedHighlightColors, setUsedHighlightColorsSaver } from './editor/hi
 import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import type { CardReviewScope, CardReviewSession } from './review/useCardReview'
+import { cardSpacingVars } from './review/cardSpacing'
 import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { textVars } from './settings/headingStyles'
@@ -884,6 +885,8 @@ export function App() {
   const settingsVars = {
     '--edit-line-height': settings.lineSpacing,
     '--edit-block-gap': `${settings.blockGap}px`,
+    // Settings › Review › Card spacing (YAZ-5050): Custom only; Same as pages sets none, so a card reads the two above.
+    ...cardSpacingVars(settings),
     '--thread-width': `${settings.threadWidth}px`,
     // Bullets in notes (the YAZ-3818 demo, bullets.css): only a changed value, so the default stays the note's 2.15em.
     ...((settings.noteBulletIndent ?? DEFAULT_SETTINGS.noteBulletIndent) !== DEFAULT_SETTINGS.noteBulletIndent ? { '--note-bullet-indent': `${settings.noteBulletIndent}px` } : {}),

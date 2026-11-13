@@ -28,7 +28,7 @@ import { isIdLetters } from '@shared/noteId'
 import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, NOTE_BULLET_GAP_MAX, NOTE_BULLET_GAP_MIN, NOTE_BULLET_INDENT_MAX, NOTE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_NOTE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, NOTE_BULLET_GAP_MAX, NOTE_BULLET_GAP_MIN, NOTE_BULLET_INDENT_MAX, NOTE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_NOTE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
@@ -73,7 +73,8 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
+import { cardSpacingFromPages } from '../review/cardSpacing'
+import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, CARD_SPACING_OPTIONS, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
 
 /** A cell bullet's px setting (the YAZ-3818 demo): the stepper, and Reset when it is not the default. */
 function CellBulletStepper({ settings, onChange, field, name, min, max, step }: { settings: SettingsState; onChange: (next: SettingsState) => void; field: 'tableCellBulletIndent' | 'tableCellBulletGap'; name: string; min: number; max: number; step: number }) {
@@ -483,9 +484,13 @@ function iconColourRow(kind: SidebarIconKind): SettingDef {
 
 /** What the section title does not say: the feature's name, and where its cards turn up. */
 const REVIEW_KEYWORDS = ['note cards', 'cards', 'flashcards', 'inbox', 'spaced repetition', 'fsrs', 'archive', 'archived']
+/** Card spacing's rows (YAZ-5050). */
+const CARD_SPACING_KEYWORDS = [...REVIEW_KEYWORDS, 'spacing', 'line spacing', 'line height', 'paragraph', 'space between blocks', 'gap', 'bullet', 'indent', 'view mode']
 
 /** Every Review row but the switch is there only while review is on. */
 const reviewOn = ({ review }: SettingsCtx): boolean => review?.settings.enabled === true
+/** Card spacing's own four rows (YAZ-5050): only with Custom. */
+const cardSpacingCustom = (ctx: SettingsCtx): boolean => reviewOn(ctx) && ctx.settings.cardSpacing === 'custom'
 
 /** One typed row of the Review section; `id` is the `ReviewSettings` field it edits. */
 const reviewField = (id: string, field: ReviewField, label: string, hint: string, unit?: string, wide = false): SettingDef => ({
@@ -1957,6 +1962,65 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             available: reviewOn,
             render: ({ settings, onChange }) => (
               <Segmented options={SHOWN_HIDDEN_WORDS_OPTIONS} value={settings.shownHiddenWords} onChange={(shownHiddenWords) => onChange({ ...settings, shownHiddenWords })} ariaLabel="Shown hidden words" />
+            ),
+          },
+          {
+            // YAZ-5050 (Yaseen: "adjust that different from the default or return to the default"): the app's settings,
+            // as Shown hidden words. Same as pages is the way back; Custom starts from the pages' values.
+            id: 'cardSpacing',
+            label: 'Card spacing',
+            hint: "How a card reads in the Inbox, the card window and the page: the pages' spacing, or its own. Custom starts from the pages' spacing.",
+            keywords: CARD_SPACING_KEYWORDS,
+            available: reviewOn,
+            render: ({ settings, onChange }) => (
+              <Segmented
+                options={CARD_SPACING_OPTIONS}
+                value={settings.cardSpacing}
+                onChange={(cardSpacing) => onChange(cardSpacing === 'custom' && settings.cardSpacing !== 'custom' ? { ...settings, cardSpacing, ...cardSpacingFromPages(settings) } : { ...settings, cardSpacing })}
+                ariaLabel="Card spacing"
+              />
+            ),
+          },
+          {
+            id: 'cardLineSpacing',
+            label: 'Line spacing',
+            hint: "A card's own line spacing.",
+            keywords: CARD_SPACING_KEYWORDS,
+            available: cardSpacingCustom,
+            render: ({ settings, onChange }) => (
+              <Segmented options={LINE_SPACING_PRESETS} value={settings.cardLineSpacing} onChange={(cardLineSpacing) => onChange({ ...settings, cardLineSpacing })} ariaLabel="Card line spacing" />
+            ),
+          },
+          {
+            id: 'cardBlockGap',
+            label: 'Space between blocks',
+            hint: "A card's own space between paragraphs, headings and bullets.",
+            keywords: CARD_SPACING_KEYWORDS,
+            available: cardSpacingCustom,
+            render: ({ settings, onChange }) => (
+              <Segmented options={BLOCK_GAP_PRESETS.filter((o) => o.value <= CARD_BLOCK_GAP_MAX)} value={settings.cardBlockGap} onChange={(cardBlockGap) => onChange({ ...settings, cardBlockGap })} ariaLabel="Card space between blocks" />
+            ),
+          },
+          {
+            id: 'cardBulletIndent',
+            label: 'Bullet indent',
+            hint: "How far each child level steps in, in a card. Reset: the pages' value.",
+            keywords: CARD_SPACING_KEYWORDS,
+            available: cardSpacingCustom,
+            render: ({ settings, onChange }) => (
+              <PxSetting name="Card bullet indent" value={settings.cardBulletIndent} fallback={settings.noteBulletIndent ?? DEFAULT_SETTINGS.noteBulletIndent}
+                min={NOTE_BULLET_INDENT_MIN} max={NOTE_BULLET_INDENT_MAX} step={2} onSet={(cardBulletIndent) => onChange({ ...settings, cardBulletIndent })} />
+            ),
+          },
+          {
+            id: 'cardBulletGap',
+            label: 'Bullet gap',
+            hint: "The space between a bullet and its text, in a card. Reset: the pages' value.",
+            keywords: CARD_SPACING_KEYWORDS,
+            available: cardSpacingCustom,
+            render: ({ settings, onChange }) => (
+              <PxSetting name="Card bullet gap" value={settings.cardBulletGap} fallback={settings.noteBulletGap ?? DEFAULT_SETTINGS.noteBulletGap}
+                min={NOTE_BULLET_GAP_MIN} max={NOTE_BULLET_GAP_MAX} step={1} onSet={(cardBulletGap) => onChange({ ...settings, cardBulletGap })} />
             ),
           },
         ],

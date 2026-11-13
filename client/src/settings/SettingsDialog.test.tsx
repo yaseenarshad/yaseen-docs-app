@@ -170,7 +170,7 @@ const FILES_ROWS = ['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 
 /** Settings › Folder pages (YAZ-4585): its personal rows, with the folder views' hover row moved from Files & Links, the view defaults, the page default. */
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and their style (YAZ-4798) after Group indent.
 const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
-const REVIEW_ROWS = ['enabled', 'buttons', 'retention', 'maxDays', 'newPerDay', 'upNextPerDay', 'newOrder', 'fuzz', 'pauseAfter', 'weights', 'shownHiddenWords', 'howCardsComeBack']
+const REVIEW_ROWS = ['enabled', 'buttons', 'retention', 'maxDays', 'newPerDay', 'upNextPerDay', 'newOrder', 'fuzz', 'pauseAfter', 'weights', 'shownHiddenWords', 'cardSpacing', 'howCardsComeBack']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
  * so the "Used by macOS" rows are not there; with no key changed, neither is "Reset all hotkeys".
@@ -1384,7 +1384,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   const S = REVIEW_ON
   const input = (el: HTMLElement, id: string) => row(el, id)?.querySelector<HTMLInputElement>('.settings__input') as HTMLInputElement
   const reviewRows = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('#settings-review .setting')].map((r) => r.dataset.setting)
-  const ALL = ['enabled', 'buttons', 'retention', 'maxDays', 'newPerDay', 'upNextPerDay', 'newOrder', 'fuzz', 'pauseAfter', 'weights', 'shownHiddenWords', 'howCardsComeBack']
+  const ALL = ['enabled', 'buttons', 'retention', 'maxDays', 'newPerDay', 'upNextPerDay', 'newOrder', 'fuzz', 'pauseAfter', 'weights', 'shownHiddenWords', 'cardSpacing', 'howCardsComeBack']
 
   it('is absent with no vault open: no Review item in the nav, and no page holds its section or a row of it', () => {
     const { el } = mount()
@@ -1397,7 +1397,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   it('on: the card rows in order, with their words and values; off: the switch alone. No upkeep row is left', () => {
     const { el, rerender } = mountOn('Review', { ...DEFAULT_SETTINGS }, status(), S)
     expect(reviewRows(el)).toEqual(ALL)
-    expect(ALL.slice(0, -1).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Review cards', 'Answer buttons', 'Remember rate', 'Longest wait', 'New cards a day', 'Up next a day', 'New cards first', 'Spread due dates', 'Pause the timer after', 'Weights', 'Shown hidden words'])
+    expect(ALL.slice(0, -1).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Review cards', 'Answer buttons', 'Remember rate', 'Longest wait', 'New cards a day', 'Up next a day', 'New cards first', 'Spread due dates', 'Pause the timer after', 'Weights', 'Shown hidden words', 'Card spacing'])
     // YAZ-5020: "How cards come back" is a quiet closed line; open, it says the same-day rules and why.
     const how = row(el, 'howCardsComeBack')!.querySelector('details')!
     expect([how.open, how.querySelector('summary')?.textContent]).toEqual([false, 'How cards come back'])
@@ -1411,6 +1411,36 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     rerender(REVIEW_OFF)
     expect(reviewRows(el)).toEqual(['enabled'])
     expect(rowButtons(el, 'enabled').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
+  })
+
+  it('YAZ-5053: Shown hidden words is Highlight · Underline · Box; Box is an app setting (onChange), never the vault\'s review.json', () => {
+    const { el, save, onChange } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
+    expect(rowButtons(el, 'shownHiddenWords').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Highlight', 'true'], ['Underline', 'false'], ['Box', 'false']])
+    act(() => rowButtons(el, 'shownHiddenWords')[2].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, shownHiddenWords: 'box' })
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  const CUSTOM_ROWS = ['cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap']
+  const CUSTOM = { cardSpacing: 'custom' as const, cardLineSpacing: 2, cardBlockGap: 8, cardBulletIndent: 40, cardBulletGap: 12 }
+  it('YAZ-5050: Card spacing is Same as pages by default, with no other row; Custom starts from the pages\' values and shows its four rows; Same as pages goes back', () => {
+    const page = { ...DEFAULT_SETTINGS, lineSpacing: 2, blockGap: 8, noteBulletIndent: 40, noteBulletGap: 12 }
+    const { el, onChange } = mountOn('Review', page, undefined, S)
+    expect(rowButtons(el, 'cardSpacing').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Same as pages', 'true'], ['Custom', 'false']])
+    for (const id of CUSTOM_ROWS) expect(row(el, id)).toBeNull()
+    act(() => rowButtons(el, 'cardSpacing')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...page, ...CUSTOM })
+  })
+
+  it('YAZ-5050: Custom card spacing: its four rows under Card spacing, in the pages\' words; a change is an app setting; Same as pages goes back', () => {
+    const custom = { ...DEFAULT_SETTINGS, ...CUSTOM }
+    const { el, onChange } = mountOn('Review', custom, undefined, S)
+    expect(reviewRows(el).slice(-6)).toEqual(['cardSpacing', ...CUSTOM_ROWS, 'howCardsComeBack'])
+    expect(CUSTOM_ROWS.map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Line spacing', 'Space between blocks', 'Bullet indent', 'Bullet gap'])
+    act(() => rowButtons(el, 'cardBlockGap')[3].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardBlockGap: 12 })
+    act(() => rowButtons(el, 'cardSpacing')[0].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardSpacing: 'pages' })
   })
 
   it('the switches save the whole object with one field changed — never onChange', () => {

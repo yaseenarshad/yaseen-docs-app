@@ -2143,6 +2143,21 @@ export interface SettingsState {
    * the card window. How the app looks, for every vault: `data-shown-hidden-words` on `.app`. The blanks do not change.
    */
   shownHiddenWords: ShownHiddenWords
+  /**
+   * Settings › Review › Card spacing (YAZ-5050): how a note card reads in the Inbox, the card window and the page.
+   * `pages` (the default) follows the pages' Line spacing, Space between blocks, Bullet indent and Bullet gap; `custom`
+   * uses the four `card*` values below, on `.app` as `--card-line-height`, `--card-block-gap`, `--card-bullet-indent`
+   * and `--card-bullet-gap`. Custom starts from the pages' values.
+   */
+  cardSpacing: CardSpacing
+  /** Card spacing, Custom (YAZ-5050): the card's line spacing, as `lineSpacing`. */
+  cardLineSpacing: number
+  /** Card spacing, Custom (YAZ-5050): the card's space between blocks, px per side, as `blockGap`. */
+  cardBlockGap: number
+  /** Card spacing, Custom (YAZ-5050): the card's bullet indent, px, as `noteBulletIndent`. */
+  cardBulletIndent: number
+  /** Card spacing, Custom (YAZ-5050): the card's bullet gap, px, as `noteBulletGap`. */
+  cardBulletGap: number
   /** The table of contents at a note's right edge (YAZ-2700): how you READ, global, never part of a note. Settings › "Pin default"; the card's "Pin" and "Unpin" write it too. */
   tableOfContents: TableOfContents
   /** Settings › "Table of contents default" (YAZ-3558 D2): on or off for each page that made no choice in its cog: a note's choice is its `toc` key (YAZ-4094 G4), a code file's is in `tocSwitches`. A page's choice wins. */
@@ -2468,8 +2483,14 @@ export const SECTION_STEPS: readonly number[] = [24, 30, 36]
 /** Section indent (YAZ-2709): when the grey section lines show. */
 export type SectionLines = 'always' | 'hover'
 export const SECTION_LINES: readonly SectionLines[] = ['always', 'hover']
-export type ShownHiddenWords = 'highlight' | 'underline'
-export const SHOWN_HIDDEN_WORDS: readonly ShownHiddenWords[] = ['highlight', 'underline']
+/** A shown hidden word's look (YAZ-5005); `box` (YAZ-5053) is Mochi's: a grey box while hidden, a light one when shown. */
+export type ShownHiddenWords = 'highlight' | 'underline' | 'box'
+export const SHOWN_HIDDEN_WORDS: readonly ShownHiddenWords[] = ['highlight', 'underline', 'box']
+/** Settings › Review › Card spacing (YAZ-5050). */
+export type CardSpacing = 'pages' | 'custom'
+export const CARD_SPACINGS: readonly CardSpacing[] = ['pages', 'custom']
+/** A card's own space between blocks (YAZ-5050), px per side. */
+export const CARD_BLOCK_GAP_MAX = 24
 
 /** Guide lines (YAZ-4094 G2): when they show — `near` is while the mouse is over the note. */
 export type GuideLinesShow = 'always' | 'near'
@@ -2858,6 +2879,11 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sectionStep: 30,
   sectionLines: 'always',
   shownHiddenWords: 'highlight',
+  cardSpacing: 'pages',
+  cardLineSpacing: 1.5,
+  cardBlockGap: 4,
+  cardBulletIndent: 34,
+  cardBulletGap: 10,
   tableOfContents: 'auto',
   tocOnByDefault: true,
   tableOfContentsWidth: TOC_DEFAULT_W,

@@ -44,7 +44,8 @@ it('YAZ-5005: Underline on `.app` takes the highlight off a shown hidden word an
   expect(underline[0].body).toMatch(/text-decoration-color:\s*var\(--accent\)/)
   // It beats the highlight rule it replaces.
   expect(beats(specificity(underline[0].selector), specificity('.note-card .note-card__hidden'))).toBe(true)
-  expect(rules(cardCss, '.note-card__blank').every((r) => !r.selector.includes('data-shown-hidden-words'))).toBe(true)
+  // Underline leaves the blank as it is (Box, YAZ-5053, is the one look that draws the blank too).
+  expect(rules(cardCss, '.note-card__blank').every((r) => !r.selector.includes("data-shown-hidden-words='underline'"))).toBe(true)
 })
 
 it('YAZ-5013: a blank and a shown word have ONE box model — inline, the same horizontal padding in both looks — and the word in a blank is invisible and not selectable', () => {
@@ -52,8 +53,11 @@ it('YAZ-5013: a blank and a shown word have ONE box model — inline, the same h
   expect(both).toHaveLength(1)
   expect(both[0].body).toMatch(/display:\s*inline;/)
   expect(both[0].body).toMatch(/padding:\s*0 2px/)
-  // No other rule changes the padding, the width or the display of either one (Underline keeps the padding too).
-  for (const rule of [...rules(cardCss, '.note-card__hidden'), ...rules(cardCss, '.note-card__blank')].filter((r) => r.selector !== both[0].selector))
+  // No other rule changes the padding, the width or the display of either one (Underline keeps the padding too), but
+  // Box's (YAZ-5053), which sets the SAME padding on both at once, so a show still moves nothing.
+  const box = rules(cardCss, "[data-shown-hidden-words='box'] .note-card :is(.note-card__hidden, .note-card__blank)")
+  expect(box).toHaveLength(1)
+  for (const rule of [...rules(cardCss, '.note-card__hidden'), ...rules(cardCss, '.note-card__blank')].filter((r) => r.selector !== both[0].selector && r.selector !== box[0].selector))
     expect(rule.body, rule.selector).not.toMatch(/(^|[\s;])(padding|width|display|margin)(-[a-z]+)?\s*:/)
   expect(rules(cardCss, '.note-card__blank > .note-card__word').some((r) => /visibility:\s*hidden/.test(r.body))).toBe(true)
   expect(rules(cardCss, '.note-card__blank').some((r) => /user-select:\s*none/.test(r.body))).toBe(true)
@@ -78,8 +82,9 @@ it('YAZ-5026 round 2: a card`s lists, read (the page, the card window, the Inbox
   expect(bullets).toMatch(/--list-gutter:\s*calc\(2\.15em - 10px\)/)
   // The card's read lists: the same three values, from the same settings.
   const vars = rules(cardCss, '.note-card__side').find((r) => r.body.includes('--card-list-gap'))!
-  expect(vars.body).toMatch(/--card-list-gap:\s*var\(--note-bullet-gap, 10px\)/)
-  expect(vars.body).toMatch(/--card-list-indent:\s*var\(--note-bullet-indent, 2\.15em\)/)
+  // YAZ-5050: Card spacing, Custom, comes first; Same as pages sets no card variable, so the pages' settings hold.
+  expect(vars.body).toMatch(/--card-list-gap:\s*var\(--card-bullet-gap, var\(--note-bullet-gap, 10px\)\)/)
+  expect(vars.body).toMatch(/--card-list-indent:\s*var\(--card-bullet-indent, var\(--note-bullet-indent, 2\.15em\)\)/)
   expect(vars.body).toMatch(/--card-list-gutter:\s*calc\(2\.15em - 10px\)/)
   // The text starts after the dot's column and the gap; a child level steps in by the indent from its parent's dot.
   const li = rules(cardCss, '.note-card .note-card__side li').find((r) => /padding:/.test(r.body))!
@@ -107,4 +112,41 @@ it('YAZ-5051: the line between two sides is clear — dashed, across the card, d
   expect(rules(screens, '.note-card-inbox__card .note-card__rule').some((r) => /margin:\s*22px -28px/.test(r.body))).toBe(true)
   // The Inbox card's own padding is what the rule reaches past.
   expect(rules(screens, '.note-card-inbox__body').some((r) => /padding:\s*24px 28px 28px/.test(r.body))).toBe(true)
+})
+
+it("YAZ-5050: a card's text reads with the pages' Line spacing and Space between blocks (or Card spacing's Custom values), in the page, the card window and the Inbox, over the page's own paragraph rule", () => {
+  const vars = rules(cardCss, '.note-card__side').find((r) => r.body.includes('--card-gap:'))!
+  expect(vars.body).toMatch(/--card-gap:\s*var\(--card-block-gap, var\(--edit-block-gap, 4px\)\)/)
+  expect(vars.body).toMatch(/--card-line:\s*var\(--card-line-height, var\(--edit-line-height, 1\.5\)\)/)
+  expect(vars.body).toMatch(/--card-list-row:\s*var\(--card-gap\)/)
+  // A paragraph: the page's look (its padding is the space between blocks), and it beats the page's own rule, which
+  // reaches a card's paragraphs in the page.
+  const app = read('../../app.css')
+  const pageP = rules(app, '.editor-instance .milkdown .ProseMirror p').find((r) => /padding:/.test(r.body))!
+  const p = rules(cardCss, '.note-card__side p').find((r) => /padding:\s*var\(--card-gap\) 0/.test(r.body))!
+  expect(p.body).toMatch(/line-height:\s*var\(--card-line\)/)
+  expect(p.body).toMatch(/margin:\s*0/)
+  expect(beats(specificity(p.selector), specificity(pageP.selector))).toBe(true)
+  // Headings: the page's three gaps above, one below.
+  const h = rules(cardCss, '.note-card__side :is(h1, h2, h3, h4, h5, h6)')[0]!
+  expect(h.body).toMatch(/margin:\s*calc\(var\(--card-gap\) \* 3\) 0 var\(--card-gap\)/)
+  expect(beats(specificity(h.selector), specificity('.editor-instance .milkdown .ProseMirror h1'))).toBe(true)
+  // A list item's paragraph has no padding of its own: the item's row is the gap.
+  expect(rules(cardCss, '.note-card__side li > p').some((r) => /padding:\s*0/.test(r.body) && beats(specificity(r.selector), specificity(p.selector)))).toBe(true)
+})
+
+it('YAZ-5053: Box, as Mochi — a hidden word is a plain grey box, a shown one sits in a lighter grey box with round corners; one padding for both, so the line keeps its place; light and dark from the text colour', () => {
+  const both = rules(cardCss, "[data-shown-hidden-words='box'] .note-card :is(.note-card__hidden, .note-card__blank)")[0]!
+  expect(both.body).toMatch(/padding:\s*2px 6px/)
+  expect(both.body).toMatch(/border-radius:\s*4px/)
+  expect(both.body).toMatch(/border-bottom:\s*0/)
+  const blank = rules(cardCss, "[data-shown-hidden-words='box'] .note-card .note-card__blank")[0]!
+  const shown = rules(cardCss, "[data-shown-hidden-words='box'] .note-card .note-card__hidden")[0]!
+  expect(blank.body).toMatch(/background:\s*color-mix\(in srgb, var\(--fg\) 10%, transparent\)/)
+  expect(shown.body).toMatch(/background:\s*color-mix\(in srgb, var\(--fg\) 5%, transparent\)/)
+  // They beat the highlight and the blank's line under it.
+  expect(beats(specificity(shown.selector), specificity('.note-card .note-card__hidden'))).toBe(true)
+  expect(beats(specificity(both.selector), specificity('.note-card .note-card__blank'))).toBe(true)
+  // Edit card's hidden word has the shown look.
+  expect(rules(cardCss, "[data-shown-hidden-words='box'] .note-card .note-card__cloze").some((r) => /color-mix\(in srgb, var\(--fg\) 5%, transparent\)/.test(r.body))).toBe(true)
 })

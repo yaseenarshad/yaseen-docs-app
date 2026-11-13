@@ -277,6 +277,11 @@
   text-decoration-thickness: 2px;
   text-underline-offset: 3px;
 }
+/* Box (YAZ-5053) in Edit card: the shown look, the editor's own padding kept. */
+[data-shown-hidden-words='box'] .note-card .note-card__cloze {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
 /* The line between two sides: the render's rule (`.note-card__rule`), across the card, selectable as one block. */
 .note-card .note-card__side-break {
   height: 1px;
@@ -301,8 +306,26 @@
 .note-card__side > :last-child {
   margin-bottom: 0;
 }
-.note-card__side p {
-  margin: 0.4em 0;
+/* A card's text, read (YAZ-5050, Yaseen: "are the spacing on cards in view mode the same as … the entire vault?"): the
+   pages' Line spacing and Space between blocks (`--edit-line-height`, `--edit-block-gap` on `.app`), or Settings ›
+   Review › Card spacing's Custom values (`--card-line-height`, `--card-block-gap`, set only then, `review/cardSpacing.ts`)
+   — in the page, the card window and the Inbox alike. A paragraph's padding is the space between blocks, as the page's
+   (`app.css`); a heading has three gaps above it and one below. The page's own paragraph and heading rules reach a card
+   in a page, so these weigh more (`noteCard.css.test.ts`). */
+.note-card .note-card__body .note-card__sides .note-card__side p {
+  margin: 0;
+  padding: var(--card-gap) 0;
+  line-height: var(--card-line);
+}
+.note-card .note-card__body .note-card__sides .note-card__side :is(h1, h2, h3, h4, h5, h6) {
+  margin: calc(var(--card-gap) * 3) 0 var(--card-gap);
+  padding: 0;
+}
+.note-card .note-card__body .note-card__sides .note-card__side > :first-child {
+  margin-top: 0;
+}
+.note-card .note-card__body .note-card__sides .note-card__side li > p {
+  padding: 0;
 }
 /* A card's lists, read (YAZ-5026 round 2: "is this following the global settings?"): the page's look, from the same
    settings — Settings › Editor › Outline › Bullet indent and Bullet gap (`--note-bullet-indent`, `--note-bullet-gap` on
@@ -311,10 +334,14 @@
    steps in by the indent from its parent's. The dots are the page's ● ○ ■ by level, the numbers its right-aligned
    ones, in the marker colour. Edit card is the page's editor inside `.editor-instance`: it follows them already. */
 .note-card__side {
-  --card-list-gap: var(--note-bullet-gap, 10px);
-  --card-list-indent: var(--note-bullet-indent, 2.15em);
+  /* YAZ-5050: Card spacing's Custom values first; with Same as pages they are not set, and the pages' hold. */
+  --card-gap: var(--card-block-gap, var(--edit-block-gap, 4px));
+  --card-line: var(--card-line-height, var(--edit-line-height, 1.5));
+  --card-list-gap: var(--card-bullet-gap, var(--note-bullet-gap, 10px));
+  --card-list-indent: var(--card-bullet-indent, var(--note-bullet-indent, 2.15em));
   --card-list-gutter: calc(2.15em - 10px);
-  --card-list-row: var(--edit-block-gap, 4px);
+  --card-list-row: var(--card-gap);
+  line-height: var(--card-line);
   --card-list-dot: 0.42em;
   --card-list-marker: color-mix(in srgb, currentColor 78%, transparent);
 }
@@ -511,6 +538,23 @@
   text-decoration-color: var(--accent);
   text-decoration-thickness: 2px;
   text-underline-offset: 3px;
+}
+/* Settings › Review › Shown hidden words: Box (YAZ-5053, Yaseen: "where its just a box? looks like mochi?"): a hidden word
+   is a plain grey box, a shown one sits in a lighter grey box with round corners. ONE padding for both, so a show moves
+   nothing on the line (YAZ-5013); a box that wraps keeps its ends on each line. The greys mix the text colour into the
+   page's, so they hold in light and dark. */
+[data-shown-hidden-words='box'] .note-card :is(.note-card__hidden, .note-card__blank) {
+  padding: 2px 6px;
+  border-bottom: 0;
+  border-radius: 4px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+[data-shown-hidden-words='box'] .note-card .note-card__blank {
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+[data-shown-hidden-words='box'] .note-card .note-card__hidden {
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
 }
 /* The blank: the word's own width, a line under it; the word inside is invisible, and a selection skips it. An inline
    border does not change the line's height. */

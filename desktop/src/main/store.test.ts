@@ -266,6 +266,19 @@ describe('createStore: loading', () => {
     expect(isSettings({ ...DEFAULT_SETTINGS, codeWrap: false })).toBe(true)
   })
 
+  it('Settings › Review › Shown hidden words (YAZ-5005, YAZ-5053) and Card spacing (YAZ-5050): Box survives a restart; a file from before them reads Highlight and Same as pages; a wrong value falls back field by field', async () => {
+    const { cardSpacing: _a, cardLineSpacing: _b, cardBlockGap: _c, cardBulletIndent: _d, cardBulletGap: _e, ...legacySettings } = DEFAULT_SETTINGS
+    await seed(valid({ settings: legacySettings }))
+    expect(createStore(file).get().settings).toMatchObject({ shownHiddenWords: 'highlight', cardSpacing: 'pages', cardLineSpacing: 1.5, cardBlockGap: 4, cardBulletIndent: 34, cardBulletGap: 10 })
+    const custom = { shownHiddenWords: 'box', cardSpacing: 'custom', cardLineSpacing: 2, cardBlockGap: 8, cardBulletIndent: 40, cardBulletGap: 14 } as const
+    await seed(valid({ settings: { ...DEFAULT_SETTINGS, ...custom } }))
+    expect(createStore(file).get().settings).toMatchObject(custom)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, shownHiddenWords: 'boxes', cardSpacing: 'mine', cardLineSpacing: -1, cardBlockGap: 'x', cardBulletIndent: 9999, cardBulletGap: 1.5 })).toMatchObject({ shownHiddenWords: 'highlight', cardSpacing: 'pages', cardLineSpacing: 1.5, cardBlockGap: 4, cardBulletIndent: 34, cardBulletGap: 10 })
+    expect(isSettings({ ...DEFAULT_SETTINGS, shownHiddenWords: 'box' })).toBe(true)
+    expect(isSettings({ ...DEFAULT_SETTINGS, cardSpacing: 'custom', cardLineSpacing: 1.15 })).toBe(true)
+    expect(isSettings({ ...DEFAULT_SETTINGS, cardSpacing: 'other' })).toBe(false)
+  })
+
   it('"Jump across files" (YAZ-3500): a file from before it reads off; on survives a restart; a wrong value reads off; it stays on this Mac', async () => {
     const { codeLanguageHelpers: _a, ...legacySettings } = DEFAULT_SETTINGS
     expect(DEFAULT_SETTINGS.codeLanguageHelpers).toBe(false)
