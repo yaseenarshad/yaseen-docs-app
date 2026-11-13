@@ -12,7 +12,7 @@ import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { createViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { NoteCardInbox, type NoteCardInboxProps } from './NoteCardInbox'
-import { answerToast, noteCardStateText } from './noteCardInboxChip'
+import { answerLine, noteCardStateText } from './noteCardInboxChip'
 import { foldHints } from './NoteCardInboxHints'
 import { CARD_MIN_WIDTH, clampCardWidth, inboxCardWidth, setInboxCardWidth } from './inboxCardWidth'
 import { useReadOnlyVault } from '../vault/readOnlyVault'
@@ -431,7 +431,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     const answers = column.querySelector('.note-card-inbox__actions')!
     expect(answers.querySelectorAll('.note-card-inbox__answer')).toHaveLength(2)
     expect(panel.contains(answers)).toBe(false)
-    expect([...column.children].map((c) => c.className)).toEqual(['note-card-inbox__above', 'note-card-inbox__panel', 'note-card-inbox__actions', 'explore__foot note-card-inbox__hints'])
+    expect([...column.children].map((c) => c.className)).toEqual(['note-card-inbox__above', 'note-card-inbox__panel', 'note-card-inbox__actions', 'note-card-inbox__last', 'explore__foot note-card-inbox__hints'])
   })
 
   it('YAZ-5027: the state chip sits right above the card, outside its head and its frame; the head starts with the page name, for a new and a due card; the row stays with no card', () => {
@@ -725,41 +725,54 @@ describe('the Inbox screen (YAZ-4962)', () => {
     }
   })
 
-  it('YAZ-5025: an answer that lands shows the app`s toast in the hover`s words with Undo (the hook`s undo, as ⌘Z), fading; a failed answer shows none; the next answer sends a new toast', async () => {
+  it('YAZ-5025 round 2: no toast; an answer that lands shows one line under the buttons in the hover`s words; its Undo is the hook`s undo, as ⌘Z, and an undo clears it; the next answer replaces it; the row keeps its height', async () => {
     mount(TWO_SIDES)
     await flush()
+    const last = () => el.querySelector<HTMLElement>('.note-card-inbox__last')!
+    // The row is there, empty, before any answer (no jump when the line comes).
+    expect(last().textContent).toBe('')
     press('2')
     expect(review.answer).toHaveBeenCalledExactlyOnceWith('good')
-    // Not yet counted by the session (the write runs): no toast.
-    expect(props.onNotice).not.toHaveBeenCalled()
+    // Not yet counted by the session (the write runs): no line.
+    expect(last().textContent).toBe('')
     session = { ...session, answered: ['good'], canUndo: true }
     render()
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('✓ Remembered · back in 3 days', 'info', 'undo', { label: 'Undo', run: expect.any(Function), fades: true })
-    const undo = vi.mocked(props.onNotice).mock.calls[0][3]!
-    act(() => undo.run())
+    expect(last().textContent).toBe('✓ Remembered · WIKI-9 · back in 3 days · Undo ⌘Z')
+    expect(last().dataset.rating).toBe('good')
+    expect(props.onNotice).not.toHaveBeenCalled()
+    // Undo in the line: the hook's own undo; the session takes the answer off, and the line clears.
+    act(() => last().querySelector<HTMLButtonElement>('.note-card-inbox__last-undo')!.click())
     expect(review.undo).toHaveBeenCalledOnce()
-    // A failed write: the session counts nothing, so no toast (the hook shows its error).
+    session = { ...session, answered: [], canUndo: false }
+    render()
+    expect(last().textContent).toBe('')
+    // A failed write: the session counts nothing, so no line (the hook shows its error).
     act(() => buttons()[0].click())
     expect(review.answer).toHaveBeenLastCalledWith('again')
     render()
-    expect(props.onNotice).toHaveBeenCalledOnce()
-    // The next answer that lands: a new toast, which replaces the last (App holds one toast).
-    session = { ...session, answered: ['good', 'again'] }
+    expect(last().textContent).toBe('')
+    // The next answer that lands: its line, in red (a Forgot).
+    session = { ...session, answered: ['again'], canUndo: true }
     render()
-    expect(props.onNotice).toHaveBeenLastCalledWith('✕ Forgot · back later today', 'info', 'undo', expect.objectContaining({ label: 'Undo', fades: true }))
-    expect(props.onNotice).toHaveBeenCalledTimes(2)
-    // The toast does not take the keyboard: ⌘Z still goes to the Inbox.
+    expect(last().textContent).toBe('✕ Forgot · WIKI-9 · back later today · Undo ⌘Z')
+    expect(last().dataset.rating).toBe('again')
+    // ⌘Z is the same undo; once the session drops the answer, the line clears.
     press('z', { metaKey: true })
     expect(review.undo).toHaveBeenCalledTimes(2)
+    session = { ...session, answered: [], canUndo: false }
+    render()
+    expect(last().textContent).toBe('')
+    expect(props.onNotice).not.toHaveBeenCalled()
   })
 
-  it('YAZ-5025: the toast`s words with four buttons use their own names and glyphs', () => {
+  it('YAZ-5025 round 2: the line`s words with four buttons use their own names and glyphs', () => {
     const four = { ...DEFAULT_REVIEW_SETTINGS, buttons: 4 as const }
-    expect(answerToast('again', 0, four)).toBe('↺ Again · back later today')
-    expect(answerToast('hard', 1, four)).toBe('~ Hard · back in 1 day')
-    expect(answerToast('easy', 20, four)).toBe('⇈ Easy · back in 20 days')
-    expect(answerToast('again', 0, DEFAULT_REVIEW_SETTINGS)).toBe('✕ Forgot · back later today')
+    expect(answerLine('again', 'DEMO-51', 0, true, four)).toBe('↺ Again · DEMO-51 · back later today')
+    expect(answerLine('hard', 'DEMO-51', 1, false, four)).toBe('~ Hard · DEMO-51 · back in 1 day')
+    expect(answerLine('easy', 'DEMO-51', 20, false, four)).toBe('⇈ Easy · DEMO-51 · back in 20 days')
+    expect(answerLine('good', 'DEMO-51', 9, false, DEFAULT_REVIEW_SETTINGS)).toBe('✓ Remembered · DEMO-51 · back in 9 days')
   })
+
 })
 
 describe('sound and boards in the Inbox (YAZ-5014, YAZ-5015)', () => {

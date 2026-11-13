@@ -35,9 +35,10 @@
  *  - The buttons row (YAZ-5004, as in Mochi): ← → on its left, the answers in the middle, ⋯ on its right. ⋯ opens a
  *    small row of icons, each with the app's hover box (its name and key): Undo last review (⌘Z), Turn review off,
  *    Put at top of Inbox / Remove from top of Inbox, Open card. They are the hook's own actions.
- *  - THE ANSWER'S TOAST (YAZ-5025): each answer that lands shows the app's toast, "✓ Remembered · back in 9 days",
- *    with Undo — the hook's own undo, as ⌘Z — and it fades as the app's Undo toasts do. A new answer replaces it.
- *    It shows only once the session counts the answer (`answered` one longer): a failed write shows its own error.
+ *  - THE LAST ANSWER'S LINE (YAZ-5025 round 2; no toast): one quiet line, centred under the answer buttons, "✓ Remembered ·
+ *    DEMO-51 · back in 9 days · Undo ⌘Z" (a Forgot in red), in the button hover's words. It stays until the next answer
+ *    replaces it; its Undo is the hook's own undo, as ⌘Z; an undo clears it. It shows only once the session counts the
+ *    answer (`answered` one longer): a failed write shows its own error. The row keeps its height empty (YAZ-5029).
  *  - The hint row shows a key only while it does something; the digits are on the buttons. It is ONE line at any width
  *    (YAZ-5024, `NoteCardInboxHints`): ⌘↵ folds first, then O; Space and E stay.
  *  - THE WIDTH (YAZ-5019): the card's left or right edge drags it wider or narrower, centred (`inboxCardWidth.ts`): at
@@ -58,7 +59,7 @@ import { NOTE_CARD_MEDIA, NOTE_CARD_OPENS, stopCardAudio, textHasAudio, toggleCa
 import { HoverTip } from '../components/HoverTip'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { CARD_FILTERS, NoteCardInboxBar } from './NoteCardInboxBar'
-import { NoteCardStateChip, answerIcon, answerToast } from './noteCardInboxChip'
+import { NoteCardStateChip, answerIcon, answerLine } from './noteCardInboxChip'
 import { useInboxCardWidth } from './inboxCardWidth'
 import { NoteCardInboxHints } from './NoteCardInboxHints'
 import '../explore/explore.css'
@@ -80,7 +81,6 @@ export interface NoteCardInboxProps {
   openLinkIn: (path: string, where: GestureAction) => void
   /** A plain click on a link in the card: the page on top. */
   openLayer: (path: string) => void
-  /** App's toast. The answer's toast (YAZ-5025) gives a kind, a type and its Undo; other notices are the text alone. */
   onNotice: (message: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void
 }
 
@@ -115,6 +115,13 @@ const ICON_UNDO = icon('M6 4 3 7l3 3M3 7h7a3 3 0 0 1 0 6H8')
 const ICON_OFF = icon('M2.5 3.5h11v3h-11zM3.5 6.5v6h9v-6M6.5 9h3')
 const ICON_TOP = icon('M3 2.5h10M8 13.5V5.5M5 8.5l3-3 3 3')
 const ICON_CARD = icon('M2.5 3.5h11v9h-11zM2.5 6.5h11')
+
+/** The last answer's line (YAZ-5025 round 2): its words, its answer, and the session's answer count with it. */
+interface AnswerLine {
+  text: string
+  rating: CardRating
+  count: number
+}
 
 /** The step a card is at (D18): how many sides show, and how many hidden words, in page order over the card. */
 interface Step {
@@ -162,22 +169,25 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
   const live = useRef({ step, done, counts, card, session, review, ratings, moreOpen, shown })
   live.current = { step, done, counts, card, session, review, ratings, moreOpen, shown }
 
-  // The answer's toast (YAZ-5025): its words fixed when the answer is given, shown once the session counts it.
-  const toast = useRef<{ text: string; count: number } | null>(null)
+  // The last answer's line (YAZ-5025 round 2): its words fixed when the answer is given, shown once the session counts
+  // it (`count`: the session's answers with it), and only while that answer is still the session's last (an undo clears it).
+  const pendingLine = useRef<AnswerLine | null>(null)
+  const [lastLine, setLastLine] = useState<AnswerLine | null>(null)
   const answerWith = useCallback((rating: CardRating) => {
-    const { session, review } = live.current
+    const { session, review, card } = live.current
     // The answers as the hook fixed them (a digit can come before the buttons show: they are fixed now, as `answer` would).
     const fixed = (session.answers ?? review.showAnswers())?.find((a) => a.review.rating === rating)
-    toast.current = fixed === undefined ? null : { text: answerToast(rating, fixed.interval, review.settings), count: session.answered.length }
+    pendingLine.current = fixed === undefined || card === null ? null : { text: answerLine(rating, card.id, fixed.interval, fixed.inSteps, review.settings), rating, count: session.answered.length + 1 }
     void review.answer(rating)
   }, [])
   const answeredCount = session.answered.length
   useEffect(() => {
-    const pending = toast.current
-    if (pending === null || answeredCount !== pending.count + 1) return
-    toast.current = null
-    onNotice(pending.text, 'info', 'undo', { label: 'Undo', run: () => void live.current.review.undo(), fades: true })
-  }, [answeredCount, onNotice])
+    const pending = pendingLine.current
+    if (pending === null || answeredCount !== pending.count) return
+    pendingLine.current = null
+    setLastLine(pending)
+  }, [answeredCount])
+  const line = lastLine !== null && answeredCount === lastLine.count && session.answered[answeredCount - 1] === lastLine.rating ? lastLine : null
   useEffect(() => {
     if (!moreOpen) return
     const away = (event: PointerEvent) => {
@@ -384,6 +394,18 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
             </div>
           </div>
         )}
+        {/* The last answer's line (YAZ-5025 round 2): centred under the buttons; the row keeps its height when empty. */}
+        <div className="note-card-inbox__last" role="status" aria-live="polite" data-rating={line?.rating}>
+          {line !== null && (
+            <>
+              <span className="note-card-inbox__last-mark">{line.text.slice(0, line.text.indexOf(' '))}</span>
+              <span className="note-card-inbox__last-text">{line.text.slice(line.text.indexOf(' '))} · </span>
+              <button type="button" className="note-card-inbox__last-undo" disabled={!session.canUndo} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.undo()}>
+                Undo <kbd>⌘Z</kbd>
+              </button>
+            </>
+          )}
+        </div>
         <NoteCardInboxHints hints={hints} />
       </div>
     </div>
