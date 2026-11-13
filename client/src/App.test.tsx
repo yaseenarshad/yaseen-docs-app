@@ -5497,6 +5497,25 @@ describe('App note card review (YAZ-4967)', () => {
     expect(el.querySelector('.note-card-inbox')).toBeNull()
   })
 
+  it('YAZ-5038: a board tab under the Inbox tab is a tab behind: its layer hides, and File › Share Link finds no board on show; back on its tab, both are as before', async () => {
+    const BOARD: IdentityFixture = { id: 'w1', root: '/v', file: '/v/Plan.excalidraw', tabs: ['/v/a.md', '/v/Plan.excalidraw'] }
+    const { el, bridge, emitShareLink } = await mount(defaultAppState(), BOARD, {}, withIndex(RECORDS()))
+    const layer = () => el.querySelector<HTMLElement>('.tabstack__layer:not(.tabstack__layer--hidden)')
+    expect(layer()).toBeInstanceOf(HTMLElement)
+    openInbox()
+    await vi.waitFor(() => expect(el.querySelector('.note-card-inbox')?.hasAttribute('hidden')).toBe(false), { timeout: SLOW_RUNNER_MS })
+    // No layer of the stack shows: the Inbox is the tab on show.
+    expect(layer()).toBeNull()
+    await act(async () => emitShareLink())
+    expect(el.querySelector('[role="dialog"][aria-label^="Share "]')).toBeNull()
+    expect(bridge.share.get).not.toHaveBeenCalled()
+    // The board's tab: its layer shows, and Share Link is its own again.
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')][1].click())
+    expect(layer()).toBeInstanceOf(HTMLElement)
+    await act(async () => emitShareLink())
+    await vi.waitFor(() => expect(el.querySelector('[role="dialog"][aria-label="Share Plan"]')).not.toBeNull())
+  })
+
   it('YAZ-5016: the Inbox tab, dragged first, keeps its place: a page tab and the sidebar\'s Inbox row go to it there; its menu\'s "Close other tabs" keeps it in front; closed and opened again, it stands at the end', async () => {
     const { el } = await mount(defaultAppState(), TABS, {}, withIndex(RECORDS()))
     const strip = () => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => `${t.textContent}${t.getAttribute('aria-selected') === 'true' ? '*' : ''}`)
@@ -5812,6 +5831,55 @@ describe('App: the note card flow from /card, through the real editor (YAZ-4965)
     expect(el.querySelector('.outside-changes-bar')).toBeNull()
     // A review is no file change (YAZ-4948 with YAZ-4985): the read-only ask never comes for the card line.
     expect(el.querySelector('#confirm-read-only-vault-text')).toBeNull()
+  }, 30_000)
+
+  /**
+   * YAZ-5038 (Yaseen: "i double clicked a word for the tool bar to show up but then i went to the inbox and then the tool
+   * bar was still on the screen"): the Inbox tab is a tab like any other. The page tab under it is NOT on show, so its
+   * layer hides as a page tab's does behind another tab — and with it everything the page draws: the selection toolbar,
+   * its menus and pickers, the find bar, the outline. What the user looks at is the Inbox: the window title says so, and
+   * no sidebar row stands as the open page. Back on the page tab, the page shows again as it was, its toolbar too.
+   */
+  it('YAZ-5038: a word selected on a page shows the toolbar; the Inbox tab to the front hides the page layer with the toolbar in it, as a page tab does; the page tab brings both back', async () => {
+    captured.realEditor = true
+    const files: Record<string, { content: string; mtime: number }> = { [PAGE]: { content: '# Cards\n\nIntro words\n\n```card\nCapital of {{France}}\n```\n<!-- card: WIKI-9 -->\n', mtime: 1 } }
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: PAGE, tabs: [PAGE] }, files, (b) => {
+      b.bridge.index.mockImplementation(async () => ({ root: '/v', records: Object.entries(files).map(([p, f]) => scan(p, f.content)), folders: [], generatedAt: 1, ids: true }))
+    })
+    await vi.waitFor(() => expect(el.querySelector('.ProseMirror')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+    const view = captured.crepes.at(-1)!.editor.action((ctx) => ctx.get(editorViewCtx))
+    view.hasFocus = () => true
+    // The double click: "words" selected, and the selection toolbar shows, in the page's layer.
+    let from = -1
+    view.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text?.includes('words')) from = pos + node.text.indexOf('words')
+      return from === -1
+    })
+    await act(async () => {
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, from, from + 'words'.length)))
+      await new Promise((r) => setTimeout(r, 60))
+    })
+    const toolbar = () => el.querySelector<HTMLElement>('.milkdown-toolbar[data-show="true"]')
+    await vi.waitFor(() => expect(toolbar()).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
+    const layerHidden = (node: Element | null) => node?.closest('.tabstack__layer')?.classList.contains('tabstack__layer--hidden')
+    expect(layerHidden(toolbar())).toBe(false)
+    const titleBefore = document.title
+    expect(captured.sidebar?.activeFile).toBe(PAGE)
+    // The sidebar's Inbox row: the Inbox tab to the front.
+    act(() => captured.sidebar?.onOpenInbox())
+    await vi.waitFor(() => expect(el.querySelector('.note-card-inbox')?.hasAttribute('hidden')).toBe(false), { timeout: SLOW_RUNNER_MS })
+    // The page tab is behind: its layer hides, the toolbar with it (the same class every page tab behind another wears).
+    expect(layerHidden(el.querySelector('.ProseMirror'))).toBe(true)
+    expect(layerHidden(el.querySelector('.milkdown-toolbar'))).toBe(true)
+    // What shows is the Inbox: no sidebar row is the open page, and the title names the Inbox tab.
+    expect(captured.sidebar?.activeFile).toBeNull()
+    expect(document.title).toMatch(/ — Inbox$/)
+    // The page tab: the page shows again as it was, its selection and toolbar too, and the title is the page's again.
+    act(() => el.querySelector<HTMLButtonElement>(`.tabbar [role="tab"]:not(.tabbar__tab--inbox)`)!.click())
+    expect(layerHidden(el.querySelector('.ProseMirror'))).toBe(false)
+    expect(el.querySelector('.note-card-inbox')?.hasAttribute('hidden')).toBe(true)
+    expect(captured.sidebar?.activeFile).toBe(PAGE)
+    expect(document.title).toBe(titleBefore)
   }, 30_000)
 })
 

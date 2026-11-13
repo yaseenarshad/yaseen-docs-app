@@ -31,6 +31,12 @@ describe('windowTitle', () => {
     expect(windowTitle(null, null, NONE, false, 'Writing')).toBe(APP_NAME)
   })
 
+  it('a tab that is no page names itself: the Inbox tab while it shows, under the vault or the window\'s name (YAZ-5038)', () => {
+    expect(windowTitle('notes', null, NONE, false, undefined, 'Inbox')).toBe('notes — Inbox')
+    expect(windowTitle('notes', null, NONE, false, 'Writing', 'Inbox · Work')).toBe('Writing — Inbox · Work')
+    expect(windowTitle(null, null, NONE, false, undefined, 'Inbox')).toBe(APP_NAME)
+  })
+
   it('is the app name on the Welcome screen (no vault), whatever the file says', () => {
     expect(APP_NAME).toBe('Yaseen Docs')
     expect(windowTitle(null, null, NONE)).toBe(APP_NAME)

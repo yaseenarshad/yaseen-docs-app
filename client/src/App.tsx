@@ -72,7 +72,7 @@ import { toolbarPrefs } from './editor/toolbarPrefs'
 import { setUsedHighlightColors, setUsedHighlightColorsSaver } from './editor/highlightUsed'
 import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
-import type { CardReviewScope } from './review/useCardReview'
+import type { CardReviewScope, CardReviewSession } from './review/useCardReview'
 import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { textVars } from './settings/headingStyles'
@@ -129,6 +129,8 @@ const isBoardFile = (path: string): boolean => {
   return kind === 'drawing' || kind === 'diagram'
 }
 const ExploreStack = lazy(() => import('./explore/ExploreStack').then((m) => ({ default: m.ExploreStack })))
+/** The Inbox tab's label (YAZ-5011): the strip's, and the window title's while it shows (YAZ-5038). */
+const inboxLabel = (session: CardReviewSession): string => (session.scope === 'vault' ? 'Inbox' : `Inbox · ${session.label}`)
 /** The Inbox screen (YAZ-4962): lazy, loaded with the first review. */
 const NoteCardInbox = lazy(() => import('./review/NoteCardInbox').then((m) => ({ default: m.NoteCardInbox })))
 
@@ -391,12 +393,6 @@ export function App() {
     moveRight, transferMainToRight, transferRightToMain,
     rightBack, rightForward, canRightBack, canRightForward, setRightOpen, setRightWidth,
   } = useWorkspace(root)
-  /**
-   * The page on show in the main pane: the active tab's — and none under the blank tab (YAZ-2655
-   * D10), where `file` is still the last real active tab, the one the window stores. What the user
-   * LOOKS at reads this: the title, the sidebar's highlight, ⌘⇧C. What is stored reads `file`.
-   */
-  const pageOnShow = blank ? null : file
   /** The notes this window's tabs show: "Recently closed" leaves them out (YAZ-3487 D10). One array while the tabs stay the same. */
   const tabPaths = useMemo(() => tabs.map((t) => t.path), [tabs])
   // The outside-change lists a tab keeps for the pages it left go when the tab closes (YAZ-3704).
@@ -501,6 +497,34 @@ export function App() {
   const first = vaults[0] ?? scopes[0]
   const live = useRef({ roots, vaults, first })
   live.current = { roots, vaults, first }
+  // Note card review (YAZ-4967): each vault counts its due cards and can hold a session, and the window
+  // shows ONE (YAZ-2602 S41): a start in one vault closes the session of every other. App's,
+  // because the sidebar that shows the count unmounts while collapsed.
+  const reviewer = vaults.find((vault) => vault.review.session !== null) ?? null
+  const review = (reviewer ?? first).review
+  /**
+   * THE INBOX TAB (YAZ-5011, Yaseen: "inbox should actually be its own tab"): the window's one review session IS the
+   * Inbox tab — open while a session is, last in the strip, its label the session's. `inboxFront` says whether it is
+   * the tab on show; a page tab of the strip, a sidebar open, ⌃Tab or ⌘T bring a page to the front and the Inbox stays
+   * open behind, at its card and step. Its ✕ and ⌘W (while it shows) close it: the session ends. Like the blank tab,
+   * it is session-only: nothing of it is stored, so a restart does not bring it back.
+   *
+   * A FIRST-CLASS TAB (YAZ-5038, Yaseen: "the inbox page is not a first class citizen"): while it shows, no page is on
+   * show (`pageOnShow` null, as under the blank tab), so the page tab under it is a tab behind, by every door a tab
+   * behind goes through: its layer hides (`tabstack__layer--hidden`, and with it the page's selection toolbar, menus,
+   * pickers, find bar and outline, and each key that asks whether its page shows), no sidebar row is the open page,
+   * ⌘⇧C copies no hidden page's path, and the window title names the Inbox.
+   */
+  const [inboxFront, setInboxFront] = useState(false)
+  const inboxShown = reviewer !== null && inboxFront
+  /**
+   * The page on show in the main pane: the active tab's — and none under the blank tab (YAZ-2655
+   * D10), where `file` is still the last real active tab, the one the window stores, nor under the Inbox tab (YAZ-5038).
+   * What the user LOOKS at reads this: the title, the sidebar's highlight, ⌘⇧C, the layer that shows. What is stored reads `file`.
+   */
+  const pageOnShow = blank || inboxShown ? null : file
+  /** The Inbox tab's label while it shows, for the window title (YAZ-5038): the tab strip's. */
+  const inboxTitle = inboxShown ? inboxLabel(reviewer.review.session!) : undefined
   /**
    * The scope of the vault that holds `path`, the most specific one; a path in no vault of the
    * window (a pasted `#/abs/path` URL, S35) gets the first vault's. Ref-backed, so the callbacks
@@ -914,7 +938,7 @@ export function App() {
       // A Files window is "Files — <vault>" (YAZ-3357 D4): it has no page on show.
       document.title = filesWindow
         ? filesWindowTitle(live.current.roots.map((vault) => storage.vaultName(vault)))
-        : windowTitle(activeName, pageOnShow, pathTitles(activeLinks.records, activeLinks.folders), pageOnShow !== null && isFolderPath(activeRoot, pageOnShow), storage.windowName())
+        : windowTitle(activeName, pageOnShow, pathTitles(activeLinks.records, activeLinks.folders), pageOnShow !== null && isFolderPath(activeRoot, pageOnShow), storage.windowName(), inboxTitle)
     }
     sync()
     const offIndex = activeLinks.subscribe(sync)
@@ -925,7 +949,7 @@ export function App() {
       offTree?.()
       offState()
     }
-  }, [activeName, pageOnShow, activeRoot, activeLinks, roots, filesWindow])
+  }, [activeName, pageOnShow, activeRoot, activeLinks, roots, filesWindow, inboxTitle])
 
   /**
    * Switch this window to `path` in place (C3, GRO-2165) — the WELCOME window, and the vault menu's
@@ -1513,20 +1537,6 @@ export function App() {
   const openWhatsNew = useCallback(() => setWhatsNewOpen(true), [])
   const closeWhatsNew = useCallback(() => setWhatsNewOpen(false), [])
 
-  // Note card review (YAZ-4967): each vault counts its due cards and can hold a session, and the window
-  // shows ONE (YAZ-2602 S41): a start in one vault closes the session of every other. App's,
-  // because the sidebar that shows the count unmounts while collapsed.
-  const reviewer = vaults.find((vault) => vault.review.session !== null) ?? null
-  const review = (reviewer ?? first).review
-  /**
-   * THE INBOX TAB (YAZ-5011, Yaseen: "inbox should actually be its own tab"): the window's one review session IS the
-   * Inbox tab — open while a session is, last in the strip, its label the session's. `inboxFront` says whether it is
-   * the tab on show; a page tab of the strip, a sidebar open, ⌃Tab or ⌘T bring a page to the front and the Inbox stays
-   * open behind, at its card and step. Its ✕ and ⌘W (while it shows) close it: the session ends. Like the blank tab,
-   * it is session-only: nothing of it is stored, so a restart does not bring it back.
-   */
-  const [inboxFront, setInboxFront] = useState(false)
-  const inboxShown = reviewer !== null && inboxFront
   /**
    * WHERE THE INBOX TAB STANDS (YAZ-5016, Yaseen: "inbox tab cant be moved around like other tabs can?"): right after
    * this page tab, by id, or first (null). It opens at the end, as a new tab does; a drag along the strip moves it; a
@@ -1786,11 +1796,12 @@ export function App() {
     if (root !== null && isBoard(path)) setShare({ root, path })
   }, [])
   const closeShare = useCallback(() => setShare(null), [])
-  const activeFile = useRef(file)
-  activeFile.current = file
+  const activeFile = useRef(pageOnShow)
+  activeFile.current = pageOnShow
   /**
    * File › Share Link ⌘⇧L (YAZ-3037's menu item, YAZ-3040's dialog): the Share dialog on the ACTIVE tab's
-   * board; nothing on a note or with no tab. Main also greys the item out off a board.
+   * board; nothing on a note or with no tab. Main also greys the item out off a board. The board on SHOW: none under
+   * the blank tab or the Inbox tab (YAZ-5038), where main still reads the stored tab's board.
    */
   const shareActiveBoard = useCallback(() => {
     if (activeFile.current !== null) openShare(activeFile.current)
@@ -2412,8 +2423,8 @@ export function App() {
     onWhatsNew: openWhatsNew,
     onKeySheet: openKeySheet,
     onExportImage: exportImage,
-    // A board under the Inbox is not on show: its export key does nothing while a review is open.
-    onExportDrawing: inboxShown ? () => undefined : exportDrawing,
+    // A board under the Inbox tab is in a hidden layer (YAZ-5038): the board commands find no board in front.
+    onExportDrawing: exportDrawing,
     onShareLink: shareActiveBoard,
     onCanvasBackground: setCanvasBackground,
   })
@@ -3411,7 +3422,7 @@ export function App() {
   // Each tab's page, by id: a layer is a tab's (YAZ-2940 D1), and its editor is that tab's page.
   const pathOf = new Map(tabs.map((t) => [t.id, t.path]))
   const zoomOf = new Map(tabs.map((t) => [t.id, t.zoom ?? null]))
-  /** The tab whose layer shows: the active one, none under the blank tab. */
+  /** The tab whose layer shows: the active one, none under the blank tab or the Inbox tab (YAZ-5038, `pageOnShow`). */
   const shown = pageOnShow === null ? null : activeTab
   // Tab sleep (YAZ-3737 5A, S10): this window is hidden or minimized; then the active tab may sleep too. A boolean
   // each, so a hide of another window renders no App here.
@@ -3795,7 +3806,7 @@ export function App() {
             onActivate={overviewOpen ? leaveOverview : activateFromStrip}
             // The Inbox tab (YAZ-5011): in the strip while a review session is open.
             // It stands where it was put (YAZ-5016): `inboxAt`, moved by a drag along the strip.
-            inbox={session === null ? undefined : { label: session.scope === 'vault' ? 'Inbox' : `Inbox · ${session.label}`, active: inboxShown, at: inboxAt, onActivate: showInbox, onClose: closeReview, onMove: setInboxAfter, onCloseOthers: () => closeAroundInbox(false), onCloseToRight: () => closeAroundInbox(true) }}
+            inbox={session === null ? undefined : { label: inboxLabel(session), active: inboxShown, at: inboxAt, onActivate: showInbox, onClose: closeReview, onMove: setInboxAfter, onCloseOthers: () => closeAroundInbox(false), onCloseToRight: () => closeAroundInbox(true) }}
             onKeep={keep}
             onClose={overviewOpen ? closeOneUnderOverview : closeTab}
             onMove={moveTab}
