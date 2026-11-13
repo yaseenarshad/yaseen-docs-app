@@ -15,6 +15,7 @@ import { type CellTextContext, cellText } from '../exportView'
 import { TOP_SPOT, type GroupSpot, childSpot, spotKey } from './groupDrag'
 import { canonicalKey } from './keys'
 import { cssZoom } from '../../lib/cssZoom'
+import { leastScroll, SHOW_GAP } from '../../editor/find/leastScroll'
 
 /** The nearest ancestor that scrolls on this axis, or null. */
 function scrollParent(el: HTMLElement, axis: 'x' | 'y'): HTMLElement | null {
@@ -26,8 +27,6 @@ function scrollParent(el: HTMLElement, axis: 'x' | 'y'): HTMLElement | null {
   return null
 }
 
-/** The gap kept between a shown match and what covers it (px on screen). */
-const SHOW_GAP = 6
 
 /**
  * Shows a match WHOLE with the least scroll, and none when it shows already (YAZ-3746 13BA): `scrollIntoView` counted
@@ -56,8 +55,8 @@ export function showWhole(el: HTMLElement): void {
       if (b.height > 0 && b.left < r.right && b.right > r.left && b.top < box.top + box.height / 2) top = Math.max(top, b.bottom)
     }
     const zoom = cssZoom(y)
-    if (r.top < top + SHOW_GAP) y.scrollTop -= (top + SHOW_GAP - r.top) / zoom
-    else if (r.bottom > bottom - SHOW_GAP) y.scrollTop += Math.min(r.bottom - bottom + SHOW_GAP, r.top - top - SHOW_GAP) / zoom
+    const dy = leastScroll({ start: r.top, end: r.bottom }, { start: top, end: bottom }, SHOW_GAP)
+    if (dy !== 0) y.scrollTop += dy / zoom
   }
   const x = scrollParent(el, 'x')
   if (x !== null && !el.classList.contains('view-table__frozen')) {
@@ -70,8 +69,8 @@ export function showWhole(el: HTMLElement): void {
     }
     const zoom = cssZoom(x)
     const at = el.getBoundingClientRect()
-    if (at.left < left + SHOW_GAP) x.scrollLeft -= (left + SHOW_GAP - at.left) / zoom
-    else if (at.right > right - SHOW_GAP) x.scrollLeft += Math.min(at.right - right + SHOW_GAP, at.left - left - SHOW_GAP) / zoom
+    const dx = leastScroll({ start: at.left, end: at.right }, { start: left, end: right }, SHOW_GAP)
+    if (dx !== 0) x.scrollLeft += dx / zoom
   }
 }
 
