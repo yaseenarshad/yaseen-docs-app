@@ -18,7 +18,7 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { AttrStep, Step, StepMap, StepResult, type Mappable } from '@milkdown/kit/prose/transform'
-import { EMPTY_CARD_LINE, cardIdOf, cardNextIndex, cardReviewsOf, formatCardLine, isCardNext, isCardNoTitle, isCardOff, parseCardLine, withCardId, withCardNext, withCardNoTitle, withCardOff, type CardLine, type CardReview } from '@shared/cardLine'
+import { EMPTY_CARD_LINE, cardIdOf, cardNextIndex, cardReviewsOf, formatCardLine, isCardNext, isCardNoTitle, isCardOff, parseCardLine, withCardId, withCardNext, withCardNoTitle, withCardOff, type CardLine, type CardPart, type CardReview } from '@shared/cardLine'
 import type { Code, RootContent } from 'mdast'
 
 /** The language of a note card's fence. */
@@ -54,6 +54,7 @@ export function changeNoteCardLine(state: EditorState, pos: number, change: (lin
   return state.tr.step(new CardLineStep(pos, formatCardLine(line), formatCardLine(changed)))
 }
 
+/** A review is its time and its rating (`cardReviewKey`): its seconds (YAZ-5033) are no part of it. */
 const sameReview = (a: CardReview, b: CardReview): boolean => a.at === b.at && a.rating === b.rating
 
 /** `reviews` less one of each of `less` (a review is its time and its rating). */
@@ -96,6 +97,13 @@ export function rebaseCardLine(now: CardLine, before: CardLine, after: CardLine)
   for (const added of lessReviews(cardReviewsOf(after), cardReviewsOf(before))) {
     const place = after.parts.findIndex((p) => p.kind === 'review' && sameReview(p.review, added))
     line = withReviewInOrder(line, added, place)
+  }
+  // A review that took its seconds (YAZ-5033: the copy rule keeps the timed copy of one review): the same review of
+  // `now`, still with none, takes them too.
+  for (const timed of cardReviewsOf(after)) {
+    if (timed.seconds === undefined || !cardReviewsOf(before).some((r) => sameReview(r, timed) && r.seconds === undefined)) continue
+    const i = line.parts.findIndex((p) => p.kind === 'review' && sameReview(p.review, timed) && p.review.seconds === undefined)
+    if (i !== -1) line = { parts: line.parts.map((p, j): CardPart => (j === i ? { kind: 'review', review: { ...timed } } : p)) }
   }
   return line
 }

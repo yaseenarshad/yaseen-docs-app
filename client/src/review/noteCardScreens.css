@@ -148,6 +148,10 @@
 .note-card-reviews__unit {
   color: var(--fg-muted);
 }
+/* The Time column (YAZ-5033): "13 s"; "—" for an older review. */
+.note-card-reviews__table td.note-card-reviews__time {
+  color: var(--fg-muted);
+}
 .note-card-reviews__next td,
 .note-card-reviews__next .note-card-reviews__unit {
   color: var(--fg-muted);
@@ -309,6 +313,18 @@
 .note-card-inbox__bar > .note-card-inbox__place {
   margin-left: auto;
   padding-right: 4px;
+}
+/* Today's work (YAZ-5033): quiet, on the right before "3 of 12"; it takes the push to the right when it shows. */
+.note-card-inbox__bar > .note-card-inbox__today {
+  flex: none;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.note-card-inbox__bar > .note-card-inbox__today + .note-card-inbox__place {
+  margin-left: 12px;
 }
 /* The progress bar (YAZ-5020, as Mochi's): thin, under the row; a Remembered fills grey, a Forgot red. */
 .note-card-inbox__progress {
@@ -677,6 +693,12 @@ body.note-card-inbox--sizing {
   margin: 0;
   font-size: 13px;
   color: var(--fg-muted);
+}
+.note-card-inbox__done-today {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
 }
 .note-card-inbox__done-more {
   padding: 2px 6px;

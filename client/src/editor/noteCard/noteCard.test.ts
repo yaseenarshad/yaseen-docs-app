@@ -457,7 +457,8 @@ describe('the card in the page', () => {
 })
 
 describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
-  const LINE = '<!-- card: WIKI-7, 2026-11-01T09:00Z good, 2026-11-05T09:00Z again, 2026-11-06T09:00Z good -->'
+  // YAZ-5033: the last review has its seconds (64 s); the older ones have none.
+  const LINE = '<!-- card: WIKI-7, 2026-11-01T09:00Z good, 2026-11-05T09:00Z again 13s, 2026-11-06T09:00Z good 64s -->'
   const PAGE = `# Page\n\n${CARD}${LINE}\n\nAfter.\n`
   const settings = () => DEFAULT_REVIEW_SETTINGS
   const header = (root: HTMLElement) => root.querySelector<HTMLButtonElement>('.note-card .note-card-reviews .backlinks__header')
@@ -502,7 +503,9 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     const trs = root.querySelectorAll('.note-card-reviews__table tbody tr')
     expect([...trs].map((tr) => tr.querySelector('button')?.getAttribute('title') ?? null)).toEqual(['Delete this review', 'Delete this review', 'Delete this review', null])
     expect(trs[3].classList.contains('note-card-reviews__next')).toBe(true)
-    expect([...root.querySelectorAll('.note-card-reviews__table th')].map((th) => th.textContent)).toEqual(['Answer', '# of days', 'Review date', 'Next due', ''])
+    expect([...root.querySelectorAll('.note-card-reviews__table th')].map((th) => th.textContent)).toEqual(['Answer', '# of days', 'Review date', 'Next due', 'Time', ''])
+    // YAZ-5033: how long each answer took; "—" for a review made before the timer; nothing for the review to come.
+    expect(table.map((r) => r[4])).toEqual(['—', '13 s', '1 min 4 s', ''])
     expect(view.state.doc).toBe(doc)
     expect(undoDepth(view.state)).toBe(0)
     expect(root.querySelector('.note-card')?.classList.contains('ProseMirror-selectednode')).toBe(false)
@@ -525,8 +528,8 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     press(header(root)!)
     await vi.waitFor(() => expect(rows(root)).toHaveLength(4))
     root.querySelectorAll<HTMLButtonElement>('.note-card-reviews__table tbody button')[1].click()
-    expect(deleteReview).toHaveBeenCalledWith(path, 'WIKI-7', { at: '2026-11-05T09:00Z', rating: 'again' })
-    await vi.waitFor(() => expect(disk.get(path)).toBe(PAGE.replace(' 2026-11-05T09:00Z again,', '')))
+    expect(deleteReview).toHaveBeenCalledWith(path, 'WIKI-7', { at: '2026-11-05T09:00Z', rating: 'again', seconds: 13 })
+    await vi.waitFor(() => expect(disk.get(path)).toBe(PAGE.replace(' 2026-11-05T09:00Z again 13s,', '')))
     // The app merges its own write into the open page: the section counts again, and the open table shows the new rows.
     expect(applyExternalMarkdown(crepe, disk.get(path)!)).toBe('applied')
     await vi.waitFor(() => expect(rows(root)).toEqual(['Remembered', 'Remembered', '']))

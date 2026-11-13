@@ -170,7 +170,7 @@ const FILES_ROWS = ['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 
 /** Settings › Folder pages (YAZ-4585): its personal rows, with the folder views' hover row moved from Files & Links, the view defaults, the page default. */
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and their style (YAZ-4798) after Group indent.
 const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
-const REVIEW_ROWS = ['enabled', 'buttons', 'retention', 'maxDays', 'newPerDay', 'upNextPerDay', 'newOrder', 'fuzz', 'weights', 'shownHiddenWords', 'howCardsComeBack']
+const REVIEW_ROWS = ['enabled', 'buttons', 'retention', 'maxDays', 'newPerDay', 'upNextPerDay', 'newOrder', 'fuzz', 'pauseAfter', 'weights', 'shownHiddenWords', 'howCardsComeBack']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
  * so the "Used by macOS" rows are not there; with no key changed, neither is "Reset all hotkeys".
@@ -1384,7 +1384,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   const S = REVIEW_ON
   const input = (el: HTMLElement, id: string) => row(el, id)?.querySelector<HTMLInputElement>('.settings__input') as HTMLInputElement
   const reviewRows = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('#settings-review .setting')].map((r) => r.dataset.setting)
-  const ALL = ['enabled', 'buttons', 'retention', 'maxDays', 'newPerDay', 'upNextPerDay', 'newOrder', 'fuzz', 'weights', 'shownHiddenWords', 'howCardsComeBack']
+  const ALL = ['enabled', 'buttons', 'retention', 'maxDays', 'newPerDay', 'upNextPerDay', 'newOrder', 'fuzz', 'pauseAfter', 'weights', 'shownHiddenWords', 'howCardsComeBack']
 
   it('is absent with no vault open: no Review item in the nav, and no page holds its section or a row of it', () => {
     const { el } = mount()
@@ -1397,7 +1397,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   it('on: the card rows in order, with their words and values; off: the switch alone. No upkeep row is left', () => {
     const { el, rerender } = mountOn('Review', { ...DEFAULT_SETTINGS }, status(), S)
     expect(reviewRows(el)).toEqual(ALL)
-    expect(ALL.slice(0, -1).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Review cards', 'Answer buttons', 'Remember rate', 'Longest wait', 'New cards a day', 'Up next a day', 'New cards first', 'Spread due dates', 'Weights', 'Shown hidden words'])
+    expect(ALL.slice(0, -1).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Review cards', 'Answer buttons', 'Remember rate', 'Longest wait', 'New cards a day', 'Up next a day', 'New cards first', 'Spread due dates', 'Pause the timer after', 'Weights', 'Shown hidden words'])
     // YAZ-5020: "How cards come back" is a quiet closed line; open, it says the same-day rules and why.
     const how = row(el, 'howCardsComeBack')!.querySelector('details')!
     expect([how.open, how.querySelector('summary')?.textContent]).toEqual([false, 'How cards come back'])
@@ -1423,6 +1423,11 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(rowButtons(el, 'newOrder').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Oldest first', 'true'], ['Newest first', 'false']])
     act(() => rowButtons(el, 'newOrder')[1].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, newOrder: 'newest' })
+    // YAZ-5033: Pause the timer after — four choices, 60 s by default, saved in review.json; its hint says "with no key or mouse".
+    expect(rowButtons(el, 'pauseAfter').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['30 s', 'false'], ['60 s', 'true'], ['2 min', 'false'], ['5 min', 'false']])
+    expect(row(el, 'pauseAfter')?.textContent).toMatch(/Pause the timer after[\s\S]*With no key or mouse/)
+    act(() => rowButtons(el, 'pauseAfter')[2].click())
+    expect(save).toHaveBeenLastCalledWith({ ...S, pauseAfter: 120 })
     act(() => rowButtons(el, 'enabled')[1].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, enabled: false })
     expect(onChange).not.toHaveBeenCalled()

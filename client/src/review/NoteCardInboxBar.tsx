@@ -5,13 +5,14 @@
  * the vault (Review this folder / page; YAZ-5017 round 2, Yaseen: "isnt this redundant?"); then the CURRENT card's place,
  * one card at a time: the vault and its folders, "Note Cards Demo › spanish-words" — no page name, the card's head shows
  * it — each part a link (its folder page: `openPlace`, the folder chips' door); a long path gives way in the middle, "…".
- * On the right "3 of 12", which counts the filter's cards. Under it the progress bar (YAZ-5020, as
+ * On the right today's work across the vault, quiet ("Today: 31 cards · 9 min", YAZ-5033), then "3 of 12", which counts the filter's cards. Under it the progress bar (YAZ-5020, as
  * Mochi's): it fills as the session's cards are answered, a Forgot in red, a Remembered in grey.
  */
 import { Fragment, useRef, useState, type ReactElement } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import type { CardRating } from '@shared/cardLine'
 import type { CardFilter, CardReviewSession } from './useCardReview'
+import { todayWork } from './reviewTime'
 import { ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './noteCardInboxIcons'
 
 /** The filters in menu order, with their names and glyphs. */
@@ -98,6 +99,11 @@ export function NoteCardInboxBar({ session, setFilter, openPlace }: NoteCardInbo
               </Fragment>
             ))}
           </nav>
+        )}
+        {todayWork(session.today) !== '' && (
+          <span className="note-card-inbox__today" title="Reviewed today in this vault">
+            {todayWork(session.today)}
+          </span>
         )}
         {session.card !== null && (
           <span className="note-card-inbox__place">

@@ -378,7 +378,7 @@ describe('YAZ-5020: same-day steps — cards come back in the same session (Yase
 
 describe('the settings (D14)', () => {
   it('defaults to two buttons, 90%, 365 days, 10 new a day, fuzz on and the Mochi weights; each bad field falls back alone', () => {
-    expect(sanitizeReviewSettings(undefined)).toEqual({ enabled: true, buttons: 2, retention: 0.9, maxDays: 365, newPerDay: 10, upNextPerDay: null, newOrder: 'oldest', fuzz: true, weights: [...DEFAULT_CARD_WEIGHTS] })
+    expect(sanitizeReviewSettings(undefined)).toEqual({ enabled: true, buttons: 2, retention: 0.9, maxDays: 365, newPerDay: 10, upNextPerDay: null, newOrder: 'oldest', fuzz: true, pauseAfter: 60, weights: [...DEFAULT_CARD_WEIGHTS] })
     expect(DEFAULT_CARD_WEIGHTS).toHaveLength(21)
     const weights = Array.from({ length: 19 }, (_, i) => i / 10)
     expect(sanitizeReviewSettings({ enabled: false, buttons: 4, retention: 0.85, maxDays: 30, newPerDay: 0, fuzz: false, weights, algorithm: 'upkeep', baseDays: 3 })).toEqual({
@@ -390,6 +390,7 @@ describe('the settings (D14)', () => {
       upNextPerDay: null,
       newOrder: 'oldest',
       fuzz: false,
+      pauseAfter: 60,
       weights,
     })
     expect(sanitizeReviewSettings({ enabled: 'yes', buttons: 3, retention: 1.5, maxDays: 0.5, newPerDay: -1, newOrder: 'random', fuzz: 1, weights: [1, 2, 3] })).toEqual(sanitizeReviewSettings(null))
@@ -398,6 +399,9 @@ describe('the settings (D14)', () => {
     // YAZ-5028: Up next a day the same way, but a missing field is no limit.
     expect([sanitizeReviewSettings({ upNextPerDay: 3 }).upNextPerDay, sanitizeReviewSettings({ upNextPerDay: null }).upNextPerDay, sanitizeReviewSettings({}).upNextPerDay, sanitizeReviewSettings({ upNextPerDay: -1 }).upNextPerDay, sanitizeReviewSettings({ upNextPerDay: 1.5 }).upNextPerDay]).toEqual([3, null, null, null, null])
     expect([sanitizeReviewSettings({ newOrder: 'newest' }).newOrder, sanitizeReviewSettings({ newOrder: 'NEWEST' }).newOrder]).toEqual(['newest', 'oldest'])
+    // YAZ-5033: "Pause the timer after" is one of its four choices, in seconds; anything else is the default, 60 s.
+    expect([30, 60, 120, 300, 45, '60', 0, -30, null, 60.5].map((pauseAfter) => sanitizeReviewSettings({ pauseAfter }).pauseAfter)).toEqual([30, 60, 120, 300, 60, 60, 60, 60, 60, 60])
+    expect(sanitizeReviewSettings({}).pauseAfter).toBe(60)
     expect(sanitizeReviewSettings({ weights: [...DEFAULT_CARD_WEIGHTS.slice(0, 20), Number.NaN] }).weights).toEqual([...DEFAULT_CARD_WEIGHTS])
   })
 })

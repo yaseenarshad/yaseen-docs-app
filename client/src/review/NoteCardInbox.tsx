@@ -47,6 +47,10 @@
  *    (YAZ-5024, `NoteCardInboxHints`): ⌘↵ folds first, then O; Space and E stay.
  *  - THE WIDTH (YAZ-5019): the card's left or right edge drags it wider or narrower, centred (`inboxCardWidth.ts`): at
  *    least 420 px, at most the tab's width less its margins; the width stays for the app's run, in memory only.
+ *  - HOW LONG EACH ANSWER TOOK (YAZ-5033, `answerTimer.ts`): the timer starts when a card shows (again when ⌘Z shows
+ *    it again), pauses while the Inbox is not in front and over any stretch of "Pause the timer after" with no key or
+ *    mouse; the answer writes its active seconds on its review part (`… good 13s`). The top row says today's work
+ *    across the vault, "Today: 31 cards · 9 min" (`session.today`, from the index), and the done screen says it too.
  *  - No Reviews section (YAZ-5000: it lives only under the card in the page, and in the card window). Nothing left: "Inbox complete." for the vault; for one page or
  *    folder "This page is done." and, quiet, "21 more in the Inbox", which starts the vault's review.
  */
@@ -67,6 +71,8 @@ import { NoteCardStateChip, answerIcon, answerLine } from './noteCardInboxChip'
 import { useInboxCardWidth } from './inboxCardWidth'
 import { NoteCardInboxHints } from './NoteCardInboxHints'
 import { KeyCaps } from '../keys/KeyCaps'
+import { useAnswerTimer } from './answerTimer'
+import { todayWork } from './reviewTime'
 import '../explore/explore.css'
 
 export interface NoteCardInboxProps {
@@ -149,6 +155,8 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
   const text = useMemo(() => (pageText !== null && hideTitle ? cardWithoutTitle(pageText) : pageText), [pageText, hideTitle])
   const hiddenTitle = pageText !== null && hideTitle ? cardTitle(pageText) : ''
   const cardKey = card === null ? null : `${session.position}\n${card.path}\n${card.id}`
+  // YAZ-5033: the active seconds on this card, from the moment its text shows; read at the answer.
+  const answerSeconds = useAnswerTimer(card?.page == null ? null : cardKey, shown, review.settings.pauseAfter)
 
   // The sides and their hidden words, once per card text.
   const counts = useMemo(() => (text === null ? [] : cardSides(text).map(hiddenCount)), [text])
@@ -178,21 +186,21 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
   // The ⋯ row (YAZ-5004): open or closed; it closes with the card, Esc and a press outside it.
   const [moreState, setMore] = useState<string | null>(null)
   const moreOpen = moreState !== null && moreState === cardKey
-  const live = useRef({ step, done, counts, card, session, review, ratings, moreOpen, shown })
-  live.current = { step, done, counts, card, session, review, ratings, moreOpen, shown }
+  const live = useRef({ step, done, counts, card, session, review, ratings, moreOpen, shown, answerSeconds })
+  live.current = { step, done, counts, card, session, review, ratings, moreOpen, shown, answerSeconds }
 
   // The last answer's line (YAZ-5025 round 2): its words fixed when the answer is given, shown once the session counts
   // it (`count`: the session's answers with it), and only while that answer is still the session's last (an undo clears it).
   const pendingLine = useRef<AnswerLine | null>(null)
   const [lastLine, setLastLine] = useState<AnswerLine | null>(null)
   const answerWith = useCallback((rating: CardRating) => {
-    const { session, review, card } = live.current
+    const { session, review, card, answerSeconds } = live.current
     // The answers as the hook fixed them (a digit can come before the buttons show: they are fixed now, as `answer` would).
     const fixed = (session.answers ?? review.showAnswers())?.find((a) => a.review.rating === rating)
     // The card by its title (YAZ-5030), a title hidden in review too: the answer is given.
     const title = card?.page == null ? '' : cardTitle(card.page.text)
     pendingLine.current = fixed === undefined || card === null ? null : { text: answerLine(rating, card.id, fixed.interval, fixed.inSteps, review.settings, title), rating, count: session.answered.length + 1 }
-    void review.answer(rating)
+    void review.answer(rating, answerSeconds())
   }, [])
   const answeredCount = session.answered.length
   useEffect(() => {
@@ -310,6 +318,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
           <div className="note-card-inbox__body">
             {card === null ? (
               <div className="note-card-inbox__done" role="status">
+                {/* YAZ-5033: today's work across the vault, under whatever the screen says. */}
                 {session.filter !== 'all' && session.counts.all > 0 ? (
                   // The filter's cards are done, others are left (YAZ-5017): the way back to All cards.
                   <>
@@ -335,6 +344,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
                     )}
                   </>
                 )}
+                {todayWork(session.today) !== '' && <p className="note-card-inbox__done-today">{todayWork(session.today)}</p>}
               </div>
             ) : (
               text !== null &&

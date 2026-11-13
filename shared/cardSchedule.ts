@@ -340,3 +340,43 @@ export function cardQueue(records: readonly CardPage[], s: ReviewSettings, now: 
   const waitingNew = waiting.filter((card) => card.isNew)
   return [...next.slice(0, front), ...due, ...(waitingNew.length === 0 ? newToday : [...newToday, ...waitingNew].sort(order))]
 }
+
+/** Today's review work (YAZ-5033, the Inbox's "Today: 31 cards · 9 min"): the cards answered, and their seconds. */
+export interface ReviewedToday {
+  /** The cards with at least one review today (a card answered twice counts once). */
+  cards: number
+  /** The reviews made today. */
+  reviews: number
+  /** The seconds those reviews took; a review with no seconds (made before YAZ-5033) counts 0. */
+  seconds: number
+}
+
+/**
+ * Today's reviews across `pages` (the index's records): the LOCAL day of `now`, midnight to midnight. A review's time
+ * is a UTC minute that sorts as a string, so each one is two string compares with the day's bounds (`cardTime`): no
+ * date parsed per review. Off cards count too: their reviews were made.
+ */
+export function reviewedToday(pages: readonly { cards?: readonly NoteCardRecord[] }[], now: number): ReviewedToday {
+  const start = new Date(now)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(start)
+  end.setDate(end.getDate() + 1)
+  const from = cardTime(start.getTime())
+  const to = cardTime(end.getTime())
+  let cards = 0
+  let reviews = 0
+  let seconds = 0
+  for (const page of pages) {
+    for (const card of page.cards ?? []) {
+      let any = false
+      for (const r of card.reviews) {
+        if (r.at < from || r.at >= to) continue
+        any = true
+        reviews++
+        seconds += r.seconds ?? 0
+      }
+      if (any) cards++
+    }
+  }
+  return { cards, reviews, seconds }
+}
