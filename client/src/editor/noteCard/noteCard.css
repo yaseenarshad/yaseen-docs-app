@@ -282,6 +282,14 @@
   border-radius: 4px;
   background: color-mix(in srgb, var(--fg) 5%, transparent);
 }
+/* Edit card's word is the editor's text, with no inner span (the caret lives there): its grey is a band of the same
+   height as the read box, in the middle of its line, so it never reaches the next line either (YAZ-5053 round 2). */
+[data-shown-hidden-words='box'] .note-card .note-card__editor .note-card__cloze {
+  background: linear-gradient(color-mix(in srgb, var(--fg) 5%, transparent), color-mix(in srgb, var(--fg) 5%, transparent)) 0 50% / 100%
+    min(100%, calc(var(--nc-box-line) - var(--nc-box-em) * 0.2)) no-repeat;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
 /* The line between two sides: the render's rule (`.note-card__rule`), across the card, selectable as one block. */
 .note-card .note-card__side-break {
   height: 1px;
@@ -544,11 +552,40 @@
    nothing on the line (YAZ-5013); a box that wraps keeps its ends on each line. The greys mix the text colour into the
    page's, so they hold in light and dark. */
 [data-shown-hidden-words='box'] .note-card :is(.note-card__hidden, .note-card__blank) {
-  padding: 2px 6px;
+  --nc-box-height: min(calc(var(--nc-box-em) * 1.15 + 4px), calc(var(--nc-box-line) - var(--nc-box-em) * 0.2));
+  --nc-box-middle: calc(var(--nc-box-em) * 0.3);
+  --nc-box-above: max(0px, calc(var(--nc-box-height) / 2 + var(--nc-box-middle)));
+  --nc-box-below: max(0px, calc(var(--nc-box-height) / 2 - var(--nc-box-middle)));
+  font-size: 0;
+  padding: var(--nc-box-above) 6px var(--nc-box-below);
   border-bottom: 0;
   border-radius: 4px;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
+}
+/* Box at every line spacing (YAZ-5053 round 2, Yaseen: "depending on the line spacing it overlaps"): an inline box is
+   as tall as its font's own line (about 1.2em) plus its padding, whatever the line spacing, so at 1.0 and 1.15 the box
+   of one line reached into the next. Here the box is sized from the line instead: the word's span has no font size
+   of its own (font-size 0, so no height), the word inside gets the text's size back, and the padding alone draws the
+   box — as tall as at 1.5, but never taller than the line less a gap, around the middle of the letters. The text's
+   size and line height come from the span's parent, as lengths (`@property`, so they do not follow the 0). The text
+   and its line do not change, so a show still moves nothing; a wrapped box gets the same height on each line. */
+@property --nc-box-em {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 16px;
+}
+@property --nc-box-line {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 24px;
+}
+[data-shown-hidden-words='box'] .note-card :has(> :is(.note-card__hidden, .note-card__blank, .note-card__cloze)) {
+  --nc-box-em: 1em;
+  --nc-box-line: 1lh;
+}
+[data-shown-hidden-words='box'] .note-card :is(.note-card__hidden, .note-card__blank) > .note-card__word {
+  font-size: var(--nc-box-em);
 }
 [data-shown-hidden-words='box'] .note-card .note-card__blank {
   background: color-mix(in srgb, var(--fg) 10%, transparent);

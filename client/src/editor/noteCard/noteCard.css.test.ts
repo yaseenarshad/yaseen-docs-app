@@ -55,7 +55,8 @@ it('YAZ-5013: a blank and a shown word have ONE box model — inline, the same h
   expect(both[0].body).toMatch(/padding:\s*0 2px/)
   // No other rule changes the padding, the width or the display of either one (Underline keeps the padding too), but
   // Box's (YAZ-5053), which sets the SAME padding on both at once, so a show still moves nothing.
-  const box = rules(cardCss, "[data-shown-hidden-words='box'] .note-card :is(.note-card__hidden, .note-card__blank)")
+  // (Round 2's word inside it gets the text's size back; that rule sets only the font size.)
+  const box = rules(cardCss, "[data-shown-hidden-words='box'] .note-card :is(.note-card__hidden, .note-card__blank)").filter((r) => r.selector === "[data-shown-hidden-words='box'] .note-card :is(.note-card__hidden, .note-card__blank)")
   expect(box).toHaveLength(1)
   for (const rule of [...rules(cardCss, '.note-card__hidden'), ...rules(cardCss, '.note-card__blank')].filter((r) => r.selector !== both[0].selector && r.selector !== box[0].selector))
     expect(rule.body, rule.selector).not.toMatch(/(^|[\s;])(padding|width|display|margin)(-[a-z]+)?\s*:/)
@@ -137,7 +138,7 @@ it("YAZ-5050: a card's text reads with the pages' Line spacing and Space between
 
 it('YAZ-5053: Box, as Mochi — a hidden word is a plain grey box, a shown one sits in a lighter grey box with round corners; one padding for both, so the line keeps its place; light and dark from the text colour', () => {
   const both = rules(cardCss, "[data-shown-hidden-words='box'] .note-card :is(.note-card__hidden, .note-card__blank)")[0]!
-  expect(both.body).toMatch(/padding:\s*2px 6px/)
+  expect(both.body).toMatch(/padding:\s*var\(--nc-box-above\) 6px var\(--nc-box-below\)/)
   expect(both.body).toMatch(/border-radius:\s*4px/)
   expect(both.body).toMatch(/border-bottom:\s*0/)
   const blank = rules(cardCss, "[data-shown-hidden-words='box'] .note-card .note-card__blank")[0]!
@@ -149,4 +150,23 @@ it('YAZ-5053: Box, as Mochi — a hidden word is a plain grey box, a shown one s
   expect(beats(specificity(both.selector), specificity('.note-card .note-card__blank'))).toBe(true)
   // Edit card's hidden word has the shown look.
   expect(rules(cardCss, "[data-shown-hidden-words='box'] .note-card .note-card__cloze").some((r) => /color-mix\(in srgb, var\(--fg\) 5%, transparent\)/.test(r.body))).toBe(true)
+})
+
+it('YAZ-5053 round 2: Box never reaches into the next line, at any line spacing — the box is drawn by padding from the line (the span has no font size), capped by the line less a gap; the word keeps its size; Edit card`s grey is a band of the same height', () => {
+  const both = rules(cardCss, "[data-shown-hidden-words='box'] .note-card :is(.note-card__hidden, .note-card__blank)")[0]!
+  // The span's own font line (about 1.2em, whatever the spacing) is what overlapped at 1.0 and 1.15: it is 0 now.
+  expect(both.body).toMatch(/font-size:\s*0;/)
+  // The height: the 1.5 look at most, and never more than the line less a gap.
+  expect(both.body).toMatch(/--nc-box-height:\s*min\(calc\(var\(--nc-box-em\) \* 1\.15 \+ 4px\), calc\(var\(--nc-box-line\) - var\(--nc-box-em\) \* 0\.2\)\)/)
+  expect(both.body).toMatch(/box-decoration-break:\s*clone/)
+  // The text's size and line come from the span's parent, as lengths (registered, so the span's 0 does not change them).
+  for (const name of ['--nc-box-em', '--nc-box-line']) expect(cardCss).toMatch(new RegExp(`@property ${name} \\{\\s*syntax: '<length>';\\s*inherits: true;`))
+  const parent = rules(cardCss, "[data-shown-hidden-words='box'] .note-card :has(> :is(.note-card__hidden, .note-card__blank, .note-card__cloze))")[0]!
+  expect(parent.body).toMatch(/--nc-box-em:\s*1em;/)
+  expect(parent.body).toMatch(/--nc-box-line:\s*1lh;/)
+  // The word gets the text's size back, so the line and the letters do not move.
+  expect(rules(cardCss, "[data-shown-hidden-words='box'] .note-card :is(.note-card__hidden, .note-card__blank) > .note-card__word")[0]!.body).toMatch(/font-size:\s*var\(--nc-box-em\)/)
+  // Edit card: a band in the middle of the line, at most the line less the same gap.
+  const edit = rules(cardCss, "[data-shown-hidden-words='box'] .note-card .note-card__editor .note-card__cloze")[0]!
+  expect(edit.body).toMatch(/0 50% \/ 100%\s+min\(100%, calc\(var\(--nc-box-line\) - var\(--nc-box-em\) \* 0\.2\)\) no-repeat/)
 })
