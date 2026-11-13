@@ -125,12 +125,17 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
   // Edit card (YAZ-5003): E blocks it in a read-only vault, as in the page. The Inbox's E opens it in any vault
   // (YAZ-5009): only this edit of this card; once it ends, the card reads, locked again.
   const [editing, setEditing] = useState(startInEdit)
+  // Out of Edit card, the body takes the keyboard, so the stack hears the next Esc or ⌘↵ (YAZ-5009 round 2). After the
+  // commit, not in Done: the card's Done gives the keyboard back to its own editor, which this commit removes; the
+  // keyboard would then fall to `document.body`, out of the stack.
+  const wasEditing = useRef(editing)
+  useEffect(() => {
+    if (wasEditing.current && !editing) bodyRef.current?.focus({ preventScroll: true })
+    wasEditing.current = editing
+  }, [editing])
   const editDone = (text: string) => {
     if (card === null) return
-    const after = () => {
-      setEditing(false)
-      bodyRef.current?.focus({ preventScroll: true })
-    }
+    const after = () => setEditing(false)
     if (text.replace(/\n+$/, '') === card.text) return after()
     changeCardTextIn(path, card.id, text, card.index).then(
       () => {
