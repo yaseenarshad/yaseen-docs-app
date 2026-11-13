@@ -93,6 +93,58 @@ describe('YAZ-5006: a key on a selected card', () => {
     expect(hasCard(crepe)).toBe(false)
   })
 
+  it('round 2: text with NO key press (dictation, the emoji picker, text replacement) does not replace the card', async () => {
+    const { crepe, view, pos } = await mount()
+    const { schema } = view.state
+    selectCard(view, pos)
+    // A transaction that types over the selection, as a DOM read or a command dispatches it: no key event, no meta.
+    view.dispatch(view.state.tr.insertText('d'))
+    view.dispatch(view.state.tr.replaceSelectionWith(schema.nodes.paragraph.create(null, schema.text('dictated'))))
+    // In two steps: the card deleted, then the text put where it was.
+    const { from, to } = view.state.selection
+    view.dispatch(view.state.tr.delete(from, to).insert(from, schema.nodes.paragraph.create(null, schema.text('emoji'))))
+    expect(hasCard(crepe)).toBe(true)
+    expect(getMarkdownForSave(crepe)).not.toMatch(/dictated|emoji|\nd\n/)
+    expect(view.state.selection).toBeInstanceOf(NodeSelection)
+    // The page's `beforeinput` of an insert is cancelled, so the browser does not write the text into the page.
+    for (const inputType of ['insertText', 'insertReplacementText', 'insertFromComposition', 'insertFromPaste']) {
+      const input = new InputEvent('beforeinput', { inputType, data: '😀', bubbles: true, cancelable: true })
+      view.dom.dispatchEvent(input)
+      expect(input.defaultPrevented, inputType).toBe(true)
+    }
+    // Text the browser wrote into the page anyway (an uncancellable composition): the DOM read is refused and redrawn.
+    const card = view.dom.querySelector('.note-card')!
+    const p = document.createElement('p')
+    p.textContent = 'typed'
+    card.replaceWith(p)
+    ;(view as unknown as { domObserver: { flush(): void } }).domObserver.flush()
+    expect(hasCard(crepe)).toBe(true)
+    expect(getMarkdownForSave(crepe)).not.toContain('typed')
+    expect(view.dom.querySelector('.note-card')).not.toBeNull()
+  })
+
+  it('round 2: Backspace, cut, the block menu`s delete and a drag move still take the card; ⌘Z brings it back', async () => {
+    const { crepe, view, pos } = await mount()
+    const size = view.state.doc.nodeAt(pos)!.nodeSize
+    // The block menu's delete (a plain delete of the block).
+    selectCard(view, pos)
+    view.dispatch(view.state.tr.delete(pos, pos + size))
+    expect(hasCard(crepe)).toBe(false)
+    undo(view.state, view.dispatch)
+    expect(hasCard(crepe)).toBe(true)
+    // A cut.
+    selectCard(view, pos)
+    view.dispatch(view.state.tr.deleteSelection().setMeta('uiEvent', 'cut'))
+    expect(hasCard(crepe)).toBe(false)
+    undo(view.state, view.dispatch)
+    // A drag move to the top of the page: deleted here, inserted there.
+    selectCard(view, pos)
+    const node = view.state.doc.nodeAt(pos)!
+    view.dispatch(view.state.tr.delete(pos, pos + size).insert(0, node).setMeta('uiEvent', 'drop'))
+    expect(view.state.doc.firstChild!.attrs.language).toBe('card')
+    expect(hasCard(crepe)).toBe(true)
+  })
+
   it('a caret in a paragraph still types', async () => {
     const { view } = await mount()
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 6)))

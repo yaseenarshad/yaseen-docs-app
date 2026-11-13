@@ -50,7 +50,7 @@ import { LanguageDescription, LanguageSupport } from '@codemirror/language'
 import { commandsCtx, editorViewCtx, nodeViewCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
-import { NodeSelection, Plugin, PluginKey, TextSelection, type EditorState } from '@milkdown/kit/prose/state'
+import { NodeSelection, Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from '@milkdown/kit/prose/state'
 import type { Decoration, DecorationSource, EditorView, NodeView, NodeViewConstructor } from '@milkdown/kit/prose/view'
 import { clearTextInCurrentBlockCommand, setBlockTypeCommand } from '@milkdown/kit/preset/commonmark'
 import { $prose, $shortcut, $view } from '@milkdown/kit/utils'
@@ -641,9 +641,46 @@ function noteCardSelection() {
 }
 
 /**
- * A key on a SELECTED card (YAZ-5006): ProseMirror replaces a selected node with what is typed, so one letter took the
- * card and its review history away. A typed character, a paste and an IME composition do nothing to a selected card;
- * Enter is Edit card. Backspace / Delete, cut, a drag and the arrows stay ProseMirror's, as for any block (⌘Z undoes).
+ * A transaction that may put other content where a selected card was (none in the app yet: an escape hatch). ⌘Z / ⇧⌘Z
+ * and an outside edit of the file may too.
+ */
+export const NOTE_CARD_REPLACE_META = 'note-card-replace'
+
+/** Text or a leaf (an image, a rule) in `content`, outside a card: what typing, a paste or a drop puts there. */
+function holdsOtherContent(content: Fragment): boolean {
+  let found = false
+  content.descendants((node) => {
+    if (found || isNoteCardNode(node)) return false
+    if (node.isText || node.isLeaf) found = true
+    return !found
+  })
+  return found
+}
+
+/**
+ * Does `tr` put other content where the card `from`..`to` was? The card is gone (its opening token deleted) and what
+ * stands in its place holds text or a leaf. A pure delete (Backspace, Delete, a cut, the block menu's delete, the
+ * first half of a drag move) leaves nothing there, or the empty paragraph an empty page needs; a card that moves next
+ * to its own place, or a change of the card's line or attributes, leaves the card there.
+ */
+function replacesCard(tr: Transaction, from: number, to: number): boolean {
+  if (!tr.mapping.mapResult(from, 1).deleted) return false
+  const start = tr.mapping.map(from, -1)
+  const end = tr.mapping.map(to, 1)
+  return end > start && holdsOtherContent(tr.doc.slice(start, end).content)
+}
+
+/**
+ * NO TEXT REPLACES A SELECTED CARD (YAZ-5006): ProseMirror replaces a selected node with what is typed, so one letter
+ * took the card and its review history away. Round 1 stopped the key presses; text that comes with no key press (macOS
+ * dictation, the emoji picker, text replacement: a `beforeinput` insert, or text the page reads from the DOM) still
+ * replaced the card. So the rule sits on the transaction, whatever its source: while a card is node-selected, a
+ * transaction that puts text or a leaf where the card was is refused (ProseMirror then redraws the page over any text
+ * the browser wrote). A paste over a selected card is refused too. Backspace / Delete, a cut, the block menu's delete
+ * and a drag move delete the card as any block (⌘Z undoes); ⌘Z / ⇧⌘Z and an outside edit of the file are not refused.
+ *
+ * The props stop what they can before the browser writes: a typed character, a `beforeinput` insert and a paste do
+ * nothing to a selected card, and Enter is Edit card.
  */
 function noteCardKeyGuard() {
   const selected = (state: EditorState): number | null => {
@@ -654,12 +691,24 @@ function noteCardKeyGuard() {
     () =>
       new Plugin({
         key: new PluginKey('mdapp-note-card-key-guard'),
-        // A composition's change is read from the page after the fact: refused while a card is selected.
-        filterTransaction: (tr, state) => !(tr.docChanged && tr.getMeta('composition') !== undefined && selected(state) !== null),
+        filterTransaction: (tr, state) => {
+          if (!tr.docChanged || selected(state) === null) return true
+          if (tr.getMeta(NOTE_CARD_REPLACE_META) === true || tr.getMeta(EXTERNAL_EDIT_META) === true || isHistoryTransaction(tr)) return true
+          return !replacesCard(tr, state.selection.from, state.selection.to)
+        },
         props: {
           handleTextInput: (view) => selected(view.state) !== null,
-          // The page's paste props are direct editor props (`clipboardPaste.ts`) and run before a plugin's `handlePaste`.
           handleDOMEvents: {
+            // Dictation, the emoji picker, text replacement, a composition's end: cancelled before the browser writes
+            // the text into the card. A drop stays ProseMirror's (a drag move). A composition's own updates cannot be
+            // cancelled: the transaction rule refuses what they write.
+            beforeinput: (view, event) => {
+              const { inputType } = event as InputEvent
+              if (selected(view.state) === null || !inputType.startsWith('insert') || inputType === 'insertFromDrop') return false
+              event.preventDefault()
+              return true
+            },
+            // The page's paste props are direct editor props (`clipboardPaste.ts`) and run before a plugin's `handlePaste`.
             paste: (view, event) => {
               if (selected(view.state) === null) return false
               event.preventDefault()
