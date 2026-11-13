@@ -7,7 +7,7 @@ import type { SearchCandidate } from '../search/searchCandidates'
 import type { PathIds } from '../search/showIds'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { CreateInline } from './CreateInline'
-import type { EntryKind, MenuRow } from './createEntry'
+import type { CreateKind, MenuRow } from './createEntry'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { hasHoverPreview } from './hoverPreviewKinds'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
@@ -25,7 +25,7 @@ import { newWindowClick } from '../lib/newWindowClick'
 
 /** Inline "New note" / "New folder" input pending inside the tree (GRO-2022). */
 export interface PendingCreate {
-  kind: EntryKind
+  kind: CreateKind
   seed: string
   /** Absolute path of the directory the entry is created in. */
   parentDir: string

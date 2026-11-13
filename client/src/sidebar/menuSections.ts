@@ -455,8 +455,8 @@ const createParent = (id: string, label: string, sections: readonly (readonly Le
 }
 
 /**
- * "New card" (YAZ-5037): after New note and before New drawing, a plain item with no flyout and no name box — the card
- * file is `<id>.md` until its title names it. Only where the vault makes cards: it uses IDs and its Review is on
+ * "New card" (YAZ-5037): after New note and before New drawing, a plain item with no flyout. It opens the name box as
+ * New note does (YAZ-5101); the typed name is the card's title, and the file is named after it. Only where the vault makes cards: it uses IDs and its Review is on
  * (`cardDir`). "Card" is no page word: it never goes through the vault's word (`unit`).
  */
 const newCard: Leaf = (t, h) => {

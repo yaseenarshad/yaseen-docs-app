@@ -1,15 +1,15 @@
 import { useRef, useState } from 'react'
 import { useUnit, type UnitText } from '../vault/unitWord'
-import type { EntryKind } from './createEntry'
+import type { CreateKind } from './createEntry'
 
 /**
  * Placeholder per entry kind; what is typed is its title, and the name on disk is built from it (YAZ-2420 🔒 D6, D20).
  * A board's box names its kind (YAZ-3028 D9); what is typed there is the file name.
  */
-const placeholderOf = (kind: EntryKind, unit: UnitText): string => ({ file: unit('New note'), dir: 'New folder', drawing: 'New drawing', diagram: 'New diagram' })[kind]
+const placeholderOf = (kind: CreateKind, unit: UnitText): string => ({ file: unit('New note'), dir: 'New folder', card: 'New card', drawing: 'New drawing', diagram: 'New diagram' })[kind]
 
 interface CreateInlineProps {
-  kind: EntryKind
+  kind: CreateKind
   /** Left padding so the input lines up with rows at its depth. */
   indent: number
   /**
@@ -31,9 +31,9 @@ export function CreateInline({ kind, indent, onSubmit, onCancel, seed = '' }: Cr
   const submit = async (value: string) => {
     const name = value.trim()
     if (submitting.current) return
-    // A note or a folder needs a name; a board's empty box is "Untitled" (YAZ-3028 D9), so it goes on as ''.
+    // A note, a card (YAZ-5101) or a folder needs a name; a board's empty box is "Untitled" (YAZ-3028 D9), so it goes on as ''.
     const empty = name === '' || name === seed.trim()
-    if (empty && (kind === 'file' || kind === 'dir')) return
+    if (empty && (kind === 'file' || kind === 'dir' || kind === 'card')) return
     submitting.current = true
     try {
       await onSubmit(empty ? '' : name)

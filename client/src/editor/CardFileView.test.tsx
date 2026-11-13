@@ -14,6 +14,7 @@ import { noteCardViewOfDom } from './noteCard/noteCardView'
 import { VaultReadOnly } from '../vault/readOnlyVault'
 import { useReviewSettings } from '../review/useReviewSettings'
 import { createCardFile } from '../review/newCardFile'
+import { cardFileName } from '@shared/cardFileFormat'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -408,6 +409,22 @@ describe('a new card file (YAZ-5037 phase 4)', () => {
     key(dom, { key: 'Enter', metaKey: true })
     await vi.waitFor(() => expect(onRetitle).toHaveBeenCalledExactlyOnceWith(NEW, 'Capital of France', 'file'))
     expect(disk.files.get(NEW)).toBe('---\nkind: card\n---\n```card\nCapital of France\n```\n<!-- card: WIKI-10 -->\n')
+  })
+
+  it('named in the sidebar`s name box (YAZ-5101): the file is named after the title, the title is the card`s first line, and Edit card opens with the caret after it', async () => {
+    const made = await createCardFile('/v/Geography', 'Capital of France')
+    expect(made).toBe(`/v/Geography/${cardFileName('Capital of France', 'WIKI-10')}`)
+    expect(disk.files.get(made)).toBe('---\nkind: card\n---\n```card\nCapital of France\n```\n<!-- card: WIKI-10 -->\n')
+    const { onRetitle } = await mount(disk.files.get(made)!, { path: made })
+    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .note-card__editor .ProseMirror')?.textContent).toContain('Capital of France'))
+    const dom = el.querySelector<HTMLElement>('[data-explore-card-edit] .note-card__editor .ProseMirror')!
+    const view = noteCardViewOfDom(dom.closest('.note-card'))!.cardEditor!.view()!
+    expect(view.state.selection.empty).toBe(true)
+    act(() => view.dispatch(view.state.tr.insertText('\n---\nParis', view.state.doc.content.size - 1)))
+    key(dom, { key: 'Enter', metaKey: true })
+    await vi.waitFor(() => expect(disk.files.get(made)).toContain('Paris'))
+    // Already named after its title: Done renames nothing.
+    expect(onRetitle).not.toHaveBeenCalled()
   })
 
   it('Done with the placeholder "Title" kept renames nothing; the tab opens in Edit card one time only', async () => {

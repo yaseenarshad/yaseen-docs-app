@@ -10,7 +10,8 @@
  *  - EDIT CARD (YAZ-5026) as in the card window: Done writes the card's text by its ID on the newest bytes, ONE
  *    `transformFile` (`changeCardTextIn`). A read-only vault or a `readonly: true` file has no Edit card; ⋯ and
  *    reviews still write, as reviews do in a locked page. A Done that changed the title then names the file after it
- *    (`onRetitle`, YAZ-5044 pick 1). A card New card just made opens in Edit card with "Title" selected.
+ *    (`onRetitle`, YAZ-5044 pick 1). A card New card just made opens in Edit card: the caret after the title its name box gave (YAZ-5101), or the
+ *    placeholder "Title" selected.
  *  - A FILE THAT IS NOT VALID (`cardFileShape`) stays a card file: one notice at the top (`CardFileNotice`), and
  *    nothing is deleted. 2+ cards: "This card file holds 3 cards.", the first card under it (each one stays in review).
  *    Text outside the card: the notice, and that text below it, muted. No card: the notice, and the file's text.
