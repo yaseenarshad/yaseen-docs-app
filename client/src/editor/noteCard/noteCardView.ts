@@ -565,9 +565,10 @@ export const noteCardLanguage = LanguageDescription.of({
   name: 'Note card',
   alias: [NOTE_CARD_LANGUAGE],
   load: async () => {
-    const { markdown } = await import('@codemirror/lang-markdown')
+    // Edit card's own extensions (YAZ-5007 no marks on other copies of a word, YAZ-5008 ⌘L), loaded with the language.
+    const [{ markdown }, { noteCardEditExtensions }] = await Promise.all([import('@codemirror/lang-markdown'), import('./noteCardEdit')])
     const md = markdown({ extensions: { remove: ['SetextHeading'] } })
-    return new LanguageSupport(md.language, [md.support, CodeMirrorView.contentAttributes.of({ spellcheck: 'true', autocorrect: 'on' })])
+    return new LanguageSupport(md.language, [md.support, CodeMirrorView.contentAttributes.of({ spellcheck: 'true', autocorrect: 'on' }), noteCardEditExtensions])
   },
 })
 

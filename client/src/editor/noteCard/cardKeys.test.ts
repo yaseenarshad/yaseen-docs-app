@@ -1,0 +1,166 @@
+/**
+ * Keys on a note card (YAZ-5006, YAZ-5007, YAZ-5008), against a real editor (`createCrepe`): a selected card is not
+ * replaced by a key, Enter is Edit card; Edit card has the writing look and no marks on other copies of the selected
+ * word; ⌘L toggles a hidden word.
+ */
+import { afterEach, describe, expect, it } from 'vitest'
+import type { Crepe } from '@milkdown/crepe'
+import { editorViewCtx } from '@milkdown/kit/core'
+import { undo } from '@milkdown/kit/prose/history'
+import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state'
+import type { EditorView } from '@milkdown/kit/prose/view'
+import { EditorSelection } from '@codemirror/state'
+import { EditorView as CodeMirrorView } from '@codemirror/view'
+import { createCrepe, getMarkdownForSave } from '../createCrepe'
+import { rules } from '../cssRules'
+import { noteCardViewAt } from './noteCardView'
+import { toggleHiddenWord } from './noteCardEdit'
+import css from './noteCard.css?raw'
+
+const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
+afterEach(async () => {
+  while (mounted.length > 0) {
+    const c = mounted.pop()!
+    await c.crepe.destroy()
+    c.root.remove()
+  }
+})
+
+const CARD = 'Intro\n\n```card\ntest one\ntest two\n---\nA\n```\n<!-- card: WIKI-9, 2026-11-01T09:00Z good -->\n\n```js\ntest\ntest\n```\n'
+
+async function mount(markdown = CARD): Promise<{ crepe: Crepe; root: HTMLElement; view: EditorView; pos: number }> {
+  const root = document.createElement('div')
+  document.body.appendChild(root)
+  const crepe = createCrepe({ root, defaultValue: markdown, noteCards: { path: '/v/Page.md' } })
+  await crepe.create()
+  mounted.push({ crepe, root })
+  const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+  view.hasFocus = () => true
+  let pos = -1
+  view.state.doc.descendants((n, p) => {
+    if (pos === -1 && n.type.name === 'code_block' && n.attrs.language === 'card') pos = p
+    return pos === -1
+  })
+  return { crepe, root, view, pos }
+}
+
+const hasCard = (crepe: Crepe) => getMarkdownForSave(crepe).includes('```card\ntest one')
+
+function selectCard(view: EditorView, pos: number): void {
+  view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)))
+}
+
+/** A typed character as the browser sends it: keydown, then keypress (ProseMirror types on keypress). */
+function type(view: EditorView, ch: string): void {
+  view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true, cancelable: true }))
+  view.dom.dispatchEvent(new KeyboardEvent('keypress', { key: ch, charCode: ch.charCodeAt(0), keyCode: ch.charCodeAt(0), bubbles: true, cancelable: true }))
+}
+
+const key = (view: EditorView, k: string) => view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }))
+
+describe('YAZ-5006: a key on a selected card', () => {
+  it('a letter, a digit, a space or a paste does nothing to the card; a composition`s change is refused', async () => {
+    const { crepe, view, pos } = await mount()
+    selectCard(view, pos)
+    for (const ch of ['d', '7', ' ', '.']) type(view, ch)
+    expect(hasCard(crepe)).toBe(true)
+    expect(view.state.selection).toBeInstanceOf(NodeSelection)
+    // A paste.
+    const paste = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(paste, 'clipboardData', { value: { getData: (t: string) => (t === 'text/plain' ? 'pasted' : ''), types: ['text/plain'], files: [] } })
+    view.dom.dispatchEvent(paste)
+    expect(hasCard(crepe)).toBe(true)
+    expect(getMarkdownForSave(crepe)).not.toContain('pasted')
+    // An IME composition: the change it reads from the page is refused while the card is selected.
+    view.dispatch(view.state.tr.replaceSelectionWith(view.state.schema.text('あ')).setMeta('composition', 1))
+    expect(hasCard(crepe)).toBe(true)
+  })
+
+  it('Enter opens Edit card; Backspace deletes the card as any block, and ⌘Z brings it back', async () => {
+    const { crepe, view, pos } = await mount()
+    selectCard(view, pos)
+    key(view, 'Enter')
+    expect(noteCardViewAt(view, pos)?.editing).toBe(true)
+    noteCardViewAt(view, pos)!.done()
+    expect(view.state.selection).toBeInstanceOf(NodeSelection)
+    key(view, 'Backspace')
+    expect(hasCard(crepe)).toBe(false)
+    undo(view.state, view.dispatch)
+    expect(hasCard(crepe)).toBe(true)
+    // Delete too.
+    selectCard(view, pos)
+    key(view, 'Delete')
+    expect(hasCard(crepe)).toBe(false)
+  })
+
+  it('a caret in a paragraph still types', async () => {
+    const { view } = await mount()
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 6)))
+    expect(view.someProp('handleTextInput', (f) => f(view, 6, 6, 'X', () => view.state.tr.insertText('X')))).toBeFalsy()
+  })
+})
+
+/** Edit card on the card at `pos`: its CodeMirror, once the card language has loaded. */
+async function editCard(root: HTMLElement, view: EditorView, pos: number): Promise<CodeMirrorView> {
+  noteCardViewAt(view, pos)!.edit()
+  const content = root.querySelector<HTMLElement>('.note-card .cm-content')!
+  await expect.poll(() => content.getAttribute('spellcheck')).toBe('true')
+  return CodeMirrorView.findFromDOM(content)!
+}
+
+describe('YAZ-5007: Edit card has the writing look', () => {
+  it('no marks on other copies of the selected word in the card; another code block keeps them', async () => {
+    const { root, view, pos } = await mount()
+    const cm = await editCard(root, view, pos)
+    cm.dispatch({ selection: EditorSelection.range(0, 4) })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(cm.dom.querySelectorAll('.cm-selectionMatch')).toHaveLength(0)
+    // The js block: the same word selected marks the other copy.
+    let jsPos = -1
+    view.state.doc.forEach((node, p) => {
+      if (node.attrs.language === 'js') jsPos = p
+    })
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, jsPos + 1, jsPos + 5)))
+    const js = [...root.querySelectorAll<HTMLElement>('.cm-content')].find((c) => c.closest('.note-card') === null)!
+    await expect.poll(() => js.parentElement!.querySelectorAll('.cm-selectionMatch').length).toBeGreaterThan(0)
+  })
+
+  it('no line numbers, no fold arrows, the page font and the card`s padding, only in a card`s editor', () => {
+    const rule = (selector: string) => rules(css, selector).find((r) => r.selector === selector)?.body ?? ''
+    expect(rule('.note-card .note-card__code .cm-gutters')).toMatch(/display:\s*none/)
+    expect(rule('.note-card .note-card__code .cm-scroller')).toMatch(/font-family:\s*var\(--crepe-font-default\)/)
+    // The rendered card's padding, so Edit card / Done does not jump.
+    const body = rule('.note-card .note-card__body').match(/padding:\s*([^;]+);/)![1]
+    expect(rule('.milkdown .note-card .note-card__code')).toContain(`padding: ${body};`)
+  })
+})
+
+describe('YAZ-5008: ⌘L toggles a hidden word in Edit card', () => {
+  const cmOf = (doc: string, from: number, to: number) => new CodeMirrorView({ doc, selection: EditorSelection.range(from, to) })
+
+  it('wraps the selection in {{ }}; unwraps a hidden word (braces included, or its words); no selection does nothing', () => {
+    let cm = cmOf('the capital of France', 15, 21)
+    expect(toggleHiddenWord(cm)).toBe(true)
+    expect(cm.state.doc.toString()).toBe('the capital of {{France}}')
+    expect(cm.state.sliceDoc(cm.state.selection.main.from, cm.state.selection.main.to)).toBe('France')
+    // Again on the same selection (the words inside): the braces come off.
+    toggleHiddenWord(cm)
+    expect(cm.state.doc.toString()).toBe('the capital of France')
+    // The whole hidden word, braces included, and the numbered form.
+    cm = cmOf('a {{1::Paris}} b', 2, 14)
+    toggleHiddenWord(cm)
+    expect(cm.state.doc.toString()).toBe('a Paris b')
+    // No selection: nothing.
+    cm = cmOf('a {{Paris}} b', 5, 5)
+    toggleHiddenWord(cm)
+    expect(cm.state.doc.toString()).toBe('a {{Paris}} b')
+  })
+
+  it('⌘L in the card`s editor wraps the selection', async () => {
+    const { root, view, pos } = await mount()
+    const cm = await editCard(root, view, pos)
+    cm.dispatch({ selection: EditorSelection.range(5, 8) })
+    cm.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', keyCode: 76, metaKey: true, bubbles: true, cancelable: true }))
+    expect(cm.state.doc.toString().startsWith('test {{one}}')).toBe(true)
+  })
+})

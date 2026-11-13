@@ -168,6 +168,29 @@
   border-radius: 0 0 7px 7px;
   width: auto;
 }
+/* Edit card has the writing look (YAZ-5007, Yaseen's decision): the page's font, no line numbers or fold arrows, the
+   rendered card's padding (`.note-card__body`), so Edit card / Done does not jump. Other code blocks keep the code look.
+   The marks on other copies of the selected word are off in `noteCardEdit.ts`. */
+.milkdown .note-card .note-card__code {
+  padding: 10px 16px 12px;
+  background: transparent;
+}
+.milkdown .note-card .note-card__code .cm-editor {
+  background: transparent;
+}
+.note-card .note-card__code .cm-gutters {
+  display: none;
+}
+.note-card .note-card__code .cm-scroller {
+  font-family: var(--crepe-font-default);
+  line-height: inherit;
+}
+.note-card .note-card__code .cm-content {
+  padding: 0;
+}
+.note-card .note-card__code .cm-line {
+  padding: 0;
+}
 
 /* The render (`renderNoteCard`): the sides, a thin rule between two. */
 .note-card__side > :first-child {
