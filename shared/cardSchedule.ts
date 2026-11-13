@@ -1,5 +1,6 @@
 import { FSRS, Rating, createEmptyCard, generatorParameters, type Card, type Grade } from 'ts-fsrs'
 import { cardTime, type CardRating, type CardReview, type NoteCardRecord } from './cardLine'
+import { hasLetters, noteIdNumber } from './noteId'
 import type { ReviewSettings } from './reviews'
 import { inFolder } from './types'
 
@@ -136,6 +137,8 @@ export interface DueCard {
   /** When it is due (ms); a new card is due `now`. */
   due: number
   isNew: boolean
+  /** Up next (the line's `next`, YAZ-4999 D3): shown before every other card. */
+  next: boolean
 }
 
 /**
@@ -210,23 +213,40 @@ export function pageCardCounts(r: CardPage, s: ReviewSettings, now: number): Pag
   if (s.enabled && cards.length > 0) {
     const facts = cardFacts(r, s)
     cards.forEach((card, i) => {
-      if (!card.off && card.id !== null && card.reviews.length > 0 && isCardDue(facts[i].due, now)) due++
+      // An up-next card is due now (YAZ-4999 D3).
+      if (!card.off && card.id !== null && card.reviews.length > 0 && (card.next || isCardDue(facts[i].due, now))) due++
     })
   }
   return { cards: cards.length, due }
 }
 
 /**
- * The cards due now (D11): each card that is in review — it has an ID, and is not `off` — and whose due date is
- * before local midnight tonight, most overdue first; then new cards in page order, as many as `newPerDay` leaves
- * today (a card counts as new on the day of its first review). None while the vault has review off.
- * `folder` (root-relative, '' = the vault) keeps the cards of that folder and its subfolders; `page` (a page's
- * absolute path, "Review this page", idea 4) keeps that page's cards alone. Either way the new cards begun today
+ * A card's place in the vault's time (YAZ-4999 D2): its ID number, the vault's one counter, so a lower number is an
+ * older card. An ID with letters that are not the vault's (`letters` given: a pasted card the sweep has not given a
+ * number yet) has no place: Infinity, so it sorts last.
+ */
+function idAge(id: string, letters: readonly string[] | undefined): number {
+  if (letters !== undefined && letters.length > 0 && !hasLetters(letters, id.slice(0, id.indexOf('-')))) return Number.POSITIVE_INFINITY
+  return noteIdNumber(id) ?? Number.POSITIVE_INFINITY
+}
+
+/**
+ * The cards due now (D11), in this order:
+ *  1. UP NEXT (YAZ-4999 D3): each card whose line holds `next`, due or not, new or not, by ID number (the time of the
+ *     mark is not in the file). They are outside the new-card limit, and are due now.
+ *  2. Each card with reviews whose due date is before local midnight tonight, most overdue first.
+ *  3. New cards, by ID number (`newOrder`: the oldest or the newest first, D2; an ID of other letters last), as many as
+ *     `newPerDay` leaves today (a card counts as new on the day of its first review); `newPerDay` null: all of them (D1).
+ * Only a card in review shows: it has an ID, and is not `off` (`off` wins over `next`). None while the vault has
+ * review off. `folder` (root-relative, '' = the vault) keeps the cards of that folder and its subfolders; `page` (a
+ * page's absolute path, "Review this page", idea 4) keeps that page's cards alone. Either way the new cards begun today
  * are counted over the whole vault: the limit is the vault's. A card whose ID a card before it on the same page holds
  * (a copy the sweep has not settled yet) is left out until it has its own ID: the Inbox never shows one card twice.
+ * `letters`: the vault's ID letters (`hasLetters`), so an ID of other letters sorts last.
  */
-export function cardQueue(records: readonly CardPage[], s: ReviewSettings, now: number, folder = '', page?: string): DueCard[] {
+export function cardQueue(records: readonly CardPage[], s: ReviewSettings, now: number, folder = '', page?: string, letters?: readonly string[]): DueCard[] {
   if (!s.enabled) return []
+  const next: DueCard[] = []
   const due: DueCard[] = []
   const fresh: DueCard[] = []
   let startedToday = 0
@@ -244,10 +264,26 @@ export function cardQueue(records: readonly CardPage[], s: ReviewSettings, now: 
       if (first !== null && first >= today && first < tomorrow) startedToday++
       if (!mine || card.off || card.id === null || ids.has(card.id)) return
       ids.add(card.id)
-      if (first === null) fresh.push({ path: r.path, index, id: card.id, due: now, isNew: true })
-      else if (isCardDue(at, now)) due.push({ path: r.path, index, id: card.id, due: at, isNew: false })
+      const isNew = first === null
+      if (card.next === true) next.push({ path: r.path, index, id: card.id, due: isNew ? now : Math.min(at, now), isNew, next: true })
+      else if (isNew) fresh.push({ path: r.path, index, id: card.id, due: now, isNew: true, next: false })
+      else if (isCardDue(at, now)) due.push({ path: r.path, index, id: card.id, due: at, isNew: false, next: false })
     })
   }
-  due.sort((a, b) => a.due - b.due || (a.path < b.path ? -1 : a.path > b.path ? 1 : a.index - b.index))
-  return [...due, ...fresh.slice(0, Math.max(0, s.newPerDay - startedToday))]
+  const place = (a: DueCard, b: DueCard): number => (a.path < b.path ? -1 : a.path > b.path ? 1 : a.index - b.index)
+  /** By ID number, `sign` 1 the oldest first, -1 the newest; an ID with no place last either way. */
+  const byAge =
+    (sign: 1 | -1) =>
+    (a: DueCard, b: DueCard): number => {
+      const x = idAge(a.id, letters)
+      const y = idAge(b.id, letters)
+      if (x === y) return place(a, b)
+      if (x === Number.POSITIVE_INFINITY) return 1
+      if (y === Number.POSITIVE_INFINITY) return -1
+      return sign * (x - y)
+    }
+  next.sort(byAge(1))
+  due.sort((a, b) => a.due - b.due || place(a, b))
+  fresh.sort(byAge(s.newOrder === 'newest' ? -1 : 1))
+  return [...next, ...due, ...(s.newPerDay === null ? fresh : fresh.slice(0, Math.max(0, s.newPerDay - startedToday)))]
 }

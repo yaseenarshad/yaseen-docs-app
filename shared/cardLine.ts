@@ -14,7 +14,8 @@ import { canonicalNoteId, isNumberId } from './noteId'
  *   <!-- card: WIKI-512, 2026-11-12T14:05Z good, 2026-11-20T09:00Z again -->
  *
  * The line holds the card's ID (the vault's counter, D2), then each review: a UTC time to the minute and the FSRS
- * rating (`again | hard | good | easy`, D5). `off` takes the card out of review. A card takes its ID when it is
+ * rating (`again | hard | good | easy`, D5). `off` takes the card out of review. `next` puts it at the top of the Inbox
+ * (YAZ-4999 D3, "Up next"): its first answer removes it, in the same write. A card takes its ID when it is
  * made (`/card` asks the vault's door, `yaseendocs card add` too); one that has none (an agent's text, a paste) gets
  * it from the index's sweep (YAZ-4960). The due date is never written: `cardSchedule.ts` replays the reviews.
  *
@@ -34,7 +35,7 @@ export interface CardReview {
 }
 
 /** One part of a card line, in the order the line holds them. */
-export type CardPart = { kind: 'id'; id: string } | { kind: 'review'; review: CardReview } | { kind: 'off' } | { kind: 'other'; text: string }
+export type CardPart = { kind: 'id'; id: string } | { kind: 'review'; review: CardReview } | { kind: 'off' } | { kind: 'next' } | { kind: 'other'; text: string }
 
 /** What a card line holds. `parts` keeps every part in place; the getters below read it. */
 export interface CardLine {
@@ -47,6 +48,8 @@ export interface NoteCardRecord {
   id: string | null
   /** Review is off for this card (the line's `off` part). */
   off: boolean
+  /** The card is up next (the line's `next` part, YAZ-4999 D3): the Inbox shows it first. */
+  next: boolean
   /** The reviews, in the order the line holds them. */
   reviews: CardReview[]
 }
@@ -70,6 +73,7 @@ export function parseCardLine(value: string): CardLine | null {
     const review = REVIEW_RE.exec(text)
     if (review !== null) parts.push({ kind: 'review', review: { at: review[1], rating: review[2] as CardRating } })
     else if (text === 'off') parts.push({ kind: 'off' })
+    else if (text === 'next') parts.push({ kind: 'next' })
     else if (!id && isNumberId(text)) {
       id = true
       parts.push({ kind: 'id', id: canonicalNoteId(text) })
@@ -80,7 +84,7 @@ export function parseCardLine(value: string): CardLine | null {
 
 /** The card line for `line`, or null when it holds no part (a card with no ID and no review writes no line). */
 export function formatCardLine(line: CardLine): string | null {
-  const parts = line.parts.map((p) => (p.kind === 'id' ? p.id : p.kind === 'review' ? `${p.review.at} ${p.review.rating}` : p.kind === 'off' ? 'off' : p.text))
+  const parts = line.parts.map((p) => (p.kind === 'id' ? p.id : p.kind === 'review' ? `${p.review.at} ${p.review.rating}` : p.kind === 'off' ? 'off' : p.kind === 'next' ? 'next' : p.text))
   return parts.length === 0 ? null : `<!-- card: ${parts.join(', ')} -->`
 }
 
@@ -89,7 +93,9 @@ export const EMPTY_CARD_LINE: CardLine = { parts: [] }
 export const cardIdOf = (line: CardLine): string | null => line.parts.find((p) => p.kind === 'id')?.id ?? null
 export const isCardOff = (line: CardLine): boolean => line.parts.some((p) => p.kind === 'off')
 export const cardReviewsOf = (line: CardLine): CardReview[] => line.parts.flatMap((p) => (p.kind === 'review' ? [p.review] : []))
-const cardRecordOf = (line: CardLine): NoteCardRecord => ({ id: cardIdOf(line), off: isCardOff(line), reviews: cardReviewsOf(line) })
+/** Is the card up next (YAZ-4999 D3)? */
+export const isCardNext = (line: CardLine): boolean => line.parts.some((p) => p.kind === 'next')
+const cardRecordOf = (line: CardLine): NoteCardRecord => ({ id: cardIdOf(line), off: isCardOff(line), next: isCardNext(line), reviews: cardReviewsOf(line) })
 
 /** The line with `id` as its ID: the ID part changes in place, or comes first. */
 export function withCardId(line: CardLine, id: string): CardLine {
@@ -105,6 +111,23 @@ export function withCardOff(line: CardLine, off: boolean): CardLine {
   const at = line.parts.findIndex((p) => p.kind === 'id') + 1
   return { parts: [...line.parts.slice(0, at), { kind: 'off' }, ...line.parts.slice(at)] }
 }
+
+/**
+ * Up next on or off for the card (YAZ-4999 D3, the ⋯ menu's "Put at top of Inbox"): `next` goes right after the ID
+ * (and after an `off` there), or first; off removes every `next`. `at` puts it back at that part place instead: the
+ * undo of an answer that removed it (`cardNextIndex` gave the place), so the line comes back byte for byte.
+ */
+export function withCardNext(line: CardLine, on: boolean, at?: number): CardLine {
+  if (isCardNext(line) === on) return line
+  if (!on) return { parts: line.parts.filter((p) => p.kind !== 'next') }
+  let i = line.parts.findIndex((p) => p.kind === 'id') + 1
+  if (line.parts[i]?.kind === 'off') i++
+  if (at !== undefined) i = Math.max(0, Math.min(at, line.parts.length))
+  return { parts: [...line.parts.slice(0, i), { kind: 'next' }, ...line.parts.slice(i)] }
+}
+
+/** The place among the line's parts of its `next` part, or -1 when the card is not up next. */
+export const cardNextIndex = (line: CardLine): number => line.parts.findIndex((p) => p.kind === 'next')
 
 /** One more review: right after the last review part, else at the end. */
 export function withCardReview(line: CardLine, review: CardReview): CardLine {

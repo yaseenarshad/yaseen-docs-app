@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   CardNotFoundError,
+  EMPTY_CARD_LINE,
   cardRecords,
   cardTime,
   changeCard,
@@ -10,6 +11,9 @@ import {
   rewritePageCards,
   withCardId,
   withCardOff,
+  withCardNext,
+  isCardNext,
+  cardNextIndex,
   cardReviewIndex,
   withCardReview,
   withCardReviewAt,
@@ -99,8 +103,8 @@ describe('the card line (D3)', () => {
       [8, 12, null, '  ', 'Two {{word}}\n---\nBack'],
     ])
     expect(cardRecords(page)).toEqual([
-      { id: 'WIKI-1', off: false, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }] },
-      { id: null, off: false, reviews: [] },
+      { id: 'WIKI-1', off: false, next: false, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }] },
+      { id: null, off: false, next: false, reviews: [] },
     ])
     const given = rewritePageCards(page, (card, i) => (i === 1 ? withCardId(card.line, 'WIKI-2') : undefined))
     expect(given).toBe(page.replace('  Back\n  ```\n', '  Back\n  ```\n  <!-- card: WIKI-2 -->\n'))
@@ -192,10 +196,10 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
     const at = (ms: number): string => cardTime(ms)
     const s = { ...DEFAULT_REVIEW_SETTINGS, newPerDay: 2 }
     const records = [
-      { path: '/v/a.md', folder: '', cards: [{ id: 'V-1', off: false, reviews: [{ at: at(now - 400 * DAY), rating: 'good' as const }] }, { id: 'V-2', off: false, reviews: [] }] },
-      { path: '/v/sub/b.md', folder: 'sub', cards: [{ id: 'V-3', off: false, reviews: [] }, { id: 'V-4', off: true, reviews: [] }, { id: null, off: false, reviews: [] }, { id: 'V-5', off: false, reviews: [] }] },
+      { path: '/v/a.md', folder: '', cards: [{ id: 'V-1', off: false, next: false, reviews: [{ at: at(now - 400 * DAY), rating: 'good' as const }] }, { id: 'V-2', off: false, next: false, reviews: [] }] },
+      { path: '/v/sub/b.md', folder: 'sub', cards: [{ id: 'V-3', off: false, next: false, reviews: [] }, { id: 'V-4', off: true, next: false, reviews: [] }, { id: null, off: false, next: false, reviews: [] }, { id: 'V-5', off: false, next: false, reviews: [] }] },
       // Started today: it counts against newPerDay, and is not due again today.
-      { path: '/v/c.md', folder: '', cards: [{ id: 'V-6', off: false, reviews: [{ at: at(now - 60_000), rating: 'good' as const }] }] },
+      { path: '/v/c.md', folder: '', cards: [{ id: 'V-6', off: false, next: false, reviews: [{ at: at(now - 60_000), rating: 'good' as const }] }] },
     ]
     const queue = cardQueue(records, s, now)
     expect(queue.map((q) => [q.id, q.isNew])).toEqual([['V-1', false], ['V-2', true]])
@@ -204,14 +208,60 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
     expect(cardQueue(records, { ...s, newPerDay: 10 }, now, 'sub').map((q) => [q.id, q.index])).toEqual([['V-3', 0], ['V-5', 3]])
     expect(cardQueue(records, { ...s, enabled: false }, now)).toEqual([])
     // Two cards with one ID on a page (a copy before the sweep settles it): the Inbox shows the first one once.
-    const twice = [{ path: '/v/d.md', folder: '', cards: [{ id: 'V-7', off: false, reviews: [] }, { id: 'V-7', off: false, reviews: [] }] }]
+    const twice = [{ path: '/v/d.md', folder: '', cards: [{ id: 'V-7', off: false, next: false, reviews: [] }, { id: 'V-7', off: false, next: false, reviews: [] }] }]
     expect(cardQueue(twice, s, now).map((q) => [q.id, q.index])).toEqual([['V-7', 0]])
+  })
+
+  it('YAZ-4999: the order — up next first (outside the limit, due now; off wins), then due, then new by ID age; an empty limit takes every new card', () => {
+    const now = new Date(2026, 5, 15, 12, 0).getTime()
+    const at = (ms: number): string => cardTime(ms)
+    const card = (id: string, over: { off?: boolean; next?: boolean; reviews?: CardReview[] } = {}) => ({ id, off: false, next: false, reviews: [] as CardReview[], ...over })
+    const learned: CardReview[] = [{ at: at(now - 2 * DAY), rating: 'good' }] // due in days: not due today
+    const overdue: CardReview[] = [{ at: at(now - 400 * DAY), rating: 'good' }]
+    const records = [
+      // Page order is not the order: the ID number is (D2). V-9 is the oldest new card, though last in path order.
+      { path: '/v/a.md', folder: '', cards: [card('WI-30'), card('WI-12'), card('WI-20', { reviews: overdue })] },
+      { path: '/v/b.md', folder: '', cards: [card('WI-25', { next: true, reviews: learned }), card('WI-40', { next: true }), card('WI-50', { next: true, off: true }), card('BUS-1')] },
+      { path: '/v/c.md', folder: '', cards: [card('WI-9'), card('WI-11', { next: true })] },
+    ]
+    const ids = (s: Parameters<typeof cardQueue>[1], letters?: readonly string[]) => cardQueue(records, s, now, '', undefined, letters).map((q) => (q.next ? `${q.id}*` : q.id))
+    const s = { ...DEFAULT_REVIEW_SETTINGS, newPerDay: 2 }
+    const table: [string, Parameters<typeof cardQueue>[1], string[]][] = [
+      // Up next by ID (V-11, V-25 not due yet, V-40 new; V-50 is off), then the overdue card, then 2 new cards, oldest first.
+      ['limit 2, oldest', s, ['WI-11*', 'WI-25*', 'WI-40*', 'WI-20', 'BUS-1', 'WI-9']],
+      ['limit 2, newest', { ...s, newOrder: 'newest' }, ['WI-11*', 'WI-25*', 'WI-40*', 'WI-20', 'WI-30', 'WI-12']],
+      ['limit 0: up next still shows', { ...s, newPerDay: 0 }, ['WI-11*', 'WI-25*', 'WI-40*', 'WI-20']],
+      ['no limit (an empty box)', { ...s, newPerDay: null }, ['WI-11*', 'WI-25*', 'WI-40*', 'WI-20', 'BUS-1', 'WI-9', 'WI-12', 'WI-30']],
+    ]
+    for (const [name, settings, want] of table) expect(ids(settings), name).toEqual(want)
+    // The vault's letters known: an ID of other letters (a paste the sweep has not renumbered) sorts last, either order.
+    expect(ids({ ...s, newPerDay: null }, ['WI'])).toEqual(['WI-11*', 'WI-25*', 'WI-40*', 'WI-20', 'WI-9', 'WI-12', 'WI-30', 'BUS-1'])
+    expect(ids({ ...s, newPerDay: null, newOrder: 'newest' }, ['WI'])).toEqual(['WI-11*', 'WI-25*', 'WI-40*', 'WI-20', 'WI-30', 'WI-12', 'WI-9', 'BUS-1'])
+    // An up-next card that is not due is due now; the Inbox count is the queue's length, up next included.
+    const q = cardQueue(records, s, now)
+    expect(q.filter((c) => c.next).every((c) => c.due <= now && isCardDue(c.due, now))).toBe(true)
+    expect(q).toHaveLength(6)
+  })
+
+  it('YAZ-4999: `next` reads, writes and goes back to its place byte for byte', () => {
+    const text = '<!-- card: WIKI-512, next, 2026-11-12T14:05Z good -->'
+    const line = parseCardLine(text)!
+    expect([isCardNext(line), cardNextIndex(line), formatCardLine(line)]).toEqual([true, 1, text])
+    expect(cardRecords(`\`\`\`card\nQ\n\`\`\`\n${text}`)).toEqual([{ id: 'WIKI-512', off: false, next: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }] }])
+    const plain = parseCardLine('<!-- card: WIKI-512, off, 2026-11-12T14:05Z good -->')!
+    expect(formatCardLine(withCardNext(plain, true))).toBe('<!-- card: WIKI-512, off, next, 2026-11-12T14:05Z good -->')
+    expect(formatCardLine(withCardNext(EMPTY_CARD_LINE, true))).toBe('<!-- card: next -->')
+    expect(withCardNext(line, true)).toBe(line)
+    expect(formatCardLine(withCardNext(line, false))).toBe('<!-- card: WIKI-512, 2026-11-12T14:05Z good -->')
+    // The undo of an answer: back at the place it had.
+    const odd = parseCardLine('<!-- card: WIKI-512, 2026-11-12T14:05Z good, next, kept -->')!
+    expect(formatCardLine(withCardNext(withCardNext(odd, false), true, cardNextIndex(odd)))).toBe(formatCardLine(odd))
   })
 })
 
 describe('the settings (D14)', () => {
   it('defaults to two buttons, 90%, 365 days, 10 new a day, fuzz on and the Mochi weights; each bad field falls back alone', () => {
-    expect(sanitizeReviewSettings(undefined)).toEqual({ enabled: true, buttons: 2, retention: 0.9, maxDays: 365, newPerDay: 10, fuzz: true, weights: [...DEFAULT_CARD_WEIGHTS] })
+    expect(sanitizeReviewSettings(undefined)).toEqual({ enabled: true, buttons: 2, retention: 0.9, maxDays: 365, newPerDay: 10, newOrder: 'oldest', fuzz: true, weights: [...DEFAULT_CARD_WEIGHTS] })
     expect(DEFAULT_CARD_WEIGHTS).toHaveLength(21)
     const weights = Array.from({ length: 19 }, (_, i) => i / 10)
     expect(sanitizeReviewSettings({ enabled: false, buttons: 4, retention: 0.85, maxDays: 30, newPerDay: 0, fuzz: false, weights, algorithm: 'upkeep', baseDays: 3 })).toEqual({
@@ -220,10 +270,14 @@ describe('the settings (D14)', () => {
       retention: 0.85,
       maxDays: 30,
       newPerDay: 0,
+      newOrder: 'oldest',
       fuzz: false,
       weights,
     })
-    expect(sanitizeReviewSettings({ enabled: 'yes', buttons: 3, retention: 1.5, maxDays: 0.5, newPerDay: -1, fuzz: 1, weights: [1, 2, 3] })).toEqual(sanitizeReviewSettings(null))
+    expect(sanitizeReviewSettings({ enabled: 'yes', buttons: 3, retention: 1.5, maxDays: 0.5, newPerDay: -1, newOrder: 'random', fuzz: 1, weights: [1, 2, 3] })).toEqual(sanitizeReviewSettings(null))
+    // YAZ-4999 D1, D2: an emptied box is `null`, no limit — a missing field (no file) keeps 10; the order is oldest or newest.
+    expect([sanitizeReviewSettings({ newPerDay: null }).newPerDay, sanitizeReviewSettings({}).newPerDay, sanitizeReviewSettings({ newPerDay: '' }).newPerDay]).toEqual([null, 10, 10])
+    expect([sanitizeReviewSettings({ newOrder: 'newest' }).newOrder, sanitizeReviewSettings({ newOrder: 'NEWEST' }).newOrder]).toEqual(['newest', 'oldest'])
     expect(sanitizeReviewSettings({ weights: [...DEFAULT_CARD_WEIGHTS.slice(0, 20), Number.NaN] }).weights).toEqual([...DEFAULT_CARD_WEIGHTS])
   })
 })

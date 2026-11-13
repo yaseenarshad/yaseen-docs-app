@@ -4,7 +4,23 @@
  * page as it is on disk now. Each write is ONE `transformFile` (`changeCard` on the bytes just read, a re-read and a
  * second try on a conflict): the page may be open in a tab, and the app merges an outside write into an open note.
  */
-import { CardNotFoundError, cardIdOf, cardReviewIndex, cardReviewsOf, changeCard, isCardOff, pageCards, withCardReview, withCardReviewAt, withoutCardReview, type CardLine, type CardReview } from '@shared/cardLine'
+import {
+  CardNotFoundError,
+  cardIdOf,
+  cardNextIndex,
+  cardReviewIndex,
+  cardReviewsOf,
+  changeCard,
+  isCardNext,
+  isCardOff,
+  pageCards,
+  withCardNext,
+  withCardReview,
+  withCardReviewAt,
+  withoutCardReview,
+  type CardLine,
+  type CardReview,
+} from '@shared/cardLine'
 import { BridgeRequestError, api } from '../api'
 import { announcedWrite } from '../lib/twinEditors'
 import { transformFile } from '../views/writeProperty'
@@ -18,6 +34,8 @@ export interface CardOnPage {
   /** Its reviews, in the order the line holds them (`cardHistory`, `cardState` and `recallChance` read them). */
   reviews: CardReview[]
   off: boolean
+  /** Up next (YAZ-4999 D3): the line's `next`. */
+  next: boolean
 }
 
 /** A card found by its ID or, before it has one, by its place (the card window, YAZ-4962). */
@@ -44,7 +62,7 @@ export async function readCardAt(path: string, id: string | null, index: number)
   const at = id === null || (cards[index] !== undefined && cardIdOf(cards[index].line) === id) ? index : cards.findIndex((c) => cardIdOf(c.line) === id)
   const card = cards[at]
   if (card === undefined) return null
-  return { path, id: cardIdOf(card.line), index: at, text: card.text, reviews: cardReviewsOf(card.line), off: isCardOff(card.line) }
+  return { path, id: cardIdOf(card.line), index: at, text: card.text, reviews: cardReviewsOf(card.line), off: isCardOff(card.line), next: isCardNext(card.line) }
 }
 
 /** Card `id` of page `path` (the first that holds it), or null when the page or the card is gone (deleted, moved, or its ID changed). */
@@ -63,6 +81,31 @@ export const changeCardLine = (path: string, id: string, change: (line: CardLine
 
 /** Writes `review` to card `id`'s line: the answer the hover showed, as it showed it (D13). Throws `CardNotFoundError`. */
 export const writeCardReview = (path: string, id: string, review: CardReview): Promise<unknown> => changeCardLine(path, id, (l) => withCardReview(l, review))
+
+/**
+ * The Inbox's answer: `review` on card `id`'s line, and its `next` removed in the SAME write (YAZ-4999 D3: the first
+ * answer to an up-next card ends the mark). Resolves to the place `next` had among the line's parts (-1: none), for
+ * `undoCardAnswer`. Throws `CardNotFoundError`.
+ */
+export async function writeCardAnswer(path: string, id: string, review: CardReview): Promise<number> {
+  let next = -1
+  await changeCardLine(path, id, (l) => {
+    // The last try wins: `transformFile` runs the change again on a conflict.
+    next = cardNextIndex(l)
+    return withCardReview(withCardNext(l, false), review)
+  })
+  return next
+}
+
+/**
+ * The undo of `writeCardAnswer`: the review at `at` removed and, when the answer removed `next`, `next` back at its
+ * place `next` — ONE write, so the file is the same bytes as before the answer.
+ */
+export const undoCardAnswer = (path: string, id: string, at: string, next: number): Promise<unknown> =>
+  changeCardLine(path, id, (l) => {
+    const without = withoutCardReview(l, at)
+    return next < 0 ? without : withCardNext(without, true, next)
+  })
 
 /**
  * Removes the review made at `at` from card `id` (undo, and the Reviews table's delete). An unknown `at` writes nothing.

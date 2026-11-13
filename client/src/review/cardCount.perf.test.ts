@@ -18,7 +18,7 @@ function cards(page: number, extra = 0): NoteCardRecord[] {
     const start = NOW - 500 * DAY + ((page * 10 + c) % 97) * DAY
     const reviews = RATINGS.map((rating, r) => ({ at: cardTime(start + r * 20 * DAY + c * 60_000), rating }))
     for (let e = 0; e < extra; e++) reviews.push({ at: cardTime(NOW - DAY + e * 60_000), rating: 'good' })
-    return { id: `WIKI-${page * 10 + c}`, off: false, reviews }
+    return { id: `WIKI-${page * 10 + c}`, off: false, next: false, reviews }
   })
 }
 

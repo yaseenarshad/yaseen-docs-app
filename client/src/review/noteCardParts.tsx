@@ -48,6 +48,32 @@ export function NoteCardId({ id, onNotice }: { id: string; onNotice: (message: s
   )
 }
 
+/**
+ * The "Up next" chip in a head (YAZ-4999 D3): the card is at the top of the Inbox. Its × removes the mark (`onRemove`).
+ * The page's card block draws the same chip (`noteCardView.ts`).
+ */
+export function NoteCardNextChip({ onRemove }: { onRemove?: () => void }) {
+  return (
+    <span className="note-card__next">
+      Up next
+      {onRemove !== undefined && (
+        <button
+          type="button"
+          className="note-card__next-remove"
+          aria-label="Remove from top of Inbox"
+          onMouseDown={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+          }}
+          onClick={onRemove}
+        >
+          ×
+        </button>
+      )}
+    </span>
+  )
+}
+
 /** Where a link in a card goes: a page of the vault (on top, or in a tab by the bound gesture), or an address to the system. */
 export interface NoteCardLinkDoors {
   /** A plain click on a page link: the page on top (an Explore layer). */

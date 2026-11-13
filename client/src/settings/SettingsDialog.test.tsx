@@ -170,7 +170,7 @@ const FILES_ROWS = ['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 
 /** Settings › Folder pages (YAZ-4585): its personal rows, with the folder views' hover row moved from Files & Links, the view defaults, the page default. */
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and their style (YAZ-4798) after Group indent.
 const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
-const REVIEW_ROWS = ['enabled', 'buttons', 'retention', 'maxDays', 'newPerDay', 'fuzz', 'weights']
+const REVIEW_ROWS = ['enabled', 'buttons', 'retention', 'maxDays', 'newPerDay', 'newOrder', 'fuzz', 'weights']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
  * so the "Used by macOS" rows are not there; with no key changed, neither is "Reset all hotkeys".
@@ -1384,7 +1384,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   const S = REVIEW_ON
   const input = (el: HTMLElement, id: string) => row(el, id)?.querySelector<HTMLInputElement>('.settings__input') as HTMLInputElement
   const reviewRows = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('#settings-review .setting')].map((r) => r.dataset.setting)
-  const ALL = ['enabled', 'buttons', 'retention', 'maxDays', 'newPerDay', 'fuzz', 'weights']
+  const ALL = ['enabled', 'buttons', 'retention', 'maxDays', 'newPerDay', 'newOrder', 'fuzz', 'weights']
 
   it('is absent with no vault open: no Review item in the nav, and no page holds its section or a row of it', () => {
     const { el } = mount()
@@ -1397,7 +1397,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   it('on: the card rows in order, with their words and values; off: the switch alone. No upkeep row is left', () => {
     const { el, rerender } = mountOn('Review', { ...DEFAULT_SETTINGS }, status(), S)
     expect(reviewRows(el)).toEqual(ALL)
-    expect(ALL.map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Review cards', 'Answer buttons', 'Remember rate', 'Longest wait', 'New cards a day', 'Spread due dates', 'Weights'])
+    expect(ALL.map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Review cards', 'Answer buttons', 'Remember rate', 'Longest wait', 'New cards a day', 'New cards first', 'Spread due dates', 'Weights'])
     expect(rowButtons(el, 'buttons').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Two', 'true'], ['Four', 'false']])
     expect(['retention', 'maxDays', 'newPerDay'].map((id) => input(el, id).value)).toEqual(['90', '365', '10'])
     expect(input(el, 'weights').value).toBe(DEFAULT_REVIEW_SETTINGS.weights.join(', '))
@@ -1415,6 +1415,10 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(save).toHaveBeenLastCalledWith({ ...S, buttons: 4 })
     act(() => rowButtons(el, 'fuzz')[1].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, fuzz: false })
+    // YAZ-4999 D2: New cards first.
+    expect(rowButtons(el, 'newOrder').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Oldest first', 'true'], ['Newest first', 'false']])
+    act(() => rowButtons(el, 'newOrder')[1].click())
+    expect(save).toHaveBeenLastCalledWith({ ...S, newOrder: 'newest' })
     act(() => rowButtons(el, 'enabled')[1].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, enabled: false })
     expect(onChange).not.toHaveBeenCalled()
@@ -1431,6 +1435,12 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     type(input(el, 'newPerDay'), '0')
     blur(input(el, 'newPerDay'))
     expect(save).toHaveBeenLastCalledWith({ ...S, newPerDay: 0 })
+    // YAZ-4999 D1: an empty box is no limit — valid, saved as null; the hint says so.
+    type(input(el, 'newPerDay'), '')
+    expect(input(el, 'newPerDay').getAttribute('aria-invalid')).toBe('false')
+    blur(input(el, 'newPerDay'))
+    expect(save).toHaveBeenLastCalledWith({ ...S, newPerDay: null })
+    expect(row(el, 'newPerDay')?.textContent).toContain('Empty means no limit.')
     const weights = S.weights.map((w, i) => (i === 0 ? 0.3 : w))
     type(input(el, 'weights'), weights.join(','))
     blur(input(el, 'weights'))

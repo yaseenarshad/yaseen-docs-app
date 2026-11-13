@@ -320,9 +320,9 @@ describe('scanFile', () => {
     await writeFile(file, bytes)
     const r = await scanFile(root, file)
     expect(r.cards).toEqual([
-      { id: 'WIKI-512', off: false, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }, { at: '2026-11-20T09:00Z', rating: 'again' }] },
-      { id: null, off: false, reviews: [] },
-      { id: 'WIKI-7', off: true, reviews: [] },
+      { id: 'WIKI-512', off: false, next: false, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }, { at: '2026-11-20T09:00Z', rating: 'again' }] },
+      { id: null, off: false, next: false, reviews: [] },
+      { id: 'WIKI-7', off: true, next: false, reviews: [] },
     ])
     expect(r.properties).toEqual({ reviews: ['old'] })
     expect(await readFile(file, 'utf8')).toBe(bytes)

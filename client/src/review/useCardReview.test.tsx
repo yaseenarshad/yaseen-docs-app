@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { cardBlock, cardRecords, cardReviewsOf, pageCards, parseCardLine, type CardLine } from '@shared/cardLine'
+import { cardBlock, cardRecords, cardTime, cardReviewsOf, pageCards, parseCardLine, type CardLine } from '@shared/cardLine'
 import { cardState } from '@shared/cardSchedule'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
@@ -155,6 +155,36 @@ describe('useCardReview', () => {
     expect(review.session).toMatchObject({ position: 1, canUndo: false })
     expect(review.session?.card).toMatchObject({ id: 'WIKI-1', page: { reviews: [{ at: '2026-10-13T09:00Z', rating: 'good' }] } })
     expect(review.session?.answers).toBeNull()
+  })
+
+  it('YAZ-4999: an up-next card comes first, though not due; its answer removes `next` in the same write, and undo puts the file back byte for byte', async () => {
+    // WIKI-2 is not due (answered an hour ago): up next makes it due now. `next` sits after an unknown part, so a re-insert elsewhere would show.
+    page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, mochi x1, next, 2026-11-12T07:00Z good'])
+    const before = vault.get(`${ROOT}/Geo.md`)!
+    await mount()
+    expect(review.dueCount).toBe(3)
+    await act(async () => review.start())
+    await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-2', next: true, page: { next: true } }))
+    const writes = vi.mocked((await import('../views/writeProperty')).transformFile).mock.calls.length
+    await step(() => review.answer('good'))
+    // ONE write: the review in, `next` out.
+    expect(vi.mocked((await import('../views/writeProperty')).transformFile).mock.calls.length).toBe(writes + 1)
+    const after = vault.get(`${ROOT}/Geo.md`)!
+    expect(after).toContain(`<!-- card: WIKI-2, mochi x1, 2026-11-12T07:00Z good, ${cardTime(NOW)} good -->`)
+    expect(review.dueCount).toBe(2)
+    await step(() => review.undo())
+    expect(vault.get(`${ROOT}/Geo.md`)).toBe(before)
+    expect(review.session?.card).toMatchObject({ id: 'WIKI-2', page: { next: true } })
+  })
+
+  it('YAZ-4999: setNext (the Inbox chip`s ×) writes the mark off and reads the card again', async () => {
+    page('Geo.md', ['Capital of {{Peru}}?', 'WIKI-2, next'])
+    await mount()
+    await act(async () => review.start())
+    await vi.waitFor(() => expect(review.session?.card?.page?.next).toBe(true))
+    await step(() => review.setNext(`${ROOT}/Geo.md`, 'WIKI-2', false))
+    expect(vault.get(`${ROOT}/Geo.md`)).toContain('<!-- card: WIKI-2 -->')
+    await vi.waitFor(() => expect(review.session?.card?.page?.next).toBe(false))
   })
 
   it('"Review this page" keeps only that page\'s cards; "Review this folder" only the folder\'s', async () => {

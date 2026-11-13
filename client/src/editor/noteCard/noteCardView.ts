@@ -8,7 +8,7 @@
  * block shows its raw text), and it draws again only on a text change. "Finding (agent)" on YAZ-4961.
  *
  * THE CARD: a head (the card ID first, small and grey, a click copies it, D20; "Review off" when the line says `off`;
- * Edit card; ⋯) and the sides, `renderNoteCard` (the Inbox's function too). The head does not repeat the card's first
+ * the chip "Up next ×" when it says `next`, YAZ-4999 D3 — its × removes the mark; Edit card; ⋯) and the sides, `renderNoteCard` (the Inbox's function too). The head does not repeat the card's first
  * line: the text is right below it (say each thing once). Hidden words show highlighted (idea 21 is later). A
  * `[[link]]` is the page's pill: a click opens it in Explore, a bound gesture (⌘-click by default) in a tab, as the
  * note's links (`noteCardLinkWhere`). Images resolve as the note's do (`imageSrc`). On an index change only the pills
@@ -28,8 +28,8 @@
  * bubbling DOM event, `NOTE_CARD_OPEN` (`mdapp:note-card-open`, detail `NoteCardOpenRequest`), from its
  * `.ProseMirror`; App's listener opens the card window. ⌘↵ anywhere else is unchanged.
  *
- * THE ⋯ MENU (D13): Turn review off / on (`withCardOff`), Reset history (`withoutCardReviews`), Copy card ID, Open
- * card. Each change is ONE transaction on the node's `cardLine` attribute (`changeNoteCardLine`): one ⌘Z, saved as
+ * THE ⋯ MENU (D13): Put at top of Inbox / Remove from top of Inbox (`withCardNext`, YAZ-4999 D3), Turn review off /
+ * on (`withCardOff`), Reset history (`withoutCardReviews`), Copy card ID, Open card. Each change is ONE transaction on the node's `cardLine` attribute (`changeNoteCardLine`): one ⌘Z, saved as
  * any edit. The ID at insert (`noteCardRow`) is a transaction out of the undo history, saved by `NOTE_CARD_ID_META`.
  */
 import { Prec, type Extension } from '@codemirror/state'
@@ -45,7 +45,7 @@ import { NodeSelection, Plugin, PluginKey, TextSelection, type EditorState } fro
 import type { Decoration, DecorationSource, EditorView, NodeView, NodeViewConstructor } from '@milkdown/kit/prose/view'
 import { clearTextInCurrentBlockCommand, setBlockTypeCommand } from '@milkdown/kit/preset/commonmark'
 import { $prose, $shortcut, $view } from '@milkdown/kit/utils'
-import { cardIdOf, cardReviewsOf, formatCardLine, isCardOff, withCardId, withCardOff, withoutCardReviews, type CardLine } from '@shared/cardLine'
+import { cardIdOf, cardReviewsOf, formatCardLine, isCardNext, isCardOff, withCardId, withCardNext, withCardOff, withoutCardReviews, type CardLine } from '@shared/cardLine'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { codeWidthSchema } from '../code/codeWidth'
 import { copyText, openMenuAt } from '../linkMenu'
@@ -145,6 +145,8 @@ export class NoteCardView implements NodeView {
   /** The card ID, first in the head (D20): a click copies it. Hidden while the card has none. */
   private readonly idButton: HTMLButtonElement
   private readonly state: HTMLElement
+  /** The "Up next" chip (YAZ-4999 D3): shown while the line holds `next`; its × removes the mark. */
+  private readonly next: HTMLElement
   private readonly editButton: HTMLButtonElement
   private readonly more: HTMLButtonElement
   private readonly body: HTMLElement
@@ -169,9 +171,12 @@ export class NoteCardView implements NodeView {
     this.idButton = button('note-card__id', 'Copy card ID', '')
     this.state = document.createElement('span')
     this.state.className = 'note-card__state'
+    this.next = document.createElement('span')
+    this.next.className = 'note-card__next'
+    this.next.append('Up next', button('note-card__next-remove', 'Remove from top of Inbox', '×'))
     this.editButton = button('note-card__edit', 'Edit card', 'Edit card')
     this.more = button('note-card__more', 'Card menu', '⋯')
-    head.append(this.idButton, this.state, this.editButton, this.more)
+    head.append(this.idButton, this.state, this.next, this.editButton, this.more)
     this.body = document.createElement('div')
     this.body.className = 'note-card__body'
     this.dom.append(head, this.body)
@@ -207,6 +212,7 @@ export class NoteCardView implements NodeView {
     this.idButton.hidden = id === null
     this.state.textContent = isCardOff(line) ? 'Review off' : ''
     this.dom.classList.toggle('note-card--off', isCardOff(line))
+    this.next.hidden = !isCardNext(line)
     this.editButton.textContent = this.code === null ? 'Edit card' : 'Done'
     this.editButton.setAttribute('aria-label', this.code === null ? 'Edit card' : 'Done')
     this.dom.classList.toggle('note-card--editing', this.code !== null)
@@ -301,7 +307,8 @@ export class NoteCardView implements NodeView {
     const onNotice = this.deps.onNotice ?? (() => {})
     return [
       { label: 'Open card', hint: '⌘↵', run: () => this.open() },
-      { label: isCardOff(line) ? 'Turn review on' : 'Turn review off', disabled: !editable, divider: true, run: () => this.change((l) => withCardOff(l, !isCardOff(l))) },
+      { label: isCardNext(line) ? 'Remove from top of Inbox' : 'Put at top of Inbox', disabled: !editable, divider: true, run: () => this.change((l) => withCardNext(l, !isCardNext(l))) },
+      { label: isCardOff(line) ? 'Turn review on' : 'Turn review off', disabled: !editable, run: () => this.change((l) => withCardOff(l, !isCardOff(l))) },
       { label: 'Reset history', disabled: !editable || cardReviewsOf(line).length === 0, danger: true, run: () => this.change(withoutCardReviews) },
       { label: 'Copy card ID', disabled: id === null, divider: true, run: () => id !== null && copyText(id, 'card ID', onNotice, undefined, true) },
     ]
@@ -324,6 +331,11 @@ export class NoteCardView implements NodeView {
     if (target.closest('.note-card__more') !== null) {
       event.preventDefault()
       this.openMenu()
+      return
+    }
+    if (target.closest('.note-card__next-remove') !== null) {
+      event.preventDefault()
+      if (this.canChangeLine) this.change((l) => withCardNext(l, false))
       return
     }
     if (target.closest('.note-card__edit') !== null) {

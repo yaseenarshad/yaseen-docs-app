@@ -36,8 +36,8 @@ import type { FoundNote } from '@shared/noteBirth'
 import { newestFile } from '@shared/settingsSync'
 import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
-import { NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'
-import { cardBlock, pageCards } from '@shared/cardLine'
+import { NOTE_ID_KEY, canonicalNoteId, isNumberId, vaultNoteId } from '@shared/noteId'
+import { cardBlock, changeCard, pageCards, withCardNext } from '@shared/cardLine'
 import { lineKinds } from '@shared/fences'
 import { cardQueue, cardState } from '@shared/cardSchedule'
 import { cardTitle } from '@shared/cardText'
@@ -77,6 +77,7 @@ export const USAGE = `usage:
   yaseendocs mentions <page.md> [--json]
   yaseendocs due      <page.md | folder> [--json]
   yaseendocs card add <page.md> --body <text | -> [--after <heading>] [--json]
+  yaseendocs card next <id> [<folder>] [--off] [--json]
   yaseendocs vaults   [--json]
   yaseendocs daily    <vault> [--date today | tomorrow | yesterday | YYYY-MM-DD] [--find] [--open] [--json]
   yaseendocs new      <folder> --title <title> [--body <text | ->] [--json]
@@ -140,17 +141,26 @@ gives its notes IDs has cards, and \`due\` and \`card\` are refused in any other
 card line by hand: \`card add\` writes it, and the app writes each review.
 
 \`due\` lists the note cards due now under a folder (the whole vault for its root), as the app's Inbox
-shows them: the cards due today, most overdue first, then new cards, as many as the vault's "new cards a
-day" leaves for today. A line is the day it was due (or \`new\`), the card's id, its title (its first line)
-and its page. Given a page, \`due\` lists every card on it, each with the day it is next due, \`new\`, or
-\`off\` (review turned off). The app works the dates out from each card's reviews with FSRS and never writes
-them, so this is the place to read them. \`--json\` gives \`id\`, \`page\`, \`title\`, \`due\` (ISO time) and
-\`isNew\` (and \`off\` for a page).
+shows them: first the cards up next (see \`card next\`), then the cards due today, most overdue first, then
+new cards, oldest or newest first by the vault's "New cards first", as many as its "New cards a day" leaves
+for today (all of them when that box is empty). A line is the day it was due (\`next\` for a card up next,
+\`new\` for a new card), the card's id, its title (its first line) and its page. Given a page, \`due\` lists
+every card on it, each with the day it is next due, \`next\`, \`new\`, or \`off\` (review turned off). The
+app works the dates out from each card's reviews with FSRS and never writes them, so this is the place to
+read them. \`--json\` gives \`id\`, \`page\`, \`title\`, \`due\` (ISO time), \`isNew\` and \`next\` (and \`off\`
+for a page).
 
 \`card add\` adds a note card to a page, with a new id from the vault's counter, as the app gives one:
 \`--body\` (\`--body -\` for stdin) is the card's text. It goes at the end of the page, or with \`--after\` at
 the end of that heading's section (the heading's text, without the \`#\` marks; case does not count). It
 prints \`added <id> to <page>\`; \`--json\` gives \`id\`, \`page\` and \`title\`.
+
+\`card next <id>\` puts a card at the top of the Inbox, as the app's "Put at top of Inbox" does: the card
+line gets the part \`next\`, and the Inbox shows the card first, due or not and outside the new cards a
+day, until it is answered one time (the answer removes \`next\`). \`--off\` removes it ("Remove from top of
+Inbox"). The card is found by its id in the vault of \`<folder>\` (the current folder when none is given).
+A card with review off stays out of the Inbox. It prints \`<id> is up next (<page>)\` or \`<id> is not up
+next (<page>)\`; \`--json\` gives \`id\`, \`page\` and \`next\`.
 
 \`vaults\` lists the vaults the app knows: the recent ones, last used first, then each other vault
 that is open or has a number. A line is the name, the folder, \`⌘<n>\` for number n, \`(open)\` for
@@ -193,12 +203,13 @@ Make a note with its first text:
 Make a note card, and see what is due:
   printf 'The capital of {{France}}\\n---\\nParis' | yaseendocs card add "/vault/Geography.md" --after "Cards" --body -
   yaseendocs due /vault --json
+  yaseendocs card next WIKI-512 /vault                  → WIKI-512 shows first in the Inbox
 `
 
 /** Every flag the contract names; anything else is refused, because `--help` IS the contract (🔒 D1) and a typo must not be absorbed. */
 const FLAGS = new Set(['--body', '--title', '--reply-to', '--by', '--date', '--after'])
 /** Flags that take no value. */
-const SWITCHES = new Set(['--json', '--help', '-h', '--find', '--open', '--reopen'])
+const SWITCHES = new Set(['--json', '--help', '-h', '--find', '--open', '--reopen', '--off'])
 
 class Usage extends Error {}
 
@@ -365,7 +376,7 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
     // `off` is the card's own review (HELP). With review off for the whole vault, ONE line says so, and each card keeps its day.
     const rows = ((await scanFile(root, target)).cards ?? []).map((card, i) => {
       const state = cardState(card.reviews, settings)
-      return { id: card.id, page: target, title: titles[i] ?? '', due: card.off ? null : state.isNew ? iso(now) : iso(state.due!), isNew: state.isNew, off: card.off }
+      return { id: card.id, page: target, title: titles[i] ?? '', due: card.off ? null : state.isNew || card.next ? iso(now) : iso(state.due!), isNew: state.isNew, next: card.next, off: card.off }
     })
     if (!settings.enabled && rows.length > 0) io.stderr(`review is off for this vault (Settings › Review › Review cards): no card is due\n`)
     if (json) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
@@ -373,7 +384,7 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
       io.stdout(
         rows.length === 0
           ? `no note cards on ${target}\n`
-          : rows.map((r) => `${r.due === null ? 'off       ' : r.isNew ? 'new       ' : day(Date.parse(r.due))}  ${r.id ?? '(no id yet)'}  ${r.title}\n`).join(''),
+          : rows.map((r) => `${r.due === null ? 'off       ' : r.next ? 'next      ' : r.isNew ? 'new       ' : day(Date.parse(r.due))}  ${r.id ?? '(no id yet)'}  ${r.title}\n`).join(''),
       )
     return
   }
@@ -384,13 +395,13 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
   const records = [...(await scanAll(root, files.filter((file) => !isFolderSettingsPath(file)))).values()]
   // The whole vault is read, so the new cards begun today count wherever they are; the folder then keeps its own.
   const folder = target === root ? '' : target.slice(root.length + 1).split(/[\\/]/).join('/')
-  const queue = cardQueue(records, settings, now, folder)
+  const queue = cardQueue(records, settings, now, folder, undefined, (await vaultIds(root)).letters)
   const titles = new Map<string, string[]>()
   for (const { path } of queue) if (!titles.has(path)) titles.set(path, await cardTitles(path))
-  const rows = queue.map((q) => ({ id: q.id, page: q.path, title: titles.get(q.path)?.[q.index] ?? '', due: iso(q.due), isNew: q.isNew }))
+  const rows = queue.map((q) => ({ id: q.id, page: q.path, title: titles.get(q.path)?.[q.index] ?? '', due: iso(q.due), isNew: q.isNew, next: q.next }))
   if (json) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
   else if (!settings.enabled) io.stdout(`review is off for this vault (Settings › Review › Review cards): no card is due\n`)
-  else io.stdout(rows.length === 0 ? `nothing is due under ${target}\n` : rows.map((r) => `${r.isNew ? 'new       ' : day(Date.parse(r.due))}  ${r.id}  ${r.title}  ${r.page}\n`).join(''))
+  else io.stdout(rows.length === 0 ? `nothing is due under ${target}\n` : rows.map((r) => `${r.next ? 'next      ' : r.isNew ? 'new       ' : day(Date.parse(r.due))}  ${r.id}  ${r.title}  ${r.page}\n`).join(''))
 }
 
 /** The app's state file as the store itself reads it (`parseState`); only READ. No file yet is the default state; a damaged one is refused and left for the app to move aside. */
@@ -577,6 +588,27 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io):
   io.stdout(flags.has('--json') ? `${JSON.stringify({ id, page, title }, null, 2)}\n` : `added ${id} to ${page}\n`)
 }
 
+/**
+ * `card next` (YAZ-4999 D3): the card with ID `ref` in the vault of `from` up next, or no longer (`--off`) — the part
+ * `next` on its card line, as the app's "Put at top of Inbox" writes it. The first page in path order that holds the
+ * ID is the card's (the Inbox shows that one too). Written atomically; the same mark again writes nothing.
+ */
+async function cardNext(ref: string, from: string, flags: Map<string, string | true>, io: Io): Promise<void> {
+  onlyFlags('card next', flags, ['--off', '--json'])
+  if (!isNumberId(ref)) throw new Usage(`card next needs a card id (WIKI-512), not ${ref}`)
+  const id = canonicalNoteId(ref)
+  const root = await cardVault(from, from)
+  const files: string[] = []
+  await walk(root, files)
+  const records = [...(await scanAll(root, files.filter((file) => !isFolderSettingsPath(file)))).values()].sort(byPath)
+  const record = records.find((r) => r.cards?.some((card) => card.id === id))
+  if (record === undefined) throw new Error(`no note card ${id} in ${root}`)
+  const on = !flags.has('--off')
+  await transformOnDisk(record.path, (content) => changeCard(content, id, (line) => withCardNext(line, on)))
+  if (on && record.cards?.find((card) => card.id === id)?.off === true) io.stderr(`review is off for ${id}: it shows in the Inbox once its review is on again\n`)
+  io.stdout(flags.has('--json') ? `${JSON.stringify({ id, page: record.path, next: on }, null, 2)}\n` : `${id} is ${on ? '' : 'not '}up next (${record.path})\n`)
+}
+
 async function run(argv: readonly string[], io: Io): Promise<void> {
   const { verb, args, flags } = parse(argv)
   if (verb === '' || verb === 'help' || flags.has('--help') || flags.has('-h')) {
@@ -594,7 +626,11 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
     return mentions(page, flags.has('--json'), io)
   }
   if (verb === 'card') {
-    if (args[0] !== 'add') throw new Usage(args[0] === undefined ? 'card needs add' : `unknown card command: ${args[0]}`)
+    if (args[0] === 'next') {
+      if (args[1] === undefined) throw new Usage('card next needs a card id')
+      return cardNext(args[1], resolve(args[2] ?? '.'), flags, io)
+    }
+    if (args[0] !== 'add') throw new Usage(args[0] === undefined ? 'card needs add or next' : `unknown card command: ${args[0]}`)
     if (args[1] === undefined) throw new Usage('card add needs a page')
     const page = resolve(args[1])
     requireMarkdownFile(page)

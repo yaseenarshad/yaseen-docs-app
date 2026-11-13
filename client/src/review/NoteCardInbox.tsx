@@ -4,7 +4,7 @@
  * card is `renderNoteCard`, the page's own render. The session is `useCardReview`'s (YAZ-4967): this screen draws it.
  *
  *  - Head: the card ID first, small and grey (a click copies it, D20; its place in the page's card and the card window
- *    too), the page's name (O), "3 of 12", ×. No card title: the card is right below it.
+ *    too), the chip "Up next ×" for a card at the top of the Inbox (YAZ-4999 D3), the page's name (O), "3 of 12", ×. No card title: the card is right below it.
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
  *    Space shows the next side, whose hidden words then show one by one. After the last step the answer buttons show,
  *    and `showAnswers()` fixes what each one writes then (the hover is the truth, D13). A card with one side and no
@@ -26,7 +26,7 @@ import { cardSides, hiddenCount } from '@shared/cardText'
 import type { GestureAction } from '@shared/keys'
 import type { ExploreVault } from '../explore/ExploreNote'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
-import { NoteCardBody, NoteCardId, NoteCardReviews, noteCardWait } from './noteCardParts'
+import { NoteCardBody, NoteCardId, NoteCardNextChip, NoteCardReviews, noteCardWait } from './noteCardParts'
 import { noteCardInboxHints, noteCardInboxKey } from './noteCardInboxKeys'
 import { HoverTip } from '../components/HoverTip'
 import '../explore/explore.css'
@@ -156,6 +156,7 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
           ) : (
             <>
               <NoteCardId id={card.id} onNotice={onNotice} />
+              {card.page?.next === true && <NoteCardNextChip onRemove={() => void review.setNext(card.path, card.id, false)} />}
               <button type="button" className="note-card-strip__page note-card-inbox__page" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(card.path, card.index, false)}>
                 {nameOf(card.path)}
               </button>

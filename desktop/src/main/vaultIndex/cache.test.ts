@@ -287,12 +287,12 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
     '```card',
     'A card links [[Card Link]] and #card-tag',
     '```',
-    '<!-- card: CAN-3, off, 2026-11-12T14:05Z good -->',
+    '<!-- card: CAN-3, off, next, 2026-11-12T14:05Z good -->',
     '',
   ].join('\n')
 
   const FINGERPRINT = {
-    cacheVersion: 11,
+    cacheVersion: 12,
     maxFileBytes: 10 * 1024 * 1024,
     /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
     recordKeys: ['aliases', 'basename', 'cards', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'links', 'mtime', 'name', 'path', 'properties', 'size', 'tags', 'title'],
@@ -319,7 +319,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
       // A file is always the page, whatever its words look like (YAZ-4954 part 2).
       links: ['Ref', 'Folder Ref', 'Note One', 'Note Two', 'Covid notes|COVID-19', 'chart.pdf', 'Card Link'],
       embeds: ['img.png', 'photo.png'],
-      cards: [{ id: 'CAN-3', off: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }] }],
+      cards: [{ id: 'CAN-3', off: true, next: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }] }],
     },
   }
 

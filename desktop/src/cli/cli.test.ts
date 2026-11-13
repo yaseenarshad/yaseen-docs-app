@@ -96,7 +96,7 @@ describe('help and usage', () => {
   })
 
   it('the contract names every verb and both rules an agent must know', () => {
-    for (const word of ['comment ', 'comments ', 'edit ', 'delete ', 'yaseendocs id ', 'yaseendocs links ', 'yaseendocs mentions ', 'yaseendocs due ', 'yaseendocs card add ', 'yaseendocs vaults ', '[[<id>]]', '(missing)', 'id: <id>', '--body', '--title', '--reply-to', '--by', '--json', 'by: agent', 'never in the body', 'Exit codes']) {
+    for (const word of ['comment ', 'comments ', 'edit ', 'delete ', 'yaseendocs id ', 'yaseendocs links ', 'yaseendocs mentions ', 'yaseendocs due ', 'yaseendocs card add ', 'yaseendocs card next ', 'yaseendocs vaults ', '[[<id>]]', '(missing)', 'id: <id>', '--body', '--title', '--reply-to', '--by', '--json', 'by: agent', 'never in the body', 'Exit codes']) {
       expect(HELP).toContain(word)
     }
   })
@@ -732,6 +732,27 @@ describe('note cards: due and card add (YAZ-4963)', () => {
     expect((await scanFile(root, geo)).cards?.map((c) => c.id)).toEqual(['YAZ-21', 'YAZ-22', 'YAZ-23'])
     expect((await readFile(geo, 'utf8')).endsWith('Text.\n\n```card\nLast\n```\n<!-- card: YAZ-23 -->\n')).toBe(true)
     expect(JSON.parse((await run(['due', geo, '--json'])).out).map((r: { id: string; isNew: boolean }) => [r.id, r.isNew])).toEqual([['YAZ-21', true], ['YAZ-22', true], ['YAZ-23', true]])
+  })
+
+  it('YAZ-4999: card next writes the part `next` (--off removes it); due lists the card first and marks it', async () => {
+    const now = minute(Date.now() - 60_000)
+    const root = await vault('cards', {
+      'deck.md': `---\nid: YAZ-1\n---\n${card('Brand new', 'YAZ-12')}\n${card('Just learned', `YAZ-11, ${now} good`)}`,
+    })
+    const deck = path.join(root, 'deck.md')
+    const before = await readFile(deck, 'utf8')
+    expect(await run(['card', 'next', 'yaz-11', root])).toEqual({ code: 0, out: `YAZ-11 is up next (${deck})\n`, err: '' })
+    expect(await readFile(deck, 'utf8')).toContain(`<!-- card: YAZ-11, next, ${now} good -->`)
+    // Not due, but up next: first, marked `next`; `--json` says so.
+    expect((await run(['due', root])).out.split('\n')[0]).toBe(`next        YAZ-11  Just learned  ${deck}`)
+    const json = JSON.parse((await run(['due', root, '--json'])).out) as { id: string; next: boolean }[]
+    expect(json.map((r) => [r.id, r.next])).toEqual([['YAZ-11', true], ['YAZ-12', false]])
+    expect((await run(['due', deck])).out.split('\n').map((l) => l.slice(0, 10).trim())).toEqual(['new', 'next', ''])
+    expect(JSON.parse((await run(['card', 'next', 'YAZ-11', root, '--off', '--json'])).out)).toEqual({ id: 'YAZ-11', page: deck, next: false })
+    expect(await readFile(deck, 'utf8')).toBe(before)
+    expect(await run(['card', 'next', 'YAZ-99', root])).toMatchObject({ code: 1, err: `no note card YAZ-99 in ${root}\n` })
+    expect((await run(['card', 'next', 'nope', root])).code).toBe(2)
+    expect((await run(['card', 'next'])).code).toBe(2)
   })
 
   it('refuses in a vault without IDs, for a heading the page does not have (no number taken), and for bad usage', async () => {
