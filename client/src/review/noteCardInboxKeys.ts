@@ -48,6 +48,8 @@ export interface NoteCardInboxMoment {
   moves?: boolean
   /** A side that shows has a sound (YAZ-5014): P plays or stops it. */
   audio?: boolean
+  /** The next Space shows the next SIDE, not a hidden word (YAZ-5048): the hint says "Next side". */
+  nextSide?: boolean
 }
 
 /**
@@ -55,8 +57,9 @@ export interface NoteCardInboxMoment {
  * answer digits are on the buttons, so the row does not say them again. No Esc (YAZ-5011): the Inbox is a tab, and
  * closes as one (its ✕, ⌘W).
  */
-export const noteCardInboxHints = ({ card, answering, canUndo, moves = false, audio = false }: NoteCardInboxMoment): { keys: string; label: string }[] => [
-  ...(card && !answering ? [{ keys: 'Space', label: 'Show' }] : []),
+export const noteCardInboxHints = ({ card, answering, canUndo, moves = false, audio = false, nextSide = false }: NoteCardInboxMoment): { keys: string; label: string }[] => [
+  // What Space does next (YAZ-5048, Yaseen: "no way to know there is another side"): a word, or the next side.
+  ...(card && !answering ? [{ keys: 'Space', label: nextSide ? 'Next side' : 'Show' }] : []),
   ...(card && audio ? [{ keys: 'P', label: 'Play' }] : []),
   ...(card && moves ? [{ keys: '← →', label: 'Other cards' }] : []),
   ...(canUndo ? [{ keys: '⌘Z', label: 'Undo' }] : []),

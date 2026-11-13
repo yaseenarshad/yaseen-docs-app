@@ -508,19 +508,22 @@
   margin-top: 5vh;
 }
 /* YAZ-5027: the row above the card holds the state chip, on the card's left edge. Its fixed height keeps the card in
-   place between cards, also with no chip. */
+   place between cards, also with no chip. YAZ-5051: the page name and the ID follow the chip here, quiet; "Side 1 of 2"
+   (YAZ-5048) sits on the right. */
 .note-card-inbox__above {
   flex: none;
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  gap: 8px;
   height: 20px;
-  margin-bottom: 6px;
+  min-width: 0;
+  margin-bottom: 8px;
+  padding: 0 2px;
 }
 /* A title hidden on the front (YAZ-5030): after the card is fully shown, a small quiet label after the chip. */
 .note-card-inbox__title {
   min-width: 0;
-  margin-left: 8px;
   overflow: hidden;
   color: var(--fg-muted);
   font-size: 12px;
@@ -584,11 +587,23 @@ body.note-card-inbox--sizing {
   cursor: ew-resize;
   user-select: none;
 }
-/* YAZ-5018 polish: the head is part of the card, as in Mochi: no rule under it. The chip sits above the card (YAZ-5027). */
+/* YAZ-5051: the page name and the ID, out of the card frame, in the row above it after the state chip. */
 .note-card-inbox__head {
-  padding: 12px 14px 0;
-  border-bottom: 0;
-  cursor: default;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+/* YAZ-5048: where you are in a card of more than one side, on the row's right: quiet, as "3 of 12" in the top row. */
+.note-card-inbox__sides {
+  flex: none;
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 /* The state chip (YAZ-5018, as Mochi's): small capitals in a quiet pill, its glyph before. */
 .note-card-inbox__state {
@@ -617,7 +632,7 @@ body.note-card-inbox--sizing {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px 28px 28px;
+  padding: 24px 28px 28px;
 }
 /* The card: no frame of its own inside the panel, a little larger. */
 .note-card-inbox__card {
@@ -629,8 +644,9 @@ body.note-card-inbox--sizing {
 .note-card-inbox__card .note-card__body {
   padding: 4px 0;
 }
+/* The line between two sides (YAZ-5051): across the whole card, edge to edge, as Mochi's, with room on each side. */
 .note-card-inbox__card .note-card__rule {
-  margin: 14px 0;
+  margin: 22px -28px;
 }
 /* The buttons row (YAZ-5004, as in Mochi): ← → on the left, the answers in the middle, ⋯ on the right. */
 .note-card-inbox__actions {
@@ -917,14 +933,15 @@ body.note-card-inbox--sizing {
 .note-card-inbox__archived-unarchive:hover {
   background: var(--bg-hover);
 }
-/* YAZ-5012: the page's name first in the Inbox head, in the title's look; a long name ends in "…" before the ID
-   "(DEMO-59)" after it gives way (the ID is `flex: none`). "6 of 25" stays on the right. */
+/* YAZ-5012: the page's name first, then the ID; a long name ends in "…" before the ID "(DEMO-59)" after it gives way
+   (the ID is `flex: none`). YAZ-5051: in the row above the card, quiet, so the card is the first thing you read. */
 .note-card-inbox__page {
   flex: 0 1 auto;
   max-width: none;
-  color: var(--fg);
-  font-size: 13px;
-  font-weight: 600;
+  padding: 0 2px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 500;
 }
 /* ONE line at any width (YAZ-5024): no wrap; a key that does not fit folds (`NoteCardInboxHints`), laid out off the
    row so it can still be measured. */

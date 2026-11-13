@@ -33,7 +33,7 @@ it('a side has no blank line under its text in the page: the body sets `white-sp
   expect(body.map((r) => r.selector)).toEqual(['.note-card .note-card__body'])
   // The sides' outer margins stay 0, and the rule between two sides keeps its gap.
   expect(rules(cardCss, '.note-card__side > :last-child').some((r) => /margin-bottom:\s*0/.test(r.body))).toBe(true)
-  expect(rules(cardCss, '.note-card .note-card__rule').some((r) => /margin:\s*10px -16px/.test(r.body))).toBe(true)
+  expect(rules(cardCss, '.note-card .note-card__rule').some((r) => /margin:\s*16px -16px/.test(r.body))).toBe(true)
 })
 
 it('YAZ-5005: Underline on `.app` takes the highlight off a shown hidden word and draws a line under it; the blank keeps its own look', () => {
@@ -96,4 +96,15 @@ it('YAZ-5026 round 2: Edit card`s key row has its own look in the page (explore.
   const row = rules(cardCss, '.note-card .note-card__keys').find((r) => /display:\s*flex/.test(r.body))!
   expect(row.body).toMatch(/gap:\s*14px/)
   expect(rules(cardCss, '.note-card .note-card__keys kbd').some((r) => /font-family:\s*inherit/.test(r.body) && /border:/.test(r.body))).toBe(true)
+})
+
+it('YAZ-5051: the line between two sides is clear — dashed, across the card, darker than its borders, unlike a rule in the text; the Inbox gives it more room, edge to edge', () => {
+  const rule = rules(cardCss, '.note-card .note-card__rule').find((r) => r.selector === '.note-card .note-card__rule')!
+  expect(rule.body).toMatch(/border-top:\s*1px dashed color-mix\(in srgb, var\(--fg\) 30%, transparent\)/)
+  expect(rule.body).toMatch(/height:\s*0/)
+  expect(rule.body).not.toMatch(/background:\s*var\(--border\)/)
+  const screens = read('../../review/noteCardScreens.css')
+  expect(rules(screens, '.note-card-inbox__card .note-card__rule').some((r) => /margin:\s*22px -28px/.test(r.body))).toBe(true)
+  // The Inbox card's own padding is what the rule reaches past.
+  expect(rules(screens, '.note-card-inbox__body').some((r) => /padding:\s*24px 28px 28px/.test(r.body))).toBe(true)
 })

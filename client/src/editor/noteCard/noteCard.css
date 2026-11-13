@@ -61,7 +61,7 @@
 }
 /* The card ID (D20): small and grey, FIRST in the head — the same place in the page, the card window and the Inbox
    (`review/noteCardParts.tsx`), in the look of a page's ID in an Explore head (`.explore__id`). A click copies it. */
-:is(.note-card, .explore__head) .note-card__id {
+:is(.note-card, .explore__head, .note-card-inbox__head) .note-card__id {
   flex: none;
   margin: 0 2px 0 0;
   padding: 0 4px;
@@ -92,7 +92,7 @@
   display: none;
 }
 /* "Up next" (YAZ-4999 D3): a small chip after the ID in the page, the card window and the Inbox; its × removes the mark. */
-:is(.note-card, .explore__head) .note-card__next {
+:is(.note-card, .explore__head, .note-card-inbox__head) .note-card__next {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -108,7 +108,7 @@
 .note-card__next[hidden] {
   display: none;
 }
-:is(.note-card, .explore__head) .note-card__next-remove {
+:is(.note-card, .explore__head, .note-card-inbox__head) .note-card__next-remove {
   flex: none;
   padding: 0 4px;
   border: 0;
@@ -119,7 +119,7 @@
   line-height: 16px;
   cursor: pointer;
 }
-:is(.note-card, .explore__head) .note-card__next-remove:hover {
+:is(.note-card, .explore__head, .note-card-inbox__head) .note-card__next-remove:hover {
   background: var(--bg-hover);
   color: var(--fg);
 }
@@ -483,10 +483,13 @@
 .note-card__board:hover .note-card__board-img {
   border-color: var(--accent);
 }
+/* The line between two sides (YAZ-5051, Yaseen: "new side line break needs help"): a dashed line across the card, as
+   Mochi's, darker than the card's borders and unlike a rule in the text (`---` is the side break, so a rule in a side is
+   solid), with room on each side. The page and the card window; the Inbox gives it more room (`noteCardScreens.css`). */
 .note-card .note-card__rule {
-  height: 1px;
-  margin: 10px -16px;
-  background: var(--border);
+  height: 0;
+  margin: 16px -16px;
+  border-top: 1px dashed color-mix(in srgb, var(--fg) 30%, transparent);
 }
 /* A hidden word, shown or not (YAZ-5013: "never jumping around"): ONE box model — inline, the real word inside, the
    same padding — so a show changes only the look and nothing on the line moves. */

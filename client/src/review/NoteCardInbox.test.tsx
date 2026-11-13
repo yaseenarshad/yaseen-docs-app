@@ -1265,3 +1265,91 @@ describe('YAZ-5046: archived cards in the Inbox, to look at (not to review)', ()
     expect(review.setFilter).toHaveBeenLastCalledWith('all')
   })
 })
+
+describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
+  const hints = () => [...el.querySelectorAll('.note-card-inbox__hints span')].map((h) => h.textContent)
+  const sideCount = () => el.querySelector('.note-card-inbox__sides')?.textContent ?? null
+
+  it('YAZ-5048: a card of two sides says "Side 1 of 2" above it, and Space says what it does next: "Show" a word, then "Next side"; a card of one side says nothing', async () => {
+    mount(TWO_SIDES)
+    expect(sideCount()).toBe('Side 1 of 2')
+    expect(hints()[0]).toBe('Space Show')
+    press(' ')
+    await flush()
+    // Side 1 has no hidden word left: the next Space shows side 2.
+    expect(sideCount()).toBe('Side 1 of 2')
+    expect(hints()[0]).toBe('Space Next side')
+    press(' ')
+    await flush()
+    expect(sideCount()).toBe('Side 2 of 2')
+    expect(hints()[0]).toBe('Space Show')
+    act(() => root?.unmount())
+    el.remove()
+    mount('One {{side}} only')
+    expect(sideCount()).toBeNull()
+  })
+
+  it('YAZ-5048: a side with no hidden word says "Next side" at once', async () => {
+    mount('Plain front\n---\nBack {{word}}')
+    expect(hints()[0]).toBe('Space Next side')
+  })
+
+  it('YAZ-5051: the page name and the ID sit in the row above the card, after the state chip; the card frame holds only the card', () => {
+    mount(TWO_SIDES)
+    const above = el.querySelector('.note-card-inbox__above')!
+    const panel = el.querySelector('.note-card-inbox__panel')!
+    expect([...above.children].map((c) => c.className).slice(0, 2)).toEqual(['note-card-inbox__state', 'note-card-inbox__head'])
+    expect([...above.querySelector('.note-card-inbox__head')!.children].map((c) => c.textContent)).toEqual(['Cards', '(WIKI-9)'])
+    expect(panel.querySelector('.note-card-inbox__head, .explore__head, .note-card-inbox__page, .note-card__id')).toBeNull()
+  })
+
+  describe('YAZ-5049: Space brings the word it shows into view, as ⌘F does', () => {
+    const box = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 100, width: 100, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
+    let place: Record<string, [number, number]>
+    let scrollTo: ReturnType<typeof vi.fn>
+    beforeEach(() => {
+      place = {}
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        if (this.classList.contains('note-card-inbox__body')) return box(100, 300)
+        const key = this.dataset.hidden !== undefined ? `word${this.dataset.hidden}` : this.dataset.side !== undefined ? `side${this.dataset.side}` : ''
+        const [top, bottom] = place[key] ?? [150, 170]
+        return box(top, bottom)
+      })
+    })
+    afterEach(() => vi.restoreAllMocks())
+    const scroller = () => {
+      const body = el.querySelector<HTMLElement>('.note-card-inbox__body')!
+      scrollTo = vi.fn()
+      body.scrollTo = scrollTo as never
+      return body
+    }
+
+    it('a word on screen: no movement', () => {
+      mount(TWO_SIDES)
+      scroller()
+      press(' ')
+      expect(scrollTo).not.toHaveBeenCalled()
+    })
+
+    it('a word below the card: the least scroll that shows it, never centred', () => {
+      mount(TWO_SIDES)
+      scroller()
+      place.word0 = [400, 420]
+      press(' ')
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 420 - 300 + 6 }))
+    })
+
+    it('a new side below the card comes in by its top; a new card does not scroll', () => {
+      mount(TWO_SIDES)
+      scroller()
+      press(' ')
+      place.side1 = [350, 900]
+      press(' ')
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 350 - 100 - 6 }))
+      scrollTo.mockClear()
+      session = { ...sessionOf(TWO_SIDES), position: 4 }
+      render()
+      expect(scrollTo).not.toHaveBeenCalled()
+    })
+  })
+})
