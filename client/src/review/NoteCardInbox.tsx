@@ -14,8 +14,8 @@
  *    hover is the truth, D13), and 1–2 / 1–4 answer at any step.
  *  - The buttons (D5): Forgot · Remembered, or Again · Hard · Good · Easy, by the setting; the hover says when the
  *    card comes back ("Remembered · 9 days").
- *  - The keys (`noteCardInboxKeys.ts`): Space, 1–2 / 1–4 (at any step, YAZ-5010), ⌘Z, O (the page on top, landed on
- *    the card; Esc there comes back to this card at the same step), E (YAZ-5003: the CARD WINDOW on top, in Edit card;
+ *  - The keys (`noteCardInboxKeys.ts`): Space, 1–2 / 1–4 (at any step, YAZ-5010), ⌘Z, O (the page on top, at its top, YAZ-5022;
+ *    Esc there comes back to this card at the same step), E (YAZ-5003: the CARD WINDOW on top, in Edit card;
  *    Done, Esc or ⌘↵ there saves and comes back to this card at the same step; nothing in a read-only vault, where
  *    Edit card is blocked as in the page), ← → (YAZ-5004: the card before or after, no answer), ⌘↵ (the page in a
  *    background tab: the review stays), Esc (only the ⋯ row; then the Esc order goes on, YAZ-5011). A key typed in a field, or while a dialog or a menu
@@ -47,8 +47,8 @@ export interface NoteCardInboxProps {
   session: CardReviewSession
   vaultOf: (path: string) => ExploreVault
   nameOf: (path: string) => string
-  /** The page on top as an Explore layer, landed on card `index` (O). */
-  openPage: (path: string, index: number, edit: boolean) => void
+  /** O and the page name: the page on top as an Explore layer, at its TOP (YAZ-5022: no scroll to the card). */
+  openPage: (path: string) => void
   /** The card window on top (⋯ › Open card); `edit` in Edit card (E, YAZ-5003). */
   openCard: (path: string, id: string, index: number, edit: boolean) => void
   /** ⌘↵: the page in a background tab. */
@@ -175,7 +175,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
         if (card.page !== null && rating !== undefined && !event.repeat) void review.answer(rating)
         return
       }
-      if (key.kind === 'open') return openPage(card.path, card.index, false)
+      if (key.kind === 'open') return openPage(card.path)
       // E edits only the card (YAZ-5003): the card window in Edit card. Read only blocks Edit card, as in the page.
       if (key.kind === 'edit') {
         if (!vaultOf(card.path).readOnly) openCard(card.path, card.id, card.index, true)
@@ -215,7 +215,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
               <span className="explore__title">{session.label}</span>
             ) : (
               <>
-                <button type="button" className="note-card-strip__page note-card-inbox__page" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(card.path, card.index, false)}>
+                <button type="button" className="note-card-strip__page note-card-inbox__page" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(card.path)}>
                   {nameOf(card.path)}
                 </button>
                 <NoteCardId id={card.id} onNotice={onNotice} brackets />

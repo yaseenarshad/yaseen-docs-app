@@ -289,10 +289,11 @@ describe('the Inbox screen (YAZ-4962)', () => {
     palette.remove()
   })
 
-  it('O opens the page on top, landed on the card; YAZ-5003: E opens only the card, in the card window, in Edit card; ⌘↵ in a tab; ⌘Z undoes only when there is an answer to undo; YAZ-5011: Esc does not close the Inbox (a tab), and the key is not taken', () => {
+  it('YAZ-5022: O opens the page on top at its TOP (no card index: no scroll to the card); YAZ-5003: E opens only the card, in the card window, in Edit card; ⌘↵ in a tab; ⌘Z undoes only when there is an answer to undo; YAZ-5011: Esc does not close the Inbox (a tab), and the key is not taken', () => {
     mount(TWO_SIDES)
     press('o')
-    expect(props.openPage).toHaveBeenLastCalledWith(PATH, 0, false)
+    expect(props.openPage).toHaveBeenLastCalledWith(PATH)
+    expect(vi.mocked(props.openPage).mock.calls[0]).toHaveLength(1)
     press('e')
     expect(props.openCard).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', 0, true)
     expect(props.openPage).toHaveBeenCalledOnce()
