@@ -76,7 +76,7 @@ export const HOTKEY_COMMANDS: readonly HotkeyCommand[] = [
   // YAZ-4994: the key toggles. Again, with the keyboard in the search, it goes back to the page, the sidebar as it was.
   { id: 'search', label: 'Search the vault', hint: 'In the sidebar; the same key goes back to the page', key: 'CmdOrCtrl+K' },
   // YAZ-2571: the explore stack. ⌘⇧F is also draw.io's To front; the menu takes it on a diagram too (Yaseen: explore has priority), and the K9 switch can hand it back.
-  { id: 'explore', label: 'Explore the vault', hint: 'A search in the middle of the window; ⏎ opens the note over it, Esc goes back one layer, the same key closes it', key: 'CmdOrCtrl+Shift+F' },
+  { id: 'explore', label: 'Explore the vault', hint: 'A search in the middle of the window; ⏎ opens the note over it, Esc goes back one layer', key: 'CmdOrCtrl+Shift+F' },
   { id: 'settings', label: 'Settings', key: 'CmdOrCtrl+,', macStandard: true },
   // A menu key since YAZ-3564 D10 (it was the renderer's ⌘B, which a note kept for Bold): it fires in a note too.
   { id: 'toggleSidebar', label: 'Toggle sidebar', hint: 'In a note, a drawing, a diagram and code too', key: 'CmdOrCtrl+Shift+B' },

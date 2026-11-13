@@ -1435,16 +1435,6 @@ export function App() {
       return n + 1
     })
   }, [hasVault, filesWindow])
-  /**
-   * The Explore key is a toggle (YAZ-4994): with Explore open it closes ALL of Explore, whatever is on top (searches,
-   * notes, boards, a note in edit, saved first), and the page has the keyboard back with no scroll. One rule: the key
-   * that opens Explore closes it. Esc still goes back one layer at a time.
-   */
-  const [exploreCloseAsk, setExploreCloseAsk] = useState(0)
-  const toggleExplore = useCallback(() => {
-    if (exploreRequest > 0) setExploreCloseAsk((n) => n + 1)
-    else openExplore()
-  }, [exploreRequest, openExplore])
   const openExploreWith = useCallback((ask: ExploreRequest) => {
     if (!hasVault || filesWindow) return
     exploreNote.current = ask
@@ -2308,7 +2298,7 @@ export function App() {
     onOpenFolder: pick,
     onOpenRoot: openVault,
     onSearch: toggleSearch,
-    onExplore: toggleExplore,
+    onExplore: openExplore,
     onSwitchVault: openVaultSwitcher,
     onSettings: openSettings,
     onToggleSidebar: toggleSidebar,
@@ -3515,7 +3505,7 @@ export function App() {
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
-          <ExploreStack request={exploreRequest} requestLayer={exploreNote.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} closeAsk={exploreCloseAsk} renderEditor={renderExploreEditor} createFolder={newNoteFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} />
+          <ExploreStack request={exploreRequest} requestLayer={exploreNote.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newNoteFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} />
         </Suspense>
       )}
       {whatsNewOpen && (

@@ -2662,21 +2662,20 @@ describe('App ⌘⇧F explore (YAZ-2571)', () => {
     expect(el.querySelector('.explore')).toBeNull()
   })
 
-  it('YAZ-4994: the Explore key toggles: again, with layers open, ALL of Explore closes and the page has the keyboard back', async () => {
+  it('YAZ-4994 decision: the Explore key again, with layers open, adds a NEW search on top; it never closes Explore', async () => {
     const { el, emitExplore } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
-    // The page's keyboard: what had it when Explore opened gets it back.
-    const page = document.createElement('button')
-    el.appendChild(page)
-    page.focus()
     act(() => emitExplore())
     await until(() => el.querySelector('.explore') !== null)
-    expect(document.activeElement).toBe(el.querySelector('.explore__input'))
+    expect(el.querySelectorAll('.explore__layer')).toHaveLength(1)
     act(() => emitExplore())
-    expect(el.querySelector('.explore')).toBeNull()
-    expect(document.activeElement).toBe(page)
-    // And once more: it opens again, a fresh search.
-    act(() => emitExplore())
+    expect(el.querySelector('.explore')).not.toBeNull()
+    expect(el.querySelectorAll('.explore__layer')).toHaveLength(2)
+    expect(el.querySelectorAll('.explore__input')).toHaveLength(2)
+    expect(document.activeElement).toBe(el.querySelectorAll('.explore__input')[1])
+    // Esc goes back one layer: the first search is still there.
+    esc()
     await until(() => el.querySelectorAll('.explore__layer').length === 1)
+    expect(document.activeElement).toBe(el.querySelector('.explore__input'))
   })
 
   it('⌘K with the stack open closes the whole stack first, then runs its sidebar search (Yaseen: "⌘K keeps its sidebar search"); the keyboard is not given back', async () => {
