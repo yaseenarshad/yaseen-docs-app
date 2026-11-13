@@ -13,6 +13,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { copyFoldKey } from '@shared/foldKey'
 import { parseFrontmatter } from '@shared/frontmatter'
+import { cardFileName } from '@shared/cardFileFormat'
 import { CLIP_CHANGED, DEFAULT_ROW_DATES, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_SORT, DEFAULT_SIDEBAR_TABS, MAX_FOCUS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, isSidebarLens, type AppState, type FileClipRequest, type FileClipState, type ImportResponse, type FocusFolder, type IndexRecord, type ListScope, type PasteRequest, type PasteResponse, type SettingsState, type SidebarTab, type TreeNode, type WatchEvent, type WindowIdentity, type SidebarTabsPrefs } from '@shared/types'
 import appCss from '../app.css?inline'
 import { formatDateTime } from '../lib/format'
@@ -8821,22 +8822,54 @@ describe('card files (YAZ-5037)', () => {
     }
   })
 
-  it('"New card" takes ONE ID from the door and writes `<id>.md` in the folder: `kind: card` and the card "Title" with its ID, no name box; then the file opens', async () => {
+  /** The name box New card opens (YAZ-5101), as New note's: its placeholder, then `typed` and a key. */
+  const nameBox = (el: HTMLElement) => el.querySelector<HTMLInputElement>('.create-inline__input')
+  const typeIn = async (el: HTMLElement, typed: string, key: 'Enter' | 'Escape') => {
+    const input = nameBox(el)!
+    act(() => {
+      input.value = typed
+      input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+    })
+    await act(async () => undefined)
+  }
+
+  it('"New card" opens the name box as "New note" does (YAZ-5101); Enter takes ONE ID and writes the card file named after the title: `kind: card`, the title as the card`s first line; then the file opens', async () => {
     const { el, bridge, props } = await mount({ review: true })
     rightClick(rowAt(el, '/v/sub'))
     await act(async () => itemByLabel(el, 'New card')?.click())
+    expect(nameBox(el)?.placeholder).toBe('New card')
+    // Nothing is made before the name.
+    expect(bridge.mintNoteId).not.toHaveBeenCalled()
+    expect(bridge.createFile).not.toHaveBeenCalled()
+    await typeIn(el, 'Capital of France', 'Enter')
     expect(bridge.mintNoteId).toHaveBeenCalledExactlyOnceWith('/v/sub')
-    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/yaz-1.md', content: '---\nkind: card\n---\n```card\nTitle\n```\n<!-- card: YAZ-1 -->\n' })
-    expect(el.querySelector('.create-inline__input')).toBeNull()
-    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/yaz-1.md')
+    const path = `/v/sub/${cardFileName('Capital of France', 'YAZ-1')}`
+    expect(path).not.toBe('/v/sub/yaz-1.md')
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path, content: '---\nkind: card\n---\n```card\nCapital of France\n```\n<!-- card: YAZ-1 -->\n' })
+    expect(nameBox(el)).toBeNull()
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(path)
   })
 
-  it('a read-only vault asks first, as New note does; refused, no ID is taken and nothing is made', async () => {
+  it('New card`s name box: an empty Enter makes nothing and the box stays; Esc makes nothing, as for a page', async () => {
+    const { el, bridge, props } = await mount({ review: true })
+    rightClick(rowAt(el, '/v/sub'))
+    await act(async () => itemByLabel(el, 'New card')?.click())
+    await typeIn(el, '   ', 'Enter')
+    expect(nameBox(el)).not.toBeNull()
+    await typeIn(el, 'Half a name', 'Escape')
+    expect(nameBox(el)).toBeNull()
+    expect(bridge.mintNoteId).not.toHaveBeenCalled()
+    expect(bridge.createFile).not.toHaveBeenCalled()
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+  })
+
+  it('a read-only vault asks first, as New note does, before the name box; refused, no box, no ID is taken and nothing is made', async () => {
     const onFileAction = vi.fn(async () => false)
     const { el, bridge, props } = await mount({ review: true, onFileAction })
     rightClick(rowAt(el, '/v/sub'))
     await act(async () => itemByLabel(el, 'New card')?.click())
     expect(onFileAction).toHaveBeenCalledExactlyOnceWith('/v')
+    expect(nameBox(el)).toBeNull()
     expect(bridge.mintNoteId).not.toHaveBeenCalled()
     expect(bridge.createFile).not.toHaveBeenCalled()
     expect(props.onOpenFile).not.toHaveBeenCalled()
