@@ -388,6 +388,25 @@ describe('the card in the page', () => {
     document.removeEventListener(NOTE_CARD_OPEN, listen)
   })
 
+  it("YAZ-5008: in Edit card a selection (a drag, a double or triple click) stays CodeMirror's and the page's TEXT selection, never the card's node selection; ⌘L wraps it", async () => {
+    const { EditorView: CodeMirrorView } = await import('@codemirror/view')
+    const { root, view } = await mount(`${CARD}<!-- card: WIKI-8 -->\n`, { noteCards: { path: '/v/Page.md' } })
+    const card = root.querySelector<HTMLElement>('.note-card')!
+    card.querySelector('.note-card__edit')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    const cm = CodeMirrorView.findFromDOM(card.querySelector<HTMLElement>('.cm-editor')!)!
+    await vi.waitFor(() => expect(cm.contentDOM.getAttribute('spellcheck')).toBe('true'))
+    const text = cm.state.doc.toString()
+    const from = text.indexOf('capital')
+    cm.dispatch({ selection: { anchor: from, head: from + 'capital'.length }, userEvent: 'select.pointer' })
+    expect(view.state.selection.constructor.name).toBe('TextSelection')
+    expect(view.state.doc.textBetween(view.state.selection.from, view.state.selection.to)).toBe('capital')
+    expect(card.classList.contains('ProseMirror-selectednode')).toBe(false)
+    expect(cm.state.selection.main).toMatchObject({ from, to: from + 'capital'.length })
+    cm.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', metaKey: true, bubbles: true, cancelable: true }))
+    expect(cm.state.doc.toString()).toContain('the {{capital}} of')
+    expect(view.state.doc.textContent).toContain('the {{capital}} of')
+  })
+
   it('draws the same in a read-only preview (idea 10: the hover preview, QuickLook, read-only notes mount this editor), with no Edit card', async () => {
     // `useReadOnlyNote.ts`'s features and its read-only switch.
     const { crepe, root } = await mount(CARD, { features: { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeature.Toolbar]: false }, wikilinks: vault(true) })

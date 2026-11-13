@@ -197,6 +197,12 @@
 .note-card .note-card__code .cm-line {
   padding: 0;
 }
+/* No current-line band in Edit card (YAZ-5008): the code look paints the focused editor's line with an opaque
+   `--bg-hover` (`codeTheme.ts`), and CodeMirror draws the selection in a layer UNDER the lines, so a selection on that
+   line (a drag, a double or triple click, ⇧+arrows) did not show. A text editor has no band; the selection shows. */
+.note-card .note-card__code .cm-editor.cm-focused .cm-activeLine {
+  background-color: transparent;
+}
 
 /* The render (`renderNoteCard`): the sides, a thin rule between two. */
 .note-card__side > :first-child {
