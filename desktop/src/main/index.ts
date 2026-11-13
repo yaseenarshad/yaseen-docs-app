@@ -5,7 +5,6 @@ import { stat } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { fileKind } from '@shared/fileKind'
 import { fileLink, isAppLink, parseFileLink } from '@shared/links'
 import { FILES_PREVIEW_FRAME, MEMORY_SAMPLE_MS, placeVaults, type ClipboardPasteRequest, type FileKind, type WindowEntry } from '@shared/types'
 import { DRAWIO_HOST } from '@shared/drawio'
@@ -28,11 +27,11 @@ import { claimDeepLinkScheme } from './deepLinkScheme'
 import { DRAW_APP_NAME, shouldImportDrawAppData, startDrawImport } from './drawImport'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
-import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, gateOnBoardKind, menuKeyedVaults, pickMenuTargetWindow, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile } from './menu'
+import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, gateOnBoardKind, menuKeyedVaults, menuKindsInFront, pickMenuTargetWindow, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile } from './menu'
 import { revealItem } from './fs/reveal'
 import { revealVaultImage, serveVaultImage } from './vaultProtocol'
 import { followSettingsFolder } from './settingsFolder'
-import { drawingInFront, hotkeyRecording } from './hotkeyRecording'
+import { drawingInFront, hotkeyRecording, noPageInFront } from './hotkeyRecording'
 import { createStore } from './store'
 import { moveLegacyHeadingStyles } from './textFormattingMove'
 import { movePageSwitches } from './movePageSwitches'
@@ -378,17 +377,16 @@ app.whenReady().then(() => {
   // The board items (YAZ-3037, YAZ-3028 D10; Draw's 🔒 YAZ-1775 D10) are enabled only while the window a
   // menu action would target has a board of the right kind in front. Read at build time from the same
   // window `menuTarget` names, so the answer and the send target can never disagree.
-  const activeFileKind = () => {
+  // What the keys follow (YAZ-3564 K9): a drawing open over the note is in front of it; the board items stay the tab's.
+  // With no page on show (YAZ-5041: the Inbox tab, the blank tab), neither follows the tab stored under it.
+  const kindsInFront = () => {
     const wc = menuTarget()
     const id = wc === undefined ? undefined : manager.idFor(wc)
     const file = id === undefined ? null : (store.get().windows.find((w) => w.id === id)?.file ?? null)
-    return file === null ? null : fileKind(file)
+    return menuKindsInFront(file, { drawingOver: wc !== undefined && drawingInFront.has(wc.id), noPage: wc !== undefined && noPageInFront.has(wc.id) })
   }
-  // What the keys follow (YAZ-3564 K9): a drawing open over the note is in front of it; the board items stay the tab's.
-  const frontKind = (): FileKind | null => {
-    const wc = menuTarget()
-    return wc !== undefined && drawingInFront.has(wc.id) ? 'drawing' : activeFileKind()
-  }
+  const activeFileKind = (): FileKind | null => kindsInFront().activeKind
+  const frontKind = (): FileKind | null => kindsInFront().frontKind
   const { apply: applyMenu, applyIfMoved } = gateOnBoardKind(activeFileKind, () =>
     Menu.setApplicationMenu(
       Menu.buildFromTemplate(
@@ -405,6 +403,7 @@ app.whenReady().then(() => {
   subscribeMenuRebuild(store, applyMenu)
   hotkeyRecording.onChange(applyMenu)
   drawingInFront.onChange(() => applyIfMoved())
+  noPageInFront.onChange(() => applyIfMoved())
   // A tab switch changes which file is in front; a focus change changes which window is asked. Either
   // rebuilds only when the board items' answer moves (YAZ-3044 A32).
   subscribeMenuRebuildOnActiveFile(store, applyIfMoved)

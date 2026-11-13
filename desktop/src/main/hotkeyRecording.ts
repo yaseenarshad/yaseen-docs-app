@@ -67,3 +67,10 @@ export const hotkeyRecording = createHotkeyRecording()
  * closes (`hotkeys.drawingInFront`); a reload, crash or close ends it, as for a recorder.
  */
 export const drawingInFront = createHotkeyRecording('each')
+
+/**
+ * Which windows have NO page on show (YAZ-5041): the Inbox tab or the blank tab is in front. The window's stored
+ * `file` stays the tab under it (restore reads it), so the menu must not read it while this is on. The renderer says
+ * when it changes (`hotkeys.noPageInFront`); a reload, crash or close ends it, as for a recorder.
+ */
+export const noPageInFront = createHotkeyRecording('each')

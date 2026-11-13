@@ -7,7 +7,7 @@ import { defaultRightPanelIdentity, type FileKind, type RecentRoots, type Window
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, sameKey } from '@shared/hotkeyBindings'
 import { createStore, type Store } from './store'
-import { CANVAS_BACKGROUND_PICKS, HEAP_SNAPSHOT_BUSY_NOTICE, HELP_URL, RELOAD_NOT_CLEAN_NOTICE, buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKeyedVaults, pickMenuTargetWindow, gateOnBoardKind, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile, type ContextMenuActions, type MenuHandlers, type MenuHost, type MenuInputs } from './menu'
+import { CANVAS_BACKGROUND_PICKS, HEAP_SNAPSHOT_BUSY_NOTICE, HELP_URL, RELOAD_NOT_CLEAN_NOTICE, buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, menuKeyedVaults, menuKindsInFront, pickMenuTargetWindow, gateOnBoardKind, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile, type ContextMenuActions, type MenuHandlers, type MenuHost, type MenuInputs } from './menu'
 
 // ---------- buildMenuTemplate (pure) ----------
 
@@ -1045,6 +1045,27 @@ describe('gateOnBoardKind', () => {
     front = 'markdown'
     over.applyIfMoved()
     expect(build).toHaveBeenCalledTimes(10)
+  })
+})
+
+describe('menuKindsInFront (YAZ-5041)', () => {
+  it('the stored tab\'s kind, a drawing over a note in front of it, and NO page at all while the Inbox tab (or the blank tab) shows', () => {
+    expect(menuKindsInFront('/v/Plan.excalidraw', { drawingOver: false, noPage: false })).toEqual({ activeKind: 'drawing', frontKind: 'drawing' })
+    expect(menuKindsInFront('/v/a.md', { drawingOver: true, noPage: false })).toEqual({ activeKind: 'markdown', frontKind: 'drawing' })
+    expect(menuKindsInFront(null, { drawingOver: false, noPage: false })).toEqual({ activeKind: null, frontKind: null })
+    // The Inbox tab in front: the stored tab is the page under it; the menu follows no page — board items grey, App keys kept.
+    expect(menuKindsInFront('/v/Plan.excalidraw', { drawingOver: false, noPage: true })).toEqual({ activeKind: null, frontKind: null })
+    expect(menuKindsInFront('/v/a.md', { drawingOver: true, noPage: true })).toEqual({ activeKind: null, frontKind: null })
+  })
+
+  it('with no page in front, Export Image… and Share Link are grey and ⌘D is Show in Sidebar, as with no tab', () => {
+    const { activeKind, frontKind } = menuKindsInFront('/v/Plan.excalidraw', { drawingOver: false, noPage: true })
+    const menu = buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind, frontKind, hotkeys: {} }, noopHandlers())
+    expect(item(menu, 'File', 'menu.file.export-image')?.enabled).toBe(false)
+    expect(item(menu, 'File', 'menu.file.share-link')?.enabled).toBe(false)
+    const none = buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: null, hotkeys: {} }, noopHandlers())
+    expect(item(menu, 'File', 'menu.file.go-to')?.accelerator).toBe(item(none, 'File', 'menu.file.go-to')?.accelerator)
+    expect(item(menu, 'File', 'menu.file.go-to')?.accelerator).toBeDefined()
   })
 })
 

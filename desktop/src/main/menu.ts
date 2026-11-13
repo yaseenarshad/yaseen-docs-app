@@ -8,6 +8,7 @@
 import type { MenuItemConstructorOptions } from 'electron'
 import { keyedVaults, type AppState, type ClipboardPasteRequest, type CopyAsMode, type FileKind, type KeyedVault, type RecentRoots, type ZoomStep } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
+import { fileKind } from '@shared/fileKind'
 import { appKeyId, keyFor, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { keyRow, stepsAside, type HotkeyAside, type KeyScope } from '@shared/keys'
 import type { Store } from './store'
@@ -660,6 +661,17 @@ export function gateOnBoardKind(kindNow: () => FileKind | null, apply: () => voi
     apply()
   }
   return { apply: always, applyIfMoved: () => (bucket() === last ? undefined : always()) }
+}
+
+/**
+ * What the menu follows in the window it would act on (YAZ-5041): `activeKind` gates the board items, `frontKind` the
+ * App keys that step aside (YAZ-3564 K9). `file` is the window's stored tab; a drawing open over a note is in front of
+ * it; with NO page on show (the Inbox tab, the blank tab) the menu follows no tab at all, whatever is stored under it.
+ */
+export function menuKindsInFront(file: string | null, front: { drawingOver: boolean; noPage: boolean }): { activeKind: FileKind | null; frontKind: FileKind | null } {
+  if (front.noPage) return { activeKind: null, frontKind: null }
+  const activeKind = file === null ? null : fileKind(file)
+  return { activeKind, frontKind: front.drawingOver ? 'drawing' : activeKind }
 }
 
 /** The one fact the board items are gated on: which file each window has in front. */
