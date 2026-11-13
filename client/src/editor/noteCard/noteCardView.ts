@@ -550,6 +550,21 @@ export class NoteCardView implements NodeView {
     openCard = this
     this.draw()
     this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, pos)))
+    this.drawSelected()
+  }
+
+  /**
+   * The page's "selected block" look on the card (YAZ-5026 round 2: "double click highlight doesnt work"): on while the
+   * card is the page's selection and NOT edited. Crepe's reset makes every selection inside a selected block clear
+   * (`.milkdown .ProseMirror .ProseMirror-selectednode ::selection { background: transparent }`), so a card selected
+   * before Edit card hid each selection in its editor: a double click, a drag, ⇧+arrows. ProseMirror calls
+   * `selectNode` / `deselectNode` only when the page's selection moves to or off the card, and Edit card and Done keep
+   * it on the card, so the look is set here too.
+   */
+  private drawSelected(): void {
+    const { selection } = this.view.state
+    const selected = this.inner === null && selection instanceof NodeSelection && selection.from === this.pos
+    this.dom.classList.toggle('ProseMirror-selectednode', selected)
   }
 
   /** A change in the card editor: its text goes into the page 300 ms later (`mirror`). */
@@ -616,6 +631,7 @@ export class NoteCardView implements NodeView {
     const pos = this.pos
     if (pos === null || this.view.isDestroyed) return
     this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, pos)))
+    this.drawSelected()
     this.view.focus()
   }
 

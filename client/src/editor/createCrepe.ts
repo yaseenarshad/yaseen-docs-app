@@ -462,8 +462,12 @@ export interface CreateCrepeOptions {
    * key. Absent → every row, as a note.
    */
   hidden?: { toolbar?: readonly string[]; slash?: readonly string[] }
-  /** A NON-note instance's own toolbar buttons (YAZ-4277 1E: a drawing text box's letter colors), added before the build. */
-  extendToolbar?: (builder: ToolbarBuilder) => void
+  /**
+   * A NON-note instance's own toolbar buttons (YAZ-4277 1E: a drawing text box's letter colors), added before the build.
+   * They form the strip's last group ("Other", `arrangeToolbar`), unless it returns `{ after }`: that group goes right
+   * after the group of that key (the card editor's "Hide word" after the heading buttons, YAZ-5026 round 2).
+   */
+  extendToolbar?: (builder: ToolbarBuilder) => void | { after: string }
   /** Whether Enter keeps the line's style (YAZ-3746 13AB). Absent → the notes' switch; a drawing text box passes its own. */
   enterKeepsStyle?: () => boolean
   /**
@@ -548,7 +552,7 @@ const runOnView = (ctx: Ctx, command: Command): void => {
  * would keep Crepe's order and raise nothing; `headingToolbar.test.ts` reads the strip of a real
  * editor and fails on it.
  */
-function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined, hidden: readonly string[] = [], extend?: (builder: ToolbarBuilder) => void): void {
+function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefined, hidden: readonly string[] = [], extend?: CreateCrepeOptions['extendToolbar']): void {
   const formatting = builder.getGroup('formatting')
   for (const color of [null, ...QUICK_HIGHLIGHTS] as HighlightColor[]) {
     const id = color === null ? 'highlight' : (`highlight-${color}` as 'highlight-green' | 'highlight-blue')
@@ -609,12 +613,20 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
       onRun: (ctx) => runOnView(ctx, toggleListKind(kind)),
     })
   }
-  extend?.(builder)
+  const place = extend?.(builder)
   // The default order leads with the Heading group (YAZ-2700): the toolbar opens over the start of
   // the selection, so its first buttons are the ones under the hand after a double click.
   const groups = builder.build()
   noteCrepeIcons(groups)
   arrangeToolbar(groups, toolbarPrefs.value)
+  if (place) {
+    // The instance's own buttons right after the group it names; that group hidden in Settings: first.
+    const at = groups.findIndex((group) => group.key === 'other')
+    if (at >= 0) {
+      const [own] = groups.splice(at, 1)
+      groups.splice(groups.findIndex((group) => group.key === place.after) + 1, 0, own)
+    }
+  }
   if (hidden.length === 0) return
   for (const group of groups) group.items = group.items.filter((item) => !hidden.includes(item.key))
   groups.splice(0, groups.length, ...groups.filter((group) => group.items.length > 0))

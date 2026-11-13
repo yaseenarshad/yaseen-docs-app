@@ -348,8 +348,12 @@ export function newSideSlashRow(builder: SlashMenuGroups): void {
   })
 }
 
-/** The toolbar's "Hide word ⌘L": lit while the selection holds a hidden word; a click is ⌘L. */
-export function hideWordButton(builder: ToolbarBuilder): void {
+/**
+ * The toolbar's "Hide word ⌘L": lit while the selection holds a hidden word; a click is ⌘L. It sits right after the
+ * heading buttons (H1 H2 H3 T), where Yaseen marked it on the strip (YAZ-5026 round 2: "change the position of the
+ * cloze caption?"): the card's own action, under the hand after a double click, not last after the link.
+ */
+export function hideWordButton(builder: ToolbarBuilder): { after: string } {
   builder.getGroup('formatting').addItem('cloze', {
     icon: HIDE_ICON,
     label: 'Hide word',
@@ -359,6 +363,7 @@ export function hideWordButton(builder: ToolbarBuilder): void {
       ctx.get(commandsCtx).call(toggleClozeCommand.key)
     },
   })
+  return { after: 'lineType' }
 }
 
 /** Two cards, the front over the back. */

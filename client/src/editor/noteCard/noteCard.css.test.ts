@@ -69,3 +69,31 @@ it("YAZ-5008: Edit card's selection shows — the code look's current-line band 
   expect(beats(specificity(off[0].selector), focusedLine)).toBe(true)
   expect(off[0].body).not.toContain('!important')
 })
+
+it('YAZ-5026 round 2: a card`s lists, read (the page, the card window, the Inbox), follow Settings › Editor › Outline › Bullet indent and Bullet gap, with the page`s dots', () => {
+  const bullets = read('../outline/bullets.css')
+  // The page: the two settings, and the dot's fixed column.
+  expect(bullets).toMatch(/--list-label-gap:\s*var\(--note-bullet-gap, 10px\)/)
+  expect(bullets).toMatch(/--list-indent:\s*var\(--note-bullet-indent, 2\.15em\)/)
+  expect(bullets).toMatch(/--list-gutter:\s*calc\(2\.15em - 10px\)/)
+  // The card's read lists: the same three values, from the same settings.
+  const vars = rules(cardCss, '.note-card__side').find((r) => r.body.includes('--card-list-gap'))!
+  expect(vars.body).toMatch(/--card-list-gap:\s*var\(--note-bullet-gap, 10px\)/)
+  expect(vars.body).toMatch(/--card-list-indent:\s*var\(--note-bullet-indent, 2\.15em\)/)
+  expect(vars.body).toMatch(/--card-list-gutter:\s*calc\(2\.15em - 10px\)/)
+  // The text starts after the dot's column and the gap; a child level steps in by the indent from its parent's dot.
+  const li = rules(cardCss, '.note-card .note-card__side li').find((r) => /padding:/.test(r.body))!
+  expect(li.body).toMatch(/calc\(var\(--card-list-gutter\) \+ var\(--card-list-gap\)\)/)
+  const child = rules(cardCss, '.note-card .note-card__side li > :is(ul, ol)')[0]!
+  expect(child.body).toMatch(/margin-left:\s*calc\(var\(--card-list-indent\) - var\(--card-list-gutter\) - var\(--card-list-gap\)\)/)
+  // No browser bullets: the page's ● ○ ■ by level.
+  expect(rules(cardCss, '.note-card .note-card__side :is(ul, ol)').some((r) => /list-style:\s*none/.test(r.body))).toBe(true)
+  const dots = rules(cardCss, 'ul > li::before')
+  expect(dots.length).toBeGreaterThanOrEqual(3)
+})
+
+it('YAZ-5026 round 2: Edit card`s key row has its own look in the page (explore.css loads only with the card window or the Inbox)', () => {
+  const row = rules(cardCss, '.note-card .note-card__keys').find((r) => /display:\s*flex/.test(r.body))!
+  expect(row.body).toMatch(/gap:\s*14px/)
+  expect(rules(cardCss, '.note-card .note-card__keys kbd').some((r) => /font-family:\s*inherit/.test(r.body) && /border:/.test(r.body))).toBe(true)
+})
