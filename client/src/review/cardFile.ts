@@ -4,7 +4,7 @@
  * page as it is on disk now. Each write is ONE `transformFile` (`changeCard` on the bytes just read, a re-read and a
  * second try on a conflict): the page may be open in a tab, and the app merges an outside write into an open note.
  */
-import { CardNotFoundError, cardIdOf, cardReviewsOf, changeCard, isCardOff, pageCards, withCardReview, withoutCardReview, type CardLine, type CardReview } from '@shared/cardLine'
+import { CardNotFoundError, cardIdOf, cardReviewIndex, cardReviewsOf, changeCard, isCardOff, pageCards, withCardReview, withCardReviewAt, withoutCardReview, type CardLine, type CardReview } from '@shared/cardLine'
 import { BridgeRequestError, api } from '../api'
 import { announcedWrite } from '../lib/twinEditors'
 import { transformFile } from '../views/writeProperty'
@@ -64,8 +64,26 @@ export const changeCardLine = (path: string, id: string, change: (line: CardLine
 /** Writes `review` to card `id`'s line: the answer the hover showed, as it showed it (D13). Throws `CardNotFoundError`. */
 export const writeCardReview = (path: string, id: string, review: CardReview): Promise<unknown> => changeCardLine(path, id, (l) => withCardReview(l, review))
 
-/** Removes the review made at `at` from card `id` (undo, and the Reviews table's delete). An unknown `at` writes nothing. */
-export const deleteCardReview = (path: string, id: string, at: string): Promise<unknown> => changeCardLine(path, id, (l) => withoutCardReview(l, at))
+/**
+ * Removes the review made at `at` from card `id` (undo, and the Reviews table's delete). An unknown `at` writes nothing.
+ * Resolves to the review's place among the line's parts (-1 for an unknown `at`): `restoreCardReview` puts it back there.
+ */
+export async function deleteCardReview(path: string, id: string, at: string): Promise<number> {
+  let removed = -1
+  await changeCardLine(path, id, (l) => {
+    // The last try wins: `transformFile` runs the change again on a conflict.
+    removed = cardReviewIndex(l, at)
+    return withoutCardReview(l, at)
+  })
+  return removed
+}
+
+/**
+ * The undo of a delete (YAZ-4964): `review` back at part `index`, the place `deleteCardReview` gave, so the file
+ * comes back byte for byte. No place (-1: the delete found no review) writes nothing.
+ */
+export const restoreCardReview = (path: string, id: string, review: CardReview, index: number): Promise<unknown> =>
+  index < 0 ? Promise.resolve() : changeCardLine(path, id, (l) => withCardReviewAt(l, review, index))
 
 /** A write that found no card: the page changed under the review. */
 export const isCardGone = (err: unknown): boolean => err instanceof CardNotFoundError || (err instanceof BridgeRequestError && err.code === 'NOT_FOUND')

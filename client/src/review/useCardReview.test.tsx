@@ -190,4 +190,17 @@ describe('useCardReview', () => {
     await act(async () => noticeAction?.run())
     await vi.waitFor(() => expect(reviewsOn('Geo.md', 'WIKI-2')).toEqual(before))
   })
+
+  it('the delete`s Undo puts the review back in its own place: the file is the same bytes (first, middle and last review; `off` and an unknown part)', async () => {
+    // Not in time order, so a re-insert by time or at the end would show in the bytes.
+    page('Mixed.md', ['Q {{a}}', 'WIKI-9, off, 2026-09-01T08:00Z good, mochi x1, 2026-10-02T09:30Z hard, 2026-08-03T10:00Z again'])
+    const original = vault.get(`${ROOT}/Mixed.md`)!
+    await mount()
+    for (const [at, rating] of [['2026-09-01T08:00Z', 'good'], ['2026-10-02T09:30Z', 'hard'], ['2026-08-03T10:00Z', 'again']] as const) {
+      await act(async () => review.deleteReview(`${ROOT}/Mixed.md`, 'WIKI-9', { at, rating }))
+      expect(vault.get(`${ROOT}/Mixed.md`)).not.toBe(original)
+      await act(async () => noticeAction?.run())
+      await vi.waitFor(() => expect(vault.get(`${ROOT}/Mixed.md`)).toBe(original))
+    }
+  })
 })

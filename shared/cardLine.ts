@@ -119,6 +119,19 @@ export function withoutCardReview(line: CardLine, at: string): CardLine {
   return i === -1 ? line : { parts: line.parts.filter((_, j) => j !== i) }
 }
 
+/** The place among the line's parts of the review `withoutCardReview(line, at)` removes, or -1 when no review is at `at`. */
+export const cardReviewIndex = (line: CardLine, at: string): number => line.parts.map((p) => p.kind === 'review' && p.review.at === at).lastIndexOf(true)
+
+/**
+ * `review` put back at part `index`: the undo of a delete (YAZ-4964). `index` is the place `cardReviewIndex` gave
+ * before the delete, so the line comes back byte for byte — with its ID, `off` and any unknown part where they were.
+ * An `index` past the end (the line lost parts since) puts the review last.
+ */
+export function withCardReviewAt(line: CardLine, review: CardReview, index: number): CardLine {
+  const at = Math.max(0, Math.min(index, line.parts.length))
+  return { parts: [...line.parts.slice(0, at), { kind: 'review', review }, ...line.parts.slice(at)] }
+}
+
 /** No reviews: the ⋯ menu's "Reset history", and the history of a copy. Every other part stays. */
 export const withoutCardReviews = (line: CardLine): CardLine => ({ parts: line.parts.filter((p) => p.kind !== 'review') })
 

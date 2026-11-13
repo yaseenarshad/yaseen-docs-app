@@ -5,7 +5,7 @@ import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { folderTitle } from '../links/shortcuts'
-import { deleteCardReview, isCardGone, readCard, writeCardReview, type CardOnPage } from './cardFile'
+import { deleteCardReview, isCardGone, readCard, restoreCardReview, writeCardReview, type CardOnPage } from './cardFile'
 
 /**
  * Note card review as App sees it (YAZ-4967): how many cards are due, and the one review
@@ -224,17 +224,18 @@ export function useCardReview(root: string | null, source: IndexSource, settings
 
   const deleteReview = useCallback(
     async (path: string, id: string, review: CardReview) => {
-      const done = await deleteCardReview(path, id, review.at).then(
-        () => true,
+      const removed = await deleteCardReview(path, id, review.at).then(
+        (index) => index,
         (err: unknown) => {
           onNotice(`Can't delete the review: ${reason(err)}`, 'error')
-          return false
+          return null
         },
       )
-      if (!done) return
+      if (removed === null) return
       readAgain(path, id)
+      // Back in its own place, not after the last review: the file is the same bytes again (YAZ-4964).
       const restore = () =>
-        void writeCardReview(path, id, review).then(
+        void restoreCardReview(path, id, review, removed).then(
           () => readAgain(path, id),
           (err: unknown) => onNotice(`Can't put the review back: ${reason(err)}`, 'error'),
         )
