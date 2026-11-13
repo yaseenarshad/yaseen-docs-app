@@ -215,6 +215,103 @@
 .note-card__body pre {
   overflow-x: auto;
 }
+/* A sound (YAZ-5014): ONE line — play, the file name, a bar, the time — in the app's tokens, light and dark. */
+.note-card .note-card__audio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  margin: 4px 0;
+  padding: 4px 10px 4px 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-side);
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1;
+  user-select: none;
+  -webkit-user-select: none;
+  white-space: nowrap;
+}
+.note-card .note-card__audio-play {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg);
+  cursor: pointer;
+}
+.note-card .note-card__audio-play:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.note-card__audio-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.note-card .note-card__audio-bar {
+  position: relative;
+  flex: 1 1 60px;
+  min-width: 40px;
+  height: 4px;
+  padding: 0;
+  border-radius: 2px;
+  background: var(--border);
+  cursor: pointer;
+}
+.note-card__audio-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.note-card__audio-time {
+  flex: none;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.note-card__audio--broken .note-card__audio-play {
+  background: var(--fg-muted);
+}
+/* A board embed (YAZ-5015): the whole board as a still picture, fit to the card's width, its name under it. */
+.note-card .note-card__board {
+  display: block;
+  margin: 6px 0;
+  cursor: pointer;
+}
+.note-card .note-card__board-img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  min-height: 40px;
+  max-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  object-fit: contain;
+  background: var(--bg-side);
+}
+.note-card .note-card__board-img:not([src]) {
+  width: 100%;
+  height: 120px;
+}
+.note-card .note-card__board-name {
+  display: block;
+  margin-top: 4px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.note-card__board:hover .note-card__board-img {
+  border-color: var(--accent);
+}
 .note-card .note-card__rule {
   height: 1px;
   margin: 10px -16px;

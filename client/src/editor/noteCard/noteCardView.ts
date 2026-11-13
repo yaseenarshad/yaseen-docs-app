@@ -11,7 +11,8 @@
  * the chip "Up next ×" when it says `next`, YAZ-4999 D3 — its × removes the mark; Edit card; ⋯) and the sides, `renderNoteCard` (the Inbox's function too). The head does not repeat the card's first
  * line: the text is right below it (say each thing once). Hidden words show highlighted (idea 21 is later). A
  * `[[link]]` is the page's pill: a click opens it in Explore, a bound gesture (⌘-click by default) in a tab, as the
- * note's links (`noteCardLinkWhere`). Images resolve as the note's do (`imageSrc`). On an index change only the pills
+ * note's links (`noteCardLinkWhere`); a board's picture (YAZ-5015) opens the same way. A sound's player (YAZ-5014) takes
+ * its own press: it plays, and selects no card. Images resolve as the note's do (`imageSrc`). On an index change only the pills
  * draw again (`refreshNoteCardLook`). In a vault that gives no IDs a ```` ```card ```` block is a code block (D8).
 
  * READ ONLY (a read-only page or vault): the card's TEXT is locked — no Edit card — but its review is not. The ⋯
@@ -63,6 +64,7 @@ import type { MenuRow } from '../blockHandleMenu'
 import type { SlashRow } from '../slashMenu'
 import type { LinkFollow } from '../wikilink/wikilinkClick'
 import { CardLineStep, changeNoteCardLine, isNoteCardNode, NOTE_CARD_LANGUAGE, noteCardLineOf } from './noteCardLine'
+import { NOTE_CARD_BOARD_ATTR, NOTE_CARD_MEDIA, NOTE_CARD_OPENS } from './noteCardMedia'
 import { NOTE_CARD_LINK_ATTR, noteCardLinkWhere, refreshNoteCardLook, renderNoteCard, type NoteCardLook } from './noteCardRender'
 import './noteCard.css'
 
@@ -521,11 +523,14 @@ export class NoteCardView implements NodeView {
       if (id !== null) copyText(id, 'card ID', this.deps.onNotice ?? (() => {}), undefined, true)
       return
     }
-    const pill = target.closest<HTMLElement>(`[${NOTE_CARD_LINK_ATTR}]`)
+    // A sound's player is its own (YAZ-5014): its click plays, and the card is not selected.
+    if (target.closest(NOTE_CARD_MEDIA) !== null) return
+    // A pill, or a board's picture (YAZ-5015): it opens as its link does.
+    const pill = target.closest<HTMLElement>(NOTE_CARD_OPENS)
     if (pill !== null && this.deps.follow !== undefined) {
       const where = noteCardLinkWhere(event, this.deps.hotkeys?.())
       event.preventDefault()
-      if (where !== null) this.deps.follow(pill.getAttribute(NOTE_CARD_LINK_ATTR) ?? '', where)
+      if (where !== null) this.deps.follow(pill.getAttribute(NOTE_CARD_LINK_ATTR) ?? pill.getAttribute(NOTE_CARD_BOARD_ATTR) ?? '', where)
       return
     }
     if (target.closest('a[href]') !== null) return
@@ -544,7 +549,7 @@ export class NoteCardView implements NodeView {
 
   private onDoubleClick = (event: MouseEvent): void => {
     const target = event.target instanceof Element ? event.target : null
-    if (target?.closest('.note-card__body') == null || target.closest(`[${NOTE_CARD_LINK_ATTR}], a[href]`) !== null) return
+    if (target?.closest('.note-card__body') == null || target.closest(`${NOTE_CARD_OPENS}, ${NOTE_CARD_MEDIA}, a[href]`) !== null) return
     event.preventDefault()
     this.edit()
   }

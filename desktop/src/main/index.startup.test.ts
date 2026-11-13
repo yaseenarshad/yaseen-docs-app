@@ -170,8 +170,8 @@ describe('main startup order (YAZ-2172)', () => {
     expect(h.app.setAsDefaultProtocolClient).not.toHaveBeenCalled()
   })
 
-  it('registers app:// with exactly standard + secure + fetch + code cache, before ready', () => {
-    expect(h.protocol.registerSchemesAsPrivileged).toHaveBeenCalledExactlyOnceWith([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true } }])
+  it('registers app:// with exactly standard + secure + fetch + code cache + stream (YAZ-5014: a card`s sound), before ready', () => {
+    expect(h.protocol.registerSchemesAsPrivileged).toHaveBeenCalledExactlyOnceWith([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true, stream: true } }])
     expect(h.s.order).not.toContain('ready')
   })
 

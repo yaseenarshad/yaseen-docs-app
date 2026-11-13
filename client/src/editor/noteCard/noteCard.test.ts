@@ -11,6 +11,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave, noteCardLook, type CreateCrepeOptions } from '../createCrepe'
 import { applyExternalMarkdown } from '../external/applyExternalMarkdown'
 import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
+import { createViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import { CrepeFeature } from '../crepe'
 import { features } from '../featureConfig'
 import { NOTE_CARD_OPEN, noteCardLanguage, noteCardViewAt, type NoteCardOpenRequest } from './noteCardView'
@@ -212,6 +213,34 @@ describe('the card in the page', () => {
       ['explore', '/v/France.md'],
       ['backgroundTab', '/v/France.md'],
     ])
+  })
+
+  it('YAZ-5015: a board embed is its picture, and a click opens the board in Explore as its link (⌘-click a tab); YAZ-5014: a press on a sound`s player selects no card', async () => {
+    vi.stubGlobal('IntersectionObserver', class { observe() {} unobserve() {} disconnect() {} })
+    try {
+      const follow: Array<[string, string]> = []
+      // A board is a view-only file: its link resolves through the view-only catalog, as in the app.
+      const viewOnlyLinks = createViewOnlyLinkSource()
+      viewOnlyLinks.update({ entries: [], resolve: (target: string) => (target === 'Card loop.excalidraw' ? '/v/Card loop.excalidraw' : null) } as never)
+      const { view } = await mount('```card\nThe loop\n---\n![[Card loop.excalidraw]] ![[tone.mp3]]\n```\n', {
+        wikilinks: vault(true),
+        viewOnlyLinks,
+        wikilinkNav: { root: '/v', createFolder: () => '', openCurrent: (p) => follow.push(['thisTab', p]), openBackground: (p) => follow.push(['backgroundTab', p]), openExplore: (p) => follow.push(['explore', p]), onNotice: () => {} },
+      })
+      const card = view.dom.querySelector<HTMLElement>('.note-card')!
+      const board = card.querySelector<HTMLElement>('.note-card__board')!
+      expect(board.querySelector('img')?.getAttribute('loading')).toBe('lazy')
+      board.querySelector('img')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+      board.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, metaKey: true }))
+      expect(follow).toEqual([
+        ['explore', '/v/Card loop.excalidraw'],
+        ['backgroundTab', '/v/Card loop.excalidraw'],
+      ])
+      card.querySelector('.note-card__audio-name')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+      expect(card.classList.contains('ProseMirror-selectednode')).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('D20: the head shows the card ID first, small and grey; a click copies it and opens nothing; a card with no ID shows none', async () => {

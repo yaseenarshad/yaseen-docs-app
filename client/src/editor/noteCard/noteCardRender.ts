@@ -21,6 +21,10 @@
  *    and the icon attributes `look.link` gives (the note's own pill rules, `wikilinkPlugin.ts`); an `![[embed]]` stays
  *    its text. `look.image` gives an image's URL (the vault's `app://vault/…`, `imageSrc.ts`); Obsidian's `alt|300`
  *    is the width. Without `look`, a link shows its text and an image keeps its source.
+ *  - A sound (`![](x.mp3)`, `![[x.mp3]]`; YAZ-5014) is the one-line player, its URL by `look.image`; a board embed
+ *    (`![[x.excalidraw]]`, `![[x.drawio]]`; YAZ-5015) is the board's still picture, its file by `look.board` (no
+ *    `look.board`: its text; it does not resolve: the unresolved pill). Both are built AFTER DOMPurify from a marker
+ *    span, as the hidden words are (`noteCardMedia.ts`).
  */
 import DOMPurify from 'dompurify'
 import { Marked, type TokenizerAndRendererExtension, type Tokens } from 'marked'
@@ -29,6 +33,7 @@ import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction, MouseMods } from '@shared/keys'
 import { parseAlt } from '../image/imageSrc'
 import { linkClickAction } from '../linkGesture'
+import { audioPlayer, boardPicture, isAudioRef, isBoardRef, missingBoard, NOTE_CARD_AUDIO_ATTR, NOTE_CARD_BOARD_ATTR, type NoteCardBoardLook } from './noteCardMedia'
 
 /** How much of the card shows (the Inbox's steps, D18). Absent: everything, as in the page. */
 export interface NoteCardShow {
@@ -49,6 +54,8 @@ export interface NoteCardLink {
 export interface NoteCardLook {
   link?: (inner: string) => NoteCardLink
   image?: (src: string) => string
+  /** A board embed's file (YAZ-5015): its root and path, or null when it does not resolve. Absent: the embed's text. */
+  board?: NoteCardBoardLook
 }
 
 /** On a pill: the raw `inner` of its `[[inner]]`, for the click (`noteCardView.ts`, `review/noteCardParts.tsx`). */
@@ -86,6 +93,9 @@ const wikilinks: TokenizerAndRendererExtension = {
   },
   renderer(token) {
     const { inner, embed, raw } = token as LinkToken
+    // A sound or a board: a marker span DOMPurify keeps as text, built into its DOM after (`applyLook`).
+    if (embed && isAudioRef(inner)) return `<span ${NOTE_CARD_AUDIO_ATTR}="${escapeHtml(inner.split('|')[0].trim())}">${escapeHtml(raw)}</span>`
+    if (embed && isBoardRef(inner)) return `<span ${NOTE_CARD_BOARD_ATTR}="${escapeHtml(inner)}">${escapeHtml(raw)}</span>`
     return embed ? escapeHtml(raw) : `<span class="wikilink" ${NOTE_CARD_LINK_ATTR}="${escapeHtml(inner)}">${escapeHtml(inner)}</span>`
   },
 }
@@ -206,10 +216,39 @@ export function refreshNoteCardLook(root: ParentNode, look: NoteCardLook | undef
   }
 }
 
+/** The sounds of `root` as players and its board embeds as pictures (YAZ-5014, YAZ-5015): made after the sanitiser. */
+function buildMedia(root: ParentNode, look: NoteCardLook | undefined): void {
+  const url = (src: string) => (look?.image === undefined ? src : look.image(src))
+  for (const marker of root.querySelectorAll<HTMLElement>(`span[${NOTE_CARD_AUDIO_ATTR}]`)) {
+    const src = marker.getAttribute(NOTE_CARD_AUDIO_ATTR) ?? ''
+    marker.replaceWith(audioPlayer(url(src), src.slice(src.lastIndexOf('/') + 1)))
+  }
+  for (const img of root.querySelectorAll('img')) {
+    const src = img.getAttribute('src')
+    if (src === null || !isAudioRef(src)) continue
+    let name = src.split(/[?#]/)[0]
+    name = name.slice(name.lastIndexOf('/') + 1)
+    try {
+      name = decodeURIComponent(name)
+    } catch {
+      // As written.
+    }
+    img.replaceWith(audioPlayer(url(src), name))
+  }
+  if (look?.board === undefined) return
+  for (const marker of root.querySelectorAll<HTMLElement>(`span[${NOTE_CARD_BOARD_ATTR}]`)) {
+    const inner = marker.getAttribute(NOTE_CARD_BOARD_ATTR) ?? ''
+    const file = look.board(inner)
+    marker.replaceWith(file === null ? missingBoard(inner) : boardPicture(inner, file.root, file.path))
+  }
+}
+
 /** The pills' labels and looks, and the images' URLs and widths, by `look`. */
 function applyLook(root: ParentNode, look: NoteCardLook | undefined): void {
+  buildMedia(root, look)
   refreshNoteCardLook(root, look)
   for (const img of root.querySelectorAll('img')) {
+    if (img.classList.contains('note-card__board-img')) continue
     const src = img.getAttribute('src')
     if (src !== null && look?.image !== undefined) img.setAttribute('src', look.image(src))
     const { text, width } = parseAlt(img.getAttribute('alt') ?? '')

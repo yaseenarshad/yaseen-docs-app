@@ -984,7 +984,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
 
 /**
  * A note card's look in a vault (YAZ-4961; YAZ-4962 for the card window and the Inbox): the link pills as the note's
- * (label, resolved, icon) and the images by the note's folder. One function for the page and the screens outside it.
+ * (label, resolved, icon), the images and sounds by the note's folder, the board embeds by their links. One function for the page and the screens outside it.
  */
 export function noteCardLook(wikilinks: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined, image?: ImageOptions, linkLook?: LinkLook): NoteCardLook {
   return {
@@ -997,6 +997,14 @@ export function noteCardLook(wikilinks: WikilinkResolveSource, viewOnly: ViewOnl
       }
     },
     image: image === undefined ? undefined : (src) => imageSrc(image.root, noteDirRel(image.root, image.notePath), src),
+    // A board embed's file (YAZ-5015): where its link resolves, in the note's vault.
+    board:
+      image === undefined
+        ? undefined
+        : (inner) => {
+            const path = linkPath(inner, wikilinks, viewOnly)
+            return path === null ? null : { root: image.root, path }
+          },
   }
 }
 

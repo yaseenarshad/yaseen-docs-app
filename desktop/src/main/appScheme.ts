@@ -5,6 +5,6 @@ import type { CustomScheme } from 'electron'
  * like https. VS Code (vscode-file://) and Obsidian (app://obsidian.md) do the same. `codeCache`:
  * Chromium keeps compiled V8 code only for http(s) unless a scheme opts in, so without it every
  * launch recompiled the renderer's entry chunk (YAZ-2187: −35 ms nav → document painted, ~1.7 MB
- * in userData/Code Cache/js).
+ * in userData/Code Cache/js). `stream` (YAZ-5014): an `<audio>` on `app://vault` streams and seeks by byte range.
  */
-export const APP_SCHEME: CustomScheme = { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true } }
+export const APP_SCHEME: CustomScheme = { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true, stream: true } }

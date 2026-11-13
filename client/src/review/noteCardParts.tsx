@@ -12,6 +12,7 @@ import type { GestureAction } from '@shared/keys'
 import { api } from '../api'
 import { noteCardLook } from '../editor/createCrepe'
 import { copyText } from '../editor/linkMenu'
+import { NOTE_CARD_BOARD_ATTR, NOTE_CARD_MEDIA, NOTE_CARD_OPENS } from '../editor/noteCard/noteCardMedia'
 import { NOTE_CARD_LINK_ATTR, noteCardLinkWhere, refreshNoteCardLook, renderNoteCard, type NoteCardShow } from '../editor/noteCard/noteCardRender'
 import { hrefTarget } from '../editor/pathPaste'
 import { linkPath } from '../editor/wikilink/wikilinkPlugin'
@@ -123,13 +124,16 @@ export function NoteCardBody({ text, path, vault, show, doors }: NoteCardBodyPro
     const target = event.target instanceof Element ? event.target : null
     if (target === null || event.button !== 0) return
     const { openLayer, openTab, onNotice } = doorsRef.current
-    const pill = target.closest<HTMLElement>(`[${NOTE_CARD_LINK_ATTR}]`)
+    // A sound's player is its own (YAZ-5014).
+    if (target.closest(NOTE_CARD_MEDIA) !== null) return
+    // A pill, or a board's picture (YAZ-5015): its board on top, as its link.
+    const pill = target.closest<HTMLElement>(NOTE_CARD_OPENS)
     if (pill !== null) {
       event.preventDefault()
       event.stopPropagation()
       const where = noteCardLinkWhere(event, storage.getSettings()?.hotkeys)
       if (where === null) return
-      const inner = pill.getAttribute(NOTE_CARD_LINK_ATTR) ?? ''
+      const inner = pill.getAttribute(NOTE_CARD_LINK_ATTR) ?? pill.getAttribute(NOTE_CARD_BOARD_ATTR) ?? ''
       const to = linkPath(inner, wikilinks, viewOnlyLinks)
       if (to === null) return onNotice(`"${inner}" is not in this vault`)
       if (where === 'explore' || where === 'thisTab') openLayer(to)
