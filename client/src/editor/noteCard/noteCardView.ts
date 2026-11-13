@@ -95,7 +95,7 @@ export const NOTE_CARD_MIRROR_MS = 300
  * `code`, the raw-text code box — kept as the fallback behind this ONE switch.
  */
 export type NoteCardEditorKind = 'page' | 'code'
-let editorKind: NoteCardEditorKind = 'code'
+let editorKind: NoteCardEditorKind = 'page'
 export const noteCardEditorKind = (): NoteCardEditorKind => editorKind
 export const setNoteCardEditorKind = (kind: NoteCardEditorKind): void => {
   editorKind = kind
@@ -203,6 +203,9 @@ function reviewsFooter(): { section: HTMLElement; header: HTMLButtonElement; tit
   section.append(bar)
   return { section, header, title, facts }
 }
+
+/** The card view that draws `dom` (a `.note-card`), or null. */
+export const noteCardViewOfDom = (dom: Element | null): NoteCardView | null => (dom instanceof HTMLElement ? (views.get(dom) ?? null) : null)
 
 /** The card view that draws the card at `pos` in `view`, or null. */
 export function noteCardViewAt(view: EditorView, pos: number): NoteCardView | null {

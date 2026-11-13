@@ -14,7 +14,7 @@ import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { createViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import { CrepeFeature } from '../crepe'
 import { features } from '../featureConfig'
-import { NOTE_CARD_OPEN, NOTE_CARD_TITLE_PLACEHOLDER, noteCardLanguage, noteCardViewAt, type NoteCardOpenRequest } from './noteCardView'
+import { NOTE_CARD_OPEN, NOTE_CARD_TITLE_PLACEHOLDER, noteCardLanguage, noteCardViewAt, setNoteCardEditorKind, type NoteCardOpenRequest } from './noteCardView'
 import { refreshNoteCardLook, renderNoteCard } from './noteCardRender'
 import { pageCards } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
@@ -44,6 +44,7 @@ vi.mock('../../views/writeProperty', async (importOriginal) => ({
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
 afterEach(async () => {
+  setNoteCardEditorKind('page')
   while (mounted.length > 0) {
     const current = mounted.pop()!
     await current.crepe.destroy()
@@ -94,6 +95,8 @@ const CARD = '```card\nWhat is the capital of {{France}}?\n---\nParis\n```\n'
 
 describe('the "Note card" slash row (D1, idea 9)', () => {
   it('/card and /notecard find one row in a vault with IDs; it inserts a card that starts with its title line and takes its ID at once, and one ⌘Z removes it', async () => {
+    // The raw-text fallback (YAZ-5026: `setNoteCardEditorKind('code')`); the page's editor is `cardEditor.test.ts`.
+    setNoteCardEditorKind('code')
     let mint = (_path: string): Promise<string> => Promise.resolve('WIKI-512')
     const mintId = vi.fn((path: string) => mint(path))
     const { crepe, root, view } = await mount('x\n', { wikilinks: vault(true), noteCards: { path: '/v/Page.md', mintId } })
@@ -366,6 +369,8 @@ describe('the card in the page', () => {
   })
 
   it('Edit card is Crepe\'s code editor (made only then); YAZ-5001: ⌘↵ there is Done, while ⌘↵ in another code block still adds a line; the head says "Done esc ⌘↵"', async () => {
+    // The raw-text fallback (YAZ-5026: `setNoteCardEditorKind('code')`); the page's editor is `cardEditor.test.ts`.
+    setNoteCardEditorKind('code')
     const { root, view } = await mount(`${CARD}<!-- card: WIKI-8 -->\n\n\`\`\`js\nx\n\`\`\`\n`, { noteCards: { path: '/v/Page.md' } })
     const card = root.querySelector<HTMLElement>('.note-card')!
     const edit = () => card.querySelector('.note-card__edit')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
@@ -415,6 +420,8 @@ describe('the card in the page', () => {
   })
 
   it("YAZ-5008: in Edit card a selection (a drag, a double or triple click) stays CodeMirror's and the page's TEXT selection, never the card's node selection; ⌘L wraps it", async () => {
+    // The raw-text fallback (YAZ-5026: `setNoteCardEditorKind('code')`); the page's editor is `cardEditor.test.ts`.
+    setNoteCardEditorKind('code')
     const { EditorView: CodeMirrorView } = await import('@codemirror/view')
     const { root, view } = await mount(`${CARD}<!-- card: WIKI-8 -->\n`, { noteCards: { path: '/v/Page.md' } })
     const card = root.querySelector<HTMLElement>('.note-card')!
