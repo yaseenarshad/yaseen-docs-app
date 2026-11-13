@@ -56,7 +56,7 @@ import { NodeSelection, Plugin, PluginKey, TextSelection, type EditorState, type
 import type { Decoration, DecorationSource, EditorView, NodeView, NodeViewConstructor } from '@milkdown/kit/prose/view'
 import { clearTextInCurrentBlockCommand, setBlockTypeCommand } from '@milkdown/kit/preset/commonmark'
 import { $prose, $shortcut, $view } from '@milkdown/kit/utils'
-import { cardIdOf, cardReviewsOf, formatCardLine, isCardNext, isCardOff, settleCardCopy, withCardId, withCardNext, withCardOff, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
+import { cardIdOf, cardReviewsOf, formatCardLine, isCardNext, isCardNoTitle, isCardOff, settleCardCopy, withCardId, withCardNext, withCardNoTitle, withCardOff, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
@@ -67,19 +67,12 @@ import type { SlashRow } from '../slashMenu'
 import type { LinkFollow } from '../wikilink/wikilinkClick'
 import { CardLineStep, changeNoteCardLine, isNoteCardNode, NOTE_CARD_LANGUAGE, noteCardLineOf } from './noteCardLine'
 import { NOTE_CARD_BOARD_ATTR, NOTE_CARD_MEDIA, NOTE_CARD_OPENS } from './noteCardMedia'
+import { NOTE_CARD_OPEN, scrollIntoViewWhenShown, takeCardLanding, type NoteCardOpenRequest } from './noteCardOpen'
 import { NOTE_CARD_LINK_ATTR, noteCardLinkWhere, refreshNoteCardLook, renderNoteCard, type NoteCardLook } from './noteCardRender'
 import './noteCard.css'
 
-/** The open hook (D13): sent from the editor's `.ProseMirror`, it bubbles. App listens and opens the card window. */
-export const NOTE_CARD_OPEN = 'mdapp:note-card-open'
-export interface NoteCardOpenRequest {
-  /** The page's absolute path, or null in a preview that does not know it. */
-  path: string | null
-  /** The card's ID, or null before it has one. */
-  cardId: string | null
-  /** The card's place among the page's cards (`pageCards` order, 0 first): finds a card with no ID yet. */
-  index: number
-}
+// The open hook (D13) lives with the card's other doors (`noteCardOpen.ts`): a card link's click sends it too (YAZ-5030).
+export { NOTE_CARD_OPEN, type NoteCardOpenRequest } from './noteCardOpen'
 
 /** On the transaction that puts the ID of a new card (out of the undo history): the editor saves it all the same. */
 export const NOTE_CARD_ID_META = 'mdapp-note-card-id'
@@ -227,6 +220,8 @@ export class NoteCardView implements NodeView {
   /** The card ID, first in the head (D20): a click copies it. Hidden while the card has none. */
   private readonly idButton: HTMLButtonElement
   private readonly state: HTMLElement
+  /** "Title hidden in review" (YAZ-5030): shown while the line holds `notitle`; quiet, as "Review off" is. */
+  private readonly notitle: HTMLElement
   /** The "Up next" chip (YAZ-4999 D3): shown while the line holds `next`; its × removes the mark. */
   private readonly next: HTMLElement
   private readonly editButton: HTMLButtonElement
@@ -259,12 +254,15 @@ export class NoteCardView implements NodeView {
     this.idButton = button('note-card__id', 'Copy card ID', '')
     this.state = document.createElement('span')
     this.state.className = 'note-card__state'
+    this.notitle = document.createElement('span')
+    this.notitle.className = 'note-card__state note-card__notitle'
+    this.notitle.textContent = 'Title hidden in review'
     this.next = document.createElement('span')
     this.next.className = 'note-card__next'
     this.next.append('Up next', button('note-card__next-remove', 'Remove from top of Inbox', '×'))
     this.editButton = button('note-card__edit', 'Edit card', 'Edit card')
     this.more = button('note-card__more', 'Card menu', '⋯')
-    head.append(this.idButton, this.state, this.next, this.editButton, this.more)
+    head.append(this.idButton, this.state, this.notitle, this.next, this.editButton, this.more)
     this.body = document.createElement('div')
     this.body.className = 'note-card__body'
     this.dom.append(head, this.body)
@@ -274,6 +272,8 @@ export class NoteCardView implements NodeView {
     this.dom.addEventListener('dblclick', this.onDoubleClick)
     views.set(this.dom, this)
     this.draw()
+    // A card link's ⌘-click opened this page to land on this card (YAZ-5030): it scrolls into view once it shows.
+    if (takeCardLanding(this.path, cardIdOf(noteCardLineOf(node)))) scrollIntoViewWhenShown(this.dom)
     this.unsubscribe = deps.subscribe?.(() => {
       // An index change redraws only the pills of a card with a link: no Markdown render again.
       if (this.code === null && this.node.textContent.includes('[[')) refreshNoteCardLook(this.body, this.deps.look())
@@ -300,6 +300,7 @@ export class NoteCardView implements NodeView {
     this.idButton.textContent = id ?? ''
     this.idButton.hidden = id === null
     this.state.textContent = isCardOff(line) ? 'Review off' : ''
+    this.notitle.hidden = !isCardNoTitle(line)
     this.dom.classList.toggle('note-card--off', isCardOff(line))
     this.next.hidden = !isCardNext(line)
     // Done says its keys, as Explore's head does (YAZ-5001).
@@ -441,17 +442,20 @@ export class NoteCardView implements NodeView {
   }
 
   /** "Edit card": Crepe's code block in the card, the caret at the end of its text. */
-  edit(): void {
+  edit(select?: { from: number; to: number }): void {
     const pos = this.pos
     if (this.code !== null || this.makeCode === null || pos === null || !this.view.editable) return
     this.code = this.makeCode(this.node)
     this.code.dom.classList.add('note-card__code')
     this.dom.append(this.code.dom)
     this.draw()
-    const end = pos + 1 + this.node.content.size
-    this.view.dispatch(this.view.state.tr.setSelection(TextSelection.create(this.view.state.doc, end)).scrollIntoView())
+    // The caret at the end, or `select` (offsets in the card's text: `/card`'s "Title" placeholder, YAZ-5030).
+    const size = this.node.content.size
+    const from = Math.max(0, Math.min(select?.from ?? size, size))
+    const to = Math.max(from, Math.min(select?.to ?? size, size))
+    this.view.dispatch(this.view.state.tr.setSelection(TextSelection.create(this.view.state.doc, pos + 1 + from, pos + 1 + to)).scrollIntoView())
     // ProseMirror hands the caret to the view (`setSelection`), which makes CodeMirror and focuses it.
-    this.code.setSelection?.(this.node.content.size, this.node.content.size, this.view.root)
+    this.code.setSelection?.(from, to, this.view.root)
   }
 
   /** "Done": the card drawn again, selected. */
@@ -522,6 +526,8 @@ export class NoteCardView implements NodeView {
       { label: 'Open card', hint: '⌘↵', run: () => this.open() },
       { label: isCardNext(line) ? 'Remove from top of Inbox' : 'Put at top of Inbox', disabled: !editable, divider: true, run: () => this.change((l) => withCardNext(l, !isCardNext(l))) },
       { label: isCardOff(line) ? 'Turn review on' : 'Turn review off', disabled: !editable, run: () => this.change((l) => withCardOff(l, !isCardOff(l))) },
+      // ONE toggle row (YAZ-5030): its hint is the state now; a click turns it to the other.
+      { label: 'Title on the front', hint: isCardNoTitle(line) ? 'Hide' : 'Show', disabled: !editable, run: () => this.change((l) => withCardNoTitle(l, !isCardNoTitle(l))) },
       { label: 'Reset history', disabled: !editable || cardReviewsOf(line).length === 0, danger: true, run: () => this.change(withoutCardReviews) },
       { label: 'Copy card ID', disabled: id === null, divider: true, run: () => id !== null && copyText(id, 'card ID', onNotice, undefined, true) },
     ]
@@ -850,9 +856,12 @@ export const noteCardLanguage = LanguageDescription.of({
 /** The words the slash filter finds "Note card" by, besides its label (idea 9). */
 const NOTE_CARD_KEYWORDS = ['card', 'notecard', 'flashcard']
 
+/** What `/card` puts on a new card's first line (YAZ-5030): its title, selected, so typing replaces it. */
+export const NOTE_CARD_TITLE_PLACEHOLDER = 'Title'
+
 /**
- * The "Note card" slash row (D1, idea 9): the `/query` cleared, the line made an empty card, and the card edited at
- * once. The card takes its ID now (the coordinator's decision on YAZ-4961): when the door answers, ONE transaction out
+ * The "Note card" slash row (D1, idea 9): the `/query` cleared, the line made a card whose first line is its title
+ * (YAZ-5030: `NOTE_CARD_TITLE_PLACEHOLDER`, selected, so typing replaces it), and the card edited at once. The card takes its ID now (the coordinator's decision on YAZ-4961): when the door answers, ONE transaction out
  * of the undo history puts `<!-- card: WIKI-512 -->` on it, so ⌘Z removes the card in one step. No answer: the sweep
  * gives the ID later.
  */
@@ -868,8 +877,10 @@ export function noteCardRow(host: NoteCardHost): SlashRow {
       commands.call(setBlockTypeCommand.key, { nodeType: codeWidthSchema.type(ctx), attrs: { language: NOTE_CARD_LANGUAGE } })
       const { $from } = view.state.selection
       if (!isNoteCardNode($from.parent)) return
+      // The title line, in the same undo step as the card: one ⌘Z removes both.
+      if ($from.parent.content.size === 0) view.dispatch(view.state.tr.insertText(NOTE_CARD_TITLE_PLACEHOLDER, $from.start()))
       const card = noteCardViewAt(view, $from.before())
-      card?.edit()
+      card?.edit({ from: 0, to: NOTE_CARD_TITLE_PLACEHOLDER.length })
       if (card === null || host.mintId === undefined) return
       host.mintId(host.path).then(
         (id) => card.takeId(id),

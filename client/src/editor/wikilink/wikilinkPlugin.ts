@@ -23,6 +23,8 @@
  *    it, "INL-4 (In-harness-lab)", a widget too. Both stay dimmed (`wikilink--unresolved`),
  *  - the vault's link pills look (YAZ-4924, `source.pills`) adds a head and a tail piece, widgets, to every pill
  *    (`pillEnds`): the text before and after, the vault's name, the ID, the folder. Look only: the file keeps `[[Name]]`,
+ *  - a link to a NOTE CARD (`[[WIKI-512]]`, YAZ-5030: the ID is a card's, `linkCard`) shows the card's title and its
+ *    ID, with a card icon (`wikilink--card`), a widget as an ID link's title is; no vault look adds ends to it,
  *  - a match whose display would be EMPTY (`[[Note|]]`, `[[|]]`, `[[#]]`) stays raw — no
  *    decorations at all, so nothing ever collapses to a zero-width invisible run (FN12,
  *    GRO-2197),
@@ -50,6 +52,7 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type EditorState, type Selection, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { makeCardResolver, type CardLink, type CardResolve } from '@shared/cardLinks'
 import { isBoardTarget } from '@shared/embedOptions'
 import { splitLink, type LinkParts } from '@shared/linkParts'
 import { WIKILINK_RE } from '@shared/linkRewrite'
@@ -209,6 +212,33 @@ export function linkPageName(inner: string, source?: { resolve: ResolveLink | nu
   return linkSplit(inner, source).page
 }
 
+/** One card resolver per index snapshot and letters (YAZ-5030): every editor's decorations read the same one. */
+const cardResolvers = new WeakMap<readonly IndexRecord[], { letters: readonly string[]; resolve: CardResolve }>()
+
+/** The card resolver of `source`'s snapshot, or null: a vault with no IDs (it has no cards, D8), or no index yet. */
+export function cardResolverOf(source: Pick<WikilinkResolveSource, 'records' | 'ids' | 'letters' | 'resolve'>): CardResolve | null {
+  if (!source.ids || source.resolve === null) return null
+  const held = cardResolvers.get(source.records)
+  if (held !== undefined && held.letters === source.letters) return held.resolve
+  const resolve = makeCardResolver(source.records, source.letters)
+  cardResolvers.set(source.records, { letters: source.letters, resolve })
+  return resolve
+}
+
+/**
+ * The NOTE CARD a raw `[[inner]]` names (YAZ-5030, D7): its page part is a card's ID (`[[WIKI-512]]`, any case, the
+ * vault's letters of before too), or null — a page, a name, a vault with no IDs, and any link before the index loads.
+ */
+export function linkCard(inner: string, source: WikilinkResolveSource): CardLink | null {
+  const resolve = cardResolverOf(source)
+  if (resolve === null) return null
+  const page = linkPageName(inner, source)
+  return page === '' ? null : resolve(page)
+}
+
+/** What a card link shows for its card (YAZ-5030): the title, or "Note card" for a card with no text yet. */
+export const cardLinkTitle = (card: CardLink): string => (card.title === '' ? 'Note card' : card.title)
+
 /**
  * The title an id link shows (YAZ-2293): `target` is a note's id and `resolve` finds the note →
  * its title, by `titles` (YAZ-2420 🔒 D14). undefined for a name, for an id no note has, and before
@@ -310,7 +340,11 @@ export function linkDisplayText(inner: string, titleOf?: (target: string) => str
 export function linksAsShown(text: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, withId = false): string {
   if (!text.includes('[[')) return text
   const titles = pathTitles(source.records, source.folders)
+  const cards = cardResolverOf(source)
   const titleOf = (target: string) => {
+    // A card's ID shows the card's title (YAZ-5030), with its ID for a copy that leaves the app.
+    const card = cards?.(target) ?? null
+    if (card !== null) return withId ? nameAndId(cardLinkTitle(card), card.id) : cardLinkTitle(card)
     const title = idLinkTitle(target, source.resolve, titles)
     const id = withId ? linkNoteId(target, source) : undefined
     return title === undefined || id === undefined ? title : nameAndId(title, id)
@@ -366,6 +400,25 @@ function titleSpan(cls: string, title: string, icon?: Record<string, string>): H
   span.className = icon === undefined ? cls : `${cls} ${icon.class}`
   span.spellcheck = false
   span.textContent = title
+  return span
+}
+
+/** The class of a card link's pill (YAZ-5030): its card icon, and the ID after the title. */
+export const WIKILINK_CARD_CLASS = 'wikilink--card'
+export const WIKILINK_CARD_ID_CLASS = 'wikilink__card-id'
+
+/**
+ * The DOM a card link draws (YAZ-5030): the card's title and, small and grey after it, its ID, in ONE pill with the card
+ * icon on its `::before` (`wikilink.css`). The look of an ID link's title (`titleSpan`), so a card pill sits among them.
+ */
+export function cardPillSpan(title: string, id: string): HTMLElement {
+  const span = document.createElement('span')
+  span.className = `${WIKILINK_CLASS} ${WIKILINK_CARD_CLASS}`
+  span.spellcheck = false
+  const idSpan = document.createElement('span')
+  idSpan.className = WIKILINK_CARD_ID_CLASS
+  idSpan.textContent = id
+  span.append(title, idSpan)
   return span
 }
 
@@ -433,6 +486,15 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   const innerStart = start + 2
   const end = innerStart + inner.length + 2
   const { pipe, pageFirst } = linkSplit(inner, source)
+  // A link to a note card (YAZ-5030): the whole `[[ID]]` is syntax, and the card's title and ID stand at its end, as a
+  // lone ID link's title does (YAZ-3916), one pill with the card icon. `title` in the spec: what ⌘F reads.
+  const card = pipe >= 0 || !resolved ? null : linkCard(inner, source)
+  if (card !== null) {
+    const shown = cardLinkTitle(card)
+    hide(out, start, end)
+    out.push(Decoration.widget(end, () => cardPillSpan(shown, card.id), { key: `card|${shown}|${card.id}`, title: `${shown} ${card.id}`, side: -1 }))
+    return
+  }
   const parts = inner.split('#')
   // A missing note shows that it is missing, with its ID (YAZ-3905 S10): in the title's place, as a title is drawn.
   const missing = resolved ? undefined : missingId(inner, source)

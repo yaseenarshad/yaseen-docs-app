@@ -5750,7 +5750,9 @@ describe('App: the note card flow from /card, through the real editor (YAZ-4965)
       return at === -1
     })
     expect(at).toBeGreaterThan(-1)
-    await act(async () => void view.dispatch(view.state.tr.insertText('Capital of {{France}}\n---\nParis', at + 1)))
+    // YAZ-5030: the card starts with its title line, "Title", selected: the typing replaces it.
+    expect(view.state.doc.textBetween(at + 1, at + 1 + 'Title'.length)).toBe('Title')
+    await act(async () => void view.dispatch(view.state.tr.insertText('Capital of {{France}}\n---\nParis', at + 1, at + 1 + 'Title'.length)))
     // The autosave writes the card with the ID the door gave at insert, before any sweep.
     await vi.waitFor(() => expect(files[PAGE].content).toBe('# Cards\n\nIntro\n\n```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'), { timeout: SLOW_RUNNER_MS })
     // The index reads the save: the Inbox row counts the new card.

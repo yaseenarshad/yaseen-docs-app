@@ -239,8 +239,9 @@ export interface IndexRecord {
   embeds: string[]
   /**
    * The page's note cards (`shared/cardLine.ts`, YAZ-4960 D4), in page order: each card's ID (null before the sweep
-   * gives one), whether review is off, and its reviews as its card line holds them. No card text: it is read when a
-   * card shows. Absent when the page has no card, or was not read. When a card is due is computed (`cardSchedule.ts`).
+   * gives one), whether review is off, and its reviews as its card line holds them; its title (its first line, what a
+   * `[[card ID]]` link shows) and whether the title is hidden on the Inbox's front (YAZ-5030). No other card text: it is
+   * read when a card shows. Absent when the page has no card, or was not read. When a card is due is computed (`cardSchedule.ts`).
    */
   cards?: NoteCardRecord[]
 }

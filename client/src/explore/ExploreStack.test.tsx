@@ -2565,6 +2565,52 @@ describe('the card window (YAZ-4962)', () => {
     expect(chip()).toBeNull()
   })
 
+  it('YAZ-5030: "Linked mentions (n)" lists the pages that link to the card, live with the index; a click opens the page on top', async () => {
+    const cardRec = rec(PAGE, 'Cards', { mtime: 1, cards: [{ id: 'WIKI-9', off: false, next: false, reviews: [], title: 'Capital of France' }] })
+    const linker = rec('/v/geo.md', 'Geography', { links: ['wiki-9'] })
+    const other = rec('/v/other.md', 'Other', { links: ['WIKI-10', 'Cards'] })
+    source.update(() => null, [cardRec, linker, other], [], true, ['WIKI'])
+    props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
+    await mount()
+    await flush()
+    const section = () => top().querySelector<HTMLElement>('.note-card-backlinks')!
+    expect(section().querySelector('.backlinks__title')?.textContent).toBe('Linked mentions (1)')
+    // Open while there are any: each linking page by its title.
+    expect([...section().querySelectorAll('.note-card-backlinks__page')].map((b) => b.textContent)).toEqual(['Geography'])
+    // A new snapshot: another page links to the card too.
+    act(() => source.update(() => null, [cardRec, linker, rec('/v/other.md', 'Other', { links: ['WIKI-9|the capital'] })], [], true, ['WIKI']))
+    expect([...section().querySelectorAll('.note-card-backlinks__page')].map((b) => b.textContent)).toEqual(['Geography', 'Other'])
+    act(() => section().querySelector<HTMLButtonElement>('.note-card-backlinks__page')!.click())
+    await flush()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['card', 'note'])
+  })
+
+  it('YAZ-5030: ⋯ "Title on the front" (Show) writes `notitle`; the head then says "Hidden in review"', async () => {
+    files[PAGE] = page('<!-- card: WIKI-9 -->')
+    writeFile.mockImplementation(async ({ path, content }) => {
+      files[path] = content
+      return { path, mtime: 2, size: content.length }
+    })
+    props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
+    await mount()
+    await flush()
+    const mark = () => top().querySelector('.explore__head .note-card__notitle')
+    expect(mark()).toBeNull()
+    const row = () => {
+      act(() => top().querySelector<HTMLButtonElement>('.explore__more')!.click())
+      return [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent?.startsWith('Title on the front'))!
+    }
+    const shown = row()
+    expect(shown.dataset.hint ?? shown.textContent).toContain('Show')
+    act(() => shown.click())
+    await flush()
+    await flush()
+    expect(files[PAGE]).toContain('<!-- card: WIKI-9, notitle -->')
+    expect(mark()?.textContent).toBe('Hidden in review')
+    // The window shows the title either way.
+    expect(top().querySelector('.explore__title')?.textContent).toBe('Capital of France')
+  })
+
   it('stays live: a new version of the page in the index reads the card again (an answer in the Inbox shows here)', async () => {
     props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
     await mount()

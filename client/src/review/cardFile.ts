@@ -13,6 +13,7 @@ import {
   changeCard,
   changeCardText,
   isCardNext,
+  isCardNoTitle,
   isCardOff,
   pageCards,
   withCardNext,
@@ -37,6 +38,8 @@ export interface CardOnPage {
   off: boolean
   /** Up next (YAZ-4999 D3): the line's `next`. */
   next: boolean
+  /** The title is hidden on the Inbox's front (YAZ-5030): the line's `notitle`. Absent: it shows. */
+  notitle?: boolean
 }
 
 /** A card found by its ID or, before it has one, by its place (the card window, YAZ-4962). */
@@ -63,7 +66,7 @@ export async function readCardAt(path: string, id: string | null, index: number)
   const at = id === null || (cards[index] !== undefined && cardIdOf(cards[index].line) === id) ? index : cards.findIndex((c) => cardIdOf(c.line) === id)
   const card = cards[at]
   if (card === undefined) return null
-  return { path, id: cardIdOf(card.line), index: at, text: card.text, reviews: cardReviewsOf(card.line), off: isCardOff(card.line), next: isCardNext(card.line) }
+  return { path, id: cardIdOf(card.line), index: at, text: card.text, reviews: cardReviewsOf(card.line), off: isCardOff(card.line), next: isCardNext(card.line), notitle: isCardNoTitle(card.line) }
 }
 
 /** Card `id` of page `path` (the first that holds it), or null when the page or the card is gone (deleted, moved, or its ID changed). */

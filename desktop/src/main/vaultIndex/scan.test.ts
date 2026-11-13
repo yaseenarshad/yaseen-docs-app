@@ -288,7 +288,7 @@ describe('scanFile', () => {
     expect(await readFile(held, 'utf8')).toBe(content)
   })
 
-  it('note cards land on the record in page order: ID, off and reviews off each card line, no card text; `reviews` is a property like any other (YAZ-4960 D4, D6)', async () => {
+  it('note cards land on the record in page order: ID, off and reviews off each card line, and the title (YAZ-5030), no other card text; `reviews` is a property like any other (YAZ-4960 D4, D6)', async () => {
     const file = path.join(root, 'cards.md')
     const bytes = [
       '---',
@@ -320,9 +320,9 @@ describe('scanFile', () => {
     await writeFile(file, bytes)
     const r = await scanFile(root, file)
     expect(r.cards).toEqual([
-      { id: 'WIKI-512', off: false, next: false, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }, { at: '2026-11-20T09:00Z', rating: 'again' }] },
-      { id: null, off: false, next: false, reviews: [] },
-      { id: 'WIKI-7', off: true, next: false, reviews: [] },
+      { id: 'WIKI-512', off: false, next: false, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }, { at: '2026-11-20T09:00Z', rating: 'again' }], title: 'Capital of France?' },
+      { id: null, off: false, next: false, reviews: [], title: 'No ID yet' },
+      { id: 'WIKI-7', off: true, next: false, reviews: [], title: 'Off' },
     ])
     expect(r.properties).toEqual({ reviews: ['old'] })
     expect(await readFile(file, 'utf8')).toBe(bytes)

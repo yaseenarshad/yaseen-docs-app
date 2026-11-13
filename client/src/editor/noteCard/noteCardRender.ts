@@ -19,7 +19,8 @@
  *    side, at a time (D18).
  *  - `[[link]]` is a pill: `<span class="wikilink" data-note-card-link="inner">` with the label, the unresolved class
  *    and the icon attributes `look.link` gives (the note's own pill rules, `wikilinkPlugin.ts`); an `![[embed]]` stays
- *    its text. `look.image` gives an image's URL (the vault's `app://vault/…`, `imageSrc.ts`); Obsidian's `alt|300`
+ *    its text; a link to a note card (YAZ-5030, `look.link` gives `card`) is the card pill, title, ID and card icon.
+ *    `look.image` gives an image's URL (the vault's `app://vault/…`, `imageSrc.ts`); Obsidian's `alt|300`
  *    is the width. Without `look`, a link shows its text and an image keeps its source.
  *  - A sound (`![](x.mp3)`, `![[x.mp3]]`; YAZ-5014) is the one-line player, its URL by `look.image`; a board embed
  *    (`![[x.excalidraw]]`, `![[x.drawio]]`; YAZ-5015) is the board's still picture, its file by `look.board` (no
@@ -32,6 +33,7 @@ import { cardSides, hiddenCount, markHidden } from '@shared/cardText'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction, MouseMods } from '@shared/keys'
 import { parseAlt } from '../image/imageSrc'
+import { cardPillSpan } from '../wikilink/wikilinkPlugin'
 import { linkClickAction } from '../linkGesture'
 import { audioPlayer, boardPicture, isAudioRef, isBoardRef, missingBoard, NOTE_CARD_AUDIO_ATTR, NOTE_CARD_BOARD_ATTR, type NoteCardBoardLook } from './noteCardMedia'
 
@@ -48,6 +50,8 @@ export interface NoteCardLink {
   label: string
   resolved: boolean
   attrs?: Record<string, string>
+  /** A link to a note card (YAZ-5030): the card's ID, drawn small after the title, with the card icon (`cardPillSpan`). */
+  card?: string
 }
 
 /** The host's look-ups: the note's link pills and its image URLs. Each absent one leaves the text as written. */
@@ -206,6 +210,12 @@ export function refreshNoteCardLook(root: ParentNode, look: NoteCardLook | undef
   for (const pill of root.querySelectorAll<HTMLElement>(`[${NOTE_CARD_LINK_ATTR}]`)) {
     const inner = pill.getAttribute(NOTE_CARD_LINK_ATTR) ?? ''
     const shown = look.link(inner)
+    if (shown.card !== undefined) {
+      const next = cardPillSpan(shown.label, shown.card)
+      next.setAttribute(NOTE_CARD_LINK_ATTR, inner)
+      pill.replaceWith(next)
+      continue
+    }
     const { class: icon, ...attrs } = shown.attrs ?? {}
     const next = document.createElement('span')
     for (const [name, value] of Object.entries(attrs)) next.setAttribute(name, value)

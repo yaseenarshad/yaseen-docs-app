@@ -61,6 +61,8 @@ export interface LinkCandidate {
    * page without one, on an alias row (the page is one row) and on hand-built rows.
    */
   id?: string
+  /** A NOTE CARD's row (YAZ-5030): it inserts the card's ID, reads as its title, and draws the card icon. */
+  card?: true
 }
 
 /** A plain link name as a candidate: it matches, inserts and reads as itself. */
@@ -310,6 +312,26 @@ const depthOf = (r: IndexRecord): number => (r.folder === '' ? 0 : r.folder.spli
  */
 export const titleCandidates = (records: readonly IndexRecord[]): LinkCandidate[] =>
   records.map((r) => ({ ...nameCandidate(r.title), insert: r.id ?? r.title, ...(r.id === undefined ? {} : { id: r.id }) }))
+
+/**
+ * The NOTE CARDS as link rows (YAZ-5030, D7): each card with an ID, in records order then page order, typed and read
+ * as its title ("Note card" for an empty one) and found by its ID too (`matchLinkIds`: `[[512`, `[[wiki-512`); it
+ * inserts the ID, so the file keeps `[[WIKI-512]]` (the ID never changes). The picker lists them after the pages
+ * (`WikilinkIndexBridge`): within a rank, input order stands, so a page comes before a card of the same rank.
+ */
+export function cardLinkCandidates(records: readonly IndexRecord[]): LinkCandidate[] {
+  const rows: LinkCandidate[] = []
+  for (const r of records) {
+    if (r.cards === undefined) continue
+    for (const card of r.cards) {
+      if (card.id === null) continue
+      const title = card.title ?? ''
+      const name = title === '' ? card.id : title
+      rows.push({ name, insert: card.id, label: title === '' ? 'Note card' : title, lower: name.toLowerCase(), path: r.path, id: card.id, card: true })
+    }
+  }
+  return rows
+}
 
 /**
  * Candidates for one index snapshot, in records order (i.e. path-sorted): per record its name —

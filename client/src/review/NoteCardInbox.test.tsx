@@ -537,7 +537,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
 
   it('YAZ-5017: the top row — "All cards ▾" opens All cards / Due today / New cards with their counts; a pick sets the filter; the scope shows as a quiet path; the filter`s done screen leads back to All cards', () => {
     mount(TWO_SIDES)
-    session = { ...session, from: ['Spanish', 'Verbs'] }
+    session = { ...session, scope: 'folder', from: ['Spanish', 'Verbs'] }
     render()
     const bar = el.querySelector('.note-card-inbox__bar')!
     const filter = bar.querySelector<HTMLButtonElement>('.note-card-inbox__filter')!
@@ -757,7 +757,8 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(last().textContent).toBe('')
     session = { ...session, answered: ['good'], canUndo: true }
     render()
-    expect(last().textContent).toBe('✓ Remembered · WIKI-9 · back in 3 days · Undo ⌘Z')
+    // YAZ-5030: the card by its title, the ID after it.
+    expect(last().textContent).toBe('✓ Remembered · Capital of France (WIKI-9) · back in 3 days · Undo ⌘Z')
     expect(last().dataset.rating).toBe('good')
     expect(props.onNotice).not.toHaveBeenCalled()
     // Undo in the line: the hook's own undo; the session takes the answer off, and the line clears.
@@ -774,7 +775,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     // The next answer that lands: its line, in red (a Forgot).
     session = { ...session, answered: ['again'], canUndo: true }
     render()
-    expect(last().textContent).toBe('✕ Forgot · WIKI-9 · back later today · Undo ⌘Z')
+    expect(last().textContent).toBe('✕ Forgot · Capital of France (WIKI-9) · back later today · Undo ⌘Z')
     expect(last().dataset.rating).toBe('again')
     // ⌘Z is the same undo; once the session drops the answer, the line clears.
     press('z', { metaKey: true })
@@ -791,29 +792,90 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(answerLine('hard', 'DEMO-51', 1, false, four)).toBe('~ Hard · DEMO-51 · back in 1 day')
     expect(answerLine('easy', 'DEMO-51', 20, false, four)).toBe('⇈ Easy · DEMO-51 · back in 20 days')
     expect(answerLine('good', 'DEMO-51', 9, false, DEFAULT_REVIEW_SETTINGS)).toBe('✓ Remembered · DEMO-51 · back in 9 days')
+    // YAZ-5030: by its title, the ID after it; a long title ends in "…", so "back in …" stays in sight.
+    expect(answerLine('good', 'DEMO-51', 9, false, DEFAULT_REVIEW_SETTINGS, 'Spanish verb 3')).toBe('✓ Remembered · Spanish verb 3 (DEMO-51) · back in 9 days')
+    const long = answerLine('good', 'DEMO-51', 9, false, DEFAULT_REVIEW_SETTINGS, 'A very long card title that goes on and on past the room it has')
+    expect(long).toBe(`✓ Remembered · ${'A very long card title that goes on and'}… (DEMO-51) · back in 9 days`)
   })
 
-  it('YAZ-5017 round 2: the top row shows the CURRENT card`s place, vault › folder › page; it changes with the card; each part opens through `openPlace`', () => {
+  it('YAZ-5017 round 2: the top row shows the CURRENT card`s place, vault › folders (no page name); it changes with the card; each part opens through `openPlace`; the scope shows only when narrower than the vault', () => {
     mount(TWO_SIDES)
     const parts = () => [...el.querySelectorAll<HTMLButtonElement>('.note-card-inbox__path-part')]
-    session = { ...session, place: [{ kind: 'vault', label: 'Demo', path: '/v' }, { kind: 'folder', label: 'spanish-words', path: '/v/spanish-words' }, { kind: 'page', label: 'Greetings', path: '/v/spanish-words/Greetings.md' }] }
+    session = { ...session, place: [{ kind: 'vault', label: 'Demo', path: '/v' }, { kind: 'folder', label: 'spanish-words', path: '/v/spanish-words' }] }
     render()
-    expect(parts().map((p) => p.textContent)).toEqual(['Demo', 'spanish-words', 'Greetings'])
-    expect(el.querySelector('.note-card-inbox__path')?.getAttribute('title')).toBe('Demo › spanish-words › Greetings')
+    expect(parts().map((p) => p.textContent)).toEqual(['Demo', 'spanish-words'])
+    expect(el.querySelector('.note-card-inbox__path')?.getAttribute('title')).toBe('Demo › spanish-words')
+    // The whole vault under review: no "· in …" (Yaseen: "isnt this redundant?").
+    expect(el.querySelector('.note-card-inbox__from')).toBeNull()
     act(() => parts()[1].click())
     expect(props.openPlace).toHaveBeenLastCalledWith('/v/spanish-words')
-    act(() => parts()[2].click())
-    expect(props.openPlace).toHaveBeenLastCalledWith('/v/spanish-words/Greetings.md')
     act(() => parts()[0].click())
     expect(props.openPlace).toHaveBeenLastCalledWith('/v')
     // The next card, in another folder: the path follows it.
-    session = { ...session, place: [{ kind: 'vault', label: 'Demo', path: '/v' }, { kind: 'folder', label: 'Bio', path: '/v/Bio' }, { kind: 'page', label: 'Cells', path: '/v/Bio/Cells.md' }] }
+    session = { ...session, place: [{ kind: 'vault', label: 'Demo', path: '/v' }, { kind: 'folder', label: 'Bio', path: '/v/Bio' }] }
     render()
-    expect(parts().map((p) => p.textContent)).toEqual(['Demo', 'Bio', 'Cells'])
+    expect(parts().map((p) => p.textContent)).toEqual(['Demo', 'Bio'])
+    // A review of one page: the scope says it.
+    session = { ...session, scope: 'page', from: ['Cells'] }
+    render()
+    expect(el.querySelector('.note-card-inbox__from')?.textContent).toBe('·in Cells')
     // No card (the done screen): no place.
     session = { ...session, card: null, place: [] }
     render()
     expect(el.querySelector('.note-card-inbox__path')).toBeNull()
+  })
+})
+
+describe('the title on the front (YAZ-5030)', () => {
+  const TITLED = '###### {{Capital of France}}\n\nWhat is the capital of {{France}}?\n---\n{{Paris}}'
+  const withLine = (notitle: boolean) => {
+    mount(TITLED)
+    session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, notitle } } }
+    render()
+  }
+  const label = () => el.querySelector('.note-card-inbox__title')?.textContent ?? null
+  const text = () => el.querySelector('.note-card-inbox__card')?.textContent ?? ''
+
+  it('Hide: the front draws no title, and the title is NEVER a Space step (its hidden word neither); after the card is fully shown the title shows as a small label', async () => {
+    withLine(true)
+    await flush()
+    expect(text()).not.toContain('Capital of France')
+    // The first Space shows the first hidden word of the CONTENT.
+    expect(blanks()).toBe(1)
+    expect(label()).toBeNull()
+    press(' ')
+    expect(shown()).toEqual(['France'])
+    expect(label()).toBeNull()
+    press(' ')
+    expect(sides()).toBe(2)
+    expect(label()).toBeNull()
+    press(' ')
+    expect(shown()).toEqual(['France', 'Paris'])
+    // Fully shown: the label says which card it was; the card itself still has no title.
+    expect(label()).toBe('Capital of France')
+    expect(text()).not.toContain('Capital of France')
+  })
+
+  it('Show (an old card, no part): the title is part of the front as before, its hidden word the first Space step; no label', async () => {
+    withLine(false)
+    await flush()
+    expect(blanks()).toBe(2)
+    press(' ')
+    expect(shown()).toEqual(['Capital of France'])
+    press(' ')
+    press(' ')
+    press(' ')
+    expect(shown()).toEqual(['Capital of France', 'France', 'Paris'])
+    expect(label()).toBeNull()
+  })
+
+  it('the answer line names the card by its title, a hidden title too (the answer is given)', async () => {
+    withLine(true)
+    await flush()
+    press('2')
+    session = { ...session, answered: ['good'], canUndo: true }
+    render()
+    expect(el.querySelector('.note-card-inbox__last')?.textContent).toBe('✓ Remembered · Capital of France (WIKI-9) · back in 3 days · Undo ⌘Z')
   })
 })
 

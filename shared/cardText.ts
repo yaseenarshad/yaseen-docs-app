@@ -80,6 +80,24 @@ export function cardTitle(text: string): string {
   return ''
 }
 
+/**
+ * The card's text without its title line (YAZ-5030, "Title on the front: Hide"): the line `cardTitle` reads, and the
+ * blank lines right after it, taken out, so the Inbox draws no title on the front and its hidden words are no Space
+ * steps. A card with no title is its text unchanged.
+ */
+export function cardWithoutTitle(text: string): string {
+  const lines = text.split('\n')
+  const kinds = lineKinds(lines)
+  for (let i = 0; i < lines.length; i++) {
+    if (kinds[i] === 'text' && SIDE_BREAK_RE.test(lines[i])) return text
+    if (plainLine(lines[i]) === '') continue
+    let end = i + 1
+    while (end < lines.length && lines[end].trim() === '') end++
+    return [...lines.slice(0, i), ...lines.slice(end)].join('\n')
+  }
+  return text
+}
+
 /** One line of Markdown as plain text. */
 function plainLine(line: string): string {
   return showHidden(line)

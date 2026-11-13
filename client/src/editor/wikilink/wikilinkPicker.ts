@@ -118,6 +118,8 @@ export interface PickerRow {
   create: boolean
   /** The page the row names (`LinkCandidate.path`): its icon. */
   path?: string
+  /** A note card's row (YAZ-5030): the card icon, not its page's. */
+  card?: true
 }
 
 interface PickerSession {
@@ -181,9 +183,10 @@ function findContext(state: EditorState): { from: number; to: number; fragment: 
 export function rowsFor(fragment: string, candidates: readonly LinkCandidate[], was?: readonly string[]): PickerRow[] {
   const matches = matchLinks(candidates, fragment, was)
   // A view-only file reads as the sidebar names it (YAZ-3778 S14): `LN Scenarios Diagram.drawio` → `LN Scenarios Diagram`.
-  const rows = matches.map(({ label, insert, path }): PickerRow => ({ label: isViewOnly(insert) ? fileLabel(label) : label, insert, create: false, path }))
+  const rows = matches.map(({ label, insert, path, card }): PickerRow => ({ label: isViewOnly(insert) ? fileLabel(label) : label, insert, create: false, path, ...(card === true && { card }) }))
   const typed = fragment.trim().toLowerCase()
-  if (typed === '' || matches.some((m) => (m.lower ?? m.name.toLowerCase()) === typed)) return rows
+  // A card of that title is no PAGE of that name (YAZ-5030): Create still makes the page.
+  if (typed === '' || matches.some((m) => m.card !== true && (m.lower ?? m.name.toLowerCase()) === typed)) return rows
   return [...rows, { label: fragment, insert: fragment, create: true }]
 }
 
@@ -377,6 +380,15 @@ export function addRowIcon(item: HTMLElement, path: string, look: LinkLook): voi
   }
 }
 
+/** A note card's row (YAZ-5030): the card pill's icon before its title. */
+function addCardIcon(item: HTMLElement): void {
+  const icon = document.createElement('span')
+  icon.className = 'wikilink-picker__card-icon'
+  icon.setAttribute('aria-hidden', 'true')
+  item.prepend(icon)
+  item.dataset.card = 'true'
+}
+
 /** The popup element + its rows; mousedown-preventDefault so picking never blurs the editor. */
 function buildPopup(view: EditorView, links: WikilinkResolveSource, nav?: WikilinkNav, look?: LinkLook): { element: HTMLElement; render: (session: PickerSession | null) => void } {
   const element = document.createElement('div')
@@ -396,7 +408,8 @@ function buildPopup(view: EditorView, links: WikilinkResolveSource, nav?: Wikili
       item.className = row.create ? `${WIKILINK_PICKER_ITEM_CLASS} ${WIKILINK_PICKER_CREATE_CLASS}` : WIKILINK_PICKER_ITEM_CLASS
       item.setAttribute('aria-selected', String(i === session.selected))
       item.textContent = row.create ? `Create "${row.label}"` : row.label
-      if (!row.create && row.path !== undefined && look !== undefined) addRowIcon(item, row.path, look)
+      if (row.card === true) addCardIcon(item)
+      else if (!row.create && row.path !== undefined && look !== undefined) addRowIcon(item, row.path, look)
       item.addEventListener('mousedown', (e) => e.preventDefault())
       item.addEventListener('click', () => {
         // Re-read the live session: the state may have moved between render and click.

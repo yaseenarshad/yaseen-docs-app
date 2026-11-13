@@ -12,6 +12,9 @@
  *  - Above the card, outside its frame (YAZ-5027): the state chip (YAZ-5018, as Mochi's: "New card", "Due today",
  *    "Due · 3 days ago"). Head: the page's name (O), the card ID in brackets, small and grey (a click copies it, D20), the chip "Up next ×"
  *    for a card at the top of the Inbox (YAZ-4999 D3). No card title: the card is right below it.
+ *  - TITLE ON THE FRONT: HIDE (YAZ-5030, the card line's `notitle`): the front is drawn without its title line (its
+ *    first line, `cardWithoutTitle`), so the title is never a Space step, nor any hidden word in it. Once the card is
+ *    fully shown the title shows as a small label in the row above the card, after the chip: which card it was.
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
  *    Space shows the next side, whose hidden words then show one by one. The answer buttons show from the moment the
  *    card shows (YAZ-5010, Yaseen: "Should always be there"): `showAnswers()` fixes what each one writes then (the
@@ -49,7 +52,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { answerLabel, answerRatings } from '@shared/cardSchedule'
-import { cardSides, hiddenCount } from '@shared/cardText'
+import { cardSides, cardTitle, cardWithoutTitle, hiddenCount } from '@shared/cardText'
 import type { GestureAction } from '@shared/keys'
 import type { CardRating } from '@shared/cardLine'
 import type { ExploreVault } from '../explore/ExploreNote'
@@ -138,7 +141,12 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
   const columnRef = useRef<HTMLDivElement>(null)
   const { width, startDrag } = useInboxCardWidth(columnRef, rootRef)
   const card = session.card
-  const text = card?.page?.text ?? null
+  const pageText = card?.page?.text ?? null
+  // "Title on the front: Hide" (YAZ-5030): the front is drawn without its title line, so the title is never a Space
+  // step (nor a hidden word in it); once the card is fully shown, the title shows as a small label above it.
+  const hideTitle = card?.page?.notitle === true
+  const text = useMemo(() => (pageText !== null && hideTitle ? cardWithoutTitle(pageText) : pageText), [pageText, hideTitle])
+  const hiddenTitle = pageText !== null && hideTitle ? cardTitle(pageText) : ''
   const cardKey = card === null ? null : `${session.position}\n${card.path}\n${card.id}`
 
   // The sides and their hidden words, once per card text.
@@ -180,7 +188,9 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
     const { session, review, card } = live.current
     // The answers as the hook fixed them (a digit can come before the buttons show: they are fixed now, as `answer` would).
     const fixed = (session.answers ?? review.showAnswers())?.find((a) => a.review.rating === rating)
-    pendingLine.current = fixed === undefined || card === null ? null : { text: answerLine(rating, card.id, fixed.interval, fixed.inSteps, review.settings), rating, count: session.answered.length + 1 }
+    // The card by its title (YAZ-5030), a title hidden in review too: the answer is given.
+    const title = card?.page == null ? '' : cardTitle(card.page.text)
+    pendingLine.current = fixed === undefined || card === null ? null : { text: answerLine(rating, card.id, fixed.interval, fixed.inSteps, review.settings, title), rating, count: session.answered.length + 1 }
     void review.answer(rating)
   }, [])
   const answeredCount = session.answered.length
@@ -272,7 +282,11 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
       <div ref={columnRef} className="note-card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
         {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height
             with no chip (the done screen), so the card does not move; the page name always starts at the head's left. */}
-        <div className="note-card-inbox__above">{card !== null && <NoteCardStateChip card={card} />}</div>
+        <div className="note-card-inbox__above">
+          {card !== null && <NoteCardStateChip card={card} />}
+          {/* A hidden title (YAZ-5030) shows here once the card is fully shown: which card it was. */}
+          {done && hiddenTitle !== '' && <span className="note-card-inbox__title">{hiddenTitle}</span>}
+        </div>
         <div className="note-card-inbox__panel">
           {/* The card's edges (YAZ-5019): a drag of either sizes the card, centred. */}
           <div className="note-card-inbox__edge" data-side="left" role="separator" aria-orientation="vertical" aria-label="Card width" onPointerDown={startDrag(-1)} />

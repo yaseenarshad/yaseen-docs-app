@@ -355,7 +355,7 @@ import { createWikilinkClick, wikilinkFollower, type LinkFollow, type WikilinkNa
 import { createWikilinkHover, type WikilinkHover } from './wikilink/wikilinkHover'
 import { createWikilinkMenu, linkMenuOf } from './wikilink/wikilinkMenu'
 import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
-import { createWikilink, createWikilinkResolveSource, linkIsResolved, linkPath, linksAsShown, type LinkLook, type VaultsOfLetters, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { cardLinkTitle, createWikilink, createWikilinkResolveSource, linkCard, linkIsResolved, linkPath, linksAsShown, type LinkLook, type VaultsOfLetters, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { languages as codeLanguages } from '@codemirror/language-data'
 import { basename } from '@shared/types'
 import { imageSrc, noteDirRel } from './image/imageSrc'
@@ -800,7 +800,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   if (opts.wikilinkNav !== undefined && follow !== undefined) {
     const nav = opts.wikilinkNav
     // A plain click opens a note pill in Explore while the vault says so (YAZ-4936): a note that is there, never a board or a folder.
-    const exploreClick = (inner: string): boolean => nav.exploreClick?.() === true && fileKind(linkPath(inner, wikilinks, viewOnlyLinks) ?? '') === 'markdown'
+    // A card link's plain click always opens its card window (YAZ-5030), as Explore does a note's with the setting on.
+    const exploreClick = (inner: string): boolean => linkCard(inner, wikilinks) !== null || (nav.exploreClick?.() === true && fileKind(linkPath(inner, wikilinks, viewOnlyLinks) ?? '') === 'markdown')
     crepe.editor.use(createWikilinkClick(follow, () => nav.hotkeys?.(), exploreClick)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow, viewOnlyLinks, opts.vaultsOfLetters))
   }
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
@@ -989,6 +990,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
 export function noteCardLook(wikilinks: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined, image?: ImageOptions, linkLook?: LinkLook): NoteCardLook {
   return {
     link: (inner) => {
+      // A link to a note card (YAZ-5030): its title, its ID and the card icon, as the note's card pill.
+      const card = inner.includes('|') ? null : linkCard(inner, wikilinks)
+      if (card !== null) return { label: cardLinkTitle(card), resolved: true, card: card.id }
       const path = linkPath(inner, wikilinks, viewOnly)
       return {
         label: linksAsShown(`[[${inner}]]`, wikilinks, viewOnly),

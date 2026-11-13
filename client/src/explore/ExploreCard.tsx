@@ -13,6 +13,10 @@
  *    hover. A card with no review says "New".
  *  - "4 Reviews": the full table, closed until asked for (the strip says the state; D13 "a footer lets the table
  *    expand"), a bin on each row (`deleteReview`, with Undo in its notice).
+ *  - TITLE ON THE FRONT (YAZ-5030): the ⋯ row "Title on the front" (Show / Hide, the card line's `notitle`); while Hide,
+ *    the head says "Hidden in review" after the title, quietly. The window shows the title either way.
+ *  - "Linked mentions (n)" (YAZ-5030): the pages that link to the card (`[[WIKI-512]]`), from the index; a click opens
+ *    the page on top.
  *
  * EDIT CARD (YAZ-5003): E on the card window (or the Inbox's E, which opens it so) shows the page card's own editor:
  * a small Crepe that holds the card block alone, with the card view's Edit card on (`noteCardView.ts`: Crepe's code
@@ -28,11 +32,16 @@
  * The card is read from its page (`readCardAt`: by ID, or by its place while it has none) and read again whenever the
  * index has a new version of the page: an answer in the Inbox or a delete elsewhere shows here at once.
  */
-import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { cardState } from '@shared/cardSchedule'
 import { cardTitle } from '@shared/cardText'
 import type { GestureAction } from '@shared/keys'
-import { cardBlock, EMPTY_CARD_LINE, withCardNext, withCardOff, withoutCardReviews, type CardReview } from '@shared/cardLine'
+import { cardBlock, EMPTY_CARD_LINE, withCardNext, withCardNoTitle, withCardOff, withoutCardReviews, type CardReview } from '@shared/cardLine'
+import { cardBacklinks } from '@shared/cardLinks'
+import type { IndexRecord } from '@shared/types'
+import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
+import { cardResolverOf } from '../editor/wikilink/wikilinkPlugin'
+import { pageLabel, pathTitles } from '../lib/pageLabel'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { changeCardLine, changeCardTextIn, readCardAt, type CardAtPage } from '../review/cardFile'
 import { createCrepe } from '../editor/createCrepe'
@@ -185,6 +194,7 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
         <span ref={titleRef} className={`explore__title${title === '' ? ' note-card__title--empty' : ''}`}>
           {loaded.kind === 'loading' ? '' : title === '' ? 'New note card' : title}
         </span>
+        {card?.notitle === true && <span className="note-card__state note-card__notitle">Hidden in review</span>}
         {/* ↗ folds into ⋯ in a narrow layer (YAZ-4986); the card ID, the title and × stay. */}
         <span className="explore__fold">
           <HoverTip text={fromInbox ? 'Open page in a new tab' : 'Open page in a new tab (⌘↵)'} data-fold-part="open">
@@ -207,6 +217,8 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
                   [
                     { id: 'next', label: card.next ? 'Remove from top of Inbox' : 'Put at top of Inbox', onSelect: () => changeLine((l) => withCardNext(l, !card.next)) },
                     { id: 'review-off', label: card.off ? 'Turn review on' : 'Turn review off', onSelect: () => changeLine((l) => withCardOff(l, !card.off)) },
+                    // ONE toggle row (YAZ-5030): the hint is the state now; a click turns it to the other.
+                    { id: 'title-front', label: 'Title on the front', hint: card.notitle === true ? 'Hide' : 'Show', onSelect: () => changeLine((l) => withCardNoTitle(l, card.notitle !== true)) },
                     ...(card.reviews.length === 0 ? [] : [{ id: 'reset', label: 'Reset history', danger: true, onSelect: () => changeLine(withoutCardReviews) }]),
                   ],
                 ]),
@@ -232,6 +244,7 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
             )}
             <NoteCardStrip card={card} pageName={pageName} vault={vault} onOpenPage={() => onOpenPage(card.index)} />
             {review !== undefined && <NoteCardReviews reviews={card.reviews} settings={review.settings} onDelete={deleteReview} />}
+            {card.id !== null && <NoteCardBacklinks id={card.id} vault={vault} onOpen={onOpenLink} />}
           </>
         )}
       </div>
@@ -286,6 +299,49 @@ function NoteCardEditor({ text, path, vault, onDone }: { text: string; path: str
     }
   }, [])
   return <div ref={hostRef} className="explore-card__edit" data-explore-card-edit />
+}
+
+/**
+ * "Linked mentions (n)" of a card (YAZ-5030): the pages whose links name the card's ID, from the index (`cardBacklinks`),
+ * live with it; each row is the page's name, and a click opens the page on top. Open while there are any.
+ */
+function NoteCardBacklinks({ id, vault, onOpen }: { id: string; vault: ExploreVault; onOpen: (path: string) => void }) {
+  const { wikilinks } = vault
+  const feed = useIndexFeed(wikilinks)
+  const pages = useMemo((): IndexRecord[] => {
+    const resolve = feed.resolve === null ? null : cardResolverOf(wikilinks)
+    return resolve === null ? [] : cardBacklinks(feed.records, id, resolve)
+  }, [feed, id, wikilinks])
+  const titles = pathTitles(feed.records, feed.folders)
+  const [open, setOpen] = useState<boolean | null>(null)
+  const shown = open ?? pages.length > 0
+  return (
+    <section className="note-card-backlinks">
+      <button type="button" className="backlinks__header" aria-expanded={shown} onClick={() => setOpen(!shown)} onMouseDown={(e) => e.preventDefault()}>
+        <svg className="backlinks__chevron" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="m4 6 4 4 4-4" />
+        </svg>
+        <span className="backlinks__title">
+          Linked mentions <span className="backlinks__count">({pages.length})</span>
+        </span>
+      </button>
+      {shown && (
+        <ul className="note-card-backlinks__list">
+          {pages.length === 0 ? (
+            <li className="note-card-backlinks__none">No page links to this card yet.</li>
+          ) : (
+            pages.map((page) => (
+              <li key={page.path}>
+                <button type="button" className="note-card-strip__page note-card-backlinks__page" onMouseDown={keepFocus} onClick={() => onOpen(page.path)}>
+                  {pageLabel(page.path, false, titles)}
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </section>
+  )
 }
 
 /**

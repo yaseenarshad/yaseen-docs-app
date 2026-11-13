@@ -284,14 +284,17 @@ const showing = (s: Session, card: DueCard): boolean => s.queue[s.at] !== undefi
 const cardKey = (card: DueCard): string => `${card.path}\n${card.id}`
 const titleOf = (records: readonly IndexRecord[], path: string): string => records.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '')
 
-/** The place of the page at `path` (YAZ-5017 round 2): the vault, each folder down to the page's (by its title), the page. */
-export function cardPlace(root: string, vault: string, folders: readonly IndexRecord[], records: readonly IndexRecord[], path: string): CardPlacePart[] {
+/**
+ * The place of the page at `path` (YAZ-5017 round 2): the vault, then each folder down to the page's (by its title). No
+ * page part (Yaseen: "isnt this redundant?"): the card's head shows the page's name.
+ */
+export function cardPlace(root: string, vault: string, folders: readonly IndexRecord[], _records: readonly IndexRecord[], path: string): CardPlacePart[] {
   const dirs = (path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path).split('/').slice(0, -1)
   const inside = dirs.map((_, i): CardPlacePart => {
     const dir = `${root}/${dirs.slice(0, i + 1).join('/')}`
     return { kind: 'folder', label: folderTitle(folders, dir), path: dir }
   })
-  return [{ kind: 'vault', label: vault, path: root }, ...inside, { kind: 'page', label: titleOf(records, path), path }]
+  return [{ kind: 'vault', label: vault, path: root }, ...inside]
 }
 
 export function useCardReview(root: string | null, source: IndexSource, settings: ReviewSettings, onNotice: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void, vaultName?: string | null): CardReviewApi {
