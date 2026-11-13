@@ -137,7 +137,7 @@ describe('sidebar sort perf (YAZ-3227)', () => {
     const now = Date.now()
     const pick = () => {
       const times = timesByPath(tree())
-      return candidates.filter(filterTest({ type: 'markdown', time: 'year' }, (path) => times.get(path) ?? 0, timeStart('year', now))!).length
+      return candidates.filter(filterTest({ type: 'pages', time: 'year' }, (path) => times.get(path) ?? 0, timeStart('year', now))!).length
     }
     expect(pick()).toBe(0) // the fixture's times are from 1970
     const { median, worst } = timeMedian(20, pick)

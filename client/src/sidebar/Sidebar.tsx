@@ -18,8 +18,10 @@ import { countLinkReferences, linkingNotes } from '../links/renameLinks'
 import { addShortcut, removeShortcut, type Move } from '../links/shortcuts'
 import type { MovedGesture } from '../lib/moveHistory'
 import { ancestorDirs, favoriteRoots, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile } from '../lib/treeState'
-import { SEARCH_CAP } from '../search/searchCandidates'
+import { SEARCH_CAP, type SearchCandidate } from '../search/searchCandidates'
+import { landOnCard } from '../editor/noteCard/noteCardOpen'
 import { filterOn, filterSection, NO_FILTER, typeChip, typeFlyout, type SearchFilter, type SearchType } from '../search/searchFilter'
+import { useReviewOnRoots } from '../review/useReviewSettings'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { ConfirmDelete, type DeleteTarget } from './ConfirmDelete'
 import { ContextMenu } from './ContextMenu'
@@ -968,6 +970,21 @@ export function Sidebar({
       if (row.path === activeFile) focusOpenDocument()
     }
   }
+  /**
+   * A card inside a page, from Search (YAZ-5037): its page opens landed on the card (`landOnCard`, as a card link's
+   * ⌘-click does); ⌘ is a background tab, and Shift shows the page in Files.
+   */
+  const openSearchCard = (row: SearchCandidate, background: boolean, reveal = false) => {
+    const page = row.page ?? row.path
+    if (!background && reveal) return onRevealInFiles(page, true)
+    if (row.id !== undefined) landOnCard(page, row.id)
+    if (background) onOpenFileBackground(page)
+    else onOpenFile(page)
+  }
+  // The search tree's door to it, the same function for the tree's life (YAZ-2194: a render that changes nothing for the search re-renders no row).
+  const searchCardNow = useRef(openSearchCard)
+  searchCardNow.current = openSearchCard
+  const openTreeCard = useCallback((row: SearchCandidate, background: boolean) => searchCardNow.current(row, background), [])
   // The search covers every vault of the window (YAZ-2602 R2): each one's index, read by its own
   // watcher, its own folders and its own files that are no notes. The tree it cuts is the one Files
   // draws — the forest, with two or more vaults (A9).
@@ -978,9 +995,11 @@ export function Sidebar({
   vaultsNow.current = vaults
   // A folder of a vault (YAZ-4922 D3): the search reads the vault's index and finds the folder's notes only.
   const searchFolders = useSameList(vaults.map((vault) => vault.folder))
+  // The vaults whose Review is on (YAZ-5037): their cards are search rows, and the Type menu offers Cards.
+  const reviewRoots = useReviewOnRoots(roots)
   const searchVaults = useMemo(
-    () => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i], idsInSearch: () => vaultsNow.current.find((v) => v.root === vault)?.idsInSearch?.() ?? 'match', ...(searchFolders[i] !== undefined && { folder: searchFolders[i] }) })),
-    [roots, watches, dirsByVault, filesByVault, searchFolders],
+    () => roots.map((vault, i) => ({ root: vault, watch: watches[i], dirs: dirsByVault[i], files: filesByVault[i], idsInSearch: () => vaultsNow.current.find((v) => v.root === vault)?.idsInSearch?.() ?? 'match', ...(searchFolders[i] !== undefined && { folder: searchFolders[i] }), ...(reviewRoots.has(vault) && { cards: true }) })),
+    [roots, watches, dirsByVault, filesByVault, searchFolders, reviewRoots],
   )
   // The Search tab (YAZ-2638 D2): its body is the search, and the query stays while another tab shows.
   const searching = lens === 'search'
@@ -1109,7 +1128,7 @@ export function Sidebar({
       keepsOrder(depth, searchSort, { keepTop: top, vaults: vaultRows.size > 0 }) ? nodes : sortLevel(nodes, searchSort, shownLabel(titles), scores),
     [vaultRows, searchSort, titles],
   )
-  const { searchInput, query, results, typed, found, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, searchLevel, searchSort.by === 'best', searchFilter, setSearchFilter, pendingSearchClear)
+  const { searchInput, query, results, typed, found, cardRows, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, searchLevel, searchSort.by === 'best', searchFilter, setSearchFilter, pendingSearchClear, openSearchCard)
   // A new query moves the results under a still pointer: the panel of the row that was there goes (YAZ-3403).
   useEffect(() => closePreview(), [query, closePreview])
   // The row whose menu is open wears the selected style beside the highlight, as on Files (S30): a
@@ -1756,7 +1775,7 @@ export function Sidebar({
     dates: sortedTab !== null && settings.rowDates[sortedTab],
   }
   // A search tree's own (YAZ-2620): its folds, its highlight and its marks; nothing in it creates, renames or drags. Its IDs are "Show IDs in search"'s (`marks`), not the files list's.
-  const searchTreeProps = { ...treeProps, ids: undefined, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, pageRows: NO_PAGE_ROWS, marks, sort: searchSort, dates: settings.rowDates.search, scores }
+  const searchTreeProps = { ...treeProps, ids: undefined, expanded: searchOpen, onToggle: toggleSearchDir, pending: null, renaming: null, move: INERT_MOVE, selection: searchSelection, shortcuts: NO_SHORTCUTS, pageRows: NO_PAGE_ROWS, marks, cardRows, onOpenCard: openTreeCard, sort: searchSort, dates: settings.rowDates.search, scores }
 
   // A vault that could not be read says so on every tab: one line per vault, its own (YAZ-2602).
   const errorLines = errors.map((message, at) => (
@@ -2311,7 +2330,7 @@ export function Sidebar({
             (next) => onChangeSettings(sortTab === 'search' ? { ...settings, searchSort: next } : { ...settings, sidebarSort: { ...settings.sidebarSort, [sortTab]: next } }),
             // The tab's date switch (YAZ-3511 D7, D10), and on Search its filters (D13, D14).
             { on: settings.rowDates[sortTab], set: (on) => onChangeSettings({ ...settings, rowDates: { ...settings.rowDates, [sortTab]: on } }) },
-            sortTab === 'search' ? filterSection(searchFilter, setSearchFilter) : undefined,
+            sortTab === 'search' ? filterSection(searchFilter, setSearchFilter, reviewRoots.size > 0) : undefined,
             // YAZ-4450 D4: each list's own switch, in a window with two or more vaults only.
             multi && (sortTab === 'focus' || sortTab === 'favorites') ? workspaceRow(sortTab) : undefined,
           )}

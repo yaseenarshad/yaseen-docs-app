@@ -27,8 +27,9 @@ const FILE_FIELDS: Record<string, (r: FileRecordLike) => Value> = {
   basename: r => r.basename,
   path: r => r.path,
   folder: r => r.folder,
-  // A folder page's subfolder row is the folder's `.folder.md` (YAZ-4579 D31): `folder`; every other record is a `note`.
-  kind: r => (r.name === FOLDER_SETTINGS_FILE ? 'folder' : 'note'),
+  // A folder page's subfolder row is the folder's `.folder.md` (YAZ-4579 D31): `folder`; a card file (YAZ-5037, the
+  // index's `kind`): `card`; every other record is a `note` (YAZ-5036 renames it `page`).
+  kind: r => (r.name === FOLDER_SETTINGS_FILE ? 'folder' : r.kind === 'card' ? 'card' : 'note'),
   ext: r => r.ext,
   size: r => r.size,
   // 0 = no file yet: the row of a folder with no `.folder.md` (YAZ-4579 D31) has no dates, never 1970 (YAZ-3746 2D).

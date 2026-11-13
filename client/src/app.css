@@ -3906,6 +3906,22 @@ body.drag-held iframe {
   display: inline;
 }
 
+/* A card's icon in search (YAZ-5037, `CardIcon`): the `[[` picker's card icon (`--card-link-icon`, wikilink.css), the
+   size and place of a file icon, in the card colour where the theme has one; File icons Off hides it too. */
+.card-icon::before {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  background: var(--kind-card, var(--fg-muted));
+  mask: var(--card-link-icon) center / 14px 14px no-repeat;
+}
+.app[data-sidebar-file-icons='off'] .card-icon::before {
+  content: none;
+}
+
 /* Search (YAZ-2620 🔒 D5): each part of a row that matched (YAZ-3748 D3), in the tree and in the flat lists — the `==highlight==` wash
    (`--mark-bg`) and weight. Weight alone was too faint at this size (Yasin's walk). The wash is
    translucent and the text keeps its colour, so it holds on the open and the highlighted row, in both themes. */

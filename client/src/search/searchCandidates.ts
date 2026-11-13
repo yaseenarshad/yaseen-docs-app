@@ -44,7 +44,17 @@ export interface SearchCandidate {
   was?: readonly string[]
   /** A text row of the explore search (YAZ-2571, `explore/exploreRows.ts`): the matched tag or frontmatter value, shown under the title. */
   snippet?: string
+  /** A card (YAZ-5037): a card file's row, or a card's in a page, while its vault's Review is on. The Cards type (`typeOf`) and the card icon read it. */
+  card?: true
+  /**
+   * A card inside a page (YAZ-5037): the page's absolute path. Its row's own `path` is `cardRowPath(page, id)`, so each
+   * row keyed by path stays one; it opens the page at the card, and it stands under its page in the search tree.
+   */
+  page?: string
 }
+
+/** A card-in-a-page row's own path (YAZ-5037): its page's, `#`, its ID. No file has it: it keys the row, never a read. */
+export const cardRowPath = (page: string, id: string): string => `${page}#${id}`
 
 /** Result cap for title search — scrollable results, not the `[[` picker's MAX_SUGGESTIONS popup. The sidebar says so when it is reached (🔒 D6, YAZ-2620). */
 export const SEARCH_CAP = 50
@@ -57,14 +67,28 @@ export const SEARCH_CAP = 50
  * is, when the note was named by hand (`ownFileName`, YAZ-3748 B4): `2026-10-28` finds `2026-10-28-sync.md` titled
  * "Weekly sync". `linkCandidates` gets no such row. `letters` are the vault's ID letters
  * (`IndexResponse.letters`): the ones it had before ride on each row that has an id.
+ *
+ * `cards`: the vault's Review is on (YAZ-5037). A card file's row is then a card (`card`), and its card's ID finds it,
+ * the file's ID; with Review off it is a page's row, as before. One row either way. And each card INSIDE a page that
+ * has an ID is one more row (YAZ-5047 pick 3), off the index's `cards` (its title and ID, no file read): found by its
+ * title, or by its exact ID; a card with no title reads as its ID.
  */
-export function searchCandidates(records: readonly IndexRecord[], letters: readonly string[] = []): SearchCandidate[] {
+export function searchCandidates(records: readonly IndexRecord[], letters: readonly string[] = [], cards = false): SearchCandidate[] {
   const was = lettersBefore(letters)
   return records.flatMap((r) => {
     const row = (name: string, label: string): SearchCandidate => ({ kind: 'file', name, lower: name.toLowerCase(), label, path: r.path, folder: r.folder })
     const aliases = r.aliases.filter((alias) => alias.toLowerCase() !== r.title.toLowerCase())
-    const rows = [{ ...row(r.title, r.title), id: r.id, ...was }, ...aliases.map((alias) => row(alias, `${alias} — ${r.title}`))]
+    const card = cards && r.kind === 'card'
+    const head = card ? { ...row(r.title, r.title), id: cardFileId(r) ?? r.id, ...was, card: true as const } : { ...row(r.title, r.title), id: r.id, ...was }
+    const rows = [head, ...aliases.map((alias) => row(alias, `${alias} — ${r.title}`))]
     if (ownFileName(r)) rows.push(row(r.basename, `${r.basename} — ${r.title}`))
+    if (cards && !card && r.cards !== undefined) {
+      for (const c of r.cards) {
+        if (c.id === null) continue
+        const name = c.title ?? c.id
+        rows.push({ kind: 'file', name, lower: name.toLowerCase(), label: name, path: cardRowPath(r.path, c.id), folder: r.folder, id: c.id, ...was, card: true, page: r.path })
+      }
+    }
     return rows
   })
 }
@@ -80,10 +104,15 @@ export function searchCandidates(records: readonly IndexRecord[], letters: reado
 function ownFileName(r: IndexRecord): boolean {
   const file = r.basename.toLowerCase()
   if (file === r.title.toLowerCase() || r.aliases.some((alias) => alias.toLowerCase() === file)) return false
-  if (r.id === undefined) return file !== kebabTitle(r.title).toLowerCase()
-  const id = r.id.toLowerCase()
+  // A card file is named from its card's ID (YAZ-5037, `cardFileName`): that ID is the one its name holds.
+  const held = cardFileId(r) ?? r.id
+  if (held === undefined) return file !== kebabTitle(r.title).toLowerCase()
+  const id = held.toLowerCase()
   return file !== id && !file.endsWith(`-${id}`)
 }
+
+/** A card file's ID (YAZ-5037): its card's, which its name holds; undefined for a page, or before the sweep gave one. */
+const cardFileId = (r: IndexRecord): string | undefined => (r.kind === 'card' ? (r.cards?.[0]?.id ?? undefined) : undefined)
 
 /** The letters a vault had before, as a candidate carries them: one shared list, and no key at all for a vault that had none. */
 const lettersBefore = (letters: readonly string[]): { was?: readonly string[] } => (letters.length > 1 ? { was: letters.slice(1) } : {})

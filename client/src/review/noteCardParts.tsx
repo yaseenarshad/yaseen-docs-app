@@ -42,8 +42,7 @@ export function noteCardDate(ms: number, now = Date.now()): string {
 export const noteCardWait = (days: number, inSteps = false): string => (inSteps ? 'later today' : days === 0 ? 'today' : dayCount(days))
 
 /** The card ID in a head (D20): small and grey, FIRST in the head; a click copies it. The page's card block has the same (`noteCardView.ts`). */
-/** `brackets`: "(DEMO-59)", after the page name in the Inbox head (YAZ-5012); the click still copies the bare ID. */
-export function NoteCardId({ id, onNotice, brackets = false }: { id: string; onNotice: (message: string) => void; brackets?: boolean }) {
+export function NoteCardId({ id, onNotice }: { id: string; onNotice: (message: string) => void }) {
   return (
     <button
       type="button"
@@ -56,7 +55,7 @@ export function NoteCardId({ id, onNotice, brackets = false }: { id: string; onN
       }}
       onClick={() => copyText(id, 'card ID', onNotice, undefined, true)}
     >
-      {brackets ? `(${id})` : id}
+      {id}
     </button>
   )
 }

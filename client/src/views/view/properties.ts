@@ -1,4 +1,4 @@
-import type { IndexRecord } from '@shared/types'
+import { FOLDER_SETTINGS_FILE, type IndexRecord } from '@shared/types'
 import { READ_ONLY_KEY } from '@shared/readOnly'
 import type { ViewSet, ViewDef } from '../viewSchema'
 import type { ColumnDecl } from '../folderSettings'
@@ -10,7 +10,8 @@ import { canonicalKey } from './keys'
  * `view.order` round-trips), then `file.name` + the page's columns (YAZ-895 — a DECLARED column is offerable before
  * any note carries a value for it; since YAZ-1549 `propertyKeys` itself shows it by default), then every other field
  * the rows hold — Columns ⚙'s "Other properties in these notes" (YAZ-4713 C4) — then "File name" (`file.basename`,
- * YAZ-2420 🔒 D18), Folder (`file.folder`, a column since YAZ-4564 D26), Cards, Due and Archived (`file.cards`, `file.due`, YAZ-4967; `file.archived`, YAZ-5046)
+ * YAZ-2420 🔒 D18), Folder (`file.folder`, a column since YAZ-4564 D26), Type (`file.kind`, YAZ-5047) where a row is a card
+ * file or a folder row, Cards, Due and Archived (`file.cards`, `file.due`, YAZ-4967; `file.archived`, YAZ-5046)
  * where a row holds a note card, and the formulas; de-duplicated by canonical
  * key. The rows are the notes' own fields less the app's keys (the folder host's `columnReservedKeys`, C1).
  */
@@ -39,6 +40,8 @@ export function allPropertyKeys(
   if (records.some((r) => READ_ONLY_KEY in r.properties)) add(`note.${READ_ONLY_KEY}`)
   add('file.basename')
   add('file.folder')
+  // The Type column (YAZ-5047): offered where it tells rows apart — a card file (YAZ-5037) or a folder row among them; off by default.
+  if (records.some((r) => r.kind === 'card' || r.name === FOLDER_SETTINGS_FILE)) add('file.kind')
   // The note card counts (YAZ-4967, idea 2): offered only where a row holds a card, hidden until the reader shows them.
   if (records.some((r) => r.cards !== undefined && r.cards.length > 0)) {
     add('file.cards')

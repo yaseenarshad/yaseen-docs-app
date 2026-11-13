@@ -21,6 +21,8 @@ import { EMPTY_SELECTION } from '../lib/selection'
 // The focus list's persistence is the REAL storage module (no mock in this file): `storage.init()`
 // against a mount's bridge is how a test hands the Sidebar a list restored from an earlier session.
 import { storage } from '../lib/storage'
+import { useReviewSettings } from '../review/useReviewSettings'
+import { takeCardLanding } from '../editor/noteCard/noteCardOpen'
 import { CollapseAllIcon, ExpandAllIcon } from '../views/view/icons'
 
 /**
@@ -3025,6 +3027,82 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     expect(props.onRevealConsumed).toHaveBeenCalledExactlyOnceWith(1)
     expect([input.value, shape(el)]).toEqual(['a', results])
     expect(el.querySelector('.tree__row--revealed')).toBeNull()
+  })
+
+  describe('YAZ-5037 cards in search (YAZ-5047 pick 3): while Review is on, a card in a page and a card file each show once, with the card icon', () => {
+    /** A page with two cards, a card file, and a plain page. */
+    const CARDS = (v: string): TreeNode[] => [note(`${v}/Geography.md`), note(`${v}/capital-of-spain-geo-150.md`), note(`${v}/Capitals list.md`)]
+    const cardRecords = (v: string): IndexRecord[] => [
+      record(v, `${v}/Geography.md`, { cards: [{ id: 'GEO-140', off: false, next: false, reviews: [], title: 'Capital of France' }, { id: 'GEO-141', off: false, next: false, reviews: [], title: 'River of Paris' }] }),
+      record(v, `${v}/capital-of-spain-geo-150.md`, { title: 'Capital of Spain', kind: 'card', properties: { kind: 'card' }, cards: [{ id: 'GEO-150', off: false, next: false, reviews: [], title: 'Capital of Spain' }] }),
+      record(v, `${v}/Capitals list.md`),
+    ]
+    /** The vault's `review.json`, read by the real `useReviewSettings` as App's scope reads it. */
+    const reviewIs = (enabled: boolean) => (b: ReturnType<typeof installBridge>) => {
+      Object.assign(b, { vaultConfig: { read: vi.fn(async () => ({ enabled })), write: vi.fn(async () => undefined), onChange: vi.fn(() => () => undefined) } })
+    }
+    let probe: Root | null = null
+    afterEach(() => {
+      act(() => probe?.unmount())
+      probe = null
+    })
+    const withReview = async (query: string, enabled: boolean) => {
+      const m = await search('', {}, { nodes: CARDS, records: cardRecords, tweak: reviewIs(enabled) })
+      function Scope() {
+        useReviewSettings(m.v, () => undefined)
+        return null
+      }
+      probe = createRoot(document.createElement('div'))
+      await act(async () => probe?.render(<Scope />))
+      await type(m.input, query)
+      return m
+    }
+    const cardRow = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__body .tree__row--card')]
+
+    it('Review on: "capital" lists the card under its page (the page dim, as a parent), the card file once, and the plain page; each card with the card icon', async () => {
+      const { el, v } = await withReview('capital', true)
+      expect(cardRow(el).map((b) => b.textContent)).toEqual(['Capital of France'])
+      expect(cardRow(el)[0].querySelector('.card-icon')).not.toBeNull()
+      // The card stands right under its page, one level in; the page is no match itself (dim).
+      const page = row(el, `${v}/Geography.md`)!
+      expect(page.closest('li')!.nextElementSibling!.contains(cardRow(el)[0])).toBe(true)
+      expect(page.classList.contains('tree__row--context')).toBe(true)
+      // A card file is ONE row: the file's own (its card is not listed again).
+      expect(el.querySelectorAll(`.sidebar__body .tree__row[data-path="${v}/capital-of-spain-geo-150.md"]`)).toHaveLength(1)
+      expect(row(el, `${v}/Capitals list.md`)).not.toBeNull()
+      expect(shape(el)).toHaveLength(4)
+    })
+
+    it('a click on the card opens its page at the card; ⌘-click in a background tab', async () => {
+      const { el, v, props } = await withReview('capital', true)
+      click(cardRow(el)[0])
+      expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/Geography.md`)
+      expect(takeCardLanding(`${v}/Geography.md`, 'GEO-140')).toBe(true)
+      click(cardRow(el)[0], { metaKey: true })
+      expect(props.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith(`${v}/Geography.md`)
+    })
+
+    it('an exact ID finds its card: `geo-140` highlights the card in the page, and Enter opens the page at it; `geo-150` finds the card file', async () => {
+      const { el, v, input, props } = await withReview('geo-140', true)
+      expect(cardRow(el).map((b) => b.textContent)).toEqual(['GEO-140 — Capital of France'])
+      expect(cursor(el)).toEqual(['GEO-140 — Capital of France'])
+      await press(input, 'Enter')
+      expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${v}/Geography.md`)
+      expect(takeCardLanding(`${v}/Geography.md`, 'GEO-140')).toBe(true)
+      await type(input, 'geo-150')
+      // One row, the card file's own, found by its card's ID (its label is the tree's title; this test feeds no titles).
+      expect(shape(el)).toHaveLength(1)
+      expect(row(el, `${v}/capital-of-spain-geo-150.md`)?.textContent).toMatch(/^GEO-150 — /)
+    })
+
+    it('Review off: no card in a page; the card file is a page row, found by its title', async () => {
+      const { el, v, input } = await withReview('capital', false)
+      expect(cardRow(el)).toEqual([])
+      expect(row(el, `${v}/Geography.md`)).toBeNull()
+      expect(row(el, `${v}/capital-of-spain-geo-150.md`)).not.toBeNull()
+      await type(input, 'geo-140')
+      expect(shape(el)).toEqual([])
+    })
   })
 
   it('S31: right-clicking blank space in the results offers no menu — not even the OS one (YAZ-803, YAZ-2050)', async () => {
@@ -11759,15 +11837,15 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     expect(walked).toEqual(['/v/Plan.md', '/v/Archive/plan.md', '/v/Plan B.md', '/v/Project plan.md'])
   })
 
-  it('S40, S57, S58, D13, D17: Type ▸ Markdown keeps the notes and their folders; the sort button says a filter is on; PDFs with none says so', async () => {
+  it('S40, S57, S58, D13, D17 (YAZ-5047: Pages, was Markdown): Type ▸ Pages keeps the notes and their folders; the sort button says a filter is on; PDFs with none says so', async () => {
     const { el } = await search(NAME)
     act(() => sortButton(el)?.click())
-    clickSub(el, 'Markdown', 'Type')
+    clickSub(el, 'Pages', 'Type')
     expect(rows(el)).toEqual(['docs 3h', 'plan 2 3h', 'plan 10 2d', 'plan a 1w', 'plan b 34m'])
     expect(sortButton(el)?.classList.contains('sidebar__sort--filtered')).toBe(true)
     expect(sortButton(el)?.title).toBe('Sort · Filters on')
     act(() => sortButton(el)?.click())
-    expect(items(el)).toContain('TypeMarkdown')
+    expect(items(el)).toContain('TypePages')
     clickSub(el, 'PDFs', 'Type')
     expect(el.querySelector('.sidebar__body .sidebar__msg')?.textContent).toBe('No matches with these filters.')
   })
@@ -11777,13 +11855,13 @@ describe('the Search tab\'s sort and dates (YAZ-3511)', () => {
     const chips = () => [...el.querySelectorAll<HTMLButtonElement>('.sidebar__filters .sidebar__filter-chip')]
     expect(el.querySelector('.sidebar__filters')).toBeNull()
     act(() => sortButton(el)?.click())
-    clickSub(el, 'Markdown', 'Type')
-    expect(chips().map((c) => c.textContent)).toEqual(['Markdown'])
+    clickSub(el, 'Pages', 'Type')
+    expect(chips().map((c) => c.textContent)).toEqual(['Pages'])
     expect(chips()[0].querySelector('.file-icon')?.getAttribute('data-kind')).toBe('markdown')
     expect(el.querySelector('.sidebar__filter-clear')).toBeNull()
     act(() => sortButton(el)?.click())
     clickSub(el, 'Today', 'Time')
-    expect(chips().map((c) => c.textContent)).toEqual(['Markdown', 'Today'])
+    expect(chips().map((c) => c.textContent)).toEqual(['Pages', 'Today'])
     act(() => chips()[0].click())
     expect(chips().map((c) => c.textContent)).toEqual(['Today'])
     act(() => sortButton(el)?.click())

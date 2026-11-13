@@ -19,6 +19,7 @@ import { summarize } from '../summaries'
 import { FolderIcon, ShortcutIcon } from './icons'
 import { HoverTip } from '../../components/HoverTip'
 import { canonicalKey } from './keys'
+import { typeWord } from './typeWord'
 import { GroupHeaderMenu } from './GroupHeaderMenu'
 import { OtherFilesFolderMove } from './otherFilesMove'
 import { GroupLevelStepsContext } from '../groupLevelSteps'
@@ -173,6 +174,7 @@ export const ColumnDecls = createContext<Readonly<Record<string, PropertyDecl>>>
 export const rowCell = (row: Row, key: string, resolve?: Resolver): ReactNode => {
   const c = canonicalKey(key)
   if (c === 'file.folder') return <FolderCell row={row} value={row.values[key]} resolve={resolve} />
+  if (c === 'file.kind') return typeWord(row.values[key])
   if (c.startsWith('note.')) return <NoteCell value={row.values[key]} name={c.slice('note.'.length)} resolve={resolve} />
   return cellContent(row.values[key], resolve)
 }

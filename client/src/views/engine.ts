@@ -236,6 +236,14 @@ function makeGetter(key: string, def: ViewSet, errors: EngineError[], cardSettin
   if (key === 'file.due') return (scope) => (cardSettings === undefined ? null : cardCount(scope.file, cardSettings, scope.now ?? Date.now()))
   // YAZ-5046: the page's archived cards (the line's `off`); no settings needed, as "Cards".
   if (key === 'file.archived') return (scope) => archivedCount(scope.file)
+  // The Type column (YAZ-5047): a card file is a Card only while the vault's Review is on (YAZ-5037); with it off, a page.
+  if (key === 'file.kind') {
+    const expr = member('file', 'kind')
+    return (scope) => {
+      const kind = evaluate(expr, scope)
+      return kind === 'card' && cardSettings?.enabled !== true ? 'note' : kind
+    }
+  }
   if (key.startsWith('file.')) {
     const expr = member('file', key.slice(5))
     return scope => evaluate(expr, scope)
@@ -439,7 +447,8 @@ const FILE_FIELD_LABELS: Readonly<Record<string, string>> = {
   'file.basename': 'File name',
   'file.path': 'Path',
   'file.folder': 'Folder',
-  'file.kind': 'Kind',
+  // YAZ-5047: one word, "Type" (Page, Card, Folder: `typeWord`); the key stays `kind`.
+  'file.kind': 'Type',
   'file.ext': 'Extension',
   'file.size': 'Size',
   'file.ctime': 'Created',

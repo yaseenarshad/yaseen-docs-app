@@ -156,7 +156,7 @@ export function propertyValues(property: string, records: readonly IndexRecord[]
   if (property === 'file.tags') for (const r of records) for (const tag of r.tags) add(tag)
   else if (property === 'file.folder') for (const r of records) add(r.folder)
   else if (property === 'file.links') for (const r of records) for (const link of r.links) add(link)
-  else if (property === 'file.kind') for (const kind of ['note', 'folder']) add(kind)
+  else if (property === 'file.kind') for (const kind of records.some((r) => r.kind === 'card') ? ['note', 'card', 'folder'] : ['note', 'folder']) add(kind)
   else if (!property.startsWith('file.') && !property.startsWith('formula.')) {
     for (const option of typing?.options ?? []) add(option)
     const bare = property.startsWith('note.') ? property.slice(5) : property
