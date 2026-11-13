@@ -3,6 +3,7 @@ import path from 'node:path'
 import { isRecord } from '@shared/guards'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { rewriteIds, type IdChange } from '@shared/linkRewrite'
+import { cardFileId, cardFileTitle, isCardKind } from '@shared/cardFileFormat'
 import { NOTE_ID_KEY, canonicalNoteId, isNoteId, isNumberId, isOldId, lettersKept, lettersOwn, noteIdNumber, numberId, vaultNoteId } from '@shared/noteId'
 import { TITLE_KEY, noteFileName, titleOf } from '@shared/noteName'
 import { VAULT_CONFIG_DIR, isFolderSettingsPath, type IdsState, type IndexRecord, type RenameFileResponse } from '@shared/types'
@@ -85,6 +86,11 @@ type Former = (id: string) => readonly string[]
 /** The path `file` takes when its name was built from its title and an ID it had before; undefined when it keeps its name. */
 function nameAfter(file: string, content: string, former: Former): string | undefined {
   const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
+  // A card file's name is built from its CARD's ID and title (YAZ-5037), never from a page `id:` it kept (pick 6).
+  if (error === undefined && isCardKind(properties)) {
+    const card = cardFileId(content)
+    return card === null || !isNoteId(card) ? undefined : pathWithId(file, cardFileTitle(content), former(canonicalNoteId(card)), canonicalNoteId(card))
+  }
   const held = error === undefined ? properties[NOTE_ID_KEY] : undefined
   if (!isNoteId(held)) return undefined
   const id = canonicalNoteId(held)

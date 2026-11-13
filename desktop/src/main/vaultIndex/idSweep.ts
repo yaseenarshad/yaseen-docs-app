@@ -1,5 +1,6 @@
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
+import { isCardFileContent } from '@shared/cardFileFormat'
 import { cardIdOf, pageCards, rewritePageCards, settleCardCopy, withCardId, type CardLine } from '@shared/cardLine'
 import { moveFolderValues } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
@@ -251,7 +252,8 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
   /** Do the BYTES of `file` still hold `held` (undefined: no id of this vault), and was it not refused as it is now? Only then is a number taken for it. */
   const needs = (file: string, held: string | undefined): Promise<boolean> =>
     readPage(file).then(
-      ({ content, mtime }) => idHeld(content, letters) === held && !(refused.has(file) && refused.get(file) === mtime),
+      // A card file with no ID of the vault needs none (YAZ-5037): the index can be a moment behind its `kind: card`.
+      ({ content, mtime }) => idHeld(content, letters) === held && !(held === undefined && isCardFileContent(content)) && !(refused.has(file) && refused.get(file) === mtime),
       () => false,
     )
   // Every indexed holder of an id some note in `among` holds. With no letters of before, two
@@ -261,7 +263,8 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
   for (const r of among) {
     const id = own(r.id)
     if (id !== undefined) groups.set(id, [...(groups.get(id) ?? []), r])
-    else if (takes(r)) wanted.push({ file: r.path, held: undefined, record: r })
+    // A card file takes no page ID (YAZ-5037): its card's ID is the file's, and its card is given one below.
+    else if (takes(r) && r.kind !== 'card') wanted.push({ file: r.path, held: undefined, record: r })
   }
   if (groups.size > 0) {
     for (const r of records.values()) {

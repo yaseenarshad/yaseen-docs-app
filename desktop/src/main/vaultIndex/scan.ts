@@ -1,5 +1,6 @@
 import { readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
+import { isCardKind } from '@shared/cardFileFormat'
 import { cardRecords } from '@shared/cardLine'
 import { maskCode } from '@shared/fences'
 import { COMMENTS_KEY } from '@shared/comments'
@@ -245,5 +246,11 @@ export async function scanFile(root: string, absPath: string): Promise<IndexReco
   record.title = titleOf(properties, record.title)
   // The page's note cards (YAZ-4960 D4): ID, off and reviews off each card line, no card text.
   const cards = cardRecords(body)
+  // A card file (YAZ-5037): the mark in its properties, never its shape — a file with 2 cards, or none, stays a card
+  // file, and its tab says so. Its title is its card's (the 5030 rule), else the file's name.
+  if (isCardKind(properties)) {
+    record.kind = 'card'
+    record.title = cards[0]?.title ?? fileTitle({ path: absPath, name, basename })
+  }
   return { ...record, ...extractBody(properties, body), ...(cards.length > 0 && { cards }) }
 }

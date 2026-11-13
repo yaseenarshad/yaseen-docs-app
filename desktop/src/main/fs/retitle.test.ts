@@ -208,3 +208,28 @@ describe('retitle: a folder (table C)', () => {
     expect(path.basename(root)).toMatch(/^mdapp-retitle-/)
   })
 })
+
+describe('retitle: a card file (YAZ-5037, YAZ-5044 pick 1)', () => {
+  const cardFile = (text: string, line = '<!-- card: YAZ-140, 2026-11-10T09:12Z good -->') => `---\nkind: card\ntags: [geo]\n---\n\`\`\`card\n${text}\n\`\`\`\n${line}\n`
+
+  it('the new words go into the card\'s first line, its marks kept; the file takes the name built from them and the CARD\'s ID; no page ID is given', async () => {
+    vi.mocked(giveId).mockClear()
+    const old = await note('Cards/yaz-140.md', cardFile('###### Title\n---\nParis'))
+    const newPath = at('Cards', 'capital-of-france-yaz-140.md')
+    expect(await retitle(root, { path: old, title: 'Capital of France' })).toEqual({ oldPath: old, newPath, kind: 'file' })
+    expect(await readFile(newPath, 'utf8')).toBe(cardFile('###### Capital of France\n---\nParis'))
+    expect(vi.mocked(giveId)).not.toHaveBeenCalled()
+  })
+
+  it('the placeholder title keeps the `<id>.md` name; the same name moves nothing', async () => {
+    const old = await note('Cards/yaz-140.md', cardFile('Old words'))
+    expect(await retitle(root, { path: old, title: 'Title' })).toEqual({ oldPath: old, newPath: old, kind: 'file' })
+    expect(await read('Cards/yaz-140.md')).toBe(cardFile('Title'))
+  })
+
+  it('a card with no ID yet takes the words and keeps its name', async () => {
+    const old = await note('Cards/fresh.md', '---\nkind: card\n---\n```card\nTitle\n```\n')
+    expect(await retitle(root, { path: old, title: 'Fresh words' })).toEqual({ oldPath: old, newPath: old, kind: 'file' })
+    expect(await read('Cards/fresh.md')).toBe('---\nkind: card\n---\n```card\nFresh words\n```\n')
+  })
+})

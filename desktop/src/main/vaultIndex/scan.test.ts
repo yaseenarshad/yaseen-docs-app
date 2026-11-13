@@ -338,6 +338,39 @@ describe('scanFile', () => {
     expect(r.tags).toEqual(['geo'])
   })
 
+  it('YAZ-5037: a card file (`kind: card`, any case) has kind card, its card\'s title, and its card\'s ID only — no page ID', async () => {
+    const file = path.join(root, 'capital-of-france-geo-140.md')
+    await writeFile(file, ['---', 'kind: " CARD "', 'tags: [geo]', '---', '```card', '###### Capital of **France**?', '---', 'Paris', '```', '<!-- card: GEO-140, 2026-11-10T09:12Z good 12s -->', ''].join('\n'))
+    const r = await scanFile(root, file)
+    expect(r.kind).toBe('card')
+    expect(r.title).toBe('Capital of France?')
+    expect(r.id).toBeUndefined()
+    expect(r.cards).toEqual([{ id: 'GEO-140', off: false, next: false, reviews: [{ at: '2026-11-10T09:12Z', rating: 'good', seconds: 12 }], title: 'Capital of France?' }])
+    expect(r.properties).toEqual({ kind: ' CARD ', tags: ['geo'] })
+  })
+
+  it('YAZ-5037: a card file with 2 cards stays a card file, and both cards stay in review; one with no card is titled by its name', async () => {
+    const two = path.join(root, 'two-cards.md')
+    await writeFile(two, ['---', 'kind: card', '---', '```card', 'First', '```', '<!-- card: GEO-141 -->', '', '```card', 'Second', '```', '<!-- card: GEO-142 -->', ''].join('\n'))
+    const r = await scanFile(root, two)
+    expect(r.kind).toBe('card')
+    expect(r.title).toBe('First')
+    expect(r.cards?.map((c) => c.id)).toEqual(['GEO-141', 'GEO-142'])
+    const none = path.join(root, 'no-card.md')
+    await writeFile(none, '---\nkind: card\n---\nJust text.\n')
+    expect(await scanFile(root, none)).toMatchObject({ kind: 'card', title: 'no-card' })
+  })
+
+  it('YAZ-5037: another `kind` value, or `type: card`, is an ordinary property — the file is a page', async () => {
+    const book = path.join(root, 'book.md')
+    await writeFile(book, '---\nkind: book\ntitle: A book\n---\n```card\nQ\n```\n')
+    expect(await scanFile(root, book)).toMatchObject({ title: 'A book', properties: { kind: 'book' } })
+    expect((await scanFile(root, book)).kind).toBeUndefined()
+    const typed = path.join(root, 'typed.md')
+    await writeFile(typed, '---\ntype: card\n---\nText\n')
+    expect((await scanFile(root, typed)).kind).toBeUndefined()
+  })
+
   it('files over MAX_FILE_BYTES → metadata only', async () => {
     const big = path.join(root, 'big.md')
     await writeFile(big, '---\na: 1\n---\n#tag [[x]]\n' + 'x'.repeat(MAX_FILE_BYTES))

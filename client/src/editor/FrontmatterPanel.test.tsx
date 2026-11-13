@@ -290,6 +290,19 @@ describe('FrontmatterPanel — the raw YAML fallback (⚡ YAZ-883)', () => {
     expect(area(el)?.value).toBe('title: UP-001 - Abdul\nStatus: Ready')
   })
 
+  it('YAZ-5037: a card file\'s `kind: card` is no row and is not counted', () => {
+    const el = mount('---\nkind: Card\nStatus: Ready\n---\nBody\n', { wikilinks: feedOf() })
+    expect(header(el)?.getAttribute('aria-label')).toBe('Properties (1)')
+    expand(el)
+    expect(keysOf(el)).toEqual(['Status'])
+  })
+
+  it('YAZ-5037: another `kind` value is the note\'s own row', () => {
+    const el = mount('---\nkind: book\n---\nBody\n', { wikilinks: feedOf() })
+    expand(el)
+    expect(keysOf(el)).toEqual(['kind'])
+  })
+
   it('invalid frontmatter drops the count rather than guessing one', () => {
     const el = mount('---\ntags: [a, b\nstatus: : :\n---\nBody\n')
     expect(header(el)?.getAttribute('aria-label')).toBe('Properties')

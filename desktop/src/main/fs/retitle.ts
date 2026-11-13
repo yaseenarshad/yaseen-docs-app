@@ -1,5 +1,8 @@
 import { lstat, stat } from 'node:fs/promises'
 import path from 'node:path'
+import { cardFileCard, cardFileName, isCardFileContent } from '@shared/cardFileFormat'
+import { cardIdOf, changeCardText } from '@shared/cardLine'
+import { withCardTitle } from '@shared/cardText'
 import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'
 import { TITLE_KEY, kebabTitle, noteFileName } from '@shared/noteName'
@@ -49,6 +52,7 @@ export async function retitle(root: string, req: unknown): Promise<RenameFileRes
   } else {
     requireMarkdownFile(p)
     const page = await readPage(p)
+    if (isCardFileContent(page.content)) return retitleCard(p, page, title)
     const { letters } = await vaultIds(root)
     const held = idOf(p, page.content, letters)
     const id = held ?? (await giveId(p, undefined, letters, nextId(root)))
@@ -59,6 +63,22 @@ export async function retitle(root: string, req: unknown): Promise<RenameFileRes
   }
   const newPath = path.join(path.dirname(p), name)
   return newPath === p ? { oldPath: p, newPath, kind: src.isDirectory() ? 'dir' : 'file' } : renameFile({ oldPath: p, newPath })
+}
+
+/**
+ * A card file's title edit (YAZ-5037, YAZ-5044 pick 1): its title is its card's first line, so the new words go there,
+ * the line's marks kept (`withCardTitle`), and the file then takes the name built from them and the CARD's ID
+ * (`cardFileName`). No page ID is given (D29 is for pages): the card's ID is the file's. A card with no ID yet keeps
+ * its name; the sweep gives it one.
+ */
+async function retitleCard(p: string, page: { content: string; mtime?: number }, title: string): Promise<RenameFileResponse> {
+  const card = cardFileCard(page.content)
+  if (card === null) throw new BridgeFailure('BAD_REQUEST', 'this card file has no card', { path: p })
+  const id = cardIdOf(card.line)
+  const next = changeCardText(page.content, id, withCardTitle(card.text, title), 0)
+  if (next !== page.content) await writeFile({ path: p, content: next, ...(page.mtime !== undefined && { expectedMtime: page.mtime }) })
+  const newPath = id === null ? p : path.join(path.dirname(p), cardFileName(title, id))
+  return newPath === p ? { oldPath: p, newPath, kind: 'file' } : renameFile({ oldPath: p, newPath })
 }
 
 const unparsed = (file: string): BridgeFailure => new BridgeFailure('BAD_REQUEST', isFolderSettingsPath(file) ? "this folder's settings do not parse" : "this note's properties do not parse", { path: file })

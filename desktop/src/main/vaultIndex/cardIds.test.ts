@@ -87,6 +87,57 @@ describe('the sweep gives note cards their IDs (YAZ-4960 D2)', () => {
   })
 })
 
+describe('card files (YAZ-5037): the card\'s ID is the file\'s ID', () => {
+  it('a card file takes no page ID: its card is given one, and a second pass gives nothing more', async () => {
+    const records = await vault({ 'new-card.md': `---\nkind: card\n---\n${card('Title')}`, 'plain.md': 'No ID yet.\n' })
+    await sweepIds(root, records, [...records.values()], () => undefined)
+    const content = await read('new-card.md')
+    expect(content).toMatch(/^---\nkind: card\n---\n```card\nTitle\n```\n<!-- card: YAZ-\d+ -->\n$/)
+    expect(content).not.toMatch(/^id:/m)
+    expect(await read('plain.md')).toMatch(/^---\nid: YAZ-\d+\n---\n/)
+    // One number for the card, one for the page: the card file took no second.
+    const ids = [(await cardsIn('new-card.md'))[0].id, parseInt((await read('plain.md')).match(/YAZ-(\d+)/)![1])]
+    expect(ids).toHaveLength(2)
+    for (const p of records.keys()) records.set(p, await scanFile(root, p))
+    const before = await read('new-card.md')
+    await sweepIds(root, records, [...records.values()], (p) => records.get(p)?.id)
+    expect(await read('new-card.md')).toBe(before)
+  })
+
+  it('a card file that keeps the `id:` of the page it was (pick 6) keeps it, and its card keeps its own', async () => {
+    const bytes = `---\nkind: card\nid: YAZ-7\n---\n${card('Capital of France', `YAZ-9, ${HISTORY}`)}`
+    const records = await vault({ 'capital-of-france-yaz-9.md': bytes })
+    await sweepIds(root, records, [...records.values()], () => undefined)
+    expect(await read('capital-of-france-yaz-9.md')).toBe(bytes)
+  })
+
+  it('the live index: a card file that lands in a vault takes one number, for its card, and no `id:` line', async () => {
+    await makeFirstMac(root)
+    await mkdir(at('Cards'), { recursive: true })
+    const ready = new Promise<void>((resolve) => {
+      const off = subscribe(root, (ev) => {
+        if (ev.type !== 'ready') return
+        queueMicrotask(() => off())
+        resolve()
+      })
+    })
+    await getIndex(root)
+    await ready
+    await writeFile(at('Cards', 'fresh.md'), `---\nkind: card\n---\n${card('Fresh card')}`)
+    let content = ''
+    for (let t0 = Date.now(); Date.now() - t0 < 5000; ) {
+      await _swept(root)
+      await sleep(50)
+      content = await read('Cards/fresh.md')
+      if (/<!-- card: YAZ-/.test(content)) break
+    }
+    await _swept(root)
+    content = await read('Cards/fresh.md')
+    expect(content).toMatch(/<!-- card: YAZ-\d+ -->/)
+    expect(content).not.toMatch(/^id:/m)
+  })
+})
+
 describe('one card ID on two pages (YAZ-4960): a cut and paste keeps the card, a copy does not', () => {
   const A = `---\nid: YAZ-1\n---\n# A\n\n${card('Moving card', `YAZ-7, ${HISTORY}`)}`
   const B = `---\nid: YAZ-2\n---\n# B\n\n${card('Moving card', `YAZ-7, ${HISTORY}`)}`

@@ -10,6 +10,7 @@ import { createContext, useCallback, useContext, useMemo, useState, useSyncExter
 import { createPortal } from 'react-dom'
 import { frontmatterInterior, parseFrontmatter, renameFrontmatterKey, replaceFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { ALSO_IN_KEY } from '@shared/alsoIn'
+import { isCardMark } from '@shared/cardFileFormat'
 import { FOLDER_VALUES_KEY, folderBlocks, folderValues, setFolderValue } from '@shared/folderValues'
 import { findKey, foldedValue, heldKey, keyFold, respell, setFolderValueOneSpelling, setOneSpelling, spellings } from '@shared/propertyKeys'
 import { inheritColumnsOf } from '@shared/folderPage'
@@ -370,7 +371,8 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
    * (`respell`): the note's `dessert column` is the `Dessert Column` row, typed and placed by its column. A note holding
    * two spellings shows the column's; the other stays in the file (Edit as YAML shows it) and goes with the next write.
    */
-  const ownFields = useMemo(() => respell(Object.fromEntries(Object.entries(parsed).filter(([key]) => !ids || (key !== FOLDER_VALUES_KEY && key !== TITLE_KEY))), colSpell, keep), [parsed, ids, colSpell, keep])
+  // A card file's mark (`kind: card`, YAZ-5037) is no row: the file is a card file, not a page with a property. Any other `kind` value shows.
+  const ownFields = useMemo(() => respell(Object.fromEntries(Object.entries(parsed).filter(([key, value]) => !isCardMark(key, value) && (!ids || (key !== FOLDER_VALUES_KEY && key !== TITLE_KEY)))), colSpell, keep), [parsed, ids, colSpell, keep])
   /**
    * "Other folders' values for this note" (C9): every value in a block of `in` that no separate row above shows — a
    * page the note left, a page whose column is no longer separate or was deleted with Keep, a folder the app cannot

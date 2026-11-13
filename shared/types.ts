@@ -244,6 +244,12 @@ export interface IndexRecord {
    * read when a card shows. Absent when the page has no card, or was not read. When a card is due is computed (`cardSchedule.ts`).
    */
   cards?: NoteCardRecord[]
+  /**
+   * `card` when the file is a CARD FILE (YAZ-5037): its properties hold `kind: card` (`shared/cardFileFormat.ts`). Its
+   * `title` is then its card's title, and `cards` holds every card in it (one, unless the file is not valid). Absent
+   * for a page.
+   */
+  kind?: 'card'
 }
 
 export interface IndexResponse {

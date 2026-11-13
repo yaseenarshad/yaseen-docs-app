@@ -292,7 +292,7 @@ function armWait(root: string, entry: Entry): void {
  * with `letters` (YAZ-2677 R5): any other is another tool's, and a yes writes over it (R7).
  */
 function wouldWrite(records: ReadonlyMap<string, IndexRecord>, dirs: readonly string[], letters: readonly string[]): NonNullable<IndexResponse['ask']> {
-  const notes = [...records.values()].filter((r) => !isFolderSettingsPath(r.path) && vaultNoteId(r.id, letters) === undefined && r.frontmatterError === undefined)
+  const notes = [...records.values()].filter((r) => !isFolderSettingsPath(r.path) && r.kind !== 'card' && vaultNoteId(r.id, letters) === undefined && r.frontmatterError === undefined)
   const groups = idGroups(records.values())
   // The box offers to keep them (YAZ-4922 🔒 D2) when some group is not an ID of the vault yet: then a folder whose settings file holds a number ID keeps it too.
   const keeps = groups.some((group) => vaultNoteId(numberId(group.letters, 1), letters) === undefined)

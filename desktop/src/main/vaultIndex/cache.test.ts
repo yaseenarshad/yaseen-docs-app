@@ -255,6 +255,13 @@ describe('index cache: a bad file never throws, only degrades', () => {
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
   })
 
+  it('YAZ-5037: a snapshot of version 14 had no `kind` on a card file, and a page title in place of its card\'s → version-mismatch, so a card file is never served as a page', async () => {
+    expect(CACHE_VERSION).toBeGreaterThanOrEqual(15)
+    const cards = [{ id: 'DEMO-105', off: false, next: false, reviews: [], title: 'Capital of France' }]
+    await writeFile(file, JSON.stringify({ version: 14, root: '/vault', records: [record('/vault/demo-105.md', { cards, properties: { kind: 'card' } } as never)] }))
+    expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
+  })
+
   it("another root's payload at this filename → miss (not this vault's cache)", async () => {
     await writeFile(file, JSON.stringify({ version: CACHE_VERSION, root: '/elsewhere', records: [] }))
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'miss' })
@@ -306,10 +313,10 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
   ].join('\n')
 
   const FINGERPRINT = {
-    cacheVersion: 14,
+    cacheVersion: 15,
     maxFileBytes: 10 * 1024 * 1024,
     /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
-    recordKeys: ['aliases', 'basename', 'cards', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'links', 'mtime', 'name', 'path', 'properties', 'size', 'tags', 'title'],
+    recordKeys: ['aliases', 'basename', 'cards', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'kind', 'links', 'mtime', 'name', 'path', 'properties', 'size', 'tags', 'title'],
     extraction: {
       // The frontmatter `title` is lifted onto the record and stays a property too (YAZ-2420 🔒 D14).
       title: 'Canonical',
@@ -337,6 +344,8 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
       // A review's seconds (YAZ-5033, CACHE_VERSION 14) ride on it: today's total reads them off the index.
       cards: [{ id: 'CAN-3', off: true, next: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }, { at: '2026-11-13T09:00Z', rating: 'again', seconds: 13 }], title: 'A card links Card Link and #card-tag', notitle: true }],
     },
+    // A card file (YAZ-5037, CACHE_VERSION 15): `kind: card` in its properties, its title its card's.
+    cardFile: { kind: 'card', title: 'Capital of France?' },
   }
 
   it('the snapshot shape + extraction semantics fingerprint matches CACHE_VERSION', async () => {
@@ -346,14 +355,18 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
       const broken = path.join(root, 'broken.md')
       await writeFile(canonical, CANONICAL_NOTE)
       await writeFile(broken, '---\nstatus: [unclosed\n---\nBody after broken frontmatter.\n')
+      const cardPath = path.join(root, 'capital-of-france-can-4.md')
+      await writeFile(cardPath, '---\nkind: Card\n---\n```card\nCapital of **France**?\n---\nParis\n```\n<!-- card: CAN-4 -->\n')
       const record = await scanFile(root, canonical)
       const errored = await scanFile(root, broken)
+      const card = await scanFile(root, cardPath)
       expect(errored.frontmatterError, BUMP_MSG).toBeDefined()
       const actual = {
         cacheVersion: CACHE_VERSION,
         maxFileBytes: MAX_FILE_BYTES,
-        recordKeys: [...new Set([...Object.keys(record), ...Object.keys(errored)])].sort(),
+        recordKeys: [...new Set([...Object.keys(record), ...Object.keys(errored), ...Object.keys(card)])].sort(),
         extraction: { title: record.title, properties: record.properties, aliases: record.aliases, tags: record.tags, links: record.links, embeds: record.embeds, cards: record.cards },
+        cardFile: { kind: card.kind, title: card.title },
       }
       expect(actual, BUMP_MSG).toEqual(FINGERPRINT)
     } finally {
