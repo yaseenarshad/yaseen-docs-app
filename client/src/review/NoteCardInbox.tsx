@@ -8,14 +8,14 @@
  *    closes as any tab does (its ✕, ⌘W): no × of its own, and Esc does not close it.
  *  - The top row (YAZ-5017, `NoteCardInboxBar`): the filter "All cards ▾" (All cards, Due today, New cards, with counts),
  *    where the cards come from (the vault, "Folder / Sub", the page), and "3 of 12" of the filter's cards on the right.
- *  - Head: the page's name (O), the card ID in brackets, small and grey (a click copies it, D20), the chip "Up next ×"
+ *  - Head: the state chip (YAZ-5018, as Mochi's: "New card", "Due today", "Due · 3 days ago"), the page's name (O), the card ID in brackets, small and grey (a click copies it, D20), the chip "Up next ×"
  *    for a card at the top of the Inbox (YAZ-4999 D3). No card title: the card is right below it.
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
  *    Space shows the next side, whose hidden words then show one by one. The answer buttons show from the moment the
  *    card shows (YAZ-5010, Yaseen: "Should always be there"): `showAnswers()` fixes what each one writes then (the
  *    hover is the truth, D13), and 1–2 / 1–4 answer at any step.
- *  - The buttons (D5): Forgot · Remembered, or Again · Hard · Good · Easy, by the setting; the hover says when the
- *    card comes back ("Remembered · 9 days").
+ *  - The buttons (D5): ✕ Forgot · ✓ Remembered, or ↺ Again · ~ Hard · ✓ Good · ⇈ Easy, by the setting, round as
+ *    Mochi's (YAZ-5018); the hover says when the card comes back ("Remembered · 9 days").
  *  - The keys (`noteCardInboxKeys.ts`): Space, 1–2 / 1–4 (at any step, YAZ-5010), ⌘Z, O (the page on top, at its top, YAZ-5022;
  *    Esc there comes back to this card at the same step), E (YAZ-5003: the CARD WINDOW on top, in Edit card;
  *    Done, Esc or ⌘↵ there saves and comes back to this card at the same step; nothing in a read-only vault, where
@@ -41,6 +41,7 @@ import { NoteCardBody, NoteCardId, NoteCardNextChip, noteCardWait } from './note
 import { noteCardInboxHints, noteCardInboxKey } from './noteCardInboxKeys'
 import { HoverTip } from '../components/HoverTip'
 import { CARD_FILTERS, NoteCardInboxBar } from './NoteCardInboxBar'
+import { NoteCardStateChip, answerIcon } from './noteCardInboxChip'
 import '../explore/explore.css'
 
 export interface NoteCardInboxProps {
@@ -219,6 +220,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
               <span className="explore__title">{session.label}</span>
             ) : (
               <>
+                <NoteCardStateChip card={card} />
                 <button type="button" className="note-card-strip__page note-card-inbox__page" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(card.path)}>
                   {nameOf(card.path)}
                 </button>
@@ -291,7 +293,8 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
                   return (
                     <HoverTip key={a.review.rating} text={comesBack}>
                       <button type="button" className="explore__button note-card-inbox__answer" data-rating={a.review.rating} aria-description={comesBack} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.answer(a.review.rating)}>
-                        {label}
+                        {answerIcon(a.review.rating, review.settings.buttons)}
+                        <span className="note-card-inbox__answer-label">{label}</span>
                         <kbd>{i + 1}</kbd>
                       </button>
                     </HoverTip>

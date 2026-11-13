@@ -11,6 +11,7 @@ import type { CardAnswer } from '@shared/cardSchedule'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { NoteCardInbox, type NoteCardInboxProps } from './NoteCardInbox'
+import { noteCardStateText } from './noteCardInboxChip'
 import { useReadOnlyVault } from '../vault/readOnlyVault'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -112,6 +113,8 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(el.querySelector('.explore__title')).toBeNull()
     const head = [...el.querySelector('.note-card-inbox__head')!.children].map((c) => [c.className, c.textContent])
     expect(head).toEqual([
+      // YAZ-5018: the state chip at the card's top left, as Mochi's.
+      ['note-card-inbox__state', 'New card'],
       ['note-card-strip__page note-card-inbox__page', 'Cards'],
       ['note-card__id', '(WIKI-9)'],
     ])
@@ -472,5 +475,38 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(el.querySelector('.note-card-inbox__done-title')?.textContent).toBe('No due cards left.')
     act(() => el.querySelector<HTMLButtonElement>('.note-card-inbox__done-more')!.click())
     expect(review.setFilter).toHaveBeenLastCalledWith('all')
+  })
+
+  it('YAZ-5018: the buttons wear their glyphs — ✕ Forgot and ✓ Remembered; with four buttons ↺ Again, ~ Hard, ✓ Good, ⇈ Easy — each a round pill with its digit', async () => {
+    const glyphs = () => buttons().map((b) => [b.querySelector('.note-card-inbox__answer-label')?.textContent, b.querySelector('svg.note-card-inbox__answer-icon path')?.getAttribute('d'), b.querySelector('kbd')?.textContent])
+    mount('Plain')
+    await flush()
+    const two = glyphs()
+    expect(two.map(([label, , key]) => [label, key])).toEqual([['Forgot', '1'], ['Remembered', '2']])
+    expect(two.every(([, d]) => typeof d === 'string' && d.length > 0)).toBe(true)
+    expect(two[0][1]).not.toBe(two[1][1])
+    act(() => root?.unmount())
+    el.remove()
+    mount('Plain', { ...DEFAULT_REVIEW_SETTINGS, buttons: 4 })
+    await flush()
+    const four = glyphs()
+    expect(four.map(([label]) => label)).toEqual(['Again', 'Hard', 'Good', 'Easy'])
+    // Four different glyphs; Good is Remembered's check, Again is not Forgot's ✕.
+    expect(new Set(four.map(([, d]) => d)).size).toBe(4)
+    expect(four[2][1]).toBe(two[1][1])
+    expect(four[0][1]).not.toBe(two[0][1])
+  })
+
+  it('YAZ-5018: the state chip — "New card" for a card never reviewed, "Due today", "Due · 3 days ago" past its day', () => {
+    const now = new Date(2026, 10, 12, 9, 0).getTime()
+    expect(noteCardStateText({ isNew: true, due: now }, now)).toBe('New card')
+    expect(noteCardStateText({ isNew: false, due: new Date(2026, 10, 12, 1, 0).getTime() }, now)).toBe('Due today')
+    expect(noteCardStateText({ isNew: false, due: new Date(2026, 10, 11, 23, 0).getTime() }, now)).toBe('Due · 1 day ago')
+    expect(noteCardStateText({ isNew: false, due: new Date(2026, 10, 9, 14, 0).getTime() }, now)).toBe('Due · 3 days ago')
+    mount(TWO_SIDES)
+    session = { ...session, card: { ...session.card!, isNew: false, due: Date.now() } }
+    render()
+    const chip = el.querySelector('.note-card-inbox__state')!
+    expect([chip.textContent, chip.getAttribute('data-state')]).toEqual(['Due today', 'due'])
   })
 })
