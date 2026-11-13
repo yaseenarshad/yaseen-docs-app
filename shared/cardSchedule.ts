@@ -1,5 +1,5 @@
 import { FSRS, Rating, State, createEmptyCard, generatorParameters, type Card, type Grade, type StepUnit } from 'ts-fsrs'
-import { cardTime, type CardRating, type CardReview, type NoteCardRecord } from './cardLine'
+import { cardReviewsOf, cardTime, withoutCardReview, type CardRating, type CardReview, type NoteCardRecord } from './cardLine'
 import { hasLetters, noteIdNumber } from './noteId'
 import type { ReviewSettings } from './reviews'
 import { inFolder } from './types'
@@ -112,6 +112,14 @@ export function cardState(reviews: readonly CardReview[], s: ReviewSettings): Ca
   const { card, review } = last
   return { isNew: false, due: card.due.getTime(), interval: card.scheduled_days, lastReview: review.at, lapses: card.lapses, inSteps: inSteps(card) }
 }
+
+/**
+ * The card's state with one review taken away (YAZ-5032 round 2: the ask before a remove says what it does): the
+ * schedule run again without it. The review taken is the one the remove takes (`withoutCardReview`): the last one at
+ * `at` in the line's order.
+ */
+export const cardStateWithout = (reviews: readonly CardReview[], at: string, s: ReviewSettings): CardState =>
+  cardState(cardReviewsOf(withoutCardReview({ parts: reviews.map((review) => ({ kind: 'review', review })) }, at)), s)
 
 /** The chance to remember the card now (idea 11, Mochi's "83%"), 0 to 1; null for a new card. */
 export function recallChance(reviews: readonly CardReview[], s: ReviewSettings, now: number): number | null {

@@ -9,8 +9,8 @@
   width: 100%;
 }
 
-/* The strip (D13; YAZ-5032, Yaseen's pick): the page's name, then one calm line of words — "Last: Remembered ·
-   Next review Apr 28, 2027 (in 183 days) · 99% you remember it now". The values emphasised, the words muted. */
+/* The strip (D13; YAZ-5032, Yaseen's pick, round 2's words): the page's name, then one calm line of words — "Due in
+   183 days (Apr 28, 2027) · 99% chance you remember it". The values emphasised, the words muted. */
 .note-card-strip {
   display: flex;
   flex-wrap: wrap;
@@ -62,28 +62,18 @@
 .note-card-strip__next[data-overdue] .note-card-strip__value {
   color: var(--danger);
 }
-/* The recall chance's one help (YAZ-5032): a small (i); its words are the hover. */
+/* The recall chance's one help (YAZ-5032; round 2: the app's own tip, `InfoTip`, as a native title shows nothing). */
 .note-card-strip__info {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 12px;
-  height: 12px;
-  margin-left: 4px;
-  border: 1px solid currentColor;
+  margin-left: 3px;
+}
+.note-card-strip__info .info-tip__button {
   border-radius: 50%;
-  font-size: 9px;
-  font-style: italic;
-  font-weight: 600;
-  line-height: 1;
-  opacity: 0.7;
-  cursor: help;
-  vertical-align: middle;
+  opacity: 0.75;
 }
-.note-card-strip__info::before {
-  content: 'i';
-}
-.note-card-strip__info:hover {
+.note-card-strip__info .info-tip__button:hover,
+.note-card-strip__info .info-tip__button[aria-expanded='true'] {
+  color: var(--fg);
   opacity: 1;
 }
 
@@ -127,7 +117,19 @@
 .note-card-backlinks__none {
   color: var(--fg-muted);
 }
-/* The table (Mochi's): small caps head, soft alternating rounded rows, the review to come muted. */
+/* The table (Mochi's): small caps head, soft alternating rounded rows, the review to come muted. Its columns size to
+   their words. In a page the table sits inside the editor, and ProseMirror's own table rule reaches it
+   (`.ProseMirror table`: a fixed layout, equal columns, clipped) with the editor's `word-wrap: break-word`: the cells
+   then ran into each other and a head word broke ("REVIEWE D ON", YAZ-5032 round 2). The two classes win over it. */
+.note-card-reviews__scroll {
+  /* The last fold (round 2): a card narrower than the table's words scrolls the table sideways; nothing overlaps. */
+  overflow-x: auto;
+  container-type: inline-size;
+}
+.note-card-reviews .note-card-reviews__table {
+  table-layout: auto;
+  overflow: visible;
+}
 .note-card-reviews__table {
   width: 100%;
   margin-top: 8px;
@@ -137,6 +139,8 @@
   color: var(--fg);
 }
 .note-card-reviews__table th {
+  white-space: nowrap;
+  overflow-wrap: normal;
   padding: 2px 12px 6px;
   font-size: 10.5px;
   font-weight: 600;
@@ -148,6 +152,7 @@
 .note-card-reviews__table td {
   padding: 5px 12px;
   white-space: nowrap;
+  overflow-wrap: normal;
   font-variant-numeric: tabular-nums;
 }
 .note-card-reviews__table tbody tr:nth-child(odd) td {
@@ -193,6 +198,38 @@
   background: var(--bg-hover);
   color: var(--danger);
   opacity: 1;
+}
+/* A narrow card (round 2, Yaseen: "when screen size is small this is what happens"): the table folds by the room it
+   has, in this order: tighter cells; then no Time column (the least read); then the answer as its glyph alone (✓ ✕,
+   its word stays the glyph's label). Past that the box scrolls sideways. */
+@container (max-width: 540px) {
+  .note-card-reviews__table th,
+  .note-card-reviews__table td {
+    padding-left: 7px;
+    padding-right: 7px;
+  }
+}
+@container (max-width: 470px) {
+  .note-card-reviews__table :is(th, td):nth-child(4):not([colspan]) {
+    display: none;
+  }
+}
+@container (max-width: 400px) {
+  .note-card-reviews__answer .note-card-reviews__word {
+    display: none;
+  }
+  .note-card-reviews__answer .note-card-answer {
+    margin-right: 0;
+  }
+}
+/* The page's Reviews row (round 2): when the strip does not fit beside "4 Reviews", it takes its own line under it,
+   on the right, so its parts never break in the middle. */
+.note-card .note-card-reviews__bar {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+.note-card-strip__line > * {
+  white-space: nowrap;
 }
 
 /* ---------- the card window (an Explore layer) ---------- */

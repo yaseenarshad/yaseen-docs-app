@@ -475,13 +475,14 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     expect(header(root)?.querySelector('svg')).not.toBeNull()
     expect(header(root)?.getAttribute('aria-expanded')).toBe('false')
     expect(root.querySelector('.note-card-reviews__table')).toBeNull()
-    // Closed, the facts show as one line of words (YAZ-5032): the last answer, the next review, the recall chance with its (i).
+    // Closed, the facts show as one line of words (YAZ-5032; round 2: no "Last"): when it is due, the recall chance with its (i).
     await vi.waitFor(() => expect(cards[0].querySelector('.note-card-reviews__facts .note-card-strip__line')).not.toBeNull())
     const facts = cards[0].querySelector('.note-card-reviews__facts')!
-    expect(facts.textContent).toMatch(/^Last: Remembered · Next review (today|later today|[A-Z][a-z]{2} \d{1,2}, \d{4} \((in \d+ days?|\d+ days? ago)\)) · \d+% you remember it now$/)
-    expect(facts.querySelector('.note-card-strip__info')?.getAttribute('title')).toBe("FSRS's guess of your chance to remember this card today. It falls as the card waits.")
-    expect(facts.querySelectorAll('[title]')).toHaveLength(2) // the (i), and the last answer's date: no other hover to puzzle out
-    expect(facts.querySelector('svg')).toBeNull()
+    expect(facts.textContent).toMatch(/^Due (today|later today|(tomorrow|yesterday|in \d+ days|\d+ days ago) \([A-Z][a-z]{2} \d{1,2}, \d{4}\)) · \d+% chance you remember it$/)
+    // The (i) is the app's own tip (round 2: a native title shows nothing in the app); no other hover to puzzle out.
+    expect(facts.querySelector('.note-card-strip__info .info-tip__button')).not.toBeNull()
+    expect(facts.querySelectorAll('[title]')).toHaveLength(0)
+    expect(facts.querySelectorAll('svg')).toHaveLength(1)
     expect(cards[1].querySelector('.note-card-reviews')).toBeNull()
     const preview = await mount(PAGE, { noteCards: { path: '/v/Page.md' } })
     expect(preview.root.querySelector('.note-card-reviews')).toBeNull()
@@ -503,9 +504,9 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
       ['Nov 6, 2026', 'Remembered', '1 day', '1 min 4 s'],
     ])
     expect(table[0][4]).toMatch(/^[A-Z][a-z]{2} \d{1,2}, \d{4}$/)
-    expect(table[3][0]).toMatch(/^Next review · (today|later today|[A-Z][a-z]{2} \d{1,2}, \d{4} · (in \d+ days?|\d+ days? ago))$/)
+    expect(table[3][0]).toMatch(/^Due (today|later today|(tomorrow|yesterday|in \d+ days|\d+ days ago) \([A-Z][a-z]{2} \d{1,2}, \d{4}\))$/)
     const trs = root.querySelectorAll('.note-card-reviews__table tbody tr')
-    expect([...trs].map((tr) => tr.querySelector('button')?.getAttribute('title') ?? null)).toEqual(['Delete this review', 'Delete this review', 'Delete this review', null])
+    expect([...trs].map((tr) => tr.querySelector('button')?.getAttribute('title') ?? null)).toEqual(['Remove this review', 'Remove this review', 'Remove this review', null])
     expect(trs[3].classList.contains('note-card-reviews__next')).toBe(true)
     expect(view.state.doc).toBe(doc)
     expect(undoDepth(view.state)).toBe(0)
@@ -529,6 +530,11 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     press(header(root)!)
     await vi.waitFor(() => expect(rows(root)).toHaveLength(4))
     root.querySelectorAll<HTMLButtonElement>('.note-card-reviews__table tbody button')[1].click()
+    // YAZ-5032 round 2: the bin asks first, and says what the remove does.
+    await vi.waitFor(() => expect(document.querySelector('.confirm .confirm__title')?.textContent).toBe('Remove the review of Nov 5, 2026?'))
+    expect(deleteReview).not.toHaveBeenCalled()
+    ;[...document.querySelectorAll<HTMLButtonElement>('.confirm button')].find((b) => b.textContent === 'Remove review')!.click()
+    await vi.waitFor(() => expect(document.querySelector('.confirm')).toBeNull())
     expect(deleteReview).toHaveBeenCalledWith(path, 'WIKI-7', { at: '2026-11-05T09:00Z', rating: 'again', seconds: 13 })
     await vi.waitFor(() => expect(disk.get(path)).toBe(PAGE.replace(' 2026-11-05T09:00Z again 13s,', '')))
     // The app merges its own write into the open page: the section counts again, and the open table shows the new rows.

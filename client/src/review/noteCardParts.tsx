@@ -4,12 +4,15 @@
  * that copies on a click (D20), and the Reviews section with the full table (D3, D13). The table is the page card's
  * too (`noteCardView.ts`, YAZ-5000); the Inbox has no Reviews section.
  */
-import { useCallback, useContext, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useContext, useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { createPortal } from 'react-dom'
 import type { CardReview } from '@shared/cardLine'
-import { answerLabel, cardHistory, cardState, dayCount, recallChance } from '@shared/cardSchedule'
+import { answerLabel, cardHistory, cardState, cardStateWithout, dayCount, recallChance } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { GestureAction } from '@shared/keys'
 import { api } from '../api'
+import { ConfirmSheet } from '../components/ConfirmSheet'
+import { InfoTip } from '../components/InfoTip'
 import { noteCardLook } from '../editor/createCrepe'
 import { copyText } from '../editor/linkMenu'
 import { NOTE_CARD_BOARD_ATTR, NOTE_CARD_MEDIA, NOTE_CARD_OPENS } from '../editor/noteCard/noteCardMedia'
@@ -213,8 +216,8 @@ function NoteCardAnswer({ review, settings, hover }: { review: CardReview; setti
   )
 }
 
-/** The (i) of the recall chance (YAZ-5032): the strip's one help. */
-export const RECALL_HELP = "FSRS's guess of your chance to remember this card today. It falls as the card waits."
+/** The (i) of the recall chance (YAZ-5032; round 2, plain words): the strip's one help. */
+export const RECALL_HELP = 'How likely you are to remember this card today. It drops the longer the card waits. A review brings it back up.'
 
 /** Whole local days from today to the day of `ms`: 0 today, 1 tomorrow, -3 three days ago. */
 const daysUntil = (ms: number, now: number): number => Math.round((new Date(ms).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) / 86_400_000)
@@ -229,12 +232,22 @@ export function noteCardNextReview(due: number, inSteps: boolean, now: number): 
   if (inSteps && days >= 0) return { date: null, days: null, when: 'later today' }
   if (days === 0) return { date: null, days: 0, when: 'today' }
   const n = Math.abs(days)
-  return { date: noteCardFullDate(due), days, when: days > 0 ? `in ${dayCount(n)}` : `${dayCount(n)} ago` }
+  // Round 2 (plain words): a day ahead or behind is "tomorrow" or "yesterday".
+  const when = days === 1 ? 'tomorrow' : days === -1 ? 'yesterday' : days > 0 ? `in ${dayCount(n)}` : `${dayCount(n)} ago`
+  return { date: noteCardFullDate(due), days, when }
 }
+
+/**
+ * The review to come in words (YAZ-5032 round 2, Yaseen: "the next review … needs better copy"): "Due" first, the
+ * app's one word for it (the Inbox's "due today", the Next due column), then how far, then the date —
+ * "Due in 183 days (Apr 28, 2027)", "Due today", "Due later today", "Due 3 days ago (Oct 24, 2026)". The strip and the
+ * table's last row say the same words.
+ */
+export const noteCardDueWords = (next: ReturnType<typeof noteCardNextReview>): string => `Due ${next.when}${next.date === null ? '' : ` (${next.date})`}`
 
 /** "in **183** days": the number emphasised, the words muted (YAZ-5032). */
 function When({ next }: { next: ReturnType<typeof noteCardNextReview> }) {
-  if (next.days === null || next.days === 0) return <b className="note-card-strip__value">{next.when}</b>
+  if (next.days === null || Math.abs(next.days) <= 1) return <b className="note-card-strip__value">{next.when}</b>
   const n = Math.abs(next.days)
   const unit = n === 1 ? 'day' : 'days'
   return next.days > 0 ? (
@@ -251,39 +264,33 @@ function When({ next }: { next: ReturnType<typeof noteCardNextReview> }) {
 const Dot = () => <span className="note-card-strip__dot"> · </span>
 
 /**
- * The strip (YAZ-5032, Yaseen's pick): one calm line of words, no icons to guess — "Last: Remembered · Next review
- * Apr 28, 2027 (in 183 days) · 99% you remember it now". The values are emphasised, the words muted; the recall
- * chance alone has a small (i) (`RECALL_HELP`). An overdue date shows in red. A fragment of one span: the card
- * window's strip holds it after the page name; the page's card block holds it on the Reviews row, closed or open.
+ * The strip (YAZ-5032, Yaseen's pick; round 2, his notes): one calm line of words, no icons to guess — "Due in 183
+ * days (Apr 28, 2027) · 99% chance you remember it". No "Last: …" (round 2: "i think thats useless"). The values are
+ * emphasised, the words muted; the recall chance alone has a small (i), the app's own tip (`InfoTip`: a native title
+ * shows nothing in the app, which was round 2's "the tool tip doesnt work"). An overdue date shows in red. A fragment
+ * of one span: the card window's strip holds it after the page name; the page's card block holds it on the Reviews
+ * row, closed or open.
  */
 export function NoteCardFacts({ reviews, settings, now = Date.now() }: { reviews: readonly CardReview[]; settings: ReviewSettings; now?: number }) {
   const facts = noteCardFacts(reviews, settings, now)
   if (facts === null) return null
-  const { last, inSteps, due, recall } = facts
+  const { inSteps, due, recall } = facts
   const next = noteCardNextReview(due, inSteps, now)
   return (
     <span className="note-card-strip__fact note-card-strip__line">
-      <span className="note-card-strip__last" title={`Answered ${noteCardFullDate(Date.parse(last.at))}`}>
-        Last: <b className="note-card-strip__value">{answerLabel(last.rating, settings)}</b>
-      </span>
-      <Dot />
       <span className="note-card-strip__next" data-overdue={noteCardOverdue(due, now) || undefined}>
-        Next review{' '}
-        {next.date === null ? (
-          <When next={next} />
-        ) : (
-          <>
-            <b className="note-card-strip__value">{next.date}</b> (<When next={next} />)
-          </>
-        )}
+        Due <When next={next} />
+        {next.date !== null && <span className="note-card-strip__date"> ({next.date})</span>}
       </span>
       {recall !== null && (
         <>
           <Dot />
           <span className="note-card-strip__recall">
-            <b className="note-card-strip__value">{`${Math.round(recall * 100)}%`}</b> you remember it now
-            {/* The "i" is the CSS's: the words read clean. */}
-            <span className="note-card-strip__info" role="img" aria-label={RECALL_HELP} title={RECALL_HELP} />
+            <b className="note-card-strip__value">{`${Math.round(recall * 100)}%`}</b> chance you remember it
+            {/* A press on the (i) keeps the page's caret where it is; the hover, the focus and the click show the tip. */}
+            <span className="note-card-strip__info" onMouseDown={(e) => e.preventDefault()}>
+              <InfoTip text={RECALL_HELP} />
+            </span>
           </span>
         </>
       )}
@@ -325,11 +332,35 @@ function Gap({ n }: { n: number }) {
 export const REVIEW_COLUMNS = ['Reviewed on', 'Answer', 'Gap', 'Time', 'Next due'] as const
 
 /**
+ * What removing `review` does to the card, in words (YAZ-5032 round 2, Yaseen: "a pop up that would show the
+ * consequences"): the schedule run again without it (`cardStateWithout`) — "The due date moves from Apr 28, 2027 to
+ * Mar 3, 2027 (in 110 days).", "The due date stays Apr 28, 2027.", or, for the card's only review, "This is the card's
+ * only review. The card becomes new again."
+ */
+export function noteCardRemoveOutcome(reviews: readonly CardReview[], review: CardReview, settings: ReviewSettings, now: number): string {
+  const after = cardStateWithout(reviews, review.at, settings)
+  if (after.isNew || after.due === null) return "This is the card's only review. The card becomes new again."
+  const before = cardState(reviews, settings)
+  const was = before.due === null ? noteCardNextReview(now, false, now) : noteCardNextReview(before.due, before.inSteps, now)
+  const will = noteCardNextReview(after.due, after.inSteps, now)
+  const from = was.date ?? was.when
+  const to = will.date ?? will.when
+  if (from === to) return `The due date stays ${to}.`
+  return `The due date moves from ${from} to ${to}${will.date === null ? '' : ` (${will.when})`}.`
+}
+
+/**
  * The full table (D3, D13; YAZ-5032, Yaseen's columns): one row per review in time order — Reviewed on (the date in
  * full, "Sep 24, 2026"), Answer (the glyph and its word), Gap (the days since the review before: "Same day", "**4**
  * days"; blank for the first), Time ("13 s"; "—" for a review made before YAZ-5033), Next due (the date that answer
- * set), and a bin to delete. A last, muted row says the review to come: "Next review · Apr 28, 2027 · in 183 days",
- * with no delete. The history is replayed only here, so a closed section costs nothing but its count.
+ * set), and a bin to remove it. A last, muted row says the review to come in the strip's words: "Due in 183 days
+ * (Apr 28, 2027)", with no bin. The history is replayed only here, so a closed section costs nothing but its count.
+ *
+ * Round 2 (Yaseen's notes): the bin asks first, in the app's confirm sheet, and says what the remove does
+ * (`noteCardRemoveOutcome`): Remove review / Cancel, the focus on Cancel, Enter (⌘↵ too) removes, Esc cancels. The
+ * sheet is in a portal on the page, so the page's card and the Explore layer that hold the table cannot clip it, and
+ * its keys stay its own (`contained`): an Esc closes the sheet, not the card window under it. A narrow table folds
+ * its columns by the room it has (`noteCardScreens.css`), and its box scrolls sideways at the last.
  */
 export function NoteCardReviewsTable({ reviews, settings, onDelete, now = Date.now() }: NoteCardReviewsProps) {
   // One replay: each row is a review's step; the last row's step is the card's state.
@@ -337,43 +368,68 @@ export function NoteCardReviewsTable({ reviews, settings, onDelete, now = Date.n
   const last = rows.at(-1)
   // A new card is due today, as the Inbox shows it.
   const next = last === undefined ? noteCardNextReview(now, false, now) : noteCardNextReview(last.due, last.inSteps, now)
+  const [asking, setAsking] = useState<CardReview | null>(null)
+  const askId = useId()
   return (
-    <table className="note-card-reviews__table">
-      <thead>
-        <tr>
-          {REVIEW_COLUMNS.map((name) => (
-            <th key={name}>{name}</th>
-          ))}
-          <th aria-label="Delete" />
-        </tr>
-      </thead>
-      <tbody>
-        {/* Keyed by place: two reviews in one minute are two rows (`withoutCardReview` takes the last of them). */}
-        {rows.map((row, i) => (
-          <tr key={i}>
-            <td>{noteCardFullDate(Date.parse(row.review.at))}</td>
-            <td className="note-card-reviews__answer">
-              <NoteCardAnswer review={row.review} settings={settings} />
-              {answerLabel(row.review.rating, settings)}
-            </td>
-            <td>{i === 0 ? '' : <Gap n={row.elapsed} />}</td>
-            <td className="note-card-reviews__time">{reviewDuration(row.review.seconds)}</td>
-            <td>{noteCardFullDate(row.due)}</td>
-            <td>
-              {onDelete !== undefined && (
-                <button type="button" className="note-card-reviews__delete" title="Delete this review" aria-label={`Delete the review of ${noteCardFullDate(Date.parse(row.review.at))}`} onMouseDown={(e) => e.preventDefault()} onClick={() => onDelete(row.review)}>
-                  <TrashIcon />
-                </button>
-              )}
-            </td>
+    <div className="note-card-reviews__scroll">
+      <table className="note-card-reviews__table">
+        <thead>
+          <tr>
+            {REVIEW_COLUMNS.map((name) => (
+              <th key={name}>{name}</th>
+            ))}
+            <th aria-label="Remove" />
           </tr>
-        ))}
-        {/* The review to come, in words: no answer yet, no delete. */}
-        <tr className="note-card-reviews__next">
-          <td colSpan={REVIEW_COLUMNS.length}>{['Next review', ...(next.date === null ? [] : [next.date]), next.when].join(' · ')}</td>
-          <td />
-        </tr>
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {/* Keyed by place: two reviews in one minute are two rows (`withoutCardReview` takes the last of them). */}
+          {rows.map((row, i) => (
+            <tr key={i}>
+              <td>{noteCardFullDate(Date.parse(row.review.at))}</td>
+              <td className="note-card-reviews__answer">
+                <NoteCardAnswer review={row.review} settings={settings} />
+                <span className="note-card-reviews__word">{answerLabel(row.review.rating, settings)}</span>
+              </td>
+              <td>{i === 0 ? '' : <Gap n={row.elapsed} />}</td>
+              <td className="note-card-reviews__time">{reviewDuration(row.review.seconds)}</td>
+              <td>{noteCardFullDate(row.due)}</td>
+              <td>
+                {onDelete !== undefined && (
+                  <button type="button" className="note-card-reviews__delete" title="Remove this review" aria-label={`Remove the review of ${noteCardFullDate(Date.parse(row.review.at))}`} onMouseDown={(e) => e.preventDefault()} onClick={() => setAsking(row.review)}>
+                    <TrashIcon />
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+          {/* The review to come, in the strip's words: no answer yet, no bin. Across every column, the bin's too. */}
+          <tr className="note-card-reviews__next">
+            <td colSpan={REVIEW_COLUMNS.length + 1}>{noteCardDueWords(next)}</td>
+          </tr>
+        </tbody>
+      </table>
+      {asking !== null &&
+        onDelete !== undefined &&
+        createPortal(
+          <ConfirmSheet
+            labelId={`${askId}-remove-review`}
+            text={
+              <>
+                <span className="confirm__title">{`Remove the review of ${noteCardFullDate(Date.parse(asking.at))}?`}</span>
+                {noteCardRemoveOutcome(reviews, asking, settings, now)}
+              </>
+            }
+            confirmLabel="Remove review"
+            danger
+            keys="contained"
+            onConfirm={() => {
+              setAsking(null)
+              onDelete(asking)
+            }}
+            onCancel={() => setAsking(null)}
+          />,
+          document.body,
+        )}
+    </div>
   )
 }

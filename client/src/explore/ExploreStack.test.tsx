@@ -2483,7 +2483,7 @@ describe('the card window (YAZ-4962)', () => {
     expect(strip()).toEqual(['cards', 'New'])
     expect(top().querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('0 Reviews')
     expect(top().querySelector('.note-card-reviews__table')).toBeNull()
-    expect(tableRows()).toEqual([['Next review · today', '']])
+    expect(tableRows()).toEqual([['Due today']])
   })
 
   it('a card with reviews: the strip says the last answer, the next review and the recall chance in one line of words (YAZ-5032), with one (i); the table has Yaseen\'s columns; each row deletes its review', async () => {
@@ -2494,10 +2494,12 @@ describe('the card window (YAZ-4962)', () => {
     const facts = strip()
     expect(facts[0]).toBe('cards')
     // Overdue (the reviews are from January, a step of a day gone by): the date and how long ago, in red.
-    expect(facts[1]).toMatch(/^Last: Remembered · Next review Jan 11, 2026 \(\d+ days ago\) · \d+% you remember it now$/)
+    expect(facts[1]).toMatch(/^Due \d+ days ago \(Jan 11, 2026\) · \d+% chance you remember it$/)
     expect(factText(1).querySelector('.note-card-strip__next')?.hasAttribute('data-overdue')).toBe(true)
-    expect(factText(1).querySelector('svg')).toBeNull()
-    expect(factText(1).querySelector('.note-card-strip__info')?.getAttribute('title')).toBe("FSRS's guess of your chance to remember this card today. It falls as the card waits.")
+    // The (i) is the app's own tip (YAZ-5032 round 2): its one svg; a click shows the words.
+    expect(factText(1).querySelectorAll('svg')).toHaveLength(1)
+    act(() => factText(1).querySelector<HTMLButtonElement>('.note-card-strip__info .info-tip__button')!.click())
+    expect(document.querySelector('.info-tip__box')?.textContent).toMatch(/^How likely you are to remember this card today\./)
     expect(top().querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('3 Reviews')
     const rows = tableRows()
     expect([...top().querySelectorAll('.note-card-reviews__table th')].map((th) => th.textContent)).toEqual(['Reviewed on', 'Answer', 'Gap', 'Time', 'Next due', ''])
@@ -2506,10 +2508,17 @@ describe('the card window (YAZ-4962)', () => {
       ['Jan 10, 2026', 'Forgot', '8 days', '—'],
       ['Jan 11, 2026', 'Remembered', '1 day', '—'],
     ])
-    expect(rows[3][0]).toMatch(/^Next review · Jan 11, 2026 · \d+ days ago$/)
+    expect(rows[3][0]).toMatch(/^Due \d+ days ago \(Jan 11, 2026\)$/)
     const deletes = top().querySelectorAll<HTMLButtonElement>('.note-card-reviews__table .note-card-reviews__delete')
     expect(deletes).toHaveLength(3)
     act(() => deletes[1].click())
+    // Round 2: the bin asks first; Esc closes the ask, not the card window under it.
+    expect(deleteReview).not.toHaveBeenCalled()
+    act(() => void document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(document.querySelector('.confirm')).toBeNull()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['card'])
+    act(() => deletes[1].click())
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('.confirm button')].find((b) => b.textContent === 'Remove review')!.click())
     expect(deleteReview).toHaveBeenCalledExactlyOnceWith(PAGE, 'WIKI-9', { at: '2026-01-10T09:00Z', rating: 'again' })
   })
 
@@ -2623,7 +2632,7 @@ describe('the card window (YAZ-4962)', () => {
     feed(2)
     await flush()
     await flush()
-    expect(factText(1).textContent).toMatch(/^Last: Remembered · Next review /)
+    expect(factText(1).textContent).toMatch(/^Due /)
     expect(tableRows()).toHaveLength(2)
   })
 
