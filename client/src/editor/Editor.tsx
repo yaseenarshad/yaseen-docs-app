@@ -93,6 +93,9 @@ import type { Notice, NoticeKind, NoticeType } from '../lib/notice'
 import type { AnchorRect } from '../sidebar/previewPlacement'
 import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
 import { VaultLinksContext } from '../links/vaultLinks'
+import { CardReviewDoor } from '../review/cardReviewDoor'
+import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
+import type { CardReview } from '@shared/cardLine'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
 
 /**
@@ -157,6 +160,10 @@ interface EditorProps {
   idInTitle?: boolean
   /** This vault's Read only (YAZ-4939): every page this editor draws opens read only, with a timed "Allow edits". Absent = off. */
   vaultReadOnly?: boolean
+  /** This vault's card review settings (YAZ-5000): the "Reviews (n)" table under each card in the page. Absent → no section. */
+  cardReviewSettings?: ReviewSettings
+  /** This vault's delete of one card review (`useCardReview.deleteReview`: a file write, Undo in its notice). */
+  onDeleteCardReview?: (path: string, id: string, review: CardReview) => Promise<void>
   /** The door a file action of a read-only vault asks through (YAZ-4939): App's sheet, true = go on. Absent = always. */
   onFileAction?: (root: string) => Promise<boolean>
   /**
@@ -301,11 +308,18 @@ interface EditorProps {
 
 /** The vault's Read only (YAZ-4939) reaches every page the editor draws — a note, a board, a code tab, a folder page and its cells — through one context. */
 export function Editor(props: EditorProps) {
-  const { vaultReadOnly = false, onFileAction } = props
+  const { vaultReadOnly = false, onFileAction, cardReviewSettings, onDeleteCardReview } = props
   const vault = useMemo((): VaultReadOnlyScope => ({ on: vaultReadOnly, allowFileAction: onFileAction ?? NO_VAULT_READ_ONLY.allowFileAction }), [vaultReadOnly, onFileAction])
+  // One door for the editor's life: the settings are read at each draw, so a change of them makes no new Crepe.
+  const reviewSettings = useRef(cardReviewSettings)
+  reviewSettings.current = cardReviewSettings
+  const hasReview = cardReviewSettings !== undefined && onDeleteCardReview !== undefined
+  const cardReviews = useMemo(() => (!hasReview ? null : { settings: () => reviewSettings.current!, deleteReview: onDeleteCardReview }), [hasReview, onDeleteCardReview])
   return (
     <VaultReadOnly.Provider value={vault}>
-      <EditorBody {...props} />
+      <CardReviewDoor.Provider value={cardReviews}>
+        <EditorBody {...props} />
+      </CardReviewDoor.Provider>
     </VaultReadOnly.Provider>
   )
 }
@@ -732,6 +746,10 @@ function CrepeHost({
   const folderLocked = useSyncExternalStore(folderChips?.subscribe ?? noSubscribe, () => folderChips?.getState().readOnly ?? false)
   /** The vault's Read only (YAZ-4939). A folder page's Page tab takes it through the folder's store above: one unlock for the whole tab. */
   const vaultScope = useContext(VaultReadOnly)
+  /** The vault's card review (YAZ-5000), read at click time: "Reviews (n)" under each card. */
+  const cardReviews = useContext(CardReviewDoor)
+  const cardReviewsRef = useRef(cardReviews)
+  cardReviewsRef.current = cardReviews
   const vaultLocked = vaultScope.on && !inFolderPage
   /** The read-only door at click time (YAZ-4985): a link to a missing page asks it before the page is made. */
   const fileDoor = useRef(vaultScope.allowFileAction)
@@ -877,6 +895,11 @@ function CrepeHost({
       onMarkdownUpdated: (md) => controller?.update(md),
       // Note cards (YAZ-4961): `/card` takes its ID from the vault's door at once; the card's open hook names this page.
       noteCards: { path: file.path, mintId: takeNoteId },
+      // "Reviews (n)" under each card with reviews (YAZ-5000): the vault's door, read when a section opens or deletes.
+      noteCardReviews:
+        cardReviewsRef.current === null
+          ? undefined
+          : { settings: () => cardReviewsRef.current?.settings() ?? DEFAULT_REVIEW_SETTINGS, deleteReview: (path, id, review) => cardReviewsRef.current?.deleteReview(path, id, review) ?? Promise.resolve() },
       // A calendar table's marker moves each minute here (YAZ-4162 D2, D9); a preview card starts no timer.
       calendarClock: true,
       // The table zoom pill on each table (YAZ-4091); the previews and the outline view have none (YAZ-4176).

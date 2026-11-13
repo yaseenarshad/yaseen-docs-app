@@ -5,7 +5,7 @@
  */
 
 /** What a key press is in the Inbox, or null when it is not one of its keys. */
-export type NoteCardInboxKey = { kind: 'step' } | { kind: 'answer'; button: number } | { kind: 'undo' } | { kind: 'open' } | { kind: 'tab' } | { kind: 'edit' } | { kind: 'close' }
+export type NoteCardInboxKey = { kind: 'step' } | { kind: 'answer'; button: number } | { kind: 'undo' } | { kind: 'open' } | { kind: 'tab' } | { kind: 'edit' } | { kind: 'close' } | { kind: 'move'; delta: -1 | 1 }
 
 interface KeyPress {
   key: string
@@ -15,7 +15,7 @@ interface KeyPress {
   shiftKey: boolean
 }
 
-/** The key's meaning: Space, 1–4, ⌘Z, O, ⌘↵, E, Esc. ⌃ stands for ⌘ off a Mac. */
+/** The key's meaning: Space, 1–4, ⌘Z, O, ⌘↵, E, Esc, ← → (YAZ-5004). ⌃ stands for ⌘ off a Mac. */
 export function noteCardInboxKey(event: KeyPress): NoteCardInboxKey | null {
   const mod = event.metaKey || event.ctrlKey
   if (event.altKey) return null
@@ -31,6 +31,8 @@ export function noteCardInboxKey(event: KeyPress): NoteCardInboxKey | null {
   if (event.key === 'o' || event.key === 'O') return { kind: 'open' }
   if (event.key === 'e' || event.key === 'E') return { kind: 'edit' }
   if (event.key === 'Escape') return { kind: 'close' }
+  if (event.key === 'ArrowLeft') return { kind: 'move', delta: -1 }
+  if (event.key === 'ArrowRight') return { kind: 'move', delta: 1 }
   return null
 }
 
@@ -41,19 +43,22 @@ export interface NoteCardInboxMoment {
   /** The buttons show: Space has no more to show. */
   answering: boolean
   canUndo: boolean
-  /** The page can open in edit mode (not a read-only vault). */
+  /** The card can be edited (not a read-only vault): E opens it in the card window, in Edit card (YAZ-5003). */
   editable: boolean
+  /** ← or → has a card to go to (YAZ-5004). */
+  moves?: boolean
 }
 
 /**
  * The hint row (D18): each key once, quiet, in the order a review uses them, and only while it does something. The
  * answer digits are on the buttons, so the row does not say them again.
  */
-export const noteCardInboxHints = ({ card, answering, canUndo, editable }: NoteCardInboxMoment): { keys: string; label: string }[] => [
+export const noteCardInboxHints = ({ card, answering, canUndo, editable, moves = false }: NoteCardInboxMoment): { keys: string; label: string }[] => [
   ...(card && !answering ? [{ keys: 'Space', label: 'Show' }] : []),
+  ...(card && moves ? [{ keys: '← →', label: 'Other cards' }] : []),
   ...(canUndo ? [{ keys: '⌘Z', label: 'Undo' }] : []),
   ...(card ? [{ keys: 'O', label: 'Open page' }] : []),
-  ...(card && editable ? [{ keys: 'E', label: 'Edit page' }] : []),
+  ...(card && editable ? [{ keys: 'E', label: 'Edit card' }] : []),
   ...(card ? [{ keys: '⌘↵', label: 'Open page in a new tab' }] : []),
   { keys: 'Esc', label: 'Close' },
 ]

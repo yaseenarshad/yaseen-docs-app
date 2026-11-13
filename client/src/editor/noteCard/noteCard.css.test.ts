@@ -35,3 +35,14 @@ it('a side has no blank line under its text in the page: the body sets `white-sp
   expect(rules(cardCss, '.note-card__side > :last-child').some((r) => /margin-bottom:\s*0/.test(r.body))).toBe(true)
   expect(rules(cardCss, '.note-card .note-card__rule').some((r) => /margin:\s*10px -16px/.test(r.body))).toBe(true)
 })
+
+it('YAZ-5005: Underline on `.app` takes the highlight off a shown hidden word and draws a line under it; the blank keeps its own look', () => {
+  const underline = rules(cardCss, "[data-shown-hidden-words='underline'] .note-card .note-card__hidden")
+  expect(underline).toHaveLength(1)
+  expect(underline[0].body).toMatch(/background:\s*none/)
+  expect(underline[0].body).toMatch(/text-decoration:\s*underline/)
+  expect(underline[0].body).toMatch(/text-decoration-color:\s*var\(--accent\)/)
+  // It beats the highlight rule it replaces.
+  expect(beats(specificity(underline[0].selector), specificity('.note-card .note-card__hidden'))).toBe(true)
+  expect(rules(cardCss, '.note-card__blank').every((r) => !r.selector.includes('data-shown-hidden-words'))).toBe(true)
+})

@@ -17,7 +17,7 @@ import { splitFrontmatter } from '@shared/frontmatter'
 import { notePageSwitches, type PageSwitches } from '@shared/pageSwitches'
 import type { CommentsOrder } from '@shared/types'
 import type { CardReview } from '@shared/cardLine'
-import type { ReviewSettings } from '@shared/reviews'
+import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import { api } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
 import { createCrepe, editorViewOf } from '../editor/createCrepe'
@@ -188,8 +188,8 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
   /** ⌘F in the reading layer finds in THIS note (check 11): the note's own find plugin on this Crepe, and its bar. */
   const findChannel = useMemo(() => createFindChannel(), [])
   // The doors, read at click time: a layer's Crepe is built once, and the stack's callbacks may change identity.
-  const doors = useRef({ onOpenLink, createFolder, onFileAction, linkActions, onNotice })
-  doors.current = { onOpenLink, createFolder, onFileAction, linkActions, onNotice }
+  const doors = useRef({ onOpenLink, createFolder, onFileAction, linkActions, onNotice, review: vault.review })
+  doors.current = { onOpenLink, createFolder, onFileAction, linkActions, onNotice, review: vault.review }
 
   /** The whole file as read, frontmatter included: the comment stream's truth. */
   const readRef = useRef('')
@@ -313,6 +313,11 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
       },
       // Pictures resolve against the note's folder, as in its page (YAZ-1656).
       image: { root, notePath: path },
+      // "Reviews (n)" under each card (YAZ-5000): the card window's table; its delete writes the file, as there.
+      noteCardReviews:
+        doors.current.review === undefined
+          ? undefined
+          : { settings: () => doors.current.review?.settings ?? DEFAULT_REVIEW_SETTINGS, deleteReview: (p, id, r) => doors.current.review?.deleteReview(p, id, r) ?? Promise.resolve() },
       // The folds, kept for a read again of this page (YAZ-4990).
       folding: { seedCollapsedKeys: () => folds.current.outline, onCollapsedKeysChange: (keys) => (folds.current = { ...folds.current, outline: new Set(keys) }) },
       headingFolding: { seedCollapsedKeys: () => folds.current.heading, onCollapsedKeysChange: (keys) => (folds.current = { ...folds.current, heading: new Set(keys) }) },

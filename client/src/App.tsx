@@ -1435,16 +1435,6 @@ export function App() {
       return n + 1
     })
   }, [hasVault, filesWindow])
-  /**
-   * The Explore key is a toggle (YAZ-4994): with Explore open it closes ALL of Explore, whatever is on top (searches,
-   * notes, boards, a note in edit, saved first), and the page has the keyboard back with no scroll. One rule: the key
-   * that opens Explore closes it. Esc still goes back one layer at a time.
-   */
-  const [exploreCloseAsk, setExploreCloseAsk] = useState(0)
-  const toggleExplore = useCallback(() => {
-    if (exploreRequest > 0) setExploreCloseAsk((n) => n + 1)
-    else openExplore()
-  }, [exploreRequest, openExplore])
   const openExploreWith = useCallback((ask: ExploreRequest) => {
     if (!hasVault || filesWindow) return
     exploreNote.current = ask
@@ -1456,6 +1446,8 @@ export function App() {
   const openExploreOn = useCallback((path: string) => openExploreWith({ kind: 'note', path }), [openExploreWith])
   /** The Inbox's O and E (YAZ-4962): the page on top, landed on the card, in edit mode for E. */
   const openPageAtCard = useCallback((path: string, card: number, edit: boolean) => openExploreWith({ kind: 'note', path, card, edit }), [openExploreWith])
+  /** The Inbox's E (YAZ-5003, in Edit card) and ⋯ › Open card (YAZ-5004): the card window on top. */
+  const openCardWindow = useCallback((path: string, cardId: string, index: number, edit: boolean) => openExploreWith({ kind: 'card', path, cardId, index, ...(edit && { edit }) }), [openExploreWith])
   // The card window (YAZ-4962, D13): every editor sends `mdapp:note-card-open` from its card (a click on the title,
   // ⋯ › Open card, ⌘↵); it bubbles to the document. A preview that does not know its page sends no path: nothing opens.
   useEffect(() => {
@@ -2308,7 +2300,7 @@ export function App() {
     onOpenFolder: pick,
     onOpenRoot: openVault,
     onSearch: toggleSearch,
-    onExplore: toggleExplore,
+    onExplore: openExplore,
     onSwitchVault: openVaultSwitcher,
     onSettings: openSettings,
     onToggleSidebar: toggleSidebar,
@@ -3244,6 +3236,9 @@ export function App() {
       // The vault's Read only (YAZ-4939), and the door a file action asks through.
       vaultReadOnly: scope.readOnlyVault.settings.on,
       onFileAction: allowFileAction,
+      // The vault's card review (YAZ-5000): "Reviews (n)" under each card in the page, the card window's table.
+      cardReviewSettings: scope.review.settings,
+      onDeleteCardReview: scope.review.deleteReview,
       properties: scope.properties,
       onOpenFileRight: openRight,
       // YAZ-4564: a folder page's Folder chips and ↗ open a subfolder's page as the sidebar's "Open folder page" does.
@@ -3474,7 +3469,7 @@ export function App() {
     <NoteWindowEditorProps.Provider value={noteWindowEditorProps}>
     <PageActions.Provider value={linkActions}>
     <CommentPrefsContext.Provider value={commentPrefs}>
-    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-code-block-width={settings.codeBlockWidth != null ? '' : undefined} data-table-width={settings.tableWidth != null ? '' : undefined} data-section-lines={settings.sectionLines} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-folder-row-band={folderRowBandOn(settings) ? 'on' : 'off'} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-band-bold={settings.tableBandBold === false ? 'off' : 'on'} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} {...headerRowAttrs(headerRow)} {...subheaderRowAttrs(subheaderRow)} data-table-sticky-subheaders={stickySubheaders ? 'on' : 'off'} data-table-text={textInCells} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
+    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-code-block-width={settings.codeBlockWidth != null ? '' : undefined} data-table-width={settings.tableWidth != null ? '' : undefined} data-section-lines={settings.sectionLines} data-shown-hidden-words={settings.shownHiddenWords} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-folder-row-band={folderRowBandOn(settings) ? 'on' : 'off'} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-band-bold={settings.tableBandBold === false ? 'off' : 'on'} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} {...headerRowAttrs(headerRow)} {...subheaderRowAttrs(subheaderRow)} data-table-sticky-subheaders={stickySubheaders ? 'on' : 'off'} data-table-text={textInCells} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
       {(glow || takeGlow) && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
         // The bottom-left corner (YAZ-3262): ONE column, so the box after a drag out always stands
@@ -3515,7 +3510,7 @@ export function App() {
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
-          <ExploreStack request={exploreRequest} requestLayer={exploreNote.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} closeAsk={exploreCloseAsk} renderEditor={renderExploreEditor} createFolder={newNoteFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} />
+          <ExploreStack request={exploreRequest} requestLayer={exploreNote.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newNoteFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} />
         </Suspense>
       )}
       {whatsNewOpen && (
@@ -3796,7 +3791,7 @@ export function App() {
             {/* The Inbox screen (YAZ-4962): the session of the vault in review, over the tab stack; the page under it stays as it was. */}
             {session !== null && (
               <Suspense fallback={null}>
-                <NoteCardInbox review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openPageAtCard} openInTab={openBackgroundCopy} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} />
+                <NoteCardInbox review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openPageAtCard} openCard={openCardWindow} openInTab={openBackgroundCopy} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} />
               </Suspense>
             )}
             {/* The tab board (YAZ-2648 D5) covers the stack while it shows; a review never has one over it. */}

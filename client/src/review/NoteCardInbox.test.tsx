@@ -29,7 +29,7 @@ let review: CardReviewApi
 let props: NoteCardInboxProps
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, ...over }
 }
 
 function render() {
@@ -54,6 +54,8 @@ function mount(text: string | null, settings: ReviewSettings = DEFAULT_REVIEW_SE
     close: vi.fn(),
     deleteReview: vi.fn(async () => {}),
     setNext: vi.fn(async () => {}),
+    move: vi.fn(),
+    turnOff: vi.fn(async () => {}),
   }
   const wikilinks = createWikilinkResolveSource()
   props = {
@@ -62,6 +64,7 @@ function mount(text: string | null, settings: ReviewSettings = DEFAULT_REVIEW_SE
     vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: { candidates: [], subscribe: () => () => undefined } as never }),
     nameOf: () => 'Cards',
     openPage: vi.fn(),
+    openCard: vi.fn(),
     openInTab: vi.fn(),
     openLinkIn: vi.fn(),
     openLayer: vi.fn(),
@@ -97,11 +100,11 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(el.querySelector('.note-card-strip__page')?.textContent).toBe('Cards')
     const hints = () => [...el.querySelectorAll('.note-card-inbox__hints span')].map((h) => h.textContent)
     // Nothing to undo; the digits are on the buttons.
-    expect(hints()).toEqual(['Space Show', 'O Open page', 'E Edit page', '⌘↵ Open page in a new tab', 'Esc Close'])
+    expect(hints()).toEqual(['Space Show', 'O Open page', 'E Edit card', '⌘↵ Open page in a new tab', 'Esc Close'])
     for (let i = 0; i < 4; i++) press(' ')
     await flush()
     // The last step: Space has nothing more to show.
-    expect(hints()).toEqual(['O Open page', 'E Edit page', '⌘↵ Open page in a new tab', 'Esc Close'])
+    expect(hints()).toEqual(['O Open page', 'E Edit card', '⌘↵ Open page in a new tab', 'Esc Close'])
   })
 
   it('YAZ-4999: an up-next card shows the chip "Up next" after the ID; its × removes the mark (setNext)', () => {
@@ -116,14 +119,15 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.setNext).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', false)
   })
 
-  it('a read-only vault: E opens the page to read (no edit mode), and the hint row does not offer E', () => {
+  it('YAZ-5003: a read-only vault blocks Edit card, as the page does: E opens nothing, and the hint row does not offer E', () => {
     mount(TWO_SIDES)
     const plain = props.vaultOf
     props.vaultOf = (path) => ({ ...plain(path), readOnly: true })
     render()
     expect([...el.querySelectorAll('.note-card-inbox__hints kbd')].map((k) => k.textContent)).not.toContain('E')
     press('e')
-    expect(props.openPage).toHaveBeenCalledExactlyOnceWith(PATH, 0, false)
+    expect(props.openCard).not.toHaveBeenCalled()
+    expect(props.openPage).not.toHaveBeenCalled()
   })
 
   it('Space (D18): the next hidden word, one at a time, in page order; then the next side, whose words show one by one; then the buttons, and showAnswers is called exactly then', async () => {
@@ -204,12 +208,13 @@ describe('the Inbox screen (YAZ-4962)', () => {
     palette.remove()
   })
 
-  it('O and E open the page on top, landed on the card (E in edit); ⌘↵ in a tab; ⌘Z undoes only when there is an answer to undo; Esc closes', () => {
+  it('O opens the page on top, landed on the card; YAZ-5003: E opens only the card, in the card window, in Edit card; ⌘↵ in a tab; ⌘Z undoes only when there is an answer to undo; Esc closes', () => {
     mount(TWO_SIDES)
     press('o')
     expect(props.openPage).toHaveBeenLastCalledWith(PATH, 0, false)
     press('e')
-    expect(props.openPage).toHaveBeenLastCalledWith(PATH, 0, true)
+    expect(props.openCard).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', 0, true)
+    expect(props.openPage).toHaveBeenCalledOnce()
     press('Enter', { metaKey: true })
     expect(props.openInTab).toHaveBeenCalledExactlyOnceWith(PATH)
     press('z', { metaKey: true })
@@ -246,11 +251,96 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.start).toHaveBeenCalledExactlyOnceWith({})
   })
 
-  it('the Reviews section under the card starts closed (silence) and opens with the full table', () => {
+  it('YAZ-5000: no Reviews section, also for a card with reviews: only the card, the steps and the answer buttons', async () => {
     mount('Just a fact')
-    expect(el.querySelector('.note-card-reviews .backlinks__header')?.getAttribute('aria-expanded')).toBe('false')
-    expect(el.querySelector('.note-card-reviews__table')).toBeNull()
-    act(() => el.querySelector<HTMLButtonElement>('.note-card-reviews .backlinks__header')?.click())
-    expect(el.querySelector('.note-card-reviews__table')).not.toBeNull()
+    session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }] } } }
+    render()
+    await flush()
+    expect(el.querySelector('.note-card-inbox__card')).not.toBeNull()
+    expect(el.querySelectorAll('.note-card-inbox__answer')).toHaveLength(2)
+    expect(el.querySelector('.note-card-reviews')).toBeNull()
+    expect(el.textContent).not.toContain('Reviews')
+  })
+
+  it('YAZ-5002: the buttons sit under the card, outside its panel; the Space hint sits between them while words are hidden; the key row is last', async () => {
+    mount(TWO_SIDES)
+    const column = el.querySelector('.note-card-inbox__column')!
+    const panel = column.querySelector('.note-card-inbox__panel')!
+    const hint = () => column.querySelector('.note-card-inbox__space')
+    expect(hint()?.textContent).toBe('Press Space to show the next hidden word')
+    expect(hint()?.querySelector('kbd')?.textContent).toBe('Space')
+    expect(panel.contains(hint())).toBe(false)
+    press(' ')
+    // France shows: the front has no more hidden words; the next Space shows the back.
+    expect(hint()?.textContent).toBe('Press Space to show the next side')
+    press(' ')
+    press(' ')
+    press(' ')
+    await flush()
+    expect(hint()).toBeNull()
+    const answers = column.querySelector('.note-card-inbox__actions')!
+    expect(answers.querySelectorAll('.note-card-inbox__answer')).toHaveLength(2)
+    expect(panel.contains(answers)).toBe(false)
+    expect([...column.children].map((c) => c.className)).toEqual(['note-card-inbox__panel', 'note-card-inbox__actions', 'explore__foot note-card-inbox__hints'])
+  })
+
+  it('YAZ-5004: ← → (buttons and keys) move to the card before or after with no answer; each is off at its end; the key row says so', () => {
+    mount(TWO_SIDES)
+    const moves = () => [...el.querySelectorAll<HTMLButtonElement>('.note-card-inbox__move')]
+    expect(moves().map((b) => [b.getAttribute('aria-label'), b.disabled])).toEqual([['Previous card', true], ['Next card', true]])
+    press('ArrowRight')
+    expect(review.move).not.toHaveBeenCalled()
+    session = { ...session, canNext: true }
+    render()
+    expect(moves().map((b) => b.disabled)).toEqual([true, false])
+    expect([...el.querySelectorAll('.note-card-inbox__hints span')].map((h) => h.textContent)).toContain('← → Other cards')
+    press('ArrowRight')
+    act(() => moves()[1].click())
+    expect(vi.mocked(review.move).mock.calls).toEqual([[1], [1]])
+    press('ArrowLeft')
+    expect(review.move).toHaveBeenCalledTimes(2)
+    session = { ...session, canBack: true }
+    render()
+    press('ArrowLeft')
+    expect(review.move).toHaveBeenLastCalledWith(-1)
+    expect(review.answer).not.toHaveBeenCalled()
+    // A key typed in a field is the field's.
+    const field = document.createElement('input')
+    el.append(field)
+    press('ArrowLeft', {}, field)
+    expect(review.move).toHaveBeenCalledTimes(3)
+  })
+
+  it('YAZ-5004: ⋯ opens a row of icon actions with their names (Undo off while there is nothing to undo); each runs the hook`s own action; Esc closes the row first', () => {
+    mount(TWO_SIDES)
+    const more = () => el.querySelector<HTMLButtonElement>('.note-card-inbox__more-button')!
+    const actions = () => [...el.querySelectorAll<HTMLButtonElement>('.note-card-inbox__more-action')]
+    expect(actions()).toEqual([])
+    act(() => more().click())
+    expect(actions().map((b) => [b.getAttribute('aria-label'), b.disabled])).toEqual([
+      ['Undo last review', true],
+      ['Turn review off', false],
+      ['Put at top of Inbox', false],
+      ['Open card', false],
+    ])
+    expect(actions().every((b) => b.querySelector('svg') !== null)).toBe(true)
+    press('Escape')
+    expect(actions()).toEqual([])
+    expect(review.close).not.toHaveBeenCalled()
+    session = { ...session, canUndo: true }
+    render()
+    const run = (label: string) => {
+      act(() => more().click())
+      act(() => actions().find((b) => b.getAttribute('aria-label') === label)!.click())
+    }
+    run('Undo last review')
+    expect(review.undo).toHaveBeenCalledOnce()
+    run('Turn review off')
+    expect(review.turnOff).toHaveBeenCalledOnce()
+    run('Put at top of Inbox')
+    expect(review.setNext).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', true)
+    run('Open card')
+    expect(props.openCard).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', 0, false)
+    expect(actions()).toEqual([])
   })
 })

@@ -233,4 +233,51 @@ describe('useCardReview', () => {
       await vi.waitFor(() => expect(vault.get(`${ROOT}/Mixed.md`)).toBe(original))
     }
   })
+
+  it('YAZ-5004: → and ← move through the queue with no answer; the card left stays in it, "1 of 2" follows; an answer after → leaves the card passed over in the queue', async () => {
+    await mount()
+    await act(async () => review.start())
+    expect(review.session).toMatchObject({ position: 1, total: 2, canBack: false, canNext: true })
+    const before = vault.get(`${ROOT}/Geo.md`)
+    act(() => review.move(1))
+    await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-3', page: { text: 'What is a {{cell}}?' } }))
+    expect(review.session).toMatchObject({ position: 2, canBack: true, canNext: false })
+    act(() => review.move(1)) // the end: nothing
+    expect(review.session?.card?.id).toBe('WIKI-3')
+    act(() => review.move(-1))
+    await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-1', page: { text: 'Capital of {{France}}?' } }))
+    expect(review.session).toMatchObject({ position: 1, canBack: false, canNext: true })
+    expect(vault.get(`${ROOT}/Geo.md`)).toBe(before)
+    act(() => review.move(1))
+    await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
+    await step(() => review.answer('good'))
+    // WIKI-1, passed over, is still in the queue: it shows next.
+    await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-1', page: { text: 'Capital of {{France}}?' } }))
+    expect(review.session).toMatchObject({ position: 2, total: 2 })
+  })
+
+  it('YAZ-5004: turnOff (the Inbox ⋯) writes `off` on the card showing and takes it out of the queue', async () => {
+    await mount()
+    await act(async () => review.start())
+    await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
+    await step(() => review.turnOff())
+    expect(vault.get(`${ROOT}/Geo.md`)).toContain('<!-- card: WIKI-1, off, 2026-10-13T09:00Z good -->')
+    await vi.waitFor(() => expect(review.session?.card?.id).toBe('WIKI-3'))
+    expect(review.dueCount).toBe(1)
+  })
+
+  it('YAZ-5003: a new version of the showing card`s page (Edit card in the card window) is read again in place: the new text, the same turn, its fixed answers kept', async () => {
+    await mount()
+    await act(async () => review.start())
+    await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
+    let shown = null as ReturnType<CardReviewApi['showAnswers']>
+    act(() => void (shown = review.showAnswers()))
+    vault.set(`${ROOT}/Geo.md`, vault.get(`${ROOT}/Geo.md`)!.replace('Capital of {{France}}?', 'The capital of {{France}}?'))
+    await act(async () => {
+      records = [...vault].map(([path, content]) => ({ ...scan(path, content), mtime: path.endsWith('Geo.md') ? 5 : 0 }))
+      listeners.forEach((l) => l())
+    })
+    await vi.waitFor(() => expect(review.session?.card?.page?.text).toBe('The capital of {{France}}?'))
+    expect(review.session?.answers).toBe(shown)
+  })
 })
