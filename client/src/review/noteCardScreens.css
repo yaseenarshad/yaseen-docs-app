@@ -112,19 +112,23 @@
   background: var(--bg-side);
   outline: none;
 }
-/* The top row (YAZ-5017, as Mochi's): the filter, the scope's path, and "3 of 12" on the right; it stays on top. */
-.note-card-inbox__bar {
+/* The top (YAZ-5017, YAZ-5020): the row, then the progress bar; it stays on top. */
+.note-card-inbox__top {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 3;
   flex: none;
   align-self: stretch;
+  padding-bottom: 4px;
+  background: var(--bg-side);
+}
+/* The top row (YAZ-5017, as Mochi's): the filter, the scope's path, and "3 of 12" on the right. */
+.note-card-inbox__bar {
   display: flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
   padding: 10px 4px 8px;
-  background: var(--bg-side);
   font-size: 13px;
   color: var(--fg-muted);
 }
@@ -171,6 +175,29 @@
 .note-card-inbox__bar > .note-card-inbox__place {
   margin-left: auto;
   padding-right: 4px;
+}
+/* The progress bar (YAZ-5020, as Mochi's): thin, under the row; a Remembered fills grey, a Forgot red. */
+.note-card-inbox__progress {
+  display: flex;
+  height: 4px;
+  margin: 0 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+.note-card-inbox__progress-part {
+  flex: none;
+  height: 100%;
+  background: color-mix(in srgb, var(--fg) 38%, transparent);
+  transition: width 160ms ease-out;
+}
+.note-card-inbox__progress-part[data-missed] {
+  background: var(--danger);
+}
+@media (prefers-reduced-motion: reduce) {
+  .note-card-inbox__progress-part {
+    transition: none;
+  }
 }
 /* The filter menu: the app's menu, each row its glyph, its name and a small count pill. */
 .note-card-inbox__filter-menu {

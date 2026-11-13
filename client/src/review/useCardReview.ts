@@ -26,6 +26,10 @@ import { changeCardLine, deleteCardReview, isCardGone, readCard, restoreCardRevi
  * The filter (YAZ-5017, as Mochi's "All cards ▾"): All cards, Due today (cards with reviews, due now) or New cards
  * (never reviewed, within today's new-card limit: the queue's own). The queue stays whole; the filter picks which of its
  * cards show, and "3 of 12" counts only those.
+ *
+ * `answered` (YAZ-5020, the progress bar) is each answer of the session, in order; ⌘Z takes the last one back. The
+ * bar's whole is the cards the session started with, plus any it took since. A new session (or the Inbox tab closed)
+ * starts it empty.
  */
 
 /** Which cards of the session show (YAZ-5017). */
@@ -68,6 +72,10 @@ export interface CardReviewSession {
   counts: Record<CardFilter, number>
   /** Where the cards come from, as a quiet path (YAZ-5017): the vault's name; the folder's parts; the page's name. */
   from: string[]
+  /** Each answer of the session, in order (YAZ-5020): a Forgot ('again') or a Remembered (any other). */
+  answered: CardRating[]
+  /** The progress bar's whole (YAZ-5020): the cards the session started with, plus any it took since. */
+  size: number
 }
 
 export interface CardReviewApi {
@@ -118,6 +126,8 @@ interface Session {
   filter: CardFilter
   /** The cards with reviews and the new cards at start: each filter's "of 12". */
   totals: { due: number; new: number }
+  /** YAZ-5020: each answer, in order (the progress bar); ⌘Z takes the last back. */
+  answered: CardRating[]
 }
 
 interface IndexSource {
@@ -237,8 +247,8 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       const queue = cardQueue(records, settings, Date.now(), scope.folder, scope.page, source.letters)
       const label = scope.page !== undefined ? titleOf(records, scope.page) : scope.folder ? folderTitle(source.folders, `${root}/${scope.folder}`) : 'Inbox'
       const { due, new: fresh } = countOf(queue)
-      // A new scope starts on All cards (YAZ-5017).
-      setSession((s) => ({ label, scope, queue, at: 0, total: queue.length, turn: (s?.turn ?? 0) + 1, undo: [], filter: 'all', totals: { due, new: fresh } }))
+      // A new scope starts on All cards (YAZ-5017), with an empty bar (YAZ-5020).
+      setSession((s) => ({ label, scope, queue, at: 0, total: queue.length, turn: (s?.turn ?? 0) + 1, undo: [], filter: 'all', totals: { due, new: fresh }, answered: [] }))
     },
     [root, source],
   )
@@ -279,7 +289,8 @@ export function useCardReview(root: string | null, source: IndexSource, settings
         const undo = written !== 'gone' ? [...s.undo, { card, review: chosen.review, next: written.next }].slice(-UNDO_DEPTH) : s.undo
         // The cards before (passed over with →) stay; the ones after are settled, as the head was before ← →.
         const queue = [...s.queue.slice(0, s.at), ...settle(s.queue.slice(s.at + 1), s.scope)]
-        return fitted({ ...s, queue, at: s.at < queue.length ? s.at : 0, turn: s.turn + 1, undo })
+        const answered = written !== 'gone' ? [...s.answered, rating] : s.answered
+        return fitted({ ...s, queue, at: s.at < queue.length ? s.at : 0, turn: s.turn + 1, undo, answered })
       })
     },
     [fixAnswers, onNotice, settle],
@@ -297,12 +308,12 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       },
     )
     busy.current = false
-    // The card shows again, also under a filter that would hide it: then All cards (YAZ-5017).
+    // The card shows again, also under a filter that would hide it: then All cards (YAZ-5017). Its answer leaves the bar (YAZ-5020).
     if (undone)
       setSession((s) =>
         s === null || s.undo.at(-1) !== last
           ? s
-          : { ...s, queue: [last.card, ...s.queue.filter((c) => !sameCard(c, last.card))], at: 0, turn: s.turn + 1, undo: s.undo.slice(0, -1), filter: matchesFilter(last.card, s.filter) ? s.filter : 'all' },
+          : { ...s, queue: [last.card, ...s.queue.filter((c) => !sameCard(c, last.card))], at: 0, turn: s.turn + 1, undo: s.undo.slice(0, -1), filter: matchesFilter(last.card, s.filter) ? s.filter : 'all', answered: s.answered.slice(0, -1) },
       )
   }, [onNotice])
 
@@ -399,6 +410,8 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       filter,
       counts,
       from,
+      answered: session.answered,
+      size: Math.max(session.total, session.answered.length + queue.length),
     }
   }, [session, loaded, fixed, turnKey, root, vaultName])
 

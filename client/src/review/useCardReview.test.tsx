@@ -226,6 +226,22 @@ describe('useCardReview', () => {
     expect(review.session?.from).toEqual(['Cells'])
   })
 
+  it('YAZ-5020: the progress bar`s answers — each answer in order (a Forgot is `again`), ⌘Z takes the last back; its whole is the session`s size at start; a new session starts empty', async () => {
+    await mount()
+    await act(async () => review.start())
+    expect(review.session).toMatchObject({ answered: [], size: 2 })
+    await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
+    await step(() => review.answer('again'))
+    expect(review.session).toMatchObject({ answered: ['again'], size: 2 })
+    await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
+    await step(() => review.answer('good'))
+    expect(review.session).toMatchObject({ card: null, answered: ['again', 'good'], size: 2 })
+    await step(() => review.undo())
+    expect(review.session).toMatchObject({ answered: ['again'], size: 2 })
+    await act(async () => review.start())
+    expect(review.session?.answered).toEqual([])
+  })
+
   it('a card whose page is gone when its turn comes is passed over; review off has no count and no session', async () => {
     await mount()
     await act(async () => review.start())

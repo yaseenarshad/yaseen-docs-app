@@ -45,7 +45,7 @@ let review: CardReviewApi
 let props: NoteCardInboxProps
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, due: 9, new: 3 }, from: ['Vault'], ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, due: 9, new: 3 }, from: ['Vault'], answered: [], size: 12, ...over }
 }
 
 function render() {
@@ -556,5 +556,24 @@ describe('the Inbox screen (YAZ-4962)', () => {
     mount(TWO_SIDES)
     expect(column().style.width).toBe(`min(${CARD_MIN_WIDTH}px, 100%)`)
     setInboxCardWidth(null)
+  })
+
+  it('YAZ-5020: the progress bar under the top row — empty at start; a Remembered adds a grey part, a Forgot a red one, each 1/size wide; the same answers in a row draw one part', () => {
+    mount(TWO_SIDES)
+    const bar = () => el.querySelector<HTMLElement>('.note-card-inbox__top > .note-card-inbox__progress')!
+    const parts = () => [...bar().querySelectorAll<HTMLElement>('.note-card-inbox__progress-part')].map((p) => [p.dataset.missed === 'true' ? 'red' : 'grey', p.style.width])
+    expect(el.querySelector('.note-card-inbox__top')?.firstElementChild?.className).toBe('note-card-inbox__bar')
+    expect(parts()).toEqual([])
+    expect(bar().getAttribute('aria-valuenow')).toBe('0')
+    session = { ...session, size: 8, answered: ['good'] }
+    render()
+    expect(parts()).toEqual([['grey', '12.5%']])
+    session = { ...session, answered: ['good', 'again'] }
+    render()
+    expect(parts()).toEqual([['grey', '12.5%'], ['red', '12.5%']])
+    session = { ...session, answered: ['good', 'again', 'again', 'easy', 'hard'] }
+    render()
+    expect(parts()).toEqual([['grey', '12.5%'], ['red', '25%'], ['grey', '25%']])
+    expect([bar().getAttribute('aria-valuenow'), bar().getAttribute('aria-valuemax')]).toEqual(['5', '8'])
   })
 })
