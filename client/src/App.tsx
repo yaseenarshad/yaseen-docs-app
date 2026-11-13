@@ -1529,6 +1529,30 @@ export function App() {
    */
   const [inboxFront, setInboxFront] = useState(false)
   const inboxShown = reviewer !== null && inboxFront
+  /**
+   * WHERE THE INBOX TAB STANDS (YAZ-5016, Yaseen: "inbox tab cant be moved around like other tabs can?"): right after
+   * this page tab, by id, or first (null). It opens at the end, as a new tab does; a drag along the strip moves it; a
+   * click on the sidebar's Inbox row goes to it where it stands. When the tab it stood after closes, it stands after the
+   * nearest tab before that one, so it keeps its place. Session-only, as the Inbox tab is. It never leaves the window:
+   * a drag of it lands only in this strip (one Inbox tab per window, and its session is this window's).
+   */
+  const [inboxAfter, setInboxAfter] = useState<string | null>(null)
+  const lastTabIds = useRef<readonly string[]>([])
+  let inboxAnchor = inboxAfter
+  if (inboxAnchor !== null && !tabs.some((t) => t.id === inboxAnchor)) {
+    const was = lastTabIds.current
+    const at = was.indexOf(inboxAnchor)
+    inboxAnchor = at === -1 ? (tabs.at(-1)?.id ?? null) : (was.slice(0, at).reverse().find((id) => tabs.some((t) => t.id === id)) ?? null)
+    setInboxAfter(inboxAnchor)
+  }
+  useEffect(() => {
+    lastTabIds.current = tabs.map((t) => t.id)
+  }, [tabs])
+  const inboxAt = inboxAnchor === null ? 0 : tabs.findIndex((t) => t.id === inboxAnchor) + 1
+  const inboxAtRef = useRef(inboxAt)
+  inboxAtRef.current = inboxAt
+  /** A close from the Inbox tab's menu took the active page tab (YAZ-5016): the Inbox tab stays in front. */
+  const inboxStays = useRef(false)
   /** The Inbox tab to the front: the blank tab, unused, goes (YAZ-2655 S73), and the tab board gives way. */
   const showInbox = useCallback(() => {
     closeBlank()
@@ -1537,6 +1561,8 @@ export function App() {
   }, [closeBlank])
   /** The Inbox tab with this scope ("Review this page / folder" replace the scope of an open one), on show. */
   const startReview = useCallback((scope: VaultScope, cards?: CardReviewScope) => {
+    // A new Inbox tab opens at the end, as a new tab does (YAZ-5016); an open one keeps its place for the new scope.
+    if (live.current.vaults.every((vault) => vault.review.session === null)) setInboxAfter(now.current.tabs.at(-1)?.id ?? null)
     for (const vault of live.current.vaults) if (vault !== scope) vault.review.close()
     scope.review.start(cards)
     showInbox()
@@ -1581,7 +1607,10 @@ export function App() {
   }, [])
   // Going to a tab — a sidebar click, ⌃Tab — brings that page to the front: the Inbox tab stays open behind (YAZ-5011).
   // A trip to another copy of the same file (YAZ-2940) moves `activeTab` and not `file`, so both are watched.
-  useEffect(() => setInboxFront(false), [activeTab, file])
+  useEffect(() => {
+    if (inboxStays.current) inboxStays.current = false
+    else setInboxFront(false)
+  }, [activeTab, file])
   /** A page tab of the strip: to the front, also the active one under the Inbox tab (no `activeTab` move then). */
   const activateFromStrip = useCallback((id: string) => {
     setInboxFront(false)
@@ -1603,6 +1632,21 @@ export function App() {
   /** What the doors below read at the moment they are used; they keep their identity under the board. */
   const now = useRef({ file, active: activeTab, tabs, preview, blank, phase: overview.phase, right: rightPanel.items.length })
   now.current = { file, active: activeTab, tabs, preview, blank, phase: overview.phase, right: rightPanel.items.length }
+  /**
+   * The Inbox tab's menu (YAZ-5016): "Close other tabs" (`right` false) closes every page tab, "Close tabs to the right"
+   * the page tabs after it; both close the blank tab, which stands last. When the active page tab goes, the Inbox tab
+   * comes to the front, as the tab right-clicked does in a browser.
+   */
+  const closeAroundInbox = useCallback((right: boolean) => {
+    const { tabs: all, active: open } = now.current
+    const ids = (right ? all.slice(inboxAtRef.current) : all).map((t) => t.id)
+    if (open !== null && ids.includes(open)) {
+      inboxStays.current = true
+      showInbox()
+    }
+    if (ids.length > 0) closeTabs(ids)
+    closeBlank()
+  }, [closeTabs, closeBlank, showInbox])
   // The note's first edit keeps the preview tab that shows it (YAZ-2648 D2). An editor says its path;
   // `keep` takes the tab's id (YAZ-2940 D1). Through `now`, because a new `onUserEdit` identity would rebuild every mounted editor.
   const keepEdited = useCallback((path: string) => {
@@ -3738,8 +3782,9 @@ export function App() {
             // Under the board the strip acts as the pages do: a tab — the active one too — is zoomed
             // into, and a tab's ✕ leaves the board open.
             onActivate={overviewOpen ? leaveOverview : activateFromStrip}
-            // The Inbox tab (YAZ-5011): last in the strip while a review session is open.
-            inbox={session === null ? undefined : { label: session.scope === 'vault' ? 'Inbox' : `Inbox · ${session.label}`, active: inboxShown, onActivate: showInbox, onClose: closeReview }}
+            // The Inbox tab (YAZ-5011): in the strip while a review session is open.
+            // It stands where it was put (YAZ-5016): `inboxAt`, moved by a drag along the strip.
+            inbox={session === null ? undefined : { label: session.scope === 'vault' ? 'Inbox' : `Inbox · ${session.label}`, active: inboxShown, at: inboxAt, onActivate: showInbox, onClose: closeReview, onMove: setInboxAfter, onCloseOthers: () => closeAroundInbox(false), onCloseToRight: () => closeAroundInbox(true) }}
             onKeep={keep}
             onClose={overviewOpen ? closeOneUnderOverview : closeTab}
             onMove={moveTab}

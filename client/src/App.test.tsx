@@ -5496,6 +5496,38 @@ describe('App note card review (YAZ-4967)', () => {
     expect(el.querySelector('.note-card-inbox')).toBeNull()
   })
 
+  it('YAZ-5016: the Inbox tab, dragged first, keeps its place: a page tab and the sidebar\'s Inbox row go to it there; its menu\'s "Close other tabs" keeps it in front; closed and opened again, it stands at the end', async () => {
+    const { el } = await mount(defaultAppState(), TABS, {}, withIndex(RECORDS()))
+    const strip = () => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => `${t.textContent}${t.getAttribute('aria-selected') === 'true' ? '*' : ''}`)
+    const tabEl = (name: string) => [...el.querySelectorAll<HTMLElement>('.tabbar .tabbar__tab')].find((t) => t.querySelector('[role="tab"]')?.textContent === name)!
+    const drag = (target: Element, type: string, clientX: number) => act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX })))
+    openInbox()
+    await vi.waitFor(() => expect(el.querySelector('.tabstack .note-card-inbox')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
+    expect(strip()).toEqual(['a', 'b', 'Inbox*'])
+    // jsdom lays out no tab: a point left of the strip is its first slot.
+    drag(tabEl('Inbox'), 'dragstart', 0)
+    drag(tabEl('a'), 'drop', -1)
+    expect(strip()).toEqual(['Inbox*', 'a', 'b'])
+    // A page tab to the front, then the sidebar's Inbox row: the Inbox tab comes to the front where it stands.
+    act(() => tabEl('b').querySelector<HTMLButtonElement>('[role="tab"]')!.click())
+    expect(strip()).toEqual(['Inbox', 'a', 'b*'])
+    openInbox()
+    expect(strip()).toEqual(['Inbox*', 'a', 'b'])
+    // Its menu: only the tab's own items. "Close other tabs" closes the page tabs, and the Inbox tab stays in front.
+    act(() => void tabEl('Inbox').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    const items = [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+    expect(items.map((item) => item.textContent)).toEqual(['Close tab', 'Close other tabs', 'Close tabs to the right'])
+    act(() => items[1].click())
+    expect(strip()).toEqual(['Inbox*'])
+    expect(el.querySelector<HTMLElement>('.note-card-inbox')?.hidden).toBe(false)
+    // Closed, then opened again with page tabs open: at the end, as a new tab.
+    act(() => captured.sidebar?.onOpenFile('/v/a.md'))
+    act(() => el.querySelector<HTMLButtonElement>('.tabbar [aria-label="Close Inbox"]')!.click())
+    expect(strip()).toEqual(['a*'])
+    openInbox()
+    expect(strip()).toEqual(['a', 'Inbox*'])
+  })
+
   it('"Review this folder" and "Review this page" start a session over that scope: its first card\'s page is read', async () => {
     const { bridge, el } = await mount(defaultAppState(), TABS, {}, withIndex(RECORDS()))
     const inboxTabs = () => [...el.querySelectorAll('.tabbar .tabbar__tab--inbox [role="tab"]')].map((t) => t.textContent)

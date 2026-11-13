@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { titleWithKey, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { rootOfPath, type DiagramDarkColors, type ScreenPoint, type TabRef } from '@shared/types'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
@@ -6,6 +6,7 @@ import { dropIndex, slotAt, slotUnder } from '../lib/dragSlot'
 import { edgeScroller } from '../lib/edgeScroll'
 import { PART_MS, drawnPlaces as drawnAt, gapOf, glide, motionOff, partGap, partShift, partTransform, roomOf as roomAlong, useEndSlides } from '../lib/liveGap'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
+import { ContextMenu } from '../sidebar/ContextMenu'
 import { FileIcon, NameEnding } from '../sidebar/FileIcon'
 import { AsleepIcon, GridIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
 import { dragWidth, foreignDrag, readPageDrag, windowTabOf, writePageDrag, type PageDrag } from '../workspace/pageDrag'
@@ -36,10 +37,12 @@ export interface TabBarProps {
    */
   blank?: boolean
   /**
-   * The Inbox tab (YAZ-5011): the window's one review session, after the page tabs. No file: no drag, no menu, no
-   * tooltip of a path. While `active`, no tab of `tabs` is the active one. Its ✕ and a middle click close it.
+   * The Inbox tab (YAZ-5011): the window's one review session. No file: no tooltip of a path. While `active`, no tab of
+   * `tabs` is the active one. Its ✕ and a middle click close it. It stands at `at`, a slot of `tabs` (absent: after
+   * them), and drags along the strip like a page tab (YAZ-5016); it never leaves the strip, so no other window, panel
+   * or tear-off takes it. Its menu has only the tab's own items (Close tab, Close other tabs, Close tabs to the right).
    */
-  inbox?: { label: string; active: boolean; onActivate: () => void; onClose: () => void }
+  inbox?: InboxTab
   /** ⌘T's button, the "+" after the tabs: App shows the blank tab and puts the caret in the search bar. Absent on a mount with no blank tab. */
   onNewTab?: () => void
   /** The blank tab's ✕ and a middle click on it: it closes alone. */
@@ -165,6 +168,27 @@ interface Ghost {
   before: string | null
 }
 
+/** The Inbox tab of the strip (YAZ-5011, YAZ-5016): see `TabBarProps.inbox`. */
+export interface InboxTab {
+  label: string
+  active: boolean
+  /** Its slot in `tabs`: how many page tabs stand before it. Absent: after them all. */
+  at?: number
+  onActivate: () => void
+  onClose: () => void
+  /** A drag along the strip let it go: it now stands right after this page tab, by id, or first (null). */
+  onMove?: (after: string | null) => void
+  /** Its menu's "Close other tabs": every page tab and the blank tab close. */
+  onCloseOthers?: () => void
+  /** Its menu's "Close tabs to the right": the page tabs after it and the blank tab close. */
+  onCloseToRight?: () => void
+}
+
+/** The Inbox tab's id in the strip's own list (YAZ-5016): no page tab has it, so every slot counts it as a tab. */
+export const INBOX_TAB = ':inbox'
+/** The one type an Inbox tab's drag carries (YAZ-5016): no page, so no other window, panel or note takes it. */
+export const INBOX_DRAG_MIME = 'application/x-yaseen-inbox-tab'
+
 /** In-flight drag state: the grabbed tab's index + the hovered insertion slot (0…tabs.length). */
 interface DragState {
   from: number
@@ -248,7 +272,21 @@ export interface NavStep {
 /** How long a press on ‹ or › is held before its menu opens instead of a step (YAZ-3647 E3), as in Chrome. */
 export const NAV_HOLD_MS = 500
 
-export function TabBar({ roots, windowId, tabs, active, preview = null, blank = false, inbox, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onRaise, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, onOpenStep, zoomLabels, onShowSidebar, onShowInSidebar, onRenameFile, onToggleOverview, overviewOpen = false, onKillAll, onCloseDuplicates, onSaveSession, onNotice, titles, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', asleep = NONE_ASLEEP, onWake }: TabBarProps) {
+export function TabBar({ roots, windowId, tabs: pages, active, preview = null, blank = false, inbox, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onRaise, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, onOpenStep, zoomLabels, onShowSidebar, onShowInSidebar, onRenameFile, onToggleOverview, overviewOpen = false, onKillAll, onCloseDuplicates, onSaveSession, onNotice, titles, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', asleep = NONE_ASLEEP, onWake }: TabBarProps) {
+  // THE INBOX TAB IN THE STRIP (YAZ-5016): one list of the page tabs and the Inbox tab, at its slot. Every slot, drag and
+  // glide of the strip reads this list; what goes out to App is in page tabs (`pageSlot`, `drop`).
+  const inboxAt = inbox === undefined ? null : Math.min(Math.max(inbox.at ?? pages.length, 0), pages.length)
+  const inboxLabel = inbox?.label
+  const tabs = useMemo<readonly Tab[]>(
+    () => (inboxAt === null ? pages : [...pages.slice(0, inboxAt), { id: INBOX_TAB, path: '', name: inboxLabel }, ...pages.slice(inboxAt)]),
+    [pages, inboxAt, inboxLabel],
+  )
+  /** A slot of the strip's list as a slot of the page tabs: a slot after the Inbox tab is one less. */
+  const pageSlot = (slot: number): number => (inboxAt === null || slot <= inboxAt ? slot : slot - 1)
+  const pageSlotRef = useRef(pageSlot)
+  pageSlotRef.current = pageSlot
+  /** The Inbox tab's own menu (YAZ-5016), where it stands. */
+  const [inboxMenu, setInboxMenu] = useState<{ x: number; y: number } | null>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
@@ -390,7 +428,8 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
         const slot = x === undefined || y === undefined ? null : slotUnder(stripRef.current, x, y)
         // Another window's card lands through main: its gap waits for it (6A1). This window's own card only moves.
         if (slot !== null && boardOwnRef.current === null) setArrival({ at: slot, count: tabCount.current, room: ARRIVAL_ROOM, yields: false })
-        return slot
+        // The board's cards are page tabs: their slot is one of the page tabs, past the Inbox tab (YAZ-5016).
+        return slot === null ? null : pageSlotRef.current(slot)
       },
     })
     return () => {
@@ -459,7 +498,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     const gone: Ghost[] = []
     if (tabs.length < was.tabs.length) {
       was.tabs.forEach((tab, i) => {
-        if (!open.has(tab.id)) gone.push({ key: ++ghostKey.current, label: labelOf(tab.path), before: was.tabs.slice(i + 1).find((next) => open.has(next.id))?.id ?? null })
+        if (!open.has(tab.id)) gone.push({ key: ++ghostKey.current, label: tab.id === INBOX_TAB ? (tab.name ?? 'Inbox') : labelOf(tab.path), before: was.tabs.slice(i + 1).find((next) => open.has(next.id))?.id ?? null })
       })
     }
     // The blank tab that went unused; one that a page filled is that page's tab now.
@@ -500,7 +539,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   // the tabs glide to their own widths.
   const [held, setHeld] = useState<{ widths: ReadonlyMap<string, number>; ids: string } | null>(null)
   const holding = held !== null && held.ids === ids.join('\n') ? held : null
-  const closeByMouse = (id: string) => {
+  const closeByMouse = (id: string, close: (id: string) => void = onClose) => {
     const i = tabs.findIndex((t) => t.id === id)
     const drawn = [...(stripRef.current?.querySelectorAll<HTMLElement>('[data-tab]') ?? [])]
     const widths = new Map(drawn.map((el) => [el.dataset.tab!, el.getBoundingClientRect().width]))
@@ -508,7 +547,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     if (next !== undefined && widths.has(id)) widths.set(next.id, widths.get(id)!)
     widths.delete(id)
     setHeld({ widths, ids: ids.filter((t) => t !== id).join('\n') })
-    onClose(id)
+    close(id)
   }
   useEffect(() => {
     if (held === null) return
@@ -576,7 +615,20 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     if (drag === null) return
     setDrag(null)
     const to = dropIndex(drag.from, insertion)
-    if (to !== drag.from) onMove(drag.from, to)
+    if (to === drag.from) return
+    if (inboxAt === null) return onMove(drag.from, to)
+    // With the Inbox tab in the strip (YAZ-5016): the new order of the whole strip, then what moved in it — the page tab
+    // among the page tabs, and the Inbox tab by the page tab it now stands after.
+    const order = tabs.map((t) => t.id)
+    const [moved] = order.splice(drag.from, 1)
+    order.splice(to, 0, moved)
+    if (moved !== INBOX_TAB) {
+      const pageFrom = pages.findIndex((t) => t.id === moved)
+      const pageTo = order.filter((id) => id !== INBOX_TAB).indexOf(moved)
+      if (pageFrom !== pageTo) onMove(pageFrom, pageTo)
+    }
+    const after = order[order.indexOf(INBOX_TAB) - 1] ?? null
+    if (after !== (inboxAt === 0 ? null : pages[inboxAt - 1].id)) inbox?.onMove?.(after)
   }
 
   const externalPage = (event: DragEvent): PageDrag | null => {
@@ -601,14 +653,14 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
       if (tab === null) return
       event.preventDefault()
       setArrival({ at: insertion, count: tabs.length, room, yields: true })
-      onDropFromWindow?.(tab.from, tab.ref, insertion)
+      onDropFromWindow?.(tab.from, tab.ref, pageSlot(insertion))
       return
     }
     const page = externalPage(event)
     if (page === null) return
     event.preventDefault()
     setArrival({ at: insertion, count: tabs.length, room, yields: true })
-    onDropPage?.(page, insertion)
+    onDropPage?.(page, pageSlot(insertion))
   }
 
   /** The slot at a client x of the strip (6A): by the layout, which the live gap does not move. */
@@ -724,6 +776,83 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     return { left, width: room - between }
   }
   const landing = boardOver === null || boardLabel === null ? null : landingAt()
+  /**
+   * The Inbox tab (YAZ-5011, YAZ-5016), at `i` of the strip's list: a tab of the strip in every way a drag reads — its
+   * slot, the live gap, the glide — and no file: no tooltip of a path, no hover card, no page in its drag. A click brings
+   * it to the front; its ✕ and a middle click close it. Its drag carries `INBOX_DRAG_MIME` alone, so it lands only in
+   * this strip: let go anywhere else, it stays where it stood (no tear-off).
+   */
+  const inboxTab = (i: number) => {
+    if (inbox === undefined) return null
+    const shown = inbox.active && !blank
+    const cls = ['tabbar__tab', 'tabbar__tab--inbox']
+    if (shown) cls.push('tabbar__tab--active')
+    if (shown && yielding) cls.push('tabbar__tab--yield')
+    if (slidIn.current.has(INBOX_TAB)) cls.push('tabbar__tab--in')
+    if (drag !== null && drag.lifted && drag.from === i) cls.push('tabbar__tab--dragging')
+    if (gap === i) cls.push('tabbar__tab--gap-before')
+    if (gap === tabs.length && i === tabs.length - 1) cls.push('tabbar__tab--gap-after')
+    return (
+      <div
+        key={INBOX_TAB}
+        data-tab={INBOX_TAB}
+        ref={shown ? activeRef : undefined}
+        className={cls.join(' ')}
+        style={tabStyle(shiftOf(i), holding?.widths.get(INBOX_TAB))}
+        draggable
+        onAnimationEnd={(e) => {
+          if (e.target !== e.currentTarget || !slidIn.current.delete(INBOX_TAB)) return
+          e.currentTarget.classList.remove('tabbar__tab--in')
+        }}
+        onDragStart={(e) => {
+          if (e.dataTransfer) {
+            e.dataTransfer.effectAllowed = 'move'
+            e.dataTransfer.setData(INBOX_DRAG_MIME, windowId)
+          }
+          setExternalOver(null)
+          setStaleHover(true)
+          setDrag({ from: i, over: null, room: roomOf(e.currentTarget, stripRef.current), lifted: false })
+          requestAnimationFrame(() => setDrag((now) => (now === null || now.from !== i ? now : { ...now, lifted: true })))
+        }}
+        onDragEnd={() => {
+          scroller.stop()
+          setDrag(null)
+          setExternalOver(null)
+        }}
+        onDragEnter={overTab}
+        onDragOver={overTab}
+        onDrop={(e) => {
+          const at = pointSlot(e.clientX)
+          if (drag !== null) {
+            e.preventDefault()
+            drop(at)
+          } else dropExternal(e, at)
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          setInboxMenu({ x: e.clientX, y: e.clientY })
+        }}
+      >
+        <button
+          type="button"
+          role="tab"
+          className="tabbar__btn"
+          aria-selected={shown}
+          onClick={inbox.onActivate}
+          onAuxClick={(e) => {
+            if (e.button === 1) closeByMouse(INBOX_TAB, inbox.onClose)
+          }}
+        >
+          <span className="tabbar__label">
+            <span className="tabbar__name">{inbox.label}</span>
+          </span>
+        </button>
+        <button type="button" className="tabbar__close" aria-label={`Close ${inbox.label}`} title={`Close ${inbox.label}`} onClick={() => closeByMouse(INBOX_TAB, inbox.onClose)}>
+          ✕
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -804,6 +933,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
       >
         {/* ONE keyed list, ghosts and tabs: a tab that closes or moves builds no other tab again. */}
         {tabs.flatMap(({ id, path, name, zoom }, i) => {
+          if (id === INBOX_TAB) return [...ghostsBefore(id), inboxTab(i)]
           // Under the blank tab, and under the Inbox tab (YAZ-5011), no tab of the strip is the active one (YAZ-2655).
           const isActive = !blank && inbox?.active !== true && id === active
           // A display name stands in for the page name (YAZ-2949 D5); every file call still takes the path.
@@ -937,28 +1067,6 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
           ]
         })}
         {ghostsBefore(null)}
-        {/* The Inbox tab (YAZ-5011): no file, so no drag and no menu. A click brings it to the front; its ✕ and a middle click close it. */}
-        {inbox !== undefined && (
-          <div ref={inbox.active && !blank ? activeRef : undefined} className={`tabbar__tab tabbar__tab--inbox${inbox.active && !blank ? ' tabbar__tab--active' : ''}`}>
-            <button
-              type="button"
-              role="tab"
-              className="tabbar__btn"
-              aria-selected={inbox.active && !blank}
-              onClick={inbox.onActivate}
-              onAuxClick={(e) => {
-                if (e.button === 1) inbox.onClose()
-              }}
-            >
-              <span className="tabbar__label">
-                <span className="tabbar__name">{inbox.label}</span>
-              </span>
-            </button>
-            <button type="button" className="tabbar__close" aria-label={`Close ${inbox.label}`} title={`Close ${inbox.label}`} onClick={inbox.onClose}>
-              ✕
-            </button>
-          </div>
-        )}
         {/* The blank tab (YAZ-2655 D10): no file, so no drag, no menu and no tooltip. Its ✕ and a middle click close it alone. */}
         {blank && (
           <div ref={activeRef} className="tabbar__tab tabbar__tab--active tabbar__tab--in" style={shiftOf(tabs.length) === 0 ? undefined : { transform: partTransform(shiftOf(tabs.length), 'x') }} {...blankSlot}>
@@ -996,6 +1104,21 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
       <div className="tabbar-tail" {...endSlot} />
       <CardPreviewHost store={tabPreview.store} cardOf={previewTab} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} side="below" />
       {menu !== null && <TabMenu menu={menu} label={labelOf(menu.path)} onClose={() => setMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} moveTargets={onMoveTargets?.(menu.path)} onMoveToWindow={onMoveToWindow} onHighlightWindow={onHighlightWindow} onDuplicate={onDuplicate} onRename={onSetName === undefined ? undefined : setRenaming} onResetName={(id) => onSetName?.(id, null)} onShowInSidebar={onShowInSidebar} onRenameFile={onRenameFile} onToggleFocus={onToggleFocus} onToggleFavorite={onToggleFavorite} onNotice={onNotice} />}
+      {/* The Inbox tab's menu (YAZ-5016): only the tab's own items. It shows no file, so no file item (Copy path, Reveal in Finder, Rename file …). */}
+      {inboxMenu !== null && inbox !== undefined && (
+        <ContextMenu
+          x={inboxMenu.x}
+          y={inboxMenu.y}
+          onClose={() => setInboxMenu(null)}
+          sections={[
+            [{ id: 'close', label: 'Close tab', onSelect: inbox.onClose }],
+            [
+              ...(inbox.onCloseOthers === undefined ? [] : [{ id: 'close-others', label: 'Close other tabs', disabled: pages.length === 0 && !blank, onSelect: inbox.onCloseOthers }]),
+              ...(inbox.onCloseToRight === undefined ? [] : [{ id: 'close-right', label: 'Close tabs to the right', disabled: (inboxAt ?? pages.length) >= pages.length && !blank, onSelect: inbox.onCloseToRight }]),
+            ],
+          ]}
+        />
+      )}
       {/* The menu of ‹ or › (YAZ-3647 E3): the steps that way, the nearest first, as the tab menu draws its rows. */}
       {navMenu !== null && (
         <ContextMenuSurface x={navMenu.x} y={navMenu.y} onClose={() => setNavMenu(null)}>
@@ -1042,7 +1165,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
                   type="button"
                   className="ctx-menu__item"
                   role="menuitem"
-                  disabled={tabs.length === 0}
+                  disabled={pages.length === 0}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => {
                     setGridMenu(null)
@@ -1060,7 +1183,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
                 type="button"
                 className="ctx-menu__item"
                 role="menuitem"
-                disabled={duplicateTabIds({ tabs, active }).length === 0}
+                disabled={duplicateTabIds({ tabs: pages, active }).length === 0}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   setGridMenu(null)
@@ -1072,9 +1195,9 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
             )}
             <button
               type="button"
-              className={tabs.length === 0 ? 'ctx-menu__item' : 'ctx-menu__item ctx-menu__item--danger'}
+              className={pages.length === 0 ? 'ctx-menu__item' : 'ctx-menu__item ctx-menu__item--danger'}
               role="menuitem"
-              disabled={tabs.length === 0}
+              disabled={pages.length === 0}
               // So does the press on the item: a sheet that is cancelled then gives the keys back to the board, or to the note.
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {

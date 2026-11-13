@@ -207,7 +207,7 @@ describe('TabBar', () => {
     expect(onToggleOverview).toHaveBeenCalledTimes(1)
   })
 
-  it('YAZ-5011: the Inbox tab stands after the page tabs; while it is on show no page tab is active; a click brings it to the front; its ✕ and a middle click close it; it has no menu', () => {
+  it('YAZ-5011: the Inbox tab stands after the page tabs; while it is on show no page tab is active; a click brings it to the front; its ✕ and a middle click close it', () => {
     const onActivate = vi.fn()
     const onClose = vi.fn()
     const inbox = { label: 'Inbox', active: true, onActivate: vi.fn(), onClose: vi.fn() }
@@ -222,11 +222,28 @@ describe('TabBar', () => {
     act(() => void tabs[2].dispatchEvent(new MouseEvent('auxclick', { bubbles: true, button: 1 })))
     expect(inbox.onClose).toHaveBeenCalledTimes(2)
     expect(onClose).not.toHaveBeenCalled()
-    act(() => void tab.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
-    expect(el.querySelector('.ctx-menu')).toBeNull()
     // Behind a page tab: the page tab is the active one again.
     act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={['/v/a.md', '/v/b.md']} active="/v/a.md" inbox={{ ...inbox, active: false }} {...noop} onActivate={onActivate} onClose={onClose} {...noNav} />))
     expect([...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false'])
+  })
+
+  it('YAZ-5016: the Inbox tab\'s right-click menu has only the tab\'s own items, no file item; each asks App', () => {
+    const inbox = { label: 'Inbox', active: true, at: 1, onActivate: vi.fn(), onClose: vi.fn(), onCloseOthers: vi.fn(), onCloseToRight: vi.fn() }
+    const el = mount({ tabs: ['/v/a.md', '/v/b.md'], active: '/v/a.md', inbox, ...noop, ...noNav })
+    const items = () => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+    const open = () => act(() => void el.querySelector('.tabbar__tab--inbox')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    open()
+    expect(items().map((item) => [item.textContent, item.disabled])).toEqual([['Close tab', false], ['Close other tabs', false], ['Close tabs to the right', false]])
+    for (const file of ['Copy path', 'Reveal in Finder', 'Open in VS Code', 'Rename file', 'Show in sidebar', 'Set display name', 'Duplicate tab', 'Move to new window']) expect(el.querySelector('.ctx-menu')?.textContent).not.toContain(file)
+    act(() => items()[1].click())
+    expect(inbox.onCloseOthers).toHaveBeenCalledOnce()
+    open()
+    act(() => items()[2].click())
+    expect(inbox.onCloseToRight).toHaveBeenCalledOnce()
+    open()
+    act(() => items()[0].click())
+    expect(inbox.onClose).toHaveBeenCalledOnce()
+    expect(noop.onClose).not.toHaveBeenCalled()
   })
 
   it('the blank tab (YAZ-2655 D10) is the last tab, named "New tab", and the active one while it shows: its ✕ and a middle click close it, it does not drag and has no menu; the "+" stands after the tabs, outside the scroller (S87)', () => {
@@ -364,6 +381,37 @@ describe('TabBar drag-to-reorder (I3, GRO-2235)', () => {
     act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: xOn(target, clientX) })))
   /** The frame after a drag starts, when the grabbed tab leaves the strip (YAZ-3808 6A). */
   const nextFrame = () => act(() => new Promise<void>((done) => requestAnimationFrame(() => done())))
+
+  it('YAZ-5016: the Inbox tab drags like a page tab: let go before a, it stands first; a page tab dragged past it moves among the page tabs, and the Inbox tab by the tab it now stands after', async () => {
+    const onMove = vi.fn()
+    const inbox = { label: 'Inbox', active: false, at: 3, onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn() }
+    const el = mount({ tabs: TABS, active: '/v/a.md', inbox, onActivate: vi.fn(), onClose: vi.fn(), onMove, ...noNav })
+    const names = () => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
+    expect(names()).toEqual(['a', 'b', 'c', 'Inbox'])
+    // The Inbox tab is a tab of the strip's slots: it parts the tabs and leaves its own room, as a page tab does.
+    fire(tabAt(el, 3), 'dragstart')
+    await nextFrame()
+    expect(tabAt(el, 3).classList.contains('tabbar__tab--dragging')).toBe(true)
+    fire(tabAt(el, 0), 'dragover', -5)
+    expect(tabAt(el, 0).classList.contains('tabbar__tab--gap-before')).toBe(true)
+    fire(tabAt(el, 0), 'drop', -5)
+    expect(inbox.onMove).toHaveBeenCalledExactlyOnceWith(null) // first: after no page tab
+    expect(onMove).not.toHaveBeenCalled() // no page tab moved
+    // App puts it there: the strip draws it first.
+    act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={TABS} active="/v/a.md" inbox={{ ...inbox, at: 0 }} onActivate={vi.fn()} onClose={vi.fn()} onMove={onMove} {...noNav} />))
+    expect(names()).toEqual(['Inbox', 'a', 'b', 'c'])
+    // c, let go before the Inbox tab: c is the first page tab now, and the Inbox tab stands after it.
+    fire(tabAt(el, 3), 'dragstart')
+    fire(tabAt(el, 0), 'drop', -5)
+    expect(onMove).toHaveBeenCalledExactlyOnceWith(2, 0)
+    expect(inbox.onMove).toHaveBeenLastCalledWith('/v/c.md')
+    // The drag carries no page: no other window, panel or note takes the Inbox tab.
+    const data = { types: [] as string[], setData(type: string) { this.types.push(type) }, effectAllowed: '' }
+    const start = new MouseEvent('dragstart', { bubbles: true, cancelable: true })
+    Object.defineProperty(start, 'dataTransfer', { value: data })
+    act(() => void tabAt(el, 0).dispatchEvent(start))
+    expect(data.types).toEqual(['application/x-yaseen-inbox-tab'])
+  })
 
   it('dropping past a tab\'s midpoint calls onMove with the final index; the grab class and the gap classes mark the drag', async () => {
     const onMove = vi.fn()
