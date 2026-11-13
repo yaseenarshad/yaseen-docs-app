@@ -463,6 +463,44 @@ function noteCardSelection() {
   )
 }
 
+/**
+ * A key on a SELECTED card (YAZ-5006): ProseMirror replaces a selected node with what is typed, so one letter took the
+ * card and its review history away. A typed character, a paste and an IME composition do nothing to a selected card;
+ * Enter is Edit card. Backspace / Delete, cut, a drag and the arrows stay ProseMirror's, as for any block (⌘Z undoes).
+ */
+function noteCardKeyGuard() {
+  const selected = (state: EditorState): number | null => {
+    const { selection } = state
+    return selection instanceof NodeSelection && isNoteCardNode(selection.node) ? selection.from : null
+  }
+  return $prose(
+    () =>
+      new Plugin({
+        key: new PluginKey('mdapp-note-card-key-guard'),
+        // A composition's change is read from the page after the fact: refused while a card is selected.
+        filterTransaction: (tr, state) => !(tr.docChanged && tr.getMeta('composition') !== undefined && selected(state) !== null),
+        props: {
+          handleTextInput: (view) => selected(view.state) !== null,
+          // The page's paste props are direct editor props (`clipboardPaste.ts`) and run before a plugin's `handlePaste`.
+          handleDOMEvents: {
+            paste: (view, event) => {
+              if (selected(view.state) === null) return false
+              event.preventDefault()
+              return true
+            },
+          },
+          handleKeyDown: (view, event) => {
+            if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.metaKey || event.ctrlKey || event.isComposing) return false
+            const pos = selected(view.state)
+            if (pos === null) return false
+            noteCardViewAt(view, pos)?.edit()
+            return true
+          },
+        },
+      }),
+  )
+}
+
 /** The card at the selection: the card selected, or the caret in its text. */
 function cardAtSelection(state: EditorState): number | null {
   const { selection } = state
@@ -711,5 +749,5 @@ function noteCardCopies(deps: NoteCardDeps) {
 
 /** The card's plugins for one editor (`createCrepe`): its view, the caret rule, the copy rule, ⌘↵. */
 export function noteCardPlugins(deps: NoteCardDeps) {
-  return [noteCardNodeView(deps), noteCardSelection(), noteCardCopies(deps), noteCardKeys(deps)].flat()
+  return [noteCardNodeView(deps), noteCardSelection(), noteCardKeyGuard(), noteCardCopies(deps), noteCardKeys(deps)].flat()
 }
