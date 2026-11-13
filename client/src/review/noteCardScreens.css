@@ -156,21 +156,69 @@
 .note-card-inbox__filter > .note-card-inbox__glyph:last-child {
   color: var(--fg-muted);
 }
+/* What is under review (YAZ-5017 round 2): quiet, right by the filter, "· in spanish-words". */
 .note-card-inbox__from {
+  flex: 0 1 auto;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
+  max-width: 30%;
+  margin-left: -4px;
   overflow: hidden;
   white-space: nowrap;
+  font-size: 12px;
 }
 .note-card-inbox__from-part {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .note-card-inbox__from-sep {
-  margin-right: 6px;
   opacity: 0.6;
+}
+/* The card's place (YAZ-5017 round 2): vault › folder › page, each a quiet link; the middle parts give way first ("…"),
+   the page keeps its name. */
+.note-card-inbox__path {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.note-card-inbox__path-sep {
+  flex: none;
+  font-size: 11px;
+  opacity: 0.6;
+}
+.note-card-inbox__path-part {
+  flex: 0 1 auto;
+  min-width: 1.8em;
+  padding: 2px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.note-card-inbox__path-part[data-kind='vault'] {
+  flex-shrink: 0.4;
+}
+.note-card-inbox__path-part[data-kind='page'] {
+  flex-shrink: 0;
+  max-width: 60%;
+  color: var(--fg);
+}
+.note-card-inbox__path-part:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
+}
+.note-card-inbox__path-part:disabled {
+  cursor: default;
 }
 .note-card-inbox__bar > .note-card-inbox__place {
   margin-left: auto;

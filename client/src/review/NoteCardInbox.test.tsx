@@ -47,7 +47,7 @@ let review: CardReviewApi
 let props: NoteCardInboxProps
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], answered: [], size: 12, ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], size: 12, ...over }
 }
 
 function render() {
@@ -88,6 +88,7 @@ function mount(text: string | null, settings: ReviewSettings = DEFAULT_REVIEW_SE
     openLinkIn: vi.fn(),
     openLayer: vi.fn(),
     onNotice: vi.fn(),
+    openPlace: vi.fn(),
   }
   el = document.createElement('div')
   document.body.appendChild(el)
@@ -523,8 +524,9 @@ describe('the Inbox screen (YAZ-4962)', () => {
     const bar = el.querySelector('.note-card-inbox__bar')!
     const filter = bar.querySelector<HTMLButtonElement>('.note-card-inbox__filter')!
     expect(filter.textContent).toBe('All cards')
-    expect(bar.querySelector('.note-card-inbox__from')?.textContent).toBe('Spanish/Verbs')
-    expect(bar.querySelector('.note-card-inbox__from')?.getAttribute('title')).toBe('Spanish / Verbs')
+    // YAZ-5017 round 2: the scope sits by the filter, "· in …".
+    expect(bar.querySelector('.note-card-inbox__from')?.textContent).toBe('·in Spanish / Verbs')
+    expect(bar.querySelector('.note-card-inbox__from')?.getAttribute('title')).toBe('Reviewing Spanish / Verbs')
     act(() => filter.click())
     const rows = () => [...document.querySelectorAll<HTMLButtonElement>('.note-card-inbox__filter-item')]
     expect(rows().map((r) => [r.textContent, r.getAttribute('aria-checked')])).toEqual([
@@ -773,6 +775,28 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(answerLine('good', 'DEMO-51', 9, false, DEFAULT_REVIEW_SETTINGS)).toBe('✓ Remembered · DEMO-51 · back in 9 days')
   })
 
+  it('YAZ-5017 round 2: the top row shows the CURRENT card`s place, vault › folder › page; it changes with the card; each part opens through `openPlace`', () => {
+    mount(TWO_SIDES)
+    const parts = () => [...el.querySelectorAll<HTMLButtonElement>('.note-card-inbox__path-part')]
+    session = { ...session, place: [{ kind: 'vault', label: 'Demo', path: '/v' }, { kind: 'folder', label: 'spanish-words', path: '/v/spanish-words' }, { kind: 'page', label: 'Greetings', path: '/v/spanish-words/Greetings.md' }] }
+    render()
+    expect(parts().map((p) => p.textContent)).toEqual(['Demo', 'spanish-words', 'Greetings'])
+    expect(el.querySelector('.note-card-inbox__path')?.getAttribute('title')).toBe('Demo › spanish-words › Greetings')
+    act(() => parts()[1].click())
+    expect(props.openPlace).toHaveBeenLastCalledWith('/v/spanish-words')
+    act(() => parts()[2].click())
+    expect(props.openPlace).toHaveBeenLastCalledWith('/v/spanish-words/Greetings.md')
+    act(() => parts()[0].click())
+    expect(props.openPlace).toHaveBeenLastCalledWith('/v')
+    // The next card, in another folder: the path follows it.
+    session = { ...session, place: [{ kind: 'vault', label: 'Demo', path: '/v' }, { kind: 'folder', label: 'Bio', path: '/v/Bio' }, { kind: 'page', label: 'Cells', path: '/v/Bio/Cells.md' }] }
+    render()
+    expect(parts().map((p) => p.textContent)).toEqual(['Demo', 'Bio', 'Cells'])
+    // No card (the done screen): no place.
+    session = { ...session, card: null, place: [] }
+    render()
+    expect(el.querySelector('.note-card-inbox__path')).toBeNull()
+  })
 })
 
 describe('sound and boards in the Inbox (YAZ-5014, YAZ-5015)', () => {

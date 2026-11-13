@@ -241,6 +241,34 @@ describe('useCardReview', () => {
     expect(review.session?.from).toEqual(['Cells'])
   })
 
+  it('YAZ-5017 round 2: `place` is the CURRENT card`s vault › folders › page, by title; it changes between cards of two folders', async () => {
+    page('Bio/Deep/More.md', ['A {{second}} new card', 'WIKI-5'])
+    source.folders = [scan(`${ROOT}/Bio/Deep/.folder.md`, '')]
+    source.folders[0].title = 'Deep down'
+    try {
+      await mount()
+      await act(async () => review.start())
+      // WIKI-1 (Geo.md, due) first, then the new cards: WIKI-3 (Bio/Cells.md), WIKI-5 (Bio/Deep/More.md).
+      expect(review.session?.place).toEqual([
+        { kind: 'vault', label: 'vault', path: ROOT },
+        { kind: 'page', label: 'Geo', path: `${ROOT}/Geo.md` },
+      ])
+      act(() => review.move(1))
+      expect(review.session?.place.map((p) => [p.kind, p.label, p.path])).toEqual([
+        ['vault', 'vault', ROOT],
+        ['folder', 'Bio', `${ROOT}/Bio`],
+        ['page', 'Cells', `${ROOT}/Bio/Cells.md`],
+      ])
+      act(() => review.move(1))
+      expect(review.session?.place.map((p) => p.label)).toEqual(['vault', 'Bio', 'Deep down', 'More'])
+      expect(review.session?.place[2].path).toBe(`${ROOT}/Bio/Deep`)
+      // The scope stays what is under review, apart from the card's place.
+      expect(review.session?.from).toEqual(['vault'])
+    } finally {
+      source.folders = []
+    }
+  })
+
   it('YAZ-5028: Up next — only the cards marked `next`, new or reviewed, never `off`; "n of m" follows it; an answer takes the card out', async () => {
     // WIKI-2 (reviewed, not due) and WIKI-5 (new) are up next; WIKI-7 is `off` and `next`: off wins.
     page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, next, 2026-11-12T07:00Z good, 2026-11-12T07:01Z good'])

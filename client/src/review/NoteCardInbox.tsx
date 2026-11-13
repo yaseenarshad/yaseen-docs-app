@@ -6,8 +6,9 @@
  *  - THE INBOX IS A TAB (YAZ-5011): App draws this screen for the window's Inbox tab, over the tab stack. Behind a page
  *    tab it stays mounted, hidden (`shown` false), so it comes back at its card and step; hidden, it hears no key. It
  *    closes as any tab does (its ✕, ⌘W): no × of its own, and Esc does not close it.
- *  - The top row (YAZ-5017, `NoteCardInboxBar`): the filter "All cards ▾" (All cards, Due today, New cards, with counts),
- *    where the cards come from (the vault, "Folder / Sub", the page), and "3 of 12" of the filter's cards on the right.
+ *  - The top row (YAZ-5017, `NoteCardInboxBar`): the filter "All cards ▾" (All cards, Due today, New cards, with counts)
+ *    with what is under review by it ("· in spanish-words"), then the CURRENT card's place, vault › folder › page, each
+ *    part a link (`openPlace`: the folder page, or the page in a tab), and "3 of 12" of the filter's cards on the right.
  *  - Above the card, outside its frame (YAZ-5027): the state chip (YAZ-5018, as Mochi's: "New card", "Due today",
  *    "Due · 3 days ago"). Head: the page's name (O), the card ID in brackets, small and grey (a click copies it, D20), the chip "Up next ×"
  *    for a card at the top of the Inbox (YAZ-4999 D3). No card title: the card is right below it.
@@ -82,6 +83,8 @@ export interface NoteCardInboxProps {
   /** A plain click on a link in the card: the page on top. */
   openLayer: (path: string) => void
   onNotice: (message: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void
+  /** A part of the top row's card place (YAZ-5017 round 2): the vault's or a folder's page, or the page, in a tab. */
+  openPlace?: (path: string) => void
 }
 
 /** The keys of a dialog, a sheet or a menu that is open: theirs, never the Inbox's. */
@@ -130,7 +133,7 @@ interface Step {
   shown: number
 }
 
-export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, openPage, openCard, openInTab, openLinkIn, openLayer, onNotice }: NoteCardInboxProps) {
+export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, openPage, openCard, openInTab, openLinkIn, openLayer, onNotice, openPlace }: NoteCardInboxProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
   const { width, startDrag } = useInboxCardWidth(columnRef, rootRef)
@@ -265,7 +268,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
 
   return (
     <div ref={rootRef} className="note-card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`}>
-      <NoteCardInboxBar session={session} setFilter={review.setFilter} />
+      <NoteCardInboxBar session={session} setFilter={review.setFilter} openPlace={openPlace} />
       <div ref={columnRef} className="note-card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
         {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height
             with no chip (the done screen), so the card does not move; the page name always starts at the head's left. */}
