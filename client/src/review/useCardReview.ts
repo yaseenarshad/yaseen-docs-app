@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { withCardNext, type CardRating, type CardReview } from '@shared/cardLine'
+import { withCardNext, withCardOff, type CardRating, type CardReview } from '@shared/cardLine'
 import { cardQueue, previewAnswers, type CardAnswer, type DueCard } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
@@ -17,6 +17,10 @@ import { changeCardLine, deleteCardReview, isCardGone, readCard, restoreCardRevi
  * `answer` writes exactly that review, so "Remembered · 9 days" is what the file gets. `undo` (⌘Z, idea 5) removes
  * the last answer's review and shows that card again. The first answer to an up-next card removes its `next` in the
  * same write (YAZ-4999 D3), and its undo puts it back.
+ *
+ * ← → (YAZ-5004) move the card showing through the queue with no answer: `at` is the one new piece of state, the
+ * place of the card showing; a card you leave stays in the queue. `turnOff` (the Inbox ⋯) writes `off` and takes the
+ * card out of the queue.
  */
 
 /** What a session reviews: the vault (nothing), a folder (root-relative, "Review this folder") or one page (its absolute path, "Review this page"). */
@@ -41,6 +45,9 @@ export interface CardReviewSession {
   /** The showing card's place among the `total` the session started with. */
   position: number
   total: number
+  /** ← and → (YAZ-5004): a card before or after the one showing is still in the queue. */
+  canBack: boolean
+  canNext: boolean
   /** Each button's outcome, fixed by `showAnswers` for the card showing (in button order); null until then. */
   answers: CardAnswer[] | null
   canUndo: boolean
@@ -67,6 +74,10 @@ export interface CardReviewApi {
   deleteReview: (path: string, id: string, review: CardReview) => Promise<void>
   /** Up next on or off for card `id` of `path` (YAZ-4999 D3, the Inbox head's chip ×): one write of the file, then the card read again. */
   setNext: (path: string, id: string, on: boolean) => Promise<void>
+  /** ← (-1) and → (+1), YAZ-5004: the card before or after, with no answer; the card left stays in the queue. */
+  move: (delta: -1 | 1) => void
+  /** The Inbox ⋯'s Turn review off (YAZ-5004): `off` on the card showing's line, and the card out of the queue. */
+  turnOff: () => Promise<void>
 }
 
 /** How many answers ⌘Z can take back in one session. */
@@ -75,8 +86,10 @@ export const UNDO_DEPTH = 20
 interface Session {
   label: string
   scope: CardReviewScope
-  /** Cards still to show; the first is the one showing. */
+  /** Cards still to show; the one at `at` is the one showing. */
   queue: DueCard[]
+  /** The place of the card showing in `queue` (YAZ-5004: ← → move it); 0 until then. */
+  at: number
   total: number
   /** Bumped each time the card at the head is put there: its page is read again, its answers fixed again. */
   turn: number
@@ -92,6 +105,11 @@ interface IndexSource {
   subscribe(listener: () => void): () => void
 }
 
+/** The session with the card at `at` gone from its queue (answered elsewhere, its page gone, review off): the next one shows. */
+const without = (s: Session, at: number): Session => {
+  const queue = [...s.queue.slice(0, at), ...s.queue.slice(at + 1)]
+  return { ...s, queue, at: at < queue.length ? at : 0, turn: s.turn + 1 }
+}
 const reason = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 const sameCard = (a: DueCard, b: DueCard): boolean => a.path === b.path && a.id === b.id
 const titleOf = (records: readonly IndexRecord[], path: string): string => records.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '')
@@ -129,12 +147,23 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     return first === -1 ? [] : queue.slice(first)
   }, [source])
 
-  const head = session?.queue[0]
+  const head = session?.queue[session.at]
   const turnKey = session === null || head === undefined ? null : `${session.turn}\n${head.path}\n${head.id}`
 
   // The notice door in a ref: the read below runs once per turn, whatever identity the caller's callback has.
   const notice = useRef(onNotice)
   notice.current = onNotice
+
+  // The page of the card showing changed on disk (Edit card in the card window, YAZ-5003; an edit in its tab): read
+  // the card again in place — same turn, so its step and its fixed answers stay, and no frame shows it empty.
+  const [reread, setReread] = useState(0)
+  const pageMtime = useMemo(() => (head === undefined ? undefined : records.find((r) => r.path === head.path)?.mtime), [records, head])
+  const seenPage = useRef<{ key: string | null; mtime: number | undefined }>({ key: null, mtime: undefined })
+  useEffect(() => {
+    const seen = seenPage.current
+    seenPage.current = { key: turnKey, mtime: pageMtime }
+    if (turnKey !== null && seen.key === turnKey && seen.mtime !== pageMtime) setReread((n) => n + 1)
+  }, [turnKey, pageMtime])
 
   // Read the card showing from its page; a page or card that is gone passes it over.
   useEffect(() => {
@@ -144,18 +173,18 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       (page) => {
         if (!on) return
         if (page !== null) return setLoaded({ key: turnKey, page })
-        setSession((s) => (s === null || s.queue[0] !== head ? s : { ...s, queue: s.queue.slice(1), turn: s.turn + 1 }))
+        setSession((s) => (s === null || s.queue[s.at] !== head ? s : without(s, s.at)))
       },
       (err: unknown) => {
         if (!on) return
         notice.current(`Can't read the card: ${reason(err)}`, 'error')
-        setSession((s) => (s === null || s.queue[0] !== head ? s : { ...s, queue: s.queue.slice(1), turn: s.turn + 1 }))
+        setSession((s) => (s === null || s.queue[s.at] !== head ? s : without(s, s.at)))
       },
     )
     return () => {
       on = false
     }
-  }, [turnKey, head])
+  }, [turnKey, head, reread])
 
   const start = useCallback(
     (scope: CardReviewScope = {}) => {
@@ -163,7 +192,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       if (!settings.enabled) return
       const queue = cardQueue(records, settings, Date.now(), scope.folder, scope.page, source.letters)
       const label = scope.page !== undefined ? titleOf(records, scope.page) : scope.folder ? folderTitle(source.folders, `${root}/${scope.folder}`) : 'Inbox'
-      setSession((s) => ({ label, scope, queue, total: queue.length, turn: (s?.turn ?? 0) + 1, undo: [] }))
+      setSession((s) => ({ label, scope, queue, at: 0, total: queue.length, turn: (s?.turn ?? 0) + 1, undo: [] }))
     },
     [root, source],
   )
@@ -171,7 +200,8 @@ export function useCardReview(root: string | null, source: IndexSource, settings
   /** The fixed answers of the card showing: fixed now when not yet (D13). */
   const fixAnswers = useCallback((): CardAnswer[] | null => {
     const { session, loaded, fixed, settings } = live.current
-    const key = session === null || session.queue[0] === undefined ? null : `${session.turn}\n${session.queue[0].path}\n${session.queue[0].id}`
+    const shown = session?.queue[session.at]
+    const key = session === null || shown === undefined ? null : `${session.turn}\n${shown.path}\n${shown.id}`
     if (key === null || loaded?.key !== key) return null
     if (fixed?.key === key) return fixed.answers
     const answers = previewAnswers(loaded.page.reviews, settings, Date.now())
@@ -183,7 +213,8 @@ export function useCardReview(root: string | null, source: IndexSource, settings
 
   const answer = useCallback(
     async (rating: CardRating) => {
-      const card = live.current.session?.queue[0]
+      const s0 = live.current.session
+      const card = s0?.queue[s0.at]
       const chosen = fixAnswers()?.find((a) => a.review.rating === rating)
       if (card === undefined || chosen === undefined || busy.current) return
       busy.current = true
@@ -198,9 +229,11 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       busy.current = false
       if (written === 'failed') return
       setSession((s) => {
-        if (s === null || s.queue[0] !== card) return s
+        if (s === null || s.queue[s.at] !== card) return s
         const undo = written !== 'gone' ? [...s.undo, { card, review: chosen.review, next: written.next }].slice(-UNDO_DEPTH) : s.undo
-        return { ...s, queue: settle(s.queue.slice(1), s.scope), turn: s.turn + 1, undo }
+        // The cards before (passed over with →) stay; the ones after are settled, as the head was before ← →.
+        const queue = [...s.queue.slice(0, s.at), ...settle(s.queue.slice(s.at + 1), s.scope)]
+        return { ...s, queue, at: s.at < queue.length ? s.at : 0, turn: s.turn + 1, undo }
       })
     },
     [fixAnswers, onNotice, settle],
@@ -218,14 +251,15 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       },
     )
     busy.current = false
-    if (undone) setSession((s) => (s === null || s.undo.at(-1) !== last ? s : { ...s, queue: [last.card, ...s.queue.filter((c) => !sameCard(c, last.card))], turn: s.turn + 1, undo: s.undo.slice(0, -1) }))
+    if (undone) setSession((s) => (s === null || s.undo.at(-1) !== last ? s : { ...s, queue: [last.card, ...s.queue.filter((c) => !sameCard(c, last.card))], at: 0, turn: s.turn + 1, undo: s.undo.slice(0, -1) }))
   }, [onNotice])
 
   const close = useCallback(() => setSession(null), [])
 
   /** The card showing, when it is card `id` of `path`, is read again, and its answers fixed again, on its new log. */
   const readAgain = useCallback((path: string, id: string) => {
-    const shown = live.current.session?.queue[0]
+    const s0 = live.current.session
+    const shown = s0?.queue[s0.at]
     if (shown !== undefined && shown.path === path && shown.id === id) setSession((s) => (s === null ? s : { ...s, turn: s.turn + 1 }))
   }, [])
 
@@ -265,19 +299,43 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     [onNotice, readAgain],
   )
 
+  const move = useCallback((delta: -1 | 1) => {
+    setSession((s) => {
+      if (s === null) return s
+      const at = s.at + delta
+      return at < 0 || at >= s.queue.length ? s : { ...s, at, turn: s.turn + 1 }
+    })
+  }, [])
+
+  const turnOff = useCallback(async () => {
+    const s0 = live.current.session
+    const card = s0?.queue[s0.at]
+    if (card === undefined) return
+    const written = await changeCardLine(card.path, card.id, (l) => withCardOff(l, true)).then(
+      () => true,
+      (err: unknown) => {
+        onNotice(`Can't change the card: ${reason(err)}`, 'error')
+        return false
+      },
+    )
+    if (written) setSession((s) => (s === null || s.queue[s.at] !== card ? s : without(s, s.at)))
+  }, [onNotice])
+
   const shownSession = useMemo<CardReviewSession | null>(() => {
     if (session === null) return null
-    const card = session.queue[0]
+    const card = session.queue[session.at]
     return {
       label: session.label,
       scope: session.scope.page !== undefined ? 'page' : session.scope.folder ? 'folder' : 'vault',
       card: card === undefined ? null : { ...card, page: loaded?.key === turnKey ? loaded.page : null },
-      position: Math.min(session.total - session.queue.length + 1, session.total),
+      position: Math.min(session.total - session.queue.length + 1 + session.at, session.total),
       total: session.total,
+      canBack: session.at > 0,
+      canNext: session.at < session.queue.length - 1,
       answers: fixed?.key === turnKey ? fixed.answers : null,
       canUndo: session.undo.length > 0,
     }
   }, [session, loaded, fixed, turnKey])
 
-  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext }
+  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, move, turnOff }
 }

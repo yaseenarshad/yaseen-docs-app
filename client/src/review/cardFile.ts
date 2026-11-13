@@ -11,6 +11,7 @@ import {
   cardReviewIndex,
   cardReviewsOf,
   changeCard,
+  changeCardText,
   isCardNext,
   isCardOff,
   pageCards,
@@ -78,6 +79,13 @@ export async function readCard(path: string, id: string): Promise<CardOnPage | n
  */
 export const changeCardLine = (path: string, id: string, change: (line: CardLine) => CardLine, index?: number): Promise<unknown> =>
   announcedWrite(path, () => transformFile(path, (c) => changeCard(c, id, change, index)))
+
+/**
+ * Card `id`'s TEXT replaced by `text` (YAZ-5003, Edit card in the card window): ONE `transformFile`, as the app's own
+ * write, so a page open in a tab takes it quietly. With no ID, the card at `index`. Throws `CardNotFoundError`.
+ */
+export const changeCardTextIn = (path: string, id: string | null, text: string, index: number): Promise<unknown> =>
+  announcedWrite(path, () => transformFile(path, (c) => changeCardText(c, id, text, index)))
 
 /** Writes `review` to card `id`'s line: the answer the hover showed, as it showed it (D13). Throws `CardNotFoundError`. */
 export const writeCardReview = (path: string, id: string, review: CardReview): Promise<unknown> => changeCardLine(path, id, (l) => withCardReview(l, review))

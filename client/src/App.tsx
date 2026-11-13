@@ -1446,6 +1446,8 @@ export function App() {
   const openExploreOn = useCallback((path: string) => openExploreWith({ kind: 'note', path }), [openExploreWith])
   /** The Inbox's O and E (YAZ-4962): the page on top, landed on the card, in edit mode for E. */
   const openPageAtCard = useCallback((path: string, card: number, edit: boolean) => openExploreWith({ kind: 'note', path, card, edit }), [openExploreWith])
+  /** The Inbox's E (YAZ-5003, in Edit card) and ⋯ › Open card (YAZ-5004): the card window on top. */
+  const openCardWindow = useCallback((path: string, cardId: string, index: number, edit: boolean) => openExploreWith({ kind: 'card', path, cardId, index, ...(edit && { edit }) }), [openExploreWith])
   // The card window (YAZ-4962, D13): every editor sends `mdapp:note-card-open` from its card (a click on the title,
   // ⋯ › Open card, ⌘↵); it bubbles to the document. A preview that does not know its page sends no path: nothing opens.
   useEffect(() => {
@@ -3789,7 +3791,7 @@ export function App() {
             {/* The Inbox screen (YAZ-4962): the session of the vault in review, over the tab stack; the page under it stays as it was. */}
             {session !== null && (
               <Suspense fallback={null}>
-                <NoteCardInbox review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openPageAtCard} openInTab={openBackgroundCopy} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} />
+                <NoteCardInbox review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openPageAtCard} openCard={openCardWindow} openInTab={openBackgroundCopy} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} />
               </Suspense>
             )}
             {/* The tab board (YAZ-2648 D5) covers the stack while it shows; a review never has one over it. */}

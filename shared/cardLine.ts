@@ -338,6 +338,30 @@ export class CardNotFoundError extends Error {
 }
 
 /**
+ * The page `content` with the TEXT of one card replaced by `text` (YAZ-5003: Edit card in the card window): card `id`
+ * (the one at `index` when it holds `id`, else the first), or with no ID the card at `index`. The fence, its indent and
+ * the card line stay; the fence grows when the new text holds a fence as long, so the text can never close the card.
+ * The same text writes nothing new. Throws `CardNotFoundError`.
+ */
+export function changeCardText(content: string, id: string | null, text: string, index = -1): string {
+  const { frontmatter, body } = splitFrontmatter(content)
+  const cards = findCards(body)
+  const at = id === null ? index : cards[index] !== undefined && cardIdOf(cards[index].line) === id ? index : cards.findIndex((card) => cardIdOf(card.line) === id)
+  const card = cards[at]
+  if (card === undefined) throw new CardNotFoundError(id ?? `#${index + 1}`)
+  const wanted = text.replace(/\n+$/, '')
+  if (card.text === wanted) return content
+  const lines = body.split('\n')
+  const open = /^[ \t]*(`{3,}|~{3,})/.exec(lines[card.open])![1]
+  const longest = Math.max(0, ...[...wanted.matchAll(/^[ \t]*(`{3,}|~{3,})/gm)].filter((m) => m[1][0] === open[0]).map((m) => m[1].length))
+  const fence = longest >= open.length ? open[0].repeat(longest + 1) : open
+  const head = fence === open ? lines[card.open] : lines[card.open].replace(open, fence)
+  const tail = fence === open ? lines[card.close] : card.indent + fence
+  lines.splice(card.open, card.close - card.open + 1, head, ...wanted.split('\n').map((l) => (l === '' ? '' : card.indent + l)), tail)
+  return frontmatter + lines.join('\n')
+}
+
+/**
  * The page `content` with the card line of card `id` changed by `change` — for the Inbox, the card window and the ⋯
  * menu: `transformFile(path, (c) => changeCard(c, 'WIKI-512', (l) => withCardReview(l, { at: cardTime(Date.now()), rating: 'good' })))`.
  * Throws `CardNotFoundError` when no card holds `id`. Two cards with one ID (a copy the sweep has not met): the one at

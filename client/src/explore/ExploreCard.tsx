@@ -13,6 +13,12 @@
  *  - "Reviews (n)": the full table, closed until asked for (the strip says the state; D13 "a footer lets the table
  *    expand"), a delete on each row (`deleteReview`, with Undo in its notice).
  *
+ * EDIT CARD (YAZ-5003): E on the card window (or the Inbox's E, which opens it so) shows the page card's own editor:
+ * a small Crepe that holds the card block alone, with the card view's Edit card on (`noteCardView.ts`: Crepe's code
+ * block, the card language). Done, Esc or ⌘↵ there writes the text into the page (`changeCardTextIn`, the app's own
+ * write) and goes back to reading; opened in Edit card (from the Inbox), the layer closes: back to the Inbox at the
+ * same card and step. A read-only vault blocks Edit card, as the page does: E does nothing.
+ *
  * The card is read from its page (`readCardAt`: by ID, or by its place while it has none) and read again whenever the
  * index has a new version of the page: an answer in the Inbox or a delete elsewhere shows here at once.
  */
@@ -20,8 +26,14 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouse
 import { answerLabel, cardState, recallChance } from '@shared/cardSchedule'
 import { cardTitle } from '@shared/cardText'
 import type { GestureAction } from '@shared/keys'
-import { withCardNext, withCardOff, withoutCardReviews, type CardReview } from '@shared/cardLine'
-import { changeCardLine, readCardAt, type CardAtPage } from '../review/cardFile'
+import { cardBlock, EMPTY_CARD_LINE, withCardNext, withCardOff, withoutCardReviews, type CardReview } from '@shared/cardLine'
+import { editorViewCtx } from '@milkdown/kit/core'
+import { changeCardLine, changeCardTextIn, readCardAt, type CardAtPage } from '../review/cardFile'
+import { createCrepe } from '../editor/createCrepe'
+import { CrepeFeature } from '../editor/crepe'
+import { features } from '../editor/featureConfig'
+import { isNoteCardNode } from '../editor/noteCard/noteCardLine'
+import { noteCardViewAt } from '../editor/noteCard/noteCardView'
 import { HoverTip } from '../components/HoverTip'
 import { NoteCardBody, NoteCardId, NoteCardNextChip, NoteCardReviews, noteCardDate, noteCardDue, noteCardOverdue, noteCardWait } from '../review/noteCardParts'
 import { copyText } from '../editor/linkMenu'
@@ -32,6 +44,8 @@ interface ExploreCardProps {
   path: string
   cardId: string | null
   index: number
+  /** Opened in Edit card (the Inbox's E, YAZ-5003): Done saves and closes the layer. */
+  startInEdit?: boolean
   /** The page's name, for the strip. */
   pageName: string
   vault: ExploreVault
@@ -52,7 +66,7 @@ interface ExploreCardProps {
 
 type Loaded = { kind: 'loading' } | { kind: 'card'; card: CardAtPage } | { kind: 'gone' }
 
-export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, onOpenLink, onOpenTab, onOpenInTab, onNotice, onHeadDown, onHeadReset, onClose, active }: ExploreCardProps) {
+export function ExploreCard({ path, cardId, index, startInEdit = false, pageName, vault, onOpenPage, onOpenLink, onOpenTab, onOpenInTab, onNotice, onHeadDown, onHeadReset, onClose, active }: ExploreCardProps) {
   const headRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLSpanElement>(null)
   useCompactHead(headRef, titleRef)
@@ -101,6 +115,32 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
 
   const review = vault.review
   const card = loaded.kind === 'card' ? loaded.card : null
+  // Edit card (YAZ-5003): blocked in a read-only vault, as in the page.
+  const [editing, setEditing] = useState(startInEdit && !vault.readOnly)
+  const editDone = (text: string) => {
+    if (card === null) return
+    const after = () => {
+      if (startInEdit) return onClose()
+      setEditing(false)
+      bodyRef.current?.focus({ preventScroll: true })
+    }
+    if (text.replace(/\n+$/, '') === card.text) return after()
+    changeCardTextIn(path, card.id, text, card.index).then(
+      () => {
+        read()
+        after()
+      },
+      (err: unknown) => onNotice(`Can't save the card: ${err instanceof Error ? err.message : String(err)}`),
+    )
+  }
+  /** E on the card window: Edit card (YAZ-5003), as the page's Edit card. Not in a field, not read only. */
+  const onBodyKey = (event: React.KeyboardEvent) => {
+    if (editing || card === null || vault.readOnly === true || event.metaKey || event.ctrlKey || event.altKey || (event.key !== 'e' && event.key !== 'E')) return
+    if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]') !== null) return
+    event.preventDefault()
+    event.stopPropagation()
+    setEditing(true)
+  }
   const id = card?.id ?? cardId
   const title = card === null ? '' : cardTitle(card.text)
   const deleteReview =
@@ -166,13 +206,17 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
           </button>
         </HoverTip>
       </div>
-      <div ref={bodyRef} className="explore__body explore__body--card" tabIndex={-1} data-explore-card>
+      <div ref={bodyRef} className="explore__body explore__body--card" tabIndex={-1} data-explore-card onKeyDown={onBodyKey}>
         {loaded.kind === 'gone' && <p className="editor-msg">This card is no longer there</p>}
         {card !== null && (
           <>
-            <div className="note-card note-card-screen">
-              <NoteCardBody text={card.text} path={path} vault={vault} doors={{ openLayer: onOpenLink, openTab: onOpenTab, onNotice }} />
-            </div>
+            {editing ? (
+              <NoteCardEditor key={`${card.index}`} text={card.text} path={path} vault={vault} onDone={editDone} />
+            ) : (
+              <div className="note-card note-card-screen">
+                <NoteCardBody text={card.text} path={path} vault={vault} doors={{ openLayer: onOpenLink, openTab: onOpenTab, onNotice }} />
+              </div>
+            )}
             <NoteCardStrip card={card} pageName={pageName} vault={vault} onOpenPage={() => onOpenPage(card.index)} />
             {review !== undefined && <NoteCardReviews reviews={card.reviews} settings={review.settings} onDelete={deleteReview} />}
           </>
@@ -180,6 +224,55 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
       </div>
     </>
   )
+}
+
+/** The page card's editor without the editing of blocks around it: the card block is all the document holds. */
+const CARD_EDIT_FEATURES = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeature.Toolbar]: false }
+
+/**
+ * Edit card in the card window (YAZ-5003): the page card's own view, in a small Crepe of the card block alone, with
+ * Edit card on at once — Crepe's code block, the card language, its Done (button, Esc, ⌘↵). Done hands the text over.
+ * Made once per edit: the text it starts from is the card's when Edit card began.
+ */
+function NoteCardEditor({ text, path, vault, onDone }: { text: string; path: string; vault: ExploreVault; onDone: (text: string) => void }) {
+  const hostRef = useRef<HTMLDivElement>(null)
+  const doneRef = useRef(onDone)
+  doneRef.current = onDone
+  const start = useRef({ text, path, vault })
+  useEffect(() => {
+    const host = hostRef.current
+    if (host === null) return
+    const { text, path, vault } = start.current
+    const el = document.createElement('div')
+    el.className = 'editor-instance'
+    host.appendChild(el)
+    const crepe = createCrepe({
+      root: el,
+      defaultValue: `${cardBlock(text, EMPTY_CARD_LINE)}\n`,
+      features: CARD_EDIT_FEATURES,
+      wikilinks: vault.wikilinks,
+      viewOnlyLinks: vault.viewOnlyLinks,
+      image: { root: vault.root, notePath: path },
+      noteCards: { path, onEditDone: (t) => doneRef.current(t) },
+    })
+    let live = true
+    void crepe.create().then(() => {
+      if (!live) return
+      const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+      let pos = -1
+      view.state.doc.descendants((node, at) => {
+        if (pos === -1 && isNoteCardNode(node)) pos = at
+        return pos === -1
+      })
+      if (pos >= 0) noteCardViewAt(view, pos)?.edit()
+    })
+    return () => {
+      live = false
+      void crepe.destroy()
+      el.remove()
+    }
+  }, [])
+  return <div ref={hostRef} className="explore-card__edit" data-explore-card-edit />
 }
 
 /**

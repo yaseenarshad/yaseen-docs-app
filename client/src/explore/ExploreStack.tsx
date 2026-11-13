@@ -87,7 +87,7 @@ const fileLayer = (path: string, from?: { search: number; at: number }): Explore
 
 /** The layer App's ask opens (YAZ-4962): a card window, or a page, landed on a card and in edit mode when asked. */
 const requestedLayer = (ask: ExploreRequest): ExploreLayer => {
-  if (ask.kind === 'card') return { id: newLayerId(), kind: 'card', path: ask.path, cardId: ask.cardId, index: ask.index }
+  if (ask.kind === 'card') return { id: newLayerId(), kind: 'card', path: ask.path, cardId: ask.cardId, index: ask.index, ...(ask.edit === true && { edit: true }) }
   const layer = fileLayer(ask.path)
   return layer.kind === 'note' ? { ...layer, ...(ask.edit === true && { mode: 'edit' }), ...(ask.card !== undefined && { card: ask.card }) } : layer
 }
@@ -551,8 +551,9 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
       return
     }
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.altKey) {
-      // In edit, the layer's ⌘↵ went back to reading (`onKeyDownCapture`); a code block's ⌘↵ is the code's.
-      if (topNote(live) === null || (top.kind === 'note' && top.mode === 'edit')) return
+      // In edit, the layer's ⌘↵ went back to reading (`onKeyDownCapture`); a code block's ⌘↵ is the code's. In a card
+      // window, the card's editor took it as Done (YAZ-5003).
+      if (topNote(live) === null || (top.kind === 'note' && top.mode === 'edit') || (top.kind === 'card' && event.defaultPrevented)) return
       event.preventDefault()
       event.stopPropagation()
       toTab()
@@ -703,6 +704,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
                 path={layer.path}
                 cardId={layer.cardId}
                 index={layer.index}
+                startInEdit={layer.edit === true}
                 pageName={nameOf(layer.path)}
                 vault={vaultOf(layer.path)}
                 onOpenPage={(index) => openPageAt(layer.path, index)}

@@ -86,6 +86,8 @@ export interface NoteCardHost {
   path: string
   /** The vault's ID door (`takeNoteId`, `views/scaffold.ts`): a new card takes its ID at once. Absent → the sweep gives it. */
   mintId?: (path: string) => Promise<string>
+  /** Done (its button, Esc or ⌘↵) with the card's text (YAZ-5003: the card window's Edit card saves it to the page). */
+  onEditDone?: (text: string) => void
 }
 
 /** What a card view needs of its editor, made once in `createCrepe`. */
@@ -409,6 +411,7 @@ export class NoteCardView implements NodeView {
     this.code.dom.remove()
     this.code = null
     this.draw()
+    this.deps.host?.onEditDone?.(this.node.textContent)
     const pos = this.pos
     if (pos === null) return
     this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, pos)))

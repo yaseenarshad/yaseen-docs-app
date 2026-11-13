@@ -12,12 +12,16 @@
  *  - The buttons (D5): Forgot · Remembered, or Again · Hard · Good · Easy, by the setting; the hover says when the
  *    card comes back ("Remembered · 9 days").
  *  - The keys (`noteCardInboxKeys.ts`): Space, 1–2 / 1–4 (once the buttons show), ⌘Z, O (the page on top, landed on
- *    the card; Esc there comes back to this card at the same step), E (the same, in edit; to read in a read-only
- *    vault — read only locks the text, not the review), ⌘↵ (the page in a
+ *    the card; Esc there comes back to this card at the same step), E (YAZ-5003: the CARD WINDOW on top, in Edit card;
+ *    Done, Esc or ⌘↵ there saves and comes back to this card at the same step; nothing in a read-only vault, where
+ *    Edit card is blocked as in the page), ← → (YAZ-5004: the card before or after, no answer), ⌘↵ (the page in a
  *    background tab: the review stays), Esc (the review closes). A key typed in a field, or while a dialog or a menu
  *    is open (Explore is a dialog), is not the Inbox's; a key with the keyboard elsewhere (the sidebar) neither.
  *  - Under the card, OUTSIDE its frame, as in Mochi (YAZ-5002): while Space has more to show, a quiet "Press Space to
  *    show the next hidden word" (or "the next side"); then the answer buttons; the key hint row last, at the bottom.
+ *  - The buttons row (YAZ-5004, as in Mochi): ← → on its left, the answers in the middle, ⋯ on its right. ⋯ opens a
+ *    small row of icons, each with the app's hover box (its name and key): Undo last review (⌘Z), Turn review off,
+ *    Put at top of Inbox / Remove from top of Inbox, Open card. They are the hook's own actions.
  *  - The hint row shows a key only while it does something; the digits are on the buttons.
  *  - No Reviews section (YAZ-5000: it lives only under the card in the page, and in the card window). Nothing left: "Inbox complete." for the vault; for one page or
  *    folder "This page is done." and, quiet, "21 more in the Inbox", which starts the vault's review.
@@ -38,8 +42,10 @@ export interface NoteCardInboxProps {
   session: CardReviewSession
   vaultOf: (path: string) => ExploreVault
   nameOf: (path: string) => string
-  /** The page on top as an Explore layer, landed on card `index`; `edit` in edit mode (O and E). */
+  /** The page on top as an Explore layer, landed on card `index` (O). */
   openPage: (path: string, index: number, edit: boolean) => void
+  /** The card window on top (⋯ › Open card); `edit` in Edit card (E, YAZ-5003). */
+  openCard: (path: string, id: string, index: number, edit: boolean) => void
   /** ⌘↵: the page in a background tab. */
   openInTab: (path: string) => void
   /** A link's bound gesture (⌘-click): App's link door. */
@@ -70,6 +76,17 @@ export function isInboxKeyTarget(event: KeyboardEvent, inbox: HTMLElement | null
   return inbox.contains(target)
 }
 
+const icon = (d: string) => (
+  <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d={d} />
+  </svg>
+)
+/** The ⋯ row's icons (YAZ-5004): undo, an archive box (review off), up to the top, a card window. */
+const ICON_UNDO = icon('M6 4 3 7l3 3M3 7h7a3 3 0 0 1 0 6H8')
+const ICON_OFF = icon('M2.5 3.5h11v3h-11zM3.5 6.5v6h9v-6M6.5 9h3')
+const ICON_TOP = icon('M3 2.5h10M8 13.5V5.5M5 8.5l3-3 3 3')
+const ICON_CARD = icon('M2.5 3.5h11v9h-11zM2.5 6.5h11')
+
 /** The step a card is at (D18): how many sides show, and how many hidden words, in page order over the card. */
 interface Step {
   key: string | null
@@ -77,7 +94,7 @@ interface Step {
   shown: number
 }
 
-export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, openInTab, openLinkIn, openLayer, onNotice }: NoteCardInboxProps) {
+export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, openCard, openInTab, openLinkIn, openLayer, onNotice }: NoteCardInboxProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const card = session.card
   const text = card?.page?.text ?? null
@@ -104,8 +121,19 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
   }, [cardKey])
 
   const ratings = answerRatings(review.settings)
-  const live = useRef({ step, done, counts, card, session, review, ratings })
-  live.current = { step, done, counts, card, session, review, ratings }
+  // The ⋯ row (YAZ-5004): open or closed; it closes with the card, Esc and a press outside it.
+  const [moreState, setMore] = useState<string | null>(null)
+  const moreOpen = moreState !== null && moreState === cardKey
+  const live = useRef({ step, done, counts, card, session, review, ratings, moreOpen })
+  live.current = { step, done, counts, card, session, review, ratings, moreOpen }
+  useEffect(() => {
+    if (!moreOpen) return
+    const away = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || event.target.closest('.note-card-inbox__more') === null) setMore(null)
+    }
+    window.addEventListener('pointerdown', away, true)
+    return () => window.removeEventListener('pointerdown', away, true)
+  }, [moreOpen])
 
   /** One Space (D18): the next hidden word of the sides showing, else the next side. */
   const advance = useCallback(() => {
@@ -120,33 +148,53 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
       if (!isInboxKeyTarget(event, rootRef.current)) return
       const key = noteCardInboxKey(event)
       if (key === null) return
-      const { done, card, session, review, ratings } = live.current
+      const { done, card, session, review, ratings, moreOpen } = live.current
       event.preventDefault()
       event.stopPropagation()
-      if (key.kind === 'close') return review.close()
+      if (key.kind === 'close') return moreOpen ? setMore(null) : review.close()
       if (key.kind === 'undo') {
         if (session.canUndo && !event.repeat) void review.undo()
         return
       }
       if (card === null) return
       if (key.kind === 'step') return advance()
+      if (key.kind === 'move') {
+        if (key.delta < 0 ? session.canBack : session.canNext) review.move(key.delta)
+        return
+      }
       if (key.kind === 'answer') {
         const rating = ratings[key.button]
         if (done && rating !== undefined && !event.repeat) void review.answer(rating)
         return
       }
-      // E opens the page in edit mode; in a read-only vault the page opens to read, as O does (the text stays locked).
-      if (key.kind === 'open' || key.kind === 'edit') return openPage(card.path, card.index, key.kind === 'edit' && !vaultOf(card.path).readOnly)
+      if (key.kind === 'open') return openPage(card.path, card.index, false)
+      // E edits only the card (YAZ-5003): the card window in Edit card. Read only blocks Edit card, as in the page.
+      if (key.kind === 'edit') {
+        if (!vaultOf(card.path).readOnly) openCard(card.path, card.id, card.index, true)
+        return
+      }
       if (key.kind === 'tab') return openInTab(card.path)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [advance, openPage, openInTab, vaultOf])
+  }, [advance, openPage, openCard, openInTab, vaultOf])
 
   const doors = useMemo(() => ({ openLayer, openTab: openLinkIn, onNotice }), [openLayer, openLinkIn, onNotice])
   // The rest of the vault, after a review of one page or one folder: the way on.
   const more = session.scope === 'vault' ? 0 : review.dueCount
-  const hints = noteCardInboxHints({ card: card !== null, answering: done, canUndo: session.canUndo, editable: card !== null && !vaultOf(card.path).readOnly })
+  const hints = noteCardInboxHints({ card: card !== null, answering: done, canUndo: session.canUndo, editable: card !== null && !vaultOf(card.path).readOnly, moves: session.canBack || session.canNext })
+  /** The ⋯ row's actions (YAZ-5004): the hook's own, with their names and keys for the hover box. */
+  const moreActions =
+    card === null
+      ? []
+      : [
+          { id: 'undo', label: 'Undo last review', keys: '⌘Z', icon: ICON_UNDO, disabled: !session.canUndo, run: () => void review.undo() },
+          { id: 'off', label: 'Turn review off', icon: ICON_OFF, disabled: card.page === null, run: () => void review.turnOff() },
+          card.page?.next === true
+            ? { id: 'next', label: 'Remove from top of Inbox', icon: ICON_TOP, disabled: false, run: () => void review.setNext(card.path, card.id, false) }
+            : { id: 'next', label: 'Put at top of Inbox', icon: ICON_TOP, disabled: card.page === null, run: () => void review.setNext(card.path, card.id, true) },
+          { id: 'card', label: 'Open card', icon: ICON_CARD, disabled: false, run: () => openCard(card.path, card.id, card.index, false) },
+        ]
 
   // What the next Space shows, said between the card and the buttons (YAZ-5002); nothing once the buttons show.
   const spaceShows = card?.page == null || done ? null : step.shown < hiddenUpTo(step.sides) ? 'the next hidden word' : 'the next side'
@@ -212,21 +260,66 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
             Press <kbd>Space</kbd> to show {spaceShows}
           </p>
         )}
-        {done && session.answers !== null && (
-          <div className="note-card-inbox__answers">
-            {session.answers.map((a, i) => {
-              const label = answerLabel(a.review.rating, review.settings)
-              // The app's own hover box (a native title shows nothing in the app, YAZ-4772): when the card comes back.
-              const comesBack = `${label} · ${noteCardWait(a.interval)}`
-              return (
-                <HoverTip key={a.review.rating} text={comesBack}>
-                  <button type="button" className="explore__button note-card-inbox__answer" data-rating={a.review.rating} aria-description={comesBack} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.answer(a.review.rating)}>
-                    {label}
-                    <kbd>{i + 1}</kbd>
-                  </button>
-                </HoverTip>
-              )
-            })}
+        {card !== null && (
+          <div className="note-card-inbox__actions">
+            <div className="note-card-inbox__moves">
+              <HoverTip text="Previous card (←)">
+                <button type="button" className="explore__button note-card-inbox__move" aria-label="Previous card" disabled={!session.canBack} onMouseDown={(e) => e.preventDefault()} onClick={() => review.move(-1)}>
+                  ←
+                </button>
+              </HoverTip>
+              <HoverTip text="Next card (→)">
+                <button type="button" className="explore__button note-card-inbox__move" aria-label="Next card" disabled={!session.canNext} onMouseDown={(e) => e.preventDefault()} onClick={() => review.move(1)}>
+                  →
+                </button>
+              </HoverTip>
+            </div>
+            <div className="note-card-inbox__answers">
+              {done &&
+                session.answers !== null &&
+                session.answers.map((a, i) => {
+                  const label = answerLabel(a.review.rating, review.settings)
+                  // The app's own hover box (a native title shows nothing in the app, YAZ-4772): when the card comes back.
+                  const comesBack = `${label} · ${noteCardWait(a.interval)}`
+                  return (
+                    <HoverTip key={a.review.rating} text={comesBack}>
+                      <button type="button" className="explore__button note-card-inbox__answer" data-rating={a.review.rating} aria-description={comesBack} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.answer(a.review.rating)}>
+                        {label}
+                        <kbd>{i + 1}</kbd>
+                      </button>
+                    </HoverTip>
+                  )
+                })}
+            </div>
+            <div className="note-card-inbox__more">
+              {moreOpen && (
+                <div className="note-card-inbox__more-row" role="toolbar" aria-label="Card actions">
+                  {moreActions.map((a) => (
+                    <HoverTip key={a.id} text={a.keys === undefined ? a.label : `${a.label} (${a.keys})`}>
+                      <button
+                        type="button"
+                        className="explore__button note-card-inbox__more-action"
+                        data-action={a.id}
+                        aria-label={a.label}
+                        disabled={a.disabled}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setMore(null)
+                          a.run()
+                        }}
+                      >
+                        {a.icon}
+                      </button>
+                    </HoverTip>
+                  ))}
+                </div>
+              )}
+              <HoverTip text="More">
+                <button type="button" className="explore__button note-card-inbox__more-button" aria-label="More" aria-expanded={moreOpen} onMouseDown={(e) => e.preventDefault()} onClick={() => setMore(moreOpen ? null : cardKey)}>
+                  ⋯
+                </button>
+              </HoverTip>
+            </div>
           </div>
         )}
         <div className="explore__foot note-card-inbox__hints" aria-hidden="true">
