@@ -63,5 +63,6 @@ export const noteCardInboxHints = ({ card, answering, canUndo, moves = false, au
   ...(card ? [{ keys: 'O', label: 'Open page' }] : []),
   // E in every vault (YAZ-5009): a read-only one unlocks the card's text alone, for the one edit.
   ...(card ? [{ keys: 'E', label: 'Edit card' }] : []),
-  ...(card ? [{ keys: '⌘↵', label: 'Open page in a new tab' }] : []),
+  // Short (YAZ-5024): the row is one line.
+  ...(card ? [{ keys: '⌘↵', label: 'New tab' }] : []),
 ]

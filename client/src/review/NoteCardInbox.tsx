@@ -30,7 +30,11 @@
  *  - The buttons row (YAZ-5004, as in Mochi): ← → on its left, the answers in the middle, ⋯ on its right. ⋯ opens a
  *    small row of icons, each with the app's hover box (its name and key): Undo last review (⌘Z), Turn review off,
  *    Put at top of Inbox / Remove from top of Inbox, Open card. They are the hook's own actions.
- *  - The hint row shows a key only while it does something; the digits are on the buttons.
+ *  - THE ANSWER'S TOAST (YAZ-5025): each answer that lands shows the app's toast, "✓ Remembered · back in 9 days",
+ *    with Undo — the hook's own undo, as ⌘Z — and it fades as the app's Undo toasts do. A new answer replaces it.
+ *    It shows only once the session counts the answer (`answered` one longer): a failed write shows its own error.
+ *  - The hint row shows a key only while it does something; the digits are on the buttons. It is ONE line at any width
+ *    (YAZ-5024, `NoteCardInboxHints`): ⌘↵ folds first, then O; Space and E stay.
  *  - THE WIDTH (YAZ-5019): the card's left or right edge drags it wider or narrower, centred (`inboxCardWidth.ts`): at
  *    least 420 px, at most the tab's width less its margins; the width stays for the app's run, in memory only.
  *  - No Reviews section (YAZ-5000: it lives only under the card in the page, and in the card window). Nothing left: "Inbox complete." for the vault; for one page or
@@ -40,15 +44,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { answerLabel, answerRatings } from '@shared/cardSchedule'
 import { cardSides, hiddenCount } from '@shared/cardText'
 import type { GestureAction } from '@shared/keys'
+import type { CardRating } from '@shared/cardLine'
 import type { ExploreVault } from '../explore/ExploreNote'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { NoteCardBody, NoteCardId, NoteCardNextChip, noteCardWait } from './noteCardParts'
 import { noteCardInboxHints, noteCardInboxKey } from './noteCardInboxKeys'
 import { NOTE_CARD_MEDIA, NOTE_CARD_OPENS, stopCardAudio, textHasAudio, toggleCardAudio } from '../editor/noteCard/noteCardMedia'
 import { HoverTip } from '../components/HoverTip'
+import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { CARD_FILTERS, NoteCardInboxBar } from './NoteCardInboxBar'
-import { NoteCardStateChip, answerIcon } from './noteCardInboxChip'
+import { NoteCardStateChip, answerIcon, answerToast } from './noteCardInboxChip'
 import { useInboxCardWidth } from './inboxCardWidth'
+import { NoteCardInboxHints } from './NoteCardInboxHints'
 import '../explore/explore.css'
 
 export interface NoteCardInboxProps {
@@ -68,7 +75,8 @@ export interface NoteCardInboxProps {
   openLinkIn: (path: string, where: GestureAction) => void
   /** A plain click on a link in the card: the page on top. */
   openLayer: (path: string) => void
-  onNotice: (message: string) => void
+  /** App's toast. The answer's toast (YAZ-5025) gives a kind, a type and its Undo; other notices are the text alone. */
+  onNotice: (message: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void
 }
 
 /** The keys of a dialog, a sheet or a menu that is open: theirs, never the Inbox's. */
@@ -146,6 +154,23 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
   const moreOpen = moreState !== null && moreState === cardKey
   const live = useRef({ step, done, counts, card, session, review, ratings, moreOpen, shown })
   live.current = { step, done, counts, card, session, review, ratings, moreOpen, shown }
+
+  // The answer's toast (YAZ-5025): its words fixed when the answer is given, shown once the session counts it.
+  const toast = useRef<{ text: string; count: number } | null>(null)
+  const answerWith = useCallback((rating: CardRating) => {
+    const { session, review } = live.current
+    // The answers as the hook fixed them (a digit can come before the buttons show: they are fixed now, as `answer` would).
+    const fixed = (session.answers ?? review.showAnswers())?.find((a) => a.review.rating === rating)
+    toast.current = fixed === undefined ? null : { text: answerToast(rating, fixed.interval, review.settings), count: session.answered.length }
+    void review.answer(rating)
+  }, [])
+  const answeredCount = session.answered.length
+  useEffect(() => {
+    const pending = toast.current
+    if (pending === null || answeredCount !== pending.count + 1) return
+    toast.current = null
+    onNotice(pending.text, 'info', 'undo', { label: 'Undo', run: () => void live.current.review.undo(), fades: true })
+  }, [answeredCount, onNotice])
   useEffect(() => {
     if (!moreOpen) return
     const away = (event: PointerEvent) => {
@@ -191,7 +216,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
       if (key.kind === 'answer') {
         // At any step (YAZ-5010): the buttons show from the moment the card shows.
         const rating = ratings[key.button]
-        if (card.page !== null && rating !== undefined && !event.repeat) void review.answer(rating)
+        if (card.page !== null && rating !== undefined && !event.repeat) answerWith(rating)
         return
       }
       if (key.kind === 'open') return openPage(card.path)
@@ -202,7 +227,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [advance, openPage, openCard, openInTab])
+  }, [advance, answerWith, openPage, openCard, openInTab])
 
   const doors = useMemo(() => ({ openLayer, openTab: openLinkIn, onNotice }), [openLayer, openLinkIn, onNotice])
   // The rest of the vault, after a review of one page or one folder: the way on.
@@ -308,7 +333,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
                   const comesBack = `${label} · ${noteCardWait(a.interval)}`
                   return (
                     <HoverTip key={a.review.rating} text={comesBack}>
-                      <button type="button" className="explore__button note-card-inbox__answer" data-rating={a.review.rating} aria-description={comesBack} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.answer(a.review.rating)}>
+                      <button type="button" className="explore__button note-card-inbox__answer" data-rating={a.review.rating} aria-description={comesBack} onMouseDown={(e) => e.preventDefault()} onClick={() => answerWith(a.review.rating)}>
                         {answerIcon(a.review.rating, review.settings.buttons)}
                         <span className="note-card-inbox__answer-label">{label}</span>
                         <kbd>{i + 1}</kbd>
@@ -348,13 +373,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
             </div>
           </div>
         )}
-        <div className="explore__foot note-card-inbox__hints" aria-hidden="true">
-          {hints.map((h) => (
-            <span key={h.label}>
-              <kbd>{h.keys}</kbd> {h.label}
-            </span>
-          ))}
-        </div>
+        <NoteCardInboxHints hints={hints} />
       </div>
     </div>
   )
