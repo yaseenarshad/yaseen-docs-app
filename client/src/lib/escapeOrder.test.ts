@@ -1,7 +1,8 @@
 /**
  * The Esc order (YAZ-4995): one Esc closes one thing, the top one first, and the left sidebar is last. The table is the
- * order as Yaseen decided it: the state when the key comes → what this one Esc does here. Steps 1 to 4 close
+ * order as Yaseen decided it: the state when the key comes → what this one Esc does here. Steps 1 to 3 close
  * themselves (each surface's own Esc): here they answer null, so nothing closes a second thing on the same key.
+ * YAZ-5011: the Inbox is a tab, no step: with its ⋯ row closed, Esc in it goes on to the sidebar, as from a page tab.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
@@ -11,14 +12,13 @@ import { escapeStep, useEscapeLast, type EscapeFacts, type EscapeStep, type Side
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-const NONE: EscapeFacts = { owner: false, explore: false, inbox: false, inText: false, sidebarShown: true, searchShown: false, canClose: true }
+const NONE: EscapeFacts = { owner: false, explore: false, inText: false, sidebarShown: true, searchShown: false, canClose: true }
 
 describe('escapeStep: one thing per Esc, the sidebar last (YAZ-4995)', () => {
   const table: [string, Partial<EscapeFacts>, EscapeStep][] = [
     ['a menu, a popover, the slash menu or the link picker shows', { owner: true, searchShown: true }, null],
     ['a dialog shows', { owner: true }, null],
     ['Explore shows (its own Esc closes one layer)', { explore: true }, null],
-    ['the Inbox shows', { inbox: true }, null],
     ['the sidebar shows its search, the keyboard out of the bar', { searchShown: true }, 'leaveSearch'],
     ['the sidebar shows its files, nothing else is open', {}, 'closeSidebar'],
     ['the caret is in the page text', { inText: true }, null],
@@ -95,6 +95,18 @@ describe('useEscapeLast: it reads what was open BEFORE the surfaces run', () => 
     expect(step).not.toHaveBeenCalled()
     esc(tab)
     expect(step).toHaveBeenCalledExactlyOnceWith('leaveSearch')
+  })
+
+  it('YAZ-5011: the Inbox is a tab, no step of the order: Esc in it goes on to the sidebar, as from a page tab', () => {
+    const aside = document.createElement('aside')
+    document.body.appendChild(aside)
+    const inbox = document.createElement('div')
+    inbox.className = 'note-card-inbox'
+    inbox.tabIndex = -1
+    document.body.appendChild(inbox)
+    const step = mount({ aside, searchShown: false, canClose: true })
+    expect(esc(inbox).defaultPrevented).toBe(true)
+    expect(step).toHaveBeenCalledExactlyOnceWith('closeSidebar')
   })
 
   it('Esc in the page text never closes the sidebar', () => {

@@ -100,11 +100,11 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(el.querySelector('.note-card-strip__page')?.textContent).toBe('Cards')
     const hints = () => [...el.querySelectorAll('.note-card-inbox__hints span')].map((h) => h.textContent)
     // Nothing to undo; the digits are on the buttons.
-    expect(hints()).toEqual(['Space Show', 'O Open page', 'E Edit card', '⌘↵ Open page in a new tab', 'Esc Close'])
+    expect(hints()).toEqual(['Space Show', 'O Open page', 'E Edit card', '⌘↵ Open page in a new tab'])
     for (let i = 0; i < 4; i++) press(' ')
     await flush()
     // The last step: Space has nothing more to show.
-    expect(hints()).toEqual(['O Open page', 'E Edit card', '⌘↵ Open page in a new tab', 'Esc Close'])
+    expect(hints()).toEqual(['O Open page', 'E Edit card', '⌘↵ Open page in a new tab'])
   })
 
   it('YAZ-4999: an up-next card shows the chip "Up next" after the ID; its × removes the mark (setNext)', () => {
@@ -241,7 +241,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     palette.remove()
   })
 
-  it('O opens the page on top, landed on the card; YAZ-5003: E opens only the card, in the card window, in Edit card; ⌘↵ in a tab; ⌘Z undoes only when there is an answer to undo; Esc closes', () => {
+  it('O opens the page on top, landed on the card; YAZ-5003: E opens only the card, in the card window, in Edit card; ⌘↵ in a tab; ⌘Z undoes only when there is an answer to undo; YAZ-5011: Esc does not close the Inbox (a tab), and the key is not taken', () => {
     mount(TWO_SIDES)
     press('o')
     expect(props.openPage).toHaveBeenLastCalledWith(PATH, 0, false)
@@ -256,17 +256,38 @@ describe('the Inbox screen (YAZ-4962)', () => {
     render()
     press('z', { metaKey: true })
     expect(review.undo).toHaveBeenCalledOnce()
-    press('Escape')
-    expect(review.close).toHaveBeenCalledOnce()
+    const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    act(() => void el.querySelector('.note-card-inbox')!.dispatchEvent(esc))
+    expect(esc.defaultPrevented).toBe(false)
+    expect(review.close).not.toHaveBeenCalled()
   })
 
-  it('the done screen: "Inbox complete." and one quiet line; only Esc (and ⌘Z with an answer to undo) in the hint row', () => {
+  it('YAZ-5011: no × in the head; behind a page tab (shown false) the Inbox is hidden, keeps its step, and hears no key', async () => {
+    mount(TWO_SIDES)
+    expect(el.querySelector('[aria-label="Close the review"]')).toBeNull()
+    expect([...el.querySelectorAll('.note-card-inbox__head button')].map((b) => b.textContent)).not.toContain('×')
+    press(' ')
+    expect(shown()).toEqual(['France'])
+    act(() => root?.render(<NoteCardInbox {...props} review={review} session={session} shown={false} />))
+    const inbox = el.querySelector<HTMLElement>('.note-card-inbox')!
+    expect(inbox.hidden).toBe(true)
+    press(' ', {}, document.body)
+    press('2', {}, document.body)
+    press('o', {}, document.body)
+    expect(review.answer).not.toHaveBeenCalled()
+    expect(props.openPage).not.toHaveBeenCalled()
+    render()
+    expect(inbox.hidden).toBe(false)
+    expect(shown()).toEqual(['France'])
+  })
+
+  it('the done screen: "Inbox complete." and one quiet line; only ⌘Z (with an answer to undo) in the hint row', () => {
     mount(TWO_SIDES)
     session = { ...session, card: null, canUndo: true }
     render()
     expect(el.querySelector('.note-card-inbox__done-title')?.textContent).toBe('Inbox complete.')
     expect(el.querySelector('.note-card-inbox__done-line')?.textContent).toBe('Nothing else is due today. Enjoy your day!')
-    expect([...el.querySelectorAll('.note-card-inbox__hints kbd')].map((k) => k.textContent)).toEqual(['⌘Z', 'Esc'])
+    expect([...el.querySelectorAll('.note-card-inbox__hints kbd')].map((k) => k.textContent)).toEqual(['⌘Z'])
     press(' ')
     press('o')
     expect(props.openPage).not.toHaveBeenCalled()

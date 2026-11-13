@@ -3,8 +3,11 @@
  * middle, in the Explore window's look, over the tab stack. The page under it never renders for it. Read-only: the
  * card is `renderNoteCard`, the page's own render. The session is `useCardReview`'s (YAZ-4967): this screen draws it.
  *
+ *  - THE INBOX IS A TAB (YAZ-5011): App draws this screen for the window's Inbox tab, over the tab stack. Behind a page
+ *    tab it stays mounted, hidden (`shown` false), so it comes back at its card and step; hidden, it hears no key. It
+ *    closes as any tab does (its ✕, ⌘W): no × of its own, and Esc does not close it.
  *  - Head: the card ID first, small and grey (a click copies it, D20; its place in the page's card and the card window
- *    too), the chip "Up next ×" for a card at the top of the Inbox (YAZ-4999 D3), the page's name (O), "3 of 12", ×. No card title: the card is right below it.
+ *    too), the chip "Up next ×" for a card at the top of the Inbox (YAZ-4999 D3), the page's name (O), "3 of 12". No card title: the card is right below it.
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
  *    Space shows the next side, whose hidden words then show one by one. The answer buttons show from the moment the
  *    card shows (YAZ-5010, Yaseen: "Should always be there"): `showAnswers()` fixes what each one writes then (the
@@ -15,7 +18,7 @@
  *    the card; Esc there comes back to this card at the same step), E (YAZ-5003: the CARD WINDOW on top, in Edit card;
  *    Done, Esc or ⌘↵ there saves and comes back to this card at the same step; nothing in a read-only vault, where
  *    Edit card is blocked as in the page), ← → (YAZ-5004: the card before or after, no answer), ⌘↵ (the page in a
- *    background tab: the review stays), Esc (the review closes). A key typed in a field, or while a dialog or a menu
+ *    background tab: the review stays), Esc (only the ⋯ row; then the Esc order goes on, YAZ-5011). A key typed in a field, or while a dialog or a menu
  *    is open (Explore is a dialog), is not the Inbox's; a key with the keyboard elsewhere (the sidebar) neither.
  *  - Under the card, OUTSIDE its frame, as in Mochi (YAZ-5002): while Space has more to show, a quiet "Press Space to
  *    show the next hidden word" (or "the next side"); then the answer buttons; the key hint row last, at the bottom.
@@ -38,6 +41,8 @@ import { HoverTip } from '../components/HoverTip'
 import '../explore/explore.css'
 
 export interface NoteCardInboxProps {
+  /** The Inbox tab is the one on show (YAZ-5011); false: behind a page tab, hidden, and deaf to keys. Default true. */
+  shown?: boolean
   review: CardReviewApi
   session: CardReviewSession
   vaultOf: (path: string) => ExploreVault
@@ -94,7 +99,7 @@ interface Step {
   shown: number
 }
 
-export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, openCard, openInTab, openLinkIn, openLayer, onNotice }: NoteCardInboxProps) {
+export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, openPage, openCard, openInTab, openLinkIn, openLayer, onNotice }: NoteCardInboxProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const card = session.card
   const text = card?.page?.text ?? null
@@ -117,15 +122,15 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
 
   // The keyboard comes to the Inbox when it opens and with each card; back from the Explore stack, App gives it back here.
   useEffect(() => {
-    rootRef.current?.focus({ preventScroll: true })
-  }, [cardKey])
+    if (shown) rootRef.current?.focus({ preventScroll: true })
+  }, [cardKey, shown])
 
   const ratings = answerRatings(review.settings)
   // The ⋯ row (YAZ-5004): open or closed; it closes with the card, Esc and a press outside it.
   const [moreState, setMore] = useState<string | null>(null)
   const moreOpen = moreState !== null && moreState === cardKey
-  const live = useRef({ step, done, counts, card, session, review, ratings, moreOpen })
-  live.current = { step, done, counts, card, session, review, ratings, moreOpen }
+  const live = useRef({ step, done, counts, card, session, review, ratings, moreOpen, shown })
+  live.current = { step, done, counts, card, session, review, ratings, moreOpen, shown }
   useEffect(() => {
     if (!moreOpen) return
     const away = (event: PointerEvent) => {
@@ -145,13 +150,15 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (!isInboxKeyTarget(event, rootRef.current)) return
+      if (!live.current.shown || !isInboxKeyTarget(event, rootRef.current)) return
       const key = noteCardInboxKey(event)
       if (key === null) return
       const { card, session, review, ratings, moreOpen } = live.current
+      // Esc closes the ⋯ row only (YAZ-5011): the Inbox is a tab, so with the row closed the key goes on down the Esc order.
+      if (key.kind === 'close' && !moreOpen) return
       event.preventDefault()
       event.stopPropagation()
-      if (key.kind === 'close') return moreOpen ? setMore(null) : review.close()
+      if (key.kind === 'close') return setMore(null)
       if (key.kind === 'undo') {
         if (session.canUndo && !event.repeat) void review.undo()
         return
@@ -201,7 +208,7 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
   const spaceShows = card?.page == null || done ? null : step.shown < hiddenUpTo(step.sides) ? 'the next hidden word' : 'the next side'
 
   return (
-    <div ref={rootRef} className="note-card-inbox" tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`}>
+    <div ref={rootRef} className="note-card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`}>
       <div className="note-card-inbox__column">
         <div className="note-card-inbox__panel">
           <div className="explore__head note-card-inbox__head">
@@ -220,9 +227,6 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
                 </span>
               </>
             )}
-            <button type="button" className="explore__button" onMouseDown={(e) => e.preventDefault()} onClick={review.close} aria-label="Close the review">
-              ×
-            </button>
           </div>
           <div className="note-card-inbox__body">
             {card === null ? (

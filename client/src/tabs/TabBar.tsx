@@ -35,6 +35,11 @@ export interface TabBarProps {
    * of `tabs` is, whatever `active` says. It is no file: it does not drag and has no menu.
    */
   blank?: boolean
+  /**
+   * The Inbox tab (YAZ-5011): the window's one review session, after the page tabs. No file: no drag, no menu, no
+   * tooltip of a path. While `active`, no tab of `tabs` is the active one. Its ✕ and a middle click close it.
+   */
+  inbox?: { label: string; active: boolean; onActivate: () => void; onClose: () => void }
   /** ⌘T's button, the "+" after the tabs: App shows the blank tab and puts the caret in the search bar. Absent on a mount with no blank tab. */
   onNewTab?: () => void
   /** The blank tab's ✕ and a middle click on it: it closes alone. */
@@ -243,7 +248,7 @@ export interface NavStep {
 /** How long a press on ‹ or › is held before its menu opens instead of a step (YAZ-3647 E3), as in Chrome. */
 export const NAV_HOLD_MS = 500
 
-export function TabBar({ roots, windowId, tabs, active, preview = null, blank = false, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onRaise, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, onOpenStep, zoomLabels, onShowSidebar, onShowInSidebar, onRenameFile, onToggleOverview, overviewOpen = false, onKillAll, onCloseDuplicates, onSaveSession, onNotice, titles, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', asleep = NONE_ASLEEP, onWake }: TabBarProps) {
+export function TabBar({ roots, windowId, tabs, active, preview = null, blank = false, inbox, onNewTab, onCloseBlank, reserveEnd = false, onActivate, onKeep, onClose, onMove, onDropPage, takesDrag, onDropFromWindow, onRaise, onTearOff, onMoveToRight, onMoveToNewWindow, onMoveTargets, onMoveToWindow, onHighlightWindow, onDuplicate, onSetName, canBack, canForward, onBack, onForward, backSteps = [], forwardSteps = [], onGoToStep, onOpenStep, zoomLabels, onShowSidebar, onShowInSidebar, onRenameFile, onToggleOverview, overviewOpen = false, onKillAll, onCloseDuplicates, onSaveSession, onNotice, titles, listState, onToggleFocus, onToggleFavorite, hotkeys = {}, hoverPreview = false, previewScope, diagramDarkColors = 'adapt', asleep = NONE_ASLEEP, onWake }: TabBarProps) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
@@ -799,8 +804,8 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
       >
         {/* ONE keyed list, ghosts and tabs: a tab that closes or moves builds no other tab again. */}
         {tabs.flatMap(({ id, path, name, zoom }, i) => {
-          // Under the blank tab no tab of the strip is the active one (YAZ-2655).
-          const isActive = !blank && id === active
+          // Under the blank tab, and under the Inbox tab (YAZ-5011), no tab of the strip is the active one (YAZ-2655).
+          const isActive = !blank && inbox?.active !== true && id === active
           // A display name stands in for the page name (YAZ-2949 D5); every file call still takes the path.
           const label = name ?? labelOf(path)
           // The tooltip's first line: the page, and " › bullet" when the tab is zoomed (YAZ-3647 E4).
@@ -932,6 +937,28 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
           ]
         })}
         {ghostsBefore(null)}
+        {/* The Inbox tab (YAZ-5011): no file, so no drag and no menu. A click brings it to the front; its ✕ and a middle click close it. */}
+        {inbox !== undefined && (
+          <div ref={inbox.active && !blank ? activeRef : undefined} className={`tabbar__tab tabbar__tab--inbox${inbox.active && !blank ? ' tabbar__tab--active' : ''}`}>
+            <button
+              type="button"
+              role="tab"
+              className="tabbar__btn"
+              aria-selected={inbox.active && !blank}
+              onClick={inbox.onActivate}
+              onAuxClick={(e) => {
+                if (e.button === 1) inbox.onClose()
+              }}
+            >
+              <span className="tabbar__label">
+                <span className="tabbar__name">{inbox.label}</span>
+              </span>
+            </button>
+            <button type="button" className="tabbar__close" aria-label={`Close ${inbox.label}`} title={`Close ${inbox.label}`} onClick={inbox.onClose}>
+              ✕
+            </button>
+          </div>
+        )}
         {/* The blank tab (YAZ-2655 D10): no file, so no drag, no menu and no tooltip. Its ✕ and a middle click close it alone. */}
         {blank && (
           <div ref={activeRef} className="tabbar__tab tabbar__tab--active tabbar__tab--in" style={shiftOf(tabs.length) === 0 ? undefined : { transform: partTransform(shiftOf(tabs.length), 'x') }} {...blankSlot}>
