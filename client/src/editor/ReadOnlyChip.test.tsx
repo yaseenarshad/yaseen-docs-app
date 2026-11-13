@@ -309,12 +309,54 @@ describe('the edit-attempt message (YAZ-4446)', () => {
     expect(card('a')).toBeNull()
     expect(paneChip('a').classList.contains('read-only-chip__button--pulse')).toBe(false)
     attempt('[data-body="a"]')
-    expect(card('a')?.textContent).toBe('This note is Read only.Click Read only to allow edits.')
+    expect(card('a')?.textContent).toBe('This note is Read only.Press Enter to allow edits.')
     expect(status('a')?.contains(card('a'))).toBe(true)
     expect(card('a')?.querySelector('.read-only-message__arrow svg')).not.toBeNull()
     expect(paneChip('a').classList.contains('read-only-chip__button--pulse')).toBe(true)
     // It is the chip's own: the card sits in the chip's box, so nothing in the page moves.
     expect(pane('a').querySelector('.read-only-chip')?.contains(card('a'))).toBe(true)
+  })
+
+  it('YAZ-4997: while the card shows, Enter in its page opens the "Allow edits?" box at once; the page never hears it (no new line); Enter again takes 1 minute', () => {
+    vi.useFakeTimers()
+    mountPanes()
+    const body = container.querySelector<HTMLElement>('[data-body="a"]')!
+    body.tabIndex = -1
+    const heard = vi.fn()
+    body.addEventListener('keydown', heard)
+    // No card yet: Enter is the page's own (its guard shows the card).
+    const first = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    act(() => void body.dispatchEvent(first))
+    expect([first.defaultPrevented, heard.mock.calls.length, pane('a').querySelector('.read-only-chip__ask')]).toEqual([false, 1, null])
+    attempt('[data-body="a"]')
+    // A held Enter's repeat opens nothing.
+    const held = new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true })
+    act(() => void body.dispatchEvent(held))
+    expect([held.defaultPrevented, pane('a').querySelector('.read-only-chip__ask')]).toEqual([true, null])
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    act(() => void body.dispatchEvent(enter))
+    expect(enter.defaultPrevented).toBe(true)
+    expect(heard).toHaveBeenCalledTimes(1) // the page heard the first Enter only
+    expect(pane('a').querySelector('.read-only-chip__ask')).not.toBeNull()
+    expect(card('a')).toBeNull()
+    expect(card('b')).toBeNull()
+    expect(pane('b').querySelector('.read-only-chip__ask')).toBeNull() // the other pane's chip does not answer
+    expect(document.activeElement?.textContent).toBe('Allow edits for 1 minute')
+    // A held Enter on the box picks nothing.
+    const repeat = new KeyboardEvent('keydown', { key: 'Enter', repeat: true, bubbles: true, cancelable: true })
+    act(() => void document.activeElement?.dispatchEvent(repeat))
+    expect([repeat.defaultPrevented, pane('a').querySelector('.read-only-chip__ask') !== null]).toEqual([true, true])
+  })
+
+  it('YAZ-4997: an Enter in a field or on a button of the page is theirs, card or not', () => {
+    vi.useFakeTimers()
+    mountPanes()
+    const field = document.createElement('input')
+    pane('a').append(field)
+    attempt('[data-body="a"]')
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    act(() => void field.dispatchEvent(enter))
+    expect([enter.defaultPrevented, pane('a').querySelector('.read-only-chip__ask')]).toEqual([false, null])
   })
 
   it('the vault\'s word for a note (YAZ-4938): in a vault of cards the card says "This card is Read only."', () => {

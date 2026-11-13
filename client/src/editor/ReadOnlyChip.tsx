@@ -30,6 +30,12 @@
  * after the last one. It shows again no sooner than `READ_ONLY_MESSAGE_GAP_MS` after it last showed. The "Allow
  * edits?" box closes it. It is in the chip's own box, absolute, so nothing in the page moves. Its live region
  * (`role="status"`) is always there, so a screen reader reads the card when it comes.
+ *
+ * THE KEYBOARD WAY IN AND OUT (YAZ-4997, Yaseen: "i want the ability to just hit enter there"). While the card shows,
+ * Enter in its page opens the "Allow edits?" box at once, and the card says so ("Press Enter to allow edits."). The
+ * Enter types nothing (the page is locked) and a held Enter opens nothing: its repeats are no answer, in the box too.
+ * Then Enter takes the focused choice, or ↓ ↑ move first. While the page is unlocked, the host's ⌘↵ and Esc lock it
+ * again (`lockKeys`: a note's text, `createCrepe`'s `lockAgain`; an Explore edit layer): the hover says so.
  */
 import { useEffect, useReducer, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { useUnit } from '../vault/unitWord'
@@ -53,6 +59,8 @@ export interface ReadOnlyChipProps {
   editingUntil?: number | null
   /** "Lock now", beside the chip while an unlock runs. */
   onLock?: () => void
+  /** The host's ⌘↵ and Esc lock the page again while it is unlocked (YAZ-4997): the hover of the chip and of Lock now says so. */
+  lockKeys?: boolean
 }
 
 /** The chip's words while an unlock runs: "Editing · mm:ss", or "until close". */
@@ -62,12 +70,15 @@ export function editingLabel(until: number, now: number): string {
   return `Editing · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`
 }
 
-export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, editingUntil = null, onLock }: ReadOnlyChipProps) {
+export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, editingUntil = null, onLock, lockKeys = false }: ReadOnlyChipProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const chipRef = useRef<HTMLButtonElement>(null)
   const cancelRef = useRef(onCancel)
   cancelRef.current = onCancel
+  const askRef = useRef(onAsk)
+  askRef.current = onAsk
   const message = useReadOnlyMessage(rootRef, chipRef, asking)
+  useEnterAsks(rootRef, message !== null && !asking, askRef)
   // The vault's word for a note (YAZ-4938): "This card is Read only." in a vault of cards.
   const unit = useUnit()
   const editing = editingUntil !== null
@@ -96,6 +107,8 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, edit
   return (
     <div ref={rootRef} className="read-only-chip"
       onKeyDown={(event) => {
+        // A held Enter is no answer (YAZ-4997): its repeats, after the Enter that opened the box, click no choice.
+        if (asking && event.key === 'Enter' && event.repeat) return event.preventDefault()
         // ↓ ↑ Tab ⇧Tab move through the choices, Cancel included; Enter picks the focused one (YAZ-4989).
         if (asking && choiceKey(event, rootRef.current?.querySelector('.read-only-chip__ask') ?? null)) return
         if (!asking || event.key !== 'Escape') return
@@ -104,12 +117,12 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, edit
         onCancel()
         chipRef.current?.focus()
       }}>
-      <button ref={chipRef} type="button" className={`read-only-chip__button${editing ? ' read-only-chip__button--editing' : ''}${message === null ? '' : ' read-only-chip__button--pulse'}`} title={editing ? 'Edits are allowed for now. Click for another time.' : 'Click to allow edits'} aria-haspopup="dialog" aria-expanded={asking} onClick={asking ? onCancel : onAsk}>
+      <button ref={chipRef} type="button" className={`read-only-chip__button${editing ? ' read-only-chip__button--editing' : ''}${message === null ? '' : ' read-only-chip__button--pulse'}`} title={editing ? `Edits are allowed for now. Click for another time.${lockKeys ? ' ⌘↵ or Esc locks it again.' : ''}` : 'Click to allow edits'} aria-haspopup="dialog" aria-expanded={asking} onClick={asking ? onCancel : onAsk}>
         {editing ? <EditingIcon /> : <LockIcon size={12} />}
         <span>{editing ? editingLabel(editingUntil, Date.now()) : 'Read only'}</span>
       </button>
       {editing && onLock !== undefined && (
-        <button type="button" className="read-only-chip__lock" title="Lock this page again now" onClick={onLock}>Lock now</button>
+        <button type="button" className="read-only-chip__lock" title={lockKeys ? 'Lock this page again now (⌘↵ or Esc)' : 'Lock this page again now'} onClick={onLock}>Lock now</button>
       )}
       <div className="read-only-message" role="status">
         {message !== null && (
@@ -124,7 +137,7 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, edit
             </span>
             <span className="read-only-message__text">
               <strong>{message.what === 'drawing' ? 'This drawing is Read only.' : unit('This note is Read only.')}</strong>
-              <span>Click Read only to allow edits.</span>
+              <span>Press Enter to allow edits.</span>
             </span>
           </div>
         )}
@@ -154,6 +167,32 @@ const EditingIcon = () => (
     <path d="M13.5 6.5l4 4" />
   </svg>
 )
+
+/**
+ * Enter while the card shows (YAZ-4997): the "Allow edits?" box, at once. Only an Enter in the card's own page, not in a
+ * field or on a button or link there (each its own Enter), heard in the capture phase, before the page's guard: it types
+ * nothing and tells no new try. A held Enter's repeats open nothing.
+ */
+function useEnterAsks(rootRef: RefObject<HTMLDivElement | null>, on: boolean, askRef: RefObject<() => void>): void {
+  useEffect(() => {
+    if (!on) return
+    const own = rootRef.current
+    const pane = own?.closest(READ_ONLY_PANE)
+    if (own == null || pane == null) return
+    const page = own.closest(READ_ONLY_PAGE)
+    const onKey = (event: Event) => {
+      const key = event as KeyboardEvent
+      if (key.key !== 'Enter' || key.metaKey || key.ctrlKey || key.altKey || key.shiftKey || key.isComposing || key.defaultPrevented) return
+      const target = key.target instanceof Element ? key.target : null
+      if (target === null || target.closest(READ_ONLY_PAGE) !== page || target.closest('input, textarea, select, button, a[href]') !== null) return
+      key.preventDefault()
+      key.stopPropagation()
+      if (!key.repeat) askRef.current()
+    }
+    pane.addEventListener('keydown', onKey, true)
+    return () => pane.removeEventListener('keydown', onKey, true)
+  }, [rootRef, on, askRef])
+}
 
 /** What the card says, and where its arrow points: the chip's middle, from the card's right edge. */
 interface ReadOnlyMessage {

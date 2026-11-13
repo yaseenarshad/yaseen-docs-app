@@ -1958,17 +1958,60 @@ describe('YAZ-4939: a note layer in a Read only vault', () => {
     expect(new Set(unlockedArgs)).toEqual(new Set([true]))
     expect(chip()?.textContent).toMatch(/^Editing · [01]:\d\d$/)
     expect(head().querySelector('.read-only-chip__lock')?.textContent).toBe('Lock now')
-    // Done goes back to reading; E then edits again with no second ask while the unlock runs.
-    act(() => [...head().querySelectorAll<HTMLButtonElement>('.explore__button')].find((b) => b.textContent?.startsWith('Done'))?.click())
+    // The keys that lock again are in the hovers (YAZ-4997).
+    expect(head().querySelector('.read-only-chip__lock')?.getAttribute('title')).toBe('Lock this page again now (⌘↵ or Esc)')
+    // Lock now: back to reading, locked again.
+    act(() => (head().querySelector('.read-only-chip__lock') as HTMLButtonElement).click())
     await flush()
     await flush()
     expect(top().querySelector('.explore__body--edit')).toBeNull()
+    expect(chip()?.textContent).toBe('Read only')
+  })
+
+  it.each(['Esc', 'Done'])('YAZ-4997 (Yaseen wants Esc to go back to read only): %s in edit saves, locks again at once and reads; the next E asks again', async (way) => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
     key(document.activeElement as Element, { key: 'e' })
     await flush()
-    expect(ask()).toBeNull()
+    act(() => choice('10 minutes').click())
+    await flush()
+    expect(chip()?.textContent).toMatch(/^Editing · (9|10):\d\d$/)
+    if (way === 'Esc') key(top().querySelector('[data-editor]') as Element, { key: 'Escape' })
+    else act(() => [...head().querySelectorAll<HTMLButtonElement>('.explore__button')].find((b) => b.textContent?.startsWith('Done'))?.click())
+    await flush()
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).toBeNull()
+    expect(chip()?.textContent).toBe('Read only')
+    expect(head().querySelector('.read-only-chip__lock')).toBeNull()
+    expect(live()).toHaveLength(2) // one step: the layer stays, reading
+    key(document.activeElement as Element, { key: 'e' })
+    await flush()
+    expect(ask()).not.toBeNull()
+  })
+
+  it('YAZ-4997: an Esc a menu of the editor took (the slash menu, the `[[` picker) closes that menu only: the page stays unlocked and in edit', async () => {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    key(document.activeElement as Element, { key: 'e' })
+    await flush()
+    act(() => choice('10 minutes').click())
+    await flush()
+    const editor = top().querySelector<HTMLElement>('.explore__body--edit') as HTMLElement
+    const field = document.createElement('div')
+    field.tabIndex = -1
+    editor.appendChild(field)
+    act(() => field.focus())
+    // The menu's own Esc: it takes the key first.
+    const taken = (e: Event) => e.preventDefault()
+    field.addEventListener('keydown', taken)
+    key(field, { key: 'Escape' })
+    await flush()
     expect(top().querySelector('.explore__body--edit')).not.toBeNull()
-    // Lock now: back to reading, locked again.
-    act(() => (head().querySelector('.read-only-chip__lock') as HTMLButtonElement).click())
+    expect(chip()?.textContent).toMatch(/^Editing · /)
+    field.removeEventListener('keydown', taken)
+    key(field, { key: 'Escape' })
     await flush()
     await flush()
     expect(top().querySelector('.explore__body--edit')).toBeNull()

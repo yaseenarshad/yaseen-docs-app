@@ -742,6 +742,16 @@ function CrepeHost({
   const unlock = useTimedUnlock(autosave.flushNow)
   const readOnly = lockedBase && unlock.until === null
   /**
+   * Esc and ⌘↵ in the text lock this page again while its timed unlock runs (YAZ-4997): save, then lock, as Lock now.
+   * Read at the key (the editor is built once); false with nothing to lock, so the keys keep their own meaning.
+   */
+  const lockAgainRef = useRef<() => boolean>(() => false)
+  lockAgainRef.current = () => {
+    if (!lockedBase || unlock.until === null) return false
+    unlock.lock()
+    return true
+  }
+  /**
    * The page cog's on/off rows (YAZ-4094 G4, G1): IN the note's frontmatter too, read off `disk` the same
    * way, so a toggle in another tab or window, or an agent's edit, shows here at once. A key that is absent
    * follows the app default; the page's own choice wins, also over Off (YAZ-3558 D1). Section indent's
@@ -1039,6 +1049,7 @@ function CrepeHost({
       hotkeys: storage.getSettings()?.hotkeys,
       // Without folded lines says what it left out (YAZ-3653); Settings › Notifications › "Copy, cut or paste" can turn it off.
       onCopyNotice: onNotice === undefined ? undefined : (text) => onNotice(text, 'copy', 'clipboard'),
+      lockAgain: () => lockAgainRef.current(),
     })
     crepeRef.current = crepe
     zoomedOutRef.current = () => tellRealZoom(crepe, zoomKeyRef.current ?? null)
@@ -1450,7 +1461,7 @@ function CrepeHost({
           own: it hands its fold-all button, cog and save state to the folder page's toolbar (YAZ-4584 D38, 10D, below). */}
       {/* The chip's box (YAZ-4939): a time choice unlocks this tab; "Turn Read only off" writes the note's own switch, and is not there while the vault's lock would keep the page locked anyway. */}
       {!inFolderPage && (
-        <StatusChips zoom={documentZoom} onZoom={changeZoom} readOnly={lockedBase ? { asking: askingUnlock, onAsk: () => setAskingUnlock(true), onAllow: (choice) => { setAskingUnlock(false); unlock.allow(choice) }, onCancel: () => setAskingUnlock(false), onTurnOff: diskReadOnly && !vaultLocked ? () => { setAskingUnlock(false); void setReadOnly(false) } : undefined, editingUntil: unlock.until, onLock: unlock.lock } : null} sync={sync} onSyncNow={onSyncNow} save={autosave.status}>
+        <StatusChips zoom={documentZoom} onZoom={changeZoom} readOnly={lockedBase ? { asking: askingUnlock, onAsk: () => setAskingUnlock(true), onAllow: (choice) => { setAskingUnlock(false); unlock.allow(choice) }, onCancel: () => setAskingUnlock(false), onTurnOff: diskReadOnly && !vaultLocked ? () => { setAskingUnlock(false); void setReadOnly(false) } : undefined, editingUntil: unlock.until, onLock: unlock.lock, lockKeys: true } : null} sync={sync} onSyncNow={onSyncNow} save={autosave.status}>
           {foldAllButton}
           {/* The cog's row reads the page's lock; a click while a timed unlock runs is "Lock now". */}
           <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : setAskingUnlock(true)) : void setReadOnly(true))} {...cog} />

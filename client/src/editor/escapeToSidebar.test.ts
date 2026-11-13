@@ -5,7 +5,7 @@
  * (the wikilinkPicker.test.ts idiom): priority 10, so the `[[` picker's dismiss (100) wins while
  * it is open, and the command DECLINES when neither is on screen — Esc stays free elsewhere.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
@@ -16,12 +16,12 @@ import { WIKILINK_PICKER_CLASS, createWikilinkCandidateSource } from './wikilink
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
-async function mount(markdown: string) {
+async function mount(markdown: string, lockAgain?: () => boolean) {
   const root = document.createElement('div')
   document.body.appendChild(root)
   const candidates = createWikilinkCandidateSource()
   candidates.update([nameCandidate('Alpha')])
-  const crepe = createCrepe({ root, defaultValue: markdown, wikilinkCandidates: candidates })
+  const crepe = createCrepe({ root, defaultValue: markdown, wikilinkCandidates: candidates, lockAgain })
   await crepe.create()
   mounted.push({ crepe, root })
   const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
@@ -37,8 +37,8 @@ function treeRow(active: boolean): HTMLElement {
   return row
 }
 
-function press(view: EditorView, key: string): boolean {
-  const event = new KeyboardEvent('keydown', { key, code: key, keyCode: 27, bubbles: true, cancelable: true })
+function press(view: EditorView, key: string, metaKey = false): boolean {
+  const event = new KeyboardEvent('keydown', { key, code: key, keyCode: key === 'Enter' ? 13 : 27, metaKey, ctrlKey: false, bubbles: true, cancelable: true })
   return view.someProp('handleKeyDown', (handler) => handler(view, event)) ?? false
 }
 
@@ -99,5 +99,54 @@ describe('Escape returns to the sidebar (YAZ-947)', () => {
     expect(document.activeElement).not.toBe(active)
     expect(press(view, 'Escape')).toBe(true) // nothing above wants it now — out to the walk
     expect(document.activeElement).toBe(active)
+  })
+})
+
+/**
+ * A page unlocked for a time (YAZ-4997, "hit CMD Enter and/or esc to go back to read only mode"): the editor asks the
+ * host's `lockAgain` at Esc (before the sidebar) and at ⌘↵ (above the note's own ⌘↵). A menu's Esc wins first.
+ */
+describe('Esc and ⌘↵ lock an unlocked page again (YAZ-4997)', () => {
+  it('Esc locks it, and does NOT go to the sidebar; only a later Esc goes on (here: with nothing to lock, to the row)', async () => {
+    const active = treeRow(true)
+    let unlocked = true
+    const lockAgain = vi.fn(() => {
+      if (!unlocked) return false
+      unlocked = false
+      return true
+    })
+    const { view } = await mount('words\n', lockAgain)
+    expect(press(view, 'Escape')).toBe(true)
+    expect(lockAgain).toHaveBeenCalledTimes(1)
+    expect(document.activeElement).not.toBe(active)
+    expect(press(view, 'Escape')).toBe(true)
+    expect(document.activeElement).toBe(active)
+  })
+
+  it('an OPEN [[ picker closes first: that Esc does not lock', async () => {
+    const lockAgain = vi.fn(() => true)
+    const { view } = await mount('start\n', lockAgain)
+    const end = view.state.doc.content.size - 1
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, end)))
+    typeText(view, '[[al')
+    expect(document.querySelector(`.${WIKILINK_PICKER_CLASS} [role="option"]`)).not.toBeNull()
+    expect(press(view, 'Escape')).toBe(true)
+    expect(lockAgain).not.toHaveBeenCalled()
+    expect(press(view, 'Escape')).toBe(true)
+    expect(lockAgain).toHaveBeenCalledTimes(1)
+  })
+
+  it('⌘↵ locks it, above the note\'s own ⌘↵ (the task box cycle); with nothing to lock ⌘↵ keeps its meaning', async () => {
+    let unlocked = true
+    const lockAgain = vi.fn(() => unlocked)
+    const { view } = await mount('- item\n', lockAgain)
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 3)))
+    const before = view.state.doc.toJSON()
+    expect(press(view, 'Enter', true)).toBe(true)
+    expect(lockAgain).toHaveBeenCalledTimes(1)
+    expect(view.state.doc.toJSON()).toEqual(before) // locked, not cycled into a task
+    unlocked = false
+    expect(press(view, 'Enter', true)).toBe(true) // the task box cycle takes it
+    expect(view.state.doc.toJSON()).not.toEqual(before)
   })
 })

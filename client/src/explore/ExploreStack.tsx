@@ -555,7 +555,9 @@ export function ExploreStack({ request, requestLayer = null, closeAsk = 0, vault
       event.preventDefault()
       event.stopPropagation()
       // Esc goes back ONE step (item 5): out of edit first (the note saved as you typed, the scroll place stays), then the layer.
-      if (top.kind === 'note' && top.mode === 'edit') toggleEdit(top.id)
+      // In a Read only vault, out of edit also locks the page again at once (YAZ-4997, Yaseen: "CMD Enter and/or esc to go
+      // back to read only mode"), as ⌘↵ does: the layer's `leaveAsk`.
+      if (top.kind === 'note' && top.mode === 'edit') setLayers((prev) => prev.map((l) => (l.id === top.id && l.kind === 'note' ? { ...l, leaveAsk: (l.leaveAsk ?? 0) + 1 } : l)))
       else pop()
       return
     }

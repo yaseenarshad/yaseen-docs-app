@@ -19,6 +19,8 @@ export interface ReadOnlyChipState {
   /** A timed unlock runs: when it ends, or Infinity until the tab closes; null = locked. */
   editingUntil?: number | null
   onLock?: () => void
+  /** ⌘↵ and Esc lock the page again (YAZ-4997): the chip's hover says so. */
+  lockKeys?: boolean
 }
 
 /**
@@ -41,7 +43,7 @@ export function StatusChips({ children, zoom, onZoom, readOnly, sync, onSyncNow,
     <div className="status-chips">
       {children}
       <DocumentZoom value={zoom} onChange={onZoom} />
-      {readOnly !== null && <ReadOnlyChip asking={readOnly.asking} onAsk={readOnly.onAsk} onAllow={readOnly.onAllow} onCancel={readOnly.onCancel} onTurnOff={readOnly.onTurnOff} editingUntil={readOnly.editingUntil} onLock={readOnly.onLock} />}
+      {readOnly !== null && <ReadOnlyChip asking={readOnly.asking} onAsk={readOnly.onAsk} onAllow={readOnly.onAllow} onCancel={readOnly.onCancel} onTurnOff={readOnly.onTurnOff} editingUntil={readOnly.editingUntil} onLock={readOnly.onLock} lockKeys={readOnly.lockKeys} />}
       {sync != null && onSyncNow !== undefined && <SyncIndicator status={sync} onSyncNow={onSyncNow} />}
       <SaveIndicator status={save} />
     </div>
