@@ -10019,6 +10019,20 @@ describe('several vaults in one window (YAZ-2602)', () => {
     expect(onAllowFileChanges).toHaveBeenCalledExactlyOnceWith(at.a, 'minute')
   })
 
+  it('YAZ-4964: in a window of two vaults, each running lock has its own short form and the name`s button stays first, so the CSS shrinks the locks before the name', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false, now: 1_000_000 })
+    try {
+      const at = pair()
+      const { el } = await mountVaults([vault(at.a, 'Notes', { readOnly: true, fileChangesUntil: 1_000_000 + 58_000 }), vault(at.b, 'Work', { readOnly: true })], { onAllowFileChanges: vi.fn() })
+      const header = el.querySelector('.sidebar__header')!
+      expect([...header.children].map((c) => [c.classList.contains('sidebar__root'), c.classList.contains('vault-lock--allowed')])).toEqual([[true, false], [false, true], [false, false], [false, false]])
+      expect([...header.querySelectorAll('.vault-lock--allowed .vault-lock__time')].map((t) => t.textContent)).toEqual(['0:58', '58s'])
+      expect(header.querySelectorAll('.vault-lock:not(.vault-lock--allowed) .vault-lock__time')).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('YAZ-4985: a Paste of a Cut made in a read-only vault asks THAT vault too: it would move the file out of it; refused, nothing is pasted', async () => {
     let held: ReturnType<typeof clipboard> | undefined
     const onFileAction = vi.fn(async (root: string) => !root.endsWith('/notes'))
@@ -11932,11 +11946,36 @@ describe('the sidebar in a read-only vault (YAZ-4939)', () => {
         const onLockFileChanges = vi.fn()
         const { el } = await mount({ vaults: v({ readOnly: true, fileChangesUntil: 1_000_000 + 60_000 }), onAllowFileChanges: vi.fn(), onLockFileChanges })
         expect(lockOf(el)?.classList.contains('read-only-chip__button--editing')).toBe(true)
-        expect(lockOf(el)?.textContent).toBe('1:00')
+        // The long form and the short one a narrow header shows (YAZ-4964, item 6): the CSS shows one of the two.
+        const times = () => [...(lockOf(el)?.querySelectorAll('.vault-lock__time') ?? [])].map((t) => t.textContent)
+        expect(times()).toEqual(['1:00', '1m'])
         act(() => vi.advanceTimersByTime(8_000))
-        expect(lockOf(el)?.textContent).toBe('0:52')
+        expect(times()).toEqual(['0:52', '52s'])
         act(() => el.querySelector<HTMLButtonElement>('.read-only-chip__lock')?.click())
         expect(onLockFileChanges).toHaveBeenCalledExactlyOnceWith('/v')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('YAZ-4964: while the allowance runs, the lock is the header`s shrinkable part: its two time forms (the short one hidden from a screen reader), and its box offers "Lock now", which a narrow header hides beside it', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: false, now: 1_000_000 })
+      try {
+        const onLockFileChanges = vi.fn()
+        const { el } = await mount({ vaults: v({ readOnly: true, fileChangesUntil: 1_000_000 + 600_000 }), onAllowFileChanges: vi.fn(), onLockFileChanges })
+        const header = el.querySelector('.sidebar__header')!
+        // In the header: the name's button, then the lock with the time and "Lock now", then the collapse button.
+        expect([...header.children].map((c) => c.className.split(' ').find((k) => k.startsWith('sidebar__') || k === 'vault-lock'))).toEqual(['sidebar__root', 'vault-lock', 'sidebar__collapse'])
+        expect(header.querySelector('.vault-lock')?.classList.contains('vault-lock--allowed')).toBe(true)
+        // The name is inside its own button, which the CSS lets shrink only after the lock (`vaultLock.css.test.ts`).
+        expect(header.querySelector('.sidebar__root > .sidebar__root-name')?.textContent).not.toBe('')
+        expect([...header.querySelectorAll('.vault-lock__time')].map((t) => [t.textContent, t.getAttribute('aria-hidden')])).toEqual([['10:00', null], ['10m', 'true']])
+        expect(lockOf(el)?.getAttribute('aria-label')).toBe('File changes allowed, 10:00 left')
+        act(() => lockOf(el)?.click())
+        expect(boxButtons(el)).toEqual(['Allow file changes for 1 minute', '10 minutes', 'Lock now', 'Cancel'])
+        act(() => [...el.querySelectorAll<HTMLButtonElement>('.vault-lock__ask button')][2]?.click())
+        expect(onLockFileChanges).toHaveBeenCalledExactlyOnceWith('/v')
+        expect(el.querySelector('.vault-lock__ask')).toBeNull()
       } finally {
         vi.useRealTimers()
       }
