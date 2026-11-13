@@ -12,7 +12,7 @@ import { searchSettings, settingCandidates, wordMatches, type SettingHit } from 
 const ctx = (sync?: SettingsCtx['sync'], review?: SettingsCtx['review']): SettingsCtx => ({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined, sync, review })
 const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_REVIEW_SETTINGS, save: () => undefined }
 // Settings › Review (YAZ-4967, D14): the note card settings.
-const REVIEW_ROWS = ['enabled', 'buttons', 'retention', 'maxDays', 'newPerDay', 'upNextPerDay', 'newOrder', 'fuzz', 'pauseAfter', 'weights', 'shownHiddenWords', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'howCardsComeBack']
+const REVIEW_ROWS = ['enabled', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardSpacingPreview', 'howCardsComeBack']
 // Settings › Link pills (YAZ-4924): the preview row, then one row for each choice, after This vault.
 const LINK_PILL_ROWS = ['linkPills']
 // Preview links on hover (`folderLinks`) beside Preview rows; Confirm changes after Ask before deleting (YAZ-3746 13AN).
@@ -45,6 +45,7 @@ describe('settingCandidates', () => {
       'contentWidth',
       'lineSpacing',
       'blockGap',
+      'pageSpacingPreview',
       'textFormatting',
       'commentsOrder',
       'commentsResolved',
@@ -319,7 +320,7 @@ describe('searchSettings', () => {
   it('matches on the group title: "section indent" finds the two rows of that group, "spacing" the two of Spacing', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'section indent'))).toEqual(['sectionStep', 'sectionLines'])
     // The note's bullet spacing (the YAZ-3818 demo) says "spacing" too.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['lineSpacing', 'blockGap', 'noteBulletIndent', 'noteBulletGap'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['lineSpacing', 'blockGap', 'pageSpacingPreview', 'noteBulletIndent', 'noteBulletGap'])
   })
 
   it('matches on the group hint too: "guide lines" finds the three guide line rows of Outline (YAZ-4094); "threading" finds the three threading rows and the two Section indent rows, whose hint names Bullet threading (and the line style of the sidebar, whose hint does too, YAZ-3309 D7)', () => {

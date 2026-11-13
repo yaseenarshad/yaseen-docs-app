@@ -138,7 +138,7 @@ const onEachPage = <T,>(el: HTMLElement, read: () => T): [string, T][] =>
 /** General (YAZ-3276 D7), the first page: the settings folder, then Reopen, moved here from Files & Links. */
 const GENERAL_ROWS = ['profile', 'settingsFolder', 'startupWindows', 'vaultOpensOn']
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
-const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'commentsOrder', 'commentsResolved', 'commentsHint']
+const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'commentsOrder', 'commentsResolved', 'commentsHint']
 /** Settings › Sidebar (YAZ-3440 D7): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
 const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules', 'goTo']
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
@@ -170,7 +170,8 @@ const FILES_ROWS = ['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 
 /** Settings › Folder pages (YAZ-4585): its personal rows, with the folder views' hover row moved from Files & Links, the view defaults, the page default. */
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and their style (YAZ-4798) after Group indent.
 const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
-const REVIEW_ROWS = ['enabled', 'buttons', 'retention', 'maxDays', 'newPerDay', 'upNextPerDay', 'newOrder', 'fuzz', 'pauseAfter', 'weights', 'shownHiddenWords', 'cardSpacing', 'howCardsComeBack']
+// YAZ-5050 round 2: in groups — Daily limits, Answers, Scheduling, Card look (with its preview).
+const REVIEW_ROWS = ['enabled', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
  * so the "Used by macOS" rows are not there; with no key changed, neither is "Reset all hotkeys".
@@ -1384,7 +1385,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   const S = REVIEW_ON
   const input = (el: HTMLElement, id: string) => row(el, id)?.querySelector<HTMLInputElement>('.settings__input') as HTMLInputElement
   const reviewRows = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('#settings-review .setting')].map((r) => r.dataset.setting)
-  const ALL = ['enabled', 'buttons', 'retention', 'maxDays', 'newPerDay', 'upNextPerDay', 'newOrder', 'fuzz', 'pauseAfter', 'weights', 'shownHiddenWords', 'cardSpacing', 'howCardsComeBack']
+  const ALL = REVIEW_ROWS
 
   it('is absent with no vault open: no Review item in the nav, and no page holds its section or a row of it', () => {
     const { el } = mount()
@@ -1397,7 +1398,9 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   it('on: the card rows in order, with their words and values; off: the switch alone. No upkeep row is left', () => {
     const { el, rerender } = mountOn('Review', { ...DEFAULT_SETTINGS }, status(), S)
     expect(reviewRows(el)).toEqual(ALL)
-    expect(ALL.slice(0, -1).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Review cards', 'Answer buttons', 'Remember rate', 'Longest wait', 'New cards a day', 'Up next a day', 'New cards first', 'Spread due dates', 'Pause the timer after', 'Weights', 'Shown hidden words', 'Card spacing'])
+    expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Review cards', 'New cards a day', 'Up next a day', 'New cards first', 'Answer buttons', 'Pause the timer after', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Card spacing'])
+    // YAZ-5050 round 2: the groups, in order; the card preview is the last row of Card look.
+    expect([...el.querySelectorAll('#settings-review .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look'])
     // YAZ-5020: "How cards come back" is a quiet closed line; open, it says the same-day rules and why.
     const how = row(el, 'howCardsComeBack')!.querySelector('details')!
     expect([how.open, how.querySelector('summary')?.textContent]).toEqual([false, 'How cards come back'])
@@ -1435,7 +1438,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   it('YAZ-5050: Custom card spacing: its four rows under Card spacing, in the pages\' words; a change is an app setting; Same as pages goes back', () => {
     const custom = { ...DEFAULT_SETTINGS, ...CUSTOM }
     const { el, onChange } = mountOn('Review', custom, undefined, S)
-    expect(reviewRows(el).slice(-6)).toEqual(['cardSpacing', ...CUSTOM_ROWS, 'howCardsComeBack'])
+    expect(reviewRows(el).slice(-7)).toEqual(['cardSpacing', ...CUSTOM_ROWS, 'cardSpacingPreview', 'howCardsComeBack'])
     expect(CUSTOM_ROWS.map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Line spacing', 'Space between blocks', 'Bullet indent', 'Bullet gap'])
     act(() => rowButtons(el, 'cardBlockGap')[3].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardBlockGap: 12 })
@@ -1597,7 +1600,8 @@ describe('SettingsDialog search (D6)', () => {
     type(searchInput(el), 'spacing')
     // The note's bullet spacing (the YAZ-3818 demo) too, under Outline.
     expect(headings(el)).toEqual(['Appearance › Spacing', 'Editor › Outline'])
-    expect(rowIds(el)).toEqual(['lineSpacing', 'blockGap', 'noteBulletIndent', 'noteBulletGap'])
+    // YAZ-5050 round 2: the Spacing preview with its rows.
+    expect(rowIds(el)).toEqual(['lineSpacing', 'blockGap', 'pageSpacingPreview', 'noteBulletIndent', 'noteBulletGap'])
     // Comments is a group of Appearance now, so its breadcrumb says so.
     type(searchInput(el), 'comments')
     // A code key's row says "comment" too (YAZ-3564). General › You (YAZ-4615 D7, who you comment as) leads, then the Appearance group.

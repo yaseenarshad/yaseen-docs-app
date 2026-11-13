@@ -21,7 +21,7 @@
  * "Duplicate IDs" (YAZ-2677 🔒 D7) is beside it while the vault uses IDs, and calls `ids.check`.
  * "ID letters" (🔒 D5) and "Old IDs" (🔒 D6) follow it (`IdLettersControl.tsx`): `ids.reletter`, `ids.backfill`.
  */
-import { useEffect, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { HeaderStyleControl } from '../views/view/StylePanel'
 import { plainHeaderRow } from '../views/view/TableLookSettings'
 import { isIdLetters } from '@shared/noteId'
@@ -489,6 +489,23 @@ const CARD_SPACING_KEYWORDS = [...REVIEW_KEYWORDS, 'spacing', 'line spacing', 'l
 
 /** Every Review row but the switch is there only while review is on. */
 const reviewOn = ({ review }: SettingsCtx): boolean => review?.settings.enabled === true
+
+/** The live spacing previews (YAZ-5050 round 2): loaded only when Settings shows one. */
+const CardSpacingPreview = lazy(() => import('./SpacingPreview').then((m) => ({ default: m.CardSpacingPreview })))
+const PageSpacingPreview = lazy(() => import('./SpacingPreview').then((m) => ({ default: m.PageSpacingPreview })))
+/** A preview row: bare (the preview is its own label), found by "preview" and the spacing words. */
+const previewRow = (id: string, label: string, keywords: readonly string[], Preview: typeof CardSpacingPreview, available?: (ctx: SettingsCtx) => boolean): SettingDef => ({
+  id,
+  label,
+  keywords: [...keywords, 'preview', 'sample'],
+  bare: true,
+  ...(available && { available }),
+  render: () => (
+    <Suspense fallback={null}>
+      <Preview />
+    </Suspense>
+  ),
+})
 /** Card spacing's own four rows (YAZ-5050): only with Custom. */
 const cardSpacingCustom = (ctx: SettingsCtx): boolean => reviewOn(ctx) && ctx.settings.cardSpacing === 'custom'
 
@@ -735,6 +752,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               <Segmented options={BLOCK_GAP_PRESETS} value={settings.blockGap} onChange={(blockGap) => onChange({ ...settings, blockGap })} ariaLabel="Space between blocks" />
             ),
           },
+          // YAZ-5050 round 2 (Yaseen: "add that preview of what the spacing on the text would be like ... in appearance
+          // spacing"): sample text in the page's own classes, redrawn as the two rows above change.
+          previewRow('pageSpacingPreview', 'Preview', ['spacing', 'line spacing', 'line height', 'space between blocks', 'gap', 'paragraph'], PageSpacingPreview),
         ],
       },
       {
@@ -1878,27 +1898,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: REVIEW_KEYWORDS,
             render: ({ review }) => review && <Segmented options={ON_OFF_OPTIONS} value={review.settings.enabled} onChange={(enabled) => review.save({ ...review.settings, enabled })} ariaLabel="Review cards" />,
           },
-          {
-            id: 'buttons',
-            label: 'Answer buttons',
-            hint: 'Two: Forgot and Remembered. Four: Again, Hard, Good and Easy.',
-            keywords: REVIEW_KEYWORDS,
-            available: reviewOn,
-            render: ({ review }) =>
-              review && (
-                <Segmented
-                  options={[
-                    { label: 'Two', value: 2 as const },
-                    { label: 'Four', value: 4 as const },
-                  ]}
-                  value={review.settings.buttons}
-                  onChange={(buttons) => review.save({ ...review.settings, buttons })}
-                  ariaLabel="Answer buttons"
-                />
-              ),
-          },
-          reviewField('retention', RETENTION_FIELD, 'Remember rate', 'How sure you want to be to remember a card when it comes back. Higher means shorter waits. 70 to 99.', '%'),
-          reviewField('maxDays', wholeField('maxDays'), 'Longest wait', 'A card never waits longer than this.', 'days'),
+        ],
+      },
+      // YAZ-5050 round 2 (Yaseen: "the review page is getting a lot in one block should we split it out?"): the same
+      // rows, in groups by what they are for. Only the grouping and the order changed.
+      {
+        title: 'Daily limits',
+        items: [
           reviewField('newPerDay', NEW_PER_DAY_FIELD, 'New cards a day', 'How many new cards the Inbox shows each day. Empty means no limit.', 'cards'),
           // YAZ-5028: beside New cards a day, the same box.
           reviewField('upNextPerDay', UP_NEXT_PER_DAY_FIELD, 'Up next a day', 'How many Up next cards go first in the Inbox each day. The others wait for another day. Empty means no limit.', 'cards'),
@@ -1922,13 +1928,29 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                 />
               ),
           },
+        ],
+      },
+      {
+        title: 'Answers',
+        items: [
           {
-            id: 'fuzz',
-            label: 'Spread due dates',
-            hint: 'Cards made together do not all come back on one day.',
+            id: 'buttons',
+            label: 'Answer buttons',
+            hint: 'Two: Forgot and Remembered. Four: Again, Hard, Good and Easy.',
             keywords: REVIEW_KEYWORDS,
             available: reviewOn,
-            render: ({ review }) => review && <Segmented options={ON_OFF_OPTIONS} value={review.settings.fuzz} onChange={(fuzz) => review.save({ ...review.settings, fuzz })} ariaLabel="Spread due dates" />,
+            render: ({ review }) =>
+              review && (
+                <Segmented
+                  options={[
+                    { label: 'Two', value: 2 as const },
+                    { label: 'Four', value: 4 as const },
+                  ]}
+                  value={review.settings.buttons}
+                  onChange={(buttons) => review.save({ ...review.settings, buttons })}
+                  ariaLabel="Answer buttons"
+                />
+              ),
           },
           {
             // YAZ-5033 (Yaseen's decision: "the time pauses when you are idle; no cap"): the answer timer's idle pause.
@@ -1952,7 +1974,27 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                 />
               ),
           },
+        ],
+      },
+      {
+        title: 'Scheduling',
+        items: [
+          reviewField('retention', RETENTION_FIELD, 'Remember rate', 'How sure you want to be to remember a card when it comes back. Higher means shorter waits. 70 to 99.', '%'),
+          reviewField('maxDays', wholeField('maxDays'), 'Longest wait', 'A card never waits longer than this.', 'days'),
+          {
+            id: 'fuzz',
+            label: 'Spread due dates',
+            hint: 'Cards made together do not all come back on one day.',
+            keywords: REVIEW_KEYWORDS,
+            available: reviewOn,
+            render: ({ review }) => review && <Segmented options={ON_OFF_OPTIONS} value={review.settings.fuzz} onChange={(fuzz) => review.save({ ...review.settings, fuzz })} ariaLabel="Spread due dates" />,
+          },
           reviewField('weights', WEIGHTS_FIELD, 'Weights', 'The 21 FSRS numbers, separated by commas. Change them only if you know FSRS.', undefined, true),
+        ],
+      },
+      {
+        title: 'Card look',
+        items: [
           {
             // YAZ-5005: how the app looks, for every vault (the app's settings, not review.json): `data-shown-hidden-words` on `.app`.
             id: 'shownHiddenWords',
@@ -2023,6 +2065,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                 min={NOTE_BULLET_GAP_MIN} max={NOTE_BULLET_GAP_MAX} step={1} onSet={(cardBulletGap) => onChange({ ...settings, cardBulletGap })} />
             ),
           },
+          // YAZ-5050 round 2: a sample card in the card's own render and styles, redrawn as the rows above change.
+          previewRow('cardSpacingPreview', 'Card preview', [...CARD_SPACING_KEYWORDS, 'cloze', 'highlight', 'underline', 'box'], CardSpacingPreview, reviewOn),
         ],
       },
       {
