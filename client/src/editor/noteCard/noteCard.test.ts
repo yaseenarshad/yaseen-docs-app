@@ -460,23 +460,56 @@ describe('renderNoteCard (the page and the Inbox, D18)', () => {
   it('renders each side as one Markdown text: hidden words inside bold, a list item and a link', () => {
     const el = renderNoteCard(text)
     const [front] = el.querySelectorAll('.note-card__side')
-    expect(front.querySelector('strong')?.innerHTML).toBe('bold <span class="note-card__hidden" data-hidden="0">one</span> more')
+    expect(front.querySelector('strong')?.innerHTML).toBe('bold <span class="note-card__hidden" data-hidden="0"><span class="note-card__word">one</span></span> more')
     expect(front.querySelector('li .note-card__hidden')?.textContent).toBe('two')
     expect(front.querySelector('a[href="https://example.com"] .note-card__hidden')?.textContent).toBe('three')
     expect([...el.querySelectorAll('.note-card__hidden')].map((s) => s.textContent)).toEqual(['one', 'two', 'three', 'four'])
   })
 
-  it('steps: `sides` shows the first sides, `shown` the first hidden words in page order; a word not shown is an empty blank', () => {
+  it('steps: `sides` shows the first sides, `shown` the first hidden words in page order; a word not shown is a blank', () => {
     const step = renderNoteCard(text, { sides: 1, shown: 1 })
     expect(step.querySelectorAll('.note-card__side')).toHaveLength(1)
     expect([...step.querySelectorAll('.note-card__hidden')].map((s) => s.textContent)).toEqual(['one'])
     const blanks = [...step.querySelectorAll<HTMLElement>('.note-card__blank')]
     expect(blanks.map((b) => b.dataset.hidden)).toEqual(['1', '2'])
-    // Not in the DOM, so a selection cannot read it.
-    expect(step.textContent).not.toContain('two')
-    expect(step.textContent).not.toContain('three')
     const last = renderNoteCard(text, { sides: 2, shown: 3 })
     expect([...last.querySelectorAll('.note-card__blank')].map((b) => (b as HTMLElement).dataset.hidden)).toEqual(['3'])
+  })
+
+  it('YAZ-5013: the blank and the shown word are the same two spans with the real word inside — only the class (and what a screen reader hears) changes — and a copy over a blank leaves the word out', () => {
+    const outer = (el: HTMLElement) => el.querySelector<HTMLElement>('[data-hidden="0"]')!
+    const blank = outer(renderNoteCard('Capital of {{France}} today', { shown: 0 }))
+    const shown = outer(renderNoteCard('Capital of {{France}} today', { shown: 1 }))
+    // The word is inside the blank, so the blank is the word's width; nothing on the line moves when it shows.
+    expect(blank.innerHTML).toBe('<span class="note-card__word" aria-hidden="true">France</span>')
+    expect(shown.innerHTML).toBe('<span class="note-card__word">France</span>')
+    expect([blank.className, blank.getAttribute('role'), blank.getAttribute('aria-label')]).toEqual(['note-card__blank', 'img', 'Hidden word'])
+    expect([shown.className, shown.getAttribute('role'), shown.getAttribute('aria-label')]).toEqual(['note-card__hidden', null, null])
+    expect(blank.style.width).toBe('')
+
+    // A selection from "Capital" to "today", over the blank: the copy has no "France".
+    const card = renderNoteCard('Capital of {{France}} today', { shown: 0 })
+    document.body.append(card)
+    const text = card.querySelector('p')!
+    const range = document.createRange()
+    range.setStart(text.firstChild!, 0)
+    range.setEnd(text.lastChild!, text.lastChild!.nodeValue!.length)
+    document.getSelection()!.removeAllRanges()
+    document.getSelection()!.addRange(range)
+    const data = new Map<string, string>()
+    const copy = new Event('copy', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(copy, 'clipboardData', { value: { setData: (type: string, value: string) => data.set(type, value) } })
+    text.dispatchEvent(copy)
+    expect(copy.defaultPrevented).toBe(true)
+    expect(data.get('text/plain')).toBe('Capital of  today')
+    expect(data.get('text/html')).not.toContain('France')
+    // A selection inside the blank's word copies nothing of it.
+    const word = card.querySelector('.note-card__word')!.firstChild!
+    range.setStart(word, 1)
+    range.setEnd(word, 4)
+    text.dispatchEvent(copy)
+    expect(data.get('text/plain')).toBe('')
+    card.remove()
   })
 
   it('YAZ-4974: a pill drawn through the page`s look keeps `wikilink` (and `wikilink--unresolved`) beside the icon`s class; a refresh draws the new look', () => {

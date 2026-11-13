@@ -46,3 +46,15 @@ it('YAZ-5005: Underline on `.app` takes the highlight off a shown hidden word an
   expect(beats(specificity(underline[0].selector), specificity('.note-card .note-card__hidden'))).toBe(true)
   expect(rules(cardCss, '.note-card__blank').every((r) => !r.selector.includes('data-shown-hidden-words'))).toBe(true)
 })
+
+it('YAZ-5013: a blank and a shown word have ONE box model — inline, the same horizontal padding in both looks — and the word in a blank is invisible and not selectable', () => {
+  const both = rules(cardCss, '.note-card .note-card__blank').filter((r) => r.selector.includes('.note-card .note-card__hidden'))
+  expect(both).toHaveLength(1)
+  expect(both[0].body).toMatch(/display:\s*inline;/)
+  expect(both[0].body).toMatch(/padding:\s*0 2px/)
+  // No other rule changes the padding, the width or the display of either one (Underline keeps the padding too).
+  for (const rule of [...rules(cardCss, '.note-card__hidden'), ...rules(cardCss, '.note-card__blank')].filter((r) => r.selector !== both[0].selector))
+    expect(rule.body, rule.selector).not.toMatch(/(^|[\s;])(padding|width|display|margin)(-[a-z]+)?\s*:/)
+  expect(rules(cardCss, '.note-card__blank > .note-card__word').some((r) => /visibility:\s*hidden/.test(r.body))).toBe(true)
+  expect(rules(cardCss, '.note-card__blank').some((r) => /user-select:\s*none/.test(r.body))).toBe(true)
+})

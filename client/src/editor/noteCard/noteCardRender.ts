@@ -9,8 +9,11 @@
  *  - A hidden word (`{{word}}`, `{{1::word}}`) becomes a placeholder in the text BEFORE the Markdown render (a private
  *    use character pair around its number, `markHidden`), so `**bold {{word}} more**`, a hidden word in a list item or
  *    in a link's text render as Markdown does. After DOMPurify, each placeholder in a TEXT node becomes a span:
- *    `.note-card__hidden` (the word, highlighted) while it shows, `.note-card__blank` (empty, about the word's width,
- *    so a selection cannot read it) while it does not.
+ *    `.note-card__hidden` (the word, highlighted or underlined) while it shows, `.note-card__blank` while it does not.
+ *    YAZ-5013 (Yaseen: "never jumping around"): BOTH hold the real word in `.note-card__word`, so the blank is exactly
+ *    the word's width and a show changes only the class. In a blank the word is invisible (`visibility: hidden`), out
+ *    of a selection (`user-select: none`), out of the accessibility tree (`aria-hidden`; the blank says "Hidden word"),
+ *    and out of a copy (`copyWithoutHidden`).
  *  - `show.sides`: how many sides show (default all); `show.shown`: how many hidden words show, in page order over
  *    the whole card (default all). The page shows everything (idea 21 is later); the Inbox steps one word, then one
  *    side, at a time (D18).
@@ -121,17 +124,19 @@ function fillHidden(root: Node, words: readonly string[], shown: number): void {
       if (m.index > from) out.append(value.slice(from, m.index))
       const n = Number(m[1])
       const word = words[n] ?? ''
+      // The same two spans either way (YAZ-5013): only the class (and what a screen reader hears) differs.
       const span = document.createElement('span')
-      if (n < shown) {
-        span.className = 'note-card__hidden'
-        span.append(fragmentOf(word, true))
-      } else {
-        span.className = 'note-card__blank'
+      const inner = document.createElement('span')
+      inner.className = 'note-card__word'
+      inner.append(fragmentOf(word, true))
+      span.className = n < shown ? 'note-card__hidden' : 'note-card__blank'
+      if (n >= shown) {
+        span.setAttribute('role', 'img')
         span.setAttribute('aria-label', 'Hidden word')
-        // About the word's width, never its text (D18: a selection cannot read it).
-        span.style.width = `${Math.min(24, Math.max(3, word.trim().length))}ch`
+        inner.setAttribute('aria-hidden', 'true')
       }
       span.dataset.hidden = String(n)
+      span.append(inner)
       out.append(span)
       from = m.index + m[0].length
     }
@@ -145,6 +150,40 @@ function fillHidden(root: Node, words: readonly string[], shown: number): void {
       if (value?.includes(OPEN) === true) el.setAttribute(name, value.replace(PLACEHOLDER_RE, (_, n: string) => (Number(n) < shown ? (words[Number(n)] ?? '') : '…')))
     }
   }
+}
+
+const BLANK = '.note-card__blank'
+const BLOCK = /^(P|DIV|LI|H[1-6]|BLOCKQUOTE|PRE|TR|UL|OL)$/
+
+/** The plain text of copied nodes: a line break for `<br>` and after each block. */
+function plainText(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.nodeValue ?? ''
+  const el = node as Element
+  if (el.tagName === 'BR') return '\n'
+  const inner = [...node.childNodes].map(plainText).join('')
+  return node.nodeType === Node.ELEMENT_NODE && BLOCK.test(el.tagName) && !inner.endsWith('\n') ? `${inner}\n` : inner
+}
+
+/**
+ * A copy of a selection over a blank (YAZ-5013): the blank's word stays out. `user-select: none` keeps it out of the
+ * browser's own copy; this covers a selection that starts or ends inside it. A selection with no blank is the browser's.
+ */
+export function copyWithoutHidden(event: ClipboardEvent): void {
+  const box = event.currentTarget
+  const selection = document.getSelection()
+  if (!(box instanceof Element) || selection === null || selection.rangeCount === 0 || event.clipboardData === null) return
+  const range = selection.getRangeAt(0)
+  if (![...box.querySelectorAll(BLANK)].some((blank) => range.intersectsNode(blank))) return
+  const common = range.commonAncestorContainer
+  const inBlank = (common instanceof Element ? common : common.parentElement)?.closest(BLANK) != null
+  const part = inBlank ? document.createDocumentFragment() : range.cloneContents()
+  for (const blank of part.querySelectorAll(BLANK)) blank.replaceChildren()
+  const html = document.createElement('div')
+  html.append(part.cloneNode(true))
+  event.preventDefault()
+  event.stopPropagation()
+  event.clipboardData.setData('text/plain', plainText(part).replace(/\n$/, ''))
+  event.clipboardData.setData('text/html', html.innerHTML)
 }
 
 /**
@@ -189,6 +228,7 @@ export function renderNoteCard(text: string, show: NoteCardShow = {}, look?: Not
   const shown = show.shown ?? Number.POSITIVE_INFINITY
   const out = document.createElement('div')
   out.className = 'note-card__sides'
+  out.addEventListener('copy', copyWithoutHidden)
   let from = 0
   for (let i = 0; i < count; i++) {
     const words: string[] = []

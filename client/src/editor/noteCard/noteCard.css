@@ -220,15 +220,20 @@
   margin: 10px -16px;
   background: var(--border);
 }
-.note-card .note-card__hidden {
+/* A hidden word, shown or not (YAZ-5013: "never jumping around"): ONE box model — inline, the real word inside, the
+   same padding — so a show changes only the look and nothing on the line moves. */
+.note-card .note-card__hidden,
+.note-card .note-card__blank {
+  display: inline;
   border-radius: 3px;
   padding: 0 2px;
+}
+.note-card .note-card__hidden {
   background: var(--mark-bg);
 }
 /* Settings › Review › Shown hidden words: Underline (YAZ-5005, app-wide, on `.app`): no highlight, a line under the
    word in the accent colour, light and dark. The blanks (words not shown yet) do not change. */
 [data-shown-hidden-words='underline'] .note-card .note-card__hidden {
-  padding: 0;
   border-radius: 0;
   background: none;
   text-decoration: underline;
@@ -236,11 +241,14 @@
   text-decoration-thickness: 2px;
   text-underline-offset: 3px;
 }
+/* The blank: the word's own width, a line under it; the word inside is invisible, and a selection skips it. An inline
+   border does not change the line's height. */
 .note-card__blank {
-  display: inline-block;
-  height: 1em;
-  vertical-align: -0.15em;
   border-bottom: 2px solid var(--fg-muted);
+  user-select: none;
+}
+.note-card__blank > .note-card__word {
+  visibility: hidden;
 }
 /* A pill in a card opens on a click (idea 6): the hand, not the text caret of a pill in the note. */
 .note-card [data-note-card-link] {
