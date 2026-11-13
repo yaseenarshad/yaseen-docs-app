@@ -119,6 +119,23 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.setNext).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', false)
   })
 
+  it('YAZ-5009: the key row shows "E Edit card" at every step — before Space, between the hidden words, after the last — and on a moved-to card', async () => {
+    mount(TWO_SIDES)
+    const hasE = () => [...el.querySelectorAll('.note-card-inbox__hints span')].map((h) => h.textContent).includes('E Edit card')
+    const seen = [hasE()]
+    for (let i = 0; i < 4; i++) {
+      press(' ')
+      await flush()
+      seen.push(hasE())
+    }
+    expect(seen).toEqual([true, true, true, true, true])
+    session = { ...session, canNext: true, canBack: true, position: 4 }
+    render()
+    expect(hasE()).toBe(true)
+    press('e')
+    expect(props.openCard).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', 0, true)
+  })
+
   it('YAZ-5003: a read-only vault blocks Edit card, as the page does: E opens nothing, and the hint row does not offer E', () => {
     mount(TWO_SIDES)
     const plain = props.vaultOf
