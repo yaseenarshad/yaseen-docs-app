@@ -216,6 +216,63 @@
   background-color: transparent;
 }
 
+/* EDIT CARD WITH THE PAGE'S EDITOR (YAZ-5026): the page's own editor in the card frame, the "Editing" frame in the
+   accent colour, the key row under it. The inner editor is not the page: no gutters, no zoom of its own (the page's
+   zoom is on the card already), the rendered card's padding so Edit card / Done does not jump. */
+.note-card.note-card--editing {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 4px 14px rgba(0, 0, 0, 0.06);
+}
+.note-card .note-card__editor {
+  position: relative;
+  cursor: text;
+}
+.milkdown .note-card .note-card__editor .milkdown > .ProseMirror {
+  zoom: 1;
+  padding: 10px 16px 12px;
+  margin: 0;
+  max-width: none;
+  min-height: 1.6em;
+  white-space: break-spaces;
+}
+.milkdown .note-card .note-card__editor .milkdown > .ProseMirror > :first-child {
+  margin-top: 0;
+}
+/* The block handle is off in a card (the card's own list): the `/` menu stays. */
+.note-card .note-card__editor .milkdown-block-handle {
+  display: none !important;
+}
+/* A hidden word in the card editor: the shown hidden word's look in the card (`.note-card__hidden`). */
+.note-card .note-card__cloze {
+  border-radius: 3px;
+  padding: 0 2px;
+  background: var(--mark-bg);
+}
+[data-shown-hidden-words='underline'] .note-card .note-card__cloze {
+  border-radius: 0;
+  background: none;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+/* The line between two sides: the render's rule (`.note-card__rule`), across the card, selectable as one block. */
+.note-card .note-card__side-break {
+  height: 1px;
+  margin: 12px -16px;
+  background: var(--border);
+  position: relative;
+}
+.note-card .note-card__side-break::after {
+  content: '';
+  position: absolute;
+  inset: -6px 0;
+}
+.note-card .note-card__side-break.ProseMirror-selectednode {
+  background: var(--accent);
+  outline: none;
+}
+
 /* The render (`renderNoteCard`): the sides, a thin rule between two. */
 .note-card__side > :first-child {
   margin-top: 0;

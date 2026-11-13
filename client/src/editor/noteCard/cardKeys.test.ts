@@ -3,7 +3,7 @@
  * replaced by a key, Enter is Edit card; Edit card has the writing look and no marks on other copies of the selected
  * word; ⌘L toggles a hidden word.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { undo } from '@milkdown/kit/prose/history'
@@ -13,7 +13,7 @@ import { EditorSelection } from '@codemirror/state'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
 import { rules } from '../cssRules'
-import { noteCardViewAt } from './noteCardView'
+import { noteCardViewAt, setNoteCardEditorKind } from './noteCardView'
 import { toggleHiddenWord } from './noteCardEdit'
 import css from './noteCard.css?raw'
 
@@ -161,6 +161,9 @@ async function editCard(root: HTMLElement, view: EditorView, pos: number): Promi
 }
 
 describe('YAZ-5007: Edit card has the writing look', () => {
+  // The raw-text fallback (YAZ-5026); the page's editor is `cardEditor.test.ts`.
+  beforeAll(() => setNoteCardEditorKind('code'))
+  afterAll(() => setNoteCardEditorKind('page'))
   it('no marks on other copies of the selected word in the card; another code block keeps them', async () => {
     const { root, view, pos } = await mount()
     const cm = await editCard(root, view, pos)
@@ -188,6 +191,9 @@ describe('YAZ-5007: Edit card has the writing look', () => {
 })
 
 describe('YAZ-5008: ⌘L toggles a hidden word in Edit card', () => {
+  // The raw-text fallback (YAZ-5026); the page's editor is `cardEditor.test.ts`.
+  beforeAll(() => setNoteCardEditorKind('code'))
+  afterAll(() => setNoteCardEditorKind('page'))
   const cmOf = (doc: string, from: number, to: number) => new CodeMirrorView({ doc, selection: EditorSelection.range(from, to) })
 
   it('wraps the selection in {{ }}; unwraps a hidden word (braces included, or its words); no selection does nothing', () => {
@@ -218,6 +224,9 @@ describe('YAZ-5008: ⌘L toggles a hidden word in Edit card', () => {
 })
 
 describe('YAZ-5034: Edit card`s key row, and ⌘⇧↵ for a new side', () => {
+  // The raw-text fallback (YAZ-5026); the page's editor is `cardEditor.test.ts`.
+  beforeAll(() => setNoteCardEditorKind('code'))
+  afterAll(() => setNoteCardEditorKind('page'))
   const shiftModEnter = (cm: CodeMirrorView) =>
     cm.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, metaKey: true, shiftKey: true, bubbles: true, cancelable: true }))
 

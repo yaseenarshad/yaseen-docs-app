@@ -7,6 +7,9 @@
  * jsdom draws the gutter, so `gutter` reads the numbers a user would read.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { setNoteCardEditorKind } from '../noteCard/noteCardView'
+
+afterEach(() => setNoteCardEditorKind('page'))
 import { EditorView as CodeMirrorView } from '@codemirror/view'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -136,6 +139,8 @@ describe('a code block’s own line numbers', () => {
   })
 
   it('a note card`s editor counts in lines of the file too (audit 6): Edit card shows the lines its text is on', async () => {
+    // The raw-text fallback (YAZ-5026: `setNoteCardEditorKind('code')`); the page's editor is `cardEditor.test.ts`.
+    setNoteCardEditorKind('code')
     const file = ['Intro.', '', '```card', 'Front', '---', 'Back', '```', '<!-- card: WIKI-1 -->', ''].join('\n')
     const { crepe, root } = await open(file)
     show(crepe, file)

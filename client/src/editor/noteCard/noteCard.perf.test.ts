@@ -13,6 +13,7 @@ import { budgetMs, median } from '../../test-perf'
 import { createCrepe, noteCardLook } from '../createCrepe'
 import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { renderNoteCard } from './noteCardRender'
+import { noteCardViewAt, noteCardEditorKind } from './noteCardView'
 
 const CARD = (i: number) => `\`\`\`card\nWhat is the capital of {{Country ${i}}}? See [[Atlas]] and **the map**.\n---\nCity ${i}, on the river.\n\`\`\`\n<!-- card: WIKI-${100 + i}, 2026-11-01T09:00Z good, 2026-11-05T09:00Z good -->\n`
 const page = (block: (i: number) => string) => `# Cards\n\n${Array.from({ length: 50 }, (_, i) => `Paragraph ${i} before the card.\n\n${block(i)}`).join('\n')}\nThe end.\n`
@@ -119,5 +120,34 @@ describe('a page with 50 note cards (idea 25)', () => {
     }
     console.log(`note cards perf: an index change with 50 link cards: median ${median(changes).toFixed(2)} ms (pills only); a full render of the 50: median ${median(full).toFixed(2)} ms (before)`)
     expect(median(changes)).toBeLessThan(budgetMs(15))
+  }, 120_000)
+
+  it('perf smoke: Edit card (YAZ-5026, the page`s editor in the card) shows the card`s text in under 150 ms on a page of 50 cards; one inner editor at a time', async () => {
+    expect(noteCardEditorKind()).toBe('page')
+    const source = createWikilinkResolveSource()
+    source.update((t) => (t === 'Atlas' ? '/v/Atlas.md' : null), [], [], true, ['WIKI'])
+    const { crepe } = await mountTimed(CARDS, source)
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    const cards: number[] = []
+    view.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'code_block' && node.attrs.language === 'card') cards.push(pos)
+      return !node.isTextblock
+    })
+    expect(cards).toHaveLength(50)
+    const opens: number[] = []
+    // A warm-up, then ten cards across the page, one after the other.
+    for (const i of [0, 1, 5, 10, 15, 20, 25, 30, 35, 40, 49]) {
+      const card = noteCardViewAt(view, cards[i])!
+      const start = performance.now()
+      card.edit()
+      await card.cardEditor!.ready
+      const ms = performance.now() - start
+      expect(card.cardEditor!.view()!.dom.textContent).toContain(`City ${i}`)
+      if (i !== 0) opens.push(ms)
+      expect(view.dom.querySelectorAll('.note-card__editor')).toHaveLength(1)
+      card.done()
+    }
+    console.log(`note cards perf: Edit card with the page's editor on a page of 50 cards: median ${median(opens).toFixed(1)} ms`)
+    expect(median(opens)).toBeLessThan(budgetMs(150))
   }, 120_000)
 })
