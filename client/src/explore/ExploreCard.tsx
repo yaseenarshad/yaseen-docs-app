@@ -138,7 +138,9 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
             </button>
           </HoverTip>
         </span>
+        {/* ⋯ at every width (YAZ-4964 round 2, item 1): its rows are the card's own (D13), not only a narrow head's. */}
         <HeadMore
+          always
           sections={() => [
             [
               { id: 'open-page', label: 'Open page', onSelect: () => onOpenPage(card?.index ?? index) },

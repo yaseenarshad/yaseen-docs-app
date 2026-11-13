@@ -76,4 +76,8 @@ describe('the folded head of a narrow layer (YAZ-4956)', () => {
   it('folded: the Read only chip shows again while its "Allow edits?" box is open or it has the keyboard', () => {
     expect(rule('.explore__head .explore__lock[data-folded]:is(:focus-within, :has(.read-only-chip__ask))')['display']).toBe('revert')
   })
+
+  it('YAZ-4964 round 2, item 1: a ⋯ that holds rows of its own (the card window\'s) shows at every width', () => {
+    expect(rule('.explore__head .explore__more--always')['display']).toBe('block')
+  })
 })

@@ -2346,6 +2346,20 @@ describe('YAZ-4956: a layer narrower than its head folds the head into ⋯', () 
     expect(compact()).toBe(false)
   })
 
+  it('YAZ-4964 round 2, item 1: the card window\'s ⋯ is there at every width (its own rows: review, history, Copy card ID); a note\'s ⋯ only when folded', async () => {
+    const PAGE = '/v/cards.md'
+    readFile.mockImplementation(async (path) => ({ path, content: '# Cards\n\n```card\nQ\n```\n<!-- card: WIKI-9 -->\n', mtime: 1, size: 1 }))
+    const source = createWikilinkResolveSource()
+    source.update(() => null, [rec(PAGE, 'Cards', { mtime: 1 })], [], true)
+    props.vaultOf = () => ({ root: '/v', wikilinks: source, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly })
+    props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
+    await mount()
+    await flush()
+    layout(700, 200)
+    expect(compact()).toBe(false)
+    expect(more().classList.contains('explore__more--always')).toBe(true)
+  })
+
   it('YAZ-4986: a card layer keeps its card ID; ↗ folds into ⋯', async () => {
     const PAGE = '/v/cards.md'
     readFile.mockImplementation(async (path) => ({ path, content: '# Cards\n\n```card\nCapital of {{France}}\n---\n{{Paris}}\n```\n<!-- card: WIKI-9 -->\n', mtime: 1, size: 1 }))

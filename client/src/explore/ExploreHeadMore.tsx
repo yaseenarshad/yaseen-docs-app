@@ -64,7 +64,9 @@ export function useCompactHead(headRef: RefObject<HTMLElement | null>, titleRef:
         if (!el!.hasAttribute('data-folded')) width.set(part, el!.offsetWidth + gap - (part === 'chip' ? wordWidth : 0))
       })
       const more = head.querySelector<HTMLElement>('.explore__more')
-      if (more !== null && more.offsetWidth > 0) {
+      // A ⋯ that always shows (the card window) is part of the rest of the head; only a fold's ⋯ comes and goes.
+      const moreAlways = more?.classList.contains('explore__more--always') === true
+      if (more !== null && !moreAlways && more.offsetWidth > 0) {
         moreWidth = more.offsetWidth + gap
         now += moreWidth
       }
@@ -79,7 +81,7 @@ export function useCompactHead(headRef: RefObject<HTMLElement | null>, titleRef:
           if (i >= from) sum += width.get(part) ?? 0
           else folded = true
         })
-        return sum + (folded ? moreWidth || MORE_GUESS + gap : 0)
+        return sum + (folded && !moreAlways ? moreWidth || MORE_GUESS + gap : 0)
       }
       let from = 0
       while (from < FOLD_ORDER.length && need(from) > head.clientWidth) from++
@@ -114,10 +116,11 @@ export function useCompactHead(headRef: RefObject<HTMLElement | null>, titleRef:
 }
 
 /**
- * The "⋯" of a folded head, and its menu. CSS shows the button only while the head is folded. The menu is built when it
+ * The "⋯" of a folded head, and its menu. CSS shows the button only while the head is folded; `always` (the card
+ * window, whose ⋯ has rows of its own: review, history, Copy card ID, YAZ-4964) shows it at every width. The menu is built when it
  * opens (`sections`) and drawn in the stack's root, over every layer; Esc closes the menu only, not the layer.
  */
-export function HeadMore({ sections }: { sections: () => MenuSection[] }) {
+export function HeadMore({ sections, always = false }: { sections: () => MenuSection[]; always?: boolean }) {
   const [at, setAt] = useState<{ x: number; y: number; host: Element } | null>(null)
   useEffect(() => {
     if (at === null) return
@@ -135,7 +138,7 @@ export function HeadMore({ sections }: { sections: () => MenuSection[] }) {
     <>
       <button
         type="button"
-        className="explore__button explore__more"
+        className={`explore__button explore__more${always ? ' explore__more--always' : ''}`}
         aria-label="More actions"
         title="More: ‹ ›, zoom, Edit, open in a tab"
         aria-haspopup="menu"

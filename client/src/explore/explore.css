@@ -401,6 +401,10 @@
 .explore__head[data-compact] .explore__more {
   display: block;
 }
+/* The card window's ⋯ has rows of its own (D13: review, history, Copy card ID): it shows at every width (YAZ-4964). */
+.explore__head .explore__more--always {
+  display: block;
+}
 .explore__head [data-folded] {
   display: none;
 }
