@@ -3246,6 +3246,24 @@ describe('the Search tab (YAZ-2638 D2)', () => {
     expect(props.onNotice).not.toHaveBeenCalled()
   })
 
+  it('YAZ-4995 (Yaseen: "esc that closes search and takes you to files ... then hitting esc again should close the side bar"): with Esc closing the sidebar, Esc in the bar goes back to Files with the keyboard on its row, not in the page; Esc on that row is left to App', async () => {
+    const pm = editorStub()
+    const { el, v, props, rerender } = await open({ lens: 'search', escapeClosesSidebar: true, activeFile: '/x' })
+    act(() => searchBar(el)!.focus())
+    await press(searchBar(el)!, 'Escape')
+    expect(props.onLensChange).toHaveBeenCalledExactlyOnceWith('files')
+    await rerender({ lens: 'files' })
+    expect(document.activeElement?.matches('.tree__row')).toBe(true)
+    expect(document.activeElement).not.toBe(pm)
+    // The next Esc on the row: nothing here takes it, so App's last Esc closes the sidebar.
+    const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    act(() => void document.activeElement?.dispatchEvent(esc))
+    expect(esc.defaultPrevented).toBe(false)
+    expect(document.activeElement?.matches('.tree__row')).toBe(true)
+    expect(row(el, `${v}/Alpha.md`)).not.toBeNull()
+    pm.remove()
+  })
+
   it('YAZ-2663 D12: ↑ in the search bar, with the highlight on the first row or with no row, goes to the tab button of Search; with a row above the highlight it moves the highlight, as before', async () => {
     const { el } = await open({ lens: 'search' })
     const input = searchBar(el)!

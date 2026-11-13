@@ -3075,6 +3075,33 @@ describe('Read only for the whole vault, with a timed "Allow edits" (YAZ-4939)',
     expect(chipButton(el)?.textContent).toBe('Read only')
   })
 
+  it('YAZ-4997: Esc and ⌘↵ in the text (`lockAgain`) save and lock an unlocked page at once, as Lock now; with nothing to lock they decline, so the keys keep their meaning', async () => {
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 20, size: body.content.length }))
+    const el = await mount(FM + BODY, 1, { vaultReadOnly: true })
+    const lockAgain = () => (createCrepeMock.mock.calls.at(-1)![0] as unknown as CreateCrepeOptions).lockAgain!()
+    expect(lockAgain()).toBe(false) // locked: nothing to lock
+    await allow(el, '10 minutes')
+    expect(chipButton(el)?.title).toBe('Edits are allowed for now. Click for another time. ⌘↵ or Esc locks it again.')
+    expect(lockNow(el)?.title).toBe('Lock this page again now (⌘↵ or Esc)')
+    type('# Hello\n\nquick\n')
+    let locked = false
+    await act(async () => {
+      locked = lockAgain()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await settle()
+    expect(locked).toBe(true)
+    expect(writeFile.mock.calls.map(([body]) => body.content)).toEqual([`${FM}# Hello\n\nquick\n`])
+    expect(readonlyOf()).toBe(true)
+    expect(chipButton(el)?.textContent).toBe('Read only')
+    expect(lockAgain()).toBe(false)
+  })
+
+  it('YAZ-4997: in a vault that is not read only, a page without its own Read only has nothing to lock: Esc and ⌘↵ keep their meaning', async () => {
+    await mount(FM + BODY, 1, { vaultReadOnly: false })
+    expect((createCrepeMock.mock.calls.at(-1)![0] as unknown as CreateCrepeOptions).lockAgain!()).toBe(false)
+  })
+
   it('"Until I close this tab" unlocks with no clock; the cog’s row still reads On, and a click on it then is "Lock now"', async () => {
     const el = await mount(FM + BODY, 1, { vaultReadOnly: true })
     await allow(el, 'Until I close this tab')

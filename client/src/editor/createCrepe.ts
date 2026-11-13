@@ -442,6 +442,11 @@ export interface CreateCrepeOptions {
   /** Copy as › Without folded lines' toast (YAZ-3653): how many folded lines the copy left out. Absent → no toast. */
   onCopyNotice?: (text: string) => void
   /**
+   * The page's timed unlock (YAZ-4997): while one runs ("Editing · 9:52"), save and lock the page again, as Lock now, and
+   * say true; else false. Esc (before it goes to the sidebar) and ⌘↵ ask it. Absent: neither key locks.
+   */
+  lockAgain?: () => boolean
+  /**
    * The note editor (YAZ-4162 D2, D9): a calendar table's current-time marker moves each minute (`table/tableCalendar.ts`).
    * Absent on the hover preview card and the other previews: they show the marker of the time they opened and start no timer.
    */
@@ -608,13 +613,31 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
  * anything that means something by Esc (the `[[` picker's dismiss at 100, menus) wins first; and
  * it DECLINES when neither is on screen (collapsed sidebar), so Esc stays free everywhere else.
  */
-const escapeToSidebar = $shortcut(() => ({
-  EscapeToSidebar: {
-    key: 'Escape',
-    priority: 10,
-    onRun: () => () => focusSidebar(),
-  },
-}))
+const escapeToSidebar = (lockAgain?: () => boolean) =>
+  $shortcut(() => ({
+    EscapeToSidebar: {
+      key: 'Escape',
+      priority: 10,
+      // An unlocked page locks first (YAZ-4997): this Esc saves it and locks it again, and only a later Esc goes on.
+      onRun: () => () => lockAgain?.() === true || focusSidebar(),
+    },
+  }))
+
+/**
+ * ⌘↵ in a page unlocked for a time (YAZ-4997, Yaseen: "hit CMD Enter and/or esc to go back to read only mode"): save and
+ * lock it again at once, as Lock now. Priority 300, above the note's own ⌘↵ (a note card's Open card at 220, a line
+ * below a table or an embed at 200 and 210, the task box's cycle): while the page is unlocked, the lock wins in the
+ * text. Inside a code block, or a note card's text, the key stays theirs (their editor takes it first). It DECLINES
+ * on a page with nothing to lock: there ⌘↵ keeps its meaning.
+ */
+const lockAgainKey = (lockAgain: () => boolean) =>
+  $shortcut(() => ({
+    LockAgain: {
+      key: 'Mod-Enter',
+      priority: 300,
+      onRun: () => () => lockAgain(),
+    },
+  }))
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // The "Note card" row (YAZ-4961, idea 9): only in a vault that gives IDs, read at each update of the menu's flags.
@@ -889,7 +912,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // YAZ-4800 demo: ⌘↵ / ⌘⇧↵ in a table add a line below / above it (priority 200, above the ⌘↵ above); the code block's
   // keys find their editor through `addLineViews`.
   crepe.editor.use(addLineKeymap).use(addLineViews)
-  crepe.editor.use(escapeToSidebar)
+  crepe.editor.use(escapeToSidebar(opts.lockAgain))
+  if (opts.lockAgain !== undefined) crepe.editor.use(lockAgainKey(opts.lockAgain))
   crepe.editor.use(zoomKeymap)
   // YAZ-1734 D3: a list_item left without its own paragraph (its line deleted) yields its children one level up, whatever path produced it.
   crepe.editor.use(liftHeadlessItems)

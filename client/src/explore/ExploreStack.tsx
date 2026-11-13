@@ -41,8 +41,13 @@ import { frontOrder, layerKindOf, MAX_LAYERS, NOTE_MS, newLayerId, pushLayer, ra
 import './explore.css'
 
 export interface ExploreStackProps {
-  /** Bumped by each ⌘⇧F while the stack shows: one more search layer on top. */
+  /** Bumped by each ask while the stack shows: one more layer on top (a search, or `requestLayer`). */
   request: number
+  /**
+   * Bumped by the Explore key while the stack shows (YAZ-4994: the key toggles): every layer closes at once, a note in
+   * edit saved first, as ⇧Esc does.
+   */
+  closeAsk?: number
   /**
    * With the ask: a layer to open instead of a search — a page for reading ("Open in Explore", YAZ-4936), landed on a
    * note card or in edit mode (the Inbox's O and E, YAZ-4962), or a card window (`mdapp:note-card-open`, D13).
@@ -120,7 +125,7 @@ const inField = (target: EventTarget | null): boolean => target instanceof Eleme
 /** What Tab can reach: the trail's chips and the front layer (round 6). */
 const TABBABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"]), [contenteditable="true"]'
 
-export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf }: ExploreStackProps) {
+export function ExploreStack({ request, requestLayer = null, closeAsk = 0, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf }: ExploreStackProps) {
   const [layers, setLayers] = useState<readonly ExploreLayer[]>([])
   const layersRef = useRef(layers)
   layersRef.current = layers
@@ -260,7 +265,16 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     [],
   )
 
-  // Each ⌘⇧F: a search layer on top (the first one opens the stack).
+  // The Explore key again (YAZ-4994): all of Explore closes, as ⇧Esc. Only a NEW ask: the count the stack mounted with is old.
+  const closeServed = useRef(closeAsk)
+  useEffect(() => {
+    if (closeAsk === closeServed.current) return
+    closeServed.current = closeAsk
+    flushEdits()
+    doors.current.onClose()
+  }, [closeAsk, flushEdits])
+
+  // Each ask: a search layer on top (the first one opens the stack), or the asked layer.
   const served = useRef(0)
   useEffect(() => {
     if (request === served.current) return
@@ -541,7 +555,9 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
       event.preventDefault()
       event.stopPropagation()
       // Esc goes back ONE step (item 5): out of edit first (the note saved as you typed, the scroll place stays), then the layer.
-      if (top.kind === 'note' && top.mode === 'edit') toggleEdit(top.id)
+      // In a Read only vault, out of edit also locks the page again at once (YAZ-4997, Yaseen: "CMD Enter and/or esc to go
+      // back to read only mode"), as ⌘↵ does: the layer's `leaveAsk`.
+      if (top.kind === 'note' && top.mode === 'edit') setLayers((prev) => prev.map((l) => (l.id === top.id && l.kind === 'note' ? { ...l, leaveAsk: (l.leaveAsk ?? 0) + 1 } : l)))
       else pop()
       return
     }

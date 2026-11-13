@@ -421,7 +421,10 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
   useEffect(() => {
     if (editAsk > 0) editRef.current()
   }, [editAsk])
-  /** ⌘↵ in edit (YAZ-4988): Lock now while the unlock runs (it saves and reads, `useTimedUnlock`'s `beforeLock`), else Done. */
+  /**
+   * Leaving edit: ⌘↵ (YAZ-4988), and Esc and Done too (YAZ-4997: Yaseen wants Esc to go back to read only). Lock now while
+   * the unlock runs (it saves and reads, `useTimedUnlock`'s `beforeLock`), else Done; the next E asks again.
+   */
   const leaveEdit = () => {
     if (unlocked) unlock.lock()
     else if (mode === 'edit') onToggleEdit()
@@ -445,6 +448,7 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
         onCancel={() => setAsking(false)}
         editingUntil={unlock.until}
         onLock={unlock.lock}
+        lockKeys
       />
     </span>
   )
@@ -459,7 +463,7 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
     const noteRows: MenuSection = [
       ...(fold === null ? [] : [{ id: 'fold-all', label: fold === 'expand' ? 'Expand all' : 'Collapse all', disabled: fold === 'none', onSelect: () => view !== null && setAllDocumentFolds(fold === 'collapse')(view.state, view.dispatch) }]),
       ...(!note || !locked ? [] : unlocked ? [{ id: 'lock', label: 'Lock now', hint: unlock.until === null ? undefined : editingLabel(unlock.until, Date.now()), onSelect: unlock.lock }] : mode === 'read' ? [{ id: 'allow', label: 'Allow edits…', onSelect: () => setAsking(true) }] : []),
-      ...(!note ? [] : mode === 'read' ? [{ id: 'edit', label: 'Edit', hint: 'E', onSelect: edit }] : [{ id: 'done', label: 'Done', hint: 'esc', onSelect: onToggleEdit }]),
+      ...(!note ? [] : mode === 'read' ? [{ id: 'edit', label: 'Edit', hint: 'E', onSelect: edit }] : [{ id: 'done', label: 'Done', hint: 'esc', onSelect: leaveEdit }]),
     ]
     return [
       steps === undefined ? [] : stepRows(steps),
@@ -520,8 +524,8 @@ export function ExploreNote({ path, mode, gone = 0, title, idInTitle = false, va
                   Editing
                 </span>
               )}
-              {/* Done (item 5): back to reading, as Esc does; the note saved as you typed. ⌘↵ (YAZ-4988) reads too, and locks again at once in a Read only vault. */}
-              <button type="button" className="explore__button" data-fold-part="edit" onClick={onToggleEdit} title={locked ? 'Back to reading (Esc); ⌘↵ also locks again' : 'Back to reading (Esc or ⌘↵)'}>
+              {/* Done (item 5): back to reading, as Esc and ⌘↵ (YAZ-4988) do; the note saved as you typed. In a Read only vault all three lock again at once (YAZ-4997). */}
+              <button type="button" className="explore__button" data-fold-part="edit" onClick={leaveEdit} title={locked ? 'Save, lock again and read (Esc or ⌘↵)' : 'Back to reading (Esc or ⌘↵)'}>
                 Done<kbd>esc</kbd>
                 <kbd>⌘↵</kbd>
               </button>

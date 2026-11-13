@@ -2649,7 +2649,7 @@ describe('App ⌘⇧F explore (YAZ-2571)', () => {
     expect(done()).toBe(true)
   }
   const esc = () => act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
-  it('File › Explore Vault… mounts the stack (its own chunk) with the caret in its search; ⌘⇧F again adds a search; Esc closes one layer, then the stack', async () => {
+  it('File › Explore Vault… mounts the stack (its own chunk) with the caret in its search; Esc closes one layer, then the stack', async () => {
     const { el, emitExplore } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
     expect(el.querySelector('.explore')).toBeNull()
     act(() => emitExplore())
@@ -2658,22 +2658,31 @@ describe('App ⌘⇧F explore (YAZ-2571)', () => {
     expect(stack.getAttribute('aria-modal')).toBe('true')
     expect(document.activeElement).toBe(stack.querySelector('.explore__input'))
     expect(stack.querySelectorAll('.explore__layer')).toHaveLength(1)
-    act(() => emitExplore())
-    expect(el.querySelectorAll('.explore__layer')).toHaveLength(2)
-    expect(document.activeElement).toBe(el.querySelectorAll('.explore__input')[1])
-    esc()
-    await until(() => el.querySelectorAll('.explore__layer').length === 1)
-    expect(document.activeElement).toBe(el.querySelector('.explore__input'))
     esc()
     expect(el.querySelector('.explore')).toBeNull()
+  })
+
+  it('YAZ-4994: the Explore key toggles: again, with layers open, ALL of Explore closes and the page has the keyboard back', async () => {
+    const { el, emitExplore } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    // The page's keyboard: what had it when Explore opened gets it back.
+    const page = document.createElement('button')
+    el.appendChild(page)
+    page.focus()
+    act(() => emitExplore())
+    await until(() => el.querySelector('.explore') !== null)
+    expect(document.activeElement).toBe(el.querySelector('.explore__input'))
+    act(() => emitExplore())
+    expect(el.querySelector('.explore')).toBeNull()
+    expect(document.activeElement).toBe(page)
+    // And once more: it opens again, a fresh search.
+    act(() => emitExplore())
+    await until(() => el.querySelectorAll('.explore__layer').length === 1)
   })
 
   it('⌘K with the stack open closes the whole stack first, then runs its sidebar search (Yaseen: "⌘K keeps its sidebar search"); the keyboard is not given back', async () => {
     const { el, emitExplore, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
     act(() => emitExplore())
     await until(() => el.querySelector('.explore') !== null)
-    act(() => emitExplore())
-    expect(el.querySelectorAll('.explore__layer')).toHaveLength(2)
     act(() => emitSearch())
     expect(el.querySelector('.explore')).toBeNull()
     expect(captured.sidebar?.lens).toBe('search')
@@ -2746,6 +2755,87 @@ describe('App ⌘K search (D4, YAZ-804)', () => {
     // A lens asks for no caret.
     act(() => captured.sidebar?.onLensChange('files'))
     expect([captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual(['files', false])
+  })
+
+  it('YAZ-4994: the search key toggles: again, with the keyboard in the search, the sidebar is as the key found it and the page has the keyboard', async () => {
+    const { el, bridge, emitSearch, emitToggleSidebar } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true })
+    const page = document.createElement('button')
+    el.appendChild(page)
+    page.focus()
+    act(() => emitSearch())
+    expect(captured.sidebar?.lens).toBe('search')
+    // The search bar takes the keyboard (the stub's own box stands in for it).
+    const bar = el.querySelector<HTMLElement>('[data-sidebar]') as HTMLElement
+    bar.tabIndex = -1
+    bar.focus()
+    act(() => emitSearch())
+    expect(el.querySelector('[data-sidebar]')).toBeNull() // the key opened the sidebar: it closes again
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ sidebarCollapsed: true })
+    expect(document.activeElement).toBe(page)
+    act(() => emitToggleSidebar())
+    expect(captured.sidebar?.lens).toBe('favorites') // the lens the window last showed
+  })
+
+  it('YAZ-4994: from an open sidebar the second press keeps the sidebar and shows its lens again; with the keyboard out of the sidebar the key goes back INTO the search', async () => {
+    const { el, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarLens: 'files' })
+    const page = document.createElement('button')
+    el.appendChild(page)
+    page.focus()
+    act(() => emitSearch())
+    act(() => captured.sidebar?.onSearchFocusHandled())
+    // The keyboard went back to the page (a click in it): the Search tab shows, and the key asks for the bar again.
+    act(() => emitSearch())
+    expect([captured.sidebar?.lens, captured.sidebar?.pendingSearchFocus]).toEqual(['search', true])
+    const bar = el.querySelector<HTMLElement>('[data-sidebar]') as HTMLElement
+    bar.tabIndex = -1
+    bar.focus()
+    act(() => emitSearch())
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(document.activeElement).toBe(page)
+  })
+
+  it('YAZ-4995, Yaseen\'s example: ⌘K opens the search → Esc shows the files → Esc closes the sidebar; another Esc never opens it', async () => {
+    const { el, bridge, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarLens: 'files' })
+    const esc = () => {
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      act(() => void (document.activeElement ?? document.body).dispatchEvent(event))
+      return event
+    }
+    act(() => emitSearch())
+    expect(captured.sidebar?.lens).toBe('search')
+    // The keyboard in the sidebar (the stub's box stands in for its search and its rows).
+    const aside = el.querySelector<HTMLElement>('[data-sidebar]') as HTMLElement
+    aside.tabIndex = -1
+    aside.focus()
+    expect(esc().defaultPrevented).toBe(true)
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(esc().defaultPrevented).toBe(true)
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ sidebarCollapsed: true })
+    expect(esc().defaultPrevented).toBe(false)
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+  })
+
+  it('YAZ-4995: Esc with the caret in the page text, or with a menu open, does not close the sidebar', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarLens: 'files' })
+    const text = document.createElement('div')
+    text.setAttribute('contenteditable', 'true')
+    el.appendChild(text)
+    text.focus()
+    act(() => void text.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    // A menu that closes on the window's Esc: this Esc is the menu's.
+    text.remove()
+    const menu = document.createElement('div')
+    menu.className = 'ctx-menu'
+    document.body.appendChild(menu)
+    act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    menu.remove()
+    act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
   })
 
   it('S16 (YAZ-2638): a switch to a different vault from the Search tab lands on Files (YAZ-1846), on a sidebar of its own key — so the text is gone', async () => {

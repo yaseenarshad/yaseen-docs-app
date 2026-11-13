@@ -897,6 +897,21 @@ describe('buildMenuTemplate — the user\'s keys (YAZ-3397 D2, D6)', () => {
     expect(item(template, 'View', 'menu.view.zoom-reset')?.accelerator).toBe('CmdOrCtrl+0')
   })
 
+  it('YAZ-4994: a search key the user moved (⌘⇧F for Search, Explore elsewhere) sends the ONE search event each time, so the renderer toggles on that key', () => {
+    const handlers = noopHandlers()
+    const search = vi.spyOn(handlers, 'search')
+    const explore = vi.spyOn(handlers, 'explore')
+    const template = build(RECENTS, false, handlers, [], null, { search: 'CmdOrCtrl+Shift+F', explore: 'CmdOrCtrl+Alt+F' })
+    const row = item(template, 'File', 'menu.file.search')
+    expect(row?.accelerator).toBe('CmdOrCtrl+Shift+F')
+    expect(item(template, 'File', 'menu.file.explore')?.accelerator).toBe('CmdOrCtrl+Alt+F')
+    const press = () => (row?.click as unknown as () => void)()
+    press()
+    press()
+    expect(search).toHaveBeenCalledTimes(2)
+    expect(explore).not.toHaveBeenCalled()
+  })
+
   it('while a recorder listens no item has a key — a role gets an empty one, so Electron gives it none', () => {
     const template = build(RECENTS, true, noopHandlers(), [{ key: 2, path: '/vaults/notes', name: 'notes' }], 'drawing', {}, true)
     const items = allItems(template).filter((i) => i.type !== 'separator')
