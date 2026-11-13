@@ -8,20 +8,24 @@
  * On the right today's work across the vault, quiet ("Today: 31 cards · 9 min", YAZ-5033), then "3 of 12", which counts the filter's cards. Under it the progress bar (YAZ-5020, as
  * Mochi's): it fills as the session's cards are answered, a Forgot in red, a Remembered in grey.
  *
- * Add more for today (YAZ-5042): the counts stay in this one menu. The Up next and New cards rows say how many cards
- * wait past today's number, "38 more", and "Add 10" adds one more day of the Settings number for today only; the menu
- * stays open, so the row's count grows (10 → 20) and "28 more · Add 10" stays while cards wait. A row with nothing
- * waiting (or no limit) is as before. In a narrow window "38 more" goes first; "Add 10" stays.
+ * Add more for today (YAZ-5042): the counts stay in this one menu. Round 2 (Yaseen: "2 and then its whatever the
+ * total is? like / 5"): the Up next and New cards rows read "today / total" — "2 / 5", "10 / 48"; the total is every
+ * card of that kind and never changes with an add. With no limit the count stands alone, as before. A click on a count
+ * while cards wait turns the row into "Add [10] more new cards" (`AddMoreField`): Enter adds that many to today
+ * (10 + 12 = 22), Esc goes back; the menu stays open, so the count changes before your eyes. After an add the row
+ * says "22 / 48 · Reset": Reset sets today back to the Settings number, never below today's work. No pop-up: it
+ * changes today only, and the line under the buttons (Undo, ⌘Z) takes back the last add or Reset.
  *
  * Archived (YAZ-5046): the last row, under a line, with how many cards of the scope are archived. It is no review: its
  * pick shows the archived cards as a list, to look at, each with Unarchive (`NoteCardInbox`).
  */
-import { Fragment, useRef, useState, type ReactElement } from 'react'
+import { Fragment, useRef, useState, type MouseEvent, type ReactElement } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import type { CardRating } from '@shared/cardLine'
 import type { AddKind } from '@shared/cardSchedule'
 import type { CardFilter, CardReviewSession } from './useCardReview'
 import { todayWork } from './reviewTime'
+import { AddMoreField } from './AddMoreField'
 import { ArchiveIcon, ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './noteCardInboxIcons'
 
 /** The filters in menu order, with their names and glyphs. */
@@ -52,19 +56,27 @@ export function progressRuns(answered: readonly CardRating[]): { missed: boolean
 interface NoteCardInboxBarProps {
   session: CardReviewSession
   setFilter: (filter: CardFilter) => void
-  /** Add more for today (YAZ-5042): the Up next or New cards row's Add. */
-  addCards?: (kind: AddKind) => void
+  /** Add more for today (YAZ-5042): the Up next or New cards row's "Add [n] more" (round 2: the typed number). */
+  addCards?: (kind: AddKind, count?: number) => void
+  /** Reset (YAZ-5042 round 2): today's number of the kind back to the Settings number. */
+  resetCards?: (kind: AddKind) => void
   /** A click on a part of the card's place: the folder page of the vault or a folder, or the page, in a tab. */
   openPlace?: (path: string) => void
 }
 
-export function NoteCardInboxBar({ session, setFilter, addCards, openPlace }: NoteCardInboxBarProps) {
+export function NoteCardInboxBar({ session, setFilter, addCards, resetCards, openPlace }: NoteCardInboxBarProps) {
   const button = useRef<HTMLButtonElement>(null)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  // YAZ-5042 round 2: the row whose count turned into "Add [n] more"; it closes with the menu.
+  const [adding, setAdding] = useState<AddKind | null>(null)
+  const closeMenu = () => {
+    setMenu(null)
+    setAdding(null)
+  }
   const current = CARD_FILTERS.find((f) => f.id === session.filter) ?? CARD_FILTERS[0]
   const ScopeIcon = session.scope === 'page' ? PageIcon : session.scope === 'folder' ? FolderIcon : VaultIcon
   const toggle = () => {
-    if (menu !== null) return setMenu(null)
+    if (menu !== null) return closeMenu()
     const r = button.current?.getBoundingClientRect()
     setMenu({ x: r?.left ?? 0, y: (r?.bottom ?? 0) + 4 })
   }
@@ -123,44 +135,64 @@ export function NoteCardInboxBar({ session, setFilter, addCards, openPlace }: No
           </span>
         )}
         {menu !== null && (
-          <ContextMenuSurface x={menu.x} y={menu.y} onClose={() => setMenu(null)} className="note-card-inbox__filter-menu">
+          <ContextMenuSurface x={menu.x} y={menu.y} onClose={closeMenu} className="note-card-inbox__filter-menu">
             {CARD_FILTERS.map((f) => {
-              // YAZ-5042: the cards that wait past today's number, on the two rows that have a number a day.
+              // YAZ-5042: the two rows that have a number a day read "today / total" (round 2), and add on a click.
               const kind: AddKind | null = f.id === 'new' ? 'new' : f.id === 'next' ? 'next' : null
               const add = kind === null || addCards === undefined ? 0 : session.adds[kind]
               const count = f.id === 'archived' ? session.archived.length : session.counts[f.id]
+              const total = kind !== null && session.limited[kind] ? count + session.more[kind] : null
+              const reset = kind !== null && resetCards !== undefined && session.canReset[kind]
+              if (kind !== null && adding === kind && add > 0)
+                return (
+                  <div key={f.id} className="note-card-inbox__filter-row" role="none" data-adding="">
+                    <span className="ctx-menu__item note-card-inbox__filter-item note-card-inbox__filter-adding">
+                      <span className="note-card-inbox__filter-name">
+                        <f.icon />
+                        <AddMoreField
+                          kind={kind}
+                          look="menu"
+                          start={add}
+                          onAdd={(n) => {
+                            setAdding(null)
+                            addCards?.(kind, n)
+                          }}
+                          onCancel={() => setAdding(null)}
+                        />
+                      </span>
+                    </span>
+                  </div>
+                )
+              const pick = (e: MouseEvent) => {
+                // A click on a count while cards wait: "Add [n] more" (the menu stays open); elsewhere on the row: the filter.
+                if (kind !== null && add > 0 && e.target instanceof Element && e.target.closest('.note-card-inbox__count') !== null) return setAdding(kind)
+                closeMenu()
+                setFilter(f.id)
+              }
               return (
                 <Fragment key={f.id}>
                   {/* YAZ-5046: a line sets Archived apart: its cards are to look at, not to review. */}
                   {f.id === 'archived' && <div className="note-card-inbox__filter-sep" role="separator" />}
                   <div className="note-card-inbox__filter-row" role="none">
-                    <button
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={f.id === session.filter}
-                      className="ctx-menu__item note-card-inbox__filter-item"
-                      data-filter={f.id}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => {
-                        setMenu(null)
-                        setFilter(f.id)
-                      }}
-                    >
+                    <button type="button" role="menuitemradio" aria-checked={f.id === session.filter} className="ctx-menu__item note-card-inbox__filter-item" data-filter={f.id} onMouseDown={(e) => e.preventDefault()} onClick={pick}>
                       <span className="note-card-inbox__filter-name">
                         <f.icon />
                         {f.label}
                       </span>
-                      <span className="note-card-inbox__count" data-filter={f.id} data-empty={count === 0 || undefined}>
-                        {count}
+                      <span
+                        className="note-card-inbox__count"
+                        data-filter={f.id}
+                        data-empty={count === 0 || undefined}
+                        data-add={add > 0 || undefined}
+                        title={kind !== null && add > 0 ? `${session.more[kind]} more wait. Click to add.` : undefined}
+                      >
+                        {total === null ? count : `${count} / ${total}`}
                       </span>
                     </button>
-                    {kind !== null && add > 0 && (
-                      <>
-                        <span className="note-card-inbox__waiting">{session.more[kind]} more</span>
-                        <button type="button" role="menuitem" className="note-card-inbox__add" data-kind={kind} aria-label={`Add ${add} ${kind === 'new' ? 'new cards' : 'Up next cards'} for today`} onMouseDown={(e) => e.preventDefault()} onClick={() => addCards?.(kind)}>
-                          Add {add}
-                        </button>
-                      </>
+                    {reset && (
+                      <button type="button" role="menuitem" className="note-card-inbox__reset" data-kind={kind} aria-label={`Reset today's ${kind === 'new' ? 'new cards' : 'Up next cards'} to the Settings number`} onMouseDown={(e) => e.preventDefault()} onClick={() => resetCards?.(kind)}>
+                        Reset
+                      </button>
                     )}
                   </div>
                 </Fragment>

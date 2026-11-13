@@ -87,6 +87,7 @@ import { NoteCardStateChip, answerIcon, answerLine } from './noteCardInboxChip'
 import { useInboxCardWidth } from './inboxCardWidth'
 import { NoteCardInboxHints } from './NoteCardInboxHints'
 import { KeyCaps } from '../keys/KeyCaps'
+import { AddMoreField } from './AddMoreField'
 import { useAnswerTimer } from './answerTimer'
 import { todayWork } from './reviewTime'
 import { revealInScroller } from '../editor/find/leastScroll'
@@ -162,11 +163,11 @@ export function waitingLine(more: Record<AddKind, number>, kinds: readonly AddKi
   return `${parts.join(' and ')} ${one ? 'waits' : 'wait'} for another day.`
 }
 
-/** An add's button (YAZ-5042): "Add 10 new cards", "Add 2 Up next". */
-export const addLabel = (kind: AddKind, n: number): string => (kind === 'new' ? `Add ${n} new card${n === 1 ? '' : 's'}` : `Add ${n} Up next`)
-
 /** The add's line (YAZ-5042), after its "+": "Added 10 new cards for today". */
 export const addedLine = (kind: AddKind, n: number): string => `Added ${n} ${kind === 'new' ? 'new' : 'Up next'} card${n === 1 ? '' : 's'} for today`
+
+/** A Reset's line (YAZ-5042 round 2), after its "↺": "Reset today's new cards" (back to the Settings number). */
+export const resetLine = (kind: AddKind): string => `Reset today's ${kind === 'new' ? 'new cards' : 'Up next'}`
 
 /**
  * The Archived list (YAZ-5046): the scope's archived cards, to look at. Each row: its title (a click opens the card
@@ -363,10 +364,9 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
   const addButtons =
     addKinds.length === 0 ? null : (
       <div className="note-card-inbox__done-adds">
+        {/* Round 2: the same field as the cards menu's, "Add [10] new cards"; the number starts at the Settings number. */}
         {addKinds.map((k) => (
-          <button key={k} type="button" className="explore__button note-card-inbox__done-add" data-kind={k} onMouseDown={(e) => e.preventDefault()} onClick={() => review.addCards(k)}>
-            {addLabel(k, session.adds[k])}
-          </button>
+          <AddMoreField key={k} kind={k} look="done" start={session.adds[k]} onAdd={(n) => review.addCards(k, n)} />
         ))}
       </div>
     )
@@ -391,7 +391,7 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
 
   return (
     <div ref={rootRef} className="note-card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`}>
-      <NoteCardInboxBar session={session} setFilter={review.setFilter} addCards={review.addCards} openPlace={openPlace} />
+      <NoteCardInboxBar session={session} setFilter={review.setFilter} addCards={review.addCards} resetCards={review.resetCards} openPlace={openPlace} />
       <div ref={columnRef} className="note-card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
         {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height
             with no chip (the done screen), so the card does not move. YAZ-5051 (Yaseen: "so that the card is just pure"):
@@ -551,10 +551,10 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
         {/* The last answer's line (YAZ-5025 round 2): centred under the buttons; the row keeps its height when empty. */}
         <div className="note-card-inbox__last" role="status" aria-live="polite" data-rating={session.lastAdd === null ? line?.rating : undefined} data-kind={session.lastAdd === null ? undefined : 'add'}>
           {session.lastAdd !== null ? (
-            // YAZ-5042: the add, while it is the last thing done; its Undo is the hook's undo, as ⌘Z.
+            // YAZ-5042: the add (round 2: or the Reset), while it is the last thing done; its Undo is the hook's undo, as ⌘Z.
             <>
-              <span className="note-card-inbox__last-mark">+</span>
-              <span className="note-card-inbox__last-text"> {addedLine(session.lastAdd.kind, session.lastAdd.count)} · </span>
+              <span className="note-card-inbox__last-mark">{session.lastAdd.reset ? '↺' : '+'}</span>
+              <span className="note-card-inbox__last-text"> {session.lastAdd.reset ? resetLine(session.lastAdd.kind) : addedLine(session.lastAdd.kind, session.lastAdd.count)} · </span>
               <button type="button" className="note-card-inbox__last-undo" disabled={!session.canUndo} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.undo()}>
                 Undo <KeyCaps keys="⌘Z" />
               </button>

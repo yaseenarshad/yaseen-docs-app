@@ -351,6 +351,12 @@ export interface CardPlan {
    * taken), or for Up next when the vault's places go to marked cards of another scope first.
    */
   grow: (kind: AddKind, n: number) => number
+  /**
+   * Reset (YAZ-5042 round 2): the least added number of each kind that keeps today's number at or above what today
+   * already did — new cards begun today past "New cards a day", Up next places taken past "Up next a day". 0 with no
+   * limit. Reset sets the added number to this, so today goes back to the Settings number, never below today's work.
+   */
+  floor: Record<AddKind, number>
 }
 
 /**
@@ -393,7 +399,7 @@ const NO_EMBEDS: ReadonlyMap<string, string> = new Map()
  * `letters`: the vault's ID letters (`hasLetters`), so an ID of other letters sorts last.
  */
 export function cardPlan(records: readonly CardPage[], s: ReviewSettings, now: number, folder = '', page?: string, letters?: readonly string[], upNextTaken: readonly string[] = [], added: CardsAddedToday = NOTHING_ADDED): CardPlan {
-  if (!s.enabled) return { queue: [], more: { new: 0, next: 0 }, grow: () => 0 }
+  if (!s.enabled) return { queue: [], more: { new: 0, next: 0 }, grow: () => 0, floor: { new: 0, next: 0 } }
   const next: DueCard[] = []
   // YAZ-5028: every marked card of the vault (the day's places are the vault's, as the new-card limit is).
   const marked: DueCard[] = []
@@ -448,9 +454,10 @@ export function cardPlan(records: readonly CardPage[], s: ReviewSettings, now: n
   let nextBase = Number.POSITIVE_INFINITY
   /** Each waiting marked card's place among the vault's marked cards (0 first): what an add must reach. */
   let ranks: number[] = []
+  let taken = 0
   if (s.upNextPerDay !== null) {
     const still = new Set(marked.map((c) => c.id))
-    const taken = new Set(upNextTaken.filter((id) => !still.has(id))).size
+    taken = new Set(upNextTaken.filter((id) => !still.has(id))).size
     nextBase = s.upNextPerDay + added.upNext - taken
     const rankOf = new Map(marked.sort(byAge(1)).map((c, i) => [`${c.path}\n${c.id}`, i]))
     const places = Math.max(0, nextBase)
@@ -479,6 +486,10 @@ export function cardPlan(records: readonly CardPage[], s: ReviewSettings, now: n
       if (kind === 'new') return s.newPerDay === null ? 0 : n + Math.max(0, -newBase)
       const rank = ranks[Math.min(n, ranks.length) - 1]
       return rank === undefined ? 0 : rank + 1 - nextBase
+    },
+    floor: {
+      new: s.newPerDay === null ? 0 : Math.max(0, startedToday - s.newPerDay),
+      next: s.upNextPerDay === null ? 0 : Math.max(0, taken - s.upNextPerDay),
     },
   }
 }

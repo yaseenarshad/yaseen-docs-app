@@ -47,7 +47,7 @@ let review: CardReviewApi
 let props: NoteCardInboxProps
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], size: 12, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, lastAdd: null, archived: [], ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], size: 12, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, lastAdd: null, archived: [], ...over }
 }
 
 function render() {
@@ -77,6 +77,7 @@ function mount(text: string | null, settings: ReviewSettings = DEFAULT_REVIEW_SE
     unarchive: vi.fn(async () => {}),
     setFilter: vi.fn(),
     addCards: vi.fn(),
+    resetCards: vi.fn(),
   }
   const wikilinks = createWikilinkResolveSource()
   props = {
@@ -1184,40 +1185,93 @@ describe("YAZ-5033: today's total — the top row and the done screen", () => {
 
 describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Settings)', () => {
   const rows = () => [...document.querySelectorAll<HTMLElement>('.note-card-inbox__filter-row')]
-  const doneText = () => [...el.querySelectorAll('.note-card-inbox__done > *')].map((c) => c.textContent)
-  const addButtons = () => [...el.querySelectorAll<HTMLButtonElement>('.note-card-inbox__done-add')]
+  // A field reads as "[10]": the done screen's pill is "Add [10] new cards" (round 2).
+  const textOf = (node: Node): string => (node instanceof HTMLInputElement ? `[${node.value}]` : node.childNodes.length === 0 ? (node.textContent ?? '') : [...node.childNodes].map(textOf).join(''))
+  const doneText = () => [...el.querySelectorAll('.note-card-inbox__done > *')].map(textOf)
+  const pills = () => [...el.querySelectorAll<HTMLElement>('.note-card-inbox__done-add')]
+  const addButtons = () => pills().map((p) => p.querySelector<HTMLButtonElement>('.note-card-inbox__done-add-word')!)
 
-  it('the cards menu: the Up next and New cards rows say "N more" and "Add N" while cards wait; Add adds for today and leaves the menu open; the filter does not change', () => {
+  const typeIn = (input: HTMLInputElement, value: string) =>
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  const key = (target: Element, k: string) => act(() => void target.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })))
+  const field = () => document.querySelector<HTMLInputElement>('.note-card-inbox__add-number')
+  const WAITING = { counts: { all: 22, next: 2, due: 10, new: 10 }, more: { new: 38, next: 3 }, adds: { new: 10, next: 2 }, limited: { new: true, next: true } }
+
+  it('round 2: the Up next and New cards rows read "today / total" ("2 / 5", "10 / 48"); no limit: the count alone', () => {
     mount(TWO_SIDES)
-    session = { ...session, counts: { all: 22, next: 2, due: 10, new: 10 }, more: { new: 38, next: 3 }, adds: { new: 10, next: 2 } }
+    session = { ...session, ...WAITING }
     render()
     act(() => el.querySelector<HTMLButtonElement>('.note-card-inbox__filter')!.click())
-    // The rows keep their name and count; the two that wait show the count and the button.
-    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next23 moreAdd 2', 'Due today10', 'New cards1038 moreAdd 10', 'Archived0'])
-    act(() => rows()[3].querySelector<HTMLButtonElement>('.note-card-inbox__add')!.click())
-    expect(review.addCards).toHaveBeenCalledExactlyOnceWith('new')
-    expect(review.setFilter).not.toHaveBeenCalled()
-    expect(rows()).toHaveLength(5)
-    act(() => rows()[1].querySelector<HTMLButtonElement>('.note-card-inbox__add')!.click())
-    expect(review.addCards).toHaveBeenLastCalledWith('next')
-    // Nothing waits (or no limit): the count only, as before.
+    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2 / 5', 'Due today10', 'New cards10 / 48', 'Archived0'])
+    // The total is every card of the kind: nothing waits, it is today's count.
     session = { ...session, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 } }
     render()
+    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2 / 2', 'Due today10', 'New cards10 / 10', 'Archived0'])
+    session = { ...session, limited: { new: false, next: false } }
+    render()
     expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2', 'Due today10', 'New cards10', 'Archived0'])
-    expect(document.querySelector('.note-card-inbox__add')).toBeNull()
   })
 
-  it('only New cards wait: only the New cards row has Add', () => {
+  it('round 2: a click on the count turns the row into "Add [10] more new cards" (the Settings number, selected); Enter adds the typed number and the menu stays open; Esc goes back; the keys stay in the field', () => {
     mount(TWO_SIDES)
-    session = { ...session, more: { new: 38, next: 0 }, adds: { new: 10, next: 0 } }
+    session = { ...session, ...WAITING }
     render()
     act(() => el.querySelector<HTMLButtonElement>('.note-card-inbox__filter')!.click())
-    expect(rows().map((r) => r.querySelector('.note-card-inbox__add')?.textContent ?? null)).toEqual([null, null, null, 'Add 10', null])
+    // A click on the name picks the filter; on the count, the field.
+    act(() => rows()[3].querySelector<HTMLElement>('.note-card-inbox__count')!.click())
+    expect(review.setFilter).not.toHaveBeenCalled()
+    expect(rows()[3].textContent).toBe('Add  more new cardsEnter')
+    expect(field()?.value).toBe('10')
+    expect(document.activeElement).toBe(field())
+    typeIn(field()!, '12')
+    // Space and the digits do not reach the Inbox; Esc does not close the menu.
+    key(field()!, ' ')
+    expect(review.answer).not.toHaveBeenCalled()
+    key(field()!, 'Enter')
+    expect(review.addCards).toHaveBeenCalledExactlyOnceWith('new', 12)
+    // The menu stays open, the row back to its count.
+    expect(rows()).toHaveLength(5)
+    expect(field()).toBeNull()
+    // Up next: its own field, at its own number; Esc goes back and the menu stays.
+    act(() => rows()[1].querySelector<HTMLElement>('.note-card-inbox__count')!.click())
+    expect(field()?.value).toBe('2')
+    expect(rows()[1].textContent).toBe('Add  more Up nextEnter')
+    key(field()!, 'ArrowUp')
+    expect(field()?.value).toBe('3')
+    key(field()!, 'Escape')
+    expect(field()).toBeNull()
+    expect(rows()).toHaveLength(5)
+    expect(review.addCards).toHaveBeenCalledTimes(1)
+    // Empty: Enter adds nothing.
+    act(() => rows()[3].querySelector<HTMLElement>('.note-card-inbox__count')!.click())
+    typeIn(field()!, '')
+    key(field()!, 'Enter')
+    expect(review.addCards).toHaveBeenCalledTimes(1)
+    // Nothing waits: the count does not add, it picks the filter.
+    session = { ...session, more: { new: 0, next: 3 }, adds: { new: 0, next: 2 } }
+    render()
+    act(() => rows()[3].querySelector<HTMLElement>('.note-card-inbox__count')!.click())
+    expect(review.setFilter).toHaveBeenCalledExactlyOnceWith('new')
+  })
+
+  it('round 2: after an add the row says "22 / 48 · Reset"; Reset calls the hook and the menu stays open', () => {
+    mount(TWO_SIDES)
+    session = { ...session, ...WAITING, counts: { all: 34, next: 2, due: 10, new: 22 }, more: { new: 26, next: 3 }, canReset: { new: true, next: false } }
+    render()
+    act(() => el.querySelector<HTMLButtonElement>('.note-card-inbox__filter')!.click())
+    expect(rows().map((r) => r.textContent)).toEqual(['All cards34', 'Up next2 / 5', 'Due today10', 'New cards22 / 48Reset', 'Archived0'])
+    act(() => rows()[3].querySelector<HTMLButtonElement>('.note-card-inbox__reset')!.click())
+    expect(review.resetCards).toHaveBeenCalledExactlyOnceWith('new')
+    expect(review.setFilter).not.toHaveBeenCalled()
+    expect(rows()).toHaveLength(5)
   })
 
   it('the line under the answer buttons says the add, and its Undo is the hook\'s undo; Cmd + Z undoes it too', () => {
     mount(TWO_SIDES)
-    session = { ...session, lastAdd: { kind: 'new', count: 10 }, canUndo: true }
+    session = { ...session, lastAdd: { kind: 'new', count: 10, reset: false }, canUndo: true }
     render()
     const last = el.querySelector<HTMLElement>('.note-card-inbox__last')!
     expect(last.textContent).toBe('+ Added 10 new cards for today · Undo Cmd + Z')
@@ -1226,32 +1280,42 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     expect(review.undo).toHaveBeenCalledTimes(1)
     press('z', { metaKey: true })
     expect(review.undo).toHaveBeenCalledTimes(2)
-    session = { ...session, lastAdd: { kind: 'next', count: 1 } }
+    session = { ...session, lastAdd: { kind: 'next', count: 1, reset: false } }
     render()
     expect(last.textContent).toBe('+ Added 1 Up next card for today · Undo Cmd + Z')
     // On the done screen too.
-    session = { ...session, card: null, lastAdd: { kind: 'new', count: 2 } }
+    session = { ...session, card: null, lastAdd: { kind: 'new', count: 2, reset: false } }
     render()
     expect(el.querySelector('.note-card-inbox__last')?.textContent).toBe('+ Added 2 new cards for today · Undo Cmd + Z')
+    // Round 2: a Reset says so, with the same Undo.
+    session = { ...session, lastAdd: { kind: 'new', count: 12, reset: true } }
+    render()
+    expect(el.querySelector('.note-card-inbox__last')?.textContent).toBe("↺ Reset today's new cards · Undo Cmd + Z")
   })
 
   it('the done screen says what waits, with one add button for each kind; nothing waits: as before', () => {
     mount(TWO_SIDES)
     session = { ...session, card: null, counts: { all: 0, next: 0, due: 0, new: 0 }, more: { new: 38, next: 3 }, adds: { new: 10, next: 2 } }
     render()
-    expect(doneText()).toEqual(['Inbox complete.', '38 new cards and 3 Up next cards wait for another day.', 'Add 10 new cardsAdd 2 Up next'])
-    expect(addButtons().map((b) => b.textContent)).toEqual(['Add 10 new cards', 'Add 2 Up next'])
+    expect(doneText()).toEqual(['Inbox complete.', '38 new cards and 3 Up next cards wait for another day.', 'Add[10]new cardsAdd[2]Up next'])
+    expect(pills().map(textOf)).toEqual(['Add[10]new cards', 'Add[2]Up next'])
+    // A click on "Add" or the words adds the number shown.
     act(() => addButtons()[0].click())
-    expect(review.addCards).toHaveBeenCalledExactlyOnceWith('new')
-    act(() => addButtons()[1].click())
-    expect(review.addCards).toHaveBeenLastCalledWith('next')
+    expect(review.addCards).toHaveBeenCalledExactlyOnceWith('new', 10)
+    act(() => pills()[1].querySelectorAll<HTMLButtonElement>('.note-card-inbox__done-add-word')[1].click())
+    expect(review.addCards).toHaveBeenLastCalledWith('next', 2)
+    // The same field: type, then Enter (the Inbox's keys do not see it).
+    const input = pills()[0].querySelector('input')!
+    typeIn(input, '25')
+    key(input, 'Enter')
+    expect(review.addCards).toHaveBeenLastCalledWith('new', 25)
     // Only one kind waits: its line and its button.
     session = { ...session, more: { new: 0, next: 3 }, adds: { new: 0, next: 2 } }
     render()
-    expect(doneText()).toEqual(['Inbox complete.', '3 Up next cards wait for another day.', 'Add 2 Up next'])
+    expect(doneText()).toEqual(['Inbox complete.', '3 Up next cards wait for another day.', 'Add[2]Up next'])
     session = { ...session, more: { new: 1, next: 0 }, adds: { new: 1, next: 0 } }
     render()
-    expect(doneText()).toEqual(['Inbox complete.', '1 new card waits for another day.', 'Add 1 new card'])
+    expect(doneText()).toEqual(['Inbox complete.', '1 new card waits for another day.', 'Add[1]new card'])
     // Nothing waits (also: no limit): as now.
     session = { ...session, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 } }
     render()
@@ -1262,12 +1326,12 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     mount(TWO_SIDES)
     session = { ...session, filter: 'new', card: null, counts: { all: 12, next: 0, due: 12, new: 0 }, more: { new: 38, next: 3 }, adds: { new: 10, next: 2 } }
     render()
-    expect(doneText()).toEqual(['No new cards left.', 'Add 10 new cards', '12 more in All cards'])
+    expect(doneText()).toEqual(['No new cards left.', 'Add[10]new cards', '12 more in All cards'])
     act(() => addButtons()[0].click())
-    expect(review.addCards).toHaveBeenCalledExactlyOnceWith('new')
+    expect(review.addCards).toHaveBeenCalledExactlyOnceWith('new', 10)
     session = { ...session, filter: 'next' }
     render()
-    expect(doneText()).toEqual(['No Up next cards left.', 'Add 2 Up next', '12 more in All cards'])
+    expect(doneText()).toEqual(['No Up next cards left.', 'Add[2]Up next', '12 more in All cards'])
     session = { ...session, filter: 'due' }
     render()
     expect(doneText()).toEqual(['No due cards left.', '12 more in All cards'])
@@ -1277,7 +1341,7 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     mount(TWO_SIDES)
     session = { ...session, label: 'Bio', scope: 'folder', card: null, counts: { all: 0, next: 0, due: 0, new: 0 }, more: { new: 5, next: 0 }, adds: { new: 5, next: 0 } }
     render()
-    expect(doneText()).toEqual(['This folder is done.', '5 new cards wait for another day.', 'Add 5 new cards', '12 more in the Inbox'])
+    expect(doneText()).toEqual(['This folder is done.', '5 new cards wait for another day.', 'Add[5]new cards', '12 more in the Inbox'])
   })
 })
 

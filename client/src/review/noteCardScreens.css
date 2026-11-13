@@ -409,11 +409,12 @@
     transition: none;
   }
 }
-/* The filter menu: the app's menu, each row its glyph, its name and a small count pill. YAZ-5042: a grid of three
-   columns, so the count pills line up whether a row has "38 more · Add 10" after it or not. */
+/* The filter menu: the app's menu, each row its glyph, its name and a small count pill. YAZ-5042 round 2: a grid of two
+   columns, so the count pills line up whether a row has "· Reset" after it or not. The Up next and New cards pills read
+   "today / total"; while cards wait, a click on the pill turns the row into "Add [10] more new cards". */
 .note-card-inbox__filter-menu {
   display: grid;
-  grid-template-columns: minmax(182px, auto) auto auto;
+  grid-template-columns: minmax(182px, auto) auto;
   align-items: center;
   min-width: 190px;
 }
@@ -423,40 +424,70 @@
 .note-card-inbox__filter-item {
   grid-column: 1;
 }
-.note-card-inbox__waiting {
-  grid-column: 2;
-  padding: 0 6px 0 12px;
-  color: var(--fg-muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  text-align: right;
+/* The count that adds: the hand, and the pill's edge on hover, so it reads as the place to click. */
+.note-card-inbox__count[data-add] {
+  cursor: pointer;
 }
-.note-card-inbox__add {
-  grid-column: 3;
-  margin-right: 4px;
-  padding: 1px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
-  color: var(--fg);
+.note-card-inbox__count[data-add]:hover {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+/* "· Reset" (round 2): quiet, after the count, only once today has an add. */
+.note-card-inbox__reset {
+  grid-column: 2;
+  margin-right: 6px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
   font: inherit;
   font-size: 12px;
-  line-height: 18px;
   white-space: nowrap;
   cursor: pointer;
 }
-.note-card-inbox__add:hover {
-  background: var(--bg-hover);
+.note-card-inbox__reset::before {
+  content: '·';
+  margin-right: 6px;
 }
-/* A narrow window: "38 more" goes first; "Add 10" stays. */
-@media (max-width: 560px) {
-  .note-card-inbox__waiting {
-    display: none;
-  }
-  .note-card-inbox__add {
-    margin-left: 8px;
-  }
+.note-card-inbox__reset:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+/* The row while you type (round 2): one line across the menu, the same height as a row. */
+.note-card-inbox__filter-row[data-adding] > .note-card-inbox__filter-item {
+  grid-column: 1 / -1;
+  cursor: default;
+}
+.note-card-inbox__filter-row[data-adding] > .note-card-inbox__filter-item:hover {
+  background: none;
+}
+.note-card-inbox__add-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.note-card-inbox__add-number {
+  box-sizing: content-box;
+  min-width: 2ch;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  line-height: 18px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+.note-card-inbox__add-enter {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  line-height: 16px;
 }
 /* YAZ-5046: the line before Archived, across the menu's three columns. */
 .note-card-inbox__filter-sep {
@@ -860,7 +891,10 @@ body.note-card-inbox--sizing {
   margin: 14px 0 6px;
 }
 .note-card-inbox__done-add {
-  padding: 5px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--bg);
@@ -869,6 +903,21 @@ body.note-card-inbox--sizing {
 }
 .note-card-inbox__done-add:hover {
   background: var(--bg-hover);
+}
+/* "Add" and the words add the number shown; the number is a field, quiet until you click it (round 2). */
+.note-card-inbox__done-add-word {
+  padding: 3px 6px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.note-card-inbox__done-add .note-card-inbox__add-number {
+  border-color: var(--border);
+}
+.note-card-inbox__done-add .note-card-inbox__add-number:focus {
+  border-color: var(--accent);
 }
 @media (max-width: 560px) {
   .note-card-inbox__done-adds {

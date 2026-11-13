@@ -502,6 +502,60 @@ describe('useCardReview', () => {
       expect(review.session).toMatchObject({ scope: 'page', counts: { new: 4 }, more: { new: 1 } })
     })
 
+    it('round 2: "Add [n] more" adds the typed number (10 + 12 = 22), a number above what waits adds all that waits; Reset sets today back to the Settings number; Undo and Cmd + Z take back the last add or Reset', async () => {
+      page('New.md', ...Array.from({ length: 8 }, (_, i): [string, string] => [`New {{${i}}}`, `WIKI-${10 + i}`]))
+      const settings = { ...S, newPerDay: 2 }
+      await mount(settings)
+      await act(async () => review.start())
+      await read()
+      // WIKI-3 and WIKI-10 today; 7 wait. Each kind has a number a day; nothing to reset yet.
+      expect(review.session).toMatchObject({ counts: { new: 2 }, more: { new: 7 }, adds: { new: 2 }, limited: { new: true, next: false }, canReset: { new: false, next: false } })
+      act(() => review.addCards('new', 3))
+      expect(review.session).toMatchObject({ counts: { new: 5 }, more: { new: 4 }, lastAdd: { kind: 'new', count: 3, reset: false }, canReset: { new: true } })
+      expect(storage.getCardsAdded(ROOT)?.newCards).toBe(3)
+      // Above what waits: all that waits, no more.
+      act(() => review.addCards('new', 50))
+      expect(review.session).toMatchObject({ counts: { new: 9 }, more: { new: 0 }, lastAdd: { kind: 'new', count: 4 } })
+      expect(storage.getCardsAdded(ROOT)?.newCards).toBe(7)
+      // 0, or nothing typed that is a number: nothing.
+      act(() => review.addCards('new', 0))
+      expect(storage.getCardsAdded(ROOT)?.newCards).toBe(7)
+      // Reset: back to the Settings number; the added cards not answered yet leave; the card on show stays.
+      act(() => review.resetCards('new'))
+      expect(review.session).toMatchObject({ card: { id: 'WIKI-1' }, counts: { new: 2 }, more: { new: 7 }, lastAdd: { kind: 'new', count: 7, reset: true }, canReset: { new: false }, canUndo: true })
+      expect(storage.getCardsAdded(ROOT)?.newCards).toBe(0)
+      expect(settings.newPerDay).toBe(2)
+      // Its undo brings them back; the undo before it takes back the add before.
+      await step(() => review.undo())
+      expect(review.session).toMatchObject({ counts: { new: 9 }, more: { new: 0 }, lastAdd: { kind: 'new', count: 4, reset: false } })
+      expect(storage.getCardsAdded(ROOT)?.newCards).toBe(7)
+      await step(() => review.undo())
+      expect(review.session).toMatchObject({ counts: { new: 5 }, more: { new: 4 } })
+    })
+
+    it('round 2: Reset never goes below what today already did (new cards begun past the number stay today)', async () => {
+      page('New.md', ...Array.from({ length: 6 }, (_, i): [string, string] => [`New {{${i}}}`, `WIKI-${10 + i}`]))
+      await mount({ ...S, newPerDay: 1 })
+      await act(async () => review.start({ page: `${ROOT}/New.md` }))
+      await read()
+      // One new card a day: WIKI-10 today; an add of 2 brings WIKI-11 and WIKI-12.
+      expect(review.session).toMatchObject({ card: { id: 'WIKI-10' }, counts: { new: 1 }, more: { new: 5 } })
+      act(() => review.addCards('new', 2))
+      // All three begun today: today did 3, so 2 of the added number are today's work.
+      for (let i = 0; i < 3; i++) {
+        await read()
+        await step(() => review.answer('good'))
+      }
+      expect(review.session?.canReset.new).toBe(false)
+      act(() => review.addCards('new', 2))
+      expect(storage.getCardsAdded(ROOT)?.newCards).toBe(4)
+      act(() => review.resetCards('new'))
+      // Back to 3 today (1 + the 2 already done), not 1: the two just added leave.
+      expect(storage.getCardsAdded(ROOT)?.newCards).toBe(2)
+      expect(review.session).toMatchObject({ more: { new: 3 }, lastAdd: { kind: 'new', reset: true } })
+      expect(review.session?.canReset.new).toBe(false)
+    })
+
     it('no limit (an empty box): nothing waits, no add', async () => {
       fiveNew()
       await mount({ ...S, newPerDay: null, upNextPerDay: null })
