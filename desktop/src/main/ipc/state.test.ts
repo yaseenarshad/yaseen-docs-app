@@ -56,7 +56,7 @@ describe('registerStateIpc', () => {
   it('registers every state channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual(
-      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setTocSwitch.channel, CONTRACT.state.setBaseGroups.channel, CONTRACT.state.settingsFolder.channel, CONTRACT.state.setSettingsFolder.channel, CONTRACT.state.setTabCanvas.channel, CONTRACT.state.systemHotkeys.channel, CONTRACT.hotkeys.recording.channel, CONTRACT.hotkeys.drawingInFront.channel].sort(),
+      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setTocSwitch.channel, CONTRACT.state.setBaseGroups.channel, CONTRACT.state.settingsFolder.channel, CONTRACT.state.setSettingsFolder.channel, CONTRACT.state.setTabCanvas.channel, CONTRACT.state.systemHotkeys.channel, CONTRACT.hotkeys.recording.channel, CONTRACT.hotkeys.drawingInFront.channel, CONTRACT.hotkeys.noPageInFront.channel].sort(),
     )
   })
 
@@ -69,6 +69,17 @@ describe('registerStateIpc', () => {
     expect(await recording({ sender: wc }, 'yes')).toEqual(bad('BAD_REQUEST'))
     expect(await recording({ sender: wc }, false)).toEqual(ok(undefined))
     expect(hotkeyRecording.active()).toBe(false)
+  })
+
+  it('YAZ-5041: the Inbox tab (or the blank tab) in front of a window marks that window "no page in front", and off again; anything but a boolean is refused', async () => {
+    const { noPageInFront } = await import('../hotkeyRecording')
+    const told = registered(CONTRACT.hotkeys.noPageInFront.channel)
+    const wc = { id: 52, on: vi.fn(), once: vi.fn() }
+    expect(await told({ sender: wc }, true)).toEqual(ok(undefined))
+    expect(noPageInFront.has(52)).toBe(true)
+    expect(await told({ sender: wc }, 1)).toEqual(bad('BAD_REQUEST'))
+    expect(await told({ sender: wc }, false)).toEqual(ok(undefined))
+    expect(noPageInFront.has(52)).toBe(false)
   })
 
   it('YAZ-3276 D6: a folder with another Mac\'s file wins (0); an empty one takes this Mac\'s settings (now); null keeps the settings', async () => {

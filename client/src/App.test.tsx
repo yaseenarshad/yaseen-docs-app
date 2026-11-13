@@ -554,6 +554,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       version: vi.fn(),
       restore: vi.fn(async () => undefined),
     },
+    // YAZ-5041: the window tells main when no page is on show (the Inbox tab, the blank tab), for the app menu.
+    hotkeys: { noPageInFront: vi.fn(async () => undefined) },
     // Settings › Sharing (YAZ-3040): not set up, nothing shared.
     share: {
       status: vi.fn(async () => ({ state: 'off' as const, url: null, workersDevUrl: null, customDomain: null, accountName: null, workerName: null, bucketName: null, readyAt: null, demo: false })),
@@ -5514,6 +5516,18 @@ describe('App note card review (YAZ-4967)', () => {
     expect(layer()).toBeInstanceOf(HTMLElement)
     await act(async () => emitShareLink())
     await vi.waitFor(() => expect(el.querySelector('[role="dialog"][aria-label="Share Plan"]')).not.toBeNull())
+  })
+
+  it('YAZ-5041: the Inbox tab to the front tells main no page is in front, so the app menu follows no page; the page tab tells main a page is in front again', async () => {
+    const BOARD: IdentityFixture = { id: 'w1', root: '/v', file: '/v/Plan.excalidraw', tabs: ['/v/a.md', '/v/Plan.excalidraw'] }
+    const { el, bridge } = await mount(defaultAppState(), BOARD, {}, withIndex(RECORDS()))
+    const told = bridge.hotkeys.noPageInFront
+    // A page on show: main reads the window's tab, as before; nothing to tell.
+    expect(told).not.toHaveBeenCalledWith(true)
+    openInbox()
+    await vi.waitFor(() => expect(told).toHaveBeenLastCalledWith(true), { timeout: SLOW_RUNNER_MS })
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')][1].click())
+    await vi.waitFor(() => expect(told).toHaveBeenLastCalledWith(false))
   })
 
   it('YAZ-5016: the Inbox tab, dragged first, keeps its place: a page tab and the sidebar\'s Inbox row go to it there; its menu\'s "Close other tabs" keeps it in front; closed and opened again, it stands at the end', async () => {

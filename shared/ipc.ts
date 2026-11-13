@@ -248,6 +248,12 @@ export const CONTRACT = {
      * menu as for a drawing tab, so ⌘D duplicates instead of going to your place. A reload or close ends it by itself.
      */
     drawingInFront: invoke<[on: boolean], void>('hotkeys:drawing-in-front', 1),
+    /**
+     * No page is on show in the calling window, or one is again (YAZ-5041): the Inbox tab or the blank tab is in front.
+     * The window's stored `file` is still the tab under it (for restore), so main builds the menu as for no tab while
+     * this is on: the board items grey, and no tab's key picks (YAZ-3564 K9). A reload or close ends it by itself.
+     */
+    noPageInFront: invoke<[on: boolean], void>('hotkeys:no-page-in-front', 1),
   },
   window: {
     /** Who am I: main answers from `AppState.windows` by the `?win=<id>` in the window's URL. */

@@ -926,6 +926,16 @@ export function App() {
   // The URL hash mirrors the ACTIVE tab (GRO-2069; rule 17: on boot the hash already won as
   // the active tab in bootTabs, so this first run is a no-op re-write of the same hash).
   useEffect(() => syncHash(file), [file])
+  // The app menu (YAZ-5041): main builds it from the window's stored tab (`file`), which stays the tab under the Inbox
+  // tab and the blank tab (restore reads it). With no page on show, this window tells main so, and the menu follows no
+  // tab: the board items grey, and no tab's key picks (YAZ-3564 K9). Only a change is told; a reload ends it in main.
+  const noPageInFront = pageOnShow === null && file !== null
+  const toldNoPage = useRef(false)
+  useEffect(() => {
+    if (toldNoPage.current === noPageInFront) return
+    toldNoPage.current = noPageInFront
+    void api.hotkeys.noPageInFront(noPageInFront).catch(() => undefined)
+  }, [noPageInFront])
 
   // The OS window title mirrors what is open (C3, GRO-2165) under the display name (YAZ-1974 D4) of the ACTIVE tab's vault (YAZ-2602 S36); Electron follows document.title.
   // Under the blank tab no page is open, and the title is the vault's alone (YAZ-2655 R20).

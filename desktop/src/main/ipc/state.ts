@@ -4,7 +4,7 @@ import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { requireStringArray } from '../fs/validate'
 import type { SettingsFolder } from '../settingsFolder'
-import { drawingInFront, hotkeyRecording } from '../hotkeyRecording'
+import { drawingInFront, hotkeyRecording, noPageInFront } from '../hotkeyRecording'
 import { isSettings, readCanvasCard, readCanvasFrame, readCanvasKey, type Store } from '../store'
 import { createSystemHotkeys } from '../systemHotkeys'
 import { broadcastAll } from './broadcast'
@@ -110,6 +110,11 @@ export function registerStateIpc(store: Store, settingsFolder: Pick<SettingsFold
   handleWithEvent(CONTRACT.hotkeys.drawingInFront, async (event, on: unknown) => {
     if (typeof on !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'on' must be a boolean")
     drawingInFront.set(event.sender, on)
+  })
+  // The Inbox tab or the blank tab comes to the front of the calling window, or leaves it (YAZ-5041): the menu follows no page.
+  handleWithEvent(CONTRACT.hotkeys.noPageInFront, async (event, on: unknown) => {
+    if (typeof on !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'on' must be a boolean")
+    noPageInFront.set(event.sender, on)
   })
   handle(CONTRACT.state.setSidebarWidth, async (width: unknown) => {
     if (typeof width !== 'number' || !Number.isFinite(width)) throw new BridgeFailure('BAD_REQUEST', "'width' must be a finite number")
