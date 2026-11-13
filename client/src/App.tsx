@@ -384,7 +384,7 @@ export function App() {
   // window's `file`: title, URL hash and the sidebar highlight all follow it. Each tab has its own
   // id (YAZ-2940 D1): `active`, `mounted` and `preview` are ids, and two tabs may show one file.
   const {
-    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, activate, sleep: sleepTabs, wake: wakeTab, close: closeTab, closeMany: closeTabs, openStored, move: moveTab,
+    tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, openBackgroundAt, activate, sleep: sleepTabs, wake: wakeTab, close: closeTab, closeMany: closeTabs, openStored, move: moveTab,
     closeActive, next: nextTab, prev: prevTab, back, forward, go: goToStep, openStep, canBack, canForward, history: tabHistory, reset: resetTabs,
     renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
@@ -1584,6 +1584,19 @@ export function App() {
    * button and a page made from a link keep `openBackground`: an open page stays as it is.
    */
   const openBackgroundCopy = useCallback((path: string) => openBackground(path, true), [openBackground])
+  /**
+   * The Inbox's ⌘↵ (YAZ-5023): the card's page in a background tab right after the Inbox tab, each next one after the
+   * one before it (the browser's opener chain); the chain starts again each time the Inbox tab comes to the front. An
+   * open page: its tab, where it stands.
+   */
+  const inboxChainFresh = useRef(true)
+  useEffect(() => {
+    if (inboxShown) inboxChainFresh.current = true
+  }, [inboxShown])
+  const openBehindInbox = useCallback((path: string) => {
+    openBackgroundAt(path, inboxAtRef.current, inboxChainFresh.current)
+    inboxChainFresh.current = false
+  }, [openBackgroundAt])
   /**
    * A link opened from a note: where its gesture's action says (YAZ-3936, Settings › Hotkeys › "Links in a note"), this
    * tab when none says. A folder view's row, a backlink and a code jump use `openFromPage`.
@@ -3871,7 +3884,7 @@ export function App() {
                 under it stays as it was. Behind a page tab it stays mounted, hidden, so it comes back at its card and step. */}
             {session !== null && (
               <Suspense fallback={null}>
-                <NoteCardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openExploreOn} openCard={openCardWindow} openInTab={openBackgroundCopy} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} />
+                <NoteCardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openExploreOn} openCard={openCardWindow} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} />
               </Suspense>
             )}
             {/* The tab board (YAZ-2648 D5) covers the stack while it shows; a review never has one over it. */}

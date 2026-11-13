@@ -1653,6 +1653,22 @@ describe('where a new tab opens (YAZ-3808 D2, D3, D4)', () => {
     expect(workspaceReducer(moved, { type: 'open-background', path: '/v/y.md', next: true }).tabs).toEqual(['/v/a.md', '/v/x1.md', '/v/b.md', '/v/r.md', '/v/y.md', '/v/c.md'])
   })
 
+  it('YAZ-5023: the Inbox\'s ⌘↵ opens each page right after the Inbox tab, in order; an open page does not move', () => {
+    // a · b (active) · [Inbox] · c · d: the Inbox tab stands at slot 2, in the middle of the strip.
+    const strip = state(['/v/a.md', '/v/b.md', '/v/c.md', '/v/d.md'], '/v/b.md')
+    const inbox = (s: TabsState, path: string, fresh = false) => tabsReducer(s, { type: 'open-background', path, at: 2, ...(fresh ? { fresh: true as const } : {}) })
+    const two = inbox(inbox(strip, '/v/x.md', true), '/v/y.md')
+    expect(two).toMatchObject({ tabs: ['/v/a.md', '/v/b.md', '/v/x.md', '/v/y.md', '/v/c.md', '/v/d.md'], active: '/v/b.md', atChain: '/v/y.md' })
+    // A page that is open already: its tab, where it stands; the chain stays.
+    expect(inbox(two, '/v/d.md')).toBe(two)
+    expect(inbox(inbox(two, '/v/d.md'), '/v/z.md').tabs).toEqual(['/v/a.md', '/v/b.md', '/v/x.md', '/v/y.md', '/v/z.md', '/v/c.md', '/v/d.md'])
+    // The Inbox tab came to the front again (`fresh`), or a trip to another tab: right after the Inbox tab again.
+    expect(inbox(two, '/v/z.md', true).tabs).toEqual(['/v/a.md', '/v/b.md', '/v/z.md', '/v/x.md', '/v/y.md', '/v/c.md', '/v/d.md'])
+    expect(inbox(tabsReducer(two, { type: 'activate', path: '/v/a.md' }), '/v/z.md').tabs).toEqual(['/v/a.md', '/v/b.md', '/v/z.md', '/v/x.md', '/v/y.md', '/v/c.md', '/v/d.md'])
+    // Other new tabs keep their place: a ⌘-click's tab next to the current one, or at the end.
+    expect(tabsReducer(two, { type: 'open-background', path: '/v/n.md' }).tabs.at(-1)).toBe('/v/n.md')
+  })
+
   it('the chain is never stored: the window\'s strip names pages, copies and names only', () => {
     const s = reduceTabs({ tabs: [{ id: 't1', path: '/v/a.md' }], active: 't1', mounted: ['t1'], history: NO_STEPS, preview: null, blank: false }, { type: 'open-background', path: '/v/x.md', next: true })
     expect(s.chain).toBe(s.tabs[1].id)

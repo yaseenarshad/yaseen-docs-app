@@ -59,6 +59,12 @@ export interface TabsState {
    * (`endChain`, at the exit of both reducers), and so does a close.
    */
   chain?: string
+  /**
+   * The last tab opened behind at a slot the caller names (YAZ-5023: the Inbox's ⌘↵, right after the Inbox tab), so
+   * the next one goes after it, in order, as `chain` does. Renderer- and session-only, never stored; a trip to another
+   * tab ends it (`endChain`), and so does `fresh`.
+   */
+  atChain?: string
 }
 
 /** One open tab (YAZ-2940 D1): its own id, the page it shows, and its display name (YAZ-2949 D1). */
@@ -200,7 +206,7 @@ export type TabsAction =
   | { type: 'open-current'; path: string; next?: boolean } // sidebar click & friends: open in the PREVIEW tab, replacing the page it showed (go to `tabOf` instead when already open); `next` (YAZ-3808 D3): a NEW preview tab opens next to the current tab
   | { type: 'navigate'; path: string } // a link inside a page: replace the ACTIVE tab in its slot, with history (go to `tabOf` instead when already open)
   | { type: 'open-new'; path: string; copy?: true; next?: boolean } // the ONE door to a kept tab: at the end — or next to the current tab, `next` (YAZ-3808 D2) — + activate; a page that is open is gone to (with `copy`, a new copy opens: a link's "new tab", YAZ-3943 demo), and the preview tab that shows it is kept
-  | { type: 'open-background'; path: string; next?: boolean; copy?: true } // a KEPT tab at the end — or next to the current tab, after the ones opened behind it, `next` (YAZ-3808 D2, D4) — do NOT activate (no-op when already open; with `copy`, a ⌘-click's new tab, a copy opens: YAZ-3943 5B)
+  | { type: 'open-background'; path: string; next?: boolean; copy?: true; at?: number; fresh?: true } // a KEPT tab at the end — or next to the current tab, after the ones opened behind it, `next` (YAZ-3808 D2, D4) — do NOT activate (no-op when already open; with `copy`, a ⌘-click's new tab, a copy opens: YAZ-3943 5B)
   | { type: 'duplicate'; id: string } // "Duplicate tab" (YAZ-2940 D6): a copy of the tab, right after it, active
   | { type: 'open-zoom'; id: string; zoom: string | null; background?: true } // a bullet in a new tab (YAZ-3646 D11): a copy of the tab right after it, at that bullet; null the whole page (a title crumb, YAZ-3647 E2)
   | { type: 'take'; path: string; background?: boolean; at?: number } // a tab another window moved here (YAZ-3091 D5): ALWAYS a new kept tab at the end, active — a copy when the page is open; `background` (a quiet move from a tab board, YAZ-3343 D13): not active, not mounted, while a page is on show; `at` (a tab dropped on this strip, YAZ-3637 D4): at that slot instead of the end
@@ -264,8 +270,8 @@ function nextSlot(s: TabsState, next: boolean | undefined): number | undefined {
  * and a state that leaves `chain` out would keep it. The same object when nothing changes.
  */
 function endChain<S extends TabsState>(was: TabsState, next: S): S {
-  if (next === was || (was.chain === undefined && next.chain === undefined)) return next
-  return next.active !== was.active || next.blank !== was.blank ? { ...next, chain: undefined } : next
+  if (next === was || (was.chain === undefined && next.chain === undefined && was.atChain === undefined && next.atChain === undefined)) return next
+  return next.active !== was.active || next.blank !== was.blank ? { ...next, chain: undefined, atChain: undefined } : next
 }
 
 /**
@@ -416,13 +422,20 @@ function tabsStep(s: TabsState, a: TabsAction): TabsState {
       return appendActive(s, a.path, false, nextSlot(s, a.next))
     }
     case 'open-background': {
-      if (a.copy !== true && shows(s, a.path)) return s // already open: stay where we are, steal nothing
+      // `fresh` starts the slot's chain again (YAZ-5023: the Inbox tab came to the front), even for a page already open.
+      const base = a.fresh === true && s.atChain !== undefined ? { ...s, atChain: undefined } : s
+      if (a.copy !== true && shows(s, a.path)) return base // already open: stay where we are, steal nothing
       // The first tab of an empty window must activate: non-empty `tabs` requires a non-null `file`.
       // Under the blank tab too (YAZ-2655 S78): the page becomes the stored file, and the blank tab still shows.
       if (s.active === null) return { ...appendActive(s, a.path, false), blank: s.blank }
       // Not mounted: the editor lazy-mounts on first activation, and the tab's step comes then (YAZ-3647 D4). Next to the
       // current tab (YAZ-3808 D2), it joins the chain, so the next one goes after it (D4).
       const tab = newTab(a.path)
+      if (a.at !== undefined) {
+        // At the caller's slot (YAZ-5023: right after the Inbox tab), or right after the last tab opened there.
+        const chained = base.atChain === undefined ? -1 : s.tabs.findIndex((t) => t.id === base.atChain)
+        return { ...s, tabs: insertAt(s.tabs, tab, chained !== -1 ? chained + 1 : Math.max(0, Math.min(a.at, s.tabs.length))), atChain: tab.id }
+      }
       const at = nextSlot(s, a.next)
       return at === undefined ? { ...s, tabs: [...s.tabs, tab] } : { ...s, tabs: insertAt(s.tabs, tab, at), chain: tab.id }
     }
@@ -966,6 +979,11 @@ export interface UseWorkspace extends WorkspaceState {
    * An open page: nothing, unless `copy` — a ⌘-click (YAZ-3943 5B): always a new tab, a copy, as browsers do.
    */
   openBackground: (path: string, copy?: boolean) => void
+  /**
+   * A background tab at slot `at` (YAZ-5023: the Inbox's ⌘↵, right after the Inbox tab), or right after the last one
+   * opened there; `fresh` starts that chain again. An open page: nothing, its tab does not move.
+   */
+  openBackgroundAt: (path: string, at: number, fresh: boolean) => void
   /** A tab, by id (YAZ-2940 D1). A sleeping tab wakes: its editor mounts again (YAZ-3737 5A). */
   activate: (id: string) => void
   /** Tab sleep (YAZ-3737 5A): these tabs' editors unmount, in ONE change; the active tab never does. Never mirrored: nothing stored changes. */
@@ -1098,6 +1116,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
     return stateRef.current.tabs.find((t) => !before.has(t.id))?.id ?? stateRef.current.tabs[stateRef.current.tabs.length - 1].id
   }, [dispatch])
   const openBackground = useCallback((path: string, copy = false) => dispatch({ type: 'open-background', path, next: opensNext(), ...(copy ? { copy: true as const } : {}) }), [dispatch])
+  const openBackgroundAt = useCallback((path: string, at: number, fresh: boolean) => dispatch({ type: 'open-background', path, at, ...(fresh ? { fresh: true as const } : {}) }), [dispatch])
   const activate = useCallback((id: string) => dispatch({ type: 'activate', id }), [dispatch])
   // `mounted` is renderer-only (rule above): sleep and wake write nothing.
   const sleep = useCallback((ids: readonly string[]) => {
@@ -1179,7 +1198,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
   return {
     ...state,
     file: activePath(state),
-    openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName, newTab, closeBlank, openBackground, activate, sleep, wake, close, closeMany, openStored, move, closeActive, next, prev, back, forward, go, openStep, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
+    openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName, newTab, closeBlank, openBackground, openBackgroundAt, activate, sleep, wake, close, closeMany, openStored, move, closeActive, next, prev, back, forward, go, openStep, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
     openRight: openRightCallback,
     openRightBackground,
     navigateRight: navigateRightCallback,
