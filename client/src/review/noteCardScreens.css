@@ -178,11 +178,64 @@
   border-radius: 4px;
   background: var(--bg);
 }
+/* The buttons row (YAZ-5004, as in Mochi): ← → on the left, the answers in the middle, ⋯ on the right. */
+.note-card-inbox__actions {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+.note-card-inbox__moves {
+  display: flex;
+  gap: 4px;
+  justify-self: start;
+}
+.note-card-inbox__actions .note-card-inbox__move,
+.note-card-inbox__actions .note-card-inbox__more-button {
+  min-width: 32px;
+  padding: 6px 8px;
+  border-color: transparent;
+  color: var(--fg-muted);
+}
+.note-card-inbox__actions .note-card-inbox__move:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.note-card-inbox__more {
+  position: relative;
+  justify-self: end;
+}
+/* The ⋯ row: small icons over the ⋯ button, on the page colour, the Explore window's soft shadow. */
+.note-card-inbox__more-row {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+.note-card-inbox__more-row .note-card-inbox__more-action {
+  display: inline-flex;
+  padding: 6px;
+  border-color: transparent;
+  color: var(--fg-muted);
+}
+.note-card-inbox__more-row .note-card-inbox__more-action:hover:not(:disabled) {
+  color: var(--fg);
+}
+.note-card-inbox__more-row .note-card-inbox__more-action:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
 .note-card-inbox__answers {
   display: flex;
   justify-content: center;
   gap: 10px;
-  margin-top: 18px;
 }
 /* Outside the panel, on the Inbox's side colour: each button is a small card of the page colour (light and dark tokens). */
 .note-card-inbox__answers .note-card-inbox__answer {
