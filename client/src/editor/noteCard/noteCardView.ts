@@ -46,7 +46,7 @@
  * any edit. The ID at insert (`noteCardRow`) is a transaction out of the undo history, saved by `NOTE_CARD_ID_META`.
  */
 import { EditorSelection, Prec, type Extension } from '@codemirror/state'
-import { isHistoryTransaction } from '@milkdown/kit/prose/history'
+import { closeHistory, isHistoryTransaction } from '@milkdown/kit/prose/history'
 import { ReplaceAroundStep, ReplaceStep } from '@milkdown/kit/prose/transform'
 import type { Fragment } from '@milkdown/kit/prose/model'
 import { EditorView as CodeMirrorView, keymap } from '@codemirror/view'
@@ -72,6 +72,7 @@ import { CardLineStep, changeNoteCardLine, isNoteCardNode, NOTE_CARD_LANGUAGE, n
 import { NOTE_CARD_BOARD_ATTR, NOTE_CARD_MEDIA, NOTE_CARD_OPENS } from './noteCardMedia'
 import { NOTE_CARD_OPEN, scrollIntoViewWhenShown, takeCardLanding, type NoteCardOpenRequest } from './noteCardOpen'
 import { NOTE_CARD_LINK_ATTR, noteCardLinkWhere, refreshNoteCardLook, renderNoteCard, type NoteCardLook } from './noteCardRender'
+import { mountCardEditor, type CardCrepe, type CardEditor } from './cardEditor'
 import './noteCard.css'
 
 // The open hook (D13) lives with the card's other doors (`noteCardOpen.ts`): a card link's click sends it too (YAZ-5030).
@@ -79,6 +80,34 @@ export { NOTE_CARD_OPEN, type NoteCardOpenRequest } from './noteCardOpen'
 
 /** On the transaction that puts the ID of a new card (out of the undo history): the editor saves it all the same. */
 export const NOTE_CARD_ID_META = 'mdapp-note-card-id'
+
+/**
+ * On the card editor's mirror of a card's text into the page (YAZ-5026; out of the undo history, so Done is ONE undo
+ * step): the editor saves it all the same, so a tab switch or a quit loses no typing.
+ */
+export const NOTE_CARD_MIRROR_META = 'mdapp-note-card-mirror'
+
+/** How long after a change in the card editor its text goes into the page (YAZ-5026). */
+export const NOTE_CARD_MIRROR_MS = 300
+
+/**
+ * Which editor Edit card opens (YAZ-5026): `page`, the page's own editor in the card (what you see is what you get), or
+ * `code`, the raw-text code box — kept as the fallback behind this ONE switch.
+ */
+export type NoteCardEditorKind = 'page' | 'code'
+let editorKind: NoteCardEditorKind = 'code'
+export const noteCardEditorKind = (): NoteCardEditorKind => editorKind
+export const setNoteCardEditorKind = (kind: NoteCardEditorKind): void => {
+  editorKind = kind
+}
+
+/** The ONE card in Edit card with the page's editor (YAZ-5026): a second Edit card first does Done on it. */
+let openCard: NoteCardView | null = null
+
+/** The open card editor's text into the page now (a save: a tab switch, a close, a quit): no typing is lost. */
+export function flushNoteCardEditor(view: EditorView): void {
+  if (openCard !== null && openCard.view === view) openCard.mirror()
+}
 
 /** What the host gives the note cards of one editor (`createCrepe({ noteCards })`). Absent → no "Note card" row. */
 export interface NoteCardHost {
@@ -111,6 +140,8 @@ export interface NoteCardDeps {
   onNotice?: (message: string) => void
   /** The vault's card review (YAZ-5000): "Reviews (n)" under a card with reviews. Absent (a hover preview): no section. */
   reviews?: NoteCardReviewDoor
+  /** The page's editor for Edit card (YAZ-5026), mounted in `root`. Absent: Edit card is the raw-text code box. */
+  editor?: (root: HTMLElement) => CardCrepe
 }
 
 /** What the Reviews section under a card needs of its vault (YAZ-5000): the card window's settings and delete. */
@@ -248,8 +279,10 @@ export class NoteCardView implements NodeView {
   private readonly editButton: HTMLButtonElement
   private readonly more: HTMLButtonElement
   private readonly body: HTMLElement
-  /** Crepe's code block while the card is edited, else null. */
+  /** Crepe's code block while the card is edited with the raw-text fallback, else null. */
   private code: NodeView | null = null
+  /** The page's editor while the card is edited with it (YAZ-5026), its mount, and what it writes over. */
+  private inner: { editor: CardEditor; mount: HTMLElement; base: string; written: string; timer: ReturnType<typeof setTimeout> | undefined } | null = null
   /** The key row under the editor (YAZ-5034): in the card only while it is edited. */
   private keyRow: HTMLElement | null = null
   /** What the body last drew: redrawn only when it changes. */
@@ -299,12 +332,22 @@ export class NoteCardView implements NodeView {
     if (takeCardLanding(this.path, cardIdOf(noteCardLineOf(node)))) scrollIntoViewWhenShown(this.dom)
     this.unsubscribe = deps.subscribe?.(() => {
       // An index change redraws only the pills of a card with a link: no Markdown render again.
-      if (this.code === null && this.node.textContent.includes('[[')) refreshNoteCardLook(this.body, this.deps.look())
+      if (!this.editing && this.node.textContent.includes('[[')) refreshNoteCardLook(this.body, this.deps.look())
     })
   }
 
   get editing(): boolean {
+    return this.code !== null || this.inner !== null
+  }
+
+  /** Edited in the raw-text fallback: the caret is in the card's own text then. */
+  get editingText(): boolean {
     return this.code !== null
+  }
+
+  /** The open card editor (YAZ-5026), for tests and the card window: null while the card is not edited with it. */
+  get cardEditor(): CardEditor | null {
+    return this.inner?.editor ?? null
   }
 
   private get pos(): number | null {
@@ -327,12 +370,12 @@ export class NoteCardView implements NodeView {
     this.dom.classList.toggle('note-card--off', isCardOff(line))
     this.next.hidden = !isCardNext(line)
     // Done says its keys, as Explore's head does (YAZ-5001), in words (YAZ-5035): "Done Esc Cmd + Enter".
-    if (this.code === null) this.editButton.textContent = 'Edit card'
+    if (!this.editing) this.editButton.textContent = 'Edit card'
     else if (this.editButton.firstChild?.textContent !== 'Done') this.editButton.replaceChildren('Done', keyCapsDom('esc'), keyCapsDom('⌘↵'))
-    this.editButton.setAttribute('aria-label', this.code === null ? 'Edit card' : 'Done')
-    this.dom.classList.toggle('note-card--editing', this.code !== null)
+    this.editButton.setAttribute('aria-label', this.editing ? 'Done' : 'Edit card')
+    this.dom.classList.toggle('note-card--editing', this.editing)
     this.drawReviews()
-    if (this.code !== null || this.drawn === text) return
+    if (this.editing || this.drawn === text) return
     this.drawn = text
     this.body.replaceChildren(text.trim() === '' ? this.emptyHint() : renderNoteCard(text, {}, this.deps.look()))
   }
@@ -467,7 +510,9 @@ export class NoteCardView implements NodeView {
   /** "Edit card": Crepe's code block in the card, the caret at the end of its text. */
   edit(select?: { from: number; to: number }): void {
     const pos = this.pos
-    if (this.code !== null || this.makeCode === null || pos === null || !this.view.editable) return
+    if (this.editing || pos === null || !this.view.editable) return
+    if (editorKind === 'page' && this.deps.editor !== undefined) return this.editWithPage(this.deps.editor, select)
+    if (this.makeCode === null) return
     this.code = this.makeCode(this.node)
     this.code.dom.classList.add('note-card__code')
     this.keyRow ??= noteCardKeyRow()
@@ -482,8 +527,98 @@ export class NoteCardView implements NodeView {
     this.code.setSelection?.(from, to, this.view.root)
   }
 
+  /**
+   * Edit card with the page's editor (YAZ-5026): mounted in the card under its head, the key row under it. The page's
+   * selection is the card while it is edited (the page does not see the inner editor's focus); the inner editor takes
+   * the keyboard once it is made.
+   */
+  private editWithPage(make: (root: HTMLElement) => CardCrepe, select?: { from: number; to: number }): void {
+    if (openCard !== null && openCard !== this) openCard.done()
+    const pos = this.pos
+    if (pos === null) return
+    const mount = document.createElement('div')
+    mount.className = 'note-card__editor'
+    mount.contentEditable = 'false'
+    this.keyRow ??= noteCardKeyRow()
+    this.dom.append(mount, this.keyRow)
+    const text = this.node.textContent
+    const editor = mountCardEditor({ root: mount, text, make, select, doors: { done: () => this.done(), changed: () => this.changed() } })
+    this.inner = { editor, mount, base: text, written: text, timer: undefined }
+    openCard = this
+    this.draw()
+    this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, pos)))
+  }
+
+  /** A change in the card editor: its text goes into the page 300 ms later (`mirror`). */
+  private changed(): void {
+    const inner = this.inner
+    if (inner === null) return
+    clearTimeout(inner.timer)
+    inner.timer = setTimeout(() => this.mirror(), NOTE_CARD_MIRROR_MS)
+  }
+
+  /** The card's text from its editor into the page, out of the undo history; saved as the card ID is. */
+  mirror(): void {
+    const inner = this.inner
+    if (inner === null) return
+    clearTimeout(inner.timer)
+    inner.timer = undefined
+    this.write(inner.editor.text(), false)
+  }
+
+  /**
+   * Puts `text` as the card's text in the page with the least change (the common start and end kept): `history` false
+   * → out of the undo history, saved by `NOTE_CARD_MIRROR_META`; true → ONE undo step of its own.
+   */
+  private write(text: string, history: boolean): void {
+    const pos = this.pos
+    const inner = this.inner
+    if (pos === null || this.view.isDestroyed) return
+    const node = this.view.state.doc.nodeAt(pos)
+    if (node === null || !isNoteCardNode(node)) return
+    const now = node.textContent
+    if (inner !== null) inner.written = text
+    if (now === text) return
+    let head = 0
+    while (head < now.length && head < text.length && now[head] === text[head]) head++
+    let tail = 0
+    while (tail < now.length - head && tail < text.length - head && now[now.length - 1 - tail] === text[text.length - 1 - tail]) tail++
+    const from = pos + 1 + head
+    const to = pos + 1 + now.length - tail
+    const middle = text.slice(head, text.length - tail)
+    const tr = middle === '' ? this.view.state.tr.delete(from, to) : this.view.state.tr.replaceWith(from, to, this.view.state.schema.text(middle))
+    if (history) this.view.dispatch(closeHistory(tr))
+    else this.view.dispatch(tr.setMeta('addToHistory', false).setMeta(NOTE_CARD_MIRROR_META, true))
+  }
+
+  /**
+   * Done with the page's editor (YAZ-5026): the page gets back the text the edit started from (or the one an outside
+   * change brought), out of the undo history, then the new text as ONE undo step: one ⌘Z in the page takes the whole
+   * edit back. No change: nothing is written.
+   */
+  private doneWithPage(): void {
+    const inner = this.inner
+    if (inner === null) return
+    clearTimeout(inner.timer)
+    const text = inner.editor.text()
+    inner.editor.destroy()
+    inner.mount.remove()
+    this.keyRow?.remove()
+    if (openCard === this) openCard = null
+    this.write(inner.base, false)
+    this.inner = null
+    this.write(text, true)
+    this.draw()
+    this.deps.host?.onEditDone?.(this.node.textContent)
+    const pos = this.pos
+    if (pos === null || this.view.isDestroyed) return
+    this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, pos)))
+    this.view.focus()
+  }
+
   /** "Done": the card drawn again, selected. */
   done(): void {
+    if (this.inner !== null) return this.doneWithPage()
     if (this.code === null) return
     this.code.destroy?.()
     this.code.dom.remove()
@@ -571,7 +706,7 @@ export class NoteCardView implements NodeView {
   private onMouseDown = (event: MouseEvent): void => {
     const target = event.target instanceof Element ? event.target : null
     // CodeMirror's own presses while the card is edited.
-    if (target === null || event.button !== 0 || (this.code !== null && this.code.dom.contains(target))) return
+    if (target === null || event.button !== 0 || (this.code !== null && this.code.dom.contains(target)) || this.inner?.mount.contains(target) === true) return
     // "Reviews (n)" opens or closes; the table's own buttons are React's. Neither selects the card.
     if (this.footer?.section.contains(target) === true) {
       if (this.footer.header.contains(target)) {
@@ -637,6 +772,13 @@ export class NoteCardView implements NodeView {
     if (!isNoteCardNode(node)) return false
     this.node = node
     if (this.code !== null && this.code.update?.(node, decorations, inner) === false) return false
+    const edit = this.inner
+    if (edit !== null && node.textContent !== edit.written) {
+      // The card's TEXT changed from outside while it is edited (an agent, git): Done writes ours, and ⌘Z brings theirs back.
+      edit.base = node.textContent
+      edit.written = node.textContent
+      this.deps.onNotice?.('This card changed outside while you edit it. Done keeps your text; ⌘Z brings the other back.')
+    }
     this.draw()
     return true
   }
@@ -648,7 +790,8 @@ export class NoteCardView implements NodeView {
 
   selectNode(): void {
     if (this.code !== null) this.code.selectNode?.()
-    else this.dom.classList.add('ProseMirror-selectednode')
+    // While its editor is open the card is the page's selection, and its "Editing" frame says so.
+    else if (this.inner === null) this.dom.classList.add('ProseMirror-selectednode')
   }
 
   deselectNode(): void {
@@ -661,11 +804,20 @@ export class NoteCardView implements NodeView {
   }
 
   ignoreMutation(mutation: MutationRecord | { type: 'selection'; target: Node }): boolean {
-    // The card's own drawing never reaches ProseMirror; CodeMirror's selection does, as in a code block.
+    // The card's own drawing never reaches ProseMirror; CodeMirror's selection does, as in a code block. The page's
+    // editor in the card (YAZ-5026) is all its own: the page never reads it.
     return this.code === null || !this.code.dom.contains(mutation.target) || mutation.type !== 'selection'
   }
 
   destroy(): void {
+    const inner = this.inner
+    if (inner !== null) {
+      // The page goes (a tab switch, a page read again): what the mirror wrote stays; the editor goes.
+      clearTimeout(inner.timer)
+      inner.editor.destroy()
+      this.inner = null
+      if (openCard === this) openCard = null
+    }
     this.closeTable()
     this.closeFacts()
     this.closeMenu?.()
@@ -713,7 +865,7 @@ function noteCardSelection() {
           if (!isNoteCardNode($from.parent) || $to.parent !== $from.parent) return null
           const pos = $from.before()
           const card = noteCardViewAt(editor, pos)
-          if (card === null || card.editing) return null
+          if (card === null || card.editingText) return null
           return state.tr.setSelection(NodeSelection.create(state.doc, pos))
         },
       }),
@@ -886,7 +1038,8 @@ export const noteCardCodeKeys: Extension = Prec.highest(
     },
     {
       key: 'Mod-Shift-Enter',
-      run: (cm) => cardOfCodeMirror(cm) !== null && insertSideBreak(cm),
+      // The raw-text card editor only: in a code block INSIDE the page's card editor (YAZ-5026) it adds a line above.
+      run: (cm) => cardOfCodeMirror(cm)?.editingText === true && !cm.dom.parentElement?.closest('.note-card__editor') && insertSideBreak(cm),
     },
   ]),
 )

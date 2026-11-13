@@ -264,7 +264,7 @@ import { breakMarks } from './breakMarks'
 import { BOARD_VIEW_META, createBoardEmbed } from './drawing/boardEmbed'
 import { flushBoardWindows } from './embed/hostWindow'
 import { drawingMenu, type DrawingCreator } from './drawingMenu'
-import { createSlashMenu } from './slashMenu'
+import { createSlashMenu, type SlashMenuGroups } from './slashMenu'
 import { imageOptionsCtx, type ImageOptions } from './image/imageOptions'
 import { createImageView, imageBoardKeys, imageParseDefaults } from './image/imageView'
 import type { FindChannel } from './find/findChannel'
@@ -359,8 +359,9 @@ import { cardLinkTitle, createWikilink, createWikilinkResolveSource, linkCard, l
 import { languages as codeLanguages } from '@codemirror/language-data'
 import { basename } from '@shared/types'
 import { imageSrc, noteDirRel } from './image/imageSrc'
-import { NOTE_CARD_ID_META, noteCardCodeKeys, noteCardLanguage, noteCardPlugins, noteCardRow, type NoteCardDeps, type NoteCardHost, type NoteCardReviewDoor } from './noteCard/noteCardView'
+import { flushNoteCardEditor, NOTE_CARD_ID_META, NOTE_CARD_MIRROR_META, noteCardCodeKeys, noteCardLanguage, noteCardPlugins, noteCardRow, type NoteCardDeps, type NoteCardHost, type NoteCardReviewDoor } from './noteCard/noteCardView'
 import type { NoteCardLook } from './noteCard/noteCardRender'
+import { cardEditorOptions } from './noteCard/cardEditorFeatures'
 import { changeCardLine } from '../review/cardFile'
 import { createIdLinkCaret } from './wikilink/idLinkCaret'
 import { createPillSelection } from './wikilink/pillSelection'
@@ -472,6 +473,17 @@ export interface CreateCrepeOptions {
   noteCards?: NoteCardHost
   /** The vault's card review (YAZ-5000): "Reviews (n)" under each card with reviews. Absent (a hover preview) → no section. */
   noteCardReviews?: NoteCardReviewDoor
+  /**
+   * Does a ```` ```card ```` block draw as a note card here? False: a code block, as in a vault with no IDs — the card
+   * editor's own editor (YAZ-5026: no card in a card). Absent → it does.
+   */
+  noteCardBlocks?: boolean
+  /** Zoom into a bullet (GRO-2029): its click and its keys. False in the card editor (YAZ-5026). Absent → on. */
+  outlineZoom?: boolean
+  /** Cell notes' button, preview, card and keys (YAZ-3818). False in the card editor (YAZ-5026). Absent → on. */
+  cellNotes?: boolean
+  /** A NON-note instance's own `/` rows (YAZ-5026: the card editor's "New side"), added after the Drawing row. */
+  extendSlash?: (builder: SlashMenuGroups) => void
 }
 
 /** The slice of Crepe's GroupBuilder `buildToolbar` hands over — structural, since Crepe exports the item type but not the builder class. */
@@ -644,7 +656,16 @@ const lockAgainKey = (lockAgain: () => boolean) =>
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // The "Note card" row (YAZ-4961, idea 9): only in a vault that gives IDs, read at each update of the menu's flags.
   const noteCardSlash = opts.noteCards === undefined ? undefined : { row: noteCardRow(opts.noteCards), on: () => (opts.wikilinks?.ids ?? false) }
-  const slashMenu = createSlashMenu(opts.drawing === undefined ? undefined : drawingMenu(opts.drawing), opts.hidden?.slash, noteCardSlash)
+  const drawingRows = opts.drawing === undefined ? undefined : drawingMenu(opts.drawing)
+  const extendSlash = opts.extendSlash
+  const slashRows =
+    extendSlash === undefined
+      ? drawingRows
+      : (builder: SlashMenuGroups) => {
+          drawingRows?.(builder)
+          extendSlash(builder)
+        }
+  const slashMenu = createSlashMenu(slashRows, opts.hidden?.slash, noteCardSlash)
   const crepe = new Crepe({
     root: opts.root,
     defaultValue: normalizeEmptyItems(opts.defaultValue ?? ''),
@@ -744,7 +765,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // A row of the table of contents, a crumb, the tab's tooltip and its Back list name a line's links as the note shows them (YAZ-3744 D6).
   const linkText = (text: string) => linksAsShown(text, wikilinks, viewOnlyLinks)
   if (opts.toc !== undefined) crepe.editor.use(createTableOfContents(opts.toc, { linkText, subscribe: wikilinks.subscribe }))
-  crepe.editor.use(createOutlineZoom({ title: () => 'Untitled', ...opts.zoom, linkText }))
+  if (opts.outlineZoom !== false) crepe.editor.use(createOutlineZoom({ title: () => 'Untitled', ...opts.zoom, linkText }))
   crepe.editor.use(guideLines)
   crepe.editor.use(bulletThreading)
   crepe.editor.use(sectionIndent)
@@ -769,10 +790,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(cellToolbar)
   // Cell notes (YAZ-3818 D8, D14): the "Add cell note" button in a cell's corner, the preview on a cell with a note,
   // and the open note's card beside its cell (the demo): Esc and the arrows at its edges at priority 90.
-  crepe.editor.use(cellNoteButton)
-  crepe.editor.use(cellNotePreview)
-  crepe.editor.use(cellNoteCard)
-  crepe.editor.use(cellNoteCardKeymap)
+  if (opts.cellNotes !== false) crepe.editor.use(cellNoteButton).use(cellNotePreview).use(cellNoteCard).use(cellNoteCardKeymap)
   // ⌘A on a bullet (YAZ-4348 demo round 2): its line first, then the whole note; priority 80, under the cell's 90.
   crepe.editor.use(bulletSelectAllKeymap)
   // The table menu's Custom colour… box and its target cells (YAZ-3817, YAZ-4366), kept through edits while it is open.
@@ -807,7 +825,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
   // Note cards (YAZ-4961): a ```card block draws as a card in every editor that has code blocks (idea 10: the hover
   // preview, QuickLook, read-only notes and Explore too); its pills, images and links as the note's.
-  if ({ ...features, ...opts.features }[CrepeFeature.CodeMirror] !== false) crepe.editor.use(noteCardPlugins(noteCardDeps(opts, wikilinks, viewOnlyLinks, follow)))
+  if ({ ...features, ...opts.features }[CrepeFeature.CodeMirror] !== false && opts.noteCardBlocks !== false) crepe.editor.use(noteCardPlugins(noteCardDeps(opts, wikilinks, viewOnlyLinks, follow)))
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav, wikilinks)).config(noPreviewOnPills)
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), wikilinks, opts.wikilinkNav, opts.linkLook))
   if (opts.boardEmbeds !== undefined) {
@@ -917,7 +935,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(addLineKeymap).use(addLineViews)
   crepe.editor.use(escapeToSidebar(opts.lockAgain))
   if (opts.lockAgain !== undefined) crepe.editor.use(lockAgainKey(opts.lockAgain))
-  crepe.editor.use(zoomKeymap)
+  if (opts.outlineZoom !== false) crepe.editor.use(zoomKeymap)
   // YAZ-1734 D3: a list_item left without its own paragraph (its line deleted) yields its children one level up, whatever path produced it.
   crepe.editor.use(liftHeadlessItems)
   // YAZ-1734 D6: typing over a selection that spans folded lines replaces only the visible pieces.
@@ -964,7 +982,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
         return new Plugin({
           key,
           // A new note card's ID (YAZ-4961) is such a write too: out of undo, so ⌘Z removes the card in one step.
-          state: { init: () => 0, apply: (tr, n) => (tr.docChanged && (tr.getMeta(BOARD_VIEW_META) === true || tr.getMeta(NOTE_CARD_ID_META) === true) ? n + 1 : n) },
+          // So is the card editor's mirror of a card's text (YAZ-5026): out of undo, so Done is ONE undo step.
+          state: { init: () => 0, apply: (tr, n) => (tr.docChanged && (tr.getMeta(BOARD_VIEW_META) === true || tr.getMeta(NOTE_CARD_ID_META) === true || tr.getMeta(NOTE_CARD_MIRROR_META) === true) ? n + 1 : n) },
           view: () => {
             let timer: ReturnType<typeof setTimeout> | undefined
             return {
@@ -1036,6 +1055,11 @@ function noteCardDeps(opts: CreateCrepeOptions, wikilinks: WikilinkResolveSource
           },
     onNotice: opts.wikilinkNav?.onNotice ?? nav?.onNotice,
     reviews: opts.noteCardReviews,
+    // Edit card with the page's editor (YAZ-5026): a second editor of this one's kind, with the card's on/off list.
+    editor: (root) => {
+      const crepe = createCrepe(cardEditorOptions(opts, root))
+      return { crepe, markdown: (doc) => postProcessMarkdown(crepe.editor.action((ctx) => ctx.get(serializerCtx)(doc))) }
+    },
   }
 }
 
@@ -1057,6 +1081,8 @@ const savedMarkdown = (ctx: Ctx): string | null => {
 export function getMarkdownForSave(crepe: Crepe): string {
   const saved = crepe.editor.action((ctx) => {
     flushBoardWindows(ctx.get(editorViewCtx))
+    // A card in Edit card (YAZ-5026): its text as it is now, into the page, before the page is read.
+    flushNoteCardEditor(ctx.get(editorViewCtx))
     return savedMarkdown(ctx)
   })
   return postProcessMarkdown(saved ?? crepe.getMarkdown())
