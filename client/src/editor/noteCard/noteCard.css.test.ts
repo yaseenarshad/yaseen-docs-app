@@ -24,3 +24,14 @@ it('every card rule that sets a margin or a padding beats `.milkdown *`, with no
   // The page gives a card room above and below, so two cards never touch.
   expect(rules(cardCss, '.milkdown .note-card').some((r) => /margin:\s*12px 0/.test(r.body))).toBe(true)
 })
+
+it('a side has no blank line under its text in the page: the body sets `white-space: normal` over ProseMirror`s `break-spaces` (YAZ-4964)', () => {
+  const prosemirror = read('../../../../node_modules/prosemirror-view/style/prosemirror.css')
+  // The page's editor keeps every space and newline; a card's body inherits that unless it sets its own.
+  expect(rules(prosemirror, '.ProseMirror').some((r) => r.selector === '.ProseMirror' && /white-space:\s*break-spaces/.test(r.body))).toBe(true)
+  const body = rules(cardCss, '.note-card__body').filter((r) => /white-space:\s*normal/.test(r.body))
+  expect(body.map((r) => r.selector)).toEqual(['.note-card .note-card__body'])
+  // The sides' outer margins stay 0, and the rule between two sides keeps its gap.
+  expect(rules(cardCss, '.note-card__side > :last-child').some((r) => /margin-bottom:\s*0/.test(r.body))).toBe(true)
+  expect(rules(cardCss, '.note-card .note-card__rule').some((r) => /margin:\s*10px -16px/.test(r.body))).toBe(true)
+})
