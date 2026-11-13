@@ -40,7 +40,8 @@ export interface TabBarProps {
    * The Inbox tab (YAZ-5011): the window's one review session. No file: no tooltip of a path. While `active`, no tab of
    * `tabs` is the active one. Its ✕ and a middle click close it. It stands at `at`, a slot of `tabs` (absent: after
    * them), and drags along the strip like a page tab (YAZ-5016); it never leaves the strip, so no other window, panel
-   * or tear-off takes it. Its menu has only the tab's own items (Close tab, Close other tabs, Close tabs to the right).
+   * or tear-off takes it. Its menu has only the tab's own items: Move to new window and Move to ▸ another window
+   * (YAZ-5054), Close tab, Close other tabs, Close tabs to the right.
    */
   inbox?: InboxTab
   /** ⌘T's button, the "+" after the tabs: App shows the blank tab and puts the caret in the search bar. Absent on a mount with no blank tab. */
@@ -182,6 +183,12 @@ export interface InboxTab {
   onCloseOthers?: () => void
   /** Its menu's "Close tabs to the right": the page tabs after it and the blank tab close. */
   onCloseToRight?: () => void
+  /** Its menu's "Move to new window" (YAZ-5054): the Inbox leaves for a window of its own, as a page tab does (YAZ-2933). */
+  onMoveToNewWindow?: () => void
+  /** The other windows that can take it (YAZ-5054), read when its menu opens: "Move to ▸". None: no "Move to". */
+  moveTargets?: () => readonly MoveTarget[]
+  /** "Move to ▸ <window>" (YAZ-5054): the Inbox goes to the open window `to`. */
+  onMoveToWindow?: (to: string) => void
 }
 
 /** The Inbox tab's id in the strip's own list (YAZ-5016): no page tab has it, so every slot counts it as a tab. */
@@ -286,7 +293,7 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
   const pageSlotRef = useRef(pageSlot)
   pageSlotRef.current = pageSlot
   /** The Inbox tab's own menu (YAZ-5016), where it stands. */
-  const [inboxMenu, setInboxMenu] = useState<{ x: number; y: number } | null>(null)
+  const [inboxMenu, setInboxMenu] = useState<{ x: number; y: number; targets: readonly MoveTarget[] } | null>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
@@ -830,7 +837,8 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
         }}
         onContextMenu={(e) => {
           e.preventDefault()
-          setInboxMenu({ x: e.clientX, y: e.clientY })
+          // The other windows are read once, as the menu opens (YAZ-5054, as a page tab's, YAZ-3091 S7).
+          setInboxMenu({ x: e.clientX, y: e.clientY, targets: inbox.onMoveToWindow === undefined ? [] : (inbox.moveTargets?.() ?? []) })
         }}
       >
         <button
@@ -1104,13 +1112,20 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
       <div className="tabbar-tail" {...endSlot} />
       <CardPreviewHost store={tabPreview.store} cardOf={previewTab} scopeOf={previewScope} diagramDarkColors={diagramDarkColors} side="below" />
       {menu !== null && <TabMenu menu={menu} label={labelOf(menu.path)} onClose={() => setMenu(null)} onMoveToRight={onMoveToRight} onMoveToNewWindow={onMoveToNewWindow} moveTargets={onMoveTargets?.(menu.path)} onMoveToWindow={onMoveToWindow} onHighlightWindow={onHighlightWindow} onDuplicate={onDuplicate} onRename={onSetName === undefined ? undefined : setRenaming} onResetName={(id) => onSetName?.(id, null)} onShowInSidebar={onShowInSidebar} onRenameFile={onRenameFile} onToggleFocus={onToggleFocus} onToggleFavorite={onToggleFavorite} onNotice={onNotice} />}
-      {/* The Inbox tab's menu (YAZ-5016): only the tab's own items. It shows no file, so no file item (Copy path, Reveal in Finder, Rename file …). */}
+      {/* The Inbox tab's menu (YAZ-5016, YAZ-5054): only the tab's own items. It shows no file, so no file item (Copy path, Reveal in Finder, Rename file …). */}
       {inboxMenu !== null && inbox !== undefined && (
         <ContextMenu
           x={inboxMenu.x}
           y={inboxMenu.y}
           onClose={() => setInboxMenu(null)}
           sections={[
+            // Where it goes (YAZ-5054), as a page tab's first group: no "Duplicate tab" (one Inbox per window) and no "Right panel" (no page).
+            [
+              ...(inbox.onMoveToNewWindow === undefined ? [] : [{ id: 'new-window', label: 'Move to new window', onSelect: inbox.onMoveToNewWindow }]),
+              ...(inbox.onMoveToWindow === undefined || inboxMenu.targets.length === 0
+                ? []
+                : [{ id: 'move-to', label: 'Move to', children: [inboxMenu.targets.map((t) => ({ id: `move-window:${t.id}`, label: t.label, onSelect: () => inbox.onMoveToWindow?.(t.id), onPreview: (on: boolean) => onHighlightWindow?.(on ? t.id : null) }))] }]),
+            ],
             [{ id: 'close', label: 'Close tab', onSelect: inbox.onClose }],
             [
               ...(inbox.onCloseOthers === undefined ? [] : [{ id: 'close-others', label: 'Close other tabs', disabled: pages.length === 0 && !blank, onSelect: inbox.onCloseOthers }]),

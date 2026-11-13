@@ -209,6 +209,19 @@ describe('useCardReview', () => {
     await vi.waitFor(() => expect(review.session?.card?.page?.next).toBe(false))
   })
 
+  it('YAZ-5054: a session says what it reviews (`cards`), and a start can resume a moved Inbox: its filter and the card on show', async () => {
+    page('Bio/More.md', ['What is a {{gene}}?', 'WIKI-5'])
+    await mount()
+    await act(async () => review.start({ folder: 'Bio' }))
+    expect(review.session?.cards).toEqual({ folder: 'Bio' })
+    expect(review.session?.card?.id).toBe('WIKI-3')
+    // The card on show and the filter come along; a card no longer in the queue starts at the filter's first card.
+    await act(async () => review.start({ folder: 'Bio' }, { filter: 'new', card: { path: `${ROOT}/Bio/More.md`, id: 'WIKI-5' } }))
+    expect(review.session).toMatchObject({ filter: 'new', cards: { folder: 'Bio' }, card: { id: 'WIKI-5' } })
+    await act(async () => review.start({}, { filter: 'due', card: { path: `${ROOT}/Gone.md`, id: 'WIKI-9' } }))
+    expect(review.session).toMatchObject({ filter: 'due', cards: {}, card: { id: 'WIKI-1' } })
+  })
+
   it('"Review this page" keeps only that page\'s cards; "Review this folder" only the folder\'s', async () => {
     await mount()
     await act(async () => review.start({ page: `${ROOT}/Bio/Cells.md` }))

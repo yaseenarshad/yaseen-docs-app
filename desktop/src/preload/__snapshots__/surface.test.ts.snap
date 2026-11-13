@@ -93,6 +93,7 @@ link.onPopOutTab/1: on link:pop-out-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev"
 link.onSendTab/1: on link:send-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:send-tab
 link.onSetRoots/1: on link:set-roots -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:set-roots
 link.onTabAction/1: on link:tab-action -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:tab-action
+link.onTakeInbox/1: on link:take-inbox -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:take-inbox
 link.onTakeTab/1: on link:take-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off link:take-tab
 link.ready/0: invoke link:ready []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 lsp.cancelInstall/0: invoke lsp:cancel-install []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -242,7 +243,9 @@ window.hiddenWindows/0: invoke window:hidden-windows-now []; => "answer"; !> {"c
 window.highlight/1: invoke window:highlight ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.highlightTab/2: invoke window:highlight-tab ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.identity/0: invoke window:identity []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.inboxToNewWindow/1: invoke window:inbox-to-new-window ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.minimizedWindows/0: invoke window:minimized-windows-now []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.moveInboxTo/2: invoke window:move-inbox-to ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.moveTab/5: invoke window:move-tab ["a0","a1","a2",null,null]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.moveTo/3: invoke window:move-to ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.noteClosed/1: invoke window:note-closed ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

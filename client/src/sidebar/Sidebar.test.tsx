@@ -8571,6 +8571,22 @@ describe('Inbox row (YAZ-2322)', () => {
     expect(props.onOpenInbox).toHaveBeenCalledTimes(1)
   })
 
+  it('YAZ-5054: a right-click opens the row\'s own menu — "Open in new tab" and "Open in new window", as a page row has them — never the text menu', async () => {
+    const onInboxNewWindow = vi.fn()
+    const { el, props } = await mount({ review: true, dueCount: 3, onInboxNewWindow })
+    const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    act(() => void inbox(el)?.dispatchEvent(menu))
+    expect(menu.defaultPrevented).toBe(true)
+    const items = () => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')]
+    expect(items().map((item) => [item.textContent, item.disabled])).toEqual([['Open in new tab', false], ['Open in new window', false]])
+    act(() => items()[0].click())
+    expect(props.onOpenInbox).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('.ctx-menu')).toBeNull()
+    act(() => void inbox(el)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+    act(() => items()[1].click())
+    expect(onInboxNewWindow).toHaveBeenCalledExactlyOnceWith(props.vaults[0].root)
+  })
+
   it('reads as active exactly while a review is open', async () => {
     const { el, rerender } = await mount({ review: true, dueCount: 3 })
     expect(inbox(el)?.getAttribute('aria-pressed')).toBe('false')

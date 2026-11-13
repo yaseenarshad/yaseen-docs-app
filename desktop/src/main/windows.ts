@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
-import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, defaultRightPanelIdentity, normalizeFilesZoom, normalizeRoots, placeVaults, rootOfPath, sameVaults, stripSlash, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type ScreenPoint, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type TearOffResult, type WindowBounds, type WindowEntry } from '@shared/types'
+import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, defaultRightPanelIdentity, normalizeFilesZoom, normalizeRoots, placeVaults, rootOfPath, sameVaults, stripSlash, type FilesAction, type FilesPreviewRequest, type InboxCarry, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type ScreenPoint, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type TearOffResult, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 import { appZoomFactor } from './appZoom'
@@ -153,6 +153,18 @@ export interface WindowManager extends WindowLookup {
    * its vaults holds `path` (D2): no vault is added. Nothing is stored here: the target stores its own new tab.
    */
   moveTo(to: string, path: string, carry?: PopOutCarry): boolean
+  /**
+   * The Inbox tab's "Move to new window" and the Inbox row's "Open in new window" (YAZ-5054): a window as `popOut`'s —
+   * `from`'s vaults (by value) and lens, the sidebar hidden, the right panel empty, cascaded (beside a Files window) —
+   * with NO page tab, and `link:take-inbox` with `carry`, held until its page listens. No MRU bump. The new window's
+   * id. Nothing of the Inbox is stored: it is session-only, as in any window (YAZ-5011).
+   */
+  inboxToNewWindow(from: WindowEntry, carry: InboxCarry): string
+  /**
+   * The Inbox tab's "Move to ▸ <window>" (YAZ-5054): raise the live full window `to` and push `link:take-inbox`.
+   * `false` = `to` is not live, is a Files window, or does not show `carry.root`.
+   */
+  moveInboxTo(to: string, carry: InboxCarry): boolean
   /**
    * A card of another window on the tab board (YAZ-3343 D3): raise the live window `to` and push `link:focus-tab`
    * with `ref`, held like any link push until its page listens. `false` = `to` is not live. The target finds the tab itself.
@@ -354,7 +366,7 @@ export interface WindowManager extends WindowLookup {
 }
 
 /** What the IPC layer (`ipc/window.ts`) needs from the manager; tests fake just this slice. */
-export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'addVaultAndTake' | 'popOutTab' | 'showWindow' | 'raise' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeReload' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'appNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
+export type WindowManagerIpc = Pick<WindowManager, 'idFor' | 'openWindow' | 'duplicateWindow' | 'popOut' | 'tearOff' | 'moveTo' | 'inboxToNewWindow' | 'moveInboxTo' | 'focusTab' | 'closeTabs' | 'moveTab' | 'setName' | 'closeOther' | 'openBehind' | 'setRoots' | 'addVaultAndTake' | 'popOutTab' | 'showWindow' | 'raise' | 'hiddenWindows' | 'minimizedWindows' | 'highlightTab' | 'tabAction' | 'highlight' | 'takeStartView' | 'takeReload' | 'takeStartEmpty' | 'takeStartCollapsed' | 'openRecentBeside' | 'openAlone' | 'openVaultSet' | 'closeWindow' | 'handleFlushed' | 'handleLinkReady' | 'vaultNotice' | 'appNotice' | 'openFilesWindow' | 'openFromFiles' | 'filesWide' | 'filesPreview' | 'setFilesZoom' | 'filesZoomMenu' | 'filesToNormal'>
 
 // ---------- bounds clamping (pure) ----------
 
@@ -1054,6 +1066,25 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       const entry = entryOf(to)
       if (win === undefined || entry === undefined || isFilesWindow(entry) || from === to || liveWindow(from) === undefined) return false
       sendLink(win, CONTRACT.link.onAddVaultAndTake.channel, { vault, from, ref: { path: ref.path, copy: ref.copy } })
+      return true
+    },
+
+    inboxToNewWindow(from, carry) {
+      const id = randomUUID()
+      // Another window, as `openBlank`'s (not `from`'s strip, name, focus list or kind), with the sidebar hidden as a
+      // moved tab's (`popOut`) — but from a Files window it shows, as every window made from one (YAZ-3357 D8).
+      open({ id, root: from.root, roots: [...from.roots], file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: !isFilesWindow(from), sidebarLens: from.sidebarLens, bounds: madeFrom(from) })
+      const win = live.get(id)
+      if (win !== undefined) sendLink(win, CONTRACT.link.onTakeInbox.channel, carry)
+      return id
+    },
+
+    moveInboxTo(to, carry) {
+      const win = liveWindow(to)
+      const entry = entryOf(to)
+      if (win === undefined || entry === undefined || isFilesWindow(entry) || !entry.roots.some((root) => stripSlash(root) === stripSlash(carry.root))) return false
+      focusWindow(win)
+      sendLink(win, CONTRACT.link.onTakeInbox.channel, carry)
       return true
     },
 
