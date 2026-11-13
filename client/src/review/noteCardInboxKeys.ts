@@ -40,7 +40,7 @@ export function noteCardInboxKey(event: KeyPress): NoteCardInboxKey | null {
 export interface NoteCardInboxMoment {
   /** A card shows (not the done screen). */
   card: boolean
-  /** The buttons show: Space has no more to show. */
+  /** Space has no more to show (the answer buttons show from the start, YAZ-5010). */
   answering: boolean
   canUndo: boolean
   /** The card can be edited (not a read-only vault): E opens it in the card window, in Edit card (YAZ-5003). */

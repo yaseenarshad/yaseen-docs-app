@@ -6,12 +6,12 @@
  *  - Head: the card ID first, small and grey (a click copies it, D20; its place in the page's card and the card window
  *    too), the chip "Up next ×" for a card at the top of the Inbox (YAZ-4999 D3), the page's name (O), "3 of 12", ×. No card title: the card is right below it.
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
- *    Space shows the next side, whose hidden words then show one by one. After the last step the answer buttons show,
- *    and `showAnswers()` fixes what each one writes then (the hover is the truth, D13). A card with one side and no
- *    hidden word shows its buttons at once.
+ *    Space shows the next side, whose hidden words then show one by one. The answer buttons show from the moment the
+ *    card shows (YAZ-5010, Yaseen: "Should always be there"): `showAnswers()` fixes what each one writes then (the
+ *    hover is the truth, D13), and 1–2 / 1–4 answer at any step.
  *  - The buttons (D5): Forgot · Remembered, or Again · Hard · Good · Easy, by the setting; the hover says when the
  *    card comes back ("Remembered · 9 days").
- *  - The keys (`noteCardInboxKeys.ts`): Space, 1–2 / 1–4 (once the buttons show), ⌘Z, O (the page on top, landed on
+ *  - The keys (`noteCardInboxKeys.ts`): Space, 1–2 / 1–4 (at any step, YAZ-5010), ⌘Z, O (the page on top, landed on
  *    the card; Esc there comes back to this card at the same step), E (YAZ-5003: the CARD WINDOW on top, in Edit card;
  *    Done, Esc or ⌘↵ there saves and comes back to this card at the same step; nothing in a read-only vault, where
  *    Edit card is blocked as in the page), ← → (YAZ-5004: the card before or after, no answer), ⌘↵ (the page in a
@@ -109,11 +109,11 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
   const hiddenUpTo = (sides: number): number => counts.slice(0, sides).reduce((a, b) => a + b, 0)
   const done = text !== null && step.sides >= counts.length && step.shown >= hiddenUpTo(counts.length)
 
-  // The buttons show: their reviews are fixed now, so the hover and the write agree (D13). Again after a delete re-reads the card.
+  // The buttons show with the card (YAZ-5010): their reviews are fixed now, so the hover and the write agree (D13). Again after a delete re-reads the card.
   const { showAnswers } = review
   useEffect(() => {
-    if (done && session.answers === null) showAnswers()
-  }, [done, session.answers, showAnswers])
+    if (text !== null && session.answers === null) showAnswers()
+  }, [text, session.answers, showAnswers])
 
   // The keyboard comes to the Inbox when it opens and with each card; back from the Explore stack, App gives it back here.
   useEffect(() => {
@@ -148,7 +148,7 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
       if (!isInboxKeyTarget(event, rootRef.current)) return
       const key = noteCardInboxKey(event)
       if (key === null) return
-      const { done, card, session, review, ratings, moreOpen } = live.current
+      const { card, session, review, ratings, moreOpen } = live.current
       event.preventDefault()
       event.stopPropagation()
       if (key.kind === 'close') return moreOpen ? setMore(null) : review.close()
@@ -163,8 +163,9 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
         return
       }
       if (key.kind === 'answer') {
+        // At any step (YAZ-5010): the buttons show from the moment the card shows.
         const rating = ratings[key.button]
-        if (done && rating !== undefined && !event.repeat) void review.answer(rating)
+        if (card.page !== null && rating !== undefined && !event.repeat) void review.answer(rating)
         return
       }
       if (key.kind === 'open') return openPage(card.path, card.index, false)
@@ -275,8 +276,7 @@ export function NoteCardInbox({ review, session, vaultOf, nameOf, openPage, open
               </HoverTip>
             </div>
             <div className="note-card-inbox__answers">
-              {done &&
-                session.answers !== null &&
+              {session.answers !== null &&
                 session.answers.map((a, i) => {
                   const label = answerLabel(a.review.rating, review.settings)
                   // The app's own hover box (a native title shows nothing in the app, YAZ-4772): when the card comes back.
