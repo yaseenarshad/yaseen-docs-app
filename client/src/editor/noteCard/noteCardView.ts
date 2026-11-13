@@ -255,9 +255,10 @@ export const NOTE_CARD_EDIT_KEYS: ReadonlyArray<{ keys: string; label: string }>
 
 /**
  * The quiet key row under Edit card's editor, on one line, keycaps as the Inbox's (`.explore__foot kbd`), in words
- * (YAZ-5035, `keyCapsDom`): "Cmd + L hide word · Cmd + Shift + Enter new side · Cmd + Enter / Esc Done".
+ * (YAZ-5035, `keyCapsDom`): "Cmd + L hide word · Cmd + Shift + Enter new side · Cmd + Enter / Esc Done". A card embed's
+ * Edit card has the same row (YAZ-5037, `cardEmbed.ts`).
  */
-function noteCardKeyRow(): HTMLElement {
+export function noteCardKeyRow(): HTMLElement {
   const row = document.createElement('div')
   row.className = 'explore__foot note-card__keys'
   row.contentEditable = 'false'

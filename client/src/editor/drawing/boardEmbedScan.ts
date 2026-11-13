@@ -6,6 +6,7 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { PluginKey, type EditorState, type Selection } from '@milkdown/kit/prose/state'
 import type { DecorationSet } from '@milkdown/kit/prose/view'
+import type { CardLink } from '@shared/cardLinks'
 import { optionsPipe, splitEmbed } from '@shared/embedOptions'
 import { WIKILINK_RE, eachPlainRun } from '../wikilink/wikilinkPlugin'
 import { boardEmbedTarget, isBoardSrc, type BoardCheck } from './boardEmbedText'
@@ -60,6 +61,18 @@ export const boardEmbedKey = new PluginKey<DecorationSet>('mdapp-board-embed')
 
 /** The host's board check (YAZ-4920), on its plugin's spec, or undefined without the host: an id link's kind. */
 export const boardCheckOf = (state: EditorState): BoardCheck | undefined => (boardEmbedKey.get(state)?.spec as { isBoard?: BoardCheck } | undefined)?.isBoard
+
+/**
+ * What the host knows of cards (YAZ-5037), on its plugin's spec: the card a link or an id embed names (by its ID, or a
+ * card file's link), and an ID it draws as "Missing card". Its board check says yes to both; these tell them apart.
+ */
+export interface CardCheck {
+  cardOf: (target: string) => CardLink | null
+  isMissing: (target: string) => boolean
+}
+
+/** The host's card check, or undefined: no host, or no card embeds in this editor (the card editor, YAZ-5026). */
+export const cardCheckOf = (state: EditorState): CardCheck | undefined => (boardEmbedKey.get(state)?.spec as { cards?: CardCheck } | undefined)?.cards
 
 /**
  * The paragraph at `pos` is one board embed and nothing else (YAZ-4907: a line goes beside it, as beside a code block or

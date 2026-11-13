@@ -62,6 +62,11 @@ export async function readCardAt(path: string, id: string | null, index: number)
     if (err instanceof BridgeRequestError && err.code === 'NOT_FOUND') return null
     throw err
   }
+  return cardInContent(path, content, id, index)
+}
+
+/** `readCardAt` on bytes already read (a card embed's one read per file version, YAZ-5037): the same choice of card. */
+export function cardInContent(path: string, content: string, id: string | null, index: number): CardAtPage | null {
   const cards = pageCards(content)
   const at = id === null || (cards[index] !== undefined && cardIdOf(cards[index].line) === id) ? index : cards.findIndex((c) => cardIdOf(c.line) === id)
   const card = cards[at]
