@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
-import { cardIdOf, cardReviewsOf, pageCards, rewritePageCards, withCardId, withCardReviews, withoutCardReviews, type CardReview } from '@shared/cardLine'
+import { cardIdOf, pageCards, rewritePageCards, settleCardCopy, withCardId, type CardLine } from '@shared/cardLine'
 import { moveFolderValues } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, noteIdNumber, vaultNoteId } from '@shared/noteId'
@@ -460,57 +460,52 @@ async function cardsToFix(
   return work
 }
 
-/** The reviews of `reviews` less those `held` holds (a review is its time and its rating). */
-const missing = (reviews: readonly CardReview[], held: readonly CardReview[]): CardReview[] =>
-  reviews.filter((r) => !held.some((h) => h.at === r.at && h.rating === r.rating))
-
 /**
  * The note cards of the page at `file` take the IDs `ids` (one for each of `fixes`, in order), but only while each
  * still holds what it held: a compare-and-set on the page's bytes and mtime, as `giveId`. False when nothing was written.
  *
- * NO REVIEW IS DROPPED (YAZ-4993). A copy with the text of the card that keeps its ID (`copyOf`, `keeper`) gives that
- * card each review it lacks (the union: each review one time, in time order), then loses its own (`history: false`).
- * A copy with another text keeps its history (`history: true`): the sweep cannot tell which card is the original, and
- * both histories stay. A copy's other parts (`off`, unknown parts) stay on it. The keeper on ANOTHER page is written
- * FIRST, with its own compare-and-set; this page only after it. A write that fails between the two leaves a review on
- * two cards, never on none, and the next pass settles it (the union of a review it holds adds nothing).
+ * NO REVIEW IS DROPPED (YAZ-4993, YAZ-4998). Each copy is settled by the one no-drop rule (`settleCardCopy`, the
+ * editor's rule too). A copy with the text of the card that keeps its ID (`copyOf`, `keeper`) gives that card each
+ * review it lacks (the union: each review one time, in time order), then loses its own (`history: false`). A copy with
+ * another text keeps its history (`history: true`): the sweep cannot tell which card is the original, and both
+ * histories stay. A copy's other parts (`off`, unknown parts) stay on it. The keeper on ANOTHER page is written FIRST,
+ * with its own compare-and-set; this page only after it. A write that fails between the two leaves a review on two
+ * cards, never on none, and the next pass settles it (the union of a review it holds adds nothing).
  */
 export async function giveCardIds(file: string, fixes: readonly CardFix[], ids: readonly string[]): Promise<CardFix[] | false> {
   const { content, mtime } = await readFile(file)
   const cards = pageCards(content)
   if (fixes.some((fix) => cards[fix.index] === undefined || cardIdOf(cards[fix.index].line) !== fix.held)) return false
-  // The reviews each card of this page takes from its copies on the page.
-  const carried = new Map<number, CardReview[]>()
+  /** Each card's line as this page will be written: the copies on the page settled first, in page order. */
+  const lines: CardLine[] = cards.map((card) => card.line)
   const settled = fixes.map((fix): CardFix => {
-    if (fix.copyOf === undefined) return fix
-    if (cards[fix.copyOf]?.text !== cards[fix.index].text) return { ...fix, history: true }
-    carried.set(fix.copyOf, [...(carried.get(fix.copyOf) ?? []), ...cardReviewsOf(cards[fix.index].line)])
-    return fix
+    if (fix.copyOf === undefined || cards[fix.copyOf] === undefined) return fix
+    const done = settleCardCopy({ line: lines[fix.copyOf], text: cards[fix.copyOf].text }, { line: lines[fix.index], text: cards[fix.index].text })
+    lines[fix.copyOf] = done.keeper ?? lines[fix.copyOf]
+    lines[fix.index] = done.copy
+    return done.emptied ? fix : { ...fix, history: true }
   })
-  /** Every review the card at `n` holds once this page is written: its own and those its copies give it. */
-  const reviewsAt = (n: number): CardReview[] => [...cardReviewsOf(cards[n].line), ...(carried.get(n) ?? [])]
   for (const [i, fix] of settled.entries()) {
     if (fix.keeper === undefined || fix.history) continue
     const there = await readFile(fix.keeper)
-    const at = pageCards(there.content).findIndex((card) => cardIdOf(card.line) === fix.held)
+    const theirs = pageCards(there.content)
+    const at = theirs.findIndex((card) => cardIdOf(card.line) === fix.held)
     // The keeper no longer holds the ID (it was cut): no copy now. Nothing is written; the next pass sees again.
     if (at === -1) return false
-    const keeper = pageCards(there.content)[at]
-    if (keeper.text !== cards[fix.index].text) {
+    const done = settleCardCopy({ line: theirs[at].line, text: theirs[at].text }, { line: lines[fix.index], text: cards[fix.index].text })
+    if (!done.emptied) {
       settled[i] = { ...fix, history: true }
       continue
     }
-    const add = missing(reviewsAt(fix.index), cardReviewsOf(keeper.line))
-    if (add.length > 0)
-      await writeFile({ path: fix.keeper, content: rewritePageCards(there.content, (card, n) => (n === at ? withCardReviews(card.line, add) : undefined)), expectedMtime: there.mtime })
+    if (done.keeper !== null && done.keeper !== theirs[at].line)
+      await writeFile({ path: fix.keeper, content: rewritePageCards(there.content, (_card, n) => (n === at ? (done.keeper ?? undefined) : undefined)), expectedMtime: there.mtime })
+    lines[fix.index] = done.copy
   }
-  const given = new Map(settled.map((fix, i) => [fix.index, { fix, id: ids[i] }]))
-  const next = rewritePageCards(content, (card, n) => {
-    const give = given.get(n)
-    const add = carried.get(n) ?? []
-    if (give === undefined) return add.length > 0 ? withCardReviews(card.line, add) : undefined
-    const line = withCardId(card.line, give.id)
-    return give.fix.history ? withCardReviews(line, add) : withoutCardReviews(line)
+  const given = new Map(settled.map((fix, i) => [fix.index, ids[i]]))
+  const next = rewritePageCards(content, (_card, n) => {
+    const id = given.get(n)
+    if (id !== undefined) return withCardId(lines[n], id)
+    return lines[n] === cards[n].line ? undefined : lines[n]
   })
   await writeFile({ path: file, content: next, expectedMtime: mtime })
   return settled

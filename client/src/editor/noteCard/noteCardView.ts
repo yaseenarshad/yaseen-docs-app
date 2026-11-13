@@ -45,7 +45,7 @@ import { NodeSelection, Plugin, PluginKey, TextSelection, type EditorState } fro
 import type { Decoration, DecorationSource, EditorView, NodeView, NodeViewConstructor } from '@milkdown/kit/prose/view'
 import { clearTextInCurrentBlockCommand, setBlockTypeCommand } from '@milkdown/kit/preset/commonmark'
 import { $prose, $shortcut, $view } from '@milkdown/kit/utils'
-import { cardIdOf, cardReviewsOf, formatCardLine, isCardOff, withCardId, withCardOff, withoutCardReviews, type CardLine } from '@shared/cardLine'
+import { cardIdOf, cardReviewsOf, formatCardLine, isCardOff, settleCardCopy, withCardId, withCardOff, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import { codeWidthSchema } from '../code/codeWidth'
 import { copyText, openMenuAt } from '../linkMenu'
@@ -579,9 +579,6 @@ function holdsCardWithId(content: Fragment): boolean {
 /** `EXTERNAL_EDIT_META` of `external/applyExternalMarkdown.ts` (that module imports `createCrepe`, which imports this one). */
 const EXTERNAL_EDIT_META = 'external-edit'
 
-/** A copy's line (YAZ-4972): no ID and no history; every other part (`off`, unknown parts) stays. */
-const copyLine = (line: CardLine): CardLine => ({ parts: withoutCardReviews(line).parts.filter((p) => p.kind !== 'id') })
-
 /**
  * THE COPY RULE IN THE PAGE (YAZ-4972): a card that a user edit INSERTS (a paste, a drop, Alt-drag) while another card
  * of the page holds its ID is the copy — it loses its ID and its history in the same transaction, and asks the vault's
@@ -591,6 +588,12 @@ const copyLine = (line: CardLine): CardLine => ({ parts: withoutCardReviews(line
  * yet swept, holds the ID too (YAZ-4993: that copy's line can be older, so emptying the moved card could drop a review).
  * Only as many inserted cards are copies as the edit adds holders of the ID. An outside write and ⌘Z / ⇧⌘Z are not
  * user inserts: the sweep's rule settles an agent's copy, and never drops a review.
+ *
+ * NO REVIEW IS DROPPED (YAZ-4998): a copy is settled by the one no-drop rule (`settleCardCopy`). The card the page
+ * already held keeps the ID. With its text, it takes each review of the copy that it lacks, in the SAME transaction (one
+ * ⌘Z undoes the paste and the union), and only then does the copy's history empty. With another text, the copy keeps its
+ * history. So a cut and a paste of the original beside an agent's older copy (two dispatches: the paste "adds a
+ * holder") loses no review: the agent's copy takes the original's reviews, or the original keeps them.
  */
 function noteCardCopies(deps: NoteCardDeps) {
   /** Positions of copies that wait for a new ID from the door, set by `appendTransaction`, taken by the plugin view. */
@@ -617,12 +620,16 @@ function noteCardCopies(deps: NoteCardDeps) {
           }
           if (inserted.length === 0) return null
           const isNew = (pos: number) => inserted.some((r) => pos >= r.from && pos < r.to)
-          const held = new Set<string>()
+          /** Each ID the page holds, with the card that keeps it: the first card the page held before the edit. */
+          const keepers = new Map<string, number>()
           const fresh: Array<{ pos: number; id: string }> = []
           state.doc.descendants((node, pos) => {
             if (isNoteCardNode(node)) {
               const id = cardIdOf(noteCardLineOf(node))
-              if (id !== null) (isNew(pos) ? fresh.push({ pos, id }) : held.add(id))
+              if (id !== null) {
+                if (isNew(pos)) fresh.push({ pos, id })
+                else if (!keepers.has(id)) keepers.set(id, pos)
+              }
               return false
             }
             return !node.isTextblock
@@ -643,17 +650,29 @@ function noteCardCopies(deps: NoteCardDeps) {
           count(old.doc, -1)
           const tr = state.tr
           const copies: number[] = []
+          /** The keepers' lines as the copies' reviews reach them, by position; written once, after the copies. */
+          const unions = new Map<number, CardLine>()
           for (const { pos, id } of fresh) {
-            if (!held.has(id)) {
-              held.add(id)
+            const at = keepers.get(id)
+            if (at === undefined) {
+              // An ID no other card of the page holds (a cut from another page): this card keeps it.
+              keepers.set(id, pos)
               continue
             }
             if ((more.get(id) ?? 0) <= 0) continue
             more.set(id, more.get(id)! - 1)
             const node = state.doc.nodeAt(pos)!
+            const keeper = state.doc.nodeAt(at)!
             const line = noteCardLineOf(node)
-            tr.step(new CardLineStep(pos, formatCardLine(line), formatCardLine(copyLine(line))))
+            const settled = settleCardCopy({ line: unions.get(at) ?? noteCardLineOf(keeper), text: keeper.textContent }, { line, text: node.textContent })
+            if (settled.keeper !== null) unions.set(at, settled.keeper)
+            tr.step(new CardLineStep(pos, formatCardLine(line), formatCardLine(withoutCardId(settled.copy))))
             copies.push(pos)
+          }
+          // The union lands on each keeper in this same transaction: the copy never empties before its reviews are there.
+          for (const [at, line] of unions) {
+            const before = noteCardLineOf(state.doc.nodeAt(at)!)
+            if (formatCardLine(line) !== formatCardLine(before)) tr.step(new CardLineStep(at, formatCardLine(before), formatCardLine(line)))
           }
           if (copies.length === 0) return null
           if (deps.host?.mintId !== undefined) asking = [...asking, ...copies]
