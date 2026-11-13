@@ -66,6 +66,24 @@ describe('a file\'s icon outside the tree (YAZ-3440 D11)', () => {
     expect(fileIconAttrs(plain, '/v/a.ts', false)['data-icon']).toBe('typescript')
   })
 
+  it('a card file (YAZ-5037) is the kind `card` from the index, whatever its name, with no Material icon; a pick still wins; a page of that name is a page', () => {
+    const cards = new Set(['/v/geo-140.md', '/v/odd-name.txt.md'])
+    const h = { ...here({ '/v/mine.md': 'python' }), cards }
+    expect(fileIconAttrs(h, '/v/geo-140.md', false)).toEqual({ 'data-kind': 'card', style: {} })
+    expect(fileIconAttrs(h, '/v/odd-name.txt.md', false)['data-kind']).toBe('card')
+    expect(fileIconAttrs({ ...h, cards: new Set([...cards, '/v/mine.md']) }, '/v/mine.md', false)).toMatchObject({ 'data-kind': 'markdown', 'data-icon': 'python', 'data-icon-custom': '' })
+    expect(fileIconAttrs(h, '/v/page.md', false)).toMatchObject({ 'data-kind': 'markdown' })
+    expect(fileIconAttrs(here(), '/v/geo-140.md', false)['data-kind']).toBe('markdown')
+    const el = draw(
+      <IconsContext.Provider value={h}>
+        <FileIcon path="/v/geo-140.md" />
+      </IconsContext.Provider>,
+    )
+    const span = el.querySelector<HTMLElement>('.file-icon')!
+    expect(span.dataset.kind).toBe('card')
+    expect(span.hasAttribute('data-icon')).toBe(false)
+  })
+
   it('draws one aria-hidden span with the attributes; a new pick from App draws it again', () => {
     const el = draw(<IconsContext.Provider value={here()}><FileIcon path="/v/a.md" /></IconsContext.Provider>)
     const span = el.querySelector<HTMLElement>('.file-icon')!

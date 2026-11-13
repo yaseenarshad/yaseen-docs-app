@@ -8,7 +8,7 @@
  */
 import { MAX_ICON_MATCH, MAX_ICON_RULES, type VaultIcons } from '@shared/vaultIcons'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { StrictMode, act, useCallback, useState } from 'react'
+import { StrictMode, act, useCallback, useMemo, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { copyFoldKey } from '@shared/foldKey'
@@ -80,6 +80,8 @@ import { useVaultListsHere } from '../lists/useVaultListsHere'
 import { useVaultIcons } from './useVaultIcons'
 import { loadMaterialIcons } from './materialIcons'
 import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
+import { useCardFiles } from './cardFiles'
+import { IconsContext } from './FileIcon'
 import { DATE_TIP_MS } from './RowDateTip'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -208,7 +210,14 @@ function WithPreview(props: PanelProps) {
     onPreview(next)
   }, [onPreview])
   previewPanel = { path, close: () => setPath(null) }
-  return <Sidebar {...props} lists={lists} icons={icons} previewPath={path} onPreview={show} />
+  // The window's card files (YAZ-5037), as App hands them to every icon: from the vaults' index.
+  const cards = useCardFiles(useSameList(props.vaults.map((vault) => vault.index)))
+  const here = useMemo(() => ({ rowIcons: icons.rowIcons, roots, cards }), [icons.rowIcons, roots, cards])
+  return (
+    <IconsContext.Provider value={here}>
+      <Sidebar {...props} lists={lists} icons={icons} previewPath={path} onPreview={show} />
+    </IconsContext.Provider>
+  )
 }
 type Vault = PanelProps['vaults'][number]
 /** A vault's own review facts (YAZ-2602 R5): review on or off, what is due, whether its review is open; and the Inbox row's click. */
@@ -8707,6 +8716,88 @@ describe('review menu items (YAZ-2322)', () => {
   })
 })
 
+/**
+ * Card files in the sidebar (YAZ-5037): "New card" on the folders' menu where the vault makes cards (IDs and Review on),
+ * which writes `<id>.md` with one card and opens it; "Review this card" on a card file's row; and the card icon on that
+ * row, from the index (`kind: 'card'`), not from its name.
+ */
+describe('card files (YAZ-5037)', () => {
+  const rowAt = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
+  const rightClick = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+  const labels = (el: HTMLElement) => menuItems(el).map((b) => b.textContent)
+  const cardFile = (path: string, id: string): IndexRecord => ({ ...indexRecord(path), kind: 'card', title: 'Capital of France', cards: [{ id, off: false, next: false, reviews: [], title: 'Capital of France' }] })
+
+  it('"New card" sits after "New note" and before "New drawing" on a folder, a file and blank space, only in a vault with IDs and Review on', async () => {
+    const on = await mount({ review: true })
+    for (const target of [rowAt(on.el, '/v/sub'), rowAt(on.el, '/v/a.md'), on.el.querySelector('.sidebar__body')]) {
+      rightClick(target)
+      const all = labels(on.el)
+      expect(all.indexOf('New card')).toBe(all.indexOf('New note') + 1)
+      expect(all.indexOf('New drawing')).toBe(all.indexOf('New card') + 1)
+    }
+    for (const over of [{ review: false }, { review: true, indexSource: indexFor(false) }]) {
+      const { el } = await mount(over)
+      rightClick(rowAt(el, '/v/sub'))
+      expect(labels(el)).toContain('New note')
+      expect(labels(el)).not.toContain('New card')
+    }
+  })
+
+  it('"New card" takes ONE ID from the door and writes `<id>.md` in the folder: `kind: card` and the card "Title" with its ID, no name box; then the file opens', async () => {
+    const { el, bridge, props } = await mount({ review: true })
+    rightClick(rowAt(el, '/v/sub'))
+    await act(async () => itemByLabel(el, 'New card')?.click())
+    expect(bridge.mintNoteId).toHaveBeenCalledExactlyOnceWith('/v/sub')
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path: '/v/sub/yaz-1.md', content: '---\nkind: card\n---\n```card\nTitle\n```\n<!-- card: YAZ-1 -->\n' })
+    expect(el.querySelector('.create-inline__input')).toBeNull()
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/sub/yaz-1.md')
+  })
+
+  it('a read-only vault asks first, as New note does; refused, no ID is taken and nothing is made', async () => {
+    const onFileAction = vi.fn(async () => false)
+    const { el, bridge, props } = await mount({ review: true, onFileAction })
+    rightClick(rowAt(el, '/v/sub'))
+    await act(async () => itemByLabel(el, 'New card')?.click())
+    expect(onFileAction).toHaveBeenCalledExactlyOnceWith('/v')
+    expect(bridge.mintNoteId).not.toHaveBeenCalled()
+    expect(bridge.createFile).not.toHaveBeenCalled()
+    expect(props.onOpenFile).not.toHaveBeenCalled()
+  })
+
+  it('a card file`s row reads "Review this card", hands App the file, and shows the card icon from the index (its name says nothing)', async () => {
+    const indexSource = indexFor(true)
+    indexSource.update(() => null, [cardFile('/v/a.md', 'V-140')], [], true)
+    const { el, props } = await mount({ review: true, indexSource })
+    expect(rowAt(el, '/v/a.md')?.dataset.kind).toBe('card')
+    expect(rowAt(el, '/v/a.md')?.hasAttribute('data-icon')).toBe(false)
+    rightClick(rowAt(el, '/v/a.md'))
+    expect(labels(el)).not.toContain('Review this page')
+    act(() => itemByLabel(el, 'Review this card')?.click())
+    expect(props.onReviewPage).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    // The index drops the mark: a page again, with the page's icon and words.
+    act(() => indexSource.update(() => null, [{ ...indexRecord('/v/a.md'), cards: [{ id: 'V-140', off: false, next: false, reviews: [] }] }], [], true))
+    expect(rowAt(el, '/v/a.md')?.dataset.kind).toBe('markdown')
+    rightClick(rowAt(el, '/v/a.md'))
+    expect(labels(el)).toContain('Review this page')
+  })
+  it('Rename of a card file is a title edit: the box shows the card`s title, and what is typed goes to the title edit door', async () => {
+    const indexSource = indexFor(true)
+    indexSource.update(() => null, [cardFile('/v/a.md', 'V-140')], [], true)
+    const { el, props } = await mount({ review: true, indexSource })
+    rightClick(rowAt(el, '/v/a.md'))
+    act(() => itemByLabel(el, 'Rename')?.click())
+    const input = el.querySelector<HTMLInputElement>('.create-inline__input')!
+    expect(input.value).toBe('Capital of France')
+    act(() => {
+      input.value = 'Capital of Italy'
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    await act(async () => undefined)
+    expect(props.onRetitle).toHaveBeenCalledExactlyOnceWith('/v/a.md', 'Capital of Italy', 'file')
+    expect(props.onRenameFile).not.toHaveBeenCalled()
+  })
+})
+
 describe('settings cog (YAZ-1679)', () => {
   it('the footer cog only asks App for the dialog — the sidebar edits no setting itself', async () => {
     const { el, props } = await mount()
@@ -9859,7 +9950,8 @@ describe('several vaults in one window (YAZ-2602)', () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     const { el, b, props } = await two({ review: true })
     rightClick(rowByPath(el, b))
-    expect(topItems(el)).toEqual(['Open folder page', 'Paste', 'Copy path', 'New note', 'New drawing', 'New folder', 'Open by itself', 'Open in', 'Remove from this window'])
+    // Review is on in a vault with IDs: a vault creates as a folder does, New card too (YAZ-5037).
+    expect(topItems(el)).toEqual(['Open folder page', 'Paste', 'Copy path', 'New note', 'New card', 'New drawing', 'New folder', 'Open by itself', 'Open in', 'Remove from this window'])
     expect(flyout(el, 'Open in').map((item) => item.textContent)).toEqual(['VS Code', 'Reveal in Finder'])
     await act(async () => itemByLabel(el, 'Copy path')?.click())
     expect(writeText).toHaveBeenCalledExactlyOnceWith(b)

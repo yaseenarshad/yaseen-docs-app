@@ -101,6 +101,26 @@ describe('a card link in a note (YAZ-5030)', () => {
     }
   })
 
+  it('a card in a card file (YAZ-5037): a click opens the card window as any card; ⌘-click opens the card file`s own tab, with no landing to ask', async () => {
+    const CARD_FILE = '/vault/capital-of-france-demo-140.md'
+    const records = [...RECORDS, rec(CARD_FILE, { kind: 'card', title: 'Capital of France', cards: [{ id: 'DEMO-140', off: false, next: false, reviews: [], title: 'Capital of France' }] })]
+    const { root, nav } = await mount('Go [[DEMO-140]] now\n', source(records))
+    const asks: NoteCardOpenRequest[] = []
+    const onOpen = (e: Event) => asks.push((e as CustomEvent<NoteCardOpenRequest>).detail)
+    document.addEventListener(NOTE_CARD_OPEN, onOpen)
+    try {
+      mousedown(root.querySelector(`.${WIKILINK_CARD_CLASS}`)!, { detail: 1 })
+      expect(asks).toEqual([{ path: CARD_FILE, cardId: 'DEMO-140', index: 0 }])
+      mousedown(root.querySelector(`.${WIKILINK_CARD_CLASS}`)!, { metaKey: true, detail: 1 })
+      expect(nav.openBackground).toHaveBeenCalledExactlyOnceWith(CARD_FILE)
+      expect(asks).toHaveLength(1)
+      // The tab is the card's file: there is no page to land in, so nothing waits for a card view to take it.
+      expect(takeCardLanding(CARD_FILE, 'DEMO-140')).toBe(false)
+    } finally {
+      document.removeEventListener(NOTE_CARD_OPEN, onOpen)
+    }
+  })
+
   it('a copy, a tab label and other plain text read the card`s title (with its ID for a copy that leaves the app)', () => {
     const s = source()
     expect(linksAsShown('Learn [[DEMO-127]]', s)).toBe('Learn Estar')

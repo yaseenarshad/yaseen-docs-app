@@ -253,7 +253,7 @@
 /* A link to a note card (YAZ-5030): the card's title, then its ID small and grey, one pill with a card icon. The icon is
    a mask over the pill's colour on 1em of padding (the mark's way above): no atomic inline box (YAZ-4991). Named by both
    classes, so Crepe's reset (`.milkdown *`) does not take the padding. The picker's card row draws the same icon
-   (`wikilinkPicker.css`). */
+   (`wikilinkPicker.css`), and so does a card file's row (YAZ-5037): `--card-link-icon` is app.css's. */
 .wikilink.wikilink--card::before {
   content: '';
   padding-left: 1em;
@@ -266,7 +266,4 @@
   color: var(--fg-muted);
   font-size: 0.8em;
   font-variant-numeric: tabular-nums;
-}
-:root {
-  --card-link-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.4' stroke-linejoin='round'%3E%3Cpath d='M2.5 3.5h11v9h-11zM2.5 6.5h11'/%3E%3C/svg%3E");
 }

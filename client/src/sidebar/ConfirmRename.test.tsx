@@ -79,6 +79,15 @@ describe('ConfirmRename', () => {
     expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'UP-001 - Abdul' to 'New Note'? No other notes link to it.")
   })
 
+  it('a title edit whose title is already in (a card file`s Done wrote it, YAZ-5037) names the file it renames, not the title twice', () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const titles: PathTitles = new Map([['/v/yaz-1.md', 'Capital of France']])
+    act(() => root?.render(<ConfirmRename oldPath="/v/yaz-1.md" title="Capital of France" kind="file" count={0} titles={titles} onConfirm={vi.fn()} onCancel={vi.fn()} />))
+    expect(container.querySelector('.confirm__text')?.textContent).toBe("Rename 'yaz-1.md' to 'Capital of France'? No links need updating.")
+  })
+
   it('names a FOLDER whole: one called `Old Note.md` keeps its `.md` (YAZ-2290)', () => {
     const { el } = mount(0, 'dir')
     expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'Old Note.md' to 'New Note.md'? No other notes link to it.")

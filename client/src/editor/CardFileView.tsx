@@ -9,7 +9,8 @@
  *    mentions (n)", and "Embedded in (n)". There is no "Open page": the tab is the card's file.
  *  - EDIT CARD (YAZ-5026) as in the card window: Done writes the card's text by its ID on the newest bytes, ONE
  *    `transformFile` (`changeCardTextIn`). A read-only vault or a `readonly: true` file has no Edit card; ⋯ and
- *    reviews still write, as reviews do in a locked page.
+ *    reviews still write, as reviews do in a locked page. A Done that changed the title then names the file after it
+ *    (`onRetitle`, YAZ-5044 pick 1). A card New card just made opens in Edit card with "Title" selected.
  *  - A FILE THAT IS NOT VALID (`cardFileShape`) stays a card file: one notice at the top (`CardFileNotice`), and
  *    nothing is deleted. 2+ cards: "This card file holds 3 cards.", the first card under it (each one stays in review).
  *    Text outside the card: the notice, and that text below it, muted. No card: the notice, and the file's text.
@@ -17,7 +18,7 @@
  *    `kind: card` goes back to the page view (`onPage`, with the bytes just read); a second card is the notice above.
  */
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { cardFileShape, isCardFileContent } from '@shared/cardFileFormat'
+import { NEW_CARD_TEXT, cardFileShape, isCardFileContent } from '@shared/cardFileFormat'
 import { cardTitle } from '@shared/cardText'
 import { splitFrontmatter } from '@shared/frontmatter'
 import type { GestureAction } from '@shared/keys'
@@ -28,6 +29,7 @@ import type { FileResponse } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
 import { CardReviewDoor } from '../review/cardReviewDoor'
 import { cardInContent } from '../review/cardFile'
+import { forgetNewCard, isNewCard } from '../review/newCardFile'
 import { CardPane, cardMenuSections, cardWrites, isCardEditKey, onIndexVersion } from '../review/cardPane'
 import { noteCardFacts, noteCardNextReview, NoteCardId, NoteCardNextChip } from '../review/noteCardParts'
 import { useVaultReviewSettings } from '../review/useReviewSettings'
@@ -58,9 +60,13 @@ export interface CardFileViewProps {
   onNotice?: (message: string) => void
   /** The file is no longer a card file (`kind: card` gone on disk): the page view, on the file just read. */
   onPage: (file: FileResponse) => void
+  /** The title edit door (YAZ-2420 🔒 D16, App's): Done that changes the card's title names the file after it. Absent: no rename. */
+  onRetitle?: (path: string, title: string, kind: 'file') => void
 }
 
 const NO_CANDIDATES: WikilinkCandidateSource = { candidates: [], subscribe: () => () => undefined }
+/** A new card's "Title", selected as Edit card opens (offsets in the card's text). */
+const NEW_CARD_TITLE = { from: 0, to: NEW_CARD_TEXT.length }
 const quiet = (): void => undefined
 
 /** The notice of a card file that is not valid, or null for a valid one. */
@@ -79,7 +85,7 @@ function folderOf(root: string, path: string): string {
   return folder === '' ? base.slice(base.lastIndexOf('/') + 1) : folder.split('/').join(' / ')
 }
 
-export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage }: CardFileViewProps) {
+export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle }: CardFileViewProps) {
   const path = file.path
   const [content, setContent] = useState<string | null>(file.content)
   const onPageRef = useRef(onPage)
@@ -126,7 +132,10 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
     (): ExploreVault => ({ root, wikilinks, wikilinkCandidates: wikilinkCandidates ?? NO_CANDIDATES, viewOnlyLinks, readOnly: vaultLocked, review: door === null || settings === undefined ? undefined : { settings, deleteReview: door.deleteReview } }),
     [root, wikilinks, wikilinkCandidates, viewOnlyLinks, vaultLocked, door, settings],
   )
-  const [editing, setEditing] = useState(false)
+  // A card New card just made (YAZ-5037) opens in Edit card, its "Title" selected so typing replaces it: one time only.
+  const [fresh] = useState(() => isNewCard(path))
+  useEffect(() => forgetNewCard(path), [path])
+  const [editing, setEditing] = useState(fresh)
   const bodyRef = useRef<HTMLDivElement>(null)
   const wasEditing = useRef(editing)
   useEffect(() => {
@@ -136,6 +145,19 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   }, [editing])
 
   const writes = cardWrites(path, card, read, onNotice, vault.review)
+  /**
+   * Done (YAZ-5044 pick 1): the card's text, then — when its title changed — the file's name follows the title through
+   * the title edit door, which asks before renaming as a page's title does. The placeholder "Title" and an empty title
+   * name nothing (`<id>.md` stays), and nor does a card with no ID yet.
+   */
+  const editDone = (text: string) => {
+    const title = cardTitle(text)
+    const named = onRetitle !== undefined && card !== null && card.id !== null && title !== '' && title !== NEW_CARD_TEXT && title !== cardTitle(card.text)
+    writes.editDone(text, () => {
+      setEditing(false)
+      if (named) onRetitle(path, title, 'file')
+    })
+  }
   const onKeyDown = (event: ReactKeyboardEvent) => {
     if (editing || !canEdit || !isCardEditKey(event)) return
     event.preventDefault()
@@ -194,8 +216,9 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               card={card}
               path={path}
               vault={vault}
-              editing={editing}
-              onEditDone={(text) => writes.editDone(text, () => setEditing(false))}
+              editing={editing && canEdit}
+              onEditDone={editDone}
+              select={fresh && card.text === NEW_CARD_TEXT ? NEW_CARD_TITLE : undefined}
               doors={doors}
               onOpenPage={onOpenFile}
               reviews={reviewOn ? settings : undefined}

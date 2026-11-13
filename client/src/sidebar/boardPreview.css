@@ -146,3 +146,9 @@
   border: 0;
   background: var(--bg);
 }
+
+/* A card file's icon before its name (YAZ-5037, `NotePreview`): centred on the name, the header's gap after it. */
+.board-preview__header > .card-file-icon {
+  align-self: center;
+  margin-right: 0;
+}

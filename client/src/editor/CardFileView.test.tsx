@@ -13,6 +13,7 @@ import { CardFileView } from './CardFileView'
 import { noteCardViewOfDom } from './noteCard/noteCardView'
 import { VaultReadOnly } from '../vault/readOnlyVault'
 import { useReviewSettings } from '../review/useReviewSettings'
+import { createCardFile } from '../review/newCardFile'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -28,6 +29,12 @@ vi.mock('../api', async (importOriginal) => {
     ...real,
     api: {
       ...real.api,
+      // New card (YAZ-5037 phase 4): one ID from the door, then the file made at once.
+      mintNoteId: vi.fn(async () => 'WIKI-10'),
+      createFile: vi.fn(async (req: { path: string; content: string }) => {
+        disk.files.set(req.path, req.content)
+        return { path: req.path, mtime: 1, size: req.content.length }
+      }),
       readFile: vi.fn(async (path: string) => {
         disk.reads++
         const content = disk.files.get(path)
@@ -83,13 +90,15 @@ afterEach(() => {
   el?.remove()
 })
 
-async function mount(content: string, opts: { readOnly?: boolean; review?: boolean } = {}) {
-  disk.files.set(PATH, content)
+async function mount(content: string, opts: { readOnly?: boolean; review?: boolean; path?: string } = {}) {
+  const path = opts.path ?? PATH
+  disk.files.set(path, content)
   if (opts.review === false) disk.review = { enabled: false }
-  const file: FileResponse = { path: PATH, content, mtime: 1, size: content.length }
+  const file: FileResponse = { path, content, mtime: 1, size: content.length }
   const onPage = vi.fn()
   const onNotice = vi.fn()
   const onOpenFile = vi.fn()
+  const onRetitle = vi.fn()
   el = document.createElement('div')
   document.body.append(el)
   root = createRoot(el)
@@ -97,12 +106,12 @@ async function mount(content: string, opts: { readOnly?: boolean; review?: boole
     root?.render(
       <VaultReadOnly.Provider value={{ on: opts.readOnly === true, allowFileAction: async () => true }}>
         <ReviewScope />
-        <CardFileView file={file} root={ROOT} wikilinks={wikilinks} onOpenFile={onOpenFile} onNotice={onNotice} onPage={onPage} />
+        <CardFileView file={file} root={ROOT} wikilinks={wikilinks} onOpenFile={onOpenFile} onNotice={onNotice} onPage={onPage} onRetitle={onRetitle} />
       </VaultReadOnly.Provider>,
     ),
   )
   await vi.waitFor(() => expect(el.querySelector('[data-card-file]')).not.toBeNull())
-  return { onPage, onNotice, onOpenFile }
+  return { onPage, onNotice, onOpenFile, onRetitle }
 }
 
 const notice = () => el.querySelector('.card-file-notice')
@@ -276,5 +285,76 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
     await menu()
     pick('Archive card')
     await vi.waitFor(() => expect(disk.files.get(PATH)).toContain('<!-- card: WIKI-9, off -->'))
+  })
+})
+
+/**
+ * NEW CARD (YAZ-5037 phase 4): the sidebar makes `<id>.md` and opens it; its tab starts in Edit card with "Title"
+ * selected, so typing replaces it. On Done the file takes its name from the title through the title edit door (the
+ * App's `onRetitle`, which asks before renaming as a page's title does). The placeholder "Title" gives no rename.
+ */
+describe('a new card file (YAZ-5037 phase 4)', () => {
+  const NEW = '/v/Geography/wiki-10.md'
+  /** A card made by New card, its tab mounted on the file it wrote. */
+  const newCard = async () => {
+    const made = await createCardFile('/v/Geography')
+    expect(made).toBe(NEW)
+    expect(disk.files.get(NEW)).toBe('---\nkind: card\n---\n```card\nTitle\n```\n<!-- card: WIKI-10 -->\n')
+    return mount(disk.files.get(NEW)!, { path: NEW })
+  }
+  const editorView = async () => {
+    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .note-card__editor .ProseMirror')?.textContent).toContain('Title'))
+    const dom = el.querySelector<HTMLElement>('[data-explore-card-edit] .note-card__editor .ProseMirror')!
+    return { dom, view: noteCardViewOfDom(dom.closest('.note-card'))!.cardEditor!.view()! }
+  }
+
+  it('opens in Edit card with "Title" selected: typing replaces it; Done writes the card, then names the file after the title', async () => {
+    const { onRetitle } = await newCard()
+    const { dom, view } = await editorView()
+    expect(view.state.doc.textBetween(view.state.selection.from, view.state.selection.to)).toBe('Title')
+    act(() => view.dispatch(view.state.tr.insertText('Capital of France')))
+    key(dom, { key: 'Enter', metaKey: true })
+    await vi.waitFor(() => expect(onRetitle).toHaveBeenCalledExactlyOnceWith(NEW, 'Capital of France', 'file'))
+    expect(disk.files.get(NEW)).toBe('---\nkind: card\n---\n```card\nCapital of France\n```\n<!-- card: WIKI-10 -->\n')
+  })
+
+  it('Done with the placeholder "Title" kept renames nothing; the tab opens in Edit card one time only', async () => {
+    const { onRetitle } = await newCard()
+    const { dom, view } = await editorView()
+    act(() => view.dispatch(view.state.tr.insertText('\n---\nThe back', view.state.doc.content.size - 1)))
+    key(dom, { key: 'Enter', metaKey: true })
+    await vi.waitFor(() => expect(disk.files.get(NEW)).toContain('The back'))
+    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
+    expect(onRetitle).not.toHaveBeenCalled()
+    // Opened again, it is a card file like any other: shown, not in Edit card.
+    act(() => root?.unmount())
+    await mount(disk.files.get(NEW)!, { path: NEW })
+    expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
+    expect(editButton()).not.toBeNull()
+  })
+
+  it('a card file not made by New card opens shown; a Done that keeps its title renames nothing, and one that changes it names the file too', async () => {
+    const { onRetitle } = await mount(FILE)
+    expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
+    act(() => editButton()!.click())
+    let dom = await cardEditor()
+    let view = noteCardViewOfDom(dom.closest('.note-card'))!.cardEditor!.view()!
+    act(() => view.dispatch(view.state.tr.insertText(' (Seine)', view.state.doc.content.size - 1)))
+    key(dom, { key: 'Enter', metaKey: true })
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toContain('Paris (Seine)'))
+    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
+    expect(onRetitle).not.toHaveBeenCalled()
+    act(() => editButton()!.click())
+    dom = await cardEditor()
+    view = noteCardViewOfDom(dom.closest('.note-card'))!.cardEditor!.view()!
+    let start = -1
+    view.state.doc.descendants((node, at) => {
+      if (start === -1 && node.isText) start = at
+      return start === -1
+    })
+    act(() => view.dispatch(view.state.tr.insertText('The ', start)))
+    key(dom, { key: 'Enter', metaKey: true })
+    await vi.waitFor(() => expect(onRetitle).toHaveBeenCalledExactlyOnceWith(PATH, 'The Capital of France', 'file'))
+    expect(disk.files.get(PATH)).toContain('The Capital of {{France}}')
   })
 })

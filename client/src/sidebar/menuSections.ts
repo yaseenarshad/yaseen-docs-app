@@ -183,6 +183,8 @@ export interface MenuHandlers {
   onNewDatedDrawing: () => void
   /** "New draw.io diagram" (YAZ-3028 D9): the name box, then an empty diagram, then its tab. There is no dated twin. */
   onNewDiagram: () => void
+  /** "New card" (YAZ-5037): a card file in that folder, at once (no name box), then its tab in Edit card. */
+  onNewCard: (dir: string) => void
   /** "Add to favorites" / "Remove N from favorites" (YAZ-1766 D3): the paths and the direction the menu read. */
   onToggleFavorite: (paths: string[], isOn: boolean) => void
   /** "Review this folder" (YAZ-2322): the folder's absolute path; the caller starts the session. */
@@ -452,6 +454,16 @@ const createParent = (id: string, label: string, sections: readonly (readonly Le
   return { id, label: unit(t, label), onSelect: first.onSelect, children }
 }
 
+/**
+ * "New card" (YAZ-5037): after New note and before New drawing, a plain item with no flyout and no name box — the card
+ * file is `<id>.md` until its title names it. Only where the vault makes cards: it uses IDs and its Review is on
+ * (`cardDir`). "Card" is no page word: it never goes through the vault's word (`unit`).
+ */
+const newCard: Leaf = (t, h) => {
+  const dir = t.cardDir ?? null
+  return t.targetDir === null || dir === null ? null : { id: 'new-card', label: 'New card', onSelect: () => h.onNewCard(dir) }
+}
+
 // The order is note, drawing, folder (Yasin, YAZ-3085 D3); the separator in the drawing flyout keeps the two apps apart.
 const newNoteMenu = createParent('new-note-menu', 'New note', [[newNote, newDatedNote]])
 const newDrawingMenu = createParent('new-drawing-menu', 'New drawing', [[newDrawing, newDatedDrawing], [newDiagram]])
@@ -471,12 +483,14 @@ const reviewFolder: Leaf = (t, h) => {
 
 /**
  * "Review this page" (YAZ-4967, idea 4): a PAGE row that holds a note card, either lens — a review session over that
- * page's due cards alone. Beside "Review this folder"; the caller's null target hides it.
+ * page's due cards alone; "Review this card" on a card file (YAZ-5037). Beside "Review this folder"; the caller's null
+ * target hides it.
  */
 const reviewPage: Leaf = (t, h) => {
   const path = t.reviewPage
   if (path === null) return null
-  return { id: 'review-page', label: 'Review this page', onSelect: () => h.onReviewPage(path) }
+  // A card file's row (YAZ-5037): the same session, over its one card.
+  return { id: 'review-page', label: t.reviewCard === true ? 'Review this card' : 'Review this page', onSelect: () => h.onReviewPage(path) }
 }
 
 /** Rename — a concrete row only, NEVER blank space: main refuses to rename a window's own vault root (E1b, GRO-2241). */
@@ -702,7 +716,7 @@ const clearClosed: Leaf = (t, h) => (t.forgetClosed === null ? null : { id: 'cle
 const CLOSED_GROUP: readonly Item[] = [forgetClosed, clearClosed]
 const OPEN_GROUP: readonly Item[] = [showInSidebar, open, openInNewTabs, openInNewWindow, focus]
 const CLIPBOARD_GROUP: readonly Item[] = [cut, copy, paste, copyPaths, copyPath]
-const CREATE_GROUP: readonly Item[] = [newNoteMenu, newDrawingMenu, newFolderMenu]
+const CREATE_GROUP: readonly Item[] = [newNoteMenu, newCard, newDrawingMenu, newFolderMenu]
 const ROW_GROUP: readonly Item[] = [reviewFolder, reviewPage, rename, changeIcon]
 const OPEN_IN_GROUP: readonly Item[] = [toggleFavorite, addShortcut, openAlone, openIn, addVault]
 const DELETE_GROUP: readonly Item[] = [share, history, info, del, removeShortcut, removeVault]

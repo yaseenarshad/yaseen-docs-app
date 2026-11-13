@@ -13,7 +13,8 @@ import { CloudOffIcon, LinkIcon, ShortcutIcon } from '../views/view/icons'
 import { TOO_LARGE_LABEL } from '../lib/syncAttention'
 import { RenameInline } from './RenameInline'
 import { iconVars } from './materialIcons'
-import { NameEnding } from './FileIcon'
+import { CARD_KIND_ICON, NameEnding } from './FileIcon'
+import { NO_CARD_FILES } from './cardFiles'
 import { iconsChangedBelow, rowIcon, type RowIcons } from './rowIcons'
 import { keepsOrder, shownLabel, sortLevel, timeOf } from './treeSort'
 import { shortRelativeTime } from '../lib/relativeTime'
@@ -334,6 +335,11 @@ interface TreeProps {
    * only where it draws that row; a change of rules re-renders every level.
    */
   icons?: RowIcons
+  /**
+   * The window's card files (YAZ-5037, `useCardFiles`): their rows are the kind `card`, with the card icon, from the
+   * index and not from their names. `sameLevel` re-renders a level only for a card file it draws.
+   */
+  cardFiles?: ReadonlySet<string>
   depth?: number
   /**
    * The levels this tree sits under that are not its own (YAZ-4450 demo): 1 for the items of a focus or favorite
@@ -392,11 +398,12 @@ function TreeLevel({
   tooLarge,
   shareBadges,
   icons,
+  cardFiles,
   depth = 0,
   shift = 0,
 }: TreeProps) {
   const level = depth + shift
-  const recurse = { shift, vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, pageRows, onOpenPage, titles, ids, marks, onHoverFile, tooLarge, shareBadges, icons, sort, dates, scores }
+  const recurse = { shift, vaultRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, pageRows, onOpenPage, titles, ids, marks, onHoverFile, tooLarge, shareBadges, icons, cardFiles, sort, dates, scores }
   /** A board or note row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
     onHoverFile === undefined || !hasHoverPreview(path) ? {} : {
@@ -473,8 +480,14 @@ function TreeLevel({
   const iconProps = (node: TreeNode, paddingLeft: number): { style: CSSProperties; 'data-icon'?: string; 'data-icon-custom'?: '' } => {
     if (node.type === 'dir' && vaultRows.has(node.path)) return { style: { paddingLeft } }
     const { id, custom } = rowIcon(icons, node.path, node.name, node.type === 'dir' ? 'folder' : 'file', node.type === 'dir' && expanded.has(foldOf(node)))
+    // A card file (YAZ-5037) has no Material icon: app.css draws the card icon by its kind (`fileKindOf`).
+    if (!custom && isCardFile(node)) return { style: { paddingLeft } }
     return { style: { paddingLeft, ...(iconVars(id) as CSSProperties) }, 'data-icon': id, ...(custom ? { 'data-icon-custom': '' as const } : {}) }
   }
+  /** One Set lookup per file row (YAZ-5037). */
+  const isCardFile = (node: TreeNode): boolean => node.type === 'file' && cardFiles?.has(node.path) === true
+  /** A file row's kind for the Line set: a card file is `card`, a file with no viewer in the app `other`. */
+  const fileKindOf = (node: Extract<TreeNode, { type: 'file' }>): string => (isCardFile(node) ? CARD_KIND_ICON : (node.kind ?? 'other'))
   /** `YAZ-12 — ` in front of the row of an ID match (YAZ-2677 S70); nothing for any other row. */
   const idFor = (path: string) => {
     const id = marks?.ids?.get(path)
@@ -662,7 +675,7 @@ function TreeLevel({
               // The file's icon before the name (YAZ-3440 D4), which took the place of the diagram's mark after it: its
               // kind for the Line set (a file with no viewer in the app is `other`), its Material icon by name (`data-icon`
               // and the inline `--icon`). app.css draws the one the icon set asks for on the label: no node more.
-              data-kind={node.kind ?? 'other'}
+              data-kind={fileKindOf(node)}
               {...iconProps(node, 8 + level * 14 + 14)}
               {...hoverOf(node.path)}
               // A shortcut row never drags (YAZ-2290 D2): the drag would move the note out of the folder it lives in.
@@ -726,7 +739,7 @@ function changedBelow(a: ReadonlySet<string>, b: ReadonlySet<string>, drawn: (pa
 function sameLevel(prev: TreeProps, next: TreeProps): boolean {
   const keys = new Set([...Object.keys(prev), ...Object.keys(next)] as (keyof TreeProps)[])
   for (const key of keys) {
-    if (key === 'expanded' || key === 'activeFile' || key === 'activeTop' || key === 'selection' || key === 'icons') continue
+    if (key === 'expanded' || key === 'activeFile' || key === 'activeTop' || key === 'selection' || key === 'icons' || key === 'cardFiles') continue
     if (!Object.is(prev[key], next[key])) return false
   }
   const dir = next.dirPath
@@ -744,6 +757,8 @@ function sameLevel(prev: TreeProps, next: TreeProps): boolean {
   if (prev.selection.copies !== next.selection.copies && [...next.selection.paths].some(drawn)) return false
   // A vault's own icons (YAZ-3440 D8, D9): a pick re-renders the levels that draw its row, a rule change every level.
   if (iconsChangedBelow(prev.icons, next.icons, drawn)) return false
+  // The card files (YAZ-5037): a file that became one, or stopped being one, re-renders the levels that draw its row.
+  if (changedBelow(prev.cardFiles ?? NO_CARD_FILES, next.cardFiles ?? NO_CARD_FILES, drawn)) return false
   // A copy's fold key (YAZ-3131) is drawn where its PATH half is.
   return !changedBelow(prev.expanded, next.expanded, (key) => below(copyFoldParts(key)?.[1] ?? key, dir)) && !changedBelow(prev.selection.paths, next.selection.paths, drawn)
 }

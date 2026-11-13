@@ -109,6 +109,8 @@ interface CardPaneProps {
   editing: boolean
   /** Edit card's Done, with the card's text. */
   onEditDone: (text: string) => void
+  /** What Edit card selects as it opens (offsets in the card's text): a new card's "Title" (YAZ-5037). Absent: the caret at the end. */
+  select?: { from: number; to: number }
   doors: NoteCardLinkDoors
   /** A page in "Linked mentions" or "Embedded in". */
   onOpenPage: (path: string) => void
@@ -122,11 +124,11 @@ interface CardPaneProps {
 }
 
 /** The card's body: the card or its editor, the strip, its Reviews, "Linked mentions" and, in a tab, "Embedded in". */
-export function CardPane({ card, path, vault, editing, onEditDone, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false }: CardPaneProps) {
+export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false }: CardPaneProps) {
   return (
     <>
       {editing ? (
-        <NoteCardEditor key={`${card.index}`} text={card.text} path={path} vault={vault} onDone={onEditDone} />
+        <NoteCardEditor key={`${card.index}`} text={card.text} path={path} vault={vault} onDone={onEditDone} select={select} />
       ) : (
         <div className="note-card note-card-screen">
           <NoteCardBody text={card.text} path={path} vault={vault} doors={doors} />
@@ -149,15 +151,15 @@ const CARD_EDIT_FEATURES = { ...features, [CrepeFeature.BlockEdit]: false, [Crep
  * Made once per edit: the text it starts from is the card's when Edit card began, and a read again under it (an
  * outside write) does not touch it.
  */
-function NoteCardEditor({ text, path, vault, onDone }: { text: string; path: string; vault: ExploreVault; onDone: (text: string) => void }) {
+function NoteCardEditor({ text, path, vault, onDone, select }: { text: string; path: string; vault: ExploreVault; onDone: (text: string) => void; select?: { from: number; to: number } }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const doneRef = useRef(onDone)
   doneRef.current = onDone
-  const start = useRef({ text, path, vault })
+  const start = useRef({ text, path, vault, select })
   useEffect(() => {
     const host = hostRef.current
     if (host === null) return
-    const { text, path, vault } = start.current
+    const { text, path, vault, select } = start.current
     const el = document.createElement('div')
     el.className = 'editor-instance'
     host.appendChild(el)
@@ -179,7 +181,7 @@ function NoteCardEditor({ text, path, vault, onDone }: { text: string; path: str
         if (pos === -1 && isNoteCardNode(node)) pos = at
         return pos === -1
       })
-      if (pos >= 0) noteCardViewAt(view, pos)?.edit()
+      if (pos >= 0) noteCardViewAt(view, pos)?.edit(select)
     })
     return () => {
       live = false

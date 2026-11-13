@@ -39,6 +39,9 @@
   --kind-image: #1d9e75;
   --kind-drawing: #c08410;
   --kind-diagram: #e0682c;
+  /* A card file's icon (YAZ-5037): the card icon of the `[[` picker and a card pill (`--card-link-icon`), in its own colour. */
+  --kind-card: #8a63c9;
+  --card-link-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.4' stroke-linejoin='round'%3E%3Cpath d='M2.5 3.5h11v9h-11zM2.5 6.5h11'/%3E%3C/svg%3E");
   /* `==highlight==` wash (YAZ-1480): translucent, so text colour and selection show through in both themes. */
   --mark-bg: rgba(255, 213, 0, 0.4);
   --mark-bg-green: rgba(80, 200, 120, 0.35);
@@ -97,6 +100,7 @@
   --kind-image: #4cc79a;
   --kind-drawing: #e0aa3e;
   --kind-diagram: #f08d5a;
+  --kind-card: #b394e6;
   --notice-fg: #e6c878;
   --notice-bg: #3a300f;
   --notice-border: #5c4d1d;
@@ -3812,6 +3816,37 @@ body.drag-held iframe {
 
 :is(.tree__row, .file-icon)[data-kind='folder'] {
   --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 4.5a1 1 0 0 1 1-1h3.4l1.6 1.6h6a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z'/%3E%3C/svg%3E");
+}
+
+:is(.tree__row, .file-icon)[data-kind='card'] {
+  --kind-icon: var(--card-link-icon);
+  --kind-color: var(--kind-card);
+}
+
+/* A CARD FILE (YAZ-5037, `data-kind='card'` from the index: `cardFiles.ts`): the card icon in the Material set too, where
+   a row's icon is otherwise its image. The row has no `data-icon`, so no Material rule below draws over it; an icon of
+   the user's own (`data-icon-custom`) still wins. Grey and Off apply as to any file. */
+.app[data-sidebar-icon-set='material']:not([data-sidebar-file-icons='off']) :is(.tree__row--file[data-kind='card']:not([data-icon-custom]) .tree__label, .file-icon--file[data-kind='card']:not([data-icon-custom]))::before {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  background: var(--kind-color);
+  mask: var(--kind-icon) center / 14px 14px no-repeat;
+}
+
+/* The card icon alone, outside `.app` (the hover preview's header, portalled to the body): no icon set to follow. */
+.card-file-icon {
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  background: var(--kind-card);
+  mask: var(--card-link-icon) center / 14px 14px no-repeat;
 }
 
 .tree > li[aria-expanded='true'] > .tree__row[data-kind='folder'] {

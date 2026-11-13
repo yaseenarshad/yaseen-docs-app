@@ -82,6 +82,7 @@ const handlers = (over: Partial<MenuHandlers> = {}): MenuHandlers => ({
   onNewDrawing: vi.fn(),
   onNewDatedDrawing: vi.fn(),
   onNewDiagram: vi.fn(),
+  onNewCard: vi.fn(),
   onToggleFavorite: vi.fn(),
   onReviewFolder: vi.fn(),
   onReviewPage: vi.fn(),
@@ -288,6 +289,21 @@ describe('create parents (YAZ-3085 D1, D3)', () => {
     const sections = build({ targetDir: null })
     expect(sections[2]).toEqual([])
     expect(allLabelsOf(sections).filter((l) => l.startsWith('New'))).toEqual([])
+  })
+
+  it('"New card" (YAZ-5037) sits after "New note" and before "New drawing", a plain item, only where the vault makes cards (`cardDir`), and hands its folder over', () => {
+    const onNewCard = vi.fn()
+    expect(labelsOf(build(FILE_ROW))).not.toContain('New card')
+    expect(labelsOf(build({ ...FILE_ROW, cardDir: null }))).not.toContain('New card')
+    const sections = build({ ...FILE_ROW, cardDir: '/v' }, { onNewCard })
+    expect(sections[2].map((i) => [i.id, i.label])).toEqual([['new-note-menu', 'New note'], ['new-card', 'New card'], ['new-drawing-menu', 'New drawing'], ['new-folder-menu', 'New folder']])
+    expect(leafOf(sections, 'New card')).toBeDefined()
+    select(sections, 'New card')
+    expect(onNewCard).toHaveBeenCalledExactlyOnceWith('/v')
+    // The page's word does not reach it: a vault that says "note" still says "New card".
+    expect(labelsOf(build({ ...FILE_ROW, cardDir: '/v', unit: (text) => text.replace(/note/g, 'page') }))).toContain('New card')
+    // No folder to create in: no card either.
+    expect(labelsOf(build({ targetDir: null, cardDir: '/v' }))).not.toContain('New card')
   })
 
   it('edge cases 3, 4, 6: offered on every row type — a file row, a folder row, a vault row, blank space — the group targets a DIRECTORY, never the clicked row', () => {
@@ -599,6 +615,14 @@ describe('review items (YAZ-2322, YAZ-4967)', () => {
     select(sections, 'Review this page')
     expect(onReviewPage).toHaveBeenCalledExactlyOnceWith('/v/Note.md')
     expect(labelsOf(sections).some((l) => l.startsWith('Turn review'))).toBe(false)
+  })
+
+  it('on a card file it is "Review this card" (YAZ-5037), in the same place, with the same handler', () => {
+    const onReviewPage = vi.fn()
+    const sections = build({ ...FILE_ROW, reviewPage: '/v/geo-140.md', reviewCard: true }, { onReviewPage })
+    expect(sections[3].map((i) => i.label)).toEqual(['Review this card', 'Rename'])
+    select(sections, 'Review this card')
+    expect(onReviewPage).toHaveBeenCalledExactlyOnceWith('/v/geo-140.md')
   })
 })
 

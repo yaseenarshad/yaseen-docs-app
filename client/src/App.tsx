@@ -88,6 +88,8 @@ import { sidebarDroppedInFrame } from './sidebar/sidebarDrag'
 import { NewItemBox, type NewItemKind } from './sidebar/NewItemBox'
 import type { PlaceVault } from './sidebar/PlacePicker'
 import { IconsContext } from './sidebar/FileIcon'
+import { useCardFiles } from './sidebar/cardFiles'
+import { useSameList } from './sidebar/hooks/useVaultTree'
 import { VaultLinksContext } from './links/vaultLinks'
 import { CommentPrefsContext, useCardFollowsProfile } from './comments/usePeople'
 import type { LinkActions } from './editor/linkMenu'
@@ -468,7 +470,6 @@ export function App() {
   // The vaults' own icons (YAZ-3440 D8, D9; D11, YAZ-3471): here too, so the tabs, the search results and Recents show a
   // row's icon with the sidebar hidden. The sidebar's tree reads the same object.
   const vaultIcons = useVaultIcons(roots, settings.sidebarIconRules, settings.sidebarFolderIcons === 'named', notify)
-  const iconsHere = useMemo(() => ({ rowIcons: vaultIcons.rowIcons, roots }), [vaultIcons.rowIcons, roots])
   // The toast's clock is the toast's own (`NoticeToast`, YAZ-3303 D9): App only says how long and closes it.
   const closeNotice = useCallback(() => setNotice(null), [])
   // The box after a drag out to Finder (YAZ-3254 D9B): its own slot, so the toast above never hides it.
@@ -498,6 +499,10 @@ export function App() {
   const first = vaults[0] ?? scopes[0]
   const live = useRef({ roots, vaults, first })
   live.current = { roots, vaults, first }
+  // The window's card files (YAZ-5037), from the vaults' index: a card file shows the card icon in the tree, the tabs,
+  // search and Recents, with the sidebar hidden too. One Set, the same while no card file comes or goes.
+  const cardFiles = useCardFiles(useSameList(vaults.map((vault) => vault.wikilinks)))
+  const iconsHere = useMemo(() => ({ rowIcons: vaultIcons.rowIcons, roots, cards: cardFiles }), [vaultIcons.rowIcons, roots, cardFiles])
   // Note card review (YAZ-4967): each vault counts its due cards and can hold a session, and the window
   // shows ONE (YAZ-2602 S41): a start in one vault closes the session of every other. App's,
   // because the sidebar that shows the count unmounts while collapsed.

@@ -11,6 +11,8 @@ import { cutAtLineEnd } from '../editor/ReadOnlyNote'
 import { storage } from '../lib/storage'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import NotePreview, { NOTE_PREVIEW_CHARS } from './NotePreview'
+import { IconsContext } from './FileIcon'
+import { NO_ROW_ICONS } from './rowIcons'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -42,7 +44,7 @@ afterEach(() => {
 })
 
 /** The panel as the host mounts it, beside a sidebar. */
-async function show(path = '/v/notes/Plan.md', textVars: CSSProperties = {}, hint?: string) {
+async function show(path = '/v/notes/Plan.md', textVars: CSSProperties = {}, hint?: string, cards?: ReadonlySet<string>) {
   const aside = document.createElement('aside')
   document.body.appendChild(aside)
   const anchor = createRef<HTMLElement>() as { current: HTMLElement | null }
@@ -50,7 +52,14 @@ async function show(path = '/v/notes/Plan.md', textVars: CSSProperties = {}, hin
   const container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  await act(async () => root?.render(<NotePreview root="/v" node={{ path }} name="Plan" hint={hint} wikilinks={createWikilinkResolveSource()} textVars={textVars} anchor={anchor} />))
+  const here = { rowIcons: NO_ROW_ICONS, roots: ['/v'], cards }
+  await act(async () =>
+    root?.render(
+      <IconsContext.Provider value={here}>
+        <NotePreview root="/v" node={{ path }} name="Plan" hint={hint} wikilinks={createWikilinkResolveSource()} textVars={textVars} anchor={anchor} />
+      </IconsContext.Provider>,
+    ),
+  )
   await act(async () => new Promise((r) => setTimeout(r, 0)))
   return document.querySelector<HTMLElement>('.note-preview')!
 }
@@ -76,6 +85,17 @@ describe('NotePreview', () => {
     document.body.replaceChildren()
     const plain = await show()
     expect(plain.querySelector('.board-preview__hint')).toBeNull()
+  })
+
+  it('a card file (YAZ-5037, from the index) has the card icon before its name in the header; a page has none', async () => {
+    readFile.mockImplementation(file('```card\nTitle\n```\n'))
+    const card = await show('/v/geo-140.md', {}, undefined, new Set(['/v/geo-140.md']))
+    expect(card.querySelector('.board-preview__header > .card-file-icon + .board-preview__name')).not.toBeNull()
+    act(() => root?.unmount())
+    root = null
+    document.body.replaceChildren()
+    const page = await show('/v/notes/Plan.md', {}, undefined, new Set(['/v/geo-140.md']))
+    expect(page.querySelector('.card-file-icon')).toBeNull()
   })
 
   it('C15, C16, C20: the board frame and header, the body below the frontmatter, in the vault`s text formatting', async () => {

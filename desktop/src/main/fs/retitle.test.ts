@@ -227,6 +227,14 @@ describe('retitle: a card file (YAZ-5037, YAZ-5044 pick 1)', () => {
     expect(await read('Cards/yaz-140.md')).toBe(cardFile('Title'))
   })
 
+  it('a title the card already has (Edit card`s Done wrote it) writes nothing, so its line keeps its own bold and link; only the name follows', async () => {
+    const text = 'Capital of **France**, see [[GEO-1]]\n---\nParis'
+    const old = await note('Cards/yaz-141.md', cardFile(text, '<!-- card: YAZ-141 -->'))
+    const newPath = at('Cards', 'capital-of-france-see-geo-1-yaz-141.md')
+    expect(await retitle(root, { path: old, title: 'Capital of France, see GEO-1' })).toEqual({ oldPath: old, newPath, kind: 'file' })
+    expect(await readFile(newPath, 'utf8')).toBe(cardFile(text, '<!-- card: YAZ-141 -->'))
+  })
+
   it('a card with no ID yet takes the words and keeps its name', async () => {
     const old = await note('Cards/fresh.md', '---\nkind: card\n---\n```card\nTitle\n```\n')
     expect(await retitle(root, { path: old, title: 'Fresh words' })).toEqual({ oldPath: old, newPath: old, kind: 'file' })

@@ -1,5 +1,6 @@
 import { mkdir, stat } from 'node:fs/promises'
 import type { CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse } from '@shared/types'
+import { cardFileId, isCardFileContent } from '@shared/cardFileFormat'
 import { isMarkdown } from '@shared/fileKind'
 import { FrontmatterWriteError, setFrontmatterProperty, withCommentsHint } from '@shared/frontmatter'
 import { NOTE_ID_KEY, isVaultNumberId } from '@shared/noteId'
@@ -32,6 +33,10 @@ const noIds = (p: string): BridgeFailure => new BridgeFailure('BAD_REQUEST', 'th
  * 🔒 A folder is born with its id too (D13): its `.folder.md`, holding a fresh `id` and, when
  * the request carries one, the folder's `title` (YAZ-2420 🔒 D6): `createFolderSettings`. A folder
  * whose file could not be written stands without one, and the id sweep gives it one.
+ *
+ * A CARD FILE (YAZ-5037, `kind: card`) is the one note born with no `id`: the ID on its card line is the file's, taken
+ * from the same door by the caller before it wrote the line. Its content is created as given, and the answer carries
+ * that card's ID.
  *
  * 🔒 All of that only where the vault uses IDs (`ids`, its door; YAZ-2523 V3). In a vault that does
  * not (`null`), a folder is the directory and a note the content it was given, as Finder would make
@@ -71,7 +76,9 @@ export async function createFile(req: string | CreateFileRequest, ids: IdDoor | 
   if (given !== undefined && typeof given !== 'string') throw new BridgeFailure('BAD_REQUEST', "'id' must be a note id", { path: p })
   if (ids === null && given !== undefined) throw noIds(p)
   if (ids !== null && given !== undefined && !isVaultNumberId(given, ids.letters)) throw new BridgeFailure('BAD_REQUEST', "'id' must be a number ID of this vault", { path: p })
-  const made = ids === null ? { content: content ?? '', id: undefined } : withNoteId(content ?? '', given ?? (await ids.mint(1))[0])
+  // A card file (YAZ-5037) is born as given: its card line holds its ID, and it gets no page `id:` (one number per card).
+  const card = ids !== null && content !== undefined && isCardFileContent(content)
+  const made = ids === null ? { content: content ?? '', id: undefined } : card ? { content, id: cardFileId(content) ?? undefined } : withNoteId(content ?? '', given ?? (await ids.mint(1))[0])
   const born = hint ? { ...made, content: withCommentsHint(made.content) } : made
   return fsCall(p, async () => {
     await createDurable(p, born.content)

@@ -34,7 +34,8 @@
  *
  * A LINK TO A NOTE CARD (YAZ-5030, `linkCard`): a plain click opens the CARD WINDOW (the Explore card layer, through
  * the one open hook, `openCardWindow`), in an editable note too, and "Open in this tab" does the same; any tab gesture
- * (⌘-click: a background tab, by default) opens the card's PAGE there, landed on the card (`landOnCard`).
+ * (⌘-click: a background tab, by default) opens the card's PAGE there, landed on the card (`landOnCard`). A card in a
+ * CARD FILE (YAZ-5037) opens that file's tab: the tab is the card, so there is nothing to land on.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
@@ -159,11 +160,11 @@ export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav
       else open(viewPath)
       return
     }
-    // A note card (YAZ-5030): its window, or its page in a tab, landed on it.
+    // A note card (YAZ-5030): its window, or its page in a tab, landed on it; a card file's tab (YAZ-5037).
     const card = linkCard(inner, source)
     if (card !== null) {
       if (where === 'explore' || where === 'thisTab') return openCardWindow(card.path, card.id, card.index)
-      landOnCard(card.path, card.id)
+      if (card.file !== true) landOnCard(card.path, card.id)
       open(card.path)
       return
     }

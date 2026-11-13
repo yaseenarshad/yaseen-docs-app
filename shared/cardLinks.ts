@@ -22,13 +22,15 @@ export interface CardLink {
   title: string
   /** The title is hidden on the Inbox's front (`notitle`). */
   notitle: boolean
+  /** The card is a card file's (YAZ-5037, `IndexRecord.kind`): `path` is the card's own file, not a page it is on. */
+  file?: true
 }
 
 /** Link target → the card it names, or null: no card holds that ID. */
 export type CardResolve = (target: string) => CardLink | null
 
 /** What a card look-up reads of a record: its path and its cards. */
-type CardHolder = { path: string; cards?: readonly NonNullable<IndexRecord['cards']>[number][] }
+type CardHolder = { path: string; kind?: IndexRecord['kind']; cards?: readonly NonNullable<IndexRecord['cards']>[number][] }
 
 /** Every card with an ID in `records`, by its ID in lowercase (and as the current letters read it, `idKey`). */
 export function cardsById(records: readonly CardHolder[], letters?: readonly string[]): Map<string, CardLink> {
@@ -37,7 +39,7 @@ export function cardsById(records: readonly CardHolder[], letters?: readonly str
     if (r.cards === undefined) continue
     r.cards.forEach((card, index) => {
       if (card.id === null) return
-      const link: CardLink = { id: card.id, path: r.path, index, title: card.title ?? '', notitle: card.notitle === true }
+      const link: CardLink = { id: card.id, path: r.path, index, title: card.title ?? '', notitle: card.notitle === true, ...(r.kind === 'card' && { file: true as const }) }
       const key = card.id.toLowerCase()
       if (!byId.has(key)) byId.set(key, link)
       const current = idKey(key, letters)

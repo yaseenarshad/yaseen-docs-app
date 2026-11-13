@@ -1,9 +1,10 @@
-import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
+import { Fragment, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject, type Ref } from 'react'
 import { useAllPathIds, type IdsInFiles, type IdsInSearch, type PathIdsSource } from '../search/showIds'
 import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
 import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api } from '../api'
+import { createCardFile } from '../review/newCardFile'
 import { osVerbs } from '../lib/osVerbs'
 import { CalendarIcon, GridIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -29,6 +30,7 @@ import { IconPicker } from './IconPicker'
 import type { VaultIconsHere } from './useVaultIcons'
 import { isIconRules, MAX_ICON_MATCH, MAX_ICON_RULES } from '@shared/vaultIcons'
 import { oneRule, rowIcon, ruleFor, withRule } from './rowIcons'
+import { IconsContext } from './FileIcon'
 import { PICKER_W, suggestIcons } from './iconSuggestions'
 import { keepsOrder, shownLabel, sortLevel, sortSections } from './treeSort'
 import { ACTIVE_TAB_SELECTOR, SidebarTabs } from './SidebarTabs'
@@ -533,6 +535,13 @@ export interface MenuTargets {
   reviewDir: string | null
   /** "Review this page" (YAZ-4967) — a PAGE row that holds a note card, outside a plural selection; null for every other row. */
   reviewPage: string | null
+  /** The `reviewPage` row is a card file (YAZ-5037): the item reads "Review this card". */
+  reviewCard?: boolean
+  /**
+   * "New card" (YAZ-5037): the folder the card file is made in — `targetDir`, where its vault uses IDs and its Review is
+   * on; null (or absent) everywhere else.
+   */
+  cardDir?: string | null
   /**
    * "Add note shortcut" — a FOLDER row outside a plural selection (YAZ-2290 D2): the folder the
    * picked note will also appear in. Null on a file row, on blank space and inside a 2+
@@ -759,6 +768,8 @@ export function Sidebar({
   const multi = roots.length > 1
   // The vaults' own icons (YAZ-3440 D8, D9): `.yaseendocs/icons.json` of each vault of the window, for the tree's rows. App's (D11).
   const { rowIcons, pick: pickIcons } = icons
+  // The window's card files (YAZ-5037): App's, from the vaults' index (`useCardFiles`), so a card file's row shows the card icon.
+  const cardFiles = useContext(IconsContext)?.cards
   // The two "Change icon" items (YAZ-3440 D8): the picker, right of the sidebar at the row, for the rows' picks or for one name rule.
   const [iconPicker, setIconPicker] = useState<IconPickerAt | null>(null)
   // What the "Change icon ▸" flyout reads as the menu opens (D8), through a ref so the menu's callback keeps its identity.
@@ -1345,6 +1356,8 @@ export function Sidebar({
       const listLens = !asSearch && (lens === 'focus' || lens === 'favorites') ? lens : null
       const listTab = listLens === 'focus' ? listsNow.current.focusTab : listsNow.current.favoritesTab
       const shownAlone = listLens === null ? undefined : listTab.folders.find((folder) => folder.id === focusOnly)
+      // Blank space of a window with two or more vaults is a vault's root on Focus and Favorites alone (YAZ-4782).
+      const targetDir = node === null && multi ? (listLens === null ? null : vaultOfFolder(shownAlone, roots)) : targetDirFor(node, top)
       const place: CreatePlace | null =
         listLens === null ? null
         : node === null ? { list: listLens, folder: shownAlone?.id ?? null, after: null }
@@ -1357,8 +1370,9 @@ export function Sidebar({
         leaveSearchTo: asSearch ? (node?.path ?? null) : null,
         // Any row that is not the Files tree's own (YAZ-2638 D1, D3): Search, Focus, Favorites. One row, never a selection.
         showPath: (outside || lens !== 'files') && plural === null ? (node?.path ?? null) : null,
-        // Blank space of a window with two or more vaults is a vault's root on Focus and Favorites alone (YAZ-4782).
-        targetDir: node === null && multi ? (listLens === null ? null : vaultOfFolder(shownAlone, roots)) : targetDirFor(node, top),
+        targetDir,
+        // "New card" (YAZ-5037): where the folder's vault makes cards — it uses IDs, and its Review is on.
+        cardDir: targetDir !== null && vaultOf(targetDir).review && vaultOf(targetDir).index.ids ? targetDir : null,
         place,
         rowKind: node?.type ?? null,
         top: asSearch ? null : (node?.top ?? null),
@@ -1406,6 +1420,7 @@ export function Sidebar({
         // By the review setting of the vault that holds the folder (R5).
         reviewDir: cardsOn && node?.type === 'dir' && vaultRow === null ? node.path : null,
         reviewPage,
+        reviewCard: pageRecord?.kind === 'card',
         // A shortcut is a folder's ID on a note: offered only where the vault uses IDs (YAZ-2523 🔒 V5).
         shortcutDir: home.index.ids && plural === null && node?.type === 'dir' && vaultRow === null ? node.path : null,
         removeShortcut: node === null || shortcutIn === null ? null : { path: node.path, dir: shortcutIn },
@@ -1577,6 +1592,27 @@ export function Sidebar({
   const addAt = lists.addAt
   const placeMade = useCallback((place: CreatePlace, path: string) => addAt(place.list, path, place.folder, place.after), [addAt])
   const { setRenamingEntry, startCreate, startCreateAt, renaming, pending } = useInlineEdits(multi ? null : root, vaultOf, menu, setMenu, favoriteNodes, focusNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, openTo, placeMade, onFileAction)
+  /**
+   * "New card" (YAZ-5037): no name box — the card file is made at once (`createCardFile`), then it opens, in Edit card.
+   * A read-only vault asks first, as every New … does (YAZ-4939). Made on the Focus or the Favorites tab, it joins the
+   * list there, as a new note does (YAZ-4782). A failure is a notice, and nothing is made.
+   */
+  const newCard = useCallback(
+    async (dir: string, place: CreatePlace | null | undefined) => {
+      const vault = vaultOf(dir).root
+      if (onFileAction !== undefined && !(await onFileAction(vault))) return
+      let path: string
+      try {
+        path = await createCardFile(dir)
+      } catch (err) {
+        return onNotice(`Can't make the card: ${err instanceof Error ? err.message : String((err as { message?: unknown })?.message ?? err)}`, 'error')
+      }
+      refresh(vault)
+      if (place != null) placeMade(place, path)
+      onOpenFile(path)
+    },
+    [vaultOf, onFileAction, refresh, placeMade, onOpenFile, onNotice],
+  )
   /** A New … on a focus or favorite folder's menu (YAZ-4782): the field first in that folder; the item in a vault's root (`vaultOfFolder`), then in the folder. */
   const newInFolder = (list: 'focus' | 'favorites') => (id: string, kind: EntryKind) => {
     const folder = (list === 'focus' ? lists.focusTab : lists.favoritesTab).folders.find((f) => f.id === id)
@@ -1693,6 +1729,7 @@ export function Sidebar({
     tooLarge,
     shareBadges,
     icons: rowIcons,
+    cardFiles,
     // Above the vault rows no one directory stands (YAZ-2602 D3).
     dirPath: multi ? '' : root,
     vaultRows,
@@ -2344,6 +2381,10 @@ export function Sidebar({
               onNewDrawing: viaTree(() => startCreate('drawing')),
               onNewDatedDrawing: viaTree(() => startCreate('drawing', datedSeed())),
               onNewDiagram: viaTree(() => startCreate('diagram')),
+              onNewCard: (dir) => {
+                setMenu(null)
+                void newCard(dir, menu.place)
+              },
               onToggleFavorite: toggleFavorite,
               onReviewFolder,
               onReviewPage,

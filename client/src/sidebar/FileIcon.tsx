@@ -20,18 +20,29 @@ import { rowIcon, type RowIcons } from './rowIcons'
 export interface IconsHere {
   rowIcons: RowIcons
   roots: readonly string[]
+  /** The window's card files (YAZ-5037, `useCardFiles`): from the index, so a card file shows the card icon whatever its name. */
+  cards?: ReadonlySet<string>
 }
 
 /** App's icons, for every place outside the tree. Null (a test, a mount with no App): Material's icons alone. */
 export const IconsContext = createContext<IconsHere | null>(null)
 
-/** The attributes that draw `path`'s icon, as a tree row has them: its kind, its icon id, whether it is the user's own, and the inline `--icon`. */
-export function fileIconAttrs(here: IconsHere | null, path: string, folder: boolean): { 'data-kind': string; 'data-icon': string; 'data-icon-custom'?: ''; style: CSSProperties } {
+/**
+ * The attributes that draw `path`'s icon, as a tree row has them: its kind, its icon id, whether it is the user's own, and the inline `--icon`.
+ * A CARD FILE (YAZ-5037) is the kind `card` in both icon sets, with no Material icon: app.css draws the card icon of
+ * the `[[` picker in `--kind-card`. An icon of the user's own (a pick or a rule) still wins.
+ */
+export function fileIconAttrs(here: IconsHere | null, path: string, folder: boolean): { 'data-kind': string; 'data-icon'?: string; 'data-icon-custom'?: ''; style: CSSProperties } {
   const name = basename(path)
   const inside = here !== null && rootOfPath(here.roots, path) !== null
   const { id, custom } = rowIcon(here?.rowIcons, path, name, folder ? 'folder' : 'file', false, inside)
+  if (!folder && !custom && here?.cards?.has(path) === true) return { 'data-kind': CARD_KIND_ICON, style: NO_STYLE }
   return { 'data-kind': folder ? 'folder' : (fileKind(name) ?? 'other'), 'data-icon': id, ...(custom ? { 'data-icon-custom': '' as const } : {}), style: iconVars(id) as CSSProperties }
 }
+
+/** The icon kind of a card file (YAZ-5037): `data-kind="card"`, as app.css names it. */
+export const CARD_KIND_ICON = 'card'
+const NO_STYLE: CSSProperties = {}
 
 /**
  * The same icon as the attributes of an editor decoration (YAZ-3609 D13, D19): the span that shows a link's own
