@@ -227,8 +227,7 @@ vi.mock('./sidebar/Sidebar', () => ({
 }))
 
 import { App, preloadTabBoard, replayNotice } from './App'
-import { NOTE_CARD_OPEN } from './editor/noteCard/noteCardView'
-import { EditorView as CodeMirrorView } from '@codemirror/view'
+import { NOTE_CARD_OPEN, noteCardViewOfDom } from './editor/noteCard/noteCardView'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { cardRecords } from '@shared/cardLine'
@@ -5696,11 +5695,13 @@ describe('App: the note card flow (YAZ-4962)', () => {
       expect([sides(el), hidden(el)]).toEqual([1, ['France']])
       // E: the card window, in Edit card at once, the caret in its text.
       await typed({ key: 'e' })
-      await vi.waitFor(() => expect(layer()?.querySelector('[data-explore-card-edit] .cm-content')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
-      await vi.waitFor(() => expect(layer()?.querySelector('[data-explore-card-edit] .cm-content')?.contains(document.activeElement)).toBe(true))
+      // YAZ-5026: the page's own editor in the card, holding the card's text.
+      const editor = () => layer()?.querySelector<HTMLElement>('[data-explore-card-edit] .note-card__editor .ProseMirror') ?? null
+      await vi.waitFor(() => expect(editor()?.textContent).toContain('Paris'), { timeout: SLOW_RUNNER_MS })
+      await vi.waitFor(() => expect(editor()?.contains(document.activeElement)).toBe(true))
       if (added !== '') {
-        const cm = CodeMirrorView.findFromDOM(layer()!.querySelector<HTMLElement>('[data-explore-card-edit] .cm-content')!)!
-        act(() => cm.dispatch({ changes: { from: cm.state.doc.length, insert: added } }))
+        const inner = noteCardViewOfDom(editor()!.closest('.note-card'))!.cardEditor!.view()!
+        act(() => inner.dispatch(inner.state.tr.insertText(added, inner.state.doc.content.size - 1)))
       }
       // The first key: Done, the card window reads (it stays open), the keyboard still in the layer.
       await typed(done)
@@ -5818,6 +5819,57 @@ describe('App: the note card flow from /card, through the real editor (YAZ-4965)
     await vi.waitFor(() => expect(files[PAGE].content).toBe('# Cards\n\nIntro, typed\n\n```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'), { timeout: SLOW_RUNNER_MS })
     await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toContain('<!-- card: WIKI-9 -->'))
     expect(el.querySelector('.outside-changes-bar')).toBeNull()
+  }, 30_000)
+
+  /**
+   * YAZ-5026: Edit card with the page's editor, through the real note editor and App's save: bold and a hidden word typed
+   * in the card's editor, Done, the exact Markdown in the file; ⌘Z in the page gives the old file back.
+   */
+  it('YAZ-5026: Edit card → bold and a hidden word in the page`s editor → Done → the exact Markdown in the file → ⌘Z gives the old file back', async () => {
+    captured.realEditor = true
+    const before = '# Cards\n\n```card\nCapital of France\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'
+    const files: Record<string, { content: string; mtime: number }> = { [PAGE]: { content: before, mtime: 1 } }
+    const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: PAGE, tabs: [PAGE] }, files, (b) => {
+      b.bridge.index.mockImplementation(async () => ({ root: '/v', records: Object.entries(files).map(([p, f]) => scan(p, f.content)), folders: [], generatedAt: 1, ids: true }))
+    })
+    bridge.writeFile.mockImplementation(async ({ path, content }: { path: string; content: string }) => {
+      files[path] = { content, mtime: (files[path]?.mtime ?? 0) + 1 }
+      return { path, mtime: files[path].mtime, size: content.length }
+    })
+    await vi.waitFor(() => expect(captured.crepes.length).toBeGreaterThan(0), { timeout: SLOW_RUNNER_MS })
+    const crepe = captured.crepes.at(-1)!
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    await vi.waitFor(() => expect(view.dom.querySelector('.note-card')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+    view.hasFocus = () => true
+    // Edit card: the page's own editor in the card, no raw text box.
+    const card = noteCardViewOfDom(view.dom.querySelector('.note-card'))!
+    await act(async () => {
+      card.dom.querySelector('.note-card__edit')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+      await card.cardEditor!.ready
+    })
+    expect(card.dom.querySelector('.cm-editor')).toBeNull()
+    const inner = card.cardEditor!.view()!
+    const word = (text: string) => {
+      let at = -1
+      inner.state.doc.descendants((node, pos) => {
+        if (at < 0 && node.isText && node.text!.includes(text)) at = pos + node.text!.indexOf(text)
+        return at < 0
+      })
+      return TextSelection.create(inner.state.doc, at, at + text.length)
+    }
+    const keyIn = (init: KeyboardEventInit) => act(async () => void inner.dom.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })))
+    // Bold (⌘B) on "Capital", a hidden word (⌘L) on "France", then Done (⌘↵).
+    act(() => inner.dispatch(inner.state.tr.setSelection(word('Capital'))))
+    await keyIn({ key: 'b', metaKey: true })
+    act(() => inner.dispatch(inner.state.tr.setSelection(word('France'))))
+    await keyIn({ key: 'l', metaKey: true })
+    await keyIn({ key: 'Enter', metaKey: true })
+    expect(card.editing).toBe(false)
+    const after = '# Cards\n\n```card\n**Capital** of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'
+    await vi.waitFor(() => expect(files[PAGE].content).toBe(after), { timeout: SLOW_RUNNER_MS })
+    // One ⌘Z in the page takes the whole edit back.
+    await act(async () => void view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true, cancelable: true })))
+    await vi.waitFor(() => expect(files[PAGE].content).toBe(before), { timeout: SLOW_RUNNER_MS })
   }, 30_000)
 
   it('a READ-ONLY vault: the page is locked, yet Remembered writes the review line to the file, and the open page shows no bar', async () => {

@@ -380,8 +380,14 @@ describe('the card editor`s own on/off list (YAZ-5026 description)', () => {
     // The button is ⌘L.
     host.querySelector<HTMLElement>('.milkdown-toolbar [data-toolbar-item="cloze"]')!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }))
     expect(inner.dom.querySelector('.note-card__cloze')?.textContent).toBe('Paris')
+    // The highlight's key and its typing are off in a card; so is the check list's `[ ] `.
+    inner.dispatch(inner.state.tr.setSelection(TextSelection.create(inner.state.doc, 13, 19)))
+    key(inner.dom, 'h', { metaKey: true, shiftKey: true })
+    caretAfter(inner, 'France')
+    type(inner, ' ==x==')
+    expect(inner.dom.querySelector('mark')).toBeNull()
     card.done()
-    expect(cardText(view)).toBe('{{Paris}} is in France')
+    expect(cardText(view)).toBe('{{Paris}} is in France \\=\\=x\\=\\=')
   })
 
   it('the `/` menu has "New side" (`/side`) and no task list, calendar table, note card or drawing; Esc closes the menu first, then is Done', async () => {
