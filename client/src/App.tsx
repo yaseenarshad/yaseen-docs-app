@@ -30,6 +30,7 @@ import { buildViewOnlyCatalog, movedCatalog, type ViewOnlyCatalog } from './link
 import { ownsCopyPathHotkey } from './lib/copyPathHotkey'
 import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { focusOpenDocument, giveFocusBack } from './lib/focusHandoff'
+import { useEscapeLast } from './lib/escapeOrder'
 import { osVerbs } from './lib/osVerbs'
 import { dragOutText, gestureNotice, namedItems, noticeMs, onDisk, shows, unlessFailed, type DragOutAsk, type NamedItem, type Notice, type NoticeKind, type NoticeType } from './lib/notice'
 import { allDirs, otherFiles, treeHasPath } from './lib/treeState'
@@ -1202,6 +1203,21 @@ export function App() {
     if (went) startPageFrom.current = from instanceof HTMLElement && from.matches('.tree__row') ? from : null
     return went
   }, [])
+  /**
+   * The last Esc (YAZ-4995, `lib/escapeOrder.ts`): what no menu, dialog, Explore layer or Inbox took. The sidebar's
+   * search goes back to its tab; then the sidebar closes, and the keyboard goes from it to the page, in place.
+   */
+  useEscapeLast(
+    () => ({ aside: sidebarRef.current, searchShown: sidebarLens === 'search', canClose: !filesWindow }),
+    (step) => {
+      if (step === 'leaveSearch') return changeLens(storage.getSidebarLens())
+      const active = document.activeElement
+      if (active === null || active === document.body || sidebarRef.current?.contains(active) === true) {
+        if (!focusOpenDocument(document, true)) leaveToPage()
+      }
+      if (!sidebarCollapsedRef.current) toggleSidebar()
+    },
+  )
   const backFromPage = useCallback(() => {
     const row = startPageFrom.current
     startPageFrom.current = null
@@ -3627,6 +3643,7 @@ export function App() {
           pendingSearchClear={pendingSearchClear}
           onSearchFocusHandled={searchFocusHandled}
           onLeaveToPage={leaveToPage}
+          escapeClosesSidebar={!filesWindow}
           // ⌘O (YAZ-1767 D8): only a request made on THIS sidebar counts; any other reads as none.
           switcherOpenRequest={switcherRequest.key === sidebarKey.current ? switcherRequest.seq : 0}
           // The vault menu's "Open in this window" (YAZ-1798 D8/D11): the one deliberate in-place switch.

@@ -2795,6 +2795,49 @@ describe('App ⌘K search (D4, YAZ-804)', () => {
     expect(document.activeElement).toBe(page)
   })
 
+  it('YAZ-4995, Yaseen\'s example: ⌘K opens the search → Esc shows the files → Esc closes the sidebar; another Esc never opens it', async () => {
+    const { el, bridge, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarLens: 'files' })
+    const esc = () => {
+      const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      act(() => void (document.activeElement ?? document.body).dispatchEvent(event))
+      return event
+    }
+    act(() => emitSearch())
+    expect(captured.sidebar?.lens).toBe('search')
+    // The keyboard in the sidebar (the stub's box stands in for its search and its rows).
+    const aside = el.querySelector<HTMLElement>('[data-sidebar]') as HTMLElement
+    aside.tabIndex = -1
+    aside.focus()
+    expect(esc().defaultPrevented).toBe(true)
+    expect(captured.sidebar?.lens).toBe('files')
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    expect(esc().defaultPrevented).toBe(true)
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith({ sidebarCollapsed: true })
+    expect(esc().defaultPrevented).toBe(false)
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+  })
+
+  it('YAZ-4995: Esc with the caret in the page text, or with a menu open, does not close the sidebar', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarLens: 'files' })
+    const text = document.createElement('div')
+    text.setAttribute('contenteditable', 'true')
+    el.appendChild(text)
+    text.focus()
+    act(() => void text.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    // A menu that closes on the window's Esc: this Esc is the menu's.
+    text.remove()
+    const menu = document.createElement('div')
+    menu.className = 'ctx-menu'
+    document.body.appendChild(menu)
+    act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(el.querySelector('[data-sidebar]')).not.toBeNull()
+    menu.remove()
+    act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(el.querySelector('[data-sidebar]')).toBeNull()
+  })
+
   it('S16 (YAZ-2638): a switch to a different vault from the Search tab lands on Files (YAZ-1846), on a sidebar of its own key — so the text is gone', async () => {
     const { el, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     act(() => emitSearch())

@@ -331,6 +331,12 @@ interface SidebarProps {
    */
   onLeaveToPage?: () => boolean
   /**
+   * Esc closes the sidebar, last of all (YAZ-4995): App's `useEscapeLast` does it. Then Esc in the search bar goes back
+   * to the last tab with the keyboard on its row (not into the page), and Esc on a row is left to App. Absent (a Files
+   * window, which IS the sidebar): Esc in the bar and on a row go to the page, as before.
+   */
+  escapeClosesSidebar?: boolean
+  /**
    * ⌘⇧C's read-only window onto the multi-selection (🔒 D4, YAZ-1338). The state stays HERE
    * (🔒 D1) — it is per root and dies with the panel — but the CHORD is App's: this component is
    * unmounted while the sidebar is collapsed, and a shortcut that stops existing when a panel is
@@ -715,6 +721,7 @@ export function Sidebar({
   pendingSearchClear = false,
   onSearchFocusHandled,
   onLeaveToPage,
+  escapeClosesSidebar = false,
   selectionRef,
   clipboardRef,
   onReviewFolder,
@@ -843,6 +850,16 @@ export function Sidebar({
   const focusedRevealId = useRef<number | null>(null)
   const [pendingReveal, setPendingReveal] = useState<SidebarRevealRequest | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+  // Esc in the search bar (YAZ-4995): the keyboard lands on a row of the tab that came back, once it is drawn — the open
+  // page's row, else the selected one, else the first. With no row the focus is nowhere, and the next Esc still closes.
+  const rowAfterSearch = useRef(false)
+  useEffect(() => {
+    if (!rowAfterSearch.current || lens === 'search') return
+    rowAfterSearch.current = false
+    const body = bodyRef.current
+    const row = body?.querySelector<HTMLElement>('.tree__row--active') ?? body?.querySelector<HTMLElement>('.tree__row--selected') ?? body?.querySelector<HTMLElement>('.tree__row[data-path]')
+    row?.focus()
+  }, [lens])
   /** The root header: it lights for a drop on the blank space too (YAZ-3247 D12). */
   const headerRef = useRef<HTMLDivElement>(null)
   // "On hover" of the level lines (YAZ-3309 D3, bug YAZ-3329): two attributes on the list, written on the
@@ -987,10 +1004,14 @@ export function Sidebar({
   const toPage = useCallback(() => focusOpenDocument() || onLeaveToPage?.() === true, [onLeaveToPage])
   // The way out of the Search tab, for the search's Esc (`searchEsc`): back to the lens the window
   // last showed, and the keyboard goes to the page on show.
+  // With Esc closing the sidebar last (YAZ-4995, Yaseen: "esc that closes search and takes you to files, ok and then
+  // hitting esc again should close the side bar"), the keyboard stays in the sidebar, on the row of the tab that comes
+  // back (`rowAfterSearch`): the next Esc closes the sidebar, and Esc in the page text never does.
   const leaveSearch = useCallback(() => {
     onLensChange(storage.getSidebarLens())
-    toPage()
-  }, [onLensChange, toPage])
+    if (escapeClosesSidebar) rowAfterSearch.current = true
+    else toPage()
+  }, [onLensChange, toPage, escapeClosesSidebar])
   // The preview panel from a row of Files, Focus or Favorites (YAZ-2663 D11): Space on a FILE row
   // shows App's panel on it — the panel of the search (YAZ-2662 D5), by the same door — and no tab
   // opens. Space looks, Enter opens, on every surface. With the panel on show it follows the
@@ -1924,10 +1945,10 @@ export function Sidebar({
             stopTreePreview()
             return
           }
-          // With no selection, Esc on a row goes to the page on show (YAZ-2663 D10), as Esc in the
-          // search bar does. A rename box and a create box are no rows: their Esc is their own.
+          // With no selection, Esc on a row closes the sidebar (YAZ-4995, App's `useEscapeLast`: the key goes on to it), or,
+          // in a Files window, goes to the page on show (YAZ-2663 D10). A rename box and a create box are no rows: their Esc is their own.
           if (selectedPaths.size === 0) {
-            if (e.target instanceof Element && e.target.matches('.tree__row') && toPage()) e.preventDefault()
+            if (!escapeClosesSidebar && e.target instanceof Element && e.target.matches('.tree__row') && toPage()) e.preventDefault()
             return
           }
           e.preventDefault()
