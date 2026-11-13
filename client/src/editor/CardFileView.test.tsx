@@ -39,6 +39,14 @@ vi.mock('../api', async (importOriginal) => {
     },
   }
 })
+/** The convert actions' writes (YAZ-5037 phase 5): their own tests are `review/cardConvert.test.ts`; here, what the tab calls. */
+const converts = vi.hoisted(() => ({
+  turnIntoPage: vi.fn(async (path: string) => path),
+  splitIntoCardFiles: vi.fn(async () => [] as string[]),
+  moveIntoCard: vi.fn(async () => undefined),
+  makeCardFromText: vi.fn(async () => undefined),
+}))
+vi.mock('../review/cardConvert', () => ({ ...converts, convertFailure: (err: unknown) => (err instanceof Error ? err.message : String(err)) }))
 vi.mock('../views/writeProperty', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../views/writeProperty')>()),
   transformFile: vi.fn(async (path: string, transform: (content: string) => string) => {
@@ -83,29 +91,33 @@ afterEach(() => {
   el?.remove()
 })
 
-async function mount(content: string, opts: { readOnly?: boolean; review?: boolean } = {}) {
+async function mount(content: string, opts: { readOnly?: boolean; review?: boolean; allow?: boolean } = {}) {
   disk.files.set(PATH, content)
   if (opts.review === false) disk.review = { enabled: false }
   const file: FileResponse = { path: PATH, content, mtime: 1, size: content.length }
   const onPage = vi.fn()
   const onNotice = vi.fn()
   const onOpenFile = vi.fn()
+  const onReread = vi.fn()
+  const allowFileAction = vi.fn(async () => opts.allow !== false)
   el = document.createElement('div')
   document.body.append(el)
   root = createRoot(el)
   await act(async () =>
     root?.render(
-      <VaultReadOnly.Provider value={{ on: opts.readOnly === true, allowFileAction: async () => true }}>
+      <VaultReadOnly.Provider value={{ on: opts.readOnly === true, allowFileAction }}>
         <ReviewScope />
-        <CardFileView file={file} root={ROOT} wikilinks={wikilinks} onOpenFile={onOpenFile} onNotice={onNotice} onPage={onPage} />
+        <CardFileView file={file} root={ROOT} wikilinks={wikilinks} onOpenFile={onOpenFile} onNotice={onNotice} onPage={onPage} onReread={onReread} />
       </VaultReadOnly.Provider>,
     ),
   )
   await vi.waitFor(() => expect(el.querySelector('[data-card-file]')).not.toBeNull())
-  return { onPage, onNotice, onOpenFile }
+  return { onPage, onNotice, onOpenFile, onReread, allowFileAction }
 }
 
 const notice = () => el.querySelector('.card-file-notice')
+const fixes = () => [...el.querySelectorAll('.card-file-notice__actions button')].map((b) => b.textContent)
+const fix = (label: string) => act(() => [...el.querySelectorAll<HTMLButtonElement>('.card-file-notice__actions button')].find((b) => b.textContent === label)!.click())
 const editButton = () => el.querySelector<HTMLButtonElement>('[data-card-file-edit]')
 const key = (target: Element, init: KeyboardEventInit) => act(() => void target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })))
 /** A new version of the card file in the index: the tab reads it again. */
@@ -140,7 +152,7 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await mount(FILE)
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('New'))
     const rows = await menu()
-    expect(rows).toEqual(['Put at top of Inbox', 'Archive card', 'Title on the front', 'Copy card ID', 'Copy card link'])
+    expect(rows).toEqual(['Put at top of Inbox', 'Archive card', 'Title on the front', 'Copy card ID', 'Copy card link', 'Turn into a page'])
     pick('Copy card link')
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('[[WIKI-9]]'))
   })
@@ -174,18 +186,19 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
 })
 
 describe('the notices of a card file that is not valid (nothing deleted)', () => {
-  it('2+ cards: "This card file holds 3 cards.", the first card under it, an actions slot with no buttons yet', async () => {
+  it('2+ cards: "This card file holds 3 cards.", the first card under it, and "Split into 3 card files"', async () => {
     const many = `${FILE}\n\`\`\`card\nSecond\n\`\`\`\n<!-- card: WIKI-10 -->\n\n\`\`\`card\nThird\n\`\`\`\n<!-- card: WIKI-11 -->\n`
     await mount(many)
-    expect(notice()?.textContent).toBe('This card file holds 3 cards.')
-    expect(notice()?.querySelector('.card-file-notice__actions')?.children.length).toBe(0)
+    expect(notice()?.querySelector('.card-file-notice__text')?.textContent).toBe('This card file holds 3 cards.')
+    expect(fixes()).toEqual(['Split into 3 card files'])
     expect(el.querySelector('.note-card-screen')?.textContent).toContain('Paris')
     expect(el.querySelector('.note-card-screen')?.textContent).not.toContain('Second')
   })
 
   it('text outside the card: "This card file has text outside the card.", that text shown below, muted', async () => {
     await mount(`---\nkind: card\n---\nA note above.\n\n${CARD}\nA note below.\n`)
-    expect(notice()?.textContent).toBe('This card file has text outside the card.')
+    expect(notice()?.querySelector('.card-file-notice__text')?.textContent).toBe('This card file has text outside the card.')
+    expect(fixes()).toEqual(['Move into the card'])
     expect(el.querySelector('.card-file__outside')?.textContent).toContain('A note above.')
     expect(el.querySelector('.card-file__outside')?.textContent).toContain('A note below.')
     expect(el.querySelector('.note-card-screen')?.textContent).toContain('Paris')
@@ -193,7 +206,8 @@ describe('the notices of a card file that is not valid (nothing deleted)', () =>
 
   it('no card: "This card file has no card.", its text shown muted, no Edit card', async () => {
     await mount('---\nkind: card\n---\nJust some words.\n')
-    expect(notice()?.textContent).toBe('This card file has no card.')
+    expect(notice()?.querySelector('.card-file-notice__text')?.textContent).toBe('This card file has no card.')
+    expect(fixes()).toEqual(['Make a card from the text', 'Turn into a page'])
     expect(el.querySelector('.card-file__outside')?.textContent).toContain('Just some words.')
     expect(el.querySelector('.note-card-screen')).toBeNull()
     expect(editButton()).toBeNull()
@@ -205,7 +219,7 @@ describe('when the file changes on disk', () => {
     const { onPage } = await mount(FILE)
     disk.files.set(PATH, `${FILE}\n\`\`\`card\nSecond\n\`\`\`\n<!-- card: WIKI-10 -->\n`)
     indexSees(2)
-    await vi.waitFor(() => expect(notice()?.textContent).toBe('This card file holds 2 cards.'))
+    await vi.waitFor(() => expect(notice()?.querySelector('.card-file-notice__text')?.textContent).toBe('This card file holds 2 cards.'))
     expect(onPage).not.toHaveBeenCalled()
     // The same version again reads nothing.
     const reads = disk.reads
@@ -276,5 +290,58 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
     await menu()
     pick('Archive card')
     await vi.waitFor(() => expect(disk.files.get(PATH)).toContain('<!-- card: WIKI-9, off -->'))
+  })
+})
+
+describe('the convert actions (YAZ-5037 phase 5)', () => {
+  beforeEach(() => Object.values(converts).forEach((fn) => fn.mockClear()))
+  const many = `${FILE}\n\`\`\`card\nSecond\n\`\`\`\n<!-- card: WIKI-10 -->\n`
+
+  it('Split and Make a card from the text run their action on this file', async () => {
+    await mount(many)
+    fix('Split into 2 card files')
+    await vi.waitFor(() => expect(converts.splitIntoCardFiles).toHaveBeenCalledWith(PATH))
+    act(() => root?.unmount())
+    await mount('---\nkind: card\n---\nJust some words.\n')
+    fix('Make a card from the text')
+    await vi.waitFor(() => expect(converts.makeCardFromText).toHaveBeenCalledWith(PATH))
+  })
+
+  it('Turn into a page reads the file again, with no "no longer a card file" notice', async () => {
+    const { onReread, onPage } = await mount(FILE)
+    await menu()
+    pick('Turn into a page')
+    await vi.waitFor(() => expect(onReread).toHaveBeenCalled())
+    expect(converts.turnIntoPage).toHaveBeenCalledWith(PATH)
+    // The index's next version reads a page now: this tab's own doing reads again, never the notice.
+    disk.files.set(PATH, '---\ntitle: Capital of France\n---\n' + CARD)
+    indexSees(5)
+    await vi.waitFor(() => expect(onReread).toHaveBeenCalledTimes(2))
+    expect(onPage).not.toHaveBeenCalled()
+  })
+
+  it('a read-only vault asks first: Cancel runs nothing', async () => {
+    const { allowFileAction } = await mount(`---\nkind: card\n---\nAbove.\n\n${CARD}`, { readOnly: true, allow: false })
+    fix('Move into the card')
+    await vi.waitFor(() => expect(allowFileAction).toHaveBeenCalledWith(ROOT))
+    await act(async () => undefined)
+    expect(converts.moveIntoCard).not.toHaveBeenCalled()
+  })
+
+  it('a failure says why in one notice', async () => {
+    converts.moveIntoCard.mockRejectedValueOnce(new Error('the disk refused the change. Nothing changed.'))
+    const { onNotice } = await mount(`---\nkind: card\n---\nAbove.\n\n${CARD}`)
+    fix('Move into the card')
+    await vi.waitFor(() => expect(onNotice).toHaveBeenCalledWith("Can't move the text into the card: the disk refused the change. Nothing changed."))
+  })
+
+  it('a `readonly: true` card file, or a vault with no IDs: no convert action', async () => {
+    await mount(many.replace('kind: card', 'kind: card\nreadonly: true'))
+    expect(fixes()).toEqual([])
+    expect(await menu()).not.toContain('Turn into a page')
+    act(() => root?.unmount())
+    act(() => wikilinks.update(() => null, records(1), [], false, []))
+    await mount(many)
+    expect(fixes()).toEqual([])
   })
 })

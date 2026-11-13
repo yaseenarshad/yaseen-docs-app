@@ -344,3 +344,52 @@ describe('making an embed: "Show as embed" on a card pill, and the paste chip\'s
     expect([...document.querySelectorAll<HTMLButtonElement>('.path-paste-chip button')].map((b) => b.textContent)).toEqual(['Keep as path'])
   })
 })
+
+describe('the convert rows (YAZ-5037 phase 5): Move to its own file, Put back into this page', () => {
+  const door = () => ({ canMove: vi.fn(() => true), move: vi.fn(), putBack: vi.fn() })
+  const pageCard = (id: string, text: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${id} -->\n`
+
+  it('a card file\'s embed alone on its line has "Put back into this page", after Show as link; the door gets the card, the embed\'s text and its place', async () => {
+    const convert = door()
+    const { root } = await mount('Intro.\n\n![[GEO-140]]\n\nMid ![[GEO-140]] text.\n\n- Item\n\n  ![[GEO-140]]\n', { noteCards: { path: PLAN, convert } })
+    const [lone, inline, inList] = boxes(root)
+    press(lone!.querySelector('.note-card__more'))
+    expect(menuLabels()).toEqual(['Open card', 'Show as link', 'Put back into this page', 'Archive card', 'Copy card ID'])
+    menuItem('Put back into this page')!.click()
+    expect(convert.putBack).toHaveBeenCalledWith({ id: 'GEO-140', path: CARD_FILE }, 'GEO-140', 0)
+    // With words around it: no card block can go there.
+    press(inline!.querySelector('.note-card__more'))
+    expect(menuLabels()).not.toContain('Put back into this page')
+    document.querySelectorAll('.ctx-menu').forEach((el) => el.remove())
+    // An indented line under a list item: the second lone embed of that text.
+    press(inList!.querySelector('.note-card__more'))
+    menuItem('Put back into this page')!.click()
+    expect(convert.putBack).toHaveBeenLastCalledWith({ id: 'GEO-140', path: CARD_FILE }, 'GEO-140', 1)
+  })
+
+  it('a card that lives in a page, or a page with no convert door: no "Put back into this page"', async () => {
+    const { root } = await mount('![[GEO-1]]\n', { noteCards: { path: PLAN, convert: door() } })
+    press(boxes(root)[0]!.querySelector('.note-card__more'))
+    expect(menuLabels()).not.toContain('Put back into this page')
+    document.querySelectorAll('.ctx-menu').forEach((el) => el.remove())
+    const other = await mount('![[GEO-140]]\n')
+    press(boxes(other.root)[0]!.querySelector('.note-card__more'))
+    expect(menuLabels()).not.toContain('Put back into this page')
+  })
+
+  it('a page card with an ID has "Move to its own file" while the door allows it (Review on); one with no ID has none', async () => {
+    const convert = door()
+    const { root } = await mount(`# Plan\n\n${pageCard('GEO-1', 'Largest country?')}\n${pageCard('GEO-2', 'Smallest country?')}\n\`\`\`card\nNo ID yet\n\`\`\`\n`, { noteCards: { path: PLAN, convert } })
+    const cards = [...root.querySelectorAll<HTMLElement>('.note-card:not(.card-embed)')]
+    press(cards[1]!.querySelector('.note-card__more'))
+    expect(menuLabels().slice(0, 2)).toEqual(['Open card', 'Move to its own file'])
+    menuItem('Move to its own file')!.click()
+    expect(convert.move).toHaveBeenCalledWith('GEO-2', 1)
+    press(cards[2]!.querySelector('.note-card__more'))
+    expect(menuLabels()).not.toContain('Move to its own file')
+    document.querySelectorAll('.ctx-menu').forEach((el) => el.remove())
+    convert.canMove.mockReturnValue(false)
+    press(cards[0]!.querySelector('.note-card__more'))
+    expect(menuLabels()).not.toContain('Move to its own file')
+  })
+})

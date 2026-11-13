@@ -85,6 +85,17 @@ export interface BoardEmbedOptions {
   cards?: CardEmbedDoors
 }
 
+/**
+ * The text between the brackets of the one embed `paragraph` holds, when that embed stands alone on its line in the
+ * file (YAZ-5037 phase 5, "Put back into this page"): a paragraph of the page itself, or one after the first of a list
+ * item (an indented line under it). Null for anything else: words around it, a list item's first line, a quote, a cell.
+ */
+function loneEmbedOf(paragraph: ProseNode, parent: ProseNode | null, index: number): string | null {
+  if (paragraph.type.name !== 'paragraph' || parent === null) return null
+  if (parent.type.name !== 'doc' && !(parent.type.name === 'list_item' && index > 0)) return null
+  return /^!\[\[([^\]\n]+)\]\]$/.exec(paragraph.textContent.trim())?.[1] ?? null
+}
+
 /** The card box's chunk would not load (YAZ-5037): one quiet line in its place, as a window's "Can't show …". */
 function cantShowCard(box: HTMLElement): void {
   box.classList.add(BOX_BROKEN_CLASS)
@@ -388,6 +399,23 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
               if (now !== null && view.editable) view.dispatch(view.state.tr.insertText(text, now.from, now.to))
             },
             menuParent: () => view.dom.parentElement ?? document.body,
+            place: () => {
+              const now = matchOf(view, mount)
+              if (now === null) return null
+              const $at = view.state.doc.resolve(now.from)
+              const inner = loneEmbedOf($at.parent, $at.node($at.depth - 1), $at.index($at.depth - 1))
+              if (inner !== now.inner) return null
+              // Its place among the page's lone embeds of that text, as the file's lines read them (`embedLine`).
+              const before = $at.before()
+              let nth = 0
+              view.state.doc.descendants((node, pos, parent, index) => {
+                if (pos >= before) return false
+                if (node.type.name !== 'paragraph') return true
+                if (loneEmbedOf(node, parent, index) === inner) nth++
+                return false
+              })
+              return { inner, nth }
+            },
           })
           mount.card = card
           if (mount.fold.folded) card.setFolded(true)

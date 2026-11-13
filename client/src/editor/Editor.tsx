@@ -94,6 +94,8 @@ import type { AnchorRect } from '../sidebar/previewPlacement'
 import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
 import { VaultLinksContext } from '../links/vaultLinks'
 import { CardReviewDoor } from '../review/cardReviewDoor'
+import { useReviewOn } from '../review/useReviewSettings'
+import { useCardConvert } from './useCardConvert'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { CardReview } from '@shared/cardLine'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
@@ -424,7 +426,10 @@ interface FolderPageMode {
  * folder page's Page tab is never a card file.
  */
 function MarkdownEditor({ inFolderPage = false, drawingSettings, root, path, watch, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, idInTitle, linkActions, onNotice, newNoteFolderFor, wikilinks, viewOnlyLinks, wikilinkCandidates, properties, onRetitle, sync, onSyncNow, commentsOrder, onChangeCommentsOrder, tableOfContents, tocOnByDefault, guideLinesOnByDefault, foldingOnByDefault, bulletThreadingOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, tocZoom, onChangeTocZoom, onUserEdit, startView, tabId, zoomKey, onZoom, onOpenBullet, diagramDarkColors = 'adapt', hoverLinks = false, hoverDrawingLinks = false, hoverBacklinks = false, folderPages, previewScope, hotkeys, hotkeysAside, outsideChangeGlow, findFolds, outsideListPinned, onChangeOutsideListPinned }: EditorProps & FolderPageMode & { drawingSettings: DrawingAppSettings }) {
-  const state = useFile(path)
+  // A convert that kept the file's name (YAZ-5037: a page turned into a card file, or back) reads it again: the right view.
+  const [revision, setRevision] = useState(0)
+  const reread = useCallback(() => setRevision((n) => n + 1), [])
+  const state = useFile(path, revision)
   const titles = usePathTitles(wikilinks)
   const read = state.status === 'ready' ? state.file : state.status === 'loading' ? state.prev : null
   // The file the card view handed back once it was no longer a card file: the page, until the next read of this tab.
@@ -440,11 +445,11 @@ function MarkdownEditor({ inFolderPage = false, drawingSettings, root, path, wat
       {wasCard && <CardFileNotice text="This file is no longer a card file." />}
       {file !== null && cardFile && (
         <Suspense fallback={null}>
-          <CardFileView key={file.path} file={file} root={root} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} viewOnlyLinks={viewOnlyLinks} onOpenFile={onOpenFile} onOpenLink={onOpenLink} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} onNotice={onNotice} onPage={toPage} />
+          <CardFileView key={file.path} file={file} root={root} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} viewOnlyLinks={viewOnlyLinks} onOpenFile={onOpenFile} onOpenLink={onOpenLink} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} onNotice={onNotice} onPage={toPage} onReread={reread} />
         </Suspense>
       )}
       {file !== null && !cardFile && (
-        <CrepeHost key={file.path} inFolderPage={inFolderPage} {...drawingSettings} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} idInTitle={idInTitle} linkActions={linkActions} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} bulletThreadingOnByDefault={bulletThreadingOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} onUserEdit={onUserEdit} startView={startView} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} folderPages={folderPages} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} />
+        <CrepeHost key={file.path} inFolderPage={inFolderPage} {...drawingSettings} root={root} file={file} titles={titles} watch={watch} onOpenFile={onOpenFile} onOpenFileRight={onOpenFileRight} onOpenFileBackground={onOpenFileBackground} onOpenLink={onOpenLink} onOpenLinkBackground={onOpenLinkBackground} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} idInTitle={idInTitle} linkActions={linkActions} onNotice={onNotice} newNoteFolderFor={newNoteFolderFor} wikilinks={wikilinks} viewOnlyLinks={viewOnlyLinks} wikilinkCandidates={wikilinkCandidates} properties={properties} onRetitle={onRetitle} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} tableOfContents={tableOfContents} tocOnByDefault={tocOnByDefault} guideLinesOnByDefault={guideLinesOnByDefault} foldingOnByDefault={foldingOnByDefault} bulletThreadingOnByDefault={bulletThreadingOnByDefault} contentWidth={contentWidth} onChangeTableOfContents={onChangeTableOfContents} tableOfContentsWidth={tableOfContentsWidth} onChangeTableOfContentsWidth={onChangeTableOfContentsWidth} tocZoom={tocZoom} onChangeTocZoom={onChangeTocZoom} onUserEdit={onUserEdit} startView={startView} tabId={tabId} zoomKey={zoomKey} onZoom={onZoom} onOpenBullet={onOpenBullet} diagramDarkColors={diagramDarkColors} hoverLinks={hoverLinks} hoverDrawingLinks={hoverDrawingLinks} hoverBacklinks={hoverBacklinks} folderPages={folderPages} previewScope={previewScope} hotkeys={hotkeys} hotkeysAside={hotkeysAside} outsideChangeGlow={outsideChangeGlow} findFolds={findFolds} outsideListPinned={outsideListPinned} onChangeOutsideListPinned={onChangeOutsideListPinned} onReread={reread} />
       )}
     </>
   )
@@ -516,6 +521,7 @@ function CrepeHost({
   onChangeOutsideListPinned,
   canvasPrefs,
   onCanvasPrefsChange,
+  onReread,
 }: DrawingAppSettings & FolderPageMode & {
   root: string
   file: FileResponse
@@ -577,6 +583,8 @@ function CrepeHost({
   outsideListPinned?: boolean
   /** The list's Pin and Unpin write the setting through this. */
   onChangeOutsideListPinned?: (pinned: boolean) => void
+  /** The page turned into a card file under its own name (YAZ-5037): the tab reads it again, to show it as one. */
+  onReread?: () => void
 }) {
   const unit = useUnit()
   // A copied page starts at its source's text size (YAZ-2951 S5); after that it changes on its own.
@@ -780,6 +788,11 @@ function CrepeHost({
   fileDoor.current = vaultScope.allowFileAction
   /** The page is under Read only: its own switch, its folder page's, or the vault's. The chip shows while this is true. */
   const lockedBase = diskReadOnly || folderLocked || vaultLocked
+  /** The convert actions (YAZ-5037 phase 5): its cards' "Move to its own file", its embeds' "Put back", the cog's "Turn into a card file". */
+  const diskRef = useRef(disk)
+  diskRef.current = disk
+  const reviewOn = useReviewOn(root)
+  const convert = useCardConvert({ root, path: file.path, wikilinks, reviewOn, inFolderPage, disk: () => diskRef.current, allowFileAction: vaultScope.allowFileAction, onNotice, onReread })
   /** The timed "Allow edits" of THIS tab (YAZ-4939): at zero the page saves, then locks again. */
   const unlock = useTimedUnlock(autosave.flushNow)
   const readOnly = lockedBase && unlock.until === null
@@ -934,7 +947,7 @@ function CrepeHost({
       defaultValue: body,
       onMarkdownUpdated: (md) => controller?.update(md),
       // Note cards (YAZ-4961): `/card` takes its ID from the vault's door at once; the card's open hook names this page.
-      noteCards: { path: file.path, mintId: takeNoteId },
+      noteCards: { path: file.path, mintId: takeNoteId, convert: convert.door },
       // "Reviews (n)" under each card with reviews (YAZ-5000): the vault's door, read when a section opens or deletes.
       noteCardReviews:
         cardReviewsRef.current === null
@@ -1527,7 +1540,7 @@ function CrepeHost({
         <StatusChips zoom={documentZoom} onZoom={changeZoom} readOnly={lockedBase ? { asking: askingUnlock, onAsk: askUnlock, onAllow: (choice) => { setAskingUnlock(false); unlock.allow(choice) }, onCancel: () => setAskingUnlock(false), onTurnOff: diskReadOnly && !vaultLocked ? () => { setAskingUnlock(false); void setReadOnly(false) } : undefined, editingUntil: unlock.until, onLock: unlock.lock, lockKeys: true, onReturn: caretBack } : null} sync={sync} onSyncNow={onSyncNow} save={autosave.status}>
           {foldAllButton}
           {/* The cog's row reads the page's lock; a click while a timed unlock runs is "Lock now". */}
-          <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : askUnlock()) : void setReadOnly(true))} {...cog} />
+          <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : askUnlock()) : void setReadOnly(true))} {...cog} rows={convert.rows} />
         </StatusChips>
       )}
       {/* The one-line note of outside changes (YAZ-3704 D6) takes the conflict bar's place and hides while it shows. */}
@@ -1602,6 +1615,8 @@ function CrepeHost({
       {/* The numbered list of outside changes (YAZ-3998) floats in the room LEFT of the note the same way. */}
       {outsideListPinned && <OutsideChangesList channel={outsideChanges} hostRef={hostRef} onPin={onChangeOutsideListPinned} />}
       <MemoTableOfContents channel={tocChannel} mode={tableOfContentsOn ? tableOfContents : 'off'} contentWidth={contentWidth} onChangeMode={onChangeTableOfContents} width={tableOfContentsWidth} onChangeWidth={onChangeTableOfContentsWidth} hostRef={hostRef} onReturnFocus={focusNote} folds={tocFolds} onChangeFolds={changeTocFolds} zoom={tocZoom} onChangeZoom={onChangeTocZoom} />
+      {/* Put back's ask (YAZ-5037): other pages embed the card. */}
+      {convert.sheet}
       {/* The drawing editor (YAZ-879) — a MODAL over the window, never a node view inside the
           note. Keyed by target so reopening a different drawing is a fresh canvas, and the
           appearance is App's already-resolved one, read once (`appliedTheme`). */}

@@ -28,6 +28,8 @@ export interface CardEmbedDoors {
   /** A Markdown link's open in the card. Absent → nothing. */
   openHref?: (href: string) => void
   onNotice?: (message: string) => void
+  /** "Put back into this page" (YAZ-5037 phase 5): the page's convert door (`CardConvertDoor.putBack`). Absent → not offered. */
+  putBack?: (card: { id: string; path: string }, inner: string, nth: number) => void
 }
 
 /** What the host gives one box. */
@@ -45,6 +47,12 @@ export interface CardEmbedHost {
   replace: (text: string) => void
   /** Where the ⋯ menu opens (the editor's parent). */
   menuParent: () => HTMLElement
+  /**
+   * Where the embed stands, for "Put back into this page": its text between the brackets and its place among the embeds
+   * of that text that stand alone on their line (`embedLine` reads the file the same way). Null when it shares its line
+   * (words around it, the first line of a list item, a quote, a table cell): a card block cannot go there.
+   */
+  place: () => { inner: string; nth: number } | null
 }
 
 /** One box. */
