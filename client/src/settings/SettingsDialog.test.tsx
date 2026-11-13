@@ -1453,6 +1453,9 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     // YAZ-5028: Up next a day, the same box: empty by default (no limit), a number saved, empty again is null.
     expect(input(el, 'upNextPerDay').value).toBe('')
     expect(row(el, 'upNextPerDay')?.textContent).toContain('Empty means no limit.')
+    // YAZ-5042 Decision 1: the cards past the number wait for another day.
+    expect(row(el, 'upNextPerDay')?.textContent).toContain('The others wait for another day.')
+    expect(row(el, 'upNextPerDay')?.textContent).not.toContain('normal place')
     type(input(el, 'upNextPerDay'), '2')
     blur(input(el, 'upNextPerDay'))
     expect(save).toHaveBeenLastCalledWith({ ...S, upNextPerDay: 2 })

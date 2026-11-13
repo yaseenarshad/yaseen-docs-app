@@ -31,7 +31,7 @@ import { cardsAddedToday, setCardsAdded, subscribeCardsAdded } from './cardsAdde
  * are never in the queue); an answer takes a card out of it, as the repeat it may leave is no longer up next.
  *
  * Up next a day (YAZ-5028, Yaseen: "so it kinda works like new?"): only the day's N places are Up next — they go first,
- * and the Up next row counts and shows those alone; the other marked cards wait in their normal place (`cardQueue`,
+ * and the Up next row counts and shows those alone; the other marked cards wait for another day, unless due anyway (YAZ-5042; `cardQueue`,
  * less `upNextTakenToday`: an answer that takes a card's mark off counts it, its ⌘Z gives it back). Every queue here
  * passes the same list, so the marks the session follows (YAZ-5031) are today's Up next, not every marked card. The
  * list lives in the app state (`upNextTaken.ts`), and a change of it is read as a change of the index.
