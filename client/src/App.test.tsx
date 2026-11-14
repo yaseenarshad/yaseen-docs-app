@@ -4,6 +4,8 @@
  * observable stubs; the bridge is the jsdom stub pattern (storage.test.ts), so the real
  * storage / api / hook modules run against it.
  */
+import { requestCourse } from './course/openCourse'
+import { defaultCourseState } from '@shared/courseState'
 import { LINK_NOTICE_MS, type NoticeKind, type NoticeType } from './lib/notice'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
@@ -239,6 +241,8 @@ import { dropAllPageWindows, keepPageWindow, pageWindowKey, pageWindowMemory, op
 import { MOVE_ROW_TITLE_MAX } from './tabs/windowLabel'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+/** The card course's notice is due in the next mount (YAZ-5120): only its own test sets it. */
+let courseNoticeDue = false
 
 /** The full `window.yaseenDocs` surface the App tree touches, all observable. `files` backs readFile/writeFile (the E1c rewrite path). */
 type IdentityFixture = Omit<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'> & Partial<Pick<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'>>
@@ -334,7 +338,9 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     pickFolder: vi.fn(async () => ({ cancelled: true as const })),
     watch: vi.fn((_root?: string, _listener?: unknown): (() => void) => () => undefined),
     state: {
-      get: vi.fn(async () => state),
+      // The card course's one notice (YAZ-5120) shows once per Mac: here it has shown, unless a test asks for it
+      // (`courseNoticeDue`), so it never takes the place of the notice another test reads.
+      get: vi.fn(async () => (courseNoticeDue ? state : { ...state, course: { ...(state.course ?? defaultCourseState()), offered: true } })),
       setSettings: vi.fn(async () => undefined),
       setSidebarWidth: vi.fn(async () => undefined),
       pushRecent: vi.fn(async () => undefined),
@@ -346,6 +352,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       setBaseGroups: vi.fn(async () => undefined),
       // The tab board's canvas (YAZ-3343 D1): the switch and the moved cards.
       setTabCanvas: vi.fn(async () => undefined),
+      setCourse: vi.fn(async () => undefined),
       onChange: vi.fn((listener: (next: AppState) => void) => {
         stateChanged.add(listener)
         return () => stateChanged.delete(listener)
@@ -7617,5 +7624,31 @@ describe('a ghost of a focus folder (YAZ-4460 F6; YAZ-4477)', () => {
     await act(async () => sidebar.onAddVaultFor?.('zz', 'q.md'))
     expect(el.querySelector('#confirm-add-vault-for-link-text')).toBeNull()
     expect(el.querySelector('.link-notice')?.textContent).toContain('This item is in the vault "zz", which this Mac does not know. Open that folder first.')
+  })
+})
+
+describe('App: the card course (YAZ-5120)', () => {
+  afterEach(() => {
+    courseNoticeDue = false
+  })
+
+  it('the one notice, the first time a vault with Review on shows: it is kept as shown, and "Open the course" opens the lazy layer; Esc closes it', async () => {
+    courseNoticeDue = true
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
+    await vi.waitFor(() => expect(el.querySelector('.link-notice')?.textContent).toContain('New to cards? Take the 26-minute course'))
+    expect(bridge.state.setCourse).toHaveBeenCalledWith({ offered: true })
+    const open = [...el.querySelectorAll<HTMLButtonElement>('.link-notice button')].find((b) => b.textContent === 'Open the course')!
+    act(() => open.click())
+    await vi.waitFor(() => expect(document.querySelector('.course[role="dialog"]')).not.toBeNull())
+    act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(document.querySelector('.course')).toBeNull()
+  })
+
+  it('requestCourse(chapter) from any part opens the course at that chapter', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
+    expect(el.querySelector('.link-notice')?.textContent ?? '').not.toContain('New to cards?')
+    act(() => requestCourse('good-card'))
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 7 of 12'))
+    act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
   })
 })

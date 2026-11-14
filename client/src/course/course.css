@@ -1,0 +1,328 @@
+/*
+ * The card course's layer (YAZ-5120). Loaded with the course's own chunk, never at the start. The look follows the
+ * approved sample (one calm stage, a caption line of fixed height, a thin progress bar, round buttons) and mockup
+ * screen 4 (the chapter list on the left). Colours are the app's own tokens, so light and dark follow the app.
+ */
+.course {
+  position: fixed;
+  inset: 0;
+  z-index: 72; /* over the app and Settings' scrim (70): one modal at a time, and this is it */
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 15px;
+  outline: none;
+  animation: course-in 160ms ease-out;
+}
+
+.course[hidden] {
+  display: none;
+}
+
+@keyframes course-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.course__vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* The chapter list */
+.course__chapters {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 10px;
+  background: var(--bg-side);
+  border-right: 1px solid var(--border);
+}
+
+.course__name {
+  margin: 0 0 10px;
+  padding: 0 10px;
+  color: var(--fg-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.course__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.course__chapter {
+  display: grid;
+  grid-template-columns: 14px 20px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 4px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.course__chapter:hover {
+  background: var(--bg-hover);
+}
+
+.course__chapter[data-finished='true'] {
+  color: var(--fg);
+}
+
+.course__chapter[aria-current='step'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.course__mark {
+  color: var(--accent);
+}
+
+.course__number {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The main column: the head, the stage, the caption, the bar, the controls */
+.course__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 14px 28px 20px;
+}
+
+.course__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.course__where {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.course__stage {
+  position: relative;
+  flex: 1;
+  min-height: 160px;
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-side);
+}
+
+.course-scene {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  padding: 24px clamp(20px, 6vw, 72px);
+  text-align: center;
+  animation: course-scene-in 260ms ease-out;
+}
+
+@keyframes course-scene-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.course-scene__words {
+  margin: 0;
+  max-width: 30ch;
+  font-size: clamp(22px, 3.2vw, 34px);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+.course__end-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* The caption: one line of fixed height, always on screen (YAZ-5120), as the sample's. */
+.course__caption {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 52px;
+  margin: 14px auto 10px;
+  max-width: 640px;
+  overflow: hidden;
+  font-size: 17px;
+  line-height: 1.45;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.course__note {
+  margin: -4px 0 10px;
+  color: var(--fg-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.course__bar {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.course__bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+.course__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.course__spacer {
+  flex: 1;
+}
+
+.course__speed {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.course__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.course__btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.course__btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.course__btn:focus-visible,
+.course__chapter:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.course__btn[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.course__btn--speed {
+  min-width: 52px;
+  padding: 6px 10px;
+}
+
+.course__btn--play {
+  min-width: 78px;
+}
+
+.course__btn--primary,
+.course__btn--try {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+
+.course__btn--primary:hover:not(:disabled),
+.course__btn--try:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+
+/* The narrow window: the chapter list goes on top, in a short scrolling strip. */
+@media (max-width: 720px) {
+  .course {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 120px) minmax(0, 1fr);
+  }
+
+  .course__chapters {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 10px;
+  }
+
+  .course__main {
+    padding: 12px 16px 16px;
+  }
+
+  .course__caption {
+    height: 72px;
+    font-size: 16px;
+  }
+}
+
+/* Reduced motion (YAZ-5120): cross-fades in place, no movement. */
+@media (prefers-reduced-motion: reduce) {
+  .course-scene {
+    animation-name: course-fade;
+  }
+}
+
+.course[data-reduced-motion='true'] .course-scene {
+  animation-name: course-fade;
+}
+
+@keyframes course-fade {
+  from {
+    opacity: 0;
+  }
+}

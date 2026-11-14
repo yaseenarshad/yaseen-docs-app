@@ -80,6 +80,7 @@
  *    the card window (as ⋯ › Open card), and "Unarchive" brings it back to review, its history kept. No answer buttons.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { CourseOffer, type CourseOfferProps } from '../course/CourseOffer'
 import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
 import { cardSides, cardTitle, cardWithoutTitle, hiddenCount } from '@shared/cardText'
 import { recordAt } from '../editor/card/embedCard'
@@ -128,6 +129,11 @@ export interface CardInboxProps {
   onNotice: (message: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void
   /** A folder of the top row's card place (YAZ-5017 round 2): the vault's or a folder's page, in a tab. The page part opens as O does. */
   openPlace?: (path: string) => void
+  /**
+   * The card course's offer on the vault's empty Inbox (YAZ-5120, suggestion 24): App gives it only when the vault has
+   * no card, the course is not done, the person did not dismiss it, and Card tips is on. Absent: no offer.
+   */
+  courseOffer?: CourseOfferProps
 }
 
 /** The keys of a dialog, a sheet or a menu that is open: theirs, never the Inbox's. */
@@ -222,7 +228,7 @@ interface Step {
   shown: number
 }
 
-export function CardInbox({ shown = true, review, session, vaultOf, nameOf, openPage, openTab, openCard, openInTab, openLinkIn, openLayer, onNotice, openPlace }: CardInboxProps) {
+export function CardInbox({ shown = true, review, session, vaultOf, nameOf, openPage, openTab, openCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, courseOffer }: CardInboxProps) {
   const unit = useUnit()
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
@@ -485,7 +491,13 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                 ) : session.scope === 'vault' ? (
                   <>
                     <p className="card-inbox__done-title">Inbox complete.</p>
-                    {addButtons === null ? <p className="card-inbox__done-line">Nothing else is due today. Enjoy your day!</p> : [waits, addButtons]}
+                    {courseOffer !== undefined ? (
+                      <CourseOffer {...courseOffer} />
+                    ) : addButtons === null ? (
+                      <p className="card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
+                    ) : (
+                      [waits, addButtons]
+                    )}
                   </>
                 ) : (
                   <>

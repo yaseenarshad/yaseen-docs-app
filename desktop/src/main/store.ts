@@ -1,4 +1,5 @@
 import { cleanIconRules, isIconRules } from '@shared/vaultIcons'
+import { applyCoursePatch, cleanCourseState, type CoursePatch } from '@shared/courseState'
 import { isValidDailyPageFormat } from '@shared/dailyPage'
 import { isCalendarDayTime, isValidTimeFormat } from '@shared/timeFormat'
 import { randomUUID } from 'node:crypto'
@@ -313,6 +314,8 @@ export interface Store {
    * that changes nothing commits nothing.
    */
   setTabCanvas(patch: TabCanvasPatch): void
+  /** The card course (YAZ-5120): the fields of `patch` over `course`, by `applyCoursePatch`, in ONE commit; a patch that changes nothing commits nothing. */
+  setCourse(patch: CoursePatch): void
   /**
    * Repair every stored reference to a just-renamed file OR directory (Links E1 GRO-2194,
    * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`), recents, each
@@ -1244,6 +1247,8 @@ function sanitizeState(raw: unknown): AppState | null {
     settingsSavedAt: isFiniteNumber(raw.settingsSavedAt) && raw.settingsSavedAt >= 0 ? raw.settingsSavedAt : 0,
     // YAZ-3343 D1: absent is the default; an old build drops the key.
     tabCanvas: sanitizeTabCanvas(raw.tabCanvas, windows),
+    // YAZ-5120: absent is the default; each bad field reads its default; an old build drops the key.
+    course: cleanCourseState(raw.course),
   }
 }
 
@@ -1551,6 +1556,11 @@ export function createStore(filePath: string): Store {
     setTabCanvas(patch) {
       const tabCanvas = applyTabCanvasPatch(state.tabCanvas, patch, new Set(state.windows.map((w) => w.id)))
       if (tabCanvas !== state.tabCanvas) commit({ ...state, tabCanvas })
+    },
+
+    setCourse(patch) {
+      const course = applyCoursePatch(state.course, patch)
+      if (course !== state.course) commit({ ...state, course })
     },
 
     renamePath(oldPath, newPath) {

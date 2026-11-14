@@ -14,6 +14,8 @@ export interface ReviewSettingsState {
   settings: ReviewSettings
   /** Shown at once; a write that fails falls back to what the file holds. Refused, with a notice, over a file that is not valid JSON. */
   save: (next: ReviewSettings) => void
+  /** The vault's file has been read (or found missing): `settings` are the vault's, not the defaults shown while it loads (YAZ-5120). */
+  ready?: boolean
 }
 
 /**
@@ -41,6 +43,8 @@ export function useVaultReviewSettings(root: string | null | undefined): ReviewS
 /** `root` is nullable because App's hooks cannot be conditional: no vault, no bridge call, the defaults. */
 export function useReviewSettings(root: string | null, onNotice: (text: string, icon?: NoticeKind) => void): ReviewSettingsState {
   const [settings, setSettings] = useState(DEFAULT_REVIEW_SETTINGS)
+  // Which vault's file was last read: the settings are that vault's from then on (`ready`).
+  const [readRoot, setReadRoot] = useState<string | null>(null)
   const live = useRef(settings)
   live.current = settings
   const malformed = useRef(false)
@@ -66,9 +70,12 @@ export function useReviewSettings(root: string | null, onNotice: (text: string, 
           malformed.current = false
           held.current = isRecord(raw) ? raw : {}
           setSettings(sanitizeReviewSettings(raw))
+          setReadRoot(root)
         },
         (err: unknown) => {
-          if (live) malformed.current = err instanceof BridgeRequestError && err.code === 'INVALID_CONFIG'
+          if (!live) return
+          malformed.current = err instanceof BridgeRequestError && err.code === 'INVALID_CONFIG'
+          setReadRoot(root)
         },
       )
     }
@@ -102,7 +109,7 @@ export function useReviewSettings(root: string | null, onNotice: (text: string, 
     [root, onNotice],
   )
 
-  return { settings, save }
+  return { settings, save, ready: root !== null && readRoot === root }
 }
 
 /**

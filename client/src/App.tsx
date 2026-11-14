@@ -1,4 +1,4 @@
-import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
 import type { LinkPills } from '@shared/linkPills'
@@ -39,6 +39,8 @@ import { absFrom, basename, dirname, relTo, stripExt } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
+import { onCourseRequest } from './course/openCourse'
+import { COURSE_NOTICE, offerInInbox, offerNotice } from './course/courseFacts'
 import { resolveItem } from './lists/focusFolders'
 import { useVaultListsHere } from './lists/useVaultListsHere'
 import { readPageView } from './lib/pageView'
@@ -137,6 +139,8 @@ const ExploreStack = lazy(() => import('./explore/ExploreStack').then((m) => ({ 
 const inboxLabel = (session: CardReviewSession): string => (session.scope === 'vault' ? 'Inbox' : `Inbox · ${session.label}`)
 /** The Inbox screen (YAZ-4962): lazy, loaded with the first review. */
 const CardInbox = lazy(() => import('./review/CardInbox').then((m) => ({ default: m.CardInbox })))
+/** The card course (YAZ-5059 decision 10, YAZ-5120): a full layer over the window, lazy, loaded when it opens. */
+const CardCourse = lazy(() => import('./course/CardCourse').then((m) => ({ default: m.CardCourse })))
 
 /**
  * The tab board (YAZ-3343 D4): its own chunk — the canvas, its layout and its cards — loaded on idle after the
@@ -1439,6 +1443,32 @@ export function App() {
     setSettingsOpen(true)
   }, [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
+
+  // THE CARD COURSE (YAZ-5120): one layer over the window, opened only by a person's click (Settings › Review, the
+  // notice, the empty Inbox, `requestCourse` from any part). Settings closes first. `n` remounts it for a new request.
+  const [courseOpen, setCourseOpen] = useState<{ chapter?: string; n: number } | null>(null)
+  const openCourse = useCallback((chapter?: string) => {
+    setSettingsOpen(false)
+    setCourseOpen((open) => ({ ...(chapter === undefined ? {} : { chapter }), n: (open?.n ?? 0) + 1 }))
+  }, [])
+  const closeCourse = useCallback(() => setCourseOpen(null), [])
+  useEffect(() => onCourseRequest(({ chapter }) => openCourse(chapter)), [openCourse])
+  const course = useSyncExternalStore(storage.subscribe, storage.getCourse)
+  // The one notice (YAZ-5120): the first time this Mac shows a vault whose Review is on, once its settings are read.
+  const reviewOnHere = root !== null && active.reviewSettings.ready === true && active.reviewSettings.settings.enabled
+  useEffect(() => {
+    if (!offerNotice(course, settings, reviewOnHere)) return
+    storage.setCourse({ offered: true })
+    notify(COURSE_NOTICE, 'info', undefined, { label: 'Open the course', run: () => openCourse() })
+  }, [course, settings, reviewOnHere, notify, openCourse])
+  // The empty Inbox's line (suggestion 24): only for a beginner, once the vault's index says it has no card.
+  const offerVault = reviewer ?? first
+  // `ids` is undefined until the vault's index has loaded: until then the vault counts as having cards (no offer).
+  const vaultHasCards = offerVault.ids === undefined || offerVault.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0)
+  const inboxCourseOffer = useMemo(
+    () => (offerInInbox(course, settings, vaultHasCards) ? { onOpen: () => openCourse(), onDismiss: () => storage.setCourse({ dismissed: true }) } : undefined),
+    [course, settings, vaultHasCards, openCourse],
+  )
   // YAZ-4615: what every comment block reads — your profile (D2), where resolved threads go (D5), and
   // the composer's way to Settings › You (D7, the first page of the dialog).
   const commentPrefs = useMemo(
@@ -3700,7 +3730,12 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
+      {courseOpen !== null && (
+        <Suspense fallback={null}>
+          <CardCourse key={courseOpen.n} chapter={courseOpen.chapter} vault={root} onClose={closeCourse} />
+        </Suspense>
+      )}
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Page (D7). */}
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
       {keySheetOpen && <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}
@@ -3994,7 +4029,7 @@ export function App() {
                 under it stays as it was. Behind a page tab it stays mounted, hidden, so it comes back at its card and step. */}
             {session !== null && (
               <Suspense fallback={null}>
-                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openExploreOn} openTab={openKeptPage} openCard={openCardWindow} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} />
+                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openExploreOn} openTab={openKeptPage} openCard={openCardWindow} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} courseOffer={inboxCourseOffer} />
               </Suspense>
             )}
             {/* The tab board (YAZ-2648 D5) covers the stack while it shows; a review never has one over it. */}

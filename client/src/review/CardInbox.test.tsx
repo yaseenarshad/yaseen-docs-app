@@ -407,6 +407,26 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(shown()).toEqual(['France'])
   })
 
+  it('YAZ-5120: with the course`s offer (App gives it to a beginner only), the empty vault Inbox says one line, with Take the course and Don`t show again', () => {
+    mount(TWO_SIDES)
+    const offer = { onOpen: vi.fn(), onDismiss: vi.fn() }
+    session = { ...session, card: null, counts: { all: 0, next: 0, due: 0, new: 0 } }
+    props = { ...props, courseOffer: offer }
+    render()
+    expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('Inbox complete.')
+    expect(el.querySelector('.course-offer__line')?.textContent).toBe('No cards yet. Take the course, or make a card.')
+    const [open, dismiss] = [...el.querySelectorAll<HTMLButtonElement>('.course-offer button')]
+    expect([open.textContent, dismiss.textContent]).toEqual(['Take the course', "Don't show again"])
+    act(() => open.click())
+    act(() => dismiss.click())
+    expect(offer.onOpen).toHaveBeenCalledOnce()
+    expect(offer.onDismiss).toHaveBeenCalledOnce()
+    // No offer: the screen is as before.
+    props = { ...props, courseOffer: undefined }
+    render()
+    expect(el.querySelector('.course-offer')).toBeNull()
+  })
+
   it('the done screen: "Inbox complete." and one quiet line; only ⌘Z (with an answer to undo) in the hint row', () => {
     mount(TWO_SIDES)
     session = { ...session, card: null, canUndo: true }

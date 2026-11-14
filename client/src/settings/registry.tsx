@@ -22,6 +22,7 @@
  * "ID letters" (🔒 D5) and "Old IDs" (🔒 D6) follow it (`IdLettersControl.tsx`): `ids.reletter`, `ids.backfill`.
  */
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
+import { COURSE_SETTINGS_GROUP } from '../course/courseSettings'
 import { HeaderStyleControl } from '../views/view/StylePanel'
 import { plainHeaderRow } from '../views/view/TableLookSettings'
 import { isIdLetters } from '@shared/pageId'
@@ -378,6 +379,8 @@ export interface SettingsCtx {
   places?: readonly PlaceVault[]
   /** Daily pages › Open template (YAZ-3607): App opens the daily pages folder's `.template.md`, made empty first when missing. Absent with no vault. */
   openDailyTemplate?: () => void
+  /** Review › Card course › "Open the course" (YAZ-5120): App closes Settings and opens the course. */
+  openCourse?: () => void
 }
 
 export interface SettingDef {
@@ -2142,6 +2145,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
         ],
       },
+      // YAZ-5120: Card course › Open the course, its own group (`course/courseSettings.tsx`).
+      COURSE_SETTINGS_GROUP,
     ],
   },
   {
