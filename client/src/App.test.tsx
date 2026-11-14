@@ -7893,7 +7893,8 @@ describe('App: the card course (YAZ-5120)', () => {
     expect(document.querySelector('.course__caption')?.textContent).toContain('Your card is now a real file')
     const createDir = (bridge as unknown as { createDir: ReturnType<typeof vi.fn> }).createDir
     await vi.waitFor(() => expect(createDir).toHaveBeenCalled(), { timeout: SLOW_RUNNER_MS })
-    expect(createDir.mock.calls.map(([req]) => (req as { path: string }).path)).toEqual(['/a/course-cards'])
+    // The live step's check and the clip's scene may both ask for the folder: every ask is in vault A, none in B.
+    expect([...new Set(createDir.mock.calls.map(([req]) => (req as { path: string }).path))]).toEqual(['/a/course-cards'])
     act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
     document.querySelectorAll('.course-tour-root').forEach((n) => n.remove())
   })

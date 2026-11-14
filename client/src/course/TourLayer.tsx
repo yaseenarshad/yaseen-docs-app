@@ -256,14 +256,16 @@ export function TourLayer({ chapter, steps, host, alive, onEnd, variant = 'tour'
           else if (active instanceof HTMLElement && coach.current?.contains(active)) active.blur()
         }
       }
-      const popups = [...document.querySelectorAll<HTMLElement>(POPUPS)].filter((p) => !(layer.current?.contains(p) ?? false) && shows(p)).map((p) => round(holeOf(boxOf(p), view, 0)))
+      // The holes for open menus matter only under a dim: a live show step, or no step, has none.
+      const dimmed = !live || isDoStep(step)
+      const popups = !dimmed ? [] : [...document.querySelectorAll<HTMLElement>(POPUPS)].filter((p) => !(layer.current?.contains(p) ?? false) && shows(p)).map((p) => round(holeOf(boxOf(p), view, 0)))
       const target = onScreen && box !== null ? round(holeOf(box, view)) : null
       // The lit control, for a docked corner to move away from; the docked course, left out of the dim.
       setLitBox(target)
       const area = courseArea()
       const course = area === null ? null : round(holeOf(area, view, 0))
       const help = step === null ? undefined : TARGET_HELP[step.target]
-      const stuckEl = help?.stuck === undefined ? null : document.querySelector<HTMLElement>(help.stuck.selector)
+      const stuckEl = help?.stuck === undefined || s.missingSince === null ? null : document.querySelector<HTMLElement>(help.stuck.selector)
       const measured = coach.current?.getBoundingClientRect()
       const next: Seen = {
         target,

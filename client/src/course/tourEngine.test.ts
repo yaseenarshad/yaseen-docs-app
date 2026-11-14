@@ -178,7 +178,7 @@ describe('live steps in the engine (YAZ-5366)', () => {
     s = tourStep(s, { type: 'event', name: 'folder-menu-open', detail: PLACES.folder, at: 2 })
     expect(exampleSafe(s, name)).toBe(true)
     // A card file outside Course Cards is open: no example in its editor.
-    s = tourStep(s, { type: 'event', name: 'card-file-open', detail: '/v/Notes/B.md', at: 3 })
+    s = tourStep(s, { type: 'event', name: 'card-file-open', detail: '/v/Pages/B.md', at: 3 })
     expect(exampleSafe(s, front)).toBe(false)
     s = tourStep(s, { type: 'event', name: 'card-file-open', detail: `${PLACES.folder}/A.md`, at: 4 })
     expect(exampleSafe(s, front)).toBe(true)
