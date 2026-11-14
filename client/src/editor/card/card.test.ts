@@ -2,7 +2,7 @@
  * The card block in the page (YAZ-4961), against a real editor (`createCrepe`): the slash row and its ID, the card
  * line's round trip, the ⋯ menu, the pills, the outside write of the sweep, and the one render function the Inbox reuses.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state'
@@ -17,7 +17,8 @@ import { features } from '../featureConfig'
 import { CARD_OPEN, CARD_TITLE_PLACEHOLDER, cardLanguage, cardBlockViewAt, setCardEditorKind, type CardOpenRequest } from './cardBlockView'
 import { refreshCardLook, renderCard } from './cardRender'
 import { READ_ONLY_EDIT, type ReadOnlyEditEvent } from '../readOnlyEdit'
-import { CARD_PREVIEW, type CardPreviewRequest } from './cardOpen'
+import { CARD_PREVIEW, landOnCard, takeCardLanding, type CardPreviewRequest } from './cardOpen'
+import { FLASH_FRAMES } from '../toc/tocMotion'
 import { pageCards } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 
@@ -716,5 +717,52 @@ describe('renderCard (the page and the Inbox, D18)', () => {
     expect(img.getAttribute('src')).toBe('app://vault/x/images/a%20b.png')
     expect(img.getAttribute('alt')).toBe('pic')
     expect(img.getAttribute('width')).toBe('300')
+  })
+})
+
+/**
+ * YAZ-5164 part 2 (Yaseen: "it kinda highlights it kinda like the animation we have with the table of contents"): a way
+ * to a card in its page (search, a card link's ⌘-click, Explore's ⌘↵) lands on the card with the table of contents'
+ * own landing, `landOn` (its scroll and its one flash), whether the page opens then or is open already.
+ */
+describe('YAZ-5164: landing on a card in its page, as the table of contents lands', () => {
+  const realMatch = window.matchMedia
+  let flashes: Element[] = []
+  beforeEach(() => {
+    flashes = []
+    Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: false }), configurable: true, writable: true })
+    // jsdom draws nothing: the card shows (it has a box), and an animation is recorded. No size watch: a frame later.
+    vi.stubGlobal('ResizeObserver', undefined)
+    vi.spyOn(HTMLElement.prototype, 'getClientRects').mockImplementation(() => [{}] as unknown as DOMRectList)
+    HTMLElement.prototype.animate = function (this: HTMLElement, frames: Keyframe[] | PropertyIndexedKeyframes | null) {
+      if (frames === FLASH_FRAMES) flashes.push(this)
+      return {} as Animation
+    }
+  })
+  afterEach(() => {
+    Object.defineProperty(window, 'matchMedia', { value: realMatch, configurable: true, writable: true })
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    delete (HTMLElement.prototype as Partial<HTMLElement>).animate
+  })
+  const page = `x\n\n${CARD}<!-- card: WIKI-7 -->\n\n${CARD}<!-- card: WIKI-8 -->\n`
+
+  it('a page that opens after the ask: its card of that ID flashes the outline`s flash, once', async () => {
+    landOnCard('/v/Page.md', 'WIKI-8')
+    const { root } = await mount(page, { wikilinks: vault(true), cards: { path: '/v/Page.md' } })
+    const cards = root.querySelectorAll('.card')
+    await vi.waitFor(() => expect(flashes).toEqual([cards[1]]))
+    expect(takeCardLanding('/v/Page.md', 'WIKI-8')).toBe(false)
+  })
+
+  it('a page open already (the search of the page on show): its card lands at once, and the ask is taken', async () => {
+    const { root } = await mount(page, { wikilinks: vault(true), cards: { path: '/v/Page.md' } })
+    const cards = root.querySelectorAll('.card')
+    landOnCard('/v/Page.md', 'wiki-7')
+    await vi.waitFor(() => expect(flashes).toEqual([cards[0]]))
+    expect(takeCardLanding('/v/Page.md', 'WIKI-7')).toBe(false)
+    // Another page's card of no view here: the ask waits for its page.
+    landOnCard('/v/Other.md', 'WIKI-7')
+    expect(takeCardLanding('/v/Other.md', 'WIKI-7')).toBe(true)
   })
 })

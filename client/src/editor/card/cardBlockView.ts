@@ -71,7 +71,7 @@ import type { SlashRow } from '../slashMenu'
 import type { LinkFollow } from '../wikilink/wikilinkClick'
 import { CardLineStep, changeCardLineAt, isCardNode, CARD_LANGUAGE, cardLineOf } from './cardBlockLine'
 import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from './cardMedia'
-import { CARD_OPEN, previewCard, scrollIntoViewWhenShown, takeCardLanding, type CardOpenRequest } from './cardOpen'
+import { CARD_OPEN, landWhenShown, previewCard, takeCardLanding, watchCardLanding, type CardOpenRequest } from './cardOpen'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard, type CardLook } from './cardRender'
 import { mountCardEditor, type CardCrepe, type CardEditor } from './cardEditor'
 import { mountReviewsStrip, type ReviewsStripHandle } from './reviewsStrip'
@@ -263,6 +263,8 @@ export class CardBlockView implements NodeView {
   /** What the body last drew: redrawn only when it changes. */
   private drawn: string | null = null
   private readonly unsubscribe: (() => void) | undefined
+  /** This card's door to a landing asked while it shows (YAZ-5164, `watchCardLanding`). */
+  private readonly unwatchLanding: () => void
   private closeMenu: (() => void) | null = null
   /** The Reviews strip (YAZ-5105 round 4): made only for a card with reviews. */
   private strip: ReviewsStripHandle | null = null
@@ -301,8 +303,14 @@ export class CardBlockView implements NodeView {
     this.dom.addEventListener('dblclick', this.onDoubleClick)
     views.set(this.dom, this)
     this.draw()
-    // A card link's ⌘-click opened this page to land on this card (YAZ-5030): it scrolls into view once it shows.
-    if (takeCardLanding(this.path, cardIdOf(cardLineOf(node)))) scrollIntoViewWhenShown(this.dom)
+    // A card link's ⌘-click, or a card row of search, opened this page to land on this card (YAZ-5030, YAZ-5164): it
+    // lands once it shows, as the table of contents lands. Asked while the page is open already: it lands then.
+    if (takeCardLanding(this.path, cardIdOf(cardLineOf(node)))) landWhenShown(this.dom)
+    this.unwatchLanding = watchCardLanding((path, id) => {
+      if (path !== this.path || cardIdOf(cardLineOf(this.node))?.toLowerCase() !== id.toLowerCase()) return false
+      landWhenShown(this.dom)
+      return true
+    })
     this.unsubscribe = deps.subscribe?.(() => {
       // An index change redraws only the pills of a card with a link: no Markdown render again.
       if (!this.editing && this.node.textContent.includes('[[')) refreshCardLook(this.body, this.deps.look())
@@ -760,6 +768,7 @@ export class CardBlockView implements NodeView {
     this.strip = null
     this.closeMenu?.()
     this.unsubscribe?.()
+    this.unwatchLanding()
     this.code?.destroy?.()
     views.delete(this.dom)
   }
