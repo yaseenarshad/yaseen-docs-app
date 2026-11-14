@@ -86,7 +86,8 @@ async function gc(dir: string): Promise<void> {
   )
 }
 
-function cacheFile(dir: string, root: string): string {
+/** The cache file of the vault at `root` in the cache folder `dir`. YAZ-5390: the friends count reads it too (`friends/scanVault.ts`). */
+export function cacheFile(dir: string, root: string): string {
   return path.join(dir, `${createHash('sha256').update(root).digest('hex').slice(0, 16)}.json`)
 }
 

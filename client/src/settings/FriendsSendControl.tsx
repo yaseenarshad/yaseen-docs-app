@@ -25,6 +25,27 @@ function whom(v: FriendsSendView): string {
   return parts.join(' and ')
 }
 
+/** "1 vault … is" or "2 vaults … are". */
+const vaults = (n: number, rest: string, one: string, many: string) => `${n === 1 ? `1 vault that counts for friends ${one}` : `${n} vaults that count for friends ${many}`} ${rest}`
+
+/**
+ * YAZ-5252: why the vaults that count cannot be counted on this Mac ("holds" means "on this Mac": open, or a closed vault
+ * that the app knows). Three kinds, each in its own words: not on this Mac, older than GitHub's copy (YAZ-5391), and
+ * not readable (YAZ-5388, YAZ-5395, YAZ-5396).
+ */
+function missingWords(v: FriendsSendView): string {
+  const behind = v.behind ?? 0
+  const unreadable = v.unreadable ?? 0
+  const notHere = Math.max(0, v.missing - behind - unreadable)
+  const one = (n: number) => (n === 1 ? 'it' : 'each')
+  const parts: string[] = []
+  if (notHere > 0) parts.push(vaults(notHere, `not on this Mac. Clone ${one(notHere)} from GitHub, then open ${one(notHere)} once in this app, and the numbers go.`, 'is', 'are'))
+  if (behind > 0) parts.push(vaults(behind, `older on this Mac than on GitHub. Open ${one(behind)} in this app to sync ${behind === 1 ? 'it' : 'them'}, and the numbers go.`, 'is', 'are'))
+  if (unreadable > 0)
+    parts.push(vaults(unreadable, `could not be read on this Mac: a link inside it, or a file the app cannot open.${v.retryAt === null ? '' : ` Next try at ${clock(v.retryAt)}.`}`, '', ''))
+  return parts.join(' ').replace(/ {2,}/g, ' ')
+}
+
 /** One line for the state, or null while main has not answered. */
 function sendLine(v: FriendsSendView, now: number): string {
   switch (v.status) {
@@ -36,8 +57,7 @@ function sendLine(v: FriendsSendView, now: number): string {
       // YAZ-5254 (round 13, item 4: one GitHub account for friends): say whose list is missing, and what to do.
       return `No friends list on ${v.login ? `@${v.login}` : 'this token\'s GitHub account'}, so nothing is sent. Friends use the GitHub account of the phone app. Add a friend there, or save a token of that account above.`
     case 'missing-vaults':
-      // YAZ-5252: "holds" means "on this Mac": open, or a closed vault that the app knows.
-      return `Not sent: ${v.missing === 1 ? '1 vault that counts for friends is' : `${v.missing} vaults that count for friends are`} not on this Mac. Open ${v.missing === 1 ? 'it' : 'each'} once in this app (or clone ${v.missing === 1 ? 'it' : 'them'} from GitHub), and the numbers go.`
+      return `Not sent: ${missingWords(v)}`
     case 'phone-first':
       return 'Not sent: open the phone app once. It finishes a change to your friends list, then this Mac sends again.'
     case 'no-gists':
@@ -53,7 +73,8 @@ function sendLine(v: FriendsSendView, now: number): string {
     case 'needs-newer-app':
       return 'Not sent: your friends list is from a newer app. Update this app.'
     case 'failed':
-      return 'Not sent: something went wrong. The app tries again when your cards change.'
+      // YAZ-5389: a count that failed waits (5 minutes, doubled each time, at most 1 hour) before the next one.
+      return `Not sent: something went wrong. The app tries again ${v.retryAt === null ? 'when your cards change' : `at ${clock(v.retryAt)}`}.`
     default: {
       if (v.friends + v.groups === 0) return 'No friends yet, so nothing is sent. Add a friend in the phone app.'
       return v.lastSentAt === null ? `Sent to ${whom(v)} when your cards change.` : `Sent to ${whom(v)}. Last sent ${ago(v.lastSentAt, now)}.`

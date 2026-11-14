@@ -12,7 +12,9 @@
  *
  * The rules, as on the phone:
  * - only with at least one friend or group (decision 22): with none, no call writes and no gist is made;
- * - only when this Mac has every vault of `FriendsIndex.vaults` open (round 12, item 3), counting only those;
+ * - only when this Mac holds every vault of `FriendsIndex.vaults` (round 12, item 3; YAZ-5252: open, or closed and known,
+ *   not behind GitHub's copy, and readable), counting only those;
+ * - a count that fails waits before the next one (YAZ-5389: 5 minutes, doubled each time, at most 1 hour);
  * - only when the numbers changed; at most once each 5 minutes, longer near GitHub's limit (`sendGap`);
  * - no sync pass to wait for: the Mac's vault IS the files on disk, and the card lines sync with them (round 13, item 7:
  *   "It needs no signal from GitHub AutoSync").
@@ -21,10 +23,10 @@
  */
 import { createHash } from 'node:crypto'
 import { findFriendsIndex, gistErrorCode, gistErrorResetAt, pointersOf, readListGist, type GistsApi, type IndexHandle, type WriteOptions } from '@shared/friendGists'
-import { emptyBudget, numbersFor, numbersKey, reserveFor, sendGap, sendGate, sendNumbers, type GistBudget, type SendReason } from '@shared/friendSend'
+import { PUBLISH_EVERY_MS, emptyBudget, numbersFor, numbersKey, reserveFor, sendGap, sendGate, sendNumbers, type GistBudget, type SendReason } from '@shared/friendSend'
 import { dayIn, type FriendStats, type FriendVault } from '@shared/friendStats'
 import type { ClosedVault } from './closedVaults'
-import { COUNT_LIMIT_MS, countPayload } from './countJob'
+import { COUNT_LIMIT_MS, ClosedVaultsUnreadable, countPayloadSliced } from './countJob'
 import { pendingRemove } from '@shared/friendsList'
 import type { FriendsSendStatus, FriendsSendView } from '@shared/types'
 
@@ -44,6 +46,14 @@ export interface MacSendSaved {
   /** YAZ-5249: the time of the last count, and a hash of what it counted (the cards and the local day). */
   lastCountAt?: number | null
   lastInput?: string | null
+  /**
+   * YAZ-5389: the counts that failed in a row, and the time of the last one. The next count waits `failWait(countFails)`
+   * (5 minutes, doubled each time, at most 1 hour); a count that works sets it back to 0. `countUnreadable`: how many
+   * closed vaults the last failed count could not read (the view of the wait says so).
+   */
+  countFails?: number
+  countFailedAt?: number | null
+  countUnreadable?: number
 }
 
 export interface MacClock {
@@ -68,9 +78,9 @@ export interface MacSenderDeps {
   stats(text: string, now: number, closed: readonly ClosedVault[], zone: string | null): Promise<Omit<FriendStats, 'login' | 'name' | 'avatar'>>
   /**
    * YAZ-5252: the vaults that count and are CLOSED on this Mac, by repo (`closedVaults.ts`): counted from their files,
-   * in the same worker. Absent: only open vaults count.
+   * in the same worker. `wanted`: the vaults that count and are not open. Absent: only open vaults count.
    */
-  closed?(): Promise<Map<string, ClosedVault>>
+  closed?(wanted: ReadonlySet<string>): Promise<Map<string, ClosedVault>>
   state: { load(): Promise<MacSendSaved | null>; save(saved: MacSendSaved): Promise<void> }
   clock?: MacClock
   sleep?: (ms: number) => Promise<void>
@@ -95,9 +105,29 @@ const nodeClock: MacClock = {
   clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
 }
 const MAX_TIMER_MS = 60 * 60_000
+/**
+ * YAZ-5389: the wait after `fails` counts that failed in a row: 5 minutes (the count's own rule, YAZ-5249), doubled
+ * each time, at most 1 hour (the longest timer here). A count that fails (a vault too large, a file that cannot be read)
+ * would fail again at once, so each card change must not start it again.
+ */
+export const failWait = (fails: number): number => Math.min(MAX_TIMER_MS, PUBLISH_EVERY_MS * 2 ** Math.max(0, fails - 1))
 const hash = (text: string) => createHash('sha256').update(text).digest('hex')
 const fresh = (): MacSendSaved => ({ lastSentAt: null, lastKey: null, budget: emptyBudget(), friends: 0, groups: 0, refused: false, lastCountAt: null, lastInput: null })
 const turn = () => new Promise<void>((done) => setImmediate(done))
+/** YAZ-5252: the hash of `head` and `text` (several MB), in slices of 1 MB with a turn between: the same as `hash(head + text)`. */
+async function hashSliced(head: string, text: string): Promise<string> {
+  const h = createHash('sha256').update(head)
+  const SLICE = 1 << 20
+  for (let i = 0; i < text.length; ) {
+    let end = Math.min(text.length, i + SLICE)
+    // Never cut a pair of UTF-16 halves: each slice is valid text, so the bytes are the bytes of the whole text.
+    if (end < text.length && /[\uDC00-\uDFFF]/.test(text[end])) end++
+    h.update(text.slice(i, end))
+    i = end
+    await turn()
+  }
+  return h.digest('hex')
+}
 
 /** The list for writes the Mac never makes: `findFriendsIndex` may join two lists; the Mac leaves that to the phone. */
 class PhoneFirst extends Error {}
@@ -129,9 +159,13 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
   let tokenEpoch = 0
 
   const set = (status: FriendsSendStatus, patch: Partial<FriendsSendView> = {}) => {
-    view = { ...view, retryAt: null, missing: 0, login: null, status, ...patch }
+    const { behind: _behind, unreadable: _unreadable, ...rest } = view
+    view = { ...rest, retryAt: null, missing: 0, login: null, status, ...patch }
     return view
   }
+  /** YAZ-5389: the view while the wait after a failed count holds. */
+  const failedView = (unreadable: number, retryAt: number) =>
+    unreadable > 0 ? set('missing-vaults', { missing: unreadable, unreadable, retryAt }) : set('failed', { retryAt })
   const schedule = (at: number) => {
     if (stopped) return
     if (timer !== null) clock.clearTimeout(timer)
@@ -223,6 +257,14 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
         return set('waiting', { retryAt: at })
       }
     }
+    // YAZ-5389: after a count that failed, the next count waits (5 minutes, doubled each time, at most 1 hour).
+    if ((s.countFails ?? 0) > 0 && s.countFailedAt != null) {
+      const at = s.countFailedAt + failWait(s.countFails ?? 0)
+      if (now < at) {
+        schedule(at)
+        return failedView(s.countUnreadable ?? 0, at)
+      }
+    }
     const api = deps.api(token)
     try {
       const list = await readList(api)
@@ -243,15 +285,18 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
       if (pendingRemove(list) !== null || list.index.stats === null) return set('phone-first')
       const held = await deps.vaults()
       // YAZ-5252: "holds" means "on this Mac": an open vault, or a closed one that the app knows (its remote matches).
-      const closedOnMac = list.index.vaults.some((v) => !held.has(v)) ? ((await deps.closed?.()) ?? new Map<string, ClosedVault>()) : new Map<string, ClosedVault>()
-      const missing = list.index.vaults.filter((v) => !held.has(v) && !closedOnMac.has(v)).length
+      const notOpen = new Set(list.index.vaults.filter((v) => !held.has(v)))
+      const closedOnMac = notOpen.size > 0 ? ((await deps.closed?.(notOpen)) ?? new Map<string, ClosedVault>()) : new Map<string, ClosedVault>()
+      // YAZ-5391: a closed copy older than the newest the Mac knows (behind its remote-tracking branch) is not counted.
+      const behind = [...notOpen].filter((v) => closedOnMac.get(v)?.behind === true).length
+      const missing = [...notOpen].filter((v) => !closedOnMac.has(v) || closedOnMac.get(v)!.behind === true).length
       const gate = sendGate({ pointers, passSeen: true, holdsAll: list.index.vaults.length > 0 && missing === 0, lastSentAt: s.lastSentAt, now, reason, budget: s.budget })
       if (!gate.go) {
         if (gate.why === 'wait' || gate.why === 'budget') {
           schedule(gate.retryAt!)
           return set(gate.why === 'wait' ? 'waiting' : 'slowed', { retryAt: gate.retryAt! })
         }
-        if (gate.why === 'missing-vaults') return set('missing-vaults', { missing })
+        if (gate.why === 'missing-vaults') return set('missing-vaults', { missing, ...(behind > 0 && { behind }) })
         return set('no-friends')
       }
       // Only the vaults that count, as the phone counts them (round 12, item 3).
@@ -263,25 +308,40 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
         else closed.push(closedOnMac.get(repo)!)
       }
       // YAZ-5249: the same cards on the same local day as at the last count: the numbers cannot change. No count.
-      const text = countPayload(counted)
-      await turn()
+      // YAZ-5252: packed in slices, so main is never held long (the same text as `countPayload`).
+      const text = await countPayloadSliced(counted, turn)
       // YAZ-5251: the days are the person's HOME zone's (the list keeps it; the Mac never writes it). No zone yet: this
       // Mac's own, as before. The zone is in the hash, so a new zone counts the same cards again.
       const zone = list.index.zone ?? null
-      const input = hash(`${dayIn(now, zone)}\n${zone ?? ''}\n${list.index.nickname ?? ''}\n${closed.map((c) => `${c.root}\t${c.key}`).join('\n')}\n${text}`)
-      await turn()
+      const input = await hashSliced(`${dayIn(now, zone)}\n${zone ?? ''}\n${list.index.nickname ?? ''}\n${closed.map((c) => `${c.root}\t${c.key}`).join('\n')}\n`, text)
       if (input === s.lastInput) {
         await store({ lastCountAt: now })
         return set('unchanged')
       }
       const p = await account(token)
-      const numbers = numbersFor(await withLimit(deps.stats(text, now, closed, zone)), { login: p.login, name: p.name, avatar: p.avatar, nickname: list.index.nickname }, now)
+      let countedStats: Awaited<ReturnType<MacSenderDeps['stats']>>
+      try {
+        countedStats = await withLimit(deps.stats(text, now, closed, zone))
+      } catch (err) {
+        // YAZ-5389: a count that failed starts a wait (doubled each time, at most 1 hour), stored for a restart too.
+        // YAZ-5388: a closed vault that could not be read is named in the view ("could not be read").
+        const fails = (s.countFails ?? 0) + 1
+        const unreadable = err instanceof ClosedVaultsUnreadable ? err.vaults.length : 0
+        await store({ countFails: fails, countFailedAt: now, countUnreadable: unreadable })
+        const at = now + failWait(fails)
+        schedule(at)
+        return failedView(unreadable, at)
+      }
+      if ((s.countFails ?? 0) > 0) await store({ countFails: 0, countFailedAt: null, countUnreadable: 0 })
+      const numbers = numbersFor(countedStats, { login: p.login, name: p.name, avatar: p.avatar, nickname: list.index.nickname }, now)
       const key = hash(numbersKey(numbers))
       if (key === s.lastKey) {
         await store({ lastCountAt: now, lastInput: input })
         return set('unchanged')
       }
-      const { outcome, budget } = await sendNumbers(api, { statsId: list.index.stats, fresh: numbers, budget: s.budget, reserve: reserveFor(pointers), now })
+      // YAZ-5391: a closed vault's files can be older than the gist's numbers (the app syncs only open vaults): with one
+      // in the count, no total goes lower than the gist's (the days never do). The phone's next send sets them again.
+      const { outcome, budget } = await sendNumbers(api, { statsId: list.index.stats, fresh: numbers, budget: s.budget, reserve: reserveFor(pointers), now, totalsNeverLower: closed.length > 0 })
       if (epoch !== tokenEpoch) return view // the token changed meanwhile: this answer is of the old token
       switch (outcome.kind) {
         case 'sent':

@@ -60,6 +60,18 @@ describe('never lower a day (round 12, item 2)', () => {
     expect(merged.totals).toEqual(totals(40))
   })
 
+  it('totalsNeverLower (YAZ-5391, the Mac counted a closed vault): each total is the larger of the two; a field it does not know stays', () => {
+    const remote = { ...file([day('2026-11-14', 9)], 30), totals: { ...totals(30), dueLeft: 20, more: 3 } }
+    const fresh = { ...file([day('2026-11-14', 4)], 20), totals: { ...totals(20), dueLeft: 25, bestDay: 7 } }
+    const { file: merged, changed } = mergeNeverLower(remote, fresh, { totalsNeverLower: true })
+    expect(merged.totals).toEqual({ ...totals(30), dueLeft: 25, bestDay: 7, more: 3 })
+    expect(changed).toBe(true)
+    // Without it (the phone, and the Mac with only open vaults): the totals are the sender's newest, as before.
+    expect(mergeNeverLower(remote, fresh).file.totals).toEqual({ ...totals(20), dueLeft: 25, bestDay: 7, more: 3 })
+    // Nothing higher than the gist: nothing to write.
+    expect(mergeNeverLower(remote, { ...file([day('2026-11-14', 4)], 20), totals: totals(20) }, { totalsNeverLower: true }).changed).toBe(false)
+  })
+
   it('keeps the days only the gist holds (another device`s), adds new days, newest first, 90 at most', () => {
     const remote = file([day('2026-11-12', 7), ...Array.from({ length: 89 }, (_, i) => day(new Date(Date.UTC(2026, 10, 11 - i)).toISOString().slice(0, 10), 1))])
     const fresh = file([day('2026-11-14', 3), day('2026-11-13', 2)])
