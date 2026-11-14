@@ -2,6 +2,6 @@
   // The tests and the build config: they run in Node, so they may use its types.
   "extends": "./tsconfig.json",
   "compilerOptions": { "types": ["vite/client", "node"] },
-  "include": ["src", "*.ts"],
+  "include": ["src", "publish", "*.ts"],
   "exclude": []
 }

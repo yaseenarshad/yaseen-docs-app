@@ -18,6 +18,6 @@ export default defineConfig({
     name: 'mobile',
     // Store tests run in plain Node with fake-indexeddb; a file that draws React says `@vitest-environment jsdom`.
     environment: 'node',
-    include: ['src/**/*.test.{ts,tsx}', '*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}', 'publish/**/*.test.ts', '*.test.ts'],
   },
 })
