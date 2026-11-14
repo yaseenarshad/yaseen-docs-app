@@ -30,10 +30,10 @@ describe('the course script (YAZ-5119, version 2 YAZ-5147, version 3 YAZ-5148)',
     }
   })
 
-  it('keeps the spoken words at 3,850 or fewer (about 26 minutes at 145 words a minute), and never says "atomic"', () => {
+  it('keeps the spoken words at 4,000 or fewer (about 27 minutes at 145 words a minute), and never says "atomic"', () => {
     const clips = COURSE.flatMap((ch) => ch.clips.map((c) => c.text))
     const words = clips.join(' ').split(/\s+/).filter((w) => w !== '').length
-    expect(words).toBeLessThanOrEqual(3850)
+    expect(words).toBeLessThanOrEqual(4000)
     for (const line of clips) expect(line.toLowerCase()).not.toMatch(/\batomic\b/)
   })
 

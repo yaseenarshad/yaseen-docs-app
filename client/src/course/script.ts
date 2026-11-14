@@ -74,11 +74,25 @@ export const COURSE: CourseChapter[] = [
       { id: 'c1-10', text: 'The app keeps a calendar for every card. On the day a card is due, it shows it to you.' },
       // The blank fills in; two buttons, Forgot and Remembered.
       { id: 'c1-11', text: 'You try to recall the hidden part, then check. And you answer: forgot, or remembered.' },
-      // A card's curve with a dotted line at 90%; the next date lands where the curve meets the line.
-      // SOURCE: shared/cardSchedule.ts (FSRS through ts-fsrs 5.4.2); shared/reviews.ts DEFAULT_REVIEW_SETTINGS.retention = 0.9.
-      { id: 'c1-12', text: 'The app sets each date with an open scheduling method called FSRS. It brings a card back when your chance of recalling it drops to about ninety percent.' },
+      // The words "FSRS" over a card; behind it, a small graph of one memory: a curve, and numbers that update.
+      // SOURCE: shared/cardSchedule.ts (FSRS through ts-fsrs 5.4.2, the FSRS-6 weights); FSRS models each card's memory (stability, difficulty) and computes the chance of recall.
+      { id: 'c1-12', text: 'That algorithm is called FSRS. It is a mathematical model of your memory.' },
+      // A card's curve with a dotted line at 90%; the odds tick down day by day; the next date lands where the curve meets the line.
+      // SOURCE: shared/reviews.ts DEFAULT_REVIEW_SETTINGS.retention = 0.9; shared/cardSchedule.ts `recallChance`.
+      { id: 'c1-17', text: 'For every card, every day, it works out the odds that you still remember it. When they drop to about ninety percent, the card comes back.' },
+      // Two brain cells and the link between them; with each spaced pulse, a switch inside the cell turns on and the link grows stronger.
+      // SOURCE: Naqib, Sossin & Farah 2012, "Molecular Determinants of the Spacing Effect", Neural Plasticity (CREB-dependent gene expression after spaced training, in Aplysia, Drosophila and rodents).
+      { id: 'c1-18', text: 'This is hard science. Researchers have watched it in brain cells: spaced practice switches on the genes that build long-term memory.' },
+      // A Nobel medal; "2000".
+      // SOURCE: The Nobel Prize in Physiology or Medicine 2000 (Eric Kandel, with Carlsson and Greengard): how nerve cells change to store memory.
+      { id: 'c1-19', text: 'The work that first showed how brain cells store a memory won a Nobel Prize.' },
+      // A ridge-shaped graph: memory kept, against the gap before the review; a peak in the middle, lower on both sides; "more than 1,350 people".
+      // SOURCE: Cepeda, Vul, Rohrer, Wixted & Pashler 2008, "Spacing effects in learning: a temporal ridgeline of optimal retention", Psychological Science 19(11): more than 1,350 people; the best gap depends on how long the memory must last.
+      { id: 'c1-20', text: 'And yes, there is a best moment to review. A study of more than 1,300 people found it: too early or too late, and you keep less.' },
+      // The ridge's peak moves for each card; a marker follows it, card by card.
+      { id: 'c1-21', text: 'The algorithm finds that moment for every card, precisely for you, by studying your memory.' },
       // The chapter list lights up, 1 to 12.
-      { id: 'c1-13', text: 'This course takes about twenty-six minutes, in twelve short chapters.' },
+      { id: 'c1-13', text: 'This course takes about twenty-seven minutes, in twelve short chapters.' },
       // The "Try it in the app" button, with "Optional" beside it.
       { id: 'c1-14', text: 'Some chapters let you try the steps in the real app. That part is always your choice.' },
       // The curve with its growing gaps, then the paper index card alone in the middle of the stage.

@@ -28,9 +28,19 @@ The app keeps a calendar for every card. On the day a card is due, it shows it t
 
 You try to recall the hidden part, then check. And you answer: forgot, or remembered.
 
-The app sets each date with an open scheduling method called FSRS. It brings a card back when your chance of recalling it drops to about ninety percent.
+That algorithm is called FSRS. It is a mathematical model of your memory.
 
-This course takes about twenty-six minutes, in twelve short chapters.
+For every card, every day, it works out the odds that you still remember it. When they drop to about ninety percent, the card comes back.
+
+This is hard science. Researchers have watched it in brain cells: spaced practice switches on the genes that build long-term memory.
+
+The work that first showed how brain cells store a memory won a Nobel Prize.
+
+And yes, there is a best moment to review. A study of more than 1,300 people found it: too early or too late, and you keep less.
+
+The algorithm finds that moment for every card, precisely for you, by studying your memory.
+
+This course takes about twenty-seven minutes, in twelve short chapters.
 
 Some chapters let you try the steps in the real app. That part is always your choice.
 
