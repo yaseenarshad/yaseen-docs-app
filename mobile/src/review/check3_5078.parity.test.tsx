@@ -144,7 +144,9 @@ async function desktopRun(files: Record<string, string>): Promise<Run> {
   }
   reindex()
   const source = { get records() { return records }, folders: [] as IndexRecord[], letters: undefined, subscribe: (l: () => void) => (listeners.add(l), () => void listeners.delete(l)) }
-  const host: ReviewHost = desktopReviewHost
+  // (builder, YAZ-5078) The phone's Undo takes back Archive card (a decision for the phone only; the Mac says no). To
+  // compare ONE logic, the Mac's run here says yes too: the same hook path, the Mac's own file writes.
+  const host: ReviewHost = { ...desktopReviewHost, undoesArchive: true }
   const m = mount(source, host, ROOT, settingsOf(files))
   const settle = async () => {
     for (let i = 0; i < 4; i++) await act(async () => void (await new Promise((r) => setTimeout(r, 0))))

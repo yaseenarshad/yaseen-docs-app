@@ -30,8 +30,8 @@ export const cardFile = (title: string, block: string, extra = '') => `---\nkind
 
 const named = (el: Element) => (el.getAttribute('aria-label') ?? el.textContent ?? '').replace(/\s+/g, ' ').trim()
 
-export async function reviewSetup(files: Record<string, string>, options: { media?: VaultMedia } = {}) {
-  return mountReview(await answersSetup({ files }), options)
+export async function reviewSetup(files: Record<string, string>, options: { media?: VaultMedia; fetch?: Parameters<typeof answersSetup>[0] extends infer O ? (O extends { fetch?: infer F } ? F : never) : never } = {}) {
+  return mountReview(await answersSetup({ files, fetch: options.fetch }), options)
 }
 
 /** The screen on a vault that is set up already (the 3,000-card test measures the screen alone). */

@@ -49,4 +49,9 @@ export interface ReviewHost {
   subscribeCardsAdded(listener: () => void): () => void
   /** The name of vault `root`, as its sidebar shows it (the breadcrumb's first part, the done screen's scope). */
   vaultName(root: string): string
+  /**
+   * Undo takes back an Archive card (YAZ-5078: the phone's decision; the mockup shows "Archived · Undo"). Absent: no,
+   * as on the Mac, whose Undo takes back answers and adds only.
+   */
+  readonly undoesArchive?: boolean
 }

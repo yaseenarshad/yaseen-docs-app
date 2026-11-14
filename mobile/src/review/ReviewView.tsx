@@ -126,7 +126,8 @@ interface Step {
 }
 
 /** The line under the buttons: the last answer, the last add, or a ⋯ action. */
-type Line = { kind: 'answer'; count: number; id: string } | { kind: 'mark'; text: string; key: string | null }
+/** The line under the buttons: the last answer, the last ⋯ mark (with its own Undo: YAZ-5078), or Archive card. */
+type Line = { kind: 'answer'; count: number; id: string } | { kind: 'mark'; text: string; key: string | null; undo?: () => Promise<unknown> } | { kind: 'archive' }
 
 function ReviewSession({ link, vault, vaultName, unit, open, source, host, media, shown = true }: ReviewViewProps & Setup) {
   const { ready, settings } = useSourceState(source)
@@ -320,23 +321,37 @@ function SessionScreen({
   const undo = () => {
     setNotice(null)
     guard.undo()
+    // YAZ-5078: Undo of Up next or Fix later: the inverse, through the host (an unsent mark leaves the list).
+    if (line?.kind === 'mark' && line.undo !== undefined) {
+      const run = line.undo
+      setLine(null)
+      return void run().catch(() => setNotice('That did not save. Try again.'))
+    }
     if (lostRow === undefined) return void review.undo()
     setLine({ kind: 'mark', text: 'Answer removed', key: cardKey })
     void Promise.all(lostRow.seqs.map((seq) => link.answers.discard(seq)))
   }
-  const act = (text: string, run: () => Promise<unknown>) => {
+  const act = (text: string, run: () => Promise<unknown>, undoIt?: () => Promise<unknown>) => {
     setMenu(null)
     setNotice(null)
-    setLine({ kind: 'mark', text, key: cardKey })
+    setLine({ kind: 'mark', text, key: cardKey, undo: undoIt })
     void run().catch(() => setNotice('That did not save. Try again.'))
+  }
+  // YAZ-5078 (the phone's decision): Archive card is on the hook's Undo stack; the line says "Archived · Undo".
+  const archive = () => {
+    setMenu(null)
+    setNotice(null)
+    setLine({ kind: 'archive' })
+    void review.turnOff()
   }
   const toggleFix = () => {
     if (card === null) return
     const on = !fixed
-    act(on ? 'Marked: Fix later' : 'Removed: Fix later', async () => {
-      await host.changeCardLine(card.path, card.id, (l) => withCardFix(l, on))
-      setFixOn({ key: `${card.path}\n${card.id}`, on })
-    })
+    const set = (to: boolean) => async () => {
+      await host.changeCardLine(card.path, card.id, (l) => withCardFix(l, to))
+      setFixOn({ key: `${card.path}\n${card.id}`, on: to })
+    }
+    act(on ? 'Marked: Fix later' : 'Removed: Fix later', set(on), set(!on))
   }
 
   // The line under the buttons shows while what it names is still the last thing done.
@@ -346,8 +361,10 @@ function SessionScreen({
       ? { text: `${addedLine(session.lastAdd.kind, session.lastAdd.count)}`, undo: session.canUndo }
       : line?.kind === 'answer' && line.count === answeredNow && answeredNow > 0
         ? { text: 'Answered', undo: session.canUndo || lostRow !== undefined }
-        : line?.kind === 'mark' && (line.key === cardKey || line.text.startsWith('Archived'))
-          ? { text: line.text, undo: false }
+        : line?.kind === 'archive' && session.lastArchive !== null
+          ? { text: 'Archived', undo: session.canUndo }
+        : line?.kind === 'mark' && line.key === cardKey
+          ? { text: line.text, undo: line.undo !== undefined }
           : line?.kind === 'mark' && line.text === 'Answer removed'
             ? { text: line.text, undo: false }
           : null
@@ -454,7 +471,7 @@ function SessionScreen({
         )}
         {menu === 'more' && card !== null && (
           <div className="review__menu review__menu--more" role="menu" aria-label="Card actions">
-            <button type="button" role="menuitem" className="review__menu-row" disabled={page === null} onClick={() => act(`Archived · ${shortName(card.page, card.id)}`, () => review.turnOff())}>
+            <button type="button" role="menuitem" className="review__menu-row" disabled={page === null} onClick={archive}>
               Archive card
             </button>
             <button
@@ -464,7 +481,7 @@ function SessionScreen({
               disabled={page === null}
               onClick={() => {
                 const on = page?.next !== true
-                act(on ? 'Marked: Up next' : 'Removed: Up next', () => review.setNext(card.path, card.id, on))
+                act(on ? 'Marked: Up next' : 'Removed: Up next', () => review.setNext(card.path, card.id, on), () => review.setNext(card.path, card.id, !on))
               }}
             >
               {page?.next === true ? 'Remove from Up next' : 'Up next'}
