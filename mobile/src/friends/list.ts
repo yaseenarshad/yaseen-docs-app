@@ -307,7 +307,14 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         const fresh = await list(api, login, false)
         if (fresh === 'broken') return { kind: 'needs-repair' as const }
         if (fresh === null || fresh === 'newer') return { kind: 'failed' as const }
-        const next = await writeFriendsIndex(api, fresh, { ...fresh.index, vaults: await idsToRepos(settings.vaults, login), nickname: settings.nickname })
+        // YAZ-5237: a write changes only what the person changed. The vaults that this phone does not hold (the Mac's)
+        // stay; only the phone's own vaults follow the choice. An unchanged name keeps the list's own (also a long one).
+        const onPhone = (await loadVaultList(store)).vaults.map((v) => v.repo.toLowerCase())
+        const chosen = await idsToRepos(settings.vaults, login)
+        const listed = fresh.index.vaults
+        const vaults = [...listed.filter((v) => !onPhone.includes(v) || chosen.includes(v)), ...chosen.filter((v) => !listed.includes(v))]
+        const nickname = settings.nickname === copy.nickname ? fresh.index.nickname : settings.nickname
+        const next = await writeFriendsIndex(api, fresh, { ...fresh.index, vaults, nickname })
         await remember(next)
         return { kind: 'ok' as const }
       })

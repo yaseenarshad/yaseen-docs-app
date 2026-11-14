@@ -239,6 +239,35 @@ describe('createFriendsList (YAZ-5083)', () => {
     await sender.stop()
   })
 
+  it('a Name change on a phone that holds only some of the vaults that count keeps the other vaults in the list', async () => {
+    const { clock, world } = setup()
+    const ali = await phone(world, clock, ALI, 'ali', ['ali/vault'])
+    await localFriends(ali.store).saveSettings({ vaults: null, nickname: null })
+    await ali.list.share()
+    const g = world.owned('ali').find((x) => INDEX_FILE in x.files)!
+    const o = JSON.parse(world.text(g.id, INDEX_FILE)!)
+    world.setFiles(g.id, { [INDEX_FILE]: JSON.stringify({ ...o, vaults: ['ali/vault', 'ali/macvault'] }) })
+    await ali.list.rows()
+    await ali.list.port.saveSettings({ ...(await ali.list.port.settings()), nickname: 'Al' })
+    expect(indexOf(world, 'ali').vaults).toEqual(['ali/vault', 'ali/macvault']) // now: ['ali/vault']
+  })
+
+  it('YAZ-5237: a change of the vaults on the phone changes only the phone`s vaults; the Name stays when only the vaults change', async () => {
+    const { clock, world } = setup()
+    const ali = await phone(world, clock, ALI, 'ali', ['ali/one', 'ali/two'])
+    await localFriends(ali.store).saveSettings({ vaults: null, nickname: 'Al' })
+    await ali.list.share()
+    const g = world.owned('ali').find((x) => INDEX_FILE in x.files)!
+    const o = JSON.parse(world.text(g.id, INDEX_FILE)!)
+    world.setFiles(g.id, { [INDEX_FILE]: JSON.stringify({ ...o, vaults: ['ali/mac', ...o.vaults], nickname: 'A'.repeat(150) }) })
+    await ali.list.rows()
+    const now = await ali.list.port.settings()
+    await ali.list.port.saveSettings({ ...now, vaults: [vaultId(ali.vaults[1])] })
+    const after = JSON.parse(world.text(g.id, INDEX_FILE)!)
+    expect(after.vaults).toEqual(['ali/mac', 'ali/two'])
+    expect(after.nickname).toBe('A'.repeat(150)) // kept whole: only the vaults changed
+  })
+
   it('a token with no Gists permission: "no-gists" for each action, and nothing is made', async () => {
     const { clock, world } = setup()
     const ali = await phone(world, clock, NOGISTS, 'ali', ['ali/vault'], 'no')
