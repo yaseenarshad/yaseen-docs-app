@@ -1,8 +1,8 @@
 /**
  * CHAPTER 6, "Your card base is your knowledge base" (YAZ-5121). One picture runs through it: the card base, and a head
  * in profile with the same map inside. Around it: the internet that never ends, a page distilled to two cards,
- * digestion (food in, the useful part kept), Craik & Lockhart's depth of processing (a paper moment), someone else's
- * cards that stay grey, capture first and make later, sixty cards waiting, and the card you have been looking forward
+ * chew now, digest later (a little thought makes the card; each review digests it more), Craik & Lockhart's depth of
+ * processing (a paper moment), someone else's cards that stay grey, capture first and make later, sixty cards waiting, and the card you have been looking forward
  * to. The fractions are where the words land in the real voice (`marks` in `script.ts`, read with `cue`).
  */
 import type { CSSProperties } from 'react'
@@ -265,60 +265,194 @@ function Digester({ beat, into, churn, keep, pass, known }: { beat: Beat; into: 
   )
 }
 
-/** c6-05 to c6-07 and c6-17, one span: chew, then digest. Bits in; you need not know it fully; you chew it first; then you can say it in your own words; reviews digest it over time. */
+/** The two steps of learning a thing, as Yaseen draws them: chew it (a bite: a little, quick thought), then digest it (a swirl: slow, over the reviews). */
+function StepIcon({ kind }: { kind: 'chew' | 'digest' | 'read' | 'talk' | 'words' }) {
+  return (
+    <svg className="kb-step__icon" viewBox="0 0 48 48" aria-hidden="true">
+      {kind === 'chew' && <path d="M39.8 21.2A16 16 0 1 1 26.8 8.2A5 5 0 0 0 33.5 13.5A5 5 0 0 0 39.8 21.2Z" />}
+      {kind === 'digest' && (
+        <>
+          <circle cx={24} cy={24} r={17} />
+          <path d="M24 24m-9 0a9 9 0 1 1 9 9a4.5 4.5 0 1 1-4.5-4.5" />
+        </>
+      )}
+      {kind === 'read' && <path d="M6 13Q15 9 24 13Q33 9 42 13V37Q33 33 24 37Q15 33 6 37ZM24 13V37" />}
+      {kind === 'talk' && <path d="M6 10H28V25H15L9 30V25H6ZM32 18H42V32H39V37L33 32H22V29" />}
+      {kind === 'words' && <path d="M33 7 41 15 19 37 9 39 11 29ZM29 11 37 19M8 43H28" />}
+    </svg>
+  )
+}
+
+/** Chew, then digest: two tiles and an arrow. `chew` and `digest` bring each in; `lit` lights one; `sub` is the line under each. */
+function ChewThenDigest({ beat, chew, digest, lit, sub, small = false }: { beat: Beat; chew: number; digest: number; lit: 'chew' | 'digest' | null; sub?: [string?, string?]; small?: boolean }) {
+  const tile = (kind: 'chew' | 'digest', p: number, label: string, line?: string) => (
+    <div className="kb-step" data-lit={lit === kind ? 'true' : undefined} style={pop(beat, p, 0.7)}>
+      <span className="kb-step__badge">
+        <StepIcon kind={kind} />
+      </span>
+      <span className="kb-step__label">{label}</span>
+      {line !== undefined && <span className="kb-step__sub">{line}</span>}
+    </div>
+  )
+  return (
+    <div className={`kb-steps${small ? ' kb-steps--small' : ''}`}>
+      {tile('chew', chew, 'Chew', sub?.[0])}
+      <span className="kb-steps__arrow" style={{ opacity: clamp(digest * 2) }} aria-hidden="true">
+        →
+      </span>
+      {tile('digest', digest, 'Digest', sub?.[1])}
+    </div>
+  )
+}
+
+/** The three quick parts of chewing (c6-07), each on its word. */
+const CHEW_PARTS = [
+  { kind: 'read', label: 'Read it' },
+  { kind: 'talk', label: 'Talk it over' },
+  { kind: 'words', label: 'Your own words' },
+] as const
+
+/** The review days the card settles over (c6-17): today, then the schedule of chapter 5. */
+const SETTLE = ['Today', '2 days', '11 days', '6 weeks', '5 months']
+
+/**
+ * c6-05, c6-06, c6-07 and c6-17, one span: chew now, digest later (YAZ-5327). c6-05: like digestion, bits go in and turn;
+ * you need not know it fully. c6-06: you chew it first: Chew lights, Digest waits. c6-07: chewing is light and quick:
+ * read it, talk it over, your own words. c6-17: the slow part: on a calendar of reviews, the card settles a little
+ * deeper with each one, from "Chewed" to "Digested".
+ */
 function Digestion(props: SceneProps) {
   const b = useBeat(props)
   const id = props.clip.id
-  if (id === 'c6-07') {
-    const think = cue(b, 0, 0.302)
-    const simply = cue(b, 1, 0.764)
-    const swirl = between(b, think, simply)
-    const say = since(b, simply - 0.03, 0.7)
-    const turn = b.reduced ? 0 : b.t * 90
-    const thoughts: HeadDot[] = Array.from({ length: 7 }, (_, k) => {
-      const a = ((k * (360 / 7) + turn) * Math.PI) / 180
-      const r = lerp(0.28, 0.06, moved(b, say))
-      return { x: 0.52 + Math.cos(a) * r, y: 0.5 + Math.sin(a) * r * 0.9, p: since(b, think - 0.05 + k * 0.02, 0.4) * (1 - say * 0.7), tone: 'fg' }
-    })
+  if (id === 'c6-06') {
+    const chew = cue(b, 0, 0.438)
+    const first = cue(b, 1, 0.604)
     return (
-      <Stage beat={b} label="To chew is to think about it a little, and put the idea in your own words">
+      <Stage beat={b} label="But you do have to chew it first">
         <Layer>
-          <div className="kit-row kb-say">
-            <Head beat={b} p={since(b, 0, 0.9)} dots={[...thoughts, { x: 0.52, y: 0.5, p: say, tone: 'accent', ring: say }]} glow={swirl * 0.6 + say * 0.4} />
-            <div className="kb-bubble" style={rise(b, say, 12)}>
-              {typedText(b, 'Sleep you miss adds up.', since(b, simply, 1.1))}
-            </div>
-          </div>
+          <ChewThenDigest beat={b} chew={since(b, chew - 0.12, 0.4)} digest={since(b, first, 0.5) * 0.45} lit={since(b, chew, 0.3) > 0.5 ? 'chew' : null} sub={[since(b, first, 0.3) > 0.5 ? 'First' : undefined]} />
         </Layer>
       </Stage>
     )
   }
-  const first = id === 'c6-05'
-  const into = first ? since(b, cue(b, 0, 0.137) - 0.05, 2.2) : 1
-  const churn = first ? between(b, 0.2, 0.5) * 0.5 : 0.5 + 0.5 * since(b, cue(b, 0, 0.427) - 0.1, 0.8)
-  const keep = first ? since(b, cue(b, 2, 0.848) - 0.04, 0.7) : 1
-  const pass = first ? 0 : since(b, cue(b, 0, 0.427) + 0.12, 1.2)
-  const known = first ? since(b, cue(b, 1, 0.492), 1.2) : 1
+  if (id === 'c6-07') {
+    const little = cue(b, 0, 0.15)
+    const at = [cue(b, 1, 0.39), cue(b, 2, 0.5), cue(b, 3, 0.805)]
+    const words = since(b, at[2], 1.1)
+    return (
+      <Stage beat={b} label="To chew is to think about it a little: read it, talk it over, put the idea in your own words">
+        <Layer place="top">
+          <ChewThenDigest beat={b} chew={1} digest={0.45} lit="chew" sub={['A little thought']} small />
+        </Layer>
+        <Layer style={{ paddingTop: '10%' }}>
+          <div className="kb-chew">
+            {CHEW_PARTS.map((part, i) => {
+              const p = since(b, at[i] - 0.03, 0.4)
+              return (
+                <div key={part.kind} className="kb-chew__part" data-lit={p > 0.5 && (i === 2 || b.progress < at[i + 1]) ? 'true' : undefined} style={rise(b, p, 10)}>
+                  <StepIcon kind={part.kind} />
+                  <span className="kb-chew__label">{part.label}</span>
+                </div>
+              )
+            })}
+          </div>
+          <div className="kb-bubble" style={rise(b, words, 10)}>
+            {typedText(b, 'Sleep you miss adds up.', words)}
+          </div>
+          <span className="kit-chip" style={pop(b, since(b, little + 0.1, 0.5))}>
+            Light and quick
+          </span>
+        </Layer>
+      </Stage>
+    )
+  }
+  if (id === 'c6-17') {
+    const later = cue(b, 0, 0.071)
+    const review = cue(b, 1, 0.497)
+    const more = cue(b, 2, 0.716)
+    // Each review on the calendar, from the word "review" to the end: the card steps down one level each time.
+    const steps = SETTLE.map((_, k) => (k === 0 ? 1 : since(b, lerp(review, 0.93, (k - 1) / 3), 0.5)))
+    const done = steps.filter((p) => p >= 1).length - 1
+    const going = steps[done + 1] ?? 0
+    const level = done + moved(b, going)
+    const xs = SETTLE.map((_, k) => 90 + k * 105)
+    const ys = SETTLE.map((_, k) => 70 + k * 42)
+    const x = lerp(xs[Math.min(done, 4)], xs[Math.min(done + 1, 4)], level - done)
+    const y = lerp(ys[Math.min(done, 4)], ys[Math.min(done + 1, 4)], level - done)
+    const warm = level / 4
+    return (
+      <Stage beat={b} label="The full digestion comes later: each time you review the card, you digest it a little more">
+        <Layer place="top">
+          <ChewThenDigest beat={b} chew={1} digest={lerp(0.45, 1, since(b, later, 0.5))} lit={since(b, later, 0.4) > 0.5 ? 'digest' : 'chew'} sub={['Now', since(b, later + 0.08, 0.4) > 0.5 ? 'Later, slowly' : undefined]} small />
+        </Layer>
+        <Layer style={{ paddingTop: '12%' }}>
+          <div className="kb-settle" style={rise(b, since(b, later + 0.05, 0.7), 10)}>
+            <svg className="kb-settle__art" viewBox="0 0 600 300" aria-hidden="true">
+              <defs>
+                <linearGradient id="kb-settle-depth" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stopColor="var(--bg)" stopOpacity={0} />
+                  <stop offset="1" stopColor="var(--accent)" stopOpacity={0.22} />
+                </linearGradient>
+              </defs>
+              <rect x={0} y={40} width={600} height={220} rx={14} fill="url(#kb-settle-depth)" />
+              <path className="kb-settle__stairs" d={xs.map((sx, k) => `${k === 0 ? 'M' : 'L'}${sx} ${ys[k]}${k < 4 ? ` H${xs[k + 1]}` : ''}`).join(' ')} />
+              {xs.map((sx, k) => (
+                <g key={k} opacity={k === 0 ? 1 : clamp(steps[k] * 2 + 0.35)}>
+                  <circle className="kb-settle__tick" cx={sx} cy={284} r={5} data-on={steps[k] >= 1 ? 'true' : undefined} />
+                  <text className="kit-svg-label kb-settle__day" x={sx} y={274} textAnchor="middle">
+                    {SETTLE[k]}
+                  </text>
+                </g>
+              ))}
+              <text className="kit-svg-label kb-settle__depth" x={594} y={62} textAnchor="end">
+                Chewed
+              </text>
+              <text className="kit-svg-label kit-svg-label--accent kb-settle__depth" x={594} y={252} textAnchor="end" opacity={lerp(0.35, 1, warm)}>
+                Digested
+              </text>
+            </svg>
+            <span className="kb-settle__card" style={{ left: `${((x / 600) * 100).toFixed(2)}%`, top: `${((y / 300) * 100).toFixed(2)}%`, boxShadow: `0 0 ${(6 + 26 * warm).toFixed(1)}px color-mix(in srgb, var(--accent) ${(10 + 50 * warm).toFixed(0)}%, transparent)` }}>
+              <MiniCardTitle title="Sleep debt adds up" />
+            </span>
+          </div>
+          <span className="kit-chip" style={pop(b, since(b, more, 0.5))}>
+            A little more each review
+          </span>
+        </Layer>
+      </Stage>
+    )
+  }
+  // c6-05: digestion as a picture: bits go in and turn; you need not know it fully before you make its card.
+  const into = since(b, cue(b, 0, 0.137) - 0.05, 2.2)
+  const churn = between(b, 0.2, 0.5) * 0.5
+  const keep = since(b, cue(b, 2, 0.848) - 0.04, 0.7)
+  const known = since(b, cue(b, 1, 0.492), 1.2)
   return (
-    <Stage beat={b} label={first ? 'Digestion: what you take in turns over; you do not have to know it fully before you make its card' : 'You digest it first: the useful part is kept, the rest passes'}>
+    <Stage beat={b} label="Think of it like digestion: you do not have to know a thing fully before you make its card">
       <Layer>
         <Fit>
-          <Digester beat={b} into={into} churn={churn} keep={keep} pass={pass} known={first ? known : undefined} />
+          <Digester beat={b} into={into} churn={churn} keep={keep} pass={0} known={known} />
           <div className="kit-tags">
-            {first && (
-              <span className="kit-chip" style={pop(b, since(b, cue(b, 1, 0.492), 0.5))}>
-                Known: not fully
-              </span>
-            )}
-            {!first && (
-              <span className="kit-chip" style={pop(b, since(b, cue(b, 0, 0.427), 0.5))}>
-                Digested
-              </span>
-            )}
+            <span className="kit-chip" style={pop(b, since(b, cue(b, 1, 0.492), 0.5))}>
+              Known: not fully
+            </span>
           </div>
         </Fit>
       </Layer>
     </Stage>
+  )
+}
+
+/** A small card's face for the settling picture: its title and two grey lines. */
+function MiniCardTitle({ title }: { title: string }) {
+  return (
+    <>
+      <span className="kb-settle__title">{title}</span>
+      <span className="kb-settle__lines" aria-hidden="true">
+        <i />
+        <i />
+      </span>
+    </>
   )
 }
 
@@ -583,11 +717,11 @@ function TheWait(props: SceneProps) {
     )
   }
   const made = cue(b, 0, 0.373)
-  const digested = cue(b, 1, 0.516)
+  const chewed = cue(b, 1, 0.516)
   const forward = cue(b, 2, 0.785)
   const glow = since(b, forward, 0.9)
   return (
-    <Stage beat={b} label="When the card comes, it is no surprise: you made it, you digested it, you have been looking forward to it">
+    <Stage beat={b} label="When the card comes, it is no surprise: you made it, you chewed on it, you have been looking forward to it">
       <Layer>
         <Fit>
           <div className="kb-arrive" style={{ ...rise(b, since(b, 0, 0.8), 20), boxShadow: glow > 0 ? `0 0 ${(40 * glow).toFixed(1)}px color-mix(in srgb, var(--accent) ${(35 * glow).toFixed(0)}%, transparent)` : undefined }}>
@@ -597,8 +731,8 @@ function TheWait(props: SceneProps) {
             <span className="kit-chip" style={pop(b, since(b, made, 0.5))}>
               You made it
             </span>
-            <span className="kit-chip" style={pop(b, since(b, digested, 0.5))}>
-              You digested it
+            <span className="kit-chip" style={pop(b, since(b, chewed, 0.5))}>
+              You chewed on it
             </span>
             <span className="kit-chip" style={pop(b, since(b, forward, 0.5))}>
               ♥ Looking forward to it

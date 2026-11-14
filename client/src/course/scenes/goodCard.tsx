@@ -60,18 +60,18 @@ function treeShow(at: Record<string, number>): Record<string, number> {
   return show
 }
 
-/** c7-01: the digested idea, and an empty card beside it, waiting to be made well. */
+/** c7-01: the chewed idea, and an empty card beside it, waiting to be made well. */
 function Begin(props: SceneProps) {
   const b = useBeat(props)
   const here = cue(b, 0, 0.499)
   const good = since(b, 0.84, 0.7)
   return (
-    <Stage beat={b} label="A digested idea, and an empty card to make well">
+    <Stage beat={b} label="An idea you have chewed on, and an empty card to make well">
       <Layer>
         <div className="kit-row">
           <div className="gc-idea" style={pop(b, since(b, 0.02, 0.7))}>
             <span className="gc-idea__core" />
-            <Words size="page">Digested</Words>
+            <Words size="page">Chewed on</Words>
           </div>
           <span className="gc-arrow" style={{ opacity: since(b, here - 0.05, 0.5) }} aria-hidden="true">
             →
