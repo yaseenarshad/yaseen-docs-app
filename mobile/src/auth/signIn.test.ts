@@ -17,8 +17,9 @@ const READ_ONLY = 'github_pat_11READONLY0readonlyreadonl_' + 'r'.repeat(59)
 const OTHER_REPO = 'github_pat_11OTHERREPO0otherrepoother_' + 'o'.repeat(59)
 const CLASSIC = 'ghp_' + 'c'.repeat(36)
 const WORK = 'github_pat_11WORKWORK0workworkworkwo_' + 'w'.repeat(59)
+const NO_CONTENTS = 'github_pat_11NOCONTENT0nocontentsnoconten_' + 'm'.repeat(59)
 const WRONG = 'github_pat_11WRONGWRONG0wrongwrongwron_' + 'x'.repeat(59)
-const ALL_TOKENS = [GOOD, NO_GISTS, READ_ONLY, OTHER_REPO, CLASSIC, WORK, WRONG]
+const ALL_TOKENS = [NO_CONTENTS, GOOD, NO_GISTS, READ_ONLY, OTHER_REPO, CLASSIC, WORK, WRONG]
 
 let github: FakeGithub
 let store: VaultStore
@@ -35,6 +36,7 @@ beforeEach(async () => {
       [READ_ONLY]: { login: 'yaseen', repos: { 'yaseen/vault': 'read' }, gists: true },
       [OTHER_REPO]: { login: 'yaseen', repos: { 'yaseen/other': 'write' }, gists: true },
       [CLASSIC]: { login: 'yaseen', kind: 'classic', repos: { 'yaseen/vault': 'write' }, gists: true },
+      [NO_CONTENTS]: { login: 'yaseen', repos: { 'yaseen/vault': 'none' }, gists: true },
       [WORK]: { login: 'yaseen-work', repos: { 'acme/pages': 'write' }, gists: true },
     },
     repos: [
@@ -182,6 +184,41 @@ describe('F4: the token is valid but cannot read this repo', () => {
   it('a branch that is not there is named', async () => {
     await failsWith({ repo: 'yaseen/vault', branch: 'gone', token: GOOD }, { kind: 'branch-not-found', repo: 'yaseen/vault', branch: 'gone' })
     expect(signInMessage({ kind: 'branch-not-found', repo: 'yaseen/vault', branch: 'gone' })).toContain('gone')
+  })
+})
+
+describe('YAZ-5165: the token sees the repo but has no Contents permission (GitHub\'s default)', () => {
+  it('names the permission to turn on, and stores nothing', async () => {
+    await failsWith({ repo: 'yaseen/vault', token: NO_CONTENTS }, { kind: 'no-contents', repo: 'yaseen/vault' })
+    const message = signInMessage({ kind: 'no-contents', repo: 'yaseen/vault' })
+    expect(message).toContain('yaseen/vault')
+    expect(message).toContain('Contents')
+    expect(message).toMatch(/Read and write/)
+  })
+
+  it('a 403 on the branch read or on the .yaseendocs read is no-contents, never "unexpected"', async () => {
+    for (const step of ['/branches/', '/contents/']) {
+      const fetch: typeof github.fetch = async (url, init) =>
+        url.includes(step) ? new Response(JSON.stringify({ message: 'Resource not accessible by personal access token' }), { status: 403 }) : github.fetch(url, init)
+      expect(await signIn({ repo: 'yaseen/vault', token: GOOD }, { ...deps, fetch })).toEqual({ ok: false, error: { kind: 'no-contents', repo: 'yaseen/vault' } })
+    }
+    await nothingStored()
+  })
+})
+
+describe('YAZ-5166: GitHub says "slow down" with no wait time', () => {
+  it.each([
+    ['the repo read', (m: string, p: string) => m === 'GET' && p === '/repos/yaseen/vault'],
+    ['the branch read', (m: string, p: string) => p.includes('/branches/')],
+    ['the write probe', (m: string, p: string) => m === 'POST' && p.endsWith('/git/blobs')],
+  ])('on %s: rate-limited with a wait of 60 s, never no-access or read-only', async (_, match) => {
+    github.slowDown = match
+    await failsWith({ repo: 'yaseen/vault', token: GOOD }, { kind: 'rate-limited', resetAt: NOW + 60_000 })
+  })
+
+  it('on the Gists probe: sign-in works, Gists is unknown (checked again later)', async () => {
+    github.slowDown = (m, p) => m === 'POST' && p === '/gists'
+    expect(await signIn({ repo: 'yaseen/vault', token: GOOD }, deps)).toMatchObject({ ok: true, account: { gists: 'unknown' } })
   })
 })
 
