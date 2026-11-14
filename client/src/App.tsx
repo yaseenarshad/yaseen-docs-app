@@ -1542,7 +1542,7 @@ export function App() {
     return () => document.removeEventListener(CARD_OPEN, onOpenCard)
   }, [openExploreWith])
   // Preview a card (YAZ-5152): every card sends `mdapp:card-preview` (⋯ › Preview, P, Edit card's Preview); the window
-  // shows it as the Inbox shows it, over everything, until Esc.
+  // shows it as the Inbox shows it, in the page area (option A), until Esc, Close, ⌘W or a click on a tab or the sidebar.
   const [cardPreview, setCardPreview] = useState<CardPreviewRequest | null>(null)
   useEffect(() => {
     const onPreview = (event: Event) => setCardPreview((event as CustomEvent<CardPreviewRequest>).detail)
@@ -1558,6 +1558,15 @@ export function App() {
     exploreFrom.current = null
     // In place (YAZ-4971): the page stays where it was scrolled, not at its caret.
     giveFocusBack(from)
+  }, [])
+  /**
+   * A click on a tab or in the sidebar while a preview shows (YAZ-5152 A): the preview goes and the click does its job.
+   * An Explore stack hidden under it goes too — the click leaves for the app — and the keyboard stays with the click.
+   */
+  const leaveCardPreview = useCallback(() => {
+    setCardPreview(null)
+    exploreFrom.current = null
+    setExploreRequest(0)
   }, [])
   // The stack's search vaults: each vault's folders from the tree the window already holds, and its drawings and diagrams
   // (YAZ-4943: they open as reading layers); no other files.
@@ -2552,7 +2561,8 @@ export function App() {
     onSwitchVault: openVaultSwitcher,
     onSettings: openSettings,
     onToggleSidebar: toggleSidebar,
-    onCloseTab: inboxShown ? closeReview : closeTabOrWindow,
+    // ⌘W with a card preview closes the preview only (YAZ-5152 A), never the tab under it.
+    onCloseTab: cardPreview !== null ? closeCardPreview : inboxShown ? closeReview : closeTabOrWindow,
     onNextTab: toNextTab,
     onPrevTab: toPrevTab,
     onTabOverview: toggleOverview,
@@ -3710,6 +3720,24 @@ export function App() {
     moveRight(from, at > from ? at - 1 : at)
   }
 
+  /** Preview a card (YAZ-5152): the Inbox's card, nothing saved; a link in it closes it and opens as in the Inbox. */
+  const cardPreviewView = (place: 'page' | 'window') =>
+    cardPreview !== null &&
+    root !== null && (
+      <Suspense fallback={null}>
+        <CardPreview
+          card={cardPreview}
+          vault={exploreVaultOf(cardPreview.path)}
+          settings={exploreVaultOf(cardPreview.path).review?.settings}
+          doors={{ openLayer: (to) => (closeCardPreview(), openExploreOn(to)), openTab: (to, where) => (closeCardPreview(), openLink(to, where)), onNotice: notify }}
+          onNotice={notify}
+          onClose={closeCardPreview}
+          leaveOn=".tabbar-row, .sidebar"
+          onLeave={leaveCardPreview}
+          whole={place === 'window'}
+        />
+      </Suspense>
+    )
   return (
     // Every place outside the tree that shows a file's icon reads it here (D11, `FileIcon`). Not indented: the app's tree below keeps its lines.
     <IconsContext.Provider value={iconsHere}>
@@ -3755,23 +3783,12 @@ export function App() {
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Page (D7). */}
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
       {keySheetOpen && <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}
-      {/* Preview a card (YAZ-5152): the Inbox's card, nothing saved; a link in it closes it and opens as in the Inbox. */}
-      {cardPreview !== null && root !== null && (
-        <Suspense fallback={null}>
-          <CardPreview
-            card={cardPreview}
-            vault={exploreVaultOf(cardPreview.path)}
-            settings={exploreVaultOf(cardPreview.path).review?.settings}
-            doors={{ openLayer: (to) => (closeCardPreview(), openExploreOn(to)), openTab: (to, where) => (closeCardPreview(), openLink(to, where)), onNotice: notify }}
-            onNotice={notify}
-            onClose={closeCardPreview}
-          />
-        </Suspense>
-      )}
+      {/* Preview a card (YAZ-5152) in a Files window: no page area there, so it covers the window. */}
+      {filesWindow && cardPreviewView('window')}
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
-          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} />
+          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} />
         </Suspense>
       )}
       {whatsNewOpen && (
@@ -4061,6 +4078,8 @@ export function App() {
                 <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} openPage={openFromInbox} openAt={settings.inboxOpenAt} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} focusMode={inboxFocusMode} onFocusMode={changeInboxFocus} />
               </Suspense>
             )}
+            {/* Preview a card (YAZ-5152 A): in the page area as the Inbox tab is, over it too; the sidebar and the tab row stay. */}
+            {cardPreviewView('page')}
             {/* The tab board (YAZ-2648 D5) covers the stack while it shows; a review never has one over it. */}
             {overview.phase !== 'closed' && !inboxShown && tabBoard()}
             {/* The preview panel of the search (YAZ-2662 D5), over the page area — over the empty page of the blank tab too (S45). No layer of the stack: it is no tab and no page. */}

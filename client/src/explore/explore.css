@@ -693,3 +693,8 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* YAZ-5152: Explore hides while a card preview it opened shows, its layers kept; Esc brings it back. */
+.explore[hidden] {
+  display: none;
+}
