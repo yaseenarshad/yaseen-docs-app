@@ -271,3 +271,33 @@ li:has(> .page-task[data-checked='true'], > p:first-child > .page-task[data-chec
 .reader [hidden] {
   display: none !important;
 }
+
+/* A web picture, sound or video: a link to tap (Safari), never loaded by the app (YAZ-5208). */
+a.page-media--web {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+/* Footnotes (YAZ-5212): the mark, and the note where it is written, as the Mac's page shows them. */
+.page-fnref a {
+  text-decoration: none;
+  font-size: 0.8em;
+}
+.page-footnote {
+  margin: 0.4em 0;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+.page-footnote__label {
+  margin-right: 0.4em;
+  font-size: 0.8em;
+  vertical-align: super;
+}
+/* A cell note's mark; the note stays hidden under its table, as on the Mac (YAZ-3818). */
+.page-cellnote {
+  color: var(--fg-muted);
+}
+/* Block math: its source, as code (the Mac draws no math: YAZ-977). */
+.reader__body pre.page-math {
+  font-style: italic;
+}

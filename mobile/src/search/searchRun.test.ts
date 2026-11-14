@@ -3,7 +3,6 @@ import { filterTest } from '@client/search/searchType'
 import type { IndexRecord } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import { phoneRecord } from '../sync/phoneIndex'
-import { uiSlicer } from '../sync/yieldToUi'
 import { buildRows, emptyBoxRows, findRows, searchRecords, type PhoneType, type SearchSource } from './searchRun'
 
 /** One card block with its line, as the Mac writes it. */
@@ -133,53 +132,31 @@ function bigVault(): IndexRecord[] {
 }
 
 describe('speed: 5,000 pages and 20,000 cards (YAZ-5079)', () => {
-  it('builds the rows and finds each query in slices: no hold of the thread over 50 ms; the numbers are printed', async () => {
+  it('builds the rows and finds each query in slices: no slice of its work takes 50 ms (CPU time of this thread; YAZ-5213)', async () => {
     const src: SearchSource = { records: bigVault(), letters: ['DEMO'], cards: true }
-    // The probe of 3B (`pass.test.ts`): a zero timeout again and again; the longest gap is the longest hold.
-    let probing = true
-    let gaps: number[] = []
-    let last = performance.now()
-    const probe = () => {
-      const t = performance.now()
-      gaps.push(t - last)
-      last = t
-      if (probing) setTimeout(probe, 0)
+    // The work between two yields, in CPU time of this thread: the load of the machine does not count.
+    const cpu = () => {
+      const u = process.threadCpuUsage()
+      return (u.user + u.system) / 1000
     }
-    setTimeout(probe, 0)
-    const measure = async <T>(run: () => Promise<T>) => {
-      await new Promise((r) => setTimeout(r, 5))
-      gaps = []
-      last = performance.now()
-      const t0 = performance.now()
-      const result = await run()
-      return { ms: performance.now() - t0, longest: Math.max(...gaps, performance.now() - last), result }
-    }
-    const realYield = () => new Promise<void>((r) => setTimeout(r, 0))
-    let idle = Infinity
-    let build = { ms: 0, longest: Infinity }
-    let find = { ms: 0, longest: Infinity }
-    let count = 0
-    for (let run = 0; run < 5 && (build.longest >= 50 || find.longest >= 50); run++) {
-      const calm = await measure(() => new Promise((r) => setTimeout(r, 100)))
-      const b = await measure(() => buildRows(src, uiSlicer(realYield)))
-      count = b.result!.length
-      let worst = { ms: 0, longest: 0 }
-      for (const q of ['a', 'pa', 'page 12', 'la casa', 'DEMO-100004', '#12', 'apple', 'zzz']) {
-        const f = await measure(() => findRows(b.result!, q, 'all', uiSlicer(realYield)))
-        if (f.longest > worst.longest) worst = f
+    const run = () => {
+      const work: number[] = []
+      let last = cpu()
+      const slice = async () => {
+        work.push(cpu() - last)
+        await new Promise((r) => setTimeout(r, 0))
+        last = cpu()
       }
-      idle = Math.min(idle, calm.longest)
-      if (b.longest < build.longest) build = b
-      if (worst.longest < find.longest) find = worst
+      return { work, slice }
     }
-    probing = false
-    console.log(`[4C perf] idle probe ${idle.toFixed(1)} ms; ${count} rows from 5,000 records: build ${build.ms.toFixed(0)} ms, longest hold ${build.longest.toFixed(1)} ms; the slowest of 8 queries ${find.ms.toFixed(0)} ms, longest hold ${find.longest.toFixed(1)} ms`)
-    expect(count).toBeGreaterThan(25_000)
-    if (idle > 15 && (build.longest >= 50 || find.longest >= 50)) {
-      console.log('[4C perf] the machine is too busy to measure holds (the idle probe alone waited > 15 ms): check skipped')
-      return
-    }
-    expect(build.longest).toBeLessThan(50)
-    expect(find.longest).toBeLessThan(50)
+    const b = run()
+    const rows = (await buildRows(src, b.slice))!
+    const f = run()
+    for (const q of ['a', 'pa', 'page 12', 'la casa', 'DEMO-100004', '#12', 'apple', 'zzz']) await findRows(rows, q, 'all', f.slice)
+    const longest = (w: number[]) => Math.max(...w)
+    console.log(`[4C perf] ${rows.length} rows from 5,000 records: build in ${b.work.length} slices, longest ${longest(b.work).toFixed(1)} ms CPU; 8 queries in ${f.work.length} slices, longest ${longest(f.work).toFixed(1)} ms CPU`)
+    expect(rows.length).toBeGreaterThan(25_000)
+    expect(longest(b.work)).toBeLessThan(50)
+    expect(longest(f.work)).toBeLessThan(50)
   }, 120_000)
 })

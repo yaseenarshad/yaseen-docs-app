@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { SearchCandidate } from '@client/search/searchCandidates'
 import { useApp } from '../app/AppState'
 import type { Route } from '../app/nav'
 import { buildRows, emptyBoxRows, findRows, type PhoneType } from '../search/searchRun'
-import { keepSearch, searchStateOf, takeSearchNotice } from '../search/searchState'
+import { keepPlace, keepSearch, searchStateOf, takeSearchNotice } from '../search/searchState'
 import { useVaultData } from '../search/vaultData'
 import { uiSlicer } from '../sync/yieldToUi'
 import '../search/search.css'
@@ -28,7 +28,10 @@ export function Search() {
   const [menu, setMenu] = useState(false)
   const [rows, setRows] = useState<SearchCandidate[] | null>(null)
   const [found, setFound] = useState<SearchCandidate[] | null>(null)
-  const [shown, setShown] = useState(STEP)
+  const [shown, setShown] = useState(held.shown ?? STEP)
+  /** The query and Type the rows shown are for: a new one starts the list again at its top (YAZ-5211). */
+  const listOf = useRef(`${held.query}\n${held.type}`)
+  const section = useRef<HTMLElement>(null)
   const [notice] = useState(() => takeSearchNotice())
   const cards = data?.review.enabled ?? false
   // Cards is a choice only while Review is on, as on the Mac.
@@ -49,7 +52,11 @@ export function Search() {
   // Each letter searches again; a search that a newer letter replaced stops.
   useEffect(() => {
     keepSearch(vaultKey, query, kind)
-    setShown(STEP)
+    if (listOf.current !== `${query}\n${kind}`) {
+      listOf.current = `${query}\n${kind}`
+      setShown(STEP)
+      keepPlace(STEP, 0)
+    }
     if (rows === null || query.trim() === '') return setFound(null)
     let live = true
     void findRows(rows, query, kind, uiSlicer(), () => live).then((next) => {
@@ -64,6 +71,23 @@ export function Search() {
   const list = useMemo(() => (rows !== null && empty ? emptyBoxRows(rows, kind) : null), [rows, empty, kind])
   const results = empty ? list : found
 
+  // YAZ-5211: the list's scroll place is kept as the person scrolls, and given back when the tab shows again.
+  useEffect(() => keepPlace(shown), [shown])
+  const placed = useRef(false)
+  useLayoutEffect(() => {
+    const scroller = section.current?.closest('.screen')
+    if (scroller == null || placed.current || results === null) return
+    placed.current = true
+    scroller.scrollTop = held.scroll
+  }, [results, held.scroll])
+  useEffect(() => {
+    const scroller = section.current?.closest('.screen')
+    if (scroller == null) return
+    const keep = () => keepPlace(null, scroller.scrollTop)
+    scroller.addEventListener('scroll', keep, { passive: true })
+    return () => scroller.removeEventListener('scroll', keep)
+  }, [])
+
   const TYPES: [PhoneType, string][] = [
     ['all', 'All types'],
     ['pages', unit('Pages')],
@@ -71,7 +95,7 @@ export function Search() {
   ]
 
   return (
-    <section className="search" aria-label="Search">
+    <section className="search" aria-label="Search" ref={section}>
       <input
         type="search"
         name="search"

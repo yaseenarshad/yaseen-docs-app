@@ -1,6 +1,7 @@
 import { cardLook } from '@client/editor/card/cardLook'
 import { isAudioRef, isBoardRef } from '@client/editor/card/cardMedia'
 import { renderCard } from '@client/editor/card/cardRender'
+import { onlyLocalMedia } from '@client/editor/card/cardSafety'
 import { cardLinkTitle, createWikilinkResolveSource, linkCard, linkPageName, linkPath, linksAsShown, missingId, type WikilinkResolveSource } from '@client/editor/wikilink/linkResolve'
 import { makeAssetResolver } from '@shared/assetLookup'
 import type { CardLink } from '@shared/cardLinks'
@@ -27,6 +28,9 @@ import './reader.css'
  */
 
 /** The resolve source of one snapshot of the vault's data, kept while the data stays (one per `version`). */
+// The reader draws cards with local media only (YAZ-5209), also when it is the first to draw one (`main.tsx` sets it too).
+onlyLocalMedia()
+
 const sources = new WeakMap<VaultData, WikilinkResolveSource>()
 export function resolveSourceOf(data: VaultData): WikilinkResolveSource {
   let source = sources.get(data)
@@ -77,6 +81,9 @@ export function assetPath(data: VaultData, holder: string, src: string): string 
   return assetsOf(data)(target, fromRoot ? undefined : folderOf(holder))
 }
 
+/** A card picture's address when the vault has no such file: a `data:` text, so nothing is fetched. */
+const MISSING_PREFIX = 'data:text/plain,vault-missing:'
+
 /** A card's text drawn read only, as the Mac draws it (`renderCard`), its pictures and sounds marked for `watchMedia`. */
 export function drawCard(data: VaultData, holder: string, text: string): HTMLElement {
   const source = resolveSourceOf(data)
@@ -86,7 +93,7 @@ export function drawCard(data: VaultData, holder: string, text: string): HTMLEle
     pagePath: `/${holder}`,
     src: (_root, dir, src) => {
       const path = assetPath(data, dir === '' ? 'x' : `${dir}/x`, src)
-      return path === null ? src : vaultMediaUrl(path)
+      return path === null ? `${MISSING_PREFIX}${encodeURIComponent(src)}` : vaultMediaUrl(path)
     },
   })
   const el = renderCard(text, {}, look)
@@ -98,10 +105,10 @@ export function drawCard(data: VaultData, holder: string, text: string): HTMLEle
     if (path !== null) {
       img.removeAttribute('src')
       img.dataset.vaultSrc = path
-    } else if (!/^(data|blob):/i.test(src)) {
+    } else if (src.startsWith(MISSING_PREFIX) || !/^(data|blob):/i.test(src)) {
       const line = document.createElement('span')
       line.className = 'page-media page-media--missing'
-      line.textContent = `Missing picture · ${src}`
+      line.textContent = `Missing picture · ${src.startsWith(MISSING_PREFIX) ? decodeURIComponent(src.slice(MISSING_PREFIX.length)) : src}`
       img.replaceWith(line)
     }
   }
