@@ -369,7 +369,7 @@ export const COURSE: CourseChapter[] = [
       // A rushed, messy card is made on the spot; it gets a red mark.
       { id: 'c6-11', text: 'Do not make the card in that moment. Rushed cards are poor cards, they pile up, and review becomes a chore.', marks: [0.336, 0.632, 0.809] },
       // Later, at a quiet desk: the note becomes a clean card. (rename-note-to-page: keep)
-      { id: 'c6-12', text: 'Make the card later, when you have time to sit and think. Capture first, make later.', marks: [0.231, 0.607, 0.801] },
+      { id: 'c6-12', text: 'Make the card later, when you have time to sit and think. Capture first, create later.' },
       // The new-card line: "New cards · 60 waiting", ten a day; a week of days ticks past.
       { id: 'c6-13', text: 'With ten new cards a day and sixty waiting, a new card can take about a week to reach you.', marks: [0.05, 0.316, 0.766] },
       // The card arrives in the Inbox; it looks familiar, like a friend.
@@ -495,19 +495,29 @@ export const COURSE: CourseChapter[] = [
       // The card skill's right-click menu: "Copy prompt for your agent".
       { id: 'c8-18', text: 'To copy the prompt later, right-click the card skill, and choose Copy prompt for your agent.', marks: [0.272, 0.617] },
       // The loop: you digest, the agent shapes, you decide; then three icons: a pen, the Inbox, shears.
-      { id: 'c8-19', text: 'You chew and decide; your agent only drafts. Next: the three habits that keep it all alive.' },
+      { id: 'c8-19', text: 'You chew and decide; your agent only drafts. Next: the four steps that keep it all alive.' },
     ],
   },
   {
     id: 'habits',
-    title: 'Three habits: make, review, tend',
+    title: 'Four steps: capture, create, review, improve',
     clips: [
       // The pen icon: cards by hand and with the agent.
       { id: 'c9-01', text: "Let's step back and see the whole system." },
       // Three icons in a row: a pen "Make", the Inbox "Review", shears "Tend".
-      { id: 'c9-02', text: 'It has three habits: making cards, reviewing cards, and tending cards. Tending means fixing and improving the cards you have.', marks: [0.19, 0.3, 0.45, 0.61] },
+      { id: 'c9-02', text: 'It has four steps: capture, create, review, and improve.' },
+      // Capture: a day goes by; small captures land in one place from a phone, a meeting, a walk.
+      { id: 'c9-12', text: 'Capture happens all day, wherever you are. When something is worth keeping, write it down.' },
+      // Three capture places side by side: a phone page, a page of quick lines, a chat channel with pages to self; each one collects the same few lines. "One place" lights up.
+      { id: 'c9-13', text: 'A page on your phone, a brain dump, a chat channel just for you. It does not matter where, as long as you have one place.' },
+      // Create: a quiet desk; the capture list on one side, new cards forming on the other.
+      { id: 'c9-14', text: 'Create is when you sit down with your capture list, and turn it into cards.' },
+      // The agent chat drafts a card from a captured line; the person reads it, and a Yes lets it become a card. The word "Chew".
+      { id: 'c9-15', text: 'This is where you chew. Your agent can do most of the work, and you read and approve each card.' },
+      // The pen icon lights up; a quiet desk.
+      { id: 'c9-09', text: 'Create is the one you set time aside for. Chewing takes thought, so give it a quiet moment.' },
       // The Inbox icon lights up; a sunrise.
-      { id: 'c9-03', text: 'Reviewing is the daily one. You open the Inbox, and the app picks the cards.', marks: [0.2, 0.48, 0.73] },
+      { id: 'c9-03', text: 'Review is the daily one, here in the app. You open the Inbox, and the app picks the cards.' },
       // A person with a thought bubble: "I am sure that worked"; a gauge beside it reads the opposite.
       { id: 'c9-04', text: 'Trust the schedule, even when it feels slow. Your gut is a poor judge of your own memory.', marks: [0.21, 0.52, 0.66] },
       // Ten figures: nine light up, "Spacing won"; then seven of the ten hold a sign, "I think it lost".
@@ -517,15 +527,13 @@ export const COURSE: CourseChapter[] = [
       // SOURCE: Karpicke & Roediger 2008, Science 319: in all four conditions people predicted they would recall about 50% of the pairs; actual recall was about 80% or about a third.
       { id: 'c9-11', text: 'In the Science study, everyone guessed they would remember about half. Some kept 80 percent. Some kept a third. Nobody saw it coming.', marks: [0.14, 0.42, 0.51, 0.7, 0.82] },
       // The shears icon lights up, inside the Inbox: a card with a small fix.
-      { id: 'c9-06', text: 'Tending needs no time of its own. It happens while you review.', marks: [0.54] },
+      { id: 'c9-06', text: 'Improving needs no time of its own. It happens while you review.' },
       // Thought bubbles over a card, "Not clear", "Needs a link"; a short message goes to the agent; the review goes on.
       { id: 'c9-07', text: 'This card is not clear. That one needs a link. With an agent, you send the fix right then, and keep going.', marks: [0.15, 0.39, 0.55, 0.69, 0.85] },
       // A clock face: a short arc for review and tending.
-      { id: 'c9-08', text: 'Even with a large card base, tending should only take a couple of minutes a day.' },
-      // The pen icon lights up; a quiet desk.
-      { id: 'c9-09', text: 'Making is the one you set time aside for. Chewing takes thought, so give it a quiet moment.' },
+      { id: 'c9-08', text: 'Even with a large card base, improving should only take a couple of minutes a day.' },
       // The three icons with their times; then two cards with a line between them.
-      { id: 'c9-10', text: 'Make with time set aside. Review every day. Tend as you review. Next: the idea that changes how you organise everything.', marks: [0.24, 0.39, 0.59] },
+      { id: 'c9-10', text: 'Capture all day. Create with time set aside. Review every day. Improve as you review. Next: the idea that changes how you organise everything.' },
     ],
   },
   {
@@ -533,13 +541,17 @@ export const COURSE: CourseChapter[] = [
     title: 'Links: how cards connect',
     clips: [
       // The three habit icons; then two cards, a thin line drawn between them.
-      { id: 'c10-01', text: 'Quick recap: you make, review and tend your cards. Now, how they connect, and why that beats folders.', marks: [0.57, 0.86] },
+      { id: 'c10-01', text: 'Quick recap: you capture, create, review and improve. Now, how your cards connect, and why that beats folders.' },
       // A computer's folders: one file goes into one folder, and the folder closes.
       { id: 'c10-02', text: 'Most of us keep things in files and folders. Computers taught us: one thing, one place.', marks: [0.24, 0.7] },
       // A new card hovers over three folders; a question mark: "Where does this go?"
       { id: 'c10-03', text: 'So when you make a card, you ask: where does this go?', marks: [0.22, 0.61] },
       // All the cards fall into one open box, "Cards"; nothing is sorted.
-      { id: 'c10-04', text: 'Cards do not need that. They can all live in one place, or one folder at most.', marks: [0.32, 0.65] },
+      { id: 'c10-04', text: 'That is why the app does not require folders. It leaves the choice to you.' },
+      // The advice as a card of its own: "Few folders. Many links." A pile of nested folders fades; a few cards with lines between them stay.
+      { id: 'c10-28', text: 'But with great power comes great responsibility. Our advice: keep folders few, and rely on links.' },
+      // One folder is made, slowly and on purpose; the rest of the cards stay loose, joined by links.
+      { id: 'c10-29', text: 'Make a folder only when you truly need one.' },
       // A line goes from one card to another; the words "Link: points to another card"; the protein card of chapter 7 and its line back to the umbrella.
       { id: 'c10-05', text: 'Links hold them together. You have seen one: the protein card, linked to its umbrella.', marks: [0.16, 0.57, 0.84] },
       // A head in profile; inside it, ideas as dots with lines between them, not boxes.
@@ -553,13 +565,13 @@ export const COURSE: CourseChapter[] = [
       // The food tree of chapter 7 on the left; a second small tree on the right, "Exercise". A dotted line wants to cross between them.
       { id: 'c10-23', text: 'A tree has branches. But ideas also connect across trees, and a folder cannot show that.', marks: [0.29, 0.48, 0.75] },
       // The card "Protein" goes into a folder "Food".
-      { id: 'c10-09', text: 'An easy example. Your protein card sits in a folder called Food.', marks: [0.4, 0.68, 0.84] },
+      { id: 'c10-09', text: 'An easy example. Say you did sort your cards into folders. Your protein card would sit in Food.' },
       // A card "How muscle grows" goes into a folder "Exercise".
-      { id: 'c10-10', text: 'Your card on how muscle grows sits in Exercise.', marks: [0.28, 0.82] },
+      { id: 'c10-10', text: 'And your card on how muscle grows would sit in Exercise.' },
       // An arm lifts a weight; small protein blocks move into the muscle.
       { id: 'c10-11', text: 'They belong together: your body builds muscle out of protein.', marks: [0.44, 0.59] },
       // The two folders stay shut, each card inside its own; then a line runs from the protein card straight to the muscle card.
-      { id: 'c10-12', text: 'Each card has one folder, so the folders keep them apart. A link joins them.', marks: [0.22, 0.48, 0.74] },
+      { id: 'c10-12', text: 'A card can live in only one folder, so the folders keep them apart. A link joins them.' },
       // Two questions side by side: "Folders: where does this go?" and "Links: what does this connect to?"
       { id: 'c10-13', text: 'Folders ask: where does this go? Links ask: what does this connect to?', marks: [0.22, 0.47, 0.67] },
       // A card links to a card file, a card in a page, and a page.
@@ -609,7 +621,7 @@ export const COURSE: CourseChapter[] = [
     title: 'Be a gardener',
     clips: [
       // The trees of cards with their links; then the Inbox with a card, and the shears icon from chapter 9.
-      { id: 'c11-01', text: 'Your cards form trees, joined by links. Now, how to tend them as you review.', marks: [0.31, 0.57] },
+      { id: 'c11-01', text: 'Your cards form trees, joined by links. Now, how to improve them as you review.' },
       // A garden: a gardener clears weeds and prunes a branch; the garden fills out.
       { id: 'c11-02', text: 'Think of a gardener. A garden does well when someone clears it and prunes it.', marks: [0.33, 0.65, 0.8] },
       // A card is reworded; a small glow over it.
@@ -633,9 +645,9 @@ export const COURSE: CourseChapter[] = [
       // The Inbox's All cards menu, the Archived row, and Unarchive.
       { id: 'c11-09', text: 'Archived cards are at the bottom of the All cards menu, in the Inbox. Unarchive brings one back.', marks: [0.21, 0.53, 0.67, 0.78] },
       // A card's back has grown long on one part; that part lifts off into its own card, and a line joins the two.
-      { id: 'c11-20', text: 'Growing is tending too. When one part of a card keeps growing, give it its own card, and link the two.', marks: [0.47, 0.61, 0.82] },
+      { id: 'c11-20', text: 'Growing is improving too. When one part of a card keeps growing, give it its own card, and link the two.' },
       // Two cards side by side; a line is drawn between them.
-      { id: 'c11-18', text: 'Tend the links as well. When you notice two cards belong together, link them.', marks: [0.45, 0.8] },
+      { id: 'c11-18', text: 'Links need care too. When you notice two cards belong together, link them.' },
       // A link between two cards that no longer fit is cut, as a branch is.
       { id: 'c11-19', text: 'When a link no longer helps, delete it like a word.', marks: [0.45, 0.68] },
       // ⋯ › Put at top of Inbox; the chip "Up next".
@@ -686,11 +698,11 @@ export const COURSE: CourseChapter[] = [
       // Each day ticks: the Inbox row lights up.
       { id: 'c12-10', text: 'Each day, open the Inbox, and answer what is due.', marks: [0.21, 0.56] },
       // A capture note fills during the week; on one day, a desk and a few new cards. (rename-note-to-page: keep)
-      { id: 'c12-11', text: 'Keep one place to capture things as you hear them. Once this week, set time aside to make a few cards from it.', marks: [0.07, 0.6, 0.74] },
+      { id: 'c12-11', text: 'Keep one place to capture things as you hear them. Once this week, set time aside to create a few cards from it.' },
       // A new card; a line from it to a card already there.
       { id: 'c12-16', text: 'For each new card, ask what it connects to, and link it.', marks: [0.36, 0.74] },
       // In the Inbox, a small fix to a card.
-      { id: 'c12-12', text: 'As you review, fix what is unclear. That is tending, and it is how your card base stays yours.', marks: [0.16, 0.49, 0.81] },
+      { id: 'c12-12', text: 'As you review, fix what is unclear. That is improving, and it is how your card base stays yours.' },
       // A small seedling in fresh soil.
       // A common saying, not a study. Ryan Holiday uses it in video UBdlprawTkA; the name is left out, because the saying is not his.
       { id: 'c12-13', text: 'The best time to start was years ago. The second best time is now.', marks: [0.37, 0.53, 0.83] },

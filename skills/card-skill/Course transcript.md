@@ -275,7 +275,7 @@ So when you hear something worth keeping, write it down somewhere.
 
 Do not make the card in that moment. Rushed cards are poor cards, they pile up, and review becomes a chore.
 
-Make the card later, when you have time to sit and think. Capture first, make later.
+Make the card later, when you have time to sit and think. Capture first, create later.
 
 With ten new cards a day and sixty waiting, a new card can take about a week to reach you.
 
@@ -385,15 +385,25 @@ Your agent drafts fast, but you decide. Keep only what you want to recall, in yo
 
 To copy the prompt later, right-click the card skill, and choose Copy prompt for your agent.
 
-You chew and decide; your agent only drafts. Next: the three habits that keep it all alive.
+You chew and decide; your agent only drafts. Next: the four steps that keep it all alive.
 
-## Chapter 9. Three habits: make, review, tend
+## Chapter 9. Four steps: capture, create, review, improve
 
 Let's step back and see the whole system.
 
-It has three habits: making cards, reviewing cards, and tending cards. Tending means fixing and improving the cards you have.
+It has four steps: capture, create, review, and improve.
 
-Reviewing is the daily one. You open the Inbox, and the app picks the cards.
+Capture happens all day, wherever you are. When something is worth keeping, write it down.
+
+A page on your phone, a brain dump, a chat channel just for you. It does not matter where, as long as you have one place.
+
+Create is when you sit down with your capture list, and turn it into cards.
+
+This is where you chew. Your agent can do most of the work, and you read and approve each card.
+
+Create is the one you set time aside for. Chewing takes thought, so give it a quiet moment.
+
+Review is the daily one, here in the app. You open the Inbox, and the app picks the cards.
 
 Trust the schedule, even when it feels slow. Your gut is a poor judge of your own memory.
 
@@ -401,25 +411,27 @@ In one experiment, spacing won for nine people out of ten. Yet seven out of ten 
 
 In the Science study, everyone guessed they would remember about half. Some kept 80 percent. Some kept a third. Nobody saw it coming.
 
-Tending needs no time of its own. It happens while you review.
+Improving needs no time of its own. It happens while you review.
 
 This card is not clear. That one needs a link. With an agent, you send the fix right then, and keep going.
 
-Even with a large card base, tending should only take a couple of minutes a day.
+Even with a large card base, improving should only take a couple of minutes a day.
 
-Making is the one you set time aside for. Chewing takes thought, so give it a quiet moment.
-
-Make with time set aside. Review every day. Tend as you review. Next: the idea that changes how you organise everything.
+Capture all day. Create with time set aside. Review every day. Improve as you review. Next: the idea that changes how you organise everything.
 
 ## Chapter 10. Links: how cards connect
 
-Quick recap: you make, review and tend your cards. Now, how they connect, and why that beats folders.
+Quick recap: you capture, create, review and improve. Now, how your cards connect, and why that beats folders.
 
 Most of us keep things in files and folders. Computers taught us: one thing, one place.
 
 So when you make a card, you ask: where does this go?
 
-Cards do not need that. They can all live in one place, or one folder at most.
+That is why the app does not require folders. It leaves the choice to you.
+
+But with great power comes great responsibility. Our advice: keep folders few, and rely on links.
+
+Make a folder only when you truly need one.
 
 Links hold them together. You have seen one: the protein card, linked to its umbrella.
 
@@ -431,13 +443,13 @@ And researchers found that new facts are usually remembered better when they fit
 
 A tree has branches. But ideas also connect across trees, and a folder cannot show that.
 
-An easy example. Your protein card sits in a folder called Food.
+An easy example. Say you did sort your cards into folders. Your protein card would sit in Food.
 
-Your card on how muscle grows sits in Exercise.
+And your card on how muscle grows would sit in Exercise.
 
 They belong together: your body builds muscle out of protein.
 
-Each card has one folder, so the folders keep them apart. A link joins them.
+A card can live in only one folder, so the folders keep them apart. A link joins them.
 
 Folders ask: where does this go? Links ask: what does this connect to?
 
@@ -478,7 +490,7 @@ Ask what a card connects to, not where it goes. Next: how to keep your tree aliv
 
 ## Chapter 11. Be a gardener
 
-Your cards form trees, joined by links. Now, how to tend them as you review.
+Your cards form trees, joined by links. Now, how to improve them as you review.
 
 Think of a gardener. A garden does well when someone clears it and prunes it.
 
@@ -502,9 +514,9 @@ To stop reviewing a card, open its menu and choose Archive card. It keeps its hi
 
 Archived cards are at the bottom of the All cards menu, in the Inbox. Unarchive brings one back.
 
-Growing is tending too. When one part of a card keeps growing, give it its own card, and link the two.
+Growing is improving too. When one part of a card keeps growing, give it its own card, and link the two.
 
-Tend the links as well. When you notice two cards belong together, link them.
+Links need care too. When you notice two cards belong together, link them.
 
 When a link no longer helps, delete it like a word.
 
@@ -550,11 +562,11 @@ Today, make one card, from something you already understand well.
 
 Each day, open the Inbox, and answer what is due.
 
-Keep one place to capture things as you hear them. Once this week, set time aside to make a few cards from it.
+Keep one place to capture things as you hear them. Once this week, set time aside to create a few cards from it.
 
 For each new card, ask what it connects to, and link it.
 
-As you review, fix what is unclear. That is tending, and it is how your card base stays yours.
+As you review, fix what is unclear. That is improving, and it is how your card base stays yours.
 
 The best time to start was years ago. The second best time is now.
 
