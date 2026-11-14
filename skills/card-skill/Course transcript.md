@@ -4,7 +4,7 @@ The words of the card course.
 
 Say you learn something today. A week from now, your brain will have forgotten most of it.
 
-In the 1880s, a scientist named Hermann Ebbinghaus pioneered memory research by memorizing lists of made-up syllables. A day later, he needed two thirds of the original time to relearn a list.
+In the 1880s, a scientist named Hermann Ebbinghaus ran one of the first experiments on memory. He memorized lists of made-up syllables to see how quickly he forgot them. A day later, relearning a list took about two thirds as long as learning it the first time.
 
 In 2015, scientists repeated his experiment. A hundred and thirty years later, they got the same curve.
 
@@ -20,7 +20,7 @@ This is hard science. Researchers have watched it in brain cells: spaced practic
 
 The work that first showed how brain cells store a memory won a Nobel Prize.
 
-A review of 317 experiments found that spaced reviews beat doing them all at once. That’s the idea behind spaced repetition, the system you’ll learn in Yaseen Docs.
+A review of 317 experiments found that spaced reviews were the best way to learn. That’s the idea behind spaced repetition, which is the system you’ll learn to use in this app.
 
 And yes, there is a best moment to review. A study of more than 1,300 people found it: too early or too late, and you keep less.
 
@@ -231,27 +231,25 @@ And known cards come back less often, so the daily review stays small as the pil
 
 Follow one card you keep remembering. It comes back after a few days. Then about two weeks. Then about six weeks. Then about four months.
 
-So a couple of months in, that card is already months away.
+So after a few review cycles, that card is already months away.
 
 By then you are not really reviewing it any more. It is part of what you know. It is part of who you are.
 
-the sociologist Niklas Luhmann had a similar card system. Over about 45 years, he created around 90,000 cards.
+The sociologist Niklas Luhmann had a similar card system. Over about 45 years, he created around 90,000 cards.
 
 He said the links between those slips helped him see how ideas fit together and turn them into new work. That system helped make him one of the most well published scientists in history. He published nearly 600 works, including more than 40 books.
 
-The writer Ryan Holiday uses a similar system. He sorts ideas onto index cards so he can pull them together when he writes a book.
+Robert Greene used a card system to research and write books like The 48 Laws of Power. He’s written three New York Times bestsellers using this system.
 
-he has created tens of thousands of cards over the last 20 years. He learned the system of creating cards from his mentor: Robert Greene.
+Greene taught the card method to his research assistant, the writer Ryan Holiday. Holiday sorts ideas onto index cards so he can pull them together when he writes a book.
 
-Robert Greene credits the system with helping him write some of the most well known books of all time such as 48 Laws of Power and he has gone on to write at least three New York Times bestsellers.
+Over about 20 years, Holiday has made tens of thousands of cards. In his videos and articles, he shares how other thinkers have used similar systems.
 
-Ryan Holiday learned this system from Robert Greene and follows it religiously. He has many videos and articles about him talking about what he's learned from other great people in history who have used a similar system.
+Holiday credits the cards with helping him write a book almost every year. Using this system, he has gone on to write four New York Times bestsellers in his series on the Stoic virtues.
 
-Ryan Holiday credits the system with helping him publish a new book almost every year. Using this system he has written four New York Time bestselling books.
+He says most of the value came later, as all those cards added up.
 
-He says most of the value of the system compounded over time and came later, when all those cards added up.
-
-this system of cards is not new, the best thinkers throughout all of history have used some version of this system. We in the app have just combined science, technology and an algorithm to it to further improve it.
+Thinkers have used systems like this for generations. The Notecard App just brings it all together in one place with research backed memory science and the memory algorithm that brings each card back when it’s time to review.
 
 You do not need to write books or be an author for this system to be valuable for you. Think of the meeting where the right fact is there when you need it.
 
@@ -259,7 +257,17 @@ The language you keep. The subject you finally understand.
 
 Over time, your card base becomes a record of what you know. Because you review it, you still know it.
 
-Small cards, every day, add up. But only if they are truly yours: that is next.
+This is why we call this card memory system “The Gym for the Mind.”
+
+Think about why people go to the gym. A machine can lift more weight than you can. So why do you still go to the gym to lift weights? Because you’re there to get stronger.
+
+Cards give your mind that kind of practice. Yes, AI makes information easy to find. But humans still need to choose what’s worth remembering. Each time you try to recall an idea or make a card clearer, you get better at using what you know.
+
+That’s why we keep the cards handmade. Let AI suggest ideas, draft a card, format it, or write the file. Read every draft, think it through, and approve what goes into your card base.
+
+Over time, that practice turns what you learn into knowledge you can use.
+
+Next, we’ll look at which ideas are worth turning into cards and how to make them your own.
 
 ## Chapter 6. Your card base is your knowledge base
 

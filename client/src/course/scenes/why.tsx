@@ -448,7 +448,7 @@ function Experiments(props: SceneProps) {
         <Tally beat={b} count={317} fill={fill} win={spaced} columns={29} />
         <Words size="page" style={rise(b, spaced)}>Spaced reviews worked better</Words>
         <Words size="title" tone="accent" style={rise(b, system)}>Spaced repetition</Words>
-        <Words size="kicker" style={rise(b, app)}>In Yaseen Docs</Words>
+        <Words size="kicker" style={rise(b, app)}>In this app</Words>
       </Layer>
     </Stage>
   )

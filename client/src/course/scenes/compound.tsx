@@ -16,6 +16,7 @@ import {
   Layer,
   MiniCard,
   Head,
+  IndexCard,
   Stage,
   Tally,
   Tree,
@@ -351,11 +352,11 @@ function Journey(props: SceneProps) {
     )
   }
   if (id === 'c5-14') {
-    const months = cue(b, 0, 0.203)
-    const away = cue(b, 1, 0.719)
+    const months = cue(b, 0, 0.209)
+    const away = cue(b, 1, 0.724)
     const span = Math.exp(lerp(Math.log(SPANS[3]), Math.log(400), moved(b, between(b, 0.02, months + 0.1))))
     return (
-      <Stage beat={b} label="A couple of months in, that card is already months away">
+      <Stage beat={b} label="After a few review cycles, that card is already months away">
         <Layer>
           <Path beat={b} draws={[1, 1, 1, 1]} span={span} here={since(b, months, 0.5)} away={since(b, away - 0.04, 0.6)} />
         </Layer>
@@ -393,9 +394,9 @@ function Journey(props: SceneProps) {
 /** c5-06: Niklas Luhmann's wooden boxes of paper slips: 1951 to 1996; about 90,000. */
 function Luhmann(props: SceneProps) {
   const b = useBeat(props)
-  const name = cue(b, 0, 0.123)
-  const years = cue(b, 1, 0.532)
-  const slips = cue(b, 2, 0.786)
+  const name = cue(b, 0, 0.115)
+  const years = cue(b, 1, 0.54)
+  const slips = cue(b, 2, 0.791)
   const rows = 4
   const cols = 6
   const fill = between(b, 0.08, slips + 0.05)
@@ -529,9 +530,9 @@ function Holiday(props: SceneProps) {
   const count = id === 'c5-16'
   const publications = id === 'c5-19'
   const compounds = id === 'c5-20'
-  const name = since(b, cue(b, 0, 0.077), 0.5)
-  const fill = intro ? between(b, cue(b, 1, 0.558), 1) : 1
-  const join = compounds ? since(b, cue(b, 0, 0.314), 1.6) : 0
+  const name = since(b, cue(b, 0, 0.328), 0.5)
+  const fill = intro ? between(b, cue(b, 1, 0.634), 1) : 1
+  const join = compounds ? since(b, cue(b, 0, 0.349), 1.6) : 0
   const boxes = [0, 1, 2]
   const per = 90
   const links: [number, number, number, number][] = [
@@ -577,11 +578,11 @@ function Holiday(props: SceneProps) {
         </svg>
       </Layer>
       <Layer place="bottom">
-        {count && <Words size="label" style={rise(b, since(b, cue(b, 0, 0.101), 0.65))}>Tens of thousands of cards over 20 years</Words>}
-        {count && <Words size="page" tone="accent" style={rise(b, since(b, cue(b, 1, 0.878), 0.45))}>Learned from Robert Greene</Words>}
-        {publications && <Words size="label" style={rise(b, since(b, cue(b, 0, 0.259), 0.55))}>A new book almost every year</Words>}
-        {publications && <Words size="label" tone="accent" style={rise(b, since(b, cue(b, 1, 0.725), 0.55))}>Four New York Times bestsellers</Words>}
-        {compounds && <span className="kit-chip" style={pop(b, since(b, cue(b, 1, 0.834), 0.45))}>All of them, added up</span>}
+        {count && <Words size="label" style={rise(b, since(b, cue(b, 0, 0.26), 0.65))}>Tens of thousands of cards over 20 years</Words>}
+        {count && <Words size="page" tone="accent" style={rise(b, since(b, cue(b, 1, 0.528), 0.45))}>Stories from other thinkers</Words>}
+        {publications && <Words size="label" style={rise(b, since(b, cue(b, 0, 0.226), 0.55))}>A new book almost every year</Words>}
+        {publications && <Words size="label" tone="accent" style={rise(b, since(b, cue(b, 1, 0.515), 0.55))}>Four New York Times bestsellers</Words>}
+        {compounds && <span className="kit-chip" style={pop(b, since(b, cue(b, 1, 0.746), 0.45))}>All of them, added up</span>}
       </Layer>
     </Stage>
   )
@@ -591,19 +592,18 @@ function Holiday(props: SceneProps) {
 function CardTradition(props: SceneProps) {
   const b = useBeat(props)
   const greene = props.clip.id === 'c5-17'
-  const influence = props.clip.id === 'c5-18'
-  const first = since(b, cue(b, 0, 0.214), 0.65)
-  const second = since(b, cue(b, 1, 0.686), 0.65)
-  const algorithm = since(b, cue(b, 2, 0.8), 0.65)
-  const title = greene ? 'Robert Greene' : influence ? 'Robert Greene and Ryan Holiday' : 'A system thinkers have used for years'
+  const first = since(b, cue(b, 0, greene ? 0.406 : 0), 0.65)
+  const second = since(b, cue(b, 1, greene ? 0.742 : 0.533), 0.65)
+  const algorithm = since(b, cue(b, 2, 0.65), 0.65)
+  const title = greene ? 'Robert Greene' : 'A system thinkers have used for years'
   return (
     <Stage beat={b} label={props.clip.text}>
       <Layer>
         <Words size="title" style={rise(b, since(b, 0, 0.65))}>{title}</Words>
         <div className="kit-tags">
-          <span className="kit-chip" style={pop(b, first)}>{greene ? 'The 48 Laws of Power' : influence ? 'A method passed down' : 'Paper cards'}</span>
-          <span className="kit-chip" style={pop(b, second)}>{greene ? 'At least three New York Times bestsellers' : influence ? 'Videos and articles' : 'Memory science and technology'}</span>
-          {!greene && !influence && <span className="kit-chip" style={pop(b, algorithm)}>A review algorithm</span>}
+          <span className="kit-chip" style={pop(b, first)}>{greene ? 'The 48 Laws of Power' : 'The Notecard App'}</span>
+          <span className="kit-chip" style={pop(b, second)}>{greene ? 'Three New York Times bestsellers' : 'Memory science'}</span>
+          {!greene && <span className="kit-chip" style={pop(b, algorithm)}>A review algorithm</span>}
         </div>
       </Layer>
     </Stage>
@@ -726,7 +726,7 @@ function CardBase(props: SceneProps) {
   )
 }
 
-/** c5-12: small cards, every day, add up; one of them, in a hand: yours. */
+/** c5-24: the draft becomes a card after the person reads and approves it. */
 function Yours(props: SceneProps) {
   const b = useBeat(props)
   const add = cue(b, 0, 0.323)
@@ -736,7 +736,7 @@ function Yours(props: SceneProps) {
   const l = moved(b, lift)
   const n = 14
   return (
-    <Stage beat={b} label="Small cards, every day, add up; but only if they are truly yours">
+    <Stage beat={b} label="Read and approve a draft before adding it to your card base">
       <Layer>
         <div className="kit-yours">
           <div className="kit-yours__pile" style={{ opacity: 1 - 0.6 * l }}>
@@ -764,6 +764,62 @@ function Yours(props: SceneProps) {
   )
 }
 
+/** The gym comparison, recall practice, and the question that opens Chapter 6. */
+function GymForTheMind(props: SceneProps) {
+  const b = useBeat(props)
+  const id = props.clip.id
+  if (id === 'c5-22') {
+    const machine = since(b, cue(b, 0, 0.26), 0.6)
+    const strongerAt = cue(b, 1, 0.88)
+    const stronger = since(b, strongerAt, 0.45)
+    const lift = moved(b, since(b, strongerAt, 0.7))
+    return (
+      <Stage beat={b} label="Machines can lift weight. Lifting at the gym helps you get stronger.">
+        <Layer>
+          <div className="kit-gym">
+            <svg viewBox="0 0 320 120" aria-hidden="true" className="kit-gym__bar">
+              <g transform={b.reduced ? undefined : `translate(0 ${-lift * 22})`}>
+                <path d="M60 70H260" stroke="var(--fg)" strokeWidth="9" strokeLinecap="round" />
+                {[70, 92, 212, 234].map((x) => (
+                  <rect key={x} x={x} y={35} width={16} height={70} rx={4} fill="var(--accent)" />
+                ))}
+              </g>
+            </svg>
+            <Words size="page" style={{ opacity: showFor(machine, stronger) }}>A machine can lift the weight</Words>
+            <Words size="title" tone="accent" style={rise(b, stronger)}>You lift to get stronger</Words>
+          </div>
+        </Layer>
+      </Stage>
+    )
+  }
+
+  const recall = id === 'c5-23'
+  const next = id === 'c5-26'
+  const first = since(b, cue(b, 0, 0.22), 0.6)
+  const second = since(b, cue(b, 1, 0.55), 0.6)
+  const third = since(b, cue(b, 2, 0.75), 0.6)
+  const title = recall ? 'Practice remembering' : next ? 'What belongs on a card?' : id === 'c5-25' ? 'Knowledge you can use' : 'The Gym for the Mind'
+  return (
+    <Stage beat={b} label={props.clip.text}>
+      <Layer>
+        <div className="kit-gym">
+          <div className="kit-gym__head">
+            {next ? <IndexCard style={pop(b, first)} /> : <Head beat={b} p={since(b, 0, 0.6)} glow={recall ? third : first} />}
+          </div>
+          <Words size="title" style={rise(b, id === 'c5-12' || id === 'c5-25' ? first : since(b, 0, 0.6))}>{title}</Words>
+          {recall && (
+            <div className="kit-tags">
+              <span className="kit-chip" style={pop(b, second)}>Choose what to remember</span>
+              <span className="kit-chip" style={pop(b, third)}>Recall it and refine it</span>
+            </div>
+          )}
+          {next && <Words size="page" tone="accent" style={rise(b, second)}>Choose an idea and make it your own</Words>}
+        </div>
+      </Layer>
+    </Stage>
+  )
+}
+
 /** The facts the scenes use, from the app's own defaults (a test holds them to `shared/reviews.ts`). */
 export const COMPOUND_FACTS = { reviewDays: REVIEW_DAYS, maxDays: DEFAULT_REVIEW_SETTINGS.maxDays }
 
@@ -778,12 +834,14 @@ export const COMPOUND_SCENES: ChapterScenes = {
     { clips: ['c5-13', 'c5-14', 'c5-15'], scene: Journey },
     { clips: ['c5-06'], scene: Luhmann },
     { clips: ['c5-07'], scene: Books },
+    { clips: ['c5-17'], scene: CardTradition },
     { clips: ['c5-08', 'c5-16'], scene: Holiday },
-    { clips: ['c5-17', 'c5-18'], scene: CardTradition },
     { clips: ['c5-19', 'c5-20'], scene: Holiday },
     { clips: ['c5-21'], scene: CardTradition },
     { clips: ['c5-09', 'c5-10'], scene: Life },
     { clips: ['c5-11'], scene: CardBase },
-    { clips: ['c5-12'], scene: Yours },
+    { clips: ['c5-12', 'c5-22', 'c5-23'], scene: GymForTheMind },
+    { clips: ['c5-24'], scene: Yours },
+    { clips: ['c5-25', 'c5-26'], scene: GymForTheMind },
   ],
 }

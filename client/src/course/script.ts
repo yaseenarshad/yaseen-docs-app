@@ -45,7 +45,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c1-01', text: 'Say you learn something today. A week from now, your brain will have forgotten most of it.', marks: [0.389, 0.757] },
       // Early memory research: Hermann Ebbinghaus, his notebook of made-up syllables, and the time it took to relearn them.
       // SOURCE: Ebbinghaus 1885, Memory: A Contribution to Experimental Psychology; savings data as given in Murre & Dros 2015, PLOS ONE, Table 3.
-      { id: 'c1-02', text: 'In the 1880s, a scientist named Hermann Ebbinghaus pioneered memory research by memorizing lists of made-up syllables. A day later, he needed two thirds of the original time to relearn a list.', marks: [0.182, 0.414, 0.613, 0.735] },
+      { id: 'c1-02', text: "In the 1880s, a scientist named Hermann Ebbinghaus ran one of the first experiments on memory. He memorized lists of made-up syllables to see how quickly he forgot them. A day later, relearning a list took about two thirds as long as learning it the first time.", marks: [0.136, 0.396, 0.667, 0.827] },
       // The old curve from 1885 and a new one from 2015 slide over each other; they match.
       // SOURCE: Murre & Dros 2015, "Replication and Analysis of Ebbinghaus' Forgetting Curve", PLOS ONE 10(7): "We conclude that the Ebbinghaus forgetting curve has indeed been replicated."
       { id: 'c1-22', text: 'In 2015, scientists repeated his experiment. A hundred and thirty years later, they got the same curve.', marks: [0.267, 0.503, 0.819] },
@@ -66,7 +66,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c1-19', text: 'The work that first showed how brain cells store a memory won a Nobel Prize.', marks: [0.641] },
       // A wall of 317 experiments shows the result behind spaced repetition in Yaseen Docs.
       // SOURCE: Cepeda, Pashler, Vul, Wixted & Rohrer 2006, "Distributed practice in verbal recall tasks", Psychological Bulletin: 317 experiments in 184 articles.
-      { id: 'c1-06', text: 'A review of 317 experiments found that spaced reviews beat doing them all at once. That’s the idea behind spaced repetition, the system you’ll learn in Yaseen Docs.', marks: [0.029, 0.065, 0.294, 0.659, 0.881] },
+      { id: 'c1-06', text: "A review of 317 experiments found that spaced reviews were the best way to learn. That’s the idea behind spaced repetition, which is the system you’ll learn to use in this app.", marks: [0.026, 0.065, 0.298, 0.642, 0.925] },
       // A ridge-shaped graph: memory kept, against the gap before the review; a peak in the middle, lower on both sides; "more than 1,350 people".
       // SOURCE: Cepeda, Vul, Rohrer, Wixted & Pashler 2008, "Spacing effects in learning: a temporal ridgeline of optimal retention", Psychological Science 19(11): more than 1,350 people; the best gap depends on how long the memory must last.
       { id: 'c1-20', text: 'And yes, there is a best moment to review. A study of more than 1,300 people found it: too early or too late, and you keep less.', marks: [0.335, 0.428, 0.677, 0.774, 0.871] },
@@ -318,33 +318,38 @@ export const COURSE: CourseChapter[] = [
       // SOURCE: the app's own scheduler with its default settings (shared/cardSchedule.ts, shared/reviews.ts DEFAULT_REVIEW_SETTINGS), each answer Remembered on the due day: gaps of about 4, 14, 45 and 135 days, then the default longest gap of 365 days (`maxDays`).
       { id: 'c5-13', text: 'Follow one card you keep remembering. It comes back after a few days. Then about two weeks. Then about six weeks. Then about four months.', marks: [0.332, 0.485, 0.663, 0.849] },
       // The time line zooms out: the card's next mark is far off to the right, past "2 months in".
-      { id: 'c5-14', text: 'So a couple of months in, that card is already months away.', marks: [0.203, 0.719] },
+      { id: 'c5-14', text: "So after a few review cycles, that card is already months away.", marks: [0.209, 0.724] },
       // The card fades into the outline of a person, and stays there as a small steady light.
       { id: 'c5-15', text: 'By then you are not really reviewing it any more. It is part of what you know. It is part of who you are.', marks: [0.478, 0.724] },
       // Wooden boxes of paper slips; the name "Niklas Luhmann", "1951 to 1996", "about 90,000 cards".
       // SOURCE: Niklas Luhmann-Archiv, Bielefeld University: about 90,000 notes, made between 1951 and 1996. (rename-note-to-page: keep)
-      { id: 'c5-06', text: 'the sociologist Niklas Luhmann had a similar card system. Over about 45 years, he created around 90,000 cards.', marks: [0.123, 0.532, 0.786] },
+      { id: 'c5-06', text: 'The sociologist Niklas Luhmann had a similar card system. Over about 45 years, he created around 90,000 cards.', marks: [0.115, 0.54, 0.791] },
       // Links between the slips bring ideas together, then the shelf fills with publications and books.
       // SOURCE: Niklas Luhmann-Archiv, Bielefeld University: nearly 600 publications, among them over 40 monographs.
       { id: 'c5-07', text: 'He said the links between those slips helped him see how ideas fit together and turn them into new work. That system helped make him one of the most well published scientists in history. He published nearly 600 works, including more than 40 books.', marks: [0.038, 0.341, 0.776, 0.918] },
+      // Robert Greene’s card method and The 48 Laws of Power, followed by the writer he taught.
+      { id: 'c5-17', text: "Robert Greene used a card system to research and write books like The 48 Laws of Power. He’s written three New York Times bestsellers using this system.", marks: [0.383, 0.638] },
       // Ryan Holiday’s index card boxes, his books, and the value of the cards over time.
       // SOURCE: Ryan Holiday on his card system: https://ryanholiday.net/the-notecard-system-the-key-for-remembering-organizing-and-using-everything-you-read/ (rename-note-to-page: keep)
       // SOURCE: Penguin Random House’s author and book pages for Robert Greene and Ryan Holiday.
-      { id: 'c5-08', text: "The writer Ryan Holiday uses a similar system. He sorts ideas onto index cards so he can pull them together when he writes a book.", marks: [0.077, 0.558] },
-      { id: 'c5-16', text: "he has created tens of thousands of cards over the last 20 years. He learned the system of creating cards from his mentor: Robert Greene.", marks: [0.101, 0.878] },
-      { id: 'c5-17', text: "Robert Greene credits the system with helping him write some of the most well known books of all time such as 48 Laws of Power and he has gone on to write at least three New York Times bestsellers.", marks: [0.499, 0.788] },
-      { id: 'c5-18', text: "Ryan Holiday learned this system from Robert Greene and follows it religiously. He has many videos and articles about him talking about what he's learned from other great people in history who have used a similar system.", marks: [0.163, 0.447] },
-      { id: 'c5-19', text: "Ryan Holiday credits the system with helping him publish a new book almost every year. Using this system he has written four New York Time bestselling books.", marks: [0.259, 0.725] },
-      { id: 'c5-20', text: "He says most of the value of the system compounded over time and came later, when all those cards added up.", marks: [0.314, 0.834] },
-      { id: 'c5-21', text: "this system of cards is not new, the best thinkers throughout all of history have used some version of this system. We in the app have just combined science, technology and an algorithm to it to further improve it.", marks: [0.214, 0.686, 0.8] },
+      { id: 'c5-08', text: "Greene taught the card method to his research assistant, the writer Ryan Holiday. Holiday sorts ideas onto index cards so he can pull them together when he writes a book.", marks: [0.347, 0.637] },
+      { id: 'c5-16', text: "Over about 20 years, Holiday has made tens of thousands of cards. In his videos and articles, he shares how other thinkers have used similar systems.", marks: [0.26, 0.528] },
+      { id: 'c5-19', text: "Holiday credits the cards with helping him write a book almost every year. Using this system, he has gone on to write four New York Times bestsellers in his series on the Stoic virtues.", marks: [0.184, 0.592] },
+      { id: 'c5-20', text: "He says most of the value came later, as all those cards added up.", marks: [0.349, 0.746] },
+      { id: 'c5-21', text: "Thinkers have used systems like this for generations. The Notecard App just brings it all together in one place with research backed memory science and the memory algorithm that brings each card back when it’s time to review.", marks: [0.261, 0.591, 0.705] },
       // Three small scenes: a meeting, a page in another language, a field that becomes clear.
       { id: 'c5-09', text: 'You do not need to write books or be an author for this system to be valuable for you. Think of the meeting where the right fact is there when you need it.', marks: [0.662, 0.765] },
       // A page in another language becomes readable; a hard subject comes into focus.
       { id: 'c5-10', text: 'The language you keep. The subject you finally understand.', marks: [0.084, 0.464, 0.676] },
       // The card base, now large, glows: "Your card base".
       { id: 'c5-11', text: 'Over time, your card base becomes a record of what you know. Because you review it, you still know it.', marks: [0.179, 0.856] },
-      // One card, held in a hand; "Yours".
-      { id: 'c5-12', text: 'Small cards, every day, add up. But only if they are truly yours: that is next.', marks: [0.323, 0.669] },
+      // The Gym for the Mind ends with what to put on a card.
+      { id: 'c5-12', text: "This is why we call this card memory system “The Gym for the Mind.”", marks: [0.595] },
+      { id: 'c5-22', text: "Think about why people go to the gym. A machine can lift more weight than you can. So why do you still go to the gym to lift weights? Because you’re there to get stronger.", marks: [0.262, 0.9] },
+      { id: 'c5-23', text: "Cards give your mind that kind of practice. Yes, AI makes information easy to find. But humans still need to choose what’s worth remembering. Each time you try to recall an idea or make a card clearer, you get better at using what you know.", marks: [0.228, 0.48, 0.684] },
+      { id: 'c5-24', text: "That’s why we keep the cards handmade. Let AI suggest ideas, draft a card, format it, or write the file. Read every draft, think it through, and approve what goes into your card base.", marks: [0.356, 0.81] },
+      { id: 'c5-25', text: "Over time, that practice turns what you learn into knowledge you can use.", marks: [0.632] },
+      { id: 'c5-26', text: "Next, we’ll look at which ideas are worth turning into cards and how to make them your own.", marks: [0.56, 0.784] },
     ],
   },
   {
