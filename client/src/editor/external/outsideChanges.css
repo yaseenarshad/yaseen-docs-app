@@ -16,7 +16,7 @@
   border-radius: 2px;
 }
 
-/* A cell whose cell note holds a change (YAZ-4319): the page is hidden until its card opens, so the cell's note
+/* A cell whose cell note holds a change (YAZ-4319): the page is hidden until its card opens, so the cell's page
    triangle shows the change, full size in the agents' colour. One more class than the cell's own hover and open rules
    (table.css), so it wins over both. */
 .milkdown .ProseMirror .milkdown-table-block :is(th, td).has-cell-note.outside-change-cell {

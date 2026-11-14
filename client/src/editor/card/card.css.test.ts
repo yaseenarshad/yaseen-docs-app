@@ -89,7 +89,10 @@ it('YAZ-5026 round 2: a card`s lists, read (the page, the card window, the Inbox
   expect(vars.body).toMatch(/--card-list-gutter:\s*calc\(2\.15em - 10px\)/)
   // The text starts after the dot's column and the gap; a child level steps in by the indent from its parent's dot.
   const li = rules(cardCss, '.card .card__side li').find((r) => /padding:/.test(r.body))!
-  expect(li.body).toMatch(/calc\(var\(--card-list-gutter\) \+ var\(--card-list-gap\)\)/)
+  expect(li.body).toMatch(/padding-left:\s*calc\(var\(--card-list-gutter\) \+ var\(--card-list-gap\)\)/)
+  // YAZ-5133: the gutter is its own declaration, so a bad row value (an invalid variable empties the whole shorthand)
+  // can never put the markers on the text.
+  expect(li.body).toMatch(/padding:\s*var\(--card-list-row\) 0;/)
   const child = rules(cardCss, '.card .card__side li > :is(ul, ol)')[0]!
   expect(child.body).toMatch(/margin-left:\s*calc\(var\(--card-list-indent\) - var\(--card-list-gutter\) - var\(--card-list-gap\)\)/)
   // No browser bullets: the page's ● ○ ■ by level.
@@ -110,9 +113,9 @@ it('YAZ-5051: the line between two sides is clear — dashed, across the card, d
   expect(rule.body).toMatch(/height:\s*0/)
   expect(rule.body).not.toMatch(/background:\s*var\(--border\)/)
   const screens = read('../../review/cardScreens.css')
-  expect(rules(screens, '.card-inbox__card .card__rule').some((r) => /margin:\s*22px -28px/.test(r.body))).toBe(true)
-  // The Inbox card's own padding is what the rule reaches past.
-  expect(rules(screens, '.card-inbox__body').some((r) => /padding:\s*24px 28px 28px/.test(r.body))).toBe(true)
+  expect(rules(screens, '.card-inbox__card .card__rule').some((r) => /margin:\s*22px calc\(-1 \* var\(--inbox-card-pad, 28px\)\)/.test(r.body))).toBe(true)
+  // The Inbox card's own padding is what the rule reaches past (28 px; Clean's 44, YAZ-5050 round 4).
+  expect(rules(screens, '.card-inbox__body').some((r) => /padding:\s*24px var\(--inbox-card-pad, 28px\) 28px/.test(r.body))).toBe(true)
 })
 
 it("YAZ-5050: a card's text reads with the pages' Line spacing and Space between blocks (or Card spacing's Custom values), in the page, the card window and the Inbox, over the page's own paragraph rule", () => {
@@ -184,4 +187,46 @@ it('YAZ-5049 round 2: the Inbox card is one long page, as Mochi — no scroll ba
   const dock = rules(screens, '.card-inbox__dock').find((r) => r.selector === '.card-inbox__dock')!
   expect(dock.body).toMatch(/position:\s*sticky/)
   expect(dock.body).toMatch(/bottom:/)
+})
+
+it('YAZ-5053 round 3: with "Mark the next hidden word" on, the next blank takes the colour in the look of Shown hidden words: the line, the highlight, or the box', () => {
+  const at = (sel: string) => rules(cardCss, sel).map((r) => r.body).join('\n')
+  expect(at("[data-mark-next-hidden] .card .card__blank[data-next]")).toMatch(/border-bottom-color:\s*var\(--next-hidden\)/)
+  expect(at("[data-mark-next-hidden][data-shown-hidden-words='highlight'] .card .card__blank[data-next]")).toMatch(/background:\s*color-mix\(in srgb, var\(--next-hidden\)/)
+  expect(at("[data-mark-next-hidden][data-shown-hidden-words='box'] .card .card__blank[data-next]")).toMatch(/background:\s*color-mix\(in srgb, var\(--next-hidden\)/)
+  // The box rule's grey loses to the colour: more weight.
+  expect(beats(specificity("[data-mark-next-hidden][data-shown-hidden-words='box'] .card .card__blank[data-next]"), specificity("[data-shown-hidden-words='box'] .card .card__blank"))).toBe(true)
+  // A calm default in light and dark, on the app's tokens: not a status colour.
+  const app = read('../../app.css')
+  const light = /:root\s*{[^}]*--next-hidden:\s*(#[0-9a-f]{6})/i.exec(app)?.[1]
+  const dark = /\[data-theme='dark'\]\s*{[^}]*--next-hidden:\s*(#[0-9a-f]{6})/i.exec(app)?.[1]
+  expect(light).toBeDefined()
+  expect(dark).toBeDefined()
+  for (const status of ['#d64545', '#c98a1a', '#3a9d5d', '#5b6cff', '#e06c6c', '#d9a13c', '#4fb573', '#7c8aff']) expect([light, dark]).not.toContain(status)
+})
+
+it('YAZ-5050 round 4: Clean (and Custom, which starts from it) adds Mochi\'s three looks: softer card text in light and dark, 44 px inside the Inbox card, and lines of about 62 letters there, centred', () => {
+  const text = rules(cardCss, '[data-card-clean] .card__sides')[0]!
+  expect(text.body).toMatch(/color:\s*color-mix\(in srgb, var\(--fg\) 90%, var\(--bg\)\)/)
+  const screens = read('../../review/cardScreens.css')
+  expect(rules(screens, '[data-card-clean]').some((r) => /--inbox-card-pad:\s*44px/.test(r.body))).toBe(true)
+  const side = rules(screens, '[data-card-clean] .card-inbox__card .card__side')[0]!
+  expect(side.body).toMatch(/max-width:\s*31em/)
+  expect(side.body).toMatch(/margin-inline:\s*auto/)
+})
+
+it('YAZ-5103: the line between two sides carries a quiet "Side 2", "Side 3" in the editor (Edit card, a card in a page, a card file) and in the read card; the Inbox has "Side 1 of 2" above, so its line has none', () => {
+  const card = rules(cardCss, '.card').find((r) => r.selector === '.card' && /counter-reset/.test(r.body))!
+  expect(card.body).toMatch(/counter-reset:\s*card-side 1/)
+  const both = ':is(.card__side-break, .card__rule)'
+  expect(rules(cardCss, `.card ${both}`).some((r) => /counter-increment:\s*card-side/.test(r.body))).toBe(true)
+  const label = rules(cardCss, `.card ${both}::before`)[0]!
+  expect(label.body).toMatch(/content:\s*'Side ' counter\(card-side\)/)
+  // Quiet, and out of the flow: the text never moves for it, and the Markdown (`---`) does not change.
+  expect(label.body).toMatch(/position:\s*absolute/)
+  expect(label.body).toMatch(/color:\s*var\(--fg-muted\)/)
+  expect(label.body).toMatch(/font-size:\s*11px/)
+  expect(label.body).not.toMatch(/font-weight/)
+  const screens = read('../../review/cardScreens.css')
+  expect(rules(screens, '.card-inbox__card .card__rule::before').some((r) => /content:\s*none/.test(r.body))).toBe(true)
 })

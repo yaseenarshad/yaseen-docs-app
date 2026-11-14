@@ -743,7 +743,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
               type="checkbox"
               className="view-switch"
               aria-label={`${label}: separate value for ${folderName}`}
-              title={unit(`${folderName} keeps its own value for each page. Other pages show the page's one value.`)}
+              title={unit(`${folderName} keeps its own value for each page. Other folder pages show the page's one value.`)}
               checked={decl?.separate === true}
               onChange={toggleSeparate}
             />
@@ -880,7 +880,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
           onConfirm={() => answerUnshare('pages')}
           onCancel={() => setUnsharing(null)}
           other={
-            <button type="button" className="confirm__btn confirm__btn--other" onClick={() => answerUnshare('page')}>
+            <button type="button" className="confirm__btn confirm__btn--other" onClick={() => answerUnshare('folder')}>
               Use the {folderName} values
             </button>
           }

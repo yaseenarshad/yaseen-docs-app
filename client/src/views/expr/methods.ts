@@ -28,7 +28,7 @@ const FILE_FIELDS: Record<string, (r: FileRecordLike) => Value> = {
   path: r => r.path,
   folder: r => r.folder,
   // A folder page's subfolder row is the folder's `.folder.md` (YAZ-4579 D31): `folder`; a card file (YAZ-5037, the
-  // index's `kind`): `card`; every other record is a `note` (YAZ-5036 renames it `page`).
+  // index's `kind`): `card`; every other record is a `page` (YAZ-5036 renames it `page`).
   kind: r => (r.name === FOLDER_SETTINGS_FILE ? 'folder' : r.kind === 'card' ? 'card' : 'page'),
   ext: r => r.ext,
   size: r => r.size,

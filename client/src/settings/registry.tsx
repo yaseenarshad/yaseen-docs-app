@@ -28,7 +28,7 @@ import { isIdLetters } from '@shared/pageId'
 import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_SPACING_CUSTOM_START, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
@@ -73,7 +73,7 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, CARD_SPACING_OPTIONS, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
+import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, cardSpacingOptions, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
 
 /** A cell bullet's px setting (the YAZ-3818 demo): the stepper, and Reset when it is not the default. */
 function CellBulletStepper({ settings, onChange, field, name, min, max, step }: { settings: SettingsState; onChange: (next: SettingsState) => void; field: 'tableCellBulletIndent' | 'tableCellBulletGap'; name: string; min: number; max: number; step: number }) {
@@ -443,41 +443,35 @@ export interface SettingsSection {
 /** A section's groups as `ctx` has them. */
 export const groupsOf = (section: SettingsSection, ctx: SettingsCtx): readonly SettingsGroup[] => section.groupsFor?.(ctx) ?? section.groups
 
-/** A kind's built-in icon colour in this theme (app.css `--kind-<kind>` on the root; `.app` carries the set ones), else the light theme's. */
-function builtInIconColour(kind: SidebarIconKind): string {
-  const css = typeof document === 'undefined' ? '' : getComputedStyle(document.documentElement).getPropertyValue(`--kind-${kind}`).trim()
-  return /^#[0-9a-f]{6}$/i.test(css) ? css : SIDEBAR_ICON_SWATCHES[kind]
+/** The colour rows' control (YAZ-5100 round 2): loaded only when Settings shows one. */
+const IconColourControl = lazy(() => import('./IconColourControl'))
+
+/**
+ * Whether a kind's colour row shows (YAZ-5100 round 2): only where the colour shows. Grey and Off draw no colour, and a
+ * folder's follows Folder icons alone. A card's only while the vault's Review is on. Text, PDF and image files have an
+ * icon per file type in Material, so their rows are the Line set's.
+ */
+function iconColourShown(kind: SidebarIconKind, ctx: SettingsCtx): boolean {
+  const { settings } = ctx
+  if (kind === 'folder') return settings.sidebarFolderIcons !== 'off'
+  if (settings.sidebarFileIcons === 'grey' || settings.sidebarFileIcons === 'off') return false
+  if (kind === 'card') return reviewOn(ctx)
+  return settings.sidebarIconSet === 'line' || !(kind === 'text' || kind === 'pdf' || kind === 'image')
 }
 
-/** One kind's icon colour (YAZ-3440 D4): the picker of the thread colour's row, and Default, which drops the kind's colour. */
+/** One kind's icon colour (YAZ-3440 D4, YAZ-5100 round 2): its picker and Reset (`IconColourControl`). */
 function iconColourRow(kind: SidebarIconKind): SettingDef {
   const name = (ctx: SettingsCtx) => sidebarIconKindLabel(kind, (text) => unit(ctx, text))
   return {
     id: `sidebarIconColors.${kind}`,
     label: (ctx) => `${name(ctx)} colour`,
-    ...(kind === 'page' ? { hint: 'Used with All colour: Colour keeps pages grey.' } : {}),
-    keywords: ['sidebar', 'tree', 'icon', 'color', 'colour', kind === 'page' ? 'markdown' : kind],
-    // The Line set's alone: Material's icons keep their own colours.
-    available: ({ settings }) => settings.sidebarIconSet === 'line' && (settings.sidebarFileIcons === 'quiet' || settings.sidebarFileIcons === 'color'),
-    render: (ctx) => {
-      const { settings, onChange } = ctx
-      const own = settings.sidebarIconColors[kind]
-      const drop = (): SettingsState['sidebarIconColors'] => Object.fromEntries(Object.entries(settings.sidebarIconColors).filter(([k]) => k !== kind))
-      return (
-        <>
-          <input
-            type="color"
-            className="settings__color"
-            aria-label={`${name(ctx)} icon colour in the sidebar`}
-            value={own ?? builtInIconColour(kind)}
-            onChange={(e) => onChange({ ...settings, sidebarIconColors: { ...settings.sidebarIconColors, [kind]: e.target.value } })}
-          />
-          <button type="button" className={`settings__option${own === undefined ? ' settings__option--active' : ''}`} disabled={own === undefined} onClick={() => onChange({ ...settings, sidebarIconColors: drop() })}>
-            Default
-          </button>
-        </>
-      )
-    },
+    keywords: ['sidebar', 'tree', 'icon', 'icons', 'color', 'colour', 'appearance', kind === 'page' ? 'markdown' : kind, ...(kind === 'page' ? ['page'] : [])],
+    available: (ctx) => iconColourShown(kind, ctx),
+    render: (ctx) => (
+      <Suspense fallback={null}>
+        <IconColourControl kind={kind} name={name(ctx)} settings={ctx.settings} onChange={ctx.onChange} />
+      </Suspense>
+    ),
   }
 }
 
@@ -939,7 +933,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               <Segmented options={SIDEBAR_FILE_ICONS_OPTIONS} value={settings.sidebarFileIcons} onChange={(sidebarFileIcons) => onChange({ ...settings, sidebarFileIcons })} ariaLabel="File icons in the sidebar" />
             ),
           },
-          // YAZ-3440 D4: a colour of its own for each kind, while the icons have colour; a page's shows with "All colour" alone.
+          // YAZ-3440 D4, YAZ-5100 round 2: a colour of its own for each kind, in both icon sets, while the icons have colour.
           ...SIDEBAR_ICON_KINDS.map(iconColourRow),
         ],
       },
@@ -1742,8 +1736,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'unitWord',
             label: 'Call a page a …',
-            hint: 'The word for the thing you make and open here: New card, Delete card…, 12 cards. Saved in this vault; another vault keeps its own word. Feature names like Cell note and Daily pages, and the .md files, do not change.',
-            keywords: ['page', 'card', 'doc', 'page', 'word', 'name', 'unit', 'call', 'rename', 'flavour', 'flavor'],
+            hint: 'The word for the thing you make and open here: New doc, Delete doc…, 12 docs. Saved in this vault; another vault keeps its own word. Feature names like Cell note and Daily pages, and the .md files, do not change.',
+            keywords: ['page', 'doc', 'note', 'word', 'name', 'unit', 'call', 'rename', 'flavour', 'flavor'],
             wide: (ctx) => ctx.unitWord?.settings.unit === 'own',
             available: (ctx) => ctx.unitWord !== undefined,
             render: ({ unitWord, hasCards }) => unitWord && <UnitWordControl unitWord={unitWord} hasCards={hasCards} />,
@@ -2006,18 +2000,51 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
-            // YAZ-5050 (Yaseen: "adjust that different from the default or return to the default"): the app's settings,
-            // as Shown hidden words. Same as pages is the way back; Custom starts at Mochi's clean values (round 3).
-            id: 'cardSpacing',
-            label: 'Card spacing',
-            hint: "How a card reads in the Inbox, the card window and the page: the pages' spacing, or its own. Custom starts roomy, as in Mochi.",
-            keywords: CARD_SPACING_KEYWORDS,
+            // YAZ-5053 round 3 (Yaseen: "so we know that that is where the eye should go"): the app's settings, as Shown
+            // hidden words. On by default: the person who asked sees it at once, and it marks one word only.
+            id: 'markNextHidden',
+            label: 'Mark the next hidden word',
+            hint: 'The hidden word that Space shows next takes a colour, in the look above.',
+            keywords: [...REVIEW_KEYWORDS, 'cloze', 'next', 'colour', 'color', 'space', 'highlight', 'underline', 'box'],
             available: reviewOn,
             render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.markNextHidden} onChange={(markNextHidden) => onChange({ ...settings, markNextHidden })} ariaLabel="Mark the next hidden word" />
+            ),
+          },
+          {
+            id: 'nextHiddenColour',
+            label: 'Colour',
+            keywords: [...REVIEW_KEYWORDS, 'cloze', 'next', 'colour', 'color'],
+            available: (ctx) => reviewOn(ctx) && ctx.settings.markNextHidden,
+            render: ({ settings, onChange }) => (
+              <>
+                <input
+                  type="color"
+                  className="settings__color"
+                  aria-label="Next hidden word colour"
+                  value={settings.nextHiddenColour ?? NEXT_HIDDEN_SWATCH}
+                  onChange={(e) => onChange({ ...settings, nextHiddenColour: e.target.value })}
+                />
+                <button type="button" className="settings__option" disabled={settings.nextHiddenColour === null} onClick={() => onChange({ ...settings, nextHiddenColour: null })}>
+                  Reset
+                </button>
+              </>
+            ),
+          },
+          {
+            // YAZ-5050 (Yaseen: "adjust that different from the default or return to the default"): the app's settings,
+            // as Shown hidden words. Same as pages is the way back; Clean is Mochi's look in one click (round 4); Custom
+            // starts from Clean and shows the rows.
+            id: 'cardSpacing',
+            label: 'Card spacing',
+            hint: (ctx) => unit(ctx, 'How a card reads in the Inbox, the card window and the page. Same as pages follows Appearance. Clean reads as in Mochi: more room, softer text, shorter lines. Custom starts from Clean; you set its spacing.'),
+            keywords: CARD_SPACING_KEYWORDS,
+            available: reviewOn,
+            render: (ctx) => (
               <Segmented
-                options={CARD_SPACING_OPTIONS}
-                value={settings.cardSpacing}
-                onChange={(cardSpacing) => onChange(cardSpacing === 'custom' && settings.cardSpacing !== 'custom' ? { ...settings, cardSpacing, ...CARD_SPACING_CUSTOM_START } : { ...settings, cardSpacing })}
+                options={cardSpacingOptions((text) => unit(ctx, text))}
+                value={ctx.settings.cardSpacing}
+                onChange={(cardSpacing) => ctx.onChange(cardSpacing === 'custom' && ctx.settings.cardSpacing !== 'custom' ? { ...ctx.settings, cardSpacing, ...CARD_SPACING_CLEAN } : { ...ctx.settings, cardSpacing })}
                 ariaLabel="Card spacing"
               />
             ),
@@ -2049,7 +2076,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: CARD_SPACING_KEYWORDS,
             available: cardSpacingCustom,
             render: ({ settings, onChange }) => (
-              <PxSetting name="Card bullet indent" value={settings.cardBulletIndent} fallback={CARD_SPACING_CUSTOM_START.cardBulletIndent}
+              <PxSetting name="Card bullet indent" value={settings.cardBulletIndent} fallback={CARD_SPACING_CLEAN.cardBulletIndent}
                 min={PAGE_BULLET_INDENT_MIN} max={PAGE_BULLET_INDENT_MAX} step={2} onSet={(cardBulletIndent) => onChange({ ...settings, cardBulletIndent })} />
             ),
           },
@@ -2060,7 +2087,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: CARD_SPACING_KEYWORDS,
             available: cardSpacingCustom,
             render: ({ settings, onChange }) => (
-              <PxSetting name="Card bullet gap" value={settings.cardBulletGap} fallback={CARD_SPACING_CUSTOM_START.cardBulletGap}
+              <PxSetting name="Card bullet gap" value={settings.cardBulletGap} fallback={CARD_SPACING_CLEAN.cardBulletGap}
                 min={PAGE_BULLET_GAP_MIN} max={PAGE_BULLET_GAP_MAX} step={1} onSet={(cardBulletGap) => onChange({ ...settings, cardBulletGap })} />
             ),
           },

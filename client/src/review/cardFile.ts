@@ -23,6 +23,10 @@ import {
   type CardLine,
   type CardReview,
 } from '@shared/cardLine'
+import { isCardKind } from '@shared/cardFileFormat'
+import { cardTitle, cardWithTitle } from '@shared/cardText'
+import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
+import { titleOf } from '@shared/pageName'
 import { BridgeRequestError, api } from '../api'
 import { announcedWrite } from '../lib/twinEditors'
 import { transformFile } from '../views/writeProperty'
@@ -47,7 +51,15 @@ export interface CardAtPage extends Omit<CardOnPage, 'id'> {
   id: string | null
   /** Its place among the page's cards now. */
   index: number
+  /**
+   * A CARD FILE's card (YAZ-5044, decision A): the file's `title`, which its `text` does not hold. Absent for a card in a
+   * page, and for a card file from before A (its first line is still its title).
+   */
+  fileTitle?: string
 }
+
+/** A card's title: a card file's `title` (YAZ-5044), else its first line (`cardTitle`). */
+export const titleOfCard = (card: Pick<CardAtPage, 'text' | 'fileTitle'>): string => card.fileTitle ?? cardTitle(card.text)
 
 /**
  * Card `id` of `path` — the one at `index` when that one holds `id` (two cards with one ID before the sweep settles
@@ -71,13 +83,22 @@ export function cardInContent(path: string, content: string, id: string | null, 
   const at = id === null || (cards[index] !== undefined && cardIdOf(cards[index].line) === id) ? index : cards.findIndex((c) => cardIdOf(c.line) === id)
   const card = cards[at]
   if (card === undefined) return null
-  return { path, id: cardIdOf(card.line), index: at, text: card.text, reviews: cardReviewsOf(card.line), off: isCardOff(card.line), next: isCardNext(card.line), notitle: isCardNoTitle(card.line) }
+  // A card file's own card (its first): the file's `title`, read off its properties, when it has one (YAZ-5044).
+  const { properties, error } = at === 0 ? parseFrontmatter(splitFrontmatter(content).frontmatter) : { properties: {}, error: 'none' }
+  const fileTitle = error === undefined && isCardKind(properties) ? titleOf(properties, '') : ''
+  return { path, id: cardIdOf(card.line), index: at, text: card.text, reviews: cardReviewsOf(card.line), off: isCardOff(card.line), next: isCardNext(card.line), notitle: isCardNoTitle(card.line), ...(fileTitle !== '' && { fileTitle }) }
 }
 
-/** Card `id` of page `path` (the first that holds it), or null when the page or the card is gone (deleted, moved, or its ID changed). */
+/**
+ * Card `id` of page `path` (the first that holds it), or null when the page or the card is gone (deleted, moved, or its
+ * ID changed). This is the Inbox's read, so a CARD FILE's card comes with its `title` as its text's first line
+ * (`cardWithTitle`, YAZ-5044): "Title on the front" Show puts the title above the front and Hide leaves it out until
+ * the card is fully shown, the one rule cards in pages follow. The Inbox writes only the card line, never the text.
+ */
 export async function readCard(path: string, id: string): Promise<CardOnPage | null> {
   const card = await readCardAt(path, id, -1)
-  return card === null || card.id === null ? null : { ...card, id: card.id }
+  if (card === null || card.id === null) return null
+  return { ...card, id: card.id, ...(card.fileTitle !== undefined && { text: cardWithTitle(card.fileTitle, card.text) }) }
 }
 
 /**

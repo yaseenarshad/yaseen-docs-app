@@ -78,7 +78,7 @@ const linesIn = (node: ProseNode): number => {
 /** The lines a copy left out: under folds, and in hidden cell notes (YAZ-3818 5A-15), counted apart for the toast. */
 interface LeftOut {
   folded: number
-  pages: number
+  cellNotes: number
 }
 
 /**
@@ -90,17 +90,17 @@ interface LeftOut {
  */
 const visibleSlice = (state: EditorState, range: CopyRange | null): { slice: Slice; left: LeftOut } => {
   const { selection, doc } = state
-  if (range === null && selection.ranges.length > 1) return { slice: selection.content(), left: { folded: 0, pages: 0 } }
+  if (range === null && selection.ranges.length > 1) return { slice: selection.content(), left: { folded: 0, cellNotes: 0 } }
   const { from: start, to: end } = range ?? selection
   const zoomed = getZoomedItemPos(state)
   const from = zoomed === null ? start : Math.max(start, zoomed)
   const to = zoomed === null ? end : Math.min(end, zoomed + doc.nodeAt(zoomed)!.nodeSize)
   const hidden = new Set<number>()
-  const left: LeftOut = { folded: 0, pages: 0 }
+  const left: LeftOut = { folded: 0, cellNotes: 0 }
   eachVisibleTextblock(state, from, to, () => {}, (pos) => {
     hidden.add(pos)
     const node = doc.nodeAt(pos)!
-    left[isCellNote(node) ? 'pages' : 'folded'] += linesIn(node)
+    left[isCellNote(node) ? 'cellNotes' : 'folded'] += linesIn(node)
   })
   const slice = doc.slice(from, to, true)
   if (hidden.size === 0) return { slice, left }
@@ -130,9 +130,9 @@ export const copyLinkTextCtx = createSlice<((text: string) => string) | null, 'c
 export const copyMarkdownCtx = createSlice<((markdown: string) => string) | null, 'copyMarkdown'>(null, 'copyMarkdown')
 
 /** What the toast says: the lines a copy left out, folded ones and cell note ones by name, so a copy reads as meant. */
-const copiedText = ({ folded, pages }: LeftOut): string => {
+const copiedText = ({ folded, cellNotes }: LeftOut): string => {
   const lines = (count: number, kind: string) => `${count} ${kind} line${count === 1 ? '' : 's'}`
-  const parts = [...(folded > 0 ? [lines(folded, 'folded')] : []), ...(pages > 0 ? [lines(pages, 'cell note')] : [])]
+  const parts = [...(folded > 0 ? [lines(folded, 'folded')] : []), ...(cellNotes > 0 ? [lines(cellNotes, 'cell note')] : [])]
   return parts.length === 0 ? 'Copied. Nothing in it was folded' : `Copied, ${parts.join(' and ')} left out`
 }
 
@@ -239,8 +239,8 @@ export const clipboardCopyOut = $prose((ctx) => {
       const dom = serializeFragment(fragment, options, target)
       dom.firstElementChild?.setAttribute(APP_CLIPBOARD, 'true')
       // The copied cells' cell notes, as Markdown in one attribute (YAZ-4206 D13): a paste in the app adds them.
-      const pages = ctx.isInjected(editorViewCtx) ? cellNotesMarkdown(fragment, ctx.get(editorViewCtx).state.doc, copySerializer(ctx)) : null
-      if (pages !== null) dom.firstElementChild?.setAttribute(CELL_NOTES_ATTR, pages)
+      const cellNotes = ctx.isInjected(editorViewCtx) ? cellNotesMarkdown(fragment, ctx.get(editorViewCtx).state.doc, copySerializer(ctx)) : null
+      if (cellNotes !== null) dom.firstElementChild?.setAttribute(CELL_NOTES_ATTR, cellNotes)
       if (dom instanceof DocumentFragment) styleTables(dom)
       collapseTablesOf(options?.document)
       return dom

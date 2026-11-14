@@ -96,7 +96,7 @@ describe('Keep: the IDs the pages hold stay (gap 1)', () => {
 })
 
 describe('Other letters: the numbers stay, and each ID, link and file name follows (gap 1)', () => {
-  it('ABC instead of YAS: YAS-796 becomes ABC-796 in its note, in each link and in its built file name; a name the app did not build stays', async () => {
+  it('ABC instead of YAS: YAS-796 becomes ABC-796 in its page, in each link and in its built file name; a name the app did not build stays', async () => {
     await make(WIKI)
     await makeFirstMac(root)
     await turnIdsOn(root, 'ABC')

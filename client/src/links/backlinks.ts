@@ -80,7 +80,7 @@ export interface MentionSnippet {
    * Never empty; a range the window cut off is dropped, the first one never is.
    */
   ranges: MentionRange[]
-  /** The label of the cell note (YAZ-3818) the line is in, `cell-N`, or absent: a click opens that page's card. */
+  /** The label of the cell note (YAZ-3818) the line is in, `cell-N`, or absent: a click opens that cell note's card. */
   cellNote?: string
 }
 

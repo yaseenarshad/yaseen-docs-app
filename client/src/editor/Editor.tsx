@@ -792,7 +792,7 @@ function CrepeHost({
   const diskRef = useRef(disk)
   diskRef.current = disk
   const reviewOn = useReviewOn(root)
-  const convert = useCardConvert({ root, path: file.path, wikilinks, reviewOn, inFolderPage, disk: () => diskRef.current, allowFileAction: vaultScope.allowFileAction, onNotice, onReread })
+  const convert = useCardConvert({ root, path: file.path, wikilinks, reviewOn, inFolderPage, disk: () => diskRef.current, allowFileAction: vaultScope.allowFileAction, onNotice, onReread, onOpenCardFile: onOpenFile })
   /** The timed "Allow edits" of THIS tab (YAZ-4939): at zero the page saves, then locks again. */
   const unlock = useTimedUnlock(autosave.flushNow)
   const readOnly = lockedBase && unlock.until === null
@@ -1345,7 +1345,7 @@ function CrepeHost({
   // "The page at now" (YAZ-4164 D11): a request for this page (the daily-page button, ⌘D) is taken once the editor is
   // ready and its tab shows — after the mount's caret and scroll — or at once by an editor that is open and in front.
   // A tab behind the page waits for its layer to show, so the tab in front never scrolls. A Linked mentions line in a
-  // cell note asks the same way for that page's card (YAZ-3818, `cellNoteRequest.ts`).
+  // cell note asks the same way for that cell note's card (YAZ-3818, `cellNoteRequest.ts`).
   useEffect(() => {
     const host = hostRef.current
     if (readyCrepe === null || crepeRef.current !== readyCrepe || host === null) return
@@ -1357,12 +1357,12 @@ function CrepeHost({
     }
     take()
     const off = onGoToNowRequest(take)
-    const offPage = onCellNoteRequest(take)
+    const offCellNote = onCellNoteRequest(take)
     const shown = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && take())
     shown?.observe(host)
     return () => {
       off()
-      offPage()
+      offCellNote()
       shown?.disconnect()
     }
   }, [readyCrepe, file.path])
@@ -1568,7 +1568,7 @@ function CrepeHost({
         // The Page tab (YAZ-4584 D38): the body alone, in the folder page's scroller, where the view body would be.
         // Its CMD+F bar comes first, so it sticks to the top of the folder page's scroller as the reader goes down.
         <div className="folder-page-doc">
-          <FindBar channel={findChannel} scope="page" hostRef={hostRef} folds={findFoldsMenu} />
+          <FindBar channel={findChannel} scope="folder" hostRef={hostRef} folds={findFoldsMenu} />
           <div className="editor-mount" ref={hostRef} {...mountWidths} />
         </div>
       ) : (

@@ -2300,7 +2300,7 @@ describe('a page’s value is its own field (YAZ-4713 C1)', () => {
       disk.set(SETTINGS_FILE, `---\nid: ${STAGES_ID}\nfolder_settings:\n  columns:\n    order:\n      kind: number\n      separate: true\n---\n`)
       disk.set(LEAD, OWN_AND_PAGE)
       await mount(SEPARATE, [rec(LEAD, { order: 1, in: { [STAGES_ID]: { order: 3 } } })])
-      await act(async () => captured.folder!.separate!.set('order', { kind: 'number', separate: true }, false, 'page'))
+      await act(async () => captured.folder!.separate!.set('order', { kind: 'number', separate: true }, false, 'folder'))
       expect(disk.get(LEAD)).toBe('---\norder: 3\n---\n')
     })
 

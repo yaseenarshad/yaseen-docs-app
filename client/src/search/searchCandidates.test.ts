@@ -80,7 +80,7 @@ describe('searchCandidates', () => {
     expect(searchCandidates([rec('/vault/Alpha.md')])[0].folder).toBe('')
   })
 
-  it('an alias adds a row after its note, labelled with the basename', () => {
+  it('an alias adds a row after its page, labelled with the basename', () => {
     const rows = searchCandidates([rec('/vault/Customer Acquisition Cost.md', ['CAC', 'Acquisition Cost'])])
     expect(rows.map((c) => c.label)).toEqual([
       'Customer Acquisition Cost',
@@ -257,7 +257,7 @@ describe('searchRows: the search box finds by id (YAZ-2420 D32)', () => {
   ]
   const found = (query: string) => searchRows(rows, query).map((c) => [c.kind, c.label, c.path])
 
-  it('D: an id pasted alone is its note, the only result, under its title', () => {
+  it('D: an id pasted alone is its page, the only result, under its title', () => {
     expect(found(ID)).toEqual([['file', 'UP-001 - Abdul', ABDUL]])
     expect(found(` ${ID.toUpperCase()} `)).toEqual([['file', 'UP-001 - Abdul', ABDUL]])
   })

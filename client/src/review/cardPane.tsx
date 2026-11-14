@@ -129,7 +129,7 @@ interface CardPaneProps {
   embeds?: boolean
 }
 
-/** The card's body: the card or its editor, the strip, its Reviews, "Linked mentions" and, in a tab, "Embedded in". */
+/** The card's body: the card or its editor, its Reviews strip, the facts strip, "Linked mentions" and, in a tab, "Embedded in". */
 export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false }: CardPaneProps) {
   return (
     <>
@@ -140,8 +140,9 @@ export function CardPane({ card, path, vault, editing, onEditDone, select, doors
           <CardBody text={card.text} path={path} vault={vault} doors={doors} />
         </div>
       )}
-      {strip}
+      {/* YAZ-5105 round 2: the Reviews strip right under the card, as Mochi's; then the card window's facts strip. */}
       {reviews !== undefined && <CardReviews reviews={card.reviews} settings={reviews} onDelete={onDeleteReview} />}
+      {strip}
       {card.id !== null && <CardPages which="links" id={card.id} wikilinks={vault.wikilinks} onOpen={onOpenPage} />}
       {embeds && card.id !== null && <CardPages which="embeds" id={card.id} wikilinks={vault.wikilinks} onOpen={onOpenPage} />}
     </>

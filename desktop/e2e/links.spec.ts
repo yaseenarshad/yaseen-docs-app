@@ -195,7 +195,7 @@ test('step 8 — a pasted path of a vault page is its link; Keep as path gives t
   await expect(keep).toHaveCount(0)
 })
 
-test('step 8b — ⌘Z gives the path back; a pasted link opens its note, and Back returns (YAZ-3609 D2; YAZ-3647 D4)', async () => {
+test('step 8b — ⌘Z gives the path back; a pasted link opens its page, and Back returns (YAZ-3609 D2; YAZ-3647 D4)', async () => {
   const ideas = path.join(vault, 'Ideas.md')
   const hub = () => readFile(path.join(vault, HUB_FILE), 'utf8')
   await pasteText(win, ideas)

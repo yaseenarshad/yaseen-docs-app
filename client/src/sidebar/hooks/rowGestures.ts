@@ -902,8 +902,8 @@ export function useInlineEdits(
       // In a vault that does not use IDs it is the name itself (YAZ-2523 🔒 V3).
       let page: string | null = null
       let made: string
-      // A card file (YAZ-5101): what was typed is the card's first line, its title, and the file is named after it
-      // (`cardFileName`). Its tab opens in Edit card, the caret after the title.
+      // A card file (YAZ-5101): what was typed is its title, in `title` as a page's (YAZ-5044), and the file is named
+      // after it (`cardFileName`). Its tab opens in Edit card, on the empty card.
       if (creating.kind === 'card') made = page = await createCardFile(creating.parentDir, name)
       else if (creating.kind === 'dir') {
         made = folderPath(creating.parentDir, name, index.ids)

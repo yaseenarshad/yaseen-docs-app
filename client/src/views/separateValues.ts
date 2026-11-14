@@ -22,7 +22,7 @@ export interface SeparateCounts {
 }
 
 /** "Keep the pages' values" (a differing page value is dropped) or "Use the <folder> values" (it overwrites the field). */
-export type SeparateKeep = 'pages' | 'page'
+export type SeparateKeep = 'pages' | 'folder'
 
 const empty = (value: unknown): boolean => value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
@@ -60,7 +60,7 @@ function mergeInContent(content: string, pageId: string, key: string, keep: Sepa
   const value = block[held]
   const field = foldedValue(parsed.properties, key)
   const cleared = setFolderValueOneSpelling(content, pageId, key, undefined)
-  const take = keep === 'page' || empty(field)
+  const take = keep === 'folder' || empty(field)
   return { content: take && !same(field, value) ? setOneSpelling(cleared, key, value, reservedKeys(true)) : cleared, before: { field, block: value } }
 }
 

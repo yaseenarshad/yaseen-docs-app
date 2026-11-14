@@ -26,9 +26,9 @@
  * active match instead of the caret (`findThreadAnchor`); a caret move or an edit gives them back.
  *
  * Cell notes (YAZ-3818 D19): in the page view, the matches in the hidden cell notes count. When the active match is in
- * one, find opens that page as a card beside its cell (`table/cellNoteCard.ts`; the caret stays), and keeps a record
- * of it, as it does of the folds it opened. When the active match moves out of that page, find closes the card.
- * `close()` on a match in the page leaves the card open with the caret in it.
+ * one, find opens that cell note as a card beside its cell (`table/cellNoteCard.ts`; the caret stays), and keeps a record
+ * of it, as it does of the folds it opened. When the active match moves out of that cell note, find closes the card.
+ * `close()` on a match in the cell note leaves the card open with the caret in it.
  *
  * Pills (YAZ-3744 S9): a `[[link]]` the page draws as a pill (`pillLinks`, the wikilink plugin's own drawing) hides
  * text. The matches that touch its hidden text (an ID, `.drawio`, folders, the brackets) are together ONE match, and each
@@ -61,7 +61,7 @@ export const FIND_MATCH_CLASS = 'find-match'
 export const FIND_ACTIVE_CLASS = 'find-match--active'
 
 /** The cell note find opened as a card (D19): its position, mapped through every change. */
-type OpenedPage = number
+type OpenedCellNote = number
 
 /** An absolute document range: one match, or the zoomed subtree. */
 interface Match {
@@ -87,7 +87,7 @@ interface FindState {
   /** The same, for heading sections (YAZ-1140) — kept apart: the two plugins own different positions. */
   revealedHeadings: ReadonlySet<number>
   /** The cell note THIS search opened, or null (D19). */
-  opened: OpenedPage | null
+  opened: OpenedCellNote | null
   /**
    * The thread points at the active match (YAZ-3166): true after a query or a step. False once the
    * caret moves, the doc is edited, or a click or a key lands in the page (YAZ-3200). A doc change
@@ -100,7 +100,7 @@ type FindMeta =
   | { type: 'query'; query: string }
   | { type: 'step'; delta: 1 | -1 }
   | { type: 'revealed'; revealed: ReadonlySet<number>; revealedHeadings: ReadonlySet<number> }
-  | { type: 'opened'; opened: OpenedPage | null }
+  | { type: 'opened'; opened: OpenedCellNote | null }
   | { type: 'clear' }
   /** A click or a key in the page that sent no transaction of its own: the thread goes back to the caret (YAZ-3200). */
   | { type: 'release' }
@@ -246,18 +246,18 @@ const nextActive = (previous: FindState, meta: FindMeta | undefined, matches: re
 const carryRevealed = (transaction: Transaction, reported: ReadonlySet<number> | undefined, previous: ReadonlySet<number>): ReadonlySet<number> =>
   reported ?? (transaction.docChanged ? new Set([...previous].map((pos) => transaction.mapping.map(pos, 1))) : previous)
 
-/** The opened page across a transaction: the freshly reported one, else the old one mapped; null once the page is gone. */
-const carryOpened = (transaction: Transaction, meta: FindMeta | undefined, previous: OpenedPage | null): OpenedPage | null => {
+/** The opened cell note across a transaction: the freshly reported one, else the old one mapped; null once the cell note is gone. */
+const carryOpened = (transaction: Transaction, meta: FindMeta | undefined, previous: OpenedCellNote | null): OpenedCellNote | null => {
   if (meta?.type === 'opened') return meta.opened
   if (previous === null || !transaction.docChanged) return previous
-  const page = transaction.mapping.mapResult(previous, 1)
-  return page.deleted ? null : page.pos
+  const cellNote = transaction.mapping.mapResult(previous, 1)
+  return cellNote.deleted ? null : cellNote.pos
 }
 
 /** The hidden cell note that holds `pos`, or null (D19). */
-const hiddenPageAt = (state: EditorState, pos: number): number | null => {
-  const page = cellNoteAround(state.doc.resolve(pos))
-  return page !== null && isCellNoteHidden(state, page) ? page : null
+const hiddenCellNoteAt = (state: EditorState, pos: number): number | null => {
+  const cellNote = cellNoteAround(state.doc.resolve(pos))
+  return cellNote !== null && isCellNoteHidden(state, cellNote) ? cellNote : null
 }
 
 /** The engine behind the channel's commands. Every step is metadata-only, and synchronous. */
@@ -315,7 +315,7 @@ const createController = (view: EditorView, channel: FindChannel): FindControlle
     if (differs(revealed, previous.revealed) || differs(revealedHeadings, previous.revealedHeadings))
       dispatchMeta({ type: 'revealed', revealed, revealedHeadings })
     if (folds !== 'keep' && active !== null) openTableRun(active.from)
-    followPages()
+    followCellNotes()
   }
   /**
    * A match in a folded table row (a collapsed subheader section, YAZ-4899 item 20, or a "Fold N rows" run) opens the
@@ -335,20 +335,20 @@ const createController = (view: EditorView, channel: FindChannel): FindControlle
    * D19: the card find opened closes when the active match is not in it; the hidden cell note that holds the active
    * match opens as a card. A card the reader closed meanwhile is no longer find's.
    */
-  const followPages = (): void => {
+  const followCellNotes = (): void => {
     let { opened } = findState()
     const match = activeMatch()
     if (opened !== null && cellNoteCardKey.getState(view.state)?.pos !== opened) opened = null
     if (opened !== null) {
-      const page = view.state.doc.nodeAt(opened)!
-      if (match === null || match.from < opened || match.from >= opened + page.nodeSize) {
+      const cellNote = view.state.doc.nodeAt(opened)!
+      if (match === null || match.from < opened || match.from >= opened + cellNote.nodeSize) {
         closeCellNote(view, false)
         opened = null
       }
     }
-    const hidden = match === null ? null : hiddenPageAt(view.state, match.from)
+    const hidden = match === null ? null : hiddenCellNoteAt(view.state, match.from)
     if (hidden !== null) {
-      // The page's cell: the one that holds its mark.
+      // The cell note's cell: the one that holds its mark.
       const mark = markPosOf(view.state.doc, view.state.doc.nodeAt(hidden)!.attrs.label as string)
       const cell = mark === null ? null : cellPosAround(view.state.doc.resolve(mark))
       if (cell !== null && openCellNote(view, cell, false)) opened = cellNoteCardKey.getState(view.state)?.pos ?? null

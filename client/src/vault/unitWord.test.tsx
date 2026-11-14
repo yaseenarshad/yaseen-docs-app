@@ -1,3 +1,4 @@
+// rename-note-to-page: skip-file (it tests the word choice "Note")
 /**
  * The vault's unit word (YAZ-4938): the helper's forms, the file's sanitising (an old vault with no file reads as
  * "page"), the round trip through `.yaseendocs/unit-word.json`, and the per-root store a menu or a toast reads.
@@ -32,25 +33,40 @@ const write = vi.mocked(api.vaultConfig.write)
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 describe('the helper', () => {
-  const card = unitTextOf(UNIT_WORDS.card)
+  const doc = unitTextOf(UNIT_WORDS.doc)
 
   it('gives each label its word in the form of its place', () => {
-    expect(card('New page')).toBe('New card')
-    expect(card('Delete page…')).toBe('Delete card…')
-    expect(card('Duplicate page')).toBe('Duplicate card')
-    expect(card('12 pages')).toBe('12 cards')
-    expect(card('No pages yet')).toBe('No cards yet')
-    expect(card('Links in 2 pages will be updated.')).toBe('Links in 2 cards will be updated.')
-    expect(card('Page')).toBe('Card')
-    expect(card('Pages you close show here.')).toBe('Cards you close show here.')
-    expect(card("This page's folder")).toBe("This card's folder")
-    expect(card("Keep the pages' values")).toBe("Keep the cards' values")
+    expect(doc('New page')).toBe('New doc')
+    expect(doc('Delete page…')).toBe('Delete doc…')
+    expect(doc('Duplicate page')).toBe('Duplicate doc')
+    expect(doc('12 pages')).toBe('12 docs')
+    expect(doc('No pages yet')).toBe('No docs yet')
+    expect(doc('Links in 2 pages will be updated.')).toBe('Links in 2 docs will be updated.')
+    expect(doc('Page')).toBe('Doc')
+    expect(doc('Pages you close show here.')).toBe('Docs you close show here.')
+    expect(doc("This page's folder")).toBe("This doc's folder")
+    expect(doc("Keep the pages' values")).toBe("Keep the docs' values")
   })
 
   it('leaves other words, code names and the word inside another alone', () => {
-    expect(card('Linked mentions')).toBe('Linked mentions')
-    expect(card('Noted. Notebook, footnote, pages.md')).toBe('Noted. Notebook, footnote, cards.md')
-    expect(card('page-window')).toBe('card-window')
+    expect(doc('Linked mentions')).toBe('Linked mentions')
+    expect(doc('Noted. Notebook, footnote, pages.md')).toBe('Noted. Notebook, footnote, docs.md')
+    expect(doc('page-window')).toBe('doc-window')
+  })
+
+  it('YAZ-5036: a page that is not the unit keeps its word: a folder page, the Start page, the New tab page, a Page tab', () => {
+    expect(doc('Only in the pages. This folder page has no column for it.')).toBe('Only in the docs. This folder page has no column for it.')
+    expect(doc('No folder pages here')).toBe('No folder pages here')
+    expect(doc('Back to the Start page')).toBe('Back to the Start page')
+    expect(doc('New tab page')).toBe('New tab page')
+    expect(doc('Page tab')).toBe('Page tab')
+  })
+
+  it('YAZ-5036: "Note" is still a choice, for a vault that wants it', () => {
+    const note = unitTextOf(UNIT_WORDS.note)
+    expect(note('New page')).toBe('New note')
+    expect(note('12 pages')).toBe('12 notes')
+    expect(note('Page')).toBe('Note')
   })
 
   it('the default word is the identity, one object for the app, and a word that spells it too', () => {
@@ -77,12 +93,14 @@ describe('the file', () => {
     expect(sanitizeUnitWord(null)).toEqual(DEFAULT_UNIT_WORD)
     expect(sanitizeUnitWord(undefined)).toEqual(DEFAULT_UNIT_WORD)
     expect(sanitizeUnitWord('card')).toEqual(DEFAULT_UNIT_WORD)
+    // YAZ-5036: "Card" is no choice any more; a file that says it reads as the default.
+    expect(sanitizeUnitWord({ unit: 'card' })).toEqual(DEFAULT_UNIT_WORD)
     expect(sanitizeUnitWord({ unit: 'slide' })).toEqual(DEFAULT_UNIT_WORD)
     expect(unitWordOf(sanitizeUnitWord(null))).toBe(PAGE_WORD)
   })
 
   it('the built-in words', () => {
-    expect(unitWordOf(sanitizeUnitWord({ unit: 'card' }))).toEqual({ one: 'card', many: 'cards' })
+    expect(unitWordOf(sanitizeUnitWord({ unit: 'note' }))).toEqual({ one: 'note', many: 'notes' })
     expect(unitWordOf(sanitizeUnitWord({ unit: 'doc' }))).toEqual({ one: 'doc', many: 'docs' })
     expect(unitWordOf(sanitizeUnitWord({ unit: 'page' }))).toEqual({ one: 'page', many: 'pages' })
   })
@@ -93,7 +111,7 @@ describe('the file', () => {
     expect(sanitizeUnitWord({ unit: 'own', own: { one: 'two words' } })).toEqual({ unit: 'own', own: { one: '', many: '' } })
     expect(sanitizeUnitWord({ unit: 'own', own: { one: '' } })).toEqual({ unit: 'own', own: { one: '', many: '' } })
     expect(unitWordOf(sanitizeUnitWord({ unit: 'own' }))).toBe(PAGE_WORD)
-    expect(sanitizeUnitWord({ unit: 'card', own: { one: 'Entry', many: 'two words' } })).toEqual({ unit: 'card', own: { one: 'Entry', many: 'Entrys' } })
+    expect(sanitizeUnitWord({ unit: 'doc', own: { one: 'Entry', many: 'two words' } })).toEqual({ unit: 'doc', own: { one: 'Entry', many: 'Entrys' } })
     expect(cleanOwnWord('a'.repeat(25))).toBe('')
     expect(cleanOwnWord('a'.repeat(24))).toBe('a'.repeat(24))
     expect(cleanOwnWord('to-do')).toBe('to-do')
@@ -144,10 +162,10 @@ describe('useVaultUnitWord', () => {
 
   it('the round trip: save writes the clean file, the helper follows, and the store answers for the root', async () => {
     await mount('/vault')
-    await act(async () => state.save({ unit: 'card', own: { one: '', many: '' } }))
-    expect(write).toHaveBeenCalledWith('/vault', UNIT_WORD_FILE, { unit: 'card', own: { one: '', many: '' } })
-    expect(state.unit('New page')).toBe('New card')
-    expect(vaultUnit('/vault')('12 pages')).toBe('12 cards')
+    await act(async () => state.save({ unit: 'doc', own: { one: '', many: '' } }))
+    expect(write).toHaveBeenCalledWith('/vault', UNIT_WORD_FILE, { unit: 'doc', own: { one: '', many: '' } })
+    expect(state.unit('New page')).toBe('New doc')
+    expect(vaultUnit('/vault')('12 pages')).toBe('12 docs')
     expect(vaultUnit('/other')).toBe(SAME_WORD)
     expect(vaultUnit(null)).toBe(SAME_WORD)
     // The file read back from disk (an old vault, another Mac's sync): the word follows it, read once per change.

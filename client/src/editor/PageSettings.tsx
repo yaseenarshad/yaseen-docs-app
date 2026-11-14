@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, type OutsideChangeGlow, type TocSource } from '@shared/types'
 import { OUTSIDE_CHANGE_GLOW_OPTIONS } from '../settings/options'
 import { CogIcon } from '../settings/SettingsButton'
+import { useUnit } from '../vault/unitWord'
 
 /** "TOC made from" (YAZ-2700 D14): Auto is the absence of a choice, `null`, and stands first — it is what a page has until the reader chooses. */
 const TOC_SOURCE_CHOICES: readonly { label: string; value: TocSource | null }[] = [
@@ -178,6 +179,7 @@ function BlockWidthRow({ label, value, settingsRow, onChange }: { label: string;
 }
 
 export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, bulletThreading = false, onToggleBulletThreading, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, outsideGlow = null, appGlow, onChangeOutsideGlow, codeWidth = null, onChangeCodeWidth, tableWidth = null, onChangeTableWidth, switches, switchesHeading, rows, readText, trigger }: PageSettingsProps) {
+  const unit = useUnit()
   // The text counted at the open IS the open state: the counts cannot drift while the menu shows.
   // A board has no text to count: its open menu holds '' and shows no counts.
   const [text, setText] = useState<string | null>(null)
@@ -488,17 +490,17 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
         </>}
       </div>, document.body)}
       {open && info && <div id={tipId} role="tooltip" className="page-settings__tip">
-        <p>This sets what the table of contents of this page shows.</p>
+        <p>{unit('This sets what the table of contents of this page shows.')}</p>
         <dl>
           <dt>Auto</dt>
-          <dd>The app selects. A page with two or more headings outside bullets shows its headings. Each other page shows its bullets.</dd>
+          <dd>{unit('The app selects. A page with two or more headings outside bullets shows its headings. Each other page shows its bullets.')}</dd>
           <dt>Headings</dt>
           <dd>Shows each heading from H1 to H5. This includes the headings that are in bullets.</dd>
           <dt>Bullets</dt>
           <dd>Shows the bullets, to three levels.</dd>
         </dl>
         <p>If a selection finds less than two lines, no table of contents shows. Select Auto to get it back.</p>
-        <p>The app saves the selection for this page.</p>
+        <p>{unit('The app saves the selection for this page.')}</p>
       </div>}
     </div>
   )

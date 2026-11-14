@@ -17,7 +17,7 @@ export function columnMark(sources: ColumnSources, key: string, separate: boolea
   // YAZ-4769 demo: a copy of a parent's column ("Change on Desserts only") was no mark at all, so it read as the folder's own.
   if (over !== undefined) return { icon: 'copy', title: `Own settings on ${sources.folderName} (${over} keeps the shared ones). Same values.`, name: sources.folderName }
   if (below !== undefined) return { icon: 'below', title: `From ${below}`, name: below }
-  if (loose === true) return { icon: 'loose', title: unit('Only in the pages. This page has no column for it.'), name: unit('Pages only') }
+  if (loose === true) return { icon: 'loose', title: unit('Only in the pages. This folder page has no column for it.'), name: unit('Pages only') }
   return null
 }
 

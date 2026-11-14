@@ -700,7 +700,7 @@ describe('Next change (D9)', () => {
 
 /**
  * YAZ-4272 C (B11): an outside edit inside a hidden cell note. The page's block is hidden until its card opens, so the
- * glow alone would show nowhere: the cell's note mark glows too, and Next opens the page as a card beside its cell, as
+ * glow alone would show nowhere: the cell's page mark glows too, and Next opens the page as a card beside its cell, as
  * find does (YAZ-3818 D19). Next closes the card it opened when it moves on.
  */
 describe('a change inside a hidden cell note (YAZ-4319)', () => {

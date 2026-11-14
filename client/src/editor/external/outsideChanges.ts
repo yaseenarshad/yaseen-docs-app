@@ -37,8 +37,8 @@
  * leaves the folds that hide the active change open: the landing. Outside the zoomed bullet, the page
  * zooms out first and the host tells the tab.
  *
- * Cell notes (YAZ-4319): a change inside a cell note glows in a block the page hides until the page's card opens. So its
- * cell's note mark glows too (`OUTSIDE_CELL_CLASS` on the cell), and Next opens the page as a card beside its cell, as
+ * Cell notes (YAZ-4319): a change inside a cell note glows in a block the cell note hides until its card opens. So its
+ * cell's note mark glows too (`OUTSIDE_CELL_CLASS` on the cell), and Next opens the cell note as a card beside its cell, as
  * find does (YAZ-3818 D19), with the caret where it was. Next closes the card it opened when it moves on; Mark all
  * checked leaves it open: the landing.
  */
@@ -67,7 +67,7 @@ export const OUTSIDE_REMOVED_CLASS = 'outside-removed'
 /** On each changed textblock: its hover shows the Checked button (outsideChanges.css). */
 export const OUTSIDE_BLOCK_CLASS = 'outside-change-block'
 export const OUTSIDE_CHECKED_CLASS = 'outside-checked'
-/** A table cell whose cell note holds a change (YAZ-4319): its note mark glows, since the page itself is hidden. */
+/** A table cell whose cell note holds a change (YAZ-4319): its note mark glows, since the cell note itself is hidden. */
 export const OUTSIDE_CELL_CLASS = 'outside-change-cell'
 /** On a glow or a removed mark: the mouse on it shows the box. Its value is the box's text in short ("Before: …"). */
 export const OUTSIDE_TIP_ATTR = 'data-outside-tip'
@@ -481,21 +481,21 @@ const checkedButton = (id: number) => (view: EditorView): HTMLElement => {
 }
 
 /** The label of the cell note that holds the block at `pos`, or null. */
-const pageLabelAt = (doc: ProseNode, pos: number): string | null => {
-  const page = cellNoteAround(doc.resolve(pos))
-  return page === null ? null : (doc.nodeAt(page)!.attrs.label as string)
+const cellNoteLabelAt = (doc: ProseNode, pos: number): string | null => {
+  const cellNote = cellNoteAround(doc.resolve(pos))
+  return cellNote === null ? null : (doc.nodeAt(cellNote)!.attrs.label as string)
 }
 
 const buildDecorations = (doc: ProseNode, changes: readonly OutsideChange[], activeId: number | null): DecorationSet => {
   if (changes.length === 0) return DecorationSet.empty
   const decorations: Decoration[] = []
   // The cell notes that hold a change: one walk finds their marks, only when there are any (YAZ-4319).
-  const pages = new Set<string>()
+  const cellNotes = new Set<string>()
   for (const change of changes) {
     const block = doc.nodeAt(change.pos)
     if (block === null) continue
-    const label = pageLabelAt(doc, change.pos)
-    if (label !== null) pages.add(label)
+    const label = cellNoteLabelAt(doc, change.pos)
+    if (label !== null) cellNotes.add(label)
     const active = change.id === activeId
     // A change with nothing to glow and no mark (an empty bullet added) wears the ring on its block.
     const ringOnBlock = active && change.glow.length === 0 && change.removed.length === 0
@@ -513,9 +513,9 @@ const buildDecorations = (doc: ProseNode, changes: readonly OutsideChange[], act
       Decoration.widget(change.pos + 1 + block.content.size, checkedButton(change.id), { side: 1, ignoreSelection: true, stopEvent: () => true, key: `outside-checked-${change.id}` }),
     )
   }
-  if (pages.size > 0) {
+  if (cellNotes.size > 0) {
     doc.descendants((node, pos) => {
-      if (!isCellNoteMark(node) || !pages.has(node.attrs.label as string)) return true
+      if (!isCellNoteMark(node) || !cellNotes.has(node.attrs.label as string)) return true
       const cell = cellPosAround(doc.resolve(pos))
       if (cell !== null) decorations.push(Decoration.node(cell, cell + doc.nodeAt(cell)!.nodeSize, { class: OUTSIDE_CELL_CLASS }))
       return false
@@ -611,7 +611,7 @@ const createController = (view: EditorView, channel: OutsideChangesChannel): Out
     if (current() === undefined) return
     // Moving on: the card Next opened closes, unless the reader closed it or the next change is in it too.
     const openNow = cellNoteCardKey.getState(view.state)?.label ?? null
-    if (opened !== null && openNow === opened && pageLabelAt(view.state.doc, target.pos) !== opened) {
+    if (opened !== null && openNow === opened && cellNoteLabelAt(view.state.doc, target.pos) !== opened) {
       closeCellNote(view, false)
       target = current()?.changes.find((change) => change.id === to.id) ?? target
     }
@@ -630,9 +630,9 @@ const createController = (view: EditorView, channel: OutsideChangesChannel): Out
     fold(revealed, false)
     foldHeadings(revealedHeadings, false)
     // A change inside a hidden cell note: its card opens beside its cell, the caret where it was (find's D19).
-    const page = cellNoteAround(view.state.doc.resolve(target.pos))
-    if (page !== null && isCellNoteHidden(view.state, page)) {
-      const label = view.state.doc.nodeAt(page)!.attrs.label as string
+    const cellNote = cellNoteAround(view.state.doc.resolve(target.pos))
+    if (cellNote !== null && isCellNoteHidden(view.state, cellNote)) {
+      const label = view.state.doc.nodeAt(cellNote)!.attrs.label as string
       const mark = markPosOf(view.state.doc, label)
       const cell = mark === null ? null : cellPosAround(view.state.doc.resolve(mark))
       if (cell !== null && openCellNote(view, cell, false)) opened = label

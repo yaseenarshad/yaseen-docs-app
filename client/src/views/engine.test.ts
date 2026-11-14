@@ -1071,7 +1071,7 @@ describe('makeResolver: frontmatter aliases (Links E2, GRO-2214)', () => {
   })
   const resolve = (records: IndexRecord[]) => makeResolver(records.map(r => new FileValue(r)), '/vault')
 
-  it('an alias resolves to its note, case-insensitively, with `[[…]]` / `|alias` / `#heading` stripped', () => {
+  it('an alias resolves to its page, case-insensitively, with `[[…]]` / `|alias` / `#heading` stripped', () => {
     const r = resolve([aliased()])
     const path = '/vault/Costs/Customer Acquisition Cost.md'
     expect(r('CAC')?.record.path).toBe(path)

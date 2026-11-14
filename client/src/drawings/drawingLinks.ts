@@ -33,6 +33,7 @@ import type { IconsHere } from '../sidebar/FileIcon'
 import { setDiagramLinkLooks, type WireLook } from '../diagrams/diagramLooks'
 import { drawingLinkIcon, setDrawingLinkIcons, type PillIcon } from './drawingLinkIcons'
 import type { PickerEditor } from './drawingLinkPicker'
+import { vaultUnit } from '../vault/unitWord'
 
 /** What a pill shows: the engine's `HostLink`. */
 export interface DrawingLink {
@@ -324,7 +325,7 @@ export function openShapeLink(link: string, event: MouseMods, deps: Pick<Drawing
   const absolute = pastedPath(text)
   const path = absolute !== null ? (absolute.startsWith(`${nav.root.replace(/\/+$/, '')}/`) ? absolute : null) : /^[a-z][a-z\d+.-]*:/i.test(text) ? null : (source.resolve?.(text) ?? null)
   if (path === null) {
-    nav.onNotice(`Can't open "${text}": it is not a page of this vault`)
+    nav.onNotice(vaultUnit(nav.root)(`Can't open "${text}": it is not a page of this vault`))
     return true
   }
   openerOf(nav, where)(path)

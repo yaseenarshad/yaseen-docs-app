@@ -278,6 +278,12 @@ describe('createStore: loading', () => {
     expect(isSettings({ ...DEFAULT_SETTINGS, shownHiddenWords: 'box' })).toBe(true)
     expect(isSettings({ ...DEFAULT_SETTINGS, cardSpacing: 'custom', cardLineSpacing: 1.15 })).toBe(true)
     expect(isSettings({ ...DEFAULT_SETTINGS, cardSpacing: 'other' })).toBe(false)
+    // YAZ-5050 round 4: Clean.
+    expect(isSettings({ ...DEFAULT_SETTINGS, cardSpacing: 'clean' })).toBe(true)
+    // YAZ-5053 round 3: Mark the next hidden word (On by default) and its colour (null: the default; else a hex colour).
+    expect(sanitizeSettings({})).toMatchObject({ markNextHidden: true, nextHiddenColour: null })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, markNextHidden: false, nextHiddenColour: '#aa3399' })).toMatchObject({ markNextHidden: false, nextHiddenColour: '#aa3399' })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, markNextHidden: 'yes', nextHiddenColour: 'blue' })).toMatchObject({ markNextHidden: true, nextHiddenColour: null })
   })
 
   it('"Jump across files" (YAZ-3500): a file from before it reads off; on survives a restart; a wrong value reads off; it stays on this Mac', async () => {
@@ -3379,3 +3385,4 @@ describe('Settings › Tables › Header row (YAZ-4794): text colour and align',
     expect(isSettings({ ...DEFAULT_SETTINGS, tableHeaderRow: noAlign })).toBe(false)
   })
 })
+

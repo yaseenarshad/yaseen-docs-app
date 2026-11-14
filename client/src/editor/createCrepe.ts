@@ -802,7 +802,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // The cell toolbar (YAZ-3696 D8): our own strip over two or more selected cells.
   crepe.editor.use(cellToolbar)
   // Cell notes (YAZ-3818 D8, D14): the "Add cell note" button in a cell's corner, the preview on a cell with a note,
-  // and the open page's card beside its cell (the demo): Esc and the arrows at its edges at priority 90.
+  // and the open cell note's card beside its cell (the demo): Esc and the arrows at its edges at priority 90.
   if (opts.cellNotes !== false) crepe.editor.use(cellNoteButton).use(cellNotePreview).use(cellNoteCard).use(cellNoteCardKeymap)
   // ⌘A on a bullet (YAZ-4348 demo round 2): its line first, then the whole page; priority 80, under the cell's 90.
   crepe.editor.use(bulletSelectAllKeymap)

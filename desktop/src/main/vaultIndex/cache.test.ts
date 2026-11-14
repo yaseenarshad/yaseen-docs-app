@@ -262,6 +262,13 @@ describe('index cache: a bad file never throws, only degrades', () => {
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
   })
 
+  it('YAZ-5044: a snapshot of version 15 read a card file\'s title off its card\'s first line, never its `title` → version-mismatch, so a renamed card file is never served under its old title', async () => {
+    expect(CACHE_VERSION).toBeGreaterThanOrEqual(16)
+    const cards = [{ id: 'DEMO-105', off: false, next: false, reviews: [], title: 'Old first line' }]
+    await writeFile(file, JSON.stringify({ version: 15, root: '/vault', records: [record('/vault/demo-105.md', { kind: 'card', cards, title: 'Old first line', properties: { kind: 'card', title: 'Capital of France' } } as never)] }))
+    expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
+  })
+
   it("another root's payload at this filename → miss (not this vault's cache)", async () => {
     await writeFile(file, JSON.stringify({ version: CACHE_VERSION, root: '/elsewhere', records: [] }))
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'miss' })
@@ -313,7 +320,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
   ].join('\n')
 
   const FINGERPRINT = {
-    cacheVersion: 15,
+    cacheVersion: 16,
     maxFileBytes: 10 * 1024 * 1024,
     /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
     recordKeys: ['aliases', 'basename', 'cards', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'kind', 'links', 'mtime', 'name', 'path', 'properties', 'size', 'tags', 'title'],

@@ -24,6 +24,8 @@
   --danger: #d64545;
   --warn: #c98a1a;
   --ok: #3a9d5d;
+  /* The next hidden word's colour (YAZ-5053 round 3): a calm sky blue, not a status colour nor the accent. */
+  --next-hidden: #2a8bd1;
   /* Hover washes on the sidebar chrome (header/cog) and on tree rows. */
   --bg-hover: #eeeef0;
   --bg-hover-row: #e9e9ec;
@@ -31,17 +33,20 @@
   --fg-dir: #444444;
   --reveal-bg: #ffe36e;
   --reveal-fg: #2d2500;
-  /* The sidebar tree's file icons (YAZ-3440 D4): one colour per kind; a page's only with "All colour", a PDF's is
-     the danger red. `sidebarIconColors` overrides each one on `.app`. Folders, pages and other files stay grey. */
+  /* The sidebar tree's file icons (YAZ-3440 D4): one colour per kind; a page's only with "All colour" or a picked one, a
+     PDF's is the danger red. `sidebarIconColors` overrides each one on `.app` (YAZ-5100 round 2: a card's and a folder's
+     too). Folders, pages and other files stay grey. */
   --kind-page: #3d8fb8;
   --kind-text: #3a7fc2;
   --kind-pdf: var(--danger);
   --kind-image: #1d9e75;
   --kind-drawing: #c08410;
   --kind-diagram: #e0682c;
-  /* A card file's icon (YAZ-5037): the card icon of the `[[` picker and a card pill (`--card-link-icon`), in its own colour. */
+  --kind-folder: var(--fg-muted);
+  /* A card file's icon (YAZ-5037): the card icon of the `[[` picker and a card pill (`--card-link-icon`), in its own colour.
+     Two stacked cards (YAZ-5100 round 2), the one token every place draws. */
   --kind-card: #8a63c9;
-  --card-link-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.4' stroke-linejoin='round'%3E%3Cpath d='M2.5 3.5h11v9h-11zM2.5 6.5h11'/%3E%3C/svg%3E");
+  --card-link-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='1.75' y='5.25' width='10' height='8' rx='1.25'/%3E%3Cpath d='M4.5 3h8.25a1.25 1.25 0 0 1 1.25 1.25v6.25'/%3E%3C/svg%3E");
   /* `==highlight==` wash (YAZ-1480): translucent, so text colour and selection show through in both themes. */
   --mark-bg: rgba(255, 213, 0, 0.4);
   --mark-bg-green: rgba(80, 200, 120, 0.35);
@@ -90,6 +95,7 @@
   --danger: #e06c6c;
   --warn: #d9a13c;
   --ok: #4fb573;
+  --next-hidden: #5ab4ea;
   --bg-hover: #333336;
   --bg-hover-row: #303034;
   --fg-dir: #b8b8bd;
@@ -3787,8 +3793,9 @@ body.drag-held iframe {
   --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 1.5h5.5l3 3v10H4zM9.5 1.5v3h3'/%3E%3C/svg%3E");
 }
 
+/* The page (YAZ-5100 round 2): a sheet with a folded corner and two lines, in both sets (Material's below). */
 :is(.tree__row, .file-icon)[data-kind='markdown'] {
-  --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 1.5h5.5l3 3v10H4zM9.5 1.5v3h3M6 8.5h4.5M6 11h4.5'/%3E%3C/svg%3E");
+  --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 2.5a1 1 0 0 1 1-1h5l3 3v9a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1zM9.5 1.5v3h3M5.75 8h4.5M5.75 10.75h4.5'/%3E%3C/svg%3E");
 }
 
 :is(.tree__row, .file-icon)[data-kind='text'] {
@@ -3818,6 +3825,7 @@ body.drag-held iframe {
 
 :is(.tree__row, .file-icon)[data-kind='folder'] {
   --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 4.5a1 1 0 0 1 1-1h3.4l1.6 1.6h6a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z'/%3E%3C/svg%3E");
+  --kind-color: var(--kind-folder);
 }
 
 :is(.tree__row, .file-icon)[data-kind='card'] {
@@ -3855,11 +3863,13 @@ body.drag-held iframe {
   --kind-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 12.5v-8a1 1 0 0 1 1-1h3.4l1.6 1.6h5a1 1 0 0 1 1 1V7M1.5 12.5 3.5 7h11l-2 5.5z'/%3E%3C/svg%3E");
 }
 
-.app[data-sidebar-file-icons='color'] :is(.tree__row, .file-icon)[data-kind='markdown'] {
+/* A page's colour: with "All colour", or once one is picked (YAZ-5100 round 2: `data-icon-colors`, App.tsx). */
+.app:is([data-sidebar-file-icons='color'], [data-icon-colors~='page']) :is(.tree__row, .file-icon)[data-kind='markdown'] {
   --kind-color: var(--kind-page);
 }
 
-.app[data-sidebar-file-icons='grey'] :is(.tree__row, .file-icon)[data-kind] {
+/* Grey greys the files; a folder's colour is Folder icons' (YAZ-5100 round 2). */
+.app[data-sidebar-file-icons='grey'] :is(.tree__row, .file-icon)[data-kind]:not([data-kind='folder']) {
   --kind-color: var(--fg-muted);
 }
 
@@ -3896,6 +3906,23 @@ body.drag-held iframe {
   mask: var(--icon) center / 14px 14px no-repeat;
 }
 
+/* YAZ-5100 round 2, after the rules above, which it outweighs or ties. A page with Material's default icon (its M↓ mark,
+   `markdown`) is the page above, in the page's colour: grey, or "All colour"'s, or a picked one. A name icon of its
+   own (README.md) keeps Material's. */
+.app[data-sidebar-icon-set='material']:not([data-sidebar-file-icons='off']) :is(.tree__row--file[data-kind='markdown'][data-icon='markdown']:not([data-icon-custom]) .tree__label, .file-icon--file[data-kind='markdown'][data-icon='markdown']:not([data-icon-custom]))::before {
+  background: var(--kind-color, var(--fg-muted));
+  mask: var(--kind-icon) center / 14px 14px no-repeat;
+}
+
+/* A picked colour in Material (YAZ-5100 round 2): a drawing's or a diagram's icon, and the default folder's, as a
+   silhouette in that colour. Grey and Off win; a folder with an icon of its own keeps its colours. */
+.app[data-sidebar-icon-set='material'][data-icon-colors~='drawing']:not([data-sidebar-file-icons='off'], [data-sidebar-file-icons='grey']) :is(.tree__row--file[data-kind='drawing']:not([data-icon-custom]) .tree__label, .file-icon--file[data-kind='drawing']:not([data-icon-custom]))::before,
+.app[data-sidebar-icon-set='material'][data-icon-colors~='diagram']:not([data-sidebar-file-icons='off'], [data-sidebar-file-icons='grey']) :is(.tree__row--file[data-kind='diagram']:not([data-icon-custom]) .tree__label, .file-icon--file[data-kind='diagram']:not([data-icon-custom]))::before,
+.app[data-sidebar-icon-set='material'][data-icon-colors~='folder']:not([data-sidebar-folder-icons='off']) :is(.tree__row--dir:is([data-icon='folder'], [data-icon='folder-open']):not([data-icon-custom]) .tree__label, .file-icon--dir:is([data-icon='folder'], [data-icon='folder-open']):not([data-icon-custom]))::before {
+  background: var(--kind-color);
+  mask: var(--icon) center / 14px 14px no-repeat;
+}
+
 /* A drawing's or a diagram's extension (YAZ-3536 D4, D5): hidden while its icon says the kind; with File icons
    Off nothing else says it, so it shows. A page has none: no extension reads as a page. */
 .name-ending {
@@ -3920,6 +3947,11 @@ body.drag-held iframe {
 }
 .app[data-sidebar-file-icons='off'] .card-icon::before {
   content: none;
+}
+/* A picked card colour (YAZ-5100 round 2) on a card pill's icon and the `[[` picker's too. */
+.app[data-icon-colors~='card']:not([data-sidebar-file-icons='off'], [data-sidebar-file-icons='grey']) .wikilink.wikilink--card::before,
+.app[data-icon-colors~='card']:not([data-sidebar-file-icons='off'], [data-sidebar-file-icons='grey']) .wikilink-picker__card-icon {
+  background-color: var(--kind-card);
 }
 
 /* Search (YAZ-2620 🔒 D5): each part of a row that matched (YAZ-3748 D3), in the tree and in the flat lists — the `==highlight==` wash

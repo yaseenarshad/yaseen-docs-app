@@ -43,6 +43,7 @@ import { checkCard, type CardFault } from '@shared/cardCheck'
 import { lineKinds } from '@shared/fences'
 import { cardQueue, cardState } from '@shared/cardSchedule'
 import { cardTitle } from '@shared/cardText'
+import { cardFileTitle } from '@shared/cardConvert'
 import { cardFileContent, cardFileName, isCardFileContent } from '@shared/cardFileFormat'
 import { CARD_SKILL_START_PAGE, cardSkillFolder } from '@shared/cardSkillFolder'
 import { makeCardResolver } from '@shared/cardLinks'
@@ -159,7 +160,7 @@ shows them: first the cards up next (see \`card next\`), then the cards due toda
 new cards, oldest or newest first by the vault's "New cards first", as many as its "New cards a day" leaves
 for today (all of them when that box is empty). A line is the day it was due (\`next\` for a card up next,
 \`new\` for a new card, \`steps\` for a card in its same-day steps: Forgot, or a new card not yet Remembered
-twice; it is due now, minutes after its last answer), the card's id, its title (its first line) and its page.
+twice; it is due now, minutes after its last answer), the card's id, its title (its first line; a card file's \`title:\`) and its page.
 Given a page, \`due\` lists every card on it, each with the day it is next due, \`next\`, \`new\`, \`steps\`, or
 \`off\` (archived: the app's "Archive card"). The app works the dates out from each card's reviews with FSRS and never writes
 them, so this is the place to read them. \`--json\` gives \`id\`, \`page\`, \`title\`, \`due\` (ISO time; the
@@ -173,10 +174,10 @@ marks; case does not count). It prints \`added <id> to <page>\`; \`--json\` give
 "This is a card file. Use \`card new\`."
 
 A card file is a card on its own: a page whose properties hold \`kind: card\` and whose body is one card and
-its card line, nothing else. The card's id is the file's id (the file has no \`id:\` line), the card's first line
-is its title, and its name is \`<kebab-title>-<id>.md\`. \`card new\` makes one in a folder, with a new id from
-the vault's counter: \`--title\` (one line) is the card's first line, and \`--body\` (\`--body -\` for stdin) the
-rest, after a blank line. A name that is already taken is refused. It prints \`made <path>\`; \`--json\` gives
+its card line, nothing else. The card's id is the file's id (the file has no \`id:\` line). Its title is its
+\`title:\` property, as a page's, and its name is \`<kebab-title>-<id>.md\`; the card holds only its sides.
+\`card new\` makes one in a folder, with a new id from the vault's counter: \`--title\` (one line) is the
+file's \`title:\`, and \`--body\` (\`--body -\` for stdin) the card's text. A name that is already taken is refused. It prints \`made <path>\`; \`--json\` gives
 \`id\`, \`path\` and \`title\`.
 
 \`--hide-title\` on \`card add\` and \`card new\` keeps the card's title off the front in review, as the app's
@@ -403,9 +404,14 @@ async function cardVault(dir: string, what: string): Promise<string> {
   return root
 }
 
-/** The title of each card of a page (idea 3), in page order: its text is read here, the index does not hold it (D4). */
+/**
+ * The title of each card of a page (idea 3), in page order: its text is read here, the index does not hold it (D4). A
+ * card file's card is titled by the file's `title` (YAZ-5044).
+ */
 async function cardTitles(page: string): Promise<string[]> {
-  return pageCards((await readPage(page)).content).map((card) => cardTitle(card.text))
+  const { content } = await readPage(page)
+  const file = isCardFileContent(content)
+  return pageCards(content).map((card, i) => (file && i === 0 ? cardFileTitle(content) : cardTitle(card.text)))
 }
 
 /** `cardFile: true` for a card that lives in a card file (YAZ-5037), nothing for a card in a page: a row's own key. */
@@ -621,7 +627,7 @@ function cardPlace(body: string, after: string | undefined): number {
 /** A card file holds one card (YAZ-5037): `card add` never puts a second one in it. */
 const CARD_FILE_REFUSED = 'This is a card file. Use `card new`.'
 
-/** The title flag of `card add` and `card new` (YAZ-5030: a card's first line): one line of text, '' when not given. */
+/** The title flag of `card add` and `card new` (YAZ-5030: a card's first line; a card file's `title`, YAZ-5044): one line of text, '' when not given. */
 function cardTitleFlag(flags: Map<string, string | true>): string {
   const titleFlag = flags.get('--title')
   if (titleFlag === true) throw new Usage('--title needs a text')
@@ -700,8 +706,8 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io):
 }
 
 /**
- * `card new` (YAZ-5037): a card file in `dir` — `kind: card` and one card, its text the title line, then a blank line
- * and the body when one is given — with a new ID from the vault's counter, named `<kebab-title>-<id>.md` as a page is.
+ * `card new` (YAZ-5037): a card file in `dir` — `kind: card`, the title in `title:` (YAZ-5044), and one card whose text
+ * is the body when one is given — with a new ID from the vault's counter, named `<kebab-title>-<id>.md` as a page is.
  * The folder is checked before a number is taken. The create never writes over a file: a name that is taken is refused
  * (the number is spent, as the app's New page spends one on a create that fails).
  */
@@ -722,7 +728,7 @@ async function cardNew(dir: string, flags: Map<string, string | true>, io: Io): 
   if (id === undefined) throw new Error(`${dir}'s vault does not give its pages IDs, so it has no cards`)
   const path = join(dir, cardFileName(title, id))
   // No door: a card file carries no page `id:` (its card's ID is the file's), so the content is written as it is.
-  await createFile({ path, content: cardFileContent(text, newCardLine(id, flags)) }, null).catch((err: unknown) => {
+  await createFile({ path, content: cardFileContent(title, body, newCardLine(id, flags)) }, null).catch((err: unknown) => {
     throw err instanceof BridgeFailure && err.code === 'ALREADY_EXISTS' ? new Error(`${path} is already there`) : err
   })
   io.stdout(flags.has('--json') ? `${JSON.stringify({ id, path, title }, null, 2)}\n` : `made ${path}\n`)

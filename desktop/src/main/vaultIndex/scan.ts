@@ -247,10 +247,13 @@ export async function scanFile(root: string, absPath: string): Promise<IndexReco
   // The page's cards (YAZ-4960 D4): ID, off and reviews off each card line, no card text.
   const cards = cardRecords(body)
   // A card file (YAZ-5037): the mark in its properties, never its shape — a file with 2 cards, or none, stays a card
-  // file, and its tab says so. Its title is its card's (the 5030 rule), else the file's name.
+  // file, and its tab says so. Its title is its `title`, as a page's (YAZ-5044, decision A); one from before A that the
+  // sweep has not moved yet reads its card's first line; else the file's name. Its card's title IS the file's, so card
+  // pills, the `[[` picker, search and the Inbox read one title.
   if (isCardKind(properties)) {
     record.kind = 'card'
-    record.title = cards[0]?.title ?? fileTitle({ path: absPath, name, basename })
+    record.title = titleOf(properties, cards[0]?.title ?? fileTitle({ path: absPath, name, basename }))
+    if (cards.length > 0) cards[0] = { ...cards[0], title: record.title }
   }
   return { ...record, ...extractBody(properties, body), ...(cards.length > 0 && { cards }) }
 }

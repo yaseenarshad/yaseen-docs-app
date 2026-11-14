@@ -94,6 +94,32 @@
 .card-reviews {
   margin-top: 16px;
 }
+/* YAZ-5105 round 2, as Mochi's bottom strip: a slim, quiet band tucked under the card box above it (outside it), its
+   top hidden under the card's lower edge, its own lower corners round; the table opens inside it. The card box sits
+   over it. Its tint is the side colour mixed toward the text, so it reads as part of the card, not of the page. */
+.card-reviews--strip {
+  position: relative;
+  margin: -12px 0 0;
+  padding: 12px 8px 0;
+  border: 1px solid var(--border);
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  background: color-mix(in srgb, var(--fg) 2%, var(--bg-side));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+:is(.card-inbox__panel, .card-screen, .explore-card__edit):has(+ .card-reviews--strip) {
+  position: relative;
+  z-index: 1;
+}
+.card-reviews--strip .card-reviews__bar {
+  min-height: 36px;
+}
+.card-reviews--strip .card-reviews__toggle {
+  font-size: 12.5px;
+}
+.card-reviews--strip .card-reviews__scroll {
+  padding: 2px 4px 12px;
+}
 /* The card window's "Linked mentions" (YAZ-5030): the backlinks header, then one page name a row. */
 .card-backlinks {
   margin-top: 16px;
@@ -689,7 +715,16 @@ body.card-inbox--sizing {
 }
 .card-inbox__body {
   flex: none;
-  padding: 24px 28px 28px;
+  padding: 24px var(--inbox-card-pad, 28px) 28px;
+}
+/* Card spacing Clean (YAZ-5050 round 4) and Custom: Mochi's room inside the card, and its line of about 62 letters,
+   centred in the card (a wider card, dragged, keeps the line and centres it). */
+[data-card-clean] {
+  --inbox-card-pad: 44px;
+}
+[data-card-clean] .card-inbox__card .card__side {
+  max-width: 31em;
+  margin-inline: auto;
 }
 /* The buttons and their line (YAZ-5049 round 2): at the bottom of the view while a long card scrolls under them, so
    an answer is always one click away; under a short card, where they always were. The page colour, fading in at the
@@ -724,7 +759,11 @@ body.card-inbox--sizing {
 }
 /* The line between two sides (YAZ-5051): across the whole card, edge to edge, as Mochi's, with room on each side. */
 .card-inbox__card .card__rule {
-  margin: 22px -28px;
+  margin: 22px calc(-1 * var(--inbox-card-pad, 28px));
+}
+/* YAZ-5103: no "Side 2" on the line here: "Side 1 of 2" above the card says it. */
+.card-inbox__card .card__rule::before {
+  content: none;
 }
 /* The buttons row (YAZ-5004, as in Mochi): ← → on the left, the answers in the middle, ⋯ on the right. */
 .card-inbox__actions {

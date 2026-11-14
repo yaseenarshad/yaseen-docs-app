@@ -75,7 +75,7 @@ const SLICE_ROWS: readonly (readonly [Slice, string, string])[] = [
   [slice(strikethroughKeymap.key), 'ToggleStrikethrough', 'page.strikethrough'],
   [slice(highlightKeymap.key), 'ToggleHighlight', 'page.highlight'],
   [slice(paragraphKeymap.key), 'TurnIntoText', 'page.text'],
-  ...[1, 2, 3, 4, 5, 6].map((n) => [slice(headingKeymap.key), `TurnIntoH${n}`, `note.heading${n}`] as const),
+  ...[1, 2, 3, 4, 5, 6].map((n) => [slice(headingKeymap.key), `TurnIntoH${n}`, `page.heading${n}`] as const),
   [slice(blockquoteKeymap.key), 'WrapInBlockquote', 'page.quote'],
   [slice(codeBlockKeymap.key), 'CreateCodeBlock', 'page.codeBlock'],
   [slice(bulletListKeymap.key), 'WrapInBulletList', 'page.bulletList'],

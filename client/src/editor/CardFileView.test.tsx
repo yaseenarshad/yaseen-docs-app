@@ -21,7 +21,8 @@ import { cardFileName } from '@shared/cardFileFormat'
 const ROOT = '/v'
 const PATH = '/v/Geography/capital-of-france-wiki-9.md'
 const CARD = '```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'
-const FILE = `---\nkind: card\n---\n${CARD}`
+/** A card file holds its title in `title`, as a page does (YAZ-5044); its card holds only its sides. */
+const FILE = `---\nkind: card\ntitle: Capital of France\n---\n${CARD}`
 const disk = vi.hoisted(() => ({ files: new Map<string, string>(), reads: 0, review: { enabled: true } as Record<string, unknown> }))
 
 vi.mock('../api', async (importOriginal) => {
@@ -71,7 +72,7 @@ const rec = (path: string, extra: Partial<IndexRecord> = {}): IndexRecord => {
 }
 /** The vault's index: the card file, a page that links to the card, two that embed it. */
 const records = (mtime: number): IndexRecord[] => [
-  rec(PATH, { mtime, kind: 'card', cards: [{ id: 'WIKI-9', off: false, next: false, reviews: [], title: 'Capital of France' }] }),
+  rec(PATH, { mtime, kind: 'card', title: 'Capital of France', cards: [{ id: 'WIKI-9', off: false, next: false, reviews: [], title: 'Capital of France' }] }),
   rec('/v/pages.md', { links: ['WIKI-9'] }),
   rec('/v/europe.md', { embeds: ['WIKI-9'] }),
   rec('/v/trips.md', { embeds: ['wiki-9'] }),
@@ -144,7 +145,8 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await mount(FILE)
     expect(disk.reads).toBe(0)
     expect(el.querySelector('.card-file__path')?.textContent).toBe('Geography')
-    expect(el.querySelector('.card-file__title')?.textContent).toBe('Capital of France')
+    // The title shows one time (YAZ-5044): the big title is the file's `title`; the card holds only its sides.
+    expect(el.querySelector('.card-file__title-row .page-title__text')?.textContent).toBe('Capital of France')
     expect(el.querySelector('[data-card-file] .card__id')?.textContent).toBe('WIKI-9')
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('New'))
     expect(el.querySelector('.card-screen')?.textContent).toContain('Paris')
@@ -192,6 +194,22 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await mount(FILE.replace('<!-- card: WIKI-9 -->', '<!-- card: WIKI-9, 2026-11-01T09:00Z good -->'))
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toMatch(/^Due /))
     expect(el.querySelector('.card-reviews .backlinks__title')?.textContent).toBe('1 Review')
+  })
+
+  it('YAZ-5105 round 2: Reviews is a strip right under the card (as Mochi), closed until clicked; Linked mentions and Embedded in stay under it', async () => {
+    await mount(FILE.replace('<!-- card: WIKI-9 -->', '<!-- card: WIKI-9, 2026-11-01T09:00Z good -->'))
+    await vi.waitFor(() => expect(el.querySelector('.card-reviews')).not.toBeNull())
+    const strip = el.querySelector('.card-reviews')!
+    expect(strip.classList.contains('card-reviews--strip')).toBe(true)
+    expect(strip.previousElementSibling?.classList.contains('card-screen')).toBe(true)
+    expect(strip.nextElementSibling?.classList.contains('card-backlinks')).toBe(true)
+    const toggle = strip.querySelector<HTMLButtonElement>('.card-reviews__toggle')!
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(strip.querySelector('.card-reviews__table')).toBeNull()
+    act(() => toggle.click())
+    expect(strip.querySelector('.card-reviews__table')).not.toBeNull()
+    act(() => toggle.click())
+    expect(strip.querySelector('.card-reviews__table')).toBeNull()
   })
 })
 
@@ -272,7 +290,7 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
     key(el.querySelector('[data-card-file-body]')!, { key: 'e' })
     const dom = await cardEditor()
     // An agent writes the same card's text and a property, and reviews it.
-    const outside = `---\nkind: card\ntags: geo\n---\n${CARD.replace('Paris', 'Paris!').replace('<!-- card: WIKI-9 -->', '<!-- card: WIKI-9, 2026-11-01T09:00Z good -->')}`
+    const outside = `---\nkind: card\ntitle: Capital of France\ntags: geo\n---\n${CARD.replace('Paris', 'Paris!').replace('<!-- card: WIKI-9 -->', '<!-- card: WIKI-9, 2026-11-01T09:00Z good -->')}`
     disk.files.set(PATH, outside)
     indexSees(2)
     await act(async () => undefined)
@@ -382,89 +400,86 @@ describe('the top bar of a card file (YAZ-5102)', () => {
 })
 
 /**
- * NEW CARD (YAZ-5037 phase 4): the sidebar makes `<id>.md` and opens it; its tab starts in Edit card with "Title"
- * selected, so typing replaces it. On Done the file takes its name from the title through the title edit door (the
- * App's `onRetitle`, which asks before renaming as a page's title does). The placeholder "Title" gives no rename.
+ * NEW CARD (YAZ-5037 phase 4, YAZ-5101, YAZ-5044): the sidebar's name box gives the title; the file holds it in `title`
+ * and is named after it; the card starts empty, and its tab opens in Edit card on it, one time only.
  */
-describe('a new card file (YAZ-5037 phase 4)', () => {
-  const NEW = '/v/Geography/wiki-10.md'
-  /** A card made by New card, its tab mounted on the file it wrote. */
-  const newCard = async () => {
-    const made = await createCardFile('/v/Geography')
-    expect(made).toBe(NEW)
-    expect(disk.files.get(NEW)).toBe('---\nkind: card\n---\n```card\nTitle\n```\n<!-- card: WIKI-10 -->\n')
-    return mount(disk.files.get(NEW)!, { path: NEW })
-  }
-  const editorView = async () => {
-    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .card__editor .ProseMirror')?.textContent).toContain('Title'))
-    const dom = el.querySelector<HTMLElement>('[data-explore-card-edit] .card__editor .ProseMirror')!
-    return { dom, view: cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()! }
-  }
-
-  it('opens in Edit card with "Title" selected: typing replaces it; Done writes the card, then names the file after the title', async () => {
-    const { onRetitle } = await newCard()
-    const { dom, view } = await editorView()
-    expect(view.state.doc.textBetween(view.state.selection.from, view.state.selection.to)).toBe('Title')
-    act(() => view.dispatch(view.state.tr.insertText('Capital of France')))
-    key(dom, { key: 'Enter', metaKey: true })
-    await vi.waitFor(() => expect(onRetitle).toHaveBeenCalledExactlyOnceWith(NEW, 'Capital of France', 'file'))
-    expect(disk.files.get(NEW)).toBe('---\nkind: card\n---\n```card\nCapital of France\n```\n<!-- card: WIKI-10 -->\n')
-  })
-
-  it('named in the sidebar`s name box (YAZ-5101): the file is named after the title, the title is the card`s first line, and Edit card opens with the caret after it', async () => {
+describe('a new card file (YAZ-5037 phase 4, YAZ-5044)', () => {
+  it('the typed name is `title`; the file is named after it; the card is empty and opens in Edit card; Done writes the card and renames nothing', async () => {
     const made = await createCardFile('/v/Geography', 'Capital of France')
     expect(made).toBe(`/v/Geography/${cardFileName('Capital of France', 'WIKI-10')}`)
-    expect(disk.files.get(made)).toBe('---\nkind: card\n---\n```card\nCapital of France\n```\n<!-- card: WIKI-10 -->\n')
+    expect(disk.files.get(made)).toBe('---\nkind: card\ntitle: Capital of France\n---\n```card\n\n```\n<!-- card: WIKI-10 -->\n')
     const { onRetitle } = await mount(disk.files.get(made)!, { path: made })
-    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .card__editor .ProseMirror')?.textContent).toContain('Capital of France'))
+    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .card__editor .ProseMirror')).not.toBeNull())
     const dom = el.querySelector<HTMLElement>('[data-explore-card-edit] .card__editor .ProseMirror')!
     const view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
-    expect(view.state.selection.empty).toBe(true)
-    act(() => view.dispatch(view.state.tr.insertText('\n---\nParis', view.state.doc.content.size - 1)))
+    act(() => view.dispatch(view.state.tr.insertText('Which city?\n---\nParis', 1)))
     key(dom, { key: 'Enter', metaKey: true })
     await vi.waitFor(() => expect(disk.files.get(made)).toContain('Paris'))
-    // Already named after its title: Done renames nothing.
-    expect(onRetitle).not.toHaveBeenCalled()
-  })
-
-  it('Done with the placeholder "Title" kept renames nothing; the tab opens in Edit card one time only', async () => {
-    const { onRetitle } = await newCard()
-    const { dom, view } = await editorView()
-    act(() => view.dispatch(view.state.tr.insertText('\n---\nThe back', view.state.doc.content.size - 1)))
-    key(dom, { key: 'Enter', metaKey: true })
-    await vi.waitFor(() => expect(disk.files.get(NEW)).toContain('The back'))
+    expect(disk.files.get(made)).toMatch(/^---\nkind: card\ntitle: Capital of France\n---\n/)
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
     expect(onRetitle).not.toHaveBeenCalled()
     // Opened again, it is a card file like any other: shown, not in Edit card.
     act(() => root?.unmount())
-    await mount(disk.files.get(NEW)!, { path: NEW })
+    await mount(disk.files.get(made)!, { path: made })
     expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
     expect(editButton()).not.toBeNull()
   })
 
-  it('a card file not made by New card opens shown; a Done that keeps its title renames nothing, and one that changes it names the file too', async () => {
+  it('a Done in Edit card never renames: the card`s text is its sides, not its title', async () => {
     const { onRetitle } = await mount(FILE)
-    expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
     act(() => editButton()!.click())
-    let dom = await cardEditor()
-    let view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
-    act(() => view.dispatch(view.state.tr.insertText(' (Seine)', view.state.doc.content.size - 1)))
+    const dom = await cardEditor()
+    const view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
+    act(() => view.dispatch(view.state.tr.insertText('The ', 1)))
     key(dom, { key: 'Enter', metaKey: true })
-    await vi.waitFor(() => expect(disk.files.get(PATH)).toContain('Paris (Seine)'))
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toContain('The Capital of {{France}}'))
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
     expect(onRetitle).not.toHaveBeenCalled()
-    act(() => editButton()!.click())
-    dom = await cardEditor()
-    view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
-    let start = -1
-    view.state.doc.descendants((node, at) => {
-      if (start === -1 && node.isText) start = at
-      return start === -1
+  })
+})
+
+/** YAZ-5104: the big title of a card file tab is a page's title: click, type, Enter renames; Esc goes back; read only blocks it. */
+describe('click the title to change it, as on a page (YAZ-5104)', () => {
+  const title = () => el.querySelector<HTMLElement>('.card-file__title-row .page-title__text')
+  const field = () => el.querySelector<HTMLTextAreaElement>('.card-file__title-row .page-title__input')
+  const type = (text: string) =>
+    act(() => {
+      const box = field()!
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(box, text)
+      box.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    act(() => view.dispatch(view.state.tr.insertText('The ', start)))
-    key(dom, { key: 'Enter', metaKey: true })
-    await vi.waitFor(() => expect(onRetitle).toHaveBeenCalledExactlyOnceWith(PATH, 'The Capital of France', 'file'))
-    expect(disk.files.get(PATH)).toContain('The Capital of {{France}}')
+
+  it('a click opens the field on the title; Enter hands the new title to the title edit door (it writes `title` and renames the file)', async () => {
+    const { onRetitle } = await mount(FILE)
+    act(() => title()!.click())
+    expect(field()?.value).toBe('Capital of France')
+    type('Capital of Spain')
+    key(field()!, { key: 'Enter' })
+    expect(onRetitle).toHaveBeenCalledExactlyOnceWith(PATH, 'Capital of Spain', 'file')
+    expect(field()).toBeNull()
+  })
+
+  it('Esc goes back: nothing is renamed; typing in the field never opens Edit card', async () => {
+    const { onRetitle } = await mount(FILE)
+    act(() => title()!.click())
+    key(field()!, { key: 'e' })
+    expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
+    type('Something else')
+    key(field()!, { key: 'Escape' })
+    expect(field()).toBeNull()
+    expect(onRetitle).not.toHaveBeenCalled()
+    expect(title()?.textContent).toBe('Capital of France')
+  })
+
+  it('read only, as on a page: a read-only vault or a `readonly: true` file does not open the field', async () => {
+    const { onRetitle } = await mount(FILE, { readOnly: true })
+    act(() => title()!.click())
+    expect(field()).toBeNull()
+    act(() => root?.unmount())
+    await mount(FILE.replace('kind: card\n', 'kind: card\nreadonly: true\n'))
+    act(() => title()!.click())
+    expect(field()).toBeNull()
+    expect(onRetitle).not.toHaveBeenCalled()
   })
 })
 

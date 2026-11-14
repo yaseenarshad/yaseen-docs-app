@@ -21,18 +21,18 @@ const ROOT = path.resolve(__dirname, '..')
 /** Feature names that hold the word and keep it, each with its reason. */
 const ALLOWED: readonly { why: string; test: RegExp }[] = [
   { why: 'Daily page: the feature, its folder, its button, its toasts, and what its button opens ("The page", "The page at now")', test: /\bdaily pages?\b|^settings\/options\.ts:\d+: The page( at now)?$/i },
-  { why: 'Cell note: the feature in a table cell, and the "All notes" card of a calendar table', test: /\bcell notes?\b|\bAll notes\b/i },
-  { why: 'The cell note feature\'s own files: its card titles ("Page", "Page: …", "Pages")', test: /^editor\/table\/cellNote/ },
+  { why: 'A page that is not the unit: a diagram\'s pages (draw.io), a table as wide as the page', test: /^editor\/embed\/boardWindow\.ts:\d+: Page$|^explore\/ExploreBoard\.tsx:\d+: Pages$|Fit columns to the page/ },
+  { why: 'A folder\'s Page tab and its settings', test: /^settings\/folderPagesSection\.tsx:\d+: Page$|^views\/view\/Toolbar\.tsx:\d+: Page settings$/ },
   { why: 'Pages from: a link column\'s setting', test: /\bPages from\b/ },
-  { why: 'Release notes', test: /^update\/WhatsNewSheet\.tsx:/ },
   { why: 'Missing page: a link pill\'s state, next to "ID from another vault"', test: /\bMissing page\b/ },
-  { why: 'Card: the block\'s name in every vault (YAZ-4946 D16), never "Card card"', test: /\bnote cards?\b/i },
   { why: 'The hotkeys sheet describes the app\'s gestures, like the help docs', test: /^settings\/hotkeys(?:Section)?\.tsx?:/ },
   { why: 'The Settings row that names the word itself, and its control', test: /^settings\/UnitWordControl\.tsx:|\bCall a page a\b/ },
   { why: 'The sidebar\'s icon rules: the icon packs\' own name lists', test: /^sidebar\/materialIconData\.ts:/ },
 ]
 
-const WORD = /\bnotes?\b/i
+/** The unit word (YAZ-5036: "page", it was "note"); a page that is not the unit keeps its word, as `unitWord.ts` `OTHER_PAGE` does. */
+const WORD = /\bpages?\b/i
+const OTHER_PAGE = /\b(?:folder|start|tab|home|front|pdf|web|settings) pages?\b|\bpages? tabs?\b/gi
 const LITERAL = /(['"`])((?:\\.|(?!\1)[^\\\n])*)\1/g
 const SLOT =
   /(?:\b(?:label|title|placeholder|aria-label|ariaLabel|confirmLabel|cancelLabel|menuLabel|triggerLabel|empty|name)\s*[:=]\s*\{?\s*|\b(?:notify|onNotice|notice|plain)\??\.?\(\s*|\b[A-Z_]*(?:LABEL|PLACEHOLDER|TITLE|NAME|OPTION|TIP|MESSAGE)S?\b[^=]*=\s*[[{]?[^'"`]*)$/
@@ -63,7 +63,7 @@ export function unguardedPageStrings(): string[] {
         LITERAL.lastIndex = 0
         for (let m = LITERAL.exec(line); m !== null; m = LITERAL.exec(line)) {
           const text = m[2]
-          const plain = text.replace(/\$\{[^}]*\}/g, '')
+          const plain = text.replace(/\$\{[^}]*\}/g, '').replace(OTHER_PAGE, '')
           if (!WORD.test(plain)) continue
           const before = line.slice(0, m.index)
           const after = line.slice(m.index + m[0].length)
@@ -79,7 +79,7 @@ export function unguardedPageStrings(): string[] {
         JSX_TEXT.lastIndex = 0
         for (let m = JSX_TEXT.exec(line); m !== null; m = JSX_TEXT.exec(line)) {
           const text = m[1].trim()
-          if (text !== '' && WORD.test(text) && !/[=(]/.test(text)) add(text)
+          if (text !== '' && WORD.test(text.replace(OTHER_PAGE, '')) && !/[=(]/.test(text)) add(text)
         }
       })
   }

@@ -124,7 +124,7 @@ test('step 1d — find inside a pill shows the find colour, and a cut pill keeps
   await win.keyboard.press('Escape')
 })
 
-test('step 1e — a rest on a pill into the other vault previews its note, as a [[link]] does; no address bar (D20)', async () => {
+test('step 1e — a rest on a pill into the other vault previews its page, as a [[link]] does; no address bar (D20)', async () => {
   await editorOf(win).getByText('See').click() // the editor has focus: Crepe would show its address bar on a link
   await editorOf(win).locator('.link-pill--first', { hasText: 'the gym plan' }).hover()
   const preview = win.locator('.page-preview')

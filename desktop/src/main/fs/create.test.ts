@@ -226,11 +226,11 @@ describe('createFile gives the page its id (YAZ-2293 D3, YAZ-2677 D4)', () => {
   it('a CARD FILE (YAZ-5037) is born as given, with no page `id:`: its card line holds its ID, which the answer carries; no number is taken', async () => {
     const [id] = await door.mint(1)
     const taken = door.given.length
-    const content = cardFileContent(NEW_CARD_TEXT, withCardId(EMPTY_CARD_LINE, id))
+    const content = cardFileContent(NEW_CARD_TEXT, '', withCardId(EMPTY_CARD_LINE, id))
     const body = await createFile({ path: at(`${id.toLowerCase()}.md`), content }, door)
     expect(body.id).toBe(id)
     expect(await readFile(at(`${id.toLowerCase()}.md`), 'utf8')).toBe(content)
-    expect(content).toBe(`---\nkind: card\n---\n\`\`\`card\nTitle\n\`\`\`\n<!-- card: ${id} -->\n`)
+    expect(content).toBe(`---\nkind: card\ntitle: Title\n---\n\`\`\`card\n\n\`\`\`\n<!-- card: ${id} -->\n`)
     expect(door.given).toHaveLength(taken)
   })
 

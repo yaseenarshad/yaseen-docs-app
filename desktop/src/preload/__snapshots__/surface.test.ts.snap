@@ -248,7 +248,6 @@ window.minimizedWindows/0: invoke window:minimized-windows-now []; => "answer"; 
 window.moveInboxTo/2: invoke window:move-inbox-to ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.moveTab/5: invoke window:move-tab ["a0","a1","a2",null,null]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.moveTo/3: invoke window:move-to ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-window.pageClosed/1: invoke window:page-closed ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.onFlush/1: (no IPC)
 window.onGlow/1: on window:glow -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off window:glow
 window.onHiddenWindows/1: on window:hidden-windows -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off window:hidden-windows
@@ -262,6 +261,7 @@ window.openFiles/1: invoke window:open-files ["a0"]; => "answer"; !> {"code":"NO
 window.openFromFiles/1: invoke window:open-from-files ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.openRecent/1: invoke window:open-recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.openSet/1: invoke window:open-set ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.pageClosed/1: invoke window:page-closed ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.popOut/2: invoke window:pop-out ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.popOutTab/2: invoke window:pop-out-tab ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.raise/0: invoke window:raise []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

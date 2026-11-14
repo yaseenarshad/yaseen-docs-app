@@ -2,16 +2,18 @@
  * A CARD FILE's tab (YAZ-5037): a `.md` file with `kind: card` (`shared/cardFileFormat.ts`) shows its card, not a page.
  * `Editor` routes here after its ONE read (`useFile`) and hands the file over: the tab reads nothing on open.
  *
- *  - The head: the folder path, the title (the card's first line), the card ID (a click copies it) and the state —
+ *  - The head: the folder path, the title, the card ID (a click copies it) and the state —
  *    "Archived", or with the vault's Review on "New" / "Due in 3 days", the "Up next" chip, "Hidden in review". Then
  *    Edit card (E) and ⋯. With Review off nothing asks you to review the card: no due state, no Inbox row, no Reviews.
  *  - The body is the card window's (`review/cardPane.tsx`): the card or the card editor, its Reviews, "Linked
  *    mentions (n)", and "Embedded in (n)". There is no "Open page": the tab is the card's file.
  *  - EDIT CARD (YAZ-5026) as in the card window: Done writes the card's text by its ID on the newest bytes, ONE
  *    `transformFile` (`changeCardTextIn`). A read-only vault or a `readonly: true` file has no Edit card; ⋯ and
- *    reviews still write, as reviews do in a locked page. A Done that changed the title then names the file after it
- *    (`onRetitle`, YAZ-5044 pick 1). A card New card just made opens in Edit card: the caret after the title its name box gave (YAZ-5101), or the
- *    placeholder "Title" selected.
+ *    reviews still write, as reviews do in a locked page. A card New card just made opens in Edit card (YAZ-5101).
+ *  - THE TITLE (YAZ-5044 decision A, YAZ-5104) is the file's `title`, as a page's, and the card's text never holds it:
+ *    the big title is the page's own `PageTitle`, read from the index, so a click edits it as on a page. Enter (or a
+ *    click away) writes `title` and renames the file through App's title edit door (`onRetitle`, which asks first as a
+ *    page's title does); Esc goes back. While the tab is read only, the title is too.
  *  - A FILE THAT IS NOT VALID (`cardFileShape`) stays a card file: one notice at the top (`CardFileNotice`), and
  *    nothing is deleted. 2+ cards: "This card file holds 3 cards.", the first card under it (each one stays in review).
  *    Text outside the card: the notice, and that text below it, muted. No card: the notice, and the file's text.
@@ -28,8 +30,7 @@
  *    `kind: card` goes back to the page view (`onPage`, with the bytes just read); a second card is the notice above.
  */
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { NEW_CARD_TEXT, cardFileShape, isCardFileContent } from '@shared/cardFileFormat'
-import { cardTitle } from '@shared/cardText'
+import { cardFileShape, isCardFileContent } from '@shared/cardFileFormat'
 import { splitFrontmatter } from '@shared/frontmatter'
 import type { GestureAction } from '@shared/keys'
 import { isPageReadOnly, setPageReadOnly } from '@shared/readOnly'
@@ -46,6 +47,7 @@ import { CardPane, cardMenuSections, cardWrites, isCardEditKey, onIndexVersion }
 import { cardFacts, cardNextReview, CardId, CardNextChip } from '../review/cardParts'
 import { useVaultReviewSettings } from '../review/useReviewSettings'
 import type { ExploreVault } from '../explore/ExplorePage'
+import { usePathTitles } from '../lib/pageLabel'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import type { MenuSection } from '../sidebar/menuSections'
 import { VaultReadOnly } from '../vault/readOnlyVault'
@@ -53,6 +55,7 @@ import { CardFileNotice } from './CardFileNotice'
 import { stepZoomByKey } from './DocumentZoom'
 import { cardBlockViewOfDom } from './card/cardBlockView'
 import { PageSettings } from './PageSettings'
+import { PageTitle } from './PageTitle'
 import { StatusChips } from './StatusChips'
 import { useTimedUnlock } from './useTimedUnlock'
 import { ZOOM_EVENT } from './zoomRequest'
@@ -61,6 +64,7 @@ import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import './cardFileView.css'
+import { useUnit } from '../vault/unitWord'
 
 export interface CardFileViewProps {
   /** The file as the tab's one read gave it (`useFile`): a card file. */
@@ -79,7 +83,7 @@ export interface CardFileViewProps {
   onNotice?: (message: string) => void
   /** The file is no longer a card file (`kind: card` gone on disk): the page view, on the file just read. */
   onPage: (file: FileResponse) => void
-  /** The title edit door (YAZ-2420 🔒 D16, App's): Done that changes the card's title names the file after it. Absent: no rename. */
+  /** The title edit door (YAZ-2420 🔒 D16, App's): the big title's edit writes `title` and names the file after it (YAZ-5104). Absent: the title is read only. */
   onRetitle?: (path: string, title: string, kind: 'file') => void
   /** The tab's own convert ended (YAZ-5037 phase 5: Turn into a page): the editor reads the file again, with no notice. */
   onReread?: () => void
@@ -89,8 +93,6 @@ export interface CardFileViewProps {
 }
 
 const NO_CANDIDATES: WikilinkCandidateSource = { candidates: [], subscribe: () => () => undefined }
-/** A new card's "Title", selected as Edit card opens (offsets in the card's text). */
-const NEW_CARD_TITLE = { from: 0, to: NEW_CARD_TEXT.length }
 const quiet = (): void => undefined
 
 /** The notice of a card file that is not valid, or null for a valid one. */
@@ -110,6 +112,7 @@ function folderOf(root: string, path: string): string {
 }
 
 export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle, onReread, sync, onSyncNow }: CardFileViewProps) {
+  const unit = useUnit()
   const path = file.path
   const [content, setContent] = useState<string | null>(file.content)
   /** "Turn into a page" runs: the file losing `kind: card` is this tab's own doing, and says nothing. */
@@ -149,6 +152,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
 
   const shape = useMemo(() => (content === null ? null : cardFileShape(splitFrontmatter(content).body)), [content])
   const card = useMemo(() => (content === null ? null : cardInContent(path, content, null, 0)), [content, path])
+  const titles = usePathTitles(wikilinks)
   const settings = useVaultReviewSettings(root)
   const reviewOn = settings?.enabled === true
   const door = useContext(CardReviewDoor)
@@ -157,7 +161,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   /** The file's own switch (`readonly: true`) or the vault's: the top bar's "Read only" chip shows while this is true. */
   const diskReadOnly = content !== null && isPageReadOnly(content)
   const lockedBase = diskReadOnly || vaultLocked
-  // A card New card just made (YAZ-5037) opens in Edit card, its "Title" selected so typing replaces it: one time only.
+  // A card New card just made (YAZ-5037) opens in Edit card, one time only.
   const [fresh] = useState(() => isNewCard(path))
   useEffect(() => forgetNewCard(path), [path])
   const [editing, setEditing] = useState(fresh)
@@ -210,21 +214,14 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const setReadOnly = (on: boolean) =>
     void transformFile(path, (text) => setPageReadOnly(text, on)).then(read, (err: unknown) => onNotice(`Read only could not change: ${err instanceof Error ? err.message : String(err)}`))
   const giveKeysBack = () => bodyRef.current?.focus({ preventScroll: true })
-  /**
-   * Done (YAZ-5044 pick 1): the card's text, then — when its title changed — the file's name follows the title through
-   * the title edit door, which asks before renaming as a page's title does. The placeholder "Title" and an empty title
-   * name nothing (`<id>.md` stays), and nor does a card with no ID yet.
-   */
+  /** Done: the card's text, its sides only (YAZ-5044: the title is the file's `title`, never in the text). */
   const editDone = (text: string) => {
-    const title = cardTitle(text)
-    const named = onRetitle !== undefined && card !== null && card.id !== null && title !== '' && title !== NEW_CARD_TEXT && title !== cardTitle(card.text)
     setSave('saving')
     writes.editDone(
       text,
       () => {
         setSave('saved')
         setEditing(false)
-        if (named) onRetitle(path, title, 'file')
       },
       () => setSave('error'),
     )
@@ -243,7 +240,6 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
 
   if (content === null || shape === null) return <p className="editor-msg">This card file is no longer there</p>
   const id = card?.id ?? null
-  const title = card === null ? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '') : cardTitle(card.text)
   const notice = shapeNotice(shape.problem, shape.cards.length)
   const outside = [shape.before, shape.after].filter((text) => text !== '')
   const state = card === null ? null : card.off ? 'Archived' : !reviewOn || settings === undefined ? null : cardDue(card.reviews, settings)
@@ -260,7 +256,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   }
   const sections = (): MenuSection[] => [
     ...cardMenuSections(card, id, writes.changeLine, onNotice, { inbox: reviewOn, link: true }),
-    ...(converts ? [[{ id: 'to-page', label: 'Turn into a page', onSelect: toPage }]] : []),
+    ...(converts ? [[{ id: 'to-page', label: unit('Turn into a page'), onSelect: toPage }]] : []),
   ]
   const fixes =
     !converts ? null : shape.problem === 'many' ? (
@@ -312,7 +308,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
           <header className="card-file__head">
             <div className="card-file__path">{folderOf(root, path)}</div>
             <div className="card-file__title-row">
-              <h1 className={`card-file__title${title === '' ? ' card-file__title--empty' : ''}`}>{title === '' ? 'New card' : title}</h1>
+              <PageTitle path={path} titles={titles} readOnly={locked || onRetitle === undefined} onRetitle={(title) => onRetitle?.(path, title, 'file')} onArrowDown={giveKeysBack} />
               {canEdit && !editing && (
                 <button type="button" className="card-file__button" data-card-file-edit onMouseDown={(e) => e.preventDefault()} onClick={() => setEditing(true)}>
                   Edit card <kbd>E</kbd>
@@ -341,7 +337,6 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               vault={vault}
               editing={editing && canEdit}
               onEditDone={editDone}
-              select={fresh && card.text === NEW_CARD_TEXT ? NEW_CARD_TITLE : undefined}
               doors={doors}
               onOpenPage={onOpenFile}
               reviews={reviewOn ? settings : undefined}

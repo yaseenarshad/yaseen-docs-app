@@ -59,8 +59,13 @@
  *    it again), pauses while the Inbox is not in front and over any stretch of "Pause the timer after" with no key or
  *    mouse; the answer writes its active seconds on its review part (`… good 13s`). The top row says today's work
  *    across the vault, "Today: 31 cards · 9 min" (`session.today`, from the index), and the done screen says it too.
- *  - No Reviews section (YAZ-5000: it lives only under the card in the page, and in the card window). Nothing left: "Inbox complete." for the vault; for one page or
- *    folder "This page is done." and, quiet, "21 more in the Inbox", which starts the vault's review.
+ *  - REVIEWS AT THE BOTTOM OF THE LAST SIDE (YAZ-5105, as Mochi; it amends YAZ-5000, which took them out of the Inbox):
+ *    once the card is fully shown, a card with reviews has the Reviews strip ("✓ 4 Reviews") right under the card,
+ *    outside its frame (round 2): the card window's own `CardReviews`, closed until asked for, with no delete here.
+ *    Never on the front or an earlier side. It is no Space step, and the scroll never goes to it; the buttons' band
+ *    stays at the bottom of the view over it.
+ *  - Nothing left: "Inbox complete." for the vault; for one page or folder "This page is done." and, quiet, "21 more in
+ *    the Inbox", which starts the vault's review.
  *  - ADD MORE FOR TODAY (YAZ-5042, Yaseen: "instead of having to go settings"): the done screen says what waits past
  *    today's number, "38 new cards and 3 Up next cards wait for another day.", with one button for each kind, "Add 10
  *    new cards" and "Add 2 Up next" (the first added card shows at once); a filter's done screen has its own kind's
@@ -79,7 +84,7 @@ import type { GestureAction } from '@shared/keys'
 import type { CardRating } from '@shared/cardLine'
 import type { ExploreVault } from '../explore/ExplorePage'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
-import { CardBody, CardId, CardNextChip, cardWait } from './cardParts'
+import { CardBody, CardId, CardNextChip, CardReviews, cardWait } from './cardParts'
 import { cardInboxHints, cardInboxKey } from './cardInboxKeys'
 import { CARD_MEDIA, CARD_OPENS, stopCardAudio, textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
 import { HoverTip } from '../components/HoverTip'
@@ -95,6 +100,7 @@ import { todayWork } from './reviewTime'
 import { cssZoom } from '../lib/cssZoom'
 import { inboxRoom, readingScroll } from './inboxScroll'
 import '../explore/explore.css'
+import { useUnit } from '../vault/unitWord'
 
 export interface CardInboxProps {
   /** The Inbox tab is the one on show (YAZ-5011); false: behind a page tab, hidden, and deaf to keys. Default true. */
@@ -213,6 +219,7 @@ interface Step {
 }
 
 export function CardInbox({ shown = true, review, session, vaultOf, nameOf, openPage, openTab, openCard, openInTab, openLinkIn, openLayer, onNotice, openPlace }: CardInboxProps) {
+  const unit = useUnit()
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
   const { width, startDrag } = useInboxCardWidth(columnRef, rootRef)
@@ -479,7 +486,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                   </>
                 ) : (
                   <>
-                    <p className="card-inbox__done-title">{session.scope === 'page' ? 'This page is done.' : 'This folder is done.'}</p>
+                    <p className="card-inbox__done-title">{session.scope === 'page' ? unit('This page is done.') : 'This folder is done.'}</p>
                     {waits}
                     {addButtons}
                     {more > 0 ? (
@@ -496,13 +503,18 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
             ) : (
               text !== null &&
               card.page !== null && (
-                <div className="card card-screen card-inbox__card" onClick={(e) => e.target instanceof Element && e.target.closest(`a[href], ${CARD_OPENS}, ${CARD_MEDIA}`) === null && advance()}>
-                  <CardBody text={text} path={card.path} vault={vaultOf(card.path)} show={{ sides: step.sides, shown: step.shown }} doors={doors} />
-                </div>
+                <>
+                  <div className="card card-screen card-inbox__card" onClick={(e) => e.target instanceof Element && e.target.closest(`a[href], ${CARD_OPENS}, ${CARD_MEDIA}`) === null && advance()}>
+                    <CardBody text={text} path={card.path} vault={vaultOf(card.path)} show={{ sides: step.sides, shown: step.shown }} doors={doors} />
+                  </div>
+                </>
               )
             )}
           </div>
         </div>
+        {/* YAZ-5105 round 2: the Reviews strip, as Mochi's, under the card and outside its frame, once the last side is
+            fully shown; closed again for each card. The buttons' band stays at the bottom of the view over it. */}
+        {card?.page != null && text !== null && session.filter !== 'archived' && done && card.page.reviews.length > 0 && <CardReviews key={cardKey} reviews={card.page.reviews} settings={review.settings} />}
         {/* Under the card, outside its frame, as in Mochi (YAZ-5002): the answer buttons, then the keys. No "Press Space"
             line between them (YAZ-5021): the key row at the bottom already says Space. */}
         {/* YAZ-5049 round 2: the buttons and their line stay at the bottom of the view while a long card scrolls under them. */}

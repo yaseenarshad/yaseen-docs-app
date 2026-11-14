@@ -138,7 +138,7 @@ export function useConfirmChanges(folder: string, on: boolean, onTurnOff?: () =>
 
   const left = paused ? Math.max(0, (pauses.get(folder) ?? 0) - Date.now()) : 0
   const pauseChip = paused ? (
-    <span className="change-pause" role="status" title="Changes on this page do not ask until the time is up">
+    <span className="change-pause" role="status" title="Changes on this folder page do not ask until the time is up">
       Not asking · {Math.floor(left / 60_000)}:{String(Math.floor((left % 60_000) / 1000)).padStart(2, '0')}
       <button type="button" className="change-pause__resume" onClick={() => setPause(folder, null)}>
         Resume
@@ -234,13 +234,13 @@ function ChangeAskCard({ ask, onChange, onCancel, onPause, onTurnOff }: { ask: C
         <span className="change-ask__foot-label">Pause asking</span>
         <div className="change-ask__pauses" role="group" aria-label="Change, then pause asking for">
           {PAUSE_MINUTES.map((minutes) => (
-            <button key={minutes} type="button" className="change-ask__pause" title={`Change, then stop asking on this page for ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`} onClick={() => onPause(minutes)}>
+            <button key={minutes} type="button" className="change-ask__pause" title={`Change, then stop asking on this folder page for ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`} onClick={() => onPause(minutes)}>
               {minutes} min
             </button>
           ))}
         </div>
         {onTurnOff !== undefined && (
-          <button type="button" className="change-ask__off" title="Change, and stop asking on this page (its ⚙ › Confirm changes: Off)" onClick={onTurnOff}>
+          <button type="button" className="change-ask__off" title="Change, and stop asking on this folder page (its ⚙ › Confirm changes: Off)" onClick={onTurnOff}>
             Don't ask here
           </button>
         )}

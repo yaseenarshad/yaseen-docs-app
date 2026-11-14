@@ -5,7 +5,7 @@
  * commands; while the channel is closed there is no bar at all.
  *
  * 🔒 THE CLAIM RULE (locked in YAZ-967, visibility amendment in YAZ-970) is why CMD+F is a WINDOW
- * CAPTURE listener, one per bar and with no coordinator between them: a `page` bar (a folder's Page
+ * CAPTURE listener, one per bar and with no coordinator between them: a `folder` bar (a folder's Page
  * tab, YAZ-4584) claims the key while focus stands inside its own host, the `page` bar claims it
  * whenever focus is NOT inside any `.folder-page-doc` — and a HIDDEN editor never claims. With no
  * other page editor showing (a folder page and no page window), CMD+F belongs to the Page even from
@@ -32,7 +32,7 @@ export interface FindBarProps {
   /** The host's one channel per editor mount — the very instance `createCrepe` was given. */
   channel: FindChannel
   /** Which part of the claim rule this bar answers CMD+F by (🔒 YAZ-967); `views`: a folder page's views (YAZ-4613). */
-  scope: 'page' | 'page' | 'views'
+  scope: 'page' | 'folder' | 'views'
   /** The Page bar's own editor mount: its claim IS focus standing inside it. Unread for `page`. */
   hostRef: RefObject<HTMLElement | null>
   /** A page's fold menu (YAZ-4787): the page's own choice (null: none), the app's, and the door that writes the page's. */
@@ -112,7 +112,7 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
       /** In the explore stack (YAZ-2571): only the layer's own bar answers; the tab's behind the stack stays shut. */
       const inExplore = active instanceof Element && active.closest('.explore') !== null && !(host?.contains(active) ?? false)
       const claims =
-        scope === 'page'
+        scope === 'folder'
           ? shown(host) && ((active !== null && host !== null && host.contains(active)) || (!inCode && !otherPage()))
           : scope === 'views'
             ? // The focus in the views (not in a page editor there), or in no page, with no page showing: the first shown views.
@@ -146,7 +146,7 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
             ref={inputRef}
             className="find-bar__input"
             type="text"
-            aria-label="Find in page"
+            aria-label={unit('Find in page')}
             placeholder="Find"
             spellCheck={false}
             value={state.query}

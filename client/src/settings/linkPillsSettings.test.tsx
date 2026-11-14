@@ -323,11 +323,11 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     expect(row.textContent).toContain('The default look of every link in this vault. Right-click a link to style that one.')
   })
 
-  it("the hint under the chips says the vault's word (YAZ-4950): a Card vault reads \"card\"", () => {
+  it("the hint under the chips says the vault's word (YAZ-4950): a Doc vault reads \"doc\"", () => {
     expect(mount(NO_LINK_PILLS).row.querySelector('.settings__tokens')?.textContent).toBe('Other text shows as you type it. An empty part, like the ID of a page without one, takes its text with it.')
     act(() => root?.unmount())
     container?.remove()
-    expect(mount(NO_LINK_PILLS, false, UNIT_WORDS.card).row.querySelector('.settings__tokens')?.textContent).toBe('Other text shows as you type it. An empty part, like the ID of a card without one, takes its text with it.')
+    expect(mount(NO_LINK_PILLS, false, UNIT_WORDS.doc).row.querySelector('.settings__tokens')?.textContent).toBe('Other text shows as you type it. An empty part, like the ID of a doc without one, takes its text with it.')
   })
 
   it('an old look reaches the row converted: the format box shows version 1 as a format', () => {

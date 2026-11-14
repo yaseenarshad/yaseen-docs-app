@@ -13,6 +13,7 @@ import { readPageSwitches, type PageSwitches } from '@shared/pageSwitches'
 import { api } from '../api'
 import { useReadOnlyPage } from './useReadOnlyPage'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { useUnit } from '../vault/unitWord'
 
 type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches } | { kind: 'empty' } | { kind: 'gone' }
 
@@ -38,6 +39,7 @@ interface ReadOnlyPageProps {
 }
 
 export function ReadOnlyPage({ path, wikilinks, className, unreadable, maxChars }: ReadOnlyPageProps) {
+  const unit = useUnit()
   const hostRef = useRef<HTMLDivElement>(null)
   const [content, setContent] = useState<Content>({ kind: 'loading' })
 
@@ -62,7 +64,7 @@ export function ReadOnlyPage({ path, wikilinks, className, unreadable, maxChars 
   return (
     <div className={className} ref={hostRef}>
       {content.kind === 'gone' && <p className="editor-msg">{unreadable}</p>}
-      {content.kind === 'empty' && <p className="editor-msg">Empty page</p>}
+      {content.kind === 'empty' && <p className="editor-msg">{unit('Empty page')}</p>}
     </div>
   )
 }

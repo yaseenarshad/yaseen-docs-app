@@ -15,7 +15,7 @@
  *    of a selection (`user-select: none`), out of the accessibility tree (`aria-hidden`; the blank says "Hidden word"),
  *    and out of a copy (`copyWithoutHidden`).
  *  - `show.sides`: how many sides show (default all); `show.shown`: how many hidden words show, in page order over
- *    the whole card (default all). The page shows everything (idea 21 is later); the Inbox steps one word, then one
+ *    the whole card (default all); the blank the next Space shows has `data-next` (YAZ-5053 round 3). The page shows everything (idea 21 is later); the Inbox steps one word, then one
  *    side, at a time (D18).
  *  - `[[link]]` is a pill: `<span class="wikilink" data-card-link="inner">` with the label, the unresolved class
  *    and the icon attributes `look.link` gives (the page's own pill rules, `wikilinkPlugin.ts`); an `![[embed]]` stays
@@ -150,6 +150,8 @@ function fillHidden(root: Node, words: readonly string[], shown: number): void {
         inner.setAttribute('aria-hidden', 'true')
       }
       span.dataset.hidden = String(n)
+      // YAZ-5053 round 3: the blank the next Space shows (the Inbox's step, never computed again elsewhere).
+      if (n === shown) span.dataset.next = ''
       span.append(inner)
       out.append(span)
       from = m.index + m[0].length

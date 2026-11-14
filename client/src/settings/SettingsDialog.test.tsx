@@ -23,6 +23,7 @@ import { idsAskMessage, idsLettersAsk, KEEP_OTHER_ASK, keepIdsAskMessage, letter
 import { HOTKEYS_SECTION } from './hotkeysSection'
 import { groupsOf, SETTINGS_SECTIONS, type SettingsCtx } from './registry'
 import { SettingsDialog } from './SettingsDialog'
+import { NEXT_HIDDEN_SWATCH } from './options'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -140,7 +141,13 @@ const GENERAL_ROWS = ['profile', 'settingsFolder', 'startupWindows', 'vaultOpens
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
 const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'commentsOrder', 'commentsResolved', 'commentsHint']
 /** Settings › Sidebar (YAZ-3440 D7): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
-const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules', 'goTo']
+/** The icon colour rows (YAZ-3440 D4, YAZ-5100 round 2), by kind. */
+const colourRows = (...kinds: string[]) => kinds.map((kind) => `sidebarIconColors.${kind}`)
+/** Settings › Sidebar with Material and "Colour" (the defaults), no vault open: a colour row per kind Material draws in one colour. */
+const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', ...colourRows('page', 'drawing', 'diagram', 'folder'), 'sidebarIconRules', 'goTo']
+const SIDEBAR_ROWS_BARE = SIDEBAR_ROWS.filter((id) => !id.startsWith('sidebarIconColors.'))
+/** The same with a vault whose Review is on: the Card colour row too. */
+const SIDEBAR_ROWS_REVIEW = SIDEBAR_ROWS.flatMap((id) => (id === 'sidebarIconColors.page' ? [id, 'sidebarIconColors.card'] : [id]))
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
 const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'pageBulletIndent', 'pageBulletGap', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'typingArrows', 'enterKeepsStylePages', 'enterKeepsStyleBoxes', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'findFolds', 'outsideChangeGlow', 'outsideListPinned', 'codeBlockWidth']
@@ -171,7 +178,7 @@ const FILES_ROWS = ['newPageLocation', 'newPageTitleTemplate', 'confirmDelete', 
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and their style (YAZ-4798) after Group indent.
 const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
 // YAZ-5050 round 2: in groups — Daily limits, Answers, Scheduling, Card look (with its preview).
-const REVIEW_ROWS = ['enabled', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
+const REVIEW_ROWS = ['enabled', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
  * so the "Used by macOS" rows are not there; with no key changed, neither is "Reset all hotkeys".
@@ -243,16 +250,57 @@ describe('SettingsDialog shell (D1)', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('Settings › Sidebar shows a colour row per kind with the Line set, while its icons have colour; Material, Grey and Off show none (YAZ-3440 D4)', () => {
-    const colourRows = ['page', 'text', 'pdf', 'image', 'drawing', 'diagram'].map((kind) => `sidebarIconColors.${kind}`)
-    const { el } = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconSet: 'line' })
-    expect(rowIds(el)).toEqual([...SIDEBAR_ROWS.slice(0, -2), ...colourRows, 'sidebarIconRules', 'goTo'])
-    for (const files of ['grey', 'off'] as const) {
-      act(() => root?.unmount())
-      container?.remove()
-      const again = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconSet: 'line', sidebarFileIcons: files })
-      expect(rowIds(again.el)).toEqual(SIDEBAR_ROWS)
+  it('Settings › Sidebar shows a colour row per kind while the icons have colour: every kind with the Line set, the one-colour kinds with Material; Grey and Off leave the folder alone (YAZ-3440 D4, YAZ-5100 round 2)', () => {
+    const withColours = (...kinds: string[]) => [...SIDEBAR_ROWS_BARE.slice(0, -2), ...colourRows(...kinds), 'sidebarIconRules', 'goTo']
+    const again = (...args: Parameters<typeof mount>) => {
+      unmount()
+      return rowIds(mountOn('Sidebar', ...args).el)
     }
+    const { el } = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconSet: 'line' })
+    expect(rowIds(el)).toEqual(withColours('page', 'drawing', 'diagram', 'folder', 'text', 'pdf', 'image'))
+    expect(again({ ...DEFAULT_SETTINGS })).toEqual(withColours('page', 'drawing', 'diagram', 'folder'))
+    for (const files of ['grey', 'off'] as const) {
+      expect(again({ ...DEFAULT_SETTINGS, sidebarIconSet: 'line', sidebarFileIcons: files }), files).toEqual(withColours('folder'))
+      expect(again({ ...DEFAULT_SETTINGS, sidebarFileIcons: files, sidebarFolderIcons: 'off' }), files).toEqual(SIDEBAR_ROWS_BARE)
+    }
+  })
+
+  it("Settings › Sidebar's Card colour shows only while the vault's Review is on (YAZ-5100 round 2)", () => {
+    const { el } = mountOn('Sidebar', { ...DEFAULT_SETTINGS }, undefined, REVIEW_ON)
+    expect(rowIds(el).filter((id) => id?.startsWith('sidebarIconColors.') === true)).toEqual(colourRows('page', 'card', 'drawing', 'diagram', 'folder'))
+    expect(row(el, 'sidebarIconColors.card')?.textContent).toContain('Card colour')
+    unmount()
+    const off = mountOn('Sidebar', { ...DEFAULT_SETTINGS }, undefined, REVIEW_OFF)
+    expect(row(off.el, 'sidebarIconColors.card')).toBeNull()
+    unmount()
+    const grey = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarFileIcons: 'grey' }, undefined, REVIEW_ON)
+    expect(row(grey.el, 'sidebarIconColors.card')).toBeNull()
+  })
+
+  it('a colour row picks a colour and Reset drops it; the swatch is the icon\'s colour as it shows now (YAZ-5100 round 2)', async () => {
+    const { el, onChange } = mountOn('Sidebar', { ...DEFAULT_SETTINGS }, undefined, REVIEW_ON)
+    // The control is its own chunk, loaded when the row shows.
+    await act(async () => await import('./IconColourControl'))
+    const picker = (id: string) => row(el, id)?.querySelector<HTMLInputElement>('input[type="color"]')
+    // Material's own colours, and the card's purple.
+    expect(picker('sidebarIconColors.drawing')?.value).toBe('#5c6bc0')
+    expect(picker('sidebarIconColors.folder')?.value).toBe('#90a4ae')
+    expect(picker('sidebarIconColors.card')?.value).toBe('#8a63c9')
+    expect(picker('sidebarIconColors.card')?.getAttribute('aria-label')).toBe('Card icon colour')
+    const reset = rowButtons(el, 'sidebarIconColors.card').find((b) => b.textContent === 'Reset')
+    expect(reset?.disabled).toBe(true)
+    act(() => {
+      const input = picker('sidebarIconColors.card')!
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, '#cc3366')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, sidebarIconColors: { card: '#cc3366' } })
+    unmount()
+    const picked = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconColors: { card: '#cc3366', folder: '#112233' } }, undefined, REVIEW_ON)
+    await act(async () => await import('./IconColourControl'))
+    expect(row(picked.el, 'sidebarIconColors.card')?.querySelector<HTMLInputElement>('input[type="color"]')?.value).toBe('#cc3366')
+    act(() => rowButtons(picked.el, 'sidebarIconColors.card').find((b) => b.textContent === 'Reset')?.click())
+    expect(picked.onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, sidebarIconColors: { folder: '#112233' } })
   })
 
   it('Settings › Sidebar › Folder icons is Plain, By name or Off, Plain first and chosen by default (YAZ-3554 D3, D5)', () => {
@@ -343,7 +391,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(seen).toEqual([
       page('General', 'settings-general', GENERAL_ROWS),
       page('Appearance', 'settings-appearance', APPEARANCE_ROWS),
-      page('Sidebar', 'settings-sidebar', SIDEBAR_ROWS),
+      page('Sidebar', 'settings-sidebar', SIDEBAR_ROWS_REVIEW),
       page('Notifications', 'settings-notifications', NOTIFICATIONS_ROWS),
       page('Editor', 'settings-editor', EDITOR_ROWS),
       page('Tables', 'settings-tables', TABLES_ROWS),
@@ -1398,7 +1446,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   it('on: the card rows in order, with their words and values; off: the switch alone. No upkeep row is left', () => {
     const { el, rerender } = mountOn('Review', { ...DEFAULT_SETTINGS }, status(), S)
     expect(reviewRows(el)).toEqual(ALL)
-    expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Review cards', 'New cards a day', 'Up next a day', 'New cards first', 'Answer buttons', 'Pause the timer after', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Card spacing'])
+    expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Review cards', 'New cards a day', 'Up next a day', 'New cards first', 'Answer buttons', 'Pause the timer after', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card spacing'])
     // YAZ-5050 round 2: the groups, in order; the card preview is the last row of Card look.
     expect([...el.querySelectorAll('#settings-review .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look'])
     // YAZ-5020: "How cards come back" is a quiet closed line; open, it says the same-day rules and why.
@@ -1424,15 +1472,53 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(save).not.toHaveBeenCalled()
   })
 
+  it('YAZ-5053 round 3: Mark the next hidden word is On by default, with its colour (a picker and Reset) under it; Off hides the colour; both are app settings', () => {
+    const { el, onChange, save } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
+        expect(row(el, 'markNextHidden')?.querySelector('.setting__label')?.textContent).toBe('Mark the next hidden word')
+    expect(rowButtons(el, 'markNextHidden').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
+    const picker = row(el, 'nextHiddenColour')?.querySelector<HTMLInputElement>('input[type="color"]')
+    expect(picker?.value).toBe(NEXT_HIDDEN_SWATCH)
+    // At the default colour, Reset has nothing to do.
+    const reset = () => [...(row(el, 'nextHiddenColour')?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Reset')
+    expect(reset()?.disabled).toBe(true)
+    act(() => rowButtons(el, 'markNextHidden')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, markNextHidden: false })
+    expect(save).not.toHaveBeenCalled()
+    // Its rows sit in Card look, after Shown hidden words.
+    const ids = reviewRows(el)
+    expect(ids.slice(ids.indexOf('shownHiddenWords'), ids.indexOf('shownHiddenWords') + 3)).toEqual(['shownHiddenWords', 'markNextHidden', 'nextHiddenColour'])
+  })
+
+  it('YAZ-5053 round 3: a picked colour shows in the picker; Reset goes back to the default; Off has no colour row', () => {
+    const picked = { ...DEFAULT_SETTINGS, nextHiddenColour: '#aa3399' }
+    const { el, onChange } = mountOn('Review', picked, undefined, S)
+    expect(row(el, 'nextHiddenColour')?.querySelector<HTMLInputElement>('input[type="color"]')?.value).toBe('#aa3399')
+    act(() => [...(row(el, 'nextHiddenColour')?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Reset')?.click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...picked, nextHiddenColour: null })
+    expect(row(mountOn('Review', { ...DEFAULT_SETTINGS, markNextHidden: false }, undefined, S).el, 'nextHiddenColour')).toBeNull()
+  })
+
   const CUSTOM_ROWS = ['cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace']
   const CUSTOM = { cardSpacing: 'custom' as const, cardLineSpacing: 2, cardBlockGap: 8, cardBulletIndent: 40, cardBulletGap: 12, cardBulletSpace: 4 }
   it('YAZ-5050 round 3: Card spacing is Same as pages by default, with no other row; Custom starts at Mochi\'s clean values (not the pages\'), and shows its rows', () => {
     const page = { ...DEFAULT_SETTINGS, lineSpacing: 1.15, blockGap: 2, pageBulletIndent: 40, pageBulletGap: 12, ...CUSTOM, cardSpacing: 'pages' as const }
     const { el, onChange } = mountOn('Review', page, undefined, S)
-    expect(rowButtons(el, 'cardSpacing').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Same as pages', 'true'], ['Custom', 'false']])
+    expect(rowButtons(el, 'cardSpacing').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Same as pages', 'true'], ['Clean', 'false'], ['Custom', 'false']])
     for (const id of CUSTOM_ROWS) expect(row(el, id)).toBeNull()
-    act(() => rowButtons(el, 'cardSpacing')[1].click())
+    act(() => rowButtons(el, 'cardSpacing')[2].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...page, cardSpacing: 'custom', cardLineSpacing: 1.5, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 0 })
+  })
+
+  it('YAZ-5050 round 4: Clean is one click, with no rows; Custom from Clean starts at Clean\'s values', () => {
+    const page = { ...DEFAULT_SETTINGS, ...CUSTOM, cardSpacing: 'pages' as const }
+    const { el, onChange } = mountOn('Review', page, undefined, S)
+    act(() => rowButtons(el, 'cardSpacing')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...page, cardSpacing: 'clean' })
+    const clean = mountOn('Review', { ...page, cardSpacing: 'clean' }, undefined, S)
+    expect(rowButtons(clean.el, 'cardSpacing').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false'])
+    for (const id of CUSTOM_ROWS) expect(row(clean.el, id)).toBeNull()
+    act(() => rowButtons(clean.el, 'cardSpacing')[2].click())
+    expect(clean.onChange).toHaveBeenLastCalledWith({ ...page, cardSpacing: 'custom', cardLineSpacing: 1.5, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 0 })
   })
 
   it('YAZ-5050: Custom card spacing: its rows under Card spacing, in the pages\' words; a change is an app setting; Reset goes to Custom\'s start; Same as pages goes back', () => {
@@ -1450,6 +1536,9 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardBulletGap: 10 })
     act(() => rowButtons(el, 'cardSpacing')[0].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardSpacing: 'pages' })
+    // Clean keeps Custom's values for a later Custom; only the choice changes.
+    act(() => rowButtons(el, 'cardSpacing')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardSpacing: 'clean' })
   })
 
   it('the switches save the whole object with one field changed — never onChange', () => {
@@ -1523,7 +1612,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
 
   it('review off: search finds the switch and none of the rows it hides; turned on, it finds them', () => {
     const { el, rerender } = mount({ ...DEFAULT_SETTINGS }, undefined, REVIEW_OFF)
-    type(searchInput(el), 'cards')
+    type(searchInput(el), 'review cards')
     expect(rowIds(el)).toEqual(['enabled'])
     type(searchInput(el), 'longest wait')
     expect(rowIds(el)).toEqual([])
@@ -1922,7 +2011,7 @@ describe('SettingsDialog: the box offers to keep the IDs the pages already hold 
     expect(el.querySelector('.confirm__text')?.textContent).toBe(keepIdsAskMessage(ASK))
     expect(keepIdsAskMessage(ASK)).toContain('120 pages and folders have an ID with YAS, and 26 with TECH')
     // The vault's word (YAZ-4938) reaches every "page" of the box.
-    expect(keepIdsAskMessage(ASK, undefined, unitTextOf(UNIT_WORDS.card))).toContain('120 cards and folders have an ID with YAS')
+    expect(keepIdsAskMessage(ASK, undefined, unitTextOf(UNIT_WORDS.doc))).toContain('120 docs and folders have an ID with YAS')
     // What "Use <letters>" does (YAZ-4922, "Yes, leave them"): only this vault's own links follow; a link out keeps its ID.
     expect(keepIdsAskMessage(ASK)).toContain('Or type other letters: each YAS ID takes them and keeps its number. Their file names follow, and so does each link to them. A link to a page outside this vault stays as it is.')
     expect(keepIdsAskMessage(ASK)).not.toContain('each link and file name follows')

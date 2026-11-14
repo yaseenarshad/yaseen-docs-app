@@ -6,7 +6,8 @@
  *
  * Only in a vault with IDs (D8). The actions that MAKE a card file (Move, Turn into a card file) show only while the
  * vault's Review is on, as New card does. Each is a file action: the vault's Read only asks first (`allowFileAction`).
- * A failure says why in one notice, and nothing changed.
+ * A failure says why in one notice, and nothing changed. Move to its own file then OPENS THE NEW CARD FILE in the tab
+ * (`onOpenCardFile`, YAZ-5133), as New card does: the tab never stays on the page the card left.
  */
 import { useCallback, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { cardFileShape } from '@shared/cardFileFormat'
@@ -57,6 +58,8 @@ export interface CardConvertHost {
   onNotice?: (message: string) => void
   /** The page became a card file under the same name: the tab reads it again, to show it as one. */
   onReread?: () => void
+  /** Move to its own file made this card file (YAZ-5133): the tab opens it. */
+  onOpenCardFile?: (path: string) => void
 }
 
 /** The page's convert door (made once: it reads the host at each call), its cog rows, and its ask while one is open. */
@@ -74,7 +77,12 @@ export function useCardConvert(host: CardConvertHost): { door: CardConvertDoor; 
   const door = useMemo(
     (): CardConvertDoor => ({
       canMove: () => ref.current.reviewOn && ref.current.wikilinks?.ids === true,
-      move: (id, index) => void run('move the card', (a) => a.moveCardToFile(ref.current.path, id, index)),
+      move: (id, index) => {
+        let made: string | null = null
+        void run('move the card', async (a) => void (made = await a.moveCardToFile(ref.current.path, id, index))).then((done) => {
+          if (done && made !== null) ref.current.onOpenCardFile?.(made)
+        })
+      },
       putBack: (card, inner, nth) => {
         const { path, wikilinks } = ref.current
         const go = () => void run('put the card back', (a) => a.putCardBackIntoPage(path, card.path, card.id, inner, nth))

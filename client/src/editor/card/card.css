@@ -16,6 +16,7 @@
   background: var(--bg);
   color: var(--fg);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px rgba(0, 0, 0, 0.06);
+  counter-reset: card-side 1;
   /* No overflow clip: the line number (`data-line`, drawn left of the block) stays visible. The head and the code
      editor round their own corners instead. */
 }
@@ -307,6 +308,25 @@
   outline: none;
 }
 
+/* YAZ-5103 (Yaseen: "the line alone is not cutting it"): the line between two sides says which side starts, "Side 2",
+   in the Inbox's words ("Side 1 of 2"), quiet and at the text's left, in the editor and the read card. Side 1 is the
+   card's top: no label. Drawn over the line, out of the flow: the text never moves, the `---` does not change. */
+.card :is(.card__side-break, .card__rule) {
+  counter-increment: card-side;
+}
+.card :is(.card__side-break, .card__rule)::before {
+  content: 'Side ' counter(card-side);
+  position: absolute;
+  top: 0;
+  left: 10px;
+  transform: translateY(-50%);
+  padding: 0 6px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-size: 11px;
+  line-height: 16px;
+  pointer-events: none;
+}
 /* The render (`renderCard`): the sides, a thin rule between two. */
 .card__side > :first-child {
   margin-top: 0;
@@ -335,6 +355,10 @@
 .card .card__body .card__sides .card__side li > p {
   padding: 0;
 }
+/* Card spacing Clean (YAZ-5050 round 4) and Custom: Mochi's softer text (#333 on white), the same step in dark. */
+[data-card-clean] .card__sides {
+  color: color-mix(in srgb, var(--fg) 90%, var(--bg));
+}
 /* A card's lists, read (YAZ-5026 round 2: "is this following the global settings?"): the page's look, from the same
    settings — Settings › Editor › Outline › Bullet indent and Bullet gap (`--page-bullet-indent`, `--page-bullet-gap` on
    `.app`, set only when changed) — in the page, the card window and the Inbox. The values are the page's
@@ -361,7 +385,8 @@
 .card .card__side li {
   position: relative;
   margin: 0;
-  padding: var(--card-list-row) 0 var(--card-list-row) calc(var(--card-list-gutter) + var(--card-list-gap));
+  padding: var(--card-list-row) 0;
+  padding-left: calc(var(--card-list-gutter) + var(--card-list-gap));
 }
 .card .card__side li > :is(ul, ol) {
   margin: 0 0 calc(-1 * var(--card-list-row));
@@ -522,6 +547,7 @@
    Mochi's, darker than the card's borders and unlike a rule in the text (`---` is the side break, so a rule in a side is
    solid), with room on each side. The page and the card window; the Inbox gives it more room (`cardScreens.css`). */
 .card .card__rule {
+  position: relative;
   height: 0;
   margin: 16px -16px;
   border-top: 1px dashed color-mix(in srgb, var(--fg) 30%, transparent);
@@ -592,6 +618,17 @@
 }
 [data-shown-hidden-words='box'] .card .card__hidden {
   background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+/* Mark the next hidden word (YAZ-5053 round 3): the one blank the next Space shows takes the colour, in the look of
+   Shown hidden words: its line, its highlight, its box. */
+[data-mark-next-hidden] .card .card__blank[data-next] {
+  border-bottom-color: var(--next-hidden);
+}
+[data-mark-next-hidden][data-shown-hidden-words='highlight'] .card .card__blank[data-next] {
+  background: color-mix(in srgb, var(--next-hidden) 22%, transparent);
+}
+[data-mark-next-hidden][data-shown-hidden-words='box'] .card .card__blank[data-next] {
+  background: color-mix(in srgb, var(--next-hidden) 35%, transparent);
 }
 /* The blank: the word's own width, a line under it; the word inside is invisible, and a selection skips it. An inline
    border does not change the line's height. */

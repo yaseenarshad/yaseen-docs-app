@@ -1,23 +1,30 @@
 /**
- * The vault's unit word (YAZ-4938): what the app calls a page in THIS vault. Page (the default), Card, Doc, Page, or
- * the user's own word with its plural. `.yaseendocs/unit-word.json` through the vault-config door, as "Clicking a
- * link" is (`explore/linkClick.ts`): re-read when the file changes, the default with no file, nothing written until
- * `save`. A window with two vaults keeps one word per vault.
+ * The vault's unit word (YAZ-4938): what the app calls a page in THIS vault. Page (the default), Doc, Note, or the
+ * user's own word with its plural. `.yaseendocs/unit-word.json` through the vault-config door, as "Clicking a link" is
+ * (`explore/linkClick.ts`): re-read when the file changes, the default with no file, nothing written until `save`. A
+ * window with two vaults keeps one word per vault.
  *
- * ONE helper gives every label its word: `unit('New page')` → "New card", `unit('12 pages')` → "12 cards",
- * `unit("This page's folder")` → "This card's folder". A label is written with the plain word, and the helper swaps
- * `page` / `pages` / `Page` / `Pages` for the vault's forms, the capital kept. Feature names that hold the word
- * ("Cell note", "Daily pages") do not go through it, and the guard test (`unitWord.guard.test.ts`) lists them.
+ * ONE helper gives every label its word: `unit('New page')` → "New doc", `unit('12 pages')` → "12 docs",
+ * `unit("This page's folder")` → "This doc's folder". A label is written with the plain word, and the helper swaps
+ * `page` / `pages` / `Page` / `Pages` for the vault's forms, the capital kept. A page that is not the unit keeps its
+ * word: "folder page", "Start page", "New tab page" (`OTHER_PAGE`). Feature names that hold the word ("Daily page")
+ * do not go through it, and the guard test (`unitWord.guard.test.ts`) lists them.
+ *
+ * YAZ-5036: "page" is the base word (it was "note"). "Card" is no choice any more: a card is its own thing (YAZ-5037),
+ * so a vault never shows two "New card" rows. A file that still says `card` reads as the default, "page". "Note" stays
+ * a choice, for a vault that wants it.
  *
  * Speed: the file is read once per vault change. The default vault's helper is the identity, so a label costs
  * nothing there; another word's helper is one small regex per label, at the label's render, never on a keystroke.
+ *
+ * rename-note-to-page: skip-file (the word "note" here is the vault's choice "Note", not a page).
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { api } from '../api'
 
 export const UNIT_WORD_FILE = 'unit-word.json'
 
-export type UnitChoice = 'page' | 'card' | 'doc' | 'page' | 'own'
+export type UnitChoice = 'page' | 'doc' | 'note' | 'own'
 
 export interface UnitWordSettings {
   unit: UnitChoice
@@ -34,12 +41,11 @@ export interface UnitWord {
 export const PAGE_WORD: UnitWord = Object.freeze({ one: 'page', many: 'pages' })
 export const DEFAULT_UNIT_WORD: UnitWordSettings = Object.freeze({ unit: 'page', own: Object.freeze({ one: '', many: '' }) })
 
-/** The four built-in words, in the order the Settings row shows them. */
+/** The three built-in words, in the order the Settings row shows them. */
 export const UNIT_WORDS: Readonly<Record<Exclude<UnitChoice, 'own'>, UnitWord>> = Object.freeze({
   page: PAGE_WORD,
-  card: Object.freeze({ one: 'card', many: 'cards' }),
   doc: Object.freeze({ one: 'doc', many: 'docs' }),
-  page: Object.freeze({ one: 'page', many: 'pages' }),
+  note: Object.freeze({ one: 'note', many: 'notes' }),
 })
 
 /** An own word is one word of letters and digits (a hyphen inside is fine), at most this long. */
@@ -52,14 +58,17 @@ export function cleanOwnWord(raw: unknown): string {
   return word.length <= OWN_WORD_MAX && OWN_WORD.test(word) ? word : ''
 }
 
-/** What the file holds, or the default for anything else. An own choice keeps, even with no usable word yet: the word then reads as "page". */
+/**
+ * What the file holds, or the default for anything else. An own choice keeps, even with no usable word yet: the word
+ * then reads as "page". `card` (a choice before YAZ-5036) reads as the default.
+ */
 export function sanitizeUnitWord(raw: unknown): UnitWordSettings {
   const o = typeof raw === 'object' && raw !== null ? (raw as { unit?: unknown; own?: unknown }) : {}
   const ownRaw = typeof o.own === 'object' && o.own !== null ? (o.own as { one?: unknown; many?: unknown }) : {}
   const one = cleanOwnWord(ownRaw.one)
   const many = cleanOwnWord(ownRaw.many)
   const own = { one, many: many === '' ? (one === '' ? '' : `${one}s`) : many }
-  const unit = o.unit === 'own' || o.unit === 'card' || o.unit === 'doc' || o.unit === 'page' ? o.unit : 'page'
+  const unit = o.unit === 'own' || o.unit === 'doc' || o.unit === 'note' ? o.unit : 'page'
   return { unit, own }
 }
 
@@ -85,7 +94,9 @@ export type UnitText = (text: string) => string
 /** The default vault's helper: the identity, one object for the app's life, so a memo sees no change. */
 export const SAME_WORD: UnitText = (text) => text
 
-const WORD = /\b(page|pages|Page|Pages)\b/g
+/** A page that is not the unit: a folder's page, the Start page, the New tab page. Its word never changes. */
+const OTHER_PAGE = String.raw`(?<!\b(?:[Ff]older|[Ss]tart|[Tt]ab|[Hh]ome|[Ff]ront|PDF|[Ww]eb|[Ss]ettings) )`
+const WORD = new RegExp(`${OTHER_PAGE}\\b(page|pages|Page|Pages)\\b(?! tab)`, 'g')
 const capital = (word: string): string => word.charAt(0).toUpperCase() + word.slice(1)
 
 /** The helper for one word. `PAGE_WORD` (and any word that spells it) gives `SAME_WORD`. */
@@ -113,6 +124,13 @@ function setVaultUnit(root: string, helper: UnitText | null): void {
 /** The helper of the vault at `root`, read now: the identity for no vault, an unknown vault, or the default word. */
 export function vaultUnit(root: string | null | undefined): UnitText {
   return (root == null ? undefined : helpers.get(root)) ?? SAME_WORD
+}
+
+/** The helper of the vault that holds `path` (the longest known root it is under): the identity when none does. */
+export function pathUnit(path: string): UnitText {
+  let best: string | null = null
+  for (const root of helpers.keys()) if ((path === root || path.startsWith(`${root.replace(/\/+$/, '')}/`)) && (best === null || root.length > best.length)) best = root
+  return best === null ? SAME_WORD : helpers.get(best)!
 }
 
 const subscribe = (listener: () => void): (() => void) => {

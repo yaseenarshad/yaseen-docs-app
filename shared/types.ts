@@ -2150,10 +2150,19 @@ export interface SettingsState {
    */
   shownHiddenWords: ShownHiddenWords
   /**
+   * Settings › Review › Mark the next hidden word (YAZ-5053 round 3, Yaseen: "can it have a color to it so we know that
+   * that is where the eye should go?"): the one blank the next Space shows takes a colour, in the look of Shown hidden
+   * words. `data-mark-next-hidden` on `.app`; the render marks the blank (`data-next`).
+   */
+  markNextHidden: boolean
+  /** Its colour: `null` is the theme's calm default (`--next-hidden` in `app.css`, light and dark); else a hex colour for both. */
+  nextHiddenColour: string | null
+  /**
    * Settings › Review › Card spacing (YAZ-5050): how a card reads in the Inbox, the card window and the page.
    * `pages` (the default) follows the pages' Line spacing, Space between blocks, Bullet indent and Bullet gap; `custom`
    * uses the four `card*` values below, on `.app` as `--card-line-height`, `--card-block-gap`, `--card-bullet-indent`
-   * and `--card-bullet-gap`. Round 3: Custom starts at Mochi's clean values (`CARD_SPACING_CUSTOM_START`).
+   * and `--card-bullet-gap`. Round 3: Custom starts at Mochi's clean values (`CARD_SPACING_CLEAN`). Round 4: `clean`
+   * uses them, with Mochi's softer text, Inbox padding and line length (`data-card-clean` on `.app`); Custom keeps that look.
    */
   cardSpacing: CardSpacing
   /** Card spacing, Custom (YAZ-5050): the card's line spacing, as `lineSpacing`. */
@@ -2494,17 +2503,17 @@ export const SECTION_LINES: readonly SectionLines[] = ['always', 'hover']
 /** A shown hidden word's look (YAZ-5005); `box` (YAZ-5053) is Mochi's: a grey box while hidden, a light one when shown. */
 export type ShownHiddenWords = 'highlight' | 'underline' | 'box'
 export const SHOWN_HIDDEN_WORDS: readonly ShownHiddenWords[] = ['highlight', 'underline', 'box']
-/** Settings › Review › Card spacing (YAZ-5050). */
-export type CardSpacing = 'pages' | 'custom'
-export const CARD_SPACINGS: readonly CardSpacing[] = ['pages', 'custom']
+/** Settings › Review › Card spacing (YAZ-5050); `clean` (round 4) is Mochi's look in one click. */
+export type CardSpacing = 'pages' | 'clean' | 'custom'
+export const CARD_SPACINGS: readonly CardSpacing[] = ['pages', 'clean', 'custom']
 /** A card's own space between blocks (YAZ-5050), px per side. */
 export const CARD_BLOCK_GAP_MAX = 24
 /**
- * Card spacing's Custom start (YAZ-5050 round 3, Yaseen: "if you put it to custom there are custom defaults and those
- * custom defaults are what mochies are"): measured on his Mochi screenshot — lines 1.5 apart, about 1em between
- * paragraphs (8 px a side), and no extra space between bullets. Separate from the pages' own defaults.
+ * Card spacing's Clean values (YAZ-5050 round 3 and 4, Yaseen: "custom defaults are what mochies are", "yes clean is
+ * good"): measured on his Mochi screenshot — lines 1.5 apart, about 1em between paragraphs (8 px a side), and no extra
+ * space between bullets. Clean uses them; Custom starts from them. Separate from the pages' own defaults.
  */
-export const CARD_SPACING_CUSTOM_START = { cardLineSpacing: 1.5, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 0 } as const
+export const CARD_SPACING_CLEAN = { cardLineSpacing: 1.5, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 0 } as const
 
 /** Guide lines (YAZ-4094 G2): when they show — `near` is while the mouse is over the page. */
 export type GuideLinesShow = 'always' | 'near'
@@ -2701,8 +2710,12 @@ export const SIDEBAR_FOLDER_ICONS: readonly SidebarFolderIcons[] = ['plain', 'na
 export type SidebarArrowMotion = 'instant' | 'smooth'
 export const SIDEBAR_ARROW_MOTIONS: readonly SidebarArrowMotion[] = ['instant', 'smooth']
 
-/** The sidebar tree (YAZ-3440 D4): the kinds whose icon has a colour of its own, in the order Settings shows them. `page` is a Markdown file's, coloured only with "All colour". */
-export const SIDEBAR_ICON_KINDS = ['page', 'text', 'pdf', 'image', 'drawing', 'diagram'] as const
+/**
+ * The sidebar tree (YAZ-3440 D4): the kinds whose icon has a colour of its own, in the order Settings shows them. `page`
+ * is a Markdown file's: grey with "Colour" until a colour is picked. `card` and `folder` (YAZ-5100 round 2) colour in both
+ * icon sets; `text`, `pdf` and `image` in the Line set alone (Material has an icon per file type for them).
+ */
+export const SIDEBAR_ICON_KINDS = ['page', 'card', 'drawing', 'diagram', 'folder', 'text', 'pdf', 'image'] as const
 export type SidebarIconKind = (typeof SIDEBAR_ICON_KINDS)[number]
 export type SidebarIconColors = Partial<Record<SidebarIconKind, string>>
 
@@ -2893,8 +2906,10 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sectionStep: 30,
   sectionLines: 'always',
   shownHiddenWords: 'highlight',
+  markNextHidden: true,
+  nextHiddenColour: null,
   cardSpacing: 'pages',
-  ...CARD_SPACING_CUSTOM_START,
+  ...CARD_SPACING_CLEAN,
   tableOfContents: 'auto',
   tocOnByDefault: true,
   tableOfContentsWidth: TOC_DEFAULT_W,

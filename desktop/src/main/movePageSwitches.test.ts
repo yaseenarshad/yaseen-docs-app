@@ -43,7 +43,7 @@ function setup(files: Record<string, string | Error>, folder: Partial<ReturnType
 }
 
 describe('movePageSwitches', () => {
-  it('writes each page entry into its note, then drops it; a code file keeps its entry', async () => {
+  it('writes each page entry into its page, then drops it; a code file keeps its entry', async () => {
     const { store, io, dropped, writes, state } = setup(
       { '/v/a.md': '# A\n', '/v/b.md': '---\ntags: [x]\n---\nB\n' },
       { tocSwitches: { '/v/a.md': false, '/v/code.ts': false }, sectionIndents: { '/v/b.md': true } },

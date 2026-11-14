@@ -9,7 +9,7 @@
 import type { KeyRow } from './types'
 
 const page = (id: string, label: string, keys: readonly string[], extra: Pick<KeyRow, 'hint'> & { builtIn?: true } = {}): KeyRow => ({
-  id: `note.${id}`,
+  id: `page.${id}`,
   scope: 'page',
   label,
   ...(extra.hint === undefined ? {} : { hint: extra.hint }),
@@ -50,7 +50,7 @@ export const PAGE_KEYS: readonly KeyRow[] = [
   page('openCellNote', 'Open the cell note of the cell at the caret', ['CmdOrCtrl+Alt+M'], { hint: 'Makes one if the cell has none. ⌘. on a plain line of a cell opens it too' }),
   page('nextCellNote', 'Next cell note', ['CmdOrCtrl+Alt+Down'], { hint: 'While a cell note is open: the next one of the page' }),
   page('previousCellNote', 'Previous cell note', ['CmdOrCtrl+Alt+Up'], { hint: 'While a cell note is open: the one before' }),
-  page('cellNoteBack', 'Back in the cell note', ['CmdOrCtrl+Alt+['], { hint: 'While a cell note is open: the page you opened before it' }),
+  page('cellNoteBack', 'Back in the cell note', ['CmdOrCtrl+Alt+['], { hint: 'While a cell note is open: the cell note you opened before it' }),
   page('cellNoteForward', 'Forward in the cell note', ['CmdOrCtrl+Alt+]'], { hint: 'Again, after Back' }),
   // YAZ-4276 A6: no key by default.
   page('allCellNotes', 'All notes of a calendar table', [], { hint: 'From a cell: every time block of its column, in the card. Again: back to the cell note' }),

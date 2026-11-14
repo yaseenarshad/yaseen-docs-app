@@ -2498,7 +2498,7 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
   const folder = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
   /** Three branches and two root pages: a folder no page of which says "archive", two `Readme`s, and `plan` — an exact name the tree draws LAST. */
   const VAULT = (v: string): TreeNode[] => [
-    folder(`${v}/Archive`, [folder(`${v}/Archive/Deep`, [page(`${v}/Archive/Deep/Old.md`)]), page(`${v}/Archive/Pages.md`)]),
+    folder(`${v}/Archive`, [folder(`${v}/Archive/Deep`, [page(`${v}/Archive/Deep/Old.md`)]), page(`${v}/Archive/Log.md`)]),
     folder(`${v}/Docs`, [folder(`${v}/Docs/Guides`, [page(`${v}/Docs/Guides/Anchor guide.md`)]), page(`${v}/Docs/Anchor.md`), page(`${v}/Docs/Readme.md`)]),
     folder(`${v}/Plans`, [page(`${v}/Plans/Plan A.md`), page(`${v}/Plans/Readme.md`), page(`${v}/Plans/Zed.md`)]),
     page(`${v}/Alpha.md`),
@@ -2580,14 +2580,14 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     expect(shape(el)).toEqual(['Archive'])
     expect(isOpen(el, `${v}/Archive`)).toBe('false')
     click(row(el, `${v}/Archive`))
-    expect(shape(el)).toEqual(['Archive', '  Deep', '  Pages'])
+    expect(shape(el)).toEqual(['Archive', '  Deep', '  Log'])
     click(row(el, `${v}/Archive/Deep`))
-    expect(shape(el)).toEqual(['Archive', '  Deep', '    Old', '  Pages'])
+    expect(shape(el)).toEqual(['Archive', '  Deep', '    Old', '  Log'])
     // S15: a second click on the same folder closes it again, and a third reopens it as it was.
     click(row(el, `${v}/Archive`))
     expect(shape(el)).toEqual(['Archive'])
     click(row(el, `${v}/Archive`))
-    expect(shape(el)).toEqual(['Archive', '  Deep', '    Old', '  Pages'])
+    expect(shape(el)).toEqual(['Archive', '  Deep', '    Old', '  Log'])
     expect(props.onOpenFile).not.toHaveBeenCalled() // D1: a click on a folder result folds it, it no longer opens its page
     // S16: the text changed, so every fold of the search is forgotten.
     await type(input, 'archiv')
@@ -2729,15 +2729,15 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     // S28: a row inside an opened folder is no match — it opens as a tree row does, and the highlight stays.
     await type(input, 'archive')
     click(row(el, `${v}/Archive`))
-    click(row(el, `${v}/Archive/Pages.md`))
-    expect(props.onOpenFile).toHaveBeenLastCalledWith(`${v}/Archive/Pages.md`)
+    click(row(el, `${v}/Archive/Log.md`))
+    expect(props.onOpenFile).toHaveBeenLastCalledWith(`${v}/Archive/Log.md`)
     expect(cursor(el)).toEqual(['Archive'])
     // S29: a search has no multi-select — shift neither selects, opens nor folds.
     const opened = vi.mocked(props.onOpenFile).mock.calls.length
-    click(row(el, `${v}/Archive/Pages.md`), { shiftKey: true })
+    click(row(el, `${v}/Archive/Log.md`), { shiftKey: true })
     click(row(el, `${v}/Archive`), { shiftKey: true })
     expect(cursor(el)).toEqual(['Archive'])
-    expect(shape(el)).toEqual(['Archive', '  Deep', '  Pages'])
+    expect(shape(el)).toEqual(['Archive', '  Deep', '  Log'])
     expect(props.onOpenFile).toHaveBeenCalledTimes(opened)
   })
 
@@ -2864,7 +2864,7 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
     await type(input, 'archive')
     click(row(el, `${v}/Archive`))
     expect(bold()).toEqual(['Archive'])
-    expect(grey()).toEqual(['Deep', 'Pages'])
+    expect(grey()).toEqual(['Deep', 'Log'])
     // S9, S10: found by an alias, or by an id — a match, in the normal colour, with nothing in its label to mark.
     await type(input, 'first')
     expect([shape(el), bold(), grey()]).toEqual([['Alpha'], [], []])
@@ -2878,7 +2878,7 @@ describe('search results as a tree (YAZ-803, YAZ-2620)', () => {
 
   it('S5, S11: nothing matched says so; at the limit a line below the tree says so — the limit counts candidate rows, a title and an alias being two', async () => {
     const many = (v: string): TreeNode[] => [folder(`${v}/Log`, Array.from({ length: 30 }, (_, i) => page(`${v}/Log/Page ${String(i).padStart(2, '0')}.md`)))]
-    const { el, input } = await search('not', {}, { nodes: many, records: (v) => pagePaths(many(v)).map((path, i) => record(v, path, { aliases: [`Notable ${i}`] })) })
+    const { el, input } = await search('pag', {}, { nodes: many, records: (v) => pagePaths(many(v)).map((path, i) => record(v, path, { aliases: [`Pagoda ${i}`] })) })
     // 60 candidates matched; the 50 kept are 25 pages' title and alias.
     expect(el.querySelectorAll('.sidebar__body .tree__row--file')).toHaveLength(25)
     expect(el.querySelector('.sidebar__body .tree + .sidebar__msg')?.textContent).toBe('Showing 50 matches. Type more to narrow.')
@@ -8833,7 +8833,7 @@ describe('card files (YAZ-5037)', () => {
     await act(async () => undefined)
   }
 
-  it('"New card" opens the name box as "New page" does (YAZ-5101); Enter takes ONE ID and writes the card file named after the title: `kind: card`, the title as the card`s first line; then the file opens', async () => {
+  it('"New card" opens the name box as "New page" does (YAZ-5101); Enter takes ONE ID and writes the card file named after the title: `kind: card`, the title in `title` and an empty card (YAZ-5044); then the file opens', async () => {
     const { el, bridge, props } = await mount({ review: true })
     rightClick(rowAt(el, '/v/sub'))
     await act(async () => itemByLabel(el, 'New card')?.click())
@@ -8845,7 +8845,7 @@ describe('card files (YAZ-5037)', () => {
     expect(bridge.mintPageId).toHaveBeenCalledExactlyOnceWith('/v/sub')
     const path = `/v/sub/${cardFileName('Capital of France', 'YAZ-1')}`
     expect(path).not.toBe('/v/sub/yaz-1.md')
-    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path, content: '---\nkind: card\n---\n```card\nCapital of France\n```\n<!-- card: YAZ-1 -->\n' })
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path, content: '---\nkind: card\ntitle: Capital of France\n---\n```card\n\n```\n<!-- card: YAZ-1 -->\n' })
     expect(nameBox(el)).toBeNull()
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(path)
   })

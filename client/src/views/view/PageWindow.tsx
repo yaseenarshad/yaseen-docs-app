@@ -7,6 +7,7 @@ import { isPageKey } from '../../editor/pageKeys'
 import { cssZoom } from '../../lib/cssZoom'
 import { storage } from '../../lib/storage'
 import { TOP_SPOT, type GroupSpot, childSpot, spotKey } from './groupDrag'
+import { legacyPageWindowKey, movedStorageItem } from '@shared/legacyNames'
 
 /**
  * The table's side of the card (YAZ-4547 D16): one mutable object per folder page, so a step renders the card and
@@ -132,7 +133,8 @@ const boxKey = (folderPath: string): string => `pageWindow:${folderPath}`
 const finite = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 export function savedPageWindowBox(folderPath: string): PageWindowBox | null {
   try {
-    const raw = localStorage.getItem(boxKey(folderPath))
+    // YAZ-5036: a box saved before the rename (`noteWindow:<folder>`) moves to the new key once.
+    const raw = movedStorageItem(localStorage, boxKey(folderPath), legacyPageWindowKey(folderPath))
     if (raw === null) return null
     const v: unknown = JSON.parse(raw)
     if (typeof v !== 'object' || v === null) return null

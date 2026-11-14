@@ -4,7 +4,7 @@
  * (findInPage.test.ts proves the engine; this file proves the bar and the keyboard surface).
  *
  * Claim rule under test (locked in YAZ-967): CMD+F is a window capture-phase listener per bar.
- * A `page` bar (a folder's Page tab, YAZ-4584) claims only while focus is inside its own host element; the `page` bar
+ * A `folder` bar (a folder's Page tab, YAZ-4584) claims only while focus is inside its own host element; the `page` bar
  * claims whenever focus is NOT inside any `.folder-page-doc`. At most one of each is
  * mounted, so exactly one bar answers.
  */
@@ -37,7 +37,7 @@ async function mountEditor(markdown: string, opts: Omit<CreateCrepeOptions, 'roo
   return { crepe, el, view: view as EditorView }
 }
 
-function renderBar(channel: FindChannel, scope: 'page' | 'page', host: HTMLElement) {
+function renderBar(channel: FindChannel, scope: 'page' | 'folder', host: HTMLElement) {
   const el = document.createElement('div')
   document.body.appendChild(el)
   const root = createRoot(el)
@@ -137,12 +137,12 @@ describe('claim rule with a page editor and the folder\'s Page tab (once the out
     const outline = await mountEditor('* outline apple', { find: outlineChannel })
     outlineHost.appendChild(outline.el)
     renderBar(pageChannel, 'page', page.el)
-    const outlineBarEl = renderBar(outlineChannel, 'page', outlineHost)
+    const outlineBarEl = renderBar(outlineChannel, 'folder', outlineHost)
 
     outline.view.dom.focus()
     pressCmdF(outline.view.dom)
     expect(outlineChannel.getState().open).toBe(true)
-    expect(outlineBarEl.querySelector('.find-bar-dock--page > .find-bar')).not.toBeNull()
+    expect(outlineBarEl.querySelector('.find-bar-dock--folder > .find-bar')).not.toBeNull()
     expect(pageChannel.getState().open).toBe(false)
 
     act(() => outlineChannel.close())
@@ -183,7 +183,7 @@ describe('claim rule beside a code tab (YAZ-3451)', () => {
     outlineInput.tabIndex = 0
     outlineHost.appendChild(outlineInput)
     document.body.appendChild(outlineHost)
-    renderBar(outlineChannel, 'page', outlineHost)
+    renderBar(outlineChannel, 'folder', outlineHost)
     const codeTab = document.createElement('section')
     codeTab.className = 'editor editor--code'
     const monacoInput = document.createElement('textarea')

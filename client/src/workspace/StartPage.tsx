@@ -38,7 +38,7 @@ const START_ROWS = 8
 const COLUMNS = [
   // "Recently closed" stands first (YAZ-3487 D13), and "Recent" reads "Recently viewed" beside it (D12): each says what it holds.
   { col: 'closed', label: 'Recently closed', empty: (unit: UnitText) => unit('Pages you close show here.') },
-  { col: 'recent', label: 'Recently viewed', empty: 'Pages you open show here.' },
+  { col: 'recent', label: 'Recently viewed', empty: (unit: UnitText) => unit('Pages you open show here.') },
   { col: 'favorites', label: 'Favorites', empty: 'No favorites yet. Right-click a file or folder → Add to favorites.' },
 ] as const
 

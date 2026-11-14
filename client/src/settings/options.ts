@@ -123,6 +123,9 @@ export const BULLET_SPACE_PRESETS: readonly Option<number>[] = [
 /** Thread line width presets, like logseq-bullet-threading (GRO-2109); `THREAD_WIDTHS` validates the field. */
 export const THREAD_WIDTH_OPTIONS: readonly Option<number>[] = THREAD_WIDTHS.map((value) => ({ label: `${value}px`, value }))
 
+/** The next hidden word's default colour in the picker (YAZ-5053 round 3): `--next-hidden` of the light theme, `app.css`. */
+export const NEXT_HIDDEN_SWATCH = '#2a8bd1'
+
 /** Shown in the colour swatch while the thread uses the app accent (`--accent` in app.css). */
 export const DEFAULT_THREAD_SWATCH = '#5b6cff'
 
@@ -151,8 +154,9 @@ export const SHOWN_HIDDEN_WORDS_OPTIONS: readonly Option<ShownHiddenWords>[] = [
 ]
 
 /** Settings › Review › Card spacing (YAZ-5050): the pages' spacing, or the card's own. */
-export const CARD_SPACING_OPTIONS: readonly Option<CardSpacing>[] = [
-  { label: 'Same as pages', value: 'pages' },
+export const cardSpacingOptions = (unit: UnitText): readonly Option<CardSpacing>[] => [
+  { label: unit('Same as pages'), value: 'pages' },
+  { label: 'Clean', value: 'clean' },
   { label: 'Custom', value: 'custom' },
 ]
 
@@ -265,10 +269,10 @@ export const SIDEBAR_ARROW_MOTION_OPTIONS: readonly Option<SidebarArrowMotion>[]
 ]
 
 /** Each kind's built-in icon colour (YAZ-3440 D4), the light theme's (app.css `--kind-<kind>`): the picker's swatch when the theme's own cannot be read. */
-export const SIDEBAR_ICON_SWATCHES: Record<SidebarIconKind, string> = { page: '#3d8fb8', text: '#3a7fc2', pdf: '#d64545', image: '#1d9e75', drawing: '#c08410', diagram: '#e0682c' }
+export const SIDEBAR_ICON_SWATCHES: Record<SidebarIconKind, string> = { page: '#3d8fb8', card: '#8a63c9', drawing: '#c08410', diagram: '#e0682c', folder: '#7a7a7a', text: '#3a7fc2', pdf: '#d64545', image: '#1d9e75' }
 
 /** The name of each kind on its colour row (YAZ-3440 D4). */
-const SIDEBAR_ICON_KIND_LABELS: Record<Exclude<SidebarIconKind, 'page'>, string> = { text: 'Text file', pdf: 'PDF', image: 'Image', drawing: 'Drawing', diagram: 'Diagram' }
+const SIDEBAR_ICON_KIND_LABELS: Record<Exclude<SidebarIconKind, 'page'>, string> = { card: 'Card', drawing: 'Drawing', diagram: 'Diagram', folder: 'Folder', text: 'Text file', pdf: 'PDF', image: 'Image' }
 /** A page's row is named by the vault's word (YAZ-4938). */
 export const sidebarIconKindLabel = (kind: SidebarIconKind, unit: UnitText): string => (kind === 'page' ? unit('Page') : SIDEBAR_ICON_KIND_LABELS[kind])
 
