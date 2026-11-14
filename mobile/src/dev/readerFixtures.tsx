@@ -4,14 +4,14 @@ import type { AppServices } from '../app/AppState'
 import type { FetchLike } from '../github/client'
 import { memoryBackend, openVaultStore, tokenStoreOn } from '../store'
 import { fakeFriends, fakeScanner, fakeSync } from './fakes'
-import { READER_NOT_STORED, seedReaderVault } from './readerVault'
+import { READER_FILES, READER_NOT_STORED, seedReaderVault } from './readerVault'
 import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
 
 /**
  * The screen fixtures of 4C (YAZ-5079): Search, a page and a card on the made-up vault of `readerVault.ts`, for the
  * screenshots (`#fixture=page`). Only a `--mode fixtures` build has this file. Nothing calls GitHub.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -37,11 +37,27 @@ function typeSearch(value: string): void {
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+/** YAZ-5364: a page with the parser tricks, each unclosed; its last line must draw (`publish/proveLayout.ts`). */
+const TRICKS = [
+  'x <template> [[Trip plan]] after',
+  'x <math><mtext><textarea> [[Trip plan]] after',
+  'x <select> [[Trip plan]] after',
+  'x <svg><foreignObject> [[Trip plan]] after',
+  'x <desc> [[Trip plan]] after',
+  '<div title="x',
+  '',
+  '## The end',
+  '',
+  'The end of the page.',
+  '',
+  '<!--',
+].join('\n\n')
+
 export async function mountReaderFixture(root: Root, name: ReaderFixture): Promise<void> {
   const backend = memoryBackend()
   const store = await openVaultStore(backend)
   const tokens = tokenStoreOn(backend)
-  await seedReaderVault(store, tokens)
+  await seedReaderVault(store, tokens, name === 'page-tricks' ? { ...READER_FILES, 'Parser tricks.md': `---\ntitle: Parser tricks\n---\n# Parser tricks\n\n${TRICKS}\n\nAfter the comment.\n` } : READER_FILES)
   // `page-online`: a media that "downloads" the picture that is not on the phone (as 3D does with a signal).
   const stored = storedMedia(store, 'yaseen/vault@main')
   const online: VaultMedia = {
@@ -96,6 +112,10 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
     case 'card':
       await typed('la bib')
       await open(/^la biblioteca/, '.card-view__card .card__sides, .card-view__card *')
+      break
+    case 'page-tricks':
+      await typed('parser')
+      await open(/^Parser tricks/, '.reader__body h1')
       break
     case 'card-file':
       await typed('capital')

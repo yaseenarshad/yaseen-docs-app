@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkDist, missingParts } from './checkBuild'
+import { checkDist, missingParts, NEVER_BUNDLED, NOT_FIRST_LOAD } from './checkBuild'
 
 /** The build check (YAZ-5087): what must never be in the published files. */
 
@@ -31,5 +31,14 @@ describe('checkDist', () => {
     const all = ['index.html', 'friend.html', 'group.html', 'join.html', '_headers', 'sw.js', 'manifest.webmanifest', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'version.txt']
     expect(missingParts(all)).toEqual([])
     expect(missingParts(all.filter((p) => p !== 'sw.js' && p !== '_headers'))).toEqual(['_headers', 'sw.js'])
+  })
+
+  it('YAZ-5377: the deny lists match what they name, and not the app', () => {
+    const never = (m: string) => NEVER_BUNDLED.some((r) => r.test(m))
+    for (const m of ['mobile/src/dev/cssAudit.ts', 'mobile/src/dev/fakes.ts', 'mobile/src/page/rawText.test.tsx', 'mobile/src/dev/readerFixtures.tsx', 'mobile/src/friends/check3/run.ts']) expect(never(m), m).toBe(true)
+    for (const m of ['mobile/src/screens/Settings.tsx', 'mobile/src/main.tsx', 'shared/cardLine.ts', 'node_modules/react/index.js']) expect(never(m), m).toBe(false)
+    const lazyOnly = (m: string) => NOT_FIRST_LOAD.some((r) => r.test(m))
+    for (const m of ['shared/friendsList.ts', 'shared/friendStats.ts', 'mobile/src/friends/removeQueue.ts', 'node_modules/yaml/browser/index.js', 'node_modules/ts-fsrs/dist/index.mjs', 'node_modules/marked/lib/marked.esm.js']) expect(lazyOnly(m), m).toBe(true)
+    for (const m of ['mobile/src/friends/ui/lazy.ts', 'mobile/src/screens/waitingRemoves.ts', 'shared/timeZone.ts', 'node_modules/react-dom/client.js']) expect(lazyOnly(m), m).toBe(false)
   })
 })

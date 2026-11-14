@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import { useApp } from '../app/AppState'
-import { deviceZone, isTimeZone } from '@shared/friendStats'
+import { deviceZone, isTimeZone } from '@shared/timeZone'
 import { cleanNickname } from '../app/friendsPort'
 import { friendsMessage } from '../auth/friends'
 import { vaultId, type PhoneVault } from '../store'

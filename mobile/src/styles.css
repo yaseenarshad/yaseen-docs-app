@@ -295,6 +295,36 @@ a {
   margin: 0 0 8px;
 }
 
+/* An ask (YAZ-5360): never taller than the part of its screen that shows (`--confirm-room`, set by `Confirm.tsx`). The
+   question scrolls inside it; the buttons keep their place under it. */
+.confirm {
+  display: flex;
+  flex-direction: column;
+  max-height: var(--confirm-room, none);
+  box-sizing: border-box;
+}
+
+.confirm__question {
+  flex: 0 1 auto;
+  min-height: 3em;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.confirm__question--scrolls {
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.confirm__extra,
+.confirm__buttons {
+  flex: none;
+}
+
+.confirm__extra {
+  margin-bottom: 10px;
+}
+
 .problem--quiet {
   border-color: var(--border);
 }

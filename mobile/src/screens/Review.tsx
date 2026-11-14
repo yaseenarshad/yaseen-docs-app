@@ -4,6 +4,8 @@ import type { ReviewLink } from '../review/link'
 import type { ReviewTabProps } from '../review/ReviewTab'
 import { vaultName } from './Frame'
 import { lazyScreen } from './LazyScreen'
+// YAZ-5363: the waiting state below and the Review tab's place are drawn before the Review chunk comes.
+import './reviewSlot.css'
 
 const waiting = (
   <div className="review review--waiting" aria-busy="true">

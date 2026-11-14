@@ -33,6 +33,28 @@ export function checkDist(files: DistFile[]): string[] {
   return problems
 }
 
+/**
+ * YAZ-5377: the ceiling of the first load's JavaScript (`index.html`'s scripts and the chunks they import), in bytes.
+ * The measured build after the fix (290,297 bytes at `d9248de99` + the fix) plus 3%. `npm run mobile:build` fails over it, and so does `src/firstLoad.test.ts`.
+ * A change that shrinks the first load lowers it in the same commit; raising it needs Yaseen's OK.
+ */
+export const FIRST_LOAD_JS_MAX = 299_006
+
+/** YAZ-5377: modules that only a lazy screen needs. `src/firstLoad.test.ts` names each one in the first load, with its import chain. */
+export const NOT_FIRST_LOAD: RegExp[] = [
+  /^shared\/friend[A-Za-z]*\.ts$/, // the friends data layer (YAZ-5362)
+  /^mobile\/src\/friends\/(?!ui\/lazy\.ts$)/, // the friends code, except the lazy door to it
+  /^shared\/cardSchedule\.ts$/,
+  /^node_modules\/ts-fsrs\//, // the review schedule
+  /^node_modules\/yaml\//, // the YAML parser (the card line, the front matter)
+  /^node_modules\/(marked|dompurify)\//, // the reader's Markdown
+  /^mobile\/src\/(page\/pageRender|media\/(ahead|plan|refs)|scan\/qrDecode)\.ts$/,
+  /^node_modules\/qr\//, // the QR reader
+]
+
+/** YAZ-5377: modules that no production chunk may hold: dev-only and test-only code, and the fixtures. */
+export const NEVER_BUNDLED: RegExp[] = [/^mobile\/src\/dev\//, /\.test\.[cm]?[jt]sx?$/, /fixture/i, /cssAudit/, /^mobile\/src\/friends\/check3\//]
+
 /** The files the publish needs. */
 export const PARTS = ['index.html', 'friend.html', 'group.html', 'join.html', '_headers', 'sw.js', 'manifest.webmanifest', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'version.txt']
 export const missingParts = (paths: string[]) => PARTS.filter((p) => !paths.includes(p))
@@ -73,11 +95,15 @@ export function main() {
   const s = sum(shell.map(fileOf))
   console.log(`  sw.js       ${kb(size('sw.js').raw)} (gzip ${kb(size('sw.js').gz)}); the worker keeps ${shell.length} files: ${kb(s.raw)} (gzip ${kb(s.gz)} on the wire)`)
 
+  const firstJs = sum(first.filter((p) => p.endsWith('.js')))
+  if (firstJs.raw > FIRST_LOAD_JS_MAX) problems.push(`the first load's JavaScript is ${kb(firstJs.raw)}, over its ceiling of ${kb(FIRST_LOAD_JS_MAX)} (YAZ-5377; src/firstLoad.test.ts names what came in)`)
+  console.log(`  first load  JavaScript ${kb(firstJs.raw)} of its ceiling ${kb(FIRST_LOAD_JS_MAX)}`)
+
   if (problems.length > 0) {
     console.error(`\nThe build check FAILED:\n${problems.map((p) => `  - ${p}`).join('\n')}`)
     process.exit(1)
   }
   console.log(`  version.txt ${readFileSync(join(dist, 'version.txt'), 'utf8').trim().replace('\n', ' (worker ')})`)
-  console.log('  check: no fixtures, no localhost, no source maps, no token; all publish parts present\n')
+  console.log('  check: no fixtures, no localhost, no source maps, no token; all publish parts present; the first load under its ceiling\n')
 }
 

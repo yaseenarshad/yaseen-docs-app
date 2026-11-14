@@ -154,15 +154,124 @@ export const ratio = (a: RGBA, b: RGBA) => {
 }
 export const hexOf = (c: RGBA) => '#' + c.slice(0, 3).map((n) => Math.round(n).toString(16).padStart(2, '0')).join('')
 
-/** Resolves `var()` with the custom properties of an element. */
+/**
+ * Resolves `var()` with the custom properties of an element. It matches the brackets itself (YAZ-5359): a fallback can
+ * hold `color-mix()` that holds `calc()` that holds `var()` (`table.css`'s head ink), deeper than a pattern can follow.
+ */
 function substitute(value: string, vars: Map<string, string>, depth = 0): string {
-  if (depth > 20 || !value.includes('var(')) return value
-  return substitute(
-    value.replace(/var\(\s*(--[\w-]+)\s*(?:,\s*((?:[^()]|\([^()]*\))*))?\)/g, (_, name: string, fallback?: string) => vars.get(name) ?? fallback ?? ''),
-    vars,
-    depth + 1,
-  )
+  if (depth > 20) return value
+  let out = ''
+  let i = 0
+  for (;;) {
+    const at = value.indexOf('var(', i)
+    if (at < 0) return out + value.slice(i)
+    let level = 0
+    let end = -1
+    let comma = -1
+    for (let j = at + 3; j < value.length; j++) {
+      const c = value[j]
+      if (c === '(') level++
+      else if (c === ')' && --level === 0) {
+        end = j
+        break
+      } else if (c === ',' && level === 1 && comma < 0) comma = j
+    }
+    if (end < 0) return out + value.slice(i)
+    const name = value.slice(at + 4, comma < 0 ? end : comma).trim()
+    const fallback = comma < 0 ? undefined : value.slice(comma + 1, end).trim()
+    const set = vars.get(name)
+    // A custom property set to `initial` is the guaranteed-invalid value: `var()` takes its fallback (table.css).
+    const chosen = set !== undefined && set.trim() !== 'initial' ? set : (fallback ?? '')
+    out += value.slice(i, at) + substitute(chosen, vars, depth + 1)
+    i = end + 1
+  }
 }
+
+/**
+ * YAZ-5359: resolves each `calc()` whose terms are numbers, or numbers of ONE unit (`%`, `px`, `em`, `rem`), with
+ * `+ - * /` and parentheses: `calc(6 * 1 * 1%)` is `6%`. A `calc()` it cannot resolve stays as written, and the colour
+ * that holds it is reported as unresolved (`audit().unresolved`).
+ */
+export function resolveCalc(value: string): string {
+  let out = value
+  for (let guard = 0; guard < 50 && /calc\(/i.test(out); guard++) {
+    const start = out.toLowerCase().lastIndexOf('calc(')
+    let depth = 0
+    let end = -1
+    for (let i = start + 4; i < out.length; i++) {
+      if (out[i] === '(') depth++
+      else if (out[i] === ')' && --depth === 0) {
+        end = i
+        break
+      }
+    }
+    if (end < 0) return out
+    const result = evalCalc(out.slice(start + 5, end))
+    if (result === null) return out
+    out = out.slice(0, start) + result + out.slice(end + 1)
+  }
+  return out
+}
+
+function evalCalc(expr: string): string | null {
+  const tokens = expr.match(/\d*\.?\d+(?:e[+-]?\d+)?(?:%|px|rem|em)?|[-+*/()]|\S/gi) ?? []
+  let i = 0
+  type Num = { n: number; unit: string }
+  const fail = (): never => {
+    throw new Error('calc')
+  }
+  const primary = (): Num => {
+    const t = tokens[i++]
+    if (t === '(') {
+      const v = sum()
+      if (tokens[i++] !== ')') fail()
+      return v
+    }
+    if (t === '-') {
+      const v = primary()
+      return { n: -v.n, unit: v.unit }
+    }
+    const m = t === undefined ? null : /^(\d*\.?\d+(?:e[+-]?\d+)?)(%|px|rem|em)?$/i.exec(t)
+    if (!m) return fail()
+    return { n: +m[1], unit: (m[2] ?? '').toLowerCase() }
+  }
+  const product = (): Num => {
+    let v = primary()
+    while (tokens[i] === '*' || tokens[i] === '/') {
+      const op = tokens[i++]
+      const w = primary()
+      if (op === '*') {
+        if (v.unit !== '' && w.unit !== '') fail()
+        v = { n: v.n * w.n, unit: v.unit || w.unit }
+      } else {
+        if (w.unit !== '' || w.n === 0) fail()
+        v = { n: v.n / w.n, unit: v.unit }
+      }
+    }
+    return v
+  }
+  const sum = (): Num => {
+    let v = product()
+    while (tokens[i] === '+' || tokens[i] === '-') {
+      const op = tokens[i++]
+      const w = product()
+      if (v.unit !== w.unit && v.n !== 0 && w.n !== 0) fail()
+      v = { n: op === '+' ? v.n + w.n : v.n - w.n, unit: v.unit || w.unit }
+    }
+    return v
+  }
+  try {
+    const v = sum()
+    if (i !== tokens.length) return null
+    return `${Math.round(v.n * 1e6) / 1e6}${v.unit}`
+  } catch {
+    return null
+  }
+}
+
+/** A value that names a colour the engine must read (a colour function, a hex, a `var()` or `calc()` left over). */
+const COLOURISH = /\b(?:color-mix|rgba?|hsla?|hwb|lab|lch|oklab|oklch|light-dark|color|var|calc)\(|gradient\(|#[0-9a-f]{3,8}\b/i
+const NOT_A_COLOUR = /^(?:inherit|initial|unset|revert|revert-layer|none)$/i
 
 export function parseColour(raw: string, current: RGBA | null): RGBA | null {
   const v = raw.trim().toLowerCase()
@@ -178,7 +287,7 @@ export function parseColour(raw: string, current: RGBA | null): RGBA | null {
   }
   const rgb = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/.exec(v)
   if (rgb) return [+rgb[1], +rgb[2], +rgb[3], rgb[4] === undefined ? 1 : rgb[4].endsWith('%') ? parseFloat(rgb[4]) / 100 : +rgb[4]]
-  const mix = /^color-mix\(\s*in srgb\s*,\s*((?:[^(),]|\([^()]*\))+?)(?:\s+([\d.]+)%)?\s*,\s*((?:[^(),]|\([^()]*\))+?)(?:\s+([\d.]+)%)?\s*\)$/.exec(v)
+  const mix = /^color-mix\(\s*in srgb\s*,\s*((?:[^(),]|\([^()]*\))+?)(?:\s+([\d.]+)%)?\s*,\s*((?:[^(),]|\([^()]*\))+?)(?:\s+([\d.]+)%)?\s*\)$/.exec(resolveCalc(v))
   if (mix) {
     const a = parseColour(mix[1], current)
     const b = parseColour(mix[3], current)
@@ -197,8 +306,8 @@ function colourIn(value: string, current: RGBA | null): RGBA | null {
   const whole = parseColour(value, current)
   if (whole !== null) return whole
   for (const part of value.match(/color-mix\((?:[^()]|\([^()]*\))*\)|#[0-9a-f]{3,8}\b|rgba?\([^)]*\)|\b(?:white|black|transparent|currentcolor)\b/gi) ?? []) {
-    const c = parseColour(part, current)
-    if (c !== null) return c
+    // The first colour of the shorthand is its colour. If the engine cannot read it, it says so (null), not the next one.
+    return parseColour(part, current)
   }
   return null
 }
@@ -234,8 +343,17 @@ export interface AuditOptions {
   without?: 'opacity' | 'color-mix' | 'ancestor-fill'
 }
 
-export function audit(root: Element, sheets: Sheet[], options: AuditOptions): { findings: Finding[]; elements: number; skipped: number } {
+export function audit(root: Element, sheets: Sheet[], options: AuditOptions): { findings: Finding[]; elements: number; skipped: number; unresolved: string[] } {
   const { theme } = options
+  /**
+   * YAZ-5359: each colour value the engine cannot read (a function it does not know, a `calc()` it cannot resolve). The
+   * engine does NOT guess for them (it would draw the element on the wrong fill). It reports each one, and the screen
+   * test expects none: a new kind of value turns the test red, not a silent pass.
+   */
+  const unresolved = new Set<string>()
+  const unread = (el: Element, prop: string, value: string) => {
+    if (options.without === undefined) unresolved.add(`${prop}: ${value} (${el.tagName.toLowerCase()}${el.classList.length > 0 ? `.${[...el.classList].join('.')}` : ''})`)
+  }
   const rules = parseSheets(sheets, theme, options.width ?? 390)
   const byKey = new Map<string, Rule[]>()
   for (const r of rules) {
@@ -290,12 +408,13 @@ export function audit(root: Element, sheets: Sheet[], options: AuditOptions): { 
     const vars = new Map(parent.vars)
     for (const [prop, d] of decls) if (prop.startsWith('--')) vars.set(prop, substitute(d.value, vars))
     const own = new Map<string, string>()
-    for (const [prop, d] of decls) if (!prop.startsWith('--')) own.set(prop, substitute(d.value, vars))
+    for (const [prop, d] of decls) if (!prop.startsWith('--')) own.set(prop, resolveCalc(substitute(d.value, vars)))
     let color = parent.color
     const c = own.get('color')
     if (c !== undefined && c !== 'inherit') {
       const parsed = options.without === 'color-mix' && /color-mix/.test(c) ? null : parseColour(c, parent.color)
       if (parsed !== null) color = parsed
+      else if (c.trim() !== '' && !NOT_A_COLOUR.test(c.trim())) unread(el, pseudo ? `color${pseudo}` : 'color', c)
     }
     let fontSize = parent.fontSize
     const fs = own.get('font-size')
@@ -325,7 +444,9 @@ export function audit(root: Element, sheets: Sheet[], options: AuditOptions): { 
     const v = own.get('background-color') ?? own.get('background')
     if (v === undefined || /^none\b/.test(v)) return [0, 0, 0, 0]
     if (options.without === 'color-mix' && /color-mix/.test(v)) return [0, 0, 0, 0]
-    return colourIn(v, compute(el).color) ?? [0, 0, 0, 0]
+    const fill = colourIn(v, compute(el).color)
+    if (fill === null && COLOURISH.test(v)) unread(el, 'background', v)
+    return fill ?? [0, 0, 0, 0]
   }
   const opacityOf = (el: Element) => {
     if (options.without === 'opacity') return 1
@@ -388,11 +509,13 @@ export function audit(root: Element, sheets: Sheet[], options: AuditOptions): { 
         const ph = compute(el, '::placeholder').own.get('color')
         // No colour of the phone's own: the browser's grey (Safari's is lighter than Chrome's #757575): fail.
         const colour = ph !== undefined ? parseColour(ph, c.color) : null
+        if (ph !== undefined && colour === null && !NOT_A_COLOUR.test(ph.trim())) unread(el, 'color::placeholder', ph)
         check(el, 'placeholder', colour ?? [117, 117, 117, 0.6], input.placeholder)
       }
       const b = c.own.get('border-color') ?? c.own.get('border')
       if (b !== undefined && !/^(0|none)\b/.test(b) && !/\b0(px)?\s+(solid|none)\b|^none/.test(c.own.get('border') ?? '')) {
         const colour = colourIn(b, c.color)
+        if (colour === null && COLOURISH.test(b)) unread(el, 'border', b)
         if (colour !== null && colour[3] > 0) check(el, 'field border', colour, input.placeholder || input.value, true)
       }
       continue
@@ -412,5 +535,5 @@ export function audit(root: Element, sheets: Sheet[], options: AuditOptions): { 
       if (m && m[2].trim() !== '' && !/^\\[0-9a-f]+\s*$/i.test(m[2])) check(el, 'text', p.color, m[2])
     }
   }
-  return { findings, elements, skipped }
+  return { findings, elements, skipped, unresolved: [...unresolved] }
 }
