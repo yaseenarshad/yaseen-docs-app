@@ -13,6 +13,8 @@ const ICONS = {
   folderCounts: <><path d="M2 5a1 1 0 0 1 1-1h3l1.2 1.4H9M2 5v7a1 1 0 0 0 1 1h5" /><path d="M11.2 8.5h3M11.2 11h3M12 7.5l-.6 4.5M13.6 7.5 13 12" /></>,
   columnTypeIcons: <><rect x="2.5" y="3.5" width="11" height="9" rx="1.5" /><path d="M5 6.5h1.5M8.5 6.5H11M5 9.5h1.5M8.5 9.5H11" /></>,
   headerRow: <><rect x="2.5" y="3" width="11" height="10" rx="1.5" /><path d="M2.5 6.5h11M3.5 4.75h9" /></>,
+  // YAZ-5319: two cards, one over the other (Show cards as rows).
+  cardRows: <><rect x="2.5" y="3.5" width="9" height="7" rx="1.2" /><path d="M5 12.5h7.3a1.2 1.2 0 0 0 1.2-1.2V6" /></>,
   subfolders: <path d="M2.5 2.5v8.5h3M2.5 5.5h3M7 8.6a.8.8 0 0 1 .8-.8h2l1 1h2.9a.8.8 0 0 1 .8.8v3.1a.8.8 0 0 1-.8.8H7.8a.8.8 0 0 1-.8-.8zM7 3.6a.8.8 0 0 1 .8-.8h2l1 1h2.9a.8.8 0 0 1 .8.8" />,
   groupIndent: <path d="M2 3h12M7 7.5h7M7 12h7M2 6.5l2.5 2.5L2 11.5" />,
   emptyGroups: <rect x="2.5" y="3" width="11" height="10" rx="1.5" strokeDasharray="2 2" />,

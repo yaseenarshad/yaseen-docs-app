@@ -5,6 +5,17 @@ import { DateValue, type Expr, LinkValue, type Value, compile, fromYaml, isEmpty
 import { renderDate } from '../expr/dates'
 import type { FilterNode } from '../viewSchema'
 import { canonicalKey } from './keys'
+import { isCardKey } from '../cardRows'
+
+/** The filter type of each card column (YAZ-5319); Page and Card ID are text. */
+const CARD_TYPES: Readonly<Record<string, PropertyType>> = {
+  'card.status': 'select',
+  'card.upNext': 'checkbox',
+  'card.nextReview': 'date',
+  'card.lastReview': 'date',
+  'card.reviews': 'number',
+  'card.successRate': 'number',
+}
 
 /**
  * Filter builder rows ↔ expression strings (GRO-2135), back from the YAZ-846 amputation
@@ -121,6 +132,8 @@ export function inferType(property: string, records: readonly IndexRecord[], typ
     return field === 'size' ? 'number' : field === 'ctime' || field === 'mtime' ? 'date' : 'text'
   }
   if (property.startsWith('formula.')) return 'text'
+  // A card row's columns (YAZ-5319): Card status is a Select (Active, Archived), Up next a checkbox, the reviews dates and numbers.
+  if (isCardKey(property)) return CARD_TYPES[property] ?? 'text'
   const bare = property.startsWith('note.') ? property.slice(5) : property
   const kind = typing?.assigned ?? typing?.dominant ?? null
   if (kind !== null) return kind === 'list' && bare === 'tags' ? 'tags' : kind
@@ -270,6 +283,8 @@ function propertyOf(e: Expr): string | null {
   if (e.type === 'member' && e.object.type === 'ident' && SCOPE_IDENTS.has(e.object.name) && e.object.name !== 'this') {
     return `${e.object.name}.${e.name}`
   }
+  // A card row's column (YAZ-5319): `card.status`. A bare `card` stays a page's property.
+  if (e.type === 'member' && e.object.type === 'ident' && e.object.name === 'card') return `card.${e.name}`
   if (e.type === 'index' && e.object.type === 'ident' && e.object.name === 'note' && e.index.type === 'str') return `note.${e.index.value}`
   if (e.type === 'ident' && !SCOPE_IDENTS.has(e.name)) return `note.${e.name}`
   return null

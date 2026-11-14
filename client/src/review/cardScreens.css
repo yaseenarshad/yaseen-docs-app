@@ -618,12 +618,6 @@
   font-size: 11px;
   line-height: 16px;
 }
-/* YAZ-5046: the line before Archived, across the menu's three columns. */
-.card-inbox__filter-sep {
-  grid-column: 1 / -1;
-  margin: 4px 0;
-  border-top: 1px solid var(--border);
-}
 .card-inbox__filter-name {
   display: inline-flex;
   align-items: center;
@@ -1114,69 +1108,6 @@ body.card-inbox--sizing {
   color: var(--fg);
   background: var(--bg-hover);
 }
-/* The Archived list (YAZ-5046): calm rows in the card's place, to look at. Each: the title, the page (quiet), then
-   Unarchive on the right. The list scrolls inside the panel. */
-.card-inbox__archived {
-  margin: 0;
-  padding: 6px 0;
-  list-style: none;
-  max-height: 60vh;
-  overflow-y: auto;
-}
-.card-inbox__archived-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 8px;
-}
-.card-inbox__archived-row + .card-inbox__archived-row {
-  border-top: 1px solid var(--border);
-}
-.card-inbox__archived-open {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 6px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--fg);
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-.card-inbox__archived-open:hover {
-  background: var(--bg-hover);
-}
-.card-inbox__archived-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.card-inbox__archived-page {
-  flex: none;
-  max-width: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--fg-muted);
-  font-size: 12px;
-}
-.card-inbox__archived-unarchive {
-  flex: none;
-  padding: 2px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
-  color: var(--fg);
-  font-size: 12px;
-}
-.card-inbox__archived-unarchive:hover {
-  background: var(--bg-hover);
-}
 /* ONE line at any width (YAZ-5024): no wrap; a key that does not fit folds (`CardInboxHints`), laid out off the
    row so it can still be measured. */
 .card-inbox__hints {
@@ -1205,8 +1136,7 @@ body.card-inbox--sizing {
 }
 
 /* A card window of an empty card: "New card", quiet. */
-.explore__title.card__title--empty,
-.card-inbox__archived-title.card__title--empty {
+.explore__title.card__title--empty {
   color: var(--fg-muted);
   font-weight: 400;
 }

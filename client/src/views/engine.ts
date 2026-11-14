@@ -10,6 +10,7 @@ import {
   compile, equals, evaluate, fromYaml, isTruthy, linkText, render,
 } from './expr'
 import { summarize } from './summaries'
+import { CARD_FIELD_LABELS, DEFAULT_CARD_ORDER, cardRowOfRecord, cardRowsOf, cardValues, isCardKey } from './cardRows'
 
 /**
  * Query engine for one Bases view (GRO-2133): filters → values → sort → limit → group → summaries
@@ -231,6 +232,11 @@ const member = (object: string, name: string): Expr => ({ type: 'member', object
  * anything else → page property (`note.` optional) through `fromYaml`.
  */
 function makeGetter(key: string, def: ViewSet, errors: EngineError[], cardSettings?: ReviewSettings): Getter {
+  // A card row's columns (YAZ-5319): the scope's `card`, which only a card row has; a page's row reads blank.
+  if (isCardKey(key)) {
+    const name = key.slice(5)
+    return (scope) => (scope.card !== undefined && Object.hasOwn(scope.card, name) ? scope.card[name] : null)
+  }
   // The card counts (YAZ-4967, idea 2): read off the index's `cards`, no file read. Blank, not 0, where there are none.
   if (key === 'file.cards') return (scope) => cardCount(scope.file, null, 0)
   if (key === 'file.due') return (scope) => (cardSettings === undefined ? null : cardCount(scope.file, cardSettings, scope.now ?? Date.now()))
@@ -381,7 +387,7 @@ export function folderAt(folder: string, page: string, depth: number): string {
  * writes `note.dessert column`. `file.*` and `formula.*` keys are their own.
  */
 export function columnKey(spelled: ReadonlyMap<string, string> | undefined, key: string): string {
-  if (spelled === undefined || key.startsWith('file.') || key.startsWith('formula.')) return key
+  if (spelled === undefined || key.startsWith('file.') || key.startsWith('formula.') || isCardKey(key)) return key
   const name = key.startsWith('note.') ? key.slice(5) : key
   const column = spelled.get(keyFold(name))
   return column === undefined || column === name ? key : `note.${column}`
@@ -394,7 +400,7 @@ function orderInColumnSpelling(order: readonly string[], spelled: ReadonlyMap<st
   for (const key of order) {
     const column = columnKey(spelled, key)
     const name = column.startsWith('note.') ? column.slice(5) : column
-    if (!column.startsWith('file.') && !column.startsWith('formula.') && spelled.has(keyFold(name))) {
+    if (!column.startsWith('file.') && !column.startsWith('formula.') && !isCardKey(column) && spelled.has(keyFold(name))) {
       if (seen.has(name)) continue
       seen.add(name)
     }
@@ -415,7 +421,10 @@ function orderInColumnSpelling(order: readonly string[], spelled: ReadonlyMap<st
  * (`comments` and `reviews` never reach here: the index drops them.)
  */
 export function propertyKeys(_def: ViewSet, view: ViewDef, records: readonly IndexRecord[], declared: readonly string[] = []): string[] {
-  if (view.order) return declared.length === 0 ? [...view.order] : orderInColumnSpelling(view.order, spellings(declared))
+  // A view listing cards (YAZ-5319) has its own columns: the name and the card columns, never a page's property.
+  if (cardRowsOf(view)) return (view.cardOrder ?? DEFAULT_CARD_ORDER).filter((key) => key.startsWith('file.') || key.startsWith('formula.') || isCardKey(key))
+  // A page's view shows no card column: a card's are its rows' alone.
+  if (view.order) return (declared.length === 0 ? [...view.order] : orderInColumnSpelling(view.order, spellings(declared))).filter((key) => !isCardKey(key))
   // A calendar card is small (YAZ-4857 item 4): with no column choice it shows the name alone, and the Columns panel says "Shown · 1".
   if (view.type === 'calendar') return ['file.name']
   return defaultKeys(records, declared)
@@ -435,7 +444,7 @@ export function defaultKeys(records: readonly IndexRecord[], declared: readonly 
  * The KEY is never touched.
  */
 export function defaultLabel(key: string): string {
-  const file = FILE_FIELD_LABELS[key]
+  const file = FILE_FIELD_LABELS[key] ?? CARD_FIELD_LABELS[key]
   if (file !== undefined) return file
   const last = key.slice(key.lastIndexOf('.') + 1).replaceAll('_', ' ')
   return last.charAt(0).toUpperCase() + last.slice(1)
@@ -515,6 +524,9 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
   for (let i = 0; i < records.length; i++) {
     // `this` is null: the views are a FOLDER's, and a folder is no record (YAZ-2290).
     const scope: Scope = { page: pageOf(records[i]), file: files[i], formulas, this: null, resolve, now, weekStartsOn }
+    // A card row (YAZ-5319) carries its card's columns: `card.status`, `card.nextReview`, …
+    const card = cardRowOfRecord(records[i])
+    if (card !== undefined) scope.card = cardValues(card, opts.cardSettings)
     if (baseFilter && !baseFilter(scope)) continue
     if (viewFilter && !viewFilter(scope)) continue
     const row: Row = { record: records[i], file: files[i], values: {} }

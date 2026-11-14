@@ -38,7 +38,12 @@ import { onPageWindowRequest } from './pageWindowRequest'
 import { Toolbar } from './view/Toolbar'
 import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { PAGE_VIEW_TYPE } from './pageView'
-import { NO_READ_ONLY, writableKey } from './readOnlyRows'
+import { NO_READ_ONLY, readOnlyTip, writableKey } from './readOnlyRows'
+import { type CardRow, cardRowOfRecord, cardRowRecords, cardRowsOf } from './cardRows'
+import { CardRows, type CardRowsValue } from './view/cardRowsContext'
+import { landOnCard } from '../editor/card/cardOpen'
+import { changeCardLine } from '../review/cardFile'
+import { type CardLine, withCardNext, withCardOff } from '@shared/cardLine'
 import { type HistoryStep, pageRef, valueHistory } from './view/valueHistory'
 import type { CardStyleWrite } from './view/CardStyleMenu'
 import { columnReservedKeys } from '../links/reservedKeys'
@@ -368,7 +373,9 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const openFilter = useCallback(() => setFilterAsks((n) => n + 1), [])
   const windowLink = useMemo(pageWindowLink, [])
   const lastWindow = useRef<PageWindowMemory | null>(null)
-  const itemProps = useCallback((path: string) => (rowPage(path) !== path || !hoverPreview ? { 'data-hover-item': path, onMouseEnter: noHover, onMouseLeave: noHover } : { 'data-hover-item': path, onMouseEnter: () => hoverCard(path, path), onMouseLeave: () => leaveCard(path) }), [hoverCard, leaveCard, hoverPreview])
+  /** The card rows inside pages by path (YAZ-5319): no file is at their path, so they have no hover panel. Set below, read at render. */
+  const cardInPage = useRef<ReadonlyMap<string, CardRow> | null>(null)
+  const itemProps = useCallback((path: string) => (rowPage(path) !== path || !hoverPreview || cardInPage.current?.has(path) === true ? { 'data-hover-item': path, onMouseEnter: noHover, onMouseLeave: noHover } : { 'data-hover-item': path, onMouseEnter: () => hoverCard(path, path), onMouseLeave: () => leaveCard(path) }), [hoverCard, leaveCard, hoverPreview])
   const viewHover = useMemo<ViewHover>(() => ({ itemProps }), [itemProps])
   // New records (a sync, another window's edit) can remove or move the item under the panel, and a removed item
   // fires no `mouseleave`: the panel goes.
@@ -388,11 +395,25 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const own = views[index]!
   // Settings › Folder pages (YAZ-4585, D34): every reader below sees the view's own keys, then Settings'. The menus
   // read `def.views[viewIndex]` for the view as written ("from Settings").
-  const view = useMemo(() => withDefaults(own, defaults), [own, defaults])
+  // The vault's card settings (YAZ-4967): the "Due" column counts with them; published by the vault's scope, off while IDs are.
+  const cardSettings = useVaultReviewSettings(root)
+  // "Show cards as rows" (YAZ-5319) is offered while the vault has Cards and IDs on; off, a view that lists cards lists its pages.
+  const cardsOffered = cardSettings?.enabled === true && folder.wikilinks.ids
+  const view = useMemo(() => {
+    const filled = withDefaults(own, defaults)
+    return filled.rows === 'cards' && !cardsOffered ? { ...filled, rows: undefined } : filled
+  }, [own, defaults, cardsOffered])
+  const cards = cardRowsOf(view)
   // "Subfolders: As rows / Both" (YAZ-4579 D30/D31): this view's records are the pages and a row per direct subfolder.
   // Every use below reads these — the engine, the menus' columns, a move's raw — so a folder row is a row like a page.
-  const withFolders = showsFolderRows(view) && folderRows.length > 0
-  const records = useMemo(() => (withFolders ? [...pageRecords, ...folderRows] : pageRecords), [withFolders, pageRecords, folderRows])
+  // Listing cards (YAZ-5319), they are a row per card of the pages, and no folder row.
+  const withFolders = !cards && showsFolderRows(view) && folderRows.length > 0
+  const records = useMemo(() => (cards ? cardRowRecords(pageRecords) : withFolders ? [...pageRecords, ...folderRows] : pageRecords), [cards, withFolders, pageRecords, folderRows])
+  /** Each card row by its path (YAZ-5319); null while the view lists pages. */
+  const cardRowAt = useMemo(() => (cards ? new Map(records.map((r) => [r.path, cardRowOfRecord(r)!] as const)) : null), [cards, records])
+  cardInPage.current = useMemo(() => (cardRowAt === null ? null : new Map([...cardRowAt].filter(([, row]) => row.pageTitle !== null))), [cardRowAt])
+  /** A card row in a read-only page is read only (YAZ-3076 D6); the pages' set for pages. */
+  const rowsReadOnly = useMemo(() => (cardRowAt === null || readOnly.size === 0 ? readOnly : new Set([...cardRowAt].filter(([, row]) => readOnly.has(row.page)).map(([path]) => path))), [cardRowAt, readOnly])
   // "Delete page…" (YAZ-4592 S26): the confirm sheet, unless Settings › Folder pages › Ask before deleting pages is off.
   const { confirmDeletePages, sheet: deleteSheet } = useDeletePages(defaults.askBeforeDelete, folder.trash, folder.allowDelete, (path) => pageRecords.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, ''))
   useEffect(() => {
@@ -561,13 +582,27 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
    * directory path, as a folder tab does (D3). A page's path passes through unchanged.
    */
   const openFolderRow = (dir: string) => (openFolderPage ?? onOpenFile)(dir)
-  const openRow = (path: string) => (rowPage(path) !== path ? openFolderRow(rowPage(path)) : onOpenFile(path))
+  /**
+   * The file a row opens (YAZ-5319): a card row inside a page opens its page, landed on the card (`landOnCard`, as
+   * search's card row); a card file's row, and a page's, their own path.
+   */
+  const landed = (path: string): string => {
+    const card = cardRowAt?.get(path)
+    if (card === undefined || card.pageTitle === null) return path
+    landOnCard(card.page, card.id)
+    return card.page
+  }
+  const openRow = (path: string) => (rowPage(path) !== path ? openFolderRow(rowPage(path)) : onOpenFile(landed(path)))
   const openBackground = folder.openBackground
-  const openRowBackground = openBackground === undefined ? undefined : (path: string) => openBackground(rowPage(path))
+  const openRowBackground = openBackground === undefined ? undefined : (path: string) => openBackground(rowPage(landed(path)))
   const openRight = folder.openRight
-  const openRowRight = openRight === undefined ? undefined : (path: string) => openRight(rowPage(path))
+  const openRowRight = openRight === undefined ? undefined : (path: string) => openRight(rowPage(landed(path)))
   const openNewTab = folder.openNewTab
-  const openRowNewTab = openNewTab === undefined ? undefined : (path: string) => openNewTab(rowPage(path))
+  const openRowNewTab = openNewTab === undefined ? undefined : (path: string) => openNewTab(rowPage(landed(path)))
+  // A card row's Page cell (YAZ-5319) opens the page through this render's `openRow`: one context value per switch.
+  const latestOpenRow = useRef(openRow)
+  latestOpenRow.current = openRow
+  const cardRowsValue = useMemo<CardRowsValue>(() => ({ offered: cardsOffered, openPage: (path) => latestOpenRow.current(path) }), [cardsOffered])
   /**
    * A click on a link pill (YAZ-4601 D47) opens the LINKED page by the page links' rule (⌘ a background tab, ⌥ the right
    * panel) and nothing else: in the capture phase, so the cell under it neither selects nor edits and its card does not
@@ -592,8 +627,6 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // The page's Linked mentions columns (YAZ-4738): off the snapshot's one reverse map, built once per snapshot.
   const resolveLink = folder.resolveLink
   const mentions = useMemo(() => mentionsColumns(settings.columns, vaultRecords, vaultFolders, resolveLink), [settings, vaultRecords, vaultFolders, resolveLink])
-  // The vault's card settings (YAZ-4967): the "Due" column counts with them; published by the vault's scope.
-  const cardSettings = useVaultReviewSettings(root)
   // An Image column sorts by the picture's file name (YAZ-4802).
   const byFileName = useMemo(() => (key: string) => settings.columns[key.startsWith('note.') ? key.slice(5) : key]?.kind === 'image', [settings])
   const result = useMemo(
@@ -1007,7 +1040,19 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     remove: confirmDeletePages,
   })
 
-  const writeValue = (path: string, key: string, value: unknown) => folder.writeValues(path, [{ key, value }])
+  /**
+   * A row's writes through the one door (`FolderHost.writeValues`). A card row's (YAZ-5319) go to its card line instead,
+   * in one write of its page (`changeCardLine`): Card status writes `off`, Card up next writes `next`.
+   */
+  const writeRowValues = (path: string, writes: readonly PropertyWrite[]): Promise<unknown> => {
+    const card = cardRowAt?.get(path)
+    if (card === undefined) return folder.writeValues(path, writes)
+    if (readOnly.has(card.page)) return Promise.reject(new Error(readOnlyTip(unit)))
+    const change = (line: CardLine): CardLine =>
+      writes.reduce((l, w) => (w.key === 'card.status' ? withCardOff(l, w.value === 'Archived') : w.key === 'card.upNext' ? withCardNext(l, w.value === true) : l), line)
+    return changeCardLine(card.page, card.id, change, card.index)
+  }
+  const writeValue = (path: string, key: string, value: unknown) => writeRowValues(path, [{ key, value }])
 
   const keys = propertyKeys(def, view, records, pageColumnKeys(folder.settings))
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
@@ -1120,7 +1165,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         search={search}
         onSearch={setSearch}
         onUpdate={update}
-        onNew={newButtons ? () => onNewPage(null) : undefined}
+        onNew={newButtons && !cards ? () => onNewPage(null) : undefined}
         allGroupKeys={allGroupKeys}
         collapsed={collapsed}
         onSetAllGroups={writeCollapsed}
@@ -1158,7 +1203,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           onOpenFilter={openFilter}
           matchRows={matchRows}
           hover={viewHover}
-          readOnly={readOnly}
+          readOnly={rowsReadOnly}
+          cardRows={cards}
           def={def}
           view={view}
           viewIndex={index}
@@ -1171,13 +1217,14 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           onOpenFile={openRow}
           onOpenFileRight={openRowRight}
           onOpenFileBackground={openRowBackground}
-          onOpenWindow={openWindow}
+          onOpenWindow={openWindow === undefined ? undefined : (path) => openWindow(landed(path))}
           windowLink={windowLink}
           onNotice={folder.onNotice}
           onMoveToGroup={onMoveToGroup}
           moveError={moveError}
-          onNewInGroup={onNewPage}
-          newRows={newButtons}
+          // A card row is no page (YAZ-5319): no new row, no Duplicate, no Delete page.
+          onNewInGroup={cards ? undefined : onNewPage}
+          newRows={newButtons && !cards}
           root={root}
           properties={properties}
           settings={folder.settings}
@@ -1194,13 +1241,13 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           separate={folder.separate}
           relation={folder.relation}
           onWriteValue={writeValue}
-          onWriteValues={folder.writeValues}
+          onWriteValues={writeRowValues}
           onRetitle={askedRetitle}
           confirmChange={confirmChange}
           reservedKeys={columnReservedKeys(folder.wikilinks.ids)}
-          onDuplicatePage={folder.duplicate}
-          onDeletePages={confirmDeletePages}
-          onNewRowBelow={newRowBelow}
+          onDuplicatePage={cards ? undefined : folder.duplicate}
+          onDeletePages={cards ? undefined : confirmDeletePages}
+          onNewRowBelow={cards ? undefined : newRowBelow}
           history={history}
           selectionChip={selectionChip}
         />
@@ -1396,6 +1443,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     <ViewDefaults.Provider value={defaults}>
       <LinkFoldersContext.Provider value={linkFolders}>
       <FolderPages.Provider value={folderPages}>
+      <CardRows.Provider value={cardRowsValue}>
         <LinkPills.Provider value={true}>
           <PillLook.Provider value={pillLook}>
           <TextLinkPicker.Provider value={true}>
@@ -1405,6 +1453,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           </TextLinkPicker.Provider>
           </PillLook.Provider>
         </LinkPills.Provider>
+      </CardRows.Provider>
       </FolderPages.Provider>
       </LinkFoldersContext.Provider>
     </ViewDefaults.Provider>

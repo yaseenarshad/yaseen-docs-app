@@ -1965,7 +1965,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'enabled',
             label: 'Use cards in this vault',
-            hint: 'Cards in this vault come back in the Inbox when they are due. An archived card does not: unarchive it from its ⋯ menu, or from the Inbox\'s Archived list.',
+            hint: 'Cards in this vault come back in the Inbox when they are due. An archived card does not: find it in a folder page\'s table (Show cards as rows, Card status), and unarchive it there or from its ⋯ menu.',
             keywords: REVIEW_KEYWORDS,
             render: ({ review, ids, vaultName }) => review && <CardsControl review={review} ids={ids} vault={vaultName} />,
           },

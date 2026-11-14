@@ -5,7 +5,7 @@
  * `view/filterRows.ts`; the Filter menu and its button come back in YAZ-1226-1229.
  */
 
-/** `status` → `note.status`; `file.x` / `formula.x` / `note.x` unchanged. */
+/** `status` → `note.status`; `file.x` / `formula.x` / `note.x` unchanged, and a card column, `card.x` (YAZ-5319). */
 export function canonicalKey(key: string): string {
-  return key.startsWith('file.') || key.startsWith('formula.') || key.startsWith('note.') ? key : `note.${key}`
+  return key.startsWith('file.') || key.startsWith('formula.') || key.startsWith('note.') || key.startsWith('card.') ? key : `note.${key}`
 }
