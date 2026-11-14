@@ -471,7 +471,7 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-/* Time so far, hidden (YAZ-5130): a small quiet clock in the time's place; a click shows the time in the same spot. */
+/* Time so far, hidden (YAZ-5130): a small quiet clock in the time's place; round 2: its hover box shows the time, no click. */
 .card-inbox__time-tip {
   display: inline-flex;
   vertical-align: middle;
@@ -481,13 +481,8 @@
   align-items: center;
   min-height: 18px;
   padding: 0 3px;
-  border: 0;
   border-radius: 5px;
-  background: none;
-  color: inherit;
-  font: inherit;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
+  cursor: default;
 }
 .card-inbox__time:hover {
   background: color-mix(in srgb, var(--fg) 7%, transparent);
@@ -496,6 +491,9 @@
 .card-inbox__time:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+.card-inbox__time:focus:not(:focus-visible) {
+  outline: none;
 }
 .card-inbox__bar > .card-inbox__today + .card-inbox__place {
   margin-left: 12px;

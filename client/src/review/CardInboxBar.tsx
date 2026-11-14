@@ -8,7 +8,7 @@
  * a folder's, a page's); a card file ends at its folder (its name is its title, the head's). Each part is a link: a
  * folder its folder page (`openPlace`, the folder chips' door), the page as O opens it. A long path gives way in the middle, "…".
  * On the right today's work across the vault, quiet ("Today: 31 cards · 9 min", YAZ-5033; the time hidden behind a
- * click by default, YAZ-5130, `TodayWork`), then "3 of 12", which counts the filter's cards. Under it the progress bar (YAZ-5020, as
+ * clock's hover box by default, YAZ-5130, `TodayWork`), then "3 of 12", which counts the filter's cards. Under it the progress bar (YAZ-5020, as
  * Mochi's): it fills as the session's cards are answered, a Forgot in red, a Remembered in grey.
  *
  * Add more for today (YAZ-5042): the counts stay in this one menu. Round 2 (Yaseen: "2 and then its whatever the
@@ -29,7 +29,8 @@ import type { AddKind } from '@shared/cardSchedule'
 import type { CardFilter, CardPlacePart, CardReviewSession } from './useCardReview'
 import { FileIcon } from '../sidebar/FileIcon'
 import { todayCards } from './reviewTime'
-import { TodayWork, type TimeView } from './TodayWork'
+import { TodayWork } from './TodayWork'
+import type { TimeSoFar } from '@shared/reviews'
 import { AddMoreField } from './AddMoreField'
 import { ArchiveIcon, ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
 
@@ -67,8 +68,8 @@ interface CardInboxBarProps {
   resetCards?: (kind: AddKind) => void
   /** A click on a part of the card's place: the folder page of the vault or a folder, or the page. */
   openPlace?: (part: CardPlacePart) => void
-  /** Time so far (YAZ-5130): how today's time shows. */
-  time: TimeView
+  /** Time so far (YAZ-5130): how today's time shows, Settings › Review. */
+  time: TimeSoFar
 }
 
 export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace, time }: CardInboxBarProps) {
