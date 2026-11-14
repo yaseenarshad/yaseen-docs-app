@@ -22,7 +22,12 @@ import {
  * the NEWEST text of the file that holds the card, so it can go on any version of the page and never clashes.
  */
 export type CardOp =
-  | { kind: 'review'; id: string; review: CardReview } // an answer
+  /**
+   * An answer. `nth` (YAZ-5078): this is the person's nth review of the same time and rating on the line (the review
+   * time is to the minute, so a new card that comes back at once gets two in one minute, as the Mac writes them).
+   * Absent: the first. The send stays idempotent: the review goes on only while the line holds fewer than `nth`.
+   */
+  | { kind: 'review'; id: string; review: CardReview; nth?: number }
   | { kind: 'unreview'; id: string; at: string; rating: CardRating } // undo of a sent answer: names ONE review (YAZ-5181)
   | { kind: 'off'; id: string; on: boolean } // archive, unarchive
   | { kind: 'next'; id: string; on: boolean } // Up next
@@ -37,7 +42,8 @@ export function applyOp(line: CardLine, op: CardOp): CardLine {
   switch (op.kind) {
     case 'review': {
       const key = cardReviewKey(op.review)
-      return cardReviewsOf(line).some((r) => cardReviewKey(r) === key) ? line : withCardReview(line, op.review)
+      const held = cardReviewsOf(line).filter((r) => cardReviewKey(r) === key).length
+      return held >= (op.nth ?? 1) ? line : withCardReview(line, op.review)
     }
     case 'unreview': {
       // YAZ-5181: the review at `at` WITH this rating, the last one (as `withoutCardReview` picks). Gone already: no

@@ -28,7 +28,7 @@ async function signedIn(options: { phone?: Awaited<ReturnType<typeof newPhone>>;
   const phone = options.phone ?? (await newPhone())
   const x = await mount({ phone })
   const answers = options.answers === undefined ? fakeAnswers() : options.answers
-  ;(x.sync as typeof x.sync & { review?: () => Promise<unknown> }).review = async () => (answers === null ? null : { answers })
+  ;(x.sync as unknown as { review?: () => Promise<unknown> }).review = async () => (answers === null ? null : { answers })
   if ((await phone.tokens.read('yaseen/vault@main')) === null) await signInWithForm(x, 'yaseen/vault', GOOD)
   else await x.syncSet({ status: 'synced', vault: 'yaseen/vault@main', ready: true })
   await x.settle()

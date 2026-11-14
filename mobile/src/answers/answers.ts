@@ -115,6 +115,12 @@ export function createAnswers(options: AnswersOptions): Answers {
   /** Sends in a row that ended in `STALE_HEAD` (the branch kept moving): each one doubles the wait (YAZ-5183). */
   let staleInRow = 0
   let state: AnswersState = { vault: null, waiting: 0, lost: [], sending: false, problem: null, retryAt: null, lastSentAt: null }
+  /**
+   * YAZ-5078: the view's mtime of each file whose shown text differs from the stored copy, with that text. The shared
+   * due list keeps a page's card facts by path, mtime and size (`cardFacts`): the Mac's index gives a new mtime on each
+   * write, so the view does too. The same text keeps its mtime (the cache hits); a new text gets a newer one.
+   */
+  let shownAt = new Map<string, { text: string; mtime: number }>()
 
   const emit = (event: AnswersEvent) => {
     for (const listener of [...listeners]) listener(event)
@@ -151,6 +157,7 @@ export function createAnswers(options: AnswersOptions): Answers {
     vault = next
     box = null
     afterglow = []
+    shownAt = new Map()
     state = { ...state, problem: null, retryAt: null, lastSentAt: null }
     const id = next
     loading = (async () => {
@@ -291,7 +298,13 @@ export function createAnswers(options: AnswersOptions): Answers {
       for (const path of paths) {
         const shown = await text(path)
         const old = records[path]
-        if (shown !== null && old !== undefined) records[path] = phoneRecord(path, old.size, shown, { ctime: old.ctime, mtime: old.mtime })
+        if (shown === null || old === undefined || vault === null) continue
+        const stored = await store.read(vault, path)
+        if (stored !== null && stored.content === shown) continue // the actions change nothing here: the stored record
+        const last = shownAt.get(path)
+        const mtime = last !== undefined && last.text === shown ? last.mtime : Math.max(old.mtime, last?.mtime ?? 0) + 1
+        shownAt.set(path, { text: shown, mtime })
+        records[path] = phoneRecord(path, new TextEncoder().encode(shown).length, shown, { ctime: old.ctime, mtime })
       }
       return { commit: index.commit, records }
     },

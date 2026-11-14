@@ -65,6 +65,20 @@ describe('applyOps (decision 2): each kind of action, by card ID, on the newest 
     expect(cardRecords(once)[0].reviews).toHaveLength(1)
   })
 
+  it('YAZ-5078: two answers in ONE minute with one rating are two reviews, as the Mac writes them; each still goes one time', () => {
+    // A new card comes back in the same session: Remembered, then Remembered again, in the same minute.
+    const twice: CardOp[] = [
+      { kind: 'review', id: 'NC-2', review: R1 },
+      { kind: 'review', id: 'NC-2', review: R1, nth: 2 },
+    ]
+    const once = applyOps(page, twice).content
+    expect(lineOf(once, 'NC-2')).toBe('<!-- card: NC-2, 2026-11-14T06:01Z good 9s, 2026-11-14T06:01Z good 9s -->')
+    // Sent again (the send reached GitHub, its answer was lost): no third review.
+    expect(applyOps(once, twice).content).toBe(once)
+    // An action from before this field (no `nth`) is the first of its minute, as before.
+    expect(applyOps(once, [{ kind: 'review', id: 'NC-2', review: R1 }]).content).toBe(once)
+  })
+
   it('YAZ-5181: `unreview` names ONE review (time and rating): applied two times, it takes one review; the other of that minute stays', () => {
     const two = applyOps(page, [{ kind: 'review', id: 'NC-2', review: { at: R1.at, rating: 'again' } }, { kind: 'review', id: 'NC-2', review: R1 }]).content
     const op: CardOp = { kind: 'unreview', id: 'NC-2', at: R1.at, rating: R1.rating }
