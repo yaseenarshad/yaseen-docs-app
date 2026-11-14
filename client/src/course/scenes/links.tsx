@@ -76,9 +76,11 @@ function OnePlace(props: SceneProps) {
     <Stage beat={b} label={id === 'c10-02' ? 'Files and folders: one thing, one place' : id === 'c10-03' ? 'A new card over three folders: where does this go?' : 'The app does not require folders: all your cards in one place, or in folders. The choice is yours'}>
       <Layer style={{ paddingBottom: '8%' }}>
         <svg className="kit-folders" viewBox="0 0 600 340" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+          <g className={aside > 0 ? 'later-aside' : undefined}>
           {FOLDERS.map((f, i) => (
             <Folder key={f.label} beat={b} x={lerp(f.x, ASIDE_X[i], aside)} y={lerp(150, 160, aside)} scale={lerp(1, 0.8, aside)} label={f.label} p={id === 'c10-02' ? since(b, i * 0.06, 0.5) : i === 2 ? 1 - aside : 1} card={i === 1 && aside < 0.5 ? 'Meeting minutes' : undefined} cardIn={i === 1 ? drop : 0} shut={i === 1 ? shut : 0} glow={i === 2 ? 0 : choice} />
           ))}
+          </g>
           {hover > 0 && (
             <g transform={`translate(${(300 + sway * (1 - ask * 0.8) - 54).toFixed(2)} ${(40 + (b.reduced ? 0 : Math.sin(b.t * 3.1) * 5)).toFixed(2)})`} opacity={clamp(hover * 2)}>
               <rect className="kit-folder__card later-hover-card" width={108} height={66} rx={6} />
@@ -270,7 +272,7 @@ function PaperOffice(props: SceneProps) {
     return (
       <Stage beat={b} label="But that is not how your brain works: ideas link to ideas. And the app does not make you work that way: no folder required">
         <Layer>
-          <div className="kit-row later-office">
+          <div className="kit-row later-office" data-app={since(b, app - 0.04, 0.6) > 0.5 ? 'true' : undefined}>
             <div className="later-office__side" style={rise(b, since(b, 0, 0.6), 10)}>
               <Head beat={b} p={since(b, 0, 0.6)} glow={ideas * 0.4}>
                 {HEAD_LINKS.map(([f, t], i) => (

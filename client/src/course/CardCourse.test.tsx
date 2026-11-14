@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, useEffect } from 'react'
+import { StrictMode, act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { defaultCourseState, type CourseState } from '@shared/courseState'
+import type { CourseAudioChange } from '@shared/courseAudio'
 import { storage } from '../lib/storage'
 import type { CourseChapter } from './script'
 import { CardCourse, PLAY_WITHOUT_SOUND, VOICE_DOWNLOAD_LIMIT, VOICE_LOADING_LINE, type CardCourseProps } from './CardCourse'
@@ -598,6 +599,156 @@ describe('VoicedCardCourse (YAZ-5159)', () => {
     } finally {
       ;(window as unknown as { yaseenDocs: unknown }).yaseenDocs = bridge
     }
+  })
+})
+
+/**
+ * YAZ-5348: a fresh app start, the course resumes in the middle of a chapter whose sound is not on disk. The layer is
+ * the real one (`VoicedCardCourse`, in StrictMode as the dev app runs it), and main is the real downloader core
+ * (`createCourseAudio`) over a temp folder: only the network (a gated fetch) and the audio element are fakes.
+ */
+describe('resume in the middle of a chapter: the voice plays for that clip (YAZ-5348)', () => {
+  const RESUME: CourseChapter[] = [
+    { id: 'one', title: 'One', clips: [{ id: 'o1', text: 'First line of one.' }, { id: 'o2', text: 'The middle line of chapter one.' }, { id: 'o3', text: 'Last line of one.' }] },
+    { id: 'two', title: 'Two', clips: [{ id: 't1', text: 'Only line of two.' }] },
+  ]
+  const BASE = 'https://example.test/course-audio-1'
+  let dir = ''
+  let bridgeBefore: unknown
+
+  /** The packs and their manifest, a gated fetch, and the real core behind a bridge in `window.yaseenDocs`. */
+  async function freshStart({ onDisk = false, offline = false } = {}) {
+    const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { createCourseAudio } = await import('../../../desktop/src/main/courseAudio/courseAudio')
+    const { sha256Hex, writePack } = await import('../../../desktop/src/main/courseAudio/packFormat')
+    dir = await mkdtemp(join(tmpdir(), 'yaz-5348-'))
+    const folder = join(dir, 'card-course-audio')
+    const files = new Map<string, Uint8Array>()
+    const chapters: Record<string, { file: string; bytes: number; sha256: string; seconds: number; clips: Record<string, { seconds: number; hash: string }> }> = {}
+    let n = 0
+    for (const ch of RESUME) {
+      const clips = ch.clips.map((c) => {
+        n += 1
+        return { id: c.id, seconds: 3, hash: n.toString(16).padStart(16, '0'), bytes: new Uint8Array(200).fill(n) }
+      })
+      const bytes = writePack(ch.id, clips)
+      const sha256 = sha256Hex(bytes)
+      const file = `${ch.id}-${sha256.slice(0, 8)}.ydca`
+      files.set(file, bytes)
+      chapters[ch.id] = { file, bytes: bytes.byteLength, sha256, seconds: 0, clips: Object.fromEntries(clips.map((c) => [c.id, { seconds: c.seconds, hash: c.hash }])) }
+    }
+    if (onDisk) {
+      await mkdir(folder, { recursive: true })
+      for (const [name, bytes] of files) await writeFile(join(folder, name), bytes)
+    }
+    let open: () => void = () => undefined
+    const gate = new Promise<void>((done) => (open = done))
+    const fetch = (async (input: RequestInfo | URL) => {
+      if (offline) throw new TypeError('fetch failed')
+      await gate
+      return new Response(files.get(decodeURIComponent(String(input).split('/').pop()!))!.slice())
+    }) as typeof globalThis.fetch
+    const listeners = new Set<(change: CourseAudioChange) => void>()
+    const core = createCourseAudio({ folder, manifest: { version: 1, chapters }, source: { kind: 'url', base: BASE }, fetch, onChange: (c) => listeners.forEach((fn) => fn(c)) })
+    bridgeBefore = (window as unknown as { yaseenDocs?: unknown }).yaseenDocs
+    ;(window as unknown as { yaseenDocs: unknown }).yaseenDocs = {
+      courseAudio: {
+        open: async (yes: boolean) => (yes ? core.open(1) : core.close(1)),
+        chapterStarting: async (chapter: string) => core.chapterStarting(1, chapter),
+        chapter: (chapter: string) => core.chapter(chapter),
+        onChange: (fn: (change: CourseAudioChange) => void) => (listeners.add(fn), () => listeners.delete(fn)),
+      },
+    }
+    return { release: () => open() }
+  }
+  /** Main's disk and the bridge's promises: real time passes, the frames do not. */
+  const settle = async () => {
+    for (let i = 0; i < 10; i++) await act(async () => new Promise((done) => setTimeout(done, 5)))
+  }
+  async function resume() {
+    saved = { ...defaultCourseState(), chapter: 'one', clip: 'o2' }
+    const { VoicedCardCourse } = await import('./CardCourse')
+    act(() =>
+      root.render(
+        <StrictMode>
+          <VoicedCardCourse vault="/demo" onClose={vi.fn()} course={RESUME} scenes={placeholderScenes} />
+        </StrictMode>,
+      ),
+    )
+    await settle()
+  }
+  const played = () => vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.map((el) => (el as HTMLAudioElement).src)
+  const notes = () => [...document.querySelectorAll('.course__note')].map((p) => p.textContent ?? '')
+  const O2 = /^app:\/\/course-voice\/one\/o2\.m4a\?v=[0-9a-f]{8}$/
+
+  afterEach(async () => {
+    ;(window as unknown as { yaseenDocs: unknown }).yaseenDocs = bridgeBefore
+    if (dir !== '') await (await import('node:fs/promises')).rm(dir, { recursive: true, force: true })
+    dir = ''
+  })
+
+  it('the sound downloads: the resumed clip holds at its first word with "Loading the voice…", then plays its own voice from its start', async () => {
+    const net = await freshStart()
+    await resume()
+    expect(caption()).toBe('The middle line of chapter one.')
+    act(() => button('Play')!.click())
+    frames(50)
+    // Five seconds: still the clip's first frame, the line, no sound yet, and the clip is not given up.
+    expect(caption()).toBe('The middle line of chapter one.')
+    expect(notes()).toContain(`${VOICE_LOADING_LINE} ${PLAY_WITHOUT_SOUND}`)
+    expect(played()).toEqual([])
+    net.release()
+    await settle()
+    frames(1)
+    // The voice of THAT clip, from its start, with no change of clip.
+    expect(played().at(-1)).toMatch(O2)
+    expect(caption()).toBe('The middle line of chapter one.')
+    expect(notes()).toEqual([])
+    // The sound moves: the clip follows it (never put aside as broken by the wait).
+    const el = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLAudioElement
+    let at = 0
+    Object.defineProperty(el, 'paused', { configurable: true, get: () => false })
+    Object.defineProperty(el, 'currentTime', { configurable: true, get: () => at, set: () => undefined })
+    for (let i = 0; i < 25; i++) {
+      at += 0.1
+      frames(1)
+    }
+    expect(caption()).toBe('The middle line of chapter one.')
+    expect(vi.mocked(HTMLMediaElement.prototype.pause).mock.contexts.includes(el)).toBe(false)
+    at = 3
+    frames(6)
+    expect(caption()).toBe('Last line of one.')
+  })
+
+  it('the sound is on disk already: the resumed clip plays its voice at once, with no line', async () => {
+    await freshStart({ onDisk: true })
+    await resume()
+    act(() => button('Play')!.click())
+    frames(1)
+    expect(played().at(-1)).toMatch(O2)
+    expect(notes()).toEqual([])
+  })
+
+  it('Mute: no hold; the clip plays on its estimate at once', async () => {
+    await freshStart()
+    await resume()
+    act(() => button('Mute')!.click())
+    act(() => button('Play')!.click())
+    frames(40)
+    expect(caption()).toBe('Last line of one.')
+    expect(notes()).toEqual([])
+  })
+
+  it('offline: no hold, silent with captions, and "Try again"', async () => {
+    await freshStart({ offline: true })
+    await resume()
+    act(() => button('Play')!.click())
+    frames(40)
+    expect(caption()).toBe('Last line of one.')
+    expect(played()).toEqual([])
+    expect(button('Try again')).toBeDefined()
   })
 })
 

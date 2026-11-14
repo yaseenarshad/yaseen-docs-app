@@ -250,3 +250,22 @@
     width: min(86cqw, 22em);
   }
 }
+/* A narrow stage (YAZ-5329): each picture keeps readable labels; what does not fit steps out. */
+@container (max-width: 560px) {
+  .later-aside .kit-folder__label {
+    display: none;
+  }
+  .later-office:not([data-app]) .later-office__app,
+  .later-office[data-app] .later-office__side:first-child {
+    display: none;
+  }
+  .later-office__app {
+    width: 88cqw;
+  }
+  .later-onefolder__web {
+    display: none;
+  }
+  .later-onefolder__art {
+    width: min(40cqw, 34cqh);
+  }
+}

@@ -145,9 +145,6 @@ function CaptureAllDay(props: SceneProps) {
     const one = since(b, cue(b, 3, 0.845), 0.6)
     return (
       <Stage beat={b} label="A phone, a brain dump, a chat channel just for you: it does not matter where, as long as you have one place">
-        <Layer place="top">
-          <Words size="kicker">Capture</Words>
-        </Layer>
         <Layer>
           <div className="later-places">
             <CapturePlace beat={b} kind="phone" p={phone} lines={since(b, cue(b, 0, 0.019) + 0.04, 1)} />
@@ -342,7 +339,7 @@ function DailyReview(props: SceneProps) {
           <line className="later-sun__horizon" x1={20} y1={118} x2={380} y2={118} />
         </svg>
       </Layer>
-      <Layer style={{ transform: b.reduced ? undefined : `translateY(${lerp(0, -30, up).toFixed(2)}cqh) scale(${lerp(1, 0.85, up).toFixed(3)})`, opacity: b.reduced ? 1 - inbox * 0.8 : 1 }}>
+      <Layer style={{ transform: b.reduced ? undefined : `translateY(${lerp(0, -30, up).toFixed(2)}cqh)`, opacity: b.reduced ? 1 - inbox * 0.8 : 1 }}>
         <Habits beat={b} show={[1, 1, 1, 1]} lit={[0, 0, since(b, 0, 0.6), 0]} pages={[undefined, undefined, 'Every day']} pageP={[0, 0, since(b, cue(b, 0, 0.142), 0.5)]} />
       </Layer>
       {inbox > 0 && (
