@@ -199,6 +199,20 @@ describe('useCardReview', () => {
     expect(review.session?.card).toMatchObject({ id: 'WIKI-2', page: { next: true } })
   })
 
+  it('YAZ-5321: `upNext` says whether any card of the vault is marked Up next (an archived one does not count): off when its last mark goes, on again with one', async () => {
+    page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, next, 2026-11-12T07:00Z good'], ['Capital of {{Chad}}?', 'WIKI-3, off, next'])
+    await mount()
+    await act(async () => review.start())
+    await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-2' }))
+    expect(review.session?.upNext).toBe(true)
+    // The answer takes the last mark off (WIKI-3 is archived): no Up next.
+    await step(() => review.answer('good'))
+    await vi.waitFor(() => expect(review.session?.upNext).toBe(false))
+    // Its undo puts the mark back.
+    await step(() => review.undo())
+    await vi.waitFor(() => expect(review.session?.upNext).toBe(true))
+  })
+
   it('YAZ-4999: setNext (the Inbox chip`s ×) writes the mark off and reads the card again', async () => {
     page('Geo.md', ['Capital of {{Peru}}?', 'WIKI-2, next'])
     await mount()

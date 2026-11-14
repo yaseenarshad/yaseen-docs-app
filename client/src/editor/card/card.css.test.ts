@@ -256,3 +256,9 @@ it('YAZ-5144 round 3: Card width is ONE rule for a card in a page (written there
   expect(rules(cardCss, '.milkdown .card').some((r) => /margin-inline:\s*auto/.test(r.body))).toBe(false)
   expect(rules(read('../cardFileView.css'), '.card-file__page').find((r) => r.selector === '.card-file__page')?.body).toMatch(/max-width:\s*var\(--content-max-width\)/)
 })
+
+it('YAZ-5145 round 3: a page locked by Read only (`data-read-only`, a page tab with its caret) shows the card\'s Edit card, which asks first; a preview (no caret) hides it', () => {
+  const hides = (part: string) => rules(cardCss, part).filter((r) => r.selector.split(',').some((s) => s.trim().startsWith(part)) && /display:\s*none/.test(r.body))
+  expect(hides(".ProseMirror[contenteditable='false'] .card__edit")).toHaveLength(1)
+  expect(hides('.ProseMirror[data-read-only] .card__edit')).toEqual([])
+})

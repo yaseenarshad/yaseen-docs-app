@@ -157,13 +157,14 @@
   font-size: 1.2em;
   line-height: 1.3;
 }
-/* A read-only page (a preview, or Read only with its caret, `data-read-only`): no Edit card — its review still works. */
-.ProseMirror[contenteditable='false'] .card__edit,
-.ProseMirror[data-read-only] .card__edit {
+/*
+ * A preview (no caret: the hover preview, an Explore layer reading): no Edit card — its review still works. A page
+ * locked by Read only (its caret, `data-read-only`) keeps Edit card: it asks "Allow edits?", then opens (YAZ-5145).
+ */
+.ProseMirror[contenteditable='false'] .card__edit {
   display: none;
 }
-.ProseMirror[contenteditable='false'] .card__more,
-.ProseMirror[data-read-only] .card__more {
+.ProseMirror[contenteditable='false'] .card__more {
   margin-left: auto;
 }
 

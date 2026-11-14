@@ -1,6 +1,6 @@
 /**
  * The Inbox's top row (YAZ-5017, as Mochi's): on the left the filter menu "All cards ▾" (All cards, Up next (YAZ-5028),
- * Due today, New cards, each with how many are left; Up next's count in the Up next chip's colours, grey at 0), then what
+ * Due today, New cards, each with how many are left; Up next only while some card of the vault is marked Up next, YAZ-5321; Up next's count in the Up next chip's colours, grey at 0), then what
  * is under review, quiet, by it ("· in spanish-words": "Folder / Sub", or the page) ONLY when the review is narrower than
  * the vault (Review this folder / page; YAZ-5017 round 2, Yaseen: "isnt this redundant?"); then the CURRENT card's place,
  * one card at a time, the Inbox's ONE breadcrumb (YAZ-5132, Yaseen: "we should just have the breadcrumb at the top"):
@@ -46,6 +46,13 @@ export const CARD_FILTERS: readonly {
   { id: 'new', label: 'New cards', icon: () => <NewIcon /> },
   { id: 'archived', label: 'Archived', icon: ArchiveIcon },
 ]
+
+/**
+ * The filters the cards menu offers (YAZ-5321, Yaseen: "Up next should only show if they have in the card base, in the
+ * vault, up next selected"): Up next only while some card of the vault is marked Up next, or while it is the filter
+ * on show (its last card answered just now). One mark brings the row back.
+ */
+export const inboxFilters = (session: Pick<CardReviewSession, 'upNext' | 'filter'>): typeof CARD_FILTERS => CARD_FILTERS.filter((f) => f.id !== 'next' || session.upNext || session.filter === 'next')
 
 /** The bar's parts (YAZ-5020): each run of the same answer as one part, so a long session draws a few boxes, not one per card. */
 export function progressRuns(answered: readonly CardRating[]): { missed: boolean; count: number }[] {
@@ -145,7 +152,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
         )}
         {menu !== null && (
           <ContextMenuSurface x={menu.x} y={menu.y} onClose={closeMenu} className="card-inbox__filter-menu">
-            {CARD_FILTERS.map((f) => {
+            {inboxFilters(session).map((f) => {
               // YAZ-5042: the two rows that have a number a day read "today / total" (round 2), and add on a click.
               const kind: AddKind | null = f.id === 'new' ? 'new' : f.id === 'next' ? 'next' : null
               const add = kind === null || addCards === undefined ? 0 : session.adds[kind]

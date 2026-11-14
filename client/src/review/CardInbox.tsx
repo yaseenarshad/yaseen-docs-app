@@ -116,6 +116,7 @@ import { TodayWork } from './TodayWork'
 import { todayCards } from './reviewTime'
 import '../explore/explore.css'
 import { useUnit } from '../vault/unitWord'
+import type { CardPlace } from '../editor/card/cardOpen'
 
 export interface CardInboxProps {
   /** The Inbox tab is the one on show (YAZ-5011); false: behind a page tab, hidden, and deaf to keys. Default true. */
@@ -128,11 +129,11 @@ export interface CardInboxProps {
    * O, the title and the page name (YAZ-5145): Explore's own page layer for the card's file, reading, at its TOP
    * (YAZ-5022); with `card` (YAZ-5307, Settings › Cards › Inbox: O opens the page at › The card), landed on that card.
    */
-  openPage: (path: string, card?: number) => void
+  openPage: (path: string, card?: CardPlace) => void
   /** Settings › Cards › Inbox: O opens the page at (YAZ-5307): `top` (the default) or `card`, for a card in a page. */
   openAt?: InboxOpenAt
-  /** E (YAZ-5145): the same layer in edit, as Explore's own E; a card in a page (`index`) lands on it in Edit card. */
-  editCard: (path: string, index: number | null) => void
+  /** E (YAZ-5145): the same layer in edit, as Explore's own E; a card in a page (`card`: by its ID, YAZ-5164) lands on it in Edit card. */
+  editCard: (path: string, card: CardPlace | null) => void
   /** ⌘↵: the page in a background tab. */
   openInTab: (path: string) => void
   /** A link's bound gesture (⌘-click): App's link door. */
@@ -249,7 +250,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
    * page at says The card. The breadcrumb's page part and ⋯ › Open card open as O does; a card file opens as itself.
    */
   const openCard = useCallback(
-    (at: { path: string; index: number }, file: boolean) => (openAt === 'card' && !file ? openFile(at.path, at.index) : openFile(at.path)),
+    (at: { path: string; id: string; index: number }, file: boolean) => (openAt === 'card' && !file ? openFile(at.path, { id: at.id, index: at.index }) : openFile(at.path)),
     [openAt, openFile],
   )
   // YAZ-5033: the active seconds on this card, from the moment its text shows; read at the answer.
@@ -361,7 +362,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
       }
       if (key.kind === 'open') return openCard(card, live.current.cardFile)
       // E (YAZ-5145): Explore's own edit of the card's file; a card in a page lands on the card, in Edit card.
-      if (key.kind === 'edit') return editCard(card.path, live.current.cardFile ? null : card.index)
+      if (key.kind === 'edit') return editCard(card.path, live.current.cardFile ? null : { id: card.id, index: card.index })
       if (key.kind === 'tab') return openInTab(card.path)
     }
     window.addEventListener('keydown', onKey)

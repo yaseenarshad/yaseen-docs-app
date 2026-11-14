@@ -42,6 +42,17 @@ const { readFile, writeFile, index, openLink, crepes } = vi.hoisted(() => ({
 
 vi.mock('../api', () => ({ api: { readFile, writeFile, index, shell: { openLink } } }))
 /** Card views the tests stand in for (YAZ-5145: the Inbox's E opens the landed card's Edit card). */
+/** A page's own cards as the card view draws them (`cardBlockView.ts`: `data-page-card`, the card's ID on it), added to `page`. */
+function drawPageCards(page: HTMLElement, ids: readonly string[]): HTMLElement[] {
+  return ids.map((id) => {
+    const el = page.appendChild(Object.assign(document.createElement('div'), { className: 'card' }))
+    el.dataset.pageCard = ''
+    el.dataset.cardId = id
+    return el
+  })
+}
+/** A card embed as `cardEmbed.ts` draws it: a `.card` too, not one of the page's own cards. */
+const embedCard = (page: HTMLElement): HTMLElement => page.appendChild(Object.assign(document.createElement('div'), { className: 'card card-embed' }))
 const fakeCards = vi.hoisted(() => new WeakMap<Element, { view: { editable: boolean }; edit: () => void }>())
 vi.mock('../editor/card/cardBlockView', async (importOriginal) => {
   const real = await importOriginal<typeof import('../editor/card/cardBlockView')>()
@@ -2799,9 +2810,12 @@ describe('YAZ-5145: the Inbox\'s O and E open Explore\'s own page layer', () => 
 
   it.each([false, true])('round 2: E on a card FILE goes straight into its Edit card (read only %s: after "Allow edits?", with no second E; nothing before)', async (readOnly) => {
     const editCard = vi.fn()
+    // The index says the file is a card file (round 3: the layer's own rule, not a flag of the Inbox's).
+    const index = createWikilinkResolveSource()
+    index.update(null, [rec(PAGE, 'Cards', { kind: 'card' })])
     props = {
       ...props,
-      ...(readOnly && { vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, readOnly: true }) }),
+      vaultOf: () => ({ root: '/v', wikilinks: index, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, readOnly }),
       // The card file view in the edit layer: its own Edit card button.
       renderEditor: (path): ReactNode => (
         <div className="editor" data-editor={path}>
@@ -2809,7 +2823,7 @@ describe('YAZ-5145: the Inbox\'s O and E open Explore\'s own page layer', () => 
         </div>
       ),
     }
-    props.requestLayer = { kind: 'page', path: PAGE, edit: true, editCard: true, fromInbox: true }
+    props.requestLayer = { kind: 'page', path: PAGE, edit: true, fromInbox: true }
     await mount()
     const wait = async () => {
       for (let i = 0; i < 3; i++) await act(async () => await new Promise((r) => setTimeout(r, 20)))
@@ -2847,17 +2861,14 @@ describe('YAZ-5145: the Inbox\'s O and E open Explore\'s own page layer', () => 
 
   /**
    * YAZ-5307: Settings › Cards › Inbox: O opens the page at. The top asks for the page alone (YAZ-5022: no landing);
-   * The card asks with the card's index, and the layer lands on that card with the one landing (`landOn`, YAZ-5164), as
+   * The card asks with the card's ID and index, and the layer lands on that card with the one landing (`landOn`, YAZ-5164), as
    * E and a card row of search do. In a page not open yet, and in one open already (its layer under this one, and a
    * tab's card that watches for landings, `watchCardLanding`: the tab's card does not take this landing).
    */
   describe('YAZ-5307: O, by Settings › Cards › Inbox: O opens the page at', () => {
-    const O = (openAt: 'top' | 'card'): ExploreRequest => ({ kind: 'page', path: PAGE, fromInbox: true, ...(openAt === 'card' && { card: 1 }) })
+    const O = (openAt: 'top' | 'card'): ExploreRequest => ({ kind: 'page', path: PAGE, fromInbox: true, ...(openAt === 'card' && { card: { id: 'WIKI-2', index: 1 } }) })
     /** The top read layer's page as the card view draws it: two cards. */
-    const drawCards = () => {
-      const page = crepes[crepes.length - 1].opts.root
-      return [0, 1].map(() => page.appendChild(Object.assign(document.createElement('div'), { className: 'card' })))
-    }
+    const drawCards = () => drawPageCards(crepes[crepes.length - 1].opts.root, ['WIKI-1', 'WIKI-2'])
     const settle = async () => {
       for (let i = 0; i < 3; i++) await act(async () => await new Promise((r) => setTimeout(r, 20)))
     }
@@ -2904,15 +2915,131 @@ describe('YAZ-5145: the Inbox\'s O and E open Explore\'s own page layer', () => 
       ...props,
       renderEditor: (path): ReactNode => (
         <div className="editor" data-editor={path}>
-          <div className="card" ref={(c) => void (c !== null && fakeCards.set(c, { view: { editable: true }, edit: () => {} }))} />
-          <div className="card" ref={(c) => void (c !== null && fakeCards.set(c, { view: { editable: true }, edit }))} />
+          <div className="card" data-page-card="" data-card-id="WIKI-1" ref={(c) => void (c !== null && fakeCards.set(c, { view: { editable: true }, edit: () => {} }))} />
+          <div className="card" data-page-card="" data-card-id="WIKI-2" ref={(c) => void (c !== null && fakeCards.set(c, { view: { editable: true }, edit }))} />
         </div>
       ),
     }
-    props.requestLayer = { kind: 'page', path: PAGE, edit: true, card: 1, editCard: true, fromInbox: true }
+    props.requestLayer = { kind: 'page', path: PAGE, edit: true, card: { id: 'WIKI-2', index: 1 }, editCard: true, fromInbox: true }
     await mount()
     for (let i = 0; i < 3; i++) await act(async () => await new Promise((r) => setTimeout(r, 20)))
     expect(edit).toHaveBeenCalledOnce()
+  })
+
+  /**
+   * Round 3 (Q38, Yaseen: "if you're opening a card file. Then it makes sense that if you're editing, you're going to
+   * edit the card"; the Decision: "E edits the thing you're looking at, in one press"). After "Allow edits?" the action
+   * that asked goes on: no second E. A card file: its Edit card. A page, cards or not: the page, never a card.
+   */
+  describe('round 3: E edits the thing you look at, in one press', () => {
+    const CARD_FILE = '/v/the-four-agreements.md'
+    const CARD_TEXT = '---\nkind: card\n---\n\nBe impeccable with your word.\n'
+    const lockedVault = () => ({ root: '/v', wikilinks, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, readOnly: true })
+    const settle = async () => {
+      for (let i = 0; i < 3; i++) await act(async () => await new Promise((r) => setTimeout(r, 20)))
+    }
+    const allow = () => act(() => [...top().querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === 'Allow edits for 1 minute')!.click())
+    const pressE = () => key(document.activeElement ?? top(), { key: 'e' })
+    /** The card file view's own Edit card button, and the first card of a page. */
+    let fileEditCard: Mock
+    let pageCardEdit: Mock
+    /** The page's "Move to its own file" (Yaseen's flow): the editor opens the new card file through the layer's link door. */
+    const moveToOwnFile = () => act(() => top().querySelector<HTMLButtonElement>('[data-move-card]')!.click())
+    beforeEach(() => {
+      fileEditCard = vi.fn()
+      pageCardEdit = vi.fn()
+      const read = readFile.getMockImplementation()!
+      readFile.mockImplementation(async (path) => (path === CARD_FILE ? { path, content: CARD_TEXT, mtime: 1, size: 1 } : read(path)))
+      props.renderEditor = (path, openLink): ReactNode =>
+        path === CARD_FILE ? (
+          <div className="editor" data-editor={path}>
+            <button type="button" data-card-file-edit onClick={fileEditCard} />
+          </div>
+        ) : (
+          <div className="editor" data-editor={path}>
+            <div className="card" data-page-card="" data-card-id="WIKI-1" ref={(c) => void (c !== null && fakeCards.set(c, { view: { editable: true }, edit: pageCardEdit }))} />
+            <button type="button" data-move-card onClick={() => openLink(CARD_FILE)} />
+          </div>
+        )
+    })
+
+    it.each([false, true])('Explore on a card file (read only %s): E is editing the card, in Edit card, with no second E', async (readOnly) => {
+      if (readOnly) props.vaultOf = lockedVault
+      props.requestLayer = { kind: 'page', path: CARD_FILE }
+      await mount()
+      await settle()
+      pressE()
+      await flush()
+      if (readOnly) {
+        expect(top().querySelector('.explore__body--edit')).toBeNull()
+        expect(fileEditCard).not.toHaveBeenCalled()
+        allow()
+      }
+      await settle()
+      expect(top().querySelector(`.explore__body--edit [data-editor="${CARD_FILE}"]`)).not.toBeNull()
+      expect(fileEditCard).toHaveBeenCalledOnce()
+    })
+
+    it('Explore on a card file, read only, then Cancel: no edit, no Edit card', async () => {
+      props.vaultOf = lockedVault
+      props.requestLayer = { kind: 'page', path: CARD_FILE }
+      await mount()
+      await settle()
+      pressE()
+      await flush()
+      act(() => [...top().querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === 'Cancel')!.click())
+      await settle()
+      expect(top().querySelector('.explore__body--edit')).toBeNull()
+      expect(fileEditCard).not.toHaveBeenCalled()
+    })
+
+    it('Explore on a page with cards, read only: E is editing the page, not a card', async () => {
+      props.vaultOf = lockedVault
+      props.requestLayer = { kind: 'page', path: PAGE }
+      await mount()
+      await settle()
+      pressE()
+      await flush()
+      allow()
+      await settle()
+      expect(top().querySelector(`.explore__body--edit [data-editor="${PAGE}"]`)).not.toBeNull()
+      expect(pageCardEdit).not.toHaveBeenCalled()
+      expect(fileEditCard).not.toHaveBeenCalled()
+    })
+
+    it('the Inbox on a card in a page, read only: E is editing that card after "Allow edits?"', async () => {
+      props.vaultOf = lockedVault
+      props.requestLayer = { kind: 'page', path: PAGE, edit: true, card: { id: 'WIKI-1', index: 0 }, editCard: true, fromInbox: true }
+      await mount()
+      await settle()
+      expect(pageCardEdit).not.toHaveBeenCalled()
+      allow()
+      await settle()
+      expect(pageCardEdit).toHaveBeenCalledOnce()
+    })
+
+    it('Yaseen\'s flow, read only: a card in a page, Move to its own file, Explore opens the new card file, and ONE E (then Allow edits) is editing it', async () => {
+      props.vaultOf = lockedVault
+      props.requestLayer = { kind: 'page', path: PAGE }
+      await mount()
+      await settle()
+      pressE()
+      await flush()
+      allow()
+      await settle()
+      // The index does not know the new file yet: the layer goes by the text it read.
+      moveToOwnFile()
+      await settle()
+      expect(top().querySelector('.explore__body--edit')).toBeNull()
+      expect(crepes[crepes.length - 1].opts.defaultValue).toContain('Be impeccable')
+      pressE()
+      await flush()
+      allow()
+      await settle()
+      expect(top().querySelector(`.explore__body--edit [data-editor="${CARD_FILE}"]`)).not.toBeNull()
+      expect(fileEditCard).toHaveBeenCalledOnce()
+      expect(pageCardEdit).not.toHaveBeenCalled()
+    })
   })
 })
 
@@ -3069,10 +3196,43 @@ describe('YAZ-5164: cards inside pages in Explore', () => {
     expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'page'])
     expect(readFile).toHaveBeenLastCalledWith(GEO)
     // The read-only page's cards, as the card view draws them: the second one is landed on.
-    const page = crepes[crepes.length - 1].opts.root
-    const cards = [0, 1].map(() => page.appendChild(Object.assign(document.createElement('div'), { className: 'card' })))
+    const cards = drawPageCards(crepes[crepes.length - 1].opts.root, ['GEO-140', 'GEO-141'])
     await vi.waitFor(() => expect(landed).toHaveBeenCalled())
     expect(landed.mock.calls.map(([target]) => target)).toEqual([cards[1]])
+  })
+
+  /**
+   * Yaseen, 2026-11-14 (screenshots: DEMO-185 picked in Explore, DEMO-183 flashed): the layer landed on the n-th `.card`
+   * of the page, and a card EMBED is a `.card` too, so an embed above the card moved the landing up one card. The
+   * sidebar search lands by ID (`landOnCard`) and was right. Now the layer finds the card by its ID too, among the
+   * page's own cards: an embed above it, or an index gone stale (a card added above since the index read), never moves it.
+   */
+  it.each([
+    ['a card embed above the card', (page: HTMLElement) => [embedCard(page), ...drawPageCards(page, ['GEO-140', 'GEO-141'])]],
+    ['a card embed inside each card', (page: HTMLElement) => drawPageCards(page, ['GEO-140', 'GEO-141']).flatMap((c) => [c, embedCard(c)])],
+    ['an index gone stale: a card added above it since', (page: HTMLElement) => drawPageCards(page, ['GEO-139', 'GEO-140', 'GEO-141'])],
+  ])('Enter on a card row lands on THAT card: %s', async (_, draw) => {
+    props = { ...props, vaults: [{ ...vaults[0], cards: true }] }
+    await mount()
+    await typeQuery('river')
+    await openResult()
+    const drawn = draw(crepes[crepes.length - 1].opts.root)
+    await vi.waitFor(() => expect(landed).toHaveBeenCalled())
+    expect(landed.mock.calls).toEqual([[drawn.find((c) => c.dataset.cardId === 'GEO-141')]])
+  })
+
+  it('two cards with one title: each row lands on its own card', async () => {
+    const twins = [GEO_CARDS[0], { ...GEO_CARDS[1], title: 'Capital of France' }]
+    index.mockResolvedValue({ root: '/v', records: [...RECORDS, rec(GEO, 'Geography', { cards: twins })], folders: [], generatedAt: 1, ids: true, size: 4 })
+    props = { ...props, vaults: [{ ...vaults[0], cards: true }] }
+    await mount()
+    await typeQuery('capital')
+    expect(rows()).toEqual(['Capital of France', 'Capital of France'])
+    key(input(), { key: 'ArrowDown' })
+    await openResult()
+    drawPageCards(crepes[crepes.length - 1].opts.root, ['GEO-140', 'GEO-141'])
+    await vi.waitFor(() => expect(landed).toHaveBeenCalled())
+    expect(landed.mock.calls.map(([target]) => (target as HTMLElement).dataset.cardId)).toEqual(['GEO-141'])
   })
 
   it('Cards off (or IDs off: the vault then says Cards are off): no card row', async () => {

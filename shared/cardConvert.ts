@@ -21,7 +21,7 @@
  * file it changes with the line end it had, `\r\n` or `\n`. A NEW card file is written with `\n`.
  */
 import { cardFileName, cardFileShape, cardFileTitle, cardFileWithBlock, CARD_KIND, CARD_KIND_KEY, indentBlock, NEW_CARD_TITLE, unindentBlock } from './cardFileFormat'
-import { CardNotFoundError, EMPTY_CARD_LINE, cardBlock, cardIdOf, cardTitleOf, changeCardText, findCards, rewritePageCards, withCardTitle, type CardBlock } from './cardLine'
+import { CardNotFoundError, EMPTY_CARD_LINE, cardBlock, cardIdOf, cardPlace, cardTitleOf, changeCardText, findCards, rewritePageCards, withCardTitle, type CardBlock } from './cardLine'
 import { lineKinds } from './fences'
 import { inLineEnds, lineEnds, withLf } from './lineEnds'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
@@ -39,7 +39,7 @@ export interface CardFileOut {
 
 /** The card at `index` when it holds `id`, else the first that holds it (`changeCard`'s choice); throws `CardNotFoundError`. */
 function cardOf(cards: readonly CardBlock[], id: string, index?: number): CardBlock {
-  const at = index !== undefined && cards[index] !== undefined && cardIdOf(cards[index].line) === id ? index : cards.findIndex((c) => cardIdOf(c.line) === id)
+  const at = cardPlace(cards.map((c) => cardIdOf(c.line)), id, index)
   if (at === -1) throw new CardNotFoundError(id)
   return cards[at]
 }

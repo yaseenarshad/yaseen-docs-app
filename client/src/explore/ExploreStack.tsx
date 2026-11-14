@@ -38,7 +38,7 @@ import { ExploreArrange } from './ExploreArrange'
 import { GRIPS, useLayerBoxes } from './layerBoxes'
 import { layoutForCount, pickRecent, TILE_MS, TILE_PLACES, tileBoxes, tileOrder, type ArrangeLayout, type TileLayout } from './tile'
 import { frontOrder, layerKindOf, MAX_LAYERS, PAGE_MS, newLayerId, pushLayer, raiseLayer, saveExploreZoom, savedExploreZoom, SEARCH_MS, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type ExploreRequest } from './layers'
-import { landOnCard } from '../editor/card/cardOpen'
+import { landOnCard, type CardPlace } from '../editor/card/cardOpen'
 import { keyText } from '@shared/keyLabel'
 import './explore.css'
 
@@ -304,7 +304,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     [push],
   )
   /** A card window's page (YAZ-4962), or a card row's (YAZ-5164): on top, landed on the card. */
-  const openPageAt = useCallback((path: string, card: number) => {
+  const openPageAt = useCallback((path: string, card: CardPlace) => {
     const layer = fileLayer(path)
     if (layer.kind === 'page' && push({ ...layer, card })) rememberExploreRecent(path)
   }, [push])
@@ -320,7 +320,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   const openRow = useCallback(
     (search: number, row: SearchCandidate, at: number) => {
       // A card inside a page (YAZ-5164): its page on top, landed on the card, as the Inbox's E lands. Not a step of ‹ ›.
-      if (row.page !== undefined) return openPageAt(row.page, row.index ?? 0)
+      if (row.page !== undefined) return openPageAt(row.page, { id: row.id ?? null, index: row.index ?? 0 })
       if (layerKindOf(row.path) === null) return openPath(row.path)
       if (push(fileLayer(row.path, { search, at }))) rememberExploreRecent(row.path)
     },
@@ -736,7 +736,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
                 index={layer.index}
                 pageName={nameOf(layer.path)}
                 vault={vaultOf(layer.path)}
-                onOpenPage={(index) => openPageAt(layer.path, index)}
+                onOpenPage={(card) => openPageAt(layer.path, card)}
                 onOpenLink={openPath}
                 onOpenTab={openTabFromCard}
                 onOpenInTab={toTab}

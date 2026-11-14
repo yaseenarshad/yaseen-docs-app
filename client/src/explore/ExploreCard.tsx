@@ -39,6 +39,7 @@ import type { GestureAction } from '@shared/keys'
 import { withCardNext, withCardTitle } from '@shared/cardLine'
 import { readCardAt, type CardAtPage } from '../review/cardFile'
 import { UNTITLED_CARD } from '../editor/card/cardTitle'
+import type { CardPlace } from '../editor/card/cardOpen'
 import { CardPane, cardMenuSections, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
 import { HoverTip } from '../components/HoverTip'
 import { withKeys } from '@shared/keyLabel'
@@ -57,8 +58,8 @@ interface ExploreCardProps {
   /** The page's name, for the strip. */
   pageName: string
   vault: ExploreVault
-  /** The page on top, landed on the card at `index` (the strip's page name). */
-  onOpenPage: (index: number) => void
+  /** The page on top, landed on this card (the strip's page name): by its ID, as it is now. */
+  onOpenPage: (card: CardPlace) => void
   /** A page link in the card: on top. */
   onOpenLink: (path: string) => void
   /** A bound gesture on a link (⌘-click): a tab. */
@@ -190,7 +191,7 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
           always
           sections={() => [
             [
-              { id: 'open-page', label: unit('Open page'), onSelect: () => onOpenPage(card?.index ?? index) },
+              { id: 'open-page', label: unit('Open page'), onSelect: () => onOpenPage(card === null ? { id: cardId, index } : { id: card.id, index: card.index }) },
               { id: 'open-tab', label: unit('Open page in a new tab'), hint: '⌘↵', onSelect: onOpenInTab },
             ],
             ...cardMenuSections(card, id, changeLine, onNotice, { inbox: true, link: false, preview }),
@@ -214,7 +215,7 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
             titleReadOnly={card.cardFile === true}
             doors={{ openLayer: onOpenLink, openTab: onOpenTab, onNotice }}
             onOpenPage={onOpenLink}
-            strip={<CardStrip card={card} pageName={pageName} vault={vault} onOpenPage={() => onOpenPage(card.index)} />}
+            strip={<CardStrip card={card} pageName={pageName} vault={vault} onOpenPage={() => onOpenPage({ id: card.id, index: card.index })} />}
             reviews={review?.settings}
             onDeleteReview={writes.deleteReview}
           />

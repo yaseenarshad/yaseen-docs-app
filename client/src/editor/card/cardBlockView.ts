@@ -15,7 +15,8 @@
  * its own press: it plays, and selects no card. Images resolve as the page's do (`imageSrc`). On an index change only the pills
  * draw again (`refreshCardLook`). In a vault that gives no IDs a ```` ```card ```` block is a code block (D8).
 
- * READ ONLY (a read-only page or vault): the card's TEXT is locked — no Edit card — but its review is not. The ⋯
+ * READ ONLY (a read-only page or vault): the card's TEXT is locked — Edit card (its button, a double-click, Enter)
+ * asks "Allow edits?" first, then opens (YAZ-5145); a preview has none — but its review is not. The ⋯
  * menu's Archive card / Unarchive card and Reset history write the card line to the FILE (`changeCardLine`, the app's own
  * write), as the Inbox does; the open page takes it quietly.
  *
@@ -263,6 +264,8 @@ export class CardBlockView implements NodeView {
   ) {
     this.dom = document.createElement('div')
     this.dom.className = 'card'
+    // The page's own card, its ID on it (YAZ-5164): what Explore's page layer lands on (`pageCardIn`); an embed has neither.
+    this.dom.dataset.pageCard = ''
     const head = document.createElement('div')
     head.className = 'card__head'
     this.idButton = button('card__id', 'Copy card ID', '')
@@ -332,6 +335,8 @@ export class CardBlockView implements NodeView {
     const line = cardLineOf(this.node)
     const id = cardIdOf(line)
     this.idButton.textContent = id ?? ''
+    if (id === null) delete this.dom.dataset.cardId
+    else this.dom.dataset.cardId = id
     this.idButton.hidden = id === null
     this.state.textContent = isCardOff(line) ? 'Archived' : ''
     this.notitle.hidden = !isCardNoTitle(line)
