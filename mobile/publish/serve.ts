@@ -23,12 +23,17 @@ const TYPES: Record<string, string> = {
   '.json': 'application/json',
 }
 
-export function serveDist(dir: string, port: number): Promise<Server> {
+export function serveDist(dir: string, port: number, delayMs = Number(process.env.NOTECARDS_DELAY ?? 0)): Promise<Server> {
   const rules = parseHeaders(existsSync(join(dir, '_headers')) ? readFileSync(join(dir, '_headers'), 'utf8') : '')
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost')
     const path = decodeURIComponent(url.pathname)
     const send = (status: number, file: string | null, extra: Record<string, string> = {}) => {
+      // A slow network (NOTECARDS_DELAY ms for each answer), so an update takes time, as on a phone.
+      if (delayMs > 0) return void setTimeout(() => answer(status, file, extra), delayMs)
+      answer(status, file, extra)
+    }
+    const answer = (status: number, file: string | null, extra: Record<string, string> = {}) => {
       if (process.env.NOTECARDS_LOG) console.error(`${status} ${req.method} ${path} ${req.headers['sec-fetch-mode'] ?? ''} ${req.headers['service-worker'] ?? ''}`)
       const headers = { ...headersFor(rules, path), ...extra }
       if (file) headers['content-type'] = TYPES[extname(file)] ?? 'application/octet-stream'

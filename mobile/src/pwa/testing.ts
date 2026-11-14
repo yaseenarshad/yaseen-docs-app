@@ -70,11 +70,12 @@ export function fakeServer(files: Record<string, FakeFile>, origin = 'https://no
 type Listener = (event: any) => void
 
 /** A service worker global scope with its events: `dispatch('fetch', …)` returns what the worker answered, or `null` (it did not touch it). */
-export function fakeScope(server: Pick<ReturnType<typeof fakeServer>, 'fetch' | 'origin'>, caches = fakeCaches()) {
+/** An open page of the app: its client ID and address (a plain string is both). */
+export type FakeWindow = string | { id: string; url: string }
+
+export function fakeScope(server: Pick<ReturnType<typeof fakeServer>, 'fetch' | 'origin'>, caches = fakeCaches(), windows: FakeWindow[] = []) {
   const listeners = new Map<string, Listener[]>()
   const log: string[] = []
-  /** The open pages of the app (their addresses). */
-  const windows: string[] = []
   const scope: SwScope = {
     location: { origin: server.origin },
     caches,
@@ -82,7 +83,11 @@ export function fakeScope(server: Pick<ReturnType<typeof fakeServer>, 'fetch' | 
     skipWaiting: async () => void log.push('skipWaiting'),
     clients: {
       claim: async () => void log.push('claim'),
-      matchAll: async () => windows.map((url) => ({ url, navigate: async (to: string) => void log.push(`navigate ${to}`) })),
+      matchAll: async () =>
+        windows.map((w) => {
+          const { id, url } = typeof w === 'string' ? { id: w, url: w } : w
+          return { id, url, navigate: async (to: string) => void log.push(`navigate ${to}`) }
+        }),
     },
     registration: { unregister: async () => (log.push('unregister'), true) },
     addEventListener: (type: string, fn: Listener) => listeners.set(type, [...(listeners.get(type) ?? []), fn]),
@@ -104,9 +109,9 @@ export function fakeScope(server: Pick<ReturnType<typeof fakeServer>, 'fetch' | 
     activate: () => run('activate', {}),
     message: (data: unknown) => run('message', { data }),
     /** The worker's answer to a request, or `null` when it let the request go to the network untouched. */
-    async request(url: string, init: { method?: string; mode?: string } = {}): Promise<Response | null> {
+    async request(url: string, init: { method?: string; mode?: string; clientId?: string; resultingClientId?: string } = {}): Promise<Response | null> {
       const request = { url: new URL(url, server.origin).href, method: init.method ?? 'GET', mode: init.mode ?? 'cors' }
-      const answered = await run('fetch', { request })
+      const answered = await run('fetch', { request, clientId: init.clientId ?? '', resultingClientId: init.resultingClientId ?? '' })
       return answered === null ? null : await answered
     },
   }

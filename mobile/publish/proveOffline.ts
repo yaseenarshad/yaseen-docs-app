@@ -171,6 +171,16 @@ const docHeaders: Record<string, string>[] = []
 // Every request URL the page makes (the friend code must never be in one).
 const requested: string[] = []
 listeners.push((m) => m.sessionId === page && m.method === 'Network.requestWillBeSent' && requested.push(m.params.request.url))
+// Every chunk the page got as HTML (YAZ-5303), with who answered it (the worker or the host).
+const htmlChunks: string[] = []
+listeners.push((m) => {
+  if (m.sessionId !== page || m.method !== 'Network.responseReceived') return
+  const r = m.params.response
+  if (/\/assets\/.+\.(js|css)$/.test(new URL(r.url).pathname) && /text\/html/.test(r.mimeType ?? '')) {
+    htmlChunks.push(`${new URL(r.url).pathname} (${r.fromServiceWorker ? 'worker' : 'host'})`)
+    if (process.env.PROOF_TRACE) console.log(`  ${new Date().toISOString().slice(14, 23)} HTML for ${new URL(r.url).pathname} from ${r.fromServiceWorker ? 'the worker' : 'the host'}`)
+  }
+})
 // Trace only: the page's requests that are still open (a request the worker holds keeps the old worker busy).
 const open_ = new Map<string, { url: string; t: number }>()
 listeners.push((m) => {

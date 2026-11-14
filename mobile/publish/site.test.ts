@@ -128,12 +128,14 @@ describe('the publish config (decision 8, round 12 item 14)', () => {
 
   it('one script builds, then publishes the preview', () => {
     const root = JSON.parse(readFileSync(join(here, '../package.json'), 'utf8'))
-    expect(root.scripts['mobile:publish:preview']).toMatch(/^npm run mobile:build && npx --yes wrangler@\d+\.\d+\.\d+ deploy --config mobile\/wrangler\.jsonc$/)
+    expect(root.scripts['mobile:publish:preview']).toMatch(/^npm run mobile:build && npm run mobile:keep-previous && npx --yes wrangler@\d+\.\d+\.\d+ deploy --config mobile\/wrangler\.jsonc$/)
+    // YAZ-5303: the live build's chunks stay on the host for one more deploy.
+    expect(root.scripts['mobile:keep-previous']).toBe('vite-node mobile/publish/keepPreviousCli.ts')
   })
 
   it('YAZ-5285: one script publishes the kill switch to the PREVIEW; the README says what to do when a bad version ships', () => {
     const root = JSON.parse(readFileSync(join(here, '../package.json'), 'utf8'))
-    expect(root.scripts['mobile:publish:preview:kill-switch']).toMatch(/^NOTECARDS_KILL_SWITCH=1 npm run mobile:build && npx --yes wrangler@\d+\.\d+\.\d+ deploy --config mobile\/wrangler\.jsonc$/)
+    expect(root.scripts['mobile:publish:preview:kill-switch']).toMatch(/^NOTECARDS_KILL_SWITCH=1 npm run mobile:build && npm run mobile:keep-previous && npx --yes wrangler@\d+\.\d+\.\d+ deploy --config mobile\/wrangler\.jsonc$/)
     const readme = read('README.md')
     const part = readme.slice(readme.indexOf('## If a bad version ships'))
     expect(part.startsWith('## If a bad version ships')).toBe(true)
