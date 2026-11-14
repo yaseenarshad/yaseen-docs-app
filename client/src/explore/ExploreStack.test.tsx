@@ -27,6 +27,7 @@ import { watchCardLanding } from '../editor/card/cardOpen'
 import { tileCells } from './tile'
 import { TITLE_ROOM } from './ExploreHeadMore'
 import { ago } from './recentSections'
+import { confirmResetHistory } from '../editor/card/testResetHistory'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -2643,7 +2644,14 @@ describe('the card window (YAZ-4962)', () => {
     expect(strip()).toContain('Archived')
     await pick('Unarchive card')
     expect(strip()).not.toContain('Archived')
+    // YAZ-5376: the last row, alone, and it asks by typing first.
+    act(() => top().querySelector<HTMLButtonElement>('.explore__more')!.click())
+    expect([...document.querySelectorAll('.ctx-menu__item')].at(-1)?.textContent).toBe('Reset history')
+    act(() => top().querySelector<HTMLButtonElement>('.explore__more')!.click())
     await pick('Reset history')
+    expect(files[PAGE]).toContain('<!-- card: WIKI-9, 2026-01-02T09:00Z good -->')
+    await confirmResetHistory()
+    await flush()
     expect(files[PAGE]).toContain('<!-- card: WIKI-9 -->\n')
   })
 

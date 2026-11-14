@@ -15,6 +15,7 @@ import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { createViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import { CrepeFeature } from '../crepe'
 import { features } from '../featureConfig'
+import { confirmResetHistory } from './testResetHistory'
 import { CARD_OPEN, cardLanguage, cardBlockViewAt, setCardEditorKind, type CardOpenRequest } from './cardBlockView'
 import { refreshCardLook, renderCard } from './cardRender'
 import { READ_ONLY_EDIT, type ReadOnlyEditEvent } from '../readOnlyEdit'
@@ -319,7 +320,13 @@ describe('the card in the page', () => {
     // YAZ-5046: an archived card says "Archived" in its head and looks muted.
     expect(root.querySelector('.card__state')?.textContent).toBe('Archived')
     expect(root.querySelector('.card')?.classList.contains('card--off')).toBe(true)
+    // YAZ-5376: Reset history is the menu's last row, after Copy card ID.
+    root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    expect([...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].at(-1)?.textContent).toMatch(/^Reset history/)
     run('Reset history')
+    // YAZ-5376: it asks first, by typing; nothing changes until then.
+    expect(line()).toBe('<!-- card: WIKI-7, off, 2026-11-12T14:05Z good, kept -->')
+    await confirmResetHistory()
     expect(line()).toBe('<!-- card: WIKI-7, off, kept -->')
     undo(view.state, view.dispatch)
     expect(line()).toBe('<!-- card: WIKI-7, off, 2026-11-12T14:05Z good, kept -->')
@@ -403,6 +410,7 @@ describe('the card in the page', () => {
     }
     run('Archive card')
     run('Reset history')
+    await confirmResetHistory()
     await tick()
     expect(fileWrites).toEqual([
       { path: '/v/Page.md', id: 'WIKI-7', index: 0, line: '<!-- card: WIKI-7, off, 2026-11-12T14:05Z good -->' },
