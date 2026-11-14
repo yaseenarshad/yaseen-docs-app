@@ -99,6 +99,14 @@ describe('GithubRemote: the four calls, on the one client of 3E', () => {
     await expect(s.remote.commit(s.git.branches.get(BRANCH)!, [], 'm')).rejects.toThrow()
   })
 
+  it('YAZ-5083 (seen live): two moves of the branch at the same moment: GitHub refuses one with 422 "Reference cannot be updated": STALE_HEAD too', async () => {
+    const s = await syncSetup({ 'a.md': 'A' })
+    s.github.interrupt = (c) => (c.method === 'PATCH' ? json(422, { message: 'Reference cannot be updated', status: '422' }) : undefined)
+    const error = await failure(s.remote.commit(s.git.branches.get(BRANCH)!, [{ path: 'a.md', content: 'x' }], 'm'))
+    expect(error.code).toBe('STALE_HEAD')
+    expect(error.said).toBe('Reference cannot be updated')
+  })
+
   it('another 422 on the ref is not STALE_HEAD', async () => {
     const s = await syncSetup({ 'a.md': 'A' })
     s.github.interrupt = (c) => (c.method === 'PATCH' ? json(422, { message: 'Reference does not exist' }) : undefined)

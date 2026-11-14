@@ -10,7 +10,8 @@ import { ListError, type RepoPort } from './friendListStore'
  * - a commit and a tree are immutable; a new tree with `base_tree` keeps every path it does not name; `sha: null`
  *   deletes a path; a tree or a commit that names an unknown object is 422;
  * - the ref `PATCH` with `force: false` from a parent that is not the head (the branch moved) is 422 "Update is not a
- *   fast forward"; the head moves only by a fast forward;
+ *   fast forward"; the head moves only by a fast forward; a second move of one branch while one is in flight is 422
+ *   "Reference cannot be updated" (seen live, YAZ-5083);
  * - the ref read has a weak ETag and a free 304; `contents` with `ref` and the raw media type gives the file's bytes, 404
  *   when the file is not there;
  * - only a token of the repo's owner (or one given access) reads; only one with write access writes (403 else). The
@@ -56,6 +57,8 @@ interface Repo {
 
 export function fakeRepoWorld(setup: { logins: (token: string) => string | null; now?: () => number; /** A repo `<login>/<name>` that its owner reads is made on the spot (the person's vaults exist on GitHub). */ autoRepos?: boolean }): FakeRepoWorld {
   const repos = new Map<string, Repo>()
+  /** The branches with a ref move in flight. */
+  const moving = new Set<string>()
   let n = 0
   const id = (kind: string) => {
     let h = (++n * 2654435761) >>> 0
@@ -220,6 +223,16 @@ export function fakeRepoWorld(setup: { logins: (token: string) => string | null;
         if (!r.commits.has(sha)) return record(json(422, { message: 'Object does not exist' }))
         // Proof 1B: a branch that moved past the parent answers 422 "Update is not a fast forward".
         if (b.force !== true && !ancestors(r, sha).has(head)) return record(json(422, { message: 'Update is not a fast forward', documentation_url: 'https://docs.github.com/rest/git/refs#update-a-reference', status: '422' }))
+        // YAZ-5083 (live): a second move of the same branch while one is in flight: 422 "Reference cannot be updated".
+        const key = `${full}:${name}`
+        if (moving.has(key)) return record(json(422, { message: 'Reference cannot be updated', documentation_url: 'https://docs.github.com/rest/git/refs#update-a-reference', status: '422' }))
+        moving.add(key)
+        try {
+          for (let i = 0; i < 3; i++) await Promise.resolve()
+        } finally {
+          moving.delete(key)
+        }
+        if (r.refs.get(name) !== head) return record(json(422, { message: 'Update is not a fast forward', status: '422' }))
         r.refs.set(name, sha)
         const cm = r.commits.get(sha)!
         const before = r.trees.get(r.commits.get(head)!.tree)!
@@ -276,7 +289,7 @@ function memoryPort(world: FakeRepoWorld, token: string, full: string, branch: s
       if (m.status !== 201) return fail(m.status)
       const sha = (m.body as { sha: string }).sha
       const r = await call('PATCH', `${base}/git/refs/heads/${branch}`, {}, { sha, force: false })
-      if (r.status === 422 && (r.body as { message?: string }).message === 'Update is not a fast forward') throw new ListError('STALE_HEAD', 'The branch moved')
+      if (r.status === 422 && ['Update is not a fast forward', 'Reference cannot be updated'].includes((r.body as { message?: string }).message ?? '')) throw new ListError('STALE_HEAD', 'The branch moved')
       if (r.status !== 200) return fail(r.status)
       return sha
     },

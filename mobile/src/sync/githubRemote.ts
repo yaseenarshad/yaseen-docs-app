@@ -28,6 +28,11 @@ export interface GithubRemote {
 
 /** GitHub's answer when the ref `PATCH` (force: false) is refused because the branch moved (proof 1B, YAZ-5063). */
 export const NOT_FAST_FORWARD = 'Update is not a fast forward'
+/**
+ * YAZ-5083 (proved live): two ref `PATCH`es of one branch at the SAME moment: GitHub refuses one with 422 "Reference
+ * cannot be updated" (not "not a fast forward"). The branch moved under it: the same answer as a stale head.
+ */
+export const REF_RACE = 'Reference cannot be updated'
 
 interface TreeEntry {
   path: string
@@ -98,8 +103,9 @@ export function githubRemote(client: GithubClient, repo: string, branch: string)
       const moved = await client.request(git('refs', 'heads', branch), { method: 'PATCH', body: { sha, force: false }, allow: [409, 422] })
       if (moved.status === 422 || moved.status === 409) {
         const said = typeof (moved.data as { message?: unknown } | null)?.message === 'string' ? (moved.data as { message: string }).message : ''
-        // Proof 1B: 422 and exactly this message. Another 422 (a ref that does not exist) is not a moved branch.
-        if (said === NOT_FAST_FORWARD) throw new GithubError('STALE_HEAD', moved.status, `GitHub answered ${moved.status}: ${said}`, null, said, moved.rateLimit)
+        // Proof 1B: 422 and exactly this message (or, YAZ-5083, the race of two moves at once). Another 422 (a ref that
+        // does not exist) is not a moved branch.
+        if (said === NOT_FAST_FORWARD || said === REF_RACE) throw new GithubError('STALE_HEAD', moved.status, `GitHub answered ${moved.status}: ${said}`, null, said, moved.rateLimit)
         throw new GithubError('UNEXPECTED', moved.status, `GitHub answered ${moved.status}${said ? `: ${said}` : ''}`, null, said, moved.rateLimit)
       }
       return sha
