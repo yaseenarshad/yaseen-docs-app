@@ -91,7 +91,7 @@ export const COURSE: CourseChapter[] = [
       // The blank fills in; two buttons, Forgot and Remembered.
       { id: 'c1-11', text: 'You try to recall the hidden part, then check. And you answer: forgot, or remembered.', marks: [0.38, 0.674, 0.788] },
       // The chapter list lights up, 1 to 12.
-      { id: 'c1-13', text: 'This course takes about half an hour, in twelve short chapters.', marks: [0.266, 0.582] },
+      { id: 'c1-13', text: 'This course takes about half an hour, in twelve short chapters.', marks: [0.3, 0.581] },
       // The "Try it in the app" button, with "Optional" beside it.
       { id: 'c1-14', text: 'Some chapters let you try the steps in the real app. That part is always your choice.' },
       // The curve with its growing gaps, then the paper index card alone in the middle of the stage.
@@ -315,7 +315,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c5-05', text: 'And known cards come back less often, so the daily review stays small as the pile grows.', marks: [0.469, 0.773] },
       // One card on a time line; four marks appear: "2 days", "11 days", "6 weeks", "5 months". The gaps stretch across the stage.
       // SOURCE: ts-fsrs 5.4.2 with its own defaults (FSRS-6 weights, 90% retention, no fuzz), each answer Remembered on the due day: gaps of 2, 11, 46 and 163 days. This app's scheduler with its default settings gives about 4 days, 2 weeks, 6 weeks and 4 months, then the longest gap of 365 days (shared/reviews.ts `maxDays`). The words wait for Yaseen (YAZ-5128).
-      { id: 'c5-13', text: 'Follow one card you keep remembering. It comes back after a few days. Then about two weeks. Then about six weeks. Then about four months.', marks: [0.359, 0.516, 0.691, 0.875] },
+      { id: 'c5-13', text: 'Follow one card you keep remembering. It comes back after a few days. Then about two weeks. Then about six weeks. Then about four months.', marks: [0.332, 0.485, 0.663, 0.849] },
       // The time line zooms out: the card's next mark is far off to the right, past "2 months in".
       { id: 'c5-14', text: 'So a couple of months in, that card is already months away.', marks: [0.203, 0.719] },
       // The card fades into the outline of a person, and stays there as a small steady light.
@@ -674,7 +674,7 @@ export const COURSE: CourseChapter[] = [
       // A terminal: `yaseendocs card guide` prints the skill's first page.
       { id: 'c12-06', text: 'Your agent can find it too. One command prints its first page.', marks: [0.47, 0.63] },
       // Settings › Cards: "Card skill in the sidebar" and "Open the course".
-      { id: 'c12-07', text: 'In Settings, under Cards, one switch shows or hides the card skill. Open the course brings you back here.', marks: [0.16, 0.29, 0.69] },
+      { id: 'c12-07', text: 'In Settings, under Cards, one switch shows or hides the card skill. Open the course brings you back here.', marks: [0.168, 0.267, 0.691] },
       // A week of seven days appears.
       { id: 'c12-08', text: 'Now, your first week.', marks: [0.33] },
       // Day 1: one card, made from something the person already understands.

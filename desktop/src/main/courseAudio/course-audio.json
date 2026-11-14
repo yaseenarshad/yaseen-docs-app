@@ -2,10 +2,10 @@
  "version": 1,
  "chapters": {
   "why": {
-   "file": "why-1bff852e.ydca",
-   "bytes": 1428712,
-   "sha256": "1bff852e6d6e1bc8be1fa7c53ef81830375cb863841e39b24be191dca7a72c8b",
-   "seconds": 166.07,
+   "file": "why-ca6ede40.ydca",
+   "bytes": 1424200,
+   "sha256": "ca6ede40ba79e097ccbddce4a0e34f34e063908f17f0ca8b92fb0f5055fa93fc",
+   "seconds": 165.535,
    "clips": {
     "c1-01": {
      "seconds": 5.55,
@@ -88,8 +88,8 @@
      "hash": "85b851ed64c16a77"
     },
     "c1-13": {
-     "seconds": 4.807,
-     "hash": "b6d123bb12bce311"
+     "seconds": 4.272,
+     "hash": "534f51bb17243917"
     },
     "c1-14": {
      "seconds": 5.944,
@@ -402,10 +402,10 @@
    }
   },
   "compound": {
-   "file": "compound-56556027.ydca",
-   "bytes": 893857,
-   "sha256": "5655602780a8164f0d1eb3f43d519f2c1568e0499c4731b8007f1a6bda3b0059",
-   "seconds": 103.61,
+   "file": "compound-0952574a.ydca",
+   "bytes": 903007,
+   "sha256": "0952574a243ce0eab217172b5bdf6b99e298ded2deb3c0a5b581e080277cee1b",
+   "seconds": 104.585,
    "clips": {
     "c5-01": {
      "seconds": 5.782,
@@ -428,8 +428,8 @@
      "hash": "6cffa1110ab97185"
     },
     "c5-13": {
-     "seconds": 10.24,
-     "hash": "fc7f41a36b4e9bf1"
+     "seconds": 11.215,
+     "hash": "ba8f1c3e4f92d538"
     },
     "c5-14": {
      "seconds": 4.342,
@@ -1006,10 +1006,10 @@
    }
   },
   "where-things-are": {
-   "file": "where-things-are-755a304b.ydca",
-   "bytes": 799771,
-   "sha256": "755a304b6836d9b0104d0e55101deaf294b335446132126a2913a9fd7d65a265",
-   "seconds": 90.977,
+   "file": "where-things-are-52e33d85.ydca",
+   "bytes": 793624,
+   "sha256": "52e33d85afc697c58f26eb27522cb20d482826679062a9443ebc6fcbf9608a59",
+   "seconds": 90.35,
    "clips": {
     "c12-01": {
      "seconds": 4.18,
@@ -1036,8 +1036,8 @@
      "hash": "6766bcbba9cea51d"
     },
     "c12-07": {
-     "seconds": 8.731,
-     "hash": "c3b868494e17e7cf"
+     "seconds": 8.104,
+     "hash": "46f4fa20c620d7ec"
     },
     "c12-08": {
      "seconds": 2.415,
