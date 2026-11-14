@@ -16,6 +16,7 @@ import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import type { FriendVault } from '@shared/friendStats'
 import { macGistsApi, readProfile } from '../src/main/friends/gistsHttp'
 import { createMacSender, type MacSendSaved } from '../src/main/friends/macSender'
+import { friendStats as countHere } from '@shared/friendStats'
 
 const file = process.argv.slice(2).filter((a) => a !== '--')[0]
 const token = /github_pat_[A-Za-z0-9_]+/.exec(readFileSync(file, 'utf8'))?.[0]
@@ -72,6 +73,7 @@ try {
     count: async () => vault,
     state: { load: async () => saved, save: async (s) => void (saved = structuredClone(s)) },
     clock: { now: () => now, setTimeout: () => 0, clearTimeout: () => undefined },
+    stats: async (text, at) => countHere(JSON.parse(text) as FriendVault[], at),
   })
   const w0 = writes
   t = Date.now()
