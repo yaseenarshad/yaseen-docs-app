@@ -23,6 +23,7 @@ import { idsAskMessage, idsLettersAsk, KEEP_OTHER_ASK, keepIdsAskMessage, letter
 import { HOTKEYS_SECTION } from './hotkeysSection'
 import { groupsOf, SETTINGS_SECTIONS, type SettingsCtx } from './registry'
 import { SettingsDialog } from './SettingsDialog'
+import { NEXT_HIDDEN_SWATCH } from './options'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -177,7 +178,7 @@ const FILES_ROWS = ['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and their style (YAZ-4798) after Group indent.
 const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
 // YAZ-5050 round 2: in groups — Daily limits, Answers, Scheduling, Card look (with its preview).
-const REVIEW_ROWS = ['enabled', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
+const REVIEW_ROWS = ['enabled', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
  * so the "Used by macOS" rows are not there; with no key changed, neither is "Reset all hotkeys".
@@ -1445,7 +1446,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   it('on: the card rows in order, with their words and values; off: the switch alone. No upkeep row is left', () => {
     const { el, rerender } = mountOn('Review', { ...DEFAULT_SETTINGS }, status(), S)
     expect(reviewRows(el)).toEqual(ALL)
-    expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Review cards', 'New cards a day', 'Up next a day', 'New cards first', 'Answer buttons', 'Pause the timer after', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Card spacing'])
+    expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Review cards', 'New cards a day', 'Up next a day', 'New cards first', 'Answer buttons', 'Pause the timer after', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card spacing'])
     // YAZ-5050 round 2: the groups, in order; the card preview is the last row of Card look.
     expect([...el.querySelectorAll('#settings-review .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look'])
     // YAZ-5020: "How cards come back" is a quiet closed line; open, it says the same-day rules and why.
@@ -1469,6 +1470,32 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     act(() => rowButtons(el, 'shownHiddenWords')[2].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, shownHiddenWords: 'box' })
     expect(save).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-5053 round 3: Mark the next hidden word is On by default, with its colour (a picker and Reset) under it; Off hides the colour; both are app settings', () => {
+    const { el, onChange, save } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
+        expect(row(el, 'markNextHidden')?.querySelector('.setting__label')?.textContent).toBe('Mark the next hidden word')
+    expect(rowButtons(el, 'markNextHidden').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
+    const picker = row(el, 'nextHiddenColour')?.querySelector<HTMLInputElement>('input[type="color"]')
+    expect(picker?.value).toBe(NEXT_HIDDEN_SWATCH)
+    // At the default colour, Reset has nothing to do.
+    const reset = () => [...(row(el, 'nextHiddenColour')?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Reset')
+    expect(reset()?.disabled).toBe(true)
+    act(() => rowButtons(el, 'markNextHidden')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, markNextHidden: false })
+    expect(save).not.toHaveBeenCalled()
+    // Its rows sit in Card look, after Shown hidden words.
+    const ids = reviewRows(el)
+    expect(ids.slice(ids.indexOf('shownHiddenWords'), ids.indexOf('shownHiddenWords') + 3)).toEqual(['shownHiddenWords', 'markNextHidden', 'nextHiddenColour'])
+  })
+
+  it('YAZ-5053 round 3: a picked colour shows in the picker; Reset goes back to the default; Off has no colour row', () => {
+    const picked = { ...DEFAULT_SETTINGS, nextHiddenColour: '#aa3399' }
+    const { el, onChange } = mountOn('Review', picked, undefined, S)
+    expect(row(el, 'nextHiddenColour')?.querySelector<HTMLInputElement>('input[type="color"]')?.value).toBe('#aa3399')
+    act(() => [...(row(el, 'nextHiddenColour')?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Reset')?.click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...picked, nextHiddenColour: null })
+    expect(row(mountOn('Review', { ...DEFAULT_SETTINGS, markNextHidden: false }, undefined, S).el, 'nextHiddenColour')).toBeNull()
   })
 
   const CUSTOM_ROWS = ['cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace']

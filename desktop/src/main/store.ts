@@ -692,6 +692,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   sectionStep: (v): v is number => isFiniteNumber(v) && SECTION_STEPS.includes(v),
   sectionLines: (v): v is SectionLines => typeof v === 'string' && (SECTION_LINES as readonly string[]).includes(v),
   shownHiddenWords: (v): v is ShownHiddenWords => typeof v === 'string' && (SHOWN_HIDDEN_WORDS as readonly string[]).includes(v),
+  markNextHidden: (v): v is boolean => typeof v === 'boolean',
+  nextHiddenColour: (v): v is string | null => v === null || isHexColour(v),
   cardSpacing: (v): v is CardSpacing => typeof v === 'string' && (CARD_SPACINGS as readonly string[]).includes(v),
   cardLineSpacing: (v): v is number => isFiniteNumber(v) && v >= 1 && v <= 3,
   cardBlockGap: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= 0 && v <= CARD_BLOCK_GAP_MAX,

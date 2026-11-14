@@ -188,3 +188,19 @@ it('YAZ-5049 round 2: the Inbox card is one long page, as Mochi — no scroll ba
   expect(dock.body).toMatch(/position:\s*sticky/)
   expect(dock.body).toMatch(/bottom:/)
 })
+
+it('YAZ-5053 round 3: with "Mark the next hidden word" on, the next blank takes the colour in the look of Shown hidden words: the line, the highlight, or the box', () => {
+  const at = (sel: string) => rules(cardCss, sel).map((r) => r.body).join('\n')
+  expect(at("[data-mark-next-hidden] .note-card .note-card__blank[data-next]")).toMatch(/border-bottom-color:\s*var\(--next-hidden\)/)
+  expect(at("[data-mark-next-hidden][data-shown-hidden-words='highlight'] .note-card .note-card__blank[data-next]")).toMatch(/background:\s*color-mix\(in srgb, var\(--next-hidden\)/)
+  expect(at("[data-mark-next-hidden][data-shown-hidden-words='box'] .note-card .note-card__blank[data-next]")).toMatch(/background:\s*color-mix\(in srgb, var\(--next-hidden\)/)
+  // The box rule's grey loses to the colour: more weight.
+  expect(beats(specificity("[data-mark-next-hidden][data-shown-hidden-words='box'] .note-card .note-card__blank[data-next]"), specificity("[data-shown-hidden-words='box'] .note-card .note-card__blank"))).toBe(true)
+  // A calm default in light and dark, on the app's tokens: not a status colour.
+  const app = read('../../app.css')
+  const light = /:root\s*{[^}]*--next-hidden:\s*(#[0-9a-f]{6})/i.exec(app)?.[1]
+  const dark = /\[data-theme='dark'\]\s*{[^}]*--next-hidden:\s*(#[0-9a-f]{6})/i.exec(app)?.[1]
+  expect(light).toBeDefined()
+  expect(dark).toBeDefined()
+  for (const status of ['#d64545', '#c98a1a', '#3a9d5d', '#5b6cff', '#e06c6c', '#d9a13c', '#4fb573', '#7c8aff']) expect([light, dark]).not.toContain(status)
+})
