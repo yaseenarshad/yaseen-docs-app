@@ -773,6 +773,26 @@ describe('cards: due and card add (YAZ-4963)', () => {
     expect((await scanFile(root, geo)).cards?.map((c) => c.id)).toEqual(['YAZ-6'])
   })
 
+  it('YAZ-5386: card add and card new --prop name=value write the card`s properties on its card line; a name twice is a list; a bad one is refused before a number is taken', async () => {
+    const root = await vault('cards', { 'geo.md': '---\nid: YAZ-5\n---\n# Geography\n', 'Cards/.keep': '' })
+    const geo = path.join(root, 'geo.md')
+    const added = await run(['card', 'add', geo, '--title', 'Capital of France', '--prop', 'tags=europe', '--prop', 'tags=capitals', '--prop', 'level=A2', '--prop', 'count=3', '--prop', 'Due Date=2026-11-20', '--body', 'The capital of {{France}}\n---\nParis', '--json'])
+    expect(JSON.parse(added.out)).toEqual({ id: 'YAZ-6', page: geo, title: 'Capital of France', properties: { tags: ['europe', 'capitals'], level: 'A2', count: 3, 'Due Date': '2026-11-20' } })
+    expect(await readFile(geo, 'utf8')).toContain('<!-- card: YAZ-6, title "Capital of France", tags "europe" "capitals", level "A2", count 3, "Due Date" "2026-11-20" -->')
+    expect((await scanFile(root, geo)).cards?.[0].properties).toEqual({ tags: ['europe', 'capitals'], level: 'A2', count: 3, 'Due Date': '2026-11-20' })
+    // A card file: the properties are on its card line too, never in its front matter (YAZ-5349 option A).
+    const made = JSON.parse((await run(['card', 'new', path.join(root, 'Cards'), '--title', 'Longest river', '--prop', 'tags=rivers', '--json'])).out) as { path: string }
+    const file = await readFile(made.path, 'utf8')
+    expect(file.startsWith('---\nkind: card\n---\n')).toBe(true)
+    // One value is that value; a list is the name given twice.
+    expect(file).toContain('<!-- card: YAZ-7, title "Longest river", tags "rivers" -->')
+    // Refused, and no number spent: no `=`, no name, a card line word.
+    for (const bad of ['level', '=A2', 'next=1', 'title=x']) expect((await run(['card', 'add', geo, '--prop', bad, '--body', 'x'])).code).toBe(2)
+    expect((await scanFile(root, geo)).cards?.map((c) => c.id)).toEqual(['YAZ-6'])
+    // The help says so.
+    expect((await run(['--help'])).out).toContain('--prop <name>=<value>')
+  })
+
   it('YAZ-4999: card next writes the part `next` (--off removes it); due lists the card first and marks it', async () => {
     const now = minute(Date.now() - 60_000)
     const root = await vault('cards', {
@@ -921,7 +941,7 @@ describe('card files (YAZ-5037)', () => {
 
   it('the contract names `card new`, the card file, `cardFile` and the kind `card`', () => {
     const help = HELP.replace(/\s+/g, ' ')
-    for (const said of ['yaseendocs card new <folder> --title <text> [--body <text | ->] [--json]', '`kind: card`', 'This is a card file. Use `card new`.', '`cardFile: true`', '(`page`, `card` or `folder`;', '`kind` is `page`, `card`, `folder` or `missing`']) expect(help).toContain(said)
+    for (const said of ['yaseendocs card new <folder> --title <text> [--body <text | ->] [--prop <name>=<value> ...] [--json]', '`kind: card`', 'This is a card file. Use `card new`.', '`cardFile: true`', '(`page`, `card` or `folder`;', '`kind` is `page`, `card`, `folder` or `missing`']) expect(help).toContain(said)
   })
 })
 
