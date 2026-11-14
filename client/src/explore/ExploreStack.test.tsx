@@ -2688,7 +2688,7 @@ describe('the card window (YAZ-4962)', () => {
     expect(chip()).toBeNull()
   })
 
-  it('YAZ-5030: "Linked mentions (n)" lists the pages that link to the card, live with the index; a click opens the page on top', async () => {
+  it('YAZ-5030, YAZ-5382: the strip`s "Linked mentions n" lists the pages that link to the card, live with the index; a click opens the page on top', async () => {
     const cardRec = rec(PAGE, 'Cards', { mtime: 1, cards: [{ id: 'WIKI-9', off: false, next: false, reviews: [], title: 'Capital of France' }] })
     const linker = rec('/v/geo.md', 'Geography', { links: ['wiki-9'] })
     const other = rec('/v/other.md', 'Other', { links: ['WIKI-10', 'Cards'] })
@@ -2696,13 +2696,16 @@ describe('the card window (YAZ-4962)', () => {
     props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
     await mount()
     await flush()
-    const section = () => top().querySelector<HTMLElement>('.card-backlinks')!
-    expect(section().querySelector('.backlinks__title')?.textContent).toBe('Linked mentions (1)')
-    // Open while there are any: each linking page by its title.
-    expect([...section().querySelectorAll('.card-backlinks__page')].map((b) => b.textContent)).toEqual(['Geography'])
+    const part = () => top().querySelector<HTMLButtonElement>('.card-reviews__toggle[data-part="links"]')!
+    expect(part().textContent).toBe('Linked mentions1')
+    // A part opens on a click (one at a time): each linking page by its title.
+    act(() => part().click())
+    const section = () => top().querySelector<HTMLElement>('.card-backlinks__list')!
+    expect([...section().querySelectorAll('.card-backlinks__name')].map((b) => b.textContent)).toEqual(['Geography'])
     // A new snapshot: another page links to the card too.
     act(() => source.update(() => null, [cardRec, linker, rec('/v/other.md', 'Other', { links: ['WIKI-9|the capital'] })], [], true, ['WIKI']))
-    expect([...section().querySelectorAll('.card-backlinks__page')].map((b) => b.textContent)).toEqual(['Geography', 'Other'])
+    expect([...section().querySelectorAll('.card-backlinks__name')].map((b) => b.textContent)).toEqual(['Geography', 'Other'])
+    expect(part().textContent).toBe('Linked mentions2')
     act(() => section().querySelector<HTMLButtonElement>('.card-backlinks__page')!.click())
     await flush()
     expect(layers().map((l) => l.dataset.kind)).toEqual(['card', 'page'])

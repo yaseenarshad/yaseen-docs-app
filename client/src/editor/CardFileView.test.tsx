@@ -145,7 +145,7 @@ async function menu(): Promise<string[]> {
 const pick = (label: string) => act(() => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === label)!.click())
 
 describe('the card file tab (YAZ-5037 phase 3)', () => {
-  it('shows the path, the title, the ID, the state, the card, "Linked mentions (1)" and "Embedded in (2)"; no notice; no read of its own on open', async () => {
+  it('shows the path, the title, the ID, the state, the card, and the strip`s parts "Linked mentions 1" and "Embedded in 2" (YAZ-5382); no notice; no read of its own on open', async () => {
     await mount(FILE)
     expect(disk.reads).toBe(0)
     expect(el.querySelector('.card-file__path')?.textContent).toBe('Geography')
@@ -155,9 +155,13 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('New'))
     expect(el.querySelector('.card-screen')?.textContent).toContain('Paris')
     expect(notice()).toBeNull()
-    expect(el.querySelector('.card-backlinks .backlinks__title')?.textContent).toBe('Linked mentions (1)')
-    expect(el.querySelector('.card-file__embeds .backlinks__title')?.textContent).toBe('Embedded in (2)')
-    expect(el.querySelector('.card-file__embeds')?.textContent).toContain('europe')
+    const part = (name: string) => el.querySelector<HTMLButtonElement>(`.card-reviews__toggle[data-part="${name}"]`)
+    expect(part('links')?.textContent).toBe('Linked mentions1')
+    expect(part('embeds')?.textContent).toBe('Embedded in2')
+    expect(el.querySelector('.card-backlinks__list')).toBeNull()
+    act(() => part('embeds')!.click())
+    expect(el.querySelector('.card-backlinks__list')?.textContent).toContain('europe')
+    expect(part('embeds')?.getAttribute('aria-expanded')).toBe('true')
     // The tab is the card's own page: none of the card window's words for a separate page.
     expect(el.textContent).not.toContain('Open page')
   })
@@ -200,13 +204,14 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     expect(el.querySelector('.card-reviews .backlinks__title')?.textContent).toBe('1 Review')
   })
 
-  it('YAZ-5105 round 2: Reviews is a strip right under the card (as Mochi), closed until clicked; Linked mentions and Embedded in stay under it', async () => {
+  it('YAZ-5105 round 2: Reviews is a strip right under the card (as Mochi), closed until clicked; YAZ-5382: Linked mentions and Embedded in are its parts, no sections under it', async () => {
     await mount(FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", 2026-11-01T09:00Z good -->'))
     await vi.waitFor(() => expect(el.querySelector('.card-reviews')).not.toBeNull())
     const strip = el.querySelector('.card-reviews')!
     expect(strip.classList.contains('card-reviews--strip')).toBe(true)
     expect(strip.previousElementSibling?.classList.contains('card-screen')).toBe(true)
-    expect(strip.nextElementSibling?.classList.contains('card-backlinks')).toBe(true)
+    expect([...strip.querySelectorAll<HTMLElement>('.card-reviews__toggle')].map((b) => b.dataset.part)).toEqual(['reviews', 'properties', 'links', 'embeds'])
+    expect(el.querySelector('section.card-backlinks')).toBeNull()
     const toggle = strip.querySelector<HTMLButtonElement>('.card-reviews__toggle')!
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(strip.querySelector('.card-reviews__table')).toBeNull()

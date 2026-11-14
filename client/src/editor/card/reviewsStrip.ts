@@ -11,7 +11,15 @@ import type { CardPropertyValue, CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
 
 /** The strip's parts (YAZ-5380): one open at a time. The same type as `CardStripPart` in `review/cardParts.tsx`, which this chunk-free file cannot import. */
-export type StripPart = 'reviews' | 'properties'
+export type StripPart = 'reviews' | 'properties' | 'links' | 'embeds'
+
+/** The strip's page parts (YAZ-5382), as `CardStripPages` in `review/cardParts.tsx`: a card file's Linked mentions and Embedded in. */
+export interface StripPages {
+  id: string
+  wikilinks: import('../wikilink/wikilinkPlugin').WikilinkResolveSource
+  onOpen: (path: string) => void
+  embeds?: boolean
+}
 
 export interface ReviewsStripProps {
   reviews: readonly CardReview[]
@@ -23,6 +31,8 @@ export interface ReviewsStripProps {
   onToggle: (part: StripPart) => void
   /** The card's own properties (YAZ-5379), for the Properties part. */
   properties: Readonly<Record<string, CardPropertyValue>>
+  /** Linked mentions and Embedded in (YAZ-5382); absent: neither part. */
+  pages?: StripPages
 }
 
 export interface ReviewsStripHandle {
@@ -47,7 +57,7 @@ const loadKit = (): Promise<Kit> =>
 
 /** Whether two draws of the strip show the same: its reviews, settings, open part and properties (the doors are read at click time). */
 const same = (a: ReviewsStripProps, b: ReviewsStripProps): boolean =>
-  a.settings === b.settings && a.open === b.open && JSON.stringify(a.properties) === JSON.stringify(b.properties) && a.reviews.length === b.reviews.length && a.reviews.every((r, i) => r === b.reviews[i] || (r.at === b.reviews[i].at && r.rating === b.reviews[i].rating && r.seconds === b.reviews[i].seconds))
+  a.settings === b.settings && a.open === b.open && JSON.stringify(a.properties) === JSON.stringify(b.properties) && a.pages?.id === b.pages?.id && a.pages?.wikilinks === b.pages?.wikilinks && a.pages?.embeds === b.pages?.embeds && a.reviews.length === b.reviews.length && a.reviews.every((r, i) => r === b.reviews[i] || (r.at === b.reviews[i].at && r.rating === b.reviews[i].rating && r.seconds === b.reviews[i].seconds))
 
 export function mountReviewsStrip(): ReviewsStripHandle {
   const dom = document.createElement('div')
@@ -59,7 +69,7 @@ export function mountReviewsStrip(): ReviewsStripHandle {
   // The doors are read at click time: a draw with new doors and the same look draws nothing.
   const props = (): ReviewsStripProps => {
     const p = latest!
-    return { ...p, onToggle: (part) => latest?.onToggle(part), onDelete: p.onDelete === undefined ? undefined : (r) => latest?.onDelete?.(r) }
+    return { ...p, pages: p.pages === undefined ? undefined : { ...p.pages, onOpen: (path) => latest?.pages?.onOpen(path) }, onToggle: (part) => latest?.onToggle(part), onDelete: p.onDelete === undefined ? undefined : (r) => latest?.onDelete?.(r) }
   }
   const paint = (k: Kit): void => {
     if (gone || latest === null) return

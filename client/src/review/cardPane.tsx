@@ -1,7 +1,7 @@
 /**
  * ONE card's body, as the card window (`explore/ExploreCard.tsx`, YAZ-4962) and a card file's tab
  * (`editor/CardFileView.tsx`, YAZ-5037) both show it: the card, everything shown — or, in Edit card, the card editor
- * (YAZ-5003, YAZ-5026) —, its Reviews (the history), "Linked mentions (n)" and, in the tab, "Embedded in (n)". Also
+ * (YAZ-5003, YAZ-5026) —, its strip (YAZ-5380, YAZ-5382: Reviews, Properties, Linked mentions and, in the tab, Embedded in). Also
  * the writes both make (Done, a ⋯ change of the card line, a review's delete: each ONE `transformFile` on the newest
  * bytes, by the card's ID), the ⋯ rows of the card, E, and the read again on each new index version of the file.
  * The heads are each one's own: the window's speaks of the page the card is on, the tab IS the card's file.
@@ -140,14 +140,14 @@ interface CardPaneProps {
   /** What Edit card selects as it opens (offsets in the card's text): a new card's "Title" (YAZ-5037). Absent: the caret at the end. */
   select?: { from: number; to: number }
   doors: CardLinkDoors
-  /** A page in "Linked mentions" or "Embedded in". */
+  /** A page in the strip's "Linked mentions" or "Embedded in". */
   onOpenPage: (path: string) => void
   /** Under the card: the card window's strip. */
   strip?: ReactNode
   /** The Reviews section's settings; absent: no Reviews. */
   reviews?: ReviewSettings
   onDeleteReview?: (review: CardReview) => void
-  /** "Embedded in (n)" after the mentions (a card file's tab). */
+  /** The strip's "Embedded in" part after Linked mentions (a card file's tab). */
   embeds?: boolean
   /** Edit card's Title field (`CardTitleField`): absent → `edit`. */
   titleField?: CardTitleField
@@ -157,7 +157,7 @@ interface CardPaneProps {
   head?: ReactNode
 }
 
-/** The card's body: the card or its editor, its Reviews strip, the facts strip, "Linked mentions" and, in a tab, "Embedded in". */
+/** The card's body: the card or its editor, its strip (Reviews, Properties, Linked mentions and, in a tab, Embedded in: YAZ-5382), then the facts strip. */
 export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false, titleField = 'edit', band, head }: CardPaneProps) {
   // The band shows the title (off the card line); the card is its text, its sides only (YAZ-5308).
   return (
@@ -172,10 +172,17 @@ export function CardPane({ card, path, vault, editing, onEditDone, select, doors
         </div>
       )}
       {/* YAZ-5105 round 2: the Reviews strip right under the card, as Mochi's; then the card window's facts strip. */}
-      {reviews !== undefined && <CardStrip reviews={card.reviews} settings={reviews} onDelete={onDeleteReview} properties={{ values: card.properties ?? {} }} />}
+      {/* YAZ-5382: Linked mentions and, on a card file, Embedded in are parts of the strip, not sections under it. */}
+      {reviews !== undefined && (
+        <CardStrip
+          reviews={card.reviews}
+          settings={reviews}
+          onDelete={onDeleteReview}
+          properties={{ values: card.properties ?? {} }}
+          pages={card.id === null ? undefined : { id: card.id, wikilinks: vault.wikilinks, onOpen: onOpenPage, embeds }}
+        />
+      )}
       {strip}
-      {card.id !== null && <CardPages which="links" id={card.id} wikilinks={vault.wikilinks} onOpen={onOpenPage} />}
-      {embeds && card.id !== null && <CardPages which="embeds" id={card.id} wikilinks={vault.wikilinks} onOpen={onOpenPage} />}
     </>
   )
 }
@@ -231,51 +238,3 @@ function CardPaneEditor({ text, title, path, vault, onDone, select, titleField }
   return <div ref={hostRef} className="explore-card__edit" data-explore-card-edit />
 }
 
-const PAGES = {
-  links: { label: 'Linked mentions', none: 'No page links to this card yet.', of: cardBacklinks, className: 'card-backlinks' },
-  embeds: { label: 'Embedded in', none: 'No page embeds this card yet.', of: cardEmbedders, className: 'card-backlinks card-file__embeds' },
-} as const
-
-/**
- * "Linked mentions (n)" of a card (YAZ-5030): the pages whose links name the card's ID (`cardBacklinks`); "Embedded in
- * (n)" (YAZ-5037): the pages whose `![[…]]` names it (`cardEmbedders`). From the index, live with it; each row is the
- * page's name, and a click opens it. Open while there are any.
- */
-function CardPages({ which, id, wikilinks, onOpen }: { which: keyof typeof PAGES; id: string; wikilinks: WikilinkResolveSource; onOpen: (path: string) => void }) {
-  const { label, none, of, className } = PAGES[which]
-  const feed = useIndexFeed(wikilinks)
-  const pages = useMemo((): IndexRecord[] => {
-    const resolve = feed.resolve === null ? null : cardResolverOf(wikilinks)
-    return resolve === null ? [] : of(feed.records, id, resolve)
-  }, [feed, id, wikilinks, of])
-  const titles = pathTitles(feed.records, feed.folders)
-  const [open, setOpen] = useState<boolean | null>(null)
-  const shown = open ?? pages.length > 0
-  return (
-    <section className={className}>
-      <button type="button" className="backlinks__header" aria-expanded={shown} onClick={() => setOpen(!shown)} onMouseDown={(e) => e.preventDefault()}>
-        <svg className="backlinks__chevron" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="m4 6 4 4 4-4" />
-        </svg>
-        <span className="backlinks__title">
-          {label} <span className="backlinks__count">({pages.length})</span>
-        </span>
-      </button>
-      {shown && (
-        <ul className="card-backlinks__list">
-          {pages.length === 0 ? (
-            <li className="card-backlinks__none">{none}</li>
-          ) : (
-            pages.map((page) => (
-              <li key={page.path}>
-                <button type="button" className="card-strip__page card-backlinks__page" onMouseDown={(e) => e.preventDefault()} onClick={() => onOpen(page.path)}>
-                  {pageLabel(page.path, false, titles)}
-                </button>
-              </li>
-            ))
-          )}
-        </ul>
-      )}
-    </section>
-  )
-}
