@@ -11,8 +11,8 @@
 }
 .card-file__page {
   width: 100%;
-  /* Settings › Review › Card width (YAZ-5144): a card's text at most `--card-text-width`, with a page column's 48 px sides. */
-  max-width: calc(var(--card-text-width) + 96px);
+  /* A page's column; Card width caps what is in it (`card.css`, YAZ-5144 round 3). */
+  max-width: var(--content-max-width);
   margin: 0 auto;
   padding: 8px 48px 64px;
 }
