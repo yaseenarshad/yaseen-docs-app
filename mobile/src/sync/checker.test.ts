@@ -168,7 +168,7 @@ describe('checker YAZ-5072: a request that never ends', () => {
 describe('checker YAZ-5072: probes that are expected to pass', () => {
   it('paths with spaces, #, %, emoji, non-ASCII; a case-only rename; a big binary', async () => {
     const s = await syncSetup({
-      'my notes/a #1 100%.md': pageText('Hash', 'NC-1'),
+      'my pages/a #1 100%.md': pageText('Hash', 'NC-1'),
       'émoji 🚀/über.md': pageText('Uber', 'NC-2'),
       'Foo.md': pageText('Foo', 'NC-3'),
       'big.bin': new Uint8Array(3_000_000),
@@ -176,7 +176,7 @@ describe('checker YAZ-5072: probes that are expected to pass', () => {
     const r = await pass(s)
     expect(r.kind).toBe('synced')
     const idx = (await s.store.getState<PhoneIndex>(VAULT, INDEX_STATE))!
-    expect(idx.records['my notes/a #1 100%.md'].title).toBe('Hash')
+    expect(idx.records['my pages/a #1 100%.md'].title).toBe('Hash')
     expect(idx.records['émoji 🚀/über.md'].folder).toBe('émoji 🚀')
     expect(s.count('blob')).toBe(3)
     const foo = pageText('Foo', 'NC-3')
