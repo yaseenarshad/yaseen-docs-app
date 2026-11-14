@@ -6,6 +6,7 @@
   "workspaces": [
     "client",
     "desktop",
+    "mobile",
     "engine/packages/common",
     "engine/packages/math",
     "engine/packages/fractional-indexing",
@@ -15,11 +16,13 @@
   "scripts": {
     "dev": "npm run dev -w desktop",
     "build": "npm run build -w desktop",
+    "mobile:dev": "npm run dev -w mobile",
+    "mobile:build": "npm run build -w mobile",
     "engine:build": "node tools/buildEngine.mjs",
     "drawio:pack": "npm run engine:build && node tools/packDrawio.mjs",
     "desktop:build": "npm run build -w desktop && node tools/packDesktop.mjs --mac",
     "desktop:build:win": "npm run build -w desktop && node tools/packDesktop.mjs --win",
-    "typecheck": "npm run engine:build && tsc -p client/tsconfig.json --noEmit && tsc -p shared/tsconfig.json --noEmit && tsc -p desktop/tsconfig.json --noEmit",
+    "typecheck": "npm run engine:build && tsc -p client/tsconfig.json --noEmit && tsc -p shared/tsconfig.json --noEmit && tsc -p desktop/tsconfig.json --noEmit && tsc -p mobile/tsconfig.json --noEmit && tsc -p mobile/tsconfig.test.json --noEmit",
     "test": "npm run engine:build && node tools/buildSpeller.mjs && vitest run",
     "e2e": "npm run build -w desktop && playwright test --config desktop/e2e/playwright.config.ts",
     "e2e:only": "playwright test --config desktop/e2e/playwright.config.ts",
