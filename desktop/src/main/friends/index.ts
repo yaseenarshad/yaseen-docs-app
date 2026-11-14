@@ -19,6 +19,8 @@ import type { Store } from '../store'
 import { readConfigDetailed } from '../vaultConfig'
 import { getIndex } from '../vaultIndex'
 import { watchCardFiles } from './cardTrigger'
+import { countTextOffThread } from './countJob'
+import countWorker from './countWorker?modulePath'
 import { macGistsApi, readProfile } from './gistsHttp'
 import { createMacSender, type MacSendSaved, type MacSender } from './macSender'
 
@@ -71,6 +73,8 @@ export function startFriendsSend(store: Store, secrets: Pick<Secrets, 'read'>, u
       return { pages: index.records, settings: sanitizeReviewSettings(config.state === 'ok' ? config.value : null) }
     },
     state,
+    // YAZ-5250: the count runs on a worker thread; main only packs the cards and waits.
+    stats: (text, now) => countTextOffThread(countWorker, text, now),
   })
   const stopTrigger = watchCardFiles({
     roots: () => rootsOf(store.get()),

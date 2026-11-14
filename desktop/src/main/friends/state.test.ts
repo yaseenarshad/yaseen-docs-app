@@ -17,6 +17,8 @@ import type { MacSendSaved } from './macSender'
 
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn(), on: vi.fn() } }))
 vi.mock('../vaultIndex', () => ({ getIndex: vi.fn() }))
+// electron-vite's `?modulePath` is a build-time import (the count worker, YAZ-5250); no test here runs it.
+vi.mock('./countWorker?modulePath', () => ({ default: '' }))
 
 let dir: string
 beforeEach(async () => void (dir = await mkdtemp(path.join(tmpdir(), 'yd-friends-'))))
