@@ -217,7 +217,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c3-07', text: 'People who kept testing themselves remembered 80 percent a week later. People who kept re-reading, with no testing, remembered 36.' },
       // Under the bars: "Rounds of practice: 237 and 243".
       // SOURCE: the same paper, Table 1: 236.8 trials (SnT, repeated testing) against 243.0 trials (STn, repeated study).
-      { id: 'c3-22', text: 'About the same amount of work. More than double the memory.' },
+      { id: 'c3-23', text: 'About the same amount of work. More than double the memory.' },
       // Space; the hidden word shows, then the back.
       { id: 'c3-08', text: 'Press Space to show the hidden words, one at a time, and then the back.' },
       // Forgot and Remembered show under the card.
