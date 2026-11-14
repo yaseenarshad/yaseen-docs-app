@@ -2551,6 +2551,26 @@ describe('the card window (YAZ-4962)', () => {
     expect(tableRows()).toEqual([['Due today']])
   })
 
+  it('YAZ-5164 part 3: the head`s title is the page title`s own component; the card never repeats it; a click renames the card in its page', async () => {
+    files[PAGE] = `# Cards\n\n\`\`\`card\nCapital of France\n\nWhich city?\n---\n{{Paris}}\n\`\`\`\n<!-- card: WIKI-9 -->\n`
+    props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
+    await mount()
+    await flush()
+    const heading = top().querySelector<HTMLElement>('.explore__title .page-title__text')!
+    expect(heading.textContent).toBe('Capital of France')
+    expect(top().querySelector('.explore__body')?.textContent).not.toContain('Capital of France')
+    expect(top().querySelector('.card__side')?.textContent?.trim()).toBe('Which city?')
+    act(() => heading.click())
+    const field = top().querySelector<HTMLTextAreaElement>('.explore__title .page-title__input')!
+    writeFile.mockClear()
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, 'France')
+      field.blur()
+    })
+    await vi.waitFor(() => expect(writeFile).toHaveBeenCalled())
+    expect(writeFile.mock.calls[0][0].content).toContain('```card\nFrance\n\nWhich city?\n---\n{{Paris}}\n```')
+  })
+
   it('a card with reviews: the strip says the last answer, the next review and the recall chance in one line of words (YAZ-5032), with one (i); the table has Yaseen\'s columns; each row deletes its review', async () => {
     files[PAGE] = page('<!-- card: WIKI-9, 2026-01-02T09:00Z good, 2026-01-10T09:00Z again, 2026-01-11T09:00Z good -->')
     props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }

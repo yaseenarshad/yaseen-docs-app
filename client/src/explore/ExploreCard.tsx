@@ -3,7 +3,8 @@
  *
  *  - Head: the card ID first, small and grey (a click copies it, D20) — its place in the page's card and the Inbox
  *    too —, then the card title (`titleOfCard`: a card file's `title`, YAZ-5044, else its first line; the layer's name,
- *    as every layer has one; "New card" for an empty card), ↗, ⋯ and ×; the chip "Up next ×" after the ID while the card is at the top of the Inbox (YAZ-4999 D3). The
+ *    as every layer has one; "New card" for an empty card; a click renames it, YAZ-5164 part 3, and the card below
+ *    never repeats it), ↗, ⋯ and ×; the chip "Up next ×" after the ID while the card is at the top of the Inbox (YAZ-4999 D3). The
  *    ⋯ menu: Open page, Open page in a new tab, Put at top of Inbox / Remove from top of Inbox, Archive card / Unarchive card (YAZ-5046),
  *    Reset history (D13, the card line through `changeCardLine`, the app's own write), Copy card ID.
  *  - The card, everything shown (`renderCard`), its pills and links live: a click opens the page on top, a bound
@@ -43,6 +44,10 @@ import { CardFacts, CardId, CardNextChip } from '../review/cardParts'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { keepFocus, type ExploreVault } from './ExplorePage'
 import { useUnit } from '../vault/unitWord'
+import { cardRetitled } from '@shared/cardText'
+import { PageTitle } from '../editor/PageTitle'
+
+const NO_TITLES: ReadonlyMap<string, string> = new Map()
 
 interface ExploreCardProps {
   path: string
@@ -155,7 +160,19 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
         {id !== null && <CardId id={id} onNotice={onNotice} />}
         {card?.next === true && <CardNextChip onRemove={card.id === null ? undefined : () => changeLine((l) => withCardNext(l, false))} />}
         <span ref={titleRef} className={`explore__title${title === '' ? ' card__title--empty' : ''}`}>
-          {loaded.kind === 'loading' ? '' : title === '' ? 'New card' : title}
+          {/* The page title's own component (YAZ-5164 part 3), as a card file's tab and a card in a page: a click renames
+              the card in its page, its first line. A read-only vault, or a card file's card, shows it only. */}
+          {card !== null && (
+            <PageTitle
+              path={path}
+              titles={NO_TITLES}
+              text={title}
+              placeholder="New card"
+              readOnly={vault.readOnly === true || card.fileTitle !== undefined}
+              locked={false}
+              onRetitle={(next) => writes.editDone(cardRetitled(card.text, next), () => undefined)}
+            />
+          )}
         </span>
         {card?.notitle === true && <span className="card__state card__notitle">Hidden in review</span>}
         {/* ↗ folds into ⋯ in a narrow layer (YAZ-4986); the card ID, the title and × stay. */}

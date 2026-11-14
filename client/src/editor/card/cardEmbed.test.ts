@@ -4,7 +4,7 @@
  * file; the ⋯ menu; the missing look; the read once per file version and only near the screen; "Show as embed" on a
  * card pill and the paste chip's "Embed" for a card link.
  */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
@@ -17,6 +17,7 @@ import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '
 import { BOARD_EMBED_SYNTAX_CLASS } from '../drawing/boardEmbed'
 import { CARD_OPEN, setCardEditorKind, type CardOpenRequest } from './cardBlockView'
 import { takeCardLanding } from './cardOpen'
+import { act } from 'react'
 import { cardEmbedOfDom } from './cardEmbed'
 import { loadCardEmbed } from './embedCard'
 import { READ_ONLY_EDIT, type ReadOnlyEditEvent } from '../readOnlyEdit'
@@ -162,6 +163,28 @@ describe('the embed and its head (Q4, locked)', () => {
     await vi.waitFor(() => expect(inPage!.querySelector('.card__body')?.textContent).toContain('Vatican City'))
     expect(inPage!.querySelector('.card__body')?.textContent).not.toContain('Russia')
     expect(getMarkdownForSave(crepe)).toBe(markdown)
+  })
+
+  it('YAZ-5164 part 3: a card in a page shows its title first in the head (the page title`s component), and its card never repeats it; a click renames it in its page', async () => {
+    const flag = globalThis as unknown as Record<string, unknown>
+    flag.IS_REACT_ACT_ENVIRONMENT = true
+    onTestFinished(() => void delete flag.IS_REACT_ACT_ENVIRONMENT)
+    const { root } = await mount('![[GEO-140]]\n\n![[GEO-1]]\n')
+    // The boxes, as drawn now (the page draws its widgets again as the index lands).
+    const inPage = () => boxes(root)[1]!
+    await vi.waitFor(() => expect(inPage().querySelector('.card__head .card__title .page-title__text')?.textContent).toBe('Largest country?'))
+    await vi.waitFor(() => expect(inPage().querySelector('.card__body')?.textContent).toContain('Russia'))
+    expect(inPage().querySelector('.card__body')?.textContent).not.toContain('Largest country?')
+    // A card file's title is the head's name already: no second title.
+    expect(boxes(root)[0]!.querySelector<HTMLElement>('.card__title')?.hidden).toBe(true)
+    press(inPage().querySelector('.card__title .page-title__text'))
+    act(() => inPage().querySelector<HTMLElement>('.card__title .page-title__text')!.click())
+    const field = inPage().querySelector<HTMLTextAreaElement>('.card__title .page-title__input')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, 'Biggest country?')
+      field.blur()
+    })
+    await vi.waitFor(() => expect(disk.files.get(EUROPE)).toContain('```card\nBiggest country?\n---\nRussia\n```\n<!-- card: GEO-1 -->'))
   })
 
   it('a click on the name opens the original: the card file\'s tab, or the page landed on the card', async () => {

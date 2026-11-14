@@ -19,6 +19,10 @@
  * same card, "This page is Read only. Press Enter to allow edits.", and Enter opens its "Allow edits?" box. The title
  * takes the keyboard (not a tab stop), so that Enter is heard. Once a choice unlocks the page, the title opens its
  * field at once: the rename the click meant (the attempt's `resume`, YAZ-5145 round 2). Cancel opens nothing.
+ *
+ * ONE TITLE FOR BOTH KINDS OF CARD (YAZ-5164 part 3): a card file's tab shows its title here, and so does the head of a
+ * card in a page (`text`: the card's title, `editor/card/cardTitle.ts`), the Inbox's head and Explore's card window. A
+ * click renames it the same way everywhere; where the title is stored is the caller's.
  */
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
@@ -30,6 +34,10 @@ interface PageTitleProps {
   path: string
   /** The window's titles (YAZ-2420 🔒 D14): the heading shows the page's title. */
   titles: PathTitles
+  /** The title itself, when it is no file's title (YAZ-5164: a card in a page's, its first line). Absent: the path's. */
+  text?: string
+  /** Shown while the title is empty (a card with no title yet). */
+  placeholder?: string
   /** Commit: the new title, straight to App's rename door (which confirms). */
   onRetitle: (title: string) => void
   /** ArrowDown out of the title: focus the editor below it. */
@@ -56,8 +64,8 @@ interface PageTitleProps {
   onNotice?: (message: string, icon?: NoticeKind, type?: NoticeType) => void
 }
 
-export function PageTitle({ path, titles, onRetitle, onArrowDown, kind = 'file', readOnly = false, locked = readOnly, id, onNotice }: PageTitleProps) {
-  const title = pageLabel(path, kind === 'dir', titles)
+export function PageTitle({ path, titles, text, placeholder, onRetitle, onArrowDown, kind = 'file', readOnly = false, locked = readOnly, id, onNotice }: PageTitleProps) {
+  const title = text ?? pageLabel(path, kind === 'dir', titles)
   const [editing, setEditing] = useState(false)
   // ONE door (YAZ-1553): leaving the field is the commit, so `onBlur` is `leave`'s only caller.
   // `settled` flips the moment the edit is over — Chromium fires one last blur when a focused
@@ -136,7 +144,7 @@ export function PageTitle({ path, titles, onRetitle, onArrowDown, kind = 'file',
       {/* Keyboard path too (⚡ YAZ-891 polish): the heading is focusable and Enter opens the
           input, so a rename never REQUIRES the mouse. */}
       <h1
-        className="page-title__text"
+        className={`page-title__text${title === '' ? ' page-title__text--empty' : ''}`}
         tabIndex={!readOnly ? 0 : locked !== false ? -1 : undefined}
         aria-readonly={readOnly || undefined}
         onClick={!readOnly ? open : locked !== false ? tell : undefined}
@@ -146,7 +154,7 @@ export function PageTitle({ path, titles, onRetitle, onArrowDown, kind = 'file',
           open()
         }}
       >
-        {title}
+        {title === '' ? placeholder : title}
       </h1>
       {id !== undefined && (
         <button

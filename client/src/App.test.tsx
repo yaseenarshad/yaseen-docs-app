@@ -5924,7 +5924,8 @@ describe('App: the card flow from /card, through the real editor (YAZ-4965)', ()
    */
   it('YAZ-5026: Edit card → bold and a hidden word in the page`s editor → Done → the exact Markdown in the file → ⌘Z gives the old file back', async () => {
     captured.realEditor = true
-    const before = '# Cards\n\n```card\nCapital of France\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'
+    // The card's title (its first line) is in Edit card's Title field (YAZ-5164 part 3): the editor holds the rest.
+    const before = '# Cards\n\n```card\nCities\n\nCapital of France\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'
     const files: Record<string, { content: string; mtime: number }> = { [PAGE]: { content: before, mtime: 1 } }
     const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: PAGE, tabs: [PAGE] }, files, (b) => {
       b.bridge.index.mockImplementation(async () => ({ root: '/v', records: Object.entries(files).map(([p, f]) => scan(p, f.content)), folders: [], generatedAt: 1, ids: true }))
@@ -5962,7 +5963,7 @@ describe('App: the card flow from /card, through the real editor (YAZ-4965)', ()
     await keyIn({ key: 'l', metaKey: true })
     await keyIn({ key: 'Enter', metaKey: true })
     expect(card.editing).toBe(false)
-    const after = '# Cards\n\n```card\n**Capital** of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'
+    const after = '# Cards\n\n```card\nCities\n\n**Capital** of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'
     await vi.waitFor(() => expect(files[PAGE].content).toBe(after), { timeout: SLOW_RUNNER_MS })
     // One ⌘Z in the page takes the whole edit back.
     await act(async () => void view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true, cancelable: true })))

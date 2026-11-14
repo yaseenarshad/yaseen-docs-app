@@ -42,7 +42,8 @@ import type { CardEditor } from './cardEditor'
 import { embedCard, recordAt, type CardEmbedHandle, type CardEmbedHost } from './embedCard'
 import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from './cardMedia'
 import { openCardWindow, previewCard } from './cardOpen'
-import { cardWithTitle } from '@shared/cardText'
+import { cardRetitled, cardTitleOut, cardWithTitle } from '@shared/cardText'
+import { mountCardTitle } from './cardTitle'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard } from './cardRender'
 import type { CardReviewDoorApi } from './cardBlockView'
 import { mountReviewsStrip, type ReviewsStripHandle } from './reviewsStrip'
@@ -183,7 +184,10 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   const editButton = button('card__edit', 'Edit card')
   const more = button('card__more', 'Card menu')
   more.textContent = '⋯'
-  head.append(from, dot, idButton, state, editButton, more)
+  // A card in a page: its title first (YAZ-5164 part 3), the page title's own component; a click renames it in its page.
+  // A card file's title is the head's name already ("Embedded from …").
+  const title = mountCardTitle()
+  head.append(title.dom, from, dot, idButton, state, editButton, more)
   const body = document.createElement('div')
   body.className = 'card__body'
 
@@ -222,6 +226,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     const className = `card card-embed${isOff ? ' card--off' : ''}${edit !== null ? ' card--editing' : ''}${folded ? ' card-embed--folded' : ''}${selected ? ' ProseMirror-selectednode' : ''}`
     if (dom.className !== className) dom.className = className
     set(fromText, `Embedded from "${embedName(card, source)}"`)
+    drawTitle(card)
     set(idButton, card.id)
     set(state, isOff ? 'Archived' : '')
     if (edit === null) set(editButton, 'Edit card')
@@ -229,9 +234,37 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     editButton.setAttribute('aria-label', edit === null ? 'Edit card' : 'Done')
   }
 
+  /** Is the card a card file's (its title is its `title`, YAZ-5044)? */
+  const isFileCard = (c: CardLink): boolean => recordAt(source.records, c.path)?.kind === 'card'
+
+  /** The head's title (YAZ-5164 part 3), a card in a page's: from the index until read, then from its text. */
+  const drawTitle = (c: CardLink, now = false): void => {
+    title.dom.hidden = isFileCard(c)
+    if (title.dom.hidden) return
+    title.render({ title: read === null ? c.title : cardTitleOut(read.text).title, readOnly: !host.editable(), onRetitle: retitle }, now)
+  }
+
+  /** The rename: the card's first line, in its ORIGINAL file (one write, as Done), shown at once. */
+  const retitle = (next: string): void => {
+    const r = read
+    if (r === null || r.fileTitle !== undefined || !host.editable()) return
+    const text = cardRetitled(r.text, next)
+    if (text === r.text) return
+    read = { ...r, text }
+    changeCardTextIn(r.path, r.id, text, r.index).catch((err: unknown) => {
+      onNotice(`Can't rename the card: ${err instanceof Error ? err.message : String(err)}`)
+      read = r
+      draw()
+      paint()
+    })
+    draw()
+    paint()
+  }
+
   const paint = (): void => {
     if (card === null || edit !== null) return
-    body.replaceChildren(read === null ? '' : renderCard(read.text, {}, doors.look(card.path)))
+    // The head shows the title; the card never repeats it (YAZ-5164 part 3). A card file's card holds none.
+    body.replaceChildren(read === null ? '' : renderCard(read.fileTitle === undefined ? cardTitleOut(read.text).text : read.text, {}, doors.look(card.path)))
     drawReviews()
   }
 
@@ -305,7 +338,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     const mount = document.createElement('div')
     mount.className = 'card__editor'
     dom.append(mount)
-    const { editor, keys } = doors.edit(mount, base.text, () => finishEdit())
+    const { editor, keys } = doors.edit(mount, base.text, () => finishEdit(), base.fileTitle)
     dom.append(keys)
     edit = { editor, mount, keys, base }
     draw()
@@ -362,6 +395,8 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     if (strip?.dom.contains(target) === true) return
     const c = card
     if (c === null) return
+    // The title is the page title's (YAZ-5164 part 3): its click renames, or asks to unlock a locked page.
+    if (title.dom.contains(target)) return drawTitle(c, true)
     if (target.closest('.card__more') !== null) {
       event.preventDefault()
       const rect = more.getBoundingClientRect()
@@ -450,6 +485,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
       edit = null
       strip?.destroy()
       strip = null
+      title.destroy()
       boxes.delete(dom)
     },
   }
