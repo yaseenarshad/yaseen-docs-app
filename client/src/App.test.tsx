@@ -7782,6 +7782,41 @@ describe('App: the card course (YAZ-5120)', () => {
     await vi.waitFor(() => expect(el.querySelector('.tabbar__tab--active')?.textContent ?? '').toContain('b'))
   })
 
+  it('YAZ-5201: in a window with vaults A and B, the course stays in the vault it was opened from: B in front during the run makes nothing in B', async () => {
+    const files = { '/a/x.md': { content: '# x', mtime: 1 }, '/b/y.md': { content: '# y', mtime: 1 } }
+    const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md', '/b/y.md'] }, files, (b) => {
+      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'review.json' ? { enabled: true } : null))
+      Object.assign(b.bridge, { createDir: vi.fn(async (req: { path: string }) => ({ path: req.path })), mintPageId: vi.fn(async () => 'TST-1') })
+    })
+    act(() => requestCourse('first-card'))
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 2 of 12'))
+    expect(bridge.state.setCourse).toHaveBeenCalledWith({ vault: '/a' })
+    // The person brings vault B to the front in the middle of the course (the tour lets them use the whole app).
+    act(() => showTourPlace({ kind: 'file', path: '/b/y.md' }))
+    await vi.waitFor(() => expect(document.querySelector('.tabbar__tab--active')?.textContent ?? '').toContain('y'))
+    const tryIt = [...document.querySelectorAll<HTMLButtonElement>('.course button')].find((b) => b.textContent === 'Try it in the app')!
+    act(() => tryIt.click())
+    const createDir = (bridge as unknown as { createDir: ReturnType<typeof vi.fn> }).createDir
+    await vi.waitFor(() => expect(createDir).toHaveBeenCalled(), { timeout: SLOW_RUNNER_MS })
+    expect(createDir.mock.calls.map(([req]) => (req as { path: string }).path)).toEqual(['/a/course-cards'])
+    act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    document.querySelectorAll('.course-tour-root').forEach((n) => n.remove())
+  })
+
+  it('YAZ-5201: the course opens again at its place in the vault kept with it; when that vault is not in the window, one line and "Start over" in the vault in front', async () => {
+    const state: AppState = { ...defaultAppState(), course: { ...defaultCourseState(), chapter: 'inbox', clip: 'c3-04', vault: '/gone' } }
+    const { bridge } = await mount(state, { id: 'w1', root: '/a', file: '/a/x.md', tabs: ['/a/x.md'] }, { '/a/x.md': { content: '# x', mtime: 1 } })
+    act(() => requestCourse())
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 3 of 12'))
+    expect([...document.querySelectorAll('.course__note')].map((n) => n.textContent)).toEqual(['gone is not open in this window, so the course makes no files. Start over in a'])
+    expect(bridge.state.setCourse).not.toHaveBeenCalledWith(expect.objectContaining({ vault: '/a' }))
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('.course button')].find((b) => b.textContent === 'Start over in a')!.click())
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 1 of 12'))
+    expect(bridge.state.setCourse).toHaveBeenCalledWith({ chapter: '', clip: '', vault: '/a' })
+    expect(document.querySelector('.course__note')).toBeNull()
+    act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+  })
+
   it('YAZ-5114 with YAZ-5120: "Learn the formats" opens the course at the chapter on good cards and formats, not the folder', async () => {
     await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
     const at = COURSE.findIndex((chapter) => chapter.title === FORMATS_CHAPTER_TITLE)

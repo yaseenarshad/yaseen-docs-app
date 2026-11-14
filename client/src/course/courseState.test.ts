@@ -26,6 +26,15 @@ describe('AppState.course (YAZ-5120)', () => {
     expect(applyCoursePatch(s, { made: [] })).toBe(s)
   })
 
+  it('vault (YAZ-5201): an absolute path or null; anything else keeps the base', () => {
+    expect(defaultCourseState().vault).toBeNull()
+    expect(cleanCourseState({ vault: '/a' }).vault).toBe('/a')
+    expect(cleanCourseState({ vault: null }, { ...defaultCourseState(), vault: '/a' }).vault).toBeNull()
+    expect(cleanCourseState({ vault: 'a' }, { ...defaultCourseState(), vault: '/b' }).vault).toBe('/b')
+    const s = { ...defaultCourseState(), vault: '/a' }
+    expect(applyCoursePatch(s, { vault: '/a' })).toBe(s)
+  })
+
   it('applyCoursePatch: the same object when nothing changed, else the new state', () => {
     const s = defaultCourseState()
     expect(applyCoursePatch(s, { muted: false })).toBe(s)

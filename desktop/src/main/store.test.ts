@@ -190,7 +190,7 @@ describe('createStore: loading', () => {
       settingsFolder: '/Sync/yaseen-docs-settings',
       settingsSavedAt: 42,
       tabCanvas: { allWindows: true, snap: true, cards: [{ win: 'w1', path: '/v/a.md', copy: 0, by: 'folder', x: 10, y: -20.5 }], frames: [] },
-      course: { chapter: 'inbox', clip: 'c3-04', finished: ['why', 'first-card'], done: false, dismissed: true, offered: true, muted: true, speed: 1.25, made: [], toured: ['first-card'] },
+      course: { chapter: 'inbox', clip: 'c3-04', finished: ['why', 'first-card'], done: false, dismissed: true, offered: true, muted: true, speed: 1.25, made: [], toured: ['first-card'], vault: '/v' },
     }
     await seed(state)
     expect(createStore(file).get()).toEqual({ ...state, folders: { '/v': { ...state.folders['/v'], expanded: [], name: null, key: null } } })

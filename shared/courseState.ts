@@ -15,6 +15,8 @@
  *   person sees in the sidebar, and deleting any of it (the whole folder too) is safe; the course makes what a step
  *   needs again.
  * - `toured`: the ids of the chapters whose guided tour ("Try it in the app", YAZ-5123) the person finished.
+ * - `vault` (YAZ-5201): the vault the course is bound to, kept with the place. The course works in ONE vault for its whole
+ *   run: the vault in front when it was opened, or, when it opens again at this place, this one. null: none yet.
  */
 
 /** The player's speeds (YAZ-5059 suggestion 21). */
@@ -40,6 +42,7 @@ export interface CourseState {
   speed: CourseSpeed
   made: CourseMade[]
   toured: string[]
+  vault: string | null
 }
 
 /** One change to the course's state: only the fields it names. */
@@ -54,7 +57,7 @@ const MAX_MADE_CARDS = 256
 const MAX_PATH = 4096
 
 export function defaultCourseState(): CourseState {
-  return { chapter: '', clip: '', finished: [], done: false, dismissed: false, offered: false, muted: false, speed: 1, made: [], toured: [] }
+  return { chapter: '', clip: '', finished: [], done: false, dismissed: false, offered: false, muted: false, speed: 1, made: [], toured: [], vault: null }
 }
 
 const isId = (v: unknown): v is string => typeof v === 'string' && v.length <= MAX_ID && /^[A-Za-z0-9_-]*$/.test(v)
@@ -91,6 +94,7 @@ export function cleanCourseState(raw: unknown, base: CourseState = defaultCourse
     speed: isSpeed(r.speed) ? r.speed : base.speed,
     made: Array.isArray(r.made) ? uniqueVaults(r.made.map(cleanMade).filter((m): m is CourseMade => m !== null)).slice(0, MAX_MADE_VAULTS) : base.made,
     toured: ids(r.toured, base.toured),
+    vault: r.vault === null || isPath(r.vault) ? r.vault : base.vault,
   }
 }
 
@@ -103,6 +107,7 @@ export function sameCourseState(a: CourseState, b: CourseState): boolean {
     && a.finished.length === b.finished.length && a.finished.every((id, i) => id === b.finished[i])
     && JSON.stringify(a.made) === JSON.stringify(b.made)
     && a.toured.length === b.toured.length && a.toured.every((id, i) => id === b.toured[i])
+    && a.vault === b.vault
 }
 
 /** Pure: `patch` applied to `state` by the rule of `cleanCourseState`; the same object when nothing changed. */

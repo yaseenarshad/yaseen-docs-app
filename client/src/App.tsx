@@ -39,8 +39,9 @@ import { absFrom, basename, dirname, relTo, stripExt } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
-import { FORMATS_CHAPTER_TITLE, onCourseRequest, requestCourseChapter } from './course/openCourse'
+import { FORMATS_CHAPTER_TITLE, courseLostLine, courseStartOverLabel, courseVaultAt, onCourseRequest, requestCourseChapter } from './course/openCourse'
 import type { CourseVault } from './course/courseHost'
+import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { onTourShow } from './course/tourBus'
 import { COURSE_NOTICE, offerInInbox, offerNotice } from './course/courseFacts'
 import { resolveItem } from './lists/focusFolders'
@@ -1473,29 +1474,56 @@ export function App() {
 
   // THE CARD COURSE (YAZ-5120): one layer over the window, opened only by a person's click (Settings › Review, the
   // notice, the empty Inbox, `requestCourse` from any part). Settings closes first. `n` remounts it for a new request.
-  const [courseOpen, setCourseOpen] = useState<{ chapter?: string; n: number } | null>(null)
+  // `vault`: the ONE vault of this run (YAZ-5201, `courseVaultAt`), kept with the place; `lost`: the kept one is not in the window.
+  const [courseOpen, setCourseOpen] = useState<{ chapter?: string; n: number; vault: string | null; lost?: string } | null>(null)
+  const courseFront = useRef(active.root)
+  courseFront.current = active.root
   const openCourse = useCallback((chapter?: string) => {
     setSettingsOpen(false)
-    setCourseOpen((open) => ({ ...(chapter === undefined ? {} : { chapter }), n: (open?.n ?? 0) + 1 }))
+    const at = courseVaultAt(chapter, storage.getCourse(), courseFront.current, live.current.roots)
+    if (at.vault !== null) storage.setCourse({ vault: at.vault })
+    setCourseOpen((open) => ({ ...(chapter === undefined ? {} : { chapter }), n: (open?.n ?? 0) + 1, ...at }))
+  }, [])
+  /** "Start over in <vault>" (YAZ-5201): the course from its start, bound to the vault in front. */
+  const startCourseOver = useCallback(() => {
+    const front = courseFront.current
+    storage.setCourse({ chapter: '', clip: '', vault: front })
+    setCourseOpen((open) => ({ n: (open?.n ?? 0) + 1, vault: front }))
   }, [])
   const closeCourse = useCallback(() => setCourseOpen(null), [])
   useEffect(() => onCourseRequest(({ chapter }) => openCourse(chapter)), [openCourse])
   const course = useSyncExternalStore(storage.subscribe, storage.getCourse)
-  // The course's vault (YAZ-5124): the active tab's, read live, so the course's host stays one object while it is open.
-  const courseLive = useRef(active)
-  courseLive.current = active
-  const courseRoot = active.root
-  const courseIndex = active.wikilinks
+  // The course's vault (YAZ-5124, YAZ-5201): the scope of the run's ONE vault, read live, so the course's host stays one
+  // object while it is open. Never the active tab's: the person may bring another vault to the front during a tour.
+  const courseBound = courseOpen?.vault ?? null
+  const courseScope = courseBound === null ? undefined : vaults[roots.indexOf(courseBound)]
+  const courseLive = useRef(courseScope)
+  courseLive.current = courseScope
+  const courseRoot = courseScope?.root ?? null
+  const courseIndex = courseScope?.wikilinks
+  /** The run's vault left the window, or the kept one is not in it (YAZ-5201): the one line, and "Start over" in the vault in front. */
+  const courseLostRoot = courseOpen === null ? null : (courseOpen.lost ?? (courseBound !== null && courseScope === undefined ? courseBound : null))
+  const courseLost =
+    courseLostRoot === null
+      ? undefined
+      : {
+          line: courseLostLine(storage.vaultName(courseLostRoot)),
+          ...(active.root === null ? {} : { startOver: { label: courseStartOverLabel(active.name ?? storage.vaultName(active.root)), run: startCourseOver } }),
+        }
   const courseVault = useMemo<CourseVault | undefined>(
     () =>
-      courseRoot === null
+      courseRoot === null || courseIndex === undefined
         ? undefined
         : {
             root: courseRoot,
             index: courseIndex,
-            ready: () => courseLive.current.ids !== undefined,
-            readOnly: () => courseLive.current.readOnlyVault.settings.on,
-            review: () => ({ ready: courseLive.current.reviewSettings.ready === true, on: courseLive.current.reviewSettings.settings.enabled, settings: courseLive.current.reviewSettings.settings }),
+            // A scope gone from the window (the vault was removed) reads as not ready: the course only shows.
+            ready: () => courseLive.current?.root === courseRoot && courseLive.current.ids !== undefined,
+            readOnly: () => courseLive.current?.readOnlyVault.settings.on ?? true,
+            review: () => {
+              const review = courseLive.current?.reviewSettings
+              return { ready: review?.ready === true, on: review?.settings.enabled === true, settings: review?.settings ?? DEFAULT_REVIEW_SETTINGS }
+            },
             cardSkill,
           },
     [courseRoot, courseIndex, cardSkill],
@@ -3859,7 +3887,7 @@ export function App() {
       {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults }} initialPage={settingsPage} onClose={closeSettings} />}
       {courseOpen !== null && (
         <Suspense fallback={null}>
-          <CardCourse key={courseOpen.n} chapter={courseOpen.chapter} vault={root} onClose={closeCourse} courseVault={courseVault} />
+          <CardCourse key={courseOpen.n} chapter={courseOpen.chapter} vault={courseOpen.vault} onClose={closeCourse} courseVault={courseVault} lost={courseLost} />
         </Suspense>
       )}
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Page (D7). */}

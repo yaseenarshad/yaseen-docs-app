@@ -354,4 +354,34 @@ describe('the course host (YAZ-5124)', () => {
     expect(seen.at(-1)?.summary()).toEqual({ folder: null, cards: [] })
     return seen.at(-1)!.courseCards().then((at) => expect(at).toEqual({ showOnly: SHOW_ONLY.readOnly }))
   })
+
+  it('YAZ-5201: the host is bound to the vault the course opened with; a new vault view (another tab in front) changes nothing', () => {
+    const seen: CourseHost[] = []
+    const Scene = ({ host }: SceneProps) => (seen.push(host), null)
+    const view = (root: string): CourseVault => ({
+      root,
+      index: { records: [], folders: [], ids: true, subscribe: () => () => undefined },
+      ready: () => true,
+      readOnly: () => false,
+      review: () => ({ ready: true, on: true, settings: DEFAULT_REVIEW_SETTINGS }),
+      cardSkill: null,
+    })
+    const props = mount({ vault: '/a', courseVault: view('/a'), scenes: () => Scene })
+    const first = seen.at(-1)
+    expect(first?.vault).toBe('/a')
+    act(() => root.render(<CardCourse {...props} vault="/b" courseVault={view('/b')} />))
+    expect(seen.at(-1)?.vault).toBe('/a')
+    expect(seen.at(-1)).toBe(first)
+  })
+
+  it('YAZ-5201: a bound vault that is not in the window: one line, nothing is made, and "Start over" in the vault in front', async () => {
+    const seen: CourseHost[] = []
+    const Scene = ({ host }: SceneProps) => (seen.push(host), null)
+    const startOver = vi.fn()
+    mount({ vault: null, lost: { line: 'a is not open in this window, so the course makes no files.', startOver: { label: 'Start over in b', run: startOver } }, scenes: () => Scene })
+    expect([...document.querySelectorAll('.course__note')].map((n) => n.textContent)).toEqual(['a is not open in this window, so the course makes no files. Start over in b'])
+    expect(await seen.at(-1)!.courseCards()).toEqual({ showOnly: 'a is not open in this window, so the course makes no files.' })
+    act(() => button('Start over in b')!.click())
+    expect(startOver).toHaveBeenCalledTimes(1)
+  })
 })

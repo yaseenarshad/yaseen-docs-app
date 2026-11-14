@@ -34,7 +34,7 @@ import './course.css'
 export interface CardCourseProps {
   /** Open at the start of this chapter (its id in `script.ts`); absent: at the saved place. */
   chapter?: string
-  /** The window's active vault, for the course's side effects; null with none open. */
+  /** The course's ONE vault for this run (YAZ-5201), for its side effects; null with none open. */
   vault: string | null
   onClose: () => void
   /** The seams, each with the frame's default. `course` is the script; tests give a small one. */
@@ -43,8 +43,13 @@ export interface CardCourseProps {
   voice?: Voice
   tour?: CourseTour
   host?: CourseHost
-  /** The live view of the course's vault (YAZ-5124): with it, and no `host`, the course makes real files (`vaultCourseHost`). */
+  /**
+   * The live view of the course's vault (YAZ-5124): with it, and no `host`, the course makes real files (`vaultCourseHost`).
+   * The course is bound to the view it opens with for its whole run (YAZ-5201): a later view of another vault changes nothing.
+   */
   courseVault?: CourseVault
+  /** The vault kept with the course's place is not in the window (YAZ-5201): one line, no file is made, and a way to start over in the vault in front. */
+  lost?: { line: string; startOver?: { label: string; run: () => void } }
 }
 
 const SPEED_LABEL: Record<CourseSpeed, string> = { 1: '1×', 1.25: '1.25×', 1.5: '1.5×' }
@@ -83,7 +88,7 @@ function createClock(read: () => SceneTime) {
   return { clock, frame: () => frames.forEach((fn) => fn()), mark: (index: number) => marks.forEach((fn) => fn(index)) }
 }
 
-export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, scenes = courseScenes, voice = SILENT_VOICE, tour: tourIn, host: hostIn, courseVault }: CardCourseProps) {
+export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, scenes = courseScenes, voice = SILENT_VOICE, tour: tourIn, host: hostIn, courseVault: courseVaultIn, lost }: CardCourseProps) {
   const reducedMotion = useReducedMotion()
 
   // ---- the voice (6D1): each chapter's sound once it is here; the clip that plays keeps what it started with ----
@@ -374,7 +379,13 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
   }
 
   // ---- the tour ----
-  const host = useMemo(() => hostIn ?? (courseVault === undefined ? showOnlyHost(vault) : vaultCourseHost(courseVault)), [hostIn, vault, courseVault])
+  // The course's ONE vault (YAZ-5201): the view it opened with, for the whole run. The tab in front may change meanwhile.
+  const [bound] = useState(() => ({ vault, courseVault: courseVaultIn }))
+  const lostLine = lost?.line ?? null
+  const host = useMemo(
+    () => hostIn ?? (lostLine !== null ? showOnlyHost(null, lostLine) : bound.courseVault === undefined ? showOnlyHost(bound.vault) : vaultCourseHost(bound.courseVault)),
+    [hostIn, lostLine, bound],
+  )
   // The AI step's watch and timer stop with the layer; its state stays for the next open (YAZ-5124).
   useEffect(() => () => host.agentStep.stop(), [host])
   // The real tour over the app (YAZ-5123), with the same host as the scenes.
@@ -485,6 +496,19 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
         {page !== null && (
           <p className="course__note" role="status">
             {page}
+          </p>
+        )}
+        {lost !== undefined && (
+          <p className="course__note" role="status">
+            {lost.line}
+            {lost.startOver !== undefined && (
+              <>
+                {' '}
+                <button type="button" className="course__btn" onClick={lost.startOver.run}>
+                  {lost.startOver.label}
+                </button>
+              </>
+            )}
           </p>
         )}
         {missing.has(chapter.id) && voice.retry !== undefined && (

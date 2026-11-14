@@ -48,3 +48,21 @@ export async function requestCourseChapter(title: string, fallback: () => void, 
   if (id === undefined) fallback()
   else requestCourse(id)
 }
+
+/**
+ * The ONE vault a course run works in (YAZ-5201), chosen when the course opens and kept for the whole run: every write,
+ * the AI step's watch, the tours' checks and the end screen use it, whichever tab is in front later.
+ *
+ * - A new run (a chapter asked for, or no place kept yet): the vault in front (`front`).
+ * - The course opens again at its kept place: the vault kept with the place (`AppState.course.vault`). When that vault
+ *   is not in the window any more, `lost` names it: the course says so in one line and offers to start over in front.
+ */
+export function courseVaultAt(chapter: string | undefined, saved: { chapter: string; clip: string; vault: string | null }, front: string | null, roots: readonly string[]): { vault: string | null; lost?: string } {
+  const resumes = chapter === undefined && saved.vault !== null && (saved.chapter !== '' || saved.clip !== '')
+  if (!resumes || saved.vault === null) return { vault: front }
+  return roots.includes(saved.vault) ? { vault: saved.vault } : { vault: null, lost: saved.vault }
+}
+
+/** The one line when the run's vault is not in the window (YAZ-5201), and the button that starts over in the vault in front. */
+export const courseLostLine = (vaultName: string): string => `${vaultName} is not open in this window, so the course makes no files.`
+export const courseStartOverLabel = (vaultName: string): string => `Start over in ${vaultName}`
