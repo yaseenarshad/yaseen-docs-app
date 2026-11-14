@@ -34,10 +34,10 @@
  * bubbling DOM event, `CARD_OPEN` (`mdapp:card-open`, detail `CardOpenRequest`), from its
  * `.ProseMirror`; App's listener opens the card window. ⌘↵ anywhere else is unchanged.
  *
- * REVIEWS (YAZ-5000, YAZ-5032; YAZ-5105 round 4): a card with reviews has THE Reviews strip at its bottom, tucked under
- * its text, closed — the one `CardReviews` of the Inbox and the card file tab (`reviewsStrip.ts`, a React root loaded
- * the first time a card with reviews draws) — with the card's facts on its right (`CardFacts`: next review, recall), so
- * they show without opening; a card with none has no strip (silence). A click opens the table inside it. Open or closed
+ * THE STRIP (YAZ-5000, YAZ-5032; YAZ-5105 round 4; YAZ-5380, YAZ-5381): every card has THE strip at its bottom, tucked
+ * under its text, closed — the one `CardStrip` of the Inbox and the card file tab (`reviewsStrip.ts`, a React root
+ * loaded the first time a card draws) — its parts Reviews and Properties, one open at a time. Its right side is empty:
+ * the due date and the recall chance are the open Reviews table's last line. A click opens a part. Open or closed
  * is UI state (`openParts`, its open part by page and ID, so a page read again keeps it), never a transaction. The table's delete
  * is the vault's `deleteReview` (`deps.reviews`): a write of the card line to the FILE, with Undo in its notice, as in
  * the card window, so it works read only and in Explore's read layer too.
@@ -406,7 +406,6 @@ export class CardBlockView implements NodeView {
       onDelete: id === null || path === null ? undefined : (review) => void door.deleteReview(path, id, review),
       open: this.openPart,
       onToggle: (part) => this.togglePart(part),
-      facts: true,
       properties: cardPropertiesOf(line),
     })
   }
