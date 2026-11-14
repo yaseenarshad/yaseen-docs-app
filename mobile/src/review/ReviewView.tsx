@@ -15,10 +15,11 @@ import { openPhoneDays, phoneReviewHost } from '../answers/reviewHost'
 import type { AnswersState } from '../answers/answers'
 import type { ReviewLink } from './link'
 import { storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
+import { lostRows } from '../status/dot'
 import { PhoneCard, type CardLinkOpen } from './PhoneCard'
 import { createReviewSource, type ReviewSource } from './source'
 import { useWakeLock } from './wakeLock'
-import { FILTERS, NEEDS_FIX, filterDone, filterLabel, lostAction, lostTitle } from './words'
+import { FILTERS, NEEDS_FIX, filterDone, filterLabel, lostTitle } from './words'
 import { DiscardAnswer } from '../screens/DiscardAnswer'
 import './review.css'
 
@@ -53,6 +54,11 @@ export interface ReviewViewProps {
   open: (to: CardLinkOpen) => void
   /** The app's media (`useVaultMedia`). Absent: `link.media`, else the store alone. */
   media?: VaultMedia
+  /**
+   * The tab is on the screen (YAZ-5224: the shell keeps it mounted behind a page, a card, another tab). Off the screen
+   * the session stays; the answer timer and the Wake Lock rest. Default true.
+   */
+  shown?: boolean
 }
 
 interface Setup {
@@ -118,12 +124,16 @@ interface Step {
 }
 
 /** The line under the buttons: the last answer, the last add, or a ⋯ action. */
-type Line = { kind: 'answer'; count: number } | { kind: 'mark'; text: string; key: string | null }
+type Line = { kind: 'answer'; count: number; id: string } | { kind: 'mark'; text: string; key: string | null }
 
-function ReviewSession({ link, vault, vaultName, unit, open, source, host, media }: ReviewViewProps & Setup) {
+/** YAZ-5226: how long a new card is on the screen before a tap acts on it (a double tap is about 150 ms apart). */
+export const SEEN_MS = 400
+
+function ReviewSession({ link, vault, vaultName, unit, open, source, host, media, shown = true }: ReviewViewProps & Setup) {
   const { ready, settings } = useSourceState(source)
   const [notice, setNotice] = useState<string | null>(null)
-  const onNotice = useCallback((text: string) => setNotice(text), [])
+  // No inner error text reaches the screen (YAZ-5076, YAZ-5228): the hook's words before the reason, e.g. "Can't undo the answer.".
+  const onNotice = useCallback((text: string) => setNotice(`${text.split(':')[0].trim()}.`), [])
   const review = useCardReview(vault, source, settings, onNotice, vaultName, host)
   const { session } = review
 
@@ -137,7 +147,8 @@ function ReviewSession({ link, vault, vaultName, unit, open, source, host, media
   // A pass that ends well asks again for each picture that waited for a signal.
   const { engine } = link
   const retry = useCallback((fn: () => void) => engine.subscribe((e) => void (e.type === 'state' && e.state.status === 'synced' && fn())), [engine])
-  useWakeLock(session?.card != null)
+  // ONE owner of the Wake Lock (YAZ-5232): this session, while its card is on the screen.
+  useWakeLock(shown && session?.card != null)
 
   if (!ready) return <Waiting />
   if (!settings.enabled)
@@ -147,7 +158,7 @@ function ReviewSession({ link, vault, vaultName, unit, open, source, host, media
       </div>
     )
   if (session === null) return <Waiting />
-  return <SessionScreen {...{ link, unit, open, source, host, media, retry, review, session, answers, notice, setNotice }} />
+  return <SessionScreen {...{ link, unit, open, source, host, media, retry, review, session, answers, notice, setNotice, shown }} />
 }
 
 function SessionScreen({
@@ -163,6 +174,7 @@ function SessionScreen({
   answers,
   notice,
   setNotice,
+  shown,
 }: {
   link: ReviewLink
   unit: UnitText
@@ -176,6 +188,7 @@ function SessionScreen({
   answers: AnswersState
   notice: string | null
   setNotice: (text: string | null) => void
+  shown: boolean
 }) {
   const card = session.card
   const page = card?.page ?? null
@@ -198,10 +211,34 @@ function SessionScreen({
   const step = stepState.key === cardKey ? stepState : { key: cardKey, sides: 1, shown: 0 }
   const upTo = (sides: number) => counts.slice(0, sides).reduce((a, b) => a + b, 0)
   const done = text !== null && step.sides >= counts.length && step.shown >= upTo(counts.length)
+  // YAZ-5226: after an answer, taps wait until the next card is on the screen AND a short time has passed, so the
+  // second tap of a double tap never lands on a card the person has not seen. The answer buttons still work at any
+  // step of a card once it is seen (decision 11, as the Mac: "the buttons should always be there").
+  const [guard, setGuard] = useState<{ from: string | null } | null>(null)
+  const guarded = guard !== null
+  useEffect(() => {
+    if (guard === null || page === null || cardKey === guard.from) return
+    const timer = setTimeout(() => setGuard(null), SEEN_MS)
+    return () => clearTimeout(timer)
+  }, [guard, cardKey, page])
   const advance = () => {
-    if (done || page === null) return
+    if (done || page === null || guarded) return
     setStep(step.shown < upTo(step.sides) ? { ...step, shown: step.shown + 1 } : { ...step, sides: step.sides + 1 })
   }
+
+  // YAZ-5229: VoiceOver hears what a step shows (the word, or the new side), and nothing before it shows.
+  const [revealed, setRevealed] = useState('')
+  useEffect(() => {
+    if (step.shown === 0 && step.sides === 1) return setRevealed('')
+    const id = setTimeout(() => {
+      const body = document.querySelector('.review .phone-card__body')
+      const words = body?.querySelectorAll('.card__hidden')
+      const side = body?.querySelector(`.card__side[data-side="${step.sides - 1}"]`)
+      const last = step.shown > 0 ? words?.[step.shown - 1]?.textContent : null
+      setRevealed((last ?? side?.textContent ?? '').trim())
+    }, 0)
+    return () => clearTimeout(id)
+  }, [step.key, step.sides, step.shown]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // The buttons' reviews are fixed when the card shows (D13): the answer writes what was fixed.
   const { showAnswers } = review
@@ -210,7 +247,7 @@ function SessionScreen({
   }, [page, session.answers, showAnswers])
 
   // Addition 5: the seconds of this card, from the moment its text shows; they stop while the app is in the background.
-  const seconds = useAnswerTimer(page === null ? null : cardKey, true, review.settings.pauseAfter)
+  const seconds = useAnswerTimer(page === null ? null : cardKey, shown, review.settings.pauseAfter)
 
   // A card file that is not valid (round 15, item 3): its first card shows, with one line.
   const [needsFix, setNeedsFix] = useState<string | null>(null)
@@ -236,11 +273,21 @@ function SessionScreen({
   const ratings = answerRatings(review.settings)
 
   const answerWith = (rating: CardRating) => {
-    if (page === null) return
+    if (page === null || card === null || guarded) return
     setMenu(null)
     setNotice(null)
-    setLine({ kind: 'answer', count: session.answered.length + 1 })
+    setGuard({ from: cardKey })
+    setLine({ kind: 'answer', count: session.answered.length + 1, id: card.id })
     void review.answer(rating, seconds())
+  }
+  // YAZ-5228: an answer whose card was gone at the send is in the amber line. Its Undo takes it away cleanly (as
+  // Discard), and never asks the host for a card that is not there.
+  const lostRow = line?.kind === 'answer' ? lostRows(answers.lost).find((r) => r.id === line.id && answers.lost.some((l) => r.seqs.includes(l.seq) && l.op.kind === 'review')) : undefined
+  const undo = () => {
+    setNotice(null)
+    if (lostRow === undefined) return void review.undo()
+    setLine({ kind: 'mark', text: 'Answer removed', key: cardKey })
+    void Promise.all(lostRow.seqs.map((seq) => link.answers.discard(seq)))
   }
   const act = (text: string, run: () => Promise<unknown>) => {
     setMenu(null)
@@ -263,9 +310,11 @@ function SessionScreen({
     session.lastAdd !== null
       ? { text: `${addedLine(session.lastAdd.kind, session.lastAdd.count)}`, undo: session.canUndo }
       : line?.kind === 'answer' && line.count === answeredNow && answeredNow > 0
-        ? { text: 'Answered', undo: session.canUndo }
+        ? { text: 'Answered', undo: session.canUndo || lostRow !== undefined }
         : line?.kind === 'mark' && (line.key === cardKey || line.text.startsWith('Archived'))
           ? { text: line.text, undo: false }
+          : line?.kind === 'mark' && line.text === 'Answer removed'
+            ? { text: line.text, undo: false }
           : null
 
   const headTitle = title.waits && !done ? '' : title.text
@@ -274,7 +323,7 @@ function SessionScreen({
 
   return (
     <div className="review">
-      {answers.lost.length > 0 && <LostAnswers answers={answers} link={link} settings={review.settings} />}
+      {answers.lost.length > 0 && <LostAnswers answers={answers} link={link} />}
       {notice !== null && (
         <p className="review__notice" role="alert">
           {notice}
@@ -326,18 +375,24 @@ function SessionScreen({
             {pageTitle !== null && <span className="review__in"> · in {pageTitle}</span>}
           </p>
           {needsFix === card.path && <p className="review__fix">{NEEDS_FIX}</p>}
+          {/* YAZ-5229: the card is TEXT for VoiceOver (its question is read; a hidden word stays "Hidden word" until it
+              shows), not one button with a label. The tap is the sighted way; VoiceOver has its own button below. A tap
+              on a link, a pill, a picture or a sound is theirs, never a step (YAZ-5078 checker, M1). */}
           <div
             className="review__card card card-screen"
-            role="button"
-            tabIndex={0}
-            aria-label={done ? 'Card, fully shown' : 'Card. Tap to show the next part'}
             onClick={(e) => {
-              if (e.target instanceof Element && e.target.closest('a[href], .phone-card__media') !== null) return
+              if (e.target instanceof Element && e.target.closest(CARD_OWN_TAPS) !== null) return
               advance()
             }}
           >
             {text !== null && page !== null ? <PhoneCard text={text} holder={card.path} show={{ sides: step.sides, shown: step.shown }} links={source.links} files={source.files} media={media} retry={retry} onOpen={open} /> : <div className="review__card-wait" aria-busy="true" />}
           </div>
+          <button type="button" className="sr-only" onClick={advance} disabled={done}>
+            {done ? 'The card is fully shown' : 'Show the next part'}
+          </button>
+          <p className="sr-only" aria-live="polite">
+            {revealed}
+          </p>
           {counts.length > 1 && <p className="review__sides">{`Side ${Math.min(step.sides, counts.length)} of ${counts.length}`}</p>}
         </>
       ) : (
@@ -346,7 +401,7 @@ function SessionScreen({
 
       <div className="review__dock">
         {card !== null && (
-          <div className="review__answers">
+          <div className="review__answers" data-guard={guarded ? '' : undefined}>
             {ratings.map((rating) => (
               <button key={rating} type="button" className="review__answer" data-rating={rating} disabled={page === null} onClick={() => answerWith(rating)}>
                 {answerIcon(rating, review.settings.buttons)}
@@ -398,7 +453,7 @@ function SessionScreen({
               {shownLine.undo && (
                 <>
                   <span aria-hidden>·</span>
-                  <button type="button" className="link-btn review__undo" onClick={() => void review.undo()}>
+                  <button type="button" className="link-btn review__undo" onClick={undo}>
                     Undo
                   </button>
                 </>
@@ -410,6 +465,9 @@ function SessionScreen({
     </div>
   )
 }
+
+/** A tap on these in a card is theirs (open, play, look), never a step. */
+const CARD_OWN_TAPS = 'a[href], [data-card-link], [data-card-board], img, .card__audio, .page-media'
 
 const shortName = (page: { text: string; fileTitle?: string } | null, id: string): string => {
   const t = page === null ? '' : (page.fileTitle ?? cardTitle(page.text)).trim()
@@ -475,20 +533,22 @@ function DoneScreen({ review, session, addKinds }: { review: CardReviewApi; sess
 }
 
 /**
- * Round 12, item 9: answers whose card was gone when they were sent. Amber; each has Discard. An answer is two actions
- * (its review, and Up next off when the card was up next): the second is part of the answer, so it is one row.
+ * Round 12, item 9: the answers whose card was gone at the send. Amber; one row for each card, with every lost action
+ * of that card, and Discard (with its ask) takes them all. The rows, the count and the words are 4D's own (`lostRows`
+ * in `status/dot.ts`), so the dot and this line always agree (YAZ-5227).
  */
-function LostAnswers({ answers, link, settings }: { answers: AnswersState; link: ReviewLink; settings: CardReviewApi['settings'] }) {
+function LostAnswers({ answers, link }: { answers: AnswersState; link: ReviewLink }) {
   const rows = lostRows(answers.lost)
   return (
     <div className="review__lost" role="alert">
       <p className="review__lost-title">{lostTitle(rows.length)}</p>
-      {rows.map(({ row, with: parts }) => {
-        const what = `${lostAction(row.op, settings)} · ${row.title === '' ? row.op.id : row.title}`
+      {rows.map((row) => {
+        const title = row.title === '' ? row.id : row.title
+        const what = `${row.answer} · ${title}`
         return (
-          <div key={row.seq} className="review__lost-row">
+          <div key={row.id} className="review__lost-row">
             <span className="review__lost-what">{what}</span>
-            <DiscardAnswer title={row.title === '' ? row.op.id : row.title} answer={lostAction(row.op, settings)} label={`Discard: ${what}`} onDiscard={() => Promise.all(parts.map((l) => link.answers.discard(l.seq)))} />
+            <DiscardAnswer title={title} answer={row.answer} label={`Discard: ${what}`} onDiscard={() => Promise.all(row.seqs.map((seq) => link.answers.discard(seq)))} />
           </div>
         )
       })}
@@ -496,10 +556,5 @@ function LostAnswers({ answers, link, settings }: { answers: AnswersState; link:
   )
 }
 
-type Lost = AnswersState['lost'][number]
-
-/** The lost actions as the person made them: Up next off goes with the answer of the same card. */
-export function lostRows(lost: readonly Lost[]): { row: Lost; with: Lost[] }[] {
-  const answerOf = (l: Lost) => (l.op.kind === 'next' && !l.op.on ? lost.find((r) => r.op.kind === 'review' && r.op.id === l.op.id) : undefined)
-  return lost.filter((l) => answerOf(l) === undefined).map((row) => ({ row, with: [row, ...lost.filter((l) => answerOf(l) === row)] }))
-}
+/** The Review tab's lost rows ARE the dot's (one function, YAZ-5227). */
+export { lostRows }

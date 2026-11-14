@@ -17,22 +17,32 @@ export function useWakeLock(on: boolean, nav: { wakeLock?: WakeLockLike } = navi
   useEffect(() => {
     const api = nav.wakeLock
     if (!on || api === undefined) return
+    // ONE lock at most (YAZ-5232): an ask that is still open counts as held, and a lock that comes when one is held
+    // already, or after the leave, is let go at once.
     let held: WakeLockSentinelLike | null = null
+    let asking = false
     let live = true
     const ask = () => {
-      if (doc.visibilityState !== 'visible' || held !== null) return
+      if (doc.visibilityState !== 'visible' || held !== null || asking) return
+      asking = true
       api.request('screen').then(
         (lock) => {
-          if (live) held = lock
+          asking = false
+          if (live && held === null) held = lock
           else void lock.release().catch(() => undefined)
         },
-        () => undefined, // the quiet fallback
+        () => {
+          asking = false // the quiet fallback
+        },
       )
     }
     const seen = () => {
-      // Hidden: iOS has ended the lock already. Visible again: ask once more.
+      // Hidden: iOS ends the lock itself (let go of ours too). Visible again: ask once more.
       if (doc.visibilityState === 'visible') ask()
-      else held = null
+      else if (held !== null) {
+        void held.release().catch(() => undefined)
+        held = null
+      }
     }
     ask()
     doc.addEventListener('visibilitychange', seen)
