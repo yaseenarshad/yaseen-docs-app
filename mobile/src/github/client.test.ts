@@ -119,6 +119,10 @@ describe('githubClient: the one way the phone talks to GitHub', () => {
       ['403 with no requests left this hour', () => json(403, { message: 'API rate limit exceeded' }, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(NOW / 1000 + 600) }), 'RATE_LIMITED', { resetAt: NOW + 600_000 }],
       ['429 with Retry-After (the secondary limit)', () => json(429, { message: 'slow down' }, { 'retry-after': '60' }), 'RATE_LIMITED', { resetAt: NOW + 60_000 }],
       ['403 with Retry-After (the secondary limit)', () => json(403, { message: 'You have exceeded a secondary rate limit' }, { 'retry-after': '30' }), 'RATE_LIMITED', { resetAt: NOW + 30_000 }],
+      // YAZ-5166: GitHub's docs: the secondary limit can come with no retry-after and with requests left. Wait 60 s.
+      ['403 "secondary rate limit" with no Retry-After and requests left (YAZ-5166)', () => json(403, { message: 'You have exceeded a secondary rate limit. Please wait a few minutes before you try again.' }, { 'x-ratelimit-remaining': '4990' }), 'RATE_LIMITED', { resetAt: NOW + 60_000 }],
+      ['429 "secondary rate limit" with no Retry-After (YAZ-5166)', () => json(429, { message: 'You have exceeded a secondary rate limit.' }), 'RATE_LIMITED', { resetAt: NOW + 60_000 }],
+      ['429 with no headers and no message: wait 60 s (YAZ-5166)', () => json(429, {}), 'RATE_LIMITED', { resetAt: NOW + 60_000 }],
       ['500', () => json(500, {}), 'GITHUB_DOWN'],
       ['503 with no body', () => new Response('<html>down</html>', { status: 503 }), 'GITHUB_DOWN'],
       ['no network (fetch rejects)', () => Promise.reject(new TypeError('Load failed')), 'OFFLINE'],
@@ -129,6 +133,18 @@ describe('githubClient: the one way the phone talks to GitHub', () => {
       const error = await failure(githubClient(TOKEN, { fetch, now: () => NOW }).request('/user'))
       expect(error.code).toBe(code)
       if (more) expect(error).toMatchObject(more)
+    })
+
+    it('a "slow down" answer on a write is RATE_LIMITED, never READ_ONLY (YAZ-5166: no red status on a send)', async () => {
+      const { fetch } = recorder(() => json(403, { message: 'You have exceeded a secondary rate limit' }, { 'x-ratelimit-remaining': '4990' }))
+      const error = await failure(githubClient(TOKEN, { fetch, now: () => NOW }).request('/repos/a/b/git/blobs', { method: 'POST', body: {} }))
+      expect(error).toMatchObject({ code: 'RATE_LIMITED', resetAt: NOW + 60_000 })
+    })
+
+    it('a "slow down" answer is RATE_LIMITED even when the caller allows 403 (YAZ-5166: the sign-in probes)', async () => {
+      const { fetch } = recorder(() => json(403, { message: 'You have exceeded a secondary rate limit' }, { 'x-ratelimit-remaining': '4990' }))
+      const error = await failure(githubClient(TOKEN, { fetch, now: () => NOW }).request('/repos/a/b/git/blobs', { method: 'POST', body: {}, allow: [403, 404] }))
+      expect(error).toMatchObject({ code: 'RATE_LIMITED', resetAt: NOW + 60_000 })
     })
 
     it('403 on a write is READ_ONLY: the token can read but not write (row "only read access")', async () => {

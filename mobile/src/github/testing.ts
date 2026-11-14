@@ -10,8 +10,11 @@ export interface FakeToken {
   name?: string | null
   /** `fine` is a fine-grained token (`github_pat_…`); `classic` (`ghp_…`) says its scopes in `X-OAuth-Scopes`. */
   kind?: 'fine' | 'classic'
-  /** Contents permission for each repo (`owner/name`, any case). A repo not listed: no access. */
-  repos?: Record<string, 'read' | 'write'>
+  /**
+   * Contents permission for each repo (`owner/name`, any case). A repo not listed: no access. `none`: the repo is
+   * selected, but Contents is "No access" (GitHub's default): Metadata lets the token see the repo, not its files.
+   */
+  repos?: Record<string, 'none' | 'read' | 'write'>
   /** The account permission "Gists" (write). For a classic token: the `gist` scope. */
   gists?: boolean
   /** The value of `github-authentication-token-expiration`, as GitHub writes it. */
@@ -50,6 +53,8 @@ export interface FakeGithub {
    * true, the fake checks the body first, so a token with too little access gets 422 for a wrong body.
    */
   bodyFirst: boolean
+  /** When set, the next calls that match get GitHub's "slow down" answer (403, no retry-after, requests left). */
+  slowDown: ((method: string, path: string) => boolean) | null
   /** The blobs the fake stored, by content: a blob with the same bytes is stored once, as in git. */
   blobs: Set<string>
 }
@@ -72,6 +77,7 @@ export function fakeGithub(setup: { tokens: Record<string, FakeToken>; repos: Fa
     down: false,
     rateLimitedUntil: null,
     bodyFirst: false,
+    slowDown: null,
     blobs: new Set(),
     revoke: (token) => void tokens.delete(token),
     async fetch(url, init) {
@@ -85,6 +91,8 @@ export function fakeGithub(setup: { tokens: Record<string, FakeToken>; repos: Fa
       if (fake.rateLimitedUntil !== null)
         return json(403, { message: 'API rate limit exceeded' }, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(fake.rateLimitedUntil) })
 
+      if (fake.slowDown?.(method, new URL(url).pathname))
+        return json(403, { message: 'You have exceeded a secondary rate limit. Please wait a few minutes before you try again.' }, { 'x-ratelimit-remaining': '4990' })
       const who = token === null ? undefined : tokens.get(token)
       if (who === undefined) return json(401, { message: 'Bad credentials' })
       const path = new URL(url).pathname.split('/').map(decodeURIComponent)
@@ -124,6 +132,7 @@ export function fakeGithub(setup: { tokens: Record<string, FakeToken>; repos: Fa
             permissions: { admin: ownerIsUser, push: ownerIsUser, pull: true },
           })
         }
+        if (rest.length > 0 && access === 'none' && repo.private !== false) return notAllowed()
         if (method === 'GET' && rest[0] === 'branches' && rest.length >= 2) {
           const branch = rest.slice(1).join('/')
           if (!(repo.branches ?? [repo.defaultBranch ?? 'main']).includes(branch)) return json(404, { message: 'Branch not found' })

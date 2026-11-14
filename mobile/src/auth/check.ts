@@ -44,8 +44,13 @@ export type SignInError =
   | { kind: 'unauthorized' }
   /** Not there, or a private repo the token may not see: GitHub gives the same 404 for both (row F4). */
   | { kind: 'repo-not-found'; repo: string }
-  /** The token may not read it (403). */
+  /** The token may not read it (403 on the repo itself). */
   | { kind: 'no-access'; repo: string }
+  /**
+   * The token sees the repo (Metadata) but may not read its files: Contents is "No access", GitHub's default
+   * (YAZ-5165). A 403 on the branch read or the `.yaseendocs` read.
+   */
+  | { kind: 'no-contents'; repo: string }
   | { kind: 'branch-not-found'; repo: string; branch: string }
   /** The repo and branch have no vault at the top: no `.yaseendocs` folder (round 16). */
   | { kind: 'no-vault'; repo: string; branch: string }
@@ -101,6 +106,7 @@ export async function checkSignIn(input: SignInInput, deps: CheckDeps = {}): Pro
       await client.request(repoPath(repo, 'branches', branch))
     } catch (error) {
       if (error instanceof GithubError && error.code === 'NOT_FOUND') return fail({ kind: 'branch-not-found', repo, branch })
+      if (error instanceof GithubError && error.code === 'NO_ACCESS') return fail({ kind: 'no-contents', repo })
       throw error
     }
 
@@ -109,6 +115,7 @@ export async function checkSignIn(input: SignInInput, deps: CheckDeps = {}): Pro
       top = (await client.request(repoPath(repo, 'contents', VAULT_CONFIG_DIR), { query: { ref: branch } })).data
     } catch (error) {
       if (error instanceof GithubError && error.code === 'NOT_FOUND') return fail({ kind: 'no-vault', repo, branch })
+      if (error instanceof GithubError && error.code === 'NO_ACCESS') return fail({ kind: 'no-contents', repo })
       throw error
     }
     // A folder answers with a list; a FILE named `.yaseendocs` is no vault.
@@ -178,6 +185,8 @@ export function signInMessage(error: SignInError): string {
       return `Can't find ${error.repo}, or your token can't read it. Check the name, and that the token includes this repo.`
     case 'no-access':
       return `Your token can't read ${error.repo}. Add this repo to the token on GitHub.`
+    case 'no-contents':
+      return `Your token can see ${error.repo} but can't read its files. On GitHub, open Settings › Developer settings › Personal access tokens › Fine-grained tokens, edit this token, and under Repository permissions set Contents to "Read and write".`
     case 'branch-not-found':
       return `${error.repo} has no branch "${error.branch}".`
     case 'no-vault':

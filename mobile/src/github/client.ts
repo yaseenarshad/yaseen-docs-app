@@ -74,7 +74,10 @@ export interface RequestOptions {
   accept?: string
   /** Read the answer as bytes, not JSON. */
   raw?: boolean
-  /** Statuses (other than 2xx and 304) that come back as an answer, not as a `GithubError`. */
+  /**
+   * Statuses (other than 2xx and 304) that come back as an answer, with the JSON body in `data`, not as a
+   * `GithubError`. A rate limit is never allowed: it always throws `RATE_LIMITED`.
+   */
   allow?: readonly number[]
   /** The query, encoded by the client (a path may not hold `?`). Never put the token here. */
   query?: Record<string, string>
@@ -150,14 +153,18 @@ export function githubClient(token: string, options: ClientOptions = {}): Github
       const etag = response.headers.get('etag')
       const rateLimit = readRateLimit(response.headers)
       if (response.status === 304) return { status: 304, headers: response.headers, etag, data: null, rateLimit }
-      const ok = (response.status >= 200 && response.status < 300) || (opts.allow ?? []).includes(response.status)
-      if (ok) {
+      if (response.status >= 200 && response.status < 300) {
         const data = opts.raw ? new Uint8Array(await response.arrayBuffer()) : await readJson(response)
         return { status: response.status, headers: response.headers, etag, data, rateLimit }
       }
       const body = await readJson(response)
       const said = body !== null && typeof body === 'object' && typeof (body as { message?: unknown }).message === 'string' ? (body as { message: string }).message : ''
-      throw failure(response, method, scrub(said), now(), rateLimit)
+      const error = failure(response, method, scrub(said), now(), rateLimit)
+      // A status in `allow` comes back as an answer (its JSON body in `data`), but a rate limit never does: a probe
+      // that allows 403 must not read GitHub's "slow down" as "no access" (YAZ-5166).
+      if (error.code !== 'RATE_LIMITED' && (opts.allow ?? []).includes(response.status))
+        return { status: response.status, headers: response.headers, etag, data: body, rateLimit }
+      throw error
     },
   }
 }
@@ -188,6 +195,14 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
+/**
+ * GitHub's "slow down" (the secondary rate limit) can come as a 403 or a 429 with no `retry-after`, and with
+ * `x-ratelimit-remaining` above 0, as that header counts the primary limit only. GitHub's docs then say: wait at
+ * least one minute (YAZ-5166).
+ */
+export const SLOW_DOWN_WAIT_MS = 60_000
+const SECONDARY_LIMIT = /secondary rate limit|abuse detection/i
+
 function failure(response: Response, method: Method, said: string, now: number, rateLimit: RateLimit | null): GithubError {
   const { status, headers } = response
   const message = `GitHub answered ${status}${said ? `: ${said}` : ''}`
@@ -199,7 +214,7 @@ function failure(response: Response, method: Method, said: string, now: number, 
     const reset = Number(headers.get('x-ratelimit-reset'))
     return make('RATE_LIMITED', Number.isFinite(reset) && reset > 0 ? reset * 1000 : null)
   }
-  if (status === 429) return make('RATE_LIMITED')
+  if (status === 429 || (status === 403 && SECONDARY_LIMIT.test(said))) return make('RATE_LIMITED', now + SLOW_DOWN_WAIT_MS)
   if (status === 401) return make('UNAUTHORIZED')
   if (status === 403) return make(method === 'GET' ? 'NO_ACCESS' : 'READ_ONLY')
   if (status === 404) return make('NOT_FOUND')
