@@ -1,7 +1,7 @@
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { fileURLToPath } from 'node:url'
-import { forbiddenImport } from './importRules'
+import { forbiddenImport, forbiddenUse } from './importRules'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const shared = fileURLToPath(new URL('../shared', import.meta.url))
@@ -9,7 +9,8 @@ const clientSrc = fileURLToPath(new URL('../client/src', import.meta.url))
 
 /**
  * Fails the build (and the dev server's load) on any module the phone must not carry: Electron, Node,
- * the desktop app, the drawing engine, the code editor (`importRules.ts`). It sees every import of every
+ * the desktop app and its bridge, the app's storage wrapper, the drawing engine, the code editor, and any repo
+ * source file that uses `window.yaseenDocs` or browser storage outside `mobile/src/store/` (`importRules.ts`). It sees every import of every
  * bundled file, so a `client/` file that pulls the editor in is caught here, not on the phone.
  */
 export function phoneImportGuard(): Plugin {
@@ -24,6 +25,12 @@ export function phoneImportGuard(): Plugin {
     load(id) {
       const why = forbiddenImport(id)
       if (why) this.error(`mobile/ never imports ${why}: ${id} (mobile/README.md)`)
+      return null
+    },
+    // YAZ-5158: a use is not an import. Each repo source file the bundle takes in is read for the bridge and storage.
+    transform(code, id) {
+      const why = forbiddenUse(id, code)
+      if (why) this.error(`mobile/ never uses ${why}: ${id} (mobile/README.md)`)
       return null
     },
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { forbiddenImport } from './importRules'
+import { forbiddenImport, forbiddenUse } from './importRules'
 
 describe('forbiddenImport: what the phone bundle never takes in', () => {
   it('Electron and every Node built-in, with or without node:', () => {
@@ -11,8 +11,34 @@ describe('forbiddenImport: what the phone bundle never takes in', () => {
       expect(forbiddenImport(id)).not.toBeNull()
   })
 
+  // YAZ-5158 (3A3): the desktop bridge and the app's storage wrapper are forbidden by path too.
+  it('the desktop bridge (client/src/api) and the app storage wrapper (client/src/lib/storage), by alias or by path', () => {
+    for (const id of ['@client/api', '@client/api.ts', '/repo/client/src/api.ts', '/repo/client/src/api', '@client/lib/storage', '/repo/client/src/lib/storage.ts'])
+      expect(forbiddenImport(id)).not.toBeNull()
+    expect(forbiddenImport('/repo/client/src/apiHelpers.ts')).toBeNull()
+  })
+
   it('the pure code the phone is for', () => {
     for (const id of ['react', 'react-dom/client', '@shared/fileKind', '/repo/shared/fileKind.ts', '/repo/client/src/review/cardParts.tsx', './store/vaults', '/repo/mobile/src/main.tsx'])
       expect(forbiddenImport(id)).toBeNull()
+  })
+})
+
+describe('forbiddenUse: code that reaches the desktop bridge or browser storage outside mobile/src/store', () => {
+  const file = '/repo/client/src/review/thing.ts'
+  it('window.yaseenDocs, localStorage, sessionStorage and indexedDB in a bundled source file', () => {
+    expect(forbiddenUse(file, 'export const v = window.yaseenDocs.vault.list()')).toMatch(/desktop bridge/)
+    expect(forbiddenUse(file, 'localStorage.setItem("a", "b")')).toMatch(/browser storage/)
+    expect(forbiddenUse(file, 'const s = window.sessionStorage')).toMatch(/browser storage/)
+    expect(forbiddenUse('/repo/mobile/src/screens/Review.tsx', 'indexedDB.open("x")')).toMatch(/browser storage/)
+  })
+
+  it('a word in a comment is not a use', () => {
+    expect(forbiddenUse(file, '// reads localStorage? no: window.yaseenDocs is the desktop\n/* indexedDB */ export const x = 1')).toBeNull()
+  })
+
+  it('the store may use storage; node_modules and files outside the repo sources are not read', () => {
+    expect(forbiddenUse('/repo/mobile/src/store/idbBackend.ts', 'indexedDB.open("x")')).toBeNull()
+    expect(forbiddenUse('/repo/node_modules/react-dom/cjs/x.js', 'localStorage')).toBeNull()
   })
 })
