@@ -26,7 +26,7 @@ describe('what the person types or pastes', () => {
     expect(cleanToken('ghp_' + 'a'.repeat(36))).toBe('ghp_' + 'a'.repeat(36))
   })
 
-  it.each(['', 'short', 'has space inside_1234567890123', 'github_pat_ünïcode_1234567890', 'x'.repeat(300), 'Bearer github_pat_1234567890123456789'])(
+  it.each(['', 'short', 'has space inside_1234567890123', 'github_pat_ünïcode_1234567890', 'x'.repeat(300), 'Bearer github_pat_1234567890123456789', 'CorrectHorseBatteryStaple2026', 'abcdefghijklmnopqrstuvwxyz0123', 'xyz_' + 'a'.repeat(36)])(
     'refuses %j as a token',
     (text) => {
       expect(cleanToken(text)).toBeNull()
