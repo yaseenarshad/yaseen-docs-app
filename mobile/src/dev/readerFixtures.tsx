@@ -4,13 +4,14 @@ import type { AppServices } from '../app/AppState'
 import type { FetchLike } from '../github/client'
 import { memoryBackend, openVaultStore, tokenStoreOn } from '../store'
 import { fakeFriends, fakeScanner, fakeSync } from './fakes'
-import { seedReaderVault } from './readerVault'
+import { READER_NOT_STORED, seedReaderVault } from './readerVault'
+import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
 
 /**
  * The screen fixtures of 4C (YAZ-5079): Search, a page and a card on the made-up vault of `readerVault.ts`, for the
  * screenshots (`#fixture=page`). Only a `--mode fixtures` build has this file. Nothing calls GitHub.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -41,7 +42,16 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
   const store = await openVaultStore(backend)
   const tokens = tokenStoreOn(backend)
   await seedReaderVault(store, tokens)
-  const services: AppServices = { store, tokens, sync: fakeSync(), friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll }
+  // `page-online`: a media that "downloads" the picture that is not on the phone (as 3D does with a signal).
+  const stored = storedMedia(store, 'yaseen/vault@main')
+  const online: VaultMedia = {
+    async show(path) {
+      const bytes = READER_NOT_STORED[path]
+      if (bytes === undefined) return stored.show(path)
+      return { status: 'ready', path, url: URL.createObjectURL(new Blob([bytes as BlobPart], { type: fileType(path) })), type: fileType(path) }
+    },
+  }
+  const services: AppServices = { store, tokens, sync: fakeSync(), friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll, ...(name === 'page-online' && { media: online }) }
   root.render(<App services={services} />)
   await until(() => document.querySelector('[role="tab"]') !== null)
   press('Search')
@@ -76,6 +86,12 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
     case 'page-lower':
       await open(/^Spanish words/, '.reader__body h1')
       document.querySelector('.card-embed')?.scrollIntoView({ block: 'start' })
+      break
+    case 'page-offline':
+    case 'page-online':
+      await open(/^Spanish words/, '.reader__body h1')
+      document.querySelector('.reader__body blockquote:not(.page-callout)')?.scrollIntoView({ block: 'start' })
+      await wait(400)
       break
     case 'card':
       await typed('la bib')

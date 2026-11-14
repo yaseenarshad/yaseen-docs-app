@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { cardInContent, titleOfCard, type CardAtPage } from '@client/review/cardRead'
 import { cardDueWords, cardFacts, cardFullDate, cardNextReview, reviewsTitle } from '@client/review/cardWords'
 import { cardFileShape } from '@shared/cardFileFormat'
@@ -7,8 +7,9 @@ import { splitFrontmatter } from '@shared/frontmatter'
 import { useApp } from '../app/AppState'
 import { Frame, vaultName } from '../screens/Frame'
 import { useVaultData } from '../search/vaultData'
-import { storedMedia, type PageMedia } from './media'
-import { fillMedia, openFile, tapOf } from './pageDom'
+import { useMediaWatch, useVaultMedia } from '../media/ui/useVaultMedia'
+import { openFile } from '../media/ui/vaultMedia'
+import { tapOf } from './pageDom'
 import { drawCard } from './pageLook'
 
 /** The words of a card file that is not valid (round 15, item 3). */
@@ -34,8 +35,8 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   const [reads, setReads] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
   const host = useRef<HTMLDivElement>(null)
-  const media = useMemo<PageMedia & { release?: () => void }>(() => app.services.media ?? storedMedia(store, vault), [app.services.media, store, vault])
-  useEffect(() => () => (media as { release?: () => void }).release?.(), [media])
+  const media = useVaultMedia()
+  useMediaWatch(host, media)
   const now = app.services.now?.() ?? Date.now()
 
   // Read again when a pass brings a new version of the file.
@@ -66,17 +67,12 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   useEffect(() => {
     const el = host.current
     if (el === null || data === null || card === null) return
-    let live = true
     const body = document.createElement('div')
     body.className = 'card__body'
     body.append(drawCard(data, path, card.text))
     el.replaceChildren(body)
-    void fillMedia(el, media, () => live)
-    return () => {
-      live = false
-    }
     // `card.text` is the drawn text: a new read with the same text draws nothing again.
-  }, [data, path, card?.text, media])
+  }, [data, path, card?.text])
 
   const onTap = async (event: React.MouseEvent) => {
     if (data === null) return
