@@ -907,6 +907,8 @@ export async function finishRemove(api: GistsApi, handle: IndexHandle, budget: G
   let base = handle
   /** The numbers gists that THIS run made: the only new numbers gists it may delete (YAZ-5276). */
   const made = new Set<string>()
+  /** This run wrote a pointer (a late one may name a generation another device passed meanwhile). */
+  let movedAny = false
   try {
     for (let round = 0; round < 12; round++) {
       base = await latest(api, base, opts)
@@ -915,6 +917,12 @@ export async function finishRemove(api: GistsApi, handle: IndexHandle, budget: G
       const current = st.gens.at(-1)
       if (st.pending.length === 0 && (current === undefined || current.done)) {
         for (const id of made) if (id !== base.index.stats) await removeQuietly(api, id)
+        // This run moved pointers to a generation that another device has since passed and finished: a write of this
+        // run that landed late may name the older gist. Move them once more to the current one (YAZ-5354, I2).
+        if (movedAny && current !== undefined) {
+          const again = await moveForward(api, base, current.stats, budget, now, opts)
+          budget = again.budget
+        }
         return { kind: 'done', handle: base, budget }
       }
       // 1. The removed pointers go first (one that the list holds again under another kind, a re-add at the same
@@ -983,6 +991,7 @@ export async function finishRemove(api: GistsApi, handle: IndexHandle, budget: G
       const target = current!.stats
       const moved = await moveForward(api, base, target, budget, now, opts)
       budget = moved.budget
+      movedAny ||= moved.wrote
       if (moved.stop !== null) return moved.stop
       // 4. A fresh read proves it.
       const proof = await latest(api, base, opts)
@@ -1044,13 +1053,14 @@ const INDEX_FILE_NAME = 'notecards-friends.json'
  * Moves each pointer of the list to `target` (the current generation of the list as just read). One that a slow run
  * wrote back to an older gist is moved again by the next round, by `settlePointers`, or by the next send (YAZ-5354).
  */
-async function moveForward(api: GistsApi, base: IndexHandle, target: string, budget: GistBudget, now: number, opts: ListOptions): Promise<{ budget: GistBudget; stop: RemoveResult | null }> {
+async function moveForward(api: GistsApi, base: IndexHandle, target: string, budget: GistBudget, now: number, opts: ListOptions): Promise<{ budget: GistBudget; stop: RemoveResult | null; wrote: boolean }> {
+  let wrote = false
   for (const pointer of pointersOf(base.index)) {
     const gist = await readPointer(api, pointer)
     if (gist === null) continue
     const state = readPointerFile(fileText(gist, POINTER_FILE))
     if (state.kind !== 'ok' || state.value.stats === target) continue
-    if (!mayUpdate(budget, now, 1, 0)) return { budget, stop: paused(base, budget, 'budget', now + sendGap(budget, now, 0)) }
+    if (!mayUpdate(budget, now, 1, 0)) return { budget, stop: paused(base, budget, 'budget', now + sendGap(budget, now, 0)), wrote }
     try {
       await api.update(pointer, { [POINTER_FILE]: JSON.stringify({ ...state.raw, v: 1, stats: target }) })
     } catch (err) {
@@ -1061,9 +1071,10 @@ async function moveForward(api: GistsApi, base: IndexHandle, target: string, bud
       throw err
     }
     budget = recordUpdate(budget, now, null)
+    wrote = true
     await opts.sleep(1000)
   }
-  return { budget, stop: null }
+  return { budget, stop: null, wrote }
 }
 
 /** Does every pointer of the list name `target` (a pointer that is gone does not count against it)? */
