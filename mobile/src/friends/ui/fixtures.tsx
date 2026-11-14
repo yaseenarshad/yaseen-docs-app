@@ -55,6 +55,20 @@ function boardOf(name: string): Board {
         ],
         groups: [{ kind: 'removing', group: '7'.repeat(32), name: 'Old group' }],
       })
+    case 'friends-v2':
+      return demoBoard(NOW, {
+        friends: [
+          demoFriend(NOW, 'Sam', { days: [[0, { cards: 44, seconds: 3960, done: true }]] }),
+          demoFriend(NOW, 'Di', { state: 'unreadable', label: "Can't read their numbers", stats: null }),
+          demoFriend(NOW, 'Ed', { state: 'offline', label: null, stats: null }),
+          demoFriend(NOW, 'Cy', { state: 'newer-app', label: 'Needs a newer app', stats: null }),
+        ],
+      })
+    case 'friends-joined': {
+      const g = demoGroup(NOW)
+      g.members[1] = { ...g.members[1], name: gistText('Mina'), joinedToday: true }
+      return demoBoard(NOW, { groups: [g] })
+    }
     case 'friends-repair':
       return { kind: 'needs-repair' }
     case 'friends-offline':
@@ -120,7 +134,15 @@ export async function mountFriendsFixture(root: Root, name: string): Promise<voi
       break
     case 'friends-group':
     case 'friends-group-member':
+    case 'friends-joined':
       press('Study group')
+      break
+    case 'friends-zone':
+      press('Settings')
+      await wait(100)
+      press('Home time zone')
+      await wait(50)
+      document.querySelector('select')?.closest('li')?.scrollIntoView()
       break
     case 'friends-remove':
       press(/^Number 1, Sam/)

@@ -175,7 +175,8 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
       const numbers = f.state === 'ok' || f.state === 'waiting'
       const sub: string[] = []
       if (f.state !== 'ok' && f.label !== null) sub.push(f.label)
-      if (!numbers && f.label === null) sub.push('no update yet')
+      // Not read yet: with no signal, say so (round 3); else 4E2's "no update yet".
+      if (!numbers && f.label === null) sub.push(f.state === 'offline' ? 'No connection. Not read yet.' : 'no update yet')
       const ago = numbers ? updatedLabel(f.updatedAt, now) : undefined
       return {
         key: f.theirs,
@@ -313,6 +314,8 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
               {group.streak === 1 ? 'Group streak: 1 day that everyone finished' : `Group streak: ${group.streak} days that everyone finished`}
             </p>
           )}
+          {/* B8 (YAZ-5084): who joined today, in 4E3's words, once and quietly under the streak. */}
+          {showGroup && group !== undefined && group.kind === 'ok' && groupViewMessage(group) !== null && <p className="fr-line">{groupViewMessage(group)}</p>}
           {showGroup && group !== undefined && group.kind !== 'ok' && <GroupProblem view={group} />}
           <ul className="rows" aria-label={showGroup ? `${gistText(group?.name ?? '')} members` : 'Friends'}>
             {rows.map(({ entry: e, rank, numbers }) => {
@@ -353,6 +356,17 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
                     // YAZ-5274: the link I pasted is gone and they never added me: the one way on is a new link of mine.
                     <button type="button" className="btn" aria-label="Share a new link" onClick={() => setPanel('share')}>
                       New link
+                    </button>
+                  )}
+                  {entry.friend?.state === 'unreadable' && (
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() =>
+                        ask(`Remove ${entry.name}? You cannot read their numbers now.`, `Remove ${entry.name}`, () => service.remove(entry.friend!.mine))
+                      }
+                    >
+                      Remove
                     </button>
                   )}
                   {entry.friend?.state === 'gone' && (

@@ -88,6 +88,19 @@ input {
 }
 
 /* 16 px in every field: with less, iOS zooms the page when the field takes focus. */
+select {
+  font: inherit;
+  font-size: 16px;
+  width: 100%;
+  min-height: var(--tap);
+  margin-top: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--control-border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
 input {
   font-size: 16px;
   width: 100%;

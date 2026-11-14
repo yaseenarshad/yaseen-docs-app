@@ -52,7 +52,7 @@ describe('the friend link of 5- and the paste box of 4E2', () => {
     expect(parseAnyLink(`${j.text} ${j.url}`)).toEqual({ kind: 'join', group: ID, pointer: ID })
   })
 
-  it("YAZ-5290: the paste box reads each kind of link from the preview, and the code each landing page copies", () => {
+  it('YAZ-5290: the paste box reads each kind of link from the preview, and the code each landing page copies', () => {
     const preview = 'https://preview.notecard.yaseenarshad.com'
     expect(parseAnyLink(ownSiteLink(groupLink(ID), preview))).toEqual({ kind: 'group', id: ID })
     expect(parseAnyLink(ownSiteLink(joinLink(ID, ID), preview))).toEqual({ kind: 'join', group: ID, pointer: ID })
@@ -68,8 +68,11 @@ describe('the friend link of 5- and the paste box of 4E2', () => {
     expect(ownSiteLink(groupLink(ID), preview).startsWith(`${preview}/group#`)).toBe(true)
     expect(ownSiteLink(joinLink(ID, ID), preview).startsWith(`${preview}/join#`)).toBe(true)
     const src = fileURLToPath(new URL('../..', import.meta.url))
-    const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]))
-    const fixed = walk(src).filter((f) => /\.(ts|tsx)$/.test(f) && !/\.test\.tsx?$|testing\.ts$|\/dev\//.test(f) && /notecards?\.yaseenarshad\.com/.test(readFileSync(f, 'utf8')))
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]))
+    const fixed = walk(src).filter(
+      (f) => /\.(ts|tsx)$/.test(f) && !/\.test\.tsx?$|testing\.ts$|\/dev\//.test(f) && /notecards?\.yaseenarshad\.com/.test(readFileSync(f, 'utf8')),
+    )
     expect(fixed.map((f) => f.slice(src.length))).toEqual([])
   })
 

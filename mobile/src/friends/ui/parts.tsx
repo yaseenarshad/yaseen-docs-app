@@ -131,6 +131,8 @@ export function actionWords(result: unknown): string | null {
           return LIST_NEEDS_REPAIR
         case 'unauthorized':
           return 'Not removed yet. Sign in again, and it finishes by itself.'
+        case 'refused':
+          return 'Not removed yet: your token has no Gists permission. Add it on GitHub; then the remove finishes by itself.'
         default:
           // A remove that waits for another reason (the words may come with it).
           return typeof r.why === 'string' && r.why.includes(' ') ? r.why : 'Not removed yet. It finishes by itself.'
