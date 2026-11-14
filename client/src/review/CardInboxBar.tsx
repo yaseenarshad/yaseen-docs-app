@@ -5,7 +5,8 @@
  * the vault (Review this folder / page; YAZ-5017 round 2, Yaseen: "isnt this redundant?"); then the CURRENT card's place,
  * one card at a time: the vault and its folders, "Cards Demo › spanish-words" — no page name, the card's head shows
  * it — each part a link (its folder page: `openPlace`, the folder chips' door); a long path gives way in the middle, "…".
- * On the right today's work across the vault, quiet ("Today: 31 cards · 9 min", YAZ-5033), then "3 of 12", which counts the filter's cards. Under it the progress bar (YAZ-5020, as
+ * On the right today's work across the vault, quiet ("Today: 31 cards · 9 min", YAZ-5033; the time hidden behind a
+ * click by default, YAZ-5130, `TodayWork`), then "3 of 12", which counts the filter's cards. Under it the progress bar (YAZ-5020, as
  * Mochi's): it fills as the session's cards are answered, a Forgot in red, a Remembered in grey.
  *
  * Add more for today (YAZ-5042): the counts stay in this one menu. Round 2 (Yaseen: "2 and then its whatever the
@@ -24,7 +25,8 @@ import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import type { CardRating } from '@shared/cardLine'
 import type { AddKind } from '@shared/cardSchedule'
 import type { CardFilter, CardReviewSession } from './useCardReview'
-import { todayWork } from './reviewTime'
+import { todayCards } from './reviewTime'
+import { TodayWork, type TimeView } from './TodayWork'
 import { AddMoreField } from './AddMoreField'
 import { ArchiveIcon, ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
 
@@ -62,9 +64,11 @@ interface CardInboxBarProps {
   resetCards?: (kind: AddKind) => void
   /** A click on a part of the card's place: the folder page of the vault or a folder, or the page, in a tab. */
   openPlace?: (path: string) => void
+  /** Time so far (YAZ-5130): how today's time shows. */
+  time: TimeView
 }
 
-export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace }: CardInboxBarProps) {
+export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace, time }: CardInboxBarProps) {
   const button = useRef<HTMLButtonElement>(null)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   // YAZ-5042 round 2: the row whose count turned into "Add [n] more"; it closes with the menu.
@@ -124,9 +128,9 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
             ))}
           </nav>
         )}
-        {todayWork(session.today) !== '' && (
+        {todayCards(session.today) !== '' && (
           <span className="card-inbox__today" title="Reviewed today in this vault">
-            {todayWork(session.today)}
+            <TodayWork today={session.today} time={time} />
           </span>
         )}
         {session.card !== null && (

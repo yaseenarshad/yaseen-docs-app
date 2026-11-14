@@ -16,6 +16,14 @@ export type ReviewButtons = 2 | 4
 export const PAUSE_AFTER_CHOICES = [30, 60, 120, 300] as const
 export type PauseAfter = (typeof PAUSE_AFTER_CHOICES)[number]
 
+/**
+ * Settings › Review › Time so far (YAZ-5130, Yaseen: "having it in sight will be stressful"): today's review time in
+ * the Inbox. `hidden` (the default) shows a small clock in its place, and a click on it shows the time; `shown` shows
+ * it as before; `off` shows no time and no clock. The answer timer runs the same in all three: each answer still saves its seconds.
+ */
+export const TIME_SO_FAR_CHOICES = ['hidden', 'shown', 'off'] as const
+export type TimeSoFar = (typeof TIME_SO_FAR_CHOICES)[number]
+
 /** Which new cards the Inbox takes first (YAZ-4999 D2), by the card's ID number: the vault's counter grows with time. */
 export type NewCardOrder = 'oldest' | 'newest'
 
@@ -44,6 +52,8 @@ export interface ReviewSettings {
    * long with no key, click, scroll or mouse move counts nothing toward how long an answer took. 30, 60, 120 or 300.
    */
   pauseAfter: PauseAfter
+  /** How the Inbox shows today's review time (YAZ-5130): hidden behind a click, shown, or off. Only how it shows. */
+  timeSoFar: TimeSoFar
   /** The FSRS weights: 21 numbers (FSRS-6); 17 or 19 are read too (ts-fsrs fills in the rest). */
   weights: number[]
 }
@@ -63,6 +73,7 @@ export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = Object.freeze({
   newOrder: 'oldest',
   fuzz: true,
   pauseAfter: 60,
+  timeSoFar: 'hidden',
   weights: [...DEFAULT_CARD_WEIGHTS],
 }) as ReviewSettings
 
@@ -85,6 +96,7 @@ export function sanitizeReviewSettings(raw: unknown): ReviewSettings {
     newOrder: r.newOrder === 'oldest' || r.newOrder === 'newest' ? r.newOrder : d.newOrder,
     fuzz: typeof r.fuzz === 'boolean' ? r.fuzz : d.fuzz,
     pauseAfter: (PAUSE_AFTER_CHOICES as readonly unknown[]).includes(r.pauseAfter) ? (r.pauseAfter as PauseAfter) : d.pauseAfter,
+    timeSoFar: (TIME_SO_FAR_CHOICES as readonly unknown[]).includes(r.timeSoFar) ? (r.timeSoFar as TimeSoFar) : d.timeSoFar,
     weights: isWeights(r.weights) ? [...r.weights] : [...d.weights],
   }
 }

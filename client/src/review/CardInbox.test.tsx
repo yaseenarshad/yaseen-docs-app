@@ -435,19 +435,28 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.start).toHaveBeenCalledExactlyOnceWith({})
   })
 
-  it('YAZ-5105: a card with reviews shows its Reviews strip (the card window\'s own `CardReviews`) under the card, outside its frame, only once the last side is fully shown; never on the front or an earlier side', async () => {
+  it('YAZ-5105: a card with reviews shows its Reviews strip (the card window\'s own `CardReviews`) under the card, outside its frame, as soon as the last side shows (round 3: its hidden words shown or not); never on the front or an earlier side', async () => {
     mount(TWO_SIDES)
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }, { at: '2026-11-13T09:00Z', rating: 'again' }] } } }
     render()
     await flush()
     const reviews = () => el.querySelector('.card-reviews')
-    // The front, its word, the second side and its first word: hidden all along.
-    for (let step = 0; step < 4; step++) {
+    // The front and its word (side 1 of 2): no strip.
+    for (let step = 0; step < 2; step++) {
       expect(reviews(), `step ${step}`).toBeNull()
       press(' ')
     }
     await flush()
+    // Round 3 (Yaseen: "just show on the last side … regardless of it hidden words are all revealed or not"): the
+    // last side shows, its two hidden words still hidden, and the strip is there.
+    expect(blanks()).toBe(2)
+    expect(reviews()).not.toBeNull()
+    // It stays while the last side's words show.
+    press(' ')
+    press(' ')
+    await flush()
     expect(blanks()).toBe(0)
+    expect(reviews()).not.toBeNull()
     // Round 2 (as Mochi): fully shown, the Reviews strip sits OUTSIDE the card's frame, right under it, before the
     // buttons' band; the buttons stay in their band.
     const column = el.querySelector('.card-inbox__column')!
@@ -483,6 +492,22 @@ describe('the Inbox screen (YAZ-4962)', () => {
     press(' ')
     await flush()
     expect(el.querySelector('.card-reviews__toggle')?.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('YAZ-5105 round 3: a one-side card (its front is its last side) shows the strip after its first Space, never before; with no hidden word it is fully shown at once, and so is the strip', async () => {
+    mount('One {{a}} and {{b}}')
+    session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }] } } }
+    render()
+    await flush()
+    expect(el.querySelector('.card-reviews'), 'the front: nothing shown yet').toBeNull()
+    press(' ')
+    await flush()
+    expect(blanks()).toBe(1)
+    expect(el.querySelector('.card-reviews')).not.toBeNull()
+    session = { ...session, position: 4, card: { ...session.card!, id: 'WIKI-10', page: { ...session.card!.page!, id: 'WIKI-10', text: 'Nothing hidden', reviews: [{ at: AT, rating: 'good' }] } } }
+    render()
+    await flush()
+    expect(el.querySelector('.card-reviews')).not.toBeNull()
   })
 
   it('YAZ-5002: the buttons sit under the card, outside its panel; the key row is last; YAZ-5021: no "Press Space" line over the buttons at any step (the key row says Space)', async () => {
@@ -1193,8 +1218,9 @@ describe('YAZ-5033: how long each answer took — the timer pauses when you are 
 })
 
 describe("YAZ-5033: today's total — the top row and the done screen", () => {
+  const SHOWN = { ...DEFAULT_REVIEW_SETTINGS, timeSoFar: 'shown' as const }
   it('the top row says "Today: N cards · M min" before "3 of 12"; nothing with no card answered today', () => {
-    mount(TWO_SIDES)
+    mount(TWO_SIDES, SHOWN)
     expect(el.querySelector('.card-inbox__today')).toBeNull()
     session = { ...session, today: { cards: 31, reviews: 35, seconds: 9 * 60 + 10 } }
     render()
@@ -1211,7 +1237,7 @@ describe("YAZ-5033: today's total — the top row and the done screen", () => {
   })
 
   it('the done screen says today`s total under "Inbox complete."', () => {
-    mount(TWO_SIDES)
+    mount(TWO_SIDES, SHOWN)
     session = { ...session, card: null, today: { cards: 12, reviews: 14, seconds: 4 * 60 + 31 } }
     render()
     const done = el.querySelector('.card-inbox__done')!
@@ -1221,6 +1247,66 @@ describe("YAZ-5033: today's total — the top row and the done screen", () => {
     session = { ...session, scope: 'page' }
     render()
     expect(el.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 12 cards · 5 min')
+  })
+})
+
+describe('YAZ-5130: Time so far — hidden behind a click (the default), shown, or off', () => {
+  const today = { cards: 31, reviews: 35, seconds: 9 * 60 + 10 }
+  const bar = () => el.querySelector('.card-inbox__bar .card-inbox__today')
+  const clock = () => el.querySelector<HTMLButtonElement>('.card-inbox__bar .card-inbox__time')
+
+  it('hidden: the cards, then a clock in the time\'s place; a click shows the time, a second click hides it again', () => {
+    mount(TWO_SIDES)
+    expect(review.settings.timeSoFar).toBe('hidden')
+    session = { ...session, today }
+    render()
+    expect(bar()?.textContent).toBe('Today: 31 cards · ')
+    expect(clock()?.getAttribute('aria-label')).toBe('Show time so far')
+    expect(clock()?.getAttribute('aria-pressed')).toBe('false')
+    expect(clock()?.querySelector('svg')).not.toBeNull()
+    act(() => clock()!.click())
+    expect(bar()?.textContent).toBe('Today: 31 cards · 9 min')
+    expect(clock()?.getAttribute('aria-label')).toBe('Hide time so far')
+    expect(clock()?.getAttribute('aria-pressed')).toBe('true')
+    act(() => clock()!.click())
+    expect(bar()?.textContent).toBe('Today: 31 cards · ')
+    // The keyboard stays in the Inbox: a press on the clock takes no focus.
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    clock()!.dispatchEvent(down)
+    expect(down.defaultPrevented).toBe(true)
+  })
+
+  it('hidden: the done screen hides the time the same way, and a click there shows it', () => {
+    mount(TWO_SIDES)
+    session = { ...session, card: null, today }
+    render()
+    const done = () => el.querySelector('.card-inbox__done-today')
+    expect(done()?.textContent).toBe('Today: 31 cards · ')
+    act(() => done()!.querySelector<HTMLButtonElement>('.card-inbox__time')!.click())
+    expect(done()?.textContent).toBe('Today: 31 cards · 9 min')
+  })
+
+  it('hidden with no seconds today: no clock, as there is no time to show', () => {
+    mount(TWO_SIDES)
+    session = { ...session, today: { cards: 2, reviews: 2, seconds: 0 } }
+    render()
+    expect(bar()?.textContent).toBe('Today: 2 cards')
+    expect(clock()).toBeNull()
+  })
+
+  it('off: the cards alone, no clock, in the top row and on the done screen; the answer still saves its seconds', async () => {
+    mount(TWO_SIDES, { ...DEFAULT_REVIEW_SETTINGS, timeSoFar: 'off' })
+    session = { ...session, today }
+    render()
+    expect(bar()?.textContent).toBe('Today: 31 cards')
+    expect(el.querySelector('.card-inbox__time')).toBeNull()
+    await flush()
+    press('2')
+    expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', expect.any(Number))
+    session = { ...session, card: null }
+    render()
+    expect(el.querySelector('.card-inbox__done-today')?.textContent).toBe('Today: 31 cards')
+    expect(el.querySelector('.card-inbox__time')).toBeNull()
   })
 })
 

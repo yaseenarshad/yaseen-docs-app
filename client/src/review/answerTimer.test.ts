@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CARD_SECONDS_MAX } from '@shared/cardLine'
 import { AnswerClock } from './answerTimer'
-import { reviewDuration, todayDuration, todayWork } from './reviewTime'
+import { reviewDuration, todayCards, todayDuration } from './reviewTime'
 
 /** YAZ-5033: the answer timer with no DOM, and the words for its time. */
 describe('AnswerClock', () => {
@@ -75,8 +75,9 @@ describe('the words for the time', () => {
 
   it('today: seconds under a minute, else whole minutes; the cards with the right word', () => {
     expect([0, 45, 60, 89, 90, 9 * 60 + 29].map(todayDuration)).toEqual(['0 s', '45 s', '1 min', '1 min', '2 min', '9 min'])
-    expect(todayWork({ cards: 0, reviews: 0, seconds: 0 })).toBe('')
-    expect(todayWork({ cards: 31, reviews: 40, seconds: 540 })).toBe('Today: 31 cards · 9 min')
-    expect(todayWork({ cards: 1, reviews: 1, seconds: 0 })).toBe('Today: 1 card')
+    // The time is its own part (YAZ-5130: hidden, shown or off by the setting); the cards always read the same.
+    expect(todayCards({ cards: 0, reviews: 0, seconds: 0 })).toBe('')
+    expect(todayCards({ cards: 31, reviews: 40, seconds: 540 })).toBe('Today: 31 cards')
+    expect(todayCards({ cards: 1, reviews: 1, seconds: 0 })).toBe('Today: 1 card')
   })
 })

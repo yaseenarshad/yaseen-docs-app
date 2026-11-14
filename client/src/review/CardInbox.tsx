@@ -59,10 +59,13 @@
  *    it again), pauses while the Inbox is not in front and over any stretch of "Pause the timer after" with no key or
  *    mouse; the answer writes its active seconds on its review part (`… good 13s`). The top row says today's work
  *    across the vault, "Today: 31 cards · 9 min" (`session.today`, from the index), and the done screen says it too.
+ *    TIME SO FAR (YAZ-5130, `TodayWork`): the time hides behind a small clock by default (a click shows it), or shows,
+ *    or is off, by Settings › Review › Time so far. The timer and the saved seconds do not change with it.
  *  - REVIEWS AT THE BOTTOM OF THE LAST SIDE (YAZ-5105, as Mochi; it amends YAZ-5000, which took them out of the Inbox):
- *    once the card is fully shown, a card with reviews has the Reviews strip ("✓ 4 Reviews") right under the card,
- *    outside its frame (round 2): the card window's own `CardReviews`, closed until asked for, with no delete here.
- *    Never on the front or an earlier side. It is no Space step, and the scroll never goes to it; the buttons' band
+ *    a card with reviews has the Reviews strip ("✓ 4 Reviews") right under the card, outside its frame (round 2): the
+ *    card window's own `CardReviews`, closed until asked for, with no delete here. Round 3: it shows as soon as the
+ *    LAST side shows, its hidden words shown or not (a one-side card: after its first Space, or at once with nothing
+ *    hidden). Never on the front or an earlier side. It is no Space step, and the scroll never goes to it; the buttons' band
  *    stays at the bottom of the view over it.
  *  - Nothing left: "Inbox complete." for the vault; for one page or folder "This page is done." and, quiet, "21 more in
  *    the Inbox", which starts the vault's review.
@@ -96,7 +99,8 @@ import { CardInboxHints } from './CardInboxHints'
 import { KeyCaps } from '../keys/KeyCaps'
 import { AddMoreField } from './AddMoreField'
 import { useAnswerTimer } from './answerTimer'
-import { todayWork } from './reviewTime'
+import { TodayWork } from './TodayWork'
+import { todayCards } from './reviewTime'
 import { cssZoom } from '../lib/cssZoom'
 import { inboxRoom, readingScroll } from './inboxScroll'
 import '../explore/explore.css'
@@ -241,6 +245,9 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   const cardKey = card === null ? null : `${session.position}\n${card.path}\n${card.id}`
   // YAZ-5033: the active seconds on this card, from the moment its text shows; read at the answer.
   const answerSeconds = useAnswerTimer(card?.page == null ? null : cardKey, shown, review.settings.pauseAfter)
+  // Time so far (YAZ-5130): hidden behind a click by default; one click shows it in the top row and on the done screen.
+  const [timeOpen, setTimeOpen] = useState(false)
+  const time = { mode: review.settings.timeSoFar, open: timeOpen, setOpen: setTimeOpen }
 
   // The sides and their hidden words, once per card text.
   const counts = useMemo(() => (text === null ? [] : cardSides(text).map(hiddenCount)), [text])
@@ -254,6 +261,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   const done = text !== null && step.sides >= counts.length && step.shown >= hiddenUpTo(counts.length)
   // YAZ-5048: the next Space shows the next side (the sides that show have no hidden word left).
   const nextSide = !done && text !== null && step.shown >= hiddenUpTo(step.sides)
+  // YAZ-5105 round 3 (Yaseen: "just show on the last side … regardless of it hidden words are all revealed or not"):
+  // the card's last side shows, past its front. A one-side card's front IS its last side: past it means its first
+  // Space has shown something, or it has nothing to show (fully shown at once).
+  const onLastSide = text !== null && step.sides >= counts.length && (step.sides > 1 || step.shown > 0 || done)
 
   // YAZ-5049 (Yaseen: "kinda like we have in the app our CMD F search"): the word a Space shows, or the side it adds,
   // comes into view, gliding; never centred. Only a step of the same card moves it. The card's render runs first.
@@ -419,7 +430,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
 
   return (
     <div ref={rootRef} className="card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`}>
-      <CardInboxBar session={session} setFilter={review.setFilter} addCards={review.addCards} resetCards={review.resetCards} openPlace={openPlace} />
+      <CardInboxBar session={session} setFilter={review.setFilter} addCards={review.addCards} resetCards={review.resetCards} openPlace={openPlace} time={time} />
       <div ref={columnRef} className="card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
         {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height
             with no chip (the done screen), so the card does not move. YAZ-5051 (Yaseen: "so that the card is just pure"):
@@ -498,7 +509,11 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                     )}
                   </>
                 )}
-                {todayWork(session.today) !== '' && <p className="card-inbox__done-today">{todayWork(session.today)}</p>}
+                {todayCards(session.today) !== '' && (
+                  <p className="card-inbox__done-today">
+                    <TodayWork today={session.today} time={time} />
+                  </p>
+                )}
               </div>
             ) : (
               text !== null &&
@@ -512,9 +527,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
             )}
           </div>
         </div>
-        {/* YAZ-5105 round 2: the Reviews strip, as Mochi's, under the card and outside its frame, once the last side is
-            fully shown; closed again for each card. The buttons' band stays at the bottom of the view over it. */}
-        {card?.page != null && text !== null && session.filter !== 'archived' && done && card.page.reviews.length > 0 && <CardReviews key={cardKey} reviews={card.page.reviews} settings={review.settings} />}
+        {/* YAZ-5105 round 2: the Reviews strip, as Mochi's, under the card and outside its frame; round 3: as soon as the
+            last side shows, its hidden words shown or not; closed again for each card. The buttons' band stays at the
+            bottom of the view over it. */}
+        {card?.page != null && session.filter !== 'archived' && onLastSide && card.page.reviews.length > 0 && <CardReviews key={cardKey} reviews={card.page.reviews} settings={review.settings} />}
         {/* Under the card, outside its frame, as in Mochi (YAZ-5002): the answer buttons, then the keys. No "Press Space"
             line between them (YAZ-5021): the key row at the bottom already says Space. */}
         {/* YAZ-5049 round 2: the buttons and their line stay at the bottom of the view while a long card scrolls under them. */}

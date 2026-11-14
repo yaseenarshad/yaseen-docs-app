@@ -47,7 +47,7 @@ it('YAZ-5050 round 2: Settings › Review is split into groups by purpose, every
   expect(review.groups.map((g) => g.items.map((i) => i.id))).toEqual([
     ['enabled'],
     ['newPerDay', 'upNextPerDay', 'newOrder'],
-    ['buttons', 'pauseAfter'],
+    ['buttons', 'pauseAfter', 'timeSoFar'],
     ['retention', 'maxDays', 'fuzz', 'weights'],
     ['shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview'],
     ['howCardsComeBack'],
