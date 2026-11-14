@@ -313,6 +313,12 @@
 .explore__body--card {
   padding-top: 16px;
 }
+/* Card width (YAZ-5144): the card, its strips and its mentions at most `--card-text-width` with the card's own sides
+   (`.card__body`'s 16 px and the frame), centred in a wider window. */
+.explore__body--card > :not(.find-bar-dock--page) {
+  max-width: calc(var(--card-text-width) + 34px);
+  margin-inline: auto;
+}
 /* Edit card in the card window (YAZ-5003): the page card's editor; the window's head has the ID, so the card's head
    keeps only "Done esc ⌘↵". */
 .explore-card__edit .card .card__id,
@@ -649,7 +655,9 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  width: min(640px, 100%);
+  /* Settings › Review › Card width (YAZ-5144): the card's text at most `--card-text-width`, with the card's own sides.
+     A drag of its edge sets the width for this run (`inboxCardWidth.ts`, inline). */
+  width: min(calc(var(--card-text-width) + 2 * var(--inbox-card-pad, 28px)), 100%);
   margin-top: 5vh;
 }
 /* YAZ-5027: the row above the card holds the state chip, on the card's left edge. Its fixed height keeps the card in
@@ -793,14 +801,10 @@ body.card-inbox--sizing {
   flex: none;
   padding: 24px var(--inbox-card-pad, 28px) 28px;
 }
-/* Card spacing Clean (YAZ-5050 round 4) and Custom: Mochi's room inside the card, and its line of about 62 letters,
-   centred in the card (a wider card, dragged, keeps the line and centres it). */
+/* Card spacing Clean (YAZ-5050 round 4) and Custom: Mochi's room inside the card. Its short line is Card width now
+   (YAZ-5144): Clean sets it to Narrow, so one rule sets a card's line. */
 [data-card-clean] {
   --inbox-card-pad: 44px;
-}
-[data-card-clean] .card-inbox__card .card__side {
-  max-width: 31em;
-  margin-inline: auto;
 }
 /* The buttons and their line (YAZ-5049 round 2): at the bottom of the view while a long card scrolls under them, so
    an answer is always one click away; under a short card, where they always were. The page colour, fading in at the
