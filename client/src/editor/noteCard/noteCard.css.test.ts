@@ -89,7 +89,10 @@ it('YAZ-5026 round 2: a card`s lists, read (the page, the card window, the Inbox
   expect(vars.body).toMatch(/--card-list-gutter:\s*calc\(2\.15em - 10px\)/)
   // The text starts after the dot's column and the gap; a child level steps in by the indent from its parent's dot.
   const li = rules(cardCss, '.note-card .note-card__side li').find((r) => /padding:/.test(r.body))!
-  expect(li.body).toMatch(/calc\(var\(--card-list-gutter\) \+ var\(--card-list-gap\)\)/)
+  expect(li.body).toMatch(/padding-left:\s*calc\(var\(--card-list-gutter\) \+ var\(--card-list-gap\)\)/)
+  // YAZ-5133: the gutter is its own declaration, so a bad row value (an invalid variable empties the whole shorthand)
+  // can never put the markers on the text.
+  expect(li.body).toMatch(/padding:\s*var\(--card-list-row\) 0;/)
   const child = rules(cardCss, '.note-card .note-card__side li > :is(ul, ol)')[0]!
   expect(child.body).toMatch(/margin-left:\s*calc\(var\(--card-list-indent\) - var\(--card-list-gutter\) - var\(--card-list-gap\)\)/)
   // No browser bullets: the page's ● ○ ■ by level.
