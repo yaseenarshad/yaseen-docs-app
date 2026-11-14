@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { mergeBoards } from '@shared/boardMerge'
 import { mergePageComments, pageRest } from '@shared/commentMerge'
+import { uniteCardLines } from '@shared/cardMerge'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { titleOf } from '@shared/pageName'
 import { isBoard, isDiagram, isDrawing, isMarkdown } from '@shared/fileKind'
@@ -35,7 +36,9 @@ import { git, zList } from './exec'
  *    or git would have merged them), the remote's stays at the path with every comment merged into
  *    it, and ours goes beside it as `<name> (conflict, YYYY-MM-DD).md`, with no comments — so one
  *    page never stops the whole vault's sync again. (This reverses YAZ-3028 D12's "a page never gets
- *    a conflicted copy". A page still never gets a `<<<<<<<` marker.) A `.folder.md` is a page here;
+ *    a conflicted copy". A page still never gets a `<<<<<<<` marker.) A `.folder.md` is a page here.
+ *    Before all of that, a CARD both sides answered or marked takes the same line on both sides (YAZ-5089,
+ *    `shared/cardMerge.ts`): the union of its reviews, a three-way result for its marks — so a review clash makes no copy;
  *  - the vault's `people.json` (YAZ-4615 D1) merges card by card, the newer card winning.
  *
  * Everything else — any other file, any other `.yaseendocs/` config — is NOT settled here: one such
@@ -232,7 +235,10 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
   if (isMarkdown(rel)) {
     // YAZ-4615 D4, D9: comments by id; the rest merged line by line, kept both ways only when the
     // same lines changed on both sides.
-    const [b, t, m] = [base?.toString('utf8') ?? null, theirs.toString('utf8'), mine.toString('utf8')]
+    const b = base?.toString('utf8') ?? null
+    // YAZ-5089 (decision 5 on YAZ-5055): a card answered or marked on both sides is no clash. Each side takes the union
+    // of the card's reviews and the three-way result of its marks first (`shared/cardMerge.ts`); a card file too.
+    const [t, m] = uniteCardLines(b, theirs.toString('utf8'), mine.toString('utf8'))
     let merged = mergePageComments(b, t, m)
     if (merged?.copy !== undefined && b !== null) {
       const lined = await lineMerge(bin, root, pageRest(b), pageRest(t), pageRest(m))
