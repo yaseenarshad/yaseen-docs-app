@@ -522,7 +522,7 @@ function Books(props: SceneProps) {
   )
 }
 
-const RESEARCH_NOTES = [
+const RESEARCH_PAGES = [
   ['A story', 'What happened?'],
   ['A pattern', 'Where else does it show up?'],
   ['A principle', 'What can I take from it?'],
@@ -532,7 +532,7 @@ function ResearchDesk({ beat, gather, reveal, greene }: { beat: Beat; gather: nu
   return (
     <div className="kit-research" aria-hidden="true">
       <div className="kit-research__notes">
-        {RESEARCH_NOTES.map(([topic, question], i) => {
+        {RESEARCH_PAGES.map(([topic, question], i) => {
           const inView = since(beat, 0.04 + i * 0.045, 0.6)
           const travel = moved(beat, clamp(gather * 1.4 - 0.2 * i), ease.inOut)
           return (
