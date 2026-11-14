@@ -65,7 +65,7 @@ function SkillSidebar({ rows, skill }: { rows: readonly Row[]; skill: readonly R
 
 const FORMATS = ['concept', 'fact', 'person', 'procedure', 'quote', 'vocabulary']
 
-/** c12-01 to c12-05, one span: the habits, then the sidebar; the card skill at its bottom; what is in it; read only,
+/** c12-01 to c12-05, one span: the four steps, then the sidebar; the card skill at its bottom; what is in it; read only,
  * duplicate it; the copy syncs, the built-in one updates. */
 function CardSkill(props: SceneProps) {
   const b = useBeat(props)
@@ -99,7 +99,7 @@ function CardSkill(props: SceneProps) {
   return (
     <Stage beat={b} label={at('c12-01') ? 'To finish: where things are, and your first week' : at('c12-02') ? 'The card skill is at the bottom of the sidebar' : at('c12-03') ? 'The card skill: the rules, the formats with examples, and the words of this course' : at('c12-04') ? 'It is read only: duplicate it into your vault to make it your own' : 'Your copy syncs with your vault; the built-in skill still updates with the app'}>
       <Layer style={{ opacity: habits }}>
-        <Habits beat={b} show={[1, 1, 1]} lit={[1, 1, 1]} />
+        <Habits beat={b} show={[1, 1, 1, 1]} lit={[1, 1, 1, 1]} />
       </Layer>
       <Layer style={{ opacity: app }}>
         <AppWindow
@@ -279,7 +279,7 @@ function FirstWeek(props: SceneProps) {
   const [x0, y0] = [COL(4) + 18, 196]
   const [x1, y1] = [COL(0) + 22, 160]
   return (
-    <Stage beat={b} label={['Your first week', 'Today, make one card from something you understand well', 'Each day, open the Inbox and answer what is due', 'Keep one place to capture; once this week, make a few cards from it', 'For each new card, ask what it connects to, and link it', 'As you review, fix what is unclear: that is tending'][Math.max(0, step)]}>
+    <Stage beat={b} label={['Your first week', 'Today, make one card from something you understand well', 'Each day, open the Inbox and answer what is due', 'Keep one place to capture; once this week, create a few cards from it', 'For each new card, ask what it connects to, and link it', 'As you review, fix what is unclear: that is improving'][Math.max(0, step)]}>
       <Layer>
         <svg className="later-weekart" viewBox="0 0 700 300" aria-hidden="true">
           {DAYS.map((d, i) => {
@@ -306,9 +306,7 @@ function FirstWeek(props: SceneProps) {
                 )}
                 {fx > 0 && (
                   <g transform={`translate(${COL(i) - 14} 102) scale(0.6)`} opacity={fx} className="later-wk__shears">
-                    <circle cx={14} cy={36} r={6} />
-                    <circle cx={34} cy={36} r={6} />
-                    <path d="M18 31 37 6M30 31 11 6" />
+                    <path d="M8 34 18 24 25 30 39 14M30 14H39V23" />
                   </g>
                 )}
                 {capture > 0 && (
@@ -347,7 +345,7 @@ function FirstWeek(props: SceneProps) {
         )}
         {at('c12-12') && (
           <span className="kit-chip" style={pop(b, since(b, cue(b, 1, 0.49), 0.5))}>
-            <HabitGlyph habit="tend" size={14} /> Tending
+            <HabitGlyph habit="improve" size={14} /> Improving
           </span>
         )}
       </Layer>

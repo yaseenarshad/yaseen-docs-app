@@ -230,37 +230,6 @@
   border: 1px solid var(--border);
   border-radius: 6px;
 }
-.later-archived-list {
-  box-sizing: border-box;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.later-archived-list li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 4px;
-  font-size: 14px;
-  border-bottom: 1px solid var(--border);
-}
-.later-archived-list__page {
-  font-size: 12px;
-  color: var(--fg-muted);
-}
-.later-unarchive {
-  margin-left: auto;
-  padding: 2px 10px;
-  font-size: 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-.later-unarchive[data-on] {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
 .later-branch {
   align-items: center;
   gap: 0;
@@ -286,43 +255,6 @@
   width: min(36cqw, 18em);
   font-size: 13px;
 }
-.later-queue {
-  position: relative;
-  box-sizing: border-box;
-  width: min(80cqw, 22em);
-  height: 13.4em;
-  padding: 8px 10px;
-  text-align: left;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-}
-.later-queue__head {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 650;
-  color: var(--fg-muted);
-}
-.later-queue__row {
-  position: absolute;
-  right: 10px;
-  left: 10px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 2.2em;
-  padding: 0 8px;
-  font-size: 14px;
-  background: var(--bg);
-  border-radius: 6px;
-}
-.later-queue__row[data-it] {
-  z-index: 1;
-  box-shadow: 0 0 0 1px var(--accent);
-}
-.later-upnext {
-  margin-left: auto;
-}
-
 /* c11-06: the card and the agent share the row; each keeps its own half, so neither runs onto the other. */
 .later-fix__card {
   width: min(44cqw, 24em);

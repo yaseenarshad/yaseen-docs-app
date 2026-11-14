@@ -84,13 +84,14 @@ const FILTERS: readonly { id: FilterId; label: string; icon: () => ReactElement 
 /**
  * The All cards menu, open over `p`. `counts` per row (a string: "10 / 48"); `active` lights a row; `countGlow` lights
  * a count (look: it is clickable); `adding` turns the New cards row into "Add [n] more new cards", `enter` presses it.
+ * `only` keeps just these rows: chapter 11 shows no Up next and no Archived (YAZ-5330).
  */
-export function FilterMenu({ beat, p, counts, active = {}, countGlow = {}, adding, enter = 0 }: { beat: Beat; p: number; counts: Readonly<Record<FilterId, string>>; active?: Partial<Record<FilterId, number>>; countGlow?: Partial<Record<FilterId, number>>; adding?: { n: number; p: number }; enter?: number }) {
+export function FilterMenu({ beat, p, counts, only, active = {}, countGlow = {}, adding, enter = 0 }: { beat: Beat; p: number; counts: Readonly<Record<FilterId, string>>; only?: readonly FilterId[]; active?: Partial<Record<FilterId, number>>; countGlow?: Partial<Record<FilterId, number>>; adding?: { n: number; p: number }; enter?: number }) {
   const q = clamp(p)
   if (q <= 0) return null
   return (
     <div className="ctx-menu card-inbox__filter-menu kit-filter" role="menu" aria-label="All cards" style={rise(beat, q, -4)}>
-      {FILTERS.map((f) => {
+      {FILTERS.filter((f) => only === undefined || only.includes(f.id)).map((f) => {
         const a = clamp(active[f.id] ?? 0)
         const g = clamp(countGlow[f.id] ?? 0)
         const addingHere = f.id === 'new' && adding !== undefined && adding.p > 0

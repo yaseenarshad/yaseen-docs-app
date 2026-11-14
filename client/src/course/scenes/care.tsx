@@ -1,14 +1,15 @@
 /**
  * CHAPTER 11, "Be a gardener" (YAZ-5121). The trees and their links become a garden: clear it, prune it, grow it.
  * Fixing is learning; a card that keeps turning red; the agent fixes the file while you keep reviewing; a scheduled
- * agent proposes and you approve each change (only approved ones land); Archive and Unarchive; a part that keeps
- * growing lifts off into its own card; tend the links; Up next; the review history; more new cards today. The cues are
- * `marks` in `script.ts`, from the real voice's word times.
+ * agent proposes and you approve each change (only approved ones land); pruning and Archive card; a part that keeps
+ * growing lifts off into its own card; care for the links; the review history; more new cards today. No Archived list in
+ * the Inbox and no Up next (YAZ-5330: Yaseen took both out of the course). The cues are `marks` in `script.ts`, from the
+ * real voice's word times.
  */
 import type { SceneProps } from '../scene'
 import { SLEEP_DEBT, TOO_MUCH, PROTEIN_BRANCH, UMBRELLA } from './cards'
 import { Answers, CardView, EditCard, cardMenuItems, Fit, Keys, Layer, MenuPreview, Pointer, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat, Habits, HabitGlyph, Garden, type PlantSpec, AgentChat, FilterMenu, ReviewsStrip, type ReviewRow, Web } from './kit'
-import { ArchiveIcon, UpNextIcon } from '../../review/cardInboxIcons'
+import { ArchiveIcon } from '../../review/cardInboxIcons'
 import type { ChapterScenes } from './registry'
 import './care.css'
 
@@ -63,7 +64,7 @@ function Gardener(props: SceneProps) {
   const learning = id === 'c11-03' ? since(b, cue(b, 1, 0.82), 0.6) : 0
   const gardenOut = Math.max(review * 0.8, fix * 0.88)
   return (
-    <Stage beat={b} label={id === 'c11-01' ? 'Your cards form trees, joined by links: tend them as you review' : id === 'c11-02' ? 'A gardener clears the garden and prunes it' : 'Each fix makes you think about the idea again: that is learning too'}>
+    <Stage beat={b} label={id === 'c11-01' ? 'Your cards form trees, joined by links: improve them as you review' : id === 'c11-02' ? 'A gardener clears the garden and prunes it' : 'Each fix makes you think about the idea again: that is learning too'}>
       <Layer style={{ opacity: 1 - gardenOut }}>
         <Garden beat={b} plants={GARDEN} grow={grow} weeds={weeds} prune={{ plant: 2, branch: 2, p: prune }} links={GARDEN_LINKS.map((l) => ({ ...l, p: links }))} lit={id === 'c11-02' ? [[0, -1], [1, -1], [2, -1]] : []} />
       </Layer>
@@ -83,7 +84,7 @@ function Gardener(props: SceneProps) {
             <Fit>
               <CardView beat={b} title={SLEEP_DEBT.title} id={SLEEP_DEBT.id} text={SLEEP_DEBT.text} sides={1} state="Due today" className="kit-cardview--small" />
             </Fit>
-            <Habits beat={b} show={[0, 0, 1]} lit={[0, 0, since(b, cue(b, 1, 0.57) + 0.08, 0.5)]} size="small" />
+            <Habits beat={b} show={[0, 0, 0, 1]} lit={[0, 0, 0, since(b, cue(b, 1, 0.57) + 0.08, 0.5)]} size="small" />
           </div>
         </Layer>
       )}
@@ -292,7 +293,7 @@ function Scheduled(props: SceneProps) {
   )
 }
 
-const MENU = (archive: number, upNext = 0) => cardMenuItems('page', { 'Archive card': archive, 'Put at top of Inbox': upNext })
+const MENU = (archive: number) => cardMenuItems('page', { 'Archive card': archive })
 
 const HISTORY: ReviewRow[] = [
   { when: '3 Nov', answer: 'remembered' },
@@ -301,7 +302,7 @@ const HISTORY: ReviewRow[] = [
   { when: '28 Oct', answer: 'remembered' },
 ]
 
-/** c11-07, c11-08 and c11-09, one span: pruning; ⋯ › Archive card (it keeps its history); the Archived list and Unarchive. */
+/** c11-07 and c11-08, one span: pruning; ⋯ › Archive card: the card mutes, and keeps its history. */
 function Prune(props: SceneProps) {
   const b = useBeat(props)
   const id = props.clip.id
@@ -310,17 +311,13 @@ function Prune(props: SceneProps) {
   const menu = id === 'c11-08' ? showFor(since(b, cue(b, 0, 0.27) - 0.04, 0.3), since(b, cue(b, 1, 0.52) + 0.06, 0.3)) : 0
   const archived = id === 'c11-08' ? since(b, cue(b, 1, 0.52) + 0.06, 0.5) : 0
   const history = id === 'c11-08' ? since(b, cue(b, 2, 0.74), 0.6) : 0
-  const inbox = id === 'c11-09' ? since(b, 0, 0.5) : 0
-  const filter = id === 'c11-09' ? showFor(since(b, 0.06, 0.3), since(b, cue(b, 1, 0.53) - 0.02, 0.3)) : 0
-  const list = id === 'c11-09' ? since(b, cue(b, 1, 0.53), 0.5) : 0
-  const unarchive = id === 'c11-09' ? since(b, cue(b, 3, 0.78), 0.5) : 0
   return (
-    <Stage beat={b} label={id === 'c11-07' ? 'Some cards no longer earn their place: pruning is part of it' : id === 'c11-08' ? "Open the card's menu and choose Archive card; it keeps its history" : 'Archived cards are at the bottom of the All cards menu; Unarchive brings one back'}>
+    <Stage beat={b} label={id === 'c11-07' ? 'Some cards no longer earn their place: pruning is part of it' : "Open the card's menu and choose Archive card; it keeps its history"}>
       {id === 'c11-07' && (
         <Layer>
           <Garden beat={b} plants={[GARDEN[0]]} grow={[1]} prune={{ plant: 0, branch: 1, p: cut }} lit={cut >= 1 ? [[0, -1], [0, 0], [0, 2]] : []} />
           <span className="later-shears" style={{ ...pop(b, showFor(since(b, cue(b, 0, 0.62) - 0.12, 0.4), since(b, cue(b, 0, 0.62) + 0.06, 0.4))) }} aria-hidden="true">
-            <HabitGlyph habit="tend" size={44} />
+            <HabitGlyph habit="prune" size={44} />
           </span>
         </Layer>
       )}
@@ -338,28 +335,6 @@ function Prune(props: SceneProps) {
               </span>
             )}
             <ReviewsStrip beat={b} rows={HISTORY} open={history} />
-          </div>
-        </Layer>
-      )}
-      {id === 'c11-09' && (
-        <Layer style={{ opacity: inbox }}>
-          <div className="later-inbox">
-            <div className="later-inbox__bar">
-              <span className="later-inbox__filter">{list > 0.5 ? 'Archived' : 'All cards'} ▾</span>
-            </div>
-            <FilterMenu beat={b} p={filter} counts={{ all: '24', next: '2', due: '12', new: '10 / 48', archived: '1' }} active={{ archived: since(b, cue(b, 0, 0.21), 0.4) }} />
-            {list > 0 && (
-              <ul className="later-archived-list" style={rise(b, list, 8)}>
-                <li style={{ opacity: 1 - unarchive * 0.7 }}>
-                  <span className="kit-app__icon kit-app__icon--card" aria-hidden="true" />
-                  <span>{TOO_MUCH.title}</span>
-                  <span className="later-archived-list__page">sleep.md</span>
-                  <span className="later-unarchive" data-on={since(b, cue(b, 2, 0.67), 0.3) > 0.5 ? 'true' : undefined}>
-                    {unarchive > 0.5 ? 'Back in review' : 'Unarchive'}
-                  </span>
-                </li>
-              </ul>
-            )}
           </div>
         </Layer>
       )}
@@ -408,7 +383,7 @@ function NewBranch(props: SceneProps) {
 }
 
 /** c11-18 and c11-19, one span: two cards belong together, link them; a link that no longer helps is cut. */
-function TendLinks(props: SceneProps) {
+function CareForLinks(props: SceneProps) {
   const b = useBeat(props)
   const id = props.clip.id
   const notice = id === 'c11-18' ? since(b, cue(b, 0, 0.45), 0.6) : 1
@@ -449,51 +424,6 @@ function TendLinks(props: SceneProps) {
         <span className="kit-chip" style={pop(b, word)}>
           Edit the card, and delete the pill
         </span>
-      </Layer>
-    </Stage>
-  )
-}
-
-const QUEUE = ['Calories', 'candid', 'Sleep debt adds up', 'Rest days']
-
-/** c11-10: ⋯ › Put at top of Inbox; the card moves to the top of the Inbox with the Up next mark. */
-function UpNext(props: SceneProps) {
-  const b = useBeat(props)
-  const choose = cue(b, 0, 0.21)
-  const put = cue(b, 1, 0.41)
-  const mark = cue(b, 2, 0.65)
-  const menu = showFor(since(b, choose - 0.08, 0.3), since(b, put + 0.04, 0.3))
-  const move = moved(b, since(b, put + 0.06, 0.8))
-  const list = since(b, put + 0.02, 0.5)
-  return (
-    <Stage beat={b} label="Put at top of Inbox: the card gets the Up next mark until you answer it">
-      <Layer style={{ opacity: 1 - list }}>
-        <div className="later-menuwrap">
-          <CardView beat={b} title={SLEEP_DEBT.title} id={SLEEP_DEBT.id} text={SLEEP_DEBT.text} sides={1} chrome="block" />
-          <MenuPreview beat={b} x={58} y={14} p={menu} items={MENU(0, since(b, put - 0.08, 0.2))} />
-        </div>
-      </Layer>
-      <Layer style={{ opacity: list }}>
-        <div className="later-queue">
-          <p className="later-queue__head">Inbox</p>
-          {QUEUE.map((t, i) => {
-            const isIt = t === SLEEP_DEBT.title
-            const from = i
-            const to = isIt ? 0 : i < 2 ? i + 1 : i
-            const y = lerp(from, to, move)
-            return (
-              <div key={t} className="later-queue__row" data-it={isIt ? 'true' : undefined} style={{ top: `${(y * 2.6 + 2.2).toFixed(3)}em` }}>
-                <span className="kit-app__icon kit-app__icon--card" aria-hidden="true" />
-                <span>{t}</span>
-                {isIt && (
-                  <span className="kit-chip later-upnext" style={pop(b, since(b, mark, 0.5))}>
-                    <UpNextIcon /> Up next
-                  </span>
-                )}
-              </div>
-            )
-          })}
-        </div>
       </Layer>
     </Stage>
   )
@@ -544,7 +474,8 @@ function MoreNew(props: SceneProps) {
           <FilterMenu
             beat={b}
             p={since(b, 0.04, 0.4)}
-            counts={{ all: '24', next: '2 / 5', due: '12', new: done > 0.5 ? '20 / 48' : '10 / 48', archived: '1' }}
+            only={['all', 'due', 'new']}
+            counts={{ all: '24', next: '0', due: '12', new: done > 0.5 ? '20 / 48' : '10 / 48', archived: '0' }}
             countGlow={{ new: showFor(since(b, count - 0.1, 0.3), adding) }}
             adding={done > 0.5 ? undefined : { n: 10, p: adding }}
             enter={since(b, enter, 0.2)}
@@ -556,19 +487,19 @@ function MoreNew(props: SceneProps) {
   )
 }
 
-/** c11-13: "Try it in the app": Archive and Up next on your own card. */
+/** c11-13: "Try it in the app": Archive your own card, then Unarchive it, both from the card's menu. */
 function TryCare(props: SceneProps) {
   const b = useBeat(props)
-  const glow = showFor(since(b, cue(b, 1, 0.67), 0.4), since(b, 0.95, 0.4))
+  const glow = showFor(since(b, cue(b, 1, 0.617), 0.4), since(b, 0.95, 0.4))
   return (
-    <Stage beat={b} label="Try Archive and Up next on your own card, in the app">
+    <Stage beat={b} label="Try Archive on your own card, in the app: then Unarchive brings it back">
       <Layer>
         <div className="kit-tags">
-          <span className="kit-chip" style={pop(b, since(b, cue(b, 0, 0.11) - 0.04, 0.5))}>
+          <span className="kit-chip" style={pop(b, since(b, cue(b, 0, 0.12) - 0.04, 0.5))}>
             <ArchiveIcon /> Archive card
           </span>
-          <span className="kit-chip" style={pop(b, since(b, 0.25, 0.5))}>
-            <UpNextIcon /> Put at top of Inbox
+          <span className="kit-chip" style={pop(b, since(b, cue(b, 0, 0.12) + 0.14, 0.5))}>
+            Unarchive card
           </span>
         </div>
         <div className="kit-try" style={pop(b, since(b, 0.3, 0.6), 0.85)}>
@@ -618,10 +549,9 @@ export const CARE_SCENES: ChapterScenes = {
     { clips: ['c11-04'], scene: KeepMissing },
     { clips: ['c11-06', 'c11-05'], scene: FixIt },
     { clips: ['c11-15', 'c11-16', 'c11-17'], scene: Scheduled },
-    { clips: ['c11-07', 'c11-08', 'c11-09'], scene: Prune },
+    { clips: ['c11-07', 'c11-08'], scene: Prune },
     { clips: ['c11-20'], scene: NewBranch },
-    { clips: ['c11-18', 'c11-19'], scene: TendLinks },
-    { clips: ['c11-10'], scene: UpNext },
+    { clips: ['c11-18', 'c11-19'], scene: CareForLinks },
     { clips: ['c11-11'], scene: History },
     { clips: ['c11-12'], scene: MoreNew },
     { clips: ['c11-13'], scene: TryCare },
