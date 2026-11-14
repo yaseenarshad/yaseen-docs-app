@@ -435,15 +435,50 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.start).toHaveBeenCalledExactlyOnceWith({})
   })
 
-  it('YAZ-5000: no Reviews section, also for a card with reviews: only the card, the steps and the answer buttons', async () => {
-    mount('Just a fact')
-    session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }] } } }
+  it('YAZ-5105: a card with reviews shows its Reviews (the card window\'s own `NoteCardReviews`) at the bottom of the last side, only once the card is fully shown; never on the front or an earlier side', async () => {
+    mount(TWO_SIDES)
+    session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }, { at: '2026-11-13T09:00Z', rating: 'again' }] } } }
     render()
     await flush()
-    expect(el.querySelector('.note-card-inbox__card')).not.toBeNull()
-    expect(el.querySelectorAll('.note-card-inbox__answer')).toHaveLength(2)
+    const reviews = () => el.querySelector('.note-card-reviews')
+    // The front, its word, the second side and its first word: hidden all along.
+    for (let step = 0; step < 4; step++) {
+      expect(reviews(), `step ${step}`).toBeNull()
+      press(' ')
+    }
+    await flush()
+    expect(blanks()).toBe(0)
+    // Fully shown: under the card's text, in its frame, the last thing in it; the buttons stay in their band under the frame.
+    const body = el.querySelector('.note-card-inbox__body')!
+    expect(body.lastElementChild).toBe(reviews())
+    expect(reviews()?.previousElementSibling?.classList.contains('note-card-inbox__card')).toBe(true)
+    expect(el.querySelector('.note-card-inbox__dock')?.contains(reviews())).toBe(false)
+    expect(el.querySelectorAll('.note-card-inbox__dock .note-card-inbox__answer')).toHaveLength(2)
+    // The same toggle as the card window's: closed until asked for; open, the table, with no delete in the Inbox.
+    const toggle = el.querySelector<HTMLButtonElement>('.note-card-reviews__toggle')!
+    expect(toggle.textContent).toBe('2 Reviews')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    act(() => toggle.click())
+    expect(el.querySelectorAll('.note-card-reviews__table tbody tr').length).toBeGreaterThanOrEqual(2)
+    expect(el.querySelector('.note-card-reviews__delete')).toBeNull()
+    // A click in it is not a step, and Space still belongs to the Inbox (nothing left to show).
+    expect(review.answer).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-5105: no Reviews for a card with none, fully shown too; the next card hides it again and starts closed', async () => {
+    mount('Just a {{fact}}')
+    await flush()
+    press(' ')
+    await flush()
+    expect(blanks()).toBe(0)
     expect(el.querySelector('.note-card-reviews')).toBeNull()
-    expect(el.textContent).not.toContain('Reviews')
+    session = { ...session, position: 4, card: { ...session.card!, id: 'WIKI-10', page: { ...session.card!.page!, id: 'WIKI-10', reviews: [{ at: AT, rating: 'good' }] } } }
+    render()
+    await flush()
+    expect(el.querySelector('.note-card-reviews'), 'the next card starts on its front').toBeNull()
+    press(' ')
+    await flush()
+    expect(el.querySelector('.note-card-reviews__toggle')?.getAttribute('aria-expanded')).toBe('false')
   })
 
   it('YAZ-5002: the buttons sit under the card, outside its panel; the key row is last; YAZ-5021: no "Press Space" line over the buttons at any step (the key row says Space)', async () => {
