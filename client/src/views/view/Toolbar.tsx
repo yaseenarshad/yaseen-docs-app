@@ -10,6 +10,7 @@ import type { FolderHost } from '../ViewsPane'
 import { countRules } from './filterRows'
 import { ColumnDetail } from './ColumnDetail'
 import { canHideColumn, setViewOrder } from './columnOrder'
+import { cardRowsOf } from '../cardRows'
 import { canonicalKey } from './keys'
 import { CollapseAllIcon, ExpandAllIcon, FilterIcon, PlusIcon, PropertiesIcon, SearchIcon, SortIcon } from './icons'
 import { FilterMenu } from './FilterMenu'
@@ -277,7 +278,8 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
         </div>
         )}
         <span className="view-toolbar__count" aria-live="polite">
-          {rowsLabel(shown, total, folders)}
+          {/* A view listing cards (YAZ-5319) counts cards. */}
+          {cardRowsOf(view) ? countLabel(shown, total, 'card') : rowsLabel(shown, total, folders)}
         </span>
       </div>
     </div>

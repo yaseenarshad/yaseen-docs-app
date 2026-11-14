@@ -118,6 +118,14 @@ export interface ViewDef {
   subfolders?: 'pages' | 'rows' | 'both' | 'hide' | false
   /** "Folders first" (YAZ-4579 D33): `false` = the subfolder rows sort among the pages. Absent = folder rows first. */
   foldersFirst?: boolean
+  /**
+   * "Show cards as rows" (YAZ-5319): `cards` lists one row per card under the folder (`cardRows.ts`), no page. On the
+   * view, so a Board or a Calendar can read it later; a Table reads it now. Absent = pages. Read only while the vault
+   * has Cards and IDs on.
+   */
+  rows?: 'pages' | 'cards'
+  /** The columns the view shows while it lists cards (YAZ-5319), as `order` for pages: each mode keeps its own. */
+  cardOrder?: string[]
   [extra: string]: unknown
 }
 

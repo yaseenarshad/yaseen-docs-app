@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useContext, type ReactNode } from 'react'
 import { useUnit } from '../../vault/unitWord'
 import { GROUP_INDENTS, type Mutate, type ViewDef, type ViewSet, groupIndentOf, showsFolderRows, shownGroupLevels } from '../viewSchema'
 import { TextField } from './TextField'
@@ -12,6 +12,8 @@ import { GroupGuideSettings, HeaderRowStyleRow, TableLookSettings } from './Tabl
 import { FromSettings, chooseOwn, useViewDefaults } from '../viewDefaults'
 import { ChoiceSeg, RowLabel } from './settingRow'
 import { CalendarEndBy, CalendarShowBy } from './CalendarView'
+import { CardRows } from './cardRowsContext'
+import { cardRowsOf } from '../cardRows'
 
 export interface ViewSettingsProps {
   def: ViewSet
@@ -52,6 +54,7 @@ const INDENT_STEPS = [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large
  */
 export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns, crossOut }: ViewSettingsProps) {
   const unit = useUnit()
+  const cardRows = useContext(CardRows)
   const defaults = useViewDefaults()
   const table = view.type === 'table'
   // A calendar's days are its groups (YAZ-4540 D4) and a Board does not indent its groups (YAZ-4544): Table, List
@@ -80,6 +83,23 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
             <FromSettings own={own} viewKey="rowNumbers" viewIndex={viewIndex} onUpdate={onUpdate} />
           </label>
         </>
+      )}
+      {/* "Show cards as rows" (YAZ-5319): a Table lists its pages or its cards; offered only while the vault has Cards and IDs on. */}
+      {table && cardRows?.offered === true && (
+        <div className="view-settings-row">
+          <RowLabel icon="cardRows">Show as rows</RowLabel>
+          <ChoiceSeg
+            label="Show cards as rows"
+            value={cardRowsOf(view) ? 'cards' : 'pages'}
+            options={[['pages', unit('Pages')], ['cards', 'Cards']]}
+            onChange={(rows) =>
+              onUpdate((d) => {
+                if (rows === 'cards') d.views[viewIndex].rows = 'cards'
+                else delete d.views[viewIndex].rows
+              })
+            }
+          />
+        </div>
       )}
       {/* Every view type (YAZ-4579 D30): the one Subfolders switch, in View › Rows since D60. */}
       <SubfoldersSwitch view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />

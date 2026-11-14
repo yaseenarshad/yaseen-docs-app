@@ -4,6 +4,7 @@ import type { ViewSet, ViewDef } from '../viewSchema'
 import type { ColumnDecl } from '../folderSettings'
 import { defaultKeys, propertyKeys, propertyLabel } from '../engine'
 import { canonicalKey } from './keys'
+import { DEFAULT_CARD_ORDER, cardRowsOf } from '../cardRows'
 
 /**
  * Every key the menus can offer (GRO-2135): the view's shown keys first (as written, so
@@ -31,6 +32,14 @@ export function allPropertyKeys(
   }
   const declared = Object.keys(columns)
   for (const k of propertyKeys(def, view, records, declared)) add(k)
+  // A view listing cards (YAZ-5319): the name, the card columns, the Folder and the formulas; a page's properties do
+  // not apply to a card this round (YAZ-5349).
+  if (cardRowsOf(view)) {
+    for (const k of DEFAULT_CARD_ORDER) add(k)
+    add('file.folder')
+    for (const name of Object.keys(def.formulas ?? {})) add(`formula.${name}`)
+    return out
+  }
   for (const k of defaultKeys(records, declared)) add(k)
   // The pages' other fields (C4): what a page with columns does not show by itself.
   const fields = new Set<string>()

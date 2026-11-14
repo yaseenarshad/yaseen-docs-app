@@ -274,16 +274,6 @@ export function pageCardCounts(r: CardPage, s: ReviewSettings, now: number): Pag
   return { cards: cards.length, due }
 }
 
-/** An archived card (YAZ-5046: the line's `off`): what the Inbox's Archived list shows of it, from the index. */
-export interface ArchivedCard {
-  path: string
-  /** Its place among the page's cards. */
-  index: number
-  id: string
-  /** Its title (off its card line, YAZ-5308); absent for a card with none. */
-  title?: string
-}
-
 /**
  * Whether any card of the vault is marked Up next (YAZ-5321: the line's `next`, on a card in review: an ID, not
  * archived). With none, the Inbox offers no Up next: the cards menu has no Up next row, so it does not confuse
@@ -294,23 +284,25 @@ export function anyUpNext(records: readonly CardPage[]): boolean {
 }
 
 /**
- * The archived cards (YAZ-5046) of the vault, of `folder` (root-relative, and its subfolders) or of `page` (its
- * absolute path), by path and then in page order. Only a card with an ID: Unarchive finds it by its ID. A copy whose ID
- * a card before it on the same page holds is left out, as `cardPlan` leaves it out.
+ * A card's review numbers as the folder table's card rows show them (YAZ-5319): its last review (ms; null for a new
+ * card), how many reviews it has, and how often it was remembered (any answer but Forgot, `again`), in whole percent
+ * (null for a new card). Off the card line's reviews alone: no FSRS step.
  */
-export function archivedCards(records: readonly CardPage[], folder = '', page?: string): ArchivedCard[] {
-  const out: ArchivedCard[] = []
-  const sorted = records.filter((r) => r.cards !== undefined && r.cards.some((c) => c.off)).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-  for (const r of sorted) {
-    if (page === undefined ? !inFolder(r.folder, folder) : r.path !== page) continue
-    const ids = new Set<string>()
-    ;(r.cards ?? []).forEach((card, index) => {
-      if (card.id === null || ids.has(card.id)) return
-      ids.add(card.id)
-      if (card.off) out.push({ path: r.path, index, id: card.id, ...(card.title !== undefined && { title: card.title }) })
-    })
+export interface CardReviewNumbers {
+  last: number | null
+  reviews: number
+  successRate: number | null
+}
+
+export function cardReviewNumbers(reviews: readonly CardReview[]): CardReviewNumbers {
+  let last: string | null = null
+  let remembered = 0
+  for (const r of reviews) {
+    if (last === null || r.at > last) last = r.at
+    if (r.rating !== 'again') remembered++
   }
-  return out
+  const at = last === null ? Number.NaN : Date.parse(last)
+  return { last: Number.isNaN(at) ? null : at, reviews: reviews.length, successRate: reviews.length === 0 ? null : Math.round((100 * remembered) / reviews.length) }
 }
 
 /**

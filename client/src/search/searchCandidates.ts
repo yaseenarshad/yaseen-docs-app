@@ -16,6 +16,7 @@
  * the bare name. Search opens `path` directly, so there is nothing to disambiguate — every page
  * gets a row under its own title, and duplicates are told apart by the folder they stand in.
  */
+import { cardsWithIds } from '@shared/cardLine'
 import { boardBaseName } from '@shared/fileKind'
 import { holdsId } from '@shared/pageId'
 import { kebabTitle } from '@shared/pageName'
@@ -72,8 +73,8 @@ export const SEARCH_CAP = 50
  *
  * `cards`: the vault's Review is on (YAZ-5037). A card file's row is then a card (`card`), and its card's ID finds it,
  * the file's ID; with Review off it is a page's row, as before. One row either way. And each card INSIDE a page that
- * has an ID is one more row (YAZ-5047 pick 3), off the index's `cards` (its title and ID, no file read): found by its
- * title, or by its exact ID; a card with no title reads as its ID.
+ * has an ID is one more row (YAZ-5047 pick 3), off the index's `cards` (its title and ID, no file read; `cardsWithIds`,
+ * the folder tables' card rows' source too, YAZ-5319): found by its title, or by its exact ID; a card with no title reads as its ID.
  */
 export function searchCandidates(records: readonly IndexRecord[], letters: readonly string[] = [], cards = false): SearchCandidate[] {
   const was = lettersBefore(letters)
@@ -84,12 +85,11 @@ export function searchCandidates(records: readonly IndexRecord[], letters: reado
     const head = card ? { ...row(r.title, r.title), id: cardFileId(r) ?? r.id, ...was, card: true as const } : { ...row(r.title, r.title), id: r.id, ...was }
     const rows = [head, ...aliases.map((alias) => row(alias, `${alias} — ${r.title}`))]
     if (ownFileName(r)) rows.push(row(r.basename, `${r.basename} — ${r.title}`))
-    if (cards && !card && r.cards !== undefined) {
-      r.cards.forEach((c, index) => {
-        if (c.id === null) return
-        const name = c.title ?? c.id
-        rows.push({ kind: 'file', name, lower: name.toLowerCase(), label: name, path: cardRowPath(r.path, c.id), folder: r.folder, id: c.id, ...was, card: true, page: r.path, index })
-      })
+    if (cards && !card) {
+      for (const { card: c, id, index } of cardsWithIds(r.cards)) {
+        const name = c.title ?? id
+        rows.push({ kind: 'file', name, lower: name.toLowerCase(), label: name, path: cardRowPath(r.path, id), folder: r.folder, id, ...was, card: true, page: r.path, index })
+      }
     }
     return rows
   })

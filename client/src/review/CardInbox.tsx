@@ -42,7 +42,7 @@
  *    Settings › Cards › Inbox: O opens the page at says The card (YAZ-5307; Explore's page layer `card`, `landOn`). E: the same layer in edit, as Explore's own E —
  *    in a Read only vault its "Allow edits?" asks first; a card in a page lands on the card and opens its Edit card
  *    ("e would edit the card"). Esc or ⌘↵ in edit go back to reading; then Esc or ⌘↵ come back to this card at the
- *    same step. The title and "in <page>" links, ⋯ › Open card and an archived card's row open as O does.
+ *    same step. The title and "in <page>" links and ⋯ › Open card open as O does.
  *  - P (YAZ-5014): plays or stops the first sound of the sides that show. Nothing plays by itself; the next card (an
  *    answer, ← →, ⌘Z), a hidden Inbox and its close stop it. "P Play" is in the hint row only while a side that shows
  *    has a sound. A board's picture (YAZ-5015) opens the board on top; Esc there comes back to this card and step.
@@ -82,9 +82,8 @@
  *    button; nothing waiting, the screen is as before. The cards menu has the same Add (`CardInboxBar`). The add's
  *    line takes the last answer's line, "+ Added 10 new cards for today · Undo ⌘Z": its Undo, and ⌘Z, take the add
  *    back while it is the last thing done (the hook's own undo).
- *  - ARCHIVED (YAZ-5046, Yaseen: "We need a way to be able to then have a toggle"): the cards menu's last row lists the
- *    scope's archived cards in the card's place, to look at, not to review: each its title and its page; a click opens
- *    it as O does (YAZ-5145), and "Unarchive" brings it back to review, its history kept. No answer buttons.
+ *  - ARCHIVED cards are not listed here (YAZ-5319): a folder page's table shows them (Show cards as rows, Card status
+ *    is Archived), and a card's ⋯ menu unarchives it.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
@@ -124,7 +123,6 @@ export interface CardInboxProps {
   review: CardReviewApi
   session: CardReviewSession
   vaultOf: (path: string) => ExploreVault
-  nameOf: (path: string) => string
   /**
    * O, the title and the page name (YAZ-5145): Explore's own page layer for the card's file, reading, at its TOP
    * (YAZ-5022); with `card` (YAZ-5307, Settings › Cards › Inbox: O opens the page at › The card), landed on that card.
@@ -199,40 +197,7 @@ export const addedLine = (kind: AddKind, n: number): string => `Added ${n} ${kin
 /** A Reset's line (YAZ-5042 round 2), after its "↺": "Reset today's new cards" (back to the Settings number). */
 export const resetLine = (kind: AddKind): string => `Reset today's ${kind === 'new' ? 'new cards' : 'Up next'}`
 
-/**
- * The Archived list (YAZ-5046): the scope's archived cards, to look at. Each row: its title (a click opens it as O does,
- * YAZ-5145), its page, quiet, and Unarchive. None: one quiet line and the way back to All cards.
- */
-function ArchivedList({ session, nameOf, openPage, unarchive, backToAll }: { session: CardReviewSession; nameOf: (path: string) => string; openPage: (path: string) => void; unarchive: CardReviewApi['unarchive']; backToAll: () => void }) {
-  if (session.archived.length === 0)
-    return (
-      <div className="card-inbox__done" role="status">
-        <p className="card-inbox__done-line card-inbox__archived-empty">No archived cards.</p>
-        {session.counts.all > 0 && (
-          <button type="button" className="card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={backToAll}>
-            {session.counts.all} more in {CARD_FILTERS[0].label}
-          </button>
-        )}
-      </div>
-    )
-  return (
-    <ul className="card-inbox__archived" aria-label="Archived cards">
-      {session.archived.map((c) => (
-        <li key={`${c.path}\n${c.id}`} className="card-inbox__archived-row">
-          <button type="button" className="card-inbox__archived-open" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(c.path)}>
-            <span className={`card-inbox__archived-title${c.title === undefined ? ' card__title--empty' : ''}`}>{c.title ?? c.id}</span>
-            <span className="card-inbox__archived-page">{nameOf(c.path)}</span>
-          </button>
-          <button type="button" className="explore__button card-inbox__archived-unarchive" onMouseDown={(e) => e.preventDefault()} onClick={() => void unarchive(c.path, c.id)}>
-            Unarchive
-          </button>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-export function CardInbox({ shown = true, review, session, vaultOf, nameOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace }: CardInboxProps) {
+export function CardInbox({ shown = true, review, session, vaultOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace }: CardInboxProps) {
   const unit = useUnit()
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
@@ -447,9 +412,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
         </div>
         {/* The card's frame and its width edges (YAZ-5019), shared with the Preview (YAZ-5152). */}
         <InboxCardPanel startDrag={startDrag} bodyRef={bodyRef}>
-            {session.filter === 'archived' ? (
-              <ArchivedList session={session} nameOf={nameOf} openPage={openFile} unarchive={review.unarchive} backToAll={() => review.setFilter('all')} />
-            ) : card === null ? (
+            {card === null ? (
               <div className="card-inbox__done" role="status">
                 {/* YAZ-5033: today's work across the vault, under whatever the screen says. */}
                 {session.filter !== 'all' && session.counts.all > 0 ? (
@@ -496,7 +459,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
         {/* YAZ-5105 round 2: the Reviews strip, as Mochi's, under the card and outside its frame; round 3: as soon as the
             last side shows, its hidden words shown or not; closed again for each card. The buttons' band stays at the
             bottom of the view over it. */}
-        {card?.page != null && session.filter !== 'archived' && onLastSide && card.page.reviews.length > 0 && <CardReviews key={cardKey} reviews={card.page.reviews} settings={review.settings} />}
+        {card?.page != null && onLastSide && card.page.reviews.length > 0 && <CardReviews key={cardKey} reviews={card.page.reviews} settings={review.settings} />}
         {/* Under the card, outside its frame, as in Mochi (YAZ-5002): the answer buttons, then the keys. No "Press Space"
             line between them (YAZ-5021): the key row at the bottom already says Space. */}
         {/* YAZ-5049 round 2: the buttons and their line stay at the bottom of the view while a long card scrolls under them. */}

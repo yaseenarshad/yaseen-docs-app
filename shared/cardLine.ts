@@ -427,6 +427,29 @@ export function findCards(text: string): CardBlock[] {
 /** What the index keeps of a page's cards (D4, YAZ-5308 its title off its line): one entry per card, in page order. */
 export const cardRecords = (text: string): CardRecord[] => findCards(text).map((c) => cardRecordOf(c.line))
 
+/** A card of a page that has an ID, with its place among the page's cards (`findCards` order, 0 first). */
+export interface CardWithId {
+  card: CardRecord
+  id: string
+  index: number
+}
+
+/**
+ * The cards of a page that each list ONE row for (search's card rows, YAZ-5047; a folder table's card rows, YAZ-5319),
+ * off the index's `cards`: each card with an ID, in page order. A copy whose ID a card before it on the page holds is
+ * left out, as the review leaves it out (`cardPlan`): one row per ID, so each row's path stays its own.
+ */
+export function cardsWithIds(cards: readonly CardRecord[] | undefined): CardWithId[] {
+  const out: CardWithId[] = []
+  const seen = new Set<string>()
+  cards?.forEach((card, index) => {
+    if (card.id === null || seen.has(card.id)) return
+    seen.add(card.id)
+    out.push({ card, id: card.id, index })
+  })
+  return out
+}
+
 /**
  * `text` with the card line of each card `change` names rewritten: `change` gets each card in page order and returns
  * the new line, or undefined to leave that card as it is. A card that had no line gets one right under its fence;
