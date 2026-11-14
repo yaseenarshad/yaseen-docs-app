@@ -592,6 +592,18 @@ describe('renderNoteCard (the page and the Inbox, D18)', () => {
     expect([...last.querySelectorAll('.note-card__blank')].map((b) => (b as HTMLElement).dataset.hidden)).toEqual(['3'])
   })
 
+  it('YAZ-5053 round 3: the ONE blank the next Space shows carries `data-next`, from the same step; none when the next Space shows a side, none when all show', () => {
+    const next = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('[data-next]')].map((b) => [b.dataset.hidden, b.className])
+    expect(next(renderNoteCard(text, { sides: 1, shown: 0 }))).toEqual([['0', 'note-card__blank']])
+    expect(next(renderNoteCard(text, { sides: 1, shown: 2 }))).toEqual([['2', 'note-card__blank']])
+    // Every word of side 1 shows: the next Space adds side 2, so no word is marked.
+    expect(next(renderNoteCard(text, { sides: 1, shown: 3 }))).toEqual([])
+    expect(next(renderNoteCard(text, { sides: 2, shown: 3 }))).toEqual([['3', 'note-card__blank']])
+    // The page shows everything: nothing is next.
+    expect(next(renderNoteCard(text))).toEqual([])
+    expect(next(renderNoteCard(text, { sides: 2, shown: 4 }))).toEqual([])
+  })
+
   it('YAZ-5013: the blank and the shown word are the same two spans with the real word inside — only the class (and what a screen reader hears) changes — and a copy over a blank leaves the word out', () => {
     const outer = (el: HTMLElement) => el.querySelector<HTMLElement>('[data-hidden="0"]')!
     const blank = outer(renderNoteCard('Capital of {{France}} today', { shown: 0 }))

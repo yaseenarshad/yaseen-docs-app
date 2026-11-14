@@ -2150,6 +2150,14 @@ export interface SettingsState {
    */
   shownHiddenWords: ShownHiddenWords
   /**
+   * Settings › Review › Mark the next hidden word (YAZ-5053 round 3, Yaseen: "can it have a color to it so we know that
+   * that is where the eye should go?"): the one blank the next Space shows takes a colour, in the look of Shown hidden
+   * words. `data-mark-next-hidden` on `.app`; the render marks the blank (`data-next`).
+   */
+  markNextHidden: boolean
+  /** Its colour: `null` is the theme's calm default (`--next-hidden` in `app.css`, light and dark); else a hex colour for both. */
+  nextHiddenColour: string | null
+  /**
    * Settings › Review › Card spacing (YAZ-5050): how a note card reads in the Inbox, the card window and the page.
    * `pages` (the default) follows the pages' Line spacing, Space between blocks, Bullet indent and Bullet gap; `custom`
    * uses the four `card*` values below, on `.app` as `--card-line-height`, `--card-block-gap`, `--card-bullet-indent`
@@ -2897,6 +2905,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sectionStep: 30,
   sectionLines: 'always',
   shownHiddenWords: 'highlight',
+  markNextHidden: true,
+  nextHiddenColour: null,
   cardSpacing: 'pages',
   ...CARD_SPACING_CUSTOM_START,
   tableOfContents: 'auto',

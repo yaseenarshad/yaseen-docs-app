@@ -24,6 +24,8 @@
   --danger: #d64545;
   --warn: #c98a1a;
   --ok: #3a9d5d;
+  /* The next hidden word's colour (YAZ-5053 round 3): a calm sky blue, not a status colour nor the accent. */
+  --next-hidden: #2a8bd1;
   /* Hover washes on the sidebar chrome (header/cog) and on tree rows. */
   --bg-hover: #eeeef0;
   --bg-hover-row: #e9e9ec;
@@ -93,6 +95,7 @@
   --danger: #e06c6c;
   --warn: #d9a13c;
   --ok: #4fb573;
+  --next-hidden: #5ab4ea;
   --bg-hover: #333336;
   --bg-hover-row: #303034;
   --fg-dir: #b8b8bd;

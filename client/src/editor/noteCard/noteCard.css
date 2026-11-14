@@ -594,6 +594,17 @@
 [data-shown-hidden-words='box'] .note-card .note-card__hidden {
   background: color-mix(in srgb, var(--fg) 5%, transparent);
 }
+/* Mark the next hidden word (YAZ-5053 round 3): the one blank the next Space shows takes the colour, in the look of
+   Shown hidden words: its line, its highlight, its box. */
+[data-mark-next-hidden] .note-card .note-card__blank[data-next] {
+  border-bottom-color: var(--next-hidden);
+}
+[data-mark-next-hidden][data-shown-hidden-words='highlight'] .note-card .note-card__blank[data-next] {
+  background: color-mix(in srgb, var(--next-hidden) 22%, transparent);
+}
+[data-mark-next-hidden][data-shown-hidden-words='box'] .note-card .note-card__blank[data-next] {
+  background: color-mix(in srgb, var(--next-hidden) 35%, transparent);
+}
 /* The blank: the word's own width, a line under it; the word inside is invisible, and a selection skips it. An inline
    border does not change the line's height. */
 .note-card__blank {

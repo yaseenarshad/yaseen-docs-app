@@ -123,6 +123,9 @@ export const BULLET_SPACE_PRESETS: readonly Option<number>[] = [
 /** Thread line width presets, like logseq-bullet-threading (GRO-2109); `THREAD_WIDTHS` validates the field. */
 export const THREAD_WIDTH_OPTIONS: readonly Option<number>[] = THREAD_WIDTHS.map((value) => ({ label: `${value}px`, value }))
 
+/** The next hidden word's default colour in the picker (YAZ-5053 round 3): `--next-hidden` of the light theme, `app.css`. */
+export const NEXT_HIDDEN_SWATCH = '#2a8bd1'
+
 /** Shown in the colour swatch while the thread uses the app accent (`--accent` in app.css). */
 export const DEFAULT_THREAD_SWATCH = '#5b6cff'
 
