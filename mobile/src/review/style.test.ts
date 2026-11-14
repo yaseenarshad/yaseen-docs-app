@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest'
  * 4B's stylesheet (jsdom has no layout, so the rules are read here): the buttons stay in reach while a long card
  * scrolls, they are big for a thumb, and the three tokens the Mac's card styles read have the Mac's values.
  */
-const css = readFileSync(new URL('./review.css', import.meta.url), 'utf8')
+// YAZ-5363: the Review tab's place and its waiting state are in `screens/reviewSlot.css` (the first load draws them).
+const css = readFileSync(new URL('./review.css', import.meta.url), 'utf8') + readFileSync(new URL('../screens/reviewSlot.css', import.meta.url), 'utf8')
 const mac = readFileSync(new URL('../../../client/src/app.css', import.meta.url), 'utf8')
 const tokens = (block: string) => Object.fromEntries([...block.matchAll(/(--[\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]))
 const blockAfter = (text: string, start: string) => {
