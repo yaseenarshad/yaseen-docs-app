@@ -1424,24 +1424,30 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(save).not.toHaveBeenCalled()
   })
 
-  const CUSTOM_ROWS = ['cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap']
-  const CUSTOM = { cardSpacing: 'custom' as const, cardLineSpacing: 2, cardBlockGap: 8, cardBulletIndent: 40, cardBulletGap: 12 }
-  it('YAZ-5050: Card spacing is Same as pages by default, with no other row; Custom starts from the pages\' values and shows its four rows; Same as pages goes back', () => {
-    const page = { ...DEFAULT_SETTINGS, lineSpacing: 2, blockGap: 8, noteBulletIndent: 40, noteBulletGap: 12 }
+  const CUSTOM_ROWS = ['cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace']
+  const CUSTOM = { cardSpacing: 'custom' as const, cardLineSpacing: 2, cardBlockGap: 8, cardBulletIndent: 40, cardBulletGap: 12, cardBulletSpace: 4 }
+  it('YAZ-5050 round 3: Card spacing is Same as pages by default, with no other row; Custom starts at Mochi\'s clean values (not the pages\'), and shows its rows', () => {
+    const page = { ...DEFAULT_SETTINGS, lineSpacing: 1.15, blockGap: 2, noteBulletIndent: 40, noteBulletGap: 12, ...CUSTOM, cardSpacing: 'pages' as const }
     const { el, onChange } = mountOn('Review', page, undefined, S)
     expect(rowButtons(el, 'cardSpacing').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Same as pages', 'true'], ['Custom', 'false']])
     for (const id of CUSTOM_ROWS) expect(row(el, id)).toBeNull()
     act(() => rowButtons(el, 'cardSpacing')[1].click())
-    expect(onChange).toHaveBeenLastCalledWith({ ...page, ...CUSTOM })
+    expect(onChange).toHaveBeenLastCalledWith({ ...page, cardSpacing: 'custom', cardLineSpacing: 1.5, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 0 })
   })
 
-  it('YAZ-5050: Custom card spacing: its four rows under Card spacing, in the pages\' words; a change is an app setting; Same as pages goes back', () => {
+  it('YAZ-5050: Custom card spacing: its rows under Card spacing, in the pages\' words; a change is an app setting; Reset goes to Custom\'s start; Same as pages goes back', () => {
     const custom = { ...DEFAULT_SETTINGS, ...CUSTOM }
     const { el, onChange } = mountOn('Review', custom, undefined, S)
-    expect(reviewRows(el).slice(-7)).toEqual(['cardSpacing', ...CUSTOM_ROWS, 'cardSpacingPreview', 'howCardsComeBack'])
-    expect(CUSTOM_ROWS.map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Line spacing', 'Space between blocks', 'Bullet indent', 'Bullet gap'])
+    expect(reviewRows(el).slice(-8)).toEqual(['cardSpacing', ...CUSTOM_ROWS, 'cardSpacingPreview', 'howCardsComeBack'])
+    expect(CUSTOM_ROWS.map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Line spacing', 'Space between blocks', 'Bullet indent', 'Bullet gap', 'Space between bullets'])
     act(() => rowButtons(el, 'cardBlockGap')[3].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardBlockGap: 12 })
+    // Round 3: Space between bullets, Tight (Mochi's) to Relaxed.
+    expect(rowButtons(el, 'cardBulletSpace').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Tight', 'false'], ['Compact', 'false'], ['Default', 'true'], ['Relaxed', 'false']])
+    act(() => rowButtons(el, 'cardBulletSpace')[0].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardBulletSpace: 0 })
+    act(() => [...(row(el, 'cardBulletGap')?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Reset')?.click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardBulletGap: 10 })
     act(() => rowButtons(el, 'cardSpacing')[0].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardSpacing: 'pages' })
   })

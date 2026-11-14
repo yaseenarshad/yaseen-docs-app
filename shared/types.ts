@@ -2153,7 +2153,7 @@ export interface SettingsState {
    * Settings › Review › Card spacing (YAZ-5050): how a note card reads in the Inbox, the card window and the page.
    * `pages` (the default) follows the pages' Line spacing, Space between blocks, Bullet indent and Bullet gap; `custom`
    * uses the four `card*` values below, on `.app` as `--card-line-height`, `--card-block-gap`, `--card-bullet-indent`
-   * and `--card-bullet-gap`. Custom starts from the pages' values.
+   * and `--card-bullet-gap`. Round 3: Custom starts at Mochi's clean values (`CARD_SPACING_CUSTOM_START`).
    */
   cardSpacing: CardSpacing
   /** Card spacing, Custom (YAZ-5050): the card's line spacing, as `lineSpacing`. */
@@ -2164,6 +2164,8 @@ export interface SettingsState {
   cardBulletIndent: number
   /** Card spacing, Custom (YAZ-5050): the card's bullet gap, px, as `noteBulletGap`. */
   cardBulletGap: number
+  /** Card spacing, Custom (YAZ-5050 round 3): the space above and below each bullet, px per side; Same as pages uses the space between blocks. */
+  cardBulletSpace: number
   /** The table of contents at a note's right edge (YAZ-2700): how you READ, global, never part of a note. Settings › "Pin default"; the card's "Pin" and "Unpin" write it too. */
   tableOfContents: TableOfContents
   /** Settings › "Table of contents default" (YAZ-3558 D2): on or off for each page that made no choice in its cog: a note's choice is its `toc` key (YAZ-4094 G4), a code file's is in `tocSwitches`. A page's choice wins. */
@@ -2497,6 +2499,12 @@ export type CardSpacing = 'pages' | 'custom'
 export const CARD_SPACINGS: readonly CardSpacing[] = ['pages', 'custom']
 /** A card's own space between blocks (YAZ-5050), px per side. */
 export const CARD_BLOCK_GAP_MAX = 24
+/**
+ * Card spacing's Custom start (YAZ-5050 round 3, Yaseen: "if you put it to custom there are custom defaults and those
+ * custom defaults are what mochies are"): measured on his Mochi screenshot — lines 1.5 apart, about 1em between
+ * paragraphs (8 px a side), and no extra space between bullets. Separate from the pages' own defaults.
+ */
+export const CARD_SPACING_CUSTOM_START = { cardLineSpacing: 1.5, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 0 } as const
 
 /** Guide lines (YAZ-4094 G2): when they show — `near` is while the mouse is over the note. */
 export type GuideLinesShow = 'always' | 'near'
@@ -2886,10 +2894,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   sectionLines: 'always',
   shownHiddenWords: 'highlight',
   cardSpacing: 'pages',
-  cardLineSpacing: 1.5,
-  cardBlockGap: 4,
-  cardBulletIndent: 34,
-  cardBulletGap: 10,
+  ...CARD_SPACING_CUSTOM_START,
   tableOfContents: 'auto',
   tocOnByDefault: true,
   tableOfContentsWidth: TOC_DEFAULT_W,

@@ -112,6 +112,13 @@ export const BLOCK_GAP_PRESETS: readonly Option<number>[] = [
   { label: 'Relaxed', value: 8 },
   { label: 'Spacious', value: 12 },
 ]
+/** Card spacing › Space between bullets (YAZ-5050 round 3): px per side; Tight is Mochi's, Default the pages'. */
+export const BULLET_SPACE_PRESETS: readonly Option<number>[] = [
+  { label: 'Tight', value: 0 },
+  { label: 'Compact', value: 2 },
+  { label: 'Default', value: 4 },
+  { label: 'Relaxed', value: 8 },
+]
 
 /** Thread line width presets, like logseq-bullet-threading (GRO-2109); `THREAD_WIDTHS` validates the field. */
 export const THREAD_WIDTH_OPTIONS: readonly Option<number>[] = THREAD_WIDTHS.map((value) => ({ label: `${value}px`, value }))

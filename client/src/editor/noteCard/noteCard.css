@@ -348,7 +348,7 @@
   --card-list-gap: var(--card-bullet-gap, var(--note-bullet-gap, 10px));
   --card-list-indent: var(--card-bullet-indent, var(--note-bullet-indent, 2.15em));
   --card-list-gutter: calc(2.15em - 10px);
-  --card-list-row: var(--card-gap);
+  --card-list-row: var(--card-bullet-space, var(--card-gap));
   line-height: var(--card-line);
   --card-list-dot: 0.42em;
   --card-list-marker: color-mix(in srgb, currentColor 78%, transparent);

@@ -119,7 +119,8 @@ it("YAZ-5050: a card's text reads with the pages' Line spacing and Space between
   const vars = rules(cardCss, '.note-card__side').find((r) => r.body.includes('--card-gap:'))!
   expect(vars.body).toMatch(/--card-gap:\s*var\(--card-block-gap, var\(--edit-block-gap, 4px\)\)/)
   expect(vars.body).toMatch(/--card-line:\s*var\(--card-line-height, var\(--edit-line-height, 1\.5\)\)/)
-  expect(vars.body).toMatch(/--card-list-row:\s*var\(--card-gap\)/)
+  // Round 3: Custom's own Space between bullets (Mochi's: none), else the space between blocks, as the page's.
+  expect(vars.body).toMatch(/--card-list-row:\s*var\(--card-bullet-space, var\(--card-gap\)\)/)
   // A paragraph: the page's look (its padding is the space between blocks), and it beats the page's own rule, which
   // reaches a card's paragraphs in the page.
   const app = read('../../app.css')

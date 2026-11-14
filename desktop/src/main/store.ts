@@ -697,6 +697,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   cardBlockGap: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= 0 && v <= CARD_BLOCK_GAP_MAX,
   cardBulletIndent: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= NOTE_BULLET_INDENT_MIN && v <= NOTE_BULLET_INDENT_MAX,
   cardBulletGap: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= NOTE_BULLET_GAP_MIN && v <= NOTE_BULLET_GAP_MAX,
+  cardBulletSpace: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= 0 && v <= CARD_BLOCK_GAP_MAX,
   tableOfContents: (v): v is TableOfContents => typeof v === 'string' && (TABLE_OF_CONTENTS as readonly string[]).includes(v),
   tocOnByDefault: (v): v is boolean => typeof v === 'boolean',
   tableOfContentsWidth: (v): v is number => isFiniteNumber(v) && v >= TOC_MIN_W && v <= TOC_MAX_W,
