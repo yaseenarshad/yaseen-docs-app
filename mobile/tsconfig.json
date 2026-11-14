@@ -1,0 +1,12 @@
+{
+  // The app itself: browser types only. With no Node types here, `process`, `Buffer` or `require` in src/ fail the typecheck.
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+    "paths": { "@shared/*": ["../shared/*"], "@client/*": ["../client/src/*"] }
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/store/testing.ts"]
+}
