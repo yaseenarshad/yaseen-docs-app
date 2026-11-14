@@ -172,15 +172,19 @@
   gap: 10px;
 }
 
-/* The caption: one line of fixed height, always on screen (YAZ-5120), as the sample's. */
+/*
+ * The caption, always on screen (YAZ-5120). It keeps room for two lines, so most clips never move the stage, and grows
+ * to the lines a long clip needs (YAZ-5345: three lines at Wide, more at Narrow): never cut. The stage above
+ * (`flex: 1`) gives up that height; the controls stay below.
+ */
 .course__caption {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: center;
-  height: 52px;
+  min-height: 52px;
   margin: 14px auto 10px;
   max-width: 640px;
-  overflow: hidden;
   font-size: 17px;
   line-height: 1.45;
   text-align: center;
@@ -342,6 +346,15 @@
   background: var(--bg-hover);
 }
 
+/* A quiet choice beside a note ("Play without sound", YAZ-5346): small, no fill. */
+.course__btn--quiet {
+  min-height: 26px;
+  padding: 2px 10px;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12.5px;
+}
+
 .course__btn:disabled {
   opacity: 0.45;
   cursor: default;
@@ -400,7 +413,7 @@
   }
 
   .course__caption {
-    height: 72px;
+    min-height: 72px;
     font-size: 16px;
   }
 }
