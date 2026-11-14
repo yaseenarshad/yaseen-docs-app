@@ -18,13 +18,31 @@ import { handleWithEvent } from './envelope'
  *    script, the devtools console or a synthetic DOM event makes no such event. The preload also asks
  *    `navigator.userActivation` (its own world, which the page cannot change), but main does not trust a renderer flag.
  * 3. No code of this window is shown now, and no confirm is open: a second request gets nothing.
- * 4. Main's own confirm, a native box that page code cannot click. Cancel: no code.
- * 5. After the code is made, the window must still be in front (YAZ-5217), else no grid.
+ * 4. Main makes the code, then asks its own confirm: a native box that page code cannot click, which names the vault
+ *    and says to continue only if the person asked (YAZ-5248). Cancel is the default (`phoneConfirmOptions`). Cancel:
+ *    no grid.
+ * 5. After the confirm, the window must still be in front (YAZ-5217), else no grid.
  * A shown code counts for `SHOWN_MS`, or until the dialog says it hid it (`phone:hide`, same sender checks).
  * A failure answers plain words, never its own message, which could hold a secret.
  */
 export const GESTURE_MS = 5_000
 export const SHOWN_MS = 60_000
+
+/**
+ * Main's confirm (YAZ-5247, YAZ-5248), the last wall before the grid: it names the vault, says what the code lets a
+ * person do, and says to continue only if the person asked. Cancel is the default and the cancel button, so Enter and
+ * Escape give Cancel.
+ */
+export function phoneConfirmOptions(repo: string) {
+  return {
+    type: 'warning' as const,
+    buttons: ['Show code', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    message: `Show the phone code for ${repo}?`,
+    detail: 'With this code, a person can change the pages and cards of this vault on GitHub. The code hides after 60 seconds. Continue only if you asked for this code.',
+  }
+}
 
 export interface PhoneIpcHost {
   rendererUrl: string
@@ -36,8 +54,8 @@ export interface PhoneIpcHost {
   build(root: string): Promise<PhoneCodeAnswer>
   /** The time of the last real click or key in this web contents, as main saw it; null for none. */
   lastInputAt(sender: WebContents): number | null
-  /** Main's confirm (a native box on the sender's window): true for "Show code". */
-  confirm(sender: WebContents): Promise<boolean>
+  /** Main's confirm (a native box on the sender's window, `phoneConfirmOptions(repo)`): true for "Show code". */
+  confirm(sender: WebContents, repo: string): Promise<boolean>
   now(): number
 }
 
@@ -69,11 +87,11 @@ export function registerPhoneIpc(windows: Pick<WindowManagerIpc, 'idFor'>, host:
     shown.set(sender.id, 'busy')
     let answer: PhoneCodeAnswer
     try {
-      if (!(await host.confirm(sender))) {
+      answer = await host.build(root)
+      if (answer.ok && !(await host.confirm(sender, answer.repo))) {
         shown.delete(sender.id)
         return { ok: false, problem: 'cancelled' }
       }
-      answer = await host.build(root)
     } catch {
       shown.delete(sender.id)
       throw new BridgeFailure('IO_ERROR', 'The code could not be made.')
