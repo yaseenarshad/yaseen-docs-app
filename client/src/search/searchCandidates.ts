@@ -16,7 +16,7 @@
  * the bare name. Search opens `path` directly, so there is nothing to disambiguate — every page
  * gets a row under its own title, and duplicates are told apart by the folder they stand in.
  */
-import { cardsWithIds } from '@shared/cardLine'
+import { cardsWithIds } from '@shared/cardsWithIds'
 import { boardBaseName } from '@shared/fileKind'
 import { holdsId } from '@shared/pageId'
 import { kebabTitle } from '@shared/pageName'
