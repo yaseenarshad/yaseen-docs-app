@@ -20,6 +20,11 @@ import { createDir, createFile } from '../../../desktop/src/main/fs/create'
 import { BridgeFailure } from '../../../desktop/src/main/fs/fsUtils'
 import { scanFile } from '../../../desktop/src/main/vaultIndex/scan'
 import { AGENT_PROMPT, NO_CARDS_YET } from './prompt'
+import { act } from 'react'
+import { COURSE } from './script'
+import { WAITING_CLIPS } from './waits'
+import { courseScenes } from './scenes'
+import { mountScene, testClock } from './scenes/testing'
 import { memoryHost, showOnlyHost, type CourseHost, type CourseVault, type MadeCard } from './courseHost'
 import {
   COURSE_PAGE,
@@ -185,6 +190,53 @@ describe('the first card (chapter 2)', () => {
     const record = await scanFile(root, made.path)
     expect(record.cards).toHaveLength(1)
     expect(record.cards?.[0]).toMatchObject({ id: 'TST-2', title: made.title, notitle: true })
+  })
+
+  it('YAZ-5121 with YAZ-5124: the chapter 2 scene, with the real host on a temporary vault, makes one valid card file from what the person typed', async () => {
+    ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+    const ch = COURSE.find((c) => c.id === 'first-card')!
+    const clip = (id: string) => ch.clips.find((c) => c.id === id)!
+    const host = vaultCourseHost(vaultOf().view, depsOf().deps)
+    const { clock } = testClock(4)
+    const scene = mountScene(courseScenes('c2-07'), ch, { clock, done: () => undefined, host, waits: (c) => WAITING_CLIPS.has(c.id) })
+    const typeInto = (el: HTMLInputElement | HTMLTextAreaElement, value: string) => {
+      const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+      act(() => {
+        Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(el, value)
+        el.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    const click = (el: Element | null | undefined) => act(() => (el as HTMLElement).click())
+    try {
+      scene.render(clip('c2-07'))
+      const field = scene.el.querySelector<HTMLTextAreaElement>('#kit-front')!
+      typeInto(field, 'Light from the Sun takes about eight minutes to reach Earth.')
+      act(() => field.form!.requestSubmit())
+      scene.render(clip('c2-08'))
+      click([...scene.el.querySelectorAll('.kit-word')].find((b) => b.textContent === 'eight'))
+      scene.render(clip('c2-28'))
+      const back = scene.el.querySelector<HTMLInputElement>('#kit-back')!
+      typeInto(back, 'Light moves at about 300,000 km a second.')
+      act(() => back.form!.requestSubmit())
+      scene.render(clip('c2-10'))
+      click(scene.el.querySelector('.kit-tap'))
+      click(scene.el.querySelector('.kit-tap'))
+      scene.render(clip('c2-11'))
+      click([...scene.el.querySelectorAll('.card-inbox__answer')].find((b) => b.textContent?.includes('Remembered')))
+      await vi.waitFor(async () => expect(await cardFilesIn(join(root, 'course-cards'))).toHaveLength(1))
+      const [name] = await cardFilesIn(join(root, 'course-cards'))
+      const content = await readFile(join(root, 'course-cards', name), 'utf8')
+      expect(isCardFileContent(content)).toBe(true)
+      const shape = cardFileShape(splitFrontmatter(content).body)
+      expect(shape.problem).toBe('ok')
+      expect(cardSides(shape.cards[0].text)).toEqual(['Light from the Sun takes about {{eight}} minutes to reach Earth.', 'Light moves at about 300,000 km a second.'])
+      const record = await scanFile(root, join(root, 'course-cards', name))
+      expect(record.cards).toHaveLength(1)
+      // The host's title rule: the first sentence of the front, without its full stop.
+      expect(record.cards?.[0]).toMatchObject({ title: 'Light from the Sun takes about eight minutes to reach Earth' })
+    } finally {
+      scene.unmount()
+    }
   })
 
   it('a repeat makes a second file, never over the first; no back makes a card of one side', async () => {

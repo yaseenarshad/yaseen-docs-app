@@ -6,7 +6,7 @@
  * - Light and dark (the app's `data-theme`), reduced motion, three stage sizes, auto-advance through the chapter
  *   (a span keeps its scene mounted across its clips, as in the layer).
  * - A clip that waits shows how many times its scene called `done()`; it holds at its end until then.
- * - The host: "makes files" (a test double that answers `makeCard` with a made-up path) or "only shows".
+ * - The host: "makes files" (the course's test double `memoryHost`: `makeFirstCard` answers a made-up path) or "only shows".
  * - The address keeps the place: `#c2-07@0.5`.
  */
 import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -14,10 +14,9 @@ import { createRoot } from 'react-dom/client'
 import { COURSE, type CourseClip } from '../../client/src/course/script'
 import { WAITING_CLIPS } from '../../client/src/course/waits'
 import { clipSeconds } from '../../client/src/course/courseTime'
-import { showOnlyHost, type CourseHost } from '../../client/src/course/courseHost'
+import { memoryHost as courseMemoryHost, showOnlyHost, type CourseHost, type MadeCard } from '../../client/src/course/courseHost'
 import type { SceneClock, SceneTime } from '../../client/src/course/scene'
 import { courseScenes, BUILT_CHAPTERS } from '../../client/src/course/scenes'
-import type { CourseCardDraft } from '../../client/src/course/scenes/makeCard'
 import '../../client/src/app.css'
 import '../../client/src/course/course.css'
 import './preview.css'
@@ -52,19 +51,16 @@ function createClock() {
   }
 }
 
-/** A host that makes the card (a made-up path), as the real one of issue 6F will. */
-function memoryHost(made: (draft: CourseCardDraft) => void): CourseHost & { makeCard(folder: string, draft: CourseCardDraft): Promise<{ path: string }> } {
+/** A host that makes the card (a made-up path), as the real one does (YAZ-5124), a moment later. */
+function memoryHost(made: (card: MadeCard) => void): CourseHost {
+  const host = courseMemoryHost('/Demo vault')
   return {
-    vault: '/Demo vault',
-    courseCards: () => Promise.resolve({ path: '/Demo vault/Course Cards' }),
-    watchCards: (_folder, onCards) => {
-      onCards([])
-      return () => undefined
-    },
-    makeCard: (folder, draft) => {
-      made(draft)
-      return new Promise((done) => setTimeout(() => done({ path: `${folder}/${draft.title}.md` }), 300))
-    },
+    ...host,
+    makeFirstCard: (input) =>
+      host.makeFirstCard(input).then((card) => {
+        if ('path' in card) made(card)
+        return new Promise((done) => setTimeout(() => done(card), 300))
+      }),
   }
 }
 
@@ -182,7 +178,7 @@ function Preview() {
     document.documentElement.dataset.theme = theme
   }, [theme])
 
-  const host = useMemo(() => (makes ? memoryHost((d) => setLog((l) => [...l, `makeCard: "${d.title}" (${d.answer})\n${d.text}`])) : showOnlyHost('/Demo vault')), [makes])
+  const host = useMemo(() => (makes ? memoryHost((card) => setLog((l) => [...l, `makeFirstCard: "${card.title}" → ${card.path}\n${card.text}`])) : showOnlyHost('/Demo vault')), [makes])
   const done = useCallback(() => setDoneCount((c) => ({ ...c, [clips[index].clip.id]: (c[clips[index].clip.id] ?? 0) + 1 })), [index])
   const Scene = courseScenes(clip.id)
   const key = courseScenes.spanOf(clip.id) ?? clip.id

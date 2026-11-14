@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as Reac
 import type { SceneProps } from '../scene'
 import { PAPERS } from './papers'
 import { CANDID, MANY_TITLES, PROTEIN } from './cards'
-import { draftText, draftTitle, makeFirstCard, type MadeCard } from './makeCard'
+import { draftText, draftTitle, firstCardInput, makeFirstCard, type MadeCard } from './makeCard'
 import {
   Answers,
   AppWindow,
@@ -453,17 +453,13 @@ function MakeCard(props: SceneProps) {
     if (answer !== null) return
     setAnswer(a)
     finish('c2-11')
-    const words2 = words
-    void makeFirstCard(host, {
-      title: draftTitle(words2.join(' ')),
-      text: draftText(words2, hide, back ?? ''),
-      answer: a,
-    }).then(setMade)
+    void makeFirstCard(host, firstCardInput(words, hide, back ?? '')).then(setMade)
   }
 
   const order = ['c2-06', 'c2-07', 'c2-08', 'c2-09', 'c2-28', 'c2-10', 'c2-11', 'c2-12', 'c2-13']
   const step = order.indexOf(id)
-  const title = draftTitle(words.join(' '))
+  // Once the host made the file, its title (the host's title rule); until then the first words.
+  const title = made !== null && 'path' in made ? made.title : draftTitle(words.join(' '))
   const cardIn = since(b, 0, 0.5)
 
   let stage

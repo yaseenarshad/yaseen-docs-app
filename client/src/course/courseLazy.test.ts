@@ -66,5 +66,7 @@ describe('the course loads only when it opens (YAZ-5120)', () => {
   it('App loads the layer with import() only', () => {
     const app = readFileSync(join(SRC, 'App.tsx'), 'utf8')
     expect(app).toContain("import('./course/CardCourse')")
+    // YAZ-5159: the layer App loads is the one with the downloaded voice, not the silent frame.
+    expect(app).toContain('m.VoicedCardCourse')
   })
 })

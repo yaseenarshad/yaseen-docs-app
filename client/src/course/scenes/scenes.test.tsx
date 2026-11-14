@@ -12,7 +12,7 @@ import { PlaceholderScene } from '../PlaceholderScene'
 import { showOnlyHost, SHOW_ONLY_NOT_YET } from '../courseHost'
 import { BUILT_CHAPTERS, CHAPTER_SCENES, NOT_BUILT_CHAPTERS, courseScenes } from '.'
 import { PAPERS, lineWords } from './papers'
-import { draftText, draftTitle, makeFirstCard } from './makeCard'
+import { COULD_NOT_MAKE, draftText, draftTitle, firstCardInput, makeFirstCard } from './makeCard'
 import { memoryHost, mountScene, testClock } from './testing'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -180,15 +180,14 @@ describe('the first card, made in the course (chapter 2, YAZ-5121)', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    expect(host.made).toEqual([
-      { title: 'Light from the Sun takes about…', text: 'Light from the Sun takes about {{eight}} minutes to reach Earth.\n---\nLight moves at about 300,000 km a second.', answer: 'remembered' },
-    ])
+    expect(host.made.map((m) => m.text)).toEqual(['Light from the Sun takes about {{eight}} minutes to reach Earth.\n---\nLight moves at about 300,000 km a second.'])
 
     scene.render(clip('c2-12'))
     scene.render(clip('c2-13'))
     at(0.9)
     expect(scene.el.querySelector('.tree__label')?.textContent).toBe('Course Cards')
-    expect(scene.el.textContent).toContain('Light from the Sun takes about…')
+    // The made card's title, from the host.
+    expect(scene.el.textContent).toContain(host.made[0].title)
     expect(done).toHaveBeenCalledTimes(5)
     scene.unmount()
   })
@@ -245,12 +244,15 @@ describe('the first card file (YAZ-5121, the host seam for 6F)', () => {
     expect(draftTitle('')).toBe('My first card')
   })
 
-  it('asks the host for the folder, then the file; a host without makeCard only shows; a failure is one line', async () => {
-    const draft = { title: 't', text: 'x', answer: 'forgot' as const }
-    expect(await makeFirstCard(memoryHost(), draft)).toEqual({ path: '/demo/Course Cards/t.md' })
-    expect(await makeFirstCard(showOnlyHost(null), draft)).toEqual({ showOnly: 'Open a vault to make real cards.' })
-    expect(await makeFirstCard(showOnlyHost('/demo'), draft)).toEqual({ showOnly: SHOW_ONLY_NOT_YET })
-    const broken = { ...memoryHost(), makeCard: () => Promise.reject(new Error('disk full')) }
-    expect('showOnly' in (await makeFirstCard(broken, draft))).toBe(true)
+  it('makes the card through host.makeFirstCard (YAZ-5124); a host that only shows says why; a failure is one line', async () => {
+    const input = firstCardInput(['The', 'sky', 'is', 'blue.'], 3, ' Rayleigh scattering. ')
+    expect(input).toEqual({ front: 'The sky is blue.', hidden: { start: 11, end: 15 }, back: 'Rayleigh scattering.' })
+    const host = memoryHost()
+    expect(await makeFirstCard(host, input)).toMatchObject({ text: 'The sky is {{blue}}.\n---\nRayleigh scattering.' })
+    expect(host.made).toHaveLength(1)
+    expect(await makeFirstCard(showOnlyHost(null), input)).toEqual({ showOnly: 'Open a vault to make real cards.' })
+    expect(await makeFirstCard(showOnlyHost('/demo'), input)).toEqual({ showOnly: SHOW_ONLY_NOT_YET })
+    const broken = { ...memoryHost(), makeFirstCard: () => Promise.reject(new Error('disk full')) }
+    expect(await makeFirstCard(broken, input)).toEqual({ showOnly: COULD_NOT_MAKE })
   })
 })
