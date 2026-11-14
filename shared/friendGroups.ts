@@ -6,8 +6,10 @@ import {
   gistErrorCode,
   gistErrorResetAt,
   isGistId,
+  makeParkedPointer,
   makePointer,
   parseFriendsIndex,
+  readListGist,
   pointersOf,
   readFriend,
   readPointerFile,
@@ -19,7 +21,7 @@ import {
   type GistsApi,
   type IndexHandle,
 } from './friendGists'
-import { pendingRemove, removeFriend, type ListCache, type ListOptions, type RemoveResult } from './friendsList'
+import { pinPointer, pendingRemove, removeFriend, type ListCache, type ListOptions, type RemoveResult } from './friendsList'
 import type { GistBudget } from './friendSend'
 import type { FriendDay, FriendStats } from './friendStats'
 
@@ -234,10 +236,10 @@ async function freshList(api: GistsApi, handle: IndexHandle, opts: ListOptions):
     throw new Stop(found.kind === 'newer' ? 'newer-app' : found.kind === 'broken' ? 'needs-repair' : 'not-found')
   }
   if (gist === 'unchanged') return handle
-  const read = parseFriendsIndex(fileText(gist, INDEX_FILE))
+  const read = readListGist(gist)
   if (read.kind === 'newer') throw new Stop('newer-app')
   if (read.kind === 'unreadable') throw new Stop('needs-repair')
-  return { ...handle, index: read.value, raw: read.raw, etag: gist.etag }
+  return { ...handle, index: read.value, raw: read.raw, etag: gist.etag, files: read.files, state: read.list }
 }
 
 type Failure = { kind: 'offline' } | { kind: 'rate-limited'; retryAt: number | null } | { kind: 'refused' } | { kind: 'unauthorized' } | { kind: 'failed' }
@@ -317,13 +319,14 @@ export async function createGroup(api: GistsApi, handle: IndexHandle, name: stri
   try {
     let base = await freshList(api, handle, opts)
     if (base.index.stats === null) return { kind: 'failed' }
-    const pointer = await makePointer(api, base.index.stats, opts)
+    const pointer = await makeParkedPointer(api, opts)
     await opts.sleep(1000)
     const file: GroupFile = { v: 1, name: clean, admin: login, members: [{ login, pointer }] }
     const made = await api.create(opts.describe('index').replace(/index|friends list/gi, 'group'), { [GROUP_FILE]: groupFileText(file) })
     await opts.sleep(1000)
     base = await freshList(api, base, opts)
-    const next = await writeFriendsIndex(api, base, { ...base.index, groups: [...base.index.groups, { name: clean, group: made.id, mine: pointer, admin: true, joined: true }] })
+    const written = await writeFriendsIndex(api, base, { ...base.index, groups: [...base.index.groups, { name: clean, group: made.id, mine: pointer, admin: true, joined: true }] })
+    const next = await pinPointer(api, written, pointer, opts)
     return { kind: 'ok', handle: next, group: made.id, link: groupLink(made.id) }
   } catch (err) {
     return failure(err)
@@ -365,10 +368,11 @@ export async function joinGroup(api: GistsApi, handle: IndexHandle, text: string
     if (file.kind === 'newer') return { kind: 'newer-app' }
     if (file.kind === 'unreadable') return { kind: 'needs-repair' }
     if (base.index.stats === null) return { kind: 'failed' }
-    const pointer = await makePointer(api, base.index.stats, opts)
+    const pointer = await makeParkedPointer(api, opts)
     await opts.sleep(1000)
     base = await freshList(api, base, opts)
-    const next = await writeFriendsIndex(api, base, { ...base.index, groups: [...base.index.groups, { name: file.value.name, group, mine: pointer, admin: false, asked: new Date(opts.now()).toISOString() }] })
+    const written = await writeFriendsIndex(api, base, { ...base.index, groups: [...base.index.groups, { name: file.value.name, group, mine: pointer, admin: false, asked: new Date(opts.now()).toISOString() }] })
+    const next = await pinPointer(api, written, pointer, opts)
     return { kind: 'joined', name: file.value.name, group, sendToAdmin: joinLink(group, pointer), handle: next }
   } catch (err) {
     return failure(err)
@@ -578,9 +582,9 @@ export async function sweepOrphans(api: GistsApi, handle: IndexHandle, _deviceNo
     const listNow = async (): Promise<IndexHandle | null> => {
       const gist = await api.read(handle.id)
       if (gist === 'unchanged') return null
-      const read = parseFriendsIndex(fileText(gist, INDEX_FILE))
+      const read = readListGist(gist)
       if (read.kind !== 'ok') return null
-      const h = { ...handle, index: read.value, raw: read.raw, etag: gist.etag }
+      const h = { ...handle, index: read.value, raw: read.raw, etag: gist.etag, files: read.files, state: read.list }
       return pendingRemove(h) === null ? h : null
     }
     const list = await listNow()

@@ -1,4 +1,5 @@
 import {
+  readListGist,
   DESCRIPTIONS,
   INDEX_FILE,
   findFriendsIndex,
@@ -188,10 +189,9 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
       try {
         const answer = await api.read(index.id, index.etag)
         if (answer === 'unchanged') return index
-        const file = answer.files[INDEX_FILE]
-        const read = parseFriendsIndex(file?.truncated ? null : file?.content)
+        const read = readListGist(answer)
         if (read.kind === 'newer') return 'newer'
-        if (read.kind === 'ok') return (index = { ...index, index: read.value, raw: read.raw, etag: answer.etag })
+        if (read.kind === 'ok') return (index = { ...index, index: read.value, raw: read.raw, etag: answer.etag, files: read.files, state: read.list })
       } catch (err) {
         if (gistErrorCode(err) !== 'NOT_FOUND') throw err
       }

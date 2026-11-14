@@ -1,5 +1,5 @@
 import { isGistId, type GistDoc, type GistListItem, type GistRate, type GistsApi } from '@shared/friendGists'
-import type { GithubClient, RateLimit } from '../github/client'
+import { GithubError, type GithubClient, type RateLimit } from '../github/client'
 
 /**
  * The gist calls (YAZ-5082) on the ONE GitHub client of 3E (`github/client.ts`): the token goes in the Authorization
@@ -11,6 +11,9 @@ import type { GithubClient, RateLimit } from '../github/client'
 const PAGE = 100
 /** 1000 gists at most: a person with more has the friends files in the newest ones (GitHub lists the newest first). */
 const MAX_PAGES = 10
+/** A PATCH that GitHub refused with 409 (another write of the same gist at that moment) is sent again this often. */
+const CONFLICT_RETRIES = 2
+const CONFLICT_WAIT_MS = 1000
 
 interface RawGist {
   id: string
@@ -51,7 +54,8 @@ function gistPath(id: string): string {
   return `/gists/${id.toLowerCase()}`
 }
 
-const filesBody = (files: Record<string, string>) => Object.fromEntries(Object.entries(files).map(([name, content]) => [name, { content }]))
+/** A file's new text, or `null`: GitHub deletes that one file (YAZ-5312). */
+const filesBody = (files: Record<string, string | null>) => Object.fromEntries(Object.entries(files).map(([name, content]) => [name, content === null ? null : { content }]))
 
 export function gistsApi(client: GithubClient): GistsApi {
   /** YAZ-5238: GitHub's time at its last answer (the `Date` header, or a lower bound from the core reset). */
@@ -86,8 +90,17 @@ export function gistsApi(client: GithubClient): GistsApi {
       return toDoc(answer.data, answer.etag)
     },
     async update(id, files) {
-      const answer = await request(gistPath(id), { method: 'PATCH', body: { files: filesBody(files) } })
-      return { gist: answer.data === null ? null : toDoc(answer.data, answer.etag), rate: gistRate(answer.rateLimit) }
+      // YAZ-5312 (proved live): two PATCHes of one gist at the same moment, on DIFFERENT files, can get 409 for one of
+      // them. GitHub refused that whole write, so the same write is safe to send again: up to 2 more times, after a wait.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const answer = await request(gistPath(id), { method: 'PATCH', body: { files: filesBody(files) } })
+          return { gist: answer.data === null ? null : toDoc(answer.data, answer.etag), rate: gistRate(answer.rateLimit) }
+        } catch (err) {
+          if (!(err instanceof GithubError && err.status === 409) || attempt >= CONFLICT_RETRIES) throw err
+          await new Promise((r) => setTimeout(r, CONFLICT_WAIT_MS * (attempt + 1)))
+        }
+      }
     },
     async remove(id) {
       await request(gistPath(id), { method: 'DELETE' })

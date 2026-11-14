@@ -20,7 +20,7 @@
  * for Settings; never a dialog, a throw or a log line. The stored state holds no token and no gist ID.
  */
 import { createHash } from 'node:crypto'
-import { findFriendsIndex, gistErrorCode, gistErrorResetAt, INDEX_FILE, parseFriendsIndex, pointersOf, type GistsApi, type IndexHandle, type WriteOptions } from '@shared/friendGists'
+import { findFriendsIndex, gistErrorCode, gistErrorResetAt, pointersOf, readListGist, type GistsApi, type IndexHandle, type WriteOptions } from '@shared/friendGists'
 import { emptyBudget, numbersFor, numbersKey, reserveFor, sendGap, sendGate, sendNumbers, type GistBudget, type SendReason } from '@shared/friendSend'
 import type { FriendStats, FriendVault } from '@shared/friendStats'
 import { COUNT_LIMIT_MS, countPayload } from './countJob'
@@ -171,9 +171,10 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
       try {
         const answer = await api.read(index.id, index.etag)
         if (answer === 'unchanged') return index
-        const read = parseFriendsIndex(answer.files[INDEX_FILE]?.truncated ? null : answer.files[INDEX_FILE]?.content)
+        // YAZ-5312: the list is the head and one file for each entry: read the whole gist.
+        const read = readListGist(answer)
         if (read.kind === 'newer') return 'newer'
-        if (read.kind === 'ok') return (index = { ...index, index: read.value, raw: read.raw, etag: answer.etag })
+        if (read.kind === 'ok') return (index = { ...index, index: read.value, raw: read.raw, etag: answer.etag, files: read.files, state: read.list })
       } catch (err) {
         if (gistErrorCode(err) !== 'NOT_FOUND') throw err
       }

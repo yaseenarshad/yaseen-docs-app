@@ -1,4 +1,4 @@
-import { DESCRIPTIONS, INDEX_FILE, emptyNumbers, pointersOf, ensureFriendsFiles, findFriendsIndex, gistErrorCode, parseFriendsIndex, writeFriendsIndex, type GistsApi, type IndexHandle } from '@shared/friendGists'
+import { readListGist, DESCRIPTIONS, INDEX_FILE, emptyNumbers, pointersOf, ensureFriendsFiles, findFriendsIndex, gistErrorCode, parseFriendsIndex, writeFriendsIndex, type GistsApi, type IndexHandle } from '@shared/friendGists'
 import { emptyBudget, recordUpdate, type GistBudget } from '@shared/friendSend'
 import {
   addMember,
@@ -22,6 +22,7 @@ import {
   WHAT_FRIENDS_SEE,
   dropHeldShares,
   markPaired,
+  settlePointers,
   finishRemove,
   newListCache,
   parseFriendLink,
@@ -195,14 +196,13 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     try {
       const answer = await api.read(h.id, h.etag)
       if (answer === 'unchanged') return h
-      const file = answer.files[INDEX_FILE]
-      const read = parseFriendsIndex(file?.truncated ? null : file?.content)
+      const read = readListGist(answer)
       if (read.kind === 'newer') return 'newer'
       if (read.kind === 'unreadable') {
         handle = null
         return 'broken'
       }
-      const next = { ...h, index: read.value, raw: read.raw, etag: answer.etag }
+      const next = { ...h, index: read.value, raw: read.raw, etag: answer.etag, files: read.files, state: read.list }
       await remember(next)
       return next
     } catch (err) {
@@ -372,6 +372,8 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
   const leaveOutcome = async (r: LeaveResult, vault: string, queue?: { mine: string; drop?: string[] }): Promise<LeaveOutcome | Unavailable> =>
     r.kind === 'admin-cannot-leave' ? r : r.kind === 'not-found' && !('handle' in r) ? { kind: 'not-found' } : mapRemove(r as RemoveResult, vault, queue)
   let swept = false
+  /** YAZ-5312: `settlePointers` ran in this session. */
+  let settled = false
 
   const groups: FriendsGroups = {
     create: (name) =>
@@ -533,6 +535,19 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
           const r = await finishRemove(api, h, await budget(), opts)
           await mapRemove(r, vault)
           h = r.handle
+        }
+        // YAZ-5312: once each session, each pointer of the list that is parked or older moves to the numbers gist.
+        // It waits while a remove waits on this phone (removes come first in the hour), and a refused write (the hour
+        // used up, offline) only means it runs again next time: the rows never fail on it.
+        if (!settled && pendingRemove(h) === null && (await queuedMines(phoneStore)).size === 0) {
+          settled = true
+          try {
+            h = await settlePointers(api, h, opts)
+            await remember(h)
+          } catch (err) {
+            if (gistErrorCode(err) === null) throw err
+            settled = false
+          }
         }
         const read = await readFriends(api, h, cache, now())
         const queued = await queuedMines(phoneStore)

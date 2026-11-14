@@ -97,8 +97,11 @@ export interface GistsApi {
   read(id: string, etag?: string | null): Promise<GistDoc | 'unchanged'>
   /** A new SECRET gist. */
   create(description: string, files: Record<string, string>): Promise<GistDoc>
-  /** Changes these files. Counts 1 on `gist_update`; `rate` is GitHub's count after it. */
-  update(id: string, files: Record<string, string>): Promise<{ gist: GistDoc | null; rate: GistRate | null }>
+  /**
+   * Changes these files, and ONLY these files: GitHub keeps each file the call does not name (YAZ-5312; proved live).
+   * `null` deletes that one file. Counts 1 on `gist_update`; `rate` is GitHub's count after it.
+   */
+  update(id: string, files: Record<string, string | null>): Promise<{ gist: GistDoc | null; rate: GistRate | null }>
   remove(id: string): Promise<void>
   /**
    * YAZ-5238: GitHub's time (ms) at its last answer, or null when it is not known: the `Date` header, or else a lower
@@ -291,13 +294,306 @@ function indexText(index: FriendsIndex, raw: Record<string, unknown> = {}): stri
   })
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// The list gist, version 2 (YAZ-5312): one file for each entry, inside the SAME gist (decisions 14 and 15 stand).
+//
+// GitHub has no conditional write for a gist, and a `PATCH` changes only the files it names. So a write that sends
+// the WHOLE list from a copy read a moment before can undo another device's change. Version 2 sends only what changed:
+// - `notecards-friends.json` (the head): `{ v: 2, nickname, vaults }`. A version 1 head is read as before (its
+//   `friends`, `groups`, `shared`, `stats` and `rekey` stay readable, and are kept as they are).
+// - `notecards-friends.f.<mine>.json` a friend `{ name, theirs, paired? }`; `…g.<mine>.json` a group; `…s.<mine>.json`
+//   a shared link `{ at }`.
+// - `notecards-friends.x.<mine>.json` a TOMBSTONE `{ at, kinds, rekey, name?, drop? }`: the entry with that pointer is
+//   gone for good. A stale write of the entry file cannot bring it back. `rekey: true`: a remove (a new numbers gist).
+// - `notecards-friends.n.<k>.json` the numbers generation k `{ stats, covers }`: the current numbers gist is the one of
+//   the highest k (then the highest ID); `covers` names each removed pointer that it was made after. `…d.<id>.json`: done
+//   (each pointer moved to it, the older numbers gists deleted). A larger set of removes makes a NEW generation.
+
+export const LIST_VERSION = 2
+const LIST_PREFIX = 'notecards-friends.'
+/** The names of the list's own files (inside the list gist). */
+export const listFile = {
+  friend: (mine: string) => `${LIST_PREFIX}f.${mine}.json`,
+  group: (mine: string) => `${LIST_PREFIX}g.${mine}.json`,
+  shared: (mine: string) => `${LIST_PREFIX}s.${mine}.json`,
+  /** A tombstone of the pointer `mine`; `tag` makes the name unique, so no tombstone is ever written over another. */
+  tomb: (mine: string, tag: string) => `${LIST_PREFIX}x.${mine}-${tag}.json`,
+  /** Generation k with its numbers gist: a unique name, so two devices never write over each other's generation. */
+  gen: (k: number, stats: string) => `${LIST_PREFIX}n.${k}-${stats}.json`,
+  done: (stats: string) => `${LIST_PREFIX}d.${stats}.json`,
+}
+const LIST_FILE_RE = /^notecards-friends\.([fgsxnd])\.([0-9a-z-]{1,90})\.json$/
+/** Is this a file of the list gist (the head, or an entry, tombstone or generation file)? */
+export const isListFile = (name: string): boolean => name === INDEX_FILE || LIST_FILE_RE.test(name)
+
+export type EntryKind = 'friend' | 'group' | 'shared'
+const KINDS: readonly EntryKind[] = ['friend', 'group', 'shared']
+
+/** A tombstone: the entry (of `kinds`) with the pointer `mine` is gone for good. */
+export interface Tombstone {
+  /** The tombstone's own ID (`<mine>-<tag>`): a generation's `covers` names tombstones, not pointers. */
+  id: string
+  mine: string
+  kinds: EntryKind[]
+  /** A remove: a new numbers gist must follow (round 16). False: the entry was only replaced (a heal, a shared link that became a friend). */
+  rekey: boolean
+  at: string
+  name?: string
+  /** More of my gists to delete with it (the group file of "Delete group"). */
+  drop: string[]
+}
+
+/** A numbers generation. */
+export interface Generation {
+  k: number
+  stats: string
+  covers: string[]
+  done: boolean
+}
+
+export interface ListState {
+  tombs: Tombstone[]
+  gens: Generation[]
+  /** The numbers gist of a version 1 head (before any generation). */
+  legacyStats: string | null
+  /** Removes (tombstones with `rekey`) that no generation covers yet. */
+  pending: Tombstone[]
+}
+
+export type ListRead = { kind: 'ok'; value: FriendsIndex; raw: Record<string, unknown>; files: Record<string, string>; list: ListState } | { kind: 'newer' } | { kind: 'unreadable'; why: string }
+
+const parseJson = (text: string): unknown => {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The list from its files (the head and each list file; other files are ignored). Never throws. The YAZ-5191 rule:
+ * a head that is not a JSON object with `v` 1 or 2, a field of the wrong shape, a tombstone or a generation that cannot
+ * be read: the whole list is `unreadable`, and nothing writes to it. An entry file that cannot be read is left out
+ * and kept as it is. A `v` above 2 is `newer`.
+ */
+export function readListFiles(input: Record<string, string | null | undefined>): ListRead {
+  const files: Record<string, string> = {}
+  for (const [name, text] of Object.entries(input)) if (typeof text === 'string' && isListFile(name)) files[name] = text
+  const headText = files[INDEX_FILE]
+  if (headText === undefined) return { kind: 'unreadable', why: 'the head file is missing' }
+  if (headText.length > 256 * 1024) return { kind: 'unreadable', why: 'the file is too large' }
+  const head = parseJson(headText)
+  if (!isObject(head)) return { kind: 'unreadable', why: 'the file is not an object' }
+  if (typeof head.v === 'number' && Number.isInteger(head.v) && head.v > LIST_VERSION) return { kind: 'newer' }
+  if (head.v !== 1 && head.v !== LIST_VERSION) return { kind: 'unreadable', why: 'the file has another version' }
+  // The head's own fields (and a version 1 head's arrays) are read with the version 1 rules.
+  let legacy: { ok: true; value: FriendsIndex } | { ok: false; why: string }
+  try {
+    legacy = parseIndex(JSON.stringify({ ...head, v: 1 }))
+  } catch {
+    legacy = { ok: false, why: 'the file cannot be read' }
+  }
+  if (!legacy.ok) return { kind: 'unreadable', why: legacy.why }
+  const friends = new Map(legacy.value.friends.map((f) => [f.mine, f]))
+  const groups = new Map(legacy.value.groups.map((g) => [g.mine, g]))
+  const shared = new Map((legacy.value.shared ?? []).map((x) => [x.mine, x]))
+  const tombs: Tombstone[] = []
+  const gens: Generation[] = []
+  const done = new Set<string>()
+  for (const [name, text] of Object.entries(files)) {
+    const m = LIST_FILE_RE.exec(name)
+    if (m === null) continue
+    const [, kind, key] = m
+    const o = parseJson(text)
+    if (kind === 'f') {
+      if (isGistId(key) && isObject(o) && isGistId(o.theirs)) friends.set(key, { name: shownName(o.name), theirs: (o.theirs as string).toLowerCase(), mine: key, ...(o.paired === true && { paired: true as const }) })
+    } else if (kind === 'g') {
+      if (isGistId(key) && isObject(o) && isGistId(o.group))
+        groups.set(key, {
+          name: shownName(o.name),
+          group: (o.group as string).toLowerCase(),
+          mine: key,
+          admin: o.admin === true,
+          ...(o.joined === true && { joined: true as const }),
+          ...(typeof o.asked === 'string' && o.asked.length <= 40 && { asked: o.asked }),
+        })
+    } else if (kind === 's') {
+      if (isGistId(key) && isObject(o)) shared.set(key, { mine: key, at: typeof o.at === 'string' && o.at.length <= 40 ? o.at : '' })
+    } else if (kind === 'x') {
+      const kinds = isObject(o) && Array.isArray(o.kinds) ? o.kinds : KINDS
+      const [mineKey, tag] = key.split('-')
+      if (!isGistId(mineKey) || tag === undefined || !isObject(o) || typeof o.rekey !== 'boolean' || !kinds.every((k) => (KINDS as readonly unknown[]).includes(k)) || (o.drop !== undefined && !(Array.isArray(o.drop) && o.drop.every(isGistId))))
+        return { kind: 'unreadable', why: `the tombstone ${key} cannot be read` }
+      tombs.push({ id: key, mine: mineKey, kinds: kinds as EntryKind[], rekey: o.rekey, at: typeof o.at === 'string' ? o.at.slice(0, 40) : '', ...(typeof o.name === 'string' && { name: o.name.slice(0, MAX_NAME) }), drop: (o.drop as string[] | undefined) ?? [] })
+    } else if (kind === 'n') {
+      const [kText, statsKey] = key.split('-')
+      const k = Number(kText)
+      if (!Number.isInteger(k) || k < 0 || !isObject(o) || !isGistId(o.stats) || o.stats.toLowerCase() !== statsKey || !Array.isArray(o.covers) || !o.covers.every((c) => typeof c === 'string' && /^[0-9a-z-]{1,90}$/.test(c)))
+        return { kind: 'unreadable', why: `the numbers generation ${key} cannot be read` }
+      gens.push({ k, stats: (o.stats as string).toLowerCase(), covers: o.covers as string[], done: false })
+    } else if (kind === 'd') {
+      if (isGistId(key)) done.add(key)
+    }
+  }
+  gens.sort((a, b) => a.k - b.k || (a.stats < b.stats ? -1 : a.stats > b.stats ? 1 : 0))
+  for (const g of gens) g.done = done.has(g.stats)
+  const ended = (mine: string, kind: EntryKind) => tombs.some((t) => t.mine === mine && t.kinds.includes(kind))
+  // A remove waits until the CURRENT generation covers it: a generation made from an older copy of the list (by a
+  // device that read it before the remove) may be the newest, and the removed friend may have read it.
+  const covered = new Set(gens.at(-1)?.covers ?? [])
+  // A version 1 head's waiting remove (`rekey.drop`) reads as removes that no generation covers yet.
+  const legacyRekey = isObject(head.rekey) && Array.isArray(head.rekey.drop) ? (head.rekey.drop as unknown[]).filter(isGistId) : []
+  for (const mine of legacyRekey) if (!tombs.some((t) => t.mine === mine)) tombs.push({ id: `${mine}-legacy`, mine, kinds: [...KINDS], rekey: true, at: '', drop: [] })
+  // A version 1 re-key whose pointers were already deleted (`drop` empty) still waits: one tombstone with no entry.
+  if (isObject(head.rekey) && legacyRekey.length === 0) tombs.push({ id: 'rekey-legacy', mine: PARKED, kinds: [], rekey: true, at: '', drop: [] })
+  const pending = tombs.filter((t) => t.rekey && !covered.has(t.id))
+  const current = gens.at(-1)
+  const legacyStats = legacy.value.stats
+  const stats = current?.stats ?? legacyStats
+  const value: FriendsIndex = {
+    v: 1,
+    nickname: legacy.value.nickname,
+    vaults: legacy.value.vaults,
+    stats,
+    friends: [...friends.values()].filter((f) => !ended(f.mine, 'friend')),
+    groups: [...groups.values()].filter((g) => !ended(g.mine, 'group')),
+    shared: [...shared.values()].filter((x) => !ended(x.mine, 'shared')),
+  }
+  const { rekey: _legacyRekey, ...headRest } = head
+  const waiting = pending.length > 0 || (current !== undefined && !current.done)
+  const names: Record<string, string> = {}
+  for (const t of pending) if (t.name !== undefined) names[t.mine] = t.name
+  const previous = gens.length >= 2 ? gens[gens.length - 2].stats : legacyStats
+  const raw: Record<string, unknown> = {
+    ...headRest,
+    ...(waiting && {
+      rekey: {
+        old: current !== undefined && !current.done ? previous : stats,
+        drop: [...pending.map((t) => t.mine), ...pending.flatMap((t) => t.drop)],
+        next: current !== undefined && !current.done ? current.stats : null,
+        at: pending[0]?.at ?? '',
+        names,
+      },
+    }),
+  }
+  return { kind: 'ok', value, raw, files, list: { tombs, gens, legacyStats, pending } }
+}
+
+/** The list from a gist answer (its files; a file cut short reads as missing). */
+export function readListGist(gist: GistDoc): ListRead {
+  const files: Record<string, string | null> = {}
+  for (const [name, f] of Object.entries(gist.files)) files[name] = f.truncated ? null : f.content
+  return readListFiles(files)
+}
+
+/** The text of an entry file: the known fields over the fields of the file as read (an older app's extra fields stay). */
+function entryText(base: string | undefined, known: Record<string, unknown>): string {
+  const o = base === undefined ? undefined : parseJson(base)
+  const raw = isObject(o) ? o : {}
+  const out: Record<string, unknown> = { ...raw, v: 1, ...known }
+  if (typeof known.name === 'string' && typeof raw.name === 'string' && known.name === shownName(raw.name)) out.name = raw.name
+  for (const [k, v] of Object.entries(out)) if (v === undefined) delete out[k]
+  return JSON.stringify(out)
+}
+
+/** The tag of a tombstone's file name: what it ends, a remove or not, and when (no two different tombstones share it). */
+export const tombTag = (kinds: readonly EntryKind[], rekey: boolean, at = ''): string =>
+  `${kinds.map((k) => k[0]).join('')}${rekey ? 'r' : 'e'}${(Date.parse(at) || 0).toString(36)}${Math.floor(Math.random() * 36 ** 4).toString(36)}`
+
+/** A tombstone file's text. */
+export const tombText = (t: Omit<Tombstone, 'mine' | 'id'>): string => JSON.stringify({ v: 1, ...t, ...(t.drop.length === 0 && { drop: undefined }) })
+
+/**
+ * The files to write so that the list as read (`handle`) becomes `next`, and nothing more (YAZ-5312). An entry that
+ * `next` no longer has gets a tombstone that only ends it (`rekey: false`): a remove writes its own tombstone first.
+ */
+export function listPatch(handle: IndexHandle, next: FriendsIndex): Record<string, string | null> {
+  const base = handle.index
+  const files = handle.files ?? {}
+  const patch: Record<string, string | null> = {}
+  const headObj = isObject(handle.raw) ? handle.raw : {}
+  const { rekey: _synth, ...headRaw } = headObj
+  const legacyHead = headRaw.v === 1 || handle.files === undefined
+  // The head: only when the name or the vaults change, or to move a version 1 head to version 2 (its arrays stay).
+  const vaultsChanged = JSON.stringify(next.vaults) !== JSON.stringify(base.vaults)
+  if (legacyHead || next.nickname !== base.nickname || vaultsChanged) {
+    const headParsed = parseJson(files[INDEX_FILE] ?? '{}')
+    const rawHead = isObject(headParsed) ? headParsed : headRaw
+    const nickname = next.nickname === shownNickname(rawHead.nickname) && rawHead.nickname !== undefined ? rawHead.nickname : next.nickname
+    const keptVaults = (Array.isArray(rawHead.vaults) ? rawHead.vaults : []).filter((v) => typeof v !== 'string')
+    patch[INDEX_FILE] = JSON.stringify({ ...rawHead, v: LIST_VERSION, nickname, vaults: [...next.vaults, ...keptVaults] })
+  }
+  const endTomb = (mine: string, kinds: EntryKind[]) => {
+    if ((handle.state?.tombs ?? []).some((t) => t.mine === mine && kinds.every((k) => t.kinds.includes(k)))) return
+    patch[listFile.tomb(mine, tombTag(kinds, false))] = tombText({ kinds, rekey: false, at: '', drop: [] })
+  }
+  // Friends.
+  const nextFriends = new Map(next.friends.map((f) => [f.mine, f]))
+  for (const f of next.friends) {
+    const name = listFile.friend(f.mine)
+    const old = base.friends.find((x) => x.mine === f.mine)
+    if (old !== undefined && files[name] !== undefined && old.name === f.name && old.theirs === f.theirs && (old.paired === true) === (f.paired === true)) continue
+    const text = entryText(files[name], { name: f.name, theirs: f.theirs, paired: f.paired === true ? true : undefined })
+    if (files[name] !== text) patch[name] = text
+  }
+  for (const f of base.friends) if (!nextFriends.has(f.mine)) endTomb(f.mine, ['friend'])
+  // Groups.
+  const nextGroups = new Map(next.groups.map((g) => [g.mine, g]))
+  for (const g of next.groups) {
+    const name = listFile.group(g.mine)
+    const old = base.groups.find((x) => x.mine === g.mine)
+    if (old !== undefined && files[name] !== undefined && JSON.stringify(old) === JSON.stringify(g)) continue
+    const text = entryText(files[name], { name: g.name, group: g.group, admin: g.admin, joined: g.joined === true ? true : undefined, asked: g.asked })
+    if (files[name] !== text) patch[name] = text
+  }
+  for (const g of base.groups) if (!nextGroups.has(g.mine)) endTomb(g.mine, ['group'])
+  // Shared links: a new one is a file; one that goes loses its file (a version 1 one gets a tombstone for `shared`).
+  const nextShared = new Set((next.shared ?? []).map((x) => x.mine))
+  for (const x of next.shared ?? []) if (!(base.shared ?? []).some((y) => y.mine === x.mine)) patch[listFile.shared(x.mine)] = JSON.stringify({ v: 1, at: x.at })
+  for (const x of base.shared ?? []) {
+    if (nextShared.has(x.mine)) continue
+    if (files[listFile.shared(x.mine)] !== undefined) patch[listFile.shared(x.mine)] = null
+    else endTomb(x.mine, ['shared'])
+  }
+  // The numbers gist: a new generation, done at once (a re-key writes its own generations).
+  if (next.stats !== null && next.stats !== base.stats) {
+    const gens = handle.state?.gens ?? []
+    const k = (gens.at(-1)?.k ?? -1) + 1
+    const covers = [...new Set([...(gens.at(-1)?.covers ?? []), ...(handle.state?.pending ?? []).map((t) => t.id)])]
+    patch[listFile.gen(k, next.stats)] = JSON.stringify({ v: 1, stats: next.stats, covers })
+    patch[listFile.done(next.stats)] = '{"v":1}'
+  }
+  return patch
+}
+
+/** YAZ-5276: a numbers gist that is provably ours: exactly our one file, in our format. Never by a file name alone. */
+export async function isOurNumbersGist(api: GistsApi, id: string): Promise<boolean> {
+  let gist: GistDoc | 'unchanged'
+  try {
+    gist = await api.read(id)
+  } catch (err) {
+    if (gistErrorCode(err) === 'NOT_FOUND') return false
+    throw err
+  }
+  if (gist === 'unchanged') return false
+  const names = Object.keys(gist.files)
+  return names.length === 1 && names[0] === NUMBERS_FILE && readStatsFile(fileText(gist, NUMBERS_FILE)).kind === 'ok'
+}
+
 /** A list found or made: its gist, its known fields, the whole object, and the ETag of the read. */
 export interface IndexHandle {
   id: string
   index: FriendsIndex
+  /** The head file's object, with `rekey` worked out from the list's files when a remove waits (see `readListFiles`). */
   raw: Record<string, unknown>
   etag: string | null
   createdAt: string
+  /** YAZ-5312: the text of each list file as read (the head and each entry file). A write sends only what differs. */
+  files?: Record<string, string>
+  /** YAZ-5312: the list's tombstones and numbers generations as read. */
+  state?: ListState
+  /** The GitHub login that owns the list gist (GitHub's answer): "my own link" and "the same friend" use owners. */
+  owner?: string | null
 }
 
 /** `broken`: the list is not a JSON object with `v: 1` (YAZ-5191). The app writes NOTHING to it: `LIST_NEEDS_REPAIR`. */
@@ -347,11 +643,11 @@ async function readIndex(api: GistsApi, id: string, createdAt: string): Promise<
     throw err
   }
   if (gist === 'unchanged') throw new Error('a read with no ETag cannot be unchanged')
-  const state = parseFriendsIndex(fileText(gist, INDEX_FILE))
+  const state = readListGist(gist)
   if (state.kind === 'newer') return { kind: 'newer', id }
   // YAZ-5191: a list that cannot be read is NEVER read as empty: an empty list would be written over the real one.
   if (state.kind === 'unreadable') return { kind: 'broken', id }
-  return { kind: 'ok', handle: { id, index: state.value, raw: state.raw, etag: gist.etag, createdAt } }
+  return { kind: 'ok', handle: { id, index: state.value, raw: state.raw, etag: gist.etag, createdAt, files: state.files, state: state.list, owner: gist.owner ?? null } }
 }
 
 /** Joins `other` into `keep`: the friends and groups of both (by pointer), the vaults of both, a name and stats if missing. */
@@ -388,7 +684,7 @@ export async function findFriendsIndex(api: GistsApi, opts: WriteOptions): Promi
     if (read.kind === 'broken') return { kind: 'broken', id: other.id }
     if (read.kind !== 'ok') continue
     const joined = joinIndex(handle.index, read.handle.index)
-    if (indexText(joined, handle.raw) !== indexText(handle.index, handle.raw)) handle = await write(() => writeFriendsIndex(api, handle, joined))
+    handle = await write(() => writeFriendsIndex(api, handle, joined))
     const lostStats = read.handle.index.stats
     if (lostStats !== null && lostStats !== handle.index.stats) {
       // The other list's friends read the other numbers gist: point them at the kept one, then delete it.
@@ -400,10 +696,24 @@ export async function findFriendsIndex(api: GistsApi, opts: WriteOptions): Promi
   return { kind: 'ok', handle }
 }
 
-/** Writes the list (the known fields over the unknown ones). GitHub has no conditional write: read it just before. */
-export async function writeFriendsIndex(api: GistsApi, handle: IndexHandle, next: FriendsIndex): Promise<IndexHandle> {
-  const { gist } = await api.update(handle.id, { [INDEX_FILE]: indexText(next, handle.raw) })
-  return { ...handle, index: next, raw: JSON.parse(indexText(next, handle.raw)) as Record<string, unknown>, etag: gist?.etag ?? null }
+/**
+ * Writes the changes from `handle` (as read) to `next`, and NOTHING else (YAZ-5312): one file for each entry that
+ * changed, a tombstone for each entry that went, the head only when the name or the vaults changed, and a new numbers
+ * generation when `stats` changed. GitHub keeps every file that the call does not name, so another device's new entry
+ * or remove is never written over. `extra` adds files of the caller (tombstones, generations). No change: no call.
+ */
+export async function writeFriendsIndex(api: GistsApi, handle: IndexHandle, next: FriendsIndex, extra: Record<string, string | null> = {}): Promise<IndexHandle> {
+  const patch = { ...listPatch(handle, next), ...extra }
+  if (Object.keys(patch).length === 0) return handle
+  const { gist } = await api.update(handle.id, patch)
+  const files: Record<string, string> = { ...(handle.files ?? { [INDEX_FILE]: indexText(handle.index, handle.raw) }) }
+  for (const [name, text] of Object.entries(patch)) {
+    if (text === null) delete files[name]
+    else files[name] = text
+  }
+  const read = readListFiles(files)
+  if (read.kind !== 'ok') return { ...handle, index: next, etag: gist?.etag ?? null }
+  return { ...handle, index: read.value, raw: read.raw, files: read.files, state: read.list, etag: gist?.etag ?? null }
 }
 
 /** An empty but valid numbers file: a friend who reads it before the first send sees zeros, not an error. */
@@ -429,8 +739,13 @@ export async function ensureFriendsFiles(api: GistsApi, seed: { vaults: string[]
   if (found.kind === 'none') {
     // Numbers first, then the list that names it: the list is never without its numbers gist.
     const numbers = await write(() => api.create(opts.describe('numbers'), { [NUMBERS_FILE]: numbersText }))
-    const index: FriendsIndex = { v: 1, nickname: seed.nickname, vaults: seed.vaults.map((v) => v.toLowerCase()), stats: numbers.id, friends: [], groups: [] }
-    const made = await write(() => api.create(opts.describe('index'), { [INDEX_FILE]: indexText(index) }))
+    const made = await write(() =>
+      api.create(opts.describe('index'), {
+        [INDEX_FILE]: JSON.stringify({ v: LIST_VERSION, nickname: seed.nickname, vaults: seed.vaults.map((v) => v.toLowerCase()) }),
+        [listFile.gen(0, numbers.id)]: JSON.stringify({ v: 1, stats: numbers.id, covers: [] }),
+        [listFile.done(numbers.id)]: '{"v":1}',
+      }),
+    )
     // Look again after a while: another device may have made its own at the same time. Both keep the oldest.
     await opts.sleep(SETTLE_MS)
     found = await findFriendsIndex(api, opts)
@@ -455,15 +770,30 @@ export async function ensureFriendsFiles(api: GistsApi, seed: { vaults: string[]
  */
 async function ensureNumbersGist(api: GistsApi, handle: IndexHandle, numbersText: string, opts: WriteOptions): Promise<IndexHandle | 'broken' | 'newer'> {
   const write = writer(opts)
-  const existing = (await api.list()).filter((g) => g.files.includes(NUMBERS_FILE)).sort(older)[0]
-  const id = existing?.id ?? (await write(() => api.create(opts.describe('numbers'), { [NUMBERS_FILE]: numbersText }))).id
+  // check3 Nit: adopt only a gist that is provably ours (one file, our format), never another tool's by its file name.
+  let id: string | null = null
+  for (const g of (await api.list()).filter((x) => x.files.length === 1 && x.files[0] === NUMBERS_FILE).sort(older)) {
+    if (await isOurNumbersGist(api, g.id)) {
+      id = g.id
+      break
+    }
+  }
+  if (id === null) id = (await write(() => api.create(opts.describe('numbers'), { [NUMBERS_FILE]: numbersText }))).id
+  const adopted = id
   const fresh = await readIndex(api, handle.id, handle.createdAt)
   if (fresh?.kind === 'broken') return 'broken'
   if (fresh?.kind === 'newer') return 'newer'
   const base = fresh?.kind === 'ok' ? fresh.handle : handle
   if (base.index.stats !== null) return base
-  return write(() => writeFriendsIndex(api, base, { ...base.index, stats: id }))
+  return write(() => writeFriendsIndex(api, base, { ...base.index, stats: adopted }))
 }
+
+/**
+ * YAZ-5312: a new pointer is born PARKED: it names this placeholder, not the numbers gist, until the list names the
+ * pointer. A pointer left behind by a stop (or a refused list write) then leads nowhere (I3), and the sweep deletes it.
+ */
+export const PARKED = '0'.repeat(32)
+export const makeParkedPointer = (api: GistsApi, opts: WriteOptions, more: { reads?: string } = {}): Promise<string> => makePointer(api, PARKED, opts, more)
 
 /** A new pointer gist for a friend or a group (4E2, 4E3): `{ v: 1, stats, reads? }`. Returns its ID, the link. */
 export async function makePointer(api: GistsApi, stats: string, opts: WriteOptions, more: { reads?: string } = {}): Promise<string> {
@@ -516,7 +846,7 @@ export async function replaceNumbersGist(api: GistsApi, handle: IndexHandle, num
   const pointers = await relinkPointers(api, pointersOf(handle.index), made.id, opts)
   await opts.sleep(WRITE_GAP_MS)
   const next = await writeFriendsIndex(api, handle, { ...handle.index, stats: made.id })
-  if (old !== null) await write(() => removeQuietly(api, old))
+  if (old !== null && (await isOurNumbersGist(api, old))) await write(() => removeQuietly(api, old))
   return { handle: next, pointers, old }
 }
 

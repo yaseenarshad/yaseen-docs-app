@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { fakeGistWorld } from '@shared/friendGistsFake'
 import { GithubError, githubClient } from '../github/client'
 import { gistsApi } from './gistsApi'
@@ -34,6 +34,32 @@ describe('gistsApi (YAZ-5082)', () => {
     expect(world.text(made.id, 'notecards-stats.json')).toBe('{"v":1,"x":2}')
     await me.remove(made.id)
     await expect(me.read(made.id)).rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+
+  it('YAZ-5312: a PATCH that GitHub refuses with 409 (another write at that moment, proved live) is sent again, at most 2 more times', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      const { world, http } = setup()
+      const id = world.seed('yaseen', { 'notecards-friends.json': '{"v":2}' })
+      let refuse = 1
+      const fetch: typeof http.fetch = async (url, init) => {
+        if ((init?.method ?? 'GET').toUpperCase() === 'PATCH' && refuse-- > 0) return new Response(JSON.stringify({ message: 'Gist cannot be updated.' }), { status: 409 })
+        return http.fetch(url, init)
+      }
+      const me = gistsApi(githubClient(TOKEN, { fetch, now: world.now }))
+      const once = me.update(id, { 'notecards-friends.f.abc.json': '{"v":1}' })
+      await vi.runAllTimersAsync()
+      await once
+      expect(world.text(id, 'notecards-friends.f.abc.json')).toBe('{"v":1}')
+      expect(world.text(id, 'notecards-friends.json')).toBe('{"v":2}')
+      refuse = 3
+      const never = me.update(id, { 'notecards-friends.f.abc.json': '{"v":2}' }).catch((e: unknown) => e)
+      await vi.runAllTimersAsync()
+      expect(await never).toMatchObject({ status: 409 })
+      expect(world.text(id, 'notecards-friends.f.abc.json')).toBe('{"v":1}')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('an ETag read: an unchanged gist is a 304, "unchanged"', async () => {

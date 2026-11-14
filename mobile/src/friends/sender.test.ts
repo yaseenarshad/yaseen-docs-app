@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { CardRecord } from '@shared/cardLine'
-import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, ensureFriendsFiles, makePointer, parseFriendsIndex, writeFriendsIndex, type WriteOptions } from '@shared/friendGists'
+import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, ensureFriendsFiles, makePointer, parseFriendsIndex, readListFiles, writeFriendsIndex, type WriteOptions } from '@shared/friendGists'
 import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
 import { PUBLISH_EVERY_MS, reserveFor } from '@shared/friendSend'
 import type { FriendDay } from '@shared/friendStats'
@@ -358,7 +358,7 @@ describe('createFriendsSender (YAZ-5082)', () => {
     await api.remove(stats)
     const p = await phone(world, clock, PHONE_TOKEN)
     await p.review(answered(2))
-    const read = parseFriendsIndex(world.text(index, INDEX_FILE)!)
+    const read = readListFiles(world.owned('yaseen').find((g) => g.id === index)!.files)
     if (read.kind !== 'ok') throw new Error('index')
     const fresh = read.value.stats!
     expect(fresh).not.toBe(stats)

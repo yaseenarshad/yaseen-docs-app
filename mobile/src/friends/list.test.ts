@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, findFriendsIndex, makePointer, parseFriendsIndex, writeFriendsIndex } from '@shared/friendGists'
+import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, findFriendsIndex, makePointer, parseFriendsIndex, readListFiles, writeFriendsIndex } from '@shared/friendGists'
 import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
 import { FRIEND_LINK_BASE, WHAT_FRIENDS_SEE } from '@shared/friendsList'
 import type { IndexRecord } from '@shared/types'
@@ -53,7 +53,7 @@ const setup = () => {
 const phone2 = async (world: FakeGistWorld, clock: FakeClock, p: Phone) => createFriendsList({ store: p.store, tokens: p.tokens, clock, fetch: gistsFetch(world).fetch, sleep: async () => {} })
 const indexOf = (world: FakeGistWorld, login: string) => {
   const g = world.owned(login).find((x) => INDEX_FILE in x.files)
-  const read = parseFriendsIndex(g ? world.text(g.id, INDEX_FILE) : null)
+  const read = g ? readListFiles(g.files) : parseFriendsIndex(null)
   if (read.kind !== 'ok') throw new Error('no list')
   return read.value
 }

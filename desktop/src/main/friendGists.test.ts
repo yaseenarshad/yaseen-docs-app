@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   INDEX_FILE,
+  LIST_VERSION,
   NUMBERS_FILE,
   POINTER_FILE,
   LIST_NEEDS_REPAIR,
@@ -11,6 +12,7 @@ import {
   findFriendsIndex,
   makePointer,
   parseFriendsIndex,
+  readListFiles,
   readFriend,
   relinkPointers,
   replaceNumbersGist,
@@ -34,6 +36,8 @@ const NOW = Date.parse('2026-11-14T06:00:00Z')
 const opts: WriteOptions = { describe: (kind) => `notecards-test ${kind}`, sleep: async () => {} }
 /** For the races: each wait gives the other device real time to run (the fake's calls also wait 0 to 3 ms at random). */
 const raceOpts: WriteOptions = { ...opts, sleep: (ms) => new Promise((done) => setTimeout(done, ms >= 5000 ? 25 : 2)) }
+/** The friends list as the app reads it: every list file of the gist (YAZ-5312, version 2). */
+const listIn = (w: ReturnType<typeof fakeGistWorld>, id: string) => readListFiles(w.owned('yaseen').find((g) => g.id === id)?.files ?? {})
 const world = () =>
   fakeGistWorld({ accounts: { [T1]: { login: 'yaseen' }, [T2]: { login: 'yaseen' }, [SAM]: { login: 'sam' }, 'tok-nogists': { login: 'yaseen', gists: false } }, start: NOW })
 
@@ -103,7 +107,7 @@ describe('make or find the files (one of each, on each device)', () => {
       if (a.kind !== 'ok' || b.kind !== 'ok') return
       expect(a.handle.id).toBe(b.handle.id)
       expect(a.handle.index.stats).toBe(b.handle.index.stats)
-      const index = parseFriendsIndex(w.text(a.handle.id, INDEX_FILE)!)
+      const index = listIn(w, a.handle.id)
       expect(index.kind === 'ok' && index.value.stats).toBe(a.handle.index.stats)
       if (w.calls.filter((c) => c.op === 'create').length === 4) twins++
     }
@@ -136,7 +140,7 @@ describe('make or find the files (one of each, on each device)', () => {
 
   it('an index written by a newer app is not touched', async () => {
     const w = world()
-    await w.api(T1).create('x', { [INDEX_FILE]: JSON.stringify({ v: 2, anything: true }) })
+    await w.api(T1).create('x', { [INDEX_FILE]: JSON.stringify({ v: LIST_VERSION + 1, anything: true }) })
     expect((await ensureFriendsFiles(w.api(T1), seed, opts)).kind).toBe('newer')
     expect(w.owned('yaseen')).toHaveLength(1)
   })
@@ -150,7 +154,7 @@ describe('make or find the files (one of each, on each device)', () => {
     const found = await findFriendsIndex(api, opts)
     if (found.kind !== 'ok') throw new Error('no index')
     await writeFriendsIndex(api, found.handle, { ...found.handle.index, nickname: 'Yas' })
-    expect(JSON.parse(w.text(made.handle.id, INDEX_FILE)!)).toMatchObject({ v: 1, nickname: 'Yas', later: [1, 2] })
+    expect(JSON.parse(w.text(made.handle.id, INDEX_FILE)!)).toMatchObject({ v: LIST_VERSION, nickname: 'Yas', later: [1, 2] })
   })
 })
 
@@ -180,8 +184,11 @@ describe('YAZ-5191: a friends list that this app cannot read is never written ov
     if (found.kind !== 'ok') throw new Error(found.kind)
     expect(found.handle.index.friends).toEqual([{ name: long.slice(0, 200), theirs: 'aa11', mine: 'bb22' }])
     await writeFriendsIndex(api, found.handle, { ...found.handle.index, friends: [...found.handle.index.friends, { name: 'Sam', theirs: 'cc33', mine: 'dd44' }] })
+    // YAZ-5312: the version 1 array stays as it was (each long name whole, the entry this app cannot read); Sam has his own file.
     const after = JSON.parse(w.text(listId, INDEX_FILE)!)
-    expect(after.friends).toEqual([{ name: long, theirs: 'aa11', mine: 'bb22' }, { name: 'Sam', theirs: 'cc33', mine: 'dd44' }, odd])
+    expect(after.friends).toEqual([{ name: long, theirs: 'aa11', mine: 'bb22' }, odd])
+    const read = listIn(w, listId)
+    expect(read.kind === 'ok' && read.value.friends).toEqual([{ name: long.slice(0, 200), theirs: 'aa11', mine: 'bb22' }, { name: 'Sam', theirs: 'cc33', mine: 'dd44' }])
     expect(after.nickname).toBe('N'.repeat(250))
     expect(after.vaults).toEqual(['a/b', 7])
     expect(after.groups).toEqual([{ name: 'G', group: 'ee55', mine: 'ff66' }])
@@ -273,7 +280,7 @@ describe('a deleted numbers gist is made again (round 16: new numbers gist, upda
     expect(JSON.parse(w.text(p1, POINTER_FILE)!)).toEqual({ v: 1, stats: fresh, reads: 'abcdef01', mark: { kind: 'cheer', at: '2026-11-14T05:00:00.000Z' }, later: 'kept' })
     expect(JSON.parse(w.text(p2, POINTER_FILE)!)).toEqual({ v: 1, stats: fresh })
     expect(result.pointers).toEqual({ updated: [p1, p2], gone: [gone] })
-    expect(parseFriendsIndex(w.text(handle.id, INDEX_FILE)!)).toMatchObject({ kind: 'ok', value: { stats: fresh } })
+    expect(listIn(w, handle.id)).toMatchObject({ kind: 'ok', value: { stats: fresh } })
     // Two pointer updates and one index update: gist_update counts each PATCH.
     expect(w.updates('yaseen') - before).toBe(3)
   })

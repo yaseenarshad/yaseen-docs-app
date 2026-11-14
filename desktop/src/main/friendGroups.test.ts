@@ -387,10 +387,10 @@ describe('YAZ-5238: the sweep deletes only what is provably an orphan, by GitHub
     expect(await sweepOrphans(ali.api, handle, w.now())).toEqual([])
     const noClock: GistsApi = { ...ali.api, serverTime: () => null }
     expect(await sweepOrphans(noClock, handle, w.now())).toEqual([])
-    const listText = w.text(handle.id, INDEX_FILE)!
-    w.setFiles(handle.id, { [INDEX_FILE]: '{"v":1,"friends":' })
+    const listFiles = { ...w.owned('ali').find((g) => g.id === handle.id)!.files }
+    w.setFiles(handle.id, { ...listFiles, [INDEX_FILE]: '{"v":1,"friends":' })
     expect(await sweepOrphans(ali.api, handle, w.now())).toEqual([])
-    w.setFiles(handle.id, { [INDEX_FILE]: listText })
+    w.setFiles(handle.id, listFiles)
     expect(w.text(orphan, POINTER_FILE)).not.toBeNull()
     expect(await sweepOrphans(ali.api, handle, w.now())).toEqual([orphan])
   })

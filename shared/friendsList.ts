@@ -8,9 +8,13 @@ import {
   gistErrorCode,
   gistErrorResetAt,
   isGistId,
-  makePointer,
-  parseFriendsIndex,
+  listFile,
+  PARKED,
+  makeParkedPointer,
   pointersOf,
+  readListGist,
+  tombTag,
+  tombText,
   readFriend,
   readPointerFile,
   readStatsFile,
@@ -22,6 +26,8 @@ import {
   type GistDoc,
   type GistsApi,
   type IndexHandle,
+  type EntryKind,
+  type ListState,
   type WriteOptions,
 } from './friendGists'
 import { mayUpdate, recordUpdate, sendGap, type GistBudget } from './friendSend'
@@ -138,8 +144,8 @@ async function latest(api: GistsApi, handle: IndexHandle, opts: WriteOptions): P
   try {
     const gist = await api.read(handle.id)
     if (gist === 'unchanged') return handle
-    const read = parseFriendsIndex(fileText(gist, INDEX_FILE))
-    if (read.kind === 'ok') return { ...handle, index: read.value, raw: read.raw, etag: gist.etag }
+    const read = readListGist(gist)
+    if (read.kind === 'ok') return { ...handle, index: read.value, raw: read.raw, etag: gist.etag, files: read.files, state: read.list, owner: gist.owner ?? handle.owner ?? null }
     if (read.kind === 'newer') throw new NewerList()
     // YAZ-5191: never go on with an old copy of a list that cannot be read now: nothing is written to it.
     throw new BrokenList()
@@ -156,9 +162,57 @@ class NewerList extends Error {}
 /** The list is not a JSON object with `v: 1`: the app writes nothing to it (YAZ-5191, `LIST_NEEDS_REPAIR`). */
 class BrokenList extends Error {}
 
-/** Writes `next`; `raw` patches the fields this module keeps beside the known ones (`rekey`). */
-async function writeList(api: GistsApi, handle: IndexHandle, next: FriendsIndex, raw?: Record<string, unknown>): Promise<IndexHandle> {
-  return writeFriendsIndex(api, raw === undefined ? handle : { ...handle, raw }, next)
+/** Writes the changes from `handle` to `next` (and `extra` files), file by file (YAZ-5312). */
+async function writeList(api: GistsApi, handle: IndexHandle, next: FriendsIndex, extra: Record<string, string | null> = {}): Promise<IndexHandle> {
+  return writeFriendsIndex(api, handle, next, extra)
+}
+
+/**
+ * YAZ-5312: after the list names a new (parked) pointer, a fresh read gives the list's numbers gist as it is NOW, and
+ * the pointer gets it. A pointer of an entry that a remove already ended stays parked.
+ */
+export async function pinPointer(api: GistsApi, handle: IndexHandle, pointer: string, opts: ListOptions): Promise<IndexHandle> {
+  const now = await latest(api, handle, opts)
+  if (now.index.stats !== null && pointersOf(now.index).includes(pointer)) await relinkPointers(api, [pointer], now.index.stats, opts)
+  return now
+}
+
+/**
+ * YAZ-5312: once each session (the phone's `rows()`), each pointer of the list that is still parked (a stop between
+ * "the list names it" and "it names the numbers") or names an OLDER numbers gist than a finished generation moves to
+ * the list's numbers gist. Forward only; nothing while a remove waits (its own steps move the pointers).
+ */
+export async function settlePointers(api: GistsApi, handle: IndexHandle, opts: ListOptions): Promise<IndexHandle> {
+  const base = await latest(api, handle, opts)
+  const st = base.state
+  const target = base.index.stats
+  if (st === undefined || target === null || pendingRemove(base) !== null) return base
+  const targetRank = rankOf(st, target) ?? Infinity
+  for (const pointer of pointersOf(base.index)) {
+    let gist: GistDoc | 'unchanged'
+    try {
+      gist = await api.read(pointer)
+    } catch (err) {
+      if (gistErrorCode(err) === 'NOT_FOUND') continue
+      throw err
+    }
+    if (gist === 'unchanged') continue
+    const state = readPointerFile(fileText(gist, POINTER_FILE))
+    if (state.kind !== 'ok') continue
+    // A friend's entry: my pointer for them reads THEIR pointer that the entry names (a stop between the list write
+    // and the pointer write of a paste leaves it reading the old one).
+    const friend = base.index.friends.find((f) => f.mine === pointer)
+    const reads = friend !== undefined && state.value.reads !== friend.theirs ? friend.theirs : state.value.reads
+    const rank = rankOf(st, state.value.stats)
+    const move = state.value.stats !== target && (state.value.stats === PARKED || (rank !== undefined && rank <= targetRank))
+    if (!move && reads === state.value.reads) continue
+    try {
+      await api.update(pointer, { [POINTER_FILE]: JSON.stringify({ ...state.raw, v: 1, stats: move ? target : state.value.stats, ...(reads !== undefined && { reads }) }) })
+    } catch (err) {
+      if (gistErrorCode(err) !== 'NOT_FOUND') throw err
+    }
+  }
+  return base
 }
 
 const isMine = (index: FriendsIndex, id: string) => pointersOf(index).includes(id)
@@ -210,16 +264,18 @@ export async function dropHeldShares(api: GistsApi, handle: IndexHandle, ids: re
 }
 
 /** The ID of the friend's numbers gist behind one of their pointers, or null when it cannot be read now. */
-async function statsBehind(api: GistsApi, pointer: string): Promise<string | null> {
+/** Who is behind one of a friend's pointers: GitHub's owner of the gist, and the numbers gist it names. */
+async function whoBehind(api: GistsApi, pointer: string): Promise<{ owner: string | null; stats: string | null }> {
   try {
     const gist = await api.read(pointer)
-    if (gist === 'unchanged') return null
+    if (gist === 'unchanged') return { owner: null, stats: null }
     const state = readPointerFile(fileText(gist, POINTER_FILE))
-    return state.kind === 'ok' ? state.value.stats : null
+    return { owner: gist.owner ?? null, stats: state.kind === 'ok' ? state.value.stats : null }
   } catch {
-    return null
+    return { owner: null, stats: null }
   }
 }
+const sameLogin = (a: string | null | undefined, b: string | null | undefined) => typeof a === 'string' && typeof b === 'string' && a !== '' && a.toLowerCase() === b.toLowerCase()
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Share and paste.
@@ -228,10 +284,11 @@ async function statsBehind(api: GistsApi, pointer: string): Promise<string | nul
 export async function shareLink(api: GistsApi, handle: IndexHandle, opts: ListOptions): Promise<{ handle: IndexHandle; pointer: string; link: string }> {
   const base = await latest(api, handle, opts)
   if (base.index.stats === null) throw new Error('The list has no numbers gist')
-  const pointer = await makePointer(api, base.index.stats, opts)
+  const pointer = await makeParkedPointer(api, opts)
   await opts.sleep(1000)
   const shared = [...(base.index.shared ?? []), { mine: pointer, at: new Date(opts.now()).toISOString() }]
-  const next = await writeList(api, base, { ...base.index, shared })
+  const written = await writeList(api, base, { ...base.index, shared })
+  const next = await pinPointer(api, written, pointer, opts)
   return { handle: next, pointer, link: friendLink(pointer) }
 }
 
@@ -332,18 +389,21 @@ export async function pasteLink(api: GistsApi, handle: IndexHandle, text: string
     if (pointer.kind === 'newer') return { kind: 'newer-app' }
     if (pointer.kind === 'unreadable') return { kind: 'not-a-friend-link' }
     const theirStats = pointer.value.stats
-    // A pointer of my own account (my other device's link, not in this list yet) names my numbers gist.
-    if (theirStats === index.stats) return { kind: 'own-link' }
+    // A pointer of my own account (my other device's link, not in this list yet): GitHub's owner is mine, or it names
+    // my numbers gist.
+    if (sameLogin(gist.owner, base.owner) || theirStats === index.stats) return { kind: 'own-link' }
     const name = await friendName(api, theirStats)
     const reads = pointer.value.reads
     const shared = index.shared ?? []
     const readsMyShare = reads !== undefined && shared.some((s) => s.mine === reads)
 
-    // The same friend already in the list: by the pointer, or by their numbers gist (a second link of theirs).
+    // The same friend already in the list: by the pointer; else by GitHub's owner of their pointers (YAZ-5312: two
+    // links of one person can name two numbers gists, one on each side of their re-key); else by their numbers gist.
     let same = index.friends.find((f) => f.theirs === id)
     if (same === undefined)
       for (const f of index.friends) {
-        if ((await statsBehind(api, f.theirs)) === theirStats) {
+        const who = await whoBehind(api, f.theirs)
+        if ((who.owner !== null && sameLogin(who.owner, gist.owner)) || (who.owner === null && who.stats !== null && who.stats === theirStats)) {
           same = f
           break
         }
@@ -353,23 +413,24 @@ export async function pasteLink(api: GistsApi, handle: IndexHandle, text: string
       if (same.theirs === id && (reads === undefined || reads === same.mine || !readsMyShare)) return { kind: 'already', name: same.name }
       // They read one of my shared links: take it as my pointer for them, and drop the extra one.
       const mine = readsMyShare ? reads! : same.mine
+      base = await latest(api, base, opts)
+      // `paired` is about the link the entry holds NOW: a new link is paired only when the friend already reads my
+      // pointer through it; else it waits for their app to confirm (markPaired). A link of mine that a remove has
+      // already ended may still answer for a moment, so an old `paired` must never carry over to a new link.
+      const friends = base.index.friends.map((f) => (f === same || f.mine === same!.mine ? { name: f.name, theirs: id, mine, ...(reads === mine && { paired: true as const }) } : f))
+      const next = await writeList(api, base, { ...base.index, friends, shared: (base.index.shared ?? []).filter((s) => s.mine !== mine) })
+      // YAZ-5312: the list first, then my pointer. A stop in between leaves my new entry unpaired ("waiting"), and the
+      // friend still sees my pointer read their OLD link, so their app keeps it. `settlePointers` finishes the step.
       // Their earlier link (`same.theirs`) stays with me unused: tell them in `held`, so their app deletes it.
       await setReads(api, mine, id, index.stats!, same.theirs !== id ? [same.theirs] : [])
-      base = await latest(api, base, opts)
-      const friends = base.index.friends.map((f) => (f === same || f.mine === same!.mine ? { ...f, theirs: id, mine, ...(reads === mine && { paired: true as const }) } : f))
-      const next = await writeList(api, base, { ...base.index, friends, shared: (base.index.shared ?? []).filter((s) => s.mine !== mine) })
       if (mine !== same.mine) await removeQuietly(api, same.mine)
       return { kind: 'added', name: same.name, paired: reads === mine, sendBack: reads === mine ? null : friendLink(mine), handle: next }
     }
 
     // A new friend. If they read one of my shared links, that link is my pointer for them; else make one.
     let mine: string
-    if (readsMyShare) {
-      mine = reads!
-      await setReads(api, mine, id, index.stats!)
-    } else {
-      mine = await makePointer(api, index.stats!, opts, { reads: id })
-    }
+    if (readsMyShare) mine = reads!
+    else mine = await makeParkedPointer(api, opts, { reads: id })
     await opts.sleep(1000)
     base = await latest(api, base, opts)
     const next = await writeList(api, base, {
@@ -377,8 +438,11 @@ export async function pasteLink(api: GistsApi, handle: IndexHandle, text: string
       friends: [...base.index.friends.filter((f) => f.theirs !== id), { name, theirs: id, mine, ...(readsMyShare && { paired: true as const }) }],
       shared: (base.index.shared ?? []).filter((s) => s.mine !== mine),
     })
+    // The list first, then my pointer's `reads` (YAZ-5312: a stop in between is finished by `settlePointers`).
+    if (readsMyShare) await setReads(api, mine, id, index.stats!)
     const paired = readsMyShare
-    return { kind: 'added', name, paired, sendBack: paired ? null : friendLink(mine), handle: next }
+    const pinned = readsMyShare ? next : await pinPointer(api, next, mine, opts)
+    return { kind: 'added', name, paired, sendBack: paired ? null : friendLink(mine), handle: pinned }
   } catch (err) {
     return failureResult(err)
   }
@@ -562,11 +626,6 @@ export function pendingRemove(handle: IndexHandle): Rekey | null {
 }
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
-const withRekey = (raw: Record<string, unknown>, rekey: Rekey | null): Record<string, unknown> => {
-  const { rekey: _old, ...rest } = raw
-  return rekey === null ? rest : { ...rest, rekey }
-}
-
 export type RemoveResult =
   | { kind: 'done'; handle: IndexHandle; budget: GistBudget }
   /** It stopped; the list holds what is left, and the next start (or `retryAt`) finishes it. */
@@ -602,42 +661,55 @@ export async function removeMany(api: GistsApi, handle: IndexHandle, mines: read
   const now = opts.now()
   let fresh = handle
   try {
-    const base = await latest(api, handle, opts)
+    let base = await latest(api, handle, opts)
     fresh = base
-    const index = base.index
-    const waiting = pendingRemove(base)
-    const todo = [...new Set(mines)].filter((m) => isMine(index, m))
-    if (todo.length === 0) return waiting === null ? { kind: 'not-found', handle: base, budget } : finishRemove(api, base, budget, opts)
+    const todo = [...new Set(mines)].filter((m) => isMine(base.index, m))
+    if (todo.length === 0) return pendingRemove(base) === null ? { kind: 'not-found', handle: base, budget } : finishRemove(api, base, budget, opts)
     if (budget.blockedUntil !== null && now < budget.blockedUntil) return paused(base, budget, 'rate-limited', budget.blockedUntil)
-    // YAZ-5235: my shared links that each friend says it holds go too (a friend who removed me: nothing to read).
+    // YAZ-5311: decide what is "unused" from fresh facts. First the pairs: a friend I keep who reads one of my shared
+    // links has that link as my pointer for them (the heal), so it is used, not unused.
+    const shares = new Set((base.index.shared ?? []).map((x) => x.mine))
+    const repairs: ListRows['repairs'] = []
+    for (const f of base.index.friends) {
+      if (todo.includes(f.mine)) continue
+      const theirs = await theirRaw(api, f.theirs)
+      const reads = theirs !== null && isGistId(theirs.reads) ? theirs.reads.toLowerCase() : null
+      if (reads !== null && reads !== f.mine && shares.has(reads)) repairs.push({ theirs: f.theirs, use: reads })
+    }
+    if (repairs.length > 0) {
+      base = await repairPairs(api, base, repairs, opts)
+      fresh = base
+    }
+    // A shared link that a friend turned out to use is now that friend's pointer: cancelling the LINK must not remove
+    // the friend (the friend's own Remove does that). It is no longer an unused link, so it is not in this remove.
+    const usedNow = new Set(repairs.map((r) => r.use))
+    for (let i = todo.length - 1; i >= 0; i--) if (usedNow.has(todo[i]) && base.index.friends.some((f) => f.mine === todo[i])) todo.splice(i, 1)
+    if (todo.length === 0) return pendingRemove(base) === null ? { kind: 'not-found', handle: base, budget } : finishRemove(api, base, budget, opts)
+    // YAZ-5235: my shared links that each removed friend says it holds go too.
     const heldShares: string[] = []
     for (const mine of todo) {
-      const friend = index.friends.find((f) => f.mine === mine)
+      const friend = base.index.friends.find((f) => f.mine === mine)
       const theirs = friend === undefined ? null : await theirRaw(api, friend.theirs)
-      if (theirs !== null) for (const id of heldOf(theirs)) if ((index.shared ?? []).some((x) => x.mine === id) && !heldShares.includes(id)) heldShares.push(id)
+      if (theirs !== null) for (const id of heldOf(theirs)) if ((base.index.shared ?? []).some((x) => x.mine === id) && !heldShares.includes(id)) heldShares.push(id)
     }
-    const names: Record<string, string> = { ...(waiting?.names ?? {}) }
-    for (const f of index.friends) if (todo.includes(f.mine)) names[f.mine] = f.name
-    for (const g of index.groups) if (todo.includes(g.mine)) names[g.mine] = g.name
-    const rekey: Rekey = {
-      old: waiting?.old ?? index.stats,
-      drop: [...(waiting?.drop ?? []), ...todo, ...heldShares, ...(more.drop ?? [])],
-      next: waiting?.next ?? null,
-      at: waiting?.at ?? new Date(now).toISOString(),
-      names,
+    // YAZ-5274: every link I shared that no friend uses stops too: I cannot tell who holds it.
+    const unusedShares = (base.index.shared ?? []).map((x) => x.mine).filter((m) => !todo.includes(m) && !heldShares.includes(m))
+    const nameOf = (m: string) => base.index.friends.find((f) => f.mine === m)?.name ?? base.index.groups.find((g) => g.mine === m)?.name
+    const at = new Date(now).toISOString()
+    // The remove's first write: a tombstone for each pointer (YAZ-5312: a file of its own; a stale write cannot undo it).
+    const tombs: Record<string, string> = {}
+    // Each tombstone ends only the kinds of entry that this read saw for that pointer (YAZ-5312: a device that re-adds
+    // a friend through the same link at the same moment keeps its new entry).
+    const kindsOf = (m: string): EntryKind[] => [
+      ...(base.index.friends.some((f) => f.mine === m) ? (['friend'] as const) : []),
+      ...(base.index.groups.some((g) => g.mine === m) ? (['group'] as const) : []),
+      ...((base.index.shared ?? []).some((x) => x.mine === m) ? (['shared'] as const) : []),
+    ]
+    for (const [i, m] of [...todo, ...heldShares, ...unusedShares].entries()) {
+      const name = nameOf(m)
+      tombs[listFile.tomb(m, tombTag(kindsOf(m), true, at))] = tombText({ kinds: kindsOf(m), rekey: true, at, ...(name !== undefined && { name }), drop: i === 0 ? (more.drop ?? []).filter(isGistId) : [] })
     }
-    // YAZ-5274: every link I shared that no friend has used yet stops too: I cannot tell who holds it, and after the
-    // re-key it would lead to the new numbers. A person who pasted one sees "This link stopped working".
-    const unusedShares = (index.shared ?? []).map((x) => x.mine).filter((m) => !heldShares.includes(m))
-    rekey.drop.push(...unusedShares.filter((m) => !rekey.drop.includes(m)))
-    const gone = (m: string) => todo.includes(m) || heldShares.includes(m) || unusedShares.includes(m)
-    const next: FriendsIndex = {
-      ...index,
-      friends: index.friends.filter((f) => !gone(f.mine)),
-      groups: index.groups.filter((g) => !gone(g.mine)),
-      ...(index.shared !== undefined && { shared: index.shared.filter((s) => !gone(s.mine)) }),
-    }
-    const written = await writeList(api, base, next, withRekey(base.raw, rekey))
+    const written = await writeList(api, base, base.index, tombs)
     return finishRemove(api, written, recordUpdate(budget, now, null), opts)
   } catch (err) {
     // The list as last read: the caller sees which removes the list does not hold yet.
@@ -670,91 +742,158 @@ function pauseOn(err: unknown, handle: IndexHandle, budget: GistBudget, now: num
 }
 
 /**
- * Finishes a remove that waits in the list (`rekey`). Each step can run again safely:
- * 1. delete the dropped pointers; 2. make the new numbers gist with the old numbers, and write its ID into `rekey`;
- * 3. move each pointer of the list to it (a pointer already there costs nothing); 4. delete every other numbers gist
- * of mine (the old one, and one made by a stop between 2 and its write); 5. write `stats`, and clear `rekey`.
- * The sender (4E1) does not send while a remove waits, so the removed friend's last numbers do not change.
+ * Finishes a remove that waits in the list (YAZ-5310, YAZ-5312). Each step can run again safely, on any device:
+ * 1. the removed pointers (and their extra gists, the group file of "Delete group") are deleted FIRST;
+ * 2. a NEW numbers generation is made for the removes that no generation covers yet. When the set of removes grows
+ *    while a generation waits, another new generation follows: a numbers gist is only good for the removes it was made
+ *    after (a removed friend may have read an earlier one);
+ * 3. each pointer of the list as it is now (the friends and groups I keep) moves FORWARD to the newest generation,
+ *    never back to an older one;
+ * 4. a fresh read proves it: no remove waits, no newer generation, every pointer names it;
+ * 5. the older numbers gists go (by their IDs in the list, and only when provably ours), then the generation is
+ *    marked done. Two devices that run it at once end on the same generation; each deletes only its own extra gist.
+ * The sender (4E1) does not send while a remove waits. `done` only after a fresh read shows nothing waits.
  */
 export async function finishRemove(api: GistsApi, handle: IndexHandle, budget: GistBudget, opts: ListOptions): Promise<RemoveResult> {
   const now = opts.now()
   let base = handle
-  /** The numbers gist that THIS run made: the only new numbers gist it may delete (YAZ-5276). */
-  let made: string | null = null
-  const dropMine = async (keep: string | null) => {
-    if (made !== null && made !== keep) await removeQuietly(api, made)
-    made = null
-  }
+  /** The numbers gists that THIS run made: the only new numbers gists it may delete (YAZ-5276). */
+  const made = new Set<string>()
   try {
-    base = await latest(api, handle, opts)
-    let rekey = pendingRemove(base)
-    if (rekey === null) return { kind: 'done', handle: base, budget }
-    for (const id of rekey.drop) await removeQuietly(api, id)
-    if (rekey.next === null) {
-      if (!mayUpdate(budget, now, 2, 0)) return paused(base, budget, 'budget', now + sendGap(budget, now, 0))
-      let text = JSON.stringify(emptyNumbers(now))
-      if (rekey.old !== null)
-        try {
-          const old = await api.read(rekey.old)
-          if (old !== 'unchanged') text = fileText(old, NUMBERS_FILE) ?? text
-        } catch (err) {
-          if (gistErrorCode(err) !== 'NOT_FOUND') throw err
-        }
-      made = (await api.create(opts.describe('numbers'), { [NUMBERS_FILE]: text })).id
-      await opts.sleep(1000)
-      // YAZ-5276: another device may finish the same remove now. Read the list again: if it already names a new numbers
-      // gist (or the remove is done), adopt that one and delete only the one this run made.
+    for (let round = 0; round < 8; round++) {
       base = await latest(api, base, opts)
-      const now2 = pendingRemove(base)
-      if (now2 === null) {
-        await dropMine(base.index.stats)
+      const st = base.state
+      if (st === undefined) return pendingRemove(base) === null ? { kind: 'done', handle: base, budget } : paused(base, budget, 'needs-repair', null)
+      const current = st.gens.at(-1)
+      if (st.pending.length === 0 && (current === undefined || current.done)) {
+        for (const id of made) if (id !== base.index.stats) await removeQuietly(api, id)
         return { kind: 'done', handle: base, budget }
       }
-      if (now2.next !== null) {
-        await dropMine(now2.next)
-        rekey = now2
-      } else {
-        rekey = { ...now2, drop: [], next: made }
-        base = await writeList(api, base, base.index, withRekey(base.raw, rekey))
-        budget = recordUpdate(budget, now, null)
+      // 1. The removed pointers go first (one that the list holds again under another kind, a re-add at the same
+      // moment on another device, stays: it moves to the new numbers with the friends I keep).
+      const live = new Set(pointersOf(base.index))
+      for (const t of st.pending) {
+        if (t.kinds.length > 0 && !live.has(t.mine)) await removeQuietly(api, t.mine)
+        for (const d of t.drop) await removeQuietly(api, d)
       }
-    }
-    let target = rekey.next!
-    const relinkAll = async (to: string): Promise<RemoveResult | null> => {
-      // YAZ-5274: only the pointers of the list as it is now (the friends and groups I still have, and links shared
-      // AFTER the remove began) move to the new numbers gist. Each link made before it was dropped at its first write.
-      for (const pointer of pointersOf(base.index)) {
-        // Keep one update for the last write of the list.
+      // 2. A new generation for the removes that no generation covers yet.
+      if (st.pending.length > 0) {
         if (!mayUpdate(budget, now, 2, 0)) return paused(base, budget, 'budget', now + sendGap(budget, now, 0))
-        const moved = await relinkPointers(api, [pointer], to, opts)
-        if (moved.updated.length > 0) {
-          budget = recordUpdate(budget, now, null)
-          await opts.sleep(1000)
-        }
+        let text = JSON.stringify(emptyNumbers(now))
+        if (base.index.stats !== null)
+          try {
+            const old = await api.read(base.index.stats)
+            if (old !== 'unchanged') text = fileText(old, NUMBERS_FILE) ?? text
+          } catch (err) {
+            if (gistErrorCode(err) !== 'NOT_FOUND') throw err
+          }
+        const id = (await api.create(opts.describe('numbers'), { [NUMBERS_FILE]: text })).id
+        made.add(id)
+        await opts.sleep(1000)
+        const k = (current?.k ?? -1) + 1
+        const covers = [...new Set([...(current?.covers ?? []), ...st.pending.map((t) => t.id)])]
+        base = await writeList(api, base, base.index, { [listFile.gen(k, id)]: JSON.stringify({ v: 1, stats: id, covers }) })
+        budget = recordUpdate(budget, now, null)
+        continue
       }
-      return null
+      // 3. Every pointer I keep moves forward to the newest generation.
+      const target = current!.stats
+      const moved = await moveForward(api, base, target, budget, now, opts)
+      budget = moved.budget
+      if (moved.stop !== null) return moved.stop
+      if (moved.changed) continue
+      // 4. A fresh read proves it.
+      const proof = await latest(api, base, opts)
+      const st2 = proof.state!
+      if (st2.pending.length > 0 || st2.gens.at(-1)?.stats !== target) {
+        base = proof
+        continue
+      }
+      if (!(await allNamed(api, proof, target))) {
+        base = proof
+        continue
+      }
+      // 5. The older numbers gists go; then the generation is done (and the files that only old state needed go).
+      for (const g of st2.gens) if (g.stats !== target) await removeIfOurNumbers(api, g.stats)
+      if (st2.legacyStats !== null && st2.legacyStats !== target) await removeIfOurNumbers(api, st2.legacyStats)
+      for (const id of made) if (id !== target) await removeQuietly(api, id)
+      if (!mayUpdate(budget, now, 1, 0)) return paused(proof, budget, 'budget', now + sendGap(budget, now, 0))
+      const last = st2.gens.at(-1)!
+      const patch: Record<string, string | null> = { [listFile.done(last.stats)]: '{"v":1}' }
+      for (const g of st2.gens) if (g !== last) {
+        if (proof.files?.[listFile.gen(g.k, g.stats)] !== undefined) patch[listFile.gen(g.k, g.stats)] = null
+        if (proof.files?.[listFile.done(g.stats)] !== undefined) patch[listFile.done(g.stats)] = null
+      }
+      // The file of each entry that a tombstone ended (the tombstone stays, so a stale write cannot bring it back).
+      const fileOf = { friend: listFile.friend, group: listFile.group, shared: listFile.shared } as const
+      for (const t of st2.tombs) for (const kind of t.kinds) if (proof.files?.[fileOf[kind](t.mine)] !== undefined) patch[fileOf[kind](t.mine)] = null
+      base = await writeList(api, proof, proof.index, patch)
+      budget = recordUpdate(budget, now, null)
     }
-    const stop = await relinkAll(target)
-    if (stop !== null) return stop
-    // Before the last write: the list once more. Another device may have finished, or chosen another new gist.
-    base = await latest(api, base, opts)
-    const last = pendingRemove(base)
-    const agreed = last === null ? base.index.stats : last.next
-    if (agreed !== null && agreed !== target) {
-      const again = await relinkAll(agreed)
-      if (again !== null) return again
-      await dropMine(agreed)
-      target = agreed
-    }
-    if (last === null) return { kind: 'done', handle: base, budget }
-    // YAZ-5276: the old numbers gist goes only by its ID from the list, and only when it is provably ours.
-    if (rekey.old !== null && rekey.old !== target) await removeIfOurNumbers(api, rekey.old)
-    if (!mayUpdate(budget, now, 1, 0)) return paused(base, budget, 'budget', now + sendGap(budget, now, 0))
-    base = await writeList(api, base, { ...base.index, stats: target }, withRekey(base.raw, null))
-    return { kind: 'done', handle: base, budget: recordUpdate(budget, now, null) }
+    return paused(base, budget, 'offline', null)
   } catch (err) {
     return pauseOn(err, base, budget, now)
   }
+}
+
+/** The rank of a numbers gist in the list: its generation, -1 for a version 1 list's, undefined when the list does not name it. */
+const rankOf = (st: ListState, id: string): number | undefined => st.gens.find((g) => g.stats === id)?.k ?? (id === st.legacyStats ? -1 : undefined)
+
+/**
+ * Moves each pointer of the list to `target`, never back: a pointer that names a NEWER generation stays; one that names
+ * a gist the list does not know makes a fresh read first (another device may have made a newer generation).
+ */
+async function moveForward(api: GistsApi, base: IndexHandle, target: string, budget: GistBudget, now: number, opts: ListOptions): Promise<{ budget: GistBudget; stop: RemoveResult | null; changed: boolean }> {
+  let st = base.state!
+  const targetRank = rankOf(st, target) ?? Infinity
+  for (const pointer of pointersOf(base.index)) {
+    let gist: GistDoc | 'unchanged'
+    try {
+      gist = await api.read(pointer)
+    } catch (err) {
+      if (gistErrorCode(err) === 'NOT_FOUND') continue
+      throw err
+    }
+    if (gist === 'unchanged') continue
+    const state = readPointerFile(fileText(gist, POINTER_FILE))
+    if (state.kind !== 'ok' || state.value.stats === target) continue
+    let rank = rankOf(st, state.value.stats)
+    if (rank === undefined) {
+      const again = await latest(api, base, opts)
+      if (again.state === undefined || again.state.gens.at(-1)?.stats !== target || again.state.pending.length > 0) return { budget, stop: null, changed: true }
+      st = again.state
+      rank = rankOf(st, state.value.stats)
+    }
+    if (rank !== undefined && rank > targetRank) continue
+    // Keep one update for the done mark.
+    if (!mayUpdate(budget, now, 2, 0)) return { budget, stop: paused(base, budget, 'budget', now + sendGap(budget, now, 0)), changed: false }
+    try {
+      await api.update(pointer, { [POINTER_FILE]: JSON.stringify({ ...state.raw, v: 1, stats: target }) })
+    } catch (err) {
+      if (gistErrorCode(err) === 'NOT_FOUND') continue // deleted in the meantime (a remove on another device)
+      throw err
+    }
+    budget = recordUpdate(budget, now, null)
+    await opts.sleep(1000)
+  }
+  return { budget, stop: null, changed: false }
+}
+
+/** Does every pointer of the list name `target` (a pointer that is gone does not count against it)? */
+async function allNamed(api: GistsApi, base: IndexHandle, target: string): Promise<boolean> {
+  for (const pointer of pointersOf(base.index)) {
+    let gist: GistDoc | 'unchanged'
+    try {
+      gist = await api.read(pointer)
+    } catch (err) {
+      if (gistErrorCode(err) === 'NOT_FOUND') continue
+      throw err
+    }
+    if (gist === 'unchanged') continue
+    const state = readPointerFile(fileText(gist, POINTER_FILE))
+    if (state.kind === 'ok' && state.value.stats !== target) return false
+  }
+  return true
 }
 
 /** YAZ-5276: deletes a numbers gist only when it holds exactly our one file in our format (never another tool's gist). */

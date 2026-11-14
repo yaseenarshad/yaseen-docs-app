@@ -310,7 +310,7 @@ function memoryApi(world: FakeGistWorld, token: string): GistsApi {
       return doc(a.body as RawGist, a.headers.etag ?? null)
     },
     async update(id, files) {
-      const a = await call('PATCH', `/gists/${id}`, {}, { files: Object.fromEntries(Object.entries(files).map(([n, c]) => [n, { content: c }])) })
+      const a = await call('PATCH', `/gists/${id}`, {}, { files: Object.fromEntries(Object.entries(files).map(([n, c]) => [n, c === null ? null : { content: c }])) })
       return { gist: doc(a.body as RawGist, a.headers.etag ?? null), rate: rateOf(a.headers) }
     },
     async remove(id) {
