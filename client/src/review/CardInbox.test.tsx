@@ -1570,7 +1570,9 @@ describe('YAZ-5097: Fix later in the Inbox, and the To fix list', () => {
     expect(props.openCard).toHaveBeenCalledExactlyOnceWith('/v/a.md', 'WIKI-4', 2, true)
     const fixed = listRows()[1].querySelector<HTMLButtonElement>('.card-inbox__archived-unarchive')!
     expect(fixed.textContent).toBe('Fixed')
-    expect(fixed.getAttribute('aria-label')).toBe('Remove Fix later')
+    // YAZ-5196 (WCAG 2.5.3, Label in Name): the accessible name starts with the word on the button, so "Click Fixed" finds it.
+    expect(fixed.getAttribute('aria-label') ?? fixed.textContent).toMatch(/^Fixed\b/)
+    expect(fixed.getAttribute('aria-label')).toBe('Fixed: remove Fix later')
     act(() => fixed.click())
     expect(review.setFix).toHaveBeenCalledExactlyOnceWith('/v/b.md', 'WIKI-8', false)
   })
