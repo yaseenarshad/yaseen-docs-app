@@ -149,7 +149,7 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     expect(disk.reads).toBe(0)
     expect(el.querySelector('.card-file__path')?.textContent).toBe('Geography')
     // The title shows one time (YAZ-5044): the big title is the file's `title`; the card holds only its sides.
-    expect(el.querySelector('.card-file__title-row .page-title__text')?.textContent).toBe('Capital of France')
+    expect(el.querySelector('.card-file .card > .card-band .page-title__text')?.textContent).toBe('Capital of France')
     expect(el.querySelector('[data-card-file] .card__id')?.textContent).toBe('WIKI-9')
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('New'))
     expect(el.querySelector('.card-screen')?.textContent).toContain('Paris')
@@ -213,6 +213,50 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     expect(strip.querySelector('.card-reviews__table')).not.toBeNull()
     act(() => toggle.click())
     expect(strip.querySelector('.card-reviews__table')).toBeNull()
+  })
+})
+
+/**
+ * YAZ-5392 (Yaseen, YAZ-5308 Q46: "model the exact same UI on the cards page itself … Just one place where the title
+ * lives for the card"): the tab shows the card as a page does. Above it the folder path only; no big page title. The
+ * card: its top bar (ID, state, Edit card, ⋯), the title band (a click renames the card and its file through App's
+ * door), the sides.
+ */
+describe('YAZ-5392: one title spot, the card as a page shows it', () => {
+  it('the path above the card and no big title; in the card: the top bar, then the title band, then the sides', async () => {
+    await mount(FILE)
+    expect(el.querySelector('.card-file__path')?.textContent).toBe('Geography')
+    expect(el.querySelector('.card-file__title-row')).toBeNull()
+    expect(el.querySelectorAll('.card-file .page-title')).toHaveLength(1)
+    const card = el.querySelector<HTMLElement>('.card-file__page > .card')!
+    expect([...card.children].map((c) => c.classList[0])).toEqual(['card__head', 'card-band', 'card__body'])
+    const head = card.querySelector('.card__head')!
+    expect(head.querySelector('.card__id')?.textContent).toBe('WIKI-9')
+    expect(head.querySelector('.card__edit')?.textContent).toBe('Edit card')
+    expect(head.querySelector('.card__more')?.textContent).toBe('⋯')
+    await vi.waitFor(() => expect(head.querySelector('.card__state')?.textContent).toBe('New'))
+    expect(card.querySelector('.card-band .page-title__text')?.textContent).toBe('Capital of France')
+    expect(card.querySelector('.card__body')?.textContent).toContain('Paris')
+  })
+
+  it('a click on the band`s title renames through the title edit door (the card line`s title and the file`s name)', async () => {
+    const { onRetitle } = await mount(FILE)
+    act(() => el.querySelector<HTMLElement>('.card-band .page-title__text')!.click())
+    const field = el.querySelector<HTMLTextAreaElement>('.card-band .page-title__input')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, 'Capital of Spain')
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    key(field, { key: 'Enter' })
+    expect(onRetitle).toHaveBeenCalledExactlyOnceWith(PATH, 'Capital of Spain', 'file')
+  })
+
+  it('Edit card: the band shows the title (no field: the band renames, read), the sides are the editor`s', async () => {
+    await mount(FILE)
+    act(() => editButton()!.click())
+    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).not.toBeNull())
+    await vi.waitFor(() => expect(el.querySelector<HTMLTextAreaElement>('[data-explore-card-edit] .card-band__field')?.value).toBe('Capital of France'))
+    expect(el.querySelector<HTMLTextAreaElement>('[data-explore-card-edit] .card-band__field')?.readOnly).toBe(true)
   })
 })
 
@@ -383,7 +427,7 @@ describe('the top bar of a card file (YAZ-5102)', () => {
 
   it('YAZ-5141: a click on the title of a locked card file shows the chip`s card ("This card is Read only. Press Enter to allow edits."); Enter asks; a choice unlocks and the title edits at once', async () => {
     const { onRetitle } = await mount(FILE, { readOnly: true, pane: true })
-    const title = el.querySelector<HTMLElement>('.card-file__title-row .page-title__text')!
+    const title = el.querySelector<HTMLElement>('.card-file .card > .card-band .page-title__text')!
     act(() => title.click())
     expect(el.querySelector('.read-only-message__card')?.textContent).toBe('This card is Read only.Press Enter to allow edits.')
     expect(document.activeElement).toBe(title)
@@ -392,8 +436,8 @@ describe('the top bar of a card file (YAZ-5102)', () => {
     expect(el.querySelector('.read-only-chip__ask p')?.textContent).toBe('Allow edits?')
     askButton('Allow edits for 1 minute')
     // YAZ-5145 round 2: the click's rename runs once the tab is unlocked, with no second click.
-    await vi.waitFor(() => expect(el.querySelector('.card-file__title-row .page-title__input')).not.toBeNull())
-    const field = el.querySelector<HTMLTextAreaElement>('.card-file__title-row .page-title__input')
+    await vi.waitFor(() => expect(el.querySelector('.card-file .card > .card-band .page-title__input')).not.toBeNull())
+    const field = el.querySelector<HTMLTextAreaElement>('.card-file .card > .card-band .page-title__input')
     expect(document.activeElement).toBe(field)
     field!.value = 'Capital of Italy'
     key(field!, { key: 'Enter' })
@@ -508,8 +552,8 @@ describe('a new card file (YAZ-5037 phase 4, YAZ-5044)', () => {
 
 /** YAZ-5104: the big title of a card file tab is a page's title: click, type, Enter renames; Esc goes back; read only blocks it. */
 describe('click the title to change it, as on a page (YAZ-5104)', () => {
-  const title = () => el.querySelector<HTMLElement>('.card-file__title-row .page-title__text')
-  const field = () => el.querySelector<HTMLTextAreaElement>('.card-file__title-row .page-title__input')
+  const title = () => el.querySelector<HTMLElement>('.card-file .card > .card-band .page-title__text')
+  const field = () => el.querySelector<HTMLTextAreaElement>('.card-file .card > .card-band .page-title__input')
   const type = (text: string) =>
     act(() => {
       const box = field()!
