@@ -7,7 +7,8 @@ import { headersFor, parseHeaders } from './headers'
  * A tiny local copy of the Cloudflare static assets host (YAZ-5087), for the headless check: it serves a build folder
  * with the rules of `wrangler.jsonc` and `_headers`:
  * - `html_handling: auto-trailing-slash`: `/` is index.html, `/friend` is friend.html; `/index.html` and `/friend.html` redirect (307);
- * - `not_found_handling: single-page-application`: a page open (Sec-Fetch-Mode: navigate) of any other address gets index.html; any other request 404;
+ * - `not_found_handling: single-page-application`: ANY other address gets index.html with 200 (Cloudflare does this
+ *   also for a script request; YAZ-5283), with the headers of that address;
  * - every answer gets the headers of `_headers` for its path. `_headers` itself is never served.
  * Run: `npx vite-node mobile/publish/serve.ts` (serves mobile/dist on http://localhost:8790).
  */
@@ -35,12 +36,12 @@ export function serveDist(dir: string, port: number): Promise<Server> {
       res.end(file && req.method !== 'HEAD' ? readFileSync(file) : undefined)
     }
     if (path === '/index.html') return send(307, null, { location: '/' })
-    if (path === '/friend.html') return send(307, null, { location: '/friend' })
-    const want = path === '/' ? 'index.html' : path === '/friend' || path === '/friend/' ? 'friend.html' : path.slice(1)
+    const page = /^\/(friend|group|join)(\.html|\/)?$/.exec(path)
+    if (page && page[2] === '.html') return send(307, null, { location: `/${page[1]}` })
+    const want = path === '/' ? 'index.html' : page ? `${page[1]}.html` : path.slice(1)
     const file = normalize(join(dir, want))
     if (file.startsWith(normalize(dir)) && want !== '_headers' && existsSync(file) && statSync(file).isFile()) return send(200, file)
-    if (req.headers['sec-fetch-mode'] === 'navigate') return send(200, join(dir, 'index.html'))
-    return send(404, null)
+    return send(200, join(dir, 'index.html'))
   })
   return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve(server)))
 }

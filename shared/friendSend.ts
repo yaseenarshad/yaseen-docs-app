@@ -150,6 +150,16 @@ export function mayUpdate(b: GistBudget, now: number, need: number, reserve: num
   return budgetLeft(b, now) - need >= reserve
 }
 
+/**
+ * THE ORDER OF THE HOURLY BUDGET (YAZ-5294), in one place: a remove first (it may use every update: `mayUpdate(…, 0)`),
+ * then the numbers send (it keeps `reserveFor(pointers)`: one update for each pointer, and `MARK_HEADROOM` for marks),
+ * then a cheer or a nudge (4E4), from its own share only: at most `MARK_HEADROOM` marks in the hour, and never the
+ * remove reserve. `marksThisHour`: the marks this device wrote in the last hour.
+ */
+export function mayMark(b: GistBudget, now: number, pointers: number, marksThisHour: number): boolean {
+  return marksThisHour < MARK_HEADROOM && mayUpdate(b, now, 1, pointers)
+}
+
 /** The time to the hour's reset, as far as this device knows. */
 function toReset(b: GistBudget, now: number): number {
   if (b.seen !== null && now < b.seen.resetAt) return b.seen.resetAt - now

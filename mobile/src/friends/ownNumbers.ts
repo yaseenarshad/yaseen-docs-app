@@ -19,6 +19,8 @@ export interface HeldEngine {
   subscribe(listener: (event: SyncEvent) => void): () => void
   index?(): PhoneIndex | null
   state?(): { vault: string | null }
+  /** Resolves when no pass runs, also the pass of a vault that WAS open (3B lets it run to its end, and it tells nobody). */
+  idle?(): Promise<void>
 }
 
 export type Counted = Omit<FriendStats, 'login' | 'name' | 'avatar'>
@@ -41,11 +43,31 @@ const localDay = (t: number) => {
 export function createOwnNumbers(store: VaultStore, options: { slicer?: () => () => Promise<void>; onCount?: () => void } = {}): OwnNumbers {
   let generation = 0
   let engine: HeldEngine | null = null
-  const held = (vault: string) => (engine !== null && engine.state?.().vault === vault ? engine.index?.() ?? null : null)
+  /**
+   * The engine's index is used only while it is known to be the stored one. After a vault switch it is not: the pass of
+   * the vault that was open can still write that vault's stored index (YAZ-5295). It is trusted again at the first
+   * `changed` event after that pass ended; until then the count reads the store.
+   */
+  let trustHeld = true
+  let settled = true
+  const held = (vault: string) => (trustHeld && engine !== null && engine.state?.().vault === vault ? engine.index?.() ?? null : null)
   let kept: { key: string; value: Promise<Counted | null> } | null = null
   const own: OwnNumbers = {
     counted(repos, now) {
-      const key = `${generation}|${localDay(now)}|${[...new Set(repos.map((r) => r.toLowerCase()))].sort().join(',')}`
+      // YAZ-5295: every input of the count is in the key: the vaults that count, the open vault and the version of its
+      // index (the engine's), the local day AND the zone (a zone change moves the day borders on the same date), and
+      // the generation (each data change of any vault that counts: a `changed` event, a vault switch, and the end of
+      // the pass of a vault that was open before).
+      const open = engine?.state?.().vault ?? null
+      const version = open === null ? '' : engine?.index?.()?.commit ?? ''
+      const key = [
+        generation,
+        localDay(now),
+        new Date(now).getTimezoneOffset(),
+        open,
+        version,
+        [...new Set(repos.map((r) => r.toLowerCase()))].sort().join(','),
+      ].join('|')
       if (kept !== null && kept.key === key) return kept.value
       const value = (async () => {
         const vaults = await countedVaults(store, repos, held)
@@ -66,8 +88,24 @@ export function createOwnNumbers(store: VaultStore, options: { slicer?: () => ()
     },
     follow(e) {
       engine = e
+      let lastOpen = e.state?.().vault ?? null
       const stop = e.subscribe((event) => {
-        if (event.type === 'changed') own.invalidate()
+        if (event.type === 'changed') {
+          if (settled) trustHeld = true
+          own.invalidate()
+        } else if (event.type === 'state' && event.state.vault !== lastOpen) {
+          // A vault switch: the pass of the vault that was open runs on and writes its index with no event. Count again
+          // now, and again when that pass has ended (YAZ-5295).
+          lastOpen = event.state.vault
+          trustHeld = false
+          settled = false
+          own.invalidate()
+          void (e.idle?.() ?? Promise.resolve()).then(() => {
+            if (engine !== e) return
+            settled = true
+            own.invalidate()
+          })
+        }
       })
       return () => {
         stop()

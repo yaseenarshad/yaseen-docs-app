@@ -1,11 +1,12 @@
 import { POINTER_FILE, gistErrorCode, gistErrorRate, gistErrorResetAt, readPointerFile, type GistsApi } from '@shared/friendGists'
-import { GIST_UPDATES_PER_HOUR, MARK_HEADROOM, budgetLeft, emptyBudget, mayUpdate, recordUpdate, type GistBudget } from '@shared/friendSend'
+import { GIST_UPDATES_PER_HOUR, MARK_HEADROOM, budgetLeft, mayMark, emptyBudget, mayUpdate, recordUpdate, type GistBudget } from '@shared/friendSend'
 import type { FriendMark } from '@shared/friendStats'
 import { recordGistsRefused } from '../../auth/friends'
 import type { FetchLike } from '../../github/client'
 import { PHONE, VaultClosedError, type TokenStore, type VaultStore } from '../../store'
 import { openFriendsApi } from '../friendsApi'
 import { friendsGuard } from '../guard'
+import { queuedMines } from '../removeQueue'
 import { SEND_STATE } from '../sender'
 import { seeMark, type SeenMark } from './board'
 
@@ -56,7 +57,11 @@ export interface Marks {
   /** `pointers`: my pointers in the list (one remove-reserve update each), for a phone where the sender has not counted them yet. */
   send(mine: string, kind: MarkKind, pointers?: number): Promise<MarkSend>
   /** Sends each kept mark whose time has come. */
-  flush(): Promise<void>
+  /**
+   * Sends each kept mark whose time has come. `pointers`: my pointers in the list (the remove reserve, YAZ-5294).
+   * `keep`: whether a pointer is still a friend's whom a mark may reach (YAZ-5293); a mark for any other is dropped.
+   */
+  flush(options: { pointers: number; keep(mine: string): boolean }): Promise<void>
   /** By my pointer. */
   outbox(): Promise<Record<string, OutMark>>
   /** By the friend's pointer (`theirs`). */
@@ -173,8 +178,16 @@ export function createMarks(options: MarksOptions): Marks {
       if (log.days[mine]?.[mark.kind] === dayOf(t)) return { kind: 'already', mark: (await outbox())[mine]?.mark ?? mark }
       // YAZ-5258: the 5 updates an hour kept for marks are a hard cap, so marks never take the numbers send's budget.
       const hour = log.times.filter((x) => x > t - HOUR && x <= t).sort((a, b) => a - b)
-      if (hour.length >= MARK_HEADROOM) return wait('marks-limit', hour[hour.length - MARK_HEADROOM] + HOUR + 1)
-      if (!mayUpdate(budget, t, 1, reserve)) return wait('budget', freeAt(budget, t, 1, reserve))
+      // YAZ-5293: checked at SEND time too: a mark never goes to a friend whose remove waits (the phone's queue).
+      if ((await queuedMines(store)).has(mine)) {
+        await saveOut(session, mine, null)
+        return { kind: 'gone' }
+      }
+      // YAZ-5294: the order of the hour is `mayMark`'s (removes, then the numbers send, then marks from their own 5).
+      if (!mayMark(budget, t, reserve, hour.length)) {
+        if (hour.length >= MARK_HEADROOM) return wait('marks-limit', hour[hour.length - MARK_HEADROOM] + HOUR + 1)
+        return wait('budget', freeAt(budget, t, 1, reserve))
+      }
       try {
         const gist = await api.read(mine)
         if (gist === 'unchanged') return { kind: 'failed' }
@@ -243,10 +256,17 @@ export function createMarks(options: MarksOptions): Marks {
         return { kind: 'waiting', mark: waiting.mark, why: waiting.why ?? 'offline', retryAt: waiting.retryAt ?? null }
       return once(mine, { kind, at: new Date(now()).toISOString() }, pointers)
     },
-    async flush() {
+    async flush({ pointers, keep }) {
       const t = now()
-      for (const [mine, out] of Object.entries(await outbox()))
-        if (out.state === 'waiting' && (out.retryAt === null || out.retryAt === undefined || t >= out.retryAt)) await once(mine, out.mark)
+      for (const [mine, out] of Object.entries(await outbox())) {
+        if (out.state !== 'waiting') continue
+        // YAZ-5293: a friend who is being removed, is removed, stopped, or no longer shares: the mark is dropped.
+        if (!keep(mine)) {
+          if (await guard.live()) await saveOut(await store.session(PHONE), mine, null)
+          continue
+        }
+        if (out.retryAt === null || out.retryAt === undefined || t >= out.retryAt) await once(mine, out.mark, pointers)
+      }
     },
     outbox,
     seen: async () => (await store.getState<Record<string, SeenMark>>(PHONE, MARKS_SEEN)) ?? {},

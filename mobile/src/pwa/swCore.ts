@@ -25,6 +25,11 @@ export interface ShellBuild {
   files: string[]
   /** The page's entry script (`/assets/index-….js`). The version check: the page fetched at install must name it. */
   entry: string
+  /**
+   * YAZ-5286: each page of the shell and the script it must name (`/` its entry, `/friend` `/group` `/join` the landing
+   * script). A page that does not name it is another page (a captive portal, another deploy): the install refuses it.
+   */
+  pages: Record<string, string>
 }
 
 export const CACHE_PREFIX = 'notecards-shell-'
@@ -64,7 +69,9 @@ export interface SwScope {
   caches: CacheStorageLike
   fetch(input: string | RequestLike, init?: RequestInit): Promise<Response>
   skipWaiting(): Promise<void>
-  clients: { claim(): Promise<void> }
+  clients: { claim(): Promise<void>; matchAll?(options?: { type?: string }): Promise<{ url: string; navigate(url: string): Promise<unknown> }[]> }
+  /** The worker's own registration (the kill switch unregisters it). */
+  registration?: { unregister(): Promise<boolean> }
   addEventListener(type: 'install' | 'activate', fn: (event: ExtendableEventLike) => void): void
   addEventListener(type: 'fetch', fn: (event: FetchEventLike) => void): void
   addEventListener(type: 'message', fn: (event: MessageEventLike) => void): void
@@ -89,7 +96,9 @@ export function route(request: RequestLike, origin: string, build: ShellBuild): 
   const path = url.pathname
   if (path === '/sw.js') return PASS
   if (request.mode === 'navigate') {
-    if (path === '/friend' || path === '/friend/' || path === '/friend.html') return { kind: 'shell', key: '/friend' }
+    // The landing pages of the three shared links (YAZ-5290).
+    const landing = /^\/(friend|group|join)(\/|\.html)?$/.exec(path)
+    if (landing) return { kind: 'shell', key: `/${landing[1]}` }
     // Any other address of the site is the app (single-page), as the host's fallback does. A file name is not.
     return /\.[a-z0-9]+$/i.test(path) && path !== '/index.html' ? PASS : { kind: 'shell', key: '/' }
   }
@@ -109,9 +118,21 @@ async function kept(caches: CacheStorageLike, version: string, key: string): Pro
   return null
 }
 
-/** The answer to a shell request: the kept copy; with none (an install still running), the network. */
+/**
+ * The answer to a shell request: the kept copy; with none (an install still running), the network.
+ *
+ * YAZ-5283: a hashed file that no kept version has goes to the host with `cache: 'no-cache'` (never an old HTTP-cache
+ * answer), and the host's app page for it (Cloudflare's single-page fallback: 200 `text/html`) becomes a 404. So the
+ * page sees a failed load, never HTML as a script, and the next try asks the host again.
+ */
 export async function respond(scope: Pick<SwScope, 'caches' | 'fetch'>, build: ShellBuild, key: string, request: RequestLike): Promise<Response> {
-  return (await kept(scope.caches, build.version, key)) ?? scope.fetch(request)
+  const own = await kept(scope.caches, build.version, key)
+  if (own) return own
+  if (!isHashed(key)) return scope.fetch(request)
+  const answer = await scope.fetch(new URL(key, request.url).href, { cache: 'no-cache', credentials: 'same-origin' })
+  const type = expectedType(key)
+  if (type && !type.test(answer.headers.get('content-type') ?? '')) return new Response('', { status: 404, statusText: 'Not Found' })
+  return answer
 }
 
 /** A copy with no `redirected` flag: a redirected answer may not answer a page open (Safari and Chrome refuse it). */
@@ -120,8 +141,16 @@ async function plain(response: Response): Promise<Response> {
   return new Response(await response.blob(), { status: response.status, statusText: response.statusText, headers: response.headers })
 }
 
-const expectedType = (path: string): RegExp | null =>
-  path.endsWith('.js') ? /javascript/ : path.endsWith('.css') ? /text\/css/ : path === '/' || path === '/friend' ? /text\/html/ : null
+/** YAZ-5286: the type each kind of shell file must have. A file of another kind is not precached. */
+const expectedType = (path: string): RegExp | null => {
+  if (path.endsWith('.js')) return /javascript/
+  if (path.endsWith('.css')) return /text\/css/
+  if (path.endsWith('.png')) return /image\/png/
+  if (path.endsWith('.svg')) return /image\/svg\+xml/
+  if (path.endsWith('.webmanifest')) return /application\/(manifest\+)?json/
+  if (/^\/(friend|group|join)?$/.test(path)) return /text\/html/
+  return null
+}
 
 export class InstallError extends Error {}
 
@@ -145,11 +174,16 @@ export async function install(scope: Pick<SwScope, 'caches' | 'fetch'>, build: S
       const response = await scope.fetch(path, { cache: 'no-cache', credentials: 'same-origin' })
       if (!response.ok) throw new InstallError(`${path}: answered ${response.status}`)
       const type = expectedType(path)
-      if (type && !type.test(response.headers.get('content-type') ?? '')) throw new InstallError(`${path}: answered ${response.headers.get('content-type')}`)
+      if (!type) throw new InstallError(`${path}: not a kind of file that the shell keeps`)
+      if (!type.test(response.headers.get('content-type') ?? '')) throw new InstallError(`${path}: answered ${response.headers.get('content-type')}`)
       got.push([path, await plain(response)])
     }
-    const page = got.find(([path]) => path === '/')
-    if (page && !(await page[1].clone().text()).includes(build.entry)) throw new InstallError(`the page is of another version (it does not name ${build.entry})`)
+    // The version check, for EVERY page: it must name its own script of this build.
+    for (const [path, response] of got) {
+      const script = path === '/' ? build.entry : build.pages?.[path]
+      if (script === undefined || !expectedType(path)?.test('text/html')) continue
+      if (!(await response.clone().text()).includes(script)) throw new InstallError(`${path}: the page is of another version (it does not name ${script})`)
+    }
     const cache = await scope.caches.open(name)
     for (const [path, response] of got) await cache.put(path, response)
   } catch (err) {

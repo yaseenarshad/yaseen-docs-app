@@ -67,8 +67,15 @@ describe('the page head for iOS', () => {
     expect(html).toContain('<meta name="referrer" content="no-referrer" />')
   })
 
+  it('YAZ-5287: the supported iPhone sizes, each with a splash (points and scale)', () => {
+    const sizes = SPLASH_SCREENS.map((s) => `${s.width}x${s.height}@${s.ratio}`).sort()
+    for (const want of ['440x956@3', '420x912@3', '402x874@3', '430x932@3', '393x852@3', '428x926@3', '390x844@3', '414x896@3', '375x812@3', '414x896@2', '375x667@2']) {
+      expect([want, sizes.includes(want)]).toEqual([want, true])
+    }
+  })
+
   it('a splash picture for each iPhone size, light and dark, in the background colour (iOS shows white without one)', () => {
-    expect(SPLASH_SCREENS.length).toBeGreaterThanOrEqual(9)
+    expect(SPLASH_SCREENS.length).toBeGreaterThanOrEqual(11)
     for (const s of SPLASH_SCREENS) {
       for (const scheme of ['light', 'dark'] as const) {
         const file = `/splash/${scheme}-${s.width * s.ratio}x${s.height * s.ratio}.png`
@@ -83,7 +90,7 @@ describe('the page head for iOS', () => {
 describe('the shell list the worker keeps', () => {
   it('the hashed build files, the pages under their served address, the manifest and icons; not the splash, the headers or the worker', () => {
     const list = shellFiles(
-      ['index.html', 'friend.html', 'assets/index-a1.js', 'assets/engine-b2.js', 'assets/qrDecode-c3.js', 'assets/index-d4.css', 'assets/friend-e5.js', 'assets/x.js.map'],
+      ['index.html', 'friend.html', 'group.html', 'join.html', 'assets/index-a1.js', 'assets/engine-b2.js', 'assets/qrDecode-c3.js', 'assets/index-d4.css', 'assets/friend-e5.js', 'assets/x.js.map'],
       ['_headers', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/apple-touch-icon.png', 'splash/dark-1179x2556.png', 'sw.js', 'robots.txt'],
     )
     expect(list).toEqual([
@@ -94,8 +101,10 @@ describe('the shell list the worker keeps', () => {
       '/assets/index-d4.css',
       '/assets/qrDecode-c3.js',
       '/friend',
+      '/group',
       '/icons/apple-touch-icon.png',
       '/icons/icon-192.png',
+      '/join',
       '/manifest.webmanifest',
     ])
   })
@@ -120,5 +129,14 @@ describe('the publish config (decision 8, round 12 item 14)', () => {
   it('one script builds, then publishes the preview', () => {
     const root = JSON.parse(readFileSync(join(here, '../package.json'), 'utf8'))
     expect(root.scripts['mobile:publish:preview']).toMatch(/^npm run mobile:build && npx --yes wrangler@\d+\.\d+\.\d+ deploy --config mobile\/wrangler\.jsonc$/)
+  })
+
+  it('YAZ-5285: one script publishes the kill switch to the PREVIEW; the README says what to do when a bad version ships', () => {
+    const root = JSON.parse(readFileSync(join(here, '../package.json'), 'utf8'))
+    expect(root.scripts['mobile:publish:preview:kill-switch']).toMatch(/^NOTECARDS_KILL_SWITCH=1 npm run mobile:build && npx --yes wrangler@\d+\.\d+\.\d+ deploy --config mobile\/wrangler\.jsonc$/)
+    const readme = read('README.md')
+    const part = readme.slice(readme.indexOf('## If a bad version ships'))
+    expect(part.startsWith('## If a bad version ships')).toBe(true)
+    for (const words of ['rollback', 'versions list', 'mobile:publish:preview:kill-switch', 'IndexedDB', 'app switcher']) expect([words, part.includes(words)]).toEqual([words, true])
   })
 })

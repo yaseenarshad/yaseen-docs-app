@@ -56,6 +56,12 @@ const tap = async (x: Harness, name: string | RegExp) => {
   await x.settle()
 }
 
+/** CPU time of this thread, in ms (YAZ-5296). */
+const cpu = () => {
+  const u = process.threadCpuUsage()
+  return (u.user + u.system) / 1000
+}
+
 let h: Harness | null = null
 afterEach(() => {
   h?.unmount()
@@ -68,14 +74,15 @@ describe('30 friends and 5 groups', () => {
       { key: 'me', name: 'You', you: true, stats: demoMe(NOW).stats },
       ...BIG.friends.map((f) => ({ key: f.theirs, name: f.name, you: false, stats: f.stats })),
     ]
+    // YAZ-5296: CPU time of this thread, not the wall clock: the load of the machine does not count.
     let worst = 0
     for (let run = 0; run < 20; run++) {
-      const t = performance.now()
+      const t = cpu()
       for (const p of PERIODS) boardRows(entries, p.id, NOW)
       for (const f of BIG.friends) vsBoard(BIG.me.stats, f.stats, NOW)
-      worst = Math.max(worst, performance.now() - t)
+      worst = Math.max(worst, cpu() - t)
     }
-    console.info(`[perf] 4 periods x 31 rows + 30 "You vs": worst ${worst.toFixed(2)} ms of 20 runs`)
+    console.info(`[perf] 4 periods x 31 rows + 30 "You vs": worst ${worst.toFixed(2)} ms CPU of 20 runs`)
     expect(worst).toBeLessThan(50)
   })
 
@@ -93,13 +100,13 @@ describe('30 friends and 5 groups', () => {
     const times: number[] = []
     for (const name of ['Yesterday', 'Week', 'Month', 'Today']) {
       const button = btn(h, name)!
-      const t = performance.now()
+      const t = cpu()
       await act(async () => button.click())
-      times.push(performance.now() - t)
+      times.push(cpu() - t)
     }
-    console.info(`[perf] period change, 31 rows, jsdom: ${times.map((t) => t.toFixed(1)).join(', ')} ms`)
-    // jsdom is many times slower than Safari; this bound only catches a gross regression.
-    expect(Math.min(...times)).toBeLessThan(250)
+    console.info(`[perf] period change, 31 rows, jsdom: ${times.map((t) => t.toFixed(1)).join(', ')} ms CPU`)
+    // jsdom is many times slower than Safari; this bound only catches a gross regression (CPU time, so no skip under load).
+    expect(Math.max(...times)).toBeLessThan(250)
     await tap(h, 'Group 1')
     expect(h.host.querySelectorAll('.fr-row')).toHaveLength(9)
   })

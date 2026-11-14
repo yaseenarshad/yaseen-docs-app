@@ -77,20 +77,28 @@ describe('my own numbers (YAZ-5255)', () => {
   it('20,000 cards with 10 answers each: no step holds the UI thread for 50 ms; the same numbers as friendStats', async () => {
     const index = records(5000, 4, 10)
     const { store } = await phone(index)
-    let longest = 0
-    let last = performance.now()
+    // YAZ-5296: the work between two yields in CPU time of THIS thread (as 4C's search test): the load of the machine
+    // does not count, and the limit stays 50 ms.
+    const cpu = () => {
+      const u = process.threadCpuUsage()
+      return (u.user + u.system) / 1000
+    }
+    const work: number[] = []
+    let last = cpu()
     const slice = uiSlicer(async () => {
-      longest = Math.max(longest, performance.now() - last)
+      work.push(cpu() - last)
       await new Promise((r) => setTimeout(r, 0))
-      last = performance.now()
+      last = cpu()
     })
     const own = createOwnNumbers(store, { slicer: () => slice })
     // The open vault: the engine holds its index, so the count reads nothing from the store.
     own.follow({ subscribe: () => () => undefined, index: () => ({ commit: 'c1', records: index }), state: () => ({ vault: 'demo/vault@main' }) })
-    last = performance.now()
+    last = cpu()
     const counted = await own.counted(['demo/vault'], NOW)
-    longest = Math.max(longest, performance.now() - last)
-    console.info(`[perf] own numbers, 20,000 cards x 10 answers: longest UI-thread step ${longest.toFixed(1)} ms`)
+    work.push(cpu() - last)
+    const longest = Math.max(...work)
+    console.info(`[perf] own numbers, 20,000 cards x 10 answers: ${work.length} slices, longest ${longest.toFixed(1)} ms CPU`)
+    expect(work.length).toBeGreaterThan(10)
     expect(longest).toBeLessThan(50)
     const vaults: FriendVault[] = [{ pages: Object.values(index), settings: DEFAULT_REVIEW_SETTINGS }]
     expect({ ...counted, at: '' }).toEqual({ ...friendStats(vaults, NOW), at: '' })

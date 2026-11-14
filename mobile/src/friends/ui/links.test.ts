@@ -1,7 +1,10 @@
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { groupLink, joinLink, parseAnyLink } from '@shared/friendGroups'
 import { parseFriendLink } from '@shared/friendsList'
-import { friendLink } from '../../pwa/friendLink'
+import { friendLink, landingCopy } from '../../pwa/friendLink'
 import { groupShareText, joinShareText, ownSiteLink } from './parts'
 
 /** YAZ-5085 with 5- (YAZ-5087): the link that "Share my link" sends, and what 4E2's paste box reads back. */
@@ -40,12 +43,33 @@ describe('the friend link of 5- and the paste box of 4E2', () => {
     const g = groupShareText('Study group', group)
     const j = joinShareText('Study group', join)
     for (const t of [g, j]) {
-      // No landing page shows a code for these links yet: the words never say "copy the code".
-      expect(t.text).not.toMatch(/copy the code/i)
-      expect(t.text).toContain('Copy this whole message')
+      // YAZ-5290: the link opens a landing page with the code and Copy (as /friend), so the words say that step.
+      expect(t.text).toContain('Open this link, copy the code, then paste it in the app.')
+      expect(t.text).not.toContain('whole message')
     }
     // The paste box reads the whole message.
     expect(parseAnyLink(`${g.text} ${g.url}`)).toEqual({ kind: 'group', id: ID })
     expect(parseAnyLink(`${j.text} ${j.url}`)).toEqual({ kind: 'join', group: ID, pointer: ID })
+  })
+
+  it("YAZ-5290: the paste box reads each kind of link from the preview, and the code each landing page copies", () => {
+    const preview = 'https://preview.notecards.yaseenarshad.com'
+    expect(parseAnyLink(ownSiteLink(groupLink(ID), preview))).toEqual({ kind: 'group', id: ID })
+    expect(parseAnyLink(ownSiteLink(joinLink(ID, ID), preview))).toEqual({ kind: 'join', group: ID, pointer: ID })
+    expect(parseAnyLink(ownSiteLink(friendLink('https://notecards.yaseenarshad.com', ID), preview))).toEqual({ kind: 'friend', id: ID })
+    // What each landing page copies (landingCopy): friend and group copy the code, a join copies its link.
+    expect(['friend', 'id']).toContain(parseAnyLink(landingCopy({ kind: 'friend', code: ID }, preview)).kind)
+    expect(['group', 'id']).toContain(parseAnyLink(landingCopy({ kind: 'group', code: ID }, preview)).kind)
+    expect(parseAnyLink(landingCopy({ kind: 'join', code: `${ID}-${ID}` }, preview))).toEqual({ kind: 'join', group: ID, pointer: ID })
+  })
+
+  it('YAZ-5291: the share sheet never gets a fixed host; no app file of mobile/src names one', () => {
+    const preview = 'https://preview.notecards.yaseenarshad.com'
+    expect(ownSiteLink(groupLink(ID), preview).startsWith(`${preview}/group#`)).toBe(true)
+    expect(ownSiteLink(joinLink(ID, ID), preview).startsWith(`${preview}/join#`)).toBe(true)
+    const src = fileURLToPath(new URL('../..', import.meta.url))
+    const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]))
+    const fixed = walk(src).filter((f) => /\.(ts|tsx)$/.test(f) && !/\.test\.tsx?$|testing\.ts$|\/dev\//.test(f) && /notecards\.yaseenarshad\.com/.test(readFileSync(f, 'utf8')))
+    expect(fixed.map((f) => f.slice(src.length))).toEqual([])
   })
 })

@@ -82,7 +82,7 @@ describe('the Content-Security-Policy of the app', () => {
   })
 
   it('every path gets the same policy (the single-page fallback, the friend page, the files)', () => {
-    for (const path of ['/index.html', '/some/route', '/friend', '/assets/index-abc.js', '/manifest.webmanifest']) {
+    for (const path of ['/index.html', '/some/route', '/friend', '/group', '/join', '/assets/index-abc.js', '/manifest.webmanifest']) {
       expect([path, headersFor(rules, path)['content-security-policy']]).toEqual([path, page['content-security-policy']])
     }
   })
@@ -106,9 +106,21 @@ describe('the other headers', () => {
     }
   })
 
-  it('hashed files: cached for a year; the page, the friend page, the worker and the manifest: always asked again', () => {
-    expect(headersFor(rules, '/assets/index-abc.js')['cache-control']).toBe('public, max-age=31536000, immutable')
-    for (const path of ['/', '/index.html', '/friend', '/friend.html', '/sw.js', '/manifest.webmanifest', '/version.txt']) {
+  it('YAZ-5283: no long cache under /assets/: a MISSING chunk gets the app page there (the single-page fallback), and the browser must not keep it', () => {
+    for (const path of ['/assets/index-abc.js', '/assets/nope-ABC.js']) {
+      const cc = headersFor(rules, path)['cache-control'] ?? ''
+      expect([path, cc]).not.toEqual([path, expect.stringMatching(/immutable|max-age=[1-9]/)])
+    }
+  })
+
+  it('YAZ-5284: HSTS on every answer, one year, no preload', () => {
+    for (const path of ['/', '/friend', '/sw.js', '/assets/index-abc.js', '/version.txt']) {
+      expect([path, headersFor(rules, path)['strict-transport-security']]).toEqual([path, 'max-age=31536000'])
+    }
+  })
+
+  it('the pages, the worker, the manifest and the version: always asked again', () => {
+    for (const path of ['/', '/index.html', '/friend', '/friend.html', '/group', '/group.html', '/join', '/join.html', '/sw.js', '/manifest.webmanifest', '/version.txt']) {
       expect([path, headersFor(rules, path)['cache-control']]).toEqual([path, 'no-cache'])
     }
   })

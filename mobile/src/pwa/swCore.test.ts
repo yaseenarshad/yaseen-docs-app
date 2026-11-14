@@ -12,9 +12,14 @@ const ORIGIN = 'https://notecards.test'
 
 function site(v: string, extra: Record<string, FakeFile> = {}) {
   const entry = `/assets/index-${v}.js`
+  const landing = `/assets/friend-${v}.js`
+  const page = (title: string) => ({ body: `<!doctype html><title>${title}</title><script type="module" src="${landing}"></script>` })
   const files: Record<string, FakeFile> = {
     '/': { body: `<!doctype html><script type="module" src="${entry}"></script>` },
-    '/friend': { body: '<!doctype html><title>Friend</title>' },
+    '/friend': page('Friend'),
+    '/group': page('Group'),
+    '/join': page('Join'),
+    [landing]: { body: 'landing()' },
     [entry]: { body: `console.log('${v}')` },
     [`/assets/engine-${v}.js`]: { body: `export const engine = '${v}'` },
     '/assets/qrDecode-same.js': { body: 'export const qr = 1' },
@@ -23,7 +28,7 @@ function site(v: string, extra: Record<string, FakeFile> = {}) {
     '/icons/icon-192.png': { body: 'png' },
     ...extra,
   }
-  const build: ShellBuild = { version: v, entry, files: Object.keys(files) }
+  const build: ShellBuild = { version: v, entry, files: Object.keys(files), pages: { '/': entry, '/friend': landing, '/group': landing, '/join': landing } }
   return { files, build }
 }
 
@@ -73,6 +78,9 @@ describe('which requests the worker takes', () => {
     expect(at(`${ORIGIN}/some/route`, 'GET', 'navigate')).toEqual({ kind: 'shell', key: '/' })
     expect(at(`${ORIGIN}/friend`, 'GET', 'navigate')).toEqual({ kind: 'shell', key: '/friend' })
     expect(at(`${ORIGIN}/friend/`, 'GET', 'navigate')).toEqual({ kind: 'shell', key: '/friend' })
+    // YAZ-5290: the group and join links have their landing page too.
+    expect(at(`${ORIGIN}/group`, 'GET', 'navigate')).toEqual({ kind: 'shell', key: '/group' })
+    expect(at(`${ORIGIN}/join/`, 'GET', 'navigate')).toEqual({ kind: 'shell', key: '/join' })
   })
 
   it('other same-origin files that are not the shell go to the network untouched (the splash pictures)', () => {
@@ -118,6 +126,32 @@ describe('the worker in its events', () => {
   })
 })
 
+describe('YAZ-5283: a chunk that no kept version has', () => {
+  it('the host answers the app page (200 text/html, the single-page fallback): the page gets a 404, never HTML as a script', async () => {
+    const { sw, server } = await installed('v1')
+    const answer = await sw.request(`${ORIGIN}/assets/late-X.js`)
+    expect(answer!.status).toBe(404)
+    expect(server.calls).toContain('/assets/late-X.js')
+  })
+
+  it('it is asked again at each try (no HTTP cache answer): the try after the file exists gets the script', async () => {
+    const { files, build } = site('v1')
+    const server = fakeServer(files, ORIGIN)
+    const inits: (RequestInit | undefined)[] = []
+    const sw = fakeScope({ ...server, fetch: (input: any, init?: RequestInit) => (inits.push(init), server.fetch(input)) })
+    wire(sw.scope, build)
+    await sw.install()
+    await sw.activate()
+    inits.length = 0
+    expect((await sw.request(`${ORIGIN}/assets/late-X.js`))!.status).toBe(404)
+    files['/assets/late-X.js'] = { body: 'export const x = 1' }
+    const again = await sw.request(`${ORIGIN}/assets/late-X.js`)
+    expect(again!.status).toBe(200)
+    expect(await again!.text()).toContain('export')
+    expect(inits.every((i) => i?.cache === 'no-cache')).toBe(true)
+  })
+})
+
 describe('a new version', () => {
   async function update(v2files: (files: Record<string, FakeFile>) => void, caches = fakeCaches()) {
     const one = await installed('v1', caches)
@@ -140,6 +174,18 @@ describe('a new version', () => {
   it('a chunk that the host answers with the app page (the single-page fallback, 200 text/html) does not install', async () => {
     const { sw } = await update((f) => (f['/assets/engine-v2.js'] = { body: '<!doctype html>', type: 'text/html' }))
     await expect(sw.install()).rejects.toThrow(/engine-v2/)
+  })
+
+  it('YAZ-5286: a landing page that is another HTML page (it does not name its own script) does not install', async () => {
+    const { sw } = await update((f) => (f['/friend'] = { body: '<!doctype html><title>Wi-Fi login</title>' }))
+    await expect(sw.install()).rejects.toThrow(/\/friend/)
+  })
+
+  it('YAZ-5286: an icon or the manifest answered with HTML does not install', async () => {
+    const icon = await update((f) => (f['/icons/icon-192.png'] = { body: '<!doctype html>', type: 'text/html' }))
+    await expect(icon.sw.install()).rejects.toThrow(/icon-192/)
+    const manifest = await update((f) => (f['/manifest.webmanifest'] = { body: '<!doctype html>', type: 'text/html' }))
+    await expect(manifest.sw.install()).rejects.toThrow(/manifest/)
   })
 
   it('the version check: an index.html of another deploy (it names another entry) does not install', async () => {

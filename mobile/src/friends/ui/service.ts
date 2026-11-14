@@ -8,6 +8,7 @@ import type { FetchLike } from '../../github/client'
 import { PHONE, loadVaultList, vaultId, type TokenStore, type VaultStore } from '../../store'
 import type { SyncEngine } from '../../sync/engine'
 import { createOwnNumbers, type OwnNumbers } from '../ownNumbers'
+import { queuedMines } from '../removeQueue'
 import { createFriendsList, type FriendsList, type ShareResult, type Unavailable } from '../list'
 import { createFriendsSender, type FriendsSender } from '../sender'
 import { avatarUrl, gistText, type SeenMark } from './board'
@@ -235,16 +236,22 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
     whatFriendsSee: WHAT_FRIENDS_SEE,
     port: list.port,
     async board() {
-      await marks.flush()
+      // The list first: it drains the phone's remove queue (removes go before marks, YAZ-5293), and gives the pointers.
       const rows = await list.rows()
-      const [mine, seen, outbox] = await Promise.all([me(), marks.seen(), marks.outbox()])
+      const [mine, seen] = await Promise.all([me(), marks.seen()])
       if (rows.kind === 'ok') {
         const all = await groups.all()
         // YAZ-5259: a group that cannot be read now keeps its last view (its members' "updated … ago" say how old).
         const kept = Array.isArray(all) && all.every((g) => g.kind !== 'offline') ? [] : (await loadCopy())?.groups ?? []
         const last = (g: GroupView) => (g.kind === 'offline' ? kept.find((k) => k.kind === 'ok' && k.group === g.group) ?? g : g)
         const groupViews = Array.isArray(all) ? all.map(cleanGroup).map(last) : kept
-        const friends = rows.rows.map(entryOf)
+        const queued = await queuedMines(store)
+        const friends = rows.rows.map(entryOf).map(removing(queued))
+        // YAZ-5293, YAZ-5294: waiting marks go now, only to friends who still share and whose remove does not wait, and
+        // with the remove reserve of the list's pointers.
+        const reach = new Set(friends.filter((f) => f.state === 'ok' || f.state === 'waiting').map((f) => f.mine))
+        await marks.flush({ pointers: rows.rows.length + rows.shared.length + (Array.isArray(all) ? all.length : 0), keep: (m) => reach.has(m) })
+        const outbox = await marks.outbox()
         pointerCount = rows.rows.length + rows.shared.length + groupViews.length
         const offline = rows.rows.some((r) => r.read?.kind === 'ok' && r.read.stale !== undefined) || rows.rows.some((r) => r.state === 'offline')
         await saveCopy({ friends, shared: rows.shared, groups: groupViews })
@@ -262,7 +269,9 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
       }
       if (rows.kind === 'offline' || rows.kind === 'rate-limited') {
         const copy = await loadCopy()
-        if (copy !== null) return { kind: 'ok', me: mine, ...copy, seen, outbox, offline: true }
+        const outbox = await marks.outbox()
+        // YAZ-5292: a remove asked with no signal waits on the phone: its row says "Removing…" (also after a restart).
+        if (copy !== null) return { kind: 'ok', me: mine, ...copy, friends: copy.friends.map(removing(await queuedMines(store))), seen, outbox, offline: true }
       }
       return rows
     },
@@ -281,6 +290,12 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
     },
   }
 }
+
+/** YAZ-5292: a friend whose remove waits in the phone's queue: "Removing…", no numbers, no mark, no tap. */
+const removing =
+  (queued: Set<string>) =>
+  (f: FriendEntry): FriendEntry =>
+    queued.has(f.mine) ? { ...f, state: 'removing', label: 'Removing…', stats: null, sendBack: null, mark: undefined, updatedAt: null } : f
 
 /** YAZ-5256: each name and login of a group view from a gist, cleaned once (`gistText`). */
 function cleanGroup(view: GroupView): GroupView {
