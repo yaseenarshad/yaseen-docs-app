@@ -67,8 +67,6 @@ import { MEMORY_SECTION } from './memorySection'
 import { NOTIFICATIONS_SECTION } from './notificationsSection'
 import { NEW_PER_DAY_FIELD, RETENTION_FIELD, ReviewNumberControl, UP_NEXT_PER_DAY_FIELD, WEIGHTS_FIELD, wholeField, type ReviewField } from './ReviewNumberControl'
 import { ReviewHowCardsComeBack } from './ReviewHowCardsComeBack'
-import { ConnectPhoneControl } from './ConnectPhoneControl'
-import { GithubTokenControl } from './GithubTokenControl'
 import { LinkPillsControl } from './LinkPillsControl'
 import type { LinkPillsState } from './useLinkPills'
 import { SettingsFolderControl } from './SettingsFolderControl'
@@ -481,6 +479,9 @@ function iconColourRow(kind: SidebarIconKind): SettingDef {
 
 /** What the section title does not say: the feature's name, and where its cards turn up. */
 const REVIEW_KEYWORDS = ['cards', 'cards', 'flashcards', 'inbox', 'spaced repetition', 'fsrs', 'archive', 'archived']
+/** "Phone and friends" (YAZ-5098): its two rows load only when Settings shows them, so the first load stays the same. */
+const GithubTokenControl = lazy(() => import('./GithubTokenControl').then((m) => ({ default: m.GithubTokenControl })))
+const ConnectPhoneControl = lazy(() => import('./ConnectPhoneControl').then((m) => ({ default: m.ConnectPhoneControl })))
 /** "Phone and friends" (YAZ-5098): the phone app reviews the cards, so the Review words find these rows too. */
 const PHONE_KEYWORDS = [...REVIEW_KEYWORDS, 'phone', 'iphone', 'mobile', 'notecards', 'connect', 'qr', 'code', 'scan', 'github', 'token', 'friends', 'secret']
 /** Card spacing's rows (YAZ-5050). */
@@ -2161,7 +2162,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: PHONE_KEYWORDS,
             wide: true,
             available: reviewOn,
-            render: () => <GithubTokenControl />,
+            render: () => (
+              <Suspense fallback={null}>
+                <GithubTokenControl />
+              </Suspense>
+            ),
           },
           {
             id: 'connectPhone',
@@ -2169,7 +2174,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             hint: "Shows a code with this vault's repo and your token. Scan it in the phone app, and type nothing on the phone.",
             keywords: PHONE_KEYWORDS,
             available: (ctx) => reviewOn(ctx) && ctx.vaultRoot !== undefined,
-            render: ({ vaultRoot }) => vaultRoot !== undefined && <ConnectPhoneControl root={vaultRoot} />,
+            render: ({ vaultRoot }) =>
+              vaultRoot !== undefined && (
+                <Suspense fallback={null}>
+                  <ConnectPhoneControl root={vaultRoot} />
+                </Suspense>
+              ),
           },
         ],
       },
