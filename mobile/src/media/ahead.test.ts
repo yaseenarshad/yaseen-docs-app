@@ -460,7 +460,7 @@ describe('3D: media ahead of time (decision 6)', () => {
     expect(await t.has('flags/far.png')).toBe(true)
   })
 
-  it('errors are quiet: a 404, GitHub`s "slow down" and no signal never change the sync dot; each is tried again later', async () => {
+  it('errors are quiet: a 404, GitHub`s "slow down" and no signal never change the sync dot; "slow down" waits, a 404 gives up until the file shows', async () => {
     const t = await setup(DEMO)
     const fr = await t.shaOf('flags/fr.png')
     const mp3 = await t.shaOf('fifth.mp3')
@@ -478,11 +478,11 @@ describe('3D: media ahead of time (decision 6)', () => {
 
     mode = 'slow'
     await t.store.remove(VAULT, 'fifth.mp3')
-    await t.git.push({ 'world.md': `${DEMO['world.md']}\n` }) // a new commit: the 404 is tried again
+    await t.git.push({ 'world.md': `${DEMO['world.md']}\n` }) // a new commit, but fr.png has the same SHA
     await t.tick(POLL_MS)
     expect(t.media.state()).toMatchObject({ waiting: 'slowed' })
     expect(t.media.state().retryAt).toBeGreaterThan(t.clock.now())
-    expect(await t.has('flags/fr.png')).toBe(true) // tried again on the new commit
+    expect(await t.has('flags/fr.png')).toBe(false) // a 404 does not heal by waiting: given up on this SHA (YAZ-5186)
     expect(await t.has('fifth.mp3')).toBe(false)
     expect(t.events.filter((e) => e.type === 'state' && (e.state.status === 'slowed' || e.state.status === 'attention' || e.state.status === 'off'))).toEqual([])
     const blobsWhileWaiting = t.pictureBlobs()
@@ -492,15 +492,17 @@ describe('3D: media ahead of time (decision 6)', () => {
     await t.tick(10 * 60_000)
     expect(await t.has('fifth.mp3')).toBe(true)
     expect(t.media.state().waiting).toBeNull()
+    expect((await t.media.show('flags/fr.png')).status).toBe('ready') // the person opens it: tried at once
   })
 
   it('no signal in the middle: the media waits quietly and continues after the next pass', async () => {
-    const t = await setup(DEMO, { parallel: 1 })
     let drop = true
-    t.github.interrupt = (call) => {
-      if (drop && call.url.includes('/git/blobs/') && t.lock.holders > 0 && t.log.some((l) => l.startsWith(`checkpoint`))) throw new TypeError('Load failed')
-      return undefined
-    }
+    const t = await setup(DEMO, {
+      parallel: 1,
+      beforeBlob: (_sha, media) => {
+        if (drop && media) throw new GithubError('OFFLINE', null, 'No connection to GitHub')
+      },
+    })
     await t.open()
     expect(t.media.state().waiting).toBe('offline')
     expect(t.engine.state().status).toBe('synced')

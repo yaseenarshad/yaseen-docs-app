@@ -11,6 +11,9 @@ import { TOKEN_STATE } from './tokenStore'
  */
 export const STORE_FORMAT = 1
 
+/** The vault's state that keeps its protected media (`protectMedia`, 3D), so a new session holds it at once. */
+export const MEDIA_KEPT_STATE = 'mediaKept'
+
 /** The scope of phone-wide state (the vault list, settings, recents), next to the per-vault scopes (vault ids). */
 export const PHONE = ''
 
@@ -109,9 +112,11 @@ export interface VaultStore {
   /**
    * 3D (YAZ-5074): the open vault's media that the cards due in the window need. Row P2 never drops these files; the
    * other media goes as before. One vault at a time (the open one, decision 7): a call replaces the set, and `null`
-   * clears it. Held in memory only: the media runner sets it again at each start.
+   * clears it. With `paths`, the set holds at once and is also kept as the vault's state `MEDIA_KEPT_STATE`. Without
+   * `paths`, the vault's kept set holds (YAZ-5188: at the start of a session, before the media's first plan, a full
+   * phone must not drop a window file). The promise ends when the set is kept.
    */
-  protectMedia(vault: string | null, paths: Iterable<string>): void
+  protectMedia(vault: string | null, paths?: Iterable<string>): Promise<void>
 
   checkpoint(vault: string): Promise<Checkpoint | null>
   setCheckpoint(vault: string, checkpoint: Checkpoint): Promise<void>
@@ -172,9 +177,9 @@ function notTheToken(name: string) {
 export async function openVaultStore(backend: Backend, options: OpenOptions = {}): Promise<VaultStore> {
   const format = options.format ?? STORE_FORMAT
   const now = options.now ?? Date.now
-  /** 3D: the open vault and its media that must stay (`protectMedia`). */
-  let kept: { vault: string; paths: ReadonlySet<string> } | null = null
-  const isKept = (e: FileRef) => kept !== null && e.vault === kept.vault && kept.paths.has(e.path)
+  /** 3D: the open vault and its media that must stay (`protectMedia`); `paths` null: read the kept set when needed. */
+  let kept: { vault: string; paths: ReadonlySet<string> | null } | null = null
+  const isKept = (e: FileRef) => kept !== null && e.vault === kept.vault && kept.paths !== null && kept.paths.has(e.path)
   /** YAZ-5175: the vaults that left the phone in this session, and whether ALL left ("erase"); `admit` brings one back. */
   const closed = new Set<string>()
   const admitted = new Set<string>()
@@ -202,6 +207,11 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
    * nor the open vault's media that the cards due in the window need (`protectMedia`, 3D: the night pick of YAZ-5074).
    */
   async function mediaToDrop(vault: string, except: FileRef | undefined): Promise<FileEntry[]> {
+    if (kept !== null && kept.paths === null) {
+      const which = kept
+      const saved = (await backend.get('state', [which.vault, MEDIA_KEPT_STATE])) as string[] | undefined
+      if (kept === which) kept = { vault: which.vault, paths: new Set(saved ?? []) }
+    }
     const entries = (await backend.all('entries')) as FileEntry[]
     const media = entries.filter((e) => e.kind === 'media' && !isKept(e) && !(except && e.vault === except.vault && e.path === except.path))
     const own = media.filter((e) => e.vault === vault)
@@ -276,8 +286,21 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
 
     remove: (vault, path) => backend.apply(dropOps({ vault, path })),
 
-    protectMedia(vault, paths) {
-      kept = vault === null ? null : { vault, paths: new Set(paths) }
+    async protectMedia(vault, paths) {
+      if (vault === null) {
+        kept = null
+        return
+      }
+      if (paths === undefined) {
+        if (kept?.vault !== vault) kept = { vault, paths: null }
+        return
+      }
+      const set = new Set(paths)
+      kept = { vault, paths: set }
+      // Kept for the next session, at best: a full phone or a closed vault leaves the set in memory for this one.
+      await applyMakingRoom([{ put: 'state', key: [vault, MEDIA_KEPT_STATE], value: [...set] }], { vault, item: `state:${MEDIA_KEPT_STATE}` }).catch((error: unknown) => {
+        if (!(error instanceof StorageFullError) && !(error instanceof VaultClosedError)) throw error
+      })
     },
 
     async list(vault) {
