@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 /**
@@ -7,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
  * (the part that no browser sends to a server). A code in the query (`?c=`) is not read. The code is drawn as text.
  */
 const ID = 'aa5a315d61ae9438b18d'
-const body = readFileSync(new URL('../../friend.html', import.meta.url), 'utf8').replace(/^[\s\S]*<body>|<\/body>[\s\S]*$/g, '')
+const body = readFileSync(join(import.meta.dirname, '../../friend.html'), 'utf8').replace(/^[\s\S]*<body>|<\/body>[\s\S]*$/g, '')
 
 async function open(path: string) {
   history.replaceState(null, '', path)

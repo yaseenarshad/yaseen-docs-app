@@ -140,11 +140,13 @@ Screenshots of the screens: `npm run build:fixtures -w mobile`, serve `mobile/di
   It takes over at the next open, before the app runs (`main.tsx`), or after "A new version is ready." → Restart, or
   when the app comes back after 5 minutes away; never while answers wait to be sent, never on the Review tab or over
   a form unless the person taps Restart.
-* **Friend link:** `https://<site>/friend#<code>` (`src/pwa/friendLink.ts`). The code is after `#`, so no server sees
-  it. `friend.html` is the landing page for Safari ("Copy this code. Open the app. Tap Paste."). "Paste a friend's
-  link" (4E2) reads either form with `friendCodeFrom`.
-* **Headers:** `public/_headers` (the CSP, `Referrer-Policy: no-referrer`, `nosniff`, the camera for this site only, the
-  cache rules). `publish/headers.test.ts` fails when the code calls an origin that the CSP does not name, or the CSP
+* **Shared links:** `https://<site>/friend#<code>`, `/group#<code>` and `/join#<group>-<pointer>` (`src/pwa/friendLink.ts`:
+  `friendLink`, `groupLinkFor`, `joinLinkFor`, `landingCodeFrom`). The code is after `#`, so no server sees it. One landing
+  page for Safari (`friend.html`, also built as `group.html` and `join.html`): "Copy this code. Open the app. Tap Paste.",
+  with words for each kind. Every link uses the site the app runs on (`location.origin`), never a fixed host.
+* **Headers:** `public/_headers` (the CSP, `Referrer-Policy: no-referrer`, `nosniff`, the camera for this site only,
+  `Strict-Transport-Security: max-age=31536000`, the cache rules; no long cache under `/assets/`, because Cloudflare
+  answers a missing chunk with the app page). `publish/headers.test.ts` fails when the code calls an origin that the CSP does not name, or the CSP
   names more.
 * **Build check:** `npm run mobile:build` ends with `publish/checkBuild.ts`: no screen fixtures, no `localhost`, no
   source maps, no token in `dist/`; every publish part there; the size report.
@@ -168,3 +170,33 @@ sending it: `npx --yes wrangler@4.162.0 deploy --config mobile/wrangler.jsonc --
 The Worker has no script: Cloudflare serves the files of `dist/` and applies `_headers`. No request reaches code of
 ours, so nothing logs an address. The stable site `notecards.yaseenarshad.com` is NOT in this config: it publishes on
 a version tag, when Yaseen says (decision 8, round 10 item 16).
+
+## If a bad version ships
+
+Decide which part is bad, then do ONE of these. Publish to the preview only, as above.
+
+**1. The page or a screen is bad; the update works.** Roll the Worker back to the last good version. The phones see a
+new `sw.js` (its version differs) and take the old build as a new version at their next open.
+
+```
+npx --yes wrangler@4.162.0 versions list --config mobile/wrangler.jsonc
+npx --yes wrangler@4.162.0 rollback <version-id> --config mobile/wrangler.jsonc --message "bad build <commit>"
+```
+
+`/version.txt` names the commit of each build. The other way: check out the last good commit and run
+`npm run mobile:publish:preview`.
+
+**2. The service worker or the update code is bad** (a fixed version installs but never takes over). Publish the kill switch:
+
+```
+npm run mobile:publish:preview:kill-switch
+```
+
+It builds the site with `src/pwa/killSwitch.ts` as `sw.js`. That worker takes over at once with no page message. It
+deletes only this app's shell caches (`notecards-shell-*`, `notecards-meta`), unregisters itself, and loads each open
+page again one time. It never touches IndexedDB: the token, the vault copy and the waiting answers stay. Then fix the
+bug and run `npm run mobile:publish:preview`. The app registers its normal worker again at the next open.
+
+**On a broken phone:** close Notecards in the app switcher (swipe it up), then open it again; do it two times. A new
+worker takes over when no page of the old one is open. Do NOT remove the site's data in Settings (Safari › Advanced ›
+Website Data): that deletes IndexedDB, with the token and the answers that wait to be sent.

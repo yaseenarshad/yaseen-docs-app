@@ -34,7 +34,7 @@ export function checkDist(files: DistFile[]): string[] {
 }
 
 /** The files the publish needs. */
-export const PARTS = ['index.html', 'friend.html', '_headers', 'sw.js', 'manifest.webmanifest', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'version.txt']
+export const PARTS = ['index.html', 'friend.html', 'group.html', 'join.html', '_headers', 'sw.js', 'manifest.webmanifest', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'version.txt']
 export const missingParts = (paths: string[]) => PARTS.filter((p) => !paths.includes(p))
 
 const TEXT = /\.(html|js|css|webmanifest|json|svg|txt)$|^_headers$/
@@ -59,7 +59,8 @@ export function main() {
   const lazy = paths.filter((p) => p.startsWith('assets/') && !first.includes(p) && !friend.includes(p) && p.endsWith('.js'))
   const sw = readFileSync(join(dist, 'sw.js'), 'utf8')
   const shell = JSON.parse(/\bfiles:(\[[^\]]*\])/.exec(sw)?.[1] ?? '[]') as string[]
-  const fileOf = (served: string) => (served === '/' ? 'index.html' : served === '/friend' ? 'friend.html' : served.slice(1))
+  if (/THE KILL SWITCH/.test(sw)) console.log('  sw.js is THE KILL SWITCH (YAZ-5285): it clears the shell caches and unregisters')
+  const fileOf = (served: string) => (served === '/' ? 'index.html' : /^\/(friend|group|join)$/.test(served) ? `${served.slice(1)}.html` : served.slice(1))
   const sum = (list: string[]) => list.map(size).reduce((a, b) => ({ raw: a.raw + b.raw, gz: a.gz + b.gz }), { raw: 0, gz: 0 })
 
   console.log('\nNotecards build (YAZ-5087)')

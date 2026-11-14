@@ -37,10 +37,12 @@ export const SPLASH_SCREENS = [
   { width: 440, height: 956, ratio: 3 }, // 16 Pro Max, 17 Pro Max
   { width: 402, height: 874, ratio: 3 }, // 16 Pro, 17, 17 Pro
   { width: 430, height: 932, ratio: 3 }, // 14 Pro Max, 15 Plus, 15 Pro Max, 16 Plus
+  { width: 420, height: 912, ratio: 3 }, // Air (YAZ-5287)
   { width: 393, height: 852, ratio: 3 }, // 14 Pro, 15, 15 Pro, 16
   { width: 428, height: 926, ratio: 3 }, // 12 Pro Max, 13 Pro Max, 14 Plus
   { width: 390, height: 844, ratio: 3 }, // 12, 13, 14, 12 Pro, 13 Pro, 16e
   { width: 375, height: 812, ratio: 3 }, // X, XS, 11 Pro, 12 mini, 13 mini
+  { width: 414, height: 896, ratio: 3 }, // XS Max, 11 Pro Max (YAZ-5287)
   { width: 414, height: 896, ratio: 2 }, // XR, 11
   { width: 375, height: 667, ratio: 2 }, // SE (2nd and 3rd), 8
 ] as const
