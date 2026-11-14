@@ -27,21 +27,26 @@ export function SignIn({ mode }: { mode: SignInMode }) {
   const [openId, setOpenId] = useState<string | null>(null)
   const [asking, setAsking] = useState(false)
   const repoField = useRef<HTMLInputElement>(null)
+  /** Set in the same turn as the tap: a second tap before the next render sees it (YAZ-5178). */
+  const checking = useRef(false)
   const again = mode.kind === 'again' ? (app.list.vaults.find((v) => vaultId(v) === mode.vault) ?? null) : null
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault()
-    if (busy) return
+    if (checking.current) return
+    checking.current = true
     setBusy(true)
     setHelp(null)
     let outcome: SignInOutcome
     try {
       outcome = mode.kind === 'again' ? await app.replaceToken(mode.vault, token) : await app.addVault({ repo, token })
     } catch {
+      checking.current = false
       setBusy(false)
       setHelp(SAVE_FAILED)
       return
     }
+    checking.current = false
     setBusy(false)
     if (outcome.ok) return
     setHelp(signInHelp(outcome.error))

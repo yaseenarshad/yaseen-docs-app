@@ -19,6 +19,8 @@
  * says "22 / 48 · Reset": Reset sets today back to the Settings number, never below today's work. No pop-up: it
  * changes today only, and the line under the buttons (Undo, ⌘Z) takes back the last add or Reset.
  *
+ * To fix (YAZ-5097): the cards marked Fix later, listed as Archived is, right before it under the same line.
+ *
  * Archived (YAZ-5046): the last row, under a line, with how many cards of the scope are archived. It is no review: its
  * pick shows the archived cards as a list, to look at, each with Unarchive (`CardInbox`).
  */
@@ -31,7 +33,7 @@ import { FileIcon } from '../sidebar/FileIcon'
 import { todayCards } from './reviewTime'
 import { TodayWork, type TimeView } from './TodayWork'
 import { AddMoreField } from './AddMoreField'
-import { ArchiveIcon, ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
+import { ArchiveIcon, ChevronIcon, DueIcon, FixIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
 
 /** The filters in menu order, with their names and glyphs. */
 export const CARD_FILTERS: readonly {
@@ -43,6 +45,7 @@ export const CARD_FILTERS: readonly {
   { id: 'next', label: 'Up next', icon: UpNextIcon },
   { id: 'due', label: 'Due today', icon: DueIcon },
   { id: 'new', label: 'New cards', icon: () => <NewIcon /> },
+  { id: 'fix', label: 'To fix', icon: FixIcon },
   { id: 'archived', label: 'Archived', icon: ArchiveIcon },
 ]
 
@@ -148,7 +151,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
               // YAZ-5042: the two rows that have a number a day read "today / total" (round 2), and add on a click.
               const kind: AddKind | null = f.id === 'new' ? 'new' : f.id === 'next' ? 'next' : null
               const add = kind === null || addCards === undefined ? 0 : session.adds[kind]
-              const count = f.id === 'archived' ? session.archived.length : session.counts[f.id]
+              const count = f.id === 'archived' ? session.archived.length : f.id === 'fix' ? session.toFix.length : session.counts[f.id]
               const total = kind !== null && session.limited[kind] ? count + session.more[kind] : null
               const reset = kind !== null && resetCards !== undefined && session.canReset[kind]
               if (kind !== null && adding === kind && add > 0)
@@ -179,8 +182,8 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
               }
               return (
                 <Fragment key={f.id}>
-                  {/* YAZ-5046: a line sets Archived apart: its cards are to look at, not to review. */}
-                  {f.id === 'archived' && <div className="card-inbox__filter-sep" role="separator" />}
+                  {/* YAZ-5046: a line sets the lists apart (To fix, YAZ-5097, then Archived): their cards are to look at, not to review. */}
+                  {f.id === 'fix' && <div className="card-inbox__filter-sep" role="separator" />}
                   <div className="card-inbox__filter-row" role="none">
                     <button type="button" role="menuitemradio" aria-checked={f.id === session.filter} className="ctx-menu__item card-inbox__filter-item" data-filter={f.id} onMouseDown={(e) => e.preventDefault()} onClick={pick}>
                       <span className="card-inbox__filter-name">

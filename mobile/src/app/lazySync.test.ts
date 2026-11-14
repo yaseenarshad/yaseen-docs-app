@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { signOutAndErase } from '../auth/signIn'
 import { createSyncEngine } from '../sync/engine'
 import { BRANCH, REPO, VAULT, pageText, syncSetup } from '../sync/testing'
 import { lazySync } from './lazySync'
@@ -68,5 +69,36 @@ describe('lazySync: 3B engine, loaded when a vault opens', () => {
     await t.sync.syncNow()
     expect(t.sync.state()).toMatchObject({ status: 'attention', problem: 'UNAUTHORIZED' })
     expect(await t.s.store.read(VAULT, 'a.md')).not.toBeNull()
+  })
+
+  it('a sign-out while the engine chunk still loads does not open the engine on the erased vault', async () => {
+    const s = await syncSetup(VAULT_FILES)
+    let loadNow!: () => void
+    const loaded = new Promise<void>((r) => (loadNow = r))
+    const opened: (string | null)[] = []
+    const sync = lazySync(s.store, s.tokens, async () => {
+      await loaded
+      return {
+        createSyncEngine: (o) => {
+          const e = createSyncEngine({ ...o, makeRemote: () => s.remote, lock: (_n, fn) => fn(), yieldToUi: async () => {} })
+          const open = e.open.bind(e)
+          e.open = async (v) => {
+            opened.push(v === null ? null : v.repo)
+            return open(v)
+          }
+          return e
+        },
+        followPage: () => () => undefined,
+      }
+    })
+    const first = sync.open(vault)
+    await new Promise((r) => setTimeout(r, 20))
+    await sync.open(null)
+    await signOutAndErase(s.store, s.tokens)
+    loadNow()
+    await first
+    await new Promise((r) => setTimeout(r, 100))
+    expect(opened.at(-1) ?? null).toBeNull()
+    expect(sync.state().vault).toBeNull()
   })
 })

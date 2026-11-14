@@ -45,6 +45,8 @@ export async function signIn(input: SignInInput, deps: SignInDeps): Promise<Sign
   if (list.vaults.some((v) => vaultId(v) === id)) return { ok: false, error: { kind: 'already-added', repo, branch } }
 
   const now = deps.now ?? Date.now
+  // The vault may have left the phone earlier in this session; the store refuses its writes until now (YAZ-5175).
+  deps.store.admit(id)
   await deps.tokens.write(id, checked.token)
   try {
     await saveAccount(deps.store, id, account)

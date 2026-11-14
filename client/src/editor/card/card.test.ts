@@ -320,6 +320,27 @@ describe('the card in the page', () => {
     expect([line(), mark().hidden]).toEqual(['<!-- card: WIKI-7, 2026-11-12T14:05Z good -->', true])
   })
 
+  it('YAZ-5097: ⋯ Fix later sets `fix` in one undo step; the head says "To fix"; Remove Fix later takes it off', async () => {
+    const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, next, 2026-11-12T14:05Z good -->\n`, { cards: { path: '/v/Page.md' } })
+    const run = (label: string) => {
+      root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+      const row = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent === label)
+      expect(row, label).toBeDefined()
+      row!.click()
+    }
+    const line = () => getMarkdownForSave(crepe).split('\n').find((l) => l.startsWith('<!-- card'))
+    const mark = () => root.querySelector<HTMLElement>('.card__fix')!
+    expect(mark().hidden).toBe(true)
+    run('Fix later')
+    expect(line()).toBe('<!-- card: WIKI-7, next, fix, 2026-11-12T14:05Z good -->')
+    expect([mark().hidden, mark().textContent]).toEqual([false, 'To fix'])
+    undo(view.state, view.dispatch)
+    expect([line(), mark().hidden]).toEqual(['<!-- card: WIKI-7, next, 2026-11-12T14:05Z good -->', true])
+    run('Fix later')
+    run('Remove Fix later')
+    expect([line(), mark().hidden]).toEqual(['<!-- card: WIKI-7, next, 2026-11-12T14:05Z good -->', true])
+  })
+
   it('YAZ-4999: ⋯ Put at top of Inbox and the chip`s × set and remove `next`, each in one undo step; read only, they write the FILE', async () => {
     const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, 2026-11-12T14:05Z good -->\n`, { cards: { path: '/v/Page.md' } })
     const rowOf = (label: string) => {

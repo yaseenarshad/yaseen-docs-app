@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { isCardSeconds, withCardNext, withCardOff, type CardRating, type CardReview } from '@shared/cardLine'
-import { addStep, archivedCards, cardPlan, previewAnswers, reviewedToday, type AddKind, type ArchivedCard, type CardAnswer, type CardPlan, type CardsAddedToday, type DueCard, type ReviewedToday } from '@shared/cardSchedule'
+import { isCardSeconds, withCardFix, withCardNext, withCardOff, type CardLine, type CardRating, type CardReview } from '@shared/cardLine'
+import { addStep, archivedCards, cardPlan, fixCards, previewAnswers, reviewedToday, type AddKind, type ArchivedCard, type CardAnswer, type CardPlan, type CardsAddedToday, type DueCard, type ReviewedToday } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
@@ -29,6 +29,10 @@ import type { ReviewHost } from './reviewHost'
  * the index (`archivedCards`), to look at, not to review. The filter `archived` shows them as a list (no card on show:
  * `at` is past the queue's end); `unarchive` takes `off` away, the history stays, and the index takes the card off the
  * list. The review's own counts and queue never hold an archived card.
+ *
+ * To fix (YAZ-5097, "Fix later"): the cards with `fix` in the open scope, from the index (`fixCards`), listed as the
+ * Archived cards are (the filter `fix`). A marked card stays in review: the mark changes no count and no queue. `setFix`
+ * writes the mark on or off (the Inbox ⋯'s Fix later, the list's Fixed) and reads the card again.
  *
  * The filter (YAZ-5017, as Mochi's "All cards ▾"): All cards, Due today (cards with reviews, due now) or New cards
  * (never reviewed, within today's new-card limit: the queue's own). The queue stays whole; the filter picks which of its
@@ -78,14 +82,16 @@ import type { ReviewHost } from './reviewHost'
  * stays. A Reset is on the undo stack as an add is; its undo brings the cards back.
  */
 
-/** Which cards of the session show (YAZ-5017); `archived` (YAZ-5046): the archived cards' list, no card to review. */
-export type CardFilter = 'all' | 'next' | 'due' | 'new' | 'archived'
+/** Which cards of the session show (YAZ-5017); `fix` (YAZ-5097) and `archived` (YAZ-5046): a list of cards, no card to review. */
+export type CardFilter = 'all' | 'next' | 'due' | 'new' | 'fix' | 'archived'
 /** The filters that review: each has a count of the session's queue. */
-export type ReviewFilter = Exclude<CardFilter, 'archived'>
+export type ReviewFilter = Exclude<CardFilter, 'fix' | 'archived'>
+/** Is `filter` a list of cards to look at (To fix, Archived), not a review? */
+export const isListFilter = (filter: CardFilter): filter is 'fix' | 'archived' => filter === 'fix' || filter === 'archived'
 
-/** Whether `card` shows under `filter`: next = marked up next (YAZ-5028), due = reviewed before (due now), new = never reviewed; archived: none of the queue. */
+/** Whether `card` shows under `filter`: next = marked up next (YAZ-5028), due = reviewed before (due now), new = never reviewed; a list (To fix, Archived): none of the queue. */
 export const matchesFilter = (card: DueCard, filter: CardFilter): boolean =>
-  filter === 'all' || (filter === 'archived' ? false : filter === 'next' ? card.next : (filter === 'new') === card.isNew)
+  filter === 'all' || (isListFilter(filter) ? false : filter === 'next' ? card.next : (filter === 'new') === card.isNew)
 
 /** What a session reviews: the vault (nothing), a folder (root-relative, "Review this folder") or one page (its absolute path, "Review this page"). */
 export interface CardReviewScope {
@@ -129,6 +135,8 @@ export interface CardReviewSession {
   counts: Record<ReviewFilter, number>
   /** The scope's archived cards (YAZ-5046), from the index: the Archived row's count and list. */
   archived: ArchivedCard[]
+  /** The scope's cards marked Fix later (YAZ-5097), from the index: the To fix row's count and list. */
+  toFix: ArchivedCard[]
   /** Where the cards come from (YAZ-5017): the vault's name; the folder's parts; the page's name. Shown by the filter ("· in …"). */
   from: string[]
   /** The card showing's place (YAZ-5017 round 2, YAZ-5132): vault › folders › page (a card file: its folders), each with what a click opens. Empty with no card. */
@@ -180,13 +188,15 @@ export interface CardReviewApi {
   deleteReview: (path: string, id: string, review: CardReview) => Promise<void>
   /** Up next on or off for card `id` of `path` (YAZ-4999 D3, the Inbox head's chip ×): one write of the file, then the card read again. */
   setNext: (path: string, id: string, on: boolean) => Promise<void>
+  /** Fix later on or off for card `id` of `path` (YAZ-5097, the Inbox ⋯ and the To fix list): one write, then the card read again; the card stays in review. */
+  setFix: (path: string, id: string, on: boolean) => Promise<void>
   /** ← (-1) and → (+1), YAZ-5004: the card before or after, with no answer; the card left stays in the queue. */
   move: (delta: -1 | 1) => void
   /** The Inbox ⋯'s Archive card (YAZ-5004, YAZ-5046): `off` on the card showing's line, and the card out of the queue. */
   turnOff: () => Promise<void>
   /** Unarchive card `id` of `path` (YAZ-5046, the Archived list): `off` off its line; its history stays. */
   unarchive: (path: string, id: string) => Promise<void>
-  /** All cards, Due today, New cards (YAZ-5017) or the Archived list (YAZ-5046): which of the session's cards show. */
+  /** All cards, Due today, New cards (YAZ-5017), the To fix list (YAZ-5097) or the Archived list (YAZ-5046): which of the session's cards show. */
   setFilter: (filter: CardFilter) => void
   /**
    * Adds `count` more cards of `kind` for today (YAZ-5042 round 2: the typed number; `session.adds[kind]`, the Settings
@@ -840,9 +850,10 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     [onNotice, readAgain, host],
   )
 
-  const setNext = useCallback(
-    async (path: string, id: string, on: boolean) => {
-      const written = await host.changeCardLine(path, id, (l) => withCardNext(l, on)).then(
+  /** One mark on or off (Up next, Fix later): one write of the file, then the card read again. */
+  const setMark = useCallback(
+    async (path: string, id: string, change: (line: CardLine) => CardLine) => {
+      const written = await host.changeCardLine(path, id, change).then(
         () => true,
         (err: unknown) => {
           onNotice(`Can't change the card: ${reason(err)}`, 'error')
@@ -853,6 +864,8 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     },
     [onNotice, readAgain, host],
   )
+  const setNext = useCallback((path: string, id: string, on: boolean) => setMark(path, id, (l) => withCardNext(l, on)), [setMark])
+  const setFix = useCallback((path: string, id: string, on: boolean) => setMark(path, id, (l) => withCardFix(l, on)), [setMark])
 
   const move = useCallback((delta: -1 | 1) => {
     setSession((s) => {
@@ -940,6 +953,8 @@ export function useCardReview(root: string | null, source: IndexSource, settings
   )
   // YAZ-5046: the open scope's archived cards, from the index.
   const archived = useMemo(() => (scope === undefined ? [] : archivedCards(records, scope.folder, scope.page)), [scope, records])
+  // YAZ-5097: the open scope's cards marked Fix later, from the index.
+  const toFix = useMemo(() => (scope === undefined ? [] : fixCards(records, scope.folder, scope.page)), [scope, records])
   // YAZ-5029: the last card shown with its text, and its session: on show while the next card is read.
   const lastShown = useRef<{ session: number; card: ShownCard } | null>(null)
   const shownSession = useMemo<CardReviewSession | null>(() => {
@@ -953,7 +968,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     const counts = countOf(queue)
     const lastStep = session.undo.at(-1)
     // "3 of 12" under the filter (YAZ-5017): its cards at start, those gone since, and the place among those left.
-    const total = filter === 'all' ? totals.due + totals.new : filter === 'archived' ? archived.length : totals[filter]
+    const total = filter === 'all' ? totals.due + totals.new : filter === 'archived' ? archived.length : filter === 'fix' ? toFix.length : totals[filter]
     const before = queue.slice(0, session.at).filter((c) => matchesFilter(c, filter)).length
     const vault = vaultName ?? (root === null ? 'Inbox' : host.vaultName(root))
     const from = scope.page !== undefined ? [session.label] : scope.folder ? scope.folder.split('/').filter(Boolean) : [vault]
@@ -962,7 +977,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       scope: scope.page !== undefined ? 'page' : scope.folder ? 'folder' : 'vault',
       cards: scope,
       card: shownCard,
-      position: filter === 'archived' ? 0 : Math.max(1, Math.min(total - counts[filter] + 1 + before, total)),
+      position: isListFilter(filter) ? 0 : Math.max(1, Math.min(total - counts[filter] + 1 + before, total)),
       total,
       canBack: stepFrom(session, -1) !== -1,
       canNext: stepFrom(session, 1) !== -1,
@@ -972,6 +987,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       filter,
       counts,
       archived,
+      toFix,
       from,
       place: shownCard === null || root === null ? [] : cardPlace(root, vault, folders, records, shownCard.path),
       answered: session.answered,
@@ -984,7 +1000,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       lastAdd: lastStep?.kind === 'add' ? { kind: lastStep.what, count: lastStep.count, reset: false } : lastStep?.kind === 'reset' ? { kind: lastStep.what, count: lastStep.count, reset: true } : null,
     }
     // `records`: a cached page is good only at its page's mtime.
-  }, [session, loaded, fixed, turnKey, root, vaultName, host, cached, records, folders, today, scopePlan, settings, archived, added])
+  }, [session, loaded, fixed, turnKey, root, vaultName, host, cached, records, folders, today, scopePlan, settings, archived, toFix, added])
 
-  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, move, turnOff, unarchive, setFilter, addCards, resetCards }
+  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, setFix, move, turnOff, unarchive, setFilter, addCards, resetCards }
 }

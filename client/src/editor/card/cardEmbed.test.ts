@@ -259,6 +259,22 @@ describe('Edit card writes the original', () => {
     expect(getMarkdownForSave(crepe)).toBe(markdown)
   })
 
+  it('YAZ-5097: Done on an edited card marked Fix later takes the mark off in the same write', async () => {
+    const { root, wikilinks } = await mount('Plan\n\n![[GEO-140]]\n')
+    disk.files.set(CARD_FILE, cardFileText.replace('<!-- card: GEO-140 -->', '<!-- card: GEO-140, fix -->'))
+    update(wikilinks, records({ cardFile: { mtime: 2, cards: [card('GEO-140', 'Capital of France', { fix: true })] } }))
+    const box = boxes(root)[0]!
+    await vi.waitFor(() => expect(box.querySelector<HTMLElement>('.card__fix')?.hidden).toBe(false))
+    press(box.querySelector('.card__edit'))
+    const handle = cardEmbedOfDom(box)!
+    await handle.cardEditor!.ready
+    const inner = handle.cardEditor!.view()!
+    inner.dispatch(inner.state.tr.insertText(' Since 508.', inner.state.doc.content.size - 1))
+    press(box.querySelector('.card__edit'))
+    await vi.waitFor(() => expect(disk.files.get(CARD_FILE)).toBe(cardFileText.replace('Paris', 'Paris Since 508.')))
+    expect(box.querySelector<HTMLElement>('.card__fix')?.hidden).toBe(true)
+  })
+
   it('Done with no change writes nothing; a read-only page has no Edit card', async () => {
     const { root, view } = await mount('![[GEO-140]]\n')
     const box = boxes(root)[0]!
@@ -279,7 +295,7 @@ describe('the ⋯ menu', () => {
     const { crepe, root } = await mount('Plan ![[GEO-140]] end\n')
     const box = boxes(root)[0]!
     press(box.querySelector('.card__more'))
-    expect(menuLabels()).toEqual(['Open card', 'Show as link', 'Archive card', 'Copy card ID'])
+    expect(menuLabels()).toEqual(['Open card', 'Show as link', 'Archive card', 'Fix later', 'Copy card ID'])
     // Open card: the card window, through the one open hook.
     const opened: CardOpenRequest[] = []
     const listen = (e: Event) => opened.push((e as CustomEvent<CardOpenRequest>).detail)
@@ -302,7 +318,25 @@ describe('the ⋯ menu', () => {
     const { root, view } = await mount('![[GEO-2]]\n')
     view.setProps({ editable: () => false })
     press(boxes(root)[0]!.querySelector('.card__more'))
-    expect(menuLabels()).toEqual(['Open card', 'Unarchive card', 'Copy card ID'])
+    expect(menuLabels()).toEqual(['Open card', 'Unarchive card', 'Fix later', 'Copy card ID'])
+  })
+
+  it('YAZ-5097: Fix later writes `fix` on the ORIGINAL; a card marked in the index says "To fix" in the head and Remove Fix later', async () => {
+    const { root } = await mount('Plan ![[GEO-140]] end\n')
+    const box = boxes(root)[0]!
+    expect(box.querySelector<HTMLElement>('.card__fix')?.hidden).toBe(true)
+    press(box.querySelector('.card__more'))
+    menuItem('Fix later')!.click()
+    await vi.waitFor(() => expect(disk.files.get(CARD_FILE)).toContain('<!-- card: GEO-140, fix -->'))
+    // The phone's mark lands: a new version of the card file in the index.
+    const marked = await mount('Plan ![[GEO-140]] end\n')
+    disk.files.set(CARD_FILE, cardFileText.replace('<!-- card: GEO-140 -->', '<!-- card: GEO-140, fix -->'))
+    update(marked.wikilinks, records({ cardFile: { mtime: 2, cards: [card('GEO-140', 'Capital of France', { fix: true })] } }))
+    const markedBox = boxes(marked.root)[0]!
+    await vi.waitFor(() => expect(markedBox.querySelector<HTMLElement>('.card__fix')?.hidden).toBe(false))
+    expect(markedBox.querySelector('.card__fix')?.textContent).toBe('To fix')
+    press(markedBox.querySelector('.card__more'))
+    expect(menuLabels()).toContain('Remove Fix later')
   })
 })
 
@@ -354,7 +388,7 @@ describe('the convert rows (YAZ-5037 phase 5): Move to its own file, Put back in
     const { root } = await mount('Intro.\n\n![[GEO-140]]\n\nMid ![[GEO-140]] text.\n\n- Item\n\n  ![[GEO-140]]\n', { cards: { path: PLAN, convert } })
     const [lone, inline, inList] = boxes(root)
     press(lone!.querySelector('.card__more'))
-    expect(menuLabels()).toEqual(['Open card', 'Show as link', 'Put back into this page', 'Archive card', 'Copy card ID'])
+    expect(menuLabels()).toEqual(['Open card', 'Show as link', 'Put back into this page', 'Archive card', 'Fix later', 'Copy card ID'])
     menuItem('Put back into this page')!.click()
     expect(convert.putBack).toHaveBeenCalledWith({ id: 'GEO-140', path: CARD_FILE }, 'GEO-140', 0)
     // With words around it: no card block can go there.
