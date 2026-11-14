@@ -278,7 +278,7 @@ describe('YAZ-5215: Discard asks first', () => {
     await h.click('Discard the answer to Speed of light')
     expect(answers.discarded).toEqual([])
     const ask = h.host.querySelector('[role="alertdialog"]')!
-    expect(ask.textContent).toContain('Discard your answer "Remembered" to Speed of light? It cannot be taken back.')
+    expect(ask.textContent).toContain('Discard your answer "Remembered" to "Speed of light"? It cannot be taken back.')
     // Cancel is the default: it has the focus, and it keeps the answer.
     expect(document.activeElement?.textContent).toBe('Cancel')
     await h.click('Cancel')
