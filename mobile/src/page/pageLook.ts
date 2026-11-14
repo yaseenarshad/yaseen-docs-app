@@ -8,7 +8,7 @@ import type { CardLink } from '@shared/cardLinks'
 import { fileKind } from '@shared/fileKind'
 import { makeResolver } from '@shared/linkResolver'
 import { vaultPageId } from '@shared/pageId'
-import { vaultMediaPath, vaultMediaUrl } from '../media/ui/vaultMedia'
+import { drawLocalCard } from '../media/ui/cardDraw'
 import type { VaultData } from '../search/vaultData'
 import type { EmbedShow, LinkShow, PageLook } from './pageRender'
 // The Mac's card look (sides, hidden words, tables in a card), then the phone's reader.
@@ -81,38 +81,9 @@ export function assetPath(data: VaultData, holder: string, src: string): string 
   return assetsOf(data)(target, fromRoot ? undefined : folderOf(holder))
 }
 
-/** A card picture's address when the vault has no such file: a `data:` text, so nothing is fetched. */
-const MISSING_PREFIX = 'data:text/plain,vault-missing:'
-
-/** A card's text drawn read only, as the Mac draws it (`renderCard`), its pictures and sounds marked for `watchMedia`. */
+/** A card's text drawn read only: the phone's ONE card drawing (`drawLocalCard`, shared with Review). */
 export function drawCard(data: VaultData, holder: string, text: string): HTMLElement {
-  const source = resolveSourceOf(data)
-  const look = cardLook(source, undefined, {
-    // `cardLook` reads the holder's folder from an absolute path under `root`: the phone's root is '' and its paths have no `/`.
-    root: '',
-    pagePath: `/${holder}`,
-    src: (_root, dir, src) => {
-      const path = assetPath(data, dir === '' ? 'x' : `${dir}/x`, src)
-      return path === null ? `${MISSING_PREFIX}${encodeURIComponent(src)}` : vaultMediaUrl(path)
-    },
-  })
-  const el = renderCard(text, {}, look)
-  // A picture of the card: no address at all until its bytes come (`watchMedia`); one not in the vault: the Mac's
-  // stock `<img>` of the text as written would fetch from this site, so it is a calm line instead.
-  for (const img of el.querySelectorAll<HTMLImageElement>('img')) {
-    const src = img.getAttribute('src') ?? ''
-    const path = vaultMediaPath(src)
-    if (path !== null) {
-      img.removeAttribute('src')
-      img.dataset.vaultSrc = path
-    } else if (src.startsWith(MISSING_PREFIX) || !/^(data|blob):/i.test(src)) {
-      const line = document.createElement('span')
-      line.className = 'page-media page-media--missing'
-      line.textContent = `Missing picture · ${src.startsWith(MISSING_PREFIX) ? decodeURIComponent(src.slice(MISSING_PREFIX.length)) : src}`
-      img.replaceWith(line)
-    }
-  }
-  return el
+  return drawLocalCard(text, {}, { links: resolveSourceOf(data), files: data.files, holder })
 }
 
 /** The title an embedded card's head names (the Mac's `embedName`): a card file's card title, else the title of its page. */

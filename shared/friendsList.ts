@@ -159,14 +159,49 @@ async function writeList(api: GistsApi, handle: IndexHandle, next: FriendsIndex,
 const isMine = (index: FriendsIndex, id: string) => pointersOf(index).includes(id)
 
 /** Writes `reads` into one of my pointers; keeps its other fields (`mark`, and what a newer app added). */
-async function setReads(api: GistsApi, pointer: string, reads: string, stats: string): Promise<void> {
+async function setReads(api: GistsApi, pointer: string, reads: string, stats: string, held: readonly string[] = []): Promise<void> {
   const gist = await api.read(pointer)
   if (gist === 'unchanged') return
   const state = readPointerFile(fileText(gist, POINTER_FILE))
-  if (state.kind === 'newer') return
-  const raw = state.kind === 'ok' ? state.raw : {}
-  if (state.kind === 'ok' && state.value.reads === reads) return
-  await api.update(pointer, { [POINTER_FILE]: JSON.stringify({ ...raw, v: 1, stats: state.kind === 'ok' ? state.value.stats : stats, reads }) })
+  // YAZ-5241: a pointer this app cannot read (or a newer one) is never written over.
+  if (state.kind !== 'ok') return
+  // YAZ-5235: `held` lists the friend's own links that I still hold (an earlier link of theirs, before the pair
+  // healed). The friend's app reads it and deletes those links, and a remove of me deletes them too.
+  const before = heldOf(state.raw)
+  const allHeld = [...new Set([...before, ...held.filter(isGistId)])]
+  if (state.value.reads === reads && allHeld.length === before.length) return
+  void stats
+  await api.update(pointer, { [POINTER_FILE]: JSON.stringify({ ...state.raw, v: 1, stats: state.value.stats, reads, ...(allHeld.length > 0 && { held: allHeld }) }) })
+}
+
+/** The friend's links that a pointer says its owner holds (`held`, YAZ-5235). Untrusted: gist IDs only, at most 50. */
+export const heldOf = (raw: Record<string, unknown>): string[] => (Array.isArray(raw.held) ? raw.held.filter(isGistId).slice(0, 50).map((x) => x.toLowerCase()) : [])
+
+/** The raw pointer behind `theirs` (a fresh read, or the reader's cached copy), or null when it cannot be read now. */
+async function theirRaw(api: GistsApi, theirs: string): Promise<Record<string, unknown> | null> {
+  try {
+    const gist = await api.read(theirs)
+    if (gist === 'unchanged') return null
+    const state = readPointerFile(fileText(gist, POINTER_FILE))
+    return state.kind === 'ok' ? state.raw : null
+  } catch (err) {
+    if (gistErrorCode(err) === 'NOT_FOUND') return null
+    throw err
+  }
+}
+
+/**
+ * YAZ-5235: deletes my shared links that a friend says it holds (`held` in the pointer it gives me), and takes them out
+ * of `shared`. That friend has paired with another of my pointers, so nobody uses them, and a remove of that friend
+ * must not leave them leading to my numbers.
+ */
+export async function dropHeldShares(api: GistsApi, handle: IndexHandle, ids: readonly string[], opts: ListOptions): Promise<IndexHandle> {
+  let base = await latest(api, handle, opts)
+  const drop = (base.index.shared ?? []).filter((x) => ids.includes(x.mine)).map((x) => x.mine)
+  if (drop.length === 0) return base
+  base = await writeList(api, base, { ...base.index, shared: (base.index.shared ?? []).filter((x) => !drop.includes(x.mine)) })
+  for (const id of drop) await removeQuietly(api, id)
+  return base
 }
 
 /** The ID of the friend's numbers gist behind one of their pointers, or null when it cannot be read now. */
@@ -313,7 +348,8 @@ export async function pasteLink(api: GistsApi, handle: IndexHandle, text: string
       if (same.theirs === id && (reads === undefined || reads === same.mine || !readsMyShare)) return { kind: 'already', name: same.name }
       // They read one of my shared links: take it as my pointer for them, and drop the extra one.
       const mine = readsMyShare ? reads! : same.mine
-      await setReads(api, mine, id, index.stats!)
+      // Their earlier link (`same.theirs`) stays with me unused: tell them in `held`, so their app deletes it.
+      await setReads(api, mine, id, index.stats!, same.theirs !== id ? [same.theirs] : [])
       base = await latest(api, base, opts)
       const friends = base.index.friends.map((f) => (f === same || f.mine === same!.mine ? { ...f, theirs: id, mine } : f))
       const next = await writeList(api, base, { ...base.index, friends, shared: (base.index.shared ?? []).filter((s) => s.mine !== mine) })
@@ -374,7 +410,8 @@ export interface FriendRow {
   name: string
   theirs: string
   mine: string
-  state: 'ok' | 'waiting' | 'gone' | 'no-numbers' | 'newer-app' | 'unreadable' | 'offline'
+  /** `removing` (YAZ-5236): my remove of this friend waits (the budget, or no connection); label "Removing…". */
+  state: 'ok' | 'waiting' | 'gone' | 'no-numbers' | 'newer-app' | 'unreadable' | 'offline' | 'removing'
   read: FriendRead | null
   label: string | null
   sendBack: string | null
@@ -396,6 +433,8 @@ export interface ListRows {
   shared: { mine: string; link: string; at: string }[]
   /** Friends that read another of my pointers than the list says: `repairPairs` fixes the list. */
   repairs: { theirs: string; use: string }[]
+  /** YAZ-5235: my shared links that a friend holds but does not use: `dropHeldShares` deletes them. */
+  held: string[]
 }
 
 /** Reads each friend (the pointer, then the numbers, with ETags) and gives the rows. Never throws for GitHub's answers. */
@@ -404,6 +443,7 @@ export async function readFriends(api: GistsApi, handle: IndexHandle, cache: Lis
   const shared = index.shared ?? []
   const rows: FriendRow[] = []
   const repairs: ListRows['repairs'] = []
+  const held: string[] = []
   for (const f of index.friends) {
     const base: Pick<FriendRow, 'name' | 'theirs' | 'mine' | 'sendBack'> = { name: f.name, theirs: f.theirs, mine: f.mine, sendBack: null }
     const goneAt = cache.goneAt.get(f.theirs)
@@ -421,6 +461,11 @@ export async function readFriends(api: GistsApi, handle: IndexHandle, cache: Lis
         base.name = name
         const reads = read.pointer.reads
         if (reads !== undefined && reads !== f.mine && shared.some((s) => s.mine === reads)) repairs.push({ theirs: f.theirs, use: reads })
+        const kept = cache.reads.get(f.theirs)
+        if (kept !== undefined && 'gist' in kept) {
+          const raw = readPointerFile(fileText(kept.gist, POINTER_FILE))
+          if (raw.kind === 'ok') for (const id of heldOf(raw.raw)) if (shared.some((s) => s.mine === id) && !held.includes(id)) held.push(id)
+        }
         const paired = reads === f.mine
         rows.push({ ...base, state: paired ? 'ok' : 'waiting', read, label: paired ? null : `Waiting for ${name} to add you`, sendBack: paired ? null : friendLink(f.mine) })
         break
@@ -441,7 +486,14 @@ export async function readFriends(api: GistsApi, handle: IndexHandle, cache: Lis
         rows.push({ ...base, state: 'offline', read, label: null })
     }
   }
-  return { rows, shared: shared.map((s) => ({ mine: s.mine, link: friendLink(s.mine), at: s.at })), repairs }
+  // YAZ-5236: the friends of a remove that waits show as "Removing…" until it is done.
+  const waiting = pendingRemove(handle)
+  if (waiting !== null)
+    for (const [mine, name] of Object.entries(waiting.names ?? {})) {
+      if (index.friends.every((f) => f.mine !== mine) && index.groups.every((g) => g.mine !== mine))
+        rows.push({ name, theirs: '', mine, state: 'removing', read: null, label: 'Removing…', sendBack: null })
+    }
+  return { rows, shared: shared.map((s) => ({ mine: s.mine, link: friendLink(s.mine), at: s.at })), repairs, held }
 }
 
 /** For each repair: the friend reads my shared link `use`, so it becomes my pointer for them; the old one goes. */
@@ -471,6 +523,8 @@ export interface Rekey {
   /** The new numbers gist, once made. */
   next: string | null
   at: string
+  /** YAZ-5236: the names of the friends and groups in this remove, for the "Removing…" rows until it is done. */
+  names?: Record<string, string>
 }
 
 export function pendingRemove(handle: IndexHandle): Rekey | null {
@@ -483,8 +537,10 @@ export function pendingRemove(handle: IndexHandle): Rekey | null {
     drop: Array.isArray(o.drop) ? o.drop.filter(isGistId) : [],
     next: id(o.next),
     at: typeof o.at === 'string' ? o.at : '',
+    names: isObj(o.names) ? Object.fromEntries(Object.entries(o.names).filter(([k, v]) => isGistId(k) && typeof v === 'string').map(([k, v]) => [k, (v as string).slice(0, 200)])) : {},
   }
 }
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 const withRekey = (raw: Record<string, unknown>, rekey: Rekey | null): Record<string, unknown> => {
   const { rekey: _old, ...rest } = raw
@@ -511,30 +567,57 @@ export async function removeFriend(
   /** 4E3: more of my gists to delete in the same safe steps (the group file of "Delete group"). */
   more: { drop?: string[] } = {},
 ): Promise<RemoveResult> {
+  return removeMany(api, handle, [mine], budget, opts, more)
+}
+
+/**
+ * YAZ-5236: removes several friends, groups or shared links in ONE re-key (one new numbers gist, each other pointer
+ * moved once). 30 removes in a row cost about as much as one.
+ * The first write puts the remove in the list (`rekey`), so it is kept until it is done. A remove has priority over a
+ * numbers update: that one write is tried also when this device's count says the hour is used up; only GitHub's own
+ * "rate limit" stops it. Then the result is `paused` before any write, and the caller keeps the request (the phone:
+ * `friendsRemoveQueue`) to try again.
+ */
+export async function removeMany(api: GistsApi, handle: IndexHandle, mines: readonly string[], budget: GistBudget, opts: ListOptions, more: { drop?: string[] } = {}): Promise<RemoveResult> {
   const now = opts.now()
+  let fresh = handle
   try {
     const base = await latest(api, handle, opts)
+    fresh = base
     const index = base.index
-    const inList = isMine(index, mine)
     const waiting = pendingRemove(base)
-    if (!inList) return waiting === null ? { kind: 'not-found', handle: base, budget } : finishRemove(api, base, budget, opts)
-    if (!mayUpdate(budget, now, 1, 0)) return paused(base, budget, 'budget', now + sendGap(budget, now, 0))
+    const todo = [...new Set(mines)].filter((m) => isMine(index, m))
+    if (todo.length === 0) return waiting === null ? { kind: 'not-found', handle: base, budget } : finishRemove(api, base, budget, opts)
+    if (budget.blockedUntil !== null && now < budget.blockedUntil) return paused(base, budget, 'rate-limited', budget.blockedUntil)
+    // YAZ-5235: my shared links that each friend says it holds go too (a friend who removed me: nothing to read).
+    const heldShares: string[] = []
+    for (const mine of todo) {
+      const friend = index.friends.find((f) => f.mine === mine)
+      const theirs = friend === undefined ? null : await theirRaw(api, friend.theirs)
+      if (theirs !== null) for (const id of heldOf(theirs)) if ((index.shared ?? []).some((x) => x.mine === id) && !heldShares.includes(id)) heldShares.push(id)
+    }
+    const names: Record<string, string> = { ...(waiting?.names ?? {}) }
+    for (const f of index.friends) if (todo.includes(f.mine)) names[f.mine] = f.name
+    for (const g of index.groups) if (todo.includes(g.mine)) names[g.mine] = g.name
     const rekey: Rekey = {
       old: waiting?.old ?? index.stats,
-      drop: [...(waiting?.drop ?? []), mine, ...(more.drop ?? [])],
+      drop: [...(waiting?.drop ?? []), ...todo, ...heldShares, ...(more.drop ?? [])],
       next: waiting?.next ?? null,
       at: waiting?.at ?? new Date(now).toISOString(),
+      names,
     }
+    const gone = (m: string) => todo.includes(m) || heldShares.includes(m)
     const next: FriendsIndex = {
       ...index,
-      friends: index.friends.filter((f) => f.mine !== mine),
-      groups: index.groups.filter((g) => g.mine !== mine),
-      ...(index.shared !== undefined && { shared: index.shared.filter((s) => s.mine !== mine) }),
+      friends: index.friends.filter((f) => !gone(f.mine)),
+      groups: index.groups.filter((g) => !gone(g.mine)),
+      ...(index.shared !== undefined && { shared: index.shared.filter((s) => !gone(s.mine)) }),
     }
     const written = await writeList(api, base, next, withRekey(base.raw, rekey))
     return finishRemove(api, written, recordUpdate(budget, now, null), opts)
   } catch (err) {
-    return pauseOn(err, handle, budget, now)
+    // The list as last read: the caller sees which removes the list does not hold yet.
+    return pauseOn(err, fresh, budget, now)
   }
 }
 

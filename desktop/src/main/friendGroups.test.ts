@@ -1,11 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, ensureFriendsFiles, findFriendsIndex, pointersOf, type GistsApi, type IndexHandle } from '@shared/friendGists'
+import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, ensureFriendsFiles, findFriendsIndex, makePointer, pointersOf, type GistsApi, type IndexHandle } from '@shared/friendGists'
 import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
 import {
   GROUP_FILE,
   GROUP_LINK_BASE,
   GROUP_NAME_MAX,
   JOIN_LINK_BASE,
+  NOT_ADDED_AFTER_MS,
   ORPHAN_AGE_MS,
   addMember,
   cleanGroupName,
@@ -15,6 +16,7 @@ import {
   groupFileText,
   groupLink,
   groupStreak,
+  groupViewMessage,
   joinGroup,
   joinLink,
   joinMessage,
@@ -122,6 +124,13 @@ describe('the group file (decision 18): read entry by entry, never written over 
     expect(back).toEqual({ ...raw, members: [{ login: 'ali', pointer: P }, { login: 7, pointer: G, more: true }, { login: 'bea', pointer: 'ab12' }, { login: 'x', pointer: 'not hex' }] })
     expect(parseGroupFile(JSON.stringify({ ...raw, v: 2 }))).toEqual({ kind: 'newer' })
     for (const bad of ['', '{', '[]', 'null', '{"v":0}']) expect(parseGroupFile(bad).kind).toBe('unreadable')
+  })
+})
+
+describe('YAZ-5241 in the group file', () => {
+  it('members, name or admin of the wrong shape: "unreadable", never an empty value', () => {
+    const ok = { v: 1, name: 'Club', admin: 'ali', members: [] }
+    for (const bad of [{ members: {} }, { members: 'x' }, { name: 5 }, { admin: [] }]) expect(parseGroupFile(JSON.stringify({ ...ok, ...bad })).kind, JSON.stringify(bad)).toBe('unreadable')
   })
 })
 
@@ -338,6 +347,141 @@ describe('remove a member, leave, "Delete group" (round 14)', () => {
     expect(await sweepOrphans(ali.api, handle, w.now())).toEqual([])
     expect(w.owned('ali').map((g) => g.id)).toEqual(before)
     expect(pointersOf(handle.index).every((p) => before.includes(p))).toBe(true)
+  })
+})
+
+describe('YAZ-5238: the sweep deletes only what is provably an orphan, by GitHub`s clock', () => {
+  it('a device clock one day ahead does not delete a pointer or a group file that another device made a second ago', async () => {
+    const w = people()
+    const ali = await person(w, 'ali')
+    const pointer = await makePointer(ali.api, ali.handle.index.stats!, opts(w))
+    const group = w.seed('ali', { [GROUP_FILE]: JSON.stringify({ v: 1, name: 'New', admin: 'ali', members: [] }) })
+    await sweepOrphans(ali.api, await fresh(ali.api, w), w.now() + 24 * 3600_000)
+    expect(w.text(pointer, POINTER_FILE)).not.toBeNull() // now: deleted
+    expect(w.text(group, GROUP_FILE)).not.toBeNull() // now: deleted
+  })
+
+  it('a gist of another device mid-flow survives; one that GitHub dates over the limit goes; a look-alike or a group in use stays', async () => {
+    const w = people()
+    const ali = await person(w, 'ali')
+    const old = await makePointer(ali.api, ali.handle.index.stats!, opts(w))
+    const lookAlike = w.seed('ali', { [POINTER_FILE]: 'my own text, not JSON' })
+    const inUse = w.seed('ali', { [GROUP_FILE]: JSON.stringify({ v: 1, name: 'Lost', admin: 'ali', members: [{ login: 'ali', pointer: old }, { login: 'bea', pointer: P }] }) })
+    w.advance(ORPHAN_AGE_MS + 1000)
+    const midFlow = await makePointer(ali.api, ali.handle.index.stats!, opts(w)) // another device, one second ago
+    const deleted = await sweepOrphans(ali.api, await fresh(ali.api, w), 0) // the device clock is wrong and is not used
+    expect(deleted).toEqual([])
+    expect(w.text(midFlow, POINTER_FILE)).not.toBeNull()
+    expect(w.text(lookAlike, POINTER_FILE)).not.toBeNull()
+    expect(w.text(inUse, GROUP_FILE)).not.toBeNull()
+    expect(w.text(old, POINTER_FILE)).not.toBeNull() // named by a group file of mine (in use): kept
+  })
+
+  it('deletes NOTHING when a read fails, the list needs repair, or GitHub`s time is not known', async () => {
+    const w = people()
+    const ali = await person(w, 'ali')
+    const orphan = await makePointer(ali.api, ali.handle.index.stats!, opts(w))
+    w.advance(ORPHAN_AGE_MS + 1000)
+    const handle = await fresh(ali.api, w)
+    w.failNext = (call) => (call.op === 'read' ? 'GITHUB_DOWN' : undefined)
+    expect(await sweepOrphans(ali.api, handle, w.now())).toEqual([])
+    const noClock: GistsApi = { ...ali.api, serverTime: () => null }
+    expect(await sweepOrphans(noClock, handle, w.now())).toEqual([])
+    const listText = w.text(handle.id, INDEX_FILE)!
+    w.setFiles(handle.id, { [INDEX_FILE]: '{"v":1,"friends":' })
+    expect(await sweepOrphans(ali.api, handle, w.now())).toEqual([])
+    w.setFiles(handle.id, { [INDEX_FILE]: listText })
+    expect(w.text(orphan, POINTER_FILE)).not.toBeNull()
+    expect(await sweepOrphans(ali.api, handle, w.now())).toEqual([orphan])
+  })
+})
+
+describe('YAZ-5239: the login of a join request is the one GitHub vouches for', () => {
+  it('a join request whose numbers claim the login of a member does not push that member out', async () => {
+    const w = people(['ali', 'bea', 'eve'])
+    const c = await club(w, ['bea'])
+    const eve = await person(w, 'eve') // then: her numbers say login "bea"
+    w.setFiles(eve.handle.index.stats!, { [NUMBERS_FILE]: JSON.stringify(stats('bea')) })
+    const joined = await joinGroup(eve.api, eve.handle, c.link, opts(w))
+    if (joined.kind !== 'joined') throw new Error(joined.kind)
+    await addMember(c.ali.api, await fresh(c.ali.api, w), c.group, joined.sendToAdmin, opts(w))
+    const members = JSON.parse(w.text(c.group, GROUP_FILE)!).members.map((m: { pointer: string }) => m.pointer)
+    expect(members).toContain(c.members.bea.pointer) // now: Bea's entry is gone
+  })
+
+  it('the request shows the gist owner`s login; a claim of the admin`s login cannot replace the admin; a second request of a member is a refused duplicate', async () => {
+    const w = people(['ali', 'bea', 'eve'])
+    const c = await club(w, ['bea'])
+    const eve = await person(w, 'eve')
+    w.setFiles(eve.handle.index.stats!, { [NUMBERS_FILE]: JSON.stringify(stats('ali')) })
+    const joined = await joinGroup(eve.api, eve.handle, c.link, opts(w))
+    if (joined.kind !== 'joined') throw new Error(joined.kind)
+    const aliH = await fresh(c.ali.api, w)
+    expect(await readJoinRequest(c.ali.api, aliH, joined.sendToAdmin)).toMatchObject({ kind: 'request', login: 'eve' })
+    expect(await addMember(c.ali.api, aliH, c.group, joined.sendToAdmin, opts(w))).toMatchObject({ kind: 'done' })
+    expect(await readGroup(c.ali.api, aliH, c.group, newListCache(), w.now())).toMatchObject({ kind: 'ok', iAmAdmin: true })
+    const file = JSON.parse(w.text(c.group, GROUP_FILE)!)
+    expect(file.members.map((m: { login: string }) => m.login)).toEqual(['ali', 'bea', 'eve'])
+
+    // Bea asks again with a new pointer: a duplicate of a member, refused; nobody is replaced.
+    const again = await makePointer(c.members.bea.api, c.members.bea.handle.index.stats!, opts(w))
+    expect(await readJoinRequest(c.ali.api, aliH, joinLink(c.group, again))).toMatchObject({ kind: 'duplicate', login: 'bea' })
+    expect(await addMember(c.ali.api, aliH, c.group, joinLink(c.group, again), opts(w))).toMatchObject({ kind: 'duplicate', login: 'bea' })
+    expect(JSON.parse(w.text(c.group, GROUP_FILE)!).members).toEqual(file.members)
+  })
+
+  it('with no owner in GitHub`s answer (an adapter that does not give it), a request is "unverified" and Add refuses it', async () => {
+    const w = people(['ali', 'bea'])
+    const c = await club(w, [])
+    const bea = await person(w, 'bea')
+    const joined = await joinGroup(bea.api, bea.handle, c.link, opts(w))
+    if (joined.kind !== 'joined') throw new Error(joined.kind)
+    const blind: GistsApi = { ...c.ali.api, read: async (id, etag) => {
+      const g = await c.ali.api.read(id, etag)
+      return g === 'unchanged' ? g : { ...g, owner: undefined }
+    } }
+    const aliH = await fresh(c.ali.api, w)
+    expect(await readJoinRequest(blind, aliH, joined.sendToAdmin)).toEqual({ kind: 'unverified' })
+    expect(await addMember(blind, aliH, c.group, joined.sendToAdmin, opts(w))).toEqual({ kind: 'unverified' })
+  })
+})
+
+describe('YAZ-5240: "removed" by state, and "not added" when the admin never adds', () => {
+  it('a person added and removed before their app ever read the group sees "removed" (the file records the remove)', async () => {
+    const w = people()
+    const c = await club(w, ['bea'])
+    expect(c.members.bea.handle.index.groups[0].joined).toBeUndefined() // her app never read the group
+    expect(await removeMember(c.ali.api, c.ali.handle, c.group, c.members.bea.pointer, opts(w))).toMatchObject({ kind: 'done' })
+    w.advance(90 * 86400_000)
+    expect(await readGroup(c.members.bea.api, c.members.bea.handle, c.group, newListCache(), w.now())).toEqual({ kind: 'removed', group: c.group, name: 'Club' })
+  })
+
+  it('never added: "waiting" for 7 days after the ask, then "not-added" with the way out; nothing leaves by itself', async () => {
+    const w = people()
+    const ali = await person(w, 'ali')
+    const made = await createGroup(ali.api, ali.handle, 'Club', 'ali', opts(w))
+    if (made.kind !== 'ok') throw new Error(made.kind)
+    const bea = await person(w, 'bea')
+    const joined = await joinGroup(bea.api, bea.handle, made.link, opts(w))
+    if (joined.kind !== 'joined') throw new Error(joined.kind)
+    expect(joined.handle.index.groups[0].asked).toEqual(expect.any(String))
+    w.advance(NOT_ADDED_AFTER_MS - 60_000)
+    expect((await readGroup(bea.api, joined.handle, made.group, newListCache(), w.now())).kind).toBe('waiting')
+    w.advance(2 * 60_000)
+    const view = await readGroup(bea.api, joined.handle, made.group, newListCache(), w.now())
+    expect(view).toEqual({ kind: 'not-added', group: made.group, name: 'Club', sendToAdmin: joined.sendToAdmin })
+    expect(groupViewMessage(view)).toBe('The admin did not add you. Send them your join link again, or tap Leave.')
+    expect(NOT_ADDED_AFTER_MS).toBe(7 * 86400_000)
+  })
+
+  it('the remove mark is bounded and goes when the person is added again', async () => {
+    const w = people()
+    const c = await club(w, ['bea'])
+    await removeMember(c.ali.api, c.ali.handle, c.group, c.members.bea.pointer, opts(w))
+    expect(JSON.parse(w.text(c.group, GROUP_FILE)!).removed).toEqual([c.members.bea.pointer])
+    const read = parseGroupFile(JSON.stringify({ v: 1, name: 'x', admin: 'ali', members: [], removed: Array.from({ length: 300 }, (_, i) => i.toString(16).padStart(32, '0')) }))
+    expect(read.kind === 'ok' && read.value.removed!.length).toBe(200)
+    expect(parseGroupFile(JSON.stringify({ v: 1, name: 'x', admin: 'ali', members: [], removed: 'x' })).kind).toBe('unreadable')
   })
 })
 

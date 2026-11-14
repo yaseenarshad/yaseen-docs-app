@@ -218,7 +218,8 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
       ['web', null, null, '_blank', ''],
       ['file', 'file', 'docs/Guide.pdf', null, ''],
       ['md', 'page', 'Trip plan.md', null, ''],
-      ['mail', null, null, '_blank', ''],
+      // Mail: no new browsing context in the DOM; a tap goes through `guardLink` (YAZ-5243).
+      ['mail', null, null, null, ''],
       ['top', null, null, null, ''],
     ])
     expect(el.querySelector('a[target="_blank"]')?.getAttribute('rel')).toBe('noopener noreferrer')

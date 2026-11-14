@@ -39,7 +39,7 @@ import { parseAlt } from '../image/imageSrc'
 import { cardPillSpan } from '../wikilink/cardPill'
 import { linkClickAction } from '../linkGesture'
 import { cardSafety } from './cardSafety'
-import { cleanLocal, LOCAL_SRC } from './localOnly'
+import { cleanLocal, LOCAL_SRC, urlOf } from './localOnly'
 import { audioPlayer, boardPicture, isAudioRef, isBoardRef, missingBoard, CARD_AUDIO_ATTR, CARD_BOARD_ATTR, type CardBoardLook } from './cardMedia'
 
 /** How much of the card shows (the Inbox's steps, D18). Absent: everything, as in the page. */
@@ -245,6 +245,9 @@ export function refreshCardLook(root: ParentNode, look: CardLook | undefined): v
   }
 }
 
+/** On the phone: a picture's address from `look.image` that is not the app's own bytes, never set as `src` (YAZ-5242). */
+export const CARD_SRC_ATTR = 'data-card-src'
+
 /** A picture's source as written: its `src`, or on the phone (local media only) its vault path, `data-local-src`. */
 const srcOf = (img: Element): string | null => img.getAttribute('src') ?? img.getAttribute(LOCAL_SRC)
 
@@ -283,7 +286,15 @@ function applyLook(root: ParentNode, look: CardLook | undefined): void {
     if (img.classList.contains('card__board-img')) continue
     const src = srcOf(img)
     img.removeAttribute(LOCAL_SRC)
-    if (src !== null && look?.image !== undefined) img.setAttribute('src', look.image(src))
+    if (src !== null && look?.image !== undefined) {
+      const url = look.image(src)
+      // The phone (YAZ-5242): an address is set only when it is the app's own bytes; any other stays a mark
+      // (`data-card-src`) that the phone's card turns into its bytes or a calm line. The Mac sets it as before.
+      if (cardSafety.local && urlOf(url).kind !== 'own') {
+        img.removeAttribute('src')
+        img.setAttribute(CARD_SRC_ATTR, url)
+      } else img.setAttribute('src', url)
+    }
     const { text, width } = parseAlt(img.getAttribute('alt') ?? '')
     img.setAttribute('alt', text)
     if (width !== null) img.setAttribute('width', String(width))

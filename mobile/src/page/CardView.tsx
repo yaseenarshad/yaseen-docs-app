@@ -8,6 +8,7 @@ import { useApp } from '../app/AppState'
 import { Frame } from '../screens/Frame'
 import { useVaultData } from '../search/vaultData'
 import { useMediaWatch, useVaultMedia } from '../media/ui/useVaultMedia'
+import { guardLink } from '../media/ui/safeLinks'
 import { openFile } from '../media/ui/vaultMedia'
 import { tapOf } from './pageDom'
 import { drawCard } from './pageLook'
@@ -77,7 +78,8 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   const onTap = async (event: React.MouseEvent) => {
     if (data === null) return
     const tap = tapOf(event.target, data)
-    if (tap === null) return
+    // Any other link: the web opens Safari, the app's window stays (YAZ-5243).
+    if (tap === null) return void guardLink(event)
     event.preventDefault()
     if (tap.kind === 'go') app.go(tap.action)
     else if (tap.kind === 'missing') setNotice(tap.text)

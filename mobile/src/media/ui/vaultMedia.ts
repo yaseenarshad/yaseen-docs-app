@@ -1,4 +1,5 @@
 import { CARD_AUDIO_ATTR, stopCardAudio } from '@client/editor/card/cardMedia'
+import { urlOf } from '@client/editor/card/localOnly'
 import { IMAGE_VIEW_MIME } from '@shared/types'
 import type { VaultStore } from '../../store'
 import type { MediaAhead } from '../ahead'
@@ -79,10 +80,10 @@ export function storedMedia(store: VaultStore, vault: string): VaultMedia & { re
 }
 
 /**
- * The address a drawn card's picture or sound holds until its bytes come: a `data:` text that names the vault file, so
- * the browser fetches nothing (the page's CSP allows `data:`).
+ * The mark a drawn card's picture or sound holds until its bytes come: a `#…` reference to the page itself that names the
+ * vault file. It is never set as an address (YAZ-5242): `watchMedia` puts the bytes in its place.
  */
-export const VAULT_MEDIA_PREFIX = 'data:text/plain,vault-media:'
+export const VAULT_MEDIA_PREFIX = '#vault-media:'
 export const vaultMediaUrl = (path: string): string => `${VAULT_MEDIA_PREFIX}${encodeURIComponent(path)}`
 export const vaultMediaPath = (src: string): string | null => (src.startsWith(VAULT_MEDIA_PREFIX) ? decodeURIComponent(src.slice(VAULT_MEDIA_PREFIX.length)) : null)
 
@@ -157,13 +158,16 @@ export function watchMedia(root: HTMLElement, media: VaultMedia, options: { onli
     if (stopped || held === undefined || held.asking || held.done) return
     held.asking = true
     void media.show(held.path).then(
-      (show) => {
+      (answer) => {
+        let show = answer
         held.asking = false
         if (stopped || !el.isConnected || state.get(el) !== held) {
           // A late answer for a view that closed or an element that left: its URL has no user.
           if (show.status === 'ready') media.releaseUrl?.(held.path, show.url)
           return
         }
+        // Only the app's own bytes become an address (YAZ-5242).
+        if (show.status === 'ready' && urlOf(show.url).kind !== 'own') show = { status: 'missing', path: held.path, why: 'failed' }
         if (show.status === 'ready') {
           held.done = true
           held.url = show.url
