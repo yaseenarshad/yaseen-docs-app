@@ -50,5 +50,9 @@ export interface SceneProps {
 
 export type Scene = ComponentType<SceneProps>
 
-/** The scene of a clip, by its id. Issue 6C gives its own; `placeholderScenes` is the frame's. */
-export type SceneFor = (clipId: string) => Scene
+/**
+ * The scene of a clip, by its id. Issue 6C gives its own (`scenes/index.ts`); `placeholderScenes` is the frame's.
+ * `spanOf` (YAZ-5121): clips in a row that share one scene give the same span key, and the layer keeps that scene
+ * mounted across them (it gets each clip as a new `clip` prop, with the same clock).
+ */
+export type SceneFor = ((clipId: string) => Scene) & { spanOf?: (clipId: string) => string | undefined }
