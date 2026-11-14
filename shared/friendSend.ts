@@ -19,7 +19,7 @@ import { FRIEND_DAYS } from './friendStats'
 export const PUBLISH_EVERY_MS = 5 * 60_000
 /** While the Friends tab is open, read each friend's numbers this often. An unchanged answer is free (decision 14). */
 export const FRIENDS_POLL_MS = 60_000
-/** GitHub's `gist_update` limit for the account (proof 1C). */
+/** GitHub's `gist_update` limit for the account (proof 1C; decision 14 as changed in the round 16 record). */
 export const GIST_UPDATES_PER_HOUR = 100
 /** Updates kept for cheers and nudges (4E4), on top of one for each pointer. */
 export const MARK_HEADROOM = 5
