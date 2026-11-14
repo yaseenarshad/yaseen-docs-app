@@ -12,7 +12,9 @@ import { friendStats, type FriendVault } from '@shared/friendStats'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { budgetMs, median } from '../../../../client/src/test-perf'
 import { writeFile } from 'node:fs/promises'
-import { COUNT_LIMIT_MS, countOffThread, countPayload, countTextOffThread } from './countJob'
+import { mkdir, rm } from 'node:fs/promises'
+import { COUNT_LIMIT_MS, countOffThread, countPayload, countTextOffThread, makeCounter } from './countJob'
+import { scanVaultForCount } from './scanVault'
 
 const TZ = process.env.TZ
 beforeAll(() => void (process.env.TZ = 'America/New_York'))
@@ -93,5 +95,50 @@ describe('the count off the main thread (YAZ-5250)', () => {
     const started = performance.now()
     await expect(countTextOffThread(stuck, '[]', NOW, 300)).rejects.toThrow(/did not answer/)
     expect(performance.now() - started).toBeLessThan(5_000)
+  })
+})
+
+describe('a closed vault, scanned from its files in the same worker (YAZ-5252)', () => {
+  const R1 = '2026-11-14T13:00Z good 7s'
+  const R2 = '2026-11-13T09:00Z again 4s'
+  async function closedVault() {
+    const root = await mkdtemp(path.join(tmpdir(), 'yd-closed-vault-'))
+    await mkdir(path.join(root, '.yaseendocs'), { recursive: true })
+    await writeFile(path.join(root, '.yaseendocs', 'ids.json'), '{"enabled":true,"letters":"WIKI"}')
+    await writeFile(path.join(root, 'Secret page.md'), `# Secret page\n\n\`\`\`card\nSecret question\n\`\`\`\n<!-- card: WIKI-5, ${R1}, ${R2} -->\n`)
+    await writeFile(path.join(root, 'Card.md'), `---\nkind: card\ntitle: Capital\n---\n\`\`\`card\nParis\n\`\`\`\n<!-- card: WIKI-6, ${R1} -->\n`)
+    await writeFile(path.join(root, 'Plain.md'), '# No cards here\n')
+    return root
+  }
+
+  it('the worker counts the open vault and the closed one together, exactly as friendStats of both', async () => {
+    const root = await closedVault()
+    try {
+      const open = { pages: [{ cards: [{ id: 'X-1', off: false, next: false, reviews: [{ at: '2026-11-14T12:00Z', rating: 'good', seconds: 3 }] }] }], settings: DEFAULT_REVIEW_SETTINGS } as unknown as FriendVault
+      const inThread = await scanVaultForCount(root)
+      expect(inThread.pages.flatMap((p) => p.cards ?? []).map((c) => c.id)).toEqual(expect.arrayContaining(['WIKI-5', 'WIKI-6']))
+      const count = makeCounter(worker)
+      const stats = await count(countPayload([open]), NOW, [{ root, key: 'h1' }])
+      expect(stats).toEqual(friendStats([open, inThread], NOW))
+      expect(stats.days.find((d) => d.day === '2026-11-14')?.cards).toBe(3)
+      expect(count.scanned()).toEqual([root])
+      // The same change key: no new scan. A new key: one scan.
+      await count(countPayload([open]), NOW, [{ root, key: 'h1' }])
+      expect(count.scanned()).toEqual([])
+      await count(countPayload([open]), NOW, [{ root, key: 'h2' }])
+      expect(count.scanned()).toEqual([root])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  it('the scan keeps the cards only: no title, no path, no card text in what goes back to main', async () => {
+    const root = await closedVault()
+    try {
+      const text = countPayload([await scanVaultForCount(root)])
+      for (const secret of ['Secret', 'Paris', 'Capital', root, '.md']) expect(text).not.toContain(secret)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })
