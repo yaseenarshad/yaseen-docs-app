@@ -18,7 +18,7 @@ export function courseTranscript(course: readonly CourseChapter[]): string {
       parts.push(chapter.tryIt.map((step, n) => `${n + 1}. ${step.say}`).join('\n'))
     }
   })
-  // The words are spoken English ("a page on your phone"), not the app's word for a page: the rename tool leaves this page alone.
-  parts.push('<!-- rename-page-to-page: ' + 'skip-file -->')
+  // The words are spoken English ("a note on your phone"), not the app's word for a page: the rename tool leaves this page alone. rename-note-to-page: keep
+  parts.push('<!-- rename-note-to-page: ' + 'skip-file -->') // rename-note-to-page: keep (the marker itself)
   return `${parts.join('\n\n')}\n`
 }

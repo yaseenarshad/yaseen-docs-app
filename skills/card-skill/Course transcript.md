@@ -512,21 +512,17 @@ Some cards no longer earn their place. Pruning is part of it.
 
 To stop reviewing a card, open its menu and choose Archive card. It keeps its history.
 
-Archived cards are at the bottom of the All cards menu, in the Inbox. Unarchive brings one back.
-
 Growing is improving too. When one part of a card keeps growing, give it its own card, and link the two.
 
 Links need care too. When you notice two cards belong together, link them.
 
 When a link no longer helps, delete it like a word.
 
-To see a card first, choose Put at top of Inbox. It gets the Up next mark until you answer it.
-
 Each card keeps its review history. You can delete one wrong answer, or choose Reset history to start fresh.
 
 Want more new cards today? Click their count in the All cards menu, and press Enter.
 
-To try Archive and Up next on your own card, choose Try it in the app.
+To try Archive on your own card, choose Try it in the app.
 
 Grow a branch here, prune one there, and your card base stays true. Next: your first week.
 
@@ -534,11 +530,7 @@ Grow a branch here, prune one there, and your card base stays true. Next: your f
 
 1. Open the menu of one of your Course Cards.
 2. Choose Archive card.
-3. Now open the Inbox.
-4. Open the All cards menu. Your card is in the Archived list.
-5. Click Unarchive to bring it back.
-6. Open the card's menu once more.
-7. Choose Put at top of Inbox. Next time you open the Inbox, it comes first.
+3. Open the card's menu again. Choose Unarchive card to bring it back.
 
 ## Chapter 12. Where things are, and your first week
 
