@@ -188,7 +188,7 @@ describe('1 vs N: what counts as one answer', () => {
       lost(7, { kind: 'off', id: 'NC-3', on: true }, 'Old card'),
       lost(8, { kind: 'next', id: 'NC-4', on: true }, 'Soon'),
       lost(9, { kind: 'fix', id: 'NC-5', on: true }, 'Typo'),
-      lost(10, { kind: 'unreview', id: 'NC-6', at: '2026-11-14T06:03Z' }, 'Undone'),
+      lost(10, { kind: 'unreview', id: 'NC-6', at: '2026-11-14T06:03Z', rating: 'good' }, 'Undone'),
     ])
     expect(rows).toEqual([
       { id: 'NC-17', title: 'Speed of light', answer: 'Remembered', seqs: [4, 5] },
