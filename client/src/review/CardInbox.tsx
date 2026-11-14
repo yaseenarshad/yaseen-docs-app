@@ -103,7 +103,7 @@ import type { InboxOpenAt } from '@shared/types'
 import type { CardRating } from '@shared/cardLine'
 import type { ExploreVault } from '../explore/ExplorePage'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
-import { CardBand, CardId, CardNextChip, CardReviews, cardWait } from './cardParts'
+import { CardBand, CardId, CardNextChip, CardStrip, cardWait } from './cardParts'
 import { CardSideCount, InboxCardFace, InboxCardPanel, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
 import { cardInboxHints, cardInboxKey } from './cardInboxKeys'
 import { textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
@@ -551,7 +551,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
         {/* YAZ-5105 round 2: the Reviews strip, as Mochi's, under the card and outside its frame; round 3: as soon as the
             last side shows, its hidden words shown or not; closed again for each card. The buttons' band stays at the
             bottom of the view over it. */}
-        {card?.page != null && onLastSide && card.page.reviews.length > 0 && <CardReviews key={cardKey} reviews={card.page.reviews} settings={review.settings} />}
+        {card?.page != null && onLastSide && <CardStrip key={cardKey} reviews={card.page.reviews} settings={review.settings} properties={{ values: card.page.properties ?? {} }} />}
         {/* Under the card, outside its frame, as in Mochi (YAZ-5002): the answer buttons, then the keys. No "Press Space"
             line between them (YAZ-5021): the key row at the bottom already says Space. */}
         {/* YAZ-5049 round 2: the buttons and their line stay at the bottom of the view while a long card scrolls under them. */}

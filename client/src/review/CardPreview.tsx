@@ -23,7 +23,7 @@ import type { ReviewSettings } from '@shared/reviews'
 import type { CardPreviewRequest } from '../editor/card/cardOpen'
 import { toggleCardAudio } from '../editor/card/cardMedia'
 import type { ExploreVault } from '../explore/ExplorePage'
-import { CardBand, CardId, CardReviews, type CardLinkDoors } from './cardParts'
+import { CardBand, CardId, CardStrip, type CardLinkDoors } from './cardParts'
 import { CardSideCount, InboxCardFace, InboxCardPanel, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
 import { useInboxCardWidth } from './inboxCardWidth'
 import { KeyLabel } from '../keys/KeyLabel'
@@ -144,7 +144,7 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose, l
             {text !== null && <InboxCardFace text={text} path={card.path} vault={vault} steps={steps} doors={doors} onStep={step} />}
           </InboxCardPanel>
           {/* The Reviews strip from the last side (YAZ-5105), as in the Inbox; no delete in a preview. */}
-          {settings !== undefined && steps.onLastSide && card.reviews.length > 0 && <CardReviews key={cardKey} reviews={card.reviews} settings={settings} />}
+          {settings !== undefined && steps.onLastSide && <CardStrip key={cardKey} reviews={card.reviews} settings={settings} properties={{ values: card.properties ?? {} }} />}
         </div>
       </div>
     </div>

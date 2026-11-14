@@ -291,7 +291,7 @@ describe('the card in the page', () => {
     const row = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent?.startsWith('Preview'))!
     expect(row.textContent).toContain('P')
     row.click()
-    expect(asks).toEqual([{ path: '/v/Page.md', id: 'WIKI-7', text: 'What is the capital of {{France}}?\n---\nParis', title: '', notitle: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }] }])
+    expect(asks).toEqual([{ path: '/v/Page.md', id: 'WIKI-7', text: 'What is the capital of {{France}}?\n---\nParis', title: '', notitle: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }], properties: {} }])
     // P with the card selected: Preview, and the card is not typed over.
     view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, cardPos(view))))
     view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', bubbles: true, cancelable: true }))
@@ -556,7 +556,7 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
   const rows = (root: HTMLElement) => [...root.querySelectorAll('.card-reviews__table tbody tr')].map((tr) => tr.querySelector('.card-answer')?.getAttribute('title') ?? '')
   const cells = (root: HTMLElement) => [...root.querySelectorAll('.card-reviews__table tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent))
 
-  it('a card with reviews shows "✓ 3 Reviews" closed, with no table, and the strip on the same row (YAZ-5032); a card with none shows no section; a preview with no door shows none', async () => {
+  it('a card with reviews shows "✓ 3 Reviews" closed, with no table, and the strip on the same row (YAZ-5032); a card with none shows the strip with "0 Reviews" dimmed (YAZ-5380); a preview with no door shows none', async () => {
     const { root } = await mount(`${PAGE}\n\`\`\`card\nAnother\n\`\`\`\n<!-- card: WIKI-8 -->\n`, { cards: { path: '/v/Page.md' }, cardReviews: { settings, deleteReview: vi.fn() } })
     const cards = root.querySelectorAll('.card')
     expect(cards).toHaveLength(2)
@@ -577,7 +577,9 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     expect(facts.querySelector('.card-strip__info .info-tip__button')).not.toBeNull()
     expect(facts.querySelectorAll('[title]')).toHaveLength(0)
     expect(facts.querySelectorAll('svg')).toHaveLength(1)
-    expect(cards[1].querySelector('.card-reviews')).toBeNull()
+    await vi.waitFor(() => expect(cards[1].querySelector('.card-reviews__toggle[data-part="reviews"]')?.textContent).toBe('0 Reviews'))
+    expect(cards[1].querySelector('.card-reviews__toggle[data-part="reviews"]')?.hasAttribute('data-empty')).toBe(true)
+    expect(cards[1].querySelector('.card-reviews__facts .card-strip__line')).toBeNull()
     const preview = await mount(PAGE, { cards: { path: '/v/Page.md' } })
     expect(preview.root.querySelector('.card-reviews')).toBeNull()
   })
@@ -609,6 +611,27 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     press(header(root)!)
     await vi.waitFor(() => expect(root.querySelector('.card-reviews__table')).toBeNull())
     expect(getMarkdownForSave(crepe)).toBe(PAGE)
+  })
+
+  it('YAZ-5380: the strip`s parts open one at a time: Properties closes Reviews, a second click closes it; no change of the page, no undo step', async () => {
+    const page = `# Page\n\n${CARD}<!-- card: WIKI-7, tags "europe" "capitals", level "A2", 2026-11-12T14:05Z good -->\n`
+    const { crepe, root, view } = await mount(page, { cards: { path: '/v/Page-parts.md' }, cardReviews: { settings, deleteReview: vi.fn() } })
+    const doc = view.state.doc
+    const part = (name: string) => root.querySelector<HTMLButtonElement>(`.card .card-reviews__toggle[data-part="${name}"]`)
+    await vi.waitFor(() => expect(part('properties')?.textContent).toBe('Properties2'))
+    expect(part('properties')?.hasAttribute('data-empty')).toBe(false)
+    press(part('reviews')!)
+    await vi.waitFor(() => expect(root.querySelector('.card-reviews__table')).not.toBeNull())
+    press(part('properties')!)
+    await vi.waitFor(() => expect(root.querySelector('.card-strip__props')).not.toBeNull())
+    expect(root.querySelector('.card-reviews__table')).toBeNull()
+    expect([part('reviews'), part('properties')].map((b) => b?.getAttribute('aria-expanded'))).toEqual(['false', 'true'])
+    expect([...root.querySelectorAll('.card-strip__prop')].map((li) => li.textContent)).toEqual(['tagseurope, capitals', 'levelA2'])
+    press(part('properties')!)
+    await vi.waitFor(() => expect(root.querySelector('.card-strip__part')).toBeNull())
+    expect(view.state.doc).toBe(doc)
+    expect(undoDepth(view.state)).toBe(0)
+    expect(getMarkdownForSave(crepe)).toBe(page)
   })
 
   it('works read only: × deletes through the vault`s door (the file), the open table follows the new line, and Undo puts the file back byte for byte', async () => {

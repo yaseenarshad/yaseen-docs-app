@@ -6,7 +6,7 @@
  */
 import { useCallback, useContext, useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import type { CardReview } from '@shared/cardLine'
+import type { CardPropertyValue, CardReview } from '@shared/cardLine'
 import { answerLabel, cardHistory, cardState, cardStateWithout, dayCount, recallChance } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { GestureAction } from '@shared/keys'
@@ -310,43 +310,85 @@ export function CardFacts({ reviews, settings, now = Date.now() }: { reviews: re
   )
 }
 
-/** The strip's own props (YAZ-5105 round 4): the table's, and where it is open, and its extras. */
-export interface CardReviewsStripProps extends CardReviewsProps {
-  /** Open or closed, held by the caller (a page's card keeps it when the page draws again). Absent: the strip holds it. */
-  open?: boolean
-  /** A click on "✓ 4 Reviews", with `open`. */
-  onToggle?: () => void
+/** The parts of the card's strip (YAZ-5380): one open at a time, each a toggle on the strip's bar. */
+export type CardStripPart = 'reviews' | 'properties'
+
+/** The strip's Properties part (YAZ-5380): the card's own properties, off its card line (YAZ-5379). Absent: no part. */
+export interface CardStripProperties {
+  values: Readonly<Record<string, CardPropertyValue>>
+}
+
+/** The strip's own props (YAZ-5105 round 4; YAZ-5380 its parts): the table's, which part is open, and its extras. */
+export interface CardStripProps extends CardReviewsProps {
+  /** The open part, held by the caller (a page's card keeps it when the page draws again); null: none. Absent: the strip holds it. */
+  open?: CardStripPart | null
+  /** A click on a part's toggle, with `open`: the caller opens it, or closes it when it is the open one. */
+  onToggle?: (part: CardStripPart) => void
   /** The card's facts on the strip's right, "Due in 3 days · 92% chance you remember it": where they show today (a page's card, an embed). */
   facts?: boolean
+  properties?: CardStripProperties
+}
+
+/** One part's toggle on the strip's bar: its words and its count; a part with 0 is dimmed, and still opens (YAZ-5380). */
+function StripToggle({ part, open, label, count, empty = count === 0, icon, onToggle }: { part: CardStripPart; open: boolean; label: string; count?: number; empty?: boolean; icon?: ReactNode; onToggle: (part: CardStripPart) => void }) {
+  return (
+    <button type="button" className="backlinks__header card-reviews__toggle" data-part={part} data-empty={empty || undefined} aria-expanded={open} onClick={() => onToggle(part)} onMouseDown={(e) => e.preventDefault()}>
+      {icon}
+      <span className="backlinks__title">{label}</span>
+      {count !== undefined && <span className="card-strip__count">{count}</span>}
+    </button>
+  )
+}
+
+/** The Properties part open (YAZ-5380): one row a property, its name and its value. */
+function CardPropertyRows({ values }: { values: Readonly<Record<string, CardPropertyValue>> }) {
+  const entries = Object.entries(values)
+  if (entries.length === 0) return <p className="card-strip__none">No properties yet.</p>
+  return (
+    <ul className="card-strip__props">
+      {entries.map(([name, value]) => (
+        <li key={name} className="card-strip__prop" data-key={name}>
+          <span className="card-strip__prop-name">{name}</span>
+          <span className="card-strip__prop-value">{Array.isArray(value) ? value.join(', ') : String(value)}</span>
+        </li>
+      ))}
+    </ul>
+  )
 }
 
 /**
- * THE REVIEWS STRIP (D3, D13, YAZ-5032; YAZ-5105): "✓ 4 Reviews", a toggle as Mochi's, CLOSED until asked for. Open,
- * the full table (`CardReviewsTable`) inside it.
- * YAZ-5105 round 2 (Yaseen: "this clean slip that shows up at the bottom", as Mochi's): a slim strip tucked under the
- * card box. Round 4 (Yaseen: "should be the same in the card page, and on inbox and in embeds and in cards that are on
- * pages"): this ONE component everywhere a card's reviews show — the Inbox's last side, the card file tab and the card
- * window, and, mounted by `editor/card/reviewsStrip.ts`, a card in a page and a card embed. A page's card and an embed
- * add the card's facts on the strip's right (`facts`); the look is `cardScreens.css`'s one strip, a step darker than
- * what it sits on.
+ * THE CARD'S STRIP (D3, D13, YAZ-5032; YAZ-5105; YAZ-5380): the slim band tucked under the card box, CLOSED until
+ * asked for. Its bar holds the card's parts — "✓ 4 Reviews", "Properties 3" — as toggles: ONE part opens at a time, a
+ * click on the open one closes it (YAZ-5349, Yaseen's pick). Open, Reviews shows the full table (`CardReviewsTable`)
+ * and Properties the card's own properties.
+ * YAZ-5105 round 2 (Yaseen: "this clean slip that shows up at the bottom", as Mochi's). Round 4 (Yaseen: "should be the
+ * same in the card page, and on inbox and in embeds and in cards that are on pages"): this ONE component everywhere a
+ * card shows — the Inbox's last side and its Preview, the card file tab and the card window, and, mounted by
+ * `editor/card/reviewsStrip.ts`, a card in a page and a card embed. A page's card and an embed add the card's facts on
+ * the strip's right (`facts`); the look is `cardScreens.css`'s one strip, a step darker than what it sits on.
  */
-export function CardReviews({ reviews, settings, onDelete, now, open: held, onToggle, facts = false }: CardReviewsStripProps) {
-  const [own, setOwn] = useState(false)
-  const open = held ?? own
+export function CardStrip({ reviews, settings, onDelete, now, open: held, onToggle, facts = false, properties }: CardStripProps) {
+  const [own, setOwn] = useState<CardStripPart | null>(null)
+  const open = held === undefined ? own : held
+  const toggle = onToggle ?? ((part: CardStripPart) => setOwn((o) => (o === part ? null : part)))
+  const propertyCount = properties === undefined ? 0 : Object.keys(properties.values).length
   return (
     <section className="card-reviews card-reviews--strip">
       <div className="card-reviews__bar">
-        <button type="button" className="backlinks__header card-reviews__toggle" aria-expanded={open} onClick={() => (onToggle ?? (() => setOwn((o) => !o)))()} onMouseDown={(e) => e.preventDefault()}>
-          <ReviewsIcon />
-          <span className="backlinks__title">{reviewsTitle(reviews.length)}</span>
-        </button>
+        <StripToggle part="reviews" open={open === 'reviews'} label={reviewsTitle(reviews.length)} empty={reviews.length === 0} icon={<ReviewsIcon />} onToggle={toggle} />
+        {properties !== undefined && <StripToggle part="properties" open={open === 'properties'} label="Properties" count={propertyCount} onToggle={toggle} />}
         {facts && (
           <span className="card-strip card-reviews__facts">
             <CardFacts reviews={reviews} settings={settings} now={now} />
           </span>
         )}
       </div>
-      {open && <CardReviewsTable reviews={reviews} settings={settings} onDelete={onDelete} now={now} />}
+      {open === 'reviews' && <CardReviewsTable reviews={reviews} settings={settings} onDelete={onDelete} now={now} />}
+      {open === 'properties' && properties !== undefined && (
+        <div className="card-strip__part">
+          <CardPropertyRows values={properties.values} />
+        </div>
+      )}
     </section>
   )
 }

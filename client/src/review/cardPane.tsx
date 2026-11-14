@@ -27,7 +27,7 @@ import { pageLabel, pathTitles } from '../lib/pageLabel'
 import type { MenuSection } from '../sidebar/menuSections'
 import { askResetHistory } from '../editor/card/askResetHistory'
 import { changeCardLine, changeCardTextIn, type CardAtPage } from './cardFile'
-import { CardBody, CardReviews, type CardLinkDoors } from './cardParts'
+import { CardBody, CardStrip, type CardLinkDoors } from './cardParts'
 
 /**
  * Runs `run` on each new version of `path` in the index (its mtime): an answer in the Inbox, an agent's write or a
@@ -54,7 +54,7 @@ export const isCardPreviewKey = (event: ReactKeyboardEvent): boolean =>
 /** Preview a shown card (YAZ-5152), from `from`, as the Inbox reads it. */
 export function previewCardOf(from: Element | null, path: string, card: CardAtPage): void {
   if (from === null) return
-  previewCard(from, { path, id: card.id, text: card.text, title: card.title, notitle: card.notitle === true, reviews: card.reviews })
+  previewCard(from, { path, id: card.id, text: card.text, title: card.title, notitle: card.notitle === true, reviews: card.reviews, properties: card.properties })
 }
 
 /** A ⋯ change of the card line (D13): `changeCardLine`'s change. */
@@ -169,7 +169,7 @@ export function CardPane({ card, path, vault, editing, onEditDone, select, doors
         </div>
       )}
       {/* YAZ-5105 round 2: the Reviews strip right under the card, as Mochi's; then the card window's facts strip. */}
-      {reviews !== undefined && <CardReviews reviews={card.reviews} settings={reviews} onDelete={onDeleteReview} />}
+      {reviews !== undefined && <CardStrip reviews={card.reviews} settings={reviews} onDelete={onDeleteReview} properties={{ values: card.properties ?? {} }} />}
       {strip}
       {card.id !== null && <CardPages which="links" id={card.id} wikilinks={vault.wikilinks} onOpen={onOpenPage} />}
       {embeds && card.id !== null && <CardPages which="embeds" id={card.id} wikilinks={vault.wikilinks} onOpen={onOpenPage} />}

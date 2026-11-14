@@ -16,6 +16,7 @@ import { VaultReadOnly } from '../vault/readOnlyVault'
 import { useReviewSettings } from '../review/useReviewSettings'
 import { createCardFile } from '../review/newCardFile'
 import { cardFileName } from '@shared/cardFileFormat'
+import { paintedFindRanges } from './find/cardFind'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -601,5 +602,41 @@ describe('the convert actions (YAZ-5037 phase 5)', () => {
     act(() => wikilinks.update(() => null, records(1), [], false, []))
     await mount(many)
     expect(fixes()).toEqual([])
+  })
+})
+
+describe('⌘F in a card file tab (YAZ-5378 part 2): the page\'s find bar, over the card as it shows', () => {
+  const pressCmdF = (target: EventTarget) => act(() => void target.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true, bubbles: true, cancelable: true })))
+  const type = (input: HTMLInputElement, value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+    act(() => {
+      setter.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  }
+  const count = () => el.querySelector('.find-bar__count')?.textContent
+
+  it('⌘F opens the bar; it counts the title and the sides (hidden words too), steps, and Esc closes it and clears the paint', async () => {
+    await mount(FILE, { pane: true })
+    const body = el.querySelector<HTMLElement>('[data-card-file]')!
+    act(() => body.focus())
+    pressCmdF(body)
+    const input = el.querySelector<HTMLInputElement>('.find-bar__input')
+    expect(input).not.toBeNull()
+    expect(document.activeElement).toBe(input)
+    // "Capital of France" (the title), "Capital of {{France}}" (side 1).
+    type(input!, 'france')
+    expect(count()).toBe('1 of 2')
+    expect(paintedFindRanges().map((r) => r.active)).toEqual([true, false])
+    act(() => input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+    expect(count()).toBe('2 of 2')
+    type(input!, 'paris')
+    expect(count()).toBe('1 of 1')
+    // Its Markdown is not its text.
+    type(input!, '{{')
+    expect(count()).toBe('0 of 0')
+    act(() => input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(el.querySelector('.find-bar')).toBeNull()
+    expect(paintedFindRanges()).toEqual([])
   })
 })

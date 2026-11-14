@@ -38,7 +38,7 @@
  * its text, closed — the one `CardReviews` of the Inbox and the card file tab (`reviewsStrip.ts`, a React root loaded
  * the first time a card with reviews draws) — with the card's facts on its right (`CardFacts`: next review, recall), so
  * they show without opening; a card with none has no strip (silence). A click opens the table inside it. Open or closed
- * is UI state (`openReviews`, by page and ID, so a page read again keeps it), never a transaction. The table's delete
+ * is UI state (`openParts`, its open part by page and ID, so a page read again keeps it), never a transaction. The table's delete
  * is the vault's `deleteReview` (`deps.reviews`): a write of the card line to the FILE, with Undo in its notice, as in
  * the card window, so it works read only and in Explore's read layer too.
  *
@@ -62,7 +62,7 @@ import type { Decoration, DecorationSource, EditorView, NodeView, NodeViewConstr
 import { clearTextInCurrentBlockCommand, setBlockTypeCommand } from '@milkdown/kit/preset/commonmark'
 import { $prose, $shortcut, $view } from '@milkdown/kit/utils'
 import { askResetHistory } from './askResetHistory'
-import { cardIdOf, cardReviewsOf, cardTitleOf, formatCardLine, isCardNext, isCardNoTitle, isCardOff, settleCardCopy, withCardId, withCardNext, withCardNoTitle, withCardOff, withCardTitle, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
+import { cardIdOf, cardPropertiesOf, cardReviewsOf, cardTitleOf, formatCardLine, isCardNext, isCardNoTitle, isCardOff, settleCardCopy, withCardId, withCardNext, withCardNoTitle, withCardOff, withCardTitle, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
@@ -77,7 +77,7 @@ import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from './cardMedia'
 import { CARD_OPEN, landWhenShown, previewCard, takeCardLanding, watchCardLanding, type CardOpenRequest } from './cardOpen'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard, type CardLook } from './cardRender'
 import { mountCardEditor, type CardCrepe, type CardEditor, type CardTitleField } from './cardEditor'
-import { mountReviewsStrip, type ReviewsStripHandle } from './reviewsStrip'
+import { mountReviewsStrip, type ReviewsStripHandle, type StripPart } from './reviewsStrip'
 import { mountCardTitle, type CardTitleHandle } from './cardTitle'
 import { tellReadOnlyEdit } from '../readOnlyEdit'
 import './card.css'
@@ -182,7 +182,7 @@ export interface CardReviewDoorApi {
 const views = new WeakMap<HTMLElement, CardBlockView>()
 
 /** The cards whose Reviews section is open, by page and ID: UI state, kept when the page is read again (YAZ-5000). */
-const openReviews = new Set<string>()
+const openParts = new Map<string, StripPart>()
 
 /** The card view that draws `dom` (a `.card`), or null. */
 export const cardBlockViewOfDom = (dom: Element | null): CardBlockView | null => (dom instanceof HTMLElement ? (views.get(dom) ?? null) : null)
@@ -375,17 +375,22 @@ export class CardBlockView implements NodeView {
     return id === null || path === null ? null : `${path}\n${id}`
   }
 
-  get reviewsOpen(): boolean {
+  /** The strip's open part (YAZ-5380), null for none. */
+  get openPart(): StripPart | null {
     const key = this.reviewsKey
-    return key !== null && openReviews.has(key)
+    return key === null ? null : (openParts.get(key) ?? null)
   }
 
-  /** The Reviews strip at the bottom of a card with reviews, its table inside while open; nothing for a card with none. */
+  get reviewsOpen(): boolean {
+    return this.openPart === 'reviews'
+  }
+
+  /** The card's strip at its bottom (YAZ-5380: every card, its parts Reviews and Properties), the open part inside it. */
   private drawReviews(): void {
     const door = this.deps.reviews
     const line = cardLineOf(this.node)
-    const reviews = door === undefined ? [] : cardReviewsOf(line)
-    if (door === undefined || reviews.length === 0) {
+    const reviews = cardReviewsOf(line)
+    if (door === undefined) {
       this.strip?.destroy()
       this.strip = null
       return
@@ -399,19 +404,25 @@ export class CardBlockView implements NodeView {
       reviews,
       settings: door.settings(),
       onDelete: id === null || path === null ? undefined : (review) => void door.deleteReview(path, id, review),
-      open: this.reviewsOpen,
-      onToggle: () => this.toggleReviews(),
+      open: this.openPart,
+      onToggle: (part) => this.togglePart(part),
       facts: true,
+      properties: cardPropertiesOf(line),
     })
   }
 
-  /** A click on "✓ n Reviews": open or closed, UI state only (no transaction, nothing in the undo history). */
-  toggleReviews(): void {
+  /** A click on a part's toggle (YAZ-5380): it opens, and the open one closes; UI state only (no transaction, nothing in the undo history). */
+  togglePart(part: StripPart): void {
     const key = this.reviewsKey
     if (key === null) return
-    if (openReviews.has(key)) openReviews.delete(key)
-    else openReviews.add(key)
+    if (openParts.get(key) === part) openParts.delete(key)
+    else openParts.set(key, part)
     this.drawReviews()
+  }
+
+  /** "✓ n Reviews" opened or closed. */
+  toggleReviews(): void {
+    this.togglePart('reviews')
   }
 
   private emptyHint(): HTMLElement {
@@ -604,7 +615,7 @@ export class CardBlockView implements NodeView {
     const line = cardLineOf(this.node)
     const text = this.inner?.editor.text() ?? this.node.textContent
     const title = this.inner?.editor.title() ?? cardTitleOf(line)
-    previewCard(this.dom, { path, id: cardIdOf(line), text, title, notitle: isCardNoTitle(line), reviews: cardReviewsOf(line) })
+    previewCard(this.dom, { path, id: cardIdOf(line), text, title, notitle: isCardNoTitle(line), reviews: cardReviewsOf(line), properties: cardPropertiesOf(line) })
   }
 
   /** Sends the open hook for this card (D13). */
