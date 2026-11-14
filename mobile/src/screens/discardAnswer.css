@@ -1,0 +1,9 @@
+/* The ask of DiscardAnswer takes the whole width under its row (the dot's sheet and the Review screen's amber line). */
+.status-sheet .row,
+.review__lost-row {
+  flex-wrap: wrap;
+}
+
+.discard-answer__ask {
+  flex: 1 0 100%;
+}

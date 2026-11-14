@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { useApp } from '../app/AppState'
 import { tokenEndWarning } from '../auth/expiry'
-import { answersPart, syncDot } from './dot'
+import { answersPart, syncDot, type Dot } from './dot'
 import { StatusSheet } from './StatusSheet'
 import { useDotAnswers } from './useDotAnswers'
 import { useOnline } from './useOnline'
@@ -29,7 +29,7 @@ export function SyncStatus() {
     <>
       <button ref={button} type="button" className="sync-status" aria-label={`Sync status: ${dot.words}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>
         <span className={`sync-dot sync-dot--${dot.state}`} aria-hidden="true" />
-        <span className="sync-status__words">{dot.words}</span>
+        <DotWords dot={dot} />
       </button>
       {open && (
         <StatusSheet
@@ -40,6 +40,26 @@ export function SyncStatus() {
           onClose={close}
         />
       )}
+    </>
+  )
+}
+
+/** The words next to the dot: one span, or the full and the short form when they differ (YAZ-5216: CSS picks by width). */
+export function DotWords({ dot }: { dot: Dot }) {
+  if (dot.short === dot.words)
+    return (
+      <span className="sync-status__words" aria-hidden="true">
+        {dot.words}
+      </span>
+    )
+  return (
+    <>
+      <span className="sync-status__words sync-status__words--full" aria-hidden="true">
+        {dot.words}
+      </span>
+      <span className="sync-status__words sync-status__words--short" aria-hidden="true">
+        {dot.short}
+      </span>
     </>
   )
 }

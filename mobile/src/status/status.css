@@ -17,14 +17,14 @@
 }
 
 /* One line in the top bar. It never wraps, so the bar keeps its height. The box is at least as wide as "Syncing…",
-   so the flip between green and blue moves nothing; longer words take room from the vault's name, not from the gear. */
+   so the flip between green and blue moves nothing; longer words take room from the vault's name, not from the gear
+   and not from the words. */
 .sync-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   flex: none;
   min-width: 7.2em;
-  max-width: 62%;
   min-height: var(--tap);
   padding: 0 6px;
   border: 0;
@@ -37,10 +37,24 @@
   cursor: pointer;
 }
 
-.sync-status__words {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* YAZ-5216: the words are never cut. The box takes the room it needs; the vault's name gives room, down to 4 letters.
+   Under 380 px (iPhone SE, mini) the short form shows: the same facts, 20 characters at most (`dot.ts`). */
+.topbar .topbar__title {
+  min-width: 4em;
+}
+
+.sync-status__words--short {
+  display: none;
+}
+
+@media (max-width: 379px) {
+  .sync-status__words--full {
+    display: none;
+  }
+
+  .sync-status__words--short {
+    display: inline;
+  }
 }
 
 .sync-dot {
