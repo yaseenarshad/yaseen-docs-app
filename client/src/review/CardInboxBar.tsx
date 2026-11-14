@@ -134,7 +134,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
           </nav>
         )}
         {todayCards(session.today) !== '' && (
-          <span className="card-inbox__today" title="Reviewed today in this vault">
+          <span className="card-inbox__today">
             <TodayWork today={session.today} time={time} />
           </span>
         )}

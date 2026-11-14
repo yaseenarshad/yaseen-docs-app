@@ -494,6 +494,18 @@
   background: color-mix(in srgb, var(--fg) 7%, transparent);
   color: var(--fg);
 }
+/* Round 3: the hover box in two lines, "Time so far:" over the time, which is a little stronger. */
+.card-inbox__time-label,
+.card-inbox__time-value {
+  display: block;
+}
+.card-inbox__time-label {
+  color: var(--fg-muted);
+}
+.card-inbox__time-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
 .card-inbox__time:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
