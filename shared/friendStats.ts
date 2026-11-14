@@ -208,8 +208,11 @@ export function friendStats(vaults: readonly FriendVault[], now: number): Omit<F
   }
 
   // The streak: finished days in a row up to today, or up to yesterday while today is not finished yet.
+  // With no answer ever, there is no streak day (YAZ-5168): each day is before the first answer. Today still shows
+  // `done: true`, as a day with no due card does (round 8); only the streak waits for the first answer.
+  const answered = firstAt !== null
   let streak = 0
-  for (let d = undone[last] ? last - 1 : last; d >= 0 && !undone[d]; d--) streak++
+  if (answered) for (let d = undone[last] ? last - 1 : last; d >= 0 && !undone[d]; d--) streak++
   let bestStreak = 0
   let run = 0
   let bestWeek = 0
@@ -217,7 +220,7 @@ export function friendStats(vaults: readonly FriendVault[], now: number): Omit<F
   // This week's first day: the last Monday at or before today (or the first day of the history).
   let thisWeek = 0
   for (let d = 0; d <= last; d++) {
-    run = undone[d] ? 0 : run + 1
+    run = undone[d] || !answered ? 0 : run + 1
     bestStreak = Math.max(bestStreak, run)
     if (weekStarts[d]) {
       week = 0
