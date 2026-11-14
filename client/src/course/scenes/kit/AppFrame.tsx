@@ -102,13 +102,14 @@ export interface MenuItem {
 
 /**
  * A card's ⋯ menu, as the app lists it: a card in a page (`cardBlockView.ts`, `menuRows`) or a card file's tab
- * (`CardFileView.tsx`, `cardMenuSections`). `active` lights rows by label; `titleHint` is "Title on the front"'s state.
+ * (`CardFileView.tsx`, `cardMenuSections`). `active` lights rows by label; `titleHint` is "Title on the front"'s state;
+ * `unit` is the vault's page word (`useUnit`), as the app's "Turn into a page" goes through it.
  */
-export function cardMenuItems(where: 'page' | 'file', active: Readonly<Record<string, number>> = {}, titleHint: 'Show' | 'Hide' = 'Show'): MenuItem[] {
+export function cardMenuItems(where: 'page' | 'file', active: Readonly<Record<string, number>> = {}, titleHint: 'Show' | 'Hide' = 'Show', unit: (text: string) => string = (text) => text): MenuItem[] {
   const rows: MenuItem[] =
     where === 'page'
       ? [{ label: 'Open card' }, { label: 'Preview', hint: 'P' }, { label: 'Put at top of Inbox', rule: true }, { label: 'Archive card' }, { label: 'Title on the front', hint: titleHint }, { label: 'Reset history' }, { label: 'Copy card ID', rule: true }]
-      : [{ label: 'Preview', hint: 'P' }, { label: 'Put at top of Inbox', rule: true }, { label: 'Archive card' }, { label: 'Title on the front', hint: titleHint }, { label: 'Copy card ID', rule: true }, { label: 'Copy card link' }, { label: 'Turn into a page', rule: true }]
+      : [{ label: 'Preview', hint: 'P' }, { label: 'Put at top of Inbox', rule: true }, { label: 'Archive card' }, { label: 'Title on the front', hint: titleHint }, { label: 'Copy card ID', rule: true }, { label: 'Copy card link' }, { label: unit('Turn into a page'), rule: true }]
   return rows.map((row) => (active[row.label] === undefined ? row : { ...row, active: active[row.label] }))
 }
 

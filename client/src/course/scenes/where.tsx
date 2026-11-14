@@ -406,7 +406,7 @@ function Embedded(props: SceneProps) {
                         x={46}
                         y={20}
                         p={cardMenu}
-                        items={cardMenuItems('file', { 'Copy card link': copyActive })}
+                        items={cardMenuItems('file', { 'Copy card link': copyActive }, 'Show', unit)}
                       />
                     }
                   />
@@ -553,7 +553,7 @@ function TryIt(props: SceneProps) {
           <Tab name={CARD.title}>
             <CardFile
               beat={b}
-              menu={<MenuPreview beat={b} x={46} y={20} p={showFor(since(b, 0.12, 0.4), since(b, 0.6, 0.4))} items={cardMenuItems('file', { 'Copy card link': since(b, 0.3, 0.3) })} />}
+              menu={<MenuPreview beat={b} x={46} y={20} p={showFor(since(b, 0.12, 0.4), since(b, 0.6, 0.4))} items={cardMenuItems('file', { 'Copy card link': since(b, 0.3, 0.3) }, 'Show', unit)} />}
             />
           </Tab>
         </AppWindow>
