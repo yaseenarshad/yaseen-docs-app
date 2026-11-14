@@ -89,7 +89,8 @@ describe('VoiceOver (YAZ-5314): a title never gives the answer away', () => {
 })
 
 describe('the answer list keeps the title part byte for byte (decision 2 with YAZ-5308)', () => {
-  const TITLE = 'title "Ünï \\"q\\", a --\\> b \\\\ 🙂"'
+  // A comma in the title is `&#44;`, as the Mac writes it (YAZ-5393): a raw comma is encoded on the first write.
+  const TITLE = 'title "Ünï \\"q\\"&#44; a --\\> b \\\\ 🙂"'
   it('an answer, Undo, Up next, Archive card and Fix later, each with its Undo: the title part never moves or changes', async () => {
     h = await reviewSetup(vault(cardBlock('Q?\n---\n{{A}}', `TI-9, ${TITLE}, 2026-11-01T09:00Z good`)))
     const line = async () => (await h!.answers.text('p.md'))!.split('\n').find((l) => l.startsWith('<!-- card: TI-9'))!
