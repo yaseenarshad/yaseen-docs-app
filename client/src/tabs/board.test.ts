@@ -13,30 +13,30 @@ const name = (path: string): string => path.slice(path.lastIndexOf('/') + 1).rep
 const byPath = (paths: readonly string[]) => paths.map((path) => ({ id: path, path }))
 
 describe('buildBoard (D7)', () => {
-  const tabs = ['/v/Clients/Acme/brief.md', '/v/today.md', '/w/x.md', '/v/Clients/Globex/call.md', '/v/Clients/Acme/pages.md', '/v/Clients/Acme', '/elsewhere/loose.md']
+  const tabs = ['/v/Clients/Acme/brief.md', '/v/today.md', '/w/x.md', '/v/Clients/Globex/call.md', '/v/Clients/Acme/notes.md', '/v/Clients/Acme', '/elsewhere/loose.md']
 
   it('one island per folder that DIRECTLY holds a page, under its vault: the label is the whole path in the vault, the top level is named by the vault, and the pages keep the strip\'s order', () => {
-    const board = buildBoard(byPath(tabs), ['/v', '/w'], ['Pages', 'Work'], name)
+    const board = buildBoard(byPath(tabs), ['/v', '/w'], ['Notes', 'Work'], name)
     expect(board.map((vault) => [vault.name, vault.islands.map((island) => [island.label, island.pages.map((page) => page.label)])])).toEqual([
       // The vault's top level first, then its folders by path. A folder tab stands on its PARENT's island.
-      ['Pages', [['Pages', ['today']], ['Clients', ['Acme']], ['Clients / Acme', ['brief', 'pages']], ['Clients / Globex', ['call']]]],
+      ['Notes', [['Notes', ['today']], ['Clients', ['Acme']], ['Clients / Acme', ['brief', 'notes']], ['Clients / Globex', ['call']]]],
       ['Work', [['Work', ['x']]]],
       // A page in no vault of the window comes last, on an island named by its folder.
       ['', [['/elsewhere', ['loose']]]],
     ])
     expect(board[0].islands.map((island) => [island.dir, island.top])).toEqual([['/v', true], ['/v/Clients', false], ['/v/Clients/Acme', false], ['/v/Clients/Globex', false]])
     // S36: three files of one name in three folders are three pages on three islands, each named by its folder.
-    const same = buildBoard(byPath(['/v/Clients/Acme/pages.md', '/v/pages.md', '/v/Clients/Globex/pages.md']), ['/v'], ['Pages'], name)
-    expect(same[0].islands.map((island) => [island.label, island.pages.map((page) => page.label)])).toEqual([['Pages', ['pages']], ['Clients / Acme', ['pages']], ['Clients / Globex', ['pages']]])
+    const same = buildBoard(byPath(['/v/Clients/Acme/notes.md', '/v/notes.md', '/v/Clients/Globex/notes.md']), ['/v'], ['Notes'], name)
+    expect(same[0].islands.map((island) => [island.label, island.pages.map((page) => page.label)])).toEqual([['Notes', ['notes']], ['Clients / Acme', ['notes']], ['Clients / Globex', ['notes']]])
   })
 
   it('the filter keeps a page whose title or path in the vault holds every term, and an island with no page left is gone', () => {
-    const board = buildBoard(byPath(tabs), ['/v', '/w'], ['Pages', 'Work'], name, ['acme', 'no'])
-    expect(board.map((vault) => vault.islands.map((island) => [island.label, island.pages.map((page) => page.label)]))).toEqual([[['Clients / Acme', ['pages']]]])
+    const board = buildBoard(byPath(tabs), ['/v', '/w'], ['Notes', 'Work'], name, ['acme', 'no'])
+    expect(board.map((vault) => vault.islands.map((island) => [island.label, island.pages.map((page) => page.label)]))).toEqual([[['Clients / Acme', ['notes']]]])
   })
 
   it('YAZ-2940 D1: two tabs of one file are two pages of its island, each with its own tab id, in the strip\'s order', () => {
-    const board = buildBoard([{ id: 't1', path: '/v/a.md' }, { id: 't2', path: '/v/b.md' }, { id: 't3', path: '/v/a.md' }], ['/v'], ['Pages'], name)
+    const board = buildBoard([{ id: 't1', path: '/v/a.md' }, { id: 't2', path: '/v/b.md' }, { id: 't3', path: '/v/a.md' }], ['/v'], ['Notes'], name)
     // YAZ-3343 D1, D11: each says which copy of its path it is, and how many the strip has.
     expect(board[0].islands[0].pages).toEqual([
       { id: 't1', path: '/v/a.md', label: 'a', named: false, page: 'a', copy: 0, copies: 2 },
@@ -44,14 +44,14 @@ describe('buildBoard (D7)', () => {
       { id: 't3', path: '/v/a.md', label: 'a', named: false, page: 'a', copy: 1, copies: 2 },
     ])
     // The copies are the strip's, whatever the filter keeps.
-    expect(buildBoard([{ id: 't1', path: '/v/a.md', name: 'One' }, { id: 't3', path: '/v/a.md', name: 'Two' }], ['/v'], ['Pages'], name, ['two'])[0].islands[0].pages.map((p) => [p.id, p.copy])).toEqual([['t3', 1]])
+    expect(buildBoard([{ id: 't1', path: '/v/a.md', name: 'One' }, { id: 't3', path: '/v/a.md', name: 'Two' }], ['/v'], ['Notes'], name, ['two'])[0].islands[0].pages.map((p) => [p.id, p.copy])).toEqual([['t3', 1]])
   })
 
   it('YAZ-2949 S12, S13: a named tab is labelled by its display name, and the filter finds it by that name, its page name or its path', () => {
     const tabs = [{ id: 't1', path: '/v/a.md', name: 'Outline' }, { id: 't2', path: '/v/b.md' }]
-    expect(buildBoard(tabs, ['/v'], ['Pages'], name)[0].islands[0].pages).toEqual([{ id: 't1', path: '/v/a.md', label: 'Outline', named: true, page: 'a', copy: 0, copies: 1 }, { id: 't2', path: '/v/b.md', label: 'b', named: false, page: 'b', copy: 0, copies: 1 }])
-    for (const term of ['outline', 'a', 'a.md']) expect(buildBoard(tabs, ['/v'], ['Pages'], name, [term])[0].islands[0].pages.map((p) => p.id)).toContain('t1')
-    expect(buildBoard(tabs, ['/v'], ['Pages'], name, ['outline'])[0].islands[0].pages.map((p) => p.id)).toEqual(['t1'])
+    expect(buildBoard(tabs, ['/v'], ['Notes'], name)[0].islands[0].pages).toEqual([{ id: 't1', path: '/v/a.md', label: 'Outline', named: true, page: 'a', copy: 0, copies: 1 }, { id: 't2', path: '/v/b.md', label: 'b', named: false, page: 'b', copy: 0, copies: 1 }])
+    for (const term of ['outline', 'a', 'a.md']) expect(buildBoard(tabs, ['/v'], ['Notes'], name, [term])[0].islands[0].pages.map((p) => p.id)).toContain('t1')
+    expect(buildBoard(tabs, ['/v'], ['Notes'], name, ['outline'])[0].islands[0].pages.map((p) => p.id)).toEqual(['t1'])
   })
 })
 
@@ -68,7 +68,7 @@ describe('islandCols / islandBox — the sizes the stylesheet is given', () => {
 
 describe('layoutCanvas — where every card stands (YAZ-3343 D1, D8)', () => {
   const { pageW, pageH, pageGap, islandPad, labelH, islandGap, framePad, frameLabelH, frameGap } = BOARD
-  const one = (win: string, paths: readonly string[], roots = ['/v'], names = ['Pages']): FrameInput => ({
+  const one = (win: string, paths: readonly string[], roots = ['/v'], names = ['Notes']): FrameInput => ({
     win,
     vaults: buildBoard(paths.map((path) => ({ id: win === 'me' ? path : `${win}\n${path}\n0`, path })), roots, names, name).map((vault: VaultIslands) => ({ ...vault, named: roots.length > 1 && vault.at < roots.length })),
   })
@@ -88,7 +88,7 @@ describe('layoutCanvas — where every card stands (YAZ-3343 D1, D8)', () => {
     expect(at(wide, '/v/Docs/c.md')).toEqual([docsX + islandPad, top.y, false])
     expect(at(wide, '/v/Docs/f.md')).toEqual([docsX + islandPad, top.y + pageH + pageGap, false])
     expect(wide.groups.map((g) => [g.island.label, g.x, g.y, g.w, g.h])).toEqual([
-      ['Pages', 0, 0, islandBox(2, 2000).w, islandBox(2, 2000).h],
+      ['Notes', 0, 0, islandBox(2, 2000).w, islandBox(2, 2000).h],
       ['Docs', docsX, 0, islandBox(4, 2000).w, islandBox(4, 2000).h],
     ])
     expect(wide.frames).toEqual([])
@@ -108,9 +108,9 @@ describe('layoutCanvas — where every card stands (YAZ-3343 D1, D8)', () => {
     expect(at(plan, '/v/a.md')).toEqual([900, 700, true])
     // b keeps its own slot: nothing closes up (D16, "no reshuffle").
     expect(at(plan, '/v/b.md')).toEqual([islandPad + pageW + pageGap, islandPad + labelH, false])
-    const pages = plan.groups[0]
-    expect([pages.x, pages.y]).toEqual([islandPad + pageW + pageGap - islandPad, 0])
-    expect([pages.x + pages.w, pages.y + pages.h]).toEqual([900 + pageW + islandPad, 700 + pageH + islandPad])
+    const notes = plan.groups[0]
+    expect([notes.x, notes.y]).toEqual([islandPad + pageW + pageGap - islandPad, 0])
+    expect([notes.x + notes.w, notes.y + notes.h]).toEqual([900 + pageW + islandPad, 700 + pageH + islandPad])
     const docs = plan.groups.find((g) => g.island.label === 'Docs')!
     expect(plan.bounds.x + plan.bounds.w).toBe(Math.max(900 + pageW + islandPad, docs.x + docs.w))
   })
@@ -162,7 +162,7 @@ describe('layoutCanvas — where every card stands (YAZ-3343 D1, D8)', () => {
 
   it('S25, D16, "the window pane is getting bigger and bigger": a frame or a group dragged twice keeps its size, and its box moves by exactly the sum of the drags, in both layouts', () => {
     const other = one('w2', ['/w/x.md', '/w/y.md'], ['/w'], ['Work'])
-    const two = one('me', ['/v/a.md', '/w/b.md', '/w/Docs/c.md'], ['/v', '/w'], ['Pages', 'Work'])
+    const two = one('me', ['/v/a.md', '/w/b.md', '/w/Docs/c.md'], ['/v', '/w'], ['Notes', 'Work'])
     /** What the board stores on a drop: each carried card at its place + the move. */
     const drag = (stored: CanvasCard[], plan: ReturnType<typeof layoutCanvas>, ids: readonly string[], by: 'folder' | 'window', dx: number, dy: number): CanvasCard[] => {
       const keep = stored.filter((c) => !ids.some((id) => (id.includes('\n') ? id.split('\n')[1] : id) === c.path))
@@ -185,9 +185,9 @@ describe('layoutCanvas — where every card stands (YAZ-3343 D1, D8)', () => {
       const wins = [two]
       let s2: CanvasCard[] = []
       let p2 = layoutCanvas(wins, { by, wrapW: 1400, stored: s2 })
-      const docs = () => p2.groups.find((g) => g.island.label === 'Pages')!
+      const docs = () => p2.groups.find((g) => g.island.label === 'Notes')!
       const start = docs()
-      const label = () => p2.vaults.find((v) => v.name === 'Pages')!
+      const label = () => p2.vaults.find((v) => v.name === 'Notes')!
       const labelStart = label()
       const ids = start.island.pages.map((page) => page.id)
       for (let i = 0; i < 2; i++) {
@@ -200,8 +200,8 @@ describe('layoutCanvas — where every card stands (YAZ-3343 D1, D8)', () => {
   })
 
   it('two or more vaults: each vault\'s name above its groups', () => {
-    const plan = layoutCanvas([one('me', ['/v/a.md', '/w/b.md'], ['/v', '/w'], ['Pages', 'Work'])], { by: 'folder', wrapW: 2000, stored: [] })
-    expect(plan.vaults.map((v) => [v.name, v.y])).toEqual([['Pages', 0], ['Work', BOARD.vaultH + islandBox(1, 2000).h + islandGap]])
+    const plan = layoutCanvas([one('me', ['/v/a.md', '/w/b.md'], ['/v', '/w'], ['Notes', 'Work'])], { by: 'folder', wrapW: 2000, stored: [] })
+    expect(plan.vaults.map((v) => [v.name, v.y])).toEqual([['Notes', 0], ['Work', BOARD.vaultH + islandBox(1, 2000).h + islandGap]])
   })
 })
 
@@ -224,7 +224,7 @@ describe('the grid ("Snap to grid", YAZ-3343 D26): a frame\'s own, at any origin
   })
 
   it('a frame\'s auto slots are one cell apart: they are on the grid of any one of them', () => {
-    const me = { win: 'me', vaults: buildBoard(byPath(['/v/a.md', '/v/b.md', '/v/Docs/c.md', '/v/Docs/d.md', '/v/Docs/e.md']), ['/v'], ['Pages'], name).map((v) => ({ ...v, named: false })) }
+    const me = { win: 'me', vaults: buildBoard(byPath(['/v/a.md', '/v/b.md', '/v/Docs/c.md', '/v/Docs/d.md', '/v/Docs/e.md']), ['/v'], ['Notes'], name).map((v) => ({ ...v, named: false })) }
     const plan = layoutCanvas([me], { by: 'window', wrapW: 1400, stored: [] })
     const first = plan.cards.get('/v/a.md')!
     for (const card of plan.cards.values()) expect(snapPoint(card, first)).toEqual({ x: card.x, y: card.y })
@@ -232,7 +232,7 @@ describe('the grid ("Snap to grid", YAZ-3343 D26): a frame\'s own, at any origin
 })
 
 describe('no overlap and a viewport-shaped layout (YAZ-3343 D28, D29)', () => {
-  const win = (id: string, n: number): FrameInput => ({ win: id, vaults: buildBoard(Array.from({ length: n }, (_, i) => ({ id: `${id}\n/v/n${i}.md\n0`, path: `/v/n${i}.md` })), ['/v'], ['Pages'], name).map((v) => ({ ...v, named: false })) })
+  const win = (id: string, n: number): FrameInput => ({ win: id, vaults: buildBoard(Array.from({ length: n }, (_, i) => ({ id: `${id}\n/v/n${i}.md\n0`, path: `/v/n${i}.md` })), ['/v'], ['Notes'], name).map((v) => ({ ...v, named: false })) })
 
   it('freeFramePosition: a frame dropped on another goes to the nearest spot clear of it by the gap; a clear one stays', () => {
     const other = { x: 0, y: 0, w: 400, h: 300 }
@@ -280,9 +280,9 @@ describe('no overlap and a viewport-shaped layout (YAZ-3343 D28, D29)', () => {
 })
 
 describe('THE NO-OVERLAP RULE in the layout (YAZ-3343 D28, S26, S56): frames and groups never overlap, whatever is stored', () => {
-  const win = (id: string, n: number): FrameInput => ({ win: id, vaults: buildBoard(Array.from({ length: n }, (_, i) => ({ id: `${id}\n/v/n${i}.md\n0`, path: `/v/n${i}.md` })), ['/v'], ['Pages'], name).map((v) => ({ ...v, named: false })) })
+  const win = (id: string, n: number): FrameInput => ({ win: id, vaults: buildBoard(Array.from({ length: n }, (_, i) => ({ id: `${id}\n/v/n${i}.md\n0`, path: `/v/n${i}.md` })), ['/v'], ['Notes'], name).map((v) => ({ ...v, named: false })) })
   /** A window of one vault whose folders are the groups of the folder layout. */
-  const folders = (paths: readonly string[]): FrameInput => ({ win: 'me', vaults: buildBoard(byPath(paths), ['/v'], ['Pages'], name).map((v) => ({ ...v, named: false })) })
+  const folders = (paths: readonly string[]): FrameInput => ({ win: 'me', vaults: buildBoard(byPath(paths), ['/v'], ['Notes'], name).map((v) => ({ ...v, named: false })) })
   /** Every frame (its label row in) or group of the plan. */
   const boxes = (plan: ReturnType<typeof layoutCanvas>): { key: string; x: number; y: number; w: number; h: number }[] =>
     plan.frames.length > 0 ? plan.frames.map((f) => ({ key: f.win, x: f.x, y: f.y - BOARD.frameLabelH, w: f.w, h: f.h + BOARD.frameLabelH })) : plan.groups.map((g) => ({ key: g.key, x: g.x, y: g.y, w: g.w, h: g.h }))
@@ -373,7 +373,7 @@ describe('THE NO-OVERLAP RULE in the layout (YAZ-3343 D28, S26, S56): frames and
 })
 
 describe('the placement rules of a drop (YAZ-3343 D26, D28, D30)', () => {
-  const win = (id: string, n: number): FrameInput => ({ win: id, vaults: buildBoard(Array.from({ length: n }, (_, i) => ({ id: `${id}\n/v/n${i}.md\n0`, path: `/v/n${i}.md` })), ['/v'], ['Pages'], name).map((v) => ({ ...v, named: false })) })
+  const win = (id: string, n: number): FrameInput => ({ win: id, vaults: buildBoard(Array.from({ length: n }, (_, i) => ({ id: `${id}\n/v/n${i}.md\n0`, path: `/v/n${i}.md` })), ['/v'], ['Notes'], name).map((v) => ({ ...v, named: false })) })
   // a: three cards in a row; b right of it, the gap kept.
   const plan = layoutCanvas([win('a', 3), win('b', 1)], { by: 'window', wrapW: 5000, stored: [] })
   const where = (id: string) => plan.cards.get(id)
@@ -422,7 +422,7 @@ describe('departureFrom — a tab that LEAVES a window from the board (YAZ-3376,
       seen.set(path, copy + 1)
       return { id: `${id}\n${path}\n${copy}`, path }
     })
-    return { win: id, vaults: buildBoard(tabs, ['/v'], ['Pages'], name).map((v) => ({ ...v, named: false })) }
+    return { win: id, vaults: buildBoard(tabs, ['/v'], ['Notes'], name).map((v) => ({ ...v, named: false })) }
   }
   const SIX = ['/v/a.md', '/v/b.md', '/v/c.md', '/v/d.md', '/v/e.md', '/v/f.md']
   /** The canvas after `patch`, laid out again over the strips after the leave, as main prunes it (`pruneCanvas`). */
