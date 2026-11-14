@@ -473,7 +473,8 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
   const PAGE = `# Page\n\n${CARD}${LINE}\n\nAfter.\n`
   const settings = () => DEFAULT_REVIEW_SETTINGS
   const header = (root: HTMLElement) => root.querySelector<HTMLButtonElement>('.card .card-reviews .backlinks__header')
-  const press = (el: Element) => el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
+  // YAZ-5105 round 4: the strip is the Inbox's own `CardReviews` (a React root): a click toggles it, as there.
+  const press = (el: Element) => (el as HTMLElement).click()
   /** Each row's answer (its glyph's word, the hover) — '' for the review to come. */
   const rows = (root: HTMLElement) => [...root.querySelectorAll('.card-reviews__table tbody tr')].map((tr) => tr.querySelector('.card-answer')?.getAttribute('title') ?? '')
   const cells = (root: HTMLElement) => [...root.querySelectorAll('.card-reviews__table tbody tr')].map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent))
@@ -482,7 +483,12 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     const { root } = await mount(`${PAGE}\n\`\`\`card\nAnother\n\`\`\`\n<!-- card: WIKI-8 -->\n`, { cards: { path: '/v/Page.md' }, cardReviews: { settings, deleteReview: vi.fn() } })
     const cards = root.querySelectorAll('.card')
     expect(cards).toHaveLength(2)
-    expect(header(root)?.textContent).toBe('3 Reviews')
+    await vi.waitFor(() => expect(header(root)?.textContent).toBe('3 Reviews'))
+    // YAZ-5105 round 4: the ONE strip (the Inbox's), its host right after the card's text, so the text tucks over it.
+    const strip = cards[0].querySelector('.card-reviews')!
+    expect(strip.classList.contains('card-reviews--strip')).toBe(true)
+    expect(strip.parentElement?.classList.contains('card__reviews')).toBe(true)
+    expect(strip.parentElement?.previousElementSibling?.classList.contains('card__body')).toBe(true)
     expect(header(root)?.querySelector('svg')).not.toBeNull()
     expect(header(root)?.getAttribute('aria-expanded')).toBe('false')
     expect(root.querySelector('.card-reviews__table')).toBeNull()
@@ -502,9 +508,10 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
   it('a click opens the card window`s table with each review and the upcoming row; open and closed are no change of the page and no undo step', async () => {
     const { crepe, root, view } = await mount(PAGE, { cards: { path: '/v/Page-open.md' }, cardReviews: { settings, deleteReview: vi.fn() } })
     const doc = view.state.doc
+    await vi.waitFor(() => expect(header(root)).not.toBeNull())
     press(header(root)!)
     await vi.waitFor(() => expect(rows(root)).toEqual(['Remembered', 'Forgot', 'Remembered', '']))
-    expect(header(root)?.getAttribute('aria-expanded')).toBe('true')
+    await vi.waitFor(() => expect(header(root)?.getAttribute('aria-expanded')).toBe('true'))
     // YAZ-5032, Yaseen's columns: Reviewed on · Answer · Gap · Time · Next due. Dates in full; the answer's glyph and
     // word; the Gap blank for the first, "Same day" for 0; the review to come in words, with no delete.
     expect([...root.querySelectorAll('.card-reviews__table th')].map((th) => th.textContent)).toEqual(['Reviewed on', 'Answer', 'Gap', 'Time', 'Next due', ''])
@@ -523,7 +530,7 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     expect(undoDepth(view.state)).toBe(0)
     expect(root.querySelector('.card')?.classList.contains('ProseMirror-selectednode')).toBe(false)
     press(header(root)!)
-    expect(root.querySelector('.card-reviews__table')).toBeNull()
+    await vi.waitFor(() => expect(root.querySelector('.card-reviews__table')).toBeNull())
     expect(getMarkdownForSave(crepe)).toBe(PAGE)
   })
 
@@ -538,6 +545,7 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     })
     const { crepe, root } = await mount(PAGE, { cards: { path }, cardReviews: { settings, deleteReview } })
     crepe.setReadonly(true)
+    await vi.waitFor(() => expect(header(root)).not.toBeNull())
     press(header(root)!)
     await vi.waitFor(() => expect(rows(root)).toHaveLength(4))
     root.querySelectorAll<HTMLButtonElement>('.card-reviews__table tbody button')[1].click()
@@ -551,7 +559,7 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     // The app merges its own write into the open page: the section counts again, and the open table shows the new rows.
     expect(applyExternalMarkdown(crepe, disk.get(path)!)).toBe('applied')
     await vi.waitFor(() => expect(rows(root)).toEqual(['Remembered', 'Remembered', '']))
-    expect(root.querySelector('.card-reviews')?.querySelector('.backlinks__title')?.textContent).toBe('2 Reviews')
+    await vi.waitFor(() => expect(root.querySelector('.card-reviews')?.querySelector('.backlinks__title')?.textContent).toBe('2 Reviews'))
     await undoDelete!()
     expect(disk.get(path)).toBe(PAGE)
   })

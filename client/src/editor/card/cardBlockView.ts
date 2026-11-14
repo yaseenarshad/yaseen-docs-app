@@ -32,14 +32,13 @@
  * bubbling DOM event, `CARD_OPEN` (`mdapp:card-open`, detail `CardOpenRequest`), from its
  * `.ProseMirror`; App's listener opens the card window. ⌘↵ anywhere else is unchanged.
  *
- * REVIEWS (YAZ-5000, YAZ-5032): a card with reviews has "✓ 4 Reviews" at its bottom, closed, and on the same row the
- * card window's strip in words (`CardFacts`: last answer, next review, recall), so the facts show without
- * opening; a card with none has no section (silence). A click opens the card window's own table
- * (`CardReviewsTable`, `review/cardParts.tsx`). Both are React roots, loaded the first time a card with
- * reviews draws. Open or closed is UI
- * state (`openReviews`, by page and ID, so a page read again keeps it), never a transaction. The table's delete is the
- * vault's `deleteReview` (`deps.reviews`): a write of the card line to the FILE, with Undo in its notice, as in the
- * card window, so it works read only and in Explore's read layer too.
+ * REVIEWS (YAZ-5000, YAZ-5032; YAZ-5105 round 4): a card with reviews has THE Reviews strip at its bottom, tucked under
+ * its text, closed — the one `CardReviews` of the Inbox and the card file tab (`reviewsStrip.ts`, a React root loaded
+ * the first time a card with reviews draws) — with the card's facts on its right (`CardFacts`: next review, recall), so
+ * they show without opening; a card with none has no strip (silence). A click opens the table inside it. Open or closed
+ * is UI state (`openReviews`, by page and ID, so a page read again keeps it), never a transaction. The table's delete
+ * is the vault's `deleteReview` (`deps.reviews`): a write of the card line to the FILE, with Undo in its notice, as in
+ * the card window, so it works read only and in Explore's read layer too.
  *
  * THE ⋯ MENU (D13): Put at top of Inbox / Remove from top of Inbox (`withCardNext`, YAZ-4999 D3), Archive card /
  * Unarchive card (`withCardOff`, YAZ-5046: the line's `off`), Reset history (`withoutCardReviews`), Copy card ID, Open card, and
@@ -75,6 +74,7 @@ import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from './cardMedia'
 import { CARD_OPEN, scrollIntoViewWhenShown, takeCardLanding, type CardOpenRequest } from './cardOpen'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard, type CardLook } from './cardRender'
 import { mountCardEditor, type CardCrepe, type CardEditor } from './cardEditor'
+import { mountReviewsStrip, type ReviewsStripHandle } from './reviewsStrip'
 import './card.css'
 
 // The open hook (D13) lives with the card's other doors (`cardOpen.ts`): a card link's click sends it too (YAZ-5030).
@@ -173,54 +173,6 @@ const views = new WeakMap<HTMLElement, CardBlockView>()
 /** The cards whose Reviews section is open, by page and ID: UI state, kept when the page is read again (YAZ-5000). */
 const openReviews = new Set<string>()
 
-type ReviewsTableProps = { reviews: readonly CardReview[]; settings: ReviewSettings; onDelete?: (review: CardReview) => void }
-type ReviewsFactsProps = { reviews: readonly CardReview[]; settings: ReviewSettings }
-interface ReviewsTableKit {
-  createRoot: typeof import('react-dom/client').createRoot
-  draw: (props: ReviewsTableProps) => import('react').ReactElement
-  /** The card window's strip in words (`CardFacts`, YAZ-5032), on the Reviews row. */
-  facts: (props: ReviewsFactsProps) => import('react').ReactElement
-}
-/** React and the card window's table and strip, loaded the first time a card with reviews draws: a page with none loads neither. */
-let tableKit: ReviewsTableKit | null = null
-let tableKitLoad: Promise<ReviewsTableKit> | null = null
-const loadTableKit = (): Promise<ReviewsTableKit> =>
-  (tableKitLoad ??= Promise.all([import('react'), import('react-dom/client'), import('../../review/cardParts')]).then(([react, dom, parts]) => {
-    tableKit = { createRoot: dom.createRoot, draw: (props) => react.createElement(parts.CardReviewsTable, props), facts: (props) => react.createElement(parts.CardFacts, props) }
-    return tableKit
-  }))
-
-const SVG = 'http://www.w3.org/2000/svg'
-
-/**
- * "4 Reviews" (YAZ-5032): the card window's toggle (`CardReviews`), the same classes and ✓, drawn without React; on
- * the same row, the card window's strip in words (`CardFacts`), so the facts show while the section is closed.
- */
-function reviewsFooter(): { section: HTMLElement; header: HTMLButtonElement; title: HTMLElement; facts: HTMLElement } {
-  const section = document.createElement('section')
-  section.className = 'card-reviews'
-  const bar = document.createElement('div')
-  bar.className = 'card-reviews__bar'
-  const header = document.createElement('button')
-  header.type = 'button'
-  header.className = 'backlinks__header card-reviews__toggle'
-  header.setAttribute('aria-expanded', 'false')
-  const check = document.createElementNS(SVG, 'svg')
-  check.setAttribute('class', 'card-inbox__glyph')
-  for (const [k, v] of Object.entries({ width: '13', height: '13', viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.3', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' })) check.setAttribute(k, v)
-  const path = document.createElementNS(SVG, 'path')
-  path.setAttribute('d', 'm3 8.5 3.25 3.25L13 4.75')
-  check.append(path)
-  const title = document.createElement('span')
-  title.className = 'backlinks__title'
-  header.append(check, title)
-  const facts = document.createElement('span')
-  facts.className = 'card-strip card-reviews__facts'
-  bar.append(header, facts)
-  section.append(bar)
-  return { section, header, title, facts }
-}
-
 /** The card view that draws `dom` (a `.card`), or null. */
 export const cardBlockViewOfDom = (dom: Element | null): CardBlockView | null => (dom instanceof HTMLElement ? (views.get(dom) ?? null) : null)
 
@@ -310,12 +262,8 @@ export class CardBlockView implements NodeView {
   private drawn: string | null = null
   private readonly unsubscribe: (() => void) | undefined
   private closeMenu: (() => void) | null = null
-  /** "Reviews (n)" (YAZ-5000): made only for a card with reviews. */
-  private footer: ReturnType<typeof reviewsFooter> | null = null
-  /** The strip on the Reviews row (YAZ-5032): its React root once the kit is loaded, and what it last drew. */
-  private facts: { root: import('react-dom/client').Root | null; props: ReviewsFactsProps; key: string } | null = null
-  /** The open table: its host, its React root once the kit is loaded, and what it draws. */
-  private table: { host: HTMLElement; root: import('react-dom/client').Root | null; props: ReviewsTableProps } | null = null
+  /** The Reviews strip (YAZ-5105 round 4): made only for a card with reviews. */
+  private strip: ReviewsStripHandle | null = null
 
   constructor(
     private node: ProseNode,
@@ -413,112 +361,38 @@ export class CardBlockView implements NodeView {
     return key !== null && openReviews.has(key)
   }
 
-  /** "Reviews (n)" at the bottom of a card with reviews, and its table while open; nothing for a card with none. */
+  /** The Reviews strip at the bottom of a card with reviews, its table inside while open; nothing for a card with none. */
   private drawReviews(): void {
     const door = this.deps.reviews
     const line = cardLineOf(this.node)
-    const count = door === undefined ? 0 : cardReviewsOf(line).length
-    if (count === 0) {
-      this.closeTable()
-      this.closeFacts()
-      this.footer?.section.remove()
-      this.footer = null
+    const reviews = door === undefined ? [] : cardReviewsOf(line)
+    if (door === undefined || reviews.length === 0) {
+      this.strip?.destroy()
+      this.strip = null
       return
     }
-    if (this.footer === null) {
-      this.footer = reviewsFooter()
-      this.dom.append(this.footer.section)
-    }
-    // `reviewsTitle` (`cardParts.tsx`): "1 Review", "4 Reviews".
-    this.footer.title.textContent = `${count} Review${count === 1 ? '' : 's'}`
-    this.showFacts()
-    const open = this.reviewsOpen
-    this.footer.header.setAttribute('aria-expanded', String(open))
-    if (open) this.showTable()
-    else this.closeTable()
+    if (this.strip === null) this.strip = mountReviewsStrip()
+    // After the card's text, before an editor's key row: the strip stays the text's neighbour (hidden while edited).
+    if (this.strip.dom.parentNode !== this.dom) this.body.after(this.strip.dom)
+    const id = cardIdOf(line)
+    const path = this.path
+    this.strip.render({
+      reviews,
+      settings: door.settings(),
+      onDelete: id === null || path === null ? undefined : (review) => void door.deleteReview(path, id, review),
+      open: this.reviewsOpen,
+      onToggle: () => this.toggleReviews(),
+      facts: true,
+    })
   }
 
-  /** A click on "Reviews (n)": open or closed, UI state only (no transaction, nothing in the undo history). */
+  /** A click on "✓ n Reviews": open or closed, UI state only (no transaction, nothing in the undo history). */
   toggleReviews(): void {
     const key = this.reviewsKey
     if (key === null) return
     if (openReviews.has(key)) openReviews.delete(key)
     else openReviews.add(key)
     this.drawReviews()
-  }
-
-  /** The card window's table, mounted on the first open; drawn again with the card line's reviews. */
-  private showTable(): void {
-    const door = this.deps.reviews
-    const footer = this.footer
-    if (door === undefined || footer === null) return
-    const line = cardLineOf(this.node)
-    const id = cardIdOf(line)
-    const path = this.path
-    const props: ReviewsTableProps = {
-      reviews: cardReviewsOf(line),
-      settings: door.settings(),
-      onDelete: id === null || path === null ? undefined : (review) => void door.deleteReview(path, id, review),
-    }
-    if (this.table !== null) {
-      this.table.props = props
-      this.table.root?.render(tableKit!.draw(props))
-      return
-    }
-    const host = document.createElement('div')
-    host.className = 'card-reviews__body'
-    footer.section.append(host)
-    const table: NonNullable<CardBlockView['table']> = { host, root: null, props }
-    this.table = table
-    const mount = (kit: ReviewsTableKit) => {
-      if (this.table !== table) return
-      table.root = kit.createRoot(host)
-      table.root.render(kit.draw(table.props))
-    }
-    if (tableKit !== null) mount(tableKit)
-    else void loadTableKit().then(mount)
-  }
-
-  /** The strip in words on the Reviews row, drawn again only when the reviews or the settings change. */
-  private showFacts(): void {
-    const door = this.deps.reviews
-    const footer = this.footer
-    if (door === undefined || footer === null) return
-    const reviews = cardReviewsOf(cardLineOf(this.node))
-    const props: ReviewsFactsProps = { reviews, settings: door.settings() }
-    const key = reviews.map((r) => `${r.at} ${r.rating}`).join(',')
-    if (this.facts !== null) {
-      if (this.facts.key === key && this.facts.props.settings === props.settings) return
-      this.facts.props = props
-      this.facts.key = key
-      this.facts.root?.render(tableKit!.facts(props))
-      return
-    }
-    const facts: NonNullable<CardBlockView['facts']> = { root: null, props, key }
-    this.facts = facts
-    const mount = (kit: ReviewsTableKit) => {
-      if (this.facts !== facts) return
-      facts.root = kit.createRoot(footer.facts)
-      facts.root.render(kit.facts(facts.props))
-    }
-    if (tableKit !== null) mount(tableKit)
-    else void loadTableKit().then(mount)
-  }
-
-  private closeFacts(): void {
-    const facts = this.facts
-    if (facts === null) return
-    this.facts = null
-    if (facts.root !== null) queueMicrotask(() => facts.root?.unmount())
-  }
-
-  private closeTable(): void {
-    const table = this.table
-    if (table === null) return
-    this.table = null
-    table.host.remove()
-    // Not in the middle of a React commit (an editor that closes in an effect's cleanup): after it.
-    if (table.root !== null) queueMicrotask(() => table.root?.unmount())
   }
 
   private emptyHint(): HTMLElement {
@@ -749,14 +623,8 @@ export class CardBlockView implements NodeView {
     const target = event.target instanceof Element ? event.target : null
     // CodeMirror's own presses while the card is edited.
     if (target === null || event.button !== 0 || (this.code !== null && this.code.dom.contains(target)) || this.inner?.mount.contains(target) === true) return
-    // "Reviews (n)" opens or closes; the table's own buttons are React's. Neither selects the card.
-    if (this.footer?.section.contains(target) === true) {
-      if (this.footer.header.contains(target)) {
-        event.preventDefault()
-        this.toggleReviews()
-      }
-      return
-    }
+    // The Reviews strip is React's (its toggle, its table): a press in it never selects the card.
+    if (this.strip?.dom.contains(target) === true) return
     if (target.closest('.card__more') !== null) {
       event.preventDefault()
       this.openMenu()
@@ -860,8 +728,8 @@ export class CardBlockView implements NodeView {
       this.inner = null
       if (openCard === this) openCard = null
     }
-    this.closeTable()
-    this.closeFacts()
+    this.strip?.destroy()
+    this.strip = null
     this.closeMenu?.()
     this.unsubscribe?.()
     this.code?.destroy?.()

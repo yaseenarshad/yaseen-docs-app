@@ -870,6 +870,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
                 openHref: cardDeps.openHref,
                 onNotice: cardDeps.onNotice,
                 putBack: opts.cards?.convert?.putBack,
+                reviews: cardDeps.reviews,
               },
       }),
     )
