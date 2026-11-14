@@ -1,14 +1,12 @@
-import { useApp } from '../app/AppState'
+import { lazy, Suspense } from 'react'
 
-/**
- * The Friends tab: a slot that 4E (YAZ-5081) fills. The shell (4A) draws this component for the tab "Friends"; it reads the
- * app's state with `useApp()` (the open vault, its word for "page" as `unit`, the sync state, `go` to move).
- */
+/** The Friends tab (4E4, YAZ-5085): the screens and the friends logic are a chunk of their own (`friends/ui/`). */
+const FriendsTab = lazy(() => import('../friends/ui/FriendsTab'))
+
 export function Friends() {
-  const { unit } = useApp()
   return (
-    <section className="placeholder" aria-label="Friends">
-      <p>{unit('Friends comes in the next build.')}</p>
-    </section>
+    <Suspense fallback={<div className="fr-wait" aria-busy="true" />}>
+      <FriendsTab />
+    </Suspense>
   )
 }

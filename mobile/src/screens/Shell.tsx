@@ -15,6 +15,8 @@ import { SignIn } from './SignIn'
 /** The reader (4C, YAZ-5079): a chunk of its own, with the Markdown renderer, so the tabs do not load it. */
 const PageView = lazy(() => import('../page/PageView'))
 const CardView = lazy(() => import('../page/CardView'))
+/** "You vs <friend>" (4E4, YAZ-5085): in the friends chunk. */
+const VsScreen = lazy(() => import('../friends/ui/VsScreen'))
 
 /** Each tab draws one component from its own file; 4B, 4C and 4E replace the placeholders (decision 21). */
 const TAB_SCREENS: Record<Tab, () => React.JSX.Element> = { friends: Friends, review: Review, search: Search }
@@ -73,6 +75,12 @@ function RouteScreen({ route }: { route: Route }) {
       return (
         <Suspense fallback={<div className="app" aria-busy="true" />}>
           <PageView key={route.path} path={route.path} at={route.at} />
+        </Suspense>
+      )
+    case 'friend':
+      return (
+        <Suspense fallback={<div className="app" aria-busy="true" />}>
+          <VsScreen route={route} />
         </Suspense>
       )
     case 'card':
