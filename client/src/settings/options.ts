@@ -265,10 +265,10 @@ export const SIDEBAR_ARROW_MOTION_OPTIONS: readonly Option<SidebarArrowMotion>[]
 ]
 
 /** Each kind's built-in icon colour (YAZ-3440 D4), the light theme's (app.css `--kind-<kind>`): the picker's swatch when the theme's own cannot be read. */
-export const SIDEBAR_ICON_SWATCHES: Record<SidebarIconKind, string> = { note: '#3d8fb8', text: '#3a7fc2', pdf: '#d64545', image: '#1d9e75', drawing: '#c08410', diagram: '#e0682c' }
+export const SIDEBAR_ICON_SWATCHES: Record<SidebarIconKind, string> = { note: '#3d8fb8', card: '#8a63c9', drawing: '#c08410', diagram: '#e0682c', folder: '#7a7a7a', text: '#3a7fc2', pdf: '#d64545', image: '#1d9e75' }
 
 /** The name of each kind on its colour row (YAZ-3440 D4). */
-const SIDEBAR_ICON_KIND_LABELS: Record<Exclude<SidebarIconKind, 'note'>, string> = { text: 'Text file', pdf: 'PDF', image: 'Image', drawing: 'Drawing', diagram: 'Diagram' }
+const SIDEBAR_ICON_KIND_LABELS: Record<Exclude<SidebarIconKind, 'note'>, string> = { card: 'Card', drawing: 'Drawing', diagram: 'Diagram', folder: 'Folder', text: 'Text file', pdf: 'PDF', image: 'Image' }
 /** A note's row is named by the vault's word (YAZ-4938). */
 export const sidebarIconKindLabel = (kind: SidebarIconKind, unit: UnitText): string => (kind === 'note' ? unit('Note') : SIDEBAR_ICON_KIND_LABELS[kind])
 

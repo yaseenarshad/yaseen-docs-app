@@ -1553,6 +1553,20 @@ describe('App table of contents setting (YAZ-2700 D2)', () => {
     expect(app.style.getPropertyValue('--kind-pdf')).toBe('')
     expect(captured.editors.length).toBe(renders)
   })
+
+  it('YAZ-5100 round 2: names the kinds with a picked colour for app.css (`data-icon-colors`), and puts a picked card colour on the root too, for the hover preview outside `.app`', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    const app = el.querySelector<HTMLElement>('.app')!
+    expect(app.hasAttribute('data-icon-colors')).toBe(false)
+    expect(document.documentElement.style.getPropertyValue('--kind-card')).toBe('')
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarIconColors: { card: '#cc3366', folder: '#112233' } } }))
+    expect(app.getAttribute('data-icon-colors')).toBe('card folder')
+    expect(app.style.getPropertyValue('--kind-folder')).toBe('#112233')
+    expect(document.documentElement.style.getPropertyValue('--kind-card')).toBe('#cc3366')
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS } }))
+    expect(app.hasAttribute('data-icon-colors')).toBe(false)
+    expect(document.documentElement.style.getPropertyValue('--kind-card')).toBe('')
+  })
 })
 
 describe('App sidebar resize (YAZ-738)', () => {

@@ -80,8 +80,10 @@ export function drawingLinkIcon(path: string, folder: boolean, onReady: () => vo
   if (app === null) return undefined
   const attrs = fileIconDecoration(here, path, folder)
   const theme = document.documentElement.dataset.theme ?? ''
-  const { sidebarIconSet = '', sidebarFileIcons = '', sidebarFolderIcons = '' } = (app as HTMLElement).dataset
-  const key = JSON.stringify([attrs['data-kind'], attrs['data-icon'], attrs['data-icon-custom'], attrs.style, folder, theme, sidebarIconSet, sidebarFileIcons, sidebarFolderIcons])
+  const { sidebarIconSet = '', sidebarFileIcons = '', sidebarFolderIcons = '', iconColors = '' } = (app as HTMLElement).dataset
+  // A picked icon colour (YAZ-5100 round 2) is a new look: the kinds that have one, and their colours on the app's style.
+  const colours = iconColors === '' ? '' : iconColors.split(' ').map((kind) => (app as HTMLElement).style.getPropertyValue(`--kind-${kind}`)).join(' ')
+  const key = JSON.stringify([attrs['data-kind'], attrs['data-icon'], attrs['data-icon-custom'], attrs.style, folder, theme, sidebarIconSet, sidebarFileIcons, sidebarFolderIcons, iconColors, colours])
   const held = icons.get(key)
   if (held !== undefined) return held === 'loading' || held === 'failed' ? undefined : held
   const icon = readIcon(attrs, app)
