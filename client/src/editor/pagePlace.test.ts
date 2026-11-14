@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { readPagePlace, showPagePlace } from './pagePlace'
+import { holdPagePlace, readPagePlace, scrollerOf, showPagePlace } from './pagePlace'
 
 /** A box at `top`, `height` tall, in window px; `drawn` false is a block folded away (no client rects). */
 function block(top: number, height: number, drawn = true): HTMLElement {
@@ -89,5 +89,43 @@ describe('showPagePlace', () => {
     expect(showPagePlace(viewOf(els), host, { pos: 0, offset: 0 })).toBe(false)
     expect(showPagePlace(viewOf(els), host, { pos: 90, offset: 0 })).toBe(false)
     expect(host.scrollTop).toBe(0)
+  })
+})
+
+describe('holdPagePlace (a lock, an unlock, the caret given back)', () => {
+  it('the block at the top stays at its spot, whatever the change does to the scroll or the layout above it', () => {
+    const tops = [{ top: -200, height: 300 }, { top: 100, height: 300 }]
+    const els = tops.map((t) => block(t.top, t.height))
+    const live = tops.map((t, i) => ({ el: els[i], ...t }))
+    const host = scroller(0, 500, live)
+    host.style.overflowY = 'auto'
+    Object.defineProperties(host, { scrollHeight: { value: 2000 }, clientHeight: { value: 500 } })
+    const view = viewOf(els) as EditorView & { dom: HTMLElement; isDestroyed: boolean }
+    Object.assign(view, { dom: host.appendChild(document.createElement('div')), isDestroyed: false })
+    const out = holdPagePlace(view, () => {
+      // The change scrolls to the top (a focus on a caret out of view), and a bar above grows by 40 px.
+      host.scrollTop = -1000
+      for (const b of live) {
+        b.top += 40
+        b.el.getBoundingClientRect = block(b.top, b.height).getBoundingClientRect
+      }
+      return 'done'
+    })
+    expect(out).toBe('done')
+    expect(els[0].getBoundingClientRect().top).toBe(-200)
+  })
+
+  it('scrollerOf: the nearest ancestor that scrolls itself; one set to scroll with nothing to scroll is not it', () => {
+    const tall = (el: HTMLElement, scroll: number) => Object.defineProperties(el, { scrollHeight: { value: scroll }, clientHeight: { value: 500 } })
+    const outer = document.body.appendChild(document.createElement('div'))
+    outer.style.overflowY = 'auto'
+    tall(outer, 2000)
+    const mid = outer.appendChild(document.createElement('div'))
+    mid.style.overflowY = 'auto'
+    tall(mid, 500)
+    const leaf = mid.appendChild(document.createElement('p'))
+    expect(scrollerOf(leaf)).toBe(outer)
+    expect(scrollerOf(outer)).toBeNull()
+    outer.remove()
   })
 })

@@ -1679,10 +1679,13 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
     })
     afterEach(() => vi.restoreAllMocks())
     /** The Inbox's own view scrolls (round 2): the card has no scroll bar of its own. */
-    const scroller = (scrollTop = 0) => {
+    // `range`: how far it scrolls (its content less its height); a long card's view scrolls far.
+    const scroller = (scrollTop = 0, range = 5000) => {
       const view = el.querySelector<HTMLElement>('.card-inbox')!
       scrollTo = vi.fn()
       view.scrollTo = scrollTo as never
+      Object.defineProperty(view, 'clientHeight', { configurable: true, value: 600 })
+      Object.defineProperty(view, 'scrollHeight', { configurable: true, value: 600 + range })
       view.scrollTop = scrollTop
       return view
     }
@@ -1759,6 +1762,28 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 200 }))
       })
 
+      it('fix "my spacebar on inbox is no longer working": a short card (its end low in the room, nothing to scroll) shows its next side at once; a move the view cannot make in full is cut to what it can', () => {
+        mount(TWO_SIDES)
+        scroller(0, 0)
+        press(' ')
+        expect(shown()).toEqual(['France'])
+        // A short card ends right where its buttons start: its end is low in the room, and the view cannot move.
+        place.panel = [110, 400]
+        press(' ')
+        expect(sides()).toBe(2)
+        expect(scrollTo).not.toHaveBeenCalled()
+        press(' ')
+        expect(shown()).toEqual(['France', 'Paris'])
+        // A view that scrolls 40 px more: the Space glides those 40 px only (not the 200 the rule wants), then shows.
+        mount(TWO_SIDES)
+        scroller(0, 40)
+        press(' ')
+        place.panel = [110, 400]
+        press(' ')
+        expect(sides()).toBe(1)
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 40 }))
+      })
+
       it('THE END: the last word shows and nothing moves; then a Space brings the card`s end in (no ring), and the next one rings the buttons', () => {
         mount(THREE)
         scroller()
@@ -1797,9 +1822,10 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
 
       it('after a scroll by hand took the next blank out of view: Space only brings it back', () => {
         mount(THREE)
-        scroller()
+        const view = scroller()
         press(' ')
         expect(shown()).toEqual(['one'])
+        view.scrollTop = 500
         place.word1 = [-200, -180]
         press(' ')
         expect(shown()).toEqual(['one'])

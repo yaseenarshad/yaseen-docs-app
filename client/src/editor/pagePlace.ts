@@ -60,8 +60,53 @@ export function readPagePlace(view: EditorView, scroller: Element, pinned?: Elem
 /** Puts `place` back: `scroller` scrolls so the block at its position starts `offset` below the top edge. False when that block is not drawn. */
 export function showPagePlace(view: EditorView, scroller: Element, place: PagePlace): boolean {
   if (place.pos < 0 || place.pos >= view.state.doc.content.size) return false
-  const box = boxOf(view, place.pos)
-  if (box === null) return false
-  scroller.scrollTop += box.top - scroller.getBoundingClientRect().top - place.offset
+  const dom = view.nodeDOM(place.pos)
+  if (!(dom instanceof HTMLElement) || dom.getClientRects().length === 0) return false
+  showBoxAt(scroller, dom, place.offset)
   return true
+}
+
+/** How far below `scroller`'s top edge `box` starts, px (negative: above). */
+export const boxOffset = (scroller: Element, box: Element): number => box.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+
+/**
+ * Scrolls `scroller` so `box` starts `offset` below its top edge: the one move every switch makes (YAZ-5164). A page's
+ * block (`showPagePlace`), and a view with no page under it: a card file's card, read or in Edit card.
+ */
+export function showBoxAt(scroller: Element, box: Element, offset: number): void {
+  scroller.scrollTop += boxOffset(scroller, box) - offset
+}
+
+/**
+ * Keeps `scroller` where it is until the returned function is called (YAZ-5164): a view built out of sight under the one
+ * on show (a card editor that puts its caret in view, a focus) must not move the one on show.
+ */
+export function freezeScroll(scroller: Element): () => void {
+  const at = scroller.scrollTop
+  const back = () => {
+    if (scroller.scrollTop !== at) scroller.scrollTop = at
+  }
+  scroller.addEventListener('scroll', back)
+  return () => scroller.removeEventListener('scroll', back)
+}
+
+/** The element that scrolls `el`: its nearest ancestor with its own vertical scroll and more to scroll than it shows (a tab's `.editor-host`, Explore's body). */
+export function scrollerOf(el: Element): Element | null {
+  for (let at = el.parentElement; at !== null; at = at.parentElement) {
+    const { overflowY } = getComputedStyle(at)
+    if ((overflowY === 'auto' || overflowY === 'scroll') && at.scrollHeight > at.clientHeight) return at
+  }
+  return null
+}
+
+/**
+ * Runs `change` with the page held in place (YAZ-5164): the block at the top stays at the same spot on screen, whatever
+ * `change` does to the layout or the scroll (a lock or an unlock, the caret given back). Returns what `change` returns.
+ */
+export function holdPagePlace<T>(view: EditorView, change: () => T): T {
+  const scroller = scrollerOf(view.dom)
+  const place = scroller === null ? null : readPagePlace(view, scroller)
+  const out = change()
+  if (scroller !== null && place !== null && !view.isDestroyed) showPagePlace(view, scroller, place)
+  return out
 }

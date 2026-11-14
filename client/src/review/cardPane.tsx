@@ -7,7 +7,7 @@
  * The heads are each one's own: the window's speaks of the page the card is on, the tab IS the card's file.
  */
 import { previewCard } from '../editor/card/cardOpen'
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { cardBlock, EMPTY_CARD_LINE, withCardNext, withCardNoTitle, withCardOff, withCardTitle, withoutCardReviews, type CardReview } from '@shared/cardLine'
 import { cardBacklinks, cardEmbedders } from '@shared/cardLinks'
@@ -20,6 +20,7 @@ import { copyText } from '../editor/linkMenu'
 import { isCardNode } from '../editor/card/cardBlockLine'
 import { cardBlockViewAt } from '../editor/card/cardBlockView'
 import type { CardTitleField } from '../editor/card/cardEditor'
+import { boxOffset, freezeScroll, scrollerOf, showBoxAt } from '../editor/pagePlace'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import { cardResolverOf, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { ExploreVault } from '../explore/ExplorePage'
@@ -166,16 +167,21 @@ interface CardPaneProps {
 
 /** The card's body: the card or its editor, its strip (Reviews, Properties, Linked mentions and, in a tab, Embedded in: YAZ-5382), then the facts strip. */
 export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false, titleField = 'edit', band, head, onChangeLine, onNotice, stripOpen, onStripToggle }: CardPaneProps) {
+  const swap = useCardSwap(editing)
   // The band shows the title (off the card line); the card is its text, its sides only (YAZ-5308).
   return (
     <>
-      {editing ? (
-        <CardPaneEditor key={`${card.index}`} text={card.text} title={card.title} path={path} vault={vault} onDone={onEditDone} select={select} titleField={titleField} />
-      ) : (
-        <div className="card card-screen">
+      {(editing || swap.shown === 'edit') && (
+        <div ref={swap.editorRef} className={`card-pane__editor${swap.shown === 'edit' ? '' : ' card-pane__incoming'}`}>
+          <CardPaneEditor key={`${card.index}`} text={card.text} title={card.title} path={path} vault={vault} onDone={onEditDone} select={select} titleField={titleField} onUp={swap.editorUp} />
+        </div>
+      )}
+      {(!editing || swap.shown === 'read') && (
+        <div ref={swap.readRef} className={`card card-screen${swap.shown === 'read' ? '' : ' card-pane__incoming'}`}>
           {head}
           {band}
           <CardBody text={card.text} path={path} vault={vault} doors={doors} />
+          {swap.shown !== 'read' && <ReadCardUp onUp={swap.readUp} />}
         </div>
       )}
       {/* YAZ-5105 round 2: the Reviews strip right under the card, as Mochi's; then the card window's facts strip. */}
@@ -199,6 +205,55 @@ export function CardPane({ card, path, vault, editing, onEditDone, select, doors
   )
 }
 
+/**
+ * READ ⇄ EDIT CARD WITH NO JUMP AND NO FLASH (YAZ-5164, Yaseen: "every switch … must keep the same block at the same
+ * spot", "it should just be so smooth"). The card on show stays until the other one is drawn under it, see-through
+ * (`card-pane__incoming`), with the scroller held (`freezeScroll`: the editor's caret and focus would move it); then they
+ * swap in one frame, the new card at the old card's spot. Edit card waits for the editor's card to open; Done waits for the
+ * read card's text, which draws in an effect. The card file tab, Explore's card window and the card window all show cards
+ * through here.
+ */
+function useCardSwap(editing: boolean): { shown: 'read' | 'edit'; editorUp: () => void; readUp: () => void; readRef: React.RefObject<HTMLDivElement | null>; editorRef: React.RefObject<HTMLDivElement | null> } {
+  const readRef = useRef<HTMLDivElement>(null)
+  const editorRef = useRef<HTMLDivElement>(null)
+  const [shown, setShown] = useState<'read' | 'edit'>(editing ? 'edit' : 'read')
+  /** The card box on show as a switch starts: its scroller and its spot, put back on the incoming card. */
+  const held = useRef<{ scroller: Element; offset: number; thaw: () => void } | null>(null)
+  const shownEditing = useRef(editing)
+  if (shownEditing.current !== editing) {
+    shownEditing.current = editing
+    held.current?.thaw()
+    const box = shown === 'read' ? readRef.current : (editorRef.current?.querySelector('.card') ?? null)
+    const scroller = box === null ? null : scrollerOf(box)
+    held.current = box === null || scroller === null ? null : { scroller, offset: boxOffset(scroller, box), thaw: freezeScroll(scroller) }
+  }
+  // The new card is on show: at the old card's spot, before it paints; the scroller is the person's again.
+  useLayoutEffect(() => {
+    const hold = held.current
+    if (hold === null || (shown === 'edit') !== editing) return
+    held.current = null
+    hold.thaw()
+    const box = shown === 'read' ? readRef.current : (editorRef.current?.querySelector('.card') ?? null)
+    if (box !== null) showBoxAt(hold.scroller, box, hold.offset)
+  }, [shown, editing])
+  useEffect(() => () => held.current?.thaw(), [])
+  return {
+    shown,
+    editorUp: () => setShown((now) => (shownEditing.current ? 'edit' : now)),
+    readUp: () => setShown((now) => (shownEditing.current ? now : 'read')),
+    readRef,
+    editorRef,
+  }
+}
+
+/** Tells its card it is drawn: after the read card's own effect drew its text (a child's effects run first). */
+function ReadCardUp({ onUp }: { onUp: () => void }): null {
+  const up = useRef(onUp)
+  up.current = onUp
+  useEffect(() => up.current(), [])
+  return null
+}
+
 /** The page card's editor without the editing of blocks around it: the card block is all the document holds. */
 const CARD_EDIT_FEATURES = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeature.Toolbar]: false }
 
@@ -208,7 +263,9 @@ const CARD_EDIT_FEATURES = { ...features, [CrepeFeature.BlockEdit]: false, [Crep
  * title over. Made once per edit: the text and title it starts from are the card's when Edit card began, and a read
  * again under it (an outside write) does not touch them.
  */
-function CardPaneEditor({ text, title, path, vault, onDone, select, titleField }: { text: string; title: string; path: string; vault: ExploreVault; onDone: (text: string, title: string) => void; select?: { from: number; to: number }; titleField: CardTitleField }) {
+function CardPaneEditor({ text, title, path, vault, onDone, select, titleField, onUp }: { text: string; title: string; path: string; vault: ExploreVault; onDone: (text: string, title: string) => void; select?: { from: number; to: number }; titleField: CardTitleField; onUp?: () => void }) {
+  const upRef = useRef(onUp)
+  upRef.current = onUp
   const hostRef = useRef<HTMLDivElement>(null)
   const doneRef = useRef(onDone)
   doneRef.current = onDone
@@ -240,6 +297,8 @@ function CardPaneEditor({ text, title, path, vault, onDone, select, titleField }
         return pos === -1
       })
       if (pos >= 0) cardBlockViewAt(view, pos)?.edit(select)
+      // Its card is open: a frame to draw it (the page's editor in the card), then it shows (YAZ-5164).
+      requestAnimationFrame(() => live && upRef.current?.())
     })
     return () => {
       live = false

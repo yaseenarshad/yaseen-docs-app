@@ -27,7 +27,7 @@ import { PageWindow, dropPageWindowsAt, pageWindowLink, pageWindowMemory, rename
 import type { Row } from '../views/engine'
 import { readPageView } from '../lib/pageView'
 import { writeProperty } from '../views/writeProperty'
-import { showPagePlace } from './pagePlace'
+import { holdPagePlace, showPagePlace } from './pagePlace'
 import type { NoticeKind } from '../lib/notice'
 import { VIEW_ONLY_CHANGE } from './readOnlyEdit'
 
@@ -101,7 +101,7 @@ vi.mock('./createCrepe', () => {
 })
 
 // A start view's place in the text (YAZ-5164): the fake Crepe has no view to measure; the real pair is in pagePlace.test.ts.
-vi.mock('./pagePlace', () => ({ showPagePlace: vi.fn(() => false), readPagePlace: vi.fn(() => null) }))
+vi.mock('./pagePlace', () => ({ showPagePlace: vi.fn(() => false), readPagePlace: vi.fn(() => null), holdPagePlace: vi.fn((_view: unknown, change: () => unknown) => change()) }))
 
 // Line numbers (YAZ-2643): jsdom has no Worker and the fake Crepe has no view. The request answers
 // with the real block index, in line; what the host SENDS to the editor is the thing under test.
@@ -3146,6 +3146,29 @@ describe('Read only for the whole vault, with a timed "Allow edits" (YAZ-4939)',
     expect(writeFile.mock.calls.map(([body]) => body.content)).toEqual([`${FM}# Hello\n\nquick\n`])
     expect(readonlyOf()).toBe(true)
     expect(chipButton(el)?.textContent).toBe('Read only')
+  })
+
+  it('YAZ-5164: the unlock and the lock keep the place (Yaseen: "if I lock now again, it then jumps me somewhere else"): each switch runs inside holdPagePlace', async () => {
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 20, size: body.content.length }))
+    const el = await mount(FM + BODY, 1, { vaultReadOnly: true })
+    const held: boolean[] = []
+    vi.mocked(holdPagePlace).mockClear().mockImplementation((_view, change) => {
+      const out = change()
+      held.push(readonlyOf())
+      return out
+    })
+    await allow(el, '10 minutes')
+    expect(held).toContain(false)
+    held.length = 0
+    await act(async () => {
+      lockNow(el)!.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await settle()
+    expect(readonlyOf()).toBe(true)
+    // The lock happened inside the hold: the place was read before it and put back after it.
+    expect(held).toContain(true)
+    vi.mocked(holdPagePlace).mockImplementation((_view, change) => change())
   })
 
   it('YAZ-4997: Esc and ⌘↵ in the text (`lockAgain`) save and lock an unlocked page at once, as Lock now; with nothing to lock they decline, so the keys keep their meaning', async () => {

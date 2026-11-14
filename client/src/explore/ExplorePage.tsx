@@ -210,6 +210,19 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   const [content, setContent] = useState<Content>({ kind: 'loading' })
   /** The read-only Crepe once it is up, for the fold-all button (round 1, item 4); null while loading or editing. */
   const [ready, setReady] = useState<ReturnType<typeof createCrepe> | null>(null)
+  /**
+   * The body on show (YAZ-5164: "it should just be so smooth", no flash). A switch of `mode` mounts the other body
+   * UNDER the one on show, see-through (`explore__body--incoming`), and the old one stays until the new one is up at the
+   * same place in the text: the reading Crepe once it is built and placed, the editor once it answers its page view
+   * (`readPageViewOf`). Then both swap in one frame.
+   */
+  const [shown, setShown] = useState<'read' | 'edit'>(mode)
+  /**
+   * Back from the editor (YAZ-5164), the text read before it is old: the editor saved. The reading Crepe waits for the
+   * read again, so it is built once, from the saved text, and placed once (a Crepe of the old text was built, then thrown
+   * away by the read's "loading", and the next one opened at the top).
+   */
+  const [stale, setStale] = useState(false)
   const icons = useContext(IconsContext)
   /** ⌘F in the reading layer finds in THIS page (check 11): the page's own find plugin on this Crepe, and its bar. */
   const findChannel = useMemo(() => createFindChannel(), [])
@@ -230,7 +243,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   useEffect(() => {
     if (mode !== 'read') return
     let live = true
-    const again = rereading.current
+    // A reading Crepe still on show (a switch to edit taken back before the editor was up) is read again in place.
+    const again = rereading.current || shownCrepe.current !== null
     rereading.current = false
     if (!again) setContent({ kind: 'loading' })
     // A save of this page still on its way (an editor's flush, YAZ-3685 F5) lands first: the read sees the typed text.
@@ -240,13 +254,18 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
       (file) => {
         if (!live) return
         readRef.current = file.content
+        setStale(false)
         const body = splitFrontmatter(file.content).body
         const switches = readPageSwitches(file.content)
         setContent((prev) =>
           body.trim() === '' ? { kind: 'empty' } : prev.kind === 'body' && prev.body === body && JSON.stringify(prev.switches) === JSON.stringify(switches) ? prev : { kind: 'body', body, switches },
         )
       },
-      () => live && setContent({ kind: 'gone' }),
+      () => {
+        if (!live) return
+        setStale(false)
+        setContent({ kind: 'gone' })
+      },
     )
     return () => {
       live = false
@@ -282,7 +301,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
     }
   }, [mode, path, indexOfVault])
 
-  const body = mode === 'read' && content.kind === 'body' ? content.body : null
+  // The reading Crepe stays while it is on show, under an editor that is not up yet (YAZ-5164).
+  const body = (mode === 'read' || shown === 'read') && !stale && content.kind === 'body' ? content.body : null
   const switches = content.kind === 'body' ? content.switches : undefined
   // The vault's three parts, not the object: App hands a new object each render, and the Crepe is built once per body.
   const { root, wikilinks, wikilinkCandidates, viewOnlyLinks } = vault
@@ -371,6 +391,7 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
         requestAnimationFrame(() => live && showPagePlace(editorViewOf(crepe), scroller, from.top))
       }
       setReady(crepe)
+      setShown('read')
     })
     return () => {
       live = false
@@ -475,10 +496,34 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   /** The saved text for the comment stream (round 1, item 3): what was read, until the block's own write moves it. */
   const file = content.kind === 'body' || content.kind === 'empty' ? { path, content: readRef.current } : null
 
-  // The top layer's body takes the focus, so E and Esc work with no click; a layer uncovered again takes it back.
+  // The editor is up (YAZ-5164): it answers its page view once its start view is applied, so it is at the reading
+  // layer's place. Then it shows, in the same frame the reading body goes. A view with no page view (a card file's) shows
+  // after a short wait, as before.
   useEffect(() => {
-    if (active && mode === 'read') bodyRef.current?.focus()
-  }, [active, mode])
+    if (mode !== 'edit' || shown === 'edit') return
+    let frames = 0
+    let id = 0
+    const tick = () => {
+      const host = editBodyRef.current?.querySelector('.editor-host')
+      if (readPageViewOf(host) !== undefined || editBodyRef.current?.querySelector('[data-card-file-edit]') != null || ++frames > EDITOR_TRIES) {
+        setShown('edit')
+        return
+      }
+      id = requestAnimationFrame(tick)
+    }
+    id = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(id)
+  }, [mode, shown])
+  // Nothing to build (an empty page, a page gone): the reading body shows at once.
+  useEffect(() => {
+    if (mode === 'read' && shown !== 'read' && (content.kind === 'empty' || content.kind === 'gone')) setShown('read')
+  }, [mode, shown, content.kind])
+
+  // The top layer's body takes the focus, so E and Esc work with no click; a layer uncovered again takes it back.
+  // Again once the reading body is on show (YAZ-5164): the editor it replaced had the keyboard until then.
+  useEffect(() => {
+    if (active && mode === 'read') bodyRef.current?.focus({ preventScroll: true })
+  }, [active, mode, shown])
 
   const page = fileKind(path) === 'markdown'
   // The vault's Read only (YAZ-4939): the layer edits only while its own timed unlock runs. At zero, or on Lock now,
@@ -527,7 +572,12 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   if (shownMode.current !== mode) {
     shownMode.current = mode
     start.current = mode === 'edit' ? readStart() : null
-    if (mode === 'read') readBack()
+    // Only from an editor on show: a switch taken back before it was up left the reading Crepe where it was.
+    back.current = null
+    if (mode === 'read' && shown === 'edit') {
+      readBack()
+      setStale(true)
+    }
     pinned.current = null
   }
   /**
@@ -686,28 +736,32 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
           ×
         </button>
       </div>
-      {mode === 'edit' ? (
-        <div ref={editBodyRef} className="explore__body explore__body--edit" style={bodyStyle}>
-          {/* Keyed by the path: a step while editing saves this page and mounts the editor on the next (the body div stays, with the keyboard). */}
-          <Fragment key={path}>{renderEditor(path, onOpenLink, unlocked, start.current?.path === path ? start.current.view : undefined)}</Fragment>
-        </div>
-      ) : (
-        <div ref={bodyRef} className="explore__body" style={bodyStyle} tabIndex={-1} data-explore-read>
-          <FindBar channel={findChannel} scope="page" hostRef={bodyRef} />
-          <div ref={mountRef} className="explore__mount" />
-          {content.kind === 'gone' && <p className="editor-msg">Can&apos;t read &quot;{title}&quot; — it is no longer there</p>}
-          {content.kind === 'empty' && <p className="editor-msg">{unit('Empty page')}</p>}
-          {/* The page's right-click menu (item 7): the text rows (Copy, Copy as; no Cut or Paste while reading), then the page menu. */}
-          {ready !== null && <PageMenu view={editorViewOf(ready)} extra={pageMenu} reading />}
-          {/* Under the page, as in its tab (round 1, item 3): the comment stream, then "Linked mentions"; a mention opens on top. */}
-          {file !== null && (
-            <div className="explore__under">
-              <CommentsSection file={file} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} />
-              <BacklinksSection path={path} source={wikilinks} openCurrent={onOpenLink} />
-            </div>
-          )}
-        </div>
-      )}
+      {/* Both bodies while a switch is under way (YAZ-5164): the incoming one see-through under the one on show. */}
+      <div className="explore__bodies">
+        {(mode === 'edit' || shown === 'edit') && (
+          <div ref={editBodyRef} className={`explore__body explore__body--edit${shown === 'edit' ? '' : ' explore__body--incoming'}`} style={bodyStyle}>
+            {/* Keyed by the path: a step while editing saves this page and mounts the editor on the next (the body div stays, with the keyboard). */}
+            <Fragment key={path}>{renderEditor(path, onOpenLink, unlocked, start.current?.path === path ? start.current.view : undefined)}</Fragment>
+          </div>
+        )}
+        {(mode === 'read' || shown === 'read') && (
+          <div ref={bodyRef} className={`explore__body${shown === 'read' ? '' : ' explore__body--incoming'}`} style={bodyStyle} tabIndex={-1} data-explore-read>
+            <FindBar channel={findChannel} scope="page" hostRef={bodyRef} />
+            <div ref={mountRef} className="explore__mount" />
+            {content.kind === 'gone' && <p className="editor-msg">Can&apos;t read &quot;{title}&quot; — it is no longer there</p>}
+            {content.kind === 'empty' && <p className="editor-msg">{unit('Empty page')}</p>}
+            {/* The page's right-click menu (item 7): the text rows (Copy, Copy as; no Cut or Paste while reading), then the page menu. */}
+            {ready !== null && <PageMenu view={editorViewOf(ready)} extra={pageMenu} reading />}
+            {/* Under the page, as in its tab (round 1, item 3): the comment stream, then "Linked mentions"; a mention opens on top. */}
+            {file !== null && (
+              <div className="explore__under">
+                <CommentsSection file={file} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} />
+                <BacklinksSection path={path} source={wikilinks} openCurrent={onOpenLink} />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </UnitContext.Provider>
   )
 }

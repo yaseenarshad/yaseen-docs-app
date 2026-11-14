@@ -234,6 +234,7 @@
  *    `table/colours.ts`), and frozen rows and columns (`table/tableFreeze.ts`; the right-click
  *    Table part is `pageMenu.tsx`'s).
  */
+import { holdPagePlace } from './pagePlace'
 import { fileKind } from '@shared/fileKind'
 import { Crepe, CrepeFeature } from './crepe'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
@@ -1213,13 +1214,16 @@ export function keepCaretOf(crepe: Crepe): KeptCaret {
 export function giveCaretBack(crepe: Crepe, kept: KeptCaret | null): void {
   const view = editorViewOf(crepe)
   if (view.isDestroyed) return
-  if (kept !== null) {
-    const { doc } = view.state
-    const pos = (n: number) => doc.resolve(Math.max(0, Math.min(n, doc.content.size)))
-    const selection = kept.doc === doc ? kept.selection : TextSelection.between(pos(kept.selection.anchor), pos(kept.selection.head))
-    if (!selection.eq(view.state.selection)) view.dispatch(view.state.tr.setSelection(selection))
-  }
-  view.focus()
+  // The page stays where it is (YAZ-5164): a caret out of view, or a focus that scrolls, never moves it.
+  holdPagePlace(view, () => {
+    if (kept !== null) {
+      const { doc } = view.state
+      const pos = (n: number) => doc.resolve(Math.max(0, Math.min(n, doc.content.size)))
+      const selection = kept.doc === doc ? kept.selection : TextSelection.between(pos(kept.selection.anchor), pos(kept.selection.head))
+      if (!selection.eq(view.state.selection)) view.dispatch(view.state.tr.setSelection(selection))
+    }
+    view.focus()
+  })
 }
 
 /** The drilled-in bullet's zoom key, or null (YAZ-2951 D4): the page view reader asks once, on a copy action. */

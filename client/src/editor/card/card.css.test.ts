@@ -210,9 +210,9 @@ it('YAZ-5050 round 4: Clean (and Custom, which starts from it) adds Mochi\'s loo
   const screens = read('../../review/cardScreens.css')
   expect(rules(screens, '[data-card-clean]').some((r) => /--inbox-card-pad:\s*44px/.test(r.body))).toBe(true)
   expect(rules(screens, '[data-card-clean]').some((r) => /max-width/.test(r.body))).toBe(false)
-  // The Inbox card's width: Card width's text and the card's own sides.
+  // The Inbox card's width: Card width's text and the card's own sides, times the Inbox zoom (YAZ-5372).
   const column = rules(screens, '.card-inbox__column').find((r) => r.selector === '.card-inbox__column')!
-  expect(column.body).toMatch(/width:\s*min\(calc\(var\(--card-text-width\) \+ 2 \* var\(--inbox-card-pad, 28px\)\), 100%\)/)
+  expect(column.body).toMatch(/width:\s*min\(calc\(\(var\(--card-text-width\) \+ 2 \* var\(--inbox-card-pad, 28px\)\) \* var\(--document-zoom, 1\)\), 100%\)/)
 })
 
 it('YAZ-5103: the line between two sides carries a quiet "Side 2", "Side 3" in the editor (Edit card, a card in a page, a card file) and in the read card; the Inbox has "Side 1 of 2" above, so its line has none', () => {
