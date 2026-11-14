@@ -492,12 +492,28 @@
   fill: var(--kit-gold);
 }
 
-/* THE CARD (the app's own classes inside; this only places and sizes it) */
+/* THE CARD (the app's own classes inside; this only places and sizes it). Its text never goes under a readable size
+   (14px; `Fit` scales it down no further than its `min`), and in a short or narrow stage the card takes more of the
+   stage's width and less padding, so a long back stays readable. */
 .kit-cardview {
   box-sizing: border-box;
   width: min(92cqw, 32em);
   text-align: left;
   font-size: clamp(14px, 4.6cqmin, 22px);
+}
+@container (max-height: 380px), (max-width: 480px) {
+  .kit-cardview {
+    width: min(98cqw, 36em);
+  }
+  .kit-cardview .card-inbox__body {
+    padding: 0.7em 1em 0.8em;
+  }
+  .kit-cardview .card-inbox__above {
+    margin-bottom: 4px;
+  }
+  .kit-cardview .card-inbox__card .card__rule {
+    margin: 12px -1em;
+  }
 }
 .kit-cardview--block .card,
 .kit-cardview--plain .card {
@@ -738,8 +754,16 @@
   color: var(--fg-muted);
   font-size: 12px;
 }
-.kit-keys kbd + kbd {
-  margin-left: 3px;
+.kit-keys > span,
+.kit-keycaps {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.kit-keycaps {
+  color: var(--fg-muted);
+  font-weight: 400;
+  font-size: 11px;
 }
 .kit-caret {
   display: inline-block;

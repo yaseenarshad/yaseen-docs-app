@@ -14,6 +14,7 @@
  */
 import type { CSSProperties, ReactNode } from 'react'
 import { InboxIcon } from '../../../views/view/icons'
+import { KeyCaps } from '../../../keys/KeyCaps'
 import { clamp, ease, lerp, type Beat } from './beat'
 
 /** A cropped app window: a sidebar on the left (optional), the content on the right. */
@@ -119,7 +120,11 @@ export function ToolbarPreview({ beat, items, x, y, p }: { beat: Beat; items: re
       {items.map((item) => (
         <span key={item.label} className={`kit-toolbar__item${item.wide === true ? ' kit-toolbar__item--wide' : ''}`} style={(item.active ?? 0) > 0 ? { background: `color-mix(in srgb, var(--accent-soft) ${(clamp(item.active ?? 0) * 100).toFixed(0)}%, transparent)`, color: 'var(--accent)' } : undefined}>
           {item.label}
-          {item.key !== undefined && <kbd>{item.key}</kbd>}
+          {item.key !== undefined && (
+            <span className="kit-keycaps">
+              <KeyCaps keys={item.key} />
+            </span>
+          )}
         </span>
       ))}
     </div>
@@ -135,7 +140,11 @@ export function SlashPreview({ beat, rows, x, y, p }: { beat: Beat; rows: readon
       {rows.map((row) => (
         <span key={row.label} className="kit-slash__row" style={(row.active ?? 0) > 0 ? { background: `color-mix(in srgb, var(--accent-soft) ${(clamp(row.active ?? 0) * 100).toFixed(0)}%, transparent)` } : undefined}>
           {row.label}
-          {row.key !== undefined && <kbd>{row.key}</kbd>}
+          {row.key !== undefined && (
+            <span className="kit-keycaps">
+              <KeyCaps keys={row.key} />
+            </span>
+          )}
         </span>
       ))}
     </div>
@@ -164,16 +173,16 @@ export function Pointer({ beat, from, to, move, click = 0, show = 1 }: { beat: B
   )
 }
 
-/** A row of keys, as the card's key row: "⌘L Hide word". */
+/**
+ * A row of keys, as the card's key row, in the app's words (`KeyCaps`): `{ keys: '⌘L', label: 'hide word' }` reads
+ * "Cmd + L hide word". `keys` is the binding (a symbol string or `Mod-L`), never words typed by hand.
+ */
 export function Keys({ items, p = 1 }: { items: readonly { keys: string; label: string }[]; p?: number }) {
   return (
     <div className="kit-keys" style={{ opacity: clamp(p) }}>
       {items.map((item) => (
         <span key={item.label}>
-          {item.keys.split(' ').map((k) => (
-            <kbd key={k}>{k}</kbd>
-          ))}{' '}
-          {item.label}
+          <KeyCaps keys={item.keys} /> {item.label}
         </span>
       ))}
     </div>

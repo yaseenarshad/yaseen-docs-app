@@ -77,7 +77,7 @@ const PIECES: Record<string, (b: Beat) => ReactElement> = {
       <ToolbarPreview beat={b} items={[{ label: 'Hide word', key: '⌘L', active: 1 }]} x={50} y={30} p={b.progress} />
       <SlashPreview beat={b} rows={[{ label: 'New side', key: '⌘⇧↵' }]} x={30} y={40} p={b.progress} />
       <Pointer beat={b} from={[0, 0]} to={[50, 50]} move={b.progress} click={b.progress} />
-      <Keys items={[{ keys: 'Cmd L', label: 'hide word' }]} />
+      <Keys items={[{ keys: '⌘L', label: 'hide word' }]} />
     </AppWindow>
   ),
   Answers: (b) => <Answers beat={b} forgot={b.progress} remembered={b.progress} />,
