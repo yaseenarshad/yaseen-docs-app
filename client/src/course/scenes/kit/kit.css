@@ -1397,7 +1397,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  gap: clamp(14px, 7cqmin, 64px);
+  gap: clamp(10px, 5cqmin, 52px);
 }
 .kit-habit {
   display: flex;
@@ -1410,7 +1410,7 @@
   --kit-lit: 0;
   display: grid;
   place-items: center;
-  width: clamp(54px, 17cqmin, 120px);
+  width: clamp(54px, 16cqmin, 112px);
   aspect-ratio: 1;
   border: 2px solid color-mix(in srgb, var(--accent) calc(30% + 70% * var(--kit-lit)), var(--border));
   border-radius: 50%;
@@ -1448,7 +1448,7 @@
   color: var(--accent);
 }
 .kit-habit__note {
-  max-width: 14ch;
+  max-width: min(14ch, 21cqw);
   font-size: clamp(11px, 2.3cqmin, 15px);
   color: var(--fg-muted);
   line-height: 1.25;

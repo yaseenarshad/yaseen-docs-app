@@ -141,3 +141,249 @@
   stroke: var(--accent);
   stroke-width: 1.5;
 }
+
+/* Capture (c9-12, c9-13): a day; where you are; the one place the lines land; three places side by side. */
+.later-day {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(80cqw, 34em);
+  font-size: clamp(var(--kit-min-text), 2.2cqmin, 14px);
+  color: var(--fg-muted);
+}
+.later-day__track {
+  position: relative;
+  flex: 1;
+  height: 2px;
+  background: var(--kit-line, var(--border));
+  border-radius: 2px;
+}
+.later-day__sun {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--warn, var(--accent)) 70%, var(--bg));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--warn, var(--accent)) 50%, transparent);
+}
+.later-captureday,
+.later-create {
+  align-items: center;
+}
+.later-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.later-source {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+}
+.later-source[data-lit] {
+  border-color: var(--accent);
+}
+.later-place-icon {
+  flex: none;
+  width: clamp(22px, 5cqmin, 32px);
+  height: clamp(22px, 5cqmin, 32px);
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.later-source__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.later-source__where {
+  font-size: clamp(var(--kit-min-text), 2.1cqmin, 13px);
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+.later-source__line {
+  font-size: clamp(12px, 2.6cqmin, 16px);
+}
+.later-arrow {
+  color: var(--accent);
+  font-size: clamp(18px, 4cqmin, 28px);
+  font-weight: 700;
+}
+@container (max-aspect-ratio: 1/1) {
+  .later-arrow {
+    transform: rotate(90deg);
+  }
+}
+.later-capture {
+  box-sizing: border-box;
+  width: min(80cqw, 19em);
+  padding: 12px 14px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+}
+.later-capture__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: clamp(var(--kit-min-text), 2.2cqmin, 14px);
+  font-weight: 700;
+  color: var(--accent);
+}
+.later-capture__title .kit-habit__glyph {
+  width: 1.3em;
+  height: 1.3em;
+}
+.later-capture__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: clamp(12px, 2.6cqmin, 15px);
+}
+.later-capture__list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 1.4em;
+  padding-bottom: 5px;
+  border-bottom: 1px dashed var(--border);
+}
+.later-capture__tick {
+  color: var(--ok, var(--accent));
+  font-weight: 700;
+}
+.later-places {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: clamp(6px, 2cqmin, 18px);
+  width: 100%;
+}
+.later-places__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: min(28cqw, 13em);
+}
+.later-places__frame {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: min(30cqh, 10em);
+  padding: 10px 12px;
+  text-align: left;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+}
+.later-places__item--phone .later-places__frame {
+  width: 78%;
+  border-width: 3px;
+  border-radius: 18px;
+}
+.later-places__item--dump .later-places__frame {
+  background: color-mix(in srgb, var(--warn, var(--accent)) 8%, var(--bg));
+}
+.later-places__head {
+  margin: 0 0 6px;
+  font-size: clamp(var(--kit-min-text), 2.1cqmin, 13px);
+  font-weight: 700;
+  color: var(--fg-muted);
+}
+.later-places__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: clamp(var(--kit-min-text), 2.2cqmin, 14px);
+  line-height: 1.3;
+}
+.later-places__item--dump .later-places__lines li::before {
+  content: '– ';
+  color: var(--fg-muted);
+}
+.later-places__item--channel .later-places__lines li {
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+}
+.later-places__who {
+  display: block;
+  font-size: var(--kit-min-text);
+  font-weight: 700;
+  color: var(--accent);
+}
+.later-places__label {
+  font-size: clamp(12px, 2.4cqmin, 15px);
+  font-weight: 600;
+}
+.later-places__or {
+  align-self: center;
+  font-size: clamp(var(--kit-min-text), 2.2cqmin, 14px);
+  color: var(--fg-muted);
+}
+@container (max-aspect-ratio: 1/1) {
+  .later-places {
+    flex-direction: column;
+    align-items: center;
+  }
+  .later-places__item {
+    flex-direction: row;
+    width: min(92cqw, 24em);
+  }
+  .later-places__frame {
+    min-height: 0;
+  }
+  .later-places__item--phone .later-places__frame {
+    width: 100%;
+  }
+  .later-places__label {
+    flex: none;
+    width: 6.5em;
+    text-align: left;
+  }
+}
+
+/* Create (c9-14, c9-15): the capture list, the agent's draft, the cards it becomes. */
+.later-made {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.later-create__chat .kit-chat {
+  width: min(60cqw, 30em);
+}
+@container (max-aspect-ratio: 1/1) {
+  .later-create__chat .kit-chat {
+    width: min(92cqw, 30em);
+  }
+  .later-made {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}

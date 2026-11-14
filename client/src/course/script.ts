@@ -353,10 +353,10 @@ export const COURSE: CourseChapter[] = [
       { id: 'c6-04', text: 'The goal is to distil. Take what you learned, and put it in your own words and your own formats.', marks: [0.141, 0.598, 0.762] },
       // A simple picture of digestion: food in, a smaller, useful part kept.
       { id: 'c6-05', text: 'Think of it like digestion. You do not have to know a thing fully before you make its card.', marks: [0.137, 0.492, 0.848] },
-      // The useful part is kept; the rest passes.
+      // Two steps: Chew and Digest. Chew lights up first; Digest waits.
       { id: 'c6-06', text: 'But you do have to chew it first.', marks: [0.438, 0.604] },
-      // A person thinks over an idea, then says it in one simple line.
-      { id: 'c6-07', text: 'To chew is to think about it a little: read it, talk it over, put the idea in your own words.', marks: [0.15, 0.805] },
+      // Chewing is light and quick: Read it, Talk it over, Your own words light up in turn; the idea in one simple line.
+      { id: 'c6-07', text: 'To chew is to think about it a little: read it, talk it over, put the idea in your own words.', marks: [0.15, 0.39, 0.5, 0.805] },
       // The chewed idea becomes a card; a calendar runs, and with each review the card settles a little deeper. (Yaseen: chewing makes the card; reviewing digests it.)
       { id: 'c6-17', text: 'The full digestion comes later. Each time you review the card, you digest it a little more.', marks: [0.071, 0.497, 0.716] },
       // A shallow glance versus a deep look; the deep one leaves a lasting mark.
@@ -384,7 +384,7 @@ export const COURSE: CourseChapter[] = [
     id: 'good-card',
     title: 'What makes a good card',
     clips: [
-      // A digested idea, and an empty card beside it.
+      // A chewed idea, and an empty card beside it.
       { id: 'c7-01', text: 'You have chewed on an idea. Here is how to make its card a good one.', marks: [0.483] },
       // A long page of text is pasted into one card; the card bulges.
       { id: 'c7-02', text: 'Many people paste a whole page of text into one card. Then they review it, and nothing sticks.', marks: [0.23, 0.494, 0.774] },
@@ -469,32 +469,32 @@ export const COURSE: CourseChapter[] = [
       { id: 'c8-06', text: 'Vibe writing means letting an AI pour out cards you never thought through.', marks: [0.475, 0.709] },
       // The card base floods with grey cards; the Inbox row dims, then goes dark.
       { id: 'c8-07', text: 'It is the fastest way to ruin your card base, which is your knowledge base, and to make the whole system worthless.', marks: [0.213, 0.516, 0.853] },
-      // Two paths: "Vibe write" leads down; "Digest, then make" leads up.
+      // Two paths: "Vibe write" leads down; "Chew, then create" leads up.
       { id: 'c8-08', text: 'If you want this system to fail, vibe write your cards. If you want what you know to compound, do not.', marks: [0.233, 0.775] },
       // The name "Ryan Holiday" and his line, in quotes.
       // SOURCE: Ryan Holiday, YouTube video UBdlprawTkA, on taking notes by hand: "The inefficiency is the efficiency." (rename-note-to-page: keep)
       { id: 'c8-09', text: 'Ryan Holiday puts it this way: "The inefficiency is the efficiency." The thinking is where you learn.', marks: [0.32, 0.691] },
-      // Digested ideas go into the agent; well-made cards come out; a person reads them.
+      // Chewed ideas go to the agent; it drafts the cards in the chat; the person reads each one there.
       { id: 'c8-10', text: 'The right way: bring ideas you have chewed on. Your agent drafts the cards in the chat, and you read each one there.', marks: [0.178, 0.528, 0.806] },
       // A text box with "Use the example" under it. WAITS: the person pastes text or picks the example.
       { id: 'c8-11', text: "Let's try it. Paste something you have chewed on, or use the example.", marks: [0.274, 0.499, 0.773] },
       // The prompt with a Copy button; its lines light up: the skill, three cards, Course Cards. WAITS: the person clicks Copy.
       { id: 'c8-12', text: 'Copy the prompt. It tells your agent to read the card skill, then draft three cards in the chat.', marks: [0.07, 0.452, 0.725] },
-      // The agent's window; a paste; card files appear in the course, one by one. WAITS: the agent writes card files in Course Cards.
+      // The agent's chat: the paste, a draft, the person's yes. WAITS: the agent writes a card file in Course Cards.
       { id: 'c8-13', text: 'Paste it into your agent. Read each draft in the chat. Ask for a change, or say yes.', marks: [0.149, 0.401, 0.841] },
       // The agent saves only the approved drafts; each new card appears in the list as its file is written.
       { id: 'c8-20', text: 'Only the cards you approve are saved. They show up here as your agent saves them.', marks: [0.221, 0.392, 0.726] },
       // The quiet line "No new cards yet. Did you check with your agent?"
       { id: 'c8-14', text: 'If nothing shows up after a minute, check with your agent.', marks: [0.428, 0.571] },
-      // The three new cards open one by one; the person reads each; "Read" ticks beside it. The word "Handmade". Nothing grades the agent's cards.
-      { id: 'c8-15', text: 'That is the handmade part. Reading the drafts, thinking about them, saying yes: that is chewing.', marks: [0.08, 0.279, 0.657] },
+      // The word "Handmade"; Read, Think, Yes tick in turn; then "That is chewing". Nothing grades the agent's cards.
+      { id: 'c8-15', text: 'That is the handmade part. Reading the drafts, thinking about them, saying yes: that is chewing.', marks: [0.08, 0.279, 0.657, 0.86] },
       // Skip, then three ready example cards with "Make these cards".
       { id: 'c8-16', text: 'No agent? Skip this step. The course shows three example cards, and makes them only if you say so.', marks: [0.161, 0.472, 0.708] },
       // A person reads a card, rewrites a line, and deletes another card.
       { id: 'c8-17', text: 'Your agent drafts fast, but you decide. Keep only what you want to recall, in your own words.', marks: [0.343, 0.487, 0.787] },
       // The card skill's right-click menu: "Copy prompt for your agent".
       { id: 'c8-18', text: 'To copy the prompt later, right-click the card skill, and choose Copy prompt for your agent.', marks: [0.272, 0.617] },
-      // The loop: you digest, the agent shapes, you decide; then three icons: a pen, the Inbox, shears.
+      // The loop: you chew, the agent drafts, you decide; then the four step icons: Capture, Create, Review, Improve.
       { id: 'c8-19', text: 'You chew and decide; your agent only drafts. Next: the four steps that keep it all alive.', marks: [0.128, 0.405, 0.681] },
     ],
   },
@@ -502,9 +502,9 @@ export const COURSE: CourseChapter[] = [
     id: 'habits',
     title: 'Four steps: capture, create, review, improve',
     clips: [
-      // The pen icon: cards by hand and with the agent.
+      // The cards so far; the view steps back from them.
       { id: 'c9-01', text: "Let's step back and see the whole system." },
-      // Three icons in a row: a pen "Make", the Inbox "Review", shears "Tend".
+      // Four icons in a row, each on its word: a notepad "Capture", a pen on a card "Create", the Inbox "Review", a rising line "Improve".
       { id: 'c9-02', text: 'It has four steps: capture, create, review, and improve.', marks: [0.317, 0.461, 0.67, 0.778] },
       // Capture: a day goes by; small captures land in one place from a phone, a meeting, a walk.
       { id: 'c9-12', text: 'Capture happens all day, wherever you are. When something is worth keeping, write it down.', marks: [0.164, 0.637, 0.782] },
@@ -514,9 +514,9 @@ export const COURSE: CourseChapter[] = [
       { id: 'c9-14', text: 'Create is when you sit down with your capture list, and turn it into cards.', marks: [0.433, 0.782] },
       // The agent chat drafts a card from a captured line; the person reads it, and a Yes lets it become a card. The word "Chew".
       { id: 'c9-15', text: 'This is where you chew. Your agent can do most of the work, and you read and approve each card.', marks: [0.151, 0.325, 0.731] },
-      // The pen icon lights up; a quiet desk.
+      // The Create icon lights up, "Time set aside"; a quiet desk, the lamp comes on.
       { id: 'c9-09', text: 'Create is the one you set time aside for. Chewing takes thought, so give it a quiet moment.', marks: [0.567, 0.808] },
-      // The Inbox icon lights up; a sunrise.
+      // The Review icon lights up, "Every day"; a sunrise; the Inbox opens and picks the cards.
       { id: 'c9-03', text: 'Review is the daily one, here in the app. You open the Inbox, and the app picks the cards.', marks: [0.142, 0.568, 0.775] },
       // A person with a thought bubble: "I am sure that worked"; a gauge beside it reads the opposite.
       { id: 'c9-04', text: 'Trust the schedule, even when it feels slow. Your gut is a poor judge of your own memory.', marks: [0.21, 0.52, 0.66] },
@@ -526,27 +526,27 @@ export const COURSE: CourseChapter[] = [
       // The Science paper again; a highlighted line: everyone predicted "about 50%"; the real bars: 80% and 36%.
       // SOURCE: Karpicke & Roediger 2008, Science 319: in all four conditions people predicted they would recall about 50% of the pairs; actual recall was about 80% or about a third.
       { id: 'c9-11', text: 'In the Science study, everyone guessed they would remember about half. Some kept 80 percent. Some kept a third. Nobody saw it coming.', marks: [0.14, 0.42, 0.51, 0.7, 0.82] },
-      // The shears icon lights up, inside the Inbox: a card with a small fix.
+      // The Improve icon lights up, inside the Inbox: a card with a small fix.
       { id: 'c9-06', text: 'Improving needs no time of its own. It happens while you review.', marks: [0.539] },
       // Thought bubbles over a card, "Not clear", "Needs a link"; a short message goes to the agent; the review goes on.
       { id: 'c9-07', text: 'This card is not clear. That one needs a link. With an agent, you send the fix right then, and keep going.', marks: [0.15, 0.39, 0.55, 0.69, 0.85] },
-      // A clock face: a short arc for review and tending.
+      // A clock face: a short arc for improving.
       { id: 'c9-08', text: 'Even with a large card base, improving should only take a couple of minutes a day.', marks: [0.147, 0.367, 0.645] },
-      // The three icons with their times; then two cards with a line between them.
-      { id: 'c9-10', text: 'Capture all day. Create with time set aside. Review every day. Improve as you review. Next: the idea that changes how you organise everything.', marks: [0.33, 0.477, 0.673] },
+      // The four icons with their times; then two cards with a line between them.
+      { id: 'c9-10', text: 'Capture all day. Create with time set aside. Review every day. Improve as you review. Next: the idea that changes how you organise everything.', marks: [0.14, 0.33, 0.477, 0.673] },
     ],
   },
   {
     id: 'links',
     title: 'Links: how cards connect',
     clips: [
-      // The three habit icons; then two cards, a thin line drawn between them.
+      // The four step icons; then two cards, a thin line drawn between them.
       { id: 'c10-01', text: 'Quick recap: you capture, create, review and improve. Now, how your cards connect, and why that beats folders.', marks: [0.634, 0.879] },
       // A computer's folders: one file goes into one folder, and the folder closes.
       { id: 'c10-02', text: 'Most of us keep things in files and folders. Computers taught us: one thing, one place.', marks: [0.24, 0.7] },
       // A new card hovers over three folders; a question mark: "Where does this go?"
       { id: 'c10-03', text: 'So when you make a card, you ask: where does this go?', marks: [0.22, 0.61] },
-      // All the cards fall into one open box, "Cards"; nothing is sorted.
+      // The folders step aside: all the cards in one open box, or in folders. "Not required", then "Your choice".
       { id: 'c10-04', text: 'That is why the app does not require folders. It leaves the choice to you.', marks: [0.492, 0.723] },
       // The advice as a card of its own: "Few folders. Many links." A pile of nested folders fades; a few cards with lines between them stay.
       { id: 'c10-28', text: 'But with great power comes great responsibility. Our advice: keep folders few, and rely on links.', marks: [0.1, 0.657, 0.921] },
@@ -564,9 +564,9 @@ export const COURSE: CourseChapter[] = [
       { id: 'c10-08', text: 'And researchers found that new facts are usually remembered better when they fit with something you already know.', marks: [0.22, 0.65] },
       // The food tree of chapter 7 on the left; a second small tree on the right, "Exercise". A dotted line wants to cross between them.
       { id: 'c10-23', text: 'A tree has branches. But ideas also connect across trees, and a folder cannot show that.', marks: [0.29, 0.48, 0.75] },
-      // The card "Protein" goes into a folder "Food".
-      { id: 'c10-09', text: 'An easy example. Say you did sort your cards into folders. Your protein card would sit in Food.', marks: [0.698, 0.831, 0.886] },
-      // A card "How muscle grows" goes into a folder "Exercise".
+      // A "What if" frame: the card "Protein" goes into a folder "Food".
+      { id: 'c10-09', text: 'An easy example. Say you did sort your cards into folders. Your protein card would sit in Food.', marks: [0.25, 0.698, 0.831, 0.886] },
+      // Still "What if": a card "How muscle grows" goes into a folder "Exercise".
       { id: 'c10-10', text: 'And your card on how muscle grows would sit in Exercise.', marks: [0.277, 0.673] },
       // An arm lifts a weight; small protein blocks move into the muscle.
       { id: 'c10-11', text: 'They belong together: your body builds muscle out of protein.', marks: [0.44, 0.59] },
@@ -620,7 +620,7 @@ export const COURSE: CourseChapter[] = [
     id: 'care',
     title: 'Be a gardener',
     clips: [
-      // The trees of cards with their links; then the Inbox with a card, and the shears icon from chapter 9.
+      // The trees of cards with their links; then the Inbox with a card, and the Improve icon from chapter 9.
       { id: 'c11-01', text: 'Your cards form trees, joined by links. Now, how to improve them as you review.', marks: [0.331, 0.562] },
       // A garden: a gardener clears weeds and prunes a branch; the garden fills out.
       { id: 'c11-02', text: 'Think of a gardener. A garden does well when someone clears it and prunes it.', marks: [0.33, 0.65, 0.8] },
@@ -669,7 +669,7 @@ export const COURSE: CourseChapter[] = [
     id: 'where-things-are',
     title: 'Where things are, and your first week',
     clips: [
-      // The three habit icons, then the real sidebar.
+      // The four step icons, then the real sidebar.
       { id: 'c12-01', text: 'To finish: where things are, and your first week.', marks: [0.29, 0.71] },
       // The real sidebar; the card skill's row at the bottom lights up.
       { id: 'c12-02', text: 'The card skill is at the bottom of the sidebar.', marks: [0.47] },

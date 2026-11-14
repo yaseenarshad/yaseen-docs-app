@@ -64,7 +64,7 @@ const pieces = (b: Beat, p: number): ReactElement[] => [
   <Crowd key="cr" beat={b} appear={p} won={9} wonP={p} doubt={7} doubtP={p} doubtText="I think it lost" wonText="Spacing won" wonTextP={p} />,
   <GuessBars key="gb" beat={b} guess={50} guessLabel="About half" guessP={p} bars={[{ label: 'A', value: 80, text: '80%', p }]} missP={p} />,
   <Gauge key="ga" beat={b} p={p} value={0.1} swing={p} label="Kept" />,
-  <ClockArc key="cl" beat={b} p={p} arcs={[{ from: 0, to: 15, p }]} label="15–20 min" labelP={p} />,
+  <ClockArc key="cl" beat={b} p={p} arcs={[{ from: 0, to: 15, p }]} label="A couple of minutes" labelP={p} />,
 ]
 
 describe('the kit for chapters 9 to 12 (YAZ-5121)', () => {
