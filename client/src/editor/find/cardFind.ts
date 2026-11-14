@@ -20,12 +20,12 @@ import type { FindChannel, FindController, FindResult } from './findChannel'
 export const CARD_FIND_READ = 'mdapp:card-find-read'
 
 /**
- * The card's text the reader sees: the title in a card's head (shown) or a card file tab's head, the sides of a card
+ * The card's text the reader sees: the title in a card's band (shown), a card file tab's too (YAZ-5392), the sides of a card
  * that is not edited or folded, and the card editor's text while it is.
  */
 export const CARD_FIND_REGIONS = [
   '.card__title:not([hidden]) .page-title__text',
-  '.card-file__head .page-title__text',
+  '.card-file__page > .card > .card-band .page-title__text',
   '.card:not(.card--editing):not(.card-embed--folded) > .card__body',
   '.card--editing .card__editor .ProseMirror',
 ].join(', ')
