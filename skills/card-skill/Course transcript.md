@@ -16,7 +16,7 @@ A new memory starts out fragile. Over time, the brain makes it stable. Scientist
 
 Each review, near the point where you would forget, pushes the memory further into long-term memory.
 
-This is hard science. Researchers have watched it in brain cells: spaced practice switches on the genes that build long-term memory.
+This is proven science. Researchers have watched it in brain cells: spaced practice switches on the genes that build long-term memory.
 
 The work that first showed how brain cells store a memory won a Nobel Prize.
 
@@ -263,7 +263,7 @@ Think about why people go to the gym. A machine can lift more weight than you ca
 
 Cards give your mind that kind of practice. Yes, AI makes information easy to find. But humans still need to choose what’s worth remembering. Each time you try to recall an idea or make a card clearer, you get better at using what you know.
 
-That’s why we keep the cards handmade. Let AI suggest ideas, draft a card, format it, or write the file. Read every draft, think it through, and approve what goes into your card base.
+That’s why we keep the cards handmade. Let AI suggest ideas, draft a card, or format it. Read the draft and think it through before you ask the agent to write the file. It takes discipline to do that every time, especially when the agent can make a whole batch in seconds. That pause is part of how you learn.
 
 Over time, that practice turns what you learn into knowledge you can use.
 
@@ -385,19 +385,19 @@ If you want this system to fail, vibe write your cards. If you want what you kno
 
 Ryan Holiday puts it this way: "The inefficiency is the efficiency." The thinking is where you learn.
 
-The right way: bring ideas you have chewed on. Your agent drafts the cards in the chat, and you read each one there.
+Start with ideas you’ve already thought through. Ask your agent to draft the cards in chat. Read each one and tell it which ones it can save.
 
 Let's try it. Paste something you have chewed on, or use the example.
 
-Copy the prompt. It tells your agent to read the card skill, then draft three cards in the chat.
+Copy the prompt. It asks your agent to read the card skill and show you three drafts in chat.
 
-Paste it into your agent. Read each draft in the chat. Ask for a change, or say yes.
+Paste it into your agent. Read the drafts, ask for changes if needed, and say which cards to save. Those are the cards that should appear here.
 
 Only the cards you approve are saved. They show up here as your agent saves them.
 
 If nothing shows up after a minute, check with your agent.
 
-That is the handmade part. Reading the drafts, thinking about them, saying yes: that is chewing.
+Now check the cards that appeared. Make sure they match the drafts you approved.
 
 No agent? Skip this step. The course shows three example cards, and makes them only if you say so.
 
@@ -405,7 +405,7 @@ Your agent drafts fast, but you decide. Keep only what you want to recall, in yo
 
 To copy the prompt later, right-click the card skill, and choose Copy prompt for your agent.
 
-You chew and decide; your agent only drafts. Next: the four steps that keep it all alive.
+Think it through, review the draft, and give the go-ahead yourself. Next, the three habits that keep your card base alive.
 
 ## Chapter 9. Four steps: capture, create, review, improve
 
@@ -433,7 +433,7 @@ In the Science study, everyone guessed they would remember about half. Some kept
 
 Improving needs no time of its own. It happens while you review.
 
-This card is not clear. That one needs a link. With an agent, you send the fix right then, and keep going.
+This card is unclear. That one needs a link. Ask your agent to suggest a fix while you keep reviewing. Come back to the suggestion and approve it before the agent edits the card.
 
 Even with a large card base, improving should only take a couple of minutes a day.
 
@@ -479,9 +479,9 @@ Folders ask: where does this go? Links ask: what does this connect to?
 
 A card can link to any card, wherever it lives, and to any page.
 
-The easy way: ask your agent to find the connections.
+Ask your agent to suggest connections in chat and explain why the cards belong together.
 
-Keep it handmade: the agent shows you each one in the chat, and you read it and approve it.
+Read each suggestion. If the connection makes sense to you, tell the agent to add that link.
 
 Beside each link go a few words on why the two connect. The reason is worth as much as the link.
 
@@ -522,15 +522,15 @@ That is not a chore. Each fix makes you think about the idea again, and that is 
 
 A card you keep missing is a sign to look at it. Often it is unclear, or it asks too much at once.
 
-To fix a card, tell your agent what to change, and keep reviewing. Each card is a file, so it can.
+If you know exactly what you want changed, tell your agent to make that edit. If you want its help deciding, ask it to show you the proposed wording first.
 
 Or do it yourself: click Edit card, or press E in the Inbox. Press Escape when you are done.
 
 Some agent tools can run by themselves at set times: a scheduled agent.
 
-It can read your card base, and propose fixes, or new links.
+Set it up to read your card base and leave you a list of suggested fixes and links.
 
-But you approve each change by hand. An agent never changes your card base on its own.
+Make this a rule for yourself. An agent should never make changes to your card base on its own. Tell it to wait, then read each suggestion and decide what it can change.
 
 Some cards no longer earn their place. Pruning is part of it.
 

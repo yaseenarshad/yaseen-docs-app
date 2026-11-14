@@ -15,7 +15,7 @@ import { AgentStepPanel, type AgentStepEvent, type AgentStepPart } from '../Agen
 import { NO_CARDS_YET } from '../prompt'
 import { EXAMPLE_CARDS } from '../courseCards'
 import { CARD_SKILL_MENU } from '../../sidebar/menuSections'
-import { AppWindow, CardView, cardSkillMenuItems, Layer, MenuPreview, MiniCard, Pointer, SidebarPreview, Stage, Tally, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat, type Beat, AgentTerminal, type TermLine, Head, QuoteCard, Habits } from './kit'
+import { AppWindow, CardView, cardSkillMenuItems, Layer, MenuPreview, MiniCard, Pointer, SidebarPreview, Stage, Tally, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat, type Beat, AgentTerminal, type TermLine, Head, QuoteCard, HabitGlyph } from './kit'
 import { QUOTES } from './papers'
 import { sampleId } from './cards'
 import type { ChapterScenes } from './registry'
@@ -342,7 +342,7 @@ function RightWay(props: SceneProps) {
   const read = cue(b, 2, 0.819)
   const station = (p: number): CSSProperties => rise(b, p, 12)
   return (
-    <Stage beat={b} label="The right way: bring ideas you have chewed on; your agent drafts the cards in the chat; you read each one there">
+    <Stage beat={b} label="Bring ideas you have thought through, review the drafts in chat, and choose which ones to save">
       <Layer>
         <div className="ai-flow">
           <div className="ai-flow__station" style={station(since(b, bring, 0.6))}>
@@ -373,7 +373,7 @@ function RightWay(props: SceneProps) {
                 </span>
               ))}
             </span>
-            <Words size="page">Read by you, there</Words>
+            <Words size="page">Approved by you</Words>
           </div>
         </div>
       </Layer>
@@ -405,7 +405,7 @@ function partsOf(id: string, copied: boolean): readonly AgentStepPart[] {
 /** The example's first card (`EXAMPLE_CARDS`): what the agent drafts in the chat. */
 const BREAD = EXAMPLE_CARDS[0].title
 /** What chewing is in the AI step (c8-15). */
-const CHEWING = ['Read the drafts', 'Think about them', 'Say yes'] as const
+const CHECK_SAVED = ['Open a saved card', 'Compare it with the draft you approved'] as const
 
 const STEP_KICKER: Readonly<Record<string, string>> = {
   'c8-11': 'Step 1 · Something you have chewed on',
@@ -413,7 +413,7 @@ const STEP_KICKER: Readonly<Record<string, string>> = {
   'c8-13': 'Step 3 · Read the drafts in the chat',
   'c8-20': 'Step 3 · Only what you approve is saved',
   'c8-14': 'Step 3 · Waiting for your agent',
-  'c8-15': 'Step 4 · That is chewing',
+  'c8-15': 'Step 4 · Check the saved cards',
   'c8-16': 'No agent?',
 }
 
@@ -451,10 +451,10 @@ function AgentStep(props: SceneProps) {
                 Reads the card skill
               </span>
               <span className="kit-chip" style={pop(b, since(b, 0.675, 0.5))}>
-                3 cards
+                3 drafts
               </span>
               <span className="kit-chip" style={pop(b, since(b, cue(b, 2, 0.818), 0.5))}>
-                Drafts in the chat
+                Wait for your approval
               </span>
             </div>
           )}
@@ -466,9 +466,9 @@ function AgentStep(props: SceneProps) {
               lines={[
                 { text: 'Paste the prompt here', p: since(b, cue(b, 0, 0.149) - 0.05, 0.8), kind: 'in' },
                 { text: `Draft 1 · ${BREAD}: “Bread rises because yeast eats the sugars…”`, p: since(b, cue(b, 1, 0.401), 0.6), kind: 'out' },
-                { text: 'Make the clue a little shorter.', p: since(b, 0.66, 0.6), kind: 'in' },
-                { text: 'Draft 1, changed. Save it?', p: since(b, 0.76, 0.5), kind: 'out' },
-                { text: 'Yes, save it', p: since(b, cue(b, 2, 0.841), 0.5), kind: 'in' },
+                { text: 'Make the clue a little shorter.', p: since(b, 0.34, 0.6), kind: 'in' },
+                { text: 'Draft 1, changed. Save it?', p: since(b, 0.45, 0.5), kind: 'out' },
+                { text: 'Save this version of card 1. Skip the other drafts for now.', p: since(b, cue(b, 2, 0.841), 0.5), kind: 'in' },
               ]}
             />
           )}
@@ -512,14 +512,14 @@ function AgentStep(props: SceneProps) {
                 Handmade
               </Words>
               <div className="kit-tags">
-                {CHEWING.map((part, k) => (
+                {CHECK_SAVED.map((part, k) => (
                   <span key={part} className="kit-chip" style={pop(b, since(b, [cue(b, 1, 0.279), 0.45, cue(b, 2, 0.657)][k], 0.4))}>
                     ✓ {part}
                   </span>
                 ))}
               </div>
               <Words size="title" tone="accent" style={rise(b, since(b, cue(b, 3, 0.86), 0.5))}>
-                That is chewing.
+                Keep the version you approved.
               </Words>
             </>
           )}
@@ -617,10 +617,10 @@ function RightClick(props: SceneProps) {
 /** c8-19: the loop (you chew, the agent drafts, you decide); then the four steps: capture, create, review, improve. */
 function Loop(props: SceneProps) {
   const b = useBeat(props)
-  const decide = cue(b, 0, 0.128)
-  const drafts = cue(b, 1, 0.405)
+  const decide = cue(b, 1, 0.30)
+  const drafts = cue(b, 0, 0.14)
   const habits = cue(b, 2, 0.681)
-  const out = since(b, 0.53, 0.6)
+  const out = since(b, habits, 0.6)
   const turn = b.reduced ? 0 : b.t * 24
   const node = (label: string, angle: number, p: number, small = false) => {
     const a = (angle * Math.PI) / 180
@@ -631,19 +631,26 @@ function Loop(props: SceneProps) {
     )
   }
   return (
-    <Stage beat={b} label="You chew and decide; your agent only drafts. Next: four steps, capture, create, review, improve">
+    <Stage beat={b} label="Think it through, review the draft, and give the go-ahead yourself">
       <Layer style={{ opacity: 1 - out }}>
         <div className="ai-loop">
           <svg viewBox="-60 -60 120 120" aria-hidden="true">
             <circle className="ai-loop__ring" r={34} strokeDasharray="6 5" transform={`rotate(${turn.toFixed(1)})`} />
           </svg>
-          {node('You chew', -90, since(b, 0.02, 0.5))}
-          {node('Your agent drafts', 30, since(b, drafts - 0.12, 0.5), true)}
-          {node('You decide', 150, since(b, decide, 0.5))}
+          {node('Think it through', -90, since(b, 0.02, 0.5))}
+          {node('Review the draft', 30, since(b, drafts, 0.5), true)}
+          {node('Give the go-ahead', 150, since(b, decide, 0.5))}
         </div>
       </Layer>
       <Layer style={{ opacity: out }}>
-        <Habits beat={b} show={[0, 1, 2, 3].map((k) => since(b, habits + k * 0.04, 0.5))} />
+        <div className="kit-habits kit-habits--large">
+          {([{ icon: 'create', label: 'Make' }, { icon: 'review', label: 'Review' }, { icon: 'prune', label: 'Tend' }] as const).map(({ icon, label }, i) => (
+            <div key={icon} className="kit-habit" style={pop(b, since(b, habits + i * 0.04, 0.5), 0.7)}>
+              <span className="kit-habit__badge"><HabitGlyph habit={icon} /></span>
+              <span className="kit-habit__label">{label}</span>
+            </div>
+          ))}
+        </div>
       </Layer>
     </Stage>
   )

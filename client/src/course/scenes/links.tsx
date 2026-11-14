@@ -738,15 +738,15 @@ function AgentLinks(props: SceneProps) {
   const b = useBeat(props)
   const id = props.clip.id
   const ask = id === 'c10-26' ? between(b, cue(b, 0, 0.34) - 0.05, cue(b, 1, 0.57) + 0.2) : 1
-  const found = id === 'c10-26' ? since(b, 0.85, 0.5) : 1
-  const shows = id === 'c10-27' ? since(b, cue(b, 1, 0.3) - 0.04, 0.5) : id === 'c10-24' ? 1 : 0
+  const found = id === 'c10-26' ? since(b, 0.52, 0.5) : 1
+  const shows = id === 'c10-26' ? since(b, 0.60, 0.6) : id === 'c10-27' ? since(b, cue(b, 1, 0.3) - 0.04, 0.5) : id === 'c10-24' ? 1 : 0
   const read = id === 'c10-27' ? since(b, cue(b, 2, 0.71) - 0.03, 1) : id === 'c10-24' ? 1 : 0
   const yes = id === 'c10-27' ? since(b, cue(b, 3, 0.82), 0.4) : id === 'c10-24' ? 1 : 0
   const handmade = id === 'c10-27' ? since(b, cue(b, 0, 0.07), 0.5) : 0
   const card = id === 'c10-24' ? since(b, 0, 0.6) : 0
   const reason = id === 'c10-24' ? since(b, cue(b, 2, 0.64), 0.5) : 0
   return (
-    <Stage beat={b} label={id === 'c10-26' ? 'Ask your agent to find the connections' : id === 'c10-27' ? 'Handmade: the agent shows each link in the chat; you read it and approve it' : 'Beside each link, a few words on why the two connect'}>
+    <Stage beat={b} label={id === 'c10-26' ? 'Ask your agent to suggest connections and explain each one in chat' : id === 'c10-27' ? 'Handmade: the agent shows each link in the chat; you read it and approve it' : 'Beside each link, a few words on why the two connect'}>
       <Layer style={{ opacity: 1 - card }}>
         <AgentChat
           beat={b}

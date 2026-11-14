@@ -374,7 +374,7 @@ function Consolidation(props: SceneProps) {
 function Cells(props: SceneProps) {
   const b = useBeat(props)
   const nobel = props.clip.id === 'c1-19'
-  const hard = nobel ? 0 : showFor(since(b, 0, 0.5), since(b, 0.2, 0.4))
+  const proven = nobel ? 0 : showFor(since(b, 0, 0.5), since(b, 0.2, 0.4))
   const draw = nobel ? 1 : since(b, 0.22, 0.9)
   const pulseAt = [cue(b, 1, 0.515), cue(b, 2, 0.633) - 0.01, cue(b, 3, 0.73) - 0.01]
   const pulses = nobel ? [] : pulseAt.map((at) => since(b, at, 0.55))
@@ -385,8 +385,8 @@ function Cells(props: SceneProps) {
   return (
     <Stage beat={b} label={nobel ? 'A Nobel Prize for how brain cells store a memory, 2000' : 'Two brain cells: each spaced pulse switches on the genes for long-term memory'}>
       <Layer>
-        <Words size="display" style={rise(b, hard)}>
-          Hard science.
+        <Words size="display" style={rise(b, proven)}>
+          Proven science.
         </Words>
       </Layer>
       <Layer

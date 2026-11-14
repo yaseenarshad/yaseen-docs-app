@@ -476,7 +476,7 @@ function ImproveWhileReviewing(props: SceneProps) {
   const goOn = id === 'c9-07' ? since(b, cue(b, 4, 0.85), 0.5) : 0
   const card = second ? PROTEIN_BRANCH : SLEEP_DEBT
   return (
-    <Stage beat={b} label={first ? 'Improving needs no time of its own: it happens while you review' : 'Not clear, needs a link: send the fix to your agent, and keep going'}>
+    <Stage beat={b} label={first ? 'Improving needs no time of its own: it happens while you review' : 'Ask for a suggestion while you review, then approve it before the agent edits the card'}>
       <Layer place="top" style={{ opacity: steps }}>
         <Habits beat={b} show={[1, 1, 1, 1]} lit={[0, 0, since(b, 0.05, 0.5), since(b, 0.05, 0.5)]} size="small" />
       </Layer>
@@ -507,8 +507,9 @@ function ImproveWhileReviewing(props: SceneProps) {
             <AgentChat
               beat={b}
               lines={[
-                { who: 'you', text: 'The Protein card needs a link to How muscle grows. And make the Sleep debt clue clearer.', p: between(b, cue(b, 2, 0.55), cue(b, 3, 0.69)) },
-                { who: 'agent', text: 'On it. I will show you each change before it lands.', p: sent },
+                { who: 'you', text: 'Suggest a link from Protein and a clearer clue for Sleep debt. Show me the changes first.', p: between(b, cue(b, 2, 0.55), cue(b, 3, 0.69)) },
+                { who: 'agent', text: 'Here’s a clearer clue for Sleep debt. Apply this wording?', p: sent },
+                { who: 'you', text: 'Yes, use that wording on the Sleep debt card.', p: goOn },
               ]}
             />
           </div>

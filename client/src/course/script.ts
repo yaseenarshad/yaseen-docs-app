@@ -60,7 +60,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c1-05', text: 'Each review, near the point where you would forget, pushes the memory further into long-term memory.', marks: [0.161, 0.475, 0.704, 0.759] },
       // Two brain cells and the link between them; with each spaced pulse, a switch inside the cell turns on and the link grows stronger.
       // SOURCE: Naqib, Sossin & Farah 2012, "Molecular Determinants of the Spacing Effect", Neural Plasticity (CREB-dependent gene expression after spaced training, in Aplysia, Drosophila and rodents).
-      { id: 'c1-18', text: 'This is hard science. Researchers have watched it in brain cells: spaced practice switches on the genes that build long-term memory.', marks: [0.22, 0.515, 0.633, 0.73] },
+      { id: 'c1-18', text: "This is proven science. Researchers have watched it in brain cells: spaced practice switches on the genes that build long-term memory.", marks: [0.231, 0.519, 0.643, 0.725] },
       // A Nobel medal; "2000".
       // SOURCE: The Nobel Prize in Physiology or Medicine 2000 (Eric Kandel, with Carlsson and Greengard): how nerve cells change to store memory.
       { id: 'c1-19', text: 'The work that first showed how brain cells store a memory won a Nobel Prize.', marks: [0.641] },
@@ -347,7 +347,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c5-12', text: "This is why we call this card memory system “The Gym for the Mind.”", marks: [0.595] },
       { id: 'c5-22', text: "Think about why people go to the gym. A machine can lift more weight than you can. So why do you still go to the gym to lift weights? Because you’re there to get stronger.", marks: [0.262, 0.9] },
       { id: 'c5-23', text: "Cards give your mind that kind of practice. Yes, AI makes information easy to find. But humans still need to choose what’s worth remembering. Each time you try to recall an idea or make a card clearer, you get better at using what you know.", marks: [0.228, 0.48, 0.684] },
-      { id: 'c5-24', text: "That’s why we keep the cards handmade. Let AI suggest ideas, draft a card, format it, or write the file. Read every draft, think it through, and approve what goes into your card base.", marks: [0.356, 0.81] },
+      { id: 'c5-24', text: "That’s why we keep the cards handmade. Let AI suggest ideas, draft a card, or format it. Read the draft and think it through before you ask the agent to write the file. It takes discipline to do that every time, especially when the agent can make a whole batch in seconds. That pause is part of how you learn.", marks: [0.13, 0.51] },
       { id: 'c5-25', text: "Over time, that practice turns what you learn into knowledge you can use.", marks: [0.632] },
       { id: 'c5-26', text: "Next, we’ll look at which ideas are worth turning into cards and how to make them your own.", marks: [0.56, 0.784] },
     ],
@@ -488,19 +488,19 @@ export const COURSE: CourseChapter[] = [
       // SOURCE: Ryan Holiday, YouTube video UBdlprawTkA, on taking notes by hand: "The inefficiency is the efficiency." (rename-note-to-page: keep)
       { id: 'c8-09', text: 'Ryan Holiday puts it this way: "The inefficiency is the efficiency." The thinking is where you learn.', marks: [0.32, 0.691] },
       // Chewed ideas go to the agent; it drafts the cards in the chat; the person reads each one there.
-      { id: 'c8-10', text: 'The right way: bring ideas you have chewed on. Your agent drafts the cards in the chat, and you read each one there.', marks: [0.178, 0.528, 0.806] },
+      { id: 'c8-10', text: "Start with ideas you’ve already thought through. Ask your agent to draft the cards in chat. Read each one and tell it which ones it can save.", marks: [0.08, 0.44, 0.63] },
       // A text box with "Use the example" under it. WAITS: the person pastes text or picks the example.
       { id: 'c8-11', text: "Let's try it. Paste something you have chewed on, or use the example.", marks: [0.274, 0.499, 0.773] },
       // The prompt with a Copy button; its lines light up: the skill, three cards, Course Cards. WAITS: the person clicks Copy.
-      { id: 'c8-12', text: 'Copy the prompt. It tells your agent to read the card skill, then draft three cards in the chat.', marks: [0.07, 0.452, 0.725] },
+      { id: 'c8-12', text: "Copy the prompt. It asks your agent to read the card skill and show you three drafts in chat.", marks: [0.07, 0.46, 0.7] },
       // The agent's chat: the paste, a draft, the person's yes. WAITS: the agent writes a card file in Course Cards.
-      { id: 'c8-13', text: 'Paste it into your agent. Read each draft in the chat. Ask for a change, or say yes.', marks: [0.149, 0.401, 0.841] },
+      { id: 'c8-13', text: "Paste it into your agent. Read the drafts, ask for changes if needed, and say which cards to save. Those are the cards that should appear here.", marks: [0.04, 0.22, 0.55] },
       // The agent saves only the approved drafts; each new card appears in the list as its file is written.
       { id: 'c8-20', text: 'Only the cards you approve are saved. They show up here as your agent saves them.', marks: [0.221, 0.392, 0.726] },
       // The quiet line "No new cards yet. Did you check with your agent?"
       { id: 'c8-14', text: 'If nothing shows up after a minute, check with your agent.', marks: [0.428, 0.571] },
       // The word "Handmade"; Read, Think, Yes tick in turn; then "That is chewing". Nothing grades the agent's cards.
-      { id: 'c8-15', text: 'That is the handmade part. Reading the drafts, thinking about them, saying yes: that is chewing.', marks: [0.08, 0.279, 0.657, 0.86] },
+      { id: 'c8-15', text: "Now check the cards that appeared. Make sure they match the drafts you approved.", marks: [0.06, 0.29, 0.59, 0.76] },
       // Skip, then three ready example cards with "Make these cards".
       { id: 'c8-16', text: 'No agent? Skip this step. The course shows three example cards, and makes them only if you say so.', marks: [0.161, 0.472, 0.708] },
       // A person reads a card, rewrites a line, and deletes another card.
@@ -508,7 +508,7 @@ export const COURSE: CourseChapter[] = [
       // The card skill's right-click menu: "Copy prompt for your agent".
       { id: 'c8-18', text: 'To copy the prompt later, right-click the card skill, and choose Copy prompt for your agent.', marks: [0.272, 0.617] },
       // The loop: you chew, the agent drafts, you decide; then the four step icons: Capture, Create, Review, Improve.
-      { id: 'c8-19', text: 'You chew and decide; your agent only drafts. Next: the four steps that keep it all alive.', marks: [0.128, 0.405, 0.681] },
+      { id: 'c8-19', text: "Think it through, review the draft, and give the go-ahead yourself. Next, the three habits that keep your card base alive.", marks: [0.14, 0.3, 0.65] },
     ],
   },
   {
@@ -542,7 +542,7 @@ export const COURSE: CourseChapter[] = [
       // The Improve icon lights up, inside the Inbox: a card with a small fix.
       { id: 'c9-06', text: 'Improving needs no time of its own. It happens while you review.', marks: [0.539] },
       // Thought bubbles over a card, "Not clear", "Needs a link"; a short message goes to the agent; the review goes on.
-      { id: 'c9-07', text: 'This card is not clear. That one needs a link. With an agent, you send the fix right then, and keep going.', marks: [0.15, 0.39, 0.55, 0.69, 0.85] },
+      { id: 'c9-07', text: "This card is unclear. That one needs a link. Ask your agent to suggest a fix while you keep reviewing. Come back to the suggestion and approve it before the agent edits the card.", marks: [0.16, 0.23, 0.33, 0.65, 0.77] },
       // A clock face: a short arc for improving.
       { id: 'c9-08', text: 'Even with a large card base, improving should only take a couple of minutes a day.', marks: [0.147, 0.367, 0.645] },
       // The four icons with their times; then two cards with a line between them.
@@ -595,9 +595,9 @@ export const COURSE: CourseChapter[] = [
       // APP: docs/CONTRACTS.md "Links to a card" (YAZ-5030); client/src/links/completion.ts (`cardLinkCandidates`: cards in files and in pages, after the pages).
       { id: 'c10-14', text: 'A card can link to any card, wherever it lives, and to any page.', marks: [0.23, 0.4, 0.72] },
       // The agent's window: "These two cards connect: Protein and How muscle grows. Add the link?"
-      { id: 'c10-26', text: 'The easy way: ask your agent to find the connections.', marks: [0.34, 0.57] },
+      { id: 'c10-26', text: "Ask your agent to suggest connections in chat and explain why the cards belong together.", marks: [0.19, 0.42] },
       // The agent shows the link and its reason in the chat; the person reads it and says yes; only then does the card change. The word "Handmade".
-      { id: 'c10-27', text: 'Keep it handmade: the agent shows you each one in the chat, and you read it and approve it.', marks: [0.07, 0.3, 0.71, 0.82] },
+      { id: 'c10-27', text: "Read each suggestion. If the connection makes sense to you, tell the agent to add that link.", marks: [0.03, 0.12, 0.36, 0.62] },
       // After the pill, a few grey words: "muscle is built from protein". The pill and its reason sit on one line.
       { id: 'c10-24', text: 'Beside each link go a few words on why the two connect. The reason is worth as much as the link.', marks: [0.11, 0.34, 0.64] },
       // Edit card on the protein card; the caret at the end of a line; "[[" and "mus" are typed; the list opens.
@@ -646,15 +646,15 @@ export const COURSE: CourseChapter[] = [
       // A card that keeps turning red; a magnifying glass over its wording.
       { id: 'c11-04', text: 'A card you keep missing is a sign to look at it. Often it is unclear, or it asks too much at once.', marks: [0.13, 0.31, 0.55, 0.71] },
       // A short message to the agent: "Make this card's clue clearer"; the card file changes.
-      { id: 'c11-06', text: 'To fix a card, tell your agent what to change, and keep reviewing. Each card is a file, so it can.', marks: [0.16, 0.42, 0.65] },
+      { id: 'c11-06', text: "If you know exactly what you want changed, tell your agent to make that edit. If you want its help deciding, ask it to show you the proposed wording first.", marks: [0.25, 0.69, 0.88] },
       // Edit card on a card; then E in the Inbox.
       { id: 'c11-05', text: 'Or do it yourself: click Edit card, or press E in the Inbox. Press Escape when you are done.', marks: [0.3, 0.53, 0.79] },
       // A clock; an agent's window wakes on its own each morning and reads the card base. Not the app: the person's own agent tool.
       { id: 'c11-15', text: 'Some agent tools can run by themselves at set times: a scheduled agent.', marks: [0.25, 0.48, 0.72] },
       // The agent writes a short list: "Make this clue clearer", "Link Protein to How muscle grows". Nothing in the card base changes.
-      { id: 'c11-16', text: 'It can read your card base, and propose fixes, or new links.', marks: [0.2, 0.42, 0.73] },
+      { id: 'c11-16', text: "Set it up to read your card base and leave you a list of suggested fixes and links.", marks: [0.17, 0.49, 0.77] },
       // The person reads the list, approves one change, and skips another. Only the approved one lands.
-      { id: 'c11-17', text: 'But you approve each change by hand. An agent never changes your card base on its own.', marks: [0.09, 0.3, 0.48] },
+      { id: 'c11-17', text: "Make this a rule for yourself. An agent should never make changes to your card base on its own. Tell it to wait, then read each suggestion and decide what it can change.", marks: [0.77, 0.84, 0.92] },
       // A branch is cut; the plant looks better for it.
       { id: 'c11-07', text: 'Some cards no longer earn their place. Pruning is part of it.', marks: [0.62] },
       // The card's ⋯ menu, "Archive card"; the card turns muted.

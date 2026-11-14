@@ -744,9 +744,9 @@ function CardBase(props: SceneProps) {
 /** A draft becomes a card after the learner checks and approves it. */
 function Yours(props: SceneProps) {
   const b = useBeat(props)
-  const draft = since(b, cue(b, 0, 0.356) - 0.13, 0.6)
-  const read = since(b, 0.59, 0.6)
-  const approve = since(b, cue(b, 1, 0.81), 0.6)
+  const draft = since(b, cue(b, 0, 0.13), 0.6)
+  const read = since(b, 0.34, 0.6)
+  const approve = since(b, cue(b, 1, 0.51), 0.6)
   return (
     <Stage beat={b} label={props.clip.text}>
       <Layer>
@@ -763,6 +763,7 @@ function Yours(props: SceneProps) {
             </div>
           </div>
           <Words size="label" tone="accent" style={rise(b, approve)}>✓ Approved for your card base</Words>
+          <Words size="page" style={rise(b, since(b, 0.59, 0.6))}>Pause and think through every draft</Words>
         </div>
       </Layer>
     </Stage>

@@ -171,7 +171,7 @@ function FixIt(props: SceneProps) {
   const layer = inbox && b.progress >= eKey + 0.03 && b.progress < back
   const editing = !agent && ((!inbox && b.progress >= click + 0.04) || (layer && b.progress < esc))
   return (
-    <Stage beat={b} label={agent ? 'Tell your agent what to change, and keep reviewing: each card is a file' : 'Or do it yourself: Edit card, or E in the Inbox; Escape when you are done'}>
+    <Stage beat={b} label={agent ? 'Ask to see the proposed wording before approving the card edit' : 'Or do it yourself: Edit card, or E in the Inbox; Escape when you are done'}>
       {agent ? (
         <Layer>
           <div className="kit-row">
@@ -182,7 +182,7 @@ function FixIt(props: SceneProps) {
               </Fit>
             </div>
             <div className="later-stack later-fix__chat">
-              <AgentChat beat={b} lines={[{ who: 'you', text: 'Make the Sleep card clearer: one idea, one hidden word.', p: between(b, tell, tell + 0.2) }, { who: 'agent', text: 'Done. Here is the change.', p: since(b, file - 0.04, 0.5) }]} style={{ width: '100%' }} />
+              <AgentChat beat={b} lines={[{ who: 'you', text: 'Suggest a clearer clue for the Sleep card.', p: between(b, tell, tell + 0.2) }, { who: 'agent', text: 'Try one hidden phrase: Each hour of sleep you miss adds to your sleep debt.', p: since(b, keep, 0.5) }, { who: 'you', text: 'Use that wording.', p: since(b, file, 0.5) }]} style={{ width: '100%' }} />
               <div className="later-file" style={rise(b, since(b, file, 0.6), 10)}>
                 <p className="later-file__name">sleep.md</p>
                 <p className="later-file__del" style={{ opacity: 1 - edited * 0.4 }}>
@@ -244,9 +244,9 @@ function Scheduled(props: SceneProps) {
   const reads = id === 'c11-16' ? since(b, cue(b, 0, 0.2), 1.4) : id === 'c11-17' ? 1 : 0
   const fixes = id === 'c11-16' ? since(b, cue(b, 1, 0.42), 0.6) : id === 'c11-17' ? 1 : 0
   const newLinks = id === 'c11-16' ? since(b, cue(b, 2, 0.73), 0.6) : id === 'c11-17' ? 1 : 0
-  const approve = id === 'c11-17' ? since(b, cue(b, 0, 0.09), 0.4) : 0
-  const skip = id === 'c11-17' ? since(b, cue(b, 1, 0.3), 0.4) : 0
-  const lands = id === 'c11-17' ? since(b, cue(b, 2, 0.48), 0.7) : 0
+  const approve = id === 'c11-17' ? since(b, cue(b, 0, 0.77), 0.4) : 0
+  const skip = id === 'c11-17' ? since(b, cue(b, 1, 0.84), 0.4) : 0
+  const lands = id === 'c11-17' ? since(b, cue(b, 2, 0.92), 0.7) : 0
   return (
     <Stage beat={b} label={id === 'c11-15' ? 'A scheduled agent runs by itself at set times' : id === 'c11-16' ? 'It reads your card base and proposes fixes, or new links' : 'You approve each change by hand; only approved ones land'}>
       <Layer place="top">
@@ -284,7 +284,7 @@ function Scheduled(props: SceneProps) {
                   </span>
                 ))}
               </div>
-              <p className="later-base__note">{id === 'c11-17' && lands > 0.5 ? 'Only what you approved changed.' : 'Nothing changes on its own.'}</p>
+              <p className="later-base__note">{id === 'c11-17' && lands > 0.5 ? 'Only what you approved changed.' : 'Ask your agent to wait for approval.'}</p>
             </div>
           )}
         </div>
