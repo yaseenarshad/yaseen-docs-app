@@ -165,6 +165,15 @@ describe('every combination', () => {
     }
   })
 
+  it('YAZ-5216: the short form for a narrow top bar is 20 characters at most and keeps each fact', () => {
+    for (const { d } of all) {
+      expect(d.short.length).toBeLessThanOrEqual(20)
+      if (d.reason === 'waiting-offline') expect(d.short).toMatch(/^\d+ waiting · offline$/)
+      if (d.reason === 'lost') expect(d.short).toMatch(/^\d+ answers? not saved$/)
+      if (d.words.length <= 20) expect(d.short).toBe(d.words)
+    }
+  })
+
   it('the five colours of decision 12 and nothing more', () => {
     expect(new Set(all.map(({ d }) => d.state))).toEqual(new Set(['synced', 'pending', 'syncing', 'off', 'attention']))
   })

@@ -40,6 +40,8 @@ export interface Dot {
   state: PhoneSyncState
   /** The few words next to the dot. VoiceOver reads them too. */
   words: string
+  /** The same facts in 20 characters at most, for a top bar under 380 px (iPhone SE). Equal to `words` when they are short. */
+  short: string
   reason: DotReason
 }
 
@@ -70,7 +72,19 @@ const RED: Record<string, { reason: DotReason; words: string }> = {
  * 8. grey "Not synced yet": no vault is open in the engine.
  * 9. green "Synced".
  */
-export function syncDot({ sync, answers, online, token }: DotInput): Dot {
+export function syncDot(input: DotInput): Dot {
+  const dot = dotWords(input)
+  return { ...dot, short: shortWords(dot, input) }
+}
+
+/** YAZ-5216: the short form keeps each fact of the words; only the long words of two states change. */
+function shortWords(dot: Omit<Dot, 'short'>, { answers }: DotInput): string {
+  if (dot.reason === 'waiting-offline') return `${answers.waiting} waiting · offline`
+  if (dot.reason === 'lost') return `${plural(answers.lost, 'answer', 'answers')} not saved`
+  return dot.words
+}
+
+function dotWords({ sync, answers, online, token }: DotInput): Omit<Dot, 'short'> {
   const red =
     token.kind === 'ended'
       ? RED.UNAUTHORIZED
@@ -150,6 +164,14 @@ export function lastSyncWords(at: number | null, now: number): string {
   if (ago < HOUR) return `Last synced ${Math.floor(ago / MIN)} min ago`
   if (ago < DAY) return `Last synced ${Math.floor(ago / HOUR)}h ago`
   return `Last synced ${plural(Math.floor(ago / DAY), 'day', 'days')} ago`
+}
+
+/** YAZ-5214: when the answer list tries again. "Next try in about 4 minutes, at 2:32 PM." */
+export function nextTryWords(retryAt: number, now: number): string {
+  const minutes = Math.ceil((retryAt - now) / MIN)
+  if (minutes <= 1) return `Next try in less than a minute, at ${clockTime(retryAt)}.`
+  if (minutes < 120) return `Next try in about ${minutes} minutes, at ${clockTime(retryAt)}.`
+  return `Next try at ${clockTime(retryAt)}.`
 }
 
 /** `14:05` or `2:05 PM`, as the phone's own setting says. */
