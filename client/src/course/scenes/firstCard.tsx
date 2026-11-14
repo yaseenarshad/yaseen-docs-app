@@ -734,15 +734,15 @@ function InTheApp(props: SceneProps) {
   if (id === 'c2-15')
     pointer = {
       from: [70, 70],
-      to: [14, 18],
+      to: [14, 19],
       move: between(b, 0, 0.11),
       click: since(b, 0.11, 0.4),
       show: 1 - since(b, 0.5, 0.3),
     }
   if (id === 'c2-15' && b.progress >= 0.3)
     pointer = {
-      from: [14, 18],
-      to: [26, 33],
+      from: [14, 19],
+      to: [24, 36],
       move: between(b, 0.3, 0.37),
       click: since(b, 0.39, 0.4),
       show: 1 - since(b, 0.5, 0.3),
@@ -809,16 +809,20 @@ function InTheApp(props: SceneProps) {
           sidebar={<SidebarPreview rows={rows} inbox={4} />}
           label={unit('The app, with made-up pages')}
           over={
-            <MenuPreview
-              beat={b}
-              x={16}
-              y={30}
-              p={menu}
-              items={NEW_MENU.map((label) => ({
-                label,
-                active: label === 'New card' ? since(b, 0.34, 0.2) : 0,
-              }))}
-            />
+            // c2-15 happens on the sidebar: the pointer and the folder's menu are placed in % of the whole window.
+            <>
+              <MenuPreview
+                beat={b}
+                x={17}
+                y={27}
+                p={menu}
+                items={NEW_MENU.map((label) => ({
+                  label,
+                  active: label === 'New card' ? since(b, 0.34, 0.2) : 0,
+                }))}
+              />
+              {id === 'c2-15' && <Pointer beat={b} from={pointer.from} to={pointer.to} move={pointer.move} click={pointer.click} show={pointer.show} />}
+            </>
           }
         >
           <div className="kit-app__tabbar">{created && <span className="kit-app__tabname">{tabTitle}</span>}</div>
@@ -919,7 +923,7 @@ function InTheApp(props: SceneProps) {
             p={cardMenu}
             items={cardMenuItems('file', { 'Title on the front': since(b, 0.6, 0.2) }, titleHidden ? 'Hide' : 'Show', unit)}
           />
-          <Pointer beat={b} from={pointer.from} to={pointer.to} move={pointer.move} click={pointer.click} show={pointer.show} />
+          {id !== 'c2-15' && <Pointer beat={b} from={pointer.from} to={pointer.to} move={pointer.move} click={pointer.click} show={pointer.show} />}
         </AppWindow>
         <Keys p={keys} items={id === 'c2-17' ? [{ keys: editKey('new side'), label: 'new side' }] : [{ keys: editKey('hide word'), label: 'hide word' }]} />
       </Layer>

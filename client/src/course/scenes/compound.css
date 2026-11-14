@@ -63,7 +63,7 @@
   font-size: clamp(var(--kit-min-text), 2.2cqmin, 13px);
 }
 .kit-five .kit-mini {
-  width: 7.5em;
+  width: 10em;
 }
 .kit-five__year {
   display: flex;

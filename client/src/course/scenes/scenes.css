@@ -223,13 +223,15 @@
   font-size: clamp(var(--kit-min-text), 1.9cqmin, 13px);
 }
 .kit-cardview--small .card-inbox__above {
+  font-size: var(--kit-min-text);
+}
+/* A card's head wraps rather than draw its title, its ID and "Side 2 of 2" on top of each other. */
+.kit-cardview .card-inbox__above {
   flex-wrap: wrap;
   row-gap: 2px;
   height: auto;
-  font-size: var(--kit-min-text);
 }
-/* A small card's head wraps rather than draw its title and "Side 2 of 2" on top of each other. */
-.kit-cardview--small .card-inbox__head {
+.kit-cardview .card-inbox__head {
   max-width: 100%;
   overflow: hidden;
 }
@@ -288,6 +290,12 @@
 /* Chapter 2's walk through the app */
 .kit-editcard {
   font-size: 14px;
+}
+/* Edit card's head wraps at a narrow stage rather than run past the card. */
+.kit-editcard > .card__head {
+  flex-wrap: wrap;
+  row-gap: 2px;
+  height: auto;
 }
 .kit-editcard__title--empty {
   color: var(--fg-muted);
