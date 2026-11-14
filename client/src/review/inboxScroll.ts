@@ -70,8 +70,27 @@ export type SpaceTarget = number | 'side' | 'end'
  * - The end: the card's end — the Reviews strip under it (YAZ-5105), else the card's bottom edge — comes in by ⌘F's
  *   rule. In view, the Space rings the buttons (round 3).
  * A view with no room laid out never moves.
+ *
+ * ONLY A MOVE THE VIEW CAN MAKE (fix, "my spacebar on inbox is no longer working"): the move is cut to how far the
+ * view can still scroll, and a Space with no move left shows. A short card ends right where its buttons start, so its
+ * end is always low in the room, and the view has nothing to scroll: a "side" Space glided nowhere, every time, and
+ * the next side never showed.
  */
 export function spaceMove(view: HTMLElement, target: SpaceTarget): number {
+  return reachable(view, wantedMove(view, target))
+}
+
+/** The move cut to the view's scroll range (screen px); 0 under one px, where nothing would move. */
+function reachable(view: HTMLElement, dy: number): number {
+  if (dy === 0) return 0
+  const zoom = cssZoom(view)
+  const down = Math.max(0, view.scrollHeight - view.clientHeight - view.scrollTop) * zoom
+  const up = -view.scrollTop * zoom
+  const move = Math.min(Math.max(dy, up), down)
+  return Math.abs(move) < 1 ? 0 : move
+}
+
+function wantedMove(view: HTMLElement, target: SpaceTarget): number {
   const room = inboxRoom(view)
   if (room.end - room.start <= 0) return 0
   if (typeof target === 'number') {
