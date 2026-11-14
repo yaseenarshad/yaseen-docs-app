@@ -7,15 +7,17 @@
  *  - A card file's row is the file itself (its path). A card inside a page has its search row's path,
  *    `cardRowPath(page, id)`: no file has it, it keys the row.
  *  - The name is the card's title, off its card line (YAZ-5308); a card with none reads as its ID.
- *  - The page's properties do not apply to a card (YAZ-5349 scopes card properties): a row holds only the two card
- *    fields a cell edits, `card.status` and `card.upNext`, under those keys.
+ *  - The page's properties do not apply to a card: a row holds the card's OWN properties, off its card line (YAZ-5349
+ *    option A, YAZ-5385), and the two card fields a cell edits, `card.status` and `card.upNext`, under those keys. A
+ *    card property is a column as a page's is (`note.level`): it filters, sorts and groups; its cell edit writes the
+ *    card line (`cardLineChange`). No page's own property is a card's column (Yaseen: no pre-made "Page tags").
  *  - The card columns are `card.*` keys, read through the scope's `card` (`cardValues`): `card.status == "Archived"`
  *    filters as a page column does. Review numbers come from `cardSchedule.ts` and are read-only.
  *
  * The setting is on the VIEW (`ViewDef.rows`), so a Board or a Calendar can read it later; this round only the Table
  * does (`cardRowsOf`). It is offered only while the vault has Cards and IDs on; off, a view shows its pages again.
  */
-import { cardsWithIds, type CardRecord } from '@shared/cardLine'
+import { cardsWithIds, withCardNext, withCardOff, withCardProperty, withoutCardProperty, type CardLine, type CardRecord } from '@shared/cardLine'
 import { cardDueAt, cardReviewNumbers } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
@@ -62,6 +64,24 @@ export const cardEditKey = (key: string): 'card.status' | 'card.upNext' | null =
 /** A card column's cell as text where it is not the value as written (YAZ-5319): the success rate in percent, "67%". Else null. */
 export const cardCellText = (key: string, value: Value): string | null => (key === 'card.successRate' && typeof value === 'number' ? `${value}%` : null)
 
+/**
+ * The card line change a card row's writes make (YAZ-5319, YAZ-5385), in one write of its page: Card status writes
+ * `off`, Card up next writes `next`, any other key the card's own property (`withCardProperty`; no value: it goes).
+ * A name the line cannot hold (a card line word) throws, and the cell says why.
+ */
+export const cardLineChange =
+  (writes: readonly { key: string; value: unknown }[]) =>
+  (line: CardLine): CardLine =>
+    writes.reduce(
+      (l, w) =>
+        w.key === 'card.status' ? withCardOff(l, w.value === 'Archived') : w.key === 'card.upNext' ? withCardNext(l, w.value === true) : w.value === undefined ? withoutCardProperty(l, w.key) : withCardProperty(l, w.key, w.value),
+      line,
+    )
+
+/** The card properties of card rows, as `note.` keys in name order: a column each (YAZ-5385). */
+export const cardPropertyKeys = (records: readonly { properties: Record<string, unknown> }[]): string[] =>
+  [...new Set(records.flatMap((r) => Object.keys(r.properties).filter((k) => !isCardKey(k))))].sort().map((k) => `note.${k}`)
+
 /** Whether a view lists cards (`rows: cards`): only a Table, this round. */
 export const cardRowsOf = (view: ViewDef): boolean => view.rows === 'cards' && view.type === 'table'
 
@@ -94,7 +114,7 @@ export function cardRowRecords(pages: readonly IndexRecord[]): IndexRecord[] {
         path: own ? r.path : cardRowPath(r.path, id),
         title: card.title ?? id,
         kind: 'card',
-        properties: { 'card.status': card.off ? 'Archived' : 'Active', 'card.upNext': card.next },
+        properties: { ...card.properties, 'card.status': card.off ? 'Archived' : 'Active', 'card.upNext': card.next },
         aliases: [],
         links: own ? r.links : [],
         embeds: own ? r.embeds : [],
