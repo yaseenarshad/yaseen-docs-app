@@ -3,17 +3,22 @@
  * card drawn read-only (`renderCard`, the page's own function) with its pills and links live, the grey card ID
  * that copies on a click (D20), and the Reviews section with the full table (D3, D13). The table is the page card's
  * too (`cardBlockView.ts`, YAZ-5000); the Inbox has no Reviews section.
+ *
+ * DESKTOP ONLY (YAZ-5161): it reads the desktop bridge (`api`), the app's settings (`storage`) and the Files tree
+ * icons, so the phone's build stops it. What the phone's Review screen shares is in bridge-free files: the drawing
+ * (`renderCard`, `cardLook`), the words (`cardWords.ts`), the answer labels (`cardInboxChip.tsx`), the review hook.
  */
 import { useCallback, useContext, useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { CardReview } from '@shared/cardLine'
-import { answerLabel, cardHistory, cardState, cardStateWithout, dayCount, recallChance } from '@shared/cardSchedule'
+import { answerLabel, cardHistory } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { GestureAction } from '@shared/keys'
 import { api } from '../api'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { InfoTip } from '../components/InfoTip'
 import { cardLook } from '../editor/card/cardLook'
+import { desktopBoardPicture } from '../editor/card/boardPictureDesktop'
 import { copyText } from '../lib/copyText'
 import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from '../editor/card/cardMedia'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard, type CardShow } from '../editor/card/cardRender'
@@ -28,18 +33,11 @@ import { reviewDuration } from './reviewTime'
 import { ReviewsIcon, TrashIcon } from './cardInboxIcons'
 import '../editor/card/card.css'
 import './cardScreens.css'
+import { cardDueWords, cardFacts, cardFullDate, cardNextReview, cardOverdue, cardRemoveOutcome, reviewsTitle, RECALL_HELP, REVIEW_COLUMNS } from './cardWords'
 
-/** A date as the card screens say it: "Nov 21", with the year when it is not this year's. */
-export function cardDate(ms: number, now = Date.now()): string {
-  const date = new Date(ms)
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: date.getFullYear() === new Date(now).getFullYear() ? undefined : 'numeric' })
-}
-
-/**
- * A wait as the screens say it: "later today" for a card in its same-day steps (YAZ-5020: it comes back in this
- * session), "today" for 0, else "9 days".
- */
-export const cardWait = (days: number, inSteps = false): string => (inSteps ? 'later today' : days === 0 ? 'today' : dayCount(days))
+// The words of the card screens moved to `cardWords.ts` (YAZ-5161), so the phone's Review screen reads them with no
+// bridge; their names stay here too.
+export { type CardFactsData, REVIEW_COLUMNS, RECALL_HELP, cardDate, cardDueWords, cardFacts, cardFullDate, cardNextReview, cardOverdue, cardRemoveOutcome, cardWait, reviewsTitle } from './cardWords'
 
 /** The card ID in a head (D20): small and grey, FIRST in the head; a click copies it. The page's card block has the same (`cardBlockView.ts`). */
 export function CardId({ id, onNotice }: { id: string; onNotice: (message: string) => void }) {
@@ -119,7 +117,7 @@ export function CardBody({ text, path, vault, show, doors }: CardBodyProps) {
   // `icons` is read at each draw; a change of the icon rules alone draws no card again (the preview panel's rule).
   const iconsRef = useRef(icons)
   iconsRef.current = icons
-  const lookOf = useCallback(() => cardLook(wikilinks, viewOnlyLinks, { root, pagePath: path }, { icon: (target, folder) => fileIconDecoration(iconsRef.current, target, folder) }), [wikilinks, viewOnlyLinks, root, path])
+  const lookOf = useCallback(() => cardLook(wikilinks, viewOnlyLinks, { root, pagePath: path, boardPicture: desktopBoardPicture }, { icon: (target, folder) => fileIconDecoration(iconsRef.current, target, folder) }), [wikilinks, viewOnlyLinks, root, path])
   useEffect(() => {
     boxRef.current?.replaceChildren(renderCard(text, { sides, shown }, lookOf()))
   }, [text, sides, shown, lookOf])
@@ -180,31 +178,6 @@ interface CardReviewsProps {
   now?: number
 }
 
-/** The day `due` is past (the strip then says "Overdue · …" with no "Due" label). */
-export const cardOverdue = (due: number, now: number): boolean => due < new Date(now).setHours(0, 0, 0, 0)
-
-/** A date in full, as the Reviews table says it (YAZ-5032, as Mochi's): "Sep 24, 2026". */
-export const cardFullDate = (ms: number): string => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-
-/** The toggle's words (YAZ-5032, as Mochi's): "1 Review", "4 Reviews". The page's card block says the same (`cardBlockView.ts`). */
-export const reviewsTitle = (n: number): string => `${n} Review${n === 1 ? '' : 's'}`
-
-/** What review knows of a card, for the strip (YAZ-5032): its last answer, the wait it set, when it is due, the recall chance. Null for a new card. */
-export interface CardFactsData {
-  last: CardReview
-  interval: number
-  inSteps: boolean
-  due: number
-  recall: number | null
-}
-
-export function cardFacts(reviews: readonly CardReview[], settings: ReviewSettings, now: number): CardFactsData | null {
-  const state = cardState(reviews, settings)
-  const last = state.lastReview === null ? undefined : reviews.filter((r) => r.at === state.lastReview).at(-1)
-  if (state.isNew || last === undefined || state.due === null) return null
-  return { last, interval: state.interval, inSteps: state.inSteps, due: state.due, recall: recallChance(reviews, settings, now) }
-}
-
 /** An answer as its glyph (YAZ-5032): ✓ Remembered / ✕ Forgot (↺ ~ ✓ ⇈ with four buttons, YAZ-5018); the word is the hover. */
 function CardAnswerView({ review, settings, hover }: { review: CardReview; settings: ReviewSettings; hover?: string }) {
   const word = answerLabel(review.rating, settings)
@@ -214,35 +187,6 @@ function CardAnswerView({ review, settings, hover }: { review: CardReview; setti
     </span>
   )
 }
-
-/** The (i) of the recall chance (YAZ-5032; round 2, plain words): the strip's one help. */
-export const RECALL_HELP = 'How likely you are to remember this card today. It drops the longer the card waits. A review brings it back up.'
-
-/** Whole local days from today to the day of `ms`: 0 today, 1 tomorrow, -3 three days ago. */
-const daysUntil = (ms: number, now: number): number => Math.round((new Date(ms).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) / 86_400_000)
-
-/**
- * The review to come in words (YAZ-5032), the strip's and the table's last row: its date in full (none for today and
- * for a card in its same-day steps), and how far it is — "in 183 days", "3 days ago", "today", "later today".
- */
-export function cardNextReview(due: number, inSteps: boolean, now: number): { date: string | null; days: number | null; when: string } {
-  const days = daysUntil(due, now)
-  // A step of a day gone by is overdue like any card: its date, and how long ago.
-  if (inSteps && days >= 0) return { date: null, days: null, when: 'later today' }
-  if (days === 0) return { date: null, days: 0, when: 'today' }
-  const n = Math.abs(days)
-  // Round 2 (plain words): a day ahead or behind is "tomorrow" or "yesterday".
-  const when = days === 1 ? 'tomorrow' : days === -1 ? 'yesterday' : days > 0 ? `in ${dayCount(n)}` : `${dayCount(n)} ago`
-  return { date: cardFullDate(due), days, when }
-}
-
-/**
- * The review to come in words (YAZ-5032 round 2, Yaseen: "the next review … needs better copy"): "Due" first, the
- * app's one word for it (the Inbox's "due today", the Next due column), then how far, then the date —
- * "Due in 183 days (Apr 28, 2027)", "Due today", "Due later today", "Due 3 days ago (Oct 24, 2026)". The strip and the
- * table's last row say the same words.
- */
-export const cardDueWords = (next: ReturnType<typeof cardNextReview>): string => `Due ${next.when}${next.date === null ? '' : ` (${next.date})`}`
 
 /** "in **183** days": the number emphasised, the words muted (YAZ-5032). */
 function When({ next }: { next: ReturnType<typeof cardNextReview> }) {
@@ -328,27 +272,6 @@ function Gap({ n }: { n: number }) {
       <b className="card-reviews__num">{n}</b> <span className="card-reviews__unit">{n === 1 ? 'day' : 'days'}</span>
     </>
   )
-}
-
-/** The table's columns, in Yaseen's order (YAZ-5032); the last, unnamed one holds the delete. */
-export const REVIEW_COLUMNS = ['Reviewed on', 'Answer', 'Gap', 'Time', 'Next due'] as const
-
-/**
- * What removing `review` does to the card, in words (YAZ-5032 round 2, Yaseen: "a pop up that would show the
- * consequences"): the schedule run again without it (`cardStateWithout`) — "The due date moves from Apr 28, 2027 to
- * Mar 3, 2027 (in 110 days).", "The due date stays Apr 28, 2027.", or, for the card's only review, "This is the card's
- * only review. The card becomes new again."
- */
-export function cardRemoveOutcome(reviews: readonly CardReview[], review: CardReview, settings: ReviewSettings, now: number): string {
-  const after = cardStateWithout(reviews, review.at, settings)
-  if (after.isNew || after.due === null) return "This is the card's only review. The card becomes new again."
-  const before = cardState(reviews, settings)
-  const was = before.due === null ? cardNextReview(now, false, now) : cardNextReview(before.due, before.inSteps, now)
-  const will = cardNextReview(after.due, after.inSteps, now)
-  const from = was.date ?? was.when
-  const to = will.date ?? will.when
-  if (from === to) return `The due date stays ${to}.`
-  return `The due date moves from ${from} to ${to}${will.date === null ? '' : ` (${will.when})`}.`
 }
 
 /**

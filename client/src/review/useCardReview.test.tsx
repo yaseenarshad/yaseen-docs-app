@@ -11,6 +11,7 @@ import { cardState } from '@shared/cardSchedule'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import { cardPlace, useCardReview, type CardReviewApi } from './useCardReview'
+import { desktopReviewHost } from './desktopReviewHost'
 import { api } from '../api'
 import { storage } from '../lib/storage'
 
@@ -100,7 +101,7 @@ function Probe({ settings }: { settings: ReviewSettings }) {
   review = useCardReview(ROOT, source, settings, (text, _icon, _type, action) => {
     notices.push(text)
     noticeAction = action
-  })
+  }, undefined, desktopReviewHost)
   return null
 }
 
@@ -866,7 +867,7 @@ describe('useCardReview: fast ← → (YAZ-5029)', () => {
   /** Each card the session hands out, after every render: the Inbox draws exactly these. */
   const seen: (string | null)[] = []
   function Watch() {
-    review = useCardReview(ROOT, source, S, (text) => void notices.push(text))
+    review = useCardReview(ROOT, source, S, (text) => void notices.push(text), undefined, desktopReviewHost)
     const card = review.session?.card
     seen.push(card === undefined || card === null ? null : card.page === null ? `${card.id}:empty` : `${card.id}:${card.page.id}`)
     return null
