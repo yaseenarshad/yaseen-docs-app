@@ -39,7 +39,8 @@
  *    Inbox's; a key with the keyboard elsewhere (the sidebar) neither.
  *  - O AND E OPEN EXPLORE'S OWN VIEW (YAZ-5145, Yaseen: "shuld be exactly the same ... we're just going to reuse
  *    explore"): the page layer Explore opens for the same file, so the card looks the same from both. O: a card file's
- *    layer, reading; a card in a page, its page at its TOP (YAZ-5022). E: the same layer in edit, as Explore's own E —
+ *    layer, reading; a card in a page, its page at its TOP (YAZ-5022), or landed on the card with its one flash when
+ *    Settings › Cards › Inbox: O opens the page at says The card (YAZ-5307; Explore's page layer `card`, `landOn`). E: the same layer in edit, as Explore's own E —
  *    in a Read only vault its "Allow edits?" asks first; a card in a page lands on the card and opens its Edit card
  *    ("e would edit the card"). Esc or ⌘↵ in edit go back to reading; then Esc or ⌘↵ come back to this card at the
  *    same step. The title and "in <page>" links, ⋯ › Open card and an archived card's row open as O does.
@@ -93,6 +94,7 @@ import { PageTitle } from '../editor/PageTitle'
 import { changeCardTextIn } from './cardFile'
 import { recordAt } from '../editor/card/embedCard'
 import type { GestureAction } from '@shared/keys'
+import type { InboxOpenAt } from '@shared/types'
 import type { CardRating } from '@shared/cardLine'
 import type { ExploreVault } from '../explore/ExplorePage'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
@@ -121,8 +123,13 @@ export interface CardInboxProps {
   session: CardReviewSession
   vaultOf: (path: string) => ExploreVault
   nameOf: (path: string) => string
-  /** O, the title and the page name (YAZ-5145): Explore's own page layer for the card's file, reading, at its TOP (YAZ-5022). */
-  openPage: (path: string) => void
+  /**
+   * O, the title and the page name (YAZ-5145): Explore's own page layer for the card's file, reading, at its TOP
+   * (YAZ-5022); with `card` (YAZ-5307, Settings › Cards › Inbox: O opens the page at › The card), landed on that card.
+   */
+  openPage: (path: string, card?: number) => void
+  /** Settings › Cards › Inbox: O opens the page at (YAZ-5307): `top` (the default) or `card`, for a card in a page. */
+  openAt?: InboxOpenAt
   /** E (YAZ-5145): the same layer in edit, as Explore's own E; a card in a page (`index`) lands on it in Edit card. */
   editCard: (path: string, index: number | null) => void
   /** ⌘↵: the page in a background tab. */
@@ -223,7 +230,7 @@ function ArchivedList({ session, nameOf, openPage, unarchive, backToAll }: { ses
   )
 }
 
-export function CardInbox({ shown = true, review, session, vaultOf, nameOf, openPage, editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace }: CardInboxProps) {
+export function CardInbox({ shown = true, review, session, vaultOf, nameOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace }: CardInboxProps) {
   const unit = useUnit()
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
@@ -236,6 +243,14 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   // A card FILE (YAZ-5037): "Open card" in the key row, and no "in <page>". One look in the index the vault already holds.
   const cardFile = card !== null && recordAt(vaultOf(card.path).wikilinks.records, card.path)?.kind === 'card'
   const cardKey = card === null ? null : `${session.position}\n${card.path}\n${card.id}`
+  /**
+   * O (YAZ-5307): the card's file at its top, or a card in a page landed on it when Settings › Cards › Inbox: O opens the
+   * page at says The card. The breadcrumb's page part and ⋯ › Open card open as O does; a card file opens as itself.
+   */
+  const openCard = useCallback(
+    (at: { path: string; index: number }, file: boolean) => (openAt === 'card' && !file ? openFile(at.path, at.index) : openFile(at.path)),
+    [openAt, openFile],
+  )
   // YAZ-5033: the active seconds on this card, from the moment its text shows; read at the answer.
   const answerSeconds = useAnswerTimer(card?.page == null ? null : cardKey, shown, review.settings.pauseAfter)
   // Time so far (YAZ-5130): hidden in the clock's hover box by default (round 2: hover only, never a click).
@@ -343,14 +358,14 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
         if (card.page !== null && rating !== undefined && !event.repeat) answerWith(rating)
         return
       }
-      if (key.kind === 'open') return openPage(card.path)
+      if (key.kind === 'open') return openCard(card, live.current.cardFile)
       // E (YAZ-5145): Explore's own edit of the card's file; a card in a page lands on the card, in Edit card.
       if (key.kind === 'edit') return editCard(card.path, live.current.cardFile ? null : card.index)
       if (key.kind === 'tab') return openInTab(card.path)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [advance, answerWith, openPage, editCard, openInTab])
+  }, [advance, answerWith, openCard, editCard, openInTab])
 
   const doors = useMemo(() => ({ openLayer, openTab: openLinkIn, onNotice }), [openLayer, openLinkIn, onNotice])
   // YAZ-5042: the kinds that wait past today's number, with an add; under a filter, only that filter's kind.
@@ -386,12 +401,12 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
           card.page?.next === true
             ? { id: 'next', label: 'Remove from top of Inbox', icon: ICON_TOP, disabled: false, run: () => void review.setNext(card.path, card.id, false) }
             : { id: 'next', label: 'Put at top of Inbox', icon: ICON_TOP, disabled: card.page === null, run: () => void review.setNext(card.path, card.id, true) },
-          { id: 'card', label: 'Open card', icon: ICON_CARD, disabled: false, run: () => openPage(card.path) },
+          { id: 'card', label: 'Open card', icon: ICON_CARD, disabled: false, run: () => openCard(card, cardFile) },
         ]
 
   return (
     <div ref={rootRef} className="card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`}>
-      <CardInboxBar session={session} setFilter={review.setFilter} addCards={review.addCards} resetCards={review.resetCards} openPlace={(part) => (part.kind === 'page' ? openPage(part.path) : openPlace?.(part.path))} time={time} />
+      <CardInboxBar session={session} setFilter={review.setFilter} addCards={review.addCards} resetCards={review.resetCards} openPlace={(part) => (part.kind === 'page' ? (card !== null && part.path === card.path ? openCard(card, cardFile) : openFile(part.path)) : openPlace?.(part.path))} time={time} />
       <div ref={columnRef} className="card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
         {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height
             with no chip (the done screen), so the card does not move. YAZ-5051 (Yaseen: "so that the card is just pure"):
@@ -405,7 +420,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                 {headTitle !== '' && (
                   <>
                     {cardFile ? (
-                      <button type="button" className="card-inbox__name card-inbox__name--link" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(card.path)}>
+                      <button type="button" className="card-inbox__name card-inbox__name--link" onMouseDown={(e) => e.preventDefault()} onClick={() => openFile(card.path)}>
                         {headTitle}
                       </button>
                     ) : card.page !== null && vaultOf(card.path).readOnly !== true ? (
@@ -433,7 +448,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
         {/* The card's frame and its width edges (YAZ-5019), shared with the Preview (YAZ-5152). */}
         <InboxCardPanel startDrag={startDrag} bodyRef={bodyRef}>
             {session.filter === 'archived' ? (
-              <ArchivedList session={session} nameOf={nameOf} openPage={openPage} unarchive={review.unarchive} backToAll={() => review.setFilter('all')} />
+              <ArchivedList session={session} nameOf={nameOf} openPage={openFile} unarchive={review.unarchive} backToAll={() => review.setFilter('all')} />
             ) : card === null ? (
               <div className="card-inbox__done" role="status">
                 {/* YAZ-5033: today's work across the vault, under whatever the screen says. */}

@@ -1513,7 +1513,8 @@ export function App() {
    * the card looks the same from both. ⌘↵ while reading goes back to the Inbox (YAZ-5009). E edits as Explore's E
    * does, then the card opens in Edit card (round 2: no second E): a card in a page (`index`) landed on, or a card file.
    */
-  const openFromInbox = useCallback((path: string) => openExploreWith({ kind: 'page', path, fromInbox: true }), [openExploreWith])
+  // YAZ-5307: `card` (Settings › Cards › Inbox: O opens the page at › The card) lands on it as E and Explore's card rows do.
+  const openFromInbox = useCallback((path: string, card?: number) => openExploreWith({ kind: 'page', path, fromInbox: true, ...(card !== undefined && { card }) }), [openExploreWith])
   const editFromInbox = useCallback((path: string, index: number | null) => openExploreWith({ kind: 'page', path, edit: true, editCard: true, fromInbox: true, ...(index !== null && { card: index }) }), [openExploreWith])
   // The card window (YAZ-4962, D13): every editor sends `mdapp:card-open` from its card (a click on the title,
   // ⋯ › Open card, ⌘↵); it bubbles to the document. A preview that does not know its page sends no path: nothing opens.
@@ -4030,7 +4031,7 @@ export function App() {
                 under it stays as it was. Behind a page tab it stays mounted, hidden, so it comes back at its card and step. */}
             {session !== null && (
               <Suspense fallback={null}>
-                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openFromInbox} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} />
+                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openFromInbox} openAt={settings.inboxOpenAt} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} />
               </Suspense>
             )}
             {/* The tab board (YAZ-2648 D5) covers the stack while it shows; a review never has one over it. */}

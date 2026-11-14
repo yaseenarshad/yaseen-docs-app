@@ -2197,6 +2197,13 @@ export interface SettingsState {
    * `--card-table-inline` on `.app`, read by the one Table position rule (`table.css`).
    */
   cardTablePosition: CardTablePosition
+  /**
+   * Settings › Cards › Inbox: O opens the page at (YAZ-5307, Yaseen: "by default it open at top of page but if someone
+   * wants to change it to go to the card on the page they can"): where the Inbox's O (and the links that open as O does)
+   * opens a card that lives in a page. `top` (the default) is the page's top, as YAZ-5022; `card` lands on the card with
+   * the one flash every way to a card in its page has (Explore's page layer `card`, `landOn`, YAZ-5164). A card file and E do not change.
+   */
+  inboxOpenAt: InboxOpenAt
   /** Card spacing, Custom (YAZ-5050): the card's line spacing, as `lineSpacing`. */
   cardLineSpacing: number
   /** Card spacing, Custom (YAZ-5050): the card's space between blocks, px per side, as `blockGap`. */
@@ -2594,6 +2601,9 @@ export type TablePosition = (typeof TABLE_POSITIONS)[number]
 /** Settings › Review › Card look › Card tables (YAZ-5136 round 3): Same as pages (Table position), or the cards' own. */
 export const CARD_TABLE_POSITIONS = ['pages', ...TABLE_POSITIONS] as const
 export type CardTablePosition = (typeof CARD_TABLE_POSITIONS)[number]
+/** Settings › Cards › Inbox: O opens the page at (YAZ-5307): the page's top (the default), or the card. */
+export const INBOX_OPEN_AT = ['top', 'card'] as const
+export type InboxOpenAt = (typeof INBOX_OPEN_AT)[number]
 export const TABLE_TEXT_IN_CELLS = ['wrap', 'clip'] as const
 export type TableTextInCells = (typeof TABLE_TEXT_IN_CELLS)[number]
 export const TABLE_ROW_BANDS: readonly TableRowBand[] = ['off', 'calendar', 'all']
@@ -2954,6 +2964,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   cardSpacing: 'pages',
   cardWidth: null,
   cardTablePosition: 'pages',
+  inboxOpenAt: 'top',
   ...CARD_SPACING_CLEAN,
   tableOfContents: 'auto',
   tocOnByDefault: true,

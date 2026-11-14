@@ -997,6 +997,37 @@ describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the brea
     expect(hints()).toContain('O Open page')
   })
 
+  // YAZ-5307: Settings › Cards › Inbox: O opens the page at. The top (the default) asks for the page alone, as YAZ-5022;
+  // The card asks for it landed on the card (its index: Explore's page layer `card`, the one landing, YAZ-5164). The
+  // breadcrumb's page part and ⋯ › Open card open as O does. E and a card file do not change.
+  it.each([
+    ['top', [PATH]],
+    ['card', [PATH, 1]],
+  ] as const)('YAZ-5307: with "%s", O, the breadcrumb`s page part and ⋯ › Open card ask for %j; E is unchanged', (openAt, asked) => {
+    mount(PLAIN)
+    props = { ...props, openAt }
+    session = { ...session, card: { ...session.card!, index: 1 }, place: [{ kind: 'vault', label: 'Demo', path: '/v' }, { kind: 'page', label: 'Cards', path: PATH }] }
+    render()
+    press('o')
+    expect(vi.mocked(props.openPage).mock.lastCall).toEqual(asked)
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__path-part[data-kind="page"]')!.click())
+    expect(vi.mocked(props.openPage).mock.lastCall).toEqual(asked)
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-action[aria-label="Open card"]')!.click())
+    expect(vi.mocked(props.openPage).mock.calls).toEqual([asked, asked, asked])
+    press('e')
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, 1)
+  })
+
+  it('YAZ-5307: with "card", a card FILE still opens as itself (no card index)', () => {
+    mount(PLAIN)
+    asCardFile()
+    props = { ...props, openAt: 'card' }
+    render()
+    press('o')
+    expect(vi.mocked(props.openPage).mock.calls).toEqual([[PATH]])
+  })
+
   it('YAZ-5164 part 3: the front never repeats the title; a click on the head`s title renames the card in its page (its first line), one write', async () => {
     textWrites.length = 0
     mount(PLAIN)
