@@ -24,7 +24,7 @@
  *
  * Not here: an embed inside a card (card-in-card is off in the card editor; a card's own render keeps `![[…]]` as text).
  */
-import { withCardOff } from '@shared/cardLine'
+import { withCardFix, withCardOff } from '@shared/cardLine'
 import type { CardLink } from '@shared/cardLinks'
 import { BridgeRequestError, api } from '../../api'
 import { keyCapsDom } from '../../keys/keyWords'
@@ -127,6 +127,8 @@ const button = (className: string, label: string): HTMLButtonElement => {
 export function cardEmbedMenuRows(o: {
   card: CardLink
   off: boolean
+  /** The card is marked Fix later (YAZ-5097). */
+  fix: boolean
   editable: boolean
   target: string
   from: EventTarget
@@ -135,13 +137,14 @@ export function cardEmbedMenuRows(o: {
   /** "Put back into this page" (YAZ-5037 phase 5): the card is in a card file, the embed stands alone on its line, and the page's door is there. Else null. */
   putBack?: (() => void) | null
 }): MenuRow[] {
-  const { card, off } = o
+  const { card, off, fix } = o
   const failed = (err: unknown) => o.onNotice(`Can't change the card: ${err instanceof Error ? err.message : String(err)}`)
   const rows: Array<MenuRow | null> = [
     { label: 'Open card', run: () => openCardWindow(card.path, card.id, card.index, o.from) },
     o.editable ? { label: 'Show as link', run: () => o.replace(`[[${o.target}]]`) } : null,
     o.putBack == null ? null : { label: pathUnit(card.path)('Put back into this page'), run: o.putBack },
     { label: off ? 'Unarchive card' : 'Archive card', divider: true, run: () => void changeCardLine(card.path, card.id, (l) => withCardOff(l, !off), card.index).catch(failed) },
+    { label: fix ? 'Remove Fix later' : 'Fix later', run: () => void changeCardLine(card.path, card.id, (l) => withCardFix(l, !fix), card.index).catch(failed) },
     { label: 'Copy card ID', divider: true, run: () => copyText(card.id, 'card ID', o.onNotice, undefined, true) },
   ]
   return rows.filter((row): row is MenuRow => row !== null)
@@ -168,10 +171,14 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   const idButton = button('card__id', 'Copy card ID')
   const state = document.createElement('span')
   state.className = 'card__state'
+  const fixMark = document.createElement('span')
+  fixMark.className = 'card__state card__fix'
+  fixMark.textContent = 'To fix'
+  fixMark.hidden = true
   const editButton = button('card__edit', 'Edit card')
   const more = button('card__more', 'Card menu')
   more.textContent = '⋯'
-  head.append(from, dot, idButton, state, editButton, more)
+  head.append(from, dot, idButton, state, fixMark, editButton, more)
   const body = document.createElement('div')
   body.className = 'card__body'
 
@@ -189,6 +196,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   let edit: { editor: CardEditor; mount: HTMLElement; keys: HTMLElement; base: CardAtPage } | null = null
 
   const off = (c: CardLink): boolean => read?.id === c.id ? read.off : recordAt(source.records, c.path)?.cards?.[c.index]?.off === true
+  const fix = (c: CardLink): boolean => (read?.id === c.id ? read.fix === true : recordAt(source.records, c.path)?.cards?.[c.index]?.fix === true)
 
   /** The head, or the missing line: from the index alone. */
   const draw = (): void => {
@@ -207,6 +215,8 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     set(fromText, `Embedded from "${embedName(card, source)}"`)
     set(idButton, card.id)
     set(state, isOff ? 'Archived' : '')
+    const isFix = fix(card)
+    if (fixMark.hidden === isFix) fixMark.hidden = !isFix
     if (edit === null) set(editButton, 'Edit card')
     else if (editButton.firstChild?.textContent !== 'Done') editButton.replaceChildren('Done', keyCapsDom('esc'), keyCapsDom('⌘↵'))
     editButton.setAttribute('aria-label', edit === null ? 'Edit card' : 'Done')
@@ -277,8 +287,11 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     edit = null
     draw()
     if (text.replace(/\n+$/, '') !== e.base.text) {
-      read = { ...e.base, text }
-      changeCardTextIn(e.base.path, e.base.id, text, e.base.index).catch((err: unknown) => {
+      // YAZ-5097: the edit is the fix: a card marked Fix later loses the mark in the same write.
+      const { fix: wasFix, ...rest } = e.base
+      read = { ...rest, text }
+      draw()
+      changeCardTextIn(e.base.path, e.base.id, text, e.base.index, wasFix === true).catch((err: unknown) => {
         onNotice(`Can't save the card: ${err instanceof Error ? err.message : String(err)}`)
         read = e.base
         paint()
@@ -295,7 +308,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     // Put back: only a card file's card (a card in a page stays where it is), and only from an embed alone on its line.
     const place = doors.putBack !== undefined && recordAt(source.records, c.path)?.kind === 'card' ? host.place() : null
     const putBack = place === null ? null : () => doors.putBack!({ id: c.id, path: c.path }, place.inner, place.nth)
-    const close = openMenuAt(host.menuParent(), x, y, cardEmbedMenuRows({ card: c, off: off(c), editable: host.editable(), target: host.target, from: dom, replace: host.replace, onNotice, putBack }))
+    const close = openMenuAt(host.menuParent(), x, y, cardEmbedMenuRows({ card: c, off: off(c), fix: fix(c), editable: host.editable(), target: host.target, from: dom, replace: host.replace, onNotice, putBack }))
     closeMenu = () => {
       close()
       closeMenu = null

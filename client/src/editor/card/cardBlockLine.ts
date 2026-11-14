@@ -18,7 +18,7 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { AttrStep, Step, StepMap, StepResult, type Mappable } from '@milkdown/kit/prose/transform'
-import { EMPTY_CARD_LINE, cardIdOf, cardNextIndex, cardReviewsOf, formatCardLine, isCardNext, isCardNoTitle, isCardOff, parseCardLine, withCardId, withCardNext, withCardNoTitle, withCardOff, type CardLine, type CardPart, type CardReview } from '@shared/cardLine'
+import { EMPTY_CARD_LINE, cardIdOf, cardNextIndex, cardReviewsOf, formatCardLine, isCardFix, isCardNext, isCardNoTitle, isCardOff, parseCardLine, withCardFix, withCardId, withCardNext, withCardNoTitle, withCardOff, type CardLine, type CardPart, type CardReview } from '@shared/cardLine'
 import type { Code, RootContent } from 'mdast'
 
 /** The language of a card's fence. */
@@ -80,7 +80,7 @@ function withReviewInOrder(line: CardLine, review: CardReview, place: number): C
 }
 
 /**
- * The line `now` with the change from `before` to `after` laid on it: the ID, `off`, `next` and `notitle` (YAZ-5030) as `after` has them where they
+ * The line `now` with the change from `before` to `after` laid on it: the ID, `off`, `next`, `notitle` (YAZ-5030) and `fix` (YAZ-5097) as `after` has them where they
  * differ, each review `after` gained added, each review it lost removed. Everything else of `now` stays.
  */
 export function rebaseCardLine(now: CardLine, before: CardLine, after: CardLine): CardLine {
@@ -90,6 +90,7 @@ export function rebaseCardLine(now: CardLine, before: CardLine, after: CardLine)
   if (isCardOff(after) !== isCardOff(before)) line = withCardOff(line, isCardOff(after))
   if (isCardNext(after) !== isCardNext(before)) line = withCardNext(line, isCardNext(after), isCardNext(after) ? cardNextIndex(after) : undefined)
   if (isCardNoTitle(after) !== isCardNoTitle(before)) line = withCardNoTitle(line, isCardNoTitle(after))
+  if (isCardFix(after) !== isCardFix(before)) line = withCardFix(line, isCardFix(after))
   for (const gone of lessReviews(cardReviewsOf(before), cardReviewsOf(after))) {
     const i = line.parts.findIndex((p) => p.kind === 'review' && sameReview(p.review, gone))
     if (i !== -1) line = { parts: line.parts.filter((_, j) => j !== i) }
