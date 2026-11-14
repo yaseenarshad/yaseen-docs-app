@@ -5,6 +5,7 @@ import { loadAccount, saveAccount } from '../auth/account'
 import { GOOD, mount, newPhone, NOW, signInWithForm, type Harness } from '../screens/testing'
 import { clockTime } from './dot'
 import { LAST_SYNC_STATE } from './lastSync'
+import { DOT_TIMES } from './storeCheck'
 import { fakeAnswers, lostAnswer, type FakeAnswers } from './testing'
 
 /**
@@ -357,5 +358,45 @@ describe('YAZ-5297: a cold open with no signal and a stored waiting answer', () 
     expect(shown(x)).toMatchObject({ colour: 'synced', words: 'Synced' })
     // The newer time is kept for the next run.
     expect(await phone.store.getState('yaseen/vault@main', LAST_SYNC_STATE)).toBe(NOW)
+  })
+})
+
+describe('YAZ-5302 (4D5): the phone\'s store never opens (IndexedDB blocked, full, or held by another tab)', () => {
+  const real = { ...DOT_TIMES }
+  afterEach(() => Object.assign(DOT_TIMES, real))
+  const pause = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))))
+
+  it('the dot does not stay on "Checking…": it ends red "Phone can\'t save", with the words and the way forward', async () => {
+    Object.assign(DOT_TIMES, { checkMs: 40, probeMs: 40 })
+    const phone = await newPhone()
+    // The list never reads its stored answers: its state is never the open vault's.
+    ;({ h } = await signedIn({ phone, answers: fakeAnswers('') }))
+    expect(shown(h)).toMatchObject({ colour: 'off', words: 'Checking…' })
+    // The store stops answering (a version change held by another tab, or a blocked IndexedDB).
+    phone.store.getState = () => new Promise(() => {})
+    await pause(150)
+    await h.settle()
+    expect(shown(h)).toMatchObject({ colour: 'attention', words: "Phone can't save", label: "Sync status: Phone can't save" })
+    await h.click("Sync status: Phone can't save")
+    expect(h.text()).toContain('This browser does not let Notecards keep your vault on the phone. Turn off Private Browsing, or open Notecards from the Home Screen.')
+    expect(h.button('Try again')).not.toBeNull()
+  })
+
+  it('a store that fails (rejects) gives the same end state', async () => {
+    Object.assign(DOT_TIMES, { checkMs: 40, probeMs: 40 })
+    const phone = await newPhone()
+    ;({ h } = await signedIn({ phone, answers: fakeAnswers('') }))
+    phone.store.getState = () => Promise.reject(new Error('QuotaExceededError'))
+    await pause(150)
+    await h.settle()
+    expect(shown(h)).toMatchObject({ colour: 'attention', words: "Phone can't save" })
+  })
+
+  it('the store answers but the list never comes (the sync could not start): grey "Can\'t sync now", never green', async () => {
+    Object.assign(DOT_TIMES, { checkMs: 40, probeMs: 40 })
+    ;({ h } = await signedIn({ answers: null }))
+    await pause(150)
+    await h.settle()
+    expect(shown(h)).toMatchObject({ colour: 'off', words: "Can't sync now" })
   })
 })

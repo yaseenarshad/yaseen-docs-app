@@ -24,9 +24,10 @@ const input = (over: {
   online?: boolean
   token?: TokenEndWarning
   loaded?: boolean
+  stuck?: 'store' | 'list' | null
 } = {}): DotInput => ({
   sync: { status: over.status ?? 'synced', problem: over.problem ?? null },
-  answers: { loaded: over.loaded ?? true, waiting: over.waiting ?? 0, lost: over.lost ?? 0, sending: over.sending ?? false, problem: over.sendProblem ?? null },
+  answers: { loaded: over.loaded ?? true, stuck: over.stuck ?? null, waiting: over.waiting ?? 0, lost: over.lost ?? 0, sending: over.sending ?? false, problem: over.sendProblem ?? null },
   online: over.online ?? true,
   token: over.token ?? NONE,
 })
@@ -100,6 +101,11 @@ describe('the table: which state wins when two are true', () => {
     ['cold start with no signal, the engine still on its first try, 3 stored answers', { online: false, status: 'syncing', waiting: 3 }, 'pending 3 answers waiting · no signal'],
     ['cold start online, 3 stored answers, the first pass runs', { status: 'syncing', waiting: 3 }, 'syncing Syncing…'],
     ['cold start online, 3 stored answers, the pass ended, before the first send', { status: 'synced', waiting: 3 }, 'pending 3 answers waiting'],
+    // YAZ-5302 (4D5): the list never reads its answers. The store does not answer: red, the person must act. The store answers: grey.
+    ['the phone\'s store never answers', { loaded: false, stuck: 'store' }, "attention Phone can't save"],
+    ['the phone\'s store never answers, with no signal', { loaded: false, stuck: 'store', online: false }, "attention Phone can't save"],
+    ['the store answers, the list never comes', { loaded: false, stuck: 'list', status: 'synced' }, "off Can't sync now"],
+    ['the list came after all: the stuck mark does not count', { loaded: true, stuck: 'store', waiting: 1 }, 'pending 1 answer waiting'],
     // Grey: no vault open yet (the engine is idle). Never empty words.
     ['the engine has not started', { status: 'idle' }, 'off Not synced yet'],
   ]
@@ -160,6 +166,7 @@ describe('every combination', () => {
   it('waiting answers are never hidden by grey: grey only when nothing waits and nothing is lost, or the list is not read yet', () => {
     for (const { over, d } of all) if (d.state === 'off' && over.loaded) expect([over.waiting, over.lost]).toEqual([0, 0])
     for (const { over, d } of all) if (!over.loaded && d.state !== 'attention') expect(d.words).toBe('Checking…')
+    for (const { d } of all) expect(d.words).not.toBe("Phone can't save")
   })
 
   it('green only when all is sent, the engine says synced, the phone is online and the token does not end soon', () => {
