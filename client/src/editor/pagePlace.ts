@@ -110,3 +110,44 @@ export function holdPagePlace<T>(view: EditorView, change: () => T): T {
   if (scroller !== null && place !== null && !view.isDestroyed) showPagePlace(view, scroller, place)
   return out
 }
+
+/**
+ * A CARD'S PLACE ACROSS READ ⇄ EDIT CARD (YAZ-5164: "the same text must stay at the same spot there too"). The read card
+ * and the card editor draw one card's text with lines of other heights (and the editor has a Title field on top), so the
+ * card's box alone keeps the card in place but shows another line at the top. The place is the LINE at the top: its text,
+ * which one of the lines with that text it is, and how far below the top edge it starts. The card's box is the fallback
+ * when the other view has no such line (a line drawn otherwise there).
+ */
+export interface SwapPlace {
+  /** The card box's offset: the fallback. */
+  offset: number
+  /** The text line at the top, with spaces made one, and which of the lines with that text it is. */
+  text: string
+  nth: number
+  /** How far below the top edge that line starts, px (negative: above). */
+  line: number
+}
+
+/** A line of text as either view draws it: a paragraph, a heading, a list line with no paragraph, code. */
+const TEXT_LINES = 'p, h1, h2, h3, h4, h5, h6, pre, li:not(:has(> p))'
+const textOf = (el: Element): string => (el.textContent ?? '').replace(/\s+/g, ' ').trim()
+const linesIn = (box: Element): Element[] => [...box.querySelectorAll(TEXT_LINES)].filter((el) => el.getClientRects().length > 0 && textOf(el) !== '')
+
+/** Where `box` (a card, read or in Edit card) stands in `scroller`: its first line that reaches below the top edge. */
+export function readSwapPlace(scroller: Element, box: Element): SwapPlace {
+  const offset = boxOffset(scroller, box)
+  const edge = scroller.getBoundingClientRect().top
+  const lines = linesIn(box)
+  const top = lines.find((el) => el.getBoundingClientRect().bottom > edge)
+  if (top === undefined) return { offset, text: '', nth: -1, line: 0 }
+  const text = textOf(top)
+  return { offset, text, nth: lines.filter((el) => textOf(el) === text).indexOf(top), line: boxOffset(scroller, top) }
+}
+
+/** Puts `place` back on `box`, the other view of the card: its same line at the same spot, else the box at the old box's spot. */
+export function showSwapPlace(scroller: Element, box: Element, place: SwapPlace): void {
+  const same = place.nth < 0 ? [] : linesIn(box).filter((el) => textOf(el) === place.text)
+  const line = same[place.nth] ?? same[0]
+  if (line !== undefined) showBoxAt(scroller, line, place.line)
+  else showBoxAt(scroller, box, place.offset)
+}
