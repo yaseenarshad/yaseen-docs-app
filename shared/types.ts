@@ -1959,7 +1959,8 @@ export type PhoneCodeAnswer = { ok: true; repo: string; branch: string; grid: bo
 /**
  * The Mac's send of the numbers to friends (YAZ-5086, 4E5; decision 16), as Settings › Review › "Phone and friends" shows
  * it. Numbers and words only: no token, no gist ID, no repo name.
- * - `no-token`: no GitHub token saved. `no-friends`: no friends list, or no friend and no group (decision 22).
+ * - `no-token`: no GitHub token saved. `no-friends`: no friend and no group (decision 22). `no-list`: no friends list
+ *   on the token's account (`login`): a person with no friends yet, or a token of another account (YAZ-5254).
  * - `missing-vaults`: this Mac does not have every vault that counts open (`missing` of them).
  * - `phone-first`: the friends list waits for a change that the phone makes (a remove, a numbers gist to make again, two
  *   lists to join). The Mac only sends, so it waits.
@@ -1970,6 +1971,7 @@ export type FriendsSendStatus =
   | 'idle'
   | 'no-token'
   | 'no-friends'
+  | 'no-list'
   | 'missing-vaults'
   | 'phone-first'
   | 'waiting'
@@ -1993,6 +1995,8 @@ export interface FriendsSendView {
   groups: number
   /** For `missing-vaults`: how many vaults that count this Mac does not have open. */
   missing: number
+  /** For `no-list`: the GitHub login of the Mac's token, or null when GitHub did not say. */
+  login?: string | null
 }
 
 /** The choices of each Settings › Folder pages row that is not a switch (YAZ-4585). The first is the default. */

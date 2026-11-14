@@ -22,7 +22,8 @@
 import { createHash } from 'node:crypto'
 import { findFriendsIndex, gistErrorCode, gistErrorResetAt, INDEX_FILE, parseFriendsIndex, pointersOf, type GistsApi, type IndexHandle, type WriteOptions } from '@shared/friendGists'
 import { emptyBudget, numbersFor, numbersKey, reserveFor, sendGap, sendGate, sendNumbers, type GistBudget, type SendReason } from '@shared/friendSend'
-import { friendStats, type FriendVault } from '@shared/friendStats'
+import { friendStats, type FriendStats, type FriendVault } from '@shared/friendStats'
+import { countPayload } from './countJob'
 import { pendingRemove } from '@shared/friendsList'
 import type { FriendsSendStatus, FriendsSendView } from '@shared/types'
 
@@ -37,6 +38,9 @@ export interface MacSendSaved {
   groups: number
   /** GitHub refused a write: the token has no Gists permission. No call until the token changes. */
   refused: boolean
+  /** YAZ-5249: the time of the last count, and a hash of what it counted (the cards and the local day). */
+  lastCountAt?: number | null
+  lastInput?: string | null
 }
 
 export interface MacClock {
@@ -53,6 +57,11 @@ export interface MacSenderDeps {
   vaults(): Promise<Map<string, string>>
   /** One vault's index records and review settings. */
   count(root: string): Promise<FriendVault>
+  /**
+   * The count of the packed cards (`countPayload`). YAZ-5250: the app runs it on a worker thread (`countJob.ts`), so
+   * the main thread only packs and waits. Default: on this thread (tests).
+   */
+  stats?(text: string, now: number): Promise<Omit<FriendStats, 'login' | 'name' | 'avatar'>>
   state: { load(): Promise<MacSendSaved | null>; save(saved: MacSendSaved): Promise<void> }
   clock?: MacClock
   sleep?: (ms: number) => Promise<void>
@@ -78,7 +87,14 @@ const nodeClock: MacClock = {
 }
 const MAX_TIMER_MS = 60 * 60_000
 const hash = (text: string) => createHash('sha256').update(text).digest('hex')
-const fresh = (): MacSendSaved => ({ lastSentAt: null, lastKey: null, budget: emptyBudget(), friends: 0, groups: 0, refused: false })
+const fresh = (): MacSendSaved => ({ lastSentAt: null, lastKey: null, budget: emptyBudget(), friends: 0, groups: 0, refused: false, lastCountAt: null, lastInput: null })
+const inThread = async (text: string, now: number) => friendStats(JSON.parse(text) as FriendVault[], now)
+/** The local day of `now`, as `friendStats` counts days: the same cards on another day can give other numbers. */
+const localDay = (now: number) => {
+  const d = new Date(now)
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+}
+const turn = () => new Promise<void>((done) => setImmediate(done))
 
 /** The list for writes the Mac never makes: `findFriendsIndex` may join two lists; the Mac leaves that to the phone. */
 class PhoneFirst extends Error {}
@@ -110,7 +126,7 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
   let tokenEpoch = 0
 
   const set = (status: FriendsSendStatus, patch: Partial<FriendsSendView> = {}) => {
-    view = { ...view, retryAt: null, missing: 0, status, ...patch }
+    view = { ...view, retryAt: null, missing: 0, login: null, status, ...patch }
     return view
   }
   const schedule = (at: number) => {
@@ -124,6 +140,12 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
   const store = async (patch: Partial<MacSendSaved>) => {
     saved = { ...(saved ?? fresh()), ...patch }
     if (!stopped) await deps.state.save(saved)
+  }
+
+  /** The account facts of the token (`GET /user`), once per token in a run of the app. */
+  async function account(token: string) {
+    if (profile === null || profile.token !== token) profile = { token, value: await deps.profile(token) }
+    return profile.value
   }
 
   async function readList(api: GistsApi): Promise<IndexHandle | 'none' | 'newer' | 'broken'> {
@@ -161,8 +183,10 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
       schedule(s.budget.blockedUntil)
       return set('slowed', { retryAt: s.budget.blockedUntil })
     }
-    if (s.lastSentAt !== null) {
-      const at = s.lastSentAt + sendGap(s.budget, now, reserve)
+    // YAZ-5249: the 5-minute rule holds for each count, not only for each send: numbers that stay the same also wait.
+    const lastTry = Math.max(s.lastSentAt ?? -Infinity, s.lastCountAt ?? -Infinity)
+    if (Number.isFinite(lastTry)) {
+      const at = lastTry + sendGap(s.budget, now, reserve)
       if (now < at) {
         schedule(at)
         return set('waiting', { retryAt: at })
@@ -173,7 +197,10 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
       const list = await readList(api)
       if (list === 'none') {
         await store({ friends: 0, groups: 0 })
-        return set('no-friends', { friends: 0, groups: 0 })
+        // YAZ-5254: no friends list on THIS token's account. Name the account: friends use one GitHub account (round
+        // 13, item 4), and the phone app's account may be another one.
+        const login = await account(token).then((p) => p.login, () => null)
+        return set('no-list', { friends: 0, groups: 0, login })
       }
       if (list === 'newer') return set('needs-newer-app')
       if (list === 'broken') return set('needs-repair')
@@ -197,19 +224,30 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
       // Only the vaults that count, as the phone counts them (round 12, item 3).
       const counted: FriendVault[] = []
       for (const repo of list.index.vaults) counted.push(await deps.count(held.get(repo)!))
-      if (profile === null || profile.token !== token) profile = { token, value: await deps.profile(token) }
-      const p = profile.value
-      const numbers = numbersFor(friendStats(counted, now), { login: p.login, name: p.name, avatar: p.avatar, nickname: list.index.nickname }, now)
+      // YAZ-5249: the same cards on the same local day as at the last count: the numbers cannot change. No count.
+      const text = countPayload(counted)
+      await turn()
+      const input = hash(`${localDay(now)}\n${list.index.nickname ?? ''}\n${text}`)
+      await turn()
+      if (input === s.lastInput) {
+        await store({ lastCountAt: now })
+        return set('unchanged')
+      }
+      const p = await account(token)
+      const numbers = numbersFor(await (deps.stats ?? inThread)(text, now), { login: p.login, name: p.name, avatar: p.avatar, nickname: list.index.nickname }, now)
       const key = hash(numbersKey(numbers))
-      if (key === s.lastKey) return set('unchanged')
+      if (key === s.lastKey) {
+        await store({ lastCountAt: now, lastInput: input })
+        return set('unchanged')
+      }
       const { outcome, budget } = await sendNumbers(api, { statsId: list.index.stats, fresh: numbers, budget: s.budget, reserve: reserveFor(pointers), now })
       if (epoch !== tokenEpoch) return view // the token changed meanwhile: this answer is of the old token
       switch (outcome.kind) {
         case 'sent':
-          await store({ lastSentAt: now, lastKey: key, budget })
+          await store({ lastSentAt: now, lastKey: key, budget, lastCountAt: now, lastInput: input })
           return set('sent', { lastSentAt: now })
         case 'unchanged':
-          await store({ lastKey: key, budget })
+          await store({ lastKey: key, budget, lastCountAt: now, lastInput: input })
           return set('unchanged')
         case 'numbers-gone':
           index = null

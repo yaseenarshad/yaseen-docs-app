@@ -251,7 +251,7 @@ describe('the count runs at most once each 5 minutes (YAZ-5249)', () => {
   })
 
   it('the same cards as at the last count, on the same day: no count at all, and no network', async () => {
-    const stats = vi.fn(async (vaults: FriendVault[], now: number) => friendStats(vaults, now))
+    const stats = vi.fn(async (text: string, now: number) => friendStats(JSON.parse(text) as FriendVault[], now))
     rig.sender = createMacSender({ ...depsOf(rig), stats })
     await withFriends(rig, 1)
     await rig.sender.attempt('pass')
