@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { PageTitle } from './PageTitle'
-import { READ_ONLY_EDIT } from './readOnlyEdit'
+import { READ_ONLY_EDIT, type ReadOnlyEditEvent } from './readOnlyEdit'
 import type { PathTitles } from '../lib/pageLabel'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -205,31 +205,28 @@ describe('PageTitle on a read-only page (YAZ-3076 S22)', () => {
     expect(heading(el)?.getAttribute('aria-readonly')).toBe('true')
   })
 
-  it('YAZ-5141: a click is an edit attempt — the pane hears it (the chip\'s card) and the title takes the keyboard; once the page unlocks, the field opens at once', () => {
+  it('YAZ-5141: a click is an edit attempt — the pane hears it (the chip\'s card) and the title takes the keyboard; YAZ-5145 round 2: it carries the rename, which the chip runs once the page unlocks: the field opens at once', () => {
     const { el, render, onRetitle } = mount({ readOnly: true })
-    const heard: string[] = []
-    el.addEventListener(READ_ONLY_EDIT, (e) => heard.push((e as CustomEvent<string>).detail))
+    const heard: ReadOnlyEditEvent[] = []
+    el.addEventListener(READ_ONLY_EDIT, (e) => heard.push(e as ReadOnlyEditEvent))
     act(() => heading(el)?.click())
-    expect(heard).toEqual(['page'])
+    expect(heard.map((e) => e.detail)).toEqual(['page'])
     expect(document.activeElement).toBe(heading(el))
+    expect(input(el)).toBeNull()
+    // The chip's "Allow edits" unlocks, then runs what the click carried.
     render(false)
+    act(() => heard[0].resume?.())
     expect(document.activeElement).toBe(field(el))
     expect(field(el).value).toBe('Old Page')
     type(el, 'New Page')
     expect(onRetitle).toHaveBeenCalledExactlyOnceWith('New Page')
   })
 
-  it('YAZ-5141: Esc (the box\'s Cancel) or a press elsewhere drops the wish: a later unlock opens no field', () => {
-    for (const away of ['esc', 'press'] as const) {
-      const { el, render } = mount({ readOnly: true })
-      act(() => heading(el)?.click())
-      if (away === 'esc') press(document.body, 'Escape')
-      else act(() => void document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })))
-      render(false)
-      expect(input(el), away).toBeNull()
-      act(() => root?.unmount())
-      container?.remove()
-    }
+  it('YAZ-5145 round 2: with no "Allow edits", an unlock alone opens no field', () => {
+    const { el, render } = mount({ readOnly: true })
+    act(() => heading(el)?.click())
+    render(false)
+    expect(input(el)).toBeNull()
   })
 
   it('YAZ-5141: read only for want of a rename door (`locked` false): a click tells nothing and takes no keyboard', () => {

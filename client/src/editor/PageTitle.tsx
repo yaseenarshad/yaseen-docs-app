@@ -18,7 +18,7 @@
  * an edit attempt, told as the page's own guard tells one (`tellReadOnlyEdit`): the pane's "Read only" chip shows the
  * same card, "This page is Read only. Press Enter to allow edits.", and Enter opens its "Allow edits?" box. The title
  * takes the keyboard (not a tab stop), so that Enter is heard. Once a choice unlocks the page, the title opens its
- * field at once: the rename the click meant. Esc, or a press anywhere but the title and the chip, drops that wish.
+ * field at once: the rename the click meant (the attempt's `resume`, YAZ-5145 round 2). Cancel opens nothing.
  */
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
@@ -72,40 +72,18 @@ export function PageTitle({ path, titles, onRetitle, onArrowDown, kind = 'file',
     setEditing(false)
   }
 
-  // A click on a locked title (YAZ-5141): the rename it meant waits for the page to unlock, then opens.
-  const [wanted, setWanted] = useState(false)
-  // The switch turned on mid-edit (an agent, another window): Escape's discard, never a commit. Off again after a
-  // click on the locked title: the rename that click meant opens.
+  // The switch turned on mid-edit (an agent, another window): Escape's discard, never a commit.
   useEffect(() => {
     if (readOnly) discard()
-    else if (wanted) {
-      setWanted(false)
-      open()
-    }
-    // `wanted` is read when the lock goes; its own change opens nothing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readOnly])
-  // The wish goes with Esc (the box's Cancel key) or a press anywhere but the title and the chip and its box.
-  const headingRef = useRef<HTMLHeadingElement>(null)
-  useEffect(() => {
-    if (!wanted) return
-    const drop = (event: Event) => {
-      const target = event.target instanceof Element ? event.target : null
-      if (event.type === 'keydown' ? (event as KeyboardEvent).key === 'Escape' : target === null || (!headingRef.current?.contains(target) && target.closest('.read-only-chip') === null)) setWanted(false)
-    }
-    window.addEventListener('keydown', drop, true)
-    window.addEventListener('pointerdown', drop, true)
-    return () => {
-      window.removeEventListener('keydown', drop, true)
-      window.removeEventListener('pointerdown', drop, true)
-    }
-  }, [wanted])
-  /** A click on the locked title: an edit attempt, told to the pane's chip; the title takes the keyboard for its Enter. */
+  /**
+   * A click on the locked title (YAZ-5141): an edit attempt that carries the rename it meant (YAZ-5145 round 2, the
+   * read-only module's one "unlock, then continue" path): the chip runs it once the person allows edits.
+   */
   const tell = (event: ReactMouseEvent<HTMLHeadingElement>): void => {
     const heading = event.currentTarget
     heading.focus({ preventScroll: true })
-    tellReadOnlyEdit(heading, locked === true ? 'page' : (locked as ReadOnlyWhat))
-    setWanted(true)
+    tellReadOnlyEdit(heading, locked === true ? 'page' : (locked as ReadOnlyWhat), open)
   }
 
   /** The one door: the title the user left behind, whichever way they left. */
@@ -158,7 +136,6 @@ export function PageTitle({ path, titles, onRetitle, onArrowDown, kind = 'file',
       {/* Keyboard path too (⚡ YAZ-891 polish): the heading is focusable and Enter opens the
           input, so a rename never REQUIRES the mouse. */}
       <h1
-        ref={headingRef}
         className="page-title__text"
         tabIndex={!readOnly ? 0 : locked !== false ? -1 : undefined}
         aria-readonly={readOnly || undefined}

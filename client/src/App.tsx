@@ -1506,10 +1506,10 @@ export function App() {
   /**
    * The Inbox's O and E (YAZ-5145): Explore's own page layer for the card's file — the view Explore opens for it — so
    * the card looks the same from both. ⌘↵ while reading goes back to the Inbox (YAZ-5009). E edits as Explore's E
-   * does; a card in a page (`index`) lands on the card, in Edit card.
+   * does, then the card opens in Edit card (round 2: no second E): a card in a page (`index`) landed on, or a card file.
    */
   const openFromInbox = useCallback((path: string) => openExploreWith({ kind: 'page', path, fromInbox: true }), [openExploreWith])
-  const editFromInbox = useCallback((path: string, index: number | null) => openExploreWith({ kind: 'page', path, edit: true, fromInbox: true, ...(index !== null && { card: index, editCard: true }) }), [openExploreWith])
+  const editFromInbox = useCallback((path: string, index: number | null) => openExploreWith({ kind: 'page', path, edit: true, editCard: true, fromInbox: true, ...(index !== null && { card: index }) }), [openExploreWith])
   // The card window (YAZ-4962, D13): every editor sends `mdapp:card-open` from its card (a click on the title,
   // ⋯ › Open card, ⌘↵); it bubbles to the document. A preview that does not know its page sends no path: nothing opens.
   useEffect(() => {
