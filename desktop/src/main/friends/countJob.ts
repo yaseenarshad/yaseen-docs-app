@@ -30,13 +30,33 @@ export function countOffThread(workerFile: string, vaults: readonly FriendVault[
   return countTextOffThread(workerFile, countPayload(vaults), now)
 }
 
+/**
+ * The time limit of one count (YAZ-5278). `friendStats` is one finite pass (about 1 s for 20,000 cards), so a count
+ * past this is broken: the worker is ended and the count fails. The next card change starts a new one.
+ */
+export const COUNT_LIMIT_MS = 60_000
+
 /** The same, for cards already packed (`countPayload`): the Mac's sender packs once, for its hash and for the count. */
-export function countTextOffThread(workerFile: string, text: string, now: number): Promise<Omit<FriendStats, 'login' | 'name' | 'avatar'>> {
+export function countTextOffThread(workerFile: string, text: string, now: number, limitMs = COUNT_LIMIT_MS): Promise<Omit<FriendStats, 'login' | 'name' | 'avatar'>> {
   const job: CountJob = { text, now }
   return new Promise((resolve, reject) => {
     const worker = new Worker(workerFile, { workerData: job })
-    worker.once('message', resolve)
-    worker.once('error', reject)
-    worker.once('exit', (code) => reject(new Error(`count worker exited with code ${code} before answering`)))
+    const limit = setTimeout(() => {
+      reject(new Error('the count worker did not answer in time'))
+      void worker.terminate()
+    }, limitMs)
+    limit.unref?.()
+    worker.once('message', (answer: Omit<FriendStats, 'login' | 'name' | 'avatar'>) => {
+      clearTimeout(limit)
+      resolve(answer)
+    })
+    worker.once('error', (err) => {
+      clearTimeout(limit)
+      reject(err)
+    })
+    worker.once('exit', (code) => {
+      clearTimeout(limit)
+      reject(new Error(`count worker exited with code ${code} before answering`))
+    })
   })
 }

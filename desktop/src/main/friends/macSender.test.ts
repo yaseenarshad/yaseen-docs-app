@@ -3,6 +3,8 @@
  * (`shared/friendSend.ts`, `shared/friendGists.ts`, `shared/friendStats.ts`) on the Mac's HTTP adapter, against the fake
  * gist world. No real GitHub, no real secrets file, no real vault: the vaults are made-up index records.
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CardRecord } from '@shared/cardLine'
 import { INDEX_FILE, NUMBERS_FILE, emptyNumbers, ensureFriendsFiles, findFriendsIndex, makePointer, writeFriendsIndex, type GistsApi, type WriteOptions } from '@shared/friendGists'
@@ -23,6 +25,8 @@ const PHONE = 'github_pat_11MACSEND_phone000000000000000000000000000000000000000
 const MAC = 'github_pat_11MACSEND_mac000000000000000000000000000000000000000000000000000000000000'
 const NOGISTS = 'github_pat_11MACSEND_nogists0000000000000000000000000000000000000000000000000000000'
 const OTHER = 'github_pat_11MACSEND_other00000000000000000000000000000000000000000000000000000000000'
+/** The count on the test's own thread: the app gives the worker (`countJob.ts`); `stats` is required (YAZ-5277). */
+const countHere = async (text: string, now: number) => friendStats(JSON.parse(text) as FriendVault[], now)
 const opts: WriteOptions = { describe: (kind) => `notecards-test ${kind}`, sleep: async () => {} }
 
 /** Made-up cards, answered `n` times today: private words in every field the index has, so a leak shows. */
@@ -69,6 +73,7 @@ function makeRig(accounts: Record<string, { login: string; gists?: boolean }> = 
         state: { load: async () => r.saved.value, save: async (s) => void (r.saved.value = structuredClone(s)) },
         clock: { now: () => world.now(), setTimeout: () => 0, clearTimeout: () => undefined },
         sleep: async () => {},
+        stats: countHere,
       }),
   }
   r.sender = r.make()
@@ -277,6 +282,67 @@ describe('a token of another GitHub account (YAZ-5254)', () => {
   })
 })
 
+describe('the count runs on the worker (YAZ-5277), and a count that never answers (YAZ-5278)', () => {
+  it('the main-side sender has no count of its own: it imports no value of friendStats, and needs `stats`', () => {
+    const source = readFileSync(join(__dirname, 'macSender.ts'), 'utf8')
+    expect(source).not.toMatch(/^import \{[^}]*\bfriendStats\b[^}]*\} from '@shared\/friendStats'/m)
+    expect(source).not.toMatch(/\bfriendStats\(/)
+    expect(source).toMatch(/^\s+stats\(text: string, now: number\)/m)
+  })
+
+  it("the app's sender counts on the worker thread: `stats` is the worker's count, with the built countWorker", () => {
+    const source = readFileSync(join(__dirname, 'index.ts'), 'utf8')
+    expect(source).toMatch(/^import countWorker from '\.\/countWorker\?modulePath'$/m)
+    expect(source).toMatch(/stats: \(text, now\) => countTextOffThread\(countWorker, text, now\)/)
+  })
+
+  it('a count that never answers: that try ends as failed at the time limit, and the next try still runs', async () => {
+    await withFriends(rig, 1)
+    const timers: (() => void)[] = []
+    const clock = { now: () => rig.world.now(), setTimeout: (fn: () => void) => (timers.push(fn), timers.length), clearTimeout: () => undefined }
+    let hang = true
+    const stats = vi.fn((text: string, now: number) => (hang ? new Promise<never>(() => undefined) : countHere(text, now)))
+    rig.sender = createMacSender({ ...depsOf(rig), clock, stats })
+    const first = rig.sender.attempt('pass')
+    await vi.waitFor(() => expect(stats).toHaveBeenCalledTimes(1))
+    for (const fire of timers.splice(0)) fire() // the time limit of the count
+    expect((await first).status).toBe('failed')
+    hang = false
+    expect((await rig.sender.attempt('pass')).status).toBe('sent')
+  })
+})
+
+describe('the stored state belongs to an account (YAZ-5279)', () => {
+  it('a token of another account with its own friends list: the Mac sends to that list', async () => {
+    const a = await withFriends(rig, 1)
+    expect((await rig.sender.attempt('pass')).status).toBe('sent')
+    // Account B ("someone") has its own list with one friend, and the same vault counts.
+    const b = rig.world.api(OTHER)
+    const made = await ensureFriendsFiles(b, { vaults: ['yaseen/vault'], nickname: null }, opts)
+    if (made.kind !== 'ok') throw new Error(made.kind)
+    const p = await makePointer(b, made.handle.index.stats!, opts)
+    await writeFriendsIndex(b, made.handle, { ...made.handle.index, friends: [{ name: 'B friend', theirs: p, mine: p }] })
+    rig.token.value = OTHER
+    rig.sender.tokenChanged()
+    rig.world.advance(PUBLISH_EVERY_MS + 1)
+    expect((await rig.sender.attempt('pass')).status).toBe('sent')
+    const numbers = JSON.parse(rig.world.text(made.handle.index.stats!, NUMBERS_FILE)!) as FriendStats
+    expect(numbers.login).toBe('someone')
+    expect(numbers.days[0].cards).toBe(3)
+    expect(a.index.stats).not.toBe(made.handle.index.stats)
+  })
+
+  it('the stored state names its account, and a state of another account starts over (no wait, no hash, no budget)', async () => {
+    await withFriends(rig, 1)
+    await rig.sender.attempt('pass')
+    expect(rig.saved.value?.account).toBe('yaseen')
+    rig.saved.value = { ...rig.saved.value!, account: 'someone-else' }
+    rig.sender = rig.make()
+    rig.cards.value = answered(3)
+    expect((await rig.sender.attempt('pass')).status).not.toBe('waiting')
+  })
+})
+
 describe('the Mac changes nothing but its numbers (YAZ-5086: "The Mac only sends")', () => {
   it('a remove that waits in the list: the Mac sends nothing and writes nothing; the phone finishes it', async () => {
     const handle = await withFriends(rig, 1)
@@ -348,6 +414,7 @@ function depsOf(r: Rig) {
     state: { load: async () => r.saved.value, save: async (s: MacSendSaved) => void (r.saved.value = structuredClone(s)) },
     clock: { now: () => r.world.now(), setTimeout: () => 0, clearTimeout: () => undefined },
     sleep: async () => {},
+    stats: countHere,
   }
 }
 void findFriendsIndex
