@@ -56,7 +56,8 @@ import { landOn } from '../editor/toc/tocMotion'
 import { cardBlockViewOfDom } from '../editor/card/cardBlockView'
 import { pageCardIn, type CardPlace } from '../editor/card/cardOpen'
 import { recordAt } from '../editor/card/embedCard'
-import { readPagePlace } from '../editor/pagePlace'
+import { readPagePlace, showPagePlace, type PagePlace } from '../editor/pagePlace'
+import { readPageViewOf } from '../lib/pageView'
 import { READ_ONLY_EDIT } from '../editor/readOnlyEdit'
 import { KeyLabel } from '../keys/KeyLabel'
 import { DONE_KEYS, withKeys } from '@shared/keyLabel'
@@ -292,6 +293,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   const folds = useRef({ path, outline: new Set<string>() as ReadonlySet<string>, heading: new Set<string>() as ReadonlySet<string> })
   /** The Crepe on show while the next one for the same page is built (YAZ-4990): it goes in the same frame the new one shows. */
   const shownCrepe = useRef<{ path: string; crepe: ReturnType<typeof createCrepe>; el: HTMLElement; up: Promise<void> } | null>(null)
+  /** Where the editor stood as the layer went back to reading (YAZ-5164): put back once the reading Crepe is up, one time. */
+  const back = useRef<{ path: string; top: PagePlace } | null>(null)
   useEffect(() => {
     const parent = mountRef.current
     const prev = shownCrepe.current
@@ -360,6 +363,13 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
       el.style.cssText = ''
       if (scroller !== null && scroller.scrollTop !== top) scroller.scrollTop = top
       shownCrepe.current = mine
+      // Back from edit (YAZ-5164): at the block the editor had at its top; once more a frame later, when the blocks above have drawn.
+      const from = back.current
+      if (from !== null && from.path === path && scroller !== null) {
+        back.current = null
+        showPagePlace(editorViewOf(crepe), scroller, from.top)
+        requestAnimationFrame(() => live && showPagePlace(editorViewOf(crepe), scroller, from.top))
+      }
       setReady(crepe)
     })
     return () => {
@@ -517,7 +527,20 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   if (shownMode.current !== mode) {
     shownMode.current = mode
     start.current = mode === 'edit' ? readStart() : null
+    if (mode === 'read') readBack()
     pinned.current = null
+  }
+  /**
+   * The same handoff in reverse (YAZ-5164): Esc or Done, and the reading layer opens where the editor stood. Read in the
+   * render that turns the layer to reading, while the editor is still on screen (its page view, `readPageViewOf`): its
+   * folds seed the reading Crepe, and its place in the text is put back once that Crepe is up (`back`).
+   */
+  function readBack(): void {
+    const view = readPageViewOf(editBodyRef.current?.querySelector('.editor-host'))
+    back.current = view?.top === undefined ? null : { path, top: view.top }
+    if (view === undefined) return
+    const keys = view.folds.filter((k) => !k.startsWith('lock:'))
+    folds.current = { path, outline: new Set(keys.filter((k) => !k.startsWith('h:'))), heading: new Set(keys.filter((k) => k.startsWith('h:'))) }
   }
   function readStart(): { path: string; view: PageView } | null {
     const scroller = bodyRef.current

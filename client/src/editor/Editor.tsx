@@ -84,7 +84,7 @@ import { namingTab } from '../lib/focusHandoff'
 import { flushRenamedPath, takeRenameBuffer } from '../lib/renameContinuity'
 import { isAnnouncedWrite, onTwinSave } from '../lib/twinEditors'
 import { registerPageView } from '../lib/pageView'
-import { showPagePlace } from './pagePlace'
+import { readPagePlace, showPagePlace } from './pagePlace'
 import { appliedTheme } from '../lib/theme'
 import { storage } from '../lib/storage'
 import { transformFile } from '../views/writeProperty'
@@ -1187,6 +1187,8 @@ function CrepeHost({
           folds: [...lockedKeys, ...bulletFoldKeys, ...headingFoldKeys],
           magnification: documentZoomRef.current,
           selection: getCaretOf(crepe),
+          // The place in the text (YAZ-5164): Explore's reading layer, another view, opens there when its edit ends.
+          top: readPagePlace(editorViewOf(crepe), scroller) ?? undefined,
         }))
       }
     })

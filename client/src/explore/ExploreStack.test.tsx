@@ -27,7 +27,8 @@ import { watchCardLanding } from '../editor/card/cardOpen'
 import { tileCells } from './tile'
 import { TITLE_ROOM } from './ExploreHeadMore'
 import { ago } from './recentSections'
-import { readPagePlace } from '../editor/pagePlace'
+import { readPagePlace, showPagePlace } from '../editor/pagePlace'
+import { registerPageView } from '../lib/pageView'
 import { tellReadOnlyEdit } from '../editor/readOnlyEdit'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -3388,5 +3389,38 @@ describe('YAZ-5164: the reading layer goes into edit where you are', () => {
     act(() => tellReadOnlyEdit(crepes[crepes.length - 1].opts.root, 'page'))
     await flush()
     expect(top().querySelector('.explore__body--edit')).toBeNull()
+  })
+
+  it('Esc (or Done) back to reading: the reading layer opens at the block the editor had at its top, with the editor\'s folds', async () => {
+    props = {
+      ...props,
+      renderEditor: (path): ReactNode => (
+        <div className="editor" data-editor={path}>
+          <div
+            className="editor-host"
+            ref={(host) =>
+              void (host !== null && registerPageView(host, () => ({ scrollTop: 900, zoomKey: null, folds: ['lock:k:0', 'abc:0', 'h:def:0'], magnification: 100, top: { pos: 50, offset: -8 } })))
+            }
+          />
+        </div>
+      ),
+    }
+    vi.mocked(showPagePlace).mockClear()
+    await mount()
+    await flush()
+    key(readBody(), { key: 'e' })
+    await flush()
+    key(top().querySelector('[data-editor]') as Element, { key: 'Escape' })
+    await flush()
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).toBeNull()
+    const reading = crepes[crepes.length - 1]
+    const seeds = reading.opts as unknown as { folding: { seedCollapsedKeys: () => ReadonlySet<string> }; headingFolding: { seedCollapsedKeys: () => ReadonlySet<string> } }
+    expect([...seeds.folding.seedCollapsedKeys()]).toEqual(['abc:0'])
+    expect([...seeds.headingFolding.seedCollapsedKeys()]).toEqual(['h:def:0'])
+    const [view, scroller, place] = vi.mocked(showPagePlace).mock.calls[0]
+    expect(view.dom).toBe(reading.opts.root.firstChild)
+    expect(scroller).toBe(readBody())
+    expect(place).toEqual({ pos: 50, offset: -8 })
   })
 })
