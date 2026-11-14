@@ -5,7 +5,7 @@
  */
 
 /** What a key press is in the Inbox, or null when it is not one of its keys. */
-export type CardInboxKey = { kind: 'step' } | { kind: 'answer'; button: number } | { kind: 'undo' } | { kind: 'open' } | { kind: 'tab' } | { kind: 'edit' } | { kind: 'close' } | { kind: 'move'; delta: -1 | 1 } | { kind: 'play' }
+export type CardInboxKey = { kind: 'step' } | { kind: 'answer'; button: number } | { kind: 'undo' } | { kind: 'open' } | { kind: 'tab' } | { kind: 'edit' } | { kind: 'close' } | { kind: 'move'; delta: -1 | 1 } | { kind: 'play' } | { kind: 'focus' }
 
 interface KeyPress {
   key: string
@@ -15,7 +15,7 @@ interface KeyPress {
   shiftKey: boolean
 }
 
-/** The key's meaning: Space, 1–4, ⌘Z, O, ⌘↵, E, Esc, ← → (YAZ-5004), P (the card's sound, YAZ-5014). ⌃ stands for ⌘ off a Mac. */
+/** The key's meaning: Space, 1–4, ⌘Z, O, ⌘↵, E, Esc, ← → (YAZ-5004), P (the card's sound, YAZ-5014), F (focus mode, YAZ-5375). ⌃ stands for ⌘ off a Mac. */
 export function cardInboxKey(event: KeyPress): CardInboxKey | null {
   const mod = event.metaKey || event.ctrlKey
   if (event.altKey) return null
@@ -31,6 +31,7 @@ export function cardInboxKey(event: KeyPress): CardInboxKey | null {
   if (event.key === 'o' || event.key === 'O') return { kind: 'open' }
   if (event.key === 'e' || event.key === 'E') return { kind: 'edit' }
   if (event.key === 'p' || event.key === 'P') return { kind: 'play' }
+  if (event.key === 'f' || event.key === 'F') return { kind: 'focus' }
   if (event.key === 'Escape') return { kind: 'close' }
   if (event.key === 'ArrowLeft') return { kind: 'move', delta: -1 }
   if (event.key === 'ArrowRight') return { kind: 'move', delta: 1 }

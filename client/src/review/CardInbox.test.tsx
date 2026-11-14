@@ -1979,3 +1979,34 @@ describe('the Inbox zoom (YAZ-5372)', () => {
     expect(zoomKey(1, document.body)).toBe(false)
   })
 })
+
+describe('focus mode on the Inbox bar (YAZ-5375)', () => {
+  const focusButton = () => el.querySelector<HTMLButtonElement>('.card-inbox__tools .card-inbox__focus')
+  const withFocus = (on: boolean, onFocusMode: (on: boolean) => void) => act(() => root?.render(<CardInbox {...props} review={review} session={session} focusMode={on} onFocusMode={onFocusMode} />))
+
+  it('a quiet icon button after the zoom, "Focus mode (F)"; a click, F and (while on) Esc turn it on or off; Esc with it off is not taken', () => {
+    mount(TWO_SIDES)
+    expect(focusButton()).toBeNull() // App gives the door
+    const onFocusMode = vi.fn()
+    withFocus(false, onFocusMode)
+    const tools = el.querySelector('.card-inbox__tools')!
+    expect(tools.firstElementChild?.classList.contains('document-zoom')).toBe(true)
+    expect([focusButton()!.getAttribute('aria-label'), focusButton()!.getAttribute('aria-pressed')]).toEqual(['Focus mode', 'false'])
+    act(() => focusButton()!.click())
+    expect(onFocusMode).toHaveBeenLastCalledWith(true)
+    press('f')
+    expect(onFocusMode).toHaveBeenLastCalledWith(true)
+    const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    act(() => void el.querySelector('.card-inbox')!.dispatchEvent(esc))
+    expect([esc.defaultPrevented, onFocusMode.mock.calls.length]).toEqual([false, 2])
+    withFocus(true, onFocusMode)
+    expect(focusButton()!.getAttribute('aria-pressed')).toBe('true')
+    press('F')
+    expect(onFocusMode).toHaveBeenLastCalledWith(false)
+    press('Escape')
+    expect(onFocusMode).toHaveBeenCalledTimes(4)
+    expect(onFocusMode).toHaveBeenLastCalledWith(false)
+    act(() => focusButton()!.click())
+    expect(onFocusMode).toHaveBeenLastCalledWith(false)
+  })
+})

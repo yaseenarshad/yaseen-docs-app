@@ -1223,6 +1223,10 @@ describe('the widths of the tabs (YAZ-2689)', () => {
   /** The declarations of the ONE rule whose selector is exactly `selector`. */
   const rule = (selector: string) => new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(tabsCss.replace(/\/\*[\s\S]*?\*\//g, ''))?.[1] ?? ''
 
+  it('YAZ-5375: focus mode — the workspace marked `data-inbox-focus` (App: the Inbox tab on show, focus mode on) hides the tab row', () => {
+    expect(rule('.workspace[data-inbox-focus] > .tabbar-row')).toMatch(/display:\s*none;/)
+  })
+
   it('YAZ-3808 6F: with no hover to trust (a drag, and after it until the mouse moves), a tab under the pointer does not light up', () => {
     expect(rule('.tabbar--hoverless .tabbar__tab:not(.tabbar__tab--active):not(.tabbar__tab--lit):hover::before')).toMatch(/background:\s*var\(--tab-fill\);/)
     expect(rule('.tabbar--hoverless .tabbar__tab:not(.tabbar__tab--active):hover .tabbar__close,\n.tabbar--hoverless .tabbar__close:hover')).toMatch(/visibility:\s*hidden;/)

@@ -351,7 +351,6 @@
   z-index: 3;
   flex: none;
   align-self: stretch;
-  padding-bottom: 4px;
   background: var(--bg-side);
 }
 /* The top row (YAZ-5017, as Mochi's): the filter, the scope's path, and "3 of 12" on the right. */
@@ -360,7 +359,8 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
-  padding: 10px 4px 8px;
+  /* Compact (YAZ-5375 A): 6 / 6, the progress a line on the bar's bottom edge, so the card starts higher. */
+  padding: 6px 4px;
   font-size: 13px;
   color: var(--fg-muted);
 }
@@ -546,6 +546,34 @@
     transition: none;
   }
 }
+/* Focus mode (YAZ-5375 C): the bar's quiet icon button, beside the zoom; pressed while the tab row is hidden. */
+.card-inbox__focus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg-muted);
+}
+.card-inbox__focus:hover {
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  color: var(--fg);
+}
+.card-inbox__focus[aria-pressed='true'] {
+  color: var(--accent);
+}
+.card-inbox__focus:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* Focus mode on, the button stays clear while the bar is not pointed at: it is the way back to the tab row. */
+.card-inbox__tools:has(.card-inbox__focus[aria-pressed='true']) {
+  opacity: 1;
+}
 /* The Inbox's zoom (YAZ-5372) on the card's text only, as a page's is on its content (app.css, YAZ-1710 D14): the
    card's frame, its width and the rule between two sides stay in unzoomed px. */
 .card-inbox__card .card__side {
@@ -554,10 +582,10 @@
 /* The progress bar (YAZ-5020, as Mochi's): thin, under the row; a Remembered fills grey, a Forgot red. */
 .card-inbox__progress {
   display: flex;
-  height: 4px;
+  height: 2px;
   margin: 0 4px;
   overflow: hidden;
-  border-radius: 2px;
+  border-radius: 1px;
   background: color-mix(in srgb, var(--fg) 8%, transparent);
 }
 .card-inbox__progress-part {
@@ -699,7 +727,8 @@
   /* Settings › Review › Card width (YAZ-5144): the card's text at most `--card-text-width`, with the card's own sides.
      A drag of its edge sets the width for this run (`inboxCardWidth.ts`, inline). */
   width: min(calc(var(--card-text-width) + 2 * var(--inbox-card-pad, 28px)), 100%);
-  margin-top: 5vh;
+  /* YAZ-5375 A: 12 px under the bar (it was 5vh), as close as the card's head row allows. */
+  margin-top: 12px;
 }
 /* YAZ-5027: the row above the card holds the state chip, on the card's left edge. Its fixed height keeps the card in
    place between cards, also with no chip. YAZ-5051: the page name and the ID follow the chip here, quiet; "Side 1 of 2"
