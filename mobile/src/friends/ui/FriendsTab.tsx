@@ -219,23 +219,16 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
   const entries = showGroup ? groupEntries : friendEntries
   const rows = boardRows(entries, period, now)
 
-  // Decision 24: a cheer or nudge on the screen is "seen" now; it then shows to the end of the next local day.
-  const shown = board.friends.flatMap((f) => {
-    const m = markToShow(f.mark, board.seen[f.theirs], now)
-    return m !== null && !showGroup ? [{ theirs: f.theirs, mark: m }] : []
-  })
-  const seenKey = shown.map((s) => `${s.theirs}:${s.mark.at}`).join()
-  const lastSeen = useRef('')
-  useEffect(() => {
-    if (seenKey === '' || seenKey === lastSeen.current) return
-    lastSeen.current = seenKey
-    void service.see(shown)
-    // `shown` follows `seenKey`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seenKey, service])
-
   const nobody = board.friends.length === 0 && board.groups.length === 0 && board.shared.length === 0
 
+  // Decision 24, YAZ-5262: a cheer or nudge is "seen" when its line was really on the screen (`CheerLine`).
+  const seenOnce = useRef(new Set<string>())
+  const seeOnce = (f: FriendEntry) => {
+    const mark = markToShow(f.mark, board.seen[f.theirs], now)
+    if (mark === null || seenOnce.current.has(`${f.theirs}:${mark.at}`)) return
+    seenOnce.current.add(`${f.theirs}:${mark.at}`)
+    void service.see([{ theirs: f.theirs, mark }])
+  }
   const ask = (question: string, yes: string, run: () => Promise<unknown>) => setAsking({ question, yes, run })
   const doAsk = async () => {
     if (asking === null) return
@@ -336,7 +329,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
                       <span className={entry.you ? 'fr-name fr-name--you' : 'fr-name'}>{entry.you ? 'You' : entry.name}</span>
                       {(entry.cheer !== null || entry.sub.length > 0) && (
                         <span className="fr-sub">
-                          {entry.cheer !== null && <span className="fr-cheer">{entry.cheer}</span>}
+                          {entry.cheer !== null && entry.friend !== undefined && <CheerLine text={entry.cheer} onSeen={() => seeOnce(entry.friend!)} />}
                           {entry.cheer !== null && entry.sub.length > 0 && ' · '}
                           {entry.sub.join(' · ')}
                         </span>
@@ -778,5 +771,51 @@ function GroupPanel({ service, close, refresh }: { service: FriendsService; clos
         Close
       </button>
     </div>
+  )
+}
+
+/**
+ * The line "cheered you" or "nudged you" (decision 24). It tells `onSeen` once, when the line is really on the screen
+ * (YAZ-5262): an `IntersectionObserver` (all of the line in view); with none, a check of its place on each scroll.
+ */
+function CheerLine({ text, onSeen }: { text: string; onSeen: () => void }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const latest = useRef(onSeen)
+  latest.current = onSeen
+  useEffect(() => {
+    const el = ref.current
+    if (el === null) return
+    let done = false
+    const seen = () => {
+      if (done) return
+      done = true
+      latest.current()
+    }
+    const IO = (globalThis as { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver
+    if (typeof IO === 'function') {
+      const watch = new IO(
+        (entries) => {
+          if (entries.some((e) => e.isIntersecting)) {
+            seen()
+            watch.disconnect()
+          }
+        },
+        { threshold: 1 },
+      )
+      watch.observe(el)
+      return () => watch.disconnect()
+    }
+    const check = () => {
+      const r = el.getBoundingClientRect()
+      if (r.height > 0 && r.top >= 0 && r.bottom <= (globalThis.innerHeight ?? 0)) seen()
+    }
+    check()
+    document.addEventListener('scroll', check, true)
+    return () => document.removeEventListener('scroll', check, true)
+  }, [])
+  return (
+    <span ref={ref} className="fr-cheer">
+      {text}
+    </span>
   )
 }

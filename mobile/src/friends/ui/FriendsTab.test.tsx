@@ -114,11 +114,35 @@ describe('the Friends tab (decisions 21, 24, 25)', () => {
     expect(h.host.querySelectorAll('.fr-mark')).toHaveLength(0)
   })
 
-  it('a cheer on the screen is "seen" (decision 24): the phone keeps it', async () => {
-    const board = demoBoard(NOW)
+  it('YAZ-5262: a cheer counts as seen only when its line was on the screen (30 friends, the cheer from the last one)', async () => {
+    // A fake IntersectionObserver: the test says which element comes into view.
+    const watched = new Map<Element, (entries: { isIntersecting: boolean; target: Element }[]) => void>()
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(private readonly fn: (entries: { isIntersecting: boolean; target: Element }[]) => void) {}
+        observe(el: Element) {
+          watched.set(el, this.fn)
+        }
+        disconnect() {
+          for (const [el, fn] of watched) if (fn === this.fn) watched.delete(el)
+        }
+        unobserve(el: Element) {
+          watched.delete(el)
+        }
+      },
+    )
+    const friends = Array.from({ length: 30 }, (_, i) => demoFriend(NOW, `Friend ${i + 1}`, { days: [[0, { cards: 100 - i }]] }))
+    friends[29] = { ...friends[29], mark: { kind: 'cheer', at: new Date(NOW - 3600_000).toISOString() } }
     let s: FakeService
-    ;({ h, s } = await open(board))
-    expect(s.calls.see).toEqual([`${board.friends[0].theirs}:${board.friends[0].mark!.at}`])
+    ;({ h, s } = await open(demoBoard(NOW, { friends })))
+    expect(h.host.querySelector('.fr-cheer')).not.toBeNull()
+    expect(s.calls.see).toEqual([])
+    const line = h.host.querySelector('.fr-cheer')!
+    await act(async () => watched.get(line)?.([{ isIntersecting: false, target: line }]))
+    expect(s.calls.see).toEqual([])
+    await act(async () => watched.get(line)?.([{ isIntersecting: true, target: line }]))
+    expect(s.calls.see).toEqual([`${friends[29].theirs}:${friends[29].mark!.at}`])
   })
 
   it('a cheer seen two days ago is gone; an unseen old one still shows', async () => {
