@@ -75,7 +75,7 @@ import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import type { CardReviewResume, CardReviewScope, CardReviewSession } from './review/useCardReview'
 import { cardLookAttrs, cardSpacingVars } from './review/cardSpacing'
-import { contentWidthVars } from './lib/contentWidth'
+import { contentWidthVars, tablePositionVars } from './lib/contentWidth'
 import { nextHiddenAttrs, nextHiddenVars } from './review/nextHidden'
 import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
@@ -898,6 +898,8 @@ export function App() {
     ...cardSpacingVars(settings),
     // Appearance › Content width and Settings › Review › Card width (YAZ-5144): the text's widest, pages and cards.
     ...contentWidthVars(settings),
+    // Settings › Tables › Table position and Card look › Card tables (YAZ-5136 rounds 2 and 3).
+    ...tablePositionVars(settings),
     // Settings › Review › Mark the next hidden word (YAZ-5053 round 3): a picked colour only; the theme's default otherwise.
     ...nextHiddenVars(settings),
     '--thread-width': `${settings.threadWidth}px`,

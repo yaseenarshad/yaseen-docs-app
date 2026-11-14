@@ -15,6 +15,7 @@
  * ⌘F's rule over the last word and the end, so the last word stays in sight.
  */
 import type { Span } from '../editor/find/leastScroll'
+import { cssZoom } from '../lib/cssZoom'
 
 /** Where a word may sit before the view moves: the top two thirds of the room. */
 export const READ_LINE = 2 / 3
@@ -36,4 +37,18 @@ export function inboxRoom(view: HTMLElement): Span {
   const top = view.querySelector('.card-inbox__top')?.getBoundingClientRect().bottom ?? box.top
   const dock = view.querySelector('.card-inbox__dock')?.getBoundingClientRect().top ?? box.bottom
   return { start: Math.max(box.top, top), end: Math.min(box.bottom, dock) }
+}
+
+/**
+ * Round 5 (Yaseen: "Yes, build it" — Space never shows a blank you cannot see): a blank is IN VIEW when all of it lies
+ * in the room, between the top row's bottom edge and the buttons' top edge. A blank cut by either edge is not.
+ */
+export const inRoom = (thing: Span, room: Span): boolean => thing.start >= room.start && thing.end <= room.end
+
+/** Moves the Inbox's view by `dy` screen px: a glide, or at once with Reduce motion. The target is absolute, so a call during a glide lands right. */
+export function glideView(view: HTMLElement, dy: number): void {
+  const top = view.scrollTop + dy / cssZoom(view)
+  const smooth = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches !== true
+  if (typeof view.scrollTo === 'function') view.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' })
+  else view.scrollTop = top
 }

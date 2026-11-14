@@ -17,7 +17,8 @@
  *    side says "Side 1 of 2" on the row's right (YAZ-5048), and the key row's Space says "Next side" when the next Space shows a side.
  *  - SCROLL (YAZ-5049): round 3 follows the NEXT blank (`data-next`, the one "Mark the next hidden word" colours) after
  *    each Space, a new side's first blank, and at the end (no blank left) brings the card's end — the Reviews strip — in
- *    as far as the last word stays in sight; one more Space there gives the answer buttons a soft ring. Round 1: the word a Space shows, or the side it adds, comes into view, gliding; never centred. Round 2
+ *    as far as the last word stays in sight; one more Space there gives the answer buttons a soft ring. Round 5: Space
+ *    never shows a blank you cannot see — a marked blank not wholly between the top row and the buttons only glides in. Round 1: the word a Space shows, or the side it adds, comes into view, gliding; never centred. Round 2
  *    (as Mochi): the card is one long page — no scroll bar of its own; the Inbox's view scrolls, the top row stays on
  *    top and the buttons at the bottom — and a word that reaches the view's lower third comes up to its upper third,
  *    so what comes next shows (`inboxScroll.ts`).
@@ -87,7 +88,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
-import { cardSides, cardTitle, cardWithoutTitle, hiddenCount } from '@shared/cardText'
+import { cardSides, cardTitle } from '@shared/cardText'
 import { recordAt } from '../editor/card/embedCard'
 import type { GestureAction } from '@shared/keys'
 import type { CardRating } from '@shared/cardLine'
@@ -96,7 +97,7 @@ import type { CardReviewApi, CardReviewSession } from './useCardReview'
 import { CardId, CardNextChip, CardReviews, cardWait } from './cardParts'
 import { CardSideCount, InboxCardFace, InboxCardPanel, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
 import { cardInboxHints, cardInboxKey } from './cardInboxKeys'
-import { CARD_MEDIA, CARD_OPENS, stopCardAudio, textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
+import { textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
 import { HoverTip } from '../components/HoverTip'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { CARD_FILTERS, CardInboxBar } from './CardInboxBar'
@@ -108,9 +109,6 @@ import { AddMoreField } from './AddMoreField'
 import { useAnswerTimer } from './answerTimer'
 import { TodayWork } from './TodayWork'
 import { todayCards } from './reviewTime'
-import { cssZoom } from '../lib/cssZoom'
-import { inboxRoom, readingScroll } from './inboxScroll'
-import { SHOW_GAP, leastScroll } from '../editor/find/leastScroll'
 import '../explore/explore.css'
 import { useUnit } from '../vault/unitWord'
 
@@ -221,13 +219,6 @@ function ArchivedList({ session, nameOf, openPage, unarchive, backToAll }: { ses
   )
 }
 
-/** The step a card is at (D18): how many sides show, and how many hidden words, in page order over the card. */
-interface Step {
-  key: string | null
-  sides: number
-  shown: number
-}
-
 export function CardInbox({ shown = true, review, session, vaultOf, nameOf, openPage, editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace }: CardInboxProps) {
   const unit = useUnit()
   const rootRef = useRef<HTMLDivElement>(null)
@@ -246,9 +237,9 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   // Time so far (YAZ-5130): hidden in the clock's hover box by default (round 2: hover only, never a click).
   const time = review.settings.timeSoFar
 
-  // Space's steps (D18, YAZ-5048, YAZ-5105 round 3) and the scroll that follows them (YAZ-5049): the Inbox's card,
+  // Space's steps (D18, YAZ-5048, YAZ-5049, YAZ-5105 round 3) and the scroll that follows them: the Inbox's card,
   // shared with the Preview (YAZ-5152, `inboxCard.tsx`). The card's sound stops with the card and a hidden Inbox.
-  const steps = useCardSteps(text, cardKey)
+  const steps = useCardSteps(text, cardKey, rootRef)
   const { counts, step, done, nextSide, onLastSide } = steps
   const bodyRef = useRef<HTMLDivElement>(null)
   useStepScroll(steps, shown, bodyRef, rootRef)
@@ -308,9 +299,11 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   // dropped Space, and one more Space moves nothing but gives the answer buttons one soft ring — where to go now.
   // A new value each time, so the ring plays again; none on the next card.
   const [nudge, setNudge] = useState<{ key: string | null; n: number }>({ key: null, n: 0 })
-  const advance = useCallback(() => {
+  // Round 4: `by` says what showed it — Space (a key) scrolls to follow the next blank, a mouse never moves the view.
+  // The steps are the shared card's (`useCardSteps`); at the end, a key rings the buttons.
+  const advance = useCallback((by: 'key' | 'mouse' = 'key') => {
     const { steps, card } = live.current
-    if (card?.page == null || steps.stepOn()) return
+    if (card?.page == null || steps.stepOn(by) || by !== 'key') return
     const key = steps.step.key
     setNudge((v) => ({ key, n: v.key === key ? v.n + 1 : 1 }))
   }, [])
@@ -465,7 +458,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
             ) : (
               text !== null &&
               card.page !== null && (
-                <InboxCardFace text={text} path={card.path} vault={vaultOf(card.path)} step={step} doors={doors} onStep={advance} />
+                <InboxCardFace text={text} path={card.path} vault={vaultOf(card.path)} steps={steps} doors={doors} onStep={advance} />
               )
             )}
         </InboxCardPanel>

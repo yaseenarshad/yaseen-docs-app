@@ -1738,6 +1738,142 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
       expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 420 - 400 + 6 }))
     })
 
+    describe('round 5 (Yaseen: "Yes, build it"): Space never shows a blank you cannot see', () => {
+      it('the marked blank in view (between the top row and the buttons): Space shows it', () => {
+        mount(THREE)
+        scroller()
+        place.word0 = [150, 170]
+        press(' ')
+        expect(shown()).toEqual(['one'])
+      })
+
+      it('the marked blank off screen: Space only glides it in, a third of the way down, and shows nothing; the next Space shows it', () => {
+        mount(THREE)
+        scroller()
+        place.word0 = [700, 720]
+        press(' ')
+        expect(shown()).toEqual([])
+        expect(blanks()).toBe(3)
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 200 }))
+        // The glide put it in view: now Space shows it.
+        place.word0 = [200, 220]
+        press(' ')
+        expect(shown()).toEqual(['one'])
+      })
+
+      it('a blank cut by the buttons` edge, or by the top row`s, is not in view: Space only moves it', () => {
+        mount(THREE)
+        scroller()
+        place.word0 = [390, 410]
+        press(' ')
+        expect(shown()).toEqual([])
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 390 - 200 }))
+        mount(THREE)
+        scroller(300)
+        place.word0 = [90, 110]
+        press(' ')
+        expect(shown()).toEqual([])
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 300 + 90 - 100 - 6 }))
+      })
+
+      it('after a scroll by hand took the next blank out of view: Space only brings it back', () => {
+        mount(THREE)
+        scroller()
+        press(' ')
+        expect(shown()).toEqual(['one'])
+        // The person scrolled down: the next blank is above the top row now.
+        place.word1 = [-200, -180]
+        scrollTo.mockClear()
+        press(' ')
+        expect(shown()).toEqual(['one'])
+        expect(scrollTo).toHaveBeenCalledOnce()
+      })
+
+      it('a new side shows no blank: Space shows the side, the view follows its first blank; a blank still out of view only moves on the next Space', () => {
+        mount(TWO_SIDES)
+        scroller()
+        press(' ')
+        place.word1 = [700, 720]
+        press(' ')
+        expect(sides()).toBe(2)
+        expect(shown()).toEqual(['France'])
+        // The glide is under way (the mock never moves): the blank is not in view yet, so Space moves only.
+        scrollTo.mockClear()
+        press(' ')
+        expect(shown()).toEqual(['France'])
+        expect(scrollTo).toHaveBeenCalledOnce()
+      })
+    })
+
+    describe('round 4 (Yaseen: "mouse behavior and spacebar behavior is a little bit different"): a click shows THAT word and the view stays put', () => {
+      const word = (n: number) => el.querySelector<HTMLElement>(`[data-hidden="${n}"]`)!
+      const click = (target: Element) => act(() => void target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })))
+      const nextMark = () => el.querySelector('[data-next]')?.getAttribute('data-hidden') ?? null
+
+      it('a click on a hidden word shows that word — not the marked one — and nothing scrolls, even with the next blank below the view', () => {
+        mount(THREE)
+        scroller()
+        place.word1 = [320, 340]
+        place.word2 = [700, 720]
+        click(word(1))
+        expect(shown()).toEqual(['two'])
+        expect(scrollTo).not.toHaveBeenCalled()
+        // The mark goes to the next blank still hidden AFTER the clicked word, in reading order.
+        expect(nextMark()).toBe('2')
+      })
+
+      it('nothing hidden after the clicked word: the mark goes to the first hidden word before it; the next Space shows the marked word and follows the round-3 rule from where the view is', () => {
+        mount(THREE)
+        scroller()
+        click(word(2))
+        expect(shown()).toEqual(['three'])
+        expect(nextMark()).toBe('0')
+        expect(scrollTo).not.toHaveBeenCalled()
+        // Space: the marked word shows; the scroll follows the NEW next blank (word 1), low in the room.
+        place.word1 = [320, 340]
+        press(' ')
+        expect(shown()).toEqual(['one', 'three'])
+        expect(nextMark()).toBe('1')
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 320 - 200 }))
+      })
+
+      it('a click on a word already shown does nothing new; a click elsewhere on the card shows the marked word, and the view stays put too', () => {
+        mount(THREE)
+        scroller()
+        click(word(1))
+        const before = shown()
+        click(el.querySelector('.card__hidden')!)
+        expect(shown()).toEqual(before)
+        expect(nextMark()).toBe('2')
+        // Elsewhere on the card (the text around the words): the marked word, a mouse step, so no scroll.
+        place.word0 = [700, 720]
+        click(el.querySelector('.card__side')!)
+        expect(shown()).toEqual(['two', 'three'])
+        expect(scrollTo).not.toHaveBeenCalled()
+        expect(nextMark()).toBe('0')
+      })
+
+      it('the clicks show every word: the card is fully shown, as by Space (the answers, the hint row without Space)', () => {
+        mount(THREE)
+        scroller()
+        for (const n of [2, 0, 1]) click(word(n))
+        expect(blanks()).toBe(0)
+        const hints = [...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)
+        expect(hints).not.toContain('Space Show')
+        expect(scrollTo).not.toHaveBeenCalled()
+      })
+
+      it('on two sides: clicks on the front`s words, then Space shows the next side as before', () => {
+        mount(TWO_SIDES)
+        scroller()
+        click(word(0))
+        expect(sides()).toBe(1)
+        press(' ')
+        expect(sides()).toBe(2)
+        expect(nextMark()).toBe('1')
+      })
+    })
+
     it('THE END: the hint row drops Space; one more Space moves nothing and gives the answer buttons one soft nudge, each time', () => {
       mount(THREE)
       scroller()

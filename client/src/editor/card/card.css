@@ -464,10 +464,16 @@
 }
 .card__sides .card__side table {
   width: 100%;
-  margin: 0;
+  /* Only the block margins: the inline ones are Table position's (`table.css`). */
+  margin-block: 0;
   table-layout: auto;
   border-collapse: collapse;
   overflow: visible;
+}
+/* Round 2: a table whose columns the page editor sized (`cardRender.ts` sets the `<col>` widths and the table's width)
+   lays out as the page's: fixed. */
+.card__sides .card__side table[data-sized] {
+  table-layout: fixed;
 }
 .card__sides .card__side :is(th, td) {
   padding: calc(4px + var(--card-gap)) 16px;

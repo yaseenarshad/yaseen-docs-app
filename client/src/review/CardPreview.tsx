@@ -8,7 +8,8 @@
  *    no schedule, no Up next and no counts. The Reviews strip has no delete here.
  *  - The bottom bar reads "Preview · Esc to close".
  *  - SPACE: the next hidden word, then the next side, as in the Inbox; at the end, the card again from its front.
- *    A click on the card is a Space too. P plays the card's sound, as in the Inbox.
+ *    A click on a blank shows that word, elsewhere on the card the marked one, as in the Inbox (YAZ-5049 round 4).
+ *    P plays the card's sound, as in the Inbox.
  *  - ESC closes it, and the keyboard goes back where it was: from Edit card, to its editor, the caret kept.
  *
  * Opened from anywhere by `CARD_PREVIEW` (`editor/card/cardOpen.ts`); App draws it.
@@ -41,7 +42,7 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose }:
   const { text, title } = useCardFront(card.text, card.notitle)
   // One preview is one card: a new ask (another card) starts at its front.
   const cardKey = `${card.path}\n${card.id ?? ''}\n${card.text}`
-  const steps = useCardSteps(text, cardKey)
+  const steps = useCardSteps(text, cardKey, rootRef)
   useStepScroll(steps, true, bodyRef, rootRef)
   const live = useRef({ steps, onClose })
   live.current = { steps, onClose }
@@ -82,8 +83,9 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose }:
   }, [])
 
   const headTitle = title.waits && !steps.done ? '' : title.text
+  /** A click on the card (not on a blank: that shows its word): the marked word, or at the end the front again. */
   const step = () => {
-    if (!steps.stepOn()) steps.restart()
+    if (!steps.stepOn('mouse')) steps.restart()
   }
   return (
     <div className="card-preview" role="dialog" aria-modal="true" aria-label="Preview card">
@@ -106,7 +108,7 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose }:
             {text !== null && <CardSideCount steps={steps} />}
           </div>
           <InboxCardPanel startDrag={startDrag} bodyRef={bodyRef}>
-            {text !== null && <InboxCardFace text={text} path={card.path} vault={vault} step={steps.step} doors={doors} onStep={step} />}
+            {text !== null && <InboxCardFace text={text} path={card.path} vault={vault} steps={steps} doors={doors} onStep={step} />}
           </InboxCardPanel>
           {/* The Reviews strip from the last side (YAZ-5105), as in the Inbox; no delete in a preview. */}
           {settings !== undefined && steps.onLastSide && card.reviews.length > 0 && <CardReviews key={cardKey} reviews={card.reviews} settings={settings} />}

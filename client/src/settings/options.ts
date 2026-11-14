@@ -5,7 +5,7 @@
  * resolution, the folder for a new page). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
 import type { UnitText } from '../vault/unitWord'
-import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyPageOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewPageLocation, type NoticeLength, type OutsideChangeGlow, type CardSpacing, type CardWidth, type SectionLines, type ShownHiddenWords, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableNewStyle, type TableTextInCells, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyPageOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewPageLocation, type NoticeLength, type OutsideChangeGlow, type CardSpacing, type SectionLines, type ShownHiddenWords, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableNewStyle, type TableTextInCells, type TablePosition, type CardTablePosition, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -153,8 +153,11 @@ export const SHOWN_HIDDEN_WORDS_OPTIONS: readonly Option<ShownHiddenWords>[] = [
   { label: 'Box', value: 'box' },
 ]
 
-/** Settings › Review › Card width (YAZ-5144): the pages' Content width, or a step of its own; Card spacing's words. */
-export const cardWidthOptions = (unit: UnitText): readonly Option<CardWidth>[] => [{ label: unit('Same as pages'), value: 'pages' }, ...CONTENT_WIDTH_OPTIONS]
+/** Settings › Review › Card width (YAZ-5144 round 2): the pages' Content width, or Custom px; Card spacing's words. */
+export const cardWidthOptions = (unit: UnitText): readonly Option<BlockWidthMode>[] => [
+  { label: unit('Same as pages'), value: 'column' },
+  { label: 'Custom', value: 'px' },
+]
 
 /** Settings › Review › Card spacing (YAZ-5050): the pages' spacing, or the card's own. */
 export const cardSpacingOptions = (unit: UnitText): readonly Option<CardSpacing>[] => [
@@ -218,6 +221,15 @@ export const TABLE_NEW_STYLE_OPTIONS: readonly Option<TableNewStyle>[] = [
 ]
 
 /** Settings › Tables › All tables › Text in cells (YAZ-4900); table.css reads it as `data-table-text` on `.app`. */
+/** Settings › Tables › Table position (YAZ-5136 round 2). */
+export const TABLE_POSITION_OPTIONS: readonly Option<TablePosition>[] = [
+  { label: 'Left', value: 'left' },
+  { label: 'Centre', value: 'center' },
+]
+
+/** Settings › Review › Card look › Card tables (YAZ-5136 round 3): the pages' Table position, or the cards' own. */
+export const cardTablePositionOptions = (unit: UnitText): readonly Option<CardTablePosition>[] => [{ label: unit('Same as pages'), value: 'pages' }, ...TABLE_POSITION_OPTIONS]
+
 export const TABLE_TEXT_IN_CELLS_OPTIONS: readonly Option<TableTextInCells>[] = [
   { label: 'Wrap', value: 'wrap' },
   { label: 'Clip', value: 'clip' },

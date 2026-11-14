@@ -37,6 +37,18 @@
   --table-text-brown: #8b5a2b;
 }
 
+/* Table position (YAZ-5136 rounds 2 and 3): ONE rule, from ONE variable, `--table-inline`: a page table's block (for a
+   block with Settings' Width), its table (for one with dragged columns) and a card's read table. A page reads
+   Settings › Tables › Table position (`--page-table-inline: auto` for Centre, on `.app`); a card, read or in Edit card,
+   reads Card look › Card tables (`--card-table-inline`), else the pages'. Left is 0, the look before. A wider table
+   gets no margin and scrolls in its box as before. */
+.app :is(.milkdown-table-block, .milkdown-table-block table, .card__table > table) {
+  margin-inline: var(--table-inline, var(--page-table-inline, 0));
+}
+.card {
+  --table-inline: var(--card-table-inline, var(--page-table-inline, 0));
+}
+
 /* Crepe's outline colour (its frame and frame-dark themes, `crepeTheme.ts`), for a table that Crepe's theme does not
    reach: a card's table read in the Inbox, Explore, the card file tab and the card window (YAZ-5136). In a page,
    Crepe's own `--crepe-color-outline` wins. `cardTable.test.ts` checks both against Crepe's files. */
