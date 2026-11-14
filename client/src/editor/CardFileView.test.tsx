@@ -11,6 +11,7 @@ import type { FileResponse, IndexRecord } from '@shared/types'
 import { createWikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { CardFileView } from './CardFileView'
 import { cardBlockViewOfDom } from './card/cardBlockView'
+import { setCardFormatHints } from './card/cardFormatHint'
 import { VaultReadOnly } from '../vault/readOnlyVault'
 import { useReviewSettings } from '../review/useReviewSettings'
 import { createCardFile } from '../review/newCardFile'
@@ -423,6 +424,27 @@ describe('a new card file (YAZ-5037 phase 4, YAZ-5044)', () => {
     await mount(disk.files.get(made)!, { path: made })
     expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
     expect(editButton()).not.toBeNull()
+  })
+
+  it('YAZ-5114: the new card file shows the format hint under the key row; the first text removes it; an old card file never shows it', async () => {
+    setCardFormatHints({ on: true, byVault: new Map([['/v', { folder: '/v/Card skill/formats', formats: ['acronym', 'book', 'comparison', 'concept'] }]]) })
+    try {
+      const made = await createCardFile('/v/Geography', 'la biblioteca')
+      await mount(disk.files.get(made)!, { path: made })
+      await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .card__formats')).not.toBeNull())
+      expect(el.querySelector('[data-explore-card-edit] .card__formats')!.textContent).toBe('Formats in your card skill: acronym · book · comparison · 1 more. Learn the formats')
+      const dom = el.querySelector<HTMLElement>('[data-explore-card-edit] .card__editor .ProseMirror')!
+      const view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
+      act(() => view.dispatch(view.state.tr.insertText('El libro', 1)))
+      expect(el.querySelector('.card__formats')).toBeNull()
+      act(() => root?.unmount())
+      await mount(FILE)
+      act(() => editButton()!.click())
+      await cardEditor()
+      expect(el.querySelector('.card__formats')).toBeNull()
+    } finally {
+      setCardFormatHints({ byVault: new Map() })
+    }
   })
 
   it('a Done in Edit card never renames: the card`s text is its sides, not its title', async () => {

@@ -286,6 +286,19 @@ describe('createStore: loading', () => {
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, markNextHidden: 'yes', nextHiddenColour: 'blue' })).toMatchObject({ markNextHidden: true, nextHiddenColour: null })
   })
 
+  it('Card tips (YAZ-5114): On by default, also in a file from before it; Off survives a restart; a wrong value reads On', async () => {
+    expect(DEFAULT_SETTINGS.cardTips).toBe(true)
+    const { cardTips: _gone, ...older } = DEFAULT_SETTINGS
+    await seed(valid({ settings: older }))
+    expect(createStore(file).get().settings.cardTips).toBe(true)
+    const store = createStore(file)
+    store.setSettings({ ...DEFAULT_SETTINGS, cardTips: false })
+    await store.flush()
+    expect(createStore(file).get().settings.cardTips).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, cardTips: 'off' })).toBe(false)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, cardTips: 'off' })).toMatchObject({ cardTips: true })
+  })
+
   it('"Jump across files" (YAZ-3500): a file from before it reads off; on survives a restart; a wrong value reads off; it stays on this Mac', async () => {
     const { codeLanguageHelpers: _a, ...legacySettings } = DEFAULT_SETTINGS
     expect(DEFAULT_SETTINGS.codeLanguageHelpers).toBe(false)

@@ -213,6 +213,8 @@ A guide for you and your AI agent on how to make good cards. It ships with the a
 
 For agents: `yaseendocs card guide` prints the skill's start page; run it before you add or change a card. `--path` prints the skill's folder, in double quotes. Inside a vault that has its own `Card skill` folder at the top, the command uses that folder; else the app's copy. Before the app has started once, there is no copy yet, and the command says so (exit 1).
 
+**The format hint** (YAZ-5114): a new, empty card in Edit card shows one quiet line under the keys: "Formats in your card skill: acronym · book · comparison · 8 more. Learn the formats". The names are the pages of the skill's `formats` folder (your own `Card skill` folder when the vault has one). The line goes when you type. A card that already has text never shows it. "Learn the formats" shows the `formats` folder: in Files for your own copy, in Finder for the app's copy. Settings › Review › Card tips (On by default) turns the line off.
+
 **Card check** (YAZ-5116): `yaseendocs card check "<page.md>" [--json]` lists each card of a page with its sure mistakes: a `{{` with no closing `}}`, an empty `{{}}`, nothing hidden on a card with no back, no title, the title still "Title", and a question that hides its own subject ("What does {{NASA}} stand for?"). Code in a card is never checked, and length is no mistake. It exits 1 when a card has a mistake. `card add` and `card new` print each mistake of the new card as a warning and still add it; with `--strict` they add nothing.
 
 ## Two kinds of vault
