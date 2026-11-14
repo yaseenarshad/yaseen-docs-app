@@ -4,7 +4,7 @@
  * that copies on a click (D20), and the Reviews section with the full table (D3, D13). The table is the page card's
  * too (`cardBlockView.ts`, YAZ-5000); the Inbox has no Reviews section.
  */
-import { useCallback, useContext, useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useContext, useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { CardReview } from '@shared/cardLine'
 import { answerLabel, cardHistory, cardState, cardStateWithout, dayCount, recallChance } from '@shared/cardSchedule'
@@ -58,6 +58,15 @@ export function CardId({ id, onNotice }: { id: string; onNotice: (message: strin
       {id}
     </button>
   )
+}
+
+/**
+ * The card's title band (YAZ-5308 A3, `editor/card/cardBand.ts`): the shaded band under the card's top bar, the title
+ * bold, a long title wrapping. Read, no label, and nothing at all for a card with no title. Explore's card, the Inbox
+ * and its Preview; a card in a page and an embed draw the same band without React.
+ */
+export function CardBand({ children }: { children: ReactNode }) {
+  return <div className="card-band">{children}</div>
 }
 
 /**

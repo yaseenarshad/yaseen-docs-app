@@ -167,12 +167,13 @@ export function CardSideCount({ steps }: { steps: Pick<CardSteps, 'counts' | 'st
   return <span className="card-inbox__sides">{`Side ${Math.min(step.sides, counts.length)} of ${counts.length}`}</span>
 }
 
-/** The card's frame (YAZ-5019): the panel, its two width edges (a drag sizes the card, centred), and its body. */
-export function InboxCardPanel({ startDrag, bodyRef, children }: { startDrag: (side: -1 | 1) => (event: ReactPointerEvent<HTMLElement>) => void; bodyRef: RefObject<HTMLDivElement | null>; children: ReactNode }) {
+/** The card's frame (YAZ-5019): the panel, its two width edges (a drag sizes the card, centred), its title band (YAZ-5308 A3), and its body. */
+export function InboxCardPanel({ startDrag, bodyRef, band, children }: { startDrag: (side: -1 | 1) => (event: ReactPointerEvent<HTMLElement>) => void; bodyRef: RefObject<HTMLDivElement | null>; band?: ReactNode; children: ReactNode }) {
   return (
     <div className="card-inbox__panel">
       <div className="card-inbox__edge" data-side="left" role="separator" aria-orientation="vertical" aria-label="Card width" onPointerDown={startDrag(-1)} />
       <div className="card-inbox__edge" data-side="right" role="separator" aria-orientation="vertical" aria-label="Card width" onPointerDown={startDrag(1)} />
+      {band}
       <div ref={bodyRef} className="card-inbox__body">
         {children}
       </div>

@@ -486,9 +486,9 @@ describe('`/card` with the page`s editor', () => {
     expect(card.editing).toBe(true)
     await card.cardEditor!.ready
     const inner = card.cardEditor!.view()!
-    const field = card.dom.querySelector<HTMLInputElement>('.card-editor__title')!
+    const field = card.dom.querySelector<HTMLTextAreaElement>('.card-band__field')!
     expect(document.activeElement).toBe(field)
-    expect([field.value, field.placeholder]).toEqual(['', 'Title'])
+    expect([field.value, field.placeholder]).toEqual(['', 'Untitled card'])
     expect(inner.state.doc.textContent).toBe('')
     await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toBe('```card\n```\n<!-- card: WIKI-512 -->\n'))
     field.value = 'Capitals'
@@ -514,13 +514,19 @@ describe('`/card` with the page`s editor', () => {
  * the card line; the editor holds the card's text, all of it; Done writes the title back on the line.
  */
 describe('YAZ-5164 part 3: Edit card`s Title field', () => {
-  const titleField = (card: CardBlockView) => card.dom.querySelector<HTMLInputElement>('.card-editor__title')
+  const titleField = (card: CardBlockView) => card.dom.querySelector<HTMLTextAreaElement>('.card-band__field')
 
-  it('the Title field sits above Side 1 with the title off the card line; the editor holds the whole text; nothing changed writes nothing', async () => {
+  it('the Title field sits in the title band (YAZ-5308 A3), with the small "Title" label, above Side 1, with the title off the card line; the editor holds the whole text; nothing changed writes nothing', async () => {
     const { view } = await mount(page('Which city?\n---\nParis', undefined, 'Capital of France'))
     const { card, inner } = await edit(view)
     const field = titleField(card)!
     expect(field.value).toBe('Capital of France')
+    const band = field.closest('.card-band')!
+    expect(band.querySelector('.card-band__label')?.textContent).toBe('Title')
+    // The card's own read band hides while Edit card is open: the title shows once, in the editor's band.
+    expect(card.dom.querySelectorAll('.card-band')).toHaveLength(2)
+    expect(card.dom.classList.contains('card--editing')).toBe(true)
+    expect(card.dom.querySelector(':scope > .card-band')).not.toBe(band)
     expect(field.compareDocumentPosition(inner.dom) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(inner.state.doc.textContent).not.toContain('Capital of France')
     expect(inner.state.doc.textContent).toContain('Which city?')
@@ -541,6 +547,18 @@ describe('YAZ-5164 part 3: Edit card`s Title field', () => {
     expect([cardText(view), cardTitle(view)]).toEqual(['Which city? Name it\n---\nParis', 'France'])
     undo(view.state, view.dispatch)
     expect([cardText(view), cardTitle(view)]).toEqual(['Which city?\n---\nParis', 'Capital of France'])
+  })
+
+  it('a long title wraps in a textarea, and a line break (a paste) becomes a space: a title is one line', async () => {
+    const { view } = await mount(page('Which city?\n---\nParis', undefined, 'Capital'))
+    const { card } = await edit(view)
+    const field = titleField(card)!
+    expect(field.tagName).toBe('TEXTAREA')
+    field.value = 'Capital\nof France'
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(field.value).toBe('Capital of France')
+    card.done()
+    expect(cardTitle(view)).toBe('Capital of France')
   })
 
   it('a first line is never the title: a card with none shows an empty field, and its first line stays in the editor', async () => {

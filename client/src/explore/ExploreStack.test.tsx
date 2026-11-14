@@ -2547,15 +2547,16 @@ describe('the card window (YAZ-4962)', () => {
   }
   const factText = (i: number) => top().querySelectorAll('.card-strip > *')[i]
 
-  it('opens from the ask with the card: the grey ID first, then its title, everything shown; a new card says "New", and its table has only the review to come', async () => {
+  it('opens from the ask with the card: the grey ID first in the head, the title in the card`s band (YAZ-5308 A3), everything shown; a new card says "New", and its table has only the review to come', async () => {
     files[PAGE] = page('<!-- card: WIKI-9, title "Capital of France" -->')
     props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
     await mount()
     await flush()
     expect(layers().map((l) => l.dataset.kind)).toEqual(['card'])
-    expect(top().querySelector('.explore__title')?.textContent).toBe('Capital of France')
+    expect(top().querySelector('.explore__body--card .card > .card-band')?.textContent).toBe('Capital of France')
+    expect(top().querySelector('.explore__head')?.textContent).not.toContain('Capital of France')
     expect(top().querySelector('.explore__head .card__id')?.textContent).toBe('WIKI-9')
-    expect(top().querySelector('.explore__head .card__id + .explore__title')).not.toBeNull()
+    expect(top().querySelector('.card-band__label')).toBeNull()
     expect(top().querySelectorAll('.card__side')).toHaveLength(2)
     expect([...top().querySelectorAll('.card__hidden')].map((s) => s.textContent)).toEqual(['France', 'Paris'])
     expect(top().querySelector('.card__blank')).toBeNull()
@@ -2565,17 +2566,17 @@ describe('the card window (YAZ-4962)', () => {
     expect(tableRows()).toEqual([['Due today']])
   })
 
-  it('YAZ-5164 part 3: the head`s title is the page title`s own component; the card never shows it; a click renames the card on its card line (YAZ-5308)', async () => {
+  it('YAZ-5164 part 3, YAZ-5308 A3: the band`s title is the page title`s own component; the card`s text never shows it; a click renames the card on its card line (YAZ-5308)', async () => {
     files[PAGE] = `# Cards\n\n\`\`\`card\nWhich city?\n---\n{{Paris}}\n\`\`\`\n<!-- card: WIKI-9, title "Capital of France" -->\n`
     props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
     await mount()
     await flush()
-    const heading = top().querySelector<HTMLElement>('.explore__title .page-title__text')!
+    const heading = top().querySelector<HTMLElement>('.card-band .page-title__text')!
     expect(heading.textContent).toBe('Capital of France')
-    expect(top().querySelector('.explore__body')?.textContent).not.toContain('Capital of France')
+    expect(top().querySelector('.explore__body .card__body')?.textContent).not.toContain('Capital of France')
     expect(top().querySelector('.card__side')?.textContent?.trim()).toBe('Which city?')
     act(() => heading.click())
-    const field = top().querySelector<HTMLTextAreaElement>('.explore__title .page-title__input')!
+    const field = top().querySelector<HTMLTextAreaElement>('.card-band .page-title__input')!
     writeFile.mockClear()
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, 'France')
@@ -2715,7 +2716,7 @@ describe('the card window (YAZ-4962)', () => {
     expect(files[PAGE]).toContain('<!-- card: WIKI-9, title "Capital of France", notitle -->')
     expect(mark()?.textContent).toBe('Hidden in review')
     // The window shows the title either way.
-    expect(top().querySelector('.explore__title')?.textContent).toBe('Capital of France')
+    expect(top().querySelector('.explore__body--card .card > .card-band')?.textContent).toBe('Capital of France')
   })
 
   it('stays live: a new version of the page in the index reads the card again (an answer in the Inbox shows here)', async () => {
@@ -2741,7 +2742,7 @@ describe('the card window (YAZ-4962)', () => {
     props.requestLayer = { kind: 'card', path: PAGE, cardId: null, index: 0 }
     await mount()
     await flush()
-    expect(top().querySelector('.explore__title')?.textContent).toBe('Capital of France')
+    expect(top().querySelector('.explore__body--card .card > .card-band')?.textContent).toBe('Capital of France')
     expect(top().querySelector('.card__id')).toBeNull()
     act(() => top().querySelector<HTMLButtonElement>('.card-strip__page')?.click())
     await flush()

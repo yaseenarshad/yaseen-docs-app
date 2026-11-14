@@ -8,7 +8,8 @@
  *  - THE HEAD (Q4, locked): ↗, `Embedded from "<name>" · GEO-140`, Edit card, ⋯. The name is the card's title for a
  *    card file (`record.kind === 'card'`), the page's title for a card in a page. A click on it opens the original as a
  *    tab gesture on the card's link does (`follow`, YAZ-5030): the card file's tab, or the page landed on the card. The
- *    ID copies on a click, as on the page's card (D20); "Archived" when the line says `off` (YAZ-5046).
+ *    ID copies on a click, as on the page's card (D20); "Archived" when the line says `off` (YAZ-5046). Under the head,
+ *    the card's title band (YAZ-5308 A3, `cardBand.ts`): a click renames a card in a page; a card file's shows only.
  *  - THE CARD: `renderCard`, the page card's own function; its pills, images and boards as its own page has them.
  *    Read from its file only once the box is near the screen (as a board window waits for the screen), and one time
  *    per version of that file (`cardFileText`, by its path and the index's mtime), however many boxes show its cards.
@@ -183,10 +184,10 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   const editButton = button('card__edit', 'Edit card')
   const more = button('card__more', 'Card menu')
   more.textContent = '⋯'
-  // A card in a page: its title first (YAZ-5164 part 3), the page title's own component; a click renames it in its page.
-  // A card file's title is the head's name already ("Embedded from …").
+  // The title band under the head (YAZ-5164 part 3, YAZ-5308 A3), the page title's own component: a click renames a card
+  // in a page in its page. A card file's shows only: its tab renames the file.
   const title = mountCardTitle()
-  head.append(title.dom, from, dot, idButton, state, editButton, more)
+  head.append(from, dot, idButton, state, editButton, more)
   const body = document.createElement('div')
   body.className = 'card__body'
 
@@ -218,7 +219,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
       dom.replaceChildren(`Missing card · ${missingId(host.target, source) ?? host.target}`)
       return
     }
-    if (head.parentNode !== dom) dom.replaceChildren(head, body)
+    if (head.parentNode !== dom) dom.replaceChildren(head, title.dom, body)
     const isOff = off(card)
     // Each index change draws the head again: only what changed is written.
     const set = (el: HTMLElement, text: string) => el.textContent !== text && (el.textContent = text)
@@ -234,11 +235,9 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   /** Is the card a card file's (its title is its file's: only its tab renames it)? */
   const isFileCard = (c: CardLink): boolean => recordAt(source.records, c.path)?.kind === 'card'
 
-  /** The head's title (YAZ-5164 part 3), a card in a page's: from the index until read, then off its card line. */
+  /** The title band (YAZ-5164 part 3, YAZ-5308 A3): from the index until read, then off its card line. */
   const drawTitle = (c: CardLink, now = false): void => {
-    title.dom.hidden = isFileCard(c)
-    if (title.dom.hidden) return
-    title.render({ title: read === null ? c.title : read.title, readOnly: !host.editable(), onRetitle: retitle }, now)
+    title.render({ title: read === null ? c.title : read.title, readOnly: !host.editable(), canRename: !isFileCard(c), onRetitle: retitle }, now)
   }
 
   /** The rename: the title on the card's line (YAZ-5308), in its ORIGINAL file (one write, as Done), shown at once. */

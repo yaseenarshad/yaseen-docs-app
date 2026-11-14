@@ -5739,7 +5739,7 @@ describe('App: the card flow (YAZ-4962)', () => {
     act(() => void el.querySelector('.tabstack')?.dispatchEvent(new CustomEvent(CARD_OPEN, { bubbles: true, detail: { path: PAGE, cardId: 'WIKI-9', index: 0 } })))
     await vi.waitFor(() => expect(document.querySelector('.explore__layer[data-kind="card"] .card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
     const layer = document.querySelector<HTMLElement>('.explore__layer[data-kind="card"]')!
-    expect(layer.querySelector('.explore__title')?.textContent).toBe('Capital of France')
+    expect(layer.querySelector('.card > .card-band')?.textContent).toBe('Capital of France')
     expect(layer.querySelector('.card__id')?.textContent).toBe('WIKI-9')
     expect(layer.querySelector('.card-reviews .backlinks__title')?.textContent).toBe('1 Review')
     expect(layer.querySelector('.card-strip__line')?.textContent).toMatch(/^Due /)

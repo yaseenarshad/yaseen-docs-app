@@ -10,10 +10,8 @@
  *    with what is under review by it ("· in spanish-words"), then the CURRENT card's place, vault › folder › page, each
  *    part a link with its icon (YAZ-5132: the one breadcrumb; `openPlace`: the folder page; the page as O), and "3 of 12" of the filter's cards on the right.
  *  - Above the card, outside its frame (YAZ-5027): the state chip (YAZ-5018, as Mochi's: "New card", "Due today",
- *    "Due · 3 days ago"), then (YAZ-5051: the card frame holds only the card) THE HEAD (YAZ-5044): "Title · ID", the
- *    card ID small and grey (a click copies it, D20). A card in a page says its page in the top row's ONE breadcrumb
- *    (YAZ-5132: no "in <page>" here), whose page part opens it as O does; a card file (YAZ-5037): its title is the
- *    link, and it and O open it in Explore (YAZ-5145, "Open card"). Then the chip "Up next ×" for a card at the top of the Inbox (YAZ-4999 D3). A card of more than one
+ *    "Due · 3 days ago"), then THE HEAD: the card ID small and grey (a click copies it, D20). A card in a page says its
+ *    page in the top row's ONE breadcrumb (YAZ-5132: no "in <page>" here), whose page part opens it as O does. Then the chip "Up next ×" for a card at the top of the Inbox (YAZ-4999 D3). A card of more than one
  *    side says "Side 1 of 2" on the row's right (YAZ-5048), and the key row's Space says "Next side" when the next Space shows a side.
  *  - SCROLL (YAZ-5049): round 3 follows the NEXT blank (`data-next`, the one "Mark the next hidden word" colours) after
  *    each Space, a new side's first blank, and at the end (no blank left) brings the card's end — the Reviews strip — in
@@ -22,9 +20,12 @@
  *    (as Mochi): the card is one long page — no scroll bar of its own; the Inbox's view scrolls, the top row stays on
  *    top and the buttons at the bottom — and a word that reaches the view's lower third comes up to its upper third,
  *    so what comes next shows (`inboxScroll.ts`).
+ *  - THE TITLE BAND (YAZ-5308 A3): the title sits in the band at the top of the card's frame (`CardBand`), with no label;
+ *    a card with no title has none. A click renames a card in a page; a card file's title (YAZ-5037) is a link, and it
+ *    and O open it in Explore (YAZ-5145, "Open card").
  *  - TITLE ON THE FRONT: HIDE (YAZ-5030, the card line's `notitle`): the title is on the card line (YAZ-5308), never in
- *    the text, so it is never a Space step. The head shows the ID only until the card is fully shown, then the title:
- *    which card it was.
+ *    the text, so it is never a Space step. The band waits until the card is fully shown, then shows the title: which
+ *    card it was.
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
  *    Space shows the next side, whose hidden words then show one by one. The answer buttons show from the moment the
  *    card shows (YAZ-5010, Yaseen: "Should always be there"): `showAnswers()` fixes what each one writes then (the
@@ -97,7 +98,7 @@ import type { InboxOpenAt } from '@shared/types'
 import type { CardRating } from '@shared/cardLine'
 import type { ExploreVault } from '../explore/ExplorePage'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
-import { CardId, CardNextChip, CardReviews, cardWait } from './cardParts'
+import { CardBand, CardId, CardNextChip, CardReviews, cardWait } from './cardParts'
 import { CardSideCount, InboxCardFace, InboxCardPanel, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
 import { cardInboxHints, cardInboxKey } from './cardInboxKeys'
 import { textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
@@ -349,9 +350,9 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
   const waits = addKinds.length > 0 && <p className="card-inbox__done-line">{waitingLine(session.more, addKinds)}</p>
   // The rest of the vault, after a review of one page or one folder: the way on.
   const more = session.scope === 'vault' ? 0 : review.dueCount
-  // The head's title: once the card is fully shown where it waits (`notitle`).
+  // The band's title: once the card is fully shown where it waits (`notitle`).
   const headTitle = title.waits && !done ? '' : title.text
-  /** The head's rename (YAZ-5164 part 3): the title on the card's line (YAZ-5308), one write; the Inbox reads the card again. */
+  /** The band's rename (YAZ-5164 part 3): the title on the card's line (YAZ-5308), one write; the Inbox reads the card again. */
   const retitle = (path: string, id: string, next: string): void => {
     changeCardLine(path, id, (l) => withCardTitle(l, next)).catch((err: unknown) => onNotice(`Can't rename the card: ${err instanceof Error ? err.message : String(err)}`))
   }
@@ -375,33 +376,13 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
       <div ref={columnRef} className="card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
         {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height
             with no chip (the done screen), so the card does not move. YAZ-5051 (Yaseen: "so that the card is just pure"):
-            the head sits here too, after the chip — YAZ-5044 "Title · ID" (a click on the ID copies it) — with "Up next ×";
-            the card frame holds only the card. YAZ-5132: no "in <page>": the top row's breadcrumb ends with the page. A long name gives way first. */}
+            the head sits here too, after the chip — the ID (a click copies it) — with "Up next ×"; the title is in the
+            card's band (YAZ-5308 A3). YAZ-5132: no "in <page>": the top row's breadcrumb ends with the page. A long name gives way first. */}
         <div className="card-inbox__above">
           {card !== null && (
             <>
               <CardStateChip card={card} />
               <span className="card-inbox__head">
-                {headTitle !== '' && (
-                  <>
-                    {cardFile ? (
-                      <button type="button" className="card-inbox__name card-inbox__name--link" onMouseDown={(e) => e.preventDefault()} onClick={() => openFile(card.path)}>
-                        {headTitle}
-                      </button>
-                    ) : card.page !== null && vaultOf(card.path).readOnly !== true ? (
-                      // A card in a page (YAZ-5164 part 3): the page title's own component, a click renames the card (its
-                      // card line), as in the page's card head. In a Read only vault it shows only.
-                      <span className="card-inbox__name">
-                        <PageTitle path={card.path} titles={NO_TITLES} text={headTitle} onRetitle={(next) => retitle(card.path, card.id, next)} />
-                      </span>
-                    ) : (
-                      <span className="card-inbox__name">{headTitle}</span>
-                    )}
-                    <span className="card-inbox__dot" aria-hidden>
-                      ·
-                    </span>
-                  </>
-                )}
                 <CardId id={card.id} onNotice={onNotice} />
                 {card.page?.next === true && <CardNextChip onRemove={() => void review.setNext(card.path, card.id, false)} />}
               </span>
@@ -411,7 +392,31 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
           {card !== null && text !== null && <CardSideCount steps={steps} />}
         </div>
         {/* The card's frame and its width edges (YAZ-5019), shared with the Preview (YAZ-5152). */}
-        <InboxCardPanel startDrag={startDrag} bodyRef={bodyRef}>
+        <InboxCardPanel
+          startDrag={startDrag}
+          bodyRef={bodyRef}
+          band={
+            card !== null &&
+            headTitle !== '' && (
+              // The title band at the top of the card's frame (YAZ-5308 A3), no label. A card file's title opens its tab; a
+              // card in a page's is the page title's own component, a click renames the card (its card line), as in the
+              // page's card (YAZ-5164 part 3). In a Read only vault it shows only.
+              <CardBand>
+                {cardFile ? (
+                  <button type="button" className="card-inbox__name card-inbox__name--link" onMouseDown={(e) => e.preventDefault()} onClick={() => openFile(card.path)}>
+                    {headTitle}
+                  </button>
+                ) : card.page !== null && vaultOf(card.path).readOnly !== true ? (
+                  <span className="card-inbox__name">
+                    <PageTitle path={card.path} titles={NO_TITLES} text={headTitle} onRetitle={(next) => retitle(card.path, card.id, next)} />
+                  </span>
+                ) : (
+                  <span className="card-inbox__name">{headTitle}</span>
+                )}
+              </CardBand>
+            )
+          }
+        >
             {card === null ? (
               <div className="card-inbox__done" role="status">
                 {/* YAZ-5033: today's work across the vault, under whatever the screen says. */}

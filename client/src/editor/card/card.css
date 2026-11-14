@@ -686,63 +686,85 @@
   cursor: pointer;
 }
 
-/* THE CARD'S TITLE (YAZ-5164 part 3): the page title's own component (`PageTitle`) in a card's head — a card in a page,
-   an embed, Explore's card window, the Inbox — at the head's own size; a click renames it. While Edit card is open its
-   Title field holds it, so the head does not show it twice. */
-.card .card__title {
-  flex: 0 1 auto;
-  min-width: 0;
-  margin: 0 2px;
-}
-.card .card__title[hidden],
-.card.card--editing .card__title {
-  display: none;
-}
-:is(.card__title, .explore__title, .card-inbox__name) .page-title {
-  display: block;
-  min-width: 0;
-}
-:is(.card__title, .explore__title, .card-inbox__name) :is(.page-title__text, .page-title__input) {
-  margin: 0 0 0 -4px;
-  padding: 0 4px;
-  overflow: hidden;
-  font: inherit;
-  font-weight: 600;
-  line-height: inherit;
-  color: var(--fg);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-:is(.card__title, .explore__title, .card-inbox__name) .page-title__input {
-  white-space: normal;
-}
-.page-title__text--empty {
-  color: var(--fg-muted);
-  font-weight: 400;
-}
-
-/* Edit card's Title field (YAZ-5164 part 3): above Side 1, the title's weight, a line under it. */
-.card .card-editor__title {
+/* THE TITLE BAND (YAZ-5308 A3, `cardBand.ts`): ONE look wherever a card shows — a card in a page and an embed (read and
+   Edit card), Explore's card, the Inbox and its Preview. A shaded band under the top bar (`--card-title-band`, one step
+   darker than the bar), the title bold, a line under it. A long title WRAPS: never cut off, never wider than the card.
+   Only Edit card has the small "TITLE" label and the field. The title is the page title's own component (`PageTitle`):
+   a click renames it. While Edit card is open, its band (in the editor) holds the title, so the card's own band hides. */
+.card-band {
   display: block;
   box-sizing: border-box;
-  width: 100%;
-  margin: 0;
-  padding: 8px 12px 6px;
-  border: 0;
+  min-width: 0;
   border-bottom: 1px solid var(--border);
-  background: transparent;
+  background: var(--card-title-band);
+  color: var(--fg);
+  font-size: 1.0625em;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+/* Its room: two classes, to beat Crepe's reset; the Inbox's frame sets its own (`cardScreens.css`). */
+.card .card-band {
+  padding: 8px 16px 9px;
+}
+.card-band[hidden],
+.card.card--editing > .card-band {
+  display: none;
+}
+.card-band .page-title {
+  display: block;
+  min-width: 0;
+}
+.card-band :is(.page-title__text, .page-title__input) {
+  margin: 0 0 0 -4px;
+  padding: 0 4px;
+  font: inherit;
+  line-height: inherit;
+  color: var(--fg);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.card-band .page-title__text--empty {
+  color: var(--fg-muted);
+}
+/* Edit card's band: the small label, then the Title field — a box the band's width, its text the title's, wrapping. */
+.card .card-band__label {
+  display: block;
+  margin: 0 0 3px;
+  color: var(--fg-muted);
+  font-size: 0.65em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  user-select: none;
+}
+.card .card-band__field {
+  display: block;
+  box-sizing: border-box;
+  width: calc(100% + 8px);
+  margin: 0 -4px;
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
   color: var(--fg);
   font: inherit;
-  font-weight: 600;
+  line-height: inherit;
   outline: none;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  resize: none;
+  field-sizing: content;
 }
-.card .card-editor__title:focus {
-  border-bottom-color: var(--accent);
+.card .card-band__field:focus {
+  border-color: var(--accent);
 }
-.card .card-editor__title::placeholder {
+.card .card-band__field::placeholder {
   color: var(--fg-muted);
-  font-weight: 400;
+  opacity: 1;
 }
-.card .card-editor__title:read-only {
-  color: var(--fg-muted);
+.card .card-band__field:read-only {
+  border-color: transparent;
+  background: transparent;
 }

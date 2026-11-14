@@ -19,7 +19,7 @@ import type { ReviewSettings } from '@shared/reviews'
 import type { CardPreviewRequest } from '../editor/card/cardOpen'
 import { toggleCardAudio } from '../editor/card/cardMedia'
 import type { ExploreVault } from '../explore/ExplorePage'
-import { CardId, CardReviews, type CardLinkDoors } from './cardParts'
+import { CardBand, CardId, CardReviews, type CardLinkDoors } from './cardParts'
 import { CardSideCount, InboxCardFace, InboxCardPanel, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
 import { useInboxCardWidth } from './inboxCardWidth'
 import { KeyLabel } from '../keys/KeyLabel'
@@ -93,22 +93,20 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose }:
       <div ref={rootRef} className="card-inbox card-inbox--preview" tabIndex={-1}>
         <div ref={columnRef} className="card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
           <div className="card-inbox__above">
-            <span className="card-inbox__head">
-              {headTitle !== '' && (
-                <>
-                  <span className="card-inbox__name">{headTitle}</span>
-                  {card.id !== null && (
-                    <span className="card-inbox__dot" aria-hidden>
-                      ·
-                    </span>
-                  )}
-                </>
-              )}
-              {card.id !== null && <CardId id={card.id} onNotice={onNotice} />}
-            </span>
+            <span className="card-inbox__head">{card.id !== null && <CardId id={card.id} onNotice={onNotice} />}</span>
             {text !== null && <CardSideCount steps={steps} />}
           </div>
-          <InboxCardPanel startDrag={startDrag} bodyRef={bodyRef}>
+          <InboxCardPanel
+            startDrag={startDrag}
+            bodyRef={bodyRef}
+            band={
+              headTitle !== '' && (
+                <CardBand>
+                  <span className="card-inbox__name">{headTitle}</span>
+                </CardBand>
+              )
+            }
+          >
             {text !== null && <InboxCardFace text={text} path={card.path} vault={vault} steps={steps} doors={doors} onStep={step} />}
           </InboxCardPanel>
           {/* The Reviews strip from the last side (YAZ-5105), as in the Inbox; no delete in a preview. */}

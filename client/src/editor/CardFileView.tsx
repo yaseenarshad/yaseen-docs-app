@@ -16,7 +16,7 @@
  *    click away) writes the card line's title and renames the file through App's title edit door (`onRetitle`, which
  *    asks first as a page's title does); Esc goes back. While the tab is read only, the title is too: a click on it shows the "Read only"
  *    chip's card, "This card is Read only. Press Enter to allow edits." (YAZ-5141), and once allowed the title edits.
- *    Edit card's Title field (YAZ-5164 part 3) holds it too, and Done renames through the same door.
+ *    The big title is the card's only title (YAZ-5308 A3): its card has no title band, and Edit card no Title field.
  *  - A FILE THAT IS NOT VALID (`cardFileShape`) stays a card file: one notice at the top (`CardFileNotice`), and
  *    nothing is deleted. 2+ cards: "This card file holds 3 cards.", the first card under it (each one stays in review).
  *    Text outside the card: the notice, and that text below it, muted. No card: the notice, and the file's text.
@@ -219,18 +219,14 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const setReadOnly = (on: boolean) =>
     void transformFile(path, (text) => setPageReadOnly(text, on)).then(read, (err: unknown) => onNotice(`Read only could not change: ${err instanceof Error ? err.message : String(err)}`))
   const giveKeysBack = () => bodyRef.current?.focus({ preventScroll: true })
-  /**
-   * Done: the card's text, its sides only; then a new title from the Title field renames the card file through the tab's
-   * title door, as the big title does (YAZ-5308: it writes the card line, then the name).
-   */
-  const editDone = (text: string, title: string) => {
+  /** Done: the card's text, its sides only. The big title is the only title here: Edit card has no Title field. */
+  const editDone = (text: string) => {
     setSave('saving')
     writes.editDone(
       text,
       () => {
         setSave('saved')
         setEditing(false)
-        if (card !== null && title !== '' && title !== card.title) onRetitle?.(path, title, 'file')
       },
       () => setSave('error'),
     )
@@ -367,7 +363,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               reviews={reviewOn ? settings : undefined}
               onDeleteReview={writes.deleteReview}
               embeds
-              titleReadOnly={onRetitle === undefined}
+              titleField="none"
             />
           )}
         </div>

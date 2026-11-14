@@ -19,6 +19,7 @@ import { features } from '../editor/featureConfig'
 import { copyText } from '../editor/linkMenu'
 import { isCardNode } from '../editor/card/cardBlockLine'
 import { cardBlockViewAt } from '../editor/card/cardBlockView'
+import type { CardTitleField } from '../editor/card/cardEditor'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import { cardResolverOf, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { ExploreVault } from '../explore/ExplorePage'
@@ -145,19 +146,22 @@ interface CardPaneProps {
   onDeleteReview?: (review: CardReview) => void
   /** "Embedded in (n)" after the mentions (a card file's tab). */
   embeds?: boolean
-  /** The Title field shows the title only (a card file's card where nothing renames its file). */
-  titleReadOnly?: boolean
+  /** Edit card's Title field (`CardTitleField`): absent → `edit`. */
+  titleField?: CardTitleField
+  /** Read, the card's title band at its top (YAZ-5308 A3, `CardBand`); absent: none (a card file's tab has its big title). */
+  band?: ReactNode
 }
 
 /** The card's body: the card or its editor, its Reviews strip, the facts strip, "Linked mentions" and, in a tab, "Embedded in". */
-export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false, titleReadOnly = false }: CardPaneProps) {
-  // The head shows the title (off the card line); the card is its text, its sides only (YAZ-5308).
+export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false, titleField = 'edit', band }: CardPaneProps) {
+  // The band shows the title (off the card line); the card is its text, its sides only (YAZ-5308).
   return (
     <>
       {editing ? (
-        <CardPaneEditor key={`${card.index}`} text={card.text} title={card.title} path={path} vault={vault} onDone={onEditDone} select={select} titleReadOnly={titleReadOnly} />
+        <CardPaneEditor key={`${card.index}`} text={card.text} title={card.title} path={path} vault={vault} onDone={onEditDone} select={select} titleField={titleField} />
       ) : (
         <div className="card card-screen">
+          {band}
           <CardBody text={card.text} path={path} vault={vault} doors={doors} />
         </div>
       )}
@@ -179,15 +183,15 @@ const CARD_EDIT_FEATURES = { ...features, [CrepeFeature.BlockEdit]: false, [Crep
  * title over. Made once per edit: the text and title it starts from are the card's when Edit card began, and a read
  * again under it (an outside write) does not touch them.
  */
-function CardPaneEditor({ text, title, path, vault, onDone, select, titleReadOnly }: { text: string; title: string; path: string; vault: ExploreVault; onDone: (text: string, title: string) => void; select?: { from: number; to: number }; titleReadOnly: boolean }) {
+function CardPaneEditor({ text, title, path, vault, onDone, select, titleField }: { text: string; title: string; path: string; vault: ExploreVault; onDone: (text: string, title: string) => void; select?: { from: number; to: number }; titleField: CardTitleField }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const doneRef = useRef(onDone)
   doneRef.current = onDone
-  const start = useRef({ text, title, path, vault, select, titleReadOnly })
+  const start = useRef({ text, title, path, vault, select, titleField })
   useEffect(() => {
     const host = hostRef.current
     if (host === null) return
-    const { text, title, path, vault, select, titleReadOnly } = start.current
+    const { text, title, path, vault, select, titleField } = start.current
     const el = document.createElement('div')
     el.className = 'editor-instance'
     host.appendChild(el)
@@ -199,7 +203,7 @@ function CardPaneEditor({ text, title, path, vault, onDone, select, titleReadOnl
       wikilinks: vault.wikilinks,
       viewOnlyLinks: vault.viewOnlyLinks,
       image: { root: vault.root, pagePath: path },
-      cards: { path, onEditDone: (t, next) => doneRef.current(t, next), titleReadOnly },
+      cards: { path, onEditDone: (t, next) => doneRef.current(t, next), titleField },
     })
     let live = true
     void crepe.create().then(() => {

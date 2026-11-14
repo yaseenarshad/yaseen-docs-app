@@ -2,11 +2,11 @@
  * A card layer of the explore stack (YAZ-4962, D13): ONE card of a page, read-only, with what review knows of it.
  *
  *  - Head: the card ID first, small and grey (a click copies it, D20) — its place in the page's card and the Inbox
- *    too —, then the card title (off its card line, YAZ-5308; the layer's name,
- *    as every layer has one; "Untitled card" for a card with none; a click renames it, YAZ-5164 part 3, and the card below
- *    never repeats it), ↗, ⋯ and ×; the chip "Up next ×" after the ID while the card is at the top of the Inbox (YAZ-4999 D3). The
+ *    too —, ↗, ⋯ and ×; the chip "Up next ×" after the ID while the card is at the top of the Inbox (YAZ-4999 D3). The
  *    ⋯ menu: Open page, Open page in a new tab, Put at top of Inbox / Remove from top of Inbox, Archive card / Unarchive card (YAZ-5046),
  *    Reset history (D13, the card line through `changeCardLine`, the app's own write), Copy card ID.
+ *  - The card's title band (YAZ-5308 A3, `CardBand`) at the card's top, as a card in a page has it: the title off its
+ *    card line, a click renames it (YAZ-5164 part 3); a card with no title has no band, and the ID names it.
  *  - The card, everything shown (`renderCard`), its pills and links live: a click opens the page on top, a bound
  *    gesture (⌘-click) a tab.
  *  - The strip: the page's name (a click opens the page on top, landed on the card), then one calm line of words
@@ -15,7 +15,7 @@
  *  - "4 Reviews": the full table, closed until asked for (the strip says the state; D13 "a footer lets the table
  *    expand"), a bin on each row (`deleteReview`, with Undo in its notice).
  *  - TITLE ON THE FRONT (YAZ-5030): the ⋯ row "Title on the front" (Show / Hide, the card line's `notitle`); while Hide,
- *    the head says "Hidden in review" after the title, quietly. The window shows the title either way.
+ *    the head says "Hidden in review" after the ID, quietly. The window shows the title either way.
  *  - "Linked mentions (n)" (YAZ-5030): the pages that link to the card (`[[WIKI-512]]`), from the index; a click opens
  *    the page on top.
  *
@@ -38,12 +38,11 @@ import { cardState } from '@shared/cardSchedule'
 import type { GestureAction } from '@shared/keys'
 import { withCardNext, withCardTitle } from '@shared/cardLine'
 import { readCardAt, type CardAtPage } from '../review/cardFile'
-import { UNTITLED_CARD } from '../editor/card/cardTitle'
 import type { CardPlace } from '../editor/card/cardOpen'
 import { CardPane, cardMenuSections, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
 import { HoverTip } from '../components/HoverTip'
 import { withKeys } from '@shared/keyLabel'
-import { CardFacts, CardId, CardNextChip } from '../review/cardParts'
+import { CardBand, CardFacts, CardId, CardNextChip } from '../review/cardParts'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { keepFocus, type ExploreVault } from './ExplorePage'
 import { useUnit } from '../vault/unitWord'
@@ -150,7 +149,6 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
     setEditing(true)
   }
   const id = card?.id ?? cardId
-  const title = card?.title ?? ''
 
   return (
     <>
@@ -162,22 +160,9 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
       >
         {id !== null && <CardId id={id} onNotice={onNotice} />}
         {card?.next === true && <CardNextChip onRemove={card.id === null ? undefined : () => changeLine((l) => withCardNext(l, false))} />}
-        <span ref={titleRef} className={`explore__title${title === '' ? ' card__title--empty' : ''}`}>
-          {/* The page title's own component (YAZ-5164 part 3), as a card file's tab and a card in a page: a click renames
-              the card, its card line (YAZ-5308). A read-only vault, or a card file's card, shows it only. */}
-          {card !== null && (
-            <PageTitle
-              path={path}
-              titles={NO_TITLES}
-              text={title}
-              placeholder={UNTITLED_CARD}
-              readOnly={vault.readOnly === true || card.cardFile === true}
-              locked={false}
-              onRetitle={(next) => changeLine((l) => withCardTitle(l, next))}
-            />
-          )}
-        </span>
         {card?.notitle === true && <span className="card__state card__notitle">Hidden in review</span>}
+        {/* The head's room (the title is in the card's band, YAZ-5308 A3): the part that grows, so a narrow layer folds. */}
+        <span ref={titleRef} className="explore__title" aria-hidden />
         {/* ↗ folds into ⋯ in a narrow layer (YAZ-4986); the card ID, the title and × stay. */}
         <span className="explore__fold">
           <HoverTip text={withKeys(unit('Open page in a new tab'), '⌘↵')} data-fold-part="open">
@@ -212,7 +197,23 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
             vault={vault}
             editing={editing}
             onEditDone={editDone}
-            titleReadOnly={card.cardFile === true}
+            titleField={card.cardFile === true ? 'show' : 'edit'}
+            band={
+              card.title !== '' && (
+                // The page title's own component (YAZ-5164 part 3), as in a card in a page: a click renames the card, its
+                // card line (YAZ-5308). A read-only vault, or a card file's card, shows it only.
+                <CardBand>
+                  <PageTitle
+                    path={path}
+                    titles={NO_TITLES}
+                    text={card.title}
+                    readOnly={vault.readOnly === true || card.cardFile === true}
+                    locked={false}
+                    onRetitle={(next) => changeLine((l) => withCardTitle(l, next))}
+                  />
+                </CardBand>
+              )
+            }
             doors={{ openLayer: onOpenLink, openTab: onOpenTab, onNotice }}
             onOpenPage={onOpenLink}
             strip={<CardStrip card={card} pageName={pageName} vault={vault} onOpenPage={() => onOpenPage({ id: card.id, index: card.index })} />}

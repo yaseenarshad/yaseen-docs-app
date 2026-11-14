@@ -679,20 +679,17 @@
   margin-bottom: 8px;
   padding: 0 2px;
 }
-/* YAZ-5044: the head's card title, "Title · ID": the head's one strong word. A long title ends in "…" first. A card
-   file's (YAZ-5037) is a link to its tab, in the same look. */
+/* The title in the card's band (YAZ-5308 A3, `.card-band`): a card file's (YAZ-5037) is a link to its tab, in the
+   same look. */
 .card-inbox__name {
-  flex: 0 1 auto;
+  display: block;
   min-width: 0;
-  overflow: hidden;
-  padding: 0 2px;
+  padding: 0;
   border: 0;
   background: none;
   color: var(--fg);
   font: inherit;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-align: left;
 }
 .card-inbox__name--link {
   cursor: pointer;
@@ -700,9 +697,9 @@
 .card-inbox__name--link:hover {
   text-decoration: underline;
 }
-.card-inbox__dot {
-  flex: none;
-  color: var(--fg-muted);
+/* The band at the top of the card's frame: the card's own sides. */
+.card-inbox__panel > .card-band {
+  padding: 12px var(--inbox-card-pad, 28px);
 }
 .card-inbox__panel {
   position: relative;
@@ -1116,12 +1113,6 @@ body.card-inbox--sizing {
   position: absolute;
   visibility: hidden;
   pointer-events: none;
-}
-
-/* A card window of an empty card: "New card", quiet. */
-.explore__title.card__title--empty {
-  color: var(--fg-muted);
-  font-weight: 400;
 }
 
 /* PREVIEW A CARD (YAZ-5152): the Inbox's screen over the window — above Explore, under the notices — with its card as

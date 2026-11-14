@@ -204,10 +204,11 @@ describe('the card in the page', () => {
       wikilinkNav: { root: '/v', createFolder: () => '', openCurrent: (p) => follow.push(['thisTab', p]), openBackground: (p) => follow.push(['backgroundTab', p]), openExplore: (p) => follow.push(['explore', p]), onNotice: () => {} },
     })
     const card = view.dom.querySelector<HTMLElement>('.card')!
-    // The head shows the title off the card line (YAZ-5308): this card has none, so the head says so; its first line is
-    // its question, in the body, its word hidden there.
+    // The title is off the card line (YAZ-5308), in the band under the head (YAZ-5308 A3): this card has none, so it has
+    // no band, and the head never says "Untitled card"; its first line is its question, in the body, its word hidden there.
     const shown = (el: Element | null) => [...(el?.children ?? [])].filter((c) => !(c as HTMLElement).hidden).map((c) => c.textContent).join('')
-    expect(shown(card.querySelector('.card__head'))).toBe('Untitled cardEdit card⋯')
+    expect(shown(card.querySelector('.card__head'))).toBe('Edit card⋯')
+    expect(card.querySelector<HTMLElement>('.card-band')?.hidden).toBe(true)
     expect([...card.querySelectorAll('.card__side')].map((side) => side.textContent?.trim())).toEqual(['What is the capital of France (France, Gone)?', 'Paris'])
     expect(card.querySelector('.card__rule')).not.toBeNull()
     expect(card.querySelector('.card__hidden')?.textContent).toBe('France')
@@ -797,29 +798,34 @@ describe('YAZ-5164: landing on a card in its page, as the table of contents land
  * head, in the page title's own component (`PageTitle`, as a card file's tab), and a click renames it; the body never
  * repeats it. Storage does not change: the title is the card's first line (`cardRetitled`).
  */
-describe('YAZ-5164 part 3: the card head shows the title (off its card line, YAZ-5308), a click renames it', () => {
+describe('YAZ-5164 part 3, YAZ-5308 A3: the card`s title band under its head shows the title (off its card line), a click renames it', () => {
   const flag = globalThis as unknown as Record<string, unknown>
   beforeEach(() => void (flag.IS_REACT_ACT_ENVIRONMENT = true))
   afterEach(() => void delete flag.IS_REACT_ACT_ENVIRONMENT)
   const TITLED = '```card\nWhich city is the capital?\n---\nParis\n```\n<!-- card: WIKI-7, title "Capital of France" -->\n'
-  /** The head's title once React drew it (the page title's own component). */
-  const headTitle = (root: HTMLElement) => root.querySelector<HTMLElement>('.card__head .page-title .page-title__text')
+  /** The band's title once React drew it (the page title's own component). */
+  const headTitle = (root: HTMLElement) => root.querySelector<HTMLElement>('.card > .card-band:not([hidden]) .page-title .page-title__text')
   const setValue = (field: HTMLTextAreaElement, value: string) => {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, value)
     field.dispatchEvent(new Event('input', { bubbles: true }))
   }
 
-  it('the head shows the title off the card line; the body is the card`s text', async () => {
+  it('the band, right under the head, shows the title off the card line, with no label; the head has none; the body is the card`s text', async () => {
     const { root } = await mount(TITLED, { wikilinks: vault(true), cards: { path: '/v/Page.md' } })
     await vi.waitFor(() => expect(headTitle(root)?.textContent).toBe('Capital of France'))
+    expect(root.querySelector('.card__head + .card-band')).not.toBeNull()
+    expect(root.querySelector('.card__head')!.textContent).not.toContain('Capital of France')
+    expect(root.querySelector('.card-band__label')).toBeNull()
     const body = root.querySelector('.card__body')!.textContent ?? ''
     expect(body).not.toContain('Capital of France')
     expect(body).toContain('Which city is the capital?')
   })
 
-  it('a card with no title on its line: the head says "Untitled card", never its first line, which stays the question', async () => {
+  it('a card with no title on its line: no band and no "Untitled card"; its first line is never the title, it stays the question', async () => {
     const { root } = await mount(CARD, { wikilinks: vault(true), cards: { path: '/v/Page.md' } })
-    await vi.waitFor(() => expect(headTitle(root)?.textContent).toBe('Untitled card'))
+    await vi.waitFor(() => expect(root.querySelector('.card__body .card__hidden')).not.toBeNull())
+    expect(root.querySelector<HTMLElement>('.card > .card-band')?.hidden).toBe(true)
+    expect(root.querySelector('.card')!.textContent).not.toContain('Untitled card')
     expect(root.querySelector('.card__body .card__hidden')?.textContent).toBe('France')
   })
 
@@ -829,7 +835,7 @@ describe('YAZ-5164 part 3: the card head shows the title (off its card line, YAZ
     // A press, then its click, as the mouse gives them.
     headTitle(root)!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
     act(() => headTitle(root)!.click())
-    const field = root.querySelector<HTMLTextAreaElement>('.card__head .page-title__input')!
+    const field = root.querySelector<HTMLTextAreaElement>('.card-band .page-title__input')!
     expect(field.value).toBe('Capital of France')
     act(() => {
       setValue(field, 'France`s capital')
@@ -850,9 +856,9 @@ describe('YAZ-5164 part 3: the card head shows the title (off its card line, YAZ
     headTitle(root)!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
     act(() => headTitle(root)!.click())
     expect(told.map((e) => e.detail)).toEqual(['card'])
-    expect(root.querySelector('.card__head .page-title__input')).toBeNull()
+    expect(root.querySelector('.card-band .page-title__input')).toBeNull()
     crepe.setReadonly(false)
     act(() => told[0].resume?.())
-    expect(root.querySelector('.card__head .page-title__input')).not.toBeNull()
+    expect(root.querySelector('.card-band .page-title__input')).not.toBeNull()
   })
 })

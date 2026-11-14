@@ -124,15 +124,14 @@ afterEach(() => {
 })
 
 describe('the Inbox screen (YAZ-4962)', () => {
-  it('YAZ-5308: the head reads "Capital of France · WIKI-9" from the start, its title off the card line, never a word of the front (YAZ-5132: the page is in the breadcrumb, not "in Cards"); the hint row shows only keys that act now', async () => {
+  it('YAZ-5308 A3: the head reads the ID; the title, off the card line, is in the band at the top of the card`s frame from the start, with no label, never a word of the front (YAZ-5132: the page is in the breadcrumb, not "in Cards"); the hint row shows only keys that act now', async () => {
     mount(TWO_SIDES)
     expect(el.querySelector('.explore__title')).toBeNull()
     const head = () => [...el.querySelector('.card-inbox__head')!.children].map((c) => [c.className, c.textContent])
-    expect(head()).toEqual([
-      ['card-inbox__name', 'Capital of France'],
-      ['card-inbox__dot', '·'],
-      ['card__id', 'WIKI-9'],
-    ])
+    const band = () => el.querySelector('.card-inbox__panel > .card-band')?.textContent ?? null
+    expect(head()).toEqual([['card__id', 'WIKI-9']])
+    expect(band()).toBe('Capital of France')
+    expect(el.querySelector('.card-band__label')).toBeNull()
     // YAZ-5017: "3 of 12" moved to the top row, on the right.
     expect(el.querySelector('.card-inbox__bar .card-inbox__place')?.textContent).toBe('3 of 12')
     const hints = () => [...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)
@@ -142,11 +141,8 @@ describe('the Inbox screen (YAZ-4962)', () => {
     await flush()
     // The last step: Space has nothing more to show, and the title shows.
     expect(hints()).toEqual(['Open page (O)', 'Edit card (E)', 'New tab (Cmd+Enter)'])
-    expect(head()).toEqual([
-      ['card-inbox__name', 'Capital of France'],
-      ['card-inbox__dot', '·'],
-      ['card__id', 'WIKI-9'],
-    ])
+    expect(head()).toEqual([['card__id', 'WIKI-9']])
+    expect(band()).toBe('Capital of France')
   })
 
   it('YAZ-4999: an up-next card shows the chip "Up next" after the ID; its × removes the mark (setNext)', () => {
@@ -957,11 +953,11 @@ describe('the title on the front (YAZ-5030)', () => {
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, notitle } } }
     render()
   }
-  /** The title in the head (YAZ-5044): "Title · ID". */
-  const label = () => el.querySelector('.card-inbox__head .card-inbox__name')?.textContent ?? null
+  /** The title in the card's band (YAZ-5308 A3); null while there is no band. */
+  const label = () => el.querySelector('.card-inbox__panel > .card-band .card-inbox__name')?.textContent ?? null
   const text = () => el.querySelector('.card-inbox__card')?.textContent ?? ''
 
-  it('Hide: the front draws no title, and the title is NEVER a Space step (its hidden word neither); the head shows the ID only until the card is fully shown, then the title (YAZ-5044)', async () => {
+  it('Hide: the front draws no title, and the title is NEVER a Space step (its hidden word neither); no band until the card is fully shown, then the band with the title (YAZ-5308 A3)', async () => {
     withLine(true)
     await flush()
     expect(text()).not.toContain('Capital of France')
@@ -976,14 +972,14 @@ describe('the title on the front (YAZ-5030)', () => {
     expect(label()).toBeNull()
     press(' ')
     expect(shown()).toEqual(['France', 'Paris'])
-    // Fully shown: the head says which card it was; the card itself still has no title.
+    // Fully shown: the band says which card it was; the card itself still has no title.
     expect(label()).toBe('Capital of France')
-    expect(el.querySelector('.card-inbox__head')!.textContent).toBe('Capital of France·WIKI-9')
+    expect(el.querySelector('.card-inbox__head')!.textContent).toBe('WIKI-9')
     expect(el.querySelectorAll('.card-inbox__title')).toHaveLength(0)
     expect(text()).not.toContain('Capital of France')
   })
 
-  it('Show (no part): the head shows the title from the start; it is no part of the front, so never a Space step (YAZ-5308)', async () => {
+  it('Show (no part): the band shows the title from the start; it is no part of the front, so never a Space step (YAZ-5308)', async () => {
     withLine(false)
     await flush()
     expect(label()).toBe('Capital of France')
@@ -1003,9 +999,10 @@ describe('the title on the front (YAZ-5030)', () => {
   })
 })
 
-describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the breadcrumb`s last part), "Open card" for a card file', () => {
+describe('YAZ-5044 the Inbox head: the ID, the title in the card`s band (YAZ-5308 A3; YAZ-5132: the page is the breadcrumb`s last part), "Open card" for a card file', () => {
   const PLAIN = 'What is the capital of {{France}}?'
-  const headText = () => el.querySelector('.card-inbox__head')!.textContent
+  /** The head's ID, then the band's title. */
+  const headText = () => `${el.querySelector('.card-inbox__head')!.textContent} | ${el.querySelector('.card-inbox__panel > .card-band')?.textContent ?? ''}`
   const hints = () => [...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)
   /** The card's file is a card file (`kind: card`), as the index says. */
   const asCardFile = () => {
@@ -1016,11 +1013,11 @@ describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the brea
     render()
   }
 
-  it('a card in a page: "Capital of France · WIKI-9" from the start, no "in Cards"; the breadcrumb`s page part and O open the page', () => {
+  it('a card in a page: "WIKI-9", and "Capital of France" in the band, from the start, no "in Cards"; the breadcrumb`s page part and O open the page', () => {
     mount(PLAIN)
     session = { ...session, place: [{ kind: 'vault', label: 'Demo', path: '/v' }, { kind: 'page', label: 'Cards', path: PATH }] }
     render()
-    expect(headText()).toBe('Capital of France·WIKI-9')
+    expect(headText()).toBe('WIKI-9 | Capital of France')
     expect(el.querySelector('.card-inbox__in')).toBeNull()
     expect(el.querySelector('.card-inbox__name')!.tagName).toBe('SPAN')
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__path-part[data-kind="page"]')!.click())
@@ -1080,10 +1077,10 @@ describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the brea
     expect(formatCardLine(change(parseCardLine('<!-- card: WIKI-9, title "Capital of France" -->')!))).toBe('<!-- card: WIKI-9, title "France" -->')
   })
 
-  it('a card file adds nothing: "Capital of France · WIKI-9"; its title is the link, and it and O open it in Explore ("Open card", YAZ-5145: as Explore opens it, not its tab); E edits it there, with no card index', () => {
+  it('a card file adds nothing: "WIKI-9", the band "Capital of France"; its title is the link, and it and O open it in Explore ("Open card", YAZ-5145: as Explore opens it, not its tab); E edits it there, with no card index', () => {
     mount(PLAIN)
     asCardFile()
-    expect(headText()).toBe('Capital of France·WIKI-9')
+    expect(headText()).toBe('WIKI-9 | Capital of France')
     expect(el.querySelector('.card-inbox__in')).toBeNull()
     expect(hints()).toContain('Open card (O)')
     expect(hints()).not.toContain('Open page (O)')
@@ -1095,22 +1092,22 @@ describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the brea
     expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, null)
   })
 
-  it('a card file with `notitle`: the ID only until the card is fully shown, then the title; O opens it all along', async () => {
+  it('a card file with `notitle`: no band until the card is fully shown, then the band with the title; O opens it all along', async () => {
     mount(PLAIN)
     asCardFile()
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, notitle: true } } }
     render()
     await flush()
-    expect(headText()).toBe('WIKI-9')
+    expect(headText()).toBe('WIKI-9 | ')
     press('o')
     expect(props.openPage).toHaveBeenCalledOnce()
     press(' ')
-    expect(headText()).toBe('Capital of France·WIKI-9')
+    expect(headText()).toBe('WIKI-9 | Capital of France')
   })
 
   it('while the card`s page is still read: the ID, no title yet', () => {
     mount(null)
-    expect(headText()).toBe('WIKI-9')
+    expect(headText()).toBe('WIKI-9 | ')
   })
 })
 
@@ -1647,7 +1644,7 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
     const above = el.querySelector('.card-inbox__above')!
     const panel = el.querySelector('.card-inbox__panel')!
     expect([...above.children].map((c) => c.className).slice(0, 2)).toEqual(['card-inbox__state', 'card-inbox__head'])
-    expect([...above.querySelector('.card-inbox__head')!.children].map((c) => c.textContent)).toEqual(['Capital of France', '·', 'WIKI-9'])
+    expect([...above.querySelector('.card-inbox__head')!.children].map((c) => c.textContent)).toEqual(['WIKI-9'])
     expect(panel.querySelector('.card-inbox__head, .explore__head, .card-inbox__page, .card__id')).toBeNull()
   })
 
