@@ -79,7 +79,11 @@ export interface FriendsServices extends FriendsPort {
 }
 
 const BOARD_COPY = 'friendsBoardCopy'
-type BoardCopy = { friends: FriendEntry[]; shared: Extract<Board, { kind: 'ok' }>['shared']; groups: GroupView[] }
+type BoardCopy = {
+  friends: FriendEntry[]
+  shared: Extract<Board, { kind: 'ok' }>['shared']
+  groups: GroupView[]
+}
 
 export interface ServiceOptions {
   store: VaultStore
@@ -92,15 +96,36 @@ export interface ServiceOptions {
   lock?: <T>(name: string, fn: () => Promise<T>) => Promise<T>
 }
 
-export function createFriendsService(options: ServiceOptions): FriendsService & { port: FriendsPort; stop(): Promise<void>; list: FriendsList; marks: Marks } {
+export function createFriendsService(options: ServiceOptions): FriendsService & {
+  port: FriendsPort
+  stop(): Promise<void>
+  list: FriendsList
+  marks: Marks
+} {
   const { store, tokens } = options
   const now = options.now ?? Date.now
-  const clock = { now, setTimeout: (fn: () => void, ms: number) => globalThis.setTimeout(fn, ms), clearTimeout: (h: unknown) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>) }
-  const list = createFriendsList({ store, tokens, fetch: options.fetch, clock, sleep: options.sleep, lock: options.lock })
-  const marks = createMarks({ store, tokens, fetch: options.fetch, now, lock: options.lock })
-  // 4E3 (YAZ-5084) adds `groups` and `pasteAny` to the list. Until it lands, the list has neither.
-  const more = list as FriendsList & Partial<{ groups: GroupsPort; pasteAny(text: string): Promise<PasteAnswer> }>
-  const groups = more.groups ?? null
+  const clock = {
+    now,
+    setTimeout: (fn: () => void, ms: number) => globalThis.setTimeout(fn, ms),
+    clearTimeout: (h: unknown) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>),
+  }
+  const list = createFriendsList({
+    store,
+    tokens,
+    fetch: options.fetch,
+    clock,
+    sleep: options.sleep,
+    lock: options.lock,
+  })
+  const marks = createMarks({
+    store,
+    tokens,
+    fetch: options.fetch,
+    now,
+    lock: options.lock,
+  })
+  // 4E3 (YAZ-5084): groups run by an admin, on the same list.
+  const groups: GroupsPort = list.groups
 
   let sender: FriendsSender | null = null
   let stopped = false
@@ -109,7 +134,15 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
   }
   void options.engine?.then((engine) => {
     if (stopped) return
-    sender = createFriendsSender({ store, tokens, sync: engine, fetch: options.fetch, clock, sleep: options.sleep, lock: options.lock })
+    sender = createFriendsSender({
+      store,
+      tokens,
+      sync: engine,
+      fetch: options.fetch,
+      clock,
+      sleep: options.sleep,
+      lock: options.lock,
+    })
     if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onHidden)
   })
 
@@ -124,7 +157,19 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
     const ids = settings.vaults ?? phone.vaults.map(vaultId)
     const repos = phone.vaults.filter((v) => ids.includes(vaultId(v))).map((v) => v.repo.toLowerCase())
     const vaults = await countedVaults(store, repos)
-    const stats = vaults === null ? null : numbersFor(friendStats(vaults, now()), { login: profile?.login ?? '', name: profile?.name ?? '', nickname: settings.nickname, avatar: profile?.avatarUrl ?? '' }, now())
+    const stats =
+      vaults === null
+        ? null
+        : numbersFor(
+            friendStats(vaults, now()),
+            {
+              login: profile?.login ?? '',
+              name: profile?.name ?? '',
+              nickname: settings.nickname,
+              avatar: profile?.avatarUrl ?? '',
+            },
+            now(),
+          )
     return { name, avatar: avatarUrl(profile?.avatarUrl), stats }
   }
 
@@ -170,12 +215,21 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
       const rows = await list.rows()
       const [mine, seen, outbox] = await Promise.all([me(), marks.seen(), marks.outbox()])
       if (rows.kind === 'ok') {
-        const all = groups === null ? [] : await groups.all()
+        const all = await groups.all()
         const groupViews = Array.isArray(all) ? all : []
         const friends = rows.rows.map(entryOf)
         const offline = rows.rows.some((r) => r.read?.kind === 'ok' && r.read.stale !== undefined) || rows.rows.some((r) => r.state === 'offline')
         await saveCopy({ friends, shared: rows.shared, groups: [] })
-        return { kind: 'ok', me: mine, friends, shared: rows.shared, groups: groupViews, seen, outbox, offline }
+        return {
+          kind: 'ok',
+          me: mine,
+          friends,
+          shared: rows.shared,
+          groups: groupViews,
+          seen,
+          outbox,
+          offline,
+        }
       }
       if (rows.kind === 'offline' || rows.kind === 'rate-limited') {
         const copy = await loadCopy()
@@ -184,7 +238,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
       return rows
     },
     share: () => list.share(),
-    paste: (text) => (more.pasteAny ? more.pasteAny(text) : list.paste(text)),
+    paste: (text) => list.pasteAny(text),
     remove: (mine) => list.remove(mine),
     mark: (mine, kind) => marks.send(mine, kind),
     see: (seen) => marks.see(seen),

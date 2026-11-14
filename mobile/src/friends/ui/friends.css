@@ -284,3 +284,7 @@
     transition: none;
   }
 }
+
+.fr-line.fr-cheer {
+  color: var(--accent);
+}

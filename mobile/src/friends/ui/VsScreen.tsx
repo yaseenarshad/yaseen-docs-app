@@ -25,9 +25,12 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
   const back = () => app.go({ type: 'back' })
 
   const ok = board !== null && board.kind === 'ok' ? board : null
-  const friend = ok !== null && route.theirs !== undefined ? (ok.friends.find((f) => f.theirs === route.theirs) ?? null) : null
-  const group = ok !== null && route.group !== undefined ? ok.groups.find((g): g is Extract<GroupView, { kind: 'ok' }> => g.kind === 'ok' && g.group === route.group) : undefined
-  const member = group !== undefined && group.kind === 'ok' ? (group.members.find((m) => m.pointer === route.pointer) ?? null) : null
+  const friend = ok !== null && route.theirs !== undefined ? ok.friends.find((f) => f.theirs === route.theirs) ?? null : null
+  const group =
+    ok !== null && route.group !== undefined
+      ? ok.groups.find((g): g is Extract<GroupView, { kind: 'ok' }> => g.kind === 'ok' && g.group === route.group)
+      : undefined
+  const member = group !== undefined && group.kind === 'ok' ? group.members.find((m) => m.pointer === route.pointer) ?? null : null
   const name = friend?.name ?? (member === null ? 'Friend' : cleanName(member.name) || cleanName(member.login) || 'Member')
   const theirStats = friend?.stats ?? (member?.read?.kind === 'ok' ? member.read.stats : null)
   const updatedAt = friend?.updatedAt ?? (member?.read?.kind === 'ok' ? member.read.updatedAt : null)
@@ -89,7 +92,9 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
           <li
             key={d.day}
             className={d.both ? 'fr-day fr-day--both' : 'fr-day'}
-            aria-label={`${d.weekday}: ${d.you ? 'you finished' : 'you did not finish'}, ${name} ${d.them ? 'finished' : 'did not finish'}${d.both ? '. You both win.' : ''}`}
+            aria-label={`${d.weekday}: ${d.you ? 'you finished' : 'you did not finish'}, ${name} ${d.them ? 'finished' : 'did not finish'}${
+              d.both ? '. You both win.' : ''
+            }`}
           >
             <span aria-hidden="true">{d.weekday.slice(0, 2)}</span>
             <span aria-hidden="true">{d.you ? '✓' : '·'}</span>
@@ -100,7 +105,9 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
       <p className="fr-line" style={{ textAlign: 'center' }}>
         {vs.bothWon === 1 ? 'You both won 1 day of 7.' : `You both won ${vs.bothWon} days of 7.`}
       </p>
-      {friend !== null && friend.state !== 'gone' && service !== null && <CheerNudge name={name} mine={friend.mine} send={(kind) => service.mark(friend.mine, kind)} sent={ok.outbox[friend.mine]} />}
+      {friend !== null && friend.state !== 'gone' && service !== null && (
+        <CheerNudge name={name} mine={friend.mine} send={(kind) => service.mark(friend.mine, kind)} sent={ok.outbox[friend.mine]} />
+      )}
       {(friend !== null || (group !== undefined && group.kind === 'ok' && group.iAmAdmin && member !== null && !member.me)) && (
         <div className="stack" style={{ marginTop: 24 }}>
           <button type="button" className="btn btn--wide btn--danger" onClick={() => setAsking('remove')}>
@@ -110,7 +117,11 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
       )}
       {asking === 'remove' && (
         <Confirm
-          question={friend !== null ? `Remove ${name}? ${name} stops seeing your numbers, and you stop seeing theirs.` : `Remove ${name} from ${cleanName(group !== undefined && group.kind === 'ok' ? group.name : '')}?`}
+          question={
+            friend !== null
+              ? `Remove ${name}? ${name} stops seeing your numbers, and you stop seeing theirs.`
+              : `Remove ${name} from ${cleanName(group !== undefined && group.kind === 'ok' ? group.name : '')}?`
+          }
           yes="Remove"
           busy={busy}
           onYes={() => void removeFriend()}
@@ -147,7 +158,23 @@ function Lines({ lines, name }: { lines: VsLine[]; name: string }) {
  * Cheer and Nudge: one tap, one send (a second tap while it runs does nothing), an honest state after it: sent, or
  * waiting with the time it goes (it is kept on the phone, never lost).
  */
-function CheerNudge({ name, send, sent }: { name: string; mine: string; send: (kind: MarkKind) => Promise<MarkSend>; sent: { mark: { kind: MarkKind; at: string }; state: 'sent' | 'waiting'; why?: string; retryAt?: number | null } | undefined }) {
+function CheerNudge({
+  name,
+  send,
+  sent,
+}: {
+  name: string
+  mine: string
+  send: (kind: MarkKind) => Promise<MarkSend>
+  sent:
+    | {
+        mark: { kind: MarkKind; at: string }
+        state: 'sent' | 'waiting'
+        why?: string
+        retryAt?: number | null
+      }
+    | undefined
+}) {
   const [running, setRunning] = useState<MarkKind | null>(null)
   const [result, setResult] = useState<MarkSend | null>(null)
   const lock = useRef(false)
@@ -163,7 +190,18 @@ function CheerNudge({ name, send, sent }: { name: string; mine: string; send: (k
     }
   }
   const words = (r: MarkSend | null): string | null => {
-    const now = r ?? (sent === undefined ? null : sent.state === 'sent' ? ({ kind: 'sent', mark: sent.mark } as MarkSend) : ({ kind: 'waiting', mark: sent.mark, why: (sent.why ?? 'offline') as 'offline', retryAt: sent.retryAt ?? null } as MarkSend))
+    const now =
+      r ??
+      (sent === undefined
+        ? null
+        : sent.state === 'sent'
+        ? ({ kind: 'sent', mark: sent.mark } as MarkSend)
+        : ({
+            kind: 'waiting',
+            mark: sent.mark,
+            why: (sent.why ?? 'offline') as 'offline',
+            retryAt: sent.retryAt ?? null,
+          } as MarkSend))
     if (now === null) return null
     const what = (m: { kind: MarkKind }) => (m.kind === 'cheer' ? 'cheer' : 'nudge')
     switch (now.kind) {
@@ -171,7 +209,9 @@ function CheerNudge({ name, send, sent }: { name: string; mine: string; send: (k
         return `${now.mark.kind === 'cheer' ? 'Cheer' : 'Nudge'} sent at ${clockTime(Date.parse(now.mark.at))}. ${name} sees it in Friends.`
       case 'waiting':
         if (now.why === 'offline') return `No connection. Your ${what(now.mark)} goes when you are online.`
-        return now.retryAt === null ? `Your ${what(now.mark)} waits. It goes by itself.` : `GitHub lets the app write only so often. Your ${what(now.mark)} goes at ${clockTime(now.retryAt)}.`
+        return now.retryAt === null
+          ? `Your ${what(now.mark)} waits. It goes by itself.`
+          : `GitHub lets the app write only so often. Your ${what(now.mark)} goes at ${clockTime(now.retryAt)}.`
       case 'no-gists':
         return 'Friends needs the Gists permission on your token.'
       case 'unauthorized':

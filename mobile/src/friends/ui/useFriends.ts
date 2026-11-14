@@ -19,10 +19,7 @@ class BoardStore {
   private listeners = new Set<() => void>()
   private timer: ReturnType<typeof setInterval> | null = null
   private run: Promise<void> | null = null
-  constructor(
-    private readonly service: FriendsService,
-    private readonly now: () => number,
-  ) {}
+  constructor(private readonly service: FriendsService, private readonly now: () => number) {}
   private set(patch: Partial<BoardSnapshot>) {
     this.snapshot = { ...this.snapshot, ...patch }
     for (const l of [...this.listeners]) l()
@@ -58,9 +55,15 @@ const EMPTY: BoardSnapshot = { board: null, at: 0, reading: false }
 const noop = () => () => undefined
 
 /** The screens' service, once its chunk loaded; null with 4A's plain port (tests of other screens). */
-export function useService(): { service: FriendsService | null; ready: boolean } {
+export function useService(): {
+  service: FriendsService | null
+  ready: boolean
+} {
   const { services } = useApp()
-  const [state, setState] = useState<{ service: FriendsService | null; ready: boolean }>({ service: null, ready: false })
+  const [state, setState] = useState<{
+    service: FriendsService | null
+    ready: boolean
+  }>({ service: null, ready: false })
   useEffect(() => {
     const get = serviceOf(services.friends)
     if (get === null) {

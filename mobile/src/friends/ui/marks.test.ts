@@ -29,17 +29,45 @@ async function phone(world: FakeGistWorld, clock: FakeClock, token: string, logi
   const backend = memoryBackend()
   const store = await openVaultStore(backend, { now: clock.now })
   const tokens = tokenStoreOn(backend)
-  const v: PhoneVault = { repo: `${login}/vault`, branch: 'main', addedAt: START }
+  const v: PhoneVault = {
+    repo: `${login}/vault`,
+    branch: 'main',
+    addedAt: START,
+  }
   await saveVaultList(store, { vaults: [v], open: vaultId(v) })
   await tokens.write(vaultId(v), token)
-  await saveAccount(store, vaultId(v), { login, name: login.toUpperCase(), avatarUrl: '', gists: 'yes', expiresAt: null, checkedAt: START })
-  await store.setState(vaultId(v), INDEX_STATE, { commit: 'c', records: { 'a.md': { cards: [] } as unknown as IndexRecord } })
+  await saveAccount(store, vaultId(v), {
+    login,
+    name: login.toUpperCase(),
+    avatarUrl: '',
+    gists: 'yes',
+    expiresAt: null,
+    checkedAt: START,
+  })
+  await store.setState(vaultId(v), INDEX_STATE, {
+    commit: 'c',
+    records: { 'a.md': { cards: [] } as unknown as IndexRecord },
+  })
   const fetch = gistsFetch(world).fetch
-  return { store, tokens, list: createFriendsList({ store, tokens, clock, fetch, sleep: async () => {} }), marks: createMarks({ store, tokens, fetch, now: clock.now }) }
+  return {
+    store,
+    tokens,
+    list: createFriendsList({
+      store,
+      tokens,
+      clock,
+      fetch,
+      sleep: async () => {},
+    }),
+    marks: createMarks({ store, tokens, fetch, now: clock.now }),
+  }
 }
 async function friends() {
   const clock = fakeClock(START)
-  const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: clock.now })
+  const world = fakeGistWorld({
+    accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } },
+    now: clock.now,
+  })
   const ali = await phone(world, clock, ALI, 'ali')
   const bea = await phone(world, clock, BEA, 'bea')
   const share = await ali.list.share()
@@ -61,15 +89,36 @@ describe('Cheer and Nudge (decision 24)', () => {
   it('one tap is ONE update of my pointer for that friend; its other fields stay; the friend reads the mark', async () => {
     const { world, ali, bea, mine } = await friends()
     const before = JSON.parse(world.text(mine, POINTER_FILE)!)
-    world.setFiles(mine, { [POINTER_FILE]: JSON.stringify({ ...before, later: 'kept' }) })
+    world.setFiles(mine, {
+      [POINTER_FILE]: JSON.stringify({ ...before, later: 'kept' }),
+    })
     const sent = await ali.marks.send(mine, 'cheer')
-    expect(sent).toEqual({ kind: 'sent', mark: { kind: 'cheer', at: new Date(START).toISOString() } })
+    expect(sent).toEqual({
+      kind: 'sent',
+      mark: { kind: 'cheer', at: new Date(START).toISOString() },
+    })
     expect(updatesOf(world, mine)).toBe(1)
-    expect(JSON.parse(world.text(mine, POINTER_FILE)!)).toEqual({ ...before, later: 'kept', mark: { kind: 'cheer', at: new Date(START).toISOString() } })
-    expect((await ali.marks.outbox())[mine]).toEqual({ mark: sent.kind === 'sent' ? sent.mark : null, state: 'sent' })
+    expect(JSON.parse(world.text(mine, POINTER_FILE)!)).toEqual({
+      ...before,
+      later: 'kept',
+      mark: { kind: 'cheer', at: new Date(START).toISOString() },
+    })
+    expect((await ali.marks.outbox())[mine]).toEqual({
+      mark: sent.kind === 'sent' ? sent.mark : null,
+      state: 'sent',
+    })
     // Bea's rows read Ali's pointer for her: the mark is there.
     const rows = await bea.list.rows()
-    expect(rows).toMatchObject({ kind: 'ok', rows: [{ name: 'ALI', state: 'ok', read: { pointer: { mark: { kind: 'cheer' } } } }] })
+    expect(rows).toMatchObject({
+      kind: 'ok',
+      rows: [
+        {
+          name: 'ALI',
+          state: 'ok',
+          read: { pointer: { mark: { kind: 'cheer' } } },
+        },
+      ],
+    })
     // The update counts on the budget the sender keeps.
     expect((await ali.store.getState<{ budget: { updates: number[] } }>(PHONE, SEND_STATE))?.budget.updates).toHaveLength(1)
   })
@@ -86,22 +135,37 @@ describe('Cheer and Nudge (decision 24)', () => {
     await ali.marks.send(mine, 'cheer')
     clock.advance(60_000)
     await ali.marks.send(mine, 'nudge')
-    expect(JSON.parse(world.text(mine, POINTER_FILE)!).mark).toEqual({ kind: 'nudge', at: new Date(START + 60_000).toISOString() })
+    expect(JSON.parse(world.text(mine, POINTER_FILE)!).mark).toEqual({
+      kind: 'nudge',
+      at: new Date(START + 60_000).toISOString(),
+    })
   })
 
   it('the budget is used up: the cheer waits on the phone, says when it goes, and goes then; the remove reserve stays', async () => {
     const { clock, world, ali, mine } = await friends()
     // 99 updates this hour and 2 pointers to keep for a remove: 1 left minus the reserve of 2 → no update now.
     const updates = Array.from({ length: 99 }, (_, i) => START - 50 * 60_000 + i)
-    await ali.store.setState(PHONE, SEND_STATE, { lastSentAt: null, lastKey: null, pointers: 2, budget: { updates, seen: null, blockedUntil: null } })
+    await ali.store.setState(PHONE, SEND_STATE, {
+      lastSentAt: null,
+      lastKey: null,
+      pointers: 2,
+      budget: { updates, seen: null, blockedUntil: null },
+    })
     const sent = await ali.marks.send(mine, 'cheer')
-    expect(sent).toMatchObject({ kind: 'waiting', why: 'budget', mark: { kind: 'cheer' } })
+    expect(sent).toMatchObject({
+      kind: 'waiting',
+      why: 'budget',
+      mark: { kind: 'cheer' },
+    })
     if (sent.kind !== 'waiting') return
     expect(sent.retryAt).toBeGreaterThan(START)
     // Two of my updates must leave the hour: the second oldest is 50 minutes old, so 10 minutes and 2 ms.
     expect(sent.retryAt! - START).toBe(10 * 60_000 + 2)
     expect(updatesOf(world, mine)).toBe(0)
-    expect((await ali.marks.outbox())[mine]).toMatchObject({ state: 'waiting', why: 'budget' })
+    expect((await ali.marks.outbox())[mine]).toMatchObject({
+      state: 'waiting',
+      why: 'budget',
+    })
     // Not yet: a flush before the time sends nothing.
     await ali.marks.flush()
     expect(updatesOf(world, mine)).toBe(0)
@@ -115,7 +179,11 @@ describe('Cheer and Nudge (decision 24)', () => {
   it('no signal: the cheer waits and goes at the next read with a signal', async () => {
     const { world, ali, mine } = await friends()
     world.offline = true
-    expect(await ali.marks.send(mine, 'cheer')).toMatchObject({ kind: 'waiting', why: 'offline', retryAt: null })
+    expect(await ali.marks.send(mine, 'cheer')).toMatchObject({
+      kind: 'waiting',
+      why: 'offline',
+      retryAt: null,
+    })
     world.offline = false
     await ali.marks.flush()
     expect(updatesOf(world, mine)).toBe(1)
@@ -124,7 +192,10 @@ describe('Cheer and Nudge (decision 24)', () => {
   it('GitHub says "rate limit": the cheer waits until GitHub\'s time', async () => {
     const { world, ali, mine } = await friends()
     world.failNext = (c) => (c.op === 'update' ? 'RATE_LIMITED' : undefined)
-    expect(await ali.marks.send(mine, 'cheer')).toMatchObject({ kind: 'waiting', why: 'rate-limited' })
+    expect(await ali.marks.send(mine, 'cheer')).toMatchObject({
+      kind: 'waiting',
+      why: 'rate-limited',
+    })
     expect(updatesOf(world, mine)).toBe(0)
   })
 
@@ -150,7 +221,10 @@ describe('Cheer and Nudge (decision 24)', () => {
     await ali.marks.see([{ theirs: 'abc', mark: cheer }])
     clock.advance(3600_000)
     await ali.marks.see([{ theirs: 'abc', mark: cheer }])
-    expect((await ali.marks.seen()).abc).toEqual({ at: cheer.at, seenAt: START })
+    expect((await ali.marks.seen()).abc).toEqual({
+      at: cheer.at,
+      seenAt: START,
+    })
   })
 
   it('after "Sign out and erase this phone": no call, nothing stored', async () => {

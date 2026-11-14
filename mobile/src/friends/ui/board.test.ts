@@ -7,7 +7,6 @@ import {
   cleanName,
   dailyMark,
   endOfNextDay,
-  groupStreak,
   initialOf,
   localDay,
   markToShow,
@@ -23,8 +22,28 @@ import {
 const NOW = new Date(2026, 10, 13, 12).getTime()
 const TODAY = localDay(NOW)
 
-const day = (offset: number, d: Partial<FriendDay> = {}): FriendDay => ({ day: addDays(TODAY, offset), cards: 0, seconds: 0, remembered: 0, forgot: 0, newCards: 0, done: false, ...d })
-const TOTALS = { cards: 0, inReview: 0, newLeft: 0, mature: 0, dueLeft: 0, addedThisWeek: 0, streak: 0, bestStreak: 0, bestDay: 0, bestWeek: 0 }
+const day = (offset: number, d: Partial<FriendDay> = {}): FriendDay => ({
+  day: addDays(TODAY, offset),
+  cards: 0,
+  seconds: 0,
+  remembered: 0,
+  forgot: 0,
+  newCards: 0,
+  done: false,
+  ...d,
+})
+const TOTALS = {
+  cards: 0,
+  inReview: 0,
+  newLeft: 0,
+  mature: 0,
+  dueLeft: 0,
+  addedThisWeek: 0,
+  streak: 0,
+  bestStreak: 0,
+  bestDay: 0,
+  bestWeek: 0,
+}
 const stats = (days: FriendDay[], totals: Partial<FriendStats['totals']> = {}): FriendStats => ({
   v: 1,
   login: 'x',
@@ -38,8 +57,22 @@ const stats = (days: FriendDay[], totals: Partial<FriendStats['totals']> = {}): 
 /** The hand-made fixture of the "You vs Sam" screen: every number below is counted by hand from these days. */
 const YOU = stats(
   [
-    day(0, { cards: 31, newCards: 9, seconds: 55 * 60, remembered: 40, forgot: 10, done: false }),
-    day(-1, { cards: 42, newCards: 12, seconds: 60 * 60, remembered: 30, forgot: 0, done: true }),
+    day(0, {
+      cards: 31,
+      newCards: 9,
+      seconds: 55 * 60,
+      remembered: 40,
+      forgot: 10,
+      done: false,
+    }),
+    day(-1, {
+      cards: 42,
+      newCards: 12,
+      seconds: 60 * 60,
+      remembered: 30,
+      forgot: 0,
+      done: true,
+    }),
     day(-2, { cards: 20, done: true, remembered: 10 }),
     day(-3, { cards: 10, done: false }),
     day(-4, { cards: 30, done: true }),
@@ -48,18 +81,42 @@ const YOU = stats(
     day(-7, { cards: 99, done: true }),
     day(-40, { cards: 500, remembered: 500, done: true }),
   ],
-  { cards: 2199, inReview: 1689, newLeft: 510, mature: 940, dueLeft: 5, addedThisWeek: 35, streak: 6, bestDay: 88 },
+  {
+    cards: 2199,
+    inReview: 1689,
+    newLeft: 510,
+    mature: 940,
+    dueLeft: 5,
+    addedThisWeek: 35,
+    streak: 6,
+    bestDay: 88,
+  },
 )
 const SAM = stats(
   [
-    day(0, { cards: 44, newCards: 14, seconds: 66 * 60 + 20, remembered: 9, forgot: 1, done: true }),
+    day(0, {
+      cards: 44,
+      newCards: 14,
+      seconds: 66 * 60 + 20,
+      remembered: 9,
+      forgot: 1,
+      done: true,
+    }),
     day(-1, { cards: 38, done: true }),
     day(-2, { cards: 5, done: false }),
     day(-3, { cards: 12, done: true }),
     day(-4, { cards: 30, done: true }),
     day(-6, { cards: 1, done: true }),
   ],
-  { cards: 1840, inReview: 1310, newLeft: 530, mature: 810, addedThisWeek: 60, streak: 8, bestDay: 96 },
+  {
+    cards: 1840,
+    inReview: 1310,
+    newLeft: 530,
+    mature: 810,
+    addedThisWeek: 60,
+    streak: 8,
+    bestDay: 96,
+  },
 )
 
 describe('the daily mark (decision 25)', () => {
@@ -71,11 +128,19 @@ describe('the daily mark (decision 25)', () => {
     expect(dailyMark(stats([day(0, { cards: 0, done: true })]), NOW)).toBe('finished')
     // No numbers for today yet (no send today): not started.
     expect(dailyMark(stats([day(-1, { cards: 10, done: true })]), NOW)).toBe('not-started')
-    expect(periodNumbers(stats([day(0, { cards: 44, newCards: 40, seconds: 600, done: true })]), 'today', NOW)).toEqual({ cards: 44, minutes: 10, mark: 'finished' })
+    expect(periodNumbers(stats([day(0, { cards: 44, newCards: 40, seconds: 600, done: true })]), 'today', NOW)).toEqual({
+      cards: 44,
+      minutes: 10,
+      mark: 'finished',
+    })
   })
 
   it('Yesterday shows ✓ or ○ only; Week and Month show no mark', () => {
-    expect(periodNumbers(YOU, 'yesterday', NOW)).toEqual({ cards: 42, minutes: 60, mark: 'finished' })
+    expect(periodNumbers(YOU, 'yesterday', NOW)).toEqual({
+      cards: 42,
+      minutes: 60,
+      mark: 'finished',
+    })
     expect(periodNumbers(stats([day(-1, { cards: 3 })]), 'yesterday', NOW).mark).toBe('not-started')
     expect(periodNumbers(YOU, 'week', NOW).mark).toBeNull()
     expect(periodNumbers(YOU, 'month', NOW).mark).toBeNull()
@@ -99,8 +164,24 @@ describe('the four periods and the order (decision 21)', () => {
   })
 
   it('sorts by cards, then minutes; equal rows share a rank; rows with no numbers go last', () => {
-    const e = (key: string, cards: number, minutes: number, you = false) => ({ key, name: key, you, stats: stats([day(0, { cards, seconds: minutes * 60 })]) })
-    const rows = boardRows([e('you', 31, 55, true), e('sam', 44, 66), { key: 'gone', name: 'Gone', you: false, stats: null }, e('priya', 12, 49), e('leo', 31, 20), e('mina', 31, 20)], 'today', NOW)
+    const e = (key: string, cards: number, minutes: number, you = false) => ({
+      key,
+      name: key,
+      you,
+      stats: stats([day(0, { cards, seconds: minutes * 60 })]),
+    })
+    const rows = boardRows(
+      [
+        e('you', 31, 55, true),
+        e('sam', 44, 66),
+        { key: 'gone', name: 'Gone', you: false, stats: null },
+        e('priya', 12, 49),
+        e('leo', 31, 20),
+        e('mina', 31, 20),
+      ],
+      'today',
+      NOW,
+    )
     expect(rows.map((r) => [r.entry.key, r.rank])).toEqual([
       ['sam', 1],
       ['you', 2],
@@ -114,7 +195,10 @@ describe('the four periods and the order (decision 21)', () => {
   it('a friend ahead of me in time: their newest day is their today', () => {
     const ahead = stats([day(1, { cards: 9, done: true }), day(0, { cards: 4 })])
     expect(todayOf(ahead, NOW)).toBe(addDays(TODAY, 1))
-    expect(periodNumbers(ahead, 'today', NOW)).toMatchObject({ cards: 9, mark: 'finished' })
+    expect(periodNumbers(ahead, 'today', NOW)).toMatchObject({
+      cards: 9,
+      mark: 'finished',
+    })
     expect(periodNumbers(ahead, 'yesterday', NOW).cards).toBe(4)
   })
 })
@@ -174,21 +258,11 @@ describe('"You vs <friend>" against a hand-made fixture (decision 23)', () => {
   })
 })
 
-describe('the group streak (round 10, item 13)', () => {
-  const done = (...offsets: number[]) => stats(offsets.map((o) => day(o, { cards: 1, done: true })))
-  it('counts the days in a row that everyone finished; an unfinished today does not stop it', () => {
-    expect(groupStreak([done(0, -1, -2, -3), done(-1, -2, -3, -4)], NOW)).toBe(3)
-    expect(groupStreak([done(0, -1, -2), done(0, -1)], NOW)).toBe(2)
-  })
-  it('a member with no update for a day did not finish it', () => {
-    expect(groupStreak([done(0, -1, -2), null], NOW)).toBe(0)
-    expect(groupStreak([done(-1, -2, -4), done(-1, -3, -2, -4)], NOW)).toBe(2)
-    expect(groupStreak([], NOW)).toBe(0)
-  })
-})
-
 describe('Cheer and Nudge on the side that gets them (decision 24)', () => {
-  const cheer = { kind: 'cheer' as const, at: new Date(NOW - 3 * 86_400_000).toISOString() }
+  const cheer = {
+    kind: 'cheer' as const,
+    at: new Date(NOW - 3 * 86_400_000).toISOString(),
+  }
   it('shows until it was seen, however old', () => {
     expect(markToShow(cheer, undefined, NOW)).toEqual(cheer)
     expect(markToShow(cheer, undefined, NOW + 30 * 86_400_000)).toEqual(cheer)
@@ -206,9 +280,15 @@ describe('Cheer and Nudge on the side that gets them (decision 24)', () => {
   })
   it('a new cheer or nudge from the same friend replaces the old one and is unseen again', () => {
     const seen = seeMark(cheer, undefined, NOW)
-    const nudge = { kind: 'nudge' as const, at: new Date(NOW + 9 * 86_400_000).toISOString() }
+    const nudge = {
+      kind: 'nudge' as const,
+      at: new Date(NOW + 9 * 86_400_000).toISOString(),
+    }
     expect(markToShow(nudge, seen, NOW + 10 * 86_400_000)).toEqual(nudge)
-    expect(seeMark(nudge, seen, NOW + 10 * 86_400_000)).toEqual({ at: nudge.at, seenAt: NOW + 10 * 86_400_000 })
+    expect(seeMark(nudge, seen, NOW + 10 * 86_400_000)).toEqual({
+      at: nudge.at,
+      seenAt: NOW + 10 * 86_400_000,
+    })
     expect(markToShow(undefined, seen, NOW)).toBeNull()
   })
 })
@@ -229,7 +309,18 @@ describe('strings from a gist', () => {
   })
   it('an avatar comes only from https://avatars.githubusercontent.com', () => {
     expect(avatarUrl('https://avatars.githubusercontent.com/u/1?v=4')).toBe('https://avatars.githubusercontent.com/u/1?v=4')
-    for (const bad of ['http://avatars.githubusercontent.com/u/1', 'https://evil.com/a.png', 'https://avatars.githubusercontent.com.evil.com/u/1', 'https://x@avatars.githubusercontent.com/u/1', 'https://avatars.githubusercontent.com:444/u/1', 'javascript:alert(1)', 'data:image/png;base64,AAAA', '', null, 'x'.repeat(600)])
+    for (const bad of [
+      'http://avatars.githubusercontent.com/u/1',
+      'https://evil.com/a.png',
+      'https://avatars.githubusercontent.com.evil.com/u/1',
+      'https://x@avatars.githubusercontent.com/u/1',
+      'https://avatars.githubusercontent.com:444/u/1',
+      'javascript:alert(1)',
+      'data:image/png;base64,AAAA',
+      '',
+      null,
+      'x'.repeat(600),
+    ])
       expect(avatarUrl(bad)).toBeNull()
   })
   it('"updated … ago" is 4E1\'s label', () => {

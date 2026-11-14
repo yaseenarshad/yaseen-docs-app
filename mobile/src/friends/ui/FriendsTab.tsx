@@ -8,7 +8,17 @@ import { Problem } from '../../screens/Frame'
 import type { Unavailable } from '../list'
 import { MARK_LINE, PERIODS, boardRows, cleanName, markToShow, markWords, updatedLabel, type BoardEntry, type Period } from './board'
 import './friends.css'
-import { GROUP_NAME_MAX, groupMessage, joinWords, type GroupView, type JoinRequest, type JoinResult } from './groups'
+import {
+  GROUP_NAME_MAX,
+  adminWords,
+  groupLink,
+  groupViewMessage,
+  joinMessage,
+  type GroupChange,
+  type GroupView,
+  type JoinRequest,
+  type JoinResult,
+} from './groups'
 import { Avatar, LinkToCopy, Mark, SHARED_WORDS, readClipboard, shareOut } from './parts'
 import type { Board, FriendEntry, FriendsService, PasteAnswer } from './service'
 import { useBoard, useNow, useService } from './useFriends'
@@ -19,7 +29,17 @@ import { useBoard, useNow, useService } from './useFriends'
  * `board.ts`; the tab computes none.
  */
 type OkBoard = Extract<Board, { kind: 'ok' }>
-type Entry = BoardEntry & { friend?: FriendEntry; avatar: string | null; sub: string[]; cheer: string | null; dim: boolean; group?: string; pointer?: string; left?: boolean }
+type Entry = BoardEntry & {
+  friend?: FriendEntry
+  avatar: string | null
+  sub: string[]
+  ago?: string
+  cheer: string | null
+  dim: boolean
+  group?: string
+  pointer?: string
+  left?: boolean
+}
 
 export default function FriendsTab() {
   const { service, ready } = useService()
@@ -28,7 +48,11 @@ export default function FriendsTab() {
   const account = friendsMessage(app.friendsAccount)
   const alert =
     account === null ? null : app.friendsAccount.kind === 'no-gists' ? (
-      <Problem message={`${account} Add it to the token on GitHub, then replace the token in Settings.`} action="How to make a token" onAction={() => app.go({ type: 'open', route: { kind: 'guide' } })} />
+      <Problem
+        message={`${account} Add it to the token on GitHub, then replace the token in Settings.`}
+        action="How to make a token"
+        onAction={() => app.go({ type: 'open', route: { kind: 'guide' } })}
+      />
     ) : (
       <Problem quiet message={account} action="Change" onAction={() => app.go({ type: 'open', route: { kind: 'settings' } })} />
     )
@@ -40,13 +64,8 @@ export default function FriendsTab() {
         <p className="fr-line">Reading your friends…</p>
       </section>
     )
-  if (service === null || board === null) return <section aria-label="Friends">{alert ?? <Empty service={null} refresh={refresh} />}</section>
-  if (board.kind !== 'ok')
-    return (
-      <section aria-label="Friends">
-        {alert ?? <Unreadable board={board} refresh={refresh} />}
-      </section>
-    )
+  if (service === null || board === null) return <section aria-label="Friends">{alert ?? <Empty service={null} />}</section>
+  if (board.kind !== 'ok') return <section aria-label="Friends">{alert ?? <Unreadable board={board} refresh={refresh} />}</section>
   return (
     <section aria-label="Friends">
       {alert}
@@ -68,7 +87,13 @@ function Unreadable({ board, refresh }: { board: Unavailable; refresh: () => Pro
         <Problem
           message="Sign in again to see your friends."
           action="Sign in again"
-          onAction={() => app.vaultKey !== null && app.go({ type: 'open', route: { kind: 'replace-token', vault: app.vaultKey } })}
+          onAction={() =>
+            app.vaultKey !== null &&
+            app.go({
+              type: 'open',
+              route: { kind: 'replace-token', vault: app.vaultKey },
+            })
+          }
         />
       )
     case 'no-gists':
@@ -91,8 +116,7 @@ function Unreadable({ board, refresh }: { board: Unavailable; refresh: () => Pro
 }
 
 /** No friend and no group yet: the two steps of decision 20, and one time what a friend sees (decision 22). */
-function Empty({ service, refresh }: { service: FriendsService | null; refresh: () => Promise<void> }) {
-  const [panel, setPanel] = useState<Panel>(null)
+function Empty({ service, setPanel }: { service: FriendsService | null; setPanel?: (p: Panel) => void }) {
   return (
     <div>
       <h2 className="title">Review with friends</h2>
@@ -102,18 +126,15 @@ function Empty({ service, refresh }: { service: FriendsService | null; refresh: 
         <li>Paste the link that your friend sends you.</li>
       </ol>
       <p className="muted">{service?.whatFriendsSee ?? 'Friends see your review numbers only: cards, minutes and streaks. Never your cards or your pages.'}</p>
-      {service !== null && (
-        <>
-          <div className="stack">
-            <button type="button" className="btn btn--wide" onClick={() => setPanel('share')}>
-              Share my link
-            </button>
-            <button type="button" className="btn btn--wide" onClick={() => setPanel('paste')}>
-              Paste a friend's link
-            </button>
-          </div>
-          <AddPanel panel={panel} setPanel={setPanel} service={service} refresh={refresh} />
-        </>
+      {setPanel !== undefined && (
+        <div className="stack">
+          <button type="button" className="btn btn--wide" onClick={() => setPanel('share')}>
+            Share my link
+          </button>
+          <button type="button" className="btn btn--wide" onClick={() => setPanel('paste')}>
+            Paste a friend's link
+          </button>
+        </div>
       )}
     </div>
   )
@@ -127,7 +148,11 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
   const [period, setPeriod] = useState<Period>('today')
   const [list, setList] = useState<string>('friends')
   const [panel, setPanel] = useState<Panel>(null)
-  const [asking, setAsking] = useState<null | { question: string; yes: string; run: () => Promise<unknown> }>(null)
+  const [asking, setAsking] = useState<null | {
+    question: string
+    yes: string
+    run: () => Promise<unknown>
+  }>(null)
   const [busy, setBusy] = useState(false)
   const [said, setSaid] = useState<string | null>(null)
 
@@ -135,15 +160,35 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
   const showGroup = list !== 'friends' && group !== undefined
 
   const friendEntries: Entry[] = useMemo(() => {
-    const me: Entry = { key: 'me', name: board.me.name, you: true, stats: board.me.stats, avatar: board.me.avatar, sub: board.me.stats === null ? ['Your numbers need each vault that counts on this phone.'] : [], cheer: null, dim: false }
+    const me: Entry = {
+      key: 'me',
+      name: board.me.name,
+      you: true,
+      stats: board.me.stats,
+      avatar: board.me.avatar,
+      sub: board.me.stats === null ? ['Your numbers need each vault that counts on this phone.'] : [],
+      cheer: null,
+      dim: false,
+    }
     const them = board.friends.map((f): Entry => {
       const shown = markToShow(f.mark, board.seen[f.theirs], now)
       const numbers = f.state === 'ok' || f.state === 'waiting'
       const sub: string[] = []
       if (f.state !== 'ok' && f.label !== null) sub.push(f.label)
-      if (numbers) sub.push(updatedLabel(f.updatedAt, now))
-      else if (f.label === null) sub.push('no update yet')
-      return { key: f.theirs, name: f.name, you: false, stats: numbers ? f.stats : null, avatar: f.avatar, friend: f, sub, cheer: shown === null ? null : MARK_LINE[shown.kind], dim: f.state === 'gone' }
+      if (!numbers && f.label === null) sub.push('no update yet')
+      const ago = numbers ? updatedLabel(f.updatedAt, now) : undefined
+      return {
+        key: f.theirs,
+        name: f.name,
+        you: false,
+        stats: numbers ? f.stats : null,
+        avatar: f.avatar,
+        friend: f,
+        sub,
+        ago,
+        cheer: shown === null ? null : MARK_LINE[shown.kind],
+        dim: f.state === 'gone',
+      }
     })
     return [me, ...them]
   }, [board, now])
@@ -154,14 +199,14 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
       const ok = m.read !== null && m.read.kind === 'ok' ? m.read : null
       const sub: string[] = []
       if (m.state !== 'ok' && m.label !== null) sub.push(m.label)
-      if (!m.me && ok !== null) sub.push(updatedLabel(ok.updatedAt, now))
       return {
         key: m.pointer,
         name: m.me ? board.me.name : cleanName(m.name) || cleanName(m.login) || 'Member',
         you: m.me,
-        stats: m.me ? board.me.stats : (ok?.stats ?? null),
+        stats: m.me ? board.me.stats : ok?.stats ?? null,
         avatar: null,
         sub,
+        ago: !m.me && ok !== null ? updatedLabel(ok.updatedAt, now) : undefined,
         cheer: null,
         dim: m.state === 'left',
         group: group.group,
@@ -190,7 +235,6 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
   }, [seenKey, service])
 
   const nobody = board.friends.length === 0 && board.groups.length === 0 && board.shared.length === 0
-  if (nobody) return <Empty service={service} refresh={refresh} />
 
   const ask = (question: string, yes: string, run: () => Promise<unknown>) => setAsking({ question, yes, run })
   const doAsk = async () => {
@@ -206,100 +250,151 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
   }
   const open = (e: Entry) => {
     if (e.you) return
-    if (e.group !== undefined && e.pointer !== undefined) app.go({ type: 'open', route: { kind: 'friend', group: e.group, pointer: e.pointer } })
-    else if (e.friend !== undefined) app.go({ type: 'open', route: { kind: 'friend', theirs: e.friend.theirs } })
+    if (e.group !== undefined && e.pointer !== undefined)
+      app.go({
+        type: 'open',
+        route: { kind: 'friend', group: e.group, pointer: e.pointer },
+      })
+    else if (e.friend !== undefined)
+      app.go({
+        type: 'open',
+        route: { kind: 'friend', theirs: e.friend.theirs },
+      })
   }
 
+  // The add panel keeps its place (and its state) when the first link or friend turns the empty tab into the list.
   return (
     <div>
-      <div className="fr-seg" role="group" aria-label="Period">
-        {PERIODS.map((p) => (
-          <button key={p.id} type="button" aria-pressed={p.id === period} onClick={() => setPeriod(p.id)}>
-            {p.label}
-          </button>
-        ))}
-      </div>
-      <div className="fr-lists" role="group" aria-label="Lists">
-        <button type="button" className="fr-pill" aria-pressed={!showGroup} onClick={() => setList('friends')}>
-          Friends
-        </button>
-        {board.groups.map((g) =>
-          g.kind === 'not-found' ? null : (
-            <button key={g.group} type="button" className="fr-pill" aria-pressed={showGroup && list === g.group} onClick={() => setList(g.group)}>
-              {cleanName(g.name, 30) || 'Group'}
-            </button>
-          ),
-        )}
-        <button type="button" className="fr-pill fr-pill--add" aria-label="Add a friend or a group" aria-expanded={panel !== null} onClick={() => setPanel(panel === null ? 'menu' : null)}>
-          + Add
-        </button>
-      </div>
-      <AddPanel panel={panel} setPanel={setPanel} service={service} refresh={refresh} />
-      {board.offline && <p className="fr-line">No connection. These are the last numbers the app read.</p>}
-      {said !== null && (
-        <p className="fr-line" role="status">
-          {said}
-        </p>
-      )}
-      {showGroup && group !== undefined && group.kind === 'ok' && (
-        <p className="fr-line">{group.streak === 1 ? 'Group streak: 1 day that everyone finished' : `Group streak: ${group.streak} days that everyone finished`}</p>
-      )}
-      {showGroup && group !== undefined && group.kind !== 'ok' && <GroupProblem view={group} />}
-      <ul className="rows" aria-label={showGroup ? `${cleanName(group?.name ?? '')} members` : 'Friends'}>
-        {rows.map(({ entry, rank, numbers }) => (
-          <li key={entry.key} className={entry.dim ? 'fr-row fr-row--gone' : 'fr-row'}>
-            <button type="button" className="fr-row__tap" onClick={() => open(entry)} disabled={entry.you} aria-label={rowWords(entry, rank, numbers, period)}>
-              <span className="fr-rank" aria-hidden="true">
-                {rank ?? ''}
-              </span>
-              <Avatar name={entry.name} url={entry.avatar} />
-              <span className="fr-who" aria-hidden="true">
-                <span className={entry.you ? 'fr-name fr-name--you' : 'fr-name'}>{entry.you ? 'You' : entry.name}</span>
-                {(entry.cheer !== null || entry.sub.length > 0) && (
-                  <span className="fr-sub">
-                    {entry.cheer !== null && <span className="fr-cheer">{entry.cheer}</span>}
-                    {entry.cheer !== null && entry.sub.length > 0 && ' · '}
-                    {entry.sub.join(' · ')}
-                  </span>
-                )}
-              </span>
-              {numbers !== null && (
-                <span className="fr-nums" aria-hidden="true">
-                  {numbers.mark !== null && <Mark mark={numbers.mark} period={period} />} <b>{numbers.cards}</b> cards
-                  <br />
-                  {numbers.minutes} min
-                </span>
-              )}
-            </button>
-            {entry.friend?.state === 'gone' && (
-              <button type="button" className="btn" onClick={() => ask(`Remove ${entry.name}? They no longer share with you.`, 'Remove', () => service.remove(entry.friend!.mine))}>
-                Remove
-              </button>
-            )}
-            {entry.left === true && group?.kind === 'ok' && group.iAmAdmin && service.groups !== null && (
-              <button type="button" className="btn" onClick={() => ask(`Remove ${entry.name} from ${cleanName(group.name)}?`, 'Remove', () => service.groups!.remove(group.group, entry.pointer!))}>
-                Remove
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-      {!showGroup && board.shared.length > 0 && (
+      {nobody ? (
+        <Empty service={service} setPanel={setPanel} />
+      ) : (
         <>
-          <h2 className="section">Links you shared</h2>
-          <ul className="rows">
-            {board.shared.map((s) => (
-              <li key={s.mine} className="row">
-                <span className="row__main">Shared {updatedLabel(Date.parse(s.at), now)}, not used yet</span>
-                <button type="button" className="btn" onClick={() => ask('Cancel this link? A friend who has it cannot add you with it.', 'Cancel link', () => service.remove(s.mine))}>
-                  Cancel link
-                </button>
-              </li>
+          <div className="fr-seg" role="group" aria-label="Period">
+            {PERIODS.map((p) => (
+              <button key={p.id} type="button" aria-pressed={p.id === period} onClick={() => setPeriod(p.id)}>
+                {p.label}
+              </button>
             ))}
-          </ul>
+          </div>
+          <div className="fr-lists" role="group" aria-label="Lists">
+            <button type="button" className="fr-pill" aria-pressed={!showGroup} onClick={() => setList('friends')}>
+              Friends
+            </button>
+            {board.groups.map((g) =>
+              g.kind === 'not-found' ? null : (
+                <button key={g.group} type="button" className="fr-pill" aria-pressed={showGroup && list === g.group} onClick={() => setList(g.group)}>
+                  {cleanName(g.name, 30) || 'Group'}
+                </button>
+              ),
+            )}
+            <button
+              type="button"
+              className="fr-pill fr-pill--add"
+              aria-label="Add a friend or a group"
+              aria-expanded={panel !== null}
+              onClick={() => setPanel(panel === null ? 'menu' : null)}
+            >
+              + Add
+            </button>
+          </div>
         </>
       )}
-      {showGroup && group !== undefined && service.groups !== null && <GroupActions view={group} service={service} ask={ask} say={setSaid} />}
+      <AddPanel panel={panel} setPanel={setPanel} service={service} refresh={refresh} />
+      {!nobody && (
+        <>
+          {board.offline && <p className="fr-line">No connection. These are the last numbers the app read.</p>}
+          {said !== null && (
+            <p className="fr-line" role="status">
+              {said}
+            </p>
+          )}
+          {showGroup && group !== undefined && group.kind === 'ok' && (
+            <p className="fr-line">
+              {group.streak === 1 ? 'Group streak: 1 day that everyone finished' : `Group streak: ${group.streak} days that everyone finished`}
+            </p>
+          )}
+          {showGroup && group !== undefined && group.kind !== 'ok' && <GroupProblem view={group} />}
+          <ul className="rows" aria-label={showGroup ? `${cleanName(group?.name ?? '')} members` : 'Friends'}>
+            {rows.map(({ entry: e, rank, numbers }) => {
+              // Round 10, item 12 (mockup version 9): "updated … ago" below the name, on Today.
+              const entry = period === 'today' && e.ago !== undefined ? { ...e, sub: [...e.sub, e.ago] } : e
+              return (
+                <li key={entry.key} className={entry.dim ? 'fr-row fr-row--gone' : 'fr-row'}>
+                  <button
+                    type="button"
+                    className="fr-row__tap"
+                    onClick={() => open(entry)}
+                    disabled={entry.you}
+                    aria-label={rowWords(entry, rank, numbers, period)}
+                  >
+                    <span className="fr-rank" aria-hidden="true">
+                      {rank ?? ''}
+                    </span>
+                    <Avatar name={entry.name} url={entry.avatar} />
+                    <span className="fr-who" aria-hidden="true">
+                      <span className={entry.you ? 'fr-name fr-name--you' : 'fr-name'}>{entry.you ? 'You' : entry.name}</span>
+                      {(entry.cheer !== null || entry.sub.length > 0) && (
+                        <span className="fr-sub">
+                          {entry.cheer !== null && <span className="fr-cheer">{entry.cheer}</span>}
+                          {entry.cheer !== null && entry.sub.length > 0 && ' · '}
+                          {entry.sub.join(' · ')}
+                        </span>
+                      )}
+                    </span>
+                    {numbers !== null && (
+                      <span className="fr-nums" aria-hidden="true">
+                        {numbers.mark !== null && <Mark mark={numbers.mark} period={period} />} <b>{numbers.cards}</b> cards
+                        <br />
+                        {numbers.minutes} min
+                      </span>
+                    )}
+                  </button>
+                  {entry.friend?.state === 'gone' && (
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => ask(`Remove ${entry.name}? They no longer share with you.`, 'Remove', () => service.remove(entry.friend!.mine))}
+                    >
+                      Remove
+                    </button>
+                  )}
+                  {entry.left === true && group?.kind === 'ok' && group.iAmAdmin && service.groups !== null && (
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() =>
+                        ask(`Remove ${entry.name} from ${cleanName(group.name)}?`, 'Remove', () => service.groups!.remove(group.group, entry.pointer!))
+                      }
+                    >
+                      Remove
+                    </button>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+          {!showGroup && board.shared.length > 0 && (
+            <>
+              <h2 className="section">Links you shared</h2>
+              <ul className="rows">
+                {board.shared.map((s) => (
+                  <li key={s.mine} className="row">
+                    <span className="row__main">Shared {updatedLabel(Date.parse(s.at), now)}, not used yet</span>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => ask('Cancel this link? A friend who has it cannot add you with it.', 'Cancel link', () => service.remove(s.mine))}
+                    >
+                      Cancel link
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {showGroup && group !== undefined && service.groups !== null && <GroupActions view={group} service={service} ask={ask} say={setSaid} />}
+        </>
+      )}
       {asking !== null && <Confirm question={asking.question} yes={asking.yes} busy={busy} onYes={() => void doAsk()} onNo={() => setAsking(null)} />}
     </div>
   )
@@ -320,7 +415,7 @@ function rowWords(e: Entry, rank: number | null, n: ReturnType<typeof boardRows>
 }
 
 function GroupProblem({ view }: { view: Exclude<GroupView, { kind: 'not-found' }> }) {
-  const message = groupMessage(view)
+  const message = groupViewMessage(view)
   return message === null ? null : <Problem quiet message={message} />
 }
 
@@ -346,22 +441,44 @@ function GroupActions({
   return (
     <div className="stack" style={{ marginTop: 16 }}>
       {view.kind === 'waiting' && (
-        <button type="button" className="btn btn--wide" onClick={() => void invite(view.sendToAdmin, 'Notecards join link', `Please add me to ${name} on Notecards.`)}>
+        <button
+          type="button"
+          className="btn btn--wide"
+          onClick={() => void invite(view.sendToAdmin, 'Notecards join link', `Please add me to ${name} on Notecards.`)}
+        >
           Send my join link to the admin
         </button>
       )}
       {view.kind === 'ok' && view.iAmAdmin && (
-        <button type="button" className="btn btn--wide" onClick={() => void invite(groupLinkOf(view.group), 'Notecards group link', `Join my group ${name} on Notecards. Open this link, copy the code, then paste it in the app.`)}>
+        <button
+          type="button"
+          className="btn btn--wide"
+          onClick={() =>
+            void invite(
+              groupLink(view.group),
+              'Notecards group link',
+              `Join my group ${name} on Notecards. Open this link, copy the code, then paste it in the app.`,
+            )
+          }
+        >
           Share the group link
         </button>
       )}
       {link !== null && <LinkToCopy link={link} />}
       {view.kind === 'ok' && view.iAmAdmin ? (
-        <button type="button" className="btn btn--wide btn--danger" onClick={() => ask(`Delete ${name}? The group is gone for each person in it.`, 'Delete group', () => groups.delete(view.group))}>
+        <button
+          type="button"
+          className="btn btn--wide btn--danger"
+          onClick={() => ask(`Delete ${name}? The group is gone for each person in it.`, 'Delete group', () => groups.delete(view.group))}
+        >
           Delete group
         </button>
       ) : (
-        <button type="button" className="btn btn--wide btn--danger" onClick={() => ask(`Leave ${name}? The others stop seeing your numbers.`, 'Leave group', () => groups.leave(view.group))}>
+        <button
+          type="button"
+          className="btn btn--wide btn--danger"
+          onClick={() => ask(`Leave ${name}? The others stop seeing your numbers.`, 'Leave group', () => groups.leave(view.group))}
+        >
           Leave group
         </button>
       )}
@@ -369,11 +486,18 @@ function GroupActions({
   )
 }
 
-/** 4E3's group link (`groupLink` of `shared/friendGroups.ts`): the landing page with the group's ID after `#`. */
-const groupLinkOf = (group: string) => `https://notecards.yaseenarshad.com/group#${group.toLowerCase()}`
-
 /** "+ Add": Share my link, Paste a friend's link, New group (decisions 18 and 20). */
-function AddPanel({ panel, setPanel, service, refresh }: { panel: Panel; setPanel: (p: Panel) => void; service: FriendsService; refresh: () => Promise<void> }) {
+function AddPanel({
+  panel,
+  setPanel,
+  service,
+  refresh,
+}: {
+  panel: Panel
+  setPanel: (p: Panel) => void
+  service: FriendsService
+  refresh: () => Promise<void>
+}) {
   if (panel === null) return null
   if (panel === 'menu')
     return (
@@ -415,7 +539,11 @@ const UNAVAILABLE_WORDS: Record<Unavailable['kind'], string> = {
 
 /** "Share my link": a new link for ONE friend (4E2), then the share sheet, with what a friend sees (decision 22). */
 function SharePanel({ service, close, refresh }: { service: FriendsService; close: () => void; refresh: () => Promise<void> }) {
-  const [state, setState] = useState<{ busy: boolean; said: string | null; link: string | null }>({ busy: false, said: null, link: null })
+  const [state, setState] = useState<{
+    busy: boolean
+    said: string | null
+    link: string | null
+  }>({ busy: false, said: null, link: null })
   const running = useRef(false)
   const go = async () => {
     if (running.current) return
@@ -423,9 +551,22 @@ function SharePanel({ service, close, refresh }: { service: FriendsService; clos
     setState({ busy: true, said: null, link: null })
     try {
       const made = await service.share()
-      if (made.kind !== 'ok') return setState({ busy: false, said: UNAVAILABLE_WORDS[made.kind], link: null })
-      const how = await shareOut({ title: made.title, text: made.text, url: made.link })
-      setState({ busy: false, said: SHARED_WORDS[how], link: how === 'show' ? made.link : null })
+      if (made.kind !== 'ok')
+        return setState({
+          busy: false,
+          said: UNAVAILABLE_WORDS[made.kind],
+          link: null,
+        })
+      const how = await shareOut({
+        title: made.title,
+        text: made.text,
+        url: made.link,
+      })
+      setState({
+        busy: false,
+        said: SHARED_WORDS[how],
+        link: how === 'show' ? made.link : null,
+      })
       void refresh()
     } finally {
       running.current = false
@@ -454,7 +595,9 @@ function SharePanel({ service, close, refresh }: { service: FriendsService; clos
 /** Words for each answer to a paste: a friend link (4E2), a group link or a join request (4E3). */
 function pasteWords(answer: PasteAnswer): string {
   if (answer.kind in UNAVAILABLE_WORDS && !('name' in answer)) return UNAVAILABLE_WORDS[answer.kind as Unavailable['kind']]
-  if (['joined', 'own-group', 'request', 'already-member', 'not-your-group', 'is-friend-link', 'is-join-request', 'not-a-group-link'].includes(answer.kind)) return joinWords(answer as JoinResult | JoinRequest)
+  if (['request', 'already-member', 'not-your-group', 'not-a-join-link'].includes(answer.kind)) return adminWords(answer as JoinRequest)
+  if (['joined', 'already', 'own-group', 'is-friend-link', 'is-join-request', 'not-a-group-link'].includes(answer.kind) && !('paired' in answer))
+    return joinMessage(answer as JoinResult)
   return pasteMessage(answer as PasteResult)
 }
 
@@ -495,7 +638,8 @@ function PastePanel({ service, close, refresh }: { service: FriendsService; clos
     setText(read)
     await add(read)
   }
-  const sendBack = answer !== null && answer.kind === 'added' && !answer.paired ? answer.sendBack : answer !== null && answer.kind === 'joined' ? answer.sendToAdmin : null
+  const sendBack =
+    answer !== null && answer.kind === 'added' && !answer.paired ? answer.sendBack : answer !== null && answer.kind === 'joined' ? answer.sendToAdmin : null
   const request = answer !== null && answer.kind === 'request' ? answer : null
   return (
     <div className="fr-panel" role="group" aria-label="Paste a friend's link">
@@ -504,7 +648,17 @@ function PastePanel({ service, close, refresh }: { service: FriendsService; clos
       </button>
       <label className="field">
         <span className="field__label">Or paste the link here</span>
-        <input ref={field} name="friend-link" value={text} onChange={(e) => setText(e.target.value)} autoCapitalize="off" autoCorrect="off" spellCheck={false} inputMode="url" maxLength={2000} />
+        <input
+          ref={field}
+          name="friend-link"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          inputMode="url"
+          maxLength={2000}
+        />
       </label>
       <button type="button" className="btn btn--wide" onClick={() => void add(text)} disabled={busy || text.trim() === ''} aria-busy={busy}>
         {busy ? 'Adding…' : 'Add'}
@@ -519,7 +673,11 @@ function PastePanel({ service, close, refresh }: { service: FriendsService; clos
           type="button"
           className="btn btn--wide"
           onClick={() =>
-            void shareOut({ title: 'Notecards friend link', text: 'Add me as a friend on Notecards. Open this link, copy the code, then paste it in the app.', url: sendBack }).then((how) => {
+            void shareOut({
+              title: 'Notecards friend link',
+              text: 'Add me as a friend on Notecards. Open this link, copy the code, then paste it in the app.',
+              url: sendBack,
+            }).then((how) => {
               if (how === 'show') setLink(sendBack)
               else if (SHARED_WORDS[how] !== null) setSaid(SHARED_WORDS[how])
             })
@@ -534,7 +692,13 @@ function PastePanel({ service, close, refresh }: { service: FriendsService; clos
           className="btn btn--wide"
           onClick={() =>
             void service.groups!.add(request.group, text).then((r) => {
-              setSaid(r.kind === 'done' ? `${cleanName(request.name)} is in ${cleanName(request.groupName)} now.` : joinWords(r as never))
+              setSaid(
+                r.kind === 'done'
+                  ? `${cleanName(request.name)} is in ${cleanName(request.groupName)} now.`
+                  : r.kind in UNAVAILABLE_WORDS
+                  ? UNAVAILABLE_WORDS[r.kind as Unavailable['kind']]
+                  : adminWords(r as GroupChange),
+              )
               setAnswer(null)
               void refresh()
             })
@@ -567,7 +731,11 @@ function GroupPanel({ service, close, refresh }: { service: FriendsService; clos
       if (made.kind === 'bad-name') return setSaid('Give the group a name.')
       if (made.kind !== 'ok') return setSaid(UNAVAILABLE_WORDS[made.kind])
       void refresh()
-      const how = await shareOut({ title: made.title, text: made.text, url: made.link })
+      const how = await shareOut({
+        title: made.title,
+        text: made.text,
+        url: made.link,
+      })
       if (how === 'show') setLink(made.link)
       setSaid('Group made. Send its link to the people you want in it. Then paste the join link each one sends you.')
     } finally {

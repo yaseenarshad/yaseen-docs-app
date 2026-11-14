@@ -26,7 +26,12 @@ export type MarkKind = FriendMark['kind']
 export type MarkSend =
   | { kind: 'sent'; mark: FriendMark }
   /** Kept on the phone; it goes at `retryAt` (null: at the next read with a signal). */
-  | { kind: 'waiting'; mark: FriendMark; why: 'budget' | 'offline' | 'rate-limited'; retryAt: number | null }
+  | {
+      kind: 'waiting'
+      mark: FriendMark
+      why: 'budget' | 'offline' | 'rate-limited'
+      retryAt: number | null
+    }
   | { kind: 'no-gists' }
   | { kind: 'no-account' }
   | { kind: 'unauthorized' }
@@ -86,7 +91,13 @@ export function freeAt(b: GistBudget, now: number, need: number, reserve: number
 }
 
 function webLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
-  const locks = (globalThis as { navigator?: { locks?: { request(name: string, fn: () => Promise<T>): Promise<T> } } }).navigator?.locks
+  const locks = (
+    globalThis as {
+      navigator?: {
+        locks?: { request(name: string, fn: () => Promise<T>): Promise<T> }
+      }
+    }
+  ).navigator?.locks
   return locks === undefined ? fn() : locks.request(name, fn)
 }
 
@@ -115,14 +126,24 @@ export function createMarks(options: MarksOptions): Marks {
   async function write(mine: string, mark: FriendMark): Promise<MarkSend> {
     if (!(await guard.live())) return { kind: 'no-account' }
     const session = await store.session(PHONE)
-    const friends = await openFriendsApi(store, tokens, { fetch: guard.fetch, now })
+    const friends = await openFriendsApi(store, tokens, {
+      fetch: guard.fetch,
+      now,
+    })
     if (friends.kind !== 'ok') return { kind: friends.kind }
     const api: GistsApi = friends.api
     return lock('notecards-friends', async () => {
       const saved = (await store.getState<SendSaved & Record<string, unknown>>(PHONE, SEND_STATE)) ?? {}
       let budget = saved.budget ?? emptyBudget()
       const saveBudget = async (b: GistBudget) => {
-        if (await guard.live()) await session.setState(PHONE, SEND_STATE, { lastSentAt: null, lastKey: null, pointers: 0, ...saved, budget: b })
+        if (await guard.live())
+          await session.setState(PHONE, SEND_STATE, {
+            lastSentAt: null,
+            lastKey: null,
+            pointers: 0,
+            ...saved,
+            budget: b,
+          })
       }
       const wait = async (why: 'budget' | 'offline' | 'rate-limited', retryAt: number | null): Promise<MarkSend> => {
         await saveOut(session, mine, { mark, state: 'waiting', why, retryAt })
@@ -139,7 +160,13 @@ export function createMarks(options: MarksOptions): Marks {
         const pointer = readPointerFile(file?.truncated ? null : file?.content)
         if (pointer.kind === 'newer') return { kind: 'newer-app' }
         if (pointer.kind === 'unreadable') return { kind: 'failed' }
-        const text = JSON.stringify({ ...pointer.raw, v: 1, stats: pointer.value.stats, ...(pointer.value.reads === undefined ? {} : { reads: pointer.value.reads }), mark })
+        const text = JSON.stringify({
+          ...pointer.raw,
+          v: 1,
+          stats: pointer.value.stats,
+          ...(pointer.value.reads === undefined ? {} : { reads: pointer.value.reads }),
+          mark,
+        })
         const answer = await api.update(mine, { [POINTER_FILE]: text })
         budget = recordUpdate(budget, now(), answer.rate)
         await saveBudget(budget)

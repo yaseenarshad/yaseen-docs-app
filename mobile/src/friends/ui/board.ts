@@ -1,4 +1,5 @@
 import { agoLabel, updatedAgo } from '@shared/friendGists'
+import { dailyMark as groupsDailyMark, localDay as sharedLocalDay } from '@shared/friendGroups'
 import { daysReviewed, rememberedPercent, type FriendDay, type FriendMark, type FriendStats } from '@shared/friendStats'
 
 /**
@@ -29,8 +30,8 @@ const dateOf = (day: string) => {
   const [y, m, d] = day.split('-').map(Number)
   return new Date(y, m - 1, d)
 }
-/** My local date at `now`, `2026-11-13`. */
-export const localDay = (now: number): string => keyOf(new Date(now))
+/** My local date at `now`, `2026-11-13` (4E3's `localDay`, so the group rows and the friend rows agree). */
+export const localDay = sharedLocalDay
 /** `day` moved by `n` days (local calendar). */
 export const addDays = (day: string, n: number): string => {
   const d = dateOf(day)
@@ -72,17 +73,20 @@ const minutesOf = (seconds: number) => Math.round(seconds / 60)
 
 /** ○ not started, ◐ started with due cards left, ✓ the due cards are finished. About the DUE cards only (round 9). */
 export type DailyMark = 'not-started' | 'started' | 'finished'
-export const MARK_SIGN: Record<DailyMark, string> = { 'not-started': '○', started: '◐', finished: '✓' }
+export const MARK_SIGN: Record<DailyMark, string> = {
+  'not-started': '○',
+  started: '◐',
+  finished: '✓',
+}
 
 /**
  * Today's mark: `done` gives ✓ (a day with no due card is done, 2C). Else a card answered today gives ◐, and none
  * gives ○. A friend with no numbers for today yet (no send today) is ○.
  */
 export function dailyMark(stats: Pick<FriendStats, 'days'>, now: number): DailyMark {
-  const today = dayIn(stats, todayOf(stats, now))
-  if (today === undefined) return 'not-started'
-  if (today.done) return 'finished'
-  return today.cards > 0 ? 'started' : 'not-started'
+  // The rule is 4E3's (`shared/friendGroups.ts`), so a friend row and a group row show the same mark.
+  const mark = groupsDailyMark(stats as FriendStats, todayOf(stats, now))
+  return mark === null ? 'not-started' : mark === 'done' ? 'finished' : mark
 }
 /** Yesterday shows ✓ or ○ only (decision 25). A day with no numbers is not finished. */
 export function yesterdayMark(stats: Pick<FriendStats, 'days'>, now: number): DailyMark {
@@ -91,7 +95,11 @@ export function yesterdayMark(stats: Pick<FriendStats, 'days'>, now: number): Da
 /** What VoiceOver reads for a mark (the signs are not words). */
 export function markWords(mark: DailyMark, period: Period): string {
   if (period === 'yesterday') return mark === 'finished' ? 'Finished the due cards yesterday' : 'Did not finish the due cards yesterday'
-  return { 'not-started': 'Not started today', started: 'Started, due cards left', finished: 'Finished the due cards' }[mark]
+  return {
+    'not-started': 'Not started today',
+    started: 'Started, due cards left',
+    finished: 'Finished the due cards',
+  }[mark]
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -110,11 +118,19 @@ export function periodNumbers(stats: Pick<FriendStats, 'days'>, period: Period, 
   switch (period) {
     case 'today': {
       const d = dayIn(stats, today)
-      return { cards: d?.cards ?? 0, minutes: minutesOf(d?.seconds ?? 0), mark: dailyMark(stats, now) }
+      return {
+        cards: d?.cards ?? 0,
+        minutes: minutesOf(d?.seconds ?? 0),
+        mark: dailyMark(stats, now),
+      }
     }
     case 'yesterday': {
       const d = dayIn(stats, addDays(today, -1))
-      return { cards: d?.cards ?? 0, minutes: minutesOf(d?.seconds ?? 0), mark: yesterdayMark(stats, now) }
+      return {
+        cards: d?.cards ?? 0,
+        minutes: minutesOf(d?.seconds ?? 0),
+        mark: yesterdayMark(stats, now),
+      }
     }
     case 'week': {
       const s = sumOf(stats.days, mondayOf(today), today)
@@ -143,7 +159,11 @@ export interface BoardRow<E extends BoardEntry = BoardEntry> {
 
 /** The rows sorted by cards, then minutes (decision 21); rows with no numbers go last, in the order given. */
 export function boardRows<E extends BoardEntry>(entries: readonly E[], period: Period, now: number): BoardRow<E>[] {
-  const withNumbers = entries.map((entry, i) => ({ entry, i, numbers: entry.stats === null ? null : periodNumbers(entry.stats, period, now) }))
+  const withNumbers = entries.map((entry, i) => ({
+    entry,
+    i,
+    numbers: entry.stats === null ? null : periodNumbers(entry.stats, period, now),
+  }))
   withNumbers.sort((a, b) => {
     if (a.numbers === null || b.numbers === null) return (a.numbers === null ? 1 : 0) - (b.numbers === null ? 1 : 0) || a.i - b.i
     return b.numbers.cards - a.numbers.cards || b.numbers.minutes - a.numbers.minutes || a.i - b.i
@@ -190,7 +210,13 @@ export interface VsBoard {
 }
 
 const lead = (you: number | null, them: number | null): Lead => (you === null || them === null ? null : you > them ? 'you' : them > you ? 'them' : 'both')
-const line = (label: string, you: number | null, them: number | null, more: Partial<VsLine> = {}): VsLine => ({ label, you, them, lead: lead(you, them), ...more })
+const line = (label: string, you: number | null, them: number | null, more: Partial<VsLine> = {}): VsLine => ({
+  label,
+  you,
+  them,
+  lead: lead(you, them),
+  ...more,
+})
 
 type VsStats = Pick<FriendStats, 'days' | 'totals'>
 function sideOf(s: VsStats | null, now: number) {
@@ -224,16 +250,44 @@ export function vsBoard(you: VsStats | null, them: VsStats | null, now: number):
     line('yesterday', a?.yesterday ?? null, b?.yesterday ?? null),
     line('7 day average', a?.average ?? null, b?.average ?? null),
     line('minutes today', a?.minutes ?? null, b?.minutes ?? null),
-    line('best day', t(you, (x) => x.bestDay), t(them, (x) => x.bestDay)),
-    line('streak', t(you, (x) => x.streak), t(them, (x) => x.streak)),
+    line(
+      'best day',
+      t(you, (x) => x.bestDay),
+      t(them, (x) => x.bestDay),
+    ),
+    line(
+      'streak',
+      t(you, (x) => x.streak),
+      t(them, (x) => x.streak),
+    ),
   ]
   const vault: VsLine[] = [
-    line('total cards', t(you, (x) => x.cards), t(them, (x) => x.cards)),
-    line('in review', t(you, (x) => x.inReview), t(them, (x) => x.inReview)),
-    line('new cards left', t(you, (x) => x.newLeft), t(them, (x) => x.newLeft)),
+    line(
+      'total cards',
+      t(you, (x) => x.cards),
+      t(them, (x) => x.cards),
+    ),
+    line(
+      'in review',
+      t(you, (x) => x.inReview),
+      t(them, (x) => x.inReview),
+    ),
+    line(
+      'new cards left',
+      t(you, (x) => x.newLeft),
+      t(them, (x) => x.newLeft),
+    ),
     line('remembered', you === null ? null : rememberedPercent(you.days), them === null ? null : rememberedPercent(them.days), { suffix: '%' }),
-    line('mature cards', t(you, (x) => x.mature), t(them, (x) => x.mature)),
-    line('added this week', t(you, (x) => x.addedThisWeek), t(them, (x) => x.addedThisWeek)),
+    line(
+      'mature cards',
+      t(you, (x) => x.mature),
+      t(them, (x) => x.mature),
+    ),
+    line(
+      'added this week',
+      t(you, (x) => x.addedThisWeek),
+      t(them, (x) => x.addedThisWeek),
+    ),
     line('days reviewed of 30', you === null ? null : daysReviewed(you.days), them === null ? null : daysReviewed(them.days)),
   ]
   const mineToday = localDay(now)
@@ -242,25 +296,15 @@ export function vsBoard(you: VsStats | null, them: VsStats | null, now: number):
     const day = addDays(mineToday, -i)
     const youDone = you !== null && dayIn(you, addDays(a!.today, -i))?.done === true
     const themDone = them !== null && dayIn(them, addDays(b!.today, -i))?.done === true
-    week.push({ day, weekday: WEEKDAYS[dateOf(day).getDay()], you: youDone, them: themDone, both: youDone && themDone })
+    week.push({
+      day,
+      weekday: WEEKDAYS[dateOf(day).getDay()],
+      you: youDone,
+      them: themDone,
+      both: youDone && themDone,
+    })
   }
   return { side, vault, week, bothWon: week.filter((d) => d.both).length }
-}
-
-// ---------------------------------------------------------------------------------------------------------------------
-// The group streak (round 10, item 13).
-
-/**
- * The days in a row that EVERY member finished their due cards, up to today. An unfinished today does not stop it
- * (as 2C's own `streak`). A member with no numbers for a day (no update yet) did not finish that day.
- */
-export function groupStreak(members: readonly (Pick<FriendStats, 'days'> | null)[], now: number): number {
-  if (members.length === 0) return 0
-  const all = (offset: number) => members.every((m) => m !== null && dayIn(m, addDays(todayOf(m, now), -offset))?.done === true)
-  let start = all(0) ? 0 : 1
-  let n = 0
-  while (start + n < 400 && all(start + n)) n++
-  return n
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -285,7 +329,10 @@ export function markToShow(mark: FriendMark | undefined, seen: SeenMark | undefi
 export function seeMark(mark: FriendMark, seen: SeenMark | undefined, now: number): SeenMark {
   return seen !== undefined && seen.at === mark.at ? seen : { at: mark.at, seenAt: now }
 }
-export const MARK_LINE: Record<FriendMark['kind'], string> = { cheer: 'cheered you', nudge: 'nudged you' }
+export const MARK_LINE: Record<FriendMark['kind'], string> = {
+  cheer: 'cheered you',
+  nudge: 'nudged you',
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Words and strings from a gist: always text, bounded.
@@ -307,9 +354,18 @@ const graphemes = (text: string): string[] => {
 /** A name from a gist as plain text: no control or bidi character, one line, at most `max` letters (then "…"). */
 export function cleanName(text: unknown, max = NAME_MAX): string {
   if (typeof text !== 'string') return ''
-  const flat = text.slice(0, max * 32).replace(/\s+/g, ' ').replace(CONTROLS, '').trim()
+  const flat = text
+    .slice(0, max * 32)
+    .replace(/\s+/g, ' ')
+    .replace(CONTROLS, '')
+    .trim()
   const parts = graphemes(flat)
-  return parts.length <= max ? flat : `${parts.slice(0, max - 1).join('').trimEnd()}…`
+  return parts.length <= max
+    ? flat
+    : `${parts
+        .slice(0, max - 1)
+        .join('')
+        .trimEnd()}…`
 }
 /** The letter of the plain avatar: the first letter of the name, or "?" */
 export function initialOf(name: string): string {

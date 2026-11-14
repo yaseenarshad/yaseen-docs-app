@@ -41,6 +41,8 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
     return (await import('../review/fixtures')).mountReviewFixture(root, name).catch((err: unknown) => {
       document.body.dataset.fixtureError = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
     })
+  // The Friends screens (4E4, YAZ-5085).
+  if (name.startsWith('friends-')) return (await import('../friends/ui/fixtures')).mountFriendsFixture(root, name)
   // The status dot's own fixtures (4D, YAZ-5080).
   if (name.startsWith('dot')) return (await import('../status/fixtures')).mountDotFixture(root, name)
   // 4C (YAZ-5079): Search, a page and a card, on a made-up vault (`readerFixtures.tsx`).
