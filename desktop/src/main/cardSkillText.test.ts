@@ -7,10 +7,15 @@ import { describe, expect, it } from 'vitest'
  * The card skill's shipped pages (YAZ-5112). Each page opens with the placeholder line, and no page holds a
  * top-level `card` fence: a duplicate in a vault with IDs would turn it into a real card. A `card` fence shown
  * inside a `markdown` example block is text, and fine.
+ *
+ * Example fences: a GOOD card goes in a ```markdown block (cardCheck.test.ts runs the six checks on each one); a card
+ * that is bad on purpose (every "Before", every weak card) goes in a ```text block, which nothing checks.
  */
 
 const SKILL = fileURLToPath(new URL('../../../skills/card-skill', import.meta.url))
 const PLACEHOLDER = "Placeholder text. Yaseen's version replaces this page."
+/** Generated from the course script (YAZ-5059), not placeholder text: it opens with its own line. */
+const NO_PLACEHOLDER = new Set(['Course transcript.md'])
 
 /** Every `.md` under `dir`, skipping dot folders (`.yaseendocs` belongs to the app). */
 async function pages(dir: string): Promise<string[]> {
@@ -61,7 +66,7 @@ describe('the card skill pages (YAZ-5112)', () => {
     for (const page of await pages(SKILL)) {
       const text = await readFile(page, 'utf8')
       const name = relative(SKILL, page)
-      expect(text.split('\n')[0], name).toBe(PLACEHOLDER)
+      if (!NO_PLACEHOLDER.has(name)) expect(text.split('\n')[0], name).toBe(PLACEHOLDER)
       const cards = topFences(text).filter((f) => f.lang === 'card').map((f) => `${name}:${f.line}`)
       expect(cards, 'a bare card fence would become a real card').toEqual([])
     }

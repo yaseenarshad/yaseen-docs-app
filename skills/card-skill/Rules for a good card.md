@@ -34,7 +34,7 @@ Placeholder text. Yaseen's version replaces this page.
 
 Before: the question hides its own subject.
 
-```markdown
+```text
 DNS
 
 What does {{DNS}} stand for?
@@ -54,7 +54,7 @@ It turns a name like example.com into the address of a computer.
 
 Before: small words are hidden, and nothing explains the term.
 
-```markdown
+```text
 Photosynthesis
 
 {{Photosynthesis}} is how {{plants}} make {{food}} from {{light}}.
