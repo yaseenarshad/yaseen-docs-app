@@ -142,6 +142,36 @@ describe('Review: the kinds of card', () => {
     expect(h.answers.waiting().map((w) => w.op.id)).toEqual(['NC-1'])
   })
 
+  it('YAZ-5298: a short card with a sound: a tap on the middle (the player\'s name, time or empty part) shows side 2; only Play and the bar are the player\'s', async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve())
+    const media: VaultMedia = { show: async (path) => ({ status: 'ready', path, url: 'blob:fake-fifth', type: 'audio/mpeg' }) }
+    h = await reviewSetup(one('Listen. Which interval is this?\n\n![[fifth.mp3]]\n---\n{{A fifth}}', { 'fifth.mp3': 'made-up bytes' }), { media })
+    await h.seen()
+    const before = h.cardText()
+    for (const own of ['.card__audio-play', '.card__audio-bar']) {
+      await act(async () => h.host.querySelector<HTMLElement>(`.review__card ${own}`)!.click())
+      await h.settle()
+      expect([own, h.cardText()]).toEqual([own, before])
+    }
+    expect(play).toHaveBeenCalledTimes(1)
+    // The middle of a short card is on the player's pill: its name. A tap there steps, as on any card (decision 11).
+    await act(async () => h.host.querySelector<HTMLElement>('.review__card .card__audio-name')!.click())
+    await h.settle()
+    expect(h.cardText()).not.toBe(before)
+    expect(h.cardText()).toContain('A fifth')
+    play.mockRestore()
+  })
+
+  it('YAZ-5298: a tap on the pill itself (between its parts) steps too', async () => {
+    const media: VaultMedia = { show: async (path) => ({ status: 'ready', path, url: 'blob:fake-fifth', type: 'audio/mpeg' }) }
+    h = await reviewSetup(one('Listen.\n\n![[fifth.mp3]]\n---\n{{A fifth}}', { 'fifth.mp3': 'made-up bytes' }), { media })
+    await h.seen()
+    const before = h.cardText()
+    await act(async () => h.host.querySelector<HTMLElement>('.review__card .card__audio')!.click())
+    await h.settle()
+    expect(h.cardText()).not.toBe(before)
+  })
+
   it('M1 (checker): a tap on a link or a picture in the card is theirs, never a step', async () => {
     const media: VaultMedia = { show: async (path) => ({ status: 'ready', path, url: 'blob:cat', type: 'image/png' }) }
     h = await reviewSetup(one('See [the site](https://example.com) and ![a cat](cat.png)\n---\n{{hidden}}', { 'cat.png': 'made-up bytes' }), { media })

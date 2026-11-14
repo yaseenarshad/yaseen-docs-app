@@ -23,6 +23,14 @@ describe('the Review tab styles', () => {
     expect(css).toMatch(/\.review__dock \{[^}]*position: sticky;[^}]*bottom: -24px;/)
   })
 
+  it('YAZ-5298: a sound player is as wide as its parts, not the whole card, so the middle of a short card is free', () => {
+    expect(css).toMatch(/\.review__card \.card__audio \{[^}]*display: inline-flex;/)
+  })
+
+  it('YAZ-5299: the card ID never breaks over two lines', () => {
+    expect(css).toMatch(/\.review__id \{[^}]*white-space: nowrap;/)
+  })
+
   it('the answer buttons and ⋯ are big for a thumb (56 px; Apple asks 44 pt)', () => {
     expect(css).toMatch(/\.review__answer \{[^}]*min-height: 56px;/)
     expect(css).toMatch(/\.review__more \{[^}]*min-width: 56px;[^}]*min-height: 56px;/)

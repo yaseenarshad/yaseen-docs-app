@@ -23,9 +23,10 @@ const input = (over: {
   sendProblem?: string | null
   online?: boolean
   token?: TokenEndWarning
+  loaded?: boolean
 } = {}): DotInput => ({
   sync: { status: over.status ?? 'synced', problem: over.problem ?? null },
-  answers: { waiting: over.waiting ?? 0, lost: over.lost ?? 0, sending: over.sending ?? false, problem: over.sendProblem ?? null },
+  answers: { loaded: over.loaded ?? true, waiting: over.waiting ?? 0, lost: over.lost ?? 0, sending: over.sending ?? false, problem: over.sendProblem ?? null },
   online: over.online ?? true,
   token: over.token ?? NONE,
 })
@@ -89,6 +90,16 @@ describe('the table: which state wins when two are true', () => {
     ['401 with answers waiting and no signal', { status: 'attention', problem: 'UNAUTHORIZED', waiting: 3, online: false }, 'attention Sign in again'],
     ['401 with a lost answer', { status: 'attention', problem: 'UNAUTHORIZED', lost: 1 }, 'attention Sign in again'],
     ['the token ended, a pass runs', { token: ENDED, status: 'syncing' }, 'attention Sign in again'],
+    // YAZ-5297, a cold start: until the answer list has read its stored answers, the dot cannot count them. Never green.
+    ['cold start: the list has not read its stored answers yet', { loaded: false }, 'off Checking…'],
+    ['cold start with no signal, the list not read yet', { loaded: false, online: false, status: 'off', problem: 'OFFLINE' }, 'off Checking…'],
+    ['cold start: a pass confirmed the head, the list not read yet', { loaded: false, status: 'synced' }, 'off Checking…'],
+    ['cold start: red wins also before the list is read', { loaded: false, status: 'attention', problem: 'UNAUTHORIZED' }, 'attention Sign in again'],
+    ['cold start with no signal, 0 stored answers', { online: false, status: 'off', problem: 'OFFLINE' }, 'off No signal'],
+    ['cold start with no signal, 3 stored answers', { online: false, status: 'off', problem: 'OFFLINE', waiting: 3 }, 'pending 3 answers waiting · no signal'],
+    ['cold start with no signal, the engine still on its first try, 3 stored answers', { online: false, status: 'syncing', waiting: 3 }, 'pending 3 answers waiting · no signal'],
+    ['cold start online, 3 stored answers, the first pass runs', { status: 'syncing', waiting: 3 }, 'syncing Syncing…'],
+    ['cold start online, 3 stored answers, the pass ended, before the first send', { status: 'synced', waiting: 3 }, 'pending 3 answers waiting'],
     // Grey: no vault open yet (the engine is idle). Never empty words.
     ['the engine has not started', { status: 'idle' }, 'off Not synced yet'],
   ]
@@ -124,13 +135,14 @@ describe('every combination', () => {
         for (const sending of [false, true])
           for (const sendProblem of SEND_PROBLEMS)
             for (const online of [true, false])
-              for (const token of [NONE, SOON, ENDED]) {
-                const over: Over = { status, problem, waiting, lost, sending, sendProblem, online, token }
-                all.push({ over, d: syncDot(input(over)) })
-              }
+              for (const token of [NONE, SOON, ENDED])
+                for (const loaded of [true, false]) {
+                  const over: Over = { status, problem, waiting, lost, sending, sendProblem, online, token, loaded }
+                  all.push({ over, d: syncDot(input(over)) })
+                }
 
-  it(`covers ${14 * 3 * 3 * 2 * 9 * 2 * 3} combinations`, () => {
-    expect(all.length).toBe(13_608)
+  it(`covers ${14 * 3 * 3 * 2 * 9 * 2 * 3 * 2} combinations`, () => {
+    expect(all.length).toBe(27_216)
   })
 
   it('red only when the person must sign in again or fix the vault: never for no signal, GitHub down, a failed read or "slow down"', () => {
@@ -141,18 +153,19 @@ describe('every combination', () => {
     }
   })
 
-  it('a lost answer always shows (amber) unless red wins', () => {
-    for (const { over, d } of all) if (over.lost! > 0 && d.state !== 'attention') expect(d.words).toMatch(/could not be saved$/)
+  it('a lost answer always shows (amber) unless red wins or the list is not read yet', () => {
+    for (const { over, d } of all) if (over.lost! > 0 && d.state !== 'attention' && over.loaded) expect(d.words).toMatch(/could not be saved$/)
   })
 
-  it('waiting answers are never hidden by grey: grey only when nothing waits and nothing is lost', () => {
-    for (const { over, d } of all) if (d.state === 'off') expect([over.waiting, over.lost]).toEqual([0, 0])
+  it('waiting answers are never hidden by grey: grey only when nothing waits and nothing is lost, or the list is not read yet', () => {
+    for (const { over, d } of all) if (d.state === 'off' && over.loaded) expect([over.waiting, over.lost]).toEqual([0, 0])
+    for (const { over, d } of all) if (!over.loaded && d.state !== 'attention') expect(d.words).toBe('Checking…')
   })
 
   it('green only when all is sent, the engine says synced, the phone is online and the token does not end soon', () => {
     for (const { over, d } of all)
       if (d.state === 'synced') {
-        expect(over).toMatchObject({ status: 'synced', waiting: 0, lost: 0, sending: false, online: true, token: NONE })
+        expect(over).toMatchObject({ status: 'synced', waiting: 0, lost: 0, sending: false, online: true, token: NONE, loaded: true })
         expect(['UNAUTHORIZED', 'READ_ONLY', 'NOT_FOUND', 'NO_ACCESS']).not.toContain(over.sendProblem)
       }
   })

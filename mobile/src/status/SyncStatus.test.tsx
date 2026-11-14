@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { loadAccount, saveAccount } from '../auth/account'
 import { GOOD, mount, newPhone, NOW, signInWithForm, type Harness } from '../screens/testing'
 import { clockTime } from './dot'
+import { LAST_SYNC_STATE } from './lastSync'
 import { fakeAnswers, lostAnswer, type FakeAnswers } from './testing'
 
 /**
@@ -92,11 +93,19 @@ describe('the dot in the top bar: always shown (decision 12)', () => {
     expect(shown(h)).toMatchObject({ colour: 'pending', words: '2 answers waiting' })
   })
 
-  it('with no answer list yet (4B not wired, or the engine still loads): the engine alone drives the dot', async () => {
+  it('a sync with no answer list at all (no `review()`): the engine alone drives the dot', async () => {
+    const phone = await newPhone()
+    const x = await mount({ phone })
+    h = x
+    await signInWithForm(x, 'yaseen/vault', GOOD)
+    expect(shown(x)).toMatchObject({ colour: 'synced', words: 'Synced' })
+    await x.syncSet({ status: 'syncing' })
+    expect(shown(x)).toMatchObject({ colour: 'syncing' })
+  })
+
+  it('YAZ-5297: the list is not there yet (the engine chunk still loads): "Checking…", never "Synced"', async () => {
     ;({ h } = await signedIn({ answers: null }))
-    expect(shown(h)).toMatchObject({ colour: 'synced', words: 'Synced' })
-    await h.syncSet({ status: 'syncing' })
-    expect(shown(h)).toMatchObject({ colour: 'syncing' })
+    expect(shown(h)).toMatchObject({ colour: 'off', words: 'Checking…' })
   })
 
   it('VoiceOver: one button that says the words, not only a colour; the dot itself is hidden from it', async () => {
@@ -312,5 +321,41 @@ describe('YAZ-5216: the words are never cut', () => {
     expect(b.querySelector('.sync-status__words--short')!.textContent).toBe('3 waiting · offline')
     expect(b.getAttribute('aria-label')).toBe('Sync status: 3 answers waiting · no signal')
     for (const span of b.querySelectorAll('.sync-status__words')) expect(span.getAttribute('aria-hidden')).toBe('true')
+  })
+})
+
+describe('YAZ-5297: a cold open with no signal and a stored waiting answer', () => {
+  it('the dot counts the stored answer once the list is there; the sheet gives the stored last sync; never "Synced" while it waits', async () => {
+    const phone = await newPhone()
+    ;({ h } = await signedIn({ phone }))
+    h.unmount()
+    // The app was closed. The last sync of the last run is on the phone; the engine of the new run has none.
+    await phone.store.setState('yaseen/vault@main', LAST_SYNC_STATE, NOW - 3 * 3_600_000)
+    setOnline(false)
+    const answers = fakeAnswers()
+    answers.set({ waiting: 1 })
+    let engineLoaded = false
+    const x = await mount({ phone })
+    h = x
+    // As lazySync: `review()` gives null until the engine chunk has loaded (it first reads the checkpoint).
+    ;(x.sync as unknown as { review?: () => Promise<unknown> }).review = async () => (engineLoaded ? { answers } : null)
+    await x.syncSet({ status: 'syncing', vault: 'yaseen/vault@main', ready: true, lastSyncedAt: null })
+    expect(shown(x).words).not.toBe('Synced')
+    engineLoaded = true
+    await x.syncSet({ status: 'off', problem: 'OFFLINE' })
+    expect(shown(x)).toMatchObject({ colour: 'pending', words: '1 answer waiting · no signal' })
+    await x.click('Sync status: 1 answer waiting · no signal')
+    expect(x.text()).toContain(`Last synced 3h ago, at ${clockTime(NOW - 3 * 3_600_000)}`)
+    await x.click('Close')
+    // The signal comes back: the engine's pass ends before the list sends. Not green while the answer waits.
+    await answersDo(x, () => setOnline(true))
+    await x.syncSet({ status: 'syncing', problem: null })
+    await x.syncSet({ status: 'synced', lastSyncedAt: NOW })
+    expect(shown(x)).toMatchObject({ colour: 'pending', words: '1 answer waiting' })
+    await answersDo(x, () => answers.set({ sending: true }))
+    await answersDo(x, () => answers.set({ sending: false, waiting: 0, lastSentAt: NOW }))
+    expect(shown(x)).toMatchObject({ colour: 'synced', words: 'Synced' })
+    // The newer time is kept for the next run.
+    expect(await phone.store.getState('yaseen/vault@main', LAST_SYNC_STATE)).toBe(NOW)
   })
 })
