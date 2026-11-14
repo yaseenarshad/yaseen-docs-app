@@ -40,8 +40,7 @@ import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, 
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
 import { FORMATS_CHAPTER_TITLE, courseLostLine, courseStartOverLabel, courseVaultAt, onCourseRequest, requestCourseChapter } from './course/openCourse'
-import type { CourseVault } from './course/courseHost'
-import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
+import { courseVaultView, type LiveCourseVault } from './course/courseVaultView'
 import { onTourShow } from './course/tourBus'
 import { COURSE_NOTICE, offerInInbox, offerNotice } from './course/courseFacts'
 import { resolveItem } from './lists/focusFolders'
@@ -1507,7 +1506,6 @@ export function App() {
   const courseScope = courseBound === null ? undefined : vaults[roots.indexOf(courseBound)]
   const courseLive = useRef(courseScope)
   courseLive.current = courseScope
-  const courseRoot = courseScope?.root ?? null
   const courseIndex = courseScope?.wikilinks
   /** The run's vault left the window, or the kept one is not in it (YAZ-5201): the one line, and "Start over" in the vault in front. */
   const courseLostRoot = courseOpen === null ? null : (courseOpen.lost ?? (courseBound !== null && courseScope === undefined ? courseBound : null))
@@ -1518,24 +1516,17 @@ export function App() {
           line: courseLostLine(storage.vaultName(courseLostRoot)),
           ...(active.root === null ? {} : { startOver: { label: courseStartOverLabel(active.name ?? storage.vaultName(active.root)), run: startCourseOver } }),
         }
-  const courseVault = useMemo<CourseVault | undefined>(
-    () =>
-      courseRoot === null || courseIndex === undefined
-        ? undefined
-        : {
-            root: courseRoot,
-            index: courseIndex,
-            // A scope gone from the window (the vault was removed) reads as not ready: the course only shows.
-            ready: () => courseLive.current?.root === courseRoot && courseLive.current.ids !== undefined,
-            readOnly: () => courseLive.current?.readOnlyVault.settings.on ?? true,
-            review: () => {
-              const review = courseLive.current?.reviewSettings
-              return { ready: review?.ready === true, on: review?.settings.enabled === true, settings: review?.settings ?? DEFAULT_REVIEW_SETTINGS }
-            },
-            cardSkill,
-          },
-    [courseRoot, courseIndex, cardSkill],
+  // One view for the run, read live from the scope that holds the bound vault NOW (YAZ-5201): a vault removed and added
+  // again comes back in another slot, so the view never keeps a slot's index (`courseVaultView`).
+  const courseVault = useMemo<LiveCourseVault | undefined>(
+    () => (courseBound === null ? undefined : courseVaultView(courseBound, () => courseLive.current, cardSkill)),
+    [courseBound, cardSkill],
   )
+  useEffect(() => {
+    if (courseVault === undefined || courseIndex === undefined) return
+    courseVault.changed()
+    return courseIndex.subscribe(() => courseVault.changed())
+  }, [courseVault, courseIndex])
   // The one notice (YAZ-5120): the first time this Mac shows a vault whose Review is on, once its settings are read.
   const reviewOnHere = root !== null && active.reviewSettings.ready === true && active.reviewSettings.settings.enabled
   useEffect(() => {

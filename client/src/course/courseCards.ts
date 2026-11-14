@@ -8,6 +8,9 @@
  *   made again when a step needs it. A "Course Cards" at the top that the course did not make (it is not in
  *   `AppState.course.made` for this vault) is the person's: the course makes "Course Cards 2" (then 3, …), and never
  *   writes into theirs (YAZ-5202, the locked decision on YAZ-5060).
+ * - The course knows its folder by the folder's ID (YAZ-5202): the `id` in its `.folder.md`, which every folder of a
+ *   vault with IDs has, kept in `made` with the path. A folder at the saved path with another ID is the person's (they
+ *   deleted the course's and made their own); a folder at the top with the saved ID is the course's, renamed.
  * - A read-only vault, IDs off, or Review off: the course only shows. Nothing is written, and the step says why.
  * - Each card the course writes is a card file as "New card" and `yaseendocs card new` write it (`cardFileContent`,
  *   `cardFileName`): `kind: card`, the title in `title:`, one card with its sides, a new ID from the vault's door.
@@ -26,7 +29,8 @@ import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { createPage, folderPath, type PageDisk } from '@shared/pageBirth'
 import { TITLE_KEY } from '@shared/pageName'
 import type { ReviewSettings } from '@shared/reviews'
-import type { IndexRecord } from '@shared/types'
+import { PAGE_ID_KEY } from '@shared/pageId'
+import { FOLDER_SETTINGS_FILE, type IndexRecord } from '@shared/types'
 import { typedFolders } from '@shared/linkResolver'
 import { storage } from '../lib/storage'
 import { bridgeDisk } from '../views/scaffold'
@@ -154,6 +158,24 @@ export function takenAtTop(root: string, records: readonly IndexRecord[], folder
 
 /** Is `path` a folder right at the top of `root`? */
 const atTop = (root: string, path: string): boolean => path.startsWith(`${root}/`) && !path.slice(root.length + 1).includes('/')
+
+/** The course title a folder at `path` was named from ("Course Cards", "Course Cards 2", …), or null for any other name. */
+function courseTitleOf(root: string, path: string): string | null {
+  for (let n = 1; n <= MAX_COURSE_FOLDERS; n++) if (folderPath(root, courseCardsTitle(n), true) === path) return courseCardsTitle(n)
+  return null
+}
+
+/** Does a folder at the top, other than the one at `except` (root-relative), have the title `title` in the index? */
+const titledAtTop = (folders: readonly IndexRecord[], title: string, except: string): boolean =>
+  folders.some((f) => f.folder !== except && f.folder !== '' && !f.folder.includes('/') && f.title.toLowerCase() === title.toLowerCase())
+
+/** The ID in the settings file (`.folder.md`) of the folder at `path`, read from the disk; null: gone, a plain folder, or no ID. */
+async function folderIdAt(disk: PageDisk, path: string): Promise<string | null> {
+  const content = await disk.read(`${path}/${FOLDER_SETTINGS_FILE}`).catch(() => null)
+  if (content === null) return null
+  const id = parseFrontmatter(splitFrontmatter(content).frontmatter).properties[PAGE_ID_KEY]
+  return typeof id === 'string' && id !== '' ? id : null
+}
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -323,45 +345,82 @@ export function vaultCourseHost(vault: CourseVault, deps: CourseHostDeps = appDe
     deps.made.set([...all.filter((m) => m.vault !== root), next])
   }
 
-  /** The course's own folder in this vault (`made`), with its title: the index's, else the title its name was made from. */
-  const ownFolder = (): { path: string; title: string } | null => {
-    const path = madeHere()?.folder
-    if (path === undefined || path === '' || !atTop(root, path)) return null
-    const rel = path.slice(root.length + 1)
-    const indexed = vault.index.folders.find((f) => f.folder === rel)?.title
-    let title = COURSE_CARDS
-    for (let n = 1; n <= MAX_COURSE_FOLDERS; n++) if (folderPath(root, courseCardsTitle(n), true) === path) title = courseCardsTitle(n)
-    return { path, title: typeof indexed === 'string' && indexed !== '' ? indexed : title }
+  /** A course folder's title: the index's, else the title its name was made from ("Course Cards", "Course Cards 2", …). */
+  const titleAt = (path: string): string => {
+    const indexed = vault.index.folders.find((f) => f.folder === relativeTo(root, path))?.title
+    return typeof indexed === 'string' && indexed !== '' ? indexed : (courseTitleOf(root, path) ?? COURSE_CARDS)
+  }
+  /** A folder at the top whose settings file holds `id` in the index (the person renamed the course's folder). */
+  const topFolderWithId = (id: string): string | null => {
+    const found = vault.index.folders.find((f) => f.id === id && f.folder !== '' && !f.folder.includes('/'))
+    return found === undefined ? null : `${root}/${found.folder}`
+  }
+  const keepFolder = (path: string, id: string | null): void =>
+    remember(({ folderId: _old, ...m }) => ({ ...m, folder: path, ...(id === null ? {} : { folderId: id }) }))
+
+  /**
+   * The course's own folder in this vault, known by its ID (YAZ-5202), with its title. The folder at the saved path is
+   * the course's only when its settings file holds the saved ID. Else a folder at the top with that ID is the course's,
+   * renamed by the person: the course uses it under its new name. null: the course's folder is gone.
+   */
+  const ownFolder = async (): Promise<{ path: string; title: string } | null> => {
+    const saved = madeHere()
+    if (saved === undefined || saved.folder === '' || !atTop(root, saved.folder)) return null
+    const id = await folderIdAt(deps.disk, saved.folder)
+    if (saved.folderId === undefined) {
+      // A record from before the course kept the ID: the folder at its path, and its ID from now on.
+      if (id === null) return null
+      keepFolder(saved.folder, id)
+      return { path: saved.folder, title: titleAt(saved.folder) }
+    }
+    if (id === saved.folderId) return { path: saved.folder, title: titleAt(saved.folder) }
+    const moved = topFolderWithId(saved.folderId)
+    if (moved === null || (await folderIdAt(deps.disk, moved)) !== saved.folderId) return null
+    keepFolder(moved, saved.folderId)
+    return { path: moved, title: titleAt(moved) }
+  }
+
+  /** Makes the folder at `path` (nothing may be there), and keeps it with its new ID. false: a folder is there already. */
+  const makeFolder = async (path: string, title: string): Promise<boolean> => {
+    try {
+      await deps.disk.createDir({ path, title })
+    } catch (err) {
+      if (deps.disk.isThere(err)) return false
+      throw err
+    }
+    keepFolder(path, await folderIdAt(deps.disk, path))
+    return true
   }
 
   const courseCards = async (): Promise<CourseCardsFolder> => {
     const reason = showOnlyReason(vault)
     if (reason !== null) return { showOnly: reason }
-    // The course's own folder: used again; deleted (the index a moment behind), it is made again in the same place.
-    const own = ownFolder()
-    if (own !== null) {
-      try {
-        await deps.disk.createDir({ path: own.path, title: own.title })
-      } catch (err) {
-        if (!deps.disk.isThere(err)) throw err
-      }
-      return own
+    const own = await ownFolder()
+    if (own !== null) return own
+    // Gone (the person deleted it): made again in its old place when nothing is there now and no other folder at the
+    // top has its title (the index may still list the deleted folder for a moment).
+    const was = madeHere()?.folder
+    const wasTitle = was === undefined || !atTop(root, was) ? null : courseTitleOf(root, was)
+    if (was !== undefined && wasTitle !== null && !titledAtTop(vault.index.folders, wasTitle, relativeTo(root, was)) && (await makeFolder(was, wasTitle))) {
+      return { path: was, title: wasTitle }
     }
     // A new one: the first title no folder at the top has. A folder there already (the index a moment behind) is the person's.
     for (let n = 1; n <= MAX_COURSE_FOLDERS; n++) {
       const title = courseCardsTitle(n)
       if (takenAtTop(root, vault.index.records, vault.index.folders, title)) continue
       const path = folderPath(root, title, true)
-      try {
-        await deps.disk.createDir({ path, title })
-      } catch (err) {
-        if (deps.disk.isThere(err)) continue
-        throw err
-      }
-      remember((m) => ({ ...m, folder: path }))
-      return { path, title }
+      if (await makeFolder(path, title)) return { path, title }
     }
     throw new Error('The course could not find a free name for its Course Cards folder')
+  }
+
+  /** The course's folder as the index shows it now, by its ID (the end screen reads it without the disk). */
+  const ownInIndex = (): string | null => {
+    const saved = madeHere()
+    if (saved === undefined || saved.folder === '' || !atTop(root, saved.folder)) return null
+    if (saved.folderId === undefined) return saved.folder
+    const at = vault.index.folders.find((f) => f.folder === relativeTo(root, saved.folder))
+    return at?.id === saved.folderId ? saved.folder : topFolderWithId(saved.folderId)
   }
 
   const watchCards = (folder: string, onCards: (cards: readonly CourseCard[]) => void): (() => void) => {
@@ -416,8 +475,8 @@ export function vaultCourseHost(vault: CourseVault, deps: CourseHostDeps = appDe
     },
     summary() {
       // The course's own folder only (YAZ-5202): a "Course Cards" of the person's is not the course's.
-      const folder = ownFolder()?.path
-      if (folder === undefined) return courseSummary(vault.index.records, root, null, vault.review().settings)
+      const folder = ownInIndex()
+      if (folder === null) return courseSummary(vault.index.records, root, null, vault.review().settings)
       const there = vault.index.records.some((r) => r.folder === relativeTo(root, folder) || r.folder.startsWith(`${relativeTo(root, folder)}/`))
       return courseSummary(vault.index.records, root, there ? folder : null, vault.review().settings)
     },

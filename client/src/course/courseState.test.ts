@@ -26,6 +26,14 @@ describe('AppState.course (YAZ-5120)', () => {
     expect(applyCoursePatch(s, { made: [] })).toBe(s)
   })
 
+  it('made.folderId (YAZ-5202): the ID of the course folder is kept; a record without one stays valid; a bad ID is dropped, not the record', () => {
+    const good = { vault: '/v', folder: '/v/course-cards', cards: [], page: null }
+    expect(cleanCourseState({ made: [{ ...good, folderId: 'YAZ-12' }] }).made).toEqual([{ ...good, folderId: 'YAZ-12' }])
+    expect(cleanCourseState({ made: [good] }).made).toEqual([good])
+    expect(cleanCourseState({ made: [{ ...good, folderId: 'a b/c' }] }).made).toEqual([good])
+    expect(cleanCourseState({ made: [{ ...good, folderId: 7 }] }).made).toEqual([good])
+  })
+
   it('vault (YAZ-5201): an absolute path or null; anything else keeps the base', () => {
     expect(defaultCourseState().vault).toBeNull()
     expect(cleanCourseState({ vault: '/a' }).vault).toBe('/a')

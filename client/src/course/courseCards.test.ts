@@ -4,7 +4,7 @@
  * the test writes the "agent's" card files itself.
  */
 import { readFileSync } from 'node:fs'
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +13,7 @@ import { EMPTY_CARD_LINE, cardReviewsOf, findCards, withCardId, withCardNoTitle,
 import { cardState, previewAnswers } from '@shared/cardSchedule'
 import { cardPieces, cardSides } from '@shared/cardText'
 import type { CourseMade } from '@shared/courseState'
-import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
+import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import type { PageDisk } from '@shared/pageBirth'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { FOLDER_SETTINGS_FILE, type IndexRecord } from '@shared/types'
@@ -133,7 +133,7 @@ describe('the folder "Course Cards" (YAZ-5124)', () => {
     await vault.refresh()
     expect(await host.courseCards()).toEqual(first)
     expect(await top()).toEqual(['course-cards'])
-    expect(made()).toEqual([{ vault: root, folder: `${root}/course-cards`, cards: [], page: null }])
+    expect(made()).toEqual([{ vault: root, folder: `${root}/course-cards`, folderId: expect.stringMatching(/^TST-\d+$/), cards: [], page: null }])
 
     // Deleted: the index is a moment behind, and the next step makes it again, in the same place.
     await rm(join(root, 'course-cards'), { recursive: true })
@@ -155,7 +155,7 @@ describe('the folder "Course Cards" (YAZ-5124)', () => {
     expect(settings.title).toBe('Course Cards 2')
     await vault.refresh()
     expect(await host.courseCards()).toEqual(at)
-    expect(made()).toEqual([{ vault: root, folder: `${root}/course-cards-2`, cards: [], page: null }])
+    expect(made()).toEqual([{ vault: root, folder: `${root}/course-cards-2`, folderId: expect.stringMatching(/^TST-\d+$/), cards: [], page: null }])
     const card = (await host.makeFirstCard({ front: 'Water boils at 100 degrees at sea level.', hidden: '100', back: '' })) as MadeCard
     expect(card.path.startsWith(`${root}/course-cards-2/`)).toBe(true)
     expect(await host.coursePage()).toMatchObject({ path: expect.stringMatching(new RegExp(`^${root}/course-cards-2/`)) })
@@ -182,6 +182,57 @@ describe('the folder "Course Cards" (YAZ-5124)', () => {
     // A new host (the course opened again) with the same record: the course's own folder, not a fourth one.
     expect(await vaultCourseHost(vault.view, deps).courseCards()).toEqual({ path: `${root}/course-cards-3`, title: 'Course Cards 3' })
     expect(await top()).toEqual(['course-cards-3', 'mine', 'mine-too'])
+  })
+
+  // YAZ-5202, the checker's round 2: the course knows its folder by the folder's ID (its `.folder.md`), not by its path.
+  it('YAZ-5202: after the person deletes the course folder and makes their OWN "Course Cards" at the same path, the course writes into a new folder, not theirs', async () => {
+    const vault = vaultOf()
+    const { deps, made } = depsOf()
+    expect(await vaultCourseHost(vault.view, deps).courseCards()).toEqual({ path: `${root}/course-cards`, title: 'Course Cards' })
+    expect(made()[0].folderId).toMatch(/^TST-\d+$/)
+    await vault.refresh()
+    await rm(join(root, 'course-cards'), { recursive: true })
+    await createDir({ path: join(root, 'course-cards'), title: 'Course Cards' }, door)
+    await writeFile(join(root, 'course-cards', 'my-page.md'), '---\ntitle: My page\n---\nMine\n')
+    await vault.refresh()
+    const card = (await vaultCourseHost(vault.view, deps).makeFirstCard({ front: 'Water boils at 100 degrees at sea level.', hidden: '100', back: '' })) as MadeCard
+    expect(card.path.startsWith(`${root}/course-cards-2/`)).toBe(true)
+    expect((await readdir(join(root, 'course-cards'))).sort()).toEqual([FOLDER_SETTINGS_FILE, 'my-page.md'])
+    expect(made()[0].folder).toBe(`${root}/course-cards-2`)
+    // The end screen counts the course's new folder only.
+    await vault.refresh()
+    expect(vaultCourseHost(vault.view, deps).summary().folder).toBe(`${root}/course-cards-2`)
+  })
+
+  it('YAZ-5202: the person renames the course folder ("Bread cards"): the course follows it by its ID and makes no second "Course Cards"', async () => {
+    const vault = vaultOf()
+    const { deps, made } = depsOf()
+    const host = vaultCourseHost(vault.view, deps)
+    const first = (await host.makeFirstCard({ front: 'Water boils at 100 degrees at sea level.', hidden: '100', back: '' })) as MadeCard
+    await vault.refresh()
+    // A rename in the app: the folder takes the new name on disk, and its settings file keeps its ID with the new title.
+    await rename(join(root, 'course-cards'), join(root, 'bread-cards'))
+    const settingsFile = join(root, 'bread-cards', FOLDER_SETTINGS_FILE)
+    await writeFile(settingsFile, setFrontmatterProperty(await readFile(settingsFile, 'utf8'), 'title', 'Bread cards'))
+    await vault.refresh()
+    expect(await host.courseCards()).toEqual({ path: `${root}/bread-cards`, title: 'Bread cards' })
+    expect(await top()).toEqual(['bread-cards'])
+    expect(made()[0].folder).toBe(`${root}/bread-cards`)
+    const second = (await host.makeFirstCard({ front: 'Ice melts at 0 degrees.', hidden: '0', back: '' })) as MadeCard
+    expect(second.path.startsWith(`${root}/bread-cards/`)).toBe(true)
+    await vault.refresh()
+    expect(host.summary()).toMatchObject({ folder: `${root}/bread-cards`, cards: [{ path: expect.stringContaining('/bread-cards/') }, { path: expect.stringContaining('/bread-cards/') }] })
+    expect(first.path.startsWith(`${root}/course-cards/`)).toBe(true)
+  })
+
+  it('YAZ-5202: a record from before folder IDs were kept takes the ID of the folder at its path', async () => {
+    const vault = vaultOf()
+    const { deps, made } = depsOf()
+    await createDir({ path: join(root, 'course-cards'), title: 'Course Cards' }, door)
+    await vault.refresh()
+    deps.made.set([{ vault: root, folder: `${root}/course-cards`, cards: [], page: null }])
+    expect(await vaultCourseHost(vault.view, deps).courseCards()).toEqual({ path: `${root}/course-cards`, title: 'Course Cards' })
+    expect(made()[0].folderId).toMatch(/^TST-\d+$/)
   })
 
   it('YAZ-5202: a "Course Cards" folder the course made (in `made`) is used again; a plain folder on disk of that name is the person\'s', async () => {

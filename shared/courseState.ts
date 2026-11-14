@@ -10,8 +10,8 @@
  * - `dismissed`: "Don't show again" on the empty Inbox line.
  * - `offered`: the one notice "New to cards? …" has shown on this Mac. It never shows again.
  * - `muted`, `speed`: the player's Mute and Speed (suggestion 21: "the course remembers Mute").
- * - `made` (YAZ-5124): what the course made, per vault: its "Course Cards" folder, the card files it wrote itself (the
- *   first card, the example cards) and its "Course page". A record, never the truth: each thing stays a plain file the
+ * - `made` (YAZ-5124): what the course made, per vault: its "Course Cards" folder (its path and its ID, YAZ-5202), the
+ *   card files it wrote itself (the first card, the example cards) and its "Course page". A record, never the truth: each thing stays a plain file the
  *   person sees in the sidebar, and deleting any of it (the whole folder too) is safe; the course makes what a step
  *   needs again.
  * - `toured`: the ids of the chapters whose guided tour ("Try it in the app", YAZ-5123) the person finished.
@@ -23,10 +23,15 @@
 export const COURSE_SPEEDS = [1, 1.25, 1.5] as const
 export type CourseSpeed = (typeof COURSE_SPEEDS)[number]
 
-/** What the course made in one vault (YAZ-5124). Absolute paths. */
+/**
+ * What the course made in one vault (YAZ-5124). Absolute paths. `folderId` (YAZ-5202): the ID in the course folder's
+ * settings file (`.folder.md`), which every folder of a vault with IDs has. The course knows its folder by it: the
+ * folder at `folder` is the course's only when it has this ID, and a rename keeps it. Absent: a record from before.
+ */
 export interface CourseMade {
   vault: string
   folder: string
+  folderId?: string
   cards: string[]
   page: string | null
 }
@@ -68,7 +73,8 @@ function cleanMade(raw: unknown): CourseMade | null {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   const r = raw as Record<string, unknown>
   if (!isPath(r.vault) || !isPath(r.folder) || !Array.isArray(r.cards) || !r.cards.every(isPath) || !(r.page === null || isPath(r.page))) return null
-  return { vault: r.vault, folder: r.folder, cards: [...new Set(r.cards as string[])].slice(0, MAX_MADE_CARDS), page: r.page as string | null }
+  const folderId = isId(r.folderId) && r.folderId !== '' ? { folderId: r.folderId } : {}
+  return { vault: r.vault, folder: r.folder, cards: [...new Set(r.cards as string[])].slice(0, MAX_MADE_CARDS), page: r.page as string | null, ...folderId }
 }
 
 const isSpeed = (v: unknown): v is CourseSpeed => (COURSE_SPEEDS as readonly unknown[]).includes(v)

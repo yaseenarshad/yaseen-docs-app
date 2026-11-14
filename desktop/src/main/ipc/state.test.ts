@@ -326,6 +326,16 @@ describe('state:set-course (YAZ-5120)', () => {
     }
     expect(store.get().course.made).toEqual(made)
   })
+
+  it('YAZ-5202: takes the course folder`s ID as the renderer writes it (`{ ...made, folder, folderId }`); a bad ID rejects the call', async () => {
+    const set = registered(CONTRACT.state.setCourse.channel)
+    const was = { vault: '/v', folder: '', cards: [] as string[], page: null }
+    const made = [{ ...was, folder: '/v/course-cards', folderId: 'TST-4' }]
+    expect(await set({ sender }, { made })).toEqual(ok(undefined))
+    expect(store.get().course.made).toEqual(made)
+    expect(await set({ sender }, { made: [{ ...made[0], folderId: 'not an id' }] })).toEqual(bad('BAD_REQUEST'))
+    expect(store.get().course.made).toEqual(made)
+  })
 })
 
 describe('state:set-tab-canvas (YAZ-3343 D1)', () => {
