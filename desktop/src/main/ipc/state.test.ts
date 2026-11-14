@@ -56,7 +56,7 @@ describe('registerStateIpc', () => {
   it('registers every state channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual(
-      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setTocSwitch.channel, CONTRACT.state.setBaseGroups.channel, CONTRACT.state.settingsFolder.channel, CONTRACT.state.setSettingsFolder.channel, CONTRACT.state.setTabCanvas.channel, CONTRACT.state.systemHotkeys.channel, CONTRACT.hotkeys.recording.channel, CONTRACT.hotkeys.drawingInFront.channel, CONTRACT.hotkeys.noPageInFront.channel].sort(),
+      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setTocSwitch.channel, CONTRACT.state.setBaseGroups.channel, CONTRACT.state.settingsFolder.channel, CONTRACT.state.setSettingsFolder.channel, CONTRACT.state.setTabCanvas.channel, CONTRACT.state.setCourse.channel, CONTRACT.state.systemHotkeys.channel, CONTRACT.hotkeys.recording.channel, CONTRACT.hotkeys.drawingInFront.channel, CONTRACT.hotkeys.noPageInFront.channel].sort(),
     )
   })
 
@@ -301,6 +301,19 @@ describe('registerStateIpc', () => {
     expect(live.webContents.send).toHaveBeenCalledTimes(1)
     store.pushRecent('/v', 1)
     expect(live.webContents.send).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('state:set-course (YAZ-5120)', () => {
+  it('applies a good patch; is strict: a bad value or an unknown field rejects the call and stores nothing', async () => {
+    const set = registered(CONTRACT.state.setCourse.channel)
+    expect(await set({ sender }, { chapter: 'inbox', clip: 'c3-04', finished: ['why'], speed: 1.25, muted: true })).toEqual(ok(undefined))
+    expect(store.get().course).toMatchObject({ chapter: 'inbox', clip: 'c3-04', finished: ['why'], speed: 1.25, muted: true })
+    const before = store.get().course
+    for (const patch of [null, [], 'x', { speed: 2 }, { muted: 'yes' }, { chapter: 'a b' }, { finished: ['why', 'why'] }, { finished: 'why' }, { folder: '/v' }]) {
+      expect(await set({ sender }, patch)).toEqual(bad('BAD_REQUEST'))
+    }
+    expect(store.get().course).toBe(before)
   })
 })
 

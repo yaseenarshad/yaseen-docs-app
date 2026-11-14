@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { defaultCourseState } from '@shared/courseState'
 import { DEFAULT_SETTINGS, MAX_COLLAPSED_GROUP_KEYS, MAX_FOLD_KEYS_PER_FILE, addRecentRoot, defaultAppState, defaultFolderState, defaultRightPanelIdentity, listVaults, openVaultRoots, type AppState, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { storage } from './storage'
 import { hashFilePath } from './urlHash'
@@ -23,6 +24,7 @@ function installBridge(state: AppState, identity: IdentityFixture) {
       setTocSwitch: vi.fn(async () => undefined),
       setBaseGroups: vi.fn(async () => undefined),
       setTabCanvas: vi.fn(async () => undefined),
+      setCourse: vi.fn(async () => undefined),
       onChange: vi.fn((l: (s: AppState) => void) => {
         listener = l
         return () => {
@@ -136,6 +138,25 @@ describe('storage.getVaultSets (YAZ-2602 D8)', () => {
     b.emit({ ...defaultAppState(), vaultSets: [reading] })
     expect(storage.getVaultSets()).toEqual([reading])
     expect(woke).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('the card course (YAZ-5120)', () => {
+  it('getCourse is the default without one; setCourse applies main`s rule in the cache at once and sends the patch; a no-op sends nothing; a broadcast of the same course keeps the snapshot', async () => {
+    b = installBridge(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
+    await storage.init()
+    expect(storage.getCourse()).toEqual(defaultCourseState())
+    const woke = vi.fn()
+    storage.subscribe(woke)
+    storage.setCourse({ chapter: 'inbox', clip: 'c3-02', muted: true })
+    expect(storage.getCourse()).toMatchObject({ chapter: 'inbox', clip: 'c3-02', muted: true })
+    expect(b.bridge.state.setCourse).toHaveBeenCalledExactlyOnceWith({ chapter: 'inbox', clip: 'c3-02', muted: true })
+    expect(woke).toHaveBeenCalledTimes(1)
+    storage.setCourse({ muted: true })
+    expect(b.bridge.state.setCourse).toHaveBeenCalledOnce()
+    const snapshot = storage.getCourse()
+    b.emit({ ...defaultAppState(), course: { ...snapshot, finished: [] } })
+    expect(storage.getCourse()).toBe(snapshot)
   })
 })
 

@@ -4,6 +4,8 @@
  *
  *  1. A menu, a popover, the slash menu, the `[[` link picker, the find bar (each its own Esc, before anything here).
  *  2. A dialog or a sheet (each its own Esc; `useModalKeys` takes the key in the capture phase).
+ *     The card course (YAZ-5120) is one: a full layer, a dialog, whose Esc closes it (`CardCourse`, capture phase). While
+ *     its guided tour runs (6E), the course is hidden and the tour's own Esc goes back to the course.
  *  3. An Explore layer, one at a time (`ExploreStack`), and an unlocked page's lock (YAZ-4997: Esc in its text saves and
  *     locks it again, `createCrepe`'s Esc and the Explore edit layer).
  *  4. The sidebar's search: back to the tab it came from, the keyboard on its row (`Sidebar`, or `escapeStep` here).

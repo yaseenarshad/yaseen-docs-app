@@ -42,6 +42,7 @@ import {
   type WindowEntry,
   type WindowIdentity,
 } from '@shared/types'
+import { applyCoursePatch, defaultCourseState, sameCourseState, type CoursePatch, type CourseState } from '@shared/courseState'
 import { api } from '../api'
 import { setCardSkillVault } from '@shared/appVaults'
 import { basename } from './paths'
@@ -62,6 +63,8 @@ const listeners = new Set<() => void>()
 let others: { windows: readonly WindowEntry[]; id: string; list: readonly WindowEntry[] } = { windows: [], id: '', list: [] }
 /** The canvas of a state without one (a main of before YAZ-3343, a test's bridge): ONE object, so a `useSyncExternalStore` snapshot holds still. */
 const NO_TAB_CANVAS: TabCanvasState = defaultTabCanvas()
+/** The course of a state without one (a main of before YAZ-5120, a test's bridge): ONE object, for the same reason. */
+const NO_COURSE: CourseState = defaultCourseState()
 
 /**
  * The two orders across vaults, each with its mutator on the bridge: the Favorites order (YAZ-2631
@@ -140,6 +143,8 @@ export const storage = {
       if (JSON.stringify(held.sessions) === JSON.stringify(next.sessions)) state = { ...state, sessions: held.sessions }
       // And the tab board's canvas (YAZ-3343 D1): the board reads it as a snapshot, and most broadcasts are not about it.
       if (held.tabCanvas !== undefined && next.tabCanvas !== undefined && sameTabCanvas(held.tabCanvas, next.tabCanvas)) state = { ...state, tabCanvas: held.tabCanvas }
+      // And the card course (YAZ-5120): the course layer and the offers read it as a snapshot.
+      if (held.course !== undefined && next.course !== undefined && sameCourseState(held.course, next.course)) state = { ...state, course: held.course }
       listeners.forEach((l) => l())
     })
   },
@@ -299,6 +304,17 @@ export const storage = {
     state = { ...state, tabCanvas: next }
     send('state.setTabCanvas', () => api.state.setTabCanvas(patch))
     // The board renders its own moves at once, as the two orders do (`setOrder`).
+    listeners.forEach((l) => l())
+  },
+  /** The card course's place, finished chapters, offers, Mute and Speed (YAZ-5120). App-wide and per machine; the same object until a change. */
+  getCourse: (): CourseState => state.course ?? NO_COURSE,
+  /** One change to the course: the cache at once (main's own rule, `applyCoursePatch`), then main. A patch that changes nothing sends nothing. */
+  setCourse(patch: CoursePatch): void {
+    const current = state.course ?? NO_COURSE
+    const next = applyCoursePatch(current, patch)
+    if (next === current) return
+    state = { ...state, course: next }
+    send('state.setCourse', () => api.state.setCourse(patch))
     listeners.forEach((l) => l())
   },
   pushRecentRoot(path: string, now = Date.now()): RecentRoots {

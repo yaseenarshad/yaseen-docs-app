@@ -11,6 +11,8 @@ import type { CardRecord } from './cardLine'
 import type { HotkeyOverrides } from './hotkeyBindings'
 import { DEFAULT_DAILY_PAGE_FORMAT } from './dailyPage'
 import { isAppVault } from './appVaults'
+import { defaultCourseState, type CourseState } from './courseState'
+export type { CoursePatch, CourseSpeed, CourseState } from './courseState'
 import { DEFAULT_MEDIA_FILTERS, type MediaFilters } from './iconPacks'
 import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT } from './timeFormat'
 
@@ -3424,6 +3426,11 @@ export interface AppState {
    * Additive within version 1: a file without it loads the default, and an old build drops the key.
    */
   tabCanvas: TabCanvasState
+  /**
+   * The card course (YAZ-5120): the place, the finished chapters, the offers' flags, Mute and Speed. Per machine
+   * (`shared/courseState.ts`). Additive within version 1: a file without it loads the default, and an old build drops the key.
+   */
+  course: CourseState
 }
 
 /** At most this many moved cards are kept (YAZ-3343 D1), last moved first: about 60 KB of the state file. */
@@ -3545,7 +3552,7 @@ export function sameTabCanvas(a: TabCanvasState, b: TabCanvasState): boolean {
 
 /** A fresh default state (a factory, so no caller can mutate a shared constant). */
 export function defaultAppState(): AppState {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [], sessions: [], settingsFolder: null, approvedPictureFolders: [], settingsSavedAt: 0, tabCanvas: defaultTabCanvas() }
+  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [], sessions: [], settingsFolder: null, approvedPictureFolders: [], settingsSavedAt: 0, tabCanvas: defaultTabCanvas(), course: defaultCourseState() }
 }
 
 export function defaultFolderState(): FolderState {

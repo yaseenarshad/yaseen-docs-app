@@ -1,0 +1,242 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { defaultCourseState, type CourseState } from '@shared/courseState'
+import { storage } from '../lib/storage'
+import type { CourseChapter } from './script'
+import { CardCourse, type CardCourseProps } from './CardCourse'
+import { memoryVoice } from './courseVoice'
+import type { CourseTour } from './courseTour'
+import { TOUR_COMING_NEXT } from './courseTour'
+import { useEscapeLast } from '../lib/escapeOrder'
+
+;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+
+/** Made-up chapters. `b` has a tour; clip `c2-07` is one of the script's clips that wait. */
+const COURSE: CourseChapter[] = [
+  { id: 'a', title: 'First', clips: [{ id: 'a1', text: 'One two three.' }, { id: 'a2', text: 'Four five six.' }] },
+  { id: 'b', title: 'Second', clips: [{ id: 'b1', text: 'Seven eight.' }, { id: 'c2-07', text: 'Type the short version.' }], tryIt: [{ target: 'x', say: 'Click x.', done: 'click' }] },
+]
+
+let root: Root
+let host: HTMLDivElement
+let saved: CourseState
+let setCourse: ReturnType<typeof vi.fn>
+/** The frame queue: `frames(n, ms)` runs n frames, each `ms` after the one before. */
+let queue: FrameRequestCallback[] = []
+let now = 0
+function frames(n: number, ms = 100): void {
+  for (let i = 0; i < n; i++) {
+    now += ms
+    const run = queue
+    queue = []
+    act(() => run.forEach((fn) => fn(now)))
+  }
+}
+
+beforeEach(() => {
+  saved = defaultCourseState()
+  setCourse = vi.fn((patch) => {
+    saved = { ...saved, ...patch }
+  })
+  vi.spyOn(storage, 'getCourse').mockImplementation(() => saved)
+  vi.spyOn(storage, 'setCourse').mockImplementation(setCourse)
+  queue = []
+  now = 0
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation((fn) => {
+    queue.push(fn)
+    return queue.length
+  })
+  vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => undefined)
+  vi.spyOn(performance, 'now').mockImplementation(() => now)
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve())
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
+  host = document.createElement('div')
+  document.body.appendChild(host)
+  root = createRoot(host)
+})
+
+afterEach(() => {
+  act(() => root.unmount())
+  host.remove()
+  document.body.textContent = ''
+  vi.restoreAllMocks()
+})
+
+function mount(props: Partial<CardCourseProps> = {}): CardCourseProps {
+  const all: CardCourseProps = { vault: '/demo', onClose: vi.fn(), course: COURSE, ...props }
+  act(() => root.render(<CardCourse {...all} />))
+  return all
+}
+const layer = () => document.querySelector<HTMLElement>('.course')!
+const caption = () => document.querySelector('.course__caption')!.textContent
+const button = (name: string) => [...document.querySelectorAll<HTMLButtonElement>('.course button')].find((b) => (b.getAttribute('aria-label') ?? b.textContent) === name)
+const press = (target: EventTarget, key: string) => {
+  const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+  act(() => void target.dispatchEvent(e))
+  return e
+}
+
+describe('the course layer (YAZ-5120)', () => {
+  it('opens as a modal dialog with the keyboard on Play, the caption on screen; Esc closes; the keyboard goes back where it was', () => {
+    const opener = document.createElement('button')
+    document.body.appendChild(opener)
+    opener.focus()
+    const props = mount()
+    expect(layer().getAttribute('role')).toBe('dialog')
+    expect(layer().getAttribute('aria-modal')).toBe('true')
+    expect(document.activeElement).toBe(button('Play'))
+    expect(caption()).toBe('One two three.')
+    press(document.activeElement!, 'Escape')
+    expect(props.onClose).toHaveBeenCalledOnce()
+    act(() => root.render(<></>))
+    expect(document.activeElement).toBe(opener)
+  })
+
+  it('Space plays and pauses while the course has the keyboard; no key reaches the app under it', () => {
+    const page = document.createElement('div')
+    page.tabIndex = 0
+    document.body.appendChild(page)
+    const appKeys = vi.fn()
+    window.addEventListener('keydown', appKeys)
+    mount()
+    act(() => layer().focus())
+    const e = press(layer(), ' ')
+    expect(e.defaultPrevented).toBe(true)
+    expect(button('Pause')).toBeDefined()
+    press(layer(), ' ')
+    expect(button('Play')).toBeDefined()
+    // A key aimed at the page under the course: swallowed, and the keyboard comes back into the course.
+    press(page, ' ')
+    press(page, 'a')
+    expect(button('Play')).toBeDefined()
+    expect(appKeys).not.toHaveBeenCalled()
+    expect(layer().contains(document.activeElement)).toBe(true)
+    // Space in a text field of a scene is the field's.
+    const field = document.createElement('input')
+    document.querySelector('.course__stage')!.appendChild(field)
+    act(() => field.focus())
+    expect(press(field, ' ').defaultPrevented).toBe(false)
+    window.removeEventListener('keydown', appKeys)
+  })
+
+  it('is in the app`s Esc order: one Esc closes the course alone, never the sidebar under it', () => {
+    const aside = document.createElement('aside')
+    document.body.appendChild(aside)
+    const act2 = vi.fn()
+    function Last() {
+      useEscapeLast(() => ({ aside, searchShown: false, canClose: true }), act2)
+      return null
+    }
+    const props: CardCourseProps = { vault: '/demo', onClose: vi.fn(), course: COURSE }
+    act(() => root.render(<><Last /><CardCourse {...props} /></>))
+    press(document.activeElement!, 'Escape')
+    expect(props.onClose).toHaveBeenCalledOnce()
+    expect(act2).not.toHaveBeenCalled()
+  })
+
+  it('Tab stays inside the layer', () => {
+    mount()
+    const focusable = [...layer().querySelectorAll<HTMLElement>('button:not(:disabled)')]
+    act(() => focusable.at(-1)!.focus())
+    press(document.activeElement!, 'Tab')
+    expect(document.activeElement).toBe(focusable[0])
+  })
+
+  it('walks the course silent on the estimate: clip by clip, the chapter end screen, then the next chapter; the place is kept', () => {
+    mount()
+    act(() => button('Play')!.click())
+    // "One two three." is 3 words: 1.5 s at least, then the 0.45 s gap.
+    frames(21)
+    expect(caption()).toBe('Four five six.')
+    expect(setCourse).toHaveBeenCalledWith({ chapter: 'a', clip: 'a2' })
+    frames(21)
+    expect(caption()).toBe('Chapter 1 done. Next: Second.')
+    expect(setCourse).toHaveBeenCalledWith({ chapter: 'b', clip: '', finished: ['a'] })
+    expect(document.querySelector('.course__chapter[data-finished="true"]')?.textContent).toContain('First')
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('.course__end-actions button')].find((b) => b.textContent === 'Next chapter')!.click())
+    expect(caption()).toBe('Seven eight.')
+    expect(button('Pause')).toBeDefined()
+  })
+
+  it('a clip that waits holds until its scene says done ("Done, go on" in the frame)', () => {
+    mount()
+    act(() => document.querySelectorAll<HTMLButtonElement>('.course__chapter')[1].click())
+    act(() => button('Next step')!.click())
+    expect(caption()).toBe('Type the short version.')
+    act(() => button('Play')!.click())
+    frames(60)
+    expect(caption()).toBe('Type the short version.')
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('.course-scene button')].find((b) => b.textContent === 'Done, go on')!.click())
+    frames(6)
+    expect(caption()).toBe("That's the whole course.")
+    expect(setCourse).toHaveBeenCalledWith(expect.objectContaining({ done: true }))
+  })
+
+  it('Mute and Speed are kept; the chapter list goes to a chapter', () => {
+    mount()
+    act(() => button('Mute')!.click())
+    expect(setCourse).toHaveBeenCalledWith({ muted: true })
+    act(() => button('1.5×')!.click())
+    expect(setCourse).toHaveBeenCalledWith({ speed: 1.5 })
+    expect(button('1.5×')!.getAttribute('aria-pressed')).toBe('true')
+    act(() => document.querySelectorAll<HTMLButtonElement>('.course__chapter')[1].click())
+    expect(setCourse).toHaveBeenCalledWith({ chapter: 'b', clip: 'b1' })
+    expect(document.querySelectorAll('.course__chapter')[1].getAttribute('aria-current')).toBe('step')
+  })
+
+  it('opens at the saved place, or at the chapter another part asked for', () => {
+    saved = { ...defaultCourseState(), chapter: 'b', clip: 'c2-07', finished: ['a'] }
+    mount()
+    expect(caption()).toBe('Type the short version.')
+    expect(document.querySelectorAll('.course__chapter')[0].getAttribute('data-finished')).toBe('true')
+    act(() => root.render(<></>))
+    mount({ chapter: 'a' })
+    expect(caption()).toBe('One two three.')
+  })
+
+  it('"Try it in the app" shows only on a chapter with tryIt; the course hides while the tour runs and comes back at the same place', async () => {
+    let finish: (r: 'finished') => void = () => undefined
+    const tour: CourseTour = { start: vi.fn(() => new Promise<'finished'>((r) => (finish = r))) }
+    mount({ tour })
+    expect(button('Try it in the app')).toBeUndefined()
+    act(() => document.querySelectorAll<HTMLButtonElement>('.course__chapter')[1].click())
+    act(() => button('Try it in the app')!.click())
+    expect(tour.start).toHaveBeenCalledWith(COURSE[1], COURSE[1].tryIt)
+    expect(layer().hidden).toBe(true)
+    await act(async () => finish('finished'))
+    expect(layer().hidden).toBe(false)
+    expect(caption()).toBe('Seven eight.')
+  })
+
+  it('the frame`s tour says it is coming next', async () => {
+    mount()
+    act(() => document.querySelectorAll<HTMLButtonElement>('.course__chapter')[1].click())
+    await act(async () => button('Try it in the app')!.click())
+    expect(document.querySelector('.course__note')?.textContent).toBe(TOUR_COMING_NEXT)
+    expect(layer().hidden).toBe(false)
+  })
+
+  it('the voice: the chapter start is told; a sound that arrives mid-clip is used from the next clip; its seconds time the clip', async () => {
+    const v = memoryVoice()
+    mount({ voice: v.voice })
+    expect(v.started).toEqual(['a'])
+    act(() => button('Play')!.click())
+    frames(2)
+    await act(async () => v.arrive('a', { a1: { url: 'blob:a1', seconds: 9 }, a2: { url: 'blob:a2', seconds: 1 } }))
+    // a1 started silent: it keeps its estimate (about 2 s) and no sound.
+    frames(19)
+    expect(caption()).toBe('Four five six.')
+    const audio = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLAudioElement
+    expect(audio.src).toBe('blob:a2')
+    // The sound's clock times the clip: the sound says it is at its end, then the gap runs on the page clock.
+    Object.defineProperty(audio, 'paused', { configurable: true, get: () => false })
+    Object.defineProperty(audio, 'currentTime', { configurable: true, get: () => 1, set: () => undefined })
+    frames(2)
+    expect(document.querySelector<HTMLElement>('.course__bar span')!.style.transform).not.toBe('')
+    frames(6)
+    expect(caption()).toBe('Chapter 1 done. Next: Second.')
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('.course__end-actions button')].find((b) => b.textContent === 'Next chapter')!.click())
+    expect(v.started).toEqual(['a', 'b'])
+  })
+})

@@ -222,6 +222,14 @@ For agents: `yaseendocs card guide` prints the skill's start page; run it before
 
 **The format hint** (YAZ-5114): a new, empty card in Edit card shows one quiet line under the keys: "Formats in your card skill: acronym · book · comparison · 8 more. Learn the formats". The names are the pages of the skill's `formats` folder (your own `Card skill` folder when the vault has one). The line goes when you type. A card that already has text never shows it. "Learn the formats" shows the `formats` folder: in Files for your own copy, in Finder for the app's copy. Settings › Review › Card tips (On by default) turns the line off.
 
+### The card course (YAZ-5059, YAZ-5120)
+
+A course inside the app on cards and spaced repetition: 12 short chapters, about 26 minutes (the words of `client/src/course/script.ts`). It is a full layer over the window, and loads only when it opens. Left: the chapters, with a mark on each one you finished. Right: the lesson, its caption (always on screen), a progress bar, and Play / Pause, Back, Next, Next chapter, Mute, Speed (1×, 1.25×, 1.5×) and Close. At the end of each chapter it stops: Next chapter, and "Try it in the app" on a chapter that has steps to try in the real app. Space plays or pauses; Esc closes it, and the app is as it was. It remembers the place, the finished chapters, Mute and Speed on this Mac.
+
+- **Ways in:** Settings › Review › Card course › Open the course (always there). One notice, the first time this Mac shows a vault with Review on: "New to cards? Take the 26-minute course". An empty Inbox, only while the vault has no card and the course is not finished: "No cards yet. Take the course, or make a card.", with "Don't show again". "Card tips" off hides the notice and the Inbox line. The course is never forced.
+- **Sound:** the voice of each chapter downloads when the chapter starts (YAZ-5159). Without it, the chapter plays silent with captions, each line timed by its words.
+- **This build** is the frame: each lesson shows its words, large; a step where you act has "Done, go on"; "Try it in the app" says it is coming next. The scenes, the voice, the guided tour and the real card files come with YAZ-5121 to YAZ-5124.
+
 ## Two kinds of vault
 
 A vault is one of two kinds. A folder you open is a **plain** vault: the app asks nothing and writes nothing you did not ask for. IDs are a setting, for the vault where you want them: Settings › Files & Links › **Give this vault's pages IDs**.
