@@ -143,4 +143,24 @@ describe('the update line', () => {
     await visibility('visible')
     expect(v.applied).toBe(0)
   })
+
+  it('YAZ-5269: a review in progress behind another tab holds the takeover at a resume; once it ends, the next resume takes it', async () => {
+    const u = fakeUpdates(true)
+    const now = { t: 0 }
+    const d = await draw(u, { tab: 'friends', reviewInProgress: true }, 0, now)
+    expect(d.text()).toContain('A new version is ready.')
+    await visibility('hidden')
+    u.takeOver()
+    now.t = RESUME_AFTER_MS * 2
+    await visibility('visible')
+    expect(u.applied).toBe(0)
+    cleanup!()
+    const v = fakeUpdates(true)
+    await draw(v, { tab: 'friends', reviewInProgress: false }, 0, now)
+    await visibility('hidden')
+    v.takeOver()
+    now.t += RESUME_AFTER_MS
+    await visibility('visible')
+    expect(v.applied).toBe(1)
+  })
 })
