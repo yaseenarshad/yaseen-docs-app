@@ -10,7 +10,6 @@
  * hole around the real control, the coach card, the real action) in its own root in `document.body`, and takes it
  * away when the tour ends. A finished tour adds the chapter to `AppState.course.toured`. The tour also ends when the
  * course layer is gone under it (the person opened the course again from Settings, or it closed).
- * `comingNextTour` was the frame's stand-in; tests still use it.
  */
 import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -29,19 +28,6 @@ export interface CourseTour {
 
 /** Pure: does this chapter offer "Try it in the app"? */
 export const hasTour = (chapter: CourseChapter): boolean => (chapter.tryIt?.length ?? 0) > 0
-
-/** The line the frame's tour shows. */
-export const TOUR_COMING_NEXT = 'Try it in the app is coming next. For now, the course shows each step.'
-
-/** The frame's tour: it shows `TOUR_COMING_NEXT` (through `say`) and comes back at once. */
-export function comingNextTour(say: (line: string) => void): CourseTour {
-  return {
-    start: () => {
-      say(TOUR_COMING_NEXT)
-      return Promise.resolve('left')
-    },
-  }
-}
 
 /** The real tour over the app (YAZ-5123), with the course's host (6F) for the Course Cards folder. */
 export function appTour(host: CourseHost): CourseTour {

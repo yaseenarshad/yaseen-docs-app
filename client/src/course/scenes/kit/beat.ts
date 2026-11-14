@@ -64,9 +64,6 @@ export function since(b: Beat, at: number, seconds: number): number {
  */
 export const cue = (b: Beat, index: number, fallback: number): number => b.marks[index] ?? fallback
 
-/** `since` from the clip's mark at `index`; a clip without that mark uses `fallback`. */
-export const sinceMark = (b: Beat, index: number, fallback: number, seconds: number): number => since(b, b.marks[index] ?? fallback, seconds)
-
 /**
  * The amount a thing has MOVED at progress `p`: eased; with reduced motion it snaps (0 before, 1 once it starts), so
  * geometry never travels. Opacity takes `p` itself, so with reduced motion the change is a cross-fade.

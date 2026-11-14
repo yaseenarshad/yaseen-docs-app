@@ -5,13 +5,12 @@ import { defaultCourseState, type CourseState } from '@shared/courseState'
 import { storage } from '../lib/storage'
 import type { CourseChapter } from './script'
 import { CardCourse, type CardCourseProps } from './CardCourse'
-import { memoryVoice } from './courseVoice'
 import type { CourseTour } from './courseTour'
 import { useEscapeLast } from '../lib/escapeOrder'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import type { CourseHost, CourseVault } from './courseHost'
 import { SHOW_ONLY } from './courseCards'
-import { placeholderScenes } from './PlaceholderScene'
+import { memoryVoice, placeholderScenes } from './scenes/testing'
 import type { SceneProps } from './scene'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -133,7 +132,7 @@ describe('the course layer (YAZ-5120)', () => {
       useEscapeLast(() => ({ aside, searchShown: false, canClose: true }), act2)
       return null
     }
-    const props: CardCourseProps = { vault: '/demo', onClose: vi.fn(), course: COURSE }
+    const props: CardCourseProps = { vault: '/demo', onClose: vi.fn(), course: COURSE, scenes: placeholderScenes }
     act(() => root.render(<><Last /><CardCourse {...props} /></>))
     press(document.activeElement!, 'Escape')
     expect(props.onClose).toHaveBeenCalledOnce()
@@ -325,7 +324,7 @@ describe('VoicedCardCourse (YAZ-5159)', () => {
       },
     }
     try {
-      act(() => root.render(<VoicedCardCourse vault="/demo" onClose={vi.fn()} course={COURSE} />))
+      act(() => root.render(<VoicedCardCourse vault="/demo" onClose={vi.fn()} course={COURSE} scenes={placeholderScenes} />))
       await act(async () => undefined)
       expect(calls).toEqual(['start:a', 'open:true'])
       act(() => root.render(<></>))
@@ -372,6 +371,35 @@ describe('the course host (YAZ-5124)', () => {
     act(() => root.render(<CardCourse {...props} vault="/b" courseVault={view('/b')} />))
     expect(seen.at(-1)?.vault).toBe('/a')
     expect(seen.at(-1)).toBe(first)
+  })
+
+  it('opened before its vault view: "still loading", then the real host of that vault once the view comes', async () => {
+    const seen: CourseHost[] = []
+    const Scene = ({ host }: SceneProps) => (seen.push(host), null)
+    let ready = false
+    const view = (root: string): CourseVault => ({
+      root,
+      index: { records: [], folders: [], ids: true, subscribe: () => () => undefined },
+      ready: () => ready,
+      readOnly: () => true,
+      review: () => ({ ready, on: true, settings: DEFAULT_REVIEW_SETTINGS }),
+      cardSkill: null,
+    })
+    const props = mount({ vault: '/a', scenes: () => Scene })
+    expect(await seen.at(-1)!.courseCards()).toEqual({ showOnly: SHOW_ONLY.loading })
+    // A view of another vault is not the course's.
+    act(() => root.render(<CardCourse {...props} courseVault={view('/b')} />))
+    expect(await seen.at(-1)!.courseCards()).toEqual({ showOnly: SHOW_ONLY.loading })
+    // The view of its vault comes: the same run now has the real host. It says "loading" until the index is read.
+    act(() => root.render(<CardCourse {...props} courseVault={view('/a')} />))
+    const real = seen.at(-1)!
+    expect(real.vault).toBe('/a')
+    expect(await real.courseCards()).toEqual({ showOnly: SHOW_ONLY.loading })
+    // Once the index is read, the host answers for the vault itself: this one is read only, a true refusal.
+    ready = true
+    expect(await real.courseCards()).toEqual({ showOnly: SHOW_ONLY.readOnly })
+    act(() => root.render(<CardCourse {...props} courseVault={view('/a')} />))
+    expect(seen.at(-1)).toBe(real)
   })
 
   it('YAZ-5201: a bound vault that is not in the window: one line, nothing is made, and "Start over" in the vault in front', async () => {

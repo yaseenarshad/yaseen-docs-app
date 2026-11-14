@@ -9,7 +9,6 @@ import { defaultCourseState, type CourseState } from '@shared/courseState'
 import { storage } from '../../lib/storage'
 import { COURSE } from '../script'
 import { CardCourse } from '../CardCourse'
-import { BUILT_CHAPTERS } from '.'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -57,8 +56,7 @@ const button = (label: string) => [...document.querySelectorAll<HTMLButtonElemen
 describe('the built chapters, in the course layer (YAZ-5121)', () => {
   it('play from the first clip to the course end on the fallback clock, with no error', () => {
     const errors = vi.spyOn(console, 'error')
-    const course = COURSE.filter((ch) => BUILT_CHAPTERS.includes(ch.id))
-    act(() => root.render(<CardCourse vault="/demo" onClose={() => undefined} course={course} />))
+    act(() => root.render(<CardCourse vault="/demo" onClose={() => undefined} course={COURSE} />))
     act(() => button('Play')!.click())
     let last = ''
     let still = 0
@@ -74,7 +72,7 @@ describe('the built chapters, in the course layer (YAZ-5121)', () => {
       }
     }
     expect(caption()).toBe("That's the whole course.")
-    expect(document.querySelectorAll('.course__chapter[data-finished="true"]')).toHaveLength(course.length)
+    expect(document.querySelectorAll('.course__chapter[data-finished="true"]')).toHaveLength(COURSE.length)
     expect(errors).not.toHaveBeenCalled()
   })
 })

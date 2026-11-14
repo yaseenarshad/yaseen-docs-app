@@ -3,7 +3,9 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { CourseChapter } from './script'
 import type { CourseCard, CourseHost } from './courseHost'
-import { memoryHost, showOnlyHost } from './courseHost'
+import { showOnlyHost } from './courseHost'
+import { SHOW_ONLY } from './courseCards'
+import { memoryHost } from './scenes/testing'
 import { FINISH_MS, HINT_AFTER_MS, TourLayer, type TourLayerProps } from './TourLayer'
 import { SHOW_ME_AFTER_MS } from './tourEngine'
 import { onTourShow, tourEvent, tourPlaces, type TourPlace } from './tourBus'
@@ -198,8 +200,8 @@ describe('the tour layer (YAZ-5123)', () => {
     expect(say()).toBe('There is no card in Course Cards yet. Chapter 2 shows how to make one.')
     // Chapter 2 itself needs no card: only the folder. A host that only shows says why.
     act(() => root.render(<></>))
-    const again = await mount({ host: showOnlyHost('/v') })
-    expect(say()).toBe('In this build the course only shows. It makes no files yet.')
+    const again = await mount({ host: showOnlyHost('/v', SHOW_ONLY.readOnly) })
+    expect(say()).toBe(SHOW_ONLY.readOnly)
     expect(button('Skip')).toBeUndefined()
     act(() => button('Back to the course')!.click())
     expect(again.onEnd).toHaveBeenCalledWith('left')

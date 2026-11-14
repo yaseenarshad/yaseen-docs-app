@@ -1,8 +1,8 @@
 /**
  * THE COURSE'S SIDE EFFECTS (YAZ-5120 the seam, YAZ-5124 the real one): what the course does in the person's vault.
  * The frame passes one `CourseHost` to each scene (`SceneProps.host`). The real host is `vaultCourseHost`
- * (`courseCards.ts`, in the lazy course chunk); `showOnlyHost` makes nothing and says why; `memoryHost` is the test
- * double the scene builders use. A test keeps the three in step (`courseCards.test.ts`).
+ * (`courseCards.ts`, in the lazy course chunk); `showOnlyHost` makes nothing and says why. The test double
+ * `memoryHost` is in `scenes/testing.tsx`. A test keeps the three in step (`courseCards.test.ts`).
  *
  * Everything the course makes is a plain file in its folder "Course Cards" (or "Course Cards 2" when the person has a
  * "Course Cards" of their own, YAZ-5202) at the top of the vault: the person sees it
@@ -164,12 +164,13 @@ export interface CourseVault {
   cardSkill: string | null
 }
 
-/** The line a scene shows when the layer has no vault view (the frame alone, or a test). */
-export const SHOW_ONLY_NOT_YET = 'In this build the course only shows. It makes no files yet.'
+/** The line of the course with no vault open. */
+export const NO_VAULT = 'Open a vault to make real cards.'
 
 const EMPTY_SUMMARY: CourseSummary = Object.freeze({ folder: null, cards: [] })
 
-function blankStep(showOnly: string | null): AgentStepState {
+/** A new AI step's state; `showOnly`: the one line when it can only show. */
+export function blankStep(showOnly: string | null): AgentStepState {
   return { text: '', example: false, given: false, prompt: showOnly === null ? null : { showOnly }, copiedAt: null, cards: [], read: [], quiet: false, examples: 'hidden', problem: null }
 }
 
@@ -195,8 +196,8 @@ function showOnlyStep(reason: string): AgentStep {
   }
 }
 
-/** The frame's host: it makes nothing, and each step says why in one line. */
-export function showOnlyHost(vault: string | null, reason = vault === null ? 'Open a vault to make real cards.' : SHOW_ONLY_NOT_YET): CourseHost {
+/** A host that makes nothing: each step says `reason` in one line. */
+export function showOnlyHost(vault: string | null, reason: string): CourseHost {
   return {
     vault,
     courseCards: () => Promise.resolve({ showOnly: reason }),
@@ -210,77 +211,4 @@ export function showOnlyHost(vault: string | null, reason = vault === null ? 'Op
     agentStep: showOnlyStep(reason),
     summary: () => EMPTY_SUMMARY,
   }
-}
-
-/**
- * The test double (for the scene builders' tests): a host whose files live in memory. `arrive` plays an agent writing
- * a card into the folder; `step` is an AI step the test drives by hand (`set`). It has every member of `CourseHost`.
- */
-export interface MemoryHost extends CourseHost {
-  folder: string
-  /** The cards the host "made" (first cards). */
-  made: MadeCard[]
-  /** The cards in the folder now, as `watchCards` gives them. */
-  cards: CourseCard[]
-  arrive(card: CourseCard, text?: string): void
-  /** Sets the AI step's state directly, and wakes its listeners. */
-  set(patch: Partial<AgentStepState>): void
-}
-
-export function memoryHost(vault = '/vault'): MemoryHost {
-  const folder = `${vault}/course-cards`
-  const texts = new Map<string, string>()
-  const watchers = new Set<(cards: readonly CourseCard[]) => void>()
-  let state = blankStep(null)
-  const listeners = new Set<() => void>()
-  const set = (patch: Partial<AgentStepState>): void => {
-    state = { ...state, ...patch }
-    listeners.forEach((l) => l())
-  }
-  const host: MemoryHost = {
-    vault,
-    folder,
-    made: [],
-    cards: [],
-    courseCards: () => Promise.resolve({ path: folder }),
-    watchCards: (_at, onCards) => {
-      watchers.add(onCards)
-      onCards(host.cards)
-      return () => void watchers.delete(onCards)
-    },
-    makeFirstCard: (input) => {
-      const front = typeof input.hidden === 'string' ? input.front.replace(input.hidden, `{{${input.hidden}}}`) : `${input.front.slice(0, input.hidden.start)}{{${input.front.slice(input.hidden.start, input.hidden.end)}}}${input.front.slice(input.hidden.end)}`
-      const made: MadeCard = { path: `${folder}/card-${host.made.length + 1}.md`, title: input.front.slice(0, 60), text: input.back === '' ? front : `${front}\n---\n${input.back}`, titleHidden: false }
-      host.made.push(made)
-      return Promise.resolve(made)
-    },
-    coursePage: () => Promise.resolve({ path: `${folder}/course-page.md` }),
-    readCard: (card) => {
-      const text = texts.get(courseCardKey(card))
-      const known = host.cards.find((c) => courseCardKey(c) === courseCardKey(card))
-      return Promise.resolve(text === undefined || known === undefined ? null : { title: known.title, sides: text.split('\n---\n') })
-    },
-    agentStep: {
-      state: () => state,
-      subscribe: (l) => (listeners.add(l), () => void listeners.delete(l)),
-      // As the real step: a new text needs a new prompt.
-      setText: (text, how = 'typed') => set({ text, example: false, given: givenAfter(state.given, text, how), prompt: null, problem: null }),
-      useExample: () => set({ text: 'Example text', example: true, given: true, prompt: null, problem: null }),
-      preparePrompt: () => (set({ prompt: { text: `Prompt\n\n${state.text}`, folder } }), Promise.resolve()),
-      copy: () => (set({ copiedAt: Date.now() }), Promise.resolve()),
-      markRead: (card) => set({ read: [...new Set([...state.read, courseCardKey(card)])] }),
-      showExamples: () => set({ examples: 'shown' }),
-      makeExamples: () => (set({ examples: [] }), Promise.resolve()),
-      stop: () => undefined,
-    },
-    summary: () => ({ folder, cards: host.cards.map((c) => ({ path: c.path, title: c.title, due: null })) }),
-    arrive(card, text = 'A {{card}}\n---\nIts back') {
-      host.cards = [...host.cards, card]
-      texts.set(courseCardKey(card), text)
-      watchers.forEach((w) => w(host.cards))
-      if (state.copiedAt !== null) set({ cards: [...state.cards, card], quiet: false })
-    },
-    set,
-  }
-  return host
 }

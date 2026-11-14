@@ -8,9 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { COURSE } from '../script'
 import { WAITING_CLIPS } from '../waits'
-import { PlaceholderScene } from '../PlaceholderScene'
-import { showOnlyHost, SHOW_ONLY_NOT_YET } from '../courseHost'
-import { BUILT_CHAPTERS, CHAPTER_SCENES, NOT_BUILT_CHAPTERS, courseScenes } from '.'
+import { NO_VAULT, showOnlyHost } from '../courseHost'
+import { SHOW_ONLY } from '../courseCards'
+import { CHAPTER_SCENES, courseScenes } from '.'
 import { PAPERS, lineWords } from './papers'
 import { PAPERS_6_TO_8, QUOTES_6_TO_8 } from './papers6to8'
 import { LATER_PAPERS } from './papersLater'
@@ -23,17 +23,13 @@ const chapter = (id: string) => COURSE.find((ch) => ch.id === id)!
 const clipIds = (id: string) => chapter(id).clips.map((c) => c.id)
 
 describe('the scene registry (YAZ-5121)', () => {
-  it('lists each chapter once: built or not built yet', () => {
-    expect([...BUILT_CHAPTERS, ...NOT_BUILT_CHAPTERS].sort()).toEqual(COURSE.map((ch) => ch.id).sort())
-    expect(BUILT_CHAPTERS.filter((id) => NOT_BUILT_CHAPTERS.includes(id))).toEqual([])
+  it('lists each chapter once, and gives each clip of the script a scene', () => {
+    expect(CHAPTER_SCENES.map((ch) => ch.chapter)).toEqual(COURSE.map((ch) => ch.id))
+    for (const ch of COURSE) for (const clip of clipIds(ch.id)) expect(() => courseScenes(clip), `${ch.id}/${clip}`).not.toThrow()
   })
 
-  it('gives each clip of a built chapter a real scene, never the placeholder', () => {
-    for (const id of BUILT_CHAPTERS) for (const clip of clipIds(id)) expect(courseScenes(clip), `${id}/${clip}`).not.toBe(PlaceholderScene)
-  })
-
-  it('keeps the placeholder for the chapters not built yet (the next builders flip them)', () => {
-    for (const id of NOT_BUILT_CHAPTERS) for (const clip of clipIds(id)) expect(courseScenes(clip), `${id}/${clip}`).toBe(PlaceholderScene)
+  it('throws for a clip with no scene', () => {
+    expect(() => courseScenes('c99-01')).toThrow('No scene for the clip c99-01')
   })
 
   it('makes each entry clips in a row of its own chapter, and gives a span one key', () => {
@@ -94,11 +90,11 @@ describe('each scene draws (YAZ-5121)', () => {
   for (const look of ['light', 'dark', 'reduced'] as const) {
     it(`at 0, 0.5, 1 and each mark of each clip of the built chapters, ${look}`, () => {
       document.documentElement.dataset.theme = look === 'dark' ? 'dark' : 'light'
-      for (const id of BUILT_CHAPTERS) {
+      for (const { id } of COURSE) {
         for (const ch of CHAPTER_SCENES.filter((c) => c.chapter === id)) {
           for (const entry of ch.entries) {
             const { clock, at } = testClock(6)
-            const scene = mountScene(entry.scene, chapter(id), { clock, done: () => undefined, reducedMotion: look === 'reduced', host: showOnlyHost('/demo') })
+            const scene = mountScene(entry.scene, chapter(id), { clock, done: () => undefined, reducedMotion: look === 'reduced', host: showOnlyHost('/demo', SHOW_ONLY.readOnly) })
             for (const clipId of entry.clips) {
               const clip = chapter(id).clips.find((c) => c.id === clipId)!
               scene.render(clip)
@@ -207,7 +203,7 @@ describe('the first card, made in the course (chapter 2, YAZ-5121)', () => {
     const MakeCard = courseScenes('c2-07')
     const done = vi.fn()
     const { clock } = testClock(4)
-    const scene = mountScene(MakeCard, ch, { clock, done, host: showOnlyHost('/demo'), waits: (c) => WAITING_CLIPS.has(c.id) })
+    const scene = mountScene(MakeCard, ch, { clock, done, host: showOnlyHost('/demo', SHOW_ONLY.readOnly), waits: (c) => WAITING_CLIPS.has(c.id) })
     scene.render(clip('c2-07'))
     click([...scene.el.querySelectorAll('button')].find((b) => b.textContent === 'Use this example'))
     scene.render(clip('c2-08'))
@@ -224,7 +220,7 @@ describe('the first card, made in the course (chapter 2, YAZ-5121)', () => {
       await Promise.resolve()
     })
     scene.render(clip('c2-13'))
-    expect(scene.el.textContent).toContain(SHOW_ONLY_NOT_YET)
+    expect(scene.el.textContent).toContain(SHOW_ONLY.readOnly)
     scene.unmount()
   })
 
@@ -232,7 +228,7 @@ describe('the first card, made in the course (chapter 2, YAZ-5121)', () => {
     const MakeCard = courseScenes('c2-07')
     const done = vi.fn()
     const { clock } = testClock(4)
-    const scene = mountScene(MakeCard, ch, { clock, done, host: showOnlyHost('/demo'), waits: (c) => WAITING_CLIPS.has(c.id) })
+    const scene = mountScene(MakeCard, ch, { clock, done, host: showOnlyHost('/demo', SHOW_ONLY.readOnly), waits: (c) => WAITING_CLIPS.has(c.id) })
     scene.render(clip('c2-07'))
     click([...scene.el.querySelectorAll('button')].find((b) => b.textContent === 'Use this example'))
     scene.render(clip('c2-08'))
@@ -261,8 +257,8 @@ describe('the first card file (YAZ-5121, the host seam for 6F)', () => {
     const host = memoryHost()
     expect(await makeFirstCard(host, input)).toMatchObject({ text: 'The sky is {{blue}}.\n---\nRayleigh scattering.' })
     expect(host.made).toHaveLength(1)
-    expect(await makeFirstCard(showOnlyHost(null), input)).toEqual({ showOnly: 'Open a vault to make real cards.' })
-    expect(await makeFirstCard(showOnlyHost('/demo'), input)).toEqual({ showOnly: SHOW_ONLY_NOT_YET })
+    expect(await makeFirstCard(showOnlyHost(null, NO_VAULT), input)).toEqual({ showOnly: NO_VAULT })
+    expect(await makeFirstCard(showOnlyHost('/demo', SHOW_ONLY.readOnly), input)).toEqual({ showOnly: SHOW_ONLY.readOnly })
     const broken = { ...memoryHost(), makeFirstCard: () => Promise.reject(new Error('disk full')) }
     expect(await makeFirstCard(broken, input)).toEqual({ showOnly: COULD_NOT_MAKE })
   })

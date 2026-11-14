@@ -73,7 +73,6 @@ export const COURSE: CourseChapter[] = [
       // A paper index card drops onto the stage.
       { id: 'c1-07', text: 'So how do you store each thing you learn in the app? Answer: on a card.' },
       // The paper index card becomes the app's real card: a title, a fact, one word as a blank.
-      // v3: "one small fact" became "one idea" (the node idea of chapter 7: a card can start as a light overview).
       { id: 'c1-08', text: 'A card is one idea, with part of it hidden.' },
       // Many cards fan out across the stage, each with one fact.
       { id: 'c1-09', text: 'You will have many cards, one for each thing you want to keep.' },
@@ -276,7 +275,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c4-08', text: 'Third, a card embedded in a page. The card lives in one place, and the page shows it.', marks: [0.545, 0.853] },
       // The card's ⋯ menu, "Copy card link"; a paste in the page, a pill; a right-click on the pill, "Show as embed".
       // APP: client/src/review/cardPane.tsx ("Copy card link" copies `[[ID]]`, on the card file tab), client/src/editor/linkMenu.ts ("Show as embed"),
-      // client/src/editor/card/cardEmbed.test.ts. v3: the paste chip's "Embed" shows only for a pasted card file PATH (client/src/editor/pathPaste.ts), not for `[[ID]]`.
+      // client/src/editor/card/cardEmbed.test.ts. The paste chip's "Embed" shows only for a pasted card file PATH (client/src/editor/pathPaste.ts), not for `[[ID]]`.
       { id: 'c4-09', text: "To embed one, copy the card's link from its menu, and paste it in a page. Then right-click the link, and choose Show as embed.", marks: [0.183, 0.391, 0.624, 0.841] },
       // A short message to the agent: "Embed my protein card in the Food page"; the embed appears in the page.
       { id: 'c4-16', text: 'Or just tell your agent: embed this card in that page.', marks: [0.393, 0.861] },
@@ -315,7 +314,7 @@ export const COURSE: CourseChapter[] = [
       // The pile grows tall; the daily stack beside it stays small.
       { id: 'c5-05', text: 'And known cards come back less often, so the daily review stays small as the pile grows.', marks: [0.469, 0.773] },
       // One card on a time line; four marks appear: "2 days", "11 days", "6 weeks", "5 months". The gaps stretch across the stage.
-      // SOURCE: this app's own scheduler with its default settings (ts-fsrs 5.4.2, FSRS-6 weights, 90% retention, no fuzz), each answer Remembered on the due day: gaps of 2, 11, 46 and 163 days; then the default longest gap of 365 days (shared/reviews.ts `maxDays`).
+      // SOURCE: ts-fsrs 5.4.2 with its own defaults (FSRS-6 weights, 90% retention, no fuzz), each answer Remembered on the due day: gaps of 2, 11, 46 and 163 days. This app's scheduler with its default settings gives about 4 days, 2 weeks, 6 weeks and 4 months, then the longest gap of 365 days (shared/reviews.ts `maxDays`). The words wait for Yaseen (YAZ-5128).
       { id: 'c5-13', text: 'Follow one card you keep remembering. It comes back after two days. Then eleven. Then about six weeks. Then about five months.', marks: [0.359, 0.516, 0.691, 0.875] },
       // The time line zooms out: the card's next mark is far off to the right, past "2 months in".
       { id: 'c5-14', text: 'So a couple of months in, that card is already months away.', marks: [0.203, 0.719] },
@@ -483,7 +482,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c8-13', text: 'Paste it into your agent. The cards show up here as it writes them.', marks: [0.216, 0.433] },
       // The quiet line "No new cards yet. Did you check with your agent?"
       { id: 'c8-14', text: 'If nothing shows up after a minute, check with your agent.', marks: [0.428, 0.571] },
-      // The three new cards open one by one; the person reads each; "Read" ticks beside it. The word "Handmade". (The card check was removed, YAZ-5060.)
+      // The three new cards open one by one; the person reads each; "Read" ticks beside it. The word "Handmade". Nothing grades the agent's cards.
       { id: 'c8-15', text: 'Now read each one. That is the handmade part: nothing stays that you have not read.', marks: [0.059, 0.387, 0.609] },
       // Skip, then three ready example cards with "Make these cards".
       { id: 'c8-16', text: 'No agent? Skip this step. The course shows three example cards, and makes them only if you say so.', marks: [0.161, 0.472, 0.708] },
@@ -572,7 +571,7 @@ export const COURSE: CourseChapter[] = [
       // APP: client/src/editor/card/cardEditorFeatures.ts (pills and the `[[` picker are on in Edit card), client/src/editor/wikilink/wikilinkPicker.ts.
       { id: 'c10-15', text: "To link by hand, edit the card. Type two square brackets, then a few letters of the other card's title.", marks: [0.2, 0.46, 0.7] },
       // The list: pages, then cards with the card icon; the card row is clicked.
-      // APP: client/src/links/completion.ts (card rows have the card icon and insert `[[ID]]`). Not on this branch: YAZ-5134's fix (2e1182e51), so a card file shows two rows here until it merges.
+      // APP: client/src/links/completion.ts (card rows have the card icon and insert `[[ID]]`; a card file is one row, YAZ-5134).
       { id: 'c10-16', text: 'A list shows what matches. Click the one with the card icon.', marks: [0.07, 0.5, 0.7] },
       // `[[DEMO-12]]` turns into a pill: the card icon, "How muscle grows", and the ID small and grey.
       // APP: docs/CONTRACTS.md "Links to a card": the pill shows the title, then the ID small and grey, with the card icon (`wikilink--card`).
@@ -612,7 +611,6 @@ export const COURSE: CourseChapter[] = [
       // A card is reworded; a small glow over it.
       { id: 'c11-03', text: 'That is not a chore. Each fix makes you think about the idea again, and that is learning too.', marks: [0.26, 0.82] },
       // A card that keeps turning red; a magnifying glass over its wording.
-      // v3: "or two cards in one" became "or it asks too much at once" (chapter 7 no longer teaches splitting).
       { id: 'c11-04', text: 'A card you keep missing is a sign to look at it. Often it is unclear, or it asks too much at once.', marks: [0.13, 0.31, 0.55, 0.71] },
       // A short message to the agent: "Make this card's clue clearer"; the card file changes.
       { id: 'c11-06', text: 'To fix a card, tell your agent what to change, and keep reviewing. Each card is a file, so it can.', marks: [0.16, 0.42, 0.65] },
@@ -642,7 +640,7 @@ export const COURSE: CourseChapter[] = [
       // APP: client/src/review/cardParts.tsx (the table's delete, on the card tab and the card window; not in the Inbox), client/src/review/cardPane.tsx ("Reset history").
       { id: 'c11-11', text: 'Each card keeps its review history. You can delete one wrong answer, or choose Reset history to start fresh.', marks: [0.16, 0.43, 0.67, 0.83] },
       // The All cards menu: the row "New cards 10 / 48"; a click on the count turns it into "Add [10] more new cards"; Enter.
-      // APP: client/src/review/CardInboxBar.tsx, client/src/review/AddMoreField.tsx (YAZ-5042 round 2). v3: there is no plain "Add" button in the menu now.
+      // APP: client/src/review/CardInboxBar.tsx, client/src/review/AddMoreField.tsx (YAZ-5042 round 2). The menu has no plain "Add" button.
       { id: 'c11-12', text: 'Want more new cards today? Click their count in the All cards menu, and press Enter.', marks: [0.42, 0.79] },
       // The "Try it in the app" button and "Next chapter".
       { id: 'c11-13', text: 'To try Archive and Up next on your own card, choose Try it in the app.', marks: [0.11, 0.67] },

@@ -5,12 +5,9 @@
  *   A span's scene stays mounted from its first clip to its last (the layer keys the stage by `spanOf`), so it keeps
  *   its state (what the person typed, where a drawing is) and moves on with no cut. It reads `clip.id` to know where
  *   it is.
- * - A clip with no entry gets the frame's `PlaceholderScene`. A chapter is "built" when each of its clips has an entry
- *   (`BUILT_CHAPTERS`; `scenes.test.ts` fails when one falls back). The next builders add their chapter's entries in
- *   `chapters.ts` and move its id to `BUILT_CHAPTERS`.
+ * - A clip with no entry is a fault: the registry throws (`scenes.test.tsx` holds every clip of the script to a scene).
  */
 import type { Scene, SceneFor } from '../scene'
-import { PlaceholderScene } from '../PlaceholderScene'
 
 export interface SceneEntry {
   /** The clips, in the script's order, with no gap. One clip, or a span. */
@@ -24,7 +21,7 @@ export interface ChapterScenes {
 }
 
 /** The registry: a `SceneFor`, with each clip's span (the stage's key; absent for a one-clip entry). */
-export function sceneRegistry(chapters: readonly ChapterScenes[], fallback: Scene = PlaceholderScene): Required<Pick<SceneFor, 'spanOf'>> & SceneFor {
+export function sceneRegistry(chapters: readonly ChapterScenes[]): Required<Pick<SceneFor, 'spanOf'>> & SceneFor {
   const byClip = new Map<string, { scene: Scene; span?: string }>()
   for (const chapter of chapters) {
     for (const entry of chapter.entries) {
@@ -35,6 +32,10 @@ export function sceneRegistry(chapters: readonly ChapterScenes[], fallback: Scen
       }
     }
   }
-  const scenes = (clipId: string): Scene => byClip.get(clipId)?.scene ?? fallback
+  const scenes = (clipId: string): Scene => {
+    const entry = byClip.get(clipId)
+    if (entry === undefined) throw new Error(`No scene for the clip ${clipId}`)
+    return entry.scene
+  }
   return Object.assign(scenes, { spanOf: (clipId: string) => byClip.get(clipId)?.span })
 }

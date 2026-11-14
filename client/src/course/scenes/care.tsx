@@ -652,6 +652,3 @@ export const CARE_SCENES: ChapterScenes = {
     { clips: ['c11-14'], scene: TrueGarden },
   ],
 }
-
-/** Kept for the end screen's quiet finale: the garden as it stands at the end of chapter 11. */
-export const FINAL_GARDEN = GROWN

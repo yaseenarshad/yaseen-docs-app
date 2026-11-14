@@ -1,9 +1,6 @@
 /**
- * THE COURSE'S SCENES (YAZ-5121, issue 6C): the layer's default `scenes` (`CardCourse`). Each built chapter gives its
- * entries (`registry.ts`); a clip of a chapter not built yet gets the frame's placeholder.
- *
- * The next builders: add your chapter's file, put its `ChapterScenes` in `CHAPTER_SCENES`, and move its id from
- * `NOT_BUILT_CHAPTERS` to `BUILT_CHAPTERS`. `scenes.test.ts` then holds each of its clips to a real scene.
+ * THE COURSE'S SCENES (YAZ-5121, issue 6C): the layer's default `scenes` (`CardCourse`). Each chapter gives its entries
+ * (`registry.ts`); `scenes.test.tsx` holds every clip of the script to a scene.
  */
 import { sceneRegistry, type ChapterScenes } from './registry'
 import { WHY_SCENES } from './why'
@@ -34,11 +31,5 @@ export const CHAPTER_SCENES: readonly ChapterScenes[] = [
   CARE_SCENES,
   WHERE_THINGS_ARE_SCENES,
 ]
-
-/** The chapters whose every clip has a real scene: all 12. */
-export const BUILT_CHAPTERS: readonly string[] = ['why', 'first-card', 'inbox', 'where', 'compound', 'knowledge-base', 'good-card', 'ai', 'habits', 'links', 'care', 'where-things-are']
-
-/** The chapters still on the placeholder: none. */
-export const NOT_BUILT_CHAPTERS: readonly string[] = []
 
 export const courseScenes = sceneRegistry(CHAPTER_SCENES)

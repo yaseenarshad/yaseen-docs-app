@@ -1,7 +1,7 @@
 /**
  * CHAPTER 5, "Why it is worth it" (YAZ-5121): the lift. Compounding, like interest; five cards a day; one card's path,
- * where the time line stretches as the gaps grow (2 days, 11 days, about 6 weeks, about 5 months: the app's own
- * scheduler with its defaults, `script.ts` c5-13), until the card settles into the outline of a person as a steady
+ * where the time line stretches as the gaps grow (2 days, 11 days, about 6 weeks, about 5 months: the gaps the voice
+ * says in c5-13, ts-fsrs's own defaults; they wait for Yaseen, see `script.ts` c5-13), until the card settles into the outline of a person as a steady
  * light; Niklas Luhmann's slips and books; Ryan Holiday's index cards; the meeting, the language, the subject.
  * Cues land on the real voice's words (`marks` in `script.ts`).
  */
@@ -230,7 +230,7 @@ function Pile(props: SceneProps) {
   )
 }
 
-/** One card's path: the days it comes back on when it is remembered each time (the app's defaults; `script.ts` c5-13). */
+/** One card's path: the days it comes back on when it is remembered each time (the voice's gaps, `script.ts` c5-13). */
 const REVIEW_DAYS = [0, 2, 13, 59, 222]
 const GAPS = ['2 days', '11 days', 'about 6 weeks', 'about 5 months']
 /** The days the line shows while each hop is drawn: it stretches as the gaps grow. */

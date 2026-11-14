@@ -3,7 +3,7 @@
  * page-like card: the journal's name, the title, the authors' last names and the year, and ONE short line that the
  * highlighter sweeps over. Nothing else of a paper is shown: no image of a page, no figure, no logo, no layout.
  *
- * THE COPYRIGHT RULE (a test holds it, `papers.test.ts`): `line` is either a paraphrase (`quote: false`) or a quote of
+ * THE COPYRIGHT RULE (a test holds it, `scenes.test.tsx`): `line` is either a paraphrase (`quote: false`) or a quote of
  * fewer than 15 words (`quote: true`), and only a quote is drawn in quotation marks. Each paper's facts come from the
  * "SOURCE:" comment in `script.ts` (the coordinator checked each number in the paper before it was spoken).
  */
@@ -20,7 +20,7 @@ export interface PaperCite {
   line: string
   /** `line` is the paper's own words (under 15 words), not a paraphrase. */
   quote: boolean
-  /** Where the facts are from (for the next builder; not shown). */
+  /** Where the facts are from (not shown). */
   source: string
 }
 
@@ -96,8 +96,6 @@ export const PAPERS = {
     source: 'script.ts c3-06, c3-07, c3-23: Karpicke & Roediger 2008, Science 319(5865):966-968, 15 February 2008; Fig. 2 (80% against 36%) and Table 1 (236.8 against 243.0 trials).',
   },
 } as const satisfies Record<string, PaperCite>
-
-export type PaperId = keyof typeof PAPERS
 
 /** The authors as a byline: "Murre & Dros", "Cepeda, Pashler, Vul et al." */
 export function byline(authors: readonly string[]): string {

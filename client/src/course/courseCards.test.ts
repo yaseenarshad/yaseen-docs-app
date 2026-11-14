@@ -27,7 +27,8 @@ import { WAITING_CLIPS } from './waits'
 import { courseScenes } from './scenes'
 import { mountScene, testClock } from './scenes/testing'
 import { TARGET_HELP, checkTour, inFolder } from './tourHelp'
-import { memoryHost, showOnlyHost, type CourseHost, type CourseVault, type MadeCard } from './courseHost'
+import { showOnlyHost, type CourseHost, type CourseVault, type MadeCard } from './courseHost'
+import { memoryHost } from './scenes/testing'
 import {
   COURSE_PAGE,
   COURSE_PAGE_LINE,
@@ -121,6 +122,16 @@ const cardFilesIn = async (dir: string): Promise<string[]> => (await readdir(dir
 const agentWrites = (dir: string, name: string, title: string, text: string): Promise<void> => writeFile(join(dir, name), `---\nkind: card\ntitle: ${title}\n---\n\`\`\`card\n${text}\n\`\`\`\n`)
 
 describe('the folder "Course Cards" (YAZ-5124)', () => {
+  it('a vault still loading only shows for now; the same host makes the folder once the vault is read (YAZ-5128)', async () => {
+    const vault = vaultOf()
+    let ready = false
+    const host = vaultCourseHost({ ...vault.view, ready: () => ready, review: () => ({ ...vault.view.review(), ready }) }, depsOf().deps)
+    expect(await host.courseCards()).toEqual({ showOnly: SHOW_ONLY.loading })
+    expect(await top()).toEqual([])
+    ready = true
+    expect(await host.courseCards()).toEqual({ path: `${root}/course-cards`, title: 'Course Cards' })
+  })
+
   it('is made once, at the top, with its title; again after the person deletes it; and kept in AppState.course.made', async () => {
     const vault = vaultOf()
     const { deps, made } = depsOf()
@@ -595,7 +606,7 @@ describe('the seam', () => {
     const real = vaultCourseHost(vaultOf().view, depsOf().deps)
     const keys = (o: object): string[] => [...new Set([...Object.keys(o), ...Object.getOwnPropertyNames(Object.getPrototypeOf(o))])].filter((k) => k !== 'constructor').sort()
     const members = (h: CourseHost): string[] => ['vault', 'courseCards', 'watchCards', 'makeFirstCard', 'coursePage', 'readCard', 'agentStep', 'summary'].filter((k) => k in h)
-    for (const host of [memoryHost(), showOnlyHost('/v')]) {
+    for (const host of [memoryHost(), showOnlyHost('/v', SHOW_ONLY.readOnly)]) {
       expect(members(host)).toEqual(members(real))
       expect(keys(host.agentStep)).toEqual(keys(real.agentStep))
       expect(Object.keys(host.agentStep.state()).sort()).toEqual(Object.keys(real.agentStep.state()).sort())

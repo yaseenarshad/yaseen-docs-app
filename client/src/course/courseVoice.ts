@@ -36,52 +36,9 @@ export interface Voice {
   retry?(chapterId: string): void
 }
 
-/** No sound at all: each clip runs on its estimate, with captions. The frame's voice until 6D1 plugs in. */
+/** No sound at all: each clip runs on its estimate, with captions (a chapter whose sound is not here yet). */
 export const SILENT_VOICE: Voice = {
   chapterStarting: () => undefined,
   chapter: () => Promise.resolve(null),
   onArrive: () => () => undefined,
-}
-
-/**
- * The test double: a voice whose chapters are in memory. `arrive(chapterId, clips)` puts a chapter's sound here and
- * tells the listeners, as a finished download does; `fail(chapterId)` tells them it could not come; `started` lists
- * each `chapterStarting` call and `retried` each `retry`.
- */
-export function memoryVoice(initial: Record<string, Record<string, ClipSound>> = {}) {
-  const here = new Map(Object.entries(initial))
-  const listeners = new Set<(chapterId: string) => void>()
-  const missing = new Set<(chapterId: string, missing: boolean) => void>()
-  const started: string[] = []
-  const retried: string[] = []
-  const soundOf = (clips: Record<string, ClipSound>): ChapterSound => ({ clip: (id) => clips[id] ?? null })
-  const voice: Voice = {
-    chapterStarting: (id) => void started.push(id),
-    chapter: (id) => Promise.resolve(here.has(id) ? soundOf(here.get(id)!) : null),
-    onArrive: (fn) => {
-      listeners.add(fn)
-      return () => listeners.delete(fn)
-    },
-    onMissing: (fn) => {
-      missing.add(fn)
-      return () => missing.delete(fn)
-    },
-    retry: (id) => {
-      retried.push(id)
-      missing.forEach((fn) => fn(id, false))
-    },
-  }
-  return {
-    voice,
-    started,
-    retried,
-    arrive(chapterId: string, clips: Record<string, ClipSound>) {
-      here.set(chapterId, clips)
-      missing.forEach((fn) => fn(chapterId, false))
-      listeners.forEach((fn) => fn(chapterId))
-    },
-    fail(chapterId: string) {
-      missing.forEach((fn) => fn(chapterId, true))
-    },
-  }
 }

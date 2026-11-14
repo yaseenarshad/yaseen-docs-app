@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { AgentStepPanel, type AgentStepEvent } from './AgentStepPanel'
-import { memoryHost, showOnlyHost, type MemoryHost } from './courseHost'
+import { showOnlyHost } from './courseHost'
+import { memoryHost, type MemoryHost } from './scenes/testing'
 import { NO_CARDS_YET } from './prompt'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true

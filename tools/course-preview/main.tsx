@@ -14,9 +14,11 @@ import { createRoot } from 'react-dom/client'
 import { COURSE, type CourseClip } from '../../client/src/course/script'
 import { WAITING_CLIPS } from '../../client/src/course/waits'
 import { clipSeconds } from '../../client/src/course/courseTime'
-import { memoryHost as courseMemoryHost, showOnlyHost, type CourseHost, type MadeCard } from '../../client/src/course/courseHost'
+import { showOnlyHost, type CourseHost, type MadeCard } from '../../client/src/course/courseHost'
+import { SHOW_ONLY } from '../../client/src/course/courseCards'
+import { memoryHost as courseMemoryHost } from '../../client/src/course/scenes/testing'
 import type { SceneClock, SceneTime } from '../../client/src/course/scene'
-import { courseScenes, BUILT_CHAPTERS } from '../../client/src/course/scenes'
+import { courseScenes } from '../../client/src/course/scenes'
 import '../../client/src/app.css'
 import '../../client/src/course/course.css'
 import './preview.css'
@@ -178,13 +180,12 @@ function Preview() {
     document.documentElement.dataset.theme = theme
   }, [theme])
 
-  const host = useMemo(() => (makes ? memoryHost((card) => setLog((l) => [...l, `makeFirstCard: "${card.title}" → ${card.path}\n${card.text}`])) : showOnlyHost('/Demo vault')), [makes])
+  const host = useMemo(() => (makes ? memoryHost((card) => setLog((l) => [...l, `makeFirstCard: "${card.title}" → ${card.path}\n${card.text}`])) : showOnlyHost('/Demo vault', SHOW_ONLY.readOnly)), [makes])
   const done = useCallback(() => setDoneCount((c) => ({ ...c, [clips[index].clip.id]: (c[clips[index].clip.id] ?? 0) + 1 })), [index])
   const Scene = courseScenes(clip.id)
   const key = courseScenes.spanOf(clip.id) ?? clip.id
   const [w, h] = SIZES[size]
   const chapterClips = clips.filter((c) => c.chapter.id === chapter.id)
-  const built = BUILT_CHAPTERS.includes(chapter.id)
 
   return (
     <div className="pv">
@@ -193,7 +194,6 @@ function Preview() {
           {COURSE.map((ch, i) => (
             <option key={ch.id} value={ch.id}>
               {i + 1}. {ch.title}
-              {BUILT_CHAPTERS.includes(ch.id) ? '' : ' (placeholder)'}
             </option>
           ))}
         </select>
@@ -250,7 +250,7 @@ function Preview() {
         ))}
       </div>
       <p className="pv__status">
-        {built ? 'Built' : 'Placeholder (not built yet)'} · {chapter.id} / {clip.id}
+        {chapter.id} / {clip.id}
         {waits && ` · waits: done() called ${doneCount[clip.id] ?? 0} time(s)${released ? '' : ', holding'}`}
         {courseScenes.spanOf(clip.id) !== undefined && ` · span ${courseScenes.spanOf(clip.id)}`}
       </p>

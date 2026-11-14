@@ -16,7 +16,7 @@
  *   `cardFileName`): `kind: card`, the title in `title:`, one card with its sides, a new ID from the vault's door.
  *   A file is never written over; a repeat makes a second file.
  * - The AI step copies a prompt and watches the folder through the vault's index. The app runs no agent and sends
- *   nothing anywhere. The card check was removed (YAZ-5060): nothing grades the agent's cards; the person reads each.
+ *   nothing anywhere. Nothing grades the agent's cards: the person reads each.
  * - What the course made is kept in `AppState.course.made`, a record only: every file is in the sidebar.
  */
 import { NEW_CARD_TEXT, cardFileContent, cardFileName, isCardKind } from '@shared/cardFileFormat'
@@ -231,7 +231,7 @@ export const NO_SKILL_SENTENCE = 'Run `yaseendocs card guide` and read the card 
 
 /**
  * The prompt for the person's own agent: `AGENT_PROMPT` with the skill's path, one sentence that asks for 3 card files
- * in the full path of "Course Cards", then the text. No check line: the card check was removed (YAZ-5060).
+ * in the full path of "Course Cards", then the text.
  */
 export function agentPrompt(skill: string | null, folder: string, text: string): string {
   const first = skill === null ? NO_SKILL_SENTENCE : cardSkillPrompt(skill)

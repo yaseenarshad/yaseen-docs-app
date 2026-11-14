@@ -13,7 +13,7 @@
  *   Closing gives the keyboard back to where it was.
  * - `prefers-reduced-motion`: the scenes and the layer cross-fade in place of movement (`course.css`, `reducedMotion`).
  * - The seams: `scenes` (6C: `scenes/index.ts`; a span of clips keeps one scene mounted), `voice` (6D1: per chapter, downloaded when needed), `tour` (6E), `host` (6F). Each has a
- *   default: the course's scenes (the placeholder for a chapter not built yet), silence, the real tour (`appTour`), and the host (the real one with a vault view, else one that makes nothing).
+ *   default: the course's scenes, silence, the real tour (`appTour`), and the host (the real one once App gives the vault's view, else one that makes nothing and says why).
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { COURSE_SPEEDS, type CourseSpeed } from '@shared/courseState'
@@ -25,8 +25,8 @@ import { chapterFraction, clipFraction, placeOf, startState, step, waitingForPer
 import { SILENT_VOICE, type ChapterSound, type ClipSound, type Voice } from './courseVoice'
 import { downloadedVoice } from './downloadedVoice'
 import { appTour, hasTour, type CourseTour } from './courseTour'
-import { showOnlyHost, type CourseHost, type CourseVault } from './courseHost'
-import { vaultCourseHost } from './courseCards'
+import { NO_VAULT, showOnlyHost, type CourseHost, type CourseVault } from './courseHost'
+import { SHOW_ONLY, vaultCourseHost } from './courseCards'
 import { courseScenes } from './scenes'
 import { CourseEnd } from './scenes/finale'
 import type { SceneClock, SceneFor, SceneTime } from './scene'
@@ -38,7 +38,7 @@ export interface CardCourseProps {
   /** The course's ONE vault for this run (YAZ-5201), for its side effects; null with none open. */
   vault: string | null
   onClose: () => void
-  /** The seams, each with the frame's default. `course` is the script; tests give a small one. */
+  /** The seams, each with its default. `course` is the script; tests give a small one. */
   course?: readonly CourseChapter[]
   scenes?: SceneFor
   voice?: Voice
@@ -46,7 +46,8 @@ export interface CardCourseProps {
   host?: CourseHost
   /**
    * The live view of the course's vault (YAZ-5124): with it, and no `host`, the course makes real files (`vaultCourseHost`).
-   * The course is bound to the view it opens with for its whole run (YAZ-5201): a later view of another vault changes nothing.
+   * The course is bound to its first view of `vault` for the whole run (YAZ-5201): a later view changes nothing. Until a
+   * view comes, the course says that the vault is still loading.
    */
   courseVault?: CourseVault
   /** The vault kept with the course's place is not in the window (YAZ-5201): one line, no file is made, and a way to start over in the vault in front. */
@@ -380,12 +381,24 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
   }
 
   // ---- the tour ----
-  // The course's ONE vault (YAZ-5201): the view it opened with, for the whole run. The tab in front may change meanwhile.
-  const [bound] = useState(() => ({ vault, courseVault: courseVaultIn }))
+  // The course's ONE vault (YAZ-5201): the vault it opened with, for the whole run. The tab in front may change
+  // meanwhile. Its view is the first one App gives for THAT vault: when the view comes after the course opened, the
+  // course takes it then; a later view (of this vault or another) changes nothing.
+  const [boundVault] = useState(vault)
+  const [boundView, setBoundView] = useState(() => (courseVaultIn?.root === vault ? courseVaultIn : undefined))
+  if (boundView === undefined && courseVaultIn !== undefined && courseVaultIn.root === boundVault) setBoundView(courseVaultIn)
   const lostLine = lost?.line ?? null
   const host = useMemo(
-    () => hostIn ?? (lostLine !== null ? showOnlyHost(null, lostLine) : bound.courseVault === undefined ? showOnlyHost(bound.vault) : vaultCourseHost(bound.courseVault)),
-    [hostIn, lostLine, bound],
+    () =>
+      hostIn ??
+      (lostLine !== null
+        ? showOnlyHost(null, lostLine)
+        : boundVault === null
+          ? showOnlyHost(null, NO_VAULT)
+          : boundView === undefined
+            ? showOnlyHost(boundVault, SHOW_ONLY.loading)
+            : vaultCourseHost(boundView)),
+    [hostIn, lostLine, boundVault, boundView],
   )
   // The AI step's watch and timer stop with the layer; its state stays for the next open (YAZ-5124).
   useEffect(() => () => host.agentStep.stop(), [host])

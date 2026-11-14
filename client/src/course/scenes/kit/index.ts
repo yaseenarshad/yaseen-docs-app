@@ -20,4 +20,4 @@ export { PageView, PageText, EmbedView, LinkPill, ReviewsLine, type EmbedViewPro
 export { ChatPreview, type ChatMessage } from './ChatPreview'
 export { JournalCover, type JournalIssue } from './Journal'
 export { Silhouette, SILHOUETTE_LIGHT } from './Silhouette'
-export { CardEditKeyRow, CardDoneKeys, editKey, editKeyText } from './EditKeys'
+export { CardEditKeyRow, CardDoneKeys, editKey } from './EditKeys'

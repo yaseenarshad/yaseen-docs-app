@@ -10,6 +10,7 @@ import type { ReactElement } from 'react'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { COURSE } from '../script'
 import { showOnlyHost } from '../courseHost'
+import { SHOW_ONLY } from '../courseCards'
 import { CHAPTER_SCENES } from '.'
 import { COMPOUND_FACTS } from './compound'
 import { beatAt, CardEditKeyRow, ChatPreview, EmbedView, InboxView, JournalCover, LinkPill, PageText, PageView, ReviewsLine, Silhouette, litFocus, type Beat } from './kit'
@@ -111,7 +112,7 @@ describe('the stage of chapters 1 to 5 (YAZ-5121)', () => {
       const chapter = COURSE.find((c) => c.id === ch.chapter)!
       for (const entry of ch.entries) {
         const { clock, at } = testClock(6)
-        const scene = mountScene(entry.scene, chapter, { clock, done: () => undefined, host: showOnlyHost('/demo') })
+        const scene = mountScene(entry.scene, chapter, { clock, done: () => undefined, host: showOnlyHost('/demo', SHOW_ONLY.readOnly) })
         for (const clipId of entry.clips) {
           scene.render(chapter.clips.find((c) => c.id === clipId)!)
           for (const f of [0.3, 0.5, 0.7, 0.95]) {

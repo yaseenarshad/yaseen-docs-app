@@ -6,7 +6,6 @@
  */
 import { CARD_EDIT_KEYS } from '../../../editor/card/cardEditKeys'
 import { KeyCaps } from '../../../keys/KeyCaps'
-import { keyText } from '../../../keys/keyWords'
 
 /** The quiet key row under Edit card's editor (`cardKeyRow` in `cardBlockView.ts`), with the app's classes. */
 export function CardEditKeyRow() {
@@ -37,6 +36,3 @@ export function CardDoneKeys() {
 export function editKey(label: string): string {
   return CARD_EDIT_KEYS.find((k) => k.label === label)?.keys.split(' / ')[0] ?? ''
 }
-
-/** The same key in words, as plain text: `editKeyText('hide word')` → "Cmd + L". */
-export const editKeyText = (label: string): string => keyText(editKey(label))
