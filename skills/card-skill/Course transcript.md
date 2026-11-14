@@ -223,6 +223,12 @@ Say you make five cards a day. In a year, that is more than 1,800 small things y
 
 And known cards come back less often, so the daily review stays small as the pile grows.
 
+Follow one card you keep remembering. It comes back after two days. Then eleven. Then about six weeks. Then about five months.
+
+So a couple of months in, that card is already months away.
+
+By then you are not really reviewing it any more. It is part of what you know. It is part of who you are.
+
 The sociologist Niklas Luhmann kept a box of paper slips for about 45 years. It grew to around 90,000 of them.
 
 He wrote nearly 600 publications, among them more than 40 books.

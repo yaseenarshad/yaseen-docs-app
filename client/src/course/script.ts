@@ -308,6 +308,13 @@ export const COURSE: CourseChapter[] = [
       { id: 'c5-04', text: 'Say you make five cards a day. In a year, that is more than 1,800 small things you still know.' },
       // The pile grows tall; the daily stack beside it stays small.
       { id: 'c5-05', text: 'And known cards come back less often, so the daily review stays small as the pile grows.' },
+      // One card on a time line; four marks appear: "2 days", "11 days", "6 weeks", "5 months". The gaps stretch across the stage.
+      // SOURCE: this app's own scheduler with its default settings (ts-fsrs 5.4.2, FSRS-6 weights, 90% retention, no fuzz), each answer Remembered on the due day: gaps of 2, 11, 46 and 163 days; then the default longest gap of 365 days (shared/reviews.ts `maxDays`).
+      { id: 'c5-13', text: 'Follow one card you keep remembering. It comes back after two days. Then eleven. Then about six weeks. Then about five months.' },
+      // The time line zooms out: the card's next mark is far off to the right, past "2 months in".
+      { id: 'c5-14', text: 'So a couple of months in, that card is already months away.' },
+      // The card fades into the outline of a person, and stays there as a small steady light.
+      { id: 'c5-15', text: 'By then you are not really reviewing it any more. It is part of what you know. It is part of who you are.' },
       // Wooden boxes of paper slips; the name "Niklas Luhmann", "1951 to 1996", "about 90,000 cards".
       // SOURCE: Niklas Luhmann-Archiv, Bielefeld University: about 90,000 notes, made between 1951 and 1996. (rename-note-to-page: keep)
       { id: 'c5-06', text: 'The sociologist Niklas Luhmann kept a box of paper slips for about 45 years. It grew to around 90,000 of them.' },
