@@ -38,6 +38,7 @@ import type { SlashMenuGroups } from '../slashMenu'
 import type { ToolbarBuilder } from '../createCrepe'
 import { cleanCardTitle } from '@shared/cardLine'
 import { joinCardParts, sideMarkdown, sideWithEdges, splitCardText, type CardParts } from './cardEditorText'
+import { cardBand, UNTITLED_CARD } from './cardBand'
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The hidden word: the `cloze` mark
@@ -460,25 +461,41 @@ function cardPlugins(doors: CardEditorDoors, escapeTaken: () => boolean) {
 }
 
 /**
- * THE TITLE FIELD (YAZ-5164 part 3, Yaseen: "Yes, build it"): above Side 1, for both kinds of card: the card's title,
- * off its card line (YAZ-5308), and the editor holds its text, its sides only. Done writes the field's title back on the
- * card line (a card file's through its tab's title door, which renames the file). Enter, ↓ and Tab go down into Side 1;
- * ⌘↵ and Esc are Done.
+ * What Edit card does with the card's title: `edit` the Title field (the default), `show` it only (an embed of a card
+ * file: only its tab renames the file), or `none` (a card file's tab: its big page title is the title, so the card has
+ * no second one).
  */
-function titleField(value: string, doors: CardEditorDoors, down: () => void, readOnly: boolean): HTMLInputElement {
-  const field = document.createElement('input')
-  field.type = 'text'
+export type CardTitleField = 'edit' | 'show' | 'none'
+
+/**
+ * THE TITLE FIELD (YAZ-5164 part 3; YAZ-5308 A3): in the card's title band (`cardBand.ts`) under its top bar, with the
+ * small "TITLE" label, for both kinds of card: the card's title, off its card line (YAZ-5308), and the editor holds its
+ * text, its sides only. Empty, it says "Untitled card" in grey. A long title wraps (a textarea that grows to its text; a
+ * title has no line breaks, so a pasted one becomes spaces). Done writes the field's title back on the card line (a
+ * card file's through its tab's title door, which renames the file). Enter, Tab and ↓ on its last line go down into
+ * Side 1; ⌘↵ and Esc are Done.
+ */
+function titleField(value: string, doors: CardEditorDoors, down: () => void, readOnly: boolean): HTMLTextAreaElement {
+  const field = document.createElement('textarea')
+  field.rows = 1
   field.readOnly = readOnly
-  field.className = 'card-editor__title'
-  field.placeholder = 'Title'
+  field.className = 'card-band__field'
+  field.placeholder = UNTITLED_CARD
   field.setAttribute('aria-label', 'Card title')
   field.spellcheck = true
   field.value = value
-  field.addEventListener('input', () => doors.changed())
+  field.addEventListener('input', () => {
+    if (/[\r\n]/.test(field.value)) {
+      const at = field.selectionStart
+      field.value = field.value.replace(/[\r\n]+/g, ' ')
+      field.setSelectionRange(at, at)
+    }
+    doors.changed()
+  })
   field.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) doors.done()
     else if (event.key === 'Escape') doors.done()
-    else if (event.key === 'Enter' || event.key === 'ArrowDown' || (event.key === 'Tab' && !event.shiftKey)) down()
+    else if (event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey) || (event.key === 'ArrowDown' && onLastLine(field))) down()
     else return
     event.preventDefault()
     event.stopPropagation()
@@ -486,23 +503,35 @@ function titleField(value: string, doors: CardEditorDoors, down: () => void, rea
   return field
 }
 
+/** The caret is on the field's last line: a title that fits one line, or the caret at its end. */
+function onLastLine(field: HTMLTextAreaElement): boolean {
+  if (field.selectionEnd === field.value.length) return true
+  const line = parseFloat(getComputedStyle(field).lineHeight)
+  return !(field.scrollHeight > 0 && line > 0 && field.scrollHeight > line * 1.5)
+}
+
 /**
  * Mounts the card's editor in `root` with the card's `text` (its sides) and its `title` in the Title field above it.
  * `select`: offsets in the card's text to select in its first line; absent → the caret at the end. `selectTitle`: the
- * Title field has the keyboard instead, its text selected (`/card`, New card: typing names the card). `titleReadOnly`:
- * the field shows the title only (an embed of a card file has no door to rename that file: its tab does).
+ * Title field has the keyboard instead, its text selected (`/card`, New card: typing names the card). `titleField`:
+ * see `CardTitleField`.
  */
-export function mountCardEditor(o: { root: HTMLElement; text: string; title: string; make: (root: HTMLElement) => CardCrepe; doors: CardEditorDoors; select?: { from: number; to: number }; selectTitle?: boolean; titleReadOnly?: boolean }): CardEditor {
+export function mountCardEditor(o: { root: HTMLElement; text: string; title: string; make: (root: HTMLElement) => CardCrepe; doors: CardEditorDoors; select?: { from: number; to: number }; selectTitle?: boolean; titleField?: CardTitleField }): CardEditor {
   const body = o.text
   const parts: CardParts = splitCardText(body)
   let view: EditorView | null = null
-  const field = titleField(o.title, o.doors, () => {
-    if (view === null) return
-    view.dispatch(view.state.tr.setSelection(Selection.atStart(view.state.doc)))
-    view.focus()
-  }, o.titleReadOnly === true)
+  const fieldKind = o.titleField ?? 'edit'
+  const field =
+    fieldKind === 'none'
+      ? null
+      : titleField(o.title, o.doors, () => {
+          if (view === null) return
+          view.dispatch(view.state.tr.setSelection(Selection.atStart(view.state.doc)))
+          view.focus()
+        }, fieldKind === 'show')
+  const band = field === null ? null : cardBand(field, true)
   const { crepe, markdown } = o.make(o.root)
-  o.root.prepend(field)
+  if (band !== null) o.root.prepend(band)
   let escapeTaken = false
   // The `/` menu hears Esc on the window, in the capture phase, before the editor: it closed itself then.
   const onKeyDown = (event: KeyboardEvent) => {
@@ -534,7 +563,7 @@ export function mountCardEditor(o: { root: HTMLElement; text: string; title: str
     const { doc } = v.state
     let selection: Selection = Selection.atEnd(doc)
     // `/card`, New card: the Title field has the keyboard, its text selected, so typing names the card.
-    if (o.selectTitle === true && !field.readOnly) {
+    if (o.selectTitle === true && field !== null && !field.readOnly) {
       v.dispatch(v.state.tr.setSelection(selection))
       view = v
       field.focus()
@@ -554,13 +583,13 @@ export function mountCardEditor(o: { root: HTMLElement; text: string; title: str
   return {
     ready,
     view: () => view,
-    title: () => cleanCardTitle(field.value),
+    title: () => (field === null ? o.title : cleanCardTitle(field.value)),
     text: () => bodyNow(),
     destroy: () => {
       if (destroyed) return
       destroyed = true
       o.root.removeEventListener('keydown', onKeyDown, true)
-      field.remove()
+      band?.remove()
       view = null
       void ready.then(() => crepe.destroy()).catch((err: unknown) => console.error('[card-editor] destroy failed:', err))
     },

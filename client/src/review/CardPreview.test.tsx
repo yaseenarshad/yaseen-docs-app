@@ -30,22 +30,23 @@ afterEach(() => {
   el?.remove()
 })
 
-function mount(text = TEXT) {
+function mount(text = TEXT, title = '') {
   const wikilinks = createWikilinkResolveSource()
   const vault = { root: '/v', wikilinks, wikilinkCandidates: { candidates: [], subscribe: () => () => undefined } as never, viewOnlyLinks: createViewOnlyLinkSource() }
   const onClose = vi.fn()
+  const onLeave = vi.fn()
   el = document.createElement('div')
   document.body.append(el)
   root = createRoot(el)
-  act(() => root?.render(<CardPreview card={{ path: PATH, id: 'WIKI-9', text, title: '', notitle: false, reviews: REVIEWS }} vault={vault} settings={DEFAULT_REVIEW_SETTINGS} doors={{ openLayer: vi.fn(), openTab: vi.fn(), onNotice: vi.fn() }} onNotice={vi.fn()} onClose={onClose} />))
-  return { onClose }
+  act(() => root?.render(<CardPreview card={{ path: PATH, id: 'WIKI-9', text, title, notitle: false, reviews: REVIEWS }} vault={vault} settings={DEFAULT_REVIEW_SETTINGS} doors={{ openLayer: vi.fn(), openTab: vi.fn(), onNotice: vi.fn() }} onNotice={vi.fn()} onClose={onClose} leaveOn=".tabbar-row, .sidebar" onLeave={onLeave} />))
+  return { onClose, onLeave }
 }
 const press = (key: string) => act(() => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })))
 const shown = () => [...el.querySelectorAll('.card__hidden')].map((s) => s.textContent)
 const sides = () => el.querySelectorAll('.card__side').length
 
 describe('Preview a card (YAZ-5152)', () => {
-  it('is the Inbox\'s card: the front with its hidden word, Space through the words and the sides, "Side n of 2", the Reviews strip from the last side; no answer buttons; "Preview · Esc to close"', () => {
+  it('is the Inbox\'s card: the front with its hidden word, Space through the words and the sides, "Side n of 2", the Reviews strip from the last side; no answer buttons', () => {
     mount()
     expect(el.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Preview card')
     expect(el.querySelector('.card-inbox--preview .card-inbox__panel .card.card-screen.card-inbox__card')).not.toBeNull()
@@ -62,7 +63,67 @@ describe('Preview a card (YAZ-5152)', () => {
     act(() => el.querySelector<HTMLButtonElement>('.card-reviews__toggle')!.click())
     expect(el.querySelector('.card-reviews__delete')).toBeNull()
     expect(el.querySelector('.card-inbox__answer, .card-inbox__actions')).toBeNull()
-    expect(el.querySelector('.card-preview__foot')?.textContent).toBe('Preview · Esc to close')
+  })
+
+  it('YAZ-5152 A: a quiet "Preview" bar on top: "Preview · <the card> · nothing is saved", and Close (Esc), which closes and gives the keyboard back', () => {
+    const editor = document.createElement('div')
+    editor.tabIndex = -1
+    document.body.append(editor)
+    editor.focus()
+    const { onClose } = mount(TEXT, 'Capital of France')
+    const bar = el.querySelector('.card-preview__bar')!
+    expect(bar.querySelector('.card-preview__label')?.textContent).toBe('Preview')
+    expect(bar.querySelector('.card-preview__what')?.textContent).toBe('· Capital of France · nothing is saved')
+    const close = bar.querySelector<HTMLButtonElement>('.card-preview__close')!
+    expect(close.textContent).toBe('Close (Esc)')
+    act(() => close.click())
+    expect(onClose).toHaveBeenCalledOnce()
+    act(() => root?.unmount())
+    root = null
+    expect(document.activeElement).toBe(editor)
+    editor.remove()
+  })
+
+  it('YAZ-5152 A: no title: the bar names the card by its ID', () => {
+    mount()
+    expect(el.querySelector('.card-preview__what')?.textContent).toBe('· WIKI-9 · nothing is saved')
+  })
+
+  it('YAZ-5152 A: ONE click on a tab or in the sidebar leaves the preview and the click still does its job; the keyboard is not pulled back under it', () => {
+    const editor = document.createElement('div')
+    editor.tabIndex = -1
+    document.body.append(editor)
+    editor.focus()
+    const row = document.createElement('div')
+    row.className = 'tabbar-row'
+    const tab = document.createElement('button')
+    const tabClick = vi.fn(() => tab.focus())
+    tab.addEventListener('click', tabClick)
+    row.append(tab)
+    const side = document.createElement('aside')
+    side.className = 'sidebar'
+    const sideRow = document.createElement('button')
+    side.append(sideRow)
+    document.body.append(row, side)
+    const { onClose, onLeave } = mount()
+    // A press inside the preview is the preview's own.
+    act(() => void el.querySelector('.card-inbox__card')!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })))
+    expect(onLeave).not.toHaveBeenCalled()
+    act(() => void tab.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true })))
+    expect(onLeave).toHaveBeenCalledOnce()
+    act(() => tab.click())
+    expect(tabClick).toHaveBeenCalledOnce()
+    act(() => root?.unmount())
+    root = null
+    expect(document.activeElement).toBe(tab)
+    expect(onClose).not.toHaveBeenCalled()
+    // The sidebar, the same.
+    const second = mount()
+    act(() => void sideRow.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true })))
+    expect(second.onLeave).toHaveBeenCalledOnce()
+    row.remove()
+    side.remove()
+    editor.remove()
   })
 
   it('Space at the end starts again from the front; a click on the card is a Space too', () => {

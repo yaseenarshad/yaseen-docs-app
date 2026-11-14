@@ -8,7 +8,7 @@ import { PART_MS, drawnPlaces as drawnAt, gapOf, glide, motionOff, partGap, part
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import { FileIcon, NameEnding } from '../sidebar/FileIcon'
-import { AsleepIcon, GridIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
+import { AsleepIcon, GridIcon, InboxIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
 import { dragWidth, foreignDrag, readPageDrag, windowTabOf, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import { duplicateTabIds, type Tab } from '../workspace/useWorkspace'
 import type { ListState } from '../lists/useVaultListsHere'
@@ -851,7 +851,9 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
             if (e.button === 1) closeByMouse(INBOX_TAB, inbox.onClose)
           }}
         >
+          {/* The sidebar Inbox row's tray (YAZ-5374), where a page tab has its file's icon, at that icon's 14px. */}
           <span className="tabbar__label">
+            <InboxIcon className="tabbar__inbox-icon" />
             <span className="tabbar__name">{inbox.label}</span>
           </span>
         </button>

@@ -1,5 +1,5 @@
 import { FSRS, Rating, State, createEmptyCard, generatorParameters, type Card, type Grade, type StepUnit } from 'ts-fsrs'
-import { cardReviewsOf, cardTime, withoutCardReview, type CardRating, type CardReview, type CardRecord } from './cardLine'
+import { cardReviewsOf, cardsWithIds, cardTime, withoutCardReview, type CardRating, type CardReview, type CardRecord } from './cardLine'
 import { embeddedCards, makeCardResolver } from './cardLinks'
 import { hasLetters, pageIdNumber } from './pageId'
 import type { ReviewSettings } from './reviews'
@@ -274,8 +274,18 @@ export function pageCardCounts(r: CardPage, s: ReviewSettings, now: number): Pag
   return { cards: cards.length, due }
 }
 
-/** An archived card (YAZ-5046: the line's `off`): what the Inbox's Archived list shows of it, from the index. */
-export interface ArchivedCard {
+/**
+ * Whether any card of the vault is marked Up next (YAZ-5321: the line's `next`, on a card in review: an ID, not
+ * archived). With none, the Inbox offers no Up next: the cards menu has no Up next row, so it does not confuse
+ * someone who never uses it; one mark brings it back.
+ */
+export function anyUpNext(records: readonly CardPage[]): boolean {
+  return records.some((r) => r.cards !== undefined && r.cards.some((c) => c.next && !c.off && c.id !== null))
+}
+
+/** A card of the To fix list (YAZ-5097): its page, its place among the page's cards, its ID and its title. */
+export interface FixCard {
+  /** The absolute path of the page or card file that holds the card. */
   path: string
   /** Its place among the page's cards. */
   index: number
@@ -285,31 +295,41 @@ export interface ArchivedCard {
 }
 
 /**
- * The archived cards (YAZ-5046) of the vault, of `folder` (root-relative, and its subfolders) or of `page` (its
- * absolute path), by path and then in page order. Only a card with an ID: Unarchive finds it by its ID. A copy whose ID
- * a card before it on the same page holds is left out, as `cardPlan` leaves it out.
+ * The cards marked "Fix later" (YAZ-5097: the line's `fix`, the To fix list) of the vault, of `folder` (root-relative,
+ * and its subfolders) or of `page` (its absolute path), by path and then in page order: an archived card too. Only a
+ * card with an ID; a copy whose ID a card before it on the same page holds is left out, as `cardPlan` leaves it out
+ * (`cardsWithIds`). A card embedded on other pages is one row: an embed holds no card line.
  */
-export const archivedCards = (records: readonly CardPage[], folder = '', page?: string): ArchivedCard[] => listedCards(records, (c) => c.off, folder, page)
-
-/**
- * The cards marked "Fix later" (YAZ-5097: the line's `fix`, the To fix list), as `archivedCards` reads them: an
- * archived card too. A card embedded on other pages is one row: an embed holds no card line.
- */
-export const fixCards = (records: readonly CardPage[], folder = '', page?: string): ArchivedCard[] => listedCards(records, (c) => c.fix === true, folder, page)
-
-function listedCards(records: readonly CardPage[], has: (card: CardRecord) => boolean, folder: string, page: string | undefined): ArchivedCard[] {
-  const out: ArchivedCard[] = []
-  const sorted = records.filter((r) => r.cards !== undefined && r.cards.some(has)).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+export function fixCards(records: readonly CardPage[], folder = '', page?: string): FixCard[] {
+  const out: FixCard[] = []
+  const sorted = records.filter((r) => r.cards !== undefined && r.cards.some((c) => c.fix === true)).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
   for (const r of sorted) {
     if (page === undefined ? !inFolder(r.folder, folder) : r.path !== page) continue
-    const ids = new Set<string>()
-    ;(r.cards ?? []).forEach((card, index) => {
-      if (card.id === null || ids.has(card.id)) return
-      ids.add(card.id)
-      if (has(card)) out.push({ path: r.path, index, id: card.id, ...(card.title !== undefined && { title: card.title }) })
-    })
+    for (const { card, id, index } of cardsWithIds(r.cards)) if (card.fix === true) out.push({ path: r.path, index, id, ...(card.title !== undefined && { title: card.title }) })
   }
   return out
+}
+
+/**
+ * A card's review numbers as the folder table's card rows show them (YAZ-5319): its last review (ms; null for a new
+ * card), how many reviews it has, and how often it was remembered (any answer but Forgot, `again`), in whole percent
+ * (null for a new card). Off the card line's reviews alone: no FSRS step.
+ */
+export interface CardReviewNumbers {
+  last: number | null
+  reviews: number
+  successRate: number | null
+}
+
+export function cardReviewNumbers(reviews: readonly CardReview[]): CardReviewNumbers {
+  let last: string | null = null
+  let remembered = 0
+  for (const r of reviews) {
+    if (last === null || r.at > last) last = r.at
+    if (r.rating !== 'again') remembered++
+  }
+  const at = last === null ? Number.NaN : Date.parse(last)
+  return { last: Number.isNaN(at) ? null : at, reviews: reviews.length, successRate: reviews.length === 0 ? null : Math.round((100 * remembered) / reviews.length) }
 }
 
 /**
@@ -365,6 +385,11 @@ export interface CardPlan {
    * limit. Reset sets the added number to this, so today goes back to the Settings number, never below today's work.
    */
   floor: Record<AddKind, number>
+  /**
+   * The fallback (YAZ-5322): folders are picked (`newFrom`), but the scope has no new card left in them, so today's new
+   * cards come from All folders. The done screen says so, and its button reads "from All folders"; the pick stays.
+   */
+  newFallback: boolean
 }
 
 /**
@@ -395,7 +420,9 @@ const NO_EMBEDS: ReadonlyMap<string, string> = new Map()
  *     anyway, among the due cards by its due date, not as Up next. A new one, or one not due, is not in today's queue.
  *  2. Each card with reviews whose due date is before local midnight tonight, or in its same-day steps (YAZ-5020),
  *     most overdue first.
- *  3. New cards, by ID number (`newOrder`: the oldest or the newest first, D2; an ID of other letters last), as many as
+ *  3. New cards, by ID number (`newOrder`: the oldest or the newest first, D2; an ID of other letters last; or Random,
+ *     one order for the day, YAZ-5322), only those of the picked folders (`newFrom`, YAZ-5322; none left there: all of
+ *     them, `newFallback`), as many as
  *     `newPerDay` leaves today (a card counts as new on the day of its first review); `newPerDay` null: all of them (D1).
  * `added` (YAZ-5042): today's added numbers, on top of `newPerDay` and `upNextPerDay` (not with no limit).
  * Only a card in review shows: it has an ID, and is not `off` (`off` wins over `next`). None while the vault has
@@ -407,14 +434,17 @@ const NO_EMBEDS: ReadonlyMap<string, string> = new Map()
  * `letters`: the vault's ID letters (`hasLetters`), so an ID of other letters sorts last.
  */
 export function cardPlan(records: readonly CardPage[], s: ReviewSettings, now: number, folder = '', page?: string, letters?: readonly string[], upNextTaken: readonly string[] = [], added: CardsAddedToday = NOTHING_ADDED): CardPlan {
-  if (!s.enabled) return { queue: [], more: { new: 0, next: 0 }, grow: () => 0, floor: { new: 0, next: 0 } }
+  if (!s.enabled) return { queue: [], more: { new: 0, next: 0 }, grow: () => 0, floor: { new: 0, next: 0 }, newFallback: false }
   const next: DueCard[] = []
   // YAZ-5028: every marked card of the vault (the day's places are the vault's, as the new-card limit is).
   const marked: DueCard[] = []
   // YAZ-5042: a marked reviewed card's own due date, and whether it is in its steps: is it due anyway?
   const dueOf = new Map<DueCard, { at: number; steps: boolean }>()
   const due: DueCard[] = []
-  const fresh: DueCard[] = []
+  let fresh: DueCard[] = []
+  // YAZ-5322: the new cards of the picked folders (`newFrom`), by where each card lives.
+  const picked: DueCard[] = []
+  const picking = s.newFrom.length > 0
   let startedToday = 0
   // Today on this computer's calendar, as minutes the line writes: a card line's time sorts as text.
   const today = cardTime(new Date(now).setHours(0, 0, 0, 0))
@@ -438,7 +468,11 @@ export function cardPlan(records: readonly CardPage[], s: ReviewSettings, now: n
         const c: DueCard = { path: r.path, index, id: card.id, due: isNew ? now : Math.min(at, now), isNew, next: true }
         if (!isNew) dueOf.set(c, { at, steps })
         next.push(c)
-      } else if (isNew) fresh.push({ path: r.path, index, id: card.id, due: now, isNew: true, next: false })
+      } else if (isNew) {
+        const c: DueCard = { path: r.path, index, id: card.id, due: now, isNew: true, next: false }
+        fresh.push(c)
+        if (picking && s.newFrom.some((f) => inFolder(r.folder, f))) picked.push(c)
+      }
       else if (isCardDue(at, now, steps)) due.push({ path: r.path, index, id: card.id, due: at, isNew: false, next: false })
     })
   }
@@ -483,7 +517,15 @@ export function cardPlan(records: readonly CardPage[], s: ReviewSettings, now: n
     ranks = ranks.sort((a, b) => a - b)
   }
   due.sort((a, b) => a.due - b.due || place(a, b))
-  fresh.sort(byAge(s.newOrder === 'newest' ? -1 : 1))
+  // YAZ-5322: only the new cards follow the pick; none left in the picked folders, they come from All folders.
+  const newFallback = picking && picked.length === 0 && fresh.length > 0
+  if (picking && !newFallback) fresh = picked
+  if (s.newOrder === 'random') {
+    // One order for the day: each card's place is a hash of its ID and today's date, so a redraw keeps it.
+    const day = new Date(now).toDateString()
+    const rank = new Map(fresh.map((c) => [c, dayHash(`${day}\n${c.id}`)]))
+    fresh.sort((a, b) => rank.get(a)! - rank.get(b)! || place(a, b))
+  } else fresh.sort(byAge(s.newOrder === 'newest' ? -1 : 1))
   const newBase = s.newPerDay === null ? Number.POSITIVE_INFINITY : s.newPerDay + added.newCards - startedToday
   const newToday = s.newPerDay === null ? fresh : fresh.slice(0, Math.max(0, newBase))
   return {
@@ -499,7 +541,51 @@ export function cardPlan(records: readonly CardPage[], s: ReviewSettings, now: n
       new: s.newPerDay === null ? 0 : Math.max(0, startedToday - s.newPerDay),
       next: s.upNextPerDay === null ? 0 : Math.max(0, taken - s.upNextPerDay),
     },
+    newFallback,
   }
+}
+
+/** FNV-1a of `text`: a stable number per card and day for the Random order (YAZ-5322). */
+function dayHash(text: string): number {
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193)
+  return h >>> 0
+}
+
+/** The folder picker's counts (YAZ-5322): every new card of the vault, and each folder's with its subfolders. */
+export interface NewCardFolders {
+  all: number
+  /** Each folder that holds a new card, itself or below, by path (root-relative): a parent before its subfolders. */
+  folders: { folder: string; count: number }[]
+}
+
+/**
+ * The new cards of the vault by folder, for the picker (YAZ-5322): what `cardPlan` counts as new — a card in review
+ * (an ID, not `off`), never reviewed, not Up next — each card one time, counted in its folder and each folder above it.
+ */
+export function newCardFolders(records: readonly CardPage[], s: ReviewSettings): NewCardFolders {
+  const counts = new Map<string, number>()
+  let all = 0
+  for (const r of records) {
+    if (r.cards === undefined || r.cards.length === 0) continue
+    const facts = cardFacts(r, s)
+    const ids = new Set<string>()
+    let n = 0
+    r.cards.forEach((card, index) => {
+      if (card.off || card.id === null || ids.has(card.id)) return
+      ids.add(card.id)
+      if (card.next !== true && facts[index].first === null) n++
+    })
+    if (n === 0) continue
+    all += n
+    const parts = r.folder.split('/').filter(Boolean)
+    for (let i = 1; i <= parts.length; i++) {
+      const folder = parts.slice(0, i).join('/')
+      counts.set(folder, (counts.get(folder) ?? 0) + n)
+    }
+  }
+  const folders = [...counts].map(([folder, count]) => ({ folder, count })).sort((a, b) => (a.folder < b.folder ? -1 : a.folder > b.folder ? 1 : 0))
+  return { all, folders }
 }
 
 /** The cards due now: `cardPlan`'s queue (the order is there). */

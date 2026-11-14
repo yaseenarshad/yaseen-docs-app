@@ -8,14 +8,24 @@
  * In a Read only vault (YAZ-4939) the head shows the page tab's "Read only" chip: E and Edit open its timed "Allow
  * edits" box, and only a choice in it edits. The unlock is THIS layer's (`useTimedUnlock`); the editor is told the
  * vault's lock is off for it while the unlock runs. At zero, or on "Lock now", the layer saves and reads again.
+ * E EDITS THE THING YOU LOOK AT (YAZ-5145 round 3, the Decision of Q38), in one press: on a CARD FILE each edit opens
+ * its Edit card, and after "Allow edits?" too, as the choice goes on to edit the layer (no second E); on a page, cards
+ * or not, E edits the page, never a card. The Inbox's E on a card in a page opens that card's Edit card, one time.
+ * EDIT WHERE YOU ARE (YAZ-5164, Yaseen: "it should keep me and maintain the scroll of where I am, so that way I can just
+ * start editing wherever I am"). The reading Crepe and the editor are two views, with other things above the text, so a
+ * scroll px would land elsewhere: going into edit, the layer reads its place in the TEXT (`readPagePlace`) and hands it
+ * to the editor as a page view (`PageView.top`), as a duplicated tab starts where its source stood, with the caret in
+ * view and the folds it showed. A card's Edit card while reading edits the layer as E does ("Allow edits?" first in a
+ * Read only vault) and opens THAT card, kept where it is on screen: unlock, then continue.
  */
 import { UnitContext, useVaultUnit } from '../vault/unitWord'
 import { usePageId } from '../search/showIds'
 import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { fileKind } from '@shared/fileKind'
 import { splitFrontmatter } from '@shared/frontmatter'
+import { isCardFileContent } from '@shared/cardFileFormat'
 import { readPageSwitches, type PageSwitches } from '@shared/pageSwitches'
-import type { CommentsOrder } from '@shared/types'
+import type { CommentsOrder, PageView } from '@shared/types'
 import type { CardReview } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import { api } from '../api'
@@ -44,7 +54,13 @@ import { useTimedUnlock } from '../editor/useTimedUnlock'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { landOn } from '../editor/toc/tocMotion'
 import { cardBlockViewOfDom } from '../editor/card/cardBlockView'
-import { KeyCaps } from '../keys/KeyCaps'
+import { pageCardIn, type CardPlace } from '../editor/card/cardOpen'
+import { recordAt } from '../editor/card/embedCard'
+import { readPagePlace, showPagePlace, type PagePlace } from '../editor/pagePlace'
+import { readPageViewOf } from '../lib/pageView'
+import { READ_ONLY_EDIT } from '../editor/readOnlyEdit'
+import { KeyLabel } from '../keys/KeyLabel'
+import { DONE_KEYS, withKeys } from '@shared/keyLabel'
 
 /** The vault the page is in: what its links resolve against. */
 export interface ExploreVault {
@@ -75,8 +91,9 @@ interface ExplorePageProps {
   /**
    * The editor of a page, with `openLink` as its link door (App's `renderPageEditor` with the stack's door).
    * `unlocked`: a timed "Allow edits" of this layer runs, so the vault's Read only does not lock the editor (YAZ-4939).
+   * `start`: where the reading layer stood as it went into edit (YAZ-5164), read by the editor as it mounts.
    */
-  renderEditor: (path: string, openLink: (path: string) => void, unlocked: boolean) => ReactNode
+  renderEditor: (path: string, openLink: (path: string) => void, unlocked: boolean, start?: PageView) => ReactNode
   /** Where a bare unresolved `[[link]]` makes its page (App's `newPageFolderFor`), root-relative. */
   createFolder: (sourcePath: string) => string
   /** App's read-only door (YAZ-4985): a link to a missing page asks it before the page is made. Absent: the page is made. */
@@ -89,9 +106,9 @@ interface ExplorePageProps {
   editAsk?: number
   /** Bumped by ⌘↵ in edit (YAZ-4988): save, lock again at once while the timed unlock runs (Lock now), and read. */
   leaveAsk?: number
-  /** The card to land on once the page shows (YAZ-4962): its place among the page's cards. */
-  card?: number
-  /** The Inbox's E (YAZ-5145): once the layer edits, the card opens in Edit card, one time: the one at `card` of a page, else the card file's. */
+  /** The card to land on once the page shows (YAZ-4962): found by its ID (YAZ-5164, `pageCardIn`), its index only while it has none. */
+  card?: CardPlace
+  /** The Inbox's E on a card in a page (YAZ-5145): once the layer edits, the card at `card` opens in Edit card, one time. A card file's opens by itself (round 3). */
   editCard?: boolean
   /** Opened by the Inbox (YAZ-5145): ⌘↵ while reading goes back to it, so ↗ does not say ⌘↵. */
   fromInbox?: boolean
@@ -134,11 +151,11 @@ export const keepFocus = (event: ReactMouseEvent) => event.preventDefault()
 export function ExploreSteps({ steps }: { steps: LayerSteps }) {
   return (
     <span className="explore__steps" data-fold-part="steps">
-      <button type="button" className="explore__step" title="Previous search result (← or ⌘⌥↑)" aria-label="Previous search result" disabled={!steps.prev} onMouseDown={keepFocus} onClick={() => steps.onStep(-1)}>
+      <button type="button" className="explore__step" title={withKeys('Previous search result', '← / ⌘⌥↑')} aria-label="Previous search result" disabled={!steps.prev} onMouseDown={keepFocus} onClick={() => steps.onStep(-1)}>
         ‹
       </button>
       <span className="explore__count">{steps.place === 0 ? '' : `${steps.place}/${steps.count}`}</span>
-      <button type="button" className="explore__step" title="Next search result (→ or ⌘⌥↓)" aria-label="Next search result" disabled={!steps.next} onMouseDown={keepFocus} onClick={() => steps.onStep(1)}>
+      <button type="button" className="explore__step" title={withKeys('Next search result', '→ / ⌘⌥↓')} aria-label="Next search result" disabled={!steps.next} onMouseDown={keepFocus} onClick={() => steps.onStep(1)}>
         ›
       </button>
     </span>
@@ -165,6 +182,9 @@ export function openRows(onOpenInTab: () => void, pageId: string | undefined, on
 /** How long a page that left the index waits before it is read again and said gone (YAZ-4990): a save through a temporary file is back by then. */
 export const GONE_CHECK_MS = 300
 
+/** How many frames (16 ms) an edit layer waits for its editor to mount a card's Edit card: a cold editor can take a while. */
+const EDITOR_TRIES = 120
+
 /** A read-only Crepe goes: out of the page at once, destroyed once it is up. */
 function retire({ crepe, el, up }: { crepe: ReturnType<typeof createCrepe>; el: HTMLElement; up: Promise<void> }): void {
   el.remove()
@@ -190,6 +210,19 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   const [content, setContent] = useState<Content>({ kind: 'loading' })
   /** The read-only Crepe once it is up, for the fold-all button (round 1, item 4); null while loading or editing. */
   const [ready, setReady] = useState<ReturnType<typeof createCrepe> | null>(null)
+  /**
+   * The body on show (YAZ-5164: "it should just be so smooth", no flash). A switch of `mode` mounts the other body
+   * UNDER the one on show, see-through (`explore__body--incoming`), and the old one stays until the new one is up at the
+   * same place in the text: the reading Crepe once it is built and placed, the editor once it answers its page view
+   * (`readPageViewOf`). Then both swap in one frame.
+   */
+  const [shown, setShown] = useState<'read' | 'edit'>(mode)
+  /**
+   * Back from the editor (YAZ-5164), the text read before it is old: the editor saved. The reading Crepe waits for the
+   * read again, so it is built once, from the saved text, and placed once (a Crepe of the old text was built, then thrown
+   * away by the read's "loading", and the next one opened at the top).
+   */
+  const [stale, setStale] = useState(false)
   const icons = useContext(IconsContext)
   /** ⌘F in the reading layer finds in THIS page (check 11): the page's own find plugin on this Crepe, and its bar. */
   const findChannel = useMemo(() => createFindChannel(), [])
@@ -210,7 +243,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   useEffect(() => {
     if (mode !== 'read') return
     let live = true
-    const again = rereading.current
+    // A reading Crepe still on show (a switch to edit taken back before the editor was up) is read again in place.
+    const again = rereading.current || shownCrepe.current !== null
     rereading.current = false
     if (!again) setContent({ kind: 'loading' })
     // A save of this page still on its way (an editor's flush, YAZ-3685 F5) lands first: the read sees the typed text.
@@ -220,13 +254,18 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
       (file) => {
         if (!live) return
         readRef.current = file.content
+        setStale(false)
         const body = splitFrontmatter(file.content).body
         const switches = readPageSwitches(file.content)
         setContent((prev) =>
           body.trim() === '' ? { kind: 'empty' } : prev.kind === 'body' && prev.body === body && JSON.stringify(prev.switches) === JSON.stringify(switches) ? prev : { kind: 'body', body, switches },
         )
       },
-      () => live && setContent({ kind: 'gone' }),
+      () => {
+        if (!live) return
+        setStale(false)
+        setContent({ kind: 'gone' })
+      },
     )
     return () => {
       live = false
@@ -262,7 +301,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
     }
   }, [mode, path, indexOfVault])
 
-  const body = mode === 'read' && content.kind === 'body' ? content.body : null
+  // The reading Crepe stays while it is on show, under an editor that is not up yet (YAZ-5164).
+  const body = (mode === 'read' || shown === 'read') && !stale && content.kind === 'body' ? content.body : null
   const switches = content.kind === 'body' ? content.switches : undefined
   // The vault's three parts, not the object: App hands a new object each render, and the Crepe is built once per body.
   const { root, wikilinks, wikilinkCandidates, viewOnlyLinks } = vault
@@ -273,6 +313,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   const folds = useRef({ path, outline: new Set<string>() as ReadonlySet<string>, heading: new Set<string>() as ReadonlySet<string> })
   /** The Crepe on show while the next one for the same page is built (YAZ-4990): it goes in the same frame the new one shows. */
   const shownCrepe = useRef<{ path: string; crepe: ReturnType<typeof createCrepe>; el: HTMLElement; up: Promise<void> } | null>(null)
+  /** Where the editor stood as the layer went back to reading (YAZ-5164): put back once the reading Crepe is up, one time. */
+  const back = useRef<{ path: string; top: PagePlace } | null>(null)
   useEffect(() => {
     const parent = mountRef.current
     const prev = shownCrepe.current
@@ -323,7 +365,7 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
       cardReviews:
         doors.current.review === undefined
           ? undefined
-          : { settings: () => doors.current.review?.settings ?? DEFAULT_REVIEW_SETTINGS, deleteReview: (p, id, r) => doors.current.review?.deleteReview(p, id, r) ?? Promise.resolve() },
+          : { settings: () => doors.current.review?.settings ?? DEFAULT_REVIEW_SETTINGS, deleteReview: (p, id, r) => doors.current.review?.deleteReview(p, id, r) ?? Promise.resolve(), vault: () => ({ root, wikilinks }) },
       // The folds, kept for a read again of this page (YAZ-4990).
       folding: { seedCollapsedKeys: () => folds.current.outline, onCollapsedKeysChange: (keys) => (folds.current = { ...folds.current, outline: new Set(keys) }) },
       headingFolding: { seedCollapsedKeys: () => folds.current.heading, onCollapsedKeysChange: (keys) => (folds.current = { ...folds.current, heading: new Set(keys) }) },
@@ -341,7 +383,15 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
       el.style.cssText = ''
       if (scroller !== null && scroller.scrollTop !== top) scroller.scrollTop = top
       shownCrepe.current = mine
+      // Back from edit (YAZ-5164): at the block the editor had at its top; once more a frame later, when the blocks above have drawn.
+      const from = back.current
+      if (from !== null && from.path === path && scroller !== null) {
+        back.current = null
+        showPagePlace(editorViewOf(crepe), scroller, from.top)
+        requestAnimationFrame(() => live && showPagePlace(editorViewOf(crepe), scroller, from.top))
+      }
       setReady(crepe)
+      setShown('read')
     })
     return () => {
       live = false
@@ -394,8 +444,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
     let timer: ReturnType<typeof setTimeout> | undefined
     const tick = () => {
       const scope = mode === 'read' ? mountRef.current : editBodyRef.current
-      const target = scope?.querySelectorAll<HTMLElement>('.card')[card]
-      if (target !== undefined) {
+      const target = pageCardIn(scope, card)
+      if (target !== null) {
         landed.current = true
         landOn(target)
         return
@@ -406,38 +456,74 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
     return () => clearTimeout(timer)
   }, [card, mode, ready])
 
-  // The Inbox's E (YAZ-5145, Yaseen: "e would edit the card"; round 2: "it should take you directly into the card
-  // edit"): once the layer edits (at once, or after "Allow edits?" in a Read only vault), the card opens in Edit card —
-  // a card in a page (`card`) as its own Edit card button does, a card file's view by its own Edit card button. One
-  // time: Done, Esc and a later edit are the page's as always. The editor mounts a tick later: ask a few frames.
-  const cardEdited = useRef(false)
+  // E edits the thing you look at (YAZ-5145, Yaseen: "e would edit the card"; round 3, Q38: "if you're opening a card
+  // file. Then it makes sense that if you're editing, you're going to edit the card"). Each time the layer goes into
+  // edit — E, Edit, or the choice in "Allow edits?" that goes on to edit it — a card file opens its Edit card, by its
+  // own button, as the card file tab's E does. The index says it is one, or the text the layer read (a card file just
+  // made, Move to its own file, before the index has it). The Inbox's E on a card in a page (`editCard`, `card`): that
+  // card, as its own Edit card does, one time. A page alone edits as a page. The editor mounts a tick later: ask a few frames.
+  const pageCardAsked = useRef<CardPlace | null>(editCard && card !== undefined ? card : null)
+  const cardOpened = useRef(false)
   useEffect(() => {
-    if (!editCard || cardEdited.current || mode !== 'edit') return
+    if (mode !== 'edit') {
+      cardOpened.current = false
+      return
+    }
+    if (cardOpened.current) return
+    const pageCard = pageCardAsked.current ?? undefined
+    if (pageCard === undefined && recordAt(indexOfVault.records, path)?.kind !== 'card' && !isCardFileContent(readRef.current)) return
     let tries = 0
     let timer: ReturnType<typeof setTimeout> | undefined
     const tick = () => {
       const scope = editBodyRef.current
-      const view = card === undefined ? null : cardBlockViewOfDom(scope?.querySelectorAll<HTMLElement>('.card')[card] ?? null)
-      const fileEdit = card === undefined ? (scope?.querySelector<HTMLButtonElement>('[data-card-file-edit]') ?? null) : null
+      const view = pageCard === undefined ? null : cardBlockViewOfDom(pageCardIn(scope, pageCard))
+      const fileEdit = pageCard === undefined ? (scope?.querySelector<HTMLButtonElement>('[data-card-file-edit]') ?? null) : null
       if ((view !== null && view.view.editable) || fileEdit !== null) {
-        cardEdited.current = true
+        cardOpened.current = true
+        pageCardAsked.current = null
         if (view !== null) view.edit()
         else fileEdit?.click()
         return
       }
-      if (++tries <= 40) timer = setTimeout(tick, 16)
+      if (++tries <= EDITOR_TRIES) timer = setTimeout(tick, 16)
     }
     tick()
     return () => clearTimeout(timer)
-  }, [editCard, card, mode])
+    // The path and the index are read when the layer goes into edit: a step while editing keeps the editor as it is.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card, mode])
 
   /** The saved text for the comment stream (round 1, item 3): what was read, until the block's own write moves it. */
   const file = content.kind === 'body' || content.kind === 'empty' ? { path, content: readRef.current } : null
 
-  // The top layer's body takes the focus, so E and Esc work with no click; a layer uncovered again takes it back.
+  // The editor is up (YAZ-5164): it answers its page view once its start view is applied, so it is at the reading
+  // layer's place. Then it shows, in the same frame the reading body goes. A view with no page view (a card file's) shows
+  // after a short wait, as before.
   useEffect(() => {
-    if (active && mode === 'read') bodyRef.current?.focus()
-  }, [active, mode])
+    if (mode !== 'edit' || shown === 'edit') return
+    let frames = 0
+    let id = 0
+    const tick = () => {
+      const host = editBodyRef.current?.querySelector('.editor-host')
+      if (readPageViewOf(host) !== undefined || editBodyRef.current?.querySelector('[data-card-file-edit]') != null || ++frames > EDITOR_TRIES) {
+        setShown('edit')
+        return
+      }
+      id = requestAnimationFrame(tick)
+    }
+    id = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(id)
+  }, [mode, shown])
+  // Nothing to build (an empty page, a page gone): the reading body shows at once.
+  useEffect(() => {
+    if (mode === 'read' && shown !== 'read' && (content.kind === 'empty' || content.kind === 'gone')) setShown('read')
+  }, [mode, shown, content.kind])
+
+  // The top layer's body takes the focus, so E and Esc work with no click; a layer uncovered again takes it back.
+  // Again once the reading body is on show (YAZ-5164): the editor it replaced had the keyboard until then.
+  useEffect(() => {
+    if (active && mode === 'read') bodyRef.current?.focus({ preventScroll: true })
+  }, [active, mode, shown])
 
   const page = fileKind(path) === 'markdown'
   // The vault's Read only (YAZ-4939): the layer edits only while its own timed unlock runs. At zero, or on Lock now,
@@ -457,6 +543,68 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   useEffect(() => {
     if (editAsk > 0) editRef.current()
   }, [editAsk])
+
+  // A card's Edit card while reading (YAZ-5164): the reading Crepe refuses it (`tellReadOnlyEdit` from the card itself;
+  // its title's rename and typing come from inside and stay refused). The layer edits as E does, and once it edits,
+  // that card opens in Edit card (`pageCardAsked`), kept where it is on screen (`pinned`). Cancel drops it.
+  const pinned = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    const body = bodyRef.current
+    if (mode !== 'read' || body === null) return
+    const onAttempt = (event: Event) => {
+      const own = event.target instanceof HTMLElement && event.target.matches('[data-page-card]') ? event.target : null
+      if (own === null) return
+      const cards = [...(mountRef.current?.querySelectorAll<HTMLElement>('[data-page-card]') ?? [])]
+      pageCardAsked.current = { id: own.dataset.cardId ?? null, index: cards.indexOf(own) }
+      pinned.current = own
+      editRef.current()
+    }
+    body.addEventListener(READ_ONLY_EDIT, onAttempt)
+    return () => body.removeEventListener(READ_ONLY_EDIT, onAttempt)
+  }, [mode])
+  /**
+   * Where the reading layer stood as it went into edit (YAZ-5164), for the editor's start: read in the render that turns
+   * the layer to edit, while the reading Crepe is still on screen. Only for this path: a step while editing starts the
+   * next page as before. Null while nothing is drawn (still loading): the editor starts as before.
+   */
+  const start = useRef<{ path: string; view: PageView } | null>(null)
+  const shownMode = useRef(mode)
+  if (shownMode.current !== mode) {
+    shownMode.current = mode
+    start.current = mode === 'edit' ? readStart() : null
+    // Only from an editor on show: a switch taken back before it was up left the reading Crepe where it was.
+    back.current = null
+    if (mode === 'read' && shown === 'edit') {
+      readBack()
+      setStale(true)
+    }
+    pinned.current = null
+  }
+  /**
+   * The same handoff in reverse (YAZ-5164): Esc or Done, and the reading layer opens where the editor stood. Read in the
+   * render that turns the layer to reading, while the editor is still on screen (its page view, `readPageViewOf`): its
+   * folds seed the reading Crepe, and its place in the text is put back once that Crepe is up (`back`).
+   */
+  function readBack(): void {
+    const view = readPageViewOf(editBodyRef.current?.querySelector('.editor-host'))
+    back.current = view?.top === undefined ? null : { path, top: view.top }
+    if (view === undefined) return
+    const keys = view.folds.filter((k) => !k.startsWith('lock:'))
+    folds.current = { path, outline: new Set(keys.filter((k) => !k.startsWith('h:'))), heading: new Set(keys.filter((k) => k.startsWith('h:'))) }
+  }
+  function readStart(): { path: string; view: PageView } | null {
+    const scroller = bodyRef.current
+    if (ready === null || scroller === null) return null
+    const place = readPagePlace(editorViewOf(ready), scroller, pinned.current ?? undefined)
+    if (place === null) return null
+    // The folds the layer shows (and the page's rows locked open, which it keeps), so the text above lays out the same.
+    const locks = storage.getFolds(root, path).filter((k) => k.startsWith('lock:'))
+    const shown = folds.current.path === path ? [...folds.current.outline, ...folds.current.heading] : []
+    return {
+      path,
+      view: { top: { pos: place.pos, offset: place.offset }, selection: { anchor: place.caret, head: place.caret }, scrollTop: scroller.scrollTop, zoomKey: null, folds: [...locks, ...shown], magnification: 100 },
+    }
+  }
   /**
    * Leaving edit: ⌘↵ (YAZ-4988), and Esc and Done too (YAZ-4997: Yaseen wants Esc to go back to read only). Lock now while
    * the unlock runs (it saves and reads, `useTimedUnlock`'s `beforeLock`), else Done; the next E asks again.
@@ -481,7 +629,14 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
           unlock.allow(choice)
           if (mode === 'read') onToggleEdit()
         }}
-        onCancel={() => setAsking(false)}
+        onCancel={() => {
+          setAsking(false)
+          // A card's Edit card that asked (YAZ-5164) does not wait for a later E: E edits the page.
+          if (mode === 'read') {
+            pageCardAsked.current = null
+            pinned.current = null
+          }
+        }}
         editingUntil={unlock.until}
         onLock={unlock.lock}
         lockKeys
@@ -547,13 +702,13 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
               {foldAll}
             </span>
           )}
-          {/* No "Reading" label (YAZ-4944): reading is the normal state; "Edit E" says what you can do. */}
+          {/* No "Reading" label (YAZ-4944): reading is the normal state; "Edit (E)" says what you can do. */}
           {mode === 'read' ? (
             <>
               {page && chip}
               {page && (
-                <button type="button" className="explore__button" data-fold-part="edit" onClick={edit} title={unit('Edit this page here (E)')}>
-                  Edit<kbd>E</kbd>
+                <button type="button" className="explore__button" data-fold-part="edit" onClick={edit} title={withKeys(unit('Edit this page here'), 'E')}>
+                  <KeyLabel action="Edit" keys="E" />
                 </button>
               )}
             </>
@@ -566,15 +721,13 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
                 </span>
               )}
               {/* Done (item 5): back to reading, as Esc and ⌘↵ (YAZ-4988) do; the page saved as you typed. In a Read only vault all three lock again at once (YAZ-4997). */}
-              <button type="button" className="explore__button" data-fold-part="edit" onClick={leaveEdit} title={locked ? 'Save, lock again and read (Esc or ⌘↵)' : 'Back to reading (Esc or ⌘↵)'}>
-                {/* The keys in words (YAZ-5035): "Done Esc Cmd + Enter". The title keeps the symbols, as a menu does. */}
-                Done
-                <KeyCaps keys="esc" />
-                <KeyCaps keys="⌘↵" />
+              <button type="button" className="explore__button" data-fold-part="edit" onClick={leaveEdit} title={withKeys(locked ? 'Save, lock again and read' : 'Back to reading', DONE_KEYS)}>
+                {/* The app's hotkey label (YAZ-5332): "Done (Esc / Cmd+Enter)". */}
+                <KeyLabel action="Done" keys={DONE_KEYS} />
               </button>
             </>
           )}
-          <button type="button" className="explore__button" data-fold-part="open" onClick={onOpenInTab} title={fromInbox ? 'Open in a tab and close the stack' : 'Open in a tab and close the stack (⌘↵)'} aria-label="Open in a tab">
+          <button type="button" className="explore__button" data-fold-part="open" onClick={onOpenInTab} title={fromInbox ? 'Open in a tab and close the stack' : withKeys('Open in a tab and close the stack', '⌘↵')} aria-label="Open in a tab">
             ↗
           </button>
         </span>
@@ -583,28 +736,32 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
           ×
         </button>
       </div>
-      {mode === 'edit' ? (
-        <div ref={editBodyRef} className="explore__body explore__body--edit" style={bodyStyle}>
-          {/* Keyed by the path: a step while editing saves this page and mounts the editor on the next (the body div stays, with the keyboard). */}
-          <Fragment key={path}>{renderEditor(path, onOpenLink, unlocked)}</Fragment>
-        </div>
-      ) : (
-        <div ref={bodyRef} className="explore__body" style={bodyStyle} tabIndex={-1} data-explore-read>
-          <FindBar channel={findChannel} scope="page" hostRef={bodyRef} />
-          <div ref={mountRef} className="explore__mount" />
-          {content.kind === 'gone' && <p className="editor-msg">Can&apos;t read &quot;{title}&quot; — it is no longer there</p>}
-          {content.kind === 'empty' && <p className="editor-msg">{unit('Empty page')}</p>}
-          {/* The page's right-click menu (item 7): the text rows (Copy, Copy as; no Cut or Paste while reading), then the page menu. */}
-          {ready !== null && <PageMenu view={editorViewOf(ready)} extra={pageMenu} reading />}
-          {/* Under the page, as in its tab (round 1, item 3): the comment stream, then "Linked mentions"; a mention opens on top. */}
-          {file !== null && (
-            <div className="explore__under">
-              <CommentsSection file={file} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} />
-              <BacklinksSection path={path} source={wikilinks} openCurrent={onOpenLink} />
-            </div>
-          )}
-        </div>
-      )}
+      {/* Both bodies while a switch is under way (YAZ-5164): the incoming one see-through under the one on show. */}
+      <div className="explore__bodies">
+        {(mode === 'edit' || shown === 'edit') && (
+          <div ref={editBodyRef} className={`explore__body explore__body--edit${shown === 'edit' ? '' : ' explore__body--incoming'}`} style={bodyStyle}>
+            {/* Keyed by the path: a step while editing saves this page and mounts the editor on the next (the body div stays, with the keyboard). */}
+            <Fragment key={path}>{renderEditor(path, onOpenLink, unlocked, start.current?.path === path ? start.current.view : undefined)}</Fragment>
+          </div>
+        )}
+        {(mode === 'read' || shown === 'read') && (
+          <div ref={bodyRef} className={`explore__body${shown === 'read' ? '' : ' explore__body--incoming'}`} style={bodyStyle} tabIndex={-1} data-explore-read>
+            <FindBar channel={findChannel} scope="page" hostRef={bodyRef} />
+            <div ref={mountRef} className="explore__mount" />
+            {content.kind === 'gone' && <p className="editor-msg">Can&apos;t read &quot;{title}&quot; — it is no longer there</p>}
+            {content.kind === 'empty' && <p className="editor-msg">{unit('Empty page')}</p>}
+            {/* The page's right-click menu (item 7): the text rows (Copy, Copy as; no Cut or Paste while reading), then the page menu. */}
+            {ready !== null && <PageMenu view={editorViewOf(ready)} extra={pageMenu} reading />}
+            {/* Under the page, as in its tab (round 1, item 3): the comment stream, then "Linked mentions"; a mention opens on top. */}
+            {file !== null && (
+              <div className="explore__under">
+                <CommentsSection file={file} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} />
+                <BacklinksSection path={path} source={wikilinks} openCurrent={onOpenLink} />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </UnitContext.Provider>
   )
 }

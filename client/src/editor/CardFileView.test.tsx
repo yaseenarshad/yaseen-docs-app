@@ -16,6 +16,7 @@ import { VaultReadOnly } from '../vault/readOnlyVault'
 import { useReviewSettings } from '../review/useReviewSettings'
 import { createCardFile } from '../review/newCardFile'
 import { cardFileName } from '@shared/cardFileFormat'
+import { paintedFindRanges } from './find/cardFind'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -46,6 +47,8 @@ vi.mock('../api', async (importOriginal) => {
       }),
       vaultConfig: { read: vi.fn(async () => disk.review), write: vi.fn(), onChange: vi.fn(() => () => undefined) },
       shell: { openLink: vi.fn() },
+      // The vault's property declarations (YAZ-5383: the strip's Properties rows are typed by them): none here.
+      properties: { get: vi.fn(async (root: string) => ({ root, version: 1, properties: {} })), onChange: vi.fn(() => () => undefined), setProperty: vi.fn() },
     },
   }
 })
@@ -56,6 +59,9 @@ const converts = vi.hoisted(() => ({
   moveIntoCard: vi.fn(async () => undefined),
   makeCardFromText: vi.fn(async () => undefined),
 }))
+/** The card's place across Edit card and Done (YAZ-5164): jsdom draws no boxes, so the move is recorded; the real one is in pagePlace.test.ts. */
+const boxMoves = vi.hoisted(() => [] as Array<{ box: Element; offset: number }>)
+vi.mock('../editor/pagePlace', async (importOriginal) => ({ ...(await importOriginal<typeof import('./pagePlace')>()), scrollerOf: (e: Element) => e.closest('[data-card-file-body]'), readSwapPlace: () => ({ offset: 120, text: '', nth: -1, line: 0 }), showSwapPlace: (_s: Element, box: Element, place: { offset: number }) => void boxMoves.push({ box, offset: place.offset }) }))
 vi.mock('../review/cardConvert', () => ({ ...converts, convertFailure: (err: unknown) => (err instanceof Error ? err.message : String(err)) }))
 vi.mock('../views/writeProperty', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../views/writeProperty')>()),
@@ -144,19 +150,23 @@ async function menu(): Promise<string[]> {
 const pick = (label: string) => act(() => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === label)!.click())
 
 describe('the card file tab (YAZ-5037 phase 3)', () => {
-  it('shows the path, the title, the ID, the state, the card, "Linked mentions (1)" and "Embedded in (2)"; no notice; no read of its own on open', async () => {
+  it('shows the path, the title, the ID, the state, the card, and the strip`s parts "Linked mentions 1" and "Embedded in 2" (YAZ-5382); no notice; no read of its own on open', async () => {
     await mount(FILE)
     expect(disk.reads).toBe(0)
     expect(el.querySelector('.card-file__path')?.textContent).toBe('Geography')
     // The title shows one time (YAZ-5044): the big title is the file's `title`; the card holds only its sides.
-    expect(el.querySelector('.card-file__title-row .page-title__text')?.textContent).toBe('Capital of France')
+    expect(el.querySelector('.card-file .card > .card-band .page-title__text')?.textContent).toBe('Capital of France')
     expect(el.querySelector('[data-card-file] .card__id')?.textContent).toBe('WIKI-9')
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('New'))
     expect(el.querySelector('.card-screen')?.textContent).toContain('Paris')
     expect(notice()).toBeNull()
-    expect(el.querySelector('.card-backlinks .backlinks__title')?.textContent).toBe('Linked mentions (1)')
-    expect(el.querySelector('.card-file__embeds .backlinks__title')?.textContent).toBe('Embedded in (2)')
-    expect(el.querySelector('.card-file__embeds')?.textContent).toContain('europe')
+    const part = (name: string) => el.querySelector<HTMLButtonElement>(`.card-reviews__toggle[data-part="${name}"]`)
+    expect(part('links')?.textContent).toBe('Linked mentions1')
+    expect(part('embeds')?.textContent).toBe('Embedded in2')
+    expect(el.querySelector('.card-backlinks__list')).toBeNull()
+    act(() => part('embeds')!.click())
+    expect(el.querySelector('.card-backlinks__list')?.textContent).toContain('europe')
+    expect(part('embeds')?.getAttribute('aria-expanded')).toBe('true')
     // The tab is the card's own page: none of the card window's words for a separate page.
     expect(el.textContent).not.toContain('Open page')
   })
@@ -212,13 +222,28 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     expect(el.querySelector('.card-reviews .backlinks__title')?.textContent).toBe('1 Review')
   })
 
-  it('YAZ-5105 round 2: Reviews is a strip right under the card (as Mochi), closed until clicked; Linked mentions and Embedded in stay under it', async () => {
+  it('YAZ-5383: the top-right properties button opens the strip`s Properties part (the page panel`s rows, the card`s own); a second click closes it', async () => {
+    await mount(FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", tags "europe" "capitals", level "A2" -->'))
+    const button = () => el.querySelector<HTMLButtonElement>('.card-file__properties')!
+    await vi.waitFor(() => expect(button()).not.toBeNull())
+    expect(button().getAttribute('aria-label')).toBe('Properties (2)')
+    expect(el.querySelector('.frontmatter-panel--card')).toBeNull()
+    act(() => button().click())
+    await vi.waitFor(() => expect(el.querySelector('.card-reviews--strip .frontmatter-panel--card')).not.toBeNull())
+    expect(el.querySelector('.card-reviews__toggle[data-part="properties"]')?.getAttribute('aria-expanded')).toBe('true')
+    expect([...el.querySelectorAll<HTMLElement>('.frontmatter-panel--card .frontmatter-panel__row')].map((r) => r.dataset.key)).toEqual(['tags', 'level'])
+    act(() => button().click())
+    expect(el.querySelector('.frontmatter-panel--card')).toBeNull()
+  })
+
+  it('YAZ-5105 round 2: Reviews is a strip right under the card (as Mochi), closed until clicked; YAZ-5382: Linked mentions and Embedded in are its parts, no sections under it', async () => {
     await mount(FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", 2026-11-01T09:00Z good -->'))
     await vi.waitFor(() => expect(el.querySelector('.card-reviews')).not.toBeNull())
     const strip = el.querySelector('.card-reviews')!
     expect(strip.classList.contains('card-reviews--strip')).toBe(true)
     expect(strip.previousElementSibling?.classList.contains('card-screen')).toBe(true)
-    expect(strip.nextElementSibling?.classList.contains('card-backlinks')).toBe(true)
+    expect([...strip.querySelectorAll<HTMLElement>('.card-reviews__toggle')].map((b) => b.dataset.part)).toEqual(['reviews', 'properties', 'links', 'embeds'])
+    expect(el.querySelector('section.card-backlinks')).toBeNull()
     const toggle = strip.querySelector<HTMLButtonElement>('.card-reviews__toggle')!
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(strip.querySelector('.card-reviews__table')).toBeNull()
@@ -226,6 +251,50 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     expect(strip.querySelector('.card-reviews__table')).not.toBeNull()
     act(() => toggle.click())
     expect(strip.querySelector('.card-reviews__table')).toBeNull()
+  })
+})
+
+/**
+ * YAZ-5392 (Yaseen, YAZ-5308 Q46: "model the exact same UI on the cards page itself … Just one place where the title
+ * lives for the card"): the tab shows the card as a page does. Above it the folder path only; no big page title. The
+ * card: its top bar (ID, state, Edit card, ⋯), the title band (a click renames the card and its file through App's
+ * door), the sides.
+ */
+describe('YAZ-5392: one title spot, the card as a page shows it', () => {
+  it('the path above the card and no big title; in the card: the top bar, then the title band, then the sides', async () => {
+    await mount(FILE)
+    expect(el.querySelector('.card-file__path')?.textContent).toBe('Geography')
+    expect(el.querySelector('.card-file__title-row')).toBeNull()
+    expect(el.querySelectorAll('.card-file .page-title')).toHaveLength(1)
+    const card = el.querySelector<HTMLElement>('.card-file__page > .card')!
+    expect([...card.children].map((c) => c.classList[0])).toEqual(['card__head', 'card-band', 'card__body'])
+    const head = card.querySelector('.card__head')!
+    expect(head.querySelector('.card__id')?.textContent).toBe('WIKI-9')
+    expect(head.querySelector('.card__edit')?.textContent).toBe('Edit card')
+    expect(head.querySelector('.card__more')?.textContent).toBe('⋯')
+    await vi.waitFor(() => expect(head.querySelector('.card__state')?.textContent).toBe('New'))
+    expect(card.querySelector('.card-band .page-title__text')?.textContent).toBe('Capital of France')
+    expect(card.querySelector('.card__body')?.textContent).toContain('Paris')
+  })
+
+  it('a click on the band`s title renames through the title edit door (the card line`s title and the file`s name)', async () => {
+    const { onRetitle } = await mount(FILE)
+    act(() => el.querySelector<HTMLElement>('.card-band .page-title__text')!.click())
+    const field = el.querySelector<HTMLTextAreaElement>('.card-band .page-title__input')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, 'Capital of Spain')
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    key(field, { key: 'Enter' })
+    expect(onRetitle).toHaveBeenCalledExactlyOnceWith(PATH, 'Capital of Spain', 'file')
+  })
+
+  it('Edit card: the band shows the title (no field: the band renames, read), the sides are the editor`s', async () => {
+    await mount(FILE)
+    act(() => editButton()!.click())
+    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).not.toBeNull())
+    await vi.waitFor(() => expect(el.querySelector<HTMLTextAreaElement>('[data-explore-card-edit] .card-band__field')?.value).toBe('Capital of France'))
+    expect(el.querySelector<HTMLTextAreaElement>('[data-explore-card-edit] .card-band__field')?.readOnly).toBe(true)
   })
 })
 
@@ -315,6 +384,19 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
     act(() => view.dispatch(view.state.tr.insertText(' (Seine)', view.state.doc.content.size - 1)))
     key(dom, { key: 'Enter', metaKey: true })
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('Paris\n```', 'Paris (Seine)\n```')))
+  })
+
+  it('YAZ-5164: Edit card and Done keep the card where it is on screen: its box is put back at the spot it had, the editor\'s card on the way in, the read card on the way out', async () => {
+    await mount(FILE)
+    boxMoves.length = 0
+    act(() => editButton()!.click())
+    const dom = await cardEditor()
+    await vi.waitFor(() => expect(boxMoves.some((m) => m.box === dom.closest('.card'))).toBe(true))
+    expect(boxMoves.every((m) => m.offset === 120)).toBe(true)
+    boxMoves.length = 0
+    key(dom, { key: 'Enter', metaKey: true })
+    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
+    await vi.waitFor(() => expect(boxMoves.some((m) => m.box === el.querySelector('.card-screen'))).toBe(true))
   })
 
   it('an outside change to the same card while you edit: the editor stays; Done writes your text by the card`s ID on the NEWEST bytes (the card window`s rule: the outside change to the rest of the file stays, yours wins in the card)', async () => {
@@ -412,7 +494,7 @@ describe('the top bar of a card file (YAZ-5102)', () => {
 
   it('YAZ-5141: a click on the title of a locked card file shows the chip`s card ("This card is Read only. Press Enter to allow edits."); Enter asks; a choice unlocks and the title edits at once', async () => {
     const { onRetitle } = await mount(FILE, { readOnly: true, pane: true })
-    const title = el.querySelector<HTMLElement>('.card-file__title-row .page-title__text')!
+    const title = el.querySelector<HTMLElement>('.card-file .card > .card-band .page-title__text')!
     act(() => title.click())
     expect(el.querySelector('.read-only-message__card')?.textContent).toBe('This card is Read only.Press Enter to allow edits.')
     expect(document.activeElement).toBe(title)
@@ -421,8 +503,8 @@ describe('the top bar of a card file (YAZ-5102)', () => {
     expect(el.querySelector('.read-only-chip__ask p')?.textContent).toBe('Allow edits?')
     askButton('Allow edits for 1 minute')
     // YAZ-5145 round 2: the click's rename runs once the tab is unlocked, with no second click.
-    await vi.waitFor(() => expect(el.querySelector('.card-file__title-row .page-title__input')).not.toBeNull())
-    const field = el.querySelector<HTMLTextAreaElement>('.card-file__title-row .page-title__input')
+    await vi.waitFor(() => expect(el.querySelector('.card-file .card > .card-band .page-title__input')).not.toBeNull())
+    const field = el.querySelector<HTMLTextAreaElement>('.card-file .card > .card-band .page-title__input')
     expect(document.activeElement).toBe(field)
     field!.value = 'Capital of Italy'
     key(field!, { key: 'Enter' })
@@ -537,8 +619,8 @@ describe('a new card file (YAZ-5037 phase 4, YAZ-5044)', () => {
 
 /** YAZ-5104: the big title of a card file tab is a page's title: click, type, Enter renames; Esc goes back; read only blocks it. */
 describe('click the title to change it, as on a page (YAZ-5104)', () => {
-  const title = () => el.querySelector<HTMLElement>('.card-file__title-row .page-title__text')
-  const field = () => el.querySelector<HTMLTextAreaElement>('.card-file__title-row .page-title__input')
+  const title = () => el.querySelector<HTMLElement>('.card-file .card > .card-band .page-title__text')
+  const field = () => el.querySelector<HTMLTextAreaElement>('.card-file .card > .card-band .page-title__input')
   const type = (text: string) =>
     act(() => {
       const box = field()!
@@ -630,5 +712,41 @@ describe('the convert actions (YAZ-5037 phase 5)', () => {
     act(() => wikilinks.update(() => null, records(1), [], false, []))
     await mount(many)
     expect(fixes()).toEqual([])
+  })
+})
+
+describe('⌘F in a card file tab (YAZ-5378 part 2): the page\'s find bar, over the card as it shows', () => {
+  const pressCmdF = (target: EventTarget) => act(() => void target.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true, bubbles: true, cancelable: true })))
+  const type = (input: HTMLInputElement, value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+    act(() => {
+      setter.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  }
+  const count = () => el.querySelector('.find-bar__count')?.textContent
+
+  it('⌘F opens the bar; it counts the title and the sides (hidden words too), steps, and Esc closes it and clears the paint', async () => {
+    await mount(FILE, { pane: true })
+    const body = el.querySelector<HTMLElement>('[data-card-file]')!
+    act(() => body.focus())
+    pressCmdF(body)
+    const input = el.querySelector<HTMLInputElement>('.find-bar__input')
+    expect(input).not.toBeNull()
+    expect(document.activeElement).toBe(input)
+    // "Capital of France" (the title), "Capital of {{France}}" (side 1).
+    type(input!, 'france')
+    expect(count()).toBe('1 of 2')
+    expect(paintedFindRanges().map((r) => r.active)).toEqual([true, false])
+    act(() => input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
+    expect(count()).toBe('2 of 2')
+    type(input!, 'paris')
+    expect(count()).toBe('1 of 1')
+    // Its Markdown is not its text.
+    type(input!, '{{')
+    expect(count()).toBe('0 of 0')
+    act(() => input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(el.querySelector('.find-bar')).toBeNull()
+    expect(paintedFindRanges()).toEqual([])
   })
 })

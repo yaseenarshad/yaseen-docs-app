@@ -1,6 +1,6 @@
 /**
  * The Inbox's top row (YAZ-5017, as Mochi's): on the left the filter menu "All cards ▾" (All cards, Up next (YAZ-5028),
- * Due today, New cards, each with how many are left; Up next's count in the Up next chip's colours, grey at 0), then what
+ * Due today, New cards, each with how many are left; Up next only while some card of the vault is marked Up next, YAZ-5321; Up next's count in the Up next chip's colours, grey at 0), then what
  * is under review, quiet, by it ("· in spanish-words": "Folder / Sub", or the page) ONLY when the review is narrower than
  * the vault (Review this folder / page; YAZ-5017 round 2, Yaseen: "isnt this redundant?"); then the CURRENT card's place,
  * one card at a time, the Inbox's ONE breadcrumb (YAZ-5132, Yaseen: "we should just have the breadcrumb at the top"):
@@ -19,22 +19,32 @@
  * says "22 / 48 · Reset": Reset sets today back to the Settings number, never below today's work. No pop-up: it
  * changes today only, and the line under the buttons (Undo, ⌘Z) takes back the last add or Reset.
  *
- * To fix (YAZ-5097): the cards marked Fix later, listed as Archived is, right before it under the same line.
+ * To fix (YAZ-5097): the cards marked Fix later, the last row, under a line. It is no review: its pick shows the
+ * cards as a list, to look at, each with Fixed (`CardInbox`).
  *
- * Archived (YAZ-5046): the last row, under a line, with how many cards of the scope are archived. It is no review: its
- * pick shows the archived cards as a list, to look at, each with Unarchive (`CardInbox`).
+ * Where new cards come from (YAZ-5322, "Final mockup — the New cards row"): the New cards row reads "New cards  from
+ * Spanish ›  10 / 24" — the folder part between the name and the count, so it reads as New cards' only; grey "from All
+ * folders ›" with no pick. A click on it opens the folder picker (`NewCardsPicker`) beside the menu; a click on the rest
+ * of the row is the filter, as before. While a folder is picked, the chip "New cards: Spanish ×" sits by the filter;
+ * × goes back to All folders. The count follows the pick (`cardPlan`).
+ *
+ * No Archived row (YAZ-5319, Yaseen: "there will be too many to review that way"): a folder page's table finds archived
+ * cards (Show cards as rows, Card status), and a card's ⋯ menu unarchives it.
  */
-import { Fragment, useRef, useState, type MouseEvent, type ReactElement } from 'react'
+import { Fragment, useRef, useState, type MouseEvent, type ReactElement, type ReactNode } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import type { CardRating } from '@shared/cardLine'
 import type { AddKind } from '@shared/cardSchedule'
-import type { CardFilter, CardPlacePart, CardReviewSession } from './useCardReview'
+import type { CardFilter, CardPlacePart, CardReviewApi, CardReviewSession } from './useCardReview'
 import { FileIcon } from '../sidebar/FileIcon'
 import { todayCards } from './reviewTime'
 import { TodayWork } from './TodayWork'
 import type { TimeSoFar } from '@shared/reviews'
 import { AddMoreField } from './AddMoreField'
-import { ArchiveIcon, ChevronIcon, DueIcon, FixIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
+import { pickLabel, useNewCardsPicker } from './NewCardsPicker'
+import { ChevronIcon, DueIcon, FixIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
+
+const NO_PICK: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders'> = { setNewFrom: () => undefined, newCardFolders: () => ({ all: 0, folders: [] }) }
 
 /** The filters in menu order, with their names and glyphs. */
 export const CARD_FILTERS: readonly {
@@ -47,8 +57,14 @@ export const CARD_FILTERS: readonly {
   { id: 'due', label: 'Due today', icon: DueIcon },
   { id: 'new', label: 'New cards', icon: () => <NewIcon /> },
   { id: 'fix', label: 'To fix', icon: FixIcon },
-  { id: 'archived', label: 'Archived', icon: ArchiveIcon },
 ]
+
+/**
+ * The filters the cards menu offers (YAZ-5321, Yaseen: "Up next should only show if they have in the card base, in the
+ * vault, up next selected"): Up next only while some card of the vault is marked Up next, or while it is the filter
+ * on show (its last card answered just now). One mark brings the row back.
+ */
+export const inboxFilters = (session: Pick<CardReviewSession, 'upNext' | 'filter'>): typeof CARD_FILTERS => CARD_FILTERS.filter((f) => f.id !== 'next' || session.upNext || session.filter === 'next')
 
 /** The bar's parts (YAZ-5020): each run of the same answer as one part, so a long session draws a few boxes, not one per card. */
 export function progressRuns(answered: readonly CardRating[]): { missed: boolean; count: number }[] {
@@ -73,17 +89,24 @@ interface CardInboxBarProps {
   openPlace?: (part: CardPlacePart) => void
   /** Time so far (YAZ-5130): how today's time shows, Settings › Review. */
   time: TimeSoFar
+  /** The folder pick for new cards (YAZ-5322): the picker's rows and its save; without it the row has no "from". */
+  pick?: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders'>
+  /** The bar's own controls at its right end, quiet until the bar is pointed at (YAZ-5372: the Inbox's zoom). */
+  tools?: ReactNode
 }
 
-export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace, time }: CardInboxBarProps) {
+export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace, time, pick, tools }: CardInboxBarProps) {
   const button = useRef<HTMLButtonElement>(null)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   // YAZ-5042 round 2: the row whose count turned into "Add [n] more"; it closes with the menu.
   const [adding, setAdding] = useState<AddKind | null>(null)
+  const picker = useNewCardsPicker(pick ?? NO_PICK, session)
   const closeMenu = () => {
     setMenu(null)
     setAdding(null)
+    picker.close()
   }
+  const picked = pickLabel(session.newFrom)
   const current = CARD_FILTERS.find((f) => f.id === session.filter) ?? CARD_FILTERS[0]
   const ScopeIcon = session.scope === 'page' ? PageIcon : session.scope === 'folder' ? FolderIcon : VaultIcon
   const toggle = () => {
@@ -111,6 +134,15 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
           <span>{current.label}</span>
           <ChevronIcon />
         </button>
+        {/* YAZ-5322: the saved pick, while it is on; × goes back to All folders. */}
+        {pick !== undefined && picked !== '' && (
+          <span className="card-inbox__pick-chip" title={`New cards come from ${picked}`}>
+            <span className="card-inbox__pick-chip-name">New cards: {picked}</span>
+            <button type="button" className="card-inbox__pick-chip-x" aria-label="New cards from All folders" onMouseDown={(e) => e.preventDefault()} onClick={() => pick.setNewFrom([])}>
+              ×
+            </button>
+          </span>
+        )}
         {/* The scope only when narrower than the vault (YAZ-5017 round 2): the whole vault says nothing here. */}
         {session.scope !== 'vault' && (
           <span className="card-inbox__from" title={`Reviewing ${session.from.join(' / ')}`}>
@@ -146,13 +178,14 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
             {session.position} of {session.total}
           </span>
         )}
+        {tools !== undefined && <span className="card-inbox__tools">{tools}</span>}
         {menu !== null && (
           <ContextMenuSurface x={menu.x} y={menu.y} onClose={closeMenu} className="card-inbox__filter-menu">
-            {CARD_FILTERS.map((f) => {
+            {inboxFilters(session).map((f) => {
               // YAZ-5042: the two rows that have a number a day read "today / total" (round 2), and add on a click.
               const kind: AddKind | null = f.id === 'new' ? 'new' : f.id === 'next' ? 'next' : null
               const add = kind === null || addCards === undefined ? 0 : session.adds[kind]
-              const count = f.id === 'archived' ? session.archived.length : f.id === 'fix' ? session.toFix.length : session.counts[f.id]
+              const count = f.id === 'fix' ? session.toFix.length : session.counts[f.id]
               const total = kind !== null && session.limited[kind] ? count + session.more[kind] : null
               const reset = kind !== null && resetCards !== undefined && session.canReset[kind]
               if (kind !== null && adding === kind && add > 0)
@@ -176,6 +209,9 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
                   </div>
                 )
               const pick = (e: MouseEvent) => {
+                // YAZ-5322: a click on "from … ›" opens the folder picker beside the menu (the menu stays open).
+                const from = e.target instanceof Element ? e.target.closest('.card-inbox__new-from') : null
+                if (from !== null) return picker.open(from, 'right')
                 // A click on a count while cards wait: "Add [n] more" (the menu stays open); elsewhere on the row: the filter.
                 if (kind !== null && add > 0 && e.target instanceof Element && e.target.closest('.card-inbox__count') !== null) return setAdding(kind)
                 closeMenu()
@@ -183,13 +219,18 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
               }
               return (
                 <Fragment key={f.id}>
-                  {/* YAZ-5046: a line sets the lists apart (To fix, YAZ-5097, then Archived): their cards are to look at, not to review. */}
+                  {/* YAZ-5097: a line sets the To fix list apart: its cards are to look at, not to review. */}
                   {f.id === 'fix' && <div className="card-inbox__filter-sep" role="separator" />}
                   <div className="card-inbox__filter-row" role="none">
                     <button type="button" role="menuitemradio" aria-checked={f.id === session.filter} className="ctx-menu__item card-inbox__filter-item" data-filter={f.id} onMouseDown={(e) => e.preventDefault()} onClick={pick}>
                       <span className="card-inbox__filter-name">
                         <f.icon />
                         {f.label}
+                        {f.id === 'new' && pick !== undefined && (
+                          <span className="card-inbox__new-from" data-on={picked !== '' || undefined} title="Which folders new cards come from">
+                            from <span className="card-inbox__new-from-name">{picked === '' ? 'All folders' : picked}</span> ›
+                          </span>
+                        )}
                       </span>
                       <span
                         className="card-inbox__count"
@@ -212,6 +253,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
             })}
           </ContextMenuSurface>
         )}
+        {menu !== null && picker.picker}
       </div>
       <div className="card-inbox__progress" role="progressbar" aria-label="Cards answered" aria-valuemin={0} aria-valuemax={session.size} aria-valuenow={session.answered.length}>
         {progressRuns(session.answered).map((run, i) => (

@@ -16,6 +16,7 @@ import { setBoardHighlight } from './boardHighlight'
 import { holdOverStrip, releaseOverStrip } from './stripDrop'
 import { IconsContext } from '../sidebar/FileIcon'
 import { buildRowIcons, rowIcon } from '../sidebar/rowIcons'
+import { INBOX_TRAY_PATH } from '../views/view/icons'
 
 // The OS-action items call the bridge (YAZ-963): stub the verbs, keep BridgeRequestError real.
 vi.mock('../api', async (importOriginal) => ({
@@ -202,7 +203,7 @@ describe('TabBar', () => {
 
     const nav = [...el.querySelectorAll<HTMLButtonElement>('.tabbar-nav__btn')]
     expect(nav.map((b) => b.getAttribute('aria-label'))).toEqual(['Back', 'Forward', 'Show all open tabs'])
-    expect([nav[2].title, nav[2].getAttribute('aria-pressed')]).toEqual(['Show all open tabs (⌘⇧M)', 'true'])
+    expect([nav[2].title, nav[2].getAttribute('aria-pressed')]).toEqual(['Show all open tabs (Cmd+Shift+M)', 'true'])
     act(() => nav[2].click())
     expect(onToggleOverview).toHaveBeenCalledTimes(1)
   })
@@ -225,6 +226,16 @@ describe('TabBar', () => {
     // Behind a page tab: the page tab is the active one again.
     act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={['/v/a.md', '/v/b.md']} active="/v/a.md" inbox={{ ...inbox, active: false }} {...noop} onActivate={onActivate} onClose={onClose} {...noNav} />))
     expect([...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false'])
+  })
+
+  it('YAZ-5374: the Inbox tab wears the sidebar Inbox row\'s tray icon before its name, at the 14px of a page tab\'s icon', () => {
+    const el = mount({ tabs: ['/v/a.md'], active: '/v/a.md', inbox: { label: 'Inbox', active: false, onActivate: vi.fn(), onClose: vi.fn() }, ...noop, ...noNav })
+    const label = el.querySelector('.tabbar__tab--inbox .tabbar__label')!
+    const icon = label.firstElementChild!
+    expect(icon.matches('svg.tabbar__inbox-icon')).toBe(true)
+    expect([icon.getAttribute('width'), icon.getAttribute('height')]).toEqual(['14', '14'])
+    expect(icon.querySelector('path')?.getAttribute('d')).toBe(INBOX_TRAY_PATH)
+    expect(label.textContent).toBe('Inbox')
   })
 
   it('YAZ-5016: the Inbox tab\'s right-click menu has only the tab\'s own items, no file item; each asks App', () => {
@@ -289,7 +300,7 @@ describe('TabBar', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
 
     const plus = el.querySelector<HTMLButtonElement>('button[aria-label="New tab"]')!
-    expect(plus.title).toBe('New tab (⌘T)')
+    expect(plus.title).toBe('New tab (Cmd+T)')
     // After the tabs, and no child of the scroller: it stays on show when the strip scrolls.
     expect(plus.closest('.tabbar')).toBeNull()
     expect(el.querySelector('.tabbar')?.compareDocumentPosition(plus)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
@@ -300,7 +311,7 @@ describe('TabBar', () => {
   it('the tooltips name the keys as they are NOW (YAZ-3410 item 3): a changed key, and no key at all', () => {
     const base = { tabs: ['/v/a.md'], active: '/v/a.md', onNewTab: vi.fn(), onToggleOverview: vi.fn(), ...noop, ...noNav }
     const titles = (el: HTMLElement) => [el.querySelector<HTMLButtonElement>('button[aria-label="New tab"]')?.title, el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')?.title]
-    expect(titles(mount({ ...base, hotkeys: { newTab: 'CmdOrCtrl+Alt+T', tabOverview: null } }))).toEqual(['New tab (⌥⌘T)', 'Show all open tabs'])
+    expect(titles(mount({ ...base, hotkeys: { newTab: 'CmdOrCtrl+Alt+T', tabOverview: null } }))).toEqual(['New tab (Option+Cmd+T)', 'Show all open tabs'])
   })
 
   it('E: a tab is labelled with its title, a folder tab with its folder\'s; one the index does not hold keeps its file name (YAZ-2420 D14)', () => {
@@ -946,7 +957,7 @@ describe('TabBar history buttons (YAZ-721; the keys since YAZ-3647 D7)', () => {
     const el = mount({ ...tabs, ...noNav })
     const labels = [...el.querySelectorAll<HTMLButtonElement>('.tabbar-nav__btn')]
     expect(labels.map((b) => b.getAttribute('aria-label'))).toEqual(['Back', 'Forward'])
-    expect(labels.map((b) => b.title)).toEqual(['Back (⌥⌘←)', 'Forward (⌥⌘→)'])
+    expect(labels.map((b) => b.title)).toEqual(['Back (Option+Cmd+Left)', 'Forward (Option+Cmd+Right)'])
     // Outside .tabbar, so the strip's own drop guards (e.target !== e.currentTarget) are untouched.
     expect(el.querySelector('.tabbar .tabbar-nav__btn')).toBeNull()
   })
@@ -954,8 +965,8 @@ describe('TabBar history buttons (YAZ-721; the keys since YAZ-3647 D7)', () => {
   it('with a new tab to open a step in, the tooltip names the clicks that are not a step too (YAZ-4156 1)', () => {
     const el = mount({ ...tabs, ...noNav, onOpenStep: vi.fn() })
     expect([...el.querySelectorAll<HTMLButtonElement>('.tabbar-nav__btn')].map((b) => b.title)).toEqual([
-      'Back (⌥⌘←)\n⌘-click: open in a new tab\nRight-click or hold: history',
-      'Forward (⌥⌘→)\n⌘-click: open in a new tab\nRight-click or hold: history',
+      'Back (Option+Cmd+Left)\n⌘-click: open in a new tab\nRight-click or hold: history',
+      'Forward (Option+Cmd+Right)\n⌘-click: open in a new tab\nRight-click or hold: history',
     ])
   })
 
@@ -1211,6 +1222,10 @@ describe('the tab of the page the board highlights (YAZ-2648)', () => {
 describe('the widths of the tabs (YAZ-2689)', () => {
   /** The declarations of the ONE rule whose selector is exactly `selector`. */
   const rule = (selector: string) => new RegExp(`(?:^|\\})\\s*${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'm').exec(tabsCss.replace(/\/\*[\s\S]*?\*\//g, ''))?.[1] ?? ''
+
+  it('YAZ-5375: focus mode — the workspace marked `data-inbox-focus` (App: the Inbox tab on show, focus mode on) hides the tab row', () => {
+    expect(rule('.workspace[data-inbox-focus] > .tabbar-row')).toMatch(/display:\s*none;/)
+  })
 
   it('YAZ-3808 6F: with no hover to trust (a drag, and after it until the mouse moves), a tab under the pointer does not light up', () => {
     expect(rule('.tabbar--hoverless .tabbar__tab:not(.tabbar__tab--active):not(.tabbar__tab--lit):hover::before')).toMatch(/background:\s*var\(--tab-fill\);/)

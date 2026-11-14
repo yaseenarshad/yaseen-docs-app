@@ -5,7 +5,9 @@
  * keeps the list in state and the DOM keeps each layer's scroll.
  */
 import { fileKind } from '@shared/fileKind'
+import type { CardPlace } from '../editor/card/cardOpen'
 import { LEGACY_EXPLORE_PAGE_BOX_KEY, movedStorageItem } from '@shared/legacyNames'
+import { savedZoom, saveZoom } from '../editor/DocumentZoom'
 
 export type ExploreLayer =
   | { id: number; kind: 'search' }
@@ -22,9 +24,9 @@ export type ExploreLayer =
       editAsk?: number
       /** Bumped by ⌘↵ in edit (YAZ-4988): the layer saves, locks again if its timed unlock runs (Lock now), and reads. */
       leaveAsk?: number
-      /** The card to land on when the page opens (YAZ-4962): its place among the page's cards. */
-      card?: number
-      /** The Inbox's E (YAZ-5145): once the layer edits, the card opens in Edit card (`card` of a page, else the card file's). */
+      /** The card to land on when the page opens (YAZ-4962): its ID, and its place among the page's cards (YAZ-5164: found by its ID). */
+      card?: CardPlace
+      /** The Inbox's E on a card in a page (YAZ-5145): once the layer edits, the card at `card` opens in Edit card. A card file's opens by itself (round 3). */
       editCard?: boolean
       /** Opened from the Inbox (YAZ-5009, YAZ-5145): ⌘↵ while reading goes back to the Inbox, not to a tab. */
       fromInbox?: boolean
@@ -78,10 +80,11 @@ export type FileLayer = Extract<ExploreLayer, { kind: 'page' | 'board' | 'card' 
 /**
  * What App asks the stack to open (YAZ-4962): a page (landing on a card), or a card window (a page card's Open card).
  * The Inbox's O and E (YAZ-5145) ask for the page layer Explore itself opens: `edit` asks it to edit as Explore's own E
- * does (a Read only vault asks "Allow edits?" first), `editCard` then opens the landed card's Edit card, and
+ * does (a Read only vault asks "Allow edits?" first; a card file then opens in Edit card, as on Explore's own E),
+ * `editCard` opens the landed card's Edit card (a card in a page), and
  * `fromInbox` makes ⌘↵ while reading go back to the Inbox.
  */
-export type ExploreRequest = { kind: 'page'; path: string; card?: number; edit?: boolean; editCard?: boolean; fromInbox?: boolean } | { kind: 'card'; path: string; cardId: string | null; index: number }
+export type ExploreRequest = { kind: 'page'; path: string; card?: CardPlace; edit?: boolean; editCard?: boolean; fromInbox?: boolean } | { kind: 'card'; path: string; cardId: string | null; index: number }
 
 /** The page, board or card layer nearest the top, or null: what ⌘↵ opens in a tab (a card's page). */
 export function topPage(layers: readonly ExploreLayer[]): FileLayer | null {
@@ -243,22 +246,8 @@ export function savedLayerBox(kind: ExploreLayer['kind']): LayerBox | null {
  * percent in the page zoom's range (50–400), 100 by default. A page tab's zoom is its own and never this one.
  */
 const ZOOM_KEY = 'explore:zoom'
-export function savedExploreZoom(): number {
-  try {
-    const n = Number(localStorage.getItem(ZOOM_KEY))
-    return Number.isInteger(n) && n >= 50 && n <= 400 ? n : 100
-  } catch {
-    return 100
-  }
-}
-export function saveExploreZoom(zoom: number): void {
-  try {
-    if (zoom === 100) localStorage.removeItem(ZOOM_KEY)
-    else localStorage.setItem(ZOOM_KEY, String(zoom))
-  } catch {
-    // No storage: the zoom lasts the stack.
-  }
-}
+export const savedExploreZoom = (): number => savedZoom(ZOOM_KEY)
+export const saveExploreZoom = (zoom: number): void => saveZoom(ZOOM_KEY, zoom)
 
 export function saveLayerBox(kind: ExploreLayer['kind'], box: LayerBox | null): void {
   try {

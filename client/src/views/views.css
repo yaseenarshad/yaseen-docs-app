@@ -3576,11 +3576,6 @@
   border-radius: 7px;
   cursor: pointer;
 }
-.change-ask__actions kbd {
-  padding: 1px 4px;
-  font: 500 10px/1.3 ui-monospace, 'SF Mono', Menlo, monospace;
-  border-radius: 4px;
-}
 .change-ask__cancel {
   color: var(--fg);
   background: var(--bg);
@@ -3589,10 +3584,6 @@
 .change-ask__cancel:hover {
   background: color-mix(in srgb, var(--fg) 4%, var(--bg));
 }
-.change-ask__cancel kbd {
-  color: var(--fg-muted);
-  background: color-mix(in srgb, var(--fg) 7%, transparent);
-}
 .change-ask__go {
   color: #fff;
   background: var(--accent);
@@ -3600,10 +3591,6 @@
 }
 .change-ask__go:hover {
   background: color-mix(in srgb, var(--accent) 88%, #000);
-}
-.change-ask__go kbd {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.2);
 }
 .change-ask__actions > button:focus {
   outline: none;

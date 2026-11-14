@@ -165,18 +165,24 @@ describe('the embed and its head (Q4, locked)', () => {
     expect(getMarkdownForSave(crepe)).toBe(markdown)
   })
 
-  it('YAZ-5164 part 3: a card in a page shows its title first in the head (the page title`s component), and its card never repeats it; a click renames it in its page', async () => {
+  it('YAZ-5164 part 3, YAZ-5308 A3: an embed shows its title in the band under its head (the page title`s component), and its card never repeats it; a click renames a card in a page in its page; a card file`s shows only', async () => {
     const flag = globalThis as unknown as Record<string, unknown>
     flag.IS_REACT_ACT_ENVIRONMENT = true
     onTestFinished(() => void delete flag.IS_REACT_ACT_ENVIRONMENT)
     const { root } = await mount('![[GEO-140]]\n\n![[GEO-1]]\n')
     // The boxes, as drawn now (the page draws its widgets again as the index lands).
     const inPage = () => boxes(root)[1]!
-    await vi.waitFor(() => expect(inPage().querySelector('.card__head .card__title .page-title__text')?.textContent).toBe('Largest country?'))
+    await vi.waitFor(() => expect(inPage().querySelector('.card__head + .card-band .card__title .page-title__text')?.textContent).toBe('Largest country?'))
     await vi.waitFor(() => expect(inPage().querySelector('.card__body')?.textContent).toContain('Russia'))
     expect(inPage().querySelector('.card__body')?.textContent).not.toContain('Largest country?')
-    // A card file's title is the head's name already: no second title.
-    expect(boxes(root)[0]!.querySelector<HTMLElement>('.card__title')?.hidden).toBe(true)
+    expect(inPage().querySelector('.card__head')?.textContent).not.toContain('Largest country?')
+    // A card file's card has the same band; a click there renames nothing (only its tab renames the file).
+    const file = () => boxes(root)[0]!
+    expect(file().querySelector<HTMLElement>('.card-band')?.hidden).toBe(false)
+    expect(file().querySelector('.card-band .page-title__text')?.textContent).toBe('Capital of France')
+    press(file().querySelector('.card-band .page-title__text'))
+    act(() => file().querySelector<HTMLElement>('.card-band .page-title__text')!.click())
+    expect(file().querySelector('.card-band .page-title__input')).toBeNull()
     press(inPage().querySelector('.card__title .page-title__text'))
     act(() => inPage().querySelector<HTMLElement>('.card__title .page-title__text')!.click())
     const field = inPage().querySelector<HTMLTextAreaElement>('.card__title .page-title__input')!
@@ -222,7 +228,7 @@ describe('the embed and its head (Q4, locked)', () => {
 
 describe('YAZ-5105 round 4: the Reviews strip in an embed, the same strip as the Inbox and the page card', () => {
   const LINE = '<!-- card: GEO-140, 2026-11-01T09:00Z good, 2026-11-06T09:00Z again 12s -->'
-  it('a card with reviews shows THE strip (`CardReviews`) under its text, with its facts; a click opens the table; the delete writes the original; no door: no strip', async () => {
+  it('a card with reviews shows THE strip (`CardStrip`) under its text, its right side empty (YAZ-5381); a click opens the table; the delete writes the original; no door: no strip', async () => {
     const deleteReview = vi.fn(async () => {})
     const settings = () => DEFAULT_REVIEW_SETTINGS
     const { root } = await mount('Plan\n\n![[GEO-140]]\n', { cardReviews: { settings, deleteReview }, wikilinks: vault(records({ cardFile: { mtime: 51 } })) }, cardFileText.replace('<!-- card: GEO-140, title "Capital of France" -->', LINE))
@@ -231,7 +237,7 @@ describe('YAZ-5105 round 4: the Reviews strip in an embed, the same strip as the
     const strip = box.querySelector('.card-reviews')!
     expect(strip.classList.contains('card-reviews--strip')).toBe(true)
     expect(strip.parentElement?.previousElementSibling?.classList.contains('card__body')).toBe(true)
-    expect(box.querySelector('.card-reviews__facts')?.textContent).toMatch(/^Due /)
+    expect(box.querySelector('.card-reviews__facts')).toBeNull()
     ;(box.querySelector('.card-reviews__toggle') as HTMLButtonElement).click()
     await vi.waitFor(() => expect(box.querySelectorAll('.card-reviews__table tbody tr')).toHaveLength(3))
     // A press in the strip never selects the embed; the delete asks, then writes the ORIGINAL through the vault's door.

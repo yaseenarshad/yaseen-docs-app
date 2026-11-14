@@ -11,6 +11,7 @@ import { createPortal } from 'react-dom'
 import { frontmatterInterior, parseFrontmatter, renameFrontmatterKey, replaceFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { ALSO_IN_KEY } from '@shared/alsoIn'
 import { isCardMark } from '@shared/cardFileFormat'
+import { isCardPropertyName, renameCardProperty, withCardProperty, withoutCardProperty, type CardLine } from '@shared/cardLine'
 import { FOLDER_VALUES_KEY, folderBlocks, folderValues, setFolderValue } from '@shared/folderValues'
 import { findKey, foldedValue, heldKey, keyFold, respell, setFolderValueOneSpelling, setOneSpelling, spellings } from '@shared/propertyKeys'
 import { inheritColumnsOf } from '@shared/folderPage'
@@ -80,7 +81,25 @@ export interface FrontmatterPanelProps {
    * page's rows are only the columns of the folder it lives in. Absent: the default (on).
    */
   inheritColumns?: boolean
+  /**
+   * A CARD's own properties instead of the page's (YAZ-5383, YAZ-5349 option A): the strip's Properties part. The same
+   * rows, types, menus and "+ Add property"; only the save target differs — the card's line (`withCardProperty`,
+   * `renameCardProperty`, `withoutCardProperty`), through `change`, the host's one write of the card line. The rows
+   * show open (the strip's part is the toggle), with no folder columns, no raw YAML and no app keys but the card line's
+   * words, which no name may be.
+   */
+  card?: CardPropertiesTarget
 }
+
+/** Where a card's properties are read and written (YAZ-5383). */
+export interface CardPropertiesTarget {
+  /** The card's own properties now, off its card line. */
+  values: Readonly<Record<string, unknown>>
+  /** Changes the card's line: the host's one write (a transaction for a card in a page, a file write elsewhere). */
+  change: (change: (line: CardLine) => CardLine) => Promise<void>
+}
+
+const NO_KEYS: ReadonlySet<string> = new Set()
 
 /** The "Column on" choice that makes no column (7A 1): a folder's choice is `/` and its root-relative path, so the vault root (`/`) is not this. */
 const NO_COLUMN = 'no-column'
@@ -202,7 +221,7 @@ export function FrontmatterPanel(props: FrontmatterPanelProps) {
   )
 }
 
-function Panel({ file, root, properties: decls = null, wikilinks, readOnly = false, links, inheritColumns = DEFAULT_FOLDER_PAGES.inheritColumns, onNotice }: FrontmatterPanelProps) {
+function Panel({ file, root, properties: decls = null, wikilinks, readOnly = false, links, inheritColumns = DEFAULT_FOLDER_PAGES.inheritColumns, onNotice, card }: FrontmatterPanelProps) {
   const unit = useUnit()
   /** The definition popover: `file` is the `.folder.md` whose column it edits (a column's owner, or a separate column's page); none = the vault's `properties.json`. */
   /** Edit property's "Column on" (YAZ-4769), awaiting its confirm: the column's folder now (`from`) and the one picked (`to`); null is no folder. */
@@ -219,17 +238,21 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
   /** The settings records by folder, once per snapshot. */
   const folderMap = useMemo(() => byFolder(folders), [folders])
   const ids = wikilinks?.ids === true
-  const reserved = reservedKeys(ids)
+  // A card has no app keys of its own: its line's words are refused as names instead (`nameRefusal`).
+  const reserved = card === undefined ? reservedKeys(ids) : NO_KEYS
   /** The keys no capitals fold ever moves or removes (YAZ-4769): the app's, and a `.folder.md`'s settings block. */
-  const keep = columnReservedKeys(ids)
+  const keep = card === undefined ? columnReservedKeys(ids) : NO_KEYS
   const dir = dirname(file.path)
   // A folder's OWN panel (YAZ-2290 D9) is mounted on the settings file itself. Its properties are
   // facts about the folder: the columns it declares for its pages neither type nor list here,
   // and the view settings block is edited through the views, so it is no row.
-  const own = isFolderSettingsPath(file.path)
+  const own = card === undefined && isFolderSettingsPath(file.path)
+  /** What a removal takes the value from, in the panel's words. */
+  const holder = own ? 'folder' : card !== undefined ? 'card' : 'page'
   const byId = useMemo(() => foldersById(folders), [folders])
   const openMemory = useContext(PropertiesOpenMemory)
-  const [expanded, setExpanded] = useState(openMemory?.current ?? false)
+  // A card's rows show open: the strip's part is their toggle (YAZ-5383).
+  const [expanded, setExpanded] = useState(card !== undefined || (openMemory?.current ?? false))
   const toggle = () => {
     const next = !expanded
     if (openMemory !== null) openMemory.current = next
@@ -310,6 +333,12 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
    */
   const commit = async (key: string, value: unknown, home: Home | null): Promise<void> => {
     if (readOnly) return
+    if (card !== undefined) {
+      // The card's line, not the page's properties (YAZ-5383): one write of the line, every other spelling of the key gone.
+      await card.change((line) => (value === undefined ? withoutCardProperty(line, key) : withCardProperty(line, key, value)))
+      setError(null)
+      return
+    }
     let change: ContentTransform = (content) => setOneSpelling(content, key, value, keep)
     if (home !== null) {
       const id = home.id ?? (await folderId(absOf(home.dir)))
@@ -320,9 +349,10 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
     setError(null)
   }
 
-  const { properties: parsed, error: parseError } = useMemo(() => parseFrontmatter(splitFrontmatter(snap.content).frontmatter), [snap.content])
+  const { properties: parsed, error: parseError } = useMemo((): { properties: Record<string, unknown>; error?: string } => (card === undefined ? parseFrontmatter(splitFrontmatter(snap.content).frontmatter) : { properties: { ...card.values } }), [snap.content, card])
   /** The page's folder, root-relative; null for a page outside the vault, which the index never reads. */
-  const relDir = vault !== undefined && inFolder(dir, vault) ? (dir === vault ? '' : relTo(vault, dir)) : null
+  // A card's properties are typed by the vault's declarations only (YAZ-5383): no folder's columns, so no folder here.
+  const relDir = card === undefined && vault !== undefined && inFolder(dir, vault) ? (dir === vault ? '' : relTo(vault, dir)) : null
   /**
    * The folder whose page types the page's fields (C2): the one it lives in. A folder's own page is a row of its
    * PARENT's page (YAZ-3746 2D, D31) when a parent view shows subfolders as rows; the vault root has no parent.
@@ -372,14 +402,14 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
    * two spellings shows the column's; the other stays in the file (Edit as YAML shows it) and goes with the next write.
    */
   // A card file's mark (`kind: card`, YAZ-5037) is no row: the file is a card file, not a page with a property. Any other `kind` value shows.
-  const ownFields = useMemo(() => respell(Object.fromEntries(Object.entries(parsed).filter(([key, value]) => !isCardMark(key, value) && (!ids || (key !== FOLDER_VALUES_KEY && key !== TITLE_KEY)))), colSpell, keep), [parsed, ids, colSpell, keep])
+  const ownFields = useMemo(() => respell(Object.fromEntries(Object.entries(parsed).filter(([key, value]) => !isCardMark(key, value) && (card !== undefined || !ids || (key !== FOLDER_VALUES_KEY && key !== TITLE_KEY)))), colSpell, keep), [parsed, ids, colSpell, keep])
   /**
    * "Other folders' values for this page" (C9): every value in a block of `in` that no separate row above shows — a
    * page the page left, a page whose column is no longer separate or was deleted with Keep, a folder the app cannot
    * find. Each has Clear.
    */
   const keptValues = useMemo(() => {
-    if (!ids) return []
+    if (!ids || card !== undefined) return []
     // A separate row shows its value in any capitals (YAZ-4769), so the fold says what it shows.
     const shownHere = new Set(separatePages.flatMap(({ home, keys }) => (home.id === undefined ? [] : keys.map((key) => `${home.id}\0${keyFold(key)}`))))
     return folderBlocks(parsed).flatMap(([id, values]) =>
@@ -387,7 +417,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
         .filter(([key]) => !shownHere.has(`${id}\0${keyFold(key)}`))
         .map(([key, raw]) => ({ id, key, raw, name: byId.get(id)?.title ?? id })),
     )
-  }, [ids, separatePages, parsed, byId])
+  }, [ids, card, separatePages, parsed, byId])
 
   /** `also_in` as the eye reads it: each folder id as that folder's title; an entry no folder has stays as written. */
   const folderNames = (raw: unknown): unknown => {
@@ -404,8 +434,8 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
   const empty = disk === '' && snap.draft === null
   // The words live in the tooltip and the accessible name (YAZ-1758); the chip itself shows a glyph.
   const label = empty ? 'Add properties' : count > 0 ? `Properties (${count})` : 'Properties'
-  // A block that will not parse has no rows to show: the raw fallback IS the surface then.
-  const rawMode = yamlMode || parseError !== undefined
+  // A block that will not parse has no rows to show: the raw fallback IS the surface then. A card line has no YAML.
+  const rawMode = card === undefined && (yamlMode || parseError !== undefined)
   // The page's fields, typed by its page's columns, then the page's columns it holds no value for (C8: "like a database").
   const fieldColumns = Object.keys(pageCols).filter((key) => !reserved.has(key))
   const typedRows = rawMode
@@ -440,6 +470,13 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
     }
     // A page with no id has no block: its empty rows hold no key to rename (YAZ-4635 P4).
     if (home !== null && home.id === undefined) return
+    if (card !== undefined) {
+      void card
+        .change((line) => renameCardProperty(line, from, to))
+        .then(() => setError(null))
+        .catch((err: unknown) => setError(`Could not rename "${from}": ${messageOf(err)}`))
+      return
+    }
     const at = home === null ? [] : [FOLDER_VALUES_KEY, home.id!]
     const change: ContentTransform = (content) => renameFrontmatterKey(content, at, from, to)
     void transformFile(file.path, change)
@@ -488,9 +525,11 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
    */
   const nameRefusal = (name: string, home: Home | null, from?: string): string | null => {
     if (!isPropertyName(name)) return 'Type a property name'
+    // A card's line words are its own facts (YAZ-5379): `title`, `off`, `next`, `notitle` are never a property's name.
+    if (card !== undefined && !isCardPropertyName(name)) return `"${name}" is a word the card line uses — choose another name`
     const fold = keyFold(name)
     const held = Object.keys(home === null ? parsed : folderValues(parsed, home.id)).find((key) => key !== from && keyFold(key) === fold)
-    if (held !== undefined) return `"${held}" is already a property of this page`
+    if (held !== undefined) return `"${held}" is already a property of this ${holder}`
     // A built-in prefix (YAZ-4637 M7): the views would read `file.x` as a file field, never as this key.
     const clash = builtInPrefixRefusal(name)
     if (clash !== null) return clash
@@ -694,14 +733,16 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
   }
 
   return (
-    <section className="frontmatter-panel" onClickCapture={onPillClick} onDoubleClickCapture={onPillClick} onMouseOver={onPillOver} onMouseOut={onPillOut}>
-      <button type="button" className="frontmatter-panel__header" aria-expanded={expanded} aria-label={label} title={label} onClick={toggle}>
-        <svg className="frontmatter-panel__chevron" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="m4 6 4 4 4-4" />
-        </svg>
-        <PropertiesIcon />
-        {count > 0 && <span className="frontmatter-panel__count">{count}</span>}
-      </button>
+    <section className={card === undefined ? 'frontmatter-panel' : 'frontmatter-panel frontmatter-panel--card'} onClickCapture={onPillClick} onDoubleClickCapture={onPillClick} onMouseOver={onPillOver} onMouseOut={onPillOut}>
+      {card === undefined && (
+        <button type="button" className="frontmatter-panel__header" aria-expanded={expanded} aria-label={label} title={label} onClick={toggle}>
+          <svg className="frontmatter-panel__chevron" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="m4 6 4 4 4-4" />
+          </svg>
+          <PropertiesIcon />
+          {count > 0 && <span className="frontmatter-panel__count">{count}</span>}
+        </button>
+      )}
       {propertyMenu && createPortal(<Popover label={`Property ${propertyMenu.key}`} anchor={propertyMenu.anchor} onClose={() => { if (!saving) setPropertyMenu(null) }} className="frontmatter-property-menu">
         <div className="frontmatter-property-menu__heading"><PropertyTypeIcon kind={propertyMenu.definition.kind} /><strong>{propertyMenu.key}</strong></div>
         {propertyMenu.editing ? <>
@@ -743,7 +784,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
         </> : <>
           {/* A column's row edits that column on its folder (C2, C6); a field no folder defines, with a vault root, the vault's declaration (YAZ-4551 D21). */}
           {(propertyMenu.file !== undefined || (typeof root === 'string' && root !== '')) && <button className="view-popover__item" type="button" onClick={() => setPropertyMenu({ ...propertyMenu, editing: true })}>Edit property <span>›</span></button>}
-          <button className="view-popover__item" type="button" onClick={() => { setRemoving({ key: propertyMenu.key, home: propertyMenu.home }); setPropertyMenu(null) }}>Remove from this {own ? 'folder' : 'page'}…</button>
+          <button className="view-popover__item" type="button" onClick={() => { setRemoving({ key: propertyMenu.key, home: propertyMenu.home }); setPropertyMenu(null) }}>Remove from this {holder}…</button>
         </>}
       </Popover>, document.body)}
       {/* YAZ-4769: a column's move asks first, with what each folder gains or loses; then Undo. */}
@@ -771,7 +812,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
       {removing !== null && createPortal(
         <ConfirmSheet
           labelId="confirm-remove-property-text"
-          text={`Remove "${removing.key}" from this ${own ? 'folder' : 'page'}? Its value goes from the ${own ? 'folder page' : 'page'}. You can undo it.`}
+          text={`Remove "${removing.key}" from this ${holder}? Its value goes from the ${own ? 'folder page' : holder}. You can undo it.`}
           confirmLabel="Remove"
           danger
           onConfirm={() => {
@@ -803,7 +844,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
             void navigator.clipboard.writeText(copyText(rowMenu.row.raw)).catch((err: unknown) => setError(`Could not copy "${rowMenu.row.key}": ${messageOf(err)}`))
             setRowMenu(null)
           }}>Copy value</button>
-          <button type="button" className="ctx-menu__item ctx-menu__item--danger" role="menuitem" onClick={() => { setRemoving({ key: rowMenu.row.key, home: rowMenu.row.home }); setRowMenu(null) }}>Remove from this {own ? 'folder' : 'page'}…</button>
+          <button type="button" className="ctx-menu__item ctx-menu__item--danger" role="menuitem" onClick={() => { setRemoving({ key: rowMenu.row.key, home: rowMenu.row.home }); setRowMenu(null) }}>Remove from this {holder}…</button>
         </>}
       </ContextMenuSurface>, document.body)}
       {expanded && (
@@ -952,7 +993,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
               </button>
             )}
             {/* No rows exist to go back to while the block will not parse, so the toggle stays away. */}
-            {parseError === undefined && (
+            {parseError === undefined && card === undefined && (
               <button
                 type="button"
                 className="frontmatter-panel__btn frontmatter-panel__mode"

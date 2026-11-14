@@ -6,6 +6,7 @@ import { DateValue, ErrorValue, FileValue, LinkValue, type Resolver, type Value,
 import { formatDateValue, formatNumber } from './columnFormat'
 import type { ViewSet } from './viewSchema'
 import { canonicalKey } from './view/keys'
+import { cardCellText } from './cardRows'
 
 /**
  * "Export as CSV…" and "Copy as table" (YAZ-4594 S30): a view's shown rows × its shown columns, as the cells show them.
@@ -50,6 +51,9 @@ export function cellText(row: Row, key: string, ctx: CellTextContext): string {
   const c = canonicalKey(key)
   if (c === 'file.name') return row.record.title
   if (c === 'file.folder') return row.record.folder === ctx.pageFolder ? '' : ctx.folderTitle(row.record.folder)
+  // A card row's success rate (YAZ-5319), in percent as its cell shows it.
+  const card = cardCellText(c, row.values[key])
+  if (card !== null) return card
   return valueText(row.values[key], ctx.resolve, c.startsWith('note.') ? ctx.decls[c.slice('note.'.length)] : undefined)
 }
 

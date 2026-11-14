@@ -24,7 +24,7 @@
   color: var(--fg-muted);
 }
 /* Folded on a bullet, or in a table cell: the head alone. */
-.card-embed--folded .card__body {
+.card-embed--folded :is(.card__body, .card-band) {
   display: none;
 }
 .card.card-embed--folded .card__head {

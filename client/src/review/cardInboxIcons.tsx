@@ -13,8 +13,6 @@ const glyph = (body: ReactElement, size = 14): ReactElement => (
 
 /** All cards: an inbox tray, as Mochi's menu draws it; the sidebar's Inbox row wears the same shape (YAZ-5131). */
 export const InboxTrayIcon = () => glyph(<path d={INBOX_TRAY_PATH} />)
-/** Archived (YAZ-5046): an archive box, the Inbox ⋯'s Archive card glyph. */
-export const ArchiveIcon = () => glyph(<path d="M2.5 3.5h11v3h-11zM3.5 6.5v6h9v-6M6.5 9h3" />)
 /**
  * The wrench of Fix later (YAZ-5097; YAZ-5197: a pencil read as "Edit card"): the To fix row and the Inbox ⋯'s Fix later.
  * Tabler's `tool`, the wrench the app already draws for the Present tab (`toolsIcon`), redrawn at 2/3 for the 16 px grid.
@@ -68,3 +66,6 @@ export const EasyIcon = () => answerGlyph(<path d="m4 8.25 4-4 4 4M4 12.25l4-4 4
 export const TrashIcon = ({ size = 14 }: { size?: number }) => glyph(<path d="M2.75 4.25h10.5M6.25 4.25v-1.5h3.5v1.5M4 4.25l.6 8.5a1 1 0 0 0 1 .95h4.8a1 1 0 0 0 1-.95l.6-8.5M6.75 7v4M9.25 7v4" />, size)
 /** The Reviews toggle (YAZ-5032, as Mochi's "✓ 4 Reviews"): a plain check, the text colour. */
 export const ReviewsIcon = ({ size = 13 }: { size?: number }) => glyph(<path d="m3 8.5 3.25 3.25L13 4.75" />, size)
+/** Focus mode (YAZ-5375): four corners pointing out (off: the room it gives), pointing in once on (back to the tabs). */
+export const FocusIcon = ({ on }: { on: boolean }) =>
+  glyph(on ? <path d="M6 2.5v3.5H2.5M10 2.5v3.5h3.5M6 13.5V10H2.5M10 13.5V10h3.5" /> : <path d="M2.5 6V2.5H6M13.5 6V2.5H10M2.5 10v3.5H6M13.5 10v3.5H10" />)

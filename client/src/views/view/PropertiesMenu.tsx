@@ -9,6 +9,7 @@ import type { FolderHost } from '../ViewsPane'
 import { type EngineError, propertyKeys, propertyLabel } from '../engine'
 import { pageColumnKeys } from '../folderSettings'
 import { canonicalKey } from './keys'
+import { isCardKey } from '../cardRows'
 import { AddColumn } from './AddColumn'
 import { canHideColumn, setViewOrder, withOrder } from './columnOrder'
 import { columnReservedKeys } from '../../links/reservedKeys'
@@ -162,7 +163,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
   }
   const glyphOf = (key: string): ReactNode => {
     const c = canonicalKey(key)
-    if (c.startsWith('file.')) return <FileFieldIcon />
+    if (c.startsWith('file.') || isCardKey(c)) return <FileFieldIcon />
     if (c.startsWith('formula.')) return <FormulaIcon />
     return <PropertyTypeIcon kind={kindOf(key)} />
   }
@@ -185,6 +186,8 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
   const typeOf = (key: string): string => {
     const c = canonicalKey(key)
     if (c.startsWith('file.')) return 'File'
+    // A card row's column (YAZ-5319): read off the card line.
+    if (isCardKey(c)) return 'Card'
     if (c.startsWith('formula.')) return 'Formula'
     return PROPERTY_LABELS[kindOf(key)]
   }

@@ -3404,21 +3404,20 @@ describe('the Search tab (YAZ-2638 D2)', () => {
 
   it('YAZ-2662 S59, S60: the empty Search tab shows its line and, below it, the keys of the search — in the keycap of the bar; with text typed the keys do not show', async () => {
     const { el } = await open({ lens: 'search' })
-    /** Each row of the list: its keycaps, and what they do. */
-    const keys = () => [...el.querySelectorAll('.sidebar__body .sidebar__keys dt')].map((dt) => [[...dt.querySelectorAll('kbd')].map((cap) => cap.textContent), dt.nextElementSibling?.textContent])
+    /** Each row of the list: the app's hotkey label (YAZ-5332), what it does first, then its keys. */
+    const keys = () => [...el.querySelectorAll('.sidebar__body .sidebar__keys li')].map((li) => li.textContent)
     expect(keys()).toEqual([
-      [['↑', '↓'], 'Move'],
-      [['↵'], 'Open'],
-      [['⌘↵'], 'Open in a background tab'],
-      [['⇧↵'], 'Show in Files'],
-      [['space'], 'Preview a file or open a folder, after ↑ or ↓'],
-      [['→', '←'], 'Open or close a folder, after ↑ or ↓'],
-      [['esc'], 'Back to the page'],
+      'Move (Up / Down)',
+      'Open (Enter)',
+      'Open in a background tab (Cmd+Enter)',
+      'Show in Files (Shift+Enter)',
+      'Preview a file or open a folder, after Up or Down (Space)',
+      'Open or close a folder, after Up or Down (Right / Left)',
+      'Back to the page (Esc)',
     ])
     // The line is its own element, and the list is the one thing below it.
     expect([...el.querySelector('.sidebar__body')!.children].map((child) => child.className)).toEqual(['sidebar__msg', 'sidebar__keys'])
     expect(bodyMsg(el)).toBe(HINT)
-    expect(appCss).toMatch(/\n\.sidebar__search-back,\n\.sidebar__keys kbd \{/) // one keycap, the bar's
     await type(searchBar(el)!, '   ') // spaces are no text
     expect(keys()).toHaveLength(7)
     // S60: with text — matches or none — the list is gone.

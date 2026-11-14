@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { isCardSeconds, withCardFix, withCardNext, withCardOff, type CardLine, type CardRating, type CardReview } from '@shared/cardLine'
-import { addStep, archivedCards, cardPlan, fixCards, previewAnswers, reviewedToday, type AddKind, type ArchivedCard, type CardAnswer, type CardPlan, type CardsAddedToday, type DueCard, type ReviewedToday } from '@shared/cardSchedule'
+import { addStep, anyUpNext, cardPlan, fixCards, newCardFolders, previewAnswers, reviewedToday, type AddKind, type CardAnswer, type CardPlan, type CardsAddedToday, type DueCard, type FixCard, type ReviewedToday } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
@@ -25,10 +25,8 @@ import type { ReviewHost } from './reviewHost'
  * place of the card showing; a card you leave stays in the queue. `turnOff` (the Inbox ⋯'s Archive card) writes `off`
  * and takes the card out of the queue.
  *
- * Archived (YAZ-5046, Yaseen: "I think we should just call that archive"): the cards with `off` in the open scope, from
- * the index (`archivedCards`), to look at, not to review. The filter `archived` shows them as a list (no card on show:
- * `at` is past the queue's end); `unarchive` takes `off` away, the history stays, and the index takes the card off the
- * list. The review's own counts and queue never hold an archived card.
+ * Archived cards (YAZ-5046) are never in the queue. The Inbox lists none (YAZ-5319): a folder page's table finds them
+ * (Show cards as rows, Card status), and a card's ⋯ menu unarchives it.
  *
  * To fix (YAZ-5097, "Fix later"): the cards with `fix` in the open scope, from the index (`fixCards`), listed as the
  * Archived cards are (the filter `fix`). A marked card stays in review: the mark changes no count and no queue. `setFix`
@@ -80,16 +78,22 @@ import type { ReviewHost } from './reviewHost'
  * makes today 22. `resetCards` sets today back to the Settings number, never below what today already did
  * (`CardPlan.floor`): the cards it takes out of today that are not answered yet leave the session, the one on show
  * stays. A Reset is on the undo stack as an add is; its undo brings the cards back.
+ *
+ * Where new cards come from (YAZ-5322): `setNewFrom` saves the folder pick (`ReviewSettings.newFrom`, all folders when
+ * empty) until it is cleared. Only new cards follow it; due cards and Up next come from everywhere (`cardPlan`). A
+ * change of the pick changes the open session's new cards at once (`withNewCards`): its new cards no longer in today's
+ * queue leave (not the one on show, not a repeat), today's new cards not in it join at the end. It is a setting, so
+ * it is not on the undo stack. `newCardFolders` gives the picker its folders and counts.
  */
 
-/** Which cards of the session show (YAZ-5017); `fix` (YAZ-5097) and `archived` (YAZ-5046): a list of cards, no card to review. */
-export type CardFilter = 'all' | 'next' | 'due' | 'new' | 'fix' | 'archived'
+/** Which cards of the session show (YAZ-5017); `fix` (YAZ-5097): the To fix list of cards, no card to review (the Archived list went in YAZ-5319). */
+export type CardFilter = 'all' | 'next' | 'due' | 'new' | 'fix'
 /** The filters that review: each has a count of the session's queue. */
-export type ReviewFilter = Exclude<CardFilter, 'fix' | 'archived'>
-/** Is `filter` a list of cards to look at (To fix, Archived), not a review? */
-export const isListFilter = (filter: CardFilter): filter is 'fix' | 'archived' => filter === 'fix' || filter === 'archived'
+export type ReviewFilter = Exclude<CardFilter, 'fix'>
+/** Is `filter` a list of cards to look at (To fix), not a review? */
+export const isListFilter = (filter: CardFilter): filter is 'fix' => filter === 'fix'
 
-/** Whether `card` shows under `filter`: next = marked up next (YAZ-5028), due = reviewed before (due now), new = never reviewed; a list (To fix, Archived): none of the queue. */
+/** Whether `card` shows under `filter`: next = marked up next (YAZ-5028), due = reviewed before (due now), new = never reviewed; a list (To fix): none of the queue. */
 export const matchesFilter = (card: DueCard, filter: CardFilter): boolean =>
   filter === 'all' || (isListFilter(filter) ? false : filter === 'next' ? card.next : (filter === 'new') === card.isNew)
 
@@ -133,10 +137,8 @@ export interface CardReviewSession {
   filter: CardFilter
   /** The cards left in the session under each filter: the menu's counts. */
   counts: Record<ReviewFilter, number>
-  /** The scope's archived cards (YAZ-5046), from the index: the Archived row's count and list. */
-  archived: ArchivedCard[]
   /** The scope's cards marked Fix later (YAZ-5097), from the index: the To fix row's count and list. */
-  toFix: ArchivedCard[]
+  toFix: FixCard[]
   /** Where the cards come from (YAZ-5017): the vault's name; the folder's parts; the page's name. Shown by the filter ("· in …"). */
   from: string[]
   /** The card showing's place (YAZ-5017 round 2, YAZ-5132): vault › folders › page (a card file: its folders), each with what a click opens. Empty with no card. */
@@ -158,10 +160,23 @@ export interface CardReviewSession {
   limited: Record<AddKind, boolean>
   /** Whether Reset would lower today's number of each kind (YAZ-5042 round 2): today has an add above today's work. */
   canReset: Record<AddKind, boolean>
+  /** Some card of the vault is marked Up next (YAZ-5321, `anyUpNext`): with none, the Inbox offers no Up next. */
+  upNext: boolean
   /** The add or Reset, while it is the last thing done (YAZ-5042): the line under the buttons says it; null otherwise. */
   lastAdd: { kind: AddKind; count: number; reset: boolean } | null
   /** The phone (YAZ-5078): the last thing done was Archive card, and Undo takes it back. Always null on the Mac. */
   lastArchive?: { id: string } | null
+  /** The saved folder pick for new cards (YAZ-5322), each with its name; empty for All folders. */
+  newFrom: Pick<NewCardFolder, 'folder' | 'label'>[]
+  /** The picked folders have no new card left in the scope, so new cards come from All folders (YAZ-5322). */
+  newFallback: boolean
+}
+
+/** A folder of the new-cards picker (YAZ-5322): root-relative, its name, and how many new cards it holds with its subfolders. */
+export interface NewCardFolder {
+  folder: string
+  label: string
+  count: number
 }
 
 export interface CardReviewApi {
@@ -196,9 +211,7 @@ export interface CardReviewApi {
   move: (delta: -1 | 1) => void
   /** The Inbox ⋯'s Archive card (YAZ-5004, YAZ-5046): `off` on the card showing's line, and the card out of the queue. */
   turnOff: () => Promise<void>
-  /** Unarchive card `id` of `path` (YAZ-5046, the Archived list): `off` off its line; its history stays. */
-  unarchive: (path: string, id: string) => Promise<void>
-  /** All cards, Due today, New cards (YAZ-5017), the To fix list (YAZ-5097) or the Archived list (YAZ-5046): which of the session's cards show. */
+  /** All cards, Up next, Due today, New cards (YAZ-5017) or the To fix list (YAZ-5097): which of the session's cards show. */
   setFilter: (filter: CardFilter) => void
   /**
    * Adds `count` more cards of `kind` for today (YAZ-5042 round 2: the typed number; `session.adds[kind]`, the Settings
@@ -207,6 +220,10 @@ export interface CardReviewApi {
   addCards: (kind: AddKind, count?: number) => void
   /** Sets today's number of `kind` back to the Settings number, never below today's work (YAZ-5042 round 2); `undo` takes it back. */
   resetCards: (kind: AddKind) => void
+  /** Saves the folders new cards come from (YAZ-5322); empty for All folders. The open session's new cards follow at once. */
+  setNewFrom: (folders: readonly string[]) => void
+  /** The picker's rows (YAZ-5322): every new card of the vault, and each folder with new cards (or picked), parents first. */
+  newCardFolders: () => { all: number; folders: NewCardFolder[] }
 }
 
 /** One part of a card's place (YAZ-5017 round 2): its name, and the path a click opens (the vault's or a folder's page, or the page). */
@@ -509,6 +526,36 @@ const withReset = (s: Session, what: AddKind, live: readonly DueCard[], delta: n
   return fitted({ ...s, queue, at: at === -1 ? Math.min(s.at, queue.length) : at, total, totals, marks, undo, turn: s.turn })
 }
 
+/**
+ * The session after the folder pick changed (YAZ-5322): `live` is the scope's queue with the new pick. A new card of the
+ * session no longer in it leaves (not the card on show, not a repeat); today's new cards not in the session join at the
+ * end, and on the done screen the first of them shows. Not on the undo stack: it is a setting.
+ */
+const withNewCards = (s: Session, live: readonly DueCard[]): Session => {
+  const plain = (c: QueueCard): boolean => c.isNew && !c.next && c.repeat !== true
+  const today = new Set(live.filter(plain).map(cardKey))
+  const inSession = new Set(s.queue.map(cardKey))
+  const head = s.queue[s.at]
+  const totals = { ...s.totals }
+  let total = s.total
+  const queue: QueueCard[] = []
+  let at = -1
+  for (const c of s.queue) {
+    if (plain(c) && c !== head && !today.has(cardKey(c))) {
+      totals.new--
+      total--
+      continue
+    }
+    if (c === head) at = queue.length
+    queue.push(c)
+  }
+  const joining = live.filter((c) => plain(c) && !inSession.has(cardKey(c)))
+  if (joining.length === 0 && queue.length === s.queue.length) return s
+  totals.new += joining.length
+  total += joining.length
+  return fitted({ ...s, queue: [...queue, ...joining], at: at === -1 ? queue.length : at, total, totals })
+}
+
 const reason = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 const sameCard = (a: DueCard, b: DueCard): boolean => a.path === b.path && a.id === b.id
 /** Is `card` the one on show? By path and ID: a mark the index changed (YAZ-5031) gives the card a new object. */
@@ -533,7 +580,16 @@ export function cardPlace(root: string, vault: string, folders: readonly IndexRe
   return records.find((r) => r.path === path)?.kind === 'card' ? top : [...top, { kind: 'page', label: titleOf(records, path), path }]
 }
 
-export function useCardReview(root: string | null, source: IndexSource, settings: ReviewSettings, onNotice: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void, vaultName: string | null | undefined, host: ReviewHost): CardReviewApi {
+export function useCardReview(
+  root: string | null,
+  source: IndexSource,
+  settings: ReviewSettings,
+  onNotice: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void,
+  vaultName: string | null | undefined,
+  host: ReviewHost,
+  /** The vault's settings save (`useReviewSettings`): the folder pick for new cards (YAZ-5322) is one of them. */
+  saveSettings?: (next: ReviewSettings) => void,
+): CardReviewApi {
   const records = useSyncExternalStore(source.subscribe, () => source.records)
   const [session, setSession] = useState<Session | null>(null)
   // The card showing, read from its page, and its fixed answers: each for one turn (`turnKey`).
@@ -569,6 +625,19 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       return withMarks(s, vault ? vaultQueue : cardPlan(records, settings, Date.now(), s.scope.folder, s.scope.page, letters, taken, added).queue)
     })
   }, [vaultQueue, records, settings, letters, taken, added])
+
+  // YAZ-5322: a change of the folder pick changes the open session's new cards at once.
+  const pickKey = settings.newFrom.join('\n')
+  const lastPick = useRef(pickKey)
+  useEffect(() => {
+    if (lastPick.current === pickKey) return
+    lastPick.current = pickKey
+    setSession((s) => {
+      if (s === null || !settings.enabled) return s
+      const vault = !s.scope.folder && s.scope.page === undefined
+      return withNewCards(s, vault ? vaultQueue : cardPlan(records, settings, Date.now(), s.scope.folder, s.scope.page, letters, taken, added).queue)
+    })
+  }, [pickKey, vaultQueue, records, settings, letters, taken, added])
 
   // The callbacks read the latest state at call time; their identities stay stable for memoised children.
   const live = useRef({ records, settings, session, loaded, fixed, taken, added })
@@ -956,16 +1025,13 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     [root, source, host],
   )
 
-  const unarchive = useCallback(
-    async (path: string, id: string) => {
-      forget(path)
-      await host.changeCardLine(path, id, (l) => withCardOff(l, false)).then(
-        () => undefined,
-        (err: unknown) => onNotice(`Can't change the card: ${reason(err)}`, 'error'),
-      )
-      forget(path)
+  const setNewFrom = useCallback(
+    (picked: readonly string[]) => {
+      const { settings } = live.current
+      if (saveSettings === undefined || picked.join('\n') === settings.newFrom.join('\n')) return
+      saveSettings({ ...settings, newFrom: [...picked] })
     },
-    [onNotice, forget, host],
+    [saveSettings],
   )
 
   const turnOff = useCallback(async () => {
@@ -991,16 +1057,17 @@ export function useCardReview(root: string | null, source: IndexSource, settings
   }, [onNotice, forget, host])
 
   const folders = source.folders
+  /** A root-relative folder's name, as the breadcrumb says it (its title, else its last part). */
+  const folderLabelOf = useCallback((folder: string) => (root === null ? folder.slice(folder.lastIndexOf('/') + 1) : folderTitle(folders, `${root}/${folder}`)), [root, folders])
   // YAZ-5042: the open scope's plan, for what waits past today's number (the vault's is `vaultPlan`).
   const scope = session?.scope
   const scopePlan = useMemo(
     () => (scope === undefined || (!scope.folder && scope.page === undefined) ? vaultPlan : cardPlan(records, settings, Date.now(), scope.folder, scope.page, letters, taken, added)),
     [scope, vaultPlan, records, settings, letters, taken, added],
   )
-  // YAZ-5046: the open scope's archived cards, from the index.
-  const archived = useMemo(() => (scope === undefined ? [] : archivedCards(records, scope.folder, scope.page)), [scope, records])
   // YAZ-5097: the open scope's cards marked Fix later, from the index.
   const toFix = useMemo(() => (scope === undefined ? [] : fixCards(records, scope.folder, scope.page)), [scope, records])
+  const upNext = useMemo(() => anyUpNext(records), [records])
   // YAZ-5029: the last card shown with its text, and its session: on show while the next card is read.
   const lastShown = useRef<{ session: number; card: ShownCard } | null>(null)
   const shownSession = useMemo<CardReviewSession | null>(() => {
@@ -1014,7 +1081,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     const counts = countOf(queue)
     const lastStep = session.undo.at(-1)
     // "3 of 12" under the filter (YAZ-5017): its cards at start, those gone since, and the place among those left.
-    const total = filter === 'all' ? totals.due + totals.new : filter === 'archived' ? archived.length : filter === 'fix' ? toFix.length : totals[filter]
+    const total = filter === 'all' ? totals.due + totals.new : filter === 'fix' ? toFix.length : totals[filter]
     const before = queue.slice(0, session.at).filter((c) => matchesFilter(c, filter)).length
     const vault = vaultName ?? (root === null ? 'Inbox' : host.vaultName(root))
     const from = scope.page !== undefined ? [session.label] : scope.folder ? scope.folder.split('/').filter(Boolean) : [vault]
@@ -1032,7 +1099,6 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       canUndo: session.undo.length > 0,
       filter,
       counts,
-      archived,
       toFix,
       from,
       place: shownCard === null || root === null ? [] : cardPlace(root, vault, folders, records, shownCard.path),
@@ -1044,10 +1110,23 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       limited: { new: settings.newPerDay !== null, next: settings.upNextPerDay !== null },
       canReset: { new: (added.newCards > scopePlan.floor.new), next: (added.upNext > scopePlan.floor.next) },
       lastArchive: lastStep?.kind === 'archive' ? { id: lastStep.card.id } : null,
+      upNext,
       lastAdd: lastStep?.kind === 'add' ? { kind: lastStep.what, count: lastStep.count, reset: false } : lastStep?.kind === 'reset' ? { kind: lastStep.what, count: lastStep.count, reset: true } : null,
+      newFrom: settings.newFrom.map((folder) => ({ folder, label: folderLabelOf(folder) })),
+      newFallback: scopePlan.newFallback,
     }
     // `records`: a cached page is good only at its page's mtime.
-  }, [session, loaded, fixed, turnKey, root, vaultName, host, cached, records, folders, today, scopePlan, settings, archived, toFix, added])
+  }, [session, loaded, fixed, turnKey, root, vaultName, host, cached, records, folders, today, scopePlan, settings, toFix, added, upNext, folderLabelOf])
 
-  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, setFix, move, turnOff, unarchive, setFilter, addCards, resetCards }
+  // YAZ-5322: the picker's rows, worked out when it opens: each folder with new cards, and each picked one (0 when empty).
+  const pickerFolders = useCallback(() => {
+    const { records, settings } = live.current
+    const { all, folders: found } = newCardFolders(records, settings)
+    const rows = new Map(found.map((f) => [f.folder, f.count]))
+    for (const folder of settings.newFrom) if (!rows.has(folder)) rows.set(folder, 0)
+    const list = [...rows].map(([folder, count]) => ({ folder, label: folderLabelOf(folder), count })).sort((a, b) => (a.folder < b.folder ? -1 : a.folder > b.folder ? 1 : 0))
+    return { all, folders: list }
+  }, [folderLabelOf])
+
+  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, setFix, move, turnOff, setFilter, addCards, resetCards, setNewFrom, newCardFolders: pickerFolders }
 }

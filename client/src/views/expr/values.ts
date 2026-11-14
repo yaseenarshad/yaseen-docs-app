@@ -94,6 +94,8 @@ export interface Scope {
   weekStartsOn?: 'sunday' | 'monday'
   /** Extra identifiers consulted before page properties, e.g. `values` in custom summaries (GRO-2134). */
   extra?: Record<string, Value>
+  /** A card row's columns (YAZ-5319, `cardRows.ts`): `card.status`, `card.nextReview`, …; absent on a page's row. */
+  card?: Record<string, Value>
 }
 
 export type Resolver = (target: string) => FileValue | null
