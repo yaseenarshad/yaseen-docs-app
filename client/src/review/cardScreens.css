@@ -920,6 +920,24 @@ body.card-inbox--sizing {
 .card-inbox__answers .card-inbox__answer:hover {
   background: color-mix(in srgb, var(--fg) 6%, var(--bg));
 }
+/* THE END's cue (YAZ-5049 round 3): one more Space when nothing is left gives the buttons one soft ring, then it
+   fades. A ring, no movement, so it stays with Reduce motion. Two names, so each new Space plays it again. */
+.card-inbox__answers[data-nudge='a'] .card-inbox__answer {
+  animation: card-inbox-nudge-a 700ms ease-out;
+}
+.card-inbox__answers[data-nudge='b'] .card-inbox__answer {
+  animation: card-inbox-nudge-b 700ms ease-out;
+}
+@keyframes card-inbox-nudge-a {
+  from {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+}
+@keyframes card-inbox-nudge-b {
+  from {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+}
 .card-inbox__answers .card-inbox__answer kbd {
   margin-left: 0;
   font-size: 11px;
