@@ -8,7 +8,8 @@
  *  - The body is the card window's (`review/cardPane.tsx`): the card or the card editor, its Reviews, "Linked
  *    mentions (n)", and "Embedded in (n)". There is no "Open page": the tab is the card's file.
  *  - EDIT CARD (YAZ-5026) as in the card window: Done writes the card's text by its ID on the newest bytes, ONE
- *    `transformFile` (`changeCardTextIn`). A read-only vault or a `readonly: true` file has no Edit card; ⋯ and
+ *    `transformFile` (`changeCardTextIn`). In a read-only vault or a `readonly: true` file, Edit card (E, the button)
+ *    asks first, as typing in a locked page does, and opens at once after "Allow edits" (YAZ-5145 round 2); ⋯ and
  *    reviews still write, as reviews do in a locked page. A card New card just made opens in Edit card (YAZ-5101).
  *  - THE TITLE (YAZ-5044 decision A, YAZ-5104) is the file's `title`, as a page's, and the card's text never holds it:
  *    the big title is the page's own `PageTitle`, read from the index, so a click edits it as on a page. Enter (or a
@@ -24,7 +25,7 @@
  *  - THE TOP BAR (YAZ-5102): a page's bar, from the same `StatusChips` — the cog, the zoom, the "Read only" chip while the
  *    vault or the file is read only, Sync and Saved. The chip turns Read only off as on a page: a time choice unlocks
  *    this tab (`useTimedUnlock`; the vault's lock stays in its file), "Turn Read only off" writes the file's own switch.
- *    While locked there is no Edit card; at the unlock's end an open Edit card is Done first, then the tab locks. The
+ *    While locked, Edit card asks first; at the unlock's end an open Edit card is Done first, then the tab locks. The
  *    cog has what applies to a card: "Read only" and the counts. A page's rows (line numbers, folding, the table of
  *    contents, the widths, "Turn into a card file", …) and Collapse all are not there: a card has none of them.
  *  - ON DISK: the tab reads the file again on each new index version, as the card window does. A file that lost
@@ -35,6 +36,7 @@ import { cardFileShape, isCardFileContent } from '@shared/cardFileFormat'
 import { splitFrontmatter } from '@shared/frontmatter'
 import type { GestureAction } from '@shared/keys'
 import { isPageReadOnly, setPageReadOnly } from '@shared/readOnly'
+import { tellReadOnlyEdit } from './readOnlyEdit'
 import { withCardNext, type CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
 import type { FileResponse, GithubSyncStatus, ZoomStep } from '@shared/types'
@@ -227,11 +229,20 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
       () => setSave('error'),
     )
   }
+  /**
+   * Edit card (E, the button): at once, or, while the tab is locked by Read only, an edit attempt that carries itself
+   * (YAZ-5145 round 2): the chip's card shows, and once the person allows edits, Edit card opens with no second E.
+   */
+  const startEdit = () => {
+    if (canEdit) return setEditing(true)
+    if (card !== null && content !== null && lockedBase && bodyRef.current !== null) tellReadOnlyEdit(bodyRef.current, 'card', () => setEditing(true))
+  }
   const onKeyDown = (event: ReactKeyboardEvent) => {
-    if (editing || !canEdit || !isCardEditKey(event)) return
+    if (editing || card === null || !isCardEditKey(event)) return
+    if (!canEdit && !lockedBase) return
     event.preventDefault()
     event.stopPropagation()
-    setEditing(true)
+    startEdit()
   }
   const doors = {
     openLayer: (to: string) => (exploreOnClick?.() === true && onOpenExplore !== undefined ? onOpenExplore(to) : (onOpenLink ?? onOpenFile)(to)),
@@ -310,8 +321,8 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
             <div className="card-file__path">{folderOf(root, path)}</div>
             <div className="card-file__title-row">
               <PageTitle path={path} titles={titles} readOnly={locked || onRetitle === undefined} locked={locked && 'card'} onRetitle={(title) => onRetitle?.(path, title, 'file')} onArrowDown={giveKeysBack} />
-              {canEdit && !editing && (
-                <button type="button" className="card-file__button" data-card-file-edit onMouseDown={(e) => e.preventDefault()} onClick={() => setEditing(true)}>
+              {(canEdit || (card !== null && lockedBase)) && !editing && (
+                <button type="button" className="card-file__button" data-card-file-edit onMouseDown={(e) => e.preventDefault()} onClick={startEdit}>
                   Edit card <kbd>E</kbd>
                 </button>
               )}

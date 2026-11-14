@@ -19,6 +19,7 @@ import { CARD_OPEN, setCardEditorKind, type CardOpenRequest } from './cardBlockV
 import { takeCardLanding } from './cardOpen'
 import { cardEmbedOfDom } from './cardEmbed'
 import { loadCardEmbed } from './embedCard'
+import { READ_ONLY_EDIT, type ReadOnlyEditEvent } from '../readOnlyEdit'
 
 /** The vault's files in memory: the card embed reads them (`api.readFile`), the card's writes change them. */
 const disk = vi.hoisted(() => ({ files: new Map<string, string>(), reads: [] as string[] }))
@@ -285,7 +286,7 @@ describe('Edit card writes the original', () => {
     expect(getMarkdownForSave(crepe)).toBe(markdown)
   })
 
-  it('Done with no change writes nothing; a read-only page has no Edit card', async () => {
+  it('Done with no change writes nothing; a read-only page asks first, then opens Edit card', async () => {
     const { root, view } = await mount('![[GEO-140]]\n')
     const box = boxes(root)[0]!
     await vi.waitFor(() => expect(box.querySelector('.card__body')?.textContent).toContain('Paris'))
@@ -295,8 +296,15 @@ describe('Edit card writes the original', () => {
     await tick()
     expect(disk.files.get(CARD_FILE)).toBe(cardFileText)
     view.setProps({ editable: () => false })
+    // YAZ-5145 round 2: read only, Edit card is an edit attempt that carries itself; "Allow edits" then opens it.
+    const told: ReadOnlyEditEvent[] = []
+    root.addEventListener(READ_ONLY_EDIT, (e) => told.push(e as ReadOnlyEditEvent))
     press(box.querySelector('.card__edit'))
     expect(cardEmbedOfDom(box)!.cardEditor).toBeNull()
+    expect(told.map((e) => e.detail)).toEqual(['card'])
+    view.setProps({ editable: () => true })
+    told[0].resume?.()
+    expect(cardEmbedOfDom(box)!.cardEditor).not.toBeNull()
   })
 })
 

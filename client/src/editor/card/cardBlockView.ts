@@ -75,6 +75,7 @@ import { CARD_OPEN, scrollIntoViewWhenShown, takeCardLanding, type CardOpenReque
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard, type CardLook } from './cardRender'
 import { mountCardEditor, type CardCrepe, type CardEditor } from './cardEditor'
 import { mountReviewsStrip, type ReviewsStripHandle } from './reviewsStrip'
+import { tellReadOnlyEdit } from '../readOnlyEdit'
 import './card.css'
 
 // The open hook (D13) lives with the card's other doors (`cardOpen.ts`): a card link's click sends it too (YAZ-5030).
@@ -402,10 +403,15 @@ export class CardBlockView implements NodeView {
     return hint
   }
 
-  /** "Edit card": Crepe's code block in the card, the caret at the end of its text. */
+  /**
+   * "Edit card": Crepe's code block in the card, the caret at the end of its text. In a page locked by Read only it is an
+   * edit attempt that carries itself (YAZ-5145 round 2): the pane's chip shows its card, and once the person allows
+   * edits, Edit card opens at once — no second double-click or Enter.
+   */
   edit(select?: { from: number; to: number }): void {
     const pos = this.pos
-    if (this.editing || pos === null || !this.view.editable) return
+    if (this.editing || pos === null) return
+    if (!this.view.editable) return tellReadOnlyEdit(this.dom, 'card', () => this.edit(select))
     if (editorKind === 'page' && this.deps.editor !== undefined) return this.editWithPage(this.deps.editor, select)
     if (this.makeCode === null) return
     this.code = this.makeCode(this.node)
