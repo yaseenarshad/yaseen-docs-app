@@ -44,6 +44,8 @@ export interface CardOnPage {
   next: boolean
   /** The title is hidden on the Inbox's front (YAZ-5030): the line's `notitle`. Absent: it shows. */
   notitle?: boolean
+  /** A CARD FILE's card (YAZ-5044): the file's `title`, which `readCard` also puts above `text`. Absent for a card in a page. */
+  fileTitle?: string
 }
 
 /** A card found by its ID or, before it has one, by its place (the card window, YAZ-4962). */
@@ -67,14 +69,18 @@ export const titleOfCard = (card: Pick<CardAtPage, 'text' | 'fileTitle'>): strin
  * Null when the page or the card is gone (an ID no card has; no card at `index`).
  */
 export async function readCardAt(path: string, id: string | null, index: number): Promise<CardAtPage | null> {
-  let content: string
+  const content = await readOrGone(path)
+  return content === null ? null : cardInContent(path, content, id, index)
+}
+
+/** The text of `path`, or null when it is gone. */
+async function readOrGone(path: string): Promise<string | null> {
   try {
-    content = (await api.readFile(path)).content
+    return (await api.readFile(path)).content
   } catch (err) {
     if (err instanceof BridgeRequestError && err.code === 'NOT_FOUND') return null
     throw err
   }
-  return cardInContent(path, content, id, index)
 }
 
 /** `readCardAt` on bytes already read (a card embed's one read per file version, and a card file's tab, which holds its file's bytes: YAZ-5037): the same choice of card. */
@@ -96,7 +102,16 @@ export function cardInContent(path: string, content: string, id: string | null, 
  * the card is fully shown, the one rule cards in pages follow. The Inbox writes only the card line, never the text.
  */
 export async function readCard(path: string, id: string): Promise<CardOnPage | null> {
-  const card = await readCardAt(path, id, -1)
+  const content = await readOrGone(path)
+  return content === null ? null : cardOnPageIn(path, content, id)
+}
+
+/**
+ * `readCard` on bytes already read: pure, so every review host reads a card the same way (YAZ-5067; the phone's host
+ * reads its stored text with it).
+ */
+export function cardOnPageIn(path: string, content: string, id: string): CardOnPage | null {
+  const card = cardInContent(path, content, id, -1)
   if (card === null || card.id === null) return null
   return { ...card, id: card.id, ...(card.fileTitle !== undefined && { text: cardWithTitle(card.fileTitle, card.text) }) }
 }
