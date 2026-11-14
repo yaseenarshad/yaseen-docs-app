@@ -65,6 +65,7 @@ export type FriendsSendStatus =
   | 'sent'
   | 'unchanged'
   | 'needs-newer-app'
+  | 'needs-repair'
   | 'sign-in-again'
   | 'failed'
 
@@ -167,7 +168,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
   }
 
   /** The list: the copy of this session (an ETag read), or found by its file name. Null: no list. */
-  async function readIndex(api: GistsApi, now: number, reason: SendReason): Promise<IndexHandle | 'newer' | null> {
+  async function readIndex(api: GistsApi, now: number, reason: SendReason): Promise<IndexHandle | 'newer' | 'broken' | null> {
     if (index !== null) {
       try {
         const answer = await api.read(index.id, index.etag)
@@ -189,6 +190,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
     }
     noIndexAt = null
     if (found.kind === 'newer') return 'newer'
+    if (found.kind === 'broken') return 'broken'
     return (index = found.handle)
   }
 
@@ -215,6 +217,8 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
     try {
       let handle = await readIndex(api, now, reason)
       if (handle === 'newer') return set({ status: 'needs-newer-app' })
+      // YAZ-5191: a list that cannot be read: no send and no write; 4E4 shows LIST_NEEDS_REPAIR.
+      if (handle === 'broken') return set({ status: 'needs-repair' })
       if (handle === null) return set({ status: 'no-friends' })
       // 4E2 (YAZ-5083): a remove waits in the list (the app closed, or the budget ran out). Finish it first; never
       // send to the old numbers gist while it waits, so the removed friend's last numbers do not change.
@@ -230,6 +234,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
           }
           if (finished.why === 'unauthorized') return set({ status: 'sign-in-again' })
           if (finished.why === 'offline') return set({ status: 'offline' })
+          if (finished.why === 'needs-repair') return set({ status: 'needs-repair' })
           if (finished.retryAt !== null) schedule(finished.retryAt)
           return set({ status: 'slowed', retryAt: finished.retryAt })
         }

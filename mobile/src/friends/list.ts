@@ -43,6 +43,8 @@ export type Unavailable =
   | { kind: 'rate-limited' }
   | { kind: 'unauthorized' }
   | { kind: 'newer-app' }
+  /** My friends list on GitHub cannot be read: nothing is written to it (YAZ-5191). Show `LIST_NEEDS_REPAIR`. */
+  | { kind: 'needs-repair' }
   | { kind: 'failed' }
 
 export interface ShareResult {
@@ -131,19 +133,20 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
   }
 
   /** This session's copy of the list, read again with its ETag (a free 304 when nothing changed, also on another device). */
-  async function refreshed(api: GistsApi, h: IndexHandle): Promise<IndexHandle | 'newer'> {
+  async function refreshed(api: GistsApi, h: IndexHandle): Promise<IndexHandle | 'newer' | 'broken'> {
     try {
       const answer = await api.read(h.id, h.etag)
       if (answer === 'unchanged') return h
       const file = answer.files[INDEX_FILE]
       const read = parseFriendsIndex(file?.truncated ? null : file?.content)
       if (read.kind === 'newer') return 'newer'
-      if (read.kind === 'ok') {
-        const next = { ...h, index: read.value, raw: read.raw, etag: answer.etag }
-        await remember(next)
-        return next
+      if (read.kind === 'unreadable') {
+        handle = null
+        return 'broken'
       }
-      return h
+      const next = { ...h, index: read.value, raw: read.raw, etag: answer.etag }
+      await remember(next)
+      return next
     } catch (err) {
       if (gistErrorCode(err) !== 'NOT_FOUND') throw err
       handle = null
@@ -152,10 +155,11 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
   }
 
   /** The list: this session's copy, or found by its file name; made (with the carried-over settings) when `make`. */
-  async function list(api: GistsApi, login: string, make: boolean, vault = ''): Promise<IndexHandle | null | 'newer'> {
+  async function list(api: GistsApi, login: string, make: boolean, vault = ''): Promise<IndexHandle | null | 'newer' | 'broken'> {
     if (handle !== null) return handle
     const found = await findFriendsIndex(api, opts)
     if (found.kind === 'newer') return 'newer'
+    if (found.kind === 'broken') return 'broken'
     if (found.kind === 'ok') {
       await remember(found.handle)
       return found.handle
@@ -166,7 +170,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     const account = vault === '' ? undefined : await loadAccount(store, vault)
     const numbers = { ...emptyNumbers(now()), login, name: settings.nickname ?? account?.name ?? login, avatar: account?.avatarUrl ?? '' }
     const made = await ensureFriendsFiles(api, { vaults: await idsToRepos(settings.vaults, login), nickname: settings.nickname, numbers }, opts)
-    if (made.kind === 'newer') return 'newer'
+    if (made.kind !== 'ok') return made.kind
     await remember(made.handle)
     return made.handle
   }
@@ -213,6 +217,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     await remember(r.handle)
     if (r.kind === 'done') return { kind: 'done' as const }
     if (r.kind === 'not-found') return { kind: 'not-found' as const }
+    if (r.why === 'needs-repair') return { kind: 'needs-repair' as const }
     if (r.why === 'refused') {
       await recordGistsRefused(store, vault)
       return { kind: 'no-gists' as const }
@@ -232,10 +237,9 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
       const copy = await store.getState<ListCopy>(PHONE, COPY)
       if (copy === undefined) return // no list yet: the first share or paste carries them over
       const result = await withApi(async (api, login) => {
-        const h = await list(api, login, false)
-        if (h === null || h === 'newer') return { kind: 'failed' as const }
         handle = null // read it again just before the write
         const fresh = await list(api, login, false)
+        if (fresh === 'broken') return { kind: 'needs-repair' as const }
         if (fresh === null || fresh === 'newer') return { kind: 'failed' as const }
         const next = await writeFriendsIndex(api, fresh, { ...fresh.index, vaults: await idsToRepos(settings.vaults, login), nickname: settings.nickname })
         await remember(next)
@@ -250,6 +254,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     share: () =>
       withApi(async (api, login, vault) => {
         const h = await list(api, login, true, vault)
+        if (h === 'broken') return { kind: 'needs-repair' as const }
         if (h === null || h === 'newer') return { kind: 'newer-app' as const }
         const shared = await shareLink(api, h, opts)
         await remember(shared.handle)
@@ -260,6 +265,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
       if (link.kind !== 'ok') return link
       return withApi(async (api, login, vault) => {
         const h = await list(api, login, true, vault)
+        if (h === 'broken') return { kind: 'needs-repair' as const }
         if (h === null || h === 'newer') return { kind: 'newer-app' as const }
         const result = await pasteLink(api, h, text, opts)
         if (result.kind === 'refused') {
@@ -273,16 +279,18 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     remove: (mine) =>
       withApi(async (api, login, vault) => {
         const h = await list(api, login, false)
+        if (h === 'broken') return { kind: 'needs-repair' as const }
         if (h === null || h === 'newer') return { kind: 'not-found' as const }
         return mapRemove(await removeFriend(api, h, mine, await budget(), opts), vault)
       }),
     rows: () =>
       withApi(async (api, login, vault) => {
         let h = await list(api, login, false)
-        if (h !== null && h !== 'newer') {
+        if (h !== null && h !== 'newer' && h !== 'broken') {
           h = await refreshed(api, h)
-          if (h !== 'newer' && handle === null) h = await list(api, login, false)
+          if (h !== 'newer' && h !== 'broken' && handle === null) h = await list(api, login, false)
         }
+        if (h === 'broken') return { kind: 'needs-repair' as const }
         if (h === 'newer') return { kind: 'newer-app' as const }
         if (h === null) {
           await store.setState(PHONE, HAS, false)

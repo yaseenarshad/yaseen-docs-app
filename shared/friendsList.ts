@@ -1,5 +1,6 @@
 import {
   INDEX_FILE,
+  LIST_NEEDS_REPAIR,
   NUMBERS_FILE,
   POINTER_FILE,
   emptyNumbers,
@@ -135,16 +136,20 @@ async function latest(api: GistsApi, handle: IndexHandle, opts: WriteOptions): P
     const read = parseFriendsIndex(fileText(gist, INDEX_FILE))
     if (read.kind === 'ok') return { ...handle, index: read.value, raw: read.raw, etag: gist.etag }
     if (read.kind === 'newer') throw new NewerList()
-    return handle
+    // YAZ-5191: never go on with an old copy of a list that cannot be read now: nothing is written to it.
+    throw new BrokenList()
   } catch (err) {
     if (gistErrorCode(err) !== 'NOT_FOUND') throw err
     const found = await findFriendsIndex(api, opts)
     if (found.kind === 'ok') return found.handle
     if (found.kind === 'newer') throw new NewerList()
+    if (found.kind === 'broken') throw new BrokenList()
     throw err
   }
 }
 class NewerList extends Error {}
+/** The list is not a JSON object with `v: 1`: the app writes nothing to it (YAZ-5191, `LIST_NEEDS_REPAIR`). */
+class BrokenList extends Error {}
 
 /** Writes `next`; `raw` patches the fields this module keeps beside the known ones (`rekey`). */
 async function writeList(api: GistsApi, handle: IndexHandle, next: FriendsIndex, raw?: Record<string, unknown>): Promise<IndexHandle> {
@@ -201,6 +206,8 @@ export type PasteResult =
   | { kind: 'not-found' }
   | { kind: 'not-a-friend-link' }
   | { kind: 'newer-app' }
+  /** My own friends list cannot be read: nothing is changed (YAZ-5191). */
+  | { kind: 'needs-repair' }
   | { kind: 'offline' }
   | { kind: 'rate-limited'; retryAt?: number | null }
   | { kind: 'refused' }
@@ -233,6 +240,8 @@ export function pasteMessage(result: PasteResult): string {
       return 'GitHub asks the app to wait. Try again in a few minutes.'
     case 'refused':
       return 'Friends needs the Gists permission on your token.'
+    case 'needs-repair':
+      return LIST_NEEDS_REPAIR
     case 'unauthorized':
       return 'Sign in again, then paste the link.'
     default:
@@ -254,6 +263,7 @@ function failureResult(err: unknown): PasteResult {
       return { kind: 'unauthorized' }
     case null:
       if (err instanceof NewerList) return { kind: 'newer-app' }
+      if (err instanceof BrokenList) return { kind: 'needs-repair' }
       throw err
     default:
       return { kind: 'failed' }
@@ -484,7 +494,7 @@ const withRekey = (raw: Record<string, unknown>, rekey: Rekey | null): Record<st
 export type RemoveResult =
   | { kind: 'done'; handle: IndexHandle; budget: GistBudget }
   /** It stopped; the list holds what is left, and the next start (or `retryAt`) finishes it. */
-  | { kind: 'paused'; handle: IndexHandle; budget: GistBudget; why: 'budget' | 'rate-limited' | 'offline' | 'refused' | 'unauthorized'; retryAt: number | null }
+  | { kind: 'paused'; handle: IndexHandle; budget: GistBudget; why: 'budget' | 'rate-limited' | 'offline' | 'refused' | 'unauthorized' | 'needs-repair'; retryAt: number | null }
   | { kind: 'not-found'; handle: IndexHandle; budget: GistBudget }
 
 /**
@@ -539,6 +549,7 @@ function pauseOn(err: unknown, handle: IndexHandle, budget: GistBudget, now: num
       return paused(handle, budget, 'unauthorized', null)
     default:
       if (err instanceof NewerList) return paused(handle, budget, 'refused', null)
+      if (err instanceof BrokenList) return paused(handle, budget, 'needs-repair', null)
       throw err
   }
 }

@@ -120,6 +120,26 @@ describe('createFriendsList (YAZ-5083)', () => {
     expect(world.owned('ali').filter((g) => INDEX_FILE in g.files)).toHaveLength(1)
   })
 
+  it('YAZ-5191: a friends list that cannot be read gives "needs-repair" for each action, and the sender stops; nothing is written', async () => {
+    const { clock, world } = setup()
+    const ali = await phone(world, clock, ALI, 'ali')
+    const share = await ali.list.share()
+    if (share.kind !== 'ok') throw new Error(share.kind)
+    const listId = world.owned('ali').find((g) => INDEX_FILE in g.files)!.id
+    world.setFiles(listId, { [INDEX_FILE]: 'not json' })
+    const n = world.calls.filter((c) => c.op !== 'list' && c.op !== 'read').length
+    expect(await ali.list.rows()).toEqual({ kind: 'needs-repair' })
+    expect(await ali.list.share()).toEqual({ kind: 'needs-repair' })
+    expect(await ali.list.paste('a1b2c3d4e5f60718293a4b5c6d7e8f90')).toEqual({ kind: 'needs-repair' })
+    const listeners = new Set<(e: SyncEvent) => void>()
+    const sender = createFriendsSender({ store: ali.store, tokens: ali.tokens, sync: { subscribe: (l) => (listeners.add(l), () => listeners.delete(l)) }, clock, fetch: gistsFetch(world).fetch, sleep: async () => {} })
+    for (const l of listeners) l({ type: 'state', state: { status: 'synced', vault: null, problem: null, retryAt: null, progress: null, lastSyncedAt: clock.now(), ready: true } })
+    await sender.idle()
+    expect(sender.state().status).toBe('needs-repair')
+    expect(world.calls.filter((c) => c.op !== 'list' && c.op !== 'read').length).toBe(n)
+    expect(world.text(listId, INDEX_FILE)).toBe('not json')
+  })
+
   it('a token with no Gists permission: "no-gists" for each action, and nothing is made', async () => {
     const { clock, world } = setup()
     const ali = await phone(world, clock, NOGISTS, 'ali', ['ali/vault'], 'no')

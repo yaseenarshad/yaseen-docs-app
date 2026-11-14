@@ -176,37 +176,46 @@ export interface FriendsIndex {
   shared?: { mine: string; at: string }[]
 }
 
-const MAX_ENTRIES = 1000
 const MAX_NAME = 200
 
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+/** A name as the screens show it: a text, cut to MAX_NAME letters; a value that is not a text shows as "Friend". */
+const shownName = (v: unknown): string => (typeof v === 'string' ? v.slice(0, MAX_NAME) : 'Friend')
+const shownNickname = (v: unknown): string | null => (typeof v === 'string' ? v.slice(0, MAX_NAME) : null)
+
+/** A friend entry this app can read: both pointer IDs are gist IDs. Else it stays in the file as it is (YAZ-5191). */
+const friendOk = (e: unknown): e is Record<string, unknown> => isObject(e) && isGistId(e.theirs) && isGistId(e.mine)
+const groupOk = (e: unknown): e is Record<string, unknown> => isObject(e) && isGistId(e.group) && isGistId(e.mine)
+const sharedOk = (e: unknown): e is Record<string, unknown> => isObject(e) && isGistId(e.mine) && typeof e.at === 'string' && e.at.length <= 40
+const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
+
+/**
+ * The list, read ENTRY BY ENTRY (YAZ-5191). One entry this app cannot read does not drop the others: it is left out of
+ * `value` and stays in the file on each write (`indexText`). A name that is too long is cut for the screens, never a
+ * reason to refuse the file; the file keeps its own name. Only a file that is not a JSON object with `v: 1` (or one
+ * over 256 KB) is unreadable: then the app writes nothing to it ("your friends list needs a repair").
+ */
 function parseIndex(text: string): { ok: true; value: FriendsIndex } | { ok: false; why: string } {
   if (text.length > 256 * 1024) return { ok: false, why: 'the file is too large' }
-  const o = JSON.parse(text) as Record<string, unknown>
+  const o = JSON.parse(text) as unknown
+  if (!isObject(o)) return { ok: false, why: 'the file is not an object' }
   if (o.v !== 1) return { ok: false, why: 'the file has another version' }
-  const name = (v: unknown) => typeof v === 'string' && v.length <= MAX_NAME
-  if (!(o.nickname === null || o.nickname === undefined || name(o.nickname))) return { ok: false, why: 'nickname is not a text' }
-  if (!Array.isArray(o.vaults) || o.vaults.length > MAX_ENTRIES || !o.vaults.every(name)) return { ok: false, why: 'vaults is not a list of names' }
-  if (!(o.stats === null || o.stats === undefined || isGistId(o.stats))) return { ok: false, why: 'stats is not a gist ID' }
-  const friends = o.friends ?? []
-  const groups = o.groups ?? []
-  if (!Array.isArray(friends) || friends.length > MAX_ENTRIES) return { ok: false, why: 'friends is not a list' }
-  if (!Array.isArray(groups) || groups.length > MAX_ENTRIES) return { ok: false, why: 'groups is not a list' }
-  const entry = (e: unknown): e is Record<string, unknown> => typeof e === 'object' && e !== null && !Array.isArray(e)
-  for (const f of friends) if (!entry(f) || !name(f.name) || !isGistId(f.theirs) || !isGistId(f.mine)) return { ok: false, why: 'a friend is not readable' }
-  for (const g of groups) if (!entry(g) || !name(g.name) || !isGistId(g.group) || !isGistId(g.mine) || typeof g.admin !== 'boolean') return { ok: false, why: 'a group is not readable' }
-  const shared = o.shared ?? []
-  if (!Array.isArray(shared) || shared.length > MAX_ENTRIES) return { ok: false, why: 'shared is not a list' }
-  for (const x of shared) if (!entry(x) || !isGistId(x.mine) || typeof x.at !== 'string' || x.at.length > 40) return { ok: false, why: 'a shared link is not readable' }
   return {
     ok: true,
     value: {
       v: 1,
-      nickname: (o.nickname as string | null | undefined) ?? null,
-      vaults: (o.vaults as string[]).map((v) => v.toLowerCase()),
-      stats: (o.stats as string | null | undefined) ?? null,
-      friends: (friends as Record<string, unknown>[]).map((f) => ({ name: f.name as string, theirs: f.theirs as string, mine: f.mine as string })),
-      groups: (groups as Record<string, unknown>[]).map((g) => ({ name: g.name as string, group: g.group as string, mine: g.mine as string, admin: g.admin as boolean })),
-      ...(o.shared !== undefined && { shared: (shared as Record<string, unknown>[]).map((x) => ({ mine: x.mine as string, at: x.at as string })) }),
+      nickname: shownNickname(o.nickname),
+      vaults: list(o.vaults)
+        .filter((v): v is string => typeof v === 'string')
+        .map((v) => v.toLowerCase()),
+      stats: isGistId(o.stats) ? o.stats : null,
+      friends: list(o.friends)
+        .filter(friendOk)
+        .map((f) => ({ name: shownName(f.name), theirs: f.theirs as string, mine: f.mine as string })),
+      groups: list(o.groups)
+        .filter(groupOk)
+        .map((g) => ({ name: shownName(g.name), group: g.group as string, mine: g.mine as string, admin: g.admin === true })),
+      ...(o.shared !== undefined && { shared: list(o.shared).filter(sharedOk).map((x) => ({ mine: x.mine as string, at: x.at as string })) }),
     },
   }
 }
@@ -222,14 +231,46 @@ export function parseFriendsIndex(text: string | null | undefined): FileState<Fr
   })
 }
 
+/** The words for a list that cannot be read (YAZ-5191; round 13, item 4: say what is wrong and what to do). */
+export const LIST_NEEDS_REPAIR = 'Your friends list on GitHub cannot be read, so the app changes nothing in it. Open your gists on GitHub and fix or delete the file notecards-friends.json.'
+
 /** The pointers that this person writes: one for each friend and each group, and each shared link not used yet (4E2). */
 export const pointersOf = (index: FriendsIndex): string[] => [...index.friends.map((f) => f.mine), ...index.groups.map((g) => g.mine), ...(index.shared ?? []).map((x) => x.mine)]
 
-/** The text of a list to write: the known fields over the fields this app does not know; each entry keeps its own. */
+/**
+ * The text of a list to write: the known fields over the fields this app does not know. Each entry keeps its own
+ * unknown fields, and its own name when the app did not change it (a long name stays whole). Each entry that this app
+ * could not read stays as it is, at the end of its list (YAZ-5191). A vault that is not a text stays too.
+ */
 export function indexText(index: FriendsIndex, raw: Record<string, unknown> = {}): string {
-  const rawEntries = (key: 'friends' | 'groups') => (Array.isArray(raw[key]) ? (raw[key] as unknown[]) : []).filter((e): e is Record<string, unknown> => typeof e === 'object' && e !== null)
-  const keep = <E extends { mine: string }>(key: 'friends' | 'groups', entries: E[]) => entries.map((e) => ({ ...(rawEntries(key).find((r) => r.mine === e.mine) ?? {}), ...e }))
-  return JSON.stringify({ ...raw, ...index, friends: keep('friends', index.friends), groups: keep('groups', index.groups) })
+  type Entry = { mine: string; name?: string; admin?: boolean }
+  const merge = (key: 'friends' | 'groups' | 'shared', entries: Entry[] | undefined, ok: (e: unknown) => boolean): unknown[] | undefined => {
+    const rawList = list(raw[key])
+    if (entries === undefined) return raw[key] === undefined ? undefined : rawList
+    const out = entries.map((e) => {
+      const r = rawList.find((x) => isObject(x) && ok(x) && x.mine === e.mine) as Record<string, unknown> | undefined
+      if (r === undefined) return e
+      const m: Record<string, unknown> = { ...r, ...e }
+      if (e.name !== undefined && e.name === shownName(r.name)) m.name = r.name
+      if (e.admin === false && typeof r.admin !== 'boolean') m.admin = r.admin
+      return m
+    })
+    return [...out, ...rawList.filter((x) => !ok(x))]
+  }
+  const nickname = index.nickname === shownNickname(raw.nickname) && raw.nickname !== undefined ? raw.nickname : index.nickname
+  const vaults = [...index.vaults, ...list(raw.vaults).filter((v) => typeof v !== 'string')]
+  const stats = index.stats === null && raw.stats !== undefined && raw.stats !== null && !isGistId(raw.stats) ? raw.stats : index.stats
+  const shared = merge('shared', index.shared, sharedOk)
+  return JSON.stringify({
+    ...raw,
+    ...index,
+    nickname,
+    vaults,
+    stats,
+    friends: merge('friends', index.friends, friendOk),
+    groups: merge('groups', index.groups, groupOk),
+    ...(shared !== undefined && { shared }),
+  })
 }
 
 /** A list found or made: its gist, its known fields, the whole object, and the ETag of the read. */
@@ -241,7 +282,8 @@ export interface IndexHandle {
   createdAt: string
 }
 
-export type IndexFind = { kind: 'none' } | { kind: 'newer'; id: string } | { kind: 'ok'; handle: IndexHandle }
+/** `broken`: the list is not a JSON object with `v: 1` (YAZ-5191). The app writes NOTHING to it: `LIST_NEEDS_REPAIR`. */
+export type IndexFind = { kind: 'none' } | { kind: 'newer'; id: string } | { kind: 'broken'; id: string } | { kind: 'ok'; handle: IndexHandle }
 
 /** How a write is labelled and spaced. `describe` gives the gist's description (the live test starts it "notecards-test"). */
 export interface WriteOptions {
@@ -289,9 +331,9 @@ async function readIndex(api: GistsApi, id: string, createdAt: string): Promise<
   if (gist === 'unchanged') throw new Error('a read with no ETag cannot be unchanged')
   const state = parseFriendsIndex(fileText(gist, INDEX_FILE))
   if (state.kind === 'newer') return { kind: 'newer', id }
-  // A broken list is read as an empty one, and its unknown fields stay; the next write repairs it.
-  const index: FriendsIndex = state.kind === 'ok' ? state.value : { v: 1, nickname: null, vaults: [], stats: null, friends: [], groups: [] }
-  return { kind: 'ok', handle: { id, index, raw: state.kind === 'ok' ? state.raw : {}, etag: gist.etag, createdAt } }
+  // YAZ-5191: a list that cannot be read is NEVER read as empty: an empty list would be written over the real one.
+  if (state.kind === 'unreadable') return { kind: 'broken', id }
+  return { kind: 'ok', handle: { id, index: state.value, raw: state.raw, etag: gist.etag, createdAt } }
 }
 
 /** Joins `other` into `keep`: the friends and groups of both (by pointer), the vaults of both, a name and stats if missing. */
@@ -324,6 +366,8 @@ export async function findFriendsIndex(api: GistsApi, opts: WriteOptions): Promi
     const read = await readIndex(api, other.id, other.createdAt)
     if (read === null) continue
     if (read.kind === 'newer') return { kind: 'newer', id: other.id }
+    // A twin this app cannot read is not joined and not deleted: stop, and say so.
+    if (read.kind === 'broken') return { kind: 'broken', id: other.id }
     if (read.kind !== 'ok') continue
     const joined = joinIndex(handle.index, read.handle.index)
     if (indexText(joined, handle.raw) !== indexText(handle.index, handle.raw)) handle = await write(() => writeFriendsIndex(api, handle, joined))
@@ -350,7 +394,7 @@ export function emptyNumbers(now: number): FriendStats {
   return { v: 1, login: '', name: '', avatar: '', days: [], totals: zero, at: new Date(now).toISOString() }
 }
 
-export type EnsureResult = { kind: 'ok'; handle: IndexHandle } | { kind: 'newer' }
+export type EnsureResult = { kind: 'ok'; handle: IndexHandle } | { kind: 'newer' } | { kind: 'broken' }
 
 /**
  * Make or find the person's friends files: ONE list and ONE numbers gist (round 16). 4E2 calls it before the first
@@ -363,6 +407,7 @@ export async function ensureFriendsFiles(api: GistsApi, seed: { vaults: string[]
   const numbersText = JSON.stringify(seed.numbers ?? emptyNumbers(now()))
   let found = await findFriendsIndex(api, opts)
   if (found.kind === 'newer') return { kind: 'newer' }
+  if (found.kind === 'broken') return { kind: 'broken' }
   if (found.kind === 'none') {
     // Numbers first, then the list that names it: the list is never without its numbers gist.
     const numbers = await write(() => api.create(opts.describe('numbers'), { [NUMBERS_FILE]: numbersText }))
@@ -372,11 +417,17 @@ export async function ensureFriendsFiles(api: GistsApi, seed: { vaults: string[]
     await opts.sleep(SETTLE_MS)
     found = await findFriendsIndex(api, opts)
     if (found.kind === 'newer') return { kind: 'newer' }
+    if (found.kind === 'broken') return { kind: 'broken' }
     if (found.kind === 'none') throw new Error('the friends list was deleted while it was made')
     if (found.handle.id !== made.id && found.handle.index.stats !== numbers.id) await write(() => removeQuietly(api, numbers.id))
   }
   let handle = found.handle
-  if (handle.index.stats === null) handle = await ensureNumbersGist(api, handle, numbersText, opts)
+  if (handle.index.stats === null) {
+    const withStats = await ensureNumbersGist(api, handle, numbersText, opts)
+    if (withStats === 'broken') return { kind: 'broken' }
+    if (withStats === 'newer') return { kind: 'newer' }
+    handle = withStats
+  }
   return { kind: 'ok', handle }
 }
 
@@ -384,11 +435,13 @@ export async function ensureFriendsFiles(api: GistsApi, seed: { vaults: string[]
  * A list with no numbers gist (an older list, or a stop halfway): finds a numbers gist by its file name (the oldest),
  * or makes one, and writes its ID into the list. Other numbers gists that no list names are left alone: 4E2 owns them.
  */
-async function ensureNumbersGist(api: GistsApi, handle: IndexHandle, numbersText: string, opts: WriteOptions): Promise<IndexHandle> {
+async function ensureNumbersGist(api: GistsApi, handle: IndexHandle, numbersText: string, opts: WriteOptions): Promise<IndexHandle | 'broken' | 'newer'> {
   const write = writer(opts)
   const existing = (await api.list()).filter((g) => g.files.includes(NUMBERS_FILE)).sort(older)[0]
   const id = existing?.id ?? (await write(() => api.create(opts.describe('numbers'), { [NUMBERS_FILE]: numbersText }))).id
   const fresh = await readIndex(api, handle.id, handle.createdAt)
+  if (fresh?.kind === 'broken') return 'broken'
+  if (fresh?.kind === 'newer') return 'newer'
   const base = fresh?.kind === 'ok' ? fresh.handle : handle
   if (base.index.stats !== null) return base
   return write(() => writeFriendsIndex(api, base, { ...base.index, stats: id }))

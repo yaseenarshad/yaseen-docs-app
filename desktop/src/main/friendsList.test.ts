@@ -391,6 +391,25 @@ describe('remove a friend (round 16)', () => {
   })
 })
 
+describe('YAZ-5191 in 4E2: add and remove never write over a list that cannot be read', () => {
+  it('paste, share, remove and finish stop with "needs-repair" and change nothing', async () => {
+    const w = people()
+    const { ali, aliForBea } = await paired(w, 1)
+    const text = '{"v":1,"friends":['
+    w.setFiles(ali.handle.id, { [INDEX_FILE]: text })
+    const writes = () => w.calls.filter((c) => c.op !== 'list' && c.op !== 'read').length
+    const n = writes()
+    expect(await pasteLink(ali.api, ali.handle, ID, opts(w))).toEqual({ kind: 'needs-repair' })
+    expect(pasteMessage({ kind: 'needs-repair' })).toContain('notecards-friends.json')
+    await expect(shareLink(ali.api, ali.handle, opts(w))).rejects.toThrow()
+    expect(await removeFriend(ali.api, ali.handle, aliForBea, emptyBudget(), opts(w))).toMatchObject({ kind: 'paused', why: 'needs-repair' })
+    expect(await finishRemove(ali.api, ali.handle, emptyBudget(), opts(w))).toMatchObject({ kind: 'paused', why: 'needs-repair' })
+    expect(writes()).toBe(n)
+    expect(w.text(ali.handle.id, INDEX_FILE)).toBe(text)
+    expect(w.text(aliForBea, POINTER_FILE)).not.toBeNull()
+  })
+})
+
 describe('a friend who removed me (round 12, item 6)', () => {
   it('shows "No longer shares with you" with no crash, and asks GitHub again at most once an hour', async () => {
     const w = people()
