@@ -84,7 +84,7 @@ import { namingTab } from '../lib/focusHandoff'
 import { flushRenamedPath, takeRenameBuffer } from '../lib/renameContinuity'
 import { isAnnouncedWrite, onTwinSave } from '../lib/twinEditors'
 import { registerPageView } from '../lib/pageView'
-import { readPagePlace, showPagePlace } from './pagePlace'
+import { holdPagePlace, readPagePlace, showPagePlace } from './pagePlace'
 import { appliedTheme } from '../lib/theme'
 import { storage } from '../lib/storage'
 import { transformFile } from '../views/writeProperty'
@@ -1455,12 +1455,14 @@ function CrepeHost({
   // the task boxes, the code blocks and the tables all ask `view.editable`. Find, copy, links, folds,
   // the table of contents, the zoom and line numbers are views and keep working (S25).
   // Said only while on, and taken back by the cleanup, as line numbers are: an editable page never pays for it.
+  // The switch keeps the place (YAZ-5164: Lock now, ⌘↵ and Esc "jump me somewhere else"): the block at the top stays at
+  // the same spot on screen, as each switch of Explore's layer keeps it (`pagePlace.ts`).
   useEffect(() => {
     const crepe = readyCrepe
     if (!readOnly || crepe === null || crepeRef.current !== crepe) return
-    crepe.setReadonly(true)
+    holdPagePlace(editorViewOf(crepe), () => crepe.setReadonly(true))
     return () => {
-      if (crepeRef.current === crepe) crepe.setReadonly(false)
+      if (crepeRef.current === crepe) holdPagePlace(editorViewOf(crepe), () => crepe.setReadonly(false))
     }
   }, [readOnly, readyCrepe])
 
