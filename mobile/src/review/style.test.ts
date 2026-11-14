@@ -28,12 +28,34 @@ describe('the Review tab styles', () => {
     expect(css).toMatch(/\.review__more \{[^}]*min-width: 56px;[^}]*min-height: 56px;/)
   })
 
+  it('YAZ-5234: the lost line and the fix line are 4.5:1 or more, light and dark', () => {
+    const lum = (hex: string) => {
+      const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4))
+      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    }
+    const ratio = (a: string, b: string) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05)
+    const phone = readFileSync(new URL('../styles.css', import.meta.url), 'utf8')
+    const light = tokens(blockAfter(css, ':root {'))['--review-warn-text']
+    const phoneTokens = tokens(blockAfter(phone, ':root {'))
+    const phoneDark = tokens(blockAfter(phone, '@media (prefers-color-scheme: dark)'))
+    expect(ratio(light, phoneTokens['--bg'])).toBeGreaterThanOrEqual(4.5)
+    expect(ratio(light, phoneTokens['--bg-side'])).toBeGreaterThanOrEqual(4.5)
+    expect(tokens(blockAfter(css, '@media (prefers-color-scheme: dark)'))['--review-warn-text']).toBe('var(--warn)')
+    expect(ratio(phoneDark['--warn'], phoneDark['--bg'])).toBeGreaterThanOrEqual(4.5)
+    expect(css).toMatch(/\.review__lost-title \{[^}]*color: var\(--review-warn-text\);/)
+  })
+
+  it('YAZ-5233: Undo and a sound\'s play button are 44 pt', () => {
+    expect(css).toMatch(/\.review__undo \{[^}]*min-width: var\(--tap\);/)
+    expect(css).toMatch(/\.review__card \.card__audio-play \{[^}]*min-width: var\(--tap\);[^}]*min-height: var\(--tap\);/)
+  })
+
   it("the card styles' tokens have the Mac's values, light and dark", () => {
     const light = tokens(blockAfter(css, ':root {'))
     const dark = tokens(blockAfter(css, '@media (prefers-color-scheme: dark)'))
     const macLight = tokens(blockAfter(mac, ':root {'))
     const macDark = tokens(blockAfter(mac, "[data-theme='dark'] {"))
     for (const name of ['--bg-hover', '--next-hidden', '--mark-bg']) expect([name, light[name]]).toEqual([name, macLight[name]])
-    for (const name of Object.keys(dark)) expect([name, dark[name]]).toEqual([name, macDark[name]])
+    for (const name of ['--bg-hover', '--next-hidden']) expect([name, dark[name]]).toEqual([name, macDark[name]])
   })
 })

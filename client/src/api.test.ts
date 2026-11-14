@@ -35,6 +35,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     components: vi.fn(),
     secrets: vi.fn(),
     phone: vi.fn(),
+    friends: vi.fn(),
     pickFolder: vi.fn(),
     pickPicturesFolder: vi.fn(),
     pictureFolders: vi.fn(),

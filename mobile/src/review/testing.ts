@@ -1,4 +1,5 @@
 import { act, createElement } from 'react'
+import { vi } from 'vitest'
 import { createRoot } from 'react-dom/client'
 import { SAME_WORD } from '@client/vault/unitWordText'
 import { answersSetup } from '../answers/testing'
@@ -14,6 +15,8 @@ import { ReviewView } from './ReviewView'
  * `// @vitest-environment jsdom`, and fakes `Date` (the review hook reads the time) with `vi.useFakeTimers`.
  */
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+// Each answer waits the short "seen" time of the next card (YAZ-5226), as a person does: a session takes longer.
+vi.setConfig({ testTimeout: 30_000 })
 
 /** Made-up "now": Friday 13 November 2026, 10:00 local time. */
 export const NOW = new Date(2026, 10, 13, 10, 0, 0).getTime()
@@ -45,7 +48,12 @@ export async function mountReview(t: Awaited<ReturnType<typeof answersSetup>>, o
   await settle()
   const buttons = () => [...host.querySelectorAll<HTMLButtonElement>('button')]
   const button = (name: string | RegExp) => buttons().find((b) => (typeof name === 'string' ? named(b) === name : name.test(named(b)))) ?? null
+  /** A new card takes taps after a short time on the screen (YAZ-5226): wait for it, as a person does. */
+  const seen = async () => {
+    for (let i = 0; i < 100 && host.querySelector('[data-guard]') !== null; i++) await act(async () => void (await new Promise((r) => setTimeout(r, 20))))
+  }
   const click = async (name: string | RegExp) => {
+    if (host.querySelector('[data-guard]') !== null && (button(name)?.closest('.review__answers') != null)) await seen()
     const b = button(name)
     if (b === null) throw new Error(`No button "${name}" on: ${host.textContent}`)
     await act(async () => b.click())
@@ -83,7 +91,9 @@ export async function mountReview(t: Awaited<ReturnType<typeof answersSetup>>, o
     /** The line under the buttons. */
     last: () => (host.querySelector('.review__last')?.textContent ?? '').replace(/\s+/g, ' ').trim(),
     head: () => (host.querySelector('.review__head')?.textContent ?? '').replace(/\s+/g, ' ').trim(),
+    seen,
     async tap() {
+      await seen()
       const card = host.querySelector<HTMLElement>('.review__card')
       if (card === null) throw new Error(`No card on: ${host.textContent}`)
       await act(async () => card.click())

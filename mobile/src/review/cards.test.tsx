@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { VaultMedia } from '../media/ui/vaultMedia'
 import { NOW, cardBlock, cardFile, page, reviewSetup, type ReviewHarness } from './testing'
@@ -20,7 +21,7 @@ describe('Review: the kinds of card', () => {
   it('no hidden word, one side: fully shown at once; a tap changes nothing; the answers work', async () => {
     h = await reviewSetup(one('Paris is the capital of France.'))
     expect(h.cardText()).toBe('Paris is the capital of France.')
-    expect(h.host.querySelector('.review__card')?.getAttribute('aria-label')).toBe('Card, fully shown')
+    expect(h.button('The card is fully shown')?.disabled).toBe(true)
     await h.tap()
     expect(h.cardText()).toBe('Paris is the capital of France.')
     await h.click('Remembered')
@@ -139,5 +140,32 @@ describe('Review: the kinds of card', () => {
     expect(h.text()).toContain('This card file needs a fix on the Mac.')
     await h.click('Remembered')
     expect(h.answers.waiting().map((w) => w.op.id)).toEqual(['NC-1'])
+  })
+
+  it('M1 (checker): a tap on a link or a picture in the card is theirs, never a step', async () => {
+    const media: VaultMedia = { show: async (path) => ({ status: 'ready', path, url: 'blob:cat', type: 'image/png' }) }
+    h = await reviewSetup(one('See [the site](https://example.com) and ![a cat](cat.png)\n---\n{{hidden}}', { 'cat.png': 'made-up bytes' }), { media })
+    const before = h.cardText()
+    for (const el of [h.host.querySelector<HTMLElement>('.review__card a[href]')!, h.host.querySelector<HTMLElement>('.review__card img')!]) {
+      el.addEventListener('click', (e) => e.preventDefault(), { once: true })
+      await act(async () => el.click())
+      await h.settle()
+      expect(h.cardText()).toBe(before)
+    }
+    await h.tap()
+    expect(h.cardText()).not.toBe(before)
+  })
+
+  it('YAZ-5229: VoiceOver reads the question; a step says what it showed; there is a button to show the next part', async () => {
+    h = await reviewSetup(one('Capital of France?\n---\nIt is {{Paris}}.'))
+    const box = h.host.querySelector('.review__card')!
+    expect(box.getAttribute('role')).toBeNull()
+    expect(box.getAttribute('aria-label')).toBeNull()
+    expect(box.textContent).toContain('Capital of France?')
+    expect(box.textContent).not.toContain('Paris')
+    await h.click('Show the next part')
+    await h.click('Show the next part')
+    expect(h.host.querySelector('[aria-live="polite"].sr-only')?.textContent).toBe('Paris')
+    for (const b of h.host.querySelectorAll('.review__answer')) expect((b.textContent ?? '').trim()).not.toBe('')
   })
 })

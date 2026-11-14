@@ -34,9 +34,9 @@ describe('useWakeLock', () => {
     await act(async () => void doc.dispatchEvent(new Event('visibilitychange')))
     ;(doc as { visibilityState: DocumentVisibilityState }).visibilityState = 'visible'
     await act(async () => void doc.dispatchEvent(new Event('visibilitychange')))
-    expect(events).toEqual(['request', 'request'])
+    expect(events).toEqual(['request', 'release', 'request'])
     await r.rerender(false)
-    expect(events).toEqual(['request', 'request', 'release'])
+    expect(events).toEqual(['request', 'release', 'request', 'release'])
     act(() => r.root.unmount())
   })
 

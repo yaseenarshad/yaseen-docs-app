@@ -389,3 +389,24 @@ a {
     transition: none;
   }
 }
+
+/* ---- A screen of its own chunk that did not load (YAZ-5230, `screens/LazyScreen.tsx`) ---- */
+
+.lazy-screen {
+  min-height: 100%;
+}
+
+.lazy-screen--failed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.lazy-screen--failed p {
+  margin: 0;
+  max-width: 32ch;
+}

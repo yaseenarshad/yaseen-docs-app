@@ -88,6 +88,20 @@ describe('applyOps (decision 2): each kind of action, by card ID, on the newest 
     expect(applyOps(two, [op, op]).content).toBe(once)
   })
 
+  it('YAZ-5198: an `unreview` names WHICH identical copy (`nth`): two identical entries, the unreview of the second applied two times leaves ONE', () => {
+    const two = applyOps(page, [{ kind: 'review', id: 'NC-2', review: { at: R1.at, rating: 'again', seconds: 3 } }, { kind: 'review', id: 'NC-2', review: { at: R1.at, rating: 'again', seconds: 4 }, nth: 2 }]).content
+    expect(lineOf(two, 'NC-2')).toBe(`<!-- card: NC-2, ${R1.at} again 3s, ${R1.at} again 4s -->`)
+    const op: CardOp = { kind: 'unreview', id: 'NC-2', at: R1.at, rating: 'again', nth: 2 }
+    const once = applyOps(two, [op]).content
+    expect(lineOf(once, 'NC-2')).toBe(`<!-- card: NC-2, ${R1.at} again 3s -->`)
+    expect(applyOps(once, [op]).content).toBe(once)
+    // The first copy's unreview (nth 1) still takes the one left, and only once.
+    const first: CardOp = { kind: 'unreview', id: 'NC-2', at: R1.at, rating: 'again', nth: 1 }
+    const none = applyOps(once, [first]).content
+    expect(lineOf(none, 'NC-2')).toBe('<!-- card: NC-2 -->')
+    expect(applyOps(none, [first]).content).toBe(none)
+  })
+
   it('the order of the actions is kept: archive then unarchive is not archived; unarchive then archive is', () => {
     expect(applyOps(page, [{ kind: 'off', id: 'NC-2', on: true }, { kind: 'off', id: 'NC-2', on: false }]).content).toBe(page)
     expect(lineOf(applyOps(page, [{ kind: 'off', id: 'NC-2', on: false }, { kind: 'off', id: 'NC-2', on: true }]).content, 'NC-2')).toBe('<!-- card: NC-2, off -->')
@@ -157,6 +171,12 @@ describe('opsBetween: a change of one card line as actions (the review host\'s â
       { kind: 'fix', id: 'NC-2', on: true },
       { kind: 'unreview', id: 'NC-2', at: R2.at, rating: R2.rating },
     ])
+  })
+  it('YAZ-5198: identical copies are counted: removing the second of two names it (`nth: 2`); adding a second names it too', () => {
+    const two = line(`<!-- card: NC-2, ${R1.at} again 3s, ${R1.at} again 4s -->`)
+    const one = line(`<!-- card: NC-2, ${R1.at} again 3s -->`)
+    expect(opsBetween('NC-2', two, one)).toEqual([{ kind: 'unreview', id: 'NC-2', at: R1.at, rating: 'again', nth: 2 }])
+    expect(opsBetween('NC-2', one, two)).toEqual([{ kind: 'review', id: 'NC-2', review: { at: R1.at, rating: 'again', seconds: 4 }, nth: 2 }])
   })
   it('a change the phone cannot send (for example the title on the front) is refused, not lost', () => {
     expect(() => opsBetween('NC-2', line('<!-- card: NC-2 -->'), line('<!-- card: NC-2, notitle -->'))).toThrow(/cannot send/)
