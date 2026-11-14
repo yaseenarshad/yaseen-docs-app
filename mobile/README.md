@@ -60,10 +60,30 @@ mobile/
       persist.ts        `askToKeepStorage()`: `navigator.storage.persist()` at sign-in
       index.ts          the public entry: `openPhoneStore()` and the types
       testing.ts        test help: a backend with a byte limit (a full phone; every stored byte counts)
+      tokenStore.ts     `TokenStore`: one GitHub token for each vault (3E)
+    github/
+      client.ts         `githubClient`: the ONE way to call GitHub; api.github.com only; typed `GithubError`s
+      testing.ts        test help: `fakeGithub`, a fake API behind `fetch` (no test calls the real one)
+    auth/               the sign-in logic, no screens (3E)
+      check.ts          the check on save: `GET /user`, the repo, the branch, `.yaseendocs` at the top, a write probe, a Gists probe
+      signIn.ts         `startState`, `signIn`, `signInAgain`, `forgetVaultAndToken`, `signOutAndErase`
+      account.ts        what the check learned (login, name, avatar, Gists, end date), kept with the vault
+      friends.ts        which account acts for friends, and its two alerts
+      expiry.ts         the token's end date and the warning before it
+      scanCode.ts       "Scan a code": what the Mac's QR code holds (the camera is 4A's)
+      input.ts          the typed repo, token and branch, cleaned
 ```
 
-Where the next units go (from the issues): `src/sync/` (3B, 3C, 3D), `src/store/tokenStore.ts` (3E),
-`src/screens/` (4A–4E).
+Where the next units go (from the issues): `src/sync/` (3B, 3C, 3D), `src/screens/` (4A–4E).
+
+## GitHub and the token, in short
+
+* Call GitHub only through `githubClient(token)` (`src/github/client.ts`). It takes a path, never an address, so the
+  token goes to `api.github.com` only, in the Authorization header. It never logs. Its errors never hold the token.
+* `openPhoneStorage()` gives the store and the `TokenStore` on one connection. Read a vault's token with
+  `tokens.read(vaultId)`; `VaultStore`'s state calls refuse the token's row.
+* GitHub hides the header `github-authentication-token-expiration` from web pages (CORS). The phone learns a token's
+  end date from the Mac's code only (`scanCode.ts`).
 
 ## Storage, in short
 

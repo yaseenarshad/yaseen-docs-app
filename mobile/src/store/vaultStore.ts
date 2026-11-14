@@ -1,6 +1,7 @@
 import { isMarkdown } from '@shared/fileKind'
 import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR } from '@shared/types'
 import type { Backend, Op } from './backend'
+import { TOKEN_STATE } from './tokenStore'
 
 /**
  * The format of the stored data: one number. Raise it when a change makes an older copy wrong to read. At the next
@@ -109,7 +110,11 @@ export interface VaultStore {
   resetCopy(vault: string): Promise<void>
   /** The vault leaves the phone: its files, its checkpoint and its state. */
   removeVault(vault: string): Promise<void>
-  /** "Sign out and erase this phone" (row N7): every file, checkpoint and state of every vault. The token is 3E's. */
+  /**
+   * "Sign out and erase this phone" (row N7): every file, checkpoint and state of every vault. The browser
+   * `TokenStore` is on the same rows, so its tokens go too; the app calls `signOutAndErase` (3E), which clears the
+   * `TokenStore` first, so a Keychain store is cleared as well.
+   */
   eraseAll(): Promise<void>
 
   close(): void
@@ -133,6 +138,11 @@ const clearCopy = (vault?: string): Op[] =>
   vault === undefined
     ? [{ clear: 'files' }, { clear: 'entries' }, { clear: 'checkpoints' }]
     : [{ clear: 'files', scope: vault }, { clear: 'entries', scope: vault }, { del: 'checkpoints', key: vault }]
+
+/** The token is `TokenStore`'s alone (3E): phone-only state never reads or writes it. */
+function notTheToken(name: string) {
+  if (name === TOKEN_STATE) throw new Error('The GitHub token is read and written through TokenStore only')
+}
 
 /** Opens the store on a backend: checks the format number first (row P3). */
 export async function openVaultStore(backend: Backend, options: OpenOptions = {}): Promise<VaultStore> {
@@ -238,12 +248,17 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
     },
 
     async getState<T>(scope: string, name: string) {
+      notTheToken(name)
       return (await backend.get('state', [scope, name])) as T | undefined
     },
     async setState(scope, name, value) {
+      notTheToken(name)
       await applyMakingRoom([{ put: 'state', key: [scope, name], value }], { vault: scope, item: `state:${name}`, from: undefined })
     },
-    removeState: (scope, name) => backend.apply([{ del: 'state', key: [scope, name] }]),
+    async removeState(scope, name) {
+      notTheToken(name)
+      await backend.apply([{ del: 'state', key: [scope, name] }])
+    },
 
     resetCopy: (vault) => backend.apply(clearCopy(vault)),
     removeVault: (vault) => backend.apply([...clearCopy(vault), { clear: 'state', scope: vault }]),

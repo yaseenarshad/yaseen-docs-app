@@ -35,11 +35,13 @@ const withoutComments = (code: string) => code.replace(/\/\*[\s\S]*?\*\//g, '').
  * - the desktop bridge, the global `window.yaseenDocs` (`shared/ipc.ts`): it is undefined on a phone;
  * - browser storage (`localStorage`, `sessionStorage`, `indexedDB`) outside `mobile/src/store/`, the one place
  *   that owns the phone's storage.
- * Only the repo's own sources are read (`client/src`, `shared`, `mobile/src`).
+ * Only the repo's own sources are read (`client/src`, `shared`, `mobile/src`), and no test file.
  */
 export function forbiddenUse(file: string, code: string): string | null {
   const path = file.split('?')[0].replaceAll('\\', '/')
   if (!REPO_SOURCE.test(path) || path.includes('/node_modules/')) return null
+  // A test is never in the bundle. Vitest runs this guard on tests too, and src/rules.test.ts names the words.
+  if (/\.test\.[cm]?[jt]sx?$/.test(path)) return null
   const text = withoutComments(code)
   if (/\b(window|globalThis|self)\s*\.\s*yaseenDocs\b/.test(text)) return 'the desktop bridge (window.yaseenDocs)'
   if (!STORE.test(path) && /\b(localStorage|sessionStorage|indexedDB)\b/.test(text)) return 'browser storage outside mobile/src/store'

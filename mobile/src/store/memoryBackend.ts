@@ -14,14 +14,18 @@ export function newMemoryDisk(): MemoryDisk {
 export function memoryBackend(disk: MemoryDisk = newMemoryDisk()): Backend {
   const table = (t: Table) => disk.get(t)!
   const id = (key: Key) => JSON.stringify(key)
+  const rowsOf = (t: Table, scope?: string) =>
+    [...table(t).values()].filter((r) => scope === undefined || (Array.isArray(r.key) && r.key[0] === scope)).sort((a, b) => compareKeys(a.key, b.key))
   return {
     async get(t, key) {
       const row = table(t).get(id(key))
       return row === undefined ? undefined : structuredClone(row.value)
     },
     async all(t, scope) {
-      const rows = [...table(t).values()].filter((r) => scope === undefined || (Array.isArray(r.key) && r.key[0] === scope))
-      return rows.sort((a, b) => compareKeys(a.key, b.key)).map((r) => structuredClone(r.value))
+      return rowsOf(t, scope).map((r) => structuredClone(r.value))
+    },
+    async keys(t, scope) {
+      return rowsOf(t, scope).map((r) => structuredClone(r.key))
     },
     async apply(ops: readonly Op[]) {
       // Clone first: a value that cannot be cloned fails the batch before any row changes.

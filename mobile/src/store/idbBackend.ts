@@ -109,6 +109,8 @@ export function idbBackend(options: { name?: string; factory?: IDBFactory; keyRa
       run((db) => request(db.transaction(table, 'readonly').objectStore(table).get(key))),
     all: (table: Table, scope?: string) =>
       run((db) => request(db.transaction(table, 'readonly').objectStore(table).getAll(scope === undefined ? undefined : scopeRange(scope)))),
+    keys: (table: Table, scope?: string) =>
+      run((db) => request(db.transaction(table, 'readonly').objectStore(table).getAllKeys(scope === undefined ? undefined : scopeRange(scope)))) as Promise<Key[]>,
     apply(ops: readonly Op[]) {
       if (ops.length === 0) return Promise.resolve()
       const tables = [...new Set(ops.map((op) => ('put' in op ? op.put : 'del' in op ? op.del : op.clear)))]

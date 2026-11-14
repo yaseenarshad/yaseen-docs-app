@@ -41,4 +41,10 @@ describe('forbiddenUse: code that reaches the desktop bridge or browser storage 
     expect(forbiddenUse('/repo/mobile/src/store/idbBackend.ts', 'indexedDB.open("x")')).toBeNull()
     expect(forbiddenUse('/repo/node_modules/react-dom/cjs/x.js', 'localStorage')).toBeNull()
   })
+
+  it('a test file is not bundled, so it is not read (src/rules.test.ts names the storage words in its own check)', () => {
+    expect(forbiddenUse('/repo/mobile/src/rules.test.ts', 'const BROWSER_STORAGE = /localStorage|indexedDB/')).toBeNull()
+    expect(forbiddenUse('/repo/client/src/review/x.test.tsx', 'window.yaseenDocs.vault')).toBeNull()
+    expect(forbiddenUse('/repo/mobile/src/screens/latest.ts', 'localStorage')).toMatch(/browser storage/)
+  })
 })
