@@ -8,5 +8,5 @@
     "paths": { "@shared/*": ["../shared/*"], "@client/*": ["../client/src/*"] }
   },
   "include": ["src"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/store/testing.ts", "src/github/testing.ts"]
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/testing.ts"]
 }

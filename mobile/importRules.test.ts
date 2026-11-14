@@ -42,9 +42,10 @@ describe('forbiddenUse: code that reaches the desktop bridge or browser storage 
     expect(forbiddenUse('/repo/node_modules/react-dom/cjs/x.js', 'localStorage')).toBeNull()
   })
 
-  it('a test file is not bundled, so it is not read (src/rules.test.ts names the storage words in its own check)', () => {
-    expect(forbiddenUse('/repo/mobile/src/rules.test.ts', 'const BROWSER_STORAGE = /localStorage|indexedDB/')).toBeNull()
-    expect(forbiddenUse('/repo/client/src/review/x.test.tsx', 'window.yaseenDocs.vault')).toBeNull()
+  // YAZ-5160: a test file is never bundled, and the guard does not run in the test project (testConfig.test.ts).
+  // forbiddenUse itself reads a file by its code, not by its name: a file named like a test gets no pass.
+  it('a file is judged by its code, not by its name', () => {
     expect(forbiddenUse('/repo/mobile/src/screens/latest.ts', 'localStorage')).toMatch(/browser storage/)
+    expect(forbiddenUse('/repo/mobile/src/screens/latest.test.ts', 'localStorage')).toMatch(/browser storage/)
   })
 })

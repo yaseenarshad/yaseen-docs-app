@@ -1,15 +1,23 @@
-import { defineConfig, mergeConfig } from 'vitest/config'
-import viteConfig from './vite.config'
+import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vitest/config'
+import { phoneResolve } from './vite.config'
 
-/** The `mobile` project of the root vitest run: the app's own Vite config (aliases, one React, the import guard), Node by default. */
-export default mergeConfig(
-  viteConfig,
-  defineConfig({
-    test: {
-      name: 'mobile',
-      // Store tests run in plain Node with fake-indexeddb; a file that draws React says `@vitest-environment jsdom`.
-      environment: 'node',
-      include: ['src/**/*.test.{ts,tsx}', '*.test.ts'],
-    },
-  }),
-)
+/**
+ * The `mobile` project of the root vitest run: the app's aliases and its one React (`phoneResolve`), Node by default.
+ *
+ * NOT the import guard (`phoneImportGuard`, YAZ-5160). The guard checks what the phone BUNDLES. Vitest loads tests and
+ * test helpers, which run in Node and are never bundled, and the guard stopped `src/rules.test.ts` from loading. The
+ * rule is tested by `importRules.test.ts`, and by `src/rules.test.ts`, which walks every file the app reaches.
+ * `testConfig.test.ts` fails if the guard comes back here.
+ */
+export default defineConfig({
+  root: import.meta.dirname,
+  plugins: [react()],
+  resolve: phoneResolve,
+  test: {
+    name: 'mobile',
+    // Store tests run in plain Node with fake-indexeddb; a file that draws React says `@vitest-environment jsdom`.
+    environment: 'node',
+    include: ['src/**/*.test.{ts,tsx}', '*.test.ts'],
+  },
+})
