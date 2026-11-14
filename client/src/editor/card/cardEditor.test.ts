@@ -332,6 +332,18 @@ describe('the mirror, Done and the page`s undo', () => {
     second.card.done()
   })
 
+  it('YAZ-5332: a press on the head`s Done button is Done (the page`s editor has no CodeMirror)', async () => {
+    const { view } = await mount(page('One'))
+    const { card, inner } = await edit(view)
+    type(inner, '!')
+    const done = card.dom.querySelector<HTMLElement>('.card__edit')!
+    expect(done.getAttribute('aria-label')).toBe('Done')
+    done.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
+    expect(card.editing).toBe(false)
+    expect(cardBody(view)).toBe('One!')
+    expect(card.dom.querySelector('.card__edit')?.textContent).toBe('Edit card')
+  })
+
   it('the page`s selection is the card while it is edited, and the page never reads the inner editor', async () => {
     const { view } = await mount(page('Front'))
     const { card, inner } = await edit(view)

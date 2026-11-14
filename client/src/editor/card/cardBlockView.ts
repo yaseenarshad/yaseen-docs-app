@@ -727,8 +727,9 @@ export class CardBlockView implements NodeView {
     }
     if (target.closest('.card__edit') !== null) {
       event.preventDefault()
-      if (this.code === null) this.edit()
-      else this.done()
+      // `editing`, not the raw-text box (YAZ-5332): with the page's editor (the default) `code` is null while edited.
+      if (this.editing) this.done()
+      else this.edit()
       return
     }
     if (target.closest('.card__id') !== null) {
