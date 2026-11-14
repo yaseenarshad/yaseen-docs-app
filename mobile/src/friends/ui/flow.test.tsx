@@ -250,6 +250,39 @@ describe('add a friend, both orders, on the real friends logic', () => {
     expect((await ali.marks.outbox())[mine]).toBeUndefined()
   })
 
+  it('YAZ-5301: a waiting cheer for a friend who no longer shares is dropped, with no write (the filter of the flush)', async () => {
+    const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: () => NOW })
+    const { ali, bea, mine } = await paired(world)
+    world.offline = true
+    expect((await ali.mark(mine, 'cheer')).kind).toBe('waiting')
+    world.offline = false
+    // Bea removes Ali: on Ali's phone Bea's row is "No longer shares with you" (`gone`). Ali's own pointer stays.
+    const theirs = await bea.board()
+    if (theirs.kind !== 'ok') throw new Error(theirs.kind)
+    expect((await bea.remove(theirs.friends[0].mine)).kind).not.toBe('paused')
+    const updates = () => world.calls.filter((c) => c.op === 'update' && c.id === mine && c.answer === 200).length
+    const before = updates()
+    const read = await ali.board()
+    if (read.kind !== 'ok') throw new Error(read.kind)
+    expect(read.friends.map((f) => [f.state, f.label])).toEqual([['gone', 'No longer shares with you']])
+    expect(updates()).toBe(before)
+    expect((await ali.marks.outbox())[mine]).toBeUndefined()
+  })
+
+  it("YAZ-5301: a mark asked while the friend's remove waits in the queue is not sent (the check at send time)", async () => {
+    const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: () => NOW })
+    const { ali, mine } = await paired(world)
+    world.offline = true
+    expect((await ali.remove(mine)).kind).toBe('paused')
+    world.offline = false
+    // The remove still waits in the phone's queue (no read of the Friends tab drained it). A cheer now must not go.
+    const updates = () => world.calls.filter((c) => c.op === 'update' && c.id === mine && c.answer === 200).length
+    const before = updates()
+    expect((await ali.mark(mine, 'cheer')).kind).toBe('gone')
+    expect(updates()).toBe(before)
+    expect((await ali.marks.outbox())[mine]).toBeUndefined()
+  })
+
   it('YAZ-5294: a waiting cheer on a new phone keeps the remove reserve when it goes later', async () => {
     const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: () => NOW })
     const { ap, ali, mine } = await paired(world)
