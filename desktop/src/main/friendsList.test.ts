@@ -29,7 +29,7 @@ import {
   shareLink,
   type ListOptions,
 } from '@shared/friendsList'
-import { emptyBudget, noteUpdate } from '@shared/friendSend'
+import { emptyBudget, recordUpdate } from '@shared/friendSend'
 import type { FriendStats } from '@shared/friendStats'
 
 /**
@@ -341,7 +341,7 @@ describe('remove a friend (round 16)', () => {
     const w2 = people()
     const two = await paired(w2, 29)
     // The Mac and cheers used most of the hour: GitHub says 12 are left.
-    const low = noteUpdate(emptyBudget(), w2.now(), { remaining: 12, limit: 100, resetAt: w2.now() + 3600_000 })
+    const low = recordUpdate(emptyBudget(), w2.now(), { remaining: 12, limit: 100, resetAt: w2.now() + 3600_000 })
     const part = await removeFriend(two.ali.api, two.ali.handle, two.aliForBea, low, opts(w2))
     expect(part).toMatchObject({ kind: 'paused', why: 'budget', retryAt: expect.any(Number) })
     expect(w2.text(two.aliForBea, POINTER_FILE)).toBeNull() // Bea is cut off at once

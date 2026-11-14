@@ -123,7 +123,7 @@ export const emptyBudget = (): GistBudget => ({ updates: [], seen: null, blocked
 const inHour = (b: GistBudget, now: number) => b.updates.filter((at) => at > now - HOUR && at <= now)
 
 /** One update made at `now`, with GitHub's count from its answer (or from a failure). */
-export function noteUpdate(b: GistBudget, now: number, rate: GistRate | null): GistBudget {
+export function recordUpdate(b: GistBudget, now: number, rate: GistRate | null): GistBudget {
   const updates = [...inHour(b, now), now]
   // `after` counts my updates since GitHub's count (YAZ-5083): updates in the same millisecond as it count too.
   const seen =
@@ -265,7 +265,7 @@ export async function sendNumbers(api: GistsApi, input: SendInput): Promise<{ ou
     if (!changed) return { outcome: { kind: 'unchanged' }, budget }
     if (!mayUpdate(budget, now, 1, input.reserve)) return { outcome: { kind: 'budget', retryAt: now + sendGap(budget, now, input.reserve) }, budget }
     const { rate } = await api.update(input.statsId, { [NUMBERS_FILE]: JSON.stringify(merged) })
-    budget = noteUpdate(budget, now, rate)
+    budget = recordUpdate(budget, now, rate)
     return { outcome: { kind: 'sent' }, budget }
   } catch (err) {
     const code = gistErrorCode(err)

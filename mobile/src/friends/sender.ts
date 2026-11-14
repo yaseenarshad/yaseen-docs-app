@@ -15,7 +15,7 @@ import {
   PUBLISH_EVERY_MS,
   emptyBudget,
   mayUpdate,
-  noteUpdate,
+  recordUpdate,
   numbersFor,
   numbersKey,
   reserveFor,
@@ -277,7 +277,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
         }
         const result = await replaceNumbersGist(api, handle, JSON.stringify(fresh), writeOptions)
         index = result.handle
-        for (let i = 0; i < result.pointers.updated.length + 1; i++) budget = noteUpdate(budget, now, null)
+        for (let i = 0; i < result.pointers.updated.length + 1; i++) budget = recordUpdate(budget, now, null)
         dirty = false
         await save({ lastSentAt: now, lastKey: key, budget, pointers })
         return set({ status: 'sent', lastSentAt: now, remade: true })

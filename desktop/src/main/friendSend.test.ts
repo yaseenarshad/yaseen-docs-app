@@ -9,7 +9,7 @@ import {
   emptyBudget,
   mayUpdate,
   mergeNeverLower,
-  noteUpdate,
+  recordUpdate,
   numbersFor,
   numbersKey,
   reserveFor,
@@ -155,26 +155,26 @@ describe('the gist_update budget (proof 1C: 100 an hour for the account)', () =>
   it('counts my own updates in the last hour, and GitHub`s number when it is newer and lower', () => {
     let b = emptyBudget()
     expect(budgetLeft(b, NOW)).toBe(GIST_UPDATES_PER_HOUR)
-    b = noteUpdate(b, NOW, null)
-    b = noteUpdate(b, NOW + 1000, null)
+    b = recordUpdate(b, NOW, null)
+    b = recordUpdate(b, NOW + 1000, null)
     expect(budgetLeft(b, NOW + 2000)).toBe(98)
     // The Mac and the cheers use the same 100: GitHub says 30 are left.
-    b = noteUpdate(b, NOW + 3000, { remaining: 30, limit: 100, resetAt: NOW + 40 * 60_000 })
+    b = recordUpdate(b, NOW + 3000, { remaining: 30, limit: 100, resetAt: NOW + 40 * 60_000 })
     expect(budgetLeft(b, NOW + 4000)).toBe(30)
     // An hour on, my own updates are out of the window, and GitHub's number is out of date.
     expect(budgetLeft(b, NOW + HOUR + 4000)).toBe(GIST_UPDATES_PER_HOUR)
   })
 
   it('never spends the reserve on a send; a remove may use it', () => {
-    const b = noteUpdate(emptyBudget(), NOW, { remaining: 14, limit: 100, resetAt: NOW + HOUR })
+    const b = recordUpdate(emptyBudget(), NOW, { remaining: 14, limit: 100, resetAt: NOW + HOUR })
     expect(mayUpdate(b, NOW, 1, reserveFor(8))).toBe(true)
-    const low = noteUpdate(emptyBudget(), NOW, { remaining: 13, limit: 100, resetAt: NOW + HOUR })
+    const low = recordUpdate(emptyBudget(), NOW, { remaining: 13, limit: 100, resetAt: NOW + HOUR })
     expect(mayUpdate(low, NOW, 1, reserveFor(8))).toBe(false)
     expect(mayUpdate(low, NOW, 9, 0)).toBe(true)
   })
 
   it('slows down before the limit: the gap between sends grows as the spare updates shrink', () => {
-    const at = (remaining: number) => sendGap(noteUpdate(emptyBudget(), NOW, { remaining, limit: 100, resetAt: NOW + HOUR }), NOW, 5)
+    const at = (remaining: number) => sendGap(recordUpdate(emptyBudget(), NOW, { remaining, limit: 100, resetAt: NOW + HOUR }), NOW, 5)
     expect(at(95)).toBe(PUBLISH_EVERY_MS)
     expect(at(17)).toBe(5 * 60_000) // 12 spare in the hour: one each 5 minutes
     expect(at(11)).toBe(10 * 60_000) // 6 spare: one each 10 minutes
@@ -203,12 +203,12 @@ describe('the send gate (decisions 14 and 22; round 12 item 3)', () => {
     expect(sendGate({ ...sent, reason: 'background' })).toEqual({ go: false, why: 'wait', retryAt: NOW - 60_000 + PUBLISH_EVERY_MS })
     expect(sendGate({ ...sent, reason: 'background', lastSentAt: NOW - PUBLISH_EVERY_MS })).toEqual({ go: true })
     // Near the limit the background send slows down too: 11 left, 7 reserved for 2 pointers → one each 15 minutes.
-    const low = noteUpdate(emptyBudget(), NOW - 60_000, { remaining: 11, limit: 100, resetAt: NOW - 60_000 + HOUR })
+    const low = recordUpdate(emptyBudget(), NOW - 60_000, { remaining: 11, limit: 100, resetAt: NOW - 60_000 + HOUR })
     expect(sendGate({ ...sent, reason: 'background', lastSentAt: NOW - 6 * 60_000, budget: low })).toMatchObject({ go: false, why: 'wait' })
   })
 
   it('the budget comes first, also for the background send', () => {
-    const b = noteUpdate(emptyBudget(), NOW - HOUR / 2, { remaining: 7, limit: 100, resetAt: NOW + HOUR / 2 })
+    const b = recordUpdate(emptyBudget(), NOW - HOUR / 2, { remaining: 7, limit: 100, resetAt: NOW + HOUR / 2 })
     expect(sendGate({ ...base, reason: 'background', budget: b })).toMatchObject({ go: false, why: 'budget' })
   })
 })

@@ -24,7 +24,7 @@ import {
   type IndexHandle,
   type WriteOptions,
 } from './friendGists'
-import { mayUpdate, noteUpdate, sendGap, type GistBudget } from './friendSend'
+import { mayUpdate, recordUpdate, sendGap, type GistBudget } from './friendSend'
 
 /**
  * THE FRIENDS LIST (YAZ-5083, 4E2; decisions 14 as changed in round 16, 15, 20 and 22; round 12, items 5 and 6). Pure
@@ -524,7 +524,7 @@ export async function removeFriend(api: GistsApi, handle: IndexHandle, mine: str
       ...(index.shared !== undefined && { shared: index.shared.filter((s) => s.mine !== mine) }),
     }
     const written = await writeList(api, base, next, withRekey(base.raw, rekey))
-    return finishRemove(api, written, noteUpdate(budget, now, null), opts)
+    return finishRemove(api, written, recordUpdate(budget, now, null), opts)
   } catch (err) {
     return pauseOn(err, handle, budget, now)
   }
@@ -583,7 +583,7 @@ export async function finishRemove(api: GistsApi, handle: IndexHandle, budget: G
       await opts.sleep(1000)
       rekey = { ...rekey, drop: [], next: made.id }
       base = await writeList(api, base, base.index, withRekey(base.raw, rekey))
-      budget = noteUpdate(budget, now, null)
+      budget = recordUpdate(budget, now, null)
     }
     const target = rekey.next!
     for (const pointer of pointersOf(base.index)) {
@@ -591,14 +591,14 @@ export async function finishRemove(api: GistsApi, handle: IndexHandle, budget: G
       if (!mayUpdate(budget, now, 2, 0)) return paused(base, budget, 'budget', now + sendGap(budget, now, 0))
       const moved = await relinkPointers(api, [pointer], target, opts)
       if (moved.updated.length > 0) {
-        budget = noteUpdate(budget, now, null)
+        budget = recordUpdate(budget, now, null)
         await opts.sleep(1000)
       }
     }
     for (const g of await api.list()) if (g.files.includes(NUMBERS_FILE) && g.id !== target) await removeQuietly(api, g.id)
     if (!mayUpdate(budget, now, 1, 0)) return paused(base, budget, 'budget', now + sendGap(budget, now, 0))
     base = await writeList(api, base, { ...base.index, stats: target }, withRekey(base.raw, null))
-    return { kind: 'done', handle: base, budget: noteUpdate(budget, now, null) }
+    return { kind: 'done', handle: base, budget: recordUpdate(budget, now, null) }
   } catch (err) {
     return pauseOn(err, base, budget, now)
   }

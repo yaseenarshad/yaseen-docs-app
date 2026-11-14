@@ -54,7 +54,7 @@ export interface ShareResult {
   title: string
   text: string
   /** Decision 22: say one time what a friend sees. */
-  note: string
+  whatFriendsSee: string
 }
 
 export interface FriendsList {
@@ -258,7 +258,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         if (h === null || h === 'newer') return { kind: 'newer-app' as const }
         const shared = await shareLink(api, h, opts)
         await remember(shared.handle)
-        return { kind: 'ok' as const, link: shared.link, ...shareText(shared.link), note: WHAT_FRIENDS_SEE }
+        return { kind: 'ok' as const, link: shared.link, ...shareText(shared.link), whatFriendsSee: WHAT_FRIENDS_SEE }
       }),
     async paste(text) {
       const link = parseFriendLink(text)
