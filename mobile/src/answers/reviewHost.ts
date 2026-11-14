@@ -1,7 +1,7 @@
 // The pure card read (YAZ-5161): no bridge, so the phone's build wall takes it. Never `cardFile.ts` (the desktop's).
 import { cardOnPageIn, type CardOnPage } from '@client/review/cardRead'
 import type { ReviewHost } from '@client/review/reviewHost'
-import { CardNotFoundError, cardIdOf, cardNextIndex, cardReviewIndex, cardReviewsOf, pageCards, type CardLine, type CardReview } from '@shared/cardLine'
+import { CardNotFoundError, cardIdOf, cardNextIndex, cardReviewIndex, cardReviewKey, cardReviewsOf, pageCards, type CardLine, type CardReview } from '@shared/cardLine'
 import { NOTHING_ADDED, type CardsAddedToday } from '@shared/cardSchedule'
 import { cardTitle } from '@shared/cardText'
 import type { VaultStore } from '../store'
@@ -107,6 +107,11 @@ export function phoneReviewHost(options: PhoneReviewHostOptions): ReviewHost {
     return { line: block.line, title: card.fileTitle ?? cardTitle(card.text) }
   }
   const add = (path: string, title: string, ops: readonly CardOp[]) => answers.add(ops.map((op) => ({ op, path, title })))
+  /** The review action for `review` on `line`: a second one of the same minute and rating says so (`nth`, YAZ-5078). */
+  const reviewOp = (id: string, line: CardLine, review: CardReview): CardOp => {
+    const nth = cardReviewsOf(line).filter((r) => cardReviewKey(r) === cardReviewKey(review)).length + 1
+    return nth > 1 ? { kind: 'review', id, review, nth } : { kind: 'review', id, review }
+  }
   /** The waiting answer of card `id` at `at` (its group and rating), or null when it is not in the list. */
   const unsentAnswer = (id: string, at: string): { group: number; rating: CardReview['rating'] } | null => {
     const w = [...answers.waiting()].reverse().find((w) => w.op.kind === 'review' && w.op.id === id && w.op.review.at === at)
@@ -123,7 +128,7 @@ export function phoneReviewHost(options: PhoneReviewHostOptions): ReviewHost {
     async writeCardAnswer(path, id, review: CardReview) {
       const { line, title } = await current(path, id)
       const next = cardNextIndex(line)
-      await add(path, title, [...(next >= 0 ? [{ kind: 'next', id, on: false } as const] : []), { kind: 'review', id, review }])
+      await add(path, title, [...(next >= 0 ? [{ kind: 'next', id, on: false } as const] : []), reviewOp(id, line, review)])
       return next
     },
     async undoCardAnswer(path, id, at, next) {
@@ -145,8 +150,8 @@ export function phoneReviewHost(options: PhoneReviewHostOptions): ReviewHost {
     },
     async restoreCardReview(path, id, review, index) {
       if (index < 0) return
-      const { title } = await current(path, id)
-      await add(path, title, [{ kind: 'review', id, review }])
+      const { line, title } = await current(path, id)
+      await add(path, title, [reviewOp(id, line, review)])
     },
     async changeCardLine(path, id, change) {
       const { line, title } = await current(path, id)

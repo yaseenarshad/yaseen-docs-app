@@ -79,6 +79,22 @@ export interface AppModel {
 
 const AppContext = createContext<AppModel | null>(null)
 
+/** The app's channel between its tabs (one Home Screen app has one window; Safari can have more). */
+const TABS_CHANNEL = 'notecards-tabs'
+type TabMessage = { type: 'erased' }
+const channelOf = (): BroadcastChannel | null => (typeof BroadcastChannel === 'function' ? new BroadcastChannel(TABS_CHANNEL) : null)
+function tellOtherTabs(message: TabMessage) {
+  const channel = channelOf()
+  channel?.postMessage(message)
+  channel?.close()
+}
+function hearOtherTabs(listener: (message: TabMessage) => void): () => void {
+  const channel = channelOf()
+  if (channel === null) return () => undefined
+  channel.onmessage = (event: MessageEvent<TabMessage>) => listener(event.data)
+  return () => channel.close()
+}
+
 /** How long a removal waits for a running pass to end. The store refuses that pass's later writes anyway (YAZ-5175),
  *  so the wait only keeps the screen honest; a stuck download must not hold the erase. */
 export const STOP_WAIT_MS = 3_000
@@ -248,9 +264,25 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   const eraseAll = useCallback(async () => {
     await stopSync(sync)
     await signOutAndErase(store, tokens)
+    // YAZ-5194: the other tabs of the app stop too and show the first-run screen. The store already refuses their
+    // writes (the erase count is in the database); this makes their screens follow.
+    tellOtherTabs({ type: 'erased' })
     await load(false)
     setNav({ tab: 'review', stack: [] })
   }, [store, tokens, sync, load])
+
+  // Another tab erased the phone: stop the sync here and show the sign-in (YAZ-5194).
+  useEffect(
+    () =>
+      hearOtherTabs((message) => {
+        if (message.type !== 'erased') return
+        void stopSync(sync).then(async () => {
+          await load(false)
+          setNav({ tab: 'review', stack: [] })
+        })
+      }),
+    [sync, load],
+  )
 
   const chooseFriends = useCallback(
     async (vault: string) => {

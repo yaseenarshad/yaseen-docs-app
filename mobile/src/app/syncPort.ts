@@ -1,3 +1,4 @@
+import type { ReviewLink } from '../review/link'
 import type { PhoneVault } from '../store'
 import type { PhoneIndex } from '../sync/phoneIndex'
 import type { TreeDiff } from '../sync/plan'
@@ -47,6 +48,11 @@ export interface ShellSync {
   open(vault: PhoneVault | null): Promise<void>
   /** A pass now ("Try again" on the download view). */
   syncNow(): Promise<void>
+  /**
+   * 4B (YAZ-5078): the engine and the ONE answer list of the open vault, for the Review tab; null while no vault is open.
+   * Absent (a fake sync): the Review tab waits.
+   */
+  review?(): Promise<ReviewLink | null>
   /** Resolves when no pass runs, also a pass of a vault that was open before (YAZ-5175: the erase waits for it). */
   idle(): Promise<void>
 }

@@ -36,6 +36,11 @@ const fill = (name: string, value: string) => {
 
 export async function mountFixture(root: Root, hash: string): Promise<void> {
   const name = /fixture=([\w-]+)/.exec(hash)?.[1] ?? 'sign-in'
+  // 4B (YAZ-5078): the Review tab's fixtures run the real engine and answer list on the fake GitHub.
+  if (name.startsWith('review-'))
+    return (await import('../review/fixtures')).mountReviewFixture(root, name).catch((err: unknown) => {
+      document.body.dataset.fixtureError = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+    })
   // The status dot's own fixtures (4D, YAZ-5080).
   if (name.startsWith('dot')) return (await import('../status/fixtures')).mountDotFixture(root, name)
   // 4C (YAZ-5079): Search, a page and a card, on a made-up vault (`readerFixtures.tsx`).

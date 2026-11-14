@@ -101,11 +101,21 @@ async function setup(files: Record<string, string | Uint8Array>, options: Option
   const lock = memoryLock()
   const log: string[] = []
   const blobsInFlight = { now: 0, max: 0 }
-  const checkpointOf = store.setCheckpoint.bind(store)
-  store.setCheckpoint = async (vault, cp) => {
-    log.push(`checkpoint ${vault}`)
-    await checkpointOf(vault, cp)
-    options.onCheckpoint?.(vault)
+  // The pass writes through a store session (YAZ-5193): the hook goes on the plain store and on each session.
+  const hookCheckpoint = (on: VaultStore) => {
+    const checkpointOf = on.setCheckpoint.bind(on)
+    on.setCheckpoint = async (vault, cp) => {
+      log.push(`checkpoint ${vault}`)
+      await checkpointOf(vault, cp)
+      options.onCheckpoint?.(vault)
+    }
+  }
+  hookCheckpoint(store)
+  const sessionOf = store.session.bind(store)
+  store.session = async (scope) => {
+    const session = await sessionOf(scope)
+    hookCheckpoint(session)
+    return session
   }
   const eagerShas = () => {
     const out = new Set<string>()

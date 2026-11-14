@@ -474,3 +474,20 @@ describe('the erase waits for a running pass (YAZ-5175)', () => {
   })
 })
 
+describe('another tab erased the phone (YAZ-5194)', () => {
+  it('this tab stops its sync and shows the sign-in', async () => {
+    h = await mount()
+    await signInWithForm(h, 'yaseen/vault', GOOD)
+    // Tab 1 erased the database (the same rows), then told the other tabs.
+    await h.tokens.clearAll()
+    await h.store.eraseAll()
+    const other = new BroadcastChannel('notecards-tabs')
+    other.postMessage({ type: 'erased' })
+    other.close()
+    await new Promise((r) => setTimeout(r, 30))
+    await h.settle()
+    expect(h.sync.opened.at(-1)).toBeNull()
+    expect(h.button('Connect vault')).not.toBeNull()
+  })
+})
+
