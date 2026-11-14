@@ -4,7 +4,7 @@ import { loadAccount } from '../auth/account'
 import { formatScanCode } from '../auth/scanCode'
 import { loadVaultList, PHONE, type VaultStore } from '../store'
 import { UNIT_WORD_PATH } from '../app/unitWord'
-import { GOOD, mount, newPhone, READ_ONLY, SECOND, signInWithForm, WRONG, type Harness } from './testing'
+import { GOOD, mount, newPhone, NO_CONTENTS, READ_ONLY, SECOND, signInWithForm, WRONG, type Harness } from './testing'
 
 let h: Harness | null = null
 afterEach(() => {
@@ -73,6 +73,7 @@ describe('each sign-in result has plain words and a way forward', () => {
     { name: 'unauthorized (F3)', repo: 'yaseen/vault', token: WRONG, words: 'GitHub does not accept this token.', forward: 'How to make a token' },
     { name: 'repo-not-found (F4)', repo: 'yaseen/missing', token: GOOD, words: "Can't find yaseen/missing, or your token can't read it.", forward: 'How to make a token' },
     { name: 'no-vault (round 16)', repo: 'yaseen/code', token: GOOD, words: 'yaseen/code has no Yaseen Docs vault at its top', forward: 'How to set up the repo' },
+    { name: 'no-contents', repo: 'yaseen/vault', token: NO_CONTENTS, words: 'set Contents to "Read and write"', forward: 'How to make a token' },
     { name: 'read-only', repo: 'yaseen/vault', token: READ_ONLY, words: 'Your token can read yaseen/vault but not change it.', forward: 'How to make a token' },
     { name: 'offline', repo: 'yaseen/vault', token: GOOD, setup: (x) => void (x.github.offline = true), words: 'No internet connection.', forward: 'Try again' },
     { name: 'github-down', repo: 'yaseen/vault', token: GOOD, setup: (x) => void (x.github.down = true), words: 'GitHub is not answering right now.', forward: 'Try again' },

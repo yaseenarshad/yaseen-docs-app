@@ -28,6 +28,9 @@ export interface Help {
   forward: Forward
 }
 
+/** A failure that is not a sign-in result: the phone could not store the vault. */
+export const SAVE_FAILED: Help = { message: 'Notecards could not save on this phone. Free some space, then try again.', forward: 'retry' }
+
 export const FORWARD_LABEL: Record<Forward, string> = {
   'token-guide': 'How to make a token',
   'repo-guide': 'How to set up the repo',
@@ -49,6 +52,7 @@ export function signInHelp(error: SignInError): Help {
     case 'unauthorized':
     case 'repo-not-found':
     case 'no-access':
+    case 'no-contents':
     case 'read-only':
       return { message, forward: 'token-guide' }
     case 'branch-not-found':

@@ -19,7 +19,7 @@ export interface FakeSync extends ShellSync {
 }
 
 /**
- * `download: false` (default): a vault opens ready, as `standInSync`. `download: true`: a vault opens with its first
+ * `download: false` (default): a vault opens ready (a whole copy on the phone). `download: true`: a vault opens with its first
  * download running (row F2); the test moves it with `set`.
  */
 export function fakeSync(options: { download?: boolean } = {}): FakeSync {

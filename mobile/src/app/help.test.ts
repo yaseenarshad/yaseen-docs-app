@@ -12,6 +12,7 @@ const EACH: Record<SignInError['kind'], SignInError> = {
   unauthorized: { kind: 'unauthorized' },
   'repo-not-found': { kind: 'repo-not-found', repo: 'yaseen/vault' },
   'no-access': { kind: 'no-access', repo: 'yaseen/vault' },
+  'no-contents': { kind: 'no-contents', repo: 'yaseen/vault' },
   'branch-not-found': { kind: 'branch-not-found', repo: 'yaseen/vault', branch: 'gone' },
   'no-vault': { kind: 'no-vault', repo: 'yaseen/vault', branch: 'main' },
   'read-only': { kind: 'read-only', repo: 'yaseen/vault' },
@@ -32,6 +33,7 @@ describe('signInHelp: every sign-in result has words and a way forward', () => {
 
   it('sends a token problem to the guide, a missing vault to the repo steps, a passing problem to "Try again"', () => {
     expect(signInHelp(EACH.unauthorized).forward).toBe('token-guide')
+    expect(signInHelp(EACH['no-contents']).forward).toBe('token-guide')
     expect(signInHelp(EACH['no-vault']).forward).toBe('repo-guide')
     expect(signInHelp(EACH.offline).forward).toBe('retry')
     expect(signInHelp(EACH['already-added']).forward).toBe('open-vault')

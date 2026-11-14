@@ -1,9 +1,9 @@
-import { vaultId, type PhoneVault } from '../store'
+import type { PhoneVault } from '../store'
 
 /**
  * What the shell needs from the sync engine (3B, YAZ-5072). It is a structural subset of 3B's `SyncEngine`
- * (`mobile/src/sync/engine.ts`), so 3B's engine plugs in as it is: `services.sync = createSyncEngine({ store, tokens })`.
- * The shell does not import `src/sync/` until 3B lands; `standInSync` keeps the app working until then.
+ * (`mobile/src/sync/engine.ts`), so 3B's engine plugs in as it is (`lazySync.ts` loads it; `engineFits` checks the
+ * fit). Tests pass `fakeSync` (`dev/fakes.ts`).
  */
 
 /**
@@ -40,24 +40,3 @@ export interface ShellSync {
 }
 
 export const IDLE: ShellSyncState = Object.freeze({ status: 'idle', vault: null, problem: null, retryAt: null, progress: null, ready: false })
-
-/**
- * Until 3B lands: a "sync" that downloads nothing and says the open vault is ready, so the shell opens its tabs. It
- * is the default in `main.tsx` only; tests use `fakeSync` (`app/testing.ts`).
- */
-export function standInSync(): ShellSync {
-  let state: ShellSyncState = IDLE
-  const listeners = new Set<(event: ShellSyncEvent) => void>()
-  return {
-    state: () => state,
-    subscribe(listener) {
-      listeners.add(listener)
-      return () => void listeners.delete(listener)
-    },
-    async open(vault) {
-      state = vault === null ? IDLE : { ...IDLE, status: 'synced', vault: vaultId(vault), ready: true }
-      for (const listener of [...listeners]) listener({ type: 'state', state })
-    },
-    async syncNow() {},
-  }
-}

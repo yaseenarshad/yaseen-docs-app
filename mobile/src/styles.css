@@ -108,6 +108,7 @@ a {
 }
 
 .topbar__title {
+  line-height: var(--tap);
   flex: 1;
   min-width: 0;
   margin: 0;

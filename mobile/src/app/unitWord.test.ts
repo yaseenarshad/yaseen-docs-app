@@ -18,7 +18,7 @@ describe("readUnitWord: the vault's word for page, with the Mac's own helper (ro
     for (const content of [null, '{oops', JSON.stringify({ unit: 'page' })]) expect((await withFile(content))('Open page · 3 pages')).toBe('Open page · 3 pages')
   })
 
-  it('Doc, Note and an own word, in every form; "card" never changes', async () => {
+  it('Doc and an own word, in every form; "card" never changes', async () => {
     expect((await withFile(JSON.stringify({ unit: 'doc' })))('Open page · Search pages · New card')).toBe('Open doc · Search docs · New card')
     expect((await withFile(JSON.stringify({ unit: 'own', own: { one: 'Entry', many: 'Entries' } })))('Pages: one page')).toBe('Entries: one entry')
   })

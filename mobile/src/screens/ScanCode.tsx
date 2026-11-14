@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../app/AppState'
-import { FORWARD_LABEL, signInHelp, type Help } from '../app/help'
+import { FORWARD_LABEL, SAVE_FAILED, signInHelp, type Help } from '../app/help'
 import { parseScanCode, scanCodeMessage, type ScanCode as Code } from '../auth/scanCode'
 import { ScanError, scanProblemMessage, type ScanSession } from '../scan/scanner'
 import { vaultId } from '../store'
@@ -21,7 +21,7 @@ export function ScanCode({ vault }: { vault?: string }) {
   const busy = useRef(false)
   const [round, setRound] = useState(0)
   const [state, setState] = useState<'starting' | 'scanning' | 'checking' | 'stopped'>('starting')
-  const [note, setNote] = useState<string | null>(null)
+  const [hint, setHint] = useState<string | null>(null)
   const [help, setHelp] = useState<Help | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
 
@@ -33,7 +33,7 @@ export function ScanCode({ vault }: { vault?: string }) {
   const check = async (found: Code) => {
     busy.current = true
     setState('checking')
-    setNote(null)
+    setHint(null)
     setHelp(null)
     try {
       const outcome = vault === undefined ? await app.addVault({ repo: found.repo, branch: found.branch, token: found.token, expiresAt: found.expiresAt }) : await app.replaceToken(vault, found.token)
@@ -43,7 +43,7 @@ export function ScanCode({ vault }: { vault?: string }) {
         setState('stopped')
       }
     } catch {
-      setHelp({ message: 'Notecards could not save on this phone. Free some space, then try again.', forward: 'retry' })
+      setHelp(SAVE_FAILED)
       setState('stopped')
     } finally {
       busy.current = false
@@ -58,10 +58,10 @@ export function ScanCode({ vault }: { vault?: string }) {
       .start(video.current, (text) => {
         if (!live || busy.current) return
         const parsed = parseScanCode(text)
-        if (!parsed.ok) return setNote(scanCodeMessage(parsed.error))
+        if (!parsed.ok) return setHint(scanCodeMessage(parsed.error))
         if (vault !== undefined && vaultId(parsed.code) !== vault) {
           const want = app.list.vaults.find((v) => vaultId(v) === vault)?.repo ?? vault
-          return setNote(`This code is for ${parsed.code.repo}. Show the code for ${want} on your Mac.`)
+          return setHint(`This code is for ${parsed.code.repo}. Show the code for ${want} on your Mac.`)
         }
         code.current = parsed.code
         stopCamera()
@@ -76,7 +76,7 @@ export function ScanCode({ vault }: { vault?: string }) {
         },
         (error: unknown) => {
           if (!live) return
-          setNote(null)
+          setHint(null)
           setHelp({ message: scanProblemMessage(error instanceof ScanError ? error.problem : 'no-camera'), forward: 'edit-repo' })
           setState('stopped')
         },
@@ -120,7 +120,7 @@ export function ScanCode({ vault }: { vault?: string }) {
           Code read. Checking the token…
         </p>
       )}
-      {note !== null && <Problem message={note} quiet />}
+      {hint !== null && <Problem message={hint} quiet />}
       {help !== null && (
         <Problem message={help.message} action={help.forward === 'edit-repo' ? 'Type the repo and token' : FORWARD_LABEL[help.forward]} onAction={forward} />
       )}

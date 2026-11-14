@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { App, NoStorage } from './App'
 import { localFriends } from './app/friendsPort'
-import { standInSync } from './app/syncPort'
+import { lazySync } from './app/lazySync'
 import { cameraScanner } from './scan/camera'
 import { openPhoneStorage } from './store'
 import './styles.css'
@@ -23,9 +23,9 @@ async function start(root: Root) {
     return
   }
   const { store, tokens } = storage
-  // WIRE 3B (YAZ-5072): replace `standInSync()` with `createSyncEngine({ store, tokens })`, and call
-  // `followPage(engine)` once. WIRE 4E (YAZ-5081): replace `localFriends(store)` with Friends' own `FriendsPort`.
-  const services = { store, tokens, sync: standInSync(), friends: localFriends(store), scanner: cameraScanner() }
+  // 3B's engine (YAZ-5072), loaded when a vault opens. WIRE 4E (YAZ-5081): replace `localFriends(store)` with
+  // Friends' own `FriendsPort`.
+  const services = { store, tokens, sync: lazySync(store, tokens), friends: localFriends(store), scanner: cameraScanner() }
   root.render(
     <StrictMode>
       <App services={services} />

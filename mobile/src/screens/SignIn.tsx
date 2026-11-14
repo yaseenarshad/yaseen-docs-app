@@ -1,6 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { useApp } from '../app/AppState'
-import { FORWARD_LABEL, signInHelp, type Help } from '../app/help'
+import { FORWARD_LABEL, SAVE_FAILED, signInHelp, type Help } from '../app/help'
 import type { SignInOutcome } from '../auth/signIn'
 import { vaultId } from '../store'
 import { Confirm } from './Confirm'
@@ -12,9 +12,6 @@ import { Frame, Problem } from './Frame'
  * - `again`: a new token for a vault on the phone (row N6, "Replace token"). The repo is fixed.
  */
 export type SignInMode = { kind: 'first' } | { kind: 'add' } | { kind: 'again'; vault: string }
-
-/** A failure that is not a sign-in result: the phone could not store the vault. */
-const SAVE_FAILED: Help = { message: 'Notecards could not save on this phone. Free some space, then try again.', forward: 'retry' }
 
 /**
  * The sign-in screen (decision 13): two fields, `owner/repo` and the token, and one button "Connect vault". One link
@@ -111,11 +108,14 @@ export function SignIn({ mode }: { mode: SignInMode }) {
           {busy ? 'Checking…' : mode.kind === 'again' ? 'Save token' : 'Connect vault'}
         </button>
         {help !== null && <Problem message={help.message} action={FORWARD_LABEL[help.forward]} onAction={forward} />}
-        <div>
-          <button type="button" className="link-btn" onClick={() => app.go({ type: 'open', route: { kind: 'guide' } })}>
-            How to make a token
-          </button>
-        </div>
+        {/* Said once: a token problem already offers the guide. */}
+        {help?.forward !== 'token-guide' && (
+          <div>
+            <button type="button" className="link-btn" onClick={() => app.go({ type: 'open', route: { kind: 'guide' } })}>
+              How to make a token
+            </button>
+          </div>
+        )}
       </form>
       <p className="section">Or</p>
       <button type="button" className="btn btn--wide" onClick={() => app.go({ type: 'open', route: { kind: 'scan', vault: mode.kind === 'again' ? mode.vault : undefined } })}>

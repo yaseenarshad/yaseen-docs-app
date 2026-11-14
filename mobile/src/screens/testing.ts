@@ -16,12 +16,14 @@ export const NOW = Date.UTC(2026, 10, 13, 12)
 export const GOOD = 'github_pat_11GOODGOOD0goodgoodgood_' + 'g'.repeat(59)
 export const SECOND = 'github_pat_11SECONDXX0secondsecondse_' + 's'.repeat(59)
 export const READ_ONLY = 'github_pat_11READONLY0readonlyreadonl_' + 'r'.repeat(59)
+export const NO_CONTENTS = 'github_pat_11NOCONTENT0nocontentnocont_' + 'c'.repeat(59)
 export const WRONG = 'github_pat_11WRONGWRONG0wrongwrongwron_' + 'x'.repeat(59)
 
 export const TOKENS: Record<string, FakeToken> = {
   [GOOD]: { login: 'yaseen', name: 'Yaseen', repos: { 'yaseen/vault': 'write', 'yaseen/second': 'write', 'yaseen/code': 'write' }, gists: true },
   [SECOND]: { login: 'yaseen', name: 'Yaseen', repos: { 'yaseen/second': 'write' }, gists: true },
   [READ_ONLY]: { login: 'yaseen', repos: { 'yaseen/vault': 'read' }, gists: true },
+  [NO_CONTENTS]: { login: 'yaseen', repos: { 'yaseen/vault': 'none' }, gists: true },
 }
 export const REPOS: FakeRepo[] = [{ fullName: 'yaseen/vault', branches: ['main', 'phone'] }, { fullName: 'yaseen/second' }, { fullName: 'yaseen/code', vault: false }]
 

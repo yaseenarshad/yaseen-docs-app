@@ -19,7 +19,7 @@ import { SAME_WORD, UNIT_WORD_PATH, readUnitWord, type UnitText } from './unitWo
 export interface AppServices {
   store: VaultStore
   tokens: TokenStore
-  /** 3B's engine, or `standInSync()` until it lands. */
+  /** 3B's engine (`lazySync`), or a fake in tests. */
   sync: ShellSync
   /** 4E's Friends, or `localFriends(store)` until it lands. */
   friends: FriendsPort
@@ -123,8 +123,12 @@ export function AppProvider({ services, children }: { services: AppServices; chi
         unit: key === null ? SAME_WORD : await readUnitWord(store, key),
       }
       openKey.current = key
-      if (opening) await sync.open(start.kind === 'ready' ? open : null)
+      const syncing = opening ? (start.kind === 'ready' ? open : null) : undefined
+      // Closing waits (nothing may poll a vault that leaves). Opening does not hold the screen: the sync's state
+      // tells the shell when the vault is ready (3B's engine loads as a chunk of its own, `lazySync`).
+      if (syncing === null) await sync.open(null)
       setLoaded(next)
+      if (syncing) void sync.open(syncing).catch(() => undefined)
       return next
     },
     [store, tokens, sync, friends],
