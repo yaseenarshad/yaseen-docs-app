@@ -3,7 +3,7 @@
  * narrower, centred. The width lives in memory for the app's run — a card change, the Inbox tab closed and opened
  * again keep it; a quit forgets it. Nothing is written to disk.
  */
-import { useCallback, useEffect, useRef, useSyncExternalStore, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { cssZoom } from '../lib/cssZoom'
 
 /** The narrowest card (px). The widest is the Inbox tab's width less its side margins. */
@@ -30,10 +30,17 @@ export function setInboxCardWidth(next: number | null): void {
 export const clampCardWidth = (w: number, room: number): number => Math.round(Math.max(CARD_MIN_WIDTH, Math.min(w, room)))
 
 /**
- * The width and the drag of one edge: `side` -1 the left edge, +1 the right. The card stays centred, so both edges
- * move: the width changes by twice the pointer's move.
+ * The card column's width set by a drag (`width`, px at 100%), or the CSS default (null). The Inbox zoom (YAZ-5372) widens
+ * it as page zoom does (`--document-zoom`), capped by the tab.
  */
-export function useInboxCardWidth(column: RefObject<HTMLElement | null>, inbox: RefObject<HTMLElement | null>) {
+export const cardColumnStyle = (width: number | null): CSSProperties | undefined => (width === null ? undefined : { width: `min(calc(${width}px * var(--document-zoom, 1)), 100%)` })
+
+/**
+ * The width and the drag of one edge: `side` -1 the left edge, +1 the right. The card stays centred, so both edges
+ * move: the width changes by twice the pointer's move. The width is kept at 100%: under the Inbox zoom `cardZoom`
+ * (YAZ-5372), the pointer's move and the room are divided by it.
+ */
+export function useInboxCardWidth(column: RefObject<HTMLElement | null>, inbox: RefObject<HTMLElement | null>, cardZoom = 1) {
   const current = useSyncExternalStore(subscribe, inboxCardWidth)
   const drag = useRef<(() => void) | null>(null)
   // A drag that runs when the Inbox goes (its tab closed) ends with it.
@@ -45,10 +52,10 @@ export function useInboxCardWidth(column: RefObject<HTMLElement | null>, inbox: 
       if (col === null || box === null || event.button !== 0) return
       event.preventDefault()
       event.stopPropagation()
-      const zoom = cssZoom(col)
+      const zoom = cssZoom(col) * cardZoom
       const start = col.getBoundingClientRect().width / zoom
       const x0 = event.clientX
-      const room = box.clientWidth - 2 * CARD_SIDE_MARGIN
+      const room = (box.clientWidth - 2 * CARD_SIDE_MARGIN) / cardZoom
       const move = (e: PointerEvent | MouseEvent) => setInboxCardWidth(clampCardWidth(start + (side * 2 * (e.clientX - x0)) / zoom, room))
       const end = () => {
         window.removeEventListener('pointermove', move)
@@ -65,7 +72,7 @@ export function useInboxCardWidth(column: RefObject<HTMLElement | null>, inbox: 
       window.addEventListener('pointerup', end)
       window.addEventListener('pointercancel', end)
     },
-    [column, inbox],
+    [column, inbox, cardZoom],
   )
   return { width: current, startDrag }
 }

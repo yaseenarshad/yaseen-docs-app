@@ -112,7 +112,7 @@ import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { CARD_FILTERS, CardInboxBar } from './CardInboxBar'
 import { CardStateChip, answerIcon, answerLine } from './cardInboxChip'
 import { FocusIcon } from './cardInboxIcons'
-import { useInboxCardWidth } from './inboxCardWidth'
+import { cardColumnStyle, useInboxCardWidth } from './inboxCardWidth'
 import { CardInboxHints } from './CardInboxHints'
 import { KeyLabel } from '../keys/KeyLabel'
 import { withKeys } from '@shared/keyLabel'
@@ -219,7 +219,6 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
   const unit = useUnit()
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
-  const { width, startDrag } = useInboxCardWidth(columnRef, rootRef)
   const card = session.card
   const pageText = card?.page?.text ?? null
   // The Inbox's card (YAZ-5152: shared with the Preview, `inboxCard.tsx`): the front, and the head's title off the card
@@ -257,8 +256,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
   }, [page, session.answers, showAnswers])
 
   /**
-   * THE INBOX'S ZOOM (YAZ-5372): the page zoom's own pill and key ladder (`DocumentZoom`), on the card's text only — the
-   * bar, the head and the buttons stay. One value for the Inbox, kept across restarts (`inbox:zoom` in localStorage).
+   * THE INBOX'S ZOOM (YAZ-5372): the page zoom's own pill and key ladder (`DocumentZoom`), and its own rule: the Inbox
+   * carries `--document-zoom` as a page's scroller does, so the whole card scales as a page does (app.css) — its text,
+   * title band, sides, pictures, spacing and width (Card width × zoom, capped by the window). The bar, the head and the
+   * buttons stay. One value for the Inbox, kept across restarts (`inbox:zoom` in localStorage).
    * ⌘+ / ⌘− / ⌘0 while the Inbox shows are its own (they zoomed the sidebar): unclaimed by a page or Explore (Explore
    * stops them on the document first), and not pressed from the sidebar or the right panel, which keep theirs.
    */
@@ -281,6 +282,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
     document.addEventListener(ZOOM_EVENT, onZoom)
     return () => document.removeEventListener(ZOOM_EVENT, onZoom)
   }, [shown])
+  // The card's width (YAZ-5019), kept at 100%: a drag under the zoom sets it as at 100%.
+  const { width, startDrag } = useInboxCardWidth(columnRef, rootRef, zoom / 100)
 
   // The keyboard comes to the Inbox when it opens and with each card; back from the Explore stack, App gives it back here.
   useEffect(() => {
@@ -438,7 +441,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
         ]
 
   return (
-    <div ref={rootRef} className="card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`} style={{ '--inbox-zoom': zoom / 100 } as CSSProperties}>
+    <div ref={rootRef} className="card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`} style={{ '--document-zoom': zoom / 100 } as CSSProperties}>
       <CardInboxBar
         session={session}
         setFilter={review.setFilter}
@@ -460,7 +463,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
           </>
         }
       />
-      <div ref={columnRef} className="card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
+      <div ref={columnRef} className="card-inbox__column" style={cardColumnStyle(width)}>
         {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height
             with no chip (the done screen), so the card does not move. YAZ-5051 (Yaseen: "so that the card is just pure"):
             the head sits here too, after the chip — the ID (a click copies it) — with "Up next ×"; the title is in the
