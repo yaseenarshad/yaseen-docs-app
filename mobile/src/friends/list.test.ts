@@ -19,6 +19,7 @@ import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn, vaultId, ty
 import type { SyncEvent } from '../sync/engine'
 import { INDEX_STATE } from '../sync/phoneIndex'
 import { fakeClock, type FakeClock } from '../sync/testing'
+import { waitingRemoves } from '../screens/waitingRemoves'
 import { createFriendsList, type FriendsList } from './list'
 import { createFriendsSender } from './sender'
 import { gistsApi } from './gistsApi'
@@ -362,6 +363,30 @@ describe('createFriendsList (YAZ-5083)', () => {
     expect(await ali.list.remove(rows.rows[0].mine)).toEqual({ kind: 'done' })
     expect(await ali.list.port.hasFriends()).toBe(false)
     expect(await bea.list.rows()).toMatchObject({ kind: 'ok', rows: [{ state: 'gone', label: 'No longer shares with you' }] })
+  })
+
+  it('YAZ-5361: a remove that waits in the list on GitHub is counted by the erase ask; once it is done, it is not', async () => {
+    const { clock, world } = setup()
+    const ali = await phone(world, clock, ALI, 'ali')
+    const bea = await phone(world, clock, BEA, 'bea')
+    const share = await ali.list.share()
+    if (share.kind !== 'ok') throw new Error(share.kind)
+    const pasted = await bea.list.paste(share.link)
+    if (pasted.kind !== 'added') throw new Error(pasted.kind)
+    await ali.list.paste(pasted.sendBack!)
+    const club = await ali.list.groups.create('Club') // a kept pointer: the remove must move it, and the hour stops that
+    if (club.kind !== 'ok') throw new Error(club.kind)
+    await ali.store.setState('', 'friendsSend', { lastSentAt: null, lastKey: null, pointers: 2, budget: { updates: [], seen: { remaining: 0, resetAt: clock.now() + 3600_000, at: clock.now(), after: 0 }, blockedUntil: null } })
+    const rows = await ali.list.rows()
+    if (rows.kind !== 'ok') throw new Error(rows.kind)
+    expect(await ali.list.remove(rows.rows[0].mine)).toMatchObject({ kind: 'paused', why: 'budget' })
+    // The first write went (it waits in the list, not in the phone's queue), and Bea is no longer a friend row.
+    expect(await ali.store.getState('', 'friendsRemoveQueue')).toBeUndefined()
+    expect(await waitingRemoves(ali.store)).toBe(1)
+    clock.advance(3600_000)
+    await ali.store.setState('', 'friendsSend', { lastSentAt: null, lastKey: null, pointers: 2, budget: { updates: [], seen: null, blockedUntil: null } })
+    expect(await ali.list.rows()).toMatchObject({ kind: 'ok' })
+    expect(await waitingRemoves(ali.store)).toBe(0)
   })
 
   it('a remove that stopped half way (budget used up) is finished by the sender at the next start, which then sends to the NEW numbers gist only', async () => {

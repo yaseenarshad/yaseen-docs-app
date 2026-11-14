@@ -3,7 +3,8 @@ import { deviceZone as friendsDeviceZone, isTimeZone as friendsIsTimeZone } from
 import { deviceZone, isTimeZone } from '@shared/timeZone'
 import { enqueueRemove, loadQueue, REMOVE_QUEUE } from '../friends/removeQueue'
 import { memoryBackend, openVaultStore, PHONE } from '../store'
-import { REMOVE_QUEUE_KEY, waitingRemoves } from './waitingRemoves'
+import { WAITING_REMOVES } from '../friends/list'
+import { REMOVE_QUEUE_KEY, WAITING_REMOVES_KEY, waitingRemoves } from './waitingRemoves'
 
 /**
  * YAZ-5362, YAZ-5377: Settings (in the first load) reads two small things that the friends code owns, with no import of
@@ -26,6 +27,19 @@ describe('the erase ask counts the waiting removes with no friends code (YAZ-536
     await store.setState(PHONE, REMOVE_QUEUE_KEY, { not: 'a list' })
     expect(await waitingRemoves(store)).toBe(0)
     expect(await loadQueue(store)).toEqual([])
+  })
+})
+
+describe('YAZ-5361: the erase ask also counts a remove that waits in the list on GitHub (the saga state)', () => {
+  it('reads the count that the friends list keeps (same key), and adds the queue', async () => {
+    expect(WAITING_REMOVES_KEY).toBe(WAITING_REMOVES)
+    const store = await openVaultStore(memoryBackend())
+    await store.setState(PHONE, WAITING_REMOVES_KEY, 1)
+    expect(await waitingRemoves(store)).toBe(1)
+    await enqueueRemove(store, { mine: 'a', at: 1 })
+    expect(await waitingRemoves(store)).toBe(2)
+    await store.setState(PHONE, WAITING_REMOVES_KEY, 'x')
+    expect(await waitingRemoves(store)).toBe(1)
   })
 })
 
