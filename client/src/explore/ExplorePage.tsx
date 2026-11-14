@@ -8,12 +8,16 @@
  * In a Read only vault (YAZ-4939) the head shows the page tab's "Read only" chip: E and Edit open its timed "Allow
  * edits" box, and only a choice in it edits. The unlock is THIS layer's (`useTimedUnlock`); the editor is told the
  * vault's lock is off for it while the unlock runs. At zero, or on "Lock now", the layer saves and reads again.
+ * E EDITS THE THING YOU LOOK AT (YAZ-5145 round 3, the Decision of Q38), in one press: on a CARD FILE each edit opens
+ * its Edit card, and after "Allow edits?" too, as the choice goes on to edit the layer (no second E); on a page, cards
+ * or not, E edits the page, never a card. The Inbox's E on a card in a page opens that card's Edit card, one time.
  */
 import { UnitContext, useVaultUnit } from '../vault/unitWord'
 import { usePageId } from '../search/showIds'
 import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { fileKind } from '@shared/fileKind'
 import { splitFrontmatter } from '@shared/frontmatter'
+import { isCardFileContent } from '@shared/cardFileFormat'
 import { readPageSwitches, type PageSwitches } from '@shared/pageSwitches'
 import type { CommentsOrder } from '@shared/types'
 import type { CardReview } from '@shared/cardLine'
@@ -44,6 +48,7 @@ import { useTimedUnlock } from '../editor/useTimedUnlock'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { landOn } from '../editor/toc/tocMotion'
 import { cardBlockViewOfDom } from '../editor/card/cardBlockView'
+import { recordAt } from '../editor/card/embedCard'
 import { KeyCaps } from '../keys/KeyCaps'
 
 /** The vault the page is in: what its links resolve against. */
@@ -91,7 +96,7 @@ interface ExplorePageProps {
   leaveAsk?: number
   /** The card to land on once the page shows (YAZ-4962): its place among the page's cards. */
   card?: number
-  /** The Inbox's E (YAZ-5145): once the layer edits, the card opens in Edit card, one time: the one at `card` of a page, else the card file's. */
+  /** The Inbox's E on a card in a page (YAZ-5145): once the layer edits, the card at `card` opens in Edit card, one time. A card file's opens by itself (round 3). */
   editCard?: boolean
   /** Opened by the Inbox (YAZ-5145): ⌘↵ while reading goes back to it, so ↗ does not say ⌘↵. */
   fromInbox?: boolean
@@ -164,6 +169,9 @@ export function openRows(onOpenInTab: () => void, pageId: string | undefined, on
 
 /** How long a page that left the index waits before it is read again and said gone (YAZ-4990): a save through a temporary file is back by then. */
 export const GONE_CHECK_MS = 300
+
+/** How many frames (16 ms) an edit layer waits for its editor to mount a card's Edit card: a cold editor can take a while. */
+const EDITOR_TRIES = 120
 
 /** A read-only Crepe goes: out of the page at once, destroyed once it is up. */
 function retire({ crepe, el, up }: { crepe: ReturnType<typeof createCrepe>; el: HTMLElement; up: Promise<void> }): void {
@@ -406,30 +414,42 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
     return () => clearTimeout(timer)
   }, [card, mode, ready])
 
-  // The Inbox's E (YAZ-5145, Yaseen: "e would edit the card"; round 2: "it should take you directly into the card
-  // edit"): once the layer edits (at once, or after "Allow edits?" in a Read only vault), the card opens in Edit card —
-  // a card in a page (`card`) as its own Edit card button does, a card file's view by its own Edit card button. One
-  // time: Done, Esc and a later edit are the page's as always. The editor mounts a tick later: ask a few frames.
-  const cardEdited = useRef(false)
+  // E edits the thing you look at (YAZ-5145, Yaseen: "e would edit the card"; round 3, Q38: "if you're opening a card
+  // file. Then it makes sense that if you're editing, you're going to edit the card"). Each time the layer goes into
+  // edit — E, Edit, or the choice in "Allow edits?" that goes on to edit it — a card file opens its Edit card, by its
+  // own button, as the card file tab's E does. The index says it is one, or the text the layer read (a card file just
+  // made, Move to its own file, before the index has it). The Inbox's E on a card in a page (`editCard`, `card`): that
+  // card, as its own Edit card does, one time. A page alone edits as a page. The editor mounts a tick later: ask a few frames.
+  const pageCardAsked = useRef(editCard && card !== undefined)
+  const cardOpened = useRef(false)
   useEffect(() => {
-    if (!editCard || cardEdited.current || mode !== 'edit') return
+    if (mode !== 'edit') {
+      cardOpened.current = false
+      return
+    }
+    if (cardOpened.current) return
+    const pageCard = pageCardAsked.current ? card : undefined
+    if (pageCard === undefined && recordAt(indexOfVault.records, path)?.kind !== 'card' && !isCardFileContent(readRef.current)) return
     let tries = 0
     let timer: ReturnType<typeof setTimeout> | undefined
     const tick = () => {
       const scope = editBodyRef.current
-      const view = card === undefined ? null : cardBlockViewOfDom(scope?.querySelectorAll<HTMLElement>('.card')[card] ?? null)
-      const fileEdit = card === undefined ? (scope?.querySelector<HTMLButtonElement>('[data-card-file-edit]') ?? null) : null
+      const view = pageCard === undefined ? null : cardBlockViewOfDom(scope?.querySelectorAll<HTMLElement>('.card')[pageCard] ?? null)
+      const fileEdit = pageCard === undefined ? (scope?.querySelector<HTMLButtonElement>('[data-card-file-edit]') ?? null) : null
       if ((view !== null && view.view.editable) || fileEdit !== null) {
-        cardEdited.current = true
+        cardOpened.current = true
+        pageCardAsked.current = false
         if (view !== null) view.edit()
         else fileEdit?.click()
         return
       }
-      if (++tries <= 40) timer = setTimeout(tick, 16)
+      if (++tries <= EDITOR_TRIES) timer = setTimeout(tick, 16)
     }
     tick()
     return () => clearTimeout(timer)
-  }, [editCard, card, mode])
+    // The path and the index are read when the layer goes into edit: a step while editing keeps the editor as it is.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card, mode])
 
   /** The saved text for the comment stream (round 1, item 3): what was read, until the block's own write moves it. */
   const file = content.kind === 'body' || content.kind === 'empty' ? { path, content: readRef.current } : null
