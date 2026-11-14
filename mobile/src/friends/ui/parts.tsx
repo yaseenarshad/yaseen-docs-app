@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { LIST_NEEDS_REPAIR } from '@shared/friendGists'
 import { friendCodeFrom, friendLink } from '../../pwa/friendLink'
 import { MARK_SIGN, initialOf, markWords, type DailyMark, type Period } from './board'
 
@@ -82,4 +83,59 @@ export const clockTime = (t: number): string => new Date(t).toLocaleTimeString([
 export function ownSiteLink(link: string, origin: string = globalThis.location?.origin ?? 'null'): string {
   const code = friendCodeFrom(link)
   return code !== null && /^https:\/\//.test(origin) ? friendLink(origin, code) : link
+}
+
+/**
+ * YAZ-5257: the words for the answer of Remove, Cancel link, Leave group, Delete group and Remove a member, or null
+ * when it is done. A remove that waits (4E2's `paused`: the budget, GitHub's rate limit, no connection) is kept on the
+ * phone and finishes by itself; the words say so, and when.
+ */
+export function actionWords(result: unknown): string | null {
+  const r = (result ?? {}) as { kind?: string; why?: string; retryAt?: number | null; login?: string }
+  switch (r.kind) {
+    case 'done':
+      return null
+    case 'paused': {
+      const when = typeof r.retryAt === 'number' ? `at ${clockTime(r.retryAt)}` : null
+      switch (r.why) {
+        case 'offline':
+          return 'Not removed yet: no connection. It finishes by itself when you are online.'
+        case 'budget':
+          return `Not removed yet: GitHub lets the app write only so often. It finishes by itself${when === null ? '' : ` ${when}`}.`
+        case 'rate-limited':
+          return `Not removed yet: GitHub asks the app to wait. It finishes by itself${when === null ? '' : ` ${when}`}.`
+        case 'needs-repair':
+          return LIST_NEEDS_REPAIR
+        case 'unauthorized':
+          return 'Not removed yet. Sign in again, and it finishes by itself.'
+        default:
+          // A remove that waits for another reason (the words may come with it).
+          return typeof r.why === 'string' && r.why.includes(' ') ? r.why : 'Not removed yet. It finishes by itself.'
+      }
+    }
+    case 'admin-cannot-leave':
+      return 'You run this group. Delete the group instead.'
+    case 'not-found':
+      return 'That is gone already.'
+    case 'no-gists':
+      return 'Friends needs the Gists permission on your token.'
+    case 'no-account':
+      return 'Friends starts after the app checks your token. Open the app once with a connection.'
+    case 'offline':
+      return 'No connection. Try again when you are online.'
+    case 'rate-limited':
+      return 'GitHub asks the app to wait. Try again in a few minutes.'
+    case 'unauthorized':
+      return 'Sign in again, then try again.'
+    case 'newer-app':
+      return 'This needs a newer Notecards. Update this app.'
+    case 'needs-repair':
+      return LIST_NEEDS_REPAIR
+    case 'not-admin':
+      return 'Only the admin can do that.'
+    case 'not-a-member':
+      return 'That person is not in the group now.'
+    default:
+      return 'It could not be done. Try again.'
+  }
 }

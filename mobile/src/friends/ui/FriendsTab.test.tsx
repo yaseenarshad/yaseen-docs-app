@@ -592,3 +592,94 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
     expect(btn(h, 'Remove from group')).not.toBeNull()
   })
 })
+
+describe('an action that cannot finish now says so (YAZ-5257)', () => {
+  const paused = async () => ({ kind: 'paused', why: 'offline', retryAt: null })
+  const yes = async (x: Harness) => {
+    await act(async () => (x.host.querySelector('[role="alertdialog"] .btn--danger') as HTMLButtonElement).click())
+    for (let i = 0; i < 4; i++) await x.settle()
+  }
+  it('Remove friend on "You vs": the words, and the screen stays open', async () => {
+    let s: FakeService
+    ;({ h, s } = await open(demoBoard(NOW)))
+    s.answers.friend = paused
+    await tap(h, /^Number 1, Sam/)
+    await until(h, '.fr-week')
+    await tap(h, 'Remove friend')
+    await yes(h)
+    expect(statusText(h)).toContain('Not removed yet: no connection. It finishes by itself when you are online.')
+    expect(plain(h.host.querySelector('.topbar__title')?.textContent)).toBe('Sam')
+  })
+  it('Cancel link, Remove a member, Leave group and Delete group each say why they did not finish', async () => {
+    const board = demoBoard(NOW, { shared: [{ mine: 'c'.repeat(32), link: 'x', at: new Date(NOW).toISOString() }] })
+    let s: FakeService
+    ;({ h, s } = await open(board))
+    s.answers.friend = async () => ({ kind: 'paused', why: 'budget', retryAt: NOW + 600_000 })
+    await tap(h, 'Cancel link')
+    await yes(h)
+    expect(statusText(h)).toMatch(/Not removed yet: GitHub lets the app write only so often\. It finishes by itself at .+\./)
+    h.unmount()
+    const admin = demoGroup(NOW)
+    admin.members[1] = { ...admin.members[1], state: 'left', read: null, label: 'Left the group' }
+    ;({ h, s } = await open({ ...demoBoard(NOW), groups: [admin] }))
+    s.answers.remove = async () => ({ kind: 'offline' })
+    await tap(h, 'Study group')
+    await tap(h, 'Remove')
+    await yes(h)
+    expect(statusText(h)).toContain('No connection. Try again when you are online.')
+    s.answers.delete = async () => ({ kind: 'paused', why: 'rate-limited', retryAt: null })
+    await tap(h, 'Delete group')
+    await yes(h)
+    expect(statusText(h)).toContain('Not removed yet: GitHub asks the app to wait. It finishes by itself.')
+    h.unmount()
+    ;({ h, s } = await open({ ...demoBoard(NOW), groups: [demoGroup(NOW, { iAmAdmin: false, admin: 'mina' })] }))
+    s.answers.leave = async () => ({ kind: 'needs-repair' })
+    await tap(h, 'Study group')
+    await tap(h, 'Leave group')
+    await yes(h)
+    expect(statusText(h)).toContain('Your friends list on GitHub cannot be read')
+  })
+  it('a row whose remove waits says "Removing…" and has no tap; a group that is leaving says so', async () => {
+    const board = demoBoard(NOW, {
+      friends: [demoFriend(NOW, 'Sam'), { ...demoFriend(NOW, 'Ann'), theirs: '', state: 'removing', label: 'Removing…', stats: null }],
+      groups: [
+        { kind: 'removing', group: '7'.repeat(32), name: 'Old group' },
+        { kind: 'not-added', group: '8'.repeat(32), name: 'New group', sendToAdmin: 'https://x.test/join#a' },
+      ],
+    })
+    ;({ h } = await open(board))
+    expect(rows(h)).toContain('A Ann Removing…')
+    expect(btn(h, /Ann/)?.disabled).toBe(true)
+    await tap(h, 'Old group')
+    expect(plain(h.text())).toContain('Removing…')
+    expect(btn(h, 'Leave group')).toBeNull()
+    await tap(h, 'New group')
+    expect(plain(h.text())).toContain('The admin did not add you. Send them your join link again, or tap Leave.')
+    expect(btn(h, 'Send my join link to the admin')).not.toBeNull()
+    expect(btn(h, 'Leave group')).not.toBeNull()
+  })
+  it('YAZ-5265: two taps on "Add <name>" add once; a duplicate and an unverified request say so', async () => {
+    let s: FakeService
+    ;({ h, s } = await open(demoBoard(NOW)))
+    let release!: (v: unknown) => void
+    s.answers.add = () => new Promise((r) => (release = r))
+    await tap(h, 'Add a friend or a group')
+    await tap(h, "Paste a friend's link")
+    s.pasteAnswer = { kind: 'request', group: 'a'.repeat(32), groupName: 'Study group', pointer: 'b'.repeat(32), login: 'zed', name: 'Zed' }
+    await h.type('Or paste the link here', 'https://notecards.yaseenarshad.com/join#x')
+    await tap(h, 'Add')
+    const add = btn(h, 'Add Zed')!
+    await act(async () => {
+      add.click()
+      add.click()
+    })
+    expect(btn(h, 'Adding…')).not.toBeNull()
+    await act(async () => release({ kind: 'duplicate', login: 'zed' }))
+    await h.settle()
+    expect(s.calls.groups.filter((c) => c.startsWith('add:'))).toHaveLength(1)
+    expect(statusText(h)).toContain('zed is already in the group.')
+    s.pasteAnswer = { kind: 'unverified' } as never
+    await tap(h, 'Add')
+    expect(statusText(h)).toContain('The app cannot check who sent this join link.')
+  })
+})

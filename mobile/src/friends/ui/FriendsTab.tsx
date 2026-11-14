@@ -19,7 +19,7 @@ import {
   type JoinRequest,
   type JoinResult,
 } from './groups'
-import { Avatar, LinkToCopy, Mark, SHARED_WORDS, ownSiteLink, readClipboard, shareOut } from './parts'
+import { Avatar, LinkToCopy, Mark, SHARED_WORDS, actionWords, ownSiteLink, readClipboard, shareOut } from './parts'
 import type { Board, FriendEntry, FriendsService, PasteAnswer } from './service'
 import { useBoard, useNow, useService } from './useFriends'
 
@@ -241,7 +241,8 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
     if (asking === null) return
     setBusy(true)
     try {
-      await asking.run()
+      // YAZ-5257: an answer that is not `done` says why, and what happens next.
+      setSaid(actionWords(await asking.run()))
     } finally {
       setBusy(false)
       setAsking(null)
@@ -319,12 +320,12 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
               // Round 10, item 12 (mockup version 9): "updated … ago" below the name, on Today.
               const entry = period === 'today' && e.ago !== undefined ? { ...e, sub: [...e.sub, e.ago] } : e
               return (
-                <li key={entry.key} className={entry.dim ? 'fr-row fr-row--gone' : 'fr-row'}>
+                <li key={entry.key || entry.friend?.mine} className={entry.dim ? 'fr-row fr-row--gone' : 'fr-row'}>
                   <button
                     type="button"
                     className="fr-row__tap"
                     onClick={() => open(entry)}
-                    disabled={entry.you}
+                    disabled={entry.you || entry.friend?.state === 'removing'}
                     aria-label={rowWords(entry, rank, numbers, period)}
                   >
                     <span className="fr-rank" aria-hidden="true">
@@ -444,7 +445,7 @@ function GroupActions({
   }
   return (
     <div className="stack" style={{ marginTop: 16 }}>
-      {view.kind === 'waiting' && (
+      {(view.kind === 'waiting' || view.kind === 'not-added') && (
         <button
           type="button"
           className="btn btn--wide"
@@ -469,7 +470,7 @@ function GroupActions({
         </button>
       )}
       {link !== null && <LinkToCopy link={link} />}
-      {view.kind === 'ok' && view.iAmAdmin ? (
+      {view.kind === 'removing' ? null : view.kind === 'ok' && view.iAmAdmin ? (
         <button
           type="button"
           className="btn btn--wide btn--danger"
@@ -599,7 +600,8 @@ function SharePanel({ service, close, refresh }: { service: FriendsService; clos
 /** Words for each answer to a paste: a friend link (4E2), a group link or a join request (4E3). */
 function pasteWords(answer: PasteAnswer): string {
   if (answer.kind in UNAVAILABLE_WORDS && !('name' in answer)) return UNAVAILABLE_WORDS[answer.kind as Unavailable['kind']]
-  if (['request', 'already-member', 'not-your-group', 'not-a-join-link'].includes(answer.kind)) return adminWords(answer as JoinRequest)
+  if (['request', 'already-member', 'not-your-group', 'not-a-join-link', 'duplicate', 'unverified'].includes(answer.kind))
+    return adminWords(answer as JoinRequest)
   if (['joined', 'already', 'own-group', 'is-friend-link', 'is-join-request', 'not-a-group-link'].includes(answer.kind) && !('paired' in answer))
     return joinMessage(answer as JoinResult)
   return pasteMessage(answer as PasteResult)
@@ -617,6 +619,8 @@ function PastePanel({ service, close, refresh }: { service: FriendsService; clos
   const [link, setLink] = useState<string | null>(null)
   const field = useRef<HTMLInputElement>(null)
   const running = useRef(false)
+  const addRunning = useRef(false)
+  const [adding, setAdding] = useState(false)
   const add = async (value: string) => {
     if (running.current) return
     running.current = true
@@ -694,8 +698,16 @@ function PastePanel({ service, close, refresh }: { service: FriendsService; clos
         <button
           type="button"
           className="btn btn--wide"
-          onClick={() =>
+          disabled={adding}
+          aria-busy={adding}
+          onClick={() => {
+            // YAZ-5265: ONE add for each request; a second tap while it runs does nothing.
+            if (addRunning.current) return
+            addRunning.current = true
+            setAdding(true)
             void service.groups!.add(request.group, text).then((r) => {
+              addRunning.current = false
+              setAdding(false)
               setSaid(
                 r.kind === 'done'
                   ? `${gistText(request.name)} is in ${gistText(request.groupName)} now.`
@@ -706,9 +718,9 @@ function PastePanel({ service, close, refresh }: { service: FriendsService; clos
               setAnswer(null)
               void refresh()
             })
-          }
+          }}
         >
-          Add {gistText(request.name)}
+          {adding ? 'Adding…' : `Add ${gistText(request.name)}`}
         </button>
       )}
       {link !== null && <LinkToCopy link={link} />}

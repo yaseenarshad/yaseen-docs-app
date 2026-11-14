@@ -230,6 +230,8 @@ export interface FakeService extends FriendsService {
   shareAnswer: ShareResult | Unavailable
   pasteAnswer: PasteAnswer
   markAnswer: (mine: string, kind: MarkKind) => Promise<MarkSend>
+  /** An answer for an action instead of `done`: `friend` (remove a friend or a link), and the groups calls by name. */
+  answers: Partial<Record<'friend' | 'remove' | 'leave' | 'delete' | 'add', () => Promise<unknown>>>
 }
 
 export function fakeService(board: Board, options: { groups?: boolean } = {}): FakeService {
@@ -245,7 +247,8 @@ export function fakeService(board: Board, options: { groups?: boolean } = {}): F
     (name: string, answer: unknown = { kind: 'done' }) =>
     async (...args: unknown[]) => {
       calls.groups.push(`${name}:${args.join(',')}`)
-      return answer as never
+      const set = service.answers[name as keyof FakeService['answers']]
+      return (set !== undefined ? await set() : answer) as never
     }
   const groups: GroupsPort = {
     create: groupCall('create', {
@@ -266,6 +269,7 @@ export function fakeService(board: Board, options: { groups?: boolean } = {}): F
   }
   const service: FakeService = {
     calls,
+    answers: {},
     next: board,
     shareAnswer: {
       kind: 'ok',
@@ -292,7 +296,8 @@ export function fakeService(board: Board, options: { groups?: boolean } = {}): F
     },
     async remove(mine) {
       calls.remove.push(mine)
-      return { kind: 'done' }
+      const set = service.answers.friend
+      return (set !== undefined ? await set() : { kind: 'done' }) as never
     },
     async mark(mine, kind) {
       calls.mark.push({ mine, kind })

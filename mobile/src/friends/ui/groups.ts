@@ -21,6 +21,10 @@ export function adminWords(result: JoinRequest | GroupChange): string {
       return `${result.name} is already in the group.`
     case 'not-your-group':
       return 'That join link is for a group that another person runs.'
+    case 'duplicate':
+      return `${result.login} is already in the group.`
+    case 'unverified':
+      return 'The app cannot check who sent this join link. Ask them to send it again from their Notecards.'
     case 'not-a-join-link':
       return 'That is not a Notecards join link. Ask the person to send it again.'
     case 'done':

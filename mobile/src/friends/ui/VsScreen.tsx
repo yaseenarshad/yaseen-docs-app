@@ -7,7 +7,7 @@ import { MARK_LINE, gistText, initialOf, markToShow, updatedLabel, vsBoard, type
 import './friends.css'
 import type { MarkKind, MarkSend } from './marks'
 import type { GroupView } from './groups'
-import { Avatar, clockTime } from './parts'
+import { Avatar, actionWords, clockTime } from './parts'
 import { useBoard, useNow, useService } from './useFriends'
 
 /**
@@ -22,6 +22,7 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
   const { board, refresh } = useBoard(service)
   const [asking, setAsking] = useState<null | 'remove'>(null)
   const [busy, setBusy] = useState(false)
+  const [said, setSaid] = useState<string | null>(null)
   const back = () => app.go({ type: 'back' })
 
   const ok = board !== null && board.kind === 'ok' ? board : null
@@ -58,13 +59,20 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
     if (service === null) return
     setBusy(true)
     try {
-      if (friend !== null) await service.remove(friend.mine)
-      else if (member !== null && group !== undefined && service.groups !== null) await service.groups.remove(group.group, member.pointer)
+      const result =
+        friend !== null
+          ? await service.remove(friend.mine)
+          : member !== null && group !== undefined && service.groups !== null
+          ? await service.groups.remove(group.group, member.pointer)
+          : { kind: 'done' }
+      // YAZ-5257: done goes back to the list; else the screen stays and says why, and what happens next.
+      const words = actionWords(result)
+      setSaid(words)
+      if (words === null) back()
     } finally {
       setBusy(false)
       setAsking(null)
       await refresh()
-      back()
     }
   }
 
@@ -115,6 +123,11 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
             {friend !== null ? 'Remove friend' : 'Remove from group'}
           </button>
         </div>
+      )}
+      {said !== null && (
+        <p className="fr-line" role="status">
+          {said}
+        </p>
       )}
       {asking === 'remove' && (
         <Confirm
