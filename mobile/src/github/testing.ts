@@ -269,7 +269,7 @@ export async function fakeGit(files: Record<string, string | Uint8Array> = {}, b
 
 type Json = (status: number, body: unknown, headers?: Record<string, string>) => Response
 
-async function gitRoute(git: FakeGit, method: string, rest: string[], access: 'read' | 'write' | undefined, init: RequestInit, body: Record<string, unknown>, url: string, json: Json): Promise<Response> {
+async function gitRoute(git: FakeGit, method: string, rest: string[], access: 'none' | 'read' | 'write' | undefined, init: RequestInit, body: Record<string, unknown>, url: string, json: Json): Promise<Response> {
   const inner = git as FakeGit & { _commit(tree: Map<string, string>, parents: string[], message: string, on: string | null): Promise<string>; _tree(tree: Map<string, string>): Promise<string> }
   const notFound = () => json(404, { message: 'Not Found', documentation_url: 'https://docs.github.com/rest/git' })
   const write = method !== 'GET'
