@@ -3,11 +3,12 @@ import { memoryBackend } from './memoryBackend'
 import { PHONE, openVaultStore } from './vaultStore'
 import { addVault, forgetVault, loadVaultList, openVault, openVaultOf, pollingVault, removeVault, saveVaultList, vaultId, type PhoneVault, type VaultList } from './vaults'
 
-const vault = (repo: string, branch = 'main', addedAt = 1): PhoneVault => ({ repo, branch, folder: '', addedAt })
+const vault = (repo: string, branch = 'main', addedAt = 1): PhoneVault => ({ repo, branch, addedAt })
 const EMPTY: VaultList = { vaults: [], open: null }
 
 describe('the vault list (decision 7: several vaults)', () => {
-  it('a vault is one repo and branch; its id ignores the case of the repo, as GitHub does', () => {
+  it('a vault is a whole repo and branch, with no folder; its id ignores the case of the repo, as GitHub does', () => {
+    expect(Object.keys(vault('a/one')).sort()).toEqual(['addedAt', 'branch', 'repo'])
     expect(vaultId(vault('Yaseen/Vault'))).toBe('yaseen/vault@main')
     expect(vaultId(vault('yaseen/vault', 'phone'))).not.toBe(vaultId(vault('yaseen/vault')))
   })
