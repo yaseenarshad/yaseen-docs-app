@@ -29,7 +29,7 @@ import { friendStats } from '@shared/friendStats'
 import { finishRemove, pendingRemove } from '@shared/friendsList'
 import { recordGistsRefused } from '../auth/friends'
 import type { FetchLike } from '../github/client'
-import { PHONE, type TokenStore, type VaultStore } from '../store'
+import { PHONE, VaultClosedError, type TokenStore, type VaultStore } from '../store'
 import type { Clock, SyncEvent } from '../sync/engine'
 import { countedVaults, openFriendsApi } from './friendsApi'
 import { friendsGuard } from './guard'
@@ -207,9 +207,12 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
     const now = clock.now()
     if (!passSeen) return set({ status: 'no-pass' })
     const saved = await loadSaved()
+    // YAZ-5195: the phone-wide session of this try. After "Sign out and erase this phone" (in any tab) its writes
+    // throw `VaultClosedError`, so nothing of this try is stored again.
+    const session = await store.session(PHONE)
     // YAZ-5195: after an erase or a stop, nothing of the friends state is stored again.
     const save = async (patch: Partial<Saved>) => {
-      if (await guard.live()) await store.setState(PHONE, SEND_STATE, { ...saved, ...patch })
+      if (await guard.live()) await session.setState(PHONE, SEND_STATE, { ...saved, ...patch })
     }
 
     // The cheap checks first: the 5-minute rule and the budget need no network and no count.
@@ -320,6 +323,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
           return set({ status: 'failed' })
       }
     } catch (err) {
+      if (err instanceof VaultClosedError) throw err
       // A failure while the list is found or the numbers gist is made again.
       switch (gistErrorCode(err)) {
         case 'OFFLINE':
@@ -354,7 +358,8 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
         queued = null
         await lock('notecards-friends', () => run(next))
       })
-      .catch(() => set({ status: 'failed' }))
+      // An erase during the try: it ends quietly, with nothing stored (YAZ-5195).
+      .catch((err) => set({ status: err instanceof VaultClosedError ? 'idle' : 'failed' }))
     return chain.then(() => state)
   }
 

@@ -21,7 +21,7 @@ import { localFriends, type FriendsPort, type FriendsSettings } from '../app/fri
 import { recordGistsRefused } from '../auth/friends'
 import { loadAccount } from '../auth/account'
 import type { FetchLike } from '../github/client'
-import { PHONE, loadVaultList, vaultId, type TokenStore, type VaultStore } from '../store'
+import { PHONE, VaultClosedError, loadVaultList, vaultId, type TokenStore, type VaultStore } from '../store'
 import type { Clock } from '../sync/engine'
 import { openFriendsApi } from './friendsApi'
 import { friendsGuard } from './guard'
@@ -107,6 +107,8 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
   }
   const cache = newListCache()
   const guard = friendsGuard(store, options.fetch, options.signal)
+  /** The phone-wide session of the running action (YAZ-5195). */
+  let phoneStore: VaultStore = store
   let handle: IndexHandle | null = null
   const local = localFriends(store)
 
@@ -135,8 +137,8 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     handle = h
     if (h === null) return
     if (!(await guard.live())) return // YAZ-5195: nothing comes back after an erase
-    await store.setState(PHONE, HAS, h.index.friends.length + h.index.groups.length > 0)
-    await store.setState(PHONE, COPY, { vaults: h.index.vaults, nickname: h.index.nickname } satisfies ListCopy)
+    await phoneStore.setState(PHONE, HAS, h.index.friends.length + h.index.groups.length > 0)
+    await phoneStore.setState(PHONE, COPY, { vaults: h.index.vaults, nickname: h.index.nickname } satisfies ListCopy)
   }
 
   /** This session's copy of the list, read again with its ETag (a free 304 when nothing changed, also on another device). */
@@ -187,18 +189,21 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
   }
   async function saveBudget(b: GistBudget): Promise<void> {
     const saved = (await store.getState<Record<string, unknown>>(PHONE, SEND_STATE)) ?? { lastSentAt: null, lastKey: null, pointers: 0 }
-    if (await guard.live()) await store.setState(PHONE, SEND_STATE, { ...saved, budget: b })
+    if (await guard.live()) await phoneStore.setState(PHONE, SEND_STATE, { ...saved, budget: b })
   }
 
   /** Runs `fn` with the friends account, under the lock the sender takes; a gist failure becomes plain state. */
   async function withApi<T>(fn: (api: GistsApi, login: string, vault: string) => Promise<T | Unavailable>): Promise<T | Unavailable> {
     if (!(await guard.live())) return { kind: 'no-account' }
+    // YAZ-5195: the phone-wide session of this action; after an erase in any tab its writes throw VaultClosedError.
+    phoneStore = await store.session(PHONE)
     const friends = await openFriendsApi(store, tokens, { fetch: guard.fetch, now })
     if (friends.kind !== 'ok') return { kind: friends.kind }
     return lock('notecards-friends', async () => {
       try {
         return await fn(friends.api, friends.account.login, friends.vault)
       } catch (err) {
+        if (err instanceof VaultClosedError) return { kind: 'no-account' as const }
         switch (gistErrorCode(err)) {
           case 'READ_ONLY':
             if (await guard.live()) await recordGistsRefused(store, friends.vault)
@@ -302,7 +307,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         if (h === 'broken') return { kind: 'needs-repair' as const }
         if (h === 'newer') return { kind: 'newer-app' as const }
         if (h === null) {
-          if (await guard.live()) await store.setState(PHONE, HAS, false)
+          if (await guard.live()) await phoneStore.setState(PHONE, HAS, false)
           return { kind: 'ok' as const, rows: [], shared: [], repairs: [] }
         }
         if (pendingRemove(h) !== null) {

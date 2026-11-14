@@ -471,6 +471,32 @@ describe('createFriendsSender (YAZ-5082)', () => {
     expect(world.calls.length).toBe(n)
   })
 
+  it('YAZ-5195: an erase and a NEW sign-in while an old send runs: the old send stores nothing (the store session)', async () => {
+    const { clock, world } = setup()
+    await friendsOf(world, PHONE_TOKEN, 1)
+    const p = await phone(world, clock, PHONE_TOKEN)
+    let release!: () => void
+    const held = new Promise<void>((done) => (release = done))
+    const http = gistsFetch(world)
+    const slow = async (url: string, init: RequestInit) => {
+      if ((init.method ?? 'GET') === 'PATCH') await held
+      return http.fetch(url, init)
+    }
+    const sender = createFriendsSender({ store: p.store, tokens: p.tokens, sync: p.sync, clock, fetch: slow, sleep: async () => {} })
+    p.sender.stop()
+    await p.store.setState(`${REPO}@main`, INDEX_STATE, { commit: 'c', records: { 'cards.md': { path: 'cards.md', cards: answered(2) } } })
+    p.sync.pass()
+    await new Promise((done) => setTimeout(done, 20))
+    await p.tokens.clearAll()
+    await p.store.eraseAll()
+    // The person signs in again at once: the vault list is back.
+    await saveVaultList(p.store, { vaults: [{ repo: REPO, branch: 'main', addedAt: START }], open: `${REPO}@main` })
+    release()
+    await sender.idle()
+    expect((await p.store.getState('', 'friendsSend')) ?? null).toBeNull()
+    await sender.stop()
+  })
+
   it('YAZ-5195: stop() (the app calls it before the erase) aborts the running write and stores nothing', async () => {
     const { clock, world } = setup()
     const { stats } = await friendsOf(world, PHONE_TOKEN, 1)
