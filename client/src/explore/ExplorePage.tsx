@@ -43,6 +43,7 @@ import { editingLabel, ReadOnlyChip } from '../editor/ReadOnlyChip'
 import { useTimedUnlock } from '../editor/useTimedUnlock'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { landOn } from '../editor/toc/tocPlugin'
+import { cardBlockViewOfDom } from '../editor/card/cardBlockView'
 import { KeyCaps } from '../keys/KeyCaps'
 
 /** The vault the page is in: what its links resolve against. */
@@ -90,6 +91,10 @@ interface ExplorePageProps {
   leaveAsk?: number
   /** The card to land on once the page shows (YAZ-4962): its place among the page's cards. */
   card?: number
+  /** The Inbox's E on a card in a page (YAZ-5145): once the layer edits, the card at `card` opens in Edit card, one time. */
+  editCard?: boolean
+  /** Opened by the Inbox (YAZ-5145): ⌘↵ while reading goes back to it, so ↗ does not say ⌘↵. */
+  fromInbox?: boolean
   /**
    * ‹ › (round 3): the page's place among the rows of the search under it ("2/3"), whether a step each way exists,
    * and the step. A page opened from a link has no search under it, so no ‹ ›.
@@ -171,7 +176,7 @@ const readFeatures = { ...features, [CrepeFeature.BlockEdit]: false, [CrepeFeatu
 
 type Content = { kind: 'loading' } | { kind: 'body'; body: string; switches: PageSwitches } | { kind: 'empty' } | { kind: 'gone' }
 
-export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, vault, style, onOpenLink, renderEditor, createFolder, onFileAction, linkActions, onNotice, onToggleEdit, editAsk = 0, leaveAsk = 0, card, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, pageMenu, onClose, active }: ExplorePageProps) {
+export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, vault, style, onOpenLink, renderEditor, createFolder, onFileAction, linkActions, onNotice, onToggleEdit, editAsk = 0, leaveAsk = 0, card, editCard = false, fromInbox = false, steps, onHeadDown, onHeadReset, zoom, onZoom, commentsOrder, onChangeCommentsOrder, onOpenInTab, onHeadMenu, pageMenu, onClose, active }: ExplorePageProps) {
   // The layer's vault's word for a page (YAZ-4938), for its own words and for every panel inside it.
   const unit = useVaultUnit(vault.root)
   const pageId = usePageId(idInTitle ? vault.wikilinks : undefined, path)
@@ -401,6 +406,27 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
     return () => clearTimeout(timer)
   }, [card, mode, ready])
 
+  // The Inbox's E on a card in a page (YAZ-5145, Yaseen: "e would edit the card"): once the layer edits (at once, or
+  // after "Allow edits?" in a Read only vault), that card opens in Edit card, as its own Edit card button does. One
+  // time: Done, Esc and a later edit are the page's as always. The editor mounts a tick later: ask a few frames.
+  const cardEdited = useRef(false)
+  useEffect(() => {
+    if (!editCard || card === undefined || cardEdited.current || mode !== 'edit') return
+    let tries = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const tick = () => {
+      const view = cardBlockViewOfDom(editBodyRef.current?.querySelectorAll<HTMLElement>('.card')[card] ?? null)
+      if (view !== null && view.view.editable) {
+        cardEdited.current = true
+        view.edit()
+        return
+      }
+      if (++tries <= 40) timer = setTimeout(tick, 16)
+    }
+    tick()
+    return () => clearTimeout(timer)
+  }, [editCard, card, mode])
+
   /** The saved text for the comment stream (round 1, item 3): what was read, until the block's own write moves it. */
   const file = content.kind === 'body' || content.kind === 'empty' ? { path, content: readRef.current } : null
 
@@ -544,7 +570,7 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
               </button>
             </>
           )}
-          <button type="button" className="explore__button" data-fold-part="open" onClick={onOpenInTab} title="Open in a tab and close the stack (⌘↵)" aria-label="Open in a tab">
+          <button type="button" className="explore__button" data-fold-part="open" onClick={onOpenInTab} title={fromInbox ? 'Open in a tab and close the stack' : 'Open in a tab and close the stack (⌘↵)'} aria-label="Open in a tab">
             ↗
           </button>
         </span>

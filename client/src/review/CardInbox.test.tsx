@@ -86,7 +86,7 @@ function mount(text: string | null, settings: ReviewSettings = DEFAULT_REVIEW_SE
     vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: { candidates: [], subscribe: () => () => undefined } as never }),
     nameOf: () => 'Cards',
     openPage: vi.fn(),
-    openCard: vi.fn(),
+    editCard: vi.fn(),
     openInTab: vi.fn(),
     openLinkIn: vi.fn(),
     openLayer: vi.fn(),
@@ -197,10 +197,10 @@ describe('the Inbox screen (YAZ-4962)', () => {
     render()
     expect(hasE()).toBe(true)
     press('e')
-    expect(props.openCard).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', 0, true)
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, 0)
   })
 
-  it('YAZ-5009: in a read-only vault the row offers "E Edit card", and E opens the card window in Edit card at once (no ask); the Inbox keeps its card and step under it', () => {
+  it('YAZ-5145: in a read-only vault the row offers "E Edit card", and E asks Explore to edit (its own "Allow edits?" asks there); the Inbox keeps its card and step under it', () => {
     mount(TWO_SIDES)
     const plain = props.vaultOf
     props.vaultOf = (path) => ({ ...plain(path), readOnly: true })
@@ -209,9 +209,9 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(shown()).toEqual(['France'])
     expect([...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)).toContain('E Edit card')
     press('e')
-    expect(props.openCard).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', 0, true)
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, 0)
     expect(props.openPage).not.toHaveBeenCalled()
-    // Back from the card window (the stack closed): the same card, the same step.
+    // Back from Explore (the stack closed): the same card, the same step.
     render()
     expect(shown()).toEqual(['France'])
     expect(el.querySelector('.card-inbox__place')?.textContent).toBe('3 of 12')
@@ -370,13 +370,13 @@ describe('the Inbox screen (YAZ-4962)', () => {
     palette.remove()
   })
 
-  it('YAZ-5022: O opens the page on top at its TOP (no card index: no scroll to the card); YAZ-5003: E opens only the card, in the card window, in Edit card; ⌘↵ in a tab; ⌘Z undoes only when there is an answer to undo; YAZ-5011: Esc does not close the Inbox (a tab), and the key is not taken', () => {
+  it('YAZ-5022: O opens the page on top at its TOP (no card index: no scroll to the card); YAZ-5145: E asks Explore to edit the page, landed on the card (its index); ⌘↵ in a tab; ⌘Z undoes only when there is an answer to undo; YAZ-5011: Esc does not close the Inbox (a tab), and the key is not taken', () => {
     mount(TWO_SIDES)
     press('o')
     expect(props.openPage).toHaveBeenLastCalledWith(PATH)
     expect(vi.mocked(props.openPage).mock.calls[0]).toHaveLength(1)
     press('e')
-    expect(props.openCard).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', 0, true)
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, 0)
     expect(props.openPage).toHaveBeenCalledOnce()
     press('Enter', { metaKey: true })
     expect(props.openInTab).toHaveBeenCalledExactlyOnceWith(PATH)
@@ -604,8 +604,9 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.turnOff).toHaveBeenCalledOnce()
     run('Put at top of Inbox')
     expect(review.setNext).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', true)
+    // YAZ-5145: Open card opens as O does: Explore's own layer.
     run('Open card')
-    expect(props.openCard).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', 0, false)
+    expect(props.openPage).toHaveBeenCalledExactlyOnceWith(PATH)
     expect(actions()).toEqual([])
   })
 
@@ -966,7 +967,7 @@ describe('YAZ-5044 the Inbox head: "Title · ID", "in <page>" for a card in a pa
     const record = { path: PATH, name: 'cards.md', basename: 'cards', title: 'Capital of France', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: { kind: 'card' }, aliases: [], tags: [], links: [], embeds: [], kind: 'card' as const }
     const wikilinks = createWikilinkResolveSource()
     wikilinks.update(() => null, [record])
-    props = { ...props, vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: { candidates: [], subscribe: () => () => undefined } as never }), openTab: vi.fn() }
+    props = { ...props, vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: { candidates: [], subscribe: () => () => undefined } as never }) }
     render()
   }
 
@@ -981,7 +982,7 @@ describe('YAZ-5044 the Inbox head: "Title · ID", "in <page>" for a card in a pa
     expect(hints()).toContain('O Open page')
   })
 
-  it('a card file adds nothing: "Capital of France · WIKI-9"; its title is the link, and it and O open the card file`s tab ("Open card")', () => {
+  it('a card file adds nothing: "Capital of France · WIKI-9"; its title is the link, and it and O open it in Explore ("Open card", YAZ-5145: as Explore opens it, not its tab); E edits it there, with no card index', () => {
     mount(PLAIN)
     asCardFile()
     expect(headText()).toBe('Capital of France·WIKI-9')
@@ -989,13 +990,14 @@ describe('YAZ-5044 the Inbox head: "Title · ID", "in <page>" for a card in a pa
     expect(hints()).toContain('O Open card')
     expect(hints()).not.toContain('O Open page')
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__name')!.click())
-    expect(props.openTab).toHaveBeenCalledExactlyOnceWith(PATH)
+    expect(props.openPage).toHaveBeenCalledExactlyOnceWith(PATH)
     press('o')
-    expect(props.openTab).toHaveBeenCalledTimes(2)
-    expect(props.openPage).not.toHaveBeenCalled()
+    expect(props.openPage).toHaveBeenCalledTimes(2)
+    press('e')
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, null)
   })
 
-  it('a card file with `notitle`: the ID only until the card is fully shown, then the title; O opens its tab all along', async () => {
+  it('a card file with `notitle`: the ID only until the card is fully shown, then the title; O opens it all along', async () => {
     mount(PLAIN)
     asCardFile()
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, notitle: true } } }
@@ -1003,7 +1005,7 @@ describe('YAZ-5044 the Inbox head: "Title · ID", "in <page>" for a card in a pa
     await flush()
     expect(headText()).toBe('WIKI-9')
     press('o')
-    expect(props.openTab).toHaveBeenCalledOnce()
+    expect(props.openPage).toHaveBeenCalledOnce()
     press(' ')
     expect(headText()).toBe('Capital of France·WIKI-9')
   })
@@ -1493,7 +1495,7 @@ describe('YAZ-5046: archived cards in the Inbox, to look at (not to review)', ()
     expect(review.setFilter).toHaveBeenCalledExactlyOnceWith('archived')
   })
 
-  it('Archived lists the cards: each its title ("New card" when empty) and its page; a click opens the card window to look at it; Unarchive unarchives it; no answer buttons, no "3 of 12"', () => {
+  it('Archived lists the cards: each its title ("New card" when empty) and its page; a click opens it as O does (YAZ-5145); Unarchive unarchives it; no answer buttons, no "3 of 12"', () => {
     mount(TWO_SIDES)
     session = { ...session, filter: 'archived', card: null, archived: ARCHIVED }
     render()
@@ -1506,7 +1508,7 @@ describe('YAZ-5046: archived cards in the Inbox, to look at (not to review)', ()
     expect(el.querySelector('.card-inbox__place')).toBeNull()
     expect(el.querySelector('.card-inbox__done')).toBeNull()
     act(() => listRows()[0].querySelector<HTMLButtonElement>('.card-inbox__archived-open')!.click())
-    expect(props.openCard).toHaveBeenCalledExactlyOnceWith('/v/a.md', 'WIKI-4', 2, false)
+    expect(props.openPage).toHaveBeenCalledExactlyOnceWith('/v/a.md')
     act(() => listRows()[1].querySelector<HTMLButtonElement>('.card-inbox__archived-unarchive')!.click())
     expect(review.unarchive).toHaveBeenCalledExactlyOnceWith('/v/b.md', 'WIKI-8')
     expect(listRows()[1].querySelector('.card-inbox__archived-unarchive')?.textContent).toBe('Unarchive')

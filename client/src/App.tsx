@@ -1500,9 +1500,13 @@ export function App() {
     })
   }, [hasVault, filesWindow])
   const openExploreOn = useCallback((path: string) => openExploreWith({ kind: 'page', path }), [openExploreWith])
-  /** The Inbox's E (YAZ-5003, in Edit card) and ⋯ › Open card (YAZ-5004): the card window on top. */
-  // The Inbox's card window (E, ⋯ › Open card): ⌘↵ while reading goes back to the Inbox (YAZ-5009).
-  const openCardWindow = useCallback((path: string, cardId: string, index: number, edit: boolean) => openExploreWith({ kind: 'card', path, cardId, index, fromInbox: true, ...(edit && { edit }) }), [openExploreWith])
+  /**
+   * The Inbox's O and E (YAZ-5145): Explore's own page layer for the card's file — the view Explore opens for it — so
+   * the card looks the same from both. ⌘↵ while reading goes back to the Inbox (YAZ-5009). E edits as Explore's E
+   * does; a card in a page (`index`) lands on the card, in Edit card.
+   */
+  const openFromInbox = useCallback((path: string) => openExploreWith({ kind: 'page', path, fromInbox: true }), [openExploreWith])
+  const editFromInbox = useCallback((path: string, index: number | null) => openExploreWith({ kind: 'page', path, edit: true, fromInbox: true, ...(index !== null && { card: index, editCard: true }) }), [openExploreWith])
   // The card window (YAZ-4962, D13): every editor sends `mdapp:card-open` from its card (a click on the title,
   // ⋯ › Open card, ⌘↵); it bubbles to the document. A preview that does not know its page sends no path: nothing opens.
   useEffect(() => {
@@ -3994,7 +3998,7 @@ export function App() {
                 under it stays as it was. Behind a page tab it stays mounted, hidden, so it comes back at its card and step. */}
             {session !== null && (
               <Suspense fallback={null}>
-                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openExploreOn} openTab={openKeptPage} openCard={openCardWindow} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} />
+                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openFromInbox} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} />
               </Suspense>
             )}
             {/* The tab board (YAZ-2648 D5) covers the stack while it shows; a review never has one over it. */}
