@@ -228,6 +228,16 @@ describe('a sync conflict copy never keeps a card (YAZ-5056)', () => {
     expect((await cardsIn(b))[0].id).not.toBe('YAZ-20')
   })
 
+  it('the Docs app\'s own sync copy, `P (conflict, <day>).md` (no host), follows the rule too (YAZ-5089)', async () => {
+    const copyName = 'P (conflict, 2026-11-13).md'
+    const records = await vault({ 'P.md': `---\nid: YAZ-1\n---\n${card('Same text', `YAZ-7, ${mine}`)}`, [copyName]: `---\nid: YAZ-1\n---\n${card('Same text', `YAZ-7, ${theirs}`)}` })
+    await sweepIds(root, records, [...records.values()], () => undefined)
+    expect(await cardsIn('P.md')).toEqual([{ id: 'YAZ-7', off: false, next: false, reviews: union }])
+    const [copied] = await cardsIn(copyName)
+    expect(copied.id).not.toBe('YAZ-7')
+    expect(copied).toMatchObject({ off: true, next: false, reviews: [] })
+  })
+
   it('a conflict copy alone (the original was deleted) keeps its card as it is', async () => {
     const copyName = 'P (conflict Host, 2026-11-13).md'
     const bytes = `---\nid: YAZ-1\n---\n${card('Same text', `YAZ-7, ${mine}`)}`
