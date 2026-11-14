@@ -2,6 +2,7 @@ import { splitFrontmatter } from './frontmatter'
 import { closesFence, fenceOf } from './fences'
 import { canonicalPageId, isNumberId } from './pageId'
 import { inLineEnds, withLf } from './lineEnds'
+import { keyFold } from './propertyKeys'
 
 /**
  * PAGE CARDS (YAZ-4946, YAZ-4959 D3): a card is a ```` ```card ```` fence in a Markdown page, and its ONE card line
@@ -51,8 +52,21 @@ export interface CardReview {
 /** The longest time a review part holds: one day, in seconds (YAZ-5033). */
 export const CARD_SECONDS_MAX = 86400
 
+/** One value of a card property (YAZ-5379): text (quoted on the line), a number or a checkbox (bare). */
+export type CardPropertyScalar = string | number | boolean
+/** A card property's value: one value, or a list of two or more (`tags "europe" "capitals"`). */
+export type CardPropertyValue = CardPropertyScalar | CardPropertyScalar[]
+
 /** One part of a card line, in the order the line holds them. */
-export type CardPart = { kind: 'id'; id: string } | { kind: 'title'; title: string } | { kind: 'review'; review: CardReview } | { kind: 'off' } | { kind: 'next' } | { kind: 'notitle' } | { kind: 'other'; text: string }
+export type CardPart =
+  | { kind: 'id'; id: string }
+  | { kind: 'title'; title: string }
+  | { kind: 'property'; name: string; value: CardPropertyValue }
+  | { kind: 'review'; review: CardReview }
+  | { kind: 'off' }
+  | { kind: 'next' }
+  | { kind: 'notitle' }
+  | { kind: 'other'; text: string }
 
 /** What a card line holds. `parts` keeps every part in place; the getters below read it. */
 export interface CardLine {
@@ -76,6 +90,8 @@ export interface CardRecord {
   title?: string
   /** The title is hidden on the Inbox's front (the line's `notitle` part, YAZ-5030); absent: it shows. */
   notitle?: true
+  /** The card's own properties (its line's property parts, YAZ-5379, `cardPropertiesOf`); absent for a card with none. */
+  properties?: Record<string, CardPropertyValue>
 }
 
 /** `<!-- card: … -->` on one line, any spaces inside the delimiters. */
@@ -124,6 +140,62 @@ export const cleanCardTitle = (title: string): string => title.replace(/\s+/g, '
 const quoteTitle = (title: string): string => `"${title.replace(/[\\">]/g, (c) => `\\${c}`)}"`
 const unquoteTitle = (quoted: string): string => quoted.replace(/\\(.)/g, '$1')
 
+// ---------- properties (YAZ-5379, YAZ-5349 option A) ----------
+//
+// A card's own properties are parts of its card line, after its ID and title: a name, then one or more values.
+//   <!-- card: GEO-197, title "Capital of Spain", tags "europe" "capitals", level "A2", count 3, done true -->
+// Text is quoted, with the title's escapes plus `\n` for a line break; a number or a checkbox is bare. Two or more
+// values are a list; one value reads as that value, as YAML's `tags: europe` does on a page (the vault's
+// `properties.json` kind decides how a panel row or a column shows it). An empty value is `""`. A name is bare when it
+// starts with a letter or `_` and holds no space, quote, comma, `\` or `>`; any other name is quoted:
+// `"Due Date" "2026-11-20"`. The card line's own words are never a name (`isCardPropertyName`). A part that does not
+// read as a property (a bare word alone, a bare value that is no number or checkbox) stays an unknown part, kept.
+
+/** The card line's own words: never a property's name (YAZ-5379), in any capitals. */
+const CARD_LINE_WORDS: ReadonlySet<string> = new Set(['title', 'off', 'next', 'notitle'])
+const BARE_NAME_RE = /^[\p{L}_][^\s",\\<>]*$/u
+const NUMBER_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/
+const TOKEN_RE = /[ \t]*("(?:[^"\\]|\\.)*"|[^\s"]+)/y
+
+/**
+ * Can `name` be a card property's name (YAZ-5379)? A property name (`isPropertyName`: not empty, no space at either
+ * end, no line break) that is none of the card line's words (`title`, `off`, `next`, `notitle`), in any capitals.
+ */
+export function isCardPropertyName(name: unknown): name is string {
+  return typeof name === 'string' && name !== '' && name === name.trim() && !/[\r\n]/.test(name) && !CARD_LINE_WORDS.has(name.toLowerCase())
+}
+
+const quoteValue = (text: string): string => `"${text.replace(/\r/g, '').replace(/[\\">\n]/g, (c) => (c === '\n' ? '\\n' : `\\${c}`))}"`
+const unquoteValue = (quoted: string): string => quoted.slice(1, -1).replace(/\\(.)/g, (_, c: string) => (c === 'n' ? '\n' : c))
+const formatScalar = (v: CardPropertyScalar): string => (typeof v === 'string' ? quoteValue(v) : String(v))
+const formatName = (name: string): string => (BARE_NAME_RE.test(name) ? name : quoteValue(name))
+
+/** A property part as the line writes it. */
+const formatProperty = (name: string, value: CardPropertyValue): string => {
+  const values = Array.isArray(value) ? value : [value]
+  return `${formatName(name)} ${values.length === 0 ? '""' : values.map(formatScalar).join(' ')}`
+}
+
+/** The property a part's text holds, or null when it holds none. */
+function parseProperty(text: string): { name: string; value: CardPropertyValue } | null {
+  const tokens: string[] = []
+  TOKEN_RE.lastIndex = 0
+  let m: RegExpExecArray | null
+  while (TOKEN_RE.lastIndex < text.length && (m = TOKEN_RE.exec(text)) !== null) tokens.push(m[1])
+  if (TOKEN_RE.lastIndex < text.trimEnd().length || tokens.length < 2) return null
+  const [head, ...rest] = tokens
+  const name = head.startsWith('"') ? unquoteValue(head) : BARE_NAME_RE.test(head) ? head : null
+  if (name === null || !isCardPropertyName(name)) return null
+  const values: CardPropertyScalar[] = []
+  for (const t of rest) {
+    if (t.startsWith('"')) values.push(unquoteValue(t))
+    else if (NUMBER_RE.test(t)) values.push(Number(t))
+    else if (t === 'true' || t === 'false') values.push(t === 'true')
+    else return null
+  }
+  return { name, value: values.length === 1 ? values[0] : values }
+}
+
 /** The card line `value` holds (one line, trimmed or not), or null when it is no card line. */
 export function parseCardLine(value: string): CardLine | null {
   const body = LINE_RE.exec(value.trim())?.[1]
@@ -147,7 +219,10 @@ export function parseCardLine(value: string): CardLine | null {
     else if (!id && isNumberId(text)) {
       id = true
       parts.push({ kind: 'id', id: canonicalPageId(text) })
-    } else parts.push({ kind: 'other', text })
+    } else {
+      const property = parseProperty(text)
+      parts.push(property === null ? { kind: 'other', text } : { kind: 'property', ...property })
+    }
   }
   return { parts }
 }
@@ -166,7 +241,9 @@ export const cardReviewKey = (r: CardReview): string => `${r.at} ${r.rating}`
 
 /** The card line for `line`, or null when it holds no part (a card with no ID and no review writes no line). */
 export function formatCardLine(line: CardLine): string | null {
-  const parts = line.parts.map((p) => (p.kind === 'id' ? p.id : p.kind === 'title' ? `title ${quoteTitle(p.title)}` : p.kind === 'review' ? formatCardReview(p.review) : p.kind === 'other' ? p.text : p.kind))
+  const parts = line.parts.map((p) =>
+    p.kind === 'id' ? p.id : p.kind === 'title' ? `title ${quoteTitle(p.title)}` : p.kind === 'property' ? formatProperty(p.name, p.value) : p.kind === 'review' ? formatCardReview(p.review) : p.kind === 'other' ? p.text : p.kind,
+  )
   return parts.length === 0 ? null : `<!-- card: ${parts.join(', ')} -->`
 }
 
@@ -185,14 +262,73 @@ export const isCardNoTitle = (line: CardLine): boolean => line.parts.some((p) =>
 export const cardTitleOf = (line: CardLine): string => line.parts.find((p) => p.kind === 'title')?.title ?? ''
 const cardRecordOf = (line: CardLine): CardRecord => {
   const title = cardTitleOf(line)
-  return { id: cardIdOf(line), off: isCardOff(line), next: isCardNext(line), reviews: cardReviewsOf(line), ...(title !== '' && { title }), ...(isCardNoTitle(line) && { notitle: true as const }) }
+  const properties = cardPropertiesOf(line)
+  return {
+    id: cardIdOf(line),
+    off: isCardOff(line),
+    next: isCardNext(line),
+    reviews: cardReviewsOf(line),
+    ...(title !== '' && { title }),
+    ...(isCardNoTitle(line) && { notitle: true as const }),
+    ...(Object.keys(properties).length > 0 && { properties }),
+  }
 }
 
-/** Where a part that follows the card's head goes: after its ID and its title (each when it has one), else first. */
+/** Where a part that follows the card's head goes: after its ID, its title and its properties (each when it has them), else first. */
 const afterHead = (line: CardLine): number => {
   let i = line.parts.findIndex((p) => p.kind === 'id') + 1
-  while (line.parts[i]?.kind === 'title') i++
+  while (line.parts[i]?.kind === 'title' || line.parts[i]?.kind === 'property') i++
   return i
+}
+
+/**
+ * The card's own properties (YAZ-5379), by name in the line's order. Two spellings of one key (`Tags`, `tags`,
+ * `keyFold`): the first one wins, as on a page.
+ */
+export function cardPropertiesOf(line: CardLine): Record<string, CardPropertyValue> {
+  const out: Record<string, CardPropertyValue> = {}
+  const seen = new Set<string>()
+  for (const p of line.parts) {
+    if (p.kind !== 'property' || seen.has(keyFold(p.name))) continue
+    seen.add(keyFold(p.name))
+    out[p.name] = Array.isArray(p.value) ? [...p.value] : p.value
+  }
+  return out
+}
+
+/** A value a property row or a cell gives, as a card line value: null and undefined are empty text, a Date its ISO day. */
+const toCardValue = (value: unknown): CardPropertyValue => {
+  const scalar = (v: unknown): CardPropertyScalar =>
+    typeof v === 'string' || typeof v === 'boolean' ? v : typeof v === 'number' && Number.isFinite(v) ? v : v instanceof Date ? v.toISOString().slice(0, 10) : v === null || v === undefined ? '' : String(v)
+  return Array.isArray(value) ? value.map(scalar) : scalar(value)
+}
+
+/**
+ * The card with property `name` set to `value` (YAZ-5379: the strip's Properties part, the Cards table's cells,
+ * `card add --prop`): the part changes in place under `name`'s spelling, its other spellings go, or it comes after the
+ * card's last property, else after its ID and title. Throws for a name the line cannot hold (`isCardPropertyName`).
+ * The same value gives the same line.
+ */
+export function withCardProperty(line: CardLine, name: string, value: unknown): CardLine {
+  if (!isCardPropertyName(name)) throw new Error(`${JSON.stringify(name)} cannot be a card property's name`)
+  const next = toCardValue(value)
+  const fold = keyFold(name)
+  const at = line.parts.findIndex((p) => p.kind === 'property' && keyFold(p.name) === fold)
+  const held = line.parts[at]
+  if (held?.kind === 'property' && held.name === name && JSON.stringify(held.value) === JSON.stringify(next) && line.parts.filter((p) => p.kind === 'property' && keyFold(p.name) === fold).length === 1) return line
+  const part: CardPart = { kind: 'property', name, value: next }
+  if (at !== -1) return { parts: line.parts.flatMap((p, i) => (i === at ? [part] : p.kind === 'property' && keyFold(p.name) === fold ? [] : [p])) }
+  let i = line.parts.findIndex((p) => p.kind === 'id') + 1
+  while (line.parts[i]?.kind === 'title') i++
+  const last = line.parts.map((p) => p.kind === 'property').lastIndexOf(true)
+  if (last !== -1) i = last + 1
+  return { parts: [...line.parts.slice(0, i), part, ...line.parts.slice(i)] }
+}
+
+/** The card without property `name`, in any spelling (YAZ-5379). A name it does not hold changes nothing. */
+export function withoutCardProperty(line: CardLine, name: string): CardLine {
+  const fold = keyFold(name)
+  return line.parts.some((p) => p.kind === 'property' && keyFold(p.name) === fold) ? { parts: line.parts.filter((p) => !(p.kind === 'property' && keyFold(p.name) === fold)) } : line
 }
 
 /**
