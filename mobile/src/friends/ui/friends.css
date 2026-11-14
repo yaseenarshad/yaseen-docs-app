@@ -1,4 +1,21 @@
-/* The Friends screens (4E4, YAZ-5085): plain, on 4A's tokens (styles.css). The look is tuned in the demo round (7-). */
+/* The Friends screens (4E4, YAZ-5085): plain, on 4A's tokens (styles.css). The look is tuned in the demo round (7-).
+   YAZ-5264: the phone's own colours for the rows' small words and marks, where the Mac's tokens are under 4.5:1 (text)
+   or 3:1 (a sign) on the page in light mode. `look.test.ts` checks each one, light and dark. */
+:root {
+  --fr-muted: #6b6b6b;
+  --fr-cheer: #4a5ae8;
+  --fr-started: #9a6700;
+  --fr-done: var(--ok);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fr-muted: #9e9e9e;
+    --fr-cheer: var(--accent);
+    --fr-started: var(--warn);
+    --fr-done: var(--ok);
+  }
+}
 
 .fr-wait {
   min-height: 40vh;
@@ -19,7 +36,7 @@
   border: 0;
   background: none;
   font-size: 14px;
-  color: var(--fg-muted);
+  color: var(--fr-muted);
 }
 
 .fr-seg button[aria-pressed='true'] {
@@ -44,7 +61,7 @@
   border-radius: 999px;
   background: none;
   font-size: 14px;
-  color: var(--fg-muted);
+  color: var(--fr-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -82,15 +99,19 @@
   text-align: left;
 }
 
-.fr-row--gone {
-  opacity: 0.6;
+.fr-row--gone .fr-name {
+  color: var(--fr-muted);
+}
+
+.fr-row--gone .fr-av {
+  filter: grayscale(1);
 }
 
 .fr-rank {
   width: 18px;
   flex: none;
   font-size: 13px;
-  color: var(--fg-muted);
+  color: var(--fr-muted);
   text-align: right;
 }
 
@@ -140,19 +161,19 @@
 .fr-sub {
   display: block;
   font-size: 13px;
-  color: var(--fg-muted);
+  color: var(--fr-muted);
   overflow-wrap: anywhere;
 }
 
 .fr-cheer {
-  color: var(--accent);
+  color: var(--fr-cheer);
 }
 
 .fr-nums {
   flex: none;
   text-align: right;
   font-size: 13px;
-  color: var(--fg-muted);
+  color: var(--fr-muted);
   white-space: nowrap;
 }
 
@@ -169,22 +190,22 @@
 }
 
 .fr-mark--not-started {
-  color: var(--fg-muted);
+  color: var(--fr-muted);
 }
 
 .fr-mark--started {
-  color: var(--warn);
+  color: var(--fr-started);
 }
 
 .fr-mark--finished {
-  color: var(--ok);
+  color: var(--fr-done);
   font-weight: 700;
 }
 
 .fr-line {
   margin: 8px 0;
   font-size: 14px;
-  color: var(--fg-muted);
+  color: var(--fr-muted);
 }
 
 .fr-panel {
@@ -225,7 +246,7 @@
 
 .fr-vs__label {
   font-size: 13px;
-  color: var(--fg-muted);
+  color: var(--fr-muted);
 }
 
 .fr-vs--part .fr-vs__label {
@@ -239,7 +260,7 @@
 .fr-vs__head {
   margin: 14px 0 4px;
   font-size: 13px;
-  color: var(--fg-muted);
+  color: var(--fr-muted);
   text-align: center;
 }
 
@@ -257,7 +278,7 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 11px;
-  color: var(--fg-muted);
+  color: var(--fr-muted);
 }
 
 .fr-day--both {
@@ -286,7 +307,7 @@
 }
 
 .fr-line.fr-cheer {
-  color: var(--accent);
+  color: var(--fr-cheer);
 }
 
 /* YAZ-5261: who each column is, under its avatar. A long name ends with "…" in its own column (320 px). */
