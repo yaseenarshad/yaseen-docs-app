@@ -4,16 +4,14 @@ import {
   cardFileId,
   cardFileName,
   cardFileShape,
-  cardFileTitle,
-  cardFileTitleMoved,
   cardFileWithBlock,
-  hasTitleProperty,
   indentBlock,
   isCardFileContent,
   isCardKind,
   isCardMark,
   unindentBlock,
 } from '@shared/cardFileFormat'
+import { cardFileTitle, cardFileTitleMoved, hasTitleProperty } from '@shared/cardConvert'
 import { findCards, parseCardLine, pageCards } from '@shared/cardLine'
 import { splitFrontmatter } from '@shared/frontmatter'
 

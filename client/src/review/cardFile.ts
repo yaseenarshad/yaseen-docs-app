@@ -23,8 +23,10 @@ import {
   type CardLine,
   type CardReview,
 } from '@shared/cardLine'
-import { cardFileTitle, hasTitleProperty, isCardFileContent } from '@shared/cardFileFormat'
+import { isCardKind } from '@shared/cardFileFormat'
 import { cardTitle, cardWithTitle } from '@shared/cardText'
+import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
+import { titleOf } from '@shared/noteName'
 import { BridgeRequestError, api } from '../api'
 import { announcedWrite } from '../lib/twinEditors'
 import { transformFile } from '../views/writeProperty'
@@ -81,8 +83,10 @@ export function cardInContent(path: string, content: string, id: string | null, 
   const at = id === null || (cards[index] !== undefined && cardIdOf(cards[index].line) === id) ? index : cards.findIndex((c) => cardIdOf(c.line) === id)
   const card = cards[at]
   if (card === undefined) return null
-  const fileTitle = at === 0 && isCardFileContent(content) && hasTitleProperty(content) ? cardFileTitle(content) : undefined
-  return { path, id: cardIdOf(card.line), index: at, text: card.text, reviews: cardReviewsOf(card.line), off: isCardOff(card.line), next: isCardNext(card.line), notitle: isCardNoTitle(card.line), ...(fileTitle !== undefined && { fileTitle }) }
+  // A card file's own card (its first): the file's `title`, read off its properties, when it has one (YAZ-5044).
+  const { properties, error } = at === 0 ? parseFrontmatter(splitFrontmatter(content).frontmatter) : { properties: {}, error: 'none' }
+  const fileTitle = error === undefined && isCardKind(properties) ? titleOf(properties, '') : ''
+  return { path, id: cardIdOf(card.line), index: at, text: card.text, reviews: cardReviewsOf(card.line), off: isCardOff(card.line), next: isCardNext(card.line), notitle: isCardNoTitle(card.line), ...(fileTitle !== '' && { fileTitle }) }
 }
 
 /**

@@ -1,6 +1,7 @@
 import { lstat, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { cardFileCard, cardFileName, cardFileTitleMoved, isCardFileContent } from '@shared/cardFileFormat'
+import { cardFileTitleMoved } from '@shared/cardConvert'
+import { cardFileCard, cardFileName, isCardFileContent } from '@shared/cardFileFormat'
 import { cardIdOf } from '@shared/cardLine'
 import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'

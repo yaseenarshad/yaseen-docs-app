@@ -1,6 +1,7 @@
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
-import { cardFileTitleMoved, isCardFileContent } from '@shared/cardFileFormat'
+import { cardFileTitleMoved } from '@shared/cardConvert'
+import { isCardFileContent } from '@shared/cardFileFormat'
 import { isSyncConflictCopy } from '@shared/syncConflict'
 import { cardIdOf, pageCards, rewritePageCards, settleCardCopy, withCardId, withCardOff, type CardLine } from '@shared/cardLine'
 import { moveFolderValues } from '@shared/folderValues'

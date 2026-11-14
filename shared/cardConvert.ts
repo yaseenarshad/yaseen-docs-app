@@ -18,12 +18,61 @@
  *  - The notice's fixes: Split (`splitCardFile`), Move into the card (`moveTextIntoCard`), Make a card from the text
  *    (`cardFromText`).
  */
-import { cardFileName, cardFileShape, cardFileTitle, cardFileTitleMoved, cardFileWithBlock, CARD_KIND, CARD_KIND_KEY, hasTitleProperty, indentBlock, NEW_CARD_TEXT, unindentBlock } from './cardFileFormat'
+import { cardFileCard, cardFileName, cardFileShape, cardFileWithBlock, CARD_KIND, CARD_KIND_KEY, indentBlock, isCardFileContent, NEW_CARD_TEXT, unindentBlock } from './cardFileFormat'
 import { CardNotFoundError, EMPTY_CARD_LINE, cardBlock, cardIdOf, changeCardText, findCards, type CardBlock } from './cardLine'
-import { cardTitle, cardWithTitle } from './cardText'
+import { cardTitle, cardWithTitle, cardWithoutTitle, hiddenCount } from './cardText'
 import { lineKinds } from './fences'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
-import { TITLE_KEY } from './noteName'
+import { NOTE_ID_KEY } from './noteId'
+import { TITLE_KEY, titleOf } from './noteName'
+
+/**
+ * A card file's title (YAZ-5044): its `title` property, as a page's (`titleOf`). A card file with no `title` yet is one
+ * from before decision A: its card's first line (`cardTitle`) until the sweep moves it. '' when there is neither.
+ */
+export function cardFileTitle(content: string): string {
+  const { properties } = parseFrontmatter(splitFrontmatter(content).frontmatter)
+  const card = cardFileCard(content)
+  return titleOf(properties, card === null ? '' : cardTitle(card.text))
+}
+
+/** Does this card file hold its title in `title` (YAZ-5044)? False for one from before decision A, or with no properties that parse. */
+export function hasTitleProperty(content: string): boolean {
+  const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
+  return error === undefined && titleOf(properties, '') !== ''
+}
+
+/**
+ * A card's title line taken out of its text (YAZ-5044, decision A): a card that becomes a CARD FILE keeps its title in
+ * the file's `title`, so its text no longer starts with it. `title` is `cardTitle`'s plain text; `text` is the card
+ * without that line and the blank lines after it (`cardWithoutTitle`). A line that holds a hidden word, or a code line,
+ * stays in the text: no hidden word and no code is ever lost. A card with no title is its text unchanged.
+ */
+export function cardTitleOut(text: string): { title: string; text: string } {
+  const title = cardTitle(text)
+  if (title === '') return { title, text }
+  const lines = text.split('\n')
+  const kinds = lineKinds(lines)
+  const at = lines.findIndex((line) => cardTitle(line) !== '')
+  return { title, text: kinds[at] !== 'text' || hiddenCount(lines[at]) > 0 ? text : cardWithoutTitle(text) }
+}
+
+/**
+ * THE ONE-TIME MOVE (YAZ-5044 point 9): a card file from before decision A — `kind: card`, no `title` — with its card's
+ * first line moved into `title` (`cardTitleOut`). Only that line leaves the card: the card line (ID, reviews, every
+ * part), the fences and the rest of the text stay, and so do the other properties. With `dropPageId` the file's page
+ * `id:` goes in the same write (an old build gave some card files a stray one, YAZ-5037). Null when there is nothing to
+ * move: not a card file, a `title` already there, no card, or a card with no title.
+ */
+export function cardFileTitleMoved(content: string, dropPageId = false): string | null {
+  if (!isCardFileContent(content) || hasTitleProperty(content)) return null
+  const card = cardFileCard(content)
+  if (card === null) return null
+  const { title, text } = cardTitleOut(card.text)
+  if (title === '') return null
+  const moved = setFrontmatterProperty(changeCardText(content, null, text, 0), TITLE_KEY, title)
+  return dropPageId ? setFrontmatterProperty(moved, NOTE_ID_KEY, undefined) : moved
+}
 
 /** A card that leaves its page or its card file: the new card file's bytes, its name, its ID and its title. */
 export interface CardFileOut {

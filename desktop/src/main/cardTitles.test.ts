@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { cardRecords, formatCardLine, isCardNoTitle, parseCardLine, withCardNoTitle, EMPTY_CARD_LINE } from '@shared/cardLine'
 import { cardBacklinks, cardEmbedders, makeCardResolver } from '@shared/cardLinks'
-import { cardPieces, cardSides, cardTitle, cardTitleOut, cardWithTitle, cardWithoutTitle, hiddenCount } from '@shared/cardText'
+import { cardTitleOut } from '@shared/cardConvert'
+import { cardPieces, cardSides, cardTitle, cardWithTitle, cardWithoutTitle, hiddenCount } from '@shared/cardText'
 import { makeResolver } from '@shared/linkResolver'
 import type { IndexRecord } from '@shared/types'
 
