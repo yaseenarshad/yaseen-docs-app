@@ -348,7 +348,8 @@ export interface SettingsCtx {
     enabled: boolean
     held: boolean
     ask: IndexResponse['ask']
-    set: (enabled: boolean, letters?: string) => void
+    /** YAZ-5154: may resolve true once saved, so Cards change only with IDs; a plain void counts as saved. */
+    set: (enabled: boolean, letters?: string) => Promise<boolean> | void
     check: () => Promise<string>
     old: number
     unfinished: boolean
@@ -407,7 +408,7 @@ export interface SettingDef {
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'tables' | 'code' | 'files' | 'folderPages' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'memory' | 'storage' | 'sharing'
+export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'tables' | 'code' | 'files' | 'folderPages' | 'cards' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'memory' | 'storage' | 'sharing'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -482,7 +483,8 @@ function iconColourRow(kind: SidebarIconKind): SettingDef {
 }
 
 /** What the section title does not say: the feature's name, and where its cards turn up. */
-const REVIEW_KEYWORDS = ['cards', 'cards', 'flashcards', 'inbox', 'spaced repetition', 'fsrs', 'archive', 'archived']
+// YAZ-5154: the section is Cards now; "review" still finds it, the word people know it by.
+const REVIEW_KEYWORDS = ['cards', 'review', 'reviews', 'flashcards', 'inbox', 'spaced repetition', 'fsrs', 'archive', 'archived']
 /** Card spacing's rows (YAZ-5050). */
 const CARD_SPACING_KEYWORDS = [...REVIEW_KEYWORDS, 'spacing', 'line spacing', 'line height', 'paragraph', 'space between blocks', 'gap', 'bullet', 'indent', 'view mode']
 
@@ -528,10 +530,64 @@ const NOTHING_TO_WRITE = { pages: 0, folders: 0, foreign: 0 }
  * for a vault that has none, and exactly its own letters, in any case, for one that has them (S9).
  * "Give IDs" and Enter do nothing until then. The box is the one typed-confirm piece (`TypedConfirmSheet`).
  */
-function GiveIdsSheet({ ask, vault, letters, onConfirm, onCancel }: { ask: NonNullable<IndexResponse['ask']>; vault?: string; letters: string | undefined; onConfirm: (letters: string) => void; onCancel: () => void }) {
+function GiveIdsSheet({ ask, vault, letters, lead = '', confirmLabel = 'Give IDs', onConfirm, onCancel }: { ask: NonNullable<IndexResponse['ask']>; vault?: string; letters: string | undefined; lead?: string; confirmLabel?: string; onConfirm: (letters: string) => void; onCancel: () => void }) {
   const unit = useUnit()
   const valid = (typed: string): boolean => (letters === undefined ? isIdLetters(typed) : typed.toUpperCase() === letters)
-  return <TypedConfirmSheet labelId="confirm-ids-on-text" text={idsAskMessage(ask, vault, unit)} ask={idsLettersAsk(letters)} confirmLabel="Give IDs" valid={valid} onConfirm={onConfirm} onCancel={onCancel} />
+  return <TypedConfirmSheet labelId="confirm-ids-on-text" text={`${lead}${idsAskMessage(ask, vault, unit)}`} ask={idsLettersAsk(letters)} confirmLabel={confirmLabel} valid={valid} onConfirm={onConfirm} onCancel={onCancel} />
+}
+
+/**
+ * The box that turns IDs on (YAZ-2677 🔒 D2, YAZ-4922 🔒 D2): the keep-letters box where pages already hold number IDs,
+ * else the typed-letters box. The IDs switch opens it; so does Cards' switch in a vault with IDs off (YAZ-5154), with its
+ * `lead` ("Cards need IDs. Turn on IDs too? ") and its button ("Turn on both").
+ */
+function IdsOnSheet({ ids, vault, lead, confirmLabel, onConfirm, onCancel }: { ids: NonNullable<SettingsCtx['ids']>; vault?: string; lead?: string; confirmLabel?: string; onConfirm: (letters: string) => void; onCancel: () => void }) {
+  const unit = useUnit()
+  return ids.ask?.groups?.[0] !== undefined ? (
+    <KeepIdsSheet text={`${lead ?? ''}${keepIdsAskMessage(ids.ask, vault, unit)}`} main={ids.ask.groups[0].letters} onConfirm={onConfirm} onCancel={onCancel} />
+  ) : (
+    <GiveIdsSheet ask={ids.ask ?? NOTHING_TO_WRITE} vault={vault} letters={ids.ask?.letters} lead={lead} confirmLabel={confirmLabel} onConfirm={onConfirm} onCancel={onCancel} />
+  )
+}
+
+/** YAZ-5154: the words of the box that IDs Off opens while Cards are on. */
+export const CARDS_OFF_TEXT = 'Cards will turn off. Your cards and reviews stay in the files.'
+
+/**
+ * Cards' switch (YAZ-5154, Yaseen: "if you turn review on, doesn't that by default also mean that you have to turn IDs
+ * on?"): Cards need IDs. It shows On only while both are on. On in a vault with IDs off asks one time, in the IDs box's
+ * own words and letters field; "Turn on both" turns IDs on with those letters, then Cards. Cancel changes nothing.
+ */
+function CardsControl({ review, ids, vault }: { review: NonNullable<SettingsCtx['review']>; ids: SettingsCtx['ids']; vault?: string }) {
+  const [asking, setAsking] = useState(false)
+  const on = review.settings.enabled && ids?.enabled !== false
+  return (
+    <>
+      <Segmented
+        options={ON_OFF_OPTIONS}
+        value={on}
+        onChange={(next) => {
+          if (next === on) return
+          if (next && ids?.enabled === false) setAsking(true)
+          else review.save({ ...review.settings, enabled: next })
+        }}
+        ariaLabel="Use cards in this vault"
+      />
+      {asking && ids !== undefined && (
+        <IdsOnSheet
+          ids={ids}
+          vault={vault}
+          lead="Cards need IDs. Turn on IDs too? "
+          confirmLabel="Turn on both"
+          onConfirm={(letters) => {
+            setAsking(false)
+            void Promise.resolve(ids.set(true, letters)).then((saved) => saved !== false && review.save({ ...review.settings, enabled: true }))
+          }}
+          onCancel={() => setAsking(false)}
+        />
+      )}
+    </>
+  )
 }
 
 /**
@@ -562,9 +618,11 @@ function DuplicatesControl({ check }: { check: () => Promise<string> }) {
  * before it is confirmed (YAZ-2677 🔒 D2); the letters the vault already has come with the index (`ask.letters`). Off in a vault
  * whose pages hold IDs asks first (🔒 V13). Each sheet's keys stay inside it, so the dialog under it does not close.
  */
-function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vault?: string }) {
+function IdsControl({ ids, vault, review }: { ids: NonNullable<SettingsCtx['ids']>; vault?: string; review?: SettingsCtx['review'] }) {
   const unit = useUnit()
-  const [asking, setAsking] = useState<'off' | 'on' | null>(null)
+  const [asking, setAsking] = useState<'off' | 'cards' | 'on' | null>(null)
+  // YAZ-5154: Cards need IDs, so Off while Cards are on says Cards turn off too.
+  const cardsOn = review?.settings.enabled === true
   return (
     <>
       <Segmented
@@ -573,6 +631,7 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
         onChange={(on) => {
           if (on === ids.enabled) return
           if (on) setAsking('on')
+          else if (cardsOn) setAsking('cards')
           else if (ids.held) setAsking('off')
           else ids.set(false)
         }}
@@ -591,22 +650,23 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
           onCancel={() => setAsking(null)}
         />
       )}
-      {asking === 'on' && ids.ask?.groups?.[0] !== undefined && (
-        <KeepIdsSheet
-          text={keepIdsAskMessage(ids.ask, vault, unit)}
-          main={ids.ask.groups[0].letters}
-          onConfirm={(letters) => {
+      {asking === 'cards' && review !== undefined && (
+        <ConfirmSheet
+          labelId="confirm-ids-off-text"
+          text={CARDS_OFF_TEXT}
+          confirmLabel="Turn off"
+          keys="contained"
+          onConfirm={() => {
             setAsking(null)
-            ids.set(true, letters)
+            void Promise.resolve(ids.set(false)).then((saved) => saved !== false && review.save({ ...review.settings, enabled: false }))
           }}
           onCancel={() => setAsking(null)}
         />
       )}
-      {asking === 'on' && ids.ask?.groups?.[0] === undefined && (
-        <GiveIdsSheet
-          ask={ids.ask ?? NOTHING_TO_WRITE}
+      {asking === 'on' && (
+        <IdsOnSheet
+          ids={ids}
           vault={vault}
-          letters={ids.ask?.letters}
           onConfirm={(letters) => {
             setAsking(null)
             ids.set(true, letters)
@@ -1840,7 +1900,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             label: (ctx) => unit(ctx, "Give this vault's pages IDs"),
             hint: 'Saved in this vault and synced with it. On: every page gets an ID and the app names its file. Off: the app leaves every file as it is.',
             available: (ctx) => ctx.ids !== undefined,
-            render: ({ ids, vaultName }) => ids && <IdsControl ids={ids} vault={vaultName} />,
+            render: ({ ids, vaultName, review }) => ids && <IdsControl ids={ids} vault={vaultName} review={review} />,
           },
           {
             id: 'duplicates',
@@ -1892,8 +1952,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   // YAZ-4585 (D34): the folder pages' own settings and the defaults their views read, after Files & Links.
   FOLDER_PAGES_SECTION,
   {
-    id: 'review',
-    title: 'Review',
+    // YAZ-5154 (Yaseen's pick: "Cards"): the section holds more than the act of review — the card look, Card width, card
+    // files and the Inbox. The Inbox keeps "review" for the act.
+    id: 'cards',
+    title: 'Cards',
     available: (ctx) => ctx.review !== undefined,
     vault: true,
     page: "These settings are saved in this vault's .yaseendocs folder and sync with it.",
@@ -1902,10 +1964,28 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         items: [
           {
             id: 'enabled',
-            label: 'Review cards',
+            label: 'Use cards in this vault',
             hint: 'Cards in this vault come back in the Inbox when they are due. An archived card does not: unarchive it from its ⋯ menu, or from the Inbox\'s Archived list.',
             keywords: REVIEW_KEYWORDS,
-            render: ({ review }) => review && <Segmented options={ON_OFF_OPTIONS} value={review.settings.enabled} onChange={(enabled) => review.save({ ...review.settings, enabled })} ariaLabel="Review cards" />,
+            render: ({ review, ids, vaultName }) => review && <CardsControl review={review} ids={ids} vault={vaultName} />,
+          },
+          {
+            // YAZ-5154: what the switch adds, closed by default; there with Cards off too, as it says what On would show.
+            id: 'whatThisAdds',
+            label: 'What this adds',
+            keywords: REVIEW_KEYWORDS,
+            bare: true,
+            render: (ctx) => (
+              <details className="review-how">
+                <summary>What this adds</summary>
+                <ul>
+                  <li>The Inbox in the sidebar.</li>
+                  <li>New card, and Card in the Type filters and search.</li>
+                  <li>{unit(ctx, 'Review this page and Review this folder.')}</li>
+                  <li>The card settings below.</li>
+                </ul>
+              </details>
+            ),
           },
         ],
       },

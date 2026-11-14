@@ -68,7 +68,8 @@ export interface VaultScope {
         enabled: boolean
         held: boolean
         ask: IndexResponse['ask']
-        set: (enabled: boolean, letters?: string) => void
+        /** Resolves true once main saved the answer, false when it refused (a notice says why). */
+        set: (enabled: boolean, letters?: string) => Promise<boolean> | void
         check: () => Promise<string>
         /** How many pages and folders of the snapshot hold an old 12-character ID (S88). */
         old: number
@@ -125,7 +126,11 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   const syncCopy = sync.status === null ? null : attentionCopy(sync.status)
   const dismissSync = useCallback(() => setSyncDismissed(true), [])
   const name = useVaultName(root)
-  const reviewSettings = useReviewSettings(root, notify)
+  // The vault's answer on IDs as the last snapshot said it (below, with `onSnapshot`): here, so Cards follow it (YAZ-5154).
+  const [idsSnapshot, setIdsSnapshot] = useState<{ root: string | null; enabled: boolean; held: boolean; old: number; unfinished: boolean; ask: IndexResponse['ask'] } | null>(null)
+  const vaultIds = idsSnapshot?.root === root ? idsSnapshot : null
+  // Cards need IDs (YAZ-5154): a vault the index says gives none publishes Cards off. No answer yet hides nothing.
+  const reviewSettings = useReviewSettings(root, notify, vaultIds?.enabled === false)
   const linkClick = useLinkClick(root)
   const showIds = useShowIds(root)
   const unit = useVaultUnitWord(root)
@@ -151,8 +156,6 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   // vault opens (YAZ-2677 🔒 D1). `ask` is what a yes would write, while the answer is not yes: the
   // counts of the box in Settings, and the letters the vault already has (🔒 D2). `held` says a page
   // holds an ID, which is true only while the vault uses IDs (a plain vault's records carry none).
-  const [idsSnapshot, setIdsSnapshot] = useState<{ root: string | null; enabled: boolean; held: boolean; old: number; unfinished: boolean; ask: IndexResponse['ask'] } | null>(null)
-  const vaultIds = idsSnapshot?.root === root ? idsSnapshot : null
   const onSnapshot = useCallback(
     (records: IndexRecord[], folders: IndexRecord[], ids: boolean, ask: IndexResponse['ask'], unfinished: boolean) => {
       onIndexSnapshot(records, folders, ids)
@@ -170,9 +173,16 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
    * keep the other's change; and a yes gives the numbers now, on this Mac (R32, S64). The index
    * refetches off the write. A file that cannot be read is not written over.
    */
-  const saveIds = (enabled: boolean, letters?: string): void => {
-    if (root === null) return
-    api.ids.set(root, enabled, letters).catch((err: unknown) => notify(`Couldn't save this vault's answer: ${said(err)}`, 'error'))
+  const saveIds = (enabled: boolean, letters?: string): Promise<boolean> => {
+    if (root === null) return Promise.resolve(false)
+    // YAZ-5154: true once saved, so Cards change only with IDs.
+    return api.ids.set(root, enabled, letters).then(
+      () => true,
+      (err: unknown) => {
+        notify(`Couldn't save this vault's answer: ${said(err)}`, 'error')
+        return false
+      },
+    )
   }
   /** "Check for duplicates" (YAZ-2677 🔒 D7): the result in one line, for the row in Settings. */
   const checkIds = (): Promise<string> => (root === null ? Promise.resolve('') : api.ids.check(root))

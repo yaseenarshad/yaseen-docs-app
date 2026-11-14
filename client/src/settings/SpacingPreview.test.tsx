@@ -42,10 +42,10 @@ it('YAZ-5050 round 2: the previews copy no text style — SpacingPreview.css sty
 })
 
 it('YAZ-5050 round 2: Settings › Review is split into groups by purpose, every row kept; each spacing has its preview right after its rows', () => {
-  const review = SETTINGS_SECTIONS.find((s) => s.id === 'review')!
+  const review = SETTINGS_SECTIONS.find((s) => s.id === 'cards')!
   expect(review.groups.map((g) => g.title ?? null)).toEqual([null, 'Daily limits', 'Answers', 'Scheduling', 'Card look', null])
   expect(review.groups.map((g) => g.items.map((i) => i.id))).toEqual([
-    ['enabled'],
+    ['enabled', 'whatThisAdds'],
     ['newPerDay', 'upNextPerDay', 'newOrder'],
     ['buttons', 'pauseAfter', 'timeSoFar'],
     ['retention', 'maxDays', 'fuzz', 'weights'],
