@@ -7,6 +7,7 @@
  * - `tourPlaces()`: the places the tour needs a mark on (the Course Cards folder, its Course page), so the sidebar can
  *   put `data-tour` on their rows. Null outside a tour.
  * - `showTourPlace(place)`: "Show me". App brings the place into view with its own navigation (`onTourShow`).
+ * - `setTourTyper(dom, typer)`: an editor gives the tour its own way to type (YAZ-5125, "Use an example").
  */
 
 /** The app events a tour step can wait for (`TourStep.done.event` in `script.ts`). */
@@ -84,4 +85,27 @@ export function onTourShow(fn: (place: TourPlace) => void): () => void {
 }
 export function showTourPlace(place: TourPlace): void {
   shower?.(place)
+}
+
+/**
+ * An editor's own way to type, for the coach card's "Use an example" (YAZ-5125). The card editor registers one on its
+ * editable element: it types through ProseMirror's own path for typed text, so the app's events fire as for typing.
+ */
+export interface TourTyper {
+  type(text: string, o?: { newSide?: boolean; lineEnd?: boolean }): void
+}
+const typers = new WeakMap<Element, TourTyper>()
+export function setTourTyper(dom: Element, typer: TourTyper | null): void {
+  if (typer === null) typers.delete(dom)
+  else typers.set(dom, typer)
+}
+/** The typer of `root` or of an element in it. */
+export function tourTyperIn(root: Element): TourTyper | null {
+  const own = typers.get(root)
+  if (own !== undefined) return own
+  for (const el of root.querySelectorAll('[contenteditable]')) {
+    const typer = typers.get(el)
+    if (typer !== undefined) return typer
+  }
+  return null
 }

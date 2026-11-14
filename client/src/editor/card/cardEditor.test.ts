@@ -13,10 +13,12 @@ import { cardSides, cardTitleOut } from '@shared/cardText'
 import { cardIdOf, findCards } from '@shared/cardLine'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
+import { createWikilinkCandidateSource } from '../wikilink/wikilinkPicker'
+import { nameCandidate } from '../../links/completion'
 import { CARD_MIRROR_MS, cardBlockViewAt, setCardEditorKind, type CardBlockView } from './cardBlockView'
 import { joinCardParts, splitCardText } from './cardEditorText'
 import { SIDE_BREAK } from './cardEditor'
-import { listenTour } from '../../course/tourBus'
+import { listenTour, tourTyperIn } from '../../course/tourBus'
 
 // The page's editor is Edit card's default (YAZ-5026); the raw-text fallback is one switch away.
 beforeAll(() => setCardEditorKind('page'))
@@ -306,6 +308,39 @@ describe('the guided tour hears the card editor (YAZ-5123)', () => {
       key(inner.dom, 'Enter', { metaKey: true, shiftKey: true })
       expect(heard).toEqual(['card-text-changed', 'card-word-hidden', 'card-side-added'])
       card.done()
+    } finally {
+      stop()
+    }
+  })
+})
+
+describe('the tour\'s "Use an example" types through the card editor\'s own path (YAZ-5125)', () => {
+  it('the front, a new side with its detail, and `[[` at the line\'s end each fire the step\'s own event', async () => {
+    const heard: string[] = []
+    const stop = listenTour((name) => heard.push(name))
+    try {
+      const candidates = createWikilinkCandidateSource()
+      candidates.update([nameCandidate('Protein')])
+      const { view, root } = await mount(page('Start.'), { wikilinkCandidates: candidates })
+      const { card, inner } = await edit(view)
+      const typer = tourTyperIn(root.querySelector('.explore-card__edit') ?? inner.dom.parentElement ?? root)
+      expect(typer).not.toBeNull()
+      caretAfter(inner, 'Start.')
+      typer!.type(' Your body builds and repairs with protein.')
+      expect(heard[0]).toBe('card-text-changed')
+      expect(inner.state.doc.textContent).toBe('Start. Your body builds and repairs with protein.')
+      heard.length = 0
+      typer!.type('An egg is mostly protein and fat.', { newSide: true })
+      expect(heard[0]).toBe('card-side-added')
+      card.done()
+      await tick(0)
+      expect(cardSides(cardBody(view))).toEqual(['Start. Your body builds and repairs with protein.', 'An egg is mostly protein and fat.'])
+      const again = await edit(view)
+      heard.length = 0
+      again.inner.dispatch(again.inner.state.tr.setSelection(TextSelection.create(again.inner.state.doc, 2)))
+      tourTyperIn(again.inner.dom)!.type('[[', { lineEnd: true })
+      expect(heard).toContain('link-picker-open')
+      again.card.done()
     } finally {
       stop()
     }

@@ -184,10 +184,10 @@ export const COURSE: CourseChapter[] = [
     tryIt: [
       { target: 'sidebar-course-cards', say: 'Right-click the Course Cards folder in the sidebar.', done: { event: 'folder-menu-open' } },
       { target: 'new-card', say: 'Choose New card.', done: 'click' },
-      { target: 'new-card-name', say: 'Type a title, and press Enter.', done: { event: 'card-file-created' } },
-      { target: 'card-editor', say: 'Now type the front: the short version, in a sentence or two.', done: { event: 'card-text-changed' } },
+      { target: 'new-card-name', say: 'Type a title, and press Enter.', done: { event: 'card-file-created' }, example: { text: 'Protein', enter: true } },
+      { target: 'card-editor', say: 'Now type the front: the short version, in a sentence or two.', done: { event: 'card-text-changed' }, example: { text: 'Your body builds and repairs with protein.' } },
       { target: 'card-editor', say: 'Select one word. In the toolbar above it, click Hide word.', done: { event: 'card-word-hidden' } },
-      { target: 'card-editor', say: 'Type slash, and choose New side. Then add one detail.', done: { event: 'card-side-added' } },
+      { target: 'card-editor', say: 'Type slash, and choose New side. Then add one detail.', done: { event: 'card-side-added' }, example: { text: 'An egg is mostly protein and fat.', newSide: true } },
       { target: 'card-done', say: 'Press Escape, or click Done, to save your card.', done: { event: 'card-edit-done' } },
     ],
   },
@@ -594,7 +594,7 @@ export const COURSE: CourseChapter[] = [
     tryIt: [
       { target: 'sidebar-course-cards', say: 'Open the Course Cards folder, and click one of your cards.', done: { event: 'card-file-open' } },
       { target: 'card-edit', say: 'Click Edit card, or press E.', done: { event: 'card-edit-open' } },
-      { target: 'card-editor', say: "At the end of a line, type two square brackets. Then a few letters of another card's title.", done: { event: 'link-picker-open' } },
+      { target: 'card-editor', say: "At the end of a line, type two square brackets. Then a few letters of another card's title.", done: { event: 'link-picker-open' }, example: { text: '[[', lineEnd: true } },
       { target: 'link-picker', say: 'Click the row with the card icon.', done: { event: 'card-link-added' } },
       { target: 'card-done', say: 'Press Escape, or click Done. The link is now a pill.', done: { event: 'card-edit-done' } },
       { target: 'card-link-pill', say: 'Click the pill. The other card opens, and Linked mentions lists your first card.', done: 'click' },

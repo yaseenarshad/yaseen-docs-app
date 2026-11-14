@@ -12,6 +12,8 @@
  * - A step ends on the person's real action (`tourEngine.ts`): a click on the control, or the app's event
  *   (`tourBus.ts`). A control that is not on screen: the coach says where it is (`tourHelp.ts`), and after a while it
  *   offers "Show me".
+ * - A step that asks the person to type offers "Use an example" (YAZ-5125, `tourExample.ts`): the example goes into the
+ *   real field through the app's own path for typing, and the step ends on the app's own event, as for typing.
  * - Esc leaves the tour, unless a menu, a dialog, Explore or a text field wants it (the app's Esc order): in the card
  *   editor, Esc is the step's own Done.
  */
@@ -25,6 +27,7 @@ import { currentStep, coachPlace, dimPath, holeOf, offersShowMe, startTour, tour
 import { checkTour, inFolder, TARGET_HELP } from './tourHelp'
 import { COURSE_CARDS } from './courseCards'
 import { listenTour, setTourPlaces, showTourPlace } from './tourBus'
+import { canFillExample, fillExample, USE_AN_EXAMPLE } from './tourExample'
 import './tour.css'
 
 export interface TourLayerProps {
@@ -239,6 +242,13 @@ export function TourLayer({ chapter, steps, host, alive, onEnd }: TourLayerProps
     const place = help?.show?.({ places: s.places, lastCard: s.lastCard }) ?? null
     if (place !== null) showTourPlace(place)
   }
+  const exampleEl = step?.example === undefined || s.status !== 'running' || seen.target === null ? null : findTarget(step.target, layer.current)
+  const canExample = step?.example !== undefined && canFillExample(exampleEl)
+  const useExample = (): void => {
+    if (step?.example === undefined) return
+    const el = findTarget(step.target, layer.current)
+    if (el !== null) fillExample(el, step.example)
+  }
   const canShow = step !== null && (help?.show !== undefined || findTarget(step.target, layer.current) !== null)
   const waitsForNext = step !== null && step.done !== 'click' && step.done.event === 'tour-next'
   const hint = step === null || !seen.hint ? null : seen.stuck && help?.stuck !== undefined ? help.stuck.say : help === undefined ? null : inFolder(help.where, folderTitle)
@@ -277,6 +287,11 @@ export function TourLayer({ chapter, steps, host, alive, onEnd }: TourLayerProps
           {step !== null && seen.showMe && canShow && (
             <button type="button" className="course-tour__btn" onClick={showMe}>
               Show me
+            </button>
+          )}
+          {canExample && (
+            <button type="button" className="course-tour__btn" onClick={useExample}>
+              {USE_AN_EXAMPLE}
             </button>
           )}
           {waitsForNext && (

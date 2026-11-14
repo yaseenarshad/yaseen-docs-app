@@ -10,6 +10,9 @@ import { FINISH_MS, HINT_AFTER_MS, TourLayer, type TourLayerProps } from './Tour
 import { SHOW_ME_AFTER_MS } from './tourEngine'
 import { onTourShow, tourEvent, tourPlaces, type TourPlace } from './tourBus'
 import { TARGET_HELP } from './tourHelp'
+import { CreateInline } from '../sidebar/CreateInline'
+import { COURSE } from './script'
+import { setTourTyper } from './tourBus'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -247,5 +250,60 @@ describe('the tour layer (YAZ-5123)', () => {
     document.body.appendChild(menu)
     frames(1)
     expect(document.querySelector('.course-tour__dim path')!.getAttribute('d')).toContain('M408 200')
+  })
+})
+
+describe('"Use an example" on a step that asks for typing (YAZ-5125)', () => {
+  const typing = COURSE.flatMap((ch) => ch.tryIt ?? []).filter((st) => st.example !== undefined)
+
+  it('only the steps that ask for typing have an example; every step keeps Skip', () => {
+    expect(typing.map((st) => st.target)).toEqual(['new-card-name', 'card-editor', 'card-editor', 'card-editor'])
+    expect(typing.map((st) => st.example!.text)).toEqual(['Protein', 'Your body builds and repairs with protein.', 'An egg is mostly protein and fat.', '[['])
+  })
+
+  it('fills the real name box and presses its own Enter: the box makes the card, and the step ends on card-file-created', async () => {
+    const made: string[] = []
+    const boxRoot = createRoot(app)
+    act(() =>
+      boxRoot.render(
+        <CreateInline
+          kind="card"
+          indent={0}
+          onCancel={() => undefined}
+          onSubmit={async (name) => {
+            made.push(name)
+            tourEvent('card-file-created', `${FOLDER}/${name}.md`)
+          }}
+        />,
+      ),
+    )
+    const box = app.querySelector<HTMLInputElement>('[data-tour="new-card-name"]')!
+    place(box, { left: 10, top: 120, width: 200, height: 24 })
+    const step = typing[0]
+    await mount({ steps: [step, { target: 'x', say: 'Next one.', done: 'click' }] })
+    frames(1)
+    expect(button('Skip')).toBeDefined()
+    act(() => button('Use an example')!.click())
+    await flush()
+    expect(made).toEqual(['Protein'])
+    expect(say()).toContain('Next one.')
+    act(() => boxRoot.unmount())
+  })
+
+  it("types into the card editor through the editor's own typer; no button for a step without an example or a field", async () => {
+    const editor = control('div', 'card-editor', { left: 10, top: 120, width: 300, height: 120 })
+    const editable = document.createElement('div')
+    editable.setAttribute('contenteditable', 'true')
+    editor.appendChild(editable)
+    const typed: Array<[string, unknown]> = []
+    setTourTyper(editable, { type: (text, o) => (typed.push([text, o]), tourEvent('card-side-added')) })
+    await mount({ steps: [typing[2], { target: 'card-editor', say: 'No example here.', done: { event: 'card-edit-done' } }] })
+    frames(1)
+    act(() => button('Use an example')!.click())
+    expect(typed).toEqual([['An egg is mostly protein and fat.', { newSide: true, lineEnd: false }]])
+    frames(1)
+    expect(say()).toContain('No example here.')
+    expect(button('Use an example')).toBeUndefined()
+    setTourTyper(editable, null)
   })
 })
