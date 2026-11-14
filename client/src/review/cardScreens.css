@@ -208,27 +208,35 @@
 .card-reviews--strip .card-reviews__scroll {
   padding: 2px 4px 12px;
 }
-/* The card window's "Linked mentions" (YAZ-5030): the backlinks header, then one page name a row. */
-.card-backlinks {
-  margin-top: 16px;
-}
-.card-backlinks .backlinks__header {
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
+/* The strip's Linked mentions and Embedded in (YAZ-5030, YAZ-5037; YAZ-5382: parts of the strip): one page a row, its
+   name on the left and its folder on the right. */
 .card-backlinks__list {
-  margin: 4px 0 0;
-  padding: 0 0 0 20px;
+  margin: 0;
+  padding: 0;
   list-style: none;
   font-size: 13px;
 }
-.card-backlinks__list li {
-  padding: 2px 0;
+.card-backlinks__list .card-backlinks__page {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  max-width: none;
+  padding: 5px 8px;
+  border-radius: 6px;
+  color: var(--fg);
+  text-align: left;
 }
-.card-backlinks__none {
+.card-backlinks__list .card-backlinks__page:hover {
+  background: var(--bg-hover);
+  text-decoration: none;
+}
+.card-backlinks__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-backlinks__folder {
+  flex: none;
   color: var(--fg-muted);
 }
 /* The table (Mochi's): small caps head, soft alternating rounded rows, the review to come muted. Its columns size to

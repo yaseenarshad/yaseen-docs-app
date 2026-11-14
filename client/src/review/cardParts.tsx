@@ -4,9 +4,11 @@
  * that copies on a click (D20), and the Reviews section with the full table (D3, D13). The table is the page card's
  * too (`cardBlockView.ts`, YAZ-5000); the Inbox has no Reviews section.
  */
-import { useCallback, useContext, useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { CardPropertyValue, CardReview } from '@shared/cardLine'
+import { cardBacklinks, cardEmbedders } from '@shared/cardLinks'
+import type { IndexRecord } from '@shared/types'
 import { answerLabel, cardHistory, cardState, cardStateWithout, dayCount, recallChance } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { GestureAction } from '@shared/keys'
@@ -18,7 +20,9 @@ import { copyText } from '../editor/linkMenu'
 import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from '../editor/card/cardMedia'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard, type CardShow } from '../editor/card/cardRender'
 import { hrefTarget } from '../editor/pathPaste'
-import { linkCard, linkPath } from '../editor/wikilink/wikilinkPlugin'
+import { cardResolverOf, linkCard, linkPath, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
+import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
+import { pageLabel, pathTitles } from '../lib/pageLabel'
 import { landOnCard, openCardWindow } from '../editor/card/cardOpen'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { storage } from '../lib/storage'
@@ -310,8 +314,27 @@ export function CardFacts({ reviews, settings, now = Date.now() }: { reviews: re
   )
 }
 
-/** The parts of the card's strip (YAZ-5380): one open at a time, each a toggle on the strip's bar. */
-export type CardStripPart = 'reviews' | 'properties'
+/** The parts of the card's strip (YAZ-5380; YAZ-5382 Linked mentions and Embedded in): one open at a time, each a toggle on the strip's bar. */
+export type CardStripPart = 'reviews' | 'properties' | 'links' | 'embeds'
+
+/**
+ * The strip's page parts (YAZ-5382): "Linked mentions" (YAZ-5030: the pages whose links name the card's ID,
+ * `cardBacklinks`) and, on a card file, "Embedded in" (YAZ-5037: the pages whose `![[…]]` names it, `cardEmbedders`).
+ * From the index, live with it. Absent: neither part (a card in a page, an embed, the Inbox).
+ */
+export interface CardStripPages {
+  id: string
+  wikilinks: WikilinkResolveSource
+  /** A click on a page of the list: it opens. */
+  onOpen: (path: string) => void
+  /** The card file tab's "Embedded in" too. */
+  embeds?: boolean
+}
+
+const PAGE_PARTS = {
+  links: { label: 'Linked mentions', none: 'No page links to this card yet.', of: cardBacklinks },
+  embeds: { label: 'Embedded in', none: 'No page embeds this card yet.', of: cardEmbedders },
+} as const
 
 /** The strip's Properties part (YAZ-5380): the card's own properties, off its card line (YAZ-5379). Absent: no part. */
 export interface CardStripProperties {
@@ -325,6 +348,15 @@ export interface CardStripProps extends CardReviewsProps {
   /** A click on a part's toggle, with `open`: the caller opens it, or closes it when it is the open one. */
   onToggle?: (part: CardStripPart) => void
   properties?: CardStripProperties
+  pages?: CardStripPages
+}
+
+/** A page part's list, worked out by `StripWithPages`: its pages and their names. */
+interface PageLists {
+  links: IndexRecord[]
+  embeds: IndexRecord[] | null
+  titles: ReturnType<typeof pathTitles>
+  onOpen: (path: string) => void
 }
 
 /** One part's toggle on the strip's bar: its words and its count; a part with 0 is dimmed, and still opens (YAZ-5380). */
@@ -366,7 +398,41 @@ function CardPropertyRows({ values }: { values: Readonly<Record<string, CardProp
  * and the recall chance are the open table's last line. The look is `cardScreens.css`'s one strip, a step darker
  * than what it sits on.
  */
-export function CardStrip({ reviews, settings, onDelete, now, open: held, onToggle, properties }: CardStripProps) {
+export function CardStrip(props: CardStripProps) {
+  return props.pages === undefined ? <StripView {...props} lists={null} /> : <StripWithPages {...props} pages={props.pages} />
+}
+
+/** The strip with its page parts: the lists off the index, live with it (the hook needs the index feed, so its own component). */
+function StripWithPages({ pages, ...props }: CardStripProps & { pages: CardStripPages }) {
+  const { id, wikilinks, onOpen, embeds } = pages
+  const feed = useIndexFeed(wikilinks)
+  const lists = useMemo((): PageLists => {
+    const resolve = feed.resolve === null ? null : cardResolverOf(wikilinks)
+    const of = (which: keyof typeof PAGE_PARTS) => (resolve === null ? [] : PAGE_PARTS[which].of(feed.records, id, resolve))
+    return { links: of('links'), embeds: embeds === true ? of('embeds') : null, titles: pathTitles(feed.records, feed.folders), onOpen }
+  }, [feed, id, wikilinks, embeds, onOpen])
+  return <StripView {...props} lists={lists} />
+}
+
+/** A page part open: one page a row, its name and its folder on the right; a click opens it. None: the part's own words. */
+function StripPageList({ which, lists }: { which: keyof typeof PAGE_PARTS; lists: PageLists }) {
+  const pages = which === 'links' ? lists.links : (lists.embeds ?? [])
+  if (pages.length === 0) return <p className="card-strip__none">{PAGE_PARTS[which].none}</p>
+  return (
+    <ul className="card-backlinks__list">
+      {pages.map((page) => (
+        <li key={page.path}>
+          <button type="button" className="card-strip__page card-backlinks__page" onMouseDown={(e) => e.preventDefault()} onClick={() => lists.onOpen(page.path)}>
+            <span className="card-backlinks__name">{pageLabel(page.path, false, lists.titles)}</span>
+            {page.folder !== '' && <span className="card-backlinks__folder">{page.folder.slice(page.folder.lastIndexOf('/') + 1)}</span>}
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function StripView({ reviews, settings, onDelete, now, open: held, onToggle, properties, lists }: CardStripProps & { lists: PageLists | null }) {
   const [own, setOwn] = useState<CardStripPart | null>(null)
   const open = held === undefined ? own : held
   const toggle = onToggle ?? ((part: CardStripPart) => setOwn((o) => (o === part ? null : part)))
@@ -376,11 +442,18 @@ export function CardStrip({ reviews, settings, onDelete, now, open: held, onTogg
       <div className="card-reviews__bar">
         <StripToggle part="reviews" open={open === 'reviews'} label={reviewsTitle(reviews.length)} empty={reviews.length === 0} icon={<ReviewsIcon />} onToggle={toggle} />
         {properties !== undefined && <StripToggle part="properties" open={open === 'properties'} label="Properties" count={propertyCount} onToggle={toggle} />}
+        {lists !== null && <StripToggle part="links" open={open === 'links'} label={PAGE_PARTS.links.label} count={lists.links.length} onToggle={toggle} />}
+        {lists?.embeds != null && <StripToggle part="embeds" open={open === 'embeds'} label={PAGE_PARTS.embeds.label} count={lists.embeds.length} onToggle={toggle} />}
       </div>
       {open === 'reviews' && <CardReviewsTable reviews={reviews} settings={settings} onDelete={onDelete} now={now} />}
       {open === 'properties' && properties !== undefined && (
         <div className="card-strip__part">
           <CardPropertyRows values={properties.values} />
+        </div>
+      )}
+      {(open === 'links' || open === 'embeds') && lists !== null && (open === 'links' || lists.embeds !== null) && (
+        <div className="card-strip__part">
+          <StripPageList which={open} lists={lists} />
         </div>
       )}
     </section>
