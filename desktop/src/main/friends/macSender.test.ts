@@ -26,7 +26,9 @@ const MAC = 'github_pat_11MACSEND_mac0000000000000000000000000000000000000000000
 const NOGISTS = 'github_pat_11MACSEND_nogists0000000000000000000000000000000000000000000000000000000'
 const OTHER = 'github_pat_11MACSEND_other00000000000000000000000000000000000000000000000000000000000'
 /** The count on the test's own thread: the app gives the worker (`countJob.ts`); `stats` is required (YAZ-5277). */
-const countHere = async (text: string, now: number) => friendStats(JSON.parse(text) as FriendVault[], now)
+const closedData = new Map<string, FriendVault>()
+const countHere = async (text: string, now: number, closed: readonly { root: string }[] = []) =>
+  friendStats([...(JSON.parse(text) as FriendVault[]), ...closed.map((c) => closedData.get(c.root)!)], now)
 const opts: WriteOptions = { describe: (kind) => `notecards-test ${kind}`, sleep: async () => {} }
 
 /** Made-up cards, answered `n` times today: private words in every field the index has, so a leak shows. */
@@ -287,13 +289,14 @@ describe('the count runs on the worker (YAZ-5277), and a count that never answer
     const source = readFileSync(join(__dirname, 'macSender.ts'), 'utf8')
     expect(source).not.toMatch(/^import \{[^}]*\bfriendStats\b[^}]*\} from '@shared\/friendStats'/m)
     expect(source).not.toMatch(/\bfriendStats\(/)
-    expect(source).toMatch(/^\s+stats\(text: string, now: number\)/m)
+    expect(source).toMatch(/^\s+stats\(text: string, now: number, closed: readonly ClosedVault\[\]\)/m)
   })
 
   it("the app's sender counts on the worker thread: `stats` is the worker's count, with the built countWorker", () => {
     const source = readFileSync(join(__dirname, 'index.ts'), 'utf8')
     expect(source).toMatch(/^import countWorker from '\.\/countWorker\?modulePath'$/m)
-    expect(source).toMatch(/stats: \(text, now\) => countTextOffThread\(countWorker, text, now\)/)
+    expect(source).toMatch(/const counter = makeCounter\(countWorker\)/)
+    expect(source).toMatch(/stats: \(text, now, closed\) => counter\(text, now, closed\)/)
   })
 
   it('a count that never answers: that try ends as failed at the time limit, and the next try still runs', async () => {
@@ -340,6 +343,46 @@ describe('the stored state belongs to an account (YAZ-5279)', () => {
     rig.sender = rig.make()
     rig.cards.value = answered(3)
     expect((await rig.sender.attempt('pass')).status).not.toBe('waiting')
+  })
+})
+
+describe('a vault that counts and is closed on this Mac (YAZ-5252: "holds" means "on this Mac")', () => {
+  beforeEach(() => closedData.clear())
+
+  it('one open and one closed vault that count: the numbers are friendStats of both (as the phone counts them)', async () => {
+    const handle = await withFriends(rig, 1, ['yaseen/vault', 'yaseen/cards'])
+    closedData.set('/Users/yaseen/Vaults/Cards', vaultWith(answered(5, START - 30_000)))
+    const closed = vi.fn(async () => new Map([['yaseen/cards', { root: '/Users/yaseen/Vaults/Cards', key: 'h1' }]]))
+    rig.sender = createMacSender({ ...depsOf(rig), closed })
+    expect((await rig.sender.attempt('pass')).status).toBe('sent')
+    const expected = friendStats([vaultWith(rig.cards.value), closedData.get('/Users/yaseen/Vaults/Cards')!], START)
+    expect(numbersOf(rig, handle.index.stats!).days).toEqual(expected.days)
+    expect(numbersOf(rig, handle.index.stats!).totals).toEqual(expected.totals)
+  })
+
+  it('the closed vault changes on disk (a new HEAD): counted again after the next trigger; the same HEAD: no count', async () => {
+    await withFriends(rig, 1, ['yaseen/vault', 'yaseen/cards'])
+    closedData.set('/c', vaultWith(answered(2, START - 30_000)))
+    let key = 'h1'
+    const stats = vi.fn(countHere)
+    rig.sender = createMacSender({ ...depsOf(rig), stats, closed: async () => new Map([['yaseen/cards', { root: '/c', key }]]) })
+    await rig.sender.attempt('pass')
+    rig.world.advance(PUBLISH_EVERY_MS + 1)
+    expect((await rig.sender.attempt('pass')).status).toBe('unchanged')
+    expect(stats).toHaveBeenCalledTimes(1)
+    key = 'h2'
+    closedData.set('/c', vaultWith(answered(6, START - 30_000)))
+    rig.world.advance(PUBLISH_EVERY_MS + 1)
+    expect((await rig.sender.attempt('pass')).status).toBe('sent')
+    expect(stats).toHaveBeenCalledTimes(2)
+    expect(stats.mock.calls[1][2]).toEqual([{ root: '/c', key: 'h2' }])
+  })
+
+  it('a vault that counts and is not on this Mac (never opened, folder gone, another remote): nothing is sent', async () => {
+    await withFriends(rig, 1, ['yaseen/vault', 'yaseen/cards'])
+    rig.sender = createMacSender({ ...depsOf(rig), closed: async () => new Map() })
+    expect(await rig.sender.attempt('pass')).toMatchObject({ status: 'missing-vaults', missing: 1 })
+    expect(macWrites(rig)).toBe(0)
   })
 })
 
