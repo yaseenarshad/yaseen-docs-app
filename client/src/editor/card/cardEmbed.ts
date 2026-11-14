@@ -47,6 +47,7 @@ import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard } from './ca
 import type { CardReviewDoorApi } from './cardBlockView'
 import { mountReviewsStrip, type ReviewsStripHandle } from './reviewsStrip'
 import { tellReadOnlyEdit } from '../readOnlyEdit'
+import { CARD_FIND_READ } from '../find/cardFind'
 import { pathUnit } from '../../vault/unitWord'
 import './cardEmbed.css'
 
@@ -461,6 +462,15 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     if (typeof IntersectionObserver === 'undefined') return come()
     stopWatch = whenNear(dom, dom.isConnected ? scrollRootOf(dom) : null, come)
   }
+
+  // ⌘F asks for the card's text (YAZ-5378): a box far from the screen reads its card now, so find counts it.
+  dom.addEventListener(CARD_FIND_READ, () => {
+    if (near) return
+    stopWatch?.()
+    stopWatch = null
+    near = true
+    load()
+  })
 
   const handle: CardEmbedHandle = {
     dom,

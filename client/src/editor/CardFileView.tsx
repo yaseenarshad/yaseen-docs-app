@@ -29,6 +29,8 @@
  *    While locked, Edit card asks first; at the unlock's end an open Edit card is Done first, then the tab locks. The
  *    cog has what applies to a card: "Read only" and the counts. A page's rows (line numbers, folding, the table of
  *    contents, the widths, "Turn into a card file", …) and Collapse all are not there: a card has none of them.
+ *  - ⌘F (YAZ-5378): the page's find bar, over the title and the card as the tab shows them (`cardFind.ts`, the page's
+ *    own card search), the Edit card editor's text while it is open.
  *  - ON DISK: the tab reads the file again on each new index version, as the card window does. A file that lost
  *    `kind: card` goes back to the page view (`onPage`, with the bytes just read); a second card is the notice above.
  */
@@ -69,6 +71,9 @@ import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import './cardFileView.css'
 import { useUnit } from '../vault/unitWord'
+import { FindBar } from './find/FindBar'
+import { createFindChannel } from './find/findChannel'
+import { createCardFinder } from './find/cardFind'
 import { KeyLabel } from '../keys/KeyLabel'
 
 export interface CardFileViewProps {
@@ -173,6 +178,9 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const editingRef = useRef(editing)
   editingRef.current = editing
   const bodyRef = useRef<HTMLDivElement>(null)
+  // ⌘F (YAZ-5378): the page's bar and channel, over the card as the tab shows it (`createCardFinder`); Esc gives the keys back.
+  const findChannel = useMemo(() => createFindChannel(), [])
+  useEffect(() => createCardFinder(findChannel, () => bodyRef.current, () => bodyRef.current?.focus({ preventScroll: true })), [findChannel])
   /** This tab's timed "Allow edits" (YAZ-4939, YAZ-5102): at its end an open Edit card is Done first, then the tab locks. */
   const unlock = useTimedUnlock(() => {
     if (!editingRef.current) return
@@ -327,6 +335,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
       <StatusChips zoom={zoom} onZoom={setZoom} readOnly={readOnlyChip} sync={sync} onSyncNow={onSyncNow} save={save}>
         <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : setAsking(true)) : setReadOnly(true))} readText={() => cardText} />
       </StatusChips>
+      <FindBar channel={findChannel} scope="page" hostRef={bodyRef} />
       {notice !== null && <CardFileNotice text={notice}>{fixes}</CardFileNotice>}
       <div ref={bodyRef} className="card-file" tabIndex={-1} data-card-file data-card-file-body onKeyDown={onKeyDown} style={{ '--document-zoom': zoom / 100 } as CSSProperties}>
         <div className="card-file__page">
