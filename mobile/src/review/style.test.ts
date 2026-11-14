@@ -82,8 +82,9 @@ describe('the Review tab styles', () => {
     expect(css).toMatch(/\.review__dock \{[^}]*margin: auto -16px -24px;/)
   })
 
-  it("YAZ-5317: a sound's progress bar has a 44 pt hit area on Review (the line stays 4 px)", () => {
-    expect(css).toMatch(/\.review__card \.card__audio-bar \{[^}]*box-sizing: content-box;[^}]*padding: 20px 0;[^}]*background-clip: content-box;/)
+  it("YAZ-5317, YAZ-5333: a sound's progress bar is no tap target on Review: no enlarged box over the card", () => {
+    expect(css).not.toMatch(/\.card__audio-bar \{[^}]*padding: 20px/)
+    expect(css).not.toMatch(/\.card__audio-bar \{[^}]*margin: -20px/)
   })
 
   it('YAZ-5313: while "A new version is ready." shows, the dock keeps room above it (no overlap with Undo or the buttons)', () => {

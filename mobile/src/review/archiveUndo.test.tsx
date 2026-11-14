@@ -104,4 +104,24 @@ describe('Undo of Archive card on the phone', () => {
     await h.wait(5_000)
     expect(h.commits()).toBe(0)
   })
+
+  for (const kind of ['Up next', 'Fix later'] as const)
+    for (const ms of [0, 100, 250])
+      it(`YAZ-5334: ${kind}, Undo ${ms} ms into a 300 ms save: the line on GitHub ends as before`, async () => {
+        h = await reviewSetup(FILES)
+        const add = h.answers.add.bind(h.answers)
+        ;(h.answers as { add: unknown }).add = async (...a: Parameters<typeof add>) => {
+          await new Promise((r) => setTimeout(r, 300))
+          return add(...a)
+        }
+        await h.click('More card actions')
+        await h.click(kind)
+        if (ms > 0) await new Promise((r) => setTimeout(r, ms))
+        await h.click('Undo')
+        await new Promise((r) => setTimeout(r, 700))
+        await h.settle()
+        ;(h.answers as { add: unknown }).add = add
+        await h.wait(5_000)
+        expect((await h.remoteLines())['AU-1']).toBe(`<!-- card: AU-1, ${OLD} -->`)
+      })
 })

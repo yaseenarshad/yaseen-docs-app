@@ -39,6 +39,18 @@ describe('the guard, each transition', () => {
     expect(guardStep(a, { type: 'answered', sameCard: true, cardOnScreen: true })).toEqual(ready) // a failed save
   })
 
+  it('YAZ-5335: another drawing while settling starts the 400 ms again (only ever longer); the same drawing does not', () => {
+    const a = guardStep(ready, { type: 'answer', from: 'd1' })
+    const settling = guardStep(guardStep(a, { type: 'answered', sameCard: false, cardOnScreen: true }), { type: 'shown', key: 'd2' })
+    if (settling.kind !== 'settling') throw new Error('not settling')
+    expect(guardStep(settling, { type: 'shown', key: 'd2' })).toBe(settling)
+    const again = guardStep(settling, { type: 'shown', key: 'd3' })
+    expect(again.kind).toBe('settling')
+    if (again.kind !== 'settling') return
+    expect(again.turn).toBeGreaterThan(settling.turn)
+    expect(guardStep(again, { type: 'seen', turn: settling.turn })).toBe(again) // the old timer ends nothing
+  })
+
   it('undo goes to ready from every state, reset from all but a running save; answered or seen in ready change nothing', () => {
     const settling = guardStep(answering, { type: 'answered', sameCard: false, cardOnScreen: true })
     for (const s of [ready, answering, settling]) expect(guardStep(s, { type: 'undo' })).toEqual(ready)

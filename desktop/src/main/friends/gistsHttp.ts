@@ -126,7 +126,8 @@ function gistPath(id: string): string {
   return `/gists/${id.toLowerCase()}`
 }
 
-const filesBody = (files: Record<string, string>) => Object.fromEntries(Object.entries(files).map(([name, content]) => [name, { content }]))
+/** A file's new text, or `null`: GitHub deletes that one file (YAZ-5312; the Mac never writes the list, so it sends no null). */
+const filesBody = (files: Record<string, string | null>) => Object.fromEntries(Object.entries(files).map(([name, content]) => [name, content === null ? null : { content }]))
 
 export function macGistsApi(token: string, fetch: FetchLike, now: () => number = Date.now): GistsApi {
   const go = (path: string, init?: Parameters<typeof call>[4]) => call(token, fetch, now, path, init)

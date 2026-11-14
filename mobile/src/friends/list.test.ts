@@ -1,5 +1,6 @@
+import { deviceZone } from '@shared/friendStats'
 import { describe, expect, it } from 'vitest'
-import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, findFriendsIndex, makePointer, parseFriendsIndex, writeFriendsIndex } from '@shared/friendGists'
+import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, findFriendsIndex, makePointer, parseFriendsIndex, readListFiles, writeFriendsIndex } from '@shared/friendGists'
 import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
 import { FRIEND_LINK_BASE, WHAT_FRIENDS_SEE } from '@shared/friendsList'
 import type { IndexRecord } from '@shared/types'
@@ -53,7 +54,7 @@ const setup = () => {
 const phone2 = async (world: FakeGistWorld, clock: FakeClock, p: Phone) => createFriendsList({ store: p.store, tokens: p.tokens, clock, fetch: gistsFetch(world).fetch, sleep: async () => {} })
 const indexOf = (world: FakeGistWorld, login: string) => {
   const g = world.owned(login).find((x) => INDEX_FILE in x.files)
-  const read = parseFriendsIndex(g ? world.text(g.id, INDEX_FILE) : null)
+  const read = g ? readListFiles(g.files) : parseFriendsIndex(null)
   if (read.kind !== 'ok') throw new Error('no list')
   return read.value
 }
@@ -71,7 +72,7 @@ describe('createFriendsList (YAZ-5083)', () => {
     const index = indexOf(world, 'ali')
     // 4A's "every vault" (null) becomes the phone's vaults on the friends account, as `owner/name` in lower case.
     expect(index).toMatchObject({ nickname: 'Al', vaults: ['ali/vault', 'ali/second'], friends: [], shared: [{ mine: expect.any(String) }] })
-    expect(await ali.list.port.settings()).toEqual({ vaults: ali.vaults.map(vaultId), nickname: 'Al' })
+    expect(await ali.list.port.settings()).toEqual({ vaults: ali.vaults.map(vaultId), nickname: 'Al', zone: deviceZone() })
   })
 
   it('"Vaults that count" chosen by vault id on the phone are written as `owner/name`; the port reads them back as ids', async () => {
@@ -82,7 +83,7 @@ describe('createFriendsList (YAZ-5083)', () => {
     expect(indexOf(world, 'ali').vaults).toEqual(['ali/two'])
     await ali.list.port.saveSettings({ vaults: [vaultId(ali.vaults[0])], nickname: 'A' })
     expect(indexOf(world, 'ali')).toMatchObject({ vaults: ['ali/one'], nickname: 'A' })
-    expect(await ali.list.port.settings()).toEqual({ vaults: [vaultId(ali.vaults[0])], nickname: 'A' })
+    expect(await ali.list.port.settings()).toEqual({ vaults: [vaultId(ali.vaults[0])], nickname: 'A', zone: deviceZone() })
   })
 
   it('both sides add each other; each side`s rows say what it sees before the other side has added it', async () => {
@@ -119,7 +120,7 @@ describe('createFriendsList (YAZ-5083)', () => {
     expect(await second.list.port.hasFriends()).toBe(false) // nothing on this phone yet
     expect(await second.list.rows()).toMatchObject({ kind: 'ok', rows: [{ name: 'BEA', state: 'ok' }] })
     expect(await second.list.port.hasFriends()).toBe(true)
-    expect(await second.list.port.settings()).toEqual({ vaults: second.vaults.map(vaultId), nickname: null })
+    expect(await second.list.port.settings()).toEqual({ vaults: second.vaults.map(vaultId), nickname: null, zone: deviceZone() })
     expect(await second.list.paste(pasted.sendBack!)).toMatchObject({ kind: 'already', name: 'BEA' })
     expect(world.owned('ali').filter((g) => INDEX_FILE in g.files)).toHaveLength(1)
   })

@@ -1,5 +1,5 @@
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 import { phoneResolve } from './vite.config'
 
 /**
@@ -19,5 +19,7 @@ export default defineConfig({
     // Store tests run in plain Node with fake-indexeddb; a file that draws React says `@vitest-environment jsdom`.
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}', 'publish/**/*.test.ts', '*.test.ts'],
+    // The friends model checker's full runs take minutes: only with CHECK3_FULL=1 (src/friends/check3/run.ts).
+    exclude: [...configDefaults.exclude, ...(process.env.CHECK3_FULL === '1' ? [] : ['src/friends/check3/{seeds,mine}-*.test.ts', 'src/friends/check3/show.test.ts'])],
   },
 })

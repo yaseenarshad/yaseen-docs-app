@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { INDEX_FILE, POINTER_FILE, parseFriendsIndex } from '@shared/friendGists'
+import { INDEX_FILE, POINTER_FILE, parseFriendsIndex, readListFiles } from '@shared/friendGists'
 import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
 import { GROUP_FILE, ORPHAN_AGE_MS, groupViewMessage } from '@shared/friendGroups'
 import type { IndexRecord } from '@shared/types'
@@ -37,7 +37,7 @@ function setup(names = ['ali', 'bea', 'cem']) {
 }
 const listOf = (world: FakeGistWorld, login: string) => {
   const g = world.owned(login).find((x) => INDEX_FILE in x.files)
-  const read = parseFriendsIndex(g ? world.text(g.id, INDEX_FILE) : null)
+  const read = g ? readListFiles(g.files) : parseFriendsIndex(null)
   if (read.kind !== 'ok') throw new Error('no list')
   return read.value
 }

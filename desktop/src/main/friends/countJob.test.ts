@@ -141,4 +141,15 @@ describe('a closed vault, scanned from its files in the same worker (YAZ-5252)',
       await rm(root, { recursive: true, force: true })
     }
   })
+
+  it('the worker counts the days in the home zone it is given (YAZ-5251)', async () => {
+    const at = '2026-11-15T05:40Z' // 00:40 in New York (this file), 21:40 on Nov 14 in Los Angeles
+    const v = { pages: [{ cards: [{ id: 'Z-1', off: false, next: false, reviews: [{ at, rating: 'good', seconds: 3 }] }] }], settings: DEFAULT_REVIEW_SETTINGS } as unknown as FriendVault
+    const now = Date.parse('2026-11-15T06:00:00Z')
+    const la = await countOffThread(worker, [v], now, 'America/Los_Angeles')
+    expect(la).toEqual(friendStats([v], now, 'America/Los_Angeles'))
+    expect(la.days.filter((d) => d.cards > 0).map((d) => d.day)).toEqual(['2026-11-14'])
+    const own = await countOffThread(worker, [v], now)
+    expect(own.days.filter((d) => d.cards > 0).map((d) => d.day)).toEqual(['2026-11-15'])
+  }, 60_000)
 })

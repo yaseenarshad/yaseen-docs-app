@@ -14,6 +14,11 @@ export interface FriendsSettings {
   vaults: string[] | null
   /** The name friends see in place of the GitHub name. Null: the GitHub name (or the login). */
   nickname: string | null
+  /**
+   * YAZ-5251: the HOME time zone (IANA) in which every device counts the days of the numbers. Null or absent: not set
+   * yet (the first device that makes the list or sends writes its own zone).
+   */
+  zone?: string | null
 }
 
 export interface FriendsPort {

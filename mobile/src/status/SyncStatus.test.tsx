@@ -365,6 +365,11 @@ describe('YAZ-5302 (4D5): the phone\'s store never opens (IndexedDB blocked, ful
   const real = { ...DOT_TIMES }
   afterEach(() => Object.assign(DOT_TIMES, real))
   const pause = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))))
+  /** Waits (up to 3 s) until the dot leaves "Checking…": a busy machine runs the 40 ms timers late. */
+  const settled = async (x: Harness) => {
+    for (let i = 0; i < 60 && shown(x).words === 'Checking…'; i++) await pause(50)
+    await x.settle()
+  }
 
   it('the dot does not stay on "Checking…": it ends red "Phone can\'t save", with the words and the way forward', async () => {
     Object.assign(DOT_TIMES, { checkMs: 40, probeMs: 40 })
@@ -374,8 +379,7 @@ describe('YAZ-5302 (4D5): the phone\'s store never opens (IndexedDB blocked, ful
     expect(shown(h)).toMatchObject({ colour: 'off', words: 'Checking…' })
     // The store stops answering (a version change held by another tab, or a blocked IndexedDB).
     phone.store.getState = () => new Promise(() => {})
-    await pause(150)
-    await h.settle()
+    await settled(h)
     expect(shown(h)).toMatchObject({ colour: 'attention', words: "Phone can't save", label: "Sync status: Phone can't save" })
     await h.click("Sync status: Phone can't save")
     expect(h.text()).toContain('This browser does not let Notecard keep your vault on the phone. Turn off Private Browsing, or open Notecard from the Home Screen.')
@@ -387,16 +391,14 @@ describe('YAZ-5302 (4D5): the phone\'s store never opens (IndexedDB blocked, ful
     const phone = await newPhone()
     ;({ h } = await signedIn({ phone, answers: fakeAnswers('') }))
     phone.store.getState = () => Promise.reject(new Error('QuotaExceededError'))
-    await pause(150)
-    await h.settle()
+    await settled(h)
     expect(shown(h)).toMatchObject({ colour: 'attention', words: "Phone can't save" })
   })
 
   it('the store answers but the list never comes (the sync could not start): grey "Can\'t sync now", never green', async () => {
     Object.assign(DOT_TIMES, { checkMs: 40, probeMs: 40 })
     ;({ h } = await signedIn({ answers: null }))
-    await pause(150)
-    await h.settle()
+    await settled(h)
     expect(shown(h)).toMatchObject({ colour: 'off', words: "Can't sync now" })
   })
 })

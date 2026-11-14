@@ -3,7 +3,9 @@ import {
   INDEX_FILE,
   NUMBERS_FILE,
   POINTER_FILE,
+  emptyNumbers,
   ensureFriendsFiles,
+  isOurNumbersGist,
   findFriendsIndex,
   makePointer,
   pointersOf,
@@ -605,6 +607,31 @@ describe('YAZ-5274: a remove ends every link the removed person holds or could h
 })
 
 describe('YAZ-5276: a remove deletes only the old numbers gist that the list names, and only when it is ours', () => {
+  it('the format check: only a gist with exactly our one numbers file, in our format, is ours', async () => {
+    const w = people()
+    const ali = await person(w, 'ali')
+    const ours = JSON.stringify(emptyNumbers(w.now()))
+    expect(await isOurNumbersGist(ali.api, w.seed('ali', { [NUMBERS_FILE]: ours }))).toBe(true)
+    expect(await isOurNumbersGist(ali.api, w.seed('ali', { [NUMBERS_FILE]: ours, 'README.md': 'mine' }))).toBe(false) // a second file
+    expect(await isOurNumbersGist(ali.api, w.seed('ali', { [NUMBERS_FILE]: '{"my":"backup"}' }))).toBe(false) // not our format
+    expect(await isOurNumbersGist(ali.api, w.seed('ali', { [NUMBERS_FILE]: 'not json' }))).toBe(false)
+    expect(await isOurNumbersGist(ali.api, w.seed('ali', { 'stats.json': ours }))).toBe(false) // another name
+    expect(await isOurNumbersGist(ali.api, 'abcdef0123456789abcdef0123456789')).toBe(false) // not there
+    w.failNext = (c) => (c.op === 'read' ? 'GITHUB_DOWN' : undefined)
+    await expect(isOurNumbersGist(ali.api, ali.handle.index.stats!)).rejects.toThrow() // in doubt: no answer, so no delete
+  })
+
+  it('a remove keeps the old numbers gist that the list names when it is not in our format', async () => {
+    const w = people()
+    const ali = await person(w, 'ali')
+    const s = await shareLink(ali.api, ali.handle, opts(w))
+    const old = ali.handle.index.stats!
+    w.setFiles(old, { [NUMBERS_FILE]: '{"my":"own numbers"}' })
+    expect((await removeFriend(ali.api, await fresh(ali.api, w), s.pointer, emptyBudget(), opts(w))).kind).toBe('done')
+    expect(w.text(old, NUMBERS_FILE)).toBe('{"my":"own numbers"}')
+    expect((await fresh(ali.api, w)).index.stats).not.toBe(old)
+  })
+
   it('a remove does not delete a gist of another tool that also holds a file named notecards-stats.json', async () => {
     const w = people()
     const ali = await person(w, 'ali')

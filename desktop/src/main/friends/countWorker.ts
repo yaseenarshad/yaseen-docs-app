@@ -4,7 +4,7 @@ import { vaultPack, type CountAnswer, type CountJob } from './countJob'
 import { scanVaultForCount } from './scanVault'
 
 // The thread `countJobOffThread` starts (YAZ-5250): one count, one message, then it exits. The day is this Mac's local
-// day: a worker thread has the same time zone as the app. YAZ-5252: a closed vault with no pack is scanned here first.
+// day, or the person's home zone (YAZ-5251, `job.zone`): a worker thread has the same time zone as the app. YAZ-5252: a closed vault with no pack is scanned here first.
 const job = workerData as CountJob
 void (async () => {
   const scanned: CountAnswer['scanned'] = []
@@ -18,6 +18,6 @@ void (async () => {
     }
   }
   const vaults = JSON.parse(closed.length === 0 ? job.text : `[${[job.text.slice(1, -1), ...closed].filter((t) => t !== '').join(',')}]`) as FriendVault[]
-  const answer: CountAnswer = { stats: friendStats(vaults, job.now), scanned }
+  const answer: CountAnswer = { stats: friendStats(vaults, job.now, job.zone ?? null), scanned }
   parentPort!.postMessage(answer)
 })()

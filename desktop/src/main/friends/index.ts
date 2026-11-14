@@ -77,7 +77,7 @@ export function startFriendsSend(store: Store, secrets: Pick<Secrets, 'read'>, u
     },
     state,
     // YAZ-5250: the count runs on a worker thread; main only packs the cards and waits.
-    stats: (text, now, closed) => counter(text, now, closed),
+    stats: (text, now, closed, zone) => counter(text, now, closed, zone),
     // YAZ-5252: the closed vaults that count, among the vaults the app knows (never a path from a gist or a renderer).
     async closed() {
       const bin = await resolveGit()

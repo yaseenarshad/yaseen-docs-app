@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useApp } from '../app/AppState'
+import { deviceZone, isTimeZone } from '@shared/friendStats'
 import { cleanNickname } from '../app/friendsPort'
 import { friendsMessage } from '../auth/friends'
 import { vaultId, type PhoneVault } from '../store'
 import { Confirm } from './Confirm'
-import { eraseQuestion, unsentOnPhone } from './eraseWords'
+import { eraseQuestion, unsentOnPhone, waitingRemoves } from './eraseWords'
 import { Frame, Problem } from './Frame'
 
 /**
@@ -17,13 +18,15 @@ export function Settings() {
   const [open, setOpen] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   /** The ask's facts, read when the person taps "Sign out and erase this phone" (null: no ask). */
-  const [erasing, setErasing] = useState<{ unsent: number; friends: boolean } | null>(null)
+  const [erasing, setErasing] = useState<{ unsent: number; friends: boolean; removes: number } | null>(null)
+  const closeErase = useCallback(() => setErasing(null), [])
   const askErase = async () => {
-    const [unsent, friends] = await Promise.all([
+    const [unsent, friends, removes] = await Promise.all([
       unsentOnPhone(app.services.store, app.list.vaults.map(vaultId)).catch(() => 0),
       app.services.friends.hasFriends().catch(() => false),
+      waitingRemoves(app.services.store),
     ])
-    setErasing({ unsent, friends })
+    setErasing({ unsent, friends: friends || removes > 0, removes })
   }
 
   const run = async (step: () => Promise<void>) => {
@@ -51,7 +54,21 @@ export function Settings() {
 
       <h2 className="section">This phone</h2>
       {erasing !== null ? (
-        <Confirm question={eraseQuestion({ ...erasing, unit: app.unit })} yes="Erase this phone" busy={busy} onYes={() => void run(app.eraseAll)} onNo={() => setErasing(null)} />
+        <Confirm
+          question={eraseQuestion({ ...erasing, unit: app.unit })}
+          yes="Erase this phone"
+          busy={busy}
+          onYes={() => void run(app.eraseAll)}
+          onNo={closeErase}
+          extra={
+            // YAZ-5343, the safe way: the Friends tab runs a waiting remove when it reads (with a signal).
+            erasing.removes > 0 && (
+              <button type="button" className="btn btn--wide" onClick={() => app.go({ type: 'tab', tab: 'friends' })}>
+                Finish it in Friends
+              </button>
+            )
+          }
+        />
       ) : (
         <button type="button" className="btn btn--wide btn--danger" onClick={() => void askErase()}>
           Sign out and erase this phone
@@ -133,8 +150,9 @@ function VaultRow({ vault, more, onMore, busy, run }: { vault: PhoneVault; more:
  */
 function FriendsPart() {
   const app = useApp()
-  const [editing, setEditing] = useState<'account' | 'vaults' | 'name' | null>(null)
-  const toggle = (part: 'account' | 'vaults' | 'name') => setEditing(editing === part ? null : part)
+  const [editing, setEditing] = useState<'account' | 'vaults' | 'name' | 'zone' | null>(null)
+  const toggle = (part: 'account' | 'vaults' | 'name' | 'zone') => setEditing(editing === part ? null : part)
+  const [zoneSaid, setZoneSaid] = useState<string | null>(null)
   const fa = app.friendsAccount
   const alert = friendsMessage(fa)
   const choices = app.list.vaults.filter((v) => app.accounts[vaultId(v)]?.gists === 'yes')
@@ -145,6 +163,10 @@ function FriendsPart() {
   const counts = (id: string) => counting === null || counting.includes(id)
   const countLabel = counting === null ? 'All vaults' : app.list.vaults.filter((v) => counts(vaultId(v))).map((v) => v.repo.split('/')[1]).join(', ') || 'None'
   const [nickname, setNickname] = useState(app.friendsSettings.nickname ?? '')
+  // YAZ-5251: the home time zone of the numbers (every device counts the days in it). Not set yet: this phone's zone.
+  const phoneZone = deviceZone()
+  const homeZone = app.friendsSettings.zone ?? phoneZone
+  const zones = editing === 'zone' ? zoneChoices(homeZone) : []
 
   const setCounts = (id: string, on: boolean) => {
     const all = app.list.vaults.map(vaultId)
@@ -209,6 +231,44 @@ function FriendsPart() {
         </li>
         <li>
           <div className="row">
+            <button type="button" className="row__button" aria-expanded={editing === 'zone'} onClick={() => toggle('zone')}>
+              Home time zone
+            </button>
+            <span className="row__side">{homeZone ?? 'This phone'}</span>
+          </div>
+          {zoneSaid !== null && editing !== 'zone' && (
+            <p className="muted" role="status">
+              {zoneSaid}
+            </p>
+          )}
+          {editing === 'zone' && (
+            <label className="field sheet">
+              <span className="field__label">
+                Your friends see your days in this time zone. Friends do not see the zone. Each day starts at midnight in it, on each device.
+              </span>
+              <select
+                aria-label="Home time zone"
+                value={homeZone ?? ''}
+                onChange={(e) => {
+                  const zone = e.target.value
+                  if (isTimeZone(zone))
+                    void app.saveFriendsSettings({ ...app.friendsSettings, zone }).then(() => {
+                      setEditing(null)
+                      setZoneSaid('Saved. Your days use the new time zone from your next day. Days already sent do not change.')
+                    })
+                }}
+              >
+                {zones.map((z) => (
+                  <option key={z} value={z}>
+                    {z === phoneZone ? `${z} (this phone)` : z}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </li>
+        <li>
+          <div className="row">
             <button type="button" className="row__button" aria-expanded={editing === 'name'} onClick={() => toggle('name')}>
               Name
             </button>
@@ -235,4 +295,10 @@ function FriendsPart() {
       </ul>
     </>
   )
+}
+
+/** YAZ-5251: the zones to choose from: the home zone, this phone's, then every zone the runtime knows. */
+function zoneChoices(home: string | null): string[] {
+  const all = (Intl as { supportedValuesOf?: (key: 'timeZone') => string[] }).supportedValuesOf?.('timeZone') ?? []
+  return [...new Set([home, deviceZone(), ...all].filter((z): z is string => isTimeZone(z)))]
 }

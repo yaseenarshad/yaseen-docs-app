@@ -20,9 +20,10 @@ export const SEEN_MS = 400
  *  - `undo` (any time, also at 0 ms): `ready` (the card that comes back is one the person saw).
  *  - `reset` (the tab hidden or shown again, the session starts again): `ready`, but a save that runs keeps
  *    `answering` (YAZ-5315: its next card still gets its 400 ms).
+ *  - `shown` of another drawing in `settling` starts its 400 ms again (YAZ-5335).
  *  - `seen`: the `SEEN_MS` timer of `settling` ran out.
  */
-export type GuardState = { kind: 'ready' } | { kind: 'answering'; from: string | null; follows: boolean } | { kind: 'awaiting'; from: string | null } | { kind: 'settling'; turn: number }
+export type GuardState = { kind: 'ready' } | { kind: 'answering'; from: string | null; follows: boolean } | { kind: 'awaiting'; from: string | null } | { kind: 'settling'; turn: number; key?: string }
 
 export type GuardEvent =
   | { type: 'answer'; from?: string | null }
@@ -42,7 +43,10 @@ export function guardStep(state: GuardState, event: GuardEvent): GuardState {
     case 'shown':
       // ANOTHER card drawn, during the save or after it. (A card that comes back has a new key: its place moved. The old
       // card drawn again while the next one reads is not "another".)
-      if ((state.kind === 'awaiting' || (state.kind === 'answering' && state.follows)) && event.key !== state.from) return { kind: 'settling', turn: ++turns }
+      if ((state.kind === 'awaiting' || (state.kind === 'answering' && state.follows)) && event.key !== state.from) return { kind: 'settling', turn: ++turns, key: event.key }
+      // YAZ-5335: another drawing while settling (the next card drawn after a redraw of the answered one): the 400 ms
+      // start again from it. It can only make the wait longer, never shorter.
+      if (state.kind === 'settling' && state.key !== undefined && event.key !== state.key) return { kind: 'settling', turn: ++turns, key: event.key }
       return state
     case 'answered':
       if (state.kind !== 'answering') return state

@@ -394,16 +394,11 @@
   }
 }
 
-/* A sound's progress bar (YAZ-5317): the Mac's 4 px line, with a 44 pt hit area on the phone (the look stays thin). */
+/* A sound's progress bar (YAZ-5317, YAZ-5333): on the phone it shows the progress only. It takes no tap (a 4 px line
+   is no target, and a 44 pt box around it covered the middle of a short card): a tap on it steps the card. Play is the
+   player's one control, 44 × 44. */
 .review__card .card__audio-bar {
-  box-sizing: content-box;
-  padding: 20px 0;
-  margin: -20px 0;
-  background-clip: content-box;
-}
-
-.review__card .card__audio-fill {
-  inset: 20px auto 20px 0;
+  cursor: inherit;
 }
 
 /* ---- "A new version is ready." (YAZ-5313) ----

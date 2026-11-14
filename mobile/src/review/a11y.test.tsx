@@ -66,4 +66,10 @@ describe('VoiceOver at each step (YAZ-5314)', () => {
     expect(steps.map((s) => s.said)).toEqual(['', 'It means Hidden word.', 'Hello'])
     expect(steps[1].card).not.toContain('Hello')
   })
+
+  it('YAZ-5337: an aria-hidden part OUTSIDE a hidden word (a separator, an icon glyph) says nothing', () => {
+    const el = document.createElement('div')
+    el.innerHTML = '<p>Rivers <span aria-hidden="true">·</span> of <span aria-hidden="true"><b>France</b></span><span role="img" aria-label="Hidden word"><span aria-hidden="true">Seine</span></span></p>'
+    expect(spokenText(el)).toBe('Rivers of Hidden word')
+  })
 })
