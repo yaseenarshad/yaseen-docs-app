@@ -83,6 +83,18 @@ describe('the downloaded voice fills the seam (YAZ-5159)', () => {
     expect(await voice.chapter('why')).toBeNull()
   })
 
+  it('a window with no course-audio door: subscribing does not throw', () => {
+    const main = fakeMain()
+    const voice = downloadedVoice({
+      ...main.bridge,
+      onChange: () => {
+        throw new TypeError('no door')
+      },
+    })
+    expect(() => voice.onArrive(() => undefined)()).not.toThrow()
+    expect(() => voice.onMissing!(() => undefined)()).not.toThrow()
+  })
+
   it('open tells main the course is open in this window, and closed', () => {
     const main = fakeMain()
     const voice = downloadedVoice(main.bridge)

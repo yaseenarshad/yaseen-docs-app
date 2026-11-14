@@ -35,10 +35,15 @@ export function downloadedVoice(bridge: CourseAudioBridge = api.courseAudio): Do
   let off: (() => void) | null = null
   const follow = () => {
     if (off !== null) return
-    off = bridge.onChange(({ chapter, state }) => {
-      missing.forEach((fn) => fn(chapter, state === 'missing'))
-      if (state === 'here') arrive.forEach((fn) => fn(chapter))
-    })
+    try {
+      off = bridge.onChange(({ chapter, state }) => {
+        missing.forEach((fn) => fn(chapter, state === 'missing'))
+        if (state === 'here') arrive.forEach((fn) => fn(chapter))
+      })
+    } catch {
+      // No bridge door (an older preload, a test window): the course plays silent.
+      off = null
+    }
   }
   const unfollow = () => {
     if (arrive.size > 0 || missing.size > 0 || off === null) return
