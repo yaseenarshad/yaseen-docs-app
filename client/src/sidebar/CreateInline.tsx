@@ -50,6 +50,7 @@ export function CreateInline({ kind, indent, onSubmit, onCancel, seed = '' }: Cr
         defaultValue={seed}
         onFocus={(e) => e.currentTarget.setSelectionRange(seed.length, seed.length)}
         className={`create-inline__input${error !== null ? ' create-inline__input--error' : ''}`}
+        data-tour={kind === 'card' ? 'new-card-name' : undefined}
         placeholder={placeholderOf(kind, unit)}
         spellCheck={false}
         onKeyDown={(e) => {

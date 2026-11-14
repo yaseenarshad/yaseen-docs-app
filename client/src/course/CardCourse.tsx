@@ -13,7 +13,7 @@
  *   Closing gives the keyboard back to where it was.
  * - `prefers-reduced-motion`: the scenes and the layer cross-fade in place of movement (`course.css`, `reducedMotion`).
  * - The seams: `scenes` (6C), `voice` (6D1: per chapter, downloaded when needed), `tour` (6E), `host` (6F). Each has a
- *   frame's default: the placeholder scene, silence, "coming next", and a host that makes nothing.
+ *   frame's default: the placeholder scene, silence, the real tour (`appTour`), and a host that makes nothing.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { COURSE_SPEEDS, type CourseSpeed } from '@shared/courseState'
@@ -23,7 +23,7 @@ import { clipSeconds } from './courseTime'
 import { WAITING_CLIPS } from './waits'
 import { chapterFraction, clipFraction, placeOf, startState, step, waitingForPerson, type PlayerAction, type PlayerContext, type PlayerEvent, type PlayerState } from './player'
 import { SILENT_VOICE, type ChapterSound, type ClipSound, type Voice } from './courseVoice'
-import { comingNextTour, hasTour, type CourseTour } from './courseTour'
+import { appTour, hasTour, type CourseTour } from './courseTour'
 import { showOnlyHost, type CourseHost } from './courseHost'
 import { placeholderScenes } from './PlaceholderScene'
 import type { SceneClock, SceneFor, SceneTime } from './scene'
@@ -355,8 +355,9 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
   }
 
   // ---- the tour ----
-  const tour = useMemo(() => tourIn ?? comingNextTour((line) => setPage(line)), [tourIn])
   const host = useMemo(() => hostIn ?? showOnlyHost(vault), [hostIn, vault])
+  // The real tour over the app (YAZ-5123), with the same host as the scenes.
+  const tour = useMemo(() => tourIn ?? appTour(host), [tourIn, host])
   const tryIt = useCallback(() => {
     const chapter = ctxRef.current.course[player.current.chapter]
     if (!hasTour(chapter)) return

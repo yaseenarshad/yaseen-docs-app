@@ -13,6 +13,7 @@ import type { IndexRecord } from '@shared/types'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { createWikilinkCandidateSource } from '../wikilink/wikilinkPicker'
+import { listenTour } from '../../course/tourBus'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { BOARD_EMBED_SYNTAX_CLASS } from '../drawing/boardEmbed'
 import { CARD_OPEN, setCardEditorKind, type CardOpenRequest } from './cardBlockView'
@@ -339,8 +340,14 @@ describe('making an embed: "Show as embed" on a card pill, and the paste chip\'s
     missing!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
     expect(menuLabels()).not.toContain('Show as embed')
     document.querySelectorAll('.ctx-menu').forEach((el) => el.remove())
+    // The guided tour (YAZ-5123): the card pill is its target, and the embed made is its event, once.
+    expect(pill!.closest('[data-tour]')?.getAttribute('data-tour')).toBe('card-link-pill')
+    const heard: string[] = []
+    const stop = listenTour((name) => heard.push(name))
     pill!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
     menuItem('Show as embed')!.click()
+    stop()
+    expect(heard).toEqual(['card-embedded'])
     expect(getMarkdownForSave(crepe)).toBe('x ![[GEO-140]] y [[GEO-404]]\n')
   })
 

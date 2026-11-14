@@ -106,6 +106,7 @@ import { cssZoom } from '../lib/cssZoom'
 import { inboxRoom, readingScroll } from './inboxScroll'
 import '../explore/explore.css'
 import { useUnit } from '../vault/unitWord'
+import { tourEvent } from '../course/tourBus'
 
 export interface CardInboxProps {
   /** The Inbox tab is the one on show (YAZ-5011); false: behind a page tab, hidden, and deaf to keys. Default true. */
@@ -212,7 +213,7 @@ function ArchivedList({ session, nameOf, openCard, unarchive, backToAll }: { ses
             <span className={`card-inbox__archived-title${c.title === undefined ? ' card__title--empty' : ''}`}>{c.title ?? 'New card'}</span>
             <span className="card-inbox__archived-page">{nameOf(c.path)}</span>
           </button>
-          <button type="button" className="explore__button card-inbox__archived-unarchive" onMouseDown={(e) => e.preventDefault()} onClick={() => void unarchive(c.path, c.id)}>
+          <button type="button" className="explore__button card-inbox__archived-unarchive" data-tour="inbox-unarchive" onMouseDown={(e) => e.preventDefault()} onClick={() => void unarchive(c.path, c.id)}>
             Unarchive
           </button>
         </li>
@@ -360,6 +361,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
     if (done || card?.page == null) return
     const before = counts.slice(0, step.sides).reduce((a, b) => a + b, 0)
     setStep(step.shown < before ? { ...step, shown: step.shown + 1 } : { ...step, sides: step.sides + 1 })
+    tourEvent('inbox-step-shown', card.path)
   }, [])
 
   useEffect(() => {
@@ -427,10 +429,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
       ? []
       : [
           { id: 'undo', label: 'Undo last review', keys: '⌘Z', icon: ICON_UNDO, disabled: !session.canUndo, run: () => void review.undo() },
-          { id: 'off', label: 'Archive card', icon: ICON_OFF, disabled: card.page === null, run: () => void review.turnOff() },
+          { id: 'off', label: 'Archive card', tour: 'card-menu-archive', icon: ICON_OFF, disabled: card.page === null, run: () => void review.turnOff() },
           card.page?.next === true
             ? { id: 'next', label: 'Remove from top of Inbox', icon: ICON_TOP, disabled: false, run: () => void review.setNext(card.path, card.id, false) }
-            : { id: 'next', label: 'Put at top of Inbox', icon: ICON_TOP, disabled: card.page === null, run: () => void review.setNext(card.path, card.id, true) },
+            : { id: 'next', label: 'Put at top of Inbox', tour: 'card-menu-up-next', icon: ICON_TOP, disabled: card.page === null, run: () => void review.setNext(card.path, card.id, true) },
           { id: 'card', label: 'Open card', icon: ICON_CARD, disabled: false, run: () => openCard(card.path, card.id, card.index, false) },
         ]
 
@@ -523,7 +525,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
               text !== null &&
               card.page !== null && (
                 <>
-                  <div className="card card-screen card-inbox__card" onClick={(e) => e.target instanceof Element && e.target.closest(`a[href], ${CARD_OPENS}, ${CARD_MEDIA}`) === null && advance()}>
+                  <div className="card card-screen card-inbox__card" data-tour="inbox-card" onClick={(e) => e.target instanceof Element && e.target.closest(`a[href], ${CARD_OPENS}, ${CARD_MEDIA}`) === null && advance()}>
                     <CardBody text={text} path={card.path} vault={vaultOf(card.path)} show={{ sides: step.sides, shown: step.shown }} doors={doors} />
                   </div>
                 </>
@@ -553,7 +555,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                 </button>
               </HoverTip>
             </div>
-            <div className="card-inbox__answers">
+            <div className="card-inbox__answers" data-tour="inbox-answers">
               {/* YAZ-5029: the buttons are the setting's, always there — never only once the card's answers are fixed, so
                   fast ← → never takes them away for a frame. The hover says when the card comes back once it is known. */}
               {ratings.map((rating, i) => {
@@ -581,6 +583,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                         type="button"
                         className="explore__button card-inbox__more-action"
                         data-action={a.id}
+                        data-tour={a.tour}
                         aria-label={a.label}
                         disabled={a.disabled}
                         onMouseDown={(e) => e.preventDefault()}
@@ -596,7 +599,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                 </div>
               )}
               <HoverTip text="More">
-                <button type="button" className="explore__button card-inbox__more-button" aria-label="More" aria-expanded={moreOpen} onMouseDown={(e) => e.preventDefault()} onClick={() => setMore(moreOpen ? null : cardKey)}>
+                <button type="button" className="explore__button card-inbox__more-button" data-tour="card-menu" aria-label="More" aria-expanded={moreOpen} onMouseDown={(e) => e.preventDefault()} onClick={() => setMore(moreOpen ? null : cardKey)}>
                   ⋯
                 </button>
               </HoverTip>

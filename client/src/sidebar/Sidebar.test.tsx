@@ -86,6 +86,7 @@ import { countChildren, Sidebar, type SidebarClipboard } from './Sidebar'
 import { useCardFiles } from './cardFiles'
 import { IconsContext } from './FileIcon'
 import { DATE_TIP_MS } from './RowDateTip'
+import { listenTour, setTourPlaces } from '../course/tourBus'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -8859,6 +8860,33 @@ describe('card files (YAZ-5037)', () => {
     expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path, content: '---\nkind: card\ntitle: Capital of France\n---\n```card\n\n```\n<!-- card: YAZ-1 -->\n' })
     expect(nameBox(el)).toBeNull()
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(path)
+  })
+
+  it('the guided tour (YAZ-5123): its folder and page rows are marked; a folder`s menu fires folder-menu-open once, with its path; the menu rows and the name box are marks', async () => {
+    const heard: Array<[string, string | undefined]> = []
+    const stop = listenTour((name, detail) => heard.push([name, detail]))
+    try {
+      const { el } = await mount({ review: true, dueCount: 1 })
+      expect(rowAt(el, '/v/sub')!.hasAttribute('data-tour')).toBe(false)
+      act(() => setTourPlaces({ folder: '/v/sub', page: '/v/a.md' }))
+      expect(rowAt(el, '/v/sub')!.dataset.tour).toBe('sidebar-course-cards')
+      expect(rowAt(el, '/v/a.md')!.dataset.tour).toBe('course-page')
+      expect(el.querySelector('.sidebar__inbox')!.getAttribute('data-tour')).toBe('sidebar-inbox')
+      rightClick(rowAt(el, '/v/a.md'))
+      expect(heard).toEqual([])
+      rightClick(rowAt(el, '/v/sub'))
+      expect(heard).toEqual([['folder-menu-open', '/v/sub']])
+      expect(itemByLabel(el, 'New card')!.dataset.tour).toBe('new-card')
+      expect(itemByLabel(el, 'Review this folder')!.dataset.tour).toBe('review-folder')
+      expect(itemByLabel(el, 'Rename')!.hasAttribute('data-tour')).toBe(false)
+      await act(async () => itemByLabel(el, 'New card')?.click())
+      expect(nameBox(el)!.dataset.tour).toBe('new-card-name')
+      act(() => setTourPlaces(null))
+      expect(rowAt(el, '/v/sub')!.hasAttribute('data-tour')).toBe(false)
+    } finally {
+      stop()
+      setTourPlaces(null)
+    }
   })
 
   it('New card`s name box: an empty Enter makes nothing and the box stays; Esc makes nothing, as for a page', async () => {

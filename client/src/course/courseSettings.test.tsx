@@ -36,6 +36,11 @@ describe('Settings › Review › Card course (YAZ-5120)', () => {
     const open = [...row!.querySelectorAll('button')].find((b) => b.textContent === 'Open the course')!
     act(() => open.click())
     expect(openCourse).toHaveBeenCalledOnce()
+    // The guided tour's marks (YAZ-5123): the button, the Review page in the list, the card skill's switch.
+    expect(open.dataset.tour).toBe('settings-course')
+    expect(el!.querySelector('.settings-nav__item[data-tour="settings-review"]')?.textContent).toBe('Review')
+    expect(el!.querySelectorAll('.settings-nav__item[data-tour]')).toHaveLength(1)
+    expect(el!.querySelector('[data-tour="settings-card-skill"]')).not.toBeNull()
   })
 
   it('always shows: with Review off, and with Card tips off', () => {

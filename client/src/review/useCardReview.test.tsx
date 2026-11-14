@@ -13,6 +13,7 @@ import type { IndexRecord } from '@shared/types'
 import { cardPlace, useCardReview, type CardReviewApi } from './useCardReview'
 import { api } from '../api'
 import { storage } from '../lib/storage'
+import { listenTour } from '../course/tourBus'
 
 const S: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS }
 const NOW = new Date(2026, 10, 12, 9, 0).getTime()
@@ -145,7 +146,12 @@ describe('useCardReview', () => {
     await act(async () => review.start())
     expect(review.session).toMatchObject({ label: 'Inbox', position: 1, total: 2 })
     expect(review.session?.card).toMatchObject({ path: `${ROOT}/Geo.md`, id: 'WIKI-1', isNew: false, page: { text: 'Capital of {{France}}?' } })
+    // The guided tour (YAZ-5123) hears the answer once it is written, once, with the card's file.
+    const heard: Array<[string, string | undefined]> = []
+    const stop = listenTour((name, detail) => heard.push([name, detail]))
     await act(async () => review.answer('again'))
+    stop()
+    expect(heard).toEqual([['inbox-answered', `${ROOT}/Geo.md`]])
     await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-3', isNew: true, page: { text: 'What is a {{cell}}?' } }))
   })
 

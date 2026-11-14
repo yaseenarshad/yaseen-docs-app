@@ -93,8 +93,8 @@ export function cardMenuSections(card: CardAtPage | null, id: string | null, cha
   const rows: MenuSection[] = []
   if (card !== null && card.id !== null)
     rows.push([
-      ...(opts.inbox ? [{ id: 'next', label: card.next ? 'Remove from top of Inbox' : 'Put at top of Inbox', onSelect: () => changeLine((l) => withCardNext(l, !card.next)) }] : []),
-      { id: 'review-off', label: card.off ? 'Unarchive card' : 'Archive card', onSelect: () => changeLine((l) => withCardOff(l, !card.off)) },
+      ...(opts.inbox ? [{ id: 'next', label: card.next ? 'Remove from top of Inbox' : 'Put at top of Inbox', tour: card.next ? undefined : 'card-menu-up-next', onSelect: () => changeLine((l) => withCardNext(l, !card.next)) }] : []),
+      { id: 'review-off', label: card.off ? 'Unarchive card' : 'Archive card', tour: card.off ? undefined : 'card-menu-archive', onSelect: () => changeLine((l) => withCardOff(l, !card.off)) },
       // ONE toggle row (YAZ-5030): the hint is the state now; a click turns it to the other.
       { id: 'title-front', label: 'Title on the front', hint: card.notitle === true ? 'Hide' : 'Show', onSelect: () => changeLine((l) => withCardNoTitle(l, card.notitle !== true)) },
       ...(card.reviews.length === 0 ? [] : [{ id: 'reset', label: 'Reset history', danger: true, onSelect: () => changeLine(withoutCardReviews) }]),
@@ -102,7 +102,7 @@ export function cardMenuSections(card: CardAtPage | null, id: string | null, cha
   if (id !== null)
     rows.push([
       { id: 'copy-id', label: 'Copy card ID', hint: id, onSelect: () => copyText(id, 'card ID', onNotice, undefined, true) },
-      ...(opts.link ? [{ id: 'copy-link', label: 'Copy card link', hint: `[[${id}]]`, onSelect: () => copyText(`[[${id}]]`, 'card link', onNotice, undefined, true) }] : []),
+      ...(opts.link ? [{ id: 'copy-link', label: 'Copy card link', hint: `[[${id}]]`, tour: 'card-copy-link', onSelect: () => copyText(`[[${id}]]`, 'card link', onNotice, undefined, true) }] : []),
     ])
   return rows
 }
@@ -196,7 +196,7 @@ function CardPaneEditor({ text, path, vault, onDone, select }: { text: string; p
       el.remove()
     }
   }, [])
-  return <div ref={hostRef} className="explore-card__edit" data-explore-card-edit />
+  return <div ref={hostRef} className="explore-card__edit" data-explore-card-edit data-tour="card-editor" />
 }
 
 const PAGES = {

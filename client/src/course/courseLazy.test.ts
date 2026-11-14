@@ -2,7 +2,8 @@
  * The course is a lazy chunk (YAZ-5120): nothing the window loads at start imports the course itself. The test walks
  * the static import graph from the renderer's entry (`main.tsx`), as the build does: `import … from`, `export … from`
  * and side-effect imports; never `import type` or `import()`. The only course files it may reach are the small
- * eager ones: the facts, the door, the Settings row, and the agent prompt (`prompt.ts`, for the sidebar's "Copy prompt").
+ * eager ones: the facts, the door, the Settings row, the agent prompt (`prompt.ts`, for the sidebar's "Copy prompt"),
+ * and the guided tour's event bus (`tourBus.ts`, YAZ-5123), which the real controls call.
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -11,7 +12,7 @@ import { describe, expect, it } from 'vitest'
 const SRC = resolve(__dirname, '..')
 const SHARED = resolve(__dirname, '../../../shared')
 const COURSE_DIR = resolve(__dirname)
-const EAGER_OK = new Set(['courseFacts.ts', 'openCourse.ts', 'courseSettings.tsx', 'prompt.ts'])
+const EAGER_OK = new Set(['courseFacts.ts', 'openCourse.ts', 'courseSettings.tsx', 'prompt.ts', 'tourBus.ts'])
 
 function resolveImport(from: string, spec: string): string | null {
   const base = spec.startsWith('@shared/') ? join(SHARED, spec.slice('@shared/'.length)) : spec.startsWith('.') ? resolve(dirname(from), spec) : null
@@ -59,7 +60,7 @@ describe('the course loads only when it opens (YAZ-5120)', () => {
   it('reaches no course file but the facts, the door and the Settings row: not the script, the player, the layer or its CSS', () => {
     const course = [...eager].filter((f) => f.startsWith(`${COURSE_DIR}/`)).map((f) => relative(COURSE_DIR, f))
     expect(course.filter((f) => !EAGER_OK.has(f))).toEqual([])
-    for (const lazy of ['script.ts', 'player.ts', 'CardCourse.tsx', 'course.css', 'CourseOffer.tsx']) expect(eager.has(join(COURSE_DIR, lazy))).toBe(false)
+    for (const lazy of ['script.ts', 'player.ts', 'CardCourse.tsx', 'course.css', 'CourseOffer.tsx', 'courseTour.ts', 'TourLayer.tsx', 'tourEngine.ts', 'tourHelp.ts', 'tour.css']) expect(eager.has(join(COURSE_DIR, lazy))).toBe(false)
   })
 
   it('App loads the layer with import() only', () => {

@@ -40,6 +40,7 @@ import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, 
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
 import { FORMATS_CHAPTER_TITLE, onCourseRequest, requestCourseChapter } from './course/openCourse'
+import { onTourShow } from './course/tourBus'
 import { COURSE_NOTICE, offerInInbox, offerNotice } from './course/courseFacts'
 import { resolveItem } from './lists/focusFolders'
 import { useVaultListsHere } from './lists/useVaultListsHere'
@@ -2701,6 +2702,15 @@ export function App() {
     const vault = scopeOf(p).root
     return vault === null ? p : relTo(vault, p)
   }, [scopeOf])
+  // The course's guided tour (YAZ-5123): "Show me" brings a place into view with the app's own doors.
+  useEffect(() => onTourShow((place) => {
+    if (place.kind === 'sidebar') return void (sidebarCollapsed && toggleSidebar())
+    if (place.kind === 'folder') return showInSidebar(place.path)
+    if (place.kind === 'file') return openPage(place.path)
+    if (place.kind === 'review-folder') return startReview(scopeOf(place.path), { folder: relLabel(place.path) })
+    if (place.kind === 'inbox') return toggleInbox(scopeOf(place.path).root ?? '')
+    return place.page === 'review' ? openReviewSettings() : openSettings()
+  }), [sidebarCollapsed, toggleSidebar, showInSidebar, openPage, startReview, scopeOf, relLabel, toggleInbox, openReviewSettings, openSettings])
   // What a Files window asks of THIS window (YAZ-3357 D2): the same doors its own sidebar uses. An Inbox opens its
   // review; one that is open already stays open (the Files window cannot see it, so a click must never close it).
   fromFiles.current = (action: FilesAction): void => {

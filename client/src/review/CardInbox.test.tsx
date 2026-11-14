@@ -16,6 +16,7 @@ import { answerLine, cardStateText } from './cardInboxChip'
 import { foldHints } from './CardInboxHints'
 import { CARD_MIN_WIDTH, clampCardWidth, inboxCardWidth, setInboxCardWidth } from './inboxCardWidth'
 import { useReadOnlyVault } from '../vault/readOnlyVault'
+import { listenTour } from '../course/tourBus'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -922,6 +923,39 @@ describe('the Inbox screen (YAZ-4962)', () => {
     session = { ...session, card: null, place: [] }
     render()
     expect(el.querySelector('.card-inbox__path')).toBeNull()
+  })
+})
+
+describe('the guided tour hears the Inbox (YAZ-5123)', () => {
+  it('each Space that shows a part fires inbox-step-shown once; the card, the answers and the ⋯ are marks', async () => {
+    mount(TWO_SIDES)
+    await flush()
+    const heard: string[] = []
+    const stop = listenTour((name) => heard.push(name))
+    try {
+      expect(el.querySelector('.card-inbox__card')!.getAttribute('data-tour')).toBe('inbox-card')
+      expect(el.querySelector('.card-inbox__answers')!.getAttribute('data-tour')).toBe('inbox-answers')
+      expect(el.querySelector('.card-inbox__more-button')!.getAttribute('data-tour')).toBe('card-menu')
+      press(' ')
+      expect(heard).toEqual(['inbox-step-shown'])
+      press(' ')
+      press(' ')
+      expect(heard).toEqual(['inbox-step-shown', 'inbox-step-shown', 'inbox-step-shown'])
+      // All shown: one more Space shows nothing, and fires nothing.
+      press(' ')
+      press(' ')
+      const all = heard.length
+      press(' ')
+      expect(heard).toHaveLength(all)
+      act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
+      const marks = [...el.querySelectorAll<HTMLElement>('.card-inbox__more-action[data-tour]')].map((b) => [b.getAttribute('aria-label'), b.dataset.tour])
+      expect(marks).toEqual([
+        ['Archive card', 'card-menu-archive'],
+        ['Put at top of Inbox', 'card-menu-up-next'],
+      ])
+    } finally {
+      stop()
+    }
   })
 })
 

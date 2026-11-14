@@ -37,6 +37,7 @@ import { normalizeEmptyItems } from '../listItemRoundTrip'
 import type { SlashMenuGroups } from '../slashMenu'
 import type { ToolbarBuilder } from '../createCrepe'
 import { joinCardParts, sideMarkdown, sideWithEdges, splitCardText, type CardParts } from './cardEditorText'
+import { tourEvent } from '../../course/tourBus'
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The hidden word: the `cloze` mark
@@ -213,7 +214,10 @@ export const toggleCloze =
     const run = clozeRunAround(state, type, from, to)
     if (dispatch === undefined) return true
     if (run !== null) dispatch(state.tr.removeMark(run.from, run.to, type).scrollIntoView())
-    else dispatch(state.tr.addMark(from, to, type.create({ prefix: null, key: ++clozeKeys })).scrollIntoView())
+    else {
+      dispatch(state.tr.addMark(from, to, type.create({ prefix: null, key: ++clozeKeys })).scrollIntoView())
+      tourEvent('card-word-hidden')
+    }
     return true
   }
 
@@ -312,6 +316,7 @@ export const newSide =
       tr.setSelection(TextSelection.create(tr.doc, after + 2))
     }
     dispatch(tr.scrollIntoView())
+    tourEvent('card-side-added')
     return true
   }
 
@@ -445,7 +450,11 @@ function cardPlugins(doors: CardEditorDoors, escapeTaken: () => boolean) {
       new Plugin({
         key: new PluginKey('mdapp-card-editor-watch'),
         // Spell check in the card's text, as in a page.
-        props: { attributes: { spellcheck: 'true' } },
+        props: {
+          attributes: { spellcheck: 'true' },
+          // The course's guided tour (YAZ-5123): the person typed in the card. Typing goes on as always.
+          handleTextInput: () => (tourEvent('card-text-changed'), false),
+        },
         view: () => ({
           update: (view, prev) => {
             if (view.state.doc !== prev.doc) doors.changed()

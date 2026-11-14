@@ -10,6 +10,7 @@
  * - `dismissed`: "Don't show again" on the empty Inbox line.
  * - `offered`: the one notice "New to cards? …" has shown on this Mac. It never shows again.
  * - `muted`, `speed`: the player's Mute and Speed (suggestion 21: "the course remembers Mute").
+ * - `toured`: the ids of the chapters whose guided tour ("Try it in the app", YAZ-5123) the person finished.
  */
 
 /** The player's speeds (YAZ-5059 suggestion 21). */
@@ -25,6 +26,7 @@ export interface CourseState {
   offered: boolean
   muted: boolean
   speed: CourseSpeed
+  toured: string[]
 }
 
 /** One change to the course's state: only the fields it names. */
@@ -35,7 +37,7 @@ const MAX_ID = 64
 const MAX_FINISHED = 64
 
 export function defaultCourseState(): CourseState {
-  return { chapter: '', clip: '', finished: [], done: false, dismissed: false, offered: false, muted: false, speed: 1 }
+  return { chapter: '', clip: '', finished: [], done: false, dismissed: false, offered: false, muted: false, speed: 1, toured: [] }
 }
 
 const isId = (v: unknown): v is string => typeof v === 'string' && v.length <= MAX_ID && /^[A-Za-z0-9_-]*$/.test(v)
@@ -49,7 +51,8 @@ export function cleanCourseState(raw: unknown, base: CourseState = defaultCourse
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return base
   const r = raw as Record<string, unknown>
   const bool = (k: 'done' | 'dismissed' | 'offered' | 'muted'): boolean => (typeof r[k] === 'boolean' ? (r[k] as boolean) : base[k])
-  const finished = Array.isArray(r.finished) ? [...new Set(r.finished.filter((id): id is string => isId(id) && id !== ''))].slice(0, MAX_FINISHED) : base.finished
+  const ids = (v: unknown, kept: string[]): string[] => (Array.isArray(v) ? [...new Set(v.filter((id): id is string => isId(id) && id !== ''))].slice(0, MAX_FINISHED) : kept)
+  const finished = ids(r.finished, base.finished)
   return {
     chapter: isId(r.chapter) ? r.chapter : base.chapter,
     clip: isId(r.clip) ? r.clip : base.clip,
@@ -59,6 +62,7 @@ export function cleanCourseState(raw: unknown, base: CourseState = defaultCourse
     offered: bool('offered'),
     muted: bool('muted'),
     speed: isSpeed(r.speed) ? r.speed : base.speed,
+    toured: ids(r.toured, base.toured),
   }
 }
 
@@ -66,6 +70,7 @@ export function cleanCourseState(raw: unknown, base: CourseState = defaultCourse
 export function sameCourseState(a: CourseState, b: CourseState): boolean {
   return a.chapter === b.chapter && a.clip === b.clip && a.done === b.done && a.dismissed === b.dismissed && a.offered === b.offered && a.muted === b.muted && a.speed === b.speed
     && a.finished.length === b.finished.length && a.finished.every((id, i) => id === b.finished[i])
+    && a.toured.length === b.toured.length && a.toured.every((id, i) => id === b.toured[i])
 }
 
 /** Pure: `patch` applied to `state` by the rule of `cleanCourseState`; the same object when nothing changed. */

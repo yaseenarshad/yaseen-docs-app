@@ -67,6 +67,7 @@ import { createFromLink } from './createFromLink'
 import type { WikilinkNav } from './wikilinkClick'
 import { linkPageName, type LinkLook, type WikilinkResolveSource } from './wikilinkPlugin'
 import './wikilinkPicker.css'
+import { tourEvent } from '../../course/tourBus'
 
 export const WIKILINK_PICKER_CLASS = 'wikilink-picker'
 export const WIKILINK_PICKER_ITEM_CLASS = 'wikilink-picker__item'
@@ -314,6 +315,7 @@ function insertRow(state: EditorState, dispatch: ((tr: Transaction) => void) | u
     const wait = born && links.ids && linkPageName(row.insert) !== '' ? ++waits : undefined
     if (wait !== undefined) tr.setMeta(pickerKey, { type: 'wait', key: wait, from: session.from + 2, to: session.from + 2 + row.insert.split('#', 1)[0].length } satisfies PickerMeta)
     dispatch(tr.scrollIntoView())
+    if (row.card === true) tourEvent('card-link-added')
     if (born) void createPage(view, nav, row.insert, links.ids, wait)
   }
   return true
@@ -395,6 +397,7 @@ function buildPopup(view: EditorView, links: WikilinkResolveSource, nav?: Wikili
   element.className = WIKILINK_PICKER_CLASS
   element.setAttribute('role', 'listbox')
   element.setAttribute('aria-label', 'Link suggestions')
+  element.dataset.tour = 'link-picker'
   let last: PickerSession | null = null
   const render = (session: PickerSession | null) => {
     if (session === last) return
@@ -453,6 +456,7 @@ export function createWikilinkPicker(source: WikilinkCandidateSource, links: Wik
           return {
             update: (view, prevState) => {
               const session = pickerKey.getState(view.state)?.session ?? null
+              if (session !== null && (pickerKey.getState(prevState)?.session ?? null) === null) tourEvent('link-picker-open')
               popup.render(session)
               // hide() directly when closed: the provider's own update skips meta-only
               // transactions (same doc + selection — exactly what Esc's dismiss is).

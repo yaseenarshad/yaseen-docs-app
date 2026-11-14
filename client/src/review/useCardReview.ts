@@ -9,6 +9,7 @@ import { storage } from '../lib/storage'
 import { changeCardLine, deleteCardReview, isCardGone, readCard, restoreCardReview, undoCardAnswer, writeCardAnswer, type CardOnPage } from './cardFile'
 import { setUpNextTaken, subscribeUpNextTaken, upNextTakenToday } from './upNextTaken'
 import { cardsAddedToday, setCardsAdded, subscribeCardsAdded } from './cardsAdded'
+import { tourEvent } from '../course/tourBus'
 
 /**
  * Card review as App sees it (YAZ-4967): how many cards are due, and the one review
@@ -720,6 +721,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       busy.current = false
       forget(card.path) // also a read begun while it wrote
       if (written === 'failed') return
+      tourEvent('inbox-answered', card.path)
       // YAZ-5028: the answer took the mark off a card of today's Up next: one of the day's places is used. A marked
       // card past the day's places (`card.next` false) loses its mark too, but it held no place.
       if (written !== 'gone' && written.next >= 0 && card.next && root !== null) setUpNextTaken(root, card.id, true)
