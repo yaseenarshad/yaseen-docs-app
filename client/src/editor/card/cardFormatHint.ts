@@ -4,7 +4,7 @@
  * card opens: "Formats in your card skill: acronym · book · comparison · 8 more. Learn the formats". The names are the
  * pages of the `formats` folder of the card skill the vault uses (its own `Card skill` folder, else the app's copy),
  * A to Z; App reads them (`api.app.cardFormats`) and hands them here (`setCardFormatHints`). The line goes at the first
- * text, and never shows on a card that has text when Edit card opens. Settings › Review › Card tips Off: no line. A
+ * text, and never shows on a card that has text when Edit card opens. Settings › Cards › Card tips Off: no line. A
  * skill with no `formats` folder, or an empty one: no line.
  *
  * "Learn the formats" sends ONE bubbling DOM event, `CARD_FORMATS_OPEN` (detail `CardFormatsOpenRequest`), as

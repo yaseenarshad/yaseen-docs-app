@@ -112,6 +112,8 @@ To comment on one of my pages, use this command. Run it with --help first:
 "/Applications/Yaseen Docs.app/Contents/Resources/bin/yaseendocs"
 ```
 
+Your agent can make cards for you too. The app ships the **card skill**: a folder of pages on how to make good cards. When cards are on in a vault, the skill is the **Card skill** row at the bottom of the sidebar. Right-click it and select **Copy prompt for your agent**, then paste the prompt to your agent. The prompt tells the agent where the skill is. The agent can also run `yaseendocs card guide`, which prints the first page of the card skill.
+
 ### Sync with the git that you already have
 
 Turn on GitHub sync for a folder that is a git repo. The app commits and pushes 30 seconds after you stop typing. It pulls when you open the folder and when you come back to the window. It uses the git on your computer, so the app never sees your password.

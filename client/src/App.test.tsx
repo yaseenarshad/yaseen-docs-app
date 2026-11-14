@@ -7866,7 +7866,7 @@ describe('App: the card course (YAZ-5120)', () => {
     act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
   })
 
-  it('YAZ-5123: the guided tour`s "Show me" opens Settings at Review, and a file, with the app`s own doors', async () => {
+  it('YAZ-5123: the guided tour`s "Show me" opens Settings at Cards, and a file, with the app`s own doors', async () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] }, { '/v/a.md': { content: '# a', mtime: 1 }, '/v/b.md': { content: '# b', mtime: 1 } })
     act(() => showTourPlace({ kind: 'settings', page: 'cards' }))
     await vi.waitFor(() => expect(document.querySelector('.settings-nav__item[aria-current="page"]')?.textContent).toBe('Cards'))
@@ -7935,7 +7935,7 @@ describe('App: the card course (YAZ-5120)', () => {
       await vi.waitFor(() => expect(el.querySelector('.course-offer')).not.toBeNull())
     })
 
-    it('Off: no notice, nothing kept as offered, and no course line in the same empty Inbox; Settings › Review still has "Open the course"', async () => {
+    it('Off: no notice, nothing kept as offered, and no course line in the same empty Inbox; Settings › Cards still has "Open the course"', async () => {
       courseNoticeDue = true
       const { bridge, el } = await mount(tips(false), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, noCards)
       await openInbox(el)

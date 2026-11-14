@@ -2017,7 +2017,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'cardTips',
             label: 'Card tips',
-            hint: 'The format hint on a new card: the formats in your card skill, and a way to learn them.',
+            hint: 'The format hint on a new card, and the offers of the course.',
             keywords: [...REVIEW_KEYWORDS, 'tips', 'hint', 'formats', 'card skill'],
             render: ({ settings, onChange }) => <Segmented options={ON_OFF_OPTIONS} value={settings.cardTips !== false} onChange={(cardTips) => onChange({ ...settings, cardTips })} ariaLabel="Card tips" />,
           },

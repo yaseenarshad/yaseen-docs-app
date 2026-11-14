@@ -96,6 +96,10 @@ The preview tool is gone — there is no browser mode and no URL to point one at
 
 A window appears, but the mouse and keyboard are never taken. When the screen is off the window is hidden and `Input.dispatchMouseEvent` does nothing: dispatch in-page events (`el.click()`, `new MouseEvent('dblclick', { bubbles: true })`) instead. Script clicks do not move focus like real clicks, so leave focus checks to the demo. A scratch vault that is a git repo makes `git status` the proof of what was written.
 
+### The course scenes preview
+
+`tools/course-preview/` (YAZ-5121) is a dev page, outside the app, that mounts any clip's scene of the card course with the course's seams (the clock, the marks, `done`, the host). It has light and dark, reduced motion and three stage sizes. It ships nowhere. Build it with `node tools/course-preview/build.mjs [--audio <folder of the voice build>]`; without `--audio`, each clip is silent and runs on the reading-time estimate. Serve `tools/course-preview/dist` with any static server, for example `python3 -m http.server 4178 -d tools/course-preview/dist`, then open http://localhost:4178.
+
 ## Gotchas
 
 - Never type into real vault files during testing — copy the vault to a scratch dir first. Files the app only *opens* are never rewritten; the first real edit normalises formatting (tabs → 2 spaces, bullet markers alternate `*`/`-`).
