@@ -616,7 +616,7 @@ function CardTradition(props: SceneProps) {
       <Layer>
         <Words size="title" style={rise(b, since(b, 0, 0.65))}>A system thinkers have used for years</Words>
         <div className="kit-tags">
-          <span className="kit-chip" style={pop(b, since(b, cue(b, 0, 0), 0.65))}>The Notecard App</span>
+          <span className="kit-chip" style={pop(b, since(b, cue(b, 0, 0), 0.65))}>The Notecard App</span> {/* rename-note-to-page: keep (the product's name) */}
           <span className="kit-chip" style={pop(b, since(b, cue(b, 1, 0.533), 0.65))}>Memory science</span>
           <span className="kit-chip" style={pop(b, since(b, cue(b, 2, 0.65), 0.65))}>A review algorithm</span>
         </div>

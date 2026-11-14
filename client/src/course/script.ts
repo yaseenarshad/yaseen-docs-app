@@ -341,7 +341,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c5-16', text: "Over about 20 years, Holiday has made tens of thousands of cards. In his videos and articles, he shares how other thinkers have used similar systems.", marks: [0.26, 0.528] },
       { id: 'c5-19', text: "Holiday credits the cards with helping him write a book almost every year. Using this system, he has gone on to write four New York Times bestsellers in his series on the Stoic virtues.", marks: [0.184, 0.592] },
       { id: 'c5-20', text: "He says most of the value came later, as all those cards added up.", marks: [0.349, 0.746] },
-      { id: 'c5-21', text: "Thinkers have used systems like this for generations. The Notecard App just brings it all together in one place with research backed memory science and the memory algorithm that brings each card back when it’s time to review.", marks: [0.261, 0.591, 0.705] },
+      { id: 'c5-21', text: "Thinkers have used systems like this for generations. The Notecard App just brings it all together in one place with research backed memory science and the memory algorithm that brings each card back when it’s time to review.", marks: [0.261, 0.591, 0.705] }, // rename-note-to-page: keep (the product's name)
       // Three small scenes: a meeting, a page in another language, a field that becomes clear.
       { id: 'c5-09', text: 'You do not need to write books or be an author for this system to be valuable for you. Think of the meeting where the right fact is there when you need it.', marks: [0.662, 0.765] },
       // A page in another language becomes readable; a hard subject comes into focus.
