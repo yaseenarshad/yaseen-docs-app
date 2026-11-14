@@ -367,6 +367,17 @@ export function cleanName(text: unknown, max = NAME_MAX): string {
         .join('')
         .trimEnd()}…`
 }
+/**
+ * THE ONE CLEANING of a string from a gist (a friend's name, a login, a group's name) before any screen draws it
+ * (YAZ-5256): `cleanName` (no control or bidi character, one line, at most `max` letters, then "…"), wrapped in a bidi
+ * isolate (U+2068 … U+2069) so a right-to-left name cannot turn the words around it. It is idempotent: a cleaned text
+ * cleans to itself. '' stays '' (the caller's fallback words then show).
+ */
+export function gistText(text: unknown, max = NAME_MAX): string {
+  const clean = cleanName(text, max)
+  return clean === '' ? '' : `\u2068${clean}\u2069`
+}
+
 /** The letter of the plain avatar: the first letter of the name, or "?" */
 export function initialOf(name: string): string {
   const first = graphemes(cleanName(name, 4))[0]

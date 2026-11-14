@@ -6,7 +6,7 @@ import { friendsMessage } from '../../auth/friends'
 import { Confirm } from '../../screens/Confirm'
 import { Problem } from '../../screens/Frame'
 import type { Unavailable } from '../list'
-import { MARK_LINE, PERIODS, boardRows, cleanName, markToShow, markWords, updatedLabel, type BoardEntry, type Period } from './board'
+import { MARK_LINE, PERIODS, boardRows, gistText, markToShow, markWords, updatedLabel, type BoardEntry, type Period } from './board'
 import './friends.css'
 import {
   GROUP_NAME_MAX,
@@ -162,7 +162,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
   const friendEntries: Entry[] = useMemo(() => {
     const me: Entry = {
       key: 'me',
-      name: board.me.name,
+      name: gistText(board.me.name),
       you: true,
       stats: board.me.stats,
       avatar: board.me.avatar,
@@ -179,7 +179,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
       const ago = numbers ? updatedLabel(f.updatedAt, now) : undefined
       return {
         key: f.theirs,
-        name: f.name,
+        name: gistText(f.name) || 'Friend',
         you: false,
         stats: numbers ? f.stats : null,
         avatar: f.avatar,
@@ -201,7 +201,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
       if (m.state !== 'ok' && m.label !== null) sub.push(m.label)
       return {
         key: m.pointer,
-        name: m.me ? board.me.name : cleanName(m.name) || cleanName(m.login) || 'Member',
+        name: m.me ? board.me.name : gistText(m.name) || gistText(m.login) || 'Member',
         you: m.me,
         stats: m.me ? board.me.stats : ok?.stats ?? null,
         avatar: null,
@@ -283,7 +283,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
             {board.groups.map((g) =>
               g.kind === 'not-found' ? null : (
                 <button key={g.group} type="button" className="fr-pill" aria-pressed={showGroup && list === g.group} onClick={() => setList(g.group)}>
-                  {cleanName(g.name, 30) || 'Group'}
+                  {gistText(g.name, 30) || 'Group'}
                 </button>
               ),
             )}
@@ -314,7 +314,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
             </p>
           )}
           {showGroup && group !== undefined && group.kind !== 'ok' && <GroupProblem view={group} />}
-          <ul className="rows" aria-label={showGroup ? `${cleanName(group?.name ?? '')} members` : 'Friends'}>
+          <ul className="rows" aria-label={showGroup ? `${gistText(group?.name ?? '')} members` : 'Friends'}>
             {rows.map(({ entry: e, rank, numbers }) => {
               // Round 10, item 12 (mockup version 9): "updated … ago" below the name, on Today.
               const entry = period === 'today' && e.ago !== undefined ? { ...e, sub: [...e.sub, e.ago] } : e
@@ -365,7 +365,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
                       type="button"
                       className="btn"
                       onClick={() =>
-                        ask(`Remove ${entry.name} from ${cleanName(group.name)}?`, `Remove ${entry.name}`, () =>
+                        ask(`Remove ${entry.name} from ${gistText(group.name)}?`, `Remove ${entry.name}`, () =>
                           service.groups!.remove(group.group, entry.pointer!),
                         )
                       }
@@ -435,7 +435,7 @@ function GroupActions({
   say: (s: string | null) => void
 }) {
   const groups = service.groups!
-  const name = cleanName(view.name) || 'this group'
+  const name = gistText(view.name) || 'this group'
   const [link, setLink] = useState<string | null>(null)
   const invite = async (url: string, title: string, text: string) => {
     const how = await shareOut({ title, text, url })
@@ -698,7 +698,7 @@ function PastePanel({ service, close, refresh }: { service: FriendsService; clos
             void service.groups!.add(request.group, text).then((r) => {
               setSaid(
                 r.kind === 'done'
-                  ? `${cleanName(request.name)} is in ${cleanName(request.groupName)} now.`
+                  ? `${gistText(request.name)} is in ${gistText(request.groupName)} now.`
                   : r.kind in UNAVAILABLE_WORDS
                   ? UNAVAILABLE_WORDS[r.kind as Unavailable['kind']]
                   : adminWords(r as GroupChange),
@@ -708,7 +708,7 @@ function PastePanel({ service, close, refresh }: { service: FriendsService; clos
             })
           }
         >
-          Add {cleanName(request.name)}
+          Add {gistText(request.name)}
         </button>
       )}
       {link !== null && <LinkToCopy link={link} />}

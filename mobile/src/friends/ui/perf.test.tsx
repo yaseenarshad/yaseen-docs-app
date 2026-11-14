@@ -38,6 +38,24 @@ const BIG = (() => {
   return demoBoard(NOW, { friends, groups })
 })()
 
+/** A name from a gist sits in a bidi isolate (U+2068 … U+2069, YAZ-5256): the tests read the words without it. */
+const plain = (text: string | null | undefined) => (text ?? '').replace(/[\u2068\u2069]/g, '')
+const named = (el: Element) =>
+  plain(el.getAttribute('aria-label') ?? el.textContent)
+    .replace(/\s+/g, ' ')
+    .trim()
+const btn = (x: Harness, name: string | RegExp) =>
+  ([...x.host.querySelectorAll('button, a')].find((el) => (typeof name === 'string' ? named(el) === name : name.test(named(el)))) as
+    | HTMLButtonElement
+    | undefined) ?? null
+/** Taps the button whose words (without the isolates) are `name`. */
+const tap = async (x: Harness, name: string | RegExp) => {
+  const el = btn(x, name)
+  if (el === null) throw new Error(`No button "${name}" on: ${plain(x.text())}`)
+  await act(async () => el.click())
+  await x.settle()
+}
+
 let h: Harness | null = null
 afterEach(() => {
   h?.unmount()
@@ -74,7 +92,7 @@ describe('30 friends and 5 groups', () => {
     expect(h.host.querySelectorAll('.fr-pill')).toHaveLength(7)
     const times: number[] = []
     for (const name of ['Yesterday', 'Week', 'Month', 'Today']) {
-      const button = h.button(name)!
+      const button = btn(h, name)!
       const t = performance.now()
       await act(async () => button.click())
       times.push(performance.now() - t)
@@ -82,7 +100,7 @@ describe('30 friends and 5 groups', () => {
     console.info(`[perf] period change, 31 rows, jsdom: ${times.map((t) => t.toFixed(1)).join(', ')} ms`)
     // jsdom is many times slower than Safari; this bound only catches a gross regression.
     expect(Math.min(...times)).toBeLessThan(250)
-    await h.click('Group 1')
+    await tap(h, 'Group 1')
     expect(h.host.querySelectorAll('.fr-row')).toHaveLength(9)
   })
 })

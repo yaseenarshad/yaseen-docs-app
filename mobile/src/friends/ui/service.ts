@@ -10,7 +10,7 @@ import type { SyncEngine } from '../../sync/engine'
 import { createOwnNumbers, type OwnNumbers } from '../ownNumbers'
 import { createFriendsList, type FriendsList, type ShareResult, type Unavailable } from '../list'
 import { createFriendsSender, type FriendsSender } from '../sender'
-import { avatarUrl, cleanName, type SeenMark } from './board'
+import { avatarUrl, gistText, type SeenMark } from './board'
 import type { GroupView, GroupsPort, JoinRequest, JoinResult } from './groups'
 import { createMarks, type MarkKind, type MarkSend, type Marks, type OutMark } from './marks'
 
@@ -161,7 +161,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
     const account = await loadFriendsAccount(store)
     const vault = account.kind === 'ok' || account.kind === 'two-accounts' ? account.vault : null
     const profile = vault === null ? undefined : await loadAccount(store, vault)
-    const name = cleanName(settings.nickname ?? profile?.name ?? profile?.login ?? '') || 'You'
+    const name = gistText(settings.nickname ?? profile?.name ?? profile?.login ?? '') || 'You'
     const phone = await loadVaultList(store)
     const ids = settings.vaults ?? phone.vaults.map(vaultId)
     const repos = phone.vaults.filter((v) => ids.includes(vaultId(v))).map((v) => v.repo.toLowerCase())
@@ -187,10 +187,11 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
     return {
       theirs: row.theirs,
       mine: row.mine,
-      name: cleanName(row.name) || 'Friend',
+      name: gistText(row.name) || 'Friend',
       avatar: avatarUrl(ok?.stats.avatar),
       state: row.state,
-      label: row.label,
+      // YAZ-5256: 4E2's words hold the raw name ("Waiting for <name> to add you"): the cleaned one goes in its place.
+      label: row.label === null ? null : row.name === '' ? row.label : row.label.split(row.name).join(gistText(row.name) || 'your friend'),
       sendBack: row.sendBack,
       stats: ok?.stats ?? null,
       updatedAt: ok?.updatedAt ?? null,
@@ -225,7 +226,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
       const [mine, seen, outbox] = await Promise.all([me(), marks.seen(), marks.outbox()])
       if (rows.kind === 'ok') {
         const all = await groups.all()
-        const groupViews = Array.isArray(all) ? all : []
+        const groupViews = Array.isArray(all) ? all.map(cleanGroup) : []
         const friends = rows.rows.map(entryOf)
         pointerCount = rows.rows.length + rows.shared.length + groupViews.length
         const offline = rows.rows.some((r) => r.read?.kind === 'ok' && r.read.stale !== undefined) || rows.rows.some((r) => r.state === 'offline')
@@ -248,7 +249,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
       return rows
     },
     share: () => list.share(),
-    paste: (text) => list.pasteAny(text),
+    paste: async (text) => cleanAnswer(await list.pasteAny(text)),
     remove: (mine) => list.remove(mine),
     mark: (mine, kind) => marks.send(mine, kind, pointerCount),
     see: (seen) => marks.see(seen),
@@ -261,4 +262,19 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
       await sender?.stop()
     },
   }
+}
+
+/** YAZ-5256: each name and login of a group view from a gist, cleaned once (`gistText`). */
+function cleanGroup(view: GroupView): GroupView {
+  if (view.kind === 'not-found') return view
+  const named = { ...view, name: gistText(view.name, 30) || 'Group' }
+  if (named.kind !== 'ok') return named
+  return { ...named, members: named.members.map((m) => ({ ...m, name: gistText(m.name) || gistText(m.login) || 'Member', login: gistText(m.login) })) }
+}
+
+/** YAZ-5256: the names in a paste answer (a friend, a group, a person who asks to join), cleaned before the words. */
+function cleanAnswer(answer: PasteAnswer): PasteAnswer {
+  const out = { ...answer } as Record<string, unknown>
+  for (const field of ['name', 'groupName', 'login']) if (typeof out[field] === 'string') out[field] = gistText(out[field])
+  return out as PasteAnswer
 }

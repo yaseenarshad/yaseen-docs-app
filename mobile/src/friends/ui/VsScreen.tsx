@@ -3,7 +3,7 @@ import { useApp } from '../../app/AppState'
 import type { Route } from '../../app/nav'
 import { Confirm } from '../../screens/Confirm'
 import { Frame, Problem } from '../../screens/Frame'
-import { MARK_LINE, cleanName, initialOf, markToShow, updatedLabel, vsBoard, type VsLine } from './board'
+import { MARK_LINE, gistText, initialOf, markToShow, updatedLabel, vsBoard, type VsLine } from './board'
 import './friends.css'
 import type { MarkKind, MarkSend } from './marks'
 import type { GroupView } from './groups'
@@ -31,7 +31,8 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
       ? ok.groups.find((g): g is Extract<GroupView, { kind: 'ok' }> => g.kind === 'ok' && g.group === route.group)
       : undefined
   const member = group !== undefined && group.kind === 'ok' ? group.members.find((m) => m.pointer === route.pointer) ?? null : null
-  const name = friend?.name ?? (member === null ? 'Friend' : cleanName(member.name) || cleanName(member.login) || 'Member')
+  const name =
+    (friend === null ? null : gistText(friend.name) || 'Friend') ?? (member === null ? 'Friend' : gistText(member.name) || gistText(member.login) || 'Member')
   const theirStats = friend?.stats ?? (member?.read?.kind === 'ok' ? member.read.stats : null)
   const updatedAt = friend?.updatedAt ?? (member?.read?.kind === 'ok' ? member.read.updatedAt : null)
   const shownMark = friend === null || ok === null ? null : markToShow(friend.mark, ok.seen[friend.theirs], now)
@@ -120,7 +121,7 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
           question={
             friend !== null
               ? `Remove ${name}? ${name} stops seeing your numbers, and you stop seeing theirs.`
-              : `Remove ${name} from ${cleanName(group !== undefined && group.kind === 'ok' ? group.name : '')}?`
+              : `Remove ${name} from ${gistText(group !== undefined && group.kind === 'ok' ? group.name : '')}?`
           }
           yes={`Remove ${name}`}
           busy={busy}

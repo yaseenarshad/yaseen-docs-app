@@ -18,6 +18,24 @@ const until = async (x: Harness, selector: string) => {
   for (let i = 0; i < 100 && x.host.querySelector(selector) === null; i++) await x.settle()
 }
 
+/** A name from a gist sits in a bidi isolate (U+2068 … U+2069, YAZ-5256): the tests read the words without it. */
+const plain = (text: string | null | undefined) => (text ?? '').replace(/[\u2068\u2069]/g, '')
+const named = (el: Element) =>
+  plain(el.getAttribute('aria-label') ?? el.textContent)
+    .replace(/\s+/g, ' ')
+    .trim()
+const btn = (x: Harness, name: string | RegExp) =>
+  ([...x.host.querySelectorAll('button, a')].find((el) => (typeof name === 'string' ? named(el) === name : name.test(named(el)))) as
+    | HTMLButtonElement
+    | undefined) ?? null
+/** Taps the button whose words (without the isolates) are `name`. */
+const tap = async (x: Harness, name: string | RegExp) => {
+  const el = btn(x, name)
+  if (el === null) throw new Error(`No button "${name}" on: ${plain(x.text())}`)
+  await act(async () => el.click())
+  await x.settle()
+}
+
 let h: Harness | null = null
 afterEach(() => {
   h?.unmount()
@@ -64,21 +82,21 @@ const words = (el: Element): string => {
   for (let n = walk.nextNode(); n !== null; n = walk.nextNode()) out.push(n.textContent ?? '')
   return out.join(' ').replace(/\s+/g, ' ').trim()
 }
-const rows = (x: Harness) => [...x.host.querySelectorAll('.fr-row')].map(words)
-const labels = (x: Harness) => [...x.host.querySelectorAll('.fr-row__tap')].map((b) => b.getAttribute('aria-label'))
-const statusText = (x: Harness) => [...x.host.querySelectorAll('[role="status"]')].map((e) => e.textContent).join(' | ')
+const rows = (x: Harness) => [...x.host.querySelectorAll('.fr-row')].map((r) => plain(words(r)))
+const labels = (x: Harness) => [...x.host.querySelectorAll('.fr-row__tap')].map((b) => plain(b.getAttribute('aria-label')))
+const statusText = (x: Harness) => plain([...x.host.querySelectorAll('[role="status"]')].map((e) => e.textContent).join(' | '))
 
 describe('the Friends tab (decisions 21, 24, 25)', () => {
   it('opens on Friends: rows sorted by cards, my own row bold, the mark, minutes, "cheered you · 2h ago"', async () => {
     ;({ h } = await open(demoBoard(NOW)))
-    expect(h.host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Friends')
+    expect(plain(h.host.querySelector('[role="tab"][aria-selected="true"]')?.textContent)).toBe('Friends')
     expect(rows(h)).toEqual([
       '1 S Sam cheered you · 2h ago ✓ 44 cards 66 min',
       '2 D You ◐ 31 cards 55 min',
       '3 P Priya 43m ago ◐ 12 cards 49 min',
       '4 L Leo no update yet ○ 0 cards 0 min',
     ])
-    expect(h.host.querySelector('.fr-name--you')?.textContent).toBe('You')
+    expect(plain(h.host.querySelector('.fr-name--you')?.textContent)).toBe('You')
     // VoiceOver reads the mark as words, with the rank and the numbers.
     expect(labels(h)[0]).toBe('Number 1, Sam, 44 cards, 66 minutes, Finished the due cards, cheered you, 2h ago')
     expect(labels(h)[1]).toBe('Number 2, You, 31 cards, 55 minutes, Started, due cards left')
@@ -87,12 +105,12 @@ describe('the Friends tab (decisions 21, 24, 25)', () => {
 
   it('Today, Yesterday, Week and Month change the numbers; Week and Month have no mark', async () => {
     ;({ h } = await open(demoBoard(NOW)))
-    await h.click('Yesterday')
+    await tap(h, 'Yesterday')
     expect(rows(h)[0]).toBe('1 P Priya ✓ 51 cards 0 min')
-    expect(h.host.querySelector('[aria-pressed="true"]')?.textContent).toBe('Yesterday')
-    await h.click('Week')
+    expect(plain(h.host.querySelector('[aria-pressed="true"]')?.textContent)).toBe('Yesterday')
+    await tap(h, 'Week')
     expect(h.host.querySelectorAll('.fr-mark')).toHaveLength(0)
-    await h.click('Month')
+    await tap(h, 'Month')
     expect(h.host.querySelectorAll('.fr-mark')).toHaveLength(0)
   })
 
@@ -112,7 +130,7 @@ describe('the Friends tab (decisions 21, 24, 25)', () => {
         [sam.theirs]: { at: sam.mark!.at, seenAt: NOW - 2 * 86_400_000 },
       },
     }))
-    expect(h.text()).not.toContain('cheered you')
+    expect(plain(h.text())).not.toContain('cheered you')
     h.unmount()
     const old = {
       ...board,
@@ -127,15 +145,15 @@ describe('the Friends tab (decisions 21, 24, 25)', () => {
       ],
     }
     ;({ h } = await open(old))
-    expect(h.text()).toContain('nudged you')
+    expect(plain(h.text())).toContain('nudged you')
   })
 
   it('no friend yet: the two steps and what a friend sees', async () => {
     ;({ h } = await open({ ...demoBoard(NOW), friends: [] }))
-    expect(h.text()).toContain('Add a friend in two steps:')
-    expect(h.text()).toContain('Share your link with your friend.')
-    expect(h.text()).toContain('Paste the link that your friend sends you.')
-    expect(h.text()).toContain('Never your cards or your pages.')
+    expect(plain(h.text())).toContain('Add a friend in two steps:')
+    expect(plain(h.text())).toContain('Share your link with your friend.')
+    expect(plain(h.text())).toContain('Paste the link that your friend sends you.')
+    expect(plain(h.text())).toContain('Never your cards or your pages.')
   })
 
   it('"Waiting…", "No longer shares with you", a newer app, a file that cannot be read', async () => {
@@ -174,12 +192,12 @@ describe('the Friends tab (decisions 21, 24, 25)', () => {
     ])
     expect(h.host.querySelector('.fr-row--gone')?.textContent).toContain('Ben')
     // Remove asks first, in plain words; Cancel has the focus and changes nothing.
-    await h.click('Remove')
-    expect(h.host.querySelector('[role="alertdialog"]')?.textContent).toContain('Remove Ben? They no longer share with you.')
-    expect(document.activeElement?.textContent).toBe('Cancel')
-    await h.click('Cancel')
+    await tap(h, 'Remove')
+    expect(plain(h.host.querySelector('[role="alertdialog"]')?.textContent)).toContain('Remove Ben? They no longer share with you.')
+    expect(plain(document.activeElement?.textContent)).toBe('Cancel')
+    await tap(h, 'Cancel')
     expect(s.calls.remove).toEqual([])
-    await h.click('Remove')
+    await tap(h, 'Remove')
     await act(async () => (h!.host.querySelector('.btn--danger') as HTMLButtonElement).click())
     await h.settle()
     expect(s.calls.remove).toEqual([board.friends[1].mine])
@@ -187,30 +205,30 @@ describe('the Friends tab (decisions 21, 24, 25)', () => {
 
   it('the list needs repair; no Gists permission; a newer app; no signal with nothing read', async () => {
     ;({ h } = await open({ kind: 'needs-repair' }))
-    expect(h.text()).toContain(LIST_NEEDS_REPAIR)
+    expect(plain(h.text())).toContain(LIST_NEEDS_REPAIR)
     h.unmount()
     ;({ h } = await open({ kind: 'no-gists' }))
-    expect(h.text()).toContain('Friends needs the Gists permission on your token.')
-    expect(h.button('How to make a token')).not.toBeNull()
+    expect(plain(h.text())).toContain('Friends needs the Gists permission on your token.')
+    expect(btn(h, 'How to make a token')).not.toBeNull()
     h.unmount()
     ;({ h } = await open({ kind: 'newer-app' }))
-    expect(h.text()).toContain('Update this app')
+    expect(plain(h.text())).toContain('Update this app')
     h.unmount()
     ;({ h } = await open({ kind: 'offline' }))
-    expect(h.text()).toContain('No connection. Your friends show when you are online.')
+    expect(plain(h.text())).toContain('No connection. Your friends show when you are online.')
   })
 
   it('no signal: the last numbers, each with "updated … ago"', async () => {
     ;({ h } = await open(demoBoard(NOW, { offline: true })))
-    expect(h.text()).toContain('No connection. These are the last numbers the app read.')
+    expect(plain(h.text())).toContain('No connection. These are the last numbers the app read.')
     expect(rows(h)[0]).toContain('2h ago')
   })
 
   it('the wrong setup: vaults on two GitHub accounts (round 13, item 4)', async () => {
     ;({ h } = await open(demoBoard(NOW), { logins: ['demo', 'work'] }))
-    expect(h.text()).toContain('Your vaults are on two GitHub accounts. Friends use @demo.')
-    await h.click('Change')
-    expect(h.host.querySelector('.topbar__title')?.textContent).toBe('Settings')
+    expect(plain(h.text())).toContain('Your vaults are on two GitHub accounts. Friends use @demo.')
+    await tap(h, 'Change')
+    expect(plain(h.host.querySelector('.topbar__title')?.textContent)).toBe('Settings')
   })
 
   it('a hostile name is text: no HTML, bounded, no bidi trick; avatars come only from GitHub', async () => {
@@ -226,12 +244,12 @@ describe('the Friends tab (decisions 21, 24, 25)', () => {
     ;({ h } = await open(board))
     expect(h.host.querySelectorAll('img')).toHaveLength(1)
     expect(h.host.querySelector('img')?.getAttribute('src')).toBe(DEMO_AVATAR)
-    expect(h.text()).toContain(evil)
+    expect(plain(h.text())).toContain(evil)
     expect((window as { hacked?: number }).hacked).toBeUndefined()
     // A picture that fails: the plain avatar (the first letter).
     await act(async () => h!.host.querySelector('img')!.dispatchEvent(new Event('error')))
     expect(h.host.querySelectorAll('img')).toHaveLength(0)
-    expect(h.text()).toContain('😀')
+    expect(plain(h.text())).toContain('😀')
   })
 })
 
@@ -248,12 +266,12 @@ describe('"+ Add" (decision 20)', () => {
     })
     let s: FakeService
     ;({ h, s } = await open(demoBoard(NOW)))
-    await h.click('Add a friend or a group')
-    expect(h.button('Share my link')).not.toBeNull()
-    expect(h.button("Paste a friend's link")).not.toBeNull()
-    expect(h.button('New group')).not.toBeNull()
-    await h.click('Share my link')
-    expect(h.text()).toContain('Friends see your review numbers only')
+    await tap(h, 'Add a friend or a group')
+    expect(btn(h, 'Share my link')).not.toBeNull()
+    expect(btn(h, "Paste a friend's link")).not.toBeNull()
+    expect(btn(h, 'New group')).not.toBeNull()
+    await tap(h, 'Share my link')
+    expect(plain(h.text())).toContain('Friends see your review numbers only')
     const go = [...h.host.querySelectorAll('.fr-panel button')].find((b) => b.textContent === 'Share my link') as HTMLButtonElement
     await act(async () => {
       go.click()
@@ -282,8 +300,8 @@ describe('"+ Add" (decision 20)', () => {
       },
     })
     ;({ h } = await open(demoBoard(NOW)))
-    await h.click('Add a friend or a group')
-    await h.click('Share my link')
+    await tap(h, 'Add a friend or a group')
+    await tap(h, 'Share my link')
     await act(async () => ([...h!.host.querySelectorAll('.fr-panel button')].find((b) => b.textContent === 'Share my link') as HTMLButtonElement).click())
     await h.settle()
     expect(copied).toHaveLength(1)
@@ -308,9 +326,9 @@ describe('"+ Add" (decision 20)', () => {
     })
     let s: FakeService
     ;({ h, s } = await open(demoBoard(NOW)))
-    await h.click('Add a friend or a group')
-    await h.click("Paste a friend's link")
-    await h.click('Paste from the clipboard')
+    await tap(h, 'Add a friend or a group')
+    await tap(h, "Paste a friend's link")
+    await tap(h, 'Paste from the clipboard')
     expect(statusText(h)).toContain('Paste the link in the field below.')
     expect(document.activeElement?.getAttribute('name')).toBe('friend-link')
     const back = 'https://notecards.yaseenarshad.com/friend#' + 'd'.repeat(32)
@@ -322,17 +340,17 @@ describe('"+ Add" (decision 20)', () => {
       handle: null as never,
     }
     await h.type('Or paste the link here', 'https://notecards.yaseenarshad.com/friend#' + 'e'.repeat(32))
-    await h.click('Add')
+    await tap(h, 'Add')
     expect(statusText(h)).toContain('Sam is added. Send them your link, so they can add you too.')
-    await h.click('Send my link back')
+    await tap(h, 'Send my link back')
     expect(shared.at(-1)?.url).toBe(back)
   })
 
   it("a group link and a join request in the same paste box use 4E3's words", async () => {
     let s: FakeService
     ;({ h, s } = await open(demoBoard(NOW)))
-    await h.click('Add a friend or a group')
-    await h.click("Paste a friend's link")
+    await tap(h, 'Add a friend or a group')
+    await tap(h, "Paste a friend's link")
     const joined = {
       kind: 'joined' as const,
       name: 'Study group',
@@ -342,9 +360,9 @@ describe('"+ Add" (decision 20)', () => {
     }
     s.pasteAnswer = joined
     await h.type('Or paste the link here', 'https://notecards.yaseenarshad.com/group#' + 'a'.repeat(32))
-    await h.click('Add')
+    await tap(h, 'Add')
     expect(statusText(h)).toContain(joinMessage(joined))
-    expect(h.button('Send my join link to the admin')).not.toBeNull()
+    expect(btn(h, 'Send my join link to the admin')).not.toBeNull()
     s.pasteAnswer = {
       kind: 'request',
       group: 'a'.repeat(32),
@@ -353,9 +371,9 @@ describe('"+ Add" (decision 20)', () => {
       login: 'mina',
       name: 'Mina',
     }
-    await h.click('Add')
+    await tap(h, 'Add')
     expect(statusText(h)).toContain('Mina asks to join Study group.')
-    await h.click('Add Mina')
+    await tap(h, 'Add Mina')
     expect(s.calls.groups.some((c) => c.startsWith('add:'))).toBe(true)
     expect(statusText(h)).toContain('Mina is in Study group now.')
   })
@@ -367,10 +385,10 @@ describe('"+ Add" (decision 20)', () => {
     })
     let s: FakeService
     ;({ h, s } = await open(demoBoard(NOW)))
-    await h.click('Add a friend or a group')
-    await h.click('New group')
+    await tap(h, 'Add a friend or a group')
+    await tap(h, 'New group')
     await h.type('Group name', 'Study group')
-    await h.click('Make the group')
+    await tap(h, 'Make the group')
     expect(s.calls.groups).toContain('create:Study group')
     expect(shared.at(-1)?.url).toContain('/group#')
     expect(statusText(h)).toContain('Group made.')
@@ -383,11 +401,11 @@ describe('groups (decision 18; round 10, item 13; round 14)', () => {
     const group = demoGroup(NOW)
     let s: FakeService
     ;({ h, s } = await open(base({ ...demoBoard(NOW), groups: [group] })))
-    await h.click('Study group')
-    expect(h.text()).toContain('Group streak: 4 days that everyone finished')
+    await tap(h, 'Study group')
+    expect(plain(h.text())).toContain('Group streak: 4 days that everyone finished')
     expect(rows(h).map((r) => r.split(' ').slice(0, 3).join(' '))).toEqual(['1 S Sam', '2 M Mina', '3 D You'])
-    await h.click('Delete group')
-    expect(h.host.querySelector('[role="alertdialog"]')?.textContent).toContain('Delete Study group? The group is gone for each person in it.')
+    await tap(h, 'Delete group')
+    expect(plain(h.host.querySelector('[role="alertdialog"]')?.textContent)).toContain('Delete Study group? The group is gone for each person in it.')
     await act(async () => (h!.host.querySelector('[role="alertdialog"] .btn--danger') as HTMLButtonElement).click())
     await h.settle()
     expect(s.calls.groups).toContain(`delete:${group.group}`)
@@ -397,9 +415,9 @@ describe('groups (decision 18; round 10, item 13; round 14)', () => {
     const member = demoGroup(NOW, { iAmAdmin: false, admin: 'mina' })
     let s: FakeService
     ;({ h, s } = await open({ ...demoBoard(NOW), groups: [member] }))
-    await h.click('Study group')
-    await h.click('Leave group')
-    expect(h.host.querySelector('[role="alertdialog"]')?.textContent).toContain('Leave Study group? The others stop seeing your numbers.')
+    await tap(h, 'Study group')
+    await tap(h, 'Leave group')
+    expect(plain(h.host.querySelector('[role="alertdialog"]')?.textContent)).toContain('Leave Study group? The others stop seeing your numbers.')
     await act(async () => (h!.host.querySelector('[role="alertdialog"] .btn--danger') as HTMLButtonElement).click())
     await h.settle()
     expect(s.calls.groups).toContain(`leave:${member.group}`)
@@ -412,10 +430,10 @@ describe('groups (decision 18; round 10, item 13; round 14)', () => {
       label: 'Left the group',
     }
     ;({ h, s } = await open({ ...demoBoard(NOW), groups: [admin] }))
-    await h.click('Study group')
-    expect(h.text()).toContain('Left the group')
-    await h.click('Remove')
-    expect(h.host.querySelector('[role="alertdialog"]')?.textContent).toContain('Remove Mina from Study group?')
+    await tap(h, 'Study group')
+    expect(plain(h.text())).toContain('Left the group')
+    await tap(h, 'Remove')
+    expect(plain(h.host.querySelector('[role="alertdialog"]')?.textContent)).toContain('Remove Mina from Study group?')
     await act(async () => (h!.host.querySelector('[role="alertdialog"] .btn--danger') as HTMLButtonElement).click())
     await h.settle()
     expect(s.calls.groups).toContain(`remove:${admin.group},${admin.members[1].pointer}`)
@@ -438,34 +456,34 @@ describe('groups (decision 18; round 10, item 13; round 14)', () => {
     ]
     ;({ h } = await open({ ...demoBoard(NOW), groups: views }))
     for (const v of views) {
-      await h.click(v.name)
-      expect(h.text()).toContain(groupViewMessage(v)!)
+      await tap(h, v.name)
+      expect(plain(h.text())).toContain(groupViewMessage(v)!)
     }
-    await h.click('G1')
-    expect(h.button('Send my join link to the admin')).not.toBeNull()
+    await tap(h, 'G1')
+    expect(btn(h, 'Send my join link to the admin')).not.toBeNull()
   })
 })
 
 describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', () => {
   it('a tap on a friend opens it: the numbers side by side, their vault, the last 7 days', async () => {
     ;({ h } = await open(demoBoard(NOW)))
-    await h.click(/^Number 1, Sam/)
+    await tap(h, /^Number 1, Sam/)
     await until(h, '.fr-week')
     await h.settle()
-    expect(h.host.querySelector('.topbar__title')?.textContent).toBe('Sam')
-    const lines = [...h.host.querySelectorAll('li.fr-vs')].map((l) => l.getAttribute('aria-label'))
+    expect(plain(h.host.querySelector('.topbar__title')?.textContent)).toBe('Sam')
+    const lines = [...h.host.querySelectorAll('li.fr-vs')].map((l) => plain(l.getAttribute('aria-label')))
     expect(lines.slice(0, 3)).toEqual(['cards today: you 31, Sam 44', 'due cards: you 22, Sam 30', 'new cards: you 9, Sam 14'])
     expect(lines).toContain('remembered: you 91%, Sam 92%')
     expect(lines).toContain('days reviewed of 30: you 7, Sam 7')
-    expect(h.text()).toContain('Sam cheered you')
+    expect(plain(h.text())).toContain('Sam cheered you')
     // You: ✓ on -6 -5 -3 -2 -1; Sam: ✓ on -6 -5 -4 -2 -1 0 → both on -6 -5 -2 -1.
-    expect(h.text()).toContain('You both won 4 days of 7.')
+    expect(plain(h.text())).toContain('You both won 4 days of 7.')
     expect(h.host.querySelectorAll('.fr-day--both')).toHaveLength(4)
-    expect(h.host.querySelector('.fr-week li')?.getAttribute('aria-label')).toMatch(/: you finished, Sam finished\. You both win\.$/)
+    expect(plain(h.host.querySelector('.fr-week li')?.getAttribute('aria-label'))).toMatch(/: you finished, Sam finished\. You both win\.$/)
     // The dot stays in the top bar (4D), with the gear.
-    expect(h.button('Settings')).not.toBeNull()
-    await h.click('‹ Back')
-    expect(h.host.querySelector('.topbar__title')?.textContent).not.toBe('Sam')
+    expect(btn(h, 'Settings')).not.toBeNull()
+    await tap(h, '‹ Back')
+    expect(plain(h.host.querySelector('.topbar__title')?.textContent)).not.toBe('Sam')
   })
 
   it('Cheer: one tap, one send (a double tap sends once), then an honest "sent"', async () => {
@@ -481,14 +499,14 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
               mark: { kind, at: new Date(NOW).toISOString() },
             })),
       )
-    await h.click(/^Number 1, Sam/)
+    await tap(h, /^Number 1, Sam/)
     await until(h, '.fr-week')
-    const cheer = h.button('Cheer')!
+    const cheer = btn(h, 'Cheer')!
     await act(async () => {
       cheer.click()
       cheer.click()
     })
-    expect(h.button('Sending…')).not.toBeNull()
+    expect(btn(h, 'Sending…')).not.toBeNull()
     await act(async () => release())
     await h.settle()
     expect(s.calls.mark).toHaveLength(1)
@@ -504,9 +522,9 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
       why: 'budget',
       retryAt: NOW + 10 * 60_000,
     })
-    await h.click(/^Number 1, Sam/)
+    await tap(h, /^Number 1, Sam/)
     await until(h, '.fr-week')
-    await h.click('Nudge')
+    await tap(h, 'Nudge')
     expect(statusText(h)).toMatch(/GitHub lets the app write only so often\. Your nudge goes at .+\./)
     s.markAnswer = async (_m, kind) => ({
       kind: 'waiting',
@@ -514,7 +532,7 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
       why: 'offline',
       retryAt: null,
     })
-    await h.click('Cheer')
+    await tap(h, 'Cheer')
     expect(statusText(h)).toContain('No connection. Your cheer goes when you are online.')
   })
 
@@ -522,12 +540,12 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
     let s: FakeService
     ;({ h, s } = await open(demoBoard(NOW)))
     s.markAnswer = async (_m, kind) => ({ kind: 'already', mark: { kind, at: new Date(NOW).toISOString() } })
-    await h.click(/^Number 1, Sam/)
+    await tap(h, /^Number 1, Sam/)
     await until(h, '.fr-week')
-    await h.click('Cheer')
+    await tap(h, 'Cheer')
     expect(statusText(h)).toContain('You cheered Sam today. One cheer a day.')
     s.markAnswer = async (_m, kind) => ({ kind: 'waiting', mark: { kind, at: '' }, why: 'marks-limit', retryAt: NOW + 600_000 })
-    await h.click('Nudge')
+    await tap(h, 'Nudge')
     expect(statusText(h)).toMatch(/Cheers and nudges go out 5 an hour\. Your nudge goes at .+\./)
   })
 
@@ -545,7 +563,7 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
         },
       },
     }))
-    await h.click(/^Number 1, Sam/)
+    await tap(h, /^Number 1, Sam/)
     await until(h, '.fr-week')
     expect(statusText(h)).toMatch(/Your cheer goes at/)
   })
@@ -554,10 +572,10 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
     const board = demoBoard(NOW)
     let s: FakeService
     ;({ h, s } = await open(board))
-    await h.click(/^Number 1, Sam/)
+    await tap(h, /^Number 1, Sam/)
     await until(h, '.fr-week')
-    await h.click('Remove friend')
-    expect(h.host.querySelector('[role="alertdialog"]')?.textContent).toContain('Remove Sam? Sam stops seeing your numbers, and you stop seeing theirs.')
+    await tap(h, 'Remove friend')
+    expect(plain(h.host.querySelector('[role="alertdialog"]')?.textContent)).toContain('Remove Sam? Sam stops seeing your numbers, and you stop seeing theirs.')
     await act(async () => (h!.host.querySelector('[role="alertdialog"] .btn--danger') as HTMLButtonElement).click())
     await h.settle()
     expect(s.calls.remove).toEqual([board.friends[0].mine])
@@ -566,11 +584,11 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
   it('a member of a group: no Cheer or Nudge; the admin can remove them', async () => {
     const group = demoGroup(NOW)
     ;({ h } = await open({ ...demoBoard(NOW), groups: [group] }))
-    await h.click('Study group')
-    await h.click(/^Number 2, Mina/)
+    await tap(h, 'Study group')
+    await tap(h, /^Number 2, Mina/)
     await until(h, '.fr-week')
-    expect(h.host.querySelector('.topbar__title')?.textContent).toBe('Mina')
-    expect(h.button('Cheer')).toBeNull()
-    expect(h.button('Remove from group')).not.toBeNull()
+    expect(plain(h.host.querySelector('.topbar__title')?.textContent)).toBe('Mina')
+    expect(btn(h, 'Cheer')).toBeNull()
+    expect(btn(h, 'Remove from group')).not.toBeNull()
   })
 })
