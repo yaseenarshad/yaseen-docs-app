@@ -1,6 +1,7 @@
 import { mkdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { cardTitlesMoved } from '@shared/cardTitleSweep'
+import { cardFilePropertiesMoved } from '@shared/cardPropertySweep'
 import { isCardFileContent } from '@shared/cardFileFormat'
 import { isSyncConflictCopy } from '@shared/syncConflict'
 import { cardIdOf, pageCards, rewritePageCards, settleCardCopy, withCardId, withCardOff, type CardLine } from '@shared/cardLine'
@@ -236,7 +237,10 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
   /** A page the index could not read (its YAML is invalid, or it is over the size limit) takes no id. */
   const takes = (r: IndexRecord): boolean => r.frontmatterError === undefined && r.size <= MAX_FILE_BYTES
   // Each card's title onto its card line, one time for the vault (YAZ-5308), before any number.
-  await moveCardTitles(root, await ownOnly([...records.values()].filter((r) => (r.cards?.length ?? 0) > 0 && takes(r) && !isFolderSettingsPath(r.path)), (r) => mine(r.path)))
+  const withCards = await ownOnly([...records.values()].filter((r) => (r.cards?.length ?? 0) > 0 && takes(r) && !isFolderSettingsPath(r.path)), (r) => mine(r.path))
+  await moveOnce(root, CARD_TITLES_MOVED, withCards, cardTitlesMoved)
+  // YAZ-5384: after the titles, a card file's own properties onto its card line (option A).
+  await moveOnce(root, CARD_PROPERTIES_MOVED, withCards.filter((r) => r.kind === 'card'), cardFilePropertiesMoved)
   /**
    * The sweep's one write of an id: `file` takes `to` while it still holds `held` (`giveId`). False
    * when it took none: it changed under the sweep, or cannot be written — and one that cannot be
@@ -381,6 +385,8 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
 
 /** The mark that a vault's card titles are on their card lines (YAZ-5308): in its config folder, under `once/` so the config watcher wakes for nothing. */
 export const CARD_TITLES_MOVED = path.join(VAULT_CONFIG_DIR, 'once', 'card-titles.json')
+/** The mark that a vault's card files have their own properties on their card lines (YAZ-5384), beside the titles' mark. */
+export const CARD_PROPERTIES_MOVED = path.join(VAULT_CONFIG_DIR, 'once', 'card-properties.json')
 
 /**
  * THE ONE-TIME MOVE OF CARD TITLES (YAZ-5308, decision D, `shared/cardTitleSweep.ts`): each file in `files` (every page
@@ -390,15 +396,18 @@ export const CARD_TITLES_MOVED = path.join(VAULT_CONFIG_DIR, 'once', 'card-title
  * moves a title again: a card written after it with a plain first line keeps that line as its question. A file that
  * changed meanwhile, or could not be written, leaves the mark off, and the next pass tries again (a title already on
  * its line is never moved twice).
+ *
+ * THE ONE-TIME MOVE OF CARD FILES' PROPERTIES (YAZ-5384, `shared/cardPropertySweep.ts`) runs the same way after it,
+ * on the card files alone, with its own mark (`CARD_PROPERTIES_MOVED`): `change` is the move, null for no change.
  */
-async function moveCardTitles(root: string, files: readonly IndexRecord[]): Promise<void> {
-  const mark = path.join(root, CARD_TITLES_MOVED)
+async function moveOnce(root: string, once: string, files: readonly IndexRecord[], change: (content: string) => string | null): Promise<void> {
+  const mark = path.join(root, once)
   if (await stat(mark).then(() => true, () => false)) return
   let done = true
   for (const r of files) {
     await inTurn(async () => {
       const { content, mtime } = await readPage(r.path)
-      const next = cardTitlesMoved(content)
+      const next = change(content)
       if (next !== null) await writeFile({ path: r.path, content: next, ...(mtime !== undefined && { expectedMtime: mtime }) })
     }).catch(() => {
       done = false

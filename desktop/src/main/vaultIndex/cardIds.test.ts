@@ -11,7 +11,7 @@ import type { IndexRecord } from '@shared/types'
 import { makeFirstMac, removeVault, sleep } from '../fs/testFixture'
 import { subscribe } from '../fs/watchers'
 import { writeConfig } from '../vaultConfig'
-import { CARD_TITLES_MOVED, _swept, giveCardIds, sweepIds } from './idSweep'
+import { CARD_PROPERTIES_MOVED, CARD_TITLES_MOVED, _swept, giveCardIds, sweepIds } from './idSweep'
 import { _evictAll, getIndex } from './index'
 import { extractLinks, extractTags, scanFile } from './scan'
 
@@ -139,20 +139,34 @@ describe('card files (YAZ-5037): the card\'s ID is the file\'s ID', () => {
 })
 
 describe('the one-time move of each card`s title onto its card line (YAZ-5308, decision D)', () => {
-  it('a card file`s `title` and a card in a page`s plain first line move onto their card lines; IDs, histories and the rest stay', async () => {
+  it('a card file`s `title` and a card in a page`s plain first line move onto their card lines; YAZ-5384: then the card file`s own properties; IDs, histories and the rest stay', async () => {
     const records = await vault({
       'Cards/capital-of-france-yaz-196.md': `---\nkind: card\ntitle: Capital of France\ntags: [geo]\n---\n${card('The capital is {{Paris}}.', `YAZ-196, ${HISTORY}`)}`,
       'page.md': `---\nid: YAZ-3\n---\n# Rivers\n\n${card('Longest river\n\nWhich is it?\n---\nThe {{Nile}}.', `YAZ-4, ${HISTORY}`)}\n${card('###### {{Capital}}\n\nOf {{Spain}}?', 'YAZ-5')}`,
     })
     const before = [await cardsIn('Cards/capital-of-france-yaz-196.md'), await cardsIn('page.md')]
     await sweepIds(root, records, [...records.values()], (p) => records.get(p)?.id)
-    expect(await read('Cards/capital-of-france-yaz-196.md')).toBe(`---\nkind: card\ntags: [geo]\n---\n${card('The capital is {{Paris}}.', `YAZ-196, title "Capital of France", ${HISTORY}`)}`)
+    expect(await read('Cards/capital-of-france-yaz-196.md')).toBe(`---\nkind: card\n---\n${card('The capital is {{Paris}}.', `YAZ-196, title "Capital of France", tags ["geo"], ${HISTORY}`)}`)
     // A first line with a hidden word is the question: it stays, and that card has no title.
     expect(await read('page.md')).toBe(`---\nid: YAZ-3\n---\n# Rivers\n\n${card('Which is it?\n---\nThe {{Nile}}.', `YAZ-4, title "Longest river", ${HISTORY}`)}\n${card('###### {{Capital}}\n\nOf {{Spain}}?', 'YAZ-5')}`)
-    expect([await cardsIn('Cards/capital-of-france-yaz-196.md'), await cardsIn('page.md')]).toEqual(before)
+    // The same cards, with the card file's card now holding its own properties (YAZ-5384).
+    expect([await cardsIn('Cards/capital-of-france-yaz-196.md'), await cardsIn('page.md')]).toEqual([[{ ...before[0][0], properties: { tags: ['geo'] } }], before[1]])
     const r = await rescan(records, 'Cards/capital-of-france-yaz-196.md', await read('Cards/capital-of-france-yaz-196.md'))
     expect([r.title, r.cards?.[0].title]).toEqual(['Capital of France', 'Capital of France'])
     expect(await readFile(at(CARD_TITLES_MOVED), 'utf8')).toMatch(/"moved"/)
+    expect(await readFile(at(CARD_PROPERTIES_MOVED), 'utf8')).toMatch(/"moved"/)
+    // A page's own properties are the page's: they never move.
+    expect(await read('page.md')).toMatch(/^---\nid: YAZ-3\n---\n/)
+  })
+
+  it('YAZ-5384 one time: once the vault has its mark, a card file`s front matter is never read for it again', async () => {
+    const records = await vault({ 'Cards/a.md': `---\nkind: card\nreadonly: true\nlevel: A2\n---\n${card('Q', 'YAZ-7, title "A"')}` })
+    await sweepIds(root, records, [...records.values()], (p) => records.get(p)?.id)
+    expect(await read('Cards/a.md')).toBe(`---\nkind: card\nreadonly: true\n---\n${card('Q', 'YAZ-7, title "A", level "A2"')}`)
+    const later = `---\nkind: card\nlevel: B1\n---\n${card('Q', 'YAZ-7, title "A"')}`
+    await rescan(records, 'Cards/a.md', later)
+    await sweepIds(root, records, [...records.values()], (p) => records.get(p)?.id)
+    expect(await read('Cards/a.md')).toBe(later)
   })
 
   it('one time: once the vault has its mark, a card written after with a plain first line keeps it as its question', async () => {
