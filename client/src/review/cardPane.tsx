@@ -6,7 +6,7 @@
  * bytes, by the card's ID), the ⋯ rows of the card, E, and the read again on each new index version of the file.
  * The heads are each one's own: the window's speaks of the page the card is on, the tab IS the card's file.
  */
-import { cardWithTitle } from '@shared/cardText'
+import { cardTitleOut, cardWithTitle } from '@shared/cardText'
 import { previewCard } from '../editor/card/cardOpen'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -142,17 +142,22 @@ interface CardPaneProps {
   onDeleteReview?: (review: CardReview) => void
   /** "Embedded in (n)" after the mentions (a card file's tab). */
   embeds?: boolean
+  /** A card file's title door (its tab's `onRetitle`): Edit card's Title field renames the card file (YAZ-5164 part 3). */
+  onRetitle?: (title: string) => void
 }
 
 /** The card's body: the card or its editor, its Reviews strip, the facts strip, "Linked mentions" and, in a tab, "Embedded in". */
-export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false }: CardPaneProps) {
+export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false, onRetitle }: CardPaneProps) {
+  // The head shows the title; the card never repeats it (YAZ-5164 part 3): a card in a page without its title line.
+  const body = card.fileTitle === undefined ? cardTitleOut(card.text).text : card.text
+  const fileTitle = card.fileTitle === undefined || onRetitle === undefined ? undefined : { value: card.fileTitle, onRetitle }
   return (
     <>
       {editing ? (
-        <CardPaneEditor key={`${card.index}`} text={card.text} path={path} vault={vault} onDone={onEditDone} select={select} />
+        <CardPaneEditor key={`${card.index}`} text={card.text} path={path} vault={vault} onDone={onEditDone} select={select} fileTitle={fileTitle} />
       ) : (
         <div className="card card-screen">
-          <CardBody text={card.text} path={path} vault={vault} doors={doors} />
+          <CardBody text={body} path={path} vault={vault} doors={doors} />
         </div>
       )}
       {/* YAZ-5105 round 2: the Reviews strip right under the card, as Mochi's; then the card window's facts strip. */}
@@ -173,15 +178,17 @@ const CARD_EDIT_FEATURES = { ...features, [CrepeFeature.BlockEdit]: false, [Crep
  * Made once per edit: the text it starts from is the card's when Edit card began, and a read again under it (an
  * outside write) does not touch it.
  */
-function CardPaneEditor({ text, path, vault, onDone, select }: { text: string; path: string; vault: ExploreVault; onDone: (text: string) => void; select?: { from: number; to: number } }) {
+function CardPaneEditor({ text, path, vault, onDone, select, fileTitle }: { text: string; path: string; vault: ExploreVault; onDone: (text: string) => void; select?: { from: number; to: number }; fileTitle?: { value: string; onRetitle: (title: string) => void } }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const doneRef = useRef(onDone)
   doneRef.current = onDone
-  const start = useRef({ text, path, vault, select })
+  const retitleRef = useRef(fileTitle?.onRetitle)
+  retitleRef.current = fileTitle?.onRetitle
+  const start = useRef({ text, path, vault, select, title: fileTitle?.value })
   useEffect(() => {
     const host = hostRef.current
     if (host === null) return
-    const { text, path, vault, select } = start.current
+    const { text, path, vault, select, title } = start.current
     const el = document.createElement('div')
     el.className = 'editor-instance'
     host.appendChild(el)
@@ -192,7 +199,7 @@ function CardPaneEditor({ text, path, vault, onDone, select }: { text: string; p
       wikilinks: vault.wikilinks,
       viewOnlyLinks: vault.viewOnlyLinks,
       image: { root: vault.root, pagePath: path },
-      cards: { path, onEditDone: (t) => doneRef.current(t) },
+      cards: { path, onEditDone: (t) => doneRef.current(t), ...(title !== undefined && { fileTitle: { value: title, onRetitle: (t: string) => retitleRef.current?.(t) } }) },
     })
     let live = true
     void crepe.create().then(() => {

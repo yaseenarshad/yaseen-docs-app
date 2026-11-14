@@ -88,7 +88,9 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
-import { cardSides, cardTitle } from '@shared/cardText'
+import { cardRetitled, cardSides, cardTitle } from '@shared/cardText'
+import { PageTitle } from '../editor/PageTitle'
+import { changeCardTextIn } from './cardFile'
 import { recordAt } from '../editor/card/embedCard'
 import type { GestureAction } from '@shared/keys'
 import type { CardRating } from '@shared/cardLine'
@@ -133,6 +135,8 @@ export interface CardInboxProps {
   /** A folder of the top row's card place (YAZ-5017 round 2): the vault's or a folder's page, in a tab. The page part opens as O does. */
   openPlace?: (path: string) => void
 }
+
+const NO_TITLES: ReadonlyMap<string, string> = new Map()
 
 /** The keys of a dialog, a sheet or a menu that is open: theirs, never the Inbox's. */
 const KEY_OWNERS = '[role="dialog"], [role="menu"], [role="listbox"]'
@@ -365,6 +369,12 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   const more = session.scope === 'vault' ? 0 : review.dueCount
   // The head's title (YAZ-5044): once the card is fully shown where it waits (`notitle`, or a hidden word in it).
   const headTitle = title.waits && !done ? '' : title.text
+  /** The head's rename (YAZ-5164 part 3): the card's first line in its page, one write; the Inbox reads the card again. */
+  const retitle = (path: string, id: string, text: string, next: string): void => {
+    const changed = cardRetitled(text, next)
+    if (changed === text) return
+    changeCardTextIn(path, id, changed, -1).catch((err: unknown) => onNotice(`Can't rename the card: ${err instanceof Error ? err.message : String(err)}`))
+  }
   const hints = cardInboxHints({ card: card !== null, cardFile, answering: done, canUndo: session.canUndo, moves: session.canBack || session.canNext, audio: text !== null && textHasAudio(cardSides(text).slice(0, step.sides).join('\n')), nextSide })
   /** The ⋯ row's actions (YAZ-5004): the hook's own, with their names and keys for the hover box. */
   const moreActions =
@@ -398,6 +408,12 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                       <button type="button" className="card-inbox__name card-inbox__name--link" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(card.path)}>
                         {headTitle}
                       </button>
+                    ) : card.page !== null && vaultOf(card.path).readOnly !== true ? (
+                      // A card in a page (YAZ-5164 part 3): the page title's own component, a click renames the card in its
+                      // page (its first line), as in the page's card head. In a Read only vault it shows only.
+                      <span className="card-inbox__name">
+                        <PageTitle path={card.path} titles={NO_TITLES} text={headTitle} onRetitle={(next) => retitle(card.path, card.id, card.page?.text ?? '', next)} />
+                      </span>
                     ) : (
                       <span className="card-inbox__name">{headTitle}</span>
                     )}

@@ -75,6 +75,8 @@ import { CARD_OPEN, landWhenShown, previewCard, takeCardLanding, watchCardLandin
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard, type CardLook } from './cardRender'
 import { mountCardEditor, type CardCrepe, type CardEditor } from './cardEditor'
 import { mountReviewsStrip, type ReviewsStripHandle } from './reviewsStrip'
+import { mountCardTitle, type CardTitleHandle } from './cardTitle'
+import { cardRetitled, cardTitleOut } from '@shared/cardText'
 import { tellReadOnlyEdit } from '../readOnlyEdit'
 import './card.css'
 
@@ -118,8 +120,16 @@ export interface CardHost {
   path: string
   /** The vault's ID door (`takePageId`, `views/scaffold.ts`): a new card takes its ID at once. Absent → the sweep gives it. */
   mintId?: (path: string) => Promise<string>
-  /** Done (its button, Esc or ⌘↵) with the card's text (YAZ-5003: the card window's Edit card saves it to the page). */
+  /**
+   * Done (its button, Esc or ⌘↵) with the card's text (YAZ-5003: the card window's Edit card saves it to the page). Set,
+   * the card is the card window's or a card file tab's (`review/cardPane.tsx`): their own head shows its title.
+   */
   onEditDone?: (text: string) => void
+  /**
+   * A CARD FILE's title (YAZ-5044: its `title`), for Edit card's Title field (YAZ-5164 part 3), and its rename on Done
+   * (the tab's title door). Absent: the card is in a page, and its title is its first line.
+   */
+  fileTitle?: { value: string; onRetitle: (title: string) => void }
   /** The convert actions of this page (YAZ-5037): absent → none (a preview, the card editor). */
   convert?: CardConvertDoor
 }
@@ -268,6 +278,8 @@ export class CardBlockView implements NodeView {
   private closeMenu: (() => void) | null = null
   /** The Reviews strip (YAZ-5105 round 4): made only for a card with reviews. */
   private strip: ReviewsStripHandle | null = null
+  /** The title in the head (YAZ-5164 part 3): the page title's component; none where the card window's own head shows it. */
+  private readonly title: CardTitleHandle | null
 
   constructor(
     private node: ProseNode,
@@ -293,7 +305,9 @@ export class CardBlockView implements NodeView {
     // Preview (YAZ-5152): in Edit card's head, beside Done — the card as the Inbox shows it, with what is typed.
     this.previewButton = button('card__preview', 'Preview card', 'Preview')
     this.more = button('card__more', 'Card menu', '⋯')
-    head.append(this.idButton, this.state, this.notitle, this.next, this.previewButton, this.editButton, this.more)
+    // The title after the ID (YAZ-5164 part 3): the head shows it, and the body never repeats it.
+    this.title = deps.host?.onEditDone === undefined ? mountCardTitle() : null
+    head.append(this.idButton, ...(this.title === null ? [] : [this.title.dom]), this.state, this.notitle, this.next, this.previewButton, this.editButton, this.more)
     this.body = document.createElement('div')
     this.body.className = 'card__body'
     this.dom.append(head, this.body)
@@ -357,9 +371,27 @@ export class CardBlockView implements NodeView {
     this.dom.classList.toggle('card--editing', this.editing)
     this.previewButton.hidden = !this.editing
     this.drawReviews()
+    // A card in a page: its title line in the head, the rest in the body (`cardTitleOut`); a first line that holds a
+    // hidden word is the card's question and stays in the body. A card file's card (its tab) holds no title.
+    const own = this.deps.host?.fileTitle === undefined ? cardTitleOut(text) : { title: this.deps.host.fileTitle.value, text }
+    this.drawTitle(own.title)
     if (this.editing || this.drawn === text) return
     this.drawn = text
-    this.body.replaceChildren(text.trim() === '' ? this.emptyHint() : renderCard(text, {}, this.deps.look()))
+    this.body.replaceChildren(text.trim() === '' ? this.emptyHint() : renderCard(own.text, {}, this.deps.look()))
+  }
+
+  /** The head's title (YAZ-5164 part 3); `now`: drawn at once, for a press about to click it. */
+  private drawTitle(title: string, now = false): void {
+    this.title?.render({ title, readOnly: !this.view.editable, onRetitle: (next) => this.retitle(next) }, now)
+  }
+
+  /**
+   * The head's rename (YAZ-5164 part 3): the card's first line (`cardRetitled`), ONE undo step. A page that cannot be
+   * edited never gets here: its title's click is an edit attempt (`PageTitle`), and the unlock runs the rename.
+   */
+  private retitle(title: string): void {
+    if (!this.view.editable) return
+    this.write(cardRetitled(this.node.textContent, title), true)
   }
 
   /** The key of this card's open state: its page and ID; null before it has both. */
@@ -455,7 +487,8 @@ export class CardBlockView implements NodeView {
     this.keyRow ??= cardKeyRow()
     this.dom.append(mount, this.keyRow)
     const text = this.node.textContent
-    const editor = mountCardEditor({ root: mount, text, make, select, doors: { done: () => this.done(), changed: () => this.changed() } })
+    const fileTitle = this.deps.host?.fileTitle?.value
+    const editor = mountCardEditor({ root: mount, text, make, select, fileTitle, doors: { done: () => this.done(), changed: () => this.changed() } })
     this.inner = { editor, mount, base: text, written: text, timer: undefined }
     openCard = this
     this.draw()
@@ -529,6 +562,7 @@ export class CardBlockView implements NodeView {
     if (inner === null) return
     clearTimeout(inner.timer)
     const text = inner.editor.text()
+    const title = inner.editor.title()
     inner.editor.destroy()
     inner.mount.remove()
     this.keyRow?.remove()
@@ -537,6 +571,9 @@ export class CardBlockView implements NodeView {
     this.inner = null
     this.write(text, true)
     this.draw()
+    // A card file's new title (its Title field): the tab's title door renames it, as its big title does.
+    const file = this.deps.host?.fileTitle
+    if (file !== undefined && title !== '' && title !== file.value) file.onRetitle(title)
     this.deps.host?.onEditDone?.(this.node.textContent)
     const pos = this.pos
     if (pos === null || this.view.isDestroyed) return
@@ -656,6 +693,12 @@ export class CardBlockView implements NodeView {
     if (target === null || event.button !== 0 || (this.code !== null && this.code.dom.contains(target)) || this.inner?.mount.contains(target) === true) return
     // The Reviews strip is React's (its toggle, its table): a press in it never selects the card.
     if (this.strip?.dom.contains(target) === true) return
+    // The title is the page title's (YAZ-5164 part 3): its click renames, or asks to unlock a locked page. Drawn now with
+    // whether the page can be edited NOW (an unlock does not redraw the card).
+    if (this.title?.dom.contains(target) === true) {
+      this.drawTitle(this.deps.host?.fileTitle?.value ?? cardTitleOut(this.node.textContent).title, true)
+      return
+    }
     if (target.closest('.card__more') !== null) {
       event.preventDefault()
       this.openMenu()
@@ -766,6 +809,7 @@ export class CardBlockView implements NodeView {
     }
     this.strip?.destroy()
     this.strip = null
+    this.title?.destroy()
     this.closeMenu?.()
     this.unsubscribe?.()
     this.unwatchLanding()

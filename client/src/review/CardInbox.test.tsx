@@ -34,6 +34,13 @@ vi.mock('../api', () => ({
   },
 }))
 
+/** The card text writes (YAZ-5164 part 3: the head's rename), recorded instead of written. */
+const textWrites = vi.hoisted(() => [] as unknown[][])
+vi.mock('./cardFile', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./cardFile')>()),
+  changeCardTextIn: vi.fn(async (...args: unknown[]) => void textWrites.push(args)),
+}))
+
 const PATH = '/v/cards.md'
 const TWO_SIDES = 'Capital of {{France}}\n---\n{{Paris}} on the {{Seine}}'
 const AT = '2026-11-12T14:05Z'
@@ -988,6 +995,21 @@ describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the brea
     press('o')
     expect(props.openPage).toHaveBeenCalledTimes(2)
     expect(hints()).toContain('O Open page')
+  })
+
+  it('YAZ-5164 part 3: the front never repeats the title; a click on the head`s title renames the card in its page (its first line), one write', async () => {
+    textWrites.length = 0
+    mount(PLAIN)
+    expect(el.querySelector('.card-inbox__card')?.textContent).not.toContain('Capital of France')
+    expect(el.querySelector('.card-inbox__card')?.textContent).toContain('What is the capital of')
+    act(() => el.querySelector<HTMLElement>('.card-inbox__name .page-title__text')!.click())
+    const field = el.querySelector<HTMLTextAreaElement>('.card-inbox__name .page-title__input')!
+    expect(field.value).toBe('Capital of France')
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, 'France')
+      field.blur()
+    })
+    expect(textWrites).toEqual([[PATH, 'WIKI-9', 'France\n\nWhat is the capital of {{France}}?', -1]])
   })
 
   it('a card file adds nothing: "Capital of France · WIKI-9"; its title is the link, and it and O open it in Explore ("Open card", YAZ-5145: as Explore opens it, not its tab); E edits it there, with no card index', () => {

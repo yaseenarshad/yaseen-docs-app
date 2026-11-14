@@ -3,6 +3,7 @@
  * line's round trip, the ⋯ menu, the pills, the outside write of the sweep, and the one render function the Inbox reuses.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act } from 'react'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state'
@@ -204,10 +205,10 @@ describe('the card in the page', () => {
       wikilinkNav: { root: '/v', createFolder: () => '', openCurrent: (p) => follow.push(['thisTab', p]), openBackground: (p) => follow.push(['backgroundTab', p]), openExplore: (p) => follow.push(['explore', p]), onNotice: () => {} },
     })
     const card = view.dom.querySelector<HTMLElement>('.card')!
-    // The head does not repeat the card's first line: the text is right below it.
-    expect(card.querySelector('.card__title')).toBeNull()
+    // The head shows the title (YAZ-5164 part 3), as plain text. This first line holds a hidden word: it is the card's
+    // question, so it stays in the body too, its word hidden there.
     const shown = (el: Element | null) => [...(el?.children ?? [])].filter((c) => !(c as HTMLElement).hidden).map((c) => c.textContent).join('')
-    expect(shown(card.querySelector('.card__head'))).toBe('Edit card⋯')
+    expect(shown(card.querySelector('.card__head'))).toBe('What is the capital of France (France, Gone)?Edit card⋯')
     expect([...card.querySelectorAll('.card__side')].map((side) => side.textContent?.trim())).toEqual(['What is the capital of France (France, Gone)?', 'Paris'])
     expect(card.querySelector('.card__rule')).not.toBeNull()
     expect(card.querySelector('.card__hidden')?.textContent).toBe('France')
@@ -764,5 +765,70 @@ describe('YAZ-5164: landing on a card in its page, as the table of contents land
     // Another page's card of no view here: the ask waits for its page.
     landOnCard('/v/Other.md', 'WIKI-7')
     expect(takeCardLanding('/v/Other.md', 'WIKI-7')).toBe(true)
+  })
+})
+
+/**
+ * YAZ-5164 part 3 (Yaseen: "Yes, build it"): ONE title UI for both kinds of card. A card in a page shows its title in its
+ * head, in the page title's own component (`PageTitle`, as a card file's tab), and a click renames it; the body never
+ * repeats it. Storage does not change: the title is the card's first line (`cardRetitled`).
+ */
+describe('YAZ-5164 part 3: the card head shows the title, a click renames it, the body never repeats it', () => {
+  const flag = globalThis as unknown as Record<string, unknown>
+  beforeEach(() => void (flag.IS_REACT_ACT_ENVIRONMENT = true))
+  afterEach(() => void delete flag.IS_REACT_ACT_ENVIRONMENT)
+  const TITLED = '```card\nCapital of France\n\nWhich city is the capital?\n---\nParis\n```\n<!-- card: WIKI-7 -->\n'
+  /** The head's title once React drew it (the page title's own component). */
+  const headTitle = (root: HTMLElement) => root.querySelector<HTMLElement>('.card__head .page-title .page-title__text')
+  const setValue = (field: HTMLTextAreaElement, value: string) => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, value)
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  it('the head shows the title; the body starts after it', async () => {
+    const { root } = await mount(TITLED, { wikilinks: vault(true), cards: { path: '/v/Page.md' } })
+    await vi.waitFor(() => expect(headTitle(root)?.textContent).toBe('Capital of France'))
+    const body = root.querySelector('.card__body')!.textContent ?? ''
+    expect(body).not.toContain('Capital of France')
+    expect(body).toContain('Which city is the capital?')
+  })
+
+  it('a first line with a hidden word is the card`s question: it stays in the body, and the head shows it as plain text', async () => {
+    const { root } = await mount(CARD, { wikilinks: vault(true), cards: { path: '/v/Page.md' } })
+    await vi.waitFor(() => expect(headTitle(root)?.textContent).toBe('What is the capital of France?'))
+    expect(root.querySelector('.card__body .card__hidden')?.textContent).toBe('France')
+  })
+
+  it('a click on the title renames the card: its first line, one undo step; Esc changes nothing', async () => {
+    const { crepe, root, view } = await mount(`x\n\n${TITLED}`, { wikilinks: vault(true), cards: { path: '/v/Page.md' } })
+    await vi.waitFor(() => expect(headTitle(root)).not.toBeNull())
+    // A press, then its click, as the mouse gives them.
+    headTitle(root)!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
+    act(() => headTitle(root)!.click())
+    const field = root.querySelector<HTMLTextAreaElement>('.card__head .page-title__input')!
+    expect(field.value).toBe('Capital of France')
+    act(() => {
+      setValue(field, 'France`s capital')
+      field.blur()
+    })
+    expect(getMarkdownForSave(crepe)).toContain('```card\nFrance`s capital\n\nWhich city is the capital?\n---\nParis\n```\n<!-- card: WIKI-7 -->')
+    await vi.waitFor(() => expect(headTitle(root)?.textContent).toBe('France`s capital'))
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toContain('```card\nCapital of France\n\nWhich')
+  })
+
+  it('in a page locked by Read only a click on the title is an edit attempt that carries the rename (unlock, then continue)', async () => {
+    const { crepe, root } = await mount(TITLED, { wikilinks: vault(true), cards: { path: '/v/Page.md' } })
+    crepe.setReadonly(true)
+    await vi.waitFor(() => expect(headTitle(root)).not.toBeNull())
+    const told: ReadOnlyEditEvent[] = []
+    root.addEventListener(READ_ONLY_EDIT, (e) => told.push(e as ReadOnlyEditEvent))
+    headTitle(root)!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
+    act(() => headTitle(root)!.click())
+    expect(told.map((e) => e.detail)).toEqual(['card'])
+    expect(root.querySelector('.card__head .page-title__input')).toBeNull()
+    crepe.setReadonly(false)
+    act(() => told[0].resume?.())
+    expect(root.querySelector('.card__head .page-title__input')).not.toBeNull()
   })
 })

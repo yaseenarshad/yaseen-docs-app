@@ -697,3 +697,64 @@
 .card [data-card-link] {
   cursor: pointer;
 }
+
+/* THE CARD'S TITLE (YAZ-5164 part 3): the page title's own component (`PageTitle`) in a card's head — a card in a page,
+   an embed, Explore's card window, the Inbox — at the head's own size; a click renames it. While Edit card is open its
+   Title field holds it, so the head does not show it twice. */
+.card .card__title {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0 2px;
+}
+.card .card__title[hidden],
+.card.card--editing .card__title {
+  display: none;
+}
+:is(.card__title, .explore__title, .card-inbox__name) .page-title {
+  display: block;
+  min-width: 0;
+}
+:is(.card__title, .explore__title, .card-inbox__name) :is(.page-title__text, .page-title__input) {
+  margin: 0 0 0 -4px;
+  padding: 0 4px;
+  overflow: hidden;
+  font: inherit;
+  font-weight: 600;
+  line-height: inherit;
+  color: var(--fg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:is(.card__title, .explore__title, .card-inbox__name) .page-title__input {
+  white-space: normal;
+}
+.page-title__text--empty {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
+/* Edit card's Title field (YAZ-5164 part 3): above Side 1, the title's weight, a line under it. */
+.card .card-editor__title {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 8px 12px 6px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-weight: 600;
+  outline: none;
+}
+.card .card-editor__title:focus {
+  border-bottom-color: var(--accent);
+}
+.card .card-editor__title::placeholder {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+.card .card-editor__title:read-only {
+  color: var(--fg-muted);
+}

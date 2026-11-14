@@ -115,6 +115,40 @@ export function cardWithTitle(title: string, text: string): string {
   return SIDE_BREAK_RE.test(body.split('\n')[0]) ? `${clean}\n${body}` : `${clean}\n\n${body}`
 }
 
+/**
+ * A card's title line taken out of its text (YAZ-5044, decision A): a card that becomes a CARD FILE keeps its title in
+ * the file's `title`, so its text no longer starts with it. `title` is `cardTitle`'s plain text; `text` is the card
+ * without that line and the blank lines after it (`cardWithoutTitle`). A line that holds a hidden word, a code line, or a
+ * line with an embed or an image stays in the text: no hidden word, no code and no picture or sound is ever lost. A card with no title is its text unchanged.
+ */
+export function cardTitleOut(text: string): { title: string; text: string } {
+  const title = cardTitle(text)
+  if (title === '') return { title, text }
+  const lines = text.split('\n')
+  const kinds = lineKinds(lines)
+  const at = lines.findIndex((line) => cardTitle(line) !== '')
+  // An embed or an image (`![[tone.mp3]]`, `![alt](src)`) is no title either: a sound, a picture or a board stays (YAZ-5164).
+  return { title, text: kinds[at] !== 'text' || hiddenCount(lines[at]) > 0 || lines[at].includes('![') ? text : cardWithoutTitle(text) }
+}
+
+/**
+ * A card in a page with `title` as its title (YAZ-5164 part 3: the card head's rename and Edit card's Title field, for a
+ * card whose title is its first line). The title line `cardTitleOut` takes out is replaced, and the rest stays byte for
+ * byte. A first line that `cardTitleOut` keeps (a hidden word, code) is the card's question, not a title line: the new
+ * title goes above it. The same title changes nothing; an empty one takes the title line out. Plain text, one line.
+ */
+export function cardRetitled(text: string, title: string): string {
+  const clean = title.replace(/\s+/g, ' ').trim()
+  const parts = cardTitleOut(text)
+  if (clean === parts.title) return text
+  if (parts.text === text) return clean === '' ? text : cardWithTitle(clean, text)
+  // The title line alone is swapped: the blank lines after it, and everything else, keep their bytes.
+  const lines = text.split('\n')
+  const at = lines.findIndex((line) => cardTitle(line) !== '')
+  if (clean === '') return parts.text
+  return [...lines.slice(0, at), clean, ...lines.slice(at + 1)].join('\n')
+}
+
 /** One line of Markdown as plain text. */
 function plainLine(line: string): string {
   return showHidden(line)

@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { cardRecords, formatCardLine, isCardNoTitle, parseCardLine, withCardNoTitle, EMPTY_CARD_LINE } from '@shared/cardLine'
 import { cardBacklinks, cardEmbedders, makeCardResolver } from '@shared/cardLinks'
-import { cardTitleOut } from '@shared/cardConvert'
-import { cardPieces, cardSides, cardTitle, cardWithTitle, cardWithoutTitle, hiddenCount } from '@shared/cardText'
+import { cardPieces, cardRetitled, cardSides, cardTitle, cardTitleOut, cardWithTitle, cardWithoutTitle, hiddenCount } from '@shared/cardText'
 import { makeResolver } from '@shared/linkResolver'
 import type { IndexRecord } from '@shared/types'
 
@@ -131,5 +130,24 @@ describe('links to a card: `[[DEMO-127]]` (YAZ-5030, D7)', () => {
     // A page that only LINKS to the card is a mention, not an embedder.
     expect(cardEmbedders(all, 'DEMO-127', resolve).some((r) => r.path === '/v/pages.md')).toBe(false)
     expect(cardEmbedders(all, 'DEMO-9', resolve)).toEqual([])
+  })
+})
+
+describe('YAZ-5164 part 3: a card in a page renamed (`cardRetitled`): its title line, by the rule that takes a title out (`cardTitleOut`)', () => {
+  it('the title line is replaced; the rest stays byte for byte; the same title changes nothing', () => {
+    expect(cardRetitled('Capital of France\n\nParis\n---\nback', 'France`s capital')).toBe('France`s capital\n\nParis\n---\nback')
+    expect(cardRetitled('# Capital  \nParis', 'Capital')).toBe('# Capital  \nParis')
+    expect(cardRetitled('Capital\n---\nParis', 'City')).toBe('City\n---\nParis')
+  })
+  it('a first line with a hidden word (or code) is the card`s question, never its title line: a new title goes above it', () => {
+    expect(cardTitleOut('The capital is {{Paris}}').text).toBe('The capital is {{Paris}}')
+    expect(cardRetitled('The capital is {{Paris}}\n---\nback', 'Capital of France')).toBe('Capital of France\n\nThe capital is {{Paris}}\n---\nback')
+  })
+  it('a first line with a sound, a picture or a board stays too: nothing on it is lost', () => {
+    for (const line of ['Hear it ![[tone.mp3]]', 'See ![map](map.png)', '![[plan.excalidraw]]']) expect(cardTitleOut(`${line}\n---\nback`).text).toBe(`${line}\n---\nback`)
+  })
+  it('a card with no title takes one; an empty title takes the title line out', () => {
+    expect(cardRetitled('', 'New')).toBe('New')
+    expect(cardRetitled('Title\n\nfront', '  ')).toBe('front')
   })
 })
