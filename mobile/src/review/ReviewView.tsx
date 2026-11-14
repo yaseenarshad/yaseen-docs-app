@@ -128,8 +128,6 @@ interface Step {
 /** The line under the buttons: the last answer, the last add, or a ⋯ action. */
 type Line = { kind: 'answer'; count: number; id: string } | { kind: 'mark'; text: string; key: string | null }
 
-export { SEEN_MS } from './tapGuard'
-
 function ReviewSession({ link, vault, vaultName, unit, open, source, host, media, shown = true }: ReviewViewProps & Setup) {
   const { ready, settings } = useSourceState(source)
   const [notice, setNotice] = useState<string | null>(null)
