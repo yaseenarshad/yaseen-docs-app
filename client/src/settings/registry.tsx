@@ -2085,6 +2085,26 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                 />
               ),
           },
+          {
+            // YAZ-5307 (Yaseen: "by default it open at top of page but if someone wants to change it to go to the card on
+            // the page they can"): the app's settings, as Card look's rows: a habit of the person, not of the vault.
+            id: 'inboxOpenAt',
+            label: (ctx) => unit(ctx, 'Inbox: O opens the page at'),
+            hint: (ctx) => unit(ctx, 'Where O in the Inbox opens a card that is in a page: at the top of the page, or at the card, with one flash. A card file opens as before.'),
+            keywords: [...REVIEW_KEYWORDS, 'inbox', 'open', 'o', 'top', 'card', 'land', 'jump', 'scroll'],
+            available: reviewOn,
+            render: (ctx) => (
+              <Segmented
+                options={[
+                  { label: 'The top', value: 'top' as const },
+                  { label: 'The card', value: 'card' as const },
+                ]}
+                value={ctx.settings.inboxOpenAt}
+                onChange={(inboxOpenAt) => ctx.onChange({ ...ctx.settings, inboxOpenAt })}
+                ariaLabel={unit(ctx, 'Inbox: O opens the page at')}
+              />
+            ),
+          },
         ],
       },
       {

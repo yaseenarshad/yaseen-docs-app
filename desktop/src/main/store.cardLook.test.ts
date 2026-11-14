@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { CARD_SPACING_CLEAN, CARD_SPACINGS, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, DEFAULT_SETTINGS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, SHOWN_HIDDEN_WORDS, type SettingsState } from '@shared/types'
+import { CARD_SPACING_CLEAN, CARD_SPACINGS, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, DEFAULT_SETTINGS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, SHOWN_HIDDEN_WORDS, INBOX_OPEN_AT, type SettingsState } from '@shared/types'
 import { createStore, isSettings } from './store'
 
 let dir: string
@@ -72,5 +72,21 @@ describe('YAZ-5053 round 4: each Card look setting is saved and reads back', () 
 
   it('every Card look row is in the list above', () => {
     expect(Object.keys(CARD_LOOK).sort()).toEqual(['cardBlockGap', 'cardBulletGap', 'cardBulletIndent', 'cardBulletSpace', 'cardLineSpacing', 'cardSpacing', 'cardTablePosition', 'cardWidth', 'markNextHidden', 'nextHiddenColour', 'shownHiddenWords'])
+  })
+})
+
+describe('YAZ-5307: Settings › Cards › Inbox: O opens the page at', () => {
+  it('is The top by default; The top and The card pass the door, are saved, and read back after a restart; anything else does not', async () => {
+    expect(DEFAULT_SETTINGS.inboxOpenAt).toBe('top')
+    expect(INBOX_OPEN_AT).toEqual(['top', 'card'])
+    for (const inboxOpenAt of INBOX_OPEN_AT) {
+      const next = { ...DEFAULT_SETTINGS, inboxOpenAt }
+      expect(isSettings(next)).toBe(true)
+      const store = createStore(file)
+      store.setSettings(next)
+      await store.flush()
+      expect(createStore(file).get().settings.inboxOpenAt).toBe(inboxOpenAt)
+    }
+    for (const inboxOpenAt of ['Card', 'page', '', null, true]) expect(isSettings({ ...DEFAULT_SETTINGS, inboxOpenAt }), String(inboxOpenAt)).toBe(false)
   })
 })

@@ -22,7 +22,8 @@ import { registerRenameContinuity } from '../lib/renameContinuity'
 import { requestZoom } from '../editor/zoomRequest'
 import { ExploreStack, FULL_NOTICE, type ExploreStackProps } from './ExploreStack'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
-import { layerPlace, MAX_LAYERS } from './layers'
+import { layerPlace, MAX_LAYERS, type ExploreRequest } from './layers'
+import { watchCardLanding } from '../editor/card/cardOpen'
 import { tileCells } from './tile'
 import { TITLE_ROOM } from './ExploreHeadMore'
 import { ago } from './recentSections'
@@ -2840,6 +2841,59 @@ describe('YAZ-5145: the Inbox\'s O and E open Explore\'s own page layer', () => 
     for (let i = 0; i < 3; i++) await act(async () => await new Promise((r) => setTimeout(r, 20)))
     expect(top().querySelector('.explore__body--edit')).toBeNull()
     expect(editCard).not.toHaveBeenCalled()
+  })
+
+  /**
+   * YAZ-5307: Settings › Cards › Inbox: O opens the page at. The top asks for the page alone (YAZ-5022: no landing);
+   * The card asks with the card's index, and the layer lands on that card with the one landing (`landOn`, YAZ-5164), as
+   * E and a card row of search do. In a page not open yet, and in one open already (its layer under this one, and a
+   * tab's card that watches for landings, `watchCardLanding`: the tab's card does not take this landing).
+   */
+  describe('YAZ-5307: O, by Settings › Cards › Inbox: O opens the page at', () => {
+    const O = (openAt: 'top' | 'card'): ExploreRequest => ({ kind: 'page', path: PAGE, fromInbox: true, ...(openAt === 'card' && { card: 1 }) })
+    /** The top read layer's page as the card view draws it: two cards. */
+    const drawCards = () => {
+      const page = crepes[crepes.length - 1].opts.root
+      return [0, 1].map(() => page.appendChild(Object.assign(document.createElement('div'), { className: 'card' })))
+    }
+    const settle = async () => {
+      for (let i = 0; i < 3; i++) await act(async () => await new Promise((r) => setTimeout(r, 20)))
+    }
+    beforeEach(() => landed.mockClear())
+
+    it.each(['top', 'card'] as const)('the page not open yet, "%s"', async (openAt) => {
+      props.requestLayer = O(openAt)
+      await mount()
+      await flush()
+      expect(layers().map((l) => l.dataset.kind)).toEqual(['page'])
+      expect(top().querySelector('.explore__body--edit')).toBeNull()
+      const cards = drawCards()
+      await settle()
+      expect(landed.mock.calls.map(([target]) => target)).toEqual(openAt === 'card' ? [cards[1]] : [])
+    })
+
+    it.each(['top', 'card'] as const)('the page open already (a layer of it under this one, and a tab whose card watches for landings), "%s"', async (openAt) => {
+      const tabCard = vi.fn(() => false)
+      const unwatch = watchCardLanding(tabCard)
+      props.requestLayer = O('top')
+      await mount()
+      await flush()
+      const under = drawCards()
+      await settle()
+      expect(landed).not.toHaveBeenCalled()
+      props.requestLayer = O(openAt)
+      render(2)
+      await flush()
+      await flush()
+      expect(live().map((l) => l.dataset.kind)).toEqual(['page', 'page'])
+      const cards = drawCards()
+      await settle()
+      expect(landed.mock.calls.map(([target]) => target)).toEqual(openAt === 'card' ? [cards[1]] : [])
+      expect(landed.mock.calls.flat()).not.toContain(under[1])
+      // The landing is the layer's own: no ask goes out to the cards of the open tab.
+      expect(tabCard).not.toHaveBeenCalled()
+      unwatch()
+    })
   })
 
   it('E on a card in a page: the layer edits, landed on the card, and that card opens in Edit card (one time)', async () => {
