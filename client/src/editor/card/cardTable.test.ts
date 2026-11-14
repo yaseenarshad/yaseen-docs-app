@@ -41,6 +41,29 @@ describe('renderCard: a table (YAZ-5136)', () => {
     expect(el.querySelectorAll('.card__table > table')).toHaveLength(2)
   })
 
+  it('round 2: the column widths the page editor saved (`<!-- table: widths … -->` after the table) size the read table', () => {
+    const cols = (t: HTMLTableElement) => [...t.querySelectorAll<HTMLElement>(':scope > colgroup > col')].map((c) => c.style.width)
+    const el = renderCard('| a | b |\n|---|---|\n| 1 | 2 |\n<!-- table: widths 300 324 -->\n\nText\n\n| x | y | z |\n|---|---|---|\n| 1 | 2 | 3 |\n\n<!-- table: widths 200 auto 150, stripes -->\n\n| p | q |\n|---|---|\n| 1 | 2 |')
+    const [all, some, none] = [...el.querySelectorAll('table')]
+    // Every column sized: the table is their sum, as the page's (prosemirror-tables).
+    expect(cols(all)).toEqual(['300px', '324px'])
+    expect([all.style.width, all.style.minWidth, all.dataset.sized]).toEqual(['624px', '', ''])
+    // A column at auto: the table fills the card and is at least the sum, an auto column counted at the page's 24 px.
+    expect(cols(some)).toEqual(['200px', '', '150px'])
+    expect([some.style.width, some.style.minWidth, some.dataset.sized]).toEqual(['', '374px', ''])
+    // No comment: no widths, the look of round 1.
+    expect(none.querySelector('colgroup')).toBeNull()
+    expect(none.dataset.sized).toBeUndefined()
+    // The comment never shows.
+    expect(el.textContent).not.toContain('widths')
+  })
+
+  it('round 2: widths in a table inside a list, and in a later side', () => {
+    const el = renderCard('* item\n\n  | a | b |\n  |---|---|\n  | 1 | 2 |\n  <!-- table: widths 120 auto -->\n---\n| c |\n|---|\n| 3 |\n<!-- table: widths 90 -->')
+    const widths = [...el.querySelectorAll('table')].map((t) => [...t.querySelectorAll('col')].map((c) => c.style.width))
+    expect(widths).toEqual([['120px', ''], ['90px']])
+  })
+
   it('a card with no table has no table box', () => {
     expect(renderCard('Plain {{text}}').querySelector('.card__table')).toBeNull()
   })
@@ -64,6 +87,20 @@ describe('card.css: a card`s table looks like the page`s (YAZ-5136)', () => {
     expect(shared(/border-bottom-width:\s*3px/)).toHaveLength(1)
   })
 
+  it('rounds 2 and 3: Table position is ONE rule from ONE variable: a page table block, its table and a card`s table; a card reads Card tables, falling back to the pages`', () => {
+    expect(rules(tableCss, '.card__table > table').filter((r) => /margin-inline/.test(r.body))).toEqual([
+      { selector: '.app :is(.milkdown-table-block, .milkdown-table-block table, .card__table > table)', body: expect.stringMatching(/^\s*margin-inline: var\(--table-inline, var\(--page-table-inline, 0\)\);\s*$/) },
+    ])
+    const card = rules(tableCss, '.card').filter((r) => r.selector === '.card' && /--table-inline/.test(r.body))
+    expect(card).toHaveLength(1)
+    expect(card[0].body).toMatch(/--table-inline:\s*var\(--card-table-inline, var\(--page-table-inline, 0\)\)/)
+    expect(tableCss).not.toMatch(/data-table-position/)
+    // No card rule sets a table's inline margin over it.
+    expect(rules(cardCss, 'table').filter((r) => /\stable(\[[^\]]*\])?$/.test(r.selector) && /(^|[\s;])margin(-inline)?(-left|-right)?\s*:/.test(r.body))).toEqual([])
+    // The card's table sits in its scroll box (`.card__table`), so a centred table wider than the card still scrolls.
+    expect(rules(cardCss, '.card__sides .card__table').some((r) => /overflow-x:\s*auto/.test(r.body))).toBe(true)
+  })
+
   it('outside a page, the border reads `--table-outline`: Crepe`s own outline colour, light and dark', () => {
     expect(tableCss).toMatch(/var\(--crepe-color-outline, var\(--table-outline\)\)/)
     const root = rules(tableCss, ':root').find((r) => r.body.includes('--table-outline'))!
@@ -79,5 +116,7 @@ describe('card.css: a card`s table looks like the page`s (YAZ-5136)', () => {
     expect(cell.body).toMatch(/padding:\s*calc\(4px \+ var\(--card-gap\)\) 16px/)
     const box = rules(cardCss, '.card__sides .card__table').find((r) => /overflow-x:\s*auto/.test(r.body))
     expect(box).toBeDefined()
+    // Round 2: a table the page sized lays out as the page's: fixed.
+    expect(rules(cardCss, '.card__sides .card__side table[data-sized]').some((r) => /table-layout:\s*fixed/.test(r.body))).toBe(true)
   })
 })

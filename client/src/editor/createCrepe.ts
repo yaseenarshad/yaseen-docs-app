@@ -864,7 +864,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
                 edit:
                   cardDeps.editor === undefined
                     ? undefined
-                    : (root, text, done) => ({ editor: mountCardEditor({ root, text, make: cardDeps.editor!, doors: { done, changed: () => {} } }), keys: cardKeyRow() }),
+                    : // A card file's title shows in the Title field, unchanged here: the file's own tab renames it (YAZ-5164 part 3).
+                      (root, text, done, fileTitle) => ({ editor: mountCardEditor({ root, text, make: cardDeps.editor!, fileTitle, titleReadOnly: fileTitle !== undefined, doors: { done, changed: () => {} } }), keys: cardKeyRow() }),
                 follow,
                 hotkeys: cardDeps.hotkeys,
                 openHref: cardDeps.openHref,

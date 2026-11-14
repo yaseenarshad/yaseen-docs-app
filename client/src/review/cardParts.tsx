@@ -116,13 +116,17 @@ export function CardBody({ text, path, vault, show, doors }: CardBodyProps) {
   const { root, wikilinks, viewOnlyLinks } = vault
   const sides = show?.sides
   const shown = show?.shown
+  // Round 4 (YAZ-5049): the words a click showed, and the marked blank; by value, so a new array draws nothing again.
+  const pickedKey = show?.picked?.join(',') ?? ''
+  const next = show?.next
   // `icons` is read at each draw; a change of the icon rules alone draws no card again (the preview panel's rule).
   const iconsRef = useRef(icons)
   iconsRef.current = icons
   const lookOf = useCallback(() => cardLook(wikilinks, viewOnlyLinks, { root, pagePath: path }, { icon: (target, folder) => fileIconDecoration(iconsRef.current, target, folder) }), [wikilinks, viewOnlyLinks, root, path])
   useEffect(() => {
-    boxRef.current?.replaceChildren(renderCard(text, { sides, shown }, lookOf()))
-  }, [text, sides, shown, lookOf])
+    const picked = pickedKey === '' ? undefined : pickedKey.split(',').map(Number)
+    boxRef.current?.replaceChildren(renderCard(text, { sides, shown, picked, next }, lookOf()))
+  }, [text, sides, shown, pickedKey, next, lookOf])
   // The pills follow the index: on each snapshot only they draw again.
   const hasLink = text.includes('[[')
   useEffect(() => (hasLink ? wikilinks.subscribe(() => boxRef.current !== null && refreshCardLook(boxRef.current, lookOf())) : undefined), [hasLink, wikilinks, lookOf])

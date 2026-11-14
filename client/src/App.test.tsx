@@ -240,6 +240,7 @@ vi.mock('./sidebar/Sidebar', () => ({
 }))
 
 import { App, preloadTabBoard, replayNotice } from './App'
+import { CARD_PREVIEW } from './editor/card/cardOpen'
 import { CARD_OPEN, cardBlockViewOfDom } from './editor/card/cardBlockView'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
@@ -5762,23 +5763,42 @@ describe('App: the card flow (YAZ-4962)', () => {
     expect(layer.querySelector('.card-strip__line')?.textContent).toMatch(/^Due /)
   })
 
+  it('YAZ-5152: the preview ask (`mdapp:card-preview`) shows the card as the Inbox does, over the window, inside the app (its Card spacing); Space steps; Esc closes it; nothing is written', async () => {
+    const files = { [PAGE]: { content: page('<!-- card: WIKI-9, 2026-01-02T09:00Z good -->'), mtime: 1 } }
+    const { el, bridge } = await mount(defaultAppState(), TABS, files, (b) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [record()], folders: [], generatedAt: 1, ids: true }))
+    const writesBefore = bridge.writeFile.mock.calls.length
+    act(() => void el.querySelector('.tabstack')?.dispatchEvent(new CustomEvent(CARD_PREVIEW, { bubbles: true, detail: { path: PAGE, id: 'WIKI-9', text: 'Capital of {{France}}\n---\n{{Paris}}', notitle: false, reviews: [{ at: '2026-01-02T09:00Z', rating: 'good' }] } })))
+    await vi.waitFor(() => expect(document.querySelector('.card-preview .card-inbox__card .card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+    const preview = document.querySelector<HTMLElement>('.card-preview')!
+    expect(preview.closest('.app')).not.toBeNull()
+    expect(preview.querySelector('.card-preview__foot')?.textContent).toBe('Preview · Esc to close')
+    await act(async () => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })))
+    expect([...preview.querySelectorAll('.card__hidden')].map((h) => h.textContent)).toEqual(['France'])
+    await act(async () => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    await vi.waitFor(() => expect(document.querySelector('.card-preview')).toBeNull())
+    expect(bridge.writeFile.mock.calls.length).toBe(writesBefore)
+  })
+
   /**
-   * YAZ-5009 round 2 (Yaseen: "esc again doesnt take me back to inbox"): the whole round trip over App's real wiring —
-   * the Inbox tab, its window keys, the Explore stack's keys on its root, the card window's real Edit card (Crepe and
-   * CodeMirror), and App's last Esc (`escapeOrder`). Each key goes where the browser sends it: to the element that
-   * has the keyboard (`document.activeElement`), not to a chosen component.
+   * YAZ-5009 round 2 (Yaseen: "esc again doesnt take me back to inbox"), over YAZ-5145 (the Inbox's E opens Explore's own
+   * page layer, in edit, landed on the card in Edit card): the whole round trip over App's real wiring — the Inbox tab,
+   * its window keys, the Explore stack's keys on its root, the real page editor in the layer and the card's real Edit
+   * card, and App's last Esc (`escapeOrder`). Each key goes where the browser sends it: to the element that has the
+   * keyboard (`document.activeElement`), not to a chosen component. Esc steps back one step at a time (Edit card, the
+   * layer's edit, the layer); ⌘↵ leaves the layer's edit at once (YAZ-4988), then goes back to the Inbox.
    */
   describe.each([
-    ['Esc', { key: 'Escape' }],
-    ['⌘↵', { key: 'Enter', metaKey: true }],
-  ] as const)('YAZ-5009: Inbox › E › Edit card › %s › read › the same key › back to the Inbox', (_name, done) => {
+    ['Esc', { key: 'Escape' }, 3],
+    ['⌘↵', { key: 'Enter', metaKey: true }, 2],
+  ] as const)('YAZ-5145: Inbox › E › the page layer in edit, the card in Edit card › %s › … › back to the Inbox', (_name, done, keys) => {
     const typed = (init: KeyboardEventInit) => act(async () => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })))
-    const layer = () => document.querySelector<HTMLElement>('.explore__layer[data-kind="card"]')
+    const layer = () => document.querySelector<HTMLElement>('.explore__layer[data-kind="page"]')
 
     it.each([
       ['the same text', ''],
       ['a changed text', ' (Seine)'],
-    ])('with %s: the second key closes the card window, the Inbox tab is active, at the same card and step', async (_what, added) => {
+    ])('with %s: the keys go back one step each, then the Inbox tab is active, at the same card and step', async (_what, added) => {
+      captured.realEditor = true
       const files = { [PAGE]: { content: page('<!-- card: WIKI-9 -->'), mtime: 1 }, '/v/a.md': { content: '# A\n', mtime: 1 } }
       const { el } = await mount(defaultAppState(), TABS, files, (b) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [record()], folders: [], generatedAt: 1, ids: true }))
       act(() => captured.sidebar?.onOpenInbox())
@@ -5787,24 +5807,25 @@ describe('App: the card flow (YAZ-4962)', () => {
       // One Space: the front's hidden word shows. That is the step to come back to.
       await typed({ key: ' ' })
       expect([sides(el), hidden(el)]).toEqual([1, ['France']])
-      // E: the card window, in Edit card at once, the caret in its text.
+      // E: Explore's own page layer (no card window), in edit, the card in Edit card, the caret in its text.
       await typed({ key: 'e' })
-      // YAZ-5026: the page's own editor in the card, holding the card's text.
-      const editor = () => layer()?.querySelector<HTMLElement>('[data-explore-card-edit] .card__editor .ProseMirror') ?? null
+      expect(document.querySelector('.explore__layer[data-kind="card"]')).toBeNull()
+      const editor = () => layer()?.querySelector<HTMLElement>('.explore__body--edit .card .card__editor .ProseMirror') ?? null
       await vi.waitFor(() => expect(editor()?.textContent).toContain('Paris'), { timeout: SLOW_RUNNER_MS })
       await vi.waitFor(() => expect(editor()?.contains(document.activeElement)).toBe(true))
       if (added !== '') {
         const inner = cardBlockViewOfDom(editor()!.closest('.card'))!.cardEditor!.view()!
         act(() => inner.dispatch(inner.state.tr.insertText(added, inner.state.doc.content.size - 1)))
       }
-      // The first key: Done, the card window reads (it stays open), the keyboard still in the layer.
-      await typed(done)
-      await vi.waitFor(() => expect(layer()?.querySelector('[data-explore-card-edit]')).toBeNull())
-      await vi.waitFor(() => expect(layer()?.querySelector('.card-screen')?.textContent).toContain(`Paris${added}`))
-      if (added !== '') await vi.waitFor(() => expect(files[PAGE].content).toContain(`{{Paris}}${added}`))
-      await act(async () => {})
-      expect(layer()?.contains(document.activeElement)).toBe(true)
-      // The second key: the card window closes, back to the Inbox tab, at the same card and step.
+      // The keys before the last: back to reading (Esc: Edit card's Done first), the layer stays, the keyboard in it.
+      for (let i = 0; i < keys - 1; i++) {
+        await typed(done)
+        await act(async () => {})
+      }
+      await vi.waitFor(() => expect(layer()?.querySelector('.explore__body--edit')).toBeNull(), { timeout: SLOW_RUNNER_MS })
+      if (added !== '') await vi.waitFor(() => expect(files[PAGE].content).toContain(`{{Paris}}${added}`), { timeout: SLOW_RUNNER_MS })
+      await vi.waitFor(() => expect(layer()?.contains(document.activeElement)).toBe(true))
+      // The last key: the layer closes, back to the Inbox tab, at the same card and step.
       await typed(done)
       await vi.waitFor(() => expect(document.querySelector('.explore')).toBeNull())
       const active = el.querySelector('.tabbar [role="tab"][aria-selected="true"]')
@@ -5816,9 +5837,9 @@ describe('App: the card flow (YAZ-4962)', () => {
       expect(inbox(el)?.contains(document.activeElement)).toBe(true)
       await typed({ key: ' ' })
       expect(sides(el)).toBe(2)
-      // No tab was opened by the ⌘↵ (the card window from the Inbox goes back, YAZ-5009).
+      // No tab was opened by the ⌘↵ (a layer from the Inbox goes back, YAZ-5009).
       expect([...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)).toEqual(['a', 'Inbox'])
-    })
+    }, 30_000)
   })
 })
 
@@ -5921,7 +5942,8 @@ describe('App: the card flow from /card, through the real editor (YAZ-4965)', ()
    */
   it('YAZ-5026: Edit card → bold and a hidden word in the page`s editor → Done → the exact Markdown in the file → ⌘Z gives the old file back', async () => {
     captured.realEditor = true
-    const before = '# Cards\n\n```card\nCapital of France\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'
+    // The card's title (its first line) is in Edit card's Title field (YAZ-5164 part 3): the editor holds the rest.
+    const before = '# Cards\n\n```card\nCities\n\nCapital of France\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'
     const files: Record<string, { content: string; mtime: number }> = { [PAGE]: { content: before, mtime: 1 } }
     const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: PAGE, tabs: [PAGE] }, files, (b) => {
       b.bridge.index.mockImplementation(async () => ({ root: '/v', records: Object.entries(files).map(([p, f]) => scan(p, f.content)), folders: [], generatedAt: 1, ids: true }))
@@ -5959,7 +5981,7 @@ describe('App: the card flow from /card, through the real editor (YAZ-4965)', ()
     await keyIn({ key: 'l', metaKey: true })
     await keyIn({ key: 'Enter', metaKey: true })
     expect(card.editing).toBe(false)
-    const after = '# Cards\n\n```card\n**Capital** of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'
+    const after = '# Cards\n\n```card\nCities\n\n**Capital** of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'
     await vi.waitFor(() => expect(files[PAGE].content).toBe(after), { timeout: SLOW_RUNNER_MS })
     // One ⌘Z in the page takes the whole edit back.
     await act(async () => void view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true, cancelable: true })))
@@ -5980,7 +6002,7 @@ describe('App: the card flow from /card, through the real editor (YAZ-4965)', ()
     act(() => captured.sidebar?.onOpenInbox())
     const inbox = () => el.querySelector<HTMLElement>('.card-inbox')
     await vi.waitFor(() => expect(inbox()?.querySelector('.card__side')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
-    // E Edit card in every vault (YAZ-5009): a read-only one unlocks the card's text alone, for the one edit.
+    // E Edit card in every vault (YAZ-5145: in a read-only one, Explore's own 'Allow edits?' asks first).
     expect([...el.querySelectorAll('.card-inbox__hints kbd')].map((k) => k.textContent)).toContain('E')
     const press = (key: string) => act(async () => void inbox()?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })))
     await press(' ')
@@ -6195,12 +6217,27 @@ describe('App "Give this vault\u2019s pages IDs" in Settings (YAZ-2523 V4, YAZ-2
     expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', false, undefined)
   })
 
-  it('an ID vault with no page holding one yet: Off saves no at once', async () => {
-    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(true, [], { enabled: true }))
+  it('an ID vault with no page holding one yet, Cards off: Off saves no at once', async () => {
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, (b) => {
+      feed(true, [], { enabled: true })(b)
+      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'review.json' ? { enabled: false } : null))
+    })
     act(() => emitSettings())
     settingsPage(el, 'Files & Links')
     await act(async () => idsButtons(el)[1].click())
     expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', false, undefined)
+  })
+
+  it('YAZ-5154: Off with Cards on asks "Cards will turn off"; Turn off saves IDs off, then Cards off in review.json', async () => {
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(true, [], { enabled: true }))
+    act(() => emitSettings())
+    settingsPage(el, 'Files & Links')
+    await act(async () => idsButtons(el)[1].click())
+    expect(bridge.ids.set).not.toHaveBeenCalled()
+    expect(el.querySelector('.confirm__text')?.textContent).toBe('Cards will turn off. Your cards and reviews stay in the files.')
+    await act(async () => sheetBtn(el, 'Turn off')?.click())
+    expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', false, undefined)
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', 'review.json', expect.objectContaining({ enabled: false }))
   })
 
   it('`ids.json` that is not valid JSON: On and Off save nothing, the front end never reads the file, and a notice says why', async () => {
@@ -6228,6 +6265,8 @@ describe('App "Give this vault\u2019s pages IDs" in Settings (YAZ-2523 V4, YAZ-2
     act(() => on.emitSettings())
     settingsPage(on.el, 'Files & Links')
     await act(async () => idsButtons(on.el)[1].click())
+    // Cards are on (no review.json): Off asks first (YAZ-5154); IDs refuse, so Cards stay as they were.
+    await act(async () => sheetBtn(on.el, 'Turn off')?.click())
     expect(on.el.querySelector('.link-notice')?.textContent).toBe("Couldn't save this vault's answer: ids.json is not valid JSON")
     expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
     expect(on.bridge.vaultConfig.write).not.toHaveBeenCalled()
@@ -6534,7 +6573,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       b.bridge.github.status.mockImplementation(async (vault) => ({ root: vault, state: 'off' as const, enabled: vault === '/v' }))
     })
     // Each of the three rows is on the page of its own section.
-    const PAGE: Record<string, string> = { ids: 'Files & Links', enabled: 'Review', githubSync: 'Sync' }
+    const PAGE: Record<string, string> = { ids: 'Files & Links', enabled: 'Cards', githubSync: 'Sync' }
     const pressed = (setting: string) => {
       settingsPage(el, PAGE[setting])
       return [...el.querySelectorAll(`[data-setting="${setting}"] button`)].map((b) => b.getAttribute('aria-pressed'))
@@ -6561,7 +6600,14 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/w', true, 'WRK')
     expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
     settingsPage(el, PAGE.enabled)
+    // The index still says IDs off here (the bridge is a stub), so Cards ask for IDs first (YAZ-5154).
     await act(async () => turnOn('enabled'))
+    act(() => {
+      const field = el.querySelector('.confirm__input') as HTMLInputElement
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set?.call(field, 'wrk')
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => sheetBtn(el, 'Turn on both')?.click())
     expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/w', 'review.json', expect.objectContaining({ enabled: true }))
     settingsPage(el, PAGE.githubSync)
     await act(async () => turnOn('githubSync'))
@@ -6583,11 +6629,11 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
         })
     act(() => emitSettings())
     // Files & Links names it twice: its "This vault" group and its "Link pills" group (YAZ-4924).
-    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Files & Links', 'Vault: v'], ['Review', 'Vault: v'], ['Sync', 'Vault: v'], ['Storage', 'Vault: v'], ['Sharing', 'Vault: v']])
+    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Files & Links', 'Vault: v'], ['Cards', 'Vault: v'], ['Sync', 'Vault: v'], ['Storage', 'Vault: v'], ['Sharing', 'Vault: v']])
     act(() => button(el, 'Close settings')?.click())
     show('/w/b.md')
     act(() => emitSettings())
-    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Files & Links', 'Vault: w'], ['Review', 'Vault: w'], ['Sync', 'Vault: w'], ['Storage', 'Vault: w'], ['Sharing', 'Vault: w']])
+    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Files & Links', 'Vault: w'], ['Cards', 'Vault: w'], ['Sync', 'Vault: w'], ['Storage', 'Vault: w'], ['Sharing', 'Vault: w']])
   })
 
   it('two vaults that have no answer on IDs: no box for either, and nothing is written (YAZ-2677 S4)', async () => {
@@ -7684,10 +7730,10 @@ describe('App: the card skill in the sidebar (YAZ-5108)', () => {
     expect(storage.getSettings().cardSkillInSidebar).toBe(false)
     expect(bridge.state.setSettings).toHaveBeenCalledWith(expect.objectContaining({ cardSkillInSidebar: false }))
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ tabs: ['/v/a.md'] }))
-    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Card skill hidden. Turn it on again in Settings › Review.')
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Card skill hidden. Turn it on again in Settings › Cards.')
     expect(el.querySelector('.link-notice__action')?.textContent).toBe('Open Settings')
     await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
-    expect(el.querySelector('.settings-nav__item[aria-current="page"]')?.textContent).toBe('Review')
+    expect(el.querySelector('.settings-nav__item[aria-current="page"]')?.textContent).toBe('Cards')
     const toggle = el.querySelector('[role="group"][aria-label="Card skill in the sidebar"]')
     expect([...(toggle?.querySelectorAll('button') ?? [])].map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Show', 'false'], ['Hide', 'true']])
   })
@@ -7696,7 +7742,7 @@ describe('App: the card skill in the sidebar (YAZ-5108)', () => {
     const { el } = await mount(skillOn({ cardSkillInSidebar: false }), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, reviews(true))
     expect(shown()).toEqual([['/v', false]])
     await act(async () => (captured.sidebar as unknown as { onOpenSettings: () => void }).onOpenSettings())
-    settingsPage(el, 'Review')
+    settingsPage(el, 'Cards')
     const show = [...el.querySelectorAll<HTMLButtonElement>('[aria-label="Card skill in the sidebar"] button')].find((b) => b.textContent === 'Show')
     await act(async () => show?.click())
     expect(shown()).toEqual([['/v', false], [SKILL, true]])
@@ -7788,8 +7834,8 @@ describe('App: the card course (YAZ-5120)', () => {
 
   it('YAZ-5123: the guided tour`s "Show me" opens Settings at Review, and a file, with the app`s own doors', async () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] }, { '/v/a.md': { content: '# a', mtime: 1 }, '/v/b.md': { content: '# b', mtime: 1 } })
-    act(() => showTourPlace({ kind: 'settings', page: 'review' }))
-    await vi.waitFor(() => expect(document.querySelector('.settings-nav__item[aria-current="page"]')?.textContent).toBe('Review'))
+    act(() => showTourPlace({ kind: 'settings', page: 'cards' }))
+    await vi.waitFor(() => expect(document.querySelector('.settings-nav__item[aria-current="page"]')?.textContent).toBe('Cards'))
     act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
     act(() => showTourPlace({ kind: 'file', path: '/v/b.md' }))
     await vi.waitFor(() => expect(el.querySelector('.tabbar__tab--active')?.textContent ?? '').toContain('b'))
@@ -7864,7 +7910,7 @@ describe('App: the card course (YAZ-5120)', () => {
       expect(el.querySelector('.link-notice')?.textContent ?? '').not.toContain(COURSE_NOTICE)
       expect(bridge.state.setCourse).not.toHaveBeenCalledWith({ offered: true })
       await act(async () => (captured.sidebar as unknown as { onOpenSettings: () => void }).onOpenSettings())
-      settingsPage(el, 'Review')
+      settingsPage(el, 'Cards')
       expect([...el.querySelectorAll('button')].some((b) => b.textContent === 'Open the course')).toBe(true)
     })
   })

@@ -23,7 +23,7 @@ function mount(enabled: boolean, settings = { ...DEFAULT_SETTINGS }) {
   el = document.createElement('div')
   document.body.appendChild(el)
   root = createRoot(el)
-  act(() => root?.render(<SettingsDialog ctx={{ settings, onChange: vi.fn(), review: { settings: { ...DEFAULT_REVIEW_SETTINGS, enabled }, save: vi.fn() }, openCourse }} initialPage="review" onClose={vi.fn()} />))
+  act(() => root?.render(<SettingsDialog ctx={{ settings, onChange: vi.fn(), review: { settings: { ...DEFAULT_REVIEW_SETTINGS, enabled }, save: vi.fn() }, openCourse }} initialPage="cards" onClose={vi.fn()} />))
   return { openCourse, row: el.querySelector<HTMLElement>('[data-setting="cardCourse"]') }
 }
 
@@ -38,7 +38,7 @@ describe('Settings › Review › Card course (YAZ-5120)', () => {
     expect(openCourse).toHaveBeenCalledOnce()
     // The guided tour's marks (YAZ-5123): the button, the Review page in the list, the card skill's switch.
     expect(open.dataset.tour).toBe('settings-course')
-    expect(el!.querySelector('.settings-nav__item[data-tour="settings-review"]')?.textContent).toBe('Review')
+    expect(el!.querySelector('.settings-nav__item[data-tour="settings-review"]')?.textContent).toBe('Cards')
     expect(el!.querySelectorAll('.settings-nav__item[data-tour]')).toHaveLength(1)
     expect(el!.querySelector('[data-tour="settings-card-skill"]')).not.toBeNull()
   })

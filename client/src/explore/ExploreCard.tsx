@@ -3,7 +3,8 @@
  *
  *  - Head: the card ID first, small and grey (a click copies it, D20) — its place in the page's card and the Inbox
  *    too —, then the card title (`titleOfCard`: a card file's `title`, YAZ-5044, else its first line; the layer's name,
- *    as every layer has one; "New card" for an empty card), ↗, ⋯ and ×; the chip "Up next ×" after the ID while the card is at the top of the Inbox (YAZ-4999 D3). The
+ *    as every layer has one; "New card" for an empty card; a click renames it, YAZ-5164 part 3, and the card below
+ *    never repeats it), ↗, ⋯ and ×; the chip "Up next ×" after the ID while the card is at the top of the Inbox (YAZ-4999 D3). The
  *    ⋯ menu: Open page, Open page in a new tab, Put at top of Inbox / Remove from top of Inbox, Archive card / Unarchive card (YAZ-5046),
  *    Reset history (D13, the card line through `changeCardLine`, the app's own write), Copy card ID.
  *  - The card, everything shown (`renderCard`), its pills and links live: a click opens the page on top, a bound
@@ -18,16 +19,13 @@
  *  - "Linked mentions (n)" (YAZ-5030): the pages that link to the card (`[[WIKI-512]]`), from the index; a click opens
  *    the page on top.
  *
- * EDIT CARD (YAZ-5003): E on the card window (or the Inbox's E, which opens it so) shows the page card's own editor:
- * a small Crepe that holds the card block alone, with the card view's Edit card on (`cardBlockView.ts`: Crepe's code
- * block, the card language). Done, Esc or ⌘↵ there writes the text into the page (`changeCardTextIn`, the app's own
- * write) and goes back to reading. A read-only vault blocks E here, as the page does.
+ * EDIT CARD (YAZ-5003): E on the card window shows the page card's own editor: a small Crepe that holds the card block
+ * alone, with the card view's Edit card on (`cardBlockView.ts`: Crepe's code block, the card language). Done, Esc or ⌘↵
+ * there writes the text into the page (`changeCardTextIn`, the app's own write) and goes back to reading. A read-only
+ * vault blocks E here, as the page does.
  *
- * FROM THE INBOX (YAZ-5009, Yaseen: "e should go directly into edit mode ... then esc and or CMD enter should go back
- * to read only mode and then another CMD enter would take u back to inbox"): the Inbox's E opens the window in Edit
- * card at once, also in a read-only vault, with no "Allow edits?" box. The exception is this card's own write, for
- * this one edit: not the vault's timed allowance, and the rest of the vault stays locked. Done, Esc or ⌘↵ save and go
- * back to reading, locked again; then ⌘↵ (the stack) or Esc goes back to the Inbox at the same card and step.
+ * WHO OPENS IT: a page's card (its ⋯ › Open card, ⌘↵ on it; `CARD_OPEN`). The Inbox no longer does (YAZ-5145): its O
+ * and E open Explore's own page layer, the view Explore opens for the same card.
  *
  * The card is read from its page (`readCardAt`: by ID, or by its place while it has none) and read again whenever the
  * index has a new version of the page: an answer in the Inbox or a delete elsewhere shows here at once.
@@ -40,21 +38,21 @@ import { cardState } from '@shared/cardSchedule'
 import type { GestureAction } from '@shared/keys'
 import { withCardNext } from '@shared/cardLine'
 import { readCardAt, titleOfCard, type CardAtPage } from '../review/cardFile'
-import { CardPane, cardMenuSections, cardWrites, isCardEditKey, onIndexVersion } from '../review/cardPane'
+import { CardPane, cardMenuSections, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
 import { HoverTip } from '../components/HoverTip'
 import { CardFacts, CardId, CardNextChip } from '../review/cardParts'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { keepFocus, type ExploreVault } from './ExplorePage'
 import { useUnit } from '../vault/unitWord'
+import { cardRetitled } from '@shared/cardText'
+import { PageTitle } from '../editor/PageTitle'
+
+const NO_TITLES: ReadonlyMap<string, string> = new Map()
 
 interface ExploreCardProps {
   path: string
   cardId: string | null
   index: number
-  /** Opened in Edit card (the Inbox's E, YAZ-5003): also in a read-only vault, for this one edit (YAZ-5009). Done reads. */
-  startInEdit?: boolean
-  /** Opened from the Inbox (YAZ-5009): ⌘↵ while reading goes back to the Inbox, so ↗ does not say ⌘↵. */
-  fromInbox?: boolean
   /** The page's name, for the strip. */
   pageName: string
   vault: ExploreVault
@@ -75,7 +73,7 @@ interface ExploreCardProps {
 
 type Loaded = { kind: 'loading' } | { kind: 'card'; card: CardAtPage } | { kind: 'gone' }
 
-export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbox = false, pageName, vault, onOpenPage, onOpenLink, onOpenTab, onOpenInTab, onNotice, onHeadDown, onHeadReset, onClose, active }: ExploreCardProps) {
+export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, onOpenLink, onOpenTab, onOpenInTab, onNotice, onHeadDown, onHeadReset, onClose, active }: ExploreCardProps) {
   const unit = useUnit()
   const headRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLSpanElement>(null)
@@ -121,9 +119,8 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
 
   const review = vault.review
   const card = loaded.kind === 'card' ? loaded.card : null
-  // Edit card (YAZ-5003): E blocks it in a read-only vault, as in the page. The Inbox's E opens it in any vault
-  // (YAZ-5009): only this edit of this card; once it ends, the card reads, locked again.
-  const [editing, setEditing] = useState(startInEdit)
+  // Edit card (YAZ-5003): E blocks it in a read-only vault, as in the page.
+  const [editing, setEditing] = useState(false)
   // Out of Edit card, the body takes the keyboard, so the stack hears the next Esc or ⌘↵ (YAZ-5009 round 2). After the
   // commit, not in Done: the card's Done gives the keyboard back to its own editor, which this commit removes; the
   // keyboard would then fall to `document.body`, out of the stack.
@@ -136,7 +133,14 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
   const changeLine = writes.changeLine
   const editDone = (text: string) => writes.editDone(text, () => setEditing(false))
   /** E on the card window: Edit card (YAZ-5003), as the page's Edit card. Not in a field, not read only. */
+  const preview = () => card !== null && previewCardOf(bodyRef.current, path, card)
   const onBodyKey = (event: React.KeyboardEvent) => {
+    // P (YAZ-5152): Preview, as the Inbox shows the card; nothing saved.
+    if (!editing && card !== null && isCardPreviewKey(event)) {
+      event.preventDefault()
+      event.stopPropagation()
+      return preview()
+    }
     if (editing || card === null || vault.readOnly === true || !isCardEditKey(event)) return
     event.preventDefault()
     event.stopPropagation()
@@ -156,12 +160,24 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
         {id !== null && <CardId id={id} onNotice={onNotice} />}
         {card?.next === true && <CardNextChip onRemove={card.id === null ? undefined : () => changeLine((l) => withCardNext(l, false))} />}
         <span ref={titleRef} className={`explore__title${title === '' ? ' card__title--empty' : ''}`}>
-          {loaded.kind === 'loading' ? '' : title === '' ? 'New card' : title}
+          {/* The page title's own component (YAZ-5164 part 3), as a card file's tab and a card in a page: a click renames
+              the card in its page, its first line. A read-only vault, or a card file's card, shows it only. */}
+          {card !== null && (
+            <PageTitle
+              path={path}
+              titles={NO_TITLES}
+              text={title}
+              placeholder="New card"
+              readOnly={vault.readOnly === true || card.fileTitle !== undefined}
+              locked={false}
+              onRetitle={(next) => writes.editDone(cardRetitled(card.text, next), () => undefined)}
+            />
+          )}
         </span>
         {card?.notitle === true && <span className="card__state card__notitle">Hidden in review</span>}
         {/* ↗ folds into ⋯ in a narrow layer (YAZ-4986); the card ID, the title and × stay. */}
         <span className="explore__fold">
-          <HoverTip text={fromInbox ? 'Open page in a new tab' : 'Open page in a new tab (⌘↵)'} data-fold-part="open">
+          <HoverTip text="Open page in a new tab (⌘↵)" data-fold-part="open">
             <button type="button" className="explore__button" onMouseDown={keepFocus} onClick={onOpenInTab} aria-label={unit('Open page in a new tab')}>
               ↗
             </button>
@@ -173,9 +189,9 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
           sections={() => [
             [
               { id: 'open-page', label: unit('Open page'), onSelect: () => onOpenPage(card?.index ?? index) },
-              { id: 'open-tab', label: unit('Open page in a new tab'), ...(!fromInbox && { hint: '⌘↵' }), onSelect: onOpenInTab },
+              { id: 'open-tab', label: unit('Open page in a new tab'), hint: '⌘↵', onSelect: onOpenInTab },
             ],
-            ...cardMenuSections(card, id, changeLine, onNotice, { inbox: true, link: false }),
+            ...cardMenuSections(card, id, changeLine, onNotice, { inbox: true, link: false, preview }),
           ]}
         />
         <HoverTip text="Close (Esc)">

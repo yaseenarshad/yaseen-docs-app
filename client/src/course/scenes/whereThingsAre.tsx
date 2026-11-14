@@ -211,7 +211,7 @@ function SettingsReview(props: SceneProps) {
   const course = cue(b, 2, 0.69)
   const showHide = since(b, sw + 0.12, 0.3) > 0.5 && b.progress < sw + 0.3 ? 'Hide' : 'Show'
   return (
-    <Stage beat={b} label="Settings › Review: one switch shows or hides the card skill; Open the course brings you back here">
+    <Stage beat={b} label="Settings › Cards: one switch shows or hides the card skill; Open the course brings you back here">
       <Layer>
         <div className="later-settings" style={rise(b, since(b, 0, 0.5), 10)}>
           <ul className="later-settings__nav">
@@ -224,7 +224,7 @@ function SettingsReview(props: SceneProps) {
           <div className="later-settings__page" style={{ opacity: lerp(0.35, 1, since(b, review, 0.4)) }}>
             <p className="later-settings__title">Review</p>
             <div className="later-settings__row">
-              <span>Review cards</span>
+              <span>Use cards in this vault</span>
               <span className="later-seg">
                 <b data-on="true">On</b>
                 <b>Off</b>

@@ -9,7 +9,7 @@ import { AGENT_PROMPT } from '../course/prompt'
 export const CARD_SKILL_NAME = 'Card skill'
 
 /** The notice after "Hide card skill" (decision 4). It has one button, "Open Settings", and stays until used or closed. */
-export const CARD_SKILL_HIDDEN = 'Card skill hidden. Turn it on again in Settings › Review.'
+export const CARD_SKILL_HIDDEN = 'Card skill hidden. Turn it on again in Settings › Cards.'
 
 /** A file action in the card skill (Rename, Move, Delete, New, Paste): the app refuses it, with no allowance. */
 export const CARD_SKILL_READ_ONLY = 'The card skill is read only. Duplicate it into your vault to change it.'

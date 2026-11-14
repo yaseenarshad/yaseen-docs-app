@@ -21,7 +21,7 @@ function sourceFiles(dir: string): string[] {
 }
 const files = sourceFiles(SRC).map((path) => ({ path: relative(SRC, path), text: readFileSync(path, 'utf8') }))
 
-/** Every `data-tour` name the code can put on an element: JSX, `dataset.tour`, and a menu row's `tour`. */
+/** Every `data-tour` name the code can put on an element: JSX, `dataset.tour`, a menu row's `tour`, and a `tour` prop. */
 function marksInCode(): Map<string, string[]> {
   const marks = new Map<string, string[]>()
   const add = (name: string, file: string) => marks.set(name, [...(marks.get(name) ?? []), file])
@@ -31,6 +31,8 @@ function marksInCode(): Map<string, string[]> {
     for (const m of text.matchAll(/data-tour=("[^"]*"|\{[^}]*\})/g)) names(m[1]).forEach((n) => add(n, path))
     for (const m of text.matchAll(/dataset\.tour = (['"][^'"]+['"])/g)) names(m[1]).forEach((n) => add(n, path))
     for (const m of text.matchAll(/\btour: ([^,}\n]+)/g)) names(m[1]).forEach((n) => add(n, path))
+    // A component that puts its `tour` prop on its element as `data-tour` (the Inbox's card face, `InboxCardFace`).
+    for (const m of text.matchAll(/\stour=("[^"]*")/g)) names(m[1]).forEach((n) => add(n, path))
   }
   // The Settings row "Open the course" is a course file in the startup bundle.
   const settingsRow = files.find((f) => f.path === 'course/courseSettings.tsx')!

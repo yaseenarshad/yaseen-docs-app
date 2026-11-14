@@ -13,9 +13,12 @@
  *    "Due · 3 days ago"), then (YAZ-5051: the card frame holds only the card) THE HEAD (YAZ-5044): "Title · ID", the
  *    card ID small and grey (a click copies it, D20). A card in a page says its page in the top row's ONE breadcrumb
  *    (YAZ-5132: no "in <page>" here), whose page part opens it as O does; a card file (YAZ-5037): its title is the
- *    link, and it and O open the card file's tab ("Open card"). Then the chip "Up next ×" for a card at the top of the Inbox (YAZ-4999 D3). A card of more than one
+ *    link, and it and O open it in Explore (YAZ-5145, "Open card"). Then the chip "Up next ×" for a card at the top of the Inbox (YAZ-4999 D3). A card of more than one
  *    side says "Side 1 of 2" on the row's right (YAZ-5048), and the key row's Space says "Next side" when the next Space shows a side.
- *  - SCROLL (YAZ-5049): the word a Space shows, or the side it adds, comes into view, gliding; never centred. Round 2
+ *  - SCROLL (YAZ-5049): round 3 follows the NEXT blank (`data-next`, the one "Mark the next hidden word" colours) after
+ *    each Space, a new side's first blank, and at the end (no blank left) brings the card's end — the Reviews strip — in
+ *    as far as the last word stays in sight; one more Space there gives the answer buttons a soft ring. Round 5: Space
+ *    never shows a blank you cannot see — a marked blank not wholly between the top row and the buttons only glides in. Round 1: the word a Space shows, or the side it adds, comes into view, gliding; never centred. Round 2
  *    (as Mochi): the card is one long page — no scroll bar of its own; the Inbox's view scrolls, the top row stays on
  *    top and the buttons at the bottom — and a word that reaches the view's lower third comes up to its upper third,
  *    so what comes next shows (`inboxScroll.ts`).
@@ -30,12 +33,16 @@
  *  - The buttons (D5): ✕ Forgot · ✓ Remembered, or ↺ Again · ~ Hard · ✓ Good · ⇈ Easy, by the setting, round as
  *    Mochi's (YAZ-5018); the hover says when the card comes back ("Remembered · 9 days"; "Forgot · later today" while
  *    the answer keeps it in its same-day steps, YAZ-5020: it comes back at the end of this session).
- *  - The keys (`cardInboxKeys.ts`): Space, 1–2 / 1–4 (at any step, YAZ-5010), ⌘Z, O (the page on top, at its top,
- *    YAZ-5022; Esc there comes back to this card at the same step), E (YAZ-5003: the CARD WINDOW on top, in Edit card, in
- *    every vault, YAZ-5009: also a read-only one, with no "Allow edits?" box — only this card's text unlocks, for this
- *    edit; Done, Esc or ⌘↵ there saves and reads, locked again; then ⌘↵ or Esc comes back to this card at the same step), ← → (YAZ-5004: the card before or after, no answer), ⌘↵ (the page in a
- *    background tab: the review stays), Esc (only the ⋯ row; then the Esc order goes on, YAZ-5011). A key typed in a field, or while a dialog or a menu
- *    is open (Explore is a dialog), is not the Inbox's; a key with the keyboard elsewhere (the sidebar) neither.
+ *  - The keys (`cardInboxKeys.ts`): Space, 1–2 / 1–4 (at any step, YAZ-5010), ⌘Z, O, E, ← → (YAZ-5004: the card before
+ *    or after, no answer), ⌘↵ (the page in a background tab: the review stays), Esc (only the ⋯ row; then the Esc order
+ *    goes on, YAZ-5011). A key typed in a field, or while a dialog or a menu is open (Explore is a dialog), is not the
+ *    Inbox's; a key with the keyboard elsewhere (the sidebar) neither.
+ *  - O AND E OPEN EXPLORE'S OWN VIEW (YAZ-5145, Yaseen: "shuld be exactly the same ... we're just going to reuse
+ *    explore"): the page layer Explore opens for the same file, so the card looks the same from both. O: a card file's
+ *    layer, reading; a card in a page, its page at its TOP (YAZ-5022). E: the same layer in edit, as Explore's own E —
+ *    in a Read only vault its "Allow edits?" asks first; a card in a page lands on the card and opens its Edit card
+ *    ("e would edit the card"). Esc or ⌘↵ in edit go back to reading; then Esc or ⌘↵ come back to this card at the
+ *    same step. The title and "in <page>" links, ⋯ › Open card and an archived card's row open as O does.
  *  - P (YAZ-5014): plays or stops the first sound of the sides that show. Nothing plays by itself; the next card (an
  *    answer, ← →, ⌘Z), a hidden Inbox and its close stop it. "P Play" is in the hint row only while a side that shows
  *    has a sound. A board's picture (YAZ-5015) opens the board on top; Esc there comes back to this card and step.
@@ -59,8 +66,8 @@
  *    it again), pauses while the Inbox is not in front and over any stretch of "Pause the timer after" with no key or
  *    mouse; the answer writes its active seconds on its review part (`… good 13s`). The top row says today's work
  *    across the vault, "Today: 31 cards · 9 min" (`session.today`, from the index), and the done screen says it too.
- *    TIME SO FAR (YAZ-5130, `TodayWork`): the time hides behind a small clock by default (a click shows it), or shows,
- *    or is off, by Settings › Review › Time so far. The timer and the saved seconds do not change with it.
+ *    TIME SO FAR (YAZ-5130, `TodayWork`): the time hides behind a small clock by default (round 2: only its hover box
+ *    shows it, and a keyboard focus), or shows, or is off, by Settings › Review › Time so far. The timer and the saved seconds do not change with it.
  *  - REVIEWS AT THE BOTTOM OF THE LAST SIDE (YAZ-5105, as Mochi; it amends YAZ-5000, which took them out of the Inbox):
  *    a card with reviews has the Reviews strip ("✓ 4 Reviews") right under the card, outside its frame (round 2): the
  *    card window's own `CardReviews`, closed until asked for, with no delete here. Round 3: it shows as soon as the
@@ -77,20 +84,23 @@
  *    back while it is the last thing done (the hook's own undo).
  *  - ARCHIVED (YAZ-5046, Yaseen: "We need a way to be able to then have a toggle"): the cards menu's last row lists the
  *    scope's archived cards in the card's place, to look at, not to review: each its title and its page; a click opens
- *    the card window (as ⋯ › Open card), and "Unarchive" brings it back to review, its history kept. No answer buttons.
+ *    it as O does (YAZ-5145), and "Unarchive" brings it back to review, its history kept. No answer buttons.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CourseOffer, type CourseOfferProps } from '../course/CourseOffer'
 import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
-import { cardSides, cardTitle, cardWithoutTitle, hiddenCount } from '@shared/cardText'
+import { cardRetitled, cardSides, cardTitle } from '@shared/cardText'
+import { PageTitle } from '../editor/PageTitle'
+import { changeCardTextIn } from './cardFile'
 import { recordAt } from '../editor/card/embedCard'
 import type { GestureAction } from '@shared/keys'
 import type { CardRating } from '@shared/cardLine'
 import type { ExploreVault } from '../explore/ExplorePage'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
-import { CardBody, CardId, CardNextChip, CardReviews, cardWait } from './cardParts'
+import { CardId, CardNextChip, CardReviews, cardWait } from './cardParts'
+import { CardSideCount, InboxCardFace, InboxCardPanel, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
 import { cardInboxHints, cardInboxKey } from './cardInboxKeys'
-import { CARD_MEDIA, CARD_OPENS, stopCardAudio, textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
+import { textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
 import { HoverTip } from '../components/HoverTip'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { CARD_FILTERS, CardInboxBar } from './CardInboxBar'
@@ -102,8 +112,6 @@ import { AddMoreField } from './AddMoreField'
 import { useAnswerTimer } from './answerTimer'
 import { TodayWork } from './TodayWork'
 import { todayCards } from './reviewTime'
-import { cssZoom } from '../lib/cssZoom'
-import { inboxRoom, readingScroll } from './inboxScroll'
 import '../explore/explore.css'
 import { useUnit } from '../vault/unitWord'
 import { tourEvent } from '../course/tourBus'
@@ -115,12 +123,10 @@ export interface CardInboxProps {
   session: CardReviewSession
   vaultOf: (path: string) => ExploreVault
   nameOf: (path: string) => string
-  /** O and the page name: the page on top as an Explore layer, at its TOP (YAZ-5022: no scroll to the card). */
+  /** O, the title and the page name (YAZ-5145): Explore's own page layer for the card's file, reading, at its TOP (YAZ-5022). */
   openPage: (path: string) => void
-  /** O and the title of a card FILE (YAZ-5037, "Open card"): the card file's own tab. Absent: `openPage`. */
-  openTab?: (path: string) => void
-  /** The card window on top (⋯ › Open card); `edit` in Edit card (E, YAZ-5003). */
-  openCard: (path: string, id: string, index: number, edit: boolean) => void
+  /** E (YAZ-5145): the same layer in edit, as Explore's own E; a card in a page (`index`) lands on it in Edit card. */
+  editCard: (path: string, index: number | null) => void
   /** ⌘↵: the page in a background tab. */
   openInTab: (path: string) => void
   /** A link's bound gesture (⌘-click): App's link door. */
@@ -136,6 +142,8 @@ export interface CardInboxProps {
    */
   courseOffer?: CourseOfferProps
 }
+
+const NO_TITLES: ReadonlyMap<string, string> = new Map()
 
 /** The keys of a dialog, a sheet or a menu that is open: theirs, never the Inbox's. */
 const KEY_OWNERS = '[role="dialog"], [role="menu"], [role="listbox"]'
@@ -190,10 +198,10 @@ export const addedLine = (kind: AddKind, n: number): string => `Added ${n} ${kin
 export const resetLine = (kind: AddKind): string => `Reset today's ${kind === 'new' ? 'new cards' : 'Up next'}`
 
 /**
- * The Archived list (YAZ-5046): the scope's archived cards, to look at. Each row: its title (a click opens the card
- * window), its page, quiet, and Unarchive. None: one quiet line and the way back to All cards.
+ * The Archived list (YAZ-5046): the scope's archived cards, to look at. Each row: its title (a click opens it as O does,
+ * YAZ-5145), its page, quiet, and Unarchive. None: one quiet line and the way back to All cards.
  */
-function ArchivedList({ session, nameOf, openCard, unarchive, backToAll }: { session: CardReviewSession; nameOf: (path: string) => string; openCard: CardInboxProps['openCard']; unarchive: CardReviewApi['unarchive']; backToAll: () => void }) {
+function ArchivedList({ session, nameOf, openPage, unarchive, backToAll }: { session: CardReviewSession; nameOf: (path: string) => string; openPage: (path: string) => void; unarchive: CardReviewApi['unarchive']; backToAll: () => void }) {
   if (session.archived.length === 0)
     return (
       <div className="card-inbox__done" role="status">
@@ -209,7 +217,7 @@ function ArchivedList({ session, nameOf, openCard, unarchive, backToAll }: { ses
     <ul className="card-inbox__archived" aria-label="Archived cards">
       {session.archived.map((c) => (
         <li key={`${c.path}\n${c.id}`} className="card-inbox__archived-row">
-          <button type="button" className="card-inbox__archived-open" onMouseDown={(e) => e.preventDefault()} onClick={() => openCard(c.path, c.id, c.index, false)}>
+          <button type="button" className="card-inbox__archived-open" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(c.path)}>
             <span className={`card-inbox__archived-title${c.title === undefined ? ' card__title--empty' : ''}`}>{c.title ?? 'New card'}</span>
             <span className="card-inbox__archived-page">{nameOf(c.path)}</span>
           </button>
@@ -222,88 +230,30 @@ function ArchivedList({ session, nameOf, openCard, unarchive, backToAll }: { ses
   )
 }
 
-/** The step a card is at (D18): how many sides show, and how many hidden words, in page order over the card. */
-interface Step {
-  key: string | null
-  sides: number
-  shown: number
-}
-
-export function CardInbox({ shown = true, review, session, vaultOf, nameOf, openPage, openTab, openCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, courseOffer }: CardInboxProps) {
+export function CardInbox({ shown = true, review, session, vaultOf, nameOf, openPage, editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, courseOffer }: CardInboxProps) {
   const unit = useUnit()
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
   const { width, startDrag } = useInboxCardWidth(columnRef, rootRef)
   const card = session.card
   const pageText = card?.page?.text ?? null
-  // "Title on the front: Hide" (YAZ-5030): the front is drawn without its title line, so the title is never a Space
-  // step (nor a hidden word in it); once the card is fully shown, the head shows it (YAZ-5044).
-  const hideTitle = card?.page?.notitle === true
-  const text = useMemo(() => (pageText !== null && hideTitle ? cardWithoutTitle(pageText) : pageText), [pageText, hideTitle])
-  // The head's title (YAZ-5044), and whether it waits for the card's last step: hidden on the front, or holding a hidden word.
-  const title = useMemo(() => {
-    if (pageText === null) return { text: '', waits: false }
-    const tells = hiddenCount(cardSides(pageText)[0]) > hiddenCount(cardSides(cardWithoutTitle(pageText))[0])
-    return { text: cardTitle(pageText), waits: hideTitle || tells }
-  }, [pageText, hideTitle])
-  // A card FILE (YAZ-5037): its own tab is where it lives. One look in the index the card's vault already holds.
+  // The Inbox's card (YAZ-5152: shared with the Preview, `inboxCard.tsx`): the front without a hidden title (YAZ-5030),
+  // and the head's title, which waits for the last step where it would tell the answer (YAZ-5044).
+  const { text, title } = useCardFront(pageText, card?.page?.notitle === true)
+  // A card FILE (YAZ-5037): "Open card" in the key row, and no "in <page>". One look in the index the vault already holds.
   const cardFile = card !== null && recordAt(vaultOf(card.path).wikilinks.records, card.path)?.kind === 'card'
-  const open = useCallback((path: string): void => (cardFile ? (openTab ?? openPage)(path) : openPage(path)), [cardFile, openTab, openPage])
   const cardKey = card === null ? null : `${session.position}\n${card.path}\n${card.id}`
   // YAZ-5033: the active seconds on this card, from the moment its text shows; read at the answer.
   const answerSeconds = useAnswerTimer(card?.page == null ? null : cardKey, shown, review.settings.pauseAfter)
-  // Time so far (YAZ-5130): hidden behind a click by default; one click shows it in the top row and on the done screen.
-  const [timeOpen, setTimeOpen] = useState(false)
-  const time = { mode: review.settings.timeSoFar, open: timeOpen, setOpen: setTimeOpen }
+  // Time so far (YAZ-5130): hidden in the clock's hover box by default (round 2: hover only, never a click).
+  const time = review.settings.timeSoFar
 
-  // The sides and their hidden words, once per card text.
-  const counts = useMemo(() => (text === null ? [] : cardSides(text).map(hiddenCount)), [text])
-  const [stepState, setStep] = useState<Step>({ key: cardKey, sides: 1, shown: 0 })
-  const step = stepState.key === cardKey ? stepState : { key: cardKey, sides: 1, shown: 0 }
-  // A card that goes and comes back (⌘Z after the last answer) starts again from its first step.
-  useEffect(() => setStep((s) => (s.key === cardKey ? s : { key: cardKey, sides: 1, shown: 0 })), [cardKey])
-  // The card's sound never outlives it (YAZ-5014): the next card, a hidden Inbox and its close stop it.
-  useEffect(() => stopCardAudio, [cardKey, shown])
-  const hiddenUpTo = (sides: number): number => counts.slice(0, sides).reduce((a, b) => a + b, 0)
-  const done = text !== null && step.sides >= counts.length && step.shown >= hiddenUpTo(counts.length)
-  // YAZ-5048: the next Space shows the next side (the sides that show have no hidden word left).
-  const nextSide = !done && text !== null && step.shown >= hiddenUpTo(step.sides)
-  // YAZ-5105 round 3 (Yaseen: "just show on the last side … regardless of it hidden words are all revealed or not"):
-  // the card's last side shows, past its front. A one-side card's front IS its last side: past it means its first
-  // Space has shown something, or it has nothing to show (fully shown at once).
-  const onLastSide = text !== null && step.sides >= counts.length && (step.sides > 1 || step.shown > 0 || done)
-
-  // YAZ-5049 (Yaseen: "kinda like we have in the app our CMD F search"): the word a Space shows, or the side it adds,
-  // comes into view, gliding; never centred. Only a step of the same card moves it. The card's render runs first.
-  // Round 2: the card is one long page, as in Mochi (no scroll bar of its own: the Inbox's view scrolls, the top row
-  // and the buttons stay), and the rule keeps room below the word, to see what comes next (`inboxScroll.ts`). A new
-  // card starts at its top, at once.
+  // Space's steps (D18, YAZ-5048, YAZ-5049, YAZ-5105 round 3) and the scroll that follows them: the Inbox's card,
+  // shared with the Preview (YAZ-5152, `inboxCard.tsx`). The card's sound stops with the card and a hidden Inbox.
+  const steps = useCardSteps(text, cardKey, rootRef)
+  const { counts, step, done, nextSide, onLastSide } = steps
   const bodyRef = useRef<HTMLDivElement>(null)
-  const lastStep = useRef<Step | null>(null)
-  useEffect(() => {
-    const before = lastStep.current
-    lastStep.current = { key: step.key, sides: step.sides, shown: step.shown }
-    const body = bodyRef.current
-    const view = rootRef.current
-    if (!shown || body === null || view === null) return
-    if (before !== null && before.key !== step.key) {
-      view.scrollTop = 0
-      return
-    }
-    if (before === null) return
-    const side = step.sides > before.sides ? body.querySelector(`.card__side[data-side="${step.sides - 1}"]`) : null
-    const target = side ?? (step.shown > before.shown ? body.querySelector(`[data-hidden="${step.shown - 1}"]`) : null)
-    if (target === null) return
-    const r = target.getBoundingClientRect()
-    // A side by its top: its first line, the line between the sides above it.
-    const thing = side === null ? { start: r.top, end: r.bottom } : { start: r.top, end: r.top }
-    const dy = readingScroll(thing, inboxRoom(view))
-    if (dy === 0) return
-    const top = view.scrollTop + dy / cssZoom(view)
-    const smooth = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches !== true
-    if (typeof view.scrollTo === 'function') view.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' })
-    else view.scrollTop = top
-  }, [step.key, step.sides, step.shown, shown])
+  useStepScroll(steps, shown, bodyRef, rootRef)
 
   // The buttons show with the card (YAZ-5010): their reviews are fixed now, so the hover and the write agree (D13). Again after a delete re-reads the card.
   // The page object, not its text (YAZ-5029): a card read again with the same text is a new page, and fixes again.
@@ -322,8 +272,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   // The ⋯ row (YAZ-5004): open or closed; it closes with the card, Esc and a press outside it.
   const [moreState, setMore] = useState<string | null>(null)
   const moreOpen = moreState !== null && moreState === cardKey
-  const live = useRef({ step, done, counts, card, session, review, ratings, moreOpen, shown, answerSeconds })
-  live.current = { step, done, counts, card, session, review, ratings, moreOpen, shown, answerSeconds }
+  const live = useRef({ steps, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile })
+  live.current = { steps, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile }
 
   // The last answer's line (YAZ-5025 round 2): its words fixed when the answer is given, shown once the session counts
   // it (`count`: the session's answers with it), and only while that answer is still the session's last (an undo clears it).
@@ -356,12 +306,23 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   }, [moreOpen])
 
   /** One Space (D18): the next hidden word of the sides showing, else the next side. */
-  const advance = useCallback(() => {
-    const { step, done, counts, card } = live.current
-    if (done || card?.page == null) return
-    const before = counts.slice(0, step.sides).reduce((a, b) => a + b, 0)
-    setStep(step.shown < before ? { ...step, shown: step.shown + 1 } : { ...step, sides: step.sides + 1 })
-    tourEvent('inbox-step-shown', card.path)
+  // THE END's cue (YAZ-5049 round 3, Yaseen: "there is no way to know they have hit the end"): the hint row has
+  // dropped Space, and one more Space moves nothing but gives the answer buttons one soft ring — where to go now.
+  // A new value each time, so the ring plays again; none on the next card.
+  const [nudge, setNudge] = useState<{ key: string | null; n: number }>({ key: null, n: 0 })
+  // Round 4: `by` says what showed it — Space (a key) scrolls to follow the next blank, a mouse never moves the view.
+  // The steps are the shared card's (`useCardSteps`); at the end, a key rings the buttons.
+  const advance = useCallback((by: 'key' | 'mouse' = 'key') => {
+    const { steps, card } = live.current
+    if (card?.page == null) return
+    if (steps.stepOn(by)) {
+      // The guided tour (YAZ-5123) hears each step of the card.
+      tourEvent('inbox-step-shown', card.path)
+      return
+    }
+    if (by !== 'key') return
+    const key = steps.step.key
+    setNudge((v) => ({ key, n: v.key === key ? v.n + 1 : 1 }))
   }, [])
 
   useEffect(() => {
@@ -395,15 +356,14 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
         if (card.page !== null && rating !== undefined && !event.repeat) answerWith(rating)
         return
       }
-      if (key.kind === 'open') return open(card.path)
-      // E edits only the card (YAZ-5003): the card window in Edit card, in every vault (YAZ-5009, Yaseen: "e should go
-      // directly into edit mode"). A read-only vault unlocks this card's text alone, for this edit (`ExploreCard`).
-      if (key.kind === 'edit') return openCard(card.path, card.id, card.index, true)
+      if (key.kind === 'open') return openPage(card.path)
+      // E (YAZ-5145): Explore's own edit of the card's file; a card in a page lands on the card, in Edit card.
+      if (key.kind === 'edit') return editCard(card.path, live.current.cardFile ? null : card.index)
       if (key.kind === 'tab') return openInTab(card.path)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [advance, answerWith, open, openCard, openInTab])
+  }, [advance, answerWith, openPage, editCard, openInTab])
 
   const doors = useMemo(() => ({ openLayer, openTab: openLinkIn, onNotice }), [openLayer, openLinkIn, onNotice])
   // YAZ-5042: the kinds that wait past today's number, with an add; under a filter, only that filter's kind.
@@ -422,6 +382,12 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   const more = session.scope === 'vault' ? 0 : review.dueCount
   // The head's title (YAZ-5044): once the card is fully shown where it waits (`notitle`, or a hidden word in it).
   const headTitle = title.waits && !done ? '' : title.text
+  /** The head's rename (YAZ-5164 part 3): the card's first line in its page, one write; the Inbox reads the card again. */
+  const retitle = (path: string, id: string, text: string, next: string): void => {
+    const changed = cardRetitled(text, next)
+    if (changed === text) return
+    changeCardTextIn(path, id, changed, -1).catch((err: unknown) => onNotice(`Can't rename the card: ${err instanceof Error ? err.message : String(err)}`))
+  }
   const hints = cardInboxHints({ card: card !== null, cardFile, answering: done, canUndo: session.canUndo, moves: session.canBack || session.canNext, audio: text !== null && textHasAudio(cardSides(text).slice(0, step.sides).join('\n')), nextSide })
   /** The ⋯ row's actions (YAZ-5004): the hook's own, with their names and keys for the hover box. */
   const moreActions =
@@ -433,12 +399,12 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
           card.page?.next === true
             ? { id: 'next', label: 'Remove from top of Inbox', icon: ICON_TOP, disabled: false, run: () => void review.setNext(card.path, card.id, false) }
             : { id: 'next', label: 'Put at top of Inbox', tour: 'card-menu-up-next', icon: ICON_TOP, disabled: card.page === null, run: () => void review.setNext(card.path, card.id, true) },
-          { id: 'card', label: 'Open card', icon: ICON_CARD, disabled: false, run: () => openCard(card.path, card.id, card.index, false) },
+          { id: 'card', label: 'Open card', icon: ICON_CARD, disabled: false, run: () => openPage(card.path) },
         ]
 
   return (
     <div ref={rootRef} className="card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`}>
-      <CardInboxBar session={session} setFilter={review.setFilter} addCards={review.addCards} resetCards={review.resetCards} openPlace={(part) => (part.kind === 'page' ? open(part.path) : openPlace?.(part.path))} time={time} />
+      <CardInboxBar session={session} setFilter={review.setFilter} addCards={review.addCards} resetCards={review.resetCards} openPlace={(part) => (part.kind === 'page' ? openPage(part.path) : openPlace?.(part.path))} time={time} />
       <div ref={columnRef} className="card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
         {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height
             with no chip (the done screen), so the card does not move. YAZ-5051 (Yaseen: "so that the card is just pure"):
@@ -452,9 +418,15 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                 {headTitle !== '' && (
                   <>
                     {cardFile ? (
-                      <button type="button" className="card-inbox__name card-inbox__name--link" onMouseDown={(e) => e.preventDefault()} onClick={() => open(card.path)}>
+                      <button type="button" className="card-inbox__name card-inbox__name--link" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(card.path)}>
                         {headTitle}
                       </button>
+                    ) : card.page !== null && vaultOf(card.path).readOnly !== true ? (
+                      // A card in a page (YAZ-5164 part 3): the page title's own component, a click renames the card in its
+                      // page (its first line), as in the page's card head. In a Read only vault it shows only.
+                      <span className="card-inbox__name">
+                        <PageTitle path={card.path} titles={NO_TITLES} text={headTitle} onRetitle={(next) => retitle(card.path, card.id, card.page?.text ?? '', next)} />
+                      </span>
                     ) : (
                       <span className="card-inbox__name">{headTitle}</span>
                     )}
@@ -469,15 +441,12 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
             </>
           )}
           {/* YAZ-5048: a card of more than one side says where you are, quietly, on the right; one side says nothing. */}
-          {card !== null && text !== null && counts.length > 1 && <span className="card-inbox__sides">{`Side ${Math.min(step.sides, counts.length)} of ${counts.length}`}</span>}
+          {card !== null && text !== null && <CardSideCount steps={steps} />}
         </div>
-        <div className="card-inbox__panel">
-          {/* The card's edges (YAZ-5019): a drag of either sizes the card, centred. */}
-          <div className="card-inbox__edge" data-side="left" role="separator" aria-orientation="vertical" aria-label="Card width" onPointerDown={startDrag(-1)} />
-          <div className="card-inbox__edge" data-side="right" role="separator" aria-orientation="vertical" aria-label="Card width" onPointerDown={startDrag(1)} />
-          <div ref={bodyRef} className="card-inbox__body">
+        {/* The card's frame and its width edges (YAZ-5019), shared with the Preview (YAZ-5152). */}
+        <InboxCardPanel startDrag={startDrag} bodyRef={bodyRef}>
             {session.filter === 'archived' ? (
-              <ArchivedList session={session} nameOf={nameOf} openCard={openCard} unarchive={review.unarchive} backToAll={() => review.setFilter('all')} />
+              <ArchivedList session={session} nameOf={nameOf} openPage={openPage} unarchive={review.unarchive} backToAll={() => review.setFilter('all')} />
             ) : card === null ? (
               <div className="card-inbox__done" role="status">
                 {/* YAZ-5033: today's work across the vault, under whatever the screen says. */}
@@ -524,15 +493,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
             ) : (
               text !== null &&
               card.page !== null && (
-                <>
-                  <div className="card card-screen card-inbox__card" data-tour="inbox-card" onClick={(e) => e.target instanceof Element && e.target.closest(`a[href], ${CARD_OPENS}, ${CARD_MEDIA}`) === null && advance()}>
-                    <CardBody text={text} path={card.path} vault={vaultOf(card.path)} show={{ sides: step.sides, shown: step.shown }} doors={doors} />
-                  </div>
-                </>
+                <InboxCardFace tour="inbox-card" text={text} path={card.path} vault={vaultOf(card.path)} steps={steps} doors={doors} onStep={advance} />
               )
             )}
-          </div>
-        </div>
+        </InboxCardPanel>
         {/* YAZ-5105 round 2: the Reviews strip, as Mochi's, under the card and outside its frame; round 3: as soon as the
             last side shows, its hidden words shown or not; closed again for each card. The buttons' band stays at the
             bottom of the view over it. */}
@@ -555,7 +519,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                 </button>
               </HoverTip>
             </div>
-            <div className="card-inbox__answers" data-tour="inbox-answers">
+            <div className="card-inbox__answers" data-tour="inbox-answers" data-nudge={nudge.key === cardKey && nudge.key !== null ? (nudge.n % 2 === 1 ? 'a' : 'b') : undefined}>
               {/* YAZ-5029: the buttons are the setting's, always there — never only once the card's answers are fixed, so
                   fast ← → never takes them away for a frame. The hover says when the card comes back once it is known. */}
               {ratings.map((rating, i) => {

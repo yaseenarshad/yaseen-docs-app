@@ -41,16 +41,16 @@ let seen: ReviewSettings | undefined
 let onRoots: ReadonlySet<string> = new Set()
 const ROOTS = ['/vault', '/other']
 
-function Probe({ vault }: { vault: string | null }) {
-  state = useReviewSettings(vault, notice)
+function Probe({ vault, idsOff = false }: { vault: string | null; idsOff?: boolean }) {
+  state = useReviewSettings(vault, notice, idsOff)
   seen = useVaultReviewSettings('/vault')
   onRoots = useReviewOnRoots(ROOTS)
   return null
 }
 
-async function mount(vault: string | null): Promise<void> {
+async function mount(vault: string | null, idsOff = false): Promise<void> {
   root = createRoot(document.createElement('div'))
-  await act(async () => root?.render(<Probe vault={vault} />))
+  await act(async () => root?.render(<Probe vault={vault} idsOff={idsOff} />))
 }
 
 beforeEach(() => {
@@ -127,6 +127,18 @@ describe('useReviewSettings', () => {
     expect([...held]).toEqual(['/vault'])
     await act(async () => state.save({ ...state.settings, newPerDay: 7 }))
     expect(onRoots).toBe(held)
+  })
+
+  it('YAZ-5154: a vault whose index says IDs off publishes Cards off — no card in search, no Card type, no card tools — whatever review.json says; the file is not written', async () => {
+    read.mockResolvedValue({ enabled: true })
+    await mount('/vault', true)
+    expect(state.settings.enabled).toBe(true)
+    expect(seen?.enabled).toBe(false)
+    expect([...onRoots]).toEqual([])
+    expect(write).not.toHaveBeenCalled()
+    await act(async () => root?.render(<Probe vault="/vault" />))
+    expect(seen?.enabled).toBe(true)
+    expect([...onRoots]).toEqual(['/vault'])
   })
 
   it('a review.json that stops being valid JSON mid-session: the settings stay and a save is refused with a notice, until the file parses again', async () => {

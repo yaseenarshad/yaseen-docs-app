@@ -38,6 +38,7 @@ import type { SlashMenuGroups } from '../slashMenu'
 import type { ToolbarBuilder } from '../createCrepe'
 import { joinCardParts, sideMarkdown, sideWithEdges, splitCardText, type CardParts } from './cardEditorText'
 import { tourEvent } from '../../course/tourBus'
+import { cardTitleOut, cardWithTitle } from '@shared/cardText'
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The hidden word: the `cloze` mark
@@ -407,8 +408,13 @@ export interface CardCrepe {
 export interface CardEditor {
   /** Made: the card's text is in it and it has the keyboard. */
   ready: Promise<void>
-  /** The card's text now: what Done writes. The text it started from until it is ready. */
+  /**
+   * The card's text now: what Done writes. The text it started from until it is ready. A card in a page: with the Title
+   * field's title as its first line (`cardRetitled`); a card file: its card alone (its title is `title()`).
+   */
   text: () => string
+  /** The Title field's title now, plain text on one line (YAZ-5164 part 3). */
+  title: () => string
   view: () => EditorView | null
   destroy: () => void
 }
@@ -466,12 +472,53 @@ function cardPlugins(doors: CardEditorDoors, escapeTaken: () => boolean) {
 }
 
 /**
- * Mounts the card's editor in `root` with the card's `text`. `select`: offsets in the card's text to select in its first
- * line (`/card`'s "Title"); absent → the caret at the end.
+ * THE TITLE FIELD (YAZ-5164 part 3, Yaseen: "Yes, build it"): above Side 1, for both kinds of card, bound to where each
+ * keeps its title. A card in a page (`fileTitle` absent): its title line (`cardTitleOut`) is in the field and out of the
+ * editor, and `text()` puts the field's title back as its first line; a first line that holds a hidden word or code is
+ * the card's question and stays in the editor, and a title typed in the field goes above it. A card file: the field is
+ * its `title` (`fileTitle`), and the editor is its card. Enter, ↓ and Tab go down into Side 1; ⌘↵ and Esc are Done.
  */
-export function mountCardEditor(o: { root: HTMLElement; text: string; make: (root: HTMLElement) => CardCrepe; doors: CardEditorDoors; select?: { from: number; to: number } }): CardEditor {
-  const parts: CardParts = splitCardText(o.text)
+function titleField(value: string, doors: CardEditorDoors, down: () => void, readOnly: boolean): HTMLInputElement {
+  const field = document.createElement('input')
+  field.type = 'text'
+  field.readOnly = readOnly
+  field.className = 'card-editor__title'
+  field.placeholder = 'Title'
+  field.setAttribute('aria-label', 'Card title')
+  field.spellcheck = true
+  field.value = value
+  field.addEventListener('input', () => doors.changed())
+  field.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) doors.done()
+    else if (event.key === 'Escape') doors.done()
+    else if (event.key === 'Enter' || event.key === 'ArrowDown' || (event.key === 'Tab' && !event.shiftKey)) down()
+    else return
+    event.preventDefault()
+    event.stopPropagation()
+  })
+  return field
+}
+
+/**
+ * Mounts the card's editor in `root` with the card's `text`, its Title field above it. `select`: offsets in the card's
+ * text to select in its first line (`/card`'s "Title": then in the Title field); absent → the caret at the end.
+ * `fileTitle`: a card file's `title` (YAZ-5044); absent, the title is the card's first line. `titleReadOnly`: the field
+ * shows the title only (an embed of a card file has no door to rename that file: its tab does).
+ */
+export function mountCardEditor(o: { root: HTMLElement; text: string; make: (root: HTMLElement) => CardCrepe; doors: CardEditorDoors; select?: { from: number; to: number }; fileTitle?: string; titleReadOnly?: boolean }): CardEditor {
+  // A card in a page: the title line out of the editor, into the field (`cardTitleOut`, the rule that moves it to a card file).
+  const split = o.fileTitle === undefined ? cardTitleOut(o.text) : { title: o.fileTitle, text: o.text }
+  const taken = o.fileTitle === undefined && split.text !== o.text
+  const body = split.text
+  const parts: CardParts = splitCardText(body)
+  let view: EditorView | null = null
+  const field = titleField(split.title, o.doors, () => {
+    if (view === null) return
+    view.dispatch(view.state.tr.setSelection(Selection.atStart(view.state.doc)))
+    view.focus()
+  }, o.titleReadOnly === true)
   const { crepe, markdown } = o.make(o.root)
+  o.root.prepend(field)
   let escapeTaken = false
   // The `/` menu hears Esc on the window, in the capture phase, before the editor: it closed itself then.
   const onKeyDown = (event: KeyboardEvent) => {
@@ -482,7 +529,6 @@ export function mountCardEditor(o: { root: HTMLElement; text: string; make: (roo
   for (const plugin of [insertHrInputRule, highlightInputRule, wrapInTaskListInputRule, ...highlightKeymap]) void crepe.editor.remove(plugin)
   crepe.editor.use(cardPlugins(o.doors, () => escapeTaken))
   let destroyed = false
-  let view: EditorView | null = null
   /** Each side's nodes as the editor started: a side still equal to them keeps its bytes. */
   let start: ProseNode[][] = []
   const ready = crepe.create().then(() => {
@@ -503,6 +549,14 @@ export function mountCardEditor(o: { root: HTMLElement; text: string; make: (roo
     start = sidesOf(v.state.doc)
     const { doc } = v.state
     let selection: Selection = Selection.atEnd(doc)
+    // `/card`'s "Title" (its first line) is the Title field's now: selected there, so typing replaces it.
+    if (o.select !== undefined && taken) {
+      v.dispatch(v.state.tr.setSelection(selection))
+      view = v
+      field.focus()
+      field.setSelectionRange(o.select.from, Math.min(o.select.to, field.value.length))
+      return
+    }
     if (o.select !== undefined) {
       const first = Selection.atStart(doc).$from
       const size = first.parent.content.size
@@ -516,25 +570,39 @@ export function mountCardEditor(o: { root: HTMLElement; text: string; make: (roo
   return {
     ready,
     view: () => view,
+    title: () => field.value.replace(/\s+/g, ' ').trim(),
     text: () => {
-      if (view === null || view.isDestroyed) return o.text
-      const now = sidesOf(view.state.doc)
-      const sides = now.map((nodes, i) => {
-        const was = parts.sides[i]
-        if (was !== undefined && start[i] !== undefined && sameNodes(nodes, start[i])) return was
-        const md = nodes.length === 0 ? '' : markdown(view!.state.schema.topNodeType.create(null, nodes)).replace(/\n+$/, '')
-        return sideWithEdges(md, was)
-      })
-      const text = joinCardParts({ sides, breaks: parts.breaks })
-      // A card with every side as it was, but a break line of its own (` --- `): the same card, its bytes.
-      return now.length === parts.sides.length && now.every((nodes, i) => start[i] !== undefined && sameNodes(nodes, start[i])) ? o.text : text
+      const edited = bodyNow()
+      if (o.fileTitle !== undefined) return edited
+      const title = field.value.replace(/\s+/g, ' ').trim()
+      if (title === split.title && edited === body) return o.text
+      // The field's title as the first line, above the editor's text. A first line kept in the editor (a hidden word, code)
+      // is no title line: with the title as it was, the editor's text alone; a new title goes above it.
+      if (title === split.title && !taken) return edited
+      return cardWithTitle(title, edited)
     },
     destroy: () => {
       if (destroyed) return
       destroyed = true
       o.root.removeEventListener('keydown', onKeyDown, true)
+      field.remove()
       view = null
       void ready.then(() => crepe.destroy()).catch((err: unknown) => console.error('[card-editor] destroy failed:', err))
     },
+  }
+
+  /** The editor's text now: its card without the title line; what it started from until it is ready. */
+  function bodyNow(): string {
+    if (view === null || view.isDestroyed) return body
+    const now = sidesOf(view.state.doc)
+    const sides = now.map((nodes, i) => {
+      const was = parts.sides[i]
+      if (was !== undefined && start[i] !== undefined && sameNodes(nodes, start[i])) return was
+      const md = nodes.length === 0 ? '' : markdown(view!.state.schema.topNodeType.create(null, nodes)).replace(/\n+$/, '')
+      return sideWithEdges(md, was)
+    })
+    const text = joinCardParts({ sides, breaks: parts.breaks })
+    // A card with every side as it was, but a break line of its own (` --- `): the same card, its bytes.
+    return now.length === parts.sides.length && now.every((nodes, i) => start[i] !== undefined && sameNodes(nodes, start[i])) ? body : text
   }
 }

@@ -29,7 +29,7 @@ import { isIdLetters } from '@shared/pageId'
 import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
@@ -74,7 +74,7 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, cardSpacingOptions, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, SHOW_HIDE_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
+import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, cardSpacingOptions, cardWidthOptions, cardTablePositionOptions, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, SHOW_HIDE_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, TABLE_POSITION_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
 
 /** A cell bullet's px setting (the YAZ-3818 demo): the stepper, and Reset when it is not the default. */
 function CellBulletStepper({ settings, onChange, field, name, min, max, step }: { settings: SettingsState; onChange: (next: SettingsState) => void; field: 'tableCellBulletIndent' | 'tableCellBulletGap'; name: string; min: number; max: number; step: number }) {
@@ -149,20 +149,21 @@ function PxSetting({ name, value, fallback, min, max, step, onSet }: { name: str
 
 /**
  * "Width" of every code block or every table (YAZ-4783 layer 3): Text column (`null`, the look before) or Pixels, with the
- * px typed beside it, kept on ⏎ or blur and clamped to `BLOCK_WIDTH_MIN`–`BLOCK_WIDTH_MAX`. Pixels starts at `start`.
+ * px typed beside it, kept on ⏎ or blur and clamped to `min`–`max` (`BLOCK_WIDTH_MIN`–`BLOCK_WIDTH_MAX`). Pixels starts
+ * at `start`. Card width (YAZ-5144 round 2) is the same control in its own words (`options`), with Reset to `start`.
  */
-function BlockWidthSetting({ name, value, start, onSet }: { name: string; value: number | null; start: number; onSet: (next: number | null) => void }) {
+function BlockWidthSetting({ name, value, start, onSet, options = BLOCK_WIDTH_OPTIONS, min = BLOCK_WIDTH_MIN, max = BLOCK_WIDTH_MAX, reset = false }: { name: string; value: number | null; start: number; onSet: (next: number | null) => void; options?: typeof BLOCK_WIDTH_OPTIONS; min?: number; max?: number; reset?: boolean }) {
   const [draft, setDraft] = useState(value === null ? '' : String(value))
   useEffect(() => setDraft(value === null ? '' : String(value)), [value])
   const keep = () => {
     const n = Number.parseInt(draft, 10)
-    const next = Number.isFinite(n) ? Math.min(BLOCK_WIDTH_MAX, Math.max(BLOCK_WIDTH_MIN, n)) : value
+    const next = Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : value
     setDraft(next === null ? '' : String(next))
     if (next !== value) onSet(next)
   }
   return (
     <>
-      <Segmented options={BLOCK_WIDTH_OPTIONS} value={value === null ? 'column' : 'px'} onChange={(mode) => onSet(mode === 'column' ? null : (value ?? start))} ariaLabel={name} />
+      <Segmented options={options} value={value === null ? 'column' : 'px'} onChange={(mode) => onSet(mode === 'column' ? null : (value ?? start))} ariaLabel={name} />
       {value !== null && (
         <span className="settings__percent">
           <input className="settings__input settings__input--number" aria-label={`${name} in px`} inputMode="numeric" value={draft} spellCheck={false}
@@ -172,6 +173,11 @@ function BlockWidthSetting({ name, value, start, onSet }: { name: string; value:
             }} />
           px
         </span>
+      )}
+      {reset && value !== null && value !== start && (
+        <button type="button" className="settings__option" onClick={() => onSet(start)}>
+          Reset
+        </button>
       )}
     </>
   )
@@ -343,7 +349,8 @@ export interface SettingsCtx {
     enabled: boolean
     held: boolean
     ask: IndexResponse['ask']
-    set: (enabled: boolean, letters?: string) => void
+    /** YAZ-5154: may resolve true once saved, so Cards change only with IDs; a plain void counts as saved. */
+    set: (enabled: boolean, letters?: string) => Promise<boolean> | void
     check: () => Promise<string>
     old: number
     unfinished: boolean
@@ -404,7 +411,7 @@ export interface SettingDef {
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'tables' | 'code' | 'files' | 'folderPages' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'memory' | 'storage' | 'sharing'
+export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'tables' | 'code' | 'files' | 'folderPages' | 'cards' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'memory' | 'storage' | 'sharing'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
@@ -479,7 +486,8 @@ function iconColourRow(kind: SidebarIconKind): SettingDef {
 }
 
 /** What the section title does not say: the feature's name, and where its cards turn up. */
-const REVIEW_KEYWORDS = ['cards', 'cards', 'flashcards', 'inbox', 'spaced repetition', 'fsrs', 'archive', 'archived']
+// YAZ-5154: the section is Cards now; "review" still finds it, the word people know it by.
+const REVIEW_KEYWORDS = ['cards', 'review', 'reviews', 'flashcards', 'inbox', 'spaced repetition', 'fsrs', 'archive', 'archived']
 /** Card spacing's rows (YAZ-5050). */
 const CARD_SPACING_KEYWORDS = [...REVIEW_KEYWORDS, 'spacing', 'line spacing', 'line height', 'paragraph', 'space between blocks', 'gap', 'bullet', 'indent', 'view mode']
 
@@ -525,10 +533,64 @@ const NOTHING_TO_WRITE = { pages: 0, folders: 0, foreign: 0 }
  * for a vault that has none, and exactly its own letters, in any case, for one that has them (S9).
  * "Give IDs" and Enter do nothing until then. The box is the one typed-confirm piece (`TypedConfirmSheet`).
  */
-function GiveIdsSheet({ ask, vault, letters, onConfirm, onCancel }: { ask: NonNullable<IndexResponse['ask']>; vault?: string; letters: string | undefined; onConfirm: (letters: string) => void; onCancel: () => void }) {
+function GiveIdsSheet({ ask, vault, letters, lead = '', confirmLabel = 'Give IDs', onConfirm, onCancel }: { ask: NonNullable<IndexResponse['ask']>; vault?: string; letters: string | undefined; lead?: string; confirmLabel?: string; onConfirm: (letters: string) => void; onCancel: () => void }) {
   const unit = useUnit()
   const valid = (typed: string): boolean => (letters === undefined ? isIdLetters(typed) : typed.toUpperCase() === letters)
-  return <TypedConfirmSheet labelId="confirm-ids-on-text" text={idsAskMessage(ask, vault, unit)} ask={idsLettersAsk(letters)} confirmLabel="Give IDs" valid={valid} onConfirm={onConfirm} onCancel={onCancel} />
+  return <TypedConfirmSheet labelId="confirm-ids-on-text" text={`${lead}${idsAskMessage(ask, vault, unit)}`} ask={idsLettersAsk(letters)} confirmLabel={confirmLabel} valid={valid} onConfirm={onConfirm} onCancel={onCancel} />
+}
+
+/**
+ * The box that turns IDs on (YAZ-2677 🔒 D2, YAZ-4922 🔒 D2): the keep-letters box where pages already hold number IDs,
+ * else the typed-letters box. The IDs switch opens it; so does Cards' switch in a vault with IDs off (YAZ-5154), with its
+ * `lead` ("Cards need IDs. Turn on IDs too? ") and its button ("Turn on both").
+ */
+function IdsOnSheet({ ids, vault, lead, confirmLabel, onConfirm, onCancel }: { ids: NonNullable<SettingsCtx['ids']>; vault?: string; lead?: string; confirmLabel?: string; onConfirm: (letters: string) => void; onCancel: () => void }) {
+  const unit = useUnit()
+  return ids.ask?.groups?.[0] !== undefined ? (
+    <KeepIdsSheet text={`${lead ?? ''}${keepIdsAskMessage(ids.ask, vault, unit)}`} main={ids.ask.groups[0].letters} onConfirm={onConfirm} onCancel={onCancel} />
+  ) : (
+    <GiveIdsSheet ask={ids.ask ?? NOTHING_TO_WRITE} vault={vault} letters={ids.ask?.letters} lead={lead} confirmLabel={confirmLabel} onConfirm={onConfirm} onCancel={onCancel} />
+  )
+}
+
+/** YAZ-5154: the words of the box that IDs Off opens while Cards are on. */
+export const CARDS_OFF_TEXT = 'Cards will turn off. Your cards and reviews stay in the files.'
+
+/**
+ * Cards' switch (YAZ-5154, Yaseen: "if you turn review on, doesn't that by default also mean that you have to turn IDs
+ * on?"): Cards need IDs. It shows On only while both are on. On in a vault with IDs off asks one time, in the IDs box's
+ * own words and letters field; "Turn on both" turns IDs on with those letters, then Cards. Cancel changes nothing.
+ */
+function CardsControl({ review, ids, vault }: { review: NonNullable<SettingsCtx['review']>; ids: SettingsCtx['ids']; vault?: string }) {
+  const [asking, setAsking] = useState(false)
+  const on = review.settings.enabled && ids?.enabled !== false
+  return (
+    <>
+      <Segmented
+        options={ON_OFF_OPTIONS}
+        value={on}
+        onChange={(next) => {
+          if (next === on) return
+          if (next && ids?.enabled === false) setAsking(true)
+          else review.save({ ...review.settings, enabled: next })
+        }}
+        ariaLabel="Use cards in this vault"
+      />
+      {asking && ids !== undefined && (
+        <IdsOnSheet
+          ids={ids}
+          vault={vault}
+          lead="Cards need IDs. Turn on IDs too? "
+          confirmLabel="Turn on both"
+          onConfirm={(letters) => {
+            setAsking(false)
+            void Promise.resolve(ids.set(true, letters)).then((saved) => saved !== false && review.save({ ...review.settings, enabled: true }))
+          }}
+          onCancel={() => setAsking(false)}
+        />
+      )}
+    </>
+  )
 }
 
 /**
@@ -559,9 +621,11 @@ function DuplicatesControl({ check }: { check: () => Promise<string> }) {
  * before it is confirmed (YAZ-2677 🔒 D2); the letters the vault already has come with the index (`ask.letters`). Off in a vault
  * whose pages hold IDs asks first (🔒 V13). Each sheet's keys stay inside it, so the dialog under it does not close.
  */
-function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vault?: string }) {
+function IdsControl({ ids, vault, review }: { ids: NonNullable<SettingsCtx['ids']>; vault?: string; review?: SettingsCtx['review'] }) {
   const unit = useUnit()
-  const [asking, setAsking] = useState<'off' | 'on' | null>(null)
+  const [asking, setAsking] = useState<'off' | 'cards' | 'on' | null>(null)
+  // YAZ-5154: Cards need IDs, so Off while Cards are on says Cards turn off too.
+  const cardsOn = review?.settings.enabled === true
   return (
     <>
       <Segmented
@@ -570,6 +634,7 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
         onChange={(on) => {
           if (on === ids.enabled) return
           if (on) setAsking('on')
+          else if (cardsOn) setAsking('cards')
           else if (ids.held) setAsking('off')
           else ids.set(false)
         }}
@@ -588,22 +653,23 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
           onCancel={() => setAsking(null)}
         />
       )}
-      {asking === 'on' && ids.ask?.groups?.[0] !== undefined && (
-        <KeepIdsSheet
-          text={keepIdsAskMessage(ids.ask, vault, unit)}
-          main={ids.ask.groups[0].letters}
-          onConfirm={(letters) => {
+      {asking === 'cards' && review !== undefined && (
+        <ConfirmSheet
+          labelId="confirm-ids-off-text"
+          text={CARDS_OFF_TEXT}
+          confirmLabel="Turn off"
+          keys="contained"
+          onConfirm={() => {
             setAsking(null)
-            ids.set(true, letters)
+            void Promise.resolve(ids.set(false)).then((saved) => saved !== false && review.save({ ...review.settings, enabled: false }))
           }}
           onCancel={() => setAsking(null)}
         />
       )}
-      {asking === 'on' && ids.ask?.groups?.[0] === undefined && (
-        <GiveIdsSheet
-          ask={ids.ask ?? NOTHING_TO_WRITE}
+      {asking === 'on' && (
+        <IdsOnSheet
+          ids={ids}
           vault={vault}
-          letters={ids.ask?.letters}
           onConfirm={(letters) => {
             setAsking(null)
             ids.set(true, letters)
@@ -1344,6 +1410,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
+            // YAZ-5136 round 2 (Yaseen's pick A: one setting for every table): the file never changes.
+            id: 'tablePosition',
+            label: 'Table position',
+            hint: 'Where every table sits in its column: in pages and in cards. A table wider than the column still scrolls sideways.',
+            keywords: ['table', 'tables', 'position', 'centre', 'center', 'centered', 'centred', 'left', 'align', 'middle'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={TABLE_POSITION_OPTIONS} value={settings.tablePosition ?? 'left'} onChange={(tablePosition) => onChange({ ...settings, tablePosition })} ariaLabel="Table position" />
+            ),
+          },
+          {
             // YAZ-4900: every page table's cells wrap or clip; a table's 6-dot menu, or a column's right-click, can say otherwise.
             id: 'tableTextInCells',
             label: 'Text in cells',
@@ -1827,7 +1903,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             label: (ctx) => unit(ctx, "Give this vault's pages IDs"),
             hint: 'Saved in this vault and synced with it. On: every page gets an ID and the app names its file. Off: the app leaves every file as it is.',
             available: (ctx) => ctx.ids !== undefined,
-            render: ({ ids, vaultName }) => ids && <IdsControl ids={ids} vault={vaultName} />,
+            render: ({ ids, vaultName, review }) => ids && <IdsControl ids={ids} vault={vaultName} review={review} />,
           },
           {
             id: 'duplicates',
@@ -1879,8 +1955,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   // YAZ-4585 (D34): the folder pages' own settings and the defaults their views read, after Files & Links.
   FOLDER_PAGES_SECTION,
   {
-    id: 'review',
-    title: 'Review',
+    // YAZ-5154 (Yaseen's pick: "Cards"): the section holds more than the act of review — the card look, Card width, card
+    // files and the Inbox. The Inbox keeps "review" for the act.
+    id: 'cards',
+    title: 'Cards',
     available: (ctx) => ctx.review !== undefined,
     vault: true,
     page: "These settings are saved in this vault's .yaseendocs folder and sync with it.",
@@ -1889,10 +1967,28 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         items: [
           {
             id: 'enabled',
-            label: 'Review cards',
+            label: 'Use cards in this vault',
             hint: 'Cards in this vault come back in the Inbox when they are due. An archived card does not: unarchive it from its ⋯ menu, or from the Inbox\'s Archived list.',
             keywords: REVIEW_KEYWORDS,
-            render: ({ review }) => review && <Segmented options={ON_OFF_OPTIONS} value={review.settings.enabled} onChange={(enabled) => review.save({ ...review.settings, enabled })} ariaLabel="Review cards" />,
+            render: ({ review, ids, vaultName }) => review && <CardsControl review={review} ids={ids} vault={vaultName} />,
+          },
+          {
+            // YAZ-5154: what the switch adds, closed by default; there with Cards off too, as it says what On would show.
+            id: 'whatThisAdds',
+            label: 'What this adds',
+            keywords: REVIEW_KEYWORDS,
+            bare: true,
+            render: (ctx) => (
+              <details className="review-how">
+                <summary>What this adds</summary>
+                <ul>
+                  <li>The Inbox in the sidebar.</li>
+                  <li>New card, and Card in the Type filters and search.</li>
+                  <li>{unit(ctx, 'Review this page and Review this folder.')}</li>
+                  <li>The card settings below.</li>
+                </ul>
+              </details>
+            ),
           },
           {
             // YAZ-5059 decision 3 (YAZ-5108): an app setting, not the vault's. Show puts the app's copy of the card skill at
@@ -1912,7 +2008,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       // YAZ-5120: Card course › Open the course, its own group (`course/courseSettings.tsx`), after the card skill's row and
-      // before Card tips (YAZ-5059: the three card-skill rows under "Review cards").
+      // before Card tips (YAZ-5059: the three card-skill rows under "Use cards in this vault").
       COURSE_SETTINGS_GROUP,
       // YAZ-5114 (YAZ-5059 decision 8): the app's settings, for every vault, so it shows with Review off too: cards are
       // made in a vault with IDs whether or not it reviews them.
@@ -2006,14 +2102,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // (`TodayWork`); the timer saves each answer's seconds in all three.
             id: 'timeSoFar',
             label: 'Time so far',
-            hint: "Today's review time in the Inbox. Hidden shows a small clock: click it to see the time. The Inbox still saves how long each answer took.",
+            hint: "Today's review time in the Inbox. Hidden shows a small clock: point at it to see the time. The Inbox still saves how long each answer took.",
             keywords: [...REVIEW_KEYWORDS, 'timer', 'time', 'today', 'clock', 'hide', 'show', 'how long'],
             available: reviewOn,
             render: ({ review }) =>
               review && (
                 <Segmented
                   options={[
-                    { label: 'Hidden (click to see)', value: 'hidden' as const },
+                    { label: 'Hidden (hover to see)', value: 'hidden' as const },
                     { label: 'Shown', value: 'shown' as const },
                     { label: 'Off', value: 'off' as const },
                   ]}
@@ -2088,19 +2184,53 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
+            // YAZ-5144 (Yaseen: "a global setting for card pages to have a certain width ... same as pages or select a
+            // different one? kinda like we have for card spacing"): the app's settings, beside Card spacing, in its words.
+            id: 'cardWidth',
+            label: 'Card width',
+            hint: (ctx) => unit(ctx, "How wide a card's text reads in the Inbox, the card window and a card file. Same as pages follows Appearance › Content width. Custom is your own width in px."),
+            keywords: [...CARD_SPACING_KEYWORDS, 'width', 'content width', 'custom', 'px', 'pixels', 'line length', 'wide', 'narrow'],
+            available: reviewOn,
+            // Round 2 (Yaseen: "same as pages then custom ... a px that you can adjust"): the code block's width control.
+            render: (ctx) => (
+              <BlockWidthSetting name="Card width" value={isCardWidth(ctx.settings.cardWidth) ? ctx.settings.cardWidth : null} start={CARD_WIDTH_START} min={CARD_WIDTH_MIN} max={CARD_WIDTH_MAX} reset
+                options={cardWidthOptions((text) => unit(ctx, text))} onSet={(cardWidth) => ctx.onChange({ ...ctx.settings, cardWidth })} />
+            ),
+          },
+          {
+            // YAZ-5136 round 3 (Yaseen: "a separate table setting so you can put a "same as pages" or ... center ... on cards
+            // in particular"): the app's settings, Card width's pattern. Read anywhere and in Edit card.
+            id: 'cardTablePosition',
+            label: 'Card tables',
+            hint: (ctx) => unit(ctx, 'Where a table sits in a card. Same as pages follows Settings › Tables › Table position.'),
+            keywords: [...CARD_SPACING_KEYWORDS, 'table', 'tables', 'position', 'centre', 'center', 'left', 'align'],
+            available: reviewOn,
+            render: (ctx) => (
+              <Segmented options={cardTablePositionOptions((text) => unit(ctx, text))} value={ctx.settings.cardTablePosition ?? 'pages'} onChange={(cardTablePosition) => ctx.onChange({ ...ctx.settings, cardTablePosition })} ariaLabel="Card tables" />
+            ),
+          },
+          {
             // YAZ-5050 (Yaseen: "adjust that different from the default or return to the default"): the app's settings,
             // as Shown hidden words. Same as pages is the way back; Clean is Mochi's look in one click (round 4); Custom
-            // starts from Clean and shows the rows.
+            // starts from Clean and shows the rows. YAZ-5144: Clean's short line is Card width Custom 520 px (round 2), set by the click.
             id: 'cardSpacing',
             label: 'Card spacing',
-            hint: (ctx) => unit(ctx, 'How a card reads in the Inbox, the card window and the page. Same as pages follows Appearance. Clean reads as in Mochi: more room, softer text, shorter lines. Custom starts from Clean; you set its spacing.'),
+            hint: (ctx) => unit(ctx, "How a card reads in the Inbox, the card window and the page. Same as pages follows Appearance. Clean reads as in Mochi: more room, softer text, and Mochi's line (Card width 520 px). Custom starts from Clean; you set its spacing."),
             keywords: CARD_SPACING_KEYWORDS,
             available: reviewOn,
             render: (ctx) => (
               <Segmented
                 options={cardSpacingOptions((text) => unit(ctx, text))}
                 value={ctx.settings.cardSpacing}
-                onChange={(cardSpacing) => ctx.onChange(cardSpacing === 'custom' && ctx.settings.cardSpacing !== 'custom' ? { ...ctx.settings, cardSpacing, ...CARD_SPACING_CLEAN } : { ...ctx.settings, cardSpacing })}
+                onChange={(cardSpacing) =>
+                  ctx.onChange(
+                    cardSpacing === 'clean'
+                      ? { ...ctx.settings, cardSpacing, cardWidth: CARD_WIDTH_CLEAN }
+                      : cardSpacing === 'custom' && ctx.settings.cardSpacing !== 'custom'
+                        ? { ...ctx.settings, cardSpacing, ...CARD_SPACING_CLEAN }
+                        : { ...ctx.settings, cardSpacing },
+                  )
+                }
                 ariaLabel="Card spacing"
               />
             ),

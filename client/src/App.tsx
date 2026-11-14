@@ -70,6 +70,7 @@ import { moveExploreRecent, rememberExploreRecent } from './explore/exploreRecen
 import type { ExploreRequest } from './explore/layers'
 import { CARD_OPEN, type CardOpenRequest } from './editor/card/cardBlockView'
 import { CARD_FORMATS_OPEN, cardFormatsOpenIn, setCardFormatHints, type CardFormatsOpenRequest } from './editor/card/cardFormatHint'
+import { CARD_PREVIEW, type CardPreviewRequest } from './editor/card/cardOpen'
 import type { SearchVault } from './search/useSearchResults'
 import { dropHistoryPaths, renameHistoryPaths } from './views/view/valueHistory'
 import { setTypingArrows } from './editor/typingArrows'
@@ -80,6 +81,8 @@ import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import type { CardReviewResume, CardReviewScope, CardReviewSession } from './review/useCardReview'
 import { cardLookAttrs, cardSpacingVars } from './review/cardSpacing'
+import { useReviewOnRoots } from './review/useReviewSettings'
+import { contentWidthVars, tablePositionVars } from './lib/contentWidth'
 import { nextHiddenAttrs, nextHiddenVars } from './review/nextHidden'
 import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
@@ -147,6 +150,7 @@ const inboxLabel = (session: CardReviewSession): string => (session.scope === 'v
 const CardInbox = lazy(() => import('./review/CardInbox').then((m) => ({ default: m.CardInbox })))
 /** The card course (YAZ-5059 decision 10, YAZ-5120): a full layer over the window, lazy, loaded when it opens. */
 const CardCourse = lazy(() => import('./course/CardCourse').then((m) => ({ default: m.VoicedCardCourse })))
+const CardPreview = lazy(() => import('./review/CardPreview').then((m) => ({ default: m.CardPreview })))
 
 /**
  * The tab board (YAZ-3343 D4): its own chunk — the canvas, its layout and its cards — loaded on idle after the
@@ -920,6 +924,10 @@ export function App() {
     '--edit-block-gap': `${settings.blockGap}px`,
     // Settings › Review › Card spacing (YAZ-5050): Custom only; Same as pages sets none, so a card reads the two above.
     ...cardSpacingVars(settings),
+    // Appearance › Content width and Settings › Review › Card width (YAZ-5144): the text's widest, pages and cards.
+    ...contentWidthVars(settings),
+    // Settings › Tables › Table position and Card look › Card tables (YAZ-5136 rounds 2 and 3).
+    ...tablePositionVars(settings),
     // Settings › Review › Mark the next hidden word (YAZ-5053 round 3): a picked colour only; the theme's default otherwise.
     ...nextHiddenVars(settings),
     '--thread-width': `${settings.threadWidth}px`,
@@ -1456,7 +1464,7 @@ export function App() {
   // because `useMenuEvents` resubscribes whenever a callback identity changes.
   const [settingsOpen, setSettingsOpen] = useState(false)
   // Which page the dialog opens on: the first, or Sharing from the Share dialog's "Open Settings › Sharing" (YAZ-3040).
-  const [settingsPage, setSettingsPage] = useState<'sharing' | 'hotkeys' | 'review' | undefined>(undefined)
+  const [settingsPage, setSettingsPage] = useState<'sharing' | 'hotkeys' | 'cards' | undefined>(undefined)
   const openSettings = useCallback(() => {
     setSettingsPage(undefined)
     setSettingsOpen(true)
@@ -1465,9 +1473,9 @@ export function App() {
     setSettingsPage('sharing')
     setSettingsOpen(true)
   }, [])
-  // The card skill's notice (YAZ-5108): "Open Settings" opens at Review, where the switch is.
+  // The card skill's notice (YAZ-5108): "Open Settings" opens at Cards (was Review), where the switch is.
   const openReviewSettings = useCallback(() => {
-    setSettingsPage('review')
+    setSettingsPage('cards')
     setSettingsOpen(true)
   }, [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
@@ -1604,9 +1612,13 @@ export function App() {
     })
   }, [hasVault, filesWindow])
   const openExploreOn = useCallback((path: string) => openExploreWith({ kind: 'page', path }), [openExploreWith])
-  /** The Inbox's E (YAZ-5003, in Edit card) and ⋯ › Open card (YAZ-5004): the card window on top. */
-  // The Inbox's card window (E, ⋯ › Open card): ⌘↵ while reading goes back to the Inbox (YAZ-5009).
-  const openCardWindow = useCallback((path: string, cardId: string, index: number, edit: boolean) => openExploreWith({ kind: 'card', path, cardId, index, fromInbox: true, ...(edit && { edit }) }), [openExploreWith])
+  /**
+   * The Inbox's O and E (YAZ-5145): Explore's own page layer for the card's file — the view Explore opens for it — so
+   * the card looks the same from both. ⌘↵ while reading goes back to the Inbox (YAZ-5009). E edits as Explore's E
+   * does, then the card opens in Edit card (round 2: no second E): a card in a page (`index`) landed on, or a card file.
+   */
+  const openFromInbox = useCallback((path: string) => openExploreWith({ kind: 'page', path, fromInbox: true }), [openExploreWith])
+  const editFromInbox = useCallback((path: string, index: number | null) => openExploreWith({ kind: 'page', path, edit: true, editCard: true, fromInbox: true, ...(index !== null && { card: index }) }), [openExploreWith])
   // The card window (YAZ-4962, D13): every editor sends `mdapp:card-open` from its card (a click on the title,
   // ⋯ › Open card, ⌘↵); it bubbles to the document. A preview that does not know its page sends no path: nothing opens.
   useEffect(() => {
@@ -1617,11 +1629,18 @@ export function App() {
     document.addEventListener(CARD_OPEN, onOpenCard)
     return () => document.removeEventListener(CARD_OPEN, onOpenCard)
   }, [openExploreWith])
+  // Preview a card (YAZ-5152): every card sends `mdapp:card-preview` (⋯ › Preview, P, Edit card's Preview); the window
+  // shows it as the Inbox shows it, over everything, until Esc.
+  const [cardPreview, setCardPreview] = useState<CardPreviewRequest | null>(null)
+  useEffect(() => {
+    const onPreview = (event: Event) => setCardPreview((event as CustomEvent<CardPreviewRequest>).detail)
+    document.addEventListener(CARD_PREVIEW, onPreview)
+    return () => document.removeEventListener(CARD_PREVIEW, onPreview)
+  }, [])
+  const closeCardPreview = useCallback(() => setCardPreview(null), [])
   // The format hint on a new card (YAZ-5114): Card tips, and the formats of each vault's card skill, read again when the
   // window comes to the front (a Duplicate of the skill, an agent's new format page). "Learn the formats" opens the
-  // skill's `formats` folder: in Files when it is in a vault of the window (the vault's own `Card skill`); the app's
-  // copy is outside every vault, and the skill's sidebar row (YAZ-5108) and the course (YAZ-5120) are not on this
-  // branch, so it shows in Finder until one of them is.
+  // course at its chapter on good cards and formats; the skill's `formats` folder only when the course cannot open.
   const cardTipsOn = settings.cardTips !== false
   useEffect(() => setCardFormatHints({ on: cardTipsOn }), [cardTipsOn])
   useEffect(() => {
@@ -1667,6 +1686,8 @@ export function App() {
   const exploreOpen = exploreRequest > 0
   // A folder of a vault (YAZ-4922 🔒 D3): the stack reads the vault's index and finds only the pages and folders under
   // the folder (`useSearchCandidates` cuts each snapshot to `folder`; its folders are cut here, `inPlace`).
+  // The vaults whose Cards are on (YAZ-5164): their cards are rows, inside pages too, as in the sidebar's search (one source).
+  const exploreCards = useReviewOnRoots(roots)
   const exploreVaults = useMemo<readonly SearchVault[]>(
     () =>
       !exploreOpen
@@ -1675,9 +1696,9 @@ export function App() {
             const folder = storage.folderIn(vault)
             const dirs = allDirs(exploreTrees[i]?.tree ?? [])
             const boards = otherFiles(exploreTrees[i]?.tree ?? []).filter(isBoardFile)
-            return { root: vault, watch: live.current.vaults[i].watch, dirs: folder === null ? dirs : dirs.filter((dir) => inPlace(folder, dir)), files: folder === null ? boards : boards.filter((path) => inPlace(folder, path)), idsInSearch: live.current.vaults[i].showIds.inSearch, idsInTitle: live.current.vaults[i].showIds.inTitle, ...(folder !== null && { folder }) }
+            return { root: vault, watch: live.current.vaults[i].watch, dirs: folder === null ? dirs : dirs.filter((dir) => inPlace(folder, dir)), files: folder === null ? boards : boards.filter((path) => inPlace(folder, path)), idsInSearch: live.current.vaults[i].showIds.inSearch, idsInTitle: live.current.vaults[i].showIds.inTitle, ...(folder !== null && { folder }), ...(exploreCards.has(vault) && { cards: true }) }
           }),
-    [exploreOpen, roots, exploreTrees],
+    [exploreOpen, roots, exploreTrees, exploreCards],
   )
   const exploreVaultOf = useCallback((path: string) => {
     const scope = scopeOf(path)
@@ -2757,7 +2778,7 @@ export function App() {
     if (place.kind === 'file') return openPage(place.path)
     if (place.kind === 'review-folder') return startReview(scopeOf(place.path), { folder: relLabel(place.path) })
     if (place.kind === 'inbox') return toggleInbox(scopeOf(place.path).root ?? '')
-    return place.page === 'review' ? openReviewSettings() : openSettings()
+    return place.page === 'cards' ? openReviewSettings() : openSettings()
   }), [sidebarCollapsed, toggleSidebar, showInSidebar, openPage, startReview, scopeOf, relLabel, toggleInbox, openReviewSettings, openSettings])
   // What a Files window asks of THIS window (YAZ-3357 D2): the same doors its own sidebar uses. An Inbox opens its
   // review; one that is open already stays open (the Files window cannot see it, so a click must never close it).
@@ -3896,6 +3917,19 @@ export function App() {
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Page (D7). */}
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
       {keySheetOpen && <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}
+      {/* Preview a card (YAZ-5152): the Inbox's card, nothing saved; a link in it closes it and opens as in the Inbox. */}
+      {cardPreview !== null && root !== null && (
+        <Suspense fallback={null}>
+          <CardPreview
+            card={cardPreview}
+            vault={exploreVaultOf(cardPreview.path)}
+            settings={exploreVaultOf(cardPreview.path).review?.settings}
+            doors={{ openLayer: (to) => (closeCardPreview(), openExploreOn(to)), openTab: (to, where) => (closeCardPreview(), openLink(to, where)), onNotice: notify }}
+            onNotice={notify}
+            onClose={closeCardPreview}
+          />
+        </Suspense>
+      )}
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
@@ -4192,7 +4226,7 @@ export function App() {
                 under it stays as it was. Behind a page tab it stays mounted, hidden, so it comes back at its card and step. */}
             {session !== null && (
               <Suspense fallback={null}>
-                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openExploreOn} openTab={openKeptPage} openCard={openCardWindow} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} courseOffer={inboxCourseOffer} />
+                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openFromInbox} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} courseOffer={inboxCourseOffer} />
               </Suspense>
             )}
             {/* The tab board (YAZ-2648 D5) covers the stack while it shows; a review never has one over it. */}

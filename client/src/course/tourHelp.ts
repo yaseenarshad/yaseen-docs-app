@@ -54,8 +54,8 @@ export const TARGET_HELP: Record<string, TargetHelp> = {
   'inbox-unarchive': { where: 'In the All cards menu, choose Archived.' },
   'card-skill-row': { where: 'The card skill is at the bottom of the sidebar. If it is not there, turn it on in Settings, under Review.', show: () => ({ kind: 'sidebar' }) },
   'settings-review': { where: 'Press Command comma to open Settings.', show: () => ({ kind: 'settings' }) },
-  'settings-card-skill': { where: 'Open Settings, and click Review.', show: () => ({ kind: 'settings', page: 'review' }) },
-  'settings-course': { where: 'Open Settings, and click Review.', show: () => ({ kind: 'settings', page: 'review' }) },
+  'settings-card-skill': { where: 'Open Settings, and click Cards.', show: () => ({ kind: 'settings', page: 'cards' }) },
+  'settings-course': { where: 'Open Settings, and click Cards.', show: () => ({ kind: 'settings', page: 'cards' }) },
 }
 
 /** What a chapter's tour needs first: the Course Cards folder, this many cards in it, and its "Course page" (chapter 4). */

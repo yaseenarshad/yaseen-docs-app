@@ -72,7 +72,7 @@ export type TourPlace =
   | { kind: 'file'; path: string }
   | { kind: 'review-folder'; path: string }
   | { kind: 'inbox'; path: string }
-  | { kind: 'settings'; page?: 'review' }
+  | { kind: 'settings'; page?: 'cards' }
 
 let shower: ((place: TourPlace) => void) | null = null
 /** App's navigation. Returns the way to stop. */

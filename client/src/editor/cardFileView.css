@@ -11,6 +11,7 @@
 }
 .card-file__page {
   width: 100%;
+  /* A page's column; Card width caps what is in it (`card.css`, YAZ-5144 round 3). */
   max-width: var(--content-max-width);
   margin: 0 auto;
   padding: 8px 48px 64px;

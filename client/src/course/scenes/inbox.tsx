@@ -633,7 +633,7 @@ function NewPerDay(props: SceneProps) {
   const number = cue(b, 1, 0.776)
   const n = DEFAULT_REVIEW_SETTINGS.newPerDay ?? 10
   return (
-    <Stage beat={b} label={`The Inbox brings at most ${n} new cards a day; Settings › Review › New cards a day`}>
+    <Stage beat={b} label={`The Inbox brings at most ${n} new cards a day; Settings › Cards › New cards a day`}>
       <Layer place="top" style={{ paddingTop: '6%' }}>
         <div className="kit-ten">
           {Array.from({ length: n }, (_, i) => (
@@ -643,7 +643,7 @@ function NewPerDay(props: SceneProps) {
       </Layer>
       <Layer style={{ paddingTop: '14%' }}>
         <div className="kit-settings" style={rise(b, since(b, 0.5, 0.6))}>
-          <p className="kit-settings__path">Settings › Review</p>
+          <p className="kit-settings__path">Settings › Cards</p>
           <p className="kit-settings__group">Daily limits</p>
           <div className="kit-settings__row">
             <span className="kit-settings__label">

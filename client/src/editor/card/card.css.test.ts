@@ -205,14 +205,15 @@ it('YAZ-5053 round 3: with "Mark the next hidden word" on, the next blank takes 
   for (const status of ['#d64545', '#c98a1a', '#3a9d5d', '#5b6cff', '#e06c6c', '#d9a13c', '#4fb573', '#7c8aff']) expect([light, dark]).not.toContain(status)
 })
 
-it('YAZ-5050 round 4: Clean (and Custom, which starts from it) adds Mochi\'s three looks: softer card text in light and dark, 44 px inside the Inbox card, and lines of about 62 letters there, centred', () => {
+it('YAZ-5050 round 4: Clean (and Custom, which starts from it) adds Mochi\'s looks: softer card text in light and dark, and 44 px inside the Inbox card; YAZ-5144: its short line is Card width (Narrow), no second width rule', () => {
   const text = rules(cardCss, '[data-card-clean] .card__sides')[0]!
   expect(text.body).toMatch(/color:\s*color-mix\(in srgb, var\(--fg\) 90%, var\(--bg\)\)/)
   const screens = read('../../review/cardScreens.css')
   expect(rules(screens, '[data-card-clean]').some((r) => /--inbox-card-pad:\s*44px/.test(r.body))).toBe(true)
-  const side = rules(screens, '[data-card-clean] .card-inbox__card .card__side')[0]!
-  expect(side.body).toMatch(/max-width:\s*31em/)
-  expect(side.body).toMatch(/margin-inline:\s*auto/)
+  expect(rules(screens, '[data-card-clean]').some((r) => /max-width/.test(r.body))).toBe(false)
+  // The Inbox card's width: Card width's text and the card's own sides.
+  const column = rules(screens, '.card-inbox__column').find((r) => r.selector === '.card-inbox__column')!
+  expect(column.body).toMatch(/width:\s*min\(calc\(var\(--card-text-width\) \+ 2 \* var\(--inbox-card-pad, 28px\)\), 100%\)/)
 })
 
 it('YAZ-5103: the line between two sides carries a quiet "Side 2", "Side 3" in the editor (Edit card, a card in a page, a card file) and in the read card; the Inbox has "Side 1 of 2" above, so its line has none', () => {
@@ -243,4 +244,16 @@ it('YAZ-5105 round 4: ONE Reviews strip — card.css holds none of its rules; ca
   const inCard = rules(screens, '.card > .card__reviews > .card-reviews--strip')[0]!
   expect(inCard.body).toMatch(/padding:\s*12px 8px 0/)
   expect(beats(specificity(inCard.selector), [0, 1, 0])).toBe(true)
+})
+
+it('YAZ-5144 round 3: Card width is ONE rule for a card in a page (written there, or an embed, in Edit card too) and the card window: the card`s text at most `--card-text-width`, its own sides added; capped by the page`s column, at its left edge', () => {
+  const screens = read('../../review/cardScreens.css')
+  const width = rules(cardCss, '.card').filter((r) => /max-width:\s*calc\(var\(--card-text-width\)/.test(r.body))
+  expect(width).toHaveLength(1)
+  expect(width[0].selector.split(/,\s*/)).toEqual(['.milkdown .card', '.explore__body--card > :not(.find-bar-dock--page)', '.card-file__page > *'])
+  expect(width[0].body).toMatch(/max-width:\s*calc\(var\(--card-text-width\) \+ 34px\)/)
+  // No other place sets it: the window only centres; a card in a page keeps its left edge.
+  expect(rules(screens, '.explore__body--card').some((r) => /max-width/.test(r.body))).toBe(false)
+  expect(rules(cardCss, '.milkdown .card').some((r) => /margin-inline:\s*auto/.test(r.body))).toBe(false)
+  expect(rules(read('../cardFileView.css'), '.card-file__page').find((r) => r.selector === '.card-file__page')?.body).toMatch(/max-width:\s*var\(--content-max-width\)/)
 })

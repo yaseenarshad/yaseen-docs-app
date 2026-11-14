@@ -57,7 +57,7 @@ export const SHOW_ONLY = {
   loading: 'Your vault is still loading, so the course only shows for now.',
   readOnly: 'This vault is read only, so the course only shows. It makes no files.',
   noIds: 'This vault does not give its pages IDs, so it has no cards. The course only shows.',
-  reviewOff: 'Review is off in this vault, so the course only shows. Turn it on in Settings › Review.',
+  reviewOff: 'Cards are off in this vault, so the course only shows. Turn them on in Settings › Cards.',
 } as const
 
 /** The AI step's lines that are not in the script. */

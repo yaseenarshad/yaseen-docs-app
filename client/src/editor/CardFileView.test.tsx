@@ -4,6 +4,7 @@
  * that is not valid (and deletes nothing), hands a file that lost `kind: card` back to the page view, and writes Edit
  * card's Done by the card's ID on the newest bytes, as the card window does. Against the real card editor.
  */
+import { CARD_PREVIEW, type CardPreviewRequest } from './card/cardOpen'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -104,7 +105,7 @@ afterEach(() => {
   el?.remove()
 })
 
-async function mount(content: string, opts: { readOnly?: boolean; review?: boolean; path?: string; allow?: boolean; candidates?: ReturnType<typeof createWikilinkCandidateSource> } = {}) {
+async function mount(content: string, opts: { readOnly?: boolean; review?: boolean; path?: string; allow?: boolean; pane?: boolean; candidates?: ReturnType<typeof createWikilinkCandidateSource> } = {}) {
   const path = opts.path ?? PATH
   disk.files.set(path, content)
   if (opts.review === false) disk.review = { enabled: false }
@@ -115,7 +116,9 @@ async function mount(content: string, opts: { readOnly?: boolean; review?: boole
   const onRetitle = vi.fn()
   const onReread = vi.fn()
   const allowFileAction = vi.fn(async () => opts.allow !== false)
-  el = document.createElement('div')
+  // `pane`: inside a tab's pane (`section.editor`), where the "Read only" chip hears an edit attempt (YAZ-5141).
+  el = document.createElement(opts.pane === true ? 'section' : 'div')
+  if (opts.pane === true) el.className = 'editor'
   document.body.append(el)
   root = createRoot(el)
   await act(async () =>
@@ -168,7 +171,7 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await mount(FILE)
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('New'))
     const rows = await menu()
-    expect(rows).toEqual(['Put at top of Inbox', 'Archive card', 'Title on the front', 'Copy card ID', 'Copy card link', 'Turn into a page'])
+    expect(rows).toEqual(['Preview', 'Put at top of Inbox', 'Archive card', 'Title on the front', 'Copy card ID', 'Copy card link', 'Turn into a page'])
     pick('Copy card link')
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('[[WIKI-9]]'))
   })
@@ -306,17 +309,17 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
     expect(onPage).not.toHaveBeenCalled()
   })
 
-  it('a read-only vault: no Edit card, and E does nothing', async () => {
+  it('a read-only vault: Edit card shows, but E (or the button) edits nothing until "Allow edits" (YAZ-5145 round 2: it asks first)', async () => {
     await mount(FILE, { readOnly: true })
-    expect(editButton()).toBeNull()
+    expect(editButton()).not.toBeNull()
     key(el.querySelector('[data-card-file-body]')!, { key: 'e' })
+    act(() => editButton()!.click())
     expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
   })
 
-  it('a `readonly: true` card file: no Edit card; ⋯ still writes (archive, as reviews do)', async () => {
+  it('a `readonly: true` card file: E edits nothing until "Allow edits"; ⋯ still writes (archive, as reviews do)', async () => {
     const locked = FILE.replace('kind: card\n', 'kind: card\nreadonly: true\n')
     await mount(locked)
-    expect(editButton()).toBeNull()
     key(el.querySelector('[data-card-file-body]')!, { key: 'e' })
     expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
     await menu()
@@ -367,6 +370,24 @@ describe('the guided tour hears the card file tab (YAZ-5123)', () => {
   })
 })
 
+describe('Preview a card from its file (YAZ-5152)', () => {
+  it('P and ⋯ › Preview ask for the preview with the card as the Inbox reads it (the file\'s title first); no write', async () => {
+    await mount(FILE)
+    const asks: CardPreviewRequest[] = []
+    const listen = (e: Event) => asks.push((e as CustomEvent<CardPreviewRequest>).detail)
+    document.addEventListener(CARD_PREVIEW, listen)
+    key(el.querySelector('[data-card-file-body]')!, { key: 'p' })
+    expect(asks).toHaveLength(1)
+    expect(asks[0]).toMatchObject({ path: PATH, id: 'WIKI-9', notitle: false })
+    expect(asks[0].text.split('\n')[0]).toBe('Capital of France')
+    await menu()
+    pick('Preview')
+    expect(asks).toHaveLength(2)
+    expect(disk.files.get(PATH)).toBe(FILE)
+    document.removeEventListener(CARD_PREVIEW, listen)
+  })
+})
+
 describe('the top bar of a card file (YAZ-5102)', () => {
   const bar = () => el.querySelector<HTMLElement>('.status-chips')
   const chip = () => el.querySelector<HTMLButtonElement>('.read-only-chip__button')
@@ -388,7 +409,6 @@ describe('the top bar of a card file (YAZ-5102)', () => {
   it('a read-only vault: the Read only chip shows; "Until I close this tab" unlocks the tab, and Edit card works', async () => {
     await mount(FILE, { readOnly: true })
     expect(chip()?.textContent).toContain('Read only')
-    expect(editButton()).toBeNull()
     act(() => chip()!.click())
     // The vault's lock is the vault's: no "Turn Read only off" here, as on a page.
     expect([...el.querySelectorAll('.read-only-chip__ask button')].map((b) => b.textContent)).not.toContain('Turn Read only off')
@@ -402,13 +422,59 @@ describe('the top bar of a card file (YAZ-5102)', () => {
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('Paris\n```', 'Paris (Seine)\n```')))
   })
 
+  it('YAZ-5141: a click on the title of a locked card file shows the chip`s card ("This card is Read only. Press Enter to allow edits."); Enter asks; a choice unlocks and the title edits at once', async () => {
+    const { onRetitle } = await mount(FILE, { readOnly: true, pane: true })
+    const title = el.querySelector<HTMLElement>('.card-file__title-row .page-title__text')!
+    act(() => title.click())
+    expect(el.querySelector('.read-only-message__card')?.textContent).toBe('This card is Read only.Press Enter to allow edits.')
+    expect(document.activeElement).toBe(title)
+    // The same Enter as the body's: the "Allow edits?" box.
+    key(title, { key: 'Enter' })
+    expect(el.querySelector('.read-only-chip__ask p')?.textContent).toBe('Allow edits?')
+    askButton('Allow edits for 1 minute')
+    // YAZ-5145 round 2: the click's rename runs once the tab is unlocked, with no second click.
+    await vi.waitFor(() => expect(el.querySelector('.card-file__title-row .page-title__input')).not.toBeNull())
+    const field = el.querySelector<HTMLTextAreaElement>('.card-file__title-row .page-title__input')
+    expect(document.activeElement).toBe(field)
+    field!.value = 'Capital of Italy'
+    key(field!, { key: 'Enter' })
+    expect(onRetitle).toHaveBeenCalledExactlyOnceWith(PATH, 'Capital of Italy', 'file')
+  })
+
+  it('YAZ-5145 round 2: E in a locked tab shows the chip`s card; Enter, then "Allow edits": Edit card opens at once, with no second E', async () => {
+    await mount(FILE, { readOnly: true, pane: true })
+    const body = el.querySelector<HTMLElement>('[data-card-file-body]')!
+    act(() => body.focus())
+    key(body, { key: 'e' })
+    expect(el.querySelector('.read-only-message__card')?.textContent).toBe('This card is Read only.Press Enter to allow edits.')
+    expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
+    key(body, { key: 'Enter' })
+    askButton('Allow edits for 1 minute')
+    await cardEditor()
+  })
+
+  it('YAZ-5145 round 2: the Edit card button in a locked tab, then Cancel: nothing opens, and a later unlock opens nothing either', async () => {
+    await mount(FILE, { readOnly: true, pane: true })
+    act(() => editButton()!.click())
+    expect(el.querySelector('.read-only-message__card')).not.toBeNull()
+    act(() => chip()!.click())
+    askButton('Cancel')
+    act(() => chip()!.click())
+    askButton('Until I close this tab')
+    await new Promise((r) => setTimeout(r, 20))
+    expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
+  })
+
   it('Lock now locks the tab again: no Edit card', async () => {
     await mount(FILE, { readOnly: true })
     act(() => chip()!.click())
     askButton('Until I close this tab')
     expect(editButton()).not.toBeNull()
     act(() => el.querySelector<HTMLButtonElement>('.read-only-chip__lock')!.click())
-    await vi.waitFor(() => expect(editButton()).toBeNull())
+    // Locked again: Edit card asks first once more (YAZ-5145 round 2), it does not edit.
+    await vi.waitFor(() => expect(el.querySelector('.read-only-chip__button')?.textContent).toContain('Read only'))
+    act(() => editButton()!.click())
+    expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
   })
 
   it('a `readonly: true` card file: "Turn Read only off" writes the file`s switch off; the chip goes and Edit card shows', async () => {
@@ -430,7 +496,9 @@ describe('the top bar of a card file (YAZ-5102)', () => {
     act(() => [...document.querySelectorAll<HTMLButtonElement>('.page-settings__menu button')].find((b) => b.textContent?.startsWith('Read only'))!.click())
     await vi.waitFor(() => expect(disk.files.get(PATH)).toContain('readonly: true'))
     await vi.waitFor(() => expect(chip()).not.toBeNull())
-    expect(editButton()).toBeNull()
+    // Locked: Edit card asks first (YAZ-5145 round 2), it does not edit.
+    act(() => editButton()!.click())
+    expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
   })
 
   it('the zoom: Zoom in sizes the card up, as a page`s text', async () => {

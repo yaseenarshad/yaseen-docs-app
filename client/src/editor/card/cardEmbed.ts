@@ -15,7 +15,7 @@
  *    The head needs no read: the index knows the name, the ID and the state.
  *  - EDIT CARD: the card editor (YAZ-5026, `mountCardEditor`, through `doors.edit`) in the box, with the page card's key row. Done writes the
  *    ORIGINAL file, one `transformFile` (`changeCardTextIn`, the app's own write: an open tab of that file takes it
- *    quietly). The page that embeds it does not change. Read only: no Edit card (the card's text is locked, as in the page).
+ *    quietly). The page that embeds it does not change. Read only: Edit card asks first, as the page's card does, and opens after "Allow edits" (YAZ-5145 round 2).
  *  - ⋯ (`cardEmbedMenuRows`): Open card (the card window), Show as link, Put back into this page (YAZ-5037 phase 5:
  *    a card file's card, from an embed alone on its line; the page's convert door writes it), Archive / Unarchive card
  *    (the original's card line, as the page card's row: shown in a read-only page too), Copy card ID.
@@ -41,10 +41,13 @@ import { missingId, type WikilinkResolveSource } from '../wikilink/wikilinkPlugi
 import type { CardEditor } from './cardEditor'
 import { embedCard, recordAt, type CardEmbedHandle, type CardEmbedHost } from './embedCard'
 import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from './cardMedia'
-import { openCardWindow } from './cardOpen'
+import { openCardWindow, previewCard } from './cardOpen'
+import { cardRetitled, cardTitleOut, cardWithTitle } from '@shared/cardText'
+import { mountCardTitle } from './cardTitle'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard } from './cardRender'
 import type { CardReviewDoorApi } from './cardBlockView'
 import { mountReviewsStrip, type ReviewsStripHandle } from './reviewsStrip'
+import { tellReadOnlyEdit } from '../readOnlyEdit'
 import { pathUnit } from '../../vault/unitWord'
 import './cardEmbed.css'
 
@@ -137,6 +140,8 @@ export function cardEmbedMenuRows(o: {
   target: string
   from: EventTarget
   replace: (text: string) => void
+  /** Preview (YAZ-5152), once the card is read. */
+  preview?: (() => void) | null
   onNotice: (message: string) => void
   /** "Put back into this page" (YAZ-5037 phase 5): the card is in a card file, the embed stands alone on its line, and the page's door is there. Else null. */
   putBack?: (() => void) | null
@@ -145,6 +150,8 @@ export function cardEmbedMenuRows(o: {
   const failed = (err: unknown) => o.onNotice(`Can't change the card: ${err instanceof Error ? err.message : String(err)}`)
   const rows: Array<MenuRow | null> = [
     { label: 'Open card', run: () => openCardWindow(card.path, card.id, card.index, o.from) },
+    // Preview (YAZ-5152): the card as the Inbox shows it, once it is read; nothing saved.
+    ...(o.preview == null ? [] : [{ label: 'Preview', run: o.preview }]),
     o.editable ? { label: 'Show as link', run: () => o.replace(`[[${o.target}]]`) } : null,
     o.putBack == null ? null : { label: pathUnit(card.path)('Put back into this page'), run: o.putBack },
     { label: off ? 'Unarchive card' : 'Archive card', divider: true, run: () => void changeCardLine(card.path, card.id, (l) => withCardOff(l, !off), card.index).catch(failed) },
@@ -177,7 +184,10 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   const editButton = button('card__edit', 'Edit card')
   const more = button('card__more', 'Card menu')
   more.textContent = '⋯'
-  head.append(from, dot, idButton, state, editButton, more)
+  // A card in a page: its title first (YAZ-5164 part 3), the page title's own component; a click renames it in its page.
+  // A card file's title is the head's name already ("Embedded from …").
+  const title = mountCardTitle()
+  head.append(title.dom, from, dot, idButton, state, editButton, more)
   const body = document.createElement('div')
   body.className = 'card__body'
 
@@ -216,6 +226,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     const className = `card card-embed${isOff ? ' card--off' : ''}${edit !== null ? ' card--editing' : ''}${folded ? ' card-embed--folded' : ''}${selected ? ' ProseMirror-selectednode' : ''}`
     if (dom.className !== className) dom.className = className
     set(fromText, `Embedded from "${embedName(card, source)}"`)
+    drawTitle(card)
     set(idButton, card.id)
     set(state, isOff ? 'Archived' : '')
     if (edit === null) set(editButton, 'Edit card')
@@ -223,9 +234,37 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     editButton.setAttribute('aria-label', edit === null ? 'Edit card' : 'Done')
   }
 
+  /** Is the card a card file's (its title is its `title`, YAZ-5044)? */
+  const isFileCard = (c: CardLink): boolean => recordAt(source.records, c.path)?.kind === 'card'
+
+  /** The head's title (YAZ-5164 part 3), a card in a page's: from the index until read, then from its text. */
+  const drawTitle = (c: CardLink, now = false): void => {
+    title.dom.hidden = isFileCard(c)
+    if (title.dom.hidden) return
+    title.render({ title: read === null ? c.title : cardTitleOut(read.text).title, readOnly: !host.editable(), onRetitle: retitle }, now)
+  }
+
+  /** The rename: the card's first line, in its ORIGINAL file (one write, as Done), shown at once. */
+  const retitle = (next: string): void => {
+    const r = read
+    if (r === null || r.fileTitle !== undefined || !host.editable()) return
+    const text = cardRetitled(r.text, next)
+    if (text === r.text) return
+    read = { ...r, text }
+    changeCardTextIn(r.path, r.id, text, r.index).catch((err: unknown) => {
+      onNotice(`Can't rename the card: ${err instanceof Error ? err.message : String(err)}`)
+      read = r
+      draw()
+      paint()
+    })
+    draw()
+    paint()
+  }
+
   const paint = (): void => {
     if (card === null || edit !== null) return
-    body.replaceChildren(read === null ? '' : renderCard(read.text, {}, doors.look(card.path)))
+    // The head shows the title; the card never repeats it (YAZ-5164 part 3). A card file's card holds none.
+    body.replaceChildren(read === null ? '' : renderCard(read.fileTitle === undefined ? cardTitleOut(read.text).text : read.text, {}, doors.look(card.path)))
     drawReviews()
   }
 
@@ -293,11 +332,13 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
 
   const startEdit = (): void => {
     const base = read
-    if (edit !== null || card === null || base === null || doors.edit === undefined || !host.editable()) return
+    if (edit !== null || card === null || base === null || doors.edit === undefined) return
+    // A page locked by Read only (YAZ-5145 round 2): an edit attempt that carries itself; "Allow edits" opens Edit card.
+    if (!host.editable()) return tellReadOnlyEdit(dom, 'card', startEdit)
     const mount = document.createElement('div')
     mount.className = 'card__editor'
     dom.append(mount)
-    const { editor, keys } = doors.edit(mount, base.text, () => finishEdit())
+    const { editor, keys } = doors.edit(mount, base.text, () => finishEdit(), base.fileTitle)
     dom.append(keys)
     edit = { editor, mount, keys, base }
     draw()
@@ -325,6 +366,13 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     host.select()
   }
 
+  /** Preview (YAZ-5152): the card as read, a card file's with its `title` first, as the Inbox reads it. */
+  const previewRead = (): void => {
+    const r = read
+    if (r === null) return
+    previewCard(dom, { path: r.path, id: r.id, text: r.fileTitle === undefined ? r.text : cardWithTitle(r.fileTitle, r.text), notitle: r.notitle === true, reviews: r.reviews })
+  }
+
   const openMenu = (x: number, y: number): void => {
     const c = card
     if (c === null) return
@@ -332,7 +380,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     // Put back: only a card file's card (a card in a page stays where it is), and only from an embed alone on its line.
     const place = doors.putBack !== undefined && recordAt(source.records, c.path)?.kind === 'card' ? host.place() : null
     const putBack = place === null ? null : () => doors.putBack!({ id: c.id, path: c.path }, place.inner, place.nth)
-    const close = openMenuAt(host.menuParent(), x, y, cardEmbedMenuRows({ card: c, off: off(c), editable: host.editable(), target: host.target, from: dom, replace: host.replace, onNotice, putBack }))
+    const close = openMenuAt(host.menuParent(), x, y, cardEmbedMenuRows({ card: c, off: off(c), editable: host.editable(), target: host.target, from: dom, replace: host.replace, onNotice, putBack, preview: read === null ? null : previewRead }))
     closeMenu = () => {
       close()
       closeMenu = null
@@ -347,6 +395,8 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     if (strip?.dom.contains(target) === true) return
     const c = card
     if (c === null) return
+    // The title is the page title's (YAZ-5164 part 3): its click renames, or asks to unlock a locked page.
+    if (title.dom.contains(target)) return drawTitle(c, true)
     if (target.closest('.card__more') !== null) {
       event.preventDefault()
       const rect = more.getBoundingClientRect()
@@ -435,6 +485,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
       edit = null
       strip?.destroy()
       strip = null
+      title.destroy()
       boxes.delete(dom)
     },
   }

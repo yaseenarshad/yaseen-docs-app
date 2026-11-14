@@ -8,9 +8,15 @@
  * The event bubbles from the element the reader tried to change. The chip hears it on its pane (`section.editor`) and
  * keeps only an attempt from its own page (`READ_ONLY_PAGE`): a split view's other pane, and a drawing popup inside a
  * page, are not its own.
+ *
+ * UNLOCK, THEN CONTINUE (YAZ-5145 round 2, Yaseen: "then you have to hit e again? thats redundant"): an attempt may
+ * carry what it was going to do (`resume`): Edit card, the title's rename (YAZ-5141). The chip keeps the last
+ * attempt's, and once a choice in its "Allow edits?" box unlocks the page (or "Turn Read only off"), it runs it, once:
+ * the person never does it twice. Cancel, Esc, a press outside the box, or a newer attempt with none, drops it. The
+ * page's own typing carries none: its caret comes back, and the next key types.
  */
 
-export type ReadOnlyWhat = 'page' | 'drawing'
+export type ReadOnlyWhat = 'page' | 'drawing' | 'card'
 
 export const READ_ONLY_EDIT = 'mdapp:read-only-edit'
 
@@ -26,10 +32,23 @@ export const READ_ONLY_MESSAGE_MS = 2500
 /** It shows again no sooner than this after it last showed. */
 export const READ_ONLY_MESSAGE_GAP_MS = 1000
 
-/** The guard refused an edit at `from`: tell the pane. */
-export function tellReadOnlyEdit(from: Element, what: ReadOnlyWhat): void {
-  from.dispatchEvent(new CustomEvent<ReadOnlyWhat>(READ_ONLY_EDIT, { bubbles: true, detail: what }))
+/** An edit attempt: what was tried on (`detail`), and what to do once the page is unlocked (`resume`), if anything. */
+export class ReadOnlyEditEvent extends CustomEvent<ReadOnlyWhat> {
+  constructor(
+    what: ReadOnlyWhat,
+    readonly resume?: () => void,
+  ) {
+    super(READ_ONLY_EDIT, { bubbles: true, detail: what })
+  }
 }
+
+/** The guard refused an edit at `from`: tell the pane; `resume` is the action to carry out once the person allows edits. */
+export function tellReadOnlyEdit(from: Element, what: ReadOnlyWhat, resume?: () => void): void {
+  from.dispatchEvent(new ReadOnlyEditEvent(what, resume))
+}
+
+/** How long a refused action waits for its "Allow edits": past this, an unlock does not run it any more. */
+export const RESUME_MS = 60_000
 
 /**
  * A VIEW CHANGE IN A READ ONLY PAGE (YAZ-4939: a table section collapsed or opened, `tableSubhead.ts`): the meta of its

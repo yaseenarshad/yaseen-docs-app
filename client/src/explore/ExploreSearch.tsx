@@ -2,7 +2,8 @@
  * A search layer of the explore stack (YAZ-2571): the input, its ranked rows (`exploreRows`) and a footer of keys.
  * With no text it lists two sections (YAZ-4945, `recentSections.ts`): the files you Opened and the files you Edited. The layer owns its query, highlight and
  * list scroll, so it reads the same when a child closes over it; the rows come from the stack's ONE candidate feed.
- * Each row: its file icon, its title with the matched part marked, its folder, and a text row's snippet.
+ * Each row: its file icon, its title with the matched part marked, its folder, and a text row's snippet. A card inside a
+ * page (YAZ-5164): the card icon, its title, and its page where the folder stands.
  */
 import { useVaultUnit } from '../vault/unitWord'
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
@@ -185,7 +186,7 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
                 aria-selected={i === sel}
                 aria-label={`Explore result ${r.label}${r.kind === 'dir' ? ', folder' : ''}`}
                 className={`search-results__row${i === sel ? ' search-results__row--active' : ''}${r.kind === 'dir' ? ' search-results__row--dir' : ''}${at !== undefined ? ' explore__row--timed' : ''}`}
-                title={r.path}
+                title={r.page ?? r.path}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   setSelected(i)
@@ -200,17 +201,19 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
                 <span className="search-results__label">
                   {/* The name is cut with "…" on its own, so a long one never hides the ID after it (round 5). */}
                   <span className="explore__name">
-                    <FileIcon path={r.path} folder={r.kind === 'dir'} />
+                    <FileIcon path={r.path} folder={r.kind === 'dir'} card={r.card === true} />
                     {r.kind === 'dir' && <FolderIcon size={12} className="search-results__glyph" />}
                     {marked(label, needle)}
-                    {r.kind === 'file' && <NameEnding path={r.path} />}
+                    {r.kind === 'file' && r.page === undefined && <NameEnding path={r.path} />}
                   </span>
                   {/* The page's or folder's id, in an ID vault (YAZ-2571 round 1): small and muted after the title; a vault without IDs has none. Found by its ID, the matched digits are marked (round 5). */}
                   {id !== null && <span className="explore__id">{marked(id, idNeedle(r, query))}</span>}
                 </span>
                 {r.snippet !== undefined && <span className="explore__snippet">{marked(r.snippet, needle)}</span>}
-                {r.folder !== '' && <span className="search-results__folder">{r.folder}</span>}
-                {r.folder === '' && r.kind === 'file' && <span className="search-results__folder">{basename(r.path) === r.label ? '' : 'Vault root'}</span>}
+                {/* A card inside a page (YAZ-5164): its page, quietly, where a page's folder stands. */}
+                {r.page !== undefined && <span className="search-results__folder">{rowOf?.(r.page)?.label ?? nameOf(r.page)}</span>}
+                {r.page === undefined && r.folder !== '' && <span className="search-results__folder">{r.folder}</span>}
+                {r.page === undefined && r.folder === '' && r.kind === 'file' && <span className="search-results__folder">{basename(r.path) === r.label ? '' : 'Vault root'}</span>}
                 {at !== undefined && <span className="explore__time">{ago(at, now)}</span>}
               </li>
               </Fragment>

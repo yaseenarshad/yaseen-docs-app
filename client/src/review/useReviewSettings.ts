@@ -40,8 +40,13 @@ export function useVaultReviewSettings(root: string | null | undefined): ReviewS
   return useSyncExternalStore(subscribe, () => (root == null ? undefined : published.get(root)))
 }
 
-/** `root` is nullable because App's hooks cannot be conditional: no vault, no bridge call, the defaults. */
-export function useReviewSettings(root: string | null, onNotice: (text: string, icon?: NoticeKind) => void): ReviewSettingsState {
+/**
+ * `root` is nullable because App's hooks cannot be conditional: no vault, no bridge call, the defaults. `idsOff`
+ * (YAZ-5154): the vault's index says it gives no IDs. Cards need IDs, so the settings PUBLISHED for the card features
+ * (search, the Card type, Move to its own file, a card file's Inbox tools, the folder tables' Due) say off; the file
+ * and `settings` stay as they are, so turning IDs back on brings Cards back.
+ */
+export function useReviewSettings(root: string | null, onNotice: (text: string, icon?: NoticeKind) => void, idsOff = false): ReviewSettingsState {
   const [settings, setSettings] = useState(DEFAULT_REVIEW_SETTINGS)
   // Which vault's file was last read: the settings are that vault's from then on (`ready`).
   const [readRoot, setReadRoot] = useState<string | null>(null)
@@ -53,9 +58,9 @@ export function useReviewSettings(root: string | null, onNotice: (text: string, 
 
   useEffect(() => {
     if (root === null) return
-    publish(root, settings)
+    publish(root, idsOff && settings.enabled ? { ...settings, enabled: false } : settings)
     return () => publish(root, null)
-  }, [root, settings])
+  }, [root, settings, idsOff])
 
   useEffect(() => {
     setSettings(DEFAULT_REVIEW_SETTINGS)

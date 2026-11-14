@@ -23,7 +23,7 @@
  */
 import { cardFileCard, cardFileName, cardFileShape, cardFileWithBlock, CARD_KIND, CARD_KIND_KEY, indentBlock, isCardFileContent, NEW_CARD_TEXT, unindentBlock } from './cardFileFormat'
 import { CardNotFoundError, EMPTY_CARD_LINE, cardBlock, cardIdOf, changeCardText, findCards, type CardBlock } from './cardLine'
-import { cardTitle, cardWithTitle, cardWithoutTitle, hiddenCount } from './cardText'
+import { cardTitle, cardTitleOut, cardWithTitle } from './cardText'
 import { lineKinds } from './fences'
 import { inLineEnds, lineEnds, withLf } from './lineEnds'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
@@ -44,21 +44,6 @@ export function cardFileTitle(content: string): string {
 export function hasTitleProperty(content: string): boolean {
   const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
   return error === undefined && titleOf(properties, '') !== ''
-}
-
-/**
- * A card's title line taken out of its text (YAZ-5044, decision A): a card that becomes a CARD FILE keeps its title in
- * the file's `title`, so its text no longer starts with it. `title` is `cardTitle`'s plain text; `text` is the card
- * without that line and the blank lines after it (`cardWithoutTitle`). A line that holds a hidden word, or a code line,
- * stays in the text: no hidden word and no code is ever lost. A card with no title is its text unchanged.
- */
-export function cardTitleOut(text: string): { title: string; text: string } {
-  const title = cardTitle(text)
-  if (title === '') return { title, text }
-  const lines = text.split('\n')
-  const kinds = lineKinds(lines)
-  const at = lines.findIndex((line) => cardTitle(line) !== '')
-  return { title, text: kinds[at] !== 'text' || hiddenCount(lines[at]) > 0 ? text : cardWithoutTitle(text) }
 }
 
 /**

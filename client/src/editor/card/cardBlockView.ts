@@ -72,11 +72,14 @@ import type { SlashRow } from '../slashMenu'
 import type { LinkFollow } from '../wikilink/wikilinkClick'
 import { CardLineStep, changeCardLineAt, isCardNode, CARD_LANGUAGE, cardLineOf } from './cardBlockLine'
 import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from './cardMedia'
-import { CARD_OPEN, scrollIntoViewWhenShown, takeCardLanding, type CardOpenRequest } from './cardOpen'
+import { CARD_OPEN, landWhenShown, previewCard, takeCardLanding, watchCardLanding, type CardOpenRequest } from './cardOpen'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard, type CardLook } from './cardRender'
 import { mountCardEditor, type CardCrepe, type CardEditor } from './cardEditor'
 import { mountReviewsStrip, type ReviewsStripHandle } from './reviewsStrip'
 import { isEmptyNewCard, newCardFormatHint } from './cardFormatHint'
+import { mountCardTitle, type CardTitleHandle } from './cardTitle'
+import { cardRetitled, cardTitleOut } from '@shared/cardText'
+import { tellReadOnlyEdit } from '../readOnlyEdit'
 import './card.css'
 
 // The open hook (D13) lives with the card's other doors (`cardOpen.ts`): a card link's click sends it too (YAZ-5030).
@@ -119,8 +122,16 @@ export interface CardHost {
   path: string
   /** The vault's ID door (`takePageId`, `views/scaffold.ts`): a new card takes its ID at once. Absent → the sweep gives it. */
   mintId?: (path: string) => Promise<string>
-  /** Done (its button, Esc or ⌘↵) with the card's text (YAZ-5003: the card window's Edit card saves it to the page). */
+  /**
+   * Done (its button, Esc or ⌘↵) with the card's text (YAZ-5003: the card window's Edit card saves it to the page). Set,
+   * the card is the card window's or a card file tab's (`review/cardPane.tsx`): their own head shows its title.
+   */
   onEditDone?: (text: string) => void
+  /**
+   * A CARD FILE's title (YAZ-5044: its `title`), for Edit card's Title field (YAZ-5164 part 3), and its rename on Done
+   * (the tab's title door). Absent: the card is in a page, and its title is its first line.
+   */
+  fileTitle?: { value: string; onRetitle: (title: string) => void }
   /** The convert actions of this page (YAZ-5037): absent → none (a preview, the card editor). */
   convert?: CardConvertDoor
 }
@@ -248,6 +259,7 @@ export class CardBlockView implements NodeView {
   /** The "Up next" chip (YAZ-4999 D3): shown while the line holds `next`; its × removes the mark. */
   private readonly next: HTMLElement
   private readonly editButton: HTMLButtonElement
+  private readonly previewButton: HTMLButtonElement
   private readonly more: HTMLButtonElement
   private readonly body: HTMLElement
   /** Crepe's code block while the card is edited with the raw-text fallback, else null. */
@@ -261,9 +273,13 @@ export class CardBlockView implements NodeView {
   /** What the body last drew: redrawn only when it changes. */
   private drawn: string | null = null
   private readonly unsubscribe: (() => void) | undefined
+  /** This card's door to a landing asked while it shows (YAZ-5164, `watchCardLanding`). */
+  private readonly unwatchLanding: () => void
   private closeMenu: (() => void) | null = null
   /** The Reviews strip (YAZ-5105 round 4): made only for a card with reviews. */
   private strip: ReviewsStripHandle | null = null
+  /** The title in the head (YAZ-5164 part 3): the page title's component; none where the card window's own head shows it. */
+  private readonly title: CardTitleHandle | null
 
   constructor(
     private node: ProseNode,
@@ -286,8 +302,12 @@ export class CardBlockView implements NodeView {
     this.next.className = 'card__next'
     this.next.append('Up next', button('card__next-remove', 'Remove from top of Inbox', '×'))
     this.editButton = button('card__edit', 'Edit card', 'Edit card')
+    // Preview (YAZ-5152): in Edit card's head, beside Done — the card as the Inbox shows it, with what is typed.
+    this.previewButton = button('card__preview', 'Preview card', 'Preview')
     this.more = button('card__more', 'Card menu', '⋯')
-    head.append(this.idButton, this.state, this.notitle, this.next, this.editButton, this.more)
+    // The title after the ID (YAZ-5164 part 3): the head shows it, and the body never repeats it.
+    this.title = deps.host?.onEditDone === undefined ? mountCardTitle() : null
+    head.append(this.idButton, ...(this.title === null ? [] : [this.title.dom]), this.state, this.notitle, this.next, this.previewButton, this.editButton, this.more)
     this.body = document.createElement('div')
     this.body.className = 'card__body'
     this.dom.append(head, this.body)
@@ -297,8 +317,14 @@ export class CardBlockView implements NodeView {
     this.dom.addEventListener('dblclick', this.onDoubleClick)
     views.set(this.dom, this)
     this.draw()
-    // A card link's ⌘-click opened this page to land on this card (YAZ-5030): it scrolls into view once it shows.
-    if (takeCardLanding(this.path, cardIdOf(cardLineOf(node)))) scrollIntoViewWhenShown(this.dom)
+    // A card link's ⌘-click, or a card row of search, opened this page to land on this card (YAZ-5030, YAZ-5164): it
+    // lands once it shows, as the table of contents lands. Asked while the page is open already: it lands then.
+    if (takeCardLanding(this.path, cardIdOf(cardLineOf(node)))) landWhenShown(this.dom)
+    this.unwatchLanding = watchCardLanding((path, id) => {
+      if (path !== this.path || cardIdOf(cardLineOf(this.node))?.toLowerCase() !== id.toLowerCase()) return false
+      landWhenShown(this.dom)
+      return true
+    })
     this.unsubscribe = deps.subscribe?.(() => {
       // An index change redraws only the pills of a card with a link: no Markdown render again.
       if (!this.editing && this.node.textContent.includes('[[')) refreshCardLook(this.body, this.deps.look())
@@ -346,10 +372,29 @@ export class CardBlockView implements NodeView {
     if (this.editing) this.editButton.dataset.tour = 'card-done'
     else delete this.editButton.dataset.tour
     this.dom.classList.toggle('card--editing', this.editing)
+    this.previewButton.hidden = !this.editing
     this.drawReviews()
+    // A card in a page: its title line in the head, the rest in the body (`cardTitleOut`); a first line that holds a
+    // hidden word is the card's question and stays in the body. A card file's card (its tab) holds no title.
+    const own = this.deps.host?.fileTitle === undefined ? cardTitleOut(text) : { title: this.deps.host.fileTitle.value, text }
+    this.drawTitle(own.title)
     if (this.editing || this.drawn === text) return
     this.drawn = text
-    this.body.replaceChildren(text.trim() === '' ? this.emptyHint() : renderCard(text, {}, this.deps.look()))
+    this.body.replaceChildren(text.trim() === '' ? this.emptyHint() : renderCard(own.text, {}, this.deps.look()))
+  }
+
+  /** The head's title (YAZ-5164 part 3); `now`: drawn at once, for a press about to click it. */
+  private drawTitle(title: string, now = false): void {
+    this.title?.render({ title, readOnly: !this.view.editable, onRetitle: (next) => this.retitle(next) }, now)
+  }
+
+  /**
+   * The head's rename (YAZ-5164 part 3): the card's first line (`cardRetitled`), ONE undo step. A page that cannot be
+   * edited never gets here: its title's click is an edit attempt (`PageTitle`), and the unlock runs the rename.
+   */
+  private retitle(title: string): void {
+    if (!this.view.editable) return
+    this.write(cardRetitled(this.node.textContent, title), true)
   }
 
   /** The key of this card's open state: its page and ID; null before it has both. */
@@ -405,10 +450,15 @@ export class CardBlockView implements NodeView {
     return hint
   }
 
-  /** "Edit card": Crepe's code block in the card, the caret at the end of its text. */
+  /**
+   * "Edit card": Crepe's code block in the card, the caret at the end of its text. In a page locked by Read only it is an
+   * edit attempt that carries itself (YAZ-5145 round 2): the pane's chip shows its card, and once the person allows
+   * edits, Edit card opens at once — no second double-click or Enter.
+   */
   edit(select?: { from: number; to: number }): void {
     const pos = this.pos
-    if (this.editing || pos === null || !this.view.editable) return
+    if (this.editing || pos === null) return
+    if (!this.view.editable) return tellReadOnlyEdit(this.dom, 'card', () => this.edit(select))
     if (editorKind === 'page' && this.deps.editor !== undefined) return this.editWithPage(this.deps.editor, select)
     if (this.makeCode === null) return
     this.code = this.makeCode(this.node)
@@ -442,7 +492,8 @@ export class CardBlockView implements NodeView {
     this.dom.append(mount, this.keyRow)
     const text = this.node.textContent
     this.showFormatHint(text)
-    const editor = mountCardEditor({ root: mount, text, make, select, doors: { done: () => this.done(), changed: () => this.changed() } })
+    const fileTitle = this.deps.host?.fileTitle?.value
+    const editor = mountCardEditor({ root: mount, text, make, select, fileTitle, doors: { done: () => this.done(), changed: () => this.changed() } })
     this.inner = { editor, mount, base: text, written: text, timer: undefined }
     openCard = this
     this.draw()
@@ -540,6 +591,7 @@ export class CardBlockView implements NodeView {
     if (inner === null) return
     clearTimeout(inner.timer)
     const text = inner.editor.text()
+    const title = inner.editor.title()
     inner.editor.destroy()
     inner.mount.remove()
     this.keyRow?.remove()
@@ -549,6 +601,9 @@ export class CardBlockView implements NodeView {
     this.inner = null
     this.write(text, true)
     this.draw()
+    // A card file's new title (its Title field): the tab's title door renames it, as its big title does.
+    const file = this.deps.host?.fileTitle
+    if (file !== undefined && title !== '' && title !== file.value) file.onRetitle(title)
     this.deps.host?.onEditDone?.(this.node.textContent)
     const pos = this.pos
     if (pos === null || this.view.isDestroyed) return
@@ -579,6 +634,18 @@ export class CardBlockView implements NodeView {
     if (pos === null) return
     this.view.dispatch(this.view.state.tr.setSelection(NodeSelection.create(this.view.state.doc, pos)))
     this.view.focus()
+  }
+
+  /**
+   * Preview (YAZ-5152): the card as the Inbox shows it, nothing saved (`CARD_PREVIEW`). While edited, what is typed —
+   * Edit card's text — saved or not. A preview that does not know its page sends nothing.
+   */
+  preview(): void {
+    const path = this.path
+    if (path === null) return
+    const line = cardLineOf(this.node)
+    const text = this.inner?.editor.text() ?? this.node.textContent
+    previewCard(this.dom, { path, id: cardIdOf(line), text, notitle: isCardNoTitle(line), reviews: cardReviewsOf(line) })
   }
 
   /** Sends the open hook for this card (D13). */
@@ -630,6 +697,7 @@ export class CardBlockView implements NodeView {
     const move = id !== null && pos !== null && convert?.canMove() === true ? { label: 'Move to its own file', run: () => convert.move(id, cardIndex(this.view.state.doc, pos)) } : null
     return [
       { label: 'Open card', hint: '⌘↵', run: () => this.open() },
+      { label: 'Preview', hint: 'P', disabled: this.path === null, run: () => this.preview() },
       ...(move === null ? [] : [move]),
       { label: isCardNext(line) ? 'Remove from top of Inbox' : 'Put at top of Inbox', disabled: !editable, divider: true, run: () => this.change((l) => withCardNext(l, !isCardNext(l))) },
       { label: isCardOff(line) ? 'Unarchive card' : 'Archive card', disabled: !editable, run: () => this.change((l) => withCardOff(l, !isCardOff(l))) },
@@ -656,6 +724,12 @@ export class CardBlockView implements NodeView {
     if (target === null || event.button !== 0 || (this.code !== null && this.code.dom.contains(target)) || this.inner?.mount.contains(target) === true) return
     // The Reviews strip is React's (its toggle, its table): a press in it never selects the card.
     if (this.strip?.dom.contains(target) === true) return
+    // The title is the page title's (YAZ-5164 part 3): its click renames, or asks to unlock a locked page. Drawn now with
+    // whether the page can be edited NOW (an unlock does not redraw the card).
+    if (this.title?.dom.contains(target) === true) {
+      this.drawTitle(this.deps.host?.fileTitle?.value ?? cardTitleOut(this.node.textContent).title, true)
+      return
+    }
     if (target.closest('.card__more') !== null) {
       event.preventDefault()
       this.openMenu()
@@ -664,6 +738,11 @@ export class CardBlockView implements NodeView {
     if (target.closest('.card__next-remove') !== null) {
       event.preventDefault()
       if (this.canChangeLine) this.change((l) => withCardNext(l, false))
+      return
+    }
+    if (target.closest('.card__preview') !== null) {
+      event.preventDefault()
+      this.preview()
       return
     }
     if (target.closest('.card__edit') !== null) {
@@ -762,8 +841,10 @@ export class CardBlockView implements NodeView {
     }
     this.strip?.destroy()
     this.strip = null
+    this.title?.destroy()
     this.closeMenu?.()
     this.unsubscribe?.()
+    this.unwatchLanding()
     this.code?.destroy?.()
     views.delete(this.dom)
   }
@@ -890,10 +971,17 @@ function cardKeyGuard() {
             },
           },
           handleKeyDown: (view, event) => {
-            if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.metaKey || event.ctrlKey || event.isComposing) return false
+            if (event.shiftKey || event.altKey || event.metaKey || event.ctrlKey || event.isComposing) return false
+            // Enter edits the selected card; P previews it (YAZ-5152: P typed over a selected card would replace it).
+            if (event.key !== 'Enter' && event.key !== 'p' && event.key !== 'P') return false
             const pos = selected(view.state)
             if (pos === null) return false
-            cardBlockViewAt(view, pos)?.edit()
+            const card = cardBlockViewAt(view, pos)
+            if (event.key === 'Enter') card?.edit()
+            else {
+              event.preventDefault()
+              card?.preview()
+            }
             return true
           },
         },

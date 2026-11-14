@@ -24,6 +24,18 @@
 .milkdown .card {
   margin: 12px 0;
 }
+/* Settings › Review › Card width (YAZ-5144 rounds 1 and 3, Yaseen: "Shouldn't it also work on embeds, card embeds, on
+   actual pages as well as cards that are just on pages directly?"): ONE rule, from `--card-text-width`, with the card's
+   own sides (`.card__body`'s 16 px and the frame): a card in a page — written there or an embed, read or in Edit card —
+   and the card window's card, strips and mentions. In a page the card is a block: never wider than the column (its
+   `width`), at the column's left edge as the other blocks. Same as pages is the pages' step, so the card fills the
+   column. A card file's tab: its card, title, strips and mentions, at the column's left edge. The Inbox sets its own
+   column from the same variable, with its own sides (`cardScreens.css`). */
+.milkdown .card,
+.explore__body--card > :not(.find-bar-dock--page),
+.card-file__page > * {
+  max-width: calc(var(--card-text-width) + 34px);
+}
 .card.ProseMirror-selectednode {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -131,6 +143,15 @@
 }
 .card__head .card__edit {
   margin-left: auto;
+}
+/* Preview (YAZ-5152): in Edit card's head only (`hidden` otherwise), beside Done. */
+.card__head .card__preview {
+  flex: none;
+  margin-left: auto;
+  padding: 0 6px;
+}
+.card--editing > .card__head .card__edit {
+  margin-left: 0;
 }
 /* "Done Esc Cmd + Enter" (YAZ-5001, in words YAZ-5035): the keys, quiet, as in Explore's head (`.explore__button kbd`). */
 .card__head .card__edit kbd {
@@ -471,10 +492,16 @@
 }
 .card__sides .card__side table {
   width: 100%;
-  margin: 0;
+  /* Only the block margins: the inline ones are Table position's (`table.css`). */
+  margin-block: 0;
   table-layout: auto;
   border-collapse: collapse;
   overflow: visible;
+}
+/* Round 2: a table whose columns the page editor sized (`cardRender.ts` sets the `<col>` widths and the table's width)
+   lays out as the page's: fixed. */
+.card__sides .card__side table[data-sized] {
+  table-layout: fixed;
 }
 .card__sides .card__side :is(th, td) {
   padding: calc(4px + var(--card-gap)) 16px;
@@ -685,4 +712,65 @@
 /* A pill in a card opens on a click (idea 6): the hand, not the text caret of a pill in the page. */
 .card [data-card-link] {
   cursor: pointer;
+}
+
+/* THE CARD'S TITLE (YAZ-5164 part 3): the page title's own component (`PageTitle`) in a card's head — a card in a page,
+   an embed, Explore's card window, the Inbox — at the head's own size; a click renames it. While Edit card is open its
+   Title field holds it, so the head does not show it twice. */
+.card .card__title {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0 2px;
+}
+.card .card__title[hidden],
+.card.card--editing .card__title {
+  display: none;
+}
+:is(.card__title, .explore__title, .card-inbox__name) .page-title {
+  display: block;
+  min-width: 0;
+}
+:is(.card__title, .explore__title, .card-inbox__name) :is(.page-title__text, .page-title__input) {
+  margin: 0 0 0 -4px;
+  padding: 0 4px;
+  overflow: hidden;
+  font: inherit;
+  font-weight: 600;
+  line-height: inherit;
+  color: var(--fg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:is(.card__title, .explore__title, .card-inbox__name) .page-title__input {
+  white-space: normal;
+}
+.page-title__text--empty {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
+/* Edit card's Title field (YAZ-5164 part 3): above Side 1, the title's weight, a line under it. */
+.card .card-editor__title {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 8px 12px 6px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-weight: 600;
+  outline: none;
+}
+.card .card-editor__title:focus {
+  border-bottom-color: var(--accent);
+}
+.card .card-editor__title::placeholder {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+.card .card-editor__title:read-only {
+  color: var(--fg-muted);
 }

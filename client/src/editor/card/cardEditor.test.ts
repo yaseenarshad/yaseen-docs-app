@@ -9,7 +9,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state'
 import { undo, undoDepth } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { cardSides } from '@shared/cardText'
+import { cardSides, cardTitleOut } from '@shared/cardText'
 import { cardIdOf, findCards } from '@shared/cardLine'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
@@ -39,7 +39,11 @@ function vault() {
   return source
 }
 
-const page = (card: string, line = '<!-- card: WIKI-7 -->') => `# Page\n\n\`\`\`\`card\n${card}\n\`\`\`\`\n${line}\n\nAfter.\n`
+/**
+ * A page with one card: `title` its first line (YAZ-5164 part 3: the Title field holds it, out of the card editor), then
+ * the card's `body`, what the card editor edits. `title` '': the body is the whole card.
+ */
+const page = (body: string, line = '<!-- card: WIKI-7 -->', title = 'Card title') => `# Page\n\n\`\`\`\`card\n${title === '' ? '' : `${title}\n\n`}${body}\n\`\`\`\`\n${line}\n\nAfter.\n`
 
 async function mount(markdown: string, opts: Partial<CreateCrepeOptions> = {}): Promise<{ crepe: Crepe; root: HTMLElement; view: EditorView }> {
   const root = document.createElement('div')
@@ -61,6 +65,8 @@ const cardPos = (view: EditorView, n = 0): number => {
   return at[n]
 }
 const cardText = (view: EditorView, n = 0): string => view.state.doc.nodeAt(cardPos(view, n))!.textContent
+/** The card without its title line: what the card editor edits (`cardTitleOut`). */
+const cardBody = (view: EditorView, n = 0): string => cardTitleOut(cardText(view, n)).text
 
 /** Edit card on the card, and its editor once it has the card's text. */
 async function edit(view: EditorView, n = 0): Promise<{ card: CardBlockView; inner: EditorView }> {
@@ -111,8 +117,8 @@ describe('Edit card with the page`s editor: the round-trip risks (YAZ-5026 scope
     caretAfter(inner, 'Question')
     type(inner, ' now')
     card.done()
-    expect(cardText(view)).toBe('Question now\n---\nAnswer')
-    expect(cardSides(cardText(view))).toEqual(['Question now', 'Answer'])
+    expect(cardBody(view)).toBe('Question now\n---\nAnswer')
+    expect(cardSides(cardBody(view))).toEqual(['Question now', 'Answer'])
   })
 
   it('a paragraph that is only `---` never becomes a side break: it is written `\\---`', async () => {
@@ -123,8 +129,8 @@ describe('Edit card with the page`s editor: the round-trip risks (YAZ-5026 scope
     // Not typed (typing `---` makes a side): a paragraph whose text is `---`, as a paste can give.
     inner.dispatch(inner.state.tr.insertText('---'))
     card.done()
-    expect(cardText(view)).toBe('Front\n---\nBack\n\n\\---')
-    expect(cardSides(cardText(view))).toHaveLength(2)
+    expect(cardBody(view)).toBe('Front\n---\nBack\n\n\\---')
+    expect(cardSides(cardBody(view))).toHaveLength(2)
   })
 
   it('`[[link]]` comes back as `[[link]]`, never `\\[\\[link]]`', async () => {
@@ -135,7 +141,7 @@ describe('Edit card with the page`s editor: the round-trip risks (YAZ-5026 scope
     caretAfter(inner, '.')
     type(inner, ' Yes')
     card.done()
-    expect(cardText(view)).toBe('See [[Atlas]] and [[WIKI-12]]. Yes\n---\nBack!')
+    expect(cardBody(view)).toBe('See [[Atlas]] and [[WIKI-12]]. Yes\n---\nBack!')
   })
 
   it('`{{` inside code is never a hidden word', async () => {
@@ -146,7 +152,7 @@ describe('Edit card with the page`s editor: the round-trip risks (YAZ-5026 scope
     caretAfter(inner, ' and ')
     type(inner, 'so ')
     card.done()
-    expect(cardText(view)).toBe('Use `{{x}}` and so {{y}}.\n\n```js\nconst a = "{{z}}"\n```')
+    expect(cardBody(view)).toBe('Use `{{x}}` and so {{y}}.\n\n```js\nconst a = "{{z}}"\n```')
   })
 
   it('a code block inside a card does not end the card: the page`s fence grows', async () => {
@@ -158,11 +164,11 @@ describe('Edit card with the page`s editor: the round-trip risks (YAZ-5026 scope
     const { from } = inner.state.selection
     inner.dispatch(inner.state.tr.replaceWith(from - 1, from + 1, codeType.create({ language: 'js' }, inner.state.schema.text('let a = 1'))))
     card.done()
-    expect(cardText(view)).toBe('Front\n---\nBack\n\n```js\nlet a = 1\n```')
+    expect(cardBody(view)).toBe('Front\n---\nBack\n\n```js\nlet a = 1\n```')
     const saved = getMarkdownForSave(crepe)
     const cards = findCards(saved)
     expect(cards).toHaveLength(1)
-    expect(cards[0].text).toBe('Front\n---\nBack\n\n```js\nlet a = 1\n```')
+    expect(cardTitleOut(cards[0].text).text).toBe('Front\n---\nBack\n\n```js\nlet a = 1\n```')
     expect(cardIdOf(cards[0].line)).toBe('WIKI-7')
   })
 
@@ -173,7 +179,7 @@ describe('Edit card with the page`s editor: the round-trip risks (YAZ-5026 scope
     caretAfter(inner, 'Front')
     type(inner, '!')
     card.done()
-    const text = cardText(view)
+    const text = cardBody(view)
     expect(text).toContain('<!-- code: width 900 -->')
     expect(text).toContain('<!-- table: stripes -->')
     expect(text).toContain('Front!')
@@ -186,7 +192,7 @@ describe('Edit card with the page`s editor: the round-trip risks (YAZ-5026 scope
     caretAfter(inner, 'two')
     type(inner, '!')
     card.done()
-    const [front, back] = splitCardText(cardText(view)).sides.map((lines) => lines.join('\n'))
+    const [front, back] = splitCardText(cardBody(view)).sides.map((lines) => lines.join('\n'))
     expect(front).toMatch(/^[-*] one\n[-*] two!$/)
     // The back: its bytes, its blank lines too.
     expect(back).toBe('__bold__   back\n\n\n')
@@ -201,10 +207,10 @@ describe('Edit card with the page`s editor: the round-trip risks (YAZ-5026 scope
     caretAfter(inner, 'a')
     type(inner, 'x')
     await tick(CARD_MIRROR_MS + 50)
-    expect(cardText(view)).not.toBe(odd)
+    expect(cardBody(view)).not.toBe(odd)
     undo(inner.state, inner.dispatch)
     card.done()
-    expect(cardText(view)).toBe(odd)
+    expect(cardBody(view)).toBe(odd)
     expect(undoDepth(view.state)).toBe(depth)
   })
 })
@@ -224,7 +230,7 @@ describe('the hidden word in the card editor', () => {
     caretAfter(inner, '.')
     type(inner, '!')
     card.done()
-    expect(cardText(view)).toBe('A {{one}}, {{1::two}} and {{c2::**three** four}}.!')
+    expect(cardBody(view)).toBe('A {{one}}, {{1::two}} and {{c2::**three** four}}.!')
   })
 
   it('⌘L hides the selected word, and in a hidden word shows it again; typing `{{word}}` hides it', async () => {
@@ -237,13 +243,13 @@ describe('the hidden word in the card editor', () => {
     type(inner, ' {{Seine}}')
     expect([...inner.dom.querySelectorAll('.card__cloze')].map((e) => e.textContent)).toEqual(['Paris', 'Seine'])
     card.done()
-    expect(cardText(view)).toBe('{{Paris}} is in France. {{Seine}}')
+    expect(cardBody(view)).toBe('{{Paris}} is in France. {{Seine}}')
     // ⌘L inside a hidden word takes the braces off the whole word.
     const again = await edit(view)
     again.inner.dispatch(again.inner.state.tr.setSelection(TextSelection.create(again.inner.state.doc, 2, 4)))
     key(again.inner.dom, 'l', { metaKey: true })
     again.card.done()
-    expect(cardText(view)).toBe('Paris is in France. {{Seine}}')
+    expect(cardBody(view)).toBe('Paris is in France. {{Seine}}')
   })
 
   it('⌘L does nothing in code, or with no selection', async () => {
@@ -256,7 +262,7 @@ describe('the hidden word in the card editor', () => {
     key(inner.dom, 'l', { metaKey: true })
     expect(inner.dom.querySelector('.card__cloze')).toBeNull()
     card.done()
-    expect(cardText(view)).toBe('Use `code` here')
+    expect(cardBody(view)).toBe('Use `code` here')
   })
 })
 
@@ -275,8 +281,8 @@ describe('sides in the card editor', () => {
     inner.dispatch(inner.state.tr.split(inner.state.selection.from))
     type(inner, '*** ')
     card.done()
-    expect(cardText(view)).toBe('Question\n---\nAnswer\n---\nThird\n\n***')
-    expect(cardSides(cardText(view))).toEqual(['Question', 'Answer', 'Third\n\n***'])
+    expect(cardBody(view)).toBe('Question\n---\nAnswer\n---\nThird\n\n***')
+    expect(cardSides(cardBody(view))).toEqual(['Question', 'Answer', 'Third\n\n***'])
   })
 })
 
@@ -314,9 +320,9 @@ describe('the mirror, Done and the page`s undo', () => {
     const { card, inner } = await edit(view)
     caretAfter(inner, 'Front')
     type(inner, ' one')
-    expect(cardText(view)).toBe('Front\n---\nBack')
+    expect(cardBody(view)).toBe('Front\n---\nBack')
     await tick(CARD_MIRROR_MS + 300)
-    expect(cardText(view)).toBe('Front one\n---\nBack')
+    expect(cardBody(view)).toBe('Front one\n---\nBack')
     expect(undoDepth(view.state)).toBe(depth)
     // The mirror is saved (a tab switch loses no typing).
     expect(saves.at(-1)).toContain('Front one')
@@ -324,10 +330,10 @@ describe('the mirror, Done and the page`s undo', () => {
     // A save reads the card as it is now.
     expect(getMarkdownForSave(crepe)).toContain('Front one two')
     card.done()
-    expect(cardText(view)).toBe('Front one two\n---\nBack')
+    expect(cardBody(view)).toBe('Front one two\n---\nBack')
     expect(undoDepth(view.state)).toBe(depth + 1)
     undo(view.state, view.dispatch)
-    expect(cardText(view)).toBe('Front\n---\nBack')
+    expect(cardBody(view)).toBe('Front\n---\nBack')
   })
 
   it('Esc and ⌘↵ in the card editor are Done; a second Edit card does Done on the first', async () => {
@@ -336,7 +342,7 @@ describe('the mirror, Done and the page`s undo', () => {
     type(inner, '!')
     key(inner.dom, 'Escape')
     expect(card.editing).toBe(false)
-    expect(cardText(view)).toBe('One!')
+    expect(cardBody(view)).toBe('One!')
     ;({ card, inner } = await edit(view))
     key(inner.dom, 'Enter', { metaKey: true })
     expect(card.editing).toBe(false)
@@ -344,7 +350,7 @@ describe('the mirror, Done and the page`s undo', () => {
     type(first.inner, '?')
     const second = await edit(view, 1)
     expect(first.card.editing).toBe(false)
-    expect(cardText(view, 0)).toBe('One!?')
+    expect(cardBody(view, 0)).toBe('One!?')
     expect(second.card.editing).toBe(true)
     second.card.done()
   })
@@ -397,16 +403,16 @@ describe('an outside change of the card`s text while it is edited', () => {
     const notices: string[] = []
     const { view } = await mount(page('Front\n---\nBack'), { wikilinkNav: { onNotice: (m: string) => notices.push(m) } as never })
     const { card, inner } = await edit(view)
-    // An agent writes the card (an outside merge: out of the undo history).
+    // An agent writes the card's front (an outside merge: out of the undo history), after its title line.
     const pos = cardPos(view)
-    view.dispatch(view.state.tr.insertText('Theirs ', pos + 1).setMeta('addToHistory', false))
+    view.dispatch(view.state.tr.insertText('Theirs ', pos + 1 + 'Card title\n\n'.length).setMeta('addToHistory', false))
     expect(notices).toHaveLength(1)
     caretAfter(inner, 'Back')
     type(inner, '!')
     card.done()
-    expect(cardText(view)).toBe('Front\n---\nBack!')
+    expect(cardBody(view)).toBe('Front\n---\nBack!')
     undo(view.state, view.dispatch)
-    expect(cardText(view)).toBe('Theirs Front\n---\nBack')
+    expect(cardBody(view)).toBe('Theirs Front\n---\nBack')
   })
 })
 
@@ -417,7 +423,7 @@ describe('the card editor`s own on/off list (YAZ-5026 description)', () => {
     expect(inner.dom.querySelector('.card')).toBeNull()
     expect(inner.state.doc.content.content.some((n) => n.type.name === 'code_block' && n.attrs.language === 'card')).toBe(true)
     card.done()
-    expect(cardText(view)).toBe('Front\n\n```card\nInner\n```')
+    expect(cardBody(view)).toBe('Front\n\n```card\nInner\n```')
   })
 
   it('the selection toolbar has "Hide word" and no highlight colours or check list', async () => {
@@ -443,7 +449,7 @@ describe('the card editor`s own on/off list (YAZ-5026 description)', () => {
     type(inner, ' ==x==')
     expect(inner.dom.querySelector('mark')).toBeNull()
     card.done()
-    expect(cardText(view)).toBe('{{Paris}} is in France \\=\\=x\\=\\=')
+    expect(cardBody(view)).toBe('{{Paris}} is in France \\=\\=x\\=\\=')
   })
 
   it('the `/` menu has "New side" (`/side`) and no task list, calendar table, card or drawing; Esc closes the menu first, then is Done', async () => {
@@ -473,12 +479,12 @@ describe('the card editor`s own on/off list (YAZ-5026 description)', () => {
     type(inner, 'Back')
     key(inner.dom, 'Escape')
     expect(card.editing).toBe(false)
-    expect(cardText(view)).toBe('Front\n---\nBack')
+    expect(cardBody(view)).toBe('Front\n---\nBack')
   })
 })
 
 describe('`/card` with the page`s editor', () => {
-  it('the new card opens in the card editor with "Title" selected; typing replaces it; Done; ⌘Z takes the text back, the next ⌘Z the card', async () => {
+  it('the new card opens in the card editor with "Title" selected in its Title field (YAZ-5164 part 3); typing replaces it; Enter goes down to Side 1; Done; ⌘Z takes the text back, the next ⌘Z the card', async () => {
     const { crepe, root, view } = await mount('x\n', { cards: { path: '/v/Page.md', mintId: () => Promise.resolve('WIKI-512') } })
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, view.state.doc.firstChild!.nodeSize - 1)).insertText('/card'))
     await tick(10)
@@ -490,19 +496,71 @@ describe('`/card` with the page`s editor', () => {
     expect(card.editing).toBe(true)
     await card.cardEditor!.ready
     const inner = card.cardEditor!.view()!
-    expect(inner.state.doc.textBetween(inner.state.selection.from, inner.state.selection.to)).toBe('Title')
+    const field = card.dom.querySelector<HTMLInputElement>('.card-editor__title')!
+    expect(document.activeElement).toBe(field)
+    expect(field.value.slice(field.selectionStart!, field.selectionEnd!)).toBe('Title')
+    expect(inner.state.doc.textContent).toBe('')
     await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toBe('```card\nTitle\n```\n<!-- card: WIKI-512 -->\n'))
+    field.value = 'Capitals'
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+    key(field, 'Enter')
     type(inner, 'Capital of {{France}}')
     key(inner.dom, 'Enter', { metaKey: true, shiftKey: true })
     type(inner, 'Paris')
     // The mirror wrote the text into the page meanwhile (out of the undo history).
     await tick(CARD_MIRROR_MS + 50)
-    expect(cardText(view)).toBe('Capital of {{France}}\n---\nParis')
+    expect(cardText(view)).toBe('Capitals\n\nCapital of {{France}}\n---\nParis')
     card.done()
-    expect(getMarkdownForSave(crepe)).toBe('```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-512 -->\n')
+    expect(getMarkdownForSave(crepe)).toBe('```card\nCapitals\n\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-512 -->\n')
     undo(view.state, view.dispatch)
     expect(cardText(view)).toBe('Title')
     undo(view.state, view.dispatch)
     expect(cardPos(view)).toBeUndefined()
+  })
+})
+
+/**
+ * YAZ-5164 part 3: Edit card has a Title field above Side 1, for both kinds of card. A card in a page keeps its title as
+ * its first line: the field shows it, the editor holds the card without it, and Done writes it back as the first line.
+ */
+describe('YAZ-5164 part 3: Edit card`s Title field', () => {
+  const titleField = (card: CardBlockView) => card.dom.querySelector<HTMLInputElement>('.card-editor__title')
+
+  it('the Title field sits above Side 1 with the title; the editor holds the card without it; nothing changed writes nothing', async () => {
+    const { view } = await mount(page('Capital of France\n\nWhich city?\n---\nParis', undefined, ''))
+    const { card, inner } = await edit(view)
+    const field = titleField(card)!
+    expect(field.value).toBe('Capital of France')
+    expect(field.compareDocumentPosition(inner.dom) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(inner.state.doc.textContent).not.toContain('Capital of France')
+    expect(inner.state.doc.textContent).toContain('Which city?')
+    card.done()
+    expect(cardText(view)).toBe('Capital of France\n\nWhich city?\n---\nParis')
+  })
+
+  it('a new title and a new front: Done writes the title as the first line, then the card, one undo step', async () => {
+    const { view } = await mount(page('Capital of France\n\nWhich city?\n---\nParis', undefined, ''))
+    const { card, inner } = await edit(view)
+    const field = titleField(card)!
+    field.value = 'France'
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+    caretAfter(inner, 'Which city?')
+    type(inner, ' Name it')
+    card.done()
+    expect(cardText(view)).toBe('France\n\nWhich city? Name it\n---\nParis')
+    undo(view.state, view.dispatch)
+    expect(cardText(view)).toBe('Capital of France\n\nWhich city?\n---\nParis')
+  })
+
+  it('a card whose first line holds a hidden word: that line stays in the editor; a title typed in the field goes above it', async () => {
+    const { view } = await mount(page('The capital is {{Paris}}\n---\nback', undefined, ''))
+    const { card, inner } = await edit(view)
+    const field = titleField(card)!
+    expect(field.value).toBe('The capital is Paris')
+    expect(inner.state.doc.textContent).toContain('The capital is')
+    field.value = 'Capital'
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+    card.done()
+    expect(cardText(view)).toBe('Capital\n\nThe capital is {{Paris}}\n---\nback')
   })
 })
