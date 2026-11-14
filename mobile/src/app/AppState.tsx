@@ -79,6 +79,18 @@ export interface AppModel {
 
 const AppContext = createContext<AppModel | null>(null)
 
+/** How long a removal waits for a running pass to end. The store refuses that pass's later writes anyway (YAZ-5175),
+ *  so the wait only keeps the screen honest; a stuck download must not hold the erase. */
+export const STOP_WAIT_MS = 3_000
+
+/** Closes the vault in the sync, then waits (at most `STOP_WAIT_MS`) for its pass to end (YAZ-5175). */
+async function stopSync(sync: ShellSync): Promise<void> {
+  await sync.open(null)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([sync.idle(), new Promise<void>((r) => (timer = setTimeout(r, STOP_WAIT_MS)))])
+  clearTimeout(timer)
+}
+
 /** The app's state, for any screen under `AppProvider`. */
 export function useApp(): AppModel {
   const app = useContext(AppContext)
@@ -214,7 +226,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   const removeVault = useCallback(
     async (vault: string) => {
       const wasOpen = openKey.current === vault
-      if (wasOpen) await sync.open(null)
+      if (wasOpen) await stopSync(sync)
       await forgetVaultAndToken(store, tokens, await loadVaultList(store), vault)
       const next = await load(wasOpen)
       if (next.phase !== 'ready') setNav({ tab: 'review', stack: [] })
@@ -225,7 +237,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   const resetCopy = useCallback(
     async (vault: string) => {
       const wasOpen = openKey.current === vault
-      if (wasOpen) await sync.open(null)
+      if (wasOpen) await stopSync(sync)
       await store.resetCopy(vault)
       await load(wasOpen)
       if (wasOpen) setNav((n) => navigate(n, { type: 'home' }))
@@ -234,7 +246,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   )
 
   const eraseAll = useCallback(async () => {
-    await sync.open(null)
+    await stopSync(sync)
     await signOutAndErase(store, tokens)
     await load(false)
     setNav({ tab: 'review', stack: [] })

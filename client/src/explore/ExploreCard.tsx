@@ -159,6 +159,7 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
           {loaded.kind === 'loading' ? '' : title === '' ? 'New card' : title}
         </span>
         {card?.notitle === true && <span className="card__state card__notitle">Hidden in review</span>}
+        {card?.fix === true && <span className="card__state card__fix">To fix</span>}
         {/* ↗ folds into ⋯ in a narrow layer (YAZ-4986); the card ID, the title and × stay. */}
         <span className="explore__fold">
           <HoverTip text={fromInbox ? 'Open page in a new tab' : 'Open page in a new tab (⌘↵)'} data-fold-part="open">

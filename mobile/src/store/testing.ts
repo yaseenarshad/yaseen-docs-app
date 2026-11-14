@@ -33,9 +33,19 @@ export function limitedBackend(inner: Backend, limit: number | (() => number)): 
         }
       }
       if ([...next.values()].reduce((sum, n) => sum + n, 0) > limitNow()) throw new DOMException('The phone is full', 'QuotaExceededError')
-      await inner.apply(ops)
+      // Counted at once, before the write lands: writes that run in parallel (3D downloads 3 at a time) each see the
+      // bytes of the others, as a real disk does. (YAZ-5074: counted after the await, three parallel writes each saw
+      // the same total, so a full phone took them all.)
+      const before = new Map(sizes)
       sizes.clear()
       for (const [k, v] of next) sizes.set(k, v)
+      try {
+        await inner.apply(ops)
+      } catch (error) {
+        sizes.clear()
+        for (const [k, v] of before) sizes.set(k, v)
+        throw error
+      }
     },
   }
 }

@@ -13,6 +13,8 @@ export interface FakeSync extends ShellSync {
   /** Every `open` call, in order. */
   opened: (PhoneVault | null)[]
   syncNowCalls: number
+  /** A pass that "runs": `idle()` waits for it. Tests set it and resolve it. */
+  running: Promise<void> | null
   /** Changes the state and tells the listeners, as 3B's engine does. */
   set(next: Partial<ShellSyncState>): void
   emit(event: ShellSyncEvent): void
@@ -28,6 +30,7 @@ export function fakeSync(options: { download?: boolean } = {}): FakeSync {
   const sync: FakeSync = {
     opened: [],
     syncNowCalls: 0,
+    running: null,
     state: () => state,
     subscribe(listener) {
       listeners.add(listener)
@@ -42,6 +45,7 @@ export function fakeSync(options: { download?: boolean } = {}): FakeSync {
     async syncNow() {
       sync.syncNowCalls++
     },
+    idle: () => sync.running ?? Promise.resolve(),
     set(next) {
       state = { ...state, ...next }
       sync.emit({ type: 'state', state })

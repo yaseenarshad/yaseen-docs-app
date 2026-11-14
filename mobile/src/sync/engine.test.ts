@@ -305,6 +305,86 @@ describe('the sync engine: P4, on demand, and the lane for 3C', () => {
   })
 })
 
+describe('the lane for 3C (YAZ-5073): a pass inside it, and one thing at a time with no Web Lock', () => {
+  it('lane(fn) gives fn a pass that runs in the lane and tells the screens, as a pass of the engine does', async () => {
+    const t = await setup()
+    await t.engine.open(VAULT_ROW)
+    await t.engine.idle()
+    await t.s.git.push({ 'b.md': pageText('B', 'NC-4') })
+    t.events.length = 0
+    const result = await t.engine.lane(async (_remote, pass) => pass())
+    expect(result).toMatchObject({ kind: 'synced' })
+    expect(t.engine.index()!.records['b.md'].title).toBe('B')
+    const changed = t.events.find((e) => e.type === 'changed')
+    expect(changed).toMatchObject({ type: 'changed', diff: { added: ['b.md'] } })
+    expect(t.engine.state()).toMatchObject({ status: 'synced', lastSyncedAt: t.clock.now() })
+  })
+
+  it('a pass that the timer starts while a lane runs waits for the lane to end (the default lock is none in this test)', async () => {
+    const t = await setup()
+    await t.engine.open(VAULT_ROW)
+    await t.engine.idle()
+    const log: string[] = []
+    let release: () => void = () => {}
+    const lane = t.engine.lane(async () => {
+      log.push('lane start')
+      await new Promise<void>((r) => (release = r))
+      log.push('lane end')
+    })
+    for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0))
+    const refs = t.refs()
+    t.clock.advance(POLL_MS)
+    for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0))
+    expect(t.refs()).toBe(refs) // the poll waits
+    release()
+    await lane
+    await t.engine.idle()
+    expect(t.refs()).toBe(refs + 1)
+    expect(log).toEqual(['lane start', 'lane end'])
+  })
+})
+
+describe('YAZ-5184: the time limit is a SILENCE limit', () => {
+  it('a download that keeps getting bytes for 100 s (one part each 20 s) is not cut; the pass ends well', async () => {
+    let hold = false
+    let feed: ReadableStreamDefaultController<Uint8Array> | null = null
+    let parts: Uint8Array[] = []
+    const s = await syncSetup({ 'a.md': pageText('A', 'NC-1') })
+    const clock = fakeClock()
+    const slow = async (url: string, init: RequestInit) => {
+      const res = await s.github.fetch(url, init)
+      if (!hold || !url.includes('/git/blobs/')) return res
+      const bytes = new Uint8Array(await res.arrayBuffer())
+      parts = [0, 1, 2, 3, 4].map((i) => bytes.subarray(Math.floor((i * bytes.length) / 5), Math.floor(((i + 1) * bytes.length) / 5)))
+      return new Response(new ReadableStream<Uint8Array>({ start: (c) => void (feed = c) }), { status: 200 })
+    }
+    const engine = createSyncEngine({
+      store: s.store,
+      tokens: s.tokens,
+      clock,
+      yieldToUi: async () => {},
+      makeRemote: (vault, token, onActivity) => githubRemote(githubClient(token, { fetch: slow, now: clock.now, onActivity }), vault.repo, vault.branch),
+    })
+    await engine.open(VAULT_ROW)
+    await engine.idle()
+    await s.git.push({ 'b.md': pageText('B', 'NC-4') })
+    hold = true
+    const pass = engine.syncNow()
+    for (let i = 0; i < 200 && feed === null; i++) await new Promise((r) => setTimeout(r, 0))
+    expect(feed).not.toBeNull()
+    for (const part of parts) {
+      clock.advance(20_000)
+      feed!.enqueue(part)
+      for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0))
+    }
+    feed!.close()
+    await pass
+    expect(engine.state()).toMatchObject({ status: 'synced', problem: null })
+    expect(engine.index()!.records['b.md'].title).toBe('B')
+    engine.stop()
+  })
+})
+
 describe('followPage: the page events', () => {
   it('hidden stops the polling, visible runs a pass at once, online runs a pass at once; the undo removes the listeners', async () => {
     const { followPage } = await import('./pageEvents')
