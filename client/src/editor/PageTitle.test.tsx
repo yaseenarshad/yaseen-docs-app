@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { PageTitle } from './PageTitle'
+import { READ_ONLY_EDIT } from './readOnlyEdit'
 import type { PathTitles } from '../lib/pageLabel'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -199,8 +200,48 @@ describe('PageTitle on a read-only page (YAZ-3076 S22)', () => {
     expect(input(el)).toBeNull()
     press(heading(el)!, 'Enter')
     expect(input(el)).toBeNull()
-    expect(heading(el)?.hasAttribute('tabindex')).toBe(false)
+    // YAZ-5141: it takes the keyboard on a click (for the chip's Enter), but Tab passes it.
+    expect(heading(el)?.getAttribute('tabindex')).toBe('-1')
     expect(heading(el)?.getAttribute('aria-readonly')).toBe('true')
+  })
+
+  it('YAZ-5141: a click is an edit attempt — the pane hears it (the chip\'s card) and the title takes the keyboard; once the page unlocks, the field opens at once', () => {
+    const { el, render, onRetitle } = mount({ readOnly: true })
+    const heard: string[] = []
+    el.addEventListener(READ_ONLY_EDIT, (e) => heard.push((e as CustomEvent<string>).detail))
+    act(() => heading(el)?.click())
+    expect(heard).toEqual(['page'])
+    expect(document.activeElement).toBe(heading(el))
+    render(false)
+    expect(document.activeElement).toBe(field(el))
+    expect(field(el).value).toBe('Old Page')
+    type(el, 'New Page')
+    expect(onRetitle).toHaveBeenCalledExactlyOnceWith('New Page')
+  })
+
+  it('YAZ-5141: Esc (the box\'s Cancel) or a press elsewhere drops the wish: a later unlock opens no field', () => {
+    for (const away of ['esc', 'press'] as const) {
+      const { el, render } = mount({ readOnly: true })
+      act(() => heading(el)?.click())
+      if (away === 'esc') press(document.body, 'Escape')
+      else act(() => void document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })))
+      render(false)
+      expect(input(el), away).toBeNull()
+      act(() => root?.unmount())
+      container?.remove()
+    }
+  })
+
+  it('YAZ-5141: read only for want of a rename door (`locked` false): a click tells nothing and takes no keyboard', () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<PageTitle path={PATH} titles={new Map()} onRetitle={vi.fn()} readOnly locked={false} />))
+    const heard: string[] = []
+    container.addEventListener(READ_ONLY_EDIT, (e) => heard.push((e as CustomEvent<string>).detail))
+    act(() => heading(container!)?.click())
+    expect(heard).toEqual([])
+    expect(heading(container)?.hasAttribute('tabindex')).toBe(false)
   })
 
   it('a field open when the switch turns on is put down unchanged — nothing is renamed', () => {

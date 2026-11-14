@@ -100,7 +100,7 @@ afterEach(() => {
   el?.remove()
 })
 
-async function mount(content: string, opts: { readOnly?: boolean; review?: boolean; path?: string; allow?: boolean } = {}) {
+async function mount(content: string, opts: { readOnly?: boolean; review?: boolean; path?: string; allow?: boolean; pane?: boolean } = {}) {
   const path = opts.path ?? PATH
   disk.files.set(path, content)
   if (opts.review === false) disk.review = { enabled: false }
@@ -111,7 +111,9 @@ async function mount(content: string, opts: { readOnly?: boolean; review?: boole
   const onRetitle = vi.fn()
   const onReread = vi.fn()
   const allowFileAction = vi.fn(async () => opts.allow !== false)
-  el = document.createElement('div')
+  // `pane`: inside a tab's pane (`section.editor`), where the "Read only" chip hears an edit attempt (YAZ-5141).
+  el = document.createElement(opts.pane === true ? 'section' : 'div')
+  if (opts.pane === true) el.className = 'editor'
   document.body.append(el)
   root = createRoot(el)
   await act(async () =>
@@ -359,6 +361,24 @@ describe('the top bar of a card file (YAZ-5102)', () => {
     act(() => view.dispatch(view.state.tr.insertText(' (Seine)', view.state.doc.content.size - 1)))
     key(dom, { key: 'Enter', metaKey: true })
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('Paris\n```', 'Paris (Seine)\n```')))
+  })
+
+  it('YAZ-5141: a click on the title of a locked card file shows the chip`s card ("This card is Read only. Press Enter to allow edits."); Enter asks; a choice unlocks and the title edits at once', async () => {
+    const { onRetitle } = await mount(FILE, { readOnly: true, pane: true })
+    const title = el.querySelector<HTMLElement>('.card-file__title-row .page-title__text')!
+    act(() => title.click())
+    expect(el.querySelector('.read-only-message__card')?.textContent).toBe('This card is Read only.Press Enter to allow edits.')
+    expect(document.activeElement).toBe(title)
+    // The same Enter as the body's: the "Allow edits?" box.
+    key(title, { key: 'Enter' })
+    expect(el.querySelector('.read-only-chip__ask p')?.textContent).toBe('Allow edits?')
+    askButton('Allow edits for 1 minute')
+    const field = el.querySelector<HTMLTextAreaElement>('.card-file__title-row .page-title__input')
+    expect(field).not.toBeNull()
+    expect(document.activeElement).toBe(field)
+    field!.value = 'Capital of Italy'
+    key(field!, { key: 'Enter' })
+    expect(onRetitle).toHaveBeenCalledExactlyOnceWith(PATH, 'Capital of Italy', 'file')
   })
 
   it('Lock now locks the tab again: no Edit card', async () => {

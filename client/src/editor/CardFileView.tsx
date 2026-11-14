@@ -13,7 +13,8 @@
  *  - THE TITLE (YAZ-5044 decision A, YAZ-5104) is the file's `title`, as a page's, and the card's text never holds it:
  *    the big title is the page's own `PageTitle`, read from the index, so a click edits it as on a page. Enter (or a
  *    click away) writes `title` and renames the file through App's title edit door (`onRetitle`, which asks first as a
- *    page's title does); Esc goes back. While the tab is read only, the title is too.
+ *    page's title does); Esc goes back. While the tab is read only, the title is too: a click on it shows the "Read only"
+ *    chip's card, "This card is Read only. Press Enter to allow edits." (YAZ-5141), and once allowed the title edits.
  *  - A FILE THAT IS NOT VALID (`cardFileShape`) stays a card file: one notice at the top (`CardFileNotice`), and
  *    nothing is deleted. 2+ cards: "This card file holds 3 cards.", the first card under it (each one stays in review).
  *    Text outside the card: the notice, and that text below it, muted. No card: the notice, and the file's text.
@@ -308,7 +309,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
           <header className="card-file__head">
             <div className="card-file__path">{folderOf(root, path)}</div>
             <div className="card-file__title-row">
-              <PageTitle path={path} titles={titles} readOnly={locked || onRetitle === undefined} onRetitle={(title) => onRetitle?.(path, title, 'file')} onArrowDown={giveKeysBack} />
+              <PageTitle path={path} titles={titles} readOnly={locked || onRetitle === undefined} locked={locked && 'card'} onRetitle={(title) => onRetitle?.(path, title, 'file')} onArrowDown={giveKeysBack} />
               {canEdit && !editing && (
                 <button type="button" className="card-file__button" data-card-file-edit onMouseDown={(e) => e.preventDefault()} onClick={() => setEditing(true)}>
                   Edit card <kbd>E</kbd>
