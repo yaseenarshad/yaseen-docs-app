@@ -5,10 +5,11 @@
  * whole read-back is `secrets:has`. With no token, the row tells how to make one (decisions 13 and 17).
  */
 import { useRef, useState } from 'react'
+import { ConfirmSheet } from '../components/ConfirmSheet'
 import { removeGithubToken, saveGithubToken, useGithubTokenSaved } from './githubToken'
 
 const PROBLEM = {
-  'not-a-token': 'This is not a GitHub token. A token has only letters, digits and _.',
+  'not-a-token': 'This is not a GitHub token. A GitHub token starts with github_pat_ or ghp_, and has only letters, digits and _.',
   failed: 'The token could not be saved.',
   'not-removed': 'The token could not be removed.',
 } as const
@@ -19,6 +20,8 @@ export function GithubTokenControl() {
   const [typed, setTyped] = useState(false)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<keyof typeof PROBLEM | null>(null)
+  /** YAZ-5219: Remove asks first. GitHub shows a token one time only, so a click by mistake costs a new token. */
+  const [asking, setAsking] = useState(false)
 
   const save = async () => {
     const input = field.current
@@ -70,10 +73,29 @@ export function GithubTokenControl() {
         <button type="button" className="settings__option" onClick={() => void save()} disabled={busy || !typed}>
           Save
         </button>
-        <button type="button" className="settings__option" onClick={() => void remove()} disabled={busy || saved !== true}>
+        <button type="button" className="settings__option" onClick={() => setAsking(true)} disabled={busy || saved !== true}>
           Remove token
         </button>
       </div>
+      {asking && (
+        <ConfirmSheet
+          labelId="remove-github-token-text"
+          text={
+            <>
+              <span className="confirm__title">Remove the GitHub token from this Mac?</span>
+              A phone that is already connected keeps working. This Mac stops sending your numbers to friends. To show a phone code again, you must paste a token again.
+            </>
+          }
+          confirmLabel="Remove"
+          danger
+          keys="contained"
+          onConfirm={() => {
+            setAsking(false)
+            void remove()
+          }}
+          onCancel={() => setAsking(false)}
+        />
+      )}
     </>
   )
 }

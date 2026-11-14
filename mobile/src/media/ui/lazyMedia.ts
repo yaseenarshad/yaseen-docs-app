@@ -26,6 +26,6 @@ export function lazyMedia(
     show: async (path) => (await get()).show(path),
     showLink: async (src, holder) => (await get()).showLink(src, holder),
     urlNow: (path) => ahead?.urlNow(path) ?? null,
-    releaseUrl: (path) => ahead?.releaseUrl(path),
+    releaseUrl: (path, url) => ahead?.releaseUrl(path, url),
   }
 }

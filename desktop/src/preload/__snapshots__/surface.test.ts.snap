@@ -62,6 +62,7 @@ focus.set/3: invoke focus:set ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOU
 focusFolders.get/2: invoke focusFolders:get ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 focusFolders.onChanged/1: on focusFolders:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off focusFolders:changed
 focusFolders.set/3: invoke focusFolders:set ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.status/0: invoke friends:status []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.history/2: invoke github:history ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.onStatus/1: on github:status-changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off github:status-changed
 github.restore/3: invoke github:restore ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -158,6 +159,7 @@ newPlaces.get/1: invoke newPlaces:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND
 newPlaces.onChanged/1: on newPlaces:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off newPlaces:changed
 newPlaces.set/2: invoke newPlaces:set ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 phone.code/1: invoke phone:code ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+phone.hide/0: invoke phone:hide []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 pickFolder/0: invoke dialog:pick-folder []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 pickPicturesFolder/1: invoke dialog:pick-pictures-folder ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 pictureFolders.allow/1: invoke picture-folders:allow ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

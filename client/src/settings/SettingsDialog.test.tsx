@@ -180,7 +180,7 @@ const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderVie
 // YAZ-5050 round 2: in groups — Daily limits, Answers, Scheduling, Card look (with its preview).
 const REVIEW_ROWS = ['enabled', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
 /** Settings › Review › Phone and friends (YAZ-5098): the token row; "Connect your phone" needs the vault's root, which these mounts do not give. */
-const PHONE_ROWS = ['githubToken']
+const PHONE_ROWS = ['githubToken', 'friendsSend']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
  * so the "Used by macOS" rows are not there; with no key changed, neither is "Reset all hotkeys".
@@ -1557,7 +1557,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   it('YAZ-5050: Custom card spacing: its rows under Card spacing, in the pages\' words; a change is an app setting; Reset goes to Custom\'s start; Same as pages goes back', () => {
     const custom = { ...DEFAULT_SETTINGS, ...CUSTOM }
     const { el, onChange } = mountOn('Review', custom, undefined, S)
-    expect(reviewRows(el).slice(-9)).toEqual(['cardSpacing', ...CUSTOM_ROWS, 'cardSpacingPreview', 'howCardsComeBack', ...PHONE_ROWS])
+    expect(reviewRows(el).slice(-(8 + PHONE_ROWS.length))).toEqual(['cardSpacing', ...CUSTOM_ROWS, 'cardSpacingPreview', 'howCardsComeBack', ...PHONE_ROWS])
     expect(CUSTOM_ROWS.map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Line spacing', 'Space between blocks', 'Bullet indent', 'Bullet gap', 'Space between bullets'])
     act(() => rowButtons(el, 'cardBlockGap')[3].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardBlockGap: 12 })

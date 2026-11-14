@@ -119,6 +119,8 @@ vi.mock('./settingsFolder', () => ({ followSettingsFolder: () => h.settingsFolde
 vi.mock('./library/folder', () => ({ ensureLibraryFolder: vi.fn(async () => '/userData/library') }))
 vi.mock('./updater', async (importOriginal) => ({ shortVersion: (await importOriginal<typeof import('./updater')>()).shortVersion, createUpdater: h.createUpdater, runFile: vi.fn(), spawnDetached: vi.fn(), RELEASES_PAGE: 'https://github.com/yaseenarshad/yaseen-docs-app/releases/latest' }))
 vi.mock('./ipc/clipboard', () => ({ registerClipboardIpc: h.registerClipboardIpc }))
+// The Mac's send of the numbers (YAZ-5086) has its own tests (`friends/`): here it is a stub, with no watcher and no call.
+vi.mock('./friends', () => ({ startFriendsSend: () => ({ look: vi.fn(), tokenChanged: vi.fn(), stop: vi.fn(async () => undefined) }) }))
 vi.mock('./drawImport', async (importOriginal) => ({ ...(await importOriginal<typeof import('./drawImport')>()), startDrawImport: h.startDrawImport }))
 vi.mock('./theme', () => ({ subscribeNativeTheme: vi.fn(), windowBackgroundColor: vi.fn() }))
 vi.mock('./appZoom', () => ({ subscribeAppZoom: vi.fn(), appZoomFactor: () => 1 }))
@@ -351,11 +353,11 @@ describe('the updater in index.ts (YAZ-2976)', () => {
     expect(send).toHaveBeenCalledExactlyOnceWith('update:state-changed', { kind: 'ready', version: '1.0.13' })
   })
 
-  it('on ready registers the four update doors (and the memory meter\'s, YAZ-3737 D1; the spell checker\'s, YAZ-4464; Connect your phone\'s, YAZ-5098) before the windows restore, then starts the timer (D7)', async () => {
+  it('on ready registers the four update doors (and the memory meter\'s, YAZ-3737 D1; the spell checker\'s, YAZ-4464; Connect your phone\'s, YAZ-5098; the friends send\'s, YAZ-5086) before the windows restore, then starts the timer (D7)', async () => {
     expect([...h.handles.keys()]).toEqual([])
     h.s.ready()
     await settle()
-    expect([...h.handles.keys()].sort()).toEqual(['memory:report', 'phone:code', 'spell:guesses', 'update:check', 'update:notes', 'update:restart', 'update:state'])
+    expect([...h.handles.keys()].sort()).toEqual(['friends:status', 'memory:report', 'phone:code', 'phone:hide', 'spell:guesses', 'update:check', 'update:notes', 'update:restart', 'update:state'])
     expect(h.s.order.indexOf('updater.start')).toBeLessThan(h.s.order.indexOf('restore:none'))
     h.updater.kind = 'manual'
     await expect(invoke('update:state')).resolves.toEqual({ ok: true, value: { kind: 'manual' } })

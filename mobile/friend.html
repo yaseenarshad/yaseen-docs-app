@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1e1e1e" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="stylesheet" href="/src/pwa/landing.css" />
+    <title>A friend on Notecards</title>
+  </head>
+  <body>
+    <main class="landing">
+      <img class="landing__icon" src="/icons/icon-192.png" alt="" width="64" height="64" />
+      <h1 class="title">A friend sent you a Notecards link</h1>
+      <p class="lead">
+        Notecards is the phone app of Yaseen Docs. You review your cards with it. Your friends see your review numbers.
+        They never see your cards.
+      </p>
+
+      <section id="has-code" hidden>
+        <p class="landing__say">Copy this code. Open the app. Tap Paste.</p>
+        <label class="field">
+          <span class="field__label">Your friend's code</span>
+          <input id="code" type="text" readonly autocomplete="off" autocapitalize="off" spellcheck="false" />
+        </label>
+        <button id="copy" class="btn btn--primary" type="button">Copy</button>
+        <p id="copied" class="muted" role="status"></p>
+        <ol class="guide-steps">
+          <li>Tap <b>Copy</b>.</li>
+          <li>Open <b>Notecards</b> from your Home Screen.</li>
+          <li>In <b>Friends</b>, tap <b>Paste a friend's link</b>.</li>
+        </ol>
+      </section>
+
+      <section id="no-code" class="problem" hidden>
+        <p>This link has no friend code. Ask your friend to send the link again.</p>
+      </section>
+
+      <h2 class="section">No Notecards on this phone yet?</h2>
+      <ol class="guide-steps">
+        <li>Copy the code first. It stays on the clipboard.</li>
+        <li>In Safari, tap the Share button, then <b>Add to Home Screen</b>, then <b>Add</b>.</li>
+        <li>Open <b>Notecards</b> from your Home Screen. Connect your vault. The app shows the steps.</li>
+        <li>In <b>Friends</b>, tap <b>Paste a friend's link</b>.</li>
+      </ol>
+      <p class="muted">Safari and the Home Screen app do not share their data. Use the app on the Home Screen, not this page.</p>
+      <p class="muted">This page sends the code nowhere. Only the app reads it, when you paste it.</p>
+    </main>
+    <script type="module" src="/src/pwa/landing.ts"></script>
+  </body>
+</html>
