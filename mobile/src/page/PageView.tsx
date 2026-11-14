@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { useApp } from '../app/AppState'
-import { Frame, vaultName } from '../screens/Frame'
+import { Frame } from '../screens/Frame'
 import { setSearchNotice } from '../search/searchState'
 import { useVaultData } from '../search/vaultData'
 import { uiSlicer } from '../sync/yieldToUi'
@@ -21,6 +21,9 @@ import { renderPage } from './pageRender'
  *  - R5 the page was deleted: back to the list, which says so.
  *  - R6 the page was renamed: it stays open, under the new path.
  */
+/** YAZ-5211: where each page was read last (phone memory only), so Back shows a page at its place. */
+const readingPlace = new Map<string, number>()
+
 export default function PageView({ path: opened, at }: { path: string; at?: string }) {
   const app = useApp()
   const { store, sync } = app.services
@@ -73,6 +76,7 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
 
   // Draw it, in slices; again when the text or the vault's index changes, at the same reading place (R3).
   const drawn = useRef<{ text: string; version: number } | null>(null)
+  const everDrawn = useRef(false)
   useEffect(() => {
     const el = host.current
     if (el === null || data === null || typeof text !== 'string') return
@@ -80,7 +84,9 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
     let live = true
     const scroller = el.closest('.screen')
     const top = scroller?.scrollTop ?? 0
-    const first = drawn.current === null
+    // The first draw of this view (a redraw after R3 keeps the place it had).
+    const first = !everDrawn.current
+    everDrawn.current = true
     drawn.current = { text, version: data.version }
     void (async () => {
       await renderPage(splitFrontmatter(text).body, pageLook(data, path), el, uiSlicer(), () => live)
@@ -88,6 +94,8 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
       const head = el.firstElementChild
       setSameTitle(head?.tagName === 'H1' && head.textContent?.trim().toLowerCase() === title.trim().toLowerCase())
       if (scroller !== null && !first) scroller.scrollTop = top
+      // YAZ-5211: back on a page read before, at its reading place (a card asked for by `at` comes first).
+      if (scroller !== null && first && at === undefined) scroller.scrollTop = readingPlace.get(`${vault}\n${path}`) ?? 0
       if (first && at !== undefined) el.querySelector(`[data-card-id="${at.replace(/["\\]/g, '\\$&')}"]`)?.scrollIntoView?.({ block: 'start' })
       await fillCardEmbeds(el, data, store, app.go, () => live)
     })()
@@ -96,6 +104,15 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
       drawn.current = null
     }
   }, [text, data, path, at, store, app.go, title])
+
+  // YAZ-5211: the reading place of this page, kept as the person scrolls.
+  useEffect(() => {
+    const scroller = host.current?.closest('.screen')
+    if (scroller == null) return
+    const keep = () => readingPlace.set(`${vault}\n${path}`, scroller.scrollTop)
+    scroller.addEventListener('scroll', keep, { passive: true })
+    return () => scroller.removeEventListener('scroll', keep)
+  }, [vault, path])
 
   const onTap = async (event: React.MouseEvent) => {
     if (data === null) return
@@ -109,7 +126,7 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
 
   const gone = text === null && data !== null
   return (
-    <Frame title={app.vault === null ? title : vaultName(app.vault.repo)} back={() => app.go({ type: 'back' })} tabs>
+    <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs>
       <article className="reader" aria-label={title}>
         <h2 className={sameTitle ? 'reader__title reader__title--same' : 'reader__title'}>{title}</h2>
         {notice !== null && (

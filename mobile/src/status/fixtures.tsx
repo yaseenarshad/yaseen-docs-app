@@ -6,6 +6,7 @@ import type { TokenEndWarning } from '../auth/expiry'
 import { fakeFriends, fakeScanner, fakeSync } from '../dev/fakes'
 import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn, vaultId, type PhoneVault } from '../store'
 import { syncDot, type DotInput } from './dot'
+import { DotWords } from './SyncStatus'
 import { fakeAnswers, lostAnswer } from './testing'
 import './status.css'
 
@@ -13,7 +14,8 @@ import './status.css'
  * The dot's screen fixtures (`#fixture=dot-…`), made-up data only, for the screenshots of YAZ-5080. Only the
  * `--mode fixtures` build reaches this file (`dev/fixtures.tsx`). Nothing calls GitHub.
  *  - `dot-all`: the five states of decision 12 in five top bars, with the words of each.
- *  - `dot-<state>`: the whole app with that state; `dot-<state>-sheet`: the same, after a tap on the dot.
+ *  - `dot-<state>`: the whole app with that state; `dot-<state>-sheet`: the same, after a tap on the dot;
+ *    `dot-lost-ask`: the ask of the first Discard.
  */
 const VAULT: PhoneVault = { repo: 'demo/demo-vault', branch: 'main', addedAt: 1 }
 const MIN = 60_000
@@ -25,6 +27,8 @@ const ALL: [string, Partial<DotInput>][] = [
   ['Sending or getting changes now', { sync: { status: 'syncing', problem: null } }],
   ['No connection', { online: false }],
   ['The token stopped working', { sync: { status: 'attention', problem: 'UNAUTHORIZED' } }],
+  ['Answers wait, no connection (the longest words)', { online: false, answers: { waiting: 3, lost: 0, sending: false, problem: null } }],
+  ['Two answers whose card is gone', { answers: { waiting: 0, lost: 2, sending: false, problem: null } }],
 ]
 
 function Gallery() {
@@ -39,7 +43,7 @@ function Gallery() {
               <h1 className="topbar__title">demo-vault</h1>
               <button type="button" className="sync-status" aria-label={`Sync status: ${dot.words}`}>
                 <span className={`sync-dot sync-dot--${dot.state}`} aria-hidden="true" />
-                <span className="sync-status__words">{dot.words}</span>
+                <DotWords dot={dot} />
               </button>
               <button type="button" className="icon-btn" aria-label="Settings">
                 ⚙
@@ -63,8 +67,9 @@ export async function mountDotFixture(root: Root, name: string): Promise<void> {
     return
   }
   const now = Date.now()
-  const sheet = name.endsWith('-sheet')
-  const state = name.replace(/^dot-/, '').replace(/-sheet$/, '')
+  const ask = name.endsWith('-ask')
+  const sheet = ask || name.endsWith('-sheet')
+  const state = name.replace(/^dot-/, '').replace(/-(sheet|ask)$/, '')
   const backend = memoryBackend()
   const store = await openVaultStore(backend)
   const tokens = tokenStoreOn(backend)
@@ -98,6 +103,9 @@ export async function mountDotFixture(root: Root, name: string): Promise<void> {
       sync.set({ status: 'off', problem: 'OFFLINE' })
       answers.set({ waiting: 3 })
       break
+    case 'stale':
+      answers.set({ waiting: 2, problem: 'STALE_HEAD', retryAt: now + 4 * MIN })
+      break
     case 'slowed':
       sync.set({ status: 'slowed', problem: 'RATE_LIMITED', retryAt: now + 4 * MIN })
       break
@@ -110,6 +118,8 @@ export async function mountDotFixture(root: Root, name: string): Promise<void> {
   }
   await wait(50)
   if (sheet) document.querySelector<HTMLButtonElement>('.sync-status')?.click()
+  await wait(50)
+  if (ask) document.querySelector<HTMLButtonElement>('.discard-answer')?.click()
   await wait(50)
   document.documentElement.dataset.fixtureReady = name
 }

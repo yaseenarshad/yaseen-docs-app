@@ -5,7 +5,7 @@ import { cardFileShape } from '@shared/cardFileFormat'
 import { answerLabel, cardHistory } from '@shared/cardSchedule'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { useApp } from '../app/AppState'
-import { Frame, vaultName } from '../screens/Frame'
+import { Frame } from '../screens/Frame'
 import { useVaultData } from '../search/vaultData'
 import { useMediaWatch, useVaultMedia } from '../media/ui/useVaultMedia'
 import { openFile } from '../media/ui/vaultMedia'
@@ -86,7 +86,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
 
   const facts = card === null || data === null ? null : cardFacts(card.reviews, data.review, now)
   return (
-    <Frame title={app.vault === null ? title : vaultName(app.vault.repo)} back={() => app.go({ type: 'back' })} tabs>
+    <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs>
       <article className="reader card-view" aria-label={title}>
         <h2 className="reader__title">
           {title}

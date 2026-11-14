@@ -19,6 +19,7 @@ import { PhoneCard, type CardLinkOpen } from './PhoneCard'
 import { createReviewSource, type ReviewSource } from './source'
 import { useWakeLock } from './wakeLock'
 import { FILTERS, NEEDS_FIX, filterDone, filterLabel, lostAction, lostTitle } from './words'
+import { DiscardAnswer } from '../screens/DiscardAnswer'
 import './review.css'
 
 /**
@@ -487,9 +488,7 @@ function LostAnswers({ answers, link, settings }: { answers: AnswersState; link:
         return (
           <div key={row.seq} className="review__lost-row">
             <span className="review__lost-what">{what}</span>
-            <button type="button" className="btn review__discard" aria-label={`Discard: ${what}`} onClick={() => void Promise.all(parts.map((l) => link.answers.discard(l.seq)))}>
-              Discard
-            </button>
+            <DiscardAnswer title={row.title === '' ? row.op.id : row.title} answer={lostAction(row.op, settings)} label={`Discard: ${what}`} onDiscard={() => Promise.all(parts.map((l) => link.answers.discard(l.seq)))} />
           </div>
         )
       })}

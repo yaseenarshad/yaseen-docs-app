@@ -9,19 +9,28 @@ interface Held {
   vault: string | null
   query: string
   type: PhoneType
+  /** YAZ-5211: the rows shown ("Show more") and the scroll place of the list. */
+  shown: number | null
+  scroll: number
   notice: string | null
 }
 
-const held: Held = { vault: null, query: '', type: 'all', notice: null }
+const held: Held = { vault: null, query: '', type: 'all', shown: null, scroll: 0, notice: null }
 
-/** The box and the Type of `vault`: empty for another vault. */
-export function searchStateOf(vault: string | null): { query: string; type: PhoneType } {
-  if (held.vault !== vault) Object.assign(held, { vault, query: '', type: 'all' })
-  return { query: held.query, type: held.type }
+/** The box, the Type, the rows shown and the scroll place of `vault`: empty for another vault. */
+export function searchStateOf(vault: string | null): { query: string; type: PhoneType; shown: number | null; scroll: number } {
+  if (held.vault !== vault) Object.assign(held, { vault, query: '', type: 'all', shown: null, scroll: 0 })
+  return { query: held.query, type: held.type, shown: held.shown, scroll: held.scroll }
 }
 
 export function keepSearch(vault: string | null, query: string, type: PhoneType): void {
   Object.assign(held, { vault, query, type })
+}
+
+/** YAZ-5211: the list's rows shown and its scroll place, kept while a page is open over the tab. */
+export function keepPlace(shown: number | null, scroll?: number): void {
+  if (shown !== null) held.shown = shown
+  if (scroll !== undefined) held.scroll = scroll
 }
 
 /** A line the Search tab says once, the next time it shows. */
@@ -38,5 +47,5 @@ export function takeSearchNotice(): string | null {
 
 /** Forgets the box, the Type and the line (a test starts clean). */
 export function forgetSearch(): void {
-  Object.assign(held, { vault: null, query: '', type: 'all', notice: null })
+  Object.assign(held, { vault: null, query: '', type: 'all', shown: null, scroll: 0, notice: null })
 }

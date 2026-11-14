@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
+import { onlyLocalMedia } from '@client/editor/card/cardSafety'
 import { App, NoStorage } from './App'
 import { localFriends } from './app/friendsPort'
 import { lazySync } from './app/lazySync'
@@ -7,6 +8,9 @@ import { lazyMedia } from './media/ui/lazyMedia'
 import { cameraScanner } from './scan/camera'
 import { openPhoneStorage } from './store'
 import './styles.css'
+
+// YAZ-5209: every card the phone draws (the reader, Review) loads nothing from another host (`localOnly.ts`).
+onlyLocalMedia()
 
 const root = createRoot(document.getElementById('root')!)
 

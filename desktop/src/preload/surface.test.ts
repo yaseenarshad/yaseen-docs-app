@@ -59,6 +59,8 @@ async function describeMethod(fn: (...args: unknown[]) => unknown, name: string)
 }
 
 it('window.yaseenDocs is exactly this surface (YAZ-2200)', async () => {
+  // Each door is called as during a click (YAZ-5218: `phone.code` refuses outside one; `preload/phone.test.ts` tests that).
+  Object.defineProperty(globalThis.navigator, 'userActivation', { value: { isActive: true }, configurable: true })
   expect(exposed.yaseenDocs).toBe(loaded.bridge)
   const lines = [...atLoad]
   const walk = async (o: Record<string, unknown>, at: string): Promise<void> => {

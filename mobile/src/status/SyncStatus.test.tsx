@@ -39,7 +39,7 @@ const status = (x: Harness) => x.host.querySelector<HTMLButtonElement>('.sync-st
 const shown = (x: Harness) => {
   const b = status(x)
   const dot = b.querySelector('.sync-dot')!
-  return { colour: [...dot.classList].find((c) => c.startsWith('sync-dot--'))!.slice('sync-dot--'.length), words: b.querySelector('.sync-status__words')!.textContent, label: b.getAttribute('aria-label') }
+  return { colour: [...dot.classList].find((c) => c.startsWith('sync-dot--'))!.slice('sync-dot--'.length), words: b.querySelector('.sync-status__words--full, .sync-status__words')!.textContent, label: b.getAttribute('aria-label') }
 }
 const answersDo = async (x: Harness, fn: () => void) => {
   await act(async () => fn())
@@ -181,6 +181,7 @@ describe('a lost answer (round 12 item 9): the title, the answer, and Discard', 
     expect(h.text()).toContain('Speed of light')
     expect(h.text()).toContain('Remembered')
     await h.click('Discard the answer to Speed of light')
+    await h.click('Discard answer')
     expect(answers.discarded).toEqual([5])
     expect(shown(h)).toMatchObject({ colour: 'synced', words: 'Synced' })
     expect(h.text()).not.toContain('Speed of light')
@@ -230,5 +231,75 @@ describe('the token end date (round 10 item 18; 3E)', () => {
     await saveAccount(phone.store, 'yaseen/vault@main', { ...account, expiresAt: new Date(NOW - 60_000).toISOString() })
     ;({ h } = await signedIn({ phone }))
     expect(shown(h)).toMatchObject({ colour: 'attention', words: 'Sign in again' })
+  })
+})
+
+describe("YAZ-5214: the answer list's long wait (its own state)", () => {
+  for (const problem of ['RATE_LIMITED', 'STALE_HEAD'] as const)
+    it(`${problem}: the sheet says when the answers go, not "in a few seconds"`, async () => {
+      let answers: FakeAnswers
+      ;({ h, answers } = await signedIn())
+      await answersDo(h, () => answers.set({ waiting: 2, problem, ...({ retryAt: NOW + 45 * 60_000 } as object) }))
+      await h.click('Sync status: 2 answers waiting')
+      const text = h.host.querySelector('[role="dialog"]')!.textContent!
+      expect(text).not.toContain('in a few seconds')
+      expect(text).toContain(clockTime(NOW + 45 * 60_000))
+      expect(text).toContain('Next try in about 45 minutes')
+      expect(text).toContain('Nothing is lost')
+    })
+
+  it('"Try now" asks the list to send at once', async () => {
+    let answers: FakeAnswers
+    ;({ h, answers } = await signedIn())
+    await answersDo(h, () => answers.set({ waiting: 1, problem: 'STALE_HEAD', retryAt: NOW + 4 * 60_000 }))
+    await h.click('Sync status: 1 answer waiting')
+    expect(h.text()).toContain('Next try in about 4 minutes')
+    await h.click('Try now')
+    expect(answers.sendNowCalls).toBe(1)
+  })
+
+  it('a send that failed (GitHub down) waits for the next sync: the sheet says so, with "Try now"', async () => {
+    let answers: FakeAnswers
+    ;({ h, answers } = await signedIn())
+    await answersDo(h, () => answers.set({ waiting: 1, problem: 'GITHUB_DOWN', retryAt: null }))
+    await h.click('Sync status: 1 answer waiting')
+    expect(h.text()).not.toContain('in a few seconds')
+    expect(h.text()).toContain('The last send did not reach GitHub.')
+    expect(h.button('Try now')).not.toBeNull()
+  })
+})
+
+describe('YAZ-5215: Discard asks first', () => {
+  it('asks before it removes the answer for good', async () => {
+    let answers: FakeAnswers
+    ;({ h, answers } = await signedIn())
+    await answersDo(h, () => answers.set({ lost: [lostAnswer(5)] }))
+    await h.click('Sync status: 1 answer could not be saved')
+    await h.click('Discard the answer to Speed of light')
+    expect(answers.discarded).toEqual([])
+    const ask = h.host.querySelector('[role="alertdialog"]')!
+    expect(ask.textContent).toContain('Discard your answer "Remembered" to "Speed of light"? It cannot be taken back.')
+    // Cancel is the default: it has the focus, and it keeps the answer.
+    expect(document.activeElement?.textContent).toBe('Cancel')
+    await h.click('Cancel')
+    expect(answers.discarded).toEqual([])
+    expect(h.text()).toContain('Speed of light')
+    await h.click('Discard the answer to Speed of light')
+    await h.click('Discard answer')
+    expect(answers.discarded).toEqual([5])
+  })
+})
+
+describe('YAZ-5216: the words are never cut', () => {
+  it('a short form for a narrow top bar that says both facts; VoiceOver reads the full words', async () => {
+    let answers: FakeAnswers
+    ;({ h, answers } = await signedIn())
+    await answersDo(h, () => setOnline(false))
+    await answersDo(h, () => answers.set({ waiting: 3 }))
+    const b = status(h)
+    expect(b.querySelector('.sync-status__words--full')!.textContent).toBe('3 answers waiting · no signal')
+    expect(b.querySelector('.sync-status__words--short')!.textContent).toBe('3 waiting · offline')
+    expect(b.getAttribute('aria-label')).toBe('Sync status: 3 answers waiting · no signal')
+    for (const span of b.querySelectorAll('.sync-status__words')) expect(span.getAttribute('aria-hidden')).toBe('true')
   })
 })
