@@ -78,8 +78,6 @@ export interface SyncEngineOptions {
    */
   lock?: <T>(name: string, fn: () => Promise<T>) => Promise<T>
   yieldToUi?: () => Promise<void>
-  /** Passed to each pass (`PassOptions.alsoEager`). 3D does not use it: its media downloads after the pass. */
-  alsoEager?: (path: string) => boolean
 }
 
 export interface SyncEngine {
@@ -294,7 +292,6 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     vault: id,
     now: clock.now,
     yieldToUi: options.yieldToUi ?? defaultYield,
-    alsoEager: options.alsoEager,
     onProgress: (progress: PassProgress) => {
       if (gen === generation) setState({ progress })
     },

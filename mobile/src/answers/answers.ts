@@ -41,8 +41,6 @@ export interface AnswersOptions {
   /** The sync engine of 3B: the send runs in its lane, never while a pass writes the store. */
   engine: Pick<SyncEngine, 'state' | 'subscribe' | 'lane'>
   clock?: Clock
-  /** Default `SEND_AFTER_MS` (decision 4). */
-  sendAfterMs?: number
   yieldToUi?: () => Promise<void>
 }
 
@@ -98,7 +96,6 @@ const NO_SIGNAL: readonly SendProblem[] = ['OFFLINE', 'GITHUB_DOWN']
 export function createAnswers(options: AnswersOptions): Answers {
   const { store, engine } = options
   const clock = options.clock ?? browserClock
-  const sendAfter = options.sendAfterMs ?? SEND_AFTER_MS
   const listeners = new Set<(event: AnswersEvent) => void>()
 
   let vault: string | null = null
@@ -273,7 +270,7 @@ export function createAnswers(options: AnswersOptions): Answers {
       const group = await box.add(entries, clock.now())
       setState({})
       emit({ type: 'changed', vault, paths: [...new Set(entries.map((e) => e.path))] })
-      if (!slowed()) plan(clock.now() + sendAfter)
+      if (!slowed()) plan(clock.now() + SEND_AFTER_MS)
       return group
     },
     async undo(group) {
