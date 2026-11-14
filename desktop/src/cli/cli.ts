@@ -38,13 +38,12 @@ import { newestFile } from '@shared/settingsSync'
 import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { PAGE_ID_KEY, canonicalPageId, isNumberId, vaultPageId } from '@shared/pageId'
-import { cardBlock, cardIdOf, changeCard, pageCards, withCardNext, withCardNoTitle, type CardLine } from '@shared/cardLine'
-import { checkCard, type CardFault } from '@shared/cardCheck'
+import { cardBlock, changeCard, pageCards, withCardNext, withCardNoTitle, type CardLine } from '@shared/cardLine'
 import { lineKinds } from '@shared/fences'
 import { inLineEnds, withLf } from '@shared/lineEnds'
 import { cardQueue, cardState } from '@shared/cardSchedule'
-import { cardTitle, cardWithTitle } from '@shared/cardText'
-import { cardFileTitle, hasTitleProperty } from '@shared/cardConvert'
+import { cardTitle } from '@shared/cardText'
+import { cardFileTitle } from '@shared/cardConvert'
 import { cardFileContent, cardFileName, isCardFileContent } from '@shared/cardFileFormat'
 import { CARD_SKILL_START_PAGE, cardSkillFolder } from '@shared/cardSkillFolder'
 import { makeCardResolver } from '@shared/cardLinks'
@@ -86,11 +85,10 @@ export const USAGE = `usage:
   yaseendocs links    <page.md> [--json]
   yaseendocs mentions <page.md> [--json]
   yaseendocs due      <page.md | folder> [--json]
-  yaseendocs card add <page.md> --body <text | -> [--title <text>] [--after <heading>] [--hide-title] [--strict] [--json]
-  yaseendocs card new <folder> --title <text> [--body <text | ->] [--hide-title] [--strict] [--json]
+  yaseendocs card add <page.md> --body <text | -> [--title <text>] [--after <heading>] [--hide-title] [--json]
+  yaseendocs card new <folder> --title <text> [--body <text | ->] [--hide-title] [--json]
   yaseendocs card next <id> [<folder>] [--off] [--json]
   yaseendocs card guide [--path]
-  yaseendocs card check <page.md> [--json]
   yaseendocs vaults   [--json]
   yaseendocs daily    <vault> [--date today | tomorrow | yesterday | YYYY-MM-DD] [--find] [--open] [--json]
   yaseendocs new      <folder> --title <title> [--body <text | ->] [--json]
@@ -185,16 +183,6 @@ file's \`title:\`, and \`--body\` (\`--body -\` for stdin) the card's text. A na
 ⋯ › "Title on the front" › Hide: the card line gets the part \`notitle\`, and the title is never a step of the
 review. The part is the same for a card in a page and for a card file. Do not put the title in \`{{ }}\`. Use \`--hide-title\`.
 
-\`card check\` lists each card of a page (a card file is its own page) with its sure mistakes: a \`{{\` with no
-\`}}\` after it on that side, an empty \`{{}}\`, a card with one side and nothing hidden, no title, the title still
-"Title", and a question that hides its own subject ("What does {{NASA}} stand for?": hide the answer, not the
-subject). Code is never checked. A line is \`<id>  <title>  ok\`, or \`<id>  <title>\` and one indented line for
-each mistake: its text, then its kind and its side (\`front\`, \`back\`, \`side 3\`, …). It exits 0 when no card has
-a mistake, exit 1 when one has; \`--json\` gives \`id\`, \`title\` and \`faults\` (\`kind\`, \`side\`: 0 for the
-front, \`text\`). \`card add\` and \`card new\` check the new card the same way: each mistake is a
-\`warning:\` line on stderr, and the card is still written. With \`--strict\` they write nothing and take no
-number when the card has a mistake (exit 1).
-
 \`card next <id>\` puts a card at the top of the Inbox, as the app's "Put at top of Inbox" does: the card
 line gets the part \`next\`, and the Inbox shows the card first, due or not and outside the new cards a
 day, until it is answered one time (the answer removes \`next\`). \`--off\` removes it ("Remove from top of
@@ -202,8 +190,8 @@ Inbox"). The card is found by its id in the vault of \`<folder>\` (the current f
 An archived card stays out of the Inbox. It prints \`<id> is up next (<page>)\` or \`<id> is not up
 next (<page>)\`; \`--json\` gives \`id\`, \`page\` and \`next\`.
 
-\`card guide\` prints the start page of the card skill: how to write a good card, the formats, and how to check
-one. Run \`yaseendocs card guide\` before you add or change a card. The skill is a folder of pages, and the start
+\`card guide\` prints the start page of the card skill: how to write a good card and the formats.
+Run \`yaseendocs card guide\` before you add or change a card. The skill is a folder of pages, and the start
 page names the others: \`--path\` prints the folder's path in double quotes (it has a space on macOS), so you can
 read them. Run inside a vault that has a \`Card skill\` folder at its top (the person's own copy of the skill), the
 command uses that folder; anywhere else, the app's copy, which the app makes at its start. Before the app has
@@ -257,11 +245,9 @@ Make a card, and see what is due:
 /** Every flag the contract names; anything else is refused, because `--help` IS the contract (🔒 D1) and a typo must not be absorbed. */
 const FLAGS = new Set(['--body', '--title', '--reply-to', '--by', '--date', '--after'])
 /** Flags that take no value. */
-const SWITCHES = new Set(['--json', '--help', '-h', '--find', '--open', '--reopen', '--off', '--path', '--hide-title', '--strict'])
+const SWITCHES = new Set(['--json', '--help', '-h', '--find', '--open', '--reopen', '--off', '--path', '--hide-title'])
 
 class Usage extends Error {}
-/** `card check` found a fault (YAZ-5116): exit 1, with the list on stdout and nothing more on stderr. */
-class Checked extends Error {}
 
 function parse(argv: readonly string[]): { verb: string; args: string[]; flags: Map<string, string | true> } {
   const args: string[] = []
@@ -640,45 +626,9 @@ function cardTitleFlag(flags: Map<string, string | true>): string {
 /** The new card's line (YAZ-5135): its ID, and `notitle` with `--hide-title`, as ⋯ › "Title on the front" › Hide writes it. */
 const newCardLine = (id: string, flags: Map<string, string | true>): CardLine => withCardNoTitle({ parts: [{ kind: 'id', id }] }, flags.has('--hide-title'))
 
-/** A fault's side as people say it (YAZ-5116): `front`, `back`, then `side 3` and up. */
-const sideName = (side: number): string => (side === 0 ? 'front' : side === 1 ? 'back' : `side ${side + 1}`)
-/** One fault on one line: its text, then its kind and side. */
-const faultLine = (f: CardFault): string => `${f.text} (${f.kind}, ${sideName(f.side)})`
-
-/**
- * The check of a new card (YAZ-5116, suggestion 16), before a number is taken: each fault a `warning:` line on stderr;
- * with `--strict` a card with a fault is refused, so nothing is written and no number is spent.
- */
-function checkNewCard(text: string, flags: Map<string, string | true>, io: Io): void {
-  const faults = checkCard(text)
-  for (const f of faults) io.stderr(`warning: ${faultLine(f)}\n`)
-  if (faults.length > 0 && flags.has('--strict')) throw new Error(`the card has ${faults.length} ${faults.length === 1 ? 'thing' : 'things'} to check, so nothing was added`)
-}
-
-/** `card check` (YAZ-5116): each card of a page with its sure mistakes; exit 1 when one has a mistake. */
-async function cardCheck(page: string, flags: Map<string, string | true>, io: Io): Promise<boolean> {
-  onlyFlags('card check', flags, ['--json'])
-  await cardVault(dirname(page), page)
-  const content = (await readFile(page)).content
-  // A card file's title is its `title` (YAZ-5044): the check reads the card as Review does, the title as its first line.
-  const titled = isCardFileContent(content) && hasTitleProperty(content) ? cardFileTitle(content) : null
-  const rows = pageCards(content).map((card, i) => {
-    const text = titled !== null && i === 0 ? cardWithTitle(titled, card.text) : card.text
-    return { id: cardIdOf(card.line), title: cardTitle(text), faults: checkCard(text) }
-  })
-  if (flags.has('--json')) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
-  else
-    io.stdout(
-      rows.length === 0
-        ? `no cards on ${page}\n`
-        : rows.map((r) => `${r.id ?? '(no id yet)'}  ${r.title}${r.faults.length === 0 ? '  ok' : ''}\n${r.faults.map((f) => `  ${faultLine(f)}\n`).join('')}`).join(''),
-    )
-  return rows.some((r) => r.faults.length > 0)
-}
-
 /** `card add` (YAZ-4963, idea 16): a card with a real ID from the vault's counter, written atomically. */
 async function cardAdd(page: string, flags: Map<string, string | true>, io: Io): Promise<void> {
-  onlyFlags('card add', flags, ['--body', '--title', '--after', '--hide-title', '--strict', '--json'])
+  onlyFlags('card add', flags, ['--body', '--title', '--after', '--hide-title', '--json'])
   const body = (await bodyOf(flags, io)).replace(/\r\n/g, '\n').replace(/^\n+|\s+$/g, '')
   if (body === '') throw new Usage('card add needs a --body with text')
   // The title is the card's first line (YAZ-5030): one line, before the body.
@@ -690,7 +640,6 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io):
   const content = (await readFile(page)).content
   if (isCardFileContent(content)) throw new Error(CARD_FILE_REFUSED)
   cardPlace(splitFrontmatter(withLf(content)).body, after)
-  checkNewCard(text, flags, io)
   // The door (YAZ-2677 D4): the count file is on disk before the card is written (R18), the app's own number.
   const id = (await mintIds(root, 1))?.[0]
   if (id === undefined) throw new Error(`${page}'s vault does not give its pages IDs, so it has no cards`)
@@ -720,7 +669,7 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io):
  * (the number is spent, as the app's New page spends one on a create that fails).
  */
 async function cardNew(dir: string, flags: Map<string, string | true>, io: Io): Promise<void> {
-  onlyFlags('card new', flags, ['--title', '--body', '--hide-title', '--strict', '--json'])
+  onlyFlags('card new', flags, ['--title', '--body', '--hide-title', '--json'])
   const title = cardTitleFlag(flags)
   if (title === '') throw new Usage('card new needs --title')
   const body = flags.has('--body') ? (await bodyOf(flags, io)).replace(/\r\n/g, '\n').replace(/^\n+|\s+$/g, '') : ''
@@ -730,8 +679,6 @@ async function cardNew(dir: string, flags: Map<string, string | true>, io: Io): 
   const root = await cardVault(dir, dir)
   // A folder the vault does not show (`.trash`, `.yaseendocs`, node_modules) is outside it: the index never reads its files.
   if (relative(root, dir).split(sep).some((name) => name !== '' && isSkipped(name))) throw new Error(`${dir} is not a folder the vault shows`)
-  const text = body === '' ? title : `${title}\n\n${body}`
-  checkNewCard(text, flags, io)
   const id = (await mintIds(root, 1))?.[0]
   if (id === undefined) throw new Error(`${dir}'s vault does not give its pages IDs, so it has no cards`)
   const path = join(dir, cardFileName(title, id))
@@ -809,14 +756,7 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       return cardNew(resolve(args[1]), flags, io)
     }
     if (args[0] === 'guide') return cardGuide(args.slice(1), flags, io)
-    if (args[0] === 'check') {
-      if (args[1] === undefined) throw new Usage('card check needs a page')
-      const page = resolve(args[1])
-      requireMarkdownFile(page)
-      if (await cardCheck(page, flags, io)) throw new Checked()
-      return
-    }
-    if (args[0] !== 'add') throw new Usage(args[0] === undefined ? 'card needs add, new, next, guide or check' : `unknown card command: ${args[0]}`)
+    if (args[0] !== 'add') throw new Usage(args[0] === undefined ? 'card needs add, new, next or guide' : `unknown card command: ${args[0]}`)
     if (args[1] === undefined) throw new Usage('card add needs a page')
     const page = resolve(args[1])
     requireMarkdownFile(page)
@@ -966,7 +906,6 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
     await run(argv, io)
     return 0
   } catch (err) {
-    if (err instanceof Checked) return 1
     if (err instanceof Usage) {
       io.stderr(`${err.message}\n${USAGE}\n`)
       return 2

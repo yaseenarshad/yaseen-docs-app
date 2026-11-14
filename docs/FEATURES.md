@@ -204,7 +204,7 @@ A card can be its **own file**, next to pages, drawings and diagrams, in a vault
 - **Convert**: a card's ⋯ in a page › **Move to its own file**; an embed › **Put back into this page**; a card file › **Turn into a page**; a page with one card and nothing else › ⚙ › **Turn into a card file**. The ID, the history and every link stay.
 - **Find it**: the card icon shows in the tree, tabs, search, Recents and the hover preview. Search lists cards (card files and cards in pages) next to pages, drawings and diagrams; its **Type** filter has Pages, Cards, Drawings, Diagrams, Folders, Images, PDFs and Other. Folder tables have a **Type** column (Page, Card, Folder), off by default.
 - **The Inbox head** reads "Title · ID". The top row has ONE breadcrumb, where the card lives: vault › folders › page, each with its folder or page icon (a card file: its folders only). An embed never shows in the Inbox. O opens the page, or the card file ("Open card").
-- **The command**: `yaseendocs card new <folder> --title "<text>" [--body "<text>"] [--hide-title] [--strict] [--json]`.
+- **The command**: `yaseendocs card new <folder> --title "<text>" [--body "<text>"] [--hide-title] [--json]`.
 - A sync conflict copy (`<name> (conflict <host>, <date>).md`) never takes a card from the real page (YAZ-5056): its copy of the card gets a new ID, no history, and is archived.
 
 ### The card skill (YAZ-5059)
@@ -212,8 +212,6 @@ A card can be its **own file**, next to pages, drawings and diagrams, in a vault
 A guide for you and your AI agent on how to make good cards. It ships with the app as plain pages (`skills/card-skill` in the repo). At each start after an update, before a window opens, the app copies it to `<app data>/card-skill` (`~/Library/Application Support/Yaseen Docs/card-skill`) and uses only that copy. The copy is read only on disk, and the next update replaces it whole: to change the skill, duplicate it into your vault.
 
 For agents: `yaseendocs card guide` prints the skill's start page; run it before you add or change a card. `--path` prints the skill's folder, in double quotes. Inside a vault that has its own `Card skill` folder at the top, the command uses that folder; else the app's copy. Before the app has started once, there is no copy yet, and the command says so (exit 1).
-
-**Card check** (YAZ-5116): `yaseendocs card check "<page.md>" [--json]` lists each card of a page with its sure mistakes: a `{{` with no closing `}}`, an empty `{{}}`, nothing hidden on a card with no back, no title, the title still "Title", and a question that hides its own subject ("What does {{NASA}} stand for?"). Code in a card is never checked, and length is no mistake. It exits 1 when a card has a mistake. `card add` and `card new` print each mistake of the new card as a warning and still add it; with `--strict` they add nothing.
 
 ## Two kinds of vault
 
