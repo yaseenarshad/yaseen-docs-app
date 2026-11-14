@@ -23,6 +23,7 @@ import { clipSeconds } from './courseTime'
 import { WAITING_CLIPS } from './waits'
 import { chapterFraction, clipFraction, placeOf, startState, step, waitingForPerson, type PlayerAction, type PlayerContext, type PlayerEvent, type PlayerState } from './player'
 import { SILENT_VOICE, type ChapterSound, type ClipSound, type Voice } from './courseVoice'
+import { downloadedVoice } from './downloadedVoice'
 import { comingNextTour, hasTour, type CourseTour } from './courseTour'
 import { showOnlyHost, type CourseHost } from './courseHost'
 import { placeholderScenes } from './PlaceholderScene'
@@ -143,6 +144,21 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
     startChapter(course[player.current.chapter].id)
     return voice.onArrive(fetchSound)
   }, [voice, course, startChapter, fetchSound])
+  /** The chapters whose sound could not come (6D1): the quiet line with "Try again" shows on them. */
+  const [missing, setMissing] = useState<ReadonlySet<string>>(() => new Set())
+  useEffect(
+    () =>
+      voice.onMissing?.((chapterId, isMissing) =>
+        setMissing((before) => {
+          if (before.has(chapterId) === isMissing) return before
+          const next = new Set(before)
+          if (isMissing) next.add(chapterId)
+          else next.delete(chapterId)
+          return next
+        }),
+      ),
+    [voice],
+  )
   const [page, setPage] = useState<string | null>(null)
   const [touring, setTouring] = useState(false)
 
@@ -465,6 +481,14 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
             {page}
           </p>
         )}
+        {missing.has(chapter.id) && voice.retry !== undefined && (
+          <p className="course__note" role="status">
+            The sound is not here, so this chapter plays with captions.{' '}
+            <button type="button" className="course__btn" onClick={() => voice.retry?.(chapter.id)}>
+              Try again
+            </button>
+          </p>
+        )}
         <div className="course__bar" aria-hidden="true">
           <span ref={barRef} />
         </div>
@@ -497,4 +521,17 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
       </div>
     </div>
   )
+}
+
+/**
+ * The layer with the downloaded voice (YAZ-5159, 6D1): App loads this one. It tells main that the course is open while
+ * it is mounted, so main downloads only then. A `voice` prop still wins (a test, another source).
+ */
+export function VoicedCardCourse(props: CardCourseProps) {
+  const voice = useMemo(() => downloadedVoice(), [])
+  useEffect(() => {
+    voice.open(true)
+    return () => voice.open(false)
+  }, [voice])
+  return <CardCourse {...props} voice={props.voice ?? voice} />
 }

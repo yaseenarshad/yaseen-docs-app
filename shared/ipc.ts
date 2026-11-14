@@ -14,6 +14,7 @@ import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, Bo
 import type { FoundPage } from './pageBirth'
 import type { CardSkillDuplicate, CardSkillFormats } from './cardSkillFolder'
 import type { CoursePatch } from './courseState'
+import type { CourseAudioChange, CourseAudioSound } from './courseAudio'
 import type { CopyAsMode, CopyAsRich, FavoriteCopiesStatus, FavoriteElementsSaveRequest, FocusFolder, ListScope, PageMenuAction, PageMenuArg, MemoryTabFacts } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
@@ -783,6 +784,20 @@ export const CONTRACT = {
    * request a handle and a position. `null` = no helper answers (none fits, or it is down): the tab
    * falls back to Monaco's one-file help, with no message. Long form: docs/CONTRACTS.md › Bridge API.
    */
+  /**
+   * The course sound (YAZ-5159, 6D1): main downloads one chapter's file when the person starts that chapter, then the
+   * next chapter's in the background, only while the course is open. A failed download is `missing`, never a rejection.
+   */
+  courseAudio: {
+    /** The course layer opened (`true`) or closed (`false`) in this window. The last close stops the downloads. */
+    open: invoke<[open: boolean], void>('course-audio:open', 1),
+    /** A chapter starts (or "Try again"): its sound downloads when it is not here. */
+    chapterStarting: invoke<[chapter: string], void>('course-audio:chapter-starting', 1),
+    /** The chapter's sound when its checked file is here; else null. */
+    chapter: invoke<[chapter: string], CourseAudioSound | null>('course-audio:chapter', 1),
+    /** A chapter's sound arrived, is downloading, or could not come. */
+    onChange: push<CourseAudioChange>('course-audio:changed'),
+  },
   lsp: {
     open: invoke<[req: LspOpenRequest], LspOpenResponse | null>('lsp:open', 1),
     /** The tab's whole text now (debounced by the tab). */

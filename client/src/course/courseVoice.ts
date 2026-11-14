@@ -15,6 +15,9 @@
  *   worked). The player then asks `chapter` again and uses the sound from the NEXT clip on, never in the middle of one.
  * - `ChapterSound.clip(clipId)`: the clip's sound — a URL the audio element can play and the length in seconds — or
  *   null for a clip it does not hold (that clip plays silent on its estimate).
+ * - Optional, for the quiet line (6D1): `onMissing(listener)` calls `listener(chapterId, true)` when a chapter's sound
+ *   could not come (offline, a failed download) and `listener(chapterId, false)` when it is coming again or here.
+ *   `retry(chapterId)` is the line's "Try again". A voice without them shows no line.
  */
 export interface ClipSound {
   url: string
@@ -29,6 +32,8 @@ export interface Voice {
   chapterStarting(chapterId: string): void
   chapter(chapterId: string): Promise<ChapterSound | null>
   onArrive(listener: (chapterId: string) => void): () => void
+  onMissing?(listener: (chapterId: string, missing: boolean) => void): () => void
+  retry?(chapterId: string): void
 }
 
 /** No sound at all: each clip runs on its estimate, with captions. The frame's voice until 6D1 plugs in. */
@@ -40,12 +45,15 @@ export const SILENT_VOICE: Voice = {
 
 /**
  * The test double: a voice whose chapters are in memory. `arrive(chapterId, clips)` puts a chapter's sound here and
- * tells the listeners, as a finished download does; `started` lists each `chapterStarting` call.
+ * tells the listeners, as a finished download does; `fail(chapterId)` tells them it could not come; `started` lists
+ * each `chapterStarting` call and `retried` each `retry`.
  */
 export function memoryVoice(initial: Record<string, Record<string, ClipSound>> = {}) {
   const here = new Map(Object.entries(initial))
   const listeners = new Set<(chapterId: string) => void>()
+  const missing = new Set<(chapterId: string, missing: boolean) => void>()
   const started: string[] = []
+  const retried: string[] = []
   const soundOf = (clips: Record<string, ClipSound>): ChapterSound => ({ clip: (id) => clips[id] ?? null })
   const voice: Voice = {
     chapterStarting: (id) => void started.push(id),
@@ -54,13 +62,26 @@ export function memoryVoice(initial: Record<string, Record<string, ClipSound>> =
       listeners.add(fn)
       return () => listeners.delete(fn)
     },
+    onMissing: (fn) => {
+      missing.add(fn)
+      return () => missing.delete(fn)
+    },
+    retry: (id) => {
+      retried.push(id)
+      missing.forEach((fn) => fn(id, false))
+    },
   }
   return {
     voice,
     started,
+    retried,
     arrive(chapterId: string, clips: Record<string, ClipSound>) {
       here.set(chapterId, clips)
+      missing.forEach((fn) => fn(chapterId, false))
       listeners.forEach((fn) => fn(chapterId))
+    },
+    fail(chapterId: string) {
+      missing.forEach((fn) => fn(chapterId, true))
     },
   }
 }

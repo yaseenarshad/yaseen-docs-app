@@ -143,7 +143,7 @@ const inboxLabel = (session: CardReviewSession): string => (session.scope === 'v
 /** The Inbox screen (YAZ-4962): lazy, loaded with the first review. */
 const CardInbox = lazy(() => import('./review/CardInbox').then((m) => ({ default: m.CardInbox })))
 /** The card course (YAZ-5059 decision 10, YAZ-5120): a full layer over the window, lazy, loaded when it opens. */
-const CardCourse = lazy(() => import('./course/CardCourse').then((m) => ({ default: m.CardCourse })))
+const CardCourse = lazy(() => import('./course/CardCourse').then((m) => ({ default: m.VoicedCardCourse })))
 
 /**
  * The tab board (YAZ-3343 D4): its own chunk — the canvas, its layout and its cards — loaded on idle after the
