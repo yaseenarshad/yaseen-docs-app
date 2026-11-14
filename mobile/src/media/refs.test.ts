@@ -33,6 +33,22 @@ describe('the pictures and sounds a card shows, as the Mac draws them (renderCar
     expect(cardMediaRefs(text)).toEqual(['my pic.png', 'my other.png', 'a#b.png', '100%.png', 'café/größe.png', 'root/lead.png'])
   })
 
+  // YAZ-5189 (3D4): DOMPurify's HTML profile keeps an <img>, and the Mac's applyLook gives it the vault URL.
+  it('an HTML picture in a card (<img src>), which the Mac shows, is a picture of the card', () => {
+    expect(cardMediaRefs('Q <img src="pic.png" width="300">')).toEqual(['pic.png']) // before the fix: []
+  })
+
+  it('every <img> the Mac draws: in a block of HTML, with single quotes, with entities, a sound in an <img>; never in code', () => {
+    const text = [
+      '<p><img alt="a" src=\'one.png\'></p>',
+      'Text <img src="a&amp;b.png"/> and <IMG SRC="Up.png">',
+      '<img src="sound.mp3">',
+      '`<img src="code.png">`',
+      '<img src="https://x/y.png"> <img data-src="no.png">',
+    ].join('\n\n')
+    expect(cardMediaRefs(text)).toEqual(['one.png', 'a&b.png', 'Up.png', 'sound.mp3'])
+  })
+
   it('one picture written twice in a card is one ref', () => {
     expect(cardMediaRefs('![](x.png) ![again](x.png)')).toEqual(['x.png'])
   })

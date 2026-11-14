@@ -12,8 +12,9 @@ import type { MediaAhead } from '../ahead'
  * one calm line ("Needs a connection"; the text stays), and fills in when the signal returns (`online`, or `retry()`
  * after a pass). `stop()` (the view closes) stops the card's sound and forgets late answers.
  *
- * The object URLs are 3D's: one per file of the open vault, kept for `urlNow`, revoked when the file changes, the vault
- * changes, or the media stops. The store-only stand-in (`storedMedia`, tests and before the engine loads) revokes its
+ * The object URLs are 3D's: one per file of the open vault, counted by its users. The watcher lets go of each URL it
+ * used (`releaseUrl`) when its element leaves the page or the view closes; 3D revokes it when no screen uses it, past a
+ * few recent ones (YAZ-5200). The store-only stand-in (`storedMedia`, tests and before the engine loads) revokes its
  * own at `release()`.
  */
 
@@ -32,6 +33,8 @@ export interface VaultMedia {
   show(path: string): Promise<FileShow>
   /** The URL `show` made for `path` before, or null: for a card drawn at once (`CardLookPlace.src`). */
   urlNow?(path: string): string | null
+  /** The screen no longer uses the URL one `show` of `path` gave (YAZ-5200): 3D may revoke it. */
+  releaseUrl?(path: string): void
 }
 
 /** 3D's `MediaAhead` is a `VaultMedia` as it is: this line fails the typecheck if the two drift apart. */
@@ -156,7 +159,11 @@ export function watchMedia(root: HTMLElement, media: VaultMedia, options: { onli
     void media.show(held.path).then(
       (show) => {
         held.asking = false
-        if (stopped || !el.isConnected) return
+        if (stopped || !el.isConnected || state.get(el) !== held) {
+          // A late answer for a view that closed or an element that left: its URL has no user.
+          if (show.status === 'ready') media.releaseUrl?.(held.path)
+          return
+        }
         if (show.status === 'ready') {
           held.done = true
           held.missing?.remove()
@@ -208,8 +215,25 @@ export function watchMedia(root: HTMLElement, media: VaultMedia, options: { onli
     for (const el of node.querySelectorAll(WAITING)) take(el)
   }
   scan(root)
+  /** Lets go of the URL `el` used, one time (YAZ-5200). */
+  const letGo = (el: Element) => {
+    const held = state.get(el)
+    state.delete(el)
+    near.delete(el)
+    seen?.unobserve(el)
+    held?.missing?.remove()
+    if (held?.done === true) media.releaseUrl?.(held.path)
+  }
   const added = new MutationObserver((records) => {
-    for (const record of records) for (const node of record.addedNodes) if (node instanceof Element) scan(node)
+    for (const record of records) {
+      for (const node of record.addedNodes) if (node instanceof Element) scan(node)
+      // An element that left the page for good (not moved within it): its URL is let go.
+      for (const node of record.removedNodes) {
+        if (!(node instanceof Element) || node.isConnected) continue
+        if (state.has(node)) letGo(node)
+        for (const el of [...state.keys()]) if (node.contains(el)) letGo(el)
+      }
+    }
   })
   added.observe(root, { childList: true, subtree: true })
 
@@ -230,6 +254,7 @@ export function watchMedia(root: HTMLElement, media: VaultMedia, options: { onli
       // A card's sound plays in the whole window (`cardMedia.ts`): the view that closes stops it.
       if (root.querySelector('.card__audio') !== null) stopCardAudio()
       for (const sound of root.querySelectorAll('audio')) sound.pause()
+      for (const el of [...state.keys()]) letGo(el)
     },
   }
 }

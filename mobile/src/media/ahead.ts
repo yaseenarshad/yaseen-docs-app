@@ -5,7 +5,6 @@ import { VAULT_CONFIG_DIR } from '@shared/types'
 import { GithubError, SECONDARY_LIMIT_WAIT_MS } from '../github/client'
 import { StorageFullError, kindOnPhone, type Checkpoint, type VaultStore } from '../store'
 import type { Clock, SyncEngine } from '../sync/engine'
-import type { GithubRemote } from '../sync/githubRemote'
 import { isEager } from '../sync/plan'
 import { uiSlicer, yieldToUi as defaultYield } from '../sync/yieldToUi'
 import { aheadPlan, type DayNumbers } from './plan'
@@ -105,6 +104,12 @@ export interface MediaAhead {
   showLink(src: string, holder: string): Promise<MediaShow>
   /** The URL `show` made for `path`, or null: for a drawing that needs a URL at once (`CardLookPlace.src`). */
   urlNow(path: string): string | null
+  /**
+   * A screen no longer shows the URL that one `show` of `path` gave (its view closed, its element left the page:
+   * YAZ-5200). Each ready `show` counts one user; when the last one lets go, the URL waits among the
+   * `MEDIA_URL_IDLE_CAP` most recent idle ones (a quick show again), then is revoked.
+   */
+  releaseUrl(path: string): void
   stop(): void
 }
 
@@ -113,6 +118,36 @@ export const MEDIA_STATE = 'media'
 interface SizesState {
   commit: string
   sizes: Record<string, number>
+}
+
+/**
+ * The phone-only state with each failed download, by blob SHA (YAZ-5186): kept, so a restart does not try again at
+ * once. A new SHA (the file changed on GitHub) has no entry, so it is tried at once.
+ */
+export const MEDIA_FAILURES_STATE = 'mediaFailures'
+export interface MediaFailure {
+  /** Failures in a row. */
+  tries: number
+  /** Not before this time (ms since 1970). */
+  nextAt: number
+  /** An error that does not heal by waiting (403, 404, a file GitHub will not give): only a new SHA or `show` tries again. */
+  gaveUp: boolean
+}
+/** The second failure in a row waits this long; each next one doubles it, up to `MEDIA_RETRY_MAX_MS`. */
+export const MEDIA_RETRY_BASE_MS = 2 * 60_000
+export const MEDIA_RETRY_MAX_MS = 60 * 60_000
+
+/**
+ * What a failed download means for that file. The first failure that may heal (no answer in time, GitHub down) tries
+ * again at the next pass: a short drop of the signal costs nothing. Each next failure in a row waits twice as long, up
+ * to 1 hour. An answer that waiting does not change (403, 404, another 4xx such as "too large") gives up on this SHA.
+ */
+export function nextFailure(before: MediaFailure | undefined, error: GithubError, now: number): MediaFailure {
+  const tries = (before?.tries ?? 0) + 1
+  const status = error.status ?? 0
+  const gaveUp = error.code === 'NO_ACCESS' || error.code === 'READ_ONLY' || error.code === 'NOT_FOUND' || (error.code === 'UNEXPECTED' && status >= 400 && status < 500)
+  const wait = tries <= 1 ? 0 : Math.min(MEDIA_RETRY_MAX_MS, MEDIA_RETRY_BASE_MS * 2 ** (tries - 2))
+  return { tries, nextAt: now + wait, gaveUp }
 }
 
 const MIME: Record<string, string> = {
@@ -131,6 +166,9 @@ const MIME: Record<string, string> = {
   pdf: 'application/pdf',
   md: 'text/markdown',
 }
+/** How many object URLs that no screen uses stay alive for a quick show again (YAZ-5200). */
+export const MEDIA_URL_IDLE_CAP = 24
+
 /** The MIME type of a file, from its extension. */
 export function mediaType(path: string): string {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -169,15 +207,18 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
   /** Each vault change starts a new generation: work of an older one writes nothing more. */
   let generation = 0
   let state: MediaState = { vault: null, done: 0, total: 0, tooLarge: 0, running: false, waiting: null, retryAt: null }
-  let plan: { key: string; commit: string; wanted: string[]; tooLarge: string[] } | null = null
+  let plan: { key: string; commit: string; wanted: string[]; tooLarge: string[]; sizesKnown: boolean } | null = null
   /** The last round of this plan left nothing to do (or the phone was full): wait for a new plan. */
   let complete = false
-  /** Blob SHAs GitHub answered 404 for: skipped until the next commit. */
-  const missing = new Set<string>()
+  /** The failed downloads of the open vault, by blob SHA (YAZ-5186); loaded from `MEDIA_FAILURES_STATE` at the plan. */
+  let failures: Record<string, MediaFailure> | null = null
   let sizesFromPass: { vault: string; commit: string; sizes: ReadonlyMap<string, number> } | null = null
   let resolver: { commit: string; resolve: (target: string, from?: string) => string | null } | null = null
   let settingsOf: { text: string | null; settings: ReviewSettings } | null = null
-  const urls = new Map<string, { sha: string | null; url: string }>()
+  /** The object URL of each shown file and how many screens use it (YAZ-5200). */
+  const urls = new Map<string, { sha: string | null; url: string; users: number }>()
+  /** URLs that no screen uses, oldest first: revoked past `MEDIA_URL_IDLE_CAP`. */
+  const idle = new Set<string>()
   let timer: unknown = null
   let round: Promise<void> | null = null
   let again = false
@@ -193,6 +234,7 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
   const revokeAll = () => {
     for (const { url } of urls.values()) revokeUrl(url)
     urls.clear()
+    idle.clear()
   }
 
   function switchTo(vault: string | null) {
@@ -200,10 +242,12 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
     clearTimer()
     plan = null
     complete = false
-    missing.clear()
+    failures = null
     resolver = null
     revokeAll()
-    store.protectMedia(vault, [])
+    // YAZ-5188: the open vault's window as the last plan kept it, at once: the first pass of a session may need room
+    // before this session's plan exists.
+    void store.protectMedia(vault).catch(() => undefined)
     setState({ vault, done: 0, total: 0, tooLarge: 0, running: false, waiting: null, retryAt: null })
   }
 
@@ -238,17 +282,35 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
     return file === null ? null : typeof file.content === 'string' ? file.content : decoder.decode(file.content)
   }
 
-  /** The sizes at `commit`: from the pass that just ran (then kept), or kept from an earlier one. Unknown: none. */
-  async function sizesAt(vault: string, commit: string): Promise<Record<string, number>> {
-    if (sizesFromPass !== null && sizesFromPass.vault === vault && sizesFromPass.commit === commit) {
-      const sizes: Record<string, number> = {}
-      for (const [path, n] of sizesFromPass.sizes) if (!isEager(path)) sizes[path] = n
-      sizesFromPass = null
-      await store.setState(vault, MEDIA_STATE, { commit, sizes } satisfies SizesState).catch(() => undefined)
-      return sizes
+  /**
+   * The sizes at `commit`: from the pass that just ran, or kept from an earlier round, or (YAZ-5187: the app closed
+   * between the checkpoint and the round, or the keep failed) from the file list again, with no lock. Null when they
+   * cannot be known now: the plan then counts every size as unknown, so nothing downloads ahead past the size limit.
+   */
+  async function sizesAt(vault: string, commit: string): Promise<Record<string, number> | null> {
+    let fresh: ReadonlyMap<string, number> | null = null
+    if (sizesFromPass !== null && sizesFromPass.vault === vault && sizesFromPass.commit === commit) fresh = sizesFromPass.sizes
+    else {
+      const kept = await store.getState<SizesState>(vault, MEDIA_STATE)
+      if (kept?.commit === commit) return kept.sizes
+      const reader = await engine.reader().catch(() => null)
+      if (reader === null || reader.vault !== vault) return null
+      try {
+        fresh = (await reader.remote.tree(commit)).bytes
+      } catch {
+        return null
+      }
     }
-    const kept = await store.getState<SizesState>(vault, MEDIA_STATE)
-    return kept?.commit === commit ? kept.sizes : {}
+    sizesFromPass = null
+    const sizes: Record<string, number> = {}
+    for (const [path, n] of fresh) if (!isEager(path)) sizes[path] = n
+    await store.setState(vault, MEDIA_STATE, { commit, sizes } satisfies SizesState).catch(() => undefined)
+    return sizes
+  }
+
+  /** Keeps the failure memory (best effort: in memory it holds for this session anyway). */
+  const keepFailures = (vault: string) => {
+    if (failures !== null) void store.setState(vault, MEDIA_FAILURES_STATE, failures).catch(() => undefined)
   }
 
   function resolverFor(checkpoint: Checkpoint) {
@@ -274,8 +336,7 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
 
     const slice = uiSlicer(options.yieldToUi ?? defaultYield)
     await slice()
-    if (plan?.key !== key) {
-      if (plan?.commit !== checkpoint.commit) missing.clear()
+    if (plan?.key !== key || !plan.sizesKnown) {
       const sizes = await sizesAt(vault, checkpoint.commit)
       await slice()
       // The same settings object while `review.json` does not change: the shared due cache is keyed by it, so a new
@@ -300,7 +361,7 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
       const made = await aheadPlan({
         records: index.records,
         read: (path) => readText(vault, path),
-        sizes: new Map(Object.keys(checkpoint.shas).map((path) => [path, sizes[path]])),
+        sizes: new Map(Object.keys(checkpoint.shas).map((path) => [path, sizes?.[path]])),
         settings,
         now,
         letters: idLettersOf(ids, repoName).letters,
@@ -308,18 +369,30 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
         slice,
       })
       if (gen !== generation) return
-      plan = { key, commit: checkpoint.commit, wanted: made.wanted.filter((p) => !isEager(p) && checkpoint.shas[p] !== undefined), tooLarge: made.tooLarge }
+      if (gen !== generation) return
+      plan = { key, commit: checkpoint.commit, wanted: made.wanted.filter((p) => !isEager(p) && checkpoint.shas[p] !== undefined), tooLarge: made.tooLarge, sizesKnown: sizes !== null }
       complete = false
-      store.protectMedia(vault, plan.wanted)
+      await store.protectMedia(vault, plan.wanted).catch(() => undefined)
+      // The failure memory: only the SHAs of this window stay in it (a changed file has a new SHA, and starts clean).
+      const keptFailures = failures ?? (await store.getState<Record<string, MediaFailure>>(vault, MEDIA_FAILURES_STATE)) ?? {}
+      if (gen !== generation) return
+      const window = new Set(plan.wanted.map((p) => checkpoint.shas[p]))
+      failures = Object.fromEntries(Object.entries(keptFailures).filter(([sha]) => window.has(sha)))
+      if (Object.keys(failures).length !== Object.keys(keptFailures).length) keepFailures(vault)
     }
     if (complete || plan === null) return
     const current = plan
+    const failed = failures ?? {}
 
     const stored = new Set((await store.list(vault)).filter((e) => e.kind === 'media').map((e) => e.path))
     await slice()
     if (gen !== generation) return
-    const todo = current.wanted.filter((p) => !stored.has(p) && !missing.has(checkpoint.shas[p]))
-    setState({ total: current.wanted.length, done: current.wanted.length - todo.length, tooLarge: current.tooLarge.length, running: todo.length > 0, waiting: null, retryAt: null })
+    const missingFiles = current.wanted.filter((p) => !stored.has(p))
+    const todo = missingFiles.filter((p) => {
+      const f = failed[checkpoint.shas[p]]
+      return f === undefined || (!f.gaveUp && f.nextAt <= now)
+    })
+    setState({ total: current.wanted.length, done: current.wanted.length - missingFiles.length, tooLarge: current.tooLarge.length, running: todo.length > 0, waiting: null, retryAt: null })
     // One download for each blob SHA: two paths with the same bytes are fetched once.
     const bySha = new Map<string, string[]>()
     for (const path of todo) bySha.set(checkpoint.shas[path], [...(bySha.get(checkpoint.shas[path]) ?? []), path])
@@ -327,8 +400,7 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
 
     try {
       for (let at = 0; at < groups.length; at += chunkSize) {
-        const chunk = groups.slice(at, at + chunkSize)
-        await engine.lane((remote, _pass, laneVault) => fetchChunk(remote, laneVault, vault, gen, chunk, slice))
+        await fetchChunk(vault, gen, groups.slice(at, at + chunkSize), slice)
         if (gen !== generation) return
       }
     } catch (error) {
@@ -347,52 +419,119 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
         setState({ running: false, waiting: 'full' })
       } else if (error instanceof GithubError && (error.code === 'OFFLINE' || error.code === 'GITHUB_DOWN')) setState({ running: false, waiting: 'offline' })
       else setState({ running: false, waiting: 'failed' })
+      planRetry(gen)
       return
     }
     complete = true
     setState({ running: false, waiting: null })
+    planRetry(gen)
   }
 
-  /** Inside the vault's lock: `parallel` downloads at a time. The checkpoint is read again: a file whose SHA moved is not written. */
-  async function fetchChunk(remote: GithubRemote, laneVault: string, vault: string, gen: number, chunk: [string, string[]][], slice: () => Promise<void>) {
+  /**
+   * A file that waits (its failure's `nextAt`) comes back on a timer at that time, not at each pass: the round of each
+   * pass does nothing for it (YAZ-5186). A file that gave up comes back only with a new SHA or `show`.
+   */
+  function planRetry(gen: number) {
+    if (gen !== generation || state.retryAt !== null) return
+    const waits = Object.values(failures ?? {})
+      .filter((f) => !f.gaveUp)
+      .map((f) => f.nextAt)
+    if (waits.length === 0) return
+    complete = true
+    clearTimer()
+    timer = clock.setTimeout(() => {
+      timer = null
+      complete = false
+      void kick()
+    }, Math.max(0, Math.min(...waits) - clock.now()))
+  }
+
+  /**
+   * One group: `parallel` downloads at a time with NO lock (YAZ-5186: a slow download never holds up a pass or the
+   * answer list), then ONE hold of the vault's lock for the writes. Under the lock the checkpoint is read again: a
+   * file whose SHA moved meanwhile is not written (its new version comes in a later round). A failure of one file is
+   * kept in the failure memory; "slow down", no token, or no answer stops the round after the downloads in flight.
+   */
+  async function fetchChunk(vault: string, gen: number, chunk: [string, string[]][], slice: () => Promise<void>) {
     const live = () => gen === generation && !stopped && engine.state().vault === vault
-    // The lane is for the vault that was open when it was asked for: another vault's remote never fetches these SHAs.
-    if (laneVault !== vault || !live()) throw new Stop()
-    const checkpoint = await store.checkpoint(vault)
-    await slice()
+    const reader = await engine.reader()
+    if (reader === null || reader.vault !== vault || !live()) throw new Stop()
+    const got: { sha: string; paths: string[]; bytes: Uint8Array }[] = []
     let next = 0
     let failure: { error: unknown } | null = null
+    let failuresChanged = false
     await Promise.all(
       Array.from({ length: Math.min(parallel, chunk.length) }, async () => {
-        while (failure === null && next < chunk.length) {
+        while (failure === null && next < chunk.length && live()) {
           const [sha, paths] = chunk[next++]
-          const current = paths.filter((p) => checkpoint?.shas[p] === sha)
-          if (current.length === 0) continue
           try {
-            const bytes = await remote.blob(sha)
-            if (!live()) throw new Stop()
-            for (const path of current) {
-              await store.write(vault, path, bytes)
-              setState({ done: state.done + 1 })
-            }
+            got.push({ sha, paths, bytes: await reader.remote.blob(sha) })
           } catch (error) {
-            if (error instanceof GithubError && error.code === 'NOT_FOUND') missing.add(sha)
-            else failure ??= { error }
+            if (error instanceof GithubError && error.code !== 'RATE_LIMITED' && error.code !== 'UNAUTHORIZED' && failures !== null) {
+              failures[sha] = nextFailure(failures[sha], error, clock.now())
+              failuresChanged = true
+              // No answer in time, or GitHub down: the signal may be gone, so no new download starts in this round.
+              if (!failures[sha].gaveUp) failure ??= { error }
+            } else failure ??= { error }
           }
           await slice()
         }
       }),
     )
+    if (failuresChanged) keepFailures(vault)
+    if (got.length > 0 && live())
+      await engine.lane(async (_remote, _pass, laneVault) => {
+        if (laneVault !== vault || !live()) throw new Stop()
+        const checkpoint = await store.checkpoint(vault)
+        await slice()
+        let cleared = false
+        for (const { sha, paths, bytes } of got) {
+          for (const path of paths) {
+            if (checkpoint?.shas[path] !== sha) continue
+            await store.write(vault, path, bytes)
+            setState({ done: state.done + 1 })
+          }
+          if (failures !== null && failures[sha] !== undefined) {
+            delete failures[sha]
+            cleared = true
+          }
+          await slice()
+        }
+        if (cleared) keepFailures(vault)
+      })
     if (failure !== null) throw (failure as { error: unknown }).error
   }
 
+  /** The URL for one more user of `path`: the one it has (same SHA), or a new one (the old one is revoked). */
   function urlFor(path: string, sha: string | null, bytes: Uint8Array): string {
     const had = urls.get(path)
-    if (had !== undefined && had.sha === sha) return had.url
-    if (had !== undefined) revokeUrl(had.url)
+    if (had !== undefined && had.sha === sha) {
+      had.users++
+      idle.delete(path)
+      return had.url
+    }
+    if (had !== undefined) {
+      revokeUrl(had.url)
+      idle.delete(path)
+    }
     const url = makeUrl(bytes, mediaType(path))
-    urls.set(path, { sha, url })
+    urls.set(path, { sha, url, users: 1 })
     return url
+  }
+
+  function releaseUrl(path: string) {
+    const held = urls.get(path)
+    if (held === undefined || held.users === 0) return
+    held.users--
+    if (held.users > 0) return
+    idle.add(path)
+    for (const oldest of idle) {
+      if (idle.size <= MEDIA_URL_IDLE_CAP) break
+      idle.delete(oldest)
+      const gone = urls.get(oldest)
+      if (gone !== undefined) revokeUrl(gone.url)
+      urls.delete(oldest)
+    }
   }
 
   /** Keeps a file that `show` downloaded: under the lock, only if the vault and the SHA did not change meanwhile. */
@@ -425,6 +564,11 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
       if (reader === null || reader.vault !== vault) return { status: 'missing', path, why: 'no-vault' }
       const bytes = await reader.remote.blob(sha)
       if (state.vault !== vault) return { status: 'missing', path, why: 'no-vault' }
+      // The person opened it: a file that gave up ahead (YAZ-5186) is in again.
+      if (failures?.[sha] !== undefined) {
+        delete failures[sha]
+        keepFailures(vault)
+      }
       return { status: 'ready', path, url: urlFor(path, sha, bytes), type: mediaType(path), bytes: bytes.byteLength, kept: keep(vault, path, sha, bytes) }
     } catch (error) {
       const code = error instanceof GithubError ? error.code : null
@@ -463,6 +607,7 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
       return path === null ? { status: 'missing', path: null, why: 'not-in-vault' } : show(path)
     },
     urlNow: (path) => urls.get(path)?.url ?? null,
+    releaseUrl,
     stop() {
       stopped = true
       generation++
