@@ -9,7 +9,7 @@ import { fakeClock, type FakeClock } from '../../sync/testing'
 import { createFriendsList, type FriendsList } from '../list'
 import { SEND_STATE } from '../sender'
 import { gistsFetch } from '../testing'
-import { mayUpdate, reserveFor } from '@shared/friendSend'
+import { emptyBudget, mayMark, mayUpdate, reserveFor } from '@shared/friendSend'
 import { createMarks, MARKS_OUT, type Marks } from './marks'
 
 /**
@@ -168,10 +168,10 @@ describe('Cheer and Nudge (decision 24)', () => {
       why: 'budget',
     })
     // Not yet: a flush before the time sends nothing.
-    await ali.marks.flush()
+    await ali.marks.flush({ pointers: 0, keep: () => true })
     expect(updatesOf(world, mine)).toBe(0)
     clock.advance(sent.retryAt! - START)
-    await ali.marks.flush()
+    await ali.marks.flush({ pointers: 0, keep: () => true })
     expect(updatesOf(world, mine)).toBe(1)
     expect(JSON.parse(world.text(mine, POINTER_FILE)!).mark).toEqual(sent.mark)
     expect((await ali.marks.outbox())[mine]).toMatchObject({ state: 'sent' })
@@ -186,7 +186,7 @@ describe('Cheer and Nudge (decision 24)', () => {
       retryAt: null,
     })
     world.offline = false
-    await ali.marks.flush()
+    await ali.marks.flush({ pointers: 0, keep: () => true })
     expect(updatesOf(world, mine)).toBe(1)
   })
 
@@ -273,7 +273,7 @@ describe('Cheer and Nudge (decision 24)', () => {
     expect(out[pointers[5]]).toMatchObject({ state: 'waiting', why: 'marks-limit' })
     // An hour later the waiting ones go.
     clock.advance(3600_000 + 1000)
-    await ali.marks.flush()
+    await ali.marks.flush({ pointers: 0, keep: () => true })
     expect((await ali.marks.outbox())[pointers[6]]).toMatchObject({ state: 'sent' })
   })
 
@@ -282,5 +282,16 @@ describe('Cheer and Nudge (decision 24)', () => {
     const updates = Array.from({ length: 99 }, (_, i) => START - 50 * 60_000 + i)
     await ali.store.setState(PHONE, SEND_STATE, { lastSentAt: null, lastKey: null, budget: { updates, seen: null, blockedUntil: null } })
     expect((await ali.marks.send(mine, 'cheer', 1)).kind).toBe('waiting')
+  })
+
+  it('YAZ-5294: the order of the hour, in one place (`mayMark`): a mark never takes the remove reserve or a 6th slot', () => {
+    const used = (n: number) => ({ ...emptyBudget(), updates: Array.from({ length: n }, (_, i) => START - 1000 - i) })
+    expect(mayMark(used(0), START, 3, 0)).toBe(true)
+    expect(mayMark(used(0), START, 3, 5)).toBe(false)
+    // 96 used, 3 pointers: 4 left, 1 for the mark leaves 3 = the remove reserve: yes. 97 used: no.
+    expect(mayMark(used(96), START, 3, 0)).toBe(true)
+    expect(mayMark(used(97), START, 3, 0)).toBe(false)
+    // The numbers send keeps its own share: with 5 marks used, its `reserveFor` still holds on a fresh hour.
+    expect(mayUpdate(used(5), START, 1, reserveFor(3))).toBe(true)
   })
 })

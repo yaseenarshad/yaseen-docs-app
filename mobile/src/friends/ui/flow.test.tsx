@@ -209,4 +209,56 @@ describe('add a friend, both orders, on the real friends logic', () => {
     expect(read.offline).toBe(true)
     expect(read.groups.map((g) => (g.kind === 'not-found' ? null : [g.kind, plain(g.name)]))).toEqual([['ok', 'Study group']])
   })
+
+  /** Ali and Bea, paired, through two services on the fake gist API. */
+  async function paired(world: FakeGistWorld) {
+    const ap = await phoneOf(ALI, 'ali')
+    const ali = serviceOn(world, ap)
+    const bea = serviceOn(world, await phoneOf(BEA, 'bea'))
+    const link = await bea.share()
+    if (link.kind !== 'ok') throw new Error(link.kind)
+    const added = await ali.paste(link.link)
+    if (added.kind !== 'added') throw new Error(added.kind)
+    await bea.paste(added.sendBack!)
+    const read = await ali.board()
+    if (read.kind !== 'ok') throw new Error(read.kind)
+    return { ap, ali, bea, mine: read.friends[0].mine }
+  }
+
+  it('YAZ-5292: a friend removed with no signal says "Removing…" at once and after a restart', async () => {
+    const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: () => NOW })
+    const { ap, ali, mine } = await paired(world)
+    world.offline = true
+    expect(await ali.remove(mine)).toMatchObject({ kind: 'paused', why: 'offline' })
+    for (const svc of [ali, serviceOn(world, ap)]) {
+      const b = await svc.board()
+      if (b.kind !== 'ok') throw new Error(b.kind)
+      expect(b.friends.map((f) => [f.state, f.label, f.stats])).toEqual([['removing', 'Removing…', null]])
+    }
+  })
+
+  it("YAZ-5293: a cheer that waits is dropped when the friend's remove is asked; no write reaches that pointer", async () => {
+    const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: () => NOW })
+    const { ali, mine } = await paired(world)
+    world.offline = true
+    expect((await ali.mark(mine, 'cheer')).kind).toBe('waiting')
+    expect((await ali.remove(mine)).kind).toBe('paused')
+    world.offline = false
+    const before = world.calls.filter((c) => c.op === 'update' && c.id === mine && c.answer === 200).length
+    await ali.board()
+    expect(world.calls.filter((c) => c.op === 'update' && c.id === mine && c.answer === 200).length).toBe(before)
+    expect((await ali.marks.outbox())[mine]).toBeUndefined()
+  })
+
+  it('YAZ-5294: a waiting cheer on a new phone keeps the remove reserve when it goes later', async () => {
+    const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: () => NOW })
+    const { ap, ali, mine } = await paired(world)
+    world.offline = true
+    expect((await ali.mark(mine, 'cheer')).kind).toBe('waiting')
+    world.offline = false
+    const updates = Array.from({ length: 99 }, (_, i) => NOW - 50 * 60_000 + i)
+    await ap.store.setState('', 'friendsSend', { lastSentAt: null, lastKey: null, budget: { updates, seen: null, blockedUntil: null } })
+    await ali.board()
+    expect((await ali.marks.outbox())[mine]).toMatchObject({ state: 'waiting' })
+  })
 })
