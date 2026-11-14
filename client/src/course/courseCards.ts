@@ -3,10 +3,11 @@
  * step where the person uses their OWN agent. In the lazy course chunk; App passes only a live view of the vault
  * (`CourseVault`, a type).
  *
- * - The folder "Course Cards", at the top of the course's vault, made the first time a step needs it, through the
- *   app's own rule for a typed folder (`typedFolders`, `folderPath`): a folder titled so at the top is used as it is; in
- *   a vault with IDs a new one is `course-cards` on disk with the title "Course Cards", as "New folder" makes it. Never
- *   anywhere else. Deleted, it is made again when a step needs it.
+ * - The folder "Course Cards", at the top of the course's vault, made the first time a step needs it, as "New folder"
+ *   makes it (`folderPath`): `course-cards` on disk with the title "Course Cards". Never anywhere else. Deleted, it is
+ *   made again when a step needs it. A "Course Cards" at the top that the course did not make (it is not in
+ *   `AppState.course.made` for this vault) is the person's: the course makes "Course Cards 2" (then 3, …), and never
+ *   writes into theirs (YAZ-5202, the locked decision on YAZ-5060).
  * - A read-only vault, IDs off, or Review off: the course only shows. Nothing is written, and the step says why.
  * - Each card the course writes is a card file as "New card" and `yaseendocs card new` write it (`cardFileContent`,
  *   `cardFileName`): `kind: card`, the title in `title:`, one card with its sides, a new ID from the vault's door.
@@ -138,11 +139,21 @@ export function showOnlyReason(vault: CourseVault): string | null {
   return null
 }
 
-/** Where "Course Cards" stands: a folder titled so (or named so) at the top of the vault, else the place "New folder" would make it. */
-export function courseCardsPath(root: string, folders: readonly IndexRecord[], ids: boolean): string {
-  const found = typedFolders(folders)('', COURSE_CARDS)
-  return found === undefined ? folderPath(root, COURSE_CARDS, ids) : `${root}/${found}`
+/** The course's folder titles in the order it tries them: "Course Cards", "Course Cards 2", "Course Cards 3", … */
+export const courseCardsTitle = (n: number): string => (n <= 1 ? COURSE_CARDS : `${COURSE_CARDS} ${n}`)
+/** How many titles the course tries before it gives up (a vault with this many folders of that name is not a real case). */
+const MAX_COURSE_FOLDERS = 99
+
+/** Is a folder at the top of the vault titled or named `title`, or named as "New folder" would name it (any case)? */
+export function takenAtTop(root: string, records: readonly IndexRecord[], folders: readonly IndexRecord[], title: string): boolean {
+  if (typedFolders(folders)('', title) !== undefined) return true
+  const names = new Set([title.toLowerCase(), folderPath(root, title, true).slice(root.length + 1).toLowerCase()])
+  const topOf = (folder: string): string => folder.split('/')[0].toLowerCase()
+  return [...records, ...folders].some((r) => r.folder !== '' && names.has(topOf(r.folder)))
 }
+
+/** Is `path` a folder right at the top of `root`? */
+const atTop = (root: string, path: string): boolean => path.startsWith(`${root}/`) && !path.slice(root.length + 1).includes('/')
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -297,18 +308,45 @@ export function vaultCourseHost(vault: CourseVault, deps: CourseHostDeps = appDe
     deps.made.set([...all.filter((m) => m.vault !== root), next])
   }
 
+  /** The course's own folder in this vault (`made`), with its title: the index's, else the title its name was made from. */
+  const ownFolder = (): { path: string; title: string } | null => {
+    const path = madeHere()?.folder
+    if (path === undefined || path === '' || !atTop(root, path)) return null
+    const rel = path.slice(root.length + 1)
+    const indexed = vault.index.folders.find((f) => f.folder === rel)?.title
+    let title = COURSE_CARDS
+    for (let n = 1; n <= MAX_COURSE_FOLDERS; n++) if (folderPath(root, courseCardsTitle(n), true) === path) title = courseCardsTitle(n)
+    return { path, title: typeof indexed === 'string' && indexed !== '' ? indexed : title }
+  }
+
   const courseCards = async (): Promise<CourseCardsFolder> => {
     const reason = showOnlyReason(vault)
     if (reason !== null) return { showOnly: reason }
-    const path = courseCardsPath(root, vault.index.folders, true)
-    // Made when missing; one that is there is used as it is. A folder the person deleted (the index a moment behind) is made again here.
-    try {
-      await deps.disk.createDir({ path, title: COURSE_CARDS })
-    } catch (err) {
-      if (!deps.disk.isThere(err)) throw err
+    // The course's own folder: used again; deleted (the index a moment behind), it is made again in the same place.
+    const own = ownFolder()
+    if (own !== null) {
+      try {
+        await deps.disk.createDir({ path: own.path, title: own.title })
+      } catch (err) {
+        if (!deps.disk.isThere(err)) throw err
+      }
+      return own
     }
-    if (madeHere()?.folder !== path) remember((m) => ({ ...m, folder: path }))
-    return { path }
+    // A new one: the first title no folder at the top has. A folder there already (the index a moment behind) is the person's.
+    for (let n = 1; n <= MAX_COURSE_FOLDERS; n++) {
+      const title = courseCardsTitle(n)
+      if (takenAtTop(root, vault.index.records, vault.index.folders, title)) continue
+      const path = folderPath(root, title, true)
+      try {
+        await deps.disk.createDir({ path, title })
+      } catch (err) {
+        if (deps.disk.isThere(err)) continue
+        throw err
+      }
+      remember((m) => ({ ...m, folder: path }))
+      return { path, title }
+    }
+    throw new Error('The course could not find a free name for its Course Cards folder')
   }
 
   const watchCards = (folder: string, onCards: (cards: readonly CourseCard[]) => void): (() => void) => {
@@ -361,7 +399,9 @@ export function vaultCourseHost(vault: CourseVault, deps: CourseHostDeps = appDe
       return agentStepOf(host)
     },
     summary() {
-      const folder = courseCardsPath(root, vault.index.folders, true)
+      // The course's own folder only (YAZ-5202): a "Course Cards" of the person's is not the course's.
+      const folder = ownFolder()?.path
+      if (folder === undefined) return courseSummary(vault.index.records, root, null, vault.review().settings)
       const there = vault.index.records.some((r) => r.folder === relativeTo(root, folder) || r.folder.startsWith(`${relativeTo(root, folder)}/`))
       return courseSummary(vault.index.records, root, there ? folder : null, vault.review().settings)
     },
@@ -431,6 +471,7 @@ function createAgentStep(ref: { current: VaultHost }): { step: AgentStep; attach
     const at: CourseCardsFolder = !ensure && folderAt !== null ? { path: folderAt } : await ref.current.courseCards()
     if ('showOnly' in at) return set({ prompt: at, problem: null })
     folderAt = at.path
+    if (at.title !== undefined && state.folderTitle !== at.title) set({ folderTitle: at.title })
     if (state.text !== text) return promptFor(false) // the person typed on meanwhile: build it for the new text
     set({ prompt: { text: agentPrompt(skillFolderOf(ref.current.vaultView), at.path, text), folder: at.path }, problem: null })
   }
@@ -492,7 +533,7 @@ function createAgentStep(ref: { current: VaultHost }): { step: AgentStep; attach
         before.add(courseCardKey({ path: one.path, index: 0 }))
       }
       ref.current.remember((m) => ({ ...m, cards: [...m.cards, ...made.map((c) => c.path)] }))
-      set({ examples: made, problem: null })
+      set({ examples: made, problem: null, ...(at.title === undefined ? {} : { folderTitle: at.title }) })
     },
     stop() {
       unwatch?.()

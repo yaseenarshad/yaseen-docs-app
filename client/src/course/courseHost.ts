@@ -4,7 +4,8 @@
  * (`courseCards.ts`, in the lazy course chunk); `showOnlyHost` makes nothing and says why; `memoryHost` is the test
  * double the scene builders use. A test keeps the three in step (`courseCards.test.ts`).
  *
- * Everything the course makes is a plain file in the folder "Course Cards" at the top of the vault: the person sees it
+ * Everything the course makes is a plain file in its folder "Course Cards" (or "Course Cards 2" when the person has a
+ * "Course Cards" of their own, YAZ-5202) at the top of the vault: the person sees it
  * in the sidebar, and deleting any of it (the whole folder too) is always safe. The course makes what a step needs again.
  * The app has no AI inside and sends nothing anywhere: the AI step only copies a prompt and watches the folder.
  *
@@ -23,8 +24,11 @@
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 
-/** The folder, or the one line that says why the course only shows. */
-export type CourseCardsFolder = { path: string } | { showOnly: string }
+/**
+ * The folder, or the one line that says why the course only shows. `title`: the folder's real title ("Course Cards", or
+ * "Course Cards 2" when the person has a "Course Cards" of their own, YAZ-5202); absent: "Course Cards".
+ */
+export type CourseCardsFolder = { path: string; title?: string } | { showOnly: string }
 
 /** One card in "Course Cards". `index` is its place among its file's cards (0 for a card file). */
 export interface CourseCard {
@@ -86,6 +90,8 @@ export interface AgentStepState {
   examples: 'hidden' | 'shown' | MadeCard[]
   /** One line for a write that failed or was refused; null when all is well. */
   problem: string | null
+  /** The real title of the course's folder, once the step knows it (YAZ-5202); absent: "Course Cards". */
+  folderTitle?: string
 }
 
 export interface AgentStep {

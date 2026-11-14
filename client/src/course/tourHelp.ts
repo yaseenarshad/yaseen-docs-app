@@ -4,6 +4,7 @@
  * start. The step's own line (`say`) is the script's and stays as it is; these lines are only the help under it.
  */
 import type { CourseCard, CourseHost } from './courseHost'
+import { COURSE_CARDS } from './courseCards'
 import type { TourPlace, TourPlaces } from './tourBus'
 
 export interface TourContext {
@@ -40,13 +41,13 @@ export const TARGET_HELP: Record<string, TargetHelp> = {
   'inbox-card': { where: 'Right-click the Course Cards folder, and choose Review this folder.', show: reviewFolder, stuck: NO_CARD_TODAY },
   'inbox-answers': { where: 'The answers are under the card, in the Inbox.', show: reviewFolder, stuck: NO_CARD_TODAY },
   'sidebar-inbox': { where: 'Inbox is at the top of the sidebar.', show: () => ({ kind: 'sidebar' }) },
-  'card-menu': { where: 'Open one of your Course Cards. Its menu is the three dots in its head.', show: card },
+  'card-menu': { where: 'Open a card in Course Cards. Its menu is the three dots in its head.', show: card },
   'card-copy-link': { where: MENU_FIRST, show: card },
   'card-menu-archive': { where: MENU_FIRST, show: card },
   'card-menu-up-next': { where: MENU_FIRST, show: card },
   'course-page': { where: 'Course page is in the Course Cards folder, in the sidebar.', show: folder },
   'page-editor': { where: 'Open Course page first.', show: (c) => (c.places.page === null ? null : { kind: 'file', path: c.places.page }) },
-  'card-edit': { where: 'Open one of your Course Cards first.', show: card },
+  'card-edit': { where: 'Open a card in Course Cards first.', show: card },
   'link-picker': { where: 'Type two square brackets in the card first.' },
   'card-link-pill': { where: 'Save the card first: press Escape, or click Done.' },
   'inbox-filter': { where: 'Open the Inbox first.', show: (c) => (c.places.folder === null ? { kind: 'sidebar' } : { kind: 'inbox', path: c.places.folder }) },
@@ -75,8 +76,14 @@ export const needsOf = (chapterId: string): TourNeeds => TOUR_NEEDS[chapterId] ?
 /** The name of the page that chapter 4's tour opens, in the Course Cards folder (the host's own file wins: `coursePage()`). */
 export const COURSE_PAGE = 'Course page.md'
 
-export const noCardsLine = (need: number): string =>
-  need <= 1 ? 'There is no card in Course Cards yet. Chapter 2 shows how to make one.' : `This tour needs ${need} cards in Course Cards. Chapter 2 shows how to make one.`
+export const noCardsLine = (need: number, folderTitle = COURSE_CARDS): string =>
+  need <= 1 ? `There is no card in ${folderTitle} yet. Chapter 2 shows how to make one.` : `This tour needs ${need} cards in ${folderTitle}. Chapter 2 shows how to make one.`
+
+/**
+ * A help line with the real title of the course's folder (YAZ-5202): "Course Cards 2" when the person has a "Course
+ * Cards" of their own. The script's own words (`say`) are not changed: only these help lines.
+ */
+export const inFolder = (line: string, folderTitle: string): string => (folderTitle === COURSE_CARDS ? line : line.replaceAll(COURSE_CARDS, folderTitle))
 
 /** How long the check waits for the folder's cards before it starts anyway. */
 const CARDS_WAIT_MS = 3000
@@ -85,11 +92,12 @@ const CARDS_WAIT_MS = 3000
  * The check before a tour: its places, or the one line that says why it cannot run. It uses the course's host (6F):
  * `courseCards()` gives the folder (or why the course only shows), `watchCards()` its cards.
  */
-export async function checkTour(chapterId: string, host: CourseHost): Promise<{ places: TourPlaces } | { blocked: string }> {
+export async function checkTour(chapterId: string, host: CourseHost): Promise<{ places: TourPlaces; folderTitle?: string } | { blocked: string }> {
   const needs = needsOf(chapterId)
   if (!needs.folder) return { places: { folder: null, page: null } }
   const found = await host.courseCards()
   if ('showOnly' in found) return { blocked: found.showOnly }
+  const folderTitle = found.title ?? COURSE_CARDS
   let places: TourPlaces = { folder: found.path, page: `${found.path}/${COURSE_PAGE}` }
   // Chapter 4 opens "Course page": the host makes it once (YAZ-5124), and its file is the one the tour marks.
   if (needs.page === true) {
@@ -97,7 +105,7 @@ export async function checkTour(chapterId: string, host: CourseHost): Promise<{ 
     if ('showOnly' in page) return { blocked: page.showOnly }
     places = { ...places, page: page.path }
   }
-  if (needs.cards === 0) return { places }
+  if (needs.cards === 0) return { places, folderTitle }
   const cards = await new Promise<readonly CourseCard[] | null>((resolve) => {
     let stop: (() => void) | null = null
     let settled = false
@@ -112,6 +120,6 @@ export async function checkTour(chapterId: string, host: CourseHost): Promise<{ 
     // A host that answers at once calls `finish` before `stop` is set: the microtask stops it after.
     stop = host.watchCards(found.path, (list) => finish(list))
   })
-  if (cards !== null && cards.length < needs.cards) return { blocked: noCardsLine(needs.cards) }
-  return { places }
+  if (cards !== null && cards.length < needs.cards) return { blocked: noCardsLine(needs.cards, folderTitle) }
+  return { places, folderTitle }
 }

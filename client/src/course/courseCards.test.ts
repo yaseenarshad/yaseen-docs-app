@@ -25,7 +25,7 @@ import { COURSE } from './script'
 import { WAITING_CLIPS } from './waits'
 import { courseScenes } from './scenes'
 import { mountScene, testClock } from './scenes/testing'
-import { checkTour } from './tourHelp'
+import { TARGET_HELP, checkTour, inFolder } from './tourHelp'
 import { memoryHost, showOnlyHost, type CourseHost, type CourseVault, type MadeCard } from './courseHost'
 import {
   COURSE_PAGE,
@@ -125,7 +125,7 @@ describe('the folder "Course Cards" (YAZ-5124)', () => {
     const { deps, made } = depsOf()
     const host = vaultCourseHost(vault.view, deps)
     const first = await host.courseCards()
-    expect(first).toEqual({ path: `${root}/course-cards` })
+    expect(first).toEqual({ path: `${root}/course-cards`, title: 'Course Cards' })
     expect(await top()).toEqual(['course-cards'])
     const settings = parseFrontmatter(splitFrontmatter(await readFile(join(root, 'course-cards', FOLDER_SETTINGS_FILE), 'utf8')).frontmatter).properties
     expect(settings.title).toBe('Course Cards')
@@ -140,13 +140,61 @@ describe('the folder "Course Cards" (YAZ-5124)', () => {
     expect(await top()).toEqual(['course-cards'])
   })
 
-  it('uses a folder titled "Course Cards" that is already at the top, as it is', async () => {
+  // YAZ-5202: this test said before that the course uses the person's own "Course Cards" as it is. That was wrong: the
+  // locked decision on YAZ-5060 (round 2 suggestion 3, round 3 decision 14) says the course makes "Course Cards 2".
+  it('YAZ-5202: a "Course Cards" at the top that the course did not make is the person\'s: the course makes "Course Cards 2", and writes nothing into theirs', async () => {
     await createDir({ path: join(root, 'my-cards'), title: 'Course Cards' }, door)
     const vault = vaultOf()
     await vault.refresh()
-    const host = vaultCourseHost(vault.view, depsOf().deps)
-    expect(await host.courseCards()).toEqual({ path: `${root}/my-cards` })
-    expect(await top()).toEqual(['my-cards'])
+    const { deps, made } = depsOf()
+    const host = vaultCourseHost(vault.view, deps)
+    const at = await host.courseCards()
+    expect(at).toEqual({ path: `${root}/course-cards-2`, title: 'Course Cards 2' })
+    const settings = parseFrontmatter(splitFrontmatter(await readFile(join(root, 'course-cards-2', FOLDER_SETTINGS_FILE), 'utf8')).frontmatter).properties
+    expect(settings.title).toBe('Course Cards 2')
+    await vault.refresh()
+    expect(await host.courseCards()).toEqual(at)
+    expect(made()).toEqual([{ vault: root, folder: `${root}/course-cards-2`, cards: [], page: null }])
+    const card = (await host.makeFirstCard({ front: 'Water boils at 100 degrees at sea level.', hidden: '100', back: '' })) as MadeCard
+    expect(card.path.startsWith(`${root}/course-cards-2/`)).toBe(true)
+    expect(await host.coursePage()).toMatchObject({ path: expect.stringMatching(new RegExp(`^${root}/course-cards-2/`)) })
+    expect(await readdir(join(root, 'my-cards'))).toEqual([FOLDER_SETTINGS_FILE])
+    expect(await top()).toEqual(['course-cards-2', 'my-cards'])
+    // The AI step names the real folder: in the prompt (its full path) and in its own lines (its title).
+    host.agentStep.useExample()
+    await host.agentStep.preparePrompt()
+    expect((host.agentStep.state().prompt as { folder: string }).folder).toBe(`${root}/course-cards-2`)
+    expect(host.agentStep.state().folderTitle).toBe('Course Cards 2')
+    // The end screen counts the course's folder, not the person's.
+    await vault.refresh()
+    expect(host.summary().folder).toBe(`${root}/course-cards-2`)
+  })
+
+  it('YAZ-5202: "Course Cards" and "Course Cards 2" both the person\'s give "Course Cards 3"; a folder `made` names is used again', async () => {
+    await createDir({ path: join(root, 'mine'), title: 'Course Cards' }, door)
+    await createDir({ path: join(root, 'mine-too'), title: 'Course Cards 2' }, door)
+    const vault = vaultOf()
+    await vault.refresh()
+    const { deps } = depsOf()
+    expect(await vaultCourseHost(vault.view, deps).courseCards()).toEqual({ path: `${root}/course-cards-3`, title: 'Course Cards 3' })
+    await vault.refresh()
+    // A new host (the course opened again) with the same record: the course's own folder, not a fourth one.
+    expect(await vaultCourseHost(vault.view, deps).courseCards()).toEqual({ path: `${root}/course-cards-3`, title: 'Course Cards 3' })
+    expect(await top()).toEqual(['course-cards-3', 'mine', 'mine-too'])
+  })
+
+  it('YAZ-5202: a "Course Cards" folder the course made (in `made`) is used again; a plain folder on disk of that name is the person\'s', async () => {
+    const vault = vaultOf()
+    const { deps } = depsOf()
+    expect(await vaultCourseHost(vault.view, deps).courseCards()).toEqual({ path: `${root}/course-cards`, title: 'Course Cards' })
+    await vault.refresh()
+    expect(await vaultCourseHost(vault.view, deps).courseCards()).toEqual({ path: `${root}/course-cards`, title: 'Course Cards' })
+    // Another vault where the person made the folder by hand (no folder settings file, so not in the index's folders).
+    await rm(join(root, 'course-cards'), { recursive: true })
+    const { mkdir } = await import('node:fs/promises')
+    await mkdir(join(root, 'course-cards'))
+    await vault.refresh()
+    expect(await vaultCourseHost(vault.view, depsOf().deps).courseCards()).toEqual({ path: `${root}/course-cards-2`, title: 'Course Cards 2' })
   })
 
   it.each([
@@ -276,9 +324,13 @@ describe('the Course page (chapter 4)', () => {
     await vault.refresh()
     expect(await host.coursePage()).toEqual(page)
     expect(made()[0].page).toBe(path)
-    // Found by its title in the folder when the record is gone (another Mac made it).
-    const fresh = vaultCourseHost(vault.view, depsOf().deps)
-    expect(await fresh.coursePage()).toEqual(page)
+    // A new host with the same record finds it again.
+    expect(await vaultCourseHost(vault.view, deps).coursePage()).toEqual(page)
+    expect((await cardFilesIn(join(root, 'course-cards'))).length).toBe(1)
+    // YAZ-5202: with no record (another Mac's course made the folder), "Course Cards" is not this Mac's: the course
+    // makes "Course Cards 2" and its own Course page there, and leaves the other folder as it is.
+    const fresh = await vaultCourseHost(vault.view, depsOf().deps).coursePage()
+    expect('path' in fresh && fresh.path.startsWith(`${root}/course-cards-2/course-page-`)).toBe(true)
     expect((await cardFilesIn(join(root, 'course-cards'))).length).toBe(1)
   })
 })
@@ -472,6 +524,20 @@ describe('chapter 4\'s tour and its Course page (YAZ-5123 with YAZ-5124)', () =>
     await vault.refresh()
     expect(await checkTour('where', host)).toEqual(checked)
     expect((await cardFilesIn(join(root, 'course-cards'))).filter((name) => !name.includes('water'))).toEqual([page.slice(page.lastIndexOf('/') + 1)])
+  })
+
+  it('YAZ-5202: with the person\'s own "Course Cards", the tour marks the course\'s "Course Cards 2", and its help lines name it', async () => {
+    await createDir({ path: join(root, 'mine'), title: 'Course Cards' }, door)
+    const vault = vaultOf()
+    await vault.refresh()
+    const host = vaultCourseHost(vault.view, depsOf().deps)
+    const empty = await checkTour('inbox', host)
+    expect(empty).toEqual({ blocked: 'There is no card in Course Cards 2 yet. Chapter 2 shows how to make one.' })
+    const checked = await checkTour('first-card', host)
+    expect(checked).toEqual({ places: { folder: `${root}/course-cards-2`, page: `${root}/course-cards-2/Course page.md` }, folderTitle: 'Course Cards 2' })
+    expect(inFolder(TARGET_HELP['new-card'].where, 'Course Cards 2')).toBe('Right-click the Course Cards 2 folder first. New card is in its menu.')
+    expect(inFolder(TARGET_HELP['card-menu'].where, 'Course Cards 2')).toBe('Open a card in Course Cards 2. Its menu is the three dots in its head.')
+    expect(inFolder(TARGET_HELP['new-card'].where, 'Course Cards')).toBe(TARGET_HELP['new-card'].where)
   })
 
   it('another chapter\'s tour makes no Course page; a read-only vault gives the tour its "cannot here" line and makes nothing', async () => {

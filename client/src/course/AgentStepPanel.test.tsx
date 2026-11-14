@@ -60,6 +60,14 @@ describe('AgentStepPanel', () => {
     expect(events).toEqual(['text', 'copied', 'arrived', 'read'])
   })
 
+  it('YAZ-5202: names the real folder when the course made "Course Cards 2"', async () => {
+    act(() => root.render(<AgentStepPanel host={host} onStep={(e) => events.push(e)} />))
+    act(() => host.set({ text: 'Some text', prompt: { text: 'Prompt', folder: '/vault/course-cards-2' }, folderTitle: 'Course Cards 2', copiedAt: 1 }))
+    expect(el.textContent).toContain('Waiting for cards in Course Cards 2…')
+    act(() => host.set({ examples: [{ path: '/vault/course-cards-2/a.md', title: 'A', text: 'A {{b}}', titleHidden: false }] }))
+    expect(el.textContent).toContain('Made 1 cards in Course Cards 2.')
+  })
+
   it('shows NO_CARDS_YET when the step has waited 60 seconds, and keeps waiting', async () => {
     act(() => root.render(<AgentStepPanel host={host} parts={['cards']} />))
     act(() => host.set({ copiedAt: 1, quiet: true }))

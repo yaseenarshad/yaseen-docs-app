@@ -22,7 +22,8 @@ import type { CourseHost } from './courseHost'
 import type { TourResult } from './courseTour'
 import { readEscapeFacts } from '../lib/escapeOrder'
 import { currentStep, coachPlace, dimPath, holeOf, offersShowMe, startTour, tourStep, type Box, type TourAction, type TourState } from './tourEngine'
-import { checkTour, TARGET_HELP } from './tourHelp'
+import { checkTour, inFolder, TARGET_HELP } from './tourHelp'
+import { COURSE_CARDS } from './courseCards'
 import { listenTour, setTourPlaces, showTourPlace } from './tourBus'
 import './tour.css'
 
@@ -99,6 +100,8 @@ export function TourLayer({ chapter, steps, host, alive, onEnd }: TourLayerProps
   if (tour.current === null) tour.current = startTour(steps)
   const [, setVersion] = useState(0)
   const [seen, setSeen] = useState<Seen>(NOTHING_SEEN)
+  /** The real title of the course's folder (YAZ-5202), for the help lines. */
+  const [folderTitle, setFolderTitle] = useState(COURSE_CARDS)
   const ended = useRef(false)
   const doors = useRef({ onEnd, alive })
   doors.current = { onEnd, alive }
@@ -123,6 +126,7 @@ export function TourLayer({ chapter, steps, host, alive, onEnd }: TourLayerProps
       (r) => {
         if (!live) return
         if ('blocked' in r) return dispatch({ type: 'blocked', reason: r.blocked })
+        setFolderTitle(r.folderTitle ?? COURSE_CARDS)
         setTourPlaces(r.places)
         dispatch({ type: 'ready', places: r.places })
       },
@@ -237,7 +241,7 @@ export function TourLayer({ chapter, steps, host, alive, onEnd }: TourLayerProps
   }
   const canShow = step !== null && (help?.show !== undefined || findTarget(step.target, layer.current) !== null)
   const waitsForNext = step !== null && step.done !== 'click' && step.done.event === 'tour-next'
-  const hint = step === null || !seen.hint ? null : seen.stuck && help?.stuck !== undefined ? help.stuck.say : (help?.where ?? null)
+  const hint = step === null || !seen.hint ? null : seen.stuck && help?.stuck !== undefined ? help.stuck.say : help === undefined ? null : inFolder(help.where, folderTitle)
   const place = coachPlace(seen.target, seen.coach, seen.view.width > 0 ? seen.view : { width: window.innerWidth, height: window.innerHeight })
   const line =
     s.status === 'checking' ? 'Getting ready…'

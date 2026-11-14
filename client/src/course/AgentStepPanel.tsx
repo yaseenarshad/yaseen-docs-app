@@ -156,7 +156,7 @@ export function AgentStepPanel({ host, parts = ALL_PARTS, onStep }: AgentStepPan
         <section className="agent-step__part" aria-label="New cards">
           {state.cards.length === 0 ? (
             <p className="agent-step__line" role="status">
-              {state.quiet ? NO_CARDS_YET : 'Waiting for cards in Course Cards…'}
+              {state.quiet ? NO_CARDS_YET : `Waiting for cards in ${state.folderTitle ?? 'Course Cards'}…`}
             </p>
           ) : (
             <ul className="agent-step__list">
@@ -191,7 +191,7 @@ export function AgentStepPanel({ host, parts = ALL_PARTS, onStep }: AgentStepPan
               ))}
               {Array.isArray(state.examples) ? (
                 <p className="agent-step__line" role="status">
-                  Made {state.examples.length} cards in Course Cards.
+                  Made {state.examples.length} cards in {state.folderTitle ?? 'Course Cards'}.
                 </p>
               ) : (
                 <button type="button" className="course__btn course__btn--primary" onClick={() => void step.makeExamples()}>
