@@ -244,7 +244,8 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
 
   /**
    * The media that may go for a write of `vault`, in the order it goes: that vault's own media first, oldest view first,
-   * then the media of the other vaults, oldest view first (decision (coordinator, for Yaseen to confirm), YAZ-5071).
+   * then the media of the other vaults, oldest view first (the coordinator's pick for YAZ-5071, for Yaseen to confirm;
+   * the record: "Finding (coordinator): what can block the overnight run" on YAZ-5057).
    * Pages, card files, settings, checkpoints and phone-only state are never in it. `except` (the file being written) neither,
    * nor the open vault's media that the cards due in the window need (`protectMedia`, 3D: the night pick of YAZ-5074).
    */

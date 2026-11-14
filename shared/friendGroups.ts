@@ -79,7 +79,10 @@ export interface GroupFile {
   removed?: string[]
 }
 
-/** YAZ-5240: never added, this long after the ask: "The admin did not add you" (Yaseen to confirm the 7 days). */
+/**
+ * YAZ-5240: never added, this long after the ask: "The admin did not add you". Yaseen to confirm the 7 days; the record:
+ * "Decision (agent, YAZ-5240), for Yaseen to confirm" on YAZ-5057.
+ */
 export const NOT_ADDED_AFTER_MS = 7 * 86400_000
 const REMOVED_MAX = 200
 
