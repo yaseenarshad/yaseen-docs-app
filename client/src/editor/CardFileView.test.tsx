@@ -47,6 +47,8 @@ vi.mock('../api', async (importOriginal) => {
       }),
       vaultConfig: { read: vi.fn(async () => disk.review), write: vi.fn(), onChange: vi.fn(() => () => undefined) },
       shell: { openLink: vi.fn() },
+      // The vault's property declarations (YAZ-5383: the strip's Properties rows are typed by them): none here.
+      properties: { get: vi.fn(async (root: string) => ({ root, version: 1, properties: {} })), onChange: vi.fn(() => () => undefined), setProperty: vi.fn() },
     },
   }
 })
@@ -205,6 +207,20 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await mount(FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", 2026-11-01T09:00Z good -->'))
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toMatch(/^Due /))
     expect(el.querySelector('.card-reviews .backlinks__title')?.textContent).toBe('1 Review')
+  })
+
+  it('YAZ-5383: the top-right properties button opens the strip`s Properties part (the page panel`s rows, the card`s own); a second click closes it', async () => {
+    await mount(FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", tags "europe" "capitals", level "A2" -->'))
+    const button = () => el.querySelector<HTMLButtonElement>('.card-file__properties')!
+    await vi.waitFor(() => expect(button()).not.toBeNull())
+    expect(button().getAttribute('aria-label')).toBe('Properties (2)')
+    expect(el.querySelector('.frontmatter-panel--card')).toBeNull()
+    act(() => button().click())
+    await vi.waitFor(() => expect(el.querySelector('.card-reviews--strip .frontmatter-panel--card')).not.toBeNull())
+    expect(el.querySelector('.card-reviews__toggle[data-part="properties"]')?.getAttribute('aria-expanded')).toBe('true')
+    expect([...el.querySelectorAll<HTMLElement>('.frontmatter-panel--card .frontmatter-panel__row')].map((r) => r.dataset.key)).toEqual(['tags', 'level'])
+    act(() => button().click())
+    expect(el.querySelector('.frontmatter-panel--card')).toBeNull()
   })
 
   it('YAZ-5105 round 2: Reviews is a strip right under the card (as Mochi), closed until clicked; YAZ-5382: Linked mentions and Embedded in are its parts, no sections under it', async () => {

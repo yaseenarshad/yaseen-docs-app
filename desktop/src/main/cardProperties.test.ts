@@ -9,6 +9,7 @@ import {
   withCardProperty,
   withCardTitle,
   withoutCardProperty,
+  renameCardProperty,
   EMPTY_CARD_LINE,
 } from '@shared/cardLine'
 
@@ -39,8 +40,14 @@ describe('property parts on the card line (YAZ-5379)', () => {
     expect(cardPropertiesOf(line(written))).toEqual({ text: 'say "hi" --> \\ ok', count: 3, ratio: -2.5, done: true, later: false, tags: ['a', 'b c'], when: '2026-11-14', empty: '' })
   })
 
-  it('a quoted number stays text; a list of one value reads as that one value (as YAML `tags: europe` does)', () => {
+  it('a quoted number stays text; one value is that value (as YAML `tags: europe` does); a list of one or none is in brackets', () => {
     expect(cardPropertiesOf(line('<!-- card: code "007", tags "europe" -->'))).toEqual({ code: '007', tags: 'europe' })
+    const l = withCardProperty(withCardProperty(withCardProperty(EMPTY_CARD_LINE, 'tags', ['europe']), 'none', []), 'two', ['a', 'b'])
+    const written = formatCardLine(l)!
+    expect(written).toBe('<!-- card: tags ["europe"], none [], two "a" "b" -->')
+    expect(cardPropertiesOf(line(written))).toEqual({ tags: ['europe'], none: [], two: ['a', 'b'] })
+    expect(cardPropertiesOf(line('<!-- card: tags [ "a" "b" ] -->'))).toEqual({ tags: ['a', 'b'] })
+    expect(line('<!-- card: tags ["a" -->').parts.map((p) => p.kind)).toEqual(['other'])
   })
 
   it('a name with a space, or one that does not start with a letter, is quoted', () => {
@@ -76,7 +83,7 @@ describe('property parts on the card line (YAZ-5379)', () => {
     l = withCardProperty(l, 'tags', ['x'])
     l = withCardProperty(l, 'level', 'A2')
     l = withCardOff(l, true)
-    expect(formatCardLine(l)).toBe('<!-- card: GEO-1, title "T", tags "x", level "A2", off, 2026-11-12T14:05Z good -->')
+    expect(formatCardLine(l)).toBe('<!-- card: GEO-1, title "T", tags ["x"], level "A2", off, 2026-11-12T14:05Z good -->')
   })
 
   it('an edit changes the value in place, under the new spelling; other spellings of the key go; remove drops it', () => {
@@ -87,6 +94,14 @@ describe('property parts on the card line (YAZ-5379)', () => {
     l = withoutCardProperty(l, 'TAGS')
     expect(formatCardLine(l)).toBe('<!-- card: GEO-1, level "A1" -->')
     expect(withCardProperty(l, 'level', 'A1')).toBe(l)
+  })
+
+  it('a rename keeps the value and the place; it refuses a card line word', () => {
+    const l = line('<!-- card: GEO-1, tags "a" "b", level "A1", 2026-11-12T14:05Z good -->')
+    expect(formatCardLine(renameCardProperty(l, 'TAGS', 'topics'))).toBe('<!-- card: GEO-1, topics "a" "b", level "A1", 2026-11-12T14:05Z good -->')
+    expect(formatCardLine(renameCardProperty(l, 'tags', 'Level'))).toBe('<!-- card: GEO-1, Level "a" "b", 2026-11-12T14:05Z good -->')
+    expect(renameCardProperty(l, 'missing', 'x')).toBe(l)
+    expect(() => renameCardProperty(l, 'tags', 'next')).toThrow()
   })
 
   it('the index keeps a card\'s properties; a card with none has no `properties`', () => {

@@ -28,7 +28,7 @@ import { pageLabel, pathTitles } from '../lib/pageLabel'
 import type { MenuSection } from '../sidebar/menuSections'
 import { askResetHistory } from '../editor/card/askResetHistory'
 import { changeCardLine, changeCardTextIn, type CardAtPage } from './cardFile'
-import { CardBody, CardStrip, type CardLinkDoors } from './cardParts'
+import { CardBody, CardStrip, type CardLinkDoors, type CardStripPart } from './cardParts'
 
 /**
  * Runs `run` on each new version of `path` in the index (its mtime): an answer in the Inbox, an agent's write or a
@@ -88,9 +88,10 @@ export function cardWrites(path: string, card: CardAtPage | null, read: () => vo
         },
       )
     },
-    changeLine(change: CardLineChange) {
-      if (card === null || card.id === null) return
-      changeCardLine(path, card.id, change, card.index).then(() => read(), failed('change the card'))
+    /** One write of the card's line; resolves when it is done (a failure is a notice). The strip's Properties wait for it (YAZ-5383). */
+    changeLine(change: CardLineChange): Promise<void> {
+      if (card === null || card.id === null) return Promise.resolve()
+      return changeCardLine(path, card.id, change, card.index).then(() => read(), failed('change the card'))
     },
     /** The Reviews table's delete (with Undo in its notice); none for a card with no ID yet. */
     deleteReview:
@@ -156,10 +157,16 @@ interface CardPaneProps {
   band?: ReactNode
   /** Read, the card's top bar above the band (YAZ-5392: a card file's tab, as a card in a page has it); absent: none. */
   head?: ReactNode
+  /** The card's line write (`cardWrites().changeLine`): the strip's Properties edit through it (YAZ-5383). Absent: they read only. */
+  onChangeLine?: (change: CardLineChange) => Promise<void>
+  onNotice?: (message: string) => void
+  /** The strip's open part, held by the caller (YAZ-5383: the card file tab's properties button opens Properties); absent: the strip holds it. */
+  stripOpen?: CardStripPart | null
+  onStripToggle?: (part: CardStripPart) => void
 }
 
 /** The card's body: the card or its editor, its strip (Reviews, Properties, Linked mentions and, in a tab, Embedded in: YAZ-5382), then the facts strip. */
-export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false, titleField = 'edit', band, head }: CardPaneProps) {
+export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false, titleField = 'edit', band, head, onChangeLine, onNotice, stripOpen, onStripToggle }: CardPaneProps) {
   const swap = useCardSwap(editing)
   // The band shows the title (off the card line); the card is its text, its sides only (YAZ-5308).
   return (
@@ -184,7 +191,12 @@ export function CardPane({ card, path, vault, editing, onEditDone, select, doors
           reviews={card.reviews}
           settings={reviews}
           onDelete={onDeleteReview}
-          properties={{ values: card.properties ?? {} }}
+          open={stripOpen}
+          onToggle={onStripToggle}
+          properties={{
+            values: card.properties ?? {},
+            edit: onChangeLine === undefined ? undefined : { change: onChangeLine, root: vault.root, wikilinks: vault.wikilinks, path, readOnly: vault.readOnly === true, onNotice },
+          }}
           pages={card.id === null ? undefined : { id: card.id, wikilinks: vault.wikilinks, onOpen: onOpenPage, embeds }}
         />
       )}

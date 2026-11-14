@@ -78,6 +78,7 @@ import { CARD_OPEN, landWhenShown, previewCard, takeCardLanding, watchCardLandin
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard, type CardLook } from './cardRender'
 import { mountCardEditor, type CardCrepe, type CardEditor, type CardTitleField } from './cardEditor'
 import { mountReviewsStrip, type ReviewsStripHandle, type StripPart } from './reviewsStrip'
+import type { WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { mountCardTitle, type CardTitleHandle } from './cardTitle'
 import { tellReadOnlyEdit } from '../readOnlyEdit'
 import './card.css'
@@ -177,6 +178,8 @@ export interface CardReviewDoorApi {
   settings: () => ReviewSettings
   /** Removes `review` from card `id` of `path` in the FILE; its notice has Undo (`useCardReview.deleteReview`). */
   deleteReview: (path: string, id: string, review: CardReview) => Promise<void>
+  /** The vault the strip's Properties rows read (YAZ-5383): its root (`properties.json`) and its index feed. Absent: they read only. */
+  vault?: () => { root: string | null; wikilinks?: WikilinkResolveSource }
 }
 
 const views = new WeakMap<HTMLElement, CardBlockView>()
@@ -406,7 +409,14 @@ export class CardBlockView implements NodeView {
       onDelete: id === null || path === null ? undefined : (review) => void door.deleteReview(path, id, review),
       open: this.openPart,
       onToggle: (part) => this.togglePart(part),
-      properties: cardPropertiesOf(line),
+      properties: {
+        values: cardPropertiesOf(line),
+        // YAZ-5383: an edit is the card's own line change — a transaction here (out of nothing else), the file when read only.
+        edit:
+          door.vault === undefined || path === null
+            ? undefined
+            : { change: (change) => Promise.resolve(this.change(change)), path, ...door.vault(), onNotice: this.deps.onNotice === undefined ? undefined : (m) => this.deps.onNotice?.(m) },
+      },
     })
   }
 

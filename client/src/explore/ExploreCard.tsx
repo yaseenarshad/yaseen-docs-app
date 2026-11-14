@@ -219,6 +219,8 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
             strip={<CardStrip card={card} pageName={pageName} vault={vault} onOpenPage={() => onOpenPage({ id: card.id, index: card.index })} />}
             reviews={review?.settings}
             onDeleteReview={writes.deleteReview}
+            onChangeLine={changeLine}
+            onNotice={onNotice}
           />
         )}
       </div>

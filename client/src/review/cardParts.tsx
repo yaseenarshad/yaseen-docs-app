@@ -6,7 +6,7 @@
  */
 import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import type { CardPropertyValue, CardReview } from '@shared/cardLine'
+import type { CardLine, CardPropertyValue, CardReview } from '@shared/cardLine'
 import { cardBacklinks, cardEmbedders } from '@shared/cardLinks'
 import type { IndexRecord } from '@shared/types'
 import { answerLabel, cardHistory, cardState, cardStateWithout, dayCount, recallChance } from '@shared/cardSchedule'
@@ -23,6 +23,8 @@ import { hrefTarget } from '../editor/pathPaste'
 import { cardResolverOf, linkCard, linkPath, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import { pageLabel, pathTitles } from '../lib/pageLabel'
+import { FrontmatterPanel, type FrontmatterPanelProps } from '../editor/FrontmatterPanel'
+import { useProperties } from '../views/useProperties'
 import { landOnCard, openCardWindow } from '../editor/card/cardOpen'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { storage } from '../lib/storage'
@@ -339,6 +341,24 @@ const PAGE_PARTS = {
 /** The strip's Properties part (YAZ-5380): the card's own properties, off its card line (YAZ-5379). Absent: no part. */
 export interface CardStripProperties {
   values: Readonly<Record<string, CardPropertyValue>>
+  /** How an edit writes (YAZ-5383); absent: the rows read only. */
+  edit?: CardPropertiesEdit
+}
+
+/** The Properties part's door (YAZ-5383): the card's one line write, and the vault its rows read. */
+export interface CardPropertiesEdit {
+  /** Changes the card's line: a transaction for a card in a page, else one write of its file. */
+  change: (change: (line: CardLine) => CardLine) => Promise<void>
+  /** The vault root: its `properties.json` types the rows. */
+  root: string | null
+  /** The index feed: link values and their suggestions. */
+  wikilinks?: WikilinkResolveSource
+  /** The file the card is in. */
+  path: string
+  /** Locked (a read-only page or vault): the rows read only, as the page panel's. */
+  readOnly?: boolean
+  /** The toast: "Removed …" with Undo. */
+  onNotice?: FrontmatterPanelProps['onNotice']
 }
 
 /** The strip's own props (YAZ-5105 round 4; YAZ-5380 its parts): the table's, which part is open, and its extras. */
@@ -370,19 +390,26 @@ function StripToggle({ part, open, label, count, empty = count === 0, icon, onTo
   )
 }
 
-/** The Properties part open (YAZ-5380): one row a property, its name and its value. */
-function CardPropertyRows({ values }: { values: Readonly<Record<string, CardPropertyValue>> }) {
-  const entries = Object.entries(values)
-  if (entries.length === 0) return <p className="card-strip__none">No properties yet.</p>
+/**
+ * The Properties part open (YAZ-5383): the page properties panel's own rows (`FrontmatterPanel` with its card target) —
+ * the same look, types, menus and "+ Add property" — over the card's own properties; an edit writes the card's line.
+ * Typed by the vault's declarations (`properties.json`). With no `edit` door (a preview), the rows read only.
+ */
+function CardPropertiesPart({ values, edit }: CardStripProperties) {
+  const decls = useProperties(edit?.root ?? null).properties
+  const change = edit?.change
+  const card = useMemo(() => ({ values, change: change ?? (() => Promise.resolve()) }), [values, change])
+  const file = useMemo(() => ({ path: edit?.path ?? '', content: '', mtime: 0 }), [edit?.path])
   return (
-    <ul className="card-strip__props">
-      {entries.map(([name, value]) => (
-        <li key={name} className="card-strip__prop" data-key={name}>
-          <span className="card-strip__prop-name">{name}</span>
-          <span className="card-strip__prop-value">{Array.isArray(value) ? value.join(', ') : String(value)}</span>
-        </li>
-      ))}
-    </ul>
+    <FrontmatterPanel
+      file={file}
+      root={edit?.root ?? null}
+      properties={decls}
+      wikilinks={edit?.wikilinks}
+      readOnly={change === undefined || edit?.readOnly === true}
+      card={card}
+      onNotice={edit?.onNotice === undefined ? undefined : (message, icon, type, action) => edit.onNotice?.(message, icon, type, action)}
+    />
   )
 }
 
@@ -448,7 +475,7 @@ function StripView({ reviews, settings, onDelete, now, open: held, onToggle, pro
       {open === 'reviews' && <CardReviewsTable reviews={reviews} settings={settings} onDelete={onDelete} now={now} />}
       {open === 'properties' && properties !== undefined && (
         <div className="card-strip__part">
-          <CardPropertyRows values={properties.values} />
+          <CardPropertiesPart {...properties} />
         </div>
       )}
       {(open === 'links' || open === 'embeds') && lists !== null && (open === 'links' || lists.embeds !== null) && (

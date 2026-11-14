@@ -286,7 +286,14 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
         stripOpen = stripOpen === part ? null : part
         drawReviews()
       },
-      properties: c.properties ?? {},
+      properties: {
+        values: c.properties ?? {},
+        // YAZ-5383: an edit writes the card's line in its ORIGINAL file, as a rename does; locked with the page.
+        edit:
+          door.vault === undefined || id === null
+            ? undefined
+            : { change: (change) => changeCardLine(c.path, id, change, c.index).then(() => undefined), path: c.path, ...door.vault(), readOnly: !host.editable(), onNotice },
+      },
     })
   }
 
