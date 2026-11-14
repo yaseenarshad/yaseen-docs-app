@@ -57,6 +57,7 @@ open desktop/dist-app/*.dmg
   - `media-cache/` (YAZ-3038): Image Studio search pages and tile pictures, kept 24 h; swept at launch and each hour.
   - `thumbs/` (YAZ-3035): preview-sized copies of a drawing's pictures for the hover preview, with a byte cap.
   - `draw-import.json` (YAZ-3041): the Draw import's marker — when the app-data half ran, and each vault's half.
+  - `card-skill/` (YAZ-5107): the app's copy of the card skill (`skills/card-skill`, shipped as `Resources/card-skill`). Made at each start when the app's version changed or a file is missing, before the first window; its files are read only. A dev build stamps the version with a hash of `skills/card-skill`, so an edit there reaches the copy at the next `npm run dev`. Never edit it: the next start replaces it.
 - To reset or hand-edit: **quit the app first** (⌘Q — quitting flushes the file), then delete or edit the JSON; on the next launch a missing file gets defaults and a corrupt one is moved aside as `yaseendocs.json.corrupt-<epoch>`, never silently overwritten. To find it (the folder first appears after the app has run once against the real state):
 
 ```bash

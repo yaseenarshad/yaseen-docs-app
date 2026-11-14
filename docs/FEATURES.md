@@ -207,6 +207,10 @@ A card can be its **own file**, next to pages, drawings and diagrams, in a vault
 - **The command**: `yaseendocs card new <folder> --title "<text>" [--body "<text>"] [--json]`.
 - A sync conflict copy (`<name> (conflict <host>, <date>).md`) never takes a card from the real page (YAZ-5056): its copy of the card gets a new ID, no history, and is archived.
 
+### The card skill (YAZ-5059)
+
+A guide for you and your AI agent on how to make good cards. It ships with the app as plain pages (`skills/card-skill` in the repo). At each start after an update, before a window opens, the app copies it to `<app data>/card-skill` (`~/Library/Application Support/Yaseen Docs/card-skill`) and uses only that copy. The copy is read only on disk, and the next update replaces it whole: to change the skill, duplicate it into your vault.
+
 ## Two kinds of vault
 
 A vault is one of two kinds. A folder you open is a **plain** vault: the app asks nothing and writes nothing you did not ask for. IDs are a setting, for the vault where you want them: Settings › Files & Links › **Give this vault's notes IDs**.
