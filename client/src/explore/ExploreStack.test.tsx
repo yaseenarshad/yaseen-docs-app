@@ -6,7 +6,7 @@
  * per page layer with the stack's link doors, and nothing writes.
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { act, type ReactNode } from 'react'
+import { act, useEffect, useState, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
 import { CrepeFeature } from '../editor/crepe'
@@ -1903,6 +1903,62 @@ describe('YAZ-4988: ⌘↵ in an edit layer goes back to reading', () => {
     expect(heard).toEqual([])
   })
 })
+
+describe('YAZ-5143: a card file in an edit layer (its editor is the card file view: no open document) hears Esc and ⌘↵', () => {
+  beforeEach(() => {
+    props = {
+      ...props,
+      // The card file view (`CardFileView`) as the edit layer's editor: its body takes the keyboard (tabIndex -1); no
+      // ProseMirror until Edit card. It mounts a moment after the layer turns to edit (the editor reads the file first).
+      renderEditor: (path): ReactNode => {
+        editors.push(path)
+        return <LateCardFile path={path} />
+      },
+    }
+  })
+  const editing = () => top().querySelector('.explore__body--edit') !== null
+  async function edit() {
+    await mount()
+    await typeQuery('alp')
+    await openResult()
+    key(document.activeElement as Element, { key: 'e' })
+    await flush()
+    expect(editing()).toBe(true)
+    // The card file view mounts, and the layer gives it the keyboard.
+    for (let i = 0; i < 4; i++) await act(async () => await new Promise((r) => setTimeout(r, 20)))
+  }
+
+  it('the keyboard goes to the card file view, so Esc goes back to reading, as on a page', async () => {
+    await edit()
+    // Chromium drops the focus of the reading body (it loses its tabindex in edit) to `document.body`, out of the
+    // stack: the keys were never heard. jsdom keeps it; the layer must hand it on to the card file view itself.
+    expect(document.activeElement).toBe(top().querySelector('[data-card-file-body]'))
+    key(document.activeElement as Element, { key: 'Escape' })
+    await flush()
+    await flush()
+    expect(editing()).toBe(false)
+    expect(live()).toHaveLength(2)
+  })
+
+  it('⌘↵ goes back to reading too; the next ⌘↵ opens the tab', async () => {
+    await edit()
+    key(document.activeElement as Element, { key: 'Enter', metaKey: true })
+    await flush()
+    await flush()
+    expect(editing()).toBe(false)
+    expect(props.openInTab).not.toHaveBeenCalled()
+  })
+})
+
+/** A card file view that mounts a moment late, as the editor's read of the file takes. */
+function LateCardFile({ path }: { path: string }) {
+  const [up, setUp] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setUp(true), 20)
+    return () => clearTimeout(t)
+  }, [])
+  return <div className="editor" data-editor={path}>{up && <div className="card-file" tabIndex={-1} data-card-file-body />}</div>
+}
 
 describe('YAZ-4939: a page layer in a Read only vault', () => {
   const unlockedArgs: boolean[] = []

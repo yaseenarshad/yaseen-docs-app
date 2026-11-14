@@ -739,6 +739,21 @@ describe('cards: due and card add (YAZ-4963)', () => {
     expect(JSON.parse((await run(['due', geo, '--json'])).out).map((r: { id: string; isNew: boolean }) => [r.id, r.isNew])).toEqual([['YAZ-21', true], ['YAZ-22', true], ['YAZ-23', true]])
   })
 
+  it('YAZ-5146: card add on a page with Windows line ends gives a number no card holds, and the page stays all \\r\\n', async () => {
+    const crlf = (text: string) => text.replace(/\n/g, '\r\n')
+    const root = await vault('cards', { 'win.md': crlf(`---\nid: YAZ-5\n---\n# Deck\n\n## Cards\n\n${card('Nine', 'YAZ-9')}\n${card('Ten', 'YAZ-10')}\n## Later\n\nText.\n`) })
+    const win = path.join(root, 'win.md')
+    // The vault's counter sees the cards of the \r\n page: YAZ-9 and YAZ-10 are held.
+    expect(await run(['card', 'add', win, '--after', 'Cards', '--title', 'Eleven', '--body', 'Front\n---\nBack'])).toEqual({ code: 0, out: `added YAZ-11 to ${win}\n`, err: '' })
+    const after = await readFile(win, 'utf8')
+    expect(/(^|[^\r])\n/.test(after)).toBe(false)
+    expect(after).toBe(crlf(`---\nid: YAZ-5\n---\n# Deck\n\n## Cards\n\n${card('Nine', 'YAZ-9')}\n${card('Ten', 'YAZ-10')}\n${card('Eleven\nFront\n---\nBack', 'YAZ-11')}\n## Later\n\nText.\n`))
+    expect((await scanFile(root, win)).cards?.map((c) => [c.id, c.title])).toEqual([['YAZ-9', 'Nine'], ['YAZ-10', 'Ten'], ['YAZ-11', 'Eleven']])
+    // card next on the \r\n page finds the card and keeps the line ends.
+    expect((await run(['card', 'next', 'YAZ-10', root])).code).toBe(0)
+    expect(await readFile(win, 'utf8')).toBe(after.replace('<!-- card: YAZ-10 -->', '<!-- card: YAZ-10, next -->'))
+  })
+
   it('YAZ-5030: card add --title writes the title as the card\'s first line; due --json gives it as the title', async () => {
     const root = await vault('cards', { 'geo.md': '---\nid: YAZ-5\n---\n# Geography\n' })
     const geo = path.join(root, 'geo.md')

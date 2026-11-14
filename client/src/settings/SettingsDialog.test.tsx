@@ -1498,6 +1498,37 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(row(mountOn('Review', { ...DEFAULT_SETTINGS, markNextHidden: false }, undefined, S).el, 'nextHiddenColour')).toBeNull()
   })
 
+  // YAZ-5053 round 4 (Yaseen: "clicking these options on or off doesnt stick… it doesnt select"): each choice of each
+  // Card look row, clicked, sends that value; the settings that come back show it selected, and only it.
+  // `store.cardLook.test.ts` saves each one through main and reads it back.
+  const CHOICE_ROWS: readonly (readonly [string, Partial<SettingsState>])[] = [
+    ['shownHiddenWords', {}],
+    ['markNextHidden', {}],
+    ['cardSpacing', {}],
+    ['cardLineSpacing', { cardSpacing: 'custom' }],
+    ['cardBlockGap', { cardSpacing: 'custom' }],
+    ['cardBulletSpace', { cardSpacing: 'custom' }],
+  ]
+  it.each(CHOICE_ROWS)('YAZ-5053 round 4: each choice of %s, clicked, is sent, and shows selected once it comes back', (id, start) => {
+    const count = rowButtons(mountOn('Review', { ...DEFAULT_SETTINGS, ...start }, undefined, S).el, id).length
+    unmount()
+    expect(count).toBeGreaterThan(1)
+    for (let at = 0; at < count; at++) {
+      // Start from another choice, so each click is a change.
+      const from = mountOn('Review', { ...DEFAULT_SETTINGS, ...start }, undefined, S)
+      act(() => rowButtons(from.el, id)[(at + 1) % count].click())
+      const other = from.onChange.mock.lastCall?.[0] as SettingsState | undefined
+      unmount()
+      const mid = mountOn('Review', other ?? { ...DEFAULT_SETTINGS, ...start }, undefined, S)
+      act(() => rowButtons(mid.el, id)[at].click())
+      const sent = mid.onChange.mock.lastCall?.[0] as SettingsState
+      unmount()
+      const back = mountOn('Review', sent, undefined, S)
+      expect(rowButtons(back.el, id).map((b) => b.getAttribute('aria-pressed'))).toEqual(Array.from({ length: count }, (_, i) => String(i === at)))
+      unmount()
+    }
+  })
+
   const CUSTOM_ROWS = ['cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace']
   const CUSTOM = { cardSpacing: 'custom' as const, cardLineSpacing: 2, cardBlockGap: 8, cardBulletIndent: 40, cardBulletGap: 12, cardBulletSpace: 4 }
   it('YAZ-5050 round 3: Card spacing is Same as pages by default, with no other row; Custom starts at Mochi\'s clean values (not the pages\'), and shows its rows', () => {

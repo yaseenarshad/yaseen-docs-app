@@ -5,7 +5,8 @@
  *   - the settings keys in `<userData>/yaseendocs.json` and in the settings folder (`settings-<macId>.json`), and the
  *     values that said `note` (`dailyPageOpens`, `newBoardFolder`, the Markdown icon colour, Folder pages › Subfolders);
  *   - the hotkey IDs (`note.bold` → `page.bold`, `dailyNote` → `dailyPage`) in `hotkeys` and `hotkeysAside`;
- *   - the keys of a folder's `.folder.md` (`other_files_keep_notes`, a fill's `note`, a view's `subfolders: notes`);
+ *   - the keys of a folder's `.folder.md` (`other_files_keep_notes`, a fill's `note`, a view's `subfolders: notes`),
+ *     and a Type test on `note` in its filters and formulas (`file.kind == "note"`: `file.kind` says `page` now);
  *   - the renderer's remembered boxes (`noteWindow:<folder>`, `explore:box:note`).
  *
  * `sanitizeSettings` drops a key it does not know, so `movedSettings` runs before it. The old names live in this file
@@ -99,12 +100,57 @@ export function movedFill(fill: unknown): unknown {
   return 'page' in rest ? rest : { ...rest, page: note }
 }
 
-/** A view of a `.folder.md` as read: `subfolders: notes` reads as `pages`, each fill's `note` as `page`; the same object when nothing is old. */
+/** `file.kind` beside `==` / `!=` and a `note` literal in either quote, on either side; an Is any of list that `.contains(file.kind)`. */
+const KIND_IS_NOTE = /(?<![\w.])file\.kind(\s*[!=]=\s*)(["'])note\2|(["'])note\3(\s*[!=]=\s*)file\.kind(?![\w(])|\[([^[\]]*)\](\s*\.contains\(\s*file\.kind\s*\))/g
+const NOTE_LITERAL = /(["'])note\1/g
+
+/**
+ * A filter or formula as read: a Type test on `note` (the Filter menu's Type, YAZ-4579 D31) tests `page`, the value
+ * `file.kind` gives a page since YAZ-5036. Every other `note` stays: a property (`note.status`), another field's value.
+ */
+export function movedKindExpr(expr: string): string {
+  if (!expr.includes('file.kind')) return expr
+  return expr.replace(KIND_IS_NOTE, (all, op?: string, q?: string, q2?: string, op2?: string, list?: string, call?: string) =>
+    op !== undefined ? `file.kind${op}${q}page${q}` : op2 !== undefined ? `${q2}page${q2}${op2}file.kind` : `[${list!.replace(NOTE_LITERAL, '$1page$1')}]${call}`,
+  )
+}
+
+/** A view's `filters` (a string, or `and` / `or` / `not` lists of them) as read; the same object when no Type test said `note`. */
+function movedFilters(node: unknown): unknown {
+  if (typeof node === 'string') return movedKindExpr(node)
+  if (!isRecord(node)) return node
+  let out: Record<string, unknown> | undefined
+  for (const key of ['and', 'or', 'not'] as const) {
+    const list = node[key]
+    if (!Array.isArray(list)) continue
+    const moved = list.map(movedFilters)
+    if (moved.some((m, i) => m !== list[i])) out = { ...(out ?? node), [key]: moved }
+  }
+  return out ?? node
+}
+
+/** A folder's `formulas` as read: each Type test on `note` tests `page`; the same object when none did. */
+export function movedFormulas<T>(formulas: T): T {
+  if (!isRecord(formulas)) return formulas
+  const moved = Object.entries(formulas).map(([name, expr]) => [name, typeof expr === 'string' ? movedKindExpr(expr) : expr] as const)
+  return moved.some(([name, expr]) => expr !== formulas[name]) ? (Object.fromEntries(moved) as T) : formulas
+}
+
+/**
+ * A view of a `.folder.md` as read: `subfolders: notes` reads as `pages`, each fill's `note` as `page`, a Type filter on
+ * `note` as `page`; the same object when nothing is old. The next write of the block saves the new names.
+ */
 export function movedView(view: Record<string, unknown>): Record<string, unknown> {
   const subfolders = view.subfolders === 'notes'
   const fills = Array.isArray(view.fills) && view.fills.some((fill) => isRecord(fill) && 'note' in fill)
-  if (!subfolders && !fills) return view
-  return { ...view, ...(subfolders && { subfolders: 'pages' }), ...(fills && { fills: (view.fills as unknown[]).map(movedFill) }) }
+  const filters = movedFilters(view.filters)
+  if (!subfolders && !fills && filters === view.filters) return view
+  return {
+    ...view,
+    ...(subfolders && { subfolders: 'pages' }),
+    ...(fills && { fills: (view.fills as unknown[]).map(movedFill) }),
+    ...(filters !== view.filters && { filters }),
+  }
 }
 
 // ---- The renderer's remembered boxes (localStorage) ----
