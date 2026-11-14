@@ -3,7 +3,6 @@ import { IDS_FILE, idLettersOf, idsAnswer } from '@shared/pageId'
 import { REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
 import { useApp } from '../app/AppState'
-import type { ShellSyncEvent } from '../app/syncPort'
 import type { VaultStore } from '../store'
 import type { PhoneIndex } from '../sync/phoneIndex'
 
@@ -45,7 +44,7 @@ export interface VaultData {
 export const INDEX_STATE_NAME = 'index'
 
 const CONFIG = `${VAULT_CONFIG_DIR}/`
-export const REVIEW_PATH = `${CONFIG}${REVIEW_SETTINGS_FILE}`
+const REVIEW_PATH = `${CONFIG}${REVIEW_SETTINGS_FILE}`
 export const IDS_PATH = `${CONFIG}${IDS_FILE}`
 
 async function readJson(store: VaultStore, vault: string, path: string): Promise<unknown> {
@@ -85,11 +84,6 @@ export async function loadVaultData(store: VaultStore, vault: string, repoName: 
     review: sanitizeReviewSettings(await readJson(store, vault, REVIEW_PATH)),
     version: ++versions,
   }
-}
-
-/** The index a `changed` event carries (3B's engine does), when it is for `vault`. */
-export function eventIndex(event: ShellSyncEvent, vault: string): PhoneIndex | undefined {
-  return event.type === 'changed' && event.vault === vault ? event.index : undefined
 }
 
 /** The open vault's data, kept current with each `changed` event of that vault; null while it loads or with no vault. */

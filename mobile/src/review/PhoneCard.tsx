@@ -7,15 +7,12 @@ import { linkCard, linkPath, type WikilinkResolveSource } from '@client/editor/w
 import '@client/editor/card/card.css'
 import '@client/editor/table/table.css'
 import '@client/review/cardScreens.css'
-import { drawLocalCard, mediaPath } from '../media/ui/cardDraw'
+import { drawLocalCard } from '../media/ui/cardDraw'
 import { guardLink } from '../media/ui/safeLinks'
 import { watchMedia, type VaultMedia } from '../media/ui/vaultMedia'
 
 /** Where a tap on a pill goes: a card alone, or a page (4C's read-only views). */
 export type CardLinkOpen = { kind: 'card'; path: string; id: string } | { kind: 'page'; path: string; at?: string }
-
-// The asset rule moved to the ONE card drawing of the phone (YAZ-5242); the name stays here too.
-export { mediaPath }
 
 /**
  * THE CARD on the phone: the Mac's own drawing (`renderCard`, `cardLook`; decision 3, no second renderer), read only,

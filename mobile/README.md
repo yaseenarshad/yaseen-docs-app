@@ -10,7 +10,7 @@ From the repo root:
 | Command | What it does |
 | -- | -- |
 | `npm run mobile:dev` | Serves the app at http://localhost:5173 with hot reload. |
-| `npm run mobile:build` | Writes the static files to `mobile/dist/` (gitignored). |
+| `npm run mobile:build` | Writes the static files to `mobile/dist/` (gitignored), then runs the build check (`publish/checkBuild.ts`). |
 | `npx vitest run --project mobile` | Runs this workspace's tests only. `npm test` runs them with all the others. |
 | `npm run typecheck` | Checks `mobile/tsconfig.json` (the app) and `mobile/tsconfig.test.json` (tests, config) with the rest. |
 
@@ -51,19 +51,32 @@ mobile/
   vite.config.ts        the build: aliases, one React, the import guard
   vitest.config.ts      the `mobile` test project (uses vite.config.ts)
   importRules.ts        what the phone never imports
+  wrangler.jsonc        the preview site's Worker (static files only)
+  publish/              the build check, the service worker build, the headers, the icons, the headless check
+  scripts/              opt-in runs against the scratch vault repo (`live*.ts`); never in `npm test`
   src/
     main.tsx, App.tsx   the start: the real services, then the app (4A)
     styles.css          the Mac's colour and font tokens; dark mode follows the iPhone
     app/                4A: the app state and actions (`AppState.tsx`, `useApp()`), the tabs and routes (`nav.ts`),
                         the words and ways forward (`help.ts`), the sync port and the lazy 3B engine (`syncPort.ts`,
                         `lazySync.ts`), Friends' port (`friendsPort.ts`), the vault's word for page (`unitWord.ts`)
-    screens/            4A: `Shell`, `SignIn`, `SetupGuide`, `ScanCode`, `Settings`, `FirstDownload`; the slots
-                        `Friends`, `Review` (4E, 4B) and `SyncStatus` (4D) are placeholders; `Search` is 4C's
+    screens/            4A: `Shell`, `SignIn`, `SetupGuide`, `ScanCode`, `Settings`, `FirstDownload`; `Search` is 4C's;
+                        `Friends`, `Review` and `SyncStatus` load the tabs of `friends/ui/`, `review/` and `status/`
+    sync/               3B: the engine (`engine.ts`: the poll, the passes, one tab at a time), a pass (`pass.ts`), what
+                        downloads first (`plan.ts`), the commit (`githubRemote.ts`), the cadence (`cadence.ts`)
+    answers/            3C: the answer list (`answers.ts`, `outbox.ts`), the actions (`ops.ts`: `CardOp`), ONE commit
+                        for each send (`send.ts`), the phone's review host (`reviewHost.ts`)
+    media/              3D: pictures and sounds of the cards due soon, after each pass (`ahead.ts`, `plan.ts`,
+                        `refs.ts`); `ui/`: one file's bytes for the screens, and the card drawing (`cardDraw.ts`)
+    review/             4B: the Review tab (`ReviewTab.tsx`, `ReviewView.tsx`, `PhoneCard.tsx`, the tap guard)
+    status/             4D: the sync dot (`dot.ts`), its button and sheet (`SyncStatus.tsx`, `StatusSheet.tsx`)
+    friends/            4E: the friends list (`list.ts`), the numbers sender (`sender.ts`), the gists (`gistsApi.ts`);
+                        `ui/`: the Friends tab, "You vs", groups, Cheer and Nudge
     search/             4C: the Mac's search over the phone's index, in slices (`searchRun.ts`), the open vault's
                         data from storage (`vaultData.ts`), what the tab keeps while a page is open (`searchState.ts`)
     page/               4C: a page and a card, read only, with no editor (a lazy chunk): `pageRender.ts` (`marked`
                         and DOMPurify), the vault's look-ups (`pageLook.ts`), pictures, embeds and taps (`pageDom.ts`),
-                        one file's bytes (`media.ts`: the store until 3D's `MediaAhead` is wired), `PageView`, `CardView`
+                        `PageView`, `CardView`; one file's bytes come from `media/ui/`
     scan/               "Scan a code": the camera (`camera.ts`) and the reader (`qrDecode.ts`, the `qr` library, a lazy chunk)
     pwa/                YAZ-5087: the service worker, the update and its safe moment, the friend landing page
     dev/                fakes for tests, and the screen fixtures of the `--mode fixtures` build (not in the real build)
@@ -75,7 +88,7 @@ mobile/
       memoryBackend.ts  memory, for tests (3B–3E use it too)
       vaults.ts         `PhoneVault`, `VaultList`: several vaults; only the open one polls
       persist.ts        `askToKeepStorage()`: `navigator.storage.persist()` at sign-in
-      index.ts          the public entry: `openPhoneStore()` and the types
+      index.ts          the public entry: `openPhoneStorage()` and the types
       testing.ts        test help: a backend with a byte limit (a full phone; every stored byte counts)
       tokenStore.ts     `TokenStore`: one GitHub token for each vault (3E)
     github/
@@ -91,11 +104,9 @@ mobile/
       input.ts          the typed repo, token and branch, cleaned
 ```
 
-Where the next units go (from the issues): `src/sync/` (3C, 3D), `src/screens/` (4B–4E: replace the slot files).
-
-Screenshots of the screens: `npm run build:fixtures -w mobile`, serve `mobile/dist-fixtures/`, open `#fixture=<name>`
-(`sign-in`, `sign-in-error`, `guide`, `scan`, `download`, `review`, `settings`, `erase`, `token-ended`; 4C: `search`,
-`search-typed`, `search-type`, `search-none`, `page`, `page-lower`, `card`, `card-file`, `card-invalid`).
+Screenshots of the screens: `npm run build:fixtures -w mobile`, serve `mobile/dist-fixtures/`, open `#fixture=<name>`.
+The names are in `src/dev/fixtures.tsx` and `src/dev/readerFixtures.tsx` (for example `sign-in`, `guide`, `settings`,
+`search`, `page`, `card`), and the Review, dot and Friends fixtures come from `review/`, `status/` and `friends/ui/`.
 
 ## GitHub and the token, in short
 
@@ -133,7 +144,7 @@ Screenshots of the screens: `npm run build:fixtures -w mobile`, serve `mobile/di
   colour). The final icon art is Yaseen's call: change `iconSvg`, run the script again.
 * **Service worker** (`src/pwa/`, hand-written): `swCore.ts` is the logic, `sw.ts` the file, `publish/pwaPlugin.ts`
   writes `dist/sw.js` with the build's file list. It keeps the app's own files only: the pages, ALL chunks (the lazy
-  sync engine and QR reader too, so they work offline), the manifest, the icons (about 436 kB, 150 kB on the wire). It
+  sync engine and QR reader too, so they work offline), the manifest, the icons (the build check prints the size). It
   never touches a request to another origin (GitHub, avatars) or a write. A new version installs whole or not at all.
   A version's cache stays while any open page runs that version (each page open notes its version; YAZ-5303), so an
   open page of an old version still loads its lazy chunks; with no page of it left, the next open removes it.
@@ -195,7 +206,7 @@ npx --yes wrangler@4.162.0 rollback <version-id> --config mobile/wrangler.jsonc 
 npm run mobile:publish:preview:kill-switch
 ```
 
-It builds the site with `src/pwa/killSwitch.ts` as `sw.js`. That worker takes over at once with no page message. It
+It builds the site with `src/pwa/swKill.ts` (the logic is `killSwitch.ts`) as `sw.js` (`NOTECARDS_KILL_SWITCH=1`, read by `publish/pwaPlugin.ts`). That worker takes over at once with no page message. It
 deletes only this app's shell caches (`notecards-shell-*`, `notecards-meta`), unregisters itself, and loads each open
 page again one time. It never touches IndexedDB: the token, the vault copy and the waiting answers stay. Then fix the
 bug and run `npm run mobile:publish:preview`. The app registers its normal worker again at the next open.

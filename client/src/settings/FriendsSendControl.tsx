@@ -26,7 +26,7 @@ function whom(v: FriendsSendView): string {
 }
 
 /** One line for the state, or null while main has not answered. */
-export function sendLine(v: FriendsSendView, now: number): string {
+function sendLine(v: FriendsSendView, now: number): string {
   switch (v.status) {
     case 'no-token':
       return 'Save a GitHub token above first.'

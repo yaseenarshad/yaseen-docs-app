@@ -19,7 +19,7 @@ async function phoneBuild(entry: string): Promise<string | null> {
 }
 
 describe('3C builds through the phone wall (YAZ-5073)', () => {
-  it.each(['reviewHost.ts', 'answers.ts', 'status.ts'])('%s', async (entry) => {
+  it.each(['reviewHost.ts', 'answers.ts'])('%s', async (entry) => {
     expect(await phoneBuild(entry)).toBeNull()
   }, 60_000)
 })

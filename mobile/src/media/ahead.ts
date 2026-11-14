@@ -25,9 +25,10 @@ import { folderOf, mediaTarget } from './refs'
  * - QUIET (decision 12): a failure never changes the sync dot. A 404 is skipped until the next commit; GitHub's
  *   "slow down" waits until the time GitHub gives; no signal waits for the next pass; a full phone waits for the next
  *   change. `state()` says why it waits.
- * - FULL PHONE (the coordinator's pick for the night, for Yaseen to confirm): the open vault's window files are
- *   protected (`VaultStore.protectMedia`). A write may drop the vault's other media and other vaults' media, oldest
- *   view first; never a window file, a page, a card file or the answer list.
+ * - FULL PHONE (the coordinator's pick for the night, for Yaseen to confirm; the record: "Finding (coordinator): what
+ *   can block the overnight run" on YAZ-5057): the open vault's window files are protected (`VaultStore.protectMedia`).
+ *   A write may drop the vault's other media and other vaults' media, oldest view first; never a window file, a page,
+ *   a card file or the answer list.
  */
 
 /** Why the media waits (none of these changes the sync dot). */

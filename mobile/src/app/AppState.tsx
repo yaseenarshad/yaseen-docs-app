@@ -22,7 +22,7 @@ export interface AppServices {
   tokens: TokenStore
   /** 3B's engine (`lazySync`), or a fake in tests. */
   sync: ShellSync
-  /** 4E's Friends, or `localFriends(store)` until it lands. */
+  /** 4E's Friends: the friends list (`lazyFriends`, `main.tsx`), or a fake in tests. */
   friends: FriendsPort
   scanner: Scanner
   /**

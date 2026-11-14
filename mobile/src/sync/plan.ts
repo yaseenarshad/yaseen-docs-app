@@ -12,7 +12,7 @@ import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR } from '@shared/types'
  */
 /** Downloaded on first sync and kept current. */
 export const isEager = (path: string): boolean => isMarkdown(path) || path.split('/').includes(VAULT_CONFIG_DIR) || path.endsWith(FOLDER_SETTINGS_FILE)
-/** Also downloaded ahead: the pictures and sounds of cards due within this many days. */
+/** Also downloaded ahead: the pictures and sounds of cards due within this many days (decision 6). */
 export const MEDIA_AHEAD_DAYS = 7
 /** Anything else is fetched the first time a page or a card shows it, then kept. */
 
