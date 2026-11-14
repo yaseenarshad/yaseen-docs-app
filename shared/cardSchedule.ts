@@ -289,16 +289,24 @@ export interface ArchivedCard {
  * absolute path), by path and then in page order. Only a card with an ID: Unarchive finds it by its ID. A copy whose ID
  * a card before it on the same page holds is left out, as `cardPlan` leaves it out.
  */
-export function archivedCards(records: readonly CardPage[], folder = '', page?: string): ArchivedCard[] {
+export const archivedCards = (records: readonly CardPage[], folder = '', page?: string): ArchivedCard[] => listedCards(records, (c) => c.off, folder, page)
+
+/**
+ * The cards marked "Fix later" (YAZ-5097: the line's `fix`, the To fix list), as `archivedCards` reads them: an
+ * archived card too. A card embedded on other pages is one row: an embed holds no card line.
+ */
+export const fixCards = (records: readonly CardPage[], folder = '', page?: string): ArchivedCard[] => listedCards(records, (c) => c.fix === true, folder, page)
+
+function listedCards(records: readonly CardPage[], has: (card: CardRecord) => boolean, folder: string, page: string | undefined): ArchivedCard[] {
   const out: ArchivedCard[] = []
-  const sorted = records.filter((r) => r.cards !== undefined && r.cards.some((c) => c.off)).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+  const sorted = records.filter((r) => r.cards !== undefined && r.cards.some(has)).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
   for (const r of sorted) {
     if (page === undefined ? !inFolder(r.folder, folder) : r.path !== page) continue
     const ids = new Set<string>()
     ;(r.cards ?? []).forEach((card, index) => {
       if (card.id === null || ids.has(card.id)) return
       ids.add(card.id)
-      if (card.off) out.push({ path: r.path, index, id: card.id, ...(card.title !== undefined && { title: card.title }) })
+      if (has(card)) out.push({ path: r.path, index, id: card.id, ...(card.title !== undefined && { title: card.title }) })
     })
   }
   return out
