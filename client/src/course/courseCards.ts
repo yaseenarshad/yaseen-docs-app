@@ -73,6 +73,8 @@ export const AGENT_LINES = {
 
 /** How long the AI step waits for a first card before `NO_CARDS_YET` shows (YAZ-5124). It keeps waiting after. */
 export const NO_CARDS_YET_MS = 60_000
+/** After "Still working" (YAZ-5347), the question comes back this much later if no card has come. */
+export const STILL_WORKING_MS = 120_000
 
 /** The longest title the course takes from a typed front. */
 const TITLE_MAX = 60
@@ -524,12 +526,12 @@ function createAgentStep(ref: { current: VaultHost }): { step: AgentStep; attach
     if (timer !== null) clearTimeout(timer)
     timer = null
   }
-  const startTimer = (): void => {
+  const startTimer = (ms = NO_CARDS_YET_MS): void => {
     clearTimer()
     timer = setTimeout(() => {
       timer = null
       if (state.cards.length === 0) set({ quiet: true })
-    }, NO_CARDS_YET_MS)
+    }, ms)
   }
   const onCards = (cards: readonly CourseCard[]): void => {
     const fresh = cards.filter((c) => !before.has(courseCardKey(c)) && !state.cards.some((s) => courseCardKey(s) === courseCardKey(c)))
@@ -611,6 +613,11 @@ function createAgentStep(ref: { current: VaultHost }): { step: AgentStep; attach
       }
       ref.current.remember((m) => ({ ...m, cards: [...m.cards, ...made.map((c) => c.path)] }))
       set({ examples: made, problem: null, ...(at.title === undefined ? {} : { folderTitle: at.title }) })
+    },
+    stillWorking() {
+      if (state.copiedAt === null || state.cards.length > 0) return
+      set({ quiet: false })
+      startTimer(STILL_WORKING_MS)
     },
     stop() {
       unwatch?.()

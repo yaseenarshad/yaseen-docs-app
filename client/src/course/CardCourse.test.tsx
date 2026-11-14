@@ -276,6 +276,30 @@ describe('the course layer (YAZ-5120)', () => {
     act(() => [...document.querySelectorAll<HTMLButtonElement>('.course__end-actions button')].find((b) => b.textContent === 'Next chapter')!.click())
     expect(v.started).toEqual(['a', 'b'])
   })
+  it('"Go on without it" (YAZ-5347): a scene\'s `next` moves a waiting clip on as Next does, with no done, Mute on or off', () => {
+    const done = vi.fn()
+    function Waiting({ clip, next, done: sceneDone }: SceneProps) {
+      return (
+        <>
+          <p className="go-clip">{clip.id}</p>
+          <button type="button" onClick={next}>
+            Go on without it
+          </button>
+          <button type="button" onClick={() => (done(), sceneDone())}>
+            Done
+          </button>
+        </>
+      )
+    }
+    saved = { ...saved, chapter: 'b', clip: 'c2-07' }
+    mount({ scenes: () => Waiting })
+    act(() => button('Mute')!.click())
+    expect(document.querySelector('.go-clip')?.textContent).toBe('c2-07')
+    act(() => button('Go on without it')!.click())
+    expect(caption()).toBe("That's the whole course.")
+    expect(done).not.toHaveBeenCalled()
+  })
+
   it('keeps one scene mounted across the clips of a span, with each clip as its prop (YAZ-5121)', () => {
     let mounts = 0
     function Spanning({ clip }: SceneProps) {

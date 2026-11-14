@@ -35,6 +35,7 @@ import {
   EXAMPLE_CARDS,
   EXAMPLE_TEXT,
   NO_CARDS_YET_MS,
+  STILL_WORKING_MS,
   SHOW_ONLY,
   agentPrompt,
   firstCard,
@@ -527,7 +528,14 @@ describe('the AI step watches Course Cards', () => {
     expect(step.state().quiet).toBe(false)
     vi.advanceTimersByTime(1)
     expect(step.state().quiet).toBe(true)
-    expect(NO_CARDS_YET).toBe('No new cards yet. Did you check with your agent?')
+    expect(NO_CARDS_YET).toBe('No new cards yet. Are you still working with your agent?')
+    // "Still working" (YAZ-5347): the question goes, and comes back 2 minutes later with no card.
+    step.stillWorking()
+    expect(step.state().quiet).toBe(false)
+    vi.advanceTimersByTime(STILL_WORKING_MS - 1)
+    expect(step.state().quiet).toBe(false)
+    vi.advanceTimersByTime(1)
+    expect(step.state().quiet).toBe(true)
     await agentWrites(join(root, 'course-cards'), 'late.md', 'Late', 'A {{late}} card')
     await vault.refresh()
     expect(step.state().quiet).toBe(false)

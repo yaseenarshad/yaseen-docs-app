@@ -88,6 +88,7 @@ export function memoryHost(vault = '/demo'): MemoryHost {
       markRead: (card) => set({ read: [...new Set([...state.read, courseCardKey(card)])] }),
       showExamples: () => set({ examples: 'shown' }),
       makeExamples: () => (set({ examples: [] }), Promise.resolve()),
+      stillWorking: () => set({ quiet: false }),
       stop: () => undefined,
     },
     summary: () => ({ folder, cards: host.cards.map((c) => ({ path: c.path, title: c.title, due: null })) }),

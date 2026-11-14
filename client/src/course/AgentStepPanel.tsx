@@ -7,9 +7,11 @@
  *    gives the text with a paste or "Use the example" (YAZ-5270), or presses the course's Next.
  * 2. `prompt`: the prompt for the person's own agent, and Copy. Its first sentence is `AGENT_PROMPT` with the path of
  *    the card skill this vault uses; then 3 cards as card files in "Course Cards"; then the text.
- * 3. `cards`: each card that comes into "Course Cards" after Copy, as the agent writes it. After 60 seconds with no
- *    card, the one line `NO_CARDS_YET`; the panel keeps waiting. Each card opens here to be read; opened, it is ticked
- *    "Read". The app runs no agent and sends nothing anywhere.
+ * 3. `cards`: each card that comes into "Course Cards" after Copy, as the agent writes it. Until the first one, a live
+ *    timer counts ("Waiting for your agent · 0:24", YAZ-5347), so the screen never looks frozen. After 60 seconds with
+ *    no card, the question `NO_CARDS_YET` with "Still working" (it comes back 2 minutes later) and "Go on without it"
+ *    (`onGoOn`: the course moves on as Next does). Each card opens here to be read; opened, it is ticked "Read". The
+ *    app runs no agent and sends nothing anywhere.
  * 4. `skip`: "No agent? Skip": three example cards show; they become files only after "Make these cards".
  *
  * `onStep` tells the scene what the person did, so it can call `done()` on the clip that waits for it.
@@ -37,7 +39,12 @@ interface AgentStepPanelProps {
   parts?: readonly AgentStepPart[]
   /** Called once per event for each mount of the panel, when the person has done it (or had done it before this mount). */
   onStep?: (event: AgentStepEvent) => void
+  /** "Go on without it": the course moves on as its Next does (the step is not done). Absent: no such button. */
+  onGoOn?: () => void
 }
+
+/** The wait's time, as m:ss. */
+export const waitClock = (seconds: number): string => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 
 const ALL_PARTS: readonly AgentStepPart[] = ['text', 'prompt', 'cards', 'skip']
 
@@ -67,7 +74,7 @@ function CardText({ card }: { card: CourseCardText }) {
   )
 }
 
-export function AgentStepPanel({ host, parts = ALL_PARTS, onStep }: AgentStepPanelProps) {
+export function AgentStepPanel({ host, parts = ALL_PARTS, onStep, onGoOn }: AgentStepPanelProps) {
   const step = host.agentStep
   const state = useSyncExternalStore(step.subscribe, step.state)
   const [open, setOpen] = useState<{ key: string; card: CourseCardText | null } | null>(null)
@@ -76,6 +83,17 @@ export function AgentStepPanel({ host, parts = ALL_PARTS, onStep }: AgentStepPan
   const onStepRef = useRef(onStep)
   onStepRef.current = onStep
   const shows = (part: AgentStepPart): boolean => parts.includes(part)
+
+  // The wait for the agent's first card: a live timer from Copy, one tick a second (YAZ-5347).
+  const waiting = parts.includes('cards') && state.copiedAt !== null && state.cards.length === 0
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!waiting) return
+    setNow(Date.now())
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [waiting])
+  const waited = state.copiedAt === null ? 0 : Math.max(0, Math.floor((now - state.copiedAt) / 1000))
 
   // The prompt is built when its part shows and the box holds text (the folder is made here, the first time).
   const hasText = state.text.trim() !== ''
@@ -174,9 +192,33 @@ export function AgentStepPanel({ host, parts = ALL_PARTS, onStep }: AgentStepPan
       {shows('cards') && state.copiedAt !== null && (
         <section className="agent-step__part" aria-label="New cards">
           {state.cards.length === 0 ? (
-            <p className="agent-step__line" role="status">
-              {state.quiet ? NO_CARDS_YET : `Waiting for cards in ${state.folderTitle ?? 'Course Cards'}…`}
-            </p>
+            <>
+              <p className="agent-step__wait" role="timer" aria-label={`Waiting for your agent, ${waitClock(waited)}`}>
+                <span className="agent-step__pulse" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                Waiting for your agent · <span className="agent-step__clock">{waitClock(waited)}</span>
+              </p>
+              {state.quiet ? (
+                <div className="agent-step__ask" role="status">
+                  <p className="agent-step__line">{NO_CARDS_YET}</p>
+                  <div className="agent-step__ask-buttons">
+                    <button type="button" className="course__btn course__btn--primary" onClick={() => step.stillWorking()}>
+                      Still working
+                    </button>
+                    {onGoOn !== undefined && (
+                      <button type="button" className="course__btn" onClick={onGoOn}>
+                        Go on without it
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="agent-step__line">New cards show up here, from {state.folderTitle ?? 'Course Cards'}.</p>
+              )}
+            </>
           ) : (
             <ul className="agent-step__list">
               {state.cards.map((card) => {

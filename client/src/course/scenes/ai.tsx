@@ -521,7 +521,7 @@ function AgentStep(props: SceneProps) {
             </>
           )}
           <div className="ai-panel">
-            <AgentStepPanel key={id} host={host} parts={partsOf(id, state.copiedAt !== null)} onStep={onStep} />
+            <AgentStepPanel key={id} host={host} parts={partsOf(id, state.copiedAt !== null)} onStep={onStep} onGoOn={props.next} />
           </div>
         </div>
       </Layer>

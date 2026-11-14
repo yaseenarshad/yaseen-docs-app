@@ -42,7 +42,7 @@ describe('AgentStepPanel', () => {
     expect(el.querySelector('pre')?.textContent).toContain('Example text')
     act(() => button('Copy').click())
     await flush()
-    expect(el.textContent).toContain('Waiting for cards in Course Cards')
+    expect(el.textContent).toContain('Waiting for your agent')
     expect(events).toEqual(['text', 'copied'])
 
     act(() => host.arrive({ path: '/vault/course-cards/a.md', index: 0, id: 'TST-1', title: 'How bread rises' }, 'Bread rises because {{yeast}} eats sugar.\n---\nThe gas is trapped.'))
@@ -84,15 +84,59 @@ describe('AgentStepPanel', () => {
   it('YAZ-5202: names the real folder when the course made "Course Cards 2"', async () => {
     act(() => root.render(<AgentStepPanel host={host} onStep={(e) => events.push(e)} />))
     act(() => host.set({ text: 'Some text', prompt: { text: 'Prompt', folder: '/vault/course-cards-2' }, folderTitle: 'Course Cards 2', copiedAt: 1 }))
-    expect(el.textContent).toContain('Waiting for cards in Course Cards 2…')
+    expect(el.textContent).toContain('Waiting for your agent')
+    expect(el.textContent).toContain('New cards show up here, from Course Cards 2.')
     act(() => host.set({ examples: [{ path: '/vault/course-cards-2/a.md', title: 'A', text: 'A {{b}}', titleHidden: false }] }))
     expect(el.textContent).toContain('Made 1 cards in Course Cards 2.')
   })
 
-  it('shows NO_CARDS_YET when the step has waited 60 seconds, and keeps waiting', async () => {
-    act(() => root.render(<AgentStepPanel host={host} parts={['cards']} />))
-    act(() => host.set({ copiedAt: 1, quiet: true }))
-    expect(el.textContent).toBe(NO_CARDS_YET)
+  describe('the wait for the agent (YAZ-5347)', () => {
+    beforeEach(() => vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] }))
+    afterEach(() => vi.useRealTimers())
+    const clock = () => el.querySelector('.agent-step__clock')?.textContent
+
+    it('a live timer shows and counts, with its moving sign, from Copy until a card comes', () => {
+      act(() => root.render(<AgentStepPanel host={host} parts={['cards']} />))
+      act(() => host.set({ copiedAt: Date.now() }))
+      expect(el.querySelector('[role="timer"]')?.textContent).toContain('Waiting for your agent · 0:00')
+      expect(el.querySelectorAll('.agent-step__pulse i')).toHaveLength(3)
+      act(() => vi.advanceTimersByTime(24_000))
+      expect(clock()).toBe('0:24')
+      act(() => vi.advanceTimersByTime(60_000))
+      expect(clock()).toBe('1:24')
+      act(() => host.arrive({ path: '/vault/course-cards/a.md', index: 0, title: 'A', id: null }))
+      expect(el.querySelector('[role="timer"]')).toBeNull()
+      expect(el.textContent).toContain('A')
+    })
+
+    it('at 60 s the question, with Still working and Go on without it; Go on moves the course on, and the step is not done', () => {
+      const goOn = vi.fn()
+      act(() => root.render(<AgentStepPanel host={host} parts={['cards']} onGoOn={goOn} onStep={(e) => events.push(e)} />))
+      act(() => host.set({ copiedAt: Date.now(), quiet: true }))
+      expect(el.querySelector('.agent-step__ask')?.textContent).toContain(NO_CARDS_YET)
+      act(() => button('Go on without it').click())
+      expect(goOn).toHaveBeenCalledOnce()
+      expect(events).not.toContain('arrived')
+    })
+
+    it('Still working: the question goes, and the timer goes on', () => {
+      const still = vi.spyOn(host.agentStep, 'stillWorking')
+      act(() => root.render(<AgentStepPanel host={host} parts={['cards']} />))
+      act(() => host.set({ copiedAt: Date.now(), quiet: true }))
+      act(() => vi.advanceTimersByTime(61_000))
+      act(() => button('Still working').click())
+      expect(still).toHaveBeenCalledOnce()
+      expect(el.querySelector('.agent-step__ask')).toBeNull()
+      act(() => vi.advanceTimersByTime(5_000))
+      expect(clock()).toBe('1:06')
+    })
+
+    it('reduced motion: the CSS stills the dots; the numbers still change (they come from the clock, not an animation)', async () => {
+      const { readFileSync } = await import('node:fs')
+      const { resolve } = await import('node:path')
+      const css = readFileSync(resolve(__dirname, 'agentStep.css'), 'utf8')
+      expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.agent-step__pulse i\s*\{\s*animation: none/)
+    })
   })
 
   it('a later clip that mounts the panel again finds the state, and hears of what was done before it', async () => {

@@ -138,3 +138,60 @@
   background: var(--accent-soft);
   color: var(--accent);
 }
+
+/* The wait for the agent (YAZ-5347): a live timer and a small, calm moving sign, so the screen never looks frozen. */
+.agent-step__wait {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 600;
+}
+.agent-step__clock {
+  font-variant-numeric: tabular-nums;
+}
+.agent-step__pulse {
+  display: inline-flex;
+  gap: 4px;
+}
+.agent-step__pulse i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.3;
+  animation: agent-step-pulse 1.5s ease-in-out infinite;
+}
+.agent-step__pulse i:nth-child(2) {
+  animation-delay: 0.25s;
+}
+.agent-step__pulse i:nth-child(3) {
+  animation-delay: 0.5s;
+}
+@keyframes agent-step-pulse {
+  50% {
+    opacity: 1;
+  }
+}
+/* Reduced motion: the dots stay still; the numbers still change. */
+@media (prefers-reduced-motion: reduce) {
+  .agent-step__pulse i {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+.agent-step__ask {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.agent-step__ask .agent-step__line {
+  color: var(--fg);
+}
+.agent-step__ask-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

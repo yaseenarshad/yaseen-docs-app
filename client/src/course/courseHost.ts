@@ -126,6 +126,8 @@ export interface AgentStep {
   showExamples(): void
   /** "Make these cards": the three example card files, made once. */
   makeExamples(): Promise<void>
+  /** "Still working" (YAZ-5347): the question goes; it comes back after `STILL_WORKING_MS` more with no card. */
+  stillWorking(): void
   /** Stops the watch and the timer (the course closed). The state stays for the next open. */
   stop(): void
 }
@@ -192,6 +194,7 @@ function showOnlyStep(reason: string): AgentStep {
     markRead: () => undefined,
     showExamples: () => set({ examples: 'shown' }),
     makeExamples: () => (set({ problem: reason }), Promise.resolve()),
+    stillWorking: () => set({ quiet: false }),
     stop: () => undefined,
   }
 }

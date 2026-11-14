@@ -46,6 +46,8 @@ export interface SceneProps {
   done: () => void
   reducedMotion: boolean
   host: CourseHost
+  /** Moves the course on exactly as its Next button does, without `done` (YAZ-5347: "Go on without it"). */
+  next?: () => void
 }
 
 export type Scene = ComponentType<SceneProps>

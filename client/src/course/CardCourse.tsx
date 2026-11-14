@@ -535,6 +535,7 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
   const chapter = ctx.course[s.chapter]
   const clip = chapter.clips[s.clip]
   const Scene = scenes(clip.id)
+  const goNext = useCallback(() => dispatch({ type: 'next' }), [dispatch])
   const waits = ctx.waits(clip)
   const done = useCallback(() => keys.current.dispatch({ type: 'release' }), [])
   const finished = new Set(s.finished)
@@ -592,7 +593,7 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
         </div>
         <div className="course__stage" role="region" aria-label="Lesson">
           {s.phase === 'clip' ? (
-            <Scene key={scenes.spanOf?.(clip.id) ?? `${chapter.id}/${clip.id}`} chapter={chapter} clip={clip} waits={waits} clock={clockRef.current.clock} done={done} reducedMotion={reducedMotion} host={host} />
+            <Scene key={scenes.spanOf?.(clip.id) ?? `${chapter.id}/${clip.id}`} chapter={chapter} clip={clip} waits={waits} clock={clockRef.current.clock} done={done} reducedMotion={reducedMotion} host={host} next={goNext} />
           ) : (
             <div className="course-scene course-scene--end">
               <p className="course-scene__words">{s.phase === 'course-end' ? "That's the whole course." : `Chapter ${s.chapter + 1} done.`}</p>
