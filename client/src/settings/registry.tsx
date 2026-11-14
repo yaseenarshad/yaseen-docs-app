@@ -1967,6 +1967,28 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                 />
               ),
           },
+          {
+            // YAZ-5130 (Yaseen: "having it in sight will be stressful"): only how the Inbox shows today's time
+            // (`TodayWork`); the timer saves each answer's seconds in all three.
+            id: 'timeSoFar',
+            label: 'Time so far',
+            hint: "Today's review time in the Inbox. Hidden shows a small clock: click it to see the time. The Inbox still saves how long each answer took.",
+            keywords: [...REVIEW_KEYWORDS, 'timer', 'time', 'today', 'clock', 'hide', 'show', 'how long'],
+            available: reviewOn,
+            render: ({ review }) =>
+              review && (
+                <Segmented
+                  options={[
+                    { label: 'Hidden (click to see)', value: 'hidden' as const },
+                    { label: 'Shown', value: 'shown' as const },
+                    { label: 'Off', value: 'off' as const },
+                  ]}
+                  value={review.settings.timeSoFar}
+                  onChange={(timeSoFar) => review.save({ ...review.settings, timeSoFar })}
+                  ariaLabel="Time so far"
+                />
+              ),
+          },
         ],
       },
       {

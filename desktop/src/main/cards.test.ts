@@ -477,7 +477,7 @@ describe('YAZ-5020: same-day steps — cards come back in the same session (Yase
 
 describe('the settings (D14)', () => {
   it('defaults to two buttons, 90%, 365 days, 10 new a day, fuzz on and the Mochi weights; each bad field falls back alone', () => {
-    expect(sanitizeReviewSettings(undefined)).toEqual({ enabled: true, buttons: 2, retention: 0.9, maxDays: 365, newPerDay: 10, upNextPerDay: null, newOrder: 'oldest', fuzz: true, pauseAfter: 60, weights: [...DEFAULT_CARD_WEIGHTS] })
+    expect(sanitizeReviewSettings(undefined)).toEqual({ enabled: true, buttons: 2, retention: 0.9, maxDays: 365, newPerDay: 10, upNextPerDay: null, newOrder: 'oldest', fuzz: true, pauseAfter: 60, timeSoFar: 'hidden', weights: [...DEFAULT_CARD_WEIGHTS] })
     expect(DEFAULT_CARD_WEIGHTS).toHaveLength(21)
     const weights = Array.from({ length: 19 }, (_, i) => i / 10)
     expect(sanitizeReviewSettings({ enabled: false, buttons: 4, retention: 0.85, maxDays: 30, newPerDay: 0, fuzz: false, weights, algorithm: 'upkeep', baseDays: 3 })).toEqual({
@@ -490,8 +490,11 @@ describe('the settings (D14)', () => {
       newOrder: 'oldest',
       fuzz: false,
       pauseAfter: 60,
+      timeSoFar: 'hidden',
       weights,
     })
+    // YAZ-5130: Time so far is hidden, shown or off; anything else is the default, hidden.
+    expect(['shown', 'off', 'hidden', 'Shown', true, undefined].map((timeSoFar) => sanitizeReviewSettings({ timeSoFar }).timeSoFar)).toEqual(['shown', 'off', 'hidden', 'hidden', 'hidden', 'hidden'])
     expect(sanitizeReviewSettings({ enabled: 'yes', buttons: 3, retention: 1.5, maxDays: 0.5, newPerDay: -1, newOrder: 'random', fuzz: 1, weights: [1, 2, 3] })).toEqual(sanitizeReviewSettings(null))
     // YAZ-4999 D1, D2: an emptied box is `null`, no limit — a missing field (no file) keeps 10; the order is oldest or newest.
     expect([sanitizeReviewSettings({ newPerDay: null }).newPerDay, sanitizeReviewSettings({}).newPerDay, sanitizeReviewSettings({ newPerDay: '' }).newPerDay]).toEqual([null, 10, 10])
