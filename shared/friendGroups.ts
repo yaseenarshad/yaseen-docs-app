@@ -510,23 +510,86 @@ export async function deleteGroup(api: GistsApi, handle: IndexHandle, group: str
 }
 
 /**
- * Deletes my gists that no list names (a stop between the steps of create, join or paste), when they are older than
- * `minAge` (another device may be at work on newer ones). It does nothing while a remove waits. Returns what it deleted.
+ * Deletes my gists that no list names (a stop between the steps of create, join or paste). YAZ-5238: only what is
+ * PROVABLY an orphan, and nothing at all when in doubt:
+ * (a) it is ours: the file name AND a content that reads as our exact format (a look-alike stays);
+ * (b) no list names it: the friends list and each group file of mine (any of my gists that holds one) are read FRESH,
+ *     right before the deletes; a group file with a member other than its admin is in use and stays (a lost write of
+ *     the list can leave a group that people joined);
+ * (c) GitHub's clock says it is older than `minAge`: its `created_at` against GitHub's time of the same answers
+ *     (`api.serverTime()`), never the device clock (`_deviceNow` is not used);
+ * (d) any read that fails, a list that needs repair, a remove that waits, or no GitHub time: delete NOTHING.
+ * Returns the deleted IDs.
  */
-export async function sweepOrphans(api: GistsApi, handle: IndexHandle, now: number, minAge = ORPHAN_AGE_MS): Promise<string[]> {
-  if (pendingRemove(handle) !== null) return []
-  const index = handle.index
-  const keep = new Set<string>([handle.id, ...(index.stats ? [index.stats] : []), ...pointersOf(index), ...index.groups.filter((g) => g.admin).map((g) => g.group)])
+export async function sweepOrphans(api: GistsApi, handle: IndexHandle, _deviceNow?: number, minAge = ORPHAN_AGE_MS): Promise<string[]> {
   const out: string[] = []
-  for (const g of await api.list()) {
-    const ours = g.files.some((f) => f === POINTER_FILE || f === GROUP_FILE || f === NUMBERS_FILE)
-    if (!ours || keep.has(g.id)) continue
-    const made = Date.parse(g.createdAt)
-    if (!Number.isFinite(made) || now - made < minAge) continue
-    await removeQuietly(api, g.id)
-    out.push(g.id)
+  try {
+    const items = await api.list()
+    const serverNow = api.serverTime?.() ?? null
+    if (serverNow === null || !Number.isFinite(serverNow)) return []
+    const listNow = async (): Promise<IndexHandle | null> => {
+      const gist = await api.read(handle.id)
+      if (gist === 'unchanged') return null
+      const read = parseFriendsIndex(fileText(gist, INDEX_FILE))
+      if (read.kind !== 'ok') return null
+      const h = { ...handle, index: read.value, raw: read.raw, etag: gist.etag }
+      return pendingRemove(h) === null ? h : null
+    }
+    const list = await listNow()
+    if (list === null) return []
+    const named = new Set<string>([handle.id, ...(list.index.stats ? [list.index.stats] : []), ...pointersOf(list.index), ...list.index.groups.map((g) => g.group)])
+    // Each of my gists with one of our files, read fresh.
+    const files = new Map<string, GistDoc>()
+    for (const g of items.filter((x) => x.files.some((f) => f === POINTER_FILE || f === GROUP_FILE || f === NUMBERS_FILE))) {
+      const gist = await api.read(g.id)
+      if (gist === 'unchanged') return []
+      files.set(g.id, gist)
+    }
+    const old = (gist: GistDoc) => {
+      const made = Date.parse(gist.createdAt)
+      return Number.isFinite(made) && serverNow - made >= minAge
+    }
+    // A group file that stays (the list names it, it is in use, it is new, or it is not provably ours) names its members'
+    // pointers too. A group file that is itself an orphan does not keep its own pointer.
+    for (const [id, gist] of files) {
+      if (fileText(gist, GROUP_FILE) === null) continue
+      const goes = !named.has(id) && old(gist) && isOurs(gist)
+      if (goes) continue
+      const file = parseGroupFile(fileText(gist, GROUP_FILE))
+      if (file.kind === 'ok') for (const m of file.value.members) named.add(m.pointer)
+    }
+    const orphans: string[] = []
+    for (const [id, gist] of files) if (!named.has(id) && old(gist) && isOurs(gist)) orphans.push(id)
+    if (orphans.length === 0) return []
+    // Right before the deletes: the list once more, fresh. A change, a failed read or a waiting remove: nothing goes.
+    const again = await listNow()
+    if (again === null) return []
+    const stillNamed = new Set([...pointersOf(again.index), ...(again.index.stats ? [again.index.stats] : []), ...again.index.groups.map((g) => g.group)])
+    for (const id of orphans) {
+      if (stillNamed.has(id)) continue
+      await removeQuietly(api, id)
+      out.push(id)
+    }
+    return out
+  } catch (err) {
+    if (gistErrorCode(err) === null) throw err
+    return out
   }
-  return out
+}
+
+/** The gist holds exactly one of our files, and it reads as our format; a group file only with its admin (not in use). */
+function isOurs(gist: GistDoc): boolean {
+  const names = Object.keys(gist.files)
+  if (names.length !== 1) return false
+  const [name] = names
+  const text = fileText(gist, name)
+  if (name === POINTER_FILE) return readPointerFile(text).kind === 'ok'
+  if (name === NUMBERS_FILE) return readStatsFile(text).kind === 'ok'
+  if (name === GROUP_FILE) {
+    const file = parseGroupFile(text)
+    return file.kind === 'ok' && file.value.members.every((m) => m.login === file.value.admin)
+  }
+  return false
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

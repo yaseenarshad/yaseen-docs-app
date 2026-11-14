@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, ensureFriendsFiles, findFriendsIndex, pointersOf, type GistsApi, type IndexHandle } from '@shared/friendGists'
+import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, ensureFriendsFiles, findFriendsIndex, makePointer, pointersOf, type GistsApi, type IndexHandle } from '@shared/friendGists'
 import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
 import {
   GROUP_FILE,
@@ -345,6 +345,52 @@ describe('remove a member, leave, "Delete group" (round 14)', () => {
     expect(await sweepOrphans(ali.api, handle, w.now())).toEqual([])
     expect(w.owned('ali').map((g) => g.id)).toEqual(before)
     expect(pointersOf(handle.index).every((p) => before.includes(p))).toBe(true)
+  })
+})
+
+describe('YAZ-5238: the sweep deletes only what is provably an orphan, by GitHub`s clock', () => {
+  it('a device clock one day ahead does not delete a pointer or a group file that another device made a second ago', async () => {
+    const w = people()
+    const ali = await person(w, 'ali')
+    const pointer = await makePointer(ali.api, ali.handle.index.stats!, opts(w))
+    const group = w.seed('ali', { [GROUP_FILE]: JSON.stringify({ v: 1, name: 'New', admin: 'ali', members: [] }) })
+    await sweepOrphans(ali.api, await fresh(ali.api, w), w.now() + 24 * 3600_000)
+    expect(w.text(pointer, POINTER_FILE)).not.toBeNull() // now: deleted
+    expect(w.text(group, GROUP_FILE)).not.toBeNull() // now: deleted
+  })
+
+  it('a gist of another device mid-flow survives; one that GitHub dates over the limit goes; a look-alike or a group in use stays', async () => {
+    const w = people()
+    const ali = await person(w, 'ali')
+    const old = await makePointer(ali.api, ali.handle.index.stats!, opts(w))
+    const lookAlike = w.seed('ali', { [POINTER_FILE]: 'my own notes, not JSON' })
+    const inUse = w.seed('ali', { [GROUP_FILE]: JSON.stringify({ v: 1, name: 'Lost', admin: 'ali', members: [{ login: 'ali', pointer: old }, { login: 'bea', pointer: P }] }) })
+    w.advance(ORPHAN_AGE_MS + 1000)
+    const midFlow = await makePointer(ali.api, ali.handle.index.stats!, opts(w)) // another device, one second ago
+    const deleted = await sweepOrphans(ali.api, await fresh(ali.api, w), 0) // the device clock is wrong and is not used
+    expect(deleted).toEqual([])
+    expect(w.text(midFlow, POINTER_FILE)).not.toBeNull()
+    expect(w.text(lookAlike, POINTER_FILE)).not.toBeNull()
+    expect(w.text(inUse, GROUP_FILE)).not.toBeNull()
+    expect(w.text(old, POINTER_FILE)).not.toBeNull() // named by a group file of mine (in use): kept
+  })
+
+  it('deletes NOTHING when a read fails, the list needs repair, or GitHub`s time is not known', async () => {
+    const w = people()
+    const ali = await person(w, 'ali')
+    const orphan = await makePointer(ali.api, ali.handle.index.stats!, opts(w))
+    w.advance(ORPHAN_AGE_MS + 1000)
+    const handle = await fresh(ali.api, w)
+    w.failNext = (call) => (call.op === 'read' ? 'GITHUB_DOWN' : undefined)
+    expect(await sweepOrphans(ali.api, handle, w.now())).toEqual([])
+    const noClock: GistsApi = { ...ali.api, serverTime: () => null }
+    expect(await sweepOrphans(noClock, handle, w.now())).toEqual([])
+    const listText = w.text(handle.id, INDEX_FILE)!
+    w.setFiles(handle.id, { [INDEX_FILE]: '{"v":1,"friends":' })
+    expect(await sweepOrphans(ali.api, handle, w.now())).toEqual([])
+    w.setFiles(handle.id, { [INDEX_FILE]: listText })
+    expect(w.text(orphan, POINTER_FILE)).not.toBeNull()
+    expect(await sweepOrphans(ali.api, handle, w.now())).toEqual([orphan])
   })
 })
 

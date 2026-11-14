@@ -127,7 +127,8 @@ export function fakeGistWorld(setup: { accounts: Record<string, FakeGistAccount>
       'x-ratelimit-reset': String(Math.ceil(reset / 1000)),
     }
   }
-  const answer = (status: number, body: unknown = null, headers: Record<string, string> = {}): FakeHttpAnswer => ({ status, body, headers })
+  // Each answer carries GitHub's time in `date` (YAZ-5238: the sweep measures age with it, never with a device clock).
+  const answer = (status: number, body: unknown = null, headers: Record<string, string> = {}): FakeHttpAnswer => ({ status, body, headers: { date: new Date(now()).toUTCString(), ...headers } })
   const notFound = () => answer(404, { message: 'Not Found', documentation_url: 'https://docs.github.com/rest/gists/gists' })
   const refused = () => answer(403, { message: 'Resource not accessible by personal access token' })
   const failWith = (code: GistErrorCode, login: string | null): FakeHttpAnswer | undefined => {
@@ -190,6 +191,7 @@ export function fakeGistWorld(setup: { accounts: Record<string, FakeGistAccount>
       world.calls.push(call)
       const done = (a: FakeHttpAnswer | undefined) => {
         call.answer = a?.status ?? 0
+        if (a !== undefined && a.headers.date === undefined) a.headers = { date: new Date(now()).toUTCString(), ...a.headers }
         return a
       }
       if (world.offline) return done(undefined)
@@ -271,9 +273,12 @@ export function fakeGistWorld(setup: { accounts: Record<string, FakeGistAccount>
 
 /** The in-memory adapter: the same typed errors as the phone's client (3E). */
 function memoryApi(world: FakeGistWorld, token: string): GistsApi {
+  let serverTime: number | null = null
   const call = async (method: string, path: string, query: Record<string, string> = {}, body: unknown = undefined, etag: string | null = null) => {
     const a = await world.http(method, path, new URLSearchParams(query), token, body, etag)
     if (a === undefined) throw new GistError('OFFLINE', 'No connection to GitHub')
+    const date = Date.parse(a.headers.date ?? '')
+    if (Number.isFinite(date)) serverTime = date
     if (a.status === 304 || (a.status >= 200 && a.status < 300)) return a
     const rate = rateOf(a.headers)
     if ((a.status === 403 || a.status === 429) && a.headers['x-ratelimit-remaining'] === '0')
@@ -311,6 +316,7 @@ function memoryApi(world: FakeGistWorld, token: string): GistsApi {
     async remove(id) {
       await call('DELETE', `/gists/${id}`)
     },
+    serverTime: () => serverTime,
   }
 }
 

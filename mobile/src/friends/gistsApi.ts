@@ -51,11 +51,22 @@ function gistPath(id: string): string {
 const filesBody = (files: Record<string, string>) => Object.fromEntries(Object.entries(files).map(([name, content]) => [name, { content }]))
 
 export function gistsApi(client: GithubClient): GistsApi {
+  /** YAZ-5238: GitHub's time at its last answer (the `Date` header, or a lower bound from the core reset). */
+  let serverTime: number | null = null
+  const request: GithubClient['request'] = async (path, options) => {
+    const answer = await client.request(path, options)
+    const date = Date.parse(answer.headers.get('date') ?? '')
+    const reset = answer.rateLimit?.resource === 'core' && answer.rateLimit.resetAt !== null ? answer.rateLimit.resetAt - 60 * 60_000 : null
+    const known = [date, reset ?? NaN].filter((t) => Number.isFinite(t))
+    if (known.length > 0) serverTime = Math.max(...known)
+    return answer
+  }
   return {
+    serverTime: () => serverTime,
     async list(): Promise<GistListItem[]> {
       const out: GistListItem[] = []
       for (let page = 1; page <= MAX_PAGES; page++) {
-        const answer = await client.request('/gists', { query: { per_page: String(PAGE), page: String(page) } })
+        const answer = await request('/gists', { query: { per_page: String(PAGE), page: String(page) } })
         const items = asList(answer.data)
         out.push(...items.map((g) => ({ id: g.id, description: g.description ?? '', files: Object.keys(g.files ?? {}), createdAt: g.created_at, updatedAt: g.updated_at })))
         if (items.length < PAGE) break
@@ -63,20 +74,20 @@ export function gistsApi(client: GithubClient): GistsApi {
       return out
     },
     async read(id, etag) {
-      const answer = await client.request(gistPath(id), etag ? { etag } : {})
+      const answer = await request(gistPath(id), etag ? { etag } : {})
       if (answer.status === 304) return 'unchanged'
       return toDoc(answer.data, answer.etag)
     },
     async create(description, files) {
-      const answer = await client.request('/gists', { method: 'POST', body: { description, public: false, files: filesBody(files) } })
+      const answer = await request('/gists', { method: 'POST', body: { description, public: false, files: filesBody(files) } })
       return toDoc(answer.data, answer.etag)
     },
     async update(id, files) {
-      const answer = await client.request(gistPath(id), { method: 'PATCH', body: { files: filesBody(files) } })
+      const answer = await request(gistPath(id), { method: 'PATCH', body: { files: filesBody(files) } })
       return { gist: answer.data === null ? null : toDoc(answer.data, answer.etag), rate: gistRate(answer.rateLimit) }
     },
     async remove(id) {
-      await client.request(gistPath(id), { method: 'DELETE' })
+      await request(gistPath(id), { method: 'DELETE' })
     },
   }
 }

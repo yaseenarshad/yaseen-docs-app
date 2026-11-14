@@ -95,6 +95,12 @@ export interface GistsApi {
   /** Changes these files. Counts 1 on `gist_update`; `rate` is GitHub's count after it. */
   update(id: string, files: Record<string, string>): Promise<{ gist: GistDoc | null; rate: GistRate | null }>
   remove(id: string): Promise<void>
+  /**
+   * YAZ-5238: GitHub's time (ms) at its last answer, or null when it is not known: the `Date` header, or else a lower
+   * bound from the exposed `x-ratelimit-reset` of the core count (the reset is at most one hour after "now"). Never
+   * the device clock. Optional: an adapter without it makes the clean-up sweep delete nothing.
+   */
+  serverTime?(): number | null
 }
 
 /** The code of a failed call, or null when `err` is not a gist failure (a bug: the caller lets it throw). */
