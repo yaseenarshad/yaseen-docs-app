@@ -163,10 +163,11 @@ async function setReads(api: GistsApi, pointer: string, reads: string, stats: st
   const gist = await api.read(pointer)
   if (gist === 'unchanged') return
   const state = readPointerFile(fileText(gist, POINTER_FILE))
-  if (state.kind === 'newer') return
-  const raw = state.kind === 'ok' ? state.raw : {}
-  if (state.kind === 'ok' && state.value.reads === reads) return
-  await api.update(pointer, { [POINTER_FILE]: JSON.stringify({ ...raw, v: 1, stats: state.kind === 'ok' ? state.value.stats : stats, reads }) })
+  // YAZ-5241: a pointer this app cannot read (or a newer one) is never written over.
+  if (state.kind !== 'ok') return
+  if (state.value.reads === reads) return
+  void stats
+  await api.update(pointer, { [POINTER_FILE]: JSON.stringify({ ...state.raw, v: 1, stats: state.value.stats, reads }) })
 }
 
 /** The ID of the friend's numbers gist behind one of their pointers, or null when it cannot be read now. */

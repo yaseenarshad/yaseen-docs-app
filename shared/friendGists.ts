@@ -201,6 +201,11 @@ function parseIndex(text: string): { ok: true; value: FriendsIndex } | { ok: fal
   const o = JSON.parse(text) as unknown
   if (!isObject(o)) return { ok: false, why: 'the file is not an object' }
   if (o.v !== 1) return { ok: false, why: 'the file has another version' }
+  // YAZ-5241: a field that is there with the wrong shape makes the whole file unreadable ("needs repair"). Reading it
+  // as an empty value would let the next write save that empty value over the real one.
+  for (const key of ['vaults', 'friends', 'groups', 'shared'] as const) if (key in o && !Array.isArray(o[key])) return { ok: false, why: `${key} is not a list` }
+  if (o.stats !== undefined && o.stats !== null && !isGistId(o.stats)) return { ok: false, why: 'stats is not a gist ID' }
+  if (o.nickname !== undefined && o.nickname !== null && typeof o.nickname !== 'string') return { ok: false, why: 'nickname is not a text' }
   return {
     ok: true,
     value: {
@@ -475,9 +480,10 @@ export async function relinkPointers(api: GistsApi, pointers: readonly string[],
     }
     if (gist === 'unchanged') continue
     const state = readPointerFile(fileText(gist, POINTER_FILE))
-    if (state.kind === 'newer') continue
-    if (state.kind === 'ok' && state.value.stats === stats) continue
-    const raw = state.kind === 'ok' ? state.raw : { v: 1 }
+    // YAZ-5241: a pointer this app cannot read (or a newer one) is never written over.
+    if (state.kind !== 'ok') continue
+    if (state.value.stats === stats) continue
+    const raw = state.raw
     await write(() => api.update(id, { [POINTER_FILE]: JSON.stringify({ ...raw, v: 1, stats }) }))
     updated.push(id)
   }

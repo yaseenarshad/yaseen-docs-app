@@ -125,6 +125,13 @@ describe('the group file (decision 18): read entry by entry, never written over 
   })
 })
 
+describe('YAZ-5241 in the group file', () => {
+  it('members, name or admin of the wrong shape: "unreadable", never an empty value', () => {
+    const ok = { v: 1, name: 'Club', admin: 'ali', members: [] }
+    for (const bad of [{ members: {} }, { members: 'x' }, { name: 5 }, { admin: [] }]) expect(parseGroupFile(JSON.stringify({ ...ok, ...bad })).kind, JSON.stringify(bad)).toBe('unreadable')
+  })
+})
+
 describe('create, join, add (decision 18; round 16)', () => {
   it('"New group": my pointer, the group file in MY gist with only the name and logins, and the group in my list', async () => {
     const w = people()

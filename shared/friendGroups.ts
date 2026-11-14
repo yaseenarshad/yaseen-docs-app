@@ -161,6 +161,9 @@ export function parseGroupFile(text: string | null | undefined): FileState<Group
   if (!isObject(raw)) return { kind: 'unreadable', why: 'the file is not an object' }
   if (typeof raw.v === 'number' && Number.isInteger(raw.v) && raw.v > 1) return { kind: 'newer' }
   if (raw.v !== 1) return { kind: 'unreadable', why: 'the file has another version' }
+  // YAZ-5241: a field there with the wrong shape makes the file unreadable, never an empty value that a write saves.
+  if ('members' in raw && !Array.isArray(raw.members)) return { kind: 'unreadable', why: 'members is not a list' }
+  for (const key of ['name', 'admin'] as const) if (key in raw && typeof raw[key] !== 'string') return { kind: 'unreadable', why: `${key} is not a text` }
   const members = (Array.isArray(raw.members) ? raw.members : []).filter(memberOk).map((m) => ({ login: shown(m.login, ''), pointer: (m.pointer as string).toLowerCase() }))
   return { kind: 'ok', value: { v: 1, name: shown(raw.name, 'Group'), admin: shown(raw.admin, ''), members }, raw }
 }
