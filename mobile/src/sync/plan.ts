@@ -6,10 +6,15 @@ import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR } from '@shared/types'
  *
  * - Eager: downloaded on the first sync and kept current. A card file (YAZ-5037) is a `.md` file, so it is eager with
  *   the pages; the phone needs no other rule.
- * - Pictures and sounds ahead of time (`MEDIA_AHEAD_DAYS`) are 3D's: the pass takes them through its `alsoEager` hook.
- * - Anything else is fetched the first time a page or a card shows it, then kept (`SyncEngine.file`).
+ * - Pictures and sounds ahead of time (`MEDIA_AHEAD_DAYS`) are 3D's (`mobile/src/media`): they download AFTER the pass,
+ *   in the background, so the first download and each refresh are never slower for them.
+ * - Anything else is fetched the first time a page or a card shows it, then kept (`MediaAhead.show`).
  */
+/** Downloaded on first sync and kept current. */
 export const isEager = (path: string): boolean => isMarkdown(path) || path.split('/').includes(VAULT_CONFIG_DIR) || path.endsWith(FOLDER_SETTINGS_FILE)
+/** Also downloaded ahead: the pictures and sounds of cards due within this many days. */
+export const MEDIA_AHEAD_DAYS = 7
+/** Anything else is fetched the first time a page or a card shows it, then kept. */
 
 /**
  * Does the phone's index hold a record for `path`? The Mac's rule (`walk` in `desktop/src/main/vaultIndex/scan.ts`):

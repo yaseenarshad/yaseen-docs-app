@@ -11,7 +11,7 @@ const DAY = 86_400_000
 
 /** One card block with its line: `reviews` as the line writes them (`2026-11-01T10:00Z good`). */
 function block(id: string, body: string, line: string[] = []): string {
-  return `\`\`\`card\n${body}\n\`\`\`\n<!-- card: ${[id, ...line].join(' ')} -->`
+  return `\`\`\`card\n${body}\n\`\`\`\n<!-- card: ${[id, ...line].join(', ')} -->`
 }
 const page = (title: string, blocks: string[], extra = '') => `---\ntitle: ${title}\n---\n\n# ${title}\n\n${extra}${blocks.join('\n\n')}\n`
 const cardFile = (title: string, b: string) => `---\nkind: card\ntitle: ${title}\n---\n\n${b}\n`
@@ -23,8 +23,9 @@ function vault(files: Record<string, string>) {
 }
 
 /** A review at `at` and its due date: the plan's own due logic (`cardDueAt`, shared with the Mac). */
-const REVIEW = ['2026-11-02T10:00Z good']
-const DUE = cardDueAt([{ at: '2026-11-02T10:00Z', rating: 'good' }], S)
+/** Three answers a day apart: past the same-day steps (a card in its steps is due now, whatever the date). */
+const REVIEW = ['2026-11-01T10:00Z good', '2026-11-02T10:00Z good', '2026-11-04T10:00Z good']
+const DUE = cardDueAt(REVIEW.map((r) => ({ at: r.split(' ')[0], rating: 'good' as const })), S)
 /** `due` moved back `days` local calendar days, at `h:m` local time. */
 function before(due: number, days: number, h?: number, m = 0) {
   const d = new Date(due)
@@ -40,7 +41,7 @@ describe('the window (decision 6): due today or within MEDIA_AHEAD_DAYS, plus ne
 
   it('due in 7 days is in; due in 8 days is out', () => {
     const v = vault({ 'a.md': page('A', [block('NC-1', 'Q', REVIEW)]) })
-    expect(Number.isFinite(DUE)).toBe(true)
+    expect(DUE).toBeGreaterThan(Date.UTC(2026, 10, 6))
     expect(cardsAhead(v.records, S, before(DUE, 7)).map((c) => c.id)).toEqual(['NC-1'])
     expect(cardsAhead(v.records, S, before(DUE, 8)).map((c) => c.id)).toEqual([])
     expect(cardsAhead(v.records, S, before(DUE, 0)).map((c) => c.id)).toEqual(['NC-1'])
@@ -100,7 +101,7 @@ describe('aheadPlan: the files the window needs', () => {
   it('a card outside the window adds nothing; a file over the size limit is left for on demand', async () => {
     const v = vault({
       'a.md': page('A', [block('NC-1', '![](near.png) ![](huge.mp3)', REVIEW)]),
-      'b.md': page('B', [block('NC-2', '![](far.png)', ['2030-01-01T10:00Z good'])]),
+      'b.md': page('B', [block('NC-2', '![](far.png)', ['2026-01-05T10:00Z easy', '2026-03-20T10:00Z easy', '2026-11-03T10:00Z easy'])]),
     })
     const sizes = new Map([
       ['near.png', 10],

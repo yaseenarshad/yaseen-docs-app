@@ -94,6 +94,12 @@ export interface VaultStore {
   list(vault: string): Promise<FileEntry[]>
   /** The file was shown now: its media is dropped later than media not shown since. */
   markViewed(vault: string, path: string): Promise<void>
+  /**
+   * 3D (YAZ-5074): the open vault's media that the cards due in the window need. Row P2 never drops these files; the
+   * other media goes as before. One vault at a time (the open one, decision 7): a call replaces the set, and `null`
+   * clears it. Held in memory only: the media runner sets it again at each start.
+   */
+  protectMedia(vault: string | null, paths: Iterable<string>): void
 
   checkpoint(vault: string): Promise<Checkpoint | null>
   setCheckpoint(vault: string, checkpoint: Checkpoint): Promise<void>
@@ -148,6 +154,9 @@ function notTheToken(name: string) {
 export async function openVaultStore(backend: Backend, options: OpenOptions = {}): Promise<VaultStore> {
   const format = options.format ?? STORE_FORMAT
   const now = options.now ?? Date.now
+  /** 3D: the open vault and its media that must stay (`protectMedia`). */
+  let kept: { vault: string; paths: ReadonlySet<string> } | null = null
+  const isKept = (e: FileRef) => kept !== null && e.vault === kept.vault && kept.paths.has(e.path)
   const stored = await backend.get('meta', 'format')
   const formatReset = stored !== undefined && stored !== format
   if (stored === undefined) await backend.apply([{ put: 'meta', key: 'format', value: format }])
@@ -156,11 +165,12 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
   /**
    * The media that may go for a write of `vault`, in the order it goes: that vault's own media first, oldest view first,
    * then the media of the other vaults, oldest view first (decision (coordinator, for Yaseen to confirm), YAZ-5071).
-   * Pages, card files, settings, checkpoints and phone-only state are never in it. `except` (the file being written) neither.
+   * Pages, card files, settings, checkpoints and phone-only state are never in it. `except` (the file being written) neither,
+   * nor the open vault's media that the cards due in the window need (`protectMedia`, 3D: the night pick of YAZ-5074).
    */
   async function mediaToDrop(vault: string, except: FileRef | undefined): Promise<FileEntry[]> {
     const entries = (await backend.all('entries')) as FileEntry[]
-    const media = entries.filter((e) => e.kind === 'media' && !(except && e.vault === except.vault && e.path === except.path))
+    const media = entries.filter((e) => e.kind === 'media' && !isKept(e) && !(except && e.vault === except.vault && e.path === except.path))
     const own = media.filter((e) => e.vault === vault)
     const others = media.filter((e) => e.vault !== vault)
     const byAge = (a: FileEntry, b: FileEntry) => a.viewedAt - b.viewedAt
@@ -232,6 +242,10 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
     },
 
     remove: (vault, path) => backend.apply(dropOps({ vault, path })),
+
+    protectMedia(vault, paths) {
+      kept = vault === null ? null : { vault, paths: new Set(paths) }
+    },
 
     async list(vault) {
       return (await backend.all('entries', vault)) as FileEntry[]

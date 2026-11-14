@@ -2,23 +2,25 @@ import { cardDueAt } from '@shared/cardSchedule'
 import { cardTime } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { describe, expect, it } from 'vitest'
-import { githubClient } from '../github/client'
+import { GithubError, githubClient } from '../github/client'
 import { fakeGit, fakeGithub } from '../github/testing'
 import { memoryBackend, openVaultStore, tokenStoreOn, vaultId, type PhoneVault, type VaultStore } from '../store'
 import type { Backend } from '../store/backend'
 import { limitedBackend } from '../store/testing'
 import { POLL_MS } from '../sync/cadence'
+import { isEager } from '../sync/plan'
 import { createSyncEngine, type SyncEvent } from '../sync/engine'
 import { githubRemote, type GithubRemote } from '../sync/githubRemote'
 import { BRANCH, REPO, TOKEN, VAULT, fakeClock } from '../sync/testing'
 import { createMediaAhead, type MediaAhead } from './ahead'
+import { MEDIA_AHEAD_MAX_BYTES } from './plan'
 
 const START = Date.UTC(2026, 10, 14, 6, 0, 0)
 const DAY = 86_400_000
 const S = DEFAULT_REVIEW_SETTINGS
 
 /** One card block with its line. */
-const block = (id: string, body: string, line: string[] = []) => `\`\`\`card\n${body}\n\`\`\`\n<!-- card: ${[id, ...line].join(' ')} -->`
+const block = (id: string, body: string, line: string[] = []) => `\`\`\`card\n${body}\n\`\`\`\n<!-- card: ${[id, ...line].join(', ')} -->`
 const page = (title: string, blocks: string[], extra = '') => `---\ntitle: ${title}\n---\n\n# ${title}\n\n${extra}${blocks.join('\n\n')}\n`
 /** A review two days ago: due in a few days, inside the window. */
 const NEAR = [`${cardTime(START - 2 * DAY)} good`]
@@ -104,10 +106,16 @@ async function setup(files: Record<string, string | Uint8Array>, options: Option
     await checkpointOf(vault, cp)
     options.onCheckpoint?.(vault)
   }
+  const eagerShas = () => {
+    const out = new Set<string>()
+    for (const g of [git, otherGit]) for (const tree of g.trees.values()) for (const [path, sha] of tree) if (isEager(path)) out.add(sha)
+    return out
+  }
   const wrap = (remote: GithubRemote, vault: string): GithubRemote => ({
     ...remote,
     async blob(sha) {
-      const background = lock.holders > 0
+      // A picture download that runs inside the vault's lock: 3D's background work (the pass gets only eager files).
+      const background = lock.holders > 0 && !eagerShas().has(sha)
       blobsInFlight.now++
       blobsInFlight.max = Math.max(blobsInFlight.max, blobsInFlight.now)
       try {
@@ -252,6 +260,25 @@ describe('3D: media ahead of time (decision 6)', () => {
     expect(shown).toMatchObject({ status: 'ready', path: 'café/größe.png', type: 'image/png' })
   })
 
+  it('a very large file (over MEDIA_AHEAD_MAX_BYTES, 10 MB) is not fetched ahead, also after a restart; it downloads when it shows', async () => {
+    const big = new Uint8Array(MEDIA_AHEAD_MAX_BYTES + 1)
+    const files = { 'a.md': page('A', [block('NC-1', '![](small.png) ![[talk.mp3]]', NEAR)]), 'small.png': png(1), 'talk.mp3': big }
+    const t = await setup(files)
+    await t.open()
+    expect(await t.has('small.png')).toBe(true)
+    expect(await t.has('talk.mp3')).toBe(false)
+    expect(t.media.state()).toMatchObject({ done: 1, total: 1, tooLarge: 1 })
+    // The next start: the head did not move, so no pass gives sizes; the kept sizes (MEDIA_STATE) still say "too large".
+    t.engine.stop()
+    t.media.stop()
+    const again = await setup(files, { store: t.store })
+    await again.open()
+    expect(again.media.state()).toMatchObject({ done: 1, total: 1, tooLarge: 1 })
+    expect(await again.has('talk.mp3')).toBe(false)
+    const shown = await again.media.show('talk.mp3')
+    expect(shown).toMatchObject({ status: 'ready', type: 'audio/mpeg', bytes: MEDIA_AHEAD_MAX_BYTES + 1 })
+  })
+
   it('resumes: a closed app picks up where it stopped; a file is stored whole or not at all', async () => {
     const pics: Record<string, Uint8Array> = {}
     const cards: string[] = []
@@ -263,7 +290,7 @@ describe('3D: media ahead of time (decision 6)', () => {
     const t = await setup({ 'a.md': page('A', cards), ...pics }, {
       parallel: 1,
       beforeBlob: (_sha, background) => {
-        if (background && ++fetched > 4) throw new TypeError('Load failed') // the app is closed after 4 files
+        if (background && ++fetched > 4) throw new GithubError('OFFLINE', null, 'No connection to GitHub') // the app is closed after 4 files
       },
     })
     await t.open()
@@ -428,8 +455,9 @@ describe('3D: "show this picture" (C1, N3), store first, then the network', () =
   it('a stored file shows from storage with no network call, and counts as viewed', async () => {
     const t = await setup(DEMO)
     await t.open()
+    await t.tick(60_000)
     const calls = t.github.calls.length
-    t.clock.advance(60_000)
+    t.clock.advance(1_000) // no poll is due in this second
     const shown = await t.media.show('flags/fr.png')
     expect(shown).toMatchObject({ status: 'ready', path: 'flags/fr.png', type: 'image/png', bytes: 8 })
     expect(t.github.calls.length).toBe(calls)

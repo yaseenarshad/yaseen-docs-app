@@ -22,8 +22,9 @@ export interface PassOptions {
   /** Gives the UI thread back (default: `scheduler.yield`, else a zero timeout). The pass calls it each ~8 ms of work. */
   yieldToUi?: () => Promise<void>
   /**
-   * 3D's hook: a file that is not eager but must download in this pass too (the pictures and sounds of the cards due
-   * within `MEDIA_AHEAD_DAYS`). It is kept as bytes. Default: none.
+   * A file that is not eager but must download in this pass too. It is kept as bytes. Default: none. 3D does NOT use
+   * it: the media of the window downloads after the pass (`mobile/src/media/ahead.ts`), so the first download and the
+   * checkpoint never wait for pictures.
    */
   alsoEager?: (path: string) => boolean
   /** Downloads at one time. Proof 1B: six at a time made the first download 3 times faster. */
@@ -44,6 +45,8 @@ export type PassResult =
       fetched: number
       /** This pass made the first full copy of the vault. */
       first: boolean
+      /** Each file's size in bytes, from the tree (3D: a picture over its limit downloads only when it shows). */
+      sizes: ReadonlyMap<string, number>
     }
 
 const decoder = new TextDecoder('utf-8', { ignoreBOM: true }) // keep a BOM, as the Mac's read does: the SHA check matches
@@ -165,5 +168,5 @@ export async function syncPass(options: PassOptions): Promise<PassResult> {
 
   const touched = [...diff.added, ...diff.changed, ...diff.removed, ...diff.renamed.flatMap((r) => [r.from, r.to])]
   const settings = [...new Set(touched.filter((p) => kindOnPhone(p) === 'settings'))].sort()
-  return { kind: 'synced', commit: head.sha, diff, settings, index, fetched, first: checkpoint === null }
+  return { kind: 'synced', commit: head.sha, diff, settings, index, fetched, first: checkpoint === null, sizes: tree.bytes }
 }
