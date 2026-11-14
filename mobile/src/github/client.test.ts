@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GITHUB_API, GithubError, githubClient, repoPath, type FetchLike } from './client'
+import { GITHUB_API, GithubError, MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS, githubClient, repoPath, type FetchLike } from './client'
 
 const TOKEN = 'github_pat_11SECRETSECRET0000000000_secretsecretsecretsecretsecretsecretsecretsecretsecretsecretsecret'
 
@@ -118,7 +118,7 @@ describe('githubClient: the one way the phone talks to GitHub', () => {
       ['404', () => json(404, { message: 'Not Found' }), 'NOT_FOUND'],
       ['403 with no requests left this hour', () => json(403, { message: 'API rate limit exceeded' }, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(NOW / 1000 + 600) }), 'RATE_LIMITED', { resetAt: NOW + 600_000 }],
       ['429 with Retry-After (the secondary limit)', () => json(429, { message: 'slow down' }, { 'retry-after': '60' }), 'RATE_LIMITED', { resetAt: NOW + 60_000 }],
-      ['403 with Retry-After (the secondary limit)', () => json(403, { message: 'You have exceeded a secondary rate limit' }, { 'retry-after': '30' }), 'RATE_LIMITED', { resetAt: NOW + 30_000 }],
+      ['403 with Retry-After (the secondary limit)', () => json(403, { message: 'You have exceeded a secondary rate limit' }, { 'retry-after': '30' }), 'RATE_LIMITED', { resetAt: NOW + 60_000 }], // YAZ-5174: never under 1 minute
       // YAZ-5166: GitHub's docs: the secondary limit can come with no retry-after and with requests left. Wait 60 s.
       ['403 "secondary rate limit" with no Retry-After and requests left (YAZ-5166)', () => json(403, { message: 'You have exceeded a secondary rate limit. Please wait a few minutes before you try again.' }, { 'x-ratelimit-remaining': '4990' }), 'RATE_LIMITED', { resetAt: NOW + 60_000 }],
       ['429 "secondary rate limit" with no Retry-After (YAZ-5166)', () => json(429, { message: 'You have exceeded a secondary rate limit.' }), 'RATE_LIMITED', { resetAt: NOW + 60_000 }],
@@ -133,6 +133,28 @@ describe('githubClient: the one way the phone talks to GitHub', () => {
       const error = await failure(githubClient(TOKEN, { fetch, now: () => NOW }).request('/user'))
       expect(error.code).toBe(code)
       if (more) expect(error).toMatchObject(more)
+    })
+
+    // YAZ-5174 (3E3): the wait from GitHub's headers has a floor and a ceiling, so no caller retries at once in a loop,
+    // and no timer overflows (a browser's setTimeout over 2^31-1 ms fires at once).
+    const waits: [string, Record<string, string>][] = [
+      ['retry-after: 999999999 (31 years)', { 'retry-after': '999999999' }],
+      ['retry-after: -30', { 'retry-after': '-30' }],
+      ['retry-after: 0', { 'retry-after': '0' }],
+      ['an empty retry-after', { 'retry-after': '' }],
+      ['retry-after as an HTTP date', { 'retry-after': 'Wed, 21 Oct 2015 07:28:00 GMT' }],
+      ['no requests left, no reset time', { 'x-ratelimit-remaining': '0' }],
+      ['no requests left, the reset 120 s before the phone\'s clock (a fast clock)', { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(NOW / 1000 - 120) }],
+      ['no requests left, the reset 3 days on', { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(NOW / 1000 + 3 * 86_400) }],
+    ]
+    it.each(waits)('YAZ-5174: a "slow down" with %s waits between the floor and the ceiling', async (_, headers) => {
+      const { fetch } = recorder(() => json(403, { message: 'You have exceeded a secondary rate limit' }, headers))
+      const error = await failure(githubClient(TOKEN, { fetch, now: () => NOW }).request('/user'))
+      expect(error.code).toBe('RATE_LIMITED')
+      expect(error.resetAt! - NOW).toBeGreaterThanOrEqual(MIN_RATE_WAIT_MS)
+      expect(error.resetAt! - NOW).toBeLessThanOrEqual(MAX_RATE_WAIT_MS)
+      expect(MIN_RATE_WAIT_MS).toBeGreaterThanOrEqual(60_000)
+      expect(MAX_RATE_WAIT_MS).toBeLessThan(2 ** 31 - 1)
     })
 
     it('a "slow down" answer on a write is RATE_LIMITED, never READ_ONLY (YAZ-5166: no red status on a send)', async () => {

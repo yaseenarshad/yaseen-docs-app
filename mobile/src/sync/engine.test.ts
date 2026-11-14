@@ -339,3 +339,59 @@ describe('followPage: the page events', () => {
     expect(await t.engine.file('a.md')).toBeNull()
   })
 })
+
+describe('YAZ-5072 round 1 fixes', () => {
+  it('hidden while a pass runs: the pass ends, and NO poll is planned while hidden (R9); visible again polls at once', async () => {
+    const t = await setup()
+    await t.engine.open(VAULT_ROW) // the first pass is running now
+    t.engine.setVisible(false)
+    await t.engine.idle()
+    expect(t.engine.state().status).toBe('synced')
+    expect(t.clock.pending()).toBe(0)
+    await t.tick(POLL_MS * 4)
+    expect(t.refs()).toBe(1)
+    // The same after a pass that fails (off) while hidden.
+    t.engine.setVisible(true)
+    await t.engine.idle()
+    t.s.github.offline = true
+    const failing = t.engine.syncNow()
+    t.engine.setVisible(false)
+    await failing
+    expect(t.engine.state().status).toBe('off')
+    expect(t.clock.pending()).toBe(0)
+  })
+
+  it('YAZ-5174: a "slow down" with retry-after: 0 plans the next try at least 60 s later, not at once', async () => {
+    const t = await setup()
+    await t.engine.open(VAULT_ROW)
+    await t.engine.idle()
+    t.s.github.interrupt = () => new Response(JSON.stringify({ message: 'You have exceeded a secondary rate limit.' }), { status: 403, headers: { 'retry-after': '0' } })
+    await t.engine.syncNow()
+    expect(t.engine.state().status).toBe('slowed')
+    expect(t.engine.state().retryAt! - t.clock.now()).toBeGreaterThanOrEqual(60_000)
+    const calls = t.s.github.calls.length
+    await t.tick(59_999)
+    expect(t.s.github.calls.length).toBe(calls)
+  })
+
+  it('YAZ-5169: "slow down" again and again: the wait grows (backoff) up to a ceiling, and never under the floor', async () => {
+    const t = await setup()
+    await t.engine.open(VAULT_ROW)
+    await t.engine.idle()
+    t.s.github.interrupt = () => new Response(JSON.stringify({ message: 'You have exceeded a secondary rate limit.' }), { status: 403, headers: { 'retry-after': '60' } })
+    const waits: number[] = []
+    for (let i = 0; i < 9; i++) {
+      await t.engine.syncNow()
+      waits.push(t.engine.state().retryAt! - t.clock.now())
+    }
+    expect(waits.slice(0, 4)).toEqual([60_000, 120_000, 240_000, 480_000])
+    expect(Math.max(...waits)).toBe(3_600_000)
+    t.s.github.interrupt = null
+    await t.engine.syncNow()
+    expect(t.engine.state().status).toBe('synced')
+    // After a good pass, the next "slow down" starts from the floor again.
+    t.s.github.interrupt = () => new Response(JSON.stringify({ message: 'You have exceeded a secondary rate limit.' }), { status: 403, headers: { 'retry-after': '60' } })
+    await t.engine.syncNow()
+    expect(t.engine.state().retryAt! - t.clock.now()).toBe(60_000)
+  })
+})
