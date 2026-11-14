@@ -95,6 +95,17 @@ describe.each(Object.keys(backends))('VaultStore on %s', (name) => {
     expect(await other.getState(A, 'answers')).toEqual([{ id: 'c1' }])
   })
 
+  it('a batch is all or nothing: a value that cannot be stored stops the ops before it too', async () => {
+    const backend = phone()()
+    const store = await openVaultStore(backend, { now: clock() })
+    const bad = backend.apply([
+      { put: 'state', key: [A, 'first'], value: 1 },
+      { put: 'state', key: [A, 'second'], value: () => 1 },
+    ])
+    await expect(bad).rejects.toMatchObject({ name: 'DataCloneError' })
+    expect(await store.getState(A, 'first')).toBeUndefined()
+  })
+
   it('a value read back is a copy: a change to it does not change the stored value', async () => {
     const store = await openVaultStore(phone()(), { now: clock() })
     const list = [{ id: 'c1' }]

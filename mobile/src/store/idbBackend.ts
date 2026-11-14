@@ -118,11 +118,18 @@ export function idbBackend(options: { name?: string; factory?: IDBFactory; keyRa
             const tx = db.transaction(tables, 'readwrite', { durability: 'strict' })
             tx.oncomplete = () => resolve()
             tx.onabort = () => reject(tx.error ?? new DOMException('The write was stopped', 'AbortError'))
-            for (const op of ops) {
-              if ('put' in op) tx.objectStore(op.put).put(op.value, op.key)
-              else if ('del' in op) tx.objectStore(op.del).delete(op.key)
-              else if (op.scope === undefined) tx.objectStore(op.clear).clear()
-              else tx.objectStore(op.clear).delete(scopeRange(op.scope))
+            try {
+              for (const op of ops) {
+                if ('put' in op) tx.objectStore(op.put).put(op.value, op.key)
+                else if ('del' in op) tx.objectStore(op.del).delete(op.key)
+                else if (op.scope === undefined) tx.objectStore(op.clear).clear()
+                else tx.objectStore(op.clear).delete(scopeRange(op.scope))
+              }
+            } catch (error) {
+              // A value the browser cannot store throws here. Stop the whole batch, so none of it lands.
+              tx.onabort = null
+              tx.abort()
+              reject(error)
             }
           }),
       )
