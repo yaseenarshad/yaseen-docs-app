@@ -23,7 +23,7 @@ export interface CourseAudioBridge {
   onChange(listener: (change: CourseAudioChange) => void): () => void
 }
 
-export interface DownloadedVoice extends Voice {
+interface DownloadedVoice extends Voice {
   /** The course layer opened (true) or closed (false) in this window. */
   open(open: boolean): void
 }

@@ -7,12 +7,12 @@ import type { CourseCard, CourseHost } from './courseHost'
 import { COURSE_CARDS } from './courseCards'
 import type { TourPlace, TourPlaces } from './tourBus'
 
-export interface TourContext {
+interface TourContext {
   places: TourPlaces
   lastCard: string | null
 }
 
-export interface TargetHelp {
+interface TargetHelp {
   /** One line: where the control is, or what to do first. */
   where: string
   /** Where "Show me" goes; none when the step before brings the target. */
@@ -59,7 +59,7 @@ export const TARGET_HELP: Record<string, TargetHelp> = {
 }
 
 /** What a chapter's tour needs first: the Course Cards folder, this many cards in it, and its "Course page" (chapter 4). */
-export interface TourNeeds {
+interface TourNeeds {
   folder: boolean
   cards: number
   page?: boolean
@@ -71,12 +71,12 @@ const TOUR_NEEDS: Record<string, TourNeeds> = {
   links: { folder: true, cards: 2 },
   care: { folder: true, cards: 1 },
 }
-export const needsOf = (chapterId: string): TourNeeds => TOUR_NEEDS[chapterId] ?? { folder: false, cards: 0 }
+const needsOf = (chapterId: string): TourNeeds => TOUR_NEEDS[chapterId] ?? { folder: false, cards: 0 }
 
 /** The name of the page that chapter 4's tour opens, in the Course Cards folder (the host's own file wins: `coursePage()`). */
 export const COURSE_PAGE = 'Course page.md'
 
-export const noCardsLine = (need: number, folderTitle = COURSE_CARDS): string =>
+const noCardsLine = (need: number, folderTitle = COURSE_CARDS): string =>
   need <= 1 ? `There is no card in ${folderTitle} yet. Chapter 2 shows how to make one.` : `This tour needs ${need} cards in ${folderTitle}. Chapter 2 shows how to make one.`
 
 /**

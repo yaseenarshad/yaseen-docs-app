@@ -77,7 +77,7 @@ export interface CourseSummary {
 }
 
 /** How the box's text changed: typed (the step waits on), or pasted (the person gave their text). */
-export type TextChange = 'typed' | 'pasted'
+type TextChange = 'typed' | 'pasted'
 
 /** `given` after a change of the box to `text` (YAZ-5270): a paste with text gives it; an empty box takes it back. */
 export const givenAfter = (was: boolean, text: string, how: TextChange): boolean => text.trim() !== '' && (was || how === 'pasted')

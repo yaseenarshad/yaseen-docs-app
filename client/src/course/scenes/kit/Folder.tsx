@@ -11,14 +11,14 @@
 import { clamp, ease, lerp, type Beat } from './beat'
 import './kitMore.css'
 
-export const FOLDER_W = 160
-export const FOLDER_H = 140
+const FOLDER_W = 160
+const FOLDER_H = 140
 const CARD_W = 108
 const CARD_H = 66
 /** The card's top inside the folder (its title still shows above the shut front). */
 const CARD_IN_Y = 34
 
-export interface FolderProps {
+interface FolderProps {
   beat: Beat
   x: number
   y: number

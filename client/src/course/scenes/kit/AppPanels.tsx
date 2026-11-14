@@ -72,7 +72,7 @@ export function LinkedMentions({ beat, count, rows, p = 1, glow = 0 }: { beat: B
   )
 }
 
-export type FilterId = 'all' | 'next' | 'due' | 'new' | 'archived'
+type FilterId = 'all' | 'next' | 'due' | 'new' | 'archived'
 const FILTERS: readonly { id: FilterId; label: string; icon: () => ReactElement }[] = [
   { id: 'all', label: 'All cards', icon: InboxTrayIcon },
   { id: 'next', label: 'Up next', icon: UpNextIcon },

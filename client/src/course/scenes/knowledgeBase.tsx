@@ -7,8 +7,7 @@
  */
 import type { CSSProperties } from 'react'
 import type { SceneProps } from '../scene'
-import { AppWindow, CardView, Fit, Layer, Paper, Cite, SidebarPreview, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, typedText, useBeat, type Beat } from './kit'
-import { Head, type HeadDot } from './kit/Head'
+import { AppWindow, CardView, Fit, Layer, Paper, Cite, SidebarPreview, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, typedText, useBeat, type Beat, Head, type HeadDot } from './kit'
 import { PAPERS } from './papers'
 import type { ChapterScenes } from './registry'
 import './knowledgeBase.css'

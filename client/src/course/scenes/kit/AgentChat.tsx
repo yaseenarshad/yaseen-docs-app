@@ -11,7 +11,7 @@ import type { CSSProperties } from 'react'
 import { clamp, ease, rise, typedText, type Beat } from './beat'
 import './kitMore.css'
 
-export interface ChatAsk {
+interface ChatAsk {
   title: string
   reason?: string
   read?: number
@@ -22,7 +22,7 @@ export interface ChatAsk {
   skip?: string
 }
 
-export interface ChatLine {
+interface ChatLine {
   who: 'you' | 'agent'
   text: string
   p: number

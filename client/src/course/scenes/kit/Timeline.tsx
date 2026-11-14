@@ -49,7 +49,7 @@ export function Timeline({ beat, stops, land, draw = 1, span }: { beat: Beat; st
   )
 }
 
-export interface CalendarChip {
+interface CalendarChip {
   /** The day of the month, 1 to 31. */
   day: number
   /** 0..1: the chip lands on its day. */

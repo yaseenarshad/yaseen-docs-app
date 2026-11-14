@@ -26,7 +26,7 @@ export const TOUR_EVENTS = [
   'card-embedded',
   'tour-next',
 ] as const
-export type TourEventName = (typeof TOUR_EVENTS)[number]
+type TourEventName = (typeof TOUR_EVENTS)[number]
 
 type EventListener = (name: TourEventName, detail?: string) => void
 let listener: EventListener | null = null

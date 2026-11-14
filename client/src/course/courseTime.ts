@@ -11,7 +11,7 @@ const WORDS_PER_MINUTE = 145
 export const MIN_CLIP_SECONDS = 1.5
 
 /** The words of a text, as the script test counts them. */
-export const wordCount = (text: string): number => text.split(/\s+/).filter((w) => w !== '').length
+const wordCount = (text: string): number => text.split(/\s+/).filter((w) => w !== '').length
 
 /** Pure: a clip's reading time at `WORDS_PER_MINUTE`, in seconds at speed 1. */
 export const estimateSeconds = (text: string): number => Math.max(MIN_CLIP_SECONDS, (wordCount(text) * 60) / WORDS_PER_MINUTE)

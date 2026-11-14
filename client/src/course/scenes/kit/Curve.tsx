@@ -16,7 +16,7 @@ export const VIEW = { w: 600, h: 340, l: 64, r: 572, t: 34, b: 284 }
 /** What memory falls to with no review at all: it never quite reaches nothing. */
 export const FLOOR = 0.2
 /** The first stability, in days (the sample's). */
-export const S0 = 1.6
+const S0 = 1.6
 
 /** Memory `dt` days after a review whose stability is `s`: 1 at the review, falling toward `FLOOR`. */
 export const memory = (dt: number, s: number): number => FLOOR + (1 - FLOOR) * Math.exp(-Math.max(0, dt) / s)
@@ -51,7 +51,7 @@ export const xOf = (axis: Axis, day: number): number => VIEW.l + (VIEW.r - VIEW.
 export const yOf = (r: number, lo = 0): number => VIEW.b - ((VIEW.b - VIEW.t) * (r - lo)) / (1 - lo)
 
 /** The curve's points up to day `cursor`: falls, and a lift at each review as far as its jump has gone. */
-export function curvePoints(axis: Axis, cursor: number, reviews: readonly Review[] = [], jumps: readonly number[] = [], s0 = S0, lo = 0): [number, number][] {
+function curvePoints(axis: Axis, cursor: number, reviews: readonly Review[] = [], jumps: readonly number[] = [], s0 = S0, lo = 0): [number, number][] {
   const pts: [number, number][] = []
   let start = 0
   let s = s0
@@ -79,7 +79,7 @@ export function curvePoints(axis: Axis, cursor: number, reviews: readonly Review
 
 export const pathOf = (pts: readonly [number, number][]): string => (pts.length === 0 ? '' : `M${pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join('L')}`)
 
-export interface CurveProps {
+interface CurveProps {
   beat: Beat
   axis: Axis
   /** 0..1: the axes, the "Today" dot and the axis words. */
@@ -188,7 +188,7 @@ export function Curve({ beat, axis, axes, cursor, reviews = [], jumps = [], s0 =
 }
 
 /** The ridge's shape: memory kept against the gap (0..1 across), its peak at `peakAt`. */
-export const ridgeAt = (x: number, peakAt = 0.36): number => {
+const ridgeAt = (x: number, peakAt = 0.36): number => {
   const k = peakAt
   const v = Math.pow(x / k, 1.4) * Math.exp(1.4 * (1 - x / k))
   return 0.18 + 0.74 * v

@@ -12,7 +12,7 @@ import './kitMore.css'
 
 export type Habit = 'make' | 'review' | 'tend'
 
-export const HABITS: readonly { id: Habit; label: string }[] = [
+const HABITS: readonly { id: Habit; label: string }[] = [
   { id: 'make', label: 'Make' },
   { id: 'review', label: 'Review' },
   { id: 'tend', label: 'Tend' },

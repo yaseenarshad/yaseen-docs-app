@@ -160,7 +160,7 @@ export const PAPERS = {
 } as const satisfies Record<string, PaperCite>
 
 /** A spoken quote (not a paper): who said it, the words, where. The same rule: under 15 words. */
-export interface SpokenQuote {
+interface SpokenQuote {
   id: string
   by: string
   where: string

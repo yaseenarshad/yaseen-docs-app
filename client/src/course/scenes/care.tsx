@@ -7,12 +7,7 @@
  */
 import type { SceneProps } from '../scene'
 import { SLEEP_DEBT, TOO_MUCH, PROTEIN_BRANCH, UMBRELLA } from './cards'
-import { Answers, CardView, EditCard, cardMenuItems, Fit, Keys, Layer, MenuPreview, Pointer, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat } from './kit'
-import { Habits, HabitGlyph } from './kit/HabitIcons'
-import { Garden, type PlantSpec } from './kit/Garden'
-import { AgentChat } from './kit/AgentChat'
-import { FilterMenu, ReviewsStrip, type ReviewRow } from './kit/AppPanels'
-import { Web } from './kit/Web'
+import { Answers, CardView, EditCard, cardMenuItems, Fit, Keys, Layer, MenuPreview, Pointer, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat, Habits, HabitGlyph, Garden, type PlantSpec, AgentChat, FilterMenu, ReviewsStrip, type ReviewRow, Web } from './kit'
 import { ArchiveIcon, UpNextIcon } from '../../review/cardInboxIcons'
 import type { ChapterScenes } from './registry'
 import './later.css'

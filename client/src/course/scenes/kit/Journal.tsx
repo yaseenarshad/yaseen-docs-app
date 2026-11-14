@@ -8,7 +8,7 @@
 import { clamp, ease, lerp, type Beat } from './beat'
 import './screens.css'
 
-export interface JournalIssue {
+interface JournalIssue {
   journal: string
   year: number
 }

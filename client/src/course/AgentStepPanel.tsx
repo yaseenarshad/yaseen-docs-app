@@ -31,7 +31,7 @@ export type AgentStepPart = 'text' | 'prompt' | 'cards' | 'skip'
  */
 export type AgentStepEvent = 'text' | 'copied' | 'arrived' | 'read' | 'made'
 
-export interface AgentStepPanelProps {
+interface AgentStepPanelProps {
   host: CourseHost
   /** The parts to show, in this order. Default: all four. */
   parts?: readonly AgentStepPart[]

@@ -36,7 +36,7 @@ export function PageText({ beat, children, p = 1 }: { beat: Beat; children: Reac
 }
 
 
-export interface EmbedViewProps {
+interface EmbedViewProps {
   beat: Beat
   /** The card's title (a card file's), for the head. */
   title: string

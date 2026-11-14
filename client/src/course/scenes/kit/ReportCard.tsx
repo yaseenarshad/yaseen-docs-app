@@ -11,7 +11,7 @@ import './kit68.css'
 
 export type Grade = 'High' | 'Moderate' | 'Low'
 
-export interface ReportRow {
+interface ReportRow {
   label: string
   grade: Grade
   /** 0..1: the row comes in. */

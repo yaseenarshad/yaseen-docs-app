@@ -50,7 +50,7 @@ const NOISE = (() => {
   return out
 })()
 
-export interface HeadProps {
+interface HeadProps {
   beat: Beat
   p?: number
   glow?: number

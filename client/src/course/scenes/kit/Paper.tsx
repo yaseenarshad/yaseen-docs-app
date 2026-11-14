@@ -12,7 +12,7 @@ import type { CSSProperties } from 'react'
 import { byline, type PaperCite } from '../papers'
 import { clamp, ease, lerp, moved, since, type Beat } from './beat'
 
-export interface PaperCues {
+interface PaperCues {
   in?: number
   highlight?: number
   lift?: number

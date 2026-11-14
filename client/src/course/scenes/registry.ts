@@ -9,7 +9,7 @@
  */
 import type { Scene, SceneFor } from '../scene'
 
-export interface SceneEntry {
+interface SceneEntry {
   /** The clips, in the script's order, with no gap. One clip, or a span. */
   clips: readonly string[]
   scene: Scene

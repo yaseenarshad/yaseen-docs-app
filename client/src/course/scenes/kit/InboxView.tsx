@@ -22,7 +22,7 @@ import { CardView, type CardViewProps } from './CardView'
 import { Pointer } from './AppFrame'
 import './screens.css'
 
-export interface InboxAnswerLook {
+interface InboxAnswerLook {
   /** 0..1: the button comes in (default: shown). */
   p?: number
   /** 0..1: the button lights, as a click or its key picks it. */
@@ -31,7 +31,7 @@ export interface InboxAnswerLook {
   key?: number
 }
 
-export interface InboxViewProps {
+interface InboxViewProps {
   beat: Beat
   /** The card (`CardView`'s props, less the beat and the frame). Absent with `done`. */
   card?: Omit<CardViewProps, 'beat' | 'chrome'>

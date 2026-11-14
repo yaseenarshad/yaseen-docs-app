@@ -135,7 +135,7 @@ export const EXAMPLE_CARDS: readonly { title: string; text: string }[] = [
 // Pure parts
 
 /** Why the course must only show in this vault, or null when it can make files. */
-export function showOnlyReason(vault: CourseVault): string | null {
+function showOnlyReason(vault: CourseVault): string | null {
   const review = vault.review()
   if (!vault.ready() || !review.ready) return SHOW_ONLY.loading
   if (vault.readOnly()) return SHOW_ONLY.readOnly
@@ -145,12 +145,12 @@ export function showOnlyReason(vault: CourseVault): string | null {
 }
 
 /** The course's folder titles in the order it tries them: "Course Cards", "Course Cards 2", "Course Cards 3", … */
-export const courseCardsTitle = (n: number): string => (n <= 1 ? COURSE_CARDS : `${COURSE_CARDS} ${n}`)
+const courseCardsTitle = (n: number): string => (n <= 1 ? COURSE_CARDS : `${COURSE_CARDS} ${n}`)
 /** How many titles the course tries before it gives up (a vault with this many folders of that name is not a real case). */
 const MAX_COURSE_FOLDERS = 99
 
 /** Is a folder at the top of the vault titled or named `title`, or named as "New folder" would name it (any case)? */
-export function takenAtTop(root: string, records: readonly IndexRecord[], folders: readonly IndexRecord[], title: string): boolean {
+function takenAtTop(root: string, records: readonly IndexRecord[], folders: readonly IndexRecord[], title: string): boolean {
   if (typedFolders(folders)('', title) !== undefined) return true
   const names = new Set([title.toLowerCase(), folderPath(root, title, true).slice(root.length + 1).toLowerCase()])
   const topOf = (folder: string): string => folder.split('/')[0].toLowerCase()
@@ -217,7 +217,7 @@ export function firstCard(input: FirstCardInput): { title: string; text: string;
 }
 
 /** The card skill folder this vault uses: its own `Card skill` at the top (the index holds a page in it) wins, else the app's copy. */
-export function skillFolderOf(vault: Pick<CourseVault, 'root' | 'index' | 'cardSkill'>): string | null {
+function skillFolderOf(vault: Pick<CourseVault, 'root' | 'index' | 'cardSkill'>): string | null {
   const isFolder = (path: string): boolean => vault.index.records.some((r) => r.path.startsWith(`${path}/`)) || vault.index.folders.some((f) => `${vault.root}/${f.folder}` === path)
   if (vault.cardSkill === null) {
     const own = cardSkillFolder(vault.root, '', isFolder)
@@ -227,7 +227,7 @@ export function skillFolderOf(vault: Pick<CourseVault, 'root' | 'index' | 'cardS
 }
 
 /** The first sentence when no card skill can be named (no app copy, no vault copy): the agent reads it through the command. */
-export const NO_SKILL_SENTENCE = 'Run `yaseendocs card guide` and read the card skill before you make or change cards in this vault.'
+const NO_SKILL_SENTENCE = 'Run `yaseendocs card guide` and read the card skill before you make or change cards in this vault.'
 
 /**
  * The prompt for the person's own agent: `AGENT_PROMPT` with the skill's path, one sentence that asks for 3 card files
@@ -254,7 +254,7 @@ export function cardsIn(records: readonly IndexRecord[], root: string, folder: s
 }
 
 /** The end screen: each card in the folder, and when it comes back (null: new, in the Inbox now). */
-export function courseSummary(records: readonly IndexRecord[], root: string, folder: string | null, settings: ReviewSettings): CourseSummary {
+function courseSummary(records: readonly IndexRecord[], root: string, folder: string | null, settings: ReviewSettings): CourseSummary {
   if (folder === null) return { folder: null, cards: [] }
   const rel = relativeTo(root, folder)
   const cards = records
@@ -270,7 +270,7 @@ export function courseSummary(records: readonly IndexRecord[], root: string, fol
 }
 
 /** A card to read: its sides, from the file's text. A card file's title is its `title:`; a card in a page has its first line. */
-export function cardTextOf(content: string, index: number): CourseCardText | null {
+function cardTextOf(content: string, index: number): CourseCardText | null {
   const { frontmatter, body } = splitFrontmatter(content)
   const card = findCards(body)[index]
   if (card === undefined) return null
@@ -293,7 +293,7 @@ export interface CourseHostDeps {
   now(): number
 }
 
-export const appDeps = (): CourseHostDeps => ({
+const appDeps = (): CourseHostDeps => ({
   disk: bridgeDisk,
   made: { get: () => storage.getCourse().made, set: (made) => storage.setCourse({ made }) },
   clipboard: (text) => navigator.clipboard.writeText(text),
@@ -305,7 +305,7 @@ export const appDeps = (): CourseHostDeps => ({
  * the review `writeCardAnswer` puts on the line), Forgot as `again` and Remembered as `good`. The course does not time
  * the answer, so the review has no seconds, as a review that nothing timed.
  */
-export function firstReview(answer: 'forgot' | 'remembered', settings: ReviewSettings, now: number): CardReview {
+function firstReview(answer: 'forgot' | 'remembered', settings: ReviewSettings, now: number): CardReview {
   const rating = answer === 'forgot' ? 'again' : 'good'
   const found = previewAnswers([], settings, now).find((a) => a.review.rating === rating)
   return found?.review ?? { at: cardTime(now), rating }

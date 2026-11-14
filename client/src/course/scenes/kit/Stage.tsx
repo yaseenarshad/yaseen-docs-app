@@ -90,7 +90,7 @@ export function Layer({ children, style, place = 'center', className }: { childr
   )
 }
 
-export type WordsSize = 'display' | 'title' | 'label' | 'kicker' | 'page'
+type WordsSize = 'display' | 'title' | 'label' | 'kicker' | 'page'
 
 /** Words on the stage, in the kit's type scale. `tone="accent"` for the one thing to look at. */
 export function Words({ size = 'title', tone, children, style, as: Tag = 'p' }: { size?: WordsSize; tone?: 'accent' | 'muted' | 'ok' | 'danger'; children: ReactNode; style?: CSSProperties; as?: 'p' | 'span' | 'div' }) {

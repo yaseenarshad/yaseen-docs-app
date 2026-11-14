@@ -35,7 +35,7 @@ export interface PlayerContext {
 }
 
 /** Where the player is: in a clip, on a chapter's end screen, or on the course's end screen. */
-export type PlayerPhase = 'clip' | 'chapter-end' | 'course-end'
+type PlayerPhase = 'clip' | 'chapter-end' | 'course-end'
 
 export interface PlayerState {
   /** The index of the chapter in the course. */

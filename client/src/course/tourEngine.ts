@@ -15,7 +15,7 @@
 import type { TourStep } from './tour'
 import type { TourPlaces } from './tourBus'
 
-export type TourStatus = 'checking' | 'blocked' | 'running' | 'finished' | 'left'
+type TourStatus = 'checking' | 'blocked' | 'running' | 'finished' | 'left'
 
 export interface TourState {
   steps: readonly TourStep[]
@@ -116,7 +116,7 @@ export interface Box {
 }
 
 /** The space around the target that the hole and the ring leave free. */
-export const SPOT_PAD = 4
+const SPOT_PAD = 4
 const GAP = 12
 const MARGIN = 12
 

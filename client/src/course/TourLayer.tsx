@@ -60,7 +60,7 @@ const boxOf = (el: Element): Box => {
 const inView = (b: Box, view: { width: number; height: number }): boolean => b.left + b.width > 0 && b.top + b.height > 0 && b.left < view.width && b.top < view.height
 
 /** The step's control: the first mark that shows, one in the window first. Never one inside the tour. */
-export function findTarget(name: string, layer: Element | null): HTMLElement | null {
+function findTarget(name: string, layer: Element | null): HTMLElement | null {
   const view = { width: window.innerWidth, height: window.innerHeight }
   const marks = [...document.querySelectorAll<HTMLElement>(`[data-tour="${name}"]`)].filter((el) => !(layer?.contains(el) ?? false) && shows(el))
   return marks.find((el) => inView(boxOf(el), view)) ?? marks[0] ?? null

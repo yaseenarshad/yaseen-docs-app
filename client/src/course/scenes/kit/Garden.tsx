@@ -8,7 +8,7 @@ import type { ReactNode } from 'react'
 import { clamp, ease, lerp, type Beat } from './beat'
 import './kitMore.css'
 
-export interface Branch {
+interface Branch {
   /** Where on the trunk it starts, 0 (ground) to 1 (top). */
   at: number
   dir: -1 | 1
@@ -51,7 +51,7 @@ function Leaf({ x, y, p, beat, accent = false, label }: { x: number; y: number; 
   )
 }
 
-export interface GardenProps {
+interface GardenProps {
   beat: Beat
   plants: readonly PlantSpec[]
   /** Per plant, 0..1: it grows (the trunk, then its branches in order). */
