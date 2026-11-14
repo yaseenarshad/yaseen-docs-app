@@ -21,7 +21,8 @@ function sourceFiles(dir: string): string[] {
   })
 }
 const files = sourceFiles(SRC).map((path) => ({ path: relative(SRC, path), text: readFileSync(path, 'utf8') }))
-const isTest = (path: string) => /\.test\.tsx?$/.test(path) || path.endsWith('store/testing.ts') || path.endsWith('github/testing.ts') || path.endsWith('sync/testing.ts')
+/** Tests and test helpers (`…/testing.ts`): they run in Node and are never bundled. */
+const isTest = (path: string) => /\.test\.tsx?$/.test(path) || /(^|\/)testing\.ts$/.test(path)
 
 const BROWSER_STORAGE = /\b(indexedDB|IDBFactory|IDBDatabase|localStorage|sessionStorage|caches\.open|navigator\.storage|document\.cookie|fake-indexeddb)\b/
 

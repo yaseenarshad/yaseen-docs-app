@@ -117,17 +117,16 @@ describe.each(Object.keys(backends))('VaultStore on %s', (name) => {
   })
 
   describe('P2: storage is full while keeping media', () => {
-    it('drops the media viewed longest ago, in any vault, and never a page, a card file or a settings file', async () => {
+    it('drops the media of its own vault first, oldest view first, and never a page, a card file or a settings file', async () => {
       const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
       await store.write(A, 'old.png', new Uint8Array(30)) // viewed at 1000
-      await store.write(B, 'older.mp3', new Uint8Array(30)) // viewed at 1001
+      await store.write(B, 'older.mp3', new Uint8Array(30)) // viewed at 1001, another vault
       await store.write(A, '.yaseendocs/settings.json', '{}') // 2 bytes, settings
-      await store.markViewed(A, 'old.png') // now viewed at 1003: B's sound is the oldest
+      await store.markViewed(A, 'old.png') // now viewed at 1003: still A's own, so it goes first
 
       const result = await store.write(A, 'Card.md', 'x'.repeat(50))
-      expect(result.dropped).toEqual([{ vault: B, path: 'older.mp3' }])
-      expect(await store.read(B, 'older.mp3')).toBeNull()
-      expect(await store.read(A, 'old.png')).not.toBeNull()
+      expect(result.dropped).toEqual([{ vault: A, path: 'old.png' }])
+      expect(await store.read(B, 'older.mp3')).not.toBeNull()
       expect((await store.read(A, 'Card.md'))?.content).toBe('x'.repeat(50))
     })
 
@@ -200,7 +199,7 @@ describe.each(Object.keys(backends))('VaultStore on %s', (name) => {
       expect((await store.list(A)).map((f) => f.path)).toEqual(['a.png', 'b.png', 'c.png'])
     })
 
-    it('a picture drops only the media of its own vault, and only as much as it needs', async () => {
+    it('a picture drops the media of its own vault first, and only as much as it needs', async () => {
       const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
       await store.write(B, 'theirs.png', new Uint8Array(40)) // oldest, but in another vault
       await store.write(A, 'a1.png', new Uint8Array(20))
@@ -211,10 +210,85 @@ describe.each(Object.keys(backends))('VaultStore on %s', (name) => {
       expect(await store.read(A, 'a2.png')).not.toBeNull()
     })
 
-    it('a picture that would fit only by dropping another vault\'s media fails, and drops nothing', async () => {
+    // Decision (coordinator, for Yaseen to confirm), choice (a): after its own vault's media, a write may take the
+    // media of other vaults, oldest view first.
+    it('when its own vault has no media left, a picture takes room from another vault, oldest view first', async () => {
       const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
-      await store.write(B, 'theirs.png', new Uint8Array(80))
-      await expect(store.write(A, 'mine.png', new Uint8Array(30))).rejects.toBeInstanceOf(StorageFullError)
+      await store.write(B, 'b-old.png', new Uint8Array(30))
+      await store.write(B, 'b-new.png', new Uint8Array(30))
+      await store.write(A, 'a.png', new Uint8Array(20))
+      const result = await store.write(A, 'mine.png', new Uint8Array(50)) // 20 free: it needs 30 more
+      expect(result.dropped).toEqual([
+        { vault: A, path: 'a.png' },
+        { vault: B, path: 'b-old.png' },
+      ])
+      expect(await store.read(B, 'b-new.png')).not.toBeNull()
+      expect(await store.read(A, 'mine.png')).not.toBeNull()
+    })
+
+    // YAZ-5157 round 2: navigator.storage.estimate() can say there is room on a nearly full disk.
+    it('estimate too high: a picture that can never fit does not drop every other picture', async () => {
+      const optimistic = (inner: Backend, room: number): Backend => ({ ...inner, room: async () => room }) as Backend
+      const store = await openVaultStore(optimistic(limitedBackend(phone()(), 100), 1_000_000), { now: clock() })
+      await store.write(A, 'a.png', new Uint8Array(20))
+      await store.write(A, 'b.png', new Uint8Array(20))
+      await store.write(A, 'c.png', new Uint8Array(20))
+      const error = await store.write(A, 'huge.mp4', new Uint8Array(500)).catch((e: unknown) => e)
+      expect(error).toBeInstanceOf(StorageFullError)
+      expect((await store.list(A)).map((f) => f.path)).toEqual(['a.png', 'b.png', 'c.png'])
+    })
+
+    it('estimate wrong: a file never drops more media than the bytes it adds, and stops when the write still fails', async () => {
+      // The disk refuses e.png whatever is dropped (the real free space is less than any estimate says).
+      const inner = limitedBackend(phone()(), 100)
+      const refusesE: Backend = {
+        ...inner,
+        apply: (ops) => (ops.some((op) => 'put' in op && Array.isArray(op.key) && op.key[1] === 'e.png') ? Promise.reject(new DOMException('full', 'QuotaExceededError')) : inner.apply(ops)),
+      }
+      const store = await openVaultStore(refusesE, { now: clock() })
+      for (const name of ['a.png', 'b.png', 'c.png', 'd.png']) await store.write(A, name, new Uint8Array(20))
+      const error = await store.write(A, 'e.png', new Uint8Array(30)).catch((e: unknown) => e)
+      expect(error).toBeInstanceOf(StorageFullError)
+      // 30 bytes needed: a.png and b.png (40) at most; c.png and d.png stay.
+      expect((error as StorageFullError).dropped.map((f) => f.path)).toEqual(['a.png', 'b.png'])
+      expect((await store.list(A)).map((f) => f.path)).toEqual(['c.png', 'd.png'])
+    })
+
+    // YAZ-5157 round 3: an estimate between the real room (40) and the file (500) passed the fit check.
+    const withRoom = (inner: Backend, room: number | null): Backend => ({ ...inner, room: async () => room }) as Backend
+    it('estimate too high but below the file (450 < 500, real room 40): a file that can never fit drops nothing', async () => {
+      const store = await openVaultStore(withRoom(limitedBackend(phone()(), 100), 450), { now: clock() })
+      for (const name of ['a.png', 'b.png', 'c.png']) await store.write(A, name, new Uint8Array(20))
+      await expect(store.write(A, 'huge.mp4', new Uint8Array(500))).rejects.toBeInstanceOf(StorageFullError)
+      expect((await store.list(A)).map((f) => f.path)).toEqual(['a.png', 'b.png', 'c.png'])
+    })
+
+    it('estimate too high: a write drops only what it needs (one picture of 20 bytes, not three)', async () => {
+      const store = await openVaultStore(withRoom(limitedBackend(phone()(), 100), 1_000_000), { now: clock() })
+      for (const name of ['a.png', 'b.png', 'c.png']) await store.write(A, name, new Uint8Array(20))
+      const result = await store.write(A, 'new.png', new Uint8Array(50)) // 40 free: it needs 10 more
+      expect(result.dropped).toEqual([{ vault: A, path: 'a.png' }])
+      expect((await store.list(A)).map((f) => f.path)).toEqual(['b.png', 'c.png', 'new.png'])
+    })
+
+    // Row P2: pages are never dropped, media may be. A page rewritten at the same size adds no bytes, but a disk that
+    // got fuller can still refuse it: then media goes, as for any page write.
+    it('a page rewritten at the same size on a disk that got fuller drops media, and the page lands', async () => {
+      let limit = 100
+      const store = await openVaultStore(limitedBackend(phone()(), () => limit), { now: clock() })
+      await store.write(A, 'pic.png', new Uint8Array(30))
+      await store.write(A, 'Page.md', 'x'.repeat(60))
+      limit = 85 // another app filled the disk
+      const result = await store.write(A, 'Page.md', 'y'.repeat(60))
+      expect(result.dropped).toEqual([{ vault: A, path: 'pic.png' }])
+      expect((await store.read(A, 'Page.md'))?.content).toBe('y'.repeat(60))
+    })
+
+    it('a picture that cannot fit even with every vault\'s media gone fails, and drops nothing', async () => {
+      const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
+      await store.write(A, 'a.md', 'x'.repeat(50))
+      await store.write(B, 'theirs.png', new Uint8Array(30))
+      await expect(store.write(A, 'mine.png', new Uint8Array(90))).rejects.toBeInstanceOf(StorageFullError)
       expect(await store.read(B, 'theirs.png')).not.toBeNull()
     })
   })

@@ -1,6 +1,6 @@
 import { PHONE, type VaultStore } from '../store/vaultStore'
 import { loadVaultList, vaultId } from '../store/vaults'
-import { loadAccount, type VaultAccount } from './account'
+import { loadAccount, saveAccount, type VaultAccount } from './account'
 
 /**
  * Which account acts for friends (round 13, item 4). Friends belong to a GitHub account, not to a vault. The app
@@ -60,4 +60,14 @@ export async function loadFriendsAccount(store: VaultStore): Promise<FriendsAcco
 export async function chooseFriendsVault(store: VaultStore, vault: string): Promise<void> {
   if ((await loadAccount(store, vault))?.gists !== 'yes') throw new Error('Only a vault whose token has the Gists permission can act for friends')
   await store.setState(PHONE, CHOICE, vault)
+}
+
+/**
+ * A gist write with this vault's token got 403 (`READ_ONLY`): the token has no Gists permission. The friends sender
+ * (4E) calls this. The sign-in probe can say "yes" by mistake if GitHub checks a body before the permission (not
+ * proven), so this is the check that settles it. Friends then shows "no-gists", or uses another vault.
+ */
+export async function recordGistsRefused(store: VaultStore, vault: string): Promise<void> {
+  const account = await loadAccount(store, vault)
+  if (account !== undefined && account.gists !== 'no') await saveAccount(store, vault, { ...account, gists: 'no' })
 }

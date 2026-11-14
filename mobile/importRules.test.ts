@@ -33,6 +33,14 @@ describe('forbiddenUse: code that reaches the desktop bridge or browser storage 
     expect(forbiddenUse('/repo/mobile/src/screens/Review.tsx', 'indexedDB.open("x")')).toMatch(/browser storage/)
   })
 
+  it('the bridge in any form: a cast, a bracket, a destructure (round 3 nit)', () => {
+    expect(forbiddenUse(file, '(window as any).yaseenDocs.vault.list()')).toMatch(/desktop bridge/)
+    expect(forbiddenUse(file, '(globalThis as unknown as { yaseenDocs: Bridge }).yaseenDocs')).toMatch(/desktop bridge/)
+    expect(forbiddenUse(file, "window['yaseenDocs'].vault")).toMatch(/desktop bridge/)
+    expect(forbiddenUse(file, 'const { yaseenDocs } = window')).toMatch(/desktop bridge/)
+    expect(forbiddenUse(file, 'interface Window { yaseenDocs: YaseenDocsApi }')).toBeNull()
+  })
+
   it('a word in a comment is not a use', () => {
     expect(forbiddenUse(file, '// reads localStorage? no: window.yaseenDocs is the desktop\n/* indexedDB */ export const x = 1')).toBeNull()
   })
@@ -42,9 +50,10 @@ describe('forbiddenUse: code that reaches the desktop bridge or browser storage 
     expect(forbiddenUse('/repo/node_modules/react-dom/cjs/x.js', 'localStorage')).toBeNull()
   })
 
-  it('a test file is not bundled, so it is not read (src/rules.test.ts names the storage words in its own check)', () => {
-    expect(forbiddenUse('/repo/mobile/src/rules.test.ts', 'const BROWSER_STORAGE = /localStorage|indexedDB/')).toBeNull()
-    expect(forbiddenUse('/repo/client/src/review/x.test.tsx', 'window.yaseenDocs.vault')).toBeNull()
+  // YAZ-5160: a test file is never bundled, and the guard does not run in the test project (testConfig.test.ts).
+  // forbiddenUse itself reads a file by its code, not by its name: a file named like a test gets no pass.
+  it('a file is judged by its code, not by its name', () => {
     expect(forbiddenUse('/repo/mobile/src/screens/latest.ts', 'localStorage')).toMatch(/browser storage/)
+    expect(forbiddenUse('/repo/mobile/src/screens/latest.test.ts', 'localStorage')).toMatch(/browser storage/)
   })
 })

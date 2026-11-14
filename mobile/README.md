@@ -14,7 +14,8 @@ From the repo root:
 | `npx vitest run --project mobile` | Runs this workspace's tests only. `npm test` runs them with all the others. |
 | `npm run typecheck` | Checks `mobile/tsconfig.json` (the app) and `mobile/tsconfig.test.json` (tests, config) with the rest. |
 
-The tests run in vitest, in Node. Storage tests use `fake-indexeddb`. A test that draws React says
+The tests run in vitest, in Node. The `mobile` test project uses the build's aliases and one React, but NOT the
+build's import guard: tests are never bundled (`testConfig.test.ts` checks this). Storage tests use `fake-indexeddb`. A test that draws React says
 `// @vitest-environment jsdom` on its first line. There are no browser tests: no Playwright, no browser window.
 
 ## The rule: no Electron, no Node
@@ -27,7 +28,8 @@ the code editor. Three checks hold the rule:
   every bundled module, also one that `client/src` pulls in:
   * by name or path (`forbiddenImport`): Electron, Node built-ins, `desktop/src`, the drawing engine, Monaco, the
     desktop bridge `client/src/api.ts` and the app's storage wrapper `client/src/lib/storage.ts`;
-  * by use (`forbiddenUse`), in every repo source file the bundle takes in: the bridge global `window.yaseenDocs`, and
+  * by use (`forbiddenUse`), in every repo source file the bundle takes in: the bridge global `window.yaseenDocs` (also
+    cast, in brackets or destructured), and
     `localStorage`, `sessionStorage` or `indexedDB` outside `mobile/src/store/`.
 * `src/rules.test.ts` reads the source, and every repo file the app reaches through its imports, with the same rules.
 
@@ -65,7 +67,7 @@ mobile/
       client.ts         `githubClient`: the ONE way to call GitHub; api.github.com only; typed `GithubError`s
       testing.ts        test help: `fakeGithub`, a fake API behind `fetch` (no test calls the real one)
     auth/               the sign-in logic, no screens (3E)
-      check.ts          the check on save: `GET /user`, the repo, the branch, `.yaseendocs` at the top, a write probe, a Gists probe
+      check.ts          the check on save: `GET /user`, the repo, the branch, `.yaseendocs` at the top, a write probe (one fixed blob), a Gists probe
       signIn.ts         `startState`, `signIn`, `signInAgain`, `forgetVaultAndToken`, `signOutAndErase`
       account.ts        what the check learned (login, name, avatar, Gists, end date), kept with the vault
       friends.ts        which account acts for friends, and its two alerts
@@ -92,9 +94,10 @@ Where the next units go (from the issues): `src/sync/` (3B, 3C, 3D), `src/screen
 * A page, a card file and a settings file are never dropped. When the phone is full, EVERY write (files,
   checkpoints, phone-only state such as the answer list) drops the media viewed longest ago and tries again (row P2).
   It says which in `dropped`. When that cannot help, it throws `StorageFullError`.
-* A picture or a sound takes room only from its own vault, and only when the room left plus that vault's media is
-  enough: a file that can never fit drops nothing. A page, a checkpoint and state may take room from any vault.
-  The room left comes from `navigator.storage.estimate()` (`Backend.room`).
+* A write takes room from its own vault's media first, then from the other vaults' media, oldest view first (a
+  coordinator pick for Yaseen to confirm). It drops one file at a time and tries again, so it drops only what the
+  write needs. A file write drops nothing when all the media that may go is smaller than the bytes it adds. The store
+  does not use `navigator.storage.estimate()`: it gives the browser's quota, not the free disk.
 * Every write resolves only after IndexedDB committed it. Await it before the screen moves on.
 * `STORE_FORMAT` is one number. A start with another stored number discards the files and checkpoints and keeps the
   phone-only state (so unsent answers can still go). Raise it when the stored shape changes.

@@ -52,6 +52,13 @@ export interface FakeGithub {
    */
   interrupt: ((call: FakeCall) => Response | undefined) | null
   revoke(token: string): void
+  /**
+   * GitHub's order of checks for a write is not proven: the permission first (403), or the body first (422). With
+   * true, the fake checks the body first, so a token with too little access gets 422 for a wrong body.
+   */
+  bodyFirst: boolean
+  /** The blobs the fake stored, by content: a blob with the same bytes is stored once, as in git. */
+  blobs: Set<string>
 }
 
 export function fakeGithub(setup: { tokens: Record<string, FakeToken>; repos: FakeRepo[] }): FakeGithub {
@@ -72,6 +79,8 @@ export function fakeGithub(setup: { tokens: Record<string, FakeToken>; repos: Fa
     down: false,
     rateLimitedUntil: null,
     interrupt: null,
+    bodyFirst: false,
+    blobs: new Set(),
     revoke: (token) => void tokens.delete(token),
     async fetch(url, init) {
       const method = (init.method ?? 'GET').toUpperCase()
@@ -101,9 +110,12 @@ export function fakeGithub(setup: { tokens: Record<string, FakeToken>; repos: Fa
       }
 
       if (path[1] === 'gists' && path.length === 2 && method === 'POST') {
-        if (!who.gists) return notAllowed()
         const files = body.files as Record<string, unknown> | undefined
-        if (!files || Object.keys(files).length === 0) return json(422, { message: 'Validation Failed', errors: [{ resource: 'Gist', code: 'missing_field', field: 'files' }] })
+        const badBody = !files || Object.keys(files).length === 0
+        const invalid = () => json(422, { message: 'Validation Failed', errors: [{ resource: 'Gist', code: 'missing_field', field: 'files' }] })
+        if (badBody && fake.bodyFirst) return invalid()
+        if (!who.gists) return notAllowed()
+        if (badBody) return invalid()
         return json(201, { id: 'g1' })
       }
 
@@ -137,9 +149,12 @@ export function fakeGithub(setup: { tokens: Record<string, FakeToken>; repos: Fa
           return notFound()
         }
         if (method === 'POST' && rest.join('/') === 'git/blobs') {
+          const invalid = () => json(422, { message: 'Invalid request.\n\n"content" wasn\'t supplied.' })
+          if (typeof body.content !== 'string' && fake.bodyFirst) return invalid()
           if (access !== 'write') return notAllowed()
           if (repo.archived) return json(403, { message: 'Repository was archived so is read-only.' })
-          if (typeof body.content !== 'string') return json(422, { message: 'Invalid request.\n\n"content" wasn\'t supplied.' })
+          if (typeof body.content !== 'string') return invalid()
+          fake.blobs.add(`${full}:${body.content}`)
           if (repo.git === undefined) return json(201, { sha: 'b10b' })
           const bytes = body.encoding === 'base64' ? fromBase64(body.content) : new TextEncoder().encode(body.content)
           return json(201, { sha: await repo.git.addBlob(bytes) })

@@ -41,14 +41,18 @@ export function phoneImportGuard(): Plugin {
  * as the desktop renderer (`desktop/electron.vite.config.ts`), and `@client` for the pure parts of `client/src`
  * that later units reuse.
  */
+/** The aliases and the one React: the build, the dev server and the tests all resolve modules the same way. */
+export const phoneResolve = {
+  alias: { '@shared': shared, '@client': clientSrc },
+  // ONE React in the bundle: a file from client/src would otherwise find client/node_modules/react, a second copy.
+  dedupe: ['react', 'react-dom'],
+}
+
 export default defineConfig({
   root: here,
+  // The guard is for what the phone bundles. `vitest.config.ts` leaves it out on purpose (YAZ-5160).
   plugins: [phoneImportGuard(), react()],
-  resolve: {
-    alias: { '@shared': shared, '@client': clientSrc },
-    // ONE React in the bundle: a file from client/src would otherwise find client/node_modules/react, a second copy.
-    dedupe: ['react', 'react-dom'],
-  },
+  resolve: phoneResolve,
   server: { fs: { allow: [here, shared, clientSrc] } },
   build: { outDir: 'dist', emptyOutDir: true },
 })
