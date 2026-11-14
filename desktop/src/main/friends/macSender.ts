@@ -23,6 +23,7 @@ import { createHash } from 'node:crypto'
 import { findFriendsIndex, gistErrorCode, gistErrorResetAt, INDEX_FILE, parseFriendsIndex, pointersOf, type GistsApi, type IndexHandle, type WriteOptions } from '@shared/friendGists'
 import { emptyBudget, numbersFor, numbersKey, reserveFor, sendGap, sendGate, sendNumbers, type GistBudget, type SendReason } from '@shared/friendSend'
 import type { FriendStats, FriendVault } from '@shared/friendStats'
+import type { ClosedVault } from './closedVaults'
 import { COUNT_LIMIT_MS, countPayload } from './countJob'
 import { pendingRemove } from '@shared/friendsList'
 import type { FriendsSendStatus, FriendsSendView } from '@shared/types'
@@ -63,7 +64,12 @@ export interface MacSenderDeps {
    * The count of the packed cards (`countPayload`). YAZ-5250, YAZ-5277: the app runs it on a worker thread
    * (`countJob.ts`), so the main thread only packs and waits. Required: this file has no count of its own.
    */
-  stats(text: string, now: number): Promise<Omit<FriendStats, 'login' | 'name' | 'avatar'>>
+  stats(text: string, now: number, closed: readonly ClosedVault[]): Promise<Omit<FriendStats, 'login' | 'name' | 'avatar'>>
+  /**
+   * YAZ-5252: the vaults that count and are CLOSED on this Mac, by repo (`closedVaults.ts`): counted from their files,
+   * in the same worker. Absent: only open vaults count.
+   */
+  closed?(): Promise<Map<string, ClosedVault>>
   state: { load(): Promise<MacSendSaved | null>; save(saved: MacSendSaved): Promise<void> }
   clock?: MacClock
   sleep?: (ms: number) => Promise<void>
@@ -239,7 +245,9 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
       view = { ...view, friends, groups }
       if (pendingRemove(list) !== null || list.index.stats === null) return set('phone-first')
       const held = await deps.vaults()
-      const missing = list.index.vaults.filter((v) => !held.has(v)).length
+      // YAZ-5252: "holds" means "on this Mac": an open vault, or a closed one that the app knows (its remote matches).
+      const closedOnMac = list.index.vaults.some((v) => !held.has(v)) ? ((await deps.closed?.()) ?? new Map<string, ClosedVault>()) : new Map<string, ClosedVault>()
+      const missing = list.index.vaults.filter((v) => !held.has(v) && !closedOnMac.has(v)).length
       const gate = sendGate({ pointers, passSeen: true, holdsAll: list.index.vaults.length > 0 && missing === 0, lastSentAt: s.lastSentAt, now, reason, budget: s.budget })
       if (!gate.go) {
         if (gate.why === 'wait' || gate.why === 'budget') {
@@ -251,18 +259,23 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
       }
       // Only the vaults that count, as the phone counts them (round 12, item 3).
       const counted: FriendVault[] = []
-      for (const repo of list.index.vaults) counted.push(await deps.count(held.get(repo)!))
+      const closed: ClosedVault[] = []
+      for (const repo of list.index.vaults) {
+        const root = held.get(repo)
+        if (root !== undefined) counted.push(await deps.count(root))
+        else closed.push(closedOnMac.get(repo)!)
+      }
       // YAZ-5249: the same cards on the same local day as at the last count: the numbers cannot change. No count.
       const text = countPayload(counted)
       await turn()
-      const input = hash(`${localDay(now)}\n${list.index.nickname ?? ''}\n${text}`)
+      const input = hash(`${localDay(now)}\n${list.index.nickname ?? ''}\n${closed.map((c) => `${c.root}\t${c.key}`).join('\n')}\n${text}`)
       await turn()
       if (input === s.lastInput) {
         await store({ lastCountAt: now })
         return set('unchanged')
       }
       const p = await account(token)
-      const numbers = numbersFor(await withLimit(deps.stats(text, now)), { login: p.login, name: p.name, avatar: p.avatar, nickname: list.index.nickname }, now)
+      const numbers = numbersFor(await withLimit(deps.stats(text, now, closed)), { login: p.login, name: p.name, avatar: p.avatar, nickname: list.index.nickname }, now)
       const key = hash(numbersKey(numbers))
       if (key === s.lastKey) {
         await store({ lastCountAt: now, lastInput: input })
