@@ -1806,8 +1806,9 @@ export function App() {
   const toCycleTab = useCallback((dir: 1 | -1) => {
     const { tabs: strip, active, blank: blankShows } = now.current
     const stop = cycleStop(strip.map((t) => t.id), active, blankShows, inboxNow.current, dir)
-    if (stop === null) return
+    // A trip from the tab board closes it, to the page already open too (one tab: no stop to go to).
     setOverview(OVERVIEW_CLOSED)
+    if (stop === null) return
     if ('inbox' in stop) showInbox()
     else {
       setInboxFront(false)
