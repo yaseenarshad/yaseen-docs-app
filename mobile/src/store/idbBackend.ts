@@ -1,4 +1,4 @@
-import { TABLES, type Backend, type Key, type Op, type Table } from './backend'
+import { StaleWriteError, TABLES, tableOf, type Backend, type Key, type Op, type Table } from './backend'
 
 /** The database's own schema number (its object stores). It is not the format of the data: that is `STORE_FORMAT`. */
 export const DB_SCHEMA = 1
@@ -112,7 +112,8 @@ export function idbBackend(options: { name?: string; factory?: IDBFactory; keyRa
       run((db) => request(db.transaction(table, 'readonly').objectStore(table).getAllKeys(scope === undefined ? undefined : scopeRange(scope)))) as Promise<Key[]>,
     apply(ops: readonly Op[]) {
       if (ops.length === 0) return Promise.resolve()
-      const tables = [...new Set(ops.map((op) => ('put' in op ? op.put : 'del' in op ? op.del : op.clear)))]
+      const tables = [...new Set(ops.map(tableOf))]
+      const checks = ops.filter((op): op is Extract<Op, { check: Table }> => 'check' in op)
       return run(
         (db) =>
           new Promise<void>((resolve, reject) => {
@@ -120,18 +121,38 @@ export function idbBackend(options: { name?: string; factory?: IDBFactory; keyRa
             const tx = db.transaction(tables, 'readwrite', { durability: 'strict' })
             tx.oncomplete = () => resolve()
             tx.onabort = () => reject(tx.error ?? new DOMException('The write was stopped', 'AbortError'))
-            try {
-              for (const op of ops) {
-                if ('put' in op) tx.objectStore(op.put).put(op.value, op.key)
-                else if ('del' in op) tx.objectStore(op.del).delete(op.key)
-                else if (op.scope === undefined) tx.objectStore(op.clear).clear()
-                else tx.objectStore(op.clear).delete(scopeRange(op.scope))
-              }
-            } catch (error) {
-              // A value the browser cannot store throws here. Stop the whole batch, so none of it lands.
+            const stop = (error: unknown) => {
               tx.onabort = null
               tx.abort()
               reject(error)
+            }
+            const write = () => {
+              try {
+                for (const op of ops) {
+                  if ('check' in op) continue
+                  if ('put' in op) tx.objectStore(op.put).put(op.value, op.key)
+                  else if ('del' in op) tx.objectStore(op.del).delete(op.key)
+                  else if (op.scope === undefined) tx.objectStore(op.clear).clear()
+                  else tx.objectStore(op.clear).delete(scopeRange(op.scope))
+                }
+              } catch (error) {
+                // A value the browser cannot store throws here. Stop the whole batch, so none of it lands.
+                stop(error)
+              }
+            }
+            if (checks.length === 0) return write()
+            // The conditions first, in this transaction: the writes start only when every row still holds its value.
+            let left = checks.length
+            let stale = false
+            for (const c of checks) {
+              const read = tx.objectStore(c.check).get(c.key)
+              read.onsuccess = () => {
+                if (read.result !== c.value) stale = true
+                if (--left === 0) {
+                  if (stale) stop(new StaleWriteError())
+                  else write()
+                }
+              }
             }
           }),
       )

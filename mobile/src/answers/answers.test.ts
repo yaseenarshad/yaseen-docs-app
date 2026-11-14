@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { cardPlan } from '@shared/cardSchedule'
+import { sanitizeReviewSettings } from '@shared/reviews'
 import { githubClient } from '../github/client'
 import { POLL_MS, SEND_AFTER_MS } from '../sync/cadence'
 import { createSyncEngine } from '../sync/engine'
@@ -96,6 +98,28 @@ describe('the local copy: an answer counts at once, with no connection', () => {
     expect(view.records['cards/light-nc-17.md'].cards![0].off).toBe(true)
     expect(view.records['cards/light-nc-17.md']).toMatchObject({ kind: 'card', title: 'Speed of light' })
     expect(t.events.some((e) => e.type === 'changed' && e.paths.includes('a.md'))).toBe(true)
+  })
+
+  it('YAZ-5078: a file that a waiting action changes gets a new mtime and size in the view, so the shared due list reads it again', async () => {
+    // `cardPlan` keeps each page's card facts by path, mtime and size (the Mac's index gives a new mtime on each
+    // write). With the stored file's mtime, the phone's due list kept the facts from before the answer.
+    const t = await answersSetup()
+    t.s.github.offline = true
+    const s = sanitizeReviewSettings({})
+    const index = t.engine.index()!
+    const due = async () => cardPlan(Object.values((await t.answers.view(index)).records), s, Date.UTC(2026, 10, 14, 6, 30)).queue.map((c) => `${c.id}${c.isNew ? ' new' : ''}`)
+    expect(await due()).toContain('NC-2 new')
+    const first = (await t.answers.view(index)).records['a.md']
+    await t.add(answer('NC-2', 1))
+    const after = (await t.answers.view(index)).records['a.md']
+    expect(after.mtime).not.toBe(first.mtime)
+    expect(after.size).toBe(new TextEncoder().encode((await t.answers.text('a.md'))!).length)
+    expect(await due()).not.toContain('NC-2 new')
+    // The same text again: the same mtime (the cache hits); an Undo back to the stored text: the stored record.
+    expect((await t.answers.view(index)).records['a.md'].mtime).toBe(after.mtime)
+    await t.answers.undo(t.answers.waiting()[0].group)
+    expect((await t.answers.view(index)).records['a.md']).toBe(index.records['a.md'])
+    expect(await due()).toContain('NC-2 new')
   })
 
   it('after the send the stored copy holds the answer, and the view does not lose it at any point', async () => {
@@ -237,3 +261,63 @@ describe('the list survives a closed app', () => {
     expect(answers.state().waiting).toBe(0)
   })
 })
+
+describe('YAZ-5183: a branch that keeps moving', () => {
+  it('the branch moves before every ref move for 2 minutes: the waits between sends grow, never over 80 writes in a minute, and the review lands once', async () => {
+    let movesUntil = 0
+    let moves = 0
+    let clockNow = () => 0
+    const t = await answersSetup({
+      fetch: (s) => async (url, init) => {
+        if ((init.method ?? 'GET') === 'PATCH' && clockNow() < movesUntil) {
+          moves++
+          await s.git.push({ [`mac-${moves}.md`]: `# ${moves}\n` })
+        }
+        return s.github.fetch(url, init)
+      },
+    })
+    clockNow = () => t.clock.now()
+    movesUntil = t.clock.now() + 120_000
+    await t.add(answer('NC-2', 1))
+    const writes = () => t.s.github.calls.filter((c) => c.method !== 'GET').length
+    const samples: { at: number; writes: number }[] = []
+    const waits: number[] = []
+    for (let i = 0; i < 120; i++) {
+      await t.tick(5_000)
+      samples.push({ at: t.clock.now(), writes: writes() })
+      const { retryAt, problem } = t.answers.state()
+      if (problem === 'STALE_HEAD' && retryAt !== null && (waits.length === 0 || waits[waits.length - 1] !== retryAt)) waits.push(retryAt)
+    }
+    for (const a of samples) {
+      const inMinute = samples.filter((b) => b.at > a.at && b.at <= a.at + 60_000).map((b) => b.writes)
+      if (inMinute.length > 0) expect(Math.max(...inMinute) - a.writes).toBeLessThanOrEqual(80)
+    }
+    const gaps = waits.slice(1).map((w, i) => w - waits[i])
+    expect(gaps.length).toBeGreaterThan(0)
+    for (let i = 1; i < gaps.length; i++) expect(gaps[i]).toBeGreaterThan(gaps[i - 1])
+    expect(await t.remoteReviews()).toEqual([at(1)])
+    expect(t.answers.state()).toMatchObject({ waiting: 0, problem: null })
+  })
+})
+
+describe('YAZ-5073 checker gap 7: a send that needs the person does not repeat by itself', () => {
+  for (const [status, code] of [[401, 'UNAUTHORIZED'], [403, 'READ_ONLY']] as const) {
+    it(`${status} (${code}): the app hidden or the signal back does not send again; only sendNow does`, async () => {
+      let tries = 0
+      const t = await answersSetup({ fetch: (s) => async (url, init) => ((init.method ?? 'GET') !== 'GET' ? (tries++, new Response(JSON.stringify({ message: 'no' }), { status })) : s.github.fetch(url, init)) })
+      await t.add(answer('NC-2', 1))
+      await t.tick(SEND_AFTER_MS)
+      expect(t.answers.state().problem).toBe(code)
+      const writes = tries
+      expect(writes).toBe(1)
+      t.answers.online()
+      t.answers.setVisible(false)
+      t.answers.setVisible(true)
+      await t.answers.idle()
+      expect(tries).toBe(writes)
+      await t.answers.sendNow()
+      expect(tries).toBeGreaterThan(writes)
+    })
+  }
+})
+

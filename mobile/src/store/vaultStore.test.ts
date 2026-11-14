@@ -402,12 +402,12 @@ describe.each(Object.keys(backends))('protected media (3D) on %s', (name) => {
   const phone = () => backends[name]()
 
   it('a write never drops a protected file; it drops the open vault`s unneeded media, then other vaults` media, oldest first', async () => {
-    const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
+    const store = await openVaultStore(limitedBackend(phone()(), 112), { now: clock() }) // 12 more: the kept set (11 bytes)
     await store.write(A, 'due.png', new Uint8Array(30)) // oldest of all, but a due card needs it
     await store.write(B, 'b-old.png', new Uint8Array(20))
     await store.write(A, 'not-needed.png', new Uint8Array(20))
     await store.write(B, 'b-new.png', new Uint8Array(20))
-    store.protectMedia(A, ['due.png'])
+    await store.protectMedia(A, ['due.png'])
     const result = await store.write(A, 'new.png', new Uint8Array(45)) // 10 free: it needs 35 more
     expect(result.dropped).toEqual([
       { vault: A, path: 'not-needed.png' },
@@ -421,7 +421,7 @@ describe.each(Object.keys(backends))('protected media (3D) on %s', (name) => {
     const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
     await store.write(A, 'due-1.png', new Uint8Array(40))
     await store.write(A, 'due-2.png', new Uint8Array(40))
-    store.protectMedia(A, ['due-1.png', 'due-2.png'])
+    await store.protectMedia(A, ['due-1.png', 'due-2.png'])
     await expect(store.write(A, 'extra.png', new Uint8Array(30))).rejects.toBeInstanceOf(StorageFullError)
     expect((await store.list(A)).map((f) => f.path)).toEqual(['due-1.png', 'due-2.png'])
   })
@@ -430,21 +430,46 @@ describe.each(Object.keys(backends))('protected media (3D) on %s', (name) => {
     const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
     await store.write(A, 'due.png', new Uint8Array(50))
     await store.write(B, 'theirs.png', new Uint8Array(45))
-    store.protectMedia(A, ['due.png'])
+    await store.protectMedia(A, ['due.png'])
     await store.setState(A, 'answers', [{ id: 'card-1', grade: 'good' }])
     expect(await store.read(B, 'theirs.png')).toBeNull()
     expect(await store.read(A, 'due.png')).not.toBeNull()
   })
 
+  // YAZ-5188 (3D3): a new session holds the kept set at once, before the media's first plan.
+  it('the protected set is kept: a new session (no paths given) never drops it, also before the first plan', async () => {
+    let limit = 1_000
+    const disk = limitedBackend(phone()(), () => limit)
+    const first = await openVaultStore(disk, { now: clock() })
+    await first.write(A, 'due.png', new Uint8Array(40))
+    await first.write(A, 'other.png', new Uint8Array(40))
+    await first.protectMedia(A, ['due.png'])
+    limit = 100 // the phone filled up meanwhile
+    const next = await openVaultStore(disk, { now: clock(10) })
+    await next.protectMedia(A)
+    const result = await next.write(A, 'page.md', 'x'.repeat(30))
+    expect(result.dropped).toEqual([{ vault: A, path: 'other.png' }])
+    expect(await next.read(A, 'due.png')).not.toBeNull()
+  })
+
+  it('a full phone does not make protectMedia fail: the set holds in memory', async () => {
+    const store = await openVaultStore(limitedBackend(phone()(), 80), { now: clock() })
+    await store.write(A, 'due-1.png', new Uint8Array(40))
+    await store.write(A, 'due-2.png', new Uint8Array(40))
+    await expect(store.protectMedia(A, ['due-1.png', 'due-2.png'])).resolves.toBeUndefined()
+    await expect(store.write(A, 'x.png', new Uint8Array(10))).rejects.toBeInstanceOf(StorageFullError)
+    expect((await store.list(A)).map((f) => f.path)).toEqual(['due-1.png', 'due-2.png'])
+  })
+
   it('only one vault is protected at a time (the open one); a new call replaces the set, and null clears it', async () => {
-    const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
+    const store = await openVaultStore(limitedBackend(phone()(), 120), { now: clock() }) // 18 more: the two kept sets
     await store.write(A, 'a.png', new Uint8Array(40))
     await store.write(B, 'b.png', new Uint8Array(40))
-    store.protectMedia(A, ['a.png'])
-    store.protectMedia(B, ['b.png']) // vault B opened: A's files are no longer protected
+    await store.protectMedia(A, ['a.png'])
+    await store.protectMedia(B, ['b.png']) // vault B opened: A's files are no longer protected
     const result = await store.write(B, 'new.png', new Uint8Array(40))
     expect(result.dropped).toEqual([{ vault: A, path: 'a.png' }])
-    store.protectMedia(null, [])
+    await store.protectMedia(null, [])
     const again = await store.write(B, 'more.png', new Uint8Array(30))
     expect(again.dropped).toEqual([{ vault: B, path: 'b.png' }])
   })

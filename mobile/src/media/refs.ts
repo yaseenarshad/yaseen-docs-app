@@ -68,12 +68,40 @@ export function mediaTarget(src: string): string | null {
     .join('/')
 }
 
+const IMG_TAG_RE = /<img\b([^>]*)>/gi
+const SRC_ATTR_RE = /(?:^|\s)src\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i
+const ENTITY_RE = /&(?:#(\d+)|#x([0-9a-f]+)|(amp|lt|gt|quot|apos));/gi
+const NAMED: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
+
+/**
+ * The `src` of each `<img>` tag in a piece of HTML that marked passed through, as the browser reads the attribute: in
+ * double, single or no quotes, with its character references decoded. Only the `<img>` tag and its `src`: marked has
+ * already split the Markdown, so this reads the one HTML attribute the Mac's `applyLook` reads.
+ */
+function htmlImageSources(html: string): string[] {
+  const out: string[] = []
+  for (const tag of html.matchAll(IMG_TAG_RE)) {
+    const m = SRC_ATTR_RE.exec(tag[1])
+    if (m === null) continue
+    const raw = m[1] ?? m[2] ?? m[3] ?? ''
+    out.push(raw.replace(ENTITY_RE, (_, dec: string | undefined, hex: string | undefined, name: string | undefined) => (dec !== undefined ? String.fromCodePoint(Number(dec)) : hex !== undefined ? String.fromCodePoint(parseInt(hex, 16)) : NAMED[name!.toLowerCase()])))
+  }
+  return out
+}
+
 function walk(tokens: readonly Token[], out: string[]): void {
   for (const token of tokens) {
     if (token.type === 'image') {
       const src = cleanUrl((token as Tokens.Image).href)
       const target = src === null ? null : mediaTarget(src)
       if (target !== null) out.push(target)
+    } else if (token.type === 'html') {
+      // An HTML picture (YAZ-5189): DOMPurify's HTML profile keeps `<img>`, and the Mac's `applyLook` gives each `<img>`
+      // of the card the vault URL. Its `src` reaches `imageSrc` as the attribute holds it (no `cleanUrl`).
+      for (const src of htmlImageSources((token as Tokens.HTML).raw)) {
+        const target = mediaTarget(src)
+        if (target !== null) out.push(target)
+      }
     } else if (token.type === 'cardLink') {
       const { inner, embed } = token as LinkToken
       if (embed && isAudioRef(inner)) {
@@ -94,8 +122,9 @@ function walk(tokens: readonly Token[], out: string[]): void {
 
 /** The sources of a card's pictures and sounds (vault paths as written, not resolved), in text order, each once. */
 export function cardMediaRefs(text: string): string[] {
-  // Most cards hold no picture and no sound: no Markdown read for them. Every picture or sound starts with `![`.
-  if (!text.includes('![')) return []
+  // Most cards hold no picture and no sound: no Markdown read for them. Every picture or sound starts with `![` or is
+  // an HTML `<img>`.
+  if (!text.includes('![') && !/<img/i.test(text)) return []
   const out: string[] = []
   walk(markdown.lexer(text), out)
   return [...new Set(out)]

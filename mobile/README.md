@@ -58,7 +58,12 @@ mobile/
                         the words and ways forward (`help.ts`), the sync port and the lazy 3B engine (`syncPort.ts`,
                         `lazySync.ts`), Friends' port (`friendsPort.ts`), the vault's word for page (`unitWord.ts`)
     screens/            4A: `Shell`, `SignIn`, `SetupGuide`, `ScanCode`, `Settings`, `FirstDownload`; the slots
-                        `Friends`, `Review`, `Search` (4E, 4B, 4C) and `SyncStatus` (4D) are placeholders
+                        `Friends`, `Review` (4E, 4B) and `SyncStatus` (4D) are placeholders; `Search` is 4C's
+    search/             4C: the Mac's search over the phone's index, in slices (`searchRun.ts`), the open vault's
+                        data from storage (`vaultData.ts`), what the tab keeps while a page is open (`searchState.ts`)
+    page/               4C: a page and a card, read only, with no editor (a lazy chunk): `pageRender.ts` (`marked`
+                        and DOMPurify), the vault's look-ups (`pageLook.ts`), pictures, embeds and taps (`pageDom.ts`),
+                        one file's bytes (`media.ts`: the store until 3D's `MediaAhead` is wired), `PageView`, `CardView`
     scan/               "Scan a code": the camera (`camera.ts`) and the reader (`qrDecode.ts`, the `qr` library, a lazy chunk)
     pwa/                YAZ-5087: the service worker, the update and its safe moment, the friend landing page
     dev/                fakes for tests, and the screen fixtures of the `--mode fixtures` build (not in the real build)
@@ -89,7 +94,8 @@ mobile/
 Where the next units go (from the issues): `src/sync/` (3C, 3D), `src/screens/` (4B–4E: replace the slot files).
 
 Screenshots of the screens: `npm run build:fixtures -w mobile`, serve `mobile/dist-fixtures/`, open `#fixture=<name>`
-(`sign-in`, `sign-in-error`, `guide`, `scan`, `download`, `review`, `settings`, `erase`, `token-ended`).
+(`sign-in`, `sign-in-error`, `guide`, `scan`, `download`, `review`, `settings`, `erase`, `token-ended`; 4C: `search`,
+`search-typed`, `search-type`, `search-none`, `page`, `page-lower`, `card`, `card-file`, `card-invalid`).
 
 ## GitHub and the token, in short
 

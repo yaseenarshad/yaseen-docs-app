@@ -5,25 +5,15 @@
  * Pages, Cards, Drawings, Diagrams — Cards only while a vault of the window has Review on (YAZ-5037).
  */
 import { createElement, type ReactNode } from 'react'
-import { fileKind } from '@shared/fileKind'
-import { IMAGE_EXTENSIONS, type TreeNode } from '@shared/types'
+import type { TreeNode } from '@shared/types'
 import { FileIcon } from '../sidebar/FileIcon'
 import { CardIcon } from './CardIcon'
 import type { MenuSection } from '../sidebar/menuSections'
 import { timeOf } from '../sidebar/treeSort'
-import type { SearchCandidate } from './searchCandidates'
+import { type SearchFilter, type SearchTime, type SearchType } from './searchType'
 
-export type SearchType = 'all' | 'pages' | 'cards' | 'drawings' | 'diagrams' | 'folders' | 'images' | 'pdfs' | 'other'
-export type SearchTime = 'any' | 'today' | 'week' | 'month' | 'year'
-export interface SearchFilter {
-  type: SearchType
-  time: SearchTime
-}
-
-/** No filter: what a new search starts with (D15). */
-export const NO_FILTER: SearchFilter = { type: 'all', time: 'any' }
-
-export const filterOn = (filter: SearchFilter): boolean => filter.type !== 'all' || filter.time !== 'any'
+// The type, its test and the filter's shape moved to `searchType.ts` (YAZ-5079), so the phone filters with no bridge; their names stay here too.
+export { NO_FILTER, filterOn, filterTest, typeOf, type SearchFilter, type SearchTime, type SearchType } from './searchType'
 
 /**
  * Each type with a name of its kind, whose icon the menu row shows: the icon a tree row of that kind shows (`FileIcon`);
@@ -48,23 +38,6 @@ const TIMES: ReadonlyArray<[SearchTime, string]> = [
   ['year', 'This year'],
 ]
 
-/** The type of each file kind (D13): the app's own kinds, so a type holds what its icon shows in the tree. Text files are Other. */
-const OF_KIND = { markdown: 'pages', drawing: 'drawings', diagram: 'diagrams', image: 'images', pdf: 'pdfs', text: 'other' } as const
-/** An image the app does not view as one, as `.svg` (a text file to the app), is still an Image to the eye. */
-const IMAGES = new Set<string>(IMAGE_EXTENSIONS)
-
-/**
- * A row's type (D13): a folder, a card (YAZ-5047: the index's `kind`, which the row carries as `card` only while its
- * vault's Review is on — else a card file is a page), else its file's kind (`fileKind`, by the extension, case-blind).
- */
-export function typeOf(row: Pick<SearchCandidate, 'kind' | 'path' | 'card'>): Exclude<SearchType, 'all'> {
-  if (row.kind === 'dir') return 'folders'
-  if (row.card === true) return 'cards'
-  const kind = fileKind(row.path)
-  if (kind !== null && kind !== 'text') return OF_KIND[kind]
-  return IMAGES.has(row.path.slice(row.path.lastIndexOf('.') + 1).toLowerCase()) ? 'images' : 'other'
-}
-
 /** Where a range starts (D14), on the local calendar of `now`: 00:00 today, Monday 00:00, the 1st, January 1; none for Any time. */
 export function timeStart(time: SearchTime, now: number): number | undefined {
   if (time === 'any') return undefined
@@ -74,16 +47,6 @@ export function timeStart(time: SearchTime, now: number): number | undefined {
   else if (time === 'month') at.setDate(1)
   else if (time === 'year') at.setMonth(0, 1)
   return at.getTime()
-}
-
-/**
- * The test a candidate must pass, or `undefined` with no filter. `from` is where the time range starts (`timeStart`), and
- * `timeOf` a row's time by its path — a file's mtime, a folder's newest file anywhere inside (D14). An empty folder (0) never passes.
- */
-export function filterTest(filter: SearchFilter, timeOf: (path: string) => number, from: number | undefined): ((row: SearchCandidate) => boolean) | undefined {
-  if (!filterOn(filter)) return undefined
-  // A card in a page (YAZ-5037) has its page's time.
-  return (row) => (filter.type === 'all' || typeOf(row) === filter.type) && (from === undefined || timeOf(row.page ?? row.path) >= from)
 }
 
 /** No times: a search with no time range reads none. */

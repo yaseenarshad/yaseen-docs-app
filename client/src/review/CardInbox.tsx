@@ -109,6 +109,7 @@ import { cssZoom } from '../lib/cssZoom'
 import { inboxRoom, readingScroll } from './inboxScroll'
 import '../explore/explore.css'
 import { useUnit } from '../vault/unitWord'
+import { addedLine, resetLine, waitingLine } from './cardWords'
 
 export interface CardInboxProps {
   /** The Inbox tab is the one on show (YAZ-5011); false: behind a page tab, hidden, and deaf to keys. Default true. */
@@ -174,18 +175,8 @@ interface AnswerLine {
   count: number
 }
 
-/** What waits past today's number (YAZ-5042), as the done screen says it: "38 new cards and 3 Up next cards wait for another day." */
-export function waitingLine(more: Record<AddKind, number>, kinds: readonly AddKind[]): string {
-  const parts = kinds.map((k) => `${more[k]} ${k === 'new' ? 'new' : 'Up next'} card${more[k] === 1 ? '' : 's'}`)
-  const one = kinds.length === 1 && more[kinds[0]] === 1
-  return `${parts.join(' and ')} ${one ? 'waits' : 'wait'} for another day.`
-}
-
-/** The add's line (YAZ-5042), after its "+": "Added 10 new cards for today". */
-export const addedLine = (kind: AddKind, n: number): string => `Added ${n} ${kind === 'new' ? 'new' : 'Up next'} card${n === 1 ? '' : 's'} for today`
-
-/** A Reset's line (YAZ-5042 round 2), after its "↺": "Reset today's new cards" (back to the Settings number). */
-export const resetLine = (kind: AddKind): string => `Reset today's ${kind === 'new' ? 'new cards' : 'Up next'}`
+// The done screen's words moved to `cardWords.ts` (YAZ-5078), so the phone's Review screen says them too.
+export { addedLine, resetLine, waitingLine } from './cardWords'
 
 /**
  * A list of cards to look at, not to review: the Archived list (YAZ-5046) and the To fix list (YAZ-5097), one look.
@@ -482,7 +473,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
             {session.filter === 'archived' ? (
               <CardList cards={session.archived} label="Archived cards" empty="No archived cards." edit={false} action={{ text: 'Unarchive', run: review.unarchive }} session={session} nameOf={nameOf} openCard={openCard} backToAll={() => review.setFilter('all')} />
             ) : session.filter === 'fix' ? (
-              <CardList cards={session.toFix} label="Cards to fix" empty="No cards to fix." edit action={{ text: 'Fixed', label: 'Remove Fix later', run: (path, id) => void review.setFix(path, id, false) }} session={session} nameOf={nameOf} openCard={openCard} backToAll={() => review.setFilter('all')} />
+              <CardList cards={session.toFix} label="Cards to fix" empty="No cards to fix." edit action={{ text: 'Fixed', label: 'Fixed: remove Fix later', run: (path, id) => void review.setFix(path, id, false) }} session={session} nameOf={nameOf} openCard={openCard} backToAll={() => review.setFilter('all')} />
             ) : card === null ? (
               <div className="card-inbox__done" role="status">
                 {/* YAZ-5033: today's work across the vault, under whatever the screen says. */}

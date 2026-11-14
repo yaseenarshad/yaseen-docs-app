@@ -82,6 +82,10 @@ export async function sendOutbox(options: SendOptions): Promise<SendReport> {
       await outbox.refresh()
       const plan = await planSend(store, vault, outbox.waiting())
       if (plan.changes.length > 0) {
+        // YAZ-5180: from here GitHub may hold these actions, so Undo may no longer remove them. An action that Undo
+        // removed after the plan was made is not marked: plan again without it.
+        const marked = await outbox.markTried(plan.done.map((w) => w.seq))
+        if (marked.length < plan.done.length) continue
         try {
           report.commit = await remote.commit(plan.parent, plan.changes, commitSubject(plan.changes.map((c) => c.path)))
         } catch (error) {

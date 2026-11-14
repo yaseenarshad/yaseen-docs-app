@@ -3,6 +3,7 @@ import {
   INDEX_FILE,
   NUMBERS_FILE,
   POINTER_FILE,
+  LIST_NEEDS_REPAIR,
   SETTLE_MS,
   WRITE_GAP_MS,
   agoLabel,
@@ -53,8 +54,11 @@ describe('the friends list file (decision 15)', () => {
     expect(read).toMatchObject({ kind: 'ok', value: index })
     expect(read.kind === 'ok' && read.raw.later).toEqual({ x: 1 })
     expect(parseFriendsIndex(JSON.stringify({ ...index, v: 2 }))).toEqual({ kind: 'newer' })
-    for (const bad of ['', '{', 'null', '[]', '{"v":1}', JSON.stringify({ ...index, friends: [{ name: 1 }] }), JSON.stringify({ ...index, stats: '../x' })])
-      expect(parseFriendsIndex(bad).kind).toBe('unreadable')
+    // Only a file that is not a JSON object with `v: 1` is unreadable (YAZ-5191).
+    for (const bad of ['', '{', 'null', '[]', '{"v":0}', '"text"']) expect(parseFriendsIndex(bad).kind).toBe('unreadable')
+    // Entry by entry: a bad entry is left out of the value; the others stay.
+    const mixed = parseFriendsIndex(JSON.stringify({ ...index, friends: [{ name: 1 }, ...index.friends], stats: '../x' }))
+    expect(mixed).toMatchObject({ kind: 'ok', value: { friends: index.friends, stats: null } })
   })
 })
 
@@ -144,6 +148,59 @@ describe('make or find the files (one of each, on each device)', () => {
     if (found.kind !== 'ok') throw new Error('no index')
     await writeFriendsIndex(api, found.handle, { ...found.handle.index, nickname: 'Yas' })
     expect(JSON.parse(w.text(made.handle.id, INDEX_FILE)!)).toMatchObject({ v: 1, nickname: 'Yas', later: [1, 2] })
+  })
+})
+
+describe('YAZ-5191: a friends list that this app cannot read is never written over', () => {
+  it('a list that this app cannot read (one name over 200 letters) is never written over: its friends stay', async () => {
+    const w = world()
+    const api = w.api(T1)
+    const statsId = w.seed('yaseen', { [NUMBERS_FILE]: JSON.stringify(STATS) })
+    const listId = w.seed('yaseen', { [INDEX_FILE]: JSON.stringify({ v: 1, nickname: null, vaults: ['yaseen/vault'], stats: statsId, friends: [
+      { name: 'x'.repeat(201), theirs: 'aa11', mine: 'bb22' },
+      { name: 'Sam', theirs: 'cc33', mine: 'dd44' },
+    ], groups: [] }) })
+    await ensureFriendsFiles(api, seed, opts)
+    expect(JSON.parse(w.text(listId, INDEX_FILE)!).friends).toHaveLength(2) // now: 0
+  })
+
+  it('a write keeps each entry that this app cannot read, and each long name whole (cut only for the screens)', async () => {
+    const w = world()
+    const api = w.api(T1)
+    const statsId = w.seed('yaseen', { [NUMBERS_FILE]: JSON.stringify(STATS) })
+    const long = 'L'.repeat(260)
+    const odd = { name: 'Odd', theirs: 'not hex', mine: 'zz', later: 1 }
+    const listId = w.seed('yaseen', {
+      [INDEX_FILE]: JSON.stringify({ v: 1, nickname: 'N'.repeat(250), vaults: ['a/b', 7], stats: statsId, friends: [{ name: long, theirs: 'aa11', mine: 'bb22' }, odd], groups: [{ name: 'G', group: 'ee55', mine: 'ff66' }] }),
+    })
+    const found = await findFriendsIndex(api, opts)
+    if (found.kind !== 'ok') throw new Error(found.kind)
+    expect(found.handle.index.friends).toEqual([{ name: long.slice(0, 200), theirs: 'aa11', mine: 'bb22' }])
+    await writeFriendsIndex(api, found.handle, { ...found.handle.index, friends: [...found.handle.index.friends, { name: 'Sam', theirs: 'cc33', mine: 'dd44' }] })
+    const after = JSON.parse(w.text(listId, INDEX_FILE)!)
+    expect(after.friends).toEqual([{ name: long, theirs: 'aa11', mine: 'bb22' }, { name: 'Sam', theirs: 'cc33', mine: 'dd44' }, odd])
+    expect(after.nickname).toBe('N'.repeat(250))
+    expect(after.vaults).toEqual(['a/b', 7])
+    expect(after.groups).toEqual([{ name: 'G', group: 'ee55', mine: 'ff66' }])
+  })
+
+  it('a list that is not JSON: find says "broken", and NO call writes to it (ensure, add, remove)', async () => {
+    const w = world()
+    const api = w.api(T1)
+    const text = '{"v":1,"friends":[{"name":"Sam","theirs":"cc33","mine":"dd44"}],'
+    const listId = w.seed('yaseen', { [INDEX_FILE]: text })
+    expect(await findFriendsIndex(api, opts)).toEqual({ kind: 'broken', id: listId })
+    expect(await ensureFriendsFiles(api, seed, opts)).toEqual({ kind: 'broken' })
+    expect(w.calls.filter((c) => c.op !== 'list' && c.op !== 'read')).toEqual([])
+    expect(w.text(listId, INDEX_FILE)).toBe(text)
+    expect(LIST_NEEDS_REPAIR).toContain('notecards-friends.json')
+  })
+
+  it('a list with broken JSON is never written over', async () => {
+    const w = world()
+    const listId = w.seed('yaseen', { [INDEX_FILE]: '{"v":1,"friends":[{"name":"Sam","theirs":"cc33","mine":"dd44"}],' })
+    await ensureFriendsFiles(w.api(T1), seed, opts)
+    expect(w.text(listId, INDEX_FILE)).toContain('"Sam"') // now: an empty list
   })
 })
 

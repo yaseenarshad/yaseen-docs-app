@@ -13,6 +13,7 @@ import {
   withCardReview,
   withoutCardReview,
   type CardLine,
+  type CardRating,
   type CardReview,
 } from '@shared/cardLine'
 
@@ -21,8 +22,13 @@ import {
  * the NEWEST text of the file that holds the card, so it can go on any version of the page and never clashes.
  */
 export type CardOp =
-  | { kind: 'review'; id: string; review: CardReview } // an answer
-  | { kind: 'unreview'; id: string; at: string } // undo of a sent answer
+  /**
+   * An answer. `nth` (YAZ-5078): this is the person's nth review of the same time and rating on the line (the review
+   * time is to the minute, so a new card that comes back at once gets two in one minute, as the Mac writes them).
+   * Absent: the first. The send stays idempotent: the review goes on only while the line holds fewer than `nth`.
+   */
+  | { kind: 'review'; id: string; review: CardReview; nth?: number }
+  | { kind: 'unreview'; id: string; at: string; rating: CardRating } // undo of a sent answer: names ONE review (YAZ-5181)
   | { kind: 'off'; id: string; on: boolean } // archive, unarchive
   | { kind: 'next'; id: string; on: boolean } // Up next
   | { kind: 'fix'; id: string; on: boolean } // Fix later (round 10, YAZ-5097)
@@ -36,10 +42,18 @@ export function applyOp(line: CardLine, op: CardOp): CardLine {
   switch (op.kind) {
     case 'review': {
       const key = cardReviewKey(op.review)
-      return cardReviewsOf(line).some((r) => cardReviewKey(r) === key) ? line : withCardReview(line, op.review)
+      const held = cardReviewsOf(line).filter((r) => cardReviewKey(r) === key).length
+      return held >= (op.nth ?? 1) ? line : withCardReview(line, op.review)
     }
-    case 'unreview':
-      return withoutCardReview(line, op.at)
+    case 'unreview': {
+      // YAZ-5181: the review at `at` WITH this rating, the last one (as `withoutCardReview` picks). Gone already: no
+      // change, so an `unreview` sent again never takes a second review of the same minute. A list stored before the
+      // rating was named (no `rating`) keeps the old reading.
+      if ((op as { rating?: CardRating }).rating === undefined) return withoutCardReview(line, op.at)
+      const key = cardReviewKey({ at: op.at, rating: op.rating })
+      const i = line.parts.map((p) => p.kind === 'review' && cardReviewKey(p.review) === key).lastIndexOf(true)
+      return i === -1 ? line : { parts: line.parts.filter((_, j) => j !== i) }
+    }
     case 'off':
       return withCardOff(line, op.on)
     case 'next':
@@ -109,7 +123,7 @@ export function opsBetween(id: string, before: CardLine, after: CardLine): CardO
   const now = cardReviewsOf(after)
   const keys = new Set(now.map(cardReviewKey))
   const had = new Set(was.map(cardReviewKey))
-  for (const r of was) if (!keys.has(cardReviewKey(r))) ops.push({ kind: 'unreview', id, at: r.at })
+  for (const r of was) if (!keys.has(cardReviewKey(r))) ops.push({ kind: 'unreview', id, at: r.at, rating: r.rating })
   for (const r of now) if (!had.has(cardReviewKey(r))) ops.push({ kind: 'review', id, review: r })
   return ops
 }

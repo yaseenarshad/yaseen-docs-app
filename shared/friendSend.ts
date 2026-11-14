@@ -19,7 +19,10 @@ import { FRIEND_DAYS } from './friendStats'
 export const PUBLISH_EVERY_MS = 5 * 60_000
 /** While the Friends tab is open, read each friend's numbers this often. An unchanged answer is free (decision 14). */
 export const FRIENDS_POLL_MS = 60_000
-/** The background send does not wait the 5 minutes, but two background sends are at least this far apart. */
+/**
+ * Before YAZ-5192 the background send waited only this long. Now every send keeps `sendGap` (at least
+ * `PUBLISH_EVERY_MS`). Kept so older callers still build; no rule reads it.
+ */
 export const BACKGROUND_GAP_MS = 60_000
 /** GitHub's `gist_update` limit for the account (proof 1C). */
 export const GIST_UPDATES_PER_HOUR = 100
@@ -110,7 +113,7 @@ export interface GistBudget {
   /** The times of MY updates in the last hour. */
   updates: number[]
   /** GitHub's count at my last update: `remaining` at `at`, until `resetAt`. It includes the Mac's and the marks'. */
-  seen: { remaining: number; resetAt: number; at: number } | null
+  seen: { remaining: number; resetAt: number; at: number; after?: number } | null
   /** GitHub said "rate limit": no update before this time. */
   blockedUntil: number | null
 }
@@ -120,9 +123,15 @@ export const emptyBudget = (): GistBudget => ({ updates: [], seen: null, blocked
 const inHour = (b: GistBudget, now: number) => b.updates.filter((at) => at > now - HOUR && at <= now)
 
 /** One update made at `now`, with GitHub's count from its answer (or from a failure). */
-export function noteUpdate(b: GistBudget, now: number, rate: GistRate | null): GistBudget {
+export function recordUpdate(b: GistBudget, now: number, rate: GistRate | null): GistBudget {
   const updates = [...inHour(b, now), now]
-  const seen = rate !== null && rate.remaining !== null ? { remaining: rate.remaining, resetAt: rate.resetAt ?? now + HOUR, at: now } : b.seen
+  // `after` counts my updates since GitHub's count (YAZ-5083): updates in the same millisecond as it count too.
+  const seen =
+    rate !== null && rate.remaining !== null
+      ? { remaining: rate.remaining, resetAt: rate.resetAt ?? now + HOUR, at: now, after: 0 }
+      : b.seen === null
+        ? null
+        : { ...b.seen, after: (b.seen.after ?? inHour(b, now).filter((at) => at > b.seen!.at).length) + 1 }
   return { updates, seen, blockedUntil: b.blockedUntil !== null && b.blockedUntil > now ? b.blockedUntil : null }
 }
 
@@ -131,7 +140,7 @@ export function budgetLeft(b: GistBudget, now: number): number {
   const mine = inHour(b, now)
   const own = GIST_UPDATES_PER_HOUR - mine.length
   if (b.seen === null || now >= b.seen.resetAt) return own
-  const since = mine.filter((at) => at > b.seen!.at).length
+  const since = b.seen.after ?? mine.filter((at) => at > b.seen!.at).length
   return Math.max(0, Math.min(own, b.seen.remaining - since))
 }
 
@@ -195,7 +204,9 @@ export function sendGate(input: GateInput): Gate {
     return { go: false, why: 'budget', retryAt: blocked }
   }
   if (input.lastSentAt !== null) {
-    const gap = input.reason === 'background' ? BACKGROUND_GAP_MS : sendGap(budget, now, reserve)
+    // YAZ-5192: the background send keeps the same gap (5 minutes, and longer near the limit). Leaving the app only
+    // sends at once when that gap is over; else the change waits for the timer, the next pass or the next leave.
+    const gap = sendGap(budget, now, reserve)
     if (now < input.lastSentAt + gap) return { go: false, why: 'wait', retryAt: input.lastSentAt + gap }
   }
   return { go: true }
@@ -254,7 +265,7 @@ export async function sendNumbers(api: GistsApi, input: SendInput): Promise<{ ou
     if (!changed) return { outcome: { kind: 'unchanged' }, budget }
     if (!mayUpdate(budget, now, 1, input.reserve)) return { outcome: { kind: 'budget', retryAt: now + sendGap(budget, now, input.reserve) }, budget }
     const { rate } = await api.update(input.statsId, { [NUMBERS_FILE]: JSON.stringify(merged) })
-    budget = noteUpdate(budget, now, rate)
+    budget = recordUpdate(budget, now, rate)
     return { outcome: { kind: 'sent' }, budget }
   } catch (err) {
     const code = gistErrorCode(err)
@@ -264,7 +275,7 @@ export async function sendNumbers(api: GistsApi, input: SendInput): Promise<{ ou
       case 'RATE_LIMITED': {
         const retryAt = Math.max(now + 60_000, gistErrorResetAt(err) ?? 0)
         const rate = gistErrorRate(err)
-        const seen = rate !== null && rate.remaining !== null ? { remaining: rate.remaining, resetAt: rate.resetAt ?? retryAt, at: now } : budget.seen
+        const seen = rate !== null && rate.remaining !== null ? { remaining: rate.remaining, resetAt: rate.resetAt ?? retryAt, at: now, after: 0 } : budget.seen
         return { outcome: { kind: 'rate-limited', retryAt }, budget: { ...budget, seen, blockedUntil: retryAt } }
       }
       case 'OFFLINE':

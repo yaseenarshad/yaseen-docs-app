@@ -1,8 +1,8 @@
 import { cardDueAt } from '@shared/cardSchedule'
 import { cardTime } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
-import { cpus, loadavg } from 'node:os'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { budgetMs } from '../../../client/src/test-perf'
 import { GithubError, githubClient } from '../github/client'
 import { fakeGit, fakeGithub } from '../github/testing'
 import { memoryBackend, openVaultStore, tokenStoreOn, vaultId, type PhoneVault, type VaultStore } from '../store'
@@ -13,7 +13,7 @@ import { isEager } from '../sync/plan'
 import { createSyncEngine, type SyncEvent } from '../sync/engine'
 import { githubRemote, type GithubRemote } from '../sync/githubRemote'
 import { BRANCH, REPO, TOKEN, VAULT, fakeClock } from '../sync/testing'
-import { createMediaAhead, type MediaAhead } from './ahead'
+import { MEDIA_URL_IDLE_CAP, createMediaAhead, type MediaAhead } from './ahead'
 import { MEDIA_AHEAD_MAX_BYTES } from './plan'
 
 const START = Date.UTC(2026, 10, 14, 6, 0, 0)
@@ -79,6 +79,8 @@ interface Options {
   beforeBlob?: (sha: string, background: boolean) => Promise<void> | void
   store?: VaultStore
   parallel?: number
+  /** The browser's own `URL.createObjectURL` and `URL.revokeObjectURL` (3D6 counts them). */
+  realUrls?: boolean
 }
 
 async function setup(files: Record<string, string | Uint8Array>, options: Options = {}) {
@@ -101,11 +103,21 @@ async function setup(files: Record<string, string | Uint8Array>, options: Option
   const lock = memoryLock()
   const log: string[] = []
   const blobsInFlight = { now: 0, max: 0 }
-  const checkpointOf = store.setCheckpoint.bind(store)
-  store.setCheckpoint = async (vault, cp) => {
-    log.push(`checkpoint ${vault}`)
-    await checkpointOf(vault, cp)
-    options.onCheckpoint?.(vault)
+  // The pass writes through a store session (YAZ-5193): the hook goes on the plain store and on each session.
+  const hookCheckpoint = (on: VaultStore) => {
+    const checkpointOf = on.setCheckpoint.bind(on)
+    on.setCheckpoint = async (vault, cp) => {
+      log.push(`checkpoint ${vault}`)
+      await checkpointOf(vault, cp)
+      options.onCheckpoint?.(vault)
+    }
+  }
+  hookCheckpoint(store)
+  const sessionOf = store.session.bind(store)
+  store.session = async (scope) => {
+    const session = await sessionOf(scope)
+    hookCheckpoint(session)
+    return session
   }
   const eagerShas = () => {
     const out = new Set<string>()
@@ -115,14 +127,15 @@ async function setup(files: Record<string, string | Uint8Array>, options: Option
   const wrap = (remote: GithubRemote, vault: string): GithubRemote => ({
     ...remote,
     async blob(sha) {
-      // A picture download that runs inside the vault's lock: 3D's background work (the pass gets only eager files).
-      const background = lock.holders > 0 && !eagerShas().has(sha)
+      // A picture download: 3D's work (the pass gets only eager files). `locked`: the vault's lock is held meanwhile.
+      const background = !eagerShas().has(sha)
+      const locked = lock.holders > 0
       blobsInFlight.now++
       blobsInFlight.max = Math.max(blobsInFlight.max, blobsInFlight.now)
       try {
         await options.beforeBlob?.(sha, background)
         const bytes = await remote.blob(sha)
-        log.push(`blob ${vault} ${sha.slice(0, 7)}${background ? ' locked' : ''}`)
+        log.push(`blob ${vault} ${sha.slice(0, 7)}${background ? ' media' : ''}${locked ? ' locked' : ''}`)
         return bytes
       } finally {
         blobsInFlight.now--
@@ -135,7 +148,7 @@ async function setup(files: Record<string, string | Uint8Array>, options: Option
     clock,
     lock: lock.run,
     yieldToUi: async () => {},
-    makeRemote: (vault, token) => wrap(githubRemote(githubClient(token, { fetch: github.fetch, now: clock.now }), vault.repo, vault.branch), vaultId(vault)),
+    makeRemote: (vault, token, onActivity) => wrap(githubRemote(githubClient(token, { fetch: github.fetch, now: clock.now, onActivity }), vault.repo, vault.branch), vaultId(vault)),
   })
   const events: SyncEvent[] = []
   engine.subscribe((e) => events.push(e))
@@ -146,12 +159,16 @@ async function setup(files: Record<string, string | Uint8Array>, options: Option
     clock,
     yieldToUi: async () => {},
     parallel: options.parallel,
-    makeUrl: (bytes, type) => {
-      const url = `blob:test/${urls.length}#${type}#${bytes.byteLength}`
-      urls.push(url)
-      return url
-    },
-    revokeUrl: () => {},
+    ...(options.realUrls === true
+      ? {}
+      : {
+          makeUrl: (bytes: Uint8Array, type: string) => {
+            const url = `blob:test/${urls.length}#${type}#${bytes.byteLength}`
+            urls.push(url)
+            return url
+          },
+          revokeUrl: () => {},
+        }),
   })
   if (options.runner === false) media.stop()
   const settle = async () => {
@@ -173,7 +190,7 @@ async function setup(files: Record<string, string | Uint8Array>, options: Option
     return g.trees.get(g.commits.get(head)!.tree)!.get(path)!
   }
   const has = async (path: string, vault = VAULT) => (await store.read(vault, path)) !== null
-  const pictureBlobs = () => log.filter((l) => l.startsWith('blob') && l.endsWith('locked')).length
+  const pictureBlobs = () => log.filter((l) => l.startsWith('blob') && l.includes(' media')).length
   return { raw, git, otherGit, github, store, tokens, clock, lock, log, engine, media, events, open, tick, settle, shaOf, has, pictureBlobs, blobsInFlight }
 }
 
@@ -203,7 +220,7 @@ describe('3D: media ahead of time (decision 6)', () => {
     expect(t.media.state()).toMatchObject({ vault: VAULT, done: 2, total: 2, waiting: null })
   })
 
-  it('downloads only after the pass wrote its checkpoint, inside the vault`s lock (never during a pass), a few at a time', async () => {
+  it('downloads only after the pass wrote its checkpoint, a few at a time; the lock is NOT held while a download waits on the network (YAZ-5186)', async () => {
     const pics: Record<string, Uint8Array> = {}
     const cards: string[] = []
     for (let i = 0; i < 12; i++) {
@@ -213,9 +230,10 @@ describe('3D: media ahead of time (decision 6)', () => {
     const t = await setup({ 'a.md': page('A', cards), ...pics }, { beforeBlob: () => new Promise((r) => setTimeout(r, 1)) })
     await t.open()
     const first = t.log.indexOf(`checkpoint ${VAULT}`)
-    const pictures = t.log.map((l, i) => [l, i] as const).filter(([l]) => l.endsWith('locked'))
+    const pictures = t.log.map((l, i) => [l, i] as const).filter(([l]) => l.includes(' media'))
     expect(pictures).toHaveLength(12)
     expect(pictures.every(([, i]) => i > first)).toBe(true)
+    expect(pictures.filter(([l]) => l.endsWith('locked'))).toEqual([])
     expect(t.lock.max).toBe(1)
     expect(t.blobsInFlight.max).toBeLessThanOrEqual(3)
     expect(t.blobsInFlight.max).toBeGreaterThan(1)
@@ -280,6 +298,133 @@ describe('3D: media ahead of time (decision 6)', () => {
     expect(shown).toMatchObject({ status: 'ready', type: 'audio/mpeg', bytes: MEDIA_AHEAD_MAX_BYTES + 1 })
   })
 
+  // YAZ-5186 (3D1): a failure that is not a 404 or a rate limit was fetched again at each pass (41 times in 10 minutes).
+  it('a picture that never finishes in time (a slow connection) is not downloaded again at every pass, without end', async () => {
+    const files = { 'a.md': page('A', [block('NC-1', '![](slow.png) ![](ok.png)', NEAR)]), 'slow.png': png(9, 64), 'ok.png': png(1) }
+    let slowSha = ''
+    let tries = 0
+    const t = await setup(files, {
+      beforeBlob: (sha) => {
+        if (sha === slowSha) {
+          tries++
+          throw new GithubError('OFFLINE', null, 'GitHub did not answer in time') // what the 30 s time limit gives
+        }
+      },
+    })
+    slowSha = await t.shaOf('slow.png')
+    await t.open()
+    expect(await t.has('ok.png')).toBe(true)
+    for (let i = 0; i < 40; i++) await t.tick(POLL_MS) // 10 minutes
+    expect(t.engine.state().status).toBe('synced')
+    expect(tries).toBeLessThanOrEqual(5) // before the fix: 41
+    expect(tries).toBeGreaterThan(1) // it does try again later
+  })
+
+  it('a 403 (NO_ACCESS) for a picture: it gives up, also after a restart, until the SHA changes or the person opens it', async () => {
+    const files = { 'a.md': page('A', [block('NC-1', '![](one.png) ![](two.png)', NEAR)]), 'one.png': png(1), 'two.png': png(2) }
+    const t = await setup(files)
+    const refusedShas = new Set([await t.shaOf('one.png'), await t.shaOf('two.png')])
+    let refused = 0
+    const interrupt = (call: { url: string }) => {
+      if ([...refusedShas].some((sha) => call.url.includes(`/git/blobs/${sha}`))) {
+        refused++
+        return new Response(JSON.stringify({ message: 'Resource not accessible by personal access token' }), { status: 403, headers: { 'x-ratelimit-remaining': '4999' } })
+      }
+      return undefined
+    }
+    t.github.interrupt = interrupt
+    await t.open()
+    for (let i = 0; i < 40; i++) await t.tick(POLL_MS)
+    expect(refused).toBe(2) // one try for each file; before the fix: 41 each
+    expect(t.engine.state().status).toBe('synced')
+    // The next start: the give-up is kept.
+    t.engine.stop()
+    t.media.stop()
+    const again = await setup(files, { store: t.store })
+    again.github.interrupt = interrupt
+    await again.open()
+    await again.tick(POLL_MS)
+    expect(refused).toBe(2)
+    // The person opens one.png: it is tried at once, and kept.
+    refusedShas.clear()
+    const shown = await again.media.show('one.png')
+    expect(shown).toMatchObject({ status: 'ready' })
+    if (shown.status === 'ready') expect(await shown.kept).toBe(true)
+    // two.png gets a new SHA on GitHub: tried again ahead at the next pass.
+    await again.git.push({ 'two.png': png(20) })
+    await again.tick(POLL_MS)
+    expect((await again.store.read(VAULT, 'two.png'))?.content).toEqual(png(20))
+  })
+
+  // YAZ-5187 (3D2)
+  it('a file over 10 MB is never fetched ahead, also when the app closed before the media round kept the sizes', async () => {
+    const big = new Uint8Array(MEDIA_AHEAD_MAX_BYTES + 1)
+    const files = { 'a.md': page('A', [block('NC-1', '![](small.png) ![[talk.mp3]]', NEAR)]), 'small.png': png(1), 'talk.mp3': big }
+    const t = await setup(files, { runner: false }) // the pass ran; the app closed before the media round
+    await t.open()
+    t.engine.stop()
+    const again = await setup(files, { store: t.store }) // the next start: the head did not move
+    await again.open()
+    expect(await again.has('small.png')).toBe(true)
+    expect(await again.has('talk.mp3')).toBe(false) // before the fix: true
+  })
+
+  // YAZ-5188 (3D3)
+  it('the first pass of a new session never drops a window file of the open vault', async () => {
+    let room = 1_000_000
+    let tick = 0
+    const raw = memoryBackend()
+    const lb = limitedBackend(raw, () => room)
+    const base = { 'a.md': page('A', [block('NC-1', '![](w1.png)', NEAR)]), 'w1.png': png(1, 100), 'u.png': png(2, 100), '.yaseendocs/review.json': '{}' }
+    const t1 = await setup(base, { store: await openVaultStore(lb, { now: () => ++tick }) })
+    await t1.open()
+    await t1.media.show('u.png') // viewed after w1.png
+    await t1.settle()
+    t1.engine.stop()
+    t1.media.stop()
+    const s2 = await openVaultStore(lb, { now: () => ++tick }) // the next start
+    room = (await usage(raw)) + 60
+    const dropped: string[] = []
+    const write = s2.write.bind(s2)
+    s2.write = async (v, p, c) => {
+      const r = await write(v, p, c)
+      dropped.push(...r.dropped.map((d) => d.path))
+      return r
+    }
+    const t2 = await setup({ ...base, 'b.md': page('B', [], 'x'.repeat(60)) }, { store: s2 })
+    await t2.open()
+    expect(dropped).not.toContain('w1.png') // before the fix: ['w1.png', …]
+    // The room came from u.png (the media no window card needs), by whichever write of the pass needed it first.
+    expect(await s2.read(VAULT, 'u.png')).toBeNull()
+    expect(await s2.read(VAULT, 'w1.png')).not.toBeNull()
+  })
+
+  // The checker's mutation (YAZ-5074 verdict): without the SHA check before a write, no test turned red.
+  it('a picture changed on GitHub between two groups of one round: the old bytes are never kept', async () => {
+    const pics: Record<string, Uint8Array> = {}
+    const cards: string[] = []
+    for (let i = 0; i < 30; i++) {
+      const n = String(i).padStart(2, '0')
+      pics[`p/${n}.png`] = png(i)
+      cards.push(block(`NC-${10 + i}`, `![](p/${n}.png)`, NEAR))
+    }
+    let n = 0
+    const holder: { t?: Awaited<ReturnType<typeof setup>> } = {}
+    const t = await setup({ 'a.md': page('A', cards), ...pics }, {
+      parallel: 1,
+      beforeBlob: async (_sha, background) => {
+        if (background && ++n === 2) {
+          await holder.t!.git.push({ 'p/29.png': png(250) })
+          void holder.t!.engine.syncNow()
+        }
+      },
+    })
+    holder.t = t
+    await t.open()
+    await t.settle()
+    expect((await t.store.read(VAULT, 'p/29.png'))?.content).toEqual(png(250))
+  })
+
   it('resumes: a closed app picks up where it stopped; a file is stored whole or not at all', async () => {
     const pics: Record<string, Uint8Array> = {}
     const cards: string[] = []
@@ -333,7 +478,7 @@ describe('3D: media ahead of time (decision 6)', () => {
     expect(await t.has('flags/far.png')).toBe(true)
   })
 
-  it('errors are quiet: a 404, GitHub`s "slow down" and no signal never change the sync dot; each is tried again later', async () => {
+  it('errors are quiet: a 404, GitHub`s "slow down" and no signal never change the sync dot; "slow down" waits, a 404 gives up until the file shows', async () => {
     const t = await setup(DEMO)
     const fr = await t.shaOf('flags/fr.png')
     const mp3 = await t.shaOf('fifth.mp3')
@@ -351,11 +496,11 @@ describe('3D: media ahead of time (decision 6)', () => {
 
     mode = 'slow'
     await t.store.remove(VAULT, 'fifth.mp3')
-    await t.git.push({ 'world.md': `${DEMO['world.md']}\n` }) // a new commit: the 404 is tried again
+    await t.git.push({ 'world.md': `${DEMO['world.md']}\n` }) // a new commit, but fr.png has the same SHA
     await t.tick(POLL_MS)
     expect(t.media.state()).toMatchObject({ waiting: 'slowed' })
     expect(t.media.state().retryAt).toBeGreaterThan(t.clock.now())
-    expect(await t.has('flags/fr.png')).toBe(true) // tried again on the new commit
+    expect(await t.has('flags/fr.png')).toBe(false) // a 404 does not heal by waiting: given up on this SHA (YAZ-5186)
     expect(await t.has('fifth.mp3')).toBe(false)
     expect(t.events.filter((e) => e.type === 'state' && (e.state.status === 'slowed' || e.state.status === 'attention' || e.state.status === 'off'))).toEqual([])
     const blobsWhileWaiting = t.pictureBlobs()
@@ -365,15 +510,17 @@ describe('3D: media ahead of time (decision 6)', () => {
     await t.tick(10 * 60_000)
     expect(await t.has('fifth.mp3')).toBe(true)
     expect(t.media.state().waiting).toBeNull()
+    expect((await t.media.show('flags/fr.png')).status).toBe('ready') // the person opens it: tried at once
   })
 
   it('no signal in the middle: the media waits quietly and continues after the next pass', async () => {
-    const t = await setup(DEMO, { parallel: 1 })
     let drop = true
-    t.github.interrupt = (call) => {
-      if (drop && call.url.includes('/git/blobs/') && t.lock.holders > 0 && t.log.some((l) => l.startsWith(`checkpoint`))) throw new TypeError('Load failed')
-      return undefined
-    }
+    const t = await setup(DEMO, {
+      parallel: 1,
+      beforeBlob: (_sha, media) => {
+        if (drop && media) throw new GithubError('OFFLINE', null, 'No connection to GitHub')
+      },
+    })
     await t.open()
     expect(t.media.state().waiting).toBe('offline')
     expect(t.engine.state().status).toBe('synced')
@@ -453,6 +600,38 @@ describe('3D: media ahead of time (decision 6)', () => {
 })
 
 describe('3D: "show this picture" (C1, N3), store first, then the network', () => {
+  // YAZ-5200 (3D6): each URL was kept until the vault closed: 500 pictures held 500 blobs.
+  it('500 pictures shown, then let go (`releaseUrl`): their object URLs are revoked, except a few recent ones; a URL in use stays', async () => {
+    const files: Record<string, string | Uint8Array> = { 'a.md': page('A', []) }
+    for (let i = 0; i < 500; i++) files[`p/${i}.png`] = png(i % 256, 32)
+    const t = await setup(files, { realUrls: true })
+    await t.open()
+    const made = vi.spyOn(URL, 'createObjectURL')
+    const revoked = vi.spyOn(URL, 'revokeObjectURL')
+    try {
+      const held = await t.media.show('p/0.png') // a picture still on the screen: never let go
+      expect(held.status).toBe('ready')
+      for (let i = 1; i < 500; i++) {
+        const shown = await t.media.show(`p/${i}.png`)
+        expect(shown.status).toBe('ready')
+        t.media.releaseUrl(`p/${i}.png`)
+      }
+      expect(made).toHaveBeenCalledTimes(500)
+      expect(made.mock.calls.length - revoked.mock.calls.length).toBeLessThanOrEqual(1 + MEDIA_URL_IDLE_CAP)
+      expect(revoked.mock.calls.map((c) => c[0])).not.toContain(held.status === 'ready' ? held.url : '')
+      expect(t.media.urlNow('p/0.png')).not.toBeNull()
+      // A recent one shows again with no new URL; an old one gets a new URL.
+      const recent = await t.media.show('p/499.png')
+      expect(made).toHaveBeenCalledTimes(500)
+      expect(recent.status).toBe('ready')
+      await t.media.show('p/1.png')
+      expect(made).toHaveBeenCalledTimes(501)
+    } finally {
+      made.mockRestore()
+      revoked.mockRestore()
+    }
+  })
+
   it('a stored file shows from storage with no network call, and counts as viewed', async () => {
     const t = await setup(DEMO)
     await t.open()
@@ -494,8 +673,10 @@ describe('3D: "show this picture" (C1, N3), store first, then the network', () =
   })
 })
 
-describe('3D: 2,000 files to fetch, no long task on the UI thread (3B`s method)', () => {
-  it('plans and downloads 2,000 pictures; the longest hold is under 50 ms; the numbers are printed', async () => {
+describe('3D: 2,000 files to fetch, no long task on the UI thread', () => {
+  // YAZ-5190 (3D5): the hold is the CPU time of 3D's own work between two yields (`process.cpuUsage`), not the wall
+  // clock: another process on a busy machine does not count, and a long task of this code always does. No skip.
+  it('plans and downloads 2,000 pictures; no slice of its work holds the thread past budgetMs(50); the numbers are printed', async () => {
     const files: Record<string, string | Uint8Array> = { '.yaseendocs/review.json': '{"newPerDay":null}' }
     for (let p = 0; p < 100; p++) {
       const cards = Array.from({ length: 10 }, (_, c) => block(`NC-${p * 10 + c + 1}`, `Q ![](img/${p}-${c}-a.png)\n---\n![](img/${p}-${c}-b.png)`, NEAR))
@@ -505,58 +686,60 @@ describe('3D: 2,000 files to fetch, no long task on the UI thread (3B`s method)'
         files[`img/${p}-${c}-b.png`] = png((p + c + 1) % 256, 16)
       }
     }
-    let probing = true
-    let gaps: number[] = []
-    let last = performance.now()
-    const probe = () => {
-      const now = performance.now()
-      gaps.push(now - last)
-      last = now
-      if (probing) setTimeout(probe, 0)
+    const cpuMs = () => {
+      const u = process.cpuUsage()
+      return (u.user + u.system) / 1000
     }
-    setTimeout(probe, 0)
-    const measure = async (run: () => Promise<unknown>) => {
-      await new Promise((r) => setTimeout(r, 5))
-      gaps = []
-      last = performance.now()
-      const t0 = performance.now()
-      await run()
-      return { ms: performance.now() - t0, longest: Math.max(...gaps, performance.now() - last) }
-    }
-    const realYield = () => new Promise<void>((r) => setTimeout(r, 0))
-    let idle = { ms: 0, longest: Infinity }
-    let best = { ms: 0, longest: Infinity }
-    for (let run = 0; run < 5 && best.longest >= 50; run++) {
+    let best = { cpu: Infinity, wall: 0, ms: 0, slices: 0 }
+    // Best of up to 3 runs: a GC pause can land in one slice of one run.
+    for (let run = 0; run < 3 && (best.cpu >= budgetMs(50) || best.wall >= budgetMs(50)); run++) {
       const t = await setup(files, { runner: false })
       await t.engine.open(MAIN)
       await t.engine.idle()
-      // The pass is done; now only 3D's work: a runner plans and downloads all 2,000.
-      const runner = createMediaAhead({ engine: t.engine, store: t.store, clock: t.clock, yieldToUi: realYield, makeUrl: () => 'blob:x', revokeUrl: () => {} })
-      const m = await measure(async () => {
-        await runner.refresh()
-        await runner.idle()
-      })
-      // The idle probe runs as long as the work did: on a loaded machine (other agents) the OS stops the process at
-      // random points, and an idle probe of the same length sees those stops too.
-      const calm = await measure(() => new Promise((r) => setTimeout(r, Math.max(100, m.ms))))
+      const holds: { cpu: number; wall: number }[] = []
+      let cpuMark = cpuMs()
+      let wallMark = performance.now()
+      const slice = () => {
+        holds.push({ cpu: cpuMs() - cpuMark, wall: performance.now() - wallMark })
+        return new Promise<void>((r) =>
+          setTimeout(() => {
+            cpuMark = cpuMs()
+            wallMark = performance.now()
+            r()
+          }, 0),
+        )
+      }
+      const runner = createMediaAhead({ engine: t.engine, store: t.store, clock: t.clock, yieldToUi: slice, makeUrl: () => 'blob:x', revokeUrl: () => {} })
+      const t0 = performance.now()
+      cpuMark = cpuMs()
+      wallMark = performance.now()
+      await runner.refresh()
+      await runner.idle()
+      holds.push({ cpu: cpuMs() - cpuMark, wall: performance.now() - wallMark })
       expect(runner.state()).toMatchObject({ done: 2000, total: 2000 })
-      if (m.longest < best.longest) best = m
-      if (calm.longest < idle.longest) idle = calm
+      const cpu = Math.max(...holds.map((h) => h.cpu))
+      const wall = Math.max(...holds.map((h) => h.wall))
+      if (Math.max(cpu, wall) < Math.max(best.cpu, best.wall)) best = { cpu, wall, ms: performance.now() - t0, slices: holds.length }
       runner.stop()
       t.engine.stop()
     }
-    probing = false
-    console.log(`[3D perf] idle probe ${idle.longest.toFixed(1)} ms; 1,000 cards, 2,000 pictures: plan and download ${best.ms.toFixed(0)} ms, longest hold ${best.longest.toFixed(1)} ms`)
-    if (best.longest >= 50 && idle.longest > 15) {
-      console.log('[3D perf] the machine is too busy to measure holds (the idle probe alone waited > 15 ms): check skipped')
-      return
-    }
-    // CPU contention (other agents) slows each unit of work; an idle probe does not see it. Load per core over 4: skipped.
-    const load = loadavg()[0] / Math.max(1, cpus().length)
-    if (best.longest >= 50 && load > 4) {
-      console.log(`[3D perf] the machine is overloaded (load ${load.toFixed(1)} per core): check skipped`)
-      return
-    }
-    expect(best.longest).toBeLessThan(50)
+    // The wall clock too: a wait that burns no CPU (a busy loop on a busy machine gets little CPU) still holds the thread.
+    // An idle probe as long as the work shows what the machine alone adds; only that skips the wall check.
+    const idle = await (async () => {
+      let longest = 0
+      let last = performance.now()
+      const end = last + Math.max(200, best.ms)
+      while (performance.now() < end) {
+        await new Promise((r) => setTimeout(r, 0))
+        const now = performance.now()
+        longest = Math.max(longest, now - last)
+        last = now
+      }
+      return longest
+    })()
+    console.log(`[3D perf] 1,000 cards, 2,000 pictures: ${best.ms.toFixed(0)} ms, ${best.slices} slices; longest slice ${best.cpu.toFixed(1)} ms CPU, ${best.wall.toFixed(1)} ms wall; idle probe ${idle.toFixed(1)} ms`)
+    expect(best.cpu).toBeLessThan(budgetMs(50))
+    if (idle < budgetMs(50)) expect(best.wall).toBeLessThan(budgetMs(50))
+    else console.log('[3D perf] the idle probe alone is over the budget: the wall-clock check is skipped (the CPU check ran)')
   }, 120_000)
 })

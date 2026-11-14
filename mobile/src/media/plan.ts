@@ -80,7 +80,7 @@ export interface AheadInput extends AheadOptions {
   records: Readonly<Record<string, IndexRecord>>
   /** The stored text of a page or card file, or null when it is not stored. */
   read: (path: string) => Promise<string | null>
-  /** Every file of the vault at the checkpoint, with its size in bytes when known (the tree's `size`). */
+  /** Every file of the vault at the checkpoint, with its size in bytes when known (the tree's `size`). Unknown: too large. */
   sizes: ReadonlyMap<string, number | undefined>
   settings: ReviewSettings
   now: number
@@ -132,7 +132,9 @@ export async function aheadPlan(input: AheadInput): Promise<AheadPlan> {
         const id = block.line.parts.find((p) => p.kind === 'id')
         if (id === undefined || id.kind !== 'id' || id.id.toLowerCase() !== c.id.toLowerCase()) continue
         for (const path of cardMediaPaths(block.text, holder, resolve)) {
-          if ((input.sizes.get(path) ?? 0) > maxBytes) tooLarge.add(path)
+          // An unknown size counts as too large (YAZ-5187): never a large file ahead by mistake; it downloads when it shows.
+          const size = input.sizes.get(path)
+          if (size === undefined || size > maxBytes) tooLarge.add(path)
           else wanted.add(path)
         }
         // After each card: reading a card's Markdown is the plan's one real cost (measured: up to ~5 ms a card).

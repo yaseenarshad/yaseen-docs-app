@@ -1,7 +1,7 @@
 // The pure card read (YAZ-5161): no bridge, so the phone's build wall takes it. Never `cardFile.ts` (the desktop's).
 import { cardOnPageIn, type CardOnPage } from '@client/review/cardRead'
 import type { ReviewHost } from '@client/review/reviewHost'
-import { CardNotFoundError, cardIdOf, cardNextIndex, cardReviewIndex, pageCards, type CardLine, type CardReview } from '@shared/cardLine'
+import { CardNotFoundError, cardIdOf, cardNextIndex, cardReviewIndex, cardReviewKey, cardReviewsOf, pageCards, type CardLine, type CardReview } from '@shared/cardLine'
 import { NOTHING_ADDED, type CardsAddedToday } from '@shared/cardSchedule'
 import { cardTitle } from '@shared/cardText'
 import type { VaultStore } from '../store'
@@ -107,9 +107,18 @@ export function phoneReviewHost(options: PhoneReviewHostOptions): ReviewHost {
     return { line: block.line, title: card.fileTitle ?? cardTitle(card.text) }
   }
   const add = (path: string, title: string, ops: readonly CardOp[]) => answers.add(ops.map((op) => ({ op, path, title })))
-  /** The waiting group that holds the answer of card `id` at `at`, or null when it was sent. */
-  const unsentAnswer = (id: string, at: string): number | null =>
-    answers.waiting().find((w) => w.op.kind === 'review' && w.op.id === id && w.op.review.at === at)?.group ?? null
+  /** The review action for `review` on `line`: a second one of the same minute and rating says so (`nth`, YAZ-5078). */
+  const reviewOp = (id: string, line: CardLine, review: CardReview): CardOp => {
+    const nth = cardReviewsOf(line).filter((r) => cardReviewKey(r) === cardReviewKey(review)).length + 1
+    return nth > 1 ? { kind: 'review', id, review, nth } : { kind: 'review', id, review }
+  }
+  /** The waiting answer of card `id` at `at` (its group and rating), or null when it is not in the list. */
+  const unsentAnswer = (id: string, at: string): { group: number; rating: CardReview['rating'] } | null => {
+    const w = [...answers.waiting()].reverse().find((w) => w.op.kind === 'review' && w.op.id === id && w.op.review.at === at)
+    return w === undefined || w.op.kind !== 'review' ? null : { group: w.group, rating: w.op.review.rating }
+  }
+  /** The review `withoutCardReview(line, at)` would take: the last one at `at`. */
+  const reviewAt = (line: CardLine, at: string): CardReview | undefined => cardReviewsOf(line).reverse().find((r) => r.at === at)
 
   return {
     async readCard(path, id): Promise<CardOnPage | null> {
@@ -119,25 +128,30 @@ export function phoneReviewHost(options: PhoneReviewHostOptions): ReviewHost {
     async writeCardAnswer(path, id, review: CardReview) {
       const { line, title } = await current(path, id)
       const next = cardNextIndex(line)
-      await add(path, title, [...(next >= 0 ? [{ kind: 'next', id, on: false } as const] : []), { kind: 'review', id, review }])
+      await add(path, title, [...(next >= 0 ? [{ kind: 'next', id, on: false } as const] : []), reviewOp(id, line, review)])
       return next
     },
     async undoCardAnswer(path, id, at, next) {
-      const group = unsentAnswer(id, at)
-      if (group !== null && (await answers.undo(group))) return
-      const { title } = await current(path, id)
-      await add(path, title, [{ kind: 'unreview', id, at }, ...(next >= 0 ? [{ kind: 'next', id, on: true } as const] : [])])
+      const waiting = unsentAnswer(id, at)
+      // Removed from the list only while no send has tried it. Else (a send runs, or its reply was lost) GitHub may
+      // hold the review, so Undo sends `unreview` (YAZ-5180). On a line with no such review it changes nothing.
+      if (waiting !== null && (await answers.undo(waiting.group))) return
+      const { line, title } = await current(path, id)
+      const rating = waiting?.rating ?? reviewAt(line, at)?.rating
+      const ops: CardOp[] = [...(rating === undefined ? [] : [{ kind: 'unreview', id, at, rating } as const]), ...(next >= 0 ? [{ kind: 'next', id, on: true } as const] : [])]
+      if (ops.length > 0) await add(path, title, ops)
     },
     async deleteCardReview(path, id, at) {
       const { line, title } = await current(path, id)
       const place = cardReviewIndex(line, at)
-      if (place >= 0) await add(path, title, [{ kind: 'unreview', id, at }])
+      const review = reviewAt(line, at)
+      if (place >= 0 && review !== undefined) await add(path, title, [{ kind: 'unreview', id, at, rating: review.rating }])
       return place
     },
     async restoreCardReview(path, id, review, index) {
       if (index < 0) return
-      const { title } = await current(path, id)
-      await add(path, title, [{ kind: 'review', id, review }])
+      const { line, title } = await current(path, id)
+      await add(path, title, [reviewOp(id, line, review)])
     },
     async changeCardLine(path, id, change) {
       const { line, title } = await current(path, id)

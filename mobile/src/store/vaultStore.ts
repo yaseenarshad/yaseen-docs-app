@@ -1,6 +1,6 @@
 import { isMarkdown } from '@shared/fileKind'
 import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR } from '@shared/types'
-import type { Backend, Op } from './backend'
+import { StaleWriteError, type Backend, type Op } from './backend'
 import { TOKEN_STATE } from './tokenStore'
 
 /**
@@ -10,6 +10,9 @@ import { TOKEN_STATE } from './tokenStore'
  * `DB_SCHEMA` in `idbBackend.ts`.
  */
 export const STORE_FORMAT = 1
+
+/** The vault's state that keeps its protected media (`protectMedia`, 3D), so a new session holds it at once. */
+export const MEDIA_KEPT_STATE = 'mediaKept'
 
 /** The scope of phone-wide state (the vault list, settings, recents), next to the per-vault scopes (vault ids). */
 export const PHONE = ''
@@ -79,9 +82,10 @@ export class StorageFullError extends Error {
 }
 
 /**
- * A write for a vault that left the phone in this session ("Remove from this phone", "Sign out and erase this phone"),
- * started before it left: a sync pass, a media download, an answer list write (YAZ-5175). The store refuses it, so no
- * row of that vault comes back after the clear. `admit` lets the vault write again when it is signed in again.
+ * A write of an older generation of the vault: it started before a clear of that vault ("Reset local copy", "Remove
+ * from this phone", "Sign out and erase this phone"), in this tab or another one. The store refuses it, so nothing of
+ * the old open comes back after the clear, and nothing of it is marked done for the new open (YAZ-5175, YAZ-5193,
+ * YAZ-5194). The writer should stop quietly: its vault, as it knew it, is gone.
  */
 export class VaultClosedError extends Error {
   constructor(readonly vault: string) {
@@ -109,9 +113,11 @@ export interface VaultStore {
   /**
    * 3D (YAZ-5074): the open vault's media that the cards due in the window need. Row P2 never drops these files; the
    * other media goes as before. One vault at a time (the open one, decision 7): a call replaces the set, and `null`
-   * clears it. Held in memory only: the media runner sets it again at each start.
+   * clears it. With `paths`, the set holds at once and is also kept as the vault's state `MEDIA_KEPT_STATE`. Without
+   * `paths`, the vault's kept set holds (YAZ-5188: at the start of a session, before the media's first plan, a full
+   * phone must not drop a window file). The promise ends when the set is kept.
    */
-  protectMedia(vault: string | null, paths: Iterable<string>): void
+  protectMedia(vault: string | null, paths?: Iterable<string>): Promise<void>
 
   checkpoint(vault: string): Promise<Checkpoint | null>
   setCheckpoint(vault: string, checkpoint: Checkpoint): Promise<void>
@@ -125,8 +131,22 @@ export interface VaultStore {
   removeState(scope: string, name: string): Promise<void>
 
   /**
-   * A vault comes onto the phone (sign-in, YAZ-5175): its writes are allowed again after `removeVault` or `eraseAll`.
-   * Until then, every write of a vault that left the phone in this session throws `VaultClosedError`.
+   * The vault's generation (YAZ-5193): a count in `meta` that each clear of the vault raises (`resetCopy`,
+   * `removeVault`), with the phone's count that `eraseAll` raises. Kept in the database, so every tab sees it (YAZ-5194).
+   *
+   * `session(scope)` reads the generation NOW and gives the same store, whose writes for `scope` land only while the
+   * generation is still that one: checked in the same transaction as each write. A writer that starts work for one open
+   * of a vault takes a session at its start: the sync pass (3B), and any sender outside the store, for example the
+   * friends sender with `session(PHONE)` (YAZ-5195: refused after "Sign out and erase this phone"). A refused write
+   * throws `VaultClosedError`.
+   *
+   * The plain store's writes use the generation that this store object first saw for the vault (and the phone's count
+   * at its open), so they are refused after a clear too, until `admit`.
+   */
+  session(scope: string): Promise<VaultStore>
+  /**
+   * The vault comes (back) onto the phone in this tab: a sign-in, or the app after "Reset local copy". The plain store
+   * takes the vault's generation of now. A session taken before stays refused.
    */
   admit(vault: string): void
 
@@ -172,23 +192,43 @@ function notTheToken(name: string) {
 export async function openVaultStore(backend: Backend, options: OpenOptions = {}): Promise<VaultStore> {
   const format = options.format ?? STORE_FORMAT
   const now = options.now ?? Date.now
-  /** 3D: the open vault and its media that must stay (`protectMedia`). */
-  let kept: { vault: string; paths: ReadonlySet<string> } | null = null
-  const isKept = (e: FileRef) => kept !== null && e.vault === kept.vault && kept.paths.has(e.path)
-  /** YAZ-5175: the vaults that left the phone in this session, and whether ALL left ("erase"); `admit` brings one back. */
-  const closed = new Set<string>()
+  /** 3D: the open vault and its media that must stay (`protectMedia`); `paths` null: read the kept set when needed. */
+  let kept: { vault: string; paths: ReadonlySet<string> | null } | null = null
+  const isKept = (e: FileRef) => kept !== null && e.vault === kept.vault && kept.paths !== null && kept.paths.has(e.path)
+  /** The generation of a scope (YAZ-5193): the phone's erase count and the vault's clear count, both in `meta`. */
+  type Generation = { all: unknown; vault: unknown }
+  const ERASES = 'erases'
+  const clearsKey = (vault: string) => `clears:${vault}`
+  const readGeneration = async (scope: string): Promise<Generation> => ({
+    all: await backend.get('meta', ERASES),
+    vault: scope === PHONE ? undefined : await backend.get('meta', clearsKey(scope)),
+  })
+  const checks = (scope: string, g: Generation): Op[] => [
+    { check: 'meta', key: ERASES, value: g.all },
+    ...(scope === PHONE ? [] : [{ check: 'meta', key: clearsKey(scope), value: g.vault } as Op]),
+  ]
+  /** The plain store's generations: the phone's erase count at this store's open, and each vault's when first written. */
+  const phoneErases = await backend.get('meta', ERASES)
+  const seen = new Map<string, Generation>()
+  /** Vaults that `admit` let in: their next plain write takes the generation of now. */
   const admitted = new Set<string>()
-  let erased = false
-  const isClosed = (vault: string) => vault !== PHONE && (closed.has(vault) || (erased && !admitted.has(vault)))
-  const scopeOf = (op: Op): string | null => ('put' in op && op.put !== 'meta' ? (typeof op.key === 'string' ? op.key : op.key[0]) : null)
-  /** Every write that ADDS rows goes through here. The check and the transaction start in the same turn, so a clear
-   *  that runs first is always seen, and a write that started first lands before the clear (IndexedDB keeps the order). */
-  const apply = (ops: readonly Op[]): Promise<void> => {
-    for (const op of ops) {
-      const vault = scopeOf(op)
-      if (vault !== null && isClosed(vault)) return Promise.reject(new VaultClosedError(vault))
+  const plainGeneration = async (scope: string): Promise<Generation | null> => {
+    if (scope === PHONE) return null // the vault list and the phone's settings: the sign-in after an erase writes them
+    let g = seen.get(scope)
+    if (g === undefined) {
+      g = admitted.delete(scope) ? await readGeneration(scope) : { all: phoneErases, vault: await backend.get('meta', clearsKey(scope)) }
+      seen.set(scope, g)
     }
-    return backend.apply(ops)
+    return g
+  }
+  const next = (count: unknown) => (typeof count === 'number' ? count : 0) + 1
+  /** Before a clear of `vault`: the plain store keeps the generation of before, so its later writes are refused too
+   *  (until `admit`). Gives the vault's clear count of before. */
+  const pinBefore = async (vault: string): Promise<unknown> => {
+    const count = await backend.get('meta', clearsKey(vault))
+    if (!seen.has(vault)) seen.set(vault, { all: phoneErases, vault: count })
+    admitted.delete(vault)
+    return count
   }
   const stored = await backend.get('meta', 'format')
   const formatReset = stored !== undefined && stored !== format
@@ -202,12 +242,30 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
    * nor the open vault's media that the cards due in the window need (`protectMedia`, 3D: the night pick of YAZ-5074).
    */
   async function mediaToDrop(vault: string, except: FileRef | undefined): Promise<FileEntry[]> {
+    if (kept !== null && kept.paths === null) {
+      const which = kept
+      const saved = (await backend.get('state', [which.vault, MEDIA_KEPT_STATE])) as string[] | undefined
+      if (kept === which) kept = { vault: which.vault, paths: new Set(saved ?? []) }
+    }
     const entries = (await backend.all('entries')) as FileEntry[]
     const media = entries.filter((e) => e.kind === 'media' && !isKept(e) && !(except && e.vault === except.vault && e.path === except.path))
     const own = media.filter((e) => e.vault === vault)
     const others = media.filter((e) => e.vault !== vault)
     const byAge = (a: FileEntry, b: FileEntry) => a.viewedAt - b.viewedAt
     return [...own.sort(byAge), ...others.sort(byAge)]
+  }
+
+  /** One store object: the plain one (`bound` null), or a session bound to one scope's generation. */
+  const build = (bound: { scope: string; g: Generation } | null): VaultStore => {
+  /** Every write that ADDS rows goes through here, with its scope's generation checked in the same transaction. */
+  const apply = async (ops: readonly Op[], scope: string): Promise<void> => {
+    const g = bound !== null && bound.scope === scope ? bound.g : await plainGeneration(scope)
+    try {
+      await backend.apply(g === null ? ops : [...checks(scope, g), ...ops])
+    } catch (error) {
+      if (error instanceof StaleWriteError) throw new VaultClosedError(scope)
+      throw error
+    }
   }
 
   /**
@@ -230,7 +288,7 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
     const dropped: FileRef[] = []
     const tryApply = async (): Promise<boolean> => {
       try {
-        await apply(ops)
+        await apply(ops, target.vault)
         return true
       } catch (error) {
         if (!isQuotaError(error)) throw error
@@ -252,7 +310,7 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
     throw new StorageFullError(target.vault, target.item, dropped)
   }
 
-  return {
+  const store: VaultStore = {
     formatReset,
 
     async read(vault, path) {
@@ -276,8 +334,21 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
 
     remove: (vault, path) => backend.apply(dropOps({ vault, path })),
 
-    protectMedia(vault, paths) {
-      kept = vault === null ? null : { vault, paths: new Set(paths) }
+    async protectMedia(vault, paths) {
+      if (vault === null) {
+        kept = null
+        return
+      }
+      if (paths === undefined) {
+        if (kept?.vault !== vault) kept = { vault, paths: null }
+        return
+      }
+      const set = new Set(paths)
+      kept = { vault, paths: set }
+      // Kept for the next session, at best: a full phone or a closed vault leaves the set in memory for this one.
+      await applyMakingRoom([{ put: 'state', key: [vault, MEDIA_KEPT_STATE], value: [...set] }], { vault, item: `state:${MEDIA_KEPT_STATE}` }).catch((error: unknown) => {
+        if (!(error instanceof StorageFullError) && !(error instanceof VaultClosedError)) throw error
+      })
     },
 
     async list(vault) {
@@ -309,25 +380,34 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
       await backend.apply([{ del: 'state', key: [scope, name] }])
     },
 
+    async session(scope) {
+      return build({ scope, g: await readGeneration(scope) })
+    },
     admit(vault) {
-      closed.delete(vault)
+      seen.delete(vault)
       admitted.add(vault)
     },
 
-    resetCopy: (vault) => backend.apply(clearCopy(vault)),
-    removeVault(vault) {
-      // Closed first, in the same turn as the clear starts: no write that comes after the clear can land (YAZ-5175).
-      closed.add(vault)
-      admitted.delete(vault)
-      return backend.apply([...clearCopy(vault), { clear: 'state', scope: vault }])
+    // Each clear raises the generation in the same transaction (YAZ-5193): every older writer of the vault is refused.
+    async resetCopy(vault) {
+      // The vault stays: the plain store moves to the new generation; a session (a pass) taken before is refused.
+      const before = await backend.get('meta', clearsKey(vault))
+      await backend.apply([...clearCopy(vault), { put: 'meta', key: clearsKey(vault), value: next(before) }])
+      seen.set(vault, { all: seen.get(vault)?.all ?? phoneErases, vault: next(before) })
     },
-    eraseAll() {
-      erased = true
-      closed.clear()
-      admitted.clear()
-      return backend.apply([...clearCopy(), { clear: 'state' }, { clear: 'meta' }, { put: 'meta', key: 'format', value: format }])
+    async removeVault(vault) {
+      const before = await pinBefore(vault)
+      await backend.apply([...clearCopy(vault), { clear: 'state', scope: vault }, { put: 'meta', key: clearsKey(vault), value: next(before) }])
+    },
+    async eraseAll() {
+      // The vaults' clear counts go with `meta`; the phone's erase count goes up, so every older writer is refused.
+      const erases = next(await backend.get('meta', ERASES))
+      await backend.apply([...clearCopy(), { clear: 'state' }, { clear: 'meta' }, { put: 'meta', key: 'format', value: format }, { put: 'meta', key: ERASES, value: erases }])
     },
 
     close: () => backend.close(),
   }
+  return store
+  }
+  return build(null)
 }

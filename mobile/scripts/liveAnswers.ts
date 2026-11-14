@@ -114,6 +114,27 @@ show(await step('5. a moved branch: STALE_HEAD, read again, repeat', () => send(
 log(`   GitHub's line: ${await remoteLine()}`)
 
 await wait(1000)
+// YAZ-5180: Undo while the send is on its way. The review host does this: `removeGroup` (refused once the send has
+// tried the action), then an `unreview` that names the review. The next send must take the review off GitHub.
+const undone = { at: minute(3), rating: 'hard' as const }
+const group = await add({ kind: 'review', id: ID, review: undone })
+let removed: number | null = null
+const undoDuringSend: GithubRemote = {
+  ...remote,
+  async commit(parent, changes, message) {
+    removed = (await box.removeGroup(group)).length // the person taps Undo now
+    if (removed === 0) await add({ kind: 'unreview', id: ID, at: undone.at, rating: undone.rating })
+    return remote.commit(parent, changes, message)
+  },
+}
+show(await step('5b. Undo while the send is on its way (YAZ-5180)', () => send(undoDuringSend)))
+log(`   Undo removed ${removed} actions from the list (0: the send had tried them, so it sent an unreview); waiting now ${box.waiting().map((w) => w.op.kind).join(' ')}`)
+log(`   GitHub's line after the send: ${await remoteLine()}`)
+await wait(1000)
+show(await step('5c. the next send (the unreview)', () => send()))
+log(`   GitHub's line: ${await remoteLine()}`)
+
+await wait(1000)
 await add({ kind: 'review', id: 'NCT-404', review: { at: minute(2), rating: 'good' } })
 show(await step('6. a card that is gone (expect lost, no write)', () => send()))
 log(`   lost list: ${box.lost().map((l) => `${l.op.kind} ${l.op.id} "${l.title}"`).join('; ')}`)

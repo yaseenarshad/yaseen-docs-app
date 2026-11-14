@@ -416,7 +416,9 @@ describe("the vault's word for page (round 15, item 5)", () => {
     expect(h.text()).toContain('Downloading your entries')
     await h.syncSet({ ready: true, status: 'synced' })
     await h.click('Search')
-    expect(h.text()).toContain('Search for cards and entries')
+    // 4C (YAZ-5079) put the real Search tab in the slot: its box and its empty vault say the vault's word.
+    expect(h.host.querySelector('input[type="search"]')?.getAttribute('placeholder')).toBe('Search cards and entries')
+    expect(h.text()).toContain('No entries yet.')
   })
 })
 
@@ -468,6 +470,23 @@ describe('the erase waits for a running pass (YAZ-5175)', () => {
     await erasing
     await h.settle()
     expect(await h.tokens.read('yaseen/vault@main')).toBeNull()
+    expect(h.button('Connect vault')).not.toBeNull()
+  })
+})
+
+describe('another tab erased the phone (YAZ-5194)', () => {
+  it('this tab stops its sync and shows the sign-in', async () => {
+    h = await mount()
+    await signInWithForm(h, 'yaseen/vault', GOOD)
+    // Tab 1 erased the database (the same rows), then told the other tabs.
+    await h.tokens.clearAll()
+    await h.store.eraseAll()
+    const other = new BroadcastChannel('notecards-tabs')
+    other.postMessage({ type: 'erased' })
+    other.close()
+    await new Promise((r) => setTimeout(r, 30))
+    await h.settle()
+    expect(h.sync.opened.at(-1)).toBeNull()
     expect(h.button('Connect vault')).not.toBeNull()
   })
 })

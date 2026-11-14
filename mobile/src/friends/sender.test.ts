@@ -7,7 +7,7 @@ import type { FriendDay } from '@shared/friendStats'
 import type { IndexRecord } from '@shared/types'
 import { loadAccount, saveAccount } from '../auth/account'
 import { githubClient } from '../github/client'
-import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn, type PhoneVault, type VaultStore } from '../store'
+import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn, type PhoneVault, type TokenStore, type VaultStore } from '../store'
 import { vaultId } from '../store/vaults'
 import type { SyncEvent, SyncState } from '../sync/engine'
 import { INDEX_STATE } from '../sync/phoneIndex'
@@ -65,6 +65,7 @@ function fakeSync(clock: FakeClock): FakeSync {
 
 interface Phone {
   store: VaultStore
+  tokens: TokenStore
   sender: FriendsSender
   sync: FakeSync
   /** Sets the stored index to `cards` (as a sync pass would), then runs a pass. */
@@ -91,7 +92,7 @@ async function phone(world: FakeGistWorld, clock: FakeClock, token: string, opti
     sync.pass()
     await sender.idle()
   }
-  return { store, sender, sync, review }
+  return { store, tokens, sender, sync, review }
 }
 
 /** The person's friends files on the fake GitHub: the index, the numbers gist, and `friends` pointers. */
@@ -186,7 +187,7 @@ describe('createFriendsSender (YAZ-5082)', () => {
     expect(numbers(world, stats)!.days[0].cards).toBe(3)
   })
 
-  it('sends when the app goes to the background, without the 5-minute wait', async () => {
+  it('YAZ-5192: leaving the app sends at once only when 5 minutes have passed; within them the change waits for the timer', async () => {
     const { clock, world } = setup()
     const { stats } = await friendsOf(world, PHONE_TOKEN, 1)
     const p = await phone(world, clock, PHONE_TOKEN)
@@ -194,7 +195,47 @@ describe('createFriendsSender (YAZ-5082)', () => {
     clock.advance(90_000)
     await p.review(answered(5, clock.now()))
     await p.sender.background()
+    expect(numbers(world, stats)!.days[0].cards).toBe(1)
+    expect(p.sender.state()).toMatchObject({ status: 'waiting', retryAt: START + PUBLISH_EVERY_MS })
+    clock.advance(PUBLISH_EVERY_MS - 90_000)
+    await p.sender.idle()
     expect(numbers(world, stats)!.days[0].cards).toBe(5)
+    // A leave after 5 quiet minutes with a new change: sent at once, with no pass.
+    clock.advance(PUBLISH_EVERY_MS)
+    await p.store.setState(`${REPO}@main`, INDEX_STATE, { commit: 'c', records: { 'cards.md': { path: 'cards.md', cards: answered(8, clock.now()) } } })
+    await p.sender.background()
+    expect(numbers(world, stats)!.days[0].cards).toBe(8)
+  })
+
+  it('YAZ-5192: the last send time survives a restart: a new app within 5 minutes does not send again', async () => {
+    const { clock, world } = setup()
+    const { stats } = await friendsOf(world, PHONE_TOKEN, 1)
+    const p = await phone(world, clock, PHONE_TOKEN)
+    await p.review(answered(2))
+    p.sender.stop()
+    clock.advance(60_000)
+    const n = patches(world).length
+    const again = createFriendsSender({ store: p.store, tokens: p.tokens, sync: p.sync, clock, fetch: gistsFetch(world).fetch, sleep: async () => {} })
+    p.sync.pass()
+    await again.idle()
+    await again.background()
+    expect(patches(world).length).toBe(n)
+    expect(again.state()).toMatchObject({ status: 'waiting', retryAt: START + PUBLISH_EVERY_MS })
+    expect(numbers(world, stats)!.days[0].cards).toBe(2)
+    again.stop()
+  })
+
+  it('background sends also slow down: leaving the app each 61 s for 1 hour does not use most of the 100', async () => {
+    const { clock, world } = setup()
+    await friendsOf(world, PHONE_TOKEN, 3)
+    const p = await phone(world, clock, PHONE_TOKEN)
+    const n = patches(world).length
+    for (let i = 1; i <= 60; i++) {
+      await p.review(answered(i, clock.now()))
+      await p.sender.background()
+      clock.advance(61_000)
+    }
+    expect(patches(world).length - n).toBeLessThanOrEqual(24) // now: 60
   })
 
   it('unchanged numbers are not sent again (each send costs 1 of 100 an hour)', async () => {
@@ -394,6 +435,98 @@ describe('createFriendsSender (YAZ-5082)', () => {
     p.sender.stop()
     expect(clock.pending()).toBe(0)
     expect(p.sync.listeners.size).toBe(0)
+  })
+
+  it('the friends send that ends after "Sign out and erase this phone" leaves nothing of the account on the phone', async () => {
+    const { clock, world } = setup()
+    await friendsOf(world, PHONE_TOKEN, 1)
+    const p = await phone(world, clock, PHONE_TOKEN)
+    // The gist write is slow: it waits until the test lets it go.
+    let release!: () => void
+    const held = new Promise<void>((done) => (release = done))
+    const http = gistsFetch(world)
+    const slow = async (url: string, init: RequestInit) => {
+      if ((init.method ?? 'GET') === 'PATCH') await held
+      return http.fetch(url, init)
+    }
+    const sender = createFriendsSender({ store: p.store, tokens: p.tokens, sync: p.sync, clock, fetch: slow, sleep: async () => {} })
+    p.sender.stop()
+    await p.store.setState(`${REPO}@main`, INDEX_STATE, { commit: 'c', records: { 'cards.md': { path: 'cards.md', cards: answered(2) } } })
+    p.sync.pass()
+    await new Promise((done) => setTimeout(done, 20)) // the send now waits in its write
+    const before = patches(world).length
+    await p.tokens.clearAll()
+    await p.store.eraseAll()
+    release()
+    await sender.idle()
+    expect((await p.store.getState('', 'friendsSend')) ?? null).toBeNull()
+    expect(await p.store.getState(`${REPO}@main`, 'account')).toBeUndefined()
+    // With no abort signal, the one write already in flight cannot be called back; its result is dropped, and no
+    // other friends call starts after the erase.
+    expect(patches(world).length).toBeLessThanOrEqual(before + 1)
+    const n = world.calls.length
+    p.sync.pass()
+    await sender.idle()
+    await sender.background()
+    expect(world.calls.length).toBe(n)
+  })
+
+  it('YAZ-5195: an erase and a NEW sign-in while an old send runs: the old send stores nothing (the store session)', async () => {
+    const { clock, world } = setup()
+    await friendsOf(world, PHONE_TOKEN, 1)
+    const p = await phone(world, clock, PHONE_TOKEN)
+    let release!: () => void
+    const held = new Promise<void>((done) => (release = done))
+    const http = gistsFetch(world)
+    const slow = async (url: string, init: RequestInit) => {
+      if ((init.method ?? 'GET') === 'PATCH') await held
+      return http.fetch(url, init)
+    }
+    const sender = createFriendsSender({ store: p.store, tokens: p.tokens, sync: p.sync, clock, fetch: slow, sleep: async () => {} })
+    p.sender.stop()
+    await p.store.setState(`${REPO}@main`, INDEX_STATE, { commit: 'c', records: { 'cards.md': { path: 'cards.md', cards: answered(2) } } })
+    p.sync.pass()
+    await new Promise((done) => setTimeout(done, 20))
+    await p.tokens.clearAll()
+    await p.store.eraseAll()
+    // The person signs in again at once: the vault list is back.
+    await saveVaultList(p.store, { vaults: [{ repo: REPO, branch: 'main', addedAt: START }], open: `${REPO}@main` })
+    release()
+    await sender.idle()
+    expect((await p.store.getState('', 'friendsSend')) ?? null).toBeNull()
+    await sender.stop()
+  })
+
+  it('YAZ-5195: stop() (the app calls it before the erase) aborts the running write and stores nothing', async () => {
+    const { clock, world } = setup()
+    const { stats } = await friendsOf(world, PHONE_TOKEN, 1)
+    const p = await phone(world, clock, PHONE_TOKEN)
+    const http = gistsFetch(world)
+    let aborted = false
+    const slow = (url: string, init: RequestInit) =>
+      (init.method ?? 'GET') !== 'PATCH'
+        ? http.fetch(url, init)
+        : new Promise<Response>((_, fail) =>
+            init.signal?.addEventListener('abort', () => {
+              aborted = true
+              fail(new DOMException('aborted', 'AbortError'))
+            }),
+          )
+    const erase = new AbortController()
+    const sender = createFriendsSender({ store: p.store, tokens: p.tokens, sync: p.sync, clock, fetch: slow, sleep: async () => {}, signal: erase.signal })
+    p.sender.stop()
+    await p.store.setState(`${REPO}@main`, INDEX_STATE, { commit: 'c', records: { 'cards.md': { path: 'cards.md', cards: answered(2) } } })
+    p.sync.pass()
+    await new Promise((done) => setTimeout(done, 20))
+    const before = JSON.stringify(await p.store.getState('', 'friendsSend'))
+    erase.abort()
+    await sender.stop()
+    expect(aborted).toBe(true)
+    expect(JSON.stringify(await p.store.getState('', 'friendsSend'))).toBe(before)
+    expect(numbers(world, stats)!.days).toEqual([])
+    p.sync.pass()
+    await sender.idle()
+    expect(world.calls.filter((c) => c.op === 'update' && c.id === stats)).toHaveLength(0)
   })
 
   it('the token is never in an address, a log, the stored state or the gists', async () => {

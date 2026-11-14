@@ -13,7 +13,7 @@ const frontmatter = (content: string) => content.slice(0, content.indexOf('---\n
 describe('applyOps (decision 2): each kind of action, by card ID, on the newest text', () => {
   const kinds: [string, CardOp[], string][] = [
     ['review', [{ kind: 'review', id: 'NC-2', review: R1 }], '<!-- card: NC-2, 2026-11-14T06:01Z good 9s -->'],
-    ['unreview', [{ kind: 'review', id: 'NC-2', review: R1 }, { kind: 'review', id: 'NC-2', review: R2 }, { kind: 'unreview', id: 'NC-2', at: R1.at }], '<!-- card: NC-2, 2026-11-14T06:02Z again -->'],
+    ['unreview', [{ kind: 'review', id: 'NC-2', review: R1 }, { kind: 'review', id: 'NC-2', review: R2 }, { kind: 'unreview', id: 'NC-2', at: R1.at, rating: R1.rating }], '<!-- card: NC-2, 2026-11-14T06:02Z again -->'],
     ['off', [{ kind: 'off', id: 'NC-2', on: true }], '<!-- card: NC-2, off -->'],
     ['next', [{ kind: 'next', id: 'NC-2', on: true }], '<!-- card: NC-2, next -->'],
     ['fix', [{ kind: 'fix', id: 'NC-2', on: true }], '<!-- card: NC-2, fix -->'],
@@ -65,10 +65,33 @@ describe('applyOps (decision 2): each kind of action, by card ID, on the newest 
     expect(cardRecords(once)[0].reviews).toHaveLength(1)
   })
 
+  it('YAZ-5078: two answers in ONE minute with one rating are two reviews, as the Mac writes them; each still goes one time', () => {
+    // A new card comes back in the same session: Remembered, then Remembered again, in the same minute.
+    const twice: CardOp[] = [
+      { kind: 'review', id: 'NC-2', review: R1 },
+      { kind: 'review', id: 'NC-2', review: R1, nth: 2 },
+    ]
+    const once = applyOps(page, twice).content
+    expect(lineOf(once, 'NC-2')).toBe('<!-- card: NC-2, 2026-11-14T06:01Z good 9s, 2026-11-14T06:01Z good 9s -->')
+    // Sent again (the send reached GitHub, its answer was lost): no third review.
+    expect(applyOps(once, twice).content).toBe(once)
+    // An action from before this field (no `nth`) is the first of its minute, as before.
+    expect(applyOps(once, [{ kind: 'review', id: 'NC-2', review: R1 }]).content).toBe(once)
+  })
+
+  it('YAZ-5181: `unreview` names ONE review (time and rating): applied two times, it takes one review; the other of that minute stays', () => {
+    const two = applyOps(page, [{ kind: 'review', id: 'NC-2', review: { at: R1.at, rating: 'again' } }, { kind: 'review', id: 'NC-2', review: R1 }]).content
+    const op: CardOp = { kind: 'unreview', id: 'NC-2', at: R1.at, rating: R1.rating }
+    const once = applyOps(two, [op]).content
+    expect(lineOf(once, 'NC-2')).toBe(`<!-- card: NC-2, ${R1.at} again -->`)
+    expect(applyOps(once, [op]).content).toBe(once)
+    expect(applyOps(two, [op, op]).content).toBe(once)
+  })
+
   it('the order of the actions is kept: archive then unarchive is not archived; unarchive then archive is', () => {
     expect(applyOps(page, [{ kind: 'off', id: 'NC-2', on: true }, { kind: 'off', id: 'NC-2', on: false }]).content).toBe(page)
     expect(lineOf(applyOps(page, [{ kind: 'off', id: 'NC-2', on: false }, { kind: 'off', id: 'NC-2', on: true }]).content, 'NC-2')).toBe('<!-- card: NC-2, off -->')
-    expect(applyOps(page, [{ kind: 'review', id: 'NC-2', review: R1 }, { kind: 'unreview', id: 'NC-2', at: R1.at }]).content).toBe(page)
+    expect(applyOps(page, [{ kind: 'review', id: 'NC-2', review: R1 }, { kind: 'unreview', id: 'NC-2', at: R1.at, rating: R1.rating }]).content).toBe(page)
   })
 
   it('a new review goes after the reviews already on the line, as the Mac writes it', () => {
@@ -105,7 +128,7 @@ describe('the older-app rule (round 10, addition 17)', () => {
       { kind: 'off', id: 'NC-2', on: true },
       { kind: 'next', id: 'NC-3', on: true },
       { kind: 'fix', id: 'NC-3', on: true },
-      { kind: 'unreview', id: 'NC-2', at: R2.at },
+      { kind: 'unreview', id: 'NC-2', at: R2.at, rating: R2.rating },
     ]
     const out = applyOps(page, ops).content
     const written = out.split('\n').filter((l) => l.startsWith('<!-- card:'))
@@ -132,7 +155,7 @@ describe('opsBetween: a change of one card line as actions (the review host\'s â
     ])
     expect(opsBetween('NC-2', before, line('<!-- card: NC-2, next, fix -->'))).toEqual([
       { kind: 'fix', id: 'NC-2', on: true },
-      { kind: 'unreview', id: 'NC-2', at: R2.at },
+      { kind: 'unreview', id: 'NC-2', at: R2.at, rating: R2.rating },
     ])
   })
   it('a change the phone cannot send (for example the title on the front) is refused, not lost', () => {

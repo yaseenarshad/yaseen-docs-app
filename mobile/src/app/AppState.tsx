@@ -4,6 +4,7 @@ import type { SignInInput } from '../auth/check'
 import { chooseFriendsVault, loadFriendsAccount, type FriendsAccount } from '../auth/friends'
 import { forgetVaultAndToken, signIn, signInAgain, signOutAndErase, startState, type SignInOutcome } from '../auth/signIn'
 import type { FetchLike } from '../github/client'
+import type { VaultMedia } from '../media/ui/vaultMedia'
 import type { Scanner } from '../scan/scanner'
 import { loadVaultList, openVault, openVaultOf, saveVaultList, vaultId, type KeepStorage, type PhoneVault, type TokenStore, type VaultList, type VaultStore } from '../store'
 import type { FriendsPort, FriendsSettings } from './friendsPort'
@@ -24,6 +25,11 @@ export interface AppServices {
   /** 4E's Friends, or `localFriends(store)` until it lands. */
   friends: FriendsPort
   scanner: Scanner
+  /**
+   * 4C (YAZ-5079): one file's bytes for the reader and Review (a picture, a sound, a PDF): 3D's `MediaAhead`, made when
+   * the engine loads (`lazyMedia`, `main.tsx`). Absent (tests): the screens read the store only (`storedMedia`).
+   */
+  media?: VaultMedia
   /** The GitHub calls of the sign-in check. Default: the browser's `fetch`. Tests pass `fakeGithub(…).fetch`. */
   fetch?: FetchLike
   now?: () => number
@@ -72,6 +78,22 @@ export interface AppModel {
 }
 
 const AppContext = createContext<AppModel | null>(null)
+
+/** The app's channel between its tabs (one Home Screen app has one window; Safari can have more). */
+const TABS_CHANNEL = 'notecards-tabs'
+type TabMessage = { type: 'erased' }
+const channelOf = (): BroadcastChannel | null => (typeof BroadcastChannel === 'function' ? new BroadcastChannel(TABS_CHANNEL) : null)
+function tellOtherTabs(message: TabMessage) {
+  const channel = channelOf()
+  channel?.postMessage(message)
+  channel?.close()
+}
+function hearOtherTabs(listener: (message: TabMessage) => void): () => void {
+  const channel = channelOf()
+  if (channel === null) return () => undefined
+  channel.onmessage = (event: MessageEvent<TabMessage>) => listener(event.data)
+  return () => channel.close()
+}
 
 /** How long a removal waits for a running pass to end. The store refuses that pass's later writes anyway (YAZ-5175),
  *  so the wait only keeps the screen honest; a stuck download must not hold the erase. */
@@ -242,9 +264,25 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   const eraseAll = useCallback(async () => {
     await stopSync(sync)
     await signOutAndErase(store, tokens)
+    // YAZ-5194: the other tabs of the app stop too and show the first-run screen. The store already refuses their
+    // writes (the erase count is in the database); this makes their screens follow.
+    tellOtherTabs({ type: 'erased' })
     await load(false)
     setNav({ tab: 'review', stack: [] })
   }, [store, tokens, sync, load])
+
+  // Another tab erased the phone: stop the sync here and show the sign-in (YAZ-5194).
+  useEffect(
+    () =>
+      hearOtherTabs((message) => {
+        if (message.type !== 'erased') return
+        void stopSync(sync).then(async () => {
+          await load(false)
+          setNav({ tab: 'review', stack: [] })
+        })
+      }),
+    [sync, load],
+  )
 
   const chooseFriends = useCallback(
     async (vault: string) => {

@@ -1,0 +1,63 @@
+/* The Search tab (4C, YAZ-5079), on the Mac's tokens (`styles.css`). Tuned in the demo round (7-). */
+.search__box {
+  margin: 0 0 8px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search__bar {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 8px;
+}
+
+.pill {
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+.pill[aria-expanded='true'] {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+.search__menu {
+  margin-bottom: 8px;
+}
+
+.search__notice {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--bg-side);
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+.search__rows .row__main {
+  overflow-wrap: anywhere;
+}
+
+.search__more {
+  margin-top: 10px;
+}
+
+/* A row is one button across the screen: the title at the left, what it is at the right. */
+.search .row.row__button {
+  width: 100%;
+  border-bottom: 1px solid var(--border);
+  color: inherit;
+  cursor: pointer;
+}
+.search__menu .row.row__button {
+  padding: 0 14px;
+}
+.search__menu .row.row__button:last-child {
+  border-bottom: 0;
+}

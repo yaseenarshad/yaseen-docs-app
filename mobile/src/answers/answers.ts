@@ -1,5 +1,5 @@
 import { cardsById } from '@shared/cardLinks'
-import { GithubError, MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS, type GithubErrorCode } from '../github/client'
+import { GithubError, MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS, rateLimitedUntil, type GithubErrorCode } from '../github/client'
 import type { VaultStore } from '../store'
 import { SEND_AFTER_MS } from '../sync/cadence'
 import type { Clock, SyncEngine } from '../sync/engine'
@@ -53,7 +53,10 @@ export interface Answers {
   waiting(): readonly WaitingAnswer[]
   /** One person action (one or more card actions): kept on the phone, then sent `SEND_AFTER_MS` after the last one. */
   add(entries: readonly { op: CardOp; path: string; title: string }[]): Promise<number>
-  /** Undo of an UNSENT action: its group leaves the list. False when it was sent already (the host adds `unreview`). */
+  /**
+   * Undo of an UNSENT action: its group leaves the list. False when it is gone, or when a send has tried it (it may be
+   * on GitHub, YAZ-5180): the host then adds `unreview`.
+   */
   undo(group: number): Promise<boolean>
   /** Discard of a lost action (the tap on the amber dot). */
   discard(seq: number): Promise<boolean>
@@ -109,7 +112,15 @@ export function createAnswers(options: AnswersOptions): Answers {
   let afterglow: CardOp[] = []
   /** "Slow down" answers to a send in a row: each one doubles the wait, up to 1 hour, as the engine does (YAZ-5169). */
   let slowedInRow = 0
+  /** Sends in a row that ended in `STALE_HEAD` (the branch kept moving): each one doubles the wait (YAZ-5183). */
+  let staleInRow = 0
   let state: AnswersState = { vault: null, waiting: 0, lost: [], sending: false, problem: null, retryAt: null, lastSentAt: null }
+  /**
+   * YAZ-5078: the view's mtime of each file whose shown text differs from the stored copy, with that text. The shared
+   * due list keeps a page's card facts by path, mtime and size (`cardFacts`): the Mac's index gives a new mtime on each
+   * write, so the view does too. The same text keeps its mtime (the cache hits); a new text gets a newer one.
+   */
+  let shownAt = new Map<string, { text: string; mtime: number }>()
 
   const emit = (event: AnswersEvent) => {
     for (const listener of [...listeners]) listener(event)
@@ -131,7 +142,8 @@ export function createAnswers(options: AnswersOptions): Answers {
     }, Math.max(0, at - clock.now()))
   }
   const waiting = () => (box?.waiting().length ?? 0) > 0
-  const slowed = () => state.problem === 'RATE_LIMITED' && state.retryAt !== null && state.retryAt > clock.now()
+  /** GitHub asked to wait, or the branch kept moving: no send before `retryAt`. */
+  const slowed = () => (state.problem === 'RATE_LIMITED' || state.problem === 'STALE_HEAD') && state.retryAt !== null && state.retryAt > clock.now()
   const needsPerson = () => state.problem !== null && NEEDS_PERSON.includes(state.problem)
   /** A send at once, unless the person must act first or GitHub asked to wait. */
   const sendSoon = () => {
@@ -145,6 +157,7 @@ export function createAnswers(options: AnswersOptions): Answers {
     vault = next
     box = null
     afterglow = []
+    shownAt = new Map()
     state = { ...state, problem: null, retryAt: null, lastSentAt: null }
     const id = next
     loading = (async () => {
@@ -187,6 +200,7 @@ export function createAnswers(options: AnswersOptions): Answers {
         })
         if (report === null) return
         slowedInRow = 0
+        staleInRow = 0
         if (report.result === 'offline') return setState({ problem: 'OFFLINE', retryAt: null })
         if (!report.stored) {
           const still = new Set(own.waiting().map((w) => w.seq))
@@ -205,8 +219,15 @@ export function createAnswers(options: AnswersOptions): Answers {
           plan(retryAt)
         } else {
           setState({ problem, retryAt: null })
-          // A branch that kept moving: try again after the usual wait. Other problems wait for the person or a trigger.
-          if (problem === 'STALE_HEAD') plan(clock.now() + sendAfter)
+          // A branch that kept moving (YAZ-5183): wait 1, 2, 4 … minutes, up to 1 hour, with the client's clamp. Each
+          // send is up to 6 tries of 3 writes, so this stays far under GitHub's write limit. Other problems wait for
+          // the person or a trigger.
+          if (problem === 'STALE_HEAD') {
+            staleInRow++
+            const retryAt = rateLimitedUntil(clock.now() + MIN_RATE_WAIT_MS * 2 ** Math.min(staleInRow - 1, 16), clock.now())
+            setState({ retryAt })
+            plan(retryAt)
+          }
         }
       } finally {
         running = null
@@ -277,7 +298,13 @@ export function createAnswers(options: AnswersOptions): Answers {
       for (const path of paths) {
         const shown = await text(path)
         const old = records[path]
-        if (shown !== null && old !== undefined) records[path] = phoneRecord(path, old.size, shown, { ctime: old.ctime, mtime: old.mtime })
+        if (shown === null || old === undefined || vault === null) continue
+        const stored = await store.read(vault, path)
+        if (stored !== null && stored.content === shown) continue // the actions change nothing here: the stored record
+        const last = shownAt.get(path)
+        const mtime = last !== undefined && last.text === shown ? last.mtime : Math.max(old.mtime, last?.mtime ?? 0) + 1
+        shownAt.set(path, { text: shown, mtime })
+        records[path] = phoneRecord(path, new TextEncoder().encode(shown).length, shown, { ctime: old.ctime, mtime })
       }
       return { commit: index.commit, records }
     },
