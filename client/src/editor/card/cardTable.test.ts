@@ -87,6 +87,16 @@ describe('card.css: a card`s table looks like the page`s (YAZ-5136)', () => {
     expect(shared(/border-bottom-width:\s*3px/)).toHaveLength(1)
   })
 
+  it('round 2: Table position Centre is ONE rule on `.app`: a page table block, its table, and a card`s table; Left has none', () => {
+    const centre = rules(tableCss, "[data-table-position='center']")
+    expect(centre).toHaveLength(1)
+    expect(centre[0].selector).toBe(".app[data-table-position='center'] :is(.milkdown-table-block, .milkdown-table-block table, .card__table > table)")
+    expect(centre[0].body.trim()).toBe('margin-inline: auto;')
+    expect(rules(tableCss, "[data-table-position='left']")).toHaveLength(0)
+    // The card's table sits in its scroll box (`.card__table`), so a centred table wider than the card still scrolls.
+    expect(rules(cardCss, '.card__sides .card__table').some((r) => /overflow-x:\s*auto/.test(r.body))).toBe(true)
+  })
+
   it('outside a page, the border reads `--table-outline`: Crepe`s own outline colour, light and dark', () => {
     expect(tableCss).toMatch(/var\(--crepe-color-outline, var\(--table-outline\)\)/)
     const root = rules(tableCss, ':root').find((r) => r.body.includes('--table-outline'))!

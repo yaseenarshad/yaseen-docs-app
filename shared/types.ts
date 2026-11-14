@@ -2247,6 +2247,11 @@ export interface SettingsState {
   tableStickyHeader: boolean
   /** Settings › Tables › All tables › Text in cells (YAZ-4900): every page table's cells Wrap (default) or Clip (one line, cut with "…"). A table's own `wrap` / `nowrap` wins, and a column's own `text` over that. `data-table-text` on `.app`. */
   tableTextInCells: TableTextInCells
+  /**
+   * Settings › Tables › Table position (YAZ-5136 round 2): `center` centres every table, in pages (edited and read) and in
+   * cards read anywhere: `data-table-position` on `.app`, one rule in `table.css`. The file never changes.
+   */
+  tablePosition: TablePosition
   /** Settings › Editor › Calendar tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
   /** Settings › Editor › Calendar tables › Now button (the YAZ-4163 demo): the "Now" chip under a calendar table whose now row is off the screen. A table's own `nonow` turns off its chip alone. `data-table-now-button` on `.app`. */
@@ -2577,6 +2582,9 @@ export type TableRowBand = 'off' | 'calendar' | 'all'
 export const TABLE_NEW_STYLES = ['plain', 'super'] as const
 export type TableNewStyle = (typeof TABLE_NEW_STYLES)[number]
 /** Text in a page table's cells (YAZ-4900): Wrap onto more lines, or Clip to one line cut with "…". */
+/** Settings › Tables › Table position (YAZ-5136 round 2, Yaseen's pick A): every table at the left (the look before) or centred. */
+export const TABLE_POSITIONS = ['left', 'center'] as const
+export type TablePosition = (typeof TABLE_POSITIONS)[number]
 export const TABLE_TEXT_IN_CELLS = ['wrap', 'clip'] as const
 export type TableTextInCells = (typeof TABLE_TEXT_IN_CELLS)[number]
 export const TABLE_ROW_BANDS: readonly TableRowBand[] = ['off', 'calendar', 'all']
@@ -2956,6 +2964,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableStickySubheaders: true,
   tableStickyHeader: true,
   tableTextInCells: 'wrap',
+  tablePosition: 'left',
   tableNowMark: 'line',
   tableNowButton: true,
   tableCellNoteButton: false,

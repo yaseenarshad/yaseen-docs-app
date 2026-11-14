@@ -155,7 +155,7 @@ const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkne
  * Settings › Tables (YAZ-4775), after Editor: the page tables' rows, moved off the Editor page with their keys. "All tables"
  * starts with Header row (YAZ-4774) and Width (YAZ-4783); Cell notes with the "+" (YAZ-4790).
  */
-const TABLES_ROWS = ['tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders', 'tableWidth', 'tableTextInCells', 'tableNewStyle', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteButton', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableAllNotesOpensAt', 'tableNowMark', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
+const TABLES_ROWS = ['tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders', 'tableWidth', 'tablePosition', 'tableTextInCells', 'tableNewStyle', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteButton', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableAllNotesOpensAt', 'tableNowMark', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Outline (YAZ-4094) first, then Section indent directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
@@ -927,11 +927,19 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     // "All tables" since YAZ-4775 (on the Tables page a second "Tables" read as "Tables › Tables"); Header row (YAZ-4774)
     // and Width (YAZ-4783) stand before Row band now, and New tables start as (YAZ-4869 item 22).
     expect(group?.querySelector('.settings-group__title')?.textContent).toBe('All tables')
-    expect([...group!.querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting).slice(0, 6)).toEqual(['tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders', 'tableWidth', 'tableTextInCells'])
+    expect([...group!.querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting).slice(0, 7)).toEqual(['tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders', 'tableWidth', 'tablePosition', 'tableTextInCells'])
     expect(row(el, 'tableRowBand')?.querySelector('.setting__label')?.textContent).toBe('Row band')
     expect(rowButtons(el, 'tableRowBand').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Off', 'false'], ['Calendar tables', 'false'], ['All tables', 'true']])
     act(() => rowButtons(el, 'tableRowBand')[1].click())
     expect(onChange.mock.calls.map((call) => call[0])).toEqual([{ ...DEFAULT_SETTINGS, tableRowBand: 'calendar' }])
+  })
+
+  it('YAZ-5136 round 2: Table position is Left (the look before) or Centre, under Width; an app setting', () => {
+    const { el, onChange } = mountOn('Tables')
+    expect(row(el, 'tablePosition')?.querySelector('.setting__label')?.textContent).toBe('Table position')
+    expect(rowButtons(el, 'tablePosition').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Left', 'true'], ['Centre', 'false']])
+    act(() => rowButtons(el, 'tablePosition')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tablePosition: 'center' })
   })
 
   it('Calendar tables › Now button (YAZ-4163 demo): On by default; Off writes only its own field', () => {
