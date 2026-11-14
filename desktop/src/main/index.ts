@@ -30,6 +30,8 @@ import { openLink } from './fs/openLink'
 import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, gateOnBoardKind, menuKeyedVaults, menuKindsInFront, pickMenuTargetWindow, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile } from './menu'
 import { revealItem } from './fs/reveal'
 import { revealVaultImage, serveVaultImage } from './vaultProtocol'
+import { COURSE_VOICE_HOST, type CourseAudio } from './courseAudio/courseAudio'
+import { registerCourseAudioIpc } from './ipc/courseAudio'
 import { followSettingsFolder } from './settingsFolder'
 import { drawingInFront, hotkeyRecording, noPageInFront } from './hotkeyRecording'
 import { createStore } from './store'
@@ -283,6 +285,8 @@ let lastFocusedWcId: number | undefined
 
 /** The per-vault GitHub sync manager (YAZ-1081), created with the rest of the IPC once `ready` fires. */
 let gitSync: GitSyncManager | undefined
+/** The course sound (YAZ-5159): made with the other doors; `app://course-voice` answers 404 before. */
+let courseAudio: CourseAudio | null = null
 
 /** The memory meter (YAZ-3737 D1), made on `ready`: a window that closes drops its history. */
 let meter: MemoryMeter | undefined
@@ -325,6 +329,8 @@ app.whenReady().then(() => {
     // `app://drawio/…` (YAZ-3028 D5, Draw's 🔒 YAZ-1802 D4): the diagram editor's OWN origin, every
     // answer under its no-network CSP; every other host is the renderer bundle, exactly as before.
     if (host === 'vault') return serveVaultImage(req, (u) => net.fetch(u))
+    // `app://course-voice/<chapter>/<clip>.m4a` (YAZ-5159): a clip of a course chapter whose downloaded file was checked.
+    if (host === COURSE_VOICE_HOST) return courseAudio?.serve(req) ?? new Response(null, { status: 404 })
     if (host === DRAWIO_HOST) {
       return serveDrawio(DRAWIO_DIR, pathname, {
         fetchFile: (url) => net.fetch(url),
@@ -424,6 +430,10 @@ app.whenReady().then(() => {
   // launch must not wait on a disk, and a path that cannot be made is still what the Settings row names.
   void ensureLibraryFolder(store.get().settings.libraryFolder, app.getPath('userData'), store.get().settingsFolder)
   gitSync = sync
+  // The course sound (YAZ-5159): downloaded per chapter while the course is open. At start only the clean-up runs, at
+  // most once a day: the folder goes 30 days after the course was last open. No download starts here.
+  courseAudio = registerCourseAudioIpc({ userData: app.getPath('userData'), isPackaged: app.isPackaged })
+  void courseAudio.sweep().catch((err: unknown) => console.warn(`[course-audio] the clean-up failed: ${String(err)}`))
   registerUpdateIpc(updater, {
     openExternal: (url) => void shell.openExternal(url),
     restartToUpdate: () => {

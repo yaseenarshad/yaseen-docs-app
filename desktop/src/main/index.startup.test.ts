@@ -376,10 +376,20 @@ describe('the updater in index.ts (YAZ-2976)', () => {
     expect([...h.handles.keys()]).toEqual([])
     h.s.ready()
     await settle()
-    expect([...h.handles.keys()].sort()).toEqual(['memory:report', 'spell:guesses', 'update:check', 'update:notes', 'update:restart', 'update:state'])
+    expect([...h.handles.keys()].sort()).toEqual(['course-audio:chapter', 'course-audio:chapter-starting', 'course-audio:open', 'memory:report', 'spell:guesses', 'update:check', 'update:notes', 'update:restart', 'update:state'])
     expect(h.s.order.indexOf('updater.start')).toBeLessThan(h.s.order.indexOf('restore:none'))
     h.updater.kind = 'manual'
     await expect(invoke('update:state')).resolves.toEqual({ ok: true, value: { kind: 'manual' } })
+  })
+
+  it('the course sound (YAZ-5159): its doors are there at start, and nothing downloads at app start', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('no network in this test'))
+    h.s.ready()
+    await settle()
+    expect(h.handles.has('course-audio:chapter-starting')).toBe(true)
+    await expect(h.handles.get('course-audio:chapter')!({}, 'why')).resolves.toEqual({ ok: true, value: null })
+    await settle()
+    expect(fetchSpy.mock.calls.filter(([url]) => String(url).includes('course-audio'))).toEqual([])
   })
 
   it('restart: manual opens the release page (S13, D3); ready quits, and the swap then reopens the app (S21); any other state does nothing', async () => {

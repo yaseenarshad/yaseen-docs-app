@@ -21,6 +21,10 @@ components.preview/1: invoke components:preview ["a0"]; => "answer"; !> {"code":
 components.read/1: invoke components:read ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 components.rename/1: invoke components:rename ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 components.save/1: invoke components:save ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+courseAudio.chapter/1: invoke course-audio:chapter ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+courseAudio.chapterStarting/1: invoke course-audio:chapter-starting ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+courseAudio.onChange/1: on course-audio:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off course-audio:changed
+courseAudio.open/1: invoke course-audio:open ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 createBoard/1: invoke fs:create-board ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 createDir/1: invoke fs:create-dir ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 createFile/1: invoke fs:create-file ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

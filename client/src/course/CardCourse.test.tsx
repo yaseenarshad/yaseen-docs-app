@@ -239,4 +239,48 @@ describe('the course layer (YAZ-5120)', () => {
     act(() => [...document.querySelectorAll<HTMLButtonElement>('.course__end-actions button')].find((b) => b.textContent === 'Next chapter')!.click())
     expect(v.started).toEqual(['a', 'b'])
   })
+
+  it('the voice could not come (YAZ-5159): one quiet line with "Try again"; it goes when the sound arrives', async () => {
+    const v = memoryVoice()
+    mount({ voice: v.voice })
+    const line = () => [...document.querySelectorAll('.course__note')].find((p) => p.textContent?.includes('The sound is not here'))
+    expect(line()).toBeUndefined()
+    act(() => v.fail('b'))
+    expect(line()).toBeUndefined()
+    act(() => v.fail('a'))
+    expect(line()?.getAttribute('role')).toBe('status')
+    expect(document.querySelector('[role="alertdialog"], [role="alert"]')).toBeNull()
+    act(() => button('Try again')!.click())
+    expect(v.retried).toEqual(['a'])
+    expect(line()).toBeUndefined()
+    act(() => v.fail('a'))
+    await act(async () => v.arrive('a', { a1: { url: 'blob:a1', seconds: 2 } }))
+    expect(line()).toBeUndefined()
+  })
+})
+
+describe('VoicedCardCourse (YAZ-5159)', () => {
+  it('tells main the course is open while it is mounted, and starts the chapter there', async () => {
+    const { VoicedCardCourse } = await import('./CardCourse')
+    const bridge = (window as unknown as { yaseenDocs?: unknown }).yaseenDocs
+    const calls: string[] = []
+    ;(window as unknown as { yaseenDocs: unknown }).yaseenDocs = {
+      courseAudio: {
+        open: async (open: boolean) => void calls.push(`open:${open}`),
+        chapterStarting: async (chapter: string) => void calls.push(`start:${chapter}`),
+        chapter: async () => null,
+        onChange: () => () => undefined,
+      },
+    }
+    try {
+      act(() => root.render(<VoicedCardCourse vault="/demo" onClose={vi.fn()} course={COURSE} />))
+      await act(async () => undefined)
+      expect(calls).toEqual(['start:a', 'open:true'])
+      act(() => root.render(<></>))
+      await act(async () => undefined)
+      expect(calls.at(-1)).toBe('open:false')
+    } finally {
+      ;(window as unknown as { yaseenDocs: unknown }).yaseenDocs = bridge
+    }
+  })
 })
