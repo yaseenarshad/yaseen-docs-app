@@ -109,7 +109,7 @@ setTimeout(() => {
   console.log('TIMEOUT', JSON.stringify(results.at(-1)), [...new Set(versions)].join(' '))
   process.exit(2)
 }, 480_000).unref()
-const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${DEBUG}`, `--user-data-dir=${process.env.PROOF_PROFILE ?? join(work, 'profile')}`, '--no-first-run', '--no-default-browser-check', '--window-size=390,844', 'about:blank'], { stdio: 'ignore' })
+const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${DEBUG}`, `--user-data-dir=${process.env.PROOF_PROFILE ?? join(work, 'profile')}`, '--no-first-run', '--no-default-browser-check', '--window-size=390,844', ...(process.env.PROOF_CHROME_ARGS ? process.env.PROOF_CHROME_ARGS.split(' ') : []), 'about:blank'], { stdio: 'ignore' })
 let browserWs = ''
 for (let i = 0; i < 50 && !browserWs; i++) {
   await wait(200)

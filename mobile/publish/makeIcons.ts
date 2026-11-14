@@ -2,12 +2,12 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { BG_DARK, BG_LIGHT, SPLASH_SCREENS, iconSvg, pngSize, solidPng, splashFile } from './images'
+import { BG_DARK, BG_LIGHT, MASKABLE_SCALE, SPLASH_SCREENS, iconSvg, pngSize, solidPng, splashFile } from './images'
 
 /**
  * Makes the icons and the splash pictures in `mobile/public/` (YAZ-5087). Run it again when the drawing changes:
  *   npx vite-node mobile/publish/makeIcons.ts
- * The icons are drawn by Chrome with no window (`--headless`). The final icon art is Yaseen's call; change `iconSvg`.
+ * The icons are drawn by Chrome with no window (`--headless`). The art is logo option 1, "Hidden word" (`iconSvg`).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -15,7 +15,7 @@ const pub = new URL('../public/', import.meta.url).pathname
 mkdirSync(join(pub, 'icons'), { recursive: true })
 mkdirSync(join(pub, 'splash'), { recursive: true })
 
-writeFileSync(join(pub, 'icons/icon.svg'), iconSvg({ round: true }))
+writeFileSync(join(pub, 'icons/icon.svg'), iconSvg())
 
 const work = mkdtempSync(join(tmpdir(), 'notecards-icons-'))
 function draw(svg: string, size: number, out: string) {
@@ -40,7 +40,7 @@ try {
   draw(iconSvg(), 180, join(pub, 'icons/apple-touch-icon.png'))
   draw(iconSvg(), 192, join(pub, 'icons/icon-192.png'))
   draw(iconSvg(), 512, join(pub, 'icons/icon-512.png'))
-  draw(iconSvg({ scale: 0.78 }), 512, join(pub, 'icons/icon-maskable-512.png'))
+  draw(iconSvg({ scale: MASKABLE_SCALE }), 512, join(pub, 'icons/icon-maskable-512.png'))
 } finally {
   rmSync(work, { recursive: true, force: true })
 }
