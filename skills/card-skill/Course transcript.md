@@ -395,7 +395,7 @@ It has four steps: capture, create, review, and improve.
 
 Capture happens all day, wherever you are. When something is worth keeping, write it down.
 
-A page on your phone, a brain dump, a chat channel just for you. It does not matter where, as long as you have one place.
+A note on your phone, a brain dump, a chat channel just for you. It does not matter where, as long as you have one place.
 
 Create is when you sit down with your capture list, and turn it into cards.
 
@@ -580,3 +580,5 @@ Your card base is your knowledge base. Build it one card at a time, and what you
 2. Now press Command comma to open Settings, and click Cards.
 3. This switch shows or hides the card skill in the sidebar.
 4. And this button brings you back to the course, at any time.
+
+<!-- rename-note-to-page: skip-file -->

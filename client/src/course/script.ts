@@ -509,7 +509,7 @@ export const COURSE: CourseChapter[] = [
       // Capture: a day goes by; small captures land in one place from a phone, a meeting, a walk.
       { id: 'c9-12', text: 'Capture happens all day, wherever you are. When something is worth keeping, write it down.' },
       // Three capture places side by side: a phone page, a page of quick lines, a chat channel with pages to self; each one collects the same few lines. "One place" lights up.
-      { id: 'c9-13', text: 'A page on your phone, a brain dump, a chat channel just for you. It does not matter where, as long as you have one place.' },
+      { id: 'c9-13', text: 'A note on your phone, a brain dump, a chat channel just for you. It does not matter where, as long as you have one place.' }, // rename-note-to-page: keep (a phone note is everyday English, not the app's page)
       // Create: a quiet desk; the capture list on one side, new cards forming on the other.
       { id: 'c9-14', text: 'Create is when you sit down with your capture list, and turn it into cards.' },
       // The agent chat drafts a card from a captured line; the person reads it, and a Yes lets it become a card. The word "Chew".
