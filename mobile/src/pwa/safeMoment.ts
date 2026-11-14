@@ -7,9 +7,9 @@
  * - A tap on "Restart": the person chose it, so the Review tab does not hold it; waiting answers and the first
  *   download still do.
  *
- * Held: answers that wait to be sent (a reload in the middle of a send is never done), the Review tab (a review can
- * be in its middle; 4B may narrow this to "a session runs"), a screen over the tabs or the sign-in form (typed text
- * would be lost), the first download.
+ * Held: answers that wait to be sent (a reload in the middle of a send is never done), the Review tab, and a review
+ * in progress on ANY tab (YAZ-5269: the session lives on behind Friends and Search; `review/inProgress.ts`), a screen
+ * over the tabs or the sign-in form (typed text would be lost), the first download.
  */
 
 export const RESUME_AFTER_MS = 5 * 60_000
@@ -26,6 +26,8 @@ export interface AppMoment {
   downloading: boolean
   /** The open vault's answers that wait to be sent (the stored answer list). */
   answersWaiting: number
+  /** A Review session is in its middle, on any tab (YAZ-5269, `reviewInProgress()`). Absent: none. */
+  reviewInProgress?: boolean
 }
 
 export function holdsOf(m: AppMoment): Hold[] {
@@ -33,7 +35,7 @@ export function holdsOf(m: AppMoment): Hold[] {
   if (m.answersWaiting > 0) holds.push('answers')
   if (m.phase !== 'ready' || m.routeOpen) holds.push('screen')
   else if (m.downloading) holds.push('download')
-  else if (m.tab === 'review') holds.push('review')
+  else if (m.tab === 'review' || m.reviewInProgress === true) holds.push('review')
   return holds
 }
 

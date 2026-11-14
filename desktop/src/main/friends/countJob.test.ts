@@ -11,7 +11,8 @@ import { build } from 'esbuild'
 import { friendStats, type FriendVault } from '@shared/friendStats'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { budgetMs, median } from '../../../../client/src/test-perf'
-import { countOffThread, countPayload } from './countJob'
+import { writeFile } from 'node:fs/promises'
+import { COUNT_LIMIT_MS, countOffThread, countPayload, countTextOffThread } from './countJob'
 
 const TZ = process.env.TZ
 beforeAll(() => void (process.env.TZ = 'America/New_York'))
@@ -84,4 +85,13 @@ describe('the count off the main thread (YAZ-5250)', () => {
     console.info(`the longest block on main, 3 runs: ${stalls.map((s) => s.toFixed(0)).join(', ')} ms`)
     expect(median(stalls)).toBeLessThan(budgetMs(50))
   }, 60_000)
+
+  it('a worker that does not answer in time is ended, and the count fails (YAZ-5278)', async () => {
+    expect(COUNT_LIMIT_MS).toBe(60_000)
+    const stuck = path.join(path.dirname(worker), 'stuck.cjs')
+    await writeFile(stuck, 'setInterval(() => {}, 1000)\n')
+    const started = performance.now()
+    await expect(countTextOffThread(stuck, '[]', NOW, 300)).rejects.toThrow(/did not answer/)
+    expect(performance.now() - started).toBeLessThan(5_000)
+  })
 })

@@ -101,7 +101,7 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
       press(/^All cards/)
       await wait(30)
       press(/^New cards/)
-      await wait(60)
+      await wait(500) // past the tap guard (YAZ-5226)
       press('Remembered')
       await wait(60)
       tap()
@@ -112,7 +112,7 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
       await wait(30)
       press(/^New cards/)
       for (let i = 0; i < 4; i++) {
-        await wait(60)
+        await wait(500) // past the tap guard (YAZ-5226)
         press('Remembered')
       }
       break
@@ -121,7 +121,7 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
       await wait(30)
       press(/^New cards/)
       for (let i = 0; i < 6; i++) {
-        await wait(60)
+        await wait(500) // past the tap guard (YAZ-5226)
         press('Remembered')
       }
       await wait(60)
@@ -129,7 +129,7 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
       break
     case 'review-done':
       for (let i = 0; i < 4; i++) {
-        await wait(80)
+        await wait(500) // past the tap guard (YAZ-5226)
         press('Remembered')
       }
       break

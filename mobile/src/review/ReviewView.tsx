@@ -18,6 +18,8 @@ import { storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
 import { lostRows } from '../status/dot'
 import { PhoneCard, type CardLinkOpen } from './PhoneCard'
 import { createReviewSource, type ReviewSource } from './source'
+import { setReviewInProgress } from './inProgress'
+import { useTapGuard } from './tapGuard'
 import { useWakeLock } from './wakeLock'
 import { FILTERS, NEEDS_FIX, filterDone, filterLabel, lostTitle } from './words'
 import { DiscardAnswer } from '../screens/DiscardAnswer'
@@ -126,8 +128,7 @@ interface Step {
 /** The line under the buttons: the last answer, the last add, or a ⋯ action. */
 type Line = { kind: 'answer'; count: number; id: string } | { kind: 'mark'; text: string; key: string | null }
 
-/** YAZ-5226: how long a new card is on the screen before a tap acts on it (a double tap is about 150 ms apart). */
-export const SEEN_MS = 400
+export { SEEN_MS } from './tapGuard'
 
 function ReviewSession({ link, vault, vaultName, unit, open, source, host, media, shown = true }: ReviewViewProps & Setup) {
   const { ready, settings } = useSourceState(source)
@@ -142,6 +143,11 @@ function ReviewSession({ link, vault, vaultName, unit, open, source, host, media
   useEffect(() => {
     if (ready && settings.enabled && session === null) start()
   }, [ready, settings.enabled, session, start])
+
+  // YAZ-5269: the one fact the update logic reads: a card on show, or an Undo still to give, on any tab.
+  const inProgress = session !== null && (session.card !== null || session.canUndo)
+  useEffect(() => setReviewInProgress(inProgress), [inProgress])
+  useEffect(() => () => setReviewInProgress(false), [])
 
   const answers = useAnswersState(link)
   // A pass that ends well asks again for each picture that waited for a signal.
@@ -214,28 +220,33 @@ function SessionScreen({
   // YAZ-5226: after an answer, taps wait until the next card is on the screen AND a short time has passed, so the
   // second tap of a double tap never lands on a card the person has not seen. The answer buttons still work at any
   // step of a card once it is seen (decision 11, as the Mac: "the buttons should always be there").
-  const [guard, setGuard] = useState<{ from: string | null } | null>(null)
-  const guarded = guard !== null
-  useEffect(() => {
-    if (guard === null || page === null || cardKey === guard.from) return
-    const timer = setTimeout(() => setGuard(null), SEEN_MS)
-    return () => clearTimeout(timer)
-  }, [guard, cardKey, page])
+  const guard = useTapGuard()
+  const guarded = !guard.taps
+  const liveKey = useRef(cardKey)
+  liveKey.current = cardKey
+  // Hidden and shown again: the guard starts from `ready` (YAZ-5266).
+  const { reset: resetGuard } = guard
+  useEffect(() => resetGuard(), [shown, resetGuard])
   const advance = () => {
     if (done || page === null || guarded) return
     setStep(step.shown < upTo(step.sides) ? { ...step, shown: step.shown + 1 } : { ...step, sides: step.sides + 1 })
   }
 
-  // YAZ-5229: VoiceOver hears what a step shows (the word, or the new side), and nothing before it shows.
+  // YAZ-5229, YAZ-5268: VoiceOver hears ONLY what a step newly shows: a new side (its text), else the new word.
   const [revealed, setRevealed] = useState('')
+  const cardBox = useRef<HTMLDivElement>(null)
+  const lastStep = useRef<Step>(step)
   useEffect(() => {
-    if (step.shown === 0 && step.sides === 1) return setRevealed('')
+    const before = lastStep.current
+    lastStep.current = step
+    if (before.key !== step.key || (step.shown === 0 && step.sides === 1)) return setRevealed('')
     const id = setTimeout(() => {
-      const body = document.querySelector('.review .phone-card__body')
-      const words = body?.querySelectorAll('.card__hidden')
-      const side = body?.querySelector(`.card__side[data-side="${step.sides - 1}"]`)
-      const last = step.shown > 0 ? words?.[step.shown - 1]?.textContent : null
-      setRevealed((last ?? side?.textContent ?? '').trim())
+      const body = cardBox.current?.querySelector('.phone-card__body')
+      if (body == null) return
+      if (step.sides > before.sides) {
+        const side = body.querySelector(`.card__side[data-side="${step.sides - 1}"]`)
+        setRevealed((side?.textContent ?? '').trim())
+      } else if (step.shown > before.shown) setRevealed((body.querySelectorAll('.card__hidden')[step.shown - 1]?.textContent ?? '').trim())
     }, 0)
     return () => clearTimeout(id)
   }, [step.key, step.sides, step.shown]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -276,15 +287,24 @@ function SessionScreen({
     if (page === null || card === null || guarded) return
     setMenu(null)
     setNotice(null)
-    setGuard({ from: cardKey })
+    const from = cardKey
     setLine({ kind: 'answer', count: session.answered.length + 1, id: card.id })
-    void review.answer(rating, seconds())
+    // YAZ-5266: the guard's one way through an answer; a failed save keeps this card on the screen, and taps act again.
+    void guard.answer(
+      async () => {
+        await review.answer(rating, seconds())
+        // Let the next card draw before the guard reads the screen.
+        await new Promise((r) => setTimeout(r, 0))
+      },
+      () => ({ sameCard: liveKey.current === from, cardOnScreen: liveKey.current !== null }),
+    )
   }
   // YAZ-5228: an answer whose card was gone at the send is in the amber line. Its Undo takes it away cleanly (as
   // Discard), and never asks the host for a card that is not there.
   const lostRow = line?.kind === 'answer' ? lostRows(answers.lost).find((r) => r.id === line.id && answers.lost.some((l) => r.seqs.includes(l.seq) && l.op.kind === 'review')) : undefined
   const undo = () => {
     setNotice(null)
+    guard.undo()
     if (lostRow === undefined) return void review.undo()
     setLine({ kind: 'mark', text: 'Answer removed', key: cardKey })
     void Promise.all(lostRow.seqs.map((seq) => link.answers.discard(seq)))
@@ -379,6 +399,7 @@ function SessionScreen({
               shows), not one button with a label. The tap is the sighted way; VoiceOver has its own button below. A tap
               on a link, a pill, a picture or a sound is theirs, never a step (YAZ-5078 checker, M1). */}
           <div
+            ref={cardBox}
             className="review__card card card-screen"
             onClick={(e) => {
               if (e.target instanceof Element && e.target.closest(CARD_OWN_TAPS) !== null) return

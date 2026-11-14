@@ -22,8 +22,8 @@
 import { createHash } from 'node:crypto'
 import { findFriendsIndex, gistErrorCode, gistErrorResetAt, INDEX_FILE, parseFriendsIndex, pointersOf, type GistsApi, type IndexHandle, type WriteOptions } from '@shared/friendGists'
 import { emptyBudget, numbersFor, numbersKey, reserveFor, sendGap, sendGate, sendNumbers, type GistBudget, type SendReason } from '@shared/friendSend'
-import { friendStats, type FriendStats, type FriendVault } from '@shared/friendStats'
-import { countPayload } from './countJob'
+import type { FriendStats, FriendVault } from '@shared/friendStats'
+import { COUNT_LIMIT_MS, countPayload } from './countJob'
 import { pendingRemove } from '@shared/friendsList'
 import type { FriendsSendStatus, FriendsSendView } from '@shared/types'
 
@@ -38,6 +38,8 @@ export interface MacSendSaved {
   groups: number
   /** GitHub refused a write: the token has no Gists permission. No call until the token changes. */
   refused: boolean
+  /** YAZ-5279: the GitHub login that this state belongs to. A state of another account starts over. */
+  account?: string | null
   /** YAZ-5249: the time of the last count, and a hash of what it counted (the cards and the local day). */
   lastCountAt?: number | null
   lastInput?: string | null
@@ -58,10 +60,10 @@ export interface MacSenderDeps {
   /** One vault's index records and review settings. */
   count(root: string): Promise<FriendVault>
   /**
-   * The count of the packed cards (`countPayload`). YAZ-5250: the app runs it on a worker thread (`countJob.ts`), so
-   * the main thread only packs and waits. Default: on this thread (tests).
+   * The count of the packed cards (`countPayload`). YAZ-5250, YAZ-5277: the app runs it on a worker thread
+   * (`countJob.ts`), so the main thread only packs and waits. Required: this file has no count of its own.
    */
-  stats?(text: string, now: number): Promise<Omit<FriendStats, 'login' | 'name' | 'avatar'>>
+  stats(text: string, now: number): Promise<Omit<FriendStats, 'login' | 'name' | 'avatar'>>
   state: { load(): Promise<MacSendSaved | null>; save(saved: MacSendSaved): Promise<void> }
   clock?: MacClock
   sleep?: (ms: number) => Promise<void>
@@ -88,7 +90,6 @@ const nodeClock: MacClock = {
 const MAX_TIMER_MS = 60 * 60_000
 const hash = (text: string) => createHash('sha256').update(text).digest('hex')
 const fresh = (): MacSendSaved => ({ lastSentAt: null, lastKey: null, budget: emptyBudget(), friends: 0, groups: 0, refused: false, lastCountAt: null, lastInput: null })
-const inThread = async (text: string, now: number) => friendStats(JSON.parse(text) as FriendVault[], now)
 /** The local day of `now`, as `friendStats` counts days: the same cards on another day can give other numbers. */
 const localDay = (now: number) => {
   const d = new Date(now)
@@ -142,6 +143,23 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
     if (!stopped) await deps.state.save(saved)
   }
 
+  /** YAZ-5278: a count that never answers ends this try as `failed`; the next try runs. */
+  function withLimit<T>(work: Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const limit = clock.setTimeout(() => reject(new Error('the count did not answer in time')), COUNT_LIMIT_MS + 5_000)
+      work.then(
+        (v) => {
+          clock.clearTimeout(limit)
+          resolve(v)
+        },
+        (err: unknown) => {
+          clock.clearTimeout(limit)
+          reject(err)
+        },
+      )
+    })
+  }
+
   /** The account facts of the token (`GET /user`), once per token in a run of the app. */
   async function account(token: string) {
     if (profile === null || profile.token !== token) profile = { token, value: await deps.profile(token) }
@@ -177,6 +195,16 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
     const token = await deps.readToken()
     if (token === null) return set('no-token')
     if (s.refused) return set('no-gists')
+    // YAZ-5279: the stored state belongs to one account. Once per token (the account facts are kept for the run of the
+    // app), check whose it is: a token of another account starts over, with no 5-minute wait, no numbers hash and no
+    // budget of the other account. GitHub that does not answer: the check waits for the next try.
+    if (profile === null || profile.token !== token) {
+      const login = await account(token).then((p) => p.login, () => null)
+      if (login !== null && s.account !== login) {
+        Object.assign(s, fresh(), { account: login })
+        await store({ ...fresh(), account: login })
+      }
+    }
     // The cheap checks first: no network and no count while the 5-minute rule or a rate limit holds.
     const reserve = reserveFor(s.friends + s.groups)
     if (s.budget.blockedUntil !== null && now < s.budget.blockedUntil) {
@@ -234,7 +262,7 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
         return set('unchanged')
       }
       const p = await account(token)
-      const numbers = numbersFor(await (deps.stats ?? inThread)(text, now), { login: p.login, name: p.name, avatar: p.avatar, nickname: list.index.nickname }, now)
+      const numbers = numbersFor(await withLimit(deps.stats(text, now)), { login: p.login, name: p.name, avatar: p.avatar, nickname: list.index.nickname }, now)
       const key = hash(numbersKey(numbers))
       if (key === s.lastKey) {
         await store({ lastCountAt: now, lastInput: input })
