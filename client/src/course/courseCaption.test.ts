@@ -30,11 +30,9 @@ describe('the caption shows whole (YAZ-5345)', () => {
     expect(blocks('.course__stage')[0]).toMatch(/flex:\s*1/)
   })
 
-  it('the longest captions of the script are whole text, with no cut of their own (c6-08 is the longest)', () => {
+  it('the longest caption exercises the multiline layout', () => {
     const clips = COURSE.flatMap((ch) => ch.clips).sort((a, b) => b.text.length - a.text.length)
-    expect(clips[0].id).toBe('c6-08')
-    // At the caption's width (640 px, 17 px type: about 75 characters a line) the longest needs three lines; the
-    // narrow window (about 40 a line) needs five. The rule above lets the line grow to each.
-    expect(Math.ceil(clips[0].text.length / 75)).toBe(3)
+    // About 75 characters fit on a line in a wide window. The layout tests above apply as the script grows.
+    expect(clips[0].text.length).toBeGreaterThan(150)
   })
 })

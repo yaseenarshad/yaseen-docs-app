@@ -393,9 +393,9 @@ function Journey(props: SceneProps) {
 /** c5-06: Niklas Luhmann's wooden boxes of paper slips: 1951 to 1996; about 90,000. */
 function Luhmann(props: SceneProps) {
   const b = useBeat(props)
-  const name = cue(b, 0, 0.125)
-  const years = cue(b, 1, 0.474)
-  const slips = cue(b, 2, 0.782)
+  const name = cue(b, 0, 0.123)
+  const years = cue(b, 1, 0.532)
+  const slips = cue(b, 2, 0.786)
   const rows = 4
   const cols = 6
   const fill = between(b, 0.08, slips + 0.05)
@@ -450,17 +450,42 @@ function Luhmann(props: SceneProps) {
 /** The 40 books among the 600 publications: every 15th spine. */
 const isBook = (i: number): boolean => i % 15 === 7
 
-/** c5-07: a shelf fills: nearly 600 publications; among them, more than 40 books light up. */
+const SLIP_NODES: readonly TreeNode[] = [
+  { id: 'a', x: 135, y: 125, kind: 'card' },
+  { id: 'b', x: 220, y: 225, kind: 'card' },
+  { id: 'c', x: 325, y: 115, kind: 'card' },
+  { id: 'd', x: 435, y: 215, kind: 'card' },
+]
+const SLIP_LINKS: readonly TreeEdge[] = [
+  { from: 'a', to: 'b' },
+  { from: 'b', to: 'c' },
+  { from: 'c', to: 'd' },
+  { from: 'a', to: 'c', kind: 'link' },
+]
+
+/** c5-07: the links between slips bring ideas together before the shelf fills with the resulting publications. */
 function Books(props: SceneProps) {
   const b = useBeat(props)
-  const six = cue(b, 0, 0.161)
-  const forty = cue(b, 1, 0.733)
-  const fill = between(b, six - 0.08, six + 0.32)
+  const linksAt = cue(b, 0, 0.038)
+  const workAt = cue(b, 1, 0.341)
+  const six = cue(b, 2, 0.776)
+  const forty = cue(b, 3, 0.918)
+  const shelf = since(b, workAt + 0.06, 0.9)
+  const linked = since(b, linksAt, 2)
+  const slips = Object.fromEntries([
+    ...SLIP_NODES.map(({ id }) => [id, since(b, 0, 0.55)]),
+    ...SLIP_LINKS.map(({ from, to }) => [`${from}>${to}`, linked]),
+  ])
+  const fill = between(b, six - 0.035, forty)
   const lit = since(b, forty, 0.8)
   const perRow = 100
   return (
-    <Stage beat={b} label="He wrote nearly 600 publications, among them more than 40 books">
-      <Layer style={{ paddingBottom: '14%' }}>
+    <Stage beat={b} label="Links between Luhmann’s slips helped him turn ideas into nearly 600 publications, including more than 40 books">
+      <Layer style={{ opacity: 1 - shelf }}>
+        <Tree beat={b} nodes={SLIP_NODES} edges={SLIP_LINKS} show={slips} />
+        <Words size="title" style={rise(b, since(b, linksAt, 0.7))}>Links between ideas</Words>
+      </Layer>
+      <Layer style={{ paddingBottom: '14%', opacity: shelf }}>
         <svg className="kit-shelf" viewBox="0 0 600 300" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
           {[0, 1, 2, 3, 4, 5].map((r) => (
             <line key={r} className="kit-shelf__board" x1={0} y1={r * 50 + 46} x2={600} y2={r * 50 + 46} />
@@ -477,6 +502,9 @@ function Books(props: SceneProps) {
         </svg>
       </Layer>
       <Layer place="bottom">
+        <Words size="label" tone="muted" style={rise(b, showFor(since(b, workAt, 0.7), since(b, six, 0.55)))}>
+          Ideas become new work
+        </Words>
         <div className="kit-books__count">
           <span style={{ opacity: since(b, six - 0.06, 0.4) }}>
             <b>
@@ -493,15 +521,17 @@ function Books(props: SceneProps) {
   )
 }
 
-/** c5-08: Ryan Holiday's long boxes of index cards, twenty years; the value came from all of them added up. */
+/** c5-08: Holiday’s index cards feed his books, and their value builds over time. */
 function Holiday(props: SceneProps) {
   const b = useBeat(props)
-  const name = cue(b, 0, 0.062)
-  const tens = cue(b, 1, 0.213)
-  const twenty = cue(b, 2, 0.441)
-  const added = cue(b, 3, 0.898)
-  const fill = between(b, tens - 0.05, twenty + 0.1)
-  const join = since(b, added - 0.2, 1.4)
+  const id = props.clip.id
+  const intro = id === 'c5-08'
+  const count = id === 'c5-16'
+  const publications = id === 'c5-19'
+  const compounds = id === 'c5-20'
+  const name = since(b, cue(b, 0, 0.077), 0.5)
+  const fill = intro ? between(b, cue(b, 1, 0.558), 1) : 1
+  const join = compounds ? since(b, cue(b, 0, 0.314), 1.6) : 0
   const boxes = [0, 1, 2]
   const per = 90
   const links: [number, number, number, number][] = [
@@ -514,14 +544,14 @@ function Holiday(props: SceneProps) {
   ]
   const cardX = (box: number, k: number): [number, number] => [30 + (k / per) * 500, 40 + box * 70]
   return (
-    <Stage beat={b} label="Ryan Holiday has kept tens of thousands of index cards over twenty years; the value came from all of them added up">
+    <Stage beat={b} label="Ryan Holiday uses index cards to gather ideas for books. Their value builds over time.">
       <Layer place="top" style={{ paddingTop: '4%' }}>
         <div className="kit-holiday__head">
-          <Words size="title" style={rise(b, since(b, name, 0.5))}>
+          <Words size="title" style={rise(b, intro ? name : 1)}>
             Ryan Holiday
           </Words>
-          <Words size="label" tone="muted" style={{ opacity: since(b, twenty, 0.4) }}>
-            <Counter beat={b} p={since(b, twenty, 1)} to={20} /> years of index cards
+          <Words size="label" tone="muted" style={{ opacity: intro ? fill : 1 }}>
+            Ideas sorted on index cards
           </Words>
         </div>
       </Layer>
@@ -547,9 +577,34 @@ function Holiday(props: SceneProps) {
         </svg>
       </Layer>
       <Layer place="bottom">
-        <span className="kit-chip" style={pop(b, since(b, added - 0.1, 0.5))}>
-          All of them, added up
-        </span>
+        {count && <Words size="label" style={rise(b, since(b, cue(b, 0, 0.101), 0.65))}>Tens of thousands of cards over 20 years</Words>}
+        {count && <Words size="page" tone="accent" style={rise(b, since(b, cue(b, 1, 0.878), 0.45))}>Learned from Robert Greene</Words>}
+        {publications && <Words size="label" style={rise(b, since(b, cue(b, 0, 0.259), 0.55))}>A new book almost every year</Words>}
+        {publications && <Words size="label" tone="accent" style={rise(b, since(b, cue(b, 1, 0.725), 0.55))}>Four New York Times bestsellers</Words>}
+        {compounds && <span className="kit-chip" style={pop(b, since(b, cue(b, 1, 0.834), 0.45))}>All of them, added up</span>}
+      </Layer>
+    </Stage>
+  )
+}
+
+/** The mentor and the app each get a beat before the course returns to everyday examples. */
+function CardTradition(props: SceneProps) {
+  const b = useBeat(props)
+  const greene = props.clip.id === 'c5-17'
+  const influence = props.clip.id === 'c5-18'
+  const first = since(b, cue(b, 0, 0.214), 0.65)
+  const second = since(b, cue(b, 1, 0.686), 0.65)
+  const algorithm = since(b, cue(b, 2, 0.8), 0.65)
+  const title = greene ? 'Robert Greene' : influence ? 'Robert Greene and Ryan Holiday' : 'A system thinkers have used for years'
+  return (
+    <Stage beat={b} label={props.clip.text}>
+      <Layer>
+        <Words size="title" style={rise(b, since(b, 0, 0.65))}>{title}</Words>
+        <div className="kit-tags">
+          <span className="kit-chip" style={pop(b, first)}>{greene ? 'The 48 Laws of Power' : influence ? 'A method passed down' : 'Paper cards'}</span>
+          <span className="kit-chip" style={pop(b, second)}>{greene ? 'At least three New York Times bestsellers' : influence ? 'Videos and articles' : 'Memory science and technology'}</span>
+          {!greene && !influence && <span className="kit-chip" style={pop(b, algorithm)}>A review algorithm</span>}
+        </div>
       </Layer>
     </Stage>
   )
@@ -574,7 +629,7 @@ function Life(props: SceneProps) {
   const clear = first ? 2 : cue(b, 2, 0.676)
   const meet = first ? since(b, meeting - 0.05, 0.6) : 1
   const factP = first ? since(b, fact, 0.5) : 1
-  const books = first ? showFor(since(b, 0, 0.4), since(b, 0.3, 0.5)) : 0
+  const books = first ? showFor(since(b, 0, 0.4), since(b, meeting - 0.08, 0.5)) : 0
   const blur = first ? 1 : 1 - since(b, clear, 1)
   return (
     <Stage beat={b} label="The meeting where the right fact is there; the language you keep; the subject you finally understand">
@@ -723,7 +778,10 @@ export const COMPOUND_SCENES: ChapterScenes = {
     { clips: ['c5-13', 'c5-14', 'c5-15'], scene: Journey },
     { clips: ['c5-06'], scene: Luhmann },
     { clips: ['c5-07'], scene: Books },
-    { clips: ['c5-08'], scene: Holiday },
+    { clips: ['c5-08', 'c5-16'], scene: Holiday },
+    { clips: ['c5-17', 'c5-18'], scene: CardTradition },
+    { clips: ['c5-19', 'c5-20'], scene: Holiday },
+    { clips: ['c5-21'], scene: CardTradition },
     { clips: ['c5-09', 'c5-10'], scene: Life },
     { clips: ['c5-11'], scene: CardBase },
     { clips: ['c5-12'], scene: Yours },

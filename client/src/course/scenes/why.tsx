@@ -110,22 +110,28 @@ const SYLLABLES = ['DAX', 'BOK', 'YAT', 'ZUP', 'KEF', 'MIB', 'LOZ', 'TAV', 'WUJ'
 /** The syllables that stay after a day (the rest fade: most of the work is gone). */
 const KEPT = new Set([1, 6, 10])
 
-/** c1-02: Ebbinghaus's notebook of nonsense syllables, 1885; a day later most are gone; learning again took ⅔. */
+/** c1-02: introduce the scientist, then show the list, the delay, and the shorter time to learn it again. */
 function Notebook(props: SceneProps) {
   const b = useBeat(props)
-  const book = since(b, 0, 0.8)
-  const dayLater = since(b, cue(b, 0, 0.378), 0.6)
-  const gone = between(b, cue(b, 1, 0.546), cue(b, 1, 0.546) + 0.13)
-  const thirds = cue(b, 2, 0.816)
+  const book = since(b, 0.02, 0.8)
+  const scientist = since(b, cue(b, 0, 0.182), 0.65)
+  const listAt = cue(b, 1, 0.414)
+  const dayAt = cue(b, 2, 0.613)
+  const dayLater = since(b, dayAt, 0.6)
+  const gone = between(b, dayAt, dayAt + 0.08)
+  const thirds = cue(b, 3, 0.735)
   const bars = since(b, thirds - 0.1, 0.5)
   const again = since(b, thirds - 0.02, 1.2)
   return (
-    <Stage beat={b} label="Ebbinghaus's notebook, 1885: a list of nonsense syllables; a day later most were gone, and relearning took two thirds of the time">
+    <Stage beat={b} label="Hermann Ebbinghaus's early memory experiment: a day later, relearning a list of syllables took two thirds of the original time">
+      <Layer place="top">
+        <Words size="kicker" style={rise(b, book)}>Early experiments on memory</Words>
+      </Layer>
       <Layer>
         <div className="kit-row">
           <div className="kit-notebook" style={rise(b, book, 14)}>
-            <p className="kit-notebook__head">
-              <span>H. Ebbinghaus</span>
+            <p className="kit-notebook__head" style={rise(b, scientist, 6)}>
+              <span>Hermann Ebbinghaus</span>
               <span>1885</span>
             </p>
             <div className="kit-notebook__grid">
@@ -133,7 +139,7 @@ function Notebook(props: SceneProps) {
                 <span
                   key={s}
                   style={{
-                    opacity: between(b, 0.03 + i * 0.022, 0.07 + i * 0.022) * (KEPT.has(i) ? 1 : lerp(1, 0.12, gone)),
+                    opacity: between(b, listAt + i * 0.008, listAt + 0.025 + i * 0.008) * (KEPT.has(i) ? 1 : lerp(1, 0.12, gone)),
                   }}
                   className={!KEPT.has(i) && gone > 0.5 ? 'is-gone' : undefined}
                 >
@@ -409,28 +415,23 @@ function Cells(props: SceneProps) {
   )
 }
 
-/** c1-06: a century of tests; the review of 317 experiments; 317 lifts out; the wall of experiments, and spacing won. */
+/** c1-06: the review of 317 experiments leads into the app’s use of spaced repetition. */
 function Experiments(props: SceneProps) {
   const b = useBeat(props)
-  const century = showFor(since(b, 0, 0.6), since(b, 0.34, 0.4))
-  const review = cue(b, 0, 0.382)
-  const n317 = cue(b, 1, 0.547)
-  const wonAt = cue(b, 2, 0.842)
+  const review = cue(b, 0, 0.029)
+  const n317 = cue(b, 1, 0.065)
+  const spacedAt = cue(b, 2, 0.294)
+  const systemAt = cue(b, 3, 0.659)
+  const appAt = cue(b, 4, 0.881)
   const big = since(b, n317, 0.9)
-  const up = moved(b, since(b, n317 + 0.11, 0.7))
-  const wall = since(b, n317 + 0.11, 0.4)
-  const fill = between(b, n317 + 0.11, wonAt)
-  const won = since(b, wonAt, 0.7)
+  const up = moved(b, since(b, n317 + 0.07, 0.7))
+  const wall = since(b, n317 + 0.07, 0.4)
+  const fill = between(b, n317 + 0.07, spacedAt)
+  const spaced = since(b, spacedAt, 0.7)
+  const system = since(b, systemAt, 0.55)
+  const app = since(b, appAt, 0.55)
   return (
-    <Stage beat={b} label="One review of 317 experiments: spacing won">
-      <Layer>
-        <div style={{ ...rise(b, century), display: 'grid', gap: '0.5em' }}>
-          <Words size="kicker">More than a century of tests</Words>
-          <Words size="display" style={{ fontVariantNumeric: 'tabular-nums' }}>
-            1885 → {Math.round(lerp(1885, 2026, b.reduced ? 1 : ease.out(between(b, 0.04, 0.26))))}
-          </Words>
-        </div>
-      </Layer>
+    <Stage beat={b} label="A review of 317 experiments found that spaced reviews worked better. Yaseen Docs uses spaced repetition.">
       <Layer>
         <Paper beat={b} paper={PAPERS.cepeda2006} at={{ in: review - 0.01, highlight: review + 0.05, lift: n317 - 0.01, out: n317 + 0.09 }} />
       </Layer>
@@ -444,10 +445,10 @@ function Experiments(props: SceneProps) {
         <BigNumber beat={b} p={big} value={317} label="experiments" up={up > 0.5} />
       </Layer>
       <Layer style={{ opacity: wall, paddingTop: '22%' }}>
-        <Tally beat={b} count={317} fill={fill} win={won} columns={29} />
-        <Words size="title" tone="accent" style={rise(b, won)}>
-          Spacing won.
-        </Words>
+        <Tally beat={b} count={317} fill={fill} win={spaced} columns={29} />
+        <Words size="page" style={rise(b, spaced)}>Spaced reviews worked better</Words>
+        <Words size="title" tone="accent" style={rise(b, system)}>Spaced repetition</Words>
+        <Words size="kicker" style={rise(b, app)}>In Yaseen Docs</Words>
       </Layer>
     </Stage>
   )
@@ -504,9 +505,9 @@ function TheCard(props: SceneProps) {
   const real = id === 'c1-08' ? since(b, 0.08, 0.6) : id === 'c1-09' ? 1 - since(b, 0, 0.6) : 0
   const hidden = id === 'c1-08' && b.progress >= 0.6
   // c1-09: many cards.
-  const many = id === 'c1-09' ? between(b, 0.1, 0.62) : 0
+  const many = id === 'c1-09' ? between(b, 0.15, 0.7) : 0
   return (
-    <Stage beat={b} label={id === 'c1-07' ? 'Each thing you learn goes on a card' : id === 'c1-08' ? 'A card: one idea, with part of it hidden' : 'Many cards, one for each thing you want to keep'}>
+    <Stage beat={b} label={id === 'c1-07' ? 'Each thing you learn goes on a card' : id === 'c1-08' ? 'A card: one idea, with part of it hidden' : 'Many cards, one for each thing you want to remember'}>
       {id === 'c1-07' && (
         <Layer>
           {THINGS.map((thing, i) => (

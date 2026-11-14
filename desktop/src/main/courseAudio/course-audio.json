@@ -2,18 +2,18 @@
  "version": 1,
  "chapters": {
   "why": {
-   "file": "why-ca6ede40.ydca",
-   "bytes": 1424200,
-   "sha256": "ca6ede40ba79e097ccbddce4a0e34f34e063908f17f0ca8b92fb0f5055fa93fc",
-   "seconds": 165.535,
+   "file": "why-75480487.ydca",
+   "bytes": 1468468,
+   "sha256": "7548048765b302d7e46f4f39ae0b7fd6e6d91e693dc948a5b3f7f71de7792ca8",
+   "seconds": 170.667,
    "clips": {
     "c1-01": {
      "seconds": 5.55,
      "hash": "6211c6a08407aa9b"
     },
     "c1-02": {
-     "seconds": 11.865,
-     "hash": "f03e7a7b18dea93f"
+     "seconds": 14.095,
+     "hash": "205ab8f2692544a8"
     },
     "c1-22": {
      "seconds": 8.104,
@@ -44,8 +44,8 @@
      "hash": "038b4f42932112f4"
     },
     "c1-06": {
-     "seconds": 9.218,
-     "hash": "6a09b95cefe3f370"
+     "seconds": 12.26,
+     "hash": "a53ef3cb22930218"
     },
     "c1-20": {
      "seconds": 10.751,
@@ -60,8 +60,8 @@
      "hash": "cc7b3b3eac3923cc"
     },
     "c1-09": {
-     "seconds": 4.412,
-     "hash": "c71a4b1d10e22f60"
+     "seconds": 4.272,
+     "hash": "305584b4f13f467c"
     },
     "c1-16": {
      "seconds": 10.519,
@@ -402,10 +402,10 @@
    }
   },
   "compound": {
-   "file": "compound-0952574a.ydca",
-   "bytes": 903007,
-   "sha256": "0952574a243ce0eab217172b5bdf6b99e298ded2deb3c0a5b581e080277cee1b",
-   "seconds": 104.585,
+   "file": "compound-e1e567ec.ydca",
+   "bytes": 1618258,
+   "sha256": "e1e567eced3223e8ef665790381bd00048d7aea9b1b77420544256ee0d864c97",
+   "seconds": 188.357,
    "clips": {
     "c5-01": {
      "seconds": 5.782,
@@ -440,20 +440,44 @@
      "hash": "049411dea7504fbd"
     },
     "c5-06": {
-     "seconds": 9.613,
-     "hash": "2d836327cdfa2fbd"
+     "seconds": 9.776,
+     "hash": "682762b62b369774"
     },
     "c5-07": {
-     "seconds": 5.457,
-     "hash": "276df8b755f1f909"
+     "seconds": 16.904,
+     "hash": "a6bbf784f1a35d40"
     },
     "c5-08": {
-     "seconds": 10.333,
-     "hash": "6da430744943e0bd"
+     "seconds": 9.311,
+     "hash": "c3c7f19ca3769017"
+    },
+    "c5-16": {
+     "seconds": 9.474,
+     "hash": "cc0e1a7fc7142437"
+    },
+    "c5-17": {
+     "seconds": 13.305,
+     "hash": "ee0cc8a4b10af4db"
+    },
+    "c5-18": {
+     "seconds": 13.769,
+     "hash": "33bb151f3f92afc2"
+    },
+    "c5-19": {
+     "seconds": 10.82,
+     "hash": "a417535c08751d50"
+    },
+    "c5-20": {
+     "seconds": 7.384,
+     "hash": "593253aabdf7645b"
+    },
+    "c5-21": {
+     "seconds": 14.002,
+     "hash": "6dda12445a1a3adb"
     },
     "c5-09": {
-     "seconds": 6.084,
-     "hash": "fe77adf7b33c0973"
+     "seconds": 10.514,
+     "hash": "96967908fae4a73a"
     },
     "c5-10": {
      "seconds": 4.737,

@@ -43,9 +43,9 @@ export const COURSE: CourseChapter[] = [
     clips: [
       // A fact glows on the stage; the forgetting curve starts to fall and the fact fades.
       { id: 'c1-01', text: 'Say you learn something today. A week from now, your brain will have forgotten most of it.', marks: [0.389, 0.757] },
-      // An old notebook page of nonsense syllables ("DAX", "BOK", "YAT"); the year 1885.
+      // Early memory research: Hermann Ebbinghaus, his notebook of made-up syllables, and the time it took to relearn them.
       // SOURCE: Ebbinghaus 1885, Memory: A Contribution to Experimental Psychology; savings data as given in Murre & Dros 2015, PLOS ONE, Table 3.
-      { id: 'c1-02', text: 'In the 1880s, Hermann Ebbinghaus measured this on himself. One day after he learned a list, most of that work was gone. Learning it again took two thirds of the time.', marks: [0.378, 0.546, 0.816] },
+      { id: 'c1-02', text: 'In the 1880s, a scientist named Hermann Ebbinghaus pioneered memory research by memorizing lists of made-up syllables. A day later, he needed two thirds of the original time to relearn a list.', marks: [0.182, 0.414, 0.613, 0.735] },
       // The old curve from 1885 and a new one from 2015 slide over each other; they match.
       // SOURCE: Murre & Dros 2015, "Replication and Analysis of Ebbinghaus' Forgetting Curve", PLOS ONE 10(7): "We conclude that the Ebbinghaus forgetting curve has indeed been replicated."
       { id: 'c1-22', text: 'In 2015, scientists repeated his experiment. A hundred and thirty years later, they got the same curve.', marks: [0.267, 0.503, 0.819] },
@@ -64,9 +64,9 @@ export const COURSE: CourseChapter[] = [
       // A Nobel medal; "2000".
       // SOURCE: The Nobel Prize in Physiology or Medicine 2000 (Eric Kandel, with Carlsson and Greengard): how nerve cells change to store memory.
       { id: 'c1-19', text: 'The work that first showed how brain cells store a memory won a Nobel Prize.', marks: [0.641] },
-      // A wall of small study tiles fills in, "317 experiments"; spaced reviews beat reviews done all at once.
+      // A wall of 317 experiments shows the result behind spaced repetition in Yaseen Docs.
       // SOURCE: Cepeda, Pashler, Vul, Wixted & Rohrer 2006, "Distributed practice in verbal recall tasks", Psychological Bulletin: 317 experiments in 184 articles.
-      { id: 'c1-06', text: 'Scientists have tested this for more than a century. One review alone covered 317 experiments, and spacing won.', marks: [0.382, 0.547, 0.842] },
+      { id: 'c1-06', text: 'A review of 317 experiments found that spaced reviews beat doing them all at once. That’s the idea behind spaced repetition, the system you’ll learn in Yaseen Docs.', marks: [0.029, 0.065, 0.294, 0.659, 0.881] },
       // A ridge-shaped graph: memory kept, against the gap before the review; a peak in the middle, lower on both sides; "more than 1,350 people".
       // SOURCE: Cepeda, Vul, Rohrer, Wixted & Pashler 2008, "Spacing effects in learning: a temporal ridgeline of optimal retention", Psychological Science 19(11): more than 1,350 people; the best gap depends on how long the memory must last.
       { id: 'c1-20', text: 'And yes, there is a best moment to review. A study of more than 1,300 people found it: too early or too late, and you keep less.', marks: [0.335, 0.428, 0.677, 0.774, 0.871] },
@@ -75,7 +75,7 @@ export const COURSE: CourseChapter[] = [
       // The paper index card becomes the app's real card: a title, a fact, one word as a blank.
       { id: 'c1-08', text: 'A card is one idea, with part of it hidden.' },
       // Many cards fan out across the stage, each with one fact.
-      { id: 'c1-09', text: 'You will have many cards, one for each thing you want to keep.' },
+      { id: 'c1-09', text: 'You will have many cards, one for each thing you want to remember.' },
       // Behind the curve, small gears turn; a date lights up on a calendar just before the curve drops. The words "Spaced repetition algorithm" settle under it. (Yaseen's line, from the doc YAS-2084.)
       { id: 'c1-16', text: 'The app runs an algorithm behind the scenes to keep track of this for you, and predicts the day you are about to forget it. This is called a spaced repetition algorithm.' },
       // The words "FSRS" over a card; behind it, a small graph of one memory: a curve, and numbers that update.
@@ -323,15 +323,22 @@ export const COURSE: CourseChapter[] = [
       { id: 'c5-15', text: 'By then you are not really reviewing it any more. It is part of what you know. It is part of who you are.', marks: [0.478, 0.724] },
       // Wooden boxes of paper slips; the name "Niklas Luhmann", "1951 to 1996", "about 90,000 cards".
       // SOURCE: Niklas Luhmann-Archiv, Bielefeld University: about 90,000 notes, made between 1951 and 1996. (rename-note-to-page: keep)
-      { id: 'c5-06', text: 'The sociologist Niklas Luhmann kept a box of paper slips for about 45 years. It grew to around 90,000 of them.', marks: [0.125, 0.474, 0.782] },
-      // A shelf of his books fills in: "nearly 600 publications", "over 40 books".
+      { id: 'c5-06', text: 'the sociologist Niklas Luhmann had a similar card system. Over about 45 years, he created around 90,000 cards.', marks: [0.123, 0.532, 0.786] },
+      // Links between the slips bring ideas together, then the shelf fills with publications and books.
       // SOURCE: Niklas Luhmann-Archiv, Bielefeld University: nearly 600 publications, among them over 40 monographs.
-      { id: 'c5-07', text: 'He wrote nearly 600 publications, among them more than 40 books.', marks: [0.161, 0.733] },
-      // Long boxes of 4 by 6 index cards; the name "Ryan Holiday".
-      // SOURCE: Ryan Holiday, YouTube video UBdlprawTkA (his card system): tens of thousands of cards, over 20 years.
-      { id: 'c5-08', text: 'The writer Ryan Holiday has kept tens of thousands of index cards over twenty years. He says the most value came later, from all of them added up.', marks: [0.062, 0.213, 0.441, 0.898] },
+      { id: 'c5-07', text: 'He said the links between those slips helped him see how ideas fit together and turn them into new work. That system helped make him one of the most well published scientists in history. He published nearly 600 works, including more than 40 books.', marks: [0.038, 0.341, 0.776, 0.918] },
+      // Ryan Holiday’s index card boxes, his books, and the value of the cards over time.
+      // SOURCE: Ryan Holiday on his card system: https://ryanholiday.net/the-notecard-system-the-key-for-remembering-organizing-and-using-everything-you-read/ (rename-note-to-page: keep)
+      // SOURCE: Penguin Random House’s author and book pages for Robert Greene and Ryan Holiday.
+      { id: 'c5-08', text: "The writer Ryan Holiday uses a similar system. He sorts ideas onto index cards so he can pull them together when he writes a book.", marks: [0.077, 0.558] },
+      { id: 'c5-16', text: "he has created tens of thousands of cards over the last 20 years. He learned the system of creating cards from his mentor: Robert Greene.", marks: [0.101, 0.878] },
+      { id: 'c5-17', text: "Robert Greene credits the system with helping him write some of the most well known books of all time such as 48 Laws of Power and he has gone on to write at least three New York Times bestsellers.", marks: [0.499, 0.788] },
+      { id: 'c5-18', text: "Ryan Holiday learned this system from Robert Greene and follows it religiously. He has many videos and articles about him talking about what he's learned from other great people in history who have used a similar system.", marks: [0.163, 0.447] },
+      { id: 'c5-19', text: "Ryan Holiday credits the system with helping him publish a new book almost every year. Using this system he has written four New York Time bestselling books.", marks: [0.259, 0.725] },
+      { id: 'c5-20', text: "He says most of the value of the system compounded over time and came later, when all those cards added up.", marks: [0.314, 0.834] },
+      { id: 'c5-21', text: "this system of cards is not new, the best thinkers throughout all of history have used some version of this system. We in the app have just combined science, technology and an algorithm to it to further improve it.", marks: [0.214, 0.686, 0.8] },
       // Three small scenes: a meeting, a page in another language, a field that becomes clear.
-      { id: 'c5-09', text: 'You do not need to write books. Think of the meeting where the right fact is there when you need it.', marks: [0.493, 0.644] },
+      { id: 'c5-09', text: 'You do not need to write books or be an author for this system to be valuable for you. Think of the meeting where the right fact is there when you need it.', marks: [0.662, 0.765] },
       // A page in another language becomes readable; a hard subject comes into focus.
       { id: 'c5-10', text: 'The language you keep. The subject you finally understand.', marks: [0.084, 0.464, 0.676] },
       // The card base, now large, glows: "Your card base".

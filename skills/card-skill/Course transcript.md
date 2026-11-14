@@ -4,7 +4,7 @@ The words of the card course.
 
 Say you learn something today. A week from now, your brain will have forgotten most of it.
 
-In the 1880s, Hermann Ebbinghaus measured this on himself. One day after he learned a list, most of that work was gone. Learning it again took two thirds of the time.
+In the 1880s, a scientist named Hermann Ebbinghaus pioneered memory research by memorizing lists of made-up syllables. A day later, he needed two thirds of the original time to relearn a list.
 
 In 2015, scientists repeated his experiment. A hundred and thirty years later, they got the same curve.
 
@@ -20,7 +20,7 @@ This is hard science. Researchers have watched it in brain cells: spaced practic
 
 The work that first showed how brain cells store a memory won a Nobel Prize.
 
-Scientists have tested this for more than a century. One review alone covered 317 experiments, and spacing won.
+A review of 317 experiments found that spaced reviews beat doing them all at once. That’s the idea behind spaced repetition, the system you’ll learn in Yaseen Docs.
 
 And yes, there is a best moment to review. A study of more than 1,300 people found it: too early or too late, and you keep less.
 
@@ -28,7 +28,7 @@ So how do you store each thing you learn in the app? Answer: on a card.
 
 A card is one idea, with part of it hidden.
 
-You will have many cards, one for each thing you want to keep.
+You will have many cards, one for each thing you want to remember.
 
 The app runs an algorithm behind the scenes to keep track of this for you, and predicts the day you are about to forget it. This is called a spaced repetition algorithm.
 
@@ -235,13 +235,25 @@ So a couple of months in, that card is already months away.
 
 By then you are not really reviewing it any more. It is part of what you know. It is part of who you are.
 
-The sociologist Niklas Luhmann kept a box of paper slips for about 45 years. It grew to around 90,000 of them.
+the sociologist Niklas Luhmann had a similar card system. Over about 45 years, he created around 90,000 cards.
 
-He wrote nearly 600 publications, among them more than 40 books.
+He said the links between those slips helped him see how ideas fit together and turn them into new work. That system helped make him one of the most well published scientists in history. He published nearly 600 works, including more than 40 books.
 
-The writer Ryan Holiday has kept tens of thousands of index cards over twenty years. He says the most value came later, from all of them added up.
+The writer Ryan Holiday uses a similar system. He sorts ideas onto index cards so he can pull them together when he writes a book.
 
-You do not need to write books. Think of the meeting where the right fact is there when you need it.
+he has created tens of thousands of cards over the last 20 years. He learned the system of creating cards from his mentor: Robert Greene.
+
+Robert Greene credits the system with helping him write some of the most well known books of all time such as 48 Laws of Power and he has gone on to write at least three New York Times bestsellers.
+
+Ryan Holiday learned this system from Robert Greene and follows it religiously. He has many videos and articles about him talking about what he's learned from other great people in history who have used a similar system.
+
+Ryan Holiday credits the system with helping him publish a new book almost every year. Using this system he has written four New York Time bestselling books.
+
+He says most of the value of the system compounded over time and came later, when all those cards added up.
+
+this system of cards is not new, the best thinkers throughout all of history have used some version of this system. We in the app have just combined science, technology and an algorithm to it to further improve it.
+
+You do not need to write books or be an author for this system to be valuable for you. Think of the meeting where the right fact is there when you need it.
 
 The language you keep. The subject you finally understand.
 
