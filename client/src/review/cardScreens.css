@@ -352,8 +352,8 @@
 .card-inbox__from-sep {
   opacity: 0.6;
 }
-/* The card's place (YAZ-5017 round 2): vault › folder › page, each a quiet link; the middle parts give way first ("…"),
-   the page keeps its name. */
+/* The card's place (YAZ-5017 round 2; YAZ-5132 the Inbox's one breadcrumb): vault › folder › page, each a quiet link
+   with its icon; the middle parts give way first ("…"), the page keeps its name. */
 .card-inbox__path {
   flex: 0 1 auto;
   display: inline-flex;
@@ -370,16 +370,27 @@
 }
 .card-inbox__path-part {
   flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
   min-width: 1.8em;
   padding: 2px 4px;
   overflow: hidden;
-  text-overflow: ellipsis;
   border: 0;
   border-radius: 5px;
   background: none;
   color: inherit;
   font: inherit;
   cursor: pointer;
+}
+/* YAZ-5132: each part's icon (the tree's own, `FileIcon`), then its name, which ends in "…" when room runs out. */
+.card-inbox__path-part > .file-icon {
+  display: inline-flex;
+  flex: none;
+}
+.card-inbox__path-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .card-inbox__path-part[data-kind='vault'] {
   flex-shrink: 0.4;
@@ -630,16 +641,6 @@
 .card-inbox__dot {
   flex: none;
   color: var(--fg-muted);
-}
-/* "in <page>" (YAZ-5044): quiet, after the ID; the page name is the link and gives way before the title. */
-.card-inbox__in {
-  display: inline-flex;
-  flex: 0 2 auto;
-  align-items: center;
-  min-width: 0;
-  margin-left: 4px;
-  color: var(--fg-muted);
-  white-space: pre;
 }
 .card-inbox__panel {
   position: relative;
@@ -1093,15 +1094,6 @@ body.card-inbox--sizing {
 }
 .card-inbox__archived-unarchive:hover {
   background: var(--bg-hover);
-}
-/* The page of a card in a page (YAZ-5044 "in <page>"): a long name ends in "…" before the ID gives way (the ID is
-   `flex: none`). YAZ-5051: in the row above the card, quiet, so the card is the first thing you read. */
-.card-inbox__page {
-  flex: 0 1 auto;
-  max-width: none;
-  padding: 0 2px;
-  color: var(--fg-muted);
-  font-size: 12px;
 }
 /* ONE line at any width (YAZ-5024): no wrap; a key that does not fit folds (`CardInboxHints`), laid out off the
    row so it can still be measured. */
