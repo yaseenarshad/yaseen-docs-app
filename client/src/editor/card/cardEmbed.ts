@@ -15,7 +15,7 @@
  *    The head needs no read: the index knows the name, the ID and the state.
  *  - EDIT CARD: the card editor (YAZ-5026, `mountCardEditor`, through `doors.edit`) in the box, with the page card's key row. Done writes the
  *    ORIGINAL file, one `transformFile` (`changeCardTextIn`, the app's own write: an open tab of that file takes it
- *    quietly). The page that embeds it does not change. Read only: no Edit card (the card's text is locked, as in the page).
+ *    quietly). The page that embeds it does not change. Read only: Edit card asks first, as the page's card does, and opens after "Allow edits" (YAZ-5145 round 2).
  *  - ⋯ (`cardEmbedMenuRows`): Open card (the card window), Show as link, Put back into this page (YAZ-5037 phase 5:
  *    a card file's card, from an embed alone on its line; the page's convert door writes it), Archive / Unarchive card
  *    (the original's card line, as the page card's row: shown in a read-only page too), Copy card ID.
@@ -45,6 +45,7 @@ import { openCardWindow } from './cardOpen'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard } from './cardRender'
 import type { CardReviewDoorApi } from './cardBlockView'
 import { mountReviewsStrip, type ReviewsStripHandle } from './reviewsStrip'
+import { tellReadOnlyEdit } from '../readOnlyEdit'
 import { pathUnit } from '../../vault/unitWord'
 import './cardEmbed.css'
 
@@ -293,7 +294,9 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
 
   const startEdit = (): void => {
     const base = read
-    if (edit !== null || card === null || base === null || doors.edit === undefined || !host.editable()) return
+    if (edit !== null || card === null || base === null || doors.edit === undefined) return
+    // A page locked by Read only (YAZ-5145 round 2): an edit attempt that carries itself; "Allow edits" opens Edit card.
+    if (!host.editable()) return tellReadOnlyEdit(dom, 'card', startEdit)
     const mount = document.createElement('div')
     mount.className = 'card__editor'
     dom.append(mount)

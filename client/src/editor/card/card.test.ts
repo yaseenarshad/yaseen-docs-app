@@ -16,6 +16,7 @@ import { CrepeFeature } from '../crepe'
 import { features } from '../featureConfig'
 import { CARD_OPEN, CARD_TITLE_PLACEHOLDER, cardLanguage, cardBlockViewAt, setCardEditorKind, type CardOpenRequest } from './cardBlockView'
 import { refreshCardLook, renderCard } from './cardRender'
+import { READ_ONLY_EDIT, type ReadOnlyEditEvent } from '../readOnlyEdit'
 import { pageCards } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 
@@ -453,6 +454,20 @@ describe('the card in the page', () => {
     expect(root.querySelector('.ProseMirror[contenteditable="false"] .card__edit')).not.toBeNull() // hidden by card.css
     root.querySelector('.card__edit')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
     expect(root.querySelector('.card .cm-editor')).toBeNull()
+  })
+
+  it('YAZ-5145 round 2: Edit card in a page locked by Read only is an edit attempt that carries itself; once the page is editable, the attempt opens Edit card, with no second double-click', async () => {
+    const { crepe, root } = await mount(CARD)
+    crepe.setReadonly(true)
+    const told: ReadOnlyEditEvent[] = []
+    root.addEventListener(READ_ONLY_EDIT, (e) => told.push(e as ReadOnlyEditEvent))
+    root.querySelector('.card__body')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))
+    expect(told.map((e) => e.detail)).toEqual(['card'])
+    expect(root.querySelector('.card--editing')).toBeNull()
+    // The chip's "Allow edits" unlocks the page, then runs what the attempt carried.
+    crepe.setReadonly(false)
+    told[0].resume?.()
+    await vi.waitFor(() => expect(root.querySelector('.card--editing')).not.toBeNull())
   })
 
   it("the sweep's write of the open page lands as one change of the card's line, the text around it kept", async () => {

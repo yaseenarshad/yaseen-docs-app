@@ -2771,6 +2771,54 @@ describe('YAZ-5145: the Inbox\'s O and E open Explore\'s own page layer', () => 
     expect(top().querySelector(`.explore__body--edit [data-editor="${PAGE}"]`)).not.toBeNull()
   })
 
+  it.each([false, true])('round 2: E on a card FILE goes straight into its Edit card (read only %s: after "Allow edits?", with no second E; nothing before)', async (readOnly) => {
+    const editCard = vi.fn()
+    props = {
+      ...props,
+      ...(readOnly && { vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, readOnly: true }) }),
+      // The card file view in the edit layer: its own Edit card button.
+      renderEditor: (path): ReactNode => (
+        <div className="editor" data-editor={path}>
+          <button type="button" data-card-file-edit onClick={editCard} />
+        </div>
+      ),
+    }
+    props.requestLayer = { kind: 'page', path: PAGE, edit: true, editCard: true, fromInbox: true }
+    await mount()
+    const wait = async () => {
+      for (let i = 0; i < 3; i++) await act(async () => await new Promise((r) => setTimeout(r, 20)))
+    }
+    await wait()
+    if (readOnly) {
+      expect(editCard).not.toHaveBeenCalled()
+      const ask = top().querySelector('.read-only-chip__ask')!
+      act(() => [...ask.querySelectorAll('button')].find((b) => b.textContent === 'Allow edits for 1 minute')!.click())
+      await wait()
+    }
+    expect(editCard).toHaveBeenCalledOnce()
+  })
+
+  it('round 2: E on a card file in a Read only vault, then Cancel: no edit, no Edit card', async () => {
+    const editCard = vi.fn()
+    props = {
+      ...props,
+      vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, readOnly: true }),
+      renderEditor: (path): ReactNode => (
+        <div className="editor" data-editor={path}>
+          <button type="button" data-card-file-edit onClick={editCard} />
+        </div>
+      ),
+    }
+    props.requestLayer = { kind: 'page', path: PAGE, edit: true, editCard: true, fromInbox: true }
+    await mount()
+    await flush()
+    const ask = top().querySelector('.read-only-chip__ask')!
+    act(() => [...ask.querySelectorAll('button')].find((b) => b.textContent === 'Cancel')!.click())
+    for (let i = 0; i < 3; i++) await act(async () => await new Promise((r) => setTimeout(r, 20)))
+    expect(top().querySelector('.explore__body--edit')).toBeNull()
+    expect(editCard).not.toHaveBeenCalled()
+  })
+
   it('E on a card in a page: the layer edits, landed on the card, and that card opens in Edit card (one time)', async () => {
     const edit = vi.fn()
     props = {

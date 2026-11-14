@@ -24,7 +24,7 @@ export type ExploreLayer =
       leaveAsk?: number
       /** The card to land on when the page opens (YAZ-4962): its place among the page's cards. */
       card?: number
-      /** The Inbox's E on a card in a page (YAZ-5145): once the layer edits, that card (`card`) opens in Edit card. */
+      /** The Inbox's E (YAZ-5145): once the layer edits, the card opens in Edit card (`card` of a page, else the card file's). */
       editCard?: boolean
       /** Opened from the Inbox (YAZ-5009, YAZ-5145): ⌘↵ while reading goes back to the Inbox, not to a tab. */
       fromInbox?: boolean
