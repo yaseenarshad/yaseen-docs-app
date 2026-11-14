@@ -358,15 +358,24 @@ describe('the guided tour hears the card file tab (YAZ-5123)', () => {
     }
   })
 
-  it('the ⋯ rows Copy card link, Archive card and Put at top of Inbox are marks of the tour', async () => {
+  it('the ⋯ rows Archive card and Copy card link are marks of the tour; once archived, the same row Unarchive card is (YAZ-5330); Put at top of Inbox is not', async () => {
     await mount(FILE)
     await menu()
-    const tours = [...document.querySelectorAll<HTMLElement>('[role="menuitem"][data-tour]')].map((item) => [item.textContent, item.dataset.tour])
-    expect(tours).toEqual([
-      ['Put at top of Inbox', 'card-menu-up-next'],
+    const tours = () => [...document.querySelectorAll<HTMLElement>('[role="menuitem"][data-tour]')].map((item) => [item.textContent, item.dataset.tour])
+    expect(tours()).toEqual([
       ['Archive card', 'card-menu-archive'],
       ['Copy card link', 'card-copy-link'],
     ])
+    pick('Archive card')
+    await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('Archived'))
+    await vi.waitFor(() => expect(document.querySelector('[role="menuitem"]')).toBeNull())
+    await menu()
+    expect(tours()).toEqual([
+      ['Unarchive card', 'card-menu-unarchive'],
+      ['Copy card link', 'card-copy-link'],
+    ])
+    pick('Unarchive card')
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE))
   })
 })
 

@@ -957,10 +957,7 @@ describe('the guided tour hears the Inbox (YAZ-5123)', () => {
       expect(heard).toHaveLength(all)
       act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
       const marks = [...el.querySelectorAll<HTMLElement>('.card-inbox__more-action[data-tour]')].map((b) => [b.getAttribute('aria-label'), b.dataset.tour])
-      expect(marks).toEqual([
-        ['Archive card', 'card-menu-archive'],
-        ['Put at top of Inbox', 'card-menu-up-next'],
-      ])
+      expect(marks).toEqual([['Archive card', 'card-menu-archive']])
     } finally {
       stop()
     }

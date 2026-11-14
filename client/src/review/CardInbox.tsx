@@ -221,7 +221,7 @@ function ArchivedList({ session, nameOf, openPage, unarchive, backToAll }: { ses
             <span className={`card-inbox__archived-title${c.title === undefined ? ' card__title--empty' : ''}`}>{c.title ?? 'New card'}</span>
             <span className="card-inbox__archived-page">{nameOf(c.path)}</span>
           </button>
-          <button type="button" className="explore__button card-inbox__archived-unarchive" data-tour="inbox-unarchive" onMouseDown={(e) => e.preventDefault()} onClick={() => void unarchive(c.path, c.id)}>
+          <button type="button" className="explore__button card-inbox__archived-unarchive" onMouseDown={(e) => e.preventDefault()} onClick={() => void unarchive(c.path, c.id)}>
             Unarchive
           </button>
         </li>
@@ -398,7 +398,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
           { id: 'off', label: 'Archive card', tour: 'card-menu-archive', icon: ICON_OFF, disabled: card.page === null, run: () => void review.turnOff() },
           card.page?.next === true
             ? { id: 'next', label: 'Remove from top of Inbox', icon: ICON_TOP, disabled: false, run: () => void review.setNext(card.path, card.id, false) }
-            : { id: 'next', label: 'Put at top of Inbox', tour: 'card-menu-up-next', icon: ICON_TOP, disabled: card.page === null, run: () => void review.setNext(card.path, card.id, true) },
+            : { id: 'next', label: 'Put at top of Inbox', icon: ICON_TOP, disabled: card.page === null, run: () => void review.setNext(card.path, card.id, true) },
           { id: 'card', label: 'Open card', icon: ICON_CARD, disabled: false, run: () => openPage(card.path) },
         ]
 

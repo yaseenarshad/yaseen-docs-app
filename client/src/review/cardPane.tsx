@@ -108,8 +108,9 @@ export function cardMenuSections(card: CardAtPage | null, id: string | null, cha
   if (card !== null && opts.preview !== undefined) rows.push([{ id: 'preview', label: 'Preview', hint: 'P', onSelect: opts.preview }])
   if (card !== null && card.id !== null)
     rows.push([
-      ...(opts.inbox ? [{ id: 'next', label: card.next ? 'Remove from top of Inbox' : 'Put at top of Inbox', tour: card.next ? undefined : 'card-menu-up-next', onSelect: () => changeLine((l) => withCardNext(l, !card.next)) }] : []),
-      { id: 'review-off', label: card.off ? 'Unarchive card' : 'Archive card', tour: card.off ? undefined : 'card-menu-archive', onSelect: () => changeLine((l) => withCardOff(l, !card.off)) },
+      ...(opts.inbox ? [{ id: 'next', label: card.next ? 'Remove from top of Inbox' : 'Put at top of Inbox', onSelect: () => changeLine((l) => withCardNext(l, !card.next)) }] : []),
+      // Chapter 11's tour (YAZ-5330): Archive card, then Unarchive card on the same row once the card is archived.
+      { id: 'review-off', label: card.off ? 'Unarchive card' : 'Archive card', tour: card.off ? 'card-menu-unarchive' : 'card-menu-archive', onSelect: () => changeLine((l) => withCardOff(l, !card.off)) },
       // ONE toggle row (YAZ-5030): the hint is the state now; a click turns it to the other.
       { id: 'title-front', label: 'Title on the front', hint: card.notitle === true ? 'Hide' : 'Show', onSelect: () => changeLine((l) => withCardNoTitle(l, card.notitle !== true)) },
       ...(card.reviews.length === 0 ? [] : [{ id: 'reset', label: 'Reset history', danger: true, onSelect: () => changeLine(withoutCardReviews) }]),

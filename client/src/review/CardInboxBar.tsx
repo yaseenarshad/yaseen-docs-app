@@ -95,7 +95,6 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
           ref={button}
           type="button"
           className="card-inbox__filter"
-          data-tour="inbox-filter"
           aria-haspopup="menu"
           aria-expanded={menu !== null}
           // Not the menu's close-on-press: the click toggles it. The keyboard stays in the Inbox.
