@@ -4,7 +4,7 @@ The words of the card course.
 
 Say you learn something today. A week from now, your brain will have forgotten most of it.
 
-In the 1880s, Hermann Ebbinghaus measured this on himself. After one day, relearning a list took him about two thirds of the original time.
+In the 1880s, Hermann Ebbinghaus measured this on himself. One day after he learned a list, most of that work was gone. Learning it again took two thirds of the time.
 
 In 2015, scientists repeated his experiment. A hundred and thirty years later, they got the same curve.
 
@@ -16,37 +16,37 @@ A new memory starts out fragile. Over time, the brain makes it stable. Scientist
 
 Each review, near the point where you would forget, pushes the memory further into long-term memory.
 
-The app runs an algorithm behind the scenes to keep track of this for you, and predicts the day you are about to forget it. This is called a spaced repetition algorithm.
+This is hard science. Researchers have watched it in brain cells: spaced practice switches on the genes that build long-term memory.
+
+The work that first showed how brain cells store a memory won a Nobel Prize.
 
 Scientists have tested this for more than a century. One review alone covered 317 experiments, and spacing won.
 
+And yes, there is a best moment to review. A study of more than 1,300 people found it: too early or too late, and you keep less.
+
 So how do you store each thing you learn in the app? Answer: on a card.
 
-That is a card: one idea, with part of it hidden.
+A card is one idea, with part of it hidden.
 
 You will have many cards, one for each thing you want to keep.
 
-The app keeps a calendar for every card. On the day a card is due, it shows it to you.
-
-You try to recall the hidden part, then check. And you answer: forgot, or remembered.
+The app runs an algorithm behind the scenes to keep track of this for you, and predicts the day you are about to forget it. This is called a spaced repetition algorithm.
 
 That algorithm is called FSRS. It is a mathematical model of your memory.
 
 For every card, every day, it works out the odds that you still remember it. When they drop to about ninety percent, the card comes back.
 
-This is hard science. Researchers have watched it in brain cells: spaced practice switches on the genes that build long-term memory.
-
-The work that first showed how brain cells store a memory won a Nobel Prize.
-
-And yes, there is a best moment to review. A study of more than 1,300 people found it: too early or too late, and you keep less.
-
 The algorithm finds that moment for every card, precisely for you, by studying your memory.
+
+The app keeps a calendar for every card. On the day a card is due, it shows it to you.
+
+You try to recall the hidden part, then check. And you answer: forgot, or remembered.
 
 This course takes about twenty-eight minutes, in twelve short chapters.
 
 Some chapters let you try the steps in the real app. That part is always your choice.
 
-Review just before you forget, and each memory lasts longer. Next: what a card really is, and your first one.
+Your brain forgets on a curve. Now you have a way to beat it. Next: what a card really is, and you make your first one.
 
 ## Chapter 2. The card: the hub of an idea
 
@@ -134,7 +134,7 @@ The Inbox shows one card at a time. Look at the card, and try to recall what is 
 
 Trying to recall is what makes it stick. A study in the journal Science put it to the test.
 
-People who kept testing themselves remembered 80 percent a week later. People who kept re-reading, with no testing, remembered 36.
+People who kept testing themselves remembered 80 percent a week later. People who kept re-reading, with no testing, remembered 36 percent.
 
 About the same amount of work. More than double the memory.
 
@@ -166,7 +166,7 @@ When nothing is left, the Inbox says Inbox complete. That's it for today.
 
 To answer your own card in the real app, choose Try it in the app.
 
-Open the Inbox each day, and let the app keep the dates. Next: cards that live inside your pages.
+A few minutes a day, and the algorithm does the rest. Next: your cards can live right inside your pages.
 
 ### Try it in the app
 
@@ -186,7 +186,7 @@ First, a card by itself. That's the card file you made: one file, one card.
 
 Second, a card inside a page. Your pages on a topic can hold cards right beside the text.
 
-In a page, type slash card, and press Return. A new card opens, ready to edit.
+In a page, type slash card, and press Enter. A new card opens, ready to edit.
 
 A card in a page has the same menu, the same history, and the same Inbox.
 
@@ -195,6 +195,8 @@ To review only the cards of one page, right-click the page, and choose Review th
 Third, a card embedded in a page. The card lives in one place, and the page shows it.
 
 To embed one, copy the card's link from its menu, and paste it in a page. Then right-click the link, and choose Show as embed.
+
+Or just tell your agent: embed this card in that page.
 
 The embed has a small head that says Embedded from, with the card's title.
 
@@ -206,7 +208,7 @@ Use a card file for a fact on its own. Use a card in a page when it belongs with
 
 To embed your first card in a page, choose Try it in the app.
 
-This is the mix and match from before: one card, one home, shown wherever it helps. Next, a short break.
+This is the mix and match from before: one card, one home, shown wherever it helps. Next: where all of this can take you.
 
 ### Try it in the app
 
@@ -279,7 +281,7 @@ When it comes, it is no surprise. You made it, you digested it, and you have bee
 
 You carry a picture of your card base in your head, because you put each card there.
 
-Your card base is your knowledge base: make it yours. Next, what a good card looks like.
+Your card base is your knowledge base: make it yours. Next: how to make a card you will be glad to see again.
 
 ## Chapter 7. What makes a good card
 
@@ -379,7 +381,7 @@ Your agent drafts fast, but you decide. Keep only what you want to recall, in yo
 
 To copy the prompt later, right-click the card skill, and choose Copy prompt for your agent.
 
-You digest and decide; your agent only shapes. Next, the three habits.
+You digest and decide; your agent only shapes. Next: the three habits that keep it all alive.
 
 ## Chapter 9. Three habits: make, review, tend
 
@@ -403,7 +405,7 @@ Even with a large card base, review and tending together can fit in fifteen to t
 
 Making is the one you set time aside for. Digesting takes thought, so give it a quiet moment.
 
-Make with time set aside. Review every day. Tend as you review. Next, how your cards connect.
+Make with time set aside. Review every day. Tend as you review. Next: the idea that changes how you organise everything.
 
 ## Chapter 10. Links: how cards connect
 
@@ -437,17 +439,17 @@ Folders ask: where does this go? Links ask: what does this connect to?
 
 A card can link to any card, wherever it lives, and to any page.
 
-To link, edit the card. Type two square brackets, then a few letters of the other card's title.
+The easy way: ask your agent to find the connections.
+
+Keep it handmade: the agent shows you each one in the chat, and you read it and approve it.
+
+Beside each link go a few words on why the two connect. The reason is worth as much as the link.
+
+To link by hand, edit the card. Type two square brackets, then a few letters of the other card's title.
 
 A list shows what matches. Click the one with the card icon.
 
 The link turns into a pill: the other card's title, with its ID small beside it.
-
-Beside each link go a few words on why the two connect. The reason is worth as much as the link.
-
-You do not have to write these yourself. Ask your agent to find the connections.
-
-Keep it handmade: the agent shows you each one in the chat, and you read it and approve it.
 
 Click the pill, and that card opens. Under it, Linked mentions lists what links to it.
 
@@ -459,7 +461,7 @@ Your card base is your knowledge base. Links make it a base, not a pile.
 
 To link two of your Course Cards, choose Try it in the app.
 
-Ask what a card connects to, not where it goes. Next: tending your cards and links.
+Ask what a card connects to, not where it goes. Next: how to keep your tree alive.
 
 ### Try it in the app
 
@@ -480,9 +482,9 @@ That is not a chore. Each fix makes you think about the idea again, and that is 
 
 A card you keep missing is a sign to look at it. Often it is unclear, or it asks too much at once.
 
-To fix a card, click Edit card, or press E in the Inbox. Press Escape when you are done.
+To fix a card, tell your agent what to change, and keep reviewing. Each card is a file, so it can.
 
-Or, since each card is a file, tell your agent what to change, and keep reviewing.
+Or do it yourself: click Edit card, or press E in the Inbox. Press Escape when you are done.
 
 Some agent tools can run by themselves at set times: a scheduled agent.
 
@@ -554,7 +556,7 @@ The best time to start was years ago. The second best time is now.
 
 That's the whole course. Make one card today. Open the Inbox tomorrow.
 
-Your card base is your knowledge base. Build it a card at a time, and what you learn stays.
+Your card base is your knowledge base. Build it one card at a time, and what you learn becomes part of who you are.
 
 ### Try it in the app
 
