@@ -445,14 +445,14 @@ describe('the Course page (chapter 4)', () => {
 })
 
 describe('the prompt (chapter 8)', () => {
-  it('names the app copy of the skill, the full path of Course Cards, and has no check line', async () => {
+  it('names the app copy of the skill and the full path of Course Cards; the agent drafts in the chat and writes only approved cards; no check line', async () => {
     const { deps } = depsOf()
     const host = vaultCourseHost(vaultOf().view, deps)
     host.agentStep.useExample()
     await host.agentStep.preparePrompt()
     const prompt = host.agentStep.state().prompt as { text: string; folder: string }
     expect(prompt.folder).toBe(`${root}/course-cards`)
-    expect(prompt.text).toBe(`${AGENT_PROMPT.replace('{path}', APP_SKILL)} Then make 3 cards from the text below, as card files in "${root}/course-cards".\n\n${EXAMPLE_TEXT}\n`)
+    expect(prompt.text).toBe(`${AGENT_PROMPT.replace('{path}', APP_SKILL)} Then draft 3 cards from the text below, here in the chat. Show me each card in full, and wait for my OK. Write a card file in "${root}/course-cards" only for each card I approve.\n\n${EXAMPLE_TEXT}\n`)
     expect(prompt.text.toLowerCase()).not.toContain('check')
   })
 

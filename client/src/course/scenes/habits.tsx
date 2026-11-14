@@ -1,7 +1,7 @@
 /**
  * CHAPTER 9, "Three habits: make, review, tend" (YAZ-5121). The whole system at a glance: three icons, then what the
  * research says about trusting the schedule (Kornell 2009: the people and their wrong guess; Karpicke & Roediger 2008:
- * the guess line against the real bars), then tending inside the review, the fifteen to twenty minutes, and making
+ * the guess line against the real bars), then tending inside the review, a couple of minutes of tending, and making
  * with time set aside. The storyboard is the comment above each clip in `script.ts`; the cues are `marks` there, set
  * from the real voice's word times, read with `cue()`.
  */
@@ -234,16 +234,15 @@ function TendWhileReviewing(props: SceneProps) {
   )
 }
 
-/** c9-08: a large card base; review and tending together on a clock face: fifteen to twenty minutes. */
+/** c9-08: a large card base; tending on a clock face: a couple of minutes a day. */
 function Minutes(props: SceneProps) {
   const b = useBeat(props)
   const large = cue(b, 0, 0.09)
-  const review = cue(b, 1, 0.29)
-  const tending = cue(b, 2, 0.39)
-  const mins = cue(b, 3, 0.65)
-  const clock = since(b, review - 0.05, 0.6)
+  const tending = cue(b, 1, 0.35)
+  const mins = cue(b, 2, 0.6)
+  const clock = since(b, tending - 0.05, 0.6)
   return (
-    <Stage beat={b} label="Even with a large card base, review and tending fit in fifteen to twenty minutes a day">
+    <Stage beat={b} label="Even with a large card base, tending takes a couple of minutes a day">
       <Layer style={{ opacity: lerp(1, 0.16, clock) * since(b, large, 0.5) }}>
         <Tally beat={b} count={600} fill={between(b, large, large + 0.18)} columns={40} />
         <Words size="kicker">A large card base</Words>
@@ -252,18 +251,12 @@ function Minutes(props: SceneProps) {
         <ClockArc
           beat={b}
           p={clock}
-          arcs={[
-            { from: 0, to: 15, p: since(b, review, 1.1) },
-            { from: 15, to: 20, p: since(b, tending, 0.9), tone: 'soft' },
-          ]}
-          label="15–20 min"
+          arcs={[{ from: 0, to: 2, p: since(b, tending, 0.9), tone: 'soft' }]}
+          label="A couple of minutes"
           labelP={since(b, mins, 0.5)}
         />
-        <div className="later-legend" style={rise(b, since(b, review, 0.5))}>
+        <div className="later-legend" style={rise(b, since(b, tending, 0.5))}>
           <span>
-            <i className="later-legend__key" /> Review
-          </span>
-          <span style={{ opacity: since(b, tending, 0.5) }}>
             <i className="later-legend__key later-legend__key--soft" /> Tending
           </span>
           <span style={{ opacity: since(b, mins + 0.08, 0.5) }}>a day</span>

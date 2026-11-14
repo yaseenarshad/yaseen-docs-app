@@ -383,6 +383,7 @@ const STEP_PARTS: Readonly<Record<string, readonly AgentStepPart[]>> = {
   'c8-11': ['text'],
   'c8-12': ['prompt'],
   'c8-13': ['cards'],
+  'c8-20': ['cards'],
   'c8-14': ['cards'],
   'c8-15': ['cards'],
   'c8-16': ['skip'],
@@ -398,11 +399,12 @@ function partsOf(id: string, copied: boolean): readonly AgentStepPart[] {
 }
 
 const STEP_KICKER: Readonly<Record<string, string>> = {
-  'c8-11': 'Step 1 · Something you have digested',
+  'c8-11': 'Step 1 · Something you have chewed on',
   'c8-12': 'Step 2 · Copy the prompt',
-  'c8-13': 'Step 3 · Paste it into your agent',
+  'c8-13': 'Step 3 · Read the drafts in the chat',
+  'c8-20': 'Step 3 · Only what you approve is saved',
   'c8-14': 'Step 3 · Waiting for your agent',
-  'c8-15': 'Step 4 · Read each one',
+  'c8-15': 'Step 4 · That is chewing',
   'c8-16': 'No agent?',
 }
 
@@ -443,7 +445,7 @@ function AgentStep(props: SceneProps) {
                 3 cards
               </span>
               <span className="kit-chip" style={pop(b, since(b, cue(b, 2, 0.818), 0.5))}>
-                In Course Cards
+                Drafts in the chat
               </span>
             </div>
           )}
@@ -453,8 +455,8 @@ function AgentStep(props: SceneProps) {
               className="ai-term ai-term--wide"
               lines={[
                 { text: 'Paste the prompt here', p: since(b, cue(b, 0, 0.216) - 0.05, 0.8), kind: 'in' },
-                { text: 'Course Cards/how-bread-rises.md', p: since(b, cue(b, 1, 0.433), 0.6), kind: 'file' },
-                { text: 'Course Cards/a-slow-rise-for-flavour.md', p: since(b, cue(b, 1, 0.433) + 0.12, 0.6), kind: 'file' },
+                { text: 'Draft 1 · How bread rises', p: since(b, cue(b, 1, 0.433), 0.6), kind: 'out' },
+                { text: 'Yes, save it', p: since(b, cue(b, 2, 0.7), 0.6), kind: 'in' },
               ]}
             />
           )}
@@ -637,7 +639,7 @@ export const AI_SCENES: ChapterScenes = {
     { clips: ['c8-08'], scene: TwoPaths },
     { clips: ['c8-09'], scene: Holiday },
     { clips: ['c8-10'], scene: RightWay },
-    { clips: ['c8-11', 'c8-12', 'c8-13', 'c8-14', 'c8-15', 'c8-16'], scene: AgentStep },
+    { clips: ['c8-11', 'c8-12', 'c8-13', 'c8-20', 'c8-14', 'c8-15', 'c8-16'], scene: AgentStep },
     { clips: ['c8-17'], scene: YouDecide },
     { clips: ['c8-18'], scene: RightClick },
     { clips: ['c8-19'], scene: Loop },

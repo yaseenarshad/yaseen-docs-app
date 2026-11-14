@@ -261,9 +261,11 @@ The goal is to distil. Take what you learned, and put it in your own words and y
 
 Think of it like digestion. You do not have to know a thing fully before you make its card.
 
-But you do have to digest it first.
+But you do have to chew it first.
 
-To digest is to think it through, until you can say it simply.
+To chew is to think about it a little: read it, talk it over, put the idea in your own words.
+
+The full digestion comes later. Each time you review the card, you digest it a little more.
 
 Memory researchers call this depth of processing. It is one of the most cited ideas in the science of memory: the more you think about what something means, the longer you keep it.
 
@@ -277,7 +279,7 @@ Make the card later, when you have time to sit and think. Capture first, make la
 
 With ten new cards a day and sixty waiting, a new card can take about a week to reach you.
 
-When it comes, it is no surprise. You made it, you digested it, and you have been looking forward to it.
+When it comes, it is no surprise. You made it, you chewed on it, and you have been looking forward to it.
 
 You carry a picture of your card base in your head, because you put each card there.
 
@@ -285,7 +287,7 @@ Your card base is your knowledge base: make it yours. Next: how to make a card y
 
 ## Chapter 7. What makes a good card
 
-You have digested an idea. Here is how to make its card a good one.
+You have chewed on an idea. Here is how to make its card a good one.
 
 Many people paste a whole page of text into one card. Then they review it, and nothing sticks.
 
@@ -345,7 +347,7 @@ The short version on the front, the details on the back, and a tree that grows w
 
 ## Chapter 8. Make cards with your AI, without vibe writing
 
-A good card starts with digestion. Now, a tool that makes cards fast, and why that is a danger.
+A good card starts with chewing. Now, a tool that makes cards fast, and why that is a danger.
 
 One fact matters here: each card is a plain Markdown file, plain text with a few light marks.
 
@@ -363,17 +365,19 @@ If you want this system to fail, vibe write your cards. If you want what you kno
 
 Ryan Holiday puts it this way: "The inefficiency is the efficiency." The thinking is where you learn.
 
-The right way: bring ideas you have already digested. The agent shapes them into cards, and you read each one.
+The right way: bring ideas you have chewed on. Your agent drafts the cards in the chat, and you read each one there.
 
-Let's try it. Paste something you have digested, or use the example.
+Let's try it. Paste something you have chewed on, or use the example.
 
-Copy the prompt. It tells your agent to read the card skill, then make three cards in Course Cards.
+Copy the prompt. It tells your agent to read the card skill, then draft three cards in the chat.
 
-Paste it into your agent. The cards show up here as it writes them.
+Paste it into your agent. Read each draft in the chat. Ask for a change, or say yes.
+
+Only the cards you approve are saved. They show up here as your agent saves them.
 
 If nothing shows up after a minute, check with your agent.
 
-Now read each one. That is the handmade part: nothing stays that you have not read.
+That is the handmade part. Reading the drafts, thinking about them, saying yes: that is chewing.
 
 No agent? Skip this step. The course shows three example cards, and makes them only if you say so.
 
@@ -381,7 +385,7 @@ Your agent drafts fast, but you decide. Keep only what you want to recall, in yo
 
 To copy the prompt later, right-click the card skill, and choose Copy prompt for your agent.
 
-You digest and decide; your agent only shapes. Next: the three habits that keep it all alive.
+You chew and decide; your agent only drafts. Next: the three habits that keep it all alive.
 
 ## Chapter 9. Three habits: make, review, tend
 
@@ -401,9 +405,9 @@ Tending needs no time of its own. It happens while you review.
 
 This card is not clear. That one needs a link. With an agent, you send the fix right then, and keep going.
 
-Even with a large card base, review and tending together can fit in fifteen to twenty minutes a day.
+Even with a large card base, tending should only take a couple of minutes a day.
 
-Making is the one you set time aside for. Digesting takes thought, so give it a quiet moment.
+Making is the one you set time aside for. Chewing takes thought, so give it a quiet moment.
 
 Make with time set aside. Review every day. Tend as you review. Next: the idea that changes how you organise everything.
 

@@ -230,12 +230,13 @@ function skillFolderOf(vault: Pick<CourseVault, 'root' | 'index' | 'cardSkill'>)
 const NO_SKILL_SENTENCE = 'Run `yaseendocs card guide` and read the card skill before you make or change cards in this vault.'
 
 /**
- * The prompt for the person's own agent: `AGENT_PROMPT` with the skill's path, one sentence that asks for 3 card files
- * in the full path of "Course Cards", then the text.
+ * The prompt for the person's own agent: `AGENT_PROMPT` with the skill's path; then the agent drafts 3 cards in the chat,
+ * waits for the person's OK on each, and writes a card file in the full path of "Course Cards" only for an approved one
+ * (Yaseen: the person chews the cards by reading the drafts in the chat); then the text.
  */
 export function agentPrompt(skill: string | null, folder: string, text: string): string {
   const first = skill === null ? NO_SKILL_SENTENCE : cardSkillPrompt(skill)
-  return `${first} Then make 3 cards from the text below, as card files in "${folder}".\n\n${text.trim()}\n`
+  return `${first} Then draft 3 cards from the text below, here in the chat. Show me each card in full, and wait for my OK. Write a card file in "${folder}" only for each card I approve.\n\n${text.trim()}\n`
 }
 
 /** The folder's path from the vault's root, '/' separators (the index's `folder`). */

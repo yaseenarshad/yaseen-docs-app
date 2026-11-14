@@ -265,7 +265,7 @@ function Digester({ beat, into, churn, keep, pass, known }: { beat: Beat; into: 
   )
 }
 
-/** c6-05, c6-06 and c6-07, one span: digestion. Bits in; you need not know it fully; you digest it first; then you can say it simply. */
+/** c6-05 to c6-07 and c6-17, one span: chew, then digest. Bits in; you need not know it fully; you chew it first; then you can say it in your own words; reviews digest it over time. */
 function Digestion(props: SceneProps) {
   const b = useBeat(props)
   const id = props.clip.id
@@ -281,7 +281,7 @@ function Digestion(props: SceneProps) {
       return { x: 0.52 + Math.cos(a) * r, y: 0.5 + Math.sin(a) * r * 0.9, p: since(b, think - 0.05 + k * 0.02, 0.4) * (1 - say * 0.7), tone: 'fg' }
     })
     return (
-      <Stage beat={b} label="To digest is to think it through, until you can say it simply">
+      <Stage beat={b} label="To chew is to think about it a little, and put the idea in your own words">
         <Layer>
           <div className="kit-row kb-say">
             <Head beat={b} p={since(b, 0, 0.9)} dots={[...thoughts, { x: 0.52, y: 0.5, p: say, tone: 'accent', ring: say }]} glow={swirl * 0.6 + say * 0.4} />
@@ -679,7 +679,7 @@ export const KNOWLEDGE_BASE_SCENES: ChapterScenes = {
     { clips: ['c6-01', 'c6-02'], scene: BaseAndHead },
     { clips: ['c6-03'], scene: Internet },
     { clips: ['c6-04'], scene: Distil },
-    { clips: ['c6-05', 'c6-06', 'c6-07'], scene: Digestion },
+    { clips: ['c6-05', 'c6-06', 'c6-07', 'c6-17'], scene: Digestion },
     { clips: ['c6-08'], scene: Depth },
     { clips: ['c6-09'], scene: Borrowed },
     { clips: ['c6-10', 'c6-11', 'c6-12'], scene: CaptureLater },
