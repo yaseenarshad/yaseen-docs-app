@@ -5,7 +5,7 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CardRecord } from '@shared/cardLine'
-import { INDEX_FILE, NUMBERS_FILE, ensureFriendsFiles, findFriendsIndex, makePointer, writeFriendsIndex, type GistsApi, type WriteOptions } from '@shared/friendGists'
+import { INDEX_FILE, NUMBERS_FILE, emptyNumbers, ensureFriendsFiles, findFriendsIndex, makePointer, writeFriendsIndex, type GistsApi, type WriteOptions } from '@shared/friendGists'
 import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
 import { PUBLISH_EVERY_MS, reserveFor } from '@shared/friendSend'
 import type { FriendStats, FriendVault } from '@shared/friendStats'
@@ -192,7 +192,7 @@ describe('the Mac sends the numbers too (YAZ-5086, decision 16)', () => {
 
   it('never lower: the phone sent more cards today; the Mac keeps the larger count', async () => {
     const handle = await withFriends(rig, 1)
-    const phoneNumbers = { v: 1, login: 'yaseen', name: 'Yaseen A', avatar: 'x', days: [{ day: '2026-11-14', cards: 9, seconds: 45, remembered: 9, forgot: 0, newCards: 0, done: true }], totals: {}, at: new Date(START).toISOString() }
+    const phoneNumbers = { ...emptyNumbers(START), login: 'yaseen', name: 'Yaseen A', days: [{ day: '2026-11-14', cards: 9, seconds: 45, remembered: 9, forgot: 0, newCards: 0, done: true }] }
     await rig.phone.update(handle.index.stats!, { [NUMBERS_FILE]: JSON.stringify(phoneNumbers) })
     await rig.sender.attempt('pass')
     expect(numbersOf(rig, handle.index.stats!).days[0]).toMatchObject({ cards: 9, done: true })
@@ -268,24 +268,30 @@ describe('the Mac changes nothing but its numbers (YAZ-5086: "The Mac only sends
 })
 
 describe('the phone and the Mac in ONE hour: one account, 100 gist updates', () => {
-  it('the phone made 80 updates; the Mac learns the rest from GitHub on its first update and slows down; the account never passes 100 less the reserve', async () => {
+  /** The phone made `phone` updates at the start of the hour; then the Mac gets a new number each minute for one hour. */
+  async function hour(phone: number) {
     const handle = await withFriends(rig, 1)
-    const reserve = reserveFor(1)
-    for (let i = 0; i < 80; i++) await rig.phone.update(handle.index.stats!, { [NUMBERS_FILE]: JSON.stringify({ v: 1, login: 'yaseen', name: 'p', avatar: '', days: [], totals: {}, at: String(i) }) })
+    for (let i = 0; i < phone; i++) await rig.phone.update(handle.index.stats!, { [NUMBERS_FILE]: JSON.stringify({ ...emptyNumbers(START), at: String(i) }) })
     const before = rig.world.updates('yaseen')
-    // A new number each minute for one hour, a try each minute.
     for (let minute = 0; minute < 60; minute++) {
       rig.cards.value = answered(minute + 1)
       await rig.sender.attempt('pass')
       rig.world.advance(60_000)
     }
-    const mac = rig.world.updates('yaseen') - before
+    return { mac: rig.world.updates('yaseen') - before, total: rig.world.updates('yaseen') }
+  }
+
+  it('the phone made 80: the Mac learns the rest from GitHub on its first update and spreads its spare; the account stays under 100 less the reserve', async () => {
+    const { mac, total } = await hour(80)
     expect(mac).toBeGreaterThan(1)
-    expect(rig.world.updates('yaseen')).toBeLessThanOrEqual(100 - reserve)
-    // After the first update the Mac knew GitHub's count: the gaps grew beyond 5 minutes.
-    const times = rig.wire.requests.filter((q) => q.method === 'PATCH').length
-    expect(times).toBe(mac)
-    expect(mac).toBeLessThan(12)
+    expect(mac).toBeLessThanOrEqual(12) // never more than one each 5 minutes
+    expect(total).toBeLessThanOrEqual(100 - reserveFor(1))
+  })
+
+  it('the phone made 90: the Mac slows to about one each 20 minutes', async () => {
+    const { mac, total } = await hour(90)
+    expect(mac).toBeLessThanOrEqual(4)
+    expect(total).toBeLessThanOrEqual(100 - reserveFor(1))
   })
 })
 

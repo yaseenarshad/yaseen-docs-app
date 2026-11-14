@@ -6,7 +6,7 @@ import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { fileLink, isAppLink, parseFileLink } from '@shared/links'
-import { FILES_PREVIEW_FRAME, MEMORY_SAMPLE_MS, placeVaults, type ClipboardPasteRequest, type FileKind, type WindowEntry } from '@shared/types'
+import { FILES_PREVIEW_FRAME, GITHUB_TOKEN_SECRET, MEMORY_SAMPLE_MS, placeVaults, type ClipboardPasteRequest, type FileKind, type WindowEntry } from '@shared/types'
 import { DRAWIO_HOST } from '@shared/drawio'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { createSpellWait } from '@shared/spelling'
@@ -20,6 +20,9 @@ import { ensureLibraryFolder } from './library/folder'
 import { broadcastAll, rootsOf, senderRoots } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
 import { registerPhoneIpc } from './ipc/phone'
+import { registerFriendsIpc } from './ipc/friends'
+import { onRendererSecretSet } from './ipc/secrets'
+import { startFriendsSend } from './friends'
 import { buildPhoneCode, phoneCodeDeps } from './phoneCode'
 import { registerSpellerIpc } from './ipc/speller'
 import { registerUpdateIpc } from './ipc/update'
@@ -427,6 +430,13 @@ app.whenReady().then(() => {
     isFocused: (sender) => BrowserWindow.fromWebContents(sender)?.isFocused() === true,
     roots: (e) => senderRoots(store, manager, e),
     build: (root) => buildPhoneCode(phoneCodeDeps(secrets), root),
+  })
+  // The Mac sends the numbers too (YAZ-5086, decision 16): with the same token, when a file with cards changes, and once
+  // after the start. A new token (or a removed one) starts over.
+  const friendsSend = startFriendsSend(store, secrets, app.getPath('userData'))
+  registerFriendsIpc(() => friendsSend.look())
+  onRendererSecretSet((name) => {
+    if (name === GITHUB_TOKEN_SECRET) friendsSend.tokenChanged()
   })
   // The one library folder every vault shares (YAZ-3038; Draw's 🔒 YAZ-1775 D5). Made at startup, detached: a
   // launch must not wait on a disk, and a path that cannot be made is still what the Settings row names.

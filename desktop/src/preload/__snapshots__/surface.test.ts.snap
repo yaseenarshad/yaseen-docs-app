@@ -62,6 +62,7 @@ focus.set/3: invoke focus:set ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOU
 focusFolders.get/2: invoke focusFolders:get ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 focusFolders.onChanged/1: on focusFolders:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off focusFolders:changed
 focusFolders.set/3: invoke focusFolders:set ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+friends.status/0: invoke friends:status []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.history/2: invoke github:history ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 github.onStatus/1: on github:status-changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off github:status-changed
 github.restore/3: invoke github:restore ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

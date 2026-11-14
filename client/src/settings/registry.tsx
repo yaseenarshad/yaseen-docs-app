@@ -482,6 +482,7 @@ const REVIEW_KEYWORDS = ['cards', 'cards', 'flashcards', 'inbox', 'spaced repeti
 /** "Phone and friends" (YAZ-5098): its two rows load only when Settings shows them, so the first load stays the same. */
 const GithubTokenControl = lazy(() => import('./GithubTokenControl').then((m) => ({ default: m.GithubTokenControl })))
 const ConnectPhoneControl = lazy(() => import('./ConnectPhoneControl').then((m) => ({ default: m.ConnectPhoneControl })))
+const FriendsSendControl = lazy(() => import('./FriendsSendControl').then((m) => ({ default: m.FriendsSendControl })))
 /** "Phone and friends" (YAZ-5098): the phone app reviews the cards, so the Review words find these rows too. */
 const PHONE_KEYWORDS = [...REVIEW_KEYWORDS, 'phone', 'iphone', 'mobile', 'notecards', 'connect', 'qr', 'code', 'scan', 'github', 'token', 'friends', 'secret']
 /** Card spacing's rows (YAZ-5050). */
@@ -2180,6 +2181,20 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                   <ConnectPhoneControl root={vaultRoot} />
                 </Suspense>
               ),
+          },
+          {
+            // YAZ-5086 (decision 16): the Mac sends the numbers too, with the token above. No switch (decision 22).
+            id: 'friendsSend',
+            label: 'Friends',
+            hint: 'This Mac sends your numbers to your friends too, when your cards change. Add friends in the phone app.',
+            keywords: PHONE_KEYWORDS,
+            wide: true,
+            available: reviewOn,
+            render: () => (
+              <Suspense fallback={null}>
+                <FriendsSendControl />
+              </Suspense>
+            ),
           },
         ],
       },

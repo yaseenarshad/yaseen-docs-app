@@ -1953,6 +1953,45 @@ export type PhoneCodeProblem = 'no-token' | 'no-git' | 'not-a-repo' | 'no-remote
  */
 export type PhoneCodeAnswer = { ok: true; repo: string; branch: string; grid: boolean[][] } | { ok: false; problem: PhoneCodeProblem }
 
+/**
+ * The Mac's send of the numbers to friends (YAZ-5086, 4E5; decision 16), as Settings › Review › "Phone and friends" shows
+ * it. Numbers and words only: no token, no gist ID, no repo name.
+ * - `no-token`: no GitHub token saved. `no-friends`: no friends list, or no friend and no group (decision 22).
+ * - `missing-vaults`: this Mac does not have every vault that counts open (`missing` of them).
+ * - `phone-first`: the friends list waits for a change that the phone makes (a remove, a numbers gist to make again, two
+ *   lists to join). The Mac only sends, so it waits.
+ * - `waiting`: the 5-minute rule; `slowed`: near GitHub's limit or a rate limit; both say `retryAt`.
+ * - `no-gists`, `sign-in-again`, `offline`, `needs-repair`, `needs-newer-app`, `failed`: quiet failures, in plain words.
+ */
+export type FriendsSendStatus =
+  | 'idle'
+  | 'no-token'
+  | 'no-friends'
+  | 'missing-vaults'
+  | 'phone-first'
+  | 'waiting'
+  | 'slowed'
+  | 'sent'
+  | 'unchanged'
+  | 'no-gists'
+  | 'sign-in-again'
+  | 'offline'
+  | 'needs-repair'
+  | 'needs-newer-app'
+  | 'failed'
+
+export interface FriendsSendView {
+  status: FriendsSendStatus
+  /** The last update of the numbers gist from THIS Mac (ms), or null. */
+  lastSentAt: number | null
+  retryAt: number | null
+  /** Friends and groups in the friends list, as last read. */
+  friends: number
+  groups: number
+  /** For `missing-vaults`: how many vaults that count this Mac does not have open. */
+  missing: number
+}
+
 /** The choices of each Settings › Folder pages row that is not a switch (YAZ-4585). The first is the default. */
 export const FOLDER_PAGE_CHOICES = {
   weekStartsOn: ['sunday', 'monday'],

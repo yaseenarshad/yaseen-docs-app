@@ -30,6 +30,8 @@ vi.mock('../api', async (importOriginal) => {
     api: {
       secrets: { has: vi.fn(), set: vi.fn() },
       phone: { code: vi.fn() },
+      // YAZ-5086: the Friends row of the same group asks for the send's state.
+      friends: { status: vi.fn(async () => ({ status: 'no-friends', lastSentAt: null, retryAt: null, friends: 0, groups: 0, missing: 0 })) },
       state: { settingsFolder: vi.fn(async () => ({ folder: null, missing: false })), setSettingsFolder: vi.fn() },
     },
   }

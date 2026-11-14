@@ -67,7 +67,7 @@ describe('macGistsApi (YAZ-5086)', () => {
     ['RATE_LIMITED', 'the hourly limit'],
     ['UNAUTHORIZED', 'a cancelled token'],
     ['GITHUB_DOWN', 'GitHub down'],
-  ] as const)('%s: %s', async (code) => {
+  ] as const)('%s: %s', async (code, _what) => {
     const { api, world } = setup()
     const made = await api.create('notecards-test numbers', { [NUMBERS_FILE]: '{}' })
     world.failNext = () => code
