@@ -5,6 +5,7 @@ import path from 'node:path'
 import { ipcMain } from 'electron'
 import { MAX_FOLD_KEYS_PER_FILE, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, defaultRightPanelIdentity, type PageView, type StartView, type TabRef, type TearOffResult, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { CONTRACT, SPECIAL, type Envelope } from '@shared/ipc'
+import { setCardSkillVault } from '@shared/appVaults'
 import { createStore, type Store } from '../store'
 import * as windows from '../windows'
 import { MAX_CLOSE_REFS, registerWindowIpc } from './window'
@@ -122,6 +123,15 @@ describe('registerWindowIpc', () => {
 
   it('window:identity answers the complete per-window identity for a registered sender', async () => {
     expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files' }))
+  })
+
+  it('YAZ-5108: window:identity names the card skill\'s copy once main made it, and the window\'s own roots stay as stored', async () => {
+    setCardSkillVault('/Users/demo/Library/Application Support/Yaseen Docs/card-skill')
+    try {
+      expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', cardSkill: '/Users/demo/Library/Application Support/Yaseen Docs/card-skill' }))
+    } finally {
+      setCardSkillVault(null)
+    }
   })
 
   it('window:identity rejects an unregistered sender (BAD_REQUEST) and a window the state no longer has (NOT_FOUND)', async () => {

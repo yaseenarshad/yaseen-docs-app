@@ -11,6 +11,7 @@ on menu:copy-as
 app.home/0: invoke app:home []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 app.sound/1: invoke app:sound ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 boardHead/1: invoke fs:board-head ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+cardSkill.duplicate/2: invoke card-skill:duplicate ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 coldDiff/1: invoke fs:cold-diff ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 components.delete/1: invoke components:delete ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 components.list/0: invoke components:list []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

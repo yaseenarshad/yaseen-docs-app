@@ -11,6 +11,7 @@ import type { WindowManagerIpc } from '../windows'
 import { copyLibrary, followLibraryMoves, type LibraryMoves } from '../library/copyLibrary'
 import { libraryFolderOf } from '../library/folder'
 import { registerBoardIpc } from './board'
+import { registerCardSkillIpc } from './cardSkill'
 import { registerComponentsIpc } from './components'
 import { registerDialogIpc } from './dialog'
 import { handle } from './envelope'
@@ -60,6 +61,7 @@ export type IpcPlaces = ShareIpcPlaces & {
 export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; secrets: Secrets; lsp: LspPool; libraryMoves: LibraryMoves } {
   const { userData } = places
   registerFsIpc(store, windows)
+  registerCardSkillIpc(store, windows)
   // The folder window's pick of an outside pictures folder is what lets the app write there (YAZ-3943 demo round 3).
   // Settings' pick is approved at once; the cog's waits here until its move is confirmed (YAZ-4074 6A item 3).
   const pickedPictureFolders = new Set<string>()

@@ -27,7 +27,11 @@ interface SidebarStubProps {
   /** The first vault of `vaults`, read off them by the stub: the vault the panel is keyed on. */
   root: string
   /** The window's vaults in the order they were added (YAZ-2602 D1): each with its name, its watcher and its index source. */
-  vaults: { root: string; name: string; watch: unknown; index: unknown; review: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[]; readOnly?: boolean; fileChangesUntil?: number | null }[]
+  vaults: { root: string; name: string; watch: unknown; index: unknown; review: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[]; readOnly?: boolean; fileChangesUntil?: number | null; app?: true }[]
+  /** "Hide card skill" on the card skill's row (YAZ-5108). */
+  onHideCardSkill?: () => void
+  /** "Duplicate into <vault>…" on the card skill's row (YAZ-5109). */
+  onDuplicateCardSkill?: (vault: string) => void
   /** Right-click → "Share" on a board row (YAZ-3040). */
   onShareFile?: (path: string) => void
   /** The Recents vault filter (YAZ-4450 D6): App's, for the window's session. */
@@ -581,6 +585,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     },
     // No `review.json` (YAZ-4967), so card review has its defaults: each vault owns one `useReviewSettings`, which reads and subscribes on vault open.
     vaultConfig: { read: vi.fn(async (_root?: string, _name?: string): Promise<unknown> => null), write: vi.fn(async () => undefined), onChange: vi.fn(() => () => undefined) },
+    // "Duplicate into <vault>…" (YAZ-5109): main copies the card skill into the vault as `Card skill`.
+    cardSkill: { duplicate: vi.fn(async (vault: string, _again: boolean): Promise<{ made: string } | { exists: string }> => ({ made: `${vault}/Card skill` })) },
     // A vault's IDs (YAZ-2677): main saves the answer and runs the duplicate check.
     ids: {
       set: vi.fn(async (_root?: string, _enabled?: boolean, _letters?: string): Promise<void> => undefined),
@@ -7617,5 +7623,116 @@ describe('a ghost of a focus folder (YAZ-4460 F6; YAZ-4477)', () => {
     await act(async () => sidebar.onAddVaultFor?.('zz', 'q.md'))
     expect(el.querySelector('#confirm-add-vault-for-link-text')).toBeNull()
     expect(el.querySelector('.link-notice')?.textContent).toContain('This item is in the vault "zz", which this Mac does not know. Open that folder first.')
+  })
+})
+
+
+/**
+ * THE CARD SKILL IN THE SIDEBAR (YAZ-5108), one test per row of the issue's table: the app's copy is one more vault of
+ * the window — last, `app: true` — while the switch says Show and a vault has reviews on. It never joins the window's
+ * own vaults (`setIdentity` roots), Recent vaults, or the 8-vault count. Made-up paths only.
+ */
+describe('App: the card skill in the sidebar (YAZ-5108)', () => {
+  const SKILL = '/demo-profile/card-skill'
+  const START = `${SKILL}/Start here.md`
+  const skillOn = (settings: Partial<AppState['settings']> = {}): AppState => ({ ...defaultAppState(), settings: { ...defaultAppState().settings, ...settings } })
+  const reviews = (on: boolean) => (b: ReturnType<typeof installBridge>) => b.bridge.vaultConfig.read.mockImplementation(async (root?: string, name?: string) => (name === 'review.json' ? { enabled: root === SKILL ? false : on } : name === 'read-only.json' && root === SKILL ? { on: true } : null))
+  const shown = () => captured.sidebar?.vaults.map((vault) => [vault.root, vault.app === true]) ?? []
+  const rootsWritten = (bridge: ReturnType<typeof installBridge>['bridge']) => (bridge.window.setIdentity.mock.calls as unknown as [{ roots?: string[] }][]).flatMap(([patch]) => patch.roots ?? [])
+
+  it('reviews off in this vault: no "Card skill" row', async () => {
+    await mount(skillOn(), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, reviews(false))
+    expect(shown()).toEqual([['/v', false]])
+  })
+
+  it('reviews on, switch on Show: the row shows at the bottom, closed, and the window\'s own vaults stay as they are', async () => {
+    const { bridge } = await mount(skillOn(), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, reviews(true))
+    expect(shown()).toEqual([['/v', false], [SKILL, true]])
+    expect(captured.sidebar?.vaults.at(-1)).toMatchObject({ name: 'Card skill', review: false, readOnly: true })
+    expect(captured.sidebar?.closedVaults).toContain(SKILL)
+    expect(storage.getRoots()).toEqual(['/v'])
+    expect(rootsWritten(bridge)).not.toContain(SKILL)
+    expect((bridge.state.pushRecent.mock.calls as unknown as [string][]).map(([path]) => path)).not.toContain(SKILL)
+    expect(storage.listVaults().map((v) => v.path)).not.toContain(SKILL)
+  })
+
+  it('a window with two vaults: their rows as today, then "Card skill" last; a reorder never stores it', async () => {
+    const { bridge } = await mount(skillOn(), { id: 'w1', root: '/a', roots: ['/a', '/b'], file: null, tabs: [], cardSkill: SKILL }, {}, reviews(true))
+    expect(shown()).toEqual([['/a', false], ['/b', false], [SKILL, true]])
+    act(() => captured.sidebar?.onReorderVaults(['/b', SKILL, '/a']))
+    expect(storage.getRoots()).toEqual(['/b', '/a'])
+    expect(rootsWritten(bridge)).not.toContain(SKILL)
+  })
+
+  it('Hide from the right-click menu: the row goes, its tabs close, the switch is Hide, and the notice says where it is; "Open Settings" opens Review with the switch', async () => {
+    const { bridge, el } = await mount(skillOn(), { id: 'w1', root: '/v', file: START, tabs: ['/v/a.md', START], cardSkill: SKILL }, {}, reviews(true))
+    expect(captured.editors.some((e) => e.path === START && e.root === SKILL)).toBe(true)
+    await act(async () => captured.sidebar?.onHideCardSkill?.())
+    expect(shown()).toEqual([['/v', false]])
+    expect(storage.getSettings().cardSkillInSidebar).toBe(false)
+    expect(bridge.state.setSettings).toHaveBeenCalledWith(expect.objectContaining({ cardSkillInSidebar: false }))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ tabs: ['/v/a.md'] }))
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Card skill hidden. Turn it on again in Settings › Review.')
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Open Settings')
+    await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
+    expect(el.querySelector('.settings-nav__item[aria-current="page"]')?.textContent).toBe('Review')
+    const toggle = el.querySelector('[role="group"][aria-label="Card skill in the sidebar"]')
+    expect([...(toggle?.querySelectorAll('button') ?? [])].map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Show', 'false'], ['Hide', 'true']])
+  })
+
+  it('switch back to Show: the row shows again, closed', async () => {
+    const { el } = await mount(skillOn({ cardSkillInSidebar: false }), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, reviews(true))
+    expect(shown()).toEqual([['/v', false]])
+    await act(async () => (captured.sidebar as unknown as { onOpenSettings: () => void }).onOpenSettings())
+    settingsPage(el, 'Review')
+    const show = [...el.querySelectorAll<HTMLButtonElement>('[aria-label="Card skill in the sidebar"] button')].find((b) => b.textContent === 'Show')
+    await act(async () => show?.click())
+    expect(shown()).toEqual([['/v', false], [SKILL, true]])
+    expect(captured.sidebar?.closedVaults).toContain(SKILL)
+  })
+
+  it('app restart with a skill tab open, skill shown: the tab comes back, read only in the skill\'s own scope', async () => {
+    await mount(skillOn(), { id: 'w1', root: '/v', file: START, tabs: ['/v/a.md', START], cardSkill: SKILL }, {}, reviews(true))
+    expect(captured.editors.some((e) => e.path === START && e.root === SKILL)).toBe(true)
+  })
+
+  it('app restart with a skill tab open, skill hidden: the tab does not come back', async () => {
+    const { bridge } = await mount(skillOn({ cardSkillInSidebar: false }), { id: 'w1', root: '/v', file: START, tabs: ['/v/a.md', START], cardSkill: SKILL }, {}, reviews(true))
+    expect(captured.editors.some((e) => e.path === START)).toBe(false)
+    expect(bridge.readFile).not.toHaveBeenCalledWith(START)
+  })
+
+  it('a file action in the skill is refused at once, with a word on how to change it', async () => {
+    const { el } = await mount(skillOn(), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, reviews(true))
+    let allowed: boolean | undefined
+    await act(async () => {
+      allowed = await captured.sidebar?.onFileAction?.(SKILL)
+    })
+    expect(allowed).toBe(false)
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('The card skill is read only. Duplicate it into your vault to change it.')
+  })
+
+  it('YAZ-5109: "Duplicate into <vault>…" asks main to copy into that vault and says where it landed', async () => {
+    const { bridge, el } = await mount(skillOn(), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, reviews(true))
+    await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/v'))
+    expect(bridge.cardSkill.duplicate).toHaveBeenCalledExactlyOnceWith('/v', false)
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Duplicated the card skill into v: "Card skill". You can change it there.')
+  })
+
+  it('YAZ-5109: with `Card skill` in the vault already, one sheet asks before a second copy; Cancel makes nothing, the other button makes `Card skill 2`', async () => {
+    const { bridge, el } = await mount(skillOn(), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, (b) => {
+      reviews(true)(b)
+      b.bridge.cardSkill.duplicate.mockImplementation(async (vault: string, again: boolean) => (again ? { made: `${vault}/Card skill 2` } : { exists: `${vault}/Card skill` }))
+    })
+    await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/v'))
+    expect(el.querySelector('#confirm-card-skill-again-text')?.textContent).toBe('Card skill is already in v. Make a second copy? The app keeps using the first one.')
+    const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === label)
+    await act(async () => button('Cancel')?.click())
+    expect(el.querySelector('#confirm-card-skill-again-text')).toBeNull()
+    expect(bridge.cardSkill.duplicate).toHaveBeenCalledTimes(1)
+    await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/v'))
+    await act(async () => button('Make a second copy')?.click())
+    expect(bridge.cardSkill.duplicate).toHaveBeenLastCalledWith('/v', true)
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Duplicated the card skill into v: "Card skill 2". You can change it there.')
   })
 })

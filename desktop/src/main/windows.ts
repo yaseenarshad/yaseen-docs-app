@@ -13,6 +13,7 @@ import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 import { appZoomFactor } from './appZoom'
 import { RELOAD_QUIET_MS } from './memory'
+import { isAppVault } from '@shared/appVaults'
 
 export interface WindowLike {
   webContents: { id: number }
@@ -643,7 +644,8 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
    * window (root null) is not a vault. Trailing slash off, like `resolveLinkTarget`: one row per vault.
    */
   const recordUsed = (root: string | null): void => {
-    if (root === null) return
+    // The app's own vault (the card skill, YAZ-5108) is never "used" as a vault of the person.
+    if (root === null || isAppVault(root)) return
     const path = stripSlash(root)
     if (store.get().recents[0]?.path !== path) store.pushRecent(path)
   }

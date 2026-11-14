@@ -43,6 +43,7 @@ import {
   type WindowIdentity,
 } from '@shared/types'
 import { api } from '../api'
+import { setCardSkillVault } from '@shared/appVaults'
 import { basename } from './paths'
 
 /**
@@ -122,6 +123,8 @@ export const storage = {
     const [s, id] = await Promise.all([api.state.get(), api.window.identity()])
     state = withSettingsDefaults(s)
     identity = id
+    // The card skill's copy (YAZ-5108): the app's own vault, which no list of the person takes (`addRecentRoot`, `listVaults`).
+    setCardSkillVault(id.cardSkill ?? null)
     unsubscribe?.()
     unsubscribe = api.state.onChange((next) => {
       // Each broadcast is a new copy. The Favorites order and the focus order each keep their identity
@@ -235,6 +238,8 @@ export const storage = {
   getWindowId: (): string => identity.id,
   /** This window is a Files window (YAZ-3357 D1): only the sidebar, no tabs. Fixed for the window's life, so a render may read it. */
   isFilesWindow: (): boolean => identity.kind === 'files',
+  /** The card skill's copy (YAZ-5108), the app's own vault, as main named it in this window's identity; null with no copy. */
+  getCardSkill: (): string | null => identity.cardSkill ?? null,
   /**
    * A Files window's own sidebar zoom in percent (YAZ-3389 D13), from its identity; a full window has none and reads
    * the shared `settings.sidebarZoom` instead. Only this window writes it (`setFilesZoom`), so the cache stays true.

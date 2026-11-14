@@ -38,6 +38,7 @@ import { movePageSwitches } from './movePageSwitches'
 import { runQuitSequence } from './quitSequence'
 import { createSpeller, nativeMenuAsker, spellerPath } from './speller'
 import { cardSkillStamp, ensureCardSkill, shippedCardSkill } from './cardSkill'
+import { setCardSkillVault } from '@shared/appVaults'
 import { stopAllLanguageServers } from './lsp/server'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
 import { appZoomFactor, subscribeAppZoom } from './appZoom'
@@ -496,6 +497,8 @@ app.whenReady().then(() => {
   const shippedSkill = shippedCardSkill({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, mainDir: __dirname })
   const cardSkillReady = (app.isPackaged ? Promise.resolve(app.getVersion()) : cardSkillStamp(shippedSkill, app.getVersion()))
     .then((version) => ensureCardSkill(app.getPath('userData'), shippedSkill, version))
+    // The copy is the app's own vault from now on (YAZ-5108): each window's identity names it, and no list of the person takes it.
+    .then((copy) => setCardSkillVault(copy))
     .catch((err: unknown) => console.error(`[cardSkill] the copy failed: ${String(err)}`))
   // The first window waits for the settings folder's first read (YAZ-3276 D4), so a theme that the other Mac
   // changed shows no flash. At most 500 ms: a slow or lost folder never holds up a launch. No folder: at once.
