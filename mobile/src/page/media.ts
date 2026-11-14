@@ -1,4 +1,5 @@
 import { IMAGE_VIEW_MIME } from '@shared/types'
+import type { MediaAhead } from '../media'
 import type { VaultStore } from '../store'
 
 /**
@@ -22,6 +23,9 @@ export type FileShow =
 export interface PageMedia {
   show(path: string): Promise<FileShow>
 }
+
+/** 3D's `MediaAhead` is a `PageMedia` as it is: this line fails the typecheck if the two drift apart. */
+export const mediaFits = (media: MediaAhead): PageMedia => media
 
 const SOUND_MIME: Record<string, string> = { mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg' }
 
