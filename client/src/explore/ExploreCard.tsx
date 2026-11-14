@@ -2,8 +2,8 @@
  * A card layer of the explore stack (YAZ-4962, D13): ONE card of a page, read-only, with what review knows of it.
  *
  *  - Head: the card ID first, small and grey (a click copies it, D20) — its place in the page's card and the Inbox
- *    too —, then the card title (`titleOfCard`: a card file's `title`, YAZ-5044, else its first line; the layer's name,
- *    as every layer has one; "New card" for an empty card; a click renames it, YAZ-5164 part 3, and the card below
+ *    too —, then the card title (off its card line, YAZ-5308; the layer's name,
+ *    as every layer has one; "Untitled card" for a card with none; a click renames it, YAZ-5164 part 3, and the card below
  *    never repeats it), ↗, ⋯ and ×; the chip "Up next ×" after the ID while the card is at the top of the Inbox (YAZ-4999 D3). The
  *    ⋯ menu: Open page, Open page in a new tab, Put at top of Inbox / Remove from top of Inbox, Archive card / Unarchive card (YAZ-5046),
  *    Reset history (D13, the card line through `changeCardLine`, the app's own write), Copy card ID.
@@ -36,15 +36,15 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { cardState } from '@shared/cardSchedule'
 import type { GestureAction } from '@shared/keys'
-import { withCardNext } from '@shared/cardLine'
-import { readCardAt, titleOfCard, type CardAtPage } from '../review/cardFile'
+import { withCardNext, withCardTitle } from '@shared/cardLine'
+import { readCardAt, type CardAtPage } from '../review/cardFile'
+import { UNTITLED_CARD } from '../editor/card/cardTitle'
 import { CardPane, cardMenuSections, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
 import { HoverTip } from '../components/HoverTip'
 import { CardFacts, CardId, CardNextChip } from '../review/cardParts'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { keepFocus, type ExploreVault } from './ExplorePage'
 import { useUnit } from '../vault/unitWord'
-import { cardRetitled } from '@shared/cardText'
 import { PageTitle } from '../editor/PageTitle'
 
 const NO_TITLES: ReadonlyMap<string, string> = new Map()
@@ -131,7 +131,8 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
   }, [editing])
   const writes = cardWrites(path, card, read, onNotice, review)
   const changeLine = writes.changeLine
-  const editDone = (text: string) => writes.editDone(text, () => setEditing(false))
+  // A card file's title is its file's: its tab renames it, so here it stays as it is.
+  const editDone = (text: string, next: string) => writes.editDone(text, () => setEditing(false), undefined, card?.cardFile === true ? undefined : next)
   /** E on the card window: Edit card (YAZ-5003), as the page's Edit card. Not in a field, not read only. */
   const preview = () => card !== null && previewCardOf(bodyRef.current, path, card)
   const onBodyKey = (event: React.KeyboardEvent) => {
@@ -147,7 +148,7 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
     setEditing(true)
   }
   const id = card?.id ?? cardId
-  const title = card === null ? '' : titleOfCard(card)
+  const title = card?.title ?? ''
 
   return (
     <>
@@ -161,16 +162,16 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
         {card?.next === true && <CardNextChip onRemove={card.id === null ? undefined : () => changeLine((l) => withCardNext(l, false))} />}
         <span ref={titleRef} className={`explore__title${title === '' ? ' card__title--empty' : ''}`}>
           {/* The page title's own component (YAZ-5164 part 3), as a card file's tab and a card in a page: a click renames
-              the card in its page, its first line. A read-only vault, or a card file's card, shows it only. */}
+              the card, its card line (YAZ-5308). A read-only vault, or a card file's card, shows it only. */}
           {card !== null && (
             <PageTitle
               path={path}
               titles={NO_TITLES}
               text={title}
-              placeholder="New card"
-              readOnly={vault.readOnly === true || card.fileTitle !== undefined}
+              placeholder={UNTITLED_CARD}
+              readOnly={vault.readOnly === true || card.cardFile === true}
               locked={false}
-              onRetitle={(next) => writes.editDone(cardRetitled(card.text, next), () => undefined)}
+              onRetitle={(next) => changeLine((l) => withCardTitle(l, next))}
             />
           )}
         </span>
@@ -209,6 +210,7 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
             vault={vault}
             editing={editing}
             onEditDone={editDone}
+            titleReadOnly={card.cardFile === true}
             doors={{ openLayer: onOpenLink, openTab: onOpenTab, onNotice }}
             onOpenPage={onOpenLink}
             strip={<CardStrip card={card} pageName={pageName} vault={vault} onOpenPage={() => onOpenPage(card.index)} />}

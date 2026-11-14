@@ -1,14 +1,13 @@
-import { stat } from 'node:fs/promises'
+import { mkdir, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { cardFileTitleMoved } from '@shared/cardConvert'
+import { cardTitlesMoved } from '@shared/cardTitleSweep'
 import { isCardFileContent } from '@shared/cardFileFormat'
 import { isSyncConflictCopy } from '@shared/syncConflict'
 import { cardIdOf, pageCards, rewritePageCards, settleCardCopy, withCardId, withCardOff, type CardLine } from '@shared/cardLine'
 import { moveFolderValues } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { PAGE_ID_KEY, pageIdNumber, vaultPageId } from '@shared/pageId'
-import { titleOf } from '@shared/pageName'
-import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, isFolderSettingsPath, type IndexRecord } from '@shared/types'
+import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, VAULT_CONFIG_DIR, isFolderSettingsPath, type IndexRecord } from '@shared/types'
 import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure, createDurable } from '../fs/fsUtils'
 import { myPage, settleClash, type ClashFix, type Pair } from './clash'
@@ -236,8 +235,8 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
   const among = await ownOnly([...new Map(events.map((r) => [r.path, records.get(r.path) ?? r])).values()], (r) => mine(r.path))
   /** A page the index could not read (its YAML is invalid, or it is over the size limit) takes no id. */
   const takes = (r: IndexRecord): boolean => r.frontmatterError === undefined && r.size <= MAX_FILE_BYTES
-  // A card file from before decision A moves its title line into `title`, one time (YAZ-5044), before any number.
-  await moveCardFileTitles(among.filter((r) => r.kind === 'card' && takes(r) && titleOf(r.properties, '') === ''), records, own)
+  // Each card's title onto its card line, one time for the vault (YAZ-5308), before any number.
+  await moveCardTitles(root, await ownOnly([...records.values()].filter((r) => (r.cards?.length ?? 0) > 0 && takes(r) && !isFolderSettingsPath(r.path)), (r) => mine(r.path)))
   /**
    * The sweep's one write of an id: `file` takes `to` while it still holds `held` (`giveId`). False
    * when it took none: it changed under the sweep, or cannot be written — and one that cannot be
@@ -380,29 +379,35 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
   }
 }
 
+/** The mark that a vault's card titles are on their card lines (YAZ-5308): in its config folder, under `once/` so the config watcher wakes for nothing. */
+export const CARD_TITLES_MOVED = path.join(VAULT_CONFIG_DIR, 'once', 'card-titles.json')
+
 /**
- * THE ONE-TIME MOVE OF A CARD FILE'S TITLE (YAZ-5044 point 9, decision A): each card file in `files` (`kind: card`, no
- * `title` in the index) has its card's first line moved into `title` (`cardFileTitleMoved`), so a card file holds its
- * title where a page does. One compare-and-set write for each file, in the sweep's write turn, on the bytes read just
- * before it: a file that changed meanwhile is left for the next pass, and one that already has a `title` writes nothing.
- * The card line (its ID and reviews) and the rest of the card stay byte for byte. Its name already follows that title.
- *
- * A page `id:` on such a file is a stray one an old build gave (YAZ-5037), and goes in the same write when no page
- * links to or embeds it; one that something links to stays (pick 6: a card file can answer to both IDs).
+ * THE ONE-TIME MOVE OF CARD TITLES (YAZ-5308, decision D, `shared/cardTitleSweep.ts`): each file in `files` (every page
+ * and card file of the vault with a card) has its cards' titles moved onto their card lines — a card file's `title`
+ * property, a card in a page's plain first line. One compare-and-set write for each file, in the sweep's write turn,
+ * on the bytes read just before it. When every file is done the vault takes its mark (`CARD_TITLES_MOVED`), and no pass
+ * moves a title again: a card written after it with a plain first line keeps that line as its question. A file that
+ * changed meanwhile, or could not be written, leaves the mark off, and the next pass tries again (a title already on
+ * its line is never moved twice).
  */
-async function moveCardFileTitles(files: readonly IndexRecord[], records: ReadonlyMap<string, IndexRecord>, own: (id: string | undefined) => string | undefined): Promise<void> {
-  if (files.length === 0) return
-  const named = new Set<string>()
-  for (const r of records.values()) for (const target of [...r.links, ...r.embeds]) named.add(target.toUpperCase())
+async function moveCardTitles(root: string, files: readonly IndexRecord[]): Promise<void> {
+  const mark = path.join(root, CARD_TITLES_MOVED)
+  if (await stat(mark).then(() => true, () => false)) return
+  let done = true
   for (const r of files) {
-    const id = own(r.id)
-    const stray = id !== undefined && !named.has(id.toUpperCase())
     await inTurn(async () => {
       const { content, mtime } = await readPage(r.path)
-      const next = cardFileTitleMoved(content, stray)
+      const next = cardTitlesMoved(content)
       if (next !== null) await writeFile({ path: r.path, content: next, ...(mtime !== undefined && { expectedMtime: mtime }) })
-    }).catch(() => undefined)
+    }).catch(() => {
+      done = false
+    })
   }
+  if (!done) return
+  await mkdir(path.dirname(mark), { recursive: true })
+    .then(() => createDurable(mark, `${JSON.stringify({ moved: new Date().toISOString() })}\n`))
+    .catch(() => undefined)
 }
 
 /** A page whose cards the sweep gives new numbers (YAZ-4960). */

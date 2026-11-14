@@ -66,8 +66,8 @@ const CARD_FILE = '/v/cards/capital-of-france-geo-140.md'
 const EUROPE = '/v/geo/Europe.md'
 const PLAN = '/v/pages/plan.md'
 
-const cardFileText = '---\nkind: card\ntitle: Capital of France\n---\n```card\nWhat is the capital of **France**?\n---\nParis\n```\n<!-- card: GEO-140 -->\n'
-const europeText = '# Europe\n\n```card\nLargest country?\n---\nRussia\n```\n<!-- card: GEO-1 -->\n\n```card\nSmallest country?\n---\nVatican City\n```\n<!-- card: GEO-2, off -->\n'
+const cardFileText = '---\nkind: card\n---\n```card\nWhat is the capital of **France**?\n---\nParis\n```\n<!-- card: GEO-140, title "Capital of France" -->\n'
+const europeText = '# Europe\n\n```card\nWhich is the largest?\n---\nRussia\n```\n<!-- card: GEO-1, title "Largest country?" -->\n\n```card\nWhich is the smallest?\n---\nVatican City\n```\n<!-- card: GEO-2, title "Smallest country?", off -->\n'
 
 const card = (id: string, title: string, over: Partial<CardRecord> = {}): CardRecord => ({ id, off: false, next: false, reviews: [], title, ...over })
 
@@ -184,7 +184,7 @@ describe('the embed and its head (Q4, locked)', () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, 'Biggest country?')
       field.blur()
     })
-    await vi.waitFor(() => expect(disk.files.get(EUROPE)).toContain('```card\nBiggest country?\n---\nRussia\n```\n<!-- card: GEO-1 -->'))
+    await vi.waitFor(() => expect(disk.files.get(EUROPE)).toContain('```card\nWhich is the largest?\n---\nRussia\n```\n<!-- card: GEO-1, title "Biggest country?" -->'))
   })
 
   it('a click on the name opens the original: the card file\'s tab, or the page landed on the card', async () => {
@@ -225,7 +225,7 @@ describe('YAZ-5105 round 4: the Reviews strip in an embed, the same strip as the
   it('a card with reviews shows THE strip (`CardReviews`) under its text, with its facts; a click opens the table; the delete writes the original; no door: no strip', async () => {
     const deleteReview = vi.fn(async () => {})
     const settings = () => DEFAULT_REVIEW_SETTINGS
-    const { root } = await mount('Plan\n\n![[GEO-140]]\n', { cardReviews: { settings, deleteReview }, wikilinks: vault(records({ cardFile: { mtime: 51 } })) }, cardFileText.replace('<!-- card: GEO-140 -->', LINE))
+    const { root } = await mount('Plan\n\n![[GEO-140]]\n', { cardReviews: { settings, deleteReview }, wikilinks: vault(records({ cardFile: { mtime: 51 } })) }, cardFileText.replace('<!-- card: GEO-140, title "Capital of France" -->', LINE))
     const box = boxes(root)[0]!
     await vi.waitFor(() => expect(box.querySelector('.card-reviews .backlinks__title')?.textContent).toBe('2 Reviews'))
     const strip = box.querySelector('.card-reviews')!
@@ -347,7 +347,7 @@ describe('the ⋯ menu', () => {
     // Archive card: the card line of the card file.
     press(box.querySelector('.card__more'))
     menuItem('Archive card')!.click()
-    await vi.waitFor(() => expect(disk.files.get(CARD_FILE)).toContain('<!-- card: GEO-140, off -->'))
+    await vi.waitFor(() => expect(disk.files.get(CARD_FILE)).toContain('<!-- card: GEO-140, title "Capital of France", off -->'))
     // Show as link: the embed becomes the card's link, in the page.
     press(box.querySelector('.card__more'))
     menuItem('Show as link')!.click()

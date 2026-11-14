@@ -22,10 +22,9 @@
  *    (as Mochi): the card is one long page — no scroll bar of its own; the Inbox's view scrolls, the top row stays on
  *    top and the buttons at the bottom — and a word that reaches the view's lower third comes up to its upper third,
  *    so what comes next shows (`inboxScroll.ts`).
- *  - TITLE ON THE FRONT: HIDE (YAZ-5030, the card line's `notitle`): the front is drawn without its title line (its
- *    first line, `cardWithoutTitle`), so the title is never a Space step, nor any hidden word in it. The head shows the
- *    ID only until the card is fully shown, then the title: which card it was. A title that holds a hidden word waits
- *    the same way, also on the front: shown early, it would tell the answer.
+ *  - TITLE ON THE FRONT: HIDE (YAZ-5030, the card line's `notitle`): the title is on the card line (YAZ-5308), never in
+ *    the text, so it is never a Space step. The head shows the ID only until the card is fully shown, then the title:
+ *    which card it was.
  *  - SPACE (D18): each Space shows the NEXT hidden word, in page order. When the side showing has none left, the next
  *    Space shows the next side, whose hidden words then show one by one. The answer buttons show from the moment the
  *    card shows (YAZ-5010, Yaseen: "Should always be there"): `showAnswers()` fixes what each one writes then (the
@@ -89,9 +88,10 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
-import { cardRetitled, cardSides, cardTitle } from '@shared/cardText'
+import { cardSides } from '@shared/cardText'
+import { withCardTitle } from '@shared/cardLine'
 import { PageTitle } from '../editor/PageTitle'
-import { changeCardTextIn } from './cardFile'
+import { changeCardLine } from './cardFile'
 import { recordAt } from '../editor/card/embedCard'
 import type { GestureAction } from '@shared/keys'
 import type { InboxOpenAt } from '@shared/types'
@@ -218,7 +218,7 @@ function ArchivedList({ session, nameOf, openPage, unarchive, backToAll }: { ses
       {session.archived.map((c) => (
         <li key={`${c.path}\n${c.id}`} className="card-inbox__archived-row">
           <button type="button" className="card-inbox__archived-open" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(c.path)}>
-            <span className={`card-inbox__archived-title${c.title === undefined ? ' card__title--empty' : ''}`}>{c.title ?? 'New card'}</span>
+            <span className={`card-inbox__archived-title${c.title === undefined ? ' card__title--empty' : ''}`}>{c.title ?? c.id}</span>
             <span className="card-inbox__archived-page">{nameOf(c.path)}</span>
           </button>
           <button type="button" className="explore__button card-inbox__archived-unarchive" onMouseDown={(e) => e.preventDefault()} onClick={() => void unarchive(c.path, c.id)}>
@@ -237,9 +237,9 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   const { width, startDrag } = useInboxCardWidth(columnRef, rootRef)
   const card = session.card
   const pageText = card?.page?.text ?? null
-  // The Inbox's card (YAZ-5152: shared with the Preview, `inboxCard.tsx`): the front without a hidden title (YAZ-5030),
-  // and the head's title, which waits for the last step where it would tell the answer (YAZ-5044).
-  const { text, title } = useCardFront(pageText, card?.page?.notitle === true)
+  // The Inbox's card (YAZ-5152: shared with the Preview, `inboxCard.tsx`): the front, and the head's title off the card
+  // line (YAZ-5308), which waits for the last step where it is hidden on the front (YAZ-5030).
+  const { text, title } = useCardFront(pageText, card?.page?.title ?? '', card?.page?.notitle === true)
   // A card FILE (YAZ-5037): "Open card" in the key row, and no "in <page>". One look in the index the vault already holds.
   const cardFile = card !== null && recordAt(vaultOf(card.path).wikilinks.records, card.path)?.kind === 'card'
   const cardKey = card === null ? null : `${session.position}\n${card.path}\n${card.id}`
@@ -292,7 +292,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
     // The answers as the hook fixed them (a digit can come before the buttons show: they are fixed now, as `answer` would).
     const fixed = (session.answers ?? review.showAnswers())?.find((a) => a.review.rating === rating)
     // The card by its title (YAZ-5030), a title hidden in review too: the answer is given.
-    const title = card?.page == null ? '' : cardTitle(card.page.text)
+    const title = card?.page?.title ?? ''
     pendingLine.current = fixed === undefined || card === null ? null : { text: answerLine(rating, card.id, fixed.interval, fixed.inSteps, review.settings, title), rating, count: session.answered.length + 1 }
     void review.answer(rating, answerSeconds())
   }, [])
@@ -382,13 +382,11 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   const waits = addKinds.length > 0 && <p className="card-inbox__done-line">{waitingLine(session.more, addKinds)}</p>
   // The rest of the vault, after a review of one page or one folder: the way on.
   const more = session.scope === 'vault' ? 0 : review.dueCount
-  // The head's title (YAZ-5044): once the card is fully shown where it waits (`notitle`, or a hidden word in it).
+  // The head's title: once the card is fully shown where it waits (`notitle`).
   const headTitle = title.waits && !done ? '' : title.text
-  /** The head's rename (YAZ-5164 part 3): the card's first line in its page, one write; the Inbox reads the card again. */
-  const retitle = (path: string, id: string, text: string, next: string): void => {
-    const changed = cardRetitled(text, next)
-    if (changed === text) return
-    changeCardTextIn(path, id, changed, -1).catch((err: unknown) => onNotice(`Can't rename the card: ${err instanceof Error ? err.message : String(err)}`))
+  /** The head's rename (YAZ-5164 part 3): the title on the card's line (YAZ-5308), one write; the Inbox reads the card again. */
+  const retitle = (path: string, id: string, next: string): void => {
+    changeCardLine(path, id, (l) => withCardTitle(l, next)).catch((err: unknown) => onNotice(`Can't rename the card: ${err instanceof Error ? err.message : String(err)}`))
   }
   const hints = cardInboxHints({ card: card !== null, cardFile, answering: done, canUndo: session.canUndo, moves: session.canBack || session.canNext, audio: text !== null && textHasAudio(cardSides(text).slice(0, step.sides).join('\n')), nextSide })
   /** The ⋯ row's actions (YAZ-5004): the hook's own, with their names and keys for the hover box. */
@@ -424,10 +422,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                         {headTitle}
                       </button>
                     ) : card.page !== null && vaultOf(card.path).readOnly !== true ? (
-                      // A card in a page (YAZ-5164 part 3): the page title's own component, a click renames the card in its
-                      // page (its first line), as in the page's card head. In a Read only vault it shows only.
+                      // A card in a page (YAZ-5164 part 3): the page title's own component, a click renames the card (its
+                      // card line), as in the page's card head. In a Read only vault it shows only.
                       <span className="card-inbox__name">
-                        <PageTitle path={card.path} titles={NO_TITLES} text={headTitle} onRetitle={(next) => retitle(card.path, card.id, card.page?.text ?? '', next)} />
+                        <PageTitle path={card.path} titles={NO_TITLES} text={headTitle} onRetitle={(next) => retitle(card.path, card.id, next)} />
                       </span>
                     ) : (
                       <span className="card-inbox__name">{headTitle}</span>

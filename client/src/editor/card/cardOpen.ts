@@ -46,8 +46,10 @@ export interface CardPreviewRequest {
   path: string
   /** The card's ID, or null before it has one. */
   id: string | null
-  /** The card's text, its title line included. */
+  /** The card's text, its sides only. */
   text: string
+  /** Its title, off its card line (YAZ-5308); '' for a card with none. */
+  title: string
   /** "Title on the front: Hide" (YAZ-5030). */
   notitle: boolean
   /** Its reviews, for the Reviews strip on the last side. */

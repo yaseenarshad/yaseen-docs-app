@@ -11,10 +11,10 @@
  *    `transformFile` (`changeCardTextIn`). In a read-only vault or a `readonly: true` file, Edit card (E, the button)
  *    asks first, as typing in a locked page does, and opens at once after "Allow edits" (YAZ-5145 round 2); ⋯ and
  *    reviews still write, as reviews do in a locked page. A card New card just made opens in Edit card (YAZ-5101).
- *  - THE TITLE (YAZ-5044 decision A, YAZ-5104) is the file's `title`, as a page's, and the card's text never holds it:
+ *  - THE TITLE (YAZ-5104, YAZ-5308 decision D) is the card's, on its card line, and the card's text never holds it:
  *    the big title is the page's own `PageTitle`, read from the index, so a click edits it as on a page. Enter (or a
- *    click away) writes `title` and renames the file through App's title edit door (`onRetitle`, which asks first as a
- *    page's title does); Esc goes back. While the tab is read only, the title is too: a click on it shows the "Read only"
+ *    click away) writes the card line's title and renames the file through App's title edit door (`onRetitle`, which
+ *    asks first as a page's title does); Esc goes back. While the tab is read only, the title is too: a click on it shows the "Read only"
  *    chip's card, "This card is Read only. Press Enter to allow edits." (YAZ-5141), and once allowed the title edits.
  *    Edit card's Title field (YAZ-5164 part 3) holds it too, and Done renames through the same door.
  *  - A FILE THAT IS NOT VALID (`cardFileShape`) stays a card file: one notice at the top (`CardFileNotice`), and
@@ -218,14 +218,18 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const setReadOnly = (on: boolean) =>
     void transformFile(path, (text) => setPageReadOnly(text, on)).then(read, (err: unknown) => onNotice(`Read only could not change: ${err instanceof Error ? err.message : String(err)}`))
   const giveKeysBack = () => bodyRef.current?.focus({ preventScroll: true })
-  /** Done: the card's text, its sides only (YAZ-5044: the title is the file's `title`, never in the text). */
-  const editDone = (text: string) => {
+  /**
+   * Done: the card's text, its sides only; then a new title from the Title field renames the card file through the tab's
+   * title door, as the big title does (YAZ-5308: it writes the card line, then the name).
+   */
+  const editDone = (text: string, title: string) => {
     setSave('saving')
     writes.editDone(
       text,
       () => {
         setSave('saved')
         setEditing(false)
+        if (card !== null && title !== '' && title !== card.title) onRetitle?.(path, title, 'file')
       },
       () => setSave('error'),
     )
@@ -362,7 +366,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               reviews={reviewOn ? settings : undefined}
               onDeleteReview={writes.deleteReview}
               embeds
-              onRetitle={onRetitle === undefined ? undefined : (title) => onRetitle(path, title, 'file')}
+              titleReadOnly={onRetitle === undefined}
             />
           )}
         </div>

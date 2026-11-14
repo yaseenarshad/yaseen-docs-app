@@ -5731,7 +5731,7 @@ describe('App: the card flow (YAZ-4962)', () => {
   })
 
   it('the card window opens from the editor\'s open-card hook (`mdapp:card-open`): a card layer of the page, the card read-only; a hook with no page opens nothing', async () => {
-    const files = { [PAGE]: { content: page('<!-- card: WIKI-9, 2026-01-02T09:00Z good -->'), mtime: 1 } }
+    const files = { [PAGE]: { content: page('<!-- card: WIKI-9, title "Capital of France", 2026-01-02T09:00Z good -->'), mtime: 1 } }
     const { el } = await mount(defaultAppState(), TABS, files, (b) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [record()], folders: [], generatedAt: 1, ids: true }))
     act(() => void document.dispatchEvent(new CustomEvent(CARD_OPEN, { detail: { path: null, cardId: 'WIKI-9', index: 0 } })))
     await act(async () => {})

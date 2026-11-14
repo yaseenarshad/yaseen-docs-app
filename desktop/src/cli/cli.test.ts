@@ -675,6 +675,8 @@ describe('cards: due and card add (YAZ-4963)', () => {
   const day = (ms: number): string => new Date(ms).toLocaleDateString('en-CA')
   const minute = (ms: number): string => `${new Date(ms).toISOString().slice(0, 16)}Z`
   const card = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->\n`
+  /** A card line with `title` on it, right after the ID (YAZ-5308). */
+  const titled = (title: string, line: string) => line.replace(/^([^,]+)/, `$1, title "${title}"`)
 
   it('due lists the cards due now and the new ones, not one that is not due nor one turned off; a page lists each card with its day', async () => {
     const long = minute(Date.now() - 400 * DAY)
@@ -682,8 +684,8 @@ describe('cards: due and card add (YAZ-4963)', () => {
     const now = minute(Date.now() - 60_000)
     // YAZ-5020: a new card needs two Remembered to leave its same-day steps; YAZ-15, a known card Forgot a minute ago, is in them.
     const root = await vault('cards', {
-      'deck.md': `---\nid: YAZ-1\n---\n# Deck\n\n${card('**Overdue** {{word}}', `YAZ-10, ${long} good, ${long2} good`)}\n${card('Just learned', `YAZ-11, ${now} good, ${now} good`)}\n${card('Brand new', 'YAZ-12')}\n${card('Turned off', `YAZ-13, off, ${long} good`)}\n${card('Forgot again', `YAZ-15, ${long} good, ${long2} good, ${now} again`)}`,
-      'sub/other.md': `---\nid: YAZ-2\n---\n${card('In a subfolder', 'YAZ-14')}`,
+      'deck.md': `---\nid: YAZ-1\n---\n# Deck\n\n${card('**Overdue** {{word}}', titled('Overdue word', `YAZ-10, ${long} good, ${long2} good`))}\n${card('Just learned', titled('Just learned', `YAZ-11, ${now} good, ${now} good`))}\n${card('Brand new', titled('Brand new', 'YAZ-12'))}\n${card('Turned off', titled('Turned off', `YAZ-13, off, ${long} good`))}\n${card('Forgot again', titled('Forgot again', `YAZ-15, ${long} good, ${long2} good, ${now} again`))}`,
+      'sub/other.md': `---\nid: YAZ-2\n---\n${card('In a subfolder', titled('In a subfolder', 'YAZ-14'))}`,
     })
     const deck = path.join(root, 'deck.md')
     const other = path.join(root, 'sub', 'other.md')
@@ -728,7 +730,8 @@ describe('cards: due and card add (YAZ-4963)', () => {
     const geo = path.join(root, 'geo.md')
     expect(await run(['card', 'add', geo, '--after', 'cards', '--body', '-'], 'The capital of {{France}}\n---\nParis\n')).toEqual({ code: 0, out: `added YAZ-21 to ${geo}\n`, err: '' })
     const second = await run(['card', 'add', geo, '--after', '## Cards', '--body', 'Code inside:\n```js\nx\n```', '--json'])
-    expect(JSON.parse(second.out)).toEqual({ id: 'YAZ-22', page: geo, title: 'Code inside:' })
+    // No --title: the card has none; no line of its text is read as one (YAZ-5308).
+    expect(JSON.parse(second.out)).toEqual({ id: 'YAZ-22', page: geo, title: '' })
     expect(await readFile(geo, 'utf8')).toBe(
       '---\nid: YAZ-5\n---\n# Geography\n\n## Cards\n\nIntro.\n\n```card\nThe capital of {{France}}\n---\nParis\n```\n<!-- card: YAZ-21 -->\n\n````card\nCode inside:\n```js\nx\n```\n````\n<!-- card: YAZ-22 -->\n\n## Later\n\nText.\n',
     )
@@ -747,19 +750,19 @@ describe('cards: due and card add (YAZ-4963)', () => {
     expect(await run(['card', 'add', win, '--after', 'Cards', '--title', 'Eleven', '--body', 'Front\n---\nBack'])).toEqual({ code: 0, out: `added YAZ-11 to ${win}\n`, err: '' })
     const after = await readFile(win, 'utf8')
     expect(/(^|[^\r])\n/.test(after)).toBe(false)
-    expect(after).toBe(crlf(`---\nid: YAZ-5\n---\n# Deck\n\n## Cards\n\n${card('Nine', 'YAZ-9')}\n${card('Ten', 'YAZ-10')}\n${card('Eleven\nFront\n---\nBack', 'YAZ-11')}\n## Later\n\nText.\n`))
-    expect((await scanFile(root, win)).cards?.map((c) => [c.id, c.title])).toEqual([['YAZ-9', 'Nine'], ['YAZ-10', 'Ten'], ['YAZ-11', 'Eleven']])
+    expect(after).toBe(crlf(`---\nid: YAZ-5\n---\n# Deck\n\n## Cards\n\n${card('Nine', 'YAZ-9')}\n${card('Ten', 'YAZ-10')}\n${card('Front\n---\nBack', 'YAZ-11, title "Eleven"')}\n## Later\n\nText.\n`))
+    expect((await scanFile(root, win)).cards?.map((c) => [c.id, c.title])).toEqual([['YAZ-9', undefined], ['YAZ-10', undefined], ['YAZ-11', 'Eleven']])
     // card next on the \r\n page finds the card and keeps the line ends.
     expect((await run(['card', 'next', 'YAZ-10', root])).code).toBe(0)
     expect(await readFile(win, 'utf8')).toBe(after.replace('<!-- card: YAZ-10 -->', '<!-- card: YAZ-10, next -->'))
   })
 
-  it('YAZ-5030: card add --title writes the title as the card\'s first line; due --json gives it as the title', async () => {
+  it('YAZ-5308: card add --title writes the title on the card line, never in its text; due --json gives it as the title', async () => {
     const root = await vault('cards', { 'geo.md': '---\nid: YAZ-5\n---\n# Geography\n' })
     const geo = path.join(root, 'geo.md')
     const added = await run(['card', 'add', geo, '--title', 'Capital of France', '--body', 'The capital of {{France}}\n---\nParis', '--json'])
     expect(JSON.parse(added.out)).toEqual({ id: 'YAZ-6', page: geo, title: 'Capital of France' })
-    expect(await readFile(geo, 'utf8')).toBe('---\nid: YAZ-5\n---\n# Geography\n\n```card\nCapital of France\nThe capital of {{France}}\n---\nParis\n```\n<!-- card: YAZ-6 -->\n')
+    expect(await readFile(geo, 'utf8')).toBe('---\nid: YAZ-5\n---\n# Geography\n\n```card\nThe capital of {{France}}\n---\nParis\n```\n<!-- card: YAZ-6, title "Capital of France" -->\n')
     // The index holds the title (YAZ-5030): what a `[[YAZ-6]]` link shows.
     expect((await scanFile(root, geo)).cards?.[0]).toMatchObject({ id: 'YAZ-6', title: 'Capital of France' })
     expect(JSON.parse((await run(['due', geo, '--json'])).out).map((r: { id: string; title: string }) => [r.id, r.title])).toEqual([['YAZ-6', 'Capital of France']])
@@ -773,12 +776,12 @@ describe('cards: due and card add (YAZ-4963)', () => {
   it('YAZ-4999: card next writes the part `next` (--off removes it); due lists the card first and marks it', async () => {
     const now = minute(Date.now() - 60_000)
     const root = await vault('cards', {
-      'deck.md': `---\nid: YAZ-1\n---\n${card('Brand new', 'YAZ-12')}\n${card('Just learned', `YAZ-11, ${now} good`)}`,
+      'deck.md': `---\nid: YAZ-1\n---\n${card('Brand new', 'YAZ-12')}\n${card('Just learned', titled('Just learned', `YAZ-11, ${now} good`))}`,
     })
     const deck = path.join(root, 'deck.md')
     const before = await readFile(deck, 'utf8')
     expect(await run(['card', 'next', 'yaz-11', root])).toEqual({ code: 0, out: `YAZ-11 is up next (${deck})\n`, err: '' })
-    expect(await readFile(deck, 'utf8')).toContain(`<!-- card: YAZ-11, next, ${now} good -->`)
+    expect(await readFile(deck, 'utf8')).toContain(`<!-- card: YAZ-11, title "Just learned", next, ${now} good -->`)
     // Not due, but up next: first, marked `next`; `--json` says so.
     expect((await run(['due', root])).out.split('\n')[0]).toBe(`next        YAZ-11  Just learned  ${deck}`)
     const json = JSON.parse((await run(['due', root, '--json'])).out) as { id: string; next: boolean }[]
@@ -823,20 +826,20 @@ describe('cards: due and card add (YAZ-4963)', () => {
 describe('card files (YAZ-5037)', () => {
   const card = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->\n`
 
-  it('card new writes a card file: kind: card, the title in `title:` (YAZ-5044), one card holding the body; the next number; named <kebab-title>-<id>.md', async () => {
+  it('card new writes a card file: kind: card, one card holding the body with the title on its card line (YAZ-5308); the next number; named <kebab-title>-<id>.md', async () => {
     const root = await vault('cards', { 'geo/deck.md': `---\nid: YAZ-5\n---\n${card('In a page', 'YAZ-9')}` })
     const geo = path.join(root, 'geo')
     const made = await run(['card', 'new', geo, '--title', 'Capital of France', '--body', '-'], 'The capital of {{France}}\n---\nParis\n')
     const file = path.join(geo, 'capital-of-france-yaz-10.md')
     expect(made).toEqual({ code: 0, out: `made ${file}\n`, err: '' })
-    expect(await readFile(file, 'utf8')).toBe('---\nkind: card\ntitle: Capital of France\n---\n```card\nThe capital of {{France}}\n---\nParis\n```\n<!-- card: YAZ-10 -->\n')
+    expect(await readFile(file, 'utf8')).toBe('---\nkind: card\n---\n```card\nThe capital of {{France}}\n---\nParis\n```\n<!-- card: YAZ-10, title "Capital of France" -->\n')
     // The index reads it as a card file: no page id, the card's title, its card.
     expect(await scanFile(root, file)).toMatchObject({ kind: 'card', title: 'Capital of France', cards: [expect.objectContaining({ id: 'YAZ-10' })] })
     expect((await scanFile(root, file)).id).toBeUndefined()
     // No --body: an empty card. --json gives the id, the path and the title.
     const json = await run(['card', 'new', geo, '--title', 'Lone', '--json'])
     expect(JSON.parse(json.out)).toEqual({ id: 'YAZ-11', path: path.join(geo, 'lone-yaz-11.md'), title: 'Lone' })
-    expect(await readFile(path.join(geo, 'lone-yaz-11.md'), 'utf8')).toBe('---\nkind: card\ntitle: Lone\n---\n```card\n\n```\n<!-- card: YAZ-11 -->\n')
+    expect(await readFile(path.join(geo, 'lone-yaz-11.md'), 'utf8')).toBe('---\nkind: card\n---\n```card\n\n```\n<!-- card: YAZ-11, title "Lone" -->\n')
     // The placeholder title of a new card keeps the `<id>.md` name, as the app's New card does.
     expect(JSON.parse((await run(['card', 'new', geo, '--title', 'Title', '--json'])).out).path).toBe(path.join(geo, 'yaz-12.md'))
   })
@@ -880,7 +883,7 @@ describe('card files (YAZ-5037)', () => {
   it('due --json marks a card that lives in a card file `cardFile: true`, for a folder and for the file; a card in a page has no such key', async () => {
     const root = await vault('cards', {
       'deck.md': `---\nid: YAZ-1\n---\n${card('In a page', 'YAZ-2')}`,
-      'own-yaz-3.md': `---\nkind: card\n---\n${card('Own', 'YAZ-3')}`,
+      'own-yaz-3.md': `---\nkind: card\n---\n${card('Own', 'YAZ-3, title "Own"')}`,
     })
     const rows = JSON.parse((await run(['due', root, '--json'])).out) as Record<string, unknown>[]
     expect(rows.map((r) => [r.id, r.cardFile])).toEqual([['YAZ-2', undefined], ['YAZ-3', true]])
@@ -892,8 +895,8 @@ describe('card files (YAZ-5037)', () => {
   it('links names a card by its id — in a card file or in a page — as kind `card`, with its title and the path of its file; mentions gives a card file kind `card`', async () => {
     const root = await vault('cards', {
       'home.md': '---\nid: YAZ-1\n---\nSee [[YAZ-3]], [[yaz-2|the card]], [[YAZ-4]] and [[YAZ-99]].\n',
-      'Decks/deck-yaz-4.md': `---\nid: YAZ-4\ntitle: Deck\n---\n${card('In a page', 'YAZ-2')}`,
-      'Decks/own-yaz-3.md': `---\nkind: card\n---\n${card('Own card\nback [[YAZ-4]]', 'YAZ-3')}`,
+      'Decks/deck-yaz-4.md': `---\nid: YAZ-4\ntitle: Deck\n---\n${card('In a page', 'YAZ-2, title "In a page"')}`,
+      'Decks/own-yaz-3.md': `---\nkind: card\n---\n${card('Own card\nback [[YAZ-4]]', 'YAZ-3, title "Own card"')}`,
     })
     const home = path.join(root, 'home.md')
     expect(await run(['links', home])).toEqual({

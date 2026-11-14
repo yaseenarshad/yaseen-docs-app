@@ -2536,6 +2536,7 @@ describe('the card window (YAZ-4962)', () => {
   const factText = (i: number) => top().querySelectorAll('.card-strip > *')[i]
 
   it('opens from the ask with the card: the grey ID first, then its title, everything shown; a new card says "New", and its table has only the review to come', async () => {
+    files[PAGE] = page('<!-- card: WIKI-9, title "Capital of France" -->')
     props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
     await mount()
     await flush()
@@ -2552,8 +2553,8 @@ describe('the card window (YAZ-4962)', () => {
     expect(tableRows()).toEqual([['Due today']])
   })
 
-  it('YAZ-5164 part 3: the head`s title is the page title`s own component; the card never repeats it; a click renames the card in its page', async () => {
-    files[PAGE] = `# Cards\n\n\`\`\`card\nCapital of France\n\nWhich city?\n---\n{{Paris}}\n\`\`\`\n<!-- card: WIKI-9 -->\n`
+  it('YAZ-5164 part 3: the head`s title is the page title`s own component; the card never shows it; a click renames the card on its card line (YAZ-5308)', async () => {
+    files[PAGE] = `# Cards\n\n\`\`\`card\nWhich city?\n---\n{{Paris}}\n\`\`\`\n<!-- card: WIKI-9, title "Capital of France" -->\n`
     props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
     await mount()
     await flush()
@@ -2569,7 +2570,7 @@ describe('the card window (YAZ-4962)', () => {
       field.blur()
     })
     await vi.waitFor(() => expect(writeFile).toHaveBeenCalled())
-    expect(writeFile.mock.calls[0][0].content).toContain('```card\nFrance\n\nWhich city?\n---\n{{Paris}}\n```')
+    expect(writeFile.mock.calls[0][0].content).toContain('```card\nWhich city?\n---\n{{Paris}}\n```\n<!-- card: WIKI-9, title "France" -->')
   })
 
   it('a card with reviews: the strip says the last answer, the next review and the recall chance in one line of words (YAZ-5032), with one (i); the table has Yaseen\'s columns; each row deletes its review', async () => {
@@ -2680,7 +2681,7 @@ describe('the card window (YAZ-4962)', () => {
   })
 
   it('YAZ-5030: ⋯ "Title on the front" (Show) writes `notitle`; the head then says "Hidden in review"', async () => {
-    files[PAGE] = page('<!-- card: WIKI-9 -->')
+    files[PAGE] = page('<!-- card: WIKI-9, title "Capital of France" -->')
     writeFile.mockImplementation(async ({ path, content }) => {
       files[path] = content
       return { path, mtime: 2, size: content.length }
@@ -2699,7 +2700,7 @@ describe('the card window (YAZ-4962)', () => {
     act(() => shown.click())
     await flush()
     await flush()
-    expect(files[PAGE]).toContain('<!-- card: WIKI-9, notitle -->')
+    expect(files[PAGE]).toContain('<!-- card: WIKI-9, title "Capital of France", notitle -->')
     expect(mark()?.textContent).toBe('Hidden in review')
     // The window shows the title either way.
     expect(top().querySelector('.explore__title')?.textContent).toBe('Capital of France')
@@ -2724,7 +2725,7 @@ describe('the card window (YAZ-4962)', () => {
   })
 
   it('a card with no ID yet opens by its place; the strip\'s page name opens the page on top, landed on the card; ⌘↵ opens the page in a tab', async () => {
-    files[PAGE] = page('')
+    files[PAGE] = page('<!-- card: title "Capital of France" -->')
     props.requestLayer = { kind: 'card', path: PAGE, cardId: null, index: 0 }
     await mount()
     await flush()

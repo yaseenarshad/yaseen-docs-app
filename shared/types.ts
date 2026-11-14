@@ -239,14 +239,14 @@ export interface IndexRecord {
   embeds: string[]
   /**
    * The page's cards (`shared/cardLine.ts`, YAZ-4960 D4), in page order: each card's ID (null before the sweep
-   * gives one), whether review is off, and its reviews as its card line holds them; its title (its first line, what a
-   * `[[card ID]]` link shows) and whether the title is hidden on the Inbox's front (YAZ-5030). No other card text: it is
+   * gives one), whether review is off, and its reviews as its card line holds them; its title (its card line's `title`,
+   * YAZ-5308: what a `[[card ID]]` link shows) and whether the title is hidden on the Inbox's front (YAZ-5030). No other card text: it is
    * read when a card shows. Absent when the page has no card, or was not read. When a card is due is computed (`cardSchedule.ts`).
    */
   cards?: CardRecord[]
   /**
    * `card` when the file is a CARD FILE (YAZ-5037): its properties hold `kind: card` (`shared/cardFileFormat.ts`). Its
-   * `title` is then its card's title, and `cards` holds every card in it (one, unless the file is not valid). Absent
+   * `title` is then its card's title (off its card line, YAZ-5308; its file name when it has none), and `cards` holds every card in it (one, unless the file is not valid). Absent
    * for a page.
    */
   kind?: 'card'

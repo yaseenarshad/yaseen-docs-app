@@ -2,10 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { cardFileAsPage, cardFileTitleMoved, cardFromText, moveCardOut, moveTextIntoCard, pageAsCardFile, putCardBack, splitCardFile } from '@shared/cardConvert'
+import { cardFileAsPage, cardFromText, moveCardOut, moveTextIntoCard, pageAsCardFile, putCardBack, splitCardFile } from '@shared/cardConvert'
 import { cardFileShape } from '@shared/cardFileFormat'
 import { cardRecords, changeCard, changeCardText, findCards, pageCards, rewritePageCards, withCardId, withCardNext, withCardNoTitle, withCardOff, withCardReview } from '@shared/cardLine'
-import { cardPieces, cardSides, cardTitle, cardWithoutTitle, hiddenCount } from '@shared/cardText'
+import { cardPieces, cardSides, hiddenCount } from '@shared/cardText'
+import { cardTitlesMoved } from '@shared/cardTitleSweep'
 import { lineKinds, maskCode } from '@shared/fences'
 import { inLineEnds, lineEndOf, withLf } from '@shared/lineEnds'
 import { scanFile } from './vaultIndex/scan'
@@ -32,7 +33,7 @@ const PAGE = [
   '---',
   'Back',
   '```',
-  '<!-- card: WIKI-1, 2026-11-12T14:05Z good -->',
+  '<!-- card: WIKI-1, title "One, word", 2026-11-12T14:05Z good -->',
   '',
   '- item',
   '  ```card',
@@ -52,8 +53,8 @@ const PAGE = [
   '',
 ].join('\n')
 
-const CARD_FILE = '---\nkind: card\ntitle: Capital\n---\n```card\nThe capital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-1 -->\n'
-const OLD_CARD_FILE = '---\nkind: card\n---\n```card\nCapital\n\nThe capital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-1 -->\n'
+const CARD_FILE = '---\nkind: card\n---\n```card\nThe capital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-1, title "Capital" -->\n'
+const OLD_CARD_FILE = '---\nkind: card\ntitle: Capital\n---\n```card\nThe capital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-1 -->\n'
 const EMBED_PAGE = '---\nid: WIKI-100\n---\n# Deck\n\n- One\n  ![[WIKI-1]]\n\nEnd.\n'
 const ONE_CARD_PAGE = '---\nid: WIKI-100\ntitle: Old\n---\n```card\nCapital\n\nThe {{x}}\n```\n<!-- card: WIKI-1 -->\n'
 const MANY_CARD_FILE = '---\nkind: card\ntitle: First\n---\n```card\nA\n```\n<!-- card: WIKI-1 -->\n\n```card\nB title\n\nB\n```\n<!-- card: WIKI-2 -->\n'
@@ -71,19 +72,19 @@ describe('readers (rule 1): a `\\r\\n` page has the cards, sides, titles and hid
 
   it('the index`s card records (IDs, reviews, titles) are the same', () => {
     expect(cardRecords(crlf(PAGE))).toEqual(cardRecords(PAGE))
-    expect(cardRecords(PAGE).map((c) => [c.id, c.title])).toEqual([['WIKI-1', 'One word'], [null, 'Two {{code}} hidden']])
+    expect(cardRecords(PAGE).map((c) => [c.id, c.title])).toEqual([['WIKI-1', 'One, word'], [null, undefined]])
   })
 
-  it('sides, title and hidden words: the same off the `\\r\\n` page; a text that still holds `\\r` (the editor`s) splits its sides alike', () => {
+  it('sides and hidden words: the same off the `\\r\\n` page; a text that still holds `\\r` (the editor`s) splits its sides alike', () => {
     const text = 'Title {{a}}\n\nFront `{{code}}`\n---\nBack {{1::b}}'
     const page = `# P\n\n\`\`\`card\n${text}\n\`\`\`\n<!-- card: WIKI-1 -->\n`
     const [mac] = findCards(page)
     const [win] = findCards(crlf(page))
     expect(win.text).toBe(text)
-    for (const read of [cardSides, cardTitle, hiddenCount, cardWithoutTitle, (t: string) => cardSides(t).map(cardPieces)] as ((t: string) => unknown)[]) expect(read(win.text)).toEqual(read(mac.text))
-    // The raw text: two sides, the same title and hidden words.
+    for (const read of [cardSides, hiddenCount, (t: string) => cardSides(t).map(cardPieces)] as ((t: string) => unknown)[]) expect(read(win.text)).toEqual(read(mac.text))
+    // The raw text: two sides, the same hidden words.
     expect(cardSides(crlf(text)).map(withLf)).toEqual(cardSides(text))
-    expect([cardTitle(crlf(text)), hiddenCount(cardSides(crlf(text))[1])]).toEqual([cardTitle(text), 1])
+    expect(hiddenCount(cardSides(crlf(text))[1])).toBe(1)
   })
 
   it('the one fence walk: the same kind for each line; the mask keeps its length', () => {
@@ -143,7 +144,8 @@ const WRITERS: [string, string, (content: string) => string][] = [
   ['split (the card file that stays)', MANY_CARD_FILE, (c) => splitCardFile(c)!.keep],
   ['move into the card', OUTSIDE_CARD_FILE, (c) => moveTextIntoCard(c)!],
   ['make a card from the text', NO_CARD_FILE, (c) => cardFromText(c)!],
-  ['the title move', OLD_CARD_FILE, (c) => cardFileTitleMoved(c, true)!],
+  ['the one-time title move', OLD_CARD_FILE, (c) => cardTitlesMoved(c)!],
+  ['the one-time title move, a card in a page', ONE_CARD_PAGE, (c) => cardTitlesMoved(c)!],
 ]
 
 describe('writers (rules 2, 3, 6): each writes the page`s own line end, never both', () => {

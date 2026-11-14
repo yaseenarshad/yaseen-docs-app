@@ -280,7 +280,7 @@ export interface ArchivedCard {
   /** Its place among the page's cards. */
   index: number
   id: string
-  /** Its title (its first line); absent for an empty card. */
+  /** Its title (off its card line, YAZ-5308); absent for a card with none. */
   title?: string
 }
 
