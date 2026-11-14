@@ -266,3 +266,8 @@ li:has(> .page-task[data-checked='true'], > p:first-child > .page-task[data-chec
   overflow: hidden;
   clip-path: inset(50%);
 }
+
+/* A picture or a sound that waits for its bytes (no signal) is hidden behind its calm line: no broken-picture icon. */
+.reader [hidden] {
+  display: none !important;
+}

@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { App, NoStorage } from './App'
 import { localFriends } from './app/friendsPort'
 import { lazySync } from './app/lazySync'
+import { lazyMedia } from './media/ui/lazyMedia'
 import { cameraScanner } from './scan/camera'
 import { openPhoneStorage } from './store'
 import './styles.css'
@@ -24,9 +25,10 @@ async function start(root: Root) {
   }
   const { store, tokens } = storage
   // 3B's engine (YAZ-5072), loaded when a vault opens. WIRE 4E (YAZ-5081): replace `localFriends(store)` with
-  // Friends' own `FriendsPort`. WIRE 3D (YAZ-5074): pass its `MediaAhead` as `media` (the reader's `PageMedia`); until
-  // then the reader shows only the pictures and files that are on the phone (`storedMedia`).
-  const services = { store, tokens, sync: lazySync(store, tokens), friends: localFriends(store), scanner: cameraScanner() }
+  // Friends' own `FriendsPort`. 3D's media (YAZ-5074) is made with the engine once it loads, in a chunk of its own
+  // (`lazyMedia`): the reader and Review show pictures, sounds and files through it (YAZ-5079).
+  const sync = lazySync(store, tokens)
+  const services = { store, tokens, sync, media: lazyMedia(sync.loaded, store), friends: localFriends(store), scanner: cameraScanner() }
   root.render(
     <StrictMode>
       <App services={services} />

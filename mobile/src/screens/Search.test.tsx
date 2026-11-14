@@ -169,9 +169,34 @@ describe('a page, read only (YAZ-5079)', () => {
     await openPage(h, 'Spanish words')
     const body = h.host.querySelector('.reader__body')!
     await waitFor(h, () => body.querySelector('img[src^="blob:"]') !== null)
-    expect([...body.querySelectorAll('img')].map((i) => i.getAttribute('src'))).toEqual(['blob:phone/1'])
+    expect([...body.querySelectorAll('img:not([hidden])')].map((i) => i.getAttribute('src'))).toEqual(['blob:phone/1'])
     expect(body.textContent).toContain('Picture · plaza.png · Needs a connection')
     expect(body.textContent).toContain('Words for a trip to Madrid in May.')
+  })
+
+  it("3D's media: a picture not on the phone shows the calm line with no signal, and fills in when the signal returns", async () => {
+    h = await openSearch()
+    let online = false
+    const asked: string[] = []
+    h.services.media = {
+      async show(path) {
+        asked.push(path)
+        return online || path === 'assets/sun.png' ? { status: 'ready', path, url: `blob:3d/${path}`, type: 'image/png' } : { status: 'missing', path, why: 'offline' }
+      },
+    }
+    await openPage(h, 'Spanish words')
+    const body = h.host.querySelector('.reader__body')!
+    await waitFor(h, () => body.textContent!.includes('Picture · plaza.png · Needs a connection'))
+    expect(body.querySelector('img[src="blob:3d/assets/sun.png"]')).not.toBeNull()
+    expect(body.textContent).toContain('Words for a trip to Madrid in May.')
+    online = true
+    await act(async () => void window.dispatchEvent(new Event('online')))
+    await waitFor(h, () => body.querySelector('img[src="blob:3d/assets/plaza.png"]') !== null)
+    expect(body.textContent).not.toContain('Needs a connection')
+    // A pass that ends asks again too (no second ask for what is shown).
+    const before = asked.length
+    await h.syncSet({ status: 'synced' })
+    expect(asked.length).toBe(before)
   })
 
   it('links: a page link opens that page; a broken link says so; a PDF opens in the iPhone viewer', async () => {
