@@ -5,7 +5,7 @@
  */
 import { fileKind } from '@shared/fileKind'
 import { parseFileLink } from '@shared/links'
-import { fileLabel } from '../lib/pageLabel'
+import { fileLabel } from '../lib/pathTitles'
 import type { LinkCandidate } from '../links/completion'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 

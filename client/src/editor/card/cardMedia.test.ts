@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderCard, type CardLook } from './cardRender'
 import { cardAudioPlaying, stopCardAudio, textHasAudio, toggleCardAudio } from './cardMedia'
+import { desktopBoardPicture } from './boardPictureDesktop'
 
 const boardHead = vi.hoisted(() => vi.fn(async (path: string) => ({ mtime: path.includes('Gone') ? Promise.reject(new Error('x')) : 7 })))
 vi.mock('../../api', () => ({ api: { boardHead: (path: string) => boardHead(path) } }))
@@ -48,7 +49,8 @@ afterEach(() => {
 const look: CardLook = {
   image: (src) => `app://vault/%2Fv/${src}?from=`,
   link: (inner) => ({ label: inner, resolved: !inner.startsWith('Gone') }),
-  board: (inner) => (inner.startsWith('Gone') ? null : { root: '/v', path: `/v/${inner.split('|')[0]}` }),
+  // The desktop's picture (YAZ-5161: the host gives it): the board's head through the bridge, then the hover picture.
+  board: (inner) => (inner.startsWith('Gone') ? null : { root: '/v', path: `/v/${inner.split('|')[0]}`, picture: desktopBoardPicture }),
 }
 
 describe('a sound in a card (YAZ-5014)', () => {

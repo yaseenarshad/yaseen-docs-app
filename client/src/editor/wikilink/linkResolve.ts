@@ -11,7 +11,7 @@ import { WIKILINK_RE } from '@shared/linkRewrite'
 import { isPageId, isNumberId, vaultPageId } from '@shared/pageId'
 import { NO_LINK_PILLS, type LinkPills } from '@shared/linkPills'
 import type { IndexRecord } from '@shared/types'
-import { fileLabel, pageLabel, pathTitles, type PathTitles } from '../../lib/pageLabel'
+import { fileLabel, pageLabel, pathTitles, type PathTitles } from '../../lib/pathTitles'
 import { boardEmbedName, boardEmbedTarget, isIdTarget } from '../drawing/boardEmbedText'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
 

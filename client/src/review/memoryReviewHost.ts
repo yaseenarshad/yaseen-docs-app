@@ -8,7 +8,7 @@
  */
 import { CardNotFoundError, cardNextIndex, cardReviewIndex, changeCard, withCardNext, withCardReview, withCardReviewAt, withoutCardReview, type CardLine } from '@shared/cardLine'
 import { NOTHING_ADDED, type CardsAddedToday } from '@shared/cardSchedule'
-import { cardOnPageIn } from './cardFile'
+import { cardOnPageIn } from './cardRead'
 import type { ReviewHost } from './reviewHost'
 
 export interface MemoryReviewHost extends ReviewHost {
@@ -71,7 +71,7 @@ export function memoryReviewHost(files: Map<string, string>, vault = 'Memory vau
       return removed
     },
     restoreCardReview: (path, id, review, index) => (index < 0 ? Promise.resolve() : change(path, id, (l) => withCardReviewAt(l, review, index))),
-    changeCardLine: (path, id, edit, index) => change(path, id, edit, index),
+    changeCardLine: (path, id, edit) => change(path, id, edit),
     upNextTakenToday: (root) => taken.get(root) ?? NONE,
     setUpNextTaken: (root, id, on) => {
       const cards = new Set(taken.get(root) ?? NONE)

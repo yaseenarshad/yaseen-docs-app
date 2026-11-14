@@ -4,9 +4,10 @@
  * the outside only through a `ReviewHost`: the card read, the card line writes, the two day numbers of each device
  * (decision 9: the Up next places taken today, "Add more for today") and the vault's name.
  *
- * The desktop passes `desktopReviewHost` (the default): today's files (`cardFile.ts`), and the day numbers in the
- * app state (`upNextTaken.ts`, `cardsAdded.ts`), unchanged. The phone passes its own host: its list of answers and its
- * own day numbers. Tests pass an in-memory host (`memoryReviewHost.ts`).
+ * The desktop passes `desktopReviewHost` (`desktopReviewHost.ts`): today's files (`cardFile.ts`), and the day numbers
+ * in the app state (`upNextTaken.ts`, `cardsAdded.ts`), unchanged. The phone passes its own host: its list of answers
+ * and its own day numbers. Tests pass an in-memory host (`memoryReviewHost.ts`). There is no default host (YAZ-5161):
+ * this file and the hook import no host, so the phone builds them with no desktop bridge and no app state.
  *
  * The rules each host keeps:
  *  - A card is read and written by its ID in the file that HOLDS it (a page, or a card file), never in a page that
@@ -14,15 +15,14 @@
  *  - A write whose card or file is gone rejects with `CardNotFoundError` (`@shared/cardLine`) or the bridge's
  *    `NOT_FOUND`: the hook reads it as "gone" (`isCardGone`) and passes the card over.
  *  - The answer and its undo are ONE write each, so an undo leaves the file byte for byte as before the answer.
+ *  - A host is ONE object for the life of the hook (a module constant, or one `useMemo`): the hook's callbacks and its
+ *    `useSyncExternalStore` subscriptions follow its identity, so a new object each render subscribes again each render.
  *  - A day number of another day reads as none; a snapshot (`upNextTakenToday`, `cardsAddedToday`) is ONE object while
  *    it holds still (`useSyncExternalStore`), and the subscribe functions wake on each change.
  */
 import type { CardLine, CardReview } from '@shared/cardLine'
 import type { CardsAddedToday } from '@shared/cardSchedule'
-import { storage } from '../lib/storage'
-import { changeCardLine, deleteCardReview, readCard, restoreCardReview, undoCardAnswer, writeCardAnswer, type CardOnPage } from './cardFile'
-import { cardsAddedToday, setCardsAdded, subscribeCardsAdded } from './cardsAdded'
-import { setUpNextTaken, subscribeUpNextTaken, upNextTakenToday } from './upNextTaken'
+import type { CardOnPage } from './cardRead'
 
 export interface ReviewHost {
   /** Card `id` of file `path` as it is now, or null when the file or the card is gone (`readCard`). */
@@ -36,7 +36,7 @@ export interface ReviewHost {
   /** A deleted review back at its place `index` (-1 writes nothing). */
   restoreCardReview(path: string, id: string, review: CardReview, index: number): Promise<unknown>
   /** Card `id`'s line changed by `change` in ONE write (Up next, Archive). */
-  changeCardLine(path: string, id: string, change: (line: CardLine) => CardLine, index?: number): Promise<unknown>
+  changeCardLine(path: string, id: string, change: (line: CardLine) => CardLine): Promise<unknown>
   /** The card IDs of vault `root` whose Up next mark an answer took off today (YAZ-5028). */
   upNextTakenToday(root: string): readonly string[]
   /** Card `id` taken from Up next today by an answer (`taken`), or given back by its undo. */
@@ -50,20 +50,3 @@ export interface ReviewHost {
   /** The name of vault `root`, as its sidebar shows it (the breadcrumb's first part, the done screen's scope). */
   vaultName(root: string): string
 }
-
-/** The desktop's host: the vault's files through the bridge, and the day numbers in the app state. Today's functions, unchanged. */
-export const desktopReviewHost: ReviewHost = Object.freeze({
-  readCard,
-  writeCardAnswer,
-  undoCardAnswer,
-  deleteCardReview,
-  restoreCardReview,
-  changeCardLine,
-  upNextTakenToday: (root: string) => upNextTakenToday(root),
-  setUpNextTaken: (root: string, id: string, taken: boolean) => setUpNextTaken(root, id, taken),
-  subscribeUpNextTaken,
-  cardsAddedToday: (root: string) => cardsAddedToday(root),
-  setCardsAdded: (root: string, added: CardsAddedToday) => setCardsAdded(root, added),
-  subscribeCardsAdded,
-  vaultName: (root: string) => storage.vaultName(root),
-})

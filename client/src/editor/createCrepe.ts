@@ -359,6 +359,7 @@ import { createWikilink, createWikilinkResolveSource, linkCard, linkPath, linksA
 import { languages as codeLanguages } from '@codemirror/language-data'
 import { flushCardEditor, CARD_ID_META, CARD_MIRROR_META, cardCodeKeys, cardKeyRow, cardLanguage, cardBlockPlugins, cardRow, type CardDeps, type CardHost, type CardReviewDoorApi } from './card/cardBlockView'
 import { cardLook } from './card/cardLook'
+import { desktopBoardPicture } from './card/boardPictureDesktop'
 // A card's look moved to its own file (YAZ-5153); it is given out here as before.
 export { cardLook } from './card/cardLook'
 import { cardEditorOptions } from './card/cardEditorFeatures'
@@ -860,7 +861,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
           cardDeps === undefined
             ? undefined
             : {
-                look: (path) => cardLook(wikilinks, viewOnlyLinks, opts.image === undefined ? undefined : { ...opts.image, pagePath: path }, opts.linkLook),
+                look: (path) => cardLook(wikilinks, viewOnlyLinks, opts.image === undefined ? undefined : { ...opts.image, pagePath: path, boardPicture: desktopBoardPicture }, opts.linkLook),
                 edit:
                   cardDeps.editor === undefined
                     ? undefined
@@ -1038,7 +1039,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
 function cardDepsOf(opts: CreateCrepeOptions, wikilinks: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource, follow: LinkFollow | undefined): CardDeps {
   const image = opts.image
   const nav = opts.markdownLinkNav
-  const look = cardLook(wikilinks, viewOnly, image, opts.linkLook)
+  const look = cardLook(wikilinks, viewOnly, image === undefined ? undefined : { ...image, boardPicture: desktopBoardPicture }, opts.linkLook)
   return {
     host: opts.cards,
     path: image?.pagePath ?? null,

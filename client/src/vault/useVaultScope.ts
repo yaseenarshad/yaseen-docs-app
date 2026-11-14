@@ -12,6 +12,7 @@ import { attentionCopy, type AttentionCopy } from '../lib/syncAttention'
 import { useVaultName } from '../lib/useVaultName'
 import { useExternalRenames, type ExternalRenames } from '../links/useExternalRenames'
 import { useCardReview, type CardReviewApi } from '../review/useCardReview'
+import { desktopReviewHost } from '../review/desktopReviewHost'
 import { useReviewSettings, type ReviewSettingsState } from '../review/useReviewSettings'
 import { useLinkClick, type LinkClickState } from '../explore/linkClick'
 import { useShowIds, type ShowIdsState } from '../search/showIds'
@@ -137,7 +138,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   useEffect(() => wikilinks.setLook(linkPills.pills, name), [wikilinks, linkPills.pills, name])
   // Card review (YAZ-4967): the Inbox count and the vault's review session, read off the SAME
   // index source the wikilinks use. The window shows one session at a time; `App` sees to that.
-  const review = useCardReview(root, wikilinks, reviewSettings.settings, notify, name)
+  const review = useCardReview(root, wikilinks, reviewSettings.settings, notify, name, desktopReviewHost)
 
   // External rename/move resilience (Links E1c, GRO-2242 — locked: confirm-first, NEVER
   // automatic, never a dialog): ONE detector per vault, fed by the cold-start reconcile diff and
