@@ -43,6 +43,7 @@
  * press outside, the window's blur, or a newer attempt with none drops it; so does `RESUME_MS` with no answer.
  */
 import { useEffect, useReducer, useRef, useState, type CSSProperties, type RefObject } from 'react'
+import { DONE_KEYS, withKeys } from '@shared/keyLabel'
 import { useUnit } from '../vault/unitWord'
 import { LockIcon } from '../views/view/icons'
 import { READ_ONLY_EDIT, READ_ONLY_MESSAGE_GAP_MS, READ_ONLY_MESSAGE_MS, READ_ONLY_PAGE, READ_ONLY_PANE, RESUME_MS, ReadOnlyEditEvent, type ReadOnlyWhat } from './readOnlyEdit'
@@ -146,12 +147,12 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, edit
         if (onReturn !== undefined) giveBack('ask')
         else chipRef.current?.focus()
       }}>
-      <button ref={chipRef} type="button" className={`read-only-chip__button${editing ? ' read-only-chip__button--editing' : ''}${message === null ? '' : ' read-only-chip__button--pulse'}`} title={editing ? `Edits are allowed for now. Click for another time.${lockKeys ? ' ⌘↵ or Esc locks it again.' : ''}` : 'Click to allow edits'} aria-haspopup="dialog" aria-expanded={asking} onClick={asking ? cancel : onAsk}>
+      <button ref={chipRef} type="button" className={`read-only-chip__button${editing ? ' read-only-chip__button--editing' : ''}${message === null ? '' : ' read-only-chip__button--pulse'}`} title={editing ? `Edits are allowed for now. Click for another time.${lockKeys ? ` ${withKeys('Lock again', DONE_KEYS)}.` : ''}` : 'Click to allow edits'} aria-haspopup="dialog" aria-expanded={asking} onClick={asking ? cancel : onAsk}>
         {editing ? <EditingIcon /> : <LockIcon size={12} />}
         <span>{editing ? editingLabel(editingUntil, Date.now()) : 'Read only'}</span>
       </button>
       {editing && onLock !== undefined && (
-        <button type="button" className="read-only-chip__lock" title={lockKeys ? 'Lock this page again now (⌘↵ or Esc)' : 'Lock this page again now'} onClick={() => {
+        <button type="button" className="read-only-chip__lock" title={lockKeys ? withKeys('Lock this page again now', DONE_KEYS) : 'Lock this page again now'} onClick={() => {
           onLock()
           giveBack('lock')
         }}>Lock now</button>

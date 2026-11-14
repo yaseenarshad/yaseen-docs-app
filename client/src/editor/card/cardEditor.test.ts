@@ -351,7 +351,8 @@ describe('the mirror, Done and the page`s undo', () => {
     expect(card.dom.classList.contains('card--editing')).toBe(true)
     expect(card.dom.classList.contains('ProseMirror-selectednode')).toBe(false)
     // The key row under the editor (YAZ-5034), kept.
-    expect(card.dom.querySelector('.card__editor + .card__keys')?.textContent).toBe('Cmd + L hide wordCmd + Shift + Enter new sideCmd + Enter / Esc Done')
+    // Each part the app's hotkey label (YAZ-5332): the action first, its keys in brackets.
+    expect([...card.dom.querySelectorAll('.card__editor + .card__keys > span')].map((s) => s.textContent)).toEqual(['Hide word (Cmd+L)', 'New side (Cmd+Shift+Enter)', 'Done (Cmd+Enter)'])
     const before = view.state.doc
     type(inner, ' more')
     await tick(20)

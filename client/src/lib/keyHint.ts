@@ -1,8 +1,9 @@
 /**
  * A key row's key as the user has it now (Settings › Hotkeys), written for a hint: the code tab's chevron menu
- * (YAZ-3478), the fold-all button's label (YAZ-3938) and the fold chevron's Collapse all / Expand all rows (YAZ-3727 D23).
+ * (YAZ-3478) and the fold chevron's Collapse all / Expand all rows (YAZ-3727 D23) in symbols, as a menu's key column; the
+ * fold-all button's label (YAZ-3938) in words, as the app's hotkey label (YAZ-5332).
  */
-import { toDisplay } from '@shared/hotkeyBindings'
+import { keyInWords, toDisplay } from '@shared/hotkeyBindings'
 import { keyRow, keysOf } from '@shared/keys'
 import { storage } from './storage'
 
@@ -11,4 +12,11 @@ export const hintOf = (rowId: string): string | undefined => {
   const row = keyRow(rowId)
   const key = row === undefined ? undefined : keysOf(row, storage.getSettings()?.hotkeys)[0]
   return key === undefined ? undefined : key.split(' ').map(toDisplay).join(' ')
+}
+
+/** The same key in words, for a label (YAZ-5332): 'Cmd+Shift+U'; undefined with no key. */
+export const wordsOf = (rowId: string): string | undefined => {
+  const row = keyRow(rowId)
+  const key = row === undefined ? undefined : keysOf(row, storage.getSettings()?.hotkeys)[0]
+  return key === undefined ? undefined : keyInWords(key)
 }

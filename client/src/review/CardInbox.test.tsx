@@ -137,13 +137,13 @@ describe('the Inbox screen (YAZ-4962)', () => {
     ])
     // YAZ-5017: "3 of 12" moved to the top row, on the right.
     expect(el.querySelector('.card-inbox__bar .card-inbox__place')?.textContent).toBe('3 of 12')
-    const hints = () => [...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)
+    const hints = () => [...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)
     // Nothing to undo; the digits are on the buttons.
-    expect(hints()).toEqual(['Space Show', 'O Open page', 'E Edit card', 'Cmd + Enter New tab'])
+    expect(hints()).toEqual(['Show (Space)', 'Open page (O)', 'Edit card (E)', 'New tab (Cmd+Enter)'])
     for (let i = 0; i < 4; i++) press(' ')
     await flush()
     // The last step: Space has nothing more to show, and the title shows.
-    expect(hints()).toEqual(['O Open page', 'E Edit card', 'Cmd + Enter New tab'])
+    expect(hints()).toEqual(['Open page (O)', 'Edit card (E)', 'New tab (Cmd+Enter)'])
     expect(head()).toEqual([
       ['card-inbox__name', 'Capital of France'],
       ['card-inbox__dot', '·'],
@@ -175,7 +175,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
 
   it('YAZ-5009, over the app\'s real wiring (`useReadOnlyVault` → `exploreVaultOf`): E shows in every vault — no `read-only.json`, `"on": false`, and `"on": true`', async () => {
     mount(TWO_SIDES)
-    const hasE = () => [...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent).includes('E Edit card')
+    const hasE = () => [...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent).includes('Edit card (E)')
     const plain = props.vaultOf
     // As App builds it: the vault's scope, `readOnly: scope.readOnlyVault.settings.on`.
     function Wired({ root: vault }: { root: string }) {
@@ -196,7 +196,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
 
   it('YAZ-5009: the key row shows "E Edit card" at every step — before Space, between the hidden words, after the last — and on a moved-to card', async () => {
     mount(TWO_SIDES)
-    const hasE = () => [...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent).includes('E Edit card')
+    const hasE = () => [...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent).includes('Edit card (E)')
     const seen = [hasE()]
     for (let i = 0; i < 4; i++) {
       press(' ')
@@ -218,7 +218,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     render()
     press(' ')
     expect(shown()).toEqual(['France'])
-    expect([...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)).toContain('E Edit card')
+    expect([...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)).toContain('Edit card (E)')
     press('e')
     expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, 0)
     expect(props.openPage).not.toHaveBeenCalled()
@@ -253,8 +253,8 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.showAnswers).toHaveBeenCalledOnce()
     await flush()
     expect(buttons().map((b) => [b.textContent, b.getAttribute('aria-description')])).toEqual([
-      ['Forgot1', 'Forgot · later today'],
-      ['Remembered2', 'Remembered · 3 days'],
+      ['Forgot (1)', 'Forgot · later today'],
+      ['Remembered (2)', 'Remembered · 3 days'],
     ])
     press(' ')
     expect([sides(), shown(), blanks()]).toEqual([1, ['France'], 0])
@@ -288,8 +288,8 @@ describe('the Inbox screen (YAZ-4962)', () => {
     await flush()
     expect(review.showAnswers).not.toHaveBeenCalled()
     expect(buttons().map((b) => [b.textContent, b.getAttribute('aria-description')])).toEqual([
-      ['Forgot1', 'Forgot'],
-      ['Remembered2', 'Remembered'],
+      ['Forgot (1)', 'Forgot'],
+      ['Remembered (2)', 'Remembered'],
     ])
     press('2')
     act(() => buttons()[0].click())
@@ -338,7 +338,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.showAnswers).toHaveBeenCalledOnce()
     await flush()
     expect(buttons().map((b) => b.getAttribute('aria-description'))).toEqual(['Again · later today', 'Hard · 3 days', 'Good · 9 days', 'Easy · 20 days'])
-    expect([...el.querySelectorAll('.card-inbox__hints kbd')].map((k) => k.textContent)).not.toContain('1–4')
+    expect(el.querySelector('.card-inbox__hints')?.textContent).not.toContain('1–4')
     press('3')
     expect(review.answer).toHaveBeenCalledExactlyOnceWith('good', expect.any(Number))
   })
@@ -428,7 +428,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     render()
     expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('Inbox complete.')
     expect(el.querySelector('.card-inbox__done-line')?.textContent).toBe('Nothing else is due today. Enjoy your day!')
-    expect([...el.querySelectorAll('.card-inbox__hints kbd')].map((k) => k.textContent)).toEqual(['Cmd', 'Z'])
+    expect([...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)).toEqual(['Undo (Cmd+Z)'])
     press(' ')
     press('o')
     expect(props.openPage).not.toHaveBeenCalled()
@@ -528,7 +528,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     await flush()
     expect(column.querySelector('.card-inbox__space')).toBeNull()
     expect(column.textContent).not.toContain('Press')
-    expect(column.querySelector('.card-inbox__hints')?.textContent).toContain('Space Show')
+    expect(column.querySelector('.card-inbox__hints')?.textContent).toContain('Show (Space)')
     press(' ')
     expect(column.querySelector('.card-inbox__space')).toBeNull()
     const answers = column.querySelector('.card-inbox__actions')!
@@ -569,7 +569,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     session = { ...session, canNext: true }
     render()
     expect(moves().map((b) => b.disabled)).toEqual([true, false])
-    expect([...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)).toContain('Left / Right Other cards')
+    expect([...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)).toContain('Other cards (Left / Right)')
     press('ArrowRight')
     act(() => moves()[1].click())
     expect(vi.mocked(review.move).mock.calls).toEqual([[1], [1]])
@@ -678,11 +678,11 @@ describe('the Inbox screen (YAZ-4962)', () => {
   })
 
   it('YAZ-5018: the buttons wear their glyphs — ✕ Forgot and ✓ Remembered; with four buttons ↺ Again, ~ Hard, ✓ Good, ⇈ Easy — each a round pill with its digit', async () => {
-    const glyphs = () => buttons().map((b) => [b.querySelector('.card-inbox__answer-label')?.textContent, b.querySelector('svg.card-inbox__answer-icon path')?.getAttribute('d'), b.querySelector('kbd')?.textContent])
+    const glyphs = () => buttons().map((b) => [b.querySelector('.card-inbox__answer-label')?.textContent, b.querySelector('svg.card-inbox__answer-icon path')?.getAttribute('d'), b.querySelector('.key-label')?.textContent])
     mount('Plain')
     await flush()
     const two = glyphs()
-    expect(two.map(([label, , key]) => [label, key])).toEqual([['Forgot', '1'], ['Remembered', '2']])
+    expect(two.map(([label, , key]) => [label, key])).toEqual([['Forgot', '(1)'], ['Remembered', '(2)']])
     expect(two.every(([, d]) => typeof d === 'string' && d.length > 0)).toBe(true)
     expect(two[0][1]).not.toBe(two[1][1])
     act(() => root?.unmount())
@@ -845,7 +845,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     session = { ...session, answered: ['good'], canUndo: true }
     render()
     // YAZ-5030: the card by its title, the ID after it.
-    expect(last().textContent).toBe('✓ Remembered · Capital of France (WIKI-9) · back in 3 days · Undo Cmd + Z')
+    expect(last().textContent).toBe('✓ Remembered · Capital of France (WIKI-9) · back in 3 days · Undo (Cmd+Z)')
     expect(last().dataset.rating).toBe('good')
     expect(props.onNotice).not.toHaveBeenCalled()
     // Undo in the line: the hook's own undo; the session takes the answer off, and the line clears.
@@ -862,7 +862,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     // The next answer that lands: its line, in red (a Forgot).
     session = { ...session, answered: ['again'], canUndo: true }
     render()
-    expect(last().textContent).toBe('✕ Forgot · Capital of France (WIKI-9) · back later today · Undo Cmd + Z')
+    expect(last().textContent).toBe('✕ Forgot · Capital of France (WIKI-9) · back later today · Undo (Cmd+Z)')
     expect(last().dataset.rating).toBe('again')
     // ⌘Z is the same undo; once the session drops the answer, the line clears.
     press('z', { metaKey: true })
@@ -970,14 +970,14 @@ describe('the title on the front (YAZ-5030)', () => {
     press('2')
     session = { ...session, answered: ['good'], canUndo: true }
     render()
-    expect(el.querySelector('.card-inbox__last')?.textContent).toBe('✓ Remembered · Capital of France (WIKI-9) · back in 3 days · Undo Cmd + Z')
+    expect(el.querySelector('.card-inbox__last')?.textContent).toBe('✓ Remembered · Capital of France (WIKI-9) · back in 3 days · Undo (Cmd+Z)')
   })
 })
 
 describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the breadcrumb`s last part), "Open card" for a card file', () => {
   const PLAIN = 'What is the capital of {{France}}?'
   const headText = () => el.querySelector('.card-inbox__head')!.textContent
-  const hints = () => [...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)
+  const hints = () => [...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)
   /** The card's file is a card file (`kind: card`), as the index says. */
   const asCardFile = () => {
     const record = { path: PATH, name: 'cards.md', basename: 'cards', title: 'Capital of France', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: { kind: 'card' }, aliases: [], tags: [], links: [], embeds: [], kind: 'card' as const }
@@ -999,7 +999,7 @@ describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the brea
     expect(props.openPlace).not.toHaveBeenCalled()
     press('o')
     expect(props.openPage).toHaveBeenCalledTimes(2)
-    expect(hints()).toContain('O Open page')
+    expect(hints()).toContain('Open page (O)')
   })
 
   // YAZ-5307: Settings › Cards › Inbox: O opens the page at. The top (the default) asks for the page alone, as YAZ-5022;
@@ -1056,8 +1056,8 @@ describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the brea
     asCardFile()
     expect(headText()).toBe('Capital of France·WIKI-9')
     expect(el.querySelector('.card-inbox__in')).toBeNull()
-    expect(hints()).toContain('O Open card')
-    expect(hints()).not.toContain('O Open page')
+    expect(hints()).toContain('Open card (O)')
+    expect(hints()).not.toContain('Open page (O)')
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__name')!.click())
     expect(props.openPage).toHaveBeenCalledExactlyOnceWith(PATH)
     press('o')
@@ -1102,7 +1102,7 @@ describe('sound and boards in the Inbox (YAZ-5014, YAZ-5015)', () => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
   })
-  const hints = () => [...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)
+  const hints = () => [...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)
 
   it('nothing plays by itself; P plays and stops; P typed in a field is not the Inbox`s; the next card stops it', async () => {
     const { cardAudioPlaying } = await import('../editor/card/cardMedia')
@@ -1129,11 +1129,11 @@ describe('sound and boards in the Inbox (YAZ-5014, YAZ-5015)', () => {
   it('a click on the player plays and does not step the card; "P Play" is in the key row only while a side that shows has a sound', async () => {
     const { cardAudioPlaying, stopCardAudio } = await import('../editor/card/cardMedia')
     mount('Front {{word}}\n---\n![](assets/audio/tone.mp3)')
-    expect(hints()).not.toContain('P Play')
+    expect(hints()).not.toContain('Play (P)')
     press(' ')
     press(' ')
     expect(el.querySelector('.card__audio')).not.toBeNull()
-    expect(hints()).toContain('P Play')
+    expect(hints()).toContain('Play (P)')
     const before = shown()
     act(() => el.querySelector<HTMLButtonElement>('.card__audio-play')!.click())
     expect(cardAudioPlaying()).toBe(true)
@@ -1141,7 +1141,7 @@ describe('sound and boards in the Inbox (YAZ-5014, YAZ-5015)', () => {
     stopCardAudio()
     session = { ...sessionOf('No sound'), position: 9 }
     render()
-    expect(hints()).not.toContain('P Play')
+    expect(hints()).not.toContain('Play (P)')
   })
 
   it('a board`s picture shows; a click opens the board on top (the Explore layer), never a step', () => {
@@ -1504,7 +1504,7 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     session = { ...session, lastAdd: { kind: 'new', count: 10, reset: false }, canUndo: true }
     render()
     const last = el.querySelector<HTMLElement>('.card-inbox__last')!
-    expect(last.textContent).toBe('+ Added 10 new cards for today · Undo Cmd + Z')
+    expect(last.textContent).toBe('+ Added 10 new cards for today · Undo (Cmd+Z)')
     expect(last.dataset.rating).toBeUndefined()
     act(() => last.querySelector<HTMLButtonElement>('.card-inbox__last-undo')!.click())
     expect(review.undo).toHaveBeenCalledTimes(1)
@@ -1512,15 +1512,15 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     expect(review.undo).toHaveBeenCalledTimes(2)
     session = { ...session, lastAdd: { kind: 'next', count: 1, reset: false } }
     render()
-    expect(last.textContent).toBe('+ Added 1 Up next card for today · Undo Cmd + Z')
+    expect(last.textContent).toBe('+ Added 1 Up next card for today · Undo (Cmd+Z)')
     // On the done screen too.
     session = { ...session, card: null, lastAdd: { kind: 'new', count: 2, reset: false } }
     render()
-    expect(el.querySelector('.card-inbox__last')?.textContent).toBe('+ Added 2 new cards for today · Undo Cmd + Z')
+    expect(el.querySelector('.card-inbox__last')?.textContent).toBe('+ Added 2 new cards for today · Undo (Cmd+Z)')
     // Round 2: a Reset says so, with the same Undo.
     session = { ...session, lastAdd: { kind: 'new', count: 12, reset: true } }
     render()
-    expect(el.querySelector('.card-inbox__last')?.textContent).toBe("↺ Reset today's new cards · Undo Cmd + Z")
+    expect(el.querySelector('.card-inbox__last')?.textContent).toBe("↺ Reset today's new cards · Undo (Cmd+Z)")
   })
 
   it('the done screen says what waits, with one add button for each kind; nothing waits: as before', () => {
@@ -1626,22 +1626,22 @@ describe('YAZ-5046: archived cards in the Inbox, to look at (not to review)', ()
 })
 
 describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
-  const hints = () => [...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)
+  const hints = () => [...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)
   const sideCount = () => el.querySelector('.card-inbox__sides')?.textContent ?? null
 
   it('YAZ-5048: a card of two sides says "Side 1 of 2" above it, and Space says what it does next: "Show" a word, then "Next side"; a card of one side says nothing', async () => {
     mount(TWO_SIDES)
     expect(sideCount()).toBe('Side 1 of 2')
-    expect(hints()[0]).toBe('Space Show')
+    expect(hints()[0]).toBe('Show (Space)')
     press(' ')
     await flush()
     // Side 1 has no hidden word left: the next Space shows side 2.
     expect(sideCount()).toBe('Side 1 of 2')
-    expect(hints()[0]).toBe('Space Next side')
+    expect(hints()[0]).toBe('Next side (Space)')
     press(' ')
     await flush()
     expect(sideCount()).toBe('Side 2 of 2')
-    expect(hints()[0]).toBe('Space Show')
+    expect(hints()[0]).toBe('Show (Space)')
     act(() => root?.unmount())
     el.remove()
     mount('One {{side}} only')
@@ -1650,7 +1650,7 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
 
   it('YAZ-5048: a side with no hidden word says "Next side" at once', async () => {
     mount('Plain front\n---\nBack {{word}}')
-    expect(hints()[0]).toBe('Space Next side')
+    expect(hints()[0]).toBe('Next side (Space)')
   })
 
   it('YAZ-5051: the head (YAZ-5044: the ID; YAZ-5132: the page is in the breadcrumb) sits in the row above the card, after the state chip; the card frame holds only the card', () => {
@@ -1919,8 +1919,8 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         scroller()
         for (const n of [2, 0, 1]) click(word(n))
         expect(blanks()).toBe(0)
-        const hints = [...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)
-        expect(hints).not.toContain('Space Show')
+        const hints = [...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)
+        expect(hints).not.toContain('Show (Space)')
         expect(scrollTo).not.toHaveBeenCalled()
       })
 
@@ -1938,13 +1938,13 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
     it('THE END: the hint row drops Space; one more Space moves nothing and gives the answer buttons one soft nudge, each time', () => {
       mount(THREE)
       scroller()
-      const hints = () => [...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)
+      const hints = () => [...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)
       const answers = () => el.querySelector('.card-inbox__answers')!
       press(' ')
       press(' ')
-      expect(hints()[0]).toBe('Space Show')
+      expect(hints()[0]).toBe('Show (Space)')
       press(' ')
-      expect(hints()).not.toContain('Space Show')
+      expect(hints()).not.toContain('Show (Space)')
       expect(answers().hasAttribute('data-nudge')).toBe(false)
       scrollTo.mockClear()
       press(' ')

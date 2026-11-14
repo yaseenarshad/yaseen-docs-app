@@ -153,12 +153,6 @@
 .card--editing > .card__head .card__edit {
   margin-left: 0;
 }
-/* "Done Esc Cmd + Enter" (YAZ-5001, in words YAZ-5035): the keys, quiet, as in Explore's head (`.explore__button kbd`). */
-.card__head .card__edit kbd {
-  margin-left: 4px;
-  font-family: inherit;
-  color: var(--fg-muted);
-}
 .card__more {
   font-size: 1.2em;
   line-height: 1.3;
@@ -200,8 +194,8 @@
   border-radius: 0;
   width: auto;
 }
-/* Edit card's key row (YAZ-5034): quiet, ONE line at the bottom of the card frame, keycaps as the Inbox's
-   (`.explore__foot kbd`). In the card only while it is edited (`cardKeyRow`). */
+/* Edit card's key row (YAZ-5034): quiet, ONE line at the bottom of the card frame, each part the app's hotkey label
+   (YAZ-5332, `.key-label`). In the card only while it is edited (`cardKeyRow`). */
 .card .card__keys {
   flex-wrap: nowrap;
   overflow: hidden;
@@ -213,7 +207,7 @@
   flex: none;
 }
 /* The row's own look (YAZ-5026 round 2): `.explore__foot` is in `explore.css`, which loads only with the card window or
-   the Inbox; in a page before either opened the row ran together ("hide wordCmd"). The same values, here. */
+   the Inbox; in a page before either opened the row ran together. The same values, here. */
 .card .card__keys {
   display: flex;
   gap: 14px;
@@ -221,13 +215,6 @@
   font-size: 11px;
   color: var(--fg-muted);
   border-top: 1px solid var(--border);
-}
-.card .card__keys kbd {
-  padding: 0 4px;
-  font-family: inherit;
-  font-size: 11px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
 }
 /* Edit card has the writing look (YAZ-5007, Yaseen's decision): the page's font, no line numbers or fold arrows, the
    rendered card's padding (`.card__body`), so Edit card / Done does not jump. Other code blocks keep the code look.

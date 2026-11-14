@@ -104,7 +104,6 @@ it('YAZ-5026 round 2: a card`s lists, read (the page, the card window, the Inbox
 it('YAZ-5026 round 2: Edit card`s key row has its own look in the page (explore.css loads only with the card window or the Inbox)', () => {
   const row = rules(cardCss, '.card .card__keys').find((r) => /display:\s*flex/.test(r.body))!
   expect(row.body).toMatch(/gap:\s*14px/)
-  expect(rules(cardCss, '.card .card__keys kbd').some((r) => /font-family:\s*inherit/.test(r.body) && /border:/.test(r.body))).toBe(true)
 })
 
 it('YAZ-5051: the line between two sides is clear — dashed, across the card, darker than its borders, unlike a rule in the text; the Inbox gives it more room, edge to edge', () => {

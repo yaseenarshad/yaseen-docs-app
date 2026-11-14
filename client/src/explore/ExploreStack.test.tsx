@@ -211,7 +211,8 @@ describe('the explore stack', () => {
     expect(layers()).toHaveLength(1)
     expect(top().dataset.kind).toBe('search')
     expect(document.activeElement).toBe(input())
-    expect(top().querySelector('.explore__foot')?.textContent).toContain('open')
+    // The app's hotkey label (YAZ-5332): the action first, its keys in brackets.
+    expect(top().querySelector('.explore__foot')?.textContent).toContain('Open in a tab (Cmd+Enter)')
   })
 
   it('a query ranks the index rows: a typo finds conjecture, a tag finds its page with the tag as the snippet; Enter opens the page ON TOP for reading, the search stays under it', async () => {
@@ -2025,7 +2026,7 @@ describe('YAZ-4939: a page layer in a Read only vault', () => {
     expect(chip()?.textContent).toMatch(/^Editing · [01]:\d\d$/)
     expect(head().querySelector('.read-only-chip__lock')?.textContent).toBe('Lock now')
     // The keys that lock again are in the hovers (YAZ-4997).
-    expect(head().querySelector('.read-only-chip__lock')?.getAttribute('title')).toBe('Lock this page again now (⌘↵ or Esc)')
+    expect(head().querySelector('.read-only-chip__lock')?.getAttribute('title')).toBe('Lock this page again now (Esc / Cmd+Enter)')
     // Lock now: back to reading, locked again.
     act(() => (head().querySelector('.read-only-chip__lock') as HTMLButtonElement).click())
     await flush()
@@ -2114,8 +2115,8 @@ describe('YAZ-4939: a page layer in a Read only vault', () => {
     act(() => choice('10 minutes').click())
     await flush()
     expect(top().querySelector('.explore__body--edit')).not.toBeNull()
-    // The edit head shows the key beside Done's Esc, in words (YAZ-5035): "Done Esc Cmd + Enter".
-    expect([...head().querySelectorAll('.explore__button kbd')].map((k) => k.textContent)).toEqual(expect.arrayContaining(['Esc', 'Cmd', 'Enter']))
+    // The edit head's Done says its keys, as the app's hotkey label (YAZ-5332).
+    expect([...head().querySelectorAll('.explore__button')].map((b) => b.textContent)).toContain('Done (Esc / Cmd+Enter)')
     key(top().querySelector('[data-editor]') as Element, { key: 'Enter', metaKey: true })
     await flush()
     await flush()

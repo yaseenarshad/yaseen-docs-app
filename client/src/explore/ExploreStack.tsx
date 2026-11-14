@@ -39,6 +39,7 @@ import { GRIPS, useLayerBoxes } from './layerBoxes'
 import { layoutForCount, pickRecent, TILE_MS, TILE_PLACES, tileBoxes, tileOrder, type ArrangeLayout, type TileLayout } from './tile'
 import { frontOrder, layerKindOf, MAX_LAYERS, PAGE_MS, newLayerId, pushLayer, raiseLayer, saveExploreZoom, savedExploreZoom, SEARCH_MS, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type ExploreRequest } from './layers'
 import { landOnCard } from '../editor/card/cardOpen'
+import { keyText } from '@shared/keyLabel'
 import './explore.css'
 
 export interface ExploreStackProps {
@@ -669,7 +670,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
           ))}
           {/* Tile (YAZ-4944): arrange the windows; ▾ opens Arrange (the layouts and which windows). */}
           <span className="explore__trail-tools">
-            <button type="button" className="explore__tile" disabled={fileCount < 2} title={fileCount < 2 ? 'Open two or more pages or boards to tile them' : 'Tile the pages and boards (⌥⌘2 … ⌥⌘5; ⌥⌘0: back to the stack)'} onMouseDown={(e) => e.preventDefault()} onClick={tileAuto}>
+            <button type="button" className="explore__tile" disabled={fileCount < 2} title={fileCount < 2 ? 'Open two or more pages or boards to tile them' : `Tile the pages and boards (${keyText('⌥⌘2')} … ${keyText('⌥⌘5')}; ${keyText('⌥⌘0')}: back to the stack)`} onMouseDown={(e) => e.preventDefault()} onClick={tileAuto}>
               <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
                 <rect x="0.5" y="0.5" width="4.75" height="4.75" rx="1" />
                 <rect x="6.75" y="0.5" width="4.75" height="4.75" rx="1" />

@@ -62,7 +62,7 @@ describe('Preview a card (YAZ-5152)', () => {
     act(() => el.querySelector<HTMLButtonElement>('.card-reviews__toggle')!.click())
     expect(el.querySelector('.card-reviews__delete')).toBeNull()
     expect(el.querySelector('.card-inbox__answer, .card-inbox__actions')).toBeNull()
-    expect(el.querySelector('.card-preview__foot')?.textContent).toBe('Preview · Esc to close')
+    expect(el.querySelector('.card-preview__foot')?.textContent).toBe('Preview · Close (Esc)')
   })
 
   it('Space at the end starts again from the front; a click on the card is a Space too', () => {

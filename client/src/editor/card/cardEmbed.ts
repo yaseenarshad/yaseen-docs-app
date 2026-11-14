@@ -31,7 +31,6 @@
 import { cleanCardTitle, withCardOff, withCardTitle } from '@shared/cardLine'
 import type { CardLink } from '@shared/cardLinks'
 import { BridgeRequestError, api } from '../../api'
-import { keyCapsDom } from '../../keys/keyWords'
 import { pageLabel, pathTitles } from '../../lib/pageLabel'
 import { changeCardLine, changeCardTextIn, cardInContent, type CardAtPage } from '../../review/cardFile'
 import type { MenuRow } from '../blockHandleMenu'
@@ -41,6 +40,7 @@ import { missingId, type WikilinkResolveSource } from '../wikilink/wikilinkPlugi
 import type { CardEditor } from './cardEditor'
 import { embedCard, recordAt, type CardEmbedHandle, type CardEmbedHost } from './embedCard'
 import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from './cardMedia'
+import { drawEditButton } from './cardEditKeys'
 import { openCardWindow, previewCard } from './cardOpen'
 import { mountCardTitle } from './cardTitle'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard } from './cardRender'
@@ -228,9 +228,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     drawTitle(card)
     set(idButton, card.id)
     set(state, isOff ? 'Archived' : '')
-    if (edit === null) set(editButton, 'Edit card')
-    else if (editButton.firstChild?.textContent !== 'Done') editButton.replaceChildren('Done', keyCapsDom('esc'), keyCapsDom('⌘↵'))
-    editButton.setAttribute('aria-label', edit === null ? 'Edit card' : 'Done')
+    drawEditButton(editButton, edit !== null)
   }
 
   /** Is the card a card file's (its title is its file's: only its tab renames it)? */

@@ -69,6 +69,7 @@ import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import './cardFileView.css'
 import { useUnit } from '../vault/unitWord'
+import { KeyLabel } from '../keys/KeyLabel'
 
 export interface CardFileViewProps {
   /** The file as the tab's one read gave it (`useFile`): a card file. */
@@ -335,7 +336,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               <PageTitle path={path} titles={titles} readOnly={locked || onRetitle === undefined} locked={locked && 'card'} onRetitle={(title) => onRetitle?.(path, title, 'file')} onArrowDown={giveKeysBack} />
               {(canEdit || (card !== null && lockedBase)) && !editing && (
                 <button type="button" className="card-file__button" data-card-file-edit onMouseDown={(e) => e.preventDefault()} onClick={startEdit}>
-                  Edit card <kbd>E</kbd>
+                  <KeyLabel action="Edit card" keys="E" />
                 </button>
               )}
               <CardFileMore sections={sections} />

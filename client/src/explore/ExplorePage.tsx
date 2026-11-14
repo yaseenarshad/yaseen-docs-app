@@ -44,7 +44,8 @@ import { useTimedUnlock } from '../editor/useTimedUnlock'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { landOn } from '../editor/toc/tocMotion'
 import { cardBlockViewOfDom } from '../editor/card/cardBlockView'
-import { KeyCaps } from '../keys/KeyCaps'
+import { KeyLabel } from '../keys/KeyLabel'
+import { DONE_KEYS, withKeys } from '@shared/keyLabel'
 
 /** The vault the page is in: what its links resolve against. */
 export interface ExploreVault {
@@ -134,11 +135,11 @@ export const keepFocus = (event: ReactMouseEvent) => event.preventDefault()
 export function ExploreSteps({ steps }: { steps: LayerSteps }) {
   return (
     <span className="explore__steps" data-fold-part="steps">
-      <button type="button" className="explore__step" title="Previous search result (← or ⌘⌥↑)" aria-label="Previous search result" disabled={!steps.prev} onMouseDown={keepFocus} onClick={() => steps.onStep(-1)}>
+      <button type="button" className="explore__step" title={withKeys('Previous search result', '← / ⌘⌥↑')} aria-label="Previous search result" disabled={!steps.prev} onMouseDown={keepFocus} onClick={() => steps.onStep(-1)}>
         ‹
       </button>
       <span className="explore__count">{steps.place === 0 ? '' : `${steps.place}/${steps.count}`}</span>
-      <button type="button" className="explore__step" title="Next search result (→ or ⌘⌥↓)" aria-label="Next search result" disabled={!steps.next} onMouseDown={keepFocus} onClick={() => steps.onStep(1)}>
+      <button type="button" className="explore__step" title={withKeys('Next search result', '→ / ⌘⌥↓')} aria-label="Next search result" disabled={!steps.next} onMouseDown={keepFocus} onClick={() => steps.onStep(1)}>
         ›
       </button>
     </span>
@@ -547,13 +548,13 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
               {foldAll}
             </span>
           )}
-          {/* No "Reading" label (YAZ-4944): reading is the normal state; "Edit E" says what you can do. */}
+          {/* No "Reading" label (YAZ-4944): reading is the normal state; "Edit (E)" says what you can do. */}
           {mode === 'read' ? (
             <>
               {page && chip}
               {page && (
-                <button type="button" className="explore__button" data-fold-part="edit" onClick={edit} title={unit('Edit this page here (E)')}>
-                  Edit<kbd>E</kbd>
+                <button type="button" className="explore__button" data-fold-part="edit" onClick={edit} title={withKeys(unit('Edit this page here'), 'E')}>
+                  <KeyLabel action="Edit" keys="E" />
                 </button>
               )}
             </>
@@ -566,15 +567,13 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
                 </span>
               )}
               {/* Done (item 5): back to reading, as Esc and ⌘↵ (YAZ-4988) do; the page saved as you typed. In a Read only vault all three lock again at once (YAZ-4997). */}
-              <button type="button" className="explore__button" data-fold-part="edit" onClick={leaveEdit} title={locked ? 'Save, lock again and read (Esc or ⌘↵)' : 'Back to reading (Esc or ⌘↵)'}>
-                {/* The keys in words (YAZ-5035): "Done Esc Cmd + Enter". The title keeps the symbols, as a menu does. */}
-                Done
-                <KeyCaps keys="esc" />
-                <KeyCaps keys="⌘↵" />
+              <button type="button" className="explore__button" data-fold-part="edit" onClick={leaveEdit} title={withKeys(locked ? 'Save, lock again and read' : 'Back to reading', DONE_KEYS)}>
+                {/* The app's hotkey label (YAZ-5332): "Done (Esc / Cmd+Enter)". */}
+                <KeyLabel action="Done" keys={DONE_KEYS} />
               </button>
             </>
           )}
-          <button type="button" className="explore__button" data-fold-part="open" onClick={onOpenInTab} title={fromInbox ? 'Open in a tab and close the stack' : 'Open in a tab and close the stack (⌘↵)'} aria-label="Open in a tab">
+          <button type="button" className="explore__button" data-fold-part="open" onClick={onOpenInTab} title={fromInbox ? 'Open in a tab and close the stack' : withKeys('Open in a tab and close the stack', '⌘↵')} aria-label="Open in a tab">
             ↗
           </button>
         </span>
