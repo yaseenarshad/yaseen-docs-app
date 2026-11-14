@@ -98,7 +98,7 @@ describe('YAZ-5047: the Type column (`file.kind`): Page, Card, Folder', () => {
     for (const cardSettings of [{ ...DEFAULT_REVIEW_SETTINGS, enabled: false }, undefined]) expect(kinds({ cardSettings })[2]).toEqual(['Capital of France', 'page'])
   })
 
-  it('the formula value `file.kind` is `card` for a card file; a page stays `page` (until YAZ-5036)', () => {
+  it('the formula value `file.kind` is `card` for a card file; a page is `page` (YAZ-5036)', () => {
     const view = { type: 'table' as const, name: 'T', order: ['file.name', 'formula.k'] }
     const values = runView({ views: [view], formulas: { k: 'file.kind' } }, view, recs.slice(0, 2), { now: NOW }).rows.map((r) => r.values['formula.k'])
     expect(values).toEqual(['page', 'card'])

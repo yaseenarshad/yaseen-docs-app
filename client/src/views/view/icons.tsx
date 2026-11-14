@@ -184,6 +184,16 @@ export const FolderIcon = ({ size, className }: { size: number; className?: stri
   </svg>
 )
 
+/** An inbox tray, as Mochi draws it: one shape for the sidebar's Inbox row (YAZ-5131) and the Inbox's "All cards" (`cardInboxIcons`). */
+export const INBOX_TRAY_PATH = 'M2.5 9.5 4 3.5h8l1.5 6v3h-11zM2.5 9.5h3.2l.8 1.5h3l.8-1.5h3.2'
+
+/** The sidebar's Inbox row (YAZ-5131): the tray at the sidebar's 14px and line, before the word. */
+export const InboxIcon = ({ className }: { className?: string }) => (
+  <svg {...svg} className={className}>
+    <path d={INBOX_TRAY_PATH} />
+  </svg>
+)
+
 /** The tab row's "More tabs" button (YAZ-3273 D2): three dots, filled, at the tabs' 15px. */
 export const MoreIcon = () => (
   <svg {...svg} width={15} height={15}>

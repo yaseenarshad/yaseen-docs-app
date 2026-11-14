@@ -27,6 +27,17 @@ describe('the rename', () => {
       expect(renameText(text, at('a.ts'))).toBe(text)
   })
 
+  it('a help line keeps "note"; a BEM modifier `--note` (a kind of layer) moves to `--page`', () => {
+    for (const text of ['.storage__file-note', '.image-studio__filter-note', '.settings-section__note--muted']) expect(renameText(text, at('a.css'))).toBe(text)
+    expect(renameText('.explore__layer--note,\n.explore__layer--board', at('a.css'))).toBe('.explore__layer--page,\n.explore__layer--board')
+  })
+
+  it('never reads the word-choice files, even on a branch whose copy has no skip-file marker', () => {
+    for (const file of ['client/src/vault/unitWord.ts', 'client/src/vault/unitWord.test.tsx', 'client/src/settings/UnitWordControl.tsx', 'client/src/settings/UnitWordControl.test.tsx'])
+      expect(skipped(file)).toBe(true)
+    expect(skipped('client/src/vault/unitWordOther.ts')).toBe(false)
+  })
+
   it('keeps the Bases namespace of a view, and moves a page key and a code name', () => {
     expect(renameText("filters: 'note.status == 1', key.startsWith('note.'), `note.${k}`, note[\"a b\"]", at('a.txt'))).toBe("filters: 'note.status == 1', key.startsWith('note.'), `note.${k}`, note[\"a b\"]")
     expect(renameText("rowShortcuts(ctx, 'note.bold'), const x = note.querySelector('p')", at('a.ts'))).toBe("rowShortcuts(ctx, 'page.bold'), const x = page.querySelector('p')")

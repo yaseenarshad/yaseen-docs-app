@@ -10,7 +10,7 @@ import { cardBlock, cardRecords, cardTime, cardReviewsOf, pageCards, parseCardLi
 import { cardState } from '@shared/cardSchedule'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
-import { useCardReview, type CardReviewApi } from './useCardReview'
+import { cardPlace, useCardReview, type CardReviewApi } from './useCardReview'
 import { api } from '../api'
 import { storage } from '../lib/storage'
 
@@ -261,7 +261,7 @@ describe('useCardReview', () => {
     expect(review.session?.from).toEqual(['Cells'])
   })
 
-  it('YAZ-5017 round 2: `place` is the CURRENT card`s vault › folders, by title (no page: the card`s head shows it); it changes between cards of two folders', async () => {
+  it('YAZ-5017 round 2, YAZ-5132: `place` is the CURRENT card`s vault › folders › page, by title (the one breadcrumb: the head has no "in <page>"); it changes between cards of two folders', async () => {
     page('Bio/Deep/More.md', ['A {{second}} new card', 'WIKI-5'])
     source.folders = [scan(`${ROOT}/Bio/Deep/.folder.md`, '')]
     source.folders[0].title = 'Deep down'
@@ -270,20 +270,38 @@ describe('useCardReview', () => {
       await act(async () => review.start())
       // WIKI-1 (Geo.md, due) first, then the new cards: WIKI-3 (Bio/Cells.md), WIKI-5 (Bio/Deep/More.md).
       // A page at the vault's top: the vault alone.
-      expect(review.session?.place).toEqual([{ kind: 'vault', label: 'vault', path: ROOT }])
+      expect(review.session?.place).toEqual([
+        { kind: 'vault', label: 'vault', path: ROOT },
+        { kind: 'page', label: 'Geo', path: `${ROOT}/Geo.md` },
+      ])
       act(() => review.move(1))
       expect(review.session?.place.map((p) => [p.kind, p.label, p.path])).toEqual([
         ['vault', 'vault', ROOT],
         ['folder', 'Bio', `${ROOT}/Bio`],
+        ['page', 'Cells', `${ROOT}/Bio/Cells.md`],
       ])
       act(() => review.move(1))
-      expect(review.session?.place.map((p) => p.label)).toEqual(['vault', 'Bio', 'Deep down'])
+      expect(review.session?.place.map((p) => p.label)).toEqual(['vault', 'Bio', 'Deep down', 'More'])
       expect(review.session?.place[2].path).toBe(`${ROOT}/Bio/Deep`)
       // The scope stays what is under review, apart from the card's place.
       expect(review.session?.from).toEqual(['vault'])
     } finally {
       source.folders = []
     }
+  })
+
+  it('YAZ-5132: a card FILE`s place is its folders only — its name is its title, which the head shows (and hides while `notitle` hides it)', () => {
+    const file = { ...scan(`${ROOT}/Bio/Mitosis.md`, ''), kind: 'card' as const, title: 'Mitosis' }
+    const pageRecord = scan(`${ROOT}/Bio/Cells.md`, '')
+    expect(cardPlace(ROOT, 'vault', [], [file, pageRecord], file.path).map((p) => [p.kind, p.label])).toEqual([
+      ['vault', 'vault'],
+      ['folder', 'Bio'],
+    ])
+    expect(cardPlace(ROOT, 'vault', [], [file, pageRecord], pageRecord.path).map((p) => [p.kind, p.label])).toEqual([
+      ['vault', 'vault'],
+      ['folder', 'Bio'],
+      ['page', 'Cells'],
+    ])
   })
 
   it('YAZ-5028: Up next — only the cards marked `next`, new or reviewed, never `off`; "n of m" follows it; an answer takes the card out', async () => {

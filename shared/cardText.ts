@@ -6,16 +6,20 @@
  * walk, `fences.ts`). Pure: no DOM.
  */
 import { lineKinds, maskCode } from './fences'
+import { withLf } from './lineEnds'
 
-/** A side break: `---` alone on its line (spaces around it allowed). */
-const SIDE_BREAK_RE = /^[ \t]*---[ \t]*$/
+/** A side break: `---` alone on its line (spaces around it allowed, and the `\r` of a Windows line end, YAZ-5146). */
+const SIDE_BREAK_RE = /^[ \t]*---[ \t]*\r?$/
 /** A hidden word: `{{word}}`, or Mochi's and Anki's numbered form `{{1::word}}` / `{{c1::word}}`, read as `{{word}}`. */
 const HIDDEN_RE = /\{\{(?:c?\d+::)?([\s\S]*?)\}\}/g
 
-/** The sides of a card, in order, each without the blank lines around it. A card with no break has one side. */
+/**
+ * The sides of a card, in order, each without the blank lines around it. A card with no break has one side. Each side
+ * has `\n` alone, also from a text that still holds a Windows line end's `\r` (the editor's, YAZ-5146).
+ */
 export function cardSides(text: string): string[] {
   const sides: string[][] = [[]]
-  const lines = text.split('\n')
+  const lines = withLf(text).split('\n')
   const kinds = lineKinds(lines)
   lines.forEach((line, i) => {
     if (kinds[i] === 'text' && SIDE_BREAK_RE.test(line)) sides.push([])

@@ -8,12 +8,12 @@
  *    closes as any tab does (its ✕, ⌘W): no × of its own, and Esc does not close it.
  *  - The top row (YAZ-5017, `CardInboxBar`): the filter "All cards ▾" (All cards, Due today, New cards, with counts)
  *    with what is under review by it ("· in spanish-words"), then the CURRENT card's place, vault › folder › page, each
- *    part a link (`openPlace`: the folder page, or the page in a tab), and "3 of 12" of the filter's cards on the right.
+ *    part a link with its icon (YAZ-5132: the one breadcrumb; `openPlace`: the folder page; the page as O), and "3 of 12" of the filter's cards on the right.
  *  - Above the card, outside its frame (YAZ-5027): the state chip (YAZ-5018, as Mochi's: "New card", "Due today",
  *    "Due · 3 days ago"), then (YAZ-5051: the card frame holds only the card) THE HEAD (YAZ-5044): "Title · ID", the
- *    card ID small and grey (a click copies it, D20); a card in a page adds a quiet "in <page>", a link that opens the
- *    page (O too); a card file (YAZ-5037) adds nothing, its title is the link, and it and O open it in Explore
- *    ("Open card"). Then the chip "Up next ×" for a card at the top of the Inbox (YAZ-4999 D3). A card of more than one
+ *    card ID small and grey (a click copies it, D20). A card in a page says its page in the top row's ONE breadcrumb
+ *    (YAZ-5132: no "in <page>" here), whose page part opens it as O does; a card file (YAZ-5037): its title is the
+ *    link, and it and O open it in Explore (YAZ-5145, "Open card"). Then the chip "Up next ×" for a card at the top of the Inbox (YAZ-4999 D3). A card of more than one
  *    side says "Side 1 of 2" on the row's right (YAZ-5048), and the key row's Space says "Next side" when the next Space shows a side.
  *  - SCROLL (YAZ-5049): the word a Space shows, or the side it adds, comes into view, gliding; never centred. Round 2
  *    (as Mochi): the card is one long page — no scroll bar of its own; the Inbox's view scrolls, the top row stays on
@@ -63,8 +63,8 @@
  *    it again), pauses while the Inbox is not in front and over any stretch of "Pause the timer after" with no key or
  *    mouse; the answer writes its active seconds on its review part (`… good 13s`). The top row says today's work
  *    across the vault, "Today: 31 cards · 9 min" (`session.today`, from the index), and the done screen says it too.
- *    TIME SO FAR (YAZ-5130, `TodayWork`): the time hides behind a small clock by default (a click shows it), or shows,
- *    or is off, by Settings › Review › Time so far. The timer and the saved seconds do not change with it.
+ *    TIME SO FAR (YAZ-5130, `TodayWork`): the time hides behind a small clock by default (round 2: only its hover box
+ *    shows it, and a keyboard focus), or shows, or is off, by Settings › Review › Time so far. The timer and the saved seconds do not change with it.
  *  - REVIEWS AT THE BOTTOM OF THE LAST SIDE (YAZ-5105, as Mochi; it amends YAZ-5000, which took them out of the Inbox):
  *    a card with reviews has the Reviews strip ("✓ 4 Reviews") right under the card, outside its frame (round 2): the
  *    card window's own `CardReviews`, closed until asked for, with no delete here. Round 3: it shows as soon as the
@@ -128,7 +128,7 @@ export interface CardInboxProps {
   /** A plain click on a link in the card: the page on top. */
   openLayer: (path: string) => void
   onNotice: (message: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void
-  /** A part of the top row's card place (YAZ-5017 round 2): the vault's or a folder's page, or the page, in a tab. */
+  /** A folder of the top row's card place (YAZ-5017 round 2): the vault's or a folder's page, in a tab. The page part opens as O does. */
   openPlace?: (path: string) => void
 }
 
@@ -246,9 +246,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   const cardKey = card === null ? null : `${session.position}\n${card.path}\n${card.id}`
   // YAZ-5033: the active seconds on this card, from the moment its text shows; read at the answer.
   const answerSeconds = useAnswerTimer(card?.page == null ? null : cardKey, shown, review.settings.pauseAfter)
-  // Time so far (YAZ-5130): hidden behind a click by default; one click shows it in the top row and on the done screen.
-  const [timeOpen, setTimeOpen] = useState(false)
-  const time = { mode: review.settings.timeSoFar, open: timeOpen, setOpen: setTimeOpen }
+  // Time so far (YAZ-5130): hidden in the clock's hover box by default (round 2: hover only, never a click).
+  const time = review.settings.timeSoFar
 
   // The sides and their hidden words, once per card text.
   const counts = useMemo(() => (text === null ? [] : cardSides(text).map(hiddenCount)), [text])
@@ -430,12 +429,12 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
 
   return (
     <div ref={rootRef} className="card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`}>
-      <CardInboxBar session={session} setFilter={review.setFilter} addCards={review.addCards} resetCards={review.resetCards} openPlace={openPlace} time={time} />
+      <CardInboxBar session={session} setFilter={review.setFilter} addCards={review.addCards} resetCards={review.resetCards} openPlace={(part) => (part.kind === 'page' ? openPage(part.path) : openPlace?.(part.path))} time={time} />
       <div ref={columnRef} className="card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
         {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height
             with no chip (the done screen), so the card does not move. YAZ-5051 (Yaseen: "so that the card is just pure"):
-            the head sits here too, after the chip — YAZ-5044 "Title · ID" (a click on the ID copies it), "in <page>" for
-            a card in a page (O opens it) — with "Up next ×"; the card frame holds only the card. A long name gives way first. */}
+            the head sits here too, after the chip — YAZ-5044 "Title · ID" (a click on the ID copies it) — with "Up next ×";
+            the card frame holds only the card. YAZ-5132: no "in <page>": the top row's breadcrumb ends with the page. A long name gives way first. */}
         <div className="card-inbox__above">
           {card !== null && (
             <>
@@ -456,14 +455,6 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                   </>
                 )}
                 <CardId id={card.id} onNotice={onNotice} />
-                {!cardFile && (
-                  <span className="card-inbox__in">
-                    {'in '}
-                    <button type="button" className="card-strip__page card-inbox__page" onMouseDown={(e) => e.preventDefault()} onClick={() => openPage(card.path)}>
-                      {nameOf(card.path)}
-                    </button>
-                  </span>
-                )}
                 {card.page?.next === true && <CardNextChip onRemove={() => void review.setNext(card.path, card.id, false)} />}
               </span>
             </>

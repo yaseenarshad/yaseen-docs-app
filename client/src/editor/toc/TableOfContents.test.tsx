@@ -47,18 +47,9 @@ describe('namesShow: names or lines', () => {
     expect(namesShow('off', 5000, 1040)).toBe(false)
   })
 
-  it('the column widths are app.css\'s --content-max-width values: a width that changes there must change here', () => {
-    /** What the `.app` rule for one content width gives the text column: its px, or Infinity for `none`. */
-    const columnMax = (selector: string): number => {
-      const value = appCss.match(new RegExp(`${selector.replace(/[.[\]]/g, '\\$&')}\\s*\\{[^}]*--content-max-width:\\s*([^;]+);`, 's'))?.[1].trim()
-      if (value === undefined) throw new Error(`no --content-max-width in ${selector}`)
-      return value === 'none' ? Infinity : Number(value.replace(/px$/, ''))
-    }
-    expect(COLUMN_MAX).toEqual({
-      narrow: columnMax('.app'),
-      medium: columnMax(".app[data-content-width='medium']"),
-      full: columnMax(".app[data-content-width='full']"),
-    })
+  it('the column widths are the pages\' column (YAZ-5144): the text\'s widest and app.css\'s 48 px sides', () => {
+    expect(appCss).toMatch(/--content-max-width:\s*calc\(var\(--content-text-width\) \+ 96px\)/)
+    expect(COLUMN_MAX).toEqual({ narrow: 640 + 96, medium: 900 + 96, full: Infinity })
   })
 })
 
@@ -69,12 +60,12 @@ describe('namesRoom: how wide the names column may get (YAZ-2752 D2, D3)', () =>
     expect([700, 820, 980, 981, 4000].map((page) => namesRoom('pinned', page, COLUMN_MAX.narrow))).toEqual([200, 320, 480, 480, 480])
     // The content width does not count for pinned names.
     expect(namesRoom('pinned', 900, COLUMN_MAX.full)).toBe(400)
-    // "Pin default" Off, a narrow column (1040) and a medium one (1440).
-    expect([1240, 1360, 1520, 1521, 4000].map((page) => namesRoom('auto', page, COLUMN_MAX.narrow))).toEqual([200, 320, 480, 480, 480])
-    expect([1640, 1760, 1920, 4000].map((page) => namesRoom('auto', page, COLUMN_MAX.medium))).toEqual([200, 320, 480, 480])
+    // "Pin default" Off, a narrow column and a medium one.
+    expect([200, 320, 480, 481, 4000].map((m) => namesRoom('auto', NARROW + m, COLUMN_MAX.narrow))).toEqual([200, 320, 480, 480, 480])
+    expect([200, 320, 480, 4000].map((m) => namesRoom('auto', COLUMN_MAX.medium + m, COLUMN_MAX.medium))).toEqual([200, 320, 480, 480])
     // The page's own scrollbar (11px in the real app) is not margin: a column that took it would narrow the text.
     // Where that leaves less than the 200px `namesShow` gave the names, the column is still 200, as it was before YAZ-2752.
-    expect([1240, 1250, 1297, 1531, 1532].map((page) => namesRoom('auto', page, COLUMN_MAX.narrow, 11))).toEqual([200, 200, 246, 480, 480])
+    expect([200, 210, 257, 491, 492].map((m) => namesRoom('auto', NARROW + m, COLUMN_MAX.narrow, 11))).toEqual([200, 200, 246, 480, 480])
     // It does not count for pinned names: they are allowed to narrow the text.
     expect(namesRoom('pinned', 820, COLUMN_MAX.narrow, 11)).toBe(320)
   })
@@ -250,6 +241,9 @@ describe('railPitch: the rail must fit', () => {
 })
 
 // ---------- the component ----------
+
+/** The narrow column, its sides in (YAZ-5144): a page this wide plus the names' room shows names with "Pin default" Off. */
+const NARROW = COLUMN_MAX.narrow
 
 const HEADINGS: TocRow[] = [
   { level: 1, text: 'Part 1' },
@@ -749,7 +743,7 @@ describe('the wheel over the table of contents moves ONE thing', () => {
 
 describe('names: the column', () => {
   it('auto with room for the text column and the names: data-names, the names at once, no button', () => {
-    const m = mount('auto', HEADINGS, 1040 + TOC_WIDTH)
+    const m = mount('auto', HEADINGS, NARROW + TOC_WIDTH)
     expect(nav(m)?.hasAttribute('data-names')).toBe(true)
     expect(names(m).map((name) => name.textContent)).toEqual(['Part 1', 'Section A', 'Deep dive', 'Section B', 'Part 2'])
     expect(lines(m)).toHaveLength(0)
@@ -757,11 +751,11 @@ describe('names: the column', () => {
   })
 
   it('auto one pixel short of that: lines', () => {
-    expect(nav(mount('auto', HEADINGS, 1040 + TOC_WIDTH - 1))?.hasAttribute('data-names')).toBe(false)
+    expect(nav(mount('auto', HEADINGS, NARROW + TOC_WIDTH - 1))?.hasAttribute('data-names')).toBe(false)
   })
 
-  it('auto reads the content width setting: a medium column needs 1640px, a full one never gets names', () => {
-    const m = mount('auto', HEADINGS, 1500)
+  it('auto reads the content width setting: a medium column needs its width and the names\', a full one never gets names', () => {
+    const m = mount('auto', HEADINGS, COLUMN_MAX.medium + TOC_WIDTH - 1)
     expect(nav(m)?.hasAttribute('data-names')).toBe(true)
     m.render('auto', 'medium')
     expect(nav(m)?.hasAttribute('data-names')).toBe(false)
@@ -809,14 +803,14 @@ describe('names: the column', () => {
 
   it('"Unpin" and "Pin" are offered only where they change what the reader sees, each with its pin and its tooltip', () => {
     // "Pin default" On, and "Pin default" Off would give the names here too: nothing to unpin.
-    const roomy = mount('pinned', HEADINGS, 1040 + TOC_WIDTH)
+    const roomy = mount('pinned', HEADINGS, NARROW + TOC_WIDTH)
     expect(nav(roomy)?.hasAttribute('data-names')).toBe(true)
     expect(buttonNamed(roomy, 'Unpin')).toBeUndefined()
     // The same window with a medium column: the names stand only because of "Pin default" On.
     roomy.render('pinned', 'medium')
     expect(buttonNamed(roomy, 'Unpin')).toBeDefined()
     // One pixel short of room, and a full-width column at any width: "Pin default" Off would give lines.
-    const tight = mount('pinned', HEADINGS, 1040 + TOC_WIDTH - 1)
+    const tight = mount('pinned', HEADINGS, NARROW + TOC_WIDTH - 1)
     const unpin = buttonNamed(tight, 'Unpin')
     expect(unpin?.title).toBe('Unpin: go back to the small lines')
     expect(unpin?.querySelector('svg')).not.toBeNull()
@@ -940,7 +934,7 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
   })
 
   it('the edge is there wherever the names are, in both modes, and nowhere else; it takes the mouse and never the keyboard', () => {
-    for (const m of [mount('pinned', HEADINGS, 900), mount('auto', HEADINGS, 1040 + TOC_WIDTH)]) {
+    for (const m of [mount('pinned', HEADINGS, 900), mount('auto', HEADINGS, NARROW + TOC_WIDTH)]) {
       expect(nav(m)?.hasAttribute('data-names')).toBe(true)
       expect(edge(m)).not.toBeNull()
       expect(nav(m)?.firstElementChild).toBe(edge(m))
@@ -961,7 +955,7 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
       expect(document.activeElement).toBe(names(m)[0])
     }
     // The small lines and their card have none, pinned or not; and no table of contents, no edge.
-    for (const m of [mount('auto', HEADINGS, 1040 + TOC_WIDTH - 1), mount('pinned', HEADINGS, NAMES_FLOOR - 1)]) {
+    for (const m of [mount('auto', HEADINGS, NARROW + TOC_WIDTH - 1), mount('pinned', HEADINGS, NAMES_FLOOR - 1)]) {
       click(rail(m))
       expect(card(m)).not.toBeNull()
       expect(edge(m)).toBeNull()
@@ -1003,25 +997,25 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
     expect(widthOf(pinned)).toBe('')
 
     // "Pin default" Off: the column stops at the empty margin, so the text is never narrower.
-    const auto = mount('auto', HEADINGS, 1360, 400)
+    const auto = mount('auto', HEADINGS, NARROW + 320, 400)
     expect(widthOf(auto)).toBe('320px')
-    resize(auto, 1520)
+    resize(auto, NARROW + 480)
     expect(widthOf(auto)).toBe('400px')
     // The same window, pinned: the room is the one of "Pin default" On.
-    resize(auto, 1360)
+    resize(auto, NARROW + 320)
     auto.render('pinned')
     expect(widthOf(auto)).toBe('400px')
     auto.render('off')
     expect(widthOf(auto)).toBe('')
 
     // A saved 160 still needs 200px of margin before the names show; then the column is 160px.
-    const slim = mount('auto', HEADINGS, 1040 + TOC_WIDTH - 1, 160)
+    const slim = mount('auto', HEADINGS, NARROW + TOC_WIDTH - 1, 160)
     expect(nav(slim)?.hasAttribute('data-names')).toBe(false)
-    resize(slim, 1040 + TOC_WIDTH)
+    resize(slim, NARROW + TOC_WIDTH)
     expect(nav(slim)?.hasAttribute('data-names')).toBe(true)
     expect(widthOf(slim)).toBe('160px')
     // And a saved 480 does not take the names away from a page that has 200px of margin.
-    const wide = mount('auto', HEADINGS, 1040 + TOC_WIDTH, 480)
+    const wide = mount('auto', HEADINGS, NARROW + TOC_WIDTH, 480)
     expect(nav(wide)?.hasAttribute('data-names')).toBe(true)
     expect(widthOf(wide)).toBe('200px')
 
@@ -1101,13 +1095,13 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
 
     // 900px pinned: the text keeps 500, so the names stop at 400.
     expect(dragBothWays(mount('pinned', HEADINGS, 900))).toEqual({ widest: '400px', narrowest: '160px' })
-    // 1360px with a 1040px column: 320px of margin, and the names take no more than that.
-    expect(dragBothWays(mount('auto', HEADINGS, 1360))).toEqual({ widest: '320px', narrowest: '160px' })
+    // 320px of margin beside a narrow column, and the names take no more than that.
+    expect(dragBothWays(mount('auto', HEADINGS, NARROW + 320))).toEqual({ widest: '320px', narrowest: '160px' })
     // At the first width that shows names at all, the margin is the 200 they start with.
-    expect(dragBothWays(mount('auto', HEADINGS, 1040 + TOC_WIDTH))).toEqual({ widest: '200px', narrowest: '160px' })
+    expect(dragBothWays(mount('auto', HEADINGS, NARROW + TOC_WIDTH))).toEqual({ widest: '200px', narrowest: '160px' })
 
     // Saved 400 in a page with room for 320: the drag starts from the 320 it shows, and saves where it ends.
-    const cut = mount('auto', HEADINGS, 1360, 400)
+    const cut = mount('auto', HEADINGS, NARROW + 320, 400)
     press(cut, 1000)
     moveTo(1020)
     expect(widthOf(cut)).toBe('300px')
@@ -1117,7 +1111,7 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
 
   it('a release that changed nothing saves nothing: a press alone, a double-click, a trip out and back — and a right press starts no drag', () => {
     // Saved 400, shown 320: a click on the edge must not make the 320 the saved width.
-    const m = mount('auto', HEADINGS, 1360, 400)
+    const m = mount('auto', HEADINGS, NARROW + 320, 400)
     press(m, 1000)
     release()
     act(() => {
@@ -1888,7 +1882,7 @@ describe('folds (YAZ-3939)', () => {
   })
 
   it('D4: in a pinned column too narrow for auto, "Unpin", the zoom and the fold-all button share the top row, "Unpin" first', () => {
-    const m = mount('pinned', TREE, 1040 + TOC_WIDTH - 1)
+    const m = mount('pinned', TREE, NARROW + TOC_WIDTH - 1)
     const tools = m.section.querySelector('.toc__tools')
     expect([...(tools?.querySelectorAll('button') ?? [])].map((el) => el.getAttribute('aria-label') ?? el.textContent)).toEqual(['Unpin', 'Zoom the table of contents out', '100%', 'Zoom the table of contents in', 'Collapse all'])
   })
@@ -2074,7 +2068,7 @@ describe('the zoom of the names (YAZ-3939 D7–D10, demo 5B)', () => {
   })
 
   it('D7: with "Unpin" in a narrow column, and in the card, the zoom is an icon that opens a box; Esc and a click outside close it, and Esc there leaves the table of contents open', () => {
-    const narrow = mount('pinned', PARENTS, 1040 + TOC_WIDTH - 1, TOC_MIN_W)
+    const narrow = mount('pinned', PARENTS, NARROW + TOC_WIDTH - 1, TOC_MIN_W)
     expect(narrow.section.querySelector('.toc__zoom .zoom-stepper')).toBeNull()
     const icon = zoomButton(narrow, 'Table of contents zoom')
     expect(icon.getAttribute('aria-label')).toBe('Table of contents zoom: 100%')
@@ -2093,7 +2087,7 @@ describe('the zoom of the names (YAZ-3939 D7–D10, demo 5B)', () => {
     })
     expect(narrow.section.querySelector('.toc__zoom-box')).toBeNull()
     // Without "Unpin" the same width has room for "− 100% +".
-    const roomy = mount('pinned', PARENTS, 1040 + TOC_WIDTH + 200, TOC_MIN_W)
+    const roomy = mount('pinned', PARENTS, NARROW + TOC_WIDTH + 200, TOC_MIN_W)
     expect(roomy.section.querySelector('.toc__zoom .zoom-stepper')).not.toBeNull()
     // The card is narrow: the icon, in its header.
     const lined = mount('auto', PARENTS, NAMES_FLOOR)

@@ -173,18 +173,12 @@ button {
 }
 
 .app {
-  --content-max-width: 1040px;
+  /* Content width (YAZ-5144): the text's widest, `--content-text-width` (App, `lib/contentWidth.ts`), and the column's
+     48 px sides. Full is the window. */
+  --content-max-width: calc(var(--content-text-width) + 96px);
   display: flex;
   height: 100%;
   overflow: hidden;
-}
-
-.app[data-content-width='medium'] {
-  --content-max-width: 1440px;
-}
-
-.app[data-content-width='full'] {
-  --content-max-width: none;
 }
 
 /* ---------- editor ---------- */
@@ -2160,25 +2154,64 @@ body.drag-held iframe {
   color: var(--fg-muted);
 }
 
-/* The Inbox row (YAZ-2322): the search bar's row as a button, the count pushed right by
-   `.tree__count`; it wears the open file's fill while a review is open. */
+/* The Inbox row (YAZ-2322): a button above the tabs, the count pushed right by `.tree__count`; it wears the open
+   file's fill while a review is open. YAZ-5131 (as Mochi's, no chevron): a place, not a plain line — a rounded row
+   inset from the sidebar's edges, the tray icon before the name, a touch of weight. With cards left for today the
+   count is a filled accent pill, the row's one mark; with none, no count: the row stays quiet. */
 .sidebar__inbox {
   flex: none;
   display: flex;
   align-items: center;
-  padding: 6px 10px 6px 14px;
-  font-size: 12.5px;
-  border-bottom: 1px solid var(--border);
+  gap: 8px;
+  box-sizing: border-box;
+  /* The pill's height: the row does not move when the count comes or goes. */
+  min-height: 28px;
+  margin: 6px 8px 4px;
+  padding: 5px 8px 5px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
 }
 
 .sidebar__inbox:hover {
   background: var(--bg-hover);
 }
 
+.sidebar__inbox-icon {
+  flex: none;
+  color: var(--fg-muted);
+}
+
+.sidebar__inbox-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar__inbox .sidebar__inbox-count {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
+}
+
 .sidebar__inbox--active,
 .sidebar__inbox--active:hover {
   color: var(--accent);
   background: var(--accent-soft);
+}
+
+.sidebar__inbox--active .sidebar__inbox-icon {
+  color: var(--accent);
 }
 
 /* Lens tabs (YAZ-847) — chrome v2 ROW 1, under the header: Files, Search (YAZ-2638 D2), Focus, Favorites.

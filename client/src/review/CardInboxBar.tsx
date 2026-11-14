@@ -3,10 +3,12 @@
  * Due today, New cards, each with how many are left; Up next's count in the Up next chip's colours, grey at 0), then what
  * is under review, quiet, by it ("· in spanish-words": "Folder / Sub", or the page) ONLY when the review is narrower than
  * the vault (Review this folder / page; YAZ-5017 round 2, Yaseen: "isnt this redundant?"); then the CURRENT card's place,
- * one card at a time: the vault and its folders, "Cards Demo › spanish-words" — no page name, the card's head shows
- * it — each part a link (its folder page: `openPlace`, the folder chips' door); a long path gives way in the middle, "…".
+ * one card at a time, the Inbox's ONE breadcrumb (YAZ-5132, Yaseen: "we should just have the breadcrumb at the top"):
+ * the vault, its folders and the page, "Cards Demo › spanish-words › Verbs", each with the tree's own icon (`FileIcon`:
+ * a folder's, a page's); a card file ends at its folder (its name is its title, the head's). Each part is a link: a
+ * folder its folder page (`openPlace`, the folder chips' door), the page as O opens it. A long path gives way in the middle, "…".
  * On the right today's work across the vault, quiet ("Today: 31 cards · 9 min", YAZ-5033; the time hidden behind a
- * click by default, YAZ-5130, `TodayWork`), then "3 of 12", which counts the filter's cards. Under it the progress bar (YAZ-5020, as
+ * clock's hover box by default, YAZ-5130, `TodayWork`), then "3 of 12", which counts the filter's cards. Under it the progress bar (YAZ-5020, as
  * Mochi's): it fills as the session's cards are answered, a Forgot in red, a Remembered in grey.
  *
  * Add more for today (YAZ-5042): the counts stay in this one menu. Round 2 (Yaseen: "2 and then its whatever the
@@ -24,9 +26,11 @@ import { Fragment, useRef, useState, type MouseEvent, type ReactElement } from '
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import type { CardRating } from '@shared/cardLine'
 import type { AddKind } from '@shared/cardSchedule'
-import type { CardFilter, CardReviewSession } from './useCardReview'
+import type { CardFilter, CardPlacePart, CardReviewSession } from './useCardReview'
+import { FileIcon } from '../sidebar/FileIcon'
 import { todayCards } from './reviewTime'
-import { TodayWork, type TimeView } from './TodayWork'
+import { TodayWork } from './TodayWork'
+import type { TimeSoFar } from '@shared/reviews'
 import { AddMoreField } from './AddMoreField'
 import { ArchiveIcon, ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
 
@@ -62,10 +66,10 @@ interface CardInboxBarProps {
   addCards?: (kind: AddKind, count?: number) => void
   /** Reset (YAZ-5042 round 2): today's number of the kind back to the Settings number. */
   resetCards?: (kind: AddKind) => void
-  /** A click on a part of the card's place: the folder page of the vault or a folder, or the page, in a tab. */
-  openPlace?: (path: string) => void
-  /** Time so far (YAZ-5130): how today's time shows. */
-  time: TimeView
+  /** A click on a part of the card's place: the folder page of the vault or a folder, or the page. */
+  openPlace?: (part: CardPlacePart) => void
+  /** Time so far (YAZ-5130): how today's time shows, Settings › Review. */
+  time: TimeSoFar
 }
 
 export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace, time }: CardInboxBarProps) {
@@ -121,8 +125,9 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
                     ›
                   </span>
                 )}
-                <button type="button" className="card-inbox__path-part" data-kind={part.kind} disabled={openPlace === undefined} onMouseDown={(e) => e.preventDefault()} onClick={() => openPlace?.(part.path)}>
-                  {part.label}
+                <button type="button" className="card-inbox__path-part" data-kind={part.kind} disabled={openPlace === undefined} onMouseDown={(e) => e.preventDefault()} onClick={() => openPlace?.(part)}>
+                  <FileIcon path={part.path} folder={part.kind !== 'page'} />
+                  <span className="card-inbox__path-name">{part.label}</span>
                 </button>
               </Fragment>
             ))}

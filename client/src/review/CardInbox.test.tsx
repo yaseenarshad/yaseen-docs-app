@@ -115,14 +115,11 @@ afterEach(() => {
 })
 
 describe('the Inbox screen (YAZ-4962)', () => {
-  it('YAZ-5044: the head reads "WIKI-9 in Cards" while the title holds a hidden word (it would tell the answer), then "Capital of France · WIKI-9 in Cards"; the hint row shows only keys that act now', async () => {
+  it('YAZ-5044: the head reads "WIKI-9" while the title holds a hidden word (it would tell the answer), then "Capital of France · WIKI-9" (YAZ-5132: the page is in the breadcrumb, not "in Cards"); the hint row shows only keys that act now', async () => {
     mount(TWO_SIDES)
     expect(el.querySelector('.explore__title')).toBeNull()
     const head = () => [...el.querySelector('.card-inbox__head')!.children].map((c) => [c.className, c.textContent])
-    expect(head()).toEqual([
-      ['card__id', 'WIKI-9'],
-      ['card-inbox__in', 'in Cards'],
-    ])
+    expect(head()).toEqual([['card__id', 'WIKI-9']])
     // YAZ-5017: "3 of 12" moved to the top row, on the right.
     expect(el.querySelector('.card-inbox__bar .card-inbox__place')?.textContent).toBe('3 of 12')
     const hints = () => [...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)
@@ -136,7 +133,6 @@ describe('the Inbox screen (YAZ-4962)', () => {
       ['card-inbox__name', 'Capital of France'],
       ['card-inbox__dot', '·'],
       ['card__id', 'WIKI-9'],
-      ['card-inbox__in', 'in Cards'],
     ])
   })
 
@@ -146,7 +142,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     const card = session.card!
     session = { ...session, card: { ...card, next: true, page: { ...card.page!, next: true } } }
     render()
-    const chip = el.querySelector('.card-inbox__head > .card__id + .card-inbox__in + .card__next')!
+    const chip = el.querySelector('.card-inbox__head > .card__id + .card__next')!
     expect(chip.textContent).toBe('Up next×')
     act(() => chip.querySelector<HTMLButtonElement>('[aria-label="Remove from top of Inbox"]')!.click())
     expect(review.setNext).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', false)
@@ -528,7 +524,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect([...column.querySelector('.card-inbox__dock')!.children].map((c) => c.className)).toEqual(['card-inbox__actions', 'card-inbox__last'])
   })
 
-  it('YAZ-5027: the state chip sits right above the card, outside its head and its frame; the head ends with "in" and the page name, for a new and a due card; the row stays with no card', () => {
+  it('YAZ-5027: the state chip sits right above the card, outside its head and its frame; the head ends with the ID (YAZ-5132: no "in <page>"), for a new and a due card; the row stays with no card', () => {
     mount(TWO_SIDES)
     const check = (words: string) => {
       const chip = el.querySelector('.card-inbox__state')!
@@ -537,7 +533,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
       expect(head.contains(chip)).toBe(false)
       expect(el.querySelector('.card-inbox__panel')!.contains(chip)).toBe(false)
       expect(chip.parentElement!.matches('.card-inbox__column > .card-inbox__above:first-child')).toBe(true)
-      expect(head.querySelector('.card-inbox__in > .card-inbox__page')!.textContent).toBe('Cards')
+      expect(head.lastElementChild!.className).toBe('card__id')
     }
     check('New card')
     session = { ...session, card: { ...session.card!, isNew: false, due: Date.now() - 3 * 86_400_000 } }
@@ -874,13 +870,21 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(long).toBe(`✓ Remembered · ${'A very long card title that goes on and'}… (DEMO-51) · back in 9 days`)
   })
 
-  it('YAZ-5017 round 2: the top row shows the CURRENT card`s place, vault › folders (no page name); it changes with the card; each part opens through `openPlace`; the scope shows only when narrower than the vault', () => {
+  it('YAZ-5017 round 2, YAZ-5132: the top row shows the CURRENT card`s place, vault › folders › page, the ONE breadcrumb, each part with its folder or page icon; it changes with the card; a folder opens through `openPlace`, the page as O does; the scope shows only when narrower than the vault', () => {
     mount(TWO_SIDES)
     const parts = () => [...el.querySelectorAll<HTMLButtonElement>('.card-inbox__path-part')]
-    session = { ...session, place: [{ kind: 'vault', label: 'Demo', path: '/v' }, { kind: 'folder', label: 'spanish-words', path: '/v/spanish-words' }] }
+    session = { ...session, place: [{ kind: 'vault', label: 'Demo', path: '/v' }, { kind: 'folder', label: 'spanish-words', path: '/v/spanish-words' }, { kind: 'page', label: 'Verbs', path: PATH }] }
     render()
-    expect(parts().map((p) => p.textContent)).toEqual(['Demo', 'spanish-words'])
-    expect(el.querySelector('.card-inbox__path')?.getAttribute('title')).toBe('Demo › spanish-words')
+    expect(parts().map((p) => p.textContent)).toEqual(['Demo', 'spanish-words', 'Verbs'])
+    // YAZ-5132: the tree's own icons (YAZ-5100), a folder's for the vault and the folders, a page's for the page.
+    expect(parts().map((p) => p.querySelector('.file-icon')?.classList.contains('file-icon--dir'))).toEqual([true, true, false])
+    expect(parts()[2].querySelector('.file-icon--file')).not.toBeNull()
+    expect(el.querySelector('.card-inbox__path')?.getAttribute('title')).toBe('Demo › spanish-words › Verbs')
+    // The head no longer says "in Verbs": one place, said once.
+    expect(el.querySelector('.card-inbox__in')).toBeNull()
+    act(() => parts()[2].click())
+    expect(props.openPage).toHaveBeenLastCalledWith(PATH)
+    expect(props.openPlace).not.toHaveBeenCalled()
     // The whole vault under review: no "· in …" (Yaseen: "isnt this redundant?").
     expect(el.querySelector('.card-inbox__from')).toBeNull()
     act(() => parts()[1].click())
@@ -930,7 +934,7 @@ describe('the title on the front (YAZ-5030)', () => {
     expect(shown()).toEqual(['France', 'Paris'])
     // Fully shown: the head says which card it was; the card itself still has no title.
     expect(label()).toBe('Capital of France')
-    expect(el.querySelector('.card-inbox__head')!.textContent).toBe('Capital of France·WIKI-9in Cards')
+    expect(el.querySelector('.card-inbox__head')!.textContent).toBe('Capital of France·WIKI-9')
     expect(el.querySelectorAll('.card-inbox__title')).toHaveLength(0)
     expect(text()).not.toContain('Capital of France')
   })
@@ -958,7 +962,7 @@ describe('the title on the front (YAZ-5030)', () => {
   })
 })
 
-describe('YAZ-5044 the Inbox head: "Title · ID", "in <page>" for a card in a page, "Open card" for a card file', () => {
+describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the breadcrumb`s last part), "Open card" for a card file', () => {
   const PLAIN = 'Capital of France\n\nWhat is the capital of {{France}}?'
   const headText = () => el.querySelector('.card-inbox__head')!.textContent
   const hints = () => [...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)
@@ -971,12 +975,16 @@ describe('YAZ-5044 the Inbox head: "Title · ID", "in <page>" for a card in a pa
     render()
   }
 
-  it('a card in a page: "Capital of France · WIKI-9 in Cards" from the start (no hidden word in its title); "in Cards" is quiet and a link, and O opens the page', () => {
+  it('a card in a page: "Capital of France · WIKI-9" from the start (no hidden word in its title), no "in Cards"; the breadcrumb`s page part and O open the page', () => {
     mount(PLAIN)
-    expect(headText()).toBe('Capital of France·WIKI-9in Cards')
+    session = { ...session, place: [{ kind: 'vault', label: 'Demo', path: '/v' }, { kind: 'page', label: 'Cards', path: PATH }] }
+    render()
+    expect(headText()).toBe('Capital of France·WIKI-9')
+    expect(el.querySelector('.card-inbox__in')).toBeNull()
     expect(el.querySelector('.card-inbox__name')!.tagName).toBe('SPAN')
-    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__in > .card-inbox__page')!.click())
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__path-part[data-kind="page"]')!.click())
     expect(props.openPage).toHaveBeenCalledExactlyOnceWith(PATH)
+    expect(props.openPlace).not.toHaveBeenCalled()
     press('o')
     expect(props.openPage).toHaveBeenCalledTimes(2)
     expect(hints()).toContain('O Open page')
@@ -1010,9 +1018,9 @@ describe('YAZ-5044 the Inbox head: "Title · ID", "in <page>" for a card in a pa
     expect(headText()).toBe('Capital of France·WIKI-9')
   })
 
-  it('while the card`s page is still read: the ID and the page, no title yet', () => {
+  it('while the card`s page is still read: the ID, no title yet', () => {
     mount(null)
-    expect(headText()).toBe('WIKI-9in Cards')
+    expect(headText()).toBe('WIKI-9')
   })
 })
 
@@ -1252,40 +1260,66 @@ describe("YAZ-5033: today's total — the top row and the done screen", () => {
   })
 })
 
-describe('YAZ-5130: Time so far — hidden behind a click (the default), shown, or off', () => {
+describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default), shown, or off', () => {
   const today = { cards: 31, reviews: 35, seconds: 9 * 60 + 10 }
   const bar = () => el.querySelector('.card-inbox__bar .card-inbox__today')
-  const clock = () => el.querySelector<HTMLButtonElement>('.card-inbox__bar .card-inbox__time')
+  const clock = () => el.querySelector<HTMLElement>('.card-inbox__bar .card-inbox__time')
+  const tip = () => document.body.querySelector<HTMLElement>('.hover-tip[role="tooltip"]')
+  /** The mouse on the clock, past the hover box's wait. */
+  const hover = (on: Element) => {
+    vi.useFakeTimers()
+    try {
+      act(() => void on.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })))
+      act(() => void vi.advanceTimersByTime(400))
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+  const unhover = (on: Element) => act(() => void on.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })))
 
-  it('hidden: the cards, then a clock in the time\'s place; a click shows the time, a second click hides it again', () => {
+  it('hidden (round 2, Yaseen: "its not a click"): a clock in the time`s place; the time shows ONLY in its hover box while the mouse is on it; a click shows nothing that stays', () => {
     mount(TWO_SIDES)
     expect(review.settings.timeSoFar).toBe('hidden')
     session = { ...session, today }
     render()
     expect(bar()?.textContent).toBe('Today: 31 cards · ')
-    expect(clock()?.getAttribute('aria-label')).toBe('Show time so far')
-    expect(clock()?.getAttribute('aria-pressed')).toBe('false')
     expect(clock()?.querySelector('svg')).not.toBeNull()
-    act(() => clock()!.click())
-    expect(bar()?.textContent).toBe('Today: 31 cards · 9 min')
-    expect(clock()?.getAttribute('aria-label')).toBe('Hide time so far')
-    expect(clock()?.getAttribute('aria-pressed')).toBe('true')
-    act(() => clock()!.click())
+    expect(clock()?.getAttribute('aria-label')).toBe('Time so far: 9 min')
+    expect(tip()).toBeNull()
+    hover(clock()!)
+    expect(tip()?.textContent).toBe('Time so far: 9 min')
+    // Never on screen: the line keeps the clock.
     expect(bar()?.textContent).toBe('Today: 31 cards · ')
-    // The keyboard stays in the Inbox: a press on the clock takes no focus.
+    unhover(clock()!)
+    expect(tip()).toBeNull()
+    // A click is no toggle: the line stays the same, and the press takes no focus (the keyboard stays in the Inbox).
     const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
     clock()!.dispatchEvent(down)
     expect(down.defaultPrevented).toBe(true)
+    act(() => clock()!.click())
+    expect(bar()?.textContent).toBe('Today: 31 cards · ')
+    expect(tip()).toBeNull()
   })
 
-  it('hidden: the done screen hides the time the same way, and a click there shows it', () => {
+  it('hidden: the keyboard reaches the clock; its focus shows the box, the blur hides it', () => {
+    mount(TWO_SIDES)
+    session = { ...session, today }
+    render()
+    expect(clock()?.tabIndex).toBe(0)
+    act(() => clock()!.focus())
+    expect(tip()?.textContent).toBe('Time so far: 9 min')
+    act(() => clock()!.blur())
+    expect(tip()).toBeNull()
+  })
+
+  it('hidden: the done screen has the same clock and box', () => {
     mount(TWO_SIDES)
     session = { ...session, card: null, today }
     render()
     const done = () => el.querySelector('.card-inbox__done-today')
     expect(done()?.textContent).toBe('Today: 31 cards · ')
-    act(() => done()!.querySelector<HTMLButtonElement>('.card-inbox__time')!.click())
-    expect(done()?.textContent).toBe('Today: 31 cards · 9 min')
+    hover(done()!.querySelector('.card-inbox__time')!)
+    expect(tip()?.textContent).toBe('Time so far: 9 min')
   })
 
   it('hidden with no seconds today: no clock, as there is no time to show', () => {
@@ -1552,12 +1586,12 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
     expect(hints()[0]).toBe('Space Next side')
   })
 
-  it('YAZ-5051: the head (YAZ-5044: the ID and "in" the page) sits in the row above the card, after the state chip; the card frame holds only the card', () => {
+  it('YAZ-5051: the head (YAZ-5044: the ID; YAZ-5132: the page is in the breadcrumb) sits in the row above the card, after the state chip; the card frame holds only the card', () => {
     mount(TWO_SIDES)
     const above = el.querySelector('.card-inbox__above')!
     const panel = el.querySelector('.card-inbox__panel')!
     expect([...above.children].map((c) => c.className).slice(0, 2)).toEqual(['card-inbox__state', 'card-inbox__head'])
-    expect([...above.querySelector('.card-inbox__head')!.children].map((c) => c.textContent)).toEqual(['WIKI-9', 'in Cards'])
+    expect([...above.querySelector('.card-inbox__head')!.children].map((c) => c.textContent)).toEqual(['WIKI-9'])
     expect(panel.querySelector('.card-inbox__head, .explore__head, .card-inbox__page, .card__id')).toBeNull()
   })
 

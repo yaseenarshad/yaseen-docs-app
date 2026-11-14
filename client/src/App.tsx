@@ -74,6 +74,7 @@ import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import type { CardReviewResume, CardReviewScope, CardReviewSession } from './review/useCardReview'
 import { cardLookAttrs, cardSpacingVars } from './review/cardSpacing'
+import { contentWidthVars } from './lib/contentWidth'
 import { nextHiddenAttrs, nextHiddenVars } from './review/nextHidden'
 import { QuickLook } from './search/QuickLook'
 import { SettingsDialog } from './settings/SettingsDialog'
@@ -893,6 +894,8 @@ export function App() {
     '--edit-block-gap': `${settings.blockGap}px`,
     // Settings › Review › Card spacing (YAZ-5050): Custom only; Same as pages sets none, so a card reads the two above.
     ...cardSpacingVars(settings),
+    // Appearance › Content width and Settings › Review › Card width (YAZ-5144): the text's widest, pages and cards.
+    ...contentWidthVars(settings),
     // Settings › Review › Mark the next hidden word (YAZ-5053 round 3): a picked colour only; the theme's default otherwise.
     ...nextHiddenVars(settings),
     '--thread-width': `${settings.threadWidth}px`,
