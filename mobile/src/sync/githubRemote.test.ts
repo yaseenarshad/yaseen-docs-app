@@ -136,20 +136,21 @@ describe('typed failures, fed with the real answers of proof 1B', () => {
 
   it('the hourly limit: 403 with x-ratelimit-remaining 0 is RATE_LIMITED with the reset time', async () => {
     const s = await syncSetup({ 'a.md': 'A' })
-    s.github.rateLimitedUntil = 1_800_000_000
+    const reset = Math.floor(Date.now() / 1000) + 600
+    s.github.rateLimitedUntil = reset
     const error = await failure(s.remote.head())
     expect(error.code).toBe('RATE_LIMITED')
-    expect(error.resetAt).toBe(1_800_000_000_000)
+    expect(error.resetAt).toBe(reset * 1000)
   })
 
-  it('GitHub\'s secondary limit with Retry-After: RATE_LIMITED at that time', async () => {
+  it('GitHub\'s secondary limit with Retry-After: RATE_LIMITED at that time, but never under 1 minute (YAZ-5174)', async () => {
     const now = 1_700_000_000_000
     const github = fakeGithub({ tokens: {}, repos: [] })
     github.interrupt = () => json(403, { message: 'You have exceeded a secondary rate limit. Please wait a few minutes before you try again.' }, { 'retry-after': '30' })
     const remote = githubRemote(githubClient(TOKEN, { fetch: github.fetch, now: () => now }), REPO, BRANCH)
     const error = await failure(remote.head())
     expect(error.code).toBe('RATE_LIMITED')
-    expect(error.resetAt).toBe(now + 30_000)
+    expect(error.resetAt).toBe(now + 60_000)
   })
 
   it('the secondary limit with NO Retry-After is RATE_LIMITED too, one minute on (GitHub\'s advice), not NO_ACCESS', async () => {

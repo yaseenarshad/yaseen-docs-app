@@ -265,10 +265,11 @@ describe('sendOutbox: errors keep the actions', () => {
     const t = await setup(FILES)
     const p = await phone(t.s)
     await p.add(answer('NC-2', 1))
-    t.s.github.rateLimitedUntil = 1_900_000_000
+    const until = Math.ceil(Date.now() / 1000) + 600
+    t.s.github.rateLimitedUntil = until
     const error = await p.send().catch((e: unknown) => e)
     expect(error).toBeInstanceOf(GithubError)
-    expect(error).toMatchObject({ code: 'RATE_LIMITED', resetAt: 1_900_000_000_000 })
+    expect(error).toMatchObject({ code: 'RATE_LIMITED', resetAt: until * 1000 })
     expect(p.box.waiting()).toHaveLength(1)
   })
 

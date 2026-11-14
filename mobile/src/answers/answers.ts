@@ -1,5 +1,5 @@
 import { cardsById } from '@shared/cardLinks'
-import { GithubError, SECONDARY_LIMIT_WAIT_MS, type GithubErrorCode } from '../github/client'
+import { GithubError, MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS, type GithubErrorCode } from '../github/client'
 import type { VaultStore } from '../store'
 import { SEND_AFTER_MS } from '../sync/cadence'
 import type { Clock, SyncEngine } from '../sync/engine'
@@ -107,6 +107,8 @@ export function createAnswers(options: AnswersOptions): Answers {
   let stopped = false
   /** Actions GitHub has, but the stored copy not yet (the pass after the commit failed): shown until the next pass. */
   let afterglow: CardOp[] = []
+  /** "Slow down" answers to a send in a row: each one doubles the wait, up to 1 hour, as the engine does (YAZ-5169). */
+  let slowedInRow = 0
   let state: AnswersState = { vault: null, waiting: 0, lost: [], sending: false, problem: null, retryAt: null, lastSentAt: null }
 
   const emit = (event: AnswersEvent) => {
@@ -184,6 +186,7 @@ export function createAnswers(options: AnswersOptions): Answers {
           return sendOutbox({ remote, store, vault: id, outbox: own, pass, now: clock.now, yieldToUi: options.yieldToUi })
         })
         if (report === null) return
+        slowedInRow = 0
         if (report.result === 'offline') return setState({ problem: 'OFFLINE', retryAt: null })
         if (!report.stored) {
           const still = new Set(own.waiting().map((w) => w.seq))
@@ -194,7 +197,10 @@ export function createAnswers(options: AnswersOptions): Answers {
       } catch (error) {
         const problem: SendProblem = error instanceof GithubError ? error.code : 'FAILED'
         if (problem === 'RATE_LIMITED') {
-          const retryAt = (error as GithubError).resetAt ?? clock.now() + SECONDARY_LIMIT_WAIT_MS
+          slowedInRow++
+          const backoff = Math.min(MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS * 2 ** Math.min(slowedInRow - 1, 16))
+          const given = ((error as GithubError).resetAt ?? clock.now()) - clock.now()
+          const retryAt = clock.now() + Math.min(MAX_RATE_WAIT_MS, Math.max(MIN_RATE_WAIT_MS, given, backoff))
           setState({ problem, retryAt })
           plan(retryAt)
         } else {

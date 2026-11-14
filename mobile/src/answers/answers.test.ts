@@ -151,6 +151,23 @@ describe('errors: the answers stay', () => {
     expect(t.answers.state()).toMatchObject({ waiting: 0, problem: null, retryAt: null })
   })
 
+  it('"slow down" again and again: each wait doubles (1, 2, 4 minutes), up to 1 hour, as the engine waits', async () => {
+    const t = await answersSetup()
+    await t.add(answer('NC-2', 1))
+    t.s.github.interrupt = (call) => (call.method !== 'GET' ? new Response(JSON.stringify({ message: 'You have exceeded a secondary rate limit' }), { status: 403 }) : undefined)
+    await t.tick(SEND_AFTER_MS)
+    const waits: number[] = []
+    for (let i = 0; i < 3; i++) {
+      const { retryAt } = t.answers.state()
+      waits.push(retryAt! - t.clock.now())
+      await t.tick(retryAt! - t.clock.now())
+    }
+    expect(waits).toEqual([60_000, 120_000, 240_000])
+    t.s.github.interrupt = null
+    await t.tick(t.answers.state().retryAt! - t.clock.now())
+    expect(t.answers.state()).toMatchObject({ waiting: 0, problem: null })
+  })
+
   it('a card that is gone: "1 answer could not be saved" with its title; the other answers go; Discard removes it', async () => {
     const t = await answersSetup()
     await t.add(answer('NC-2', 1))
