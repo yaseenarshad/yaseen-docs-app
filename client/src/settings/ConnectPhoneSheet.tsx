@@ -21,11 +21,11 @@ type View =
   | { kind: 'loading' }
   | { kind: 'shown'; repo: string; branch: string }
   | { kind: 'hidden' }
-  | { kind: 'problem'; problem: PhoneCodeProblem }
+  | { kind: 'problem'; problem: Exclude<PhoneCodeProblem, 'cancelled' | 'not-in-front'> }
   | { kind: 'failed' }
 
 /** Plain words for each vault that has no code. None holds a value from the token or the remote. */
-const PROBLEM_WORDS: Record<PhoneCodeProblem, string> = {
+const PROBLEM_WORDS: Record<Exclude<PhoneCodeProblem, 'cancelled' | 'not-in-front'>, string> = {
   'no-token': 'Save a GitHub token in Phone and friends first.',
   'no-git': 'Git is not on this Mac, so the app cannot find the repo of this vault.',
   'not-a-repo': 'This vault is not a git repo. The phone gets the vault from a GitHub repo, so the vault must be the top folder of one.',
@@ -55,11 +55,15 @@ export default function ConnectPhoneSheet({ root, seconds, onClose }: { root: st
     canvas.height = 0
   }, [])
 
+  /** YAZ-5218: main counts a code as shown until the dialog says it is gone; then this window may ask again. */
+  const tellMain = useCallback(() => void api.phone.hide().catch(() => undefined), [])
+
   const hide = useCallback(() => {
     attempt.current++
     wipe()
+    tellMain()
     setView((v) => (v.kind === 'shown' || v.kind === 'loading' ? { kind: 'hidden' } : v))
-  }, [wipe])
+  }, [wipe, tellMain])
 
   const show = useCallback(async () => {
     const id = ++attempt.current
@@ -73,7 +77,16 @@ export default function ConnectPhoneSheet({ root, seconds, onClose }: { root: st
     }
     if (id !== attempt.current) return
     if (!answer.ok) {
-      setView({ kind: 'problem', problem: answer.problem })
+      // Cancel in main's confirm, or the window was not in front when the code was made (YAZ-5217): hidden.
+      if (answer.problem === 'cancelled' || answer.problem === 'not-in-front') setView({ kind: 'hidden' })
+      else setView({ kind: 'problem', problem: answer.problem })
+      return
+    }
+    // YAZ-5217: the window may have lost the focus while the code was made (main's confirm, git, the QR chunk). A code
+    // never paints in a window that is not in front: it stays hidden, and main hears so.
+    if (!document.hasFocus() || document.visibilityState === 'hidden') {
+      tellMain()
+      setView({ kind: 'hidden' })
       return
     }
     toPaint.current = answer.grid
@@ -87,8 +100,9 @@ export default function ConnectPhoneSheet({ root, seconds, onClose }: { root: st
     return () => {
       attempt.current++
       wipe()
+      tellMain()
     }
-  }, [show, wipe])
+  }, [show, wipe, tellMain])
 
   // Paint as the canvas comes into the page, then let the grid go.
   useLayoutEffect(() => {

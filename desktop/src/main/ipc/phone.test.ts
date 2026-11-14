@@ -85,6 +85,7 @@ describe('phone:code (YAZ-5098)', () => {
     expect(Object.keys(CONTRACT.secrets).sort()).toEqual(['has', 'set'])
     expect(Object.keys(CONTRACT.phone)).toEqual(['code', 'hide'])
   })
+})
 
 describe('phone:code needs a real action that MAIN saw, and a confirm in main (YAZ-5218)', () => {
   it('no click or key that main saw: no grid, no confirm, no build', async () => {
