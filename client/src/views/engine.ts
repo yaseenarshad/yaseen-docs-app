@@ -10,7 +10,7 @@ import {
   compile, equals, evaluate, fromYaml, isTruthy, linkText, render,
 } from './expr'
 import { summarize } from './summaries'
-import { CARD_FIELD_LABELS, DEFAULT_CARD_ORDER, cardRowOfRecord, cardRowsOf, cardValues, isCardKey } from './cardRows'
+import { CARD_FIELD_LABELS, DEFAULT_CARD_ORDER, cardPropertyKeys, cardRowOfRecord, cardRowsOf, cardValues, isCardKey } from './cardRows'
 
 /**
  * Query engine for one Bases view (GRO-2133): filters → values → sort → limit → group → summaries
@@ -421,8 +421,14 @@ function orderInColumnSpelling(order: readonly string[], spelled: ReadonlyMap<st
  * (`comments` and `reviews` never reach here: the index drops them.)
  */
 export function propertyKeys(_def: ViewSet, view: ViewDef, records: readonly IndexRecord[], declared: readonly string[] = []): string[] {
-  // A view listing cards (YAZ-5319) has its own columns: the name and the card columns, never a page's property.
-  if (cardRowsOf(view)) return (view.cardOrder ?? DEFAULT_CARD_ORDER).filter((key) => key.startsWith('file.') || key.startsWith('formula.') || isCardKey(key))
+  // A view listing cards (YAZ-5319) has its own columns: the name, the card columns and the cards' own properties
+  // (YAZ-5385), never a page's property.
+  if (cardRowsOf(view)) {
+    const own = cardPropertyKeys(records)
+    // A page's column left in the card order never shows there: only a property some card holds does.
+    if (view.cardOrder !== undefined) return view.cardOrder.filter((key) => key.startsWith('file.') || key.startsWith('formula.') || isCardKey(key) || own.includes(key))
+    return [...DEFAULT_CARD_ORDER, ...own]
+  }
   // A page's view shows no card column: a card's are its rows' alone.
   if (view.order) return (declared.length === 0 ? [...view.order] : orderInColumnSpelling(view.order, spellings(declared))).filter((key) => !isCardKey(key))
   // A calendar card is small (YAZ-4857 item 4): with no column choice it shows the name alone, and the Columns panel says "Shown · 1".

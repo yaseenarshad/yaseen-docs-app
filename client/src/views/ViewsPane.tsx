@@ -39,11 +39,10 @@ import { Toolbar } from './view/Toolbar'
 import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { PAGE_VIEW_TYPE } from './pageView'
 import { NO_READ_ONLY, readOnlyTip, writableKey } from './readOnlyRows'
-import { type CardRow, cardRowOfRecord, cardRowRecords, cardRowsOf } from './cardRows'
+import { type CardRow, cardLineChange, cardRowOfRecord, cardRowRecords, cardRowsOf } from './cardRows'
 import { CardRows, type CardRowsValue } from './view/cardRowsContext'
 import { landOnCard } from '../editor/card/cardOpen'
 import { changeCardLine } from '../review/cardFile'
-import { type CardLine, withCardNext, withCardOff } from '@shared/cardLine'
 import { type HistoryStep, pageRef, valueHistory } from './view/valueHistory'
 import type { CardStyleWrite } from './view/CardStyleMenu'
 import { columnReservedKeys } from '../links/reservedKeys'
@@ -1042,15 +1041,14 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
 
   /**
    * A row's writes through the one door (`FolderHost.writeValues`). A card row's (YAZ-5319) go to its card line instead,
-   * in one write of its page (`changeCardLine`): Card status writes `off`, Card up next writes `next`.
+   * in one write of its page (`changeCardLine`, `cardLineChange`): Card status writes `off`, Card up next writes `next`, a
+   * card property its part (YAZ-5385).
    */
   const writeRowValues = (path: string, writes: readonly PropertyWrite[]): Promise<unknown> => {
     const card = cardRowAt?.get(path)
     if (card === undefined) return folder.writeValues(path, writes)
     if (readOnly.has(card.page)) return Promise.reject(new Error(readOnlyTip(unit)))
-    const change = (line: CardLine): CardLine =>
-      writes.reduce((l, w) => (w.key === 'card.status' ? withCardOff(l, w.value === 'Archived') : w.key === 'card.upNext' ? withCardNext(l, w.value === true) : l), line)
-    return changeCardLine(card.page, card.id, change, card.index)
+    return changeCardLine(card.page, card.id, cardLineChange(writes), card.index)
   }
   const writeValue = (path: string, key: string, value: unknown) => writeRowValues(path, [{ key, value }])
 

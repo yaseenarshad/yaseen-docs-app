@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { CardRecord } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
-import { cardRowRecords } from './cardRows'
+import { cardLineChange, cardRowRecords } from './cardRows'
+import { formatCardLine, parseCardLine } from '@shared/cardLine'
 import { defaultLabel, propertyKeys, runView } from './engine'
 import { DateValue } from './expr'
 import type { ViewDef, ViewSet } from './viewSchema'
@@ -99,6 +100,38 @@ describe('YAZ-5319: card rows', () => {
     expect(propertyKeys(def, pages, PAGES)).toEqual(['file.name', 'note.status'])
     // A page's column in the card columns never shows there.
     expect(propertyKeys(def, { ...CARDS, cardOrder: ['file.name', 'note.status', 'card.id'] }, [])).toEqual(['file.name', 'card.id'])
+  })
+
+  it('YAZ-5385: a card`s own properties are its row`s: a column each, after the card columns, that filters and sorts; the page`s never', () => {
+    const pages = [
+      record('Trip', { properties: { tags: ['page-tag'] }, cards: [card('GEO-1', { title: 'A', properties: { tags: ['europe', 'capitals'], level: 'A2' } }), card('GEO-2', { title: 'B', properties: { level: 'B1' } })] }),
+      record('GEO-3', { kind: 'card', cards: [card('GEO-3', { title: 'C' })] }),
+    ]
+    const rows = cardRowRecords(pages)
+    expect(rows.map((r) => r.properties)).toEqual([
+      { tags: ['europe', 'capitals'], level: 'A2', 'card.status': 'Active', 'card.upNext': false },
+      { level: 'B1', 'card.status': 'Active', 'card.upNext': false },
+      { 'card.status': 'Active', 'card.upNext': false },
+    ])
+    // By default: the name, the card columns, then each card property (no "Page tags": the page's own are not a card's).
+    expect(propertyKeys(DEF, CARDS, rows)).toEqual(['file.name', 'card.page', 'card.status', 'card.nextReview', 'card.lastReview', 'card.reviews', 'card.successRate', 'card.upNext', 'card.id', 'note.level', 'note.tags'])
+    // A view with its own card order keeps a card property it holds, and the menus offer the rest.
+    const own: ViewDef = { ...CARDS, cardOrder: ['file.name', 'note.level'] }
+    expect(propertyKeys({ views: [own] }, own, rows)).toEqual(['file.name', 'note.level'])
+    expect(allPropertyKeys({ views: [own] }, own, rows)).toEqual(['file.name', 'note.level', 'card.page', 'card.status', 'card.nextReview', 'card.lastReview', 'card.reviews', 'card.successRate', 'card.upNext', 'card.id', 'note.tags', 'file.folder'])
+    // Filter and sort as a page's column.
+    const filtered: ViewDef = { ...CARDS, filters: 'note.tags.contains("europe")' }
+    expect(runView({ views: [filtered] }, filtered, rows, { now: NOW }).rows.map((r) => r.record.title)).toEqual(['A'])
+    const sorted: ViewDef = { ...CARDS, sort: [{ property: 'note.level', direction: 'DESC' }] }
+    expect(runView({ views: [sorted] }, sorted, rows, { now: NOW }).rows.map((r) => r.record.title)).toEqual(['B', 'A', 'C'])
+  })
+
+  it('YAZ-5385: a row`s writes are its card line`s: Card status, Card up next, and a property set or cleared', () => {
+    const line = parseCardLine('<!-- card: GEO-1, title "A", level "A2", 2026-11-12T14:05Z good -->')!
+    const change = cardLineChange([{ key: 'level', value: 'B1' }, { key: 'tags', value: ['x'] }, { key: 'card.upNext', value: true }])
+    expect(formatCardLine(change(line))).toBe('<!-- card: GEO-1, title "A", level "B1", tags ["x"], next, 2026-11-12T14:05Z good -->')
+    expect(formatCardLine(cardLineChange([{ key: 'level', value: undefined }])(line))).toBe('<!-- card: GEO-1, title "A", 2026-11-12T14:05Z good -->')
+    expect(() => cardLineChange([{ key: 'next', value: 'x' }])(line)).toThrow()
   })
 
   it('offers the card columns, the Folder and the formulas; no page property (YAZ-5349 scopes card properties)', () => {
