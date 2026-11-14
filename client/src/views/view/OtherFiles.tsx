@@ -2,14 +2,14 @@
  * THE OTHER FILES TRAY (YAZ-4597, D43-D46): a collapsible section at the foot of a folder page, under every view tab,
  * because it belongs to the folder.
  *
- *  - ITS LINES (D44, D45): the files directly in the folder that are not notes — off the window's Files tree, which
- *    lists every file; the index has only notes — then the notes moved there (`other_files`). Each line has the
+ *  - ITS LINES (D44, D45): the files directly in the folder that are not pages — off the window's Files tree, which
+ *    lists every file; the index has only pages — then the pages moved there (`other_files`). Each line has the
  *    sidebar's icon, a type, the size and the modified date. The header counts them.
  *  - OPENING (D46): a click opens the file in this tab, through the app's opener for its kind (PDF, image, drawing,
  *    diagram, code); ⌘-click opens a background tab. The right-click is the views' row menu (`PageContextMenu`): Open,
- *    Open in new tab, Copy path, Reveal in Finder, and on a moved note "Move back to the table".
+ *    Open in new tab, Copy path, Reveal in Finder, and on a moved page "Move back to the table".
  *  - DRAG (D46): a view row dropped on the tray moves there (a row drag sets `text/plain` to its path, `groupDrag.ts`);
- *    a moved note dragged onto the view body moves back (`trayBackTarget`). No moves while the page is read only (D36).
+ *    a moved page dragged onto the view body moves back (`trayBackTarget`). No moves while the page is read only (D36).
  *  - OPEN OR CLOSED: per folder page, with the views' collapsed groups (`storage.getViewGroups`), under the page's own
  *    `<folder>::` key, which a folder rename carries.
  *  - A WHOLE SUBFOLDER (YAZ-4747 OF3): a folder moved here is one line with a chevron, closed at first. Open, it shows
@@ -18,7 +18,7 @@
  *    inside it has the plain menu.
  *  - HOVER (YAZ-4601 demo 13C): resting on a line opens the sidebar's hover panel beside it (`useCardPreview`), as a
  *    row of the views does, under "Preview rows on hover": a drawing's or diagram's picture, a text file's top with its
- *    colours, a moved note's top, a picture, a PDF's first page (13R; one rule, `hasHoverPreview`).
+ *    colours, a moved page's top, a picture, a PDF's first page (13R; one rule, `hasHoverPreview`).
  */
 import { Fragment, useMemo, useRef, useState, type CSSProperties, type ReactNode, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { BOARD_TYPE_NAME } from '@shared/fileKind'
@@ -39,17 +39,17 @@ export interface OtherFileLine {
   type: string
   size: number
   mtime: number
-  /** A note moved here (D44): it moves back to the table. */
-  note: boolean
+  /** A page moved here (D44): it moves back to the table. */
+  page: boolean
 }
 
 const TYPE_NAME: Record<Exclude<FileKind, 'markdown'>, string> = { text: 'Text', pdf: 'PDF', image: 'Image', drawing: BOARD_TYPE_NAME.drawing, diagram: BOARD_TYPE_NAME.diagram }
-/** A note's type name is the vault's word (YAZ-4938). */
-const noteType = (unit: UnitText): string => unit('Note')
+/** A page's type name is the vault's word (YAZ-4938). */
+const pageType = (unit: UnitText): string => unit('Page')
 
-/** The files in `nodes` that are not notes, in the tree's order. */
+/** The files in `nodes` that are not pages, in the tree's order. */
 const filesIn = (nodes: readonly TreeNode[]): OtherFileLine[] =>
-  nodes.flatMap((n) => (n.type === 'file' && n.kind !== 'markdown' ? [{ path: n.path, name: n.name, type: n.kind === null ? 'File' : TYPE_NAME[n.kind], size: n.size, mtime: n.mtime, note: false }] : []))
+  nodes.flatMap((n) => (n.type === 'file' && n.kind !== 'markdown' ? [{ path: n.path, name: n.name, type: n.kind === null ? 'File' : TYPE_NAME[n.kind], size: n.size, mtime: n.mtime, page: false }] : []))
 
 /** What `dir` holds in a Files tree of `root`: its children, or none when the tree does not list it. */
 export function folderNodes(tree: readonly TreeNode[], root: string, dir: string): readonly TreeNode[] {
@@ -62,17 +62,17 @@ export function folderNodes(tree: readonly TreeNode[], root: string, dir: string
   return []
 }
 
-/** The files directly in `dir` that are not notes (D44, D45), off a Files tree of `root`. A subfolder's files are its own page's. */
+/** The files directly in `dir` that are not pages (D44, D45), off a Files tree of `root`. A subfolder's files are its own page's. */
 export const folderFiles = (tree: readonly TreeNode[], root: string, dir: string): OtherFileLine[] => filesIn(folderNodes(tree, root, dir))
 
-/** A line inside a moved folder (YAZ-4747 OF3): every file, a note too (named without `.md`, as the sidebar names it), typed as the tray types them. */
-const nodeLine = (node: Extract<TreeNode, { type: 'file' }>, unit: UnitText): OtherFileLine => ({ path: node.path, name: node.kind === 'markdown' ? node.name.replace(/\.md$/i, '') : node.name, type: node.kind === null ? 'File' : node.kind === 'markdown' ? noteType(unit) : TYPE_NAME[node.kind], size: node.size, mtime: node.mtime, note: false })
+/** A line inside a moved folder (YAZ-4747 OF3): every file, a page too (named without `.md`, as the sidebar names it), typed as the tray types them. */
+const nodeLine = (node: Extract<TreeNode, { type: 'file' }>, unit: UnitText): OtherFileLine => ({ path: node.path, name: node.kind === 'markdown' ? node.name.replace(/\.md$/i, '') : node.name, type: node.kind === null ? 'File' : node.kind === 'markdown' ? pageType(unit) : TYPE_NAME[node.kind], size: node.size, mtime: node.mtime, page: false })
 
 /** A folder's lines, subfolders first (OF3): each `dir` node, then each file, in the tree's order within each. */
 const byFoldersFirst = (nodes: readonly TreeNode[]): TreeNode[] => [...nodes.filter((n) => n.type === 'dir'), ...nodes.filter((n) => n.type === 'file')]
 
-/** A moved note as a line. */
-export const noteLine = (record: IndexRecord, unit: UnitText = SAME_WORD): OtherFileLine => ({ path: record.path, name: record.title, type: noteType(unit), size: record.size, mtime: record.mtime, note: true })
+/** A moved page as a line. */
+export const pageLine = (record: IndexRecord, unit: UnitText = SAME_WORD): OtherFileLine => ({ path: record.path, name: record.title, type: pageType(unit), size: record.size, mtime: record.mtime, page: true })
 
 /** The tray's collapsed marker in the page's collapsed-groups entry. */
 const CLOSED = 'other-files'
@@ -85,12 +85,12 @@ export const OTHER_FILES_LIMIT = 200
 /** An open folder's marker in the same entry (YAZ-4747 OF3): folders start closed. */
 const OPEN_DIR = 'other-files-open:'
 
-/** The note being dragged out of the tray, between its dragstart and its drop or dragend. */
+/** The page being dragged out of the tray, between its dragstart and its drop or dragend. */
 let fromTray: string | null = null
 /** The tray drag's own payload (YAZ-4635 P2), `ViewTabs`' `VIEW_TAB_MIME` idiom: never `text/plain`, which the Page tab's editor would insert as text on a drop. */
-const TRAY_NOTE_MIME = 'application/x-yaseen-tray-note'
+const TRAY_PAGE_MIME = 'application/x-yaseen-tray-page'
 
-/** The view body as a drop target for a note dragged out of the tray (D46). Nothing while the page takes no moves. */
+/** The view body as a drop target for a page dragged out of the tray (D46). Nothing while the page takes no moves. */
 export function trayBackTarget(onMoveBack: ((path: string) => void) | null): Record<string, unknown> {
   if (onMoveBack === null) return {}
   return {
@@ -113,8 +113,8 @@ export interface OtherFilesProps {
   root: string
   /** The folder page's directory. */
   dir: string
-  /** The notes moved here, in `other_files` order. */
-  notes: readonly IndexRecord[]
+  /** The pages moved here, in `other_files` order. */
+  pages: readonly IndexRecord[]
   /** The subfolders moved here (YAZ-4747), in `other_files` order; "Move back to the table" takes a folder's directory. */
   folders?: readonly { dir: string; name: string }[]
   onOpen: (path: string) => void
@@ -122,7 +122,7 @@ export interface OtherFilesProps {
   onNotice?: (message: string) => void
   /** "Move back to the table"; null while the page is read only (D36). */
   onMoveBack: ((path: string) => void) | null
-  /** A dragged view row dropped here; null while the page is read only. The host checks the path is one of its notes. */
+  /** A dragged view row dropped here; null while the page is read only. The host checks the path is one of its pages. */
   onTakeRow: ((path: string) => void) | null
   /** "Preview rows on hover" (demo 13C): resting on a line shows the sidebar's panel beside it. Off = no dwell. */
   hoverPreview?: boolean
@@ -133,7 +133,7 @@ export interface OtherFilesProps {
 
 const NO_FOLDERS: readonly { dir: string; name: string }[] = []
 
-export function OtherFiles({ root, dir, notes, folders = NO_FOLDERS, onOpen, onOpenBackground, onNotice, onMoveBack, onTakeRow, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: OtherFilesProps) {
+export function OtherFiles({ root, dir, pages, folders = NO_FOLDERS, onOpen, onOpenBackground, onNotice, onMoveBack, onTakeRow, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: OtherFilesProps) {
   const unit = useUnit()
   const roots = useMemo(() => [root], [root])
   const [tree] = useLatestTrees(roots)
@@ -141,7 +141,7 @@ export function OtherFiles({ root, dir, notes, folders = NO_FOLDERS, onOpen, onO
   const listRef = useRef<HTMLUListElement>(null)
   const { store: hoverStore, hoverCard, leaveCard } = useCardPreview(hoverPreview, (path) => listRef.current?.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"]`) ?? null)
   const files = useMemo(() => (tree === null ? [] : folderFiles(tree.tree, root, dir)), [tree, root, dir])
-  const lines = useMemo(() => [...files, ...notes.map((record) => noteLine(record, unit))], [files, notes, unit])
+  const lines = useMemo(() => [...files, ...pages.map((record) => pageLine(record, unit))], [files, pages, unit])
   const key = `${dir}::`
   // One stored entry: the tray's closed marker, and each open folder's (OF3).
   const [marks, setMarks] = useState(() => storage.getViewGroups(root, key))
@@ -167,7 +167,7 @@ export function OtherFiles({ root, dir, notes, folders = NO_FOLDERS, onOpen, onO
       ? {}
       : {
           onDragOver: (e: ReactDragEvent) => {
-            // A note of the tray's own is no drop; any other drag must carry a path (`text/plain`).
+            // A page of the tray's own is no drop; any other drag must carry a path (`text/plain`).
             if (fromTray !== null || (e.dataTransfer != null && !e.dataTransfer.types.includes('text/plain'))) return
             e.preventDefault()
             if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
@@ -201,7 +201,7 @@ export function OtherFiles({ root, dir, notes, folders = NO_FOLDERS, onOpen, onO
           style={{ '--other-files-depth': depth } as CSSProperties}
           onContextMenu={(e) => {
             e.preventDefault()
-            setMenu({ x: e.clientX, y: e.clientY, line: { path: node.path, name: node.name, type: 'Folder', size: 0, mtime: 0, note: moved }, folder: true })
+            setMenu({ x: e.clientX, y: e.clientY, line: { path: node.path, name: node.name, type: 'Folder', size: 0, mtime: 0, page: moved }, folder: true })
           }}
         >
           <button type="button" className="other-files__name" title={node.path} aria-expanded={opened} onClick={() => flip(mark)}>
@@ -256,7 +256,7 @@ export function OtherFiles({ root, dir, notes, folders = NO_FOLDERS, onOpen, onO
       </div>
       {open &&
         (lines.length + folders.length === 0 ? (
-          <p className="other-files__empty">{unit('No other files. Drag a row here to move its note out of the views.')}</p>
+          <p className="other-files__empty">{unit('No other files. Drag a row here to move its page out of the views.')}</p>
         ) : (
           <ul className="other-files__list" ref={listRef}>
             {folders.map((f) => folderLines({ path: f.dir, name: f.name }, 0, true))}
@@ -271,12 +271,12 @@ export function OtherFiles({ root, dir, notes, folders = NO_FOLDERS, onOpen, onO
                   e.preventDefault()
                   setMenu({ x: e.clientX, y: e.clientY, line })
                 }}
-                {...(line.note && onMoveBack !== null
+                {...(line.page && onMoveBack !== null
                   ? {
                       draggable: true,
                       onDragStart: (e: ReactDragEvent) => {
                         fromTray = line.path
-                        e.dataTransfer?.setData(TRAY_NOTE_MIME, line.path)
+                        e.dataTransfer?.setData(TRAY_PAGE_MIME, line.path)
                         if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
                       },
                       onDragEnd: () => {
@@ -316,7 +316,7 @@ export function OtherFiles({ root, dir, notes, folders = NO_FOLDERS, onOpen, onO
           onNotice={onNotice}
           onClose={() => setMenu(null)}
           extra={
-            menu.line.note && onMoveBack !== null
+            menu.line.page && onMoveBack !== null
               ? [
                   <button
                     key="back"

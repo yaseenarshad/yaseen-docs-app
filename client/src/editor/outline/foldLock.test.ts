@@ -238,7 +238,7 @@ describe('a lock follows a rename by typing, as a fold does (YAZ-4155)', () => {
     return crepe.editor.action((ctx) => ctx.get(editorViewCtx))
   }
 
-  it('a heading: the reopened note with the new text has the lock', async () => {
+  it('a heading: the reopened page with the new text has the lock', async () => {
     let lockKeys: readonly string[] = []
     const view = await mount({ onLockedKeysChange: (keys) => (lockKeys = keys) })
     lock(view, heading(view, 'Other'))
@@ -247,7 +247,7 @@ describe('a lock follows a rename by typing, as a fold does (YAZ-4155)', () => {
     expect(isFoldLocked(reopened.state, heading(reopened, 'OYther'))).toBe(true)
   })
 
-  it('a bullet: the reopened note with the new text has the lock', async () => {
+  it('a bullet: the reopened page with the new text has the lock', async () => {
     let lockKeys: readonly string[] = []
     const view = await mount({ onLockedKeysChange: (keys) => (lockKeys = keys) })
     lock(view, item(view, 'Trevor'))

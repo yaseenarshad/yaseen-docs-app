@@ -1,4 +1,4 @@
-import { isNoteId } from '@shared/noteId'
+import { isPageId } from '@shared/pageId'
 import { splitLink, undecided } from '@shared/linkParts'
 import { LINK_VALUE_RE as WIKI_LINK, stripBrackets } from '@shared/linkResolver'
 import { parseIsoDate, renderDate, renderDuration } from './dates'
@@ -28,8 +28,8 @@ export class LinkValue {
   constructor(readonly target: string, readonly display?: string) {}
 }
 /**
- * What a link READS AS (YAZ-2293 D8 — the file stores a note's id, the app shows its title): the
- * hand-typed label, else the current title of the note its id names, else the target as written.
+ * What a link READS AS (YAZ-2293 D8 — the file stores a page's id, the app shows its title): the
+ * hand-typed label, else the current title of the page its id names, else the target as written.
  * `render`, the cells' chips and the sort all ask here, so they cannot disagree. No resolver is
  * the STORED form — what every write-back and persisted key passes.
  */
@@ -39,7 +39,7 @@ export function linkText(link: LinkValue, resolve?: Resolver): string {
   if (link.target.includes('|')) return splitLink(link.target, page => resolve(page) !== null).words ?? link.target
   // The id is the part before any `#heading`, which rides along as it does on a name.
   const id = link.target.split('#', 1)[0]
-  const title = isNoteId(id) ? resolve(id)?.record.title : undefined
+  const title = isPageId(id) ? resolve(id)?.record.title : undefined
   return title === undefined ? link.target : title + link.target.slice(id.length)
 }
 export class RegexValue {
@@ -49,7 +49,7 @@ export class ErrorValue {
   constructor(readonly message: string) {}
 }
 
-/** Minimal structural shape of a note record; the real IndexRecord (shared/types.ts) satisfies it. */
+/** Minimal structural shape of a page record; the real IndexRecord (shared/types.ts) satisfies it. */
 export interface FileRecordLike {
   path: string
   id?: string
@@ -76,12 +76,12 @@ export class FileValue {
 }
 
 export interface Scope {
-  note: Record<string, unknown>
+  page: Record<string, unknown>
   file: FileValue | null
   formulas: Record<string, string>
   this: FileValue | null
   /**
-   * Link target / path → note in the engine's record set (GRO-2132). Absent: `file()` and
+   * Link target / path → page in the engine's record set (GRO-2132). Absent: `file()` and
    * `asFile()` are ErrorValues and link matching stays textual.
    */
   resolve?: Resolver
@@ -92,7 +92,7 @@ export interface Scope {
   now?: number
   /** Settings › Folder pages › Week starts on, for `isThisWeek()`. Absent: Sunday. */
   weekStartsOn?: 'sunday' | 'monday'
-  /** Extra identifiers consulted before note properties, e.g. `values` in custom summaries (GRO-2134). */
+  /** Extra identifiers consulted before page properties, e.g. `values` in custom summaries (GRO-2134). */
   extra?: Record<string, Value>
 }
 
@@ -131,7 +131,7 @@ export function isEmpty(v: Value): boolean {
   return typeOf(v) === 'object' && Object.keys(v).length === 0
 }
 
-/** A target as text; both sides kept (`Covid notes|COVID-19`, YAZ-4954) read as the shape reads them, the page no note answered. */
+/** A target as text; both sides kept (`Covid pages|COVID-19`, YAZ-4954) read as the shape reads them, the page no page answered. */
 const normTarget = (t: string) => {
   const bare = stripBrackets(t)
   return (bare.includes('|') ? splitLink(bare).page : bare).replace(/\.md$/i, '').replace(/^\/+|\/+$/g, '').toLowerCase()
@@ -149,7 +149,7 @@ export function linkTargetsMatch(a: string, b: string): boolean {
 
 const isPrimitive = (v: Value) => v === null || typeof v !== 'object'
 
-/** Link, path string or file → the note it names, or null when unresolved / not link-like. */
+/** Link, path string or file → the page it names, or null when unresolved / not link-like. */
 function resolveSide(v: Value, resolve: Resolver): FileValue | null {
   if (v instanceof FileValue) return v
   if (v instanceof LinkValue) return resolve(v.target)
@@ -201,8 +201,8 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> => {
 
 /**
  * Raw frontmatter → Value: `[[x|d]]` strings become links (the page on either side, `splitLink`, YAZ-4935), ISO-ish
- * strings and JS Dates become dates. Words that only LOOK like an ID (`[[Covid notes|COVID-19]]`, `undecided`) keep the
- * link's text whole as the target, with no words: this knows no notes, so the resolver picks the page (the left side
+ * strings and JS Dates become dates. Words that only LOOK like an ID (`[[Covid pages|COVID-19]]`, `undecided`) keep the
+ * link's text whole as the target, with no words: this knows no pages, so the resolver picks the page (the left side
  * when it is one) and `linkText` the words (YAZ-4954). Written back, such a link is its text as written.
  */
 export function fromYaml(v: unknown): Value {
@@ -234,7 +234,7 @@ function toJson(v: Value): unknown {
 }
 
 /**
- * Display string (`toString()` semantics). With `resolve`, an unlabelled id link shows its note's
+ * Display string (`toString()` semantics). With `resolve`, an unlabelled id link shows its page's
  * title (`linkText`); WITHOUT, a link is exactly its stored `[[…]]` — the form written to a file.
  */
 export function render(v: Value, resolve?: Resolver): string {

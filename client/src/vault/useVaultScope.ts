@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { isOldId } from '@shared/noteId'
+import { isOldId } from '@shared/pageId'
 import type { IdsState, IndexRecord, IndexResponse, PropertiesResponse } from '@shared/types'
 import { api } from '../api'
 import { createViewOnlyLinkSource, type MutableViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
@@ -22,7 +22,7 @@ import { useTextFormatting, type TextFormattingState } from '../settings/useText
 import { useProperties } from '../views/useProperties'
 
 /**
- * Everything the window holds ONCE PER VAULT (YAZ-2602 D1): a note's links, properties, sync,
+ * Everything the window holds ONCE PER VAULT (YAZ-2602 D1): a page's links, properties, sync,
  * review and IDs come from the vault that holds it, whichever tab is in front. `App` owns one per
  * slot (`vault/slots.ts`) and every one stays loaded, so a tab switch between two vaults costs
  * what a switch inside one vault costs.
@@ -48,11 +48,11 @@ export interface VaultScope {
   linkClick: LinkClickState
   /** This vault's "Show IDs in search" (YAZ-4940): `.yaseendocs/show-ids.json`. */
   showIds: ShowIdsState
-  /** What this vault calls a note (YAZ-4938): `.yaseendocs/unit-word.json`, and the helper that gives each label its word. */
+  /** What this vault calls a page (YAZ-4938): `.yaseendocs/unit-word.json`, and the helper that gives each label its word. */
   unit: UnitWordState
   /** This vault's Read only (YAZ-4939): `.yaseendocs/read-only.json`, and its file-actions allowance. */
   readOnlyVault: ReadOnlyVaultState
-  /** How text looks in every note of this vault (YAZ-3066 D10): `.yaseendocs/text-formatting.json`. Each page layer of the vault reads it (D12). */
+  /** How text looks in every page of this vault (YAZ-3066 D10): `.yaseendocs/text-formatting.json`. Each page layer of the vault reads it (D12). */
   textFormatting: TextFormattingState
   /** How every link pill of this vault looks (YAZ-4924): `.yaseendocs/link-pills.json`. Each page layer reads its CSS variables; `wikilinks` carries the pieces a pill gains. */
   linkPills: LinkPillsState
@@ -70,7 +70,7 @@ export interface VaultScope {
         ask: IndexResponse['ask']
         set: (enabled: boolean, letters?: string) => void
         check: () => Promise<string>
-        /** How many notes and folders of the snapshot hold an old 12-character ID (S88). */
+        /** How many pages and folders of the snapshot hold an old 12-character ID (S88). */
         old: number
         /** A run of "Give old IDs numbers" stopped with links left to change (S90). */
         unfinished: boolean
@@ -111,7 +111,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   const sync = useGithubSync(root)
   // The attention banner (3B): passive, exactly like the external-rename one — `role="status"`,
   // explicit buttons, never a modal. Sync failing is not worth stealing focus over; the vault
-  // still works, and the note in front of the user is untouched.
+  // still works, and the page in front of the user is untouched.
   //
   // Dismissal is per-PROBLEM, not per-session: it resets on ANY transition of state or reason,
   // so a retry that fails again — or a different failure — says so rather than staying silent
@@ -135,7 +135,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   // The look's text pieces and the vault's name reach every editor of the vault through its resolve source (YAZ-4924):
   // one object the editors already subscribe to, so a change draws the pills again without a prop on each editor.
   useEffect(() => wikilinks.setLook(linkPills.pills, name), [wikilinks, linkPills.pills, name])
-  // Note card review (YAZ-4967): the Inbox count and the vault's review session, read off the SAME
+  // Card review (YAZ-4967): the Inbox count and the vault's review session, read off the SAME
   // index source the wikilinks use. The window shows one session at a time; `App` sees to that.
   const review = useCardReview(root, wikilinks, reviewSettings.settings, notify, name)
 
@@ -149,14 +149,14 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   // one of another vault says nothing here, so the Settings switch never shows an answer this vault
   // did not give. `enabled` is the snapshot's `ids`: no answer reads as no, and nothing asks when a
   // vault opens (YAZ-2677 🔒 D1). `ask` is what a yes would write, while the answer is not yes: the
-  // counts of the box in Settings, and the letters the vault already has (🔒 D2). `held` says a note
+  // counts of the box in Settings, and the letters the vault already has (🔒 D2). `held` says a page
   // holds an ID, which is true only while the vault uses IDs (a plain vault's records carry none).
   const [idsSnapshot, setIdsSnapshot] = useState<{ root: string | null; enabled: boolean; held: boolean; old: number; unfinished: boolean; ask: IndexResponse['ask'] } | null>(null)
   const vaultIds = idsSnapshot?.root === root ? idsSnapshot : null
   const onSnapshot = useCallback(
     (records: IndexRecord[], folders: IndexRecord[], ids: boolean, ask: IndexResponse['ask'], unfinished: boolean) => {
       onIndexSnapshot(records, folders, ids)
-      // The row "Old IDs" shows while a note or a folder holds an old ID (YAZ-2677 R3, S88), or a run that stopped left links to change (S90).
+      // The row "Old IDs" shows while a page or a folder holds an old ID (YAZ-2677 R3, S88), or a run that stopped left links to change (S90).
       const old = [...records, ...folders].filter((record) => isOldId(record.id)).length
       setIdsSnapshot({ root, enabled: ids, held: records.some((record) => record.id !== undefined), old, unfinished, ask })
     },

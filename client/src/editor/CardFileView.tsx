@@ -33,7 +33,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState, type CSS
 import { cardFileShape, isCardFileContent } from '@shared/cardFileFormat'
 import { splitFrontmatter } from '@shared/frontmatter'
 import type { GestureAction } from '@shared/keys'
-import { isNoteReadOnly, setNoteReadOnly } from '@shared/readOnly'
+import { isPageReadOnly, setPageReadOnly } from '@shared/readOnly'
 import { withCardNext, type CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
 import type { FileResponse, GithubSyncStatus, ZoomStep } from '@shared/types'
@@ -44,16 +44,16 @@ import { CardReviewDoor } from '../review/cardReviewDoor'
 import { cardInContent } from '../review/cardFile'
 import { forgetNewCard, isNewCard } from '../review/newCardFile'
 import { CardPane, cardMenuSections, cardWrites, isCardEditKey, onIndexVersion } from '../review/cardPane'
-import { noteCardFacts, noteCardNextReview, NoteCardId, NoteCardNextChip } from '../review/noteCardParts'
+import { cardFacts, cardNextReview, CardId, CardNextChip } from '../review/cardParts'
 import { useVaultReviewSettings } from '../review/useReviewSettings'
-import type { ExploreVault } from '../explore/ExploreNote'
+import type { ExploreVault } from '../explore/ExplorePage'
 import { usePathTitles } from '../lib/pageLabel'
 import { ContextMenu } from '../sidebar/ContextMenu'
 import type { MenuSection } from '../sidebar/menuSections'
 import { VaultReadOnly } from '../vault/readOnlyVault'
 import { CardFileNotice } from './CardFileNotice'
 import { stepZoomByKey } from './DocumentZoom'
-import { noteCardViewOfDom } from './noteCard/noteCardView'
+import { cardBlockViewOfDom } from './card/cardBlockView'
 import { PageSettings } from './PageSettings'
 import { PageTitle } from './PageTitle'
 import { StatusChips } from './StatusChips'
@@ -157,7 +157,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const vaultScope = useContext(VaultReadOnly)
   const vaultLocked = vaultScope.on
   /** The file's own switch (`readonly: true`) or the vault's: the top bar's "Read only" chip shows while this is true. */
-  const diskReadOnly = content !== null && isNoteReadOnly(content)
+  const diskReadOnly = content !== null && isPageReadOnly(content)
   const lockedBase = diskReadOnly || vaultLocked
   // A card New card just made (YAZ-5037) opens in Edit card, one time only.
   const [fresh] = useState(() => isNewCard(path))
@@ -169,7 +169,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   /** This tab's timed "Allow edits" (YAZ-4939, YAZ-5102): at its end an open Edit card is Done first, then the tab locks. */
   const unlock = useTimedUnlock(() => {
     if (!editingRef.current) return
-    noteCardViewOfDom(bodyRef.current?.querySelector('[data-explore-card-edit] .note-card') ?? null)?.done()
+    cardBlockViewOfDom(bodyRef.current?.querySelector('[data-explore-card-edit] .card') ?? null)?.done()
   })
   const locked = lockedBase && unlock.until === null
   const canEdit = card !== null && content !== null && !locked
@@ -210,7 +210,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   }, [lockedBase])
   /** The cog's row and the chip's "Turn Read only off": the file's own `readonly` key, on the newest bytes. */
   const setReadOnly = (on: boolean) =>
-    void transformFile(path, (text) => setNoteReadOnly(text, on)).then(read, (err: unknown) => onNotice(`Read only could not change: ${err instanceof Error ? err.message : String(err)}`))
+    void transformFile(path, (text) => setPageReadOnly(text, on)).then(read, (err: unknown) => onNotice(`Read only could not change: ${err instanceof Error ? err.message : String(err)}`))
   const giveKeysBack = () => bodyRef.current?.focus({ preventScroll: true })
   /** Done: the card's text, its sides only (YAZ-5044: the title is the file's `title`, never in the text). */
   const editDone = (text: string) => {
@@ -243,7 +243,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const state = card === null ? null : card.off ? 'Archived' : !reviewOn || settings === undefined ? null : cardDue(card.reviews, settings)
   // The convert actions (YAZ-5037 phase 5): only in a vault with IDs (D8), never on a `readonly: true` file. Each is a
   // file action: the vault's Read only asks first. The tab reads the file again on the next index version.
-  const converts = wikilinks.ids && !isNoteReadOnly(content)
+  const converts = wikilinks.ids && !isPageReadOnly(content)
   const convert = (failure: string, action: Parameters<typeof runConvert>[4]) => void runConvert(root, vaultScope.allowFileAction, onNotice, failure, action)
   const toPage = () => {
     turning.current = true
@@ -315,10 +315,10 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               <CardFileMore sections={sections} />
             </div>
             <div className="card-file__facts">
-              {id !== null && <NoteCardId id={id} onNotice={onNotice} />}
+              {id !== null && <CardId id={id} onNotice={onNotice} />}
               {state !== null && <span className="card-file__state">{state}</span>}
-              {reviewOn && card?.next === true && <NoteCardNextChip onRemove={() => writes.changeLine((l) => withCardNext(l, false))} />}
-              {reviewOn && card?.notitle === true && <span className="note-card__state note-card__notitle">Hidden in review</span>}
+              {reviewOn && card?.next === true && <CardNextChip onRemove={() => writes.changeLine((l) => withCardNext(l, false))} />}
+              {reviewOn && card?.notitle === true && <span className="card__state card__notitle">Hidden in review</span>}
             </div>
           </header>
           {outside.length > 0 && (
@@ -350,9 +350,9 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
 
 /** The head's state words for a card in review: "New", or "Due in 3 days" / "Due today" / "Due 2 days ago". */
 function cardDue(reviews: readonly CardReview[], settings: ReviewSettings, now = Date.now()): string {
-  const facts = noteCardFacts(reviews, settings, now)
+  const facts = cardFacts(reviews, settings, now)
   if (facts === null) return 'New'
-  return `Due ${noteCardNextReview(facts.due, facts.inSteps, now).when}`
+  return `Due ${cardNextReview(facts.due, facts.inSteps, now).when}`
 }
 
 /** The tab's ⋯ and its menu (the card's rows), built when it opens. */

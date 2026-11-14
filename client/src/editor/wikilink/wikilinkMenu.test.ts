@@ -1,7 +1,7 @@
 /**
  * Right-click on a `[[link]]` (YAZ-2293, YAZ-3609 D23): real editor (`createCrepe({ wikilinkNav })`), real
  * mousedown / contextmenu events on the rendered `.wikilink` spans. Pinned here: the one link menu names
- * the note and its id, and "Copy ID" copies exactly the id; a missing note still offers its id (YAZ-3905
+ * the page and its id, and "Copy ID" copies exactly the id; a missing page still offers its id (YAZ-3905
  * S10); a NAME link gets the same menu with no ID rows; Open, Open in new tab, Copy name, Edit link and
  * Remove link do what they say (YAZ-3740; every kind's exact rows and the new rows: `linkMenu.test.ts`); a right-button mousedown on a link is swallowed so the link is still rendered when
  * `contextmenu` arrives; and the menu closes the way every `.ctx-menu--editor` popup does.
@@ -56,8 +56,8 @@ const idMenu = (id: string) => [`ID: ${id}`, 'Open', 'Open in new tab', 'Copy na
 const nameMenu = () => ['Open', 'Open in new tab', 'Copy name', 'Copy path', 'Pill style', 'Edit link', 'Remove link']
 /** A name link that finds nothing: no top line, no path to copy. */
 const deadNameMenu = () => ['Open', 'Open in new tab', 'Copy name', 'Pill style', 'Edit link', 'Remove link']
-/** A note that is gone (YAZ-3905 S10): what can be said, its ID to copy, Edit and Remove. */
-const missingMenu = (id: string) => [`Missing note · ${id}`, 'Copy ID', 'Pill style', 'Edit link', 'Remove link']
+/** A page that is gone (YAZ-3905 S10): what can be said, its ID to copy, Edit and Remove. */
+const missingMenu = (id: string) => [`Missing page · ${id}`, 'Copy ID', 'Pill style', 'Edit link', 'Remove link']
 
 /** jsdom has no clipboard; the menu's only job is to hand the id to it, so spy on writeText. */
 let writeText: Mock
@@ -77,7 +77,7 @@ afterEach(async () => {
 })
 
 describe('right-click on a rendered id link', () => {
-  it('replaces the native menu with the one link menu: the note\'s name and its id, which are not actions, then the rows', async () => {
+  it('replaces the native menu with the one link menu: the page\'s name and its id, which are not actions, then the rows', async () => {
     const { root, view } = await mount(`pad [[${ID}]] tail\n`)
     expect(mouse(linkSpan(root, 'Road Map'), 'contextmenu').defaultPrevented).toBe(true)
     const rows = rowsOf(popupOf(view)!)
@@ -113,15 +113,15 @@ describe('right-click on a rendered id link', () => {
     expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(idMenu(ID))
   })
 
-  it('S10: an id no note has reads "Missing note", and still offers its id and Copy ID (YAZ-3905)', async () => {
+  it('S10: an id no page has reads "Missing page", and still offers its id and Copy ID (YAZ-3905)', async () => {
     const { root, view } = await mount(`pad [[${DEAD}]] tail\n`)
-    expect(mouse(linkSpan(root, `Missing note · ${DEAD}`), 'contextmenu').defaultPrevented).toBe(true)
+    expect(mouse(linkSpan(root, `Missing page · ${DEAD}`), 'contextmenu').defaultPrevented).toBe(true)
     expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(missingMenu(DEAD))
     rowNamed(view, 'Copy ID').click()
     expect(writeText).toHaveBeenCalledExactlyOnceWith(DEAD)
   })
 
-  it('E: the pill shows the title of the note, and of the folder (YAZ-2420 D14); the top line is the ID alone', async () => {
+  it('E: the pill shows the title of the page, and of the folder (YAZ-2420 D14); the top line is the ID alone', async () => {
     const FOLDER_ID = 'f7n2w8rt4xyz'
     const titled = (path: string, id: string, title: string) => ({ path, id, title, folder: 'upwork-2026', basename: 'x', aliases: [] as string[] }) as IndexRecord
     const records = [titled('/vault/upwork-2026/up-001-abdul-k3m9x2pq7abc.md', ID, 'UP-001 - Abdul')]
@@ -141,7 +141,7 @@ describe('right-click on a rendered id link', () => {
       path, id, name: path.slice(path.lastIndexOf('/') + 1), basename: 'x', title, folder: 'Projects', ext: 'md', size: 1, ctime: 1, mtime: 1,
       properties: {}, aliases: [], tags: [], links: [], embeds: [],
     })
-    // The bridge's feed: a folder with its settings file's id, and a note INSIDE it — which is no folder.
+    // The bridge's feed: a folder with its settings file's id, and a page INSIDE it — which is no folder.
     const records = [record('/vault/Projects/Road Map.md', ID, 'Road Map')]
     const folders = [record('/vault/Projects/.folder.md', FOLDER_ID, 'Projects')]
     const { root, view } = await mount(`pad [[${FOLDER_ID}]] and [[${ID}]] tail\n`, true, (source) =>
@@ -200,9 +200,9 @@ describe('right-click on a number ID link (YAZ-2677 D3)', () => {
     }
   })
 
-  it('S25: a number ID no note has is a missing note (YAZ-3905 S10): its id as the app writes it, and Copy ID', async () => {
+  it('S25: a number ID no page has is a missing page (YAZ-3905 S10): its id as the app writes it, and Copy ID', async () => {
     const { root, view } = await mount('pad [[yaz-99]] tail\n', true, feed)
-    expect(mouse(linkSpan(root, 'Missing note · YAZ-99'), 'contextmenu').defaultPrevented).toBe(true)
+    expect(mouse(linkSpan(root, 'Missing page · YAZ-99'), 'contextmenu').defaultPrevented).toBe(true)
     expect(rowsOf(popupOf(view)!).map((row) => row.textContent)).toEqual(missingMenu('YAZ-99'))
   })
 })
@@ -217,7 +217,7 @@ describe('a name link gets the same menu (YAZ-3609 D23)', () => {
     }
   })
 
-  it('a pathed name link, to a note or a folder, has no top line: never its typed path, nor a repeat of its pill (YAZ-3747 demo)', async () => {
+  it('a pathed name link, to a page or a folder, has no top line: never its typed path, nor a repeat of its pill (YAZ-3747 demo)', async () => {
     const FOLDER_ID = 'f7n2w8rt4xyz'
     const record = (path: string, id: string, title: string): IndexRecord => ({
       path, id, name: path.slice(path.lastIndexOf('/') + 1), basename: 'x', title, folder: 'area', ext: 'md', size: 1, ctime: 1, mtime: 1,
@@ -289,7 +289,7 @@ describe('a name link gets the same menu (YAZ-3609 D23)', () => {
     expect(getMarkdownForSave(crepe)).toBe('a the plan b Road Map c Known > Q1 d\n')
   })
 
-  it('a read-only note offers no Edit and no Remove (YAZ-3076 D2)', async () => {
+  it('a read-only page offers no Edit and no Remove (YAZ-3076 D2)', async () => {
     const { crepe, root, view } = await mount('pad [[Known]] tail\n')
     crepe.setReadonly(true)
     mouse(linkSpan(root, 'Known'), 'contextmenu')

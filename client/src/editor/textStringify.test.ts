@@ -26,7 +26,7 @@ afterEach(async () => {
   }
 })
 
-/** The note's one paragraph, its text replaced by `text` (what typing leaves behind). */
+/** The page's one paragraph, its text replaced by `text` (what typing leaves behind). */
 async function paragraphOf(text: string): Promise<Crepe> {
   const crepe = await mount('x\n')
   const view = crepe.editor.ctx.get(editorViewCtx)

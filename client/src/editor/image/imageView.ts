@@ -35,7 +35,7 @@
  * style.
  *
  * SRC: `imageSrc()` — the vault protocol URL for a relative src, pass-through for a schemed one.
- * The note's directory is derived ONCE per mount from `root` + `notePath`.
+ * The page's directory is derived ONCE per mount from `root` + `pagePath`.
  *
  * SELECTION: a single click is ProseMirror's stock `NodeSelection` on an atom (the schema says
  * `selectable: true`); `selectNode` / `deselectNode` toggle `is-selected`, which is what shows the
@@ -83,9 +83,9 @@ import type { BoardRef, BoardWindowHandle } from '../embed/types'
 import { linkMenuRows, openMenuAt } from '../linkMenu'
 import { innermostItemPos } from '../outline/listNodes'
 import { toggleOutlineFold } from '../outline/outlineFolding'
-import { inCellOrNote } from '../table/cellBlocks'
+import { inCellOrPage } from '../table/cellBlocks'
 import type { GalleryImage, ImageOptions } from './imageOptions'
-import { formatAlt, imageSrc, noteDirRel, parseAlt } from './imageSrc'
+import { formatAlt, imageSrc, pageDirRel, parseAlt } from './imageSrc'
 import './imageView.css'
 
 export const IMAGE_VIEW_CLASS = 'image-view'
@@ -366,7 +366,7 @@ class ImageNodeView implements NodeView {
     this.handles = []
     this.dom.replaceChildren()
     const pos = this.getPos()
-    this.cell = pos !== undefined && inCellOrNote(this.view.state.doc.resolve(pos))
+    this.cell = pos !== undefined && inCellOrPage(this.view.state.doc.resolve(pos))
     const board = () => this.board
     boardWindows.set(this.dom, board)
     let views = boardViews.get(this.view)
@@ -438,7 +438,7 @@ class ImageNodeView implements NodeView {
     return pos === undefined || node === null || node.type !== this.node.type || node.attrs.src !== this.node.attrs.src ? null : { pos, node }
   }
 
-  /** D4: the options into the alt after its name, outside undo, only in an editable note and only when the text changes. */
+  /** D4: the options into the alt after its name, outside undo, only in an editable page and only when the text changes. */
   private writeBoardOptions(next: EmbedOptions): void {
     const live = this.view.editable ? this.liveNode() : null
     if (live === null) return
@@ -498,14 +498,14 @@ class ImageNodeView implements NodeView {
 
 /** Each board image's window, by its node view's DOM (only while it shows a board): the key plugin below reaches the selected one (D10). */
 const boardWindows = new WeakMap<Node, () => BoardWindowHandle | null>()
-/** The board images of each editor view: a note that turns read-only tells their windows (item 24), as the text host does. */
+/** The board images of each editor view: a page that turns read-only tells their windows (item 24), as the text host does. */
 const boardViews = new WeakMap<EditorView, Set<() => BoardWindowHandle | null>>()
 
 /**
  * The keys of a selected board image (an embed from another vault, D1), as `boardEmbed.ts` has them for `![[…]]`: the
  * editor keeps the focus, so ⌘+ ⌘− ⌘0 and Shift+1 come here and go to that image's window; Escape first deselects it,
- * the caret after the node (item 20, A2), before the note's Escape leaves for the sidebar. Its plugin view tells the
- * windows when the note turns read-only or editable (item 24).
+ * the caret after the node (item 20, A2), before the page's Escape leaves for the sidebar. Its plugin view tells the
+ * windows when the page turns read-only or editable (item 24).
  */
 export const imageBoardKeys = $prose(
   () =>
@@ -538,8 +538,8 @@ export const imageBoardKeys = $prose(
 
 /** The node view for `image`, registered by createCrepe when the host supplies `opts.image`. */
 export function createImageView(opts: ImageOptions) {
-  // Derived once per mount: the note does not move while its editor is open (a rename remounts).
-  const fromDir = noteDirRel(opts.root, opts.notePath)
+  // Derived once per mount: the page does not move while its editor is open (a rename remounts).
+  const fromDir = pageDirRel(opts.root, opts.pagePath)
   return $view(imageSchema.node, () => (node, view, getPos, decorations) => new ImageNodeView(node, view, getPos, opts, fromDir, decorations))
 }
 
@@ -547,7 +547,7 @@ export function createImageView(opts: ImageOptions) {
  * An image read from Markdown with no title (or no alt) gets `''`, as every image the editor makes does (Milkdown's
  * schema default); Milkdown's own parser keeps the file's `null`. The file writes both the same way, so two values for
  * one image made a pasted image differ from the same image read back: the next outside save glowed it as a change
- * (YAZ-3704 4I2). One value, so a diff of the note sees no change there.
+ * (YAZ-3704 4I2). One value, so a diff of the page sees no change there.
  */
 export const imageParseDefaults = imageSchema.extendSchema((prev) => (ctx) => {
   const base = prev(ctx)

@@ -283,7 +283,7 @@ describe('T changes only the line\'s text type, never the list (YAZ-4369)', () =
     const { crepe, view } = await mount('* ## X\n* R\n  * ## A\n    * ## B\n    * C\n* ## Y\n')
     const itemPos = posOf(crepe, 'A') - 2
     expect(runCommand(crepe, zoomToKey(zoomKeyAt(view.state.doc, itemPos)))).toBe(true)
-    // Over the whole note: X and Y are outside the zoom, so hidden.
+    // Over the whole page: X and Y are outside the zoom, so hidden.
     select(crepe, posOf(crepe, 'X'), endOf(crepe, 'Y'))
     expect(press(crepe, 'text')).toBe(true)
     expect(md(crepe)).toBe('* ## X\n* R\n  * A\n    * B\n    * C\n* ## Y\n')
@@ -296,7 +296,7 @@ describe('a plain line of a body cell and of a cell note card (YAZ-3818 D1, 5A-1
     ['bulletList', '<ul><li>a</li></ul>', '[^cell-1]: * a'],
     ['numberedList', '<ol><li>a</li></ol>', '[^cell-1]: 1. a'],
     ['checklist', '<ul><li>[ ] a</li></ul>', '[^cell-1]: * [ ] a'],
-  ] as const)('%s makes the list; a header cell holds one line (D7)', async (button, cell, note) => {
+  ] as const)('%s makes the list; a header cell holds one line (D7)', async (button, cell, page) => {
     const inCell = await mount('| h |\n| - |\n| a |\n')
     select(inCell.crepe, posOf(inCell.crepe, 'a'), endOf(inCell.crepe, 'a'))
     expect(lit(inCell.crepe)).toEqual(['text'])
@@ -314,7 +314,7 @@ describe('a plain line of a body cell and of a cell note card (YAZ-3818 D1, 5A-1
     select(onPage.crepe, posOf(onPage.crepe, 'a'), endOf(onPage.crepe, 'a'))
     expect(lit(onPage.crepe)).toEqual(['text'])
     expect(press(onPage.crepe, button)).toBe(true)
-    expect(md(onPage.crepe)).toContain(note)
+    expect(md(onPage.crepe)).toContain(page)
   })
 })
 

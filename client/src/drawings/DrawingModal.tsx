@@ -64,7 +64,7 @@ import './drawingModal.css'
 
 /**
  * The ONE canvas, in its own chunk (YAZ-3028): since a drawing tab shares it, it carries Draw's engine
- * options (canvas prefs, fit-on-open, the toolbar mode), and a note that is only being read never
+ * options (canvas prefs, fit-on-open, the toolbar mode), and a page that is only being read never
  * needs them. It arrives with the first open, beside the engine it loads anyway.
  */
 const ExcalidrawSurface = lazy(() => import('./ExcalidrawSurface').then((m) => ({ default: m.ExcalidrawSurface })))
@@ -75,11 +75,11 @@ export const BROKEN_DRAWING_MESSAGE = "This drawing can't be opened: its file is
 /** The inline confirm's copy (an in-modal strip, not a sheet), asked only when a save failed or a conflict blocks it. */
 export const DISCARD_PROMPT = 'Changes are not saved. Discard them?'
 
-/** Page links in the drawing's text (YAZ-4039): the props the note's own `[[links]]` get, as a drawing tab has them. */
+/** Page links in the drawing's text (YAZ-4039): the props the page's own `[[links]]` get, as a drawing tab has them. */
 interface DrawingModalProps extends DrawingLinkProps, DrawingAppSettings {
   /** Vault root; with the target it is all `openDrawing` needs. */
   root: string
-  /** The embed's raw target, exactly as the note spells it — the resolution rule is the pipe's. */
+  /** The embed's raw target, exactly as the page spells it — the resolution rule is the pipe's. */
   target: string
   /** The app's resolved appearance, handed straight to the surface. */
   theme: 'light' | 'dark'
@@ -89,7 +89,7 @@ interface DrawingModalProps extends DrawingLinkProps, DrawingAppSettings {
   hotkeys?: HotkeyOverrides
   /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
   hotkeysAside?: HotkeyAside
-  /** The note's passive notice: what a link's open or a new page says, and missing pictures (an error). */
+  /** The page's passive notice: what a link's open or a new page says, and missing pictures (an error). */
   onNotice?: (message: string, icon?: NoticeKind) => void
 }
 
@@ -164,8 +164,8 @@ export function DrawingModal({ root, target, theme, onClose, hotkeys, hotkeysAsi
   // Focus lands here on mount so Esc works before the canvas exists (and stays inside afterwards).
   useEffect(() => overlayRef.current?.focus(), [])
 
-  // A drawing is in front of the note while this is open (YAZ-3564 K9, K11): main's menu lets it keep ⌘D, and the
-  // key sheet lists its keys. Best effort: a failed send only leaves the note's menu keys.
+  // A drawing is in front of the page while this is open (YAZ-3564 K9, K11): main's menu lets it keep ⌘D, and the
+  // key sheet lists its keys. Best effort: a failed send only leaves the page's menu keys.
   useEffect(() => {
     setPlaceOverTab('drawing')
     void api.hotkeys.drawingInFront(true).catch(() => undefined)
@@ -238,7 +238,7 @@ export function DrawingModal({ root, target, theme, onClose, hotkeys, hotkeysAsi
   )
 
   // The close/quit handshake (GRO-2160): main holds the window open until this settles (5s cap in main).
-  // It answers whether the drawing is clean (YAZ-3737 D2). Unmounted any other way (the note closed under it):
+  // It answers whether the drawing is clean (YAZ-3737 D2). Unmounted any other way (the page closed under it):
   // save what is pending, then never write again.
   useEffect(() => {
     const offFlush = api.window.onFlush(async () => {

@@ -1,6 +1,6 @@
 /**
- * CONFIRM CHANGES (YAZ-3746 13AN): a change to a note's own values from a folder page asks first, so a stray key in a
- * cell never changes a note. On by default: Settings › Folder pages › Confirm changes, and the folder's cog
+ * CONFIRM CHANGES (YAZ-3746 13AN): a change to a page's own values from a folder page asks first, so a stray key in a
+ * cell never changes a page. On by default: Settings › Folder pages › Confirm changes, and the folder's cog
  * (`confirm_changes` in its `.folder.md`) can say otherwise.
  *
  * The ask is a small card by the cell or card that changes: what changes, from what to what, with Change (Enter) and
@@ -20,13 +20,13 @@ export const CHANGE_CANCELLED = new Error('The change was cancelled')
 export interface ChangeAsk {
   /** What changes: the column's name, or the gesture ("Clear", "Paste into", "Rename", "Move"). */
   kind: string
-  /** The note it changes, by title. */
-  note?: string
+  /** The page it changes, by title. */
+  page?: string
   /** The value before; absent where it is not known (a move). */
   from?: unknown
   /** The value after. */
   to?: unknown
-  /** A bulk change's size instead of a before → after: "44 cells in 44 notes". */
+  /** A bulk change's size instead of a before → after: "44 cells in 44 pages". */
   summary?: string
   /** The go button's word (13AS): "Clear", "Paste", "Move", "Rename"…; absent: "Change". */
   action?: string
@@ -193,7 +193,7 @@ function ChangeAskCard({ ask, onChange, onCancel, onPause, onTurnOff }: { ask: C
       window.removeEventListener('keydown', key, true)
     }
   }, [onCancel, onChange])
-  const label = ask.summary !== undefined ? `${ask.kind} ${ask.summary}?` : `${ask.kind}${ask.note === undefined ? '' : ` of ${ask.note}`}: ${'from' in ask ? `${askValue(ask.from)} to ` : ''}${askValue(ask.to)}?`
+  const label = ask.summary !== undefined ? `${ask.kind} ${ask.summary}?` : `${ask.kind}${ask.page === undefined ? '' : ` of ${ask.page}`}: ${'from' in ask ? `${askValue(ask.from)} to ` : ''}${askValue(ask.to)}?`
   const value = (v: unknown, side: 'from' | 'to') => (
     <span className={`change-ask__val change-ask__val--${side}${isEmptyValue(v) ? ' change-ask__val--empty' : ''}`} title={askValue(v)}>
       {askValue(v)}
@@ -204,9 +204,9 @@ function ChangeAskCard({ ask, onChange, onCancel, onPause, onTurnOff }: { ask: C
       <div className="change-ask__body">
         <div className="change-ask__head">
           <span className="change-ask__kind">{ask.kind}</span>
-          {ask.note !== undefined && (
-            <span className="change-ask__note" title={ask.note}>
-              {ask.note}
+          {ask.page !== undefined && (
+            <span className="change-ask__note" title={ask.page}>
+              {ask.page}
             </span>
           )}
         </div>

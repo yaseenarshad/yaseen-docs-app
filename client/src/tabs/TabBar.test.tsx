@@ -182,12 +182,12 @@ describe('TabBar', () => {
   })
 
   it('renders a labelled tablist: one role=tab per path, extension-stripped label, full path as tooltip', () => {
-    const el = mount({ tabs: ['/v/Note.md', '/v/sub/Plan.markdown'], active: '/v/Note.md', ...noop, ...noNav })
+    const el = mount({ tabs: ['/v/Page.md', '/v/sub/Plan.markdown'], active: '/v/Page.md', ...noop, ...noNav })
     expect(el.querySelector('.tabbar')?.getAttribute('role')).toBe('tablist')
     expect(el.querySelector('.tabbar')?.getAttribute('aria-label')).toBe('Open files')
     const tabsEls = [...el.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
-    expect(tabsEls.map((t) => t.textContent)).toEqual(['Note', 'Plan'])
-    expect(tabsEls.map((t) => t.title)).toEqual(['/v/Note.md', '/v/sub/Plan.markdown'])
+    expect(tabsEls.map((t) => t.textContent)).toEqual(['Page', 'Plan'])
+    expect(tabsEls.map((t) => t.title)).toEqual(['/v/Page.md', '/v/sub/Plan.markdown'])
   })
 
   it('the preview tab wears the preview class and a double click on a tab asks to keep it (YAZ-2648 D1, D2); the grid button after ▶ toggles the overview and is pressed while it shows (D8)', () => {
@@ -316,13 +316,13 @@ describe('TabBar', () => {
   })
 
   it('a folder named like a file keeps its whole name once the Files tree says it is a folder (YAZ-2290)', async () => {
-    const el = mount({ roots: ['/named'], tabs: ['/named/Notes.md', '/named/Plan.md'], active: '/named/Notes.md', ...noop, ...noNav })
+    const el = mount({ roots: ['/named'], tabs: ['/named/Pages.md', '/named/Plan.md'], active: '/named/Pages.md', ...noop, ...noNav })
     const labels = () => [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent)
-    expect(labels()).toEqual(['Notes', 'Plan']) // no tree yet: nothing says it is a folder
-    vi.mocked(api.tree).mockResolvedValueOnce({ root: '/named', tree: [{ type: 'dir', name: 'Notes.md', path: '/named/Notes.md', children: [] }], generatedAt: 1 })
+    expect(labels()).toEqual(['Pages', 'Plan']) // no tree yet: nothing says it is a folder
+    vi.mocked(api.tree).mockResolvedValueOnce({ root: '/named', tree: [{ type: 'dir', name: 'Pages.md', path: '/named/Pages.md', children: [] }], generatedAt: 1 })
     await act(async () => void (await fetchTree('/named')))
-    expect(labels()).toEqual(['Notes.md', 'Plan'])
-    expect(el.querySelector('[aria-label="Close Notes.md"]')).not.toBeNull()
+    expect(labels()).toEqual(['Pages.md', 'Plan'])
+    expect(el.querySelector('[aria-label="Close Pages.md"]')).not.toBeNull()
   })
 
   it("each tab shows its file's tree icon before its name: a folder page the folder's, a display name its file's, a file outside the vaults Material's (YAZ-3440 D11)", async () => {
@@ -345,7 +345,7 @@ describe('TabBar', () => {
     expect(icon('o').hasAttribute('data-icon-custom')).toBe(false)
   })
 
-  it("a board tab holds its extension after its name, for File icons Off to show (YAZ-3536 D4); a display name, a folder page and a note hold none", async () => {
+  it("a board tab holds its extension after its name, for File icons Off to show (YAZ-3536 D4); a display name, a folder page and a page hold none", async () => {
     container = document.body.appendChild(document.createElement('div'))
     root = createRoot(container)
     vi.mocked(api.tree).mockResolvedValueOnce({ root: '/v', tree: [{ type: 'dir', name: 'Plan.drawio', path: '/v/Plan.drawio', children: [] }], generatedAt: 1 })
@@ -430,7 +430,7 @@ describe('TabBar drag-to-reorder (I3, GRO-2235)', () => {
     fire(tabAt(el, 0), 'drop', -5)
     expect(onMove).toHaveBeenCalledExactlyOnceWith(2, 0)
     expect(inbox.onMove).toHaveBeenLastCalledWith('/v/c.md')
-    // The drag carries no page: no other window, panel or note takes the Inbox tab.
+    // The drag carries no page: no other window, panel or page takes the Inbox tab.
     const data = { types: [] as string[], setData(type: string) { this.types.push(type) }, effectAllowed: '' }
     const start = new MouseEvent('dragstart', { bubbles: true, cancelable: true })
     Object.defineProperty(start, 'dataTransfer', { value: data })
@@ -769,8 +769,8 @@ describe('TabBar keeps the active tab in view (I3 overflow polish)', () => {
 })
 
 describe('TabBar right-click menu (YAZ-922)', () => {
-  const TABS = ['/vault/Note.md', '/vault/sub/Deep Note.md']
-  const props = { tabs: TABS, active: '/vault/Note.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), ...noNav }
+  const TABS = ['/vault/Page.md', '/vault/sub/Deep Page.md']
+  const props = { tabs: TABS, active: '/vault/Page.md', onActivate: vi.fn(), onClose: vi.fn(), onMove: vi.fn(), ...noNav }
 
   /** jsdom has no clipboard; the menu's only job is to hand the path to it, so spy on writeText. */
   let writeText: ReturnType<typeof vi.fn>
@@ -815,7 +815,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     const el = mount({ ...props, onActivate, onShowInSidebar })
     rightClick(tabAt(el, 1))
     act(() => items(el)[0]?.click())
-    expect(onShowInSidebar).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md')
+    expect(onShowInSidebar).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Page.md')
     expect(onActivate).not.toHaveBeenCalled()
     expect(menuOf(el)).toBeNull()
   })
@@ -827,7 +827,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     act(() => items(el).find((item) => item.textContent === 'Move to')?.click())
     const move = items(el).find((item) => item.textContent === 'Right panel')
     act(() => move?.click())
-    expect(onMoveToRight).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md')
+    expect(onMoveToRight).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Page.md')
     expect(menuOf(el)).toBeNull()
   })
 
@@ -851,14 +851,14 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     const el = mount(props)
     rightClick(tabAt(el, 1))
     act(() => items(el)[1]?.click())
-    expect(writeText).toHaveBeenCalledWith('/vault/sub/Deep Note.md')
+    expect(writeText).toHaveBeenCalledWith('/vault/sub/Deep Page.md')
     expect(menuOf(el)).toBeNull()
   })
 
-  it('"Copy path" is a tab\'s one copy item, a note\'s and a folder\'s: nothing else is named Copy — no "Copy ID" (YAZ-2420 D22, D31)', async () => {
+  it('"Copy path" is a tab\'s one copy item, a page\'s and a folder\'s: nothing else is named Copy — no "Copy ID" (YAZ-2420 D22, D31)', async () => {
     vi.mocked(api.tree).mockResolvedValueOnce({ root: '/one', tree: [{ type: 'dir', name: 'Projects', path: '/one/Projects', children: [] }], generatedAt: 1 })
     await fetchTree('/one')
-    const el = mount({ ...props, roots: ['/one'], tabs: ['/one/Note.md', '/one/Projects'] })
+    const el = mount({ ...props, roots: ['/one'], tabs: ['/one/Page.md', '/one/Projects'] })
     for (const i of [0, 1]) {
       rightClick(tabAt(el, i))
       expect(items(el).map((b) => b.textContent).filter((label) => label?.startsWith('Copy'))).toEqual(['Copy path'])
@@ -870,14 +870,14 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     const [onToggleFocus, onToggleFavorite] = [vi.fn(), vi.fn()]
     const el = mount({ ...props, listState, onToggleFocus, onToggleFavorite })
     rightClick(tabAt(el, 1))
-    expect(listState).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Note.md')
+    expect(listState).toHaveBeenCalledExactlyOnceWith('/vault/sub/Deep Page.md')
     expect(items(el).map((b) => b.textContent)).toEqual(['Show in sidebar', 'Add to focus', 'Copy path', 'Remove from favorites', 'Reveal in Finder', 'Open in VS Code'])
     act(() => items(el)[1]?.click())
-    expect(onToggleFocus).toHaveBeenCalledExactlyOnceWith(['/vault/sub/Deep Note.md'], false)
+    expect(onToggleFocus).toHaveBeenCalledExactlyOnceWith(['/vault/sub/Deep Page.md'], false)
     expect(menuOf(el)).toBeNull()
     rightClick(tabAt(el, 1))
     act(() => items(el)[3]?.click())
-    expect(onToggleFavorite).toHaveBeenCalledExactlyOnceWith(['/vault/sub/Deep Note.md'], true)
+    expect(onToggleFavorite).toHaveBeenCalledExactlyOnceWith(['/vault/sub/Deep Page.md'], true)
   })
 
   it('a tab menu has no review item: a card is turned off on the card (YAZ-4967, D6)', () => {
@@ -892,7 +892,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     rightClick(tabAt(el, 1))
     act(() => items(el)[1]?.click())
     expect(writeText).toHaveBeenCalledTimes(1)
-    expect(writeText).toHaveBeenCalledWith('/vault/sub/Deep Note.md')
+    expect(writeText).toHaveBeenCalledWith('/vault/sub/Deep Page.md')
   })
 
   it('Escape anywhere in the window dismisses the menu', () => {
@@ -918,7 +918,7 @@ describe('TabBar right-click menu (YAZ-922)', () => {
     expect(menuOf(el)).not.toBeNull()
     // …and the press that survived is followed by the click that actually copies.
     act(() => items(el)[1]?.click())
-    expect(writeText).toHaveBeenCalledWith('/vault/Note.md')
+    expect(writeText).toHaveBeenCalledWith('/vault/Page.md')
   })
 
   it('closing the menu unhooks its window listeners (no stray dismissals after the fact)', () => {
@@ -1125,7 +1125,7 @@ describe('tab menu OS actions (YAZ-963)', () => {
     const base: TabBarProps = {
       roots: ['/vault'],
       titles: new Map(),
-      tabs: ['/vault/A.md', '/vault/sub/Deep Note.md'],
+      tabs: ['/vault/A.md', '/vault/sub/Deep Page.md'],
       active: '/vault/A.md',
       onActivate: vi.fn(),
       onClose: vi.fn(),
@@ -1150,7 +1150,7 @@ describe('tab menu OS actions (YAZ-963)', () => {
     const el = mountWith()
     rightClick(tabAt(el, 1))
     act(() => itemNamed(el, 'Reveal in Finder')?.click())
-    expect(reveal).toHaveBeenCalledExactlyOnceWith({ path: '/vault/sub/Deep Note.md' })
+    expect(reveal).toHaveBeenCalledExactlyOnceWith({ path: '/vault/sub/Deep Page.md' })
     expect(menuOf(el)).toBeNull()
   })
 
@@ -1175,7 +1175,7 @@ describe('tab menu OS actions (YAZ-963)', () => {
     expect(String(onNotice.mock.calls[0][0])).toMatch(/no longer there|Can't reveal/i)
   })
 
-  it('E: the stale-tab notice names the note by its title (YAZ-2420 D14)', async () => {
+  it('E: the stale-tab notice names the page by its title (YAZ-2420 D14)', async () => {
     reveal.mockRejectedValueOnce(new BridgeRequestError('NOT_FOUND', 'gone'))
     const onNotice = vi.fn()
     const el = mountWith({ onNotice, titles: new Map([['/vault/A.md', 'UP-001 - Abdul']]) })

@@ -1,8 +1,8 @@
 /**
- * The Table part of a note's right-click menu (YAZ-3769, YAZ-3696 🔒 D5 / S3), after the paste
- * rows, when the right-click is in a cell of an editable note (R3). It is the ONE table menu
- * (YAZ-3820): a row or column handle opens the same note menu, on the cells it selected
- * (`noteMenu.tsx`). Six groups:
+ * The Table part of a page's right-click menu (YAZ-3769, YAZ-3696 🔒 D5 / S3), after the paste
+ * rows, when the right-click is in a cell of an editable page (R3). It is the ONE table menu
+ * (YAZ-3820): a row or column handle opens the same page menu, on the cells it selected
+ * (`pageMenu.tsx`). Six groups:
  * - the clicked cell's note (YAZ-3818 D8): "Add cell note" on a cell with none; "Open cell note" and
  *   "Delete cell note" on a cell with one. Delete asks nothing; ⌘Z brings the note and its mark back;
  * - Insert row above / below, Insert column left / right, Duplicate row, Duplicate column (YAZ-4168);
@@ -152,7 +152,7 @@ function duplicateOn(view: EditorView, pointer: number, kind: 'rows' | 'columns'
 
 /**
  * As many body rows as the rect holds, at index `at` of its table, each cell with its column's alignment:
- * a copy of Milkdown's `addRowWithAlignment`, which needs the editor's `ctx`; the note menu has the view only.
+ * a copy of Milkdown's `addRowWithAlignment`, which needs the editor's `ctx`; the page menu has the view only.
  * Each cell also takes the `valign` of the cell above it (YAZ-4166); above the first body row, that row's own, not the
  * header's (YAZ-4173 12C). A merged cell that spans the place (YAZ-4792) grows by the rows, as prosemirror-tables'
  * `addRow` does, and the new rows have no cell of their own under it.
@@ -424,7 +424,7 @@ function customColour(view: EditorView, pointer: number, attr: 'fill' | 'color')
 
 /**
  * The vendored table block's ask for the table menu (YAZ-3820): `{ x, y, pos }` in `detail`. The
- * package sends its own copy of this name (`operation.ts`); `noteMenu.test.tsx` clicks a real handle.
+ * package sends its own copy of this name (`operation.ts`); `pageMenu.test.tsx` clicks a real handle.
  */
 export const TABLE_HANDLE_MENU = 'milkdown-table-handle-menu'
 
@@ -464,7 +464,7 @@ function rowLookParent(view: EditorView, pos: number, kind: 'header' | 'subheade
 
 /**
  * What a right-click opened the table menu on (YAZ-4970): cells (a right-click in a cell), or a row or column handle
- * (`noteMenu.tsx` reads it from the handle's selection, `handleKind`).
+ * (`pageMenu.tsx` reads it from the handle's selection, `handleKind`).
  */
 export type TableMenuKind = 'cells' | 'row' | 'column'
 
@@ -502,7 +502,7 @@ function formatParent(align: MenuAction[][], fill: MenuParent, color: MenuParent
   }
 }
 
-/** The Table part's groups for `kind` (YAZ-4970), or none: no cell at `pointer`, or a read-only note. */
+/** The Table part's groups for `kind` (YAZ-4970), or none: no cell at `pointer`, or a read-only page. */
 export function tableMenuSections(view: EditorView, pointer: number | null, kind: TableMenuKind = 'cells'): MenuSection[] {
   if (!view.editable || pointer === null) return []
   const cell = clickedCell(view.state.doc, pointer)

@@ -150,7 +150,7 @@ describe('sanitizeLinkPills, version 2 (YAZ-4924)', () => {
 /** The pieces of an end as `part:text`, the icon as `icon`. */
 const texts = (end: PillEnd | null) => (end === null ? null : end.pieces.map((p) => (p.part === 'icon' ? 'icon' : p.part === 'mark' ? `mark:${p.icon}` : `${p.part}:${p.text}`)))
 const info = { id: 'YAS-12', folder: 'Projects/Plans' }
-/** The pill of a note of this vault, with an ID, in Projects/Plans, under `pills`. */
+/** The pill of a page of this vault, with an ID, in Projects/Plans, under `pills`. */
 const drawn = (pills: LinkPills, otherVault: string | null = null) => {
   const { head, tail } = pillParts(pills, { info, otherVault }, 'Mine')
   return { head: texts(head), tail: texts(tail), icon: pillIconPlace(pills) }

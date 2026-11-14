@@ -76,7 +76,7 @@ describe('mergeExternalMarkdown (YAZ-3704 D1)', () => {
     expect(getMarkdownForSave(crepe)).toContain('New para')
   })
 
-  it('lands nothing when the new file equals the live note, also when the note has a heading (checker 4A)', async () => {
+  it('lands nothing when the new file equals the live page, also when the page has a heading (checker 4A)', async () => {
     const base = '# Title\n\nAlpha\n'
     const { crepe } = await mount(base)
     typeBefore(crepe, 'Alpha', 'USER-')
@@ -144,7 +144,7 @@ describe('mergeExternalMarkdown (YAZ-3704 D1)', () => {
     expect(getMarkdownForSave(crepe)).toContain('The cat sat on the mat.')
   })
 
-  it('refuses a whole-note rewrite while there is typing', async () => {
+  it('refuses a whole-page rewrite while there is typing', async () => {
     const { crepe } = await mount()
     typeBefore(crepe, 'Child', 'USER-')
     expect(mergeExternalMarkdown(crepe, BASE, '# Entirely different\n\nNothing in common.\n')).toBe('conflict')
@@ -181,7 +181,7 @@ describe('mergeExternalMarkdown (YAZ-3704 D1)', () => {
     expect(ranges.every((r) => r.removed === '')).toBe(true)
   })
 
-  it('lands nothing when the new file already equals the live note', async () => {
+  it('lands nothing when the new file already equals the live page', async () => {
     const { crepe } = await mount()
     typeBefore(crepe, 'Child', 'USER-')
     const seen = spyDispatch(crepe)

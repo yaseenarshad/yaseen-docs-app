@@ -8,8 +8,8 @@ import { isDrawing } from '@shared/fileKind'
 import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { indexTarget, splitLink } from '@shared/linkParts'
-import { IDS_FILE, NOTE_ID_KEY, canonicalNoteId, idsAnswer, isNoteId } from '@shared/noteId'
-import { titleOf } from '@shared/noteName'
+import { IDS_FILE, PAGE_ID_KEY, canonicalPageId, idsAnswer, isPageId } from '@shared/pageId'
+import { titleOf } from '@shared/pageName'
 import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
 import { fsCall, isMarkdown, isSkipped } from '../fs/fsUtils'
 
@@ -34,8 +34,8 @@ export async function walk(dir: string, out: string[], dirs?: string[], boards?:
 }
 
 /**
- * Does the folder `dir` answer for the IDs of its own notes (YAZ-4922 🔒 D1)? Only when its `.yaseendocs/ids.json`
- * holds an answer, yes or no (`idsAnswer`): then it is the ID vault of each note under it (`idVault`). A file that
+ * Does the folder `dir` answer for the IDs of its own pages (YAZ-4922 🔒 D1)? Only when its `.yaseendocs/ids.json`
+ * holds an answer, yes or no (`idsAnswer`): then it is the ID vault of each page under it (`idVault`). A file that
  * is missing, unreadable or not JSON has not answered.
  */
 export const answersIds = (dir: string): Promise<boolean> =>
@@ -51,9 +51,9 @@ export const answersIds = (dir: string): Promise<boolean> =>
   )
 
 /**
- * THE BORDER OF A VAULT'S ID WORK (YAZ-4922 🔒 D1), for one pass: is the file at `p` (a note, a board or a folder's
+ * THE BORDER OF A VAULT'S ID WORK (YAZ-4922 🔒 D1), for one pass: is the file at `p` (a page, a board or a folder's
  * settings file) one whose ID is the vault at `root`'s? It is not when a folder between them answers for itself
- * (`answersIds`): that folder is a vault inside the vault, and the note's ID is its. The vault still LISTS that note
+ * (`answersIds`): that folder is a vault inside the vault, and the page's ID is its. The vault still LISTS that page
  * (its sidebar, its search, its links); only the ID work stops at the border. Each folder is read once for the pass:
  * a pass that starts later reads again, so a vault made inside this one meanwhile counts at once. `answers` keeps the
  * reads longer, for what the index only SHOWS (the counts of the box): the live index clears it when folders change.
@@ -72,7 +72,7 @@ export function idsOwnedBy(root: string, answers = new Map<string, Promise<boole
 
 /**
  * The ID vault of `p` within the vault at `root` (YAZ-4922 🔒 D1, `idVault`'s rule): the nearest folder at or above `p`
- * that answers for its own IDs, up to `root` itself. A note made inside a vault inside `root` takes THAT vault's IDs.
+ * that answers for its own IDs, up to `root` itself. A page made inside a vault inside `root` takes THAT vault's IDs.
  */
 export async function idsHome(root: string, p: string): Promise<string> {
   for (let dir = p; dir.startsWith(root + path.sep); dir = path.dirname(dir)) if (await answersIds(dir)) return dir
@@ -103,7 +103,7 @@ function frontmatterTags(props: Record<string, unknown>): string[] {
   return out
 }
 
-/** The frontmatter key holding a note's extra names — read by `extractAliases`, SKIPPED by `extractLinks`. */
+/** The frontmatter key holding a page's extra names — read by `extractAliases`, SKIPPED by `extractLinks`. */
 const ALIASES_KEY = 'aliases'
 
 /**
@@ -127,7 +127,7 @@ const URL_RE = /https?:\/\/\S+/g
 /**
  * Body with fenced code blocks (``` / ~~~) and inline code spans blanked out — the one pre-pass shared by the tag,
  * link and embed extractors, since Obsidian's cache ignores all three there. The walk is `shared/fences.ts`, the
- * rename's too: a note card's text counts (D17), a code block inside a card does not.
+ * rename's too: a card's text counts (D17), a code block inside a card does not.
  */
 const stripCode = maskCode
 
@@ -155,7 +155,7 @@ export function linkTarget(inner: string): string {
 
 /**
  * What the index keeps of a link (`indexTarget`, YAZ-4954): `linkTarget`, except that words which only LOOK like an ID
- * (`[[Covid notes|COVID-19]]`) keep both page sides, `Covid notes|COVID-19`. The scan knows no notes; the resolver
+ * (`[[Covid pages|COVID-19]]`) keep both page sides, `Covid pages|COVID-19`. The scan knows no pages; the resolver
  * picks the side when it reads the record (the left side when it is a page).
  */
 function bodyWikilinks(body: string, embed: boolean): string[] {
@@ -171,7 +171,7 @@ function bodyWikilinks(body: string, embed: boolean): string[] {
 /**
  * Frontmatter string values (top-level and inside lists) that are exactly `[[…]]`, then the same
  * in each folder's block of `in` (D19), then body `[[links]]` outside code; embeds excluded.
- * `aliases` is skipped whatever it holds (GRO-2214): its values are this note's own NAMES, never
+ * `aliases` is skipped whatever it holds (GRO-2214): its values are this page's own NAMES, never
  * outgoing links.
  */
 export function extractLinks(props: Record<string, unknown>, body: string): string[] {
@@ -234,17 +234,17 @@ export async function scanFile(root: string, absPath: string): Promise<IndexReco
   const content = await fsCall(absPath, () => readFile(absPath, 'utf8'))
   const { frontmatter, body } = splitFrontmatter(content)
   const { properties, error } = parseFrontmatter(frontmatter)
-  delete properties[COMMENTS_KEY] // the note's own comment stream (YAZ-1472), never a property
+  delete properties[COMMENTS_KEY] // the page's own comment stream (YAZ-1472), never a property
   record.properties = properties
   if (error !== undefined) record.frontmatterError = error
   // The id as the file holds it, in the form the app writes (YAZ-2677 R2, S18): `yaz-12` is held as
   // `YAZ-12`, and the file is not rewritten for the case alone. WHOSE id it is — this vault's, by
   // its letters now or before (R5) — is said where the index is handed out and where it is swept:
   // the letters can change after this record was scanned and cached.
-  const id = properties[NOTE_ID_KEY]
-  if (isNoteId(id)) record.id = canonicalNoteId(id)
+  const id = properties[PAGE_ID_KEY]
+  if (isPageId(id)) record.id = canonicalPageId(id)
   record.title = titleOf(properties, record.title)
-  // The page's note cards (YAZ-4960 D4): ID, off and reviews off each card line, no card text.
+  // The page's cards (YAZ-4960 D4): ID, off and reviews off each card line, no card text.
   const cards = cardRecords(body)
   // A card file (YAZ-5037): the mark in its properties, never its shape — a file with 2 cards, or none, stays a card
   // file, and its tab says so. Its title is its `title`, as a page's (YAZ-5044, decision A); one from before A that the

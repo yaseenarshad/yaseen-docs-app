@@ -1,5 +1,5 @@
 /**
- * The Page tab (YAZ-4584 D38): the folder's own document, the body of its `.folder.md`, in the note
+ * The Page tab (YAZ-4584 D38): the folder's own document, the body of its `.folder.md`, in the page
  * editor. It replaced the Outline view, and a stored `type: outline` reads as `page` (`folderSettings`).
  * A folder has at most one.
  */

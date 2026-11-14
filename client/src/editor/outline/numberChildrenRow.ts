@@ -3,7 +3,7 @@
  * children, after the "turn into" rows (YAZ-3727 D13). No row when the item has no direct child list (it was a
  * disabled row before D13); the row only dispatches
  * toggleNumberedChildren's transaction and never touches text. No row when the block is not in a
- * list item (YAZ-3696 B3): a table, a line or a heading at the top level has nothing to number. No row in a note
+ * list item (YAZ-3696 B3): a table, a line or a heading at the top level has nothing to number. No row in a page
  * that cannot change (YAZ-3727 D15: a right-click on the text shows these rows too).
  */
 import type { RowProvider } from '../blockHandleMenu'

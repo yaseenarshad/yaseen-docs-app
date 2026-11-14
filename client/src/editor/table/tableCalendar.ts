@@ -515,7 +515,7 @@ export function setTimeSlots(view: EditorView, pos: number, slot: number): void 
  * calendar table when absent); a row with no empty cell takes it at the end of its first cell after the time. The row
  * scrolls to the middle of the screen (the YAZ-4163 demo: "into view" left it at an edge, or under a pinned header). `false`, and no caret move, when there is no calendar table or no row holds the current minute.
  * A now row in a folded run opens the run in the same step (YAZ-4165), so the caret is never in a hidden row. A
- * read-only note never changes (YAZ-4176): its run stays folded, the caret does not move, and its bar scrolls to the middle.
+ * read-only page never changes (YAZ-4176): its run stays folded, the caret does not move, and its bar scrolls to the middle.
  */
 export function goToNow(view: EditorView, at?: number): boolean {
   const { doc } = view.state

@@ -6,9 +6,9 @@
  * (`fs/assets.ts`'s `resolveAsset`, reached through `main/vaultProtocol.ts`), the `<img>` that
  * asks for it lives in the RENDERER, and the answer is a real HTTP-shaped response Chromium
  * either decodes or errors on. A unit test can check either half; only this can check that
- * "what Obsidian would show, this shows" — one note, one screenful, every reference shape at once:
+ * "what Obsidian would show, this shows" — one page, one screenful, every reference shape at once:
  *
- *   ✓ `images/a.png`            note-relative      → resolution step 1 (a note's own file wins)
+ *   ✓ `images/a.png`            page-relative      → resolution step 1 (a page's own file wins)
  *   ✓ `assets/images/b.png`     root-relative      → step 2 (what a paste writes, YAZ-1668)
  *   ✓ `deep.png`                basename only      → step 3, Obsidian's shortest-path walk
  *   ✓ `images/has%20space.png`  percent-encoded    → decoded ONCE, so the file on disk is found
@@ -39,8 +39,8 @@ import { SMALL_HEIGHT, SMALL_WIDTH, smallPng } from './imageFixtures'
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = path.join('Guides', 'Cases.md')
-const NOTE_BODY = 'cases-note-body'
+const PAGE = path.join('Guides', 'Cases.md')
+const PAGE_BODY = 'cases-page-body'
 
 /** In-vault image files, vault-relative. Each is a real 240×160 PNG (`imageFixtures.ts`). */
 const VAULT_IMAGES = [
@@ -52,15 +52,15 @@ const VAULT_IMAGES = [
   'wiki.png',
 ] as const
 
-/** A real image the note points at with `../../outside.png` — outside the vault, so still refused. */
+/** A real image the page points at with `../../outside.png` — outside the vault, so still refused. */
 const OUTSIDE_IMAGE = 'outside.png'
 
 /**
  * Every reference shape, one per block, in the order the assertions read them. Already in remark's
  * normalised form so the first autosave (step 2's resize) changes only what the resize changed.
  */
-const NOTE_TEXT = [
-  NOTE_BODY,
+const PAGE_TEXT = [
+  PAGE_BODY,
   '![a](images/a.png)',
   '![b](assets/images/b.png)',
   '![deep](deep.png)',
@@ -92,7 +92,7 @@ const brokenChips = (w: Page) => editorOf(w).locator('.image-view__broken')
 const imgByAlt = (w: Page, alt: string) => editorOf(w).locator(`.image-view img[alt="${alt}"]`)
 const viewByAlt = (w: Page, alt: string) => editorOf(w).locator(`.image-view:has(img[alt="${alt}"])`)
 
-const readNote = () => readFile(path.join(vault, NOTE), 'utf8')
+const readPageFile = () => readFile(path.join(vault, PAGE), 'utf8')
 /** What the browser actually decoded — 0 (or a throw) when the src never loaded. */
 const naturalWidthOf = (img: Locator): Promise<number> => img.evaluate((el) => (el as HTMLImageElement).naturalWidth)
 /**
@@ -109,7 +109,7 @@ test.beforeAll(async () => {
   await mkdir(path.join(vault, 'assets', 'images'), { recursive: true })
   await mkdir(path.join(vault, 'Archive', 'x', 'y'), { recursive: true })
   await Promise.all([
-    writeFile(path.join(vault, NOTE), NOTE_TEXT),
+    writeFile(path.join(vault, PAGE), PAGE_TEXT),
     ...VAULT_IMAGES.map((rel, i) => writeFile(path.join(vault, rel), smallPng(i * 7))),
     // OUTSIDE the vault copy, deliberately: the escape must be refused because it is an escape,
     // not because the file happens to be missing. `<vault>/Guides/../../outside.png` is exactly here.
@@ -124,9 +124,9 @@ test.afterAll(async () => {
 })
 
 test('step 1 — every reference shape resolves the way Obsidian would, or breaks honestly', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, NOTE)) })
+  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, PAGE)) })
   win = await appWindow(app, 'w1')
-  await expect(editorOf(win)).toContainText(NOTE_BODY)
+  await expect(editorOf(win)).toContainText(PAGE_BODY)
 
   // Eight image NODES: the five that load and the three that cannot. The fenced line and the
   // wiki embed are not among them — see below.
@@ -185,8 +185,8 @@ test('step 2 — the west handle resizes into `alt|width` on disk; ⌘Z takes it
 
   // ONE document change per gesture, written on mouseup and autosaved — the width is markdown.
   const widthRe = /!\[a\|(\d+)]\(images\/a\.png\)/
-  await expect.poll(readNote, { timeout: 10_000 }).toMatch(widthRe)
-  const committed = Number(widthRe.exec(await readNote())![1])
+  await expect.poll(readPageFile, { timeout: 10_000 }).toMatch(widthRe)
+  const committed = Number(widthRe.exec(await readPageFile())![1])
   // A pixel or two of slack for where the synthetic pointer actually landed; the point is that
   // the drag's travel — not some default — is what got written.
   expect(committed).toBeGreaterThan(SMALL_WIDTH + 40)
@@ -197,10 +197,10 @@ test('step 2 — the west handle resizes into `alt|width` on disk; ⌘Z takes it
   // --- undo: out of the editor markup first, then off the disk on the next autosave ---
   await win.keyboard.press('Meta+z')
   await expect.poll(() => styleWidthOf(imgByAlt(win, 'a'))).toBe('')
-  await expect.poll(readNote, { timeout: 10_000 }).toContain('![a](images/a.png)')
-  expect(await readNote()).not.toMatch(widthRe)
+  await expect.poll(readPageFile, { timeout: 10_000 }).toContain('![a](images/a.png)')
+  expect(await readPageFile()).not.toMatch(widthRe)
   // The sized twin was never touched: undo reached exactly the one node the drag changed.
-  expect(await readNote()).toContain('![sized|300](images/a.png)')
+  expect(await readPageFile()).toContain('![sized|300](images/a.png)')
   expect(await styleWidthOf(imgByAlt(win, 'sized'))).toBe('300px')
   await shoot(win, 'imageRender-04-undone')
 })

@@ -81,7 +81,7 @@ const box = () => document.querySelector<HTMLElement>('.read-only-chip__ask')
 /** Types in the locked page: the message shows, and Enter opens the box, which takes the keyboard. */
 function enterOpensBox(view: ReturnType<typeof editorViewOf>) {
   expect(view.editable).toBe(false)
-  act(() => tellReadOnlyEdit(view.dom, 'note'))
+  act(() => tellReadOnlyEdit(view.dom, 'page'))
   key(view.dom, 'Enter')
   expect(box()).not.toBeNull()
   expect(document.activeElement?.textContent).toBe('Allow edits for 1 minute')

@@ -1,7 +1,7 @@
 /**
- * LINKS TO A NOTE CARD (YAZ-5030, D7 of YAZ-4948): `[[DEMO-127]]` names the card whose line holds that ID. Against a
+ * LINKS TO A PAGE CARD (YAZ-5030, D7 of YAZ-4948): `[[DEMO-127]]` names the card whose line holds that ID. Against a
  * real editor (`createCrepe`): the pill shows the card's title and ID with the card icon; a plain click opens the card
- * window (the one open hook, `mdapp:note-card-open`), in an editable note too; ⌘-click opens the card's page in a
+ * window (the one open hook, `mdapp:card-open`), in an editable page too; ⌘-click opens the card's page in a
  * background tab, landed on the card. The `[[` picker lists cards after pages, by title and by ID. A card's text draws
  * the same pill. A card that is gone shows the missing look. The file keeps `[[DEMO-127]]`.
  */
@@ -10,9 +10,9 @@ import type { Crepe } from '@milkdown/crepe'
 import type { IndexRecord } from '@shared/types'
 import { cardLinkCandidates, linkCandidates } from '../../links/completion'
 import { linkResolver } from '../../links/folderLinks'
-import { createCrepe, getMarkdownForSave, noteCardLook } from '../createCrepe'
-import { NOTE_CARD_OPEN, takeCardLanding, type NoteCardOpenRequest } from '../noteCard/noteCardOpen'
-import { renderNoteCard } from '../noteCard/noteCardRender'
+import { createCrepe, getMarkdownForSave, cardLook } from '../createCrepe'
+import { CARD_OPEN, takeCardLanding, type CardOpenRequest } from '../card/cardOpen'
+import { renderCard } from '../card/cardRender'
 import { rowsFor } from './wikilinkPicker'
 import { WIKILINK_CARD_CLASS, createWikilinkResolveSource, linksAsShown } from './wikilinkPlugin'
 
@@ -24,7 +24,7 @@ const rec = (path: string, extra: Partial<IndexRecord> = {}): IndexRecord => {
 
 const VERBS = '/vault/verbs.md'
 const RECORDS: IndexRecord[] = [
-  rec('/vault/Estar notes.md', { id: 'DEMO-3' }),
+  rec('/vault/Estar pages.md', { id: 'DEMO-3' }),
   rec(VERBS, { id: 'DEMO-1', cards: [{ id: 'DEMO-126', off: false, next: false, reviews: [], title: 'Ser' }, { id: 'DEMO-127', off: false, next: false, reviews: [], title: 'Estar', notitle: true }] }),
   // An OLD card: no `notitle`, a title all the same.
   rec('/vault/old.md', { id: 'DEMO-2', cards: [{ id: 'DEMO-40', off: false, next: false, reviews: [], title: 'Old card' }] }),
@@ -57,7 +57,7 @@ async function mount(markdown: string, wikilinks = source()) {
 
 const mousedown = (el: Element, init: MouseEventInit = {}) => el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, ...init }))
 
-describe('a card link in a note (YAZ-5030)', () => {
+describe('a card link in a page (YAZ-5030)', () => {
   it('`[[DEMO-127]]` in any case is a card pill: the card`s title and its ID, with the card icon; the file keeps the link', async () => {
     const { crepe, root } = await mount('See [[demo-127]] and [[DEMO-40]] and [[DEMO-3]].\n')
     const cards = [...root.querySelectorAll<HTMLElement>(`.${WIKILINK_CARD_CLASS}`)]
@@ -65,7 +65,7 @@ describe('a card link in a note (YAZ-5030)', () => {
     expect(cards[0].querySelector('.wikilink__card-id')?.textContent).toBe('DEMO-127')
     expect(cards[0].classList.contains('wikilink--unresolved')).toBe(false)
     // A page's ID stays a page pill, by its title.
-    expect([...root.querySelectorAll('.wikilink')].some((s) => s.textContent === 'Estar notes')).toBe(true)
+    expect([...root.querySelectorAll('.wikilink')].some((s) => s.textContent === 'Estar pages')).toBe(true)
     expect(getMarkdownForSave(crepe)).toBe('See [[demo-127]] and [[DEMO-40]] and [[DEMO-3]].\n')
   })
 
@@ -79,11 +79,11 @@ describe('a card link in a note (YAZ-5030)', () => {
     expect(plain.root.querySelector(`.${WIKILINK_CARD_CLASS}`)).toBeNull()
   })
 
-  it('a plain click opens the card window (one open hook, in an editable note); ⌘-click opens the page in a background tab, landed on the card', async () => {
+  it('a plain click opens the card window (one open hook, in an editable page); ⌘-click opens the page in a background tab, landed on the card', async () => {
     const { root, nav } = await mount('Go [[DEMO-127]] now\n')
-    const asks: NoteCardOpenRequest[] = []
-    const onOpen = (e: Event) => asks.push((e as CustomEvent<NoteCardOpenRequest>).detail)
-    document.addEventListener(NOTE_CARD_OPEN, onOpen)
+    const asks: CardOpenRequest[] = []
+    const onOpen = (e: Event) => asks.push((e as CustomEvent<CardOpenRequest>).detail)
+    document.addEventListener(CARD_OPEN, onOpen)
     try {
       const pill = root.querySelector(`.${WIKILINK_CARD_CLASS}`)!
       // A real single click (`detail` 1).
@@ -97,7 +97,7 @@ describe('a card link in a note (YAZ-5030)', () => {
       expect(takeCardLanding(VERBS, 'demo-127')).toBe(true)
       expect(takeCardLanding(VERBS, 'DEMO-127')).toBe(false)
     } finally {
-      document.removeEventListener(NOTE_CARD_OPEN, onOpen)
+      document.removeEventListener(CARD_OPEN, onOpen)
     }
   })
 
@@ -105,9 +105,9 @@ describe('a card link in a note (YAZ-5030)', () => {
     const CARD_FILE = '/vault/capital-of-france-demo-140.md'
     const records = [...RECORDS, rec(CARD_FILE, { kind: 'card', title: 'Capital of France', cards: [{ id: 'DEMO-140', off: false, next: false, reviews: [], title: 'Capital of France' }] })]
     const { root, nav } = await mount('Go [[DEMO-140]] now\n', source(records))
-    const asks: NoteCardOpenRequest[] = []
-    const onOpen = (e: Event) => asks.push((e as CustomEvent<NoteCardOpenRequest>).detail)
-    document.addEventListener(NOTE_CARD_OPEN, onOpen)
+    const asks: CardOpenRequest[] = []
+    const onOpen = (e: Event) => asks.push((e as CustomEvent<CardOpenRequest>).detail)
+    document.addEventListener(CARD_OPEN, onOpen)
     try {
       mousedown(root.querySelector(`.${WIKILINK_CARD_CLASS}`)!, { detail: 1 })
       expect(asks).toEqual([{ path: CARD_FILE, cardId: 'DEMO-140', index: 0 }])
@@ -117,7 +117,7 @@ describe('a card link in a note (YAZ-5030)', () => {
       // The tab is the card's file: there is no page to land in, so nothing waits for a card view to take it.
       expect(takeCardLanding(CARD_FILE, 'DEMO-140')).toBe(false)
     } finally {
-      document.removeEventListener(NOTE_CARD_OPEN, onOpen)
+      document.removeEventListener(CARD_OPEN, onOpen)
     }
   })
 
@@ -136,13 +136,13 @@ describe('the `[[` picker lists cards (YAZ-5030)', () => {
     // An exact title: the card (tier 0) first; a page that only starts with it (tier 1) after.
     expect(rows.map((r) => [r.label, r.insert, r.card === true])).toEqual([
       ['Estar', 'DEMO-127', true],
-      ['Estar notes', 'DEMO-3', false],
+      ['Estar pages', 'DEMO-3', false],
       // No PAGE is named so: Create stays last.
       ['estar', 'estar', false],
     ])
     // Same rank: the page first. `es` starts both names.
     const same = rowsFor('es', candidates, ['DEMO'])
-    expect(same.filter((r) => !r.create).map((r) => r.label)).toEqual(['Estar notes', 'Estar'])
+    expect(same.filter((r) => !r.create).map((r) => r.label)).toEqual(['Estar pages', 'Estar'])
   })
 
   it('by ID: `[[127` (number only) and `[[demo-127` find the card, read `DEMO-127 — Estar`', () => {
@@ -157,11 +157,11 @@ describe('the `[[` picker lists cards (YAZ-5030)', () => {
   })
 })
 
-describe('a card link inside a card (YAZ-5030, `renderNoteCard`)', () => {
+describe('a card link inside a card (YAZ-5030, `renderCard`)', () => {
   it('draws the card pill: title, ID, card icon class; the raw link rides on it for the click', () => {
-    const el = renderNoteCard('Compare with [[DEMO-126]]', {}, noteCardLook(source(), undefined))
+    const el = renderCard('Compare with [[DEMO-126]]', {}, cardLook(source(), undefined))
     const pill = el.querySelector<HTMLElement>(`.${WIKILINK_CARD_CLASS}`)!
     expect(pill.textContent).toBe('SerDEMO-126')
-    expect(pill.getAttribute('data-note-card-link')).toBe('DEMO-126')
+    expect(pill.getAttribute('data-card-link')).toBe('DEMO-126')
   })
 })

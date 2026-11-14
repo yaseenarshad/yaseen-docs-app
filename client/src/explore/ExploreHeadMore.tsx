@@ -156,7 +156,7 @@ export function HeadMore({ sections, always = false }: { sections: () => MenuSec
       {at !== null &&
         createPortal(
           // The menu is drawn in the stack's root, but React passes its events up through the head: a press, a double
-          // click or a right-click in it is not the head's drag, reset or note menu.
+          // click or a right-click in it is not the head's drag, reset or page menu.
           <span style={{ display: 'contents' }} onMouseDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
             <ContextMenu x={at.x} y={at.y} sections={sections()} onClose={() => setAt(null)} />
           </span>,

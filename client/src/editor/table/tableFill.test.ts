@@ -7,7 +7,7 @@ import { undo } from '@milkdown/kit/prose/history'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { cellDOM, cellPos, mountNote, mountTable, mouseAt, unmountAll } from './tableTestKit'
+import { cellDOM, cellPos, mountPage, mountTable, mouseAt, unmountAll } from './tableTestKit'
 import { fillCells, fillSource } from './tableFill'
 
 afterEach(unmountAll)
@@ -85,7 +85,7 @@ describe('fill command', () => {
   })
 
   it('down from one date cell: the next days (YAZ-3789)', async () => {
-    const { view } = await mountNote('| d |\n| --- |\n| 2026-10-30 |\n|  |\n|  |\n')
+    const { view } = await mountPage('| d |\n| --- |\n| 2026-10-30 |\n|  |\n|  |\n')
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, 1, 0) + 2)))
     view.dispatch(fillCells(view.state, fillSource(view.state)!, 'down', 2)!)
     const texts: string[] = []
@@ -104,7 +104,7 @@ describe('fill handle', () => {
     expect(view.dom.querySelectorAll('.table-fill-handle')).toHaveLength(1)
   })
 
-  it('no handle outside a table or in a read-only note', async () => {
+  it('no handle outside a table or in a read-only page', async () => {
     const view = await mountTable(`para\n\n${TABLE}`)
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2)))
     expect(handle(view)).toBeNull()
@@ -163,7 +163,7 @@ describe('fill handle', () => {
 
 describe('a note closed during a drag', () => {
   it('drops the drag\'s document listeners: a later mouseup dispatches nothing', async () => {
-    const { crepe, view } = await mountNote(TABLE)
+    const { crepe, view } = await mountPage(TABLE)
     selectCells(view, [1, 1], [2, 2])
     mouseAt('mousedown', handle(view)!, ...at(2, 2, 1))
     mouseAt('mousemove', cellDOM(view, 4, 1), ...at(4, 1, 1))

@@ -4,7 +4,7 @@
  * chip, sync chip, conflict bar, debounced autosave, the quit handshake, all from
  * `useDocumentHost` (YAZ-2073 🔒 D16) — with the canvas where a text editor would be.
  *
- * 🔒 CHROME ONLY. The ENGINE lives behind `ExcalidrawSurface` — the SAME surface the note embed's
+ * 🔒 CHROME ONLY. The ENGINE lives behind `ExcalidrawSurface` — the SAME surface the page embed's
  * modal mounts (rule 28) — and nothing in this file imports the package, or anything that does.
  * `DrawingEditor.test.tsx` mocks that one seam and pins the rest.
  *
@@ -234,7 +234,7 @@ const EXPORT_FAILED = "The Excalidraw drawing couldn't be exported."
 /** What the PDF button says when the sheet, the print or the write refused (YAZ-3943 D6). */
 const PDF_FAILED = "The PDF couldn't be exported."
 
-/** Page links in the board's text (YAZ-4039): the props a note's editor gets for its `[[links]]` (`useDrawingLinks`). */
+/** Page links in the board's text (YAZ-4039): the props a page's editor gets for its `[[links]]` (`useDrawingLinks`). */
 export interface DrawingEditorProps extends DocumentHostProps, DrawingLinkProps {
   /**
    * The user-level canvas preferences (🔒 YAZ-1775 D9), App's copy of `SettingsState.canvas`: seeded into

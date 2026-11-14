@@ -25,7 +25,7 @@ function mount(onSubmit: (name: string) => Promise<void> = () => Promise.resolve
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<RenameInline initial="Old Note" title={title} indent={0} onSubmit={submit} onCancel={onCancel} />))
+  act(() => root?.render(<RenameInline initial="Old Page" title={title} indent={0} onSubmit={submit} onCancel={onCancel} />))
   const field = container.querySelector<HTMLInputElement>('.create-inline__input')
   if (field === null) throw new Error('the rename input did not mount')
   return { el: container, field, onSubmit: submit, onCancel }
@@ -40,24 +40,24 @@ describe('RenameInline (YAZ-1553)', () => {
   it('mounts focused with the current name selected', () => {
     const { field } = mount()
     expect(document.activeElement).toBe(field)
-    expect(field.value).toBe('Old Note')
+    expect(field.value).toBe('Old Page')
   })
 
   it('Enter commits through the one door: focus leaves, the trimmed name is submitted', async () => {
     const { field, onSubmit } = mount()
-    field.value = '  New Note  '
+    field.value = '  New Page  '
     press(field, 'Enter')
     await flush()
-    expect(onSubmit).toHaveBeenCalledWith('New Note')
+    expect(onSubmit).toHaveBeenCalledWith('New Page')
     expect(document.activeElement).not.toBe(field)
   })
 
   it('click-away commits the changed name', async () => {
     const { field, onSubmit, onCancel } = mount()
-    field.value = 'New Note'
+    field.value = 'New Page'
     leave(field)
     await flush()
-    expect(onSubmit).toHaveBeenCalledWith('New Note')
+    expect(onSubmit).toHaveBeenCalledWith('New Page')
     expect(onCancel).not.toHaveBeenCalled()
   })
 
@@ -124,7 +124,7 @@ describe('RenameInline (YAZ-1553)', () => {
   it('a rejected submit shows its message and keeps the box open; leaving again retries', async () => {
     let calls = 0
     const { el, field, onSubmit } = mount(() => (++calls === 1 ? Promise.reject(new Error('Taken')) : Promise.resolve()))
-    field.value = 'New Note'
+    field.value = 'New Page'
     leave(field)
     await flush()
     expect(error(el)).toBe('Taken')

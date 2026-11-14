@@ -1,5 +1,5 @@
 /**
- * `useAutosave` (YAZ-2131 1E, YAZ-2172): the hook that owns one note's `Autosave` controller.
+ * `useAutosave` (YAZ-2131 1E, YAZ-2172): the hook that owns one page's `Autosave` controller.
  * `lib/autosave.ts` has its own state-machine suite; this pins what the hook adds on top: the held
  * frontmatter re-prepended on every write, the frontmatter-only absorb (GRO-2186), the CONFLICT
  * mtime and "keep mine", the flush on unmount and the close/quit handshake (GRO-2160). The bridge
@@ -22,7 +22,7 @@ const writeFile = vi.mocked(api.writeFile)
 const readFile = vi.mocked(api.readFile)
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-const PATH = '/vault/note.md'
+const PATH = '/vault/page.md'
 const FM = '---\nstatus: draft\n---\n'
 
 let root: Root | null = null
@@ -36,7 +36,7 @@ function Probe() {
   return null
 }
 
-/** Mounts the hook and attaches a note whose live editor body is whatever `body()` returns. */
+/** Mounts the hook and attaches a page whose live editor body is whatever `body()` returns. */
 function mountAttached(body: () => string, mtime = 1): Autosave {
   root = createRoot(document.createElement('div'))
   act(() => root?.render(<Probe />))
@@ -106,7 +106,7 @@ describe('useAutosave (YAZ-2172)', () => {
     expect(handle.status).toBe('saved')
   })
 
-  it('the handshake answers clean only when the note is on disk: a conflict or a failed write says not clean (YAZ-3737 D2)', async () => {
+  it('the handshake answers clean only when the page is on disk: a conflict or a failed write says not clean (YAZ-3737 D2)', async () => {
     let live = 'body'
     mountAttached(() => live)
     live = 'typed'

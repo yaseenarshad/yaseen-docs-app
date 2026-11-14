@@ -1,5 +1,5 @@
 /**
- * Page links in a drawing (YAZ-4039 D7, D11): what a pill shows, and what each gesture on it does, through the note's
+ * Page links in a drawing (YAZ-4039 D7, D11): what a pill shows, and what each gesture on it does, through the page's
  * own pieces. The engine side (layout, hit test, hover, clicks, menu) is `engine/.../tests/hostLinks.test.tsx`.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -46,10 +46,10 @@ describe('what a pill shows', () => {
     expect(drawingLinkLook('Projects', source)).toEqual({ label: 'Projects', folder: true })
   })
 
-  it('shows a missing page dim, and a gone ID as a missing note', () => {
+  it('shows a missing page dim, and a gone ID as a missing page', () => {
     const { source } = setup()
     expect(drawingLinkLook('Nowhere', source)).toEqual({ label: 'Nowhere', missing: true })
-    expect(drawingLinkLook(GONE, source)).toEqual({ label: `Missing note · ${GONE}`, missing: true })
+    expect(drawingLinkLook(GONE, source)).toEqual({ label: `Missing page · ${GONE}`, missing: true })
   })
 
   it('leaves a link with nothing to show as text', () => {
@@ -77,13 +77,13 @@ describe('the gestures on a pill', () => {
     expect(follow).not.toHaveBeenCalled()
   })
 
-  it('a plain click opens on a read-only board, as in a read-only note', () => {
+  it('a plain click opens on a read-only board, as in a read-only page', () => {
     const { links, follow } = setup(true)
     expect(links.onPointerDown(hit(ID), press())).toBe(true)
     expect(follow).toHaveBeenLastCalledWith(ID, 'thisTab')
   })
 
-  it('a read-only board follows the vault\'s "Clicking a link: Explore" (YAZ-4939): a note pill opens in Explore, a folder pill and ⌘-click keep their doors', () => {
+  it('a read-only board follows the vault\'s "Clicking a link: Explore" (YAZ-4939): a page pill opens in Explore, a folder pill and ⌘-click keep their doors', () => {
     const { links, follow, nav } = setup(true)
     Object.assign(nav, { openExplore: vi.fn(), exploreClick: () => true })
     expect(links.onPointerDown(hit(ID), press())).toBe(true)
@@ -101,7 +101,7 @@ describe('the gestures on a pill', () => {
     expect(follow).not.toHaveBeenCalled()
   })
 
-  it('⌘-click calls the note follower, which opens the page', () => {
+  it('⌘-click calls the page follower, which opens the page', () => {
     const { source, nav, deps } = setup()
     const follow = wikilinkFollower(source, nav)
     const links = drawingHostLinks(() => ({ ...deps(), follow }))
@@ -126,7 +126,7 @@ describe('the gestures on a pill', () => {
     expect(menu).toHaveBeenCalledWith(hit(ID), event)
   })
 
-  it("the menu is the note's one link menu", () => {
+  it("the menu is the page's one link menu", () => {
     const { source, nav, follow } = setup()
     const labels = (menu: LinkMenu) => linkMenuRows(menu).map((row) => row.label)
     expect(labels(linkMenuOf(ID, source, nav, follow, undefined, undefined, undefined, undefined))).toEqual([`ID: ${ID}`, 'Open', 'Open in new tab', 'Copy name and ID', 'Copy ID', 'Copy path'])
@@ -176,8 +176,8 @@ describe('two vaults in one window', () => {
     expect(windowLinkLook('BBB-1')).toEqual({ label: 'Budget' })
     expect(windowLinkLook('Shared')).toEqual({ label: 'Shared' })
     expect(linkVault('Shared')?.root).toBe('/a')
-    expect(windowLinkLook('AAA-9')).toEqual({ label: 'Missing note · AAA-9', missing: true })
-    expect(windowLinkLook('BBB-9')).toEqual({ label: 'Missing note · BBB-9', missing: true })
+    expect(windowLinkLook('AAA-9')).toEqual({ label: 'Missing page · AAA-9', missing: true })
+    expect(windowLinkLook('BBB-9')).toEqual({ label: 'Missing page · BBB-9', missing: true })
   })
 
   it('keeps a vault while any board of it is mounted, and drops it with the last one', () => {
@@ -205,7 +205,7 @@ describe('two vaults in one window', () => {
     expect(windowLinkLook('BBB-1')).toEqual({ label: 'Budget 2026' })
   })
 
-  it('YAZ-4074 6A item 7: a new index that changes no look of a drawn link wakes no board (a note autosave)', () => {
+  it('YAZ-4074 6A item 7: a new index that changes no look of a drawn link wakes no board (a page autosave)', () => {
     const { links } = setup()
     const listener = vi.fn()
     unmounts.push(links.subscribe(listener))
@@ -213,10 +213,10 @@ describe('two vaults in one window', () => {
     unmounts.push(mountDrawingVault('/b', own))
     expect(windowLinkLook('BBB-1')).toEqual({ label: 'Budget' })
     listener.mockClear()
-    // The autosave of another note: a new records array, the same titles.
+    // The autosave of another page: a new records array, the same titles.
     own.update(own.resolve, [...own.records, { path: '/b/Other.md', title: 'Other' } as unknown as IndexRecord], [], true, ['BBB'])
     expect(listener).not.toHaveBeenCalled()
-    // A rename of the linked note does wake them.
+    // A rename of the linked page does wake them.
     own.update(own.resolve, [{ path: '/b/Budget.md', title: 'Budget Q3' }] as unknown as IndexRecord[], [], true, ['BBB'])
     expect(listener).toHaveBeenCalledTimes(1)
   })

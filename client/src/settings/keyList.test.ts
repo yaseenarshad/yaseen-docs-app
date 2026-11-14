@@ -9,9 +9,9 @@ const search = row('app.search', ['CmdOrCtrl+K'])
 const quit = row('app.mac.quit', ['CmdOrCtrl+Q'], { changeable: false, macStandard: true })
 const duplicate = row('drawing.duplicate', ['CmdOrCtrl+D'])
 const link = row('drawing.link', ['CmdOrCtrl+K'])
-const noteBold = row('note.bold', ['CmdOrCtrl+B'])
+const pageBold = row('page.bold', ['CmdOrCtrl+B'])
 const trim = row('code.trim', ['CmdOrCtrl+K CmdOrCtrl+X'])
-const ROWS = [goTo, search, quit, duplicate, link, noteBold, trim]
+const ROWS = [goTo, search, quit, duplicate, link, pageBold, trim]
 
 describe('the key list (K1)', () => {
   it('has one row per id, and every changeable App command is a row', () => {
@@ -23,9 +23,9 @@ describe('the key list (K1)', () => {
   })
 
   it('reads a change by its scoped id, an old App change by its plain id, and null as no key', () => {
-    expect(keysOf(noteBold, {})).toEqual(['CmdOrCtrl+B'])
-    expect(keysOf(noteBold, { 'note.bold': 'CmdOrCtrl+Alt+B' })).toEqual(['CmdOrCtrl+Alt+B'])
-    expect(keysOf(noteBold, { 'note.bold': null })).toEqual([])
+    expect(keysOf(pageBold, {})).toEqual(['CmdOrCtrl+B'])
+    expect(keysOf(pageBold, { 'page.bold': 'CmdOrCtrl+Alt+B' })).toEqual(['CmdOrCtrl+Alt+B'])
+    expect(keysOf(pageBold, { 'page.bold': null })).toEqual([])
     expect(keysOf(search, { search: 'CmdOrCtrl+J' })).toEqual(['CmdOrCtrl+J'])
     expect(keysOf(search, { 'app.search': 'CmdOrCtrl+L', search: 'CmdOrCtrl+J' })).toEqual(['CmdOrCtrl+L'])
   })
@@ -33,11 +33,11 @@ describe('the key list (K1)', () => {
 
 describe('the clash rule (K3) and the step aside (K9)', () => {
   it('two places never clash; the same place does', () => {
-    const noteSame = row('note.same', ['CmdOrCtrl+Alt+D'])
+    const pageSame = row('note.same', ['CmdOrCtrl+Alt+D'])
     const drawingSame = row('drawing.same', ['CmdOrCtrl+Alt+D'])
-    expect(clashesOf(noteSame, 'CmdOrCtrl+Alt+D', {}, {}, [...ROWS, noteSame, drawingSame])).toEqual([])
-    // A note is no place an App key steps aside in: Show in sidebar blocks a note's ⌘D.
-    expect(clashesOf(noteBold, 'CmdOrCtrl+D', {}, {}, ROWS).map((r) => r.id)).toEqual(['app.goTo'])
+    expect(clashesOf(pageSame, 'CmdOrCtrl+Alt+D', {}, {}, [...ROWS, pageSame, drawingSame])).toEqual([])
+    // A page is no place an App key steps aside in: Show in sidebar blocks a page's ⌘D.
+    expect(clashesOf(pageBold, 'CmdOrCtrl+D', {}, {}, ROWS).map((r) => r.id)).toEqual(['app.goTo'])
     expect(clashesOf(link, 'CmdOrCtrl+D', {}, {}, ROWS).map((r) => r.id)).toEqual(['drawing.duplicate'])
   })
 
@@ -46,7 +46,7 @@ describe('the clash rule (K3) and the step aside (K9)', () => {
     expect(blockersOf(link, {}, {}, ROWS).map((r) => r.id)).toEqual(['app.search'])
     // ⌘D: Show in sidebar steps aside in drawings by default, so Duplicate keeps ⌘D there.
     expect(stepsAside(goTo, 'drawing', {})).toBe(true)
-    expect(stepsAside(goTo, 'note', {})).toBe(false)
+    expect(stepsAside(goTo, 'page', {})).toBe(false)
     expect(blockersOf(duplicate, {}, {}, ROWS)).toEqual([])
     // The switch off: ⌘D goes to your place everywhere, and Duplicate is blocked.
     expect(blockersOf(duplicate, {}, { 'app.goTo': false }, ROWS).map((r) => r.id)).toEqual(['app.goTo'])
@@ -80,8 +80,8 @@ describe('the clash rule (K3) and the step aside (K9)', () => {
 
   it('takes a bare letter only for a drawing (its tools are letters); every other place needs ⌘, ⌃ or ⌥', () => {
     expect(isUsableFor(duplicate, 'R')).toBe(true)
-    expect(isUsableFor(noteBold, 'R')).toBe(false)
-    expect(isUsableFor(noteBold, 'Alt+R')).toBe(true)
+    expect(isUsableFor(pageBold, 'R')).toBe(false)
+    expect(isUsableFor(pageBold, 'Alt+R')).toBe(true)
     expect(isUsableFor(trim, 'CmdOrCtrl+K CmdOrCtrl+X')).toBe(true)
     expect(isUsableFor(trim, 'CmdOrCtrl+K X')).toBe(false)
   })

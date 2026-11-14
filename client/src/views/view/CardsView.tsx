@@ -16,9 +16,9 @@ import { canonicalKey } from './keys'
 import { GroupHeader, rowCell, rowTitle } from './GroupHeader'
 import { type GroupSpot, TOP_SPOT, childSpot, groupTakesNew, spotKey } from './groupDrag'
 import { PageContextMenu } from './PageContextMenu'
-import { type CardNoteDoors, cardMenuItems } from './rowMenuItems'
+import { type CardPageDoors, cardMenuItems } from './rowMenuItems'
 import { openByKey } from '../../lib/openGesture'
-import { type NoteWindowLink, currentItemClass, shownRows, useNoteWindowItems } from './NoteWindow'
+import { type PageWindowLink, currentItemClass, shownRows, usePageWindowItems } from './PageWindow'
 import { NO_READ_ONLY, writableKey } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
@@ -44,13 +44,13 @@ export interface CardsViewProps {
   onOpenFileBackground?: (path: string) => void
   /** "Open in mini window ⇧↩" (D57) and ⇧Enter (YAZ-4605 D56) in the right-click menu (YAZ-4547 D24): ViewsPane's card; absent = no item. */
   onOpenWindow?: (path: string) => void
-  /** The card's link: this view writes the order it shows and marks the card's note (D24). */
-  windowLink?: NoteWindowLink
+  /** The card's link: this view writes the order it shows and marks the card's page (D24). */
+  windowLink?: PageWindowLink
   onNotice?: (message: string) => void
-  /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. */
+  /** Create a page seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers. */
   onNewInGroup?: (group: Group, name?: string, at?: GroupSpot) => void
-  /** The card menu's note items (YAZ-3746 13BO): Open, the new note beside a card, Duplicate, Delete. Absent: none. */
-  noteDoors?: CardNoteDoors
+  /** The card menu's page items (YAZ-3746 13BO): Open, the new page beside a card, Duplicate, Delete. Absent: none. */
+  pageDoors?: CardPageDoors
   /** The vault's property declarations (5E, GRO-2217): vault-wide editor inference and relation targets. */
   properties?: PropertiesResponse | null
   /** The settings of the folder whose rows these are (YAZ-819): the typing ladder's TOP rung (🔒 Q8). */
@@ -59,29 +59,29 @@ export interface CardsViewProps {
   vaultRecords: readonly IndexRecord[]
   /** The snapshot's folder settings records, for a link column narrowed to a folder. */
   vaultFolders: readonly IndexRecord[]
-  /** ViewsPane's resolver: a cell reads an id link as the title of the note, or folder, it names (YAZ-2293 D8). */
+  /** ViewsPane's resolver: a cell reads an id link as the title of the page, or folder, it names (YAZ-2293 D8). */
   resolve: Resolver
   /** The window's link resolver, by which a link column's target names its folder. */
   resolveLink: ResolveLink
   /** A cell's commit: one value of one row, through the host's writer (`FolderHost.writeValues`). */
   onWriteValue: (path: string, key: string, value: unknown) => Promise<unknown>
-  /** The read-only notes (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
+  /** The read-only pages (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
   readOnly?: ReadonlySet<string>
 }
 
 // ---------- covers ----------
 
-/** What the note's `image` property value asks for; null = no value → placeholder. */
+/** What the page's `image` property value asks for; null = no value → placeholder. */
 type Cover = { kind: 'color'; color: string } | { kind: 'remote'; src: string } | { kind: 'asset'; ref: string } | null
 
 const COLOR_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i
 const WIKILINK_RE = /^\[\[([^[\]]*)\]\]$/
 
 /**
- * The view's `image` names a per-note property (Obsidian cards semantics); ITS VALUE on each
- * note decides the cover: `#rgb`/`#rrggbb` → colour block, `http(s)://` → remote URL, a
- * wikilink or plain path → local vault asset via `readAsset`. Only note properties resolve
- * (`file.` / `formula.` keys have no per-note frontmatter value → placeholder).
+ * The view's `image` names a per-page property (Obsidian cards semantics); ITS VALUE on each
+ * page decides the cover: `#rgb`/`#rrggbb` → colour block, `http(s)://` → remote URL, a
+ * wikilink or plain path → local vault asset via `readAsset`. Only page properties resolve
+ * (`file.` / `formula.` keys have no per-page frontmatter value → placeholder).
  */
 function coverOf(record: IndexRecord, imageKey: string): Cover {
   const key = canonicalKey(imageKey)
@@ -147,15 +147,15 @@ function CardCover({ root, cover }: { root: string; cover: Cover }) {
  * `imageFit` (cover|contain) and `imageAspectRatio` (number, default 1:1) land as CSS custom
  * properties on the grid. Grouped results render 4C sections — the shared `GroupHeader` over
  * each group's grid, with the SAME persisted collapse state as the table/board (never the
- * page's card); search narrows cards and drops empty groups. Note-property rows edit inline
+ * page's card); search narrows cards and drops empty groups. Page-property rows edit inline
  * through `EditableCell` (5B, GRO-2142); a lightbox stays out of scope.
  */
-export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onNewInGroup, noteDoors, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue, readOnly = NO_READ_ONLY, hover }: CardsViewProps) {
+export function CardsView({ def, view, root, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onNewInGroup, pageDoors, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue, readOnly = NO_READ_ONLY, hover }: CardsViewProps) {
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
-  // The note window (YAZ-4547 D24): the order shown through the groups, once per rows, groups or collapse change.
+  // The page window (YAZ-4547 D24): the order shown through the groups, once per rows, groups or collapse change.
   const windowOrder = useMemo(() => shownRows(groups, rows, collapsed), [groups, rows, collapsed])
   const rootRef = useRef<HTMLDivElement>(null)
-  useNoteWindowItems(windowLink, windowOrder, rootRef)
+  usePageWindowItems(windowLink, windowOrder, rootRef)
   /** A typed editor keeps its own (native) menu, as in the table. */
   const openMenu = (event: ReactMouseEvent, row: Row): void => {
     if (event.target instanceof Element && event.target.closest('[data-editing]') !== null) return
@@ -177,9 +177,9 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
     [rest, rowRecords, properties, settings],
   )
   /** What the pickers resolve and complete over: the WHOLE vault, never the folder's rows alone (🔒 D2). */
-  // The note editor's `[[` rows, notes and folders (YAZ-4601 D49).
+  // The page editor's `[[` rows, pages and folders (YAZ-4601 D49).
   const titles = useMemo(() => cellLinkCandidates(vaultRecords, vaultFolders, resolveLink, root), [vaultRecords, vaultFolders, resolveLink, root])
-  // Relation columns narrow the link picker to the notes in the FOLDER the target names
+  // Relation columns narrow the link picker to the pages in the FOLDER the target names
   // (YAZ-2290 D10: `belongsToTitles`); a target naming no folder falls back to all titles.
   const linkNames = useMemo(() => {
     const m = new Map<string, LinkCandidate[]>()
@@ -261,7 +261,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
           rows={g.rows}
           collapsed={isCollapsed}
           onToggle={() => onToggleGroup(gk)}
-          // A level a new note cannot take (a `file.*` one) has no "+", as in Table and Board (YAZ-4544).
+          // A level a new page cannot take (a `file.*` one) has no "+", as in Table and Board (YAZ-4544).
           onNew={onNewInGroup === undefined || !groupTakesNew(view, at.level, settings.columns) ? undefined : () => onNewInGroup(g, undefined, at)}
           resolve={resolve}
           level={at.level}
@@ -278,7 +278,7 @@ export function CardsView({ def, view, root, records, rows, groups, collapsed, o
       {groups === null
         ? grid(rows)
         : groups.map((g) => section(g, TOP_SPOT))}
-      {menu !== null && <PageContextMenu {...menu} onOpenRight={onOpenFileRight} onOpenBackground={onOpenFileBackground} onOpenWindow={onOpenWindow} onNotice={onNotice} onClose={() => setMenu(null)} {...cardMenuItems(noteDoors, menu.path, () => setMenu(null), noteDoors?.newBelow === undefined ? undefined : { label: 'New card below', run: () => noteDoors.newBelow!(menu.path) })} />}
+      {menu !== null && <PageContextMenu {...menu} onOpenRight={onOpenFileRight} onOpenBackground={onOpenFileBackground} onOpenWindow={onOpenWindow} onNotice={onNotice} onClose={() => setMenu(null)} {...cardMenuItems(pageDoors, menu.path, () => setMenu(null), pageDoors?.newBelow === undefined ? undefined : { label: 'New card below', run: () => pageDoors.newBelow!(menu.path) })} />}
     </div>
   )
 }

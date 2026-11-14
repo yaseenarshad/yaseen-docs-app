@@ -380,7 +380,7 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
 
     it('give text the dark shade as its font colour and, with Shift, the light shade as its background — text being anything that LOOKS like text', () => {
       const { env } = loadPostConfig()
-      const [text, title] = [cell(TEXT, { label: 'Note' }), cell(AI_TITLE, { label: 'Find the bottleneck' })]
+      const [text, title] = [cell(TEXT, { label: 'Page' }), cell(AI_TITLE, { label: 'Find the bottleneck' })]
       const editor = openEditor(env)
       editor.select(text, title)
       editor.press('g')
@@ -404,7 +404,7 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
 
     it('t, b and w are one value wherever they land', () => {
       const { env } = loadPostConfig()
-      const [shape, text] = [cell(RECT), cell(TEXT, { label: 'Note' })]
+      const [shape, text] = [cell(RECT), cell(TEXT, { label: 'Page' })]
       const editor = openEditor(env)
       editor.select(shape, text)
       editor.press('t')
@@ -442,7 +442,7 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
 
   it('1–0 set a text’s font size and give anything else a new long side, aspect and centre kept', () => {
     const { env } = loadPostConfig()
-    const text = cell(TEXT, { label: 'Note' })
+    const text = cell(TEXT, { label: 'Page' })
     const shape = cell(RECT, { geo: geometry(0, 0, 100, 50) })
     const edge = cell(EDGE, { edge: true, geo: geometry(0, 0, 0, 0, true) })
     const editor = openEditor(env)
@@ -460,7 +460,7 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
 
   it('⌘⇧X toggles strikethrough', () => {
     const { env } = loadPostConfig()
-    const text = cell(TEXT, { label: 'Note' })
+    const text = cell(TEXT, { label: 'Page' })
     const editor = openEditor(env)
     editor.select(text)
     editor.press('x', { metaKey: true, shiftKey: true })
@@ -484,7 +484,7 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
     const open = (hotkeys) => {
       const { env } = loadPostConfig({ shortcuts: drawioConfig('adapt', hotkeys, {}, true).keyboardShortcuts })
       const editor = openEditor(env)
-      const text = cell(TEXT, { label: 'Note' })
+      const text = cell(TEXT, { label: 'Page' })
       editor.select(text)
       return { editor, text }
     }
@@ -593,7 +593,7 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
 
   it('a corner drag scales a text’s font with its height; a side drag and a shape’s label do not', () => {
     const { env } = loadPostConfig()
-    const text = cell(TEXT, { label: 'Note', geo: geometry(0, 0, 200, 60) })
+    const text = cell(TEXT, { label: 'Page', geo: geometry(0, 0, 200, 60) })
     const shape = cell(RECT, { label: 'Box', geo: geometry(0, 0, 200, 60) })
     const editor = openEditor(env)
     const before = geometry(0, 0, 100, 30)

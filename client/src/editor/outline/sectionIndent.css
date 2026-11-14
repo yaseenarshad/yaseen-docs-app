@@ -40,19 +40,19 @@
 @property --w5 { syntax: '<length>'; inherits: false; initial-value: 1px; }
 @property --w6 { syntax: '<length>'; inherits: false; initial-value: 1px; }
 
-/* One step: the setting (24 | 30 | 36, App.tsx `--section-step-setting`), or 18px when the note
+/* One step: the setting (24 | 30 | 36, App.tsx `--section-step-setting`), or 18px when the page
    column is 480px or less. A plain number, because `border-image-slice` takes numbers; the query
    container is `.milkdown`, the parent, since an element cannot query itself. It does not zoom
    (app.css puts the zoom on `.ProseMirror`), so 480px is the width on screen. */
 .editor-host[data-section-indent] .editor-instance .milkdown {
-  container: note / inline-size;
+  container: page / inline-size;
 }
 
 .editor-instance .milkdown > .ProseMirror {
   --section-step-n: var(--section-step-setting, 30);
 }
 
-@container note (max-width: 480px) {
+@container page (max-width: 480px) {
   .editor-instance .milkdown > .ProseMirror {
     --section-step-n: 18;
   }
@@ -60,7 +60,7 @@
 
 /* The grey is OPAQUE on purpose (the same 14% as a list guide line, mixed into the page instead of
    into nothing): the outsets below can lie over a neighbour's, and two see-through lines would
-   add up to a darker dash. `--bg` is the note's own surface in both themes (app.css). A line is
+   add up to a darker dash. `--bg` is the page's own surface in both themes (app.css). A line is
    1px wide until the path makes it wider: the registered initial value of `--w1`…`--w6`. */
 .editor-instance .milkdown > .ProseMirror > [data-sd] {
   --step: calc(var(--section-step-n) * 1px);
@@ -167,7 +167,7 @@
 }
 
 /* "Only near the mouse" (Settings › Editor › Section indent › Grey lines): the grey lines show
-   while the pointer is over the note. The purple path does not ask the pointer. */
+   while the pointer is over the page. The purple path does not ask the pointer. */
 .app[data-section-lines='hover'] .editor-instance .milkdown > .ProseMirror > [data-sd] {
   transition: --section-line 0.12s;
 }

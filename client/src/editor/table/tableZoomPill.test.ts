@@ -12,7 +12,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { getMarkdownForSave } from '../createCrepe'
 import { mount, pressKey, unmountAll as unmountMarks } from '../marks/markTestKit'
 import { formatTableComment, parseTableComment, plainTable, type TableStyle } from './tableComment'
-import { cellPos, dragColumnEdge, mountNote, mountTable, unmountAll } from './tableTestKit'
+import { cellPos, dragColumnEdge, mountPage, mountTable, unmountAll } from './tableTestKit'
 import tableCss from './table.css?inline'
 
 /** The value of each render of a pill (`DocumentZoom`), the real component's own. */
@@ -66,7 +66,7 @@ describe('in the editor', () => {
   const ZOOMED = `${TABLE}\n<!-- table: zoom 75%, border 2px 40% -->\n`
 
   it('loads into the table, saves byte for byte, and puts the zoom on the block for `table.css`', async () => {
-    const { crepe, view } = await mountNote(ZOOMED)
+    const { crepe, view } = await mountPage(ZOOMED)
     expect(getMarkdownForSave(crepe)).toBe(ZOOMED)
     expect(firstTable(view).attrs.zoom).toBe(75)
     expect(block(view).getAttribute('data-table-zoom')).toBe('75')
@@ -75,7 +75,7 @@ describe('in the editor', () => {
   })
 
   it('a copy inside the app keeps it', async () => {
-    const { view } = await mountNote(ZOOMED)
+    const { view } = await mountPage(ZOOMED)
     const { schema } = view.state
     const holder = document.createElement('div')
     holder.appendChild(DOMSerializer.fromSchema(schema).serializeNode(firstTable(view)))
@@ -91,7 +91,7 @@ describe('in the editor', () => {
 
 describe('the pill on the table (the page zoom pill, `DocumentZoom`)', () => {
   it('shows the table\'s value; − / + change it, one undo step each; 100% writes no part', async () => {
-    const { crepe, view } = await mountNote(`${TABLE}\n<!-- table: zoom 90% -->\n`)
+    const { crepe, view } = await mountPage(`${TABLE}\n<!-- table: zoom 90% -->\n`)
     expect(anchor(view).nextElementSibling).toBe(block(view))
     expect(anchor(view).querySelector('.document-zoom__value')!.textContent).toBe('90%')
     expect(anchor(view).querySelector('.document-zoom')!.getAttribute('aria-label')).toBe('Table zoom')
@@ -110,7 +110,7 @@ describe('the pill on the table (the page zoom pill, `DocumentZoom`)', () => {
   })
 
   it('a zoom change renders only that table\'s pill; an Enter in a cell of another table renders none (YAZ-4176)', async () => {
-    const { crepe, view } = await mountNote(`${TABLE}\n<!-- table: zoom 50% -->\n\ntext\n\n${TABLE}`)
+    const { crepe, view } = await mountPage(`${TABLE}\n<!-- table: zoom 50% -->\n\ntext\n\n${TABLE}`)
     renders.length = 0
     const second = [...view.dom.querySelectorAll('.table-zoom-anchor')][1]!
     second.querySelector<HTMLButtonElement>('button[aria-label="Zoom in"]')!.click()
@@ -131,7 +131,7 @@ describe('the pill on the table (the page zoom pill, `DocumentZoom`)', () => {
   })
 
   it('each table has its own pill', async () => {
-    const { view } = await mountNote(`${TABLE}\n<!-- table: zoom 50% -->\n\ntext\n\n${TABLE}`)
+    const { view } = await mountPage(`${TABLE}\n<!-- table: zoom 50% -->\n\ntext\n\n${TABLE}`)
     const pills = [...view.dom.querySelectorAll('.table-zoom-anchor .document-zoom__value')].map((el) => el.textContent)
     expect(pills).toEqual(['50%', '100%'])
   })

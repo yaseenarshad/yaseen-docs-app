@@ -308,14 +308,14 @@ describe('storage.init', () => {
 describe('storage', () => {
   it('root is the window identity; changing it clears the file AND tabs in one write, re-setting it keeps them', () => {
     expect(storage.getRoot()).toBeNull()
-    storage.setRoot('/notes')
-    expect(storage.getRoot()).toBe('/notes')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' })
-    storage.setWorkspace('/notes', [{ path: '/notes/a.md' }], '/notes/a.md', defaultRightPanelIdentity())
-    storage.setRoot('/notes')
-    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/notes' })
-    expect(storage.getFile()).toBe('/notes/a.md')
-    expect(storage.getTabs()).toEqual(['/notes/a.md'])
+    storage.setRoot('/pages')
+    expect(storage.getRoot()).toBe('/pages')
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/pages', file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' })
+    storage.setWorkspace('/pages', [{ path: '/pages/a.md' }], '/pages/a.md', defaultRightPanelIdentity())
+    storage.setRoot('/pages')
+    expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: '/pages' })
+    expect(storage.getFile()).toBe('/pages/a.md')
+    expect(storage.getTabs()).toEqual(['/pages/a.md'])
     storage.setRoot(null)
     expect(storage.getRoot()).toBeNull()
     expect(b.bridge.window.setIdentity).toHaveBeenLastCalledWith({ root: null, file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarLens: 'files' })
@@ -514,7 +514,7 @@ describe('storage', () => {
     expect(storage.getTocSource('/r2', '/r1/a.md')).toBeNull()
     expect(b.bridge.state.setTocSource).toHaveBeenCalledWith('/r1', '/r1/a.md', 'bullets')
     expect(b.bridge.state.setTocSource).toHaveBeenCalledTimes(2)
-    // The same choice again, and Auto on a note that is on Auto: no write.
+    // The same choice again, and Auto on a page that is on Auto: no write.
     storage.setTocSource('/r1', '/r1/a.md', 'bullets')
     storage.setTocSource('/r1', '/r1/never.md', null)
     expect(b.bridge.state.setTocSource).toHaveBeenCalledTimes(2)
@@ -529,7 +529,7 @@ describe('storage', () => {
     expect(storage.getTocSource('/r1', '/r1/b.md')).toBeNull()
   })
 
-  it('the table of contents switch is keyed by root then file; a note with no entry made no choice (`undefined`: the setting decides, YAZ-3558 D1); on AND off are sent, and the same value again writes nothing (YAZ-2950)', () => {
+  it('the table of contents switch is keyed by root then file; a page with no entry made no choice (`undefined`: the setting decides, YAZ-3558 D1); on AND off are sent, and the same value again writes nothing (YAZ-2950)', () => {
     expect(storage.getTocSwitch('/r1', '/r1/a.md')).toBeUndefined()
     storage.setTocSwitch('/r1', '/r1/a.md', false)
     expect(storage.getTocSwitch('/r1', '/r1/a.md')).toBe(false)

@@ -14,7 +14,7 @@ import { appWindow, launchApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = 'FormatFold.md'
+const PAGE = 'FormatFold.md'
 const BODY = `# Plan
 
 * Alpha parent
@@ -32,7 +32,7 @@ const BOLDED = `# Plan
 
 let userData: string
 let vault: string
-let notePath: string
+let pagePath: string
 let app: ElectronApplication
 let win: Page
 
@@ -46,8 +46,8 @@ async function fold(label: string): Promise<void> {
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'ff-userdata-'))
   vault = await mkdtemp(path.join(tmpdir(), 'ff-vault-'))
-  notePath = path.join(vault, NOTE)
-  await writeFile(notePath, BODY)
+  pagePath = path.join(vault, PAGE)
+  await writeFile(pagePath, BODY)
 })
 
 test.afterAll(async () => {
@@ -56,7 +56,7 @@ test.afterAll(async () => {
 })
 
 test('step 1 — fold both parents and select them with the keyboard', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
+  app = await launchApp({ userData, seedState: seededState(vault, pagePath) })
   win = await appWindow(app, 'w1')
   await expect(editor()).toContainText('alpha-kid-e2e')
 
@@ -81,7 +81,7 @@ test('step 2 — Bold on the toolbar bolds the parents only, on disk too', async
   await expect(bold).not.toHaveClass(/active/)
   await bold.click()
   await expect(bold).toHaveClass(/active/)
-  await expect.poll(() => readFile(notePath, 'utf8'), { timeout: 10_000 }).toBe(BOLDED)
+  await expect.poll(() => readFile(pagePath, 'utf8'), { timeout: 10_000 }).toBe(BOLDED)
   await shoot(win, 'ff-02-parents-bold')
 })
 

@@ -1,5 +1,5 @@
 /**
- * Where an editor's pop-up toolbar is (YAZ-4445). A note's toolbar sits beside its view. A drawing text box moves
+ * Where an editor's pop-up toolbar is (YAZ-4445). A page's toolbar sits beside its view. A drawing text box moves
  * its toolbar into a layer of its own on the page (`drawings/textBoxEditor.ts`, YAZ-4277 1C), so a ▾ panel looks
  * there for its ▾.
  */

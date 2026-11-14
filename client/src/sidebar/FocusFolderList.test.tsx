@@ -11,7 +11,7 @@ import { FocusFolderList } from './FocusFolderList'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-const ROOTS = ['/x/Notes', '/x/Work']
+const ROOTS = ['/x/Pages', '/x/Work']
 const folder = (id: string, items: FocusFolder['items']): FocusFolder => ({ id, name: id, created: 1, at: 1, items })
 let root: Root | null = null
 let el: HTMLDivElement
@@ -25,7 +25,7 @@ afterEach(() => {
 function mount(over: Partial<ComponentProps<typeof FocusFolderList>> = {}) {
   const props: ComponentProps<typeof FocusFolderList> = {
     kind: 'focus',
-    folders: [folder('Clients', [{ vault: 'Work', path: 'Clients' }, { vault: 'Notes', path: 'a.md' }]), folder('Empty', [])],
+    folders: [folder('Clients', [{ vault: 'Work', path: 'Clients' }, { vault: 'Pages', path: 'a.md' }]), folder('Empty', [])],
     roots: ROOTS,
     renderItems: (_f, paths) => (
       <ul className="tree" role="group">
@@ -116,7 +116,7 @@ describe('FocusFolderList', () => {
     expect(document.querySelector('.ctx-menu__heading')?.getAttribute('title')).toContain('Workspace: a window with two or more vaults')
     expect(item('Vault')?.title).toBe('Show it in a window with this vault alone')
     act(() => item('Open all in tabs')?.click())
-    expect(props.onOpenAll).toHaveBeenCalledExactlyOnceWith(['/x/Work/Clients', '/x/Notes/a.md'])
+    expect(props.onOpenAll).toHaveBeenCalledExactlyOnceWith(['/x/Work/Clients', '/x/Pages/a.md'])
     menuOf('Empty')
     expect(item('Open all in tabs')).toBeUndefined()
   })
@@ -150,16 +150,16 @@ describe('FocusFolderList', () => {
   })
 
   it('YAZ-4477 (M5, F6): a ghost — an item of a vault not in this window — has the ghost glyph and a tooltip, and its click asks to add the vault; a name two vaults share opens nothing', () => {
-    const props = mount({ folders: [folder('Mixed', [{ vault: 'Research', path: 'Papers/p.md' }, { vault: 'Notes', path: 'a.md' }])] })
+    const props = mount({ folders: [folder('Mixed', [{ vault: 'Research', path: 'Papers/p.md' }, { vault: 'Pages', path: 'a.md' }])] })
     const ghost = el.querySelector<HTMLButtonElement>('.tree__row--ghost')
     expect(ghost?.querySelector('.tree__ghost-icon')).not.toBeNull()
     expect(ghost?.title).toBe('In "Research", which is not in this window')
     act(() => ghost?.click())
     expect(props.onGhost).toHaveBeenCalledExactlyOnceWith('Research', 'Papers/p.md')
     act(() => root?.unmount())
-    const clash = mount({ roots: ['/home/Notes', '/work/Notes'], folders: [folder('Twins', [{ vault: 'Notes', path: 'a.md' }])] })
+    const clash = mount({ roots: ['/home/Pages', '/work/Pages'], folders: [folder('Twins', [{ vault: 'Pages', path: 'a.md' }])] })
     const twin = el.querySelector<HTMLButtonElement>('.tree__row--ghost')
-    expect(twin?.title).toBe('Two vaults in this window are named "Notes": the app cannot tell which one holds it')
+    expect(twin?.title).toBe('Two vaults in this window are named "Pages": the app cannot tell which one holds it')
     act(() => twin?.click())
     expect(clash.onGhost).not.toHaveBeenCalled()
   })
@@ -177,14 +177,14 @@ describe('FocusFolderList', () => {
   })
 
   it('YAZ-4477 (YAZ-4470 9): a fold lasts the session — the list that mounts again, after a tab switch, keeps it — and each tab has its own', () => {
-    mount({ folders: [folder('Keep shut', [{ vault: 'Notes', path: 'a.md' }])] })
+    mount({ folders: [folder('Keep shut', [{ vault: 'Pages', path: 'a.md' }])] })
     act(() => row('Keep shut').click())
     expect(row('Keep shut').closest('li')?.getAttribute('aria-expanded')).toBe('false')
     act(() => root?.unmount())
-    mount({ folders: [folder('Keep shut', [{ vault: 'Notes', path: 'a.md' }])] })
+    mount({ folders: [folder('Keep shut', [{ vault: 'Pages', path: 'a.md' }])] })
     expect(row('Keep shut').closest('li')?.getAttribute('aria-expanded')).toBe('false')
     act(() => root?.unmount())
-    mount({ kind: 'favorites', folders: [folder('Keep shut', [{ vault: 'Notes', path: 'a.md' }])] })
+    mount({ kind: 'favorites', folders: [folder('Keep shut', [{ vault: 'Pages', path: 'a.md' }])] })
     expect(row('Keep shut').closest('li')?.getAttribute('aria-expanded')).toBe('true')
   })
 })

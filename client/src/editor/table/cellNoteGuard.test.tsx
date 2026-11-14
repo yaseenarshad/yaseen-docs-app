@@ -1,6 +1,6 @@
 /**
  * Delete, duplicate, copy and paste with cell notes (YAZ-4206: D13, D16, D17, D18), on real editors with the note's
- * own menu host (`NoteMenu`) mounted, so each ask shows the app's sheet.
+ * own menu host (`PageMenu`) mounted, so each ask shows the app's sheet.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -12,7 +12,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuAction, MenuItem } from '../../sidebar/menuSections'
 import { getMarkdownForSave } from '../createCrepe'
 import { IS_MAC, mount, pressKey, unmountAll } from '../marks/markTestKit'
-import { NoteMenu, noteMenuSections } from '../noteMenu'
+import { PageMenu, pageMenuSections } from '../pageMenu'
 import { CELL_NOTES_ATTR, pasteCellsOnly } from './cellNoteClipboard'
 import { cellPos } from './tableTestKit'
 
@@ -49,7 +49,7 @@ async function open(markdown = NOTES) {
   document.body.append(host)
   act(() => {
     root = createRoot(host)
-    root.render(<NoteMenu view={mounted.view} />)
+    root.render(<PageMenu view={mounted.view} />)
   })
   return mounted
 }
@@ -59,7 +59,7 @@ const sheetText = () => sheet()?.querySelector('.confirm__text')?.textContent ??
 const button = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('.confirm button')].find((b) => b.textContent === label)!
 const press = (label: string) => act(() => button(label).click())
 const items = (view: EditorView, r: number, c: number): MenuAction[] =>
-  noteMenuSections(view, null, vi.fn(), cellPos(view, r, c) + 2)
+  pageMenuSections(view, null, vi.fn(), cellPos(view, r, c) + 2)
     .flat()
     .flatMap((item: MenuItem) => (item.children === undefined ? [item] : item.children.flat()))
 const menu = (view: EditorView, r: number, c: number, id: string) => act(() => items(view, r, c).find((item) => item.id === `table-${id}`)!.onSelect())
@@ -273,7 +273,7 @@ describe('D13: copy and paste carry cell notes; D18: Paste as › Cells only doe
   it('Cells only is off outside a table, on in one', async () => {
     const { view } = await open(`Text\n\n${NOTES}`)
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2)))
-    const pasteCells = () => noteMenuSections(view, null, vi.fn()).flat().flatMap((item: MenuItem) => (item.children === undefined ? [item] : item.children.flat())).find((item) => item.id === 'paste-cells')!
+    const pasteCells = () => pageMenuSections(view, null, vi.fn()).flat().flatMap((item: MenuItem) => (item.children === undefined ? [item] : item.children.flat())).find((item) => item.id === 'paste-cells')!
     expect(pasteCells().disabled).toBe(true)
     caretIn(view, 1, 0)
     expect(pasteCells().disabled).toBe(false)

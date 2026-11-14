@@ -1,6 +1,6 @@
 /**
  * Subfolders as rows (YAZ-4579, 2D, D30-D33): ViewsPane mounted with react-dom in jsdom over a page `Schema` whose
- * notes are its own `Overview` and one note in each subfolder, and whose folder rows are `Orders` (no settings file)
+ * pages are its own `Overview` and one page in each subfolder, and whose folder rows are `Orders` (no settings file)
  * and `Users` (a settings file, with values for Schema). The host maps the values (`FolderView`); here they come in
  * as the rows' properties. Pinned: the switch's four modes, the switch in Properties and in the Sort and group menu,
  * the folder icon and "N inside", the doors a folder row opens through, its rename, a drag that writes values only,
@@ -27,8 +27,8 @@ const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecor
 }
 
 const USERS_FILE = '/vault/Schema/Users/.folder.md'
-/** The page's notes, as `folderRows` hands them. */
-const NOTES = [
+/** The page's pages, as `folderRows` hands them. */
+const PAGES = [
   rec('/vault/Schema/Overview.md', { status: 'open', due: '2026-12-03' }),
   rec('/vault/Schema/Users/email.md', { status: 'open', due: '2026-12-04' }),
   rec('/vault/Schema/Orders/total.md', { status: 'done', due: '2026-12-05' }),
@@ -52,7 +52,7 @@ function mount(text: string, readOnly?: ReadonlySet<string>, folderPages?: Folde
     openRight: vi.fn(),
     retitle: vi.fn(),
     writeValues: vi.fn(() => Promise.resolve()),
-    renderNoteEditor: vi.fn((path: string) => <div className="test-window-editor">{path}</div>),
+    renderPageEditor: vi.fn((path: string) => <div className="test-window-editor">{path}</div>),
   }
   const onOpenFile = vi.fn()
   container = document.createElement('div')
@@ -69,10 +69,10 @@ function mount(text: string, readOnly?: ReadonlySet<string>, folderPages?: Folde
           }}
           root="/vault"
           folderPath="/vault/Schema"
-          records={NOTES}
+          records={PAGES}
           folderRows={FOLDER_ROWS}
           readOnly={readOnly}
-          folder={testFolderHost({ vaultRecords: NOTES, vaultFolders: FOLDERS, ...host })}
+          folder={testFolderHost({ vaultRecords: PAGES, vaultFolders: FOLDERS, ...host })}
           onOpenFile={onOpenFile}
           folderPages={folderPages}
         />,
@@ -130,36 +130,36 @@ const table = (extra = '') => `views:
 ${extra}`
 
 describe('the "Subfolders" switch (D30)', () => {
-  it('absent = Their notes: every note below, and no folder row', () => {
+  it('absent = Their pages: every page below, and no folder row', () => {
     expect(names(mount(table()).el)).toEqual(['Overview', 'email', 'total'])
   })
 
-  it('As rows: a row per direct subfolder, first, and the folder’s own notes', () => {
+  it('As rows: a row per direct subfolder, first, and the folder’s own pages', () => {
     expect(names(mount(table('    subfolders: rows\n')).el)).toEqual(['Orders', 'Users', 'Overview'])
   })
 
-  it('Both: the folder rows and every note below', () => {
+  it('Both: the folder rows and every page below', () => {
     expect(names(mount(table('    subfolders: both\n')).el)).toEqual(['Orders', 'Users', 'Overview', 'email', 'total'])
   })
 
-  it('Hide: the own notes alone; a stored `false` (YAZ-4564 D25) reads as Hide', () => {
+  it('Hide: the own pages alone; a stored `false` (YAZ-4564 D25) reads as Hide', () => {
     expect(names(mount(table('    subfolders: hide\n')).el)).toEqual(['Overview'])
     act(() => root?.unmount())
     container?.remove()
     expect(names(mount(table('    subfolders: false\n')).el)).toEqual(['Overview'])
   })
 
-  it('Properties › View › Subfolders writes each mode; Their notes removes the key', () => {
+  it('Properties › View › Subfolders writes each mode; Their pages removes the key', () => {
     const { el, yaml } = mount(table())
     click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]')) // View › Rows (YAZ-4607 D59)
     const select = () => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Subfolders"]')
-    expect([...select().options].map((o) => o.text)).toEqual(['Their notes', 'As rows', 'Both', 'Hide'])
-    expect(select().value).toBe('notes')
+    expect([...select().options].map((o) => o.text)).toEqual(['Their pages', 'As rows', 'Both', 'Hide'])
+    expect(select().value).toBe('pages')
     choose(select(), 'rows')
     expect(yaml()).toContain('subfolders: rows')
     expect(names(el)).toEqual(['Orders', 'Users', 'Overview'])
-    choose(select(), 'notes')
+    choose(select(), 'pages')
     expect(yaml()).not.toContain('subfolders')
   })
 
@@ -180,7 +180,7 @@ describe('the "Subfolders" switch (D30)', () => {
 })
 
 describe('a folder row (D31/D32)', () => {
-  it('wears the folder icon, and "N inside" (the notes its own page shows) once the view turns the count on; its values are its cells', () => {
+  it('wears the folder icon, and "N inside" (the pages its own page shows) once the view turns the count on; its values are its cells', () => {
     const { el } = mount(table('    subfolders: rows\n    folderCounts: true\n'))
     const users = nameCell(el, 'Users')
     expect(users.querySelector('.view-folder-row__icon')).not.toBeNull()
@@ -203,11 +203,11 @@ describe('a folder row (D31/D32)', () => {
     // Open in mini window shows the folder page: the editor a folder tab has, on the directory.
     fire(nameCell(el, 'Users'), {}, 'contextmenu')
     click(menuItem(el, 'Open in mini window'))
-    expect(host.renderNoteEditor).toHaveBeenLastCalledWith('/vault/Schema/Users')
+    expect(host.renderPageEditor).toHaveBeenLastCalledWith('/vault/Schema/Users')
     expect(q(el, '.test-window-editor').textContent).toBe('/vault/Schema/Users')
   })
 
-  it('a note row still opens the note itself', () => {
+  it('a page row still opens the page itself', () => {
     const { el, host, onOpenFile } = mount(table('    subfolders: rows\n'))
     press(nameCell(el, 'Overview'), 'Enter')
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Schema/Overview.md')
@@ -249,14 +249,14 @@ describe('a folder row (D31/D32)', () => {
     expect(host.openFolderPage).toHaveBeenCalledExactlyOnceWith('/vault/Schema/Users')
   })
 
-  it('"+ New" makes a note, never a folder', () => {
+  it('"+ New" makes a page, never a folder', () => {
     const create = vi.fn(() => Promise.resolve('/vault/Schema/Untitled.md'))
     let parsed = parseViews(table('    subfolders: rows\n'))
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
-    act(() => root?.render(<ViewsPane parsed={parsed} onChange={(next) => void (parsed = next)} root="/vault" folderPath="/vault/Schema" records={NOTES} folderRows={FOLDER_ROWS} folder={testFolderHost({ vaultRecords: NOTES, vaultFolders: FOLDERS, create })} onOpenFile={vi.fn()} />))
-    click(q(container, '[aria-label="New note"]'))
+    act(() => root?.render(<ViewsPane parsed={parsed} onChange={(next) => void (parsed = next)} root="/vault" folderPath="/vault/Schema" records={PAGES} folderRows={FOLDER_ROWS} folder={testFolderHost({ vaultRecords: PAGES, vaultFolders: FOLDERS, create })} onOpenFile={vi.fn()} />))
+    click(q(container, '[aria-label="New page"]'))
     expect(create).toHaveBeenCalledExactlyOnceWith({ properties: {} }, undefined)
   })
 })
@@ -281,7 +281,7 @@ describe('Folders first (D33)', () => {
 })
 
 describe('Kind in the Filter menu (D31)', () => {
-  it('is a filter property while folder rows show, with the values note and folder', () => {
+  it('is a filter property while folder rows show, with the values page and folder', () => {
     const { el } = mount(table('    subfolders: rows\n    filters: file.kind == "folder"\n'))
     expect(names(el)).toEqual(['Orders', 'Users'])
     click(q(el, '.view-toolbar [aria-label="Filter"]'))
@@ -363,7 +363,7 @@ describe('the count and the search with folder rows (YAZ-4595 S36)', () => {
     expect(count(el)).toBe('0 / 3 items · 1 / 2 folders')
     search(el, 'ORDERS')
     expect(names(el)).toEqual(['Orders'])
-    // A note is still found by its values.
+    // A page is still found by its values.
     search(el, 'email')
     expect(names(el)).toEqual(['email'])
     expect(count(el)).toBe('1 / 3 items · 0 / 2 folders')
@@ -385,7 +385,7 @@ describe('the count and the search with folder rows (YAZ-4595 S36)', () => {
   })
 })
 
-describe('the folder icon and the notes inside count (YAZ-4848)', () => {
+describe('the folder icon and the pages inside count (YAZ-4848)', () => {
   const icon = (cell: Element) => cell.querySelector('.view-folder-row__icon') !== null
   const count = (cell: Element) => cell.querySelector('.view-folder-row__inside')?.textContent ?? null
   const openView = (el: ParentNode) => {
@@ -413,14 +413,14 @@ describe('the folder icon and the notes inside count (YAZ-4848)', () => {
     openView(el)
     const sw = (label: string) => q<HTMLInputElement>(el, `.view-popover--properties [aria-label="${label}"]`)
     expect(sw('Folder icon').checked).toBe(true)
-    expect(sw('Notes inside count').checked).toBe(false)
-    click(sw('Notes inside count'))
+    expect(sw('Pages inside count').checked).toBe(false)
+    click(sw('Pages inside count'))
     expect(yaml()).toContain('folderCounts: true')
     expect(count(nameCell(el, 'Users'))).toBe('1 inside')
     click(sw('Folder icon'))
     expect(yaml()).toContain('folderIcons: false')
     expect(icon(nameCell(el, 'Users'))).toBe(false)
-    for (const label of ['Notes inside count', 'Folder icon']) click(q(sw(label).closest('label')!, '.view-from-settings--reset'))
+    for (const label of ['Pages inside count', 'Folder icon']) click(q(sw(label).closest('label')!, '.view-from-settings--reset'))
     expect(yaml()).not.toContain('folderCounts')
     expect(yaml()).not.toContain('folderIcons')
     expect(icon(nameCell(el, 'Users'))).toBe(true)
@@ -437,7 +437,7 @@ describe('the folder icon and the notes inside count (YAZ-4848)', () => {
       expect(card()!.querySelector('.view-folder-row__icon')).not.toBeNull()
       openView(el)
       expect(el.querySelector('.view-popover--properties [aria-label="Folder icon"]')).not.toBeNull()
-      expect(el.querySelector('.view-popover--properties [aria-label="Notes inside count"]')).toBeNull()
+      expect(el.querySelector('.view-popover--properties [aria-label="Pages inside count"]')).toBeNull()
       act(() => root?.unmount())
       container?.remove()
       ;({ el } = mount(cal('    folderIcons: false\n')))
@@ -462,6 +462,6 @@ describe('the folder icon and the notes inside count (YAZ-4848)', () => {
     const { el } = mount(table())
     openView(el)
     expect(el.querySelector('.view-popover--properties [aria-label="Folder icon"]')).toBeNull()
-    expect(el.querySelector('.view-popover--properties [aria-label="Notes inside count"]')).toBeNull()
+    expect(el.querySelector('.view-popover--properties [aria-label="Pages inside count"]')).toBeNull()
   })
 })

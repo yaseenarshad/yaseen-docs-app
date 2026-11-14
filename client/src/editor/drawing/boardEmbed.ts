@@ -1,5 +1,5 @@
 /**
- * Board embeds in the note (YAZ-4827 2A; was the drawing preview of YAZ-878): `![[CloudFront.drawio|640x360 view=…]]`
+ * Board embeds in the page (YAZ-4827 2A; was the drawing preview of YAZ-878): `![[CloudFront.drawio|640x360 view=…]]`
  * and `![[Sketch.excalidraw]]` show as a WINDOW into the board (`embed/types.ts`, the window is 1B's, in a lazy chunk).
  *
  * DECORATIONS ONLY (🔒 the locked editor contract): the embed stays PLAIN TEXT in the document — no schema node, no
@@ -10,7 +10,7 @@
  *     `stopEvent` gives the window every event in it: ProseMirror and the link plugins (click, menu, hover) see none.
  *
  * ONLY board targets (`.excalidraw`, `.drawio`, `boardEmbedTarget`) and, with `cards`, an ID that names a card (YAZ-5037,
- * `noteCard/cardEmbed.ts`: the card's box in the same widget) or names nothing ("Missing card"): every other embed and
+ * `card/cardEmbed.ts`: the card's box in the same widget) or names nothing ("Missing card"): every other embed and
  * every link passes through. The host's check (`isBoard`, on the plugin's spec) says yes to all three, so the scan,
  * the caret, ⌘F, the fold and "Add line" treat a card's box as a board's window; `cardOf` (on the spec too) tells the
  * card from the board for the link menu and the paste chip.
@@ -33,7 +33,7 @@
  * back. Escape first deselects it (item 20); Shift+1 fits the board (D10).
  *
  * WRITES (D4): the window's `onOptions` → one `insertText` over the options part only (after the last `|`, which keeps
- * an alias before it, or a new `|…` before `]]`), `addToHistory: false`, only in an editable note, only when the text differs. The embed is found
+ * an alias before it, or a new `|…` before `]]`), `addToHistory: false`, only in an editable page, only when the text differs. The embed is found
  * again from the CURRENT doc at the widget's live position, and its target must still be the same: no stale position.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
@@ -47,14 +47,14 @@ import { BOX_BROKEN_CLASS, menuRowOf, mountInBox, onFlush } from '../embed/hostW
 import type { BoardRef, BoardWindowHandle, OpenHow } from '../embed/types'
 import { linkMenuRows, openMenuAt, type LinkMenu } from '../linkMenu'
 import { embedFolds, toggleOutlineFold } from '../outline/outlineFolding'
-import { inCellOrNote } from '../table/cellBlocks'
+import { inCellOrPage } from '../table/cellBlocks'
 import { OPEN_ID_LINK } from '../wikilink/idLinkCaret'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import { linkPath, missingId, type LinkLook, type WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { boardEmbedAt, boardEmbedKey, boardEmbedsIn, embedRevealed, type BoardEmbedMatch, type CardCheck } from './boardEmbedScan'
 import { boardEmbedName, hasIdEmbed, isIdTarget, type BoardCheck } from './boardEmbedText'
 import { isBoardTarget } from '@shared/embedOptions'
-import { embedCard, loadCardEmbed, type CardEmbedDoors, type CardEmbedHandle } from '../noteCard/embedCard'
+import { embedCard, loadCardEmbed, type CardEmbedDoors, type CardEmbedHandle } from '../card/embedCard'
 import './boardEmbed.css'
 
 export { boardEmbedKey }
@@ -64,13 +64,13 @@ export const BOARD_EMBED_SYNTAX_CLASS = 'drawing-embed__syntax'
 export const BOARD_EMBED_CLASS = 'board-embed'
 /** Set on a view write (D4): not the user's typing, not an undo step. */
 export const BOARD_VIEW_META = 'mdapp-board-view'
-/** The resolver changed and the note has an id embed (YAZ-4920): every textblock is scanned again, the ids kept. */
+/** The resolver changed and the page has an id embed (YAZ-4920): every textblock is scanned again, the ids kept. */
 const BOARD_RESCAN = 'mdapp-board-rescan'
 
 export interface BoardEmbedOptions {
   /** The vault root the boards load from. */
   root: string
-  /** The one resolve source of the note's links: a target's path, re-read when it changes. */
+  /** The one resolve source of the page's links: a target's path, re-read when it changes. */
   source: WikilinkResolveSource
   viewOnly?: ViewOnlyLinkSource
   /** The pill's icon (`LinkLook.icon`). Absent → the kind's plain icon. */
@@ -159,7 +159,7 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
       const path = linkPath(target, opts.source, opts.viewOnly)
       return (path !== null && isBoardTarget(path)) || isCardEmbed(target)
     }
-    /** The note has shown an id-shaped embed (resolved or not): the resolver's next change scans the note again. */
+    /** The page has shown an id-shaped embed (resolved or not): the resolver's next change scans the page again. */
     let sawIdEmbed = false
 
     /** One textblock's decorations; `idFor` gives each embed its id (inherited, or new). */
@@ -167,7 +167,7 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
       boardEmbedStats.blocksScanned++
       if (!sawIdEmbed && hasIdEmbed(block.textContent)) sawIdEmbed = true
       const found = boardEmbedsIn(block, pos, isBoard)
-      const cell = found.length > 0 && inCellOrNote(doc.resolve(pos + 1))
+      const cell = found.length > 0 && inCellOrPage(doc.resolve(pos + 1))
       for (const m of found) {
         if (embedRevealed(sel, m.from, m.to)) continue
         const fact: EmbedFact = { id: idFor(m.target), target: m.target, options: m.options, cell }
@@ -496,7 +496,7 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
         let editable = editorView.editable
         let selected: number | null = null
         let folds = embedFolds(editorView.state)
-        /** The resolver changed (YAZ-4920): a note with an id embed scans again, then the windows hear their refs. */
+        /** The resolver changed (YAZ-4920): a page with an id embed scans again, then the windows hear their refs. */
         const resolvedAll = (): void => {
           if (sawIdEmbed) editorView.dispatch(editorView.state.tr.setMeta(BOARD_RESCAN, true))
           resolved()
@@ -506,7 +506,7 @@ export function createBoardEmbed(opts: BoardEmbedOptions) {
         const offFlush = onFlush(editorView, () => mounts.forEach((mount) => mount.handle?.flush()))
         /** Each window's fold, from the outline's state: only when that state changed. */
         const syncFolds = (before: ReadonlyMap<number, unknown> | null) => {
-          // A9: no embed on a bullet, before or now (the typing path of most notes): nothing to ask of any mount.
+          // A9: no embed on a bullet, before or now (the typing path of most pages): nothing to ask of any mount.
           if (before !== null && before.size === 0 && folds.size === 0) return
           boardEmbedStats.foldPasses++
           for (const mount of mounts.values()) {

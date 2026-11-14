@@ -1,9 +1,9 @@
 /**
  * THE CODE OUTLINE (YAZ-3486): every feature of VS Code's Outline, in the app's look, in the place of
- * a note's table of contents. YAZ-3439 "A code Outline with every VS Code Outline feature, in the
+ * a page's table of contents. YAZ-3439 "A code Outline with every VS Code Outline feature, in the
  * app's look".
  *
- * THE FRAME IS THE NOTE'S (`TableOfContents.tsx`, `tocFrame.tsx`): the same `nav.toc` at the tab's
+ * THE FRAME IS THE PAGE'S (`TableOfContents.tsx`, `tocFrame.tsx`): the same `nav.toc` at the tab's
  * right edge, the same two looks — the names column when there is room (`namesShow`), else the rail
  * of small lines and its card —, the same settings (Settings › Table of contents: "Table of contents
  * default" and "Pin default", YAZ-3558), the same width and drag edge, the same ⌘J. `auto` means room for
@@ -19,7 +19,7 @@
  *
  * FOLLOW THE CURSOR (S7): the current row is the symbol that holds the cursor; while the code
  * scrolls with the cursor off screen, the symbol at the top of the view. The list keeps it in view.
- * A jump names its own row current until the reader's next wheel, press or key in the code, as in a note.
+ * A jump names its own row current until the reader's next wheel, press or key in the code, as in a page.
  *
  * ERROR MARKS (S6): Monaco's errors and warnings, as a red or yellow dot on the row of the symbol
  * that holds each one; a collapsed row shows the worst of what it hides.
@@ -74,7 +74,7 @@ export interface CodeOutlineProps {
   /** Settings › "Pin default": Off (`auto`) / On (`pinned`); `off` while this file shows no table of contents. */
   mode: TableOfContentsMode
   onChangeMode: (mode: TableOfContentsMode) => void
-  /** The names column's width, the note's setting (YAZ-2752). */
+  /** The names column's width, the page's setting (YAZ-2752). */
   width: number
   onChangeWidth: (width: number) => void
   sort: CodeOutlineSort
@@ -493,7 +493,7 @@ interface OutlineListProps {
 
 /**
  * The rows: a scroll box with one runner `ROW_H` × rows tall, and only the rows on screen in it (and
- * `OVERSCAN` more each way). The accent marker rides the hairline to the current row, as in a note.
+ * `OVERSCAN` more each way). The accent marker rides the hairline to the current row, as in a page.
  * The current row, and the picked one, stay in view: the list scrolls when they leave it.
  */
 function OutlineList({ id, tree, rows, marks, at, pick, collapsed, filter, onToggle, onPick }: OutlineListProps) {

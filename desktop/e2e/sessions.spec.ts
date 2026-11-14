@@ -21,7 +21,7 @@ let vaults: string[] = []
 let app: ElectronApplication
 let win: Page
 
-const note = async (vault: string, name: string): Promise<string> => {
+const page = async (vault: string, name: string): Promise<string> => {
   const file = path.join(vault, `${name}.md`)
   await writeFile(file, `${name.toLowerCase()} body\n`)
   return file
@@ -46,10 +46,10 @@ test.afterAll(async () => {
 
 test('save and close all tabs, name the session, restore it; a restore adds a vault and skips a gone file; all of it stays after a restart', async () => {
   const [a, b, c] = vaults
-  const alpha = await note(a, 'Alpha')
-  const beta = await note(a, 'Beta')
-  const bravo = await note(b, 'Bravo')
-  const charlie = await note(c, 'Charlie')
+  const alpha = await page(a, 'Alpha')
+  const beta = await page(a, 'Beta')
+  const bravo = await page(b, 'Bravo')
+  const charlie = await page(c, 'Charlie')
   const state = wholeRow(seededState(a, beta))
   state.windows[0] = { ...state.windows[0], roots: [a, b], tabs: [alpha, beta, bravo] }
   state.recents = [a, b, c].map((p) => ({ path: p, lastOpened: Date.now() }))

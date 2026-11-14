@@ -1,5 +1,5 @@
 /**
- * WHAT BOTH HOSTS DO WITH A WINDOW (YAZ-4834 A17): the note's `![[…]]` decorations (`boardEmbed.ts`) and the board
+ * WHAT BOTH HOSTS DO WITH A WINDOW (YAZ-4834 A17): the page's `![[…]]` decorations (`boardEmbed.ts`) and the board
  * image node (`imageView.ts`) mount, size, menu and flush their windows the same way, so the steps live here once.
  * Eager and small: the window itself stays in its lazy chunk (`loadBoardWindow`).
  *
@@ -59,7 +59,7 @@ function cantShow(box: HTMLElement, name: string): void {
 }
 
 /**
- * The nearest ancestor of `el` that scrolls (YAZ-4862): the note scrolls in `.editor-host`, which clips first, so the
+ * The nearest ancestor of `el` that scrolls (YAZ-4862): the page scrolls in `.editor-host`, which clips first, so the
  * viewport is the wrong "one screen" there. Null = none (the viewport). Read once per mount.
  */
 export function scrollRootOf(el: Element): Element | null {

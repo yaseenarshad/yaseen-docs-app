@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { defaultAppState, defaultFolderState, type AppState } from '@shared/types'
 import { movePageSwitches, type MovedList } from './movePageSwitches'
 
-/** The one-time move of the page switches from the app state into the notes (YAZ-4094 G4). */
+/** The one-time move of the page switches from the app state into the pages (YAZ-4094 G4). */
 
 const missing = Object.assign(new Error('gone'), { code: 'ENOENT' })
 
@@ -43,7 +43,7 @@ function setup(files: Record<string, string | Error>, folder: Partial<ReturnType
 }
 
 describe('movePageSwitches', () => {
-  it('writes each note entry into its note, then drops it; a code file keeps its entry', async () => {
+  it('writes each page entry into its page, then drops it; a code file keeps its entry', async () => {
     const { store, io, dropped, writes, state } = setup(
       { '/v/a.md': '# A\n', '/v/b.md': '---\ntags: [x]\n---\nB\n' },
       { tocSwitches: { '/v/a.md': false, '/v/code.ts': false }, sectionIndents: { '/v/b.md': true } },
@@ -55,7 +55,7 @@ describe('movePageSwitches', () => {
     expect(state.folders['/v'].sectionIndents).toEqual({})
   })
 
-  it('a note that already holds the value is not written; a gone note or a block that does not parse drops its entry; a note that cannot be read or written now keeps it', async () => {
+  it('a page that already holds the value is not written; a gone page or a block that does not parse drops its entry; a page that cannot be read or written now keeps it', async () => {
     const { store, io, dropped, writes, state } = setup(
       { '/v/same.md': '---\ntoc: false\n---\n', '/v/bad.md': '---\nkey: [\n---\n', '/v/locked.md': '# L\n', '/v/busy.md': new Error('EIO') },
       { tocSwitches: { '/v/same.md': false, '/v/gone.md': true, '/v/bad.md': false, '/v/locked.md': false, '/v/busy.md': true } },
@@ -66,7 +66,7 @@ describe('movePageSwitches', () => {
     expect(state.folders['/v'].tocSwitches).toEqual({ '/v/locked.md': false, '/v/busy.md': true })
   })
 
-  it('a note that already holds the key keeps its own value, also another one: the entry only goes (YAZ-4119 fix 5)', async () => {
+  it('a page that already holds the key keeps its own value, also another one: the entry only goes (YAZ-4119 fix 5)', async () => {
     const { store, io, dropped, writes, state } = setup(
       { '/v/synced.md': '---\ntoc: true\n---\n', '/v/indent.md': '---\nsection-indent: false\n---\n' },
       { tocSwitches: { '/v/synced.md': false }, sectionIndents: { '/v/indent.md': true } },
@@ -87,7 +87,7 @@ describe('movePageSwitches', () => {
     expect(dropped).toEqual(['tocSwitches:/v/a.md'])
   })
 
-  it('a note written between the read and the write (an autosave) is not written over: the entry stays for the next launch', async () => {
+  it('a page written between the read and the write (an autosave) is not written over: the entry stays for the next launch', async () => {
     const { store, io, dropped, writes, state, mtimes, readHook } = setup({ '/v/busy.md': '# B\n', '/v/calm.md': '# C\n' }, { tocSwitches: { '/v/busy.md': false, '/v/calm.md': false } })
     readHook((file) => {
       if (file === '/v/busy.md') mtimes[file] = 2

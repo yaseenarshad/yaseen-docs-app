@@ -7,7 +7,7 @@
  *   Edited   up to `SECTION_CAP`: the vault's save log (`storage.getEdits`), the list the sidebar's Recents tab reads
  *            (YAZ-3235); a file already under Opened is not repeated.
  *
- * Notes, drawings and diagrams only (they open as layers); only this window's vaults, and in a folder-of-a-vault
+ * Pages, drawings and diagrams only (they open as layers); only this window's vaults, and in a folder-of-a-vault
  * window only the files under that folder (`inPlace`). Pure; the stack calls it when its list may have changed (an
  * open, a step), never per keystroke.
  */
@@ -40,7 +40,7 @@ const newestFirst = (a: ExploreOpen, b: ExploreOpen): number => b.at - a.at || (
 
 export function recentSections({ vaults, explore, opensOf, editsOf }: RecentSources, cap = SECTION_CAP): RecentSections {
   const roots = vaults.map((v) => v.root)
-  /** A file of this window that opens as a layer: in a vault of it, under its folder, a note or a board. */
+  /** A file of this window that opens as a layer: in a vault of it, under its folder, a page or a board. */
   const shown = (path: string): boolean => {
     const root = rootOfPath(roots, path)
     if (root === null || layerKindOf(path) === null) return false

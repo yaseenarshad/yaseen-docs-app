@@ -65,16 +65,16 @@ describe('namesShow: names or lines', () => {
 describe('namesRoom: how wide the names column may get (YAZ-2752 D2, D3)', () => {
   it('pinned leaves the text 500px, auto takes the empty margin and no more, and neither goes past 480', () => {
     expect([TOC_MIN_W, TOC_WIDTH, TOC_MAX_W, TEXT_FLOOR]).toEqual([160, TOC_DEFAULT_W, 480, 500])
-    // "Pin default" On: the text has 500px at the floor today (700 of note, 200 of names) and never less.
-    expect([700, 820, 980, 981, 4000].map((note) => namesRoom('pinned', note, COLUMN_MAX.narrow))).toEqual([200, 320, 480, 480, 480])
+    // "Pin default" On: the text has 500px at the floor today (700 of page, 200 of names) and never less.
+    expect([700, 820, 980, 981, 4000].map((page) => namesRoom('pinned', page, COLUMN_MAX.narrow))).toEqual([200, 320, 480, 480, 480])
     // The content width does not count for pinned names.
     expect(namesRoom('pinned', 900, COLUMN_MAX.full)).toBe(400)
     // "Pin default" Off, a narrow column (1040) and a medium one (1440).
-    expect([1240, 1360, 1520, 1521, 4000].map((note) => namesRoom('auto', note, COLUMN_MAX.narrow))).toEqual([200, 320, 480, 480, 480])
-    expect([1640, 1760, 1920, 4000].map((note) => namesRoom('auto', note, COLUMN_MAX.medium))).toEqual([200, 320, 480, 480])
-    // The note's own scrollbar (11px in the real app) is not margin: a column that took it would narrow the text.
+    expect([1240, 1360, 1520, 1521, 4000].map((page) => namesRoom('auto', page, COLUMN_MAX.narrow))).toEqual([200, 320, 480, 480, 480])
+    expect([1640, 1760, 1920, 4000].map((page) => namesRoom('auto', page, COLUMN_MAX.medium))).toEqual([200, 320, 480, 480])
+    // The page's own scrollbar (11px in the real app) is not margin: a column that took it would narrow the text.
     // Where that leaves less than the 200px `namesShow` gave the names, the column is still 200, as it was before YAZ-2752.
-    expect([1240, 1250, 1297, 1531, 1532].map((note) => namesRoom('auto', note, COLUMN_MAX.narrow, 11))).toEqual([200, 200, 246, 480, 480])
+    expect([1240, 1250, 1297, 1531, 1532].map((page) => namesRoom('auto', page, COLUMN_MAX.narrow, 11))).toEqual([200, 200, 246, 480, 480])
     // It does not count for pinned names: they are allowed to narrow the text.
     expect(namesRoom('pinned', 820, COLUMN_MAX.narrow, 11)).toBe(320)
   })
@@ -163,34 +163,34 @@ describe('pathLines: the level lines from the current row up to its parents (YAZ
   /** Rows from their levels alone: the path reads nothing else of a row. */
   const levels = (...of: TocLevel[]): TocRow[] => of.map((level, i) => ({ level, text: `Row ${i}` }))
   // Row:               0  1  2  3  4  5  6  7  8
-  const NOTE = levels(1, 2, 3, 3, 2, 3, 1, 3, 2)
-  const NONE = NOTE.map(() => '')
+  const PAGE = levels(1, 2, 3, 3, 2, 3, 1, 3, 2)
+  const NONE = PAGE.map(() => '')
   /** The path with row `at` current, the rows that are not on it left out: row → `data-path`. */
   const lit = (rows: readonly TocRow[], at: number): Record<number, string> => Object.fromEntries(pathLines(rows, at).flatMap((path, row) => (path === '' ? [] : [[row, path]])))
 
   it('a level 1 row has no path; a level 2 row has the line of its level 1 parent down to it, where the level piece goes to the name (`1t`)', () => {
-    for (const at of [0, 6]) expect(pathLines(NOTE, at)).toEqual(NONE)
-    expect(lit(NOTE, 1)).toEqual({ 1: '1t' })
+    for (const at of [0, 6]) expect(pathLines(PAGE, at)).toEqual(NONE)
+    expect(lit(PAGE, 1)).toEqual({ 1: '1t' })
     // Not the first child: the line of the parent passes the earlier sibling and the rows below it.
-    expect(lit(NOTE, 4)).toEqual({ 1: '1', 2: '1', 3: '1', 4: '1t' })
+    expect(lit(PAGE, 4)).toEqual({ 1: '1', 2: '1', 3: '1', 4: '1t' })
     // The parent is the NEAREST level 1 above: row 6, not row 0. Row 7 between them is two levels in, and the line passes it.
-    expect(lit(NOTE, 8)).toEqual({ 7: '1', 8: '1t' })
+    expect(lit(PAGE, 8)).toEqual({ 7: '1', 8: '1t' })
   })
 
   it('a level 3 row below a level 2 below a level 1: the first line stops at the level 2 parent (`1t`), the second goes from below that parent to the row (`2`, then `2t`)', () => {
-    expect(lit(NOTE, 2)).toEqual({ 1: '1t', 2: '2t' })
-    expect(lit(NOTE, 3)).toEqual({ 1: '1t', 2: '2', 3: '2t' })
+    expect(lit(PAGE, 2)).toEqual({ 1: '1t', 2: '2t' })
+    expect(lit(PAGE, 3)).toEqual({ 1: '1t', 2: '2', 3: '2t' })
     // The second level 2 of the part: the first line passes the full first one on its way down.
-    expect(lit(NOTE, 5)).toEqual({ 1: '1', 2: '1', 3: '1', 4: '1t', 5: '2t' })
+    expect(lit(PAGE, 5)).toEqual({ 1: '1', 2: '1', 3: '1', 4: '1t', 5: '2t' })
   })
 
   it('a level 3 row directly below a level 1: the first line down to it and no `t`, because the row is two levels in; the second line stays grey', () => {
-    expect(lit(NOTE, 7)).toEqual({ 7: '1' })
+    expect(lit(PAGE, 7)).toEqual({ 7: '1' })
     expect(lit(levels(1, 3, 3, 3), 3)).toEqual({ 1: '1', 2: '1', 3: '1' })
   })
 
   it('a row with no parent above it has no path, and a level 3 below a level 2 with no level 1 has the second line only', () => {
-    // A note that starts at level 2 or at level 3, and a flat note of one level.
+    // A page that starts at level 2 or at level 3, and a flat page of one level.
     for (const rows of [levels(2, 2, 2), levels(3, 3), levels(3, 2, 2), levels(1, 1, 1)]) {
       for (const at of rows.keys()) expect(pathLines(rows, at)).toEqual(rows.map(() => ''))
     }
@@ -209,19 +209,19 @@ describe('pathLines: the level lines from the current row up to its parents (YAZ
     expect(lit(DEEP, 3)).toEqual({ 1: '1t', 2: '2t', 3: '3t' })
     // An H5 below two H4s: the line of the H3 passes the first H4 on its way to the second.
     expect(lit(levels(1, 2, 3, 4, 4, 5), 5)).toEqual({ 1: '1t', 2: '2t', 3: '3', 4: '3t', 5: '4t' })
-    // A note that goes from H2 to H4 with no H3: the H4 row gets the line of its H2 and no `t`; an H5 under it gets the line of the H4.
+    // A page that goes from H2 to H4 with no H3: the H4 row gets the line of its H2 and no `t`; an H5 under it gets the line of the H4.
     expect(lit(levels(1, 2, 4, 5), 2)).toEqual({ 1: '1t', 2: '2' })
     expect(lit(levels(1, 2, 4, 5), 3)).toEqual({ 1: '1t', 2: '2', 3: '4t' })
   })
 
-  it('the path stops at the current row and starts below its top parent, for each row of a note', () => {
-    for (const at of NOTE.keys()) {
-      const path = pathLines(NOTE, at)
-      expect(path).toHaveLength(NOTE.length)
+  it('the path stops at the current row and starts below its top parent, for each row of a page', () => {
+    for (const at of PAGE.keys()) {
+      const path = pathLines(PAGE, at)
+      expect(path).toHaveLength(PAGE.length)
       // Rows below the current row are never on the path.
       expect(path.slice(at + 1)).toEqual(NONE.slice(at + 1))
       // A parent row never carries its own line, and no level 1 row is ever on a path.
-      NOTE.forEach((row, i) => {
+      PAGE.forEach((row, i) => {
         if (row.level === 1) expect(path[i]).toBe('')
         // A line passes only rows that are further in than it: line 1 at 20px, line 2 at 36px.
         if (path[i] !== '') expect(Number(path[i][0])).toBeLessThan(row.level)
@@ -377,7 +377,7 @@ const scrollFrame = async (m: Mounted): Promise<void> => {
   })
 }
 
-describe('which notes show one', () => {
+describe('which pages show one', () => {
   it('renders nothing under two headings', () => {
     expect(nav(mount('auto', []))).toBeNull()
     expect(nav(mount('auto', [HEADINGS[0]]))).toBeNull()
@@ -406,7 +406,7 @@ describe('which notes show one', () => {
     expect(nav(m)?.hasAttribute('data-names')).toBe(true)
   })
 
-  it('a note whose second heading is typed later gets one then; one that loses it, loses it', () => {
+  it('a page whose second heading is typed later gets one then; one that loses it, loses it', () => {
     const m = mount('auto', [HEADINGS[0]])
     expect(nav(m)).toBeNull()
     act(() => m.channel.publish(HEADINGS.slice(0, 2)))
@@ -425,7 +425,7 @@ describe('which notes show one', () => {
 })
 
 describe('lines: the rail', () => {
-  it('a narrow note shows lines — no data-names, no names until the card opens', () => {
+  it('a narrow page shows lines — no data-names, no names until the card opens', () => {
     const m = mount('auto', HEADINGS, 320)
     expect(nav(m)?.hasAttribute('data-names')).toBe(false)
     expect(lines(m).map((line) => line.dataset.level)).toEqual(['1', '2', '3', '2', '1'])
@@ -502,7 +502,7 @@ describe('lines: the rail', () => {
     expect(buttonNamed(narrow, 'Pin')).toBeUndefined()
   })
 
-  it('pinned in a note too narrow for names: lines still, and neither "Pin" nor "Unpin" in the card', () => {
+  it('pinned in a page too narrow for names: lines still, and neither "Pin" nor "Unpin" in the card', () => {
     const m = mount('pinned', HEADINGS, 320)
     expect(nav(m)?.hasAttribute('data-names')).toBe(false)
     click(rail(m))
@@ -511,13 +511,13 @@ describe('lines: the rail', () => {
   })
 })
 
-describe('a scroll of the note', () => {
+describe('a scroll of the page', () => {
   const wheel = (m: Mounted, init: WheelEventInit = { deltaY: 40 }): void =>
     act(() => {
       m.scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, ...init }))
     })
 
-  it('a turn of the wheel over the note opens no card, in lines mode and in names mode; the current line still moves (YAZ-2886)', async () => {
+  it('a turn of the wheel over the page opens no card, in lines mode and in names mode; the current line still moves (YAZ-2886)', async () => {
     const m = mount('auto')
     wheel(m, { deltaY: 400 })
     m.current.mockReturnValue(3)
@@ -548,7 +548,7 @@ describe('a scroll of the note', () => {
       return m
     }
 
-    it('a turn of the wheel over the note sets it at once and renders nothing; ONE timer serves the burst; it goes 1500 ms after the LAST turn, and the next turn sets it again', () => {
+    it('a turn of the wheel over the page sets it at once and renders nothing; ONE timer serves the burst; it goes 1500 ms after the LAST turn, and the next turn sets it again', () => {
       fakeClock()
       const m = mountAtRest('pinned', HEADINGS, 900)
       expect(reading(m)).toBe(false)
@@ -604,7 +604,7 @@ describe('a scroll of the note', () => {
       const notReading = async (): Promise<void> => {
         wheel(m, { deltaX: 40, deltaY: 0 })
         wheel(m, { deltaY: 40, ctrlKey: true })
-        // Typing at the bottom of the window and a jump scroll the note; Page Down and a drag of the scrollbar are a key and a press.
+        // Typing at the bottom of the window and a jump scroll the page; Page Down and a drag of the scrollbar are a key and a press.
         await scrollFrame(m)
         keyOn(m.scroller, 'PageDown')
         act(() => {
@@ -630,7 +630,7 @@ describe('a scroll of the note', () => {
       expect(reading(m)).toBe(false)
     })
 
-    it('a wheel over the table of contents that moves the NOTE sets it by the same rule — beside the list, and on a list that fits — and one that scrolls the list itself does not', () => {
+    it('a wheel over the table of contents that moves the PAGE sets it by the same rule — beside the list, and on a list that fits — and one that scrolls the list itself does not', () => {
       fakeClock()
       const m = mountAtRest('pinned', HEADINGS, 900)
       const wheelOver = (el: Element, init: WheelEventInit = { deltaY: 40 }): void =>
@@ -639,18 +639,18 @@ describe('a scroll of the note', () => {
         })
       const list = m.section.querySelector<HTMLElement>('.toc__names')!
       const unpin = buttonNamed(m, 'Unpin')!
-      // A list longer than its box keeps the wheel and the note stays: the mouse is on the list, and toc.css's hover rule shows the lines there.
+      // A list longer than its box keeps the wheel and the page stays: the mouse is on the list, and toc.css's hover rule shows the lines there.
       Object.defineProperties(list, { scrollHeight: { configurable: true, value: 900 }, clientHeight: { configurable: true, value: 300 } })
       wheelOver(names(m)[1])
-      // A sideways turn and a pinch move nothing, here as over the note.
+      // A sideways turn and a pinch move nothing, here as over the page.
       wheelOver(unpin, { deltaX: 40, deltaY: 0 })
       wheelOver(unpin, { deltaY: 40, ctrlKey: true })
       expect([m.scroller.scrollTop, reading(m), vi.getTimerCount()]).toEqual([0, false, 0])
-      // Beside the list there is no list to scroll: the note moves, and the scroller hears no wheel of its own.
+      // Beside the list there is no list to scroll: the page moves, and the scroller hears no wheel of its own.
       const commits = m.commits()
       wheelOver(unpin)
       expect([m.scroller.scrollTop, reading(m), vi.getTimerCount()]).toEqual([40, true, 1])
-      // A list that fits lets the note move too. It is the same burst: the one timer, 1500 ms after the LAST turn.
+      // A list that fits lets the page move too. It is the same burst: the one timer, 1500 ms after the LAST turn.
       Object.defineProperties(list, { scrollHeight: { configurable: true, value: 300 } })
       act(() => {
         vi.advanceTimersByTime(1000)
@@ -714,7 +714,7 @@ describe('the wheel over the table of contents moves ONE thing', () => {
       el.dispatchEvent(new WheelEvent('wheel', { bubbles: true, ...init }))
     })
 
-  it('a list that fits lets the note scroll, by the wheel’s own distance; a list longer than its box keeps the wheel, and the note stays', () => {
+  it('a list that fits lets the page scroll, by the wheel’s own distance; a list longer than its box keeps the wheel, and the page stays', () => {
     const m = mount('pinned', HEADINGS, 900)
     const list = m.section.querySelector<HTMLElement>('.toc__names')!
     wheelOver(names(m)[1])
@@ -730,12 +730,12 @@ describe('the wheel over the table of contents moves ONE thing', () => {
     wheelOver(names(m)[1])
     wheelOver(names(m)[4], { deltaY: -30 })
     expect(m.scroller.scrollTop).toBe(78)
-    // Beside the list — "Unpin", the column's own padding — there is no list to scroll: the note moves.
+    // Beside the list — "Unpin", the column's own padding — there is no list to scroll: the page moves.
     wheelOver(buttonNamed(m, 'Unpin')!)
     expect(m.scroller.scrollTop).toBe(108)
   })
 
-  it('the note’s own move by that wheel lets go of a jump’s hold, as a wheel over the note does', async () => {
+  it('the page’s own move by that wheel lets go of a jump’s hold, as a wheel over the page does', async () => {
     const m = mount('pinned', HEADINGS, 900)
     m.current.mockReturnValue(4)
     click(names(m)[3])
@@ -828,7 +828,7 @@ describe('names: the column', () => {
     const floor = mount('auto', HEADINGS, NAMES_FLOOR)
     click(rail(floor))
     const pin = buttonNamed(floor, 'Pin')
-    expect(pin?.title).toBe('Pin: keep the table of contents open beside the note')
+    expect(pin?.title).toBe('Pin: keep the table of contents open beside the page')
     expect(pin?.querySelector('svg')).not.toBeNull()
     const under = mount('auto', HEADINGS, NAMES_FLOOR - 1)
     click(rail(under))
@@ -882,7 +882,7 @@ describe('the path in the names: data-path follows the current row (YAZ-2762 D3,
 
   it('a click on a name moves the path at once and holds it through the jump\'s own scroll; a scroll inside one section draws nothing again', async () => {
     const m = mount('pinned', HEADINGS, 900)
-    // The spy would say the last row: the note hit its bottom before "Deep dive" reached the top.
+    // The spy would say the last row: the page hit its bottom before "Deep dive" reached the top.
     m.current.mockReturnValue(4)
     click(names(m)[2])
     expect(paths(m)).toEqual(['', '1t', '2t', '', ''])
@@ -893,7 +893,7 @@ describe('the path in the names: data-path follows the current row (YAZ-2762 D3,
     expect(m.commits()).toBe(commits)
   })
 
-  it('the card has the same path as the column, and a note of more than 200 rows counts it on the rows it SHOWS', async () => {
+  it('the card has the same path as the column, and a page of more than 200 rows counts it on the rows it SHOWS', async () => {
     const inCard = mount('auto')
     await goTo(inCard, 2)
     click(rail(inCard))
@@ -948,7 +948,7 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
       expect([edge(m)?.tagName, edge(m)?.hasAttribute('tabindex')]).toEqual(['DIV', false])
       // The section wears `data-toc-names` while the names show (YAZ-4849): a folder page's scroller reads it.
       expect(m.section.hasAttribute('data-toc-names')).toBe(true)
-      // The wheel on it is the wheel on the column beside the list: the note moves.
+      // The wheel on it is the wheel on the column beside the list: the page moves.
       act(() => {
         edge(m)!.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 30 }))
       })
@@ -1020,7 +1020,7 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
     resize(slim, 1040 + TOC_WIDTH)
     expect(nav(slim)?.hasAttribute('data-names')).toBe(true)
     expect(widthOf(slim)).toBe('160px')
-    // And a saved 480 does not take the names away from a note that has 200px of margin.
+    // And a saved 480 does not take the names away from a page that has 200px of margin.
     const wide = mount('auto', HEADINGS, 1040 + TOC_WIDTH, 480)
     expect(nav(wide)?.hasAttribute('data-names')).toBe(true)
     expect(widthOf(wide)).toBe('200px')
@@ -1106,7 +1106,7 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
     // At the first width that shows names at all, the margin is the 200 they start with.
     expect(dragBothWays(mount('auto', HEADINGS, 1040 + TOC_WIDTH))).toEqual({ widest: '200px', narrowest: '160px' })
 
-    // Saved 400 in a note with room for 320: the drag starts from the 320 it shows, and saves where it ends.
+    // Saved 400 in a page with room for 320: the drag starts from the 320 it shows, and saves where it ends.
     const cut = mount('auto', HEADINGS, 1360, 400)
     press(cut, 1000)
     moveTo(1020)
@@ -1167,7 +1167,7 @@ describe('the edge of the names column: a drag sets its width (YAZ-2752)', () =>
   })
 })
 
-describe('where the reader is: the marker, and a long list in step with the note (D5)', () => {
+describe('where the reader is: the marker, and a long list in step with the page (D5)', () => {
   const ROW = 24
   /**
    * jsdom lays nothing out, so the names get what toc.css would give them: each `ROW` px tall, one
@@ -1228,7 +1228,7 @@ describe('where the reader is: the marker, and a long list in step with the note
     }
   })
 
-  it('a list longer than its box moves with the note like a scrollbar’s thumb: the first name at the top, the last at the bottom, in step between — and fades at the edge that has more', async () => {
+  it('a list longer than its box moves with the page like a scrollbar’s thumb: the first name at the top, the last at the bottom, in step between — and fades at the edge that has more', async () => {
     // Ten names of 24px in a box of 120px: 120px of travel.
     const undo = layOutNames(120)
     const scrollTo = vi.fn()
@@ -1260,7 +1260,7 @@ describe('where the reader is: the marker, and a long list in step with the note
     }
   })
 
-  it('a click on a name, or a fold, moves only the marker: the list holds still until the note moves again (YAZ-3939, demo 5C)', async () => {
+  it('a click on a name, or a fold, moves only the marker: the list holds still until the page moves again (YAZ-3939, demo 5C)', async () => {
     // Ten names of 24px in a box of 120px, three of them parents.
     const undo = layOutNames(120)
     const scrollTo = vi.fn()
@@ -1283,11 +1283,11 @@ describe('where the reader is: the marker, and a long list in step with the note
       expect(names(m).map((name) => name.textContent)).toEqual(['A', 'a1', 'a2', 'B', 'b1', 'b2', 'C', 'D'])
       expect(names(m)[6].getAttribute('aria-current')).toBe('true')
       expect(scrollTo).toHaveBeenCalledTimes(1)
-      // The reader moves the note: the list follows again.
+      // The reader moves the page: the list follows again.
       reading = 1
       await scrollFrame(m)
       expect(scrollTo).toHaveBeenCalledTimes(2)
-      // A click on the current name renders nothing and holds nothing: the next move of the note still follows.
+      // A click on the current name renders nothing and holds nothing: the next move of the page still follows.
       click(names(m)[1])
       act(() => {
         m.scroller.dispatchEvent(new Event('pointerdown'))
@@ -1318,7 +1318,7 @@ describe('where the reader is: the marker, and a long list in step with the note
       click(arrowOfC())
       expect(names(m)[6].getAttribute('aria-current')).toBe('true')
       expect(scrollTo).toHaveBeenCalledTimes(before)
-      // Open "C" again with its arrow. The note did not move: "c2" is current, and the list holds.
+      // Open "C" again with its arrow. The page did not move: "c2" is current, and the list holds.
       click(arrowOfC())
       expect(names(m).map((name) => name.textContent)).toEqual(['A', 'a1', 'a2', 'B', 'b1', 'b2', 'C', 'c1', 'c2', 'D'])
       expect(names(m)[8].getAttribute('aria-current')).toBe('true')
@@ -1385,24 +1385,24 @@ describe('the stylesheet the component counts on (toc.css, app.css)', () => {
   }
   const zIndex = (body: string): number => Number(body.match(/z-index:\s*(\d+);/)?.[1])
 
-  it('stands on a layer above the note and BELOW the status chips, whose menus open over its corner', () => {
+  it('stands on a layer above the page and BELOW the status chips, whose menus open over its corner', () => {
     const toc = zIndex(rule(tocCss, '.toc'))
     const chips = zIndex(rule(appCss, '.status-chips'))
     expect(toc).toBeGreaterThan(0)
     expect(toc).toBeLessThan(chips)
   })
 
-  it('ONE scrollbar, the note’s: a list shows none and keeps the wheel at its ends; no card follows the note (YAZ-2886); the names take their 200px from the scroller', () => {
+  it('ONE scrollbar, the page’s: a list shows none and keeps the wheel at its ends; no card follows the page (YAZ-2886); the names take their 200px from the scroller', () => {
     const list = rule(tocCss, '.toc__names')
     expect(list).toMatch(/overflow-y:\s*auto;/)
     expect(list).toMatch(/scrollbar-width:\s*none;/)
     expect(list).toMatch(/overscroll-behavior:\s*contain;/)
     expect(tocCss).not.toContain('data-follow')
-    // `namesShow` counts with TOC_WIDTH: the scroller pads by it, the find bar moves by it, the column stands left of the note's scrollbar.
+    // `namesShow` counts with TOC_WIDTH: the scroller pads by it, the find bar moves by it, the column stands left of the page's scrollbar.
     expect(tocCss).toMatch(new RegExp(`--toc-width:\\s*${TOC_WIDTH}px;`))
-    // Both read the section's `data-toc-names` (YAZ-4849): no `:has()` over the note's text (YAZ-3329).
+    // Both read the section's `data-toc-names` (YAZ-4849): no `:has()` over the page's text (YAZ-3329).
     expect(rule(tocCss, '.editor[data-toc-names] > .editor-host')).toMatch(/padding-right:\s*var\(--toc-width/)
-    expect(rule(tocCss, '.editor[data-toc-names] > .find-bar-dock--note')).toMatch(/right:\s*var\(--toc-width/)
+    expect(rule(tocCss, '.editor[data-toc-names] > .find-bar-dock--page')).toMatch(/right:\s*var\(--toc-width/)
     expect(tocCss).not.toContain(':has(> .toc[data-names])')
     const column = rule(tocCss, '.toc[data-names]')
     expect(column).toMatch(/right:\s*var\(--toc-gutter/)
@@ -1576,9 +1576,9 @@ describe('click = jump', () => {
     expect(card(m)).toBeNull()
   })
 
-  it('the heading jumped to is current at once and stays so through the jump\'s own scroll, until the reader moves the note', async () => {
+  it('the heading jumped to is current at once and stays so through the jump\'s own scroll, until the reader moves the page', async () => {
     const m = mount('pinned', HEADINGS, 900)
-    // The spy would say the last heading: the note hit its bottom before "Section B" reached the top.
+    // The spy would say the last heading: the page hit its bottom before "Section B" reached the top.
     m.current.mockReturnValue(4)
     click(names(m)[3])
     expect(names(m)[3].getAttribute('aria-current')).toBe('true')
@@ -1636,7 +1636,7 @@ describe('⌘J', () => {
     expect(document.activeElement).toBe(names(m)[0])
   })
 
-  it('Esc closes the card and hands the caret back to the note', () => {
+  it('Esc closes the card and hands the caret back to the page', () => {
     const m = mount('auto')
     act(() => m.mountEl.focus())
     pressCmdJ(m.mountEl)
@@ -1665,7 +1665,7 @@ describe('⌘J', () => {
     expect(m.onReturnFocus).toHaveBeenCalledTimes(1)
   })
 
-  it('a note that shows no table of contents does not claim the key', () => {
+  it('a page that shows no table of contents does not claim the key', () => {
     const none = mount('auto', [HEADINGS[0]])
     act(() => none.mountEl.focus())
     expect(pressCmdJ(none.mountEl).defaultPrevented).toBe(false)
@@ -1753,9 +1753,9 @@ describe('folds (YAZ-3939)', () => {
     return el
   }
 
-  it('D1: a fold key is the level, the text and which row of the two it is: the note\'s heading fold rule', () => {
-    expect(tocFoldKeys([{ level: 1, text: 'Notes' }, { level: 2, text: 'Notes' }, { level: 1, text: 'Notes' }])).toEqual([key(1, 'Notes'), key(2, 'Notes'), key(1, 'Notes', 1)])
-    // The text is hashed, as the note's own fold keys are: a long bullet makes a short key.
+  it('D1: a fold key is the level, the text and which row of the two it is: the page\'s heading fold rule', () => {
+    expect(tocFoldKeys([{ level: 1, text: 'Pages' }, { level: 2, text: 'Pages' }, { level: 1, text: 'Pages' }])).toEqual([key(1, 'Pages'), key(2, 'Pages'), key(1, 'Pages', 1)])
+    // The text is hashed, as the page's own fold keys are: a long bullet makes a short key.
     const [long] = tocFoldKeys([{ level: 1, text: 'x'.repeat(5000) }])
     expect(long.length).toBeLessThan(40)
   })
@@ -1781,7 +1781,7 @@ describe('folds (YAZ-3939)', () => {
     expect(names(m)[2].dataset.fold).toBe('closed')
     expect(names(m)[2].getAttribute('aria-expanded')).toBe('false')
     expect(m.jump).not.toHaveBeenCalled()
-    // D2: the note never folds; the fold is saved for this note.
+    // D2: the page never folds; the fold is saved for this page.
     expect(m.onChangeFolds).toHaveBeenLastCalledWith([key(1, 'Design')])
     click(arrow(m, 'Design'))
     expect(shownTexts(m)).toEqual(texts(TREE))
@@ -2101,10 +2101,10 @@ describe('the zoom of the names (YAZ-3939 D7–D10, demo 5B)', () => {
     expect(zoomButton(lined, 'Table of contents zoom').closest('.toc__header')).not.toBeNull()
   })
 
-  it('D8: ⌘+ / ⌘− / ⌘0 with the focus in the table of contents zoom the names and never reach the note; with the focus in the note they are not claimed', () => {
+  it('D8: ⌘+ / ⌘− / ⌘0 with the focus in the table of contents zoom the names and never reach the page; with the focus in the page they are not claimed', () => {
     const m = mount('pinned', PARENTS, 900, TOC_DEFAULT_W, [], 100)
-    const noteListener = vi.fn()
-    m.section.addEventListener(ZOOM_EVENT, noteListener)
+    const pageListener = vi.fn()
+    m.section.addEventListener(ZOOM_EVENT, pageListener)
     names(m)[0].focus()
     expect(zoomEvent(names(m)[0], 1).defaultPrevented).toBe(true)
     expect(m.onChangeZoom).toHaveBeenLastCalledWith(125)
@@ -2112,10 +2112,10 @@ describe('the zoom of the names (YAZ-3939 D7–D10, demo 5B)', () => {
     expect(m.onChangeZoom).toHaveBeenLastCalledWith(90)
     zoomEvent(names(m)[0], 0)
     expect(m.onChangeZoom).toHaveBeenLastCalledWith(100)
-    expect(noteListener).not.toHaveBeenCalled()
+    expect(pageListener).not.toHaveBeenCalled()
     m.mountEl.focus()
     expect(zoomEvent(m.mountEl, 1).defaultPrevented).toBe(false)
-    expect(noteListener).toHaveBeenCalledTimes(1)
+    expect(pageListener).toHaveBeenCalledTimes(1)
     expect(m.onChangeZoom).toHaveBeenCalledTimes(3)
   })
 

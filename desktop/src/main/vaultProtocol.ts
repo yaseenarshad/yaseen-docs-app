@@ -17,13 +17,13 @@ import { mimeFor, resolveAsset } from './fs/assets'
  *
  * The grammar the renderer builds (each `<seg>` `encodeURIComponent`-encoded, joined by `/`):
  *
- *     app://vault/<root>/<ref seg>[/<ref seg>…][?from=<note dir>]
+ *     app://vault/<root>/<ref seg>[/<ref seg>…][?from=<page dir>]
  *
  * `<root>` is the ABSOLUTE vault root as ONE segment — its own slashes encoded, which the URL
  * parser never decodes, so it survives as one piece; `<ref>` is the image link as written in
- * the markdown, split on `/`; `from` is the linking note's ROOT-RELATIVE directory (`''` at
- * the root) so a note's own `./pic.png` beats a same-named file elsewhere. Resolution is
- * `resolveAsset`'s Obsidian order (note-relative → root-relative → shortest-path basename),
+ * the markdown, split on `/`; `from` is the linking page's ROOT-RELATIVE directory (`''` at
+ * the root) so a page's own `./pic.png` beats a same-named file elsewhere. Resolution is
+ * `resolveAsset`'s Obsidian order (page-relative → root-relative → shortest-path basename),
  * restricted to `IMAGE_EXTENSIONS`; a drawing, a text file, an escape or a miss is a plain 404
  * with no file read — the `<img>` shows nothing, exactly as for a dead `http` source.
  *
@@ -48,7 +48,7 @@ import { mimeFor, resolveAsset } from './fs/assets'
  * overwritten (`create`), but a user swapping a file in Finder is.
  *
  * SOUND (YAZ-5014): `AUDIO_EXTENSIONS` (mp3, m4a, wav, ogg) ride the same grammar, resolver and vault edge, for a
- * note card's one-line player. An `<audio>` seeks with a `Range: bytes=a-b` request, so a sound file answers
+ * card's one-line player. An `<audio>` seeks with a `Range: bytes=a-b` request, so a sound file answers
  * `Accept-Ranges: bytes` and a range with a 206 and its `Content-Range` (read from the file here, not by the fetch);
  * a range past the end is a 416. The scheme's `stream` privilege (`appScheme.ts`) lets the player stream it.
  *
@@ -61,7 +61,7 @@ export interface VaultUrl {
   root: string
   /** The image link as written, path segments decoded and re-joined with `/`. */
   ref: string
-  /** Root-relative directory of the linking note, decoded; absent when the URL carries no `from`. */
+  /** Root-relative directory of the linking page, decoded; absent when the URL carries no `from`. */
   from?: string
 }
 

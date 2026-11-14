@@ -31,7 +31,7 @@ export const calendarDaySetting = (): { start: number; end: number } => day
 let headerRow: HeaderRow = DEFAULT_HEADER_ROW
 
 /**
- * Settings › Tables › All tables › Header row (YAZ-4774), App's door: a note table's "Header row ›" and a folder table's
+ * Settings › Tables › All tables › Header row (YAZ-4774), App's door: a page table's "Header row ›" and a folder table's
  * View tab read it when they open, to show what a table follows. The page itself reads it from `.app` (`table.css`).
  */
 export function setHeaderRowSetting(value: HeaderRow): void {

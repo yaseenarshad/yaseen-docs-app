@@ -79,7 +79,7 @@ afterEach(() => {
   store.removeWindow('w-other')
 })
 
-/** A fresh layout: `vault/Plans` holds `Taken.md`; `other/Elsewhere.md`; Finder holds a note, a folder with a note inside, `.DS_Store` and `Taken.md`. */
+/** A fresh layout: `vault/Plans` holds `Taken.md`; `other/Elsewhere.md`; Finder holds a page, a folder with a page inside, `.DS_Store` and `Taken.md`. */
 async function layout() {
   const at = await mkdtemp(path.join(base, 'case-'))
   vault = path.join(at, 'vault')
@@ -91,7 +91,7 @@ async function layout() {
   await Promise.all([
     writeFile(path.join(vault, 'Plans', 'Taken.md'), 'in the vault'),
     writeFile(path.join(other, 'Elsewhere.md'), 'other vault'),
-    writeFile(path.join(finder, 'Note.md'), 'from finder'),
+    writeFile(path.join(finder, 'Page.md'), 'from finder'),
     writeFile(path.join(finder, 'Trip', 'Days', 'one.md'), 'day one'),
     writeFile(path.join(finder, '.DS_Store'), 'hidden'),
     writeFile(path.join(finder, 'Taken.md'), 'from finder'),
@@ -109,19 +109,19 @@ function fakeWindow() {
 describe('fs:import (YAZ-3253 D3, D9A)', () => {
   const importInto = (paths: string[], targetDir: string) => registered(CONTRACT.file.import)({ sender: {} }, { paths, targetDir })
 
-  it('moves a note and a folder with its contents in, through the paste move verb (S17, S24); a hidden item is skipped with no row (S20); the app clipboard is untouched', async () => {
+  it('moves a page and a folder with its contents in, through the paste move verb (S17, S24); a hidden item is skipped with no row (S20); the app clipboard is untouched', async () => {
     await layout()
     const clip = { op: 'copy' as const, paths: [path.join(vault, 'Plans', 'Taken.md')] }
     fileClip.set(clip)
     const w = fakeWindow()
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
     const plans = path.join(vault, 'Plans')
-    const res = await importInto([path.join(finder, 'Note.md'), path.join(finder, 'Trip'), path.join(finder, '.DS_Store')], plans)
+    const res = await importInto([path.join(finder, 'Page.md'), path.join(finder, 'Trip'), path.join(finder, '.DS_Store')], plans)
     expect(res).toEqual({
       ok: true,
       value: {
         moved: [
-          { from: path.join(finder, 'Note.md'), to: path.join(plans, 'Note.md'), kind: 'file' },
+          { from: path.join(finder, 'Page.md'), to: path.join(plans, 'Page.md'), kind: 'file' },
           { from: path.join(finder, 'Trip'), to: path.join(plans, 'Trip'), kind: 'dir' },
         ],
         copied: [],
@@ -140,11 +140,11 @@ describe('fs:import (YAZ-3253 D3, D9A)', () => {
     await layout()
     const plans = path.join(vault, 'Plans')
     otherDisk.add(path.join(finder, 'Trip'))
-    const res = await importInto([path.join(finder, 'Note.md'), path.join(finder, 'Trip'), path.join(finder, 'Taken.md')], plans)
+    const res = await importInto([path.join(finder, 'Page.md'), path.join(finder, 'Trip'), path.join(finder, 'Taken.md')], plans)
     expect(res).toEqual({
       ok: true,
       value: {
-        moved: [{ from: path.join(finder, 'Note.md'), to: path.join(plans, 'Note.md'), kind: 'file' }],
+        moved: [{ from: path.join(finder, 'Page.md'), to: path.join(plans, 'Page.md'), kind: 'file' }],
         copied: [{ from: path.join(finder, 'Trip'), to: path.join(plans, 'Trip'), kind: 'dir' }],
         failed: [{ from: path.join(finder, 'Taken.md'), code: 'ALREADY_EXISTS', message: 'a file with this name already exists' }],
       },
@@ -158,11 +158,11 @@ describe('fs:import (YAZ-3253 D3, D9A)', () => {
   it('refuses an item inside another vault the app has open, and moves the rest (S22); a target in no vault of the window is refused whole', async () => {
     await layout()
     const plans = path.join(vault, 'Plans')
-    const res = await importInto([path.join(other, 'Elsewhere.md'), path.join(finder, 'Note.md')], plans)
+    const res = await importInto([path.join(other, 'Elsewhere.md'), path.join(finder, 'Page.md')], plans)
     expect(res).toEqual({
       ok: true,
       value: {
-        moved: [{ from: path.join(finder, 'Note.md'), to: path.join(plans, 'Note.md'), kind: 'file' }],
+        moved: [{ from: path.join(finder, 'Page.md'), to: path.join(plans, 'Page.md'), kind: 'file' }],
         copied: [],
         failed: [{ from: path.join(other, 'Elsewhere.md'), code: 'BAD_REQUEST', message: 'To move between vaults, use cut and paste' }],
       },
@@ -176,11 +176,11 @@ describe('fs:import (YAZ-3253 D3, D9A)', () => {
     await layout()
     store.upsertWindow({ ...entry, id: 'w-other', root: path.join(finder, 'Trip', 'Days') })
     const plans = path.join(vault, 'Plans')
-    const res = await importInto([path.join(finder, 'Trip'), path.join(finder, 'Note.md')], plans)
+    const res = await importInto([path.join(finder, 'Trip'), path.join(finder, 'Page.md')], plans)
     expect(res).toEqual({
       ok: true,
       value: {
-        moved: [{ from: path.join(finder, 'Note.md'), to: path.join(plans, 'Note.md'), kind: 'file' }],
+        moved: [{ from: path.join(finder, 'Page.md'), to: path.join(plans, 'Page.md'), kind: 'file' }],
         copied: [],
         failed: [{ from: path.join(finder, 'Trip'), code: 'BAD_REQUEST', message: 'it holds a vault that is open' }],
       },
@@ -252,7 +252,7 @@ describe('fs:drag-out (YAZ-3254 D4)', () => {
     ['a relative path', () => ({ paths: ['Plans/Taken.md'], icon: PNG })],
     ['no path', () => ({ paths: [], icon: PNG })],
     ["a path in another window's vault", () => ({ paths: [path.join(other, 'Elsewhere.md')], icon: PNG })],
-    ['a path in no vault', () => ({ paths: [path.join(finder, 'Note.md')], icon: PNG })],
+    ['a path in no vault', () => ({ paths: [path.join(finder, 'Page.md')], icon: PNG })],
     ['a vault itself', () => ({ paths: [vault], icon: PNG })],
     ['an icon that is no PNG data URL', () => ({ paths: [path.join(vault, 'Plans', 'Taken.md')], icon: 'data:image/jpeg;base64,AAAA' })],
     ['an icon of 64 KB or more', () => ({ paths: [path.join(vault, 'Plans', 'Taken.md')], icon: `data:image/png;base64,${'A'.repeat(64 * 1024)}` })],
@@ -292,13 +292,13 @@ describe('a drag out that lands in another window of the app (YAZ-3263)', () => 
     await layout()
     const a = contents(1)
     const b = contents(2)
-    const note = path.join(vault, 'Plans', 'Taken.md')
-    await dragOut(a, [note])
-    await droppedHere(b, [path.join(finder, 'Note.md')]) // Finder's own items
-    await droppedHere(a, [note]) // A's own drop: A tells itself apart (S30)
+    const page = path.join(vault, 'Plans', 'Taken.md')
+    await dragOut(a, [page])
+    await droppedHere(b, [path.join(finder, 'Page.md')]) // Finder's own items
+    await droppedHere(a, [page]) // A's own drop: A tells itself apart (S30)
     expect(landedIn(a)).toEqual([])
     await dragOut(b, [path.join(vault, 'Plans')])
-    await droppedHere(a, [note]) // the older drag is gone
+    await droppedHere(a, [page]) // the older drag is gone
     expect(landedIn(a)).toEqual([])
     await droppedHere(a, [path.join(vault, 'Plans')])
     expect(landedIn(b)).toEqual([{ paths: [path.join(vault, 'Plans')] }])
@@ -320,7 +320,7 @@ describe('the index takes an in-app move and a tidy-up write at once (YAZ-3258, 
   const record = async (p: string) => (await getIndex(vault)).records.find((r) => r.path === p)
   afterEach(() => _evictAll())
 
-  it('a note moved by `fs:rename` is at its new path in the next `getIndex`, with its links: the next move of a gesture finds it there (S3)', async () => {
+  it('a page moved by `fs:rename` is at its new path in the next `getIndex`, with its links: the next move of a gesture finds it there (S3)', async () => {
     await layout()
     const x = path.join(vault, 'X.md')
     await writeFile(x, 'See [[Plans/Y]].')
@@ -330,7 +330,7 @@ describe('the index takes an in-app move and a tidy-up write at once (YAZ-3258, 
     expect(await record(path.join(vault, 'Plans', 'X.md'))).toMatchObject({ folder: 'Plans', links: ['Plans/Y'] })
   })
 
-  it("a folder moved by `fs:rename` takes its notes along, each with the new path and folder; a folder's settings file is read again (it is titled by its folder)", async () => {
+  it("a folder moved by `fs:rename` takes its pages along, each with the new path and folder; a folder's settings file is read again (it is titled by its folder)", async () => {
     await layout()
     await mkdir(path.join(vault, 'Archive'))
     await writeFile(path.join(vault, 'Plans', '.folder.md'), '---\nstatus: open\n---\n')
@@ -341,15 +341,15 @@ describe('the index takes an in-app move and a tidy-up write at once (YAZ-3258, 
     expect(folders.map((r) => [r.path, r.title])).toEqual([[path.join(vault, 'Archive', 'Done', '.folder.md'), 'Done']])
   })
 
-  it('a Finder item moved in by `fs:import` is in the next `getIndex`, a folder with each note inside it', async () => {
+  it('a Finder item moved in by `fs:import` is in the next `getIndex`, a folder with each page inside it', async () => {
     await layout()
     await getIndex(vault)
     const plans = path.join(vault, 'Plans')
-    await registered(CONTRACT.file.import)({ sender: {} }, { paths: [path.join(finder, 'Note.md'), path.join(finder, 'Trip')], targetDir: plans })
-    expect((await getIndex(vault)).records.map((r) => r.path)).toEqual([path.join(plans, 'Note.md'), path.join(plans, 'Taken.md'), path.join(plans, 'Trip', 'Days', 'one.md')])
+    await registered(CONTRACT.file.import)({ sender: {} }, { paths: [path.join(finder, 'Page.md'), path.join(finder, 'Trip')], targetDir: plans })
+    expect((await getIndex(vault)).records.map((r) => r.path)).toEqual([path.join(plans, 'Page.md'), path.join(plans, 'Taken.md'), path.join(plans, 'Trip', 'Days', 'one.md')])
   })
 
-  it("a quiet write (a link rewrite) is in the next `getIndex`: a quick ⌘Z finds the note that links to the new path (S33). A user's edit waits for the watcher", async () => {
+  it("a quiet write (a link rewrite) is in the next `getIndex`: a quick ⌘Z finds the page that links to the new path (S33). A user's edit waits for the watcher", async () => {
     await layout()
     const z = path.join(vault, 'Z.md')
     await writeFile(z, 'See [[Plans/Y]].')

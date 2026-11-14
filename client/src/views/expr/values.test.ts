@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DateValue, DurationValue, ErrorValue, FileValue, LinkValue, RegexValue, fromYaml, isTruthy, linkText, render } from './index'
 
 const rec = {
-  path: 'Notes/Foo.md', name: 'Foo.md', basename: 'Foo', title: 'Foo', folder: 'Notes', ext: 'md', size: 10,
+  path: 'Pages/Foo.md', name: 'Foo.md', basename: 'Foo', title: 'Foo', folder: 'Pages', ext: 'md', size: 10,
   ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [],
 }
 
@@ -10,7 +10,7 @@ describe('fromYaml', () => {
   it('detects wiki links', () => {
     expect(fromYaml('[[Foo]]')).toEqual(new LinkValue('Foo'))
     expect(fromYaml('[[Foo|Display]]')).toEqual(new LinkValue('Foo', 'Display'))
-    // YAZ-4935: the page on either side of the `|`. Words first keeps the text whole (YAZ-4954): only the notes can
+    // YAZ-4935: the page on either side of the `|`. Words first keeps the text whole (YAZ-4954): only the pages can
     // tell whether "staging" is a page, so the resolver picks; written back, the link is its text as written.
     expect(fromYaml('[[staging|WIKI-116]]')).toEqual(new LinkValue('staging|WIKI-116'))
     expect(fromYaml('[[staging|WIKI-116#Intro]]')).toEqual(new LinkValue('staging|WIKI-116#Intro'))
@@ -75,16 +75,16 @@ describe('render', () => {
     expect(render({ a: 1 })).toBe('{"a":1}')
   })
 
-  // YAZ-2293 D8: the file stores the id; with a resolver, what is shown is the note's title.
+  // YAZ-2293 D8: the file stores the id; with a resolver, what is shown is the page's title.
   describe('with a resolver (YAZ-2293 D8)', () => {
     const resolve = (target: string) => (target === 'k3m9x2pq7abc' ? new FileValue(rec) : null)
 
-    it('an id link reads as the title of the note it names', () => {
+    it('an id link reads as the title of the page it names', () => {
       expect(render(new LinkValue('k3m9x2pq7abc'), resolve)).toBe('[[Foo]]')
       expect(render([new LinkValue('k3m9x2pq7abc'), 'a'], resolve)).toBe('[[Foo]], a')
     })
 
-    it('a hand-typed label, an id naming no note and a name link all render as stored', () => {
+    it('a hand-typed label, an id naming no page and a name link all render as stored', () => {
       expect(render(new LinkValue('k3m9x2pq7abc', 'Label'), resolve)).toBe('[[k3m9x2pq7abc|Label]]')
       expect(render(new LinkValue('7tq2m8vd4xhn'), resolve)).toBe('[[7tq2m8vd4xhn]]')
       expect(render(new LinkValue('Bar'), resolve)).toBe('[[Bar]]')
@@ -96,12 +96,12 @@ describe('render', () => {
     })
   })
 
-  it('linkText: the label, else the title of the note its id names, else the target as written', () => {
+  it('linkText: the label, else the title of the page its id names, else the target as written', () => {
     const resolve = (target: string) => (target === 'k3m9x2pq7abc' || target === 'Bar' ? new FileValue(rec) : null)
     expect(linkText(new LinkValue('k3m9x2pq7abc', 'Label'), resolve)).toBe('Label')
     expect(linkText(new LinkValue('k3m9x2pq7abc'), resolve)).toBe('Foo')
     expect(linkText(new LinkValue('7tq2m8vd4xhn'), resolve)).toBe('7tq2m8vd4xhn')
-    // A NAME link shows what it shows today, even when it resolves to a note spelled otherwise.
+    // A NAME link shows what it shows today, even when it resolves to a page spelled otherwise.
     expect(linkText(new LinkValue('Bar'), resolve)).toBe('Bar')
     expect(linkText(new LinkValue('k3m9x2pq7abc'))).toBe('k3m9x2pq7abc')
     // A `#heading` rides on the id as it would on a name: the id part is what gets the title.
@@ -110,7 +110,7 @@ describe('render', () => {
     expect(render(new LinkValue('k3m9x2pq7abc#Section'), resolve)).toBe('[[Foo#Section]]')
   })
 
-  it('E: linkText reads the title its note\'s record holds, not its file name (YAZ-2420 D14)', () => {
+  it('E: linkText reads the title its page\'s record holds, not its file name (YAZ-2420 D14)', () => {
     const titled = new FileValue({ ...rec, name: 'up-001-abdul-k3m9x2pq7abc.md', basename: 'up-001-abdul-k3m9x2pq7abc', title: 'UP-001 - Abdul' })
     expect(linkText(new LinkValue('k3m9x2pq7abc#Scope'), () => titled)).toBe('UP-001 - Abdul#Scope')
   })
@@ -126,8 +126,8 @@ describe('isTruthy', () => {
 })
 
 /**
- * YAZ-4954: `fromYaml` knows no notes, so a link whose right side only LOOKS like an ID keeps both sides; the resolver
- * picks where the notes are known (the left side when it is a page, YAZ-4935). The stored text stays as written.
+ * YAZ-4954: `fromYaml` knows no pages, so a link whose right side only LOOKS like an ID keeps both sides; the resolver
+ * picks where the pages are known (the left side when it is a page, YAZ-4935). The stored text stays as written.
  */
 describe('fromYaml: words that only look like an ID (YAZ-4954)', () => {
   const file = (title: string) => new FileValue({ ...rec, path: `/vault/${title}.md`, name: `${title}.md`, basename: title, title })
@@ -137,20 +137,20 @@ describe('fromYaml: words that only look like an ID (YAZ-4954)', () => {
   }
 
   it('keeps both sides as written; the other order and two plain words split as before', () => {
-    expect(fromYaml('[[Covid notes|COVID-19]]')).toEqual(new LinkValue('Covid notes|COVID-19'))
-    expect(fromYaml('[[Covid notes#Intro|COVID-19]]')).toEqual(new LinkValue('Covid notes#Intro|COVID-19'))
-    expect(fromYaml('[[COVID-19|Covid notes]]')).toEqual(new LinkValue('COVID-19', 'Covid notes'))
+    expect(fromYaml('[[Covid pages|COVID-19]]')).toEqual(new LinkValue('Covid pages|COVID-19'))
+    expect(fromYaml('[[Covid pages#Intro|COVID-19]]')).toEqual(new LinkValue('Covid pages#Intro|COVID-19'))
+    expect(fromYaml('[[COVID-19|Covid pages]]')).toEqual(new LinkValue('COVID-19', 'Covid pages'))
     expect(fromYaml('[[Postgres|database]]')).toEqual(new LinkValue('Postgres', 'database'))
   })
 
-  it('the stored form is the text as written; a reader with the notes shows the words of the side it picks', () => {
-    const v = fromYaml('[[Covid notes|COVID-19]]') as LinkValue
-    expect(render(v)).toBe('[[Covid notes|COVID-19]]')
-    expect(linkText(v)).toBe('Covid notes|COVID-19')
+  it('the stored form is the text as written; a reader with the pages shows the words of the side it picks', () => {
+    const v = fromYaml('[[Covid pages|COVID-19]]') as LinkValue
+    expect(render(v)).toBe('[[Covid pages|COVID-19]]')
+    expect(linkText(v)).toBe('Covid pages|COVID-19')
     // The left side is a page: it is the page, and the words are COVID-19.
-    expect(linkText(v, over('Covid notes', 'COVID-19'))).toBe('COVID-19')
-    // Only the ID side is a page: it is the page, and the words are "Covid notes".
-    expect(linkText(v, (t) => (t === 'COVID-19' ? file('COVID-19') : null))).toBe('Covid notes')
-    expect(render(v, over('Covid notes'))).toBe('[[Covid notes|COVID-19]]')
+    expect(linkText(v, over('Covid pages', 'COVID-19'))).toBe('COVID-19')
+    // Only the ID side is a page: it is the page, and the words are "Covid pages".
+    expect(linkText(v, (t) => (t === 'COVID-19' ? file('COVID-19') : null))).toBe('Covid pages')
+    expect(render(v, over('Covid pages'))).toBe('[[Covid pages|COVID-19]]')
   })
 })

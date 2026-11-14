@@ -42,7 +42,7 @@ afterEach(async () => {
 async function baseRepo(): Promise<GitRepo> {
   const repo = await makeGitRepo()
   cleanups.push(repo.cleanup)
-  await repo.write('note.md', 'line one\n')
+  await repo.write('page.md', 'line one\n')
   await repo.run(['add', '-A'])
   await repo.run(['commit', '-m', 'base'])
   return repo
@@ -103,7 +103,7 @@ describe('syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
 
     expect((await syncPass(repo.root)).state).toBe('synced')
     expect(await repo.run(['log', '-1', '--format=%s'])).not.toMatch(/\.tmp-[0-9a-f]{12}/)
-    expect((await repo.run(['ls-tree', '-r', '--name-only', 'HEAD'])).split('\n').sort()).toEqual(['a.md', 'keep.tmp-draft.md', 'note.md'])
+    expect((await repo.run(['ls-tree', '-r', '--name-only', 'HEAD'])).split('\n').sort()).toEqual(['a.md', 'keep.tmp-draft.md', 'page.md'])
     expect(await remoteHead(repo, remote)).toBe(await repo.run(['rev-parse', 'HEAD']))
     expect(await readFile(path.join(repo.root, 'a.md.tmp-0123456789ab'), 'utf8')).toBe('# a (torn)\n')
   })
@@ -184,24 +184,24 @@ describe('syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
 
   it('holds back a TRACKED file that grew past the limit; the committed version stays as it was', async () => {
     const { repo } = await pushedRepo()
-    await truncate(path.join(repo.root, 'note.md'), GITHUB_FILE_LIMIT_BYTES + 1)
+    await truncate(path.join(repo.root, 'page.md'), GITHUB_FILE_LIMIT_BYTES + 1)
 
     const status = await syncPass(repo.root)
 
-    expect(status).toMatchObject({ attention: 'too-large', tooLarge: ['note.md'] })
-    expect(await repo.run(['show', 'HEAD:note.md'])).toBe('line one')
+    expect(status).toMatchObject({ attention: 'too-large', tooLarge: ['page.md'] })
+    expect(await repo.run(['show', 'HEAD:page.md'])).toBe('line one')
   })
 
   it('D12: a held-back TRACKED file never blocks the rebase — the rest syncs both ways and its bytes stay exactly as they were', async () => {
     const { repo, remote } = await pushedRepo()
     const other = await secondClone(remote)
     const bin = await requireGit()
-    // The other machine changes the big file's committed version AND adds a note, and pushes first.
-    await writeFile(path.join(other, 'note.md'), 'line one\nfrom the other machine\n', 'utf8')
+    // The other machine changes the big file's committed version AND adds a page, and pushes first.
+    await writeFile(path.join(other, 'page.md'), 'line one\nfrom the other machine\n', 'utf8')
     await writeFile(path.join(other, 'other.md'), '# other\n', 'utf8')
     for (const args of [['add', '-A'], ['commit', '-m', 'other'], ['push']]) expect((await git(bin, other, args)).code).toBe(0)
-    // Here: note.md grows past the line (a distinctive head, then a sparse tail), and a small edit.
-    const big = path.join(repo.root, 'note.md')
+    // Here: page.md grows past the line (a distinctive head, then a sparse tail), and a small edit.
+    const big = path.join(repo.root, 'page.md')
     await writeFile(big, 'our head\n')
     await truncate(big, GITHUB_FILE_LIMIT_BYTES + 1)
     const before = await sha1(big)
@@ -209,17 +209,17 @@ describe('syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
 
     const status = await syncPass(repo.root)
 
-    expect(status).toMatchObject({ state: 'attention', attention: 'too-large', tooLarge: ['note.md'] })
+    expect(status).toMatchObject({ state: 'attention', attention: 'too-large', tooLarge: ['page.md'] })
     // Both ways: their commit is under ours, ours is on the remote.
     expect(await repo.run(['log', '--format=%s'])).toBe('sync: small.md\nother\nbase')
     expect(await remoteHead(repo, remote)).toBe(await repo.run(['rev-parse', 'HEAD']))
     // Our bytes on disk, untouched; theirs is what history holds; nothing staged, nothing stashed.
     expect(await sha1(big)).toBe(before)
-    expect(await repo.run(['show', 'HEAD:note.md'])).toBe('line one\nfrom the other machine')
+    expect(await repo.run(['show', 'HEAD:page.md'])).toBe('line one\nfrom the other machine')
     expect(await repo.run(['diff', '--cached', '--name-only'])).toBe('')
     expect(await repo.run(['stash', 'list'])).toBe('')
     // And the next pass is the same calm answer, not a conflict.
-    expect(await syncPass(repo.root)).toMatchObject({ attention: 'too-large', tooLarge: ['note.md'] })
+    expect(await syncPass(repo.root)).toMatchObject({ attention: 'too-large', tooLarge: ['page.md'] })
   })
 
   it('clears once the file is gone: the next pass is plain synced, with no list', async () => {
@@ -288,7 +288,7 @@ describe('syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     const { repo, remote } = await pushedRepo()
     const other = await secondClone(remote)
     const bin = await requireGit()
-    await writeFile(path.join(other, 'note.md'), 'line one\nfrom the other machine\n', 'utf8')
+    await writeFile(path.join(other, 'page.md'), 'line one\nfrom the other machine\n', 'utf8')
     for (const args of [['add', '-A'], ['commit', '-m', 'other'], ['push']]) {
       expect((await git(bin, other, args)).code).toBe(0)
     }
@@ -307,20 +307,20 @@ describe('syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     const { repo, remote } = await pushedRepo()
     const other = await secondClone(remote)
     const bin = await requireGit()
-    // The other machine adds its OWN note and pushes first…
+    // The other machine adds its OWN page and pushes first…
     await writeFile(path.join(other, 'other.md'), '# from the other machine\n', 'utf8')
     for (const args of [['add', '-A'], ['commit', '-m', 'other'], ['push']]) {
       expect((await git(bin, other, args)).code).toBe(0)
     }
     // …while this machine edits a DIFFERENT file. No lines collide: the everyday two-machine case.
-    await repo.write('note.md', 'line one\nedited here\n')
+    await repo.write('page.md', 'line one\nedited here\n')
 
     const status = await syncPass(repo.root)
 
     expect(status.state).toBe('synced')
     // Our commit replayed on top of theirs and both are on the remote; the working tree has both files.
     expect(await remoteHead(repo, remote)).toBe(await repo.run(['rev-parse', 'HEAD']))
-    expect(await repo.run(['log', '--format=%s'])).toBe('sync: note.md\nother\nbase')
+    expect(await repo.run(['log', '--format=%s'])).toBe('sync: page.md\nother\nbase')
     expect(await repo.run(['show', 'HEAD:other.md'])).toBe('# from the other machine')
   })
 
@@ -413,7 +413,7 @@ describe('parkWhileRebasing (YAZ-1801 D12)', { timeout: REAL_GIT_TIMEOUT_MS }, (
     await repo.write('big.bin', 'committed\n')
     await repo.run(['add', '-A'])
     await repo.run(['commit', '-m', 'big'])
-    await repo.write('note.md', 'stashed note\n')
+    await repo.write('page.md', 'stashed page\n')
     await repo.run(['stash', 'push', '-m', 'mine'])
     const theirs = await repo.run(['rev-parse', 'refs/stash'])
     await repo.write('big.bin', 'grew past the line\n')
@@ -476,7 +476,7 @@ describe('lookAtRemote', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
 describe('flush mode (YAZ-1111)', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
   it('pushes to a reachable remote exactly like a normal pass', async () => {
     const { repo, remote } = await pushedRepo()
-    await repo.write('note.md', 'line one\nline two\n')
+    await repo.write('page.md', 'line one\nline two\n')
     const status = await syncPass(repo.root, { flush: true })
     expect(status.state).toBe('synced')
     expect(await remoteHead(repo, remote)).toBe(await repo.run(['rev-parse', 'HEAD']))
@@ -490,13 +490,13 @@ describe('flush mode (YAZ-1111)', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
       // fast — exactly the captive-portal quit the flush cap exists for. On a network that answers
       // with a quick refusal instead, the pass just returns even faster; both paths are in-budget.
       await repo.run(['remote', 'add', 'origin', 'http://192.0.2.1:9418/x.git'])
-      await repo.write('note.md', 'line one\nedited\n')
+      await repo.write('page.md', 'line one\nedited\n')
       const t0 = Date.now()
       const status = await syncPass(repo.root, { flush: true })
       expect(Date.now() - t0).toBeLessThan(9_000)
       expect(status.state === 'pending' || status.state === 'attention').toBe(true)
       // The edit is safe regardless: committed locally, pushed on the next open.
-      expect(await repo.run(['log', '-1', '--format=%s'])).toBe('sync: note.md')
+      expect(await repo.run(['log', '-1', '--format=%s'])).toBe('sync: page.md')
     },
     15_000,
   )
@@ -505,7 +505,7 @@ describe('flush mode (YAZ-1111)', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
 describe('commitMessage', () => {
   it('uses basenames, caps the list at three, and falls back to a bare subject', () => {
     expect(commitMessage([])).toBe('sync')
-    expect(commitMessage(['notes/deep/one.md'])).toBe('sync: one.md')
+    expect(commitMessage(['pages/deep/one.md'])).toBe('sync: one.md')
     expect(commitMessage(['a.md', 'b.md', 'c.md'])).toBe('sync: a.md, b.md, c.md')
     expect(commitMessage(['a.md', 'b.md', 'c.md', 'd.md'])).toBe('sync: a.md, b.md, c.md +1 more')
   })

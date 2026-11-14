@@ -331,7 +331,7 @@ describe('the exported copy and the board itself (YAZ-3943)', () => {
     const api = { getSceneElements: () => ELEMENTS, getAppState: () => ({}), getFiles: () => ({}), refresh: () => undefined, updateScene: () => undefined, updateFrameRendering: () => undefined }
     act(() => (last().onExcalidrawAPI as (a: unknown) => void)(api))
     expect(fontsOf(await handle!.exportScene())).toEqual([6, 8])
-    // The mount's baseline snapshot: what a save writes, in a tab and in the note's popup.
+    // The mount's baseline snapshot: what a save writes, in a tab and in the page's popup.
     expect(fontsOf(snapshot!.serialize().json)).toEqual([10, 14])
   })
 

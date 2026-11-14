@@ -67,10 +67,10 @@ export const FileIcon = memo(function FileIcon({ path, folder = false, card = fa
 })
 
 /** A name of each kind a New row makes: its icon is the tree's for that name (YAZ-5100). */
-const NEW_KIND_SAMPLE: Readonly<Record<CreateKind, string>> = { file: 'note.md', card: 'card.md', drawing: 'drawing.excalidraw', diagram: 'diagram.drawio', dir: 'folder' }
+const NEW_KIND_SAMPLE: Readonly<Record<CreateKind, string>> = { file: 'page.md', card: 'card.md', drawing: 'drawing.excalidraw', diagram: 'diagram.drawio', dir: 'folder' }
 
 /**
- * The icon of what a New row makes (YAZ-5100: "New note", "New card", "New drawing", "New folder" and their flyouts): the
+ * The icon of what a New row makes (YAZ-5100: "New page", "New card", "New drawing", "New folder" and their flyouts): the
  * icon a tree row of that kind shows, from the same `FileIcon`, so the icon set, the file icon style and Off apply.
  */
 export const NewKindIcon = ({ kind }: { kind: CreateKind }) => <FileIcon path={NEW_KIND_SAMPLE[kind]} folder={kind === 'dir'} card={kind === 'card'} />

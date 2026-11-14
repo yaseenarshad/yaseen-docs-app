@@ -183,7 +183,7 @@ export async function buildTree(dir: string): Promise<TreeNode[]> {
 /**
  * Opens, writes and fsyncs before closing (YAZ-2177; libuv issues F_FULLFSYNC on macOS): the bytes
  * are on disk before a rename or link gives them a real name, so a crash or power loss can't
- * surface an empty or torn note, state file or image under it. A string lands as UTF-8; bytes (an
+ * surface an empty or torn page, state file or image under it. A string lands as UTF-8; bytes (an
  * image through `writeAsset`, YAZ-1661) land verbatim — `writeFile` ignores the encoding for a view.
  * `mode` sets the permissions a NEW file is born with (YAZ-3038: `secrets.json` is owner-only from the start).
  */
@@ -240,7 +240,7 @@ export async function atomicWrite(file: string, content: string | Uint8Array, mo
  *
  * The link only CLAIMS the name (YAZ-2380): the same bytes are then renamed in over it. macOS
  * reports nothing at all when a file whose first name was a since-removed hard link is later
- * deleted, so a note left on the linked inode could be deleted outside the app and stay in the
+ * deleted, so a page left on the linked inode could be deleted outside the app and stay in the
  * tree and the index for good. A renamed-in file — what every save already leaves — is seen to go.
  *
  * `mode` is the new file's permissions from its first byte (YAZ-3044 A7: the Draw import's copies).

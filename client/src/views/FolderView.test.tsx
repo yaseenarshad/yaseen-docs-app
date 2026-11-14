@@ -4,17 +4,17 @@
  * mocked (the settings door), `writeRouted` mocked (every value a view writes, YAZ-4713 C1) and `api`
  * mocked for the create path. Some blocks swap in the REAL writers over an in-memory disk.
  *
- * Pinned here: its rows are the notes UNDER the folder, at any depth, and its shortcuts; a folder with no
+ * Pinned here: its rows are the pages UNDER the folder, at any depth, and its shortcuts; a folder with no
  * `.folder.md` shows the defaults and opening it writes nothing; link resolution and the link
  * pickers read the WHOLE vault even though the rows are a subset; a config edit is ONE
- * `folder_settings` write on the folder's `.folder.md` while a cell edit writes the NOTE's own field
+ * `folder_settings` write on the folder's `.folder.md` while a cell edit writes the PAGE's own field
  * (a "Separate value for <folder>" column's goes to the page's block of `in`, C3); columns flow down
- * from the parent folders (C2); switching view writes nothing at all; and "New" births a note
+ * from the parent folders (C2); switching view writes nothing at all; and "New" births a page
  * in the folder from its template and the seed alone.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
-import { noteFileName } from '@shared/noteName'
+import { pageFileName } from '@shared/pageName'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import type { CreateFileRequest, IndexRecord, TreeNode } from '@shared/types'
 import { declarationForKind } from './view/declarationForKind'
@@ -32,7 +32,7 @@ const renderNoAsk: typeof renderFolderView = (props) => renderFolderView({ folde
 vi.mock('./writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.fn(), writeRouted: vi.fn(), transformFile: vi.fn() }))
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
-  api: { readFile: vi.fn(), writeFile: vi.fn(), createFile: vi.fn(), mintNoteId: vi.fn(), tree: vi.fn() },
+  api: { readFile: vi.fn(), writeFile: vi.fn(), createFile: vi.fn(), mintPageId: vi.fn(), tree: vi.fn() },
 }))
 /** The real pane, wrapped, so a test can reach the host's bundle directly. */
 const captured = vi.hoisted(() => ({ folder: null as FolderHost | null, records: [] as readonly IndexRecord[] }))
@@ -50,26 +50,26 @@ vi.mock('./ViewsPane', async (importOriginal) => {
 
 
 import { api, BridgeRequestError } from '../api'
-import { testDoor } from '../testNoteIds'
+import { testDoor } from '../testPageIds'
 import type { FolderHost, ViewsPaneProps } from './ViewsPane'
 import { transformFile, writeProperties, writeProperty, writeRouted } from './writeProperty'
 
 const write = vi.mocked(writeProperty)
-/** The ONE door a view writes a value through (YAZ-4713 C1): the note, the fields, the page's separate keys, the page's id when one is separate. */
+/** The ONE door a view writes a value through (YAZ-4713 C1): the page, the fields, the page's separate keys, the page's id when one is separate. */
 const writeValues = vi.mocked(writeRouted)
-/** No column of the page is separate (C3): every value is the note's own field, and no page id is asked for. */
+/** No column of the page is separate (C3): every value is the page's own field, and no page id is asked for. */
 const SHARED = new Set<string>()
-/** The one-file transform behind a declaration write (`writeFolderColumn`) and a column delete's note strips. */
+/** The one-file transform behind a declaration write (`writeFolderColumn`) and a column delete's page strips. */
 const transform = vi.mocked(transformFile)
 const readFile = vi.mocked(api.readFile)
 const writeFile = vi.mocked(api.writeFile)
 const createFile = vi.mocked(api.createFile)
-/** The atomic content-at-create form is the only one this path uses (`createNote`). */
+/** The atomic content-at-create form is the only one this path uses (`createPage`). */
 const created = (call: number): CreateFileRequest => createFile.mock.calls[call][0] as CreateFileRequest
-/** What a create from a view is expected to have sent (YAZ-2420 D20): the note titled `title` in `dir`, under its built name, holding `properties` and then its title. */
+/** What a create from a view is expected to have sent (YAZ-2420 D20): the page titled `title` in `dir`, under its built name, holding `properties` and then its title. */
 const born = (call: number, dir: string, properties = '', title = 'Untitled'): CreateFileRequest => {
   const id = created(call).id!
-  return { path: `${dir}/${noteFileName(title, id)}`, content: `---\n${properties}title: ${title}\n---\n`, id }
+  return { path: `${dir}/${pageFileName(title, id)}`, content: `---\n${properties}title: ${title}\n---\n`, id }
 }
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -80,7 +80,7 @@ const born = (call: number, dir: string, properties = '', title = 'Untitled'): C
 const STAGES = '/vault/stages'
 /** Where its settings live once anything is saved (D1). */
 const SETTINGS_FILE = '/vault/stages/.folder.md'
-/** The folder's id (YAZ-2293): the `id` of that file, which a note's `also_in` names (D2). */
+/** The folder's id (YAZ-2293): the `id` of that file, which a page's `also_in` names (D2). */
 const STAGES_ID = 'k3m9x2pq7abc'
 const LEAD ='/vault/stages/Lead Gen.md'
 const SALES = '/vault/stages/Sales.md'
@@ -99,12 +99,12 @@ const SETTINGS = {
   views: [{ type: 'page', name: 'Page' }, TABLE],
 }
 
-/** A note's properties holding `values` as its own fields (YAZ-4713 C1: one value per note, read the same from every page), beside its `own` other fields. */
+/** A page's properties holding `values` as its own fields (YAZ-4713 C1: one value per page, read the same from every page), beside its `own` other fields. */
 const held = (values: Record<string, unknown>, own: Record<string, unknown> = {}): Record<string, unknown> => ({ ...own, ...values })
 /** The folder under test's own block of `in` (D19): today only a separate column's values (C3), and what a column delete strips. */
 const inBlock = (values: Record<string, unknown>, own: Record<string, unknown> = {}): Record<string, unknown> => ({ ...own, in: { [STAGES_ID]: values } })
 
-/** The whole snapshot, in the index's path order: the folder's two notes, one in a SUBFOLDER, and notes elsewhere. */
+/** The whole snapshot, in the index's path order: the folder's two pages, one in a SUBFOLDER, and pages elsewhere. */
 function vault(): IndexRecord[] {
   return [
     rec(OTHER, held({ order: 7 }, { title: 'in another folder' })),
@@ -123,8 +123,8 @@ let source: MutableWikilinkResolveSource
 const onOpenFile = vi.fn()
 
 /**
- * WikilinkIndexBridge's own wrapping: THE link resolver — a note, else a folder of the Files
- * tree — the notes, and the folder settings records riding beside them. `settings: null` = the
+ * WikilinkIndexBridge's own wrapping: THE link resolver — a page, else a folder of the Files
+ * tree — the pages, and the folder settings records riding beside them. `settings: null` = the
  * folder has no `.folder.md`. The vault uses IDs, here and wherever a test feeds the source itself,
  * but for the blocks that say otherwise (YAZ-2523): with `ids` false no record has an id, the folder's included.
  */
@@ -150,8 +150,8 @@ beforeEach(async () => {
   transform.mockResolvedValue({ mtime: 2, content: '' })
   readFile.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'path does not exist')) // no template
   createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
-  // The door in the main process (YAZ-2677 D4): a new note's id is the vault's next number.
-  vi.mocked(api.mintNoteId).mockImplementation(testDoor())
+  // The door in the main process (YAZ-2677 D4): a new page's id is the vault's next number.
+  vi.mocked(api.mintPageId).mockImplementation(testDoor())
 })
 
 afterEach(() => {
@@ -222,7 +222,7 @@ const defaultViewPressed = (el: ParentNode): string => defaultViewTrigger(el).te
 // ---------- the folder itself (D1/D4/E2) ----------
 
 describe('a folder with no settings file', () => {
-  it('shows its notes under the default views — Table, then Board, no Page — and opening writes NOTHING', async () => {
+  it('shows its pages under the default views — Table, then Board, no Page — and opening writes NOTHING', async () => {
     const el = await mount(null)
     await flush()
     expect(q(el, 'h1').textContent).toBe('stages')
@@ -237,7 +237,7 @@ describe('a folder with no settings file', () => {
   })
 
   it('Empty folder: opens with empty views — the default Table, then Board, no rows, "0 items" — and opening writes NOTHING', async () => {
-    const el = await mount(null, [rec(OTHER), rec(OUTSIDER), rec('/vault/kpis/CAC.md')]) // notes elsewhere; none under the folder
+    const el = await mount(null, [rec(OTHER), rec(OUTSIDER), rec('/vault/kpis/CAC.md')]) // pages elsewhere; none under the folder
     await flush()
     expect(q(el, 'h1').textContent).toBe('stages')
     expect(texts(el, '.view-tab__btn')).toEqual(['Table', 'Board'])
@@ -301,7 +301,7 @@ describe('a folder with no settings file', () => {
     expect(texts(el, '.view-tab__btn')).toEqual(tabs)
   })
 
-  it('a note’s own `id`, `title` and `also_in` are no columns where the vault uses IDs: they are the app’s keys (YAZ-4713 C1)', async () => {
+  it('a page’s own `id`, `title` and `also_in` are no columns where the vault uses IDs: they are the app’s keys (YAZ-4713 C1)', async () => {
     const el = await mount({}, [rec(LEAD, held({ order: 2 }, { id: 'n0tead000001', title: 'Lead', also_in: [STAGES_ID] }))])
     expect(texts(el, '.view-table thead th:not(.view-table__gutter)')).toEqual(['Name', 'Order'])
   })
@@ -322,12 +322,12 @@ describe('a folder whose `.folder.md` declares columns', () => {
     expect(captured.folder!.settings.columns).toEqual({})
   })
 
-  it('opening it, and adding a column, write nothing into the notes (E1)', async () => {
+  it('opening it, and adding a column, write nothing into the pages (E1)', async () => {
     await mount()
     await flush()
     act(() => captured.folder!.setColumns({ ...SETTINGS.columns, owner: { kind: 'link' } }))
     await flush()
-    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', expect.anything(), expect.any(Function)) // the settings, and no note
+    expect(write).toHaveBeenCalledExactlyOnceWith(SETTINGS_FILE, 'folder_settings', expect.anything(), expect.any(Function)) // the settings, and no page
     expect(writeValues).not.toHaveBeenCalled()
     expect(transform).not.toHaveBeenCalled()
     expect(createFile).not.toHaveBeenCalled()
@@ -337,8 +337,8 @@ describe('a folder whose `.folder.md` declares columns', () => {
 
 // ---------- the rows (D4) ----------
 
-describe('rows are the notes UNDER the folder, at any depth, and only those', () => {
-  it('a note in a subfolder, at any depth, is a row', async () => {
+describe('rows are the pages UNDER the folder, at any depth, and only those', () => {
+  it('a page in a subfolder, at any depth, is a row', async () => {
     const el = await mount(SETTINGS, [...vault(), rec('/vault/stages/archive/2019/Older.md')])
     selectView(el, 'Table')
     expect(rowNames(el)).toEqual(['Lead Gen', 'Sales', 'Old', 'Older'])
@@ -354,7 +354,7 @@ describe('rows are the notes UNDER the folder, at any depth, and only those', ()
     expect(rowNames(el)).not.toContain('archive')
   })
 
-  it('a note that lands in the folder on the next snapshot is a row with no user action', async () => {
+  it('a page that lands in the folder on the next snapshot is a row with no user action', async () => {
     const el = await mount()
     selectView(el, 'Table')
     feed(SETTINGS, [...vault(), rec('/vault/stages/Expansion.md')])
@@ -368,23 +368,23 @@ describe('rows are the notes UNDER the folder, at any depth, and only those', ()
     expect(rowNames(el)).toEqual(['Lead Gen'])
   })
 
-  /** One table per filter, over the folder's two direct notes and the one in its subfolder `archive`. */
+  /** One table per filter, over the folder's two direct pages and the one in its subfolder `archive`. */
   const filtered = (name: string, filters?: string): Record<string, unknown> => ({ type: 'table', name, order: ['file.name'], ...(filters === undefined ? {} : { filters }) })
 
-  it('Filter Folder to this folder (the exact-match operator, `file.folder == "<folder>"` / "is any of"): only the notes directly in it — while the folder page with no filter shows every note under it at any depth', async () => {
+  it('Filter Folder to this folder (the exact-match operator, `file.folder == "<folder>"` / "is any of"): only the pages directly in it — while the folder page with no filter shows every page under it at any depth', async () => {
     const el = await mount({ views: [filtered('All'), filtered('Exact', 'file.folder == "stages"'), filtered('Any of', '["stages"].contains(file.folder)')] })
-    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales', 'Old']) // no filter: the subfolder's note is a row
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales', 'Old']) // no filter: the subfolder's page is a row
     selectView(el, 'Exact')
     expect(rowNames(el)).toEqual(['Lead Gen', 'Sales'])
     selectView(el, 'Any of')
     expect(rowNames(el)).toEqual(['Lead Gen', 'Sales'])
   })
 
-  it('the OTHER Folder operator, "in folder" (`file.inFolder("<folder>")`), is not exact: it matches the notes under that folder at any depth', async () => {
+  it('the OTHER Folder operator, "in folder" (`file.inFolder("<folder>")`), is not exact: it matches the pages under that folder at any depth', async () => {
     const el = await mount({ views: [filtered('Under', 'file.inFolder("stages")'), filtered('Under the subfolder', 'file.inFolder("stages/archive")')] }, [...vault(), rec('/vault/stages/archive/2019/Older.md')])
-    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales', 'Old', 'Older']) // the folder's own notes and every depth below
+    expect(rowNames(el)).toEqual(['Lead Gen', 'Sales', 'Old', 'Older']) // the folder's own pages and every depth below
     selectView(el, 'Under the subfolder')
-    expect(rowNames(el)).toEqual(['Old', 'Older']) // the subfolder's own note and the one below it; not its parent's
+    expect(rowNames(el)).toEqual(['Old', 'Older']) // the subfolder's own page and the one below it; not its parent's
   })
 
   /** Each group header's label → the names of the rows under it, read down the table body. */
@@ -400,7 +400,7 @@ describe('rows are the notes UNDER the folder, at any depth, and only those', ()
   }
   const BY_FOLDER = { type: 'table', name: 'By folder', order: ['file.name'], groupBy: { property: 'file.folder' } }
 
-  it('Group by Folder (YAZ-2541): one group per folder ONE step below this one, a deeper note rolled up into it, the direct notes under the folder’s own group; a subfolder with no settings file is headed by its directory name', async () => {
+  it('Group by Folder (YAZ-2541): one group per folder ONE step below this one, a deeper page rolled up into it, the direct pages under the folder’s own group; a subfolder with no settings file is headed by its directory name', async () => {
     const el = await mount({ views: [BY_FOLDER] }, [...vault(), rec('/vault/stages/archive/2019/Older.md')])
     expect(groupedNames(el)).toEqual({ stages: ['Lead Gen', 'Sales'], archive: ['Old', 'Older'] })
     expect(texts(el, '.view-group__count')).toEqual(['2', '2'])
@@ -419,7 +419,7 @@ describe('rows are the notes UNDER the folder, at any depth, and only those', ()
     expect(el.querySelector('.view-group__value')?.getAttribute('title')).toBe('Pipeline stages') // a cut-off name is whole in its tooltip
   })
 
-  it('Folder then Folder (YAZ-2541): the inner groups are the next folder down, a subfolder’s own notes directly under it', async () => {
+  it('Folder then Folder (YAZ-2541): the inner groups are the next folder down, a subfolder’s own pages directly under it', async () => {
     const el = await mount({ views: [{ ...BY_FOLDER, groupBy: [{ property: 'file.folder' }, { property: 'file.folder' }] }] }, [...vault(), rec('/vault/stages/archive/2019/Older.md')])
     expect(groupedNames(el)).toEqual({ stages: ['Lead Gen', 'Sales'], archive: ['Old'], '2019': ['Older'] })
     expect(texts(el, '.view-group__count')).toEqual(['2', '2', '1'])
@@ -440,13 +440,13 @@ describe('a shortcut is a row too (D2/D4)', () => {
   /** Other.md lives at the vault root and ALSO appears in the folder: its `also_in` names the folder's id. */
   const shortcut = (): IndexRecord[] => vault().map((r) => (r.path === OTHER ? { ...r, properties: { ...r.properties, also_in: [STAGES_ID] } } : r))
 
-  it('a note whose `also_in` holds the folder’s id shows among its rows, in the snapshot’s order', async () => {
+  it('a page whose `also_in` holds the folder’s id shows among its rows, in the snapshot’s order', async () => {
     const el = await mount(SETTINGS, shortcut())
     selectView(el, 'Table')
     expect(rowNames(el)).toEqual(['Other', 'Lead Gen', 'Sales', 'Old'])
   })
 
-  it('the shortcut mark: a row that does not live under the folder wears it in every view; a note that lives here, or in a subfolder, wears none', async () => {
+  it('the shortcut mark: a row that does not live under the folder wears it in every view; a page that lives here, or in a subfolder, wears none', async () => {
     /** Of the four titles a view draws, the ones wearing the mark — by the name they read as, which the mark adds nothing to. */
     const marked = (el: ParentNode, title: string): string[] => {
       const titles = [...el.querySelectorAll(title)]
@@ -464,12 +464,12 @@ describe('a shortcut is a row too (D2/D4)', () => {
     expect(marked(el, '.view-list__title')).toEqual(['Other'])
   })
 
-  it('a folder with no `.folder.md` has no id, so the same note is no row there', async () => {
+  it('a folder with no `.folder.md` has no id, so the same page is no row there', async () => {
     const el = await mount(null, shortcut())
     expect(rowNames(el)).toEqual(['Lead Gen', 'Sales', 'Old'])
   })
 
-  it('editing a cell on the shortcut row writes the ORIGINAL file — it is the same note', async () => {
+  it('editing a cell on the shortcut row writes the ORIGINAL file — it is the same page', async () => {
     const el = await mount(SETTINGS, shortcut())
     selectView(el, 'Table')
     openCell(el, 0, 1) // Other's `order`: a number by the folder's own declaration
@@ -490,7 +490,7 @@ describe('a shortcut is a row too (D2/D4)', () => {
     click(menuItem(el, 'Delete column…'))
   }
 
-  it('a cell in a folder’s table is typed by that folder’s own columns, whatever the folder the note lives in declares', async () => {
+  it('a cell in a folder’s table is typed by that folder’s own columns, whatever the folder the page lives in declares', async () => {
     const el = await mount(SETTINGS, shortcut())
     feedWith('/vault', { order: { kind: 'text' } }) // Other lives at the root, which says `order` is text
     selectView(el, 'Table')
@@ -501,12 +501,12 @@ describe('a shortcut is a row too (D2/D4)', () => {
     expect(writeValues).toHaveBeenCalledExactlyOnceWith(OTHER, [{ key: 'order', value: 9 }], SHARED, undefined) // a number: stages' own declaration
   })
 
-  it('Delete column and clear (YAZ-4713 C7): the field leaves every note under the folder that holds it — at any depth, and a shortcut — and a note the folder does not show keeps it', async () => {
+  it('Delete column and clear (YAZ-4713 C7): the field leaves every page under the folder that holds it — at any depth, and a shortcut — and a page the folder does not show keeps it', async () => {
     await mount(SETTINGS, shortcut())
     await act(async () => captured.folder!.deleteColumn!('order'))
     expect(transform.mock.calls.map(([path]) => path)).toEqual([OTHER, LEAD, SALES, DEEP])
     const strip = transform.mock.calls[0][1]
-    // The note's own field goes; a separate page's block (C3) is not this column's value.
+    // The page's own field goes; a separate page's block (C3) is not this column's value.
     expect(strip(`---\ntitle: mine\norder: 5\nin:\n  z8y7x6w5v4t3:\n    order: 4\n---\n`)).toBe('---\ntitle: mine\nin:\n  z8y7x6w5v4t3:\n    order: 4\n---\n')
     transform.mockClear()
     await mount(SETTINGS, vault()) // no shortcut: Other is no row here, and keeps its `order`
@@ -514,28 +514,28 @@ describe('a shortcut is a row too (D2/D4)', () => {
     expect(transform.mock.calls.map(([path]) => path)).toEqual([LEAD, SALES, DEEP])
   })
 
-  it('"Keep the values in the notes" (C7): the column goes, and no note is written', async () => {
+  it('"Keep the values in the pages" (C7): the column goes, and no page is written', async () => {
     await mount(SETTINGS, shortcut())
     await act(async () => captured.folder!.deleteColumn!('order', false))
     expect(transform.mock.calls.map(([path]) => path)).not.toContain(LEAD)
   })
 
-  it('a subfolder that defines the key itself keeps its notes’ values: its page shows its own definition (C7)', async () => {
+  it('a subfolder that defines the key itself keeps its pages’ values: its page shows its own definition (C7)', async () => {
     await mount(SETTINGS, shortcut())
     feedWith('/vault/stages/archive', { order: { kind: 'text' } })
     await act(async () => captured.folder!.deleteColumn!('order'))
     expect(transform.mock.calls.map(([path]) => path)).toEqual([OTHER, LEAD, SALES])
   })
 
-  it('a note that cannot be written is reported in the column banner; the others are still cleared', async () => {
+  it('a page that cannot be written is reported in the column banner; the others are still cleared', async () => {
     transform.mockRejectedValueOnce(new Error('frontmatter is not valid YAML'))
     const el = await mount(SETTINGS, shortcut())
     await act(async () => captured.folder!.deleteColumn!('order'))
-    expect(q(el, '[role="alert"]').textContent).toContain('Could not remove "order" from 1 note: Other (frontmatter is not valid YAML)')
+    expect(q(el, '[role="alert"]').textContent).toContain('Could not remove "order" from 1 page: Other (frontmatter is not valid YAML)')
     expect(transform.mock.calls.map(([path]) => path)).toEqual([OTHER, LEAD, SALES, DEEP])
   })
 
-  it('the confirm sheet names the folder and counts the notes under it holding the field, taken once, when the sheet opens (C7)', async () => {
+  it('the confirm sheet names the folder and counts the pages under it holding the field, taken once, when the sheet opens (C7)', async () => {
     const own = rec('/vault/stages/Own.md', { order: 9 })
     const el = await mount(SETTINGS, [...vault(), own]) // Other is no row here: not counted
     openDeleteSheet(el)
@@ -543,12 +543,12 @@ describe('a shortcut is a row too (D2/D4)', () => {
     expect(text).toMatch(/^Delete the column "Order"\? It goes from .+ and every page under it\.$/)
     const main = () => [...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)
     expect(main()).toContain('Delete column and clear 4 values')
-    expect(main()).toContain('Keep the values in the notes')
+    expect(main()).toContain('Keep the values in the pages')
     feed(SETTINGS, [...vault(), own, rec('/vault/stages/New.md', { order: 4 })])
     expect(main()).toContain('Delete column and clear 4 values')
   })
 
-  it('a cell edit on a row from a subfolder writes that note, in the OPENED folder’s block', async () => {
+  it('a cell edit on a row from a subfolder writes that page, in the OPENED folder’s block', async () => {
     const el = await mount()
     selectView(el, 'Table')
     openCell(el, 2, 1) // archive/Old's `order`
@@ -558,7 +558,7 @@ describe('a shortcut is a row too (D2/D4)', () => {
     expect(writeValues).toHaveBeenCalledExactlyOnceWith(DEEP, [{ key: 'order', value: 9 }], SHARED, undefined)
   })
 
-  it('a board drag on a row from a subfolder writes that note, in the OPENED folder’s block', async () => {
+  it('a board drag on a row from a subfolder writes that page, in the OPENED folder’s block', async () => {
     const el = await mount({ ...SETTINGS, views: [{ ...BOARD, order: ['file.name'], groupBy: { property: 'note.order' } }] })
     const fire = (target: Element, type: string): void => act(() => void target.dispatchEvent(new Event(type, { bubbles: true, cancelable: true })))
     const old = [...el.querySelectorAll('.view-board__title')].find((title) => title.textContent === 'Old')!.closest('.view-board__card')!
@@ -568,11 +568,11 @@ describe('a shortcut is a row too (D2/D4)', () => {
     expect(writeValues).toHaveBeenCalledExactlyOnceWith(DEEP, [{ key: 'order', value: 1, prevRaw: 3 }], SHARED, undefined)
   })
 
-  it('"New" creates the note DIRECTLY in the opened folder, whatever rows its subfolders show', async () => {
+  it('"New" creates the page DIRECTLY in the opened folder, whatever rows its subfolders show', async () => {
     const el = await mount(SETTINGS, [...vault(), rec('/vault/stages/archive/Untitled.md')])
     selectView(el, 'Table')
     expect(rowNames(el)).toContain('Untitled') // a row here, from the subfolder
-    click(byLabel(el, 'New note'))
+    click(byLabel(el, 'New page'))
     await flush()
     expect(created(0).path).toBe(born(0, '/vault/stages').path)
   })
@@ -589,7 +589,7 @@ describe('Delete column leaves no stale reference (YAZ-4596 S37)', () => {
       groupBy: [{ property: 'note.order' }, { property: 'file.folder' }],
       filters: { and: ['note.order != 9', 'file.name.contains("")'] },
       columnWrap: { 'note.order': false, 'note.related': false },
-      fills: [{ note: '[[Lead Gen]]', column: 'note.order', fill: 'red' }, { note: '[[Sales]]', fill: 'blue' }, { note: '[[Sales]]', column: 'order', fill: 'green' }],
+      fills: [{ page: '[[Lead Gen]]', column: 'note.order', fill: 'red' }, { page: '[[Sales]]', fill: 'blue' }, { page: '[[Sales]]', column: 'order', fill: 'green' }],
     }
     const calendar = { type: 'calendar', name: 'Calendar', dateProperty: 'note.order' }
     const settings = { ...SETTINGS, views: [SETTINGS.views[0], table, BOARD, calendar], other_files: ['[[Old]]'] }
@@ -612,7 +612,7 @@ describe('Delete column leaves no stale reference (YAZ-4596 S37)', () => {
       groupBy: [{ property: 'file.folder' }],
       filters: { and: ['file.name.contains("")'] },
       columnWrap: { 'note.related': false },
-      fills: [{ note: '[[Sales]]', fill: 'blue' }],
+      fills: [{ page: '[[Sales]]', fill: 'blue' }],
     })
     expect(after.views[2]).toEqual(BOARD)
     expect(after.views[3]).toEqual({ type: 'calendar', name: 'Calendar' })
@@ -644,7 +644,7 @@ describe('the Page tab is the folder\'s own document (YAZ-4584 D38)', () => {
     return el
   }
 
-  it('a stored `type: outline` shows as the Page tab, and its body is the note editor on `.folder.md`; opening writes nothing', async () => {
+  it('a stored `type: outline` shows as the Page tab, and its body is the page editor on `.folder.md`; opening writes nothing', async () => {
     const el = await mountPage({ ...SETTINGS, views: [{ type: 'outline', name: 'Outline', outline: '- [[Sales]]' }, TABLE] })
     expect(texts(el, '.view-tab__btn')).toEqual(['Outline', 'Table'])
     expect(q(el, '.view-page .page-doc').textContent).toBe('the Page')
@@ -672,9 +672,9 @@ describe('the Page tab is the folder\'s own document (YAZ-4584 D38)', () => {
     expect((menuItem(el, 'Duplicate') as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('the outline\'s names keep the whole page clear: the folder page\'s scroller makes the room a note\'s does (YAZ-4849)', async () => {
-    // The Page's note editor puts its outline beside its body, in the Page tab (Editor.tsx, `inFolderPage`): deep in
-    // the folder page's scroller, never a child of `section.editor` as on a note.
+  it('the outline\'s names keep the whole page clear: the folder page\'s scroller makes the room a page\'s does (YAZ-4849)', async () => {
+    // The Page's page editor puts its outline beside its body, in the Page tab (Editor.tsx, `inFolderPage`): deep in
+    // the folder page's scroller, never a child of `section.editor` as on a page.
     const el = renderNoAsk({ path: STAGES, source, onOpenFile, renderPage })
     el.classList.add('editor') // Editor.tsx: the folder page's `section.editor`
     // While the names show, the outline marks the section it measures (tocFrame.tsx `useTocWidthVar`).
@@ -687,7 +687,7 @@ describe('the Page tab is the folder\'s own document (YAZ-4584 D38)', () => {
       const host = q<HTMLElement>(el, ':scope > .editor-host')
       // The title, the view tabs and toolbar, the Page, Other files and Comments are all in this scroller.
       expect(getComputedStyle(host).paddingRight).toBe('var(--toc-width)')
-      // The lines look (no names), or no outline at all (the Table tab), takes no room, as on a note.
+      // The lines look (no names), or no outline at all (the Table tab), takes no room, as on a page.
       el.removeAttribute('data-toc-names')
       expect(getComputedStyle(host).paddingRight).not.toBe('var(--toc-width)')
     } finally {
@@ -735,7 +735,7 @@ describe('the chrome is the views chrome', () => {
     expect(item('View settings…')?.disabled).toBe(true)
     expect(el.querySelector('[aria-label="Filter"]')).toBeNull() // documentView — rows-bearing views offer it
     expect(el.querySelector('[aria-label="Sort"]')).not.toBeNull() // the rest of the toolbar is untouched
-    expect(el.querySelector('[aria-label="New note"]')).not.toBeNull()
+    expect(el.querySelector('[aria-label="New page"]')).not.toBeNull()
   })
 
 })
@@ -899,7 +899,7 @@ describe('config edits are ONE settings write on the folder', () => {
 
     expect(write).toHaveBeenCalledTimes(1)
     const [path, key, value] = write.mock.calls[0]
-    expect(path).toBe(SETTINGS_FILE) // the FOLDER's settings file, not a note
+    expect(path).toBe(SETTINGS_FILE) // the FOLDER's settings file, not a page
     expect(key).toBe('folder_settings')
     expect(value).toEqual({
       ...SETTINGS,
@@ -1118,7 +1118,7 @@ describe('the declarations ride AHEAD of the index (YAZ-1549)', () => {
     // "+ Add column", a Link with no target, as AddColumn builds it (the undefined target that kept the stamps apart).
     act(() => captured.folder!.setColumns({ ...SETTINGS.columns, rel: declarationForKind({ kind: 'link', target: undefined }, 'link') }))
     await flush()
-    // Meanwhile a note's Properties panel made `order` a Text column; the index echoes disk after the write landed (mtime 2).
+    // Meanwhile a page's Properties panel made `order` a Text column; the index echoes disk after the write landed (mtime 2).
     const echoed = { ...SETTINGS, columns: { order: { kind: 'text' as const }, related: SETTINGS.columns.related, rel: { kind: 'link' as const } } }
     feed(echoed, vault(), true, 2)
     await flush()
@@ -1159,7 +1159,7 @@ describe('the declarations ride AHEAD of the index (YAZ-1549)', () => {
     expect(rebased(0, echoed).columns).toEqual(echoed.columns)
   })
 
-  it('a refused settings write ABORTS a delete: the banner says why, the ahead copy is put back, and not one note is touched', async () => {
+  it('a refused settings write ABORTS a delete: the banner says why, the ahead copy is put back, and not one page is touched', async () => {
     write.mockRejectedValueOnce(new Error('disk full'))
     const el = await mount()
     await act(async () => captured.folder!.deleteColumn!('order'))
@@ -1220,19 +1220,19 @@ describe('setColumns is the DECLARATIONS door (YAZ-895)', () => {
   })
 })
 
-describe('cell editing writes the NOTE’s own field, typed by the page’s columns (🔒 Q8, YAZ-4713 C1/C2)', () => {
-  it('the picker narrows to the notes in the FOLDER the column targets — from the WHOLE vault (🔒 D2, YAZ-2290 D10)', async () => {
+describe('cell editing writes the PAGE’s own field, typed by the page’s columns (🔒 Q8, YAZ-4713 C1/C2)', () => {
+  it('the picker narrows to the pages in the FOLDER the column targets — from the WHOLE vault (🔒 D2, YAZ-2290 D10)', async () => {
     const el = await mount()
     selectView(el, 'Table')
     openCell(el, 0, 2) // Lead Gen's empty `related` cell: multi-link by the folder's own declaration
     const input = byLabel<HTMLInputElement>(el, 'Edit related')
     setValue(input, '[[')
-    // The folder [[KPIs]] names is not this one and its notes are no rows here — a picker fed
-    // the rows alone would have fallen back to the two notes instead.
+    // The folder [[KPIs]] names is not this one and its pages are no rows here — a picker fed
+    // the rows alone would have fallen back to the two pages instead.
     expect(options(el)).toEqual(['CAC', 'LTV'])
   })
 
-  it('a new folder narrows the picker as soon as the tree has it — no note has to change', async () => {
+  it('a new folder narrows the picker as soon as the tree has it — no page has to change', async () => {
     const settings = { ...SETTINGS, columns: { ...SETTINGS.columns, related: { kind: 'multi-link', target: '[[Fresh]]' } } }
     const el = await mount(settings)
     selectView(el, 'Table')
@@ -1243,9 +1243,9 @@ describe('cell editing writes the NOTE’s own field, typed by the page’s colu
       press(byLabel(el, 'Edit related'), 'Escape')
       return offered
     }
-    expect(typed()).toHaveLength(7) // no folder named Fresh: every note
+    expect(typed()).toHaveLength(7) // no folder named Fresh: every page
     const records = [...vault(), rec('/vault/Fresh/One.md')].sort((a, b) => (a.path < b.path ? -1 : 1))
-    feed(settings, records) // the note is indexed before the tree shows its folder
+    feed(settings, records) // the page is indexed before the tree shows its folder
     expect(typed()).toHaveLength(8)
     vi.mocked(api.tree).mockResolvedValue({ root: '/vault', tree: [...DIRS, { type: 'dir', name: 'Fresh', path: '/vault/Fresh', children: [] }], generatedAt: 2 })
     await fetchTree('/vault')
@@ -1259,7 +1259,7 @@ describe('cell editing writes the NOTE’s own field, typed by the page’s colu
     expect(q(el, '[data-cell="0:2"]').textContent).toBe('stages')
   })
 
-  it('committing writes the note’s own field, through the folder’s writer', async () => {
+  it('committing writes the page’s own field, through the folder’s writer', async () => {
     const el = await mount()
     selectView(el, 'Table')
     openCell(el, 0, 2)
@@ -1277,7 +1277,7 @@ describe('one key, capitals ignored (YAZ-4769, option B)', () => {
   const settings = { columns: { 'Dessert Column': { kind: 'text' as const } }, views: [{ type: 'table', name: 'Table', order: ['file.name', 'note.Dessert Column', 'note.dessert column'] }] }
   const records = (): IndexRecord[] => vault().map((r) => (r.path === LEAD ? { ...r, properties: held({ 'dessert column': 'Pie', 'DESSERT COLUMN': 'Tart' }) } : r))
 
-  it('a note’s `dessert column` is the page’s `Dessert Column` cell, the first of two spellings winning; a view that names it in both capitals shows ONE column', async () => {
+  it('a page’s `dessert column` is the page’s `Dessert Column` cell, the first of two spellings winning; a view that names it in both capitals shows ONE column', async () => {
     const el = await mount(settings, records())
     selectView(el, 'Table')
     expect(q(el, '[data-cell="0:1"]').textContent).toBe('Pie')
@@ -1293,10 +1293,10 @@ describe('one key, capitals ignored (YAZ-4769, option B)', () => {
   })
 })
 
-describe('New births a note in the folder (D4/E1/E3)', () => {
+describe('New births a page in the folder (D4/E1/E3)', () => {
   it('creates it IN the folder holding its `title` and nothing else — no empty column keys — and opens it', async () => {
     const el = await mount()
-    click(byLabel(el, 'New note'))
+    click(byLabel(el, 'New page'))
     await flush()
 
     expect(readFile.mock.calls).toEqual([[SETTINGS_FILE], ['/vault/stages/.template.md']]) // the page's own bytes (D9), then E3: the folder's own hidden template
@@ -1306,11 +1306,11 @@ describe('New births a note in the folder (D4/E1/E3)', () => {
     expect(onOpenFile).toHaveBeenCalledWith(created(0).path)
   })
 
-  it('B: "New" titles the note `Untitled` every time — no `Untitled 2`: two clicks are two notes of one title, kept apart by their ids (YAZ-2420 D20)', async () => {
+  it('B: "New" titles the page `Untitled` every time — no `Untitled 2`: two clicks are two pages of one title, kept apart by their ids (YAZ-2420 D20)', async () => {
     const el = await mount(SETTINGS, [...vault(), rec('/vault/stages/Untitled.md')])
-    click(byLabel(el, 'New note'))
+    click(byLabel(el, 'New page'))
     await flush()
-    click(byLabel(el, 'New note'))
+    click(byLabel(el, 'New page'))
     await flush()
     expect([created(0), created(1)]).toEqual([born(0, '/vault/stages'), born(1, '/vault/stages')])
     expect(created(0).path).not.toBe(created(1).path)
@@ -1318,31 +1318,31 @@ describe('New births a note in the folder (D4/E1/E3)', () => {
   })
 
   it('"New" from a folder’s `.template.md`: the template is copied as written — its own fields, its `in:` blocks and its body', async () => {
-    const template = `---\nowner: me\nin:\n  ${STAGES_ID}:\n    order: 1\n  z8y7x6w5v4t3:\n    status: 2-Todo\n---\n## Notes\n`
+    const template = `---\nowner: me\nin:\n  ${STAGES_ID}:\n    order: 1\n  z8y7x6w5v4t3:\n    status: 2-Todo\n---\n## Pages\n`
     readFile.mockResolvedValue({ path: '/vault/stages/.template.md', content: template, mtime: 1, size: 0 })
     const el = await mount()
-    click(byLabel(el, 'New note'))
+    click(byLabel(el, 'New page'))
     await flush()
-    expect(created(0).content).toBe(`---\nowner: me\nin:\n  ${STAGES_ID}:\n    order: 1\n  z8y7x6w5v4t3:\n    status: 2-Todo\ntitle: Untitled\n---\n## Notes\n`)
+    expect(created(0).content).toBe(`---\nowner: me\nin:\n  ${STAGES_ID}:\n    order: 1\n  z8y7x6w5v4t3:\n    status: 2-Todo\ntitle: Untitled\n---\n## Pages\n`)
   })
 
-  it('a board column\'s "+" writes the one real seed — that column\'s value, as the note\'s own field (YAZ-4713 C1) — and nothing else', async () => {
+  it('a board column\'s "+" writes the one real seed — that column\'s value, as the page\'s own field (YAZ-4713 C1) — and nothing else', async () => {
     const el = await mount({ columns: STATUS, views: [{ ...BOARD, groupBy: { property: 'note.status' } }] }, [...vault(), rec('/vault/stages/Done one.md', held({ status: '4-Done' }))])
-    click(byLabel(el, 'New note in group 4-Done'))
+    click(byLabel(el, 'New page in group 4-Done'))
     await flush()
     expect(created(0)).toEqual(born(0, '/vault/stages', 'status: 4-Done\n'))
   })
 
-  it.each(['table', 'board', 'cards', 'list'])('the "+" on a group header when a %s is grouped by Folder (`file.folder`) creates the note in that group’s folder — the subfolder one step down, not the deeper folder rolled up into it (YAZ-2541)', async (type) => {
+  it.each(['table', 'board', 'cards', 'list'])('the "+" on a group header when a %s is grouped by Folder (`file.folder`) creates the page in that group’s folder — the subfolder one step down, not the deeper folder rolled up into it (YAZ-2541)', async (type) => {
     const view = { type, name: 'View', order: ['file.name'], groupBy: { property: 'file.folder' } }
     const el = await mount({ ...SETTINGS, views: [view] }, [...vault(), rec('/vault/stages/Untitled.md'), rec('/vault/stages/archive/2019/Older.md')])
-    click(byLabel(el, 'New note in group archive'))
+    click(byLabel(el, 'New page in group archive'))
     await flush()
     // Born in the subfolder, from ITS template.
     expect(readFile.mock.calls.at(-1)).toEqual(['/vault/stages/archive/.template.md'])
     expect(created(0)).toEqual(born(0, '/vault/stages/archive'))
     expect(onOpenFile).toHaveBeenCalledWith(created(0).path)
-    click(byLabel(el, 'New note in group stages'))
+    click(byLabel(el, 'New page in group stages'))
     await flush()
     expect(created(1)).toEqual(born(1, '/vault/stages'))
   })
@@ -1350,23 +1350,23 @@ describe('New births a note in the folder (D4/E1/E3)', () => {
   it.each(['table', 'board'])('Folder then Folder on a %s (YAZ-2541): the "+" on an INNER group creates in the inner folder, the one on its outer in the outer’s', async (type) => {
     const view = { type, name: 'View', order: ['file.name'], groupBy: [{ property: 'file.folder' }, { property: 'file.folder' }] }
     const el = await mount({ ...SETTINGS, views: [view] }, [...vault(), rec('/vault/stages/archive/2019/Older.md')])
-    click(byLabel(el, 'New note in group 2019'))
+    click(byLabel(el, 'New page in group 2019'))
     await flush()
     expect(created(0)).toEqual(born(0, '/vault/stages/archive/2019'))
-    click(byLabel(el, 'New note in group archive'))
+    click(byLabel(el, 'New page in group archive'))
     await flush()
     expect(created(1)).toEqual(born(1, '/vault/stages/archive'))
   })
 
   // YAZ-4799: grouped by Folder, a shortcut counts in the folder it is a shortcut in — here the opened folder itself —
-  // so the vault-root note no longer makes a "vault" group of its own.
+  // so the vault-root page no longer makes a "vault" group of its own.
   it('a shortcut that lives in the vault root sits in the group of the folder it is a shortcut in, the opened one; that group’s "+" creates in the opened folder (YAZ-2541, YAZ-4799)', async () => {
     const records = vault().map((r) => (r.path === OTHER ? { ...r, properties: { also_in: [STAGES_ID] } } : r))
     const el = await mount({ ...SETTINGS, views: [{ type: 'table', name: 'View', order: ['file.name'], groupBy: { property: 'file.folder' } }] }, records)
     expect(texts(el, '.view-group__value')).toEqual(['stages', 'archive'])
     // Other is in the first group, stages, before archive's Old.
     expect(texts(el, '.view-table__name')).toEqual(['Other', 'Lead Gen', 'Sales', 'Old'])
-    click(byLabel(el, 'New note in group stages'))
+    click(byLabel(el, 'New page in group stages'))
     await flush()
     expect(created(0).path).toBe(born(0, '/vault/stages').path)
   })
@@ -1374,12 +1374,12 @@ describe('New births a note in the folder (D4/E1/E3)', () => {
   it('the "+" under a group-by-Folder group that is not under the opened folder (a shortcut’s home) creates in the opened folder', async () => {
     const records = vault().map((r) => (r.path === OUTSIDER ? { ...r, properties: { also_in: [STAGES_ID] } } : r))
     const el = await mount({ ...SETTINGS, views: [{ type: 'table', name: 'View', order: ['file.name'], groupBy: { property: 'file.folder' } }] }, records)
-    click(byLabel(el, 'New note in group Sub'))
+    click(byLabel(el, 'New page in group Sub'))
     await flush()
     expect(created(0).path).toBe(born(0, '/vault/stages').path)
   })
 
-  it('B: a card name typed on a board (YAZ-943) is the note’s title, a title another note here has included; the path that comes back is the one created (YAZ-2420 D20)', async () => {
+  it('B: a card name typed on a board (YAZ-943) is the page’s title, a title another page here has included; the path that comes back is the one created (YAZ-2420 D20)', async () => {
     await mount()
     const paths = [await captured.folder!.create({ properties: {} }, 'Ship it'), await captured.folder!.create({ properties: {} }, 'Lead Gen')]
     expect([created(0), created(1)]).toEqual([born(0, '/vault/stages', '', 'Ship it'), born(1, '/vault/stages', '', 'Lead Gen')])
@@ -1404,7 +1404,7 @@ describe('New births a note in the folder (D4/E1/E3)', () => {
   it('a create failure is reported in place, never thrown at the tab', async () => {
     createFile.mockRejectedValue(new Error('read-only vault'))
     const el = await mount()
-    click(byLabel(el, 'New note'))
+    click(byLabel(el, 'New page'))
     await flush()
     expect(el.textContent).toContain('read-only vault')
     expect(onOpenFile).not.toHaveBeenCalled()
@@ -1412,13 +1412,13 @@ describe('New births a note in the folder (D4/E1/E3)', () => {
 })
 
 // The ID vault's half of each row is the block above.
-describe('New in a vault that does not use IDs makes the note the plain way (YAZ-2523 V3)', () => {
+describe('New in a vault that does not use IDs makes the page the plain way (YAZ-2523 V3)', () => {
   /** The folder as such a vault's index hands it out: its settings record has no id. */
   const mountPlain = (settings: unknown = SETTINGS): Promise<HTMLElement> => mount(settings, vault(), false)
 
   it('"New" creates `Untitled.md` in the folder, empty: no id and no `title` is sent', async () => {
     const el = await mountPlain()
-    click(byLabel(el, 'New note'))
+    click(byLabel(el, 'New page'))
     await flush()
     expect(createFile.mock.calls).toEqual([[{ path: '/vault/stages/Untitled.md', content: '' }]])
     expect(onOpenFile).toHaveBeenCalledWith('/vault/stages/Untitled.md')
@@ -1432,18 +1432,18 @@ describe('New in a vault that does not use IDs makes the note the plain way (YAZ
       return { path, mtime: 1, size: 0 }
     })
     const el = await mountPlain()
-    click(byLabel(el, 'New note'))
+    click(byLabel(el, 'New page'))
     await flush()
     expect(createFile.mock.calls.map(([req]) => (req as CreateFileRequest).path)).toEqual(['/vault/stages/Untitled.md', '/vault/stages/Untitled 2.md', '/vault/stages/Untitled 3.md'])
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/stages/Untitled 3.md')
   })
 
-  it('a view\u2019s seeded values are the note\u2019s own properties beside the template\u2019s: no `in:` block is written, and the folder is given no id', async () => {
-    readFile.mockResolvedValue({ path: '/vault/stages/.template.md', content: '---\nowner: me\n---\n## Notes\n', mtime: 1, size: 0 })
+  it('a view\u2019s seeded values are the page\u2019s own properties beside the template\u2019s: no `in:` block is written, and the folder is given no id', async () => {
+    readFile.mockResolvedValue({ path: '/vault/stages/.template.md', content: '---\nowner: me\n---\n## Pages\n', mtime: 1, size: 0 })
     const el = await mountPlain({ ...SETTINGS, views: [{ type: 'table', name: 'Table', order: ['file.name'], filters: { and: ['file.hasTag("hiring")', 'kind == "task"'] } }] })
-    click(byLabel(el, 'New note'))
+    click(byLabel(el, 'New page'))
     await flush()
-    expect(createFile.mock.calls).toEqual([[{ path: '/vault/stages/Untitled.md', content: '---\nowner: me\nkind: task\ntags:\n  - hiring\n---\n## Notes\n' }]])
+    expect(createFile.mock.calls).toEqual([[{ path: '/vault/stages/Untitled.md', content: '---\nowner: me\nkind: task\ntags:\n  - hiring\n---\n## Pages\n' }]])
     expect(transform).not.toHaveBeenCalled()
   })
 
@@ -1478,12 +1478,12 @@ describe('the write-echo guard vs rapid gestures (YAZ-1241)', () => {
 // ---------- each folder has its own properties (D19) ----------
 
 /**
- * A note's value for a column is the note's own field, one per key, read and written the same from every page
- * (YAZ-4713 C1). A column set to "Separate value on this page" (C3) keeps this page's value in the note's `in` block
+ * A page's value for a column is the page's own field, one per key, read and written the same from every page
+ * (YAZ-4713 C1). A column set to "Separate value on this page" (C3) keeps this page's value in the page's `in` block
  * named by the page's id, as before. Columns flow down the folder chain (C2). Here the writers are the REAL ones over
- * an in-memory disk, so what is pinned is the bytes a gesture leaves in the note.
+ * an in-memory disk, so what is pinned is the bytes a gesture leaves in the page.
  */
-describe('a note’s value is its own field (YAZ-4713 C1)', () => {
+describe('a page’s value is its own field (YAZ-4713 C1)', () => {
   const ARCHIVE = '/vault/stages/archive'
   const ARCHIVE_ID = 'z8y7x6w5v4t3'
   const SUB_ID = 'a1b2c3d4e5f6'
@@ -1517,20 +1517,20 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
   const card = (el: ParentNode, name: string): Element => [...el.querySelectorAll('.view-board__title')].find((title) => title.textContent === name)!.closest('.view-board__card')!
   const columnHolding = (el: ParentNode, name: string): Element => card(el, name).closest('.view-board__col')!
   const ORDER_BOARD = { ...BOARD, order: ['file.name'], groupBy: { property: 'note.order' } }
-  /** A note holding its own `order`, and the old per-page values of another folder and of this one (D19). */
+  /** A page holding its own `order`, and the old per-page values of another folder and of this one (D19). */
   const THREE = `---\ntitle: mine\norder: 500\nin:\n  ${ARCHIVE_ID}:\n    order: 30\n  ${STAGES_ID}:\n    order: 3\n---\nBody\n`
 
-  it('Edit a cell in a folder’s table: the value is written to the note’s own field — its `in:` blocks stay byte for byte', async () => {
+  it('Edit a cell in a folder’s table: the value is written to the page’s own field — its `in:` blocks stay byte for byte', async () => {
     disk.set(DEEP, THREE)
     const el = await mount()
     selectView(el, 'Table')
     editNumber(el, 'Old', 1, 'Edit order', '9')
     await flush()
     expect(disk.get(DEEP)).toBe(THREE.replace('order: 500\n', 'order: 9\n'))
-    expect(writeFile).toHaveBeenCalledTimes(1) // the note, and nothing else
+    expect(writeFile).toHaveBeenCalledTimes(1) // the page, and nothing else
   })
 
-  it('Drag a card on a folder’s board: the note’s own field for the grouped column changes, nothing else', async () => {
+  it('Drag a card on a folder’s board: the page’s own field for the grouped column changes, nothing else', async () => {
     disk.set(DEEP, THREE)
     const el = await mount({ ...SETTINGS, views: [ORDER_BOARD] })
     fire(card(el, 'Old'), 'dragstart')
@@ -1540,7 +1540,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     expect(writeFile).toHaveBeenCalledTimes(1)
   })
 
-  it('The same note on two pages (a parent and a child, or a home and a shortcut): every page shows its one value', async () => {
+  it('The same page on two pages (a parent and a child, or a home and a shortcut): every page shows its one value', async () => {
     const settings = { columns: { order: { kind: 'number' } }, views: [{ type: 'table', name: 'Table', order: ['file.name', 'note.order'] }] }
     const folders = [
       { ...rec('/vault/Sub/.folder.md', { folder_settings: settings }), id: SUB_ID },
@@ -1577,16 +1577,16 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     write.mockImplementation(real.writeProperty) // the settings door writes the disk too
     disk.set(`${SCHEMA}/.folder.md`, `---\nid: ${SUB_ID}\ntitle: Schema\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n---\n`)
     disk.set(IN_ORDERS, '---\ntitle: Orders table\n---\n')
-    /** The index as the scan reads the disk: each `.folder.md` and note by its own frontmatter. */
+    /** The index as the scan reads the disk: each `.folder.md` and page by its own frontmatter. */
     const fromDisk = (path: string): IndexRecord => {
       const { properties } = parseFrontmatter(splitFrontmatter(disk.get(path) ?? '').frontmatter)
       return { ...rec(path, properties), ...(typeof properties.title === 'string' && { title: properties.title }), ...(typeof properties.id === 'string' && { id: properties.id }) }
     }
-    const open = async (path: string, note: string): Promise<HTMLElement> => {
+    const open = async (path: string, page: string): Promise<HTMLElement> => {
       unmountFolderView()
       const el = renderNoAsk({ path, source, onOpenFile })
       const folders = [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`].filter((file) => disk.has(file)).map(fromDisk)
-      const records = [fromDisk(note)]
+      const records = [fromDisk(page)]
       act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, true))
       await flush()
       return el
@@ -1599,7 +1599,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       disk.delete(from)
     }
 
-    // 1. Add Domain on Schema: one definition, in Schema's own `.folder.md`; no note is written (E1).
+    // 1. Add Domain on Schema: one definition, in Schema's own `.folder.md`; no page is written (E1).
     let el = await open(SCHEMA, IN_ORDERS)
     await act(async () => void captured.folder!.setColumns({ ...captured.folder!.settings.columns, domain }))
     await flush()
@@ -1615,7 +1615,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     expect(headerMark(el, 'Domain')).toMatchObject({ dataset: { mark: 'parent' } })
     expect(headerMark(el, 'Domain')!.querySelector('svg')!.getAttribute('aria-label')).toBe('From Schema')
 
-    // 3. Set Billing on Orders: the note's own field, readable by anyone (C1).
+    // 3. Set Billing on Orders: the page's own field, readable by anyone (C1).
     click(q(cell(el, 'Orders table', 1), '[data-edit]'))
     click([...document.querySelectorAll<HTMLElement>('[role="option"]')].find((option) => option.textContent?.startsWith('Billing'))!)
     await flush()
@@ -1627,7 +1627,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     expect(cell(el, 'Orders table', 1).textContent).toContain('Billing')
     expect(headerMark(el, 'Domain')).toBeNull()
 
-    // 5. Move the note out of Schema and back: the value goes with it, and comes back with it (C9).
+    // 5. Move the page out of Schema and back: the value goes with it, and comes back with it (C9).
     move(IN_ORDERS, IN_ARCHIVE)
     el = await open(ARCHIVE_DIR, IN_ARCHIVE) // a page with no columns shows every field
     expect(disk.get(IN_ARCHIVE)).toBe(billing)
@@ -1645,7 +1645,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
   describe('Schema declares Domain; Orders, below it, shows it (YAZ-4713 C6, C7)', () => {
     const SCHEMA = '/vault/schema'
     const ORDERS = '/vault/schema/orders'
-    const TABLE_NOTE = '/vault/schema/orders/Orders table.md'
+    const TABLE_PAGE = '/vault/schema/orders/Orders table.md'
     const domain = { kind: 'select' as const, options: ['Billing', 'Payments'] }
     const schemaFile = '---\nfolder_settings:\n  columns:\n    domain:\n      kind: select\n      options: [Billing, Payments]\n  views:\n    - type: table\n      name: Table\n---\n'
     const ordersFile = '---\nfolder_settings:\n  views:\n    - type: table\n      name: Orders\n      sort:\n        - property: note.domain\n          direction: ASC\n---\n'
@@ -1654,7 +1654,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
         { ...rec(`${SCHEMA}/.folder.md`, { folder_settings: { columns: { domain }, views: [{ type: 'table', name: 'Table' }] } }), id: SUB_ID },
         { ...rec(`${ORDERS}/.folder.md`, { folder_settings: { views: [{ type: 'table', name: 'Orders', sort: [{ property: 'note.domain', direction: 'ASC' }] }] } }), id: ARCHIVE_ID },
       ]
-      const records = [rec(TABLE_NOTE, { title: 'Orders table', domain: 'Billing' })]
+      const records = [rec(TABLE_PAGE, { title: 'Orders table', domain: 'Billing' })]
       unmountFolderView()
       renderNoAsk({ path, source, onOpenFile })
       act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, true))
@@ -1663,7 +1663,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     beforeEach(() => {
       disk.set(`${SCHEMA}/.folder.md`, schemaFile)
       disk.set(`${ORDERS}/.folder.md`, ordersFile)
-      disk.set(TABLE_NOTE, '---\ntitle: Orders table\ndomain: Billing\n---\n')
+      disk.set(TABLE_PAGE, '---\ntitle: Orders table\ndomain: Billing\n---\n')
     })
 
     it('C6: an edit of Domain from Orders is written to Schema’s `.folder.md`; Orders’ file is untouched', async () => {
@@ -1676,22 +1676,22 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       expect(captured.folder!.settings.columns.domain).toEqual({ ...domain, options: ['Billing', 'Payments', 'Refunds'] })
     })
 
-    it('C6: "Change on this folder only" declares Domain in Orders’ file; Schema is unchanged; the note keeps its one value', async () => {
+    it('C6: "Change on this folder only" declares Domain in Orders’ file; Schema is unchanged; the page keeps its one value', async () => {
       await open(ORDERS)
       await act(async () => void (await captured.folder!.sources.here('domain')))
       expect(disk.get(`${ORDERS}/.folder.md`)).toContain('domain:')
       expect(disk.get(`${SCHEMA}/.folder.md`)).toBe(schemaFile)
-      expect(disk.get(TABLE_NOTE)).toBe('---\ntitle: Orders table\ndomain: Billing\n---\n')
+      expect(disk.get(TABLE_PAGE)).toBe('---\ntitle: Orders table\ndomain: Billing\n---\n')
     })
 
-    it('C7: on Orders, Domain offers no Delete; on Schema, Delete with Clear removes the note field and Orders’ sort on it', async () => {
+    it('C7: on Orders, Domain offers no Delete; on Schema, Delete with Clear removes the page field and Orders’ sort on it', async () => {
       await open(ORDERS)
       expect(captured.folder!.sources.of('domain').from).toBeDefined() // the menus offer Hide only (`deletableHere`)
       await open(SCHEMA)
       expect(captured.folder!.valueCount('note.domain')).toBe(1)
       await act(async () => captured.folder!.deleteColumn!('domain', true))
       await flush()
-      expect(disk.get(TABLE_NOTE)).toBe('---\ntitle: Orders table\n---\n')
+      expect(disk.get(TABLE_PAGE)).toBe('---\ntitle: Orders table\n---\n')
       expect(disk.get(`${ORDERS}/.folder.md`)).not.toContain('domain')
     })
 
@@ -1718,15 +1718,15 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       expect(captured.folder!.sources.of('sweetness').below).toBeDefined()
     })
 
-    it('C7: Keep leaves every note’s field; Orders’ views still lose the column', async () => {
+    it('C7: Keep leaves every page’s field; Orders’ views still lose the column', async () => {
       await open(SCHEMA)
       await act(async () => captured.folder!.deleteColumn!('domain', false))
       await flush()
-      expect(disk.get(TABLE_NOTE)).toBe('---\ntitle: Orders table\ndomain: Billing\n---\n')
+      expect(disk.get(TABLE_PAGE)).toBe('---\ntitle: Orders table\ndomain: Billing\n---\n')
       expect(disk.get(`${ORDERS}/.folder.md`)).not.toContain('domain')
     })
 
-    /** The page at `path`, its index read from the disk as the scan reads it: every `.folder.md` and note in `files`. */
+    /** The page at `path`, its index read from the disk as the scan reads it: every `.folder.md` and page in `files`. */
     const fromDisk = (path: string): IndexRecord => {
       const { properties } = parseFrontmatter(splitFrontmatter(disk.get(path) ?? '').frontmatter)
       return { ...rec(path, properties), ...(typeof properties.title === 'string' && { title: properties.title }), ...(typeof properties.id === 'string' && { id: properties.id }) }
@@ -1742,36 +1742,36 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     }
     const withFilter = (name: string, extra = '') => `---\n${extra}folder_settings:\n  views:\n    - type: table\n      name: ${name}\n      filters: note.domain == "Billing"\n---\n`
 
-    it('C6, 7A 2/4/9: an option rename of Schema’s Domain from Orders renames Schema’s notes and the filters below that take Domain from Schema; a read-only page and a subfolder with its own Domain keep theirs; Undo puts all back', async () => {
+    it('C6, 7A 2/4/9: an option rename of Schema’s Domain from Orders renames Schema’s pages and the filters below that take Domain from Schema; a read-only page and a subfolder with its own Domain keep theirs; Undo puts all back', async () => {
       const LOCKED = `${SCHEMA}/locked/.folder.md`
       const OWN = `${SCHEMA}/own/.folder.md`
-      const OWN_NOTE = `${SCHEMA}/own/Own note.md`
+      const OWN_PAGE = `${SCHEMA}/own/Own page.md`
       disk.set(`${ORDERS}/.folder.md`, withFilter('Orders'))
       disk.set(LOCKED, withFilter('Locked', 'readonly: true\n'))
       disk.set(OWN, '---\nfolder_settings:\n  columns:\n    domain:\n      kind: select\n      options: [Billing]\n  views:\n    - type: table\n      name: Own\n      filters: note.domain == "Billing"\n---\n')
-      disk.set(OWN_NOTE, '---\ndomain: Billing\n---\n')
-      const files = [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, LOCKED, OWN, TABLE_NOTE, OWN_NOTE]
+      disk.set(OWN_PAGE, '---\ndomain: Billing\n---\n')
+      const files = [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, LOCKED, OWN, TABLE_PAGE, OWN_PAGE]
       const before = new Map(disk)
       const onNotice = await openFromDisk(ORDERS, files)
       const renamed = { ...domain, options: ['Ledger', 'Payments'] }
       await act(async () => void (await captured.folder!.setColumn('domain', renamed, domain, { from: 'Billing', to: 'Ledger' })))
       await flush()
       expect(disk.get(`${SCHEMA}/.folder.md`)).toContain('Ledger') // the owner's definition
-      expect(disk.get(TABLE_NOTE)).toBe('---\ntitle: Orders table\ndomain: Ledger\n---\n') // a note of Schema's scope
+      expect(disk.get(TABLE_PAGE)).toBe('---\ntitle: Orders table\ndomain: Ledger\n---\n') // a page of Schema's scope
       expect(disk.get(`${ORDERS}/.folder.md`)).toContain('filters: note.domain == "Ledger"') // a page below that takes Domain from Schema
       expect(disk.get(LOCKED)).toBe(before.get(LOCKED)) // read only (D36)
       expect(disk.get(OWN)).toBe(before.get(OWN)) // its own Domain: another column
-      expect(disk.get(OWN_NOTE)).toBe(before.get(OWN_NOTE))
-      expect(onNotice).toHaveBeenCalledExactlyOnceWith('Renamed “Billing” to “Ledger” in 1 note', 'info', 'undo', expect.objectContaining({ label: 'Undo' }))
+      expect(disk.get(OWN_PAGE)).toBe(before.get(OWN_PAGE))
+      expect(onNotice).toHaveBeenCalledExactlyOnceWith('Renamed “Billing” to “Ledger” in 1 page', 'info', 'undo', expect.objectContaining({ label: 'Undo' }))
       await act(async () => onNotice.mock.calls[0][3].run())
       await flush()
-      expect(disk.get(TABLE_NOTE)).toBe(before.get(TABLE_NOTE))
+      expect(disk.get(TABLE_PAGE)).toBe(before.get(TABLE_PAGE))
       expect(disk.get(`${ORDERS}/.folder.md`)).toContain('filters: note.domain == "Billing"')
       expect(disk.get(`${SCHEMA}/.folder.md`)).not.toContain('Ledger')
     })
 
     it('C6, 7A 4: a second edit of Schema’s Domain from Orders before the index echoes the first builds on the first (`aheadParents`)', async () => {
-      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_PAGE])
       const first = { ...domain, options: ['Billing', 'Payments', 'Refunds'] }
       await act(async () => void (await captured.folder!.setColumn('domain', first, domain)))
       expect(captured.folder!.settings.columns.domain).toEqual(first) // ahead of the index
@@ -1784,7 +1784,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
 
     it('C6, D36, 7A 4: Schema’s folder page is read only, so an edit of its Domain from Orders is refused and writes nothing', async () => {
       disk.set(`${SCHEMA}/.folder.md`, schemaFile.replace('---\nfolder_settings', '---\nreadonly: true\nfolder_settings'))
-      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_PAGE])
       writeFile.mockClear()
       await act(async () => expect(captured.folder!.setColumn('domain', { ...domain, options: ['Billing'] }, domain)).rejects.toThrow("schema's folder page is read only"))
       expect(writeFile).not.toHaveBeenCalled()
@@ -1795,7 +1795,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
       write.mockImplementation(real.writeProperty) // the settings door writes the disk too
       disk.set(`${ORDERS}/.folder.md`, '---\nfolder_settings:\n  columns:\n    domain:\n      kind: select\n      options: [Orders only]\n  views:\n    - type: table\n      name: Orders\n---\n')
-      const onNotice = await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      const onNotice = await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_PAGE])
       expect(captured.folder!.sources.of('domain')).toEqual({ over: 'schema' })
       await act(async () => void (await captured.folder!.sources.useParent('domain')))
       await flush()
@@ -1805,14 +1805,14 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       await act(async () => onNotice.mock.calls[0][3].run())
       await flush()
       expect(disk.get(`${ORDERS}/.folder.md`)).toContain('Orders only')
-      expect(disk.get(TABLE_NOTE)).toBe('---\ntitle: Orders table\ndomain: Billing\n---\n') // the note's one value never moved
+      expect(disk.get(TABLE_PAGE)).toBe('---\ntitle: Orders table\ndomain: Billing\n---\n') // the page's one value never moved
     })
 
     // CHECKER (YAZ-4713 round 1): bugs found by the checker. Each test fails at 0f4b998b8.
     it('CHECKER B1: Schema keeps its own value of Domain (separate on Schema); an edit of Domain from Orders still reaches Schema and keeps the switch', async () => {
       const separateSchema = schemaFile.replace('      options: [Billing, Payments]\n', '      options: [Billing, Payments]\n      separate: true\n')
       disk.set(`${SCHEMA}/.folder.md`, separateSchema)
-      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_PAGE])
       expect(captured.folder!.sources.of('domain').from).toBeDefined() // Orders shows Schema's Domain, shared
       const base = captured.folder!.settings.columns.domain // as Edit column hands it: the page's definition
       const next = { ...base, options: ['Billing', 'Payments', 'Refunds'] }
@@ -1828,13 +1828,13 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     it('CHECKER B2: "Separate value for Orders" on, then off, on Schema’s Domain gives Orders Schema’s column back (no hidden copy on Orders)', async () => {
       const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
       write.mockImplementation(real.writeProperty) // the settings door writes the disk too: Off removes Orders' declaration
-      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_PAGE])
       const shown = captured.folder!.settings.columns.domain
-      await act(async () => captured.folder!.separate!.set('domain', shown, true, 'notes'))
-      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      await act(async () => captured.folder!.separate!.set('domain', shown, true, 'pages'))
+      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_PAGE])
       expect(captured.folder!.settings.columns.domain.separate).toBe(true)
-      await act(async () => captured.folder!.separate!.set('domain', captured.folder!.settings.columns.domain, false, 'notes'))
-      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      await act(async () => captured.folder!.separate!.set('domain', captured.folder!.settings.columns.domain, false, 'pages'))
+      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_PAGE])
       // Expected: Domain is Schema's again, so a later edit on Schema reaches Orders.
       expect(captured.folder!.sources.of('domain')).toEqual({ from: expect.any(String) })
     })
@@ -1843,12 +1843,12 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
       write.mockImplementation(real.writeProperty)
       disk.set(`${ORDERS}/.folder.md`, '---\nfolder_settings:\n  columns:\n    domain:\n      kind: select\n      options: [Orders only]\n  views:\n    - type: table\n      name: Orders\n---\n')
-      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_PAGE])
       expect(captured.folder!.sources.of('domain')).toEqual({ over: 'schema' })
-      await act(async () => captured.folder!.separate!.set('domain', captured.folder!.settings.columns.domain, true, 'notes'))
-      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
-      await act(async () => captured.folder!.separate!.set('domain', captured.folder!.settings.columns.domain, false, 'notes'))
-      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_NOTE])
+      await act(async () => captured.folder!.separate!.set('domain', captured.folder!.settings.columns.domain, true, 'pages'))
+      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_PAGE])
+      await act(async () => captured.folder!.separate!.set('domain', captured.folder!.settings.columns.domain, false, 'pages'))
+      await openFromDisk(ORDERS, [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`, TABLE_PAGE])
       expect(captured.folder!.sources.of('domain')).toEqual({ over: 'schema' })
       expect(captured.folder!.settings.columns.domain).toEqual({ kind: 'select', options: ['Orders only'] })
     })
@@ -1890,7 +1890,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     expect((write.mock.calls[0][2] as { columns: unknown }).columns).toEqual({ stage: { kind: 'text' } })
   })
 
-  it('A folder’s table: which values — the page’s columns, plus the built-in file columns (name, folder, tags, dates, links); the note’s other fields wait in Columns ⚙ (C4)', async () => {
+  it('A folder’s table: which values — the page’s columns, plus the built-in file columns (name, folder, tags, dates, links); the page’s other fields wait in Columns ⚙ (C4)', async () => {
     const lead: IndexRecord = {
       ...rec(LEAD, { id: 'n0tehasan1dx', secret: 'own', also_in: [ARCHIVE_ID], order: 2, extra: 'here', in: { [ARCHIVE_ID]: { elsewhere: 1 } } }),
       tags: ['topic'],
@@ -1905,20 +1905,20 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     feed({ columns: SETTINGS.columns, views: [{ type: 'table', name: 'Table', order: ['file.name', 'file.folder', 'file.tags', 'file.links', 'file.mtime', 'note.secret', 'note.id', 'note.elsewhere'] }] }, [lead])
     await flush()
     const shown = [1, 2, 3, 4, 5, 6, 7].map((column) => cell(el, 'Lead Gen', column).textContent)
-    // A note directly in the page's folder shows the page, never a blank (YAZ-4801 demo: the path from this page).
+    // A page directly in the page's folder shows the page, never a blank (YAZ-4801 demo: the path from this page).
     expect(shown.slice(0, 3)).toEqual(['stages', 'topic', 'Sales'])
     expect(shown[3]).toContain('2026')
-    expect(shown.slice(4)).toEqual(['own', 'Empty', 'Empty']) // the note's own field shows; its id is the app's; another page's old block is not read
+    expect(shown.slice(4)).toEqual(['own', 'Empty', 'Empty']) // the page's own field shows; its id is the app's; another page's old block is not read
   })
 
-  it('Filter, sort, group, summary and formula in a folder’s views work on the notes’ own values', async () => {
-    /** Every note carries decoys: the same names in two pages' old blocks. */
-    const note = (path: string, order: number, stage: string): IndexRecord => rec(path, { order, stage, in: { [ARCHIVE_ID]: { order: 900, stage: 'theirs' }, [STAGES_ID]: { order: 500, stage: 'old' } } })
+  it('Filter, sort, group, summary and formula in a folder’s views work on the pages’ own values', async () => {
+    /** Every page carries decoys: the same names in two pages' old blocks. */
+    const page = (path: string, order: number, stage: string): IndexRecord => rec(path, { order, stage, in: { [ARCHIVE_ID]: { order: 900, stage: 'theirs' }, [STAGES_ID]: { order: 500, stage: 'old' } } })
     const view = { type: 'table', name: 'Table', order: ['file.name', 'note.order', 'formula.double'], filters: 'order >= 2', sort: [{ property: 'note.order', direction: 'DESC' }], summaries: { 'note.order': 'Sum' } }
     const settings = { columns: { order: { kind: 'number' }, stage: { kind: 'text' } }, formulas: { double: 'order * 2' }, views: [view, { ...view, name: 'Grouped', groupBy: { property: 'note.stage' } }] }
-    const el = await mount(settings, [note(LEAD, 2, 'warm'), note(SALES, 1, 'warm'), note(DEEP, 3, 'cold'), note('/vault/stages/Won.md', 4, 'warm')])
+    const el = await mount(settings, [page(LEAD, 2, 'warm'), page(SALES, 1, 'warm'), page(DEEP, 3, 'cold'), page('/vault/stages/Won.md', 4, 'warm')])
 
-    expect(rowNames(el)).toEqual(['Won', 'Old', 'Lead Gen']) // filtered (Sales is 1) and sorted, by the notes' `order`
+    expect(rowNames(el)).toEqual(['Won', 'Old', 'Lead Gen']) // filtered (Sales is 1) and sorted, by the pages' `order`
     expect(rowNames(el).map((name) => cell(el, name, 2).textContent)).toEqual(['8', '6', '4']) // the formula
     expect(byLabel(el, 'Summarize Order').textContent).toBe('Sum9') // the summary
 
@@ -1926,43 +1926,43 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     expect(texts(el, '.view-group__value')).toEqual(['cold', 'warm']) // the groups
   })
 
-  it('"New" in a folder’s view, with a filter or group that seeds a value: the seed is the new note’s own field', async () => {
+  it('"New" in a folder’s view, with a filter or group that seeds a value: the seed is the new page’s own field', async () => {
     const view = { type: 'board', name: 'Board', order: ['file.name'], filters: 'kind == "task"', groupBy: { property: 'note.order' } }
     const el = await mount({ ...SETTINGS, views: [view] }, [rec(LEAD, held({ kind: 'task', order: 2 }))])
-    click(byLabel(el, 'New note'))
+    click(byLabel(el, 'New page'))
     await flush()
     expect(created(0)).toEqual(born(0, '/vault/stages', 'kind: task\n')) // the filter's seed
-    click(byLabel(el, 'New note in group 2'))
+    click(byLabel(el, 'New page in group 2'))
     await flush()
     expect(created(1).content).toBe('---\nkind: task\norder: 2\ntitle: Untitled\n---\n') // and the group's
     expect(disk.has(SETTINGS_FILE)).toBe(false) // a shared value needs no page id
   })
 
   it('"New" seeds beside what the folder’s template already holds: the seed is a field, the template’s fields and blocks stay', async () => {
-    disk.set('/vault/stages/.template.md', `---\nowner: me\nkind: idea\nin:\n  ${ARCHIVE_ID}:\n    status: 2-Todo\n---\n## Notes\n`)
+    disk.set('/vault/stages/.template.md', `---\nowner: me\nkind: idea\nin:\n  ${ARCHIVE_ID}:\n    status: 2-Todo\n---\n## Pages\n`)
     const el = await mount({ ...SETTINGS, views: [{ type: 'table', name: 'Table', order: ['file.name'], filters: 'kind == "task"' }] })
-    click(byLabel(el, 'New note'))
+    click(byLabel(el, 'New page'))
     await flush()
-    expect(created(0).content).toBe(`---\nowner: me\nkind: task\nin:\n  ${ARCHIVE_ID}:\n    status: 2-Todo\ntitle: Untitled\n---\n## Notes\n`)
+    expect(created(0).content).toBe(`---\nowner: me\nkind: task\nin:\n  ${ARCHIVE_ID}:\n    status: 2-Todo\ntitle: Untitled\n---\n## Pages\n`)
   })
 
   it('a group "+" under group-by-Folder still creates in that group’s folder, with the seeded value as its field', async () => {
     const view = { type: 'table', name: 'Table', order: ['file.name'], filters: 'kind == "task"', groupBy: { property: 'file.folder' } }
     const el = await mount({ ...SETTINGS, views: [view] }, [rec(LEAD, held({ kind: 'task' })), rec(DEEP, held({ kind: 'task' }))])
-    click(byLabel(el, 'New note in group archive')) // headed by the subfolder's name (YAZ-2541), born in its path
+    click(byLabel(el, 'New page in group archive')) // headed by the subfolder's name (YAZ-2541), born in its path
     await flush()
     expect(created(0)).toEqual(born(0, '/vault/stages/archive', 'kind: task\n'))
   })
 
-  it('a `file.hasTag` filter seeds the note’s OWN tags, at the top level', async () => {
+  it('a `file.hasTag` filter seeds the page’s OWN tags, at the top level', async () => {
     const tagged = { ...rec(LEAD, held({ kind: 'task' })), tags: ['hiring'] }
     const el = await mount({ ...SETTINGS, views: [{ type: 'table', name: 'Table', order: ['file.name'], filters: { and: ['file.hasTag("hiring")', 'kind == "task"'] } }] }, [tagged])
-    click(byLabel(el, 'New note'))
+    click(byLabel(el, 'New page'))
     await flush()
     expect(created(0).content).toBe('---\nkind: task\ntags:\n  - hiring\ntitle: Untitled\n---\n')
   })
 
-  it('A folder with nothing saved has no column (C5): it shows the notes’ own fields, as a plain vault does', async () => {
+  it('A folder with nothing saved has no column (C5): it shows the pages’ own fields, as a plain vault does', async () => {
     const folders = [{ ...rec(SETTINGS_FILE), id: STAGES_ID }] // born holding only its id (D13)
     const records = [rec(LEAD, { status: '4-Done', in: { [STAGES_ID]: { status: '2-Todo' } } }), rec(SALES, { status: '1-Backlog' })]
     const el = renderNoAsk({ path: STAGES, source, onOpenFile })
@@ -1973,7 +1973,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     expect([cell(el, 'Lead Gen', 1).textContent, cell(el, 'Sales', 1).textContent]).toEqual(['4-Done', '1-Backlog'])
   })
 
-  it('A note with no value for a column: an empty cell, and nothing is written until a value is set', async () => {
+  it('A page with no value for a column: an empty cell, and nothing is written until a value is set', async () => {
     disk.set(SALES, '---\ntitle: Sales\n---\n')
     const el = await mount(SETTINGS, [rec(SALES, { title: 'Sales' })])
     selectView(el, 'Table')
@@ -1988,12 +1988,12 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     expect(disk.get(SALES)).toBe('---\ntitle: Sales\norder: 4\n---\n')
   })
 
-  it('A value cleared on a board removes the note’s field; another page’s old block stays', async () => {
+  it('A value cleared on a board removes the page’s field; another page’s old block stays', async () => {
     const records = [rec(LEAD, { order: 2, in: { [ARCHIVE_ID]: { order: 30 } } }), rec(SALES, held({ order: 1 }, { title: 'Sales' })), rec('/vault/stages/Blank.md')]
     disk.set(LEAD, `---\norder: 2\nin:\n  ${ARCHIVE_ID}:\n    order: 30\n---\n`)
     disk.set(SALES, '---\ntitle: Sales\norder: 1\n---\n')
     const el = await mount({ ...SETTINGS, views: [ORDER_BOARD] }, records)
-    // Onto the column of the notes with no `order`: the value is cleared.
+    // Onto the column of the pages with no `order`: the value is cleared.
     fire(card(el, 'Lead Gen'), 'dragstart')
     fire(columnHolding(el, 'Blank'), 'drop')
     fire(card(el, 'Sales'), 'dragstart')
@@ -2003,7 +2003,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     expect(disk.get(SALES)).toBe('---\ntitle: Sales\n---\n')
   })
 
-  it('An old per-page value (D19, `in.<page id>`) is not read: the page shows the note’s own field (C1); the old values wait for the one-time move (C10)', async () => {
+  it('An old per-page value (D19, `in.<page id>`) is not read: the page shows the page’s own field (C1); the old values wait for the one-time move (C10)', async () => {
     const el = await mount(SETTINGS, [rec(LEAD, { order: 99, in: { [STAGES_ID]: { order: 2 } } }), rec(SALES, inBlock({ order: 1 }))])
     selectView(el, 'Table')
     expect(cell(el, 'Lead Gen', 1).textContent).toBe('99')
@@ -2018,21 +2018,21 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     expect(writeFile).not.toHaveBeenCalled()
   })
 
-  it('a Linked mentions column is no note field: the write door refuses one (YAZ-4738)', async () => {
+  it('a Linked mentions column is no page field: the write door refuses one (YAZ-4738)', async () => {
     await mount({ columns: { used_by: { kind: 'mentions' } }, views: [{ type: 'table', name: 'Table' }] }, [rec(LEAD, { order: 2 })])
     await expect(captured.folder!.writeValues(LEAD, [{ key: 'used_by', value: ['[[Sales]]'] }])).rejects.toThrow('used_by is a Linked mentions column')
     expect(writeValues).not.toHaveBeenCalled()
   })
 
   /**
-   * Link and Multi-link columns ride the same model (YAZ-4736): the value is the note's own field, the column's `target`
+   * Link and Multi-link columns ride the same model (YAZ-4736): the value is the page's own field, the column's `target`
    * comes down with the definition, and a delete, an Undo and a move treat a link like any value. Backlinks and a rename
    * read and rewrite the field and a page's block alike (`scan.test.ts` extractLinks, `renameLinks.test.ts`).
    */
   describe('link columns in the new model (YAZ-4736)', () => {
     const SCHEMA = '/vault/schema'
     const ORDERS = '/vault/schema/orders'
-    const NOTE = '/vault/schema/orders/Orders table.md'
+    const PAGE = '/vault/schema/orders/Orders table.md'
     const MOVED = '/vault/Sub/Orders table.md'
     const schemaFile = `---\nid: ${SUB_ID}\ntitle: Schema\nfolder_settings:\n  columns:\n    points_to:\n      kind: link\n      target: "[[KPIs]]"\n  views:\n    - type: table\n      name: Table\n      order:\n        - file.name\n        - note.points_to\n---\n`
     const onNotice = vi.fn()
@@ -2040,20 +2040,20 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       const { properties } = parseFrontmatter(splitFrontmatter(disk.get(path) ?? '').frontmatter)
       return { ...rec(path, properties), ...(typeof properties.title === 'string' && { title: properties.title }), ...(typeof properties.id === 'string' && { id: properties.id }) }
     }
-    /** The page at `path`, its index read from the disk: the two folder files, the note wherever it is, and the notes the targets name. */
-    const open = async (path: string, note = NOTE): Promise<HTMLElement> => {
+    /** The page at `path`, its index read from the disk: the two folder files, the page wherever it is, and the pages the targets name. */
+    const open = async (path: string, page = PAGE): Promise<HTMLElement> => {
       unmountFolderView()
       const el = renderNoAsk({ path, source, onOpenFile, onNotice })
       const folders = [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`].filter((file) => disk.has(file)).map(fromDisk)
-      const records = [rec('/vault/kpis/CAC.md'), rec('/vault/kpis/LTV.md'), rec(OUTSIDER), fromDisk(note)].sort((a, b) => (a.path < b.path ? -1 : 1))
+      const records = [rec('/vault/kpis/CAC.md'), rec('/vault/kpis/LTV.md'), rec(OUTSIDER), fromDisk(page)].sort((a, b) => (a.path < b.path ? -1 : 1))
       act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, true))
       await flush()
       return el
     }
     /** The index's echo of the disk, on the mounted page. */
-    const echo = (note = NOTE): void => {
+    const echo = (page = PAGE): void => {
       const folders = [`${SCHEMA}/.folder.md`, `${ORDERS}/.folder.md`].filter((file) => disk.has(file)).map(fromDisk)
-      const records = [rec('/vault/kpis/CAC.md'), rec('/vault/kpis/LTV.md'), rec(OUTSIDER), fromDisk(note)].sort((a, b) => (a.path < b.path ? -1 : 1))
+      const records = [rec('/vault/kpis/CAC.md'), rec('/vault/kpis/LTV.md'), rec(OUTSIDER), fromDisk(page)].sort((a, b) => (a.path < b.path ? -1 : 1))
       act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, true))
     }
     const picked = (el: ParentNode, key: string): (string | null)[] => {
@@ -2067,28 +2067,28 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       const real = await vi.importActual<typeof import('./writeProperty')>('./writeProperty')
       write.mockImplementation(real.writeProperty)
       disk.set(`${SCHEMA}/.folder.md`, schemaFile)
-      disk.set(NOTE, '---\ntitle: Orders table\n---\n')
+      disk.set(PAGE, '---\ntitle: Orders table\n---\n')
     })
 
-    it('a link set on a subfolder page picks from the inherited target and is the note’s own field; every page shows it; a move out and back keeps it', async () => {
+    it('a link set on a subfolder page picks from the inherited target and is the page’s own field; every page shows it; a move out and back keeps it', async () => {
       let el = await open(ORDERS)
       expect(captured.folder!.columns.points_to).toEqual({ decl: { kind: 'link', target: '[[KPIs]]' }, owner: 'schema' })
-      expect(picked(el, 'points_to')).toEqual(['CAC', 'LTV']) // the notes of Schema's target, on Orders
+      expect(picked(el, 'points_to')).toEqual(['CAC', 'LTV']) // the pages of Schema's target, on Orders
       openCell(el, 0, 1)
       setValue(byLabel<HTMLInputElement>(el, 'Edit points_to'), '[[')
       click(q(el, '[role="option"]')) // completes to [[CAC]]
       press(byLabel(el, 'Edit points_to'), 'Enter')
       await flush()
       const linked = '---\ntitle: Orders table\npoints_to: "[[CAC]]"\n---\n'
-      expect(disk.get(NOTE)).toBe(linked) // a plain field: the index reads it as a link, so CAC lists the note as a backlink
+      expect(disk.get(PAGE)).toBe(linked) // a plain field: the index reads it as a link, so CAC lists the page as a backlink
       el = await open(SCHEMA)
       expect(cell(el, 'Orders table', 1).textContent).toBe('CAC')
-      // A move writes no value away (C9): the link goes with the note and comes back with it.
-      disk.set(MOVED, disk.get(NOTE)!)
-      disk.delete(NOTE)
+      // A move writes no value away (C9): the link goes with the page and comes back with it.
+      disk.set(MOVED, disk.get(PAGE)!)
+      disk.delete(PAGE)
       el = await open('/vault/Sub', MOVED)
       expect(disk.get(MOVED)).toBe(linked)
-      disk.set(NOTE, disk.get(MOVED)!)
+      disk.set(PAGE, disk.get(MOVED)!)
       disk.delete(MOVED)
       el = await open(ORDERS)
       expect(cell(el, 'Orders table', 1).textContent).toBe('CAC')
@@ -2102,30 +2102,30 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       await act(async () => void (await captured.folder!.setColumn('points_to', { kind: 'link', target: '[[Sub]]' }, { kind: 'link', target: '[[KPIs]]' })))
       expect(disk.get(`${SCHEMA}/.folder.md`)).toBe(schemaFile)
       el = await open(ORDERS)
-      expect(picked(el, 'points_to')).toEqual(['Outsider']) // the notes of Orders' own target
+      expect(picked(el, 'points_to')).toEqual(['Outsider']) // the pages of Orders' own target
       el = await open(SCHEMA)
       expect(picked(el, 'points_to')).toEqual(['CAC', 'LTV'])
     })
 
     it('"Delete column and clear N values" removes the link field (so its backlink goes); Undo puts back the column and the link', async () => {
-      disk.set(NOTE, '---\ntitle: Orders table\npoints_to: "[[CAC]]"\n---\n')
+      disk.set(PAGE, '---\ntitle: Orders table\npoints_to: "[[CAC]]"\n---\n')
       await open(SCHEMA)
       expect(captured.folder!.valueCount('note.points_to')).toBe(1)
       await act(async () => captured.folder!.deleteColumn!('points_to', true))
       await flush()
-      expect(disk.get(NOTE)).toBe('---\ntitle: Orders table\n---\n')
+      expect(disk.get(PAGE)).toBe('---\ntitle: Orders table\n---\n')
       expect(disk.get(`${SCHEMA}/.folder.md`)).not.toContain('points_to')
       const undo = onNotice.mock.calls.find((call) => call[2] === 'undo')
       expect(undo).toBeDefined()
       echo() // the index catches up with the delete before the Undo, as in the app
       await act(async () => void (await undo![3].run()))
       await flush()
-      expect(disk.get(NOTE)).toBe('---\ntitle: Orders table\npoints_to: "[[CAC]]"\n---\n')
+      expect(disk.get(PAGE)).toBe('---\ntitle: Orders table\npoints_to: "[[CAC]]"\n---\n')
       expect(disk.get(`${SCHEMA}/.folder.md`)).toContain('    points_to:\n      kind: link\n')
     })
 
     it('Undo BEFORE the index has seen the delete (YAZ-4741): the column, its place in the view and the link all come back', async () => {
-      disk.set(NOTE, '---\ntitle: Orders table\npoints_to: "[[CAC]]"\n---\n')
+      disk.set(PAGE, '---\ntitle: Orders table\npoints_to: "[[CAC]]"\n---\n')
       await open(SCHEMA)
       await act(async () => captured.folder!.deleteColumn!('points_to', true))
       await flush()
@@ -2134,7 +2134,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       // No echo: the index still holds the column, as when a fast click beats it.
       await act(async () => void (await undo![3].run()))
       await flush()
-      expect(disk.get(NOTE)).toBe('---\ntitle: Orders table\npoints_to: "[[CAC]]"\n---\n')
+      expect(disk.get(PAGE)).toBe('---\ntitle: Orders table\npoints_to: "[[CAC]]"\n---\n')
       expect(disk.get(`${SCHEMA}/.folder.md`)).toBe(schemaFile)
     })
 
@@ -2153,7 +2153,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     })
 
     it('a link field no folder defines waits under "Other properties"; shown, it reads and edits as a link', async () => {
-      disk.set(NOTE, '---\ntitle: Orders table\ncontact: "[[Outsider]]"\n---\n')
+      disk.set(PAGE, '---\ntitle: Orders table\ncontact: "[[Outsider]]"\n---\n')
       const el = await open(ORDERS)
       expect(texts(el, '.view-table thead th:not(.view-table__gutter)').map((t) => t.trim())).toEqual(['Name', 'Points to'])
       click(byLabel(el, 'Columns and view'))
@@ -2172,7 +2172,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     })
   })
 
-  describe('a write drops no value when the note has moved (C9)', () => {
+  describe('a write drops no value when the page has moved (C9)', () => {
     const GONE_ID = 'n0f01der0000' // a block for a folder no settings record has
     const settings = { columns: { order: { kind: 'number' } }, views: [{ type: 'table', name: 'Table', order: ['file.name', 'note.order'] }, ORDER_BOARD] }
     const folders = [
@@ -2220,7 +2220,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
   describe('a page with no id (its `.folder.md` is missing or has none)', () => {
     const idOf = (content: string): string => /^id: (\S+)$/m.exec(content)![1]
 
-    it('a shared value needs no id: the first value written is the note’s field, and no `.folder.md` is made', async () => {
+    it('a shared value needs no id: the first value written is the page’s field, and no `.folder.md` is made', async () => {
       disk.set(LEAD, `---\norder: 30\nin:\n  ${ARCHIVE_ID}:\n    order: 30\n---\n`)
       const el = await mount(null, [rec(LEAD, { order: 30, in: { [ARCHIVE_ID]: { order: 30 } } })])
       expect(cell(el, 'Lead Gen', 1).textContent).toBe('30')
@@ -2239,7 +2239,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       const el = renderNoAsk({ path: STAGES, source, onOpenFile })
       act(() => source.update(linkResolver(records, '/vault', vaultDirs('/vault'), folders), records, folders, true))
       await flush()
-      expect(cell(el, 'Lead Gen', 1).textContent).toBe('Empty') // this page's own value: none yet; the note's 30 is not this page's
+      expect(cell(el, 'Lead Gen', 1).textContent).toBe('Empty') // this page's own value: none yet; the page's 30 is not this page's
       editNumber(el, 'Lead Gen', 1, 'Edit order', '4')
       await flush()
       const id = idOf(disk.get(SETTINGS_FILE)!)
@@ -2254,7 +2254,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       const el = renderNoAsk({ path: STAGES, source, onOpenFile })
       act(() => source.update(linkResolver([], '/vault', vaultDirs('/vault'), folders), [], folders, true))
       await flush()
-      click(byLabel(el, 'New note'))
+      click(byLabel(el, 'New page'))
       await flush()
       const id = idOf(disk.get(SETTINGS_FILE)!)
       expect(disk.get(SETTINGS_FILE)).toBe(`---\nowner: me\nid: ${id}\n---\n`)
@@ -2266,7 +2266,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
     const SEPARATE = { columns: { order: { kind: 'number', separate: true } }, views: [TABLE] }
     const OWN_AND_PAGE = `---\norder: 1\nin:\n  ${STAGES_ID}:\n    order: 3\n---\n`
 
-    it('reads and writes this page’s block; the note’s field and every other page stay as they were', async () => {
+    it('reads and writes this page’s block; the page’s field and every other page stay as they were', async () => {
       disk.set(LEAD, OWN_AND_PAGE)
       const el = await mount(SEPARATE, [rec(LEAD, { order: 1, in: { [STAGES_ID]: { order: 3 } } })])
       expect(cell(el, 'Lead Gen', 1).textContent).toBe('3')
@@ -2275,7 +2275,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       expect(disk.get(LEAD)).toBe(OWN_AND_PAGE.replace('    order: 3\n', '    order: 9\n'))
     })
 
-    it('turning it off with "Keep the notes’ values": page values fill empty fields, a differing one is dropped; Undo puts every block and field back', async () => {
+    it('turning it off with "Keep the pages’ values": page values fill empty fields, a differing one is dropped; Undo puts every block and field back', async () => {
       disk.set(SETTINGS_FILE, `---\nid: ${STAGES_ID}\nfolder_settings:\n  columns:\n    order:\n      kind: number\n      separate: true\n---\n`)
       disk.set(LEAD, OWN_AND_PAGE) // differs: 1 against the page's 3
       disk.set(SALES, `---\nin:\n  ${STAGES_ID}:\n    order: 5\n---\n`) // fills an empty field
@@ -2284,11 +2284,11 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       feed(SEPARATE, [rec(LEAD, { order: 1, in: { [STAGES_ID]: { order: 3 } } }), rec(SALES, { in: { [STAGES_ID]: { order: 5 } } })])
       await flush()
       expect(captured.folder!.separate!.counts('order')).toEqual({ total: 2, fill: 1, differ: 1 })
-      await act(async () => captured.folder!.separate!.set('order', { kind: 'number', separate: true }, false, 'notes'))
+      await act(async () => captured.folder!.separate!.set('order', { kind: 'number', separate: true }, false, 'pages'))
       expect(disk.get(SETTINGS_FILE)).not.toContain('separate')
       expect(disk.get(LEAD)).toBe('---\norder: 1\n---\n')
       expect(disk.get(SALES)).toBe('---\norder: 5\n---\n')
-      expect(onNotice).toHaveBeenCalledExactlyOnceWith('Order has one value per note again', 'info', 'undo', expect.objectContaining({ label: 'Undo' }))
+      expect(onNotice).toHaveBeenCalledExactlyOnceWith('Order has one value per page again', 'info', 'undo', expect.objectContaining({ label: 'Undo' }))
       await act(async () => onNotice.mock.calls[0][3].run())
       await flush()
       expect(disk.get(SETTINGS_FILE)).toContain('separate: true')
@@ -2311,9 +2311,9 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
   })
 
   // The ID vault's half of each row is the block above; "New" with a seed is in the block of the plain "New".
-  describe('where the vault does not use IDs a folder\u2019s columns are the notes\u2019 own properties (YAZ-2523 V6)', () => {
+  describe('where the vault does not use IDs a folder\u2019s columns are the pages\u2019 own properties (YAZ-2523 V6)', () => {
     const writeOwn = vi.mocked(writeProperties)
-    /** The notes as such a vault's index holds them: every key is the note's own, `id`, `title`, `also_in` and `in` like the rest (V12). */
+    /** The pages as such a vault's index holds them: every key is the page's own, `id`, `title`, `also_in` and `in` like the rest (V12). */
     const OWN = [rec(LEAD, { owner: 'Ana', id: 'k3m9x2pq7abc', also_in: [ARCHIVE_ID] }), rec(SALES, { order: 1 }), rec(DEEP, { title: 'mine', order: 500, in: { [ARCHIVE_ID]: { order: 30 }, [STAGES_ID]: { order: 3 } } })]
     const headers = (el: ParentNode): string[] => texts(el, '.view-table thead th:not(.view-table__gutter)')
 
@@ -2323,7 +2323,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       write.mockImplementation(real.writeProperty)
     })
 
-    it('a folder with nothing saved is a Table alone — no Board, no `status` column — listing Name and the notes\u2019 own keys with their values, `id`, `title`, `also_in` and `in` among them; opening writes NOTHING', async () => {
+    it('a folder with nothing saved is a Table alone — no Board, no `status` column — listing Name and the pages\u2019 own keys with their values, `id`, `title`, `also_in` and `in` among them; opening writes NOTHING', async () => {
       const el = await mount(null, OWN, false)
       expect(texts(el, '.view-tab__btn')).toEqual(['Table'])
       expect(captured.folder!.settings.columns).toEqual({})
@@ -2337,7 +2337,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       expect(writeFile).not.toHaveBeenCalled()
     })
 
-    it('a cell edit writes that one line at the top of the note: an `in:` block already there stays byte for byte, and no `.folder.md` is made', async () => {
+    it('a cell edit writes that one line at the top of the page: an `in:` block already there stays byte for byte, and no `.folder.md` is made', async () => {
       disk.set(DEEP, THREE)
       const el = await mount(null, OWN, false)
       editNumber(el, 'Old', 4, 'Edit order', '9')
@@ -2346,7 +2346,7 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       expect([...disk.keys()]).toEqual([DEEP])
     })
 
-    it('a board drop writes the grouped property at the top of the note, and nothing else', async () => {
+    it('a board drop writes the grouped property at the top of the page, and nothing else', async () => {
       disk.set(DEEP, THREE)
       const el = await mount({ ...SETTINGS, views: [ORDER_BOARD] }, OWN, false)
       fire(card(el, 'Old'), 'dragstart')
@@ -2373,10 +2373,10 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
       expect(texts(el, '.view-tab__btn')).toEqual(['Table'])
     })
 
-    it('"Delete column…" is not offered, by the header\u2019s menu or the Properties menu; hiding the column is a settings write that leaves every note as it was', async () => {
+    it('"Delete column…" is not offered, by the header\u2019s menu or the Properties menu; hiding the column is a settings write that leaves every page as it was', async () => {
       const el = await mount(null, OWN, false)
       expect(captured.folder!.deleteColumn).toBeUndefined()
-      // The value is the note's own field in both kinds of vault (YAZ-4713 C1), so the count is real; only the Delete is withheld (V11).
+      // The value is the page's own field in both kinds of vault (YAZ-4713 C1), so the count is real; only the Delete is withheld (V11).
       expect(captured.folder!.valueCount('note.owner')).toBe(1)
       click(byLabel(el, 'Columns and view'))
       click(byLabel(el, 'Open Owner'))
@@ -2395,20 +2395,20 @@ describe('a note’s value is its own field (YAZ-4713 C1)', () => {
 })
 
 /**
- * A read-only note in a folder that uses IDs (YAZ-3076 D6, S52, S53, S57): the views show the
- * folder's block of `in`, never the note's top-level fields, so the switch must reach them from the
- * note's OWN properties. Its cell opens no editor, its card does not move, and nothing is written.
+ * A read-only page in a folder that uses IDs (YAZ-3076 D6, S52, S53, S57): the views show the
+ * folder's block of `in`, never the page's top-level fields, so the switch must reach them from the
+ * page's OWN properties. Its cell opens no editor, its card does not move, and nothing is written.
  */
-describe('a read-only note in a folder that uses IDs (YAZ-3076 D6)', () => {
+describe('a read-only page in a folder that uses IDs (YAZ-3076 D6)', () => {
   const locked = (): IndexRecord[] => vault().map((r) => (r.path === DEEP ? { ...r, properties: { ...r.properties, readonly: true } } : r))
   const cellOf = (el: ParentNode, name: string, column: number): HTMLElement => q<HTMLElement>(el, `[data-cell="${rowNames(el).indexOf(name)}:${column}"]`)
   const cardOf = (el: ParentNode, name: string): Element => [...el.querySelectorAll('.view-board__title')].find((title) => title.textContent === name)!.closest('.view-board__card')!
 
-  it('its cell shows the folder’s value and has no editor, while another note’s cell still edits', async () => {
+  it('its cell shows the folder’s value and has no editor, while another page’s cell still edits', async () => {
     const el = await mount({ ...SETTINGS, views: [TABLE] }, locked())
     expect(cellOf(el, 'Old', 1).textContent).toContain('3')
     expect(cellOf(el, 'Old', 1).querySelector('[data-edit]')).toBeNull()
-    expect(cellOf(el, 'Old', 1).querySelector('[title="This note is read only"]')).not.toBeNull()
+    expect(cellOf(el, 'Old', 1).querySelector('[title="This page is read only"]')).not.toBeNull()
     expect(cellOf(el, 'Sales', 1).querySelector('[data-edit]')).not.toBeNull()
   })
 
@@ -2430,14 +2430,14 @@ describe('a read-only note in a folder that uses IDs (YAZ-3076 D6)', () => {
   })
 })
 
-describe('S24: renaming an option rewrites the notes that hold it (YAZ-4591)', () => {
+describe('S24: renaming an option rewrites the pages that hold it (YAZ-4591)', () => {
   const STAGE = { kind: 'select' as const, options: ['Todo', 'Done'] }
   const RENAMED = { kind: 'select' as const, options: ['Next', 'Done'] }
   const WITH_STAGE = { columns: { stage: STAGE }, views: [TABLE] }
-  /** The files `transformFile` reads and rewrites: the settings file and the notes. */
+  /** The files `transformFile` reads and rewrites: the settings file and the pages. */
   let disk: Map<string, string>
   const yaml = (values: string, own = ''): string => `---\n${own}in:\n  ${STAGES_ID}:\n    ${values}\n---\n`
-  /** A note holding the value as its own field (YAZ-4713 C1). */
+  /** A page holding the value as its own field (YAZ-4713 C1). */
   const own = (values: string, before = ''): string => `---\n${before}${values}\n---\n`
 
   beforeEach(() => {
@@ -2457,11 +2457,11 @@ describe('S24: renaming an option rewrites the notes that hold it (YAZ-4591)', (
     return onNotice
   }
 
-  it('ID vault: the declaration and the views\' filters first, then one write per note of the column’s folder holding it as its own field (YAZ-4713 C1) — a list keeps its other elements; Undo puts all back', async () => {
+  it('ID vault: the declaration and the views\' filters first, then one write per page of the column’s folder holding it as its own field (YAZ-4713 C1) — a list keeps its other elements; Undo puts all back', async () => {
     disk.set(LEAD, own('stage: Todo'))
     // The list holds both labels (YAZ-4637 M5): the rename folds it to one, and Undo puts the exact list back.
     disk.set(SALES, own('stage: [Todo, Next]'))
-    disk.set(OTHER, own('stage: Todo')) // no row of this folder: another folder's note keeps its value
+    disk.set(OTHER, own('stage: Todo')) // no row of this folder: another folder's page keeps its value
     const onNotice = await mountWith([rec(OTHER, held({ stage: 'Todo' })), rec(LEAD, held({ stage: 'Todo' })), rec(SALES, held({ stage: ['Todo', 'Next'] })), rec(DEEP, held({ stage: 'Done' }))])
     await act(async () => captured.folder!.setColumn('stage', RENAMED, STAGE, { from: 'Todo', to: 'Next' }))
     expect(transform.mock.calls.map(([path]) => path)).toEqual([SETTINGS_FILE, LEAD, SALES])
@@ -2470,7 +2470,7 @@ describe('S24: renaming an option rewrites the notes that hold it (YAZ-4591)', (
     expect(disk.get(OTHER)).toBe(own('stage: Todo'))
     // The view's filter on that value follows in the same settings write (M5).
     expect(disk.get(SETTINGS_FILE)).toContain('filters: note.stage == "Next"')
-    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Renamed “Todo” to “Next” in 2 notes', 'info', 'undo', expect.objectContaining({ label: 'Undo', fades: true }))
+    expect(onNotice).toHaveBeenCalledExactlyOnceWith('Renamed “Todo” to “Next” in 2 pages', 'info', 'undo', expect.objectContaining({ label: 'Undo', fades: true }))
     transform.mockClear()
     await act(async () => onNotice.mock.calls[0][3].run())
     await flush()
@@ -2481,25 +2481,25 @@ describe('S24: renaming an option rewrites the notes that hold it (YAZ-4591)', (
     expect(disk.get(SETTINGS_FILE)).toContain('filters: note.stage == "Todo"')
   })
 
-  it('a separate column (C3): the notes holding it in this page’s block, wherever they are; the note’s own field is not this page’s', async () => {
+  it('a separate column (C3): the pages holding it in this page’s block, wherever they are; the page’s own field is not this page’s', async () => {
     disk.set(SETTINGS_FILE, disk.get(SETTINGS_FILE)!.replace('      options: [Todo, Done]\n', '      options: [Todo, Done]\n      separate: true\n'))
     disk.set(OTHER, yaml('stage: Todo', 'stage: Todo\n'))
     const onNotice = await mountWith([rec(OTHER, inBlock({ stage: 'Todo' }, { stage: 'Todo' }))], true, { columns: { stage: { ...STAGE, separate: true } }, views: [TABLE] })
     await act(async () => captured.folder!.setColumn('stage', { ...RENAMED, separate: true }, { ...STAGE, separate: true }, { from: 'Todo', to: 'Next' }))
     expect(disk.get(OTHER)).toBe(yaml('stage: Next', 'stage: Todo\n'))
-    expect(onNotice.mock.calls[0][0]).toBe('Renamed “Todo” to “Next” in 1 note')
+    expect(onNotice.mock.calls[0][0]).toBe('Renamed “Todo” to “Next” in 1 page')
   })
 
-  it('a note that is read only on disk is never written (YAZ-4637 M6): the toast counts it as not changed', async () => {
+  it('a page that is read only on disk is never written (YAZ-4637 M6): the toast counts it as not changed', async () => {
     disk.set(LEAD, own('stage: Todo'))
     disk.set(SALES, own('stage: Todo', 'readonly: true\n'))
     const onNotice = await mountWith([rec(SALES, held({ stage: 'Todo' })), rec(LEAD, held({ stage: 'Todo' }))])
     await act(async () => captured.folder!.setColumn('stage', RENAMED, STAGE, { from: 'Todo', to: 'Next' }))
     expect(disk.get(SALES)).toBe(own('stage: Todo', 'readonly: true\n'))
-    expect(onNotice.mock.calls[0][0]).toBe('Renamed “Todo” to “Next” in 1 note · 1 note not changed')
+    expect(onNotice.mock.calls[0][0]).toBe('Renamed “Todo” to “Next” in 1 page · 1 page not changed')
   })
 
-  it('a refused declaration touches no note', async () => {
+  it('a refused declaration touches no page', async () => {
     disk.set(LEAD, own('stage: Todo'))
     const onNotice = await mountWith([rec(LEAD, held({ stage: 'Todo' }))])
     await act(async () => expect(captured.folder!.setColumn('stage', RENAMED, { kind: 'select', options: ['Other'] }, { from: 'Todo', to: 'Next' })).rejects.toThrow('changed since'))
@@ -2507,13 +2507,13 @@ describe('S24: renaming an option rewrites the notes that hold it (YAZ-4591)', (
     expect(onNotice).not.toHaveBeenCalled()
   })
 
-  it('a read-only note keeps the old label, and the toast says so', async () => {
+  it('a read-only page keeps the old label, and the toast says so', async () => {
     disk.set(LEAD, own('stage: Todo'))
     disk.set(SALES, own('stage: Todo', 'readonly: true\n'))
     const onNotice = await mountWith([rec(LEAD, held({ stage: 'Todo' })), rec(SALES, held({ stage: 'Todo' }, { readonly: true }))])
     await act(async () => captured.folder!.setColumn('stage', RENAMED, STAGE, { from: 'Todo', to: 'Next' }))
     expect(transform.mock.calls.map(([path]) => path)).toEqual([SETTINGS_FILE, LEAD])
-    expect(onNotice.mock.calls[0][0]).toBe('Renamed “Todo” to “Next” in 1 note · 1 note not changed')
+    expect(onNotice.mock.calls[0][0]).toBe('Renamed “Todo” to “Next” in 1 page · 1 page not changed')
   })
 
   it('a vault without IDs: the rows’ own top-level key', async () => {
@@ -2523,6 +2523,6 @@ describe('S24: renaming an option rewrites the notes that hold it (YAZ-4591)', (
     await act(async () => captured.folder!.setColumn('stage', RENAMED, STAGE, { from: 'Todo', to: 'Next' }))
     expect(transform.mock.calls.map(([path]) => path)).toEqual([SETTINGS_FILE, LEAD]) // Other is no row of this folder
     expect(disk.get(LEAD)).toBe('---\nstage: Next\n---\n')
-    expect(onNotice.mock.calls[0][0]).toBe('Renamed “Todo” to “Next” in 1 note')
+    expect(onNotice.mock.calls[0][0]).toBe('Renamed “Todo” to “Next” in 1 page')
   })
 })

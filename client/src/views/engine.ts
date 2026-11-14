@@ -22,7 +22,7 @@ export interface Row {
   file: FileValue
   /** Keyed by the property key as written in the view (`file.name`, `status`, `note.status`, `formula.x`). */
   values: Record<string, Value>
-  /** The note matches the view's `crossOut` (YAZ-4864): a calendar card is crossed out whole. Absent = no. */
+  /** The page matches the view's `crossOut` (YAZ-4864): a calendar card is crossed out whole. Absent = no. */
   crossed?: true
 }
 
@@ -74,7 +74,7 @@ export interface ViewResult {
 }
 
 export interface RunOptions {
-  /** The folder's declared column names — shown by default before any note carries them (YAZ-1549). */
+  /** The folder's declared column names — shown by default before any page carries them (YAZ-1549). */
   declared?: readonly string[]
   /**
    * The run's clock (YAZ-4919): `today()`, `now()` and a date's `isToday()` / `isThisWeek()` / `isThisMonth()` read it,
@@ -101,7 +101,7 @@ export interface RunOptions {
     folders: readonly IndexRecord[]
     vault: string
     /**
-     * A note's `also_in` folder ids by its path (YAZ-4799): the folder page hands the views rows with the app's keys taken
+     * A page's `also_in` folder ids by its path (YAZ-4799): the folder page hands the views rows with the app's keys taken
      * out (`rowValues`), `also_in` among them, so the shortcut places are read off the index's own records.
      */
     alsoIn?: (path: string) => readonly string[]
@@ -113,20 +113,20 @@ export interface RunOptions {
   optionOrder?: (property: string) => readonly string[] | undefined
   /**
    * A Select or Multi-select column's option parents (YAZ-4799): its parent column and each option's parent option; else
-   * undefined. Grouped parent › child, a note joins only the child groups whose parent is the group it is in.
+   * undefined. Grouped parent › child, a page joins only the child groups whose parent is the group it is in.
    */
   optionParent?: (property: string) => { column: string; of: Readonly<Record<string, string>> } | undefined
   /** An Image column (YAZ-4802): its sort goes by the picture's file name, not the folder it is in. */
   byFileName?: (property: string) => boolean
   /**
-   * The vault's note card review settings (YAZ-4967, idea 2): the "Due" column (`file.due`) counts with them. Absent
+   * The vault's card review settings (YAZ-4967, idea 2): the "Due" column (`file.due`) counts with them. Absent
    * (a vault no scope has open), "Due" is blank; "Cards" (`file.cards`) and "Archived" (`file.archived`, YAZ-5046) need none.
    */
   cardSettings?: ReviewSettings
   /**
    * The page's Linked mentions columns (YAZ-4738 L1, L3): their keys, and each one's value for a record — the links to
-   * the notes that mention it, worked out from the index. A row reads it under the key, as if the note held it (cells,
-   * filters, search), but no note does. A sort on one sorts by how many there are.
+   * the pages that mention it, worked out from the index. A row reads it under the key, as if the page held it (cells,
+   * filters, search), but no page does. A sort on one sorts by how many there are.
    */
   mentions?: { keys: readonly string[]; of: (record: IndexRecord, key: string) => readonly string[] }
 }
@@ -228,10 +228,10 @@ const member = (object: string, name: string): Expr => ({ type: 'member', object
 /**
  * `file.x` → file field, `formula.x` → formula (a compile error is reported once at `formula.x`
  * and the cell is an ErrorValue; an unknown formula is the evaluator's ErrorValue, no report),
- * anything else → note property (`note.` optional) through `fromYaml`.
+ * anything else → page property (`note.` optional) through `fromYaml`.
  */
 function makeGetter(key: string, def: ViewSet, errors: EngineError[], cardSettings?: ReviewSettings): Getter {
-  // The note card counts (YAZ-4967, idea 2): read off the index's `cards`, no file read. Blank, not 0, where there are none.
+  // The card counts (YAZ-4967, idea 2): read off the index's `cards`, no file read. Blank, not 0, where there are none.
   if (key === 'file.cards') return (scope) => cardCount(scope.file, null, 0)
   if (key === 'file.due') return (scope) => (cardSettings === undefined ? null : cardCount(scope.file, cardSettings, scope.now ?? Date.now()))
   // YAZ-5046: the page's archived cards (the line's `off`); no settings needed, as "Cards".
@@ -241,7 +241,7 @@ function makeGetter(key: string, def: ViewSet, errors: EngineError[], cardSettin
     const expr = member('file', 'kind')
     return (scope) => {
       const kind = evaluate(expr, scope)
-      return kind === 'card' && cardSettings?.enabled !== true ? 'note' : kind
+      return kind === 'card' && cardSettings?.enabled !== true ? 'page' : kind
     }
   }
   if (key.startsWith('file.')) {
@@ -259,7 +259,7 @@ function makeGetter(key: string, def: ViewSet, errors: EngineError[], cardSettin
     return scope => evaluate(expr, scope)
   }
   const name = key.startsWith('note.') ? key.slice(5) : key
-  return scope => fromYaml(Object.hasOwn(scope.note, name) ? scope.note[name] : undefined)
+  return scope => fromYaml(Object.hasOwn(scope.page, name) ? scope.page[name] : undefined)
 }
 
 /** A page's card count, or with `s` its due count; null (a blank cell) for none. */
@@ -299,7 +299,7 @@ const rank = (v: Value): number => {
 /**
  * Type-aware comparison: numbers numeric, dates/durations by ms, strings natural and
  * case-insensitive, booleans false < true, links by what they read as (`linkText` — through
- * `resolve`, an id link by its note's title, YAZ-2293 D8), files by title; mixed types by
+ * `resolve`, an id link by its page's title, YAZ-2293 D8), files by title; mixed types by
  * rank. Missing (null / undefined / error) always sorts last whatever the direction.
  */
 export function compareValues(a: Value | undefined, b: Value | undefined, direction: 'ASC' | 'DESC' = 'ASC', resolve?: Resolver): number {
@@ -404,13 +404,13 @@ function orderInColumnSpelling(order: readonly string[], spelled: ReadonlyMap<st
 }
 
 /**
- * `view.order` if set, else `file.name` plus the page's columns, sorted, as `note.<key>`. `declared` is the page's
+ * `view.order` if set, else `file.name` plus the page's columns, sorted, as `page.<key>`. `declared` is the page's
  * column names (YAZ-1549; since YAZ-4713 C2 its own and its parent folders'): a declared column is a column before any
- * note carries it. A page with columns shows them alone (C4): the notes' other fields wait in Columns ⚙ › "Other
- * properties in these notes". A page with NO column shows every key the rows hold, as a plain vault does — the folder
+ * page carries it. A page with columns shows them alone (C4): the pages' other fields wait in Columns ⚙ › "Other
+ * properties in these pages". A page with NO column shows every key the rows hold, as a plain vault does — the folder
  * host has taken the app's own keys out of the rows already (`columnReservedKeys`).
  * Except the read-only switch (`readonly`, a reserved key the index keeps so the views can lock a
- * note's cells, YAZ-3122): one locked note must not put a "Readonly" row on every card (YAZ-3130
+ * page's cells, YAZ-3122): one locked page must not put a "Readonly" row on every card (YAZ-3130
  * nit). It shows only where a view orders it or the folder declares it; the menus still offer it.
  * (`comments` and `reviews` never reach here: the index drops them.)
  */
@@ -456,7 +456,7 @@ const FILE_FIELD_LABELS: Readonly<Record<string, string>> = {
   'file.tags': 'Tags',
   'file.links': 'Links',
   'file.embeds': 'Embeds',
-  // The note card counts (YAZ-4967, idea 2).
+  // The card counts (YAZ-4967, idea 2).
   'file.cards': 'Cards',
   'file.due': 'Due',
   'file.archived': 'Archived',
@@ -501,20 +501,20 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
     return v
   }
 
-  // A Linked mentions column (YAZ-4738) reads as a field of the row's note: one copy of the fields per row, only where the page has one.
+  // A Linked mentions column (YAZ-4738) reads as a field of the row's page: one copy of the fields per row, only where the page has one.
   const mentions = opts.mentions !== undefined && opts.mentions.keys.length > 0 ? opts.mentions : undefined
-  const noteOf = (record: IndexRecord): Record<string, unknown> => {
+  const pageOf = (record: IndexRecord): Record<string, unknown> => {
     if (mentions === undefined) return record.properties
-    const note: Record<string, unknown> = { ...record.properties }
-    for (const key of mentions.keys) note[key] = mentions.of(record, key)
-    return note
+    const page: Record<string, unknown> = { ...record.properties }
+    for (const key of mentions.keys) page[key] = mentions.of(record, key)
+    return page
   }
 
   // filters
   const entries: Entry[] = []
   for (let i = 0; i < records.length; i++) {
     // `this` is null: the views are a FOLDER's, and a folder is no record (YAZ-2290).
-    const scope: Scope = { note: noteOf(records[i]), file: files[i], formulas, this: null, resolve, now, weekStartsOn }
+    const scope: Scope = { page: pageOf(records[i]), file: files[i], formulas, this: null, resolve, now, weekStartsOn }
     if (baseFilter && !baseFilter(scope)) continue
     if (viewFilter && !viewFilter(scope)) continue
     const row: Row = { record: records[i], file: files[i], values: {} }
@@ -554,12 +554,12 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
     })
   }
 
-  // Folders first (YAZ-4579 D33): the subfolder rows before the notes, each part in the view's order. A
+  // Folders first (YAZ-4579 D33): the subfolder rows before the pages, each part in the view's order. A
   // stable split, and only where a folder row is: a page without one costs one pass of name checks.
   if (view.foldersFirst !== false && entries.some(isFolderEntry)) {
     const folders = entries.filter(isFolderEntry)
-    const notes = entries.filter(e => !isFolderEntry(e))
-    entries.splice(0, entries.length, ...folders, ...notes)
+    const pages = entries.filter(e => !isFolderEntry(e))
+    entries.splice(0, entries.length, ...folders, ...pages)
   }
 
   // limit
@@ -583,7 +583,7 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
    * `depth` > 0 is a Folder level under a page (YAZ-2541): the key is the folder that many steps below it.
    */
   /**
-   * The folders a note shows in on a Folder level (YAZ-4799: "next.js is both in two layers"): its home, then each folder
+   * The folders a page shows in on a Folder level (YAZ-4799: "next.js is both in two layers"): its home, then each folder
    * its `also_in` names that is on this page, so a shortcut counts in the folder it is a shortcut in (a fan-out, as a
    * multi-select's). Under a Folder group (`within`) only the places inside that group: a path keeps its pair (App + API)
    * and never mixes it with the other place's (Clients + API). One place: the home alone, as before.
@@ -633,7 +633,7 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
         else valued.push({ key, entries: [entry] })
         continue
       }
-      // A LIST fans out: the entry joins one group per DISTINCT non-empty element (D1), so a note
+      // A LIST fans out: the entry joins one group per DISTINCT non-empty element (D1), so a page
       // in two funnels shows under both instead of forming a combination group. Empty elements are
       // dropped, and a list left with none falls to "No value" exactly as `[]` already does.
       fannedOut = true
@@ -719,7 +719,7 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
    * MERGE RULE (YAZ-745, per parent since YAZ-4531): a key equal to the parent's is no group — its
    * entries sit DIRECTLY under the parent, as do the value-less entries of a "No value" parent, which
    * therefore never carries a "No value" child. Folder then Folder (YAZ-2541) rides on it: a
-   * subfolder's own notes resolve to the subfolder at every deeper level, so they sit directly under it.
+   * subfolder's own pages resolve to the subfolder at every deeper level, so they sit directly under it.
    * Direct entries are not split further.
    * `step` is the folder step below the page a Folder level keys on: its own (`depths[at]`), or, nested (YAZ-4918),
    * the next one under its own group; `within` keeps a shortcut's places inside the folder group above (YAZ-4799).
@@ -744,7 +744,7 @@ export function runView(def: ViewSet, view: ViewDef, records: readonly IndexReco
   /**
    * One group of level `at`, keyed at folder `step` (0 off a Folder level); above the last level it carries `children`
    * and `direct`, possibly empty. A nested Folder level (YAZ-4918) first tries the step below its own group: the
-   * subfolders' groups become its `children`, its own notes `direct`, and the group is `nested`. A folder with no
+   * subfolders' groups become its `children`, its own pages `direct`, and the group is `nested`. A folder with no
    * subfolder goes on to the next view level, so "Folder (All), then Status" puts the Status groups inside each
    * deepest folder, and on the last level it is a leaf.
    */

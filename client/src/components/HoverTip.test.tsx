@@ -2,7 +2,7 @@
  * The app's own hover box (YAZ-4772 demo: "tool tip on column hover?"; then "when you have the tool tip hover then right
  * click the tool tip shows up messed up"): after a short wait on hover a box shows in a portal on the page; leaving,
  * a press, a right-click or a scroll anywhere closes it at once, and a press before it shows cancels it.
- * And the shortcut ↗ after a row's title (YAZ-4797 demo) says where the note lives in that box.
+ * And the shortcut ↗ after a row's title (YAZ-4797 demo) says where the page lives in that box.
  */
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -84,7 +84,7 @@ describe('YAZ-4772 demo: HoverTip', () => {
   })
 })
 
-describe('YAZ-4797 demo: the shortcut ↗ says where the note lives', () => {
+describe('YAZ-4797 demo: the shortcut ↗ says where the page lives', () => {
   const row = (folder: string): Row => ({ record: { ...TEST_RECORDS[0], folder, title: 'Tiramisu', name: 'Tiramisu.md' } as IndexRecord, values: {} }) as unknown as Row
 
   it('YAZ-4797 demo: on Party menu, Tiramisu (in Recipes/Desserts) shows ↗ whose box reads "Shortcut. Lives in Recipes › Desserts"', () => {
@@ -96,7 +96,7 @@ describe('YAZ-4797 demo: the shortcut ↗ says where the note lives', () => {
     expect(box()?.textContent).toBe('Shortcut. Lives in Recipes › Desserts')
   })
 
-  it('YAZ-4797 demo: a note at the vault top says "the vault"; a note that lives here has no ↗', () => {
+  it('YAZ-4797 demo: a page at the vault top says "the vault"; a page that lives here has no ↗', () => {
     render(<ViewFolder.Provider value="Recipes/Party menu">{rowTitle(row(''))}</ViewFolder.Provider>)
     enter(host!.querySelector('.view-shortcut-tip')!)
     wait(400)

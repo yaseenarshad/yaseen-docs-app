@@ -15,13 +15,13 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuAction, MenuItem, MenuParent } from '../../sidebar/menuSections'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
 import { pressKey } from '../marks/markTestKit'
-import { noteMenuSections } from '../noteMenu'
+import { pageMenuSections } from '../pageMenu'
 import { sectionEnd, subheadOf, unfoldedRows } from './cells'
 import { tableData } from './super/superData'
 import { formatTableComment, parseTableComment, plainTable, type TableStyle } from './tableComment'
 import { sectionsOf } from './tableSubhead'
 import { VIEW_ONLY_CHANGE } from '../readOnlyEdit'
-import { cellPos, mountNote, unmountAll } from './tableTestKit'
+import { cellPos, mountPage, unmountAll } from './tableTestKit'
 import { setStickyHeaderSetting } from './timeFormatSetting'
 
 afterEach(async () => {
@@ -61,7 +61,7 @@ const looks = (view: EditorView): string[] =>
     }
     return tr.classList.contains('table-fold-hidden') ? 'hidden' : tr.classList.contains('table-fold-bar') ? 'bar' : '-'
   })
-const items = (view: EditorView, row: number, col: number): MenuItem[] => noteMenuSections(view, null, vi.fn(), cellPos(view, row, col) + 2).flat()
+const items = (view: EditorView, row: number, col: number): MenuItem[] => pageMenuSections(view, null, vi.fn(), cellPos(view, row, col) + 2).flat()
 const menuItem = (view: EditorView, row: number, col: number, id: string): MenuAction | undefined =>
   items(view, row, col)
     .flatMap((item: MenuItem) => (item.children === undefined ? [item] : item.children.flat()))
@@ -96,7 +96,7 @@ describe('the parts (item 22)', () => {
   })
 
   it('loads onto the rows\' cells, saves byte for byte, and a plain table writes no comment', async () => {
-    const { crepe, view } = await mountNote(EIGHT)
+    const { crepe, view } = await mountPage(EIGHT)
     expect(getMarkdownForSave(crepe)).toBe(EIGHT)
     expect(sectionsOf(firstTable(view).node)).toEqual([
       { row: 2, end: 5, collapsed: false },
@@ -104,7 +104,7 @@ describe('the parts (item 22)', () => {
     ])
     expect(looks(view)).toEqual(['-', '-', 'sub', '-', '-', '-', 'sub', '-', '-'])
     expect(trs(view)[2]!.cells[0]!.hasAttribute('data-subhead')).toBe(true)
-    const plain = await mountNote(table(['a', 'b']))
+    const plain = await mountPage(table(['a', 'b']))
     expect(getMarkdownForSave(plain.crepe)).toBe(table(['a', 'b']))
     expect(plain.view.dom.querySelector('.table-subhead-row, .table-subhead-chevron, [data-table-subheads]')).toBeNull()
   })
@@ -112,7 +112,7 @@ describe('the parts (item 22)', () => {
 
 describe('the section math', () => {
   it('`subheadOf`, `sectionEnd` and `unfoldedRows` (fill down and paste skip a subheader row, item 19)', async () => {
-    const { view } = await mountNote(EIGHT)
+    const { view } = await mountPage(EIGHT)
     const { node } = firstTable(view)
     expect([1, 2, 3, 5, 6, 8].map((r) => subheadOf(node, r))).toEqual([null, 2, 2, 2, 6, 6])
     expect(sectionEnd(node, 2)).toBe(5)
@@ -122,7 +122,7 @@ describe('the section math', () => {
   })
 
   it('a Super table\'s records leave the subheader rows out; the cells keep every row (item 21)', async () => {
-    const { view } = await mountNote(EIGHT)
+    const { view } = await mountPage(EIGHT)
     const data = tableData(firstTable(view).node)
     expect(data.cells).toHaveLength(9)
     expect(data.records.map((r) => r.name)).toEqual(['r1', 'r3', 'r4', 'r5', 'r7', 'r8'])
@@ -131,7 +131,7 @@ describe('the section math', () => {
 
 describe('"Make subheader row" and "Turn back into a normal row" (item 4), one undo step each', () => {
   it('a body row becomes a subheader row; the header row cannot; the save writes `subhead`; ⌘Z undoes it in one step', async () => {
-    const { crepe, view } = await mountNote(table(['r1', 'r2', 'r3', 'r4']))
+    const { crepe, view } = await mountPage(table(['r1', 'r2', 'r3', 'r4']))
     expect(menuItem(view, 0, 0, 'table-subhead')).toBeUndefined()
     expect(menuItem(view, 2, 0, 'table-subhead')?.label).toBe('Make subheader row')
     menuItem(view, 2, 0, 'table-subhead')!.onSelect()
@@ -152,13 +152,13 @@ describe('"Make subheader row" and "Turn back into a normal row" (item 4), one u
   })
 
   it('is off in a Time-slots table, with the reason (item 21)', async () => {
-    const { view } = await mountNote(['| Time | Plan |', '| --- | --- |', '| 9:00 am | a |', '| 9:30 am | b |'].join('\n') + '\n\n<!-- table: calendar 30m -->\n')
+    const { view } = await mountPage(['| Time | Plan |', '| --- | --- |', '| 9:00 am | a |', '| 9:30 am | b |'].join('\n') + '\n\n<!-- table: calendar 30m -->\n')
     const item = menuItem(view, 1, 0, 'table-subhead')!
     expect([item.disabled, item.hint]).toEqual([true, 'Time slots are on'])
   })
 
   it('a subheader row\'s right-click has the style flyout and Collapse / Expand all; a header-row cell has "Header row style ›" (item 3)', async () => {
-    const { crepe, view } = await mountNote(EIGHT)
+    const { crepe, view } = await mountPage(EIGHT)
     const flyout = parent(view, 2, 0, 'table-subheader-style')!
     expect(flyout.label).toBe('Subheader row style')
     // YAZ-4899 demo ("in a different way?"): the six-dot menu's own panel, drawn by its code in this flyout.
@@ -207,7 +207,7 @@ describe('"Make subheader row" and "Turn back into a normal row" (item 4), one u
 
 describe('the chevron and the collapsed section (items 10–12, 14)', () => {
   it('a mousedown collapses the section in the `fold` mark with no bar; the count shows; one ⌘Z opens it', async () => {
-    const { crepe, view } = await mountNote(EIGHT)
+    const { crepe, view } = await mountPage(EIGHT)
     expect(looks(view)).toEqual(['-', '-', 'sub', '-', '-', '-', 'sub', '-', '-'])
     expect(chevronOf(view, 2)?.dataset.collapsed).toBeUndefined()
     clickChevron(view, 2)
@@ -224,7 +224,7 @@ describe('the chevron and the collapsed section (items 10–12, 14)', () => {
   })
 
   it('⌥-click collapses every section of the table, and again opens them; the menu rows do the same', async () => {
-    const { view } = await mountNote(EIGHT)
+    const { view } = await mountPage(EIGHT)
     clickChevron(view, 6, true)
     expect(looks(view)).toEqual(['-', '-', 'sub·3', 'hidden', 'hidden', 'hidden', 'sub·2', 'hidden', 'hidden'])
     clickChevron(view, 6, true)
@@ -236,15 +236,15 @@ describe('the chevron and the collapsed section (items 10–12, 14)', () => {
   })
 
   it('a section with no rows under it has no chevron', async () => {
-    const { view } = await mountNote(table(['r1', 'r2'], 'subhead 3'))
+    const { view } = await mountPage(table(['r1', 'r2'], 'subhead 3'))
     expect(looks(view)).toEqual(['-', '-', 'sub'])
     expect(chevronOf(view, 2)).toBeNull()
   })
 
-  // YAZ-4939: a collapse is how you look, not what is there — it works in a note you cannot edit (a read-only note, the
+  // YAZ-4939: a collapse is how you look, not what is there — it works in a note you cannot edit (a read-only page, the
   // explore stack's reading layer). Out of the undo history, and said to the host (`VIEW_ONLY_CHANGE`), which never saves it while locked.
-  it('a read-only note: the chevron, ⌥-click, ⌘↑ / ⌘↓ and ⌘⇧U / ⌘⇧I collapse and open sections; each is out of the undo history and tells the host', async () => {
-    const { crepe, view } = await mountNote(EIGHT)
+  it('a read-only page: the chevron, ⌥-click, ⌘↑ / ⌘↓ and ⌘⇧U / ⌘⇧I collapse and open sections; each is out of the undo history and tells the host', async () => {
+    const { crepe, view } = await mountPage(EIGHT)
     caretIn(view, 4, 1)
     crepe.setReadonly(true)
     const depth = undoDepth(view.state)
@@ -276,8 +276,8 @@ describe('the chevron and the collapsed section (items 10–12, 14)', () => {
     expect(getMarkdownForSave(crepe)).toBe(EIGHT)
   })
 
-  it('an editable note: a collapse is one undo step and tells the host nothing (the autosave writes it, as before)', async () => {
-    const { view } = await mountNote(EIGHT)
+  it('an editable page: a collapse is one undo step and tells the host nothing (the autosave writes it, as before)', async () => {
+    const { view } = await mountPage(EIGHT)
     const heard = vi.fn()
     view.dom.addEventListener(VIEW_ONLY_CHANGE, heard)
     clickChevron(view, 2)
@@ -288,14 +288,14 @@ describe('the chevron and the collapsed section (items 10–12, 14)', () => {
   })
 
   it('"Turn back into a normal row" on a collapsed subheader row opens its section first', async () => {
-    const { crepe, view } = await mountNote(EIGHT)
+    const { crepe, view } = await mountPage(EIGHT)
     clickChevron(view, 2)
     menuItem(view, 2, 0, 'table-subhead-off')!.onSelect()
     expect(getMarkdownForSave(crepe)).toBe(table(['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8'], 'subhead 7'))
   })
 
   it('"Insert row below" a collapsed subheader row opens it first, so the new row shows (item 18)', async () => {
-    const { view } = await mountNote(EIGHT)
+    const { view } = await mountPage(EIGHT)
     clickChevron(view, 2)
     menuItem(view, 2, 0, 'table-insert-row-below')!.onSelect()
     expect(names(view)).toEqual(['Name', 'r1', 'r2', '', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8'])
@@ -305,7 +305,7 @@ describe('the chevron and the collapsed section (items 10–12, 14)', () => {
 
 describe('Sort inside each section (item 15)', () => {
   it('the subheader rows stay; the rows above the first one and each section sort among themselves', async () => {
-    const { view } = await mountNote(table(['c', 'a', 'S1', 'z', 'b', 'S2', 'y', 'x'], 'subhead 4 7'))
+    const { view } = await mountPage(table(['c', 'a', 'S1', 'z', 'b', 'S2', 'y', 'x'], 'subhead 4 7'))
     menuItem(view, 1, 0, 'table-sort-asc')!.onSelect()
     expect(names(view)).toEqual(['Name', 'a', 'c', 'S1', 'b', 'z', 'S2', 'x', 'y'])
     menuItem(view, 1, 0, 'table-sort-desc')!.onSelect()
@@ -320,7 +320,7 @@ describe('Sort inside each section (item 15)', () => {
 
 describe('the keys (item 13)', () => {
   it('⌘↑ in a section collapses it and puts the caret on its subheader row; ⌘↓ opens it; above the first subheader row the keys pass', async () => {
-    const { crepe, view } = await mountNote(EIGHT)
+    const { crepe, view } = await mountPage(EIGHT)
     caretIn(view, 4, 1)
     expect(pressKey(crepe, 'ArrowUp', { mod: true })).toBe(true)
     expect(looks(view)[2]).toBe('sub·3')
@@ -333,7 +333,7 @@ describe('the keys (item 13)', () => {
   })
 
   it('⌘⇧U collapses every section of every table and ⌘⇧I opens them', async () => {
-    const { crepe, view } = await mountNote(`${EIGHT}\n${table(['a', 'b', 'c'], 'subhead 3')}`)
+    const { crepe, view } = await mountPage(`${EIGHT}\n${table(['a', 'b', 'c'], 'subhead 3')}`)
     caretIn(view, 1, 0)
     pressKey(crepe, 'u', { mod: true, shift: true })
     expect(view.dom.querySelectorAll('.table-subhead-collapsed')).toHaveLength(3)
@@ -350,7 +350,7 @@ describe('the drag (item 17): `MoveRow` on a table with subheader rows', () => {
     })
 
   it('a collapsed subheader row moves with its hidden rows, up and down; an open one moves alone', async () => {
-    const { crepe, view } = await mountNote(EIGHT)
+    const { crepe, view } = await mountPage(EIGHT)
     clickChevron(view, 2)
     move(crepe, 2, 8)
     expect(names(view)).toEqual(['Name', 'r1', 'r6', 'r7', 'r8', 'r2', 'r3', 'r4', 'r5'])
@@ -362,7 +362,7 @@ describe('the drag (item 17): `MoveRow` on a table with subheader rows', () => {
   })
 
   it('a row dropped under a collapsed subheader row lands after its section, never inside it', async () => {
-    const { crepe, view } = await mountNote(EIGHT)
+    const { crepe, view } = await mountPage(EIGHT)
     clickChevron(view, 6)
     move(crepe, 1, 6)
     expect(names(view)).toEqual(['Name', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'r1'])

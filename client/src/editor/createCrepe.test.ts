@@ -66,11 +66,11 @@ describe('getPlainText: what the page settings menu counts (YAZ-2643)', () => {
     expect(await text('* one\n  * two\n\n> said\n\n```js\nconst a = 1\n```\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\nEnd.\n')).toBe('one\ntwo\nsaid\nconst a = 1\na\nb\n1\n2\nEnd.')
   })
 
-  it('is empty for an empty note (S20)', async () => {
+  it('is empty for an empty page (S20)', async () => {
     expect(await text('')).toBe('')
   })
 
-  it('a note that ends in a bullet: the empty paragraph Crepe keeps under it counts as nothing, before and after the editor’s first transaction (S18)', async () => {
+  it('a page that ends in a bullet: the empty paragraph Crepe keeps under it counts as nothing, before and after the editor’s first transaction (S18)', async () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     const crepe = createCrepe({ root, defaultValue: '* one\n* two\n' })

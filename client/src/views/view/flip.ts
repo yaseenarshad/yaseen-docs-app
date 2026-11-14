@@ -10,7 +10,7 @@ import { useCallback, useLayoutEffect, useRef } from 'react'
  * measured half, kept pure and pinned by tests; the DOM choreography around them is deliberately
  * thin. One `useFlip` covers the WHOLE board, so a card dragged between columns is a move, not a
  * death and a birth. Cards are measured in the root's CONTENT space, never the viewport's, so a
- * scroll — the board sideways, the note vertically — is not motion (YAZ-1555).
+ * scroll — the board sideways, the page vertically — is not motion (YAZ-1555).
  */
 
 export interface FlipRect {

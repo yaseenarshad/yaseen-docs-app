@@ -12,7 +12,7 @@ import { createRoot } from 'react-dom/client'
 import { DEFAULT_FOLD_ARROW_PREFS, Excalidraw, exportToBlob, restoreElements, takeFoldsAside } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
 import { BOARD_META_KEY, boardFoldArrowsOf } from '../../shared/drawingAssets'
-import { board, loadBoard, note, safeName, save, wireDownload } from './board.js'
+import { board, loadBoard, page, safeName, save, wireDownload } from './board.js'
 
 const { allowDownload, name } = board
 const PNG_SCALE = 2
@@ -56,7 +56,7 @@ async function main() {
     }
   }
 
-  note.remove()
+  page.remove()
   createRoot(document.getElementById('canvas')).render(
     React.createElement(Excalidraw, {
       initialData: { elements, files, appState: { viewBackgroundColor, theme: 'light' }, scrollToContent: true },

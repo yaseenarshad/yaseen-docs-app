@@ -5,7 +5,7 @@ import { RowLabel } from './settingRow'
 
 /** The switch's choices, in its order (YAZ-4579 D30). */
 const MODES: readonly (readonly [SubfoldersMode, string])[] = [
-  ['notes', 'Their notes'],
+  ['pages', 'Their pages'],
   ['rows', 'As rows'],
   ['both', 'Both'],
   ['hide', 'Hide'],
@@ -23,7 +23,7 @@ interface SubfoldersSwitchProps {
 
 /**
  * "Subfolders" (YAZ-4579 D30): one switch, in the sliders popover's View › Rows (YAZ-4607 D60; before that in
- * Properties and in the ⇅ popover too). Settings' choice removes the key (Their notes unless Settings › Folder pages
+ * Properties and in the ⇅ popover too). Settings' choice removes the key (Their pages unless Settings › Folder pages
  * says otherwise, YAZ-4585). Every view type has it.
  */
 export function SubfoldersSwitch({ view, own, viewIndex, onUpdate, className = 'view-settings-row' }: SubfoldersSwitchProps) {

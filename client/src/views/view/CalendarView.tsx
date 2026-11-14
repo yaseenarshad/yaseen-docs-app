@@ -20,10 +20,10 @@ import { StyleFlyout } from './StylePanel'
 import { plainHeaderRow, setHeaderRowPart, shownHeaderRow, toggleHeaderRowPlain } from './TableLookSettings'
 import type { ValueHistory } from './valueHistory'
 import { canonicalKey } from './keys'
-import { type NoteWindowLink, currentItemClass, useNoteWindowItems } from './NoteWindow'
+import { type PageWindowLink, currentItemClass, usePageWindowItems } from './PageWindow'
 import { PageContextMenu } from './PageContextMenu'
 import { Popover } from './Popover'
-import { type CardNoteDoors, cardMenuItems } from './rowMenuItems'
+import { type CardPageDoors, cardMenuItems } from './rowMenuItems'
 import { ReadOnlyName } from './ReadOnlyMark'
 import { FolderIcon } from './icons'
 import { FolderPages } from './GroupHeader'
@@ -46,15 +46,15 @@ export interface CalendarViewProps {
   endKey?: string | null
   /** The folder's date columns (`dateColumns`): the "Choose End date" picker lists those that are not the start. */
   dateColumns?: readonly string[]
-  /** Read-only notes do not drag (YAZ-3076 D6). */
+  /** Read-only pages do not drag (YAZ-3076 D6). */
   readOnly?: ReadonlySet<string>
   onOpenFile?: (path: string) => void
   onOpenFileRight?: (path: string) => void
   onOpenFileBackground?: (path: string) => void
   /** "Open in mini window ⇧↩" (D57) and ⇧Enter (YAZ-4605 D56) in the card's right-click menu (YAZ-4547 D24): ViewsPane's card; absent = no item. */
   onOpenWindow?: (path: string) => void
-  /** The card's link: the calendar writes its order and marks the card's note (D24). */
-  windowLink?: NoteWindowLink
+  /** The card's link: the calendar writes its order and marks the card's page (D24). */
+  windowLink?: PageWindowLink
   /** Where a failed page action of the right-click menu says so. */
   onNotice?: (message: string) => void
   /** A drop on a day, or on the "No date" tray (`null`): ViewsPane's optimistic write. */
@@ -70,11 +70,11 @@ export interface CalendarViewProps {
   onAddEndColumn?: () => void
   /** The last failed move, flagged on its card. */
   moveError: { path: string; message: string } | null
-  /** "+" on a day (S10): a new note with that date. */
+  /** "+" on a day (S10): a new page with that date. */
   onNewOnDay?: (day: DayKey) => void
-  /** The card menu's note items (YAZ-3746 13BO): Open, the new note beside a card, Duplicate, Delete. Absent: none. */
-  noteDoors?: CardNoteDoors
-  /** "Card style ›" in a card's menu (YAZ-4906): ViewsPane writes the note's `color`, `text_color` and `weight` (undefined removes a key). Absent: no item. */
+  /** The card menu's page items (YAZ-3746 13BO): Open, the new page beside a card, Duplicate, Delete. Absent: none. */
+  pageDoors?: CardPageDoors
+  /** "Card style ›" in a card's menu (YAZ-4906): ViewsPane writes the page's `color`, `text_color` and `weight` (undefined removes a key). Absent: no item. */
   onStyle?: (path: string, writes: CardStyleWrite[]) => void
   /** The page's ⌘Z / ⇧⌘Z history of value changes (`valueHistory.ts`): a card colour is one step of it. Absent: the keys do nothing here. */
   history?: ValueHistory
@@ -88,7 +88,7 @@ export interface CalendarViewProps {
   wrap?: boolean
   /** Settings › Folder pages › Week starts on Sunday (YAZ-4585); else Monday (D11). */
   sundayFirst?: boolean
-  /** "Hide weekends" (YAZ-4595 S33): Monday to Friday only; a weekend note shows on the Friday before (the Monday after when that Friday is off the grid, YAZ-4635 P3), marked Sat or Sun. */
+  /** "Hide weekends" (YAZ-4595 S33): Monday to Friday only; a weekend page shows on the Friday before (the Monday after when that Friday is off the grid, YAZ-4635 P3), marked Sat or Sun. */
   hideWeekends?: boolean
 }
 
@@ -126,9 +126,9 @@ const stretched = (span: { start: DayKey; end: DayKey }, edge: 'start' | 'end', 
 
 /**
  * The calendar view (YAZ-4540, YAZ-949): a month grid, Monday first (D11), with ‹, › and Today.
- * Each note goes on the date part of its `dateKey` value as written (S3); a day shows 3 cards and
+ * Each page goes on the date part of its `dateKey` value as written (S3); a day shows 3 cards and
  * "+N more", which opens the whole day in place. Today's date wears a ring (S7). A plain click opens
- * the note in a background tab, ⌥-click in the right panel, Enter in this tab (D11). Dragging a card
+ * the page in a background tab, ⌥-click in the right panel, Enter in this tab (D11). Dragging a card
  * to a day writes that day and keeps the time (D4); the "No date" tray below takes a card (its date
  * goes) and gives one. Only the drag and the shown day are state here: the rows go into days ONCE per
  * rows change, in a `useMemo`, and a dragover sets state only when the hovered target changes.
@@ -159,7 +159,7 @@ function gridLines(view: ViewDef | undefined): CSSProperties | undefined {
   } as CSSProperties
 }
 
-export function CalendarView({ hover, def, view, records, settings, resolve, rows, dateKey, endKey = null, dateColumns = NO_COLUMNS, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, onMoveSpan, onChooseEnd, onAddEndColumn, moveError, onNewOnDay, noteDoors, onStyle, history, onHeaderRow, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
+export function CalendarView({ hover, def, view, records, settings, resolve, rows, dateKey, endKey = null, dateColumns = NO_COLUMNS, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, onMoveSpan, onChooseEnd, onAddEndColumn, moveError, onNewOnDay, pageDoors, onStyle, history, onHeaderRow, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
   const unitText = useUnit()
   // The view's "Folder icon" (YAZ-4848), through the page's folder context; on outside a folder page.
   const folderIcons = useContext(FolderPages)?.folderIcons ?? true
@@ -209,7 +209,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   // Each week row's bars and lanes (YAZ-4858), once per rows or page change.
   const layouts = useMemo(() => weeks.map((week) => layoutWeek(week, bars)), [weeks, bars])
   // Each day on screen in its order, the timed cards first in time order (D22), in Month and in Week alike, so the
-  // note window steps exactly as the days show. While weekends hide (YAZ-4595 S33) a weekday also takes the cards of
+  // page window steps exactly as the days show. While weekends hide (YAZ-4595 S33) a weekday also takes the cards of
   // the weekend days that go to it (`weekendHomes`, YAZ-4635 P3: a Friday its Saturday's then its Sunday's; a Monday
   // the Sunday whose Friday is off the grid), each day in that order. Once per rows or page change, not on each dragover.
   const dayCards = useMemo(() => {
@@ -234,7 +234,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     })
     return out
   }, [weeks, layouts])
-  // The note window (YAZ-4547 D24): day by day across the days on screen, a day's bars first (a bar once, on its first
+  // The page window (YAZ-4547 D24): day by day across the days on screen, a day's bars first (a bar once, on its first
   // day there), then its timed cards (every card, also those behind "+N more"), then "No date". Once per rows or page change.
   const windowOrder = useMemo(() => {
     if (dateKey === null) return []
@@ -254,7 +254,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   }, [weeks, layouts, dayCards, undated, dateKey])
   const rootRef = useRef<HTMLDivElement>(null)
   // The mini window's card under a "+N more" (YAZ-3746 13J): that day (or `NO_DATE`, the tray) shows every card while
-  // the window is on one of its hidden ones, so ‹ › and the arrow keys show each note highlighted; it folds again when
+  // the window is on one of its hidden ones, so ‹ › and the arrow keys show each page highlighted; it folds again when
   // the window moves on or closes. `show` tells each step; the revealed card is in the DOM only after that render, so
   // the effect marks and scrolls it then. A bar in a hidden lane (YAZ-4858) opens the first day of its row.
   const [revealed, setRevealed] = useState<string | null>(null)
@@ -273,7 +273,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     }
     return undated.findIndex((r) => r.record.path === current) >= TRAY_CARDS ? NO_DATE : null
   }
-  useNoteWindowItems(windowLink, windowOrder, rootRef, (current) => setRevealed(hiddenHome(current)))
+  usePageWindowItems(windowLink, windowOrder, rootRef, (current) => setRevealed(hiddenHome(current)))
   useEffect(() => {
     if (revealed !== null) windowLink?.show()
   }, [revealed, windowLink])
@@ -295,7 +295,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   if (dateKey === null)
     return (
       <div className="view-cal__hint">
-        <p>{unitText('Calendar views place notes on a date. Add a Date column in Properties, or give a note a date such as 2026-12-03.')}</p>
+        <p>{unitText('Calendar views place pages on a date. Add a Date column in Properties, or give a page a date such as 2026-12-03.')}</p>
       </div>
     )
 
@@ -433,7 +433,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     const path = row.record.path
     const locked = readOnly.has(path)
     const time = from === null && place === undefined ? null : timeOf(row.record.properties[dateKey])
-    // A weekend note on its Friday or Monday (YAZ-4595 S33, YAZ-4635 P3) says its day. A drop on that day is a drop on its own day: no write.
+    // A weekend page on its Friday or Monday (YAZ-4595 S33, YAZ-4635 P3) says its day. A drop on that day is a drop on its own day: no write.
     const real = from === null ? null : dayOf(row.record.properties[dateKey]) ?? (endKey === null ? null : dayOf(row.record.properties[endKey]))
     const weekend = real === null || real === from ? null : weekendOf(real)
     // A card is small (YAZ-4857 item 3): an empty value is left out, and so is a line with nothing left on it.
@@ -454,13 +454,13 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
         <CardProp key={key} def={def} view={view} row={row} field={key} resolve={resolve} />
       )
     const bar = place?.bar
-    // The edges (YAZ-4858): a dated card's two ends; a bar's ends where its row does not cut it. None on a read-only note.
+    // The edges (YAZ-4858): a dated card's two ends; a bar's ends where its row does not cut it. None on a read-only page.
     const edges = !locked && (from !== null || bar !== undefined)
     const className = `view-cal__card${wrap && bar === undefined ? ' view-cal__card--wrap' : ''}${bar === undefined ? '' : ` view-cal__bar${bar.cutStart ? ' view-cal__bar--cut-start' : ''}${bar.cutEnd ? ' view-cal__bar--cut-end' : ''}`}${drag?.path === path ? ' view-cal__card--drag' : ''}${resize?.path === path ? ' view-cal__card--resize' : ''}${row.crossed === true ? ' view-cal__card--crossed' : ''}${currentItemClass(windowLink, path)}`
     const props = {
       className,
       tabIndex: 0,
-      // The note's `color`, `text_color` and `weight` dress the card (YAZ-4906, views.css); a crossed-out card keeps them.
+      // The page's `color`, `text_color` and `weight` dress the card (YAZ-4906, views.css); a crossed-out card keeps them.
       ...cardStyleAttrs(row.record.properties),
       ...(!locked && {
         draggable: true,
@@ -545,12 +545,12 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   }
 
   /**
-   * The card menu's groups: the note items, then "Card style ›" (YAZ-4906) when the pane writes styles and the note is
+   * The card menu's groups: the page items, then "Card style ›" (YAZ-4906) when the pane writes styles and the page is
    * not read-only. The panel's ✓ marks are the card's style NOW (the rows, optimistic), so a strength after a colour
    * keeps that colour.
    */
   const menuItems = (m: NonNullable<typeof menu>) => {
-    const items = cardMenuItems(noteDoors, m.path, () => setMenu(null), m.day === null || onNewOnDay === undefined ? undefined : { label: unitText('New note on this day'), run: () => onNewOnDay(m.day!) })
+    const items = cardMenuItems(pageDoors, m.path, () => setMenu(null), m.day === null || onNewOnDay === undefined ? undefined : { label: unitText('New page on this day'), run: () => onNewOnDay(m.day!) })
     if (onStyle === undefined || m.locked) return items
     const properties = rows.find((r) => r.record.path === m.path)?.record.properties ?? {}
     return { ...items, extra: [...(items.extra ?? []), <CardStyleFlyout key="style" properties={properties} onPick={(writes) => onStyle(m.path, writes)} />] }
@@ -636,7 +636,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
                     <div className="view-cal__day-head">
                       <span className="view-cal__date">{Number(day.slice(8))}</span>
                       {onNewOnDay !== undefined && (
-                        <button type="button" className="view-cal__add" aria-label={unitText(`New note on ${day}`)} title={unitText('New note on this day')} onClick={() => onNewOnDay(day)}>
+                        <button type="button" className="view-cal__add" aria-label={unitText(`New page on ${day}`)} title={unitText('New page on this day')} onClick={() => onNewOnDay(day)}>
                           +
                         </button>
                       )}
@@ -695,7 +695,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
           onOpenWindow={onOpenWindow}
           onNotice={onNotice}
           onClose={() => setMenu(null)}
-          // A dated card's new note goes on its day (13BO CM2), as the day's "+"; an undated one has none.
+          // A dated card's new page goes on its day (13BO CM2), as the day's "+"; an undated one has none.
           {...menuItems(menu)}
         />
       )}

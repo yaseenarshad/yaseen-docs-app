@@ -1,9 +1,9 @@
-/** YAZ-4701 (6B): the rest of a note merges line by line; D9 keeps both only for the SAME lines. Found by the checker. */
+/** YAZ-4701 (6B): the rest of a page merges line by line; D9 keeps both only for the SAME lines. Found by the checker. */
 import { describe, expect, it } from 'vitest'
-import { mergeNoteComments, noteRest, type LineMerge } from '@shared/commentMerge'
+import { mergePageComments, pageRest, type LineMerge } from '@shared/commentMerge'
 import { readComments } from '@shared/comments'
 
-const note = (entries: string, body: string) => `---\ntitle: Plan\n${entries === '' ? '' : `comments:\n${entries}`}---\n${body}`
+const page = (entries: string, body: string) => `---\ntitle: Plan\n${entries === '' ? '' : `comments:\n${entries}`}---\n${body}`
 const e = (id: string, n: number, day: string, body: string) => `  - id: ${id}\n    n: ${n}\n    at: 2026-11-0${day}T10:00:00Z\n    body: ${body}\n`
 const BODY = 'Para one.\n\nPara two.\n\nPara three.\n\nPara four.\n\nPara five.\n'
 
@@ -19,14 +19,14 @@ const byLine: LineMerge = (base, theirs, mine) => {
   return out.join('\n')
 }
 
-describe('mergeNoteComments: the rest merges line by line (D9)', () => {
+describe('mergePageComments: the rest merges line by line (D9)', () => {
   const one = e('a', 1, '1', 'First')
-  const base = note(one, BODY)
-  const theirs = note(one + e('b', 2, '2', 'Sam'), BODY.replace('Para one.', 'Para one, edited by Sam.'))
+  const base = page(one, BODY)
+  const theirs = page(one + e('b', 2, '2', 'Sam'), BODY.replace('Para one.', 'Para one, edited by Sam.'))
 
-  it('both comment, and each edits a DIFFERENT paragraph: one note with both edits and both comments, no copy', () => {
-    const mine = note(one + e('c', 2, '3', 'Me'), BODY.replace('Para five.', 'Para five, edited by me.'))
-    const m = mergeNoteComments(base, theirs, mine, byLine)
+  it('both comment, and each edits a DIFFERENT paragraph: one page with both edits and both comments, no copy', () => {
+    const mine = page(one + e('c', 2, '3', 'Me'), BODY.replace('Para five.', 'Para five, edited by me.'))
+    const m = mergePageComments(base, theirs, mine, byLine)
     expect(readComments(m?.text ?? '').map((c) => c.id)).toEqual(['a', 'b', 'c'])
     expect(m?.copy).toBeUndefined()
     expect(m?.text).toContain('Para one, edited by Sam.')
@@ -34,25 +34,25 @@ describe('mergeNoteComments: the rest merges line by line (D9)', () => {
   })
 
   it('the line merge gets the three rests, with no comments in them', () => {
-    const mine = note(one + e('c', 2, '3', 'Me'), BODY.replace('Para five.', 'Para five, edited by me.'))
+    const mine = page(one + e('c', 2, '3', 'Me'), BODY.replace('Para five.', 'Para five, edited by me.'))
     const seen: string[][] = []
-    mergeNoteComments(base, theirs, mine, (b, t, m) => (seen.push([b, t, m]), null))
-    expect(seen).toEqual([[noteRest(base), noteRest(theirs), noteRest(mine)]])
+    mergePageComments(base, theirs, mine, (b, t, m) => (seen.push([b, t, m]), null))
+    expect(seen).toEqual([[pageRest(base), pageRest(theirs), pageRest(mine)]])
     expect(seen[0].some((s) => s.includes('comments:'))).toBe(false)
   })
 
   it('both edit the SAME paragraph: Sam’s text stays, mine is the copy (D9)', () => {
-    const mine = note(one + e('c', 2, '3', 'Me'), BODY.replace('Para one.', 'Para one, edited by me.'))
-    const m = mergeNoteComments(base, theirs, mine, byLine)
+    const mine = page(one + e('c', 2, '3', 'Me'), BODY.replace('Para one.', 'Para one, edited by me.'))
+    const m = mergePageComments(base, theirs, mine, byLine)
     expect(m?.text).toContain('Para one, edited by Sam.')
     expect(m?.copy).toContain('Para one, edited by me.')
     expect(readComments(m?.text ?? '').map((c) => c.id)).toEqual(['a', 'b', 'c'])
   })
 
   it('only one side changed the rest: no line merge is asked for', () => {
-    const mine = note(one + e('c', 2, '3', 'Me'), BODY)
+    const mine = page(one + e('c', 2, '3', 'Me'), BODY)
     let calls = 0
-    const m = mergeNoteComments(base, theirs, mine, () => (calls++, null))
+    const m = mergePageComments(base, theirs, mine, () => (calls++, null))
     expect(calls).toBe(0)
     expect(m?.copy).toBeUndefined()
     expect(m?.text).toContain('Para one, edited by Sam.')

@@ -1,15 +1,15 @@
 /**
- * open-big: click a big note in the tree → its last line painted (plus a frame), and the longest task
- * on the way. From a small note each time. v0.9.27 needs ~24 min for the 20k-line note, so an open
- * gets OPEN_TIMEOUT_MS: past it that note and the rest of the run report null.
+ * open-big: click a big page in the tree → its last line painted (plus a frame), and the longest task
+ * on the way. From a small page each time. v0.9.27 needs ~24 min for the 20k-line page, so an open
+ * gets OPEN_TIMEOUT_MS: past it that page and the rest of the run report null.
  */
 import path from 'node:path'
-import { writeNote } from '../genVault.mjs'
+import { writePageFile } from '../genVault.mjs'
 import { clickUntilPainted, painted, row, session } from '../lib/session.mjs'
 import { sleep } from '../lib/app.mjs'
 
 const OPEN_TIMEOUT_MS = 90_000
-/** Cheapest first; the note that may not finish goes last. */
+/** Cheapest first; the page that may not finish goes last. */
 const BIG = [
   ['bullets1k', 'Bullets 1k', 'bullets', 1000],
   ['prose5k', 'Prose 5k', 'prose', 5000],
@@ -20,8 +20,8 @@ const BIG = [
 
 export function setup(dir) {
   const vault = path.join(dir, 'vault')
-  const files = Object.fromEntries(BIG.map(([key, name, kind, lines]) => [key, writeNote(vault, name, kind, lines)]))
-  return { profile: path.join(dir, 'profile'), vault, small: writeNote(vault, 'Small', 'bullets', 20), files }
+  const files = Object.fromEntries(BIG.map(([key, name, kind, lines]) => [key, writePageFile(vault, name, kind, lines)]))
+  return { profile: path.join(dir, 'profile'), vault, small: writePageFile(vault, 'Small', 'bullets', 20), files }
 }
 
 export function run(app, { profile, vault, small, files }) {

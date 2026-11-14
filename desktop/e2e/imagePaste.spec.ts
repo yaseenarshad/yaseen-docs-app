@@ -6,14 +6,14 @@
  * link in it is somebody else's process: Electron's clipboard holds real pixels, Chromium turns
  * them into a `File` on the paste event, `insertImage.ts` writes them through the bridge into the
  * vault, remark serializes the node, autosave puts it on disk, and main's `app://vault/` protocol
- * serves the file back to the `<img>` that now stands in the note.
+ * serves the file back to the `<img>` that now stands in the page.
  *
  * WHY IT MATTERS, clause by clause:
  *  1 a wide screenshot lands as a FILE in `assets/images/`, never as a blob in the markdown, and
- *    the note gains exactly one line — `![<name>|400](assets/images/<name>.png)`. The `|400`
+ *    the page gains exactly one line — `![<name>|400](assets/images/<name>.png)`. The `|400`
  *    (`PASTED_IMAGE_WIDTH`) is display width only: the FILE keeps every pixel it arrived with.
  *  2 a NARROW image is left at its natural size — a 16px icon must never be blown up to 400.
- *  3 from a NESTED note the link is still ROOT-relative (`assets/images/…`, never `../../`),
+ *  3 from a NESTED page the link is still ROOT-relative (`assets/images/…`, never `../../`),
  *    which is what makes the same line resolve from anywhere in the vault — and it renders.
  *  4 inside a fenced code block a pasted image writes NOTHING and inserts NOTHING. The fence is
  *    CodeMirror's (Crepe's `CodeMirror` feature), so the guard being proved here is that the
@@ -52,23 +52,23 @@ const IMAGES_DIR = path.join('assets', 'images')
 const PASTED_IMAGE_WIDTH = 400
 
 /**
- * One note per paste so every assertion can be the note's WHOLE bytes rather than a substring —
+ * One page per paste so every assertion can be the page's WHOLE bytes rather than a substring —
  * each body line is both the editor-is-ready gate and the "nothing else moved" baseline. Already
  * in remark's normalised form, so the only diff a save can make is the inserted image line.
  */
-const NOTES = {
-  paste: { rel: 'Paste.md', body: 'paste-note-body' },
-  narrow: { rel: 'Narrow.md', body: 'narrow-note-body' },
-  nested: { rel: path.join('Guides', 'Deep', 'Nested.md'), body: 'nested-note-body' },
-  repeat: { rel: 'Repeat.md', body: 'repeat-note-body' },
+const PAGES = {
+  paste: { rel: 'Paste.md', body: 'paste-page-body' },
+  narrow: { rel: 'Narrow.md', body: 'narrow-page-body' },
+  nested: { rel: path.join('Guides', 'Deep', 'Nested.md'), body: 'nested-page-body' },
+  repeat: { rel: 'Repeat.md', body: 'repeat-page-body' },
 } as const
 
-/** The fenced-code note: CodeMirror owns this block, and a paste into it must do nothing at all. */
-const CODE_NOTE = 'Code.md'
+/** The fenced-code page: CodeMirror owns this block, and a paste into it must do nothing at all. */
+const CODE_PAGE = 'Code.md'
 const CODE_BODY = 'code-fence-body'
-const CODE_NOTE_TEXT = `\`\`\`\n${CODE_BODY}\n\`\`\`\n`
+const CODE_PAGE_TEXT = `\`\`\`\n${CODE_BODY}\n\`\`\`\n`
 
-/** `<note-with-spaces-as-dashes>-<yyyyMMdd-HHmmss>[-N].<ext>` — `insertImage.ts`'s `imageName`. */
+/** `<page-with-spaces-as-dashes>-<yyyyMMdd-HHmmss>[-N].<ext>` — `insertImage.ts`'s `imageName`. */
 const imageNameRe = (stem: string) => new RegExp(`^${stem}-(\\d{8}-\\d{6})(?:-(\\d+))?\\.png$`)
 
 let userData: string
@@ -81,8 +81,8 @@ let win: Page
 const imageViews = (w: Page) => editorOf(w).locator('.image-view')
 const readyImages = (w: Page) => editorOf(w).locator('.image-view--ready img')
 
-const noteFile = (rel: string) => path.join(vault, rel)
-const readNote = (rel: string) => readFile(noteFile(rel), 'utf8')
+const pageFile = (rel: string) => path.join(vault, rel)
+const readPageFile = (rel: string) => readFile(pageFile(rel), 'utf8')
 const listImages = async (): Promise<string[]> => (await readdir(path.join(vault, IMAGES_DIR)).catch(() => [])).sort()
 const readImageFile = (name: string) => readFile(path.join(vault, IMAGES_DIR, name))
 
@@ -93,10 +93,10 @@ test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'imgpaste-userdata-'))
   vaultSrc = await buildFixtureVault()
   vault = await copyVault(vaultSrc)
-  await mkdir(path.dirname(noteFile(NOTES.nested.rel)), { recursive: true })
+  await mkdir(path.dirname(pageFile(PAGES.nested.rel)), { recursive: true })
   await Promise.all([
-    ...Object.values(NOTES).map((n) => writeFile(noteFile(n.rel), `${n.body}\n`)),
-    writeFile(noteFile(CODE_NOTE), CODE_NOTE_TEXT),
+    ...Object.values(PAGES).map((n) => writeFile(pageFile(n.rel), `${n.body}\n`)),
+    writeFile(pageFile(CODE_PAGE), CODE_PAGE_TEXT),
   ])
 })
 
@@ -133,20 +133,20 @@ async function pressPaste(): Promise<void> {
 /** Caret on a FRESH empty paragraph under the paragraph reading `afterText` — where a paste lands. */
 async function caretOnNewBlockAfter(w: Page, afterText: string): Promise<void> {
   await editorOf(w).locator('p').filter({ hasText: afterText }).last().click()
-  // Home/End do not move the caret on macOS; ⌘→ does (see helpers.ts's caret notes).
+  // Home/End do not move the caret on macOS; ⌘→ does (see helpers.ts's caret pages).
   await w.keyboard.press('Meta+ArrowRight')
   await w.keyboard.press('Enter')
 }
 
-/** Opens a vault note by clicking its row in the Files tree — the gesture a user makes. */
-async function openNote(w: Page, rel: string, body: string): Promise<void> {
-  const row = w.locator(`.tree__row--file[data-path="${noteFile(rel)}"]`)
+/** Opens a vault page by clicking its row in the Files tree — the gesture a user makes. */
+async function openPage(w: Page, rel: string, body: string): Promise<void> {
+  const row = w.locator(`.tree__row--file[data-path="${pageFile(rel)}"]`)
   await expect(row).toBeVisible()
   await row.click()
   await expect(editorOf(w)).toContainText(body)
 }
 
-/** How many files in `IMAGES_DIR` were named after the note `stem` — pollable while a write lands. */
+/** How many files in `IMAGES_DIR` were named after the page `stem` — pollable while a write lands. */
 const countImagesFor = async (stem: string): Promise<number> => (await listImages()).filter((n) => imageNameRe(stem).test(n)).length
 
 /** The PNGs in `IMAGES_DIR` named after `stem`, asserted to be exactly `expected` of them. */
@@ -157,13 +157,13 @@ async function imagesFor(stem: string, expected: number): Promise<string[]> {
 }
 
 test('step 1 — a wide screenshot pastes into a FILE plus one root-relative line carrying |400', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, noteFile(NOTES.paste.rel)) })
+  app = await launchApp({ userData, seedState: seededState(vault, pageFile(PAGES.paste.rel)) })
   win = await appWindow(app, 'w1')
-  await expect(editorOf(win)).toContainText(NOTES.paste.body)
+  await expect(editorOf(win)).toContainText(PAGES.paste.body)
   // The images home is made by the first write, never scaffolded.
   expect(await listImages()).toEqual([])
 
-  await caretOnNewBlockAfter(win, NOTES.paste.body)
+  await caretOnNewBlockAfter(win, PAGES.paste.body)
   await putImageOnClipboard(WIDE_PNG)
   await pressPaste()
 
@@ -175,11 +175,11 @@ test('step 1 — a wide screenshot pastes into a FILE plus one root-relative lin
   // Full resolution on disk: `|400` is a DISPLAY width, and `writeImage` never re-encodes.
   expect(pngSize(written)).toEqual({ width: WIDE_WIDTH, height: WIDE_HEIGHT })
 
-  // --- the note ---
+  // --- the page ---
   const stem = name.slice(0, -'.png'.length)
   await expect
-    .poll(() => readNote(NOTES.paste.rel))
-    .toBe(`${NOTES.paste.body}\n\n![${stem}|${PASTED_IMAGE_WIDTH}](${IMAGES_DIR}/${name})\n`)
+    .poll(() => readPageFile(PAGES.paste.rel))
+    .toBe(`${PAGES.paste.body}\n\n![${stem}|${PASTED_IMAGE_WIDTH}](${IMAGES_DIR}/${name})\n`)
 
   // --- the page ---
   await expect(imageViews(win)).toHaveCount(1)
@@ -190,8 +190,8 @@ test('step 1 — a wide screenshot pastes into a FILE plus one root-relative lin
 })
 
 test('step 2 — a narrow image keeps its natural size: no |400 anywhere in the line', async () => {
-  await openNote(win, NOTES.narrow.rel, NOTES.narrow.body)
-  await caretOnNewBlockAfter(win, NOTES.narrow.body)
+  await openPage(win, PAGES.narrow.rel, PAGES.narrow.body)
+  await caretOnNewBlockAfter(win, PAGES.narrow.body)
   await putImageOnClipboard(NARROW_PNG)
   await pressPaste()
 
@@ -200,18 +200,18 @@ test('step 2 — a narrow image keeps its natural size: no |400 anywhere in the 
   expect(pngSize(await readImageFile(name))).toEqual({ width: NARROW_WIDTH, height: NARROW_HEIGHT })
 
   const stem = name.slice(0, -'.png'.length)
-  await expect.poll(() => readNote(NOTES.narrow.rel)).toBe(`${NOTES.narrow.body}\n\n![${stem}](${IMAGES_DIR}/${name})\n`)
-  expect(await readNote(NOTES.narrow.rel)).not.toContain('|')
+  await expect.poll(() => readPageFile(PAGES.narrow.rel)).toBe(`${PAGES.narrow.body}\n\n![${stem}](${IMAGES_DIR}/${name})\n`)
+  expect(await readPageFile(PAGES.narrow.rel)).not.toContain('|')
 
   await expect(readyImages(win)).toHaveCount(1)
   await expect.poll(() => naturalWidthOf(readyImages(win).first())).toBe(NARROW_WIDTH)
   await shoot(win, 'imagePaste-02-narrow-natural-size')
 })
 
-test('step 3 — from a NESTED note the link is still root-relative, and it renders', async () => {
+test('step 3 — from a NESTED page the link is still root-relative, and it renders', async () => {
   await expandDirs(win, [path.join(vault, 'Guides'), path.join(vault, 'Guides', 'Deep')])
-  await openNote(win, NOTES.nested.rel, NOTES.nested.body)
-  await caretOnNewBlockAfter(win, NOTES.nested.body)
+  await openPage(win, PAGES.nested.rel, PAGES.nested.body)
+  await caretOnNewBlockAfter(win, PAGES.nested.body)
   await putImageOnClipboard(WIDE_PNG)
   await pressPaste()
 
@@ -219,13 +219,13 @@ test('step 3 — from a NESTED note the link is still root-relative, and it rend
   const [name] = await imagesFor('Nested', 1)
   const stem = name.slice(0, -'.png'.length)
   await expect
-    .poll(() => readNote(NOTES.nested.rel))
-    .toBe(`${NOTES.nested.body}\n\n![${stem}|${PASTED_IMAGE_WIDTH}](${IMAGES_DIR}/${name})\n`)
-  const body = await readNote(NOTES.nested.rel)
-  // 🔒 ROOT-relative, from three levels down: never `../`, never the note's own directory.
+    .poll(() => readPageFile(PAGES.nested.rel))
+    .toBe(`${PAGES.nested.body}\n\n![${stem}|${PASTED_IMAGE_WIDTH}](${IMAGES_DIR}/${name})\n`)
+  const body = await readPageFile(PAGES.nested.rel)
+  // 🔒 ROOT-relative, from three levels down: never `../`, never the page's own directory.
   expect(body).toContain(`](${IMAGES_DIR}/`)
   expect(body).not.toContain('../')
-  // And main resolves it: root-relative is resolution step 2, after note-relative.
+  // And main resolves it: root-relative is resolution step 2, after page-relative.
   await expect(readyImages(win)).toHaveCount(1)
   await expect.poll(() => naturalWidthOf(readyImages(win).first())).toBe(WIDE_WIDTH)
   await shoot(win, 'imagePaste-03-nested-root-relative')
@@ -233,7 +233,7 @@ test('step 3 — from a NESTED note the link is still root-relative, and it rend
 
 test('step 4 — pasted inside a fenced code block: no file, no node, not one byte moved', async () => {
   const filesBefore = await listImages()
-  await openNote(win, CODE_NOTE, CODE_BODY)
+  await openPage(win, CODE_PAGE, CODE_BODY)
   // The fence is a CodeMirror node view; clicking its text is how the caret gets inside it.
   const fence = layer(win).locator('.cm-content')
   await expect(fence).toContainText(CODE_BODY)
@@ -247,12 +247,12 @@ test('step 4 — pasted inside a fenced code block: no file, no node, not one by
   await expect(imageViews(win)).toHaveCount(0)
   expect(await listImages()).toEqual(filesBefore)
   await expect(fence).toContainText(CODE_BODY)
-  expect(await readNote(CODE_NOTE)).toBe(CODE_NOTE_TEXT)
+  expect(await readPageFile(CODE_PAGE)).toBe(CODE_PAGE_TEXT)
 })
 
 test('step 5 — the same image pasted three times is THREE files; create-only never overwrites', async () => {
-  await openNote(win, NOTES.repeat.rel, NOTES.repeat.body)
-  await caretOnNewBlockAfter(win, NOTES.repeat.body)
+  await openPage(win, PAGES.repeat.rel, PAGES.repeat.body)
+  await caretOnNewBlockAfter(win, PAGES.repeat.body)
   for (let i = 0; i < 3; i++) {
     await putImageOnClipboard(WIDE_PNG)
     await pressPaste()
@@ -289,27 +289,27 @@ test('step 5 — the same image pasted three times is THREE files; create-only n
 })
 
 test('step 6 — it survives the app, and a no-op re-save leaves the markdown byte-identical', async () => {
-  const before = await readNote(NOTES.paste.rel)
+  const before = await readPageFile(PAGES.paste.rel)
   await quitApp(app) // the REAL quit path: pending autosaves and the state write are flushed
 
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
   win = await appWindow(app, 'w1')
-  await openNote(win, NOTES.paste.rel, NOTES.paste.body)
+  await openPage(win, PAGES.paste.rel, PAGES.paste.body)
 
   // Read COLD off disk: the file, the line and the protocol all still agree.
   await expect(readyImages(win)).toHaveCount(1)
   await expect.poll(() => naturalWidthOf(readyImages(win).first())).toBe(WIDE_WIDTH)
-  expect(await readNote(NOTES.paste.rel)).toBe(before)
+  expect(await readPageFile(PAGES.paste.rel)).toBe(before)
   await shoot(win, 'imagePaste-06-survives-relaunch')
 
   // A full save cycle with no net edit: type a character, watch it reach disk (which is the
   // proof autosave actually RAN), delete it, and the file must come back to the same bytes —
   // no `|400` drift, no src re-encoding, no image node round-tripping into something else.
-  await editorOf(win).locator('p').filter({ hasText: NOTES.paste.body }).last().click()
+  await editorOf(win).locator('p').filter({ hasText: PAGES.paste.body }).last().click()
   await win.keyboard.press('Meta+ArrowRight')
   await win.keyboard.type('Z', { delay: 15 })
-  await expect.poll(() => readNote(NOTES.paste.rel), { timeout: 10_000 }).toContain(`${NOTES.paste.body}Z`)
+  await expect.poll(() => readPageFile(PAGES.paste.rel), { timeout: 10_000 }).toContain(`${PAGES.paste.body}Z`)
   await win.keyboard.press('Backspace')
-  await expect.poll(() => readNote(NOTES.paste.rel), { timeout: 10_000 }).toBe(before)
+  await expect.poll(() => readPageFile(PAGES.paste.rel), { timeout: 10_000 }).toBe(before)
   await shoot(win, 'imagePaste-07-byte-identical-resave')
 })

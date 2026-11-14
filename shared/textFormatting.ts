@@ -4,7 +4,7 @@ import { HEADING_HIGHLIGHTS, HEADING_KEYS, HEADING_SIZE_MAX, HEADING_SIZE_MIN, t
 
 /**
  * A vault's text formatting (YAZ-3066, decisions D10 and D14 on YAZ-3048): how normal text and each
- * heading level look in every note of ONE vault. It lives in `<vault>/.yaseendocs/text-formatting.json`
+ * heading level look in every page of ONE vault. It lives in `<vault>/.yaseendocs/text-formatting.json`
  * and goes through the generic `vaultConfig` door, the pattern of `review.json`, so GitHub sync
  * carries it to the other Macs. Pure: no React, no fs.
  *

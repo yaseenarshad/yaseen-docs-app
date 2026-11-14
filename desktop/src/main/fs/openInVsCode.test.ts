@@ -2,7 +2,7 @@
  * Open in VS Code (YAZ-963) — `reveal.test.ts`'s mirror, same load-bearing case: without the
  * stat, a stale row's `openExternal` would fire a dead `vscode://` URL and the menu item would
  * look broken. The URL is the OS deep-link (`vscode://file/<path>`), every segment encoded so a
- * space in a note name survives the trip.
+ * space in a page name survives the trip.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { writeFile } from 'node:fs/promises'
@@ -18,7 +18,7 @@ let root: string
 let cleanup: () => Promise<void>
 beforeAll(async () => {
   ;({ root, cleanup } = await makeFixture())
-  await writeFile(path.join(root, 'My Note.md'), 'has a space')
+  await writeFile(path.join(root, 'My Page.md'), 'has a space')
 })
 afterAll(() => cleanup())
 
@@ -35,9 +35,9 @@ describe('openInVsCode (YAZ-963)', () => {
   })
 
   it('a space in the name is percent-encoded — the URL survives, the file opens', async () => {
-    const p = path.join(root, 'My Note.md')
+    const p = path.join(root, 'My Page.md')
     expect(await openInVsCode({ path: p })).toEqual({ path: p })
-    expect(open).toHaveBeenCalledExactlyOnceWith(`vscode://file${path.join(root, 'My%20Note.md')}`)
+    expect(open).toHaveBeenCalledExactlyOnceWith(`vscode://file${path.join(root, 'My%20Page.md')}`)
   })
 
   it('opens a FOLDER the same way — VS Code decides what a folder means, not this menu', async () => {
@@ -57,7 +57,7 @@ describe('openInVsCode (YAZ-963)', () => {
   })
 
   it('opens a non-vault file and a dot-entry: read-only posture, no gates (reveal parity)', async () => {
-    const txt = path.join(root, 'notes.txt')
+    const txt = path.join(root, 'pages.txt')
     expect(await openInVsCode({ path: txt })).toEqual({ path: txt })
     const dot = path.join(root, '.obsidian')
     expect(await openInVsCode({ path: dot })).toEqual({ path: dot })

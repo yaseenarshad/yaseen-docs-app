@@ -21,14 +21,14 @@ interface ConfirmDeleteColumnProps {
   folderName: string
   /** `FolderHost.valueCount`: asked ONCE, when the sheet opens. */
   count: (key: string) => number
-  /** `clear`: the main button, the values go too; false: "Keep the values in the notes". */
+  /** `clear`: the main button, the values go too; false: "Keep the values in the pages". */
   onConfirm: (clear: boolean) => void
   onCancel: () => void
 }
 
 /**
  * Confirm-first for "Delete column…" (YAZ-1513), on `ConfirmSheet`. YAZ-4713 C7: the main button, `--danger` because
- * notes ARE rewritten, is "Delete column and clear N values"; "Keep the values in the notes" removes only the column.
+ * pages ARE rewritten, is "Delete column and clear N values"; "Keep the values in the pages" removes only the column.
  * With no value to clear, the one button is "Delete column". Its keys and click-away stay inside it
  * (`keys="contained"`), so a Popover hosting this sheet does not see the same Escape and close underneath it.
  */
@@ -48,7 +48,7 @@ export function ConfirmDeleteColumn({ columnKey, def, folderName, count, onConfi
       other={
         holding > 0 && (
           <button type="button" className="confirm__btn confirm__btn--other" onClick={() => onConfirm(false)}>
-            Keep the values in the notes
+            Keep the values in the pages
           </button>
         )
       }

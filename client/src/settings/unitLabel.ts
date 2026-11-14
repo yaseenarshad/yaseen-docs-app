@@ -1,4 +1,4 @@
-/** The vault's word for a note in a Settings label (YAZ-4938): `label: (ctx) => unit(ctx, 'New notes are in review')`. "note" with no vault open. */
+/** The vault's word for a page in a Settings label (YAZ-4938): `label: (ctx) => unit(ctx, 'New pages are in review')`. "page" with no vault open. */
 import { SAME_WORD } from '../vault/unitWord'
 import type { SettingsCtx } from './registry'
 

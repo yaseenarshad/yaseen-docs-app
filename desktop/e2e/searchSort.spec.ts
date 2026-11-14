@@ -1,7 +1,7 @@
 /**
  * SEARCH SORT, DATES AND FILTERS, END TO END (YAZ-3511): the sort button of the tab row on the Search tab, its menu
  * with Best match (the default), "Show last updated" and the Type and Time filters, the search tree under each sort,
- * each row's date from the real file times, a note written on disk taking "now" at once (D2), a filter that resets
+ * each row's date from the real file times, a page written on disk taking "now" at once (D2), a filter that resets
  * when the bar is empty (D15), and — the claim only the real app can make — `settings.searchSort` and
  * `settings.rowDates` kept across a quit and a relaunch while the Files sort and its date switch stay their own (D1, D10).
  *
@@ -49,7 +49,7 @@ async function filter(parent: string, label: string): Promise<void> {
 }
 
 /** A file with its modified time `minutes` ago. */
-async function note(rel: string, minutes: number): Promise<void> {
+async function page(rel: string, minutes: number): Promise<void> {
   const file = path.join(vault, rel)
   await mkdir(path.dirname(file), { recursive: true })
   await writeFile(file, rel.endsWith('.md') ? `# ${path.basename(rel, '.md')}\n` : 'x')
@@ -68,14 +68,14 @@ const ALL = ['plan', 'plan new', 'plan scan.pdf', 'Plans', 'plan b', 'plan 10', 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'search-sort-userdata-'))
   vault = await mkdtemp(path.join(tmpdir(), 'search-sort-vault-'))
-  await note('plan.md', 60 * 24 * 30)
-  await note('Plans/plan b.md', 60 * 3)
-  await note('Plans/plan 10.md', 60 * 24 * 2)
-  await note('plan old.md', 60 * 24 * 400)
-  await note('plan new.md', 5)
-  await note('plan scan.pdf', 60 * 2)
-  await note('Project plan.md', 1)
-  await note('Other/notes.md', 60)
+  await page('plan.md', 60 * 24 * 30)
+  await page('Plans/plan b.md', 60 * 3)
+  await page('Plans/plan 10.md', 60 * 24 * 2)
+  await page('plan old.md', 60 * 24 * 400)
+  await page('plan new.md', 5)
+  await page('plan scan.pdf', 60 * 2)
+  await page('Project plan.md', 1)
+  await page('Other/pages.md', 60)
 })
 
 test.afterAll(async () => {
@@ -103,13 +103,13 @@ test('step 2 — Name sorts folders first, numbers in number order; Last updated
   await shoot(win, 'search-sort-02-last-updated')
 })
 
-test('step 3 — a note written on disk reads "now" and moves up at once (D2)', async () => {
+test('step 3 — a page written on disk reads "now" and moves up at once (D2)', async () => {
   await writeFile(path.join(vault, 'plan old.md'), '# plan old\n\nEdited.\n')
   await expect(labels(win)).toHaveText(['Plans', 'plan b', 'plan 10', 'plan old', 'Project plan', 'plan new', 'plan scan.pdf', 'plan'])
   await expect.poll(() => dated(win)).toContain('plan old now')
 })
 
-test('step 4 — Type ▸ PDFs keeps the PDF; Markdown keeps the notes and their folder; the sort button says a filter is on (D13, D17)', async () => {
+test('step 4 — Type ▸ PDFs keeps the PDF; Markdown keeps the pages and their folder; the sort button says a filter is on (D13, D17)', async () => {
   // The Type list: each type with the tree's own icon for its kind (D13).
   await sortButton(win).click()
   await menuItem(win, 'Type').click()
@@ -122,7 +122,7 @@ test('step 4 — Type ▸ PDFs keeps the PDF; Markdown keeps the notes and their
   await expect(sortButton(win)).toHaveClass(/sidebar__sort--filtered/)
   await filter('Type', 'Markdown')
   await expect(labels(win)).toHaveText(['Plans', 'plan b', 'plan 10', 'plan old', 'Project plan', 'plan new', 'plan'])
-  await shoot(win, 'search-sort-04-notes')
+  await shoot(win, 'search-sort-04-pages')
 })
 
 test('step 5 — Time ▸ Today keeps what changed today; an empty bar resets both filters (D14, D15)', async () => {

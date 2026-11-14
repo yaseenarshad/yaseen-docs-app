@@ -90,7 +90,7 @@ describe('useViewOnlyCatalog (YAZ-1310)', () => {
     for (const event of [
       { type: 'change', path: '/vault/data.json', mtime: 2 },
       { type: 'change', path: '/vault/photo.png', mtime: 2 },
-      { type: 'add', path: '/vault/Note.md', mtime: 2 },
+      { type: 'add', path: '/vault/Page.md', mtime: 2 },
       { type: 'unlink', path: '/vault/vector.svg' },
       { type: 'error', message: 'nope' },
     ] satisfies WatchEvent[]) await emit(event)

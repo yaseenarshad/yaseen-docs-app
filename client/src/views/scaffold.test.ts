@@ -1,13 +1,13 @@
 /**
- * A note is born from its folder's template and what the seed makes of it (YAZ-2290 E1/E3), in
+ * A page is born from its folder's template and what the seed makes of it (YAZ-2290 E1/E3), in
  * one atomic content-at-create call (GRO-2202). `api` mocked like writeProperty.test.ts.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { parseFrontmatter } from '@shared/frontmatter'
-import { isNoteId } from '@shared/noteId'
+import { isPageId } from '@shared/pageId'
 import type { IndexRecord } from '@shared/types'
-import { testDoor } from '../testNoteIds'
-import { createNote, ensureFolder, folderPath, takeNoteId } from './scaffold'
+import { testDoor } from '../testPageIds'
+import { createPage, ensureFolder, folderPath, takePageId } from './scaffold'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -17,7 +17,7 @@ vi.mock('../api', async (importOriginal) => ({
     writeFile: vi.fn(),
     createDir: vi.fn(),
     index: vi.fn(),
-    mintNoteId: vi.fn(),
+    mintPageId: vi.fn(),
   },
 }))
 
@@ -26,7 +26,7 @@ import { api, BridgeRequestError } from '../api'
 const readFile = vi.mocked(api.readFile)
 const createFile = vi.mocked(api.createFile)
 const createDir = vi.mocked(api.createDir)
-const mintNoteId = vi.mocked(api.mintNoteId)
+const mintPageId = vi.mocked(api.mintPageId)
 
 const notFound = () => new BridgeRequestError('NOT_FOUND', 'path does not exist')
 const alreadyExists = () => new BridgeRequestError('ALREADY_EXISTS', 'path already exists')
@@ -38,74 +38,74 @@ const held = (...folders: Array<[folder: string, title: string]>): IndexRecord[]
 beforeEach(() => {
   vi.clearAllMocks()
   // The door in the main process (YAZ-2677 D4): the vault's next number, 1 first.
-  mintNoteId.mockImplementation(testDoor())
+  mintPageId.mockImplementation(testDoor())
 })
 
 const ID = 'YAZ-12'
 /** The id as a file name holds it (YAZ-2677 R8). */
 const NAME = 'yaz-12'
 
-describe('createNote (YAZ-2290 E1/E3)', () => {
-  it('B: a note titled `UP-001 - Abdul Sample R` is `up-001-abdul-sample-r-<id>.md`, born with that id and its `title`; its path is what comes back (YAZ-2420 D20)', async () => {
+describe('createPage (YAZ-2290 E1/E3)', () => {
+  it('B: a page titled `UP-001 - Abdul Sample R` is `up-001-abdul-sample-r-<id>.md`, born with that id and its `title`; its path is what comes back (YAZ-2420 D20)', async () => {
     readFile.mockRejectedValue(notFound())
 
-    await expect(createNote('/v/Projects', 'UP-001 - Abdul Sample R', true, undefined, ID)).resolves.toBe(`/v/Projects/up-001-abdul-sample-r-${NAME}.md`)
+    await expect(createPage('/v/Projects', 'UP-001 - Abdul Sample R', true, undefined, ID)).resolves.toBe(`/v/Projects/up-001-abdul-sample-r-${NAME}.md`)
 
     expect(createFile.mock.calls).toEqual([[{ path: `/v/Projects/up-001-abdul-sample-r-${NAME}.md`, content: '---\ntitle: UP-001 - Abdul Sample R\n---\n', id: ID }]])
   })
 
-  it('B, S14: with no id handed in, the next number is taken from the door, for the folder the note is made in, and is the id in the name; two notes of one title are two files (YAZ-2420 D20, YAZ-2677 D4)', async () => {
+  it('B, S14: with no id handed in, the next number is taken from the door, for the folder the page is made in, and is the id in the name; two pages of one title are two files (YAZ-2420 D20, YAZ-2677 D4)', async () => {
     readFile.mockRejectedValue(notFound())
 
-    const [a, b] = [await createNote('/v/Projects', 'Untitled', true), await createNote('/v/Projects', 'Untitled', true)]
+    const [a, b] = [await createPage('/v/Projects', 'Untitled', true), await createPage('/v/Projects', 'Untitled', true)]
 
-    expect(mintNoteId.mock.calls).toEqual([['/v/Projects'], ['/v/Projects']])
+    expect(mintPageId.mock.calls).toEqual([['/v/Projects'], ['/v/Projects']])
     const ids = createFile.mock.calls.map((c) => (c[0] as { id: string }).id)
     expect(ids).toEqual(['YAZ-1', 'YAZ-2'])
-    expect(ids.every(isNoteId)).toBe(true)
+    expect(ids.every(isPageId)).toBe(true)
     expect([a, b]).toEqual(['/v/Projects/untitled-yaz-1.md', '/v/Projects/untitled-yaz-2.md'])
   })
 
   it('an id that was handed in is used as it is: the door is not asked a second time', async () => {
     readFile.mockRejectedValue(notFound())
-    await createNote('/v/Projects', 'A', true, undefined, ID)
-    expect(mintNoteId).not.toHaveBeenCalled()
+    await createPage('/v/Projects', 'A', true, undefined, ID)
+    expect(mintPageId).not.toHaveBeenCalled()
   })
 
-  it('R18: the number is taken before the note is made, and after the template was read: a template that cannot be read costs no number', async () => {
+  it('R18: the number is taken before the page is made, and after the template was read: a template that cannot be read costs no number', async () => {
     const order: string[] = []
     readFile.mockImplementation(async () => {
       order.push('template')
       throw notFound()
     })
-    mintNoteId.mockImplementation(async () => (order.push('number'), 'YAZ-7'))
+    mintPageId.mockImplementation(async () => (order.push('number'), 'YAZ-7'))
     createFile.mockImplementation(async (req) => (order.push('create'), { path: (req as { path: string }).path, mtime: 1, size: 0 }))
-    await createNote('/v/Projects', 'A', true)
+    await createPage('/v/Projects', 'A', true)
     expect(order).toEqual(['template', 'number', 'create'])
   })
 
   it('the vault does not use IDs after all (the door answers null): the create is refused, and nothing is made', async () => {
     readFile.mockRejectedValue(notFound())
-    mintNoteId.mockResolvedValue(null)
-    await expect(createNote('/v/Projects', 'A', true)).rejects.toThrow('this vault does not use IDs')
-    await expect(takeNoteId('/v/Projects')).rejects.toThrow('this vault does not use IDs')
+    mintPageId.mockResolvedValue(null)
+    await expect(createPage('/v/Projects', 'A', true)).rejects.toThrow('this vault does not use IDs')
+    await expect(takePageId('/v/Projects')).rejects.toThrow('this vault does not use IDs')
     expect(createFile).not.toHaveBeenCalled()
   })
 
-  it('S31: a create that the disk refuses leaves its number a gap: the next note gets the next number', async () => {
+  it('S31: a create that the disk refuses leaves its number a gap: the next page gets the next number', async () => {
     readFile.mockRejectedValue(notFound())
     createFile.mockRejectedValueOnce(new BridgeRequestError('ALREADY_EXISTS', 'path already exists'))
-    await expect(createNote('/v/Projects', 'A', true)).rejects.toThrow('path already exists')
+    await expect(createPage('/v/Projects', 'A', true)).rejects.toThrow('path already exists')
     createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
-    await expect(createNote('/v/Projects', 'A', true)).resolves.toBe('/v/Projects/a-yaz-2.md')
+    await expect(createPage('/v/Projects', 'A', true)).resolves.toBe('/v/Projects/a-yaz-2.md')
   })
 
   it('B: a title is free text, `/`, `:`, `?` and quotes included; one with no letter or digit is named by the id alone (YAZ-2420 D20)', async () => {
     readFile.mockRejectedValue(notFound())
     const title = 'Q3/Q4: "what" now?'
 
-    await expect(createNote('/v', title, true, undefined, ID)).resolves.toBe(`/v/q3-q4-what-now-${NAME}.md`)
-    await expect(createNote('/v', '—', true, undefined, ID)).resolves.toBe(`/v/${NAME}.md`)
+    await expect(createPage('/v', title, true, undefined, ID)).resolves.toBe(`/v/q3-q4-what-now-${NAME}.md`)
+    await expect(createPage('/v', '—', true, undefined, ID)).resolves.toBe(`/v/${NAME}.md`)
 
     expect(createFile.mock.calls.map((c) => parseFrontmatter((c[0] as { content: string }).content).properties)).toEqual([{ title }, { title: '—' }])
   })
@@ -113,90 +113,90 @@ describe('createNote (YAZ-2290 E1/E3)', () => {
   it('no template: the seed and the title alone — no column is stamped', async () => {
     readFile.mockRejectedValue(notFound())
 
-    await createNote('/v/Projects', 'A', true, (template) => ({ ...template, status: '2-Todo' }), ID)
+    await createPage('/v/Projects', 'A', true, (template) => ({ ...template, status: '2-Todo' }), ID)
 
     expect(readFile).toHaveBeenCalledWith('/v/Projects/.template.md') // hidden, in the folder itself
     expect(createFile.mock.calls).toEqual([[{ path: `/v/Projects/a-${NAME}.md`, content: '---\nstatus: 2-Todo\ntitle: A\n---\n', id: ID }]])
     expect(api.writeFile).not.toHaveBeenCalled() // ONE atomic create, never a follow-up write
   })
 
-  it('the template gives its frontmatter and body; the seed is handed its properties and what it returns is the note’s', async () => {
-    readFile.mockResolvedValue({ path: '/v/Projects/.template.md', content: '---\nowner: me\nstatus: 1-Backlog\n---\n## Notes\n', mtime: 1, size: 1 })
+  it('the template gives its frontmatter and body; the seed is handed its properties and what it returns is the page’s', async () => {
+    readFile.mockResolvedValue({ path: '/v/Projects/.template.md', content: '---\nowner: me\nstatus: 1-Backlog\n---\n## Pages\n', mtime: 1, size: 1 })
 
-    await createNote('/v/Projects', 'A', true, (template) => ({ ...template, status: '2-Todo' }), ID)
-    await createNote('/v/Projects', 'B', true, undefined, ID)
+    await createPage('/v/Projects', 'A', true, (template) => ({ ...template, status: '2-Todo' }), ID)
+    await createPage('/v/Projects', 'B', true, undefined, ID)
 
     expect(createFile.mock.calls.map((c) => (c[0] as { content: string }).content)).toEqual([
-      '---\nowner: me\nstatus: 2-Todo\ntitle: A\n---\n## Notes\n',
-      '---\nowner: me\nstatus: 1-Backlog\ntitle: B\n---\n## Notes\n', // no seed: the template as written
+      '---\nowner: me\nstatus: 2-Todo\ntitle: A\n---\n## Pages\n',
+      '---\nowner: me\nstatus: 1-Backlog\ntitle: B\n---\n## Pages\n', // no seed: the template as written
     ])
   })
 
   it('B: in a folder with a `.template.md`, the template’s properties come first and the typed title replaces its `title` (YAZ-2420 D20)', async () => {
     readFile.mockResolvedValue({ path: '/v/Projects/.template.md', content: '---\ntitle: Template\nstatus: 1-Backlog\n---\n', mtime: 1, size: 1 })
 
-    await createNote('/v/Projects', 'Typed', true, (template) => ({ ...template, title: 'Seeded' }), ID)
+    await createPage('/v/Projects', 'Typed', true, (template) => ({ ...template, title: 'Seeded' }), ID)
 
     expect(createFile.mock.calls).toEqual([[{ path: `/v/Projects/typed-${NAME}.md`, content: '---\ntitle: Typed\nstatus: 1-Backlog\n---\n', id: ID }]])
   })
 
   it('a read failure other than a missing template, and a create failure, propagate', async () => {
     readFile.mockRejectedValueOnce(new BridgeRequestError('FORBIDDEN', 'permission denied'))
-    await expect(createNote('/v/Projects', 'A', true)).rejects.toThrow('permission denied')
+    await expect(createPage('/v/Projects', 'A', true)).rejects.toThrow('permission denied')
     expect(createFile).not.toHaveBeenCalled()
-    expect(mintNoteId).not.toHaveBeenCalled()
+    expect(mintPageId).not.toHaveBeenCalled()
 
     readFile.mockRejectedValue(notFound())
     createFile.mockRejectedValue(new Error('parent folder does not exist'))
-    await expect(createNote('/v/Projects', 'A', true)).rejects.toThrow('parent folder does not exist')
+    await expect(createPage('/v/Projects', 'A', true)).rejects.toThrow('parent folder does not exist')
   })
 })
 
-// The ID vault's half of each row is `createNote (YAZ-2290 E1/E3)`, above.
-describe('createNote in a vault that does not use IDs (YAZ-2523 V3)', () => {
+// The ID vault's half of each row is `createPage (YAZ-2290 E1/E3)`, above.
+describe('createPage in a vault that does not use IDs (YAZ-2523 V3)', () => {
   beforeEach(() => {
     createFile.mockResolvedValue({ path: '', mtime: 1, size: 0 })
   })
 
-  it('a note named `Meeting notes` is `Meeting notes.md`, empty: no id is made, and no `title` or `id` is sent', async () => {
+  it('a page named `Meeting pages` is `Meeting pages.md`, empty: no id is made, and no `title` or `id` is sent', async () => {
     readFile.mockRejectedValue(notFound())
 
-    await expect(createNote('/v/Projects', 'Meeting notes', false)).resolves.toBe('/v/Projects/Meeting notes.md')
+    await expect(createPage('/v/Projects', 'Meeting pages', false)).resolves.toBe('/v/Projects/Meeting pages.md')
 
-    expect(createFile.mock.calls).toEqual([[{ path: '/v/Projects/Meeting notes.md', content: '' }]])
+    expect(createFile.mock.calls).toEqual([[{ path: '/v/Projects/Meeting pages.md', content: '' }]])
   })
 
   it('a name typed with its `.md` is that file, not `Name.md.md`', async () => {
     readFile.mockRejectedValue(notFound())
 
-    await expect(createNote('/v', 'README.md', false)).resolves.toBe('/v/README.md')
+    await expect(createPage('/v', 'README.md', false)).resolves.toBe('/v/README.md')
   })
 
-  it('the folder\u2019s `.template.md` is the note as it is, comments and its own `title` and `id` lines included', async () => {
-    const template = '---\n# who owns it\nowner: me\ntitle: Template\nid: k3m9x2pq7abc\n---\n## Notes\n'
+  it('the folder\u2019s `.template.md` is the page as it is, comments and its own `title` and `id` lines included', async () => {
+    const template = '---\n# who owns it\nowner: me\ntitle: Template\nid: k3m9x2pq7abc\n---\n## Pages\n'
     readFile.mockResolvedValue({ path: '/v/Projects/.template.md', content: template, mtime: 1, size: 1 })
 
-    await createNote('/v/Projects', 'A', false)
+    await createPage('/v/Projects', 'A', false)
 
     expect(createFile.mock.calls).toEqual([[{ path: '/v/Projects/A.md', content: template }]])
   })
 
   it('a seed is applied to the template\u2019s properties, and no `title` is added to what it returns', async () => {
-    readFile.mockResolvedValueOnce({ path: '/v/Projects/.template.md', content: '---\nowner: me\nstatus: 1-Backlog\n---\n## Notes\n', mtime: 1, size: 1 })
+    readFile.mockResolvedValueOnce({ path: '/v/Projects/.template.md', content: '---\nowner: me\nstatus: 1-Backlog\n---\n## Pages\n', mtime: 1, size: 1 })
     readFile.mockRejectedValue(notFound())
 
-    await createNote('/v/Projects', 'A', false, (template) => ({ ...template, status: '2-Todo' }))
-    await createNote('/v/Projects', 'B', false, (template) => template)
+    await createPage('/v/Projects', 'A', false, (template) => ({ ...template, status: '2-Todo' }))
+    await createPage('/v/Projects', 'B', false, (template) => template)
 
     expect(createFile.mock.calls).toEqual([
-      [{ path: '/v/Projects/A.md', content: '---\nowner: me\nstatus: 2-Todo\n---\n## Notes\n' }],
+      [{ path: '/v/Projects/A.md', content: '---\nowner: me\nstatus: 2-Todo\n---\n## Pages\n' }],
       [{ path: '/v/Projects/B.md', content: '' }],
     ])
   })
 
   it('a name a file cannot hold is refused with the reason, before anything is read or made', async () => {
-    await expect(createNote('/v', 'Q3/Q4', false)).rejects.toThrow('Name cannot contain "/"')
-    await expect(createNote('/v', '.hidden', false)).rejects.toThrow('Names starting with "." are hidden')
+    await expect(createPage('/v', 'Q3/Q4', false)).rejects.toThrow('Name cannot contain "/"')
+    await expect(createPage('/v', '.hidden', false)).rejects.toThrow('Names starting with "." are hidden')
     expect(readFile).not.toHaveBeenCalled()
     expect(createFile).not.toHaveBeenCalled()
   })
@@ -204,7 +204,7 @@ describe('createNote in a vault that does not use IDs (YAZ-2523 V3)', () => {
   it('a name that is taken is refused as the bridge refuses it', async () => {
     readFile.mockRejectedValue(notFound())
     createFile.mockRejectedValue(alreadyExists())
-    await expect(createNote('/v', 'Taken', false)).rejects.toThrow('path already exists')
+    await expect(createPage('/v', 'Taken', false)).rejects.toThrow('path already exists')
   })
 })
 

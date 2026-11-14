@@ -1,14 +1,14 @@
-/* The table of contents (YAZ-2700): a note's rows — its headings, or its bullets — at its right
+/* The table of contents (YAZ-2700): a page's rows — its headings, or its bullets — at its right
    edge: TableOfContents.tsx.
 
    It is CHROME, like the find bar: a sibling of the scroller inside `section.editor` (the
-   positioned ancestor), so it holds its place while the note scrolls under it and the document
+   positioned ancestor), so it holds its place while the page scrolls under it and the document
    zoom (`--document-zoom`, on the scroller's content) never reaches it. The component sets `top`
    to where the scroller starts — below the status chips, and a conflict bar when there is one —
    `--toc-height` to the scroller's height and `--toc-gutter` to the width of the scroller's own
    scrollbar (0 when the system overlays it). Colours are app.css's tokens, so both themes follow.
 
-   ONE scrollbar: the note's. The lists here scroll (the wheel, the arrow keys, and they follow the
+   ONE scrollbar: the page's. The lists here scroll (the wheel, the arrow keys, and they follow the
    current row by themselves) but show no bar of their own — a soft fade at an edge says there
    is more behind it. */
 :root {
@@ -32,14 +32,14 @@
   initial-value: transparent;
 }
 
-/* LINES is the default look: the nav spans the note but takes no pointer, so the text under it
+/* LINES is the default look: the nav spans the page but takes no pointer, so the text under it
    stays the text. Only the rail and the card (`.toc__hover`) answer the mouse. */
 .toc {
   position: absolute;
   right: 0;
   bottom: 0;
   left: 0;
-  /* Above the note, BELOW the status chips (app.css `.status-chips`): their menus — the page cog's, the
+  /* Above the page, BELOW the status chips (app.css `.status-chips`): their menus — the page cog's, the
      zoom pill's — drop down over this corner. At the same level this element, the later sibling,
      would be drawn over an open menu. */
   z-index: 1;
@@ -51,7 +51,7 @@
 
 /* ---------- names: a quiet column beside the text ---------- */
 
-/* The column stands LEFT of the note's scrollbar, over room the scroller pads out for it — so the
+/* The column stands LEFT of the page's scrollbar, over room the scroller pads out for it — so the
    one scrollbar stays at the window's edge, where a scrollbar belongs. */
 .toc[data-names] {
   right: var(--toc-gutter, 0px);
@@ -65,7 +65,7 @@
   animation: toc-fade 240ms ease;
 }
 
-/* The scroller's room for the names: the section's `data-toc-names` (tocFrame.tsx) says they show. A note's outline
+/* The scroller's room for the names: the section's `data-toc-names` (tocFrame.tsx) says they show. A page's outline
    is the section's child; a folder page's Page tab (YAZ-4584 D38) puts it deep in the folder page's scroller, so the
    whole page — title, view tabs and toolbar, the Page, Other files, Comments — gets the room too (YAZ-4849). No
    `:has()` over the text you type in (YAZ-3329). */
@@ -73,7 +73,7 @@
   padding-right: var(--toc-width);
 }
 
-.editor[data-toc-names] > .find-bar-dock--note {
+.editor[data-toc-names] > .find-bar-dock--page {
   right: var(--toc-width);
 }
 
@@ -104,12 +104,12 @@
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;
-  /* The wheel stays in the list at its ends: the note under it never moves by accident. */
+  /* The wheel stays in the list at its ends: the page under it never moves by accident. */
   overscroll-behavior: contain;
   scrollbar-width: none;
   mask-image: linear-gradient(to bottom, transparent 0, #000 var(--toc-fade-top), #000 calc(100% - var(--toc-fade-bottom)), transparent 100%);
   transition: --toc-rest 160ms ease, --toc-path 160ms ease;
-  /* The names' own zoom (YAZ-3939 D10), set on a note's `.toc`; the code Outline has none. */
+  /* The names' own zoom (YAZ-3939 D10), set on a page's `.toc`; the code Outline has none. */
   zoom: var(--toc-zoom, 1);
 }
 
@@ -123,7 +123,7 @@
   --toc-path: var(--accent);
 }
 
-/* On hover, the PATH also shows while the reader moves the note with the wheel (`data-reading`,
+/* On hover, the PATH also shows while the reader moves the page with the wheel (`data-reading`,
    set by the component): it follows them down the list. The grey lines wait for the mouse. */
 .app[data-toc-lines='hover'] .toc[data-reading] .toc__names {
   --toc-path: var(--accent);
@@ -262,7 +262,7 @@
 }
 
 /* THE FOLD ARROW (YAZ-3939 D3): in the last 16px of the name's indent, between the level line (or
-   the hairline) and the name, with room on both sides; the name never moves. The look of the note's heading arrow and the code Outline's:
+   the hairline) and the name, with room on both sides; the name never moves. The look of the page's heading arrow and the code Outline's:
    open points down, folded points right; it shows while the mouse or the keyboard is in the list,
    and always on a folded row. */
 .toc__fold {
@@ -510,7 +510,7 @@
 
 /* The card: the find bar's surface. It shrinks before the rail does, so a 320px panel still fits
    both. It is never taller than 440px: a card as tall as the window is a wall, and the list
-   inside moves in step with the note, so the current row is always in it. It comes in from
+   inside moves in step with the page, so the current row is always in it. It comes in from
    the rail's side and leaves the same way (`data-leaving`, for the component's `EXIT_MS`). */
 .toc__card {
   display: flex;

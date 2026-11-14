@@ -4,7 +4,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HIGHLIGHT_CUSTOM_COLORS_KEPT, HIGHLIGHT_CUSTOM_COLORS_SHOWN } from '@shared/types'
-import { countUse, mostUsedHighlightColors, noteHighlightColorUse, setUsedHighlightColors, setUsedHighlightColorsSaver } from './highlightUsed'
+import { countUse, mostUsedHighlightColors, recordHighlightColorUse, setUsedHighlightColors, setUsedHighlightColorsSaver } from './highlightUsed'
 
 afterEach(() => {
   setUsedHighlightColors([])
@@ -38,7 +38,7 @@ describe('most used custom highlight colours (YAZ-4348 demo round 2)', () => {
   it('a use lands at once and goes to the setting\'s door', () => {
     const save = vi.fn()
     setUsedHighlightColorsSaver(save)
-    noteHighlightColorUse('#3366ff')
+    recordHighlightColorUse('#3366ff')
     expect(save).toHaveBeenLastCalledWith([{ color: '#3366ff', uses: 1 }])
     expect(mostUsedHighlightColors()).toEqual(['#3366ff'])
   })

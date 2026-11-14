@@ -13,7 +13,7 @@ import { appWindow, launchApp, quitApp, readState, seededState, shoot } from './
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = 'AgentEdited.md'
+const PAGE = 'AgentEdited.md'
 const ALPHA = 'alpha-body-e2e'
 const CHILD = 'child-bullet-e2e'
 const ADDED = 'agent-added-line-e2e'
@@ -36,18 +36,18 @@ ${ADDED}
 
 let userData: string
 let vault: string
-let notePath: string
+let pagePath: string
 let app: ElectronApplication
 let win: Page
 
-const foldKeys = async () => (await readState(userData)).folders[vault]?.folds[notePath] ?? []
+const foldKeys = async () => (await readState(userData)).folders[vault]?.folds[pagePath] ?? []
 const hasBothKeys = (keys: readonly string[]) => keys.some((k) => k.startsWith('h:')) && keys.some((k) => !k.startsWith('h:'))
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'fee-userdata-'))
   vault = await mkdtemp(path.join(tmpdir(), 'fee-vault-'))
-  notePath = path.join(vault, NOTE)
-  await writeFile(notePath, BODY)
+  pagePath = path.join(vault, PAGE)
+  await writeFile(pagePath, BODY)
 })
 
 test.afterAll(async () => {
@@ -56,7 +56,7 @@ test.afterAll(async () => {
 })
 
 test('step 1 — collapse a heading and a bullet; both keys land in app state', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
+  app = await launchApp({ userData, seedState: seededState(vault, pagePath) })
   win = await appWindow(app, 'w1')
   await expect(win.locator('.ProseMirror')).toContainText(ALPHA)
 
@@ -73,7 +73,7 @@ test('step 1 — collapse a heading and a bullet; both keys land in app state', 
 })
 
 test('step 2 — the agent edits the file on disk; the reload keeps both folds and both keys', async () => {
-  await writeFile(notePath, EDITED)
+  await writeFile(pagePath, EDITED)
 
   // The clean-doc silent reload delivers the agent's new content...
   await expect(win.locator('.ProseMirror')).toContainText(ADDED, { timeout: 15_000 })
@@ -84,7 +84,7 @@ test('step 2 — the agent edits the file on disk; the reload keeps both folds a
 
   // The old bug's second half: the reload erased the persisted keys. They must survive.
   await expect.poll(async () => hasBothKeys(await foldKeys()), { timeout: 10_000 }).toBe(true)
-  expect(await readFile(notePath, 'utf8')).toBe(EDITED)
+  expect(await readFile(pagePath, 'utf8')).toBe(EDITED)
   await shoot(win, 'fee-02-reload-kept-folds')
 
   // Quit → the flushed state still carries both keys (nothing wiped them on the way out).

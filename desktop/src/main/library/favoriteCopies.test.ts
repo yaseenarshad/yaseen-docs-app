@@ -95,7 +95,7 @@ describe('favorite copies (YAZ-4363)', () => {
     expect(await copies.preview({ provider: 'iconify', id: 'mdi:home' })).toBeNull()
   })
 
-  it('a pass removes the copy of a favorite that left without its removal here (another Mac); a copy with no note stays (YAZ-4366)', async () => {
+  it('a pass removes the copy of a favorite that left without its removal here (another Mac); a copy with no page stays (YAZ-4366)', async () => {
     favorites = [icon('a'), icon('b')]
     await copies.start(fetchers)
     expect(await files()).toHaveLength(2)

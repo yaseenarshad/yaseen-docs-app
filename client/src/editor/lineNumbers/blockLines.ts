@@ -18,7 +18,7 @@ import { parseTableComment } from '../table/tableComment'
  * a `table` and the `<!-- table: … -->` right after it (`tableStyleRemark`), and the table's entry
  * ends on the comment. A code block's comment too (YAZ-4783): the editor joins a fenced or an indented
  * code block and the `<!-- code: … -->` after it (`codeWidthRemark`), and the code's entry ends on the
- * comment. A note card's card line too (YAZ-4960): the editor joins a ```card block and its `<!-- card: … -->`.
+ * comment. A card's card line too (YAZ-4960): the editor joins a ```card block and its `<!-- card: … -->`.
  * Any other HTML block is a block, as before. A footnote is no block: its
  * blocks are (a cell note's too, YAZ-3818), and a footnote with none (`[^1]:`) is one empty
  * paragraph on its line, as the editor fills it.
@@ -64,7 +64,7 @@ export function blockLines(text: string): BlockLines {
   // Per open quote, the count of blocks when it opened: the editor fills a quote that holds none with an empty paragraph.
   const quotes: number[] = []
   // The line of a footnote that holds no block yet (`[^1]:`): the editor fills it with an empty paragraph too (YAZ-3818).
-  let emptyNote: number | null = null
+  let emptyPage: number | null = null
   const add = (line: number, end: number, kind: string) => {
     lines.push(line)
     ends.push(end)
@@ -88,12 +88,12 @@ export function blockLines(text: string): BlockLines {
       if (phase === 'enter' && emptyItem === token.start.line) emptyItem = null
       else flush()
     }
-    if (LISTS.has(type) || type === 'blockQuote') emptyNote = null
+    if (LISTS.has(type) || type === 'blockQuote') emptyPage = null
     if (type === 'gfmFootnoteDefinition') {
-      if (phase === 'enter') emptyNote = token.start.line
-      else if (emptyNote !== null) {
-        add(emptyNote, emptyNote, 'p')
-        emptyNote = null
+      if (phase === 'enter') emptyPage = token.start.line
+      else if (emptyPage !== null) {
+        add(emptyPage, emptyPage, 'p')
+        emptyPage = null
       }
     }
     if (type === 'blockQuote') {
@@ -112,7 +112,7 @@ export function blockLines(text: string): BlockLines {
     const kind = KIND[type]
     if (kind === undefined) continue
     emptyItem = null
-    emptyNote = null
+    emptyPage = null
     // A fence that is never closed runs to the end of the text, and ends at the START of the line under its last one.
     const { start, end } = token
     const last = end.column === 1 && end.line > start.line ? end.line - 1 : end.line
@@ -121,7 +121,7 @@ export function blockLines(text: string): BlockLines {
       after = null
       continue
     }
-    // A note card (YAZ-4960, idea 29): a ```card fence, whose comment is its card line, not a code comment.
+    // A card (YAZ-4960, idea 29): a ```card fence, whose comment is its card line, not a code comment.
     const card = type === 'codeFenced' && isCardFence(text.slice(start.offset, text.indexOf('\n', start.offset) >>> 0))
     after = card ? 'card' : kind in COMMENTS ? kind : null
     add(start.line, last, kind)

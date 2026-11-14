@@ -4,7 +4,7 @@
  * opens a small menu upward with two rows, each the same "− 100% +" (`ZoomStepper`): App size on top, the App size of
  * every window (`settings.appZoom`, along `APP_ZOOM_STEPS`), and Sidebar at the bottom, next to the chip, the zoom of
  * the sidebar's lists (YAZ-3389; a Files window's own zoom there, D13). The keys never reach the App size: ⌘+ / ⌘− /
- * ⌘0 zoom a note or the sidebar (`zoomRequest.ts`).
+ * ⌘0 zoom a page or the sidebar (`zoomRequest.ts`).
  *
  * The menu goes to `document.body`: a fixed box inside a zoomed one scales and moves (`SessionList`). It is zoomed by
  * 1 / the page's zoom, so it keeps its size on the screen at every App size, and while it is open it keeps its place on

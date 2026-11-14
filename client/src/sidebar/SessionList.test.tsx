@@ -113,7 +113,7 @@ describe('SessionList (YAZ-3147 D6)', () => {
     expect(rows().map((r) => r.getAttribute('aria-expanded'))).toEqual(['false', 'false'])
   })
 
-  it('a board tab row has no icon, so it always names its kind: its extension shows after the name; a display name and a note get none (YAZ-3536 D4)', async () => {
+  it('a board tab row has no icon, so it always names its kind: its extension shows after the name; a display name and a page get none (YAZ-3536 D4)', async () => {
     const BOARDS: Session = { id: 's3', name: 'Boards', tabs: [{ path: '/v/Flow.drawio' }, { path: '/v/Map.excalidraw', name: 'Roadmap' }, { path: '/v/c.md' }], roots: ['/v'], lastUsed: 30 }
     await mount([BOARDS])
     act(() => rows()[0].click())

@@ -11,7 +11,7 @@
  * Close (`closeCellNote`): Esc with the caret in the card (priority 90: the `[[` picker's Esc at 100 wins, the Esc to
  * the sidebar at 10 loses), the ×, a mousedown outside the card (not on its own cell's corner) unless the card is
  * pinned (its pin, one for the editor, round 2 of the demo). The caret goes back after the mark in the cell, and
- * an empty note goes with its mark (D15), never in a read-only note.
+ * an empty note goes with its mark (D15), never in a read-only page.
  * Inside: ArrowUp on the card's first line and ArrowDown on its last line stay in the card, and a mouse selection that
  * starts in it does not leave it.
  *
@@ -46,7 +46,7 @@ import type { ReplaceStep } from '@milkdown/kit/prose/transform'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import type { AllNotesOpensAt } from '@shared/types'
-import { rowShortcuts } from '../noteKeys'
+import { rowShortcuts } from '../pageKeys'
 import { wikilinkPickerOpen } from '../wikilink/wikilinkPicker'
 import { cellPosAround } from '../outline/listNodes'
 import { cellBlocksOf } from './cellBlocks'
@@ -101,7 +101,7 @@ export function cellNoteOrder(doc: ProseNode): string[] {
 
 const CLOSED: CellNoteCardState = { label: null, pos: null, cell: null, all: false, calendar: null, set: DecorationSet.empty }
 
-/** The class of the open note's card in "All notes" (round 4 of the demo): table.css hides the note, shows the list. */
+/** The class of the open page's card in "All notes" (round 4 of the demo): table.css hides the note, shows the list. */
 export const CELL_NOTE_ALL_CLASS = 'cell-note--all'
 
 /** A link in the "All notes" list as the note shows it: `[[a|b]]` as "b", `[[a]]` as "a". */
@@ -225,7 +225,7 @@ function calendarAround(doc: ProseNode, cell: number): TableAt | null {
   return (table.node.attrs.calendar as number) > 0 ? table : null
 }
 
-/** The time blocks of `table` in `column`. The notes follow the table (`notesFollowTables`): one pass finds them by label. */
+/** The time blocks of `table` in `column`. The notes follow the table (`pagesFollowTables`): one pass finds them by label. */
 function timeBlocks(doc: ProseNode, table: TableAt, column: number): TimeBlock[] {
   const notes = new Map<string, number>()
   const $end = doc.resolve(table.end)
@@ -273,7 +273,7 @@ const typingInBodyCells = (tr: Transaction): boolean =>
   })
 
 /** A change in a cell note other than the live one (an undo, an outside edit): its lines in the card are built again. */
-const changesOtherNotes = (tr: Transaction, live: string): boolean =>
+const changesOtherPages = (tr: Transaction, live: string): boolean =>
   tr.steps.some((step, i) => {
     const from = (step as { from?: number }).from
     if (from === undefined) return true
@@ -324,7 +324,7 @@ const blockList = (rows: readonly BlockView[], live: number | null, onlyFilled: 
     }
     wrap.appendChild(heading)
     if (!isLive && block.lines === null) {
-      // No `disabled`: a read-only switch rebuilds no widget. `goLive` declines in a read-only note (table.css quiets it).
+      // No `disabled`: a read-only switch rebuilds no widget. `goLive` declines in a read-only page (table.css quiets it).
       const empty = headButton('cell-note-time-empty', 'Empty. Click to write.', 'Write in this time block', () => void goLive(view, block.row, null, empty))
       wrap.appendChild(empty)
     } else if (!isLive) {
@@ -515,7 +515,7 @@ function goLive(view: EditorView, row: number, line: number | null, from: Elemen
       insertCellNote(tr, cell, templateBlocks(view))
       label = cellNoteOf(tr.doc, cell)!
     } else {
-      // A mark with no note: its note, under the table (`notesFollowTables` puts it in order).
+      // A mark with no note: its note, under the table (`pagesFollowTables` puts it in order).
       tr.insert(tr.mapping.map(open.table.end), view.state.schema.nodes.cell_note.createAndFill({ label })!)
     }
     made = [...made, label]
@@ -752,7 +752,7 @@ function cardState(doc: ProseNode, label: string | null, all = false, carry: Par
 }
 
 /**
- * Can `openCellNote` open the cell at `cellPos`? An editable note always can (it makes the note); a read-only one only
+ * Can `openCellNote` open the cell at `cellPos`? An editable page always can (it makes the note); a read-only one only
  * when the cell's mark has its cell note (5A-22).
  */
 export function canOpenCellNote(view: EditorView, cellPos: number): boolean {
@@ -762,7 +762,7 @@ export function canOpenCellNote(view: EditorView, cellPos: number): boolean {
 
 /**
  * Close the open card. The caret goes back after the mark (unless `moveCaret` is false: find's own close), and an
- * empty note goes with its mark in an editable note (D15). Returns the transaction it sent, or null when none was open.
+ * empty note goes with its mark in an editable page (D15). Returns the transaction it sent, or null when none was open.
  */
 export function closeCellNote(view: EditorView, moveCaret = true): Transaction | null {
   const { state } = view
@@ -784,7 +784,7 @@ export function closeCellNote(view: EditorView, moveCaret = true): Transaction |
 /**
  * Open the cell note of the cell at `cellPos` as a card (D8): a cell with no mark gets a cell note first
  * (`addCellNote`); a mark with no cell note gets an empty one under its table. The note is found by its label, as
- * `notesFollowTables` may move it. A read-only note only opens a cell note that is there. With `moveCaret` (all but
+ * `pagesFollowTables` may move it. A read-only page only opens a cell note that is there. With `moveCaret` (all but
  * find), the caret goes to the end of the note (of a new note's first line) and the editor takes the focus. `visit`
  * records the open in the card's Back list (Back and Forward move in it instead).
  */
@@ -828,7 +828,7 @@ export function openCellNote(view: EditorView, cellPos: number, moveCaret = true
 }
 
 /**
- * The open note's cell in view (round 4 of the demo): no scroll when the cell shows whole, else the least scroll of the
+ * The open page's cell in view (round 4 of the demo): no scroll when the cell shows whole, else the least scroll of the
  * page's scroller that shows it, at the nearest edge; never centred.
  */
 export function revealOpenCell(view: EditorView): void {
@@ -923,7 +923,7 @@ const withoutMarks = (content: Fragment): Fragment => {
   return Fragment.from(kept)
 }
 
-/** Can "Move to cell note" move the cell at `cellPos`? An editable note, and a cell with some text (the demo). */
+/** Can "Move to cell note" move the cell at `cellPos`? An editable page, and a cell with some text (the demo). */
 export const canMoveToCellNote = (view: EditorView, cellPos: number): boolean => view.editable && (view.state.doc.nodeAt(cellPos)?.textContent.trim() ?? '') !== ''
 
 /**
@@ -967,7 +967,7 @@ const readOnlyAll = (state: EditorState): boolean => {
   return card?.all === true && card.calendar === null && inCard(state, state.selection.head)
 }
 
-/** The note that holds `pos`: the open note, or in a calendar's "All notes" one of the notes it shows; else null. */
+/** The note that holds `pos`: the open page, or in a calendar's "All notes" one of the notes it shows; else null. */
 const cardNoteAt = (state: EditorState, pos: number): number | null => {
   const card = cellNoteCardKey.getState(state)
   if (card?.pos == null) return null
@@ -975,7 +975,7 @@ const cardNoteAt = (state: EditorState, pos: number): number | null => {
   return notes.find((note) => pos > note && pos < note + state.doc.nodeAt(note)!.nodeSize) ?? null
 }
 
-/** Is `pos` inside the open note (or a note the calendar view shows)? */
+/** Is `pos` inside the open page (or a note the calendar view shows)? */
 const inCard = (state: EditorState, pos: number): boolean => cardNoteAt(state, pos) !== null
 
 /** ArrowUp on the card's first line, ArrowDown on its last: to that line's start or end, not out of the card. */
@@ -1415,7 +1415,7 @@ export const cellNoteCard = $prose(
           // typing in the live note only maps it.
           if (card.calendar !== null && cell !== null) {
             const table = calendarAround(tr.doc, cell)
-            if (table === null || (changedTables(tr).has(table.pos) && !typingInBodyCells(tr)) || changesOtherNotes(tr, card.label)) return cardState(tr.doc, card.label, card.all, carry)
+            if (table === null || (changedTables(tr).has(table.pos) && !typingInBodyCells(tr)) || changesOtherPages(tr, card.label)) return cardState(tr.doc, card.label, card.all, carry)
           }
           const calendar = card.calendar === null ? null : { ...card.calendar, shown: card.calendar.shown.map((note) => tr.mapping.map(note)), anchor: anchor! }
           return { ...card, pos: tr.mapping.map(card.pos!), cell, calendar, set: card.set.map(tr.mapping, tr.doc) }
@@ -1525,14 +1525,14 @@ const openAtCaret: Command = (state, dispatch, view) => {
  * plugin's `keydown` DOM handler (YAZ-4395).
  */
 export const cellNoteCardKeymap = $shortcut((ctx) => ({
-  ...rowShortcuts(ctx, 'note.openCellNote', 'OpenCellNote', { priority: 90, onRun: () => openAtCaret }),
-  ...rowShortcuts(ctx, 'note.nextCellNote', 'NextCellNote', { priority: 90, onRun: () => whileOpen((view) => stepCellNote(view, 1)) }),
-  ...rowShortcuts(ctx, 'note.previousCellNote', 'PreviousCellNote', { priority: 90, onRun: () => whileOpen((view) => stepCellNote(view, -1)) }),
-  ...rowShortcuts(ctx, 'note.cellNoteBack', 'CellNoteBack', { priority: 90, onRun: () => whileOpen((view) => goCellNoteHistory(view, -1)) }),
-  ...rowShortcuts(ctx, 'note.cellNoteForward', 'CellNoteForward', { priority: 90, onRun: () => whileOpen((view) => goCellNoteHistory(view, 1)) }),
-  ...rowShortcuts(ctx, 'note.allCellNotes', 'AllCellNotes', { priority: 90, onRun: () => toggleAllAtCaret }),
-  ...rowShortcuts(ctx, 'note.nextTimeBlock', 'NextTimeBlock', { priority: 90, onRun: () => inCalendar((view) => goTimeBlock(view, 1)) }),
-  ...rowShortcuts(ctx, 'note.previousTimeBlock', 'PreviousTimeBlock', { priority: 90, onRun: () => inCalendar((view) => goTimeBlock(view, -1)) }),
+  ...rowShortcuts(ctx, 'page.openCellNote', 'OpenCellNote', { priority: 90, onRun: () => openAtCaret }),
+  ...rowShortcuts(ctx, 'page.nextCellNote', 'NextCellNote', { priority: 90, onRun: () => whileOpen((view) => stepCellNote(view, 1)) }),
+  ...rowShortcuts(ctx, 'page.previousCellNote', 'PreviousCellNote', { priority: 90, onRun: () => whileOpen((view) => stepCellNote(view, -1)) }),
+  ...rowShortcuts(ctx, 'page.cellNoteBack', 'CellNoteBack', { priority: 90, onRun: () => whileOpen((view) => goCellNoteHistory(view, -1)) }),
+  ...rowShortcuts(ctx, 'page.cellNoteForward', 'CellNoteForward', { priority: 90, onRun: () => whileOpen((view) => goCellNoteHistory(view, 1)) }),
+  ...rowShortcuts(ctx, 'page.allCellNotes', 'AllCellNotes', { priority: 90, onRun: () => toggleAllAtCaret }),
+  ...rowShortcuts(ctx, 'page.nextTimeBlock', 'NextTimeBlock', { priority: 90, onRun: () => inCalendar((view) => goTimeBlock(view, 1)) }),
+  ...rowShortcuts(ctx, 'page.previousTimeBlock', 'PreviousTimeBlock', { priority: 90, onRun: () => inCalendar((view) => goTimeBlock(view, -1)) }),
   CloseCellNote: { key: 'Escape', priority: 90, onRun: () => closeCard },
   CellNoteSelectAll: { key: 'Mod-a', priority: 90, onRun: () => (state, dispatch, view) => selectCard(state, dispatch, view) || selectCell(state, dispatch, view) },
 }))

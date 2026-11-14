@@ -1,19 +1,19 @@
 /**
- * One time (YAZ-4094 G4): the page switches that the app state held for notes move into the notes'
+ * One time (YAZ-4094 G4): the page switches that the app state held for pages move into the pages'
  * frontmatter, where the editor now reads them (`shared/pageSwitches.ts`): every `sectionIndents` entry,
- * and the note entries of `tocSwitches`. A code file's `tocSwitches` entry stays — it has no frontmatter.
+ * and the page entries of `tocSwitches`. A code file's `tocSwitches` entry stays — it has no frontmatter.
  *
- * Each note is written first, then its entry leaves the state, so a crash in between only repeats the
- * move on the next launch. The note is the source of truth: a note that already holds the key (as
+ * Each page is written first, then its entry leaves the state, so a crash in between only repeats the
+ * move on the next launch. The page is the source of truth: a page that already holds the key (as
  * `true` or `false`) is never written, and only loses the entry — so a choice that sync brought from
- * the other Mac, or a toggle after a crash, stays. A note that is gone, or whose block does not parse,
- * loses its entry; a note that cannot be read or written now keeps it for the next launch, and so does
- * a note whose mtime changed between the read and the write (an autosave landed: its text wins).
+ * the other Mac, or a toggle after a crash, stays. A page that is gone, or whose block does not parse,
+ * loses its entry; a page that cannot be read or written now keeps it for the next launch, and so does
+ * a page whose mtime changed between the read and the write (an autosave landed: its text wins).
  */
 import { readFile, stat } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { isMarkdown } from '@shared/fileKind'
-import { notePageSwitches, setNotePageSwitch, type PageSwitchKey } from '@shared/pageSwitches'
+import { readPageSwitches, writePageSwitch, type PageSwitchKey } from '@shared/pageSwitches'
 import type { AppState } from '@shared/types'
 import { atomicWrite } from './fs/fsUtils'
 
@@ -44,7 +44,7 @@ export async function movePageSwitches(store: PageSwitchStore, io = { readFile: 
         }
         let next: string
         try {
-          next = notePageSwitches(content)[KEY_OF[list]] === undefined ? setNotePageSwitch(content, KEY_OF[list], on) : content
+          next = readPageSwitches(content)[KEY_OF[list]] === undefined ? writePageSwitch(content, KEY_OF[list], on) : content
         } catch {
           store.dropPageSwitch(root, file, list)
           continue

@@ -18,7 +18,7 @@
  *    rewriting (the E1b engine already handles bare-stays / pathed-rewrites).
  */
 import { fileKind } from '@shared/fileKind'
-import { titleOf } from '@shared/noteName'
+import { titleOf } from '@shared/pageName'
 import { isFolderSettingsPath, type DiffFileStat, type IndexRecord } from '@shared/types'
 import { basename, stripExt } from '../lib/paths'
 
@@ -30,7 +30,7 @@ export interface RenameHypothesis {
 
 const sig = (f: DiffFileStat) => `${f.size}\u0000${f.mtime}`
 
-/** A markdown note, non-empty — the only files a hypothesis may involve. */
+/** A markdown page, non-empty — the only files a hypothesis may involve. */
 const eligible = (f: DiffFileStat) => f.size > 0 && fileKind(f.path) === 'markdown' && !isFolderSettingsPath(f.path)
 
 function bySignature(list: readonly DiffFileStat[]): Map<string, DiffFileStat[]> {

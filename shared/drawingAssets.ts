@@ -15,10 +15,10 @@ import { isFiniteNumber, isRecord } from './guards'
  * A "pictures out" `.excalidraw` carries `files: {}` — image ELEMENTS keep only their `fileId`,
  * and the bytes live at `<vault>/assets/<fileId>.<ext>`. The id is Excalidraw's own (the SHA-1 of
  * the bytes), so the store is content-addressed for free and its files are IMMUTABLE: a second
- * paste of one image writes nothing and two boards share one file. Note images stay in
+ * paste of one image writes nothing and two boards share one file. Page images stay in
  * `assets/images/` (YAZ-3028 edge cases); the drawing store is the top of `assets/` only.
  *
- * A note EMBED keeps Docs' own shape (rule 28): the modal writes the scene with its images inside
+ * A page EMBED keeps Docs' own shape (rule 28): the modal writes the scene with its images inside
  * it, through `writeAsset`. Both readers accept both shapes — a tab's `drawing:load` lifts an
  * embedded scene's pictures (and its first save moves them into the store), and the embed's
  * reader resolves a lean scene's ids out of the store — so a drawing open in both places keeps its
@@ -225,13 +225,13 @@ export function parseBoardMetaBlock(head: string): BoardMetaBlock | null {
 // ---------- A board's ID (YAZ-3943 4C) ----------
 
 /**
- * The block key of a board's ID, as a note's is `id:` in its frontmatter (`NOTE_ID_KEY`): `"id": "YAZ-12"`. The vault's
+ * The block key of a board's ID, as a page's is `id:` in its frontmatter (`PAGE_ID_KEY`): `"id": "YAZ-12"`. The vault's
  * door gives it on the board's first save in a vault that gives IDs (`fs/drawing.ts`); opening never writes it. The
  * index reads it off the head (`vaultIndex/live.ts`), so `[[YAZ-12]]` opens the board after any rename.
  */
 export const BOARD_ID_KEY = 'id'
 
-/** The ID a block holds, as written, or undefined. Whether it is an ID of THIS vault is `vaultNoteId`'s to say. */
+/** The ID a block holds, as written, or undefined. Whether it is an ID of THIS vault is `vaultPageId`'s to say. */
 export function boardIdOf(block: unknown): string | undefined {
   const id = isRecord(block) ? block[BOARD_ID_KEY] : undefined
   return typeof id === 'string' ? id : undefined
@@ -251,7 +251,7 @@ export function formerBoardIdsOf(block: unknown): string[] {
 
 /**
  * Index of the `}` that closes the `{` at `start`, or null when the text ends first. String-aware,
- * because an importer's extra value may legitimately contain a brace (`"note": "a }"`).
+ * because an importer's extra value may legitimately contain a brace (`"page": "a }"`).
  */
 function closingBrace(text: string, start: number): number | null {
   let depth = 0
@@ -504,7 +504,7 @@ export function picturesSize(elements: readonly unknown[], files: Readonly<Recor
 /** "3 pictures are missing" (YAZ-3943 1F): the count first, as the size row says it. */
 export const missingPicturesText = (missing: number): string => (missing === 1 ? '1 picture is missing' : `${missing} pictures are missing`)
 
-/** What a board with missing pictures says when it opens, in a tab or the note popup (YAZ-3943 1F, YAZ-4074 6A item 12). */
+/** What a board with missing pictures says when it opens, in a tab or the page popup (YAZ-3943 1F, YAZ-4074 6A item 12). */
 export const missingPicturesNotice = (missing: number): string => (missing === 1 ? '1 picture of this board is missing' : `${missing} pictures of this board are missing`)
 
 /**

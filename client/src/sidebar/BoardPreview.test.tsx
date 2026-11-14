@@ -19,10 +19,10 @@ describe('boardPreviewPlacement', () => {
     expect(boardPreviewPlacement(260, 280, 800)).toBeNull()
   })
 
-  it('YAZ-3075 D2, C15: a note takes the same place and width, 70% of the window tall', () => {
+  it('YAZ-3075 D2, C15: a page takes the same place and width, 70% of the window tall', () => {
     // height = round(900 * 0.7) = 630; top = (900 - 630) / 2 = 135.
-    expect(boardPreviewPlacement(260, 1440, 900, 'note')).toEqual({ left: 276, top: 135, width: 669, height: 630 })
-    expect(boardPreviewPlacement(260, 280, 800, 'note')).toBeNull()
+    expect(boardPreviewPlacement(260, 1440, 900, 'page')).toEqual({ left: 276, top: 135, width: 669, height: 630 })
+    expect(boardPreviewPlacement(260, 280, 800, 'page')).toBeNull()
   })
 })
 
@@ -40,8 +40,8 @@ describe('belowPlacement (YAZ-3403 D11: a tab of the tab strip)', () => {
   })
 
   it('is no taller than the room below the box, and null with no room at all', () => {
-    // A note is 630 tall; under a box at 500 the room is 900 - 16 - 508 = 376.
-    expect(belowPlacement({ ...tab, top: 470, bottom: 500 }, 1440, 900, 'note')).toEqual({ left: 300, top: 508, width: 520, height: 376 })
+    // A page is 630 tall; under a box at 500 the room is 900 - 16 - 508 = 376.
+    expect(belowPlacement({ ...tab, top: 470, bottom: 500 }, 1440, 900, 'page')).toEqual({ left: 300, top: 508, width: 520, height: 376 })
     expect(belowPlacement({ ...tab, top: 850, bottom: 880 }, 1440, 900)).toBeNull()
     expect(belowPlacement(tab, 0, 900)).toBeNull()
   })
@@ -64,7 +64,7 @@ describe('besidePlacement with no room on either side (YAZ-3429: the linked ment
 
   it('goes above the row when the room above is the larger', () => {
     const low = { ...row, top: 700, bottom: 724 }
-    const at = besidePlacement(low, 1440, 900, 'note')
+    const at = besidePlacement(low, 1440, 900, 'page')
     expect(at).not.toBeNull()
     expect(overlaps(low, at!)).toBe(false)
     expect(at!.top + at!.height).toBe(692)
@@ -86,7 +86,7 @@ describe('edgePlacement (YAZ-3429: a linked mention — Yasin: "cant it be on th
   })
 
   it('stays inside the window for a row near the bottom, and is null with no room', () => {
-    expect(edgePlacement({ ...row, top: 860, bottom: 884 }, 1440, 900, 'note')).toMatchObject({ top: 254, height: 630 })
+    expect(edgePlacement({ ...row, top: 860, bottom: 884 }, 1440, 900, 'page')).toMatchObject({ top: 254, height: 630 })
     expect(edgePlacement(row, 0, 900)).toBeNull()
   })
 })

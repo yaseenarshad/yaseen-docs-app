@@ -1,14 +1,14 @@
 /**
- * Hover on wiki links (YAZ-3403): resting the pointer on a resolved `[[link]]` in a note says which page it opens,
+ * Hover on wiki links (YAZ-3403): resting the pointer on a resolved `[[link]]` in a page says which page it opens,
  * so the editor's host can show the sidebar's hover panel beside it, with one line on how to open it (YAZ-3935:
- * "⌘-click to open", from the bound gesture; the host reads `editable` for a read-only note's "Click to open"). Wired through `createCrepe({ wikilinkHover })`,
- * and only by the note editor: the read-only previews never pass it.
+ * "⌘-click to open", from the bound gesture; the host reads `editable` for a read-only page's "Click to open"). Wired through `createCrepe({ wikilinkHover })`,
+ * and only by the page editor: the read-only previews never pass it.
  *
  * On the view's own DOM events (`handleDOMEvents`), never a document listener: many editors are mounted at once.
  * The page is resolved as a click resolves it (`wikilinkClick.ts`): the collapsed `.wikilink` span, the match under
  * it, its page name, then the vault's resolver — or, for a link to a file that only views, the view-only catalog.
  * An unresolved link, a revealed (raw) one and `[[#heading]]` say nothing. Which pages preview is the host's to
- * decide (a note or a board).
+ * decide (a page or a board).
  */
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
@@ -20,7 +20,7 @@ import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSourc
 
 /** Where a link hover goes: the editor's host. */
 export interface WikilinkHover {
-  /** The pointer came onto a resolved link: the page it opens, the link's box on screen, and whether the note is editable (the card's open line, YAZ-3935). */
+  /** The pointer came onto a resolved link: the page it opens, the link's box on screen, and whether the page is editable (the card's open line, YAZ-3935). */
   onHover: (path: string, rect: AnchorRect, editable: boolean) => void
   /** The pointer left the link. */
   onLeave: () => void

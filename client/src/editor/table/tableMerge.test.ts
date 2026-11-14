@@ -12,7 +12,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { getMarkdownForSave } from '../createCrepe'
 import { formatTableComment, parseTableComment, plainTable } from './tableComment'
 import { mergeCells, mergeRect, unmergeCells } from './tableMerge'
-import { cellPos, mountNote, unmountAll } from './tableTestKit'
+import { cellPos, mountPage, unmountAll } from './tableTestKit'
 
 afterEach(unmountAll)
 
@@ -56,7 +56,7 @@ describe('YAZ-4792 demo: the comment part', () => {
 
 describe('YAZ-4792 demo: merging', () => {
   it('YAZ-4792 demo: two body cells side by side become one cell spanning 2 columns, both texts kept', async () => {
-    const { crepe, view } = await mountNote(TABLE)
+    const { crepe, view } = await mountPage(TABLE)
     select(view, [1, 0], [1, 1])
     expect(mergeRect(view.state.selection)).not.toBeNull()
     expect(mergeCells(view.state, view.dispatch)).toBe(true)
@@ -65,7 +65,7 @@ describe('YAZ-4792 demo: merging', () => {
   })
 
   it('YAZ-4792 demo: two lines merged down keep both lines in one cell, joined by a line break', async () => {
-    const { crepe, view } = await mountNote(TABLE)
+    const { crepe, view } = await mountPage(TABLE)
     select(view, [1, 0], [2, 0])
     mergeCells(view.state, view.dispatch)
     const cell = tableNode(view).child(1).child(0)
@@ -82,7 +82,7 @@ describe('YAZ-4792 demo: merging', () => {
   })
 
   it('YAZ-4792 demo: one ⌘Z takes the merge off', async () => {
-    const { crepe, view } = await mountNote(TABLE)
+    const { crepe, view } = await mountPage(TABLE)
     const before = getMarkdownForSave(crepe)
     select(view, [1, 0], [2, 1])
     mergeCells(view.state, view.dispatch)
@@ -92,17 +92,17 @@ describe('YAZ-4792 demo: merging', () => {
   })
 
   it('YAZ-4792 demo: a reload of the file reads the merge back', async () => {
-    const { crepe, view } = await mountNote(TABLE)
+    const { crepe, view } = await mountPage(TABLE)
     select(view, [1, 0], [1, 1])
     mergeCells(view.state, view.dispatch)
     const saved = getMarkdownForSave(crepe)
-    const again = await mountNote(saved)
+    const again = await mountPage(saved)
     expect(grid(again.view)[1]).toEqual(['Set up S3\nAna[2x1]'])
     expect(getMarkdownForSave(again.crepe)).toBe(saved)
   })
 
   it('YAZ-4792 demo: the header can merge across its own row', async () => {
-    const { crepe, view } = await mountNote(TABLE)
+    const { crepe, view } = await mountPage(TABLE)
     select(view, [0, 0], [0, 1])
     expect(mergeCells(view.state, view.dispatch)).toBe(true)
     expect(grid(view)[0]).toEqual(['Plan\nOwner[2x1]'])
@@ -112,7 +112,7 @@ describe('YAZ-4792 demo: merging', () => {
 
 describe('YAZ-4792 demo: what cannot merge', () => {
   it('YAZ-4792 demo: one cell, or the header row with a body row, gives no rectangle', async () => {
-    const { view } = await mountNote(TABLE)
+    const { view } = await mountPage(TABLE)
     select(view, [1, 0], [1, 0])
     expect(mergeRect(view.state.selection)).toBeNull()
     select(view, [0, 0], [1, 0])
@@ -121,13 +121,13 @@ describe('YAZ-4792 demo: what cannot merge', () => {
   })
 
   it('YAZ-4792 demo: a selection that holds a folded row does not merge', async () => {
-    const { view } = await mountNote(`${TABLE}\n<!-- table: fold 3 -->\n`)
+    const { view } = await mountPage(`${TABLE}\n<!-- table: fold 3 -->\n`)
     select(view, [1, 0], [2, 0])
     expect(mergeRect(view.state.selection)).toBeNull()
   })
 
   it('YAZ-4792 demo: a selection that cuts through a merged cell does not merge', async () => {
-    const { view } = await mountNote(TABLE)
+    const { view } = await mountPage(TABLE)
     select(view, [1, 0], [2, 0])
     mergeCells(view.state, view.dispatch)
     // The merged cell spans rows 1–2 of column 0; rows 2–3 of columns 0–1 cut through it.
@@ -139,7 +139,7 @@ describe('YAZ-4792 demo: what cannot merge', () => {
 
 describe('YAZ-4792 demo: unmerging', () => {
   it('YAZ-4792 demo: Unmerge puts the covered cells back, empty; the text stays in the top-left cell; the comment part goes', async () => {
-    const { crepe, view } = await mountNote(TABLE)
+    const { crepe, view } = await mountPage(TABLE)
     select(view, [1, 0], [1, 1])
     mergeCells(view.state, view.dispatch)
     // The caret in the merged cell.

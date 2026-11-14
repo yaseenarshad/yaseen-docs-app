@@ -1,13 +1,13 @@
 /**
- * THE EXPLORE STACK (YAZ-2571): ⌘⇧F opens a search panel in the middle of the window; Enter opens the note ON TOP
- * of the search, for reading; ⌘⇧F again adds a search on top of that; a link in a note adds that note on top; Esc
+ * THE EXPLORE STACK (YAZ-2571): ⌘⇧F opens a search panel in the middle of the window; Enter opens the page ON TOP
+ * of the search, for reading; ⌘⇧F again adds a search on top of that; a link in a page adds that page on top; Esc
  * removes ONE layer, the top one. Every layer stays mounted while it is covered, so each keeps its own scroll
  * place exactly: the defining requirement (no jump, no flash of the top). The workspace under the stack never moves.
  *
  * One stack per window, in its own chunk (App lazy-loads it on the first ⌘⇧F). The list of layers is state
  * (`layers.ts`); the DOM keeps each layer's scroll. The rows of every search layer come from ONE candidate
  * feed (`useSearchCandidates`): a nested search adds no index read. The keys are read on the stack's root: Esc,
- * E (read → edit), ⌘↵ (the top note in a tab, the stack closes; on a search, its highlighted row, YAZ-4984; on the Inbox's card window, back to the Inbox, YAZ-5009), and ‹ › (round 3: a note opened from a search
+ * E (read → edit), ⌘↵ (the top page in a tab, the stack closes; on a search, its highlighted row, YAZ-4984; on the Inbox's card window, back to the Inbox, YAZ-5009), and ‹ › (round 3: a page opened from a search
  * steps through that search's rows in place, ← / → while reading, ⌘⌥↑ / ⌘⌥↓ in any mode; `shared/keys/explore.ts`).
  * A menu, a picker or a pop-up that takes Esc keeps it (the mini window's rule, YAZ-4547). At most 12 layers; a
  * 13th says so and opens nothing. Each layer moves like a cell note (round 3, `layerBoxes.ts`). The layers act like
@@ -18,7 +18,7 @@ import { rootOfPath, type CommentsOrder, type OpenStat, type ZoomStep } from '@s
 import type { GestureAction } from '@shared/keys'
 import { stepZoomByKey } from '../editor/DocumentZoom'
 import type { LinkActions } from '../editor/linkMenu'
-import { isNoteKey } from '../editor/noteKeys'
+import { isPageKey } from '../editor/pageKeys'
 import { ZOOM_EVENT } from '../editor/zoomRequest'
 import { focusOpenDocument } from '../lib/focusHandoff'
 import { flushRenamedPath } from '../lib/renameContinuity'
@@ -28,8 +28,8 @@ import { useSearchCandidates, type SearchVault } from '../search/useSearchResult
 import { ContextMenu } from '../sidebar/ContextMenu'
 import { ExploreBoard } from './ExploreBoard'
 import { ExploreCard } from './ExploreCard'
-import { ExploreNote, type ExploreVault } from './ExploreNote'
-import { exploreNoteSections } from './exploreMenu'
+import { ExplorePage, type ExploreVault } from './ExplorePage'
+import { explorePageSections } from './exploreMenu'
 import { exploreRecents, onExploreMove, rememberExploreRecent } from './exploreRecents'
 import { ExploreSearch, type SearchLink } from './ExploreSearch'
 import { textCandidates } from './exploreRows'
@@ -37,7 +37,7 @@ import { recentSections } from './recentSections'
 import { ExploreArrange } from './ExploreArrange'
 import { GRIPS, useLayerBoxes } from './layerBoxes'
 import { layoutForCount, pickRecent, TILE_MS, TILE_PLACES, tileBoxes, tileOrder, type ArrangeLayout, type TileLayout } from './tile'
-import { frontOrder, layerKindOf, MAX_LAYERS, NOTE_MS, newLayerId, pushLayer, raiseLayer, saveExploreZoom, savedExploreZoom, SEARCH_MS, stepCount, stepPlace, stepResult, topNote, type ExploreLayer, type ExploreRequest } from './layers'
+import { frontOrder, layerKindOf, MAX_LAYERS, PAGE_MS, newLayerId, pushLayer, raiseLayer, saveExploreZoom, savedExploreZoom, SEARCH_MS, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type ExploreRequest } from './layers'
 import './explore.css'
 
 export interface ExploreStackProps {
@@ -48,10 +48,10 @@ export interface ExploreStackProps {
   request: number
   /**
    * With the ask: a layer to open instead of a search — a page for reading ("Open in Explore", YAZ-4936), landed on a
-   * note card or in edit mode (the Inbox's O and E, YAZ-4962), or a card window (`mdapp:note-card-open`, D13).
+   * card or in edit mode (the Inbox's O and E, YAZ-4962), or a card window (`mdapp:card-open`, D13).
    */
   requestLayer?: ExploreRequest | null
-  /** The window's vaults for the search: root, watcher, folders; no other files (the stack reads notes). */
+  /** The window's vaults for the search: root, watcher, folders; no other files (the stack reads pages). */
   vaults: readonly SearchVault[]
   vaultOf: (path: string) => ExploreVault
   nameOf: (path: string) => string
@@ -62,14 +62,14 @@ export interface ExploreStackProps {
   /** App's read-only door (YAZ-4985), for a reading layer's link to a missing page. */
   onFileAction?: (root: string) => Promise<boolean>
   linkActions?: LinkActions
-  /** A note in a normal tab (⌘↵, ↗), a folder's page or another file (a drawing, a PDF): the stack closes. */
+  /** A page in a normal tab (⌘↵, ↗), a folder's page or another file (a drawing, a PDF): the stack closes. */
   openInTab: (path: string) => void
   /** A link's bound gesture in a card window (⌘-click, YAZ-4962): App's link door; a background tab keeps the stack. */
   openLinkIn?: (path: string, where: GestureAction) => void
   onNotice: (message: string) => void
-  /** The tab menu's "Rename file" (App's `renameInSidebar`): the note menu's row (round 1, items 6 and 7). */
+  /** The tab menu's "Rename file" (App's `renameInSidebar`): the page menu's row (round 1, items 6 and 7). */
   onRenameFile?: (path: string) => void
-  /** The comment stream's order and its toggle (YAZ-1515): a note layer shows the stream as its tab does (round 1, item 3). */
+  /** The comment stream's order and its toggle (YAZ-1515): a page layer shows the stream as its tab does (round 1, item 3). */
   commentsOrder: CommentsOrder
   onChangeCommentsOrder: (order: CommentsOrder) => void
   /** The last Esc, ⌘↵ and the click outside: App unmounts the stack and the keyboard goes back where it was. */
@@ -81,15 +81,15 @@ export interface ExploreStackProps {
 
 const noLog = () => ({})
 
-/** The layer a note or a board opens as (YAZ-4943): a note for reading, a board (a drawing or a diagram) for reading. */
+/** The layer a page or a board opens as (YAZ-4943): a page for reading, a board (a drawing or a diagram) for reading. */
 const fileLayer = (path: string, from?: { search: number; at: number }): ExploreLayer =>
-  layerKindOf(path) === 'board' ? { id: newLayerId(), kind: 'board', path, ...(from !== undefined && { from }) } : { id: newLayerId(), kind: 'note', path, mode: 'read', ...(from !== undefined && { from }) }
+  layerKindOf(path) === 'board' ? { id: newLayerId(), kind: 'board', path, ...(from !== undefined && { from }) } : { id: newLayerId(), kind: 'page', path, mode: 'read', ...(from !== undefined && { from }) }
 
 /** The layer App's ask opens (YAZ-4962): a card window, or a page, landed on a card and in edit mode when asked. */
 const requestedLayer = (ask: ExploreRequest): ExploreLayer => {
   if (ask.kind === 'card') return { id: newLayerId(), kind: 'card', path: ask.path, cardId: ask.cardId, index: ask.index, ...(ask.edit === true && { edit: true }), ...(ask.fromInbox === true && { fromInbox: true }) }
   const layer = fileLayer(ask.path)
-  return layer.kind === 'note' ? { ...layer, ...(ask.edit === true && { mode: 'edit' }), ...(ask.card !== undefined && { card: ask.card }) } : layer
+  return layer.kind === 'page' ? { ...layer, ...(ask.edit === true && { mode: 'edit' }), ...(ask.card !== undefined && { card: ask.card }) } : layer
 }
 
 /** The Tile keys (YAZ-4944, `shared/keys/explore.ts`) and their layouts. */
@@ -132,11 +132,11 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   const ordered = useMemo(() => frontOrder(layers, order), [layers, order])
   /**
    * A layer in edit on its way out (a close, ⌘↵, a menu row that closes the stack): its editor's pending save goes
-   * through the one flush door first, so a read of the note anywhere (`savedFirst`) waits for it. The unmount's own
+   * through the one flush door first, so a read of the page anywhere (`savedFirst`) waits for it. The unmount's own
    * flush writes too, but tells no reader.
    */
   const flushEdits = useCallback(() => {
-    for (const l of layersRef.current) if (l.kind === 'note' && l.mode === 'edit') void flushRenamedPath(l.path)
+    for (const l of layersRef.current) if (l.kind === 'page' && l.mode === 'edit') void flushRenamedPath(l.path)
   }, [])
 
   /** The layers on their way out (the exit motion), by id: still drawn, no keys, gone after the motion. */
@@ -147,7 +147,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   const windowSize = useWindowSize()
   // Where each layer stands (round 3): written to the layers' style, never rendered; the head drags, the grips resize.
   const gestures = useLayerBoxes(rootRef, layers, windowSize.width, windowSize.height)
-  /** The one zoom of every note layer (round 4): the page zoom's pill and keys, kept in localStorage; a note tab's zoom is its own. */
+  /** The one zoom of every page layer (round 4): the page zoom's pill and keys, kept in localStorage; a page tab's zoom is its own. */
   const [zoom, setZoomState] = useState(savedExploreZoom)
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
@@ -156,9 +156,9 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     setZoomState(next)
     saveExploreZoom(next)
   }, [])
-  /** Each search layer's rows (round 3), by layer id: what the note over it steps through. Dropped with the layer. */
+  /** Each search layer's rows (round 3), by layer id: what the page over it steps through. Dropped with the layer. */
   const links = useRef(new Map<number, SearchLink>())
-  /** Bumped when a search's rows change under a note from it (YAZ-2571 bug): the note's ‹ n/m › is drawn again with the new rows. */
+  /** Bumped when a search's rows change under a page from it (YAZ-2571 bug): the page's ‹ n/m › is drawn again with the new rows. */
   const [, setRowsSeen] = useState(0)
   const linkOf = (id: number): SearchLink => {
     let link = links.current.get(id)
@@ -212,11 +212,11 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
 
   const doors = useRef({ onNotice, onClose, openInTab, openLinkIn, onRenameFile, linkActions })
   doors.current = { onNotice, onClose, openInTab, openLinkIn, onRenameFile, linkActions }
-  /** The note menu on show (round 1, items 6 and 7): where, and for which note. */
+  /** The page menu on show (round 1, items 6 and 7): where, and for which page. */
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
-  const noteSections = useCallback(
+  const pageSections = useCallback(
     (path: string) =>
-      exploreNoteSections(path, {
+      explorePageSections(path, {
         openInTab: (p) => doors.current.openInTab(p),
         linkActions: doors.current.linkActions,
         onRenameFile: doors.current.onRenameFile,
@@ -245,7 +245,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     return true
   }, [])
 
-  // A note of a layer renamed elsewhere (App's `file:renamed`) moves the layer to the new path: its title, chip and
+  // A page of a layer renamed elsewhere (App's `file:renamed`) moves the layer to the new path: its title, chip and
   // read follow, and an editor mounts there (as the mini window's does). Deleted: the layer reads again and says so.
   useEffect(
     () =>
@@ -269,10 +269,10 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     if (request === served.current) return
     served.current = request
     if (requestLayer === null) push({ id: newLayerId(), kind: 'search' })
-    else if (push(requestedLayer(requestLayer)) && requestLayer.kind === 'note') rememberExploreRecent(requestLayer.path)
+    else if (push(requestedLayer(requestLayer)) && requestLayer.kind === 'page') rememberExploreRecent(requestLayer.path)
   }, [request, requestLayer, push])
 
-  /** A note or a board (YAZ-4943) goes on top for reading; a folder or another file opens in a tab and the stack closes. */
+  /** A page or a board (YAZ-4943) goes on top for reading; a folder or another file opens in a tab and the stack closes. */
   const openPath = useCallback(
     (path: string) => {
       if (layerKindOf(path) === null) {
@@ -287,7 +287,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   /** A card window's page (YAZ-4962): on top, landed on the card. */
   const openPageAt = useCallback((path: string, card: number) => {
     const layer = fileLayer(path)
-    if (layer.kind === 'note' && push({ ...layer, card })) rememberExploreRecent(path)
+    if (layer.kind === 'page' && push({ ...layer, card })) rememberExploreRecent(path)
   }, [push])
   /** A card window's link with a bound gesture: a background tab keeps the stack; any other tab closes it. */
   const openTabFromCard = useCallback((path: string, where: GestureAction) => {
@@ -307,9 +307,9 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   )
 
   /**
-   * ‹ › (round 3): the note layer `id` goes to the next (`dir` 1) or the previous note row of the search under it,
-   * in place: no layer is added. In edit the note's pending save flushes first (a cell note's step), and the editor
-   * mounts on the next note. False at the end of the rows, or for a note that came from a link.
+   * ‹ › (round 3): the page layer `id` goes to the next (`dir` 1) or the previous page row of the search under it,
+   * in place: no layer is added. In edit the page's pending save flushes first (a cell note's step), and the editor
+   * mounts on the next page. False at the end of the rows, or for a page that came from a link.
    */
   const step = useCallback((id: number, dir: -1 | 1): boolean => {
     const layer = layersRef.current.find((l) => l.id === id)
@@ -317,15 +317,15 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     const search = layer.from.search
     const to = stepResult(links.current.get(search)?.rows ?? [], layer.from.at, layer.path, dir)
     if (to === null) return false
-    if (layer.kind === 'note' && layer.mode === 'edit') void flushRenamedPath(layer.path)
-    // A step may cross between a note and a board (YAZ-4943): the SAME layer (its id, box and place) shows the next
-    // file in its kind; a note keeps its mode, a board reads.
+    if (layer.kind === 'page' && layer.mode === 'edit') void flushRenamedPath(layer.path)
+    // A step may cross between a page and a board (YAZ-4943): the SAME layer (its id, box and place) shows the next
+    // file in its kind; a page keeps its mode, a board reads.
     const from = { search, at: to.at }
     setLayers((prev) =>
       prev.map((l): ExploreLayer => {
         if (l.id !== id || l.kind === 'search' || l.kind === 'card') return l
         if (layerKindOf(to.path) === 'board') return { id, kind: 'board', path: to.path, from }
-        return { id, kind: 'note', path: to.path, mode: l.kind === 'note' ? l.mode : 'read', from }
+        return { id, kind: 'page', path: to.path, mode: l.kind === 'page' ? l.mode : 'read', from }
       }),
     )
     rememberExploreRecent(to.path)
@@ -337,12 +337,12 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     const live = ordered.filter((l) => !leaving.has(l.id))
     const gone = id === undefined ? live[live.length - 1] : live.find((l) => l.id === id)
     if (gone === undefined) return
-    if (gone.kind === 'note' && gone.mode === 'edit') void flushRenamedPath(gone.path)
+    if (gone.kind === 'page' && gone.mode === 'edit') void flushRenamedPath(gone.path)
     if (live.length === 1) {
       doors.current.onClose()
       return
     }
-    const ms = reducedMotion() ? 0 : gone.kind === 'search' ? SEARCH_MS : NOTE_MS
+    const ms = reducedMotion() ? 0 : gone.kind === 'search' ? SEARCH_MS : PAGE_MS
     const remove = () => {
       setLayers((prev) => prev.filter((l) => l.id !== gone.id))
       setLeaving((prev) => {
@@ -367,7 +367,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   const topRef = useRef(top)
   topRef.current = top
 
-  // ⌘+ / ⌘− / ⌘0 while Explore is open (round 4): the menu's step (`requestZoom`, App) zooms the TOP note layer, on the
+  // ⌘+ / ⌘− / ⌘0 while Explore is open (round 4): the menu's step (`requestZoom`, App) zooms the TOP page layer, on the
   // page zoom's key ladder; on a search layer it does nothing. Caught on the document first, so neither the tab behind
   // nor the editor inside a layer (its own `.editor` listener) takes it, and the sidebar's fallback never runs.
   useEffect(() => {
@@ -378,7 +378,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
       const step = (event as CustomEvent<ZoomStep>).detail
       // A board on top (YAZ-4943): its own zoom.
       if (layer?.kind === 'board') return boardZooms.current.get(layer.id)?.(step)
-      if (layer === undefined || layer.kind !== 'note') return
+      if (layer === undefined || layer.kind !== 'page') return
       setZoom(step === 0 ? 100 : (stepZoomByKey(zoomRef.current, step) ?? zoomRef.current))
     }
     document.addEventListener(ZOOM_EVENT, onZoom, true)
@@ -391,26 +391,26 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
    */
   const raise = useCallback((id: number) => setOrder((prev) => raiseLayer(layersRef.current, prev, id)), [])
 
-  const setMode = useCallback((id: number, mode: 'read' | 'edit') => setLayers((prev) => prev.map((l) => (l.id === id && l.kind === 'note' && l.mode !== mode ? { ...l, mode } : l))), [])
+  const setMode = useCallback((id: number, mode: 'read' | 'edit') => setLayers((prev) => prev.map((l) => (l.id === id && l.kind === 'page' && l.mode !== mode ? { ...l, mode } : l))), [])
   /**
-   * A note layer's mode flips (item 5): Edit / E to edit; Done / Esc back to reading. Leaving edit FIRST flushes the
+   * A page layer's mode flips (item 5): Edit / E to edit; Done / Esc back to reading. Leaving edit FIRST flushes the
    * editor's pending save (`flushRenamedPath`: the flush a tab close and a mini-window step take) and waits for it, THEN
    * reads: the reading view shows what was typed, never the file from before the save.
    */
   const toggleEdit = useCallback(
     (id: number) => {
       const layer = layersRef.current.find((l) => l.id === id)
-      if (layer === undefined || layer.kind !== 'note') return
+      if (layer === undefined || layer.kind !== 'page') return
       if (layer.mode === 'read') return setMode(id, 'edit')
       void flushRenamedPath(layer.path).finally(() => setMode(id, 'read'))
     },
     [setMode],
   )
 
-  /** Notes and boards open now: what the Tile button arranges. */
+  /** Pages and boards open now: what the Tile button arranges. */
   const fileCount = live.filter((l) => l.kind !== 'search').length
   /**
-   * Tile (YAZ-4944): `ids` (the most recently used first; by default the layout's places of notes and boards, the
+   * Tile (YAZ-4944): `ids` (the most recently used first; by default the layout's places of pages and boards, the
    * front order's newest) to the layout's cells, in the window under the top bar; the others stay where they stand,
    * behind. Stack: every layer back to its stack place. The windows glide there (`explore--gliding`, the CSS
    * transition of their box; none with reduced motion): style writes only, plus one render for the front order.
@@ -436,7 +436,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     },
     [live, gestures, windowSize],
   )
-  /** The ▦ Tile button: the layout by how many notes and boards are open. */
+  /** The ▦ Tile button: the layout by how many pages and boards are open. */
   const tileAuto = () => {
     const layout = layoutForCount(fileCount)
     if (layout !== null) tile(layout)
@@ -455,7 +455,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     if (from instanceof HTMLElement && from.isConnected) from.focus({ preventScroll: true })
   }, [])
 
-  /** ⌘↵ on a search row (YAZ-4984): that row in a tab (a note, a board, a folder's page), and the stack closes. */
+  /** ⌘↵ on a search row (YAZ-4984): that row in a tab (a page, a board, a folder's page), and the stack closes. */
   const rowToTab = useCallback(
     (row: SearchCandidate) => {
       flushEdits()
@@ -465,10 +465,10 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     [flushEdits],
   )
   const toTab = useCallback(() => {
-    const note = topNote(live)
-    if (note === null) return
+    const page = topPage(live)
+    if (page === null) return
     flushEdits()
-    doors.current.openInTab(note.path)
+    doors.current.openInTab(page.path)
     doors.current.onClose()
   }, [live, flushEdits])
 
@@ -477,7 +477,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     if (top === undefined) return
     const el = rootRef.current?.querySelector<HTMLElement>(`[data-layer="${top.id}"]`)
     if (el === null || el === undefined) return
-    if (top.kind === 'note' && top.mode === 'edit') {
+    if (top.kind === 'page' && top.mode === 'edit') {
       // The editor mounts its document a tick later: ask until it is there, a few frames at most.
       let tries = 0
       const tick = () => {
@@ -494,18 +494,18 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
    * ⌘↵ in an edit layer (YAZ-4988, Yaseen: "CMD enter kinda acts as your way to put it back into read mode"): back to
    * reading, locked again at once in a Read only vault; the next ⌘↵ opens the tab. Heard in the capture phase, ahead of
    * the editor's own ⌘↵ (a task box, a line below a table or an embed, Open card): the layer's key wins in the text and
-   * on a note card. Inside a code block's editor the key stays the code's (a new line): a key typed into code keeps its meaning.
+   * on a card. Inside a code block's editor the key stays the code's (a new line): a key typed into code keeps its meaning.
    */
   const onKeyDownCapture = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (top === undefined || top.kind !== 'note' || top.mode !== 'edit') return
+    if (top === undefined || top.kind !== 'page' || top.mode !== 'edit') return
     if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.nativeEvent.isComposing) return
     const target = event.target instanceof Element ? event.target : null
     const layer = rootRef.current?.querySelector(`[data-layer="${top.id}"]`) ?? null
     if (target === null || layer === null || !layer.contains(target)) return
-    if (target.closest('.cm-editor') !== null && target.closest('.note-card') === null) return
+    if (target.closest('.cm-editor') !== null && target.closest('.card') === null) return
     event.preventDefault()
     event.stopPropagation()
-    setLayers((prev) => prev.map((l) => (l.id === top.id && l.kind === 'note' ? { ...l, leaveAsk: (l.leaveAsk ?? 0) + 1 } : l)))
+    setLayers((prev) => prev.map((l) => (l.id === top.id && l.kind === 'page' ? { ...l, leaveAsk: (l.leaveAsk ?? 0) + 1 } : l)))
   }
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -528,9 +528,9 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
       return
     }
     if (event.key === 'Escape') {
-      // The note menu's own Esc (the `ContextMenu` closes itself) and a menu's: nothing else closes.
+      // The page menu's own Esc (the `ContextMenu` closes itself) and a menu's: nothing else closes.
       if (event.target instanceof Element && event.target.closest('.ctx-menu') !== null) return
-      // ⇧Esc closes every layer in one key (YAZ-4926): a note in edit saves first; App gives the keyboard back.
+      // ⇧Esc closes every layer in one key (YAZ-4926): a page in edit saves first; App gives the keyboard back.
       if (event.shiftKey) {
         event.preventDefault()
         event.stopPropagation()
@@ -543,17 +543,17 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
       if (event.defaultPrevented && el !== null && el.contains(document.activeElement)) return
       event.preventDefault()
       event.stopPropagation()
-      // Esc goes back ONE step (item 5): out of edit first (the note saved as you typed, the scroll place stays), then the layer.
+      // Esc goes back ONE step (item 5): out of edit first (the page saved as you typed, the scroll place stays), then the layer.
       // In a Read only vault, out of edit also locks the page again at once (YAZ-4997, Yaseen: "CMD Enter and/or esc to go
       // back to read only mode"), as ⌘↵ does: the layer's `leaveAsk`.
-      if (top.kind === 'note' && top.mode === 'edit') setLayers((prev) => prev.map((l) => (l.id === top.id && l.kind === 'note' ? { ...l, leaveAsk: (l.leaveAsk ?? 0) + 1 } : l)))
+      if (top.kind === 'page' && top.mode === 'edit') setLayers((prev) => prev.map((l) => (l.id === top.id && l.kind === 'page' ? { ...l, leaveAsk: (l.leaveAsk ?? 0) + 1 } : l)))
       else pop()
       return
     }
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.altKey) {
       // In edit, the layer's ⌘↵ went back to reading (`onKeyDownCapture`); a code block's ⌘↵ is the code's. In a card
       // window, the card's editor took it as Done (YAZ-5003).
-      if (topNote(live) === null || (top.kind === 'note' && top.mode === 'edit') || (top.kind === 'card' && event.defaultPrevented)) return
+      if (topPage(live) === null || (top.kind === 'page' && top.mode === 'edit') || (top.kind === 'card' && event.defaultPrevented)) return
       event.preventDefault()
       event.stopPropagation()
       // A card window from the Inbox, reading (YAZ-5009, Yaseen: "another CMD enter would take u back to inbox"): back
@@ -565,7 +565,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     // Tile (YAZ-4944): ⌥⌘2 … ⌥⌘5, ⌥⌘0. A key the editor took (a heading in edit) is left to it.
     if (!event.defaultPrevented) {
       const overrides = storage.getSettings()?.hotkeys
-      const hit = TILE_KEYS.find(([id]) => isNoteKey(event, id, overrides))
+      const hit = TILE_KEYS.find(([id]) => isPageKey(event, id, overrides))
       if (hit !== undefined) {
         event.preventDefault()
         event.stopPropagation()
@@ -575,12 +575,12 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     }
     // ‹ › (round 3): a bare key (← / →) is the caret's while a field or the editor has the keyboard, so it steps only
     // while reading; a chord (⌘⌥↓ / ⌘⌥↑) steps in any mode. A key the editor took (a cell note's own step) is left.
-    if ((top.kind === 'note' || top.kind === 'board') && top.from !== undefined && !event.defaultPrevented) {
+    if ((top.kind === 'page' || top.kind === 'board') && top.from !== undefined && !event.defaultPrevented) {
       const overrides = storage.getSettings()?.hotkeys
-      const dir = isNoteKey(event, 'explore.nextResult', overrides) ? 1 : isNoteKey(event, 'explore.previousResult', overrides) ? -1 : 0
+      const dir = isPageKey(event, 'explore.nextResult', overrides) ? 1 : isPageKey(event, 'explore.previousResult', overrides) ? -1 : 0
       if (dir !== 0) {
         const bare = !event.metaKey && !event.ctrlKey && !event.altKey
-        if (bare && ((top.kind === 'note' && top.mode === 'edit') || inField(event.target))) return
+        if (bare && ((top.kind === 'page' && top.mode === 'edit') || inField(event.target))) return
         if (step(top.id, dir)) {
           event.preventDefault()
           event.stopPropagation()
@@ -588,12 +588,12 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
         return
       }
     }
-    // E on the reading surface edits (item 5); Esc and Done leave edit. No ⌘E: it is the note's Inline code, and
+    // E on the reading surface edits (item 5); Esc and Done leave edit. No ⌘E: it is the page's Inline code, and
     // Yaseen's own ⌘E goes to his emoji app ("i thought leaving edit was esc?").
-    if ((event.key === 'e' || event.key === 'E') && !event.metaKey && !event.ctrlKey && !event.altKey && top.kind === 'note' && top.mode === 'read' && !inField(event.target)) {
+    if ((event.key === 'e' || event.key === 'E') && !event.metaKey && !event.ctrlKey && !event.altKey && top.kind === 'page' && top.mode === 'read' && !inField(event.target)) {
       event.preventDefault()
       // In a Read only vault (YAZ-4939) the layer decides: it asks with its timed "Allow edits", or edits while unlocked.
-      if (vaultOf(top.path).readOnly === true) setLayers((prev) => prev.map((l) => (l.id === top.id && l.kind === 'note' ? { ...l, editAsk: (l.editAsk ?? 0) + 1 } : l)))
+      if (vaultOf(top.path).readOnly === true) setLayers((prev) => prev.map((l) => (l.id === top.id && l.kind === 'page' ? { ...l, editAsk: (l.editAsk ?? 0) + 1 } : l)))
       else toggleEdit(top.id)
     }
   }
@@ -607,11 +607,11 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   }
 
   /** A layer's name in the trail and in Arrange: Search, the page's name, or the card's ID (YAZ-4962). */
-  const trailName = (layer: ExploreLayer): string => (layer.kind === 'search' ? 'Search' : layer.kind === 'card' ? (layer.cardId ?? 'Note card') : nameOf(layer.path))
+  const trailName = (layer: ExploreLayer): string => (layer.kind === 'search' ? 'Search' : layer.kind === 'card' ? (layer.cardId ?? 'Card') : nameOf(layer.path))
 
-  /** For each search layer, the note from it nearest the front (round 3, round 6): its row is the one marked. */
+  /** For each search layer, the page from it nearest the front (round 3, round 6): its row is the one marked. */
   const markedOf = new Map<number, { path: string; at: number }>()
-  for (const l of live) if ((l.kind === 'note' || l.kind === 'board') && l.from !== undefined) markedOf.set(l.from.search, { path: l.path, at: l.from.at })
+  for (const l of live) if ((l.kind === 'page' || l.kind === 'board') && l.from !== undefined) markedOf.set(l.from.search, { path: l.path, at: l.from.at })
 
   // A click on the dim outside every layer: the front layer closes, as Esc does.
   const onBackdropMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -643,7 +643,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
           ))}
           {/* Tile (YAZ-4944): arrange the windows; ▾ opens Arrange (the layouts and which windows). */}
           <span className="explore__trail-tools">
-            <button type="button" className="explore__tile" disabled={fileCount < 2} title={fileCount < 2 ? 'Open two or more notes or boards to tile them' : 'Tile the notes and boards (⌥⌘2 … ⌥⌘5; ⌥⌘0: back to the stack)'} onMouseDown={(e) => e.preventDefault()} onClick={tileAuto}>
+            <button type="button" className="explore__tile" disabled={fileCount < 2} title={fileCount < 2 ? 'Open two or more pages or boards to tile them' : 'Tile the pages and boards (⌥⌘2 … ⌥⌘5; ⌥⌘0: back to the stack)'} onMouseDown={(e) => e.preventDefault()} onClick={tileAuto}>
               <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
                 <rect x="0.5" y="0.5" width="4.75" height="4.75" rx="1" />
                 <rect x="6.75" y="0.5" width="4.75" height="4.75" rx="1" />
@@ -674,13 +674,13 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
         const out = leaving.has(layer.id)
         // The place and size come from `useLayerBoxes`, written to the style; only the motion's length is rendered.
         // The draw order is the front order (round 6): the DOM keeps the open order, so no layer moves in it (a move would lose its scroll).
-        const style = { '--explore-ms': `${layer.kind === 'search' ? SEARCH_MS : NOTE_MS}ms`, zIndex: ordered.indexOf(layer) + 1 } as CSSProperties
-        /** A search layer: the note that came from it nearest the front, whose row stays marked (round 3). */
+        const style = { '--explore-ms': `${layer.kind === 'search' ? SEARCH_MS : PAGE_MS}ms`, zIndex: ordered.indexOf(layer) + 1 } as CSSProperties
+        /** A search layer: the page that came from it nearest the front, whose row stays marked (round 3). */
         const marked = layer.kind === 'search' ? markedOf.get(layer.id) ?? null : null
-        /** A note layer from a search: its place among that search's rows, and whether a step each way exists. */
-        const rows = (layer.kind === 'note' || layer.kind === 'board') && layer.from !== undefined ? (links.current.get(layer.from.search)?.rows ?? []) : null
+        /** A page layer from a search: its place among that search's rows, and whether a step each way exists. */
+        const rows = (layer.kind === 'page' || layer.kind === 'board') && layer.from !== undefined ? (links.current.get(layer.from.search)?.rows ?? []) : null
         const steps =
-          (layer.kind === 'note' || layer.kind === 'board') && layer.from !== undefined && rows !== null
+          (layer.kind === 'page' || layer.kind === 'board') && layer.from !== undefined && rows !== null
             ? { place: stepPlace(rows, layer.from.at, layer.path), count: stepCount(rows), prev: stepResult(rows, layer.from.at, layer.path, -1) !== null, next: stepResult(rows, layer.from.at, layer.path, 1) !== null, onStep: (dir: -1 | 1) => void step(layer.id, dir) }
             : undefined
         return (
@@ -739,7 +739,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
                 active={!covered}
               />
             ) : (
-              <ExploreNote
+              <ExplorePage
                 path={layer.path}
                 mode={layer.mode}
                 gone={layer.gone ?? 0}
@@ -766,7 +766,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
                 onChangeCommentsOrder={onChangeCommentsOrder}
                 onOpenInTab={toTab}
                 onHeadMenu={(x, y) => setMenu({ x, y, path: layer.path })}
-                noteMenu={() => noteSections(layer.path)}
+                pageMenu={() => pageSections(layer.path)}
                 onClose={() => close(layer.id)}
                 active={!covered}
               />
@@ -777,7 +777,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
           </div>
         )
       })}
-      {menu !== null && <ContextMenu x={menu.x} y={menu.y} sections={noteSections(menu.path)} onClose={() => setMenu(null)} />}
+      {menu !== null && <ContextMenu x={menu.x} y={menu.y} sections={pageSections(menu.path)} onClose={() => setMenu(null)} />}
     </div>
   )
 }

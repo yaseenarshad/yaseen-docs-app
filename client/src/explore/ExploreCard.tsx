@@ -1,12 +1,12 @@
 /**
- * A card layer of the explore stack (YAZ-4962, D13): ONE note card of a page, read-only, with what review knows of it.
+ * A card layer of the explore stack (YAZ-4962, D13): ONE card of a page, read-only, with what review knows of it.
  *
  *  - Head: the card ID first, small and grey (a click copies it, D20) — its place in the page's card and the Inbox
  *    too —, then the card title (`titleOfCard`: a card file's `title`, YAZ-5044, else its first line; the layer's name,
- *    as every layer has one; "New note card" for an empty card), ↗, ⋯ and ×; the chip "Up next ×" after the ID while the card is at the top of the Inbox (YAZ-4999 D3). The
+ *    as every layer has one; "New card" for an empty card), ↗, ⋯ and ×; the chip "Up next ×" after the ID while the card is at the top of the Inbox (YAZ-4999 D3). The
  *    ⋯ menu: Open page, Open page in a new tab, Put at top of Inbox / Remove from top of Inbox, Archive card / Unarchive card (YAZ-5046),
  *    Reset history (D13, the card line through `changeCardLine`, the app's own write), Copy card ID.
- *  - The card, everything shown (`renderNoteCard`), its pills and links live: a click opens the page on top, a bound
+ *  - The card, everything shown (`renderCard`), its pills and links live: a click opens the page on top, a bound
  *    gesture (⌘-click) a tab.
  *  - The strip: the page's name (a click opens the page on top, landed on the card), then one calm line of words
  *    (YAZ-5032): "Last: Remembered · Next review Apr 28, 2027 (in 183 days) · 99% you remember it now", the recall
@@ -19,7 +19,7 @@
  *    the page on top.
  *
  * EDIT CARD (YAZ-5003): E on the card window (or the Inbox's E, which opens it so) shows the page card's own editor:
- * a small Crepe that holds the card block alone, with the card view's Edit card on (`noteCardView.ts`: Crepe's code
+ * a small Crepe that holds the card block alone, with the card view's Edit card on (`cardBlockView.ts`: Crepe's code
  * block, the card language). Done, Esc or ⌘↵ there writes the text into the page (`changeCardTextIn`, the app's own
  * write) and goes back to reading. A read-only vault blocks E here, as the page does.
  *
@@ -42,9 +42,9 @@ import { withCardNext } from '@shared/cardLine'
 import { readCardAt, titleOfCard, type CardAtPage } from '../review/cardFile'
 import { CardPane, cardMenuSections, cardWrites, isCardEditKey, onIndexVersion } from '../review/cardPane'
 import { HoverTip } from '../components/HoverTip'
-import { NoteCardFacts, NoteCardId, NoteCardNextChip } from '../review/noteCardParts'
+import { CardFacts, CardId, CardNextChip } from '../review/cardParts'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
-import { keepFocus, type ExploreVault } from './ExploreNote'
+import { keepFocus, type ExploreVault } from './ExplorePage'
 
 interface ExploreCardProps {
   path: string
@@ -151,12 +151,12 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
         onMouseDown={onHeadDown}
         onDoubleClick={onHeadReset}
       >
-        {id !== null && <NoteCardId id={id} onNotice={onNotice} />}
-        {card?.next === true && <NoteCardNextChip onRemove={card.id === null ? undefined : () => changeLine((l) => withCardNext(l, false))} />}
-        <span ref={titleRef} className={`explore__title${title === '' ? ' note-card__title--empty' : ''}`}>
-          {loaded.kind === 'loading' ? '' : title === '' ? 'New note card' : title}
+        {id !== null && <CardId id={id} onNotice={onNotice} />}
+        {card?.next === true && <CardNextChip onRemove={card.id === null ? undefined : () => changeLine((l) => withCardNext(l, false))} />}
+        <span ref={titleRef} className={`explore__title${title === '' ? ' card__title--empty' : ''}`}>
+          {loaded.kind === 'loading' ? '' : title === '' ? 'New card' : title}
         </span>
-        {card?.notitle === true && <span className="note-card__state note-card__notitle">Hidden in review</span>}
+        {card?.notitle === true && <span className="card__state card__notitle">Hidden in review</span>}
         {/* ↗ folds into ⋯ in a narrow layer (YAZ-4986); the card ID, the title and × stay. */}
         <span className="explore__fold">
           <HoverTip text={fromInbox ? 'Open page in a new tab' : 'Open page in a new tab (⌘↵)'} data-fold-part="open">
@@ -193,7 +193,7 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
             onEditDone={editDone}
             doors={{ openLayer: onOpenLink, openTab: onOpenTab, onNotice }}
             onOpenPage={onOpenLink}
-            strip={<NoteCardStrip card={card} pageName={pageName} vault={vault} onOpenPage={() => onOpenPage(card.index)} />}
+            strip={<CardStrip card={card} pageName={pageName} vault={vault} onOpenPage={() => onOpenPage(card.index)} />}
             reviews={review?.settings}
             onDeleteReview={writes.deleteReview}
           />
@@ -205,20 +205,20 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
 
 /**
  * The strip under the card (D13, idea 11; YAZ-5032): the page, then what review knows as one calm line of words
- * (`NoteCardFacts`: the last answer, the next review and how far it is, the recall chance with its (i)). A card with
+ * (`CardFacts`: the last answer, the next review and how far it is, the recall chance with its (i)). A card with
  * no review is "New"; an archived card (the line's `off`, YAZ-5046) says "Archived".
  */
-function NoteCardStrip({ card, pageName, vault, onOpenPage }: { card: CardAtPage; pageName: string; vault: ExploreVault; onOpenPage: () => void }) {
+function CardStrip({ card, pageName, vault, onOpenPage }: { card: CardAtPage; pageName: string; vault: ExploreVault; onOpenPage: () => void }) {
   const settings = vault.review?.settings
   const isNew = settings !== undefined && cardState(card.reviews, settings).isNew
   return (
-    <div className="note-card-strip">
-      <button type="button" className="note-card-strip__page" onMouseDown={keepFocus} onClick={onOpenPage}>
+    <div className="card-strip">
+      <button type="button" className="card-strip__page" onMouseDown={keepFocus} onClick={onOpenPage}>
         {pageName}
       </button>
-      {card.off && <span className="note-card-strip__fact">Archived</span>}
-      {isNew && <span className="note-card-strip__fact">New</span>}
-      {settings !== undefined && !isNew && <NoteCardFacts reviews={card.reviews} settings={settings} />}
+      {card.off && <span className="card-strip__fact">Archived</span>}
+      {isNew && <span className="card-strip__fact">New</span>}
+      {settings !== undefined && !isNew && <CardFacts reviews={card.reviews} settings={settings} />}
     </div>
   )
 }

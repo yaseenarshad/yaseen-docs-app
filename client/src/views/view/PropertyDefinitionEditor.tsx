@@ -1,9 +1,9 @@
 import './propertyDefinitionEditor.css'
 import { useUnit } from '../../vault/unitWord'
-import { NotesFromPicker, useLinkFolders } from './NotesFromPicker'
+import { PagesFromPicker, useLinkFolders } from './PagesFromPicker'
 import { useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { useLiveGapReorder } from '../../lib/useLiveGapReorder'
-import { NOTE_PROPERTY_KINDS, type PropertyDecl, type PropertyKind } from '@shared/types'
+import { PAGE_PROPERTY_KINDS, type PropertyDecl, type PropertyKind } from '@shared/types'
 import { orderedPropertyOptions, validPropertyOptionSort } from '@shared/propertyOptions'
 import { TextField } from './TextField'
 import { DragHandleIcon } from './icons'
@@ -15,7 +15,7 @@ export const PROPERTY_LABELS: Record<PropertyKind, string> = {
 export const DESCRIPTIONS: Record<PropertyKind, string> = {
   text: 'Write any text.', number: 'Store a numeric value.', date: 'Choose a calendar date.', checkbox: 'Check or uncheck.',
   list: 'Keep a list of free-form values.', link: 'Link to one page.', 'multi-link': 'Link to multiple pages.',
-  select: 'Choose one option.', 'multi-select': 'Choose multiple options.', image: 'One picture from the vault.', mentions: 'The notes that link here. Worked out by the app; read only.',
+  select: 'Choose one option.', 'multi-select': 'Choose multiple options.', image: 'One picture from the vault.', mentions: 'The pages that link here. Worked out by the app; read only.',
 }
 
 /** Shared monochrome type symbols for definitions and property rows. */
@@ -46,7 +46,7 @@ export function PropertyTypeIcon({ kind }: { kind: PropertyKind }) {
  */
 export function PropertyOptionsEditor({ value, onChange, observed = [], onRename }: {
   value: PropertyDecl; onChange: (next: PropertyDecl) => void; observed?: readonly string[]
-  /** A rename that also rewrites the notes holding the option (YAZ-4591 S24): the folder's column editor. Absent: a rename is `onChange`, metadata only. */
+  /** A rename that also rewrites the pages holding the option (YAZ-4591 S24): the folder's column editor. Absent: a rename is `onChange`, metadata only. */
   onRename?: (next: PropertyDecl, from: string, to: string) => void
 }) {
   const unit = useUnit()
@@ -106,7 +106,7 @@ export function PropertyOptionsEditor({ value, onChange, observed = [], onRename
         <div className="property-def__form-actions"><button type="button" onClick={closeDetail}>Cancel</button><button type="submit" className="property-def__save">Save</button></div>
       </form>
       <button type="button" className="property-def__delete" onClick={() => { setOptions(options.filter(option => option !== editing)); closeDetail() }}>Remove option</button>
-      <p className="property-def__hint">{unit(onRename ? 'Renaming this option changes it in every note that holds it. Removing it keeps existing note values.' : 'Renaming or removing this option keeps existing note values.')}</p>
+      <p className="property-def__hint">{unit(onRename ? 'Renaming this option changes it in every page that holds it. Removing it keeps existing page values.' : 'Renaming or removing this option keeps existing page values.')}</p>
     </div> : <>
       <div className="property-def__option-list" {...live.listProps}
         onDragEnter={event => own(live.over(event), event)} onDragOver={event => own(live.over(event), event)} onDrop={event => own(live.drop(event), event)}>
@@ -136,10 +136,10 @@ export function PropertyOptionsEditor({ value, onChange, observed = [], onRename
 }
 
 /**
- * Definition-only edits: the host owns scope, persistence, and all note values. `kinds`: the types it offers — a note's
- * field the kinds a note can hold (the default); a folder's new column every kind, Linked mentions too (YAZ-4738).
+ * Definition-only edits: the host owns scope, persistence, and all page values. `kinds`: the types it offers — a page's
+ * field the kinds a page can hold (the default); a folder's new column every kind, Linked mentions too (YAZ-4738).
  */
-export function PropertyDefinitionEditor({ value, onChange, observed = [], kinds = NOTE_PROPERTY_KINDS }: {
+export function PropertyDefinitionEditor({ value, onChange, observed = [], kinds = PAGE_PROPERTY_KINDS }: {
   value: PropertyDecl; onChange: (next: PropertyDecl) => void; observed?: readonly string[]; kinds?: readonly PropertyKind[]
 }) {
   const unit = useUnit()
@@ -168,14 +168,14 @@ export function PropertyDefinitionEditor({ value, onChange, observed = [], kinds
         }}><PropertyTypeIcon kind={kind} /><span>{PROPERTY_LABELS[kind]}</span>{value.kind === kind && <span className="property-def__check" aria-hidden="true">✓</span>}</button>)}
         {types.length === 0 && <p className="property-def__empty">No matching types</p>}
       </div>
-      <p className="property-def__hint">{unit('Changing type keeps existing note values.')}</p>
+      <p className="property-def__hint">{unit('Changing type keeps existing page values.')}</p>
     </section> : <>
       <button ref={typeButton} type="button" className="property-def__type-row" aria-label={`Property type: ${PROPERTY_LABELS[value.kind]}`} aria-expanded={false} onClick={() => setChoosing(true)}>
         <span className="property-def__muted">Type</span><span className="property-def__current-type"><PropertyTypeIcon kind={value.kind} />{PROPERTY_LABELS[value.kind]}<span className="property-def__chevron" aria-hidden="true">›</span></span>
       </button>
       {!choice && <p className="property-def__description">{DESCRIPTIONS[value.kind]}</p>}
-      {/* YAZ-4795 demo: the same "Notes from" folder picker as Edit column, where the folders are known (a folder page). */}
-      {(value.kind === 'link' || value.kind === 'multi-link') && linkFolders !== null && <div className="property-def__target"><span>Notes from</span><NotesFromPicker target={value.target} label="the new column" source={linkFolders} onPick={target => {
+      {/* YAZ-4795 demo: the same "Pages from" folder picker as Edit column, where the folders are known (a folder page). */}
+      {(value.kind === 'link' || value.kind === 'multi-link') && linkFolders !== null && <div className="property-def__target"><span>Pages from</span><PagesFromPicker target={value.target} label="the new column" source={linkFolders} onPick={target => {
         const next = { ...value }
         if (target !== undefined) next.target = target; else delete next.target
         onChange(next)

@@ -1,8 +1,8 @@
 /**
  * Read only for the whole vault on a folder page (YAZ-4939): with the vault On the page — its title, its columns and its
- * settings — and every cell lock, with no `readonly` in `.folder.md` and none in a note; its views still change and save
+ * settings — and every cell lock, with no `readonly` in `.folder.md` and none in a page; its views still change and save
  * (round 3); the chip's time choice unlocks
- * THIS tab, and each note's own switch then still holds. Mounted as `FolderView.toolbar.test.tsx` is, under the context
+ * THIS tab, and each page's own switch then still holds. Mounted as `FolderView.toolbar.test.tsx` is, under the context
  * `Editor` provides.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -52,7 +52,7 @@ let clock = 100
 let root: Root | null = null
 let container: HTMLElement | null = null
 
-/** The index's snapshot: two notes — one with its own `readonly: true` — and the settings file's record. */
+/** The index's snapshot: two pages — one with its own `readonly: true` — and the settings file's record. */
 function feed(): void {
   const records = [rec(LEAD, { priority: 'High' }), rec(OWN, { priority: 'Low', readonly: true })]
   const settings = disk.get(SETTINGS_FILE)
@@ -150,7 +150,7 @@ const addColumnRight = (el: ParentNode, label: string, name: string): void => {
 }
 
 describe('Read only for the whole vault on a folder page (YAZ-4939)', () => {
-  it('YAZ-4985: a row\'s "Delete note…" asks the vault\'s door BEFORE its delete sheet; refused, no sheet; allowed, the sheet, and its Delete tells App the door was asked', async () => {
+  it('YAZ-4985: a row\'s "Delete page…" asks the vault\'s door BEFORE its delete sheet; refused, no sheet; allowed, the sheet, and its Delete tells App the door was asked', async () => {
     let allow = false
     const ask = vi.fn(async () => allow)
     const trash = vi.fn(async () => undefined)
@@ -158,21 +158,21 @@ describe('Read only for the whole vault on a folder page (YAZ-4939)', () => {
     const pick = async () => {
       const row = [...el.querySelectorAll<HTMLElement>('tbody tr')].find((tr) => tr.textContent?.includes('Lead Gen'))!
       act(() => void row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
-      click([...el.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((x) => x.textContent === 'Delete note…')!)
+      click([...el.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((x) => x.textContent === 'Delete page…')!)
       await flush()
     }
     await pick()
     expect(ask).toHaveBeenCalledExactlyOnceWith('/vault')
-    expect(document.querySelector('#confirm-delete-notes-text')).toBeNull()
+    expect(document.querySelector('#confirm-delete-pages-text')).toBeNull()
     allow = true
     await pick()
-    expect(document.querySelector('#confirm-delete-notes-text')?.textContent).toBe('Delete "Lead Gen"? It moves to the Trash.')
+    expect(document.querySelector('#confirm-delete-pages-text')?.textContent).toBe('Delete "Lead Gen"? It moves to the Trash.')
     click([...document.querySelectorAll<HTMLElement>('.confirm button')].find((b) => b.textContent === 'Delete')!)
     await flush()
     expect(trash).toHaveBeenCalledExactlyOnceWith([LEAD], true)
   })
 
-  it('YAZ-4985: a row\'s "Duplicate note" is a New note: it asks the vault\'s door first; refused, nothing is copied; allowed, the copy is made', async () => {
+  it('YAZ-4985: a row\'s "Duplicate page" is a New page: it asks the vault\'s door first; refused, nothing is copied; allowed, the copy is made', async () => {
     const duplicate = vi.mocked(api.file.duplicate)
     let allow = false
     const ask = vi.fn(async () => allow)
@@ -180,7 +180,7 @@ describe('Read only for the whole vault on a folder page (YAZ-4939)', () => {
     const pick = async () => {
       const row = [...el.querySelectorAll<HTMLElement>('tbody tr')].find((tr) => tr.textContent?.includes('Lead Gen'))!
       act(() => void row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
-      click([...el.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((x) => x.textContent === 'Duplicate note')!)
+      click([...el.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((x) => x.textContent === 'Duplicate page')!)
       await flush()
     }
     await pick()
@@ -266,14 +266,14 @@ describe('Read only for the whole vault on a folder page (YAZ-4939)', () => {
     expect([...el.querySelectorAll('.view-table thead th')].map((t) => t.textContent)).not.toContain('Owner')
   })
 
-  it('the vault Off: no chip, and only the note with its own switch is locked', async () => {
+  it('the vault Off: no chip, and only the page with its own switch is locked', async () => {
     const el = await mount(false)
     expect(chip(el)).toBeNull()
     expect(lockedCell(el, 'Lead Gen')).toBe(false)
     expect(lockedCell(el, 'Own switch')).toBe(true)
   })
 
-  it('a time choice unlocks this tab — the settings write goes, the cells open, a note’s own switch still holds; at zero it locks again; "Lock now" locks at once', async () => {
+  it('a time choice unlocks this tab — the settings write goes, the cells open, a page’s own switch still holds; at zero it locks again; "Lock now" locks at once', async () => {
     const el = await mount(true)
     click(chip(el)!)
     click(boxButton(el, 'Allow edits for 1 minute'))

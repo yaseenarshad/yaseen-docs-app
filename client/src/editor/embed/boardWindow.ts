@@ -1,6 +1,6 @@
 /**
  * THE BOARD WINDOW (YAZ-4824; D2, D9, D10, D11, D12, D13, items 4, 6, 7, 10, 12, 13, 17, 20, 22, 24): a window into a
- * drawing or a diagram, in a note. A host (`types.ts`) gives it a board, the options its text holds and its doors; the
+ * drawing or a diagram, in a page. A host (`types.ts`) gives it a board, the options its text holds and its doors; the
  * window shows the board's ONE picture (`boardPictures.ts`) and handles every gesture. It knows nothing of ProseMirror.
  * This module is the lazy chunk `loadBoardWindow()` imports; nothing loads it at startup.
  *
@@ -12,19 +12,19 @@
  * GESTURES (D10, as the tab's view mode): the wheel pans (`delta / zoom`); ⌘ or ctrl + wheel, and a pinch, zoom at the
  * pointer by `exp(−deltaY × 0.01)` (the engine's `getWheelZoom`); a drag pans. While selected: ⌘+ ⌘− (× 1.1, the
  * engine's step), ⌘0 (100%), Shift+1 (fit), Escape (deselect, item 20). Only those keys stop; ⌘+ elsewhere stays the
- * note's zoom.
+ * page's zoom.
  *
  * STATES (D9): Live — the wheel moves it, except for 300 ms after a page scroll (the scroll guard); Resting — after
  * `embedRestSeconds` with no gesture (read live; 0 = never) the wheel scrolls the page, a hover says "Click to move",
  * a click wakes it, and nothing is written; Locked — nothing moves it, the lock button or the menu unlocks it, saved
  * as `locked`. A new embed is written `|locked` (YAZ-2571 round 7); an embed with no options is an old one, unlocked.
- * In a read-only host (a Read only note or vault, Explore's reading layer) every window starts locked, whatever the
+ * In a read-only host (a Read only page or vault, Explore's reading layer) every window starts locked, whatever the
  * text saved; an unlock there is this view's only and is never written, and an editable host again gets the saved lock.
  * View full size is never locked so: it is there to look around in.
  *
  * WRITES (D4, item 18): 800 ms after the last wheel or drag, the rounded view goes to `onOptions` — only when it moved
  * enough (`movedEnough`) and the host is editable. A view moved in a read-only host is never written, not even when the
- * note turns editable before that write (YAZ-4942). A resize, a lock, a page and a fit write at once. While a gesture
+ * page turns editable before that write (YAZ-4942). A resize, a lock, a page and a fit write at once. While a gesture
  * runs or a write waits, `update({ options })` is kept, not applied (item 17); it applies once nothing was written,
  * and a write supersedes it (the host's echo of that write follows).
  *
@@ -237,7 +237,7 @@ class BoardWindow implements BoardWindowHandle {
   private readonly pill: HTMLButtonElement
   private readonly zoomButton: HTMLButtonElement
   private readonly line: HTMLDivElement
-  private readonly restNote: HTMLDivElement
+  private readonly restPage: HTMLDivElement
   private readonly handles: HTMLSpanElement[]
 
   private status: Status = 'loading'
@@ -265,7 +265,7 @@ class BoardWindow implements BoardWindowHandle {
   /** An `update({ options })` that came while a gesture ran or a write waited (item 17). */
   private pendingOptions: { value: EmbedOptions | null } | null = null
   private gesture = false
-  /** The view was last moved in a read-only host (YAZ-4942): it is this view's only and is never written, also when the note turns editable before its write. */
+  /** The view was last moved in a read-only host (YAZ-4942): it is this view's only and is never written, also when the page turns editable before its write. */
   private viewReadOnly = false
 
   private restTimer: ReturnType<typeof setTimeout> | undefined
@@ -283,7 +283,7 @@ class BoardWindow implements BoardWindowHandle {
   /** The zoom label's percent as written (A23): a pan frame writes it only when it changes. */
   private zoomLabel = -1
 
-  /** `full`: the window of View full size, which has the focus itself (A3); a note's window never takes it. */
+  /** `full`: the window of View full size, which has the focus itself (A3); a page's window never takes it. */
   constructor(
     host: BoardWindowHost,
     private readonly full = false,
@@ -318,8 +318,8 @@ class BoardWindow implements BoardWindowHandle {
     this.foldButton = button('board-window__fold', 'Collapse embed', FOLD_UP)
     this.pill = button('board-window__pill', 'Open', '')
     this.zoomButton = button('board-window__zoom', 'Fit', '')
-    this.restNote = el('div', 'board-window__rest')
-    this.restNote.textContent = 'Click to move'
+    this.restPage = el('div', 'board-window__rest')
+    this.restPage.textContent = 'Click to move'
     this.line = el('div', 'board-window__line')
     this.handles = HANDLE_DIRECTIONS.map((dir) => {
       const handle = el('span', `board-window__handle board-window__handle--${dir}`)
@@ -390,7 +390,7 @@ class BoardWindow implements BoardWindowHandle {
 
   /** The open window's children, in order. */
   private parts(): HTMLElement[] {
-    return [this.stage, this.restNote, this.lockButton, this.foldButton, this.pill, this.zoomButton, ...this.handles]
+    return [this.stage, this.restPage, this.lockButton, this.foldButton, this.pill, this.zoomButton, ...this.handles]
   }
 
   // ── Picture ──
@@ -689,7 +689,7 @@ class BoardWindow implements BoardWindowHandle {
     this.width = size.width
     this.height = size.height
     this.renderSize()
-    // A read-only host keeps the view's own lock (YAZ-2571 round 7): the text's lock is for an editable note.
+    // A read-only host keeps the view's own lock (YAZ-2571 round 7): the text's lock is for an editable page.
     if (!this.readOnlyLock() && this.locked !== (options?.locked ?? false)) {
       this.locked = options?.locked ?? false
       this.renderLock()
@@ -736,7 +736,7 @@ class BoardWindow implements BoardWindowHandle {
     if (e.button !== 0 || this.folded) return
     if (e.target instanceof Element && e.target.closest('.board-window__handle') !== null) return
     e.preventDefault()
-    // In a note the EDITOR keeps the focus (A3): a pan must leave the caret and the keys where they were.
+    // In a page the EDITOR keeps the focus (A3): a pan must leave the caret and the keys where they were.
     if (this.full || this.host.fill === true) this.dom.focus({ preventScroll: true })
     const startX = e.clientX
     const startY = e.clientY
@@ -820,7 +820,7 @@ class BoardWindow implements BoardWindowHandle {
   }
 
   /**
-   * The window's own keys (D10): ⌘+ ⌘− ⌘0 and Shift+1. In a note the EDITOR keeps the focus (typing over a selected
+   * The window's own keys (D10): ⌘+ ⌘− ⌘0 and Shift+1. In a page the EDITOR keeps the focus (typing over a selected
    * embed replaces it, item 21), so the host hands each key here while the embed is selected; the full-size overlay's
    * window, which has the focus, reaches it through `onKey`. True when the key was the window's.
    */
@@ -1045,7 +1045,7 @@ class BoardWindow implements BoardWindowHandle {
     return { x: view.x, y: view.y, width: width / view.zoom, height: height / view.zoom }
   }
 
-  /** View full size (item 4): a second window of the same board over the whole note; Esc, the backdrop or ✕ close it. */
+  /** View full size (item 4): a second window of the same board over the whole page; Esc, the backdrop or ✕ close it. */
   private openFullSize(): void {
     if (this.overlay !== null) return
     const opener = document.activeElement
@@ -1100,7 +1100,7 @@ class BoardWindow implements BoardWindowHandle {
     inner.dom.focus({ preventScroll: true })
   }
 
-  /** A8: a view still waiting for its 800 ms write is written now (the note is about to save, or to go). */
+  /** A8: a view still waiting for its 800 ms write is written now (the page is about to save, or to go). */
   flush(): void {
     if (this.writeTimer !== undefined) this.writeNow(true)
   }

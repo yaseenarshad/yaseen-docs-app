@@ -5,10 +5,10 @@
  * links?" — CONFIRM-FIRST, never automatic, never a dialog.
  *
  * Three flows, serial (each step continues the last):
- *  - WHILE-RUNNING (steps 1–2): rename a linked note via node fs with the app open → the
+ *  - WHILE-RUNNING (steps 1–2): rename a linked page via node fs with the app open → the
  *    watcher-driven index refetch pairs the vanished/appeared records by (size, mtime) → the
  *    banner names both paths; nothing is rewritten until Update, which repairs the open tab
- *    (label follows) and rewrites the referencing note on disk with the summary notice.
+ *    (label follows) and rewrites the referencing page on disk with the summary notice.
  *  - DISMISS (step 3): the banner's Dismiss rewrites NOTHING, and the hypothesis stays gone
  *    for the session (a later index refetch must not re-offer it).
  *  - COLD-START (step 4): quit (the persistent index cache flushes), rename on disk while the
@@ -64,18 +64,18 @@ test('step 1 — a rename on disk while the app runs banners with both names; NO
 
   await expect(banner(win)).toContainText('Looks like B.md became B2.md — update 1 link?')
   await shoot(win, 'ext-rename-01-banner')
-  // Confirm-first, ALWAYS: the referencing note is untouched while the banner waits.
+  // Confirm-first, ALWAYS: the referencing page is untouched while the banner waits.
   expect(await readFile(path.join(vault, 'A.md'), 'utf8')).toContain('[[B]]')
 })
 
-test('step 2 — Update repairs the open tab and rewrites the referencing note; summary notice; banner gone', async () => {
+test('step 2 — Update repairs the open tab and rewrites the referencing page; summary notice; banner gone', async () => {
   await banner(win).locator('button', { hasText: 'Update' }).click()
 
   await expect.poll(() => readFile(path.join(vault, 'A.md'), 'utf8')).toBe('# A\n\nSee [[B2]] here.\n')
   // The open tab followed through the SAME file:renamed downstream as an in-app rename.
   await expect(activeTab(win)).toHaveText('B2')
   await expect(editorOf(win)).toContainText(B_BODY)
-  await expect(win.locator('.link-notice')).toHaveText('Updated links in 1 note')
+  await expect(win.locator('.link-notice')).toHaveText('Updated links in 1 page')
   await expect(banner(win)).toHaveCount(0)
   await shoot(win, 'ext-rename-02-updated')
 })
@@ -90,7 +90,7 @@ test('step 3 — Dismiss rewrites nothing and the hypothesis stays dismissed for
   await writeFile(path.join(vault, 'Ideas.md'), '# Ideas\n\nsynthetic-idea-body touched\n')
   await win.waitForTimeout(1500)
   await expect(banner(win)).toHaveCount(0)
-  // And the referencing note was never rewritten.
+  // And the referencing page was never rewritten.
   expect(await readFile(path.join(vault, 'D.md'), 'utf8')).toBe('# D\n\nSee [[E]] here.\n')
   await shoot(win, 'ext-rename-03-dismissed')
   await quitApp(app) // flushes the persistent index cache — step 4's before-picture
@@ -107,7 +107,7 @@ test('step 4 — cold start: renamed while the app was CLOSED → the cache reco
 
   await banner(win).locator('button', { hasText: 'Update' }).click()
   await expect.poll(() => readFile(path.join(vault, 'A.md'), 'utf8')).toBe('# A\n\nSee [[B3]] here.\n')
-  await expect(win.locator('.link-notice')).toHaveText('Updated links in 1 note')
+  await expect(win.locator('.link-notice')).toHaveText('Updated links in 1 page')
   await expect(banner(win)).toHaveCount(0)
   await shoot(win, 'ext-rename-05-cold-updated')
   await quitApp(app)

@@ -48,7 +48,7 @@ describe('a file\'s icon outside the tree (YAZ-3440 D11)', () => {
     expect(fileIconAttrs(h, '/v/a.ts', false)['data-icon-custom']).toBeUndefined()
     expect(fileIconAttrs(h, '/v/a.zip', false)['data-kind']).toBe('other')
     expect(fileIconAttrs(h, '/v/src', true)).toMatchObject({ 'data-kind': 'folder', 'data-icon': 'folder-src' })
-    expect(fileIconAttrs(h, '/v/notes.md', false)['data-icon']).toBe(rowIcon(h.rowIcons, '/v/notes.md', 'notes.md', 'file').id)
+    expect(fileIconAttrs(h, '/v/pages.md', false)['data-icon']).toBe(rowIcon(h.rowIcons, '/v/pages.md', 'pages.md', 'file').id)
   })
 
   it("a path outside the window's vaults gets Material's icon: no pick and no rule; so does a mount with no App", () => {

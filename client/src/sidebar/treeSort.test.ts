@@ -58,7 +58,7 @@ describe('sortLevel under Kind first (YAZ-4614 D66)', () => {
   const of = (path: string, kind: FileKind | null, mtime: number): TreeNode => ({ type: 'file', name: path.split('/').pop()!, path, size: 1, mtime, kind })
   const byName = (node: TreeNode) => node.name
   const paths = (nodes: TreeNode[]) => nodes.map(byName)
-  // One level with every kind, in no order: two folders, two notes, a drawing, a diagram, a PDF, an image, a text file, a file with no viewer.
+  // One level with every kind, in no order: two folders, two pages, a drawing, a diagram, a PDF, an image, a text file, a file with no viewer.
   const mixed = (): TreeNode[] => [
     of('/v/b.md', 'markdown', 40),
     of('/v/a.png', 'image', 60),
@@ -80,7 +80,7 @@ describe('sortLevel under Kind first (YAZ-4614 D66)', () => {
     expect(paths(sortLevel(mixed(), { ...NAME, kinds: false }, byName))).toEqual(before)
   })
 
-  it('on: folders, notes, drawings, diagrams, PDFs, images, text files, other files; Name A to Z inside each kind, and Z to A flips the rows of a kind, not the kinds', () => {
+  it('on: folders, pages, drawings, diagrams, PDFs, images, text files, other files; Name A to Z inside each kind, and Z to A flips the rows of a kind, not the kinds', () => {
     expect(paths(sortLevel(mixed(), KINDS, byName))).toEqual(BY_KIND)
     expect(paths(sortLevel(mixed(), { ...KINDS, reverse: true }, byName))).toEqual(['z', 'y', 'b.md', 'a.md', 'a.excalidraw', 'a.drawio', 'a.pdf', 'a.png', 'a.txt', 'a.zip'])
   })
@@ -201,7 +201,7 @@ describe('sortLevel under Best match (YAZ-3511 D12)', () => {
     dir('/v/Plans', [file('/v/Plans/plan.md', 10)]),
     file('/v/Plan B.md', 30),
     file('/v/Plan C.md', 60),
-    file('/v/notes.md', 99),
+    file('/v/pages.md', 99),
   ]
   const scores = new Map([
     ['/v/Project plan.md', 3],
@@ -212,9 +212,9 @@ describe('sortLevel under Best match (YAZ-3511 D12)', () => {
   ])
 
   it('the best score first; on a tie the newer row; folders do not go first; a row with no score goes last (edge cases 28 to 31)', () => {
-    expect(names(sortLevel(nodes(), BEST, byFileName, scores))).toEqual(['Plans', 'Plan C', 'Plan B', 'Project plan', 'notes'])
+    expect(names(sortLevel(nodes(), BEST, byFileName, scores))).toEqual(['Plans', 'Plan C', 'Plan B', 'Project plan', 'pages'])
     const fileFirst = new Map([...scores, ['/v/Plans', 2], ['/v/Project plan.md', 1]])
-    expect(names(sortLevel(nodes(), BEST, byFileName, fileFirst))).toEqual(['Project plan', 'Plan C', 'Plan B', 'Plans', 'notes'])
+    expect(names(sortLevel(nodes(), BEST, byFileName, fileFirst))).toEqual(['Project plan', 'Plan C', 'Plan B', 'Plans', 'pages'])
   })
 
   it('the same score and the same time: by name, A to Z (edge case 29); reverse does nothing', () => {

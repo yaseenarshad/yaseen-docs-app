@@ -69,7 +69,7 @@ describe('the pop-up toolbar and the / menu of a text box (YAZ-4277 1C, D4, D8)'
     expect(boxText(view)).toBe('☐ pick these words')
   })
 
-  it('maps every note highlight name a box has no name for to the note’s own hex (YAZ-4388)', () => {
+  it('maps every page highlight name a box has no name for to the page’s own hex (YAZ-4388)', () => {
     const { yellow, green, blue, pink, ...others } = HIGHLIGHT_HEX
     void [yellow, green, blue, pink]
     expect(PANEL_HIGHLIGHT_HEX).toEqual(others)
@@ -83,7 +83,7 @@ describe('the pop-up toolbar and the / menu of a text box (YAZ-4277 1C, D4, D8)'
   ])('keeps a %s highlight from the ▾ panel (YAZ-4388) on the box letters, as %s', async (color, run) => {
     const { view } = await mountBox('pick these words')
     view.dispatch(view.state.tr.addMark(1, 5, view.state.schema.marks.highlight.create({ color })))
-    // the box keeps the four note names it draws; any other panel colour is its own hex, which a box draws too
+    // the box keeps the four page names it draws; any other panel colour is its own hex, which a box draws too
     expect(docToBox(view.state.doc, { text: '', textRuns: undefined }, helpers).textRuns).toEqual([{ start: 0, end: 4, highlight: run }])
   })
 

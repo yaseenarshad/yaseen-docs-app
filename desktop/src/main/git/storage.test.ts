@@ -39,12 +39,12 @@ describe('vaultStorage (YAZ-1801 D2)', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     const lean = await write(root, 'Nested/Lean.excalidraw', board({}))
     const corrupt = await write(root, 'Corrupt.excalidraw', '{ not json')
     const diagram = await write(root, 'Flow.drawio', '<mxfile></mxfile>')
-    // A note embed (YAZ-852) keeps its pictures inside (rule 28): a board, but not "embedded" — shrink never moves them.
+    // A page embed (YAZ-852) keeps its pictures inside (rule 28): a board, but not "embedded" — shrink never moves them.
     const embed = await write(root, 'assets/drawings/Embed.excalidraw', board({ e: dataURL }))
     const pic = await write(root, 'assets/abc.png', 'png bytes')
-    const noteImage = await write(root, 'assets/images/shot.png', 'note image')
+    const pageImage = await write(root, 'assets/images/shot.png', 'page image')
     const theirs = await write(root, 'Nested/assets/mine.png', 'a user folder called assets is theirs')
-    const note = await write(root, 'Note.md', '# a note')
+    const page = await write(root, 'Page.md', '# a page')
     const video = await write(root, 'Big video.mov', 'mov')
     await write(root, '.yaseendocs/github.json', '{"enabled":true}')
     await write(root, '.hidden/Ghost.excalidraw', board({ g: dataURL }))
@@ -52,8 +52,8 @@ describe('vaultStorage (YAZ-1801 D2)', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     const stats = await vaultStorage(root)
 
     expect(stats.boards).toEqual({ bytes: legacy + lean + corrupt + diagram + embed, count: 5 })
-    expect(stats.pictures).toEqual({ bytes: pic + noteImage, count: 2 })
-    expect(stats.other).toEqual({ bytes: theirs + note + video, count: 3 })
+    expect(stats.pictures).toEqual({ bytes: pic + pageImage, count: 2 })
+    expect(stats.other).toEqual({ bytes: theirs + page + video, count: 3 })
     expect(stats.embedded).toEqual({ bytes: 2 * dataURL.length, boards: 1 })
     expect(stats.git).toBeNull()
     expect(stats.large).toEqual([])
@@ -73,7 +73,7 @@ describe('vaultStorage (YAZ-1801 D2)', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     const aaa = await write(root, 'Trip pictures/aaa.png', 'aaa')
     const bbb = await write(root, 'Trip pictures/bbb.gif', 'bbbb')
     // not a picture the board can read: a text file, and a file in a folder under it
-    const notes = await write(root, 'Trip pictures/notes.txt', 'notes')
+    const pages = await write(root, 'Trip pictures/pages.txt', 'pages')
     const deeper = await write(root, 'Trip pictures/old/ccc.png', 'ccc')
     const ccc = await write(outside, 'ccc.png', 'ccccc')
     await write(outside, 'deep/ddd.png', 'not walked')
@@ -83,7 +83,7 @@ describe('vaultStorage (YAZ-1801 D2)', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
 
     expect(stats.boards).toEqual({ bytes: trip + again + far + nope, count: 4 })
     expect(stats.pictures).toEqual({ bytes: aaa + bbb + ccc, count: 3 })
-    expect(stats.other).toEqual({ bytes: notes + deeper, count: 2 })
+    expect(stats.other).toEqual({ bytes: pages + deeper, count: 2 })
   })
 
   it('lists EVERY file at or over 50 MiB — board, picture, anything else — biggest first, and nothing under it', async () => {

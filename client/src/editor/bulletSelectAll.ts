@@ -1,8 +1,8 @@
 /**
- * ⌘A ON A BULLET (YAZ-4348 demo round 2, Yasin: "when i am on a bullet in a note, and then i hit CMD A, i want it to
+ * ⌘A ON A BULLET (YAZ-4348 demo round 2, Yasin: "when i am on a bullet in a page, and then i hit CMD A, i want it to
  * only highlight the contents of that bullet first, then if i hit CMD A again, it will then highlight the entire
  * page"). The first ⌘A selects the text of the bullet's own line (a bullet, a numbered item or a task; its nested
- * bullets are not part of it). A second ⌘A, on just that, declines, and the page's own select all runs: the whole note.
+ * bullets are not part of it). A second ⌘A, on just that, declines, and the page's own select all runs: the whole page.
  *
  * Priority 80: a table cell's and a cell note's ⌘A (`cellNoteCard.ts`, 90) win inside a table. An empty bullet has no
  * text to select, so ⌘A there is the page's at once.

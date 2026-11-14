@@ -61,7 +61,7 @@ describe('blockFileNavigation (YAZ-3253 S21)', () => {
       blockFileNavigation(event, legacy ? url : undefined)
       return event.preventDefault.mock.calls.length === 1
     }
-    expect([go('file:///Users/yasin/Downloads/Note.md'), go('file:///tmp/a%20b.pdf', true)]).toEqual([true, true])
+    expect([go('file:///Users/yasin/Downloads/Page.md'), go('file:///tmp/a%20b.pdf', true)]).toEqual([true, true])
     expect([go('app://yaseen/index.html?win=w1'), go('http://localhost:5173/'), go('not a url')]).toEqual([false, false, false])
   })
 

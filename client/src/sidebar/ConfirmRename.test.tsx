@@ -16,24 +16,24 @@ import { ConfirmRename, isNameChange, renameConfirmMessage } from './ConfirmRena
 
 describe('renameConfirmMessage (⚡ YAZ-888) — the LOCKED copy', () => {
   it('names both spellings and the count, plural and singular', () => {
-    expect(renameConfirmMessage('Old Note', 'New Note', 3, false)).toBe("Rename 'Old Note' to 'New Note'? Links in 3 notes will be updated.")
-    expect(renameConfirmMessage('Old Note', 'New Note', 1, false)).toBe("Rename 'Old Note' to 'New Note'? Links in 1 note will be updated.")
+    expect(renameConfirmMessage('Old Page', 'New Page', 3, false)).toBe("Rename 'Old Page' to 'New Page'? Links in 3 pages will be updated.")
+    expect(renameConfirmMessage('Old Page', 'New Page', 1, false)).toBe("Rename 'Old Page' to 'New Page'? Links in 1 page will be updated.")
   })
 
   it('a page nobody links to says so instead of promising an update of nothing', () => {
-    expect(renameConfirmMessage('Old Note', 'New Note', 0, false)).toBe("Rename 'Old Note' to 'New Note'? No other notes link to it.")
+    expect(renameConfirmMessage('Old Page', 'New Page', 0, false)).toBe("Rename 'Old Page' to 'New Page'? No other pages link to it.")
   })
 
-  it('a title edit with nothing to rewrite says only that: notes may still link to the page by its id (YAZ-2420 D16)', () => {
-    expect(renameConfirmMessage('Old Note', 'New Note', 0, true)).toBe("Rename 'Old Note' to 'New Note'? No links need updating.")
-    expect(renameConfirmMessage('Old Note', 'New Note', 2, true)).toBe("Rename 'Old Note' to 'New Note'? Links in 2 notes will be updated.")
+  it('a title edit with nothing to rewrite says only that: pages may still link to the page by its id (YAZ-2420 D16)', () => {
+    expect(renameConfirmMessage('Old Page', 'New Page', 0, true)).toBe("Rename 'Old Page' to 'New Page'? No links need updating.")
+    expect(renameConfirmMessage('Old Page', 'New Page', 2, true)).toBe("Rename 'Old Page' to 'New Page'? Links in 2 pages will be updated.")
   })
 })
 
 describe('isNameChange (⚡ YAZ-888) — the rule the one door asks', () => {
   it('a changed last segment is a NAME change', () => {
     expect(isNameChange('/v/Old.md', '/v/New.md')).toBe(true)
-    expect(isNameChange('/v/Docs', '/v/Notes')).toBe(true)
+    expect(isNameChange('/v/Docs', '/v/Pages')).toBe(true)
   })
 
   it('a MOVE keeps the name — it never asks', () => {
@@ -51,8 +51,8 @@ afterEach(() => {
   container = null
 })
 
-const OLD = '/v/Old Note.md'
-const NEW = '/v/New Note.md'
+const OLD = '/v/Old Page.md'
+const NEW = '/v/New Page.md'
 
 function mount(count: number, kind: 'file' | 'dir' = 'file', titles: PathTitles = new Map()) {
   const onConfirm = vi.fn()
@@ -71,12 +71,12 @@ const press = (el: HTMLElement, key: string) => act(() => void btn(el, 'Cancel')
 describe('ConfirmRename', () => {
   it('renders the LOCKED copy over PAGE names — basenames minus the extension, never file names', () => {
     const { el } = mount(2)
-    expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'Old Note' to 'New Note'? Links in 2 notes will be updated.")
+    expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'Old Page' to 'New Page'? Links in 2 pages will be updated.")
   })
 
   it('E: the rename sheet names the page by its title (YAZ-2420 D14)', () => {
     const { el } = mount(0, 'file', new Map([[OLD, 'UP-001 - Abdul']]))
-    expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'UP-001 - Abdul' to 'New Note'? No other notes link to it.")
+    expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'UP-001 - Abdul' to 'New Page'? No other pages link to it.")
   })
 
   it('a title edit whose title is already in (a card file`s Done wrote it, YAZ-5037) names the file it renames, not the title twice', () => {
@@ -88,9 +88,9 @@ describe('ConfirmRename', () => {
     expect(container.querySelector('.confirm__text')?.textContent).toBe("Rename 'yaz-1.md' to 'Capital of France'? No links need updating.")
   })
 
-  it('names a FOLDER whole: one called `Old Note.md` keeps its `.md` (YAZ-2290)', () => {
+  it('names a FOLDER whole: one called `Old Page.md` keeps its `.md` (YAZ-2290)', () => {
     const { el } = mount(0, 'dir')
-    expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'Old Note.md' to 'New Note.md'? No other notes link to it.")
+    expect(el.querySelector('.confirm__text')?.textContent).toBe("Rename 'Old Page.md' to 'New Page.md'? No other pages link to it.")
   })
 
   it('offers exactly Cancel and Rename', () => {
@@ -176,7 +176,7 @@ describe('ConfirmRename', () => {
     expect(dialog?.getAttribute('role')).toBe('dialog')
     expect(dialog?.getAttribute('aria-modal')).toBe('true')
     expect(dialog?.getAttribute('aria-labelledby')).toBe('confirm-rename-text')
-    expect(el.querySelector('#confirm-rename-text')?.textContent).toContain('Links in 3 notes will be updated.')
+    expect(el.querySelector('#confirm-rename-text')?.textContent).toContain('Links in 3 pages will be updated.')
   })
 
   it('has no danger styling — nothing is destroyed here', () => {

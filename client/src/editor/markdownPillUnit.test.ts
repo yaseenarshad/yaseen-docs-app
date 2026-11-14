@@ -18,8 +18,8 @@ const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 async function mount(markdown: string) {
   const root = document.createElement('div')
   document.body.appendChild(root)
-  // As the app's `vaultHref`: a `#heading` of this note resolves to the note's folder (YAZ-4033).
-  const vaultPath = (href: string) => (href.startsWith('../') ? `/v/${href.slice(3)}` : href.startsWith('#') ? '/v/notes/' : null)
+  // As the app's `vaultHref`: a `#heading` of this page resolves to the page's folder (YAZ-4033).
+  const vaultPath = (href: string) => (href.startsWith('../') ? `/v/${href.slice(3)}` : href.startsWith('#') ? '/v/pages/' : null)
   const nav = { open: vi.fn(), copy: vi.fn(), onNotice: vi.fn(), vaultPath, icon: () => ({ class: 'probe-icon' }) }
   const crepe = createCrepe({ root, defaultValue: markdown, markdownLinkNav: nav })
   await crepe.create()
@@ -190,7 +190,7 @@ describe('a Markdown link pill is one unit (YAZ-4021)', () => {
     await settle()
   })
 
-  it('a paste in a read-only note leaves a pill alone at the next outside edit (YAZ-4038)', async () => {
+  it('a paste in a read-only page leaves a pill alone at the next outside edit (YAZ-4038)', async () => {
     const { view, crepe } = await mount(DOC)
     select(view, TO)
     crepe.setReadonly(true)

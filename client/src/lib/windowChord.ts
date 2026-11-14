@@ -9,7 +9,7 @@
  * fires inside a field the other one respects.
  */
 import { eventKey } from '@shared/hotkeyBindings'
-import { readOnlyNoteHoldsKeys } from './readOnlyCaret'
+import { readOnlyPageHoldsKeys } from './readOnlyCaret'
 
 /**
  * The chord's own half: which key, and exactly which modifiers (never merely tolerated). ⌘ is assumed
@@ -51,8 +51,8 @@ export function ownsWindowChord(event: KeyboardEvent, chord: WindowChord | null)
 
   const target = event.target
   if (!(target instanceof Element)) return false
-  // A read-only note is a note (YAZ-3127, D8): its body, or `<body>` with the reader's selection in it, keeps its keys.
-  if (readOnlyNoteHoldsKeys(target)) return false
+  // A read-only page is a page (YAZ-3127, D8): its body, or `<body>` with the reader's selection in it, keeps its keys.
+  if (readOnlyPageHoldsKeys(target)) return false
   if (target.ownerDocument.querySelector('[aria-modal="true"]') !== null) return false
 
   for (let el: Element | null = target; el !== null; el = el.parentElement) {

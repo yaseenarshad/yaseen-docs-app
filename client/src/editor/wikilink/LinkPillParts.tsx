@@ -66,9 +66,9 @@ export function PillTail({ tail, icon }: { tail: PillEnd; icon?: ReactNode }) {
 
 /**
  * A pill's inside under the vault's format (`pillParts`): the head, the icon where the format puts it (on the name,
- * `{icon}{name}`, today's; as a piece of an end; or nowhere), the name, the tail — as the note editor's widgets draw
- * them. `icon`: the page's `FileIcon`; none for a pill with no icon to draw (a missing note). `otherVault`: the name of
- * the pill's vault when that is not the note's own (a cell's pill is the vault's own, so it never has one).
+ * `{icon}{name}`, today's; as a piece of an end; or nowhere), the name, the tail — as the page editor's widgets draw
+ * them. `icon`: the page's `FileIcon`; none for a pill with no icon to draw (a missing page). `otherVault`: the name of
+ * the pill's vault when that is not the page's own (a cell's pill is the vault's own, so it never has one).
  */
 export function PillEnds({ text, info, icon, otherVault = null }: { text: string; info?: PathInfo; icon?: ReactNode; otherVault?: string | null }) {
   const { pills, vault } = useContext(PillLook)

@@ -1,22 +1,22 @@
 import { FrontmatterWriteError, parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
 
 /**
- * A folder page's own values for a note (D19, since YAZ-4713 C3 only for a column set to "Separate value on this
- * page"): `in`, one block per FOLDER ID, each holding that page's values for the note. Every other column's value is
- * the note's own top-level field (C1). The app's own key, never a column.
+ * A folder page's own values for a page (D19, since YAZ-4713 C3 only for a column set to "Separate value on this
+ * page"): `in`, one block per FOLDER ID, each holding that page's values for the page. Every other column's value is
+ * the page's own top-level field (C1). The app's own key, never a column.
  */
 export const FOLDER_VALUES_KEY = 'in'
 
 const isMap = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 
-/** ONE folder's values as the note holds them. A folder with no id, an `in` that is no map and a block that is no map all read as none. */
+/** ONE folder's values as the page holds them. A folder with no id, an `in` that is no map and a block that is no map all read as none. */
 export function folderValues(properties: Record<string, unknown>, folderId: string | undefined): Record<string, unknown> {
   const blocks = properties[FOLDER_VALUES_KEY]
   const block = folderId !== undefined && isMap(blocks) ? blocks[folderId] : undefined
   return isMap(block) ? block : {}
 }
 
-/** EVERY folder's block, by folder id, as written: what the index and the rename read a note's folder values through. Tolerant as `folderValues` is. */
+/** EVERY folder's block, by folder id, as written: what the index and the rename read a page's folder values through. Tolerant as `folderValues` is. */
 export function folderBlocks(properties: Record<string, unknown>): [string, Record<string, unknown>][] {
   const blocks = properties[FOLDER_VALUES_KEY]
   return isMap(blocks) ? Object.entries(blocks).filter((entry): entry is [string, Record<string, unknown>] => isMap(entry[1])) : []
@@ -50,7 +50,7 @@ export function withFolderValues(properties: Record<string, unknown>, folderId: 
  * Set (or clear, when `value === undefined`) ONE field of ONE folder's block in a whole file's
  * content. Only that field's own line is written (`setFrontmatterIn`, which refuses frontmatter
  * that will not parse): the rest of `in` keeps its quoting and layout, so two devices changing
- * different values of one note merge. Clearing a field the block does not hold returns the same
+ * different values of one page merge. Clearing a field the block does not hold returns the same
  * string; the block goes with its last field, and `in` with its last block.
  */
 export function setFolderValue(content: string, folderId: string, key: string, value: unknown): string {
@@ -64,7 +64,7 @@ export function setFolderValue(content: string, folderId: string, key: string, v
 
 /**
  * A whole file's content with the block of the folder `from` named `to` instead, where it stood: a
- * copied folder's values, under the copy's id. The same string when the note holds no block for
+ * copied folder's values, under the copy's id. The same string when the page holds no block for
  * `from`, already holds one for `to` (never overwritten), or its frontmatter will not parse.
  */
 export function moveFolderValues(content: string, from: string, to: string): string {

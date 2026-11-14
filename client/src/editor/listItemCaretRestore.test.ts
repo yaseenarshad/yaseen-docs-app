@@ -1,7 +1,7 @@
 /**
  * Crepe's list-item node view restores the caret one frame after it mounts (the pinned
  * `@milkdown/components` build, `client/vendor/milkdown-components-7.22.1-yaz1410.*`). YAZ-2131 4B:
- * that restore runs once per editor view per frame, not once per list item — opening a note with N
+ * that restore runs once per editor view per frame, not once per list item — opening a page with N
  * bullets used to run N whole-plugin passes in one frame (22.6 s at 5k lines) — and the caret
  * still lands where the last of those N dispatches put it.
  */

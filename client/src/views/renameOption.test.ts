@@ -1,7 +1,7 @@
 /**
- * S24 (YAZ-4591): renaming a Select or Multi-select option rewrites every note that holds it — this
+ * S24 (YAZ-4591): renaming a Select or Multi-select option rewrites every page that holds it — this
  * folder's block where the vault uses IDs, the top level where it does not — in ONE guarded write
- * per note, replacing only the renamed element of a list. `transformFile` is stubbed over an
+ * per page, replacing only the renamed element of a list. `transformFile` is stubbed over an
  * in-memory disk, so each rewrite is the real transform.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -18,7 +18,7 @@ vi.mock('./writeProperty', () => ({
   }),
 }))
 import { transformFile } from './writeProperty'
-import { renameInContent, renameInPaths, renameNotice, renameOptionInFilters, renameOptionInNotes, renamedValue, restoreInPaths } from './renameOption'
+import { renameInContent, renameInPaths, renameNotice, renameOptionInFilters, renameOptionInPages, renamedValue, restoreInPaths } from './renameOption'
 
 const ID = 'k3m9x2pq7abc'
 const OTHER = 'z8y7x6w5v4t3'
@@ -48,12 +48,12 @@ describe('renamedValue', () => {
 })
 
 describe('renameInContent', () => {
-  it('a "Separate value for <folder>" column (YAZ-4713 C3): only that page’s block changes — not the note’s own key, not another page’s', () => {
+  it('a "Separate value for <folder>" column (YAZ-4713 C3): only that page’s block changes — not the page’s own key, not another page’s', () => {
     const before = `---\ntitle: A\nstage: Todo\nin:\n  ${OTHER}:\n    stage: Todo\n  ${ID}:\n    stage: Todo\n    tags: [x]\n---\nbody\n`
     expect(renameInContent(before, { block: ID }, 'stage', 'Todo', 'Next')).toEqual({ content: `---\ntitle: A\nstage: Todo\nin:\n  ${OTHER}:\n    stage: Todo\n  ${ID}:\n    stage: Next\n    tags: [x]\n---\nbody\n`, before: 'Todo' })
   })
 
-  it('a shared column (YAZ-4713 C1), in vaults with IDs and without: the note’s own key; a multi-select list keeps its other elements', () => {
+  it('a shared column (YAZ-4713 C1), in vaults with IDs and without: the page’s own key; a multi-select list keeps its other elements', () => {
     const before = '---\n# kept comment\nlabels:\n  - red\n  - Todo\n  - blue\nother: 1\n---\n'
     const { content: after } = renameInContent(before, null, 'labels', 'Todo', 'Next')
     expect(after).toContain('# kept comment')
@@ -66,8 +66,8 @@ describe('renameInContent', () => {
   })
 })
 
-describe('renameOptionInNotes', () => {
-  it('one write per note holding the label; non-holders and read-only notes are never written', async () => {
+describe('renameOptionInPages', () => {
+  it('one write per page holding the label; non-holders and read-only pages are never written', async () => {
     disk.set('/a.md', `---\nin:\n  ${ID}:\n    stage: Todo\n---\n`)
     disk.set('/b.md', `---\nin:\n  ${ID}:\n    stage: [Todo, Done]\n---\n`)
     disk.set('/c.md', `---\nin:\n  ${ID}:\n    stage: Done\n---\n`)
@@ -77,33 +77,33 @@ describe('renameOptionInNotes', () => {
       rec('/b.md', { in: { [ID]: { stage: ['Todo', 'Done'] } } }),
       rec('/c.md', { in: { [ID]: { stage: 'Done' } } }),
       rec('/locked.md', { readonly: true, in: { [ID]: { stage: 'Todo' } } }),
-      rec('/own.md', { stage: 'Todo' }), // the note's own key, not this folder's value
+      rec('/own.md', { stage: 'Todo' }), // the page's own key, not this folder's value
     ]
-    const result = await renameOptionInNotes(records, { block: ID }, 'stage', 'Todo', 'Next', new Set(['/locked.md']))
+    const result = await renameOptionInPages(records, { block: ID }, 'stage', 'Todo', 'Next', new Set(['/locked.md']))
     expect(vi.mocked(transformFile).mock.calls.map(([path]) => path)).toEqual(['/a.md', '/b.md'])
     expect(result).toEqual({ changed: [{ path: '/a.md', before: 'Todo' }, { path: '/b.md', before: ['Todo', 'Done'] }], kept: 1 })
     expect(disk.get('/a.md')).toContain('stage: Next')
     expect(disk.get('/b.md')).toMatch(/Next[\s\S]*Done/)
     expect(disk.get('/b.md')).not.toContain('Todo')
     expect(disk.get('/locked.md')).toContain('stage: Todo')
-    expect(renameNotice('Todo', 'Next', result)).toBe('Renamed “Todo” to “Next” in 2 notes · 1 note not changed')
+    expect(renameNotice('Todo', 'Next', result)).toBe('Renamed “Todo” to “Next” in 2 pages · 1 page not changed')
   })
 
   it('a failed write is counted as kept; the rest still land', async () => {
     disk.set('/a.md', '---\nstage: Todo\n---\n')
-    const result = await renameOptionInNotes([rec('/a.md', { stage: 'Todo' }), rec('/gone.md', { stage: 'Todo' })], null, 'stage', 'Todo', 'Next', new Set())
+    const result = await renameOptionInPages([rec('/a.md', { stage: 'Todo' }), rec('/gone.md', { stage: 'Todo' })], null, 'stage', 'Todo', 'Next', new Set())
     expect(result).toEqual({ changed: [{ path: '/a.md', before: 'Todo' }], kept: 1 })
   })
 
-  it('a note that is read only on disk is never written, wherever it is (YAZ-4637 M6), and counts as not changed', async () => {
+  it('a page that is read only on disk is never written, wherever it is (YAZ-4637 M6), and counts as not changed', async () => {
     disk.set('/a.md', '---\nstage: Todo\n---\n')
     disk.set('/outside.md', '---\nreadonly: true\nstage: Todo\n---\n')
-    const result = await renameOptionInNotes([rec('/a.md', { stage: 'Todo' }), rec('/outside.md', { readonly: true, stage: 'Todo' })], null, 'stage', 'Todo', 'Next', new Set())
+    const result = await renameOptionInPages([rec('/a.md', { stage: 'Todo' }), rec('/outside.md', { readonly: true, stage: 'Todo' })], null, 'stage', 'Todo', 'Next', new Set())
     expect(result).toEqual({ changed: [{ path: '/a.md', before: 'Todo' }], kept: 1 })
     expect(disk.get('/outside.md')).toBe('---\nreadonly: true\nstage: Todo\n---\n')
   })
 
-  it('Undo puts each changed note\'s exact previous value back (YAZ-4637 M5): a list that held both labels is whole again', async () => {
+  it('Undo puts each changed page\'s exact previous value back (YAZ-4637 M5): a list that held both labels is whole again', async () => {
     disk.set('/a.md', '---\nlabels:\n  - Todo\n  - Next\n---\n')
     disk.set('/b.md', '---\nlabels: Next\n---\n')
     const { changed } = await renameInPaths(['/a.md'], null, 'labels', 'Todo', 'Next')

@@ -2,7 +2,7 @@
  * Title search candidates (YAZ-802): basename + alias rows over an index snapshot, matched
  * through the shared completion matcher at SEARCH_CAP — and, since YAZ-1491, one row per FOLDER
  * of the loaded tree (🔒 D1), ranked through the very same matcher (🔒 D2); since YAZ-2620, one row
- * per tree file that is no note (🔒 D3 there), the same way. The perf smoke lives in
+ * per tree file that is no page (🔒 D3 there), the same way. The perf smoke lives in
  * searchCandidates.perf.test.ts (YAZ-740).
  */
 import { describe, expect, it } from 'vitest'
@@ -38,7 +38,7 @@ describe('searchCandidates', () => {
     ])
   })
 
-  it('E: a note is matched on its title and labelled with it, on its alias rows too; an alias equal to the title is skipped (YAZ-2420 D14)', () => {
+  it('E: a page is matched on its title and labelled with it, on its alias rows too; an alias equal to the title is skipped (YAZ-2420 D14)', () => {
     // The id the file name holds (YAZ-3748 B4): a file the app named from the title and id adds no file-name row.
     const rows = searchCandidates([{ ...rec('/vault/up-001-abdul-k3m9x2pq7abc.md', ['Abdul', 'up-001 - abdul'], 'UP-001 - Abdul'), id: 'k3m9x2pq7abc' }])
     expect(rows.map((c) => [c.name, c.label])).toEqual([
@@ -53,11 +53,11 @@ describe('searchCandidates', () => {
     const rows = searchCandidates([
       rec('/vault/2026-10-28-sync.md', [], 'Weekly sync'),
       { ...rec('/vault/2026-10-29-sync.md', [], 'Weekly sync 2'), id: 'k3m9x2pq' }, // an id does not hide a name given by hand
-      { ...rec('/vault/working-log-k3m9x2pq.md', [], 'Working Log'), id: 'k3m9x2pq' }, // `noteFileName`: the app named it
+      { ...rec('/vault/working-log-k3m9x2pq.md', [], 'Working Log'), id: 'k3m9x2pq' }, // `pageFileName`: the app named it
       { ...rec('/vault/old-title-yaz-12.md', [], 'New title'), id: 'YAZ-12' }, // a name built for an older title: the id finds it (4A finding 5)
       { ...rec('/vault/k3m9x2pq7abc.md', [], 'Bare id'), id: 'k3m9x2pq7abc' }, // the file name is the id
       rec('/vault/plan-b.md', [], 'Plan B'), // `kebabTitle`, a vault with no ids
-      rec('/vault/Notes.md'), // no `title:`: the title is the file name
+      rec('/vault/Pages.md'), // no `title:`: the title is the file name
       rec('/vault/cac.md', ['CAC'], 'Customer Acquisition Cost'), // the file name is an alias
     ])
     expect(rows.map((c) => c.label)).toEqual([
@@ -69,7 +69,7 @@ describe('searchCandidates', () => {
       'New title',
       'Bare id',
       'Plan B',
-      'Notes',
+      'Pages',
       'Customer Acquisition Cost',
       'CAC — Customer Acquisition Cost',
     ])
@@ -80,14 +80,14 @@ describe('searchCandidates', () => {
     expect(searchCandidates([rec('/vault/Alpha.md')])[0].folder).toBe('')
   })
 
-  it('an alias adds a row after its note, labelled with the basename', () => {
+  it('an alias adds a row after its page, labelled with the basename', () => {
     const rows = searchCandidates([rec('/vault/Customer Acquisition Cost.md', ['CAC', 'Acquisition Cost'])])
     expect(rows.map((c) => c.label)).toEqual([
       'Customer Acquisition Cost',
       'CAC — Customer Acquisition Cost',
       'Acquisition Cost — Customer Acquisition Cost',
     ])
-    // Every row opens the same note.
+    // Every row opens the same page.
     expect(rows.every((c) => c.path === '/vault/Customer Acquisition Cost.md')).toBe(true)
   })
 
@@ -96,10 +96,10 @@ describe('searchCandidates', () => {
   })
 
   it('duplicate basenames BOTH appear under the bare name, told apart by the folder (unlike linkCandidates)', () => {
-    const rows = searchCandidates([rec('/vault/Note.md'), rec('/vault/deep/Note.md')])
-    expect(rows.map((c) => c.name)).toEqual(['Note', 'Note'])
+    const rows = searchCandidates([rec('/vault/Page.md'), rec('/vault/deep/Page.md')])
+    expect(rows.map((c) => c.name)).toEqual(['Page', 'Page'])
     expect(rows.map((c) => c.folder)).toEqual(['', 'deep'])
-    expect(rows.map((c) => c.path)).toEqual(['/vault/Note.md', '/vault/deep/Note.md'])
+    expect(rows.map((c) => c.path)).toEqual(['/vault/Page.md', '/vault/deep/Page.md'])
   })
 })
 
@@ -136,7 +136,7 @@ describe('folderCandidates (🔒 D1, YAZ-1491)', () => {
 })
 
 describe('fileCandidates (🔒 D3, YAZ-2620)', () => {
-  it('S12: one `file` row per file that is no note — matched by its file name WITH the extension, labelled by its root-relative folder', () => {
+  it('S12: one `file` row per file that is no page — matched by its file name WITH the extension, labelled by its root-relative folder', () => {
     const rows = fileCandidates('/vault', ['/vault/skills/yt/get-transcript.py', '/vault/scan.pdf'])
     expect(rows).toEqual([
       { kind: 'file', name: 'get-transcript.py', lower: 'get-transcript.py', label: 'get-transcript.py', path: '/vault/skills/yt/get-transcript.py', folder: 'skills/yt' },
@@ -144,7 +144,7 @@ describe('fileCandidates (🔒 D3, YAZ-2620)', () => {
     ])
     expect(searchTitles(rows, '.py').map((c) => c.path)).toEqual(['/vault/skills/yt/get-transcript.py'])
     expect(searchTitles(rows, 'Get-Transcript').map((c) => c.path)).toEqual(['/vault/skills/yt/get-transcript.py'])
-    expect(searchTitles(rows, 'skills')).toEqual([]) // its folder is a label, never matched — a note's rule (🔒 D3, YAZ-739)
+    expect(searchTitles(rows, 'skills')).toEqual([]) // its folder is a label, never matched — a page's rule (🔒 D3, YAZ-739)
     expect(fileCandidates('/vault/', ['/vault/a/b.txt']).map((c) => c.folder)).toEqual(['a'])
   })
 
@@ -154,12 +154,12 @@ describe('fileCandidates (🔒 D3, YAZ-2620)', () => {
     expect(searchTitles(rows, 'excalidraw').map((c) => c.path)).toEqual(['/vault/Flow.excalidraw'])
   })
 
-  it('S12, S19: a note still matches by its title and aliases, never by a file name that the app made from the title (YAZ-3748 B4); a tie is folder, then note, then other file', () => {
-    const notes = searchCandidates([rec('/vault/up-001-abdul.md', ['Plan'], 'UP-001 - Abdul')])
-    const rows = [...folderCandidates('/vault', ['/vault/plan'], []), ...notes, ...fileCandidates('/vault', ['/vault/bin/plan', '/vault/up-001-abdul.py'])]
-    // The other file holds the text. The note's TITLE holds each of its words, so it follows as a word match (YAZ-3748 D2): by its title, not its file name.
+  it('S12, S19: a page still matches by its title and aliases, never by a file name that the app made from the title (YAZ-3748 B4); a tie is folder, then page, then other file', () => {
+    const pages = searchCandidates([rec('/vault/up-001-abdul.md', ['Plan'], 'UP-001 - Abdul')])
+    const rows = [...folderCandidates('/vault', ['/vault/plan'], []), ...pages, ...fileCandidates('/vault', ['/vault/bin/plan', '/vault/up-001-abdul.py'])]
+    // The other file holds the text. The page's TITLE holds each of its words, so it follows as a word match (YAZ-3748 D2): by its title, not its file name.
     expect(searchTitles(rows, 'up-001-abdul').map((c) => [c.path, c.label])).toEqual([['/vault/up-001-abdul.py', 'up-001-abdul.py'], ['/vault/up-001-abdul.md', 'UP-001 - Abdul']])
-    // `plan` three times, each an exact name: the folder, the note's alias, the file with no extension.
+    // `plan` three times, each an exact name: the folder, the page's alias, the file with no extension.
     expect(searchTitles(rows, 'plan').map((c) => [c.kind, c.label])).toEqual([['dir', 'plan'], ['file', 'Plan — UP-001 - Abdul'], ['file', 'plan']])
   })
 })
@@ -169,24 +169,24 @@ describe('searchTitles', () => {
     rec('/vault/Big CAC story.md'),
     rec('/vault/CAC Model.md'),
     rec('/vault/CAC.md'),
-    rec('/vault/Ideas.md', ['cac notes']),
+    rec('/vault/Ideas.md', ['cac pages']),
   ])
 
   it('ranks exact → prefix → substring, input order within each bucket', () => {
     expect(searchTitles(candidates, 'cac').map((c) => c.label)).toEqual([
       'CAC',
       'CAC Model',
-      'cac notes — Ideas',
+      'cac pages — Ideas',
       'Big CAC story',
     ])
   })
 
-  it('a note never matches on its folder (🔒 D3, YAZ-739); the folder itself is ONE row (🔒 D2, YAZ-1491)', () => {
-    const rows = [...folderCandidates('/vault', ['/vault/Archive'], []), ...searchCandidates([rec('/vault/Archive/Note.md')])]
+  it('a page never matches on its folder (🔒 D3, YAZ-739); the folder itself is ONE row (🔒 D2, YAZ-1491)', () => {
+    const rows = [...folderCandidates('/vault', ['/vault/Archive'], []), ...searchCandidates([rec('/vault/Archive/Page.md')])]
     expect(searchTitles(rows, 'archive').map((c) => [c.kind, c.label])).toEqual([['dir', 'Archive']])
   })
 
-  it('a folder and a note of the same name both match exactly — the folder first (tree order, 🔒 D1)', () => {
+  it('a folder and a page of the same name both match exactly — the folder first (tree order, 🔒 D1)', () => {
     const rows = [...folderCandidates('/vault', ['/vault/CAC'], []), ...searchCandidates([rec('/vault/CAC.md')])]
     expect(searchTitles(rows, 'cac').map((c) => [c.kind, c.path])).toEqual([
       ['dir', '/vault/CAC'],
@@ -195,13 +195,13 @@ describe('searchTitles', () => {
   })
 
   it('an empty query returns the first SEARCH_CAP rows in records order', () => {
-    const many = searchCandidates(Array.from({ length: SEARCH_CAP + 10 }, (_, i) => rec(`/vault/Note ${i}.md`)))
+    const many = searchCandidates(Array.from({ length: SEARCH_CAP + 10 }, (_, i) => rec(`/vault/Page ${i}.md`)))
     expect(searchTitles(many, '')).toEqual(many.slice(0, SEARCH_CAP))
   })
 
   it('caps at SEARCH_CAP after ranking — a late exact match still tops a board of substrings', () => {
     const many = searchCandidates([
-      ...Array.from({ length: SEARCH_CAP + 10 }, (_, i) => rec(`/vault/note cac ${i}.md`)),
+      ...Array.from({ length: SEARCH_CAP + 10 }, (_, i) => rec(`/vault/page cac ${i}.md`)),
       rec('/vault/CAC.md'),
     ])
     const matched = searchTitles(many, 'cac')
@@ -224,16 +224,16 @@ describe('searchTitles with pinned rows first (YAZ-2662 D4)', () => {
   })
 
   it('S24: the limit cuts AFTER the pinned matches went first — 60 other matches and 3 pinned keep the 3 and the best 47 of the others', () => {
-    const many = searchCandidates([...Array.from({ length: 60 }, (_, i) => rec(`/vault/Note ${String(i).padStart(2, '0')}.md`)), ...Array.from({ length: 3 }, (_, i) => rec(`/vault/Pinned/A note ${i}.md`))])
+    const many = searchCandidates([...Array.from({ length: 60 }, (_, i) => rec(`/vault/Page ${String(i).padStart(2, '0')}.md`)), ...Array.from({ length: 3 }, (_, i) => rec(`/vault/Pinned/A page ${i}.md`))])
     const pinned = new Set(many.slice(60).map((c) => c.path))
-    const matched = searchTitles(many, 'note', pinned)
+    const matched = searchTitles(many, 'page', pinned)
     expect(matched).toHaveLength(SEARCH_CAP)
-    expect(matched.slice(0, 3).map((c) => c.label)).toEqual(['A note 0', 'A note 1', 'A note 2']) // they only CONTAIN the text; the 60 start with it
+    expect(matched.slice(0, 3).map((c) => c.label)).toEqual(['A page 0', 'A page 1', 'A page 2']) // they only CONTAIN the text; the 60 start with it
     expect(matched.slice(3)).toEqual(many.slice(0, 47))
-    expect(searchTitles(many, 'note').some((c) => pinned.has(c.path))).toBe(false) // with no pinned row the limit cuts them, as before
+    expect(searchTitles(many, 'page').some((c) => pinned.has(c.path))).toBe(false) // with no pinned row the limit cuts them, as before
   })
 
-  it('no pinned row, or no pinned match, is the ranking as it was: what the note-shortcut picker asks for (R7)', () => {
+  it('no pinned row, or no pinned match, is the ranking as it was: what the page-shortcut picker asks for (R7)', () => {
     expect(searchTitles(candidates, 'cac', new Set())).toEqual(searchTitles(candidates, 'cac'))
     expect(searchTitles(candidates, 'big', first).map((c) => c.label)).toEqual(['Big CAC story'])
   })
@@ -253,16 +253,16 @@ describe('searchRows: the search box finds by id (YAZ-2420 D32)', () => {
   const folders = [{ ...rec('/vault/candidates/.folder.md', [], 'Candidates 2026'), id: 'f7n2w8rt4xyz' }]
   const rows = [
     ...folderCandidates('/vault', ['/vault/candidates'], folders),
-    ...searchCandidates([{ ...rec(ABDUL, ['Abdul'], 'UP-001 - Abdul'), id: ID }, rec('/vault/k3m9 abdul notes.md'), { ...rec('/vault/plan-7tq2m8vd4xhn.md', [], 'Plan'), id: '7tq2m8vd4xhn' }]),
+    ...searchCandidates([{ ...rec(ABDUL, ['Abdul'], 'UP-001 - Abdul'), id: ID }, rec('/vault/k3m9 abdul pages.md'), { ...rec('/vault/plan-7tq2m8vd4xhn.md', [], 'Plan'), id: '7tq2m8vd4xhn' }]),
   ]
   const found = (query: string) => searchRows(rows, query).map((c) => [c.kind, c.label, c.path])
 
-  it('D: an id pasted alone is its note, the only result, under its title', () => {
+  it('D: an id pasted alone is its page, the only result, under its title', () => {
     expect(found(ID)).toEqual([['file', 'UP-001 - Abdul', ABDUL]])
     expect(found(` ${ID.toUpperCase()} `)).toEqual([['file', 'UP-001 - Abdul', ABDUL]])
   })
 
-  it('D: a `[[<id>]]` link, a file name or a whole copied path that holds the id is the same one result, wherever the note lives now', () => {
+  it('D: a `[[<id>]]` link, a file name or a whole copied path that holds the id is the same one result, wherever the page lives now', () => {
     for (const pasted of [`[[${ID}|Abdul]]`, `up-001-abdul-sample-${ID}.md`, `/Users/y/vault/ai-dev-hire/upwork/up-001-abdul-sample-${ID}.md`]) expect(found(pasted)).toEqual([['file', 'UP-001 - Abdul', ABDUL]])
   })
 
@@ -275,7 +275,7 @@ describe('searchRows: the search box finds by id (YAZ-2420 D32)', () => {
   })
 
   it('in a vault that does not use IDs nothing is found by id: its index hands out no id, so an id pasted is searched as any text is (YAZ-2523 V5)', () => {
-    // The same note and folder as such a vault's index hands them out: no `id`, the file name as the title.
+    // The same page and folder as such a vault's index hands them out: no `id`, the file name as the title.
     const plain = [...folderCandidates('/vault', ['/vault/candidates'], [rec('/vault/candidates/.folder.md', [], 'candidates')]), ...searchCandidates([{ ...rec('/vault/candidates/Abdul.md', ['Abdul R']), properties: { id: ID } }])]
     for (const pasted of [ID, `[[${ID}|Abdul]]`, 'see f7n2w8rt4xyz']) expect(searchRows(plain, pasted)).toEqual([])
     expect(searchRows(plain, 'abdul')).toEqual(searchTitles(plain, 'abdul'))
@@ -283,39 +283,39 @@ describe('searchRows: the search box finds by id (YAZ-2420 D32)', () => {
   })
 
   it('D: text that holds no id of this vault is the ordinary search: part of an id matches nothing by id, and a title sharing its letters is found as any title is', () => {
-    expect(found('k3m9').map(([, label]) => label)).toEqual(['k3m9 abdul notes'])
+    expect(found('k3m9').map(([, label]) => label)).toEqual(['k3m9 abdul pages'])
     expect(found(ID.slice(0, 11))).toEqual([])
-    expect(found('zzzz9zzzzzzz')).toEqual([]) // an id, but of no note here
+    expect(found('zzzz9zzzzzzz')).toEqual([]) // an id, but of no page here
     expect(searchRows(rows, 'abdul')).toEqual(searchTitles(rows, 'abdul'))
   })
 })
 
 // Search by number (YAZ-2677 D9, with its addition): scenario record section F, S69 to S78.
-describe('searchRows: the search box finds a note by its number (YAZ-2677 D9)', () => {
-  const note = (path: string, title: string, id: string, aliases: string[] = []): IndexRecord => ({ ...rec(path, aliases, title), id })
+describe('searchRows: the search box finds a page by its number (YAZ-2677 D9)', () => {
+  const page = (path: string, title: string, id: string, aliases: string[] = []): IndexRecord => ({ ...rec(path, aliases, title), id })
   // Two vaults in one window, as `useSearchResults` joins them: `YAZ`, which was `OLD` before, and `BUS`.
   const yaz = [
-    note('/yaz/plan-yaz-12.md', 'Plan', 'YAZ-12', ['The plan']),
-    note('/yaz/first-yaz-1.md', 'First', 'YAZ-1'),
-    note('/yaz/big-yaz-120.md', 'Big', 'YAZ-120'),
-    note('/yaz/chapter-yaz-7.md', 'Chapter 12', 'YAZ-7'),
-    note('/yaz/fix-yaz-8.md', 'Fix for YAZ-12', 'YAZ-8'),
-    note('/yaz/old-k3m9x2pq7abc.md', 'Old one', 'k3m9x2pq7abc'),
+    page('/yaz/plan-yaz-12.md', 'Plan', 'YAZ-12', ['The plan']),
+    page('/yaz/first-yaz-1.md', 'First', 'YAZ-1'),
+    page('/yaz/big-yaz-120.md', 'Big', 'YAZ-120'),
+    page('/yaz/chapter-yaz-7.md', 'Chapter 12', 'YAZ-7'),
+    page('/yaz/fix-yaz-8.md', 'Fix for YAZ-12', 'YAZ-8'),
+    page('/yaz/old-k3m9x2pq7abc.md', 'Old one', 'k3m9x2pq7abc'),
     rec('/yaz/no id 12.md'),
   ]
   const rows = [
     ...folderCandidates('/yaz', ['/yaz/area'], [{ ...rec('/yaz/area/.folder.md', [], 'Area'), id: 'YAZ-3' }], ['YAZ', 'OLD']),
     ...searchCandidates(yaz, ['YAZ', 'OLD']),
-    ...searchCandidates([note('/bus/trip-bus-12.md', 'Trip', 'BUS-12'), note('/bus/twelve-bus-5.md', '12 stops', 'BUS-5')], ['BUS']),
+    ...searchCandidates([page('/bus/trip-bus-12.md', 'Trip', 'BUS-12'), page('/bus/twelve-bus-5.md', '12 stops', 'BUS-5')], ['BUS']),
   ]
   const found = (query: string) => searchRows(rows, query).map((c) => c.label)
 
-  it('S69: `12` shows the note of number 12 first, then the title matches for "12"', () => {
+  it('S69: `12` shows the page of number 12 first, then the title matches for "12"', () => {
     expect(found('12').slice(0, 2)).toEqual(['YAZ-12 — Plan', 'BUS-12 — Trip'])
     expect(found('12').slice(2)).toEqual(['12 stops', 'Chapter 12', 'Fix for YAZ-12', 'no id 12'])
   })
 
-  it('S70: in a window with two vaults both notes of that number show first, and each row shows its full ID', () => {
+  it('S70: in a window with two vaults both pages of that number show first, and each row shows its full ID', () => {
     expect(searchRows(rows, '12').slice(0, 2).map((c) => [c.label, c.path])).toEqual([
       ['YAZ-12 — Plan', '/yaz/plan-yaz-12.md'],
       ['BUS-12 — Trip', '/bus/trip-bus-12.md'],
@@ -329,7 +329,7 @@ describe('searchRows: the search box finds a note by its number (YAZ-2677 D9)', 
     expect(found('yaz12')).toEqual(['YAZ-12 — Plan', 'Fix for YAZ-12'])
   })
 
-  it('S72: `yaz-12` does not show `YAZ-1` or `YAZ-120`, nor the other vault\'s note 12: an ID matches whole', () => {
+  it('S72: `yaz-12` does not show `YAZ-1` or `YAZ-120`, nor the other vault\'s page 12: an ID matches whole', () => {
     for (const typed of ['yaz-12', 'yaz12', 'yaz 12']) {
       const shown = searchRows(rows, typed).map((c) => c.id)
       expect(shown).toContain('YAZ-12')
@@ -337,29 +337,29 @@ describe('searchRows: the search box finds a note by its number (YAZ-2677 D9)', 
     }
   })
 
-  it('S73: `1` shows `YAZ-1` first, and no note whose number only starts with 1', () => {
+  it('S73: `1` shows `YAZ-1` first, and no page whose number only starts with 1', () => {
     expect(found('1')[0]).toBe('YAZ-1 — First')
     const byId = searchRows(rows, '1').filter((c) => c.label.includes(' — ') && c.label.startsWith(`${c.id} — `))
     expect(byId.map((c) => c.id)).toEqual(['YAZ-1'])
   })
 
-  it('S74: a pasted link `[[YAZ-12]]`, a file name `plan-yaz-12.md` and a whole path are that note (YAZ-2420 D32)', () => {
+  it('S74: a pasted link `[[YAZ-12]]`, a file name `plan-yaz-12.md` and a whole path are that page (YAZ-2420 D32)', () => {
     for (const pasted of ['[[yaz-12|the plan]]', 'plan-yaz-12.md', '/Users/y/vault/work/plan-yaz-12.md']) expect(found(pasted)).toEqual(['YAZ-12 — Plan'])
     // `[[YAZ-12]]` reads as the words `yaz` and `12`, which start words of `Fix for YAZ-12` (YAZ-3748 D2): as `YAZ-12` typed (S71), after the ID.
     expect(found('[[YAZ-12]]')).toEqual(['YAZ-12 — Plan', 'Fix for YAZ-12'])
   })
 
-  it('S75: an old ID, pasted or typed, is its note under its title, as before', () => {
+  it('S75: an old ID, pasted or typed, is its page under its title, as before', () => {
     expect(found('k3m9x2pq7abc')).toEqual(['Old one'])
     expect(found('/vault/old-K3M9X2PQ7ABC.md')).toEqual(['Old one'])
   })
 
-  it('S76: `99`, a number no note has, gives the title matches only', () => {
+  it('S76: `99`, a number no page has, gives the title matches only', () => {
     expect(searchRows(rows, '99')).toEqual(searchTitles(rows, '99'))
     expect(searchRows([...rows, ...searchCandidates([rec('/yaz/route 99.md')])], '99').map((c) => c.label)).toEqual(['route 99'])
   })
 
-  it('S77: `OLD-12`, where the vault had the letters `OLD` before, is the note with number 12 of THAT vault', () => {
+  it('S77: `OLD-12`, where the vault had the letters `OLD` before, is the page with number 12 of THAT vault', () => {
     for (const typed of ['OLD-12', 'old12', 'old 12']) expect(found(typed)).toEqual(['YAZ-12 — Plan'])
     // The letters of before ride on the rows of that vault alone, as one shared list.
     const [first, second] = rows.filter((c) => c.kind === 'file' && c.was !== undefined)
@@ -368,11 +368,11 @@ describe('searchRows: the search box finds a note by its number (YAZ-2677 D9)', 
     expect(rows.find((c) => c.id === 'BUS-12')).not.toHaveProperty('was')
   })
 
-  it('a folder is found by its number as a note is', () => {
+  it('a folder is found by its number as a page is', () => {
     expect(searchRows(rows, 'yaz-3').map((c) => [c.kind, c.label, c.path])).toEqual([['dir', 'YAZ-3 — Area', '/yaz/area']])
   })
 
-  it('a note is one row when its id and its title both match; its alias row is not added after it', () => {
+  it('a page is one row when its id and its title both match; its alias row is not added after it', () => {
     expect(found('yaz-12').filter((label) => label.includes('Plan') || label.includes('plan'))).toEqual(['YAZ-12 — Plan'])
   })
 
@@ -392,26 +392,26 @@ describe('searchRows: the search box finds a note by its number (YAZ-2677 D9)', 
   })
 
   it('the rows are capped as the title search is, ID rows first', () => {
-    const many = searchCandidates(Array.from({ length: 80 }, (_, i) => note(`/yaz/n-${i}.md`, `Report 12 part ${i}`, `YAZ-${i + 200}`)))
+    const many = searchCandidates(Array.from({ length: 80 }, (_, i) => page(`/yaz/n-${i}.md`, `Report 12 part ${i}`, `YAZ-${i + 200}`)))
     const shown = searchRows([...many, ...rows], '12')
     expect(shown).toHaveLength(SEARCH_CAP)
     expect(shown.slice(0, 2).map((c) => c.id)).toEqual(['YAZ-12', 'BUS-12'])
   })
 })
 
-describe('`#5` finds a note by its ID number alone (YAZ-2571 round 5)', () => {
-  const note = (path: string, title: string, id: string): IndexRecord => ({ ...rec(path, [], title), id })
+describe('`#5` finds a page by its ID number alone (YAZ-2571 round 5)', () => {
+  const page = (path: string, title: string, id: string): IndexRecord => ({ ...rec(path, [], title), id })
   // The vault of the issue's pictures: many titles hold a 5, and EMB-5 has a long name. The records stand out of number order.
   const emb = [
-    note('/emb/emb-37.md', '25 Table subheader rows', 'EMB-37'),
-    note('/emb/emb-6.md', '05 The view is remembered', 'EMB-6'),
-    note('/emb/emb-5.md', '04 Resize04 Resize04 Resize04 Resize04', 'EMB-5'),
-    note('/emb/emb-16.md', '15 Read-only note', 'EMB-16'),
-    note('/emb/emb-300.md', 'Three hundred', 'EMB-300'),
-    note('/emb/emb-31.md', 'Thirty-one', 'EMB-31'),
-    note('/emb/emb-3.md', 'Three', 'EMB-3'),
-    note('/emb/emb-30.md', 'Thirty', 'EMB-30'),
-    note('/emb/old-k3m9x2pq7ab5.md', 'Old 5', 'k3m9x2pq7ab5'),
+    page('/emb/emb-37.md', '25 Table subheader rows', 'EMB-37'),
+    page('/emb/emb-6.md', '05 The view is remembered', 'EMB-6'),
+    page('/emb/emb-5.md', '04 Resize04 Resize04 Resize04 Resize04', 'EMB-5'),
+    page('/emb/emb-16.md', '15 Read-only page', 'EMB-16'),
+    page('/emb/emb-300.md', 'Three hundred', 'EMB-300'),
+    page('/emb/emb-31.md', 'Thirty-one', 'EMB-31'),
+    page('/emb/emb-3.md', 'Three', 'EMB-3'),
+    page('/emb/emb-30.md', 'Thirty', 'EMB-30'),
+    page('/emb/old-k3m9x2pq7ab5.md', 'Old 5', 'k3m9x2pq7ab5'),
     rec('/emb/Release #5.md'),
   ]
   const rows = [...folderCandidates('/emb', ['/emb/area'], [{ ...rec('/emb/area/.folder.md', [], 'Area'), id: 'EMB-35' }], ['EMB']), ...searchCandidates(emb, ['EMB'])]
@@ -431,8 +431,8 @@ describe('`#5` finds a note by its ID number alone (YAZ-2571 round 5)', () => {
     expect(found('#37')).toEqual(['EMB-37 — 25 Table subheader rows'])
   })
 
-  it('1. two vaults: each note of that number comes first, in the window\'s order', () => {
-    const two = [...rows, ...searchCandidates([note('/bus/bus-3.md', 'Bus three', 'BUS-3'), note('/bus/bus-32.md', 'Bus 32', 'BUS-32')], ['BUS'])]
+  it('1. two vaults: each page of that number comes first, in the window\'s order', () => {
+    const two = [...rows, ...searchCandidates([page('/bus/bus-3.md', 'Bus three', 'BUS-3'), page('/bus/bus-32.md', 'Bus 32', 'BUS-32')], ['BUS'])]
     expect(searchRows(two, '#3').map((c) => c.id)).toEqual(['EMB-3', 'BUS-3', 'EMB-30', 'EMB-31', 'BUS-32', 'EMB-35', 'EMB-37', 'EMB-300'])
   })
 
@@ -446,7 +446,7 @@ describe('`#5` finds a note by its ID number alone (YAZ-2571 round 5)', () => {
   })
 
   it('1. the rows are capped as the other searches are', () => {
-    const many = searchCandidates(Array.from({ length: 80 }, (_, i) => note(`/emb/n-${i}.md`, `N ${i}`, `EMB-${1000 + i}`)))
+    const many = searchCandidates(Array.from({ length: 80 }, (_, i) => page(`/emb/n-${i}.md`, `N ${i}`, `EMB-${1000 + i}`)))
     const shown = searchRows(many, '#1')
     expect(shown).toHaveLength(SEARCH_CAP)
     expect(shown[0].id).toBe('EMB-1000')
@@ -464,7 +464,7 @@ describe('`#5` finds a note by its ID number alone (YAZ-2571 round 5)', () => {
   })
 
   it('2. a bare `5` is EMB-5 first, then the title matches as before; `emb-5`, `EMB5` and `emb 5` are EMB-5 first', () => {
-    expect(found('5')).toEqual(['EMB-5 — 04 Resize04 Resize04 Resize04 Resize04', '25 Table subheader rows', '05 The view is remembered', '15 Read-only note', 'Old 5', 'Release #5'])
+    expect(found('5')).toEqual(['EMB-5 — 04 Resize04 Resize04 Resize04 Resize04', '25 Table subheader rows', '05 The view is remembered', '15 Read-only page', 'Old 5', 'Release #5'])
     for (const typed of ['emb-5', 'EMB5', 'emb 5']) expect(found(typed)[0]).toBe('EMB-5 — 04 Resize04 Resize04 Resize04 Resize04')
   })
 
@@ -477,7 +477,7 @@ describe('`#5` finds a note by its ID number alone (YAZ-2571 round 5)', () => {
     expect(idNeedle(bare, '37')?.text).toBe('37')
     const [lettered] = searchRows(rows, 'emb 5')
     expect(idNeedle(lettered, 'emb 5')?.text).toBe('5')
-    // EMB-16 is found by its title "15 Read-only note": its chip shows no mark.
+    // EMB-16 is found by its title "15 Read-only page": its chip shows no mark.
     const byTitle = searchRows(rows, '5').find((c) => c.id === 'EMB-16')
     expect(byTitle).toBeDefined()
     expect(idNeedle(byTitle!, '5')).toBeUndefined()

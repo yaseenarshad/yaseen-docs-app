@@ -14,7 +14,7 @@ import { findKey } from '@shared/propertyKeys'
 import { isRecord } from '@shared/guards'
 // The one reserved key this module owns, and where links live inside it (YAZ-864): both are in
 // `@shared/folderSettingsLinks`, so the main process's ID rewrite walks the same leaves (YAZ-2677).
-import { FOLDER_SETTINGS_KEY, OTHER_FILES_KEEP_NOTES_KEY, OTHER_FILES_KEY } from '@shared/folderSettingsLinks'
+import { FOLDER_SETTINGS_KEY, OTHER_FILES_KEEP_PAGES_KEY, OTHER_FILES_KEY } from '@shared/folderSettingsLinks'
 import type { ViewDef } from './viewSchema'
 import { PAGE_VIEW_TYPE } from './pageView'
 import { transformFile, writeProperty } from './writeProperty'
@@ -23,8 +23,8 @@ import { readFormat } from './columnFormat'
 /** A column the folder declares — this module's own vocabulary, shaped like `PropertyDecl`. */
 export type ColumnDecl = PropertyDecl & {
   /**
-   * "Separate value for <folder>" (YAZ-4713 C3): this folder's page keeps its own value for each note, in the note's
-   * `in: {<page id>}` block, apart from the note's one value. Off by default; read only where the vault uses IDs.
+   * "Separate value for <folder>" (YAZ-4713 C3): this folder's page keeps its own value for each page, in the page's
+   * `in: {<page id>}` block, apart from the page's one value. Off by default; read only where the vault uses IDs.
    */
   separate?: true
 }
@@ -54,12 +54,12 @@ export interface FolderSettings {
    */
   views: ViewDef[]
   /**
-   * The notes moved to the page's Other files tray (YAZ-4597 D44), as links: `other_files` in the file. They leave
+   * The pages moved to the page's Other files tray (YAZ-4597 D44), as links: `other_files` in the file. They leave
    * every view of the folder. Undefined when absent; an entry that is not text is a problem and dropped.
    */
   otherFiles?: string[]
-  /** The folders of `otherFiles` whose notes stay in the views (YAZ-4747 OF2): `other_files_keep_notes`. */
-  otherFilesKeepNotes?: string[]
+  /** The folders of `otherFiles` whose pages stay in the views (YAZ-4747 OF2): `other_files_keep_pages`. */
+  otherFilesKeepPages?: string[]
   /** Human one-liners a surface can show. Never thrown, never written back. */
   problems: string[]
 }
@@ -246,15 +246,15 @@ function readProperties(raw: unknown, problems: string[]): Record<string, { disp
   return properties
 }
 
-/** `other_files` (and `other_files_keep_notes`): a list of links. Only text survives; what a link names is the page's to resolve. */
+/** `other_files` (and `other_files_keep_pages`): a list of links. Only text survives; what a link names is the page's to resolve. */
 function readOtherFiles(raw: unknown, problems: string[], key = OTHER_FILES_KEY): string[] | undefined {
   if (raw === undefined) return undefined
   if (!Array.isArray(raw)) {
-    problems.push(`${FOLDER_SETTINGS_KEY}.${key} must be a list of note links — ignoring it`)
+    problems.push(`${FOLDER_SETTINGS_KEY}.${key} must be a list of page links — ignoring it`)
     return undefined
   }
   const links = raw.filter((link): link is string => typeof link === 'string')
-  if (links.length < raw.length) problems.push(`${FOLDER_SETTINGS_KEY}.${key} must hold only note links — ignoring the rest`)
+  if (links.length < raw.length) problems.push(`${FOLDER_SETTINGS_KEY}.${key} must hold only page links — ignoring the rest`)
   return links
 }
 
@@ -293,7 +293,7 @@ export function folderSettings(record: IndexRecord | undefined, ids: boolean): F
     properties: readProperties(raw.properties, problems),
     views: readViews(raw.views, problems, ids),
     otherFiles: readOtherFiles(raw[OTHER_FILES_KEY], problems),
-    otherFilesKeepNotes: readOtherFiles(raw[OTHER_FILES_KEEP_NOTES_KEY], problems, OTHER_FILES_KEEP_NOTES_KEY),
+    otherFilesKeepPages: readOtherFiles(raw[OTHER_FILES_KEEP_PAGES_KEY], problems, OTHER_FILES_KEEP_PAGES_KEY),
     problems,
   }
 }
@@ -319,7 +319,7 @@ function plain(settings: FolderSettings): Record<string, unknown> {
   out.views = settings.views
   // An empty tray writes no key (YAZ-4597).
   if (settings.otherFiles !== undefined && settings.otherFiles.length > 0) out[OTHER_FILES_KEY] = settings.otherFiles
-  if (settings.otherFilesKeepNotes !== undefined && settings.otherFilesKeepNotes.length > 0) out[OTHER_FILES_KEEP_NOTES_KEY] = settings.otherFilesKeepNotes
+  if (settings.otherFilesKeepPages !== undefined && settings.otherFilesKeepPages.length > 0) out[OTHER_FILES_KEEP_PAGES_KEY] = settings.otherFilesKeepPages
   return out
 }
 
@@ -480,7 +480,7 @@ export function writeFolderColumn(path: string, key: string, next: ColumnDecl, b
 }
 
 /**
- * Take one column's declaration off a folder (YAZ-4769, Edit property's "Column on"): the notes keep their values; only
+ * Take one column's declaration off a folder (YAZ-4769, Edit property's "Column on"): the pages keep their values; only
  * the folder's definition goes. `base` is the declaration the caller saw (a change since then refuses, as
  * `writeFolderColumn` does); `null` takes it off whatever it is (an Undo that runs later). No declaration: no change.
  */
@@ -519,7 +519,7 @@ export function insertFolderColumn(path: string, key: string, decl: ColumnDecl, 
 /**
  * Move one column's definition between two folders' `.folder.md`s (YAZ-4769): declare it on `to` first, then take it
  * off `from`, so no moment has it nowhere. `null` on either side: only the other write (make a column, or remove one).
- * The notes' values never change. Resolves with the Undo, which puts both files back, the column at its old place on
+ * The pages' values never change. Resolves with the Undo, which puts both files back, the column at its old place on
  * `from`. The caller checks read-only pages first.
  */
 export async function moveFolderColumn({ key, decl, from, to, ids }: {

@@ -7,20 +7,20 @@
  * (YAZ-3748 D2), capped at MAX_SUGGESTIONS after ranking.
  *
  * `linkCandidates(records)` derives the editor picker's candidates from an index snapshot:
- * every markdown note under its TITLE (YAZ-2420 🔒 D17 — the basename of a note that has no
+ * every markdown page under its TITLE (YAZ-2420 🔒 D17 — the basename of a page that has no
  * `title:`), plus one row per frontmatter ALIAS (Links E2, GRO-2214). Duplicate titles follow the
  * resolver's shallowest-depth rule (`views/engine.ts` `makeResolver`, GRO-2190): the bare title
  * resolves to the shallowest match (equal depth → first in path order), so only that record gets
  * the bare name — every other duplicate is disambiguated as `folder/title`, and inserts
  * `folder/basename`, which resolves root-relatively.
- * An alias row is typed as the alias but INSERTS the piped `[[Note|Alias]]`, so it is
- * unambiguous by construction too — the target is that note's own unambiguous name, whoever
- * else claims the alias (aliases resolve after basenames, and two notes may share one). Two
- * notes claiming the same alias therefore both show, told apart by the note half of the label —
+ * An alias row is typed as the alias but INSERTS the piped `[[Page|Alias]]`, so it is
+ * unambiguous by construction too — the target is that page's own unambiguous name, whoever
+ * else claims the alias (aliases resolve after basenames, and two pages may share one). Two
+ * pages claiming the same alias therefore both show, told apart by the page half of the label —
  * which is already `folder/title` when their titles collide as well.
- * A note WITH a frontmatter `id` (YAZ-2293, 🔒) is linked by it instead: both its name row and
+ * A page WITH a frontmatter `id` (YAZ-2293, 🔒) is linked by it instead: both its name row and
  * its alias rows insert the plain `[[id]]` — no name, no pipe — so the link survives any rename
- * or move. The names above are then only what such a row is TYPED and READ as; a note with no
+ * or move. The names above are then only what such a row is TYPED and READ as; a page with no
  * id keeps inserting them, and the exception below is theirs alone.
  * Inserting exactly a candidate's `insert` text therefore always links to its record — with ONE
  * honest exception (GRO-2197 audit): the `r.folder === ''` clause below hands the bare title
@@ -31,18 +31,18 @@
  */
 import type { IndexRecord } from '@shared/types'
 import { isViewOnly } from '@shared/fileKind'
-import { holdsId } from '@shared/noteId'
+import { holdsId } from '@shared/pageId'
 
 /** Suggestion cap shared by every completion surface (was EditableCell's local constant). */
 export const MAX_SUGGESTIONS = 8
 
 /** One completion row: what it matches, what it inserts between the brackets, what it reads as. */
 export interface LinkCandidate {
-  /** The text the typed fragment matches: the note's link name, or one of its aliases. */
+  /** The text the typed fragment matches: the page's link name, or one of its aliases. */
   name: string
-  /** Placed between `[[` and `]]` — the note's or folder's `id`; without one the name, or the piped `Note|Alias` of an alias row. */
+  /** Placed between `[[` and `]]` — the page's or folder's `id`; without one the name, or the piped `Page|Alias` of an alias row. */
   insert: string
-  /** Row text: the name alone, `Alias — Note` (the alias row's disambiguation) or a folder's `Name (folder)`. */
+  /** Row text: the name alone, `Alias — Page` (the alias row's disambiguation) or a folder's `Name (folder)`. */
   label: string
   /**
    * `name.toLowerCase()`, precomputed by the constructors so the ranking scan (GRO-2197 —
@@ -52,7 +52,7 @@ export interface LinkCandidate {
   lower?: string
   /**
    * The record this row names (YAZ-957). Set by `linkCandidates`, absent on hand-built rows —
-   * without it a caller wanting "this note's name" has to match rows back by position or by
+   * without it a caller wanting "this page's name" has to match rows back by position or by
    * resolving them, and both are wrong in a way that only shows up on a duplicate basename.
    */
   path?: string
@@ -61,7 +61,7 @@ export interface LinkCandidate {
    * page without one, on an alias row (the page is one row) and on hand-built rows.
    */
   id?: string
-  /** A NOTE CARD's row (YAZ-5030): it inserts the card's ID, reads as its title, and draws the card icon. */
+  /** A PAGE CARD's row (YAZ-5030): it inserts the card's ID, reads as its title, and draws the card icon. */
   card?: true
 }
 
@@ -71,23 +71,23 @@ export const nameCandidate = (name: string): LinkCandidate => ({ name, insert: n
 /**
  * Picker-only composition: every recognized view-only TARGET spelling belongs to the
  * navigation-only route, even before its catalog entry exists. Semantic aliases whose DISPLAY
- * happens to match remain valid because their target (before `|`) is still an ordinary note.
+ * happens to match remain valid because their target (before `|`) is still an ordinary page.
  * So does a row inserting an `id` (YAZ-2293): an id is no view-only spelling, and unlike its
- * name it does link to a note NAMED like a view-only file. Resolution sources stay split.
+ * name it does link to a page NAMED like a view-only file. Resolution sources stay split.
  */
 export function mergeLinkCandidates(markdown: readonly LinkCandidate[], viewOnly: readonly LinkCandidate[], boardIds?: ReadonlyMap<string, string>): LinkCandidate[] {
   return [
     ...markdown.filter((candidate) => !isViewOnly(candidate.insert.split('|', 1)[0].trim())),
-    // A board with an ID is inserted by it, as a note is (YAZ-3943 4C): the picker, a pasted path and a drop write `[[ID]]`.
+    // A board with an ID is inserted by it, as a page is (YAZ-3943 4C): the picker, a pasted path and a drop write `[[ID]]`.
     ...(boardIds === undefined || boardIds.size === 0 ? viewOnly : viewOnly.map((row) => (row.path !== undefined && boardIds.has(row.path) ? { ...row, insert: boardIds.get(row.path)!, id: boardIds.get(row.path)! } : row))),
   ]
 }
 
-/** An alias of `note` (that note's own unambiguous name): typed as the alias, inserted as the note's `id` — piped behind `target`, the text that links to it, when it has none. */
-const aliasCandidate = (alias: string, note: string, target: string, path: string, id?: string): LinkCandidate => ({
+/** An alias of `page` (that page's own unambiguous name): typed as the alias, inserted as the page's `id` — piped behind `target`, the text that links to it, when it has none. */
+const aliasCandidate = (alias: string, page: string, target: string, path: string, id?: string): LinkCandidate => ({
   name: alias,
   insert: id ?? `${target}|${alias}`,
-  label: `${alias} — ${note}`,
+  label: `${alias} — ${page}`,
   lower: alias.toLowerCase(),
   path,
 })
@@ -187,7 +187,7 @@ export function matchTier(row: { name: string; lower?: string }, needle: Needle)
 /**
  * Candidates matching `fragment`, RANKED (GRO-2197, YAZ-3748 D2) by `matchTier`: exact name match first, then prefix
  * matches, then substring matches, then word and joined matches — case-insensitive over the candidate NAME (an alias row
- * matches on the alias, never on the note half of its label or insert), input order preserved
+ * matches on the alias, never on the page half of its label or insert), input order preserved
  * within each tier. The needle is the fragment with its ENDS trimmed (Obsidian: `[[ al`
  * still matches Alpha); inside it, a space is a letter to the first three tiers and a split between words to the
  * last two. Ranking needs the full scan, so there is no early exit: the per-candidate work is one `indexOf` over the
@@ -307,15 +307,15 @@ const depthOf = (r: IndexRecord): number => (r.folder === '' ? 0 : r.folder.spli
 
 /**
  * What Bases' cell editors complete over: the index TITLES (YAZ-2420 🔒 D17) — no aliases, no
- * folder disambiguation — each written as every link the app writes (YAZ-2293): the note's `id`
- * when it has one, else the title, the basename of a note that has none.
+ * folder disambiguation — each written as every link the app writes (YAZ-2293): the page's `id`
+ * when it has one, else the title, the basename of a page that has none.
  */
 export const titleCandidates = (records: readonly IndexRecord[]): LinkCandidate[] =>
   records.map((r) => ({ ...nameCandidate(r.title), insert: r.id ?? r.title, ...(r.id === undefined ? {} : { id: r.id }) }))
 
 /**
- * The NOTE CARDS as link rows (YAZ-5030, D7): each card with an ID, in records order then page order, typed and read
- * as its title ("Note card" for an empty one) and found by its ID too (`matchLinkIds`: `[[512`, `[[wiki-512`); it
+ * The PAGE CARDS as link rows (YAZ-5030, D7): each card with an ID, in records order then page order, typed and read
+ * as its title ("Card" for an empty one) and found by its ID too (`matchLinkIds`: `[[512`, `[[wiki-512`); it
  * inserts the ID, so the file keeps `[[WIKI-512]]` (the ID never changes). The picker lists them after the pages
  * (`WikilinkIndexBridge`): within a rank, input order stands, so a page comes before a card of the same rank.
  */
@@ -327,7 +327,7 @@ export function cardLinkCandidates(records: readonly IndexRecord[]): LinkCandida
       if (card.id === null) continue
       const title = card.title ?? ''
       const name = title === '' ? card.id : title
-      rows.push({ name, insert: card.id, label: title === '' ? 'Note card' : title, lower: name.toLowerCase(), path: r.path, id: card.id, card: true })
+      rows.push({ name, insert: card.id, label: title === '' ? 'Card' : title, lower: name.toLowerCase(), path: r.path, id: card.id, card: true })
     }
   }
   return rows

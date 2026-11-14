@@ -55,7 +55,7 @@ beforeAll(async () => {
   store = createStore(path.join(home.dir, 'yaseendocs.json'))
   store.upsertWindow({ ...entry, id: 'w-this', root: vault })
   registerFsIpc(store, { idFor: () => 'w-this', vaultNotice: vi.fn() })
-  // The Trash held a note of this name already: the new one goes in under the clash name of its time.
+  // The Trash held a page of this name already: the new one goes in under the clash name of its time.
   vi.mocked(shell.trashItem).mockImplementation(async (p: string) => {
     const d = new Date()
     const two = (n: number) => String(n).padStart(2, '0')
@@ -99,12 +99,12 @@ describe('fs:delete, then fs:put-back (YAZ-3268 D16)', () => {
 
   it('never replaces a broken link with the old name, through the door: ALREADY_EXISTS, and the link and the entry stay (YAZ-3271)', async () => {
     const trashed = path.join(trash, 'L.md')
-    await writeFile(trashed, 'the deleted note')
+    await writeFile(trashed, 'the deleted page')
     const to = path.join(vault, 'L.md')
     await symlink(path.join(vault, 'nowhere.md'), to)
     expect(await putBack(trashed, to)).toMatchObject({ ok: false, error: { code: 'ALREADY_EXISTS', path: to } })
     expect((await lstat(to)).isSymbolicLink()).toBe(true)
-    expect(await readFile(trashed, 'utf8')).toBe('the deleted note')
+    expect(await readFile(trashed, 'utf8')).toBe('the deleted page')
   })
 
   it('an entry of a `.Trashes/<uid>` folder that is not the Trash of that disk is refused (YAZ-3268 nit 1)', async () => {

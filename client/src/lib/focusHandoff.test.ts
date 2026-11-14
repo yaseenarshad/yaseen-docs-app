@@ -65,8 +65,8 @@ describe('focusOpenDocument: into the text', () => {
     expect(document.activeElement).toBe(page)
   })
 
-  it('YAZ-2662 R4: the preview panel of the search is no page — its note is skipped for the open document, and with no page open the call declines', () => {
-    // The panel renders a note through the hover card's read-only renderer, which wears `.editor-instance`.
+  it('YAZ-2662 R4: the preview panel of the search is no page — its page is skipped for the open document, and with no page open the call declines', () => {
+    // The panel renders a page through the hover card's read-only renderer, which wears `.editor-instance`.
     const panel = document.createElement('div')
     panel.className = 'quicklook'
     document.body.appendChild(panel)
@@ -80,9 +80,9 @@ describe('focusOpenDocument: into the text', () => {
     expect(document.activeElement).toBe(page)
   })
 
-  it('YAZ-3075 C29: the sidebar`s hover preview is no page — the note in `.board-preview` is skipped for the open document', () => {
+  it('YAZ-3075 C29: the sidebar`s hover preview is no page — the page in `.board-preview` is skipped for the open document', () => {
     const panel = document.createElement('div')
-    panel.className = 'board-preview note-preview'
+    panel.className = 'board-preview page-preview'
     document.body.appendChild(panel)
     const hovered = editor(true)
     panel.appendChild(hovered.parentElement!)

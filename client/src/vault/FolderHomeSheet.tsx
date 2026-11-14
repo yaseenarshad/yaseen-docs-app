@@ -2,7 +2,7 @@
  * "A FOLDER OF <VAULT>" OR ITS OWN VAULT (YAZ-4922 🔒 D3, D4). A folder picked with Open folder… (⌘O's panel, the File
  * menu, Welcome) that sits inside a vault the app knows asks ONE box first: open it as a folder of that vault — the
  * first answer, with the focus — as its own vault, or not at all. A folder of a vault keeps the vault's IDs, links,
- * sync and `.yaseendocs`; its own vault would give the notes IDs of its own, the trouble of gaps 1 to 3.
+ * sync and `.yaseendocs`; its own vault would give the pages IDs of its own, the trouble of gaps 1 to 3.
  */
 import { ConfirmSheet } from '../components/ConfirmSheet'
 

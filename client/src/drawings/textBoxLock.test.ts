@@ -29,7 +29,7 @@ const boxText = (view: Awaited<ReturnType<typeof mountBox>>['view']) => docToBox
 
 describe('the block lock of a text box (YAZ-4277 1B, D4)', () => {
   /**
-   * Every input rule a box editor runs, by its pattern. A new note rule fails here until it is put on a side: kept
+   * Every input rule a box editor runs, by its pattern. A new page rule fails here until it is put on a side: kept
    * (it makes a mark or a block a box draws) or removed in `lockToTextBox` (it would make one a box cannot hold).
    */
   it('runs only the input rules that make what a box draws', async () => {
@@ -41,7 +41,7 @@ describe('the block lock of a text box (YAZ-4277 1B, D4)', () => {
       String(/(?<![\w:/])(?:\*\*|__)([^*_]+?)(?:\*\*|__)(?![\w/])$/), // **bold**
       String(/(?<![\w:/])(~{1,2})(.+?)\1(?!\w|\/)$/), // ~~strike~~
       String(/(?<![\w=])==(\S(?:[^=]*\S)?)==$/), // ==highlight==
-      String(/^\[(?<checked>\s|x)\]\s$/), // [ ] in a bullet (the note's rule)
+      String(/^\[(?<checked>\s|x)\]\s$/), // [ ] in a bullet (the page's rule)
       String(/^\[(?<checked>\s|x)\]\s$/), // [ ] on a plain line (the box's rule, 1C)
     ])
   })
@@ -64,7 +64,7 @@ describe('the block lock of a text box (YAZ-4277 1B, D4)', () => {
     ])
   })
 
-  it('makes an arrow of a typed `->`, as in a note (YAZ-4273), and the box keeps it as a letter', async () => {
+  it('makes an arrow of a typed `->`, as in a page (YAZ-4273), and the box keeps it as a letter', async () => {
     const { view } = await mountBox('')
     typeText(view, 'a -> b')
     expect(boxText(view)).toBe('a → b')
@@ -86,7 +86,7 @@ describe('the block lock of a text box (YAZ-4277 1B, D4)', () => {
     expect(view.state.doc.child(0).type.name).toBe('paragraph')
   })
 
-  it('makes a bullet of a typed `- `, as in a note', async () => {
+  it('makes a bullet of a typed `- `, as in a page', async () => {
     const { view } = await mountBox('')
     typeText(view, '- a')
     expect(boxText(view)).toBe('• a')

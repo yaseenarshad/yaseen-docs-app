@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { canonicalNoteId, IDS_FILE, NOTE_ID_KEY, idLettersOf, idsAnswer, isIdLetters, isNumberId, numberId, vaultNoteId } from '@shared/noteId'
+import { canonicalPageId, IDS_FILE, PAGE_ID_KEY, idLettersOf, idsAnswer, isIdLetters, isNumberId, numberId, vaultPageId } from '@shared/pageId'
 import { FOLDER_SETTINGS_FILE, isFolderSettingsPath, type IdGroup, type IdsState, type IndexRecord, type IndexResponse, type WatchEvent } from '@shared/types'
 import { boardIdOf, formerBoardIdsOf } from '@shared/drawingAssets'
 import { isFiniteNumber, isRecord } from '@shared/guards'
@@ -35,7 +35,7 @@ interface Entry {
   cardWaits: Map<string, number>
   /** The ONE timer of this vault that sweeps the files in `waits` and `cardWaits` again when their wait is over (R34). */
   wait?: NodeJS.Timeout
-  /** Each ID two Macs gave that two notes still hold, and the path of the note that keeps it (YAZ-2677 S46): the index hands the ID out for that note only. */
+  /** Each ID two Macs gave that two pages still hold, and the path of the page that keeps it (YAZ-2677 S46): the index hands the ID out for that page only. */
   kept: Map<string, string>
   /** Each board's ID as its head holds it (YAZ-3943 4C), by path; a board with no ID is not here. Never cached: the build reads the heads again. */
   boards: Map<string, string>
@@ -72,9 +72,9 @@ function onEvent(root: string, entry: Entry, ev: WatchEvent): void {
         .then(
           (record) => {
             entry.records.set(ev.path, record)
-            // The diary notes each link to an ID this Mac made, with the time (YAZ-2677 R27).
+            // The diary pages each link to an ID this Mac made, with the time (YAZ-2677 R27).
             if (entry.ids) see(root, record, Date.now())
-            // Every other indexed note is known to hold what it holds; this one, what it held before.
+            // Every other indexed page is known to hold what it holds; this one, what it held before.
             void sweep(root, entry, [record], (p) => (p === ev.path ? held : entry.records.get(p)?.id))
           },
           () => entry.records.delete(ev.path),
@@ -131,7 +131,7 @@ const boardIdAt = (file: string): Promise<BoardIds> =>
 function learnFormer(entry: Entry, { id, was }: BoardIds): boolean {
   let learned = false
   if (id !== undefined)
-    for (const w of was.map(canonicalNoteId)) {
+    for (const w of was.map(canonicalPageId)) {
       if (entry.formerIds.get(w) === id) continue
       entry.formerIds.set(w, id)
       learned = true
@@ -165,7 +165,7 @@ async function readBoard(root: string, entry: Entry, file: string): Promise<void
 
 /**
  * Hears that the boards with an ID changed in the vault at `root` (YAZ-3943 4C): a board took one, or one with an ID came,
- * went or moved. A board is no note, so the windows do not read the index again for its events: the bridge tells them.
+ * went or moved. A board is no page, so the windows do not read the index again for its events: the bridge tells them.
  */
 let boardsChanged: ((root: string) => void) | undefined
 
@@ -177,7 +177,7 @@ export function onBoardIds(listener: ((root: string) => void) | undefined): void
 /**
  * TWO BOARDS WITH ONE ID (YAZ-4129 6B3): a Finder copy of a board keeps the board's ID. The board that keeps it is the one
  * with the oldest `createdAt`; between equal ones (a copy has its original's block), the one the index knew first: at a
- * cold start, the first in path order, as for notes (`idSweep.ts`). The other one gets a new ID on its next save
+ * cold start, the first in path order, as for pages (`idSweep.ts`). The other one gets a new ID on its next save
  * (`fs/drawing.ts`), never on an open (4C). Only boards that share an ID cost a head read here.
  */
 async function boardKeepers(entry: Entry): Promise<Map<string, string>> {
@@ -248,7 +248,7 @@ function sweep(
   })
 }
 
-/** What a sweep found about two notes with one ID goes to the index (which note the ID opens meanwhile, S46) and to the bridge (S45). */
+/** What a sweep found about two pages with one ID goes to the index (which page the ID opens meanwhile, S46) and to the bridge (S45). */
 function report(root: string, entry: Entry, { fixes, kept }: SweepResult, notice: boolean): void {
   for (const [id, keeper] of kept) entry.kept.set(id, keeper)
   for (const { id } of fixes) entry.kept.delete(id)
@@ -287,23 +287,23 @@ function armWait(root: string, entry: Entry): void {
 // CACHE_VERSION bump here.)
 
 /**
- * What a yes would write (`IndexResponse.ask`, YAZ-2523 🔒 V2): a note with no id that can take
+ * What a yes would write (`IndexResponse.ask`, YAZ-2523 🔒 V2): a page with no id that can take
  * one, and a folder with no settings file or no id in the one it has. An id is one of the vault
  * with `letters` (YAZ-2677 R5): any other is another tool's, and a yes writes over it (R7).
  */
 function wouldWrite(records: ReadonlyMap<string, IndexRecord>, dirs: readonly string[], letters: readonly string[]): NonNullable<IndexResponse['ask']> {
-  const notes = [...records.values()].filter((r) => !isFolderSettingsPath(r.path) && r.kind !== 'card' && vaultNoteId(r.id, letters) === undefined && r.frontmatterError === undefined)
+  const pages = [...records.values()].filter((r) => !isFolderSettingsPath(r.path) && r.kind !== 'card' && vaultPageId(r.id, letters) === undefined && r.frontmatterError === undefined)
   const groups = idGroups(records.values())
   // The box offers to keep them (YAZ-4922 🔒 D2) when some group is not an ID of the vault yet: then a folder whose settings file holds a number ID keeps it too.
-  const keeps = groups.some((group) => vaultNoteId(numberId(group.letters, 1), letters) === undefined)
+  const keeps = groups.some((group) => vaultPageId(numberId(group.letters, 1), letters) === undefined)
   return {
-    notes: notes.length,
+    pages: pages.length,
     folders: dirs.filter((dir) => {
       const id = records.get(path.join(dir, FOLDER_SETTINGS_FILE))?.id
-      return vaultNoteId(id, letters) === undefined && !(keeps && isNumberId(id))
+      return vaultPageId(id, letters) === undefined && !(keeps && isNumberId(id))
     }).length,
-    foreign: notes.filter((r) => r.properties[NOTE_ID_KEY] !== undefined).length,
-    ...(keeps && { groups, bare: notes.filter((r) => r.id === undefined).length }),
+    foreign: pages.filter((r) => r.properties[PAGE_ID_KEY] !== undefined).length,
+    ...(keeps && { groups, bare: pages.filter((r) => r.id === undefined).length }),
   }
 }
 
@@ -316,7 +316,7 @@ function idGroups(records: Iterable<IndexRecord>): IdGroup[] {
 
 /**
  * The records and folders of `entry` whose IDs are the vault's own (YAZ-4922 🔒 D1): a vault inside it keeps its
- * notes' IDs, so a yes of this vault would write nothing there. For what the index shows; the reads are kept in `answers`.
+ * pages' IDs, so a yes of this vault would write nothing there. For what the index shows; the reads are kept in `answers`.
  */
 async function ownPart(root: string, entry: Entry): Promise<{ records: Map<string, IndexRecord>; dirs: string[] }> {
   const mine = idsOwnedBy(root, entry.answers)
@@ -354,12 +354,12 @@ async function build(root: string): Promise<Entry> {
     const { letters, ...held } = await vaultIds(root)
     let answer = held.answer
     const own = await ownPart(root, entry)
-    // A vault that already uses IDs carries over with no question (YAZ-2523 🔒 V11): some note holds
+    // A vault that already uses IDs carries over with no question (YAZ-2523 🔒 V11): some page holds
     // an id and a yes would write nothing, so yes is saved. One that cannot be written to stays
     // unanswered, and so does one whose `ids.json` is not valid JSON: it is not written over. Each
     // other key of the file stays (YAZ-2677 R10), and an answer that arrived meanwhile stands.
     const ask = wouldWrite(own.records, own.dirs, letters)
-    if (answer === undefined && ask.notes === 0 && ask.folders === 0 && [...own.records.values()].some((r) => !isFolderSettingsPath(r.path) && vaultNoteId(r.id, letters) !== undefined)) {
+    if (answer === undefined && ask.pages === 0 && ask.folders === 0 && [...own.records.values()].some((r) => !isFolderSettingsPath(r.path) && vaultPageId(r.id, letters) !== undefined)) {
       let now: boolean | undefined
       answer = await saveIds(root, (config) => ((now = idsAnswer(config)) === undefined ? { ...config, enabled: true } : undefined)).then(
         () => now ?? true,
@@ -375,7 +375,7 @@ async function build(root: string): Promise<Entry> {
     throw err
   }
   entries.set(root, entry)
-  // Not awaited: a vault of id-less notes must not hold up its first index (YAZ-2293 D3).
+  // Not awaited: a vault of id-less pages must not hold up its first index (YAZ-2293 D3).
   void sweep(root, entry, [...entry.records.values()], (p) => cached.records?.get(p)?.id, dirs)
   schedulePersist(root, entry.records)
   return entry
@@ -404,7 +404,7 @@ function touch(root: string, entry: Entry): void {
 }
 
 /**
- * Index of every markdown note under `root` (GRO-2128). The first call walks the tree and
+ * Index of every markdown page under `root` (GRO-2128). The first call walks the tree and
  * subscribes to the root's watcher; later calls return the live map (sorted by path) with a
  * fresh `generatedAt`. Transport-agnostic: no HTTP here — the Desktop bridge calls this directly.
  */
@@ -418,7 +418,7 @@ export async function getIndex(root: string): Promise<IndexResponse> {
   if (ids && !entry.ids) sweepIndexed(root)
   entry.ids = ids
   const sorted = [...entry.records.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-  // One map holds notes and folder settings files alike; the file name tells them apart (YAZ-2290 D8).
+  // One map holds pages and folder settings files alike; the file name tells them apart (YAZ-2290 D8).
   const records: IndexRecord[] = []
   const folders: IndexRecord[] = []
   const current = `${letters[0]}-`
@@ -430,15 +430,15 @@ export async function getIndex(root: string): Promise<IndexResponse> {
     const own = await ownPart(root, entry)
     return { root, records, folders, generatedAt: Date.now(), ids, ask: { ...wouldWrite(own.records, own.dirs, letters), ...(saved && { letters: letters[0] }) } }
   }
-  // A board's ID goes out as a note's does (R5): with the current letters, and not at all when it is another vault's.
+  // A board's ID goes out as a page's does (R5): with the current letters, and not at all when it is another vault's.
   // An ID two boards hold goes out for its keeper alone (YAZ-4129 6B3), so `[[ID]]` opens that board.
   // The IDs it held before a two-Mac merge go out with it (YAZ-4071 7I): a link to one still opens it.
   const keepers = await boardKeepers(entry)
   const boards = [...entry.boards]
     .flatMap(([p, held]) => {
-      const id = vaultNoteId(held, letters)
+      const id = vaultPageId(held, letters)
       if (id === undefined || keepers.get(held) !== p) return []
-      const was = [...new Set([...entry.formerIds].flatMap(([w, now]) => (now === held ? (vaultNoteId(w, letters) ?? []) : [])))].sort()
+      const was = [...new Set([...entry.formerIds].flatMap(([w, now]) => (now === held ? (vaultPageId(w, letters) ?? []) : [])))].sort()
       return [{ path: p, id, ...(was.length > 0 && { was }) }]
     })
     .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
@@ -454,7 +454,7 @@ const inside = (root: string, p: string): boolean => p.startsWith(root + path.se
  * and a quick ⌘Z read them (S3, S33). The watcher's echo comes later (0.3–4 s on NFS,
  * docs/DEVELOPMENT.md) and scans the same files again, which changes nothing; only the echo runs the
  * ID sweep and the diary, and keeps the list of folders, as for any add.
- * A note is scanned at its new path: a rename can change its name, and so its title. A folder's notes
+ * A page is scanned at its new path: a rename can change its name, and so its title. A folder's pages
  * keep their records with the new path and folder, as a move changes no byte of them; a folder's
  * settings file is scanned, because the folder's name is its title. A folder that comes from outside
  * every live index is walked. Never throws.
@@ -505,9 +505,9 @@ export async function indexMoved(oldPath: string, newPath: string, kind: 'file' 
 
 /**
  * A tidy-up write the app made itself (`FileWriteRequest.quiet`: a link rewrite, a folder's values),
- * taken by each live index AT ONCE, as a move is (`indexMoved`): a quick ⌘Z finds the note whose link
+ * taken by each live index AT ONCE, as a move is (`indexMoved`): a quick ⌘Z finds the page whose link
  * the move rewrote (S33). An edit the user made waits for the watcher: its echo tells the ID sweep the
- * ID the note held before the edit (YAZ-2293 D4), and a scan here would hide it. Never throws.
+ * ID the page held before the edit (YAZ-2293 D4), and a scan here would hide it. Never throws.
  */
 export async function indexWrote(p: string): Promise<void> {
   if (!isMarkdown(p)) return
@@ -538,9 +538,9 @@ async function liveEntry(root: string): Promise<Entry> {
 }
 
 // The door's answer to "what is the highest number in this vault?" (YAZ-2677 R16) comes from the
-// live records, in memory: a new note reads no file for it. Also a number a note held by hand (S37).
+// live records, in memory: a new page reads no file for it. Also a number a page held by hand (S37).
 highestFrom(async (root, letters) => highestNumber((await liveEntry(root)).records.values(), letters))
-// A vault inside this one counts above this one's notes (YAZ-4922 D1, gap 3): only an index already held is asked.
+// A vault inside this one counts above this one's pages (YAZ-4922 D1, gap 3): only an index already held is asked.
 seenFrom((root, letters) => {
   const entry = entries.get(root)
   return entry === undefined ? undefined : highestNumber(entry.records.values(), letters)
@@ -548,7 +548,7 @@ seenFrom((root, letters) => {
 
 /**
  * A record as a vault that does not use IDs hands it out (YAZ-2523 🔒 V12): no id, its file name as its title. `id` and `title` stay among its properties.
- * No note cards either (YAZ-4946 D8: only a vault that gives IDs has cards): a ```` ```card ```` block there is a code block.
+ * No cards either (YAZ-4946 D8: only a vault that gives IDs has cards): a ```` ```card ```` block there is a code block.
  */
 function plain({ id: _id, cards: _cards, ...r }: IndexRecord): IndexRecord {
   r.title = fileTitle(r)
@@ -561,13 +561,13 @@ function plain({ id: _id, cards: _cards, ...r }: IndexRecord): IndexRecord {
  * lookup finds it by one spelling; one with any other letters is another tool's `id` and goes out
  * as none (R7). The record itself, untouched, in every other case — almost all of them.
  *
- * An ID two Macs gave, while two notes still hold it (`kept`, YAZ-2677 S46): only the note that
+ * An ID two Macs gave, while two pages still hold it (`kept`, YAZ-2677 S46): only the page that
  * keeps it goes out with it, so a link by that ID opens the keeper on every Mac until the one Mac
- * that must fix it has run. The other note goes out as a note that has no id yet.
+ * that must fix it has run. The other page goes out as a page that has no id yet.
  */
 function owned(r: IndexRecord, letters: readonly string[], current: string, kept: ReadonlyMap<string, string>): IndexRecord {
   if (r.id === undefined) return r
-  const id = r.id.startsWith(current) ? r.id : vaultNoteId(r.id, letters)
+  const id = r.id.startsWith(current) ? r.id : vaultPageId(r.id, letters)
   if (id === r.id && kept.size === 0) return r
   const keeper = id === undefined ? undefined : kept.get(id)
   if (id === r.id && (keeper === undefined || keeper === r.path)) return r
@@ -577,12 +577,12 @@ function owned(r: IndexRecord, letters: readonly string[], current: string, kept
 
 /** `entry.kept` without each ID whose keeper holds it no more: that clash is over, or its keeper moved, and the ID goes out as the files hold it. */
 function keptIds(entry: Entry, letters: readonly string[]): ReadonlyMap<string, string> {
-  for (const [id, keeper] of entry.kept) if (vaultNoteId(entry.records.get(keeper)?.id, letters) !== id) entry.kept.delete(id)
+  for (const [id, keeper] of entry.kept) if (vaultPageId(entry.records.get(keeper)?.id, letters) !== id) entry.kept.delete(id)
   return entry.kept
 }
 
 /**
- * Sweeps every note the live index holds for `root`, and every folder there now — for a vault that
+ * Sweeps every page the live index holds for `root`, and every folder there now — for a vault that
  * said yes after its index was built (YAZ-2523 🔒 V4). A yes that arrived by the sync, or from
  * another window: the numbers wait where this Mac is not the vault's first (YAZ-2677 S65).
  */
@@ -606,7 +606,7 @@ export async function saveIdsAnswer(root: unknown, enabled: unknown, letters?: u
   const r = requireAbsPath(root, 'root')
   if (typeof enabled !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'enabled' must be true or false")
   if (letters !== undefined && (typeof letters !== 'string' || !isIdLetters(letters))) throw new BridgeFailure('BAD_REQUEST', "'letters' must be 2 to 5 letters")
-  // A yes with letters keeps the IDs the notes already hold (YAZ-4922 🔒 D2): their groups, counted where it is asked.
+  // A yes with letters keeps the IDs the pages already hold (YAZ-4922 🔒 D2): their groups, counted where it is asked.
   const groups = enabled && letters !== undefined ? idGroups((await ownPart(r, await liveEntry(r))).records.values()) : []
   let moved = false
   await saveIds(r, (config) => {
@@ -620,17 +620,17 @@ export async function saveIdsAnswer(root: unknown, enabled: unknown, letters?: u
 
 /**
  * GIVE IDS, KEEPING THE IDS THAT ARE THERE (YAZ-4922 🔒 D2, gap 1): the keys of `ids.json` for a yes with the letters
- * `to`, where the notes hold number IDs in `groups` (`idGroups`, the biggest first). Where no group is new to the
+ * `to`, where the pages hold number IDs in `groups` (`idGroups`, the biggest first). Where no group is new to the
  * vault, only `letters` changes: the box as it always was.
- *  - `to` are the letters of a group: that group is the vault's, as it is. 0 notes change.
+ *  - `to` are the letters of a group: that group is the vault's, as it is. 0 pages change.
  *  - Other letters: the biggest group MOVES to them (`moved`): its letters go into `was`, and "Change letters"
- *    (`reletter`) then moves its numbers, links and file names. The number of each note stays.
+ *    (`reletter`) then moves its numbers, links and file names. The number of each page stays.
  *  - Each other group is KEPT (`kept`, `KEPT_MARK`): its IDs stay as they are, and none gets a fresh number.
- * A note with no ID is the only one the sweep gives a number.
+ * A page with no ID is the only one the sweep gives a number.
  */
 function keepGroups(config: Record<string, unknown>, vaultName: string, groups: readonly IdGroup[], to: string): { config: Record<string, unknown>; moved: boolean } {
   const held = idLettersOf(config, vaultName).letters
-  const fresh = groups.filter((group) => vaultNoteId(numberId(group.letters, 1), held) === undefined)
+  const fresh = groups.filter((group) => vaultPageId(numberId(group.letters, 1), held) === undefined)
   if (fresh.length === 0) return { config: { letters: to }, moved: false }
   const main = groups.some((group) => group.letters === to) ? to : groups[0].letters
   const moved = main !== to
@@ -641,8 +641,8 @@ function keepGroups(config: Record<string, unknown>, vaultName: string, groups: 
 
 /**
  * "Give IDs" from the box in Settings (YAZ-2677 R32, S64; YAZ-4922 🔒 D2): the answer and the letters are saved,
- * keeping the IDs the notes hold (`keepGroups`). Where the biggest group takes other letters, its numbers, links and
- * file names follow first (`changeLetters` with the letters the vault has now). Then every note with no ID is given
+ * keeping the IDs the pages hold (`keepGroups`). Where the biggest group takes other letters, its numbers, links and
+ * file names follow first (`changeLetters` with the letters the vault has now). Then every page with no ID is given
  * its number on this Mac (`giveIdsNow`). `renamed` hears each file that took a new name, as "Change letters" does.
  */
 export async function turnIdsOn(root: string, letters: string, renamed?: Renamed): Promise<void> {
@@ -680,7 +680,7 @@ async function stateAfter(root: string, entry: Entry, { changed, gone }: Pass): 
   return idsStateOf((await ownPart(root, entry)).records.values(), (await vaultIds(root)).letters, await planLeft(root))
 }
 
-/** What the rows "ID letters" and "Old IDs" of Settings show (YAZ-2677 🔒 D5, D6, `IdsState`): of the vault's own notes, none of a vault inside it (YAZ-4922 D1). */
+/** What the rows "ID letters" and "Old IDs" of Settings show (YAZ-2677 🔒 D5, D6, `IdsState`): of the vault's own pages, none of a vault inside it (YAZ-4922 D1). */
 export async function idsState(root: unknown): Promise<IdsState> {
   const { r, entry, letters } = await idsVault(root)
   return idsStateOf((await ownPart(r, entry)).records.values(), letters, await planLeft(r))
@@ -688,7 +688,7 @@ export async function idsState(root: unknown): Promise<IdsState> {
 
 /**
  * "Change letters" (YAZ-2677 🔒 D5, S79 to S87), at once on this Mac (R32). FIRST `ids.json` takes
- * the new letters and keeps the letters of before in `was` (S81): from then on each note opens,
+ * the new letters and keeps the letters of before in `was` (S81): from then on each page opens,
  * whatever happens next, because the index reads an ID with letters of before as an ID of the
  * vault (S82, S83). THEN each file follows (`reletter`). The letters the vault already has write
  * nothing into `ids.json` and finish a change that stopped (S83, S85). The same change on two Macs
@@ -699,9 +699,9 @@ export async function changeLetters(root: unknown, letters: unknown, renamed?: R
   const { r, entry, letters: held, saved } = await idsVault(root)
   const to = letters.toUpperCase()
   if (isKept(held, to)) throw new BridgeFailure('BAD_REQUEST', `${to} are the letters of a group this vault keeps as it is`)
-  // A vault with no letters in its file saves them here, and keeps its default in `was` (R11): a note that carries the default follows.
+  // A vault with no letters in its file saves them here, and keeps its default in `was` (R11): a page that carries the default follows.
   if (to !== held[0] || !saved) await saveIds(r, (config) => configWithLetters(config, held, to))
-  // The boards' IDs come from the index (their heads), the vault's own only (D1); the notes' are read off the disk by the pass itself.
+  // The boards' IDs come from the index (their heads), the vault's own only (D1); the pages' are read off the disk by the pass itself.
   const mine = idsOwnedBy(r, entry.answers)
   const boards = (await ownOnly([...entry.boards], ([p]) => mine(p))).map(([, id]) => id)
   return stateAfter(r, entry, await reletter(r, (await vaultIds(r)).letters, renamed, boards))
@@ -709,7 +709,7 @@ export async function changeLetters(root: unknown, letters: unknown, renamed?: R
 
 /**
  * "Give old IDs numbers" (YAZ-2677 🔒 D6, S88 to S90), at once on this Mac (R32): `backfill` over
- * the notes the index holds. Never throws for a file it could not write: the state says what is left.
+ * the pages the index holds. Never throws for a file it could not write: the state says what is left.
  */
 export async function giveOldIdsNumbers(root: unknown, renamed?: Renamed): Promise<IdsState> {
   const { r, entry, letters } = await idsVault(root)
@@ -717,7 +717,7 @@ export async function giveOldIdsNumbers(root: unknown, renamed?: Renamed): Promi
 }
 
 /**
- * "Give IDs" (YAZ-2677 R32, S64): the user asked on THIS Mac, so every note and folder of `root`
+ * "Give IDs" (YAZ-2677 R32, S64): the user asked on THIS Mac, so every page and folder of `root`
  * is given its number now, whichever Mac is the vault's first. A Mac that only sees the yes
  * arrive sweeps by `sweepIndexed`, and waits. Resolves when the pass is done; never throws.
  */
@@ -734,9 +734,9 @@ export async function giveIdsNow(root: string): Promise<void> {
 }
 
 /**
- * "Check for duplicates" (YAZ-2677 🔒 D7, S55 to S57): the notes of `root` that share an ID are
+ * "Check for duplicates" (YAZ-2677 🔒 D7, S55 to S57): the pages of `root` that share an ID are
  * swept now, on this Mac (R32), and what happened is told in one line. A clash that another Mac
- * must fix is told and not touched. A note with no ID is not given one here.
+ * must fix is told and not touched. A page with no ID is not given one here.
  */
 export async function checkDuplicates(root: unknown): Promise<string> {
   const r = requireAbsPath(root, 'root')
@@ -745,7 +745,7 @@ export async function checkDuplicates(root: unknown): Promise<string> {
   if (answer !== true) throw new BridgeFailure('BAD_REQUEST', 'this vault does not use IDs', { path: r })
   const holders = new Map<string, IndexRecord[]>()
   for (const record of entry.records.values()) {
-    const id = vaultNoteId(record.id, letters)
+    const id = vaultPageId(record.id, letters)
     if (id !== undefined) holders.set(id, [...(holders.get(id) ?? []), record])
   }
   const among = [...holders.values()].filter((group) => group.length > 1).flat()

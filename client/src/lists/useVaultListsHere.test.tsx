@@ -230,7 +230,7 @@ describe('the workspace list (YAZ-4450 D2, D4)', () => {
 
 describe('the folders of a tab (YAZ-4460; demo YAZ-4471, YAZ-4472; ideas YAZ-4470)', () => {
   const ON: WorkspaceLists = { focus: true, favorites: true }
-  const roots = ['/x/Notes', '/x/Work']
+  const roots = ['/x/Pages', '/x/Work']
   const folder = (id: string, items: FocusFolder['items'], extra: Partial<FocusFolder> = {}): FocusFolder => ({ id, name: id, created: 1, at: 1, items, ...extra })
   /** A bridge whose focus folders and lists live in maps by vault and scope, as main keeps them in each vault. */
   function folderBridge(folders: FocusFolder[], scopes: ListScope[] = ['workspace', 'vault']) {
@@ -249,7 +249,7 @@ describe('the folders of a tab (YAZ-4460; demo YAZ-4471, YAZ-4472; ideas YAZ-447
     if (action === undefined) throw new Error('no Undo on the last toast')
     act(() => action.run())
   }
-  const items: FocusFolder['items'] = [{ vault: 'Notes', path: 'a.md' }, { vault: 'Work', path: 'b.md' }]
+  const items: FocusFolder['items'] = [{ vault: 'Pages', path: 'a.md' }, { vault: 'Work', path: 'b.md' }]
 
   it('YAZ-4472: a delete reaches both scopes, and "Keep items" puts the items at the top level of each; Undo brings the folder back', async () => {
     const { live, list } = folderBridge([folder('f', items)])
@@ -259,14 +259,14 @@ describe('the folders of a tab (YAZ-4460; demo YAZ-4471, YAZ-4472; ideas YAZ-447
     await act(async () => here().focusTab.remove('f'))
     for (const r of roots) for (const scope of ['workspace', 'vault'] as const) expect(live(r, scope), `${r} ${scope}`).toEqual([])
     for (const scope of ['workspace', 'vault'] as const) {
-      expect(list('/x/Notes', scope)).toEqual(['/x/Notes/a.md'])
+      expect(list('/x/Pages', scope)).toEqual(['/x/Pages/a.md'])
       expect(list('/x/Work', scope)).toEqual(['/x/Work/b.md'])
     }
     expect(onNotice).toHaveBeenLastCalledWith('Deleted f (focus folder)', 'focus', 'lists', UNDO)
     undo()
     await act(async () => undefined)
     for (const r of roots) for (const scope of ['workspace', 'vault'] as const) expect(live(r, scope), `${r} ${scope}`).toEqual(['f'])
-    expect(list('/x/Notes', 'workspace')).toEqual([])
+    expect(list('/x/Pages', 'workspace')).toEqual([])
     expect(list('/x/Work', 'vault')).toEqual([])
   })
 
@@ -281,7 +281,7 @@ describe('the folders of a tab (YAZ-4460; demo YAZ-4471, YAZ-4472; ideas YAZ-447
     expect(list('/x/Work', 'vault')).toEqual([])
     await act(async () => here().setScope('focus', ['/x/Work/b.md'], 'vault', false))
     const vaultCopy = () => bridge.focusFolders.set.mock.calls.filter((call) => call[0] === '/x/Work' && call[1] === 'vault').at(-1)?.[2]
-    expect(vaultCopy()?.find((f) => f.id === 'f')?.items).toEqual([{ vault: 'Notes', path: 'a.md' }])
+    expect(vaultCopy()?.find((f) => f.id === 'f')?.items).toEqual([{ vault: 'Pages', path: 'a.md' }])
     expect(here().scopesOf('focus', ['/x/Work/b.md']).vault).toBe(false)
     expect(live('/x/Work', 'workspace')).toEqual(['f']) // the folder on show keeps it
     undo()
@@ -291,19 +291,19 @@ describe('the folders of a tab (YAZ-4460; demo YAZ-4471, YAZ-4472; ideas YAZ-447
   })
 
   it(`YAZ-4479: a folder holds ${MAX_FOLDER_ITEMS} items at most and says so; at a full top level "Keep items" says what left, and a move out keeps the item in its folder`, async () => {
-    const many = Array.from({ length: MAX_FOLDER_ITEMS + 5 }, (_, i) => `/x/Notes/n${i}.md`)
-    const full = Array.from({ length: MAX_FOCUS }, (_, i) => `/x/Notes/top${i}.md`)
+    const many = Array.from({ length: MAX_FOLDER_ITEMS + 5 }, (_, i) => `/x/Pages/n${i}.md`)
+    const full = Array.from({ length: MAX_FOCUS }, (_, i) => `/x/Pages/top${i}.md`)
     const { bridge } = folderBridge([folder('f', [])], ['workspace'])
-    bridge.focus.get.mockImplementation(async (r: string, scope: ListScope) => (r === '/x/Notes' && scope === 'workspace' ? full : []))
+    bridge.focus.get.mockImplementation(async (r: string, scope: ListScope) => (r === '/x/Pages' && scope === 'workspace' ? full : []))
     await storage.init()
     await mount(roots, ON)
     await act(async () => void here().focusTab.addTo(many, 'f'))
     expect(here().focusTab.folders[0].items).toHaveLength(MAX_FOLDER_ITEMS)
     expect(onNotice).toHaveBeenCalledWith('Added 500 to f (focus folder). A folder holds 500 items at most: 5 items stay where they were.', 'error', undefined, UNDO)
     onNotice.mockReset()
-    await act(async () => here().focusTab.moveOut('/x/Notes/n0.md'))
+    await act(async () => here().focusTab.moveOut('/x/Pages/n0.md'))
     expect(onNotice).toHaveBeenLastCalledWith('Focus limit reached: 500 items. It stays in its folder.', 'error')
-    expect(here().focusTab.folderOf('/x/Notes/n0.md')?.id).toBe('f')
+    expect(here().focusTab.folderOf('/x/Pages/n0.md')?.id).toBe('f')
     await act(async () => here().focusTab.remove('f'))
     expect(onNotice).toHaveBeenLastCalledWith('Deleted f. Focus limit reached: 500 items, so some of its items left focus.', 'error', undefined, UNDO)
   })
@@ -315,15 +315,15 @@ describe('the folders of a tab (YAZ-4460; demo YAZ-4471, YAZ-4472; ideas YAZ-447
     bridge.favorites.set.mockImplementation(async (r: string, paths: readonly string[], scope: ListScope) => void favs.set(`${r}|${scope}`, [...paths]))
     await storage.init()
     await mount(roots, ON)
-    act(() => void here().toggleFocus(['/x/Notes/a.md'], false))
-    expect(list('/x/Notes', 'workspace')).toEqual(['/x/Notes/a.md'])
+    act(() => void here().toggleFocus(['/x/Pages/a.md'], false))
+    expect(list('/x/Pages', 'workspace')).toEqual(['/x/Pages/a.md'])
     undo()
-    expect(list('/x/Notes', 'workspace')).toEqual([])
-    act(() => void here().toggleFocus(['/x/Notes/a.md'], false))
-    act(() => void here().toggleFocus(['/x/Notes/a.md'], true))
+    expect(list('/x/Pages', 'workspace')).toEqual([])
+    act(() => void here().toggleFocus(['/x/Pages/a.md'], false))
+    act(() => void here().toggleFocus(['/x/Pages/a.md'], true))
     expect(onNotice).toHaveBeenLastCalledWith('Removed from focus', 'focus', 'lists', UNDO)
     undo()
-    expect(list('/x/Notes', 'workspace')).toEqual(['/x/Notes/a.md'])
+    expect(list('/x/Pages', 'workspace')).toEqual(['/x/Pages/a.md'])
     act(() => here().toggleFavorite(['/x/Work/b.md'], false))
     expect(favs.get('/x/Work|workspace')).toEqual(['/x/Work/b.md'])
     undo()
@@ -340,21 +340,21 @@ describe('the folders of a tab (YAZ-4460; demo YAZ-4471, YAZ-4472; ideas YAZ-447
   })
 
   it('YAZ-4480: an add into a nearly full folder moves only what fits; the rest stay where they were, and one toast counts what went in and says what stayed', async () => {
-    const fill = Array.from({ length: MAX_FOLDER_ITEMS - 1 }, (_, i) => ({ vault: 'Notes', path: `n${i}.md` }))
+    const fill = Array.from({ length: MAX_FOLDER_ITEMS - 1 }, (_, i) => ({ vault: 'Pages', path: `n${i}.md` }))
     const { list } = folderBridge([folder('f', fill)], ['workspace'])
     await storage.init()
     await mount(roots, ON)
-    act(() => void here().toggleFocus(['/x/Notes/t1.md', '/x/Notes/t2.md', '/x/Notes/t3.md'], false))
+    act(() => void here().toggleFocus(['/x/Pages/t1.md', '/x/Pages/t2.md', '/x/Pages/t3.md'], false))
     await act(async () => undefined)
     onNotice.mockReset()
-    await act(async () => void here().focusTab.addTo(['/x/Notes/t1.md', '/x/Notes/t2.md', '/x/Notes/t3.md'], 'f'))
+    await act(async () => void here().focusTab.addTo(['/x/Pages/t1.md', '/x/Pages/t2.md', '/x/Pages/t3.md'], 'f'))
     expect(here().focusTab.folders[0].items).toHaveLength(MAX_FOLDER_ITEMS)
-    expect(list('/x/Notes', 'workspace')).toEqual(['/x/Notes/t2.md', '/x/Notes/t3.md'])
+    expect(list('/x/Pages', 'workspace')).toEqual(['/x/Pages/t2.md', '/x/Pages/t3.md'])
     expect(onNotice.mock.calls).toEqual([['Added to f (focus folder). A folder holds 500 items at most: 2 items stay where they were.', 'error', undefined, UNDO]])
     // Full now: nothing moves, and the toast says so.
     onNotice.mockReset()
-    await act(async () => void here().focusTab.addTo(['/x/Notes/t2.md'], 'f'))
-    expect(list('/x/Notes', 'workspace')).toEqual(['/x/Notes/t2.md', '/x/Notes/t3.md'])
+    await act(async () => void here().focusTab.addTo(['/x/Pages/t2.md'], 'f'))
+    expect(list('/x/Pages', 'workspace')).toEqual(['/x/Pages/t2.md', '/x/Pages/t3.md'])
     expect(onNotice.mock.calls).toEqual([['A folder holds 500 items at most: one item stays where it was.', 'error']])
   })
 
@@ -363,9 +363,9 @@ describe('the folders of a tab (YAZ-4460; demo YAZ-4471, YAZ-4472; ideas YAZ-447
     await storage.init()
     await mount(roots, ON)
     await act(async () => here().focusTab.remove('f', false))
-    expect(live('/x/Notes', 'workspace')).toEqual([])
+    expect(live('/x/Pages', 'workspace')).toEqual([])
     expect(live('/x/Work', 'vault')).toEqual([])
-    expect(list('/x/Notes', 'workspace')).toEqual([])
+    expect(list('/x/Pages', 'workspace')).toEqual([])
     expect(list('/x/Work', 'vault')).toEqual([])
   })
 
@@ -376,7 +376,7 @@ describe('the folders of a tab (YAZ-4460; demo YAZ-4471, YAZ-4472; ideas YAZ-447
     expect(here().focusTab.folders.map((f) => f.id)).toEqual(['a', 'b'])
     await act(async () => here().focusTab.reorderFolders(['b', 'a']))
     expect(here().focusTab.folders.map((f) => [f.id, f.pos])).toEqual([['b', 0], ['a', 1]])
-    const last = bridge.focusFolders.set.mock.calls.filter((call) => call[0] === '/x/Notes' && call[1] === 'workspace').at(-1)?.[2]
+    const last = bridge.focusFolders.set.mock.calls.filter((call) => call[0] === '/x/Pages' && call[1] === 'workspace').at(-1)?.[2]
     expect(last?.map((f) => [f.id, f.pos])).toEqual([['a', 1], ['b', 0]])
   })
 
@@ -385,12 +385,12 @@ describe('the folders of a tab (YAZ-4460; demo YAZ-4471, YAZ-4472; ideas YAZ-447
     bridge.focus.get.mockImplementation(async (r: string, scope: ListScope) => (scope === 'workspace' ? [`${r}/top.md`] : []))
     await storage.init()
     await mount(roots, ON)
-    expect(here().focusList).toEqual(['/x/Notes/top.md', '/x/Work/top.md'])
+    expect(here().focusList).toEqual(['/x/Pages/top.md', '/x/Work/top.md'])
     await act(async () => here().clearFocus())
-    expect(list('/x/Notes', 'workspace')).toEqual([])
+    expect(list('/x/Pages', 'workspace')).toEqual([])
     expect(onNotice).toHaveBeenLastCalledWith('Cleared the top level of Focus', 'focus', 'lists', UNDO)
     undo()
-    expect(list('/x/Notes', 'workspace')).toEqual(['/x/Notes/top.md'])
+    expect(list('/x/Pages', 'workspace')).toEqual(['/x/Pages/top.md'])
     expect(list('/x/Work', 'workspace')).toEqual(['/x/Work/top.md'])
   })
 
@@ -399,11 +399,11 @@ describe('the folders of a tab (YAZ-4460; demo YAZ-4471, YAZ-4472; ideas YAZ-447
     await storage.init()
     await mount(roots, ON)
     await act(async () => here().focusTab.setFolderScope('f', 'workspace', false))
-    expect(live('/x/Notes', 'workspace')).toEqual([])
-    expect(live('/x/Notes', 'vault')).toEqual(['f'])
+    expect(live('/x/Pages', 'workspace')).toEqual([])
+    expect(live('/x/Pages', 'vault')).toEqual(['f'])
     expect(onNotice).toHaveBeenLastCalledWith('f moved to the vault list', 'focus', 'lists', UNDO)
     undo()
     await act(async () => undefined)
-    expect(live('/x/Notes', 'workspace')).toEqual(['f'])
+    expect(live('/x/Pages', 'workspace')).toEqual(['f'])
   })
 })

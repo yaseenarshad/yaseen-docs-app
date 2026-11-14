@@ -279,7 +279,7 @@ describe('github.json drives adoption', () => {
 describe('list files start a sync (YAZ-2702)', () => {
   const FOCUS = 'focus.0123456789ab.json'
 
-  it('S18: a change of a list file with no note edit marks pending once, and a burst — two list files and a note — runs exactly one pass after the quiet period', async () => {
+  it('S18: a change of a list file with no page edit marks pending once, and a burst — two list files and a page — runs exactly one pass after the quiet period', async () => {
     const h = harness({ quietMs: 30 })
     h.enabled.set(ROOT, true)
     const manager = createGitSync(h.host)

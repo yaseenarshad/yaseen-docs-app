@@ -27,7 +27,7 @@ describe('diagramRoot / diagramDocumentError (🔒 YAZ-1802 D6)', () => {
     expect(diagramDocumentError('')).toMatch(/empty/)
     expect(diagramDocumentError('  \n')).toMatch(/empty/)
     expect(diagramDocumentError('this is not xml at all')).toMatch(/not a draw.io diagram/)
-    expect(diagramDocumentError('<note><to>Tove</to></note>')).toMatch(/not a draw.io diagram/)
+    expect(diagramDocumentError('<page><to>Tove</to></page>')).toMatch(/not a draw.io diagram/)
     expect(diagramDocumentError('<mxfile><diagram id="a">')).toMatch(/cut short/)
     expect(diagramDocumentError('<mxfile><diagram id="a"><!-- half -->')).toMatch(/cut short/)
   })

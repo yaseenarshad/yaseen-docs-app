@@ -1,5 +1,5 @@
 /**
- * The New… box (⌘N, YAZ-3556 D5, D7, D3; YAZ-4252): it opens on Note, ← → pick the kind (no wrap), ⏎ moves to the
+ * The New… box (⌘N, YAZ-3556 D5, D7, D3; YAZ-4252): it opens on Page, ← → pick the kind (no wrap), ⏎ moves to the
  * place row and ⏎ there makes it in the folder on show, Esc closes; a missing default folder says so; "Choose…" opens
  * the place picker for this one item. The Folder tile, the vault's place shortcuts and the keys `1`, `3`, ⏎.
  */
@@ -54,7 +54,7 @@ afterEach(() => {
   localStorage.clear()
 })
 
-function render(dir = '/v/Inbox', missing: string | null = null, vaults = [{ root: '/v', name: 'Notes' }]) {
+function render(dir = '/v/Inbox', missing: string | null = null, vaults = [{ root: '/v', name: 'Pages' }]) {
   const onMake = vi.fn()
   const onClose = vi.fn()
   const host = document.createElement('div')
@@ -75,14 +75,14 @@ const activeRow = () => [...document.querySelectorAll('.new-item__row')].findInd
 const place = () => document.querySelector('.new-item__place')?.textContent
 
 describe('NewItemBox (YAZ-3556 D5, D7)', () => {
-  it('opens on Note with the keyboard on the sheet; ← → pick the kind without wrapping; ⏎ makes it in the folder; Esc closes', () => {
+  it('opens on Page with the keyboard on the sheet; ← → pick the kind without wrapping; ⏎ makes it in the folder; Esc closes', () => {
     const { onMake, onClose } = render()
-    expect([...document.querySelectorAll('.new-item__tile .new-item__label')].map((t) => t.textContent)).toEqual(['Note', 'Excalidraw drawing', 'draw.io diagram', 'Folder'])
-    expect(chosen()).toBe('Note')
+    expect([...document.querySelectorAll('.new-item__tile .new-item__label')].map((t) => t.textContent)).toEqual(['Page', 'Excalidraw drawing', 'draw.io diagram', 'Folder'])
+    expect(chosen()).toBe('Page')
     expect(document.activeElement).toBe(sheet())
     expect(place()).toBe('Inbox')
     press('ArrowLeft')
-    expect(chosen()).toBe('Note')
+    expect(chosen()).toBe('Page')
     press('ArrowRight')
     press('ArrowRight')
     press('ArrowRight')
@@ -115,7 +115,7 @@ describe('NewItemBox (YAZ-3556 D5, D7)', () => {
 
   it('a default folder the vault does not have: the vault folder, and it says so (D3)', () => {
     render('/v', 'Inbox')
-    expect(place()).toBe('Notes')
+    expect(place()).toBe('Pages')
     expect(document.querySelector('.new-item .confirm__status')?.textContent).toMatch(/“Inbox” is not in this vault/)
   })
 
@@ -163,7 +163,7 @@ describe('the New… box\'s folders, place shortcuts and keys (YAZ-4252)', () =>
     // Change place: the picker opens on the shortcut's folder.
     act(() => void slots()[2]!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 5, clientY: 5 })))
     act(() => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) => b.textContent === 'Change place')?.click())
-    act(() => [...document.querySelectorAll<HTMLElement>('.place-picker__crumb')].find((c) => c.textContent === 'Notes')?.click())
+    act(() => [...document.querySelectorAll<HTMLElement>('.place-picker__crumb')].find((c) => c.textContent === 'Pages')?.click())
     pick('Inbox')
     chooseHere()
     await flush()
@@ -195,7 +195,7 @@ describe('the New… box\'s folders, place shortcuts and keys (YAZ-4252)', () =>
     await flush()
     expect(slots()[0]!.title).toBe('Projects')
     act(() => document.querySelector<HTMLButtonElement>('.new-item__slot-edit')!.click())
-    act(() => [...document.querySelectorAll<HTMLElement>('.place-picker__crumb')].find((c) => c.textContent === 'Notes')?.click())
+    act(() => [...document.querySelectorAll<HTMLElement>('.place-picker__crumb')].find((c) => c.textContent === 'Pages')?.click())
     pick('Inbox')
     chooseHere()
     await flush()
@@ -220,13 +220,13 @@ describe('the New… box\'s folders, place shortcuts and keys (YAZ-4252)', () =>
 
   it('the demo: two shortcuts of one name show their parent folders; a window of two vaults names the vault in the tooltip', async () => {
     stored.set('/v', ['/v/Projects/2026/folder2', '/v/Inbox/folder2', '/v/Inbox'])
-    render('/v', null, [{ root: '/v', name: 'Notes' }, { root: '/w', name: 'Work vault' }])
+    render('/v', null, [{ root: '/v', name: 'Pages' }, { root: '/w', name: 'Work vault' }])
     await flush()
     expect(slots().map((b) => b.querySelector('.new-item__slot-parent')?.textContent ?? null)).toEqual(['2026', 'Inbox', null])
-    expect(slots()[0]!.title).toBe('Notes / Projects / 2026 / folder2')
+    expect(slots()[0]!.title).toBe('Pages / Projects / 2026 / folder2')
   })
 
-  it('keys: `1`, `3`, ⏎ makes a note in the third place; ↑ goes back to the kinds', async () => {
+  it('keys: `1`, `3`, ⏎ makes a page in the third place; ↑ goes back to the kinds', async () => {
     stored.set('/v', ['/v/Inbox', null, '/v/Projects'])
     const { onMake } = render('/v')
     await flush()
@@ -245,7 +245,7 @@ describe('the New… box\'s folders, place shortcuts and keys (YAZ-4252)', () =>
   it('a workspace: the shortcuts are those of the vault the folder is in; a pick in another vault shows that vault\'s', async () => {
     stored.set('/v', ['/v/Inbox', null, null])
     stored.set('/w', [null, '/w/Work', null])
-    render('/v', null, [{ root: '/v', name: 'Notes' }, { root: '/w', name: 'Work vault' }])
+    render('/v', null, [{ root: '/v', name: 'Pages' }, { root: '/w', name: 'Work vault' }])
     await flush()
     expect(slotNames()).toEqual(['Inbox', '+ Add place', '+ Add place'])
     act(() => document.querySelector<HTMLButtonElement>('.new-item__choose')?.click())
@@ -262,30 +262,30 @@ describe('the New… box\'s folders, place shortcuts and keys (YAZ-4252)', () =>
     const { onMake } = render('/v/Inbox')
     await flush()
     expect(slots().map((b) => b.classList.contains('new-item__slot--missing'))).toEqual([true, false, false])
-    const note = () => document.querySelector('.new-item__gone')?.textContent ?? null
-    expect(note()).toBeNull()
-    // A click, then the key `1`: the note, and the place does not change.
+    const page = () => document.querySelector('.new-item__gone')?.textContent ?? null
+    expect(page()).toBeNull()
+    // A click, then the key `1`: the page, and the place does not change.
     act(() => slots()[0]!.click())
-    expect(note()).toBe('This folder is gone. Change place or remove it.')
+    expect(page()).toBe('This folder is gone. Change place or remove it.')
     expect(place()).toBe('Inbox')
     press('2')
-    expect(note()).toBeNull()
+    expect(page()).toBeNull()
     expect(place()).toBe('Projects')
     press('1')
-    expect(note()).toBe('This folder is gone. Change place or remove it.')
+    expect(page()).toBe('This folder is gone. Change place or remove it.')
     expect(place()).toBe('Projects')
-    // ← from Projects lands on the gone one (YAZ-4266): it takes the focus, with no note, and the place stays.
+    // ← from Projects lands on the gone one (YAZ-4266): it takes the focus, with no page, and the place stays.
     press('ArrowLeft')
     expect(document.activeElement).toBe(slots()[0])
-    expect(note()).toBeNull()
+    expect(page()).toBeNull()
     expect(place()).toBe('Projects')
     // ⏎ there says it is gone and makes nothing.
     press('Enter')
-    expect(note()).toBe('This folder is gone. Change place or remove it.')
+    expect(page()).toBe('This folder is gone. Change place or remove it.')
     expect(onMake).not.toHaveBeenCalled()
     // → goes back to Projects, and ⏎ makes the item there.
     press('ArrowRight')
-    expect(note()).toBeNull()
+    expect(page()).toBeNull()
     expect(document.activeElement).toBe(slots()[1])
     press('Enter')
     expect(onMake).toHaveBeenCalledExactlyOnceWith('file', '/v/Projects')
@@ -318,7 +318,7 @@ describe('the New… box\'s folders, place shortcuts and keys (YAZ-4252)', () =>
     const failed = () => document.querySelector('.new-item__failed')?.textContent ?? null
     failNextSave = true
     act(() => document.querySelector<HTMLButtonElement>('.new-item__slot-edit')!.click())
-    act(() => [...document.querySelectorAll<HTMLElement>('.place-picker__crumb')].find((c) => c.textContent === 'Notes')?.click())
+    act(() => [...document.querySelectorAll<HTMLElement>('.place-picker__crumb')].find((c) => c.textContent === 'Pages')?.click())
     pick('Inbox')
     chooseHere()
     await flush()

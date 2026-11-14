@@ -7,9 +7,9 @@
  * jsdom draws the gutter, so `gutter` reads the numbers a user would read.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { setNoteCardEditorKind } from '../noteCard/noteCardView'
+import { setCardEditorKind } from '../card/cardBlockView'
 
-afterEach(() => setNoteCardEditorKind('page'))
+afterEach(() => setCardEditorKind('page'))
 import { EditorView as CodeMirrorView } from '@codemirror/view'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -138,14 +138,14 @@ describe('a code block’s own line numbers', () => {
     }
   })
 
-  it('a note card`s editor counts in lines of the file too (audit 6): Edit card shows the lines its text is on', async () => {
-    // The raw-text fallback (YAZ-5026: `setNoteCardEditorKind('code')`); the page's editor is `cardEditor.test.ts`.
-    setNoteCardEditorKind('code')
+  it('a card`s editor counts in lines of the file too (audit 6): Edit card shows the lines its text is on', async () => {
+    // The raw-text fallback (YAZ-5026: `setCardEditorKind('code')`); the page's editor is `cardEditor.test.ts`.
+    setCardEditorKind('code')
     const file = ['Intro.', '', '```card', 'Front', '---', 'Back', '```', '<!-- card: WIKI-1 -->', ''].join('\n')
     const { crepe, root } = await open(file)
     show(crepe, file)
-    expect(root.querySelector('.note-card')!.getAttribute('data-line-code')).toBe('4')
-    root.querySelector<HTMLElement>('.note-card__edit')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    expect(root.querySelector('.card')!.getAttribute('data-line-code')).toBe('4')
+    root.querySelector<HTMLElement>('.card__edit')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
     await Promise.resolve()
     await Promise.resolve()
     expect(gutter(root)).toEqual([['4', '5', '6']])

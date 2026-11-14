@@ -1,7 +1,7 @@
 /**
  * "New row below" in the folder table's row and selection right-click (YAZ-4611 D63). ViewsPane is mounted in jsdom
- * with a host whose `create` records the seed and resolves a path; the test then hands the pane the new note, as the
- * index would. The new row's Name cell goes into title edit, the note does not open, and the toast's Undo trashes it.
+ * with a host whose `create` records the seed and resolves a path; the test then hands the pane the new page, as the
+ * index would. The new row's Name cell goes into title edit, the page does not open, and the toast's Undo trashes it.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -11,15 +11,15 @@ import { type ParsedViews, parseViews } from '../viewSchema'
 import { ViewsPane } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
-import type { NewNoteSeed } from '../newNote'
+import type { NewPageSeed } from '../newPage'
 import { dropAllHistories, dropHistoryPaths, renameHistoryPaths } from './valueHistory'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined, getSettings: () => undefined, getRoots: () => [] } }))
 
-const note = (name: string, properties: Record<string, unknown>): IndexRecord => ({ ...TEST_RECORDS[4], path: `/vault/f/${name}.md`, basename: name, name: `${name}.md`, title: name, folder: 'f', properties })
-const RECORDS = [note('A', { kind: 'post', rank: 1, status: 'todo', area: 'work' }), note('B', { kind: 'post', rank: 5, status: 'todo', area: 'home' }), note('C', { kind: 'post', rank: 9, status: 'done', area: 'work' })]
+const page = (name: string, properties: Record<string, unknown>): IndexRecord => ({ ...TEST_RECORDS[4], path: `/vault/f/${name}.md`, basename: name, name: `${name}.md`, title: name, folder: 'f', properties })
+const RECORDS = [page('A', { kind: 'post', rank: 1, status: 'todo', area: 'work' }), page('B', { kind: 'post', rank: 5, status: 'todo', area: 'home' }), page('C', { kind: 'post', rank: 9, status: 'done', area: 'work' })]
 const NEW = '/vault/f/Untitled.md'
 
 const TABLE = `views:
@@ -51,8 +51,8 @@ afterEach(() => {
 function mount(text: string, records: IndexRecord[] = RECORDS) {
   let parsed = parseViews(text)
   let shown = records
-  const seeds: NewNoteSeed[] = []
-  const create = vi.fn(async (seed: NewNoteSeed) => {
+  const seeds: NewPageSeed[] = []
+  const create = vi.fn(async (seed: NewPageSeed) => {
     seeds.push(seed)
     return NEW
   })
@@ -82,9 +82,9 @@ function mount(text: string, records: IndexRecord[] = RECORDS) {
       ),
     )
   draw()
-  /** The index brings the new note, with its seed. */
+  /** The index brings the new page, with its seed. */
   const arrive = (ctime?: number) => {
-    shown = [...shown, { ...note('Untitled', seeds.at(-1)!.properties), ...(ctime !== undefined && { ctime }) }]
+    shown = [...shown, { ...page('Untitled', seeds.at(-1)!.properties), ...(ctime !== undefined && { ctime }) }]
     folder.vaultRecords = shown
     draw()
   }
@@ -123,7 +123,7 @@ describe('New row below (YAZ-4611 D63)', () => {
     expect(seeds[0].properties).toMatchObject({ status: 'todo', area: 'home', rank: 5 })
   })
 
-  it('under a sort the new row shows right after the anchor, its Name cell in title edit; the note does not open', async () => {
+  it('under a sort the new row shows right after the anchor, its Name cell in title edit; the page does not open', async () => {
     const { el, arrive, onOpenFile } = mount(TABLE)
     await newBelow(el, 'B')
     arrive()
@@ -133,7 +133,7 @@ describe('New row below (YAZ-4611 D63)', () => {
     expect(onOpenFile).not.toHaveBeenCalled()
   })
 
-  it('Enter retitles the note; Esc keeps "Untitled"', async () => {
+  it('Enter retitles the page; Esc keeps "Untitled"', async () => {
     const a = mount(TABLE)
     await newBelow(a.el, 'B')
     a.arrive()
@@ -155,7 +155,7 @@ describe('New row below (YAZ-4611 D63)', () => {
     expect(b.retitle).not.toHaveBeenCalled()
   })
 
-  it('the toast\'s Undo moves the new note to the Trash', async () => {
+  it('the toast\'s Undo moves the new page to the Trash', async () => {
     const { el, onNotice, trash } = mount(TABLE)
     await newBelow(el, 'B')
     const [message, , type, action] = onNotice.mock.lastCall as [string, string, string, { run: () => void }]
@@ -164,7 +164,7 @@ describe('New row below (YAZ-4611 D63)', () => {
     expect(trash).toHaveBeenCalledExactlyOnceWith([NEW])
   })
 
-  it('the Undo follows the note\'s rename (YAZ-4637 T3): a retitle in a vault without ids renames the file, and Undo trashes THAT file', async () => {
+  it('the Undo follows the page\'s rename (YAZ-4637 T3): a retitle in a vault without ids renames the file, and Undo trashes THAT file', async () => {
     const { el, onNotice, trash } = mount(TABLE)
     await newBelow(el, 'B')
     renameHistoryPaths(NEW, '/vault/f/My title.md')
@@ -173,7 +173,7 @@ describe('New row below (YAZ-4611 D63)', () => {
     expect(trash).toHaveBeenCalledExactlyOnceWith(['/vault/f/My title.md'])
   })
 
-  it('the Undo trashes only the note it created (T3): nothing once that note was deleted, and nothing when a newer file stands at its path', async () => {
+  it('the Undo trashes only the page it created (T3): nothing once that page was deleted, and nothing when a newer file stands at its path', async () => {
     const a = mount(TABLE)
     await newBelow(a.el, 'B')
     dropHistoryPaths(NEW)
@@ -209,8 +209,8 @@ describe('New row below (YAZ-4611 D63)', () => {
     expect(seeds[0].properties).toMatchObject({ rank: 9 })
   })
 
-  it('a windowed table (600 notes) scrolls to the new row and puts its Name cell in edit', async () => {
-    const many = Array.from({ length: 600 }, (_, i) => note(`n${String(i).padStart(3, '0')}`, { rank: i * 2 }))
+  it('a windowed table (600 pages) scrolls to the new row and puts its Name cell in edit', async () => {
+    const many = Array.from({ length: 600 }, (_, i) => page(`n${String(i).padStart(3, '0')}`, { rank: i * 2 }))
     const { el, arrive } = mount(TABLE.replace(`    filters:
       and:
         - 'note.kind == "post"'
@@ -226,7 +226,7 @@ describe('New row below (YAZ-4611 D63)', () => {
       wrap.dispatchEvent(new Event('scroll', { bubbles: true }))
     })
     expect(el.querySelector('td.view-table__name')?.textContent).toBe('n000')
-    // The new note has n300's rank: its line is near 300, which the scroll mounts.
+    // The new page has n300's rank: its line is near 300, which the scroll mounts.
     arrive()
     expect(wrap.scrollTop).toBeGreaterThan(280 * 28)
     const input = el.querySelector<HTMLInputElement>('input[aria-label="Edit title"]')!

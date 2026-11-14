@@ -57,9 +57,9 @@ vi.mock('../viewers/PdfViewer', () => ({ PdfViewer: viewer('pdf') }))
 /** The board picture (YAZ-3044 A22), stood in: it says what it was handed. */
 vi.mock('./QuickLookBoard', () => ({ default: (props: { root: string; path: string; darkColors: string }) => <div data-board={props.path} data-root={props.root} data-dark={props.darkColors} /> }))
 
-const NOTE = '---\ntitle: Plan\n---\n\n# Hello\n\nthe body\n'
+const PAGE = '---\ntitle: Plan\n---\n\n# Hello\n\nthe body\n'
 const BODY = '\n# Hello\n\nthe body\n'
-const file = (path: string, content = NOTE): File => ({ path, content, mtime: 1, size: content.length })
+const file = (path: string, content = PAGE): File => ({ path, content, mtime: 1, size: content.length })
 
 const watch: WatchSource = { subscribe: () => () => undefined }
 const wikilinks = createWikilinkResolveSource()
@@ -90,7 +90,7 @@ afterEach(() => {
 })
 
 describe('the preview panel of the search (YAZ-2662 D5)', () => {
-  it('S31, S39, S42, S44: a note shows under its title, read from the disk one time and rendered read-only — no frontmatter, no plugin that edits, nothing that saves or stores a fold — and the panel takes no focus', async () => {
+  it('S31, S39, S42, S44: a page shows under its title, read from the disk one time and rendered read-only — no frontmatter, no plugin that edits, nothing that saves or stores a fold — and the panel takes no focus', async () => {
     readFile.mockImplementation(async (path) => file(path))
     const bar = document.createElement('input')
     document.body.appendChild(bar)
@@ -103,8 +103,8 @@ describe('the preview panel of the search (YAZ-2662 D5)', () => {
     expect(opts.defaultValue).toBe(BODY)
     expect(setReadonly).toHaveBeenCalledExactlyOnceWith(true)
     expect(opts.features).toMatchObject({ [CrepeFeature.BlockEdit]: false, [CrepeFeature.Toolbar]: false })
-    // The window's resolve source, so an id link shows its note's title; and no door of the editor that writes.
-    // `foldingOn` (YAZ-4094 F1) only reads: the note's own `folding` key, else Settings › "Folding default" (on).
+    // The window's resolve source, so an id link shows its page's title; and no door of the editor that writes.
+    // `foldingOn` (YAZ-4094 F1) only reads: the page's own `folding` key, else Settings › "Folding default" (on).
     expect(Object.keys(opts).sort()).toEqual(['defaultValue', 'features', 'foldingOn', 'root', 'wikilinks'])
     expect(opts.wikilinks).toBe(wikilinks)
     expect((opts.foldingOn as () => boolean)()).toBe(true)
@@ -159,14 +159,14 @@ describe('the preview panel of the search (YAZ-2662 D5)', () => {
     expect([crepes, viewers]).toEqual([[], []])
   })
 
-  it('S41: a note that is gone, or that the app cannot read, gets one line that names it as the tree does — and no document', async () => {
+  it('S41: a page that is gone, or that the app cannot read, gets one line that names it as the tree does — and no document', async () => {
     readFile.mockRejectedValue({ code: 'NOT_FOUND', message: 'path does not exist' })
     const { panel } = await show('/v/Plan.md', 'Plan of the year')
     expect(panel.querySelector('.quicklook__body')?.textContent).toBe('Can\'t preview "Plan of the year" — it is no longer there')
     expect(crepes).toEqual([])
   })
 
-  it('a note with no text below its frontmatter says so, as the hover card does — no empty document with the hint of an editor', async () => {
+  it('a page with no text below its frontmatter says so, as the hover card does — no empty document with the hint of an editor', async () => {
     readFile.mockImplementation(async (path) => file(path, '---\ntitle: Plan\n---\n\n'))
     const { panel } = await show('/v/Plan.md')
     expect(panel.querySelector('.quicklook__body')?.textContent).toBe('Empty page')
@@ -216,7 +216,7 @@ describe('the preview panel of the search (YAZ-2662 D5)', () => {
     expect(panel.querySelector('.ProseMirror')).toBeNull()
   })
 
-  it('R4: the note in the panel is not the open document — `focusOpenDocument` goes past it to the page, and with no page open it moves no caret', async () => {
+  it('R4: the page in the panel is not the open document — `focusOpenDocument` goes past it to the page, and with no page open it moves no caret', async () => {
     readFile.mockImplementation(async (path) => file(path))
     const { panel } = await show('/v/Plan.md')
     const previewed = panel.querySelector<HTMLElement>('.editor-instance .ProseMirror')

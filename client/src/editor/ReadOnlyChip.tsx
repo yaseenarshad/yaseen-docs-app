@@ -1,6 +1,6 @@
 /**
  * THE "READ ONLY" CHIP and its "Allow edits?" box (YAZ-3076 D4, D4a option 1). It shows only while
- * the file is read only, in the status row of a note (cog, zoom, chip, sync, save) and of a
+ * the file is read only, in the status row of a page (cog, zoom, chip, sync, save) and of a
  * board (cog, chip, sync, save) — read only is never silent (S49). A stray key or click never unlocks
  * the file: a click on the chip opens a small box under it, and only a choice in it unlocks. Turning read only ON
  * never asks; that is the cog's row.
@@ -35,7 +35,7 @@
  * Enter in its page opens the "Allow edits?" box at once, and the card says so ("Press Enter to allow edits."). The
  * Enter types nothing (the page is locked) and a held Enter opens nothing: its repeats are no answer, in the box too.
  * Then Enter takes the focused choice, or ↓ ↑ move first. While the page is unlocked, the host's ⌘↵ and Esc lock it
- * again (`lockKeys`: a note's text, `createCrepe`'s `lockAgain`; an Explore edit layer): the hover says so.
+ * again (`lockKeys`: a page's text, `createCrepe`'s `lockAgain`; an Explore edit layer): the hover says so.
  */
 import { useEffect, useReducer, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { useUnit } from '../vault/unitWord'
@@ -87,7 +87,7 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, edit
   const message = useReadOnlyMessage(rootRef, chipRef, asking)
   const giveBack = useGiveBack(onReturn)
   useEnterAsks(rootRef, message !== null && !asking, askRef)
-  // The vault's word for a note (YAZ-4938): "This card is Read only." in a vault of cards.
+  // The vault's word for a page (YAZ-4938): "This card is Read only." in a vault of cards.
   const unit = useUnit()
   const editing = editingUntil !== null
   // The 1-second clock (YAZ-4939): here alone, only while a TIMED unlock runs, and gone with it.
@@ -154,7 +154,7 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, edit
               <LockIcon size={13} />
             </span>
             <span className="read-only-message__text">
-              <strong>{message.what === 'drawing' ? 'This drawing is Read only.' : unit('This note is Read only.')}</strong>
+              <strong>{message.what === 'drawing' ? 'This drawing is Read only.' : unit('This page is Read only.')}</strong>
               <span>Press Enter to allow edits.</span>
             </span>
           </div>

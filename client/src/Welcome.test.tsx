@@ -1,6 +1,6 @@
 /**
  * Welcome screen (C2, GRO-2164): the app name, recents as one-click rows (display name, path,
- * relative last-opened), the empty state, and the "Folder not found" note on a row whose
+ * relative last-opened), the empty state, and the "Folder not found" page on a row whose
  * folder vanished on disk — the rows are snapshotted at mount, so that row stays visible
  * after its MRU entry is dropped.
  */
@@ -62,14 +62,14 @@ describe('relativeLastOpened', () => {
 describe('Welcome', () => {
   it('renders the app name, one row per recent in MRU order and the Open folder… button', () => {
     const recents: RecentRoots = [
-      { path: '/vaults/notes', lastOpened: Date.now() - 2 * HOUR },
+      { path: '/vaults/pages', lastOpened: Date.now() - 2 * HOUR },
       { path: '/vaults/work', lastOpened: Date.now() - DAY },
     ]
     const { el } = mount({ recents })
     expect(el.querySelector('.welcome__title')?.textContent?.trim()).toBe('Yaseen Docs')
     const r = rows(el)
-    expect(r.map((b) => b.querySelector('.welcome__recent-name')?.textContent)).toEqual(['notes', 'work'])
-    expect(r.map((b) => b.querySelector('.welcome__recent-path')?.textContent)).toEqual(['/vaults/notes', '/vaults/work'])
+    expect(r.map((b) => b.querySelector('.welcome__recent-name')?.textContent)).toEqual(['pages', 'work'])
+    expect(r.map((b) => b.querySelector('.welcome__recent-path')?.textContent)).toEqual(['/vaults/pages', '/vaults/work'])
     expect(r[0]?.querySelector('.welcome__recent-when')?.textContent).toBe('2 hours ago')
     expect(r[1]?.querySelector('.welcome__recent-when')?.textContent).toBe('yesterday')
     expect(el.querySelector<HTMLButtonElement>('.btn--primary')?.textContent).toBe('Open folder…')
@@ -91,9 +91,9 @@ describe('Welcome', () => {
   })
 
   it('clicking a row opens that recent; the Open folder… button runs the pick flow', () => {
-    const { el, props } = mount({ recents: [{ path: '/vaults/notes', lastOpened: Date.now() }] })
+    const { el, props } = mount({ recents: [{ path: '/vaults/pages', lastOpened: Date.now() }] })
     act(() => rows(el)[0]?.click())
-    expect(props.onOpenRecent).toHaveBeenCalledWith('/vaults/notes')
+    expect(props.onOpenRecent).toHaveBeenCalledWith('/vaults/pages')
     act(() => el.querySelector<HTMLButtonElement>('.btn--primary')?.click())
     expect(props.onPickFolder).toHaveBeenCalledTimes(1)
   })
@@ -120,24 +120,24 @@ describe('Welcome', () => {
 
   it('saved workspaces stand first under "Workspaces": name, last used, vault names; then a line and "Folders" (YAZ-3886 D2, D3)', () => {
     const sets: VaultSet[] = [
-      { id: 's1', name: 'Work', roots: ['/vaults/notes', '/vaults/work'], lastUsed: Date.now() - 2 * HOUR },
+      { id: 's1', name: 'Work', roots: ['/vaults/pages', '/vaults/work'], lastUsed: Date.now() - 2 * HOUR },
       { id: 's2', name: 'Never used', roots: ['/a', '/b', '/c'], lastUsed: 0 },
     ]
-    const { el } = mount({ sets, recents: [{ path: '/vaults/notes', lastOpened: Date.now() - DAY }] })
+    const { el } = mount({ sets, recents: [{ path: '/vaults/pages', lastOpened: Date.now() - DAY }] })
     expect([...el.querySelectorAll('.welcome__label')].map((l) => [l.textContent, l.classList.contains('welcome__label--rule')])).toEqual([['Workspaces', false], ['Folders', true]])
     const r = rows(el)
-    expect(r.map((b) => b.querySelector('.welcome__recent-name')?.textContent)).toEqual(['Work', 'Never used', 'notes'])
+    expect(r.map((b) => b.querySelector('.welcome__recent-name')?.textContent)).toEqual(['Work', 'Never used', 'pages'])
     expect(r.map((b) => b.querySelector('.welcome__recent-when')?.textContent)).toEqual(['2 hours ago', '', 'yesterday'])
-    expect(r.map((b) => b.querySelector('.welcome__recent-path')?.textContent)).toEqual(['notes + work', 'a + b + c', '/vaults/notes'])
+    expect(r.map((b) => b.querySelector('.welcome__recent-path')?.textContent)).toEqual(['pages + work', 'a + b + c', '/vaults/pages'])
   })
 
   it('with no saved workspace the page is as before: no label, no line (YAZ-3886 D4)', () => {
-    const { el } = mount({ recents: [{ path: '/vaults/notes', lastOpened: Date.now() }] })
+    const { el } = mount({ recents: [{ path: '/vaults/pages', lastOpened: Date.now() }] })
     expect(el.querySelector('.welcome__label')).toBeNull()
     expect(rows(el)).toHaveLength(1)
   })
 
-  it('a workspace with no recent folder keeps "Folders" above the empty note', () => {
+  it('a workspace with no recent folder keeps "Folders" above the empty page', () => {
     const { el } = mount({ sets: [{ id: 's1', name: 'Work', roots: ['/a', '/b'], lastUsed: 0 }] })
     expect(el.querySelector('.welcome__label--rule')?.nextElementSibling?.textContent).toBe('No recent folders yet.')
   })
@@ -154,12 +154,12 @@ describe('Welcome', () => {
 
   it('a folder\'s path under the home folder reads "~/…" once main answers; any other path stays in full (YAZ-3886 P2)', async () => {
     Object.defineProperty(window, 'yaseenDocs', { value: { app: { home: async () => '/Users/me' } }, configurable: true, writable: true })
-    const recents: RecentRoots = ['/Users/me/Documents/notes', '/Users/meg/work', '/Volumes/disk/me'].map((path) => ({ path, lastOpened: Date.now() }))
+    const recents: RecentRoots = ['/Users/me/Documents/pages', '/Users/meg/work', '/Volumes/disk/me'].map((path) => ({ path, lastOpened: Date.now() }))
     const { el } = mount({ recents })
     const paths = () => rows(el).map((b) => b.querySelector('.welcome__recent-path')?.textContent)
-    expect(paths()).toEqual(['/Users/me/Documents/notes', '/Users/meg/work', '/Volumes/disk/me'])
+    expect(paths()).toEqual(['/Users/me/Documents/pages', '/Users/meg/work', '/Volumes/disk/me'])
     await act(async () => undefined)
-    expect(paths()).toEqual(['~/Documents/notes', '/Users/meg/work', '/Volumes/disk/me'])
+    expect(paths()).toEqual(['~/Documents/pages', '/Users/meg/work', '/Volumes/disk/me'])
     delete (window as unknown as Record<string, unknown>).yaseenDocs
   })
 
@@ -187,7 +187,7 @@ describe('Welcome', () => {
     }
     const enter = (input: HTMLInputElement) => act(() => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
     const bridge = { app: { home: vi.fn(async () => '/Users/me') }, window: { renameSet: vi.fn(async (_id: string, _name: string) => true), removeSet: vi.fn(async () => undefined), openAlone: vi.fn(async () => true) }, shell: { reveal: vi.fn(async () => undefined), openVsCode: vi.fn(async () => undefined) } }
-    const work: VaultSet = { id: 's1', name: 'Work', roots: ['/vaults/notes', '/vaults/work'], lastUsed: Date.now() }
+    const work: VaultSet = { id: 's1', name: 'Work', roots: ['/vaults/pages', '/vaults/work'], lastUsed: Date.now() }
 
     beforeEach(() => {
       Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
@@ -200,20 +200,20 @@ describe('Welcome', () => {
     })
 
     it('a folder row has the ⌘O vault menu without "Add to this window" and "Open in this window": on this page both are a click', () => {
-      const { el } = mount({ recents: [{ path: '/vaults/notes', lastOpened: Date.now() }] })
+      const { el } = mount({ recents: [{ path: '/vaults/pages', lastOpened: Date.now() }] })
       expect(rightClick(rows(el)[0])).toBe(true)
       expect(menuLabels()).toEqual(['Open by itself', 'Open in Files window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
       pick('Reveal in Finder')
-      expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/vaults/notes' })
+      expect(bridge.shell.reveal).toHaveBeenCalledExactlyOnceWith({ path: '/vaults/pages' })
     })
 
     it('"Remove from recent vaults" forgets the entry and takes the row off at once; a dead row has no menu', async () => {
       const remove = vi.spyOn(storage, 'removeRecentRoot').mockImplementation(() => undefined)
       const onOpenRecent = vi.fn(async (path: string) => path !== '/vaults/gone')
-      const { el } = mount({ recents: ['/vaults/notes', '/vaults/gone'].map((path) => ({ path, lastOpened: Date.now() })), onOpenRecent })
+      const { el } = mount({ recents: ['/vaults/pages', '/vaults/gone'].map((path) => ({ path, lastOpened: Date.now() })), onOpenRecent })
       rightClick(rows(el)[0])
       pick('Remove from recent vaults')
-      expect(remove).toHaveBeenCalledExactlyOnceWith('/vaults/notes')
+      expect(remove).toHaveBeenCalledExactlyOnceWith('/vaults/pages')
       expect(rows(el).map((b) => b.querySelector('.welcome__recent-name')?.textContent)).toEqual(['gone'])
       await act(async () => rows(el)[0]?.click())
       expect(rightClick(rows(el)[0])).toBe(true)
@@ -222,19 +222,19 @@ describe('Welcome', () => {
 
     it('"Set display name" turns the name into a field; ⏎ saves it through the store', async () => {
       const save = vi.spyOn(storage, 'setVaultName').mockImplementation(() => undefined)
-      const { el } = mount({ recents: [{ path: '/vaults/notes', lastOpened: Date.now() }] })
+      const { el } = mount({ recents: [{ path: '/vaults/pages', lastOpened: Date.now() }] })
       rightClick(rows(el)[0])
       pick('Set display name')
       const input = el.querySelector<HTMLInputElement>('.welcome__rename')!
-      expect(input.value).toBe('notes')
-      await fill(input, '  My notes ')
+      expect(input.value).toBe('pages')
+      await fill(input, '  My pages ')
       enter(input)
-      expect(save).toHaveBeenCalledExactlyOnceWith('/vaults/notes', 'My notes')
+      expect(save).toHaveBeenCalledExactlyOnceWith('/vaults/pages', 'My pages')
       expect(el.querySelector('.welcome__rename')).toBeNull()
     })
 
     it('a workspace row has "Rename" and "Remove from workspaces": a rename shows at once, a remove takes the row and, with the last one, the group', async () => {
-      const { el } = mount({ sets: [work], recents: [{ path: '/vaults/notes', lastOpened: Date.now() }] })
+      const { el } = mount({ sets: [work], recents: [{ path: '/vaults/pages', lastOpened: Date.now() }] })
       rightClick(rows(el)[0])
       expect(menuLabels()).toEqual(['Rename', 'Remove from workspaces'])
       pick('Rename')
@@ -251,7 +251,7 @@ describe('Welcome', () => {
       pick('Remove from workspaces')
       expect(bridge.window.removeSet).toHaveBeenCalledExactlyOnceWith('s1')
       expect(el.querySelector('.welcome__label')).toBeNull()
-      expect(rows(el).map((b) => b.querySelector('.welcome__recent-name')?.textContent)).toEqual(['notes'])
+      expect(rows(el).map((b) => b.querySelector('.welcome__recent-name')?.textContent)).toEqual(['pages'])
     })
 
     it('a rename that main refuses keeps the old name and says why', async () => {
@@ -295,11 +295,11 @@ describe('Welcome', () => {
   })
 
   it('a long folder path is cut from the left: the path sits in a `bdi` inside the tail box (YAZ-3886 Q1)', () => {
-    const { el } = mount({ recents: [{ path: '/vaults/notes', lastOpened: Date.now() }] })
+    const { el } = mount({ recents: [{ path: '/vaults/pages', lastOpened: Date.now() }] })
     const path = rows(el)[0]?.querySelector('.welcome__recent-path')
     expect(path?.classList.contains('welcome__recent-path--tail')).toBe(true)
     expect(path?.firstElementChild?.tagName).toBe('BDI')
-    expect(path?.textContent).toBe('/vaults/notes')
+    expect(path?.textContent).toBe('/vaults/pages')
   })
 
   it('disables the Open folder… button while the dialog is open', () => {

@@ -4,7 +4,7 @@
  * a tree row 1.25× taller on screen, while the sidebar's header, its tab row and the footer's cog keep
  * their size and place, and the window's own Chromium zoom stays 0. The value is a setting: it is in
  * the state file after a quit and comes back on the next launch. The percent goes back to 100%, and
- * View › Zoom In / Actual Size with no note focused step the same zoom. A Chromium zoom left from an
+ * View › Zoom In / Actual Size with no page focused step the same zoom. A Chromium zoom left from an
  * older build goes back to 0 at the next load (D8). A Files window (D13) zooms its own list: it opens at the sidebar zoom
  * of the window that opened it (YAZ-3487 D19), and its zoom menu and View › Zoom In change only its own value.
  * The footer fits (YAZ-3401): from the narrowest sidebar (180 px) up, with the "Files window" chip, with an update
@@ -158,7 +158,7 @@ test.afterAll(async () => {
 })
 
 test('step 1 — "Zoom the sidebar in": 125%, a tree row 1.25× taller, the header, the tab row and the cog unchanged, the window not zoomed', async () => {
-  // No note open: nothing claims the menu's zoom later, so it reaches the sidebar.
+  // No page open: nothing claims the menu's zoom later, so it reaches the sidebar.
   app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
   await expect(zoomChip(win)).toHaveText('100%')
@@ -193,7 +193,7 @@ test('step 3 — a click on the menu\'s percent goes back to 100%', async () => 
   await win.keyboard.press('Escape')
 })
 
-test('step 4 — View › Zoom In and Actual Size, with no note focused, step the sidebar zoom and never the window', async () => {
+test('step 4 — View › Zoom In and Actual Size, with no page focused, step the sidebar zoom and never the window', async () => {
   await clickMenuItem(app, 'menu.view.zoom-in', 'w1')
   await expect(zoomChip(win)).toHaveText('125%')
   await clickMenuItem(app, 'menu.view.zoom-reset', 'w1')
@@ -253,7 +253,7 @@ test('step 7 — YAZ-3401: a Files window\'s footer fits from 180 px up; the chi
 
 test('step 8 — YAZ-3401: with an update ready, the footer fits from 180 px up, in a full window and in a Files window', async () => {
   // A fake feed with a newer release, as `update.spec`: an unpackaged run makes it `manual`, "New update ready".
-  const release = (tag: string) => ({ tag_name: tag, name: 'Newest', published_at: '2026-10-17T12:00:00Z', draft: false, prerelease: false, body: 'Notes.', assets: [{ name: `Yaseen.Docs-${tag.slice(1)}-arm64.dmg`, browser_download_url: 'http://127.0.0.1:9/never.dmg', digest: `sha256:${'0'.repeat(64)}` }] })
+  const release = (tag: string) => ({ tag_name: tag, name: 'Newest', published_at: '2026-10-17T12:00:00Z', draft: false, prerelease: false, body: 'Pages.', assets: [{ name: `Yaseen.Docs-${tag.slice(1)}-arm64.dmg`, browser_download_url: 'http://127.0.0.1:9/never.dmg', digest: `sha256:${'0'.repeat(64)}` }] })
   const server: Server = createServer((req, res) => {
     if (req.url === '/releases/latest') return void res.end(JSON.stringify(release('v99.0.0')))
     if (req.url?.startsWith('/releases') === true) return void res.end(JSON.stringify([release('v99.0.0')]))

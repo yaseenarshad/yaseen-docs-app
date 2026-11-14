@@ -70,8 +70,8 @@ describe('fs:create-board', () => {
     expect(await readFile(file, 'utf8')).toBe('mine')
   })
 
-  it('refuses a note, a path outside the vault and a missing parent, and leaves nothing behind', async () => {
-    expect((await failure(createBoard({ root, path: path.join(root, 'Note.md') }))).code).toBe('UNSUPPORTED_EXTENSION')
+  it('refuses a page, a path outside the vault and a missing parent, and leaves nothing behind', async () => {
+    expect((await failure(createBoard({ root, path: path.join(root, 'Page.md') }))).code).toBe('UNSUPPORTED_EXTENSION')
     expect((await failure(createBoard({ root, path: path.join(path.dirname(root), 'Out.excalidraw') }))).code).toBe('BAD_REQUEST')
     expect((await failure(createBoard({ root, path: 'Rel.drawio' }))).code).toBe('NOT_ABSOLUTE')
     expect((await failure(createBoard({ root, path: path.join(root, 'Gone', 'X.drawio') }))).code).toBe('NOT_FOUND')

@@ -4,10 +4,10 @@
  *  - THE SWITCHES are "Guide lines" and "Folding" in the page cog, after "Section indent". Both start on.
  *  - OFF: no chevron on a bullet or a heading, no "Collapse all" button, and no guide line (the nested
  *    list's `::before` strip has no content).
- *  - THEY ARE SAVED IN the note: `guide-lines: false` and `folding: false` in its frontmatter
+ *  - THEY ARE SAVED IN the page: `guide-lines: false` and `folding: false` in its frontmatter
  *    (`shared/pageSwitches.ts`), every other byte kept, and they are still off after a restart.
  *
- * Same harness as every spec here: temp `--user-data-dir`, a COPY of the fixture vault with one note of
+ * Same harness as every spec here: temp `--user-data-dir`, a COPY of the fixture vault with one page of
  * this spec's own in it, `outline-switches-` step screenshots. Serial: each step continues the last.
  */
 // Written for YAZ-4119 (the audit of YAZ-4094). Not yet run: e2e runs only with the user's OK, so every
@@ -16,12 +16,12 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { notePageSwitches, setNotePageSwitch } from '../../shared/pageSwitches'
+import { readPageSwitches, writePageSwitch } from '../../shared/pageSwitches'
 import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, quitApp, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = 'Outline.md'
+const PAGE = 'Outline.md'
 const CHILD = 'child-bullet-e2e'
 /** A heading with text under it (a heading chevron) and a bullet with a child (a bullet chevron and one guide line). */
 const BODY = `# Plan
@@ -30,13 +30,13 @@ const BODY = `# Plan
   * ${CHILD}
 * leaf-bullet-e2e
 `
-/** The note after both clicks: the two keys in a new frontmatter block, and the text as it was. */
-const BOTH_OFF = setNotePageSwitch(setNotePageSwitch(BODY, 'guide-lines', false), 'folding', false)
+/** The page after both clicks: the two keys in a new frontmatter block, and the text as it was. */
+const BOTH_OFF = writePageSwitch(writePageSwitch(BODY, 'guide-lines', false), 'folding', false)
 
 let userData: string
 let vaultSrc: string
 let vault: string
-let notePath: string
+let pagePath: string
 let app: ElectronApplication
 let win: Page
 
@@ -68,8 +68,8 @@ test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'outlineswitches-userdata-'))
   vaultSrc = await buildFixtureVault()
   vault = await copyVault(vaultSrc)
-  notePath = path.join(vault, NOTE)
-  await writeFile(notePath, BODY)
+  pagePath = path.join(vault, PAGE)
+  await writeFile(pagePath, BODY)
 })
 
 test.afterAll(async () => {
@@ -77,8 +77,8 @@ test.afterAll(async () => {
   await Promise.all([userData, vaultSrc, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — a note with no choice follows the defaults: chevrons, the "Collapse all" button and a guide line', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
+test('step 1 — a page with no choice follows the defaults: chevrons, the "Collapse all" button and a guide line', async () => {
+  app = await launchApp({ userData, seedState: seededState(vault, pagePath) })
   win = await appWindow(app, 'w1')
   await expect(child(win)).toBeVisible()
 
@@ -89,7 +89,7 @@ test('step 1 — a note with no choice follows the defaults: chevrons, the "Coll
   await shoot(win, 'outline-switches-01-defaults')
 })
 
-test('step 2 — "Guide lines" and "Folding" off in the page cog: no guide line, no chevron and no "Collapse all"; both are written IN the note', async () => {
+test('step 2 — "Guide lines" and "Folding" off in the page cog: no guide line, no chevron and no "Collapse all"; both are written IN the page', async () => {
   await cog(win).click()
   await expect(menu(win)).toBeVisible()
   await pageSwitch(win, 'Guide lines').click()
@@ -104,14 +104,14 @@ test('step 2 — "Guide lines" and "Folding" off in the page cog: no guide line,
   await expect.poll(() => guideLine(win)).toBe('none')
   // Nothing is hidden: the child bullet still shows.
   await expect(child(win)).toBeVisible()
-  await expect.poll(async () => notePageSwitches(await readFile(notePath, 'utf8')), { timeout: 10_000 }).toEqual({ 'guide-lines': false, folding: false })
+  await expect.poll(async () => readPageSwitches(await readFile(pagePath, 'utf8')), { timeout: 10_000 }).toEqual({ 'guide-lines': false, folding: false })
   await shoot(win, 'outline-switches-02-off')
 })
 
-test('step 3 — after a restart both are still off, read from the note: its frontmatter, no chevron, no guide line', async () => {
+test('step 3 — after a restart both are still off, read from the page: its frontmatter, no chevron, no guide line', async () => {
   await quitApp(app) // the autosave flush point: a pending write would land here
-  // The two keys and nothing else: the text of the note is as it was written.
-  expect(await readFile(notePath, 'utf8')).toBe(BOTH_OFF)
+  // The two keys and nothing else: the text of the page is as it was written.
+  expect(await readFile(pagePath, 'utf8')).toBe(BOTH_OFF)
 
   app = await launchApp({ userData })
   win = await appWindow(app, 'w1')

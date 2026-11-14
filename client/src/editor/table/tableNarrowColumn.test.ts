@@ -5,7 +5,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { cellDOM, cellPos, dragColumnEdge, mountNote, mountTable as mount, unmountAll } from './tableTestKit'
+import { cellDOM, cellPos, dragColumnEdge, mountPage, mountTable as mount, unmountAll } from './tableTestKit'
 import { NARROW_COLUMN } from './tableStyle'
 import { getMarkdownForSave } from '../createCrepe'
 import tableCss from './table.css?inline'
@@ -44,7 +44,7 @@ describe('YAZ-4791 demo: a column under 56px gets narrow cells', () => {
 
   it('YAZ-4791 demo: from the file, widths 24 and 55 are narrow, 56 is not; the widths save as they were', async () => {
     const md = '| # | Name | Note |\n| - | - | - |\n| 1 | a | x |\n\n<!-- table: widths 24 55 56 -->\n'
-    const { crepe, view } = await mountNote(md)
+    const { crepe, view } = await mountPage(md)
     expect([0, 1, 2].map((col) => cellDOM(view, 1, col).hasAttribute('data-narrow'))).toEqual([true, true, false])
     expect(getMarkdownForSave(crepe)).toContain('<!-- table: widths 24 55 56 -->')
   })

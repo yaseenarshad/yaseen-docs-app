@@ -43,7 +43,7 @@ const CLOSE_FENCE_RE = /(?:^|\r?\n)(?:---|\.\.\.)[ \t]*(?:\r?\n)?$/
  * come off, every other byte — comments, key order, quoting, blank lines — stays exactly as the
  * file has it. The inverse of `replaceFrontmatter` (⚡ YAZ-883) and the one place the fence
  * regexes are applied, so the parser and the raw panel can never disagree about where a block
- * ends. Note the trailing newline goes with the terminator: `---\na: 1\n---\n` → `a: 1`.
+ * ends. Page the trailing newline goes with the terminator: `---\na: 1\n---\n` → `a: 1`.
  */
 export function frontmatterInterior(frontmatter: string): string {
   return frontmatter.replace(OPEN_FENCE_RE, '').replace(CLOSE_FENCE_RE, '')
@@ -62,7 +62,7 @@ export function parseFrontmatter(frontmatter: string): { properties: Record<stri
   return { properties: value as Record<string, unknown> }
 }
 
-/** Thrown instead of writing when a note's frontmatter is not valid YAML, or is not a map (GRO-2141). */
+/** Thrown instead of writing when a page's frontmatter is not valid YAML, or is not a map (GRO-2141). */
 export class FrontmatterWriteError extends Error {
   constructor(message: string) {
     super(message)
@@ -90,7 +90,7 @@ export function setFrontmatterProperty(content: string, key: string, value: unkn
 }
 
 /**
- * YAZ-4615 D10: the one line a new note carries for an agent — where comments go and the two keys
+ * YAZ-4615 D10: the one line a new page carries for an agent — where comments go and the two keys
  * an agent's comment needs. A YAML comment at the TOP of the block: every `setFrontmatterIn` write
  * keeps it (yaml's Document holds a leading comment), the properties panel never shows it, and the
  * reader (`shared/comments.ts`) shows a `{by, body}` entry and numbers it on its next write.
@@ -200,7 +200,7 @@ function keepHint(before: string, yaml: string): string {
 }
 
 /**
- * Replace a note's WHOLE frontmatter interior with the user's literal text (⚡ YAZ-883, the raw
+ * Replace a page's WHOLE frontmatter interior with the user's literal text (⚡ YAZ-883, the raw
  * properties panel). The text goes back VERBATIM — never parsed and re-serialised — so comments,
  * key order and quoting styles survive exactly as typed; validation is the CALLER's job
  * (`parseFrontmatter` on the result), because a block that will not parse would corrupt the index.

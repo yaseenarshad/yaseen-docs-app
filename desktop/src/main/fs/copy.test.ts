@@ -9,7 +9,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from '
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
-import { isNoteId } from '@shared/noteId'
+import { isPageId } from '@shared/pageId'
 import { FOLDER_SETTINGS_FILE } from '@shared/types'
 import { BridgeFailure } from './fsUtils'
 import { copyEntry, freeName, pasteEntries, type PasteOps } from './copy'
@@ -45,15 +45,15 @@ describe('freeName (YAZ-1674, D3 — Finder\'s rule)', () => {
     expect(await freeName(root, 'fresh.md', 'file')).toBe('fresh.md')
   })
 
-  it('a file keeps its extension: Note.md → Note copy.md → Note copy 2.md → Note copy 3.md', async () => {
+  it('a file keeps its extension: Page.md → Page copy.md → Page copy 2.md → Page copy 3.md', async () => {
     const dir = path.join(root, 'clash')
     await mkdir(dir)
-    await writeFile(path.join(dir, 'Note.md'), '1')
-    expect(await freeName(dir, 'Note.md', 'file')).toBe('Note copy.md')
-    await writeFile(path.join(dir, 'Note copy.md'), '2')
-    expect(await freeName(dir, 'Note.md', 'file')).toBe('Note copy 2.md')
-    await writeFile(path.join(dir, 'Note copy 2.md'), '3')
-    expect(await freeName(dir, 'Note.md', 'file')).toBe('Note copy 3.md')
+    await writeFile(path.join(dir, 'Page.md'), '1')
+    expect(await freeName(dir, 'Page.md', 'file')).toBe('Page copy.md')
+    await writeFile(path.join(dir, 'Page copy.md'), '2')
+    expect(await freeName(dir, 'Page.md', 'file')).toBe('Page copy 2.md')
+    await writeFile(path.join(dir, 'Page copy 2.md'), '3')
+    expect(await freeName(dir, 'Page.md', 'file')).toBe('Page copy 3.md')
   })
 
   it('splits at the LAST extension and counts on from an existing " copy N" suffix (Finder)', async () => {
@@ -61,10 +61,10 @@ describe('freeName (YAZ-1674, D3 — Finder\'s rule)', () => {
     await mkdir(dir)
     await writeFile(path.join(dir, 'archive.tar.gz'), 'a')
     expect(await freeName(dir, 'archive.tar.gz', 'file')).toBe('archive.tar copy.gz')
-    await writeFile(path.join(dir, 'Note copy.md'), 'c')
-    expect(await freeName(dir, 'Note copy.md', 'file')).toBe('Note copy 2.md')
-    await writeFile(path.join(dir, 'Note copy 2.md'), 'c2')
-    expect(await freeName(dir, 'Note copy 2.md', 'file')).toBe('Note copy 3.md')
+    await writeFile(path.join(dir, 'Page copy.md'), 'c')
+    expect(await freeName(dir, 'Page copy.md', 'file')).toBe('Page copy 2.md')
+    await writeFile(path.join(dir, 'Page copy 2.md'), 'c2')
+    expect(await freeName(dir, 'Page copy 2.md', 'file')).toBe('Page copy 3.md')
   })
 
   it('a folder keeps its whole name, a dot in it is no extension: v1.2 → v1.2 copy → v1.2 copy 2', async () => {
@@ -77,12 +77,12 @@ describe('freeName (YAZ-1674, D3 — Finder\'s rule)', () => {
 })
 
 describe('copyEntry (YAZ-1674, D4)', () => {
-  it('copies a file that is no note into a folder, bytes and mtime faithful, and reports from/to/kind', async () => {
-    const from = path.join(root, 'notes.txt')
+  it('copies a file that is no page into a folder, bytes and mtime faithful, and reports from/to/kind', async () => {
+    const from = path.join(root, 'pages.txt')
     const then = new Date('2020-01-02T03:04:05Z')
     await utimes(from, then, then)
     const res = await copyEntry(from, path.join(root, 'Empty'), door)
-    const to = path.join(root, 'Empty', 'notes.txt')
+    const to = path.join(root, 'Empty', 'pages.txt')
     expect(res).toEqual({ from, to, kind: 'file' })
     expect(await readFile(to, 'utf8')).toBe('not markdown')
     expect(await readFile(from, 'utf8')).toBe('not markdown') // source untouched
@@ -116,7 +116,7 @@ describe('copyEntry (YAZ-1674, D4)', () => {
     expect(await readdir(path.join(root, 'Empty'))).not.toContain('.obsidian')
   })
 
-  it('copying a file that is no note into its OWN folder is Duplicate for free: the copy takes the next free name', async () => {
+  it('copying a file that is no page into its OWN folder is Duplicate for free: the copy takes the next free name', async () => {
     const from = path.join(root, 'assets-only', 'img.png')
     const first = await copyEntry(from, path.dirname(from), door)
     expect(first.to).toBe(path.join(root, 'assets-only', 'img copy.png'))
@@ -154,7 +154,7 @@ describe('copyEntry (YAZ-1674, D4)', () => {
 })
 
 // A copy made in the app (YAZ-2420 🔒 D21): scenario table B of the decision record, and section I.
-describe('copyEntry: a copy is its own note at once (YAZ-2420 D21)', () => {
+describe('copyEntry: a copy is its own page at once (YAZ-2420 D21)', () => {
   const ID = 'k3m9x2pq7abc'
   const at = (...p: string[]) => path.join(root, ...p)
   const read = (file: string) => readFile(file, 'utf8')
@@ -169,9 +169,9 @@ describe('copyEntry: a copy is its own note at once (YAZ-2420 D21)', () => {
     return at(dir)
   }
 
-  it('a note copied in the app: the copy holds a fresh id and `title: <title> copy`, under the name built from both; the original keeps its bytes', async () => {
+  it('a page copied in the app: the copy holds a fresh id and `title: <title> copy`, under the name built from both; the original keeps its bytes', async () => {
     const original = `---\nid: ${ID}\ntitle: Abdul Sample\nstatus: new # kept\n---\nbody\n`
-    const dir = await folder('d21-note', { [`abdul-sample-${ID}.md`]: original })
+    const dir = await folder('d21-page', { [`abdul-sample-${ID}.md`]: original })
     const from = path.join(dir, `abdul-sample-${ID}.md`)
     const res = await copyEntry(from, dir, door)
     const id = (await propertiesOf(res.to)).id
@@ -183,7 +183,7 @@ describe('copyEntry: a copy is its own note at once (YAZ-2420 D21)', () => {
     expect(await read(from)).toBe(original)
   })
 
-  it('a second copy of the same note is ` copy` again: the ids keep the two files apart', async () => {
+  it('a second copy of the same page is ` copy` again: the ids keep the two files apart', async () => {
     const dir = await folder('d21-twice', { [`plan-${ID}.md`]: `---\nid: ${ID}\ntitle: Plan\n---\n` })
     const first = await copyEntry(path.join(dir, `plan-${ID}.md`), dir, door)
     const second = await copyEntry(path.join(dir, `plan-${ID}.md`), dir, door)
@@ -195,7 +195,7 @@ describe('copyEntry: a copy is its own note at once (YAZ-2420 D21)', () => {
     expect(new Set([ID, (await propertiesOf(first.to)).id, (await propertiesOf(second.to)).id]).size).toBe(3)
   })
 
-  it('a note with no `title:` (a file made outside the app) is copied by the title it shows, its file name: into its own folder or another', async () => {
+  it('a page with no `title:` (a file made outside the app) is copied by the title it shows, its file name: into its own folder or another', async () => {
     const dir = await folder('d21-outside', { 'Plan.md': 'body\n', 'elsewhere/keep.txt': '' })
     for (const into of [dir, path.join(dir, 'elsewhere')]) {
       const { to } = await copyEntry(path.join(dir, 'Plan.md'), into, door)
@@ -218,7 +218,7 @@ describe('copyEntry: a copy is its own note at once (YAZ-2420 D21)', () => {
     [`candidates/deep/sam-${SAM}.md`]: `---\nid: ${SAM}\ntitle: Sam\n---\n`,
   }
 
-  it('a folder copied in the app: the copy is titled `<title> copy` under the kebab-case of that; every note in it holds a fresh id under a rebuilt name, its title unchanged, and every `.folder.md` a fresh id', async () => {
+  it('a folder copied in the app: the copy is titled `<title> copy` under the kebab-case of that; every page in it holds a fresh id under a rebuilt name, its title unchanged, and every `.folder.md` a fresh id', async () => {
     const parent = await folder('d21-folder', Object.fromEntries(Object.entries(UPWORK_FILES).map(([rel, content]) => [`upwork-2026/${rel}`, content])))
     const from = path.join(parent, 'upwork-2026')
     const res = await copyEntry(from, parent, door)
@@ -229,27 +229,27 @@ describe('copyEntry: a copy is its own note at once (YAZ-2420 D21)', () => {
     expect(await read(path.join(to, FOLDER_SETTINGS_FILE))).toBe(`---\nid: ${upwork}\ntitle: Upwork 2026 copy\nfolder_settings:\n  views: []\n---\n`)
     const [abdulName, planName] = (await names(to)).filter((name) => /^(abdul|plan)-/.test(name))
     const [abdul, plan] = [String((await propertiesOf(path.join(to, abdulName))).id), String((await propertiesOf(path.join(to, planName))).id)]
-    // The hidden template, the PDF and the note that will not parse come as they are, bytes and name.
+    // The hidden template, the PDF and the page that will not parse come as they are, bytes and name.
     expect(await names(to)).toEqual([FOLDER_SETTINGS_FILE, '.template.md', `abdul-${abdul.toLowerCase()}.md`, 'broken.md', 'candidates', 'cv.pdf', `plan-${plan.toLowerCase()}.md`])
     for (const name of ['.template.md', 'broken.md', 'cv.pdf']) expect(await read(path.join(to, name))).toBe(UPWORK_FILES[name])
     expect(await read(path.join(to, abdulName))).toBe(`---\nid: ${abdul}\ntitle: Abdul\n---\nbody\n`)
     expect(await read(path.join(to, planName))).toBe(`---\nid: ${plan}\ntitle: Plan\n---\nmade outside the app\n`)
 
-    // A folder inside keeps its name and title, and takes a fresh id like its notes.
+    // A folder inside keeps its name and title, and takes a fresh id like its pages.
     const candidates = String((await propertiesOf(path.join(to, 'candidates', FOLDER_SETTINGS_FILE))).id)
     expect(await read(path.join(to, 'candidates', FOLDER_SETTINGS_FILE))).toBe(`---\nid: ${candidates}\ntitle: Candidates\n---\n`)
     const [samName] = await names(path.join(to, 'candidates', 'deep'))
     const sam = String((await propertiesOf(path.join(to, 'candidates', 'deep', samName))).id)
     expect(samName).toBe(`sam-${sam.toLowerCase()}.md`)
 
-    // No two notes share an id, and no name in the copy carries an original's.
+    // No two pages share an id, and no name in the copy carries an original's.
     const fresh = [upwork, abdul, plan, candidates, sam]
-    expect(fresh.every(isNoteId)).toBe(true)
-    // S53: each note of the copy and each `.folder.md` gets a next number, all taken from the door
+    expect(fresh.every(isPageId)).toBe(true)
+    // S53: each page of the copy and each `.folder.md` gets a next number, all taken from the door
     // with ONE request before anything is copied (R19): the folder first, then the rest.
     const taken = door.given.slice(door.given.indexOf(upwork))
     expect([...fresh].sort()).toEqual(taken.slice(0, 5).sort())
-    // The note that does not parse was counted and took none: a gap of one number, never a number given two times.
+    // The page that does not parse was counted and took none: a gap of one number, never a number given two times.
     expect(taken).toHaveLength(6)
     expect(new Set([UPWORK, ABDUL, PLAN, CANDIDATES, SAM, ...fresh]).size).toBe(10)
     for (const [rel, content] of Object.entries(UPWORK_FILES)) expect(await read(path.join(from, rel))).toBe(content)
@@ -276,13 +276,13 @@ describe('copyEntry: a copy is its own note at once (YAZ-2420 D21)', () => {
   })
 
   it('a folder made outside the app (no `.folder.md`) is copied by the title it shows, its name: the copy’s `.folder.md` holds a fresh id and `title: <name> copy`', async () => {
-    const parent = await folder('d21-folder-outside', { '10_04- Standup/notes.txt': 'n' })
+    const parent = await folder('d21-folder-outside', { '10_04- Standup/pages.txt': 'n' })
     const { to } = await copyEntry(path.join(parent, '10_04- Standup'), parent, door)
     expect(to).toBe(path.join(parent, '10-04-standup-copy'))
     const id = String((await propertiesOf(path.join(to, FOLDER_SETTINGS_FILE))).id)
-    expect(isNoteId(id)).toBe(true)
+    expect(isPageId(id)).toBe(true)
     expect(await read(path.join(to, FOLDER_SETTINGS_FILE))).toBe(`---\nid: ${id}\ntitle: 10_04- Standup copy\n---\n`)
-    expect(await names(to)).toEqual([FOLDER_SETTINGS_FILE, 'notes.txt'])
+    expect(await names(to)).toEqual([FOLDER_SETTINGS_FILE, 'pages.txt'])
   })
 
   it('a folder whose title is too long for the count to reach its name is refused beside its original, never copied over it', async () => {
@@ -296,7 +296,7 @@ describe('copyEntry: a copy is its own note at once (YAZ-2420 D21)', () => {
     expect(await names(parent)).toEqual([path.basename(name), 'long'])
   })
 
-  it('a copied folder’s notes carry their values to the copy: a note with an `in:` block for the original holds those values under the copy’s id, a folder inside it likewise, and the original is untouched (section I)', async () => {
+  it('a copied folder’s pages carry their values to the copy: a page with an `in:` block for the original holds those values under the copy’s id, a folder inside it likewise, and the original is untouched (section I)', async () => {
     const [HIRING, STAGES, ELSEWHERE] = ['3y7505rsr6fd', 'mzf9cjhn02vm', 'a1b2c3d4e5f6']
     const files: Record<string, string> = {
       [`hiring/${FOLDER_SETTINGS_FILE}`]: `---\nid: ${HIRING}\ntitle: Hiring\n---\n`,
@@ -325,7 +325,7 @@ describe('copyEntry: a copy is its own note at once (YAZ-2420 D21)', () => {
     }
   })
 
-  it('a note whose frontmatter does not parse is copied as today, bytes and name: it can hold neither an id nor a title', async () => {
+  it('a page whose frontmatter does not parse is copied as today, bytes and name: it can hold neither an id nor a title', async () => {
     const broken = `---\nid: ${ID}\nstatus: [unclosed\n---\nbody\n`
     const dir = await folder('d21-broken', { 'broken.md': broken })
     const { to } = await copyEntry(path.join(dir, 'broken.md'), dir, door)
@@ -333,7 +333,7 @@ describe('copyEntry: a copy is its own note at once (YAZ-2420 D21)', () => {
     expect(await read(to)).toBe(broken)
   })
 
-  it('a cut and paste is a move: the note keeps its name, its id and its bytes', async () => {
+  it('a cut and paste is a move: the page keeps its name, its id and its bytes', async () => {
     const content = `---\nid: ${ID}\ntitle: Plan\n---\nbody\n`
     const dir = await folder('d21-cut', { [`plan-${ID}.md`]: content, 'into/keep.txt': '' })
     const from = path.join(dir, `plan-${ID}.md`)
@@ -344,23 +344,23 @@ describe('copyEntry: a copy is its own note at once (YAZ-2420 D21)', () => {
   })
 })
 
-// The ID vault's half of each row is `copyEntry: a copy is its own note at once`, above.
+// The ID vault's half of each row is `copyEntry: a copy is its own page at once`, above.
 describe('copyEntry in a vault that does not use IDs: the same bytes under the name Finder gives (YAZ-2523 V3)', () => {
-  const NOTE = '---\nid: k3m9x2pq7abc\ntitle: Deploy checklist\nin:\n  aaaaaaaaaaaa:\n    Status: Done\n---\nbody\n'
+  const PAGE = '---\nid: k3m9x2pq7abc\ntitle: Deploy checklist\nin:\n  aaaaaaaaaaaa:\n    Status: Done\n---\nbody\n'
   const SETTINGS = '---\nid: aaaaaaaaaaaa\ntitle: Q3 Plans\n---\n'
   let plain: string
   beforeAll(async () => {
     plain = await mkdtemp(path.join(tmpdir(), 'mdapp-plain-'))
     await mkdir(path.join(plain, 'v1.2', 'inner'), { recursive: true })
     await mkdir(path.join(plain, 'Elsewhere'))
-    await writeFile(path.join(plain, 'Name.md'), NOTE)
+    await writeFile(path.join(plain, 'Name.md'), PAGE)
     await writeFile(path.join(plain, 'v1.2', FOLDER_SETTINGS_FILE), SETTINGS)
-    await writeFile(path.join(plain, 'v1.2', 'inner', 'deep.md'), NOTE)
+    await writeFile(path.join(plain, 'v1.2', 'inner', 'deep.md'), PAGE)
     await writeFile(path.join(plain, 'v1.2', 'bare.md'), 'no frontmatter\n')
   })
   afterAll(() => rm(plain, { recursive: true, force: true }))
 
-  it('a note beside its original is `Name copy.md`, then `Name copy 2.md`; in another folder it keeps its name', async () => {
+  it('a page beside its original is `Name copy.md`, then `Name copy 2.md`; in another folder it keeps its name', async () => {
     const from = path.join(plain, 'Name.md')
     expect(await copyEntry(from, plain, null)).toEqual({ from, to: path.join(plain, 'Name copy.md'), kind: 'file' })
     expect((await copyEntry(from, plain, null)).to).toBe(path.join(plain, 'Name copy 2.md'))
@@ -374,13 +374,13 @@ describe('copyEntry in a vault that does not use IDs: the same bytes under the n
   })
 
   it('every copy holds the bytes of its original all the way down: no fresh id, no new title, no `.folder.md` that was not there', async () => {
-    const folder = (name: string) => ({ [`${name}/`]: '', [`${name}/${FOLDER_SETTINGS_FILE}`]: SETTINGS, [`${name}/bare.md`]: 'no frontmatter\n', [`${name}/inner/`]: '', [`${name}/inner/deep.md`]: NOTE })
+    const folder = (name: string) => ({ [`${name}/`]: '', [`${name}/${FOLDER_SETTINGS_FILE}`]: SETTINGS, [`${name}/bare.md`]: 'no frontmatter\n', [`${name}/inner/`]: '', [`${name}/inner/deep.md`]: PAGE })
     expect(await vaultFiles(plain)).toEqual({
-      'Name.md': NOTE,
-      'Name copy.md': NOTE,
-      'Name copy 2.md': NOTE,
+      'Name.md': PAGE,
+      'Name copy.md': PAGE,
+      'Name copy 2.md': PAGE,
       'Elsewhere/': '',
-      'Elsewhere/Name.md': NOTE,
+      'Elsewhere/Name.md': PAGE,
       ...folder('v1.2'),
       ...folder('v1.2 copy'),
       ...folder('v1.2 copy 2'),
@@ -394,18 +394,18 @@ describe('pasteEntries (YAZ-1674, D2/D3)', () => {
   it('copy: every entry in clipboard ORDER, each under its free name, source untouched', async () => {
     const dir = path.join(root, 'paste-copy')
     await mkdir(dir)
-    const paths = [path.join(root, 'notes.txt'), path.join(root, 'A.md'), path.join(root, 'Zeta')]
+    const paths = [path.join(root, 'pages.txt'), path.join(root, 'A.md'), path.join(root, 'Zeta')]
     const res = await pasteEntries({ op: 'copy', paths }, { targetDir: dir }, real)
     expect(res.failed).toEqual([])
     expect(res.pasted).toEqual([
-      { from: paths[0], to: path.join(dir, 'notes.txt'), kind: 'file' },
+      { from: paths[0], to: path.join(dir, 'pages.txt'), kind: 'file' },
       { from: paths[1], to: expect.stringMatching(/\/paste-copy\/a-copy-yaz-\d+\.md$/), kind: 'file' },
       { from: paths[2], to: path.join(dir, 'zeta-copy'), kind: 'dir' },
     ])
     for (const p of paths) expect(await exists(p)).toBe(true)
     // Pasting the same copy again lands beside the first under Finder's names.
     const again = await pasteEntries({ op: 'copy', paths: paths.slice(0, 1) }, { targetDir: dir }, real)
-    expect(again.pasted[0].to).toBe(path.join(dir, 'notes copy.txt'))
+    expect(again.pasted[0].to).toBe(path.join(dir, 'pages copy.txt'))
   })
 
   it('one bad entry never stops the rest: a missing source fails NOT_FOUND, the others land', async () => {
@@ -499,7 +499,7 @@ describe('pasteEntries (YAZ-1674, D2/D3)', () => {
     const err = await failure(pasteEntries(clip, { targetDir: missing }, real))
     expect(err.code).toBe('NOT_FOUND')
     expect(err.path).toBe(missing)
-    expect(await code(pasteEntries(clip, { targetDir: path.join(root, 'notes.txt') }, real))).toBe('NOT_A_DIRECTORY')
+    expect(await code(pasteEntries(clip, { targetDir: path.join(root, 'pages.txt') }, real))).toBe('NOT_A_DIRECTORY')
     expect(await code(pasteEntries(clip, { targetDir: 'relative' }, real))).toBe('NOT_ABSOLUTE')
     expect(await code(pasteEntries(clip, {}, real))).toBe('BAD_REQUEST')
     expect(await code(pasteEntries(clip, null, real))).toBe('BAD_REQUEST')

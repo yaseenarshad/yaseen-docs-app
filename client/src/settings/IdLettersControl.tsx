@@ -5,7 +5,7 @@
  * for it and shows what the vault holds afterwards.
  */
 import { useEffect, useRef, useState } from 'react'
-import { isIdLetters } from '@shared/noteId'
+import { isIdLetters } from '@shared/pageId'
 import type { IdsState } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { idsLettersAsk, KEEP_OTHER_ASK, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
@@ -35,8 +35,8 @@ export function TypedConfirmSheet({ labelId, text, ask, confirmLabel, valid, onC
 }
 
 /**
- * "Give IDs" where the notes already hold number IDs (YAZ-4922 🔒 D2): the box says the groups (`text`) and its first
- * answer, with the focus, is "Keep <main>" — the biggest group's letters, so 0 notes change. The field takes other
+ * "Give IDs" where the pages already hold number IDs (YAZ-4922 🔒 D2): the box says the groups (`text`) and its first
+ * answer, with the focus, is "Keep <main>" — the biggest group's letters, so 0 pages change. The field takes other
  * letters instead, and the button at the left end says them ("Use ABC"). Enter in the field: the typed letters, or
  * Keep while it is empty; bad letters do nothing. Elsewhere Enter is Keep. Its keys stay inside it.
  */
@@ -113,9 +113,9 @@ export function useRun(): { busy: boolean; line: string | null; run: (working: s
 
 /**
  * "ID letters" (🔒 D5, S79, S80, S83, S85): the vault's letters, read from the main process when the
- * row appears, and "Change letters". The box counts the notes that change and takes the new
+ * row appears, and "Change letters". The box counts the pages that change and takes the new
  * letters: bad input, and the letters the vault already has, do nothing. Where a change stopped,
- * the row says how many notes still have the old letters, and "Finish" runs the same change again.
+ * the row says how many pages still have the old letters, and "Finish" runs the same change again.
  */
 export function IdLettersControl({ ids, vault }: { ids: Ids; vault?: string }) {
   const unit = useUnit()
@@ -177,10 +177,10 @@ export function IdLettersControl({ ids, vault }: { ids: Ids; vault?: string }) {
 }
 
 /**
- * "Old IDs" (🔒 D6, S88 to S91): how many notes hold an old 12-character ID, and "Give them
+ * "Old IDs" (🔒 D6, S88 to S91): how many pages hold an old 12-character ID, and "Give them
  * numbers". The box says the count and to sync and close the other Mac first, and takes the vault's
  * own letters. The row goes when the vault's index holds no old ID and no run is unfinished; while
- * some notes are left, or links of a run that stopped (`unfinished`), a second run finishes.
+ * some pages are left, or links of a run that stopped (`unfinished`), a second run finishes.
  */
 export function OldIdsControl({ ids, vault }: { ids: Ids; vault?: string }) {
   const unit = useUnit()
@@ -207,7 +207,7 @@ export function OldIdsControl({ ids, vault }: { ids: Ids; vault?: string }) {
             setAsking(null)
             run('Giving numbers…', () =>
               ids.backfill().then(
-                ({ old, unfinished }) => (old === 0 && !unfinished ? unit('Each note has a number now.') : `${oldIdsLine(old, unit)} Run it again to finish.`),
+                ({ old, unfinished }) => (old === 0 && !unfinished ? unit('Each page has a number now.') : `${oldIdsLine(old, unit)} Run it again to finish.`),
                 (err: unknown) => `Couldn't give the numbers: ${said(err)}`,
               ),
             )

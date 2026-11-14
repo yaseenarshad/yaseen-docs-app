@@ -1,6 +1,6 @@
 /**
  * The highlight ▾ panel of the selection toolbar (YAZ-4348 demo round 2): the board's (Excalidraw) colour popup,
- * rebuilt for the note (`engine/…/ColorPicker/Picker.tsx` is the look and the order). Top to bottom:
+ * rebuilt for the page (`engine/…/ColorPicker/Picker.tsx` is the look and the order). Top to bottom:
  *  - **Most used custom colours** — the custom colours picked most (`highlightUsed.ts`, the setting
  *    `highlightCustomColors`); the row is gone while there are none.
  *  - **Colours** — the 8 highlight colours (yellow, green, blue, pink, orange, purple, red, gray; each its wash
@@ -16,9 +16,9 @@
  * pick is one undo step. The panel lives on the page's body, `position: fixed` under the ▾: Crepe's toolbar has
  * `overflow: hidden`, so a panel inside it would be cut off. It never takes the selection: its swatches cancel
  * their mousedown and the keys are read on the document while it is open — arrows move through the swatches as
- * a grid, Home and End, Enter or Space picks, Escape closes it; any other key closes it and goes on to the note.
+ * a grid, Home and End, Enter or Space picks, Escape closes it; any other key closes it and goes on to the page.
  * Only the Hex code field and the box's R G B fields take the focus, to be typed in; a pick from them gives the
- * focus back to the note first. A click outside or a new selection closes the panel; a scroll moves it with the ▾.
+ * focus back to the page first. A click outside or a new selection closes the panel; a scroll moves it with the ▾.
  *
  * The box's pick goes to the selection, as a swatch's does: any new selection closes the panel and the box with it.
  *
@@ -47,7 +47,7 @@ import {
 } from './marks/highlight'
 import { hexOfRgb, rgbOf } from '../lib/colour'
 import { ColourBox } from './highlightColourBox'
-import { mostUsedHighlightColors, noteHighlightColorUse } from './highlightUsed'
+import { mostUsedHighlightColors, recordHighlightColorUse } from './highlightUsed'
 import { toolbarItemOf } from './toolbarHost'
 
 /** The ▾'s toolbar key. */
@@ -97,7 +97,7 @@ export function readHex(typed: string): CustomHighlight | null {
   return null
 }
 
-/** Each open note's panel, so the toolbar's ▾ reaches the one of its own editor. */
+/** Each open page's panel, so the toolbar's ▾ reaches the one of its own editor. */
 const panels = new WeakMap<EditorView, HighlightPanel>()
 
 /** The ▾'s press (Crepe runs it on pointerdown): open this editor's panel, or close it. */
@@ -209,7 +209,7 @@ class HighlightPanel {
     input.tabIndex = -1
     input.setAttribute('aria-label', 'Hex code')
     // A click on the field opens the colour box under it, and leaves the caret in it for typing. Before the field
-    // takes the focus (a listener runs before the mousedown's default), so the toolbar sees the note focused.
+    // takes the focus (a listener runs before the mousedown's default), so the toolbar sees the page focused.
     input.addEventListener('mousedown', () => {
       if (!this.#box.open) this.#openBox()
     })
@@ -258,7 +258,7 @@ class HighlightPanel {
     b.setAttribute('aria-label', label)
     b.setAttribute('aria-pressed', 'false')
     b.dataset.item = id
-    // The selection and the focus stay in the note.
+    // The selection and the focus stay in the page.
     b.addEventListener('mousedown', (e) => e.preventDefault())
     b.addEventListener('click', run)
     const item = { id, el: b, run }
@@ -342,7 +342,7 @@ class HighlightPanel {
     this.#move(this.#current)
   }
 
-  /** Render, unless the change just made already did (`update` renders on each change of the note). */
+  /** Render, unless the change just made already did (`update` renders on each change of the page). */
   #renderOnce(since: number): void {
     if (this.open && this.#renders === since) this.#render()
   }
@@ -399,7 +399,7 @@ class HighlightPanel {
     el.classList.toggle('is-above', !roomBelow)
   }
 
-  /** The keyboard's place: a class, since the focus stays in the note (or on the ▾). */
+  /** The keyboard's place: a class, since the focus stays in the page (or on the ▾). */
   #move(id: string | null): void {
     this.#current = id
     for (const row of this.#rows) for (const item of row) item.el.classList.toggle('is-current', item.id === id)
@@ -463,7 +463,7 @@ class HighlightPanel {
     }
   }
 
-  /** Enter applies a valid hex, the focus back in the note first so its toolbar stays; Escape closes the box, else the panel. */
+  /** Enter applies a valid hex, the focus back in the page first so its toolbar stays; Escape closes the box, else the panel. */
   #hexKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault()
@@ -504,7 +504,7 @@ class HighlightPanel {
   /** A colour on the selection. A custom one counts as a use; a shade keeps the row of shades it came from. */
   #apply(color: HighlightColor, newBase = true): void {
     if (newBase) this.#base = hexOf(color)
-    if (isCustomHighlight(color)) noteHighlightColorUse(color)
+    if (isCustomHighlight(color)) recordHighlightColorUse(color)
     const since = this.#renders
     this.#run(applyHighlight(this.#type(), color))
     this.#renderOnce(since)
@@ -529,7 +529,7 @@ class HighlightPanel {
     this.#place()
   }
 
-  /** Just the box; a focus in it goes back to the note. */
+  /** Just the box; a focus in it goes back to the page. */
   #closeBox(): void {
     const doc = this.view.dom.ownerDocument
     const focused = this.#box.el.contains(doc.activeElement)
@@ -543,7 +543,7 @@ class HighlightPanel {
   #pickBox = (color: CustomHighlight): void => {
     const { view } = this
     if (view.isDestroyed || !this.open || !this.#box.open) return
-    // Back in the note before the change lands, so its toolbar (and the ▾ under the panel) stays.
+    // Back in the page before the change lands, so its toolbar (and the ▾ under the panel) stays.
     if (this.#el!.contains(view.dom.ownerDocument.activeElement)) view.focus()
     this.#apply(color)
   }
@@ -551,7 +551,7 @@ class HighlightPanel {
   update(view: EditorView, prev: EditorState): void {
     if (!this.open) return
     if (!prev.selection.eq(view.state.selection) || view.state.selection.empty) this.close()
-    // A new doc is a change (`eq` would walk the whole note on each one).
+    // A new doc is a change (`eq` would walk the whole page on each one).
     else if (prev.doc !== view.state.doc) this.#render()
   }
 
@@ -563,5 +563,5 @@ class HighlightPanel {
   }
 }
 
-/** The panel of each note. */
+/** The panel of each page. */
 export const highlightPanel = $prose((ctx) => new Plugin({ key: new PluginKey('mdapp-highlight-panel'), view: (view) => new HighlightPanel(ctx, view) }))

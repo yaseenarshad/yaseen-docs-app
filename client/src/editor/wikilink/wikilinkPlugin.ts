@@ -9,23 +9,23 @@
  *  - `[[target|alias]]` hides `target|` and shows only the alias,
  *  - `[[target#heading]]` shows `target > heading` (the `#` is hidden; each post-`#` segment
  *    carries `wikilink__sub`, whose CSS `::before` draws the ` > ` separator),
- *  - `[[<id>]]` (YAZ-2293 — the target is a note's permanent id, and the source resolves it) hides
- *    the id as well and shows the note's CURRENT TITLE in its place: the one WIDGET here, every
+ *  - `[[<id>]]` (YAZ-2293 — the target is a page's permanent id, and the source resolves it) hides
+ *    the id as well and shows the page's CURRENT TITLE in its place: the one WIDGET here, every
  *    other decoration only hides or styles characters the document holds. The title is read off
  *    the index at each build, so a rename changes what the link shows and not one byte of the
- *    document. A hand-typed `[[<id>|label]]` shows its label; an id no note has, and any id before
+ *    document. A hand-typed `[[<id>|label]]` shows its label; an id no page has, and any id before
  *    the index loads, shows as the raw id, like a name,
  *  - a link that resolves shows its page's NAME (YAZ-3778 D2, D3): the folders of a pathed
  *    `[[folder/name]]` and an extension the sidebar hides (`.md`, a drawing's, a diagram's) are
  *    syntax too. A dead link keeps its text (S12),
- *  - an ID of this vault that no note has (YAZ-3905 S10) shows "Missing note · YAS-466" in place of
+ *  - an ID of this vault that no page has (YAZ-3905 S10) shows "Missing page · YAS-466" in place of
  *    the id, a widget as the title is; an ID of another vault of the window (S23) shows its vault after
  *    it, "INL-4 (In-harness-lab)", a widget too. Both stay dimmed (`wikilink--unresolved`),
  *  - the vault's link pills look (YAZ-4924, `source.pills`) adds a head and a tail piece, widgets, to every pill
  *    (`pillEnds`): the text before and after, the vault's name, the ID, the folder. Look only: the file keeps `[[Name]]`,
- *  - a link to a NOTE CARD (`[[WIKI-512]]`, YAZ-5030: the ID is a card's, `linkCard`) shows the card's title and its
+ *  - a link to a PAGE CARD (`[[WIKI-512]]`, YAZ-5030: the ID is a card's, `linkCard`) shows the card's title and its
  *    ID, with a card icon (`wikilink--card`), a widget as an ID link's title is; no vault look adds ends to it,
- *  - a match whose display would be EMPTY (`[[Note|]]`, `[[|]]`, `[[#]]`) stays raw — no
+ *  - a match whose display would be EMPTY (`[[Page|]]`, `[[|]]`, `[[#]]`) stays raw — no
  *    decorations at all, so nothing ever collapses to a zero-width invisible run (FN12,
  *    GRO-2197),
  *  - visible segments get `wikilink` (accent), plus `wikilink--unresolved` (dimmed) when the
@@ -56,7 +56,7 @@ import { makeCardResolver, type CardLink, type CardResolve } from '@shared/cardL
 import { isBoardTarget } from '@shared/embedOptions'
 import { splitLink, type LinkParts } from '@shared/linkParts'
 import { WIKILINK_RE } from '@shared/linkRewrite'
-import { isNoteId, isNumberId, vaultNoteId } from '@shared/noteId'
+import { isPageId, isNumberId, vaultPageId } from '@shared/pageId'
 import { boardBaseName, fileKind } from '@shared/fileKind'
 import { NO_LINK_PILLS, type LinkPills } from '@shared/linkPills'
 import { basename, type IndexRecord } from '@shared/types'
@@ -79,7 +79,7 @@ export interface LinkLook {
   icon: (path: string, folder: boolean) => Record<string, string>
 }
 
-/** Link target → resolved absolute path — a note's file, else a folder's directory (YAZ-2290 D10) — or null when nothing matches. */
+/** Link target → resolved absolute path — a page's file, else a folder's directory (YAZ-2290 D10) — or null when nothing matches. */
 export type ResolveLink = (target: string) => string | null
 
 /**
@@ -101,11 +101,11 @@ export interface WikilinkResolveSource {
   readonly records: readonly IndexRecord[]
   /** The same snapshot's folder settings records (YAZ-2290 D8) — never among `records`. */
   readonly folders: readonly IndexRecord[]
-  /** Does the snapshot's vault give its notes IDs (YAZ-2523 🔒 V5)? false until the first index lands. */
+  /** Does the snapshot's vault give its pages IDs (YAZ-2523 🔒 V5)? false until the first index lands. */
   readonly ids: boolean
   /**
    * The vault's ID letters (`IndexResponse.letters`, YAZ-2677 R5), the current ones first; none where
-   * it does not use IDs. `vaultNoteId` reads a link target with them: other `LETTERS-NUMBER` text is a name (R6).
+   * it does not use IDs. `vaultPageId` reads a link target with them: other `LETTERS-NUMBER` text is a name (R6).
    */
   readonly letters: readonly string[]
   /**
@@ -193,8 +193,8 @@ export function createWikilinkResolveSource(): MutableWikilinkResolveSource {
 export { WIKILINK_RE }
 
 /**
- * The parts of a raw `[[inner]]` with the vault's notes known (`source`, YAZ-4935 round 2): words that only LOOK like
- * an ID (`[[Covid notes|COVID-19]]`) leave the left side the page when it resolves; the right side is the page only
+ * The parts of a raw `[[inner]]` with the vault's pages known (`source`, YAZ-4935 round 2): words that only LOOK like
+ * an ID (`[[Covid pages|COVID-19]]`) leave the left side the page when it resolves; the right side is the page only
  * when the left does not. No `source`, or no index yet: the shape decides (`splitLink`).
  */
 export function linkSplit(inner: string, source?: { resolve: ResolveLink | null }): LinkParts {
@@ -226,7 +226,7 @@ export function cardResolverOf(source: Pick<WikilinkResolveSource, 'records' | '
 }
 
 /**
- * The NOTE CARD a raw `[[inner]]` names (YAZ-5030, D7): its page part is a card's ID (`[[WIKI-512]]`, any case, the
+ * The PAGE CARD a raw `[[inner]]` names (YAZ-5030, D7): its page part is a card's ID (`[[WIKI-512]]`, any case, the
  * vault's letters of before too), or null — a page, a name, a vault with no IDs, and any link before the index loads.
  */
 export function linkCard(inner: string, source: WikilinkResolveSource): CardLink | null {
@@ -236,24 +236,24 @@ export function linkCard(inner: string, source: WikilinkResolveSource): CardLink
   return page === '' ? null : resolve(page)
 }
 
-/** What a card link shows for its card (YAZ-5030): the title, or "Note card" for a card with no text yet. */
-export const cardLinkTitle = (card: CardLink): string => (card.title === '' ? 'Note card' : card.title)
+/** What a card link shows for its card (YAZ-5030): the title, or "Card" for a card with no text yet. */
+export const cardLinkTitle = (card: CardLink): string => (card.title === '' ? 'Card' : card.title)
 
 /**
- * The title an id link shows (YAZ-2293): `target` is a note's id and `resolve` finds the note →
- * its title, by `titles` (YAZ-2420 🔒 D14). undefined for a name, for an id no note has, and before
+ * The title an id link shows (YAZ-2293): `target` is a page's id and `resolve` finds the page →
+ * its title, by `titles` (YAZ-2420 🔒 D14). undefined for a name, for an id no page has, and before
  * the index has loaded — all of which show the target as written. The ONE answer shared by the
  * decorations, the backlinks snippets and the right-click menu (`wikilinkMenu.ts`).
  *
  * The target is tested by its SHAPE, old or number (YAZ-2677): the vault is not known here. So a
- * name that reads like a number ID and finds a note by that name (R6, S26) shows that note's title.
+ * name that reads like a number ID and finds a page by that name (R6, S26) shows that page's title.
  */
 export function idLinkTitle(target: string, resolve: ResolveLink | null, titles: PathTitles): string | undefined {
-  const path = resolve !== null && isNoteId(target) ? resolve(target) : null
+  const path = resolve !== null && isPageId(target) ? resolve(target) : null
   return path === null ? undefined : pageLabel(path, false, titles)
 }
 
-/** An unpiped ID link that shows its note's title (YAZ-3744 D1). */
+/** An unpiped ID link that shows its page's title (YAZ-3744 D1). */
 export function showsTitle(inner: string, source: WikilinkResolveSource): boolean {
   return !inner.includes('|') && idLinkTitle(linkPageName(inner), source.resolve, pathTitles(source.records, source.folders)) !== undefined
 }
@@ -261,7 +261,7 @@ export function showsTitle(inner: string, source: WikilinkResolveSource): boolea
 /**
  * A `[[link]]` that collapses to a pill, and so is one unit (YAZ-3935, point 3 of YAZ-3879: D1 extended to every
  * link): the caret steps over it (`idLinkCaret.ts`), and only "Edit link" opens its raw text. A link with nothing to
- * show (`[[Note|]]`, `[[#]]`) stays raw text (FN12). A title only adds text, so the check needs no index: one string scan.
+ * show (`[[Page|]]`, `[[#]]`) stays raw text (FN12). A title only adds text, so the check needs no index: one string scan.
  */
 export const isLinkUnit = (inner: string): boolean => linkDisplayText(inner) !== ''
 
@@ -269,21 +269,21 @@ export const isLinkUnit = (inner: string): boolean => linkDisplayText(inner) !==
  * The ID of THIS vault that a link's page part is, as the app writes it (YAZ-2677 R2), or undefined: a vault with no IDs
  * (YAZ-2523 🔒 V5), a name, and other `LETTERS-NUMBER` text (R6). `[[yas-466]]` is "YAS-466".
  */
-export function linkNoteId(page: string, { ids, letters }: Pick<WikilinkResolveSource, 'ids' | 'letters'>): string | undefined {
-  return ids ? vaultNoteId(page, letters) : undefined
+export function linkPageId(page: string, { ids, letters }: Pick<WikilinkResolveSource, 'ids' | 'letters'>): string | undefined {
+  return ids ? vaultPageId(page, letters) : undefined
 }
 
 /** "AR v2 plan (YAS-466)" (YAZ-3744 S8): the one text of an ID link's name and ID, for a plain-text copy and "Copy name and ID". */
 export const nameAndId = (title: string, id: string): string => `${title} (${id})`
 
 /**
- * The ID of THIS vault a link names whose note is gone (YAZ-3905 S10), as the app writes it, or undefined: a found
+ * The ID of THIS vault a link names whose page is gone (YAZ-3905 S10), as the app writes it, or undefined: a found
  * link, a name, a vault that does not use IDs, and any link before the index loads (nothing is known yet).
  */
 export function missingId(inner: string, source: WikilinkResolveSource): string | undefined {
   if (!source.ids || source.resolve === null) return undefined
   const page = linkPageName(inner, source)
-  const id = vaultNoteId(page, source.letters)
+  const id = vaultPageId(page, source.letters)
   return id !== undefined && source.resolve(page) === null ? id : undefined
 }
 
@@ -294,14 +294,14 @@ export function missingId(inner: string, source: WikilinkResolveSource): string 
  */
 export function otherVaultId(inner: string, source: WikilinkResolveSource, vaultsOf: VaultsOfLetters | undefined): { id: string; vault: string | null } | null {
   const page = linkPageName(inner, source)
-  if (vaultsOf === undefined || source.resolve === null || !isNumberId(page) || vaultNoteId(page, source.letters) !== undefined || source.resolve(page) !== null) return null
+  if (vaultsOf === undefined || source.resolve === null || !isNumberId(page) || vaultPageId(page, source.letters) !== undefined || source.resolve(page) !== null) return null
   const names = vaultsOf(page.slice(0, page.indexOf('-')).toUpperCase())
   return names.length === 0 ? null : { id: page, vault: names.length === 1 ? names[0]! : null }
 }
 
 /**
  * The hidden ends of a link's page part (YAZ-3778 D2, D3): the folders before its name, and an extension the
- * sidebar hides (`fileLabel`: a note's, a drawing's, a diagram's). `[0, 0]` when nothing would be left.
+ * sidebar hides (`fileLabel`: a page's, a drawing's, a diagram's). `[0, 0]` when nothing would be left.
  */
 function pageTrim(page: string): [lead: number, trail: number] {
   const lead = page.lastIndexOf('/') + 1
@@ -317,7 +317,7 @@ function pageTrim(page: string): [lead: number, trail: number] {
  * the CSS draws between segments — the page part replaced by `titleOf`'s answer when it has one
  * (an id link's title, `idLinkTitle`), else, when `named` says the page is found, by its name
  * (`pageTrim`, YAZ-3778 D2, D3; a dead link keeps its text, S12). '' means NOTHING would be
- * visible (`[[Note|]]`, `[[|]]`, `[[#]]`) — such a match stays raw (FN12, GRO-2197; see
+ * visible (`[[Page|]]`, `[[|]]`, `[[#]]`) — such a match stays raw (FN12, GRO-2197; see
  * `decorate`). Exported for the backlinks snippets (FN9, GRO-2197), which must read exactly as
  * the editor renders: one mapping, never a second regex.
  */
@@ -332,7 +332,7 @@ export function linkDisplayText(inner: string, titleOf?: (target: string) => str
 }
 
 /**
- * `text` with each `[[link]]` as the note shows it (YAZ-3744 D6): a crumb, a tab's label, a TOC row, a plain-text
+ * `text` with each `[[link]]` as the page shows it (YAZ-3744 D6): a crumb, a tab's label, a TOC row, a plain-text
  * copy. A board embed (`![[x.drawio|640x360 …]]`, YAZ-4827 item 16) is its name, as its window's name pill shows it; other
  * embeds and links with nothing to show stay as written. `withId` adds an ID link's ID after its title
  * (YAZ-3744 S8): "AR v2 plan (YAS-466)", for a copy that leaves the app.
@@ -346,7 +346,7 @@ export function linksAsShown(text: string, source: WikilinkResolveSource, viewOn
     const card = cards?.(target) ?? null
     if (card !== null) return withId ? nameAndId(cardLinkTitle(card), card.id) : cardLinkTitle(card)
     const title = idLinkTitle(target, source.resolve, titles)
-    const id = withId ? linkNoteId(target, source) : undefined
+    const id = withId ? linkPageId(target, source) : undefined
     return title === undefined || id === undefined ? title : nameAndId(title, id)
   }
   // An id embed (YAZ-4920) is a board when the id resolves to one; it copies as the board's name.
@@ -470,7 +470,7 @@ function pillEnds(inner: string, resolved: boolean, source: WikilinkResolveSourc
 
 /** Decorations for one collapsed match: `[[inner]]` starting at `start`. */
 function decorate(out: Decoration[], start: number, inner: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, look?: LinkLook, vaultsOf?: VaultsOfLetters): void {
-  // A match whose display would be EMPTY ([[Note|]], [[|]], [[#]]) gets NO decorations at all:
+  // A match whose display would be EMPTY ([[Page|]], [[|]], [[#]]) gets NO decorations at all:
   // hiding every character would leave a zero-width invisible run the click handler cannot see
   // and only exact caret placement can recover — raw-and-editable, the revealed state, is the
   // consistent answer (FN12, GRO-2197).
@@ -486,7 +486,7 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   const innerStart = start + 2
   const end = innerStart + inner.length + 2
   const { pipe, pageFirst } = linkSplit(inner, source)
-  // A link to a note card (YAZ-5030): the whole `[[ID]]` is syntax, and the card's title and ID stand at its end, as a
+  // A link to a card (YAZ-5030): the whole `[[ID]]` is syntax, and the card's title and ID stand at its end, as a
   // lone ID link's title does (YAZ-3916), one pill with the card icon. `title` in the spec: what ⌘F reads.
   const card = pipe >= 0 || !resolved ? null : linkCard(inner, source)
   if (card !== null) {
@@ -496,9 +496,9 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
     return
   }
   const parts = inner.split('#')
-  // A missing note shows that it is missing, with its ID (YAZ-3905 S10): in the title's place, as a title is drawn.
+  // A missing page shows that it is missing, with its ID (YAZ-3905 S10): in the title's place, as a title is drawn.
   const missing = resolved ? undefined : missingId(inner, source)
-  const title = pipe >= 0 ? undefined : titleOf(parts[0].trim()) ?? (missing === undefined ? undefined : `Missing note · ${missing}`)
+  const title = pipe >= 0 ? undefined : titleOf(parts[0].trim()) ?? (missing === undefined ? undefined : `Missing page · ${missing}`)
   // An ID of another vault says which vault (S23), after the ID.
   const other = pipe >= 0 || resolved || missing !== undefined ? null : otherVaultId(inner, source, vaultsOf)
   // The pieces the vault's look adds at the pill's ends (YAZ-4924): the head goes before the first shown piece, the tail after the last.
@@ -508,7 +508,7 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   const first = (pos: number) => {
     if (lastShown >= 0) return
     const { head } = ends
-    // The key holds the pill's classes: a pill whose note goes missing (or comes back) draws its end again in the new class.
+    // The key holds the pill's classes: a pill whose page goes missing (or comes back) draws its end again in the new class.
     if (head !== null) out.push(Decoration.widget(pos, () => headSpan(cls, head, found?.attrs), { side: -1, key: `${cls}|${headKey(head)}` }))
     lastShown = pos
   }
@@ -614,7 +614,7 @@ function decorateBlock(out: Decoration[], block: ProseNode, pos: number, sel: Se
 /**
  * A link of a textblock that shows as a pill (YAZ-3744 S9): its range, the ranges it hides (`wikilink__syntax`: the
  * brackets, an ID, an alias's target, hidden folders and extensions, each `#`), and the text the title widget
- * shows in place of its ID (an ID link's title, or "Missing note · YAS-466", S10), else null.
+ * shows in place of its ID (an ID link's title, or "Missing page · YAS-466", S10), else null.
  */
 export interface PillLink {
   from: number
@@ -624,7 +624,7 @@ export interface PillLink {
 }
 
 /**
- * The pills of one textblock at `pos`, drawn by `decorate` itself, so they hide exactly what the note hides. For ⌘F
+ * The pills of one textblock at `pos`, drawn by `decorate` itself, so they hide exactly what the page hides. For ⌘F
  * (`findInPage.ts`). A link the selection opens (`decorateBlock`'s reveal rule) is plain text and left out, and so is
  * a link with nothing to show.
  */
@@ -708,7 +708,7 @@ function updateDecorations(
   return set.remove(stale).add(doc, fresh)
 }
 
-/** Draws every `[[link]]` of the note again, with no edit: the host calls it when the file icons change (YAZ-3609 D13). */
+/** Draws every `[[link]]` of the page again, with no edit: the host calls it when the file icons change (YAZ-3609 D13). */
 export function redrawWikilinks(view: EditorView): void {
   view.dispatch(view.state.tr.setMeta(wikilinkKey, 'look-updated').setMeta('addToHistory', false))
 }

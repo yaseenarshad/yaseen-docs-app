@@ -1,9 +1,9 @@
 /*
  * Wikilink rendering (Links A, GRO-2190) — classes applied by wikilinkPlugin.ts.
  *
- * A link in an editable note is part of the text (YAZ-3935 C1): the text cursor, and the hand only
+ * A link in an editable page is part of the text (YAZ-3935 C1): the text cursor, and the hand only
  * while the modifiers of a bound open gesture are held (`data-link-hand` on the editor's root,
- * `linkGesture.ts`). A read-only note opens a link on a plain click, so it shows the hand.
+ * `linkGesture.ts`). A read-only page opens a link on a plain click, so it shows the hand.
  * Hiding is `display: none` on TEXT SPANS inside a line (the tabs-layer scroll caveat is about
  * hiding whole layers, not inline spans); the caret never has to cross hidden text because every
  * link is one unit (`idLinkCaret.ts` steps the caret over it).
@@ -43,7 +43,7 @@
   border-radius: var(--pill-radius, 4px);
   background: var(--pill-bg, color-mix(in srgb, var(--accent) 10%, transparent));
 }
-/* A link the note highlights (right-click › Pill style ›, or the toolbar; YAZ-4924 round 5): the page's highlight wins
+/* A link the page highlights (right-click › Pill style ›, or the toolbar; YAZ-4924 round 5): the page's highlight wins
    over the vault's box. The pill's own fill steps aside, so the mark's wash shows behind the whole pill, its ends too.
    Bold, italic and underline need no rule: the name's weight and style fall back to the line's (inherit), and the vault
    can add them, never take them away. */
@@ -56,7 +56,7 @@
    `([[Redis]])` the bracket alone at the end of the line (the mark is a mask, below). The icon is an inline box, app.css's 14px glyph on 14px of
    padding (its width and height do nothing on an inline box); its own 14px font keeps it where the inline-block's
    `vertical-align: -2px` put it, in a heading too. With the icons off app.css draws no `::before`, so it takes no room.
-   Every icon of a pill: the name's own (a note, a note card, the title of an ID link), an icon piece of the head or the
+   Every icon of a pill: the name's own (a page, a card, the title of an ID link), an icon piece of the head or the
    tail, and a `FileIcon` inside a React pill (a folder page's cell, the properties panel, the Settings preview). */
 .wikilink.file-icon::before,
 .wikilink .file-icon::before {
@@ -178,7 +178,7 @@
   text-decoration-line: var(--pill-path-decoration, none);
 }
 /* The mark (`{mark}`, round 5): a small static icon, 1em square, so it is its line's size (a heading's in a heading), in
-   the name's colour (the pill's) until the mark has its own; a missing note's is muted as its name is. An inline span
+   the name's colour (the pill's) until the mark has its own; a missing page's is muted as its name is. An inline span
    that wears its icon (`--pill-mark-icon`, `LINK_PILL_MARK_MASK`) as a mask over its colour on 1em of padding, centred
    on its letters where the svg's `vertical-align: -0.125em` put it: not an svg, which is an atomic inline box (YAZ-4991).
    The padding is the icon's room: named by the head or the tail it stands in, so Crepe's reset (`.milkdown *`) does not take it. */
@@ -201,7 +201,7 @@
 /* A mark or an icon piece has no letter of its own, and the browser leaves an inline box with no letter at the end of a
    line when the line breaks right after it, so a pill whose head is only an icon lost it to the line before (YAZ-4991).
    A word joiner is its letter: it holds the piece to the text after it, and to a period after it, as a word holds its
-   period. Generated text: no part of the note, its file, a copy or find; a space before the pill still breaks the line. */
+   period. Generated text: no part of the page, its file, a copy or find; a space before the pill still breaks the line. */
 .link-pill__mark::after,
 .link-pill__icon::after {
   content: '\2060';
@@ -250,7 +250,7 @@
   color: var(--fg-muted);
 }
 
-/* A link to a note card (YAZ-5030): the card's title, then its ID small and grey, one pill with a card icon. The icon is
+/* A link to a card (YAZ-5030): the card's title, then its ID small and grey, one pill with a card icon. The icon is
    a mask over the pill's colour on 1em of padding (the mark's way above): no atomic inline box (YAZ-4991). Named by both
    classes, so Crepe's reset (`.milkdown *`) does not take the padding. The picker's card row draws the same icon
    (`wikilinkPicker.css`), and so does a card file's row (YAZ-5037): `--card-link-icon` is app.css's. */

@@ -1,6 +1,6 @@
 /**
  * The numbered list (YAZ-3998), pinned like the table of contents (YAZ-3704 demo, 4J): its rows, numbered, with the
- * change word by word; a click goes to that change. Pinned, it sits left of the note with **Unpin**; unpinned, the bar's
+ * change word by word; a click goes to that change. Pinned, it sits left of the page with **Unpin**; unpinned, the bar's
  * count opens the same rows as a dropdown with **Pin**. A real channel with a stub controller bound, as the plugin binds
  * its own, and the page's boxes (`section.editor`, the scroller, the text) laid out by hand.
  */
@@ -29,7 +29,7 @@ const ROWS: OutsideChangeRow[] = [
   { id: 3, number: 3, active: true, parts: [{ kind: 'same', text: 'Removed: ' }, { kind: 'del', text: 'Ask about parking' }] },
 ]
 
-const stubController = (rowsOf: () => OutsideChangeRow[]): OutsideChangesController => ({ next: vi.fn(), go: vi.fn(), rows: rowsOf, clear: vi.fn(), markWholeNote: vi.fn(), setGlow: vi.fn() })
+const stubController = (rowsOf: () => OutsideChangeRow[]): OutsideChangesController => ({ next: vi.fn(), go: vi.fn(), rows: rowsOf, clear: vi.fn(), markWholePage: vi.fn(), setGlow: vi.fn() })
 
 /** The bar and the list as `Editor.tsx` renders them: the list only while pinned. */
 function mount(pinned: boolean) {
@@ -60,7 +60,7 @@ function mount(pinned: boolean) {
   )
   const show = (next: OutsideChangeRow[]): void => {
     rows = next
-    act(() => channel.sync({ count: next.length, wholeNote: false, fadesAt: null }, channel.getVersion() + 1))
+    act(() => channel.sync({ count: next.length, wholePage: false, fadesAt: null }, channel.getVersion() + 1))
   }
   const list = () => section?.querySelector<HTMLElement>('.outside-list:not(.outside-list--dropdown)') ?? null
   const dropdown = () => section?.querySelector<HTMLElement>('.outside-list--dropdown') ?? null
@@ -90,7 +90,7 @@ describe('OutsideChangesList, pinned (YAZ-3998; 4J)', () => {
     expect(list()).toBeNull()
   })
 
-  it('a click on a row goes to that change, and its mousedown keeps the focus in the note', () => {
+  it('a click on a row goes to that change, and its mousedown keeps the focus in the page', () => {
     const { controller, show, list } = mount(true)
     show(ROWS)
     const row = list()?.querySelectorAll<HTMLButtonElement>('.outside-list__row')[1]
@@ -110,18 +110,18 @@ describe('OutsideChangesList, pinned (YAZ-3998; 4J)', () => {
     expect(onPin).toHaveBeenCalledWith(false)
   })
 
-  it('the stylesheet: the pinned list makes the note give it room, as the table of contents does; its header takes clicks', () => {
+  it('the stylesheet: the pinned list makes the page give it room, as the table of contents does; its header takes clicks', () => {
     expect(outsideCss).toMatch(/\.editor:has\(> \.outside-list:not\(\.outside-list--dropdown\)\) > \.editor-host \{\s*padding-left: var\(--outside-list-width\);/)
     expect(outsideCss).toMatch(/\.outside-list__header \{[^}]*pointer-events: auto;/)
   })
 })
 
 describe('OutsideChangesList, unpinned: the dropdown (4J)', () => {
-  it('no list beside the note; the count opens the rows as a dropdown, Pin at its top', () => {
+  it('no list beside the page; the count opens the rows as a dropdown, Pin at its top', () => {
     const { onPin, show, list, dropdown, count } = mount(false)
     show(ROWS)
     expect(list()).toBeNull()
-    expect(count()?.textContent).toBe('2 outside changes in this note ▾')
+    expect(count()?.textContent).toBe('2 outside changes in this page ▾')
     expect(dropdown()).toBeNull()
     act(() => count()?.click())
     expect(numbers(dropdown())).toEqual(['1', '3'])
@@ -142,7 +142,7 @@ describe('OutsideChangesList, unpinned: the dropdown (4J)', () => {
     expect(dropdown()).toBeNull()
   })
 
-  it('4J1: a dropdown open when the list empties, or when the whole note changes, does not open by itself on the next change', () => {
+  it('4J1: a dropdown open when the list empties, or when the whole page changes, does not open by itself on the next change', () => {
     const { channel, show, dropdown, count } = mount(false)
     show(ROWS)
     act(() => count()?.click())
@@ -150,8 +150,8 @@ describe('OutsideChangesList, unpinned: the dropdown (4J)', () => {
     show(ROWS)
     expect(dropdown()).toBeNull()
     act(() => count()?.click())
-    act(() => channel.sync({ count: 0, wholeNote: true, fadesAt: null }, channel.getVersion() + 1))
-    act(() => channel.sync({ count: 0, wholeNote: false, fadesAt: null }, channel.getVersion() + 1))
+    act(() => channel.sync({ count: 0, wholePage: true, fadesAt: null }, channel.getVersion() + 1))
+    act(() => channel.sync({ count: 0, wholePage: false, fadesAt: null }, channel.getVersion() + 1))
     show(ROWS)
     expect(dropdown()).toBeNull()
   })
@@ -168,7 +168,7 @@ describe('the channel: a new editor on the same channel (4K)', () => {
       channel.bind(stubController(() => rows))
     })
     rows = [{ id: 9, number: 1, active: false, parts: [{ kind: 'ins', text: 'New' }] }]
-    act(() => channel.sync({ count: 1, wholeNote: false, fadesAt: null }, 1))
+    act(() => channel.sync({ count: 1, wholePage: false, fadesAt: null }, 1))
     expect(numbers(list())).toEqual(['1'])
     expect(list()?.querySelector('ins')?.textContent).toBe('New')
   })

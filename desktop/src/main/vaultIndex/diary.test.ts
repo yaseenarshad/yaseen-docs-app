@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { IDS_FILE } from '@shared/noteId'
+import { IDS_FILE } from '@shared/pageId'
 import { VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
 import { CLASHES_MAX, LINKS_MAX, _resetDiary, flushDiaries, namedIds, openDiary, saveDiary, see } from './diary'
 import { MADE_DAYS, _actAs, _resetMint, countsOf, mintIds } from './mint'
@@ -36,10 +36,10 @@ const book = async () => openDiary(root, await countsOf(root), LETTERS, Date.now
 const files = async (): Promise<string[]> => readdir(path.join(appData, 'id-diary')).catch(() => [])
 const onDisk = async (): Promise<{ links: Record<string, Record<string, number>>; clashes: Record<string, unknown> }> => JSON.parse(await readFile(path.join(appData, 'id-diary', (await files())[0]), 'utf8'))
 
-describe('namedIds: each ID a note names', () => {
+describe('namedIds: each ID a page names', () => {
   it('a link, an embed, an `also_in` entry and a link place of a folder’s settings, as the app writes an ID; names and old IDs are left out', () => {
     const r = record('a.md', {
-      links: ['yaz-7', 'Some note', 'YAZ-12', '6cbnmcq5n2sj', 'YAZ-7'],
+      links: ['yaz-7', 'Some page', 'YAZ-12', '6cbnmcq5n2sj', 'YAZ-7'],
       embeds: ['YAZ-3'],
       properties: { also_in: ['yaz-9', 'not an id'], folder_settings: { views: [{ type: 'table', order: ['[[YAZ-4|x]]', '[[Name]]'] }] } },
     })
@@ -48,7 +48,7 @@ describe('namedIds: each ID a note names', () => {
   })
 
   it('YAZ-4954: a link that keeps both sides (`staging|YAZ-12`) still names its ID, as before', () => {
-    expect(namedIds(record('c.md', { links: ['staging|YAZ-12'], embeds: ['Covid notes|yaz-19'] })).sort()).toEqual(['YAZ-12', 'YAZ-19'])
+    expect(namedIds(record('c.md', { links: ['staging|YAZ-12'], embeds: ['Covid pages|yaz-19'] })).sort()).toEqual(['YAZ-12', 'YAZ-19'])
     // A link place of a folder's settings (part 2: `exactLinkTarget` keeps both sides too).
     const settings = { folder_settings: { columns: { owner: { kind: 'link', target: '[[staging|YAZ-21]]' } }, views: [{ type: 'table', order: ['[[photo.png|YAZ-22]]'] }] } }
     expect(namedIds(record('d.md', { properties: settings }))).toEqual(['YAZ-21'])

@@ -2,7 +2,7 @@
  * QUIT AND CLOSE NEVER LOSE AN EDIT (YAZ-2174, reliability R1). A keystroke typed a moment before ⌘Q
  * or ⌘W must be on disk once the app is gone. Main holds each window for its renderer's flush
  * handshake (GRO-2160, 5 s cap) and then DESTROYS it, which runs no React unmount — so a writer that
- * only saves on unmount loses its last edit. The note editor always joined the handshake; a folder's
+ * only saves on unmount loses its last edit. The page editor always joined the handshake; a folder's
  * OUTLINE view (its own 500 ms debounce on top of Crepe's 200 ms listener) joins it since YAZ-2174,
  * and before that lost the edit 5 of 5 times.
  *
@@ -63,8 +63,8 @@ const tempDir = async (prefix: string): Promise<string> => {
 /** Resolves once the process is gone: closing the last window quits the app (`window-all-closed`). */
 const exited = (a: ElectronApplication): Promise<void> => new Promise((resolve) => a.on('close', () => resolve()))
 
-/** A copy of the generated fixture, open on its seed note; every temp dir is cleaned after the test. */
-async function openSeedNote(prefix: string): Promise<{ win: Page; vault: string; file: string }> {
+/** A copy of the generated fixture, open on its seed page; every temp dir is cleaned after the test. */
+async function openSeedPage(prefix: string): Promise<{ win: Page; vault: string; file: string }> {
   const src = await buildFixtureVault()
   const vault = await copyVault(src)
   dirs.push(src, vault)
@@ -73,8 +73,8 @@ async function openSeedNote(prefix: string): Promise<{ win: Page; vault: string;
   return { win: await appWindow(app, 'w1'), vault, file }
 }
 
-test('note editor: an edit typed right before ⌘Q is on disk', async () => {
-  const { win, file } = await openSeedNote('quitflush-note-')
+test('page editor: an edit typed right before ⌘Q is on disk', async () => {
+  const { win, file } = await openSeedPage('quitflush-page-')
   const marker = await typeMarkerAtLastBullet(win, 'NOTEPROBE')
   await expect(editorOf(win)).toContainText(marker)
   await quitApp(app!)
@@ -82,8 +82,8 @@ test('note editor: an edit typed right before ⌘Q is on disk', async () => {
   expect(await readFile(file, 'utf8')).toContain(marker)
 })
 
-test('note editor: an edit typed right before ⌘Q, while 230 files land in the vault, is on disk', async () => {
-  const { win, vault, file } = await openSeedNote('quitflush-storm-')
+test('page editor: an edit typed right before ⌘Q, while 230 files land in the vault, is on disk', async () => {
+  const { win, vault, file } = await openSeedPage('quitflush-storm-')
   const marker = await typeMarkerAtLastBullet(win, 'STORMPROBE')
   await expect(editorOf(win)).toContainText(marker)
   const pulled = path.join(vault, 'Pulled')

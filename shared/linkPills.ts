@@ -1,7 +1,7 @@
 import { isRecord } from './guards'
 
 /**
- * A vault's link pills look (YAZ-4924): how every link pill of ONE vault draws — in its notes, the explore stack, the
+ * A vault's link pills look (YAZ-4924): how every link pill of ONE vault draws — in its pages, the explore stack, the
  * mini window, a folder page's cells and the properties panel. It lives in `<vault>/.yaseendocs/link-pills.json` and
  * goes through the generic `vaultConfig` door, the pattern of `text-formatting.json`, so GitHub sync carries it to the
  * other Macs. Pure: no React, no fs.
@@ -16,7 +16,7 @@ import { isRecord } from './guards'
  * A missing file, or `{}`, is the app's own look: the default format with every part at its own default draws exactly
  * today's pill, the other vault's name in brackets after it (YAZ-3609 D22) included. A version 1 file (the fields of
  * the first round: background, before / after, icon, bold…) is read and converted in memory (`fromV1`); it is written
- * as version 2 only when the reader changes something. The look never changes a note: the pieces are drawn, the note
+ * as version 2 only when the reader changes something. The look never changes a page: the pieces are drawn, the page
  * keeps `[[Name]]`.
  */
 

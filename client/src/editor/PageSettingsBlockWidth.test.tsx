@@ -1,6 +1,6 @@
 /**
- * The page cog's "Code block width" and "Table width" (YAZ-4783 layer 2): Default (Settings') or this note's px. The
- * host keeps the value (in the note's frontmatter); the menu shows it and hands a change back. The menu is a portal on
+ * The page cog's "Code block width" and "Table width" (YAZ-4783 layer 2): Default (Settings') or this page's px. The
+ * host keeps the value (in the page's frontmatter); the menu shows it and hands a change back. The menu is a portal on
  * `document.body`.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -54,7 +54,7 @@ describe('the cog’s block widths (YAZ-4783 layer 2)', () => {
     expect(group('Table width')).toBeNull()
   })
 
-  it('a note with no width shows Default pressed and an empty field; its tooltip names the Settings row', () => {
+  it('a page with no width shows Default pressed and an empty field; its tooltip names the Settings row', () => {
     mount(null)
     expect(defaultButton('Code block width').getAttribute('aria-pressed')).toBe('true')
     expect(defaultButton('Code block width').title).toBe('Default follows Settings › Editor › Code blocks › Width')

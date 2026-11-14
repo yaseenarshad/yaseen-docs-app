@@ -1,18 +1,18 @@
 /**
  * Titles, ids and file names (YAZ-2420) end-to-end against the REAL app, on a vault that uses IDs
- * (YAZ-2523, `idVault`) with two notes made outside the app: a note's title is `title:` in the
- * note, its id is `id:`, and its file name is built by the app as `<kebab-title>-<id>.md`.
+ * (YAZ-2523, `idVault`) with two pages made outside the app: a page's title is `title:` in the
+ * page, its id is `id:`, and its file name is built by the app as `<kebab-title>-<id>.md`.
  *
  * The arc, in order (serial by design — each step continues the previous state):
- *   1 a note made in the app is born with its id, its title and its built name; every screen shows the title
+ *   1 a page made in the app is born with its id, its title and its built name; every screen shows the title
  *   2 a title edit from the page heading writes the title and renames the file; the id stays
  *   3 the sidebar's rename edits the title; a hand-typed `[[Old title]]` follows it
  *   4 a title that builds the same name changes the title line only
  *   5 a file made outside the app keeps its name until its title is edited in the app
  *   6 a `title:` edited by hand shows at once and renames nothing
  *   7 a folder is its title in kebab-case, with its title in `.folder.md`
- *   8 a copy is its own note: a fresh id, `<title> copy`, its own name
- *   9 the search box — on the Search tab (YAZ-2638) — finds a note by its id, and by an old path that holds it
+ *   8 a copy is its own page: a fresh id, `<title> copy`, its own name
+ *   9 the search box — on the Search tab (YAZ-2638) — finds a page by its id, and by an old path that holds it
  *  10 a row's menu has one copy item
  *  11 a table's Name cell is text: a click selects, a double-click edits the title
  *
@@ -22,7 +22,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { NOTE_ID as ID, activeTab, appWindow, confirmSheet, contents, dirRow, fileRow, idOf, idVault, launchApp, layer, lensTab, menuItem, only, openFolder, quitApp, searchBar, seededState, shoot, showSearchTab, tabsOf, titleOf } from './helpers'
+import { PAGE_ID as ID, activeTab, appWindow, confirmSheet, contents, dirRow, fileRow, idOf, idVault, launchApp, layer, lensTab, menuItem, only, openFolder, quitApp, searchBar, seededState, shoot, showSearchTab, tabsOf, titleOf } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -34,7 +34,7 @@ let win: Page
 const title = (w: Page) => layer(w).locator('.page-title__text')
 const titleInput = (w: Page) => layer(w).locator('.page-title__input')
 const inline = (w: Page) => w.locator('.create-inline__input')
-/** A search result is a row of the search tree (YAZ-2620); a note found by its id stands alone in it. */
+/** A search result is a row of the search tree (YAZ-2620); a page found by its id stands alone in it. */
 // The labels alone: a search row also ends with its Last updated (YAZ-3511 D5).
 const results = (w: Page) => w.locator('.sidebar__body .tree__row--file .tree__label')
 
@@ -48,8 +48,8 @@ async function confirmIfAsked(w: Page): Promise<void> {
   await expect(ask).toHaveCount(0)
 }
 
-/** "New note" / "New folder" from the sidebar's blank-space menu, typed and committed. */
-async function create(w: Page, item: 'New note' | 'New folder', typed: string): Promise<void> {
+/** "New page" / "New folder" from the sidebar's blank-space menu, typed and committed. */
+async function create(w: Page, item: 'New page' | 'New folder', typed: string): Promise<void> {
   await w.locator('.sidebar__body').click({ button: 'right', position: { x: 40, y: 500 } })
   await menuItem(w, item).click()
   await inline(w).fill(typed)
@@ -68,10 +68,10 @@ async function renameRow(w: Page, row: ReturnType<typeof fileRow>, prefill: stri
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'names-userdata-'))
   vault = await mkdtemp(path.join(tmpdir(), 'names-vault-'))
-  // Made outside the app: a note that links by NAME, and a note with no frontmatter at all.
+  // Made outside the app: a page that links by NAME, and a page with no frontmatter at all.
   await writeFile(path.join(vault, 'Index.md'), 'See [[Guide]] here.\n')
   await writeFile(path.join(vault, 'Plan.md'), 'plan-body\n')
-  // A vault that uses IDs (YAZ-2523): each note made outside the app gets its number when the app opens it.
+  // A vault that uses IDs (YAZ-2523): each page made outside the app gets its number when the app opens it.
   await idVault(vault, userData)
 })
 
@@ -83,12 +83,12 @@ test.afterAll(async () => {
 let guide = ''
 let guideId = ''
 
-test('step 1 — a note made in the app is born with its id, its title and its built name', async () => {
+test('step 1 — a page made in the app is born with its id, its title and its built name', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
   await expect(fileRow(win, 'Index')).toBeVisible()
 
-  await create(win, 'New note', 'Guide')
+  await create(win, 'New page', 'Guide')
   await expect.poll(() => only(vault, new RegExp(`^guide-${ID}\\.md$`))).not.toBe('')
   guide = await only(vault, new RegExp(`^guide-${ID}\\.md$`))
   const content = await read(path.join(vault, guide))
@@ -116,7 +116,7 @@ test('step 2 — a title edit from the page heading writes the title and renames
   expect(idOf(await read(path.join(vault, built)))).toBe(guideId)
   await expect(title(win)).toHaveText('What/Why: the "Handbook"?')
   await expect(activeTab(win)).toHaveText('What/Why: the "Handbook"?')
-  // The hand-typed name link followed the title, in the note made outside the app.
+  // The hand-typed name link followed the title, in the page made outside the app.
   await expect.poll(() => read(path.join(vault, 'Index.md'))).not.toContain('[[Guide]]')
   guide = built
   await shoot(win, 'names-02-heading-retitle')
@@ -171,7 +171,7 @@ test('step 7 — a folder is its title in kebab-case, with its title in .folder.
   await shoot(win, 'names-07-folder')
 })
 
-test('step 8 — a copy is its own note: a fresh id, its title with copy, its own name', async () => {
+test('step 8 — a copy is its own page: a fresh id, its title with copy, its own name', async () => {
   await fileRow(win, 'Hand Edited').click({ button: 'right' })
   await win.locator('.ctx-menu').getByRole('menuitem', { name: /^Copy(?: ⌘\S*)?$/ }).click()
   await win.locator('.sidebar__body').click({ button: 'right', position: { x: 40, y: 500 } })
@@ -186,7 +186,7 @@ test('step 8 — a copy is its own note: a fresh id, its title with copy, its ow
   await expect(fileRow(win, 'Hand Edited copy')).toBeVisible()
 })
 
-test('step 9 — the search box finds a note by its id, and by an old path that holds it', async () => {
+test('step 9 — the search box finds a page by its id, and by an old path that holds it', async () => {
   // The bar is on the Search tab only (YAZ-2638 D2): show the tab, then type.
   await showSearchTab(win)
   // A row found by its id shows the id in front of its title (YAZ-2677).
@@ -195,7 +195,7 @@ test('step 9 — the search box finds a note by its id, and by an old path that 
   // A path copied before the retitles: the file name is stale, the id in it is not.
   await searchBar(win).fill(path.join(vault, `guide-${guideId.toLowerCase()}.md`))
   await expect(results(win)).toHaveText([`${guideId} — Hand Edited`])
-  // An id matches whole: a longer number is no note's.
+  // An id matches whole: a longer number is no page's.
   await searchBar(win).fill(`${guideId}0`)
   await expect(results(win)).toHaveCount(0)
   await shoot(win, 'names-09-search-by-id')

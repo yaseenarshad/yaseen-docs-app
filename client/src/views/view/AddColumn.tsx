@@ -26,7 +26,7 @@ export interface AddColumnProps {
 /**
  * "+ Add column" (YAZ-896): declare a column on the FOLDER — the typing ladder's top rung
  * (🔒 Q8) — and show it, in one `folder_settings` write (🔒 D3). Any name is the key, as typed
- * (YAZ-4535, D19: `isPropertyName`). A name the folder has already — a note property or a declared
+ * (YAZ-4535, D19: `isPropertyName`). A name the folder has already — a page property or a declared
  * column — is SHOWN when the view hides it (S1: no twin), and refused when the view shows it. It
  * lived inside `PropertiesMenu.tsx` until YAZ-1513 gave the table header a second doorway to it.
  */

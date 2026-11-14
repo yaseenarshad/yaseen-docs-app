@@ -19,8 +19,8 @@ vi.mock('./recentlyClosed', async (importOriginal) => {
   const real = await importOriginal<typeof import('./recentlyClosed')>()
   return { ...real, recentlyClosed: vi.fn(real.recentlyClosed) }
 })
-// The sidebar's note panel (YAZ-3403): a stand-in that says which note it shows.
-vi.mock('../sidebar/NotePreview', () => ({ default: ({ name }: { name: string }) => <div className="note-preview" aria-label={`Preview of ${name}`} /> }))
+// The sidebar's page panel (YAZ-3403): a stand-in that says which page it shows.
+vi.mock('../sidebar/PagePreview', () => ({ default: ({ name }: { name: string }) => <div className="page-preview" aria-label={`Preview of ${name}`} /> }))
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -41,7 +41,7 @@ interface Fixture {
   /** Each vault's tree, by its root: the keys are the vaults of the window, in its order. */
   trees: Record<string, TreeNode[]>
   opens?: Record<string, Record<string, OpenStat>>
-  /** Each vault's closed notes (YAZ-3487 D9): file → when it closed. */
+  /** Each vault's closed pages (YAZ-3487 D9): file → when it closed. */
   closed?: Record<string, Record<string, number>>
   favorites?: Record<string, string[]>
   favoritesOrder?: string[]
@@ -52,7 +52,7 @@ function installBridge({ trees, opens = {}, closed = {}, favorites = {}, favorit
   const favoritesChanged = new Set<(change: { root: string; scope: ListScope }) => void>()
   const roots = Object.keys(trees)
   // The first two vaults have a name of their own: what the app calls them, and what a row's tag says (S20).
-  const state: AppState = { ...defaultAppState(), favoritesOrder, folders: Object.fromEntries(roots.map((vaultRoot, at) => [vaultRoot, { ...defaultFolderState(), opens: opens[vaultRoot] ?? {}, closed: closed[vaultRoot] ?? {}, name: ['Notes', 'Work'][at] ?? null }])) }
+  const state: AppState = { ...defaultAppState(), favoritesOrder, folders: Object.fromEntries(roots.map((vaultRoot, at) => [vaultRoot, { ...defaultFolderState(), opens: opens[vaultRoot] ?? {}, closed: closed[vaultRoot] ?? {}, name: ['Pages', 'Work'][at] ?? null }])) }
   const bridge = {
     tree: vi.fn(async (vaultRoot: string) => ({ root: vaultRoot, tree: trees[vaultRoot] ?? [], generatedAt: 1 })),
     // App's reader of the window's lists asks for focus too (`useVaultListsHere`); this page shows none of it.
@@ -155,7 +155,7 @@ afterEach(() => {
 })
 
 describe('StartPage', () => {
-  it('a board row has no icon, so it always names its kind: its extension shows after the name; a note shows none (YAZ-3536 D4, S29)', async () => {
+  it('a board row has no icon, so it always names its kind: its extension shows after the name; a page shows none (YAZ-3536 D4, S29)', async () => {
     const v = vault()
     const { el } = await mount({ trees: { [v]: [file(`${v}/Sketch.excalidraw`, 'drawing'), file(`${v}/plan.md`)] }, opens: { [v]: { [`${v}/Sketch.excalidraw`]: used(1, HOUR), [`${v}/plan.md`]: used(1, 2 * HOUR) } } })
     const [sketch, plan] = rowsOf(el, 'recent')
@@ -167,12 +167,12 @@ describe('StartPage', () => {
   it('S11, S12, S24: three columns; "Recent" shows the 8 pages last on show, the newest first, from every vault, each with its name, its folder and how long ago; the old line is gone', async () => {
     const v = vault()
     const w = vault('w')
-    const notes = Array.from({ length: 7 }, (_, at) => `${v}/n${at}.md`)
+    const pages = Array.from({ length: 7 }, (_, at) => `${v}/n${at}.md`)
     const { el } = await mount(
       {
-        trees: { [v]: [dir(`${v}/Projects`, [dir(`${v}/Projects/Alpha`, [file(`${v}/Projects/Alpha/plan.md`)])]), ...notes.map((path) => file(path))], [w]: [file(`${w}/x.md`), file(`${w}/report.pdf`, 'pdf')] },
+        trees: { [v]: [dir(`${v}/Projects`, [dir(`${v}/Projects/Alpha`, [file(`${v}/Projects/Alpha/plan.md`)])]), ...pages.map((path) => file(path))], [w]: [file(`${w}/x.md`), file(`${w}/report.pdf`, 'pdf')] },
         opens: {
-          [v]: { [`${v}/Projects/Alpha/plan.md`]: used(1, 2 * HOUR), ...Object.fromEntries(notes.map((path, at) => [path, used(1, (at + 3) * HOUR)])) },
+          [v]: { [`${v}/Projects/Alpha/plan.md`]: used(1, 2 * HOUR), ...Object.fromEntries(pages.map((path, at) => [path, used(1, (at + 3) * HOUR)])) },
           [w]: { [`${w}/x.md`]: used(1, 30_000), [`${w}/report.pdf`]: used(1, 26 * HOUR) },
         },
       },
@@ -184,7 +184,7 @@ describe('StartPage', () => {
       ['favorites', 'Favorites'],
     ])
     // 10 pages in the record of two vaults: the 8 newest, and the two oldest (n6, report.pdf) are not here.
-    expect(paths(el, 'recent')).toEqual([`${w}/x.md`, `${v}/Projects/Alpha/plan.md`, ...notes.slice(0, 6)])
+    expect(paths(el, 'recent')).toEqual([`${w}/x.md`, `${v}/Projects/Alpha/plan.md`, ...pages.slice(0, 6)])
     const [x, plan, n0] = rowsOf(el, 'recent')
     // The name is the page's title; a page at the top of its vault names no folder.
     expect([part(plan, 'start__name'), part(plan, 'start__where'), part(plan, 'start__when')]).toEqual(['The plan', 'Projects / Alpha', '2h'])
@@ -212,7 +212,7 @@ describe('StartPage', () => {
     expect(paths(el, 'favorites')).toHaveLength(8) // 9 favorites have a file: `y.md` is the ninth
     const [x, projects] = rowsOf(el, 'favorites')
     expect([part(x, 'start__name'), part(x, 'tree__vault'), isDir(x)]).toEqual(['x', 'Work', false])
-    expect([part(projects, 'start__name'), part(projects, 'tree__vault'), isDir(projects)]).toEqual(['Projects', 'Notes', true])
+    expect([part(projects, 'start__name'), part(projects, 'tree__vault'), isDir(projects)]).toEqual(['Projects', 'Pages', true])
     // A favorites row says no time.
     expect(part(x, 'start__when')).toBeNull()
   })
@@ -224,14 +224,14 @@ describe('StartPage', () => {
     expect(el.querySelector('.tree__vault')).toBeNull()
   })
 
-  it('YAZ-3487 S31, S35, S40: "Recently closed" shows the 8 notes closed last, the newest first, from every vault, each with how long ago; a note a tab shows now — here or in another window — is not there', async () => {
+  it('YAZ-3487 S31, S35, S40: "Recently closed" shows the 8 pages closed last, the newest first, from every vault, each with how long ago; a page a tab shows now — here or in another window — is not there', async () => {
     const v = vault()
     const w = vault('w')
-    const notes = Array.from({ length: 9 }, (_, n) => `${v}/n${n}.md`)
-    const b = installBridge({ trees: { [v]: notes.map((path) => file(path)), [w]: [file(`${w}/x.md`), file(`${w}/open-there.md`)] } })
-    // Another window shows `open-there.md` in a tab: it is no closed note now (S37).
+    const pages = Array.from({ length: 9 }, (_, n) => `${v}/n${n}.md`)
+    const b = installBridge({ trees: { [v]: pages.map((path) => file(path)), [w]: [file(`${w}/x.md`), file(`${w}/open-there.md`)] } })
+    // Another window shows `open-there.md` in a tab: it is no closed page now (S37).
     b.state.windows = [{ id: 'w2', root: w, roots: [w], file: `${w}/open-there.md`, tabs: [`${w}/open-there.md`], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } }]
-    b.state.folders[v].closed = Object.fromEntries(notes.map((path, n) => [path, NOW - (n + 1) * HOUR]))
+    b.state.folders[v].closed = Object.fromEntries(pages.map((path, n) => [path, NOW - (n + 1) * HOUR]))
     b.state.folders[w].closed = { [`${w}/x.md`]: NOW - 30_000, [`${w}/open-there.md`]: NOW, [`${w}/gone.md`]: NOW }
     await storage.init()
     container = document.createElement('div')
@@ -241,7 +241,7 @@ describe('StartPage', () => {
     // This window shows `n0.md` in a tab (S35, S36): it is not there either.
     await act(async () => root?.render(<StartPage {...doors([v, w])} openTabs={[`${v}/n0.md`]} />))
     // `gone.md` is not on the disk (S38); `n0` and `open-there` are open; of the rest, the 8 newest.
-    expect(paths(el, 'closed')).toEqual([`${w}/x.md`, ...notes.slice(1, 8)])
+    expect(paths(el, 'closed')).toEqual([`${w}/x.md`, ...pages.slice(1, 8)])
     const [x, n1] = rowsOf(el, 'closed')
     expect([part(x, 'start__when'), part(x, 'tree__vault'), part(n1, 'start__when')]).toEqual(['now', 'Work', '2h'])
     expect(emptyLine(el, 'closed')).toBeNull()
@@ -319,9 +319,9 @@ describe('StartPage', () => {
     expect(el.querySelector('.start__empty')).toBeNull()
     await act(async () => land({ root: v, tree: [], generatedAt: 1 }))
     // "Recently closed" reads only the tree and the app state (YAZ-3487 S41): it says so with the tree.
-    expect([emptyLine(el, 'recent'), emptyLine(el, 'favorites'), emptyLine(el, 'closed')]).toEqual(['Pages you open show here.', null, 'Notes you close show here.'])
+    expect([emptyLine(el, 'recent'), emptyLine(el, 'favorites'), emptyLine(el, 'closed')]).toEqual(['Pages you open show here.', null, 'Pages you close show here.'])
     await act(async () => list([]))
-    expect([emptyLine(el, 'recent'), emptyLine(el, 'favorites'), emptyLine(el, 'closed')]).toEqual(['Pages you open show here.', 'No favorites yet. Right-click a file or folder → Add to favorites.', 'Notes you close show here.'])
+    expect([emptyLine(el, 'recent'), emptyLine(el, 'favorites'), emptyLine(el, 'closed')]).toEqual(['Pages you open show here.', 'No favorites yet. Right-click a file or folder → Add to favorites.', 'Pages you close show here.'])
     expect(el.querySelector('button.start__row')).toBeNull()
   })
 
@@ -448,7 +448,7 @@ describe('StartPage', () => {
     // A use that main added, and the vault's new name: each is a change of what the page reads.
     await emitState({ ...state, folders: { ...state.folders, [w]: { ...state.folders[w], opens: { [`${w}/x.md`]: used(1) } } } })
     expect(runs.length).toBe(settled + 1)
-    expect(rowsOf(el, 'recent').map((button) => [button.dataset.path, part(button, 'tree__vault')])).toEqual([[`${w}/x.md`, 'Work'], [`${v}/a.md`, 'Notes'], [`${v}/b.md`, 'Notes']])
+    expect(rowsOf(el, 'recent').map((button) => [button.dataset.path, part(button, 'tree__vault')])).toEqual([[`${w}/x.md`, 'Work'], [`${v}/a.md`, 'Pages'], [`${v}/b.md`, 'Pages']])
     await emitState({ ...state, folders: { ...state.folders, [v]: { ...state.folders[v], name: 'Journal' } } })
     expect(rowsOf(el, 'recent').map((button) => part(button, 'tree__vault'))).toEqual(['Journal', 'Journal'])
   })
@@ -779,7 +779,7 @@ describe('StartPage', () => {
     }
   })
 
-  it('the page goes while the keyboard is on one of its rows, and the page on show has no text (a PDF): the caret does NOT go into a note of the right panel', async () => {
+  it('the page goes while the keyboard is on one of its rows, and the page on show has no text (a PDF): the caret does NOT go into a page of the right panel', async () => {
     const v = vault()
     const { el } = await mount(keysFixture(v))
     // As App draws them: the page stands in the tab stack, and the right panel is no part of that stack.
@@ -797,7 +797,7 @@ describe('StartPage', () => {
       act(() => cell(el, 'recent', 0).focus())
       await act(async () => root?.render(null))
       expect(document.activeElement).not.toBe(right.firstElementChild)
-      // With a note on show in the stack too, the caret goes into THAT note.
+      // With a page on show in the stack too, the caret goes into THAT page.
       await act(async () => root?.render(<StartPage {...doors([v])} />))
       const main = editor()
       el.appendChild(main)
@@ -809,42 +809,42 @@ describe('StartPage', () => {
     }
   })
 
-  it('YAZ-3403 S1, S6, S12 to S15, D2: a rest of 400 ms on a note row opens the sidebar\'s note panel; a folder row opens none; a key, the pointer leaving and a scroll close it; with the setting off, or while the Space panel shows, no panel opens', async () => {
+  it('YAZ-3403 S1, S6, S12 to S15, D2: a rest of 400 ms on a page row opens the sidebar\'s page panel; a folder row opens none; a key, the pointer leaving and a scroll close it; with the setting off, or while the Space panel shows, no panel opens', async () => {
     vi.useRealTimers()
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
     vi.setSystemTime(NOW)
     const v = vault()
     const fixture: Fixture = { trees: { [v]: [dir(`${v}/Projects`), file(`${v}/a.md`)] }, opens: { [v]: { [`${v}/a.md`]: used(2, HOUR), [`${v}/Projects`]: used(1, 2 * HOUR) } } }
     const scope = () => ({ root: v, wikilinks: {} as never, textVars: {} })
-    const panel = () => document.querySelector('.note-preview')?.getAttribute('aria-label') ?? null
+    const panel = () => document.querySelector('.page-preview')?.getAttribute('aria-label') ?? null
     const enter = (target: Element) => act(() => void target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
     const leave = (target: Element) => act(() => void target.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })))
     const rest = async (target: Element, ms = HOVER_PREVIEW_DWELL_MS) => {
       enter(target)
       await act(async () => void vi.advanceTimersByTime(ms))
-      await act(async () => void (await import('../sidebar/NotePreview')))
+      await act(async () => void (await import('../sidebar/PagePreview')))
     }
     const { el } = await mount(fixture, { hoverPreview: true, previewScope: scope })
-    const note = row(el, `${v}/a.md`)
-    await rest(note, HOVER_PREVIEW_DWELL_MS - 1)
+    const page = row(el, `${v}/a.md`)
+    await rest(page, HOVER_PREVIEW_DWELL_MS - 1)
     expect(panel()).toBeNull() // not before the dwell
     await act(async () => void vi.advanceTimersByTime(1))
-    await act(async () => void (await import('../sidebar/NotePreview')))
+    await act(async () => void (await import('../sidebar/PagePreview')))
     expect(panel()).toBe('Preview of a') // S1
-    leave(note)
+    leave(page)
     expect(panel()).toBeNull() // S12: the pointer leaves
     await rest(row(el, `${v}/Projects`))
     expect(panel()).toBeNull() // S6: a folder row
-    await rest(note)
+    await rest(page)
     expect(panel()).toBe('Preview of a')
-    act(() => void note.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', bubbles: true })))
+    act(() => void page.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', bubbles: true })))
     expect(panel()).toBeNull() // S12: any key
-    leave(note)
-    await rest(note)
+    leave(page)
+    await rest(page)
     expect(panel()).toBe('Preview of a')
     act(() => void el.querySelector('.start')!.dispatchEvent(new Event('scroll')))
     expect(panel()).toBeNull() // S13: a scroll
-    leave(note)
+    leave(page)
 
     // S15: Preview on hover (or New tab page) off — no panel.
     await act(async () => root?.render(<StartPage {...doors([v])} hoverPreview={false} previewScope={scope} />))

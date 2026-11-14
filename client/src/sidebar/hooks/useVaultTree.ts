@@ -25,7 +25,7 @@ export function useSameList<T>(list: readonly T[]): readonly T[] {
 }
 
 /**
- * One landed tree's folders, outer before inner (`allDirs`), and its files that are no notes
+ * One landed tree's folders, outer before inner (`allDirs`), and its files that are no pages
  * (`otherFiles`): walked once per tree, so a tree of one vault walks no other vault again and the
  * lists of a vault that did not change keep their identity (YAZ-2602 R2).
  */
@@ -148,7 +148,7 @@ export function useVaultTree(
   const dirs = useMemo(() => (dirsByVault.length === 1 ? dirsByVault[0] : dirsByVault.flat()), [dirsByVault])
   /** One vault's own folders: what a rule about that vault alone resolves over. */
   const dirsOf = useCallback((vault: string): string[] => dirsByVault[roots.indexOf(vault)] ?? [], [dirsByVault, roots])
-  // The files that are not notes, for the search (YAZ-2620 🔒 D3): the index holds notes only. Vault by vault, as `dirsByVault`.
+  // The files that are not pages, for the search (YAZ-2620 🔒 D3): the index holds pages only. Vault by vault, as `dirsByVault`.
   const filesByVault = useMemo(() => roots.map((vault) => walkOf(shown.get(vault)).files), [shown, roots])
   // The Focus tab's rows (YAZ-2619 D2), off the live trees, in the order of `focusList` (App's, YAZ-3264 D1),
   // never the tree's. An item this Mac has no file for draws no row and STAYS in the list (YAZ-2702 S13).
@@ -288,7 +288,7 @@ export function useVaultTree(
   // A tab may be a FOLDER (YAZ-2290 D3), so both checks ask `treeHasPath`: a folder still in the
   // tree survives, one that left it closes like a file. The tree that can say is the one of the
   // vault that holds the file (YAZ-2602). A HIDDEN file — a "." name on its way, like a folder's `.template.md` that
-  // Settings › Daily notes › Open template opens (YAZ-3607 D6) — is never in the tree either, so neither check asks.
+  // Settings › Daily pages › Open template opens (YAZ-3607 D6) — is never in the tree either, so neither check asks.
   const validated = useRef(false)
   const home = activeFile === null ? null : rootOfPath(roots, activeFile)
   const homeTree = trees.get(home ?? root) ?? null

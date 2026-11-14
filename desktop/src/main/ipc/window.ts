@@ -197,7 +197,7 @@ function requireFilesPreview(v: unknown): FilesPreviewRequest {
  * answered here too, because it needs the caller's window: `link:ready` (YAZ-2589 A2).
  */
 export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void {
-  /** The vaults of a window's places (YAZ-4922 D3): a tab of a folder of a vault may be any note of that vault. */
+  /** The vaults of a window's places (YAZ-4922 D3): a tab of a folder of a vault may be any page of that vault. */
   const vaultsOf = (entry: WindowEntry): string[] => placeVaults(store.get().folders, entry.roots)
   const entryFor = (e: IpcMainInvokeEvent): WindowEntry => {
     const id = windows.idFor(e.sender)
@@ -472,13 +472,13 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     windows.highlight(entryFor(e).id, to === null ? null : requireString(to, 'to'))
   })
 
-  // `window:note-closed` (YAZ-3487 D10): the notes of tabs the caller closed go to "Recently closed" of ITS vaults.
-  handleWithEvent(CONTRACT.window.noteClosed, async (e, files: unknown) => {
+  // `window:page-closed` (YAZ-3487 D10): the pages of tabs the caller closed go to "Recently closed" of ITS vaults.
+  handleWithEvent(CONTRACT.window.pageClosed, async (e, files: unknown) => {
     const roots = vaultsOf(entryFor(e))
     if (!Array.isArray(files)) throw new BridgeFailure('BAD_REQUEST', "'files' must be a list of absolute paths")
     store.addClosed(roots, files.map((file, i) => requireAbsPath(file, `files[${i}]`)))
   })
-  // `window:forget-closed` (YAZ-3487 D14): drop notes from "Recently closed", or with null clear it, for the caller's vaults.
+  // `window:forget-closed` (YAZ-3487 D14): drop pages from "Recently closed", or with null clear it, for the caller's vaults.
   handleWithEvent(CONTRACT.window.forgetClosed, async (e, files: unknown) => {
     const roots = vaultsOf(entryFor(e))
     if (files !== null && !Array.isArray(files)) throw new BridgeFailure('BAD_REQUEST', "'files' must be null or a list of absolute paths")

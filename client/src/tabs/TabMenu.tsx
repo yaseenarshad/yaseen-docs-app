@@ -81,7 +81,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
     onMoveToRight === undefined ? [] : [{ id: 'move-right', label: 'Right panel', onSelect: () => onMoveToRight(menu.path) }],
   ].filter((group) => group.length > 0)
   // Four groups (YAZ-2949 D6), in this order: the tab's place · find the file · this tab
-  // and its note · outside the app. `ContextMenu` skips an empty group and closes the menu after each item.
+  // and its page · outside the app. `ContextMenu` skips an empty group and closes the menu after each item.
   // The two list toggles (YAZ-3264 D2) stand where the sidebar's file menu has them: focus right after
   // "Show in sidebar", favorites first in the last group, each with its sidebar tab's glyph (D6). Each acts on the state the menu read (S14).
   const lists = menu.lists ?? null

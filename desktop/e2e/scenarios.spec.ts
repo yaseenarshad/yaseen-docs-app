@@ -65,7 +65,7 @@ let vaultSrc: string
 let vaultA: string
 let vaultB: string
 let vaultC: string
-let noteA: string // vault A's seeded file (SEED_FILE)
+let pageA: string // vault A's seeded file (SEED_FILE)
 let app: ElectronApplication
 let winA: Page
 let winB: Page
@@ -77,7 +77,7 @@ test.beforeAll(async () => {
   vaultA = await copyVault(vaultSrc)
   vaultB = await copyVault(vaultSrc)
   vaultC = await copyVault(vaultSrc)
-  noteA = path.join(vaultA, SEED_FILE)
+  pageA = path.join(vaultA, SEED_FILE)
 })
 
 test.afterAll(async () => {
@@ -88,7 +88,7 @@ test.afterAll(async () => {
 })
 
 test('scenario 1 — ⌘⇧N opens a new window on the same vault with a blank tab (YAZ-3343 D35, S59): cascaded bounds; a page opened there syncs live', async () => {
-  app = await launchApp({ userData, seedState: seededState(vaultA, noteA) })
+  app = await launchApp({ userData, seedState: seededState(vaultA, pageA) })
   winA = await appWindow(app, 'w1')
   await expect(editorOf(winA)).toContainText(SEED_BODY)
 
@@ -113,9 +113,9 @@ test('scenario 1 — ⌘⇧N opens a new window on the same vault with a blank t
   await shoot(winB, 'g3-01a-new-window-blank-tab')
 
   // The same page in B, by the search the blank tab gives: the two windows now show one file.
-  await openFromBlankTab(winB, 'Welcome note')
+  await openFromBlankTab(winB, 'Welcome page')
   await expect(editorOf(winB)).toContainText(SEED_BODY)
-  await expect.poll(() => winB.title()).toBe(titleOf(vaultA, noteA))
+  await expect.poll(() => winB.title()).toBe(titleOf(vaultA, pageA))
   await shoot(winB, 'g3-01b-same-page')
 
   // Edit in A (inside an existing bullet — never right after Enter, Milkdown remaps the caret):
@@ -135,7 +135,7 @@ test('scenario 2 — external edit while B is dirty raises the conflict bar; Rel
   await editorOf(winB).getByText(LAST_BULLET).click()
   await winB.keyboard.press('End')
   await winB.keyboard.type(` ${DIRTY_MARKER}`, { delay: 10 })
-  await writeFile(noteA, `# Welcome\n\n${EXTERNAL_BODY}\n`) // plain fs write: different content, fresh mtime
+  await writeFile(pageA, `# Welcome\n\n${EXTERNAL_BODY}\n`) // plain fs write: different content, fresh mtime
 
   await expect(winB.locator('.conflict-bar')).toBeVisible({ timeout: 10_000 })
   await expect(winB.locator('.conflict-bar')).toContainText('File changed on disk.')
@@ -147,8 +147,8 @@ test('scenario 2 — external edit while B is dirty raises the conflict bar; Rel
   await expect(editorOf(winB)).not.toContainText(DIRTY_MARKER)
   await expect(winB.locator('.conflict-bar')).toHaveCount(0)
   // Reload never writes: the disk still holds exactly the external version.
-  expect(await readFile(noteA, 'utf8')).toContain(EXTERNAL_BODY)
-  expect(await readFile(noteA, 'utf8')).not.toContain(DIRTY_MARKER)
+  expect(await readFile(pageA, 'utf8')).toContain(EXTERNAL_BODY)
+  expect(await readFile(pageA, 'utf8')).not.toContain(DIRTY_MARKER)
   await shoot(winB, 'g3-02b-reload-resolved')
 })
 
@@ -157,8 +157,8 @@ test('scenario 3 — ⌘-click on a sidebar file opens a BACKGROUND TAB; the con
   await winA.locator('.tree__row--file', { hasText: 'Ideas' }).click({ modifiers: ['Meta'] })
   // A background tab in THIS window: the strip gains a tab, activation unchanged, NO new window.
   await expect(tabsOf(winA)).toHaveCount(2)
-  await expect(activeTab(winA)).toHaveText('Welcome note')
-  await expect(winA.locator('.tree__row--active')).toContainText('Welcome note')
+  await expect(activeTab(winA)).toHaveText('Welcome page')
+  await expect(winA.locator('.tree__row--active')).toContainText('Welcome page')
   expect(await windowCount(app)).toBe(2)
   await shoot(winA, 'g3-03a-cmd-click-background-tab')
 
@@ -172,7 +172,7 @@ test('scenario 3 — ⌘-click on a sidebar file opens a BACKGROUND TAB; the con
   await expect(editorOf(winC)).toContainText(IDEAS_BODY)
   await expect.poll(() => winC.title()).toBe(titleOf(vaultA, path.join(vaultA, 'Ideas.md')))
   // The origin window stayed put: same active file/tab, untouched.
-  await expect(activeTab(winA)).toHaveText('Welcome note')
+  await expect(activeTab(winA)).toHaveText('Welcome page')
   await shoot(winC, 'g3-03b-context-menu-new-window')
 })
 
@@ -193,20 +193,20 @@ test('scenario 6 — relaunch restores all three windows with their roots and fi
 })
 
 test('scenario 4 — hot deep link routes to the window on its vault; the other window untouched', async () => {
-  const noteB = path.join(vaultB, SEED_FILE)
+  const pageB = path.join(vaultB, SEED_FILE)
   app = await launchApp({
     userData,
     seedState: multiWindowState(
       [
-        { id: 'wa', root: vaultA, file: noteA },
-        { id: 'wb', root: vaultB, file: noteB },
+        { id: 'wa', root: vaultA, file: pageA },
+        { id: 'wb', root: vaultB, file: pageB },
       ],
       [vaultA, vaultB],
     ),
   })
   winA = await appWindow(app, 'wa')
   winB = await appWindow(app, 'wb')
-  await expect(editorOf(winA)).toContainText(EXTERNAL_BODY) // vault A note as scenario 2 left it
+  await expect(editorOf(winA)).toContainText(EXTERNAL_BODY) // vault A page as scenario 2 left it
   await expect(editorOf(winB)).toContainText(SEED_BODY) // vault B copy is pristine
 
   const roadmapB = path.join(vaultB, 'Projects', 'Roadmap.md')
@@ -216,8 +216,8 @@ test('scenario 4 — hot deep link routes to the window on its vault; the other 
   await expect.poll(() => winB.title()).toBe(titleOf(vaultB, roadmapB))
   await expect(editorOf(winB)).toContainText(ROADMAP_BODY)
   expect(await windowCount(app)).toBe(2)
-  await expect.poll(() => winA.title()).toBe(titleOf(vaultA, noteA))
-  await expect(winA.locator('.tree__row--active')).toContainText('Welcome note')
+  await expect.poll(() => winA.title()).toBe(titleOf(vaultA, pageA))
+  await expect(winA.locator('.tree__row--active')).toContainText('Welcome page')
   await shoot(winB, 'g3-04-hot-link-routed')
 })
 
@@ -237,7 +237,7 @@ test('scenario 5 — deep link to a recents-only vault opens a new window on tha
   await expect
     .poll(async () => (await readState(userData)).windows.find((w) => w.id === winParam(winNew))?.root)
     .toBe(vaultB)
-  await expect.poll(() => winA.title()).toBe(titleOf(vaultA, noteA)) // vault A window untouched
+  await expect.poll(() => winA.title()).toBe(titleOf(vaultA, pageA)) // vault A window untouched
   await shoot(winNew, 'g3-05-recents-link-new-window')
 })
 
@@ -254,19 +254,19 @@ test('scenario 7 (bonus) — Finder "Open With" (open-file) rides the same link 
 })
 
 test('scenario 8 — "Reopen: Last vault": a plain launch brings back only the window of the vault used last; the other two are forgotten (YAZ-2589 D2, D3)', async () => {
-  const noteB = path.join(vaultB, SEED_FILE)
+  const pageB = path.join(vaultB, SEED_FILE)
   // Three saved windows on three vaults, as a quit leaves them; vault B was used last (first in `recents`).
   const seed = multiWindowState(
     [
-      { id: 'la', root: vaultA, file: noteA },
-      { id: 'lb', root: vaultB, file: noteB },
+      { id: 'la', root: vaultA, file: pageA },
+      { id: 'lb', root: vaultB, file: pageB },
       { id: 'lc', root: vaultC, file: path.join(vaultC, SEED_FILE) },
     ],
     [vaultB, vaultA, vaultC],
   )
   app = await launchApp({ userData, seedState: { ...seed, settings: { ...seed.settings, startupWindows: 'last' } } })
   const win = await appWindow(app, 'lb')
-  await expect.poll(() => win.title()).toBe(titleOf(vaultB, noteB))
+  await expect.poll(() => win.title()).toBe(titleOf(vaultB, pageB))
   expect(await windowCount(app)).toBe(1)
   // The windows that did not come back are gone from the state file; their vaults stay in the recents.
   await expect.poll(async () => (await readState(userData)).windows.map((w) => w.id)).toEqual(['lb'])

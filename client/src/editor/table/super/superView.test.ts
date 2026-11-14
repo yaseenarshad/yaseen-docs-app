@@ -11,7 +11,7 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { createCrepe, getMarkdownForSave } from '../../createCrepe'
 import { createFindChannel } from '../../find/findChannel'
-import { mountNote, unmountAll } from '../tableTestKit'
+import { mountPage, unmountAll } from '../tableTestKit'
 import { loadSuperTable, SUPER_TYPING_MS } from '../tableZoomPill'
 import { superRuns } from './superData'
 import { activeViewAt, setActiveTab, SUPER_HIDDEN_CLASS } from './superTables'
@@ -42,7 +42,7 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** A note with its table's view `name` showing; `saved` is the note as the app saves it, before any change. */
 async function showView(markdown: string, name: string) {
-  const m = await mountNote(markdown)
+  const m = await mountPage(markdown)
   const saved = getMarkdownForSave(m.crepe)
   await loadSuperTable()
   setActiveTab(m.view, tablePos(m.view), name)
@@ -133,7 +133,7 @@ describe('YAZ-4876 S5: edit in a view, header rename, find', () => {
   })
 
   it('item 15: a key in a header cell renames the column in the views, in the same undo step', async () => {
-    const { view, crepe } = await mountNote(NOTE)
+    const { view, crepe } = await mountPage(NOTE)
     const saved = getMarkdownForSave(crepe)
     // The end of "Layer" in the header row.
     let at = -1
@@ -185,7 +185,7 @@ describe('YAZ-4876 S5: edit in a view, header rename, find', () => {
   })
 
   it('item 15: a key in a body row runs no rename: the views stay the same object', async () => {
-    const { view } = await mountNote(NOTE)
+    const { view } = await mountPage(NOTE)
     const views = view.state.doc.nodeAt(tablePos(view))!.attrs.views
     let at = -1
     view.state.doc.descendants((node, pos) => {
@@ -219,7 +219,7 @@ describe('YAZ-4876 S5: edit in a view, header rename, find', () => {
   })
 })
 
-describe('YAZ-4897: a read-only note shows a Super table’s tabs, and its views read only', () => {
+describe('YAZ-4897: a read-only page shows a Super table’s tabs, and its views read only', () => {
   // table.css's `display: none` rules, read as text, against the real anchor (jsdom paints nothing).
   const hideRules = [...tableCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)]
     .filter(([, , body]) => /display:\s*none/.test(body!))
@@ -236,7 +236,7 @@ describe('YAZ-4897: a read-only note shows a Super table’s tabs, and its views
   const tab = (view: EditorView, name: string) => [...view.dom.querySelectorAll<HTMLButtonElement>('.table-super-bar__tab')].find((t) => t.textContent === name)!
 
   it('the tabs show and switch; the pill, "+", Sort / Group / Filter, the summaries, edits and drags are off; the note is unchanged', async () => {
-    const { view, crepe } = await mountNote(NOTE)
+    const { view, crepe } = await mountPage(NOTE)
     const saved = getMarkdownForSave(crepe)
     await loadSuperTable()
     await wait(0)
@@ -272,8 +272,8 @@ describe('YAZ-4897: a read-only note shows a Super table’s tabs, and its views
     expect(getMarkdownForSave(crepe)).toBe(saved)
   })
 
-  it('a plain table keeps no anchor in a read-only note', async () => {
-    const { view, crepe } = await mountNote(TABLE)
+  it('a plain table keeps no anchor in a read-only page', async () => {
+    const { view, crepe } = await mountPage(TABLE)
     crepe.setReadonly(true)
     await wait(0)
     expect(hidden(view.dom.querySelector('.table-zoom-anchor')!)).toBe(true)

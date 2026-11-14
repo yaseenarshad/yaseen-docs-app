@@ -12,17 +12,17 @@ import { ensureBoardMergeRule, resolveRebase } from './resolve'
  *
  * The order is fixed and load-bearing — commit, fetch, rebase, push:
  *   - COMMIT FIRST so the rebase has a clean tree to move. Nothing here ever stashes; a stash is
- *     a place work can be forgotten, and this app's promise is that the user's notes are always
+ *     a place work can be forgotten, and this app's promise is that the user's pages are always
  *     on disk exactly as they left them. ONE exception (🔒 YAZ-1801 D12, YAZ-3039): a TRACKED file held back
  *     as too large is the one edit a commit can never absorb, and it would make the rebase refuse
  *     ("unstaged changes"). Only those files are parked for the length of the rebase and their
  *     exact bytes copied back straight after (`parkWhileRebasing`) — files sync will never commit
  *     anyway, restored by a copy, never a merge.
- *   - REBASE, never merge. Two machines editing different notes replay cleanly and the history
+ *   - REBASE, never merge. Two machines editing different pages replay cleanly and the history
  *     stays a line anyone can read in the GitHub UI.
  *   - A rebase that CONFLICTS on drawings is settled and finished (YAZ-1897 in Draw, YAZ-3039 here,
  *     `resolve.ts`): a drawing merges shape by shape, a diagram keeps both copies, the vault's two
- *     list files merge per entry, and the pass reports what it merged. A NOTE merges its comments by
+ *     list files merge per entry, and the pass reports what it merged. A PAGE merges its comments by
  *     id and its text line by line; when both sides changed the same lines, both versions are kept
  *     (YAZ-4615 D4, D9). Anything else `resolve.ts` does not settle is aborted immediately, exactly as
  *     before (the lossless rule, YAZ-1081): git puts the working tree back byte-for-byte and the pass
@@ -131,7 +131,7 @@ const NOTHING_TO_COMMIT = /nothing to commit|nothing added to commit|no changes 
 
 /**
  * git's refusal to START a rebase over a working tree that changed after the commit (YAZ-3044 A1):
- * a note autosaved between the pass's commit and its `rebase`. Not a conflict — a retry.
+ * a page autosaved between the pass's commit and its `rebase`. Not a conflict — a retry.
  */
 const REBASE_REFUSED = /cannot rebase: (you have unstaged changes|your index contains uncommitted changes)/i
 
@@ -255,7 +255,7 @@ export async function syncPass(root: string, opts?: { candidates?: readonly stri
         return false
       }
       // YAZ-3039: settle the drawing conflicts and finish; it aborts (losslessly) whatever it cannot
-      // settle — a note conflict above all, which keeps Docs' own words below (YAZ-3028 D4).
+      // settle — a page conflict above all, which keeps Docs' own words below (YAZ-3028 D4).
       const report = await resolveRebase(bin, root, { before: span[0] ?? 'HEAD', upstream: span[1] ?? '@{u}' })
       merged = report ?? []
       return report !== null

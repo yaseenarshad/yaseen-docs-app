@@ -37,7 +37,7 @@ const arrowFor = (typed: string) => ARROWS[typed.replace(/-+/g, '-').replace(/=+
 
 let on = true
 
-/** App, when Settings › Editor › Typing › Arrows changes. An open note uses it at its next keystroke. */
+/** App, when Settings › Editor › Typing › Arrows changes. An open page uses it at its next keystroke. */
 export function setTypingArrows(next: boolean): void {
   on = next
 }

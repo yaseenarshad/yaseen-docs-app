@@ -69,7 +69,7 @@ interface FocusFolderListProps {
   /** The scope this tab shows: its check, off, takes the folder off the screen, so a box asks first. */
   scope: 'workspace' | 'vault'
   /**
-   * "New note" / "New drawing" / "New folder" on a folder's menu (YAZ-4782): the Sidebar opens the name field in that
+   * "New page" / "New drawing" / "New folder" on a folder's menu (YAZ-4782): the Sidebar opens the name field in that
    * folder, and the item, made in a vault's root, joins it. Absent: the menu has no New rows.
    */
   onNew?: (id: string, kind: EntryKind) => void
@@ -260,7 +260,7 @@ export function FocusFolderList({ kind, folders, roots, renderItems, editing, on
             })()], ...(onNew === undefined ? [] : [[
               // YAZ-4782: the tree menu's New rows, in its order; the item is made in a vault's root and joins this folder.
               // YAZ-5100: each with the icon of what it makes, as the tree menu's.
-              { id: 'focus-folder-new-note', label: unit('New note'), icon: <NewKindIcon kind="file" />, onSelect: () => newIn(menu.id, 'file') },
+              { id: 'focus-folder-new-page', label: unit('New page'), icon: <NewKindIcon kind="file" />, onSelect: () => newIn(menu.id, 'file') },
               { id: 'focus-folder-new-drawing', label: 'New drawing', icon: <NewKindIcon kind="drawing" />, onSelect: () => newIn(menu.id, 'drawing') },
               { id: 'focus-folder-new-folder', label: 'New folder', icon: <NewKindIcon kind="dir" />, onSelect: () => newIn(menu.id, 'dir') },
             ]]), [{ id: 'focus-folder-rename', label: 'Rename', onSelect: () => onEdit(menu.id) }, ...(only === menu.id ? [] : [{ id: 'focus-folder-only', label: 'Hide all others', onSelect: () => onHideOthers(menu.id) }])], scopeGroup(kind, scopesOf(menu.id), (to, on) => onSetScope(menu.id, to, on), { scope, ask: () => leave(menu.id) }), [{ id: 'focus-folder-delete', label: kind === 'focus' ? 'Delete focus folder' : 'Delete favorite folder', danger: true, onSelect: () => setDeleting(folders.find((f) => f.id === menu.id) ?? null) }]]}

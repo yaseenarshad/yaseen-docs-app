@@ -7,11 +7,11 @@
  *    YAZ-4302), and one space. Any other line — a wrong marker for its level, a level with no parent, two spaces —
  *    stays a paragraph that holds its letters as they are, so it comes back byte for byte.
  *  - The letter styles are marks: bold `strong`, italic `emphasis`, underline `underline`, strike `strike_through`,
- *    highlight `highlight` (yellow is the note's `null`), color `text_color` (the box's own mark, `textBoxLock.ts`).
+ *    highlight `highlight` (yellow is the page's `null`), color `text_color` (the box's own mark, `textBoxLock.ts`).
  *  - The letters the document has no place for — each line break, and a bullet's indent, marker and space — keep the
  *    styles they had: the runs of the text before the edit are moved over the edit (`remapTextRunsForTextEdit`) and
  *    kept on those letters only. So an unchanged box gives back the same `textRuns` after `normalizeTextRuns`.
- *  - `[[link]]` pills stay letters, as in a note: the canvas draws the pill.
+ *  - `[[link]]` pills stay letters, as in a page: the canvas draws the pill.
  *
  * Offsets in and out of the editor are offsets in `originalText`: `posAt` / `offsetAt` skip a bullet's prefix.
  */
@@ -209,7 +209,7 @@ export function docToBox(
   return { text, textRuns: helpers.normalizeTextRuns([...visible, ...kept], text.length) }
 }
 
-/** The note highlight names a box draws by name (the engine's `TEXT_HIGHLIGHT_FILLS`); yellow is the note's `null`. */
+/** The page highlight names a box draws by name (the engine's `TEXT_HIGHLIGHT_FILLS`); yellow is the page's `null`. */
 const BOX_HIGHLIGHT_NAMES = new Set(['green', 'blue', 'pink'])
 
 /**
@@ -219,7 +219,7 @@ const BOX_HIGHLIGHT_NAMES = new Set(['green', 'blue', 'pink'])
 export const PANEL_HIGHLIGHT_HEX: Readonly<Record<string, string>> = { orange: '#ff9632', purple: '#a06eff', red: '#ff5a50', gray: '#969696' }
 
 /**
- * A note highlight as a box run keeps it. A panel name that is no box name would be dropped by the engine, so it
+ * A page highlight as a box run keeps it. A panel name that is no box name would be dropped by the engine, so it
  * becomes its own hex, which a box draws (a custom highlight).
  */
 function boxHighlight(color: string | null): string {

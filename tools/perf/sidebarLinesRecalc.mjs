@@ -3,12 +3,12 @@
  * USAGE: node tools/perf/sidebarLinesRecalc.mjs [--rows 10200] [--rounds 20] [--css <file>] [--only <case,…>] [--budget 7.3]
  *
  * The style and layout cost of the sidebar's level lines and thread (YAZ-3309, bug YAZ-3329), at the scale
- * of a fully open 10,000-note vault. Headless Chromium (Playwright): no window opens, so it is safe on a Mac
+ * of a fully open 10,000-page vault. Headless Chromium (Playwright): no window opens, so it is safe on a Mac
  * that someone is using. Local only, not in CI: timings depend on the machine. Run `npm run build` first.
  *
  * It loads the shipped CSS (`desktop/out/renderer/assets/index-*.css`, or `--css`) and builds the DOM of
  * `Tree.tsx` by hand: a small open top folder, then two open top folders of about 5,100 rows each (100
- * folders, each with an open subfolder of 50 notes and 50 notes of its own). Each folder row carries
+ * folders, each with an open subfolder of 50 pages and 50 pages of its own). Each folder row carries
  * `tree__row--sticky`, as in Tree.tsx (YAZ-3440 D1). The page also runs the real
  * `client/src/sidebar/levelLinesHover.ts` (built with esbuild), as `Sidebar.tsx` does for "On hover", and the
  * real `client/src/sidebar/stickyFolders.ts`, which writes `data-sticky-levels` on the list (D2).
@@ -41,7 +41,7 @@
  *   click    a mouse click on a row
  *   row      the mouse moves to the next row inside one folder
  *   cross    the mouse moves between a row of the small top folder and a row of a big one
- *   expand   a folder of 50 notes opens (its list goes into the DOM), then closes
+ *   expand   a folder of 50 pages opens (its list goes into the DOM), then closes
  *   scroll   the mouse in the list, the list scrolls 2 rows a frame for `rounds` × 15 frames, through about 6
  *            ends of folders (YAZ-3440): style and layout of each frame, the worst frame and the mean. The
  *            worst frame (style + layout) must stay at or under `--budget` ms (7.3, the YAZ-3329 budget).
@@ -74,11 +74,11 @@ const sticky = css.includes('tree__row--sticky')
 const file = (depth, name) => `<li role="treeitem" aria-selected="false"><button type="button" class="tree__row tree__row--file" style="padding-left:${8 + depth * 14 + 14}px" data-path="${name}"><span class="tree__label">${name}</span></button></li>`
 const dir = (depth, name, children) =>
   `<li role="treeitem" aria-expanded="${children !== null}" aria-selected="false"><button type="button" class="tree__row tree__row--dir tree__row--sticky" style="padding-left:${8 + depth * 14}px" data-path="${name}"><span class="tree__chevron${children !== null ? ' tree__chevron--open' : ''}"></span><span class="tree__label">${name}</span></button>${children === null ? '' : `<ul class="tree" role="group" style="--tree-depth:${depth + 1}">${children}</ul>`}</li>`
-const notes = (depth, prefix, n) => Array.from({ length: n }, (_, k) => file(depth, `${prefix}/n${k}`)).join('')
-const big = (name) => dir(0, name, Array.from({ length: bigFolders }, (_, f) => dir(1, `${name}/d${f}`, dir(2, `${name}/d${f}/s`, notes(3, `${name}/d${f}/s`, 50)) + notes(2, `${name}/d${f}`, 50))).join(''))
-const tree = dir(0, 'Z', notes(1, 'Z', 4)) + big('A') + big('B')
-/** 9 open folders, each in the one before, each with 30 notes after its subfolder: deeper than the 7-level cap. */
-const chain = (depth) => dir(depth, `L${depth}`, (depth < 8 ? chain(depth + 1) : '') + notes(depth + 1, `L${depth}`, 30))
+const pages = (depth, prefix, n) => Array.from({ length: n }, (_, k) => file(depth, `${prefix}/n${k}`)).join('')
+const big = (name) => dir(0, name, Array.from({ length: bigFolders }, (_, f) => dir(1, `${name}/d${f}`, dir(2, `${name}/d${f}/s`, pages(3, `${name}/d${f}/s`, 50)) + pages(2, `${name}/d${f}`, 50))).join(''))
+const tree = dir(0, 'Z', pages(1, 'Z', 4)) + big('A') + big('B')
+/** 9 open folders, each in the one before, each with 30 pages after its subfolder: deeper than the 7-level cap. */
+const chain = (depth) => dir(depth, `L${depth}`, (depth < 8 ? chain(depth + 1) : '') + pages(depth + 1, `L${depth}`, 30))
 
 const script = (file, globalName) => transformSync(readFileSync(path.join(repo, file), 'utf8'), { loader: 'ts', format: 'iife', globalName }).code
 /**
@@ -148,7 +148,7 @@ const probes = `
 const page = (lines, style, content = tree) => `<!doctype html><html><head><style>${css}</style></head><body style="margin:0">
 <div class="app" data-sidebar-lines="${lines}" data-sidebar-line-style="${style}" style="--thread-width:2px;display:flex;height:800px">
 <aside class="sidebar" style="width:260px;display:flex;flex-direction:column"><div class="sidebar__body" style="overflow:auto"><ul class="tree" role="tree">${content}</ul></div></aside>
-<main id="main" tabindex="-1" style="flex:1">note</main></div><script>${listeners}${probes}</script></body></html>`
+<main id="main" tabindex="-1" style="flex:1">page</main></div><script>${listeners}${probes}</script></body></html>`
 
 const browser = await chromium.launch({ headless: true })
 const frame = (p) => p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))))
@@ -198,14 +198,14 @@ for (const [lines, style] of [['hover', 'plain'], ['always', 'plain'], ['off', '
   // ---------- behavior, in real Chromium ----------
   const marks = () => p.evaluate(() => ['data-mouse-in', 'data-key-focus'].filter((a) => document.querySelector('.sidebar__body').hasAttribute(a)))
   /** The opacity of a level's grey line, of a row's thread piece and of a folder's coloured chevron, after the fades. */
-  const look = async (folder, note) => {
+  const look = async (folder, page) => {
     await p.waitForTimeout(400)
     return p.evaluate(([f, n]) => {
       const li = (path) => document.querySelector(`[data-path="${path}"]`).parentElement
       // A pseudo-element with no `content` is not drawn: 'none', whatever its opacity reads.
       const drawn = (el, pseudo) => (getComputedStyle(el, pseudo).content === 'none' ? 'none' : getComputedStyle(el, pseudo).opacity)
       return { line: drawn(li(f).querySelector(':scope > ul'), '::before'), thread: drawn(li(n), '::before'), chevron: drawn(li(f), '::after') }
-    }, [folder, note])
+    }, [folder, page])
   }
   const hover = lines === 'hover'
   const shows = lines === 'off' ? '0' : '1'
@@ -214,7 +214,7 @@ for (const [lines, style] of [['hover', 'plain'], ['always', 'plain'], ['off', '
   check(`${name}: the mouse in the list`, await marks(), hover ? ['data-mouse-in'] : [])
   await p.mouse.move(out.x, out.y)
   check(`${name}: the mouse out of the list`, await marks(), [])
-  // S2: Tab from the note into the tree, the mouse away. D11: the keys draw no thread.
+  // S2: Tab from the page into the tree, the mouse away. D11: the keys draw no thread.
   await p.focus('#main')
   await p.keyboard.press('Tab')
   check(`${name}: a Tab into a row (S2)`, await marks(), hover ? ['data-key-focus'] : [])
@@ -227,7 +227,7 @@ for (const [lines, style] of [['hover', 'plain'], ['always', 'plain'], ['off', '
   check(`${name}: the mouse leaves after a click (S3)`, await marks(), [])
   check(`${name}: the lines after a click and the mouse out (S3)`, (await look('Z', 'Z/n1')).line, lines === 'always' ? '1' : '0')
   if (style === 'thread') {
-    // D7: the mouse rests on a note: the thread and the coloured chevron of its folder show.
+    // D7: the mouse rests on a page: the thread and the coloured chevron of its folder show.
     await p.mouse.move(150, (await at('[data-path="Z/n2"]')).y + ROW / 2)
     check(`${name}: the thread on a resting mouse (D7)`, await look('Z', 'Z/n2'), { line: '1', thread: '1', chevron: '1' })
     // Bug YAZ-3342: the same folder in inline rename draws no coloured chevron.
@@ -355,13 +355,13 @@ for (const [lines, style] of [['hover', 'plain'], ['always', 'plain'], ['off', '
   // Inside one folder: the rows of A/d0/s, one after the other.
   const first = await at('[data-path="A/d0/s/n0"]')
   row.row = await measure(rounds * 2, (k) => p.mouse.move(150, first.y + ROW / 2 + (k % 10) * ROW))
-  // Across top folders: a note of Z, then the first note of A (A holds about half the tree).
+  // Across top folders: a page of Z, then the first page of A (A holds about half the tree).
   const z = await at('[data-path="Z/n3"]')
   const a = await at('[data-path="A/d0"]')
   row.cross = await measure(rounds * 2, (k) => p.mouse.move(150, (k % 2 === 0 ? z : a).y + ROW / 2))
   await p.mouse.move(out.x, out.y)
   await p.waitForTimeout(400)
-  // Open and close a folder of 50 notes: its list goes into the DOM and out, as React mounts it.
+  // Open and close a folder of 50 pages: its list goes into the DOM and out, as React mounts it.
   row.expand = await measure(rounds * 2, (k) =>
     p.evaluate((open) => {
       const li = document.querySelector('[data-path="A/d1/s"]').parentElement

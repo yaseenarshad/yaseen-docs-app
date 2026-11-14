@@ -3,37 +3,37 @@
  * decorations (`wikilinkPlugin.ts`), wired through `createCrepe({ wikilinkNav })`.
  *
  * GESTURES (YAZ-3936, demo round 1 C4 of YAZ-3879): a click opens a link only with a gesture bound in Settings ›
- * Hotkeys › "Links in a note" (`shared/keys/gestures.ts`, read at the click). The defaults are browser style (G6 of
+ * Hotkeys › "Links in a page" (`shared/keys/gestures.ts`, read at the click). The defaults are browser style (G6 of
  * YAZ-3966): ⌘-click opens it in a background tab (`nav.openBackground`: appended, never activated, never focused),
  * ⌘⇧-click in a new tab in front (`nav.openNewTab`), and "Open in this tab" has no gesture (`nav.openCurrent`, an
  * already-open path goes to its tab). A read-only
- * note keeps "a click opens" (point 6): a plain click there opens in this tab. Any other click is the editor's
+ * page keeps "a click opens" (point 6): a plain click there opens in this tab. Any other click is the editor's
  * (`linkClickAction`, `linkGesture.ts`).
  *
  * MOUSEDOWN, not click: acting on mousedown and calling `preventDefault()` keeps the caret and focus exactly where
  * they were, so a ⌘ background open leaves the document's focused/unfocused state untouched. A revealed (raw) match
  * has no `.wikilink` decoration span, so this handler ignores it (normal caret placement).
  *
- * A CLICK AS ON TEXT (YAZ-3935, C1 and C2 of YAZ-3879): in an editable note a plain click on a pill puts the caret at
+ * A CLICK AS ON TEXT (YAZ-3935, C1 and C2 of YAZ-3879): in an editable page a plain click on a pill puts the caret at
  * its nearer edge (the pointer against the pill's middle), and a double-click selects exactly the link; both on
  * mousedown with the default prevented, so the link never flashes its raw text. The link is one unit (`idLinkCaret.ts`).
  * That takes the browser's own drag too, so a drag that starts on a pill is followed here (`followDrag`).
  *
  * An UNRESOLVED link is created first (`createFromLink` — bare targets under `nav.createFolder()`, the Files & Links
- * "default location for new notes" setting read at CLICK time; C2-, GRO-2240), then opened by the same gesture: a
+ * "default location for new pages" setting read at CLICK time; C2-, GRO-2240), then opened by the same gesture: a
  * dead link makes its page only through an open gesture (point 5). Failures surface via `nav.onNotice` (App's
- * passive link-notice), never a dialog. A click while its note is being made does nothing, and one after it was made,
- * before the index holds it, opens that note (YAZ-2478): two notes of one title are two files, so the disk refuses no
+ * passive link-notice), never a dialog. A click while its page is being made does nothing, and one after it was made,
+ * before the index holds it, opens that page (YAZ-2478): two pages of one title are two files, so the disk refuses no
  * second one. Two more notices (F2, GRO-2197) keep otherwise invisible outcomes visible: a click during the pre-index
- * window (nothing resolvable yet) says the index is still loading, and a background open that CREATES a note names
+ * window (nothing resolvable yet) says the index is still loading, and a background open that CREATES a page names
  * it — the new page opened in a background tab, so nothing else on screen moves. An ID link (YAZ-2293) is the one
- * unresolved link that is NEVER created: an id names a note that existed, so a page called `<id>.md` would be a
- * different note wearing its name — the click says the note is gone and does nothing else. A resolving one opens
+ * unresolved link that is NEVER created: an id names a page that existed, so a page called `<id>.md` would be a
+ * different page wearing its name — the click says the page is gone and does nothing else. A resolving one opens
  * from its title widget, which carries `.wikilink` and sits inside the match, so the hit-test below finds it like any
  * segment. `[[#h]]` (same-file, empty target) is a no-op — the heading jump is GRO-2239.
  *
- * A LINK TO A NOTE CARD (YAZ-5030, `linkCard`): a plain click opens the CARD WINDOW (the Explore card layer, through
- * the one open hook, `openCardWindow`), in an editable note too, and "Open in this tab" does the same; any tab gesture
+ * A LINK TO A PAGE CARD (YAZ-5030, `linkCard`): a plain click opens the CARD WINDOW (the Explore card layer, through
+ * the one open hook, `openCardWindow`), in an editable page too, and "Open in this tab" does the same; any tab gesture
  * (⌘-click: a background tab, by default) opens the card's PAGE there, landed on the card (`landOnCard`). A card in a
  * CARD FILE (YAZ-5037) opens that file's tab: the tab is the card, so there is nothing to land on.
  */
@@ -41,14 +41,14 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { vaultNoteId } from '@shared/noteId'
+import { vaultPageId } from '@shared/pageId'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction } from '@shared/keys'
 import { createFromLink } from './createFromLink'
 import { linkClickAction, trackLinkHand } from '../linkGesture'
 import type { LinkActions } from '../linkMenu'
 import { WIKILINK_CLASS, WIKILINK_RE, eachPlainRun, linkCard, linkPageName, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
-import { landOnCard, openCardWindow } from '../noteCard/noteCardOpen'
+import { landOnCard, openCardWindow } from '../card/cardOpen'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
 
 /**
@@ -61,7 +61,7 @@ export interface WikilinkNav extends LinkActions {
   /**
    * Root-relative folder where a BARE unresolved link creates its page ('' = the vault
    * root). A getter, read at CLICK time: the host resolves the Files & Links "default
-   * location for new notes" setting against ITS OWN page path (`newNoteBase`, C2- GRO-2240),
+   * location for new pages" setting against ITS OWN page path (`newPageBase`, C2- GRO-2240),
    * so right-panel and folder editors create beside themselves, not beside the main
    * tab (YAZ-1643); settings changes land live without remounting any editor. Pathed
    * targets (`[[Sub/Page]]`) ignore it — see `planLinkCreation`.
@@ -73,9 +73,9 @@ export interface WikilinkNav extends LinkActions {
   openNewTab?: (path: string) => void
   /** "Open in a background tab": append a background tab (already-open → no-op; focus never moves). */
   openBackground: (path: string) => void
-  /** "Open in Explore" (YAZ-4936): the note as a reading layer of the explore stack. Absent → no row, and a click opens as today. */
+  /** "Open in Explore" (YAZ-4936): the page as a reading layer of the explore stack. Absent → no row, and a click opens as today. */
   openExplore?: (path: string) => void
-  /** This vault's "Clicking a link" (YAZ-4936), read at each click: true when a plain click on a note pill opens it in Explore. */
+  /** This vault's "Clicking a link" (YAZ-4936), read at each click: true when a plain click on a page pill opens it in Explore. */
   exploreClick?: () => boolean
   /** The user's changes of Settings › Hotkeys (`settings.hotkeys`), read at each click: the gestures that open a link. Absent → the defaults. */
   hotkeys?: () => HotkeyOverrides | undefined
@@ -134,10 +134,10 @@ export const openerOf = (nav: WikilinkNav, where: LinkWhere): ((path: string) =>
 
 /**
  * Follows the raw `[[inner]]` as an open gesture does: opens it `where` the gesture says; an unresolved link is
- * created first. One for an editor, so the click and the link menu's Open rows (YAZ-3609 D23) share the notes being made.
+ * created first. One for an editor, so the click and the link menu's Open rows (YAZ-3609 D23) share the pages being made.
  */
 export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav, viewOnly?: ViewOnlyLinkSource, vaultsOf?: VaultsOfLetters): LinkFollow {
-  /** The dead links whose note is being made (null), or was made at that path and is not in the index yet (YAZ-2478): a click on one makes nothing more. */
+  /** The dead links whose page is being made (null), or was made at that path and is not in the index yet (YAZ-2478): a click on one makes nothing more. */
   const making = new Map<string, string | null>()
   return (inner, where) => {
     const page = linkPageName(inner, source)
@@ -160,7 +160,7 @@ export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav
       else open(viewPath)
       return
     }
-    // A note card (YAZ-5030): its window, or its page in a tab, landed on it; a card file's tab (YAZ-5037).
+    // A card (YAZ-5030): its window, or its page in a tab, landed on it; a card file's tab (YAZ-5037).
     const card = linkCard(inner, source)
     if (card !== null) {
       if (where === 'explore' || where === 'thisTab') return openCardWindow(card.path, card.id, card.index)
@@ -170,7 +170,7 @@ export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav
     }
     const resolve = source.resolve
     // Pre-index window: every link renders resolved but nothing can be resolved yet;
-    // creating here could shadow an existing note, so the gesture is swallowed — but
+    // creating here could shadow an existing page, so the gesture is swallowed — but
     // SAID (GRO-2197): a silently dead click reads as breakage.
     if (resolve === null) {
       nav.onNotice('Vault index is still loading — try that link again in a moment')
@@ -183,10 +183,10 @@ export function wikilinkFollower(source: WikilinkResolveSource, nav: WikilinkNav
       making.delete(page)
       open(path)
     }
-    // An ID of THIS vault that no note has is a deleted note's (YAZ-2677 S25): nothing is
+    // An ID of THIS vault that no page has is a deleted page's (YAZ-2677 S25): nothing is
     // created under an ID. Other `LETTERS-NUMBER` text is a name, created like any name
     // (R6, S21, S22); a vault that does not use IDs has no letters, so only an old ID is one there.
-    else if (vaultNoteId(page, source.letters) !== undefined) nav.onNotice(source.ids ? 'That note no longer exists' : 'This vault does not use IDs, so this link cannot be opened')
+    else if (vaultPageId(page, source.letters) !== undefined) nav.onNotice(source.ids ? 'That page no longer exists' : 'This vault does not use IDs, so this link cannot be opened')
     // An ID of another vault of the window (YAZ-3905 S23): no page of that name is made here; the notice says
     // whose it is. This narrows R6 for this one case: other `LETTERS-NUMBER` text is still a name.
     else if ((other = otherVaultId(inner, source, vaultsOf)) !== null) nav.onNotice(`This ID belongs to ${other.vault === null ? 'another vault' : `the ${other.vault} vault`}. Use a link to that vault.`)
@@ -265,13 +265,13 @@ export function nearerEdge(view: EditorView, span: Element, from: number, to: nu
  * The click: `follow` is the editor's one `wikilinkFollower`, shared with the link menu's Open rows; `hotkeys` the
  * user's changes, read at each click (`linkClickAction`).
  *
- * In an editable note a click no gesture has works as on text (YAZ-3935 C1, C2): a plain click puts the caret at the
+ * In an editable page a click no gesture has works as on text (YAZ-3935 C1, C2): a plain click puts the caret at the
  * pill's nearer edge, a double-click selects exactly the link. Both prevent the default, so the link never flashes
  * its raw text. Any other click (⇧, ⌥) is the editor's. The plugin also keeps the hand cursor in step with the held
  * modifiers (`trackLinkHand`).
  */
 /**
- * `exploreClick(inner)` (YAZ-4936): true when this vault's "Clicking a link" is Explore and the link is a note that is
+ * `exploreClick(inner)` (YAZ-4936): true when this vault's "Clicking a link" is Explore and the link is a page that is
  * there, so a plain click opens it as a reading layer; a board or a folder pill, and an unresolved link, keep today's click.
  */
 export function createWikilinkClick(follow: LinkFollow, hotkeys: () => HotkeyOverrides | undefined = () => undefined, exploreClick: (inner: string) => boolean = () => false) {
@@ -290,7 +290,7 @@ export function createWikilinkClick(follow: LinkFollow, hotkeys: () => HotkeyOve
               if (span === null || !view.dom.contains(span)) return false
               const match = wikilinkMatchAt(view.state.doc, linkPosAtDOM(view, span))
               if (match === null) return false
-              // A single plain click follows the vault's "Clicking a link" (YAZ-4936), on a read-only note too (YAZ-4939).
+              // A single plain click follows the vault's "Clicking a link" (YAZ-4936), on a read-only page too (YAZ-4939).
               const where = linkClickAction(view, event, hotkeys(), () => event.detail === 1 && exploreClick(match.inner))
               if (where !== null) {
                 // From here the gesture is ours: no caret placement, no focus change, no reveal.

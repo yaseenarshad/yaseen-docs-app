@@ -169,7 +169,7 @@ test('"Make full window": two clicks on the chip open a full window where it sto
   expect(at).toMatchObject({ y: narrow.y, height: narrow.height, width: await wideWidth(fullId) })
   // On its vault, on the blank tab with the caret in the search (D13).
   await expect(full.locator('.tabbar [role="tab"]')).toHaveText(['New tab'])
-  await expect(full.locator('[aria-label="Search notes"]')).toBeFocused()
+  await expect(full.locator('[aria-label="Search pages"]')).toBeFocused()
   await expect(chip(full)).toHaveCount(0)
   await shoot(full, 'fileswin-5-full-window')
 

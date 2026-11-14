@@ -16,13 +16,13 @@ function rootColour(name: string): string | null {
 
 /**
  * A kind's colour while none is picked, as the icons show it now: Material's own for the kinds it draws as an image, a
- * note's grey with "Colour", else app.css's `--kind-<kind>` in this theme (`.app` carries the picked ones; the root the card's
+ * page's grey with "Colour", else app.css's `--kind-<kind>` in this theme (`.app` carries the picked ones; the root the card's
  * too, but a picked one is the picker's value), else the light theme's.
  */
 export function builtInIconColour(kind: SidebarIconKind, settings: SettingsState): string {
   const material = settings.sidebarIconSet === 'material' ? MATERIAL_ICON_SWATCHES[kind] : undefined
   if (material !== undefined) return material
-  if (kind === 'note' && settings.sidebarFileIcons !== 'color') return rootColour('--fg-muted') ?? SIDEBAR_ICON_SWATCHES.folder
+  if (kind === 'page' && settings.sidebarFileIcons !== 'color') return rootColour('--fg-muted') ?? SIDEBAR_ICON_SWATCHES.folder
   return rootColour(`--kind-${kind}`) ?? SIDEBAR_ICON_SWATCHES[kind]
 }
 

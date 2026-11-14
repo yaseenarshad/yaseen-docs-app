@@ -231,7 +231,7 @@ describe('index cache: a bad file never throws, only degrades', () => {
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
   })
 
-  it('YAZ-4954: a snapshot of version 8 read `[[Covid notes|COVID-19]]` as COVID-19 only → version-mismatch, so the vault is scanned again', async () => {
+  it('YAZ-4954: a snapshot of version 8 read `[[Covid pages|COVID-19]]` as COVID-19 only → version-mismatch, so the vault is scanned again', async () => {
     await writeFile(file, JSON.stringify({ version: 8, root: '/vault', records: [record('/vault/a.md', { links: ['COVID-19'] })] }))
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
   })
@@ -284,8 +284,8 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
     'Bump CACHE_VERSION in vaultIndex/cache.ts and re-pin FINGERPRINT in this test — ' +
     'discard IS the migration (a version mismatch costs one full rescan, never a converter).'
 
-  /** Exercises every extraction rule the cache would freeze: frontmatter parsing, the `comments` drop, tag/link/embed extraction, code stripping, URL skipping, note cards (a card's text is Markdown, its card line is lifted). */
-  const CANONICAL_NOTE = [
+  /** Exercises every extraction rule the cache would freeze: frontmatter parsing, the `comments` drop, tag/link/embed extraction, code stripping, URL skipping, cards (a card's text is Markdown, its card line is lifted). */
+  const CANONICAL_PAGE = [
     '---',
     'id: k3m9x2pq7abc',
     'title: Canonical',
@@ -297,16 +297,16 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
     'in:',
     '  3y7505rsr6fd:',
     '    owner: "[[Folder Ref]]"',
-    '    note: see [[Not A Link In Text]]',
+    '    page: see [[Not A Link In Text]]',
     'comments:',
     '  - id: c0ffee00',
     '    at: 2026-09-11T18:22:31Z',
-    '    body: "[[Not A Link Either]] — a comment is the note, not a property"',
+    '    body: "[[Not A Link Either]] — a comment is the page, not a property"',
     '---',
     '',
     'Inline #gamma and #tag/nested here, plus https://example.test/#not-a-tag',
-    'Body [[Note One|alias]] then [[Note Two#heading]] then ![[img.png]]',
-    'Words that look like an ID: [[Covid notes|COVID-19]]',
+    'Body [[Page One|alias]] then [[Page Two#heading]] then ![[img.png]]',
+    'Words that look like an ID: [[Covid pages|COVID-19]]',
     'A file is the page: ![[photo.png|FIG-1]] and [[FIG-2|chart.pdf]]',
     '`#code and [[in-code]]` stay out',
     '```',
@@ -335,17 +335,17 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
         tags: ['alpha', '#beta'],
         link: '[[Ref|shown]]',
         aliases: ['Canon', ' Spaced Alias ', '[[Not A Link]]'],
-        in: { '3y7505rsr6fd': { owner: '[[Folder Ref]]', note: 'see [[Not A Link In Text]]' } },
-        // No `comments`: the note's own comment stream is dropped at scan time (YAZ-1472, 🔒 D5).
+        in: { '3y7505rsr6fd': { owner: '[[Folder Ref]]', page: 'see [[Not A Link In Text]]' } },
+        // No `comments`: the page's own comment stream is dropped at scan time (YAZ-1472, 🔒 D5).
       },
       aliases: ['Canon', 'Spaced Alias', '[[Not A Link]]'],
-      // A note card's text is Markdown (YAZ-4960 D17): its links and tags count; any other fence's do not.
+      // A card's text is Markdown (YAZ-4960 D17): its links and tags count; any other fence's do not.
       tags: ['alpha', 'beta', 'gamma', 'tag/nested', 'card-tag'],
       // `[[Not A Link]]` sits under `aliases`, so it is a NAME, never an outgoing link (GRO-2214).
       // A whole-value link in a folder's block of `in` is a link (D19).
-      // Words that only LOOK like an ID keep both page sides (YAZ-4954): the resolver picks, where the notes are known.
+      // Words that only LOOK like an ID keep both page sides (YAZ-4954): the resolver picks, where the pages are known.
       // A file is always the page, whatever its words look like (YAZ-4954 part 2).
-      links: ['Ref', 'Folder Ref', 'Note One', 'Note Two', 'Covid notes|COVID-19', 'chart.pdf', 'Card Link'],
+      links: ['Ref', 'Folder Ref', 'Page One', 'Page Two', 'Covid pages|COVID-19', 'chart.pdf', 'Card Link'],
       embeds: ['img.png', 'photo.png'],
       // A card's title (its first line, as plain text) and its `notitle` part ride on the record (YAZ-5030): a card link shows the title.
       // A review's seconds (YAZ-5033, CACHE_VERSION 14) ride on it: today's total reads them off the index.
@@ -360,7 +360,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
     try {
       const canonical = path.join(root, 'canonical.md')
       const broken = path.join(root, 'broken.md')
-      await writeFile(canonical, CANONICAL_NOTE)
+      await writeFile(canonical, CANONICAL_PAGE)
       await writeFile(broken, '---\nstatus: [unclosed\n---\nBody after broken frontmatter.\n')
       const cardPath = path.join(root, 'capital-of-france-can-4.md')
       await writeFile(cardPath, '---\nkind: Card\n---\n```card\nCapital of **France**?\n---\nParis\n```\n<!-- card: CAN-4 -->\n')

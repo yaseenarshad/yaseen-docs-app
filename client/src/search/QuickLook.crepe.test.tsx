@@ -1,5 +1,5 @@
 /**
- * The preview panel with the REAL Crepe (YAZ-2662 S42): one integration proof that the note in the
+ * The preview panel with the REAL Crepe (YAZ-2662 S42): one integration proof that the page in the
  * panel is an actual Milkdown document that cannot be edited and that takes no focus. The states
  * of the panel live in `QuickLook.test.tsx` with Crepe mocked; here real timers run so Crepe's
  * async create settles.
@@ -13,8 +13,8 @@ import { QuickLook } from './QuickLook'
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 const CONTENT = '---\ntitle: Alpha\n---\n\n# Hello panel\n\nthe saved text\n'
-/** A note with an id link (YAZ-2293): the link has no readable text of its own. */
-const LINKED = '---\ntitle: Linked\n---\n\nthis note links [[k3m9x2pq7abc]]\n'
+/** A page with an id link (YAZ-2293): the link has no readable text of its own. */
+const LINKED = '---\ntitle: Linked\n---\n\nthis page links [[k3m9x2pq7abc]]\n'
 
 vi.mock('../api', () => ({
   api: {
@@ -51,7 +51,7 @@ async function waitFor(condition: () => boolean, timeoutMs = 5000): Promise<void
 }
 
 describe('the real Crepe in the preview panel', () => {
-  it('S42: the note is rendered read-only, without its frontmatter, and the caret stays where it was', async () => {
+  it('S42: the page is rendered read-only, without its frontmatter, and the caret stays where it was', async () => {
     const bar = document.createElement('input')
     document.body.appendChild(bar)
     bar.focus()
@@ -69,7 +69,7 @@ describe('the real Crepe in the preview panel', () => {
     expect(document.activeElement).toBe(bar)
   })
 
-  it("an id link shows the note's title, resolved through the window's source (YAZ-2293; moved here from the folder views' removed card, YAZ-3743)", async () => {
+  it("an id link shows the page's title, resolved through the window's source (YAZ-2293; moved here from the folder views' removed card, YAZ-3743)", async () => {
     const wikilinks = createWikilinkResolveSource()
     wikilinks.update((target) => (target === 'k3m9x2pq7abc' ? '/vault/Projects/Road Map.md' : null))
     container = document.createElement('div')

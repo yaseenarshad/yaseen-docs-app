@@ -1,8 +1,8 @@
 /**
- * Board embeds in the note (YAZ-4827 2A, YAZ-4829 2C, YAZ-4830 2D, YAZ-4831 2E): a real editor (`createCrepe`) and a
+ * Board embeds in the page (YAZ-4827 2A, YAZ-4829 2C, YAZ-4830 2D, YAZ-4831 2E): a real editor (`createCrepe`) and a
  * FAKE window — `loadBoardWindow` is mocked, and each mount records the host it got and every call the host made.
  * Pinned: which embeds get a window, the window's ref and options, the update on a text change, the view write (only
- * the options, outside undo, never in a read-only note), the stable key, destroy, the typing count, selection, caret,
+ * the options, outside undo, never in a read-only page), the stable key, destroy, the typing count, selection, caret,
  * find, the plain-text copy, no hover card, the menu, open, fold, the outside-edit merge, and the paste → embed flow.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -214,7 +214,7 @@ describe('the text and the window (2A)', () => {
     expect(md(crepe)).toBe('![[Sketch.excalidraw|640x360 locked]]\n')
   })
 
-  it('a read-only note writes nothing, and the window hears that it is read-only', async () => {
+  it('a read-only page writes nothing, and the window hears that it is read-only', async () => {
     const { crepe, view } = await mount('![[CloudFront.drawio]]\n')
     await windows(1)
     view.setProps({ editable: () => false })
@@ -244,7 +244,7 @@ describe('the text and the window (2A)', () => {
 })
 
 describe('the typing path (D1)', () => {
-  it('a keystroke scans only the textblocks it touched, never the whole note', async () => {
+  it('a keystroke scans only the textblocks it touched, never the whole page', async () => {
     const lines = Array.from({ length: 60 }, (_, i) => (i % 3 === 0 ? `![[Board ${i}.drawio|640x360]]` : `Line ${i} with words`))
     const { view } = await mount(`${lines.join('\n\n')}\n`)
     await windows(20)
@@ -302,7 +302,7 @@ describe('selection, caret, find, copy, hover (2A)', () => {
 
   it('⌘F finds no match in an embed`s hidden text (item 15)', async () => {
     const find = createFindChannel()
-    await mount('CloudFront notes\n\n![[CloudFront.drawio|640x360]]\n', { find })
+    await mount('CloudFront pages\n\n![[CloudFront.drawio|640x360]]\n', { find })
     await windows(1)
     find.open()
     find.setQuery('cloudfront')
@@ -364,7 +364,7 @@ describe('open and the menu (2C)', () => {
     expect(md(crepe)).toBe('A  B\n')
   })
 
-  it('"Show as embed" on a board pill; none on a note pill (D8)', async () => {
+  it('"Show as embed" on a board pill; none on a page pill (D8)', async () => {
     const { crepe, view, root } = await mount('[[CloudFront.drawio|Net]] and [[Plan]]\n', { wikilinkNav: nav() })
     const pill = (text: string) => Array.from(root.querySelectorAll<HTMLElement>('.wikilink')).find((el) => el.textContent === text)!
     const rowsAfter = (text: string) => {
@@ -481,7 +481,7 @@ describe('the flow (2C → 2A)', () => {
     const candidates = createWikilinkCandidateSource()
     candidates.update([{ name: 'CloudFront.drawio', insert: 'CloudFront.drawio', label: 'CloudFront', path: '/v/CloudFront.drawio' }])
     const saved = vi.fn()
-    const { crepe, view } = await mount('Next:\n', { pathPaste: { root: '/v', notePath: '/v/a/today.md', candidates }, onMarkdownUpdated: saved })
+    const { crepe, view } = await mount('Next:\n', { pathPaste: { root: '/v', pagePath: '/v/a/today.md', candidates }, onMarkdownUpdated: saved })
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.doc.content.size - 1)))
     const event = { clipboardData: { getData: (type: string) => (type === 'text/plain' ? '/v/CloudFront.drawio' : '') }, preventDefault() {} } as unknown as ClipboardEvent
     view.pasteText('/v/CloudFront.drawio', event)
@@ -509,10 +509,10 @@ describe('the flow (2C → 2A)', () => {
     expect(fakes.list[0]!.host.options).toEqual(OPTS)
   })
 
-  it('a pasted note path gets no Embed button', async () => {
+  it('a pasted page path gets no Embed button', async () => {
     const candidates = createWikilinkCandidateSource()
     candidates.update([{ name: 'Plan', insert: 'Plan', label: 'Plan', path: '/v/Plan.md' }])
-    const { view } = await mount('Next:\n', { pathPaste: { root: '/v', notePath: '/v/a/today.md', candidates } })
+    const { view } = await mount('Next:\n', { pathPaste: { root: '/v', pagePath: '/v/a/today.md', candidates } })
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.doc.content.size - 1)))
     view.pasteText('/v/Plan.md', { clipboardData: { getData: () => '/v/Plan.md' }, preventDefault() {} } as unknown as ClipboardEvent)
     expect(Array.from(document.querySelectorAll('.path-paste-chip button')).map((b) => b.textContent)).toEqual(['Keep as path'])
@@ -556,7 +556,7 @@ describe('the checker`s round 1 and 3B (YAZ-4834)', () => {
   it('a table cell: a pasted board path gets no Embed button', async () => {
     const candidates = createWikilinkCandidateSource()
     candidates.update([{ name: 'CloudFront.drawio', insert: 'CloudFront.drawio', label: 'CloudFront', path: '/v/CloudFront.drawio' }])
-    const { view } = await mount('| a |\n| --- |\n| x |\n', { pathPaste: { root: '/v', notePath: '/v/a/today.md', candidates } })
+    const { view } = await mount('| a |\n| --- |\n| x |\n', { pathPaste: { root: '/v', pagePath: '/v/a/today.md', candidates } })
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, posOf(view, 'x') + 1)))
     view.pasteText('/v/CloudFront.drawio', { clipboardData: { getData: (t: string) => (t === 'text/plain' ? '/v/CloudFront.drawio' : '') }, preventDefault() {} } as unknown as ClipboardEvent)
     expect(Array.from(document.querySelectorAll('.path-paste-chip button')).map((b) => b.textContent)).toEqual(['Keep as path'])
@@ -572,14 +572,14 @@ describe('plain text of a board image node (2B, item 16)', () => {
 })
 
 describe('YAZ-4920: an id link to a board embeds (D1 on YAZ-4821: id links keep working)', () => {
-  /** An ID vault: `EMB-40` is `Boards/Slides with frames.excalidraw`, `YAZ-12` a note. */
+  /** An ID vault: `EMB-40` is `Boards/Slides with frames.excalidraw`, `YAZ-12` a page. */
   const idVault = () => {
     const wikilinks = createWikilinkResolveSource()
     wikilinks.update((t) => (t === 'EMB-40' ? '/v/Boards/Slides with frames.excalidraw' : t === 'YAZ-12' ? '/v/Plan.md' : t.endsWith('.excalidraw') || t.endsWith('.drawio') ? `/v/${t}` : null), [], [], true, ['EMB', 'YAZ'])
     return wikilinks
   }
 
-  it('`![[EMB-40]]` in a file is a window into the board the id names, with the board\'s name and kind; `![[YAZ-12]]` (a note) stays text', async () => {
+  it('`![[EMB-40]]` in a file is a window into the board the id names, with the board\'s name and kind; `![[YAZ-12]]` (a page) stays text', async () => {
     const { root } = await mount('![[EMB-40]]\n\n![[YAZ-12]]\n', { wikilinks: idVault() })
     await windows(1)
     expect(fakes.list[0]!.host.ref).toMatchObject({ root: '/v', path: '/v/Boards/Slides with frames.excalidraw', kind: 'drawing', name: 'Slides with frames' })
@@ -604,7 +604,7 @@ describe('YAZ-4920: an id link to a board embeds (D1 on YAZ-4821: id links keep 
   it('paste the board\'s path, then "Embed": the text is the id embed, and it is a window', async () => {
     const candidates = createWikilinkCandidateSource()
     candidates.update([{ name: 'Slides with frames.excalidraw', insert: 'EMB-40', label: 'Slides with frames', path: '/v/Boards/Slides with frames.excalidraw' }])
-    const { crepe, view } = await mount('Next:\n', { wikilinks: idVault(), pathPaste: { root: '/v', notePath: '/v/a/today.md', candidates } })
+    const { crepe, view } = await mount('Next:\n', { wikilinks: idVault(), pathPaste: { root: '/v', pagePath: '/v/a/today.md', candidates } })
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, view.state.doc.content.size - 1)))
     const event = { clipboardData: { getData: (type: string) => (type === 'text/plain' ? '/v/Boards/Slides with frames.excalidraw' : '') }, preventDefault() {} } as unknown as ClipboardEvent
     view.pasteText('/v/Boards/Slides with frames.excalidraw', event)

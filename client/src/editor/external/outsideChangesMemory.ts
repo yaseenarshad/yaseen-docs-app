@@ -6,14 +6,14 @@
  * Keyed by tab and path. The plugin saves its list each time its editor is destroyed (none: the entry goes) and reads it
  * when an editor of the same tab and page starts (`outsideChanges.ts`). The read leaves the entry: React may start an
  * editor twice, and the copy that stays must find the list too; App names the live tabs (`keepOutsideChangesOfTabs`), and the
- * lists of a closed tab go. A tab keeps its last `MAX_KEPT_PAGES` pages' lists. A note that changed while its tab was
+ * lists of a closed tab go. A tab keeps its last `MAX_KEPT_PAGES` pages' lists. A page that changed while its tab was
  * away gets its list back through the diff from the kept doc, with what changed meanwhile glowing (`keptBack`).
  */
 
 /** A list as the plugin left it: the doc it was drawn on (its shape, to know it is still the same), and the list. */
 export interface SavedOutsideChanges {
   shape: string
-  /** The doc as JSON: a note that changed while the tab was away is diffed from it. */
+  /** The doc as JSON: a page that changed while the tab was away is diffed from it. */
   doc: unknown
   changes: readonly unknown[]
   lastNumber: number

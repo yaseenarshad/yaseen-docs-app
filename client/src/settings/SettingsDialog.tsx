@@ -167,7 +167,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
     <section key={s.id} id={`settings-${s.id}`} data-section={s.id} className="settings-section">
       <h2 className="settings-section__title">{s.title}</h2>
       {s.vault === true && vaultLine('settings-section__note')}
-      {s.note !== undefined && <p className="settings-section__note">{s.note}</p>}
+      {s.page !== undefined && <p className="settings-section__note">{s.page}</p>}
       {groupsOf(s, ctx).map((g, i) => group(g, g.items.filter((item) => isAvailable(item, ctx)), g.anchor ?? i, true, i))}
     </section>
   )

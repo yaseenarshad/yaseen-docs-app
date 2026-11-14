@@ -39,7 +39,7 @@ const keycap = (w: Page) => w.locator('.sidebar__search-back')
 /** The Focus tab's text while its list is empty (YAZ-2619 S15). */
 const FOCUS_EMPTY = 'Nothing in focus. Right-click a file or folder → Add to focus.'
 /** The Search tab's text while its bar is empty (YAZ-2638 S7). */
-const SEARCH_EMPTY = 'Type to search every note and folder.'
+const SEARCH_EMPTY = 'Type to search every page and folder.'
 
 /** The lens a tab row reports through `aria-selected` — exactly one at a time. */
 async function expectLens(w: Page, lens: 'Files'): Promise<void> {

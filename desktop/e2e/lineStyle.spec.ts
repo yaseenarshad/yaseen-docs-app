@@ -30,9 +30,9 @@ import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, se
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = 'Lines.md'
-const NOTE_BODY = 'line-note-body'
-const NOTE_TEXT = `${NOTE_BODY}\n\n***\n\nafter the line\n`
+const PAGE = 'Lines.md'
+const PAGE_BODY = 'line-page-body'
+const PAGE_TEXT = `${PAGE_BODY}\n\n***\n\nafter the line\n`
 
 let userData: string
 let vaultSrc: string
@@ -40,7 +40,7 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-const readNote = () => readFile(path.join(vault, NOTE), 'utf8')
+const readPageFile = () => readFile(path.join(vault, PAGE), 'utf8')
 const lineView = (w: Page) => editorOf(w).locator('.line-view')
 const lineHr = (w: Page) => lineView(w).locator('hr')
 const menu = (w: Page) => w.locator('.ctx-menu--editor')
@@ -84,10 +84,10 @@ test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'linestyle-userdata-'))
   vaultSrc = await buildFixtureVault()
   vault = await copyVault(vaultSrc)
-  await writeFile(path.join(vault, NOTE), NOTE_TEXT)
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, NOTE)) })
+  await writeFile(path.join(vault, PAGE), PAGE_TEXT)
+  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, PAGE)) })
   win = await appWindow(app, 'w1')
-  await expect(editorOf(win)).toContainText(NOTE_BODY)
+  await expect(editorOf(win)).toContainText(PAGE_BODY)
 })
 
 test.afterAll(async () => {
@@ -120,7 +120,7 @@ test('step 2 — the 6-dot menu of a line: type 80 + Enter sets the darkness on 
   await win.keyboard.type('80')
   await win.keyboard.press('Enter')
   await expect(menu(win)).toBeHidden()
-  await expect.poll(readNote, { timeout: 10_000 }).toBe(`${NOTE_BODY}\n\n***\n\n<!-- line: darkness 80% -->\n\nafter the line\n`)
+  await expect.poll(readPageFile, { timeout: 10_000 }).toBe(`${PAGE_BODY}\n\n***\n\n<!-- line: darkness 80% -->\n\nafter the line\n`)
 })
 
 test('step 3 — the 6px preset makes the line 6px thick, on screen and on disk', async () => {
@@ -130,7 +130,7 @@ test('step 3 — the 6px preset makes the line 6px thick, on screen and on disk'
   await expect(box(win)).toHaveValue('3px')
   await preset(win, '6px').click()
   await expect(menu(win)).toBeHidden()
-  await expect.poll(readNote, { timeout: 10_000 }).toContain('***\n\n<!-- line: darkness 80%, thickness 6px -->\n')
+  await expect.poll(readPageFile, { timeout: 10_000 }).toContain('***\n\n<!-- line: darkness 80%, thickness 6px -->\n')
   await expect.poll(async () => Math.round((await hrBox(win)).height)).toBe(18)
   await shoot(win, 'lineStyle-03-thick')
 })
@@ -143,7 +143,7 @@ test('step 4 — the style picker makes the line dashed, in the darkness colour,
   await shoot(win, 'lineStyle-04-style-open')
   await preset(win, 'Dashed').click()
   await expect(menu(win)).toBeHidden()
-  await expect.poll(readNote, { timeout: 10_000 }).toContain('***\n\n<!-- line: darkness 80%, thickness 6px, style dashed -->\n')
+  await expect.poll(readPageFile, { timeout: 10_000 }).toContain('***\n\n<!-- line: darkness 80%, thickness 6px, style dashed -->\n')
   await expect(lineView(win)).toHaveAttribute('data-line-pattern', 'dashed')
   const look = () => lineHr(win).evaluate((el) => {
     const style = getComputedStyle(el)
@@ -177,8 +177,8 @@ test('step 5 — click the line, drag its end handle to about 40%: the length la
   await win.mouse.move(row!.x + row!.width * 0.4, y, { steps: 12 })
   await win.mouse.up()
   const re = /\*\*\*\n\n<!-- line: darkness 80%, thickness 6px, style dashed, length (\d+)% -->\n/
-  await expect.poll(readNote, { timeout: 10_000 }).toMatch(re)
-  const length = Number(re.exec(await readNote())![1])
+  await expect.poll(readPageFile, { timeout: 10_000 }).toMatch(re)
+  const length = Number(re.exec(await readPageFile())![1])
   expect(length).toBeGreaterThanOrEqual(38)
   expect(length).toBeLessThanOrEqual(42)
   // The line on screen is that share of the row, and it is still selected.
@@ -189,7 +189,7 @@ test('step 5 — click the line, drag its end handle to about 40%: the length la
 
 test('step 6 — ⌘Z takes the length back out in one step', async () => {
   await win.keyboard.press('Meta+z')
-  await expect.poll(readNote, { timeout: 10_000 }).toBe(`${NOTE_BODY}\n\n***\n\n<!-- line: darkness 80%, thickness 6px, style dashed -->\n\nafter the line\n`)
+  await expect.poll(readPageFile, { timeout: 10_000 }).toBe(`${PAGE_BODY}\n\n***\n\n<!-- line: darkness 80%, thickness 6px, style dashed -->\n\nafter the line\n`)
   const [lineBox, row] = await Promise.all([hrBox(win), lineView(win).boundingBox()])
   expect(lineBox.width).toBeCloseTo(row!.width, 0)
 })
@@ -203,7 +203,7 @@ test('step 7 — line numbers (S22, YAZ-3204): the thick styled line shows 3–5
   // The comment (line 5) is no block of the page: it is the line's range, and the next block is line 7.
   await expect.poll(() => lineView(win).getAttribute('data-line'), { timeout: 15_000 }).toBe('3')
   await expect(lineView(win)).toHaveAttribute('data-line-end', '5')
-  await expect(editorOf(win).locator('p[data-line]', { hasText: NOTE_BODY })).toHaveAttribute('data-line', '1')
+  await expect(editorOf(win).locator('p[data-line]', { hasText: PAGE_BODY })).toHaveAttribute('data-line', '1')
   await expect(editorOf(win).locator('p[data-line]', { hasText: 'after the line' })).toHaveAttribute('data-line', '7')
   // The number's box is centred on the wrapper, and the wrapper is the 18px line itself: the middle of the line.
   const at = await lineView(win).evaluate((el) => {
@@ -219,7 +219,7 @@ test('step 7 — line numbers (S22, YAZ-3204): the thick styled line shows 3–5
 })
 
 test('step 8 — a line as a bullet\'s first block meets the bullet dot at its middle (YAZ-3207)', async () => {
-  await writeFile(path.join(vault, NOTE), `${NOTE_BODY}\n\n* text before\n* ---\n  * child\n* text after\n`)
+  await writeFile(path.join(vault, PAGE), `${PAGE_BODY}\n\n* text before\n* ---\n  * child\n* text after\n`)
   const item = editorOf(win).locator('.milkdown-list-item-block > li:has(> .children > .content-dom > .line-view)')
   await expect(item).toHaveCount(1, { timeout: 15_000 })
   const mids = await item.evaluate((li) => {
@@ -231,8 +231,8 @@ test('step 8 — a line as a bullet\'s first block meets the bullet dot at its m
 })
 
 test('step 9 — the vault\'s default line in Settings (YAZ-3208): a plain line follows it at once, a line set to solid keeps its own style', async () => {
-  // An outside change gives the note one plain line and one line set to solid (S27, S92, S100).
-  await writeFile(path.join(vault, NOTE), `${NOTE_BODY}\n\n***\n\n***\n\n<!-- line: style solid -->\n`)
+  // An outside change gives the page one plain line and one line set to solid (S27, S92, S100).
+  await writeFile(path.join(vault, PAGE), `${PAGE_BODY}\n\n***\n\n***\n\n<!-- line: style solid -->\n`)
   await expect(lineView(win)).toHaveCount(2)
   await expect(lineView(win).nth(1)).toHaveAttribute('data-line-pattern', 'solid')
   const look = (i: number) => lineView(win).nth(i).locator('hr').evaluate((el) => ({ image: getComputedStyle(el).backgroundImage, height: el.getBoundingClientRect().height }))
@@ -280,7 +280,7 @@ test('step 9 — the vault\'s default line in Settings (YAZ-3208): a plain line 
   await expect(row.locator('.heading-styles__size')).toHaveText(['50%', '4 px'])
   await shoot(win, 'lineStyle-09-settings-line')
 
-  // Only the changed fields are in the vault's file (D8); the note's bytes do not change (D9).
+  // Only the changed fields are in the vault's file (D8); the page's bytes do not change (D9).
   await expect.poll(async () => JSON.parse(await readFile(path.join(vault, '.yaseendocs', 'text-formatting.json'), 'utf8'))).toEqual({ version: 1, line: { thickness: 4, pattern: 'dashed' } })
   // The plain line follows the default at once, under the open dialog (S91); the solid one keeps its own (S92, S100).
   await expect.poll(async () => (await look(0)).image).toMatch(/^linear-gradient/)
@@ -292,5 +292,5 @@ test('step 9 — the vault\'s default line in Settings (YAZ-3208): a plain line 
   await row.getByRole('button', { name: 'Reset line', exact: true }).click()
   await expect.poll(async () => (await look(0)).image).toBe('none')
   await win.keyboard.press('Escape')
-  expect(await readNote()).toBe(`${NOTE_BODY}\n\n***\n\n***\n\n<!-- line: style solid -->\n`)
+  expect(await readPageFile()).toBe(`${PAGE_BODY}\n\n***\n\n***\n\n<!-- line: style solid -->\n`)
 })

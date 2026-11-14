@@ -152,7 +152,7 @@ export function tabRowSections(layout: RowLayout, prefs: SidebarTabsPrefs, lens:
       ? []
       : [{ id: 'tabrow-hide', label: `Hide ${TAB_LABEL[tab]}`, disabled: tab === 'files', hint: tab === 'files' ? 'Files stays' : undefined, onSelect: () => handlers.onHide(tab) }]
   const icon = handlers.iconOf
-  const tabItem = (tab: SidebarTab, note?: string): MenuAction => ({ id: `tabrow-open-${tab}`, label: TAB_LABEL[tab], icon: icon?.(tab), hint: tab === lens ? 'open' : note, onSelect: () => handlers.onOpen(tab) })
+  const tabItem = (tab: SidebarTab, page?: string): MenuAction => ({ id: `tabrow-open-${tab}`, label: TAB_LABEL[tab], icon: icon?.(tab), hint: tab === lens ? 'open' : page, onSelect: () => handlers.onOpen(tab) })
   const over = layout.over.map((tab) => tabItem(tab))
   const hidden = layout.hidden.map((tab) => tabItem(tab, 'hidden'))
   const offBar: MenuAction[] = []

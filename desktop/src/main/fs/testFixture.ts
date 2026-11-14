@@ -5,7 +5,7 @@ import { _swept } from '../vaultIndex/idSweep'
 import { COUNT_DIR, macId, type IdDoor } from '../vaultIndex/mint'
 import { BridgeFailure } from './fsUtils'
 
-/** Creates a temp vault that gives its notes IDs (`ids.json` says yes), with Markdown, view-only text/image, a file with no in-app viewer, and hidden entries; caller removes it via `cleanup`. */
+/** Creates a temp vault that gives its pages IDs (`ids.json` says yes), with Markdown, view-only text/image, a file with no in-app viewer, and hidden entries; caller removes it via `cleanup`. */
 export async function makeFixture(): Promise<{ root: string; cleanup: () => Promise<void> }> {
   const root = await mkdtemp(path.join(tmpdir(), 'mdapp-'))
   await mkdir(path.join(root, 'Zeta', 'inner'), { recursive: true })
@@ -19,7 +19,7 @@ export async function makeFixture(): Promise<{ root: string; cleanup: () => Prom
   await Promise.all([
     writeFile(path.join(root, 'b.md'), '# b\n'),
     writeFile(path.join(root, 'A.md'), '# A\n'),
-    writeFile(path.join(root, 'notes.txt'), 'not markdown'),
+    writeFile(path.join(root, 'pages.txt'), 'not markdown'),
     writeFile(path.join(root, 'book.epub'), 'no in-app viewer'),
     writeFile(path.join(root, '.hidden.md'), 'hidden'),
     writeFile(path.join(root, 'Zeta', 'inner', 'deep.md'), 'deep'),

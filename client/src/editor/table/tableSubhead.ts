@@ -56,7 +56,7 @@ import { moveRowCommand } from '@milkdown/kit/preset/gfm'
 import { $shortcut } from '@milkdown/kit/utils'
 import { cssZoom } from '../../lib/cssZoom'
 import { verticalScrollParent, watchNear } from '../../lib/pinnedHeader'
-import { rowShortcuts } from '../noteKeys'
+import { rowShortcuts } from '../pageKeys'
 import { VIEW_ONLY_CHANGE } from '../readOnlyEdit'
 import { beforeTableEditing } from './beforeTableEditing'
 import { bodySpansRows, rowFolded, rowSubhead, sectionEnd, subheadOf, tableHasSubheads } from './cells'
@@ -245,7 +245,7 @@ function subheadDecorations(table: ProseNode, pos: number): Decoration[] {
   return out
 }
 
-/** A mousedown on a chevron: toggle its section, with ⌥ every section of the table; in a read-only note too (YAZ-4939). */
+/** A mousedown on a chevron: toggle its section, with ⌥ every section of the table; in a read-only page too (YAZ-4939). */
 function onChevron(view: EditorView, event: MouseEvent): boolean {
   if (event.button !== 0 || !(event.target instanceof Element)) return false
   const chevron = event.target.closest('.table-subhead-chevron')
@@ -507,10 +507,10 @@ const allSections =
 const PRIORITY = 110
 
 const subheadKeys = $shortcut((ctx) => ({
-  ...rowShortcuts(ctx, 'note.foldHere', 'CollapseSubheadSection', { priority: PRIORITY, onRun: () => sectionHere(true) }),
-  ...rowShortcuts(ctx, 'note.unfoldHere', 'ExpandSubheadSection', { priority: PRIORITY, onRun: () => sectionHere(false) }),
-  ...rowShortcuts(ctx, 'note.foldAll', 'CollapseAllSubheads', { priority: PRIORITY, onRun: () => allSections(true) }),
-  ...rowShortcuts(ctx, 'note.unfoldAll', 'ExpandAllSubheads', { priority: PRIORITY, onRun: () => allSections(false) }),
+  ...rowShortcuts(ctx, 'page.foldHere', 'CollapseSubheadSection', { priority: PRIORITY, onRun: () => sectionHere(true) }),
+  ...rowShortcuts(ctx, 'page.unfoldHere', 'ExpandSubheadSection', { priority: PRIORITY, onRun: () => sectionHere(false) }),
+  ...rowShortcuts(ctx, 'page.foldAll', 'CollapseAllSubheads', { priority: PRIORITY, onRun: () => allSections(true) }),
+  ...rowShortcuts(ctx, 'page.unfoldAll', 'ExpandAllSubheads', { priority: PRIORITY, onRun: () => allSections(false) }),
 }))
 
 /**

@@ -23,8 +23,8 @@ import { CardNotFoundError, EMPTY_CARD_LINE, cardBlock, cardIdOf, changeCardText
 import { cardTitle, cardWithTitle, cardWithoutTitle, hiddenCount } from './cardText'
 import { lineKinds } from './fences'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
-import { NOTE_ID_KEY } from './noteId'
-import { TITLE_KEY, titleOf } from './noteName'
+import { PAGE_ID_KEY } from './pageId'
+import { TITLE_KEY, titleOf } from './pageName'
 
 /**
  * A card file's title (YAZ-5044): its `title` property, as a page's (`titleOf`). A card file with no `title` yet is one
@@ -71,7 +71,7 @@ export function cardFileTitleMoved(content: string, dropPageId = false): string 
   const { title, text } = cardTitleOut(card.text)
   if (title === '') return null
   const moved = setFrontmatterProperty(changeCardText(content, null, text, 0), TITLE_KEY, title)
-  return dropPageId ? setFrontmatterProperty(moved, NOTE_ID_KEY, undefined) : moved
+  return dropPageId ? setFrontmatterProperty(moved, PAGE_ID_KEY, undefined) : moved
 }
 
 /** A card that leaves its page or its card file: the new card file's bytes, its name, its ID and its title. */

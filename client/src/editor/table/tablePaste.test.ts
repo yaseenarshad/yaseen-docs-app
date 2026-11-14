@@ -169,7 +169,7 @@ describe('paste cells into a table (D4)', () => {
     expect(view.state.doc.eq(before)).toBe(true)
   })
 
-  it('a read-only note ignores the paste', async () => {
+  it('a read-only page ignores the paste', async () => {
     const view = await mountTable()
     caretIn(view, 1, 0)
     const before = view.state.doc

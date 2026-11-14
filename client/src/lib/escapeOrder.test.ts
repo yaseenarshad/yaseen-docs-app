@@ -101,7 +101,7 @@ describe('useEscapeLast: it reads what was open BEFORE the surfaces run', () => 
     const aside = document.createElement('aside')
     document.body.appendChild(aside)
     const inbox = document.createElement('div')
-    inbox.className = 'note-card-inbox'
+    inbox.className = 'card-inbox'
     inbox.tabIndex = -1
     document.body.appendChild(inbox)
     const step = mount({ aside, searchShown: false, canClose: true })

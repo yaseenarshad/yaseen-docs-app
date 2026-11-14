@@ -28,7 +28,7 @@ describe('openLink', () => {
     expect(os.openPath).not.toHaveBeenCalled()
   })
 
-  it('resolves an encoded relative file from the source note directory', async () => {
+  it('resolves an encoded relative file from the source page directory', async () => {
     const os = host()
 
     await openLink(
@@ -46,18 +46,18 @@ describe('openLink', () => {
   ])('opens an absolute local target through the OS file handler: %s', async (href, expected) => {
     const os = host()
 
-    await openLink({ href, sourcePath: '/vault/Note.md' }, os)
+    await openLink({ href, sourcePath: '/vault/Page.md' }, os)
 
     expect(os.openPath).toHaveBeenCalledExactlyOnceWith(expected)
     expect(os.openExternal).not.toHaveBeenCalled()
   })
 
   it.each([
-    [{ href: '#section', sourcePath: '/vault/Note.md' }, 'fragment-only links stay inside the document'],
-    [{ href: 'javascript:alert(1)', sourcePath: '/vault/Note.md' }, 'unsupported link protocol'],
-    [{ href: 'data:text/plain,nope', sourcePath: '/vault/Note.md' }, 'unsupported link protocol'],
-    [{ href: 'app://yaseen/index.html', sourcePath: '/vault/Note.md' }, 'unsupported link protocol'],
-    [{ href: '', sourcePath: '/vault/Note.md' }, "missing 'href'"],
+    [{ href: '#section', sourcePath: '/vault/Page.md' }, 'fragment-only links stay inside the document'],
+    [{ href: 'javascript:alert(1)', sourcePath: '/vault/Page.md' }, 'unsupported link protocol'],
+    [{ href: 'data:text/plain,nope', sourcePath: '/vault/Page.md' }, 'unsupported link protocol'],
+    [{ href: 'app://yaseen/index.html', sourcePath: '/vault/Page.md' }, 'unsupported link protocol'],
+    [{ href: '', sourcePath: '/vault/Page.md' }, "missing 'href'"],
     [{ href: 'relative.txt' }, "missing 'sourcePath' for a relative link"],
     [null, 'invalid open-link request'],
   ])('rejects invalid or non-shell input without an OS side effect', async (req, message) => {
@@ -92,7 +92,7 @@ describe('openLink', () => {
     const os = host()
     vi.mocked(os.openPath).mockResolvedValue('The file does not exist')
 
-    await expect(openLink({ href: 'missing.pdf', sourcePath: '/vault/Note.md' }, os)).rejects.toMatchObject({
+    await expect(openLink({ href: 'missing.pdf', sourcePath: '/vault/Page.md' }, os)).rejects.toMatchObject({
       code: 'IO_ERROR',
       message: 'The file does not exist',
       path: '/vault/missing.pdf',

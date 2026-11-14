@@ -1,6 +1,6 @@
 /**
  * The `[[` link picker (Links B, GRO-2191): typing `[[` in the editor opens a suggestion popup
- * over every markdown note in the vault; typing filters, ↑/↓ navigate, Enter/click INSERTS THE
+ * over every markdown page in the vault; typing filters, ↑/↓ navigate, Enter/click INSERTS THE
  * PLAIN TEXT `[[name]]` (the A- decorations restyle it on their next pass — never a schema or
  * doc-structure change, so round-trip stays byte-identical), Esc dismisses leaving the typed
  * text as-is.
@@ -36,11 +36,11 @@
  * What the row inserts does not change.
  *
  * Matching is the shared `links/completion.ts` (one matcher with the Bases cell editors —
- * locked ruling): case-insensitive, by text and then by words (YAZ-3748 D1), cap 8; a page's ID first (YAZ-4992). A note
+ * locked ruling): case-insensitive, by text and then by words (YAZ-3748 D1), cap 8; a page's ID first (YAZ-4992). A page
  * with frontmatter aliases (E2, GRO-2214) is offered twice — under its name (inserting
  * `[[Name]]`) and under each alias, which READS `CAC — Customer Acquisition Cost` and INSERTS
- * the piped `[[Customer Acquisition Cost|CAC]]`, so the link targets the note and displays the
- * alias. A note with a frontmatter `id` (YAZ-2293, 🔒) is offered under the same rows but every
+ * the piped `[[Customer Acquisition Cost|CAC]]`, so the link targets the page and displays the
+ * alias. A page with a frontmatter `id` (YAZ-2293, 🔒) is offered under the same rows but every
  * one of them inserts the plain `[[id]]`. When no row's name is the non-empty fragment
  * (YAZ-3748 B1: it was when nothing matched), a "Create" row below the matches creates the page
  * (YAZ-1357, 🔒 D3 revised — through Links C's own `createFromLink`, staying put; see
@@ -106,8 +106,8 @@ export function createWikilinkCandidateSource(): MutableWikilinkCandidateSource 
 }
 
 /**
- * One popup row: shows `label`, inserts `[[insert]]` — the two differ for every row of a note
- * with an id (it inserts the id, YAZ-2293) and for an id-less note's alias row, which reads
+ * One popup row: shows `label`, inserts `[[insert]]` — the two differ for every row of a page
+ * with an id (it inserts the id, YAZ-2293) and for an id-less page's alias row, which reads
  * `CAC — Customer Acquisition Cost` and inserts the piped `[[Customer Acquisition Cost|CAC]]`
  * (E2, GRO-2214). `create` rows show as Create "…" (no row has the typed name, B1) and make the
  * page — `insert` is then its typed NAME, and the link goes in by the new page's id (`insertRow`).
@@ -118,7 +118,7 @@ export interface PickerRow {
   create: boolean
   /** The page the row names (`LinkCandidate.path`): its icon. */
   path?: string
-  /** A note card's row (YAZ-5030): the card icon, not its page's. */
+  /** A card's row (YAZ-5030): the card icon, not its page's. */
   card?: true
 }
 
@@ -177,7 +177,7 @@ function findContext(state: EditorState): { from: number; to: number; fragment: 
  * Matches through the shared matcher, then Create for a non-empty fragment that no matched row is NAMED (trimmed, any
  * case; YAZ-3748 B1). A page is found by its ID too (YAZ-4992, `matchLinks`): `[[40` lists WIKI-40 first, read
  * `WIKI-40 — Redis`; `was` is the vault's ID letters, so an old one (`OLD-40`) finds it as the search box does. The word tiers find more rows than the text did, so "nothing matched" no longer means "no page has
- * this name": `q4 meeting notes` finds `Meeting notes Q4` and still offers to create its own page. An exact name ranks
+ * this name": `q4 meeting pages` finds `Meeting pages Q4` and still offers to create its own page. An exact name ranks
  * first (tier 0), so it is among the matches whenever one exists.
  */
 export function rowsFor(fragment: string, candidates: readonly LinkCandidate[], was?: readonly string[]): PickerRow[] {
@@ -237,10 +237,10 @@ function session(state: EditorState, prev: PickerState | null, tr: Transaction |
  * Without a nav there is no vault to create in, so the row only inserts.
  *
  * 🔒 Where the vault uses IDs the order is fixed (YAZ-2677 S35): the NUMBER first, from the door
- * (`fs:mint-note-id`); then the link, `[[id]]` where the typed name stands (`wait`, the key of its
- * place); then the note, born WITH that id. Each step that fails leaves a link that reads: no
+ * (`fs:mint-page-id`); then the link, `[[id]]` where the typed name stands (`wait`, the key of its
+ * place); then the page, born WITH that id. Each step that fails leaves a link that reads: no
  * number, and the link stays the typed name; a name the user changed during the wait stays as
- * they left it, and the note is still made; no note, and nothing carries the id, so the id goes
+ * they left it, and the page is still made; no page, and nothing carries the id, so the id goes
  * back to the typed name — found by its text, which an id makes unique in the document, wherever
  * typing has since pushed it.
  *
@@ -251,12 +251,12 @@ async function createPage(view: EditorView | undefined, nav: WikilinkNav, name: 
   const page = name.split('#', 1)[0]
   // A read-only vault asks before the page is made (YAZ-4985): a Cancel leaves the link as it was typed, with no page.
   if (nav.allowFileAction !== undefined && !(await nav.allowFileAction(nav.root))) return
-  /** The id the note is born with, and the id the LINK holds: a note that is not born gives the link its typed name back. */
+  /** The id the page is born with, and the id the LINK holds: a page that is not born gives the link its typed name back. */
   let id: string | undefined
   let linked: string | undefined
   let numbered = ids
   if (wait !== undefined) {
-    const given = await api.mintNoteId(nav.root).catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))))
+    const given = await api.mintPageId(nav.root).catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))))
     const placed = placeId(view, wait, page, typeof given === 'string' ? given : undefined)
     if (given instanceof Error) return nav.onNotice(`Can't create "${linkPageName(name)}": ${given.message}`)
     // `null`: the vault stopped using IDs after the pick. The page is made the plain way, and the link holds its name.
@@ -380,7 +380,7 @@ export function addRowIcon(item: HTMLElement, path: string, look: LinkLook): voi
   }
 }
 
-/** A note card's row (YAZ-5030): the card pill's icon before its title. */
+/** A card's row (YAZ-5030): the card pill's icon before its title. */
 function addCardIcon(item: HTMLElement): void {
   const icon = document.createElement('span')
   icon.className = 'wikilink-picker__card-icon'

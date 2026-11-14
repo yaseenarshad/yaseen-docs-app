@@ -25,7 +25,7 @@ describe('the matching order (YAZ-3440 D8, D9)', () => {
   it("(3) then Material's match, (4) then its default; a folder open shows the open twin, its pick's too", () => {
     const i = icons({ '/v/Mine': 'folder-docs' })
     expect(rowIcon(i, '/v/a.test.ts', 'a.test.ts', 'file')).toEqual({ id: 'test-ts', custom: false })
-    expect(rowIcon(i, '/v/notes', 'notes', 'file')).toEqual({ id: 'file', custom: false })
+    expect(rowIcon(i, '/v/pages', 'pages', 'file')).toEqual({ id: 'file', custom: false })
     expect(rowIcon(i, '/v/src', 'src', 'folder', true)).toEqual({ id: 'folder-src-open', custom: false })
     expect(rowIcon(i, '/v/Mine', 'Mine', 'folder', true)).toEqual({ id: 'folder-docs-open', custom: true })
     expect(rowIcon(undefined, '/v/a.py', 'a.py', 'file')).toEqual({ id: 'python', custom: false })

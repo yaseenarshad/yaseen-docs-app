@@ -19,7 +19,7 @@ import { activeTab, appWindow, clickMenuItem, closeWindow, dirRow, editorOf, exp
 test.describe.configure({ mode: 'serial' })
 
 /** The active file: THREE folders down, so nothing but a real gesture can put its row on screen. */
-const DEEP = path.join('Projects', 'alpha', 'beta', 'Deep note.md')
+const DEEP = path.join('Projects', 'alpha', 'beta', 'Deep page.md')
 const DEEP_BODY = 'collapsed-deep-body'
 /** The dirs the seed claims are open — the whole chain to the active file, plus a sibling. */
 const SEEDED_DIRS = [path.join('Projects', 'alpha', 'beta'), path.join('Projects', 'alpha'), 'Projects', 'Reference']
@@ -42,10 +42,10 @@ async function buildVault(): Promise<string> {
   await mkdir(path.join(root, 'Projects', 'alpha', 'beta'), { recursive: true })
   await mkdir(path.join(root, 'Reference'), { recursive: true })
   await Promise.all([
-    writeFile(path.join(root, 'Loose note.md'), '# Loose note\n\ncollapsed-loose-body\n'),
+    writeFile(path.join(root, 'Loose page.md'), '# Loose page\n\ncollapsed-loose-body\n'),
     writeFile(path.join(root, 'Projects', 'Charter.md'), '# Charter\n\ncollapsed-charter-body\n'),
     writeFile(path.join(root, 'Projects', 'alpha', 'Alpha brief.md'), '# Alpha brief\n\ncollapsed-alpha-body\n'),
-    writeFile(path.join(root, DEEP), `# Deep note\n\n${DEEP_BODY}\n`),
+    writeFile(path.join(root, DEEP), `# Deep page\n\n${DEEP_BODY}\n`),
     writeFile(path.join(root, 'Reference', 'Handbook.md'), '# Handbook\n\ncollapsed-handbook-body\n'),
   ])
   return root
@@ -77,16 +77,16 @@ test('step 1 — a state file full of open dirs launches FOLDED, with the deep t
   win = await appWindow(app, 'w1')
 
   // The tab is the half that DOES restore: the file three folders down is open and reading.
-  await expect(activeTab(win)).toHaveText('Deep note')
+  await expect(activeTab(win)).toHaveText('Deep page')
   await expect(editorOf(win)).toContainText(DEEP_BODY)
 
   // …and the tree behind it is at its root: two dirs and one file, every dir shut. The seed
   // named four open dirs and the active file's own chain among them; not one of them took.
   await expect(dirRow(win, 'Projects')).toBeVisible()
   await expect(dirRow(win, 'Reference')).toBeVisible()
-  await expect(fileRow(win, 'Loose note')).toBeVisible()
+  await expect(fileRow(win, 'Loose page')).toBeVisible()
   await expect(openDirs(win)).toHaveCount(0)
-  await expect(fileRow(win, 'Deep note')).toHaveCount(0) // the ACTIVE file's row is not drawn either
+  await expect(fileRow(win, 'Deep page')).toHaveCount(0) // the ACTIVE file's row is not drawn either
   await expect(fileRow(win, 'Charter')).toHaveCount(0)
   await expect(fileRow(win, 'Handbook')).toHaveCount(0)
   await shoot(win, 'collapsed-01-launch')
@@ -100,7 +100,7 @@ test('step 2 — two dirs opened by hand stay open here; a second window on the 
   await expect(fileRow(win, 'Charter')).toBeVisible()
   await expect(fileRow(win, 'Alpha brief')).toBeVisible()
   await expect(dirRow(win, 'beta')).toBeVisible()
-  await expect(fileRow(win, 'Deep note')).toHaveCount(0) // `beta` was left folded on purpose
+  await expect(fileRow(win, 'Deep page')).toHaveCount(0) // `beta` was left folded on purpose
 
   // A second window on the same root (⌘⇧N) starts with every folder closed (YAZ-3487 D17). It opens on the blank
   // tab with the caret in the search (YAZ-3343 D35): its Files tab is one click away. It writes nothing until the
@@ -139,10 +139,10 @@ test('step 3 — the quit does not write the list, and the relaunch is folded ag
 
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
   win = await appWindow(app, 'w1')
-  await expect(activeTab(win)).toHaveText('Deep note')
+  await expect(activeTab(win)).toHaveText('Deep page')
   await expect(editorOf(win)).toContainText(DEEP_BODY)
   await expect(openDirs(win)).toHaveCount(0)
-  await expect(fileRow(win, 'Deep note')).toHaveCount(0)
+  await expect(fileRow(win, 'Deep page')).toHaveCount(0)
   await expect(fileRow(win, 'Alpha brief')).toHaveCount(0) // step 2's two dirs went with the session
   await shoot(win, 'collapsed-03-relaunch')
   await quitApp(app)

@@ -93,8 +93,8 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
           </label>
           {view.type !== 'calendar' && (
             <label className="view-settings-row">
-              <RowLabel icon="folderCounts">{unit('Notes inside count')}</RowLabel>
-              <input type="checkbox" role="switch" aria-label={unit('Notes inside count')} checked={view.folderCounts !== false} onChange={(e) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'folderCounts', e.target.checked, defaults))} />
+              <RowLabel icon="folderCounts">{unit('Pages inside count')}</RowLabel>
+              <input type="checkbox" role="switch" aria-label={unit('Pages inside count')} checked={view.folderCounts !== false} onChange={(e) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'folderCounts', e.target.checked, defaults))} />
               <FromSettings own={own} viewKey="folderCounts" viewIndex={viewIndex} onUpdate={onUpdate} />
             </label>
           )}
@@ -172,7 +172,7 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
       )}
       {view.type === 'calendar' && (
         <>
-          {/* Start date, once Show by (YAZ-3746 13AD, YAZ-4858): the date column the calendar places notes on; only here, not on the toolbar. */}
+          {/* Start date, once Show by (YAZ-3746 13AD, YAZ-4858): the date column the calendar places pages on; only here, not on the toolbar. */}
           {(dateColumns.length > 0 || typeof view.dateProperty === 'string') && (
             <>
               <p className="view-menu__label">Dates</p>
@@ -232,7 +232,7 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
           <p className="view-menu__label">Lines</p>
           <CalendarLineRow label="Between weeks" widthKey="weekLine" colorKey="weekLineColor" view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
           <CalendarLineRow label="Between days" widthKey="dayLine" colorKey="dayLineColor" view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
-          {/* Cross out when (YAZ-4864): a card whose note matches these rows is crossed out whole. */}
+          {/* Cross out when (YAZ-4864): a card whose page matches these rows is crossed out whole. */}
           {crossOut !== undefined && (
             <>
               <p className="view-menu__label">Cross out</p>

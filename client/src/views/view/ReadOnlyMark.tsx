@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { LockIcon } from './icons'
 
 /**
- * The lock after a read-only note's name in a folder's views (YAZ-3076 D9, S59-S62): the table's
+ * The lock after a read-only page's name in a folder's views (YAZ-3076 D9, S59-S62): the table's
  * Name cell, the board card title, the cards title and the list row. Muted, the size of the text,
  * no layout of its own (`views.css`), "Read only" on a hover. It carries no text, so the name reads
  * the same to every reader of it.
@@ -16,7 +16,7 @@ export function ReadOnlyMark() {
 }
 
 /**
- * A read-only note's name with its lock (YAZ-3129): the NAME is what ellipses, and the lock is its
+ * A read-only page's name with its lock (YAZ-3129): the NAME is what ellipses, and the lock is its
  * sibling, so a long name is cut before the lock and the lock always shows after the "…". The views'
  * name boxes clip with `text-overflow`; a lock inside the clipped text went with the cut.
  */

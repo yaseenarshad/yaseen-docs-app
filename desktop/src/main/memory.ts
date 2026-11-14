@@ -107,7 +107,7 @@ export function grewSince(ring: readonly MemorySample[], bytes: number, at: numb
 }
 
 const WORDS: readonly (readonly [FileKind | null, string, string])[] = [
-  ['markdown', 'note', 'notes'],
+  ['markdown', 'page', 'pages'],
   ['drawing', 'drawing', 'drawings'],
   ['diagram', 'diagram', 'diagrams'],
   ['pdf', 'PDF', 'PDFs'],
@@ -117,7 +117,7 @@ const WORDS: readonly (readonly [FileKind | null, string, string])[] = [
   [null, 'other file', 'other files'],
 ]
 
-/** What a window has open, as "2 notes, 2 drawings"; '' with no tab. */
+/** What a window has open, as "2 pages, 2 drawings"; '' with no tab. */
 export function openText(tabs: readonly string[]): string {
   const kinds = tabs.map((path) => fileKind(path))
   return WORDS.flatMap(([kind, one, many]) => {

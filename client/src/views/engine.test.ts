@@ -66,7 +66,7 @@ describe('runView: rows and values (GRO-2133)', () => {
     expect((cell as ErrorValue).message).toMatch(/unknown formula Untitled/)
   })
 
-  it('values: file.*, bare and note.-prefixed properties, formulas; a formula compile error is one EngineError + ErrorValue cells', () => {
+  it('values: file.*, bare and page.-prefixed properties, formulas; a formula compile error is one EngineError + ErrorValue cells', () => {
     const r = run(
       { order: ['file.name', 'status', 'note.priority', 'formula.ppu', 'formula.bad', 'formula.rel', 'file.nope'], sort: [] },
       { formulas: { ppu: 'priority * 2', bad: '1 +', rel: 'file("Agentic Agency").properties.priority' } },
@@ -185,7 +185,7 @@ describe('runView: filters built by the Filter model (YAZ-1225)', () => {
     { rule: { property: 'note.status', op: 'isNotEmpty', value: '' }, rows: ['Agentic Agency', 'The Levels of an Agency', 'Creator Economy', 'The Gold In Your Archive', 'VSL-v1'] },
     { rule: { property: 'note.priority', op: 'gt', value: '1' }, rows: ['Agentic Agency', 'Creator Economy'] },
     { rule: { property: 'note.priority', op: 'isEmpty', value: '' }, rows: ['The Gold In Your Archive', 'Attribution', 'Tech & Silicon Valley', 'List of Topics', 'VSL-v1'] },
-    // D5 (YAZ-1218): ordering operators carry an emptiness guard, so an undated note never
+    // D5 (YAZ-1218): ordering operators carry an emptiness guard, so an undated page never
     // matches `dateBefore` — the Notion/Airtable behavior. `toNumber(null)` is 0 without it.
     { rule: { property: 'note.date', op: 'dateBefore', value: '2026-08-01' }, rows: ['Creator Economy'] },
     { rule: { property: 'note.date', op: 'isNotEmpty', value: '' }, rows: ['Agentic Agency', 'Creator Economy'] },
@@ -225,7 +225,7 @@ describe('runView: filters built by the Filter model (YAZ-1225)', () => {
 })
 
 describe('runView: sort and limit (GRO-2133)', () => {
-  it('date DESC puts the two dated notes first and the rest (nulls) last in path order', () => {
+  it('date DESC puts the two dated pages first and the rest (nulls) last in path order', () => {
     const r = run({ sort: [{ property: 'date', direction: 'DESC' }] })
     expect(names(r)).toEqual(['Agentic Agency', 'Creator Economy', ...PATH_ORDER.filter(n => n !== 'Agentic Agency' && n !== 'Creator Economy')])
     const asc = run({ sort: [{ property: 'note.date', direction: 'ASC' }] })
@@ -247,10 +247,10 @@ describe('runView: sort and limit (GRO-2133)', () => {
     ])
   })
 
-  it('natural string order: Note 2 before Note 10', () => {
-    const recs = ['Note 10', 'Note 2', 'note 1'].map((b, i) => ({ ...TEST_RECORDS[0], path: `/vault/${i}/${b}.md`, basename: b, name: `${b}.md` }))
+  it('natural string order: Page 2 before Page 10', () => {
+    const recs = ['Page 10', 'Page 2', 'page 1'].map((b, i) => ({ ...TEST_RECORDS[0], path: `/vault/${i}/${b}.md`, basename: b, name: `${b}.md` }))
     const r = runView({ views: [] }, { type: 'table', name: 'T', sort: [{ property: 'file.basename', direction: 'ASC' }] }, recs, {})
-    expect(r.rows.map(x => x.record.basename)).toEqual(['note 1', 'Note 2', 'Note 10'])
+    expect(r.rows.map(x => x.record.basename)).toEqual(['page 1', 'Page 2', 'Page 10'])
   })
 
   it('limit applies after sort; total is the pre-limit count', () => {
@@ -523,7 +523,7 @@ describe('runView: three group levels (YAZ-4531)', () => {
     expect(e.children).toEqual([])
   })
 
-  it('Folder then Folder then Folder under a page: each level one step further down; a folder\'s own notes sit directly under it', () => {
+  it('Folder then Folder then Folder under a page: each level one step further down; a folder\'s own pages sit directly under it', () => {
     const at = (path: string) => {
       const basename = path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '')
       return { ...TEST_RECORDS[0], path: `/vault/${path}`, basename, title: basename, folder: path.slice(0, path.lastIndexOf('/')), properties: {} } as IndexRecord
@@ -546,7 +546,7 @@ describe('folderAt (YAZ-2541): the folder a Folder level groups by', () => {
     expect(folderAt('stages/archive/2019', 'stages', 1)).toBe('stages/archive')
     expect(folderAt('stages/archive/2019', 'stages', 2)).toBe('stages/archive/2019')
     expect(folderAt('stages/archive/2019/q1', 'stages', 2)).toBe('stages/archive/2019')
-    expect(folderAt('stages', 'stages', 1)).toBe('stages') // the page's own folder: its direct notes
+    expect(folderAt('stages', 'stages', 1)).toBe('stages') // the page's own folder: its direct pages
     expect(folderAt('stages/archive', 'stages', 2)).toBe('stages/archive') // nearer than two steps
   })
 
@@ -556,7 +556,7 @@ describe('folderAt (YAZ-2541): the folder a Folder level groups by', () => {
     expect(folderAt('stagesX/y', 'stages', 1)).toBe('stagesX/y') // a prefix is not an ancestor
   })
 
-  it("the root page ('') holds every folder: its first step is the top-level folder, a root note stays ''", () => {
+  it("the root page ('') holds every folder: its first step is the top-level folder, a root page stays ''", () => {
     expect(folderAt('a/b/c', '', 1)).toBe('a')
     expect(folderAt('a/b/c', '', 2)).toBe('a/b')
     expect(folderAt('', '', 1)).toBe('')
@@ -569,7 +569,7 @@ describe('runView: group by Folder under a page (YAZ-2541)', () => {
     const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
     return { ...TEST_RECORDS[0], path: `/vault/${path}`, basename, title: basename, folder, properties: {} } as IndexRecord
   }
-  /** The page `stages`: two direct notes, one in `archive`, one two steps down, one in `active`, and a shortcut living in `Sub`. */
+  /** The page `stages`: two direct pages, one in `archive`, one two steps down, one in `active`, and a shortcut living in `Sub`. */
   const recs = [
     at('stages/Lead Gen.md'),
     at('stages/Sales.md'),
@@ -588,7 +588,7 @@ describe('runView: group by Folder under a page (YAZ-2541)', () => {
     runView({ views: [] }, { type: 'table', name: 'T', groupBy }, recs, opts)
   const rowsOf = (g: { rows: { record: IndexRecord }[] }) => g.rows.map(x => x.record.basename)
 
-  it('one Folder level: a group per folder ONE step below the page, deeper notes rolled up into it; the direct notes under the page\'s own; a shortcut under its home', () => {
+  it('one Folder level: a group per folder ONE step below the page, deeper pages rolled up into it; the direct pages under the page\'s own; a shortcut under its home', () => {
     const r = T({ property: 'file.folder' })
     expect(r.groups!.map(g => g.key)).toEqual(['stages', 'stages/active', 'stages/archive', 'Sub']) // keys stay paths, in the engine's order
     expect(r.groups!.map(rowsOf)).toEqual([['Lead Gen', 'Sales'], ['Now'], ['Old', 'Older'], ['Outsider']])
@@ -599,7 +599,7 @@ describe('runView: group by Folder under a page (YAZ-2541)', () => {
     expect(labels(T({ property: 'file.folder' }))).toEqual(['Stages', 'active', 'Archive', 'Sub'])
   })
 
-  it('Folder then Folder: the inner groups are the NEXT folder down; a subfolder\'s own notes sit directly under it (the merge rule)', () => {
+  it('Folder then Folder: the inner groups are the NEXT folder down; a subfolder\'s own pages sit directly under it (the merge rule)', () => {
     const r = T([{ property: 'file.folder' }, { property: 'file.folder' }])
     expect(labels(r)).toEqual(['Stages', 'active', 'Archive', 'Sub'])
     const [stages, active, archive, sub] = r.groups!
@@ -645,7 +645,7 @@ describe("a Folder level's Depth and Layout (YAZ-4918)", () => {
     const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
     return { ...TEST_RECORDS[0], path: `/vault/${path}`, basename, title: basename, folder, properties } as IndexRecord
   }
-  /** The page `stages`: notes one, two, three and four folders down, and a shortcut living in `Sub`. */
+  /** The page `stages`: pages one, two, three and four folders down, and a shortcut living in `Sub`. */
   const recs = [
     at('stages/Lead Gen.md', { status: 'open' }),
     at('stages/Sales.md', { status: 'done' }),
@@ -677,7 +677,7 @@ describe("a Folder level's Depth and Layout (YAZ-4918)", () => {
     expect(r.groups!.some((g) => g.nested)).toBe(false)
   })
 
-  it('Depth 2: the subfolders nest inside their folder\'s group on the SAME level; a folder\'s own notes sit first, above them; a folder with no subfolder is a leaf', () => {
+  it('Depth 2: the subfolders nest inside their folder\'s group on the SAME level; a folder\'s own pages sit first, above them; a folder with no subfolder is a leaf', () => {
     const r = T({ property: 'file.folder', depth: 2 })
     expect(tree(r.groups!)).toEqual(['Stages = Lead Gen,Sales', 'active = Now', 'Archive * (Old)', '  2019 = Older,Deep,Deeper', 'Sub = Outsider'])
     // The outer group's rows stay the whole branch, so its count and summaries are unchanged.
@@ -689,7 +689,7 @@ describe("a Folder level's Depth and Layout (YAZ-4918)", () => {
     expect(tree(T({ property: 'file.folder', depth: 'all' }).groups!)).toEqual(tree(T({ property: 'file.folder', depth: 3 }).groups!))
   })
 
-  it('"Folder (All), then Status": the Status groups sit inside each deepest folder, and a folder\'s own notes above its subfolders are not split', () => {
+  it('"Folder (All), then Status": the Status groups sit inside each deepest folder, and a folder\'s own pages above its subfolders are not split', () => {
     const r = T([{ property: 'file.folder', depth: 'all' }, { property: 'status' }])
     expect(tree(r.groups!)).toEqual([
       'Stages ()', '  done = Sales', '  open = Lead Gen',
@@ -747,7 +747,7 @@ describe("a Folder level's Depth and Layout (YAZ-4918)", () => {
 })
 
 describe('propertyKeys / propertyLabel (GRO-2133)', () => {
-  it('propertyKeys: view.order when set, else file.name + sorted note keys', () => {
+  it('propertyKeys: view.order when set, else file.name + sorted page keys', () => {
     expect(propertyKeys(yasin, yasin.views[0], TEST_RECORDS)).toEqual(['file.name'])
     expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS)).toEqual([
       'file.name', 'note.cover', 'note.date', 'note.pillar', 'note.priority', 'note.published', 'note.related', 'note.status', 'note.tags', 'note.views',
@@ -776,7 +776,7 @@ describe('propertyKeys / propertyLabel (GRO-2133)', () => {
     for (const type of ['table', 'board', 'list', 'cards']) expect(propertyKeys(yasin, { type, name: 'X' }, [], ['status'])).toEqual(['file.name', 'note.status'])
   })
 
-  it('propertyLabel: displayName (bare or note.-prefixed key) else the default label (YAZ-1513)', () => {
+  it('propertyLabel: displayName (bare or page.-prefixed key) else the default label (YAZ-1513)', () => {
     const def: ViewSet = { properties: { status: { displayName: 'STATUS' }, 'note.views': { displayName: 'Views' }, 'file.name': { displayName: 'Title' } }, views: [] }
     expect(propertyLabel(def, 'status')).toBe('STATUS')
     expect(propertyLabel(def, 'note.status')).toBe('STATUS')
@@ -804,14 +804,14 @@ describe('propertyKeys / propertyLabel (GRO-2133)', () => {
     expect(defaultLabel('formula.score_total')).toBe('Score total')
     // an already-capitalised or non-letter start is left alone
     expect(defaultLabel('note.KPIs')).toBe('KPIs')
-    expect(defaultLabel('note.2024_goals')).toBe('2024 goals')
+    expect(defaultLabel('page.2024_goals')).toBe('2024 goals')
   })
 })
 
 describe('runView: Name is the title, File name its own column (YAZ-2420 D18)', () => {
-  const note = (file: string, title: string, properties: Record<string, unknown> = {}): IndexRecord => ({ ...TEST_RECORDS[0], path: `/vault/${file}.md`, name: `${file}.md`, basename: file, title, folder: '', properties })
+  const page = (file: string, title: string, properties: Record<string, unknown> = {}): IndexRecord => ({ ...TEST_RECORDS[0], path: `/vault/${file}.md`, name: `${file}.md`, basename: file, title, folder: '', properties })
   /** In path order; by title the two swap. */
-  const records = [note('a-zebra-7tq2m8vd4xhn', 'Zebra'), note('up-001-abdul-k3m9x2pq7abc', 'UP-001 - Abdul')]
+  const records = [page('a-zebra-7tq2m8vd4xhn', 'Zebra'), page('up-001-abdul-k3m9x2pq7abc', 'UP-001 - Abdul')]
   const table = (view: Partial<ViewDef>, def: Partial<ViewSet> = {}): ViewResult => {
     const v: ViewDef = { type: 'table', name: 'T', ...view }
     return runView({ views: [v], ...def }, v, records)
@@ -839,11 +839,11 @@ describe('runView: Name is the title, File name its own column (YAZ-2420 D18)', 
 })
 
 describe('runView: subfolder rows (YAZ-4579 D31/D33)', () => {
-  const note = (path: string, title: string): IndexRecord => ({ ...TEST_RECORDS[0], path: `/vault/${path}`, name: path.slice(path.lastIndexOf('/') + 1), basename: title, title, folder: 'Schema', properties: {} })
+  const page = (path: string, title: string): IndexRecord => ({ ...TEST_RECORDS[0], path: `/vault/${path}`, name: path.slice(path.lastIndexOf('/') + 1), basename: title, title, folder: 'Schema', properties: {} })
   /** A subfolder's row: its `.folder.md`, titled as the folder, `folder` = the page. */
-  const folderRow = (dir: string): IndexRecord => ({ ...note(`Schema/${dir}/.folder.md`, dir), basename: '.folder' })
-  /** In the order ViewsPane hands them: the notes, then the folder rows. */
-  const records = [note('Schema/Apple.md', 'Apple'), note('Schema/Zoo.md', 'Zoo'), folderRow('Users'), folderRow('Orders')]
+  const folderRow = (dir: string): IndexRecord => ({ ...page(`Schema/${dir}/.folder.md`, dir), basename: '.folder' })
+  /** In the order ViewsPane hands them: the pages, then the folder rows. */
+  const records = [page('Schema/Apple.md', 'Apple'), page('Schema/Zoo.md', 'Zoo'), folderRow('Users'), folderRow('Orders')]
   const table = (view: Partial<ViewDef>): ViewResult => {
     const v: ViewDef = { type: 'table', name: 'T', ...view }
     return runView({ views: [v] }, v, records)
@@ -851,20 +851,20 @@ describe('runView: subfolder rows (YAZ-4579 D31/D33)', () => {
   const titles = (r: ViewResult): string[] => r.rows.map(row => row.record.title)
   const byName: Partial<ViewDef> = { sort: [{ property: 'file.name', direction: 'ASC' }] }
 
-  it('`file.kind` is `folder` for a folder row and `note` for a note, under the label "Type" (YAZ-5047, was "Kind"); a filter on it keeps one kind', () => {
-    expect(table({ order: ['file.name', 'file.kind'] }).rows.map(row => row.values['file.kind'])).toEqual(['folder', 'folder', 'note', 'note'])
+  it('`file.kind` is `folder` for a folder row and `page` for a page, under the label "Type" (YAZ-5047, was "Kind"); a filter on it keeps one kind', () => {
+    expect(table({ order: ['file.name', 'file.kind'] }).rows.map(row => row.values['file.kind'])).toEqual(['folder', 'folder', 'page', 'page'])
     expect(titles(table({ filters: 'file.kind == "folder"' }))).toEqual(['Users', 'Orders'])
-    expect(titles(table({ filters: 'file.kind == "note"' }))).toEqual(['Apple', 'Zoo'])
+    expect(titles(table({ filters: 'file.kind == "page"' }))).toEqual(['Apple', 'Zoo'])
     expect(defaultLabel('file.kind')).toBe('Type')
   })
 
-  it('Folders first (D33), the default: folder rows before the notes, each part in the view’s sort — or, with none, as handed in', () => {
+  it('Folders first (D33), the default: folder rows before the pages, each part in the view’s sort — or, with none, as handed in', () => {
     expect(titles(table(byName))).toEqual(['Orders', 'Users', 'Apple', 'Zoo'])
     expect(titles(table({ sort: [{ property: 'file.name', direction: 'DESC' }] }))).toEqual(['Users', 'Orders', 'Zoo', 'Apple'])
     expect(titles(table({}))).toEqual(['Users', 'Orders', 'Apple', 'Zoo'])
   })
 
-  it('`foldersFirst: false`: the folder rows sort among the notes by the view’s sort alone', () => {
+  it('`foldersFirst: false`: the folder rows sort among the pages by the view’s sort alone', () => {
     expect(titles(table({ ...byName, foldersFirst: false }))).toEqual(['Apple', 'Orders', 'Users', 'Zoo'])
     expect(titles(table({ foldersFirst: false }))).toEqual(['Apple', 'Zoo', 'Users', 'Orders'])
   })
@@ -877,10 +877,10 @@ describe('runView: subfolder rows (YAZ-4579 D31/D33)', () => {
 })
 
 describe('targetBasename (YAZ-2241)', () => {
-  it('names the basename of EVERY note a target resolves to without aliases, whatever its spelling', () => {
+  it('names the basename of EVERY page a target resolves to without aliases, whatever its spelling', () => {
     // The rename detector skips a file whose basename no link names; that is only sound if every
-    // name, path and root-absolute match ends in the note's own basename. Fuzz the spellings.
-    const names = ['Note', 'note', 'Ünïcode Straße', 'ΟΔΟΣ', 'İstanbul', 'a.b', 'x.MD', 'Plan 2026', 'Deep']
+    // name, path and root-absolute match ends in the page's own basename. Fuzz the spellings.
+    const names = ['Page', 'page', 'Ünïcode Straße', 'ΟΔΟΣ', 'İstanbul', 'a.b', 'x.MD', 'Plan 2026', 'Deep']
     const folders = ['', 'a', 'A/b', 'Σ/ç d', 'x.md']
     const records: IndexRecord[] = []
     for (const [i, name] of names.entries()) {
@@ -900,7 +900,7 @@ describe('targetBasename (YAZ-2241)', () => {
     for (const r of records) {
       for (const target of spellings(r)) {
         const hit = resolve(target)
-        // The one spelling outside the rule since a note answers to its TITLE (YAZ-2420 D17): the note
+        // The one spelling outside the rule since a page answers to its TITLE (YAZ-2420 D17): the page
         // named `x.MD` is found as `[[x.MD]]`, which `targetBasename` reads as a file `x` and its extension.
         if (hit === null || targetKey(target) === 'x.md') continue
         resolved++
@@ -914,37 +914,37 @@ describe('targetBasename (YAZ-2241)', () => {
 describe('views: words that only LOOK like an ID (YAZ-4954)', () => {
   const rec = (name: string, properties: Record<string, unknown> = {}, links: string[] = []) =>
     ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, name: `${name}.md`, basename: name, title: name, folder: '', properties, links }) as IndexRecord
-  const COVID = rec('Covid notes')
-  const ID_NOTE = rec('COVID-19')
+  const COVID = rec('Covid pages')
+  const ID_PAGE = rec('COVID-19')
   // As the index reads them (`scan.test.ts`): the words-first link keeps both sides, the ID-first one its ID.
-  const A = rec('A', { related: '[[Covid notes|COVID-19]]' }, ['Covid notes|COVID-19'])
-  const B = rec('B', { related: '[[COVID-19|Covid notes]]' }, ['COVID-19'])
+  const A = rec('A', { related: '[[Covid pages|COVID-19]]' }, ['Covid pages|COVID-19'])
+  const B = rec('B', { related: '[[COVID-19|Covid pages]]' }, ['COVID-19'])
   const view = (records: IndexRecord[], filters?: string) =>
     runView({ views: [], formulas: { page: 'related.asFile().name' } }, { type: 'table', name: 'T', order: ['formula.page'], sort: [{ property: 'file.basename', direction: 'ASC' }], ...(filters && { filters }) }, records, { resolve: resolverFor(records, '/vault') })
 
-  it('a frontmatter value: the left side is the page when it is a note; the other order names the ID', () => {
-    const r = view([A, B, COVID, ID_NOTE], 'file.basename == "A" || file.basename == "B"')
-    expect(r.rows.map(x => [x.record.basename, x.values['formula.page']])).toEqual([['A', 'Covid notes'], ['B', 'COVID-19']])
+  it('a frontmatter value: the left side is the page when it is a page; the other order names the ID', () => {
+    const r = view([A, B, COVID, ID_PAGE], 'file.basename == "A" || file.basename == "B"')
+    expect(r.rows.map(x => [x.record.basename, x.values['formula.page']])).toEqual([['A', 'Covid pages'], ['B', 'COVID-19']])
   })
 
-  it('only one side is a note: that side', () => {
-    expect(view([A, ID_NOTE], 'file.basename == "A"').rows[0].values['formula.page']).toBe('COVID-19')
-    expect(view([A, COVID], 'file.basename == "A"').rows[0].values['formula.page']).toBe('Covid notes')
+  it('only one side is a page: that side', () => {
+    expect(view([A, ID_PAGE], 'file.basename == "A"').rows[0].values['formula.page']).toBe('COVID-19')
+    expect(view([A, COVID], 'file.basename == "A"').rows[0].values['formula.page']).toBe('Covid pages')
   })
 
   it('file.hasLink and a property compare pick the same page', () => {
-    const all = [A, B, COVID, ID_NOTE]
-    expect(view(all, 'file.hasLink("Covid notes")').rows.map(x => x.record.basename)).toEqual(['A'])
+    const all = [A, B, COVID, ID_PAGE]
+    expect(view(all, 'file.hasLink("Covid pages")').rows.map(x => x.record.basename)).toEqual(['A'])
     expect(view(all, 'file.hasLink("COVID-19")').rows.map(x => x.record.basename)).toEqual(['B'])
-    expect(view(all, 'related == link("Covid notes")').rows.map(x => x.record.basename)).toEqual(['A'])
+    expect(view(all, 'related == link("Covid pages")').rows.map(x => x.record.basename)).toEqual(['A'])
   })
 
   it('the resolver reads a kept pair and a whole link by the same rule', () => {
-    const resolve = makeResolver([A, COVID, ID_NOTE].map(r => new FileValue(r)), '/vault')
-    expect(resolve('Covid notes|COVID-19')?.record.title).toBe('Covid notes')
-    expect(resolve('[[Covid notes|COVID-19]]')?.record.title).toBe('Covid notes')
-    expect(resolve('COVID-19|Covid notes')?.record.title).toBe('COVID-19')
-    expect(makeResolver([ID_NOTE].map(r => new FileValue(r)))('Covid notes|COVID-19')?.record.title).toBe('COVID-19')
+    const resolve = makeResolver([A, COVID, ID_PAGE].map(r => new FileValue(r)), '/vault')
+    expect(resolve('Covid pages|COVID-19')?.record.title).toBe('Covid pages')
+    expect(resolve('[[Covid pages|COVID-19]]')?.record.title).toBe('Covid pages')
+    expect(resolve('COVID-19|Covid pages')?.record.title).toBe('COVID-19')
+    expect(makeResolver([ID_PAGE].map(r => new FileValue(r)))('Covid pages|COVID-19')?.record.title).toBe('COVID-19')
   })
 })
 
@@ -1001,13 +1001,13 @@ describe('makeResolver (GRO-2132)', () => {
 })
 
 describe('makeResolver: number IDs (YAZ-2677 D3)', () => {
-  const note = (path: string, id?: string, title?: string): IndexRecord => {
+  const page = (path: string, id?: string, title?: string): IndexRecord => {
     const name = path.slice(path.lastIndexOf('/') + 1)
     const basename = name.replace(/\.md$/, '')
     return { ...TEST_RECORDS[0], path, name, basename, title: title ?? basename, folder: '', aliases: [], ...(id === undefined ? { id: undefined } : { id }) }
   }
-  // The vault `YAZ`, which was `OLD` before. Note 30 is only NAMED like an ID; an old ID lives beside the numbers.
-  const records = [note('/vault/plan-yaz-12.md', 'YAZ-12', 'Plan'), note('/vault/YAZ-7.md', 'YAZ-30'), note('/vault/home-k3m9x2pq7abc.md', 'k3m9x2pq7abc', 'Home'), note('/vault/GPT-4.md')]
+  // The vault `YAZ`, which was `OLD` before. Page 30 is only NAMED like an ID; an old ID lives beside the numbers.
+  const records = [page('/vault/plan-yaz-12.md', 'YAZ-12', 'Plan'), page('/vault/YAZ-7.md', 'YAZ-30'), page('/vault/home-k3m9x2pq7abc.md', 'k3m9x2pq7abc', 'Home'), page('/vault/GPT-4.md')]
   const resolve = makeResolver(records.map((r) => new FileValue(r)), '/vault', { letters: ['YAZ', 'OLD'] })
   const pathOf = (target: string) => resolve(target)?.record.path ?? null
 
@@ -1026,19 +1026,19 @@ describe('makeResolver: number IDs (YAZ-2677 D3)', () => {
     expect(pathOf('OLD-99')).toBeNull()
   })
 
-  it('S26: a target that is the ID of no note falls back to the name: `[[YAZ-7]]` opens the note named so', () => {
+  it('S26: a target that is the ID of no page falls back to the name: `[[YAZ-7]]` opens the page named so', () => {
     expect(pathOf('YAZ-7')).toBe('/vault/YAZ-7.md')
     expect(pathOf('yaz-30')).toBe('/vault/YAZ-7.md') // and its own ID still reaches it
   })
 
-  it('S21, S22: other LETTERS-NUMBER text is a name: it finds a note of that name, and never the note of that number', () => {
+  it('S21, S22: other LETTERS-NUMBER text is a name: it finds a page of that name, and never the page of that number', () => {
     expect(pathOf('GPT-4')).toBe('/vault/GPT-4.md')
     expect(pathOf('BUS-12')).toBeNull()
     expect(pathOf('BUS-30')).toBeNull()
   })
 
-  it('an ID wins over a note that is named like it', () => {
-    const both = [note('/vault/a/YAZ-12.md'), note('/vault/plan-yaz-12.md', 'YAZ-12', 'Plan')]
+  it('an ID wins over a page that is named like it', () => {
+    const both = [page('/vault/a/YAZ-12.md'), page('/vault/plan-yaz-12.md', 'YAZ-12', 'Plan')]
     expect(makeResolver(both.map((r) => new FileValue(r)), '/vault')('yaz-12')?.record.path).toBe('/vault/plan-yaz-12.md')
   })
 
@@ -1071,7 +1071,7 @@ describe('makeResolver: frontmatter aliases (Links E2, GRO-2214)', () => {
   })
   const resolve = (records: IndexRecord[]) => makeResolver(records.map(r => new FileValue(r)), '/vault')
 
-  it('an alias resolves to its note, case-insensitively, with `[[…]]` / `|alias` / `#heading` stripped', () => {
+  it('an alias resolves to its page, case-insensitively, with `[[…]]` / `|alias` / `#heading` stripped', () => {
     const r = resolve([aliased()])
     const path = '/vault/Costs/Customer Acquisition Cost.md'
     expect(r('CAC')?.record.path).toBe(path)
@@ -1086,14 +1086,14 @@ describe('makeResolver: frontmatter aliases (Links E2, GRO-2214)', () => {
 
   it('a real name ALWAYS beats an alias, whatever their depths', () => {
     const named = { ...TEST_RECORDS[0], path: '/vault/deep/deeper/CAC.md', name: 'CAC.md', basename: 'CAC', folder: 'deep/deeper' }
-    // The aliased note sits shallower (Costs/) and comes first — the basename map still wins.
+    // The aliased page sits shallower (Costs/) and comes first — the basename map still wins.
     expect(resolve([aliased(), named])('CAC')?.record.path).toBe('/vault/deep/deeper/CAC.md')
     expect(resolve([named, aliased()])('CAC')?.record.path).toBe('/vault/deep/deeper/CAC.md')
-    // …and the root-relative path form of the named note is unaffected too.
+    // …and the root-relative path form of the named page is unaffected too.
     expect(resolve([aliased(), named])('deep/deeper/CAC')?.record.path).toBe('/vault/deep/deeper/CAC.md')
   })
 
-  it('two notes claiming one alias: shallowest wins; equal depth → first in path order', () => {
+  it('two pages claiming one alias: shallowest wins; equal depth → first in path order', () => {
     const deep = aliased({ path: '/vault/a/b/Deep.md', name: 'Deep.md', basename: 'Deep', folder: 'a/b', aliases: ['CAC'] })
     const shallow = aliased({ path: '/vault/z/Shallow.md', name: 'Shallow.md', basename: 'Shallow', folder: 'z', aliases: ['CAC'] })
     expect(resolve([deep, shallow])('CAC')?.record.path).toBe('/vault/z/Shallow.md') // a later shallower file wins
@@ -1111,8 +1111,8 @@ describe('makeResolver: frontmatter aliases (Links E2, GRO-2214)', () => {
   it('aliases reach every resolver consumer for free — `file.hasLink` sees them', () => {
     const hub = { ...TEST_RECORDS[0], path: '/vault/Hub.md', name: 'Hub.md', basename: 'Hub', folder: '', links: ['CAC'] }
     const records = [hub, aliased()]
-    // The hub links `[[CAC]]`; asked about the aliased note's REAL name, hasLink compares
-    // RESOLVED paths — both sides land on the same note through the fourth map.
+    // The hub links `[[CAC]]`; asked about the aliased page's REAL name, hasLink compares
+    // RESOLVED paths — both sides land on the same page through the fourth map.
     const hasLink = (arg: string): string[] => {
       const view: ViewDef = { type: 'table', name: 'T', filters: `file.hasLink("${arg}")` }
       return names(runView({ views: [view] }, view, records, { root: '/vault' }))
@@ -1130,8 +1130,8 @@ describe('makeResolver: frontmatter aliases (Links E2, GRO-2214)', () => {
  * contents pass only the MEMBERS as rows while injecting the whole-vault resolver, so a link
  * cell pointing at a page OUTSIDE the members still resolves.
  */
-describe('makeResolver: note ids (YAZ-2293 D5)', () => {
-  const note = (basename: string, id?: string): IndexRecord => ({
+describe('makeResolver: page ids (YAZ-2293 D5)', () => {
+  const page = (basename: string, id?: string): IndexRecord => ({
     ...TEST_RECORDS[0],
     path: `/vault/${basename}.md`,
     name: `${basename}.md`,
@@ -1143,35 +1143,35 @@ describe('makeResolver: note ids (YAZ-2293 D5)', () => {
   })
   const files = (records: IndexRecord[]) => records.map(r => new FileValue(r))
 
-  it('an id resolves to the note that carries it, with `[[…]]`, `|label` and `#heading` stripped', () => {
-    const r = makeResolver(files([note('Kickoff', 'k3m9x2pq7abc'), note('Other')]), '/vault')
+  it('an id resolves to the page that carries it, with `[[…]]`, `|label` and `#heading` stripped', () => {
+    const r = makeResolver(files([page('Kickoff', 'k3m9x2pq7abc'), page('Other')]), '/vault')
     expect(r('k3m9x2pq7abc')?.record.basename).toBe('Kickoff')
     expect(r('[[k3m9x2pq7abc|label]]')?.record.basename).toBe('Kickoff')
     expect(r('k3m9x2pq7abc#Heading')?.record.basename).toBe('Kickoff')
     expect(r('7tq2m8vd4xhn')).toBe(null)
   })
 
-  it('the id wins over a note that is merely NAMED like it', () => {
-    const r = makeResolver(files([note('k3m9x2pq7abc'), note('Kickoff', 'k3m9x2pq7abc')]), '/vault')
+  it('the id wins over a page that is merely NAMED like it', () => {
+    const r = makeResolver(files([page('k3m9x2pq7abc'), page('Kickoff', 'k3m9x2pq7abc')]), '/vault')
     expect(r('k3m9x2pq7abc')?.record.basename).toBe('Kickoff')
   })
 
-  it('the id follows its note through a rename and a move, and resolves to nothing once the note is gone; a note with an id still answers to its name (scenario C2, C3, D11)', () => {
-    const before = resolverFor([note('Kickoff', 'k3m9x2pq7abc'), note('Other')], '/vault')
+  it('the id follows its page through a rename and a move, and resolves to nothing once the page is gone; a page with an id still answers to its name (scenario C2, C3, D11)', () => {
+    const before = resolverFor([page('Kickoff', 'k3m9x2pq7abc'), page('Other')], '/vault')
     expect(before('k3m9x2pq7abc')?.record.path).toBe('/vault/Kickoff.md')
     expect(before('[[Kickoff]]')?.record.id).toBe('k3m9x2pq7abc')
     // Renamed AND moved by anything: the next snapshot holds the same id at another path.
-    const moved: IndexRecord = { ...note('Kickoff 2027', 'k3m9x2pq7abc'), path: '/vault/Archive/Kickoff 2027.md', folder: 'Archive' }
-    const after = resolverFor([moved, note('Other')], '/vault')
+    const moved: IndexRecord = { ...page('Kickoff 2027', 'k3m9x2pq7abc'), path: '/vault/Archive/Kickoff 2027.md', folder: 'Archive' }
+    const after = resolverFor([moved, page('Other')], '/vault')
     expect(after('k3m9x2pq7abc')?.record.path).toBe('/vault/Archive/Kickoff 2027.md')
     expect(after('Kickoff')).toBe(null) // what the id is for: the old NAME is what stops resolving
     expect(after('Kickoff 2027')?.record.id).toBe('k3m9x2pq7abc')
-    // Deleted: the id names nothing — no fallback to a note called anything.
-    expect(resolverFor([note('Other')], '/vault')('k3m9x2pq7abc')).toBe(null)
+    // Deleted: the id names nothing — no fallback to a page called anything.
+    expect(resolverFor([page('Other')], '/vault')('k3m9x2pq7abc')).toBe(null)
   })
 
   it('`{ ids: false }` builds the resolver the rename engine probes with: an id resolves to nothing', () => {
-    const records = [note('Kickoff', 'k3m9x2pq7abc')]
+    const records = [page('Kickoff', 'k3m9x2pq7abc')]
     expect(makeResolver(files(records), '/vault', { ids: false })('k3m9x2pq7abc')).toBe(null)
     expect(makeResolver(files(records), '/vault', { ids: false })('Kickoff')?.record.basename).toBe('Kickoff')
     expect(resolverFor(records, '/vault', { ids: false })).not.toBe(resolverFor(records, '/vault'))
@@ -1181,45 +1181,45 @@ describe('makeResolver: note ids (YAZ-2293 D5)', () => {
 
 describe('makeResolver: titles (YAZ-2420 D17)', () => {
   const ID = 'k3m9x2pq7abc'
-  const note = (rel: string, over: Partial<IndexRecord> = {}): IndexRecord => {
+  const page = (rel: string, over: Partial<IndexRecord> = {}): IndexRecord => {
     const basename = rel.slice(rel.lastIndexOf('/') + 1)
     return { ...TEST_RECORDS[0], path: `/vault/${rel}.md`, name: `${basename}.md`, basename, title: basename, folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '', aliases: [], ...over }
   }
-  const abdul = (over: Partial<IndexRecord> = {}) => note(`candidates/up-001-abdul-${ID}`, { title: 'UP-001 - Abdul', id: ID, ...over })
+  const abdul = (over: Partial<IndexRecord> = {}) => page(`candidates/up-001-abdul-${ID}`, { title: 'UP-001 - Abdul', id: ID, ...over })
   const resolve = (...records: IndexRecord[]) => makeResolver(records.map(r => new FileValue(r)), '/vault')
 
-  it('E: a hand-typed `[[Title]]` is the note with that title, and the note still answers to its file name', () => {
-    const r = resolve(abdul(), note('Other'))
+  it('E: a hand-typed `[[Title]]` is the page with that title, and the page still answers to its file name', () => {
+    const r = resolve(abdul(), page('Other'))
     expect(r('UP-001 - Abdul')?.record.id).toBe(ID)
     expect(r('[[up-001 - abdul|Abdul]]')?.record.id).toBe(ID)
     expect(r(`up-001-abdul-${ID}`)?.record.id).toBe(ID)
-    expect(r('Other')?.record.basename).toBe('Other') // a note with no title: its file name, as before
+    expect(r('Other')?.record.basename).toBe('Other') // a page with no title: its file name, as before
   })
 
   it('an id comes before a title', () => {
-    expect(resolve(note('a/named-like-an-id', { title: ID }), abdul())(ID)?.record.title).toBe('UP-001 - Abdul')
+    expect(resolve(page('a/named-like-an-id', { title: ID }), abdul())(ID)?.record.title).toBe('UP-001 - Abdul')
   })
 
   it('a path comes before a title', () => {
-    const r = resolve(note('Plan'), note('a/b/Plan'), note('roadmap', { title: 'a/b/Plan' }))
+    const r = resolve(page('Plan'), page('a/b/Plan'), page('roadmap', { title: 'a/b/Plan' }))
     expect(r('a/b/Plan')?.record.path).toBe('/vault/a/b/Plan.md')
     expect(r('/vault/a/b/Plan.md')?.record.path).toBe('/vault/a/b/Plan.md')
   })
 
   it('a title comes before a file name, whatever their depths', () => {
-    // `a/Plan.md` is titled Roadmap, so only its file name is Plan; the deeper note is TITLED Plan.
-    const r = resolve(note('a/Plan', { title: 'Roadmap' }), note('x/y/plan-7tq2m8vd4xhn', { title: 'Plan' }))
+    // `a/Plan.md` is titled Roadmap, so only its file name is Plan; the deeper page is TITLED Plan.
+    const r = resolve(page('a/Plan', { title: 'Roadmap' }), page('x/y/plan-7tq2m8vd4xhn', { title: 'Plan' }))
     expect(r('Plan')?.record.path).toBe('/vault/x/y/plan-7tq2m8vd4xhn.md')
     expect(r('Roadmap')?.record.path).toBe('/vault/a/Plan.md')
   })
 
   it('a title comes before an alias', () => {
-    const r = resolve(note('a/aliased', { aliases: ['UP-001 - Abdul'] }), abdul({ path: `/vault/x/y/up-001-abdul-${ID}.md`, folder: 'x/y' }))
+    const r = resolve(page('a/aliased', { aliases: ['UP-001 - Abdul'] }), abdul({ path: `/vault/x/y/up-001-abdul-${ID}.md`, folder: 'x/y' }))
     expect(r('UP-001 - Abdul')?.record.id).toBe(ID)
   })
 
-  it('two notes with one title: the shallowest, and of two as deep the first in the given order', () => {
-    const titled = (rel: string) => note(rel, { title: 'Standup' })
+  it('two pages with one title: the shallowest, and of two as deep the first in the given order', () => {
+    const titled = (rel: string) => page(rel, { title: 'Standup' })
     expect(resolve(titled('a/b/one'), titled('z/two'))('Standup')?.record.path).toBe('/vault/z/two.md')
     expect(resolve(titled('a/one'), titled('b/two'))('Standup')?.record.path).toBe('/vault/a/one.md')
   })
@@ -1227,16 +1227,16 @@ describe('makeResolver: titles (YAZ-2420 D17)', () => {
 
 describe('makeResolver: a path of titles (YAZ-2478, YAZ-2420 D17)', () => {
   const ID = 'k3m9x2pq7abc'
-  const note = (rel: string, title: string): IndexRecord => {
+  const page = (rel: string, title: string): IndexRecord => {
     const basename = rel.slice(rel.lastIndexOf('/') + 1)
     return { ...TEST_RECORDS[0], path: `/vault/${rel}.md`, name: `${basename}.md`, basename, title, folder: rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '', aliases: [] }
   }
   /** A folder's settings record, titled by its own name when it has no `title:` — as the index titles it. */
-  const folder = (rel: string, title = rel.slice(rel.lastIndexOf('/') + 1)): IndexRecord => note(`${rel}/.folder`, title)
+  const folder = (rel: string, title = rel.slice(rel.lastIndexOf('/') + 1)): IndexRecord => page(`${rel}/.folder`, title)
   const resolve = (records: IndexRecord[], folders: IndexRecord[]) => makeResolver(records.map(r => new FileValue(r)), '/vault', { folders })
 
-  it('E: `[[Sub/Page]]` is the note titled Page in the folder titled Sub (`sub/page-<id>.md`), whatever its directory is called', () => {
-    const records = [note(`my-folder/page-7tq2m8vd4xhn`, 'Page'), note(`sub/page-${ID}`, 'Page')]
+  it('E: `[[Sub/Page]]` is the page titled Page in the folder titled Sub (`sub/page-<id>.md`), whatever its directory is called', () => {
+    const records = [page(`my-folder/page-7tq2m8vd4xhn`, 'Page'), page(`sub/page-${ID}`, 'Page')]
     const r = resolve(records, [folder('my-folder', 'My Folder'), folder('sub', 'Sub')])
     expect(r('Sub/Page')?.record.path).toBe(`/vault/sub/page-${ID}.md`)
     expect(r('[[/sub/page#Rates|shown]]')?.record.path).toBe(`/vault/sub/page-${ID}.md`)
@@ -1246,39 +1246,39 @@ describe('makeResolver: a path of titles (YAZ-2478, YAZ-2420 D17)', () => {
   })
 
   it('a folder NAMED `Sub`, with no title or with no settings file yet, is found by its directory name', () => {
-    const records = [note(`Sub/page-${ID}`, 'Page')]
+    const records = [page(`Sub/page-${ID}`, 'Page')]
     expect(resolve(records, [folder('Sub')])('sub/Page')?.record.path).toBe(`/vault/Sub/page-${ID}.md`)
     expect(resolve(records, [])('Sub/Page')?.record.path).toBe(`/vault/Sub/page-${ID}.md`)
   })
 
   it('two levels, `[[A/B/Page]]`: each segment is a folder\'s title, else its directory name', () => {
-    const r = resolve([note(`alpha/beta/page-${ID}`, 'Page')], [folder('alpha', 'A'), folder('alpha/beta', 'B')])
+    const r = resolve([page(`alpha/beta/page-${ID}`, 'Page')], [folder('alpha', 'A'), folder('alpha/beta', 'B')])
     for (const typed of ['A/B/Page', 'A/beta/Page', 'alpha/B/Page', 'alpha/beta/Page']) expect(r(typed)?.record.path, typed).toBe(`/vault/alpha/beta/page-${ID}.md`)
     expect(r('B/Page')).toBe(null) // root-relative, as a path of file names is
   })
 
   it('a folder\'s title comes before another\'s directory name; the vault root answers to no name', () => {
-    const records = [note('page-root', 'Page'), note('sub/page-one', 'Page'), note('x/page-two', 'Page')]
+    const records = [page('page-root', 'Page'), page('sub/page-one', 'Page'), page('x/page-two', 'Page')]
     const r = resolve(records, [folder('', 'Vault'), folder('sub', 'Archive'), folder('x', 'Sub')])
     expect(r('Sub/Page')?.record.path).toBe('/vault/x/page-two.md')
     expect(r('Archive/Page')?.record.path).toBe('/vault/sub/page-one.md')
     expect(r('Vault/Page')).toBe(null)
   })
 
-  it('an exact root-relative file path still wins, and so does a note whose whole title is the target', () => {
-    const records = [note('roadmap', 'Docs/Page'), note('sub/Page', 'Other'), note(`sub/page-${ID}`, 'Page')]
+  it('an exact root-relative file path still wins, and so does a page whose whole title is the target', () => {
+    const records = [page('roadmap', 'Docs/Page'), page('sub/Page', 'Other'), page(`sub/page-${ID}`, 'Page')]
     const r = resolve(records, [folder('sub', 'Sub'), folder('docs', 'Docs')])
     expect(r('sub/Page')?.record.path).toBe('/vault/sub/Page.md')
     expect(r('Docs/Page')?.record.path).toBe('/vault/roadmap.md')
   })
 
   it('a path of titles comes before an alias', () => {
-    const aliased = { ...note('aliased', 'Aliased'), aliases: ['Sub/Page'] }
-    expect(resolve([aliased, note(`sub/page-${ID}`, 'Page')], [folder('sub', 'Sub')])('Sub/Page')?.record.path).toBe(`/vault/sub/page-${ID}.md`)
+    const aliased = { ...page('aliased', 'Aliased'), aliases: ['Sub/Page'] }
+    expect(resolve([aliased, page(`sub/page-${ID}`, 'Page')], [folder('sub', 'Sub')])('Sub/Page')?.record.path).toBe(`/vault/sub/page-${ID}.md`)
   })
 
   it('with no folders handed in, a path is a path of file names as before; `resolverFor` keeps one resolver per folder list', () => {
-    const records = [note(`sub/page-${ID}`, 'Page')]
+    const records = [page(`sub/page-${ID}`, 'Page')]
     const folders = [folder('sub', 'Sub')]
     expect(makeResolver(records.map(r => new FileValue(r)), '/vault')('Sub/Page')).toBe(null)
     expect(resolverFor(records, '/vault')('Sub/Page')).toBe(null)
@@ -1289,19 +1289,19 @@ describe('makeResolver: a path of titles (YAZ-2478, YAZ-2420 D17)', () => {
 })
 
 describe('runView: an id link orders and labels by what is shown (YAZ-2293 D8)', () => {
-  const note = (basename: string, extra: Partial<IndexRecord> = {}): IndexRecord => ({
+  const page = (basename: string, extra: Partial<IndexRecord> = {}): IndexRecord => ({
     ...TEST_RECORDS[0], path: `/vault/${basename}.md`, name: `${basename}.md`, basename, title: basename, folder: '', properties: {}, ...extra,
   })
   /** The ids sort AGAINST the titles on purpose: `1…` is Zed, `9…` is Alpha. */
   const ZED = '1aaaaaaaaaaa'
   const ALPHA = '9zzzzzzzzzzz'
   const records = [
-    note('Alpha', { id: ALPHA }),
-    note('Zed', { id: ZED }),
-    note('row-a', { properties: { owner: `[[${ZED}]]` } }),
-    note('row-b', { properties: { owner: '[[Middle]]' } }),
-    note('row-c', { properties: { owner: `[[${ALPHA}]]` } }),
-    note('row-d', { properties: { owner: `[[${ALPHA}|Omega]]` } }),
+    page('Alpha', { id: ALPHA }),
+    page('Zed', { id: ZED }),
+    page('row-a', { properties: { owner: `[[${ZED}]]` } }),
+    page('row-b', { properties: { owner: '[[Middle]]' } }),
+    page('row-c', { properties: { owner: `[[${ALPHA}]]` } }),
+    page('row-d', { properties: { owner: `[[${ALPHA}|Omega]]` } }),
   ]
   const view: ViewDef = { type: 'table', name: 'T', order: ['file.name', 'owner'], filters: 'owner' }
 
@@ -1317,8 +1317,8 @@ describe('runView: an id link orders and labels by what is shown (YAZ-2293 D8)',
     expect(r.groups!.map(g => groupKeyOf(g.key))).toEqual([`v:[[${ALPHA}]]`, 'v:[[Middle]]', `v:[[${ZED}]]`])
   })
 
-  it('an id naming no note keeps the raw id, in the label and in the order', () => {
-    const lone = [note('row-a', { properties: { owner: '[[7tq2m8vd4xhn]]' } }), note('row-b', { properties: { owner: '[[Middle]]' } })]
+  it('an id naming no page keeps the raw id, in the label and in the order', () => {
+    const lone = [page('row-a', { properties: { owner: '[[7tq2m8vd4xhn]]' } }), page('row-b', { properties: { owner: '[[Middle]]' } })]
     const r = runView({ views: [view] }, { ...view, groupBy: { property: 'owner' } }, lone)
     expect(labels(r)).toEqual(['[[7tq2m8vd4xhn]]', '[[Middle]]'])
   })
@@ -1346,11 +1346,11 @@ describe('runView: RunOptions.resolve (🔒 D2, YAZ-819)', () => {
 
 describe('runView: option order (YAZ-3940)', () => {
   const OPTIONS = ['Later', 'Ready', 'Done']
-  const notes = (statuses: unknown[]): IndexRecord[] => statuses.map((status, i) => ({
+  const pages = (statuses: unknown[]): IndexRecord[] => statuses.map((status, i) => ({
     ...TEST_RECORDS[0], path: `/vault/n${i}.md`, basename: `n${i}`, title: `n${i}`, properties: { status },
   }))
   const optionOrder = (property: string) => (property === 'note.status' || property === 'status' ? OPTIONS : undefined)
-  const recs = notes(['Done', 'Legacy', 'Ready', null, 'Archive', 'Later'])
+  const recs = pages(['Done', 'Legacy', 'Ready', null, 'Archive', 'Later'])
   const one = (view: Partial<ViewDef>, opts: Parameters<typeof runView>[3] = { optionOrder }) => {
     const v: ViewDef = { type: 'table', name: 'T', order: ['file.name', 'note.status'], ...view }
     return runView({ views: [v] }, v, recs, opts)
@@ -1380,7 +1380,7 @@ describe('runView: option order (YAZ-3940)', () => {
   })
 
   it('a Multi-select list sorts by its first element and groups each element in option order', () => {
-    const tagged = notes([['Done', 'Later'], ['Ready']])
+    const tagged = pages([['Done', 'Later'], ['Ready']])
     const v: ViewDef = { type: 'table', name: 'T', sort: [{ property: 'note.status', direction: 'ASC' }], groupBy: { property: 'note.status' } }
     const r = runView({ views: [v] }, v, tagged, { optionOrder })
     expect(r.rows.map(row => row.record.basename)).toEqual(['n1', 'n0'])
@@ -1421,7 +1421,7 @@ describe('runView: live relative dates (YAZ-4919)', () => {
   }
   const at = (y: number, m: number, d: number, h = 10) => new Date(y, m - 1, d, h).getTime()
 
-  it('isToday / isThisWeek / isThisMonth read the run\'s clock, injected; an undated note is out, with no error', () => {
+  it('isToday / isThisWeek / isThisMonth read the run\'s clock, injected; an undated page is out, with no error', () => {
     expect(titles('note.date.isToday()', { now: at(2026, 8, 1, 23) })).toEqual(['Agentic Agency'])
     expect(titles('note.date.isToday()', { now: at(2026, 8, 2) })).toEqual([])
     expect(titles('note.date.isThisMonth()', { now: at(2026, 7, 20) })).toEqual(['Creator Economy'])

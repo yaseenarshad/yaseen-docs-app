@@ -475,7 +475,7 @@ function installBridge(app: AppState, identity: IdentityFixture) {
         sidebarLens: identity.sidebarLens ?? 'files',
       })),
       setIdentity: vi.fn(async () => undefined),
-      noteClosed: vi.fn(async () => undefined),
+      pageClosed: vi.fn(async () => undefined),
     },
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })
@@ -526,7 +526,7 @@ describe('bootTabs (rules 12/15)', () => {
     expect(byPath(bootTabs(null))).toEqual(state([], null))
   })
 
-  it('YAZ-3487 D15: with "Open on: Its last note" a fresh window falls back to the folder lastFile again; a window opened empty on purpose stays empty', async () => {
+  it('YAZ-3487 D15: with "Open on: Its last page" a fresh window falls back to the folder lastFile again; a window opened empty on purpose stays empty', async () => {
     const last: AppState = { ...seeded, settings: { ...seeded.settings, vaultOpensOn: 'last' } }
     installBridge(last, { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: false })
     await storage.init()
@@ -673,19 +673,19 @@ describe('useWorkspace legacy main-tab mirror', () => {
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/d.md'], '/v/d.md'))
   })
 
-  it('YAZ-3487 D10 (S31, S32, S43): close, closeMany and closeActive send the closed tabs\' notes to main, one call each; the blank tab sends nothing', () => {
+  it('YAZ-3487 D10 (S31, S32, S43): close, closeMany and closeActive send the closed tabs\' pages to main, one call each; the blank tab sends nothing', () => {
     for (const path of ['/v/a.md', '/v/b.md', '/v/c.md', '/v/d.md']) act(() => latest.openBackground(path))
     act(() => latest.close(idOf('/v/a.md')))
-    expect(bridge.window.noteClosed).toHaveBeenLastCalledWith(['/v/a.md'])
+    expect(bridge.window.pageClosed).toHaveBeenLastCalledWith(['/v/a.md'])
     act(() => latest.closeMany(['/v/b.md', '/v/c.md'].map(idOf)))
-    expect(bridge.window.noteClosed).toHaveBeenLastCalledWith(['/v/b.md', '/v/c.md'])
+    expect(bridge.window.pageClosed).toHaveBeenLastCalledWith(['/v/b.md', '/v/c.md'])
     act(() => latest.activate(idOf('/v/d.md')))
     act(() => void latest.closeActive())
-    expect(bridge.window.noteClosed).toHaveBeenLastCalledWith(['/v/d.md'])
-    expect(bridge.window.noteClosed).toHaveBeenCalledTimes(3)
+    expect(bridge.window.pageClosed).toHaveBeenLastCalledWith(['/v/d.md'])
+    expect(bridge.window.pageClosed).toHaveBeenCalledTimes(3)
     act(() => latest.newTab())
     act(() => void latest.closeActive())
-    expect(bridge.window.noteClosed).toHaveBeenCalledTimes(3)
+    expect(bridge.window.pageClosed).toHaveBeenCalledTimes(3)
   })
 
   it('"Close duplicate tabs" (YAZ-3943 5A): three copies of a and two of b leave one of each, the active copy kept, the leftmost otherwise; the copies go to "Recently closed" in ONE close; no copy, no change', () => {
@@ -701,7 +701,7 @@ describe('useWorkspace legacy main-tab mirror', () => {
     expect(latest.tabs.map((t) => t.id)).toEqual([tabs[1], tabs[4], tabs[5]])
     expect(latest.active).toBe(tabs[4])
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(writes + 1)
-    expect(bridge.window.noteClosed).toHaveBeenLastCalledWith(['/v/a.md', '/v/a.md', '/v/b.md'])
+    expect(bridge.window.pageClosed).toHaveBeenLastCalledWith(['/v/a.md', '/v/a.md', '/v/b.md'])
     expect(duplicateTabIds(latest)).toEqual([])
     // A tab zoomed into a bullet shows another view of the page: no copy of the whole page.
     expect(duplicateTabIds({ tabs: [{ id: 't1', path: '/v/a.md' }, { id: 't2', path: '/v/a.md', zoom: 'k' }, { id: 't3', path: '/v/a.md', zoom: 'k' }], active: null })).toEqual(['t3'])
@@ -968,7 +968,7 @@ describe('workspaceReducer right-panel ownership', () => {
 
 /**
  * Delete (GRO-2272 `B2-`): deleting a tab IS closing it. These assertions exist to keep the
- * two in step — divergence would show up as "deleting the active note picks a different tab
+ * two in step — divergence would show up as "deleting the active page picks a different tab
  * than ⌘W does", which nobody reports and everybody feels.
  */
 describe('delete / delete-dir (GRO-2272)', () => {
@@ -1533,7 +1533,7 @@ describe('display name (YAZ-2949 D2): a name on one tab', () => {
     const s = named(two())
     const linked = reduceTabs(s, { type: 'navigate', path: '/v/c.md' })
     expect(linked.tabs[0]).toEqual({ id: 't1', path: '/v/c.md' })
-    const back = reduceTabs({ ...named(linked, 't1', 'C notes'), history: { steps: [step(1, 't1', A), step(2, 't1', '/v/c.md')], index: 1 } }, { type: 'back' })
+    const back = reduceTabs({ ...named(linked, 't1', 'C pages'), history: { steps: [step(1, 't1', A), step(2, 't1', '/v/c.md')], index: 1 } }, { type: 'back' })
     expect(back.tabs[0]).toEqual({ id: 't1', path: A })
     // The preview tab that is named is kept, so a sidebar click opens a new preview tab and the name stays.
     const kept = reduceTabs(named(two({ preview: 't1' })), { type: 'open-current', path: '/v/c.md' })

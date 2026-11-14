@@ -6,25 +6,25 @@
  *
  * 🔒 THE CLAIM RULE (locked in YAZ-967, visibility amendment in YAZ-970) is why CMD+F is a WINDOW
  * CAPTURE listener, one per bar and with no coordinator between them: a `folder` bar (a folder's Page
- * tab, YAZ-4584) claims the key while focus stands inside its own host, the `note` bar claims it
+ * tab, YAZ-4584) claims the key while focus stands inside its own host, the `page` bar claims it
  * whenever focus is NOT inside any `.folder-page-doc` — and a HIDDEN editor never claims. With no
- * other note editor showing (a folder page and no note window), CMD+F belongs to the Page even from
+ * other page editor showing (a folder page and no page window), CMD+F belongs to the Page even from
  * the sidebar or the title. A `views` bar (a folder page's Table, Board, List, Cards or Calendar, YAZ-4613) claims
- * while focus stands in its pane (`[data-find-host]`), where the `note` bar declines. Exactly one bar answers; the other declines. Neither bar claims while focus stands in a code tab
+ * while focus stands in its pane (`[data-find-host]`), where the `page` bar declines. Exactly one bar answers; the other declines. Neither bar claims while focus stands in a code tab
  * (`.editor--code`): there CMD+F is Monaco's own find box (YAZ-3451, YAZ-3464).
  *
  * Focus: the input does not exist yet on the CMD+F that OPENS the bar, so that focus lands in a
  * layout effect on the open; a CMD+F on an already-open bar has an input to focus and refocuses it
  * from the handler itself — one call site, told apart by the ref being null or not.
  *
- * Folds (YAZ-4787): a note's bar has a fold button beside the count. Its menu sets what find does with folded bullets
- * for this note (`find-folds` in the note); "Use the default" hands it back to Settings › Editor › Find.
+ * Folds (YAZ-4787): a page's bar has a fold button beside the count. Its menu sets what find does with folded bullets
+ * for this page (`find-folds` in the page); "Use the default" hands it back to Settings › Editor › Find.
  */
 import { useUnit } from '../../vault/unitWord'
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type MouseEvent, type RefObject } from 'react'
 import type { FindFolds } from '@shared/types'
 import { storage } from '../../lib/storage'
-import { isNoteKey } from '../noteKeys'
+import { isPageKey } from '../pageKeys'
 import type { FindChannel } from './findChannel'
 import './find.css'
 
@@ -32,10 +32,10 @@ export interface FindBarProps {
   /** The host's one channel per editor mount — the very instance `createCrepe` was given. */
   channel: FindChannel
   /** Which part of the claim rule this bar answers CMD+F by (🔒 YAZ-967); `views`: a folder page's views (YAZ-4613). */
-  scope: 'note' | 'folder' | 'views'
-  /** The Page bar's own editor mount: its claim IS focus standing inside it. Unread for `note`. */
+  scope: 'page' | 'folder' | 'views'
+  /** The Page bar's own editor mount: its claim IS focus standing inside it. Unread for `page`. */
   hostRef: RefObject<HTMLElement | null>
-  /** A note's fold menu (YAZ-4787): the note's own choice (null: none), the app's, and the door that writes the note's. */
+  /** A page's fold menu (YAZ-4787): the page's own choice (null: none), the app's, and the door that writes the page's. */
   folds?: { own: FindFolds | null; app: FindFolds; onChange: (folds: FindFolds | null) => void }
 }
 
@@ -96,31 +96,31 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       // Find's key as it is now (YAZ-3564 K4): the setting is read at each keydown.
-      if (!isNoteKey(event, 'note.find', storage.getSettings()?.hotkeys)) return
+      if (!isPageKey(event, 'page.find', storage.getSettings()?.hotkeys)) return
       const active = document.activeElement
       // In a card's editor (YAZ-5026: the card's own list has no find), ⌘F is not the page's.
-      if (active instanceof Element && active.closest('.note-card__editor') !== null) return
+      if (active instanceof Element && active.closest('.card__editor') !== null) return
       // checkVisibility is absent under jsdom, where nothing is ever hidden — hence the ?? true.
       const shown = (el: Element | null): boolean => el instanceof HTMLElement && (el.checkVisibility?.() ?? true)
-      // Never from a code tab (YAZ-3451, YAZ-3464): its ⌘F is Monaco's find box. A note or a Page tab in the other place would take it first.
+      // Never from a code tab (YAZ-3451, YAZ-3464): its ⌘F is Monaco's find box. A page or a Page tab in the other place would take it first.
       const inCode = active instanceof Element && active.closest('.editor--code') !== null
       const host = hostRef.current
-      /** Another note editor shows: the Page's own mount is an `.editor-mount` too, so it does not count. */
-      const otherNote = (): boolean => [...document.querySelectorAll('.editor-mount .ProseMirror')].some((el) => !host?.contains(el) && shown(el))
+      /** Another page editor shows: the Page's own mount is an `.editor-mount` too, so it does not count. */
+      const otherPage = (): boolean => [...document.querySelectorAll('.editor-mount .ProseMirror')].some((el) => !host?.contains(el) && shown(el))
       /** In a folder page's own find: its Page tab, or its views (`[data-find-host]`, YAZ-4613). */
       const inPage = active instanceof Element && active.closest('.folder-page-doc, [data-find-host]') !== null
       /** In the explore stack (YAZ-2571): only the layer's own bar answers; the tab's behind the stack stays shut. */
       const inExplore = active instanceof Element && active.closest('.explore') !== null && !(host?.contains(active) ?? false)
       const claims =
         scope === 'folder'
-          ? shown(host) && ((active !== null && host !== null && host.contains(active)) || (!inCode && !otherNote()))
+          ? shown(host) && ((active !== null && host !== null && host.contains(active)) || (!inCode && !otherPage()))
           : scope === 'views'
-            ? // The focus in the views (not in a note editor there), or in no page, with no note showing: the first shown views.
+            ? // The focus in the views (not in a page editor there), or in no page, with no page showing: the first shown views.
               shown(host) &&
               !inCode &&
               (active !== null && host !== null && host.contains(active)
                 ? active.closest('.editor-mount') === null
-                : !inPage && !otherNote() && [...document.querySelectorAll('[data-find-host]')].find(shown) === host)
+                : !inPage && !otherPage() && [...document.querySelectorAll('[data-find-host]')].find(shown) === host)
             : shown(host) && !inCode && !inPage && !inExplore
       if (!claims) return
       event.preventDefault()
@@ -197,7 +197,7 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
                       onMouseDown={hold}
                       onClick={() => {
                         setFoldMenu(false)
-                        // The app's own choice with no note choice yet: nothing to write.
+                        // The app's own choice with no page choice yet: nothing to write.
                         if (folds.own === null && choice.value === folds.app) return
                         folds.onChange(choice.value)
                       }}
@@ -213,7 +213,7 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
                   ))}
                   <div className="find-folds__rule" />
                   {folds.own === null ? (
-                    <div className="find-folds__foot">{unit('For this note. The default is in Settings › Editor › Find.')}</div>
+                    <div className="find-folds__foot">{unit('For this page. The default is in Settings › Editor › Find.')}</div>
                   ) : (
                     <button
                       type="button"
