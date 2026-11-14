@@ -25,11 +25,12 @@ function request<T>(req: IDBRequest<T>): Promise<T> {
  * The phone's backend: one IndexedDB database. It opens on the first call. When the connection is lost, the
  * next call opens a new one, and a call that finds it lost is tried one more time on the new one.
  */
-export function idbBackend(options: { name?: string; factory?: IDBFactory; keyRange?: typeof IDBKeyRange } = {}): Backend {
+export function idbBackend(options: { name?: string; factory?: IDBFactory; keyRange?: typeof IDBKeyRange; storage?: StorageManager } = {}): Backend {
   const name = options.name ?? DB_NAME
   // Both from the same IndexedDB: the browser's, or a test's fake-indexeddb.
   const factory = options.factory ?? indexedDB
   const keyRange = options.keyRange ?? IDBKeyRange
+  const storage = 'storage' in options ? options.storage : globalThis.navigator?.storage
   /** All the keys `[scope, …]`: arrays sort after strings, so `[scope, []]` is above every `[scope, path]`. */
   const scopeRange = (scope: string) => keyRange.bound([scope], [scope, []])
   let current: IDBDatabase | null = null
@@ -135,6 +136,15 @@ export function idbBackend(options: { name?: string; factory?: IDBFactory; keyRa
             }
           }),
       )
+    },
+    async room() {
+      if (typeof storage?.estimate !== 'function') return null
+      try {
+        const { quota, usage } = await storage.estimate()
+        return quota === undefined || usage === undefined ? null : Math.max(0, quota - usage)
+      } catch {
+        return null
+      }
     },
     close() {
       current?.close()

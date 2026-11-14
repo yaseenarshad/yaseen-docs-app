@@ -78,7 +78,7 @@ describe('which account acts for friends (round 13, item 4)', () => {
 
   it('keeps the choice on the phone, and refuses a vault without the Gists permission', async () => {
     const store = await openVaultStore(memoryBackend())
-    const v = (repo: string): PhoneVault => ({ repo, branch: 'main', addedAt: 1 }) as PhoneVault
+    const v = (repo: string): PhoneVault => ({ repo, branch: 'main', addedAt: 1 })
     let list: VaultList = { vaults: [], open: null }
     list = addVault(addVault(addVault(list, v('yaseen/a')), v('yaseen/b')), v('yaseen/c'))
     await saveVaultList(store, list)

@@ -15,5 +15,35 @@ export function forbiddenImport(id: string): string | null {
   if (/(^|\/)@excalidraw\//.test(path) || /(^|\/)engine\/packages\//.test(path)) return 'the drawing engine'
   if (/(^|\/)monaco-editor(\/|$)/.test(path)) return 'the code editor'
   if (/(^|\/)desktop\/src\//.test(path)) return 'the desktop app'
+  // YAZ-5158: the desktop bridge and the app's storage wrapper are repo files, so they are named by path. A client
+  // file that imports either one is then stopped too, because the build checks every import of every bundled file.
+  if (/(^|\/)(@client|client\/src)\/api(\.tsx?)?$/.test(path)) return 'the desktop bridge (client/src/api)'
+  if (/(^|\/)(@client|client\/src)\/lib\/storage(\.tsx?)?$/.test(path)) return "the app's storage wrapper (client/src/lib/storage)"
+  return null
+}
+
+/** The repo's own sources: what `forbiddenUse` reads. Packages in node_modules are not read. */
+const REPO_SOURCE = /(^|\/)(client\/src|shared|mobile\/src)\//
+const STORE = /(^|\/)mobile\/src\/store\//
+
+/** The code with its comments taken out (roughly: a `//` after `:` stays, so a URL is kept). */
+const withoutComments = (code: string) => code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\])\/\/.*$/gm, '$1')
+
+/**
+ * Why the phone must not bundle this source file, from what its CODE uses, or `null`. A use is not an import, so
+ * `forbiddenImport` cannot see it (YAZ-5158):
+ * - the desktop bridge, the global `window.yaseenDocs` (`shared/ipc.ts`): it is undefined on a phone;
+ * - browser storage (`localStorage`, `sessionStorage`, `indexedDB`) outside `mobile/src/store/`, the one place
+ *   that owns the phone's storage.
+ * Only the repo's own sources are read (`client/src`, `shared`, `mobile/src`), and no test file.
+ */
+export function forbiddenUse(file: string, code: string): string | null {
+  const path = file.split('?')[0].replaceAll('\\', '/')
+  if (!REPO_SOURCE.test(path) || path.includes('/node_modules/')) return null
+  // A test is never in the bundle. Vitest runs this guard on tests too, and src/rules.test.ts names the words.
+  if (/\.test\.[cm]?[jt]sx?$/.test(path)) return null
+  const text = withoutComments(code)
+  if (/\b(window|globalThis|self)\s*\.\s*yaseenDocs\b/.test(text)) return 'the desktop bridge (window.yaseenDocs)'
+  if (!STORE.test(path) && /\b(localStorage|sessionStorage|indexedDB)\b/.test(text)) return 'browser storage outside mobile/src/store'
   return null
 }

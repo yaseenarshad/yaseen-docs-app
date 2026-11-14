@@ -24,8 +24,12 @@ the code editor. Three checks hold the rule:
 
 * `mobile/tsconfig.json` has browser types only. `process`, `Buffer` or `require` in `src/` fail the typecheck.
 * `importRules.ts` lists what is forbidden. The build fails on it (`phoneImportGuard` in `vite.config.ts`), for
-  every bundled module, also one that `client/src` pulls in.
-* `src/rules.test.ts` reads the source: no forbidden import, and no browser storage outside `src/store/`.
+  every bundled module, also one that `client/src` pulls in:
+  * by name or path (`forbiddenImport`): Electron, Node built-ins, `desktop/src`, the drawing engine, Monaco, the
+    desktop bridge `client/src/api.ts` and the app's storage wrapper `client/src/lib/storage.ts`;
+  * by use (`forbiddenUse`), in every repo source file the bundle takes in: the bridge global `window.yaseenDocs`, and
+    `localStorage`, `sessionStorage` or `indexedDB` outside `mobile/src/store/`.
+* `src/rules.test.ts` reads the source, and every repo file the app reaches through its imports, with the same rules.
 
 Config files and tests run in Node, so they may use it.
 
@@ -33,7 +37,8 @@ Config files and tests run in Node, so they may use it.
 
 * `@shared/…`: the pure code in `shared/`, as the desktop renderer imports it.
 * `@client/…`: pure parts of `client/src` (the card drawing, the review logic). Bring in only files that do not
-  reach the editor, Electron (`window.api`) or the drawing engine. The build tells you if one does.
+  reach the editor, the desktop bridge (`window.yaseenDocs`, through `client/src/api.ts`), the app's storage wrapper
+  or the drawing engine. The build and `src/rules.test.ts` tell you if one does, with the file that does it.
 * React: one copy in the bundle (`dedupe` in `vite.config.ts`), the same version as `client/`.
 
 ## Layout
@@ -54,7 +59,7 @@ mobile/
       vaults.ts         `PhoneVault`, `VaultList`: several vaults; only the open one polls
       persist.ts        `askToKeepStorage()`: `navigator.storage.persist()` at sign-in
       index.ts          the public entry: `openPhoneStore()` and the types
-      testing.ts        test help: a backend with a byte limit (a full phone)
+      testing.ts        test help: a backend with a byte limit (a full phone; every stored byte counts)
       tokenStore.ts     `TokenStore`: one GitHub token for each vault (3E)
     github/
       client.ts         `githubClient`: the ONE way to call GitHub; api.github.com only; typed `GithubError`s
@@ -82,9 +87,14 @@ Where the next units go (from the issues): `src/sync/` (3B, 3C, 3D), `src/screen
 
 ## Storage, in short
 
-* A vault's id is `owner/repo@branch` (`vaultId`). Its files, checkpoint and state are under that id.
-* A page, a card file and a settings file are never dropped. When the phone is full, `write` drops the media
-  viewed longest ago, in any vault, and says which in `dropped`. With no media left it throws `StorageFullError`.
+* A vault is a whole repo and branch. Its id is `owner/repo@branch` (`vaultId`). Its files, checkpoint and state are
+  under that id.
+* A page, a card file and a settings file are never dropped. When the phone is full, EVERY write (files,
+  checkpoints, phone-only state such as the answer list) drops the media viewed longest ago and tries again (row P2).
+  It says which in `dropped`. When that cannot help, it throws `StorageFullError`.
+* A picture or a sound takes room only from its own vault, and only when the room left plus that vault's media is
+  enough: a file that can never fit drops nothing. A page, a checkpoint and state may take room from any vault.
+  The room left comes from `navigator.storage.estimate()` (`Backend.room`).
 * Every write resolves only after IndexedDB committed it. Await it before the screen moves on.
 * `STORE_FORMAT` is one number. A start with another stored number discards the files and checkpoints and keeps the
   phone-only state (so unsent answers can still go). Raise it when the stored shape changes.

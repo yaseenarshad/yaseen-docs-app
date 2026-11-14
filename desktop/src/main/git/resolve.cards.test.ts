@@ -92,6 +92,13 @@ describe('sync unites card lines before the line merge (YAZ-5089)', { timeout: R
     expect(copies(a)).toEqual([])
   })
 
+  it('YAZ-5155: a review I removed (undo) stays removed while Sam answered the same card: one page, no copy', async () => {
+    const R2 = '2026-11-05T09:00Z again'
+    const { a } = await meet({ 'words.md': PAGE(card('Hola', `YAZ-7, ${OLD}, ${R2}`)) }, { 'words.md': PAGE(card('Hola', `YAZ-7, ${OLD}, ${R2}, ${SAM}`)) }, { 'words.md': PAGE(card('Hola', `YAZ-7, ${OLD}`)) })
+    expect(a.read('words.md')).toBe(PAGE(card('Hola', `YAZ-7, ${OLD}, ${SAM}`)))
+    expect(copies(a)).toEqual([])
+  })
+
   it('a card file answered on both Macs: the union of the reviews, its properties byte for byte, no copy', async () => {
     const file = (line: string) => `---\nkind: card\ntitle: "Capital: France"\n---\n${card('Capital of {{France}}\n---\nParis', line)}`
     const { a } = await meet({ 'Capital.md': file(`YAZ-9, ${OLD}`) }, { 'Capital.md': file(`YAZ-9, ${OLD}, ${SAM}`) }, { 'Capital.md': file(`YAZ-9, ${OLD}, ${ME}`) })

@@ -1,7 +1,7 @@
 import { askToKeepStorage, type KeepStorage } from '../store/persist'
 import type { TokenStore } from '../store/tokenStore'
 import type { VaultStore } from '../store/vaultStore'
-import { addVault, forgetVault, loadVaultList, openVaultOf, saveVaultList, vaultId, type PhoneVault, type VaultList } from '../store/vaults'
+import { addVault, forgetVault, loadVaultList, openVaultOf, saveVaultList, vaultId, type VaultList } from '../store/vaults'
 import { saveAccount, type VaultAccount } from './account'
 import { checkSignIn, type CheckDeps, type SignInError, type SignInInput } from './check'
 
@@ -48,7 +48,7 @@ export async function signIn(input: SignInInput, deps: SignInDeps): Promise<Sign
   await deps.tokens.write(id, checked.token)
   try {
     await saveAccount(deps.store, id, account)
-    await saveVaultList(deps.store, addVault(list, { repo, branch, addedAt: now() } as PhoneVault))
+    await saveVaultList(deps.store, addVault(list, { repo, branch, addedAt: now() }))
   } catch (error) {
     // No token is left behind for a vault that is not on the list.
     await deps.tokens.clear(id).catch(() => undefined)

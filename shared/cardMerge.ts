@@ -1,10 +1,11 @@
-import { cardIdOf, cardReviewKey, cardReviewsOf, formatCardLine, pageCards, rewritePageCards, withCardReviews, type CardBlock, type CardLine, type CardPart } from './cardLine'
+import { cardIdOf, cardReviewKey, cardReviewsOf, formatCardLine, formatCardReview, pageCards, rewritePageCards, withCardReviews, type CardBlock, type CardLine, type CardPart } from './cardLine'
 
 /**
  * THE CARD RULE OF SYNC (YAZ-5089, decision 5 on YAZ-5055). A card line is ONE line, so one card answered on two Macs
  * is one line changed two ways: git stops, and sync keeps both pages (a conflict copy). This rule runs BEFORE the
  * page's line merge. Each card that BOTH sides changed (by ID) takes, on both sides, the same new line:
- *  - the reviews: the union of both sides' reviews, each one ONE time, in time order (`withCardReviews`: of one review
+ *  - the reviews: the union of both sides' reviews (but a review in the base that one side removed and the other left
+ *    as it was stays removed, YAZ-5155), each one ONE time, in time order (`withCardReviews`: of one review
  *    with and without seconds, the timed one);
  *  - the marks (`off`, `next`, `notitle`, and each part this app does not know yet, such as `fix`): a three-way result
  *    against the base. A mark that one side changed takes that change; a mark both sides left alone stays as it was.
@@ -69,7 +70,10 @@ function uniteLine(base: CardLine | null, theirs: CardLine, mine: CardLine): Car
   const [b, t, m] = [marksOf(base), marksOf(theirs), marksOf(mine)]
   // A mark both sides agree on stays as they have it; else the side that changed it from the base wins.
   const keep = (k: string): boolean => (t.has(k) === m.has(k) ? t.has(k) : t.has(k) === b.has(k) ? m.has(k) : t.has(k))
-  let parts = withCardReviews(theirs, cardReviewsOf(mine)).parts.filter((p) => !keyOf(p).startsWith('mark ') || keep(keyOf(p)))
+  const gone = removedReviews(base, theirs, mine)
+  let parts = withCardReviews(theirs, cardReviewsOf(mine)).parts.filter((p) =>
+    p.kind === 'review' ? !gone.has(cardReviewKey(p.review)) : !keyOf(p).startsWith('mark ') || keep(keyOf(p)),
+  )
   // A mark only mine has goes after the part it follows in mine (`next` after the ID, `fix` after the reviews), else first.
   for (let i = 0; i < mine.parts.length; i++) {
     const part = mine.parts[i]
@@ -88,6 +92,26 @@ function uniteLine(base: CardLine | null, theirs: CardLine, mine: CardLine): Car
     parts = [...parts.slice(0, at), part, ...parts.slice(at)]
   }
   return { parts }
+}
+
+/**
+ * YAZ-5155: the reviews that stay removed. A review in the base that one side removed (an undo, "Remove review", Reset
+ * history) and the other side left as it was (the same seconds, or removed too) stays removed. A review the other side
+ * changed (it took its seconds) stays: a change wins over a remove, so no review is lost by accident. With no base
+ * line for the card, nothing stays removed: the union.
+ */
+function removedReviews(base: CardLine | null, theirs: CardLine, mine: CardLine): Set<string> {
+  const gone = new Set<string>()
+  if (base === null) return gone
+  const byKey = (line: CardLine) => new Map(cardReviewsOf(line).map((r) => [cardReviewKey(r), formatCardReview(r)]))
+  const [t, m] = [byKey(theirs), byKey(mine)]
+  for (const r of cardReviewsOf(base)) {
+    const k = cardReviewKey(r)
+    const was = formatCardReview(r)
+    const [inT, inM] = [t.get(k), m.get(k)]
+    if ((inT === undefined && (inM === undefined || inM === was)) || (inM === undefined && inT === was)) gone.add(k)
+  }
+  return gone
 }
 
 const rank = (p: CardPart | undefined): number => (p?.kind === 'off' ? 1 : p?.kind === 'next' ? 2 : p?.kind === 'notitle' ? 3 : 0)
