@@ -79,6 +79,7 @@ export async function sendOutbox(options: SendOptions): Promise<SendReport> {
   try {
     for (;;) {
       await pass()
+      await outbox.refresh()
       const plan = await planSend(store, vault, outbox.waiting())
       if (plan.changes.length > 0) {
         try {

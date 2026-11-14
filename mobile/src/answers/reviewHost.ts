@@ -1,7 +1,5 @@
-import type { CardOnPage } from '@client/review/cardFile'
-// YAZ-5161 moves the pure card read to `@client/review/cardRead` (no bridge). Import it from there when that lands:
-// the phone's build wall refuses `cardFile.ts` once 4B bundles this host.
-import { cardOnPageIn } from '@client/review/cardFile'
+// The pure card read (YAZ-5161): no bridge, so the phone's build wall takes it. Never `cardFile.ts` (the desktop's).
+import { cardOnPageIn, type CardOnPage } from '@client/review/cardRead'
 import type { ReviewHost } from '@client/review/reviewHost'
 import { CardNotFoundError, cardIdOf, cardNextIndex, cardReviewIndex, pageCards, type CardLine, type CardReview } from '@shared/cardLine'
 import { NOTHING_ADDED, type CardsAddedToday } from '@shared/cardSchedule'

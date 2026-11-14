@@ -54,6 +54,8 @@ export interface Outbox {
   settle(done: readonly number[], lost: readonly number[], now: number): Promise<void>
   /** The person tapped Discard on a lost action. False when it was not there. */
   discard(seq: number): Promise<boolean>
+  /** Reads the stored list again (another tab of the app may have changed it, row P4). */
+  refresh(): Promise<void>
 }
 
 const EMPTY: AnswerBook = { v: 1, next: 1, waiting: [], lost: [] }
@@ -62,10 +64,16 @@ const EMPTY: AnswerBook = { v: 1, next: 1, waiting: [], lost: [] }
 export async function openOutbox(store: VaultStore, vault: string): Promise<Outbox> {
   const saved = await store.getState<AnswerBook>(vault, ANSWERS_STATE)
   let book: AnswerBook = saved?.v === 1 ? saved : EMPTY
-  // One write at a time, in order. A write that fails (a full phone) leaves the list in memory as it was.
+  const reread = async () => {
+    const stored = await store.getState<AnswerBook>(vault, ANSWERS_STATE)
+    book = stored?.v === 1 ? stored : EMPTY
+  }
+  // One write at a time, in order. Each one starts from the STORED list, so a second tab's change is kept (P4). A write
+  // that fails (a full phone) leaves the list in memory as it was.
   let chain: Promise<unknown> = Promise.resolve()
   const change = <T>(edit: (book: AnswerBook) => { next: AnswerBook; out: T } | null, fallback: T): Promise<T> => {
     const run = chain.then(async () => {
+      await reread()
       const made = edit(book)
       if (made === null) return fallback
       await store.setState(vault, ANSWERS_STATE, made.next)
@@ -99,6 +107,11 @@ export async function openOutbox(store: VaultStore, vault: string): Promise<Outb
         const newlyLost = b.waiting.filter((w) => isLost.has(w.seq)).map((w): LostAnswer => ({ seq: w.seq, op: w.op, path: w.path, title: w.title, lostAt: now }))
         return { next: { ...b, waiting: b.waiting.filter((w) => !leave.has(w.seq)), lost: [...b.lost, ...newlyLost] }, out: undefined }
       }, undefined)
+    },
+    refresh() {
+      const run = chain.then(reread)
+      chain = run.catch(() => undefined)
+      return run
     },
     discard(seq) {
       return change((b) => (b.lost.some((l) => l.seq === seq) ? { next: { ...b, lost: b.lost.filter((l) => l.seq !== seq) }, out: true } : null), false)

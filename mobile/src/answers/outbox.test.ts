@@ -99,6 +99,17 @@ describe('the answer list: undo, settle, lost, discard', () => {
     expect(box.waiting().map((w) => w.op.id)).toEqual(['NC-1'])
   })
 
+  it('two tabs of the app (P4): each write starts from the stored list, so neither tab loses the other\'s answer', async () => {
+    const store = await openVaultStore(memoryBackend())
+    const tabA = await openOutbox(store, VAULT)
+    const tabB = await openOutbox(store, VAULT)
+    await tabA.add([entry(review('NC-1', 1))], 1)
+    await tabB.add([entry(review('NC-2', 2))], 2)
+    await tabA.refresh()
+    expect(tabA.waiting().map((w) => [w.op.id, w.seq])).toEqual([['NC-1', 1], ['NC-2', 2]])
+    expect((await openOutbox(store, VAULT)).waiting()).toHaveLength(2)
+  })
+
   it('writes run one after the other: ten adds at once all land, in order', async () => {
     const store = await openVaultStore(memoryBackend())
     const box = await openOutbox(store, VAULT)
