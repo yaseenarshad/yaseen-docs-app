@@ -1,5 +1,6 @@
 import { join } from 'node:path'
-import { PIXABAY_SECRET } from '@shared/types'
+import { GITHUB_TOKEN_SECRET, PIXABAY_SECRET } from '@shared/types'
+import { cleanToken } from '@shared/githubInput'
 import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure } from '../fs/fsUtils'
 import { requireRequest, str } from '../fs/validate'
@@ -15,9 +16,15 @@ import { handle } from './envelope'
 
 /**
  * The only names a renderer may WRITE. A secret that main stores itself (Draw's sharing token, YAZ-3040)
- * must not be one a renderer can overwrite.
+ * must not be one a renderer can overwrite. The GitHub token (YAZ-5098, Settings › Review › "Phone and friends") is
+ * pasted in Settings; main reads it for the phone's code (`phone:code`) and for the friends sender (4E5, YAZ-5086).
  */
-export const RENDERER_WRITABLE_SECRETS: readonly string[] = [PIXABAY_SECRET]
+export const RENDERER_WRITABLE_SECRETS: readonly string[] = [PIXABAY_SECRET, GITHUB_TOKEN_SECRET]
+
+/** A value's own check, by name: the stored value, or null to refuse it. The refusal never repeats the value. */
+const CLEAN: Readonly<Record<string, (value: string) => string | null>> = {
+  [GITHUB_TOKEN_SECRET]: cleanToken,
+}
 
 /** `onSet` hears each name a renderer set or cleared: a new Pixabay key starts the favorites' backfill (YAZ-4363). */
 export function registerSecretsIpc(userData: string, onSet: (name: string) => void = () => undefined): Secrets {
@@ -28,7 +35,9 @@ export function registerSecretsIpc(userData: string, onSet: (name: string) => vo
     if (!RENDERER_WRITABLE_SECRETS.includes(name)) throw new BridgeFailure('BAD_REQUEST', `'${name}' is not a secret this window may set`)
     // `''` is not a value: storing it would make `has` say yes to a key that is not there.
     if (r.value !== null && (typeof r.value !== 'string' || r.value === '')) throw new BridgeFailure('BAD_REQUEST', "'value' must be a non-empty string or null")
-    await secrets.set(name, r.value)
+    const clean = r.value === null ? null : (CLEAN[name] ?? ((v: string) => v))(r.value)
+    if (r.value !== null && clean === null) throw new BridgeFailure('BAD_REQUEST', 'That is not a GitHub token.')
+    await secrets.set(name, clean)
     onSet(name)
   })
   handle(CONTRACT.secrets.has, async (req: unknown) => {
