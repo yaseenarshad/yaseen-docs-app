@@ -1,0 +1,409 @@
+/*
+ * Chapter 8's own layout (YAZ-5121, `ai.tsx`). The kit's look is in `kit/kit.css` and `kit/kit68.css`; the AI step's
+ * panel is YAZ-5124's (`agentStep.css`). App tokens only.
+ */
+.ai-pair {
+  align-items: center;
+}
+.ai-term {
+  width: min(44cqw, 18em);
+}
+.ai-term--mini {
+  width: min(28cqw, 11em);
+  font-size: 0.7em;
+}
+.ai-term--mini .kit-term__body {
+  min-height: 3em;
+}
+.ai-term--wide {
+  width: min(86cqw, 30em);
+}
+.ai-term--wide .kit-term__body {
+  min-height: 0;
+}
+.ai-chip--bad {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+/* The plain file */
+.ai-file {
+  box-sizing: border-box;
+  width: min(86cqw, 30em);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+  text-align: left;
+}
+.ai-file__head {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.5em 0.9em;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-side);
+  color: var(--fg-muted);
+  font-size: 0.8em;
+}
+.ai-file__icon {
+  width: 0.8em;
+  height: 1em;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+}
+.ai-file__text {
+  margin: 0;
+  padding: 0.9em 1.1em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: clamp(10px, 2.5cqmin, 14px);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ai-file__text mark {
+  border-radius: 3px;
+  color: inherit;
+}
+
+/* Reads and writes; any agent */
+.ai-stack {
+  position: relative;
+}
+.ai-stack__ghost {
+  position: absolute;
+  inset: 0;
+}
+.ai-stack__ghost .kit-term,
+.ai-stack__front .kit-term {
+  width: min(80cqw, 26em);
+}
+.ai-stack__front {
+  position: relative;
+}
+
+/* No AI inside, nothing sent */
+.ai-nocloud,
+.ai-own {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5em;
+}
+.ai-cloud {
+  width: min(22cqw, 6em);
+  overflow: visible;
+}
+.ai-cloud__shape {
+  fill: var(--kit-faint);
+  stroke: var(--fg-muted);
+  stroke-width: 2;
+}
+.ai-cloud__cross {
+  stroke: var(--danger);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+.ai-arrow {
+  color: var(--fg-muted);
+  font-size: 1.4em;
+  line-height: 1;
+}
+
+/* The warning: the screen goes quiet */
+.ai-quiet {
+  background: var(--bg);
+}
+.ai-warning {
+  max-width: 14em;
+  margin: 0;
+  font-size: clamp(28px, 9.5cqmin, 78px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+.ai-warning > span {
+  display: inline-block;
+  margin: 0 0.12em;
+}
+.ai-warning__vibe {
+  position: relative;
+  color: var(--danger);
+}
+.ai-warning__vibe i {
+  position: absolute;
+  left: 0;
+  right: 0.25em;
+  bottom: 0.02em;
+  height: 0.08em;
+  border-radius: 2px;
+  background: var(--danger);
+  transform-origin: 0 50%;
+}
+
+/* The flood */
+.ai-pour {
+  display: grid;
+  grid-template-columns: repeat(6, auto);
+  gap: 5px;
+  font-size: clamp(6px, 1.6cqmin, 10px);
+}
+.ai-pour .kit-mini {
+  width: 7em;
+}
+.ai-flood {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+.ai-flood .kit-tally {
+  width: 100%;
+  height: 100%;
+}
+.ai-flood .kit-tally__tile.is-on {
+  fill: color-mix(in srgb, var(--fg-muted) 40%, transparent);
+}
+.ai-darken {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.6em;
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+/* Two paths */
+.ai-paths {
+  width: min(86cqw, 30em);
+  overflow: visible;
+}
+.ai-paths__fork {
+  fill: var(--fg);
+}
+.ai-paths__down,
+.ai-paths__up {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+.ai-paths__down {
+  stroke: color-mix(in srgb, var(--fg-muted) 70%, transparent);
+}
+.ai-paths__up {
+  stroke: var(--accent);
+}
+.ai-paths__label--down {
+  fill: var(--fg-muted);
+}
+
+/* The hand that writes */
+.ai-hand {
+  width: min(40cqw, 12em);
+  overflow: visible;
+}
+.ai-hand__ink {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+/* The right way */
+.ai-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(6px, 2cqmin, 18px);
+}
+.ai-flow__station {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5em;
+}
+.ai-flow__arrow {
+  color: var(--accent);
+  font-size: 1.6em;
+  font-weight: 700;
+}
+.ai-flow__orbs {
+  display: flex;
+  gap: 6px;
+}
+.ai-flow__orbs i {
+  width: 1.6em;
+  height: 1.6em;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, color-mix(in srgb, var(--accent) 45%, var(--bg)), var(--accent));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.ai-flow__cards {
+  display: flex;
+  gap: 6px;
+}
+.ai-flow__card {
+  position: relative;
+  width: 2.6em;
+  height: 3.3em;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  box-shadow: inset 0 -0.3em 0 color-mix(in srgb, var(--accent) 50%, transparent);
+}
+.ai-flow__tick {
+  position: absolute;
+  top: -0.6em;
+  right: -0.6em;
+  display: grid;
+  place-items: center;
+  width: 1.4em;
+  height: 1.4em;
+  border-radius: 50%;
+  background: var(--ok);
+  color: var(--bg);
+  font-size: 0.8em;
+  font-weight: 800;
+}
+
+/* The hands-on step: the real panel, on the stage */
+.ai-step-layer {
+  justify-content: flex-start;
+  overflow: auto;
+}
+.ai-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8em;
+  width: min(100%, 640px);
+}
+.ai-panel {
+  width: 100%;
+  font-size: 14px;
+}
+.ai-minute {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  text-align: left;
+}
+.ai-minute svg {
+  width: 2.6em;
+  height: 2.6em;
+}
+.ai-minute__track {
+  fill: none;
+  stroke: var(--kit-faint);
+  stroke-width: 4;
+}
+.ai-minute__fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 4;
+}
+
+/* You decide */
+.ai-decide {
+  align-items: flex-start;
+}
+.ai-decide__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6em;
+  width: min(44cqw, 17em);
+  text-align: left;
+}
+.ai-decide__card .kit-cardview {
+  width: 100%;
+}
+
+/* The right-click */
+.ai-rc {
+  position: relative;
+}
+.ai-rc .kit-app__main {
+  position: relative;
+}
+.ai-copied {
+  position: absolute;
+  right: 8%;
+  bottom: 10%;
+  padding: 0.3em 0.8em;
+  border-radius: 999px;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+/* The loop, and the three habits */
+.ai-loop {
+  position: relative;
+  width: min(70cqmin, 20em);
+  aspect-ratio: 1;
+}
+.ai-loop svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.ai-loop__ring {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 55%, transparent);
+  stroke-width: 1.5;
+}
+.ai-loop__node {
+  position: absolute;
+  padding: 0.45em 0.9em;
+  border: 1.5px solid var(--accent);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg);
+  font-weight: 700;
+  white-space: nowrap;
+  translate: -50% -50%;
+}
+.ai-loop__node--small {
+  border-style: dashed;
+  color: var(--fg-muted);
+  font-size: 0.85em;
+  font-weight: 500;
+}
+.ai-habits {
+  display: flex;
+  gap: clamp(14px, 6cqmin, 48px);
+}
+.ai-habits__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5em;
+}
+.ai-habits__icon {
+  display: grid;
+  place-items: center;
+  width: 2.6em;
+  height: 2.6em;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: clamp(18px, 5cqmin, 32px);
+}
+.ai-habits__inbox {
+  width: 1em;
+  height: 1em;
+}
+
+/* A card in a box of this chapter takes the box's width. */
+.ai-decide__card .kit-cardview {
+  min-width: 0;
+  font-size: clamp(12px, 3.4cqmin, 18px);
+}
