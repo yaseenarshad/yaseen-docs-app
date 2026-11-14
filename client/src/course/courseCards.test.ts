@@ -273,7 +273,7 @@ describe('the first card (chapter 2)', () => {
       click(scene.el.querySelector('.kit-tap'))
       scene.render(clip('c2-11'))
       click([...scene.el.querySelectorAll('.card-inbox__answer')].find((b) => b.textContent?.includes('Remembered')))
-      await vi.waitFor(async () => expect(await cardFilesIn(join(root, 'course-cards'))).toHaveLength(1))
+      await vi.waitFor(async () => expect(await cardFilesIn(join(root, 'course-cards'))).toHaveLength(1), { timeout: 5000 })
       const [name] = await cardFilesIn(join(root, 'course-cards'))
       const content = await readFile(join(root, 'course-cards', name), 'utf8')
       expect(isCardFileContent(content)).toBe(true)
@@ -289,8 +289,11 @@ describe('the first card (chapter 2)', () => {
       expect(reviews).toHaveLength(1)
       expect(reviews[0]).toMatchObject({ rating: 'good', at: expect.stringMatching(/^\d{4}-\d\d-\d\dT\d\d:\d\dZ$/) })
       expect(cardState(reviews, DEFAULT_REVIEW_SETTINGS).isNew).toBe(false)
-      await act(() => Promise.resolve())
-      expect(scene.el.querySelector('.card-inbox__last')?.textContent).toBe('Remembered · saved with the card')
+      // The scene shows "saved" once the host's answer reaches React (a moment after the file is on disk).
+      await vi.waitFor(async () => {
+        await act(() => Promise.resolve())
+        expect(scene.el.querySelector('.card-inbox__last')?.textContent).toBe('Remembered · saved with the card')
+      }, { timeout: 5000 })
     } finally {
       scene.unmount()
     }

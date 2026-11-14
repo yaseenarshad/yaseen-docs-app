@@ -78,7 +78,7 @@ describe('each scene of chapters 6 to 8 draws (YAZ-5121)', () => {
       for (const ch of MINE) {
         for (const entry of ch.entries) {
           const host = memoryHost()
-          host.set({ text: 'Bread notes', copiedAt: 1, prompt: { text: 'Prompt', folder: host.folder } })
+          host.set({ text: 'Bread pages', copiedAt: 1, prompt: { text: 'Prompt', folder: host.folder } })
           host.arrive({ path: `${host.folder}/a.md`, index: 0, id: 'A1B2', title: 'How bread rises' })
           const { clock, at } = testClock(6)
           const scene = mountScene(entry.scene, chapter(ch.chapter), { clock, done: () => undefined, reducedMotion: look === 'reduced', host })

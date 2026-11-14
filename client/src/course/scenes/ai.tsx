@@ -28,7 +28,7 @@ const SLEEP_FILE = cardFileContent(SLEEP_TITLE, SLEEP_TEXT, { parts: [{ kind: 'i
 const SLEEP_FILE_NAME = cardFileName(SLEEP_TITLE, 'K7Q2')
 
 /** The app beside the agent: a small window with the Inbox and Course Cards. */
-const appSidebar = (inbox: number, extra: { glow?: number } = {}) => <SidebarPreview inbox={inbox} rows={[{ name: 'Course Cards', kind: 'folder', open: true, glow: extra.glow }, { name: SLEEP_TITLE, kind: 'card', depth: 1 }, { name: 'Pages', kind: 'folder' }]} />
+const appSidebar = (inbox: number, extra: { glow?: number } = {}) => <SidebarPreview inbox={inbox} rows={[{ name: 'Course Cards', kind: 'folder', open: true, glow: extra.glow }, { name: SLEEP_TITLE, kind: 'card', depth: 1 }, { name: 'Projects', kind: 'folder' }]} />
 
 /** c8-01: the agent's window next to the app; it makes cards fast; that is the danger. */
 function ToolAndApp(props: SceneProps) {
@@ -547,7 +547,7 @@ function RightClick(props: SceneProps) {
                 rows={[
                   { name: 'Card skill', kind: 'folder', glow: showFor(since(b, right - 0.1, 0.4), since(b, choose + 0.1, 0.6)) },
                   { name: 'Course Cards', kind: 'folder' },
-                  { name: 'Pages', kind: 'folder' },
+                  { name: 'Projects', kind: 'folder' },
                 ]}
               />
             }

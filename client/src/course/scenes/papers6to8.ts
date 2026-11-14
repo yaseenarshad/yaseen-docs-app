@@ -43,7 +43,7 @@ export const QUOTES_6_TO_8 = {
   holiday: {
     id: 'holiday',
     by: 'Ryan Holiday',
-    where: 'on taking notes by hand',
+    where: 'on writing by hand',
     line: 'The inefficiency is the efficiency.',
     quote: true,
     source: 'script.ts c8-09: Ryan Holiday, YouTube video UBdlprawTkA.',

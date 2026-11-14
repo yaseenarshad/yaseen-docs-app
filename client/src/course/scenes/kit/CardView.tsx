@@ -53,9 +53,24 @@ export interface CardViewProps {
   label?: string
 }
 
+const ID_LETTERS = 'ABCDEFGHJKMNPQRSTVWXYZ23456789'
+
+/** A made-up card ID for a link's target: the same target always gets the same ID, and two targets get two IDs. */
+export function madeUpCardId(target: string): string {
+  let h = 2166136261
+  for (let i = 0; i < target.length; i++) h = Math.imul(h ^ target.charCodeAt(i), 16777619) >>> 0
+  let id = ''
+  for (let i = 0; i < 4; i++) {
+    id += ID_LETTERS[h % ID_LETTERS.length]
+    h = (Math.floor(h / ID_LETTERS.length) ^ Math.imul(h, 31 + i)) >>> 0
+  }
+  return id
+}
+
 function lookOf(links: Readonly<Record<string, string>> | undefined): CardLook | undefined {
   if (links === undefined) return undefined
-  return { link: (inner) => ({ label: links[inner] ?? inner, resolved: true, card: 'K7Q2' }) }
+  // Each pill names its own target's ID (it was one fixed ID for every pill).
+  return { link: (inner) => ({ label: links[inner] ?? inner, resolved: true, card: madeUpCardId(inner) }) }
 }
 
 /** The rendered sides (the app's own render), as a node to mount. */

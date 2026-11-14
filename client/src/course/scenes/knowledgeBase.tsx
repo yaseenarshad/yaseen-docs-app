@@ -180,7 +180,7 @@ function Distil(props: SceneProps) {
   const boil = between(b, distil, words - 0.05)
   const lines = SLEEP_PAGE.split(/(?<=[.;]) /)
   return (
-    <Stage beat={b} label="A page of text, distilled into two short cards, in your own words and your own formats">
+    <Stage beat={b} label="A web page of text, distilled into two short cards, in your own words and your own formats">
       <Layer>
         <div className="kit-row">
           <div className="kb-page" style={{ ...rise(b, since(b, 0, 0.6)), opacity: lerp(1, 0.45, boil) }}>

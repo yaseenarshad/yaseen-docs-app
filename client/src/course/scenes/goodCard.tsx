@@ -7,6 +7,7 @@
  * naming; formats. The fractions are where the words land in the real voice (`marks` in `script.ts`, read with `cue`).
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useUnit } from '../../vault/unitWord'
 import type { SceneProps } from '../scene'
 import { PROTEIN } from './cards'
 import { AppWindow, CardView, Fit, IndexCard, Layer, Paper, SidebarPreview, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat, type Beat } from './kit'
@@ -929,12 +930,13 @@ const FORMATS = [
 
 /** c7-16: four small cards in four formats, each on its word; then the card skill's formats folder, with a page for each. */
 function Formats(props: SceneProps) {
+  const unit = useUnit()
   const b = useBeat(props)
   const at = [0, 1, 2, 3].map((k) => cue(b, k, [0.304, 0.391, 0.477, 0.581][k]))
   const skill = cue(b, 4, 0.755)
   const side = since(b, skill - 0.05, 0.7)
   return (
-    <Stage beat={b} label="Different things need different formats: a word, a person, a process, a quote. Each has a short page in the card skill">
+    <Stage beat={b} label={unit('Different things need different formats: a word, a person, a process, a quote. Each has a short page in the card skill')}>
       <Layer>
         <div className="kit-row gc-formats">
           <div className="gc-formats__grid">
@@ -948,7 +950,7 @@ function Formats(props: SceneProps) {
           <div style={rise(b, side, 14)}>
             <AppWindow
               style={{ width: 'min(40cqw, 16em)', height: 'min(56cqh, 14em)' }}
-              label="The card skill's formats folder, with a page for each format"
+              label={unit("The card skill's formats folder, with a page for each format")}
               sidebar={
             <SidebarPreview
               rows={[

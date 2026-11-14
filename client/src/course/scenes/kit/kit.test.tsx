@@ -141,3 +141,13 @@ describe('the beat (YAZ-5121)', () => {
     expect(memory(dayAt(0.9, 5), 5)).toBeCloseTo(0.9)
   })
 })
+
+describe('CardView\'s link pills (YAZ-5121 clean-up)', () => {
+  it('give each target its own made-up ID, the same one each time', async () => {
+    const { madeUpCardId } = await import('./CardView')
+    const ids = ['Protein', 'Protein, carbs and fat', 'Calories', 'How muscle grows'].map(madeUpCardId)
+    expect(new Set(ids).size).toBe(4)
+    for (const id of ids) expect(id).toMatch(/^[A-Z2-9]{4}$/)
+    expect(madeUpCardId('Protein')).toBe(ids[0])
+  })
+})

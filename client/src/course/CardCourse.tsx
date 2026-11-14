@@ -28,6 +28,7 @@ import { appTour, hasTour, type CourseTour } from './courseTour'
 import { showOnlyHost, type CourseHost, type CourseVault } from './courseHost'
 import { vaultCourseHost } from './courseCards'
 import { courseScenes } from './scenes'
+import { CourseEnd } from './scenes/finale'
 import type { SceneClock, SceneFor, SceneTime } from './scene'
 import './course.css'
 
@@ -470,6 +471,7 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
           ) : (
             <div className="course-scene course-scene--end">
               <p className="course-scene__words">{s.phase === 'course-end' ? "That's the whole course." : `Chapter ${s.chapter + 1} done.`}</p>
+              {s.phase === 'course-end' && <CourseEnd host={host} />}
               <div className="course__end-actions">
                 {tourButton}
                 {s.phase === 'chapter-end' ? (
