@@ -235,7 +235,7 @@ function InAPage(props: SceneProps) {
   // c4-04: the card slides in between the paragraphs; the text beside it lights.
   const cardIn = step === 0 ? since(b, cue(b, 0, 0.193), 0.7) : 1
   const textLit = step === 0 ? showFor(since(b, cue(b, 1, 0.783), 0.4), since(b, 0.99, 0.3)) : 0
-  // c4-05: "/card", Enter, a new card opens with its title line selected.
+  // c4-05: "/card", Enter, a new card opens: an empty card, its Title field has the keyboard (placeholder "Title", YAZ-5308).
   const slashAt = step === 1 ? 0.137 : 2
   const typed = step !== 1 || b.progress < slashAt ? '' : '/card'.slice(0, Math.min(5, 1 + Math.floor(between(b, slashAt, 0.3) * 5)))
   const enter = step === 1 ? cue(b, 0, 0.446) : 2
@@ -290,12 +290,7 @@ function InAPage(props: SceneProps) {
                       className="kit-where__newcard"
                       style={pop(b, since(b, enter, 0.4), 0.9)}
                       keys={since(b, opens, 0.4)}
-                      title={
-                        <>
-                          <span className="kit-selection">Title</span>
-                          <Caret />
-                        </>
-                      }
+                      titleCaret
                     >
                       <p>&nbsp;</p>
                     </EditCard>

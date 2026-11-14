@@ -171,7 +171,7 @@ export const COURSE: CourseChapter[] = [
       // APP: client/src/editor/card/cardBlockView.ts (the edit button reads "Done" while editing; "Cmd + Enter / Esc Done").
       { id: 'c2-20', text: 'Press Escape, or click Done, and the card saves.' },
       // The card file's tab: the big title at the top; a click, new words, Enter; the tab and the sidebar take the new name.
-      // APP: shared/cardFileFormat.ts (the title is the `title` property, the file is named after it), client/src/editor/CardFileView.tsx (`PageTitle`: click, type, Enter). A card INSIDE a page keeps its first line as its title (chapter 4 does not say it).
+      // APP: shared/cardFileFormat.ts (the title is on the card line, `title "…"`, YAZ-5308; the file is named after it), client/src/editor/CardFileView.tsx (`PageTitle`: click, type, Enter; `retitle` writes the title, then renames the file). A card INSIDE a page has its title on its card line too.
       { id: 'c2-14', text: "The title sits at the top of the card's tab. Click it to change it, and the file's name follows." },
       // The card's ⋯ menu: "Title on the front · Show"; a click; it reads "Hide".
       // APP: client/src/review/cardPane.tsx (`cardMenuSections`: "Title on the front", Show / Hide).
@@ -265,7 +265,8 @@ export const COURSE: CourseChapter[] = [
       { id: 'c4-03', text: "First, a card by itself. That's the card file you made: one file, one card.", marks: [0.453, 0.657, 0.793] },
       // A page of text with a card between two paragraphs.
       { id: 'c4-04', text: 'Second, a card inside a page. Your pages on a topic can hold cards right beside the text.', marks: [0.193, 0.783] },
-      // A "/card" typed in a page; a new card opens for editing.
+      // A "/card" typed in a page; a new, empty card opens for editing, its Title field has the keyboard (YAZ-5308).
+      // APP: client/src/editor/card/cardBlockView.ts (`edit('title')`), client/src/editor/card/cardEditor.ts (`selectTitle`, placeholder "Title").
       { id: 'c4-05', text: 'In a page, type slash card, and press Enter. A new card opens, ready to edit.', marks: [0.446, 0.652] },
       // A card in a page with its ⋯ menu, its Reviews, and the Inbox behind it.
       { id: 'c4-06', text: 'A card in a page has the same menu, the same history, and the same Inbox.', marks: [0.336, 0.595, 0.784] },
@@ -457,7 +458,7 @@ export const COURSE: CourseChapter[] = [
     clips: [
       // A terminal window with an agent in it, next to the app.
       { id: 'c8-01', text: 'A good card starts with chewing. Now, a tool that makes cards fast, and why that is a danger.', marks: [0.21, 0.476, 0.886] },
-      // A card file opens as plain text: the title line, the fact, the hidden word in marks; the word "Markdown".
+      // A card file opens as plain text: `kind: card`, the fact, the hidden word in marks, the card line with its ID and title (YAZ-5308); the word "Markdown".
       { id: 'c8-02', text: 'One fact matters here: each card is a plain Markdown file, plain text with a few light marks.', marks: [0.465, 0.85] },
       // The agent's window reads a card file.
       { id: 'c8-03', text: 'An agent is an AI tool that can read and write files on your computer. Any agent like that works here.', marks: [0.308, 0.372, 0.659] },

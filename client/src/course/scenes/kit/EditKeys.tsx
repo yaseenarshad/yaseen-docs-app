@@ -9,6 +9,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { DONE_KEYS } from '@shared/keyLabel'
 import { CARD_EDIT_KEYS } from '../../../editor/card/cardEditKeys'
 import { KeyLabel } from '../../../keys/KeyLabel'
+import { Caret } from './AppFrame'
 
 /** The quiet key row under Edit card's editor (`cardKeyRow` in `cardEditKeys.ts`), with the app's classes. */
 export function CardEditKeyRow() {
@@ -37,10 +38,11 @@ export function editKey(label: string): string {
 /**
  * A card in Edit card, as the app draws it in a page (`cardBlockView.ts`, `cardEditor.ts`): the head with the ID,
  * Preview (YAZ-5152), "Done (Esc / Cmd+Enter)" and ⋯; the Title field above Side 1 (YAZ-5164; empty, it shows its placeholder "Title", as `cardEditor.ts` sets it);
- * the sides (`children`); the key row. `title`: the field's text, or a node (a selection, a caret); `done` 0..1 brings in
+ * the sides (`children`); the key row. `title`: the field's text, or a node (a selection, a caret); `titleCaret`: an
+ * empty field has the keyboard, the caret before its placeholder (`/card`, New card: YAZ-5308); `done` 0..1 brings in
  * the head's buttons; `keys` 0..1 the key row.
  */
-export function EditCard({ id, title, done = 1, keys = 1, className, style, children }: { id: string; title?: ReactNode; done?: number; keys?: number; className?: string; style?: CSSProperties; children?: ReactNode }) {
+export function EditCard({ id, title, titleCaret = false, done = 1, keys = 1, className, style, children }: { id: string; title?: ReactNode; titleCaret?: boolean; done?: number; keys?: number; className?: string; style?: CSSProperties; children?: ReactNode }) {
   const empty = title === undefined || title === ''
   return (
     <div className={`card card--editing kit-editcard${className === undefined ? '' : ` ${className}`}`} style={style}>
@@ -54,7 +56,16 @@ export function EditCard({ id, title, done = 1, keys = 1, className, style, chil
         </span>
         <span className="card__more">⋯</span>
       </div>
-      <p className={`card-editor__title${empty ? ' kit-editcard__title--empty' : ''}`}>{empty ? 'Title' : title}</p>
+      <p className={`card-editor__title${empty ? ' kit-editcard__title--empty' : ''}`}>
+        {empty ? (
+          <>
+            {titleCaret && <Caret />}
+            Title
+          </>
+        ) : (
+          title
+        )}
+      </p>
       <div className="kit-editcard__text">{children}</div>
       {keys > 0 && (
         <div style={{ opacity: keys }}>

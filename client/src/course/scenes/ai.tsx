@@ -23,7 +23,7 @@ import './ai.css'
 
 const SLEEP_TITLE = 'Sleep debt'
 const SLEEP_TEXT = 'Each short night adds to a {{sleep debt}}, and one long lie-in does not pay it back.\n---\nSleep you miss adds up over the week.'
-/** The real card file, as the app writes it (`cardFileContent`, the writer of New card). */
+/** The real card file, as the app writes it (`cardFileContent`, the writer of New card): `kind: card`, the card, its card line with the title (YAZ-5308). */
 const SLEEP_FILE = cardFileContent(SLEEP_TITLE, SLEEP_TEXT, { parts: [{ kind: 'id', id: sampleId(SLEEP_TITLE) }] })
 const SLEEP_FILE_NAME = cardFileName(SLEEP_TITLE, sampleId(SLEEP_TITLE))
 
@@ -64,8 +64,11 @@ function ToolAndApp(props: SceneProps) {
   )
 }
 
-/** The marks of a card file: the properties' fences, the card's fence, the side line, the hidden words' braces. */
-const MARK = /(\{\{|\}\}|^---$|^```card$|^```$|<!-- card: [A-Z0-9]+ -->)/m
+/**
+ * The marks of a card file: the properties' fences, the card's fence, the side line, the hidden words' braces, and the
+ * card line, which holds the card's ID and its title (YAZ-5308: `<!-- card: DEMO-25, title "Sleep debt" -->`).
+ */
+const MARK = /(\{\{|\}\}|^---$|^```card$|^```$|^<!-- card: .*-->$)/m
 
 /** c8-02: a card file opens as plain text; the word Markdown; the few light marks light up. */
 function PlainFile(props: SceneProps) {
