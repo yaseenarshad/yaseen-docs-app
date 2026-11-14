@@ -236,8 +236,8 @@ export function linkCard(inner: string, source: WikilinkResolveSource): CardLink
   return page === '' ? null : resolve(page)
 }
 
-/** What a card link shows for its card (YAZ-5030): the title, or "Card" for a card with no text yet. */
-export const cardLinkTitle = (card: CardLink): string => (card.title === '' ? 'Card' : card.title)
+/** What a card link shows for its card (YAZ-5030): its title (off its card line, YAZ-5308), or its ID for a card with none. */
+export const cardLinkTitle = (card: CardLink): string => (card.title === '' ? card.id : card.title)
 
 /**
  * The title an id link shows (YAZ-2293): `target` is a page's id and `resolve` finds the page →
@@ -344,7 +344,7 @@ export function linksAsShown(text: string, source: WikilinkResolveSource, viewOn
   const titleOf = (target: string) => {
     // A card's ID shows the card's title (YAZ-5030), with its ID for a copy that leaves the app.
     const card = cards?.(target) ?? null
-    if (card !== null) return withId ? nameAndId(cardLinkTitle(card), card.id) : cardLinkTitle(card)
+    if (card !== null) return withId && card.title !== '' ? nameAndId(card.title, card.id) : cardLinkTitle(card)
     const title = idLinkTitle(target, source.resolve, titles)
     const id = withId ? linkPageId(target, source) : undefined
     return title === undefined || id === undefined ? title : nameAndId(title, id)

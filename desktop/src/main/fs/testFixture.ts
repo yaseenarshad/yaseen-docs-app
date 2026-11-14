@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { _swept } from '../vaultIndex/idSweep'
+import { CARD_TITLES_MOVED, _swept } from '../vaultIndex/idSweep'
 import { COUNT_DIR, macId, type IdDoor } from '../vaultIndex/mint'
 import { BridgeFailure } from './fsUtils'
 
@@ -47,15 +47,21 @@ export async function removeVault(...roots: string[]): Promise<void> {
   }
 }
 
+/** Where the sweep keeps its one-time marks (`CARD_TITLES_MOVED`). */
+const ONCE_DIR = path.dirname(CARD_TITLES_MOVED)
+
 /**
  * Everything under `dir`, hidden entries included: each file's text by its path from `dir`, each
- * folder as `<path>/`. What a test compares to prove that nothing else was written (YAZ-2523 🔒 V3).
+ * folder as `<path>/`, but the sweep's one-time marks. What a test compares to prove that nothing
+ * else was written (YAZ-2523 🔒 V3).
  */
 export async function vaultFiles(dir: string): Promise<Record<string, string>> {
   const out: Record<string, string> = {}
   for (const entry of await readdir(dir, { recursive: true, withFileTypes: true })) {
     const file = path.join(entry.parentPath, entry.name)
     const rel = path.relative(dir, file)
+    // The sweep's one-time marks (YAZ-5308, `idSweep.ts`): the vault's own state, no file a test wrote.
+    if (rel === ONCE_DIR || rel.startsWith(`${ONCE_DIR}${path.sep}`)) continue
     if (entry.isDirectory()) out[`${rel}/`] = ''
     else out[rel] = await readFile(file, 'utf8')
   }

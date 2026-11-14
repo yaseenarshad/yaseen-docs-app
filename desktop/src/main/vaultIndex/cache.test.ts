@@ -269,6 +269,13 @@ describe('index cache: a bad file never throws, only degrades', () => {
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
   })
 
+  it('YAZ-5308: a snapshot of version 16 read a card`s title off its first line or a card file`s `title` → version-mismatch, so a card is never served under a title its card line does not hold', async () => {
+    expect(CACHE_VERSION).toBeGreaterThanOrEqual(17)
+    const cards = [{ id: 'DEMO-105', off: false, next: false, reviews: [], title: 'Old first line' }]
+    await writeFile(file, JSON.stringify({ version: 16, root: '/vault', records: [record('/vault/a.md', { cards } as never)] }))
+    expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
+  })
+
   it("another root's payload at this filename → miss (not this vault's cache)", async () => {
     await writeFile(file, JSON.stringify({ version: CACHE_VERSION, root: '/elsewhere', records: [] }))
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'miss' })
@@ -315,12 +322,12 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
     '```card',
     'A card links [[Card Link]] and #card-tag',
     '```',
-    '<!-- card: CAN-3, off, next, notitle, 2026-11-12T14:05Z good, 2026-11-13T09:00Z again 13s -->',
+    '<!-- card: CAN-3, title "Card, links", off, next, notitle, 2026-11-12T14:05Z good, 2026-11-13T09:00Z again 13s -->',
     '',
   ].join('\n')
 
   const FINGERPRINT = {
-    cacheVersion: 16,
+    cacheVersion: 17,
     maxFileBytes: 10 * 1024 * 1024,
     /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
     recordKeys: ['aliases', 'basename', 'cards', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'kind', 'links', 'mtime', 'name', 'path', 'properties', 'size', 'tags', 'title'],
@@ -347,11 +354,11 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
       // A file is always the page, whatever its words look like (YAZ-4954 part 2).
       links: ['Ref', 'Folder Ref', 'Page One', 'Page Two', 'Covid pages|COVID-19', 'chart.pdf', 'Card Link'],
       embeds: ['img.png', 'photo.png'],
-      // A card's title (its first line, as plain text) and its `notitle` part ride on the record (YAZ-5030): a card link shows the title.
+      // A card's title (off its card line, YAZ-5308) and its `notitle` part ride on the record (YAZ-5030): a card link shows the title.
       // A review's seconds (YAZ-5033, CACHE_VERSION 14) ride on it: today's total reads them off the index.
-      cards: [{ id: 'CAN-3', off: true, next: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }, { at: '2026-11-13T09:00Z', rating: 'again', seconds: 13 }], title: 'A card links Card Link and #card-tag', notitle: true }],
+      cards: [{ id: 'CAN-3', off: true, next: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }, { at: '2026-11-13T09:00Z', rating: 'again', seconds: 13 }], title: 'Card, links', notitle: true }],
     },
-    // A card file (YAZ-5037, CACHE_VERSION 15): `kind: card` in its properties, its title its card's.
+    // A card file (YAZ-5037, CACHE_VERSION 15): `kind: card` in its properties, its title its card's (off its card line, YAZ-5308).
     cardFile: { kind: 'card', title: 'Capital of France?' },
   }
 
@@ -363,7 +370,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
       await writeFile(canonical, CANONICAL_PAGE)
       await writeFile(broken, '---\nstatus: [unclosed\n---\nBody after broken frontmatter.\n')
       const cardPath = path.join(root, 'capital-of-france-can-4.md')
-      await writeFile(cardPath, '---\nkind: Card\n---\n```card\nCapital of **France**?\n---\nParis\n```\n<!-- card: CAN-4 -->\n')
+      await writeFile(cardPath, '---\nkind: Card\n---\n```card\nCapital of **France**?\n---\nParis\n```\n<!-- card: CAN-4, title "Capital of France?" -->\n')
       const record = await scanFile(root, canonical)
       const errored = await scanFile(root, broken)
       const card = await scanFile(root, cardPath)

@@ -39,7 +39,7 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose }:
   const columnRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const { width, startDrag } = useInboxCardWidth(columnRef, rootRef)
-  const { text, title } = useCardFront(card.text, card.notitle)
+  const { text, title } = useCardFront(card.text, card.title, card.notitle)
   // One preview is one card: a new ask (another card) starts at its front.
   const cardKey = `${card.path}\n${card.id ?? ''}\n${card.text}`
   const steps = useCardSteps(text, cardKey, rootRef)

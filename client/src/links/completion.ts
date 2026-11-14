@@ -327,7 +327,7 @@ export function cardLinkCandidates(records: readonly IndexRecord[]): LinkCandida
       if (card.id === null) continue
       const title = card.title ?? ''
       const name = title === '' ? card.id : title
-      rows.push({ name, insert: card.id, label: title === '' ? 'Card' : title, lower: name.toLowerCase(), path: r.path, id: card.id, card: true })
+      rows.push({ name, insert: card.id, label: name, lower: name.toLowerCase(), path: r.path, id: card.id, card: true })
     }
   }
   return rows

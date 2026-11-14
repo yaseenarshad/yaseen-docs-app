@@ -1,12 +1,12 @@
 /**
- * THE INBOX CARD, shared (YAZ-5152): the card as the Inbox shows it — its front without a hidden title, Space's steps
+ * THE INBOX CARD, shared (YAZ-5152): the card as the Inbox shows it — its front and its head title, Space's steps
  * (the next hidden word, then the next side), the scroll that follows them, the card's frame with its width edges,
  * "Side 1 of 2", and the step the Reviews strip waits for. The Inbox (`CardInbox`) and the card Preview
  * (`CardPreview`) both draw their card with these, so a preview IS the Inbox's card: no copy of its look or its steps.
  * What each adds is its own: the Inbox its answers, its timer and its session; the Preview none of them.
  */
 import { useCallback, useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react'
-import { cardSides, cardTitle, cardTitleOut, cardWithoutTitle, hiddenCount } from '@shared/cardText'
+import { cardSides, hiddenCount } from '@shared/cardText'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { CardBody, type CardLinkDoors } from './cardParts'
 import { CARD_MEDIA, CARD_OPENS, stopCardAudio } from '../editor/card/cardMedia'
@@ -20,20 +20,13 @@ export interface CardStep extends Reveal {
 }
 
 /**
- * The card's front and head title (YAZ-5030, YAZ-5044). The head shows the title, and the front never repeats it
- * (YAZ-5164 part 3): the front is the card without its title line (`cardTitleOut`), as in the page. A first line that
- * holds a hidden word is the card's question and stays on the front, unless "Title on the front: Hide" (`notitle`) takes
- * it off, as it always did (`cardWithoutTitle`): a hidden word in it is then no Space step. The head's title waits for
- * the card's last step where it is hidden on the front, or holds a hidden word (shown early, it would tell the answer).
+ * The card's front and head title (YAZ-5030, YAZ-5308). The front is the card's text (its sides only) and the head shows
+ * its title, off its card line: never part of the text, so it is never a Space step. "Title on the front: Hide"
+ * (`notitle`) makes the head's title wait for the card's last step.
  */
-export function useCardFront(pageText: string | null, notitle: boolean): { text: string | null; title: { text: string; waits: boolean } } {
-  const text = useMemo(() => (pageText === null ? null : notitle ? cardWithoutTitle(pageText) : cardTitleOut(pageText).text), [pageText, notitle])
-  const title = useMemo(() => {
-    if (pageText === null) return { text: '', waits: false }
-    const tells = hiddenCount(cardSides(pageText)[0]) > hiddenCount(cardSides(cardWithoutTitle(pageText))[0])
-    return { text: cardTitle(pageText), waits: notitle || tells }
-  }, [pageText, notitle])
-  return { text, title }
+export function useCardFront(pageText: string | null, title: string, notitle: boolean): { text: string | null; title: { text: string; waits: boolean } } {
+  const head = useMemo(() => ({ text: pageText === null ? '' : title, waits: notitle }), [pageText, title, notitle])
+  return { text: pageText, title: head }
 }
 
 export interface CardSteps {

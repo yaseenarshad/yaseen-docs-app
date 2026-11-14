@@ -3,8 +3,8 @@
  * card embed (`cardEmbed.ts`) are drawn without React, and show their title in the head with the page title's own
  * component, `PageTitle`: the one a card file's tab shows (YAZ-5104). A click renames it, and in a page locked by Read
  * only the click is an edit attempt that carries the rename (YAZ-5145 round 2: "unlock, then continue"). No second
- * copy of its look or its keys. Where the title is stored is the caller's (`onRetitle`): a card in a page writes its
- * first line (`cardRetitled`).
+ * copy of its look or its keys. Where the title is stored is the caller's (`onRetitle`): the card line's `title`
+ * (YAZ-5308, `withCardTitle`).
  *
  * React is woken only for a title someone reaches (the pointer comes over it, the keyboard comes to it, a press): until
  * then the box is the component's own markup, drawn here (a page of 50 cards makes no 50 React roots on open).

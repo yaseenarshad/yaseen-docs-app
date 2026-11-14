@@ -28,7 +28,7 @@
  *
  * Not here: an embed inside a card (card-in-card is off in the card editor; a card's own render keeps `![[…]]` as text).
  */
-import { withCardOff } from '@shared/cardLine'
+import { cleanCardTitle, withCardOff, withCardTitle } from '@shared/cardLine'
 import type { CardLink } from '@shared/cardLinks'
 import { BridgeRequestError, api } from '../../api'
 import { keyCapsDom } from '../../keys/keyWords'
@@ -42,7 +42,6 @@ import type { CardEditor } from './cardEditor'
 import { embedCard, recordAt, type CardEmbedHandle, type CardEmbedHost } from './embedCard'
 import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from './cardMedia'
 import { openCardWindow, previewCard } from './cardOpen'
-import { cardRetitled, cardTitleOut, cardWithTitle } from '@shared/cardText'
 import { mountCardTitle } from './cardTitle'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard } from './cardRender'
 import type { CardReviewDoorApi } from './cardBlockView'
@@ -56,7 +55,7 @@ const NEAR = '600px 0px'
 
 /** The name in the head: a card file's card title, else the title of the page the card is on. */
 export function embedName(card: CardLink, source: WikilinkResolveSource): string {
-  if (recordAt(source.records, card.path)?.kind === 'card') return card.title === '' ? 'Untitled card' : card.title
+  if (recordAt(source.records, card.path)?.kind === 'card') return card.title === '' ? card.id : card.title
   return pageLabel(card.path, false, pathTitles(source.records, source.folders))
 }
 
@@ -234,24 +233,24 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     editButton.setAttribute('aria-label', edit === null ? 'Edit card' : 'Done')
   }
 
-  /** Is the card a card file's (its title is its `title`, YAZ-5044)? */
+  /** Is the card a card file's (its title is its file's: only its tab renames it)? */
   const isFileCard = (c: CardLink): boolean => recordAt(source.records, c.path)?.kind === 'card'
 
-  /** The head's title (YAZ-5164 part 3), a card in a page's: from the index until read, then from its text. */
+  /** The head's title (YAZ-5164 part 3), a card in a page's: from the index until read, then off its card line. */
   const drawTitle = (c: CardLink, now = false): void => {
     title.dom.hidden = isFileCard(c)
     if (title.dom.hidden) return
-    title.render({ title: read === null ? c.title : cardTitleOut(read.text).title, readOnly: !host.editable(), onRetitle: retitle }, now)
+    title.render({ title: read === null ? c.title : read.title, readOnly: !host.editable(), onRetitle: retitle }, now)
   }
 
-  /** The rename: the card's first line, in its ORIGINAL file (one write, as Done), shown at once. */
+  /** The rename: the title on the card's line (YAZ-5308), in its ORIGINAL file (one write, as Done), shown at once. */
   const retitle = (next: string): void => {
     const r = read
-    if (r === null || r.fileTitle !== undefined || !host.editable()) return
-    const text = cardRetitled(r.text, next)
-    if (text === r.text) return
-    read = { ...r, text }
-    changeCardTextIn(r.path, r.id, text, r.index).catch((err: unknown) => {
+    if (r === null || r.id === null || r.cardFile === true || !host.editable()) return
+    const clean = cleanCardTitle(next)
+    if (clean === r.title) return
+    read = { ...r, title: clean }
+    changeCardLine(r.path, r.id, (l) => withCardTitle(l, clean), r.index).catch((err: unknown) => {
       onNotice(`Can't rename the card: ${err instanceof Error ? err.message : String(err)}`)
       read = r
       draw()
@@ -263,8 +262,8 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
 
   const paint = (): void => {
     if (card === null || edit !== null) return
-    // The head shows the title; the card never repeats it (YAZ-5164 part 3). A card file's card holds none.
-    body.replaceChildren(read === null ? '' : renderCard(read.fileTitle === undefined ? cardTitleOut(read.text).text : read.text, {}, doors.look(card.path)))
+    // The head shows the title (off the card line); the card's text is its sides only (YAZ-5308).
+    body.replaceChildren(read === null ? '' : renderCard(read.text, {}, doors.look(card.path)))
     drawReviews()
   }
 
@@ -338,7 +337,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     const mount = document.createElement('div')
     mount.className = 'card__editor'
     dom.append(mount)
-    const { editor, keys } = doors.edit(mount, base.text, () => finishEdit(), base.fileTitle)
+    const { editor, keys } = doors.edit(mount, base.text, base.title, () => finishEdit(), base.cardFile === true)
     dom.append(keys)
     edit = { editor, mount, keys, base }
     draw()
@@ -349,14 +348,16 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     const e = edit
     if (e === null) return
     const text = e.editor.text()
+    // A card file's title is read only here (its tab renames the file); a card in a page's goes on its card line.
+    const title = e.base.cardFile === true ? e.base.title : e.editor.title()
     e.editor.destroy()
     e.mount.remove()
     e.keys.remove()
     edit = null
     draw()
-    if (text.replace(/\n+$/, '') !== e.base.text) {
-      read = { ...e.base, text }
-      changeCardTextIn(e.base.path, e.base.id, text, e.base.index).catch((err: unknown) => {
+    if (text.replace(/\n+$/, '') !== e.base.text || title !== e.base.title) {
+      read = { ...e.base, text, title }
+      changeCardTextIn(e.base.path, e.base.id, text, e.base.index, title === e.base.title ? undefined : title).catch((err: unknown) => {
         onNotice(`Can't save the card: ${err instanceof Error ? err.message : String(err)}`)
         read = e.base
         paint()
@@ -366,11 +367,11 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     host.select()
   }
 
-  /** Preview (YAZ-5152): the card as read, a card file's with its `title` first, as the Inbox reads it. */
+  /** Preview (YAZ-5152): the card as read, as the Inbox reads it. */
   const previewRead = (): void => {
     const r = read
     if (r === null) return
-    previewCard(dom, { path: r.path, id: r.id, text: r.fileTitle === undefined ? r.text : cardWithTitle(r.fileTitle, r.text), notitle: r.notitle === true, reviews: r.reviews })
+    previewCard(dom, { path: r.path, id: r.id, text: r.text, title: r.title, notitle: r.notitle === true, reviews: r.reviews })
   }
 
   const openMenu = (x: number, y: number): void => {

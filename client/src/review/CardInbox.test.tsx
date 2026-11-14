@@ -8,6 +8,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { CardAnswer } from '@shared/cardSchedule'
+import { formatCardLine, parseCardLine, type CardLine } from '@shared/cardLine'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { createViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
@@ -34,11 +35,11 @@ vi.mock('../api', () => ({
   },
 }))
 
-/** The card text writes (YAZ-5164 part 3: the head's rename), recorded instead of written. */
-const textWrites = vi.hoisted(() => [] as unknown[][])
+/** The card line writes (YAZ-5164 part 3: the head's rename, YAZ-5308 on the card line), recorded instead of written. */
+const lineWrites = vi.hoisted(() => [] as unknown[][])
 vi.mock('./cardFile', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./cardFile')>()),
-  changeCardTextIn: vi.fn(async (...args: unknown[]) => void textWrites.push(args)),
+  changeCardLine: vi.fn(async (...args: unknown[]) => void lineWrites.push(args)),
 }))
 
 const PATH = '/v/cards.md'
@@ -53,8 +54,11 @@ let session: CardReviewSession
 let review: CardReviewApi
 let props: CardInboxProps
 
-function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], size: 12, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, lastAdd: null, archived: [], ...over }
+/** The card's title, off its card line (YAZ-5308). */
+const TITLE = 'Capital of France'
+
+function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}, title = TITLE): CardReviewSession {
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], size: 12, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, lastAdd: null, archived: [], ...over }
 }
 
 function render() {
@@ -122,11 +126,15 @@ afterEach(() => {
 })
 
 describe('the Inbox screen (YAZ-4962)', () => {
-  it('YAZ-5044: the head reads "WIKI-9" while the title holds a hidden word (it would tell the answer), then "Capital of France · WIKI-9" (YAZ-5132: the page is in the breadcrumb, not "in Cards"); the hint row shows only keys that act now', async () => {
+  it('YAZ-5308: the head reads "Capital of France · WIKI-9" from the start, its title off the card line, never a word of the front (YAZ-5132: the page is in the breadcrumb, not "in Cards"); the hint row shows only keys that act now', async () => {
     mount(TWO_SIDES)
     expect(el.querySelector('.explore__title')).toBeNull()
     const head = () => [...el.querySelector('.card-inbox__head')!.children].map((c) => [c.className, c.textContent])
-    expect(head()).toEqual([['card__id', 'WIKI-9']])
+    expect(head()).toEqual([
+      ['card-inbox__name', 'Capital of France'],
+      ['card-inbox__dot', '·'],
+      ['card__id', 'WIKI-9'],
+    ])
     // YAZ-5017: "3 of 12" moved to the top row, on the right.
     expect(el.querySelector('.card-inbox__bar .card-inbox__place')?.textContent).toBe('3 of 12')
     const hints = () => [...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)
@@ -914,7 +922,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
 })
 
 describe('the title on the front (YAZ-5030)', () => {
-  const TITLED = '###### {{Capital of France}}\n\nWhat is the capital of {{France}}?\n---\n{{Paris}}'
+  const TITLED = 'What is the capital of {{France}}?\n---\n{{Paris}}'
   const withLine = (notitle: boolean) => {
     mount(TITLED)
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, notitle } } }
@@ -946,17 +954,14 @@ describe('the title on the front (YAZ-5030)', () => {
     expect(text()).not.toContain('Capital of France')
   })
 
-  it('Show (an old card, no part): the title is part of the front as before, its hidden word the first Space step; the head waits for the last step to show it, as the title tells the answer (YAZ-5044)', async () => {
+  it('Show (no part): the head shows the title from the start; it is no part of the front, so never a Space step (YAZ-5308)', async () => {
     withLine(false)
     await flush()
-    expect(blanks()).toBe(2)
-    press(' ')
-    expect(shown()).toEqual(['Capital of France'])
-    press(' ')
-    press(' ')
-    press(' ')
-    expect(shown()).toEqual(['Capital of France', 'France', 'Paris'])
     expect(label()).toBe('Capital of France')
+    expect(text()).not.toContain('Capital of France')
+    expect(blanks()).toBe(1)
+    press(' ')
+    expect(shown()).toEqual(['France'])
   })
 
   it('the answer line names the card by its title, a hidden title too (the answer is given)', async () => {
@@ -970,7 +975,7 @@ describe('the title on the front (YAZ-5030)', () => {
 })
 
 describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the breadcrumb`s last part), "Open card" for a card file', () => {
-  const PLAIN = 'Capital of France\n\nWhat is the capital of {{France}}?'
+  const PLAIN = 'What is the capital of {{France}}?'
   const headText = () => el.querySelector('.card-inbox__head')!.textContent
   const hints = () => [...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)
   /** The card's file is a card file (`kind: card`), as the index says. */
@@ -982,7 +987,7 @@ describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the brea
     render()
   }
 
-  it('a card in a page: "Capital of France · WIKI-9" from the start (no hidden word in its title), no "in Cards"; the breadcrumb`s page part and O open the page', () => {
+  it('a card in a page: "Capital of France · WIKI-9" from the start, no "in Cards"; the breadcrumb`s page part and O open the page', () => {
     mount(PLAIN)
     session = { ...session, place: [{ kind: 'vault', label: 'Demo', path: '/v' }, { kind: 'page', label: 'Cards', path: PATH }] }
     render()
@@ -1028,8 +1033,8 @@ describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the brea
     expect(vi.mocked(props.openPage).mock.calls).toEqual([[PATH]])
   })
 
-  it('YAZ-5164 part 3: the front never repeats the title; a click on the head`s title renames the card in its page (its first line), one write', async () => {
-    textWrites.length = 0
+  it('YAZ-5164 part 3: the front never shows the title; a click on the head`s title renames the card on its card line (YAZ-5308), one write', async () => {
+    lineWrites.length = 0
     mount(PLAIN)
     expect(el.querySelector('.card-inbox__card')?.textContent).not.toContain('Capital of France')
     expect(el.querySelector('.card-inbox__card')?.textContent).toContain('What is the capital of')
@@ -1040,7 +1045,10 @@ describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the brea
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, 'France')
       field.blur()
     })
-    expect(textWrites).toEqual([[PATH, 'WIKI-9', 'France\n\nWhat is the capital of {{France}}?', -1]])
+    expect(lineWrites).toHaveLength(1)
+    expect(lineWrites[0].slice(0, 2)).toEqual([PATH, 'WIKI-9'])
+    const change = lineWrites[0][2] as (line: CardLine) => CardLine
+    expect(formatCardLine(change(parseCardLine('<!-- card: WIKI-9, title "Capital of France" -->')!))).toBe('<!-- card: WIKI-9, title "France" -->')
   })
 
   it('a card file adds nothing: "Capital of France · WIKI-9"; its title is the link, and it and O open it in Explore ("Open card", YAZ-5145: as Explore opens it, not its tab); E edits it there, with no card index', () => {
@@ -1588,14 +1596,14 @@ describe('YAZ-5046: archived cards in the Inbox, to look at (not to review)', ()
     expect(review.setFilter).toHaveBeenCalledExactlyOnceWith('archived')
   })
 
-  it('Archived lists the cards: each its title ("New card" when empty) and its page; a click opens it as O does (YAZ-5145); Unarchive unarchives it; no answer buttons, no "3 of 12"', () => {
+  it('Archived lists the cards: each its title (its ID when it has none) and its page; a click opens it as O does (YAZ-5145); Unarchive unarchives it; no answer buttons, no "3 of 12"', () => {
     mount(TWO_SIDES)
     session = { ...session, filter: 'archived', card: null, archived: ARCHIVED }
     render()
     expect(el.querySelector('.card-inbox__filter')?.textContent).toBe('Archived')
     expect(listRows().map((r) => [r.querySelector('.card-inbox__archived-title')?.textContent, r.querySelector('.card-inbox__archived-page')?.textContent])).toEqual([
       ['Old fact', 'Cards'],
-      ['New card', 'Cards'],
+      ['WIKI-8', 'Cards'],
     ])
     expect(buttons()).toEqual([])
     expect(el.querySelector('.card-inbox__place')).toBeNull()
@@ -1650,7 +1658,7 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
     const above = el.querySelector('.card-inbox__above')!
     const panel = el.querySelector('.card-inbox__panel')!
     expect([...above.children].map((c) => c.className).slice(0, 2)).toEqual(['card-inbox__state', 'card-inbox__head'])
-    expect([...above.querySelector('.card-inbox__head')!.children].map((c) => c.textContent)).toEqual(['WIKI-9'])
+    expect([...above.querySelector('.card-inbox__head')!.children].map((c) => c.textContent)).toEqual(['Capital of France', '·', 'WIKI-9'])
     expect(panel.querySelector('.card-inbox__head, .explore__head, .card-inbox__page, .card__id')).toBeNull()
   })
 

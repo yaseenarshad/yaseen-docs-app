@@ -21,8 +21,8 @@ export interface CardEmbedDoors {
    * card's key row to go under it. Absent: no Edit card. A door, not an import: the card editor's module reaches the
    * page's marks, which reach this host.
    */
-  /** `fileTitle`: the card is a card file's (YAZ-5044), its `title` for Edit card's Title field (YAZ-5164 part 3). */
-  edit?: (root: HTMLElement, text: string, done: () => void, fileTitle?: string) => { editor: CardEditor; keys: HTMLElement }
+  /** `title`: the card's, for Edit card's Title field (YAZ-5164 part 3); `fileCard`: a card file's, its title read only here. */
+  edit?: (root: HTMLElement, text: string, title: string, done: () => void, fileCard: boolean) => { editor: CardEditor; keys: HTMLElement }
   /** The editor's one link follower: the name's click and the card's pills. */
   follow?: LinkFollow
   hotkeys?: () => HotkeyOverrides | undefined
