@@ -371,12 +371,12 @@ function Digestion(props: SceneProps) {
     const review = cue(b, 1, 0.497)
     const more = cue(b, 2, 0.716)
     // Each review on the calendar, from the word "review" to the end: the card steps down one level each time.
-    const steps = SETTLE.map((_, k) => (k === 0 ? 1 : since(b, lerp(review, 0.93, (k - 1) / 3), 0.5)))
+    const steps = SETTLE.map((_, k) => (k === 0 ? 1 : since(b, lerp(review, 0.84, (k - 1) / 3), 0.5)))
     const done = steps.filter((p) => p >= 1).length - 1
     const going = steps[done + 1] ?? 0
     const level = done + moved(b, going)
     const xs = SETTLE.map((_, k) => 90 + k * 105)
-    const ys = SETTLE.map((_, k) => 70 + k * 42)
+    const ys = SETTLE.map((_, k) => 84 + k * 36)
     const x = lerp(xs[Math.min(done, 4)], xs[Math.min(done + 1, 4)], level - done)
     const y = lerp(ys[Math.min(done, 4)], ys[Math.min(done + 1, 4)], level - done)
     const warm = level / 4
@@ -407,12 +407,12 @@ function Digestion(props: SceneProps) {
               <text className="kit-svg-label kb-settle__depth" x={594} y={62} textAnchor="end">
                 Chewed
               </text>
-              <text className="kit-svg-label kit-svg-label--accent kb-settle__depth" x={594} y={252} textAnchor="end" opacity={lerp(0.35, 1, warm)}>
+              <text className="kit-svg-label kit-svg-label--accent kb-settle__depth" x={8} y={248} textAnchor="start" opacity={lerp(0.35, 1, warm)}>
                 Digested
               </text>
             </svg>
             <span className="kb-settle__card" style={{ left: `${((x / 600) * 100).toFixed(2)}%`, top: `${((y / 300) * 100).toFixed(2)}%`, boxShadow: `0 0 ${(6 + 26 * warm).toFixed(1)}px color-mix(in srgb, var(--accent) ${(10 + 50 * warm).toFixed(0)}%, transparent)` }}>
-              <MiniCardTitle title="Sleep debt adds up" />
+              <MiniCardTitle title="Sleep debt" />
             </span>
           </div>
           <span className="kit-chip" style={pop(b, since(b, more, 0.5))}>

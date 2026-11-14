@@ -58,24 +58,24 @@
 }
 
 /* c3-01 */
-.kit-habit {
+.inbox-habit {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: clamp(10px, 3cqmin, 24px);
   width: min(92cqw, 30em);
 }
-.kit-habit .kit-cardview--small {
+.inbox-habit .kit-cardview--small {
   width: min(80cqw, 24em);
   font-size: clamp(12px, 3cqmin, 16px);
 }
-.kit-habit__loop {
+.inbox-habit__loop {
   display: block;
   width: 100%;
   height: 1.6em;
   overflow: visible;
 }
-.kit-habit__loop path {
+.inbox-habit__loop path {
   fill: none;
   stroke: var(--accent);
   stroke-width: 2;

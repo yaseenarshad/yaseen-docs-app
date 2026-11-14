@@ -115,13 +115,13 @@ function Habit(props: SceneProps) {
   return (
     <Stage beat={b} label="Your first card, and the week: each day, the Inbox brings it back">
       <Layer>
-        <div className="kit-habit">
+        <div className="inbox-habit">
           <div style={rise(b, since(b, 0, 0.7), 14)}>
             <CardView beat={b} title={FIRST.title} text={FIRST.text} sides={1} chrome="block" id={FIRST.id} className="kit-cardview--small" lit={[showFor(since(b, 0.05, 0.5), since(b, daily, 0.5))]} />
           </div>
           <div style={{ opacity: since(b, daily - 0.04, 0.4) }}>
             <WeekStrip beat={b} lit={lit} cards={Object.fromEntries(WEEK.map((_, i) => [i, since(b, back + i * 0.025, 0.4)]))} />
-            <svg className="kit-habit__loop" viewBox="0 0 300 30" preserveAspectRatio="none" aria-hidden="true">
+            <svg className="inbox-habit__loop" viewBox="0 0 300 30" preserveAspectRatio="none" aria-hidden="true">
               <path d="M290 4 C 290 26, 10 26, 10 4" pathLength={1} strokeDasharray="1 1" strokeDashoffset={1 - moved(b, loop)} />
               <path d="M4 10 L10 3 L16 10" opacity={clamp(loop * 3 - 2)} />
             </svg>

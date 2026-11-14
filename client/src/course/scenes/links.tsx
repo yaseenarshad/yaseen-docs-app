@@ -71,13 +71,13 @@ function OnePlace(props: SceneProps) {
   const notRequired = id === 'c10-04' ? showFor(since(b, cue(b, 0, 0.492), 0.4), since(b, cue(b, 1, 0.723) - 0.04, 0.3)) : 0
   const choice = id === 'c10-04' ? since(b, cue(b, 1, 0.723), 0.5) : 0
   const pile = Array.from({ length: 9 }, (_, i) => ({ p: since(b, fall + i * 0.035, 0.6), dx: ((i * 37) % 9) / 4 - 1, tilt: ((i * 53) % 21) - 10 }))
-  const ASIDE_X = [318, 412, 506]
+  const ASIDE_X = [300, 446, 600]
   return (
     <Stage beat={b} label={id === 'c10-02' ? 'Files and folders: one thing, one place' : id === 'c10-03' ? 'A new card over three folders: where does this go?' : 'The app does not require folders: all your cards in one place, or in folders. The choice is yours'}>
       <Layer style={{ paddingBottom: '8%' }}>
         <svg className="kit-folders" viewBox="0 0 600 340" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
           {FOLDERS.map((f, i) => (
-            <Folder key={f.label} beat={b} x={lerp(f.x, ASIDE_X[i], aside)} y={lerp(150, 168, aside)} scale={lerp(1, 0.56, aside)} label={f.label} p={id === 'c10-02' ? since(b, i * 0.06, 0.5) : 1} card={i === 1 ? 'Meeting minutes' : undefined} cardIn={i === 1 ? drop : 0} shut={i === 1 ? shut : 0} glow={choice} />
+            <Folder key={f.label} beat={b} x={lerp(f.x, ASIDE_X[i], aside)} y={lerp(150, 160, aside)} scale={lerp(1, 0.8, aside)} label={f.label} p={id === 'c10-02' ? since(b, i * 0.06, 0.5) : i === 2 ? 1 - aside : 1} card={i === 1 && aside < 0.5 ? 'Meeting minutes' : undefined} cardIn={i === 1 ? drop : 0} shut={i === 1 ? shut : 0} glow={i === 2 ? 0 : choice} />
           ))}
           {hover > 0 && (
             <g transform={`translate(${(300 + sway * (1 - ask * 0.8) - 54).toFixed(2)} ${(40 + (b.reduced ? 0 : Math.sin(b.t * 3.1) * 5)).toFixed(2)})`} opacity={clamp(hover * 2)}>
@@ -92,9 +92,9 @@ function OnePlace(props: SceneProps) {
               </text>
             </g>
           )}
-          {box > 0 && <Folder beat={b} x={24} y={86} scale={1.45} label="Cards" p={box} pile={pile} glow={choice} />}
+          {box > 0 && <Folder beat={b} x={20} y={96} scale={1.4} label="Cards" p={box} pile={pile} glow={choice} />}
           {box > 0 && (
-            <text className="kit-svg-label later-or" x={290} y={214} textAnchor="middle" opacity={box}>
+            <text className="kit-svg-label later-or" x={268} y={220} textAnchor="middle" opacity={box}>
               or
             </text>
           )}
@@ -219,7 +219,7 @@ function FewFolders(props: SceneProps) {
   const advice = since(b, 0.45, 0.6)
   return (
     <Stage beat={b} label="With great power comes great responsibility. Our advice: few folders, many links">
-      <Layer style={{ opacity: 1 - advice * 0.9 }}>
+      <Layer style={{ opacity: 1 - advice }}>
         <AppWindow
           sidebar={<SidebarPreview rows={NESTED.map((row, i) => ({ name: row.name, kind: 'folder', depth: row.depth, open: row.depth < 2 && NESTED[i + 1]?.depth > row.depth, p: since(b, power - 0.06 + i * 0.022, 0.25) }))} />}
           label="A sidebar of folders inside folders"

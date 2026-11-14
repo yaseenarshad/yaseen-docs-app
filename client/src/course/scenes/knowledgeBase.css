@@ -643,14 +643,14 @@
   flex-direction: column;
   gap: 0.4em;
   box-sizing: border-box;
-  width: min(9em, 28%);
+  width: min(11em, 34%);
   padding: 0.55em 0.7em;
   font-size: clamp(var(--kit-min-text), 2.3cqmin, 14px);
   text-align: left;
   border: 1.5px solid var(--accent);
   border-radius: 8px;
   background: var(--bg);
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, calc(-100% - 6px));
 }
 .kb-settle__title {
   overflow: hidden;
