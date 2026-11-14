@@ -10,7 +10,8 @@
   X-Content-Type-Options: nosniff
   Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=(), usb=()
   Cross-Origin-Opener-Policy: same-origin
-  # YAZ-5284: HTTPS only, for one year (no preload, no subdomains). Plain http:// is sent to https:// by Cloudflare.
+  # YAZ-5284: HTTPS only, for one year (no preload, no subdomains). Browsers obey it only on an HTTPS answer. Plain
+  # http:// is NOT sent to https:// yet: the site answers 200 there until the zone's "Always Use HTTPS" is on (Yaseen).
   Strict-Transport-Security: max-age=31536000
 
 # YAZ-5283: no long cache rule for /assets/*. Cloudflare answers a MISSING chunk with the app page (the single-page
