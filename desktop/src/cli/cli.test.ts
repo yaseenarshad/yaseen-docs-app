@@ -903,7 +903,7 @@ describe('card files (YAZ-5037)', () => {
 
   it('the contract names `card new`, the card file, `cardFile` and the kind `card`', () => {
     const help = HELP.replace(/\s+/g, ' ')
-    for (const said of ['yaseendocs card new <folder> --title <text> [--body <text | ->] [--json]', '`kind: card`', 'This is a card file. Use `card new`.', '`cardFile: true`', '(`note`, `card` or `folder`;', '`kind` is `note`, `card`, `folder` or `missing`']) expect(help).toContain(said)
+    for (const said of ['yaseendocs card new <folder> --title <text> [--body <text | ->] [--hide-title] [--json]', '`kind: card`', 'This is a card file. Use `card new`.', '`cardFile: true`', '(`note`, `card` or `folder`;', '`kind` is `note`, `card`, `folder` or `missing`']) expect(help).toContain(said)
   })
 })
 
@@ -1282,5 +1282,37 @@ describe('card guide (YAZ-5110)', () => {
     const help = HELP.replace(/\s+/g, ' ')
     for (const said of ['Run `yaseendocs card guide` before you add or change a card.', '`--path`', 'Card skill']) expect(help).toContain(said)
     expect(help).not.toMatch(/note card guide/)
+  })
+})
+
+describe('--hide-title (YAZ-5135)', () => {
+  const card = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->\n`
+
+  it('card add --hide-title writes `notitle` on the new card line; without it, no `notitle`', async () => {
+    const root = await vault('cards', { 'deck.md': '---\nid: YAZ-5\n---\n# Deck\n' })
+    const deck = path.join(root, 'deck.md')
+    expect((await run(['card', 'add', deck, '--title', 'Capital of France', '--body', 'The capital is {{Paris}}', '--hide-title'])).code).toBe(0)
+    expect(await run(['card', 'add', deck, '--title', 'Shown', '--body', '{{Rome}}'])).toMatchObject({ code: 0 })
+    // No --title: the first line of --body is the title, and the flag still applies.
+    expect(JSON.parse((await run(['card', 'add', deck, '--body', 'Body title\n{{x}}', '--hide-title', '--json'])).out)).toEqual({ id: 'YAZ-8', page: deck, title: 'Body title' })
+    const content = await readFile(deck, 'utf8')
+    expect(content).toContain(card('Capital of France\nThe capital is {{Paris}}', 'YAZ-6, notitle'))
+    expect(content).toContain(card('Shown\n{{Rome}}', 'YAZ-7'))
+    expect(content).toContain(card('Body title\n{{x}}', 'YAZ-8, notitle'))
+  })
+
+  it('card new --hide-title writes `notitle` on the card file\'s line; without it, no `notitle`', async () => {
+    const root = await vault('cards', { 'geo/a.md': '' })
+    const geo = path.join(root, 'geo')
+    expect((await run(['card', 'new', geo, '--title', 'Capital of France', '--body', '{{Paris}}', '--hide-title'])).code).toBe(0)
+    expect(await readFile(path.join(geo, 'capital-of-france-yaz-1.md'), 'utf8')).toBe(`---\nkind: card\n---\n${card('Capital of France\n\n{{Paris}}', 'YAZ-1, notitle')}`)
+    expect((await run(['card', 'new', geo, '--title', 'Shown'])).code).toBe(0)
+    expect(await readFile(path.join(geo, 'shown-yaz-2.md'), 'utf8')).toBe(`---\nkind: card\n---\n${card('Shown', 'YAZ-2')}`)
+  })
+
+  it('the help lists the flag on both commands and says not to hide the title in {{ }}', () => {
+    expect(USAGE).toMatch(/yaseendocs card add <page\.md> [^\n]*\[--hide-title\]/)
+    expect(USAGE).toMatch(/yaseendocs card new <folder> [^\n]*\[--hide-title\]/)
+    expect(HELP.replace(/\s+/g, ' ')).toContain('Do not put the title in `{{ }}`. Use `--hide-title`.')
   })
 })

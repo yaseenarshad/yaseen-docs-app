@@ -38,7 +38,7 @@ import { newestFile } from '@shared/settingsSync'
 import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, canonicalNoteId, isNumberId, vaultNoteId } from '@shared/noteId'
-import { cardBlock, changeCard, pageCards, withCardNext } from '@shared/cardLine'
+import { cardBlock, changeCard, pageCards, withCardNext, withCardNoTitle, type CardLine } from '@shared/cardLine'
 import { lineKinds } from '@shared/fences'
 import { cardQueue, cardState } from '@shared/cardSchedule'
 import { cardTitle } from '@shared/cardText'
@@ -83,8 +83,8 @@ export const USAGE = `usage:
   yaseendocs links    <page.md> [--json]
   yaseendocs mentions <page.md> [--json]
   yaseendocs due      <page.md | folder> [--json]
-  yaseendocs card add <page.md> --body <text | -> [--title <text>] [--after <heading>] [--json]
-  yaseendocs card new <folder> --title <text> [--body <text | ->] [--json]
+  yaseendocs card add <page.md> --body <text | -> [--title <text>] [--after <heading>] [--hide-title] [--json]
+  yaseendocs card new <folder> --title <text> [--body <text | ->] [--hide-title] [--json]
   yaseendocs card next <id> [<folder>] [--off] [--json]
   yaseendocs card guide [--path]
   yaseendocs vaults   [--json]
@@ -175,6 +175,10 @@ the vault's counter: \`--title\` (one line) is the card's first line, and \`--bo
 rest, after a blank line. A name that is already taken is refused. It prints \`made <path>\`; \`--json\` gives
 \`id\`, \`path\` and \`title\`.
 
+\`--hide-title\` on \`card add\` and \`card new\` keeps the card's title off the front in review, as the app's
+⋯ › "Title on the front" › Hide: the card line gets the part \`notitle\`, and the title is never a step of the
+review. Do not put the title in \`{{ }}\`. Use \`--hide-title\`.
+
 \`card next <id>\` puts a card at the top of the Inbox, as the app's "Put at top of Inbox" does: the card
 line gets the part \`next\`, and the Inbox shows the card first, due or not and outside the new cards a
 day, until it is answered one time (the answer removes \`next\`). \`--off\` removes it ("Remove from top of
@@ -237,7 +241,7 @@ Make a note card, and see what is due:
 /** Every flag the contract names; anything else is refused, because `--help` IS the contract (🔒 D1) and a typo must not be absorbed. */
 const FLAGS = new Set(['--body', '--title', '--reply-to', '--by', '--date', '--after'])
 /** Flags that take no value. */
-const SWITCHES = new Set(['--json', '--help', '-h', '--find', '--open', '--reopen', '--off', '--path'])
+const SWITCHES = new Set(['--json', '--help', '-h', '--find', '--open', '--reopen', '--off', '--path', '--hide-title'])
 
 class Usage extends Error {}
 
@@ -610,9 +614,12 @@ function cardTitleFlag(flags: Map<string, string | true>): string {
   return titleLine
 }
 
+/** The new card's line (YAZ-5135): its ID, and `notitle` with `--hide-title`, as ⋯ › "Title on the front" › Hide writes it. */
+const newCardLine = (id: string, flags: Map<string, string | true>): CardLine => withCardNoTitle({ parts: [{ kind: 'id', id }] }, flags.has('--hide-title'))
+
 /** `card add` (YAZ-4963, idea 16): a note card with a real ID from the vault's counter, written atomically. */
 async function cardAdd(page: string, flags: Map<string, string | true>, io: Io): Promise<void> {
-  onlyFlags('card add', flags, ['--body', '--title', '--after', '--json'])
+  onlyFlags('card add', flags, ['--body', '--title', '--after', '--hide-title', '--json'])
   const body = (await bodyOf(flags, io)).replace(/\r\n/g, '\n').replace(/^\n+|\s+$/g, '')
   if (body === '') throw new Usage('card add needs a --body with text')
   // The title is the card's first line (YAZ-5030): one line, before the body.
@@ -627,7 +634,7 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io):
   // The door (YAZ-2677 D4): the count file is on disk before the card is written (R18), the app's own number.
   const id = (await mintIds(root, 1))?.[0]
   if (id === undefined) throw new Error(`${page}'s vault does not give its notes IDs, so it has no note cards`)
-  const block = cardBlock(text, { parts: [{ kind: 'id', id }] })
+  const block = cardBlock(text, newCardLine(id, flags))
   await transformOnDisk(page, (fresh) => {
     if (isCardFileContent(fresh)) throw new Error(CARD_FILE_REFUSED)
     const { frontmatter, body } = splitFrontmatter(fresh)
@@ -652,7 +659,7 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io):
  * (the number is spent, as the app's New note spends one on a create that fails).
  */
 async function cardNew(dir: string, flags: Map<string, string | true>, io: Io): Promise<void> {
-  onlyFlags('card new', flags, ['--title', '--body', '--json'])
+  onlyFlags('card new', flags, ['--title', '--body', '--hide-title', '--json'])
   const title = cardTitleFlag(flags)
   if (title === '') throw new Usage('card new needs --title')
   const body = flags.has('--body') ? (await bodyOf(flags, io)).replace(/\r\n/g, '\n').replace(/^\n+|\s+$/g, '') : ''
@@ -666,7 +673,7 @@ async function cardNew(dir: string, flags: Map<string, string | true>, io: Io): 
   if (id === undefined) throw new Error(`${dir}'s vault does not give its notes IDs, so it has no note cards`)
   const path = join(dir, cardFileName(title, id))
   // No door: a card file carries no page `id:` (its card's ID is the file's), so the content is written as it is.
-  await createFile({ path, content: cardFileContent(body === '' ? title : `${title}\n\n${body}`, { parts: [{ kind: 'id', id }] }) }, null).catch((err: unknown) => {
+  await createFile({ path, content: cardFileContent(body === '' ? title : `${title}\n\n${body}`, newCardLine(id, flags)) }, null).catch((err: unknown) => {
     throw err instanceof BridgeFailure && err.code === 'ALREADY_EXISTS' ? new Error(`${path} is already there`) : err
   })
   io.stdout(flags.has('--json') ? `${JSON.stringify({ id, path, title }, null, 2)}\n` : `made ${path}\n`)
