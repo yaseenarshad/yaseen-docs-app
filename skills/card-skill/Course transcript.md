@@ -20,7 +20,7 @@ It is one of the most tested ideas about memory: one review of 317 experiments f
 
 So where does each thing you learn go? Picture a paper index card, the kind people study with.
 
-That is a card: one small fact, with part of it hidden.
+That is a card: one idea, with part of it hidden.
 
 You will have many cards, one for each thing you want to keep.
 
@@ -30,23 +30,23 @@ You try to recall the hidden part, then check. And you answer: forgot, or rememb
 
 The app sets each date with an open scheduling method called FSRS. It brings a card back when your chance of recalling it drops to about ninety percent.
 
-This course takes about twenty minutes, in eleven short chapters.
+This course takes about twenty-three minutes, in twelve short chapters.
 
 Some chapters let you try the steps in the real app. That part is always your choice.
 
 Review just before you forget, and each memory lasts longer. Next: why a card is the right shape, and your first one.
 
-## Chapter 2. The card: one small fact
+## Chapter 2. The card: one idea to recall
 
-Quick recap: each thing you learn goes on a card. Now, why a card is small, and how to make one.
+Quick recap: each thing you learn goes on a card. Now, what a card holds, and how to make one.
 
-A good card is atomic. That means it holds one small idea, and nothing else.
+A good card holds one idea you want to recall. It can start light, and grow as you learn.
 
-Small pieces can be mixed and matched, wherever you need them.
+Cards like this can be mixed and matched, wherever you need them.
 
-Piotr Wozniak, who built SuperMemo, made it a rule: keep each card simple. It is easier to remember, and a hard part gets its own reviews.
+Piotr Wozniak, who built SuperMemo, made it a rule: keep each card simple. A simple card is easier to remember.
 
-All your cards together are your card base. It grows one small piece at a time.
+All your cards together are your card base. It grows one card at a time.
 
 Think of something you learned this week.
 
@@ -64,25 +64,30 @@ Either answer is fine. The app saves it with the card.
 
 Your card is now a real file, in a folder called Course Cards, at the top of your vault.
 
-A card file's first line is its title. If the title gives the answer away, hide it with Title on the front, in the card's menu.
+In the app, right-click a folder and choose New card. Type the title, press Enter, then the fact.
 
-In the app, right-click a folder and choose New card. Type the title, then the fact.
+To hide a word, select it, and click Hide word in the toolbar. The key is Command L.
 
-Select a word and press Command L to hide it. Press Escape, and the card saves.
+For a back side, type slash, and choose New side. The key is Command Shift Enter.
 
-For a back side, type three dashes on an empty line. The answer, or a short line that explains it, goes after them.
+Press Escape, or click Done, and the card saves.
+
+The title sits at the top of the card's tab. Click it to change it, and the file's name follows.
+
+If the title gives the answer away, set Title on the front to Hide, in the card's menu.
 
 To make one in the real app now, choose Try it in the app.
 
-One card, one small fact. Next: the place your cards come back to, each day.
+One card, one idea to recall. Next: the place your cards come back to, each day.
 
 ### Try it in the app
 
 1. Right-click the Course Cards folder in the sidebar.
 2. Choose New card.
-3. Type a title. Then, on the next line, one fact.
-4. Select one word, and press Command L to hide it.
-5. Press Escape, or click Done, to save your card.
+3. Type a title, and press Enter.
+4. Now type one fact.
+5. Select one word. In the toolbar above it, click Hide word.
+6. Press Escape, or click Done, to save your card.
 
 ## Chapter 3. The Inbox, each day
 
@@ -156,7 +161,7 @@ To review only the cards of one page, right-click the page, and choose Review th
 
 Third, a card embedded in a page. The card lives in one place, and the page shows it.
 
-To embed one, copy the card's link from its menu. Paste it in a page, and choose Embed.
+To embed one, copy the card's link from its menu, and paste it in a page. Then right-click the link, and choose Show as embed.
 
 The embed has a small head that says Embedded from, with the card's title.
 
@@ -175,7 +180,7 @@ This is the mix and match from before: one card, one home, shown wherever it hel
 1. Open your card's menu: the three dots in its head.
 2. Choose Copy card link.
 3. Now open Course page, in the Course Cards folder.
-4. Click in the page, and paste with Command V. Then choose Embed.
+4. Click in the page, and paste with Command V. Then right-click the link, and choose Show as embed.
 
 ## Chapter 5. Why it is worth it
 
@@ -247,11 +252,15 @@ A wall of text is not a card. It asks you to recall everything at once, so you r
 
 Before you make a card, ask one question. What is the one thing I want to recall?
 
-Then split it. One card for each thing. Small cards are quick to answer, and easy to remember.
+Then think of your cards as nodes on a tree. A node is a point that others connect to.
 
-For example, what you learn about a new word becomes four cards. What it means, how to say it, one example, and where it comes from.
+At the start, one light card is enough: say, how protein, carbs and fat differ.
 
-If a card is hard every time, it is often two cards in one. Split it again.
+As you learn more about protein, it gets its own card, linked back to the first.
+
+The first card stays the overview. The tree grows as your understanding grows.
+
+So start light. Add a card when you know enough to need one.
 
 Your turn. Which of these two cards is better?
 
@@ -333,21 +342,82 @@ Even with a large card base, review and tending together can fit in fifteen to t
 
 Making is the one you set time aside for. Digesting takes thought, so give it a quiet moment.
 
-Make with time set aside. Review every day. Tend as you review. Next, the tending itself.
+Make with time set aside. Review every day. Tend as you review. Next, how your cards connect.
 
-## Chapter 10. Be a gardener
+## Chapter 10. Links: how cards connect
 
-Tending happens as you review. Here is how, and why it is worth it.
+Quick recap: you make, review and tend your cards. Now, how they connect, and why that beats folders.
+
+Most of us keep things in files and folders. Computers taught us: one thing, one place.
+
+So when you make a card, you ask: where does this go?
+
+Cards do not need that. They can all live in one place, or one folder at most.
+
+Links hold them together. A link points to another card, like the protein card in chapter 7.
+
+Your mind does not work like folders. It works by association: one idea calls up another.
+
+Researchers describe memory as a web of linked ideas. Think of one, and the ones linked to it come to mind more easily.
+
+And researchers found that new facts are usually remembered better when they fit with something you already know.
+
+An easy example. Your card on bees sits in a folder called Animals.
+
+Your card on how flowers make seeds sits in Plants.
+
+They belong together: bees carry pollen from flower to flower, and many flowers need it for seeds.
+
+Each card has one folder, so the folders keep them apart. A link joins them.
+
+Folders ask: where does this go? Links ask: what does this connect to?
+
+A card can link to any card, wherever it lives, and to any page.
+
+To link, edit the card. Type two square brackets, then a few letters of the other card's title.
+
+A list shows what matches. Click the one with the card icon.
+
+The link turns into a pill: the other card's title, with its ID small beside it.
+
+Click the pill, and that card opens. Under it, Linked mentions lists what links to it.
+
+To remove a link, edit the card, and delete the pill like a word.
+
+Your card base is your knowledge base. Links make it a base, not a pile.
+
+To link two of your Course Cards, choose Try it in the app.
+
+Ask what a card connects to, not where it goes. Next: tending your cards and links.
+
+### Try it in the app
+
+1. Open the Course Cards folder, and click one of your cards.
+2. Click Edit card, or press E.
+3. At the end of a line, type two square brackets. Then a few letters of another card's title.
+4. Click the row with the card icon.
+5. Press Escape, or click Done. The link is now a pill.
+6. Click the pill. The other card opens, and Linked mentions lists your first card.
+
+## Chapter 11. Be a gardener
+
+Your cards connect through links. Now, how to tend them as you review.
 
 Think of a gardener. A garden does well when someone clears it and prunes it.
 
 That is not a chore. Each fix makes you think about the idea again, and that is learning too.
 
-A card you keep missing is a sign to look at it. Often it is unclear, or two cards in one.
+A card you keep missing is a sign to look at it. Often it is unclear, or it asks too much at once.
 
 To fix a card, click Edit card, or press E in the Inbox. Press Escape when you are done.
 
 Or, since each card is a file, tell your agent what to change, and keep reviewing.
+
+Some agent tools can run by themselves at set times: a scheduled agent.
+
+It can read your card base, and propose fixes, or new links.
+
+But you approve each change by hand. An agent never changes your card base on its own.
 
 Some cards no longer earn their place. Pruning is part of it.
 
@@ -355,11 +425,15 @@ To stop reviewing a card, open its menu and choose Archive card. It keeps its hi
 
 Archived cards are at the bottom of the All cards menu, in the Inbox. Unarchive brings one back.
 
+Tend the links too. When you notice two cards belong together, link them.
+
+When a link no longer helps, delete it like a word.
+
 To see a card first, choose Put at top of Inbox. It gets the Up next mark until you answer it.
 
 Each card keeps its review history. You can delete one wrong answer, or choose Reset history to start fresh.
 
-Want more today? Click Add in the All cards menu.
+Want more new cards today? Click their count in the All cards menu, and press Enter.
 
 To try Archive and Up next on your own card, choose Try it in the app.
 
@@ -375,7 +449,7 @@ Prune a little each day, and your card base stays true. Next: your first week.
 6. Open the card's menu once more.
 7. Choose Put at top of Inbox. Next time you open the Inbox, it comes first.
 
-## Chapter 11. Where things are, and your first week
+## Chapter 12. Where things are, and your first week
 
 To finish: where things are, and your first week.
 
@@ -398,6 +472,8 @@ Today, make one card, from something you already understand well.
 Each day, open the Inbox, and answer what is due.
 
 Keep one place to capture things as you hear them. Once this week, set time aside to make a few cards from it.
+
+For each new card, ask what it connects to, and link it.
 
 As you review, fix what is unclear. That is tending, and it is how your card base stays yours.
 

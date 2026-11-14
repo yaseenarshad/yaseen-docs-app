@@ -7,9 +7,9 @@ import { courseTranscript, TRANSCRIPT_FIRST_LINE } from './transcript'
 /** The skill's page made from the script. `UPDATE_COURSE_TRANSCRIPT=1 npx vitest run client/src/course/script.test.ts` writes it again. */
 const PAGE = resolve(__dirname, '../../../skills/card-skill/Course transcript.md')
 
-describe('the course script (YAZ-5119, version 2 YAZ-5147)', () => {
-  it('has the 11 chapters with unique ids, and chapter 1 keeps the two sample clips whose words did not change', () => {
-    expect(COURSE).toHaveLength(11)
+describe('the course script (YAZ-5119, version 2 YAZ-5147, version 3 YAZ-5148)', () => {
+  it('has the 12 chapters with unique ids, and chapter 1 keeps the two sample clips whose words did not change', () => {
+    expect(COURSE).toHaveLength(12)
     expect(new Set(COURSE.map((ch) => ch.id)).size).toBe(COURSE.length)
     expect(COURSE[0].clips.filter((c) => /^s\d[ab]$/.test(c.id)).map((c) => c.id)).toEqual(['s2b', 's3a'])
   })
@@ -28,6 +28,13 @@ describe('the course script (YAZ-5119, version 2 YAZ-5147)', () => {
       expect(line).not.toContain('!')
       expect(line.toLowerCase()).not.toContain('note card') // rename-note-to-page: keep
     }
+  })
+
+  it('keeps the spoken words at 3,300 or fewer (about 23 minutes at 145 words a minute), and never says "atomic"', () => {
+    const clips = COURSE.flatMap((ch) => ch.clips.map((c) => c.text))
+    const words = clips.join(' ').split(/\s+/).filter((w) => w !== '').length
+    expect(words).toBeLessThanOrEqual(3300)
+    for (const line of clips) expect(line.toLowerCase()).not.toMatch(/\batomic\b/)
   })
 
   it('names each tour target in kebab case', () => {
