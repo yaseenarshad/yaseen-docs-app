@@ -45,7 +45,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c1-01', text: 'Say you learn something today. A week from now, your brain will have forgotten most of it.' },
       // An old notebook page of nonsense syllables ("DAX", "BOK", "YAT"); the year 1885.
       // SOURCE: Ebbinghaus 1885, Memory: A Contribution to Experimental Psychology; savings data as given in Murre & Dros 2015, PLOS ONE, Table 3.
-      { id: 'c1-02', text: 'In the 1880s, Hermann Ebbinghaus measured this on himself. After one day, relearning a list took him about two thirds of the original time.' },
+      { id: 'c1-02', text: 'In the 1880s, Hermann Ebbinghaus measured this on himself. One day after he learned a list, most of that work was gone. Learning it again took two thirds of the time.' },
       // The old curve from 1885 and a new one from 2015 slide over each other; they match.
       // SOURCE: Murre & Dros 2015, "Replication and Analysis of Ebbinghaus' Forgetting Curve", PLOS ONE 10(7): "We conclude that the Ebbinghaus forgetting curve has indeed been replicated."
       { id: 'c1-22', text: 'In 2015, scientists repeated his experiment. A hundred and thirty years later, they got the same curve.' },
@@ -58,45 +58,45 @@ export const COURSE: CourseChapter[] = [
       { id: 'c1-04', text: 'A new memory starts out fragile. Over time, the brain makes it stable. Scientists call this consolidation.' },
       // Each review mark pushes the memory deeper, from a "Short-term" band into a "Long-term" band.
       { id: 'c1-05', text: 'Each review, near the point where you would forget, pushes the memory further into long-term memory.' },
-      // Behind the curve, small gears turn; a date lights up on a calendar just before the curve drops. The words "Spaced repetition algorithm" settle under it. (Yaseen's line, from the doc YAS-2084.)
-      { id: 'c1-16', text: 'The app runs an algorithm behind the scenes to keep track of this for you, and predicts the day you are about to forget it. This is called a spaced repetition algorithm.' },
-      // A wall of small study tiles fills in, "317 experiments"; spaced reviews beat reviews done all at once.
-      // SOURCE: Cepeda, Pashler, Vul, Wixted & Rohrer 2006, "Distributed practice in verbal recall tasks", Psychological Bulletin: 317 experiments in 184 articles.
-      { id: 'c1-06', text: 'Scientists have tested this for more than a century. One review alone covered 317 experiments, and spacing won.' },
-      // A paper index card drops onto the stage.
-      { id: 'c1-07', text: 'So how do you store each thing you learn in the app? Answer: on a card.' },
-      // The paper index card becomes the app's real card: a title, a fact, one word as a blank.
-      // v3: "one small fact" became "one idea" (the node idea of chapter 7: a card can start as a light overview).
-      { id: 'c1-08', text: 'That is a card: one idea, with part of it hidden.' },
-      // Many cards fan out across the stage, each with one fact.
-      { id: 'c1-09', text: 'You will have many cards, one for each thing you want to keep.' },
-      // A calendar; each card takes its own date.
-      { id: 'c1-10', text: 'The app keeps a calendar for every card. On the day a card is due, it shows it to you.' },
-      // The blank fills in; two buttons, Forgot and Remembered.
-      { id: 'c1-11', text: 'You try to recall the hidden part, then check. And you answer: forgot, or remembered.' },
-      // The words "FSRS" over a card; behind it, a small graph of one memory: a curve, and numbers that update.
-      // SOURCE: shared/cardSchedule.ts (FSRS through ts-fsrs 5.4.2, the FSRS-6 weights); FSRS models each card's memory (stability, difficulty) and computes the chance of recall.
-      { id: 'c1-12', text: 'That algorithm is called FSRS. It is a mathematical model of your memory.' },
-      // A card's curve with a dotted line at 90%; the odds tick down day by day; the next date lands where the curve meets the line.
-      // SOURCE: shared/reviews.ts DEFAULT_REVIEW_SETTINGS.retention = 0.9; shared/cardSchedule.ts `recallChance`.
-      { id: 'c1-17', text: 'For every card, every day, it works out the odds that you still remember it. When they drop to about ninety percent, the card comes back.' },
       // Two brain cells and the link between them; with each spaced pulse, a switch inside the cell turns on and the link grows stronger.
       // SOURCE: Naqib, Sossin & Farah 2012, "Molecular Determinants of the Spacing Effect", Neural Plasticity (CREB-dependent gene expression after spaced training, in Aplysia, Drosophila and rodents).
       { id: 'c1-18', text: 'This is hard science. Researchers have watched it in brain cells: spaced practice switches on the genes that build long-term memory.' },
       // A Nobel medal; "2000".
       // SOURCE: The Nobel Prize in Physiology or Medicine 2000 (Eric Kandel, with Carlsson and Greengard): how nerve cells change to store memory.
       { id: 'c1-19', text: 'The work that first showed how brain cells store a memory won a Nobel Prize.' },
+      // A wall of small study tiles fills in, "317 experiments"; spaced reviews beat reviews done all at once.
+      // SOURCE: Cepeda, Pashler, Vul, Wixted & Rohrer 2006, "Distributed practice in verbal recall tasks", Psychological Bulletin: 317 experiments in 184 articles.
+      { id: 'c1-06', text: 'Scientists have tested this for more than a century. One review alone covered 317 experiments, and spacing won.' },
       // A ridge-shaped graph: memory kept, against the gap before the review; a peak in the middle, lower on both sides; "more than 1,350 people".
       // SOURCE: Cepeda, Vul, Rohrer, Wixted & Pashler 2008, "Spacing effects in learning: a temporal ridgeline of optimal retention", Psychological Science 19(11): more than 1,350 people; the best gap depends on how long the memory must last.
       { id: 'c1-20', text: 'And yes, there is a best moment to review. A study of more than 1,300 people found it: too early or too late, and you keep less.' },
-      // The ridge's peak moves for each card; a marker follows it, card by card.
+      // A paper index card drops onto the stage.
+      { id: 'c1-07', text: 'So how do you store each thing you learn in the app? Answer: on a card.' },
+      // The paper index card becomes the app's real card: a title, a fact, one word as a blank.
+      // v3: "one small fact" became "one idea" (the node idea of chapter 7: a card can start as a light overview).
+      { id: 'c1-08', text: 'A card is one idea, with part of it hidden.' },
+      // Many cards fan out across the stage, each with one fact.
+      { id: 'c1-09', text: 'You will have many cards, one for each thing you want to keep.' },
+      // Behind the curve, small gears turn; a date lights up on a calendar just before the curve drops. The words "Spaced repetition algorithm" settle under it. (Yaseen's line, from the doc YAS-2084.)
+      { id: 'c1-16', text: 'The app runs an algorithm behind the scenes to keep track of this for you, and predicts the day you are about to forget it. This is called a spaced repetition algorithm.' },
+      // The words "FSRS" over a card; behind it, a small graph of one memory: a curve, and numbers that update.
+      // SOURCE: shared/cardSchedule.ts (FSRS through ts-fsrs 5.4.2, the FSRS-6 weights); FSRS models each card's memory (stability, difficulty) and computes the chance of recall.
+      { id: 'c1-12', text: 'That algorithm is called FSRS. It is a mathematical model of your memory.' },
+      // A card's curve with a dotted line at 90%; the odds tick down day by day; the next date lands where the curve meets the line.
+      // SOURCE: shared/reviews.ts DEFAULT_REVIEW_SETTINGS.retention = 0.9; shared/cardSchedule.ts `recallChance`.
+      { id: 'c1-17', text: 'For every card, every day, it works out the odds that you still remember it. When they drop to about ninety percent, the card comes back.' },
+      // The 90% line and the ridge's peak from before line up; a marker lands on the best moment for this card, then the next card, then the next.
       { id: 'c1-21', text: 'The algorithm finds that moment for every card, precisely for you, by studying your memory.' },
+      // A calendar; each card takes its own date.
+      { id: 'c1-10', text: 'The app keeps a calendar for every card. On the day a card is due, it shows it to you.' },
+      // The blank fills in; two buttons, Forgot and Remembered.
+      { id: 'c1-11', text: 'You try to recall the hidden part, then check. And you answer: forgot, or remembered.' },
       // The chapter list lights up, 1 to 12.
       { id: 'c1-13', text: 'This course takes about twenty-eight minutes, in twelve short chapters.' },
       // The "Try it in the app" button, with "Optional" beside it.
       { id: 'c1-14', text: 'Some chapters let you try the steps in the real app. That part is always your choice.' },
       // The curve with its growing gaps, then the paper index card alone in the middle of the stage.
-      { id: 'c1-15', text: 'Review just before you forget, and each memory lasts longer. Next: what a card really is, and your first one.' },
+      { id: 'c1-15', text: 'Your brain forgets on a curve. Now you have a way to beat it. Next: what a card really is, and you make your first one.' },
     ],
   },
   {
@@ -211,7 +211,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c3-06', text: 'Trying to recall is what makes it stick. A study in the journal Science put it to the test.' },
       // Two bars rise, one week later: "Kept testing themselves: 80%", "Kept re-reading, no testing: 36%".
       // SOURCE: the same paper, Fig. 2 and text: about 80% recalled in the repeated-testing conditions (ST, SnT); 36% in the repeated-study, no-more-testing condition (STn).
-      { id: 'c3-07', text: 'People who kept testing themselves remembered 80 percent a week later. People who kept re-reading, with no testing, remembered 36.' },
+      { id: 'c3-07', text: 'People who kept testing themselves remembered 80 percent a week later. People who kept re-reading, with no testing, remembered 36 percent.' },
       // Under the bars: "Rounds of practice: 237 and 243".
       // SOURCE: the same paper, Table 1: 236.8 trials (SnT, repeated testing) against 243.0 trials (STn, repeated study).
       { id: 'c3-23', text: 'About the same amount of work. More than double the memory.' },
@@ -244,7 +244,7 @@ export const COURSE: CourseChapter[] = [
       // The "Try it in the app" button and "Next chapter".
       { id: 'c3-21', text: 'To answer your own card in the real app, choose Try it in the app.' },
       // A page of text, with a space between two paragraphs.
-      { id: 'c3-22', text: 'Open the Inbox each day, and let the app keep the dates. Next: cards that live inside your pages.' },
+      { id: 'c3-22', text: 'A few minutes a day, and the algorithm does the rest. Next: your cards can live right inside your pages.' },
     ],
     tryIt: [
       { target: 'sidebar-course-cards', say: 'Right-click the Course Cards folder.', done: { event: 'folder-menu-open' } },
@@ -267,7 +267,7 @@ export const COURSE: CourseChapter[] = [
       // A page of text with a card between two paragraphs.
       { id: 'c4-04', text: 'Second, a card inside a page. Your pages on a topic can hold cards right beside the text.' },
       // A "/card" typed in a page; a new card opens for editing.
-      { id: 'c4-05', text: 'In a page, type slash card, and press Return. A new card opens, ready to edit.' },
+      { id: 'c4-05', text: 'In a page, type slash card, and press Enter. A new card opens, ready to edit.' },
       // A card in a page with its ⋯ menu, its Reviews, and the Inbox behind it.
       { id: 'c4-06', text: 'A card in a page has the same menu, the same history, and the same Inbox.' },
       // A page's right-click menu: "Review this page".
@@ -278,6 +278,8 @@ export const COURSE: CourseChapter[] = [
       // APP: client/src/review/cardPane.tsx ("Copy card link" copies `[[ID]]`, on the card file tab), client/src/editor/linkMenu.ts ("Show as embed"),
       // client/src/editor/card/cardEmbed.test.ts. v3: the paste chip's "Embed" shows only for a pasted card file PATH (client/src/editor/pathPaste.ts), not for `[[ID]]`.
       { id: 'c4-09', text: "To embed one, copy the card's link from its menu, and paste it in a page. Then right-click the link, and choose Show as embed." },
+      // A short message to the agent: "Embed my protein card in the Food page"; the embed appears in the page.
+      { id: 'c4-16', text: 'Or just tell your agent: embed this card in that page.' },
       // The embed's head: ↗ Embedded from "…" · ID.
       { id: 'c4-10', text: "The embed has a small head that says Embedded from, with the card's title." },
       // Edit card on the embed; the card file changes too.
@@ -289,7 +291,7 @@ export const COURSE: CourseChapter[] = [
       // The "Try it in the app" button and "Next chapter".
       { id: 'c4-14', text: 'To embed your first card in a page, choose Try it in the app.' },
       // One card shown in three pages at once; lines lead back to it. Then the stage widens.
-      { id: 'c4-15', text: 'This is the mix and match from before: one card, one home, shown wherever it helps. Next, a short break.' },
+      { id: 'c4-15', text: 'This is the mix and match from before: one card, one home, shown wherever it helps. Next: where all of this can take you.' },
     ],
     tryIt: [
       { target: 'card-menu', say: "Open your card's menu: the three dots in its head.", done: 'click' },
@@ -374,7 +376,7 @@ export const COURSE: CourseChapter[] = [
       // A mental map of the card base, with the cards in their places.
       { id: 'c6-15', text: 'You carry a picture of your card base in your head, because you put each card there.' },
       // The card base and the head in profile, matching; then a clean card next to a messy one.
-      { id: 'c6-16', text: 'Your card base is your knowledge base: make it yours. Next, what a good card looks like.' },
+      { id: 'c6-16', text: 'Your card base is your knowledge base: make it yours. Next: how to make a card you will be glad to see again.' },
     ],
   },
   {
@@ -490,7 +492,7 @@ export const COURSE: CourseChapter[] = [
       // The card skill's right-click menu: "Copy prompt for your agent".
       { id: 'c8-18', text: 'To copy the prompt later, right-click the card skill, and choose Copy prompt for your agent.' },
       // The loop: you digest, the agent shapes, you decide; then three icons: a pen, the Inbox, shears.
-      { id: 'c8-19', text: 'You digest and decide; your agent only shapes. Next, the three habits.' },
+      { id: 'c8-19', text: 'You digest and decide; your agent only shapes. Next: the three habits that keep it all alive.' },
     ],
   },
   {
@@ -520,7 +522,7 @@ export const COURSE: CourseChapter[] = [
       // The pen icon lights up; a quiet desk.
       { id: 'c9-09', text: 'Making is the one you set time aside for. Digesting takes thought, so give it a quiet moment.' },
       // The three icons with their times; then two cards with a line between them.
-      { id: 'c9-10', text: 'Make with time set aside. Review every day. Tend as you review. Next, how your cards connect.' },
+      { id: 'c9-10', text: 'Make with time set aside. Review every day. Tend as you review. Next: the idea that changes how you organise everything.' },
     ],
   },
   {
@@ -560,21 +562,21 @@ export const COURSE: CourseChapter[] = [
       // A card links to a card file, a card in a page, and a page.
       // APP: docs/CONTRACTS.md "Links to a card" (YAZ-5030); client/src/links/completion.ts (`cardLinkCandidates`: cards in files and in pages, after the pages).
       { id: 'c10-14', text: 'A card can link to any card, wherever it lives, and to any page.' },
+      // The agent's window: "These two cards connect: Protein and How muscle grows. Add the link?"
+      { id: 'c10-26', text: 'The easy way: ask your agent to find the connections.' },
+      // The agent shows the link and its reason in the chat; the person reads it and says yes; only then does the card change. The word "Handmade".
+      { id: 'c10-27', text: 'Keep it handmade: the agent shows you each one in the chat, and you read it and approve it.' },
+      // After the pill, a few grey words: "muscle is built from protein". The pill and its reason sit on one line.
+      { id: 'c10-24', text: 'Beside each link go a few words on why the two connect. The reason is worth as much as the link.' },
       // Edit card on the protein card; the caret at the end of a line; "[[" and "mus" are typed; the list opens.
       // APP: client/src/editor/card/cardEditorFeatures.ts (pills and the `[[` picker are on in Edit card), client/src/editor/wikilink/wikilinkPicker.ts.
-      { id: 'c10-15', text: "To link, edit the card. Type two square brackets, then a few letters of the other card's title." },
+      { id: 'c10-15', text: "To link by hand, edit the card. Type two square brackets, then a few letters of the other card's title." },
       // The list: pages, then cards with the card icon; the card row is clicked.
       // APP: client/src/links/completion.ts (card rows have the card icon and insert `[[ID]]`). Not on this branch: YAZ-5134's fix (2e1182e51), so a card file shows two rows here until it merges.
       { id: 'c10-16', text: 'A list shows what matches. Click the one with the card icon.' },
       // `[[DEMO-12]]` turns into a pill: the card icon, "How muscle grows", and the ID small and grey.
       // APP: docs/CONTRACTS.md "Links to a card": the pill shows the title, then the ID small and grey, with the card icon (`wikilink--card`).
       { id: 'c10-17', text: "The link turns into a pill: the other card's title, with its ID small beside it." },
-      // After the pill, a few grey words: "muscle is built from protein". The pill and its reason sit on one line.
-      { id: 'c10-24', text: 'Beside each link go a few words on why the two connect. The reason is worth as much as the link.' },
-      // The agent's window: "These two cards connect: Protein and How muscle grows. Add the link?"
-      { id: 'c10-26', text: 'You do not have to write these yourself. Ask your agent to find the connections.' },
-      // The agent shows the link and its reason in the chat; the person reads it and says yes; only then does the card change. The word "Handmade".
-      { id: 'c10-27', text: 'Keep it handmade: the agent shows you each one in the chat, and you read it and approve it.' },
       // A click on the pill; the muscle card opens in the card window; under it, "Linked mentions (1)" lists the protein card.
       // APP: client/src/editor/createCrepe.ts (a card pill's plain click opens the card window), client/src/review/cardPane.tsx ("Linked mentions (n)"), shared/cardLinks.ts (`cardBacklinks`), shared/fences.ts (a card's text counts).
       { id: 'c10-18', text: 'Click the pill, and that card opens. Under it, Linked mentions lists what links to it.' },
@@ -588,7 +590,7 @@ export const COURSE: CourseChapter[] = [
       // The "Try it in the app" button and "Next chapter".
       { id: 'c10-21', text: 'To link two of your Course Cards, choose Try it in the app.' },
       // The protein card and the muscle card with their line; then the garden from chapter 9.
-      { id: 'c10-22', text: 'Ask what a card connects to, not where it goes. Next: tending your cards and links.' },
+      { id: 'c10-22', text: 'Ask what a card connects to, not where it goes. Next: how to keep your tree alive.' },
     ],
     tryIt: [
       { target: 'sidebar-course-cards', say: 'Open the Course Cards folder, and click one of your cards.', done: { event: 'card-file-open' } },
@@ -612,10 +614,10 @@ export const COURSE: CourseChapter[] = [
       // A card that keeps turning red; a magnifying glass over its wording.
       // v3: "or two cards in one" became "or it asks too much at once" (chapter 7 no longer teaches splitting).
       { id: 'c11-04', text: 'A card you keep missing is a sign to look at it. Often it is unclear, or it asks too much at once.' },
-      // Edit card on a card; then E in the Inbox.
-      { id: 'c11-05', text: 'To fix a card, click Edit card, or press E in the Inbox. Press Escape when you are done.' },
       // A short message to the agent: "Make this card's clue clearer"; the card file changes.
-      { id: 'c11-06', text: 'Or, since each card is a file, tell your agent what to change, and keep reviewing.' },
+      { id: 'c11-06', text: 'To fix a card, tell your agent what to change, and keep reviewing. Each card is a file, so it can.' },
+      // Edit card on a card; then E in the Inbox.
+      { id: 'c11-05', text: 'Or do it yourself: click Edit card, or press E in the Inbox. Press Escape when you are done.' },
       // A clock; an agent's window wakes on its own each morning and reads the card base. Not the app: the person's own agent tool.
       { id: 'c11-15', text: 'Some agent tools can run by themselves at set times: a scheduled agent.' },
       // The agent writes a short list: "Make this clue clearer", "Link Protein to How muscle grows". Nothing in the card base changes.
@@ -693,7 +695,7 @@ export const COURSE: CourseChapter[] = [
       // One new card, then a calendar page turns to tomorrow and the Inbox lights up.
       { id: 'c12-14', text: "That's the whole course. Make one card today. Open the Inbox tomorrow." },
       // The course's end screen: cards made, and when they come back.
-      { id: 'c12-15', text: 'Your card base is your knowledge base. Build it a card at a time, and what you learn stays.' },
+      { id: 'c12-15', text: 'Your card base is your knowledge base. Build it one card at a time, and what you learn becomes part of who you are.' },
     ],
     tryIt: [
       { target: 'card-skill-row', say: 'This is the card skill. Click it to open it.', done: 'click' },
