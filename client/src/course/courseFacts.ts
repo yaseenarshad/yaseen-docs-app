@@ -11,7 +11,7 @@ import type { SettingsState } from '@shared/types'
  * the app (`desktop/src/main/courseAudio/course-audio.json`), rounded. A literal, because this file is in the startup
  * bundle; a test (`courseFacts.test.ts`) sums the manifest and fails when the two differ.
  */
-export const COURSE_MINUTES = 27
+export const COURSE_MINUTES = 28
 
 /** Settings › Cards › Card course: the row's hint. */
 export const COURSE_HINT = `About ${COURSE_MINUTES} minutes. Learn how cards work, and make your first ones.`

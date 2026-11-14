@@ -547,9 +547,9 @@ export const COURSE: CourseChapter[] = [
       // A new card hovers over three folders; a question mark: "Where does this go?"
       { id: 'c10-03', text: 'So when you make a card, you ask: where does this go?', marks: [0.22, 0.61] },
       // An old office: a filing cabinet; one sheet of paper goes into one drawer, and the drawer shuts. Then the same picture as computer folders.
-      { id: 'c10-30', text: 'Computers copied the paper office, where a sheet of paper sits in one drawer.' },
+      { id: 'c10-30', text: 'Computers copied the paper office, where a sheet of paper sits in one drawer.', marks: [0.14, 0.265, 0.53, 0.811] },
       // The drawer fades; a head in profile with ideas as dots and lines; then the app, with cards loose and linked, no folder required. (Yaseen: a "but" before the app's choice.)
-      { id: 'c10-31', text: 'But that is not how your brain works. And the app does not make you work that way.' },
+      { id: 'c10-31', text: 'But that is not how your brain works. And the app does not make you work that way.', marks: [0.235, 0.542, 0.77] },
       // The folders step aside: all the cards in one open box, or in folders. "Not required", then "Your choice".
       { id: 'c10-04', text: 'That is why the app does not require folders. It leaves the choice to you.', marks: [0.492, 0.723] },
       // The advice as a card of its own: "Few folders. Many links." A pile of nested folders fades; a few cards with lines between them stay.
@@ -559,7 +559,7 @@ export const COURSE: CourseChapter[] = [
       // A line goes from one card to another; the words "Link: points to another card"; the protein card of chapter 7 and its line back to the umbrella.
       { id: 'c10-05', text: 'Links hold them together. You have seen one: the protein card, linked to its umbrella.', marks: [0.16, 0.57, 0.84] },
       // A head in profile; inside it, ideas as dots with lines between them, not boxes.
-      { id: 'c10-06', text: 'Your mind works by association: one idea calls up another.' },
+      { id: 'c10-06', text: 'Your mind works by association: one idea calls up another.', marks: [0.147, 0.335, 0.555, 0.727] },
       // One dot lights up; the light spreads along its lines to the dots linked to it.
       // SOURCE: Collins & Loftus 1975, "A spreading-activation theory of semantic processing", Psychological Review 82(6): memory as a network of linked concepts; activation spreads from one to the ones linked to it (priming).
       { id: 'c10-07', text: 'Researchers describe memory as a web of linked ideas. Think of one, and the ones linked to it come to mind more easily.', marks: [0.14, 0.49, 0.62] },
@@ -688,15 +688,15 @@ export const COURSE: CourseChapter[] = [
       // Settings › Cards: "Card skill in the sidebar" and "Open the course".
       { id: 'c12-07', text: 'In Settings, under Cards, one switch shows or hides the card skill. Open the course brings you back here.', marks: [0.168, 0.267, 0.691] },
       // Settings › Cards opens in full; the section title glows. (YAZ-5331, Yaseen's words.)
-      { id: 'c12-17', text: 'Settings has a whole section for cards. With new updates, we are adding different settings, but they will always be shown here.' },
+      { id: 'c12-17', text: 'Settings has a whole section for cards. With new updates, we are adding different settings, but they will always be shown here.', marks: [0.163, 0.274, 0.437, 0.893] },
       // The Card look group lights up row by row: Shown hidden words, Card width, Card tables.
-      { id: 'c12-18', text: 'You can change how hidden words look, how wide a card is, and how tables show on a card.' },
+      { id: 'c12-18', text: 'You can change how hidden words look, how wide a card is, and how tables show on a card.', marks: [0.162, 0.412, 0.674] },
       // The Daily limits group lights up: New cards a day, New cards first. The folder choice is shown as an idea, not as a row a person could look for: it is not in the app yet (Yaseen keeps it on purpose, YAZ-5331).
-      { id: 'c12-19', text: 'You can set how many new cards come each day, and whether the oldest or the newest come first or select which folder you want your new cards to be selected from.' },
+      { id: 'c12-19', text: 'You can set how many new cards come each day, and whether the oldest or the newest come first or select which folder you want your new cards to be selected from.', marks: [0.112, 0.357, 0.439, 0.711] },
       // Each row shows a small "Recommended" mark beside its default.
-      { id: 'c12-20', text: 'Each one starts at what we recommend. If you know what you want, change it. If not, keep the defaults.' },
+      { id: 'c12-20', text: 'Each one starts at what we recommend. If you know what you want, change it. If not, keep the defaults.', marks: [0.2, 0.546, 0.861] },
       // The Scheduling group, with a quiet amber warning edge.
-      { id: 'c12-21', text: 'One warning: be careful with the scheduling settings. They decide when each card comes back.' },
+      { id: 'c12-21', text: 'One warning: be careful with the scheduling settings. They decide when each card comes back.', marks: [0.046, 0.321, 0.784] },
       // A week of seven days appears.
       { id: 'c12-08', text: 'Now, your first week.', marks: [0.33] },
       // Day 1: one card, made from something the person already understands.

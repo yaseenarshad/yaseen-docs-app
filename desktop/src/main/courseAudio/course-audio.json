@@ -826,10 +826,10 @@
    }
   },
   "links": {
-   "file": "links-c5834c57.ydca",
-   "bytes": 1548997,
-   "sha256": "c5834c5700b1337a843b73be5c156c37562b5f4cb3b673ce546e291a5fe25e54",
-   "seconds": 178.166,
+   "file": "links-df4f0769.ydca",
+   "bytes": 1625273,
+   "sha256": "df4f076912df1c39890cf9c3805087edaaa8b1187ef8195143cd06d6dad58d2c",
+   "seconds": 186.363,
    "clips": {
     "c10-01": {
      "seconds": 8.963,
@@ -842,6 +842,14 @@
     "c10-03": {
      "seconds": 3.924,
      "hash": "5ebc0103bcd692bc"
+    },
+    "c10-30": {
+     "seconds": 5.132,
+     "hash": "91ca32de3a5185c7"
+    },
+    "c10-31": {
+     "seconds": 5.457,
+     "hash": "92b795342b273326"
     },
     "c10-04": {
      "seconds": 5.201,
@@ -860,8 +868,8 @@
      "hash": "e99b15ce8f4faa49"
     },
     "c10-06": {
-     "seconds": 7.291,
-     "hash": "55696cf47435b111"
+     "seconds": 4.899,
+     "hash": "33289af6325083c7"
     },
     "c10-07": {
      "seconds": 8.568,
@@ -1030,10 +1038,10 @@
    }
   },
   "where-things-are": {
-   "file": "where-things-are-732dbab0.ydca",
-   "bytes": 793725,
-   "sha256": "732dbab05ba8b47b5aaa03b298ab7bbfb5361e6f9e946fe8acac6ac4616078bf",
-   "seconds": 90.396,
+   "file": "where-things-are-ad7e583c.ydca",
+   "bytes": 1135335,
+   "sha256": "ad7e583cecbf6419018fc1a54f8102f121da657cc0594fd07aa9a04614a2367d",
+   "seconds": 130.497,
    "clips": {
     "c12-01": {
      "seconds": 4.18,
@@ -1062,6 +1070,26 @@
     "c12-07": {
      "seconds": 8.104,
      "hash": "46f4fa20c620d7ec"
+    },
+    "c12-17": {
+     "seconds": 8.336,
+     "hash": "7f40e848b95e63a6"
+    },
+    "c12-18": {
+     "seconds": 6.409,
+     "hash": "9a02258c8f970a9f"
+    },
+    "c12-19": {
+     "seconds": 10.751,
+     "hash": "832210825095df1d"
+    },
+    "c12-20": {
+     "seconds": 7.616,
+     "hash": "5bdd049c006e0f60"
+    },
+    "c12-21": {
+     "seconds": 6.989,
+     "hash": "4e19384638774116"
     },
     "c12-08": {
      "seconds": 2.415,
