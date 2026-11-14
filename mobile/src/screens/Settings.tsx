@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useApp } from '../app/AppState'
 import { deviceZone, isTimeZone } from '@shared/friendStats'
 import { cleanNickname } from '../app/friendsPort'
 import { friendsMessage } from '../auth/friends'
 import { vaultId, type PhoneVault } from '../store'
 import { Confirm } from './Confirm'
-import { eraseQuestion, unsentOnPhone } from './eraseWords'
+import { eraseQuestion, unsentOnPhone, waitingRemoves } from './eraseWords'
 import { Frame, Problem } from './Frame'
 
 /**
@@ -18,13 +18,15 @@ export function Settings() {
   const [open, setOpen] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   /** The ask's facts, read when the person taps "Sign out and erase this phone" (null: no ask). */
-  const [erasing, setErasing] = useState<{ unsent: number; friends: boolean } | null>(null)
+  const [erasing, setErasing] = useState<{ unsent: number; friends: boolean; removes: number } | null>(null)
+  const closeErase = useCallback(() => setErasing(null), [])
   const askErase = async () => {
-    const [unsent, friends] = await Promise.all([
+    const [unsent, friends, removes] = await Promise.all([
       unsentOnPhone(app.services.store, app.list.vaults.map(vaultId)).catch(() => 0),
       app.services.friends.hasFriends().catch(() => false),
+      waitingRemoves(app.services.store),
     ])
-    setErasing({ unsent, friends })
+    setErasing({ unsent, friends: friends || removes > 0, removes })
   }
 
   const run = async (step: () => Promise<void>) => {
@@ -52,7 +54,21 @@ export function Settings() {
 
       <h2 className="section">This phone</h2>
       {erasing !== null ? (
-        <Confirm question={eraseQuestion({ ...erasing, unit: app.unit })} yes="Erase this phone" busy={busy} onYes={() => void run(app.eraseAll)} onNo={() => setErasing(null)} />
+        <Confirm
+          question={eraseQuestion({ ...erasing, unit: app.unit })}
+          yes="Erase this phone"
+          busy={busy}
+          onYes={() => void run(app.eraseAll)}
+          onNo={closeErase}
+          extra={
+            // YAZ-5343, the safe way: the Friends tab runs a waiting remove when it reads (with a signal).
+            erasing.removes > 0 && (
+              <button type="button" className="btn btn--wide" onClick={() => app.go({ type: 'tab', tab: 'friends' })}>
+                Finish it in Friends
+              </button>
+            )
+          }
+        />
       ) : (
         <button type="button" className="btn btn--wide btn--danger" onClick={() => void askErase()}>
           Sign out and erase this phone
