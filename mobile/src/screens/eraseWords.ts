@@ -1,6 +1,5 @@
 import { ANSWERS_STATE, type AnswerBook } from '../answers/outbox'
 import type { UnitText } from '../app/unitWord'
-import { loadQueue } from '../friends/removeQueue'
 import type { VaultStore } from '../store'
 
 /**
@@ -39,7 +38,5 @@ export async function unsentOnPhone(store: VaultStore, vaults: readonly string[]
   return unsentAnswers(books)
 }
 
-/** YAZ-5343: the friends removes that wait on the phone (no signal, or GitHub's limit): the erase would drop them. */
-export async function waitingRemoves(store: VaultStore): Promise<number> {
-  return (await loadQueue(store).catch(() => [])).length
-}
+/** YAZ-5343, YAZ-5362: the waiting friends removes, read with no friends code (`waitingRemoves.ts`). */
+export { waitingRemoves } from './waitingRemoves'
