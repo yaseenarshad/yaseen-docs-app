@@ -177,7 +177,7 @@ describe('Edit column › "Separate value for <folder>" (YAZ-4713 C3, 1B)', () =
     expect(q(el, '.confirm__status--error').textContent).toContain('only one stays')
     expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Use the Desserts values', 'Cancel', "Keep the notes' values"])
     await act(async () => click([...el.querySelectorAll<HTMLElement>('.confirm__btn')].find((b) => b.textContent === 'Use the Desserts values')!))
-    expect(set).toHaveBeenCalledExactlyOnceWith('status', separate, false, 'page')
+    expect(set).toHaveBeenCalledExactlyOnceWith('status', separate, false, 'folder')
     expect(el.querySelector('.confirm__text')).toBeNull()
   })
 

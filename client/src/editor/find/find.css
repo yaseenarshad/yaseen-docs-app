@@ -42,7 +42,7 @@
   z-index: 8;
 }
 
-.find-bar-dock--page,
+.find-bar-dock--folder,
 .find-bar-dock--views {
   position: sticky;
   top: 8px;

@@ -36,7 +36,7 @@ const SILHOUETTE = rules.find((rule) => /background:\s*var\(--fg-muted\);/.test(
 /** The Line set's colour for a note: "All colour", or a picked one. */
 const NOTE_COLOUR = rules.find((rule) => /--kind-color:\s*var\(--kind-note\)/.test(rule.body))
 /** YAZ-5100 round 2: Material's page icon (a sheet with lines, in the note's colour), and a picked colour on Material's icon (its silhouette). */
-const PAGE = rules.find((rule) => rule.selectors.some((sel) => sel.includes("[data-icon='markdown']")) && /mask:\s*var\(--kind-icon\)/.test(rule.body))
+const PAGE_RULE = rules.find((rule) => rule.selectors.some((sel) => sel.includes("[data-icon='markdown']")) && /mask:\s*var\(--kind-icon\)/.test(rule.body))
 const PICKED = rules.find((rule) => /background:\s*var\(--kind-color\);/.test(rule.body) && /mask:\s*var\(--icon\)/.test(rule.body))
 
 type App = { set: 'material' | 'line'; files: 'quiet' | 'color' | 'grey' | 'off'; folders?: 'plain' | 'named' | 'off'; colors?: string }
@@ -71,7 +71,7 @@ function look(app: App, row: Row): 'line' | 'image' | 'silhouette' | 'page' | 'p
   const [tree, outside] = (['tree', 'outside'] as const).map((where) => {
     const el = build(app, row, where)
     // After the others and heavier: each wins where it applies (YAZ-5100 round 2).
-    if (draws(PAGE, el)) return 'page'
+    if (draws(PAGE_RULE, el)) return 'page'
     if (draws(PICKED, el)) return draws(IMAGE, el) ? 'picked' : 'picked alone'
     if (draws(SILHOUETTE, el)) return draws(IMAGE, el) || draws(LINE, el) ? 'silhouette' : 'silhouette alone'
     if (draws(IMAGE, el)) return 'image'
@@ -124,9 +124,9 @@ describe('file and folder icons CSS contract (YAZ-3440 D4, D5)', () => {
   })
 
   it('YAZ-5100 round 2: a note with Material\'s default icon is the page (a sheet with lines) in every style but Off; a name icon of its own or a pick keeps Material\'s', () => {
-    expect(PAGE && PICKED).toBeTruthy()
+    expect(PAGE_RULE && PICKED).toBeTruthy()
     // After the image, its light twin and the silhouette: it wins over each where it applies.
-    expect(rules.indexOf(PAGE!)).toBeGreaterThan(rules.indexOf(SILHOUETTE!))
+    expect(rules.indexOf(PAGE_RULE!)).toBeGreaterThan(rules.indexOf(SILHOUETTE!))
     expect(rules.indexOf(PICKED!)).toBeGreaterThan(rules.indexOf(SILHOUETTE!))
     for (const files of ['quiet', 'color', 'grey'] as const) expect(look({ set: 'material', files }, NOTE), files).toBe('page')
     expect(look({ set: 'material', files: 'off' }, NOTE)).toBe('none')

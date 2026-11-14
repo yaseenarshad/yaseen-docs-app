@@ -1568,7 +1568,7 @@ function CrepeHost({
         // The Page tab (YAZ-4584 D38): the body alone, in the folder page's scroller, where the view body would be.
         // Its CMD+F bar comes first, so it sticks to the top of the folder page's scroller as the reader goes down.
         <div className="folder-page-doc">
-          <FindBar channel={findChannel} scope="page" hostRef={hostRef} folds={findFoldsMenu} />
+          <FindBar channel={findChannel} scope="folder" hostRef={hostRef} folds={findFoldsMenu} />
           <div className="editor-mount" ref={hostRef} {...mountWidths} />
         </div>
       ) : (

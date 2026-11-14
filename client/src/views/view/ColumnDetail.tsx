@@ -880,7 +880,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
           onConfirm={() => answerUnshare('notes')}
           onCancel={() => setUnsharing(null)}
           other={
-            <button type="button" className="confirm__btn confirm__btn--other" onClick={() => answerUnshare('page')}>
+            <button type="button" className="confirm__btn confirm__btn--other" onClick={() => answerUnshare('folder')}>
               Use the {folderName} values
             </button>
           }

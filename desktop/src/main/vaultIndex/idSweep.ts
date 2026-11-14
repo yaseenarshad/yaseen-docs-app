@@ -441,11 +441,11 @@ async function cardsToFix(
   if (pages.length === 0) return []
   const swept = new Set(pages.map((r) => r.path))
   // Who holds each ID, by the index: the notes, and the pages of the cards. Read once, and only for a pass with cards.
-  const notes = new Set<string>()
+  const heldIds = new Set<string>()
   const holders = new Map<string, string[]>()
   for (const r of records.values()) {
     const id = own(r.id)
-    if (id !== undefined && !isFolderSettingsPath(r.path)) notes.add(id)
+    if (id !== undefined && !isFolderSettingsPath(r.path)) heldIds.add(id)
     for (const card of r.cards ?? []) {
       const cardId = own(card.id ?? undefined)
       if (cardId !== undefined) holders.set(cardId, [...(holders.get(cardId) ?? []), r.path])
@@ -471,7 +471,7 @@ async function cardsToFix(
         continue
       }
       seen.set(id, index)
-      if (notes.has(id)) {
+      if (heldIds.has(id)) {
         fixes.push({ index, held: card.id, history: true })
         continue
       }
