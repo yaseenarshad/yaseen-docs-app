@@ -7,7 +7,7 @@
  * One stack per window, in its own chunk (App lazy-loads it on the first ⌘⇧F). The list of layers is state
  * (`layers.ts`); the DOM keeps each layer's scroll. The rows of every search layer come from ONE candidate
  * feed (`useSearchCandidates`): a nested search adds no index read. The keys are read on the stack's root: Esc,
- * E (read → edit), ⌘↵ (the top page in a tab, the stack closes; on a search, its highlighted row, YAZ-4984; on the Inbox's card window, back to the Inbox, YAZ-5009), and ‹ › (round 3: a page opened from a search
+ * E (read → edit), ⌘↵ (the top page in a tab, the stack closes; on a search, its highlighted row, YAZ-4984; on a page layer the Inbox opened, back to the Inbox, YAZ-5009, YAZ-5145), and ‹ › (round 3: a page opened from a search
  * steps through that search's rows in place, ← / → while reading, ⌘⌥↑ / ⌘⌥↓ in any mode; `shared/keys/explore.ts`).
  * A menu, a picker or a pop-up that takes Esc keeps it (the mini window's rule, YAZ-4547). At most 12 layers; a
  * 13th says so and opens nothing. Each layer moves like a cell note (round 3, `layerBoxes.ts`). The layers act like
@@ -85,11 +85,21 @@ const noLog = () => ({})
 const fileLayer = (path: string, from?: { search: number; at: number }): ExploreLayer =>
   layerKindOf(path) === 'board' ? { id: newLayerId(), kind: 'board', path, ...(from !== undefined && { from }) } : { id: newLayerId(), kind: 'page', path, mode: 'read', ...(from !== undefined && { from }) }
 
-/** The layer App's ask opens (YAZ-4962): a card window, or a page, landed on a card and in edit mode when asked. */
-const requestedLayer = (ask: ExploreRequest): ExploreLayer => {
-  if (ask.kind === 'card') return { id: newLayerId(), kind: 'card', path: ask.path, cardId: ask.cardId, index: ask.index, ...(ask.edit === true && { edit: true }), ...(ask.fromInbox === true && { fromInbox: true }) }
+/**
+ * The layer App's ask opens (YAZ-4962): a card window, or a page landed on a card. Asked to edit (the Inbox's E,
+ * YAZ-5145): as Explore's own E — editing at once, or in a Read only vault reading with its "Allow edits?" asked.
+ */
+const requestedLayer = (ask: ExploreRequest, readOnly: boolean): ExploreLayer => {
+  if (ask.kind === 'card') return { id: newLayerId(), kind: 'card', path: ask.path, cardId: ask.cardId, index: ask.index }
   const layer = fileLayer(ask.path)
-  return layer.kind === 'page' ? { ...layer, ...(ask.edit === true && { mode: 'edit' }), ...(ask.card !== undefined && { card: ask.card }) } : layer
+  if (layer.kind !== 'page') return layer
+  return {
+    ...layer,
+    ...(ask.edit === true && (readOnly ? { editAsk: 1 } : { mode: 'edit' })),
+    ...(ask.card !== undefined && { card: ask.card }),
+    ...(ask.editCard === true && { editCard: true }),
+    ...(ask.fromInbox === true && { fromInbox: true }),
+  }
 }
 
 /** The Tile keys (YAZ-4944, `shared/keys/explore.ts`) and their layouts. */
@@ -276,8 +286,8 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     if (request === served.current) return
     served.current = request
     if (requestLayer === null) push({ id: newLayerId(), kind: 'search' })
-    else if (push(requestedLayer(requestLayer)) && requestLayer.kind === 'page') rememberExploreRecent(requestLayer.path)
-  }, [request, requestLayer, push])
+    else if (push(requestedLayer(requestLayer, vaultOf(requestLayer.path).readOnly === true)) && requestLayer.kind === 'page') rememberExploreRecent(requestLayer.path)
+  }, [request, requestLayer, push, vaultOf])
 
   /** A page or a board (YAZ-4943) goes on top for reading; a folder or another file opens in a tab and the stack closes. */
   const openPath = useCallback(
@@ -566,9 +576,10 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
       if (topPage(live) === null || (top.kind === 'page' && top.mode === 'edit') || (top.kind === 'card' && event.defaultPrevented)) return
       event.preventDefault()
       event.stopPropagation()
-      // A card window from the Inbox, reading (YAZ-5009, Yaseen: "another CMD enter would take u back to inbox"): back
-      // to the Inbox, at the same card and step. From anywhere else, the page in a tab.
-      if (top.kind === 'card' && top.fromInbox === true) return pop()
+      // A layer from the Inbox's O or E, reading (YAZ-5009, Yaseen: "another CMD enter would take u back to inbox";
+      // YAZ-5145: the Inbox opens Explore's own page layer): back to the Inbox, at the same card and step. From anywhere
+      // else, the page in a tab.
+      if (top.kind === 'page' && top.fromInbox === true) return pop()
       toTab()
       return
     }
@@ -717,8 +728,6 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
                 path={layer.path}
                 cardId={layer.cardId}
                 index={layer.index}
-                startInEdit={layer.edit === true}
-                fromInbox={layer.fromInbox === true}
                 pageName={nameOf(layer.path)}
                 vault={vaultOf(layer.path)}
                 onOpenPage={(index) => openPageAt(layer.path, index)}
@@ -767,6 +776,8 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
                 editAsk={layer.editAsk}
                 leaveAsk={layer.leaveAsk}
                 card={layer.card}
+                editCard={layer.editCard === true}
+                fromInbox={layer.fromInbox === true}
                 steps={steps}
                 zoom={zoom}
                 onZoom={setZoom}
