@@ -2,7 +2,7 @@ import { GithubError, SECONDARY_LIMIT_WAIT_MS, githubClient, type GithubErrorCod
 import { StorageFullError, vaultId, type PhoneVault, type StoredFile, type TokenStore, type VaultStore } from '../store'
 import { POLL_MS } from './cadence'
 import { githubRemote, type GithubRemote } from './githubRemote'
-import { syncPass, type PassProgress } from './pass'
+import { syncPass, type PassProgress, type PassResult } from './pass'
 import { INDEX_STATE, type PhoneIndex } from './phoneIndex'
 import { isEager, type TreeDiff } from './plan'
 import { yieldToUi as defaultYield } from './yieldToUi'
@@ -91,9 +91,11 @@ export interface SyncEngine {
   file(path: string): Promise<StoredFile | null>
   /**
    * Runs `fn` with the open vault's remote, between passes and under the same lock (3C: the send of the answer list).
-   * After `fn`, call `syncNow()` to take in the new head.
+   * A pass never runs while `fn` runs, and `fn` never runs while a pass writes the store. `pass` runs ONE sync pass
+   * inside the lane: it brings the stored copy to the newest head and tells the screens, as a pass of the engine does.
+   * `vault` is the id of the vault the lane is for (the open vault when `lane` was called).
    */
-  lane<T>(fn: (remote: GithubRemote) => Promise<T>): Promise<T>
+  lane<T>(fn: (remote: GithubRemote, pass: () => Promise<PassResult>, vault: string) => Promise<T>): Promise<T>
   /** Stops the timers and the polling. */
   stop(): void
 }
@@ -132,6 +134,16 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   let current: PhoneIndex | null = null
   let running: Promise<void> | null = null
   let timer: unknown = null
+  /**
+   * One pass or lane at a time in THIS tab, also where the Web Lock is missing (YAZ-5073: a timer's pass must wait for
+   * 3C's send). The Web Lock (`lock`) keeps other tabs out.
+   */
+  let turn: Promise<unknown> = Promise.resolve()
+  const exclusive = <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = turn.then(fn, fn)
+    turn = run.catch(() => undefined)
+    return run
+  }
   let state: SyncState = { status: 'idle', vault: null, problem: null, retryAt: null, progress: null, lastSyncedAt: null, ready: false }
 
   const emit = (event: SyncEvent) => {
@@ -168,6 +180,28 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     emit({ type: 'changed', vault: id, commit: saved.commit, diff: null, settings: [], index: saved })
   }
 
+  /** The open vault's pass result taken in: the index, `ready`, and the screens told. */
+  async function adopt(id: string, gen: number, result: PassResult) {
+    if (gen !== generation) return
+    if (result.kind === 'synced') {
+      current = result.index
+      setState({ ready: true })
+      emit({ type: 'changed', vault: id, commit: result.commit, diff: result.diff, settings: result.settings, index: result.index })
+    } else await loadIndex(id, gen) // another tab may have synced this vault (P4)
+  }
+
+  const passOptions = (open: PhoneVault, id: string, token: string, gen: number) => ({
+    remote: makeRemote(open, token),
+    store,
+    vault: id,
+    now: clock.now,
+    yieldToUi: options.yieldToUi ?? defaultYield,
+    alsoEager: options.alsoEager,
+    onProgress: (progress: PassProgress) => {
+      if (gen === generation) setState({ progress })
+    },
+  })
+
   async function runPass(gen: number) {
     const open = vault!
     const id = vaultId(open)
@@ -179,25 +213,9 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     }
     setState({ status: 'syncing', progress: null })
     try {
-      const result = await lock(lockName(id), () =>
-        syncPass({
-          remote: makeRemote(open, token),
-          store,
-          vault: id,
-          now: clock.now,
-          yieldToUi: options.yieldToUi ?? defaultYield,
-          alsoEager: options.alsoEager,
-          onProgress: (progress) => {
-            if (gen === generation) setState({ progress })
-          },
-        }),
-      )
+      const result = await exclusive(() => lock(lockName(id), () => syncPass(passOptions(open, id, token, gen))))
       if (gen !== generation) return
-      if (result.kind === 'synced') {
-        current = result.index
-        setState({ ready: true })
-        emit({ type: 'changed', vault: id, commit: result.commit, diff: result.diff, settings: result.settings, index: result.index })
-      } else await loadIndex(id, gen) // another tab may have synced this vault (P4)
+      await adopt(id, gen, result)
       setState({ status: 'synced', problem: null, retryAt: null, progress: null, lastSyncedAt: clock.now() })
       plan()
     } catch (error) {
@@ -285,10 +303,18 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     async lane(fn) {
       if (vault === null) throw new Error('No vault is open')
       const open = vault
+      const id = vaultId(open)
+      const gen = generation
       await this.idle()
-      const token = await tokens.read(vaultId(open))
+      const token = await tokens.read(id)
       if (token === null) throw new GithubError('UNAUTHORIZED', null, 'This vault has no token')
-      return lock(lockName(vaultId(open)), () => fn(makeRemote(open, token)))
+      const pass = async () => {
+        const result = await syncPass(passOptions(open, id, token, gen))
+        await adopt(id, gen, result)
+        if (gen === generation) setState({ status: 'synced', problem: null, retryAt: null, progress: null, lastSyncedAt: clock.now() })
+        return result
+      }
+      return exclusive(() => lock(lockName(id), () => fn(makeRemote(open, token), pass, id)))
     },
     stop() {
       generation++

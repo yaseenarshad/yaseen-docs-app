@@ -1,0 +1,222 @@
+import { describe, expect, it } from 'vitest'
+import { githubClient } from '../github/client'
+import { POLL_MS, SEND_AFTER_MS } from '../sync/cadence'
+import { createSyncEngine } from '../sync/engine'
+import { githubRemote } from '../sync/githubRemote'
+import { VAULT, fakeClock, pageText } from '../sync/testing'
+import { createAnswers } from './answers'
+import { VAULT_ROW, answer, answersSetup, at } from './testing'
+
+describe('when the list is sent (decision 4)', () => {
+  it(`${SEND_AFTER_MS / 1000} s after the LAST answer: a burst of answers is ONE commit`, async () => {
+    const t = await answersSetup()
+    for (let i = 0; i < 10; i++) {
+      await t.add(answer(i % 2 === 0 ? 'NC-2' : 'NC-3', i))
+      await t.tick(1_000)
+    }
+    expect(t.commits()).toBe(0)
+    await t.tick(SEND_AFTER_MS - 1_001)
+    expect(t.commits()).toBe(0)
+    await t.tick(1)
+    expect(t.commits()).toBe(1)
+    expect(await t.remoteReviews()).toEqual([at(0), at(2), at(4), at(6), at(8)])
+    expect(t.answers.state()).toMatchObject({ waiting: 0, sending: false, problem: null, lastSentAt: t.clock.now() })
+  })
+
+  it('at once when the app goes to the background', async () => {
+    const t = await answersSetup()
+    await t.add(answer('NC-2', 1))
+    // As followPage and 4A do: the page is hidden.
+    t.engine.setVisible(false)
+    t.answers.setVisible(false)
+    await t.answers.idle()
+    expect(t.commits()).toBe(1)
+    expect(t.clock.pending()).toBe(0) // no send timer left, and the engine does not poll while hidden
+  })
+
+  it('no signal: the answer waits ("1 answer waiting"); it goes at once when the connection comes back', async () => {
+    const t = await answersSetup()
+    t.s.github.offline = true
+    await t.add(answer('NC-2', 1))
+    await t.tick(SEND_AFTER_MS)
+    expect(t.answers.state()).toMatchObject({ waiting: 1, problem: 'OFFLINE', sending: false })
+    t.s.github.offline = false
+    t.answers.online()
+    await t.answers.idle()
+    expect(t.commits()).toBe(1)
+    expect(t.answers.state()).toMatchObject({ waiting: 0, problem: null })
+  })
+
+  it('no signal, and no "online" event: the engine\'s next good poll sends the waiting answers', async () => {
+    const t = await answersSetup()
+    t.s.github.offline = true
+    await t.add(answer('NC-2', 1))
+    await t.tick(SEND_AFTER_MS)
+    t.s.github.offline = false
+    await t.tick(POLL_MS)
+    expect(t.commits()).toBe(1)
+  })
+
+  it('an answer made during a send waits for the next send; one send at a time', async () => {
+    let release: () => void = () => {}
+    let held = false
+    const t = await answersSetup({
+      fetch: (s) => async (url, init) => {
+        if ((init.method ?? 'GET') === 'PATCH' && !held) {
+          held = true
+          await new Promise<void>((r) => (release = r))
+        }
+        return s.github.fetch(url, init)
+      },
+    })
+    await t.add(answer('NC-2', 1))
+    const first = t.answers.sendNow()
+    await new Promise((r) => setTimeout(r, 0))
+    for (let i = 0; i < 20 && !held; i++) await new Promise((r) => setTimeout(r, 0))
+    expect(t.answers.state().sending).toBe(true)
+    await t.add(answer('NC-3', 2))
+    void t.answers.sendNow()
+    release()
+    await first
+    await t.answers.idle()
+    expect(t.commits()).toBe(2)
+    expect(await t.remoteReviews('a.md', 'NC-3')).toEqual([at(2)])
+  })
+})
+
+describe('the local copy: an answer counts at once, with no connection', () => {
+  it('text() and view() hold the waiting answers, so Review and the due list are right offline', async () => {
+    const t = await answersSetup()
+    t.s.github.offline = true
+    await t.add(answer('NC-2', 1), { kind: 'off', id: 'NC-17', on: true })
+    expect(await t.answers.text('a.md')).toContain(`<!-- card: NC-2, ${at(1)} good -->`)
+    expect((await t.store.read(VAULT, 'a.md'))!.content).not.toContain(at(1)) // the stored copy is GitHub's
+    const view = await t.answers.view(t.engine.index()!)
+    expect(view.records['a.md'].cards!.find((c) => c.id === 'NC-2')!.reviews.map((r) => r.at)).toEqual([at(1)])
+    expect(view.records['cards/light-nc-17.md'].cards![0].off).toBe(true)
+    expect(view.records['cards/light-nc-17.md']).toMatchObject({ kind: 'card', title: 'Speed of light' })
+    expect(t.events.some((e) => e.type === 'changed' && e.paths.includes('a.md'))).toBe(true)
+  })
+
+  it('after the send the stored copy holds the answer, and the view does not lose it at any point', async () => {
+    const t = await answersSetup()
+    await t.add(answer('NC-2', 1))
+    await t.tick(SEND_AFTER_MS)
+    expect((await t.store.read(VAULT, 'a.md'))!.content).toContain(`<!-- card: NC-2, ${at(1)} good -->`)
+    expect(t.engine.index()!.records['a.md'].cards!.find((c) => c.id === 'NC-2')!.reviews).toHaveLength(1)
+    expect(await t.answers.text('a.md')).toBe((await t.store.read(VAULT, 'a.md'))!.content)
+  })
+})
+
+describe('errors: the answers stay', () => {
+  it('401: "Sign in again" (red); no send on each poll; after the new token, sendNow sends them', async () => {
+    let refuse = true
+    const t = await answersSetup({ fetch: (s) => async (url, init) => (refuse && (init.method ?? 'GET') !== 'GET' ? new Response(JSON.stringify({ message: 'Bad credentials' }), { status: 401 }) : s.github.fetch(url, init)) })
+    await t.add(answer('NC-2', 1))
+    await t.tick(SEND_AFTER_MS)
+    expect(t.answers.state()).toMatchObject({ waiting: 1, problem: 'UNAUTHORIZED' })
+    const calls = t.s.github.calls.filter((c) => c.method !== 'GET').length
+    await t.tick(POLL_MS * 4)
+    expect(t.s.github.calls.filter((c) => c.method !== 'GET').length).toBe(calls)
+    refuse = false
+    await t.answers.sendNow()
+    expect(t.answers.state()).toMatchObject({ waiting: 0, problem: null })
+    expect(await t.remoteReviews()).toEqual([at(1)])
+  })
+
+  it('403 on the write (no write access): READ_ONLY, the answers stay, no repeat on each poll', async () => {
+    const t = await answersSetup({ fetch: (s) => async (url, init) => ((init.method ?? 'GET') !== 'GET' ? new Response(JSON.stringify({ message: 'Resource not accessible by personal access token' }), { status: 403 }) : s.github.fetch(url, init)) })
+    await t.add(answer('NC-2', 1))
+    await t.tick(SEND_AFTER_MS)
+    expect(t.answers.state()).toMatchObject({ waiting: 1, problem: 'READ_ONLY' })
+    const writes = t.s.github.calls.filter((c) => c.method !== 'GET').length
+    await t.tick(POLL_MS * 4)
+    expect(t.s.github.calls.filter((c) => c.method !== 'GET').length).toBe(writes)
+  })
+
+  it('"slow down": it waits until the time GitHub gives, then sends', async () => {
+    const t = await answersSetup()
+    await t.add(answer('NC-2', 1))
+    const until = Math.ceil((t.clock.now() + SEND_AFTER_MS + 120_000) / 1000)
+    let limited = true
+    t.s.github.interrupt = (call) =>
+      limited && call.method !== 'GET' ? new Response(JSON.stringify({ message: 'API rate limit exceeded' }), { status: 403, headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(until) } }) : undefined
+    await t.tick(SEND_AFTER_MS)
+    expect(t.answers.state()).toMatchObject({ waiting: 1, problem: 'RATE_LIMITED', retryAt: until * 1000 })
+    limited = false
+    await t.tick(until * 1000 - t.clock.now() - 1)
+    expect(t.commits()).toBe(0)
+    await t.tick(1)
+    expect(t.commits()).toBe(1)
+    expect(t.answers.state()).toMatchObject({ waiting: 0, problem: null, retryAt: null })
+  })
+
+  it('a card that is gone: "1 answer could not be saved" with its title; the other answers go; Discard removes it', async () => {
+    const t = await answersSetup()
+    await t.add(answer('NC-2', 1))
+    await t.add(answer('NC-3', 2))
+    await t.s.git.push({ 'a.md': pageText('A', 'NC-1', ['NC-3']) })
+    await t.tick(SEND_AFTER_MS)
+    expect(await t.remoteReviews('a.md', 'NC-3')).toEqual([at(2)])
+    const lost = t.answers.state().lost
+    expect(lost).toMatchObject([{ op: answer('NC-2', 1), title: 'Title NC-2' }])
+    expect(t.answers.state().waiting).toBe(0)
+    expect(await t.answers.discard(lost[0].seq)).toBe(true)
+    expect(t.answers.state().lost).toEqual([])
+  })
+})
+
+describe('one send at a time, and never while a sync pass writes the store', () => {
+  it('a pass is downloading: the send starts only after the pass has written its checkpoint', async () => {
+    let gate: Promise<void> | null = null
+    let open: () => void = () => {}
+    const log: string[] = []
+    const t = await answersSetup({
+      fetch: (s) => async (url, init) => {
+        const method = init.method ?? 'GET'
+        if (method === 'GET' && url.includes('/git/blobs/') && gate !== null) await gate
+        log.push(`${method} ${new URL(url).pathname.split('/git/')[1]}`)
+        return s.github.fetch(url, init)
+      },
+    })
+    const pushed = await t.s.git.push({ 'b.md': pageText('B', 'NC-4', ['NC-5']) })
+    const bBlob = t.s.git.trees.get(t.s.git.commits.get(pushed)!.tree)!.get('b.md')!
+    gate = new Promise((r) => (open = r))
+    const pass = t.engine.syncNow()
+    await new Promise((r) => setTimeout(r, 0))
+    await t.add(answer('NC-2', 1))
+    const send = t.answers.sendNow()
+    for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0))
+    expect(log.some((l) => l.startsWith('POST'))).toBe(false)
+    open()
+    gate = null
+    await pass
+    await send
+    await t.answers.idle()
+    const firstWrite = log.findIndex((l) => l.startsWith('POST'))
+    expect(firstWrite).toBeGreaterThan(log.indexOf(`GET blobs/${bBlob}`))
+    expect(log.indexOf(`GET blobs/${bBlob}`)).toBeGreaterThan(-1)
+    expect(t.commits()).toBe(1)
+  })
+})
+
+describe('the list survives a closed app', () => {
+  it('answers made with no signal, the app closed: at the next start they are still there and go at once', async () => {
+    const t = await answersSetup()
+    t.s.github.offline = true
+    await t.add(answer('NC-2', 1))
+    t.answers.stop()
+    t.engine.stop()
+    t.s.github.offline = false
+    // The next start: a new engine and a new list on the same store.
+    const clock = fakeClock()
+    const engine = createSyncEngine({ store: t.store, tokens: t.s.tokens, clock, yieldToUi: async () => {}, makeRemote: (v, token) => githubRemote(githubClient(token, { fetch: t.s.github.fetch, now: clock.now }), v.repo, v.branch) })
+    const answers = createAnswers({ store: t.store, engine, clock, yieldToUi: async () => {} })
+    await engine.open(VAULT_ROW)
+    await engine.idle()
+    await answers.idle()
+    expect(t.commits()).toBe(1)
+    expect(await t.remoteReviews()).toEqual([at(1)])
+    expect(answers.state().waiting).toBe(0)
+  })
+})
