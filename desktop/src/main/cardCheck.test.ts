@@ -73,6 +73,26 @@ describe('checkCard: one case for each kind', () => {
   })
 })
 
+/**
+ * Windows line ends (YAZ-5138, YAZ-5146 rule 5): `checkCard` gives a `\r\n` card the same result as its `\n` twin. One
+ * case for each fault kind, and a clean card; the YAZ-5138 card was a false `nothing-to-recall`.
+ */
+describe('checkCard with Windows line ends (YAZ-5138)', () => {
+  const crlf = (text: string): string => text.replace(/\n/g, '\r\n')
+  it.each<[string, string, CardFault['kind'][]]>([
+    ['clean, two sides (the YAZ-5138 card)', 'Capital of France\nWhat is it?\n---\nParis', []],
+    ['unclosed', 'Capital of France\nThe capital is Paris\n---\nIt is {{Paris', ['unclosed']],
+    ['empty-hidden', 'Capital\nThe capital is {{}}\n---\nParis', ['empty-hidden']],
+    ['nothing-to-recall', 'Capital of France\nThe capital of France is Paris.', ['nothing-to-recall']],
+    ['no-title', '\n\n---\nThe capital is {{Paris}}', ['no-title']],
+    ['title-placeholder', 'Title\nThe capital is {{Paris}}', ['title-placeholder']],
+    ['hidden-subject', 'NASA\nWhat does {{NASA}} stand for?\n---\nNational Aeronautics and Space Administration', ['hidden-subject']],
+  ])('%s: the \\r\\n text gives what the \\n text gives', (_case, lf, kinds) => {
+    expect(checkCard(lf).map((f) => f.kind)).toEqual(kinds)
+    expect(checkCard(crlf(lf))).toEqual(checkCard(lf))
+  })
+})
+
 /** One clean card for each of the 11 formats of the card skill: first line the title, `{{word}}`, `---`. */
 const CLEAN: Record<string, string> = {
   acronym: 'NASA\nWhat does NASA stand for?\n---\n{{National Aeronautics and Space Administration}}',

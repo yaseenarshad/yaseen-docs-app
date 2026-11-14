@@ -1370,6 +1370,19 @@ describe('card check, and the check in card add and card new (YAZ-5116)', () => 
     expect(p[0].faults.map((f: { kind: string }) => f.kind)).toContain('title-placeholder')
   })
 
+  it('card check reads a page with Windows line ends as its \\n twin: 2 cards, `title-placeholder`, exit 1 (YAZ-5138)', async () => {
+    const page = `# CRLF\n\n${card('Capital of France\nWhat is it?\n---\nParis', 'YAZ-9')}\n${card('Title\nIt is {{x}}.', 'YAZ-10')}`
+    const root = await vault('cards', { 'crlf.md': page.replace(/\n/g, '\r\n'), 'lf.md': page })
+    const r = await run(['card', 'check', path.join(root, 'crlf.md')])
+    expect(r).toEqual({ code: 1, out: 'YAZ-9  Capital of France  ok\nYAZ-10  Title\n  The title is still "Title". (title-placeholder, front)\n', err: '' })
+    const lf = await run(['card', 'check', path.join(root, 'lf.md')])
+    expect(r).toEqual(lf)
+    // A card file with \\r\\n reads its title from `title:` too.
+    const file = `---\nkind: card\ntitle: Title\n---\n${card('It is {{Paris}}.', 'YAZ-11')}`
+    await writeFile(path.join(root, 'title-yaz-11.md'), file.replace(/\n/g, '\r\n'))
+    expect(await run(['card', 'check', path.join(root, 'title-yaz-11.md'), '--json'])).toEqual({ code: 1, out: `${JSON.stringify([{ id: 'YAZ-11', title: 'Title', faults: [{ kind: 'title-placeholder', side: 0, text: 'The title is still "Title".' }] }], null, 2)}\n`, err: '' })
+  })
+
   it('card check is refused in a vault without IDs, and takes no other flag', async () => {
     const plain = await vault('plain', { 'a.md': 'Text.\n' }, false)
     expect((await run(['card', 'check', path.join(plain, 'a.md')])).err).toMatch(/does not give its pages IDs/)
