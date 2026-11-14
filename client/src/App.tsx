@@ -75,6 +75,7 @@ import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import type { CardReviewResume, CardReviewScope, CardReviewSession } from './review/useCardReview'
 import { cardLookAttrs, cardSpacingVars } from './review/cardSpacing'
+import { cardTextVars } from './review/cardText'
 import { useReviewOnRoots } from './review/useReviewSettings'
 import { contentWidthVars, tablePositionVars } from './lib/contentWidth'
 import { nextHiddenAttrs, nextHiddenVars } from './review/nextHidden'
@@ -898,6 +899,8 @@ export function App() {
     '--edit-block-gap': `${settings.blockGap}px`,
     // Settings › Review › Card spacing (YAZ-5050): Custom only; Same as pages sets none, so a card reads the two above.
     ...cardSpacingVars(settings),
+    // Card look › Card text size and Card title size (YAZ-5387): the card's own text, and its title band's step of it.
+    ...cardTextVars(settings),
     // Appearance › Content width and Settings › Review › Card width (YAZ-5144): the text's widest, pages and cards.
     ...contentWidthVars(settings),
     // Settings › Tables › Table position and Card look › Card tables (YAZ-5136 rounds 2 and 3).
