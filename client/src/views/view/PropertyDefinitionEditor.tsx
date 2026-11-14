@@ -180,7 +180,7 @@ export function PropertyDefinitionEditor({ value, onChange, observed = [], kinds
         if (target !== undefined) next.target = target; else delete next.target
         onChange(next)
       }} /></div>}
-      {(value.kind === 'link' || value.kind === 'multi-link') && linkFolders === null && <label className="property-def__target"><span>Link to</span><TextField className="property-def__input" aria-label="Link target" placeholder="Any page, or [[Folder]]" value={value.target ?? ''} onCommit={target => {
+      {(value.kind === 'link' || value.kind === 'multi-link') && linkFolders === null && <label className="property-def__target"><span>Link to</span><TextField className="property-def__input" aria-label="Link target" placeholder={unit('Any page, or [[Folder]]')} value={value.target ?? ''} onCommit={target => {
         const next = { ...value }
         if (target.trim()) next.target = target.trim(); else delete next.target
         onChange(next)

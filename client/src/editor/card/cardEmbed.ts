@@ -39,6 +39,7 @@ import { embedCard, recordAt, type CardEmbedHandle, type CardEmbedHost } from '.
 import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from './cardMedia'
 import { openCardWindow } from './cardOpen'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard } from './cardRender'
+import { pathUnit } from '../../vault/unitWord'
 import './cardEmbed.css'
 
 /** How far outside the screen a box starts to read its card (the page's own scroller). */
@@ -139,7 +140,7 @@ export function cardEmbedMenuRows(o: {
   const rows: Array<MenuRow | null> = [
     { label: 'Open card', run: () => openCardWindow(card.path, card.id, card.index, o.from) },
     o.editable ? { label: 'Show as link', run: () => o.replace(`[[${o.target}]]`) } : null,
-    o.putBack == null ? null : { label: 'Put back into this page', run: o.putBack },
+    o.putBack == null ? null : { label: pathUnit(card.path)('Put back into this page'), run: o.putBack },
     { label: off ? 'Unarchive card' : 'Archive card', divider: true, run: () => void changeCardLine(card.path, card.id, (l) => withCardOff(l, !off), card.index).catch(failed) },
     { label: 'Copy card ID', divider: true, run: () => copyText(card.id, 'card ID', o.onNotice, undefined, true) },
   ]

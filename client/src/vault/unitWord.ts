@@ -126,6 +126,13 @@ export function vaultUnit(root: string | null | undefined): UnitText {
   return (root == null ? undefined : helpers.get(root)) ?? SAME_WORD
 }
 
+/** The helper of the vault that holds `path` (the longest known root it is under): the identity when none does. */
+export function pathUnit(path: string): UnitText {
+  let best: string | null = null
+  for (const root of helpers.keys()) if ((path === root || path.startsWith(`${root.replace(/\/+$/, '')}/`)) && (best === null || root.length > best.length)) best = root
+  return best === null ? SAME_WORD : helpers.get(best)!
+}
+
 const subscribe = (listener: () => void): (() => void) => {
   listeners.add(listener)
   return () => listeners.delete(listener)

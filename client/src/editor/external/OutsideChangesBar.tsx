@@ -72,6 +72,7 @@ const left = (ms: number): string => {
  * while a timed glow shows: an untimed one (until checked) has no countdown, and nothing ticks.
  */
 function FadeCountdown({ at, onKeep }: { at: number; onKeep?: () => void }) {
+  const unit = useUnit()
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     setNow(Date.now())
@@ -83,7 +84,7 @@ function FadeCountdown({ at, onKeep }: { at: number; onKeep?: () => void }) {
       <span className="outside-changes-bar__fade">fades in {left(at - now)}</span>
       {/* Catch it before it goes: this page's glow becomes "Until I check it", saved in the page as the cog saves it. */}
       {onKeep !== undefined && (
-        <button type="button" className="outside-changes-bar__keep" title="Keep the changes lit until you check them: this page's glow becomes Until I check it" onMouseDown={hold} onClick={onKeep}>
+        <button type="button" className="outside-changes-bar__keep" title={unit("Keep the changes lit until you check them: this page's glow becomes Until I check it")} onMouseDown={hold} onClick={onKeep}>
           Keep
         </button>
       )}

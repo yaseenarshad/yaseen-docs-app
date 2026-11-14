@@ -64,6 +64,7 @@ import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import './cardFileView.css'
+import { useUnit } from '../vault/unitWord'
 
 export interface CardFileViewProps {
   /** The file as the tab's one read gave it (`useFile`): a card file. */
@@ -111,6 +112,7 @@ function folderOf(root: string, path: string): string {
 }
 
 export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle, onReread, sync, onSyncNow }: CardFileViewProps) {
+  const unit = useUnit()
   const path = file.path
   const [content, setContent] = useState<string | null>(file.content)
   /** "Turn into a page" runs: the file losing `kind: card` is this tab's own doing, and says nothing. */
@@ -254,7 +256,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   }
   const sections = (): MenuSection[] => [
     ...cardMenuSections(card, id, writes.changeLine, onNotice, { inbox: reviewOn, link: true }),
-    ...(converts ? [[{ id: 'to-page', label: 'Turn into a page', onSelect: toPage }]] : []),
+    ...(converts ? [[{ id: 'to-page', label: unit('Turn into a page'), onSelect: toPage }]] : []),
   ]
   const fixes =
     !converts ? null : shape.problem === 'many' ? (

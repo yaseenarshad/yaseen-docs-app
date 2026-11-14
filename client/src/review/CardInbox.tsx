@@ -100,6 +100,7 @@ import { todayWork } from './reviewTime'
 import { cssZoom } from '../lib/cssZoom'
 import { inboxRoom, readingScroll } from './inboxScroll'
 import '../explore/explore.css'
+import { useUnit } from '../vault/unitWord'
 
 export interface CardInboxProps {
   /** The Inbox tab is the one on show (YAZ-5011); false: behind a page tab, hidden, and deaf to keys. Default true. */
@@ -218,6 +219,7 @@ interface Step {
 }
 
 export function CardInbox({ shown = true, review, session, vaultOf, nameOf, openPage, openTab, openCard, openInTab, openLinkIn, openLayer, onNotice, openPlace }: CardInboxProps) {
+  const unit = useUnit()
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
   const { width, startDrag } = useInboxCardWidth(columnRef, rootRef)
@@ -484,7 +486,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                   </>
                 ) : (
                   <>
-                    <p className="card-inbox__done-title">{session.scope === 'page' ? 'This page is done.' : 'This folder is done.'}</p>
+                    <p className="card-inbox__done-title">{session.scope === 'page' ? unit('This page is done.') : 'This folder is done.'}</p>
                     {waits}
                     {addButtons}
                     {more > 0 ? (

@@ -154,8 +154,8 @@ export const SHOWN_HIDDEN_WORDS_OPTIONS: readonly Option<ShownHiddenWords>[] = [
 ]
 
 /** Settings › Review › Card spacing (YAZ-5050): the pages' spacing, or the card's own. */
-export const CARD_SPACING_OPTIONS: readonly Option<CardSpacing>[] = [
-  { label: 'Same as pages', value: 'pages' },
+export const cardSpacingOptions = (unit: UnitText): readonly Option<CardSpacing>[] => [
+  { label: unit('Same as pages'), value: 'pages' },
   { label: 'Clean', value: 'clean' },
   { label: 'Custom', value: 'custom' },
 ]

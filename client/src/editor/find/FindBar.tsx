@@ -146,7 +146,7 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
             ref={inputRef}
             className="find-bar__input"
             type="text"
-            aria-label="Find in page"
+            aria-label={unit('Find in page')}
             placeholder="Find"
             spellCheck={false}
             value={state.query}

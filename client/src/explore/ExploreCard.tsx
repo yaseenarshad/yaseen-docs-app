@@ -45,6 +45,7 @@ import { HoverTip } from '../components/HoverTip'
 import { CardFacts, CardId, CardNextChip } from '../review/cardParts'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { keepFocus, type ExploreVault } from './ExplorePage'
+import { useUnit } from '../vault/unitWord'
 
 interface ExploreCardProps {
   path: string
@@ -75,6 +76,7 @@ interface ExploreCardProps {
 type Loaded = { kind: 'loading' } | { kind: 'card'; card: CardAtPage } | { kind: 'gone' }
 
 export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbox = false, pageName, vault, onOpenPage, onOpenLink, onOpenTab, onOpenInTab, onNotice, onHeadDown, onHeadReset, onClose, active }: ExploreCardProps) {
+  const unit = useUnit()
   const headRef = useRef<HTMLDivElement>(null)
   const titleRef = useRef<HTMLSpanElement>(null)
   useCompactHead(headRef, titleRef)
@@ -160,7 +162,7 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
         {/* ↗ folds into ⋯ in a narrow layer (YAZ-4986); the card ID, the title and × stay. */}
         <span className="explore__fold">
           <HoverTip text={fromInbox ? 'Open page in a new tab' : 'Open page in a new tab (⌘↵)'} data-fold-part="open">
-            <button type="button" className="explore__button" onMouseDown={keepFocus} onClick={onOpenInTab} aria-label="Open page in a new tab">
+            <button type="button" className="explore__button" onMouseDown={keepFocus} onClick={onOpenInTab} aria-label={unit('Open page in a new tab')}>
               ↗
             </button>
           </HoverTip>
@@ -170,8 +172,8 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
           always
           sections={() => [
             [
-              { id: 'open-page', label: 'Open page', onSelect: () => onOpenPage(card?.index ?? index) },
-              { id: 'open-tab', label: 'Open page in a new tab', ...(!fromInbox && { hint: '⌘↵' }), onSelect: onOpenInTab },
+              { id: 'open-page', label: unit('Open page'), onSelect: () => onOpenPage(card?.index ?? index) },
+              { id: 'open-tab', label: unit('Open page in a new tab'), ...(!fromInbox && { hint: '⌘↵' }), onSelect: onOpenInTab },
             ],
             ...cardMenuSections(card, id, changeLine, onNotice, { inbox: true, link: false }),
           ]}

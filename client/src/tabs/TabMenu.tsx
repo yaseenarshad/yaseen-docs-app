@@ -4,6 +4,7 @@ import { ContextMenu } from '../sidebar/ContextMenu'
 import { CopyIcon, EyeIcon, HeartIcon } from '../views/view/icons'
 import { focusPlaces, scopeGroup, type MenuAction, type MenuSection } from '../sidebar/menuSections'
 import type { ListState } from '../lists/useVaultListsHere'
+import { useUnit } from '../vault/unitWord'
 
 /** An open tab menu: where it stands, the tab it is about, and that tab's review state as it was when the menu opened. */
 export interface TabMenuAt {
@@ -73,6 +74,7 @@ export interface TabMenuProps {
  * `ContextMenu` (YAZ-2949 D6), so its groups have the same lines as every other menu of the app.
  */
 export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [], onMoveToWindow, onHighlightWindow, onMoveToNewWindow, onDuplicate, onRename, onResetName, onShowInSidebar, onRenameFile, onToggleFocus, onToggleFavorite, onNotice, leading = [], trailing = [] }: TabMenuProps) {
+  const unit = useUnit()
   /** The menu's OS actions (YAZ-963): the sidebar's verbs and notices (`lib/osVerbs.ts`), a stale tab named by its label. */
   const os = osVerbs((message) => onNotice?.(message), () => label)
   // "Move to ▸" (YAZ-3091 D3): the other windows, a line, then "Right panel". An empty group is left out, and with no group there is no item.
@@ -119,7 +121,7 @@ export function TabMenu({ menu, label, onClose, onMoveToRight, moveTargets = [],
     [
       // Never "Rename": that word renames on disk in the file menu (YAZ-2949 D3, the vault menu's words).
       ...(onRename === undefined ? [] : [{ id: 'rename', label: 'Set display name', onSelect: () => onRename(menu.id) }]),
-      ...(menu.named && onResetName !== undefined ? [{ id: 'reset-name', label: 'Reset to page name', onSelect: () => onResetName(menu.id) }] : []),
+      ...(menu.named && onResetName !== undefined ? [{ id: 'reset-name', label: unit('Reset to page name'), onSelect: () => onResetName(menu.id) }] : []),
     ],
     // "Rename file" (YAZ-4248), a group of its own after the tab's name, so the file's name and the tab's are apart.
     // Grey on a tab that shows no file (a folder page, Settings).

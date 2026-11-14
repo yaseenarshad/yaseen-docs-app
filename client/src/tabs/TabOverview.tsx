@@ -20,6 +20,7 @@ import { TabSearchPanel, type SearchPlace } from './TabSearchPanel'
 import { autoWindowLabel, windowLabel } from './windowLabel'
 import { AsleepIcon } from '../views/view/icons'
 import './tabs.css'
+import { useUnit } from '../vault/unitWord'
 
 export { SETTLE_MS, TOOLBAR_INSET } from './useCamera'
 
@@ -263,6 +264,7 @@ const NONE_ASLEEP: ReadonlySet<string> = new Set()
  * moving renders two cards, and a pan, a zoom or a drag renders none (D4).
  */
 const Card = memo(function Card(p: CardProps) {
+  const unit = useUnit()
   const cls = ['taboverview__page']
   if (p.active) cls.push('taboverview__page--active')
   if (p.previewing) cls.push('taboverview__page--preview')
@@ -302,7 +304,7 @@ const Card = memo(function Card(p: CardProps) {
         </span>
       )}
       {p.folder !== null && <span className="taboverview__folder">{p.folder}</span>}
-      {p.named && <span className="taboverview__pagename">Page: {p.page}</span>}
+      {p.named && <span className="taboverview__pagename">{unit('Page')}: {p.page}</span>}
       {p.picture && p.root !== null ? (
         <span className="taboverview__shot">
           <Suspense fallback={<span className="taboverview__lines">{p.lines}</span>}>
@@ -363,6 +365,7 @@ type Gesture =
  * App owns the sheet and the close.
  */
 export function TabOverview({ roots, vaultNames, tabs, active, preview, titles, windowId, asleep = NONE_ASLEEP, darkColors = 'adapt', leaving = false, onLeft, onOpen, onCloseTabs, onDismiss, onKillAll, onMoveToRight, onMoveTargets, onDropToWindow, onMoveToNewWindowQuietly, onMoveTab, onMoveToSlot, onTakeAt, onAskVault, onHighlightWindow, onDuplicate, onSetName, onShowInSidebar, onNotice, listState, onToggleFocus, onToggleFavorite, hoverPreview = false, previewScope, onCloseWindow, onNewWindow, onOpenTabHere, filesWindow = false }: TabOverviewProps) {
+  const unit = useUnit()
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState<string | null>(active)
   const [pageMenu, setPageMenu] = useState<TabMenuAt | null>(null)

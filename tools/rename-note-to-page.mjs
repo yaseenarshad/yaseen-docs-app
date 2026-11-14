@@ -107,7 +107,7 @@ const KEEP = [
   /RELEASE_NOTES?(?![A-Z])/g,
   /update:notes/g,
   /\bupdater?\.notes\b/g,
-  /(?<=registerUpdateIpc\(\{[^\n]*)\bnotes(?=: async)/g,
+  /\bnotes(?=: async \(\) => \(\{ current:)/g,
   /whats-new__notes/g,
   // The small help line under a control (a BEM element called "note").
   /[a-z][a-z-]*__(?:[a-z-]*-)?notes?\b(?<!(?:backlinks|quicklook)__notes?)/g,
@@ -252,11 +252,15 @@ export function renameText(text, { file = 'x.ts', names = null } = {}) {
   const hold = (m) => `${kept.push(m) - 1}`
   let out = text
   // The Bases namespace: kept unless it is code (`note.querySelector`) or a page key (`note.bold`).
-  const code = /\.(m?[jt]sx?|cjs)$/.test(file) ? codeNoteOffsets(file, text) : new Set()
+  BASES.lastIndex = 0
+  const code = /\.(m?[jt]sx?|cjs)$/.test(file) && BASES.test(text) ? codeNoteOffsets(file, text) : new Set()
+  BASES.lastIndex = 0
   out = out.replace(BASES, (m, member, offset) => (code.has(offset) || KEY_IDS.has(member) || EXT.test(member ?? '') ? m : hold(m)))
   out = out.replace(/^.*$/gm, (line) => (line.includes(KEEP_LINE) ? hold(line) : line))
   if (keepWords) for (const [re, to] of PAGE_PHRASES) out = out.replace(re, to)
   for (const re of KEEP) out = out.replace(re, hold)
+  // A doc line about cell notes: its bare "note" is a cell note too (`[^cell-1]` and "the note right under the table").
+  if (/\.md$/.test(file)) out = out.replace(/^.*\uE000.*$/gm, (line) => (/cell[ -]?notes?/i.test(line.replace(/\uE000(\d+)\uE001/g, (_, n) => kept[Number(n)])) ? line.replace(/(?<![A-Za-z0-9_$`.-])(?:notes?|Notes?)(?![A-Za-z0-9_$`-]|[ -]?[Cc]ards?\b)/g, hold) : line))
   out = out.replace(NAME, (name) => {
     if (Object.hasOwn(NAMES, name)) return hold(NAMES[name])
     if (keepWords && HAS_NOTE.test(name) && (BARE.has(name) || (names !== null && !names.has(name)))) return hold(name)

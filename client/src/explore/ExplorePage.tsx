@@ -563,7 +563,7 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
           <FindBar channel={findChannel} scope="page" hostRef={bodyRef} />
           <div ref={mountRef} className="explore__mount" />
           {content.kind === 'gone' && <p className="editor-msg">Can&apos;t read &quot;{title}&quot; — it is no longer there</p>}
-          {content.kind === 'empty' && <p className="editor-msg">Empty page</p>}
+          {content.kind === 'empty' && <p className="editor-msg">{unit('Empty page')}</p>}
           {/* The page's right-click menu (item 7): the text rows (Copy, Copy as; no Cut or Paste while reading), then the page menu. */}
           {ready !== null && <PageMenu view={editorViewOf(ready)} extra={pageMenu} reading />}
           {/* Under the page, as in its tab (round 1, item 3): the comment stream, then "Linked mentions"; a mention opens on top. */}
