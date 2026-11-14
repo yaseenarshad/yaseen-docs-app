@@ -3126,11 +3126,9 @@ describe('YAZ-4990: Explore follows a page that changes', () => {
       // This page changes (an agent, a sync, another tab): read again, shown in place.
       files['/v/alpha.md'] = '# Alpha\n\nsecond text\n'
       feed([rec('/v/alpha.md', 'Alpha', { mtime: 2, size: 11 }), rec('/v/beta.md', 'Beta', { mtime: 2 })])
-      await flush()
-      await flush()
-      await flush()
+      // The read waits a task (the index's burst), so wait for it, not for a count of microtasks.
+      await vi.waitFor(() => expect(shown()).toEqual(['# Alpha\n\nsecond text\n']))
       expect(readFile.mock.calls.length).toBe(reads + 1)
-      expect(shown()).toEqual(['# Alpha\n\nsecond text\n'])
       expect(first.destroy).toHaveBeenCalled()
       expect(body().scrollTop).toBe(420)
       const next = crepes.at(-1)!
@@ -3409,7 +3407,9 @@ describe('YAZ-5164: the reading layer goes into edit where you are', () => {
     await mount()
     await flush()
     key(readBody(), { key: 'e' })
-    await flush()
+    // The editor shows once it answers its page view (a frame); the reading body goes then.
+    await wait()
+    expect(top().querySelector('[data-explore-read]')).toBeNull()
     key(top().querySelector('[data-editor]') as Element, { key: 'Escape' })
     await flush()
     await flush()
@@ -3422,5 +3422,81 @@ describe('YAZ-5164: the reading layer goes into edit where you are', () => {
     expect(view.dom).toBe(reading.opts.root.firstChild)
     expect(scroller).toBe(readBody())
     expect(place).toEqual({ pos: 50, offset: -8 })
+  })
+
+  /**
+   * No flash (Yaseen, 21:15: "I don't like that there's a flash when you switch between edit and read … it should just be
+   * so smooth"): the body on show stays until the other one is up at the same place, then both swap in one frame.
+   */
+  describe('the switch is smooth: the old body stays until the new one is up', () => {
+    /** An editor that answers its page view only when `up()` is called, as the real one does once its start view is applied. */
+    let up: () => void = () => {}
+    beforeEach(() => {
+      props = {
+        ...props,
+        renderEditor: (path): ReactNode => (
+          <div className="editor" data-editor={path}>
+            <div className="editor-host" ref={(host) => void (host !== null && (up = () => registerPageView(host, () => ({ scrollTop: 0, zoomKey: null, folds: [], magnification: 100, top: { pos: 9, offset: 0 } }))))} />
+          </div>
+        ),
+      }
+    })
+    const bodies = () => [...top().querySelectorAll<HTMLElement>('.explore__bodies > .explore__body')].map((b) => `${b.hasAttribute('data-explore-read') ? 'read' : 'edit'}${b.classList.contains('explore__body--incoming') ? ' (incoming)' : ''}`)
+
+    it('E: the reading body stays on show with the editor under it, see-through, until the editor is up; then the reading body goes', async () => {
+      await mount()
+      await flush()
+      key(readBody(), { key: 'e' })
+      await flush()
+      expect(bodies()).toEqual(['edit (incoming)', 'read'])
+      expect(crepes[crepes.length - 1].destroy).not.toHaveBeenCalled()
+      up()
+      await wait()
+      expect(bodies()).toEqual(['edit'])
+    })
+
+    it('Esc: the editor stays on show until the reading Crepe is up; that Crepe is built ONCE, from the text the editor saved', async () => {
+      await mount()
+      await flush()
+      key(readBody(), { key: 'e' })
+      up()
+      await wait()
+      const built = crepes.length
+      readFile.mockImplementation(async (p) => ({ path: p, content: 'saved by the editor\n', mtime: 2, size: 1 }))
+      let answer: () => void = () => {}
+      const held = new Promise<void>((r) => (answer = r))
+      const real = readFile.getMockImplementation()!
+      readFile.mockImplementation(async (p) => {
+        await held
+        return real(p)
+      })
+      key(top().querySelector('[data-editor]') as Element, { key: 'Escape' })
+      await flush()
+      // The text is still being read: the editor stays on show, and no Crepe of the old text is built.
+      expect(bodies()).toEqual(['edit', 'read (incoming)'])
+      expect(crepes.length).toBe(built)
+      answer()
+      await wait()
+      expect(crepes.length).toBe(built + 1)
+      expect(crepes[crepes.length - 1].opts.defaultValue).toBe('saved by the editor\n')
+      expect(bodies()).toEqual(['read'])
+    })
+
+    it('a quick E then Esc, before the editor is up: the reading Crepe never went, so it stays as it was (no new Crepe, the same scroll)', async () => {
+      await mount()
+      await flush()
+      const body = readBody()
+      body.scrollTop = 700
+      const built = crepes.length
+      key(body, { key: 'e' })
+      await flush()
+      key(top().querySelector('[data-editor]') as Element, { key: 'Escape' })
+      await wait()
+      expect(bodies()).toEqual(['read'])
+      expect(readBody()).toBe(body)
+      expect(body.scrollTop).toBe(700)
+      expect(crepes.length).toBe(built)
+      expect(crepes[built - 1].destroy).not.toHaveBeenCalled()
+    })
   })
 })

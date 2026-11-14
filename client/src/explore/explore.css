@@ -331,6 +331,23 @@
   overflow-y: auto;
   padding: 8px 24px 32px;
 }
+/* The page layer's body box (YAZ-5164): the body on show fills it; while read ⇄ edit switches, the incoming body lies
+   under it at the same size, see-through, until it is up at the same place. Opacity, not visibility: the incoming editor
+   takes the caret as it mounts, and a hidden element cannot take it. */
+.explore__bodies {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+.explore__body--incoming {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0;
+  pointer-events: none;
+}
 .explore__body:focus {
   outline: none;
 }

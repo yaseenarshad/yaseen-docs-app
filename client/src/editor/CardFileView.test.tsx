@@ -56,6 +56,9 @@ const converts = vi.hoisted(() => ({
   moveIntoCard: vi.fn(async () => undefined),
   makeCardFromText: vi.fn(async () => undefined),
 }))
+/** The card's place across Edit card and Done (YAZ-5164): jsdom draws no boxes, so the move is recorded; the real one is in pagePlace.test.ts. */
+const boxMoves = vi.hoisted(() => [] as Array<{ box: Element; offset: number }>)
+vi.mock('../editor/pagePlace', async (importOriginal) => ({ ...(await importOriginal<typeof import('./pagePlace')>()), scrollerOf: (e: Element) => e.closest('[data-card-file-body]'), boxOffset: () => 120, showBoxAt: (_s: Element, box: Element, offset: number) => void boxMoves.push({ box, offset }) }))
 vi.mock('../review/cardConvert', () => ({ ...converts, convertFailure: (err: unknown) => (err instanceof Error ? err.message : String(err)) }))
 vi.mock('../views/writeProperty', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../views/writeProperty')>()),
@@ -286,6 +289,19 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('Paris\n```', 'Paris (Seine)\n```')))
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
     await vi.waitFor(() => expect(el.querySelector('.card-screen')?.textContent).toContain('Paris (Seine)'))
+  })
+
+  it('YAZ-5164: Edit card and Done keep the card where it is on screen: its box is put back at the spot it had, the editor\'s card on the way in, the read card on the way out', async () => {
+    await mount(FILE)
+    boxMoves.length = 0
+    act(() => editButton()!.click())
+    const dom = await cardEditor()
+    await vi.waitFor(() => expect(boxMoves.some((m) => m.box === dom.closest('.card'))).toBe(true))
+    expect(boxMoves.every((m) => m.offset === 120)).toBe(true)
+    boxMoves.length = 0
+    key(dom, { key: 'Enter', metaKey: true })
+    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
+    await vi.waitFor(() => expect(boxMoves.some((m) => m.box === el.querySelector('.card-screen'))).toBe(true))
   })
 
   it('an outside change to the same card while you edit: the editor stays; Done writes your text by the card`s ID on the NEWEST bytes (the card window`s rule: the outside change to the rest of the file stays, yours wins in the card)', async () => {
