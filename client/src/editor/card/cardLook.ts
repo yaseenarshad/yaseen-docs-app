@@ -12,6 +12,7 @@ import { basename } from '@shared/types'
 import { imageSrc, pageDirRel } from '../image/imageSrc'
 import { cardLinkTitle, linkCard, linkIsResolved, linkPath, linksAsShown, type LinkLook, type WikilinkResolveSource } from '../wikilink/linkResolve'
 import type { ViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
+import type { BoardPictureLoad } from './cardMedia'
 import type { CardLook } from './cardRender'
 
 /** The URL of a picture or a sound: `src` as written in a page whose folder is `pageDirRel` (relative to `root`). */
@@ -25,10 +26,16 @@ export interface CardLookPlace {
   pagePath: string
   /** The URL of a picture or a sound. Absent: `imageSrc`, the desktop's `app://vault/…`. */
   src?: CardMediaSrc
+  /**
+   * A board embed's still picture (YAZ-5161). The desktop passes `desktopBoardPicture` (`boardPictureDesktop.ts`).
+   * Absent: a board embed shows its text, as a card with no place does.
+   */
+  boardPicture?: BoardPictureLoad
 }
 
 export function cardLook(wikilinks: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined, image?: CardLookPlace, linkLook?: LinkLook): CardLook {
   const mediaSrc = image?.src ?? imageSrc
+  const boardPicture = image?.boardPicture
   return {
     link: (inner) => {
       // A link to a card (YAZ-5030): its title, its ID and the card icon, as the page's card pill.
@@ -44,11 +51,11 @@ export function cardLook(wikilinks: WikilinkResolveSource, viewOnly: ViewOnlyLin
     image: image === undefined ? undefined : (src) => mediaSrc(image.root, pageDirRel(image.root, image.pagePath), src),
     // A board embed's file (YAZ-5015): where its link resolves, in the page's vault.
     board:
-      image === undefined
+      image === undefined || boardPicture === undefined
         ? undefined
         : (inner) => {
             const path = linkPath(inner, wikilinks, viewOnly)
-            return path === null ? null : { root: image.root, path }
+            return path === null ? null : { root: image.root, path, picture: boardPicture }
           },
   }
 }

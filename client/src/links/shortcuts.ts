@@ -16,15 +16,10 @@ import { FOLDER_SETTINGS_FILE, folderSettingsPath, inFolder, isFolderSettingsPat
 import { absFrom, basename, dirname, relTo } from '../lib/paths'
 import { takePageId } from '../views/scaffold'
 import { transformFile } from '../views/writeProperty'
+import { folderRecord, folderTitle } from './folderTitle'
 
-/** The settings record of the folder at `dir`; undefined while it has no `.folder.md`. */
-export function folderRecord(folders: readonly IndexRecord[], dir: string): IndexRecord | undefined {
-  const path = folderSettingsPath(dir)
-  return folders.find((r) => r.path === path)
-}
-
-/** A folder's title (YAZ-2420 🔒 D14): its settings record's, else, while it has no `.folder.md`, its directory's name. */
-export const folderTitle = (folders: readonly IndexRecord[], dir: string): string => folderRecord(folders, dir)?.title ?? basename(dir)
+// A folder's title moved to its own file (YAZ-5161), so the review hook loads with no bridge; its names stay here too.
+export { folderRecord, folderTitle }
 
 /** The settings records by the directory each is the folder of. */
 export const foldersByDir = (folders: readonly IndexRecord[]): Map<string, IndexRecord> => new Map(folders.map((r) => [dirname(r.path), r]))

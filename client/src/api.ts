@@ -1,20 +1,9 @@
-import type { BridgeError, BridgeErrorCode } from '@shared/types'
+import type { BridgeError } from '@shared/types'
 import { type Bridge, CONTRACT, isLeaf, type YaseenDocsApi } from '@shared/ipc'
 
-/** Typed failure from the main process (see docs/CONTRACTS.md "Bridge API"). */
-export class BridgeRequestError extends Error {
-  constructor(
-    readonly code: BridgeErrorCode | 'CONFLICT',
-    message: string,
-    /** Current on-disk mtime, only present on CONFLICT. */
-    readonly mtime?: number,
-    /** The offending path, when the main process attributed the failure to one. */
-    readonly path?: string,
-  ) {
-    super(message)
-    this.name = 'BridgeRequestError'
-  }
-}
+// The error class moved to its own file (YAZ-5161), so code the phone shares can test for it with no bridge.
+import { BridgeRequestError } from './bridgeError'
+export { BridgeRequestError }
 
 function isBridgeError(err: unknown): err is BridgeError {
   return typeof err === 'object' && err !== null && typeof (err as BridgeError).code === 'string' && typeof (err as BridgeError).message === 'string'
