@@ -209,7 +209,8 @@ function MindWeb(props: SceneProps) {
   const newFacts = id === 'c10-08' ? cue(b, 0, 0.22) : 2
   const fits = id === 'c10-08' ? cue(b, 1, 0.65) : 2
   const arrive = since(b, newFacts, 0.8)
-  const nodes: WebNode[] = [...BIG_WEB.nodes, { id: 'n1', x: lerp(590, 520, moved(b, arrive)), y: lerp(10, 50, moved(b, arrive)), label: 'sourdough' }, { id: 'n2', x: lerp(40, 560, moved(b, arrive)), y: lerp(330, 40, moved(b, arrive)), label: 'a lone fact' }]
+  // The lone fact lands at the web's edge, away from every idea (the web's ideas stay inside its 40-unit margin).
+  const nodes: WebNode[] = [...BIG_WEB.nodes, { id: 'n1', x: lerp(590, 520, moved(b, arrive)), y: lerp(10, 50, moved(b, arrive)), label: 'sourdough' }, { id: 'n2', x: lerp(10, 64, moved(b, arrive)), y: lerp(340, 324, moved(b, arrive)), label: 'a lone fact' }]
   const edges: WebEdge[] = [...BIG_WEB.edges, { from: 'n1', to: 'w2' }, { from: 'n1', to: 'w6' }]
   const show: Record<string, number> = { n1: arrive, n2: arrive * (1 - since(b, fits + 0.05, 1)), 'n1>w2': since(b, fits, 0.6), 'n1>w6': since(b, fits + 0.04, 0.6) }
   const dim = id === 'c10-08' ? lerp(1, 0.6, since(b, newFacts - 0.05, 0.5)) : 1

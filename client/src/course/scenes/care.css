@@ -152,12 +152,18 @@
   grid-template-columns: 1fr 1fr;
   gap: 6px;
 }
+/* A narrow stage: one title a row, whole. */
+@container (max-width: 560px) {
+  .later-base__grid {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+}
 .later-base__card {
   padding: 4px 6px;
-  overflow: hidden;
-  font-size: 11px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  font-size: var(--kit-min-text);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
   border: 1px solid var(--border);
   border-radius: 5px;
 }
