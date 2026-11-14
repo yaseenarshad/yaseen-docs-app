@@ -157,8 +157,8 @@ describe('Review: the kinds of card', () => {
     // The middle of a short card is on the player's pill: its name. A tap there steps, as on any card (decision 11).
     await act(async () => h.host.querySelector<HTMLElement>('.review__card .card__audio-name')!.click())
     await h.settle()
-    expect(h.cardText()).not.toBe(before)
-    expect(h.cardText()).toContain('A fifth')
+    // Side 2 shows, with its hidden word as "_" (the next tap shows it).
+    expect(h.cardText()).toBe(`${before} _`)
     play.mockRestore()
   })
 

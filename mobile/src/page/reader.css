@@ -228,6 +228,8 @@ li:has(> .page-task[data-checked='true'], > p:first-child > .page-task[data-chec
   color: var(--fg-muted);
   font-weight: 400;
   font-size: 0.8em;
+  /* One word ("· NC-48"): never broken over two lines (YAZ-5299). The title before it wraps. */
+  white-space: nowrap;
 }
 .card-view__in {
   margin: -8px 0 12px;

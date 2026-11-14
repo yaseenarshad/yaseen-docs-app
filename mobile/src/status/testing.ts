@@ -18,8 +18,9 @@ export const lostAnswer = (seq: number, title = 'Speed of light', rating: 'good'
   lostAt: 0,
 })
 
-export function fakeAnswers(): FakeAnswers {
-  let state: AnswersState = { vault: null, waiting: 0, lost: [], sending: false, problem: null, retryAt: null, lastSentAt: null }
+/** `vault`: the open vault's id; the dot reads a list's state only when it is the open vault's (YAZ-5297). */
+export function fakeAnswers(vault = 'yaseen/vault@main'): FakeAnswers {
+  let state: AnswersState = { vault, waiting: 0, lost: [], sending: false, problem: null, retryAt: null, lastSentAt: null }
   let list: WaitingAnswer[] = []
   const listeners = new Set<(event: AnswersEvent) => void>()
   const emit = () => {

@@ -131,6 +131,11 @@
   font-size: 13px;
 }
 
+/* The card ID is one word ("NC-48"): never broken over two lines (YAZ-5299). The title wraps. */
+.review__id {
+  white-space: nowrap;
+}
+
 .review__fix {
   margin: 0 0 8px;
   font-size: 14px;
@@ -352,6 +357,12 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* A card's sound: as wide as its parts, not the whole card, so the middle of a short card stays a tap that steps
+   (YAZ-5298). Only Play and the bar are the player's own taps. */
+.review__card .card__audio {
+  display: inline-flex;
 }
 
 /* A card's sound: the Mac's 24 px button, 44 pt to a finger here (YAZ-5233). */

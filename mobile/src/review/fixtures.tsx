@@ -64,7 +64,12 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
   step('engine')
   if (name === 'review-offline') t.s.github.offline = true
   const media: VaultMedia = {
-    show: async (path) => (path.endsWith('.png') && name !== 'review-offline' ? { status: 'ready', path, url: ROBIN, type: 'image/svg+xml' } : { status: 'missing', path, why: 'offline' }),
+    show: async (path) =>
+      path.endsWith('.png') && name !== 'review-offline'
+        ? { status: 'ready', path, url: ROBIN, type: 'image/svg+xml' }
+        : path.endsWith('.mp3') && name.startsWith('review-sound')
+          ? { status: 'ready', path, url: 'blob:fixture-sound', type: 'audio/mpeg' }
+          : { status: 'missing', path, why: 'offline' },
   }
   const backend = memoryBackend()
   const store = await openVaultStore(backend)
@@ -114,6 +119,22 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
       for (let i = 0; i < 4; i++) {
         await wait(500) // past the tap guard (YAZ-5226)
         press('Remembered')
+      }
+      break
+    // YAZ-5298: the short sound card (DEMO-42); `-tap`: one tap at the middle of the card, where the player is.
+    case 'review-sound':
+    case 'review-sound-tap':
+      press(/^All cards/)
+      await wait(30)
+      press(/^New cards/)
+      for (let i = 0; i < 5; i++) {
+        await wait(500) // past the tap guard (YAZ-5226)
+        press('Remembered')
+      }
+      if (name === 'review-sound-tap') {
+        await wait(500)
+        const box = document.querySelector<HTMLElement>('.review__card')!.getBoundingClientRect()
+        ;(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2) as HTMLElement | null)?.click()
       }
       break
     case 'review-long':

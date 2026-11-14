@@ -15,39 +15,66 @@ type WithReview = { review?: () => Promise<{ answers: DotAnswers } | null> }
 
 export interface DotAnswersView {
   list: DotAnswers | null
+  /** The list's state once it has read its stored answers for the open vault; null before (YAZ-5297). */
   state: AnswersState | null
   waiting: readonly WaitingAnswer[]
+  /** The app has no answer list at all (a sync with no `review()`): the engine alone drives the dot. */
+  noList: boolean
 }
 
-const NOTHING: DotAnswersView = { list: null, state: null, waiting: [] }
+const nothing = (noList: boolean): DotAnswersView => ({ list: null, state: null, waiting: [], noList })
 
-/** The open vault's answer list, read again when the open vault changes. */
+/**
+ * The open vault's answer list. YAZ-5297: at a cold start `review()` gives null while the engine chunk loads (lazySync
+ * reads the checkpoint first), and the list reads its stored answers after that. So the hook asks again at each state
+ * of the sync until it has the list, and gives the list's state only when it is the open vault's (`state.vault`).
+ */
 export function useDotAnswers(sync: ShellSync, vault: string | null): DotAnswersView {
-  const [view, setView] = useState<DotAnswersView>(NOTHING)
+  const review = (sync as ShellSync & WithReview).review
+  const [view, setView] = useState<DotAnswersView>(() => nothing(review === undefined))
   useEffect(() => {
     let live = true
     let stop = () => {}
-    const review = (sync as ShellSync & WithReview).review
+    let asking = false
     if (vault === null || review === undefined) {
-      setView(NOTHING)
+      setView(nothing(review === undefined))
       return
     }
-    void review
-      .call(sync)
-      .then((link) => {
-        if (!live || link === null) return
-        const list = link.answers
-        const read = () => setView({ list, state: list.state(), waiting: list.waiting() })
-        stop = list.subscribe((event) => {
-          if (event.type === 'state') read()
+    setView(nothing(false))
+    let list: DotAnswers | null = null
+    const read = () => {
+      if (!live || list === null) return
+      const state = list.state()
+      const own = state.vault === vault
+      setView({ list, state: own ? state : null, waiting: own ? list.waiting() : [], noList: false })
+    }
+    const ask = () => {
+      if (list !== null || asking) return
+      asking = true
+      void review
+        .call(sync)
+        .then((link) => {
+          asking = false
+          if (!live || link === null || list !== null) return
+          list = link.answers
+          stop = list.subscribe((event) => {
+            if (event.type === 'state') read()
+          })
+          read()
         })
-        read()
-      })
-      .catch(() => undefined)
+        .catch(() => {
+          asking = false
+        })
+    }
+    const unfollow = sync.subscribe((event) => {
+      if (event.type === 'state') ask()
+    })
+    ask()
     return () => {
       live = false
+      unfollow()
       stop()
     }
-  }, [sync, vault])
+  }, [sync, vault, review])
   return view
 }

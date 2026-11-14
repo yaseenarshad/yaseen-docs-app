@@ -23,16 +23,16 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 const ALL: [string, Partial<DotInput>][] = [
   ['All is sent and up to date', {}],
-  ['Answers not sent yet', { answers: { waiting: 3, lost: 0, sending: false, problem: null } }],
+  ['Answers not sent yet', { answers: { loaded: true, waiting: 3, lost: 0, sending: false, problem: null } }],
   ['Sending or getting changes now', { sync: { status: 'syncing', problem: null } }],
   ['No connection', { online: false }],
   ['The token stopped working', { sync: { status: 'attention', problem: 'UNAUTHORIZED' } }],
-  ['Answers wait, no connection (the longest words)', { online: false, answers: { waiting: 3, lost: 0, sending: false, problem: null } }],
-  ['Two answers whose card is gone', { answers: { waiting: 0, lost: 2, sending: false, problem: null } }],
+  ['Answers wait, no connection (the longest words)', { online: false, answers: { loaded: true, waiting: 3, lost: 0, sending: false, problem: null } }],
+  ['Two answers whose card is gone', { answers: { loaded: true, waiting: 0, lost: 2, sending: false, problem: null } }],  ['A cold start: the list reads its stored answers', { answers: { loaded: false, waiting: 0, lost: 0, sending: false, problem: null } }],
 ]
 
 function Gallery() {
-  const base: DotInput = { sync: { status: 'synced', problem: null }, answers: { waiting: 0, lost: 0, sending: false, problem: null }, online: true, token: { kind: 'none' } }
+  const base: DotInput = { sync: { status: 'synced', problem: null }, answers: { loaded: true, waiting: 0, lost: 0, sending: false, problem: null }, online: true, token: { kind: 'none' } }
   return (
     <div className="app" style={{ overflow: 'auto' }}>
       {ALL.map(([what, over]) => {
@@ -79,7 +79,7 @@ export async function mountDotFixture(root: Root, name: string): Promise<void> {
   await saveAccount(store, vaultId(VAULT), account)
   await saveVaultList(store, { vaults: [VAULT], open: vaultId(VAULT) })
   const sync = fakeSync()
-  const answers = fakeAnswers()
+  const answers = fakeAnswers(vaultId(VAULT))
   Object.assign(sync, { review: async () => ({ answers }) })
   const refuseAll = async () => new Response(JSON.stringify({ message: 'Bad credentials' }), { status: 401 })
   const services: AppServices = { store, tokens, sync, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll, now: () => now }

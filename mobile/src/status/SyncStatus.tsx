@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 import { useApp } from '../app/AppState'
 import { tokenEndWarning } from '../auth/expiry'
 import { answersPart, syncDot, type Dot } from './dot'
+import { useLastSync } from './lastSync'
 import { StatusSheet } from './StatusSheet'
 import { useDotAnswers } from './useDotAnswers'
 import { useOnline } from './useOnline'
@@ -24,7 +25,8 @@ export function SyncStatus() {
   }, [])
   const now = (app.services.now ?? Date.now)()
   const token = tokenEndWarning(app.vaultKey === null ? null : (app.accounts[app.vaultKey]?.expiresAt ?? null), now)
-  const dot = syncDot({ sync: app.sync, answers: answersPart(answers.state, answers.waiting), online, token })
+  const dot = syncDot({ sync: app.sync, answers: answersPart(answers.state, answers.waiting, answers.noList), online, token })
+  const lastAt = useLastSync(app.services.store, app.vaultKey, app.sync.lastSyncedAt, answers.state?.lastSentAt)
   return (
     <>
       <button ref={button} type="button" className="sync-status" aria-label={`Sync status: ${dot.words}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>
@@ -37,6 +39,7 @@ export function SyncStatus() {
           token={token}
           answers={answers}
           now={now}
+          lastAt={lastAt}
           onClose={close}
         />
       )}

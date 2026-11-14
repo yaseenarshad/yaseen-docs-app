@@ -12,7 +12,7 @@ import type { DotAnswersView } from './useDotAnswers'
  * to do: "Sign in again" (red), "Replace token" (the token ends soon), Discard for each lost answer (round 12 item 9).
  * A sheet at the bottom of the screen, near the thumb. Close, Escape or a tap outside closes it.
  */
-export function StatusSheet({ dot, token, answers, now, onClose }: { dot: Dot; token: TokenEndWarning; answers: DotAnswersView; now: number; onClose: () => void }) {
+export function StatusSheet({ dot, token, answers, now, lastAt, onClose }: { dot: Dot; token: TokenEndWarning; answers: DotAnswersView; now: number; lastAt: number | null; onClose: () => void }) {
   const app = useApp()
   const close = useRef<HTMLButtonElement>(null)
   const nav = useRef(app.nav)
@@ -32,8 +32,6 @@ export function StatusSheet({ dot, token, answers, now, onClose }: { dot: Dot; t
   }, [app.nav, onClose])
 
   const sync = app.sync
-  const last = Math.max(sync.lastSyncedAt ?? -1, answers.state?.lastSentAt ?? -1)
-  const lastAt = last < 0 ? null : last
   const lost = lostRows(answers.state?.lost ?? [])
   const listWait = dot.reason === 'waiting' ? waitWords(answers, now) : null
   const said = listWait !== null ? null : why(dot, sync.status === 'slowed' ? sync.retryAt : null)
@@ -140,6 +138,8 @@ function why(dot: Dot, retryAt: number | null): string | null {
       return slowed ?? 'GitHub asked the app to slow down. It tries again in a few minutes.'
     case 'starting':
       return 'The phone has not synced this vault yet.'
+    case 'checking':
+      return 'The phone reads the answers it keeps. This takes a moment.'
     default:
       return null
   }

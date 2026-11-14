@@ -401,7 +401,10 @@ function SessionScreen({
           <div
             ref={cardBox}
             className="review__card card card-screen"
-            onClick={(e) => {
+            // YAZ-5298: the CAPTURE phase. A sound player stops each click inside it (the Mac's `cardMedia`, so its own
+            // clicks never reach the Mac's editor). Then a tap on its name, its time or its empty part never stepped the
+            // card. The capture sees every tap first; only the player's own controls keep theirs.
+            onClickCapture={(e) => {
               if (e.target instanceof Element && e.target.closest(CARD_OWN_TAPS) !== null) return
               advance()
             }}
@@ -488,7 +491,8 @@ function SessionScreen({
 }
 
 /** A tap on these in a card is theirs (open, play, look), never a step. */
-const CARD_OWN_TAPS = 'a[href], [data-card-link], [data-card-board], img, .card__audio, .page-media'
+/** What a tap keeps for itself (never a step): a link, a pill, a picture, a board, and a sound's Play and bar (YAZ-5298). */
+const CARD_OWN_TAPS = 'a[href], [data-card-link], [data-card-board], img, .card__audio-play, .card__audio-bar, .page-media'
 
 const shortName = (page: { text: string; fileTitle?: string } | null, id: string): string => {
   const t = page === null ? '' : (page.fileTitle ?? cardTitle(page.text)).trim()
