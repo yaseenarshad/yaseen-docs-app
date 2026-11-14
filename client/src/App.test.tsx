@@ -5745,22 +5745,25 @@ describe('App: the card flow (YAZ-4962)', () => {
   })
 
   /**
-   * YAZ-5009 round 2 (Yaseen: "esc again doesnt take me back to inbox"): the whole round trip over App's real wiring —
-   * the Inbox tab, its window keys, the Explore stack's keys on its root, the card window's real Edit card (Crepe and
-   * CodeMirror), and App's last Esc (`escapeOrder`). Each key goes where the browser sends it: to the element that
-   * has the keyboard (`document.activeElement`), not to a chosen component.
+   * YAZ-5009 round 2 (Yaseen: "esc again doesnt take me back to inbox"), over YAZ-5145 (the Inbox's E opens Explore's own
+   * page layer, in edit, landed on the card in Edit card): the whole round trip over App's real wiring — the Inbox tab,
+   * its window keys, the Explore stack's keys on its root, the real page editor in the layer and the card's real Edit
+   * card, and App's last Esc (`escapeOrder`). Each key goes where the browser sends it: to the element that has the
+   * keyboard (`document.activeElement`), not to a chosen component. Esc steps back one step at a time (Edit card, the
+   * layer's edit, the layer); ⌘↵ leaves the layer's edit at once (YAZ-4988), then goes back to the Inbox.
    */
   describe.each([
-    ['Esc', { key: 'Escape' }],
-    ['⌘↵', { key: 'Enter', metaKey: true }],
-  ] as const)('YAZ-5009: Inbox › E › Edit card › %s › read › the same key › back to the Inbox', (_name, done) => {
+    ['Esc', { key: 'Escape' }, 3],
+    ['⌘↵', { key: 'Enter', metaKey: true }, 2],
+  ] as const)('YAZ-5145: Inbox › E › the page layer in edit, the card in Edit card › %s › … › back to the Inbox', (_name, done, keys) => {
     const typed = (init: KeyboardEventInit) => act(async () => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })))
-    const layer = () => document.querySelector<HTMLElement>('.explore__layer[data-kind="card"]')
+    const layer = () => document.querySelector<HTMLElement>('.explore__layer[data-kind="page"]')
 
     it.each([
       ['the same text', ''],
       ['a changed text', ' (Seine)'],
-    ])('with %s: the second key closes the card window, the Inbox tab is active, at the same card and step', async (_what, added) => {
+    ])('with %s: the keys go back one step each, then the Inbox tab is active, at the same card and step', async (_what, added) => {
+      captured.realEditor = true
       const files = { [PAGE]: { content: page('<!-- card: WIKI-9 -->'), mtime: 1 }, '/v/a.md': { content: '# A\n', mtime: 1 } }
       const { el } = await mount(defaultAppState(), TABS, files, (b) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [record()], folders: [], generatedAt: 1, ids: true }))
       act(() => captured.sidebar?.onOpenInbox())
@@ -5769,24 +5772,25 @@ describe('App: the card flow (YAZ-4962)', () => {
       // One Space: the front's hidden word shows. That is the step to come back to.
       await typed({ key: ' ' })
       expect([sides(el), hidden(el)]).toEqual([1, ['France']])
-      // E: the card window, in Edit card at once, the caret in its text.
+      // E: Explore's own page layer (no card window), in edit, the card in Edit card, the caret in its text.
       await typed({ key: 'e' })
-      // YAZ-5026: the page's own editor in the card, holding the card's text.
-      const editor = () => layer()?.querySelector<HTMLElement>('[data-explore-card-edit] .card__editor .ProseMirror') ?? null
+      expect(document.querySelector('.explore__layer[data-kind="card"]')).toBeNull()
+      const editor = () => layer()?.querySelector<HTMLElement>('.explore__body--edit .card .card__editor .ProseMirror') ?? null
       await vi.waitFor(() => expect(editor()?.textContent).toContain('Paris'), { timeout: SLOW_RUNNER_MS })
       await vi.waitFor(() => expect(editor()?.contains(document.activeElement)).toBe(true))
       if (added !== '') {
         const inner = cardBlockViewOfDom(editor()!.closest('.card'))!.cardEditor!.view()!
         act(() => inner.dispatch(inner.state.tr.insertText(added, inner.state.doc.content.size - 1)))
       }
-      // The first key: Done, the card window reads (it stays open), the keyboard still in the layer.
-      await typed(done)
-      await vi.waitFor(() => expect(layer()?.querySelector('[data-explore-card-edit]')).toBeNull())
-      await vi.waitFor(() => expect(layer()?.querySelector('.card-screen')?.textContent).toContain(`Paris${added}`))
-      if (added !== '') await vi.waitFor(() => expect(files[PAGE].content).toContain(`{{Paris}}${added}`))
-      await act(async () => {})
-      expect(layer()?.contains(document.activeElement)).toBe(true)
-      // The second key: the card window closes, back to the Inbox tab, at the same card and step.
+      // The keys before the last: back to reading (Esc: Edit card's Done first), the layer stays, the keyboard in it.
+      for (let i = 0; i < keys - 1; i++) {
+        await typed(done)
+        await act(async () => {})
+      }
+      await vi.waitFor(() => expect(layer()?.querySelector('.explore__body--edit')).toBeNull(), { timeout: SLOW_RUNNER_MS })
+      if (added !== '') await vi.waitFor(() => expect(files[PAGE].content).toContain(`{{Paris}}${added}`), { timeout: SLOW_RUNNER_MS })
+      await vi.waitFor(() => expect(layer()?.contains(document.activeElement)).toBe(true))
+      // The last key: the layer closes, back to the Inbox tab, at the same card and step.
       await typed(done)
       await vi.waitFor(() => expect(document.querySelector('.explore')).toBeNull())
       const active = el.querySelector('.tabbar [role="tab"][aria-selected="true"]')
@@ -5798,9 +5802,9 @@ describe('App: the card flow (YAZ-4962)', () => {
       expect(inbox(el)?.contains(document.activeElement)).toBe(true)
       await typed({ key: ' ' })
       expect(sides(el)).toBe(2)
-      // No tab was opened by the ⌘↵ (the card window from the Inbox goes back, YAZ-5009).
+      // No tab was opened by the ⌘↵ (a layer from the Inbox goes back, YAZ-5009).
       expect([...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)).toEqual(['a', 'Inbox'])
-    })
+    }, 30_000)
   })
 })
 
@@ -5962,7 +5966,7 @@ describe('App: the card flow from /card, through the real editor (YAZ-4965)', ()
     act(() => captured.sidebar?.onOpenInbox())
     const inbox = () => el.querySelector<HTMLElement>('.card-inbox')
     await vi.waitFor(() => expect(inbox()?.querySelector('.card__side')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
-    // E Edit card in every vault (YAZ-5009): a read-only one unlocks the card's text alone, for the one edit.
+    // E Edit card in every vault (YAZ-5145: in a read-only one, Explore's own 'Allow edits?' asks first).
     expect([...el.querySelectorAll('.card-inbox__hints kbd')].map((k) => k.textContent)).toContain('E')
     const press = (key: string) => act(async () => void inbox()?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })))
     await press(' ')
