@@ -1,0 +1,474 @@
+/* Chapter 3, "The Inbox, each day" (YAZ-5121): the few arrangements its scenes need. App tokens only. */
+
+/* A big keycap on the stage (Space, 1, 2, Cmd + Z) */
+.kit-bigkey {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.4em;
+  padding: 0.45em 0.9em;
+  border: 1px solid var(--border);
+  border-bottom-width: 3px;
+  border-radius: 9px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+  color: var(--fg);
+  font-size: clamp(13px, 3.6cqmin, 20px);
+  font-weight: 600;
+}
+
+/* A week as a strip of days */
+.kit-week {
+  display: flex;
+  justify-content: center;
+  gap: clamp(4px, 1.4cqmin, 10px);
+}
+.kit-week__day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4em;
+  box-sizing: border-box;
+  width: clamp(36px, 9.5cqmin, 64px);
+  padding: 0.45em 0 0.6em;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg);
+  font-size: clamp(11px, 2.6cqmin, 14px);
+}
+.kit-week__day b {
+  color: var(--fg-muted);
+  font-weight: 600;
+}
+.kit-week__day.is-today {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.kit-week__day.is-missed {
+  border-style: dashed;
+  opacity: 0.45;
+}
+.kit-week__card {
+  display: block;
+  width: 62%;
+  aspect-ratio: 5 / 3;
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, var(--border));
+  border-radius: 3px;
+  background: var(--accent-soft);
+}
+
+/* c3-01 */
+.kit-habit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(10px, 3cqmin, 24px);
+  width: min(92cqw, 30em);
+}
+.kit-habit .kit-cardview--small {
+  width: min(80cqw, 24em);
+  font-size: clamp(12px, 3cqmin, 16px);
+}
+.kit-habit__loop {
+  display: block;
+  width: 100%;
+  height: 1.6em;
+  overflow: visible;
+}
+.kit-habit__loop path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* c3-02 */
+.kit-ask {
+  display: grid;
+  place-items: center;
+  width: 1.6em;
+  height: 1.6em;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: clamp(36px, 14cqmin, 96px);
+  font-weight: 800;
+  box-shadow: var(--kit-shadow);
+}
+
+/* c3-03, c3-04 */
+.kit-inboxrow__main {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: calc(100% - 33px);
+}
+.kit-inboxrow__main > * {
+  grid-area: 1 / 1;
+}
+.kit-inboxrow__cal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 78%;
+  max-height: 88%;
+}
+.kit-inboxrow__daily {
+  position: absolute;
+  left: 4%;
+  top: 8%;
+}
+.kit-inboxrow__zoom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.kit-inboxrow__row {
+  font-size: 1.6em;
+  min-width: 7em;
+  padding: 0.3em 0.6em;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-side);
+}
+.kit-inboxrow__row .sidebar__inbox-count {
+  margin-left: auto;
+  border-radius: 999px;
+}
+.kit-inboxrow__due {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: 22em;
+}
+.kit-inboxrow__due .kit-mini {
+  width: 7.5em;
+}
+
+/* c3-05: the stack under the card */
+.kit-onecard {
+  position: relative;
+}
+.kit-onecard__under {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-side);
+}
+.kit-onecard > .kit-inbox {
+  position: relative;
+}
+
+/* c3-06, c3-07, c3-23: the issue, the paper, the bars */
+.kit-issue {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+.kit-issue > * {
+  grid-area: 1 / 1;
+}
+.kit-issue__paper {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+.kit-retrieval__head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.kit-retrieval {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(6px, 2cqmin, 14px);
+}
+.kit-retrieval .kit-bars {
+  height: min(52cqh, 18em);
+}
+.kit-retrieval__work {
+  display: flex;
+  align-items: center;
+  gap: clamp(18px, 8cqmin, 72px);
+  color: var(--fg-muted);
+  font-size: clamp(12px, 3cqmin, 17px);
+  font-variant-numeric: tabular-nums;
+}
+.kit-retrieval__work b {
+  color: var(--fg);
+  font-size: 1.3em;
+}
+
+/* The answer as a small chip: ✕ Forgot, ✓ Remembered */
+.kit-answer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.3em 0.8em;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 0.92em;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.kit-answer-chip[data-rating='again'] {
+  color: var(--danger);
+}
+.kit-answer-chip[data-rating='good'] {
+  color: var(--ok);
+}
+
+/* c3-12, c3-13 */
+.kit-sooner__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.kit-sooner__card .kit-mini {
+  width: 11em;
+}
+.kit-sooner__answers {
+  display: flex;
+  gap: 6px;
+}
+.kit-sooner__cal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(54cqw, 22em);
+  max-height: 80cqh;
+}
+
+/* c3-14: today's line of cards */
+.kit-queue {
+  position: relative;
+  width: min(94cqw, 40em);
+  height: 9em;
+  font-size: clamp(10px, 2.8cqmin, 15px);
+}
+.kit-queue__now {
+  position: absolute;
+  left: 6%;
+  top: 0;
+  color: var(--accent);
+  font-size: 0.85em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.kit-queue__item {
+  position: absolute;
+  top: 2em;
+  width: 20%;
+}
+.kit-queue__item .kit-mini {
+  width: 100%;
+  box-sizing: border-box;
+}
+.kit-queue__mark {
+  position: absolute;
+  top: -0.7em;
+  right: -0.5em;
+  display: grid;
+  place-items: center;
+  width: 1.7em;
+  height: 1.7em;
+  border-radius: 50%;
+  background: var(--danger);
+  color: var(--bg);
+  font-weight: 800;
+}
+.kit-queue__mark[data-rating='good'] {
+  background: var(--ok);
+}
+
+/* c3-16 */
+.kit-tworow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(10px, 4cqmin, 28px);
+}
+.kit-tworow__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.kit-tworow .kit-cardview--small {
+  width: min(70cqw, 22em);
+  font-size: clamp(12px, 2.8cqmin, 15px);
+}
+.kit-tworow__checks {
+  display: flex;
+  gap: 8px;
+}
+
+/* c3-17 */
+.kit-dates__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0.45em 0.8em;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-size: clamp(12px, 3cqmin, 16px);
+}
+.kit-dates__box {
+  min-width: 7em;
+  padding: 0.15em 0.5em;
+  border: 1px dashed var(--border);
+  border-radius: 5px;
+  text-align: left;
+}
+.kit-dates__box s {
+  text-decoration-color: var(--danger);
+  text-decoration-thickness: 2px;
+}
+.kit-dates {
+  padding-top: 8%;
+}
+.kit-dates__answers {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 6px;
+}
+.kit-dates__gears {
+  width: min(20cqw, 8em);
+}
+.kit-dates__cal {
+  width: min(40cqw, 18em);
+  max-height: 64cqh;
+}
+
+/* c3-18 */
+.kit-missed__inbox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(42cqw, 13em);
+  padding: 8px 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-side);
+  font-size: 13px;
+  text-align: left;
+}
+
+/* c3-19 */
+.kit-ten {
+  display: flex;
+  gap: clamp(3px, 1cqmin, 8px);
+}
+.kit-ten__card {
+  display: block;
+  width: clamp(16px, 4.6cqmin, 30px);
+  aspect-ratio: 5 / 3.4;
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, var(--border));
+  border-radius: 3px;
+  background: var(--accent-soft);
+}
+.kit-settings {
+  box-sizing: border-box;
+  width: min(92cqw, 30em);
+  padding: 1em 1.2em;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+  font-size: 13px;
+  text-align: left;
+}
+.kit-settings__path {
+  margin: 0 0 0.8em;
+  font-size: 1.15em;
+  font-weight: 600;
+}
+.kit-settings__group {
+  margin: 0 0 0.5em;
+  color: var(--fg-muted);
+  font-size: 0.82em;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.kit-settings__row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.kit-settings__label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.kit-settings__label span {
+  color: var(--fg-muted);
+  font-size: 0.88em;
+}
+.kit-settings__value {
+  flex: none;
+  color: var(--fg-muted);
+}
+.kit-settings__box {
+  display: inline-block;
+  min-width: 3em;
+  padding: 3px 8px;
+  text-align: right;
+}
+
+/* c3-22 */
+.kit-clock {
+  width: min(28cqmin, 9em);
+  height: min(28cqmin, 9em);
+}
+.kit-clock__face {
+  fill: var(--bg);
+  stroke: var(--kit-line);
+  stroke-width: 2;
+}
+.kit-clock__slice {
+  fill: var(--accent-soft);
+}
+.kit-clock__hand {
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.kit-clock__pin {
+  fill: var(--accent);
+}
+.kit-next__gears {
+  width: min(26cqmin, 9em);
+}
+.kit-next__page {
+  box-sizing: border-box;
+  width: min(92cqw, 30em);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+  font-size: clamp(12px, 2.8cqmin, 15px);
+}
+.kit-next__slot {
+  overflow: hidden;
+}
+.kit-next__page .kit-cardview--small {
+  font-size: clamp(11px, 2.6cqmin, 14px);
+}

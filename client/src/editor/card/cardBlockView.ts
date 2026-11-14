@@ -65,6 +65,7 @@ import type { CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
 import { codeWidthSchema } from '../code/codeWidth'
 import { keyCapsDom } from '../../keys/keyWords'
+import { CARD_EDIT_KEYS } from './cardEditKeys'
 import { copyText, openMenuAt } from '../linkMenu'
 import type { MenuRow } from '../blockHandleMenu'
 import type { SlashRow } from '../slashMenu'
@@ -216,12 +217,8 @@ const button = (className: string, label: string, text: string): HTMLButtonEleme
   return b
 }
 
-/** The keys of Edit card (YAZ-5034), in the row under its editor. */
-export const CARD_EDIT_KEYS: ReadonlyArray<{ keys: string; label: string }> = [
-  { keys: '⌘L', label: 'hide word' },
-  { keys: '⌘⇧↵', label: 'new side' },
-  { keys: '⌘↵ / esc', label: 'Done' },
-]
+/** The keys of Edit card (YAZ-5034), in the row under its editor (`cardEditKeys.ts`). */
+export { CARD_EDIT_KEYS }
 
 /**
  * The quiet key row under Edit card's editor, on one line, keycaps as the Inbox's (`.explore__foot kbd`), in words

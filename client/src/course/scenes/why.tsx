@@ -92,7 +92,7 @@ function Forget(props: SceneProps) {
             {
               day: 6.6,
               r: memory(7, 1.6) + 0.09,
-              text: 'about 20% left',
+              text: 'about a quarter left',
               p: between(b, cue(b, 1, 0.757) + 0.04, 0.92),
               tone: 'strong',
               anchor: 'end',
@@ -769,7 +769,7 @@ function TryIt(props: SceneProps) {
               inbox={4}
               rows={[
                 { name: 'Course Cards', kind: 'folder' },
-                { name: 'Pages', kind: 'folder' },
+                { name: 'Projects', kind: 'folder' },
                 { name: 'Reading list', kind: 'page' },
               ]}
             />

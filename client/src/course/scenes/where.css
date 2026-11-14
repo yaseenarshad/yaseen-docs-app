@@ -1,0 +1,360 @@
+/* Chapter 4, "Where a card lives" (YAZ-5121): the few arrangements its scenes need. App tokens only. */
+
+.kit-where__tab {
+  position: relative;
+  height: calc(100% - 33px);
+  overflow: hidden;
+}
+.kit-where__file {
+  padding: 1.2em 1.5em;
+}
+.kit-where__file .kit-cardview {
+  width: 100%;
+  font-size: 14px;
+}
+.kit-where__page {
+  position: relative;
+  height: 100%;
+  transform-origin: 50% 30%;
+}
+.kit-where__page .kit-page {
+  padding: 1em 1.4em;
+}
+.kit-where__page .kit-cardview--small,
+.kit-where__page .kit-embed {
+  width: 100%;
+  font-size: 13px;
+}
+.kit-where__slot {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.kit-where__typing {
+  color: var(--fg);
+}
+.kit-where__newcard {
+  font-size: 13px;
+}
+.kit-where__newcard .card__edit {
+  margin-left: auto;
+  padding: 0 6px;
+  color: var(--fg-muted);
+}
+.kit-where__newcard .card__edit kbd {
+  font-family: inherit;
+  font-size: 11px;
+}
+.kit-where__newcard .card__more {
+  padding: 0 6px;
+  color: var(--fg-muted);
+}
+.kit-where__onefile {
+  position: absolute;
+  left: 3%;
+  bottom: 6%;
+}
+.kit-where__onecard {
+  position: absolute;
+  right: 4%;
+  top: 46%;
+}
+.kit-where__key {
+  display: inline-grid;
+  place-items: center;
+  padding: 0.45em 0.9em;
+  border: 1px solid var(--border);
+  border-bottom-width: 3px;
+  border-radius: 9px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+  font-size: clamp(13px, 3.6cqmin, 20px);
+  font-weight: 600;
+}
+
+/* c4-01 */
+.kit-beside {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(10px, 3cqmin, 26px);
+  width: 100%;
+}
+.kit-beside__file {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: min(44cqw, 18em);
+}
+.kit-beside__file .kit-cardview--small {
+  width: 100%;
+  font-size: clamp(11px, 2.6cqmin, 14px);
+}
+.kit-beside__page {
+  width: min(44cqw, 18em);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+  font-size: clamp(11px, 2.6cqmin, 14px);
+}
+.kit-beside__page .kit-app__bigtitle {
+  font-size: 1.5em;
+}
+
+/* The three places */
+.kit-places {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(8px, 3cqmin, 26px);
+  width: min(94cqw, 40em);
+}
+.kit-place {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5em;
+  min-width: 0;
+  padding: 0.7em 0.6em 0.8em;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+  font-size: clamp(11px, 2.8cqmin, 15px);
+}
+.kit-place__name {
+  font-weight: 600;
+}
+.kit-place__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  box-sizing: border-box;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  padding: 0.6em;
+  border-radius: 6px;
+  background: var(--bg-side);
+}
+.kit-place__tab {
+  width: 40%;
+  height: 0.5em;
+  border-radius: 3px;
+  background: var(--kit-line);
+}
+.kit-place__title {
+  width: 55%;
+  height: 0.6em;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--fg) 45%, transparent);
+}
+.kit-place__line {
+  display: block;
+  height: 0.32em;
+  border-radius: 2px;
+  background: var(--kit-faint);
+}
+.kit-place__card,
+.kit-place__embed {
+  position: relative;
+  flex: 1;
+  min-height: 1.6em;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 65%, var(--border));
+  border-radius: 5px;
+  background: var(--accent-soft);
+}
+.kit-place__embed {
+  border-style: solid;
+  background: var(--bg);
+}
+.kit-place__embed-head {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 0.9em;
+  padding-left: 0.3em;
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.7em;
+  line-height: 0.9em;
+  text-align: left;
+}
+.kit-three {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+.kit-three__arrows {
+  display: block;
+  width: min(94cqw, 40em);
+  height: clamp(24px, 9cqh, 56px);
+  overflow: visible;
+}
+.kit-three__arrows path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.kit-three__inbox {
+  padding: 0.4em 1em;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+  font-size: clamp(13px, 3.2cqmin, 17px);
+}
+
+/* c4-08 to c4-11 */
+.kit-embedscene {
+  position: relative;
+}
+.kit-embedscene__chat {
+  position: absolute;
+  right: -2%;
+  bottom: -4%;
+  width: min(60cqw, 22em);
+}
+.kit-embedscene__chat .kit-chat {
+  width: 100%;
+}
+
+/* c4-12 */
+.kit-move {
+  position: relative;
+  width: min(94cqw, 40em);
+}
+.kit-move__card {
+  position: absolute;
+  top: 54%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 30%;
+  pointer-events: none;
+}
+.kit-move__box {
+  box-sizing: border-box;
+  width: 80%;
+  padding: 0.5em 0.6em;
+  overflow: hidden;
+  border: 1.5px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+  font-size: clamp(10px, 2.4cqmin, 13px);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kit-move__history {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ok);
+  font-size: clamp(10px, 2.2cqmin, 12px);
+}
+
+/* c4-13 */
+.kit-which {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(12px, 5cqmin, 40px);
+  width: min(80cqw, 30em);
+}
+
+/* c4-15 */
+.kit-every {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  font-size: clamp(10px, 2.6cqmin, 14px);
+}
+.kit-every__lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.kit-every__lines line {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+  vector-effect: non-scaling-stroke;
+}
+.kit-every__page {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  box-sizing: border-box;
+  width: 10.5em;
+  margin: -2.6em 0 0 -5.25em;
+  padding: 0.6em 0.7em;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+  text-align: left;
+}
+.kit-every__title {
+  font-weight: 600;
+}
+.kit-every__page i {
+  display: block;
+  width: 90%;
+  height: 0.35em;
+  border-radius: 2px;
+  background: var(--kit-faint);
+}
+.kit-every__embed {
+  overflow: hidden;
+  padding: 0.25em 0.4em;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--fg);
+  font-size: 0.85em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kit-every__card {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4em;
+  width: 12em;
+  margin: -2em 0 0 -6em;
+  padding: 0.7em;
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: 0 0 0 6px var(--accent-soft), var(--kit-shadow);
+}
+.kit-every__cardtitle {
+  font-weight: 700;
+}
+.kit-every__home {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--fg-muted);
+  font-size: 0.85em;
+}
+.kit-every__far {
+  position: absolute;
+  width: 3.2em;
+  height: 2.2em;
+  margin: -1.1em 0 0 -1.6em;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+}

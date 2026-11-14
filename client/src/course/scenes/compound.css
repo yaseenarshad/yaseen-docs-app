@@ -1,0 +1,415 @@
+/* Chapter 5, "Why it is worth it" (YAZ-5121): the few arrangements its scenes need. App tokens; the drawings' wood
+   and paper are plain colours, as the kit's index card is. */
+
+/* c5-01 */
+.kit-sofar {
+  grid-template-columns: minmax(0, 1fr);
+  width: min(86cqw, 24em);
+  font-size: clamp(13px, 3.4cqmin, 19px);
+}
+.kit-sofar li {
+  align-items: center;
+}
+.kit-sofar li span:nth-child(2) {
+  flex: 1;
+}
+.kit-sofar__tick {
+  color: var(--ok);
+  font-weight: 800;
+}
+
+/* c5-02 */
+.kit-interest {
+  display: block;
+  width: min(90cqw, 36em);
+  max-height: 72cqh;
+  overflow: visible;
+}
+.kit-interest__base {
+  fill: color-mix(in srgb, var(--fg-muted) 45%, transparent);
+}
+.kit-interest__grow {
+  fill: var(--accent);
+}
+.kit-interest__key {
+  display: flex;
+  gap: 1.4em;
+  color: var(--fg-muted);
+  font-size: clamp(11px, 2.6cqmin, 14px);
+}
+.kit-interest__key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+}
+.kit-interest__swatch {
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--fg-muted) 45%, transparent);
+}
+.kit-interest__swatch--grow {
+  background: var(--accent);
+}
+
+/* c5-04 */
+.kit-five {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(4px, 1.4cqmin, 10px);
+  font-size: clamp(9px, 2.2cqmin, 13px);
+}
+.kit-five .kit-mini {
+  width: 7.5em;
+}
+.kit-five__year {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.kit-five__year .kit-tally {
+  width: min(80cqw, 30em);
+  max-height: 42cqh;
+}
+
+/* c5-05 */
+.kit-pile {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: clamp(24px, 10cqmin, 90px);
+}
+.kit-pile__col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+}
+.kit-pile__stack {
+  position: relative;
+  width: clamp(70px, 22cqmin, 150px);
+  height: min(56cqh, 15em);
+}
+.kit-pile__stack i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2.1%;
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--border));
+  border-radius: 2px;
+  background: var(--bg);
+}
+.kit-pile__col--today .kit-pile__stack i {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* c5-13 to c5-15: one card's path */
+.kit-path {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  overflow: visible;
+}
+.kit-path__arc {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.kit-path__arc.is-away {
+  stroke-width: 3.5;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 50%, transparent));
+}
+.kit-path__gap {
+  font-weight: 600;
+}
+.kit-path__here {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+}
+.kit-path__card {
+  fill: var(--bg);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.kit-who {
+  width: min(70cqw, 20em);
+  height: 74cqh;
+}
+.kit-who__words {
+  display: grid;
+}
+.kit-who__words > * {
+  grid-area: 1 / 1;
+}
+
+/* c5-06 */
+.kit-cabinet {
+  width: min(48cqw, 20em);
+  max-height: 70cqh;
+}
+.kit-cabinet__body {
+  fill: #7a4f2a;
+}
+.kit-cabinet__drawer {
+  fill: #a8733f;
+  stroke: #5e3b1d;
+  stroke-width: 1.2;
+}
+.kit-cabinet__handle {
+  fill: #e5d3a8;
+}
+.kit-cabinet__slip {
+  fill: #fbf7ea;
+  stroke: #d8cfb8;
+  stroke-width: 0.5;
+}
+.kit-luhmann__facts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  text-align: left;
+}
+.kit-luhmann__count {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4em;
+}
+.kit-luhmann__number {
+  color: var(--accent);
+  font-size: clamp(30px, 11cqmin, 84px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+/* c5-07 */
+.kit-shelf {
+  display: block;
+  width: min(92cqw, 40em);
+  max-height: 64cqh;
+}
+.kit-shelf__board {
+  stroke: #8a5a2b;
+  stroke-width: 3;
+}
+.kit-shelf__spine {
+  fill: color-mix(in srgb, var(--fg-muted) 55%, transparent);
+}
+.kit-shelf__book {
+  fill: var(--accent);
+}
+.kit-books__count {
+  display: flex;
+  gap: 1.6em;
+  font-size: clamp(14px, 4cqmin, 24px);
+}
+.kit-books__count b {
+  font-size: 1.3em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* c5-08 */
+.kit-holiday__head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.kit-boxes {
+  display: block;
+  width: min(92cqw, 38em);
+  max-height: 56cqh;
+}
+.kit-boxes__box {
+  fill: color-mix(in srgb, var(--fg) 6%, var(--bg));
+  stroke: var(--kit-line);
+  stroke-width: 1.5;
+}
+.kit-boxes__card {
+  stroke: color-mix(in srgb, var(--fg) 30%, var(--bg));
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+.kit-boxes__link {
+  fill: none;
+  stroke: var(--kit-gold);
+  stroke-width: 2;
+}
+
+/* c5-09, c5-10 */
+.kit-life {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(8px, 3cqmin, 24px);
+  width: min(96cqw, 44em);
+}
+.kit-life__panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5em;
+  min-width: 0;
+  padding: 0.7em 0.5em;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+  font-size: clamp(10px, 2.6cqmin, 14px);
+}
+.kit-life__art {
+  display: block;
+  width: 100%;
+  max-height: 38cqh;
+  overflow: visible;
+}
+.kit-life__name {
+  font-weight: 600;
+}
+.kit-life__table {
+  fill: color-mix(in srgb, var(--fg) 8%, var(--bg));
+  stroke: var(--kit-line);
+}
+.kit-life__person {
+  fill: color-mix(in srgb, var(--fg-muted) 50%, transparent);
+}
+.kit-life__you {
+  fill: var(--accent);
+}
+.kit-life__card {
+  fill: var(--bg);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.kit-life__cardline {
+  stroke: var(--kit-line);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.kit-life__french {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5em 0.6em;
+  padding: 0.6em 0.2em;
+}
+.kit-life__word {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15em;
+}
+.kit-life__word b {
+  font-family: Charter, 'Iowan Old Style', Georgia, serif;
+  font-size: 1.15em;
+}
+.kit-life__word i {
+  color: var(--accent);
+  font-size: 0.82em;
+  font-style: normal;
+}
+.kit-life__cycle {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+}
+.kit-life__node {
+  fill: var(--accent);
+}
+
+/* c5-11 */
+.kit-base2 {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: clamp(4px, 1.4cqmin, 10px);
+  width: min(96cqw, 46em);
+  font-size: clamp(7px, 1.8cqmin, 11px);
+}
+.kit-base2 .kit-mini {
+  width: 100%;
+}
+.kit-base2__label {
+  padding: 0.35em 1em;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: clamp(13px, 3.6cqmin, 20px);
+  font-weight: 700;
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* c5-12 */
+.kit-yours {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: clamp(16px, 8cqmin, 64px);
+  width: 100%;
+}
+.kit-yours__pile {
+  position: relative;
+  width: clamp(80px, 22cqmin, 150px);
+  height: min(56cqh, 15em);
+}
+.kit-yours__card {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 18%;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.kit-yours__held {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: clamp(120px, 34cqmin, 220px);
+}
+.kit-yours__one {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4em;
+  box-sizing: border-box;
+  width: 70%;
+  aspect-ratio: 5 / 3;
+  margin-bottom: -18%;
+  padding: 0.8em;
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bg);
+  box-shadow: 0 0 0 5px var(--accent-soft), var(--kit-shadow);
+}
+.kit-yours__one i {
+  display: block;
+  width: 90%;
+  height: 0.4em;
+  border-radius: 2px;
+  background: var(--kit-line);
+}
+.kit-hand {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+.kit-hand path {
+  fill: none;
+  stroke: var(--fg);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

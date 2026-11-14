@@ -6,6 +6,7 @@
  */
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { SceneProps } from '../scene'
+import { useUnit } from '../../vault/unitWord'
 import { PAPERS } from './papers'
 import { CANDID, MANY_TITLES, PROTEIN } from './cards'
 import { draftText, draftTitle, firstCardInput, makeFirstCard, type MadeCard } from './makeCard'
@@ -13,6 +14,8 @@ import {
   Answers,
   AppWindow,
   Caret,
+  CardDoneKeys,
+  CardEditKeyRow,
   CardView,
   Fit,
   IndexCard,
@@ -31,8 +34,10 @@ import {
   between,
   clamp,
   cue,
+  editKey,
   hub,
   lerp,
+  litFocus,
   moved,
   pop,
   rise,
@@ -129,7 +134,7 @@ function ProteinCard(props: SceneProps) {
       }
     >
       <Layer>
-        <Fit>
+        <Fit min={0.8} focus={litFocus(b, lit, 6)}>
           <div style={rise(b, front ? since(b, 0, 0.7) : 1, 16)}>
             <CardView
               beat={b}
@@ -191,7 +196,7 @@ function CandidCard(props: SceneProps) {
   return (
     <Stage beat={b} label={front ? 'A card for a word: a sentence that uses it, then what it means; the word is hidden in both' : 'Its back: how to say it, where it comes from, more examples'}>
       <Layer>
-        <Fit>
+        <Fit min={0.8} focus={litFocus(b, lit, 7)}>
           <div style={rise(b, front ? since(b, 0, 0.7) : 1, 16)}>
             <CardView
               beat={b}
@@ -216,11 +221,12 @@ function CandidCard(props: SceneProps) {
 /** c2-23: one bare line, the real card, a whole page; the card is the size that works. */
 function Sizes(props: SceneProps) {
   const b = useBeat(props)
+  const unit = useUnit()
   const left = since(b, 0.1, 0.6)
   const right = since(b, 0.33, 0.6)
   const pick = since(b, 0.55, 0.6)
   return (
-    <Stage beat={b} label="More than one line, far less than a page: the short version on the front, the details on the back">
+    <Stage beat={b} label={unit('More than one line, far less than a page: the short version on the front, the details on the back')}>
       <Layer>
         <div className="kit-sizes">
           <div
@@ -251,7 +257,7 @@ function Sizes(props: SceneProps) {
                 <i key={i} style={{ width: `${70 + ((i * 37) % 30)}%` }} />
               ))}
             </span>
-            <Words size="page">A whole page</Words>
+            <Words size="page">{unit('A whole page')}</Words>
           </div>
         </div>
         <div className="kit-tags">
@@ -294,7 +300,7 @@ function Grows(props: SceneProps) {
   return (
     <Stage beat={b} label="A card starts light and grows as you learn more">
       <Layer>
-        <Fit>
+        <Fit min={0.8} focus={litFocus(b, [0, 0, 0, g3, g4, g5], 6)}>
           <div style={rise(b, since(b, 0, 0.6), 12)}>
             <CardView
               beat={b}
@@ -613,7 +619,7 @@ function MakeCard(props: SceneProps) {
         active: true,
         glow: since(b, 0.3, 0.6) * (1 - since(b, 0.85, 0.6)),
       },
-      { name: 'Pages', kind: 'folder' },
+      { name: 'Projects', kind: 'folder' },
       { name: 'Reading list', kind: 'page' },
     ]
     stage = (
@@ -650,11 +656,12 @@ const NEW_MENU = ['New page', 'New card', 'New folder', 'New board']
 
 /**
  * c2-15 to c2-21, one span: the same steps in the app, in a copy of its parts. A right-click on a folder, New card, the
- * name, Enter; the front; Hide word in the toolbar (⌘L); `/` New side (⌘⇧↵); three stars make a section; Esc or Done;
+ * name, Enter; the front; Hide word in the toolbar (Cmd + L); `/` New side (Cmd + Shift + Enter); three stars make a section; Esc or Done;
  * the title at the top of the tab; the card's menu, Title on the front.
  */
 function InTheApp(props: SceneProps) {
   const b = useBeat(props)
+  const unit = useUnit()
   const id = props.clip.id
   const order = ['c2-15', 'c2-16', 'c2-17', 'c2-29', 'c2-20', 'c2-14', 'c2-21']
   const step = order.indexOf(id)
@@ -703,7 +710,7 @@ function InTheApp(props: SceneProps) {
           },
         ]
       : []),
-    { name: 'Pages', kind: 'folder' },
+    { name: 'Projects', kind: 'folder' },
     { name: 'Reading list', kind: 'page' },
   ]
 
@@ -801,7 +808,7 @@ function InTheApp(props: SceneProps) {
   return (
     <Stage beat={b} label="In the app: make a card, hide a word, add a side and a section, save, rename, and the card's menu">
       <Layer>
-        <AppWindow sidebar={<SidebarPreview rows={rows} inbox={4} />} label="The app, with made-up pages">
+        <AppWindow sidebar={<SidebarPreview rows={rows} inbox={4} />} label={unit('The app, with made-up pages')}>
           <div className="kit-app__tabbar">{created && <span className="kit-app__tabname">{tabTitle}</span>}</div>
           {created && (
             <div className="kit-app__tab">
@@ -814,7 +821,7 @@ function InTheApp(props: SceneProps) {
                   <div className="card__head">
                     <span className="card__id">P2X9</span>
                     <span className="card__edit">
-                      Done <kbd>esc</kbd> <kbd>⌘↵</kbd>
+                      <CardDoneKeys />
                     </span>
                     <span className="card__more">⋯</span>
                   </div>
@@ -861,17 +868,7 @@ function InTheApp(props: SceneProps) {
                       </p>
                     )}
                   </div>
-                  <div className="card__keys">
-                    <span>
-                      <kbd>⌘L</kbd> hide word
-                    </span>
-                    <span>
-                      <kbd>⌘⇧↵</kbd> new side
-                    </span>
-                    <span>
-                      <kbd>⌘↵</kbd> / <kbd>esc</kbd> Done
-                    </span>
-                  </div>
+                  <CardEditKeyRow />
                 </div>
               ) : (
                 <div className="kit-readcard">
@@ -908,7 +905,7 @@ function InTheApp(props: SceneProps) {
               { label: 'T' },
               {
                 label: 'Hide word',
-                key: '⌘L',
+                key: editKey('hide word'),
                 wide: true,
                 active: since(b, 0.36, 0.2),
               },
@@ -921,7 +918,7 @@ function InTheApp(props: SceneProps) {
             x={36}
             y={44}
             p={id === 'c2-17' ? showFor(since(b, 0.21, 0.25), since(b, 0.47, 0.2)) : 0}
-            rows={[{ label: 'New side', key: '⌘⇧↵', active: since(b, 0.4, 0.2) }, { label: 'Heading 1' }, { label: 'Bullet list' }, { label: 'Quote' }]}
+            rows={[{ label: 'New side', active: since(b, 0.4, 0.2) }, { label: 'Heading 1' }, { label: 'Bullet list' }, { label: 'Quote' }]}
           />
           <MenuPreview
             beat={b}
@@ -941,7 +938,7 @@ function InTheApp(props: SceneProps) {
           />
           <Pointer beat={b} from={pointer.from} to={pointer.to} move={pointer.move} click={pointer.click} show={pointer.show} />
         </AppWindow>
-        <Keys p={keys} items={id === 'c2-17' ? [{ keys: 'Cmd Shift Enter', label: 'new side' }] : [{ keys: 'Cmd L', label: 'hide word' }]} />
+        <Keys p={keys} items={id === 'c2-17' ? [{ keys: editKey('new side'), label: 'new side' }] : [{ keys: editKey('hide word'), label: 'hide word' }]} />
       </Layer>
     </Stage>
   )
@@ -1019,7 +1016,7 @@ function HubAndInbox(props: SceneProps) {
               rows={[
                 { name: 'Course Cards', kind: 'folder', open: true },
                 { name: 'Sleep debt adds up', kind: 'card', depth: 1 },
-                { name: 'Pages', kind: 'folder' },
+                { name: 'Projects', kind: 'folder' },
               ]}
             />
           }

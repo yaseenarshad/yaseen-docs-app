@@ -85,6 +85,16 @@ export const PAPERS = {
     quote: false,
     source: 'script.ts c2-24: Wozniak 1999, rule 4, supermemo.com.',
   },
+  karpicke2008: {
+    id: 'karpicke2008',
+    journal: 'Science',
+    title: 'The Critical Importance of Retrieval for Learning',
+    authors: ['Karpicke', 'Roediger'],
+    year: 2008,
+    line: 'Once a word was learned, more testing helped a week later. More studying did not.',
+    quote: false,
+    source: 'script.ts c3-06, c3-07, c3-23: Karpicke & Roediger 2008, Science 319(5865):966-968, 15 February 2008; Fig. 2 (80% against 36%) and Table 1 (236.8 against 243.0 trials).',
+  },
 } as const satisfies Record<string, PaperCite>
 
 export type PaperId = keyof typeof PAPERS

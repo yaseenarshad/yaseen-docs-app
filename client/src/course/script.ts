@@ -197,54 +197,54 @@ export const COURSE: CourseChapter[] = [
     title: 'The Inbox, each day',
     clips: [
       // The card from chapter 2, in the Course Cards folder.
-      { id: 'c3-01', text: 'You made your first card. Here is the daily habit that brings it back.' },
+      { id: 'c3-01', text: 'You made your first card. Here is the daily habit that brings it back.', marks: [0.6, 0.771] },
       // A calendar with many cards on many days; it fades.
-      { id: 'c3-02', text: 'So which card do you look at, and when?' },
+      { id: 'c3-02', text: 'So which card do you look at, and when?', marks: [0.705] },
       // The real sidebar; the Inbox row lights up.
-      { id: 'c3-03', text: 'The app keeps track of the dates for you. All you do is open the Inbox every day.' },
+      { id: 'c3-03', text: 'The app keeps track of the dates for you. All you do is open the Inbox every day.', marks: [0.636, 0.802] },
       // The Inbox row's number, "4".
-      { id: 'c3-04', text: 'The Inbox is in the sidebar. The number beside it is how many cards are due now.' },
+      { id: 'c3-04', text: 'The Inbox is in the sidebar. The number beside it is how many cards are due now.', marks: [0.439, 0.798] },
       // The real Inbox on sample cards: one card in the middle, "1 of 4".
-      { id: 'c3-05', text: 'The Inbox shows one card at a time. Look at the card, and try to recall what is hidden.' },
+      { id: 'c3-05', text: 'The Inbox shows one card at a time. Look at the card, and try to recall what is hidden.', marks: [0.182, 0.752] },
       // The cover of the journal Science, 15 February 2008; a paper slides out: "The Critical Importance of Retrieval for Learning"; one sentence is highlighted.
       // SOURCE: Karpicke & Roediger 2008, "The Critical Importance of Retrieval for Learning", Science 319(5865):966-968.
-      { id: 'c3-06', text: 'Trying to recall is what makes it stick. A study in the journal Science put it to the test.' },
+      { id: 'c3-06', text: 'Trying to recall is what makes it stick. A study in the journal Science put it to the test.', marks: [0.613, 0.801] },
       // Two bars rise, one week later: "Kept testing themselves: 80%", "Kept re-reading, no testing: 36%".
       // SOURCE: the same paper, Fig. 2 and text: about 80% recalled in the repeated-testing conditions (ST, SnT); 36% in the repeated-study, no-more-testing condition (STn).
-      { id: 'c3-07', text: 'People who kept testing themselves remembered 80 percent a week later. People who kept re-reading, with no testing, remembered 36 percent.' },
+      { id: 'c3-07', text: 'People who kept testing themselves remembered 80 percent a week later. People who kept re-reading, with no testing, remembered 36 percent.', marks: [0.256, 0.827] },
       // Under the bars: "Rounds of practice: 237 and 243".
       // SOURCE: the same paper, Table 1: 236.8 trials (SnT, repeated testing) against 243.0 trials (STn, repeated study).
-      { id: 'c3-23', text: 'About the same amount of work. More than double the memory.' },
+      { id: 'c3-23', text: 'About the same amount of work. More than double the memory.', marks: [0.181, 0.617] },
       // Space; the hidden word shows, then the back.
-      { id: 'c3-08', text: 'Press Space to show the hidden words, one at a time, and then the back.' },
+      { id: 'c3-08', text: 'Press Space to show the hidden words, one at a time, and then the back.', marks: [0.062, 0.477, 0.777] },
       // Forgot and Remembered show under the card.
-      { id: 'c3-09', text: 'Then choose Forgot or Remembered. Be honest. It only helps you.' },
+      { id: 'c3-09', text: 'Then choose Forgot or Remembered. Be honest. It only helps you.', marks: [0.14, 0.336] },
       // The hover on Remembered: "Remembered · 9 days".
-      { id: 'c3-10', text: 'Hold the pointer on a button to see when the card comes back.' },
+      { id: 'c3-10', text: 'Hold the pointer on a button to see when the card comes back.', marks: [0.291, 0.54] },
       // The key row: 1 and 2 on the buttons; ⌘Z.
-      { id: 'c3-11', text: 'You can also press 1 for Forgot and 2 for Remembered. Command Z takes back the last answer.' },
+      { id: 'c3-11', text: 'You can also press 1 for Forgot and 2 for Remembered. Command Z takes back the last answer.', marks: [0.155, 0.371, 0.629, 0.774] },
       // The calendar again, under the card.
-      { id: 'c3-12', text: 'Based on that, the app moves the calendar for you.' },
+      { id: 'c3-12', text: 'Based on that, the app moves the calendar for you.', marks: [0.442] },
       // Forgot; the card's date moves closer.
-      { id: 'c3-13', text: 'If you forgot, the card comes back sooner, so you can learn it again.' },
+      { id: 'c3-13', text: 'If you forgot, the card comes back sooner, so you can learn it again.', marks: [0.122, 0.455] },
       // The forgotten card goes to the end of the queue and comes round again.
-      { id: 'c3-14', text: 'In fact, a card you forgot comes back later in the same review, until you remember it.' },
+      { id: 'c3-14', text: 'In fact, a card you forgot comes back later in the same review, until you remember it.', marks: [0.283, 0.713] },
       // Remembered; the card's date moves further, a bigger gap each time.
-      { id: 'c3-15', text: 'If you remembered, the card waits longer. Each time you remember it, the wait grows.' },
+      { id: 'c3-15', text: 'If you remembered, the card waits longer. Each time you remember it, the wait grows.', marks: [0.276, 0.605, 0.776] },
       // A new card: two check marks, then it leaves for a later day.
-      { id: 'c3-16', text: 'A new card needs two Remembered in a row. Then it leaves for a day or more.' },
+      { id: 'c3-16', text: 'A new card needs two Remembered in a row. Then it leaves for a day or more.', marks: [0.227, 0.352, 0.63] },
       // The dates fill in by themselves.
-      { id: 'c3-17', text: 'You never set a date. The app works out each date from your answers.' },
+      { id: 'c3-17', text: 'You never set a date. The app works out each date from your answers.', marks: [0.183, 0.766] },
       // A few days pass on the calendar; the due cards wait in the Inbox.
-      { id: 'c3-18', text: "Missed a day? That's fine. The cards that are due wait in the Inbox until you come back." },
+      { id: 'c3-18', text: "Missed a day? That's fine. The cards that are due wait in the Inbox until you come back.", marks: [0.069, 0.664] },
       // "New cards a day: 10" in Settings › Review.
-      { id: 'c3-19', text: 'To keep it light, the Inbox brings at most ten new cards a day. You can change that number in Settings.' },
+      { id: 'c3-19', text: 'To keep it light, the Inbox brings at most ten new cards a day. You can change that number in Settings.', marks: [0.399, 0.776] },
       // The done screen: "Inbox complete."
-      { id: 'c3-20', text: "When nothing is left, the Inbox says Inbox complete. That's it for today." },
+      { id: 'c3-20', text: "When nothing is left, the Inbox says Inbox complete. That's it for today.", marks: [0.157, 0.451] },
       // The "Try it in the app" button and "Next chapter".
-      { id: 'c3-21', text: 'To answer your own card in the real app, choose Try it in the app.' },
+      { id: 'c3-21', text: 'To answer your own card in the real app, choose Try it in the app.', marks: [0.649] },
       // A page of text, with a space between two paragraphs.
-      { id: 'c3-22', text: 'A few minutes a day, and the algorithm does the rest. Next: your cards can live right inside your pages.' },
+      { id: 'c3-22', text: 'A few minutes a day, and the algorithm does the rest. Next: your cards can live right inside your pages.', marks: [0.221, 0.483, 0.809] },
     ],
     tryIt: [
       { target: 'sidebar-course-cards', say: 'Right-click the Course Cards folder.', done: { event: 'folder-menu-open' } },
@@ -259,39 +259,39 @@ export const COURSE: CourseChapter[] = [
     title: 'Where a card lives',
     clips: [
       // The card file and the Inbox, side by side.
-      { id: 'c4-01', text: 'So far, your card is a file of its own. It can also live beside your pages.' },
+      { id: 'c4-01', text: 'So far, your card is a file of its own. It can also live beside your pages.', marks: [0.336, 0.714] },
       // Three empty frames side by side: "By itself", "In a page", "Embedded".
-      { id: 'c4-02', text: 'A card can live in three places. The review works the same in each one.' },
+      { id: 'c4-02', text: 'A card can live in three places. The review works the same in each one.', marks: [0.22, 0.535] },
       // The card file from chapter 2 in its own tab.
-      { id: 'c4-03', text: "First, a card by itself. That's the card file you made: one file, one card." },
+      { id: 'c4-03', text: "First, a card by itself. That's the card file you made: one file, one card.", marks: [0.453, 0.657, 0.793] },
       // A page of text with a card between two paragraphs.
-      { id: 'c4-04', text: 'Second, a card inside a page. Your pages on a topic can hold cards right beside the text.' },
+      { id: 'c4-04', text: 'Second, a card inside a page. Your pages on a topic can hold cards right beside the text.', marks: [0.193, 0.783] },
       // A "/card" typed in a page; a new card opens for editing.
-      { id: 'c4-05', text: 'In a page, type slash card, and press Enter. A new card opens, ready to edit.' },
+      { id: 'c4-05', text: 'In a page, type slash card, and press Enter. A new card opens, ready to edit.', marks: [0.446, 0.652] },
       // A card in a page with its ⋯ menu, its Reviews, and the Inbox behind it.
-      { id: 'c4-06', text: 'A card in a page has the same menu, the same history, and the same Inbox.' },
+      { id: 'c4-06', text: 'A card in a page has the same menu, the same history, and the same Inbox.', marks: [0.336, 0.595, 0.784] },
       // A page's right-click menu: "Review this page".
-      { id: 'c4-07', text: 'To review only the cards of one page, right-click the page, and choose Review this page.' },
+      { id: 'c4-07', text: 'To review only the cards of one page, right-click the page, and choose Review this page.', marks: [0.424, 0.724] },
       // A page shows a card that lives in another file; an arrow back to the card file.
-      { id: 'c4-08', text: 'Third, a card embedded in a page. The card lives in one place, and the page shows it.' },
+      { id: 'c4-08', text: 'Third, a card embedded in a page. The card lives in one place, and the page shows it.', marks: [0.545, 0.853] },
       // The card's ⋯ menu, "Copy card link"; a paste in the page, a pill; a right-click on the pill, "Show as embed".
       // APP: client/src/review/cardPane.tsx ("Copy card link" copies `[[ID]]`, on the card file tab), client/src/editor/linkMenu.ts ("Show as embed"),
       // client/src/editor/card/cardEmbed.test.ts. v3: the paste chip's "Embed" shows only for a pasted card file PATH (client/src/editor/pathPaste.ts), not for `[[ID]]`.
-      { id: 'c4-09', text: "To embed one, copy the card's link from its menu, and paste it in a page. Then right-click the link, and choose Show as embed." },
+      { id: 'c4-09', text: "To embed one, copy the card's link from its menu, and paste it in a page. Then right-click the link, and choose Show as embed.", marks: [0.183, 0.391, 0.624, 0.841] },
       // A short message to the agent: "Embed my protein card in the Food page"; the embed appears in the page.
-      { id: 'c4-16', text: 'Or just tell your agent: embed this card in that page.' },
+      { id: 'c4-16', text: 'Or just tell your agent: embed this card in that page.', marks: [0.393, 0.861] },
       // The embed's head: ↗ Embedded from "…" · ID.
-      { id: 'c4-10', text: "The embed has a small head that says Embedded from, with the card's title." },
+      { id: 'c4-10', text: "The embed has a small head that says Embedded from, with the card's title.", marks: [0.446, 0.802] },
       // Edit card on the embed; the card file changes too.
-      { id: 'c4-11', text: 'Edit an embed, and you change the one real card. Its history stays with it.' },
+      { id: 'c4-11', text: 'Edit an embed, and you change the one real card. Its history stays with it.', marks: [0.404, 0.659] },
       // A card moves between the three frames; its history line follows.
-      { id: 'c4-12', text: 'You can move a card between these places at any time. Its history goes with it.' },
+      { id: 'c4-12', text: 'You can move a card between these places at any time. Its history goes with it.', marks: [0.221, 0.669] },
       // Two labels: "A fact on its own" under the card file, "Part of your pages" under the page.
-      { id: 'c4-13', text: 'Use a card file for a fact on its own. Use a card in a page when it belongs with your pages.' },
+      { id: 'c4-13', text: 'Use a card file for a fact on its own. Use a card in a page when it belongs with your pages.', marks: [0.211, 0.744] },
       // The "Try it in the app" button and "Next chapter".
-      { id: 'c4-14', text: 'To embed your first card in a page, choose Try it in the app.' },
+      { id: 'c4-14', text: 'To embed your first card in a page, choose Try it in the app.', marks: [0.621] },
       // One card shown in three pages at once; lines lead back to it. Then the stage widens.
-      { id: 'c4-15', text: 'This is the mix and match from before: one card, one home, shown wherever it helps. Next: where all of this can take you.' },
+      { id: 'c4-15', text: 'This is the mix and match from before: one card, one home, shown wherever it helps. Next: where all of this can take you.', marks: [0.278, 0.475, 0.798] },
     ],
     tryIt: [
       { target: 'card-menu', say: "Open your card's menu: the three dots in its head.", done: 'click' },
@@ -305,39 +305,39 @@ export const COURSE: CourseChapter[] = [
     title: 'Why it is worth it',
     clips: [
       // The four chapters so far, as four small ticks.
-      { id: 'c5-01', text: 'You can make, review and place a card. Now, why it is worth doing.' },
+      { id: 'c5-01', text: 'You can make, review and place a card. Now, why it is worth doing.', marks: [0.069, 0.201, 0.318, 0.733] },
       // A small sum grows on itself, like interest on savings.
-      { id: 'c5-02', text: 'What you learn this way compounds. To compound is to grow on itself, like interest.' },
+      { id: 'c5-02', text: 'What you learn this way compounds. To compound is to grow on itself, like interest.', marks: [0.218, 0.621, 0.833] },
       // One card, then a new card that hooks onto it.
-      { id: 'c5-03', text: 'Each thing you keep gives the next thing something to hold on to.' },
+      { id: 'c5-03', text: 'Each thing you keep gives the next thing something to hold on to.', marks: [0.421, 0.679] },
       // A counter: 5 cards a day, the days of a year pass, "1,825".
-      { id: 'c5-04', text: 'Say you make five cards a day. In a year, that is more than 1,800 small things you still know.' },
+      { id: 'c5-04', text: 'Say you make five cards a day. In a year, that is more than 1,800 small things you still know.', marks: [0.112, 0.346, 0.534] },
       // The pile grows tall; the daily stack beside it stays small.
-      { id: 'c5-05', text: 'And known cards come back less often, so the daily review stays small as the pile grows.' },
+      { id: 'c5-05', text: 'And known cards come back less often, so the daily review stays small as the pile grows.', marks: [0.469, 0.773] },
       // One card on a time line; four marks appear: "2 days", "11 days", "6 weeks", "5 months". The gaps stretch across the stage.
       // SOURCE: this app's own scheduler with its default settings (ts-fsrs 5.4.2, FSRS-6 weights, 90% retention, no fuzz), each answer Remembered on the due day: gaps of 2, 11, 46 and 163 days; then the default longest gap of 365 days (shared/reviews.ts `maxDays`).
-      { id: 'c5-13', text: 'Follow one card you keep remembering. It comes back after two days. Then eleven. Then about six weeks. Then about five months.' },
+      { id: 'c5-13', text: 'Follow one card you keep remembering. It comes back after two days. Then eleven. Then about six weeks. Then about five months.', marks: [0.359, 0.516, 0.691, 0.875] },
       // The time line zooms out: the card's next mark is far off to the right, past "2 months in".
-      { id: 'c5-14', text: 'So a couple of months in, that card is already months away.' },
+      { id: 'c5-14', text: 'So a couple of months in, that card is already months away.', marks: [0.203, 0.719] },
       // The card fades into the outline of a person, and stays there as a small steady light.
-      { id: 'c5-15', text: 'By then you are not really reviewing it any more. It is part of what you know. It is part of who you are.' },
+      { id: 'c5-15', text: 'By then you are not really reviewing it any more. It is part of what you know. It is part of who you are.', marks: [0.478, 0.724] },
       // Wooden boxes of paper slips; the name "Niklas Luhmann", "1951 to 1996", "about 90,000 cards".
       // SOURCE: Niklas Luhmann-Archiv, Bielefeld University: about 90,000 notes, made between 1951 and 1996. (rename-note-to-page: keep)
-      { id: 'c5-06', text: 'The sociologist Niklas Luhmann kept a box of paper slips for about 45 years. It grew to around 90,000 of them.' },
+      { id: 'c5-06', text: 'The sociologist Niklas Luhmann kept a box of paper slips for about 45 years. It grew to around 90,000 of them.', marks: [0.125, 0.474, 0.782] },
       // A shelf of his books fills in: "nearly 600 publications", "over 40 books".
       // SOURCE: Niklas Luhmann-Archiv, Bielefeld University: nearly 600 publications, among them over 40 monographs.
-      { id: 'c5-07', text: 'He wrote nearly 600 publications, among them more than 40 books.' },
+      { id: 'c5-07', text: 'He wrote nearly 600 publications, among them more than 40 books.', marks: [0.161, 0.733] },
       // Long boxes of 4 by 6 index cards; the name "Ryan Holiday".
       // SOURCE: Ryan Holiday, YouTube video UBdlprawTkA (his card system): tens of thousands of cards, over 20 years.
-      { id: 'c5-08', text: 'The writer Ryan Holiday has kept tens of thousands of index cards over twenty years. He says the most value came later, from all of them added up.' },
+      { id: 'c5-08', text: 'The writer Ryan Holiday has kept tens of thousands of index cards over twenty years. He says the most value came later, from all of them added up.', marks: [0.062, 0.213, 0.441, 0.898] },
       // Three small scenes: a meeting, a page in another language, a field that becomes clear.
-      { id: 'c5-09', text: 'You do not need to write books. Think of the meeting where the right fact is there when you need it.' },
+      { id: 'c5-09', text: 'You do not need to write books. Think of the meeting where the right fact is there when you need it.', marks: [0.493, 0.644] },
       // A page in another language becomes readable; a hard subject comes into focus.
-      { id: 'c5-10', text: 'The language you keep. The subject you finally understand.' },
+      { id: 'c5-10', text: 'The language you keep. The subject you finally understand.', marks: [0.084, 0.464, 0.676] },
       // The card base, now large, glows: "Your card base".
-      { id: 'c5-11', text: 'Over time, your card base becomes a record of what you know. Because you review it, you still know it.' },
+      { id: 'c5-11', text: 'Over time, your card base becomes a record of what you know. Because you review it, you still know it.', marks: [0.179, 0.856] },
       // One card, held in a hand; "Yours".
-      { id: 'c5-12', text: 'Small cards, every day, add up. But only if they are truly yours: that is next.' },
+      { id: 'c5-12', text: 'Small cards, every day, add up. But only if they are truly yours: that is next.', marks: [0.323, 0.669] },
     ],
   },
   {
