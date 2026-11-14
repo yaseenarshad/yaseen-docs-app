@@ -1,12 +1,13 @@
 import { PHONE, type VaultStore } from './vaultStore'
 
-/** One vault on the phone: one GitHub repo and branch, with its own token and its own stored files. */
+/**
+ * One vault on the phone: one GitHub repo and branch, with its own token and its own stored files. A vault is the
+ * WHOLE repo; a vault in a subfolder of a repo is not in the first release (Yaseen, YAZ-5057 decision record round 16).
+ */
 export interface PhoneVault {
   /** `owner/name` on GitHub. */
   repo: string
   branch: string
-  /** As decision 7 names it. Stored as given; no rule reads it yet (open: see YAZ-5071). */
-  folder: string
   addedAt: number
 }
 
