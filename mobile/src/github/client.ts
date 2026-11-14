@@ -45,6 +45,13 @@ export const MAX_RATE_WAIT_MS = 60 * 60_000
  * A download that still gets bytes goes on to its end (YAZ-5184).
  */
 export const REQUEST_TIMEOUT_MS = 30_000
+/**
+ * YAZ-5199: `fetch` gives no upload progress (and Safari no streamed request body), so a body that goes up slowly
+ * looks silent. Until GitHub's answer comes, a request with a body gets the time its body needs at this floor speed
+ * (10 KB/s: a bad but live signal), on top of the silence limit. After the answer's head, the silence limit holds.
+ */
+export const UPLOAD_FLOOR_BYTES_PER_S = 10_000
+export const uploadAllowanceMs = (bytes: number): number => Math.ceil((bytes / UPLOAD_FLOOR_BYTES_PER_S) * 1000)
 
 /** When to try again: `until` (ms since 1970, or null: not said) held between the floor and the ceiling from `now`. */
 export function rateLimitedUntil(until: number | null, now: number): number {
@@ -163,17 +170,19 @@ export function githubClient(token: string, options: ClientOptions = {}): Github
 
       // The silence limit (YAZ-5173, YAZ-5184): it starts again at the answer and at each part of the body.
       const limit = options.timeoutMs ?? REQUEST_TIMEOUT_MS
+      const payload = opts.body === undefined ? undefined : JSON.stringify(opts.body)
       const abort = typeof AbortController === 'function' ? new AbortController() : null
       let silence: ReturnType<typeof setTimeout> | null = null
-      const alive = () => {
+      const alive = (ms = limit) => {
         if (silence !== null) clearTimeout(silence)
-        if (abort !== null) silence = setTimeout(() => abort.abort(), limit)
+        if (abort !== null) silence = setTimeout(() => abort.abort(), ms)
       }
       const heard = () => {
         alive()
         options.onActivity?.()
       }
-      alive()
+      // Before the answer: the limit plus the time the body needs at the floor speed (YAZ-5199).
+      alive(limit + (payload === undefined ? 0 : uploadAllowanceMs(new TextEncoder().encode(payload).byteLength)))
       try {
         return await send()
       } finally {
@@ -187,7 +196,7 @@ export function githubClient(token: string, options: ClientOptions = {}): Github
           response = await fetch(`${GITHUB_API}${path}${query}`, {
             method,
             headers,
-            body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+            body: payload,
             // No cookies. No browser cache: the ETag is ours (3B), and answers made with the token stay off the disk.
             credentials: 'omit',
             // A request that is silent for `limit` stops (YAZ-5173, YAZ-5184). The abort reads as OFFLINE below.

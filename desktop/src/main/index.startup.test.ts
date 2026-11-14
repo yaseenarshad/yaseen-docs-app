@@ -351,11 +351,11 @@ describe('the updater in index.ts (YAZ-2976)', () => {
     expect(send).toHaveBeenCalledExactlyOnceWith('update:state-changed', { kind: 'ready', version: '1.0.13' })
   })
 
-  it('on ready registers the four update doors (and the memory meter\'s, YAZ-3737 D1; the spell checker\'s, YAZ-4464) before the windows restore, then starts the timer (D7)', async () => {
+  it('on ready registers the four update doors (and the memory meter\'s, YAZ-3737 D1; the spell checker\'s, YAZ-4464; Connect your phone\'s, YAZ-5098) before the windows restore, then starts the timer (D7)', async () => {
     expect([...h.handles.keys()]).toEqual([])
     h.s.ready()
     await settle()
-    expect([...h.handles.keys()].sort()).toEqual(['memory:report', 'spell:guesses', 'update:check', 'update:notes', 'update:restart', 'update:state'])
+    expect([...h.handles.keys()].sort()).toEqual(['memory:report', 'phone:code', 'spell:guesses', 'update:check', 'update:notes', 'update:restart', 'update:state'])
     expect(h.s.order.indexOf('updater.start')).toBeLessThan(h.s.order.indexOf('restore:none'))
     h.updater.kind = 'manual'
     await expect(invoke('update:state')).resolves.toEqual({ ok: true, value: { kind: 'manual' } })

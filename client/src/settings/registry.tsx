@@ -376,6 +376,8 @@ export interface SettingsCtx {
   hotkeyFilter?: HotkeyFilter
   /** The window's vaults for the place picker (YAZ-3556 D6), the active tab's first; absent in a window with no vault. */
   places?: readonly PlaceVault[]
+  /** The active tab's vault (YAZ-5098: "Connect your phone" shows its code); absent with no vault open. */
+  vaultRoot?: string
   /** Daily pages › Open template (YAZ-3607): App opens the daily pages folder's `.template.md`, made empty first when missing. Absent with no vault. */
   openDailyTemplate?: () => void
 }
@@ -477,6 +479,11 @@ function iconColourRow(kind: SidebarIconKind): SettingDef {
 
 /** What the section title does not say: the feature's name, and where its cards turn up. */
 const REVIEW_KEYWORDS = ['cards', 'cards', 'flashcards', 'inbox', 'spaced repetition', 'fsrs', 'archive', 'archived']
+/** "Phone and friends" (YAZ-5098): its two rows load only when Settings shows them, so the first load stays the same. */
+const GithubTokenControl = lazy(() => import('./GithubTokenControl').then((m) => ({ default: m.GithubTokenControl })))
+const ConnectPhoneControl = lazy(() => import('./ConnectPhoneControl').then((m) => ({ default: m.ConnectPhoneControl })))
+/** "Phone and friends" (YAZ-5098): the phone app reviews the cards, so the Review words find these rows too. */
+const PHONE_KEYWORDS = [...REVIEW_KEYWORDS, 'phone', 'iphone', 'mobile', 'notecards', 'connect', 'qr', 'code', 'scan', 'github', 'token', 'friends', 'secret']
 /** Card spacing's rows (YAZ-5050). */
 const CARD_SPACING_KEYWORDS = [...REVIEW_KEYWORDS, 'spacing', 'line spacing', 'line height', 'paragraph', 'space between blocks', 'gap', 'bullet', 'indent', 'view mode']
 
@@ -2139,6 +2146,40 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             bare: true,
             available: reviewOn,
             render: () => <ReviewHowCardsComeBack />,
+          },
+        ],
+      },
+      {
+        // YAZ-5098 (round 12, item 8: "8 - yes"): ONE GitHub token for "Connect your phone" and for friends (4E5,
+        // YAZ-5086, whose switch goes in this group too). The token is the Mac's, in main's secrets store, not this
+        // vault's: never a `SettingsState` field, never in review.json. The code is this vault's (its repo, its branch).
+        title: 'Phone and friends',
+        items: [
+          {
+            id: 'githubToken',
+            label: 'GitHub token',
+            hint: 'One token for the phone app and for friends, for all your vaults. It stays on this Mac, readable only by your user, and is never shown again.',
+            keywords: PHONE_KEYWORDS,
+            wide: true,
+            available: reviewOn,
+            render: () => (
+              <Suspense fallback={null}>
+                <GithubTokenControl />
+              </Suspense>
+            ),
+          },
+          {
+            id: 'connectPhone',
+            label: 'Connect your phone',
+            hint: "Shows a code with this vault's repo and your token. Scan it in the phone app, and type nothing on the phone.",
+            keywords: PHONE_KEYWORDS,
+            available: (ctx) => reviewOn(ctx) && ctx.vaultRoot !== undefined,
+            render: ({ vaultRoot }) =>
+              vaultRoot !== undefined && (
+                <Suspense fallback={null}>
+                  <ConnectPhoneControl root={vaultRoot} />
+                </Suspense>
+              ),
           },
         ],
       },
