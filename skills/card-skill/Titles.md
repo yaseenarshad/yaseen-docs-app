@@ -32,8 +32,10 @@ The title is always a plain first line. Hiding it is an option of the card, not 
 How to hide it:
 
 - **With the command:** add `--hide-title` to `yaseendocs card add …` or `yaseendocs card new …`.
-- **In a file you write by hand:** put the line `<!-- card: notitle -->` directly below the card's closing fence. The app adds the ID and keeps the option.
+- **In a file you write by hand:** put the line `<!-- card: notitle -->` below the fence, on a new card only.
 - **In the app:** the card's ⋯ menu › "Title on the front" › Hide.
+
+**The card line.** Never change a card line that the app wrote: it holds the card's ID and its reviews. On a new card that you write by hand, you may put the line `<!-- card: notitle -->` directly below the closing fence; the app adds the ID and keeps the option. With the command, use `--hide-title`.
 
 A card inside a page, written by hand, with its title hidden:
 

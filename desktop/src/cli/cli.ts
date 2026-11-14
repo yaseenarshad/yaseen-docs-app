@@ -149,8 +149,10 @@ the app counts it: by id, path, title, file name or alias, in the body or the pr
 A note card is a spaced-repetition card inside a page: a \`\`\`card\` fence with its text, and the card
 line under it, \`<!-- card: <id>, <time> <answer>, ... -->\`, which holds the card's id and each review.
 \`---\` alone on a line splits the front from the back, and \`{{word}}\` hides a word. Only a vault that
-gives its notes IDs has cards, and \`due\` and \`card\` are refused in any other. Never write or change a
-card line by hand: \`card add\` and \`card new\` write it, and the app writes each review.
+gives its notes IDs has cards, and \`due\` and \`card\` are refused in any other. \`card add\` and \`card new\`
+write the card line, and the app writes each review. Never change a card line that the app wrote: it holds the card's
+ID and its reviews. On a new card that you write by hand, you may put the line \`<!-- card: notitle -->\` directly
+below the closing fence; the app adds the ID and keeps the option. With the command, use \`--hide-title\`.
 
 \`due\` lists the note cards due now under a folder (the whole vault for its root), as the app's Inbox
 shows them: first the cards up next (see \`card next\`), then the cards due today, most overdue first, then

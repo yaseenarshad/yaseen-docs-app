@@ -2,6 +2,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { HELP } from '../cli/cli'
 
 /**
  * The card skill's shipped pages (YAZ-5112). Each page opens with the placeholder line, and no page holds a
@@ -94,5 +95,27 @@ describe('the card skill pages (YAZ-5112)', () => {
       })
     }
     expect(found).toEqual([])
+  })
+
+  /**
+   * The one rule for the card line (YAZ-5139, Yaseen's option 1), said the same way in the command's help, the start
+   * page and the titles page. A change of one place that the others do not get fails here.
+   */
+  it('HELP, Start here.md and Titles.md say the same rule for the card line (YAZ-5139)', async () => {
+    const RULE = [
+      "Never change a card line that the app wrote: it holds the card's ID and its reviews.",
+      'On a new card that you write by hand, you may put the line `<!-- card: notitle -->` directly below the closing fence; the app adds the ID and keeps the option.',
+      'With the command, use `--hide-title`.',
+    ]
+    const flat = (text: string): string => text.replace(/\s+/g, ' ')
+    const places: Record<string, string> = {
+      HELP: flat(HELP),
+      'Start here.md': flat(await readFile(join(SKILL, 'Start here.md'), 'utf8')),
+      'Titles.md': flat(await readFile(join(SKILL, 'Titles.md'), 'utf8')),
+    }
+    const missing = Object.entries(places).flatMap(([name, text]) => RULE.filter((sentence) => !text.includes(sentence)).map((sentence) => `${name}: ${sentence}`))
+    expect(missing).toEqual([])
+    // The old, opposite rule is gone from each place.
+    for (const [name, text] of Object.entries(places)) expect(text, name).not.toMatch(/Never write (?:or change )?(?:that|a card) line by hand/)
   })
 })

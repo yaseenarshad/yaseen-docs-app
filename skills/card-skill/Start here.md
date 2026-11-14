@@ -30,7 +30,7 @@ Many people guess Sydney. Canberra was built as a compromise between Sydney and 
 ```
 ````
 
-The app writes the line under the block, with the card's ID and its reviews. Never write that line by hand.
+The app writes the card line under the block. Never change a card line that the app wrote: it holds the card's ID and its reviews. On a new card that you write by hand, you may put the line `<!-- card: notitle -->` directly below the closing fence; the app adds the ID and keeps the option. With the command, use `--hide-title`.
 
 ## How to make a card
 
