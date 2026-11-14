@@ -260,7 +260,7 @@ export const pointersOf = (index: FriendsIndex): string[] => [...index.friends.m
  * unknown fields, and its own name when the app did not change it (a long name stays whole). Each entry that this app
  * could not read stays as it is, at the end of its list (YAZ-5191). A vault that is not a text stays too.
  */
-export function indexText(index: FriendsIndex, raw: Record<string, unknown> = {}): string {
+function indexText(index: FriendsIndex, raw: Record<string, unknown> = {}): string {
   type Entry = { mine: string; name?: string; admin?: boolean }
   const merge = (key: 'friends' | 'groups' | 'shared', entries: Entry[] | undefined, ok: (e: unknown) => boolean): unknown[] | undefined => {
     const rawList = list(raw[key])

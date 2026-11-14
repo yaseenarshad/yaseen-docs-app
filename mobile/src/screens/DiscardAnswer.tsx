@@ -33,4 +33,4 @@ export function DiscardAnswer({ title, answer, label, onDiscard }: { title: stri
 }
 
 /** The plain words of the ask: the action, the card, and that it cannot come back. */
-export const discardQuestion = (title: string, answer: string): string => `Discard your answer "${answer}" to "${title}"${/[?!.]$/.test(title) ? '' : '?'} It cannot be taken back.`
+const discardQuestion = (title: string, answer: string): string => `Discard your answer "${answer}" to "${title}"${/[?!.]$/.test(title) ? '' : '?'} It cannot be taken back.`

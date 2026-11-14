@@ -160,7 +160,7 @@ export function Search() {
 }
 
 /** Where a row opens: a page read only; a card alone (a card file's card, or a card in its page). */
-export function routeOf(row: SearchCandidate): Route {
+function routeOf(row: SearchCandidate): Route {
   if (row.card === true) return { kind: 'card', path: row.page ?? row.path, id: row.id ?? '' }
   return { kind: 'page', path: row.path }
 }

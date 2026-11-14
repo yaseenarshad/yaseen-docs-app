@@ -2,7 +2,7 @@ import { useApp } from '../app/AppState'
 import { Frame } from './Frame'
 
 /** GitHub's page that makes a fine-grained token. */
-export const NEW_TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new'
+const NEW_TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new'
 
 /**
  * "Set up your phone" (round 11, item 9): make the repo, make the token, add the app to the Home Screen. It says the

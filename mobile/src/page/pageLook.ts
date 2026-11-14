@@ -75,7 +75,7 @@ function srcTarget(src: string): { target: string; fromRoot: boolean } {
 }
 
 /** Where a picture, a sound or a file named in `holder` lands in the vault, or null. */
-export function assetPath(data: VaultData, holder: string, src: string): string | null {
+function assetPath(data: VaultData, holder: string, src: string): string | null {
   if (src === '' || /^[a-z][a-z0-9+.-]*:/i.test(src)) return null
   const { target, fromRoot } = srcTarget(src)
   return assetsOf(data)(target, fromRoot ? undefined : folderOf(holder))

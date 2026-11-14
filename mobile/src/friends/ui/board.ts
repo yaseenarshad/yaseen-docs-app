@@ -89,7 +89,7 @@ export function dailyMark(stats: Pick<FriendStats, 'days'>, now: number): DailyM
   return mark === null ? 'not-started' : mark === 'done' ? 'finished' : mark
 }
 /** Yesterday shows ✓ or ○ only (decision 25). A day with no numbers is not finished. */
-export function yesterdayMark(stats: Pick<FriendStats, 'days'>, now: number): DailyMark {
+function yesterdayMark(stats: Pick<FriendStats, 'days'>, now: number): DailyMark {
   return dayIn(stats, addDays(todayOf(stats, now), -1))?.done === true ? 'finished' : 'not-started'
 }
 /** What VoiceOver reads for a mark (the signs are not words). */
@@ -343,7 +343,7 @@ export const updatedLabel = (updatedAt: number | null, now: number): string => a
 /** Bidi controls and other invisible format characters: a name must not turn the row's text around. */
 const CONTROLS = /[\u0000-\u0008\u000e-\u001f\u007f-\u009f\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]/g
 /** The most letters of a name on a screen (a GitHub name has 255 at most; a nickname 40). */
-export const NAME_MAX = 40
+const NAME_MAX = 40
 
 const graphemes = (text: string): string[] => {
   const Seg = (Intl as { Segmenter?: typeof Intl.Segmenter }).Segmenter

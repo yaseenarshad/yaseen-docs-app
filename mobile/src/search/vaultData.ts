@@ -44,7 +44,7 @@ export interface VaultData {
 export const INDEX_STATE_NAME = 'index'
 
 const CONFIG = `${VAULT_CONFIG_DIR}/`
-export const REVIEW_PATH = `${CONFIG}${REVIEW_SETTINGS_FILE}`
+const REVIEW_PATH = `${CONFIG}${REVIEW_SETTINGS_FILE}`
 export const IDS_PATH = `${CONFIG}${IDS_FILE}`
 
 async function readJson(store: VaultStore, vault: string, path: string): Promise<unknown> {
