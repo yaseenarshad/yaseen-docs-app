@@ -34,45 +34,40 @@ export const COURSE: CourseChapter[] = [
       { id: 'c1-01', text: 'Say you learn something today. A week from now, your brain will have forgotten most of it.' },
       // An old notebook page of nonsense syllables ("DAX", "BOK", "YAT"); the year 1885.
       // SOURCE: Ebbinghaus 1885, Memory: A Contribution to Experimental Psychology; savings data as given in Murre & Dros 2015, PLOS ONE, Table 3.
-      { id: 'c1-02', text: 'In the 1880s, Hermann Ebbinghaus measured this on himself, with lists of made-up syllables.' },
-      // The curve at "1 day"; a bar shows two thirds of the first effort, needed again.
-      // SOURCE: Murre & Dros 2015, Table 3: Ebbinghaus's savings after 1 day = 0.337, so relearning took about 66% of the first effort.
-      { id: 'c1-03', text: 'After just one day, learning a list again took him about two thirds of the time it took at first.' },
+      { id: 'c1-02', text: 'In the 1880s, Hermann Ebbinghaus measured this on himself. After one day, relearning a list took him about two thirds of the original time.' },
       // A review just before the curve drops; the curve lifts and falls slower.
-      { id: 'c1-04', text: 'But review it again before you forget, and it sticks longer.' },
+      { id: 'c1-03', text: 'But review it again before you forget, and it sticks longer.' },
       // Three reviews; the gaps label "1 day", "1 week", "1 month" on the marks. (Approved sample, unchanged.)
       { id: 's2b', text: 'Each time, the gap grows. A day. A week. A month.', marks: [0.439, 0.597, 0.74] },
       // A small glowing memory, faint at first, grows solid over time.
       // SOURCE: Squire, Genzel, Wixted & Morris 2015, "Memory Consolidation", Cold Spring Harb Perspect Biol.
-      { id: 'c1-05', text: 'A new memory starts out fragile. Over time, the brain makes it stable. Scientists call this consolidation.' },
+      { id: 'c1-04', text: 'A new memory starts out fragile. Over time, the brain makes it stable. Scientists call this consolidation.' },
       // Each review mark pushes the memory deeper, from a "Short-term" band into a "Long-term" band.
-      { id: 'c1-06', text: 'Each review, near the point where you would forget, pushes the memory further into long-term memory.' },
+      { id: 'c1-05', text: 'Each review, near the point where you would forget, pushes the memory further into long-term memory.' },
       // The words "Spaced repetition" settle under the curve. (Approved sample, unchanged.)
       { id: 's3a', text: "That's all spaced repetition is." },
       // A wall of small study tiles fills in, "317 experiments"; spaced study beats crammed study.
       // SOURCE: Cepeda, Pashler, Vul, Wixted & Rohrer 2006, "Distributed practice in verbal recall tasks", Psychological Bulletin: 317 experiments in 184 articles.
-      { id: 'c1-07', text: 'It is one of the most tested ideas about memory. One review of 317 experiments found that spaced study beats cramming.' },
+      { id: 'c1-06', text: 'It is one of the most tested ideas about memory: one review of 317 experiments found that spacing beats cramming.' },
       // A paper index card drops onto the stage.
-      { id: 'c1-08', text: 'So where does each thing you learn go? Picture a paper index card, the kind people study with.' },
+      { id: 'c1-07', text: 'So where does each thing you learn go? Picture a paper index card, the kind people study with.' },
       // The paper index card becomes the app's real card: a title, a fact, one word as a blank.
-      { id: 'c1-09', text: 'That is a card: one small fact, with part of it hidden.' },
+      { id: 'c1-08', text: 'That is a card: one small fact, with part of it hidden.' },
       // Many cards fan out across the stage, each with one fact.
-      { id: 'c1-10', text: 'You will have many cards, one for each thing you want to keep.' },
+      { id: 'c1-09', text: 'You will have many cards, one for each thing you want to keep.' },
       // A calendar; each card takes its own date.
-      { id: 'c1-11', text: 'The app keeps a calendar for every card. On the day a card is due, it shows it to you.' },
+      { id: 'c1-10', text: 'The app keeps a calendar for every card. On the day a card is due, it shows it to you.' },
       // The blank fills in; two buttons, Forgot and Remembered.
-      { id: 'c1-12', text: 'You try to recall the hidden part, then check. And you answer: forgot, or remembered.' },
+      { id: 'c1-11', text: 'You try to recall the hidden part, then check. And you answer: forgot, or remembered.' },
       // A card's curve with a dotted line at 90%; the next date lands where the curve meets the line.
       // SOURCE: shared/cardSchedule.ts (FSRS through ts-fsrs 5.4.2); shared/reviews.ts DEFAULT_REVIEW_SETTINGS.retention = 0.9.
-      { id: 'c1-13', text: 'The app sets each date with an open scheduling method called FSRS. It brings a card back when your chance of recalling it drops to about ninety percent.' },
+      { id: 'c1-12', text: 'The app sets each date with an open scheduling method called FSRS. It brings a card back when your chance of recalling it drops to about ninety percent.' },
       // The chapter list lights up, 1 to 11.
-      { id: 'c1-14', text: 'This course takes about twenty-five minutes, in eleven short chapters.' },
+      { id: 'c1-13', text: 'This course takes about twenty minutes, in eleven short chapters.' },
       // The "Try it in the app" button, with "Optional" beside it.
-      { id: 'c1-15', text: 'Some chapters let you try the steps in the real app. That part is always your choice.' },
-      // The curve with its growing gaps, as a small picture to keep.
-      { id: 'c1-16', text: 'If you remember one thing, make it this. Review just before you forget, and each memory lasts longer.' },
-      // The paper index card again, alone in the middle of the stage.
-      { id: 'c1-17', text: 'Next: why a card is the right shape for what you learn. And you make your first one.' },
+      { id: 'c1-14', text: 'Some chapters let you try the steps in the real app. That part is always your choice.' },
+      // The curve with its growing gaps, then the paper index card alone in the middle of the stage.
+      { id: 'c1-15', text: 'Review just before you forget, and each memory lasts longer. Next: why a card is the right shape, and your first one.' },
     ],
   },
   {
@@ -80,59 +75,44 @@ export const COURSE: CourseChapter[] = [
     title: 'The card: one small fact',
     clips: [
       // The paper index card from chapter 1, and the calendar behind it.
-      { id: 'c2-01', text: 'Quick recap. Each thing you want to learn goes on a card, and the app brings it back on time.' },
-      // The card turns, as if to be looked at closely.
-      { id: 'c2-02', text: 'Now, why a card is small, and how to make one.' },
+      { id: 'c2-01', text: 'Quick recap: each thing you learn goes on a card. Now, why a card is small, and how to make one.' },
       // The word "Atomic" over one small card.
-      { id: 'c2-03', text: 'A good card is atomic. That means it holds one small idea, and nothing else.' },
+      { id: 'c2-02', text: 'A good card is atomic. That means it holds one small idea, and nothing else.' },
       // Small cards slide together in new groups, like pieces that fit many ways.
-      { id: 'c2-04', text: 'Small pieces can be mixed and matched, wherever you need them.' },
+      { id: 'c2-03', text: 'Small pieces can be mixed and matched, wherever you need them.' },
       // The name "Piotr Wozniak" and "1999"; one big card splits into three small ones.
       // SOURCE: Wozniak 1999, "Effective learning: Twenty rules of formulating knowledge", rule 4, the minimum information principle (supermemo.com).
-      { id: 'c2-05', text: 'Piotr Wozniak, who built the program SuperMemo, made this a rule: keep each card as simple as you can.' },
-      // The three small cards each get their own date; the hard one comes back more often.
-      // SOURCE: Wozniak 1999, rule 4: simple items are easier to remember and easier to schedule.
-      { id: 'c2-06', text: 'A simple card is easier to remember. And a hard part on its own card gets the reviews it needs.' },
+      { id: 'c2-04', text: 'Piotr Wozniak, who built SuperMemo, made it a rule: keep each card simple. It is easier to remember, and a hard part gets its own reviews.' },
       // All the cards together form one growing set, labelled "Card base".
-      { id: 'c2-07', text: 'All your cards together are your card base. It grows one small piece at a time.' },
+      { id: 'c2-05', text: 'All your cards together are your card base. It grows one small piece at a time.' },
       // A blank card in the middle of the stage.
-      { id: 'c2-08', text: 'So a good card holds one small fact. Think of something you learned this week.' },
+      { id: 'c2-06', text: 'Think of something you learned this week.' },
       // An empty card with a blinking caret. WAITS: the person types a fact.
-      { id: 'c2-09', text: 'Type one thing you want to remember. One short sentence is best.' },
+      { id: 'c2-07', text: 'Type one thing you want to remember. One short sentence is best.' },
       // The fact's words become buttons. WAITS: the person taps the word to hide.
-      { id: 'c2-10', text: 'Now tap the word you want to hide.' },
+      { id: 'c2-08', text: 'Now tap the word you want to hide.' },
       // The word turns into a blank; the card takes its frame.
-      { id: 'c2-11', text: "That's a card. The hidden word is the part you will try to recall." },
+      { id: 'c2-09', text: "That's a card. The hidden word is the part you will try to recall." },
       // The card, front only. WAITS: the person taps the card to show the word.
-      { id: 'c2-12', text: 'Tap it to check yourself.' },
+      { id: 'c2-10', text: 'Tap it to check yourself.' },
       // Forgot and Remembered under the card. WAITS: the person picks one.
-      { id: 'c2-13', text: 'Did you remember it?' },
+      { id: 'c2-11', text: 'Did you remember it?' },
       // The answer's quiet line under the card.
-      { id: 'c2-14', text: 'Either answer is fine. The app saves it with the card.' },
+      { id: 'c2-12', text: 'Either answer is fine. The app saves it with the card.' },
       // The sidebar: the folder "Course Cards" opens and shows the new card file.
-      { id: 'c2-15', text: 'Your card is now a real file, in a folder called Course Cards. It sits at the top of your vault, the folder the app has open.' },
-      // The card file's tab: the title line is marked "Title".
-      { id: 'c2-16', text: 'A card file holds one card. Its first line is the title.' },
-      // The card's ⋯ menu, "Title on the front" › Hide; the title leaves the front.
-      { id: 'c2-17', text: "If the title gives the answer away, hide it. Open the card's menu, and choose Title on the front." },
-      // A folder's right-click menu; "New card" lights up.
-      { id: 'c2-18', text: 'In the app, you make a card yourself. Right-click a folder, and choose New card.' },
-      // The new card in Edit card, with "Title" selected; text is typed in.
-      { id: 'c2-19', text: 'The card opens, ready to edit. Type the title, then the fact.' },
-      // A word is selected; the key row shows "⌘L hide word"; the word is marked.
-      { id: 'c2-20', text: 'To hide a word, select it and press Command L.' },
+      { id: 'c2-13', text: 'Your card is now a real file, in a folder called Course Cards, at the top of your vault.' },
+      // The card file's tab: the title line is marked "Title"; then ⋯ › "Title on the front" › Hide.
+      { id: 'c2-14', text: "A card file's first line is its title. If the title gives the answer away, hide it with Title on the front, in the card's menu." },
+      // A folder's right-click menu, "New card"; the new card opens in Edit card and text is typed in.
+      { id: 'c2-15', text: 'In the app, right-click a folder and choose New card. Type the title, then the fact.' },
+      // A word is selected; "⌘L hide word"; then Esc, and the tab takes the title as its name.
+      { id: 'c2-16', text: 'Select a word and press Command L to hide it. Press Escape, and the card saves.' },
       // Three dashes on an empty line; the card splits into a front and a back.
-      { id: 'c2-21', text: 'To add a back side, type three dashes on an empty line. What comes after them is the back.' },
-      // The back side: the answer, and one short line that explains it.
-      { id: 'c2-22', text: 'On the back, put the answer, or a short line that explains it.' },
-      // Esc; the card shows again and the tab takes the title as its name.
-      { id: 'c2-23', text: 'When you are done, press Escape. The card saves, and the file takes its name from the title.' },
-      // The one small card, alone, with "One card, one fact" under it.
-      { id: 'c2-24', text: 'One card, one small fact. Everything else is built from that.' },
+      { id: 'c2-17', text: 'For a back side, type three dashes on an empty line. The answer, or a short line that explains it, goes after them.' },
       // The "Try it in the app" button and "Next chapter".
-      { id: 'c2-25', text: 'To make one in the real app now, choose Try it in the app. Or go on to the next chapter.' },
+      { id: 'c2-18', text: 'To make one in the real app now, choose Try it in the app.' },
       // The sidebar's Inbox row glows softly.
-      { id: 'c2-26', text: 'Next: the one place you open each day, where your cards come back.' },
+      { id: 'c2-19', text: 'One card, one small fact. Next: the place your cards come back to, each day.' },
     ],
     tryIt: [
       { target: 'sidebar-course-cards', say: 'Right-click the Course Cards folder in the sidebar.', done: { event: 'folder-menu-open' } },
@@ -147,7 +127,7 @@ export const COURSE: CourseChapter[] = [
     title: 'The Inbox, each day',
     clips: [
       // The card from chapter 2, in the Course Cards folder.
-      { id: 'c3-01', text: 'You made your first card. Here is the short daily habit that brings it back.' },
+      { id: 'c3-01', text: 'You made your first card. Here is the daily habit that brings it back.' },
       // A calendar with many cards on many days; it fades.
       { id: 'c3-02', text: 'So which card do you look at, and when?' },
       // The real sidebar; the Inbox row lights up.
@@ -187,12 +167,10 @@ export const COURSE: CourseChapter[] = [
       { id: 'c3-19', text: 'To keep it light, the Inbox brings at most ten new cards a day. You can change that number in Settings.' },
       // The done screen: "Inbox complete."
       { id: 'c3-20', text: "When nothing is left, the Inbox says Inbox complete. That's it for today." },
-      // The Inbox row, and a small calendar with each day ticked.
-      { id: 'c3-21', text: 'Open the Inbox each day, answer honestly, and let the app keep the dates.' },
       // The "Try it in the app" button and "Next chapter".
-      { id: 'c3-22', text: 'To answer your own card in the real app, choose Try it in the app.' },
+      { id: 'c3-21', text: 'To answer your own card in the real app, choose Try it in the app.' },
       // A page of notes, with a space between two paragraphs.
-      { id: 'c3-23', text: 'Next: a card can also live right inside your notes.' },
+      { id: 'c3-22', text: 'Open the Inbox each day, and let the app keep the dates. Next: cards that live inside your notes.' },
     ],
     tryIt: [
       { target: 'sidebar-course-cards', say: 'Right-click the Course Cards folder.', done: { event: 'folder-menu-open' } },
@@ -207,7 +185,7 @@ export const COURSE: CourseChapter[] = [
     title: 'Where a card lives',
     clips: [
       // The card file and the Inbox, side by side.
-      { id: 'c4-01', text: 'So far, your card is a file of its own. But it can also sit beside the notes it came from.' },
+      { id: 'c4-01', text: 'So far, your card is a file of its own. It can also live beside your notes.' },
       // Three empty frames side by side: "By itself", "In a page", "Embedded".
       { id: 'c4-02', text: 'A card can live in three places. The review works the same in each one.' },
       // The card file from chapter 2 in its own tab.
@@ -232,12 +210,10 @@ export const COURSE: CourseChapter[] = [
       { id: 'c4-12', text: 'You can move a card between these places at any time. Its history goes with it.' },
       // Two labels: "A fact on its own" under the card file, "Part of your notes" under the page.
       { id: 'c4-13', text: 'Use a card file for a fact on its own. Use a card in a page when it belongs with your notes.' },
-      // One card, shown in three pages at once; lines lead back to the one card.
-      { id: 'c4-14', text: 'This is the mix and match from before. One card, one home, shown wherever it helps.' },
       // The "Try it in the app" button and "Next chapter".
-      { id: 'c4-15', text: 'To embed your first card in a page, choose Try it in the app.' },
-      // The stage widens; many cards, far into the distance.
-      { id: 'c4-16', text: "That's the how. Next, a short break, to see where all this can take you." },
+      { id: 'c4-14', text: 'To embed your first card in a page, choose Try it in the app.' },
+      // One card shown in three pages at once; lines lead back to it. Then the stage widens.
+      { id: 'c4-15', text: 'This is the mix and match from before: one card, one home, shown wherever it helps. Next, a short break.' },
     ],
     tryIt: [
       { target: 'card-menu', say: "Open your card's menu: the three dots in its head.", done: 'click' },
@@ -251,7 +227,7 @@ export const COURSE: CourseChapter[] = [
     title: 'Why it is worth it',
     clips: [
       // The four chapters so far, as four small ticks.
-      { id: 'c5-01', text: 'You can make a card, review it, and place it in your notes. Now, why it is worth doing.' },
+      { id: 'c5-01', text: 'You can make, review and place a card. Now, why it is worth doing.' },
       // A small sum grows on itself, like interest on savings.
       { id: 'c5-02', text: 'What you learn this way compounds. To compound is to grow on itself, like interest.' },
       // One card, then a new card that hooks onto it.
@@ -259,7 +235,7 @@ export const COURSE: CourseChapter[] = [
       // A counter: 5 cards a day, the days of a year pass, "1,825".
       { id: 'c5-04', text: 'Say you make five cards a day. In a year, that is more than 1,800 small things you still know.' },
       // The pile grows tall; the daily stack beside it stays small.
-      { id: 'c5-05', text: 'And because known cards come back less and less often, the daily review stays small while the pile grows.' },
+      { id: 'c5-05', text: 'And known cards come back less often, so the daily review stays small as the pile grows.' },
       // Wooden boxes of paper slips; the name "Niklas Luhmann", "1951 to 1996", "about 90,000 cards".
       // SOURCE: Niklas Luhmann-Archiv, Bielefeld University: about 90,000 notes, made between 1951 and 1996.
       { id: 'c5-06', text: 'The sociologist Niklas Luhmann kept a box of paper slips for about 45 years. It grew to around 90,000 of them.' },
@@ -268,20 +244,15 @@ export const COURSE: CourseChapter[] = [
       { id: 'c5-07', text: 'He wrote nearly 600 publications, among them more than 40 books.' },
       // Long boxes of 4 by 6 index cards; the name "Ryan Holiday".
       // SOURCE: Ryan Holiday, YouTube video UBdlprawTkA (his note card system): tens of thousands of cards, over 20 years.
-      { id: 'c5-08', text: 'The writer Ryan Holiday has kept tens of thousands of index cards, over twenty years.' },
-      // His first book, then the second and third; the stack of cards under them keeps growing.
-      // SOURCE: same video: his first book got some use from the cards; the most value came from years of cards added up.
-      { id: 'c5-09', text: 'He says the most value came years later, from all the cards added up.' },
+      { id: 'c5-08', text: 'The writer Ryan Holiday has kept tens of thousands of index cards over twenty years. He says the most value came later, from all of them added up.' },
       // Three small scenes: a meeting, a page in another language, a field that becomes clear.
-      { id: 'c5-10', text: 'You do not need to write books. Think of the meeting where the right fact is there when you need it.' },
+      { id: 'c5-09', text: 'You do not need to write books. Think of the meeting where the right fact is there when you need it.' },
       // A page in another language becomes readable; a hard subject comes into focus.
-      { id: 'c5-11', text: 'The language you keep. The subject you finally understand.' },
+      { id: 'c5-10', text: 'The language you keep. The subject you finally understand.' },
       // The card base, now large, glows: "Your card base".
-      { id: 'c5-12', text: 'Over time, your card base becomes a record of what you know. Because you review it, you still know it.' },
-      // A few cards a day, and a long road of days behind them.
-      { id: 'c5-13', text: 'Small cards, every day, add up to a lot.' },
+      { id: 'c5-11', text: 'Over time, your card base becomes a record of what you know. Because you review it, you still know it.' },
       // One card, held in a hand; "Yours".
-      { id: 'c5-14', text: 'But only if the cards are truly yours. That is next.' },
+      { id: 'c5-12', text: 'Small cards, every day, add up. But only if they are truly yours: that is next.' },
     ],
   },
   {
@@ -293,7 +264,7 @@ export const COURSE: CourseChapter[] = [
       // The card base, and a head in profile; the two match.
       { id: 'c6-02', text: 'Your card base is your knowledge base. It is a picture of what you know.' },
       // An endless scroll of web pages pours past; a tiny card base under it.
-      { id: 'c6-03', text: 'So the goal is not to copy the internet into it. There is always more. You would never finish.' },
+      { id: 'c6-03', text: 'The goal is not to copy the internet into it. There is always more.' },
       // A page of notes boils down to two short cards in plain words.
       { id: 'c6-04', text: 'The goal is to distil. Take what you learned, and put it in your own words and your own formats.' },
       // A simple picture of digestion: food in, a smaller, useful part kept.
@@ -305,32 +276,22 @@ export const COURSE: CourseChapter[] = [
       // A shallow glance versus a deep look; the deep one leaves a lasting mark.
       // SOURCE: Craik & Lockhart 1972, "Levels of processing: A framework for memory research", Journal of Verbal Learning and Verbal Behavior.
       { id: 'c6-08', text: 'Memory researchers call this depth of processing. The more you think about what something means, the longer you keep it.' },
-      // Two words: "fast", made by the person, glows longer than "fast", only read.
-      // SOURCE: Slamecka & Graf 1978, "The generation effect: Delineation of a phenomenon", J. Exp. Psych.: Human Learning and Memory.
-      { id: 'c6-09', text: 'In one classic study, people remembered words they came up with themselves better than words they only read.' },
       // Someone else's deck is copied in; the cards stay grey.
-      { id: 'c6-10', text: "That is why copying someone else's cards makes no sense. It skips the very part that makes you learn." },
+      { id: 'c6-09', text: "That is why copying someone else's cards makes no sense: it skips the thinking that makes you learn." },
       // A phone note: a quick line written down while someone talks.
-      { id: 'c6-11', text: 'So here is the habit. When you hear something worth keeping, write it down somewhere. A note, a list, anywhere.' },
+      { id: 'c6-10', text: 'So when you hear something worth keeping, write it down somewhere.' },
       // A rushed, messy card is made on the spot; it gets a red mark.
-      { id: 'c6-12', text: 'Do not make the card in that moment. A card made in a hurry is usually a poor card.' },
-      // Poor cards pile up in the Inbox; the Inbox row dims.
-      { id: 'c6-13', text: 'Poor cards pile up. Review turns into a chore, and you stop opening the Inbox.' },
+      { id: 'c6-11', text: 'Do not make the card in that moment. Rushed cards are poor cards, they pile up, and review becomes a chore.' },
       // Later, at a quiet desk: the note becomes a clean card.
-      { id: 'c6-14', text: 'Make the card later, when you have time to sit and think. Capture first, make later.' },
-      // A stack of marked books beside a desk; a second pass; a few lines stand out.
-      // SOURCE: Ryan Holiday, YouTube video UBdlprawTkA: he lets a book sit, then makes note cards on a second pass.
-      { id: 'c6-15', text: 'Ryan Holiday does this with books. He lets a book sit, then makes his cards on a second pass.' },
+      { id: 'c6-12', text: 'Make the card later, when you have time to sit and think. Capture first, make later.' },
       // The new-card line: "New cards · 60 waiting", ten a day; a week of days ticks past.
-      { id: 'c6-16', text: 'Remember the ten new cards a day. If sixty are waiting, a new card can take about a week to reach you.' },
+      { id: 'c6-13', text: 'With ten new cards a day and sixty waiting, a new card can take about a week to reach you.' },
       // The card arrives in the Inbox; it looks familiar, like a friend.
-      { id: 'c6-17', text: 'When it comes, it is no surprise. You made it, you digested it, and you have been looking forward to it.' },
+      { id: 'c6-14', text: 'When it comes, it is no surprise. You made it, you digested it, and you have been looking forward to it.' },
       // A mental map of the card base, with the cards in their places.
-      { id: 'c6-18', text: 'You carry a picture of your card base in your head, because you put each card there.' },
-      // The card base and the head in profile again, matching.
-      { id: 'c6-19', text: 'Keep this: your card base is your knowledge base. Make it yours, one digested card at a time.' },
-      // A clean card next to a messy one.
-      { id: 'c6-20', text: 'So what does a good card look like? That is next.' },
+      { id: 'c6-15', text: 'You carry a picture of your card base in your head, because you put each card there.' },
+      // The card base and the head in profile, matching; then a clean card next to a messy one.
+      { id: 'c6-16', text: 'Your card base is your knowledge base: make it yours. Next, what a good card looks like.' },
     ],
   },
   {
@@ -365,17 +326,13 @@ export const COURSE: CourseChapter[] = [
       // Rule 3; a sentence with three scattered blanks, then one blank over a whole phrase.
       { id: 'c7-13', text: 'Rule three. Hide a phrase that means something, not a few scattered words.' },
       // The answer shows; the person's own words differ, and still get the check.
-      { id: 'c7-14', text: 'When you check yourself, the same meaning in other words counts as remembered. Exact words matter only for things like a quote or a command.' },
+      { id: 'c7-14', text: 'When you check yourself, the same meaning in other words counts. Exact words matter only for quotes and commands.' },
       // A title changes from "From the podcast, part 3" to the name of the idea.
-      { id: 'c7-15', text: 'Name the card after the idea, not after where you found it. Picture looking for it again in six months.' },
-      // Four small cards: a word, a person, a process, a quote.
-      { id: 'c7-16', text: 'Different things need different cards. A word, a person, a process, or a quote each has its own format.' },
-      // The card skill's Formats folder, one page for each format.
-      { id: 'c7-17', text: 'Each format is a short page in the card skill, with an example. You will see where it is in the last chapter.' },
-      // The four small cards from before, side by side.
-      { id: 'c7-18', text: 'One thing to recall. Hide the answer, not the clue. Small cards beat big ones.' },
-      // A terminal window with an agent in it, beside a card.
-      { id: 'c7-19', text: 'Good cards take thought. Next, a tool that can help make them, and how it can hurt.' },
+      { id: 'c7-15', text: 'Name each card after the idea, not after where you found it.' },
+      // Four small cards: a word, a person, a process, a quote; then the card skill's Formats folder.
+      { id: 'c7-16', text: 'Different things need different formats: a word, a person, a process, a quote. Each has a short page in the card skill.' },
+      // The four small cards side by side; then a terminal window with an agent in it.
+      { id: 'c7-17', text: 'One thing to recall. Hide the answer, not the clue. Next, a tool that can help, and hurt.' },
     ],
   },
   {
@@ -383,64 +340,44 @@ export const COURSE: CourseChapter[] = [
     title: 'Make cards with your AI, without vibe writing',
     clips: [
       // A terminal window with an agent in it, next to the app.
-      { id: 'c8-01', text: 'You know a good card starts with digestion. Now, a tool that makes cards fast, and why that speed is also its danger.' },
-      // A card file opens as plain text: the title line, the fact, the hidden word in marks.
-      { id: 'c8-02', text: 'First, a fact that matters here. Each card is a plain Markdown file on your computer.' },
-      // The word "Markdown", then plain text with a few light marks.
-      { id: 'c8-03', text: 'Markdown is plain text with a few light marks, so any tool that reads files can read your cards.' },
+      { id: 'c8-01', text: 'A good card starts with digestion. Now, a tool that makes cards fast, and why that is a danger.' },
+      // A card file opens as plain text: the title line, the fact, the hidden word in marks; the word "Markdown".
+      { id: 'c8-02', text: 'One fact matters here: each card is a plain Markdown file, plain text with a few light marks.' },
       // The agent's window reads a card file.
-      { id: 'c8-04', text: 'An agent is an AI tool that can read and write files on your computer. Any agent like that works here.' },
+      { id: 'c8-03', text: 'An agent is an AI tool that can read and write files on your computer. Any agent like that works here.' },
       // The app with a line through a cloud: no AI inside, nothing sent.
-      { id: 'c8-05', text: 'The app has no AI inside, and it sends nothing anywhere. You use your own agent.' },
+      { id: 'c8-04', text: 'The app has no AI inside, and it sends nothing anywhere. You use your own agent.' },
       // The screen goes quiet; one line: "Do not vibe write your cards."
-      { id: 'c8-06', text: 'Now the warning. Do not vibe write your cards.' },
+      { id: 'c8-05', text: 'Now the warning. Do not vibe write your cards.' },
       // An agent pours out card after card; nobody reads them.
-      { id: 'c8-07', text: 'Vibe writing means letting an AI pour out cards you never thought through.' },
-      // The card base from chapter 6 floods with grey cards.
-      { id: 'c8-08', text: 'That is the fastest way to ruin your card base. And your card base is your knowledge base.' },
-      // The Inbox fills with strangers; the Inbox row dims, then goes dark.
-      { id: 'c8-09', text: 'Your Inbox fills with cards you do not know, and the whole system becomes worthless.' },
+      { id: 'c8-06', text: 'Vibe writing means letting an AI pour out cards you never thought through.' },
+      // The card base floods with grey cards; the Inbox row dims, then goes dark.
+      { id: 'c8-07', text: 'It is the fastest way to ruin your card base, which is your knowledge base, and to make the whole system worthless.' },
       // Two paths: "Vibe write" leads down; "Digest, then make" leads up.
-      { id: 'c8-10', text: 'If you want this system to fail, vibe write your cards. If you want what you know to compound, do not.' },
+      { id: 'c8-08', text: 'If you want this system to fail, vibe write your cards. If you want what you know to compound, do not.' },
       // The name "Ryan Holiday" and his line, in quotes.
       // SOURCE: Ryan Holiday, YouTube video UBdlprawTkA, on taking notes by hand: "The inefficiency is the efficiency."
-      { id: 'c8-11', text: 'Ryan Holiday puts it in four words: "The inefficiency is the efficiency." The slow part, the thinking, is where you learn.' },
+      { id: 'c8-09', text: 'Ryan Holiday puts it this way: "The inefficiency is the efficiency." The thinking is where you learn.' },
       // A digested note goes into the agent; well-made cards come out; a person reads them.
-      { id: 'c8-12', text: 'The right way: the AI helps you make cards from what you have already digested.' },
-      // The note, the agent, and the person, in a loop.
-      { id: 'c8-13', text: 'You bring notes you thought through. The agent shapes them into cards, by the rules you just learned.' },
-      // The person reads each new card.
-      { id: 'c8-14', text: 'Then you read each one.' },
+      { id: 'c8-10', text: 'The right way: bring notes you have already digested. The agent shapes them into cards, and you read each one.' },
       // A text box with "Use the example notes" under it. WAITS: the person pastes notes or picks the example.
-      { id: 'c8-15', text: "Let's try it. Paste some notes you have already digested. Or use the example notes." },
-      // The prompt with a Copy button. WAITS: the person clicks Copy.
-      { id: 'c8-16', text: 'Next, copy the prompt.' },
-      // The prompt's lines light up one by one: the skill, three cards, Course Cards, the check.
-      { id: 'c8-17', text: 'The prompt tells your agent to read the card skill first. Then it asks for three cards from your notes, in Course Cards, and a check of each one.' },
-      // The card skill's pages flow into the agent.
-      { id: 'c8-18', text: 'The skill teaches your agent the same rules you just learned.' },
-      // The agent's window; a paste. WAITS: the agent writes card files in Course Cards.
-      { id: 'c8-19', text: 'Paste the prompt into your agent, and let it work.' },
-      // Card files appear in the course, one by one.
-      { id: 'c8-20', text: 'The cards show up here as soon as your agent writes them.' },
+      { id: 'c8-11', text: "Let's try it. Paste some digested notes, or use the example notes." },
+      // The prompt with a Copy button; its lines light up: the skill, three cards, Course Cards, the check. WAITS: the person clicks Copy.
+      { id: 'c8-12', text: 'Copy the prompt. It tells your agent to read the card skill, then make three cards in Course Cards.' },
+      // The agent's window; a paste; card files appear in the course, one by one. WAITS: the agent writes card files in Course Cards.
+      { id: 'c8-13', text: 'Paste it into your agent. The cards show up here as it writes them.' },
       // The quiet line "No new cards yet. Did you check with your agent?"
-      { id: 'c8-21', text: 'If nothing shows up after a minute, check with your agent. The course keeps waiting.' },
-      // Each new card gets a check mark or "1 thing to check".
-      { id: 'c8-22', text: 'Then the app checks each card for sure mistakes. For example, a card with nothing hidden.' },
-      // "3 cards. 2 pass the check." with the fault listed under the third.
-      { id: 'c8-23', text: 'You see how many cards pass, and what to fix in the others. Fix them yourself, or ask your agent.' },
+      { id: 'c8-14', text: 'If nothing shows up after a minute, check with your agent.' },
+      // Each new card gets a check mark or "1 thing to check"; "3 cards. 2 pass the check."
+      { id: 'c8-15', text: 'Then the app checks each card, and shows what to fix.' },
       // Skip, then three ready example cards with "Make these cards".
-      { id: 'c8-24', text: 'No agent? Skip this step. The course shows three example cards, and makes them only if you say so.' },
+      { id: 'c8-16', text: 'No agent? Skip this step. The course shows three example cards, and makes them only if you say so.' },
       // A person reads a card, rewrites a line, and deletes another card.
-      { id: 'c8-25', text: 'An agent drafts fast, but you decide. Read each card, and keep only what you want to recall.' },
-      // A line on a card is rewritten in plainer words.
-      { id: 'c8-26', text: 'Where a card does not sound like you, put it in your own words.' },
+      { id: 'c8-17', text: 'Your agent drafts fast, but you decide. Keep only what you want to recall, in your own words.' },
       // The card skill's right-click menu: "Copy prompt for your agent".
-      { id: 'c8-27', text: 'You can copy the same prompt at any time. Right-click the card skill in the sidebar, and choose Copy prompt for your agent.' },
-      // The loop again: you digest, the agent shapes, you decide.
-      { id: 'c8-28', text: 'So, the line to keep: you digest and decide. Your agent only shapes.' },
-      // Three icons appear: a pen, the Inbox, a pair of shears.
-      { id: 'c8-29', text: 'Making cards is one of three habits. Next, all three.' },
+      { id: 'c8-18', text: 'To copy the prompt later, right-click the card skill, and choose Copy prompt for your agent.' },
+      // The loop: you digest, the agent shapes, you decide; then three icons: a pen, the Inbox, shears.
+      { id: 'c8-19', text: 'You digest and decide; your agent only shapes. Next, the three habits.' },
     ],
   },
   {
@@ -448,7 +385,7 @@ export const COURSE: CourseChapter[] = [
     title: 'Three habits: make, review, tend',
     clips: [
       // The pen icon: cards by hand and with the agent.
-      { id: 'c9-01', text: "You can now make cards by hand and with your agent. Let's step back and see the whole system." },
+      { id: 'c9-01', text: "Let's step back and see the whole system." },
       // Three icons in a row: a pen "Make", the Inbox "Review", shears "Tend".
       { id: 'c9-02', text: 'It has three habits: making cards, reviewing cards, and tending cards. Tending means fixing and improving the cards you have.' },
       // The Inbox icon lights up; a sunrise.
@@ -460,20 +397,14 @@ export const COURSE: CourseChapter[] = [
       { id: 'c9-05', text: 'Yet 72 percent of them believed cramming had worked better.' },
       // The shears icon lights up, inside the Inbox: a card with a small fix.
       { id: 'c9-06', text: 'Tending needs no time of its own. It happens while you review.' },
-      // Thought bubbles over a card: "Not clear", "Needs a link".
-      { id: 'c9-07', text: 'This card is not clear. That one needs a link. You notice it right there, in the review.' },
-      // A short message goes to the agent; the review goes on.
-      { id: 'c9-08', text: 'With an agent, you send the fix in that moment, and keep going.' },
-      // A separate "chore" block on a calendar dissolves into the review block.
-      { id: 'c9-09', text: 'Tending used to need time of its own. Now it rides along with the review.' },
+      // Thought bubbles over a card, "Not clear", "Needs a link"; a short message goes to the agent; the review goes on.
+      { id: 'c9-07', text: 'This card is not clear. That one needs a link. With an agent, you send the fix right then, and keep going.' },
       // A clock face: a short arc for review and tending.
-      { id: 'c9-10', text: 'Even with a large card base, review and tending together can fit in fifteen to twenty minutes a day.' },
+      { id: 'c9-08', text: 'Even with a large card base, review and tending together can fit in fifteen to twenty minutes a day.' },
       // The pen icon lights up; a quiet desk.
-      { id: 'c9-11', text: 'Making is the one you set time aside for. Digesting takes thought, so give it a quiet moment.' },
-      // The three icons with their times: "Time set aside", "Every day", "While you review".
-      { id: 'c9-12', text: 'Make with time set aside. Review every day. Tend as you review.' },
-      // A garden path; the shears icon.
-      { id: 'c9-13', text: 'Next, the tending itself, and why it is learning too.' },
+      { id: 'c9-09', text: 'Making is the one you set time aside for. Digesting takes thought, so give it a quiet moment.' },
+      // The three icons with their times; then a garden path.
+      { id: 'c9-10', text: 'Make with time set aside. Review every day. Tend as you review. Next, the tending itself.' },
     ],
   },
   {
@@ -485,39 +416,29 @@ export const COURSE: CourseChapter[] = [
       // A garden: a gardener clears weeds and prunes a branch; the garden fills out.
       { id: 'c10-02', text: 'Think of a gardener. A garden does well when someone clears it and prunes it.' },
       // A card is reworded; a small glow over it.
-      { id: 'c10-03', text: 'That is not a chore apart from learning. Each fix makes you think about the idea again, and that is learning too.' },
+      { id: 'c10-03', text: 'That is not a chore. Each fix makes you think about the idea again, and that is learning too.' },
       // A card that keeps turning red; a magnifying glass over its wording.
-      { id: 'c10-04', text: 'A card you keep missing is not a failure. It is a sign to look at it.' },
-      // The card's wording comes into focus; it splits in two.
-      { id: 'c10-05', text: 'Often the wording is unclear, or it is two cards in one.' },
+      { id: 'c10-04', text: 'A card you keep missing is a sign to look at it. Often it is unclear, or two cards in one.' },
       // Edit card on a card; then E in the Inbox.
-      { id: 'c10-06', text: 'To fix a card, click Edit card, or press E in the Inbox. Press Escape when you are done.' },
+      { id: 'c10-05', text: 'To fix a card, click Edit card, or press E in the Inbox. Press Escape when you are done.' },
       // A short note to the agent: "Make this card's clue clearer"; the card file changes.
-      { id: 'c10-07', text: 'Or, since each card is a file, tell your agent what to change, and keep reviewing.' },
+      { id: 'c10-06', text: 'Or, since each card is a file, tell your agent what to change, and keep reviewing.' },
       // A branch is cut; the plant looks better for it.
-      { id: 'c10-08', text: 'Some cards no longer earn their place. Pruning is part of it.' },
+      { id: 'c10-07', text: 'Some cards no longer earn their place. Pruning is part of it.' },
       // The card's ⋯ menu, "Archive card"; the card turns muted.
-      { id: 'c10-09', text: 'To stop reviewing a card, open its menu and choose Archive card. It keeps its history.' },
+      { id: 'c10-08', text: 'To stop reviewing a card, open its menu and choose Archive card. It keeps its history.' },
       // The Inbox's All cards menu, the Archived row, and Unarchive.
-      { id: 'c10-10', text: 'Archived cards are at the bottom of the All cards menu, in the Inbox. Unarchive brings one back.' },
+      { id: 'c10-09', text: 'Archived cards are at the bottom of the All cards menu, in the Inbox. Unarchive brings one back.' },
       // ⋯ › Put at top of Inbox; the chip "Up next".
-      { id: 'c10-11', text: 'To see a card first, choose Put at top of Inbox. It gets the Up next mark, and comes before the others.' },
-      // The first answer; the Up next chip goes.
-      { id: 'c10-12', text: 'The mark comes off when you answer the card.' },
-      // Reviews under a card in a page opens: each answer, and the Next row.
-      { id: 'c10-13', text: 'Under each card is its review history. Click Reviews to see each answer, and when it comes next.' },
-      // A row of Reviews with its ×.
-      { id: 'c10-14', text: 'Each row has a small cross. Use it to delete one wrong answer.' },
-      // ⋯ › Reset history; the card shows New.
-      { id: 'c10-15', text: 'If a card changed a lot, choose Reset history. It starts again as a new card.' },
+      { id: 'c10-10', text: 'To see a card first, choose Put at top of Inbox. It gets the Up next mark until you answer it.' },
+      // Reviews under a card opens: each answer with its ×; then ⋯ › Reset history, and the card shows New.
+      { id: 'c10-11', text: 'Each card keeps its review history. You can delete one wrong answer, or choose Reset history to start fresh.' },
       // The All cards menu: "New cards · 38 more" and its Add button.
-      { id: 'c10-16', text: 'Want more today? In the All cards menu, click Add for more new cards. Tomorrow, the usual number comes back.' },
-      // The garden again, full and tidy; the card base beside it.
-      { id: 'c10-17', text: 'Prune a little each day, and your card base stays a true picture of what you know.' },
+      { id: 'c10-12', text: 'Want more today? Click Add in the All cards menu.' },
       // The "Try it in the app" button and "Next chapter".
-      { id: 'c10-18', text: 'To try Archive and Up next on your own card, choose Try it in the app.' },
-      // The sidebar, and a calendar page for the week ahead.
-      { id: 'c10-19', text: 'One chapter left: where things are, and your first week.' },
+      { id: 'c10-13', text: 'To try Archive and Up next on your own card, choose Try it in the app.' },
+      // The garden, full and tidy; then a calendar page for the week ahead.
+      { id: 'c10-14', text: 'Prune a little each day, and your card base stays true. Next: your first week.' },
     ],
     tryIt: [
       { target: 'card-menu', say: 'Open the menu of one of your Course Cards.', done: 'click' },
@@ -534,7 +455,7 @@ export const COURSE: CourseChapter[] = [
     title: 'Where things are, and your first week',
     clips: [
       // The three habit icons, then the real sidebar.
-      { id: 'c11-01', text: 'You know the three habits, and how to tend as you go. To finish: where to find things, and how to start.' },
+      { id: 'c11-01', text: 'To finish: where things are, and your first week.' },
       // The real sidebar; the card skill's row at the bottom lights up.
       { id: 'c11-02', text: 'The card skill is at the bottom of the sidebar.' },
       // The card skill opens: Start here, the rules, Formats, Course transcript.
@@ -558,12 +479,12 @@ export const COURSE: CourseChapter[] = [
       // In the Inbox, a small fix to a card.
       { id: 'c11-12', text: 'As you review, fix what is unclear. That is tending, and it is how your card base stays yours.' },
       // A small seedling in fresh soil.
-      // SOURCE: Ryan Holiday, YouTube video UBdlprawTkA: the best time to start was long ago; the second best time is now.
-      { id: 'c11-13', text: 'Ryan Holiday says the best time to start a system like this was years ago. The second best time is now.' },
+      // A common saying, not a study. Ryan Holiday uses it in video UBdlprawTkA; the name is left out, because the saying is not his.
+      { id: 'c11-13', text: 'The best time to start was years ago. The second best time is now.' },
       // One new card, then a calendar page turns to tomorrow and the Inbox lights up.
       { id: 'c11-14', text: "That's the whole course. Make one card today. Open the Inbox tomorrow." },
       // The course's end screen: cards made, cards that pass the check, when they come back.
-      { id: 'c11-15', text: 'Your card base is your knowledge base. Build it one digested card at a time, and what you learn stays with you.' },
+      { id: 'c11-15', text: 'Your card base is your knowledge base. Build it a card at a time, and what you learn stays.' },
     ],
     tryIt: [
       { target: 'card-skill-row', say: 'This is the card skill. Click it to open it.', done: 'click' },
