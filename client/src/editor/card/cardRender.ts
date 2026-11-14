@@ -31,13 +31,14 @@
  *    span, as the hidden words are (`cardMedia.ts`).
  */
 import DOMPurify from 'dompurify'
-import { Marked, type TokenizerAndRendererExtension, type Tokens } from 'marked'
+import { Marked, type Token, type TokenizerAndRendererExtension, type Tokens } from 'marked'
 import { cardSides, hiddenCount, markHidden } from '@shared/cardText'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction, MouseMods } from '@shared/keys'
 import { parseAlt } from '../image/imageSrc'
 import { cardPillSpan } from '../wikilink/wikilinkPlugin'
 import { linkClickAction } from '../linkGesture'
+import { parseTableComment } from '../table/tableComment'
 import { audioPlayer, boardPicture, isAudioRef, isBoardRef, missingBoard, CARD_AUDIO_ATTR, CARD_BOARD_ATTR, type CardBoardLook } from './cardMedia'
 
 /** How much of the card shows (the Inbox's steps, D18). Absent: everything, as in the page. */
@@ -124,8 +125,65 @@ function sanitize(html: string): DocumentFragment {
   return purifier.sanitize(html, { ...PURIFY, RETURN_DOM_FRAGMENT: true })
 }
 
-/** One side's or one hidden word's Markdown as a sanitised fragment. */
-const fragmentOf = (text: string, inline: boolean): DocumentFragment => sanitize(inline ? markdown.parseInline(text, { async: false }) : markdown.parse(text, { async: false }))
+/** One hidden word's Markdown as a sanitised fragment. */
+const inlineOf = (text: string): DocumentFragment => sanitize(markdown.parseInline(text, { async: false }))
+
+/** A column's least width in the page's tables, px (`tableColumnResize.ts`: prosemirror-tables' `cellMinWidth`). */
+const CELL_MIN_WIDTH = 24
+
+/**
+ * The column widths the page editor saved for each table of `tokens`, in page order (YAZ-5136 round 2, Yaseen: "if u
+ * edit the size of the card in the editor, it doesnt preserve the size in the viewer?"): the `widths` part of the
+ * `<!-- table: … -->` comment right after a table (`tableComment.ts`, the page's one reader). `null`: no widths.
+ */
+function tableWidths(tokens: readonly Token[], out: Array<ReadonlyArray<number | null> | null> = []): Array<ReadonlyArray<number | null> | null> {
+  tokens.forEach((token, at) => {
+    if (token.type === 'table') {
+      const next = tokens[at + 1]
+      const widths = next?.type === 'html' ? (parseTableComment(next.raw)?.widths ?? []) : []
+      out.push(widths.some((w) => w !== null) ? widths : null)
+      return
+    }
+    if (token.type === 'list') for (const item of (token as Tokens.List).items) tableWidths(item.tokens, out)
+    else if ('tokens' in token && Array.isArray(token.tokens)) tableWidths(token.tokens, out)
+  })
+  return out
+}
+
+/**
+ * The saved widths on the read tables, as the page's tables take them (prosemirror-tables): a `<col>` per column, and
+ * a fixed layout; a table with every column sized is their sum wide, one with an `auto` column fills its box and is
+ * at least the sum (an `auto` column counted at `CELL_MIN_WIDTH`). Set after DOMPurify, from numbers only.
+ */
+function sizeTables(root: ParentNode, widths: ReadonlyArray<ReadonlyArray<number | null> | null>): void {
+  root.querySelectorAll('table').forEach((table, at) => {
+    const own = widths[at]
+    if (own == null) return
+    const columns = table.rows[0]?.cells.length ?? 0
+    const group = document.createElement('colgroup')
+    let sum = 0
+    for (let c = 0; c < columns; c++) {
+      const w = own[c] ?? null
+      const col = document.createElement('col')
+      if (w !== null) col.style.width = `${w}px`
+      group.append(col)
+      sum += w ?? CELL_MIN_WIDTH
+    }
+    table.prepend(group)
+    table.dataset.sized = ''
+    if (Array.from({ length: columns }, (_, c) => own[c] ?? null).every((w) => w !== null)) table.style.width = `${sum}px`
+    else table.style.minWidth = `${sum}px`
+  })
+}
+
+/** One side's Markdown as a sanitised fragment, its tables sized as the page saved them. */
+function sideOf(text: string): DocumentFragment {
+  const tokens = markdown.lexer(text)
+  const widths = tableWidths(tokens)
+  const fragment = sanitize(markdown.parser(tokens))
+  sizeTables(fragment, widths)
+  return fragment
+}
 
 /** Each table of `root` in a box that scrolls sideways (YAZ-5136): a wide table scrolls in the card, not the view. */
 function boxTables(root: ParentNode): void {
@@ -159,7 +217,7 @@ function fillHidden(root: Node, words: readonly string[], open: (n: number) => b
       const span = document.createElement('span')
       const inner = document.createElement('span')
       inner.className = 'card__word'
-      inner.append(fragmentOf(word, true))
+      inner.append(inlineOf(word))
       span.className = open(n) ? 'card__hidden' : 'card__blank'
       if (!open(n)) {
         span.setAttribute('role', 'img')
@@ -314,7 +372,7 @@ export function renderCard(text: string, show: CardShow = {}, look?: CardLook): 
     const side = document.createElement('div')
     side.className = 'card__side'
     side.dataset.side = String(i)
-    side.append(fragmentOf(marked, false))
+    side.append(sideOf(marked))
     boxTables(side)
     fillHidden(side, words, open, next)
     applyLook(side, look)
