@@ -3385,3 +3385,4 @@ describe('Settings › Tables › Header row (YAZ-4794): text colour and align',
     expect(isSettings({ ...DEFAULT_SETTINGS, tableHeaderRow: noAlign })).toBe(false)
   })
 })
+

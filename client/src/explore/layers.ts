@@ -5,6 +5,7 @@
  * keeps the list in state and the DOM keeps each layer's scroll.
  */
 import { fileKind } from '@shared/fileKind'
+import { LEGACY_EXPLORE_PAGE_BOX_KEY, movedStorageItem } from '@shared/legacyNames'
 
 export type ExploreLayer =
   | { id: number; kind: 'search' }
@@ -218,7 +219,8 @@ const BOX_KEY = (kind: ExploreLayer['kind']): string => `explore:box:${kind}`
 const finite = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 export function savedLayerBox(kind: ExploreLayer['kind']): LayerBox | null {
   try {
-    const raw = localStorage.getItem(BOX_KEY(kind))
+    // YAZ-5036: the page layer's box saved before the rename (`explore:box:note`) moves to the new key once.
+    const raw = kind === 'page' ? movedStorageItem(localStorage, BOX_KEY(kind), LEGACY_EXPLORE_PAGE_BOX_KEY) : localStorage.getItem(BOX_KEY(kind))
     if (raw === null) return null
     const v: unknown = JSON.parse(raw)
     if (typeof v !== 'object' || v === null) return null

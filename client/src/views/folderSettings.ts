@@ -15,6 +15,7 @@ import { isRecord } from '@shared/guards'
 // The one reserved key this module owns, and where links live inside it (YAZ-864): both are in
 // `@shared/folderSettingsLinks`, so the main process's ID rewrite walks the same leaves (YAZ-2677).
 import { FOLDER_SETTINGS_KEY, OTHER_FILES_KEEP_PAGES_KEY, OTHER_FILES_KEY } from '@shared/folderSettingsLinks'
+import { OTHER_FILES_KEEP_KEY_MOVE, movedView } from '@shared/legacyNames'
 import type { ViewDef } from './viewSchema'
 import { PAGE_VIEW_TYPE } from './pageView'
 import { transformFile, writeProperty } from './writeProperty'
@@ -186,7 +187,7 @@ function readViews(raw: unknown, problems: string[], ids: boolean): ViewDef[] {
       problems.push(`${FOLDER_SETTINGS_KEY}.views[${i}] must be a map with a type and a name — skipping it`)
       return
     }
-    let read: Record<string, unknown> = view
+    let read: Record<string, unknown> = movedView(view)
     if (view.outline !== undefined && typeof view.outline !== 'string') {
       problems.push(`${FOLDER_SETTINGS_KEY}.views[${i}].outline must be one markdown bullet list — ignoring it`)
       const { outline: _dropped, ...rest } = view
@@ -293,7 +294,8 @@ export function folderSettings(record: IndexRecord | undefined, ids: boolean): F
     properties: readProperties(raw.properties, problems),
     views: readViews(raw.views, problems, ids),
     otherFiles: readOtherFiles(raw[OTHER_FILES_KEY], problems),
-    otherFilesKeepPages: readOtherFiles(raw[OTHER_FILES_KEEP_PAGES_KEY], problems, OTHER_FILES_KEEP_PAGES_KEY),
+    // YAZ-5036: a file from before the rename says `other_files_keep_notes`; the new key wins when both are there.
+    otherFilesKeepPages: readOtherFiles(raw[OTHER_FILES_KEEP_PAGES_KEY] ?? raw[OTHER_FILES_KEEP_KEY_MOVE.from], problems, OTHER_FILES_KEEP_PAGES_KEY),
     problems,
   }
 }

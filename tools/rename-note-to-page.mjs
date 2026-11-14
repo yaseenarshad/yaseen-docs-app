@@ -88,6 +88,8 @@ const PAGE_PHRASES = [
 // ---- What stays, wherever it is (each match is set aside before the rename and put back after) ----
 
 const KEEP = [
+  // A remark about this rename itself names the old words (a comment line that says YAZ-5036).
+  /^\s*(?:\/\/|\*|\/\*).*\bYAZ-5036\b.*$/gm,
   // The cell note settings' keywords (before "cell note" itself is set aside).
   /(?<='cell note', (?:'new note', )?)'note'|(?<='template', 'cell note', )'new note'/g,
   // The release notes' bridge call (`update.notes`), before "ReleaseNotes" is set aside below.
@@ -133,6 +135,7 @@ const KEEP = [
   /(?<=getAttribute\(['"]role['"]\)\)\.toBe\()['"]note['"]/g,
   // Musical and sticky notes, notebooks, Excalidraw's names.
   /\b(?:musical|bank|sticky|post-it) notes?\b/gi,
+  /\bworking notes\b/g,
   /\bnoteLicense\b/g,
 ]
 

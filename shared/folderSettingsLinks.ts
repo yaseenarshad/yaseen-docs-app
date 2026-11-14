@@ -4,6 +4,7 @@
  * walk the same leaves: there is one link parser, never two.
  */
 import { isRecord } from './guards'
+import { OTHER_FILES_KEEP_KEY_MOVE, movedFill } from './legacyNames'
 
 /**
  * The one reserved key `client/src/views/folderSettings.ts` owns; nothing else may name it —
@@ -61,7 +62,8 @@ export function mapFolderSettingsLinks(
       const next: Record<string, unknown> = { ...view }
       if (Array.isArray(view.order)) next.order = view.order.map(mapLink)
       // A cell or row fill names its page by a link (YAZ-4536 D3): a rename keeps the fill on its page.
-      if (Array.isArray(view.fills)) next.fills = view.fills.map((fill: unknown) => (isRecord(fill) && 'page' in fill ? { ...fill, page: mapLink(fill.page) } : fill))
+      // YAZ-5036: a fill from before the rename names its page in `note`; it moves to `page` with the rename's write.
+      if (Array.isArray(view.fills)) next.fills = view.fills.map(movedFill).map((fill: unknown) => (isRecord(fill) && 'page' in fill ? { ...fill, page: mapLink(fill.page) } : fill))
       return next
     })
   }
@@ -83,6 +85,11 @@ export function mapFolderSettingsLinks(
   if (Array.isArray(raw[OTHER_FILES_KEY])) value[OTHER_FILES_KEY] = raw[OTHER_FILES_KEY].map(mapLink)
   // A folder moved there "folder only" is named by a link too (YAZ-4747 OF5).
   if (Array.isArray(raw[OTHER_FILES_KEEP_PAGES_KEY])) value[OTHER_FILES_KEEP_PAGES_KEY] = raw[OTHER_FILES_KEEP_PAGES_KEY].map(mapLink)
+  // YAZ-5036: the list under its old key (`other_files_keep_notes`) moves to the new key with the rename's write.
+  else if (Array.isArray(raw[OTHER_FILES_KEEP_KEY_MOVE.from])) {
+    value[OTHER_FILES_KEEP_PAGES_KEY] = (raw[OTHER_FILES_KEEP_KEY_MOVE.from] as unknown[]).map(mapLink)
+    delete value[OTHER_FILES_KEEP_KEY_MOVE.from]
+  }
   return changed ? { key: FOLDER_SETTINGS_KEY, value } : null
 }
 

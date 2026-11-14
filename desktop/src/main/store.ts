@@ -219,6 +219,7 @@ import { MAX_PICTURE_FOLDERS } from './fs/picturesFolders'
 import { isFiniteNumber, isRecord, isStringArray } from '@shared/guards'
 import { isHeadingStyle } from '@shared/textFormatting'
 import { isMediaFilters, isPinnedPacks, sanitizeMediaFilters } from '@shared/iconPacks'
+import { movedSettings } from '@shared/legacyNames'
 import { APP_STANDARD_KEYS, HOTKEY_COMMANDS, MENU_FIXED_KEYS, appKeyId, keyFor, sameKey, scopedId, type HotkeyId, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, asideId, gestureRow, isDefaultGesture, isGestureEntry, isUsableFor, keyRow, withAside, type HotkeyAside } from '@shared/keys'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
@@ -803,7 +804,8 @@ const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsStat
  * longer has is dropped: `linkOpen` (YAZ-3609 D11) went with YAZ-3936, as the gestures of Settings › Hotkeys took its place.
  */
 export function sanitizeSettings(raw: unknown): SettingsState {
-  const src = isRecord(raw) ? raw : {}
+  // YAZ-5036: the names that said "note" move to "page" first (`movedSettings`), so no setting and no custom key resets.
+  const src = isRecord(raw) ? movedSettings(raw) : {}
   const out = { ...DEFAULT_SETTINGS }
   for (const k of SETTINGS_KEYS) {
     const v = src[k]
@@ -847,7 +849,9 @@ const WHOLE_FIELDS: readonly (keyof SettingsState)[] = ['hotkeys', 'hotkeysAside
  * that the file lacks or that the repair had to change keeps this Mac's part. A field with no repair by part
  * (`sidebarSort`) that the repair resets as a whole keeps this Mac's whole field (YAZ-3302).
  */
-export function mergeFolderSettings(current: SettingsState, incoming: Partial<Record<keyof SettingsState, unknown>>): SettingsState {
+export function mergeFolderSettings(current: SettingsState, given: Partial<Record<keyof SettingsState, unknown>>): SettingsState {
+  // YAZ-5036: a Mac on an older build writes the old names; they move here, before the merge picks the travelling keys.
+  const incoming = movedSettings(given)
   const isObject = (v: unknown): v is Record<string, unknown> => isRecord(v) && !Array.isArray(v)
   const taken = Object.fromEntries(
     Object.entries(incoming)
