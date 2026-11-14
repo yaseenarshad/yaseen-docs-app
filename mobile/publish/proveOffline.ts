@@ -46,7 +46,12 @@ const deploy = (from: string, name: string, change: (dir: string) => void) => {
   change(dir)
   return dir
 }
+// The QR reader's chunk of v1 is NOT in v2 (as a deploy whose chunk names changed): an old page must still load it.
+const qrChunk = readdirSync(join(mobile, 'dist', 'assets')).find((f) => f.startsWith('qrDecode-'))!
 const v2 = LIVE ? '' : deploy(v1, 'v2', (dir) => {
+  const sw = join(dir, 'sw.js')
+  writeFileSync(sw, readFileSync(sw, 'utf8').replace(`"/assets/${qrChunk}",`, ''))
+  unlinkSync(join(dir, 'assets', qrChunk))
   const html = join(dir, 'index.html')
   writeFileSync(html, readFileSync(html, 'utf8').replace('<title>', '<meta name="proof" content="v2" /><title>'))
 })
@@ -95,7 +100,7 @@ setTimeout(() => {
   console.log('TIMEOUT', JSON.stringify(results.at(-1)), [...new Set(versions)].join(' '))
   process.exit(2)
 }, 480_000).unref()
-const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${DEBUG}`, `--user-data-dir=${join(work, 'profile')}`, '--no-first-run', '--no-default-browser-check', '--window-size=390,844', 'about:blank'], { stdio: 'ignore' })
+const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${DEBUG}`, `--user-data-dir=${process.env.PROOF_PROFILE ?? join(work, 'profile')}`, '--no-first-run', '--no-default-browser-check', '--window-size=390,844', 'about:blank'], { stdio: 'ignore' })
 let browserWs = ''
 for (let i = 0; i < 50 && !browserWs; i++) {
   await wait(200)
@@ -153,6 +158,9 @@ listeners.push((m) => {
 })
 await send('ServiceWorker.enable', {}, page)
 const docHeaders: Record<string, string>[] = []
+// Every request URL the page makes (the friend code must never be in one).
+const requested: string[] = []
+listeners.push((m) => m.sessionId === page && m.method === 'Network.requestWillBeSent' && requested.push(m.params.request.url))
 // Trace only: the page's requests that are still open (a request the worker holds keeps the old worker busy).
 const open_ = new Map<string, { url: string; t: number }>()
 listeners.push((m) => {
@@ -191,6 +199,21 @@ const text = () => evaluate('document.body.innerText')
 const shellCaches = `caches.keys().then(ks => ks.filter(k => k.startsWith('notecards-shell-')).sort())`
 
 try {
+  // 0. LIVE with PROOF_EXPECT_UPDATE: this browser profile had the previous build. The new one must install, take over,
+  // and run at a later open.
+  if (LIVE && process.env.PROOF_EXPECT_UPDATE) {
+    const liveEntry = /src="(\/assets\/index-[^"]+\.js)"/.exec(await fetch(`${ORIGIN}/`).then((r) => r.text()))![1]
+    await open(`${ORIGIN}/`)
+    const before = await evaluate(`[navigator.serviceWorker.controller !== null, document.querySelector('script[src*="/assets/index-"]').getAttribute('src')]`)
+    record('0a the profile runs the previous build from its worker', before[0] === true && before[1] !== liveEntry, `page ${before[1]}, live ${liveEntry}`)
+    const t0 = Date.now()
+    const took = await until(`navigator.serviceWorker.getRegistration().then(r => !r.waiting && !r.installing && r.active.state === 'activated').then(ok => ok && caches.keys()).then(ks => ks && ks.filter(k => k.startsWith('notecards-shell-')).length === 2)`, 60_000)
+    record('0b the new build installs in the background and takes over (old build kept)', took, `${((Date.now() - t0) / 1000).toFixed(1)} s`)
+    await open(`${ORIGIN}/`)
+    const after = await evaluate(`document.querySelector('script[src*="/assets/index-"]').getAttribute('src')`)
+    record('0c the next open runs the new build', after === liveEntry, after)
+  }
+
   // 1. Online, the first open.
   await host(v1)
   await open(`${ORIGIN}/`)
@@ -199,11 +222,21 @@ try {
   record('1b the page has the CSP, no-referrer, nosniff, the camera rule', Boolean(h['content-security-policy']?.includes('connect-src https://api.github.com') && h['referrer-policy'] === 'no-referrer' && h['x-content-type-options'] === 'nosniff' && h['permissions-policy']?.includes('camera=(self)')))
   const active = await until(`navigator.serviceWorker.ready.then(r => r.active && r.active.state === 'activated')`)
   const controlled = await until(`navigator.serviceWorker.controller !== null`)
-  const kept = await evaluate(`${shellCaches}.then(async ks => ks.length ? (await (await caches.open(ks[0])).keys()).length : 0)`)
+  const swVer = /version:"([0-9a-z-]+)"/.exec(swText)![1]
+  const kept = await evaluate(`caches.has('notecards-shell-${swVer}').then(async has => has ? (await (await caches.open('notecards-shell-${swVer}')).keys()).length : 0)`)
   const expected = shellList.length
   record('1c the service worker installs, takes the page, keeps the whole shell', active && controlled && kept === expected, `${kept} of ${expected} files`)
   record('1d zero CSP violations, zero errors (page and worker)', csp().length === 0 && errors().length === 0, `${csp().length} CSP, ${errors().length} errors`)
   await shot('1-online-light')
+
+  // 1e. The friend link, online: the page shows the code; the code is in the fragment only, in no request.
+  const CODE = 'bb5a315d61ae9438b18e'
+  const sentBefore = requested.length
+  await open(`${ORIGIN}/friend#${CODE}`)
+  const shows = await until(`document.getElementById('code')?.value === '${CODE}'`)
+  const leaked = requested.slice(sentBefore).filter((u) => u.includes(CODE))
+  record('1e the friend page shows the code; no request carries it', shows && leaked.length === 0 && requested.length > sentBefore, `${requested.length - sentBefore} requests, ${leaked.length} with the code`)
+  await open(`${ORIGIN}/`)
 
   // 2. The CSP is live: a call to another origin is refused (this violation is on purpose).
   const before = csp().length
@@ -248,6 +281,10 @@ try {
   record('4b the new version takes over by itself, and the next open runs it', took && swapped, `took over ${(tookMs / 1000).toFixed(1)} s after the open`)
   record('4c the old version is kept beside the new one (its lazy chunks still load)', (await evaluate(shellCaches)).length === 2, JSON.stringify(await evaluate(shellCaches)))
 
+  const old = await evaluate(`import('/assets/${qrChunk}').then(() => 'loaded', e => String(e))`)
+  const hostHasIt = await fetch(`${ORIGIN}/assets/${qrChunk}`).then((r) => r.headers.get('content-type') ?? '')
+  record("4d after the deploy, a lazy chunk of the OLD version still loads (the host no longer has it)", old === 'loaded' && !/javascript/.test(hostHasIt), `${old}; the host answers ${hostHasIt || 'nothing'}`)
+
   // 5. A broken deploy.
   await host(v3)
   await open(`${ORIGIN}/`)
@@ -269,6 +306,17 @@ try {
   record('6 dark mode: the dark background', bg === 'rgb(30, 30, 30)', bg)
   await shot('6-offline-dark')
 
+  if (!LIVE) {
+    // 8. "Try again" (lazyScreen): a chunk that failed once loads on the next import, when the host has it again.
+    await host(v2)
+    await open(`${ORIGIN}/`)
+    const late = 'late-proof.js'
+    const first = await evaluate(`import('/assets/${late}').then(() => 'loaded', () => 'failed')`)
+    writeFileSync(join(v2, 'assets', late), 'export const late = 1\n')
+    const again = await evaluate(`import('/assets/${late}').then(() => 'loaded', () => 'failed')`)
+    record('8 a chunk import that failed loads at the next try (no failure kept by the worker or the browser)', first === 'failed' && again === 'loaded', `${first}, then ${again}`)
+    await host(null)
+  }
   const unexpected = csp().slice(onPurpose)
   record('7 no CSP violation in any later step', unexpected.length === 0, unexpected.map((l) => l.text).join(' | '))
   console.log('\nAll messages of the page and the worker:')
@@ -280,6 +328,7 @@ try {
   await wait(500)
   try {
     rmSync(work, { recursive: true, force: true })
+    if (process.env.PROOF_PROFILE && !process.env.PROOF_KEEP_PROFILE) rmSync(process.env.PROOF_PROFILE, { recursive: true, force: true })
   } catch {
     // Chrome may still write its profile while it stops; the temp folder goes with the next restart.
   }
