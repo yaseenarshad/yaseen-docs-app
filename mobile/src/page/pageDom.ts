@@ -4,65 +4,14 @@ import { cardInContent } from '@client/review/cardRead'
 import type { NavAction } from '../app/nav'
 import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
-import type { FileShow, PageMedia } from './media'
 import { cardOf, drawCard, embedName, resolveSourceOf } from './pageLook'
 
 /**
- * What a drawn page or card does once it is on screen (YAZ-5079): its pictures and sounds get their bytes (`fillMedia`),
- * its embedded cards are read and drawn in place (`fillCardEmbeds`, round 15 item 1), and a tap on a link opens what it
+ * What a drawn page or card does once it is on screen (YAZ-5079): its pictures and sounds get their bytes
+ * (`watchMedia`, `media/ui/vaultMedia.ts`), its embedded cards are read and drawn in place (`fillCardEmbeds`, round 15 item 1), and a tap on a link opens what it
  * names (`onPageTap`). Every element here is made by the app; the page's text reaches the screen only through
  * `renderPage` or `renderCard`, which clean it first.
  */
-
-const nameOf = (path: string) => path.slice(path.lastIndexOf('/') + 1)
-
-/** The calm line for a file the phone cannot show now (N3: "needs a connection"; the text still shows). */
-export function missingWords(kind: 'Picture' | 'Sound' | 'File', path: string, show: Extract<FileShow, { status: 'missing' }>): string {
-  if (show.why === 'offline') return `${kind} · ${nameOf(path)} · Needs a connection`
-  if (show.why === 'gone' || show.why === 'not-in-vault') return `Missing ${kind.toLowerCase()} · ${nameOf(path)}`
-  if (show.why === 'slowed') return `${kind} · ${nameOf(path)} · Try again soon`
-  return `${kind} · ${nameOf(path)} · Can't show it now`
-}
-
-function line(text: string): HTMLElement {
-  const el = document.createElement('span')
-  el.className = 'page-media page-media--missing'
-  el.textContent = text
-  return el
-}
-
-/** Each picture and sound of `root` gets its bytes, or a calm line. `live()` false: the page changed; stop. */
-export async function fillMedia(root: ParentNode, media: PageMedia, live: () => boolean = () => true): Promise<void> {
-  const jobs: Promise<void>[] = []
-  for (const img of root.querySelectorAll<HTMLImageElement>('img[data-vault-src]')) {
-    const path = img.dataset.vaultSrc!
-    // Asked for once: a second `fillMedia` of the same page passes it by.
-    delete img.dataset.vaultSrc
-    jobs.push(
-      media.show(path).then((show) => {
-        if (!live()) return
-        if (show.status === 'ready') img.src = show.url
-        else img.replaceWith(line(missingWords('Picture', path, show)))
-      }),
-    )
-  }
-  for (const box of root.querySelectorAll<HTMLElement>('[data-vault-sound]')) {
-    const path = box.dataset.vaultSound!
-    delete box.dataset.vaultSound
-    jobs.push(
-      media.show(path).then((show) => {
-        if (!live()) return
-        if (show.status !== 'ready') return void box.replaceWith(line(missingWords('Sound', path, show)))
-        const audio = document.createElement('audio')
-        audio.controls = true
-        audio.preload = 'none'
-        audio.src = show.url
-        box.replaceChildren(audio)
-      }),
-    )
-  }
-  await Promise.all(jobs)
-}
 
 /**
  * Each `![[ID]]` box of `root` with its card, read from the stored file (round 15, item 1): the head "Embedded from
@@ -132,19 +81,5 @@ export function tapOf(target: EventTarget | null, data: VaultData): Tap {
     if (page !== null) return { kind: 'go', action: { type: 'open', route: { kind: 'page', path: page } } }
     return { kind: 'missing', text: `${el.textContent ?? inner}. It is not in the vault.` }
   }
-  return null
-}
-
-/** Types the iPhone's own viewer shows (round 12, items 11 and 12). Any other: "Can't open on the phone yet". */
-const VIEWABLE = /^(application\/pdf|image\/|audio\/|video\/|text\/)/
-
-/**
- * Opens a vault file in the iPhone's own viewer (a PDF: round 12, item 11), or says why it cannot (item 12). Returns
- * the words to show, or null when the viewer opened.
- */
-export async function openFile(media: PageMedia, path: string, open: (url: string) => boolean = (url) => window.open(url, '_blank') !== null): Promise<string | null> {
-  const show = await media.show(path)
-  if (show.status !== 'ready') return missingWords('File', path, show)
-  if (!VIEWABLE.test(show.type) || !open(show.url)) return `${nameOf(path)} · Can't open on the phone yet`
   return null
 }

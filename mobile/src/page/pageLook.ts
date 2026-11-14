@@ -7,6 +7,7 @@ import type { CardLink } from '@shared/cardLinks'
 import { fileKind } from '@shared/fileKind'
 import { makeResolver } from '@shared/linkResolver'
 import { vaultPageId } from '@shared/pageId'
+import { vaultMediaPath, vaultMediaUrl } from '../media/ui/vaultMedia'
 import type { VaultData } from '../search/vaultData'
 import type { EmbedShow, LinkShow, PageLook } from './pageRender'
 // The Mac's card look (sides, hidden words, tables in a card), then the phone's reader.
@@ -76,14 +77,7 @@ export function assetPath(data: VaultData, holder: string, src: string): string 
   return assetsOf(data)(target, fromRoot ? undefined : folderOf(holder))
 }
 
-/**
- * The address a card's picture or sound gets from `cardLook`: a `data:` text that names the vault file, so the browser
- * fetches nothing (the page's CSP allows `data:`). The page view puts the stored bytes in its place (`fillMedia`).
- */
-export const VAULT_MEDIA_PREFIX = 'data:text/plain,vault-media:'
-export const vaultMediaPath = (src: string): string | null => (src.startsWith(VAULT_MEDIA_PREFIX) ? decodeURIComponent(src.slice(VAULT_MEDIA_PREFIX.length)) : null)
-
-/** A card's text drawn read only, as the Mac draws it (`renderCard`), its pictures marked for `fillMedia`. */
+/** A card's text drawn read only, as the Mac draws it (`renderCard`), its pictures and sounds marked for `watchMedia`. */
 export function drawCard(data: VaultData, holder: string, text: string): HTMLElement {
   const source = resolveSourceOf(data)
   const look = cardLook(source, undefined, {
@@ -92,11 +86,11 @@ export function drawCard(data: VaultData, holder: string, text: string): HTMLEle
     pagePath: `/${holder}`,
     src: (_root, dir, src) => {
       const path = assetPath(data, dir === '' ? 'x' : `${dir}/x`, src)
-      return path === null ? src : `${VAULT_MEDIA_PREFIX}${encodeURIComponent(path)}`
+      return path === null ? src : vaultMediaUrl(path)
     },
   })
   const el = renderCard(text, {}, look)
-  // A picture of the card: no address at all until its bytes come (`fillMedia`); one not in the vault: the Mac's
+  // A picture of the card: no address at all until its bytes come (`watchMedia`); one not in the vault: the Mac's
   // stock `<img>` of the text as written would fetch from this site, so it is a calm line instead.
   for (const img of el.querySelectorAll<HTMLImageElement>('img')) {
     const src = img.getAttribute('src') ?? ''

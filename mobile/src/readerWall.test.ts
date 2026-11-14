@@ -26,6 +26,9 @@ describe('the phone app has no editor, and the reader is a lazy chunk (YAZ-5079)
     const first = new Set([entry.fileName, ...entry.imports])
     const eager = chunks.filter((c) => first.has(c.fileName)).flatMap((c) => Object.keys(c.modules))
     expect(eager.filter((m) => /node_modules\/(marked|dompurify)\//.test(m) || m.endsWith('page/pageRender.ts'))).toEqual([])
+    // 3D's media (YAZ-5074) comes with the engine or the reader, never in the first load.
+    expect(modules.some((m) => m.endsWith('mobile/src/media/ahead.ts'))).toBe(true)
+    expect(eager.filter((m) => /mobile\/src\/media\/(ahead|plan|refs)\.ts$|media\/ui\/vaultMedia\.ts$/.test(m))).toEqual([])
     // The Search tab is in the first load: it opens at once, with no signal.
     expect(eager.some((m) => m.endsWith('mobile/src/screens/Search.tsx'))).toBe(true)
   }, 180_000)
