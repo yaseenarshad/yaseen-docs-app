@@ -197,9 +197,9 @@ const NAV = ['General', 'Editor', 'Sidebar', 'Cards', 'Sync']
 /** c12-07: Settings › Cards: the card skill switch, and Open the course. */
 function SettingsCards(props: SceneProps) {
   const b = useBeat(props)
-  const review = cue(b, 0, 0.16)
-  const sw = cue(b, 1, 0.29)
-  const course = cue(b, 2, 0.69)
+  const review = cue(b, 0, 0.168)
+  const sw = cue(b, 1, 0.267)
+  const course = cue(b, 2, 0.691)
   const showHide = since(b, sw + 0.12, 0.3) > 0.5 && b.progress < sw + 0.3 ? 'Hide' : 'Show'
   return (
     <Stage beat={b} label="Settings › Cards: one switch shows or hides the card skill; Open the course brings you back here">

@@ -727,7 +727,7 @@ function Due(props: SceneProps) {
 /** c1-13: the course's minutes (`COURSE_MINUTES`, the voice's length); the twelve chapters light up. */
 function Chapters(props: SceneProps) {
   const b = useBeat(props)
-  const twelve = cue(b, 1, 0.582)
+  const twelve = cue(b, 1, 0.581)
   const up = moved(b, since(b, twelve - 0.08, 0.6))
   return (
     <Stage beat={b} label={`About ${COURSE_MINUTES} minutes, in 12 short chapters`}>
@@ -738,7 +738,7 @@ function Chapters(props: SceneProps) {
           transform: b.reduced ? undefined : `translateY(${lerp(28, 0, up).toFixed(2)}%) scale(${lerp(1, 0.5, up).toFixed(3)})`,
         }}
       >
-        <BigNumber beat={b} p={since(b, cue(b, 0, 0.266) - 0.02, 0.8)} value={COURSE_MINUTES} label="minutes" up={up > 0.5} />
+        <BigNumber beat={b} p={since(b, cue(b, 0, 0.3) - 0.02, 0.8)} value={COURSE_MINUTES} label="minutes" up={up > 0.5} />
       </Layer>
       <Layer style={{ paddingTop: '20%', opacity: since(b, 0.52, 0.5) }}>
         <ol className="kit-chapters">

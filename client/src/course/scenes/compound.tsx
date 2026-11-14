@@ -1,7 +1,7 @@
 /**
  * CHAPTER 5, "Why it is worth it" (YAZ-5121): the lift. Compounding, like interest; five cards a day; one card's path,
- * where the time line stretches as the gaps grow (2 days, 11 days, about 6 weeks, about 5 months: the gaps the voice
- * says in c5-13, ts-fsrs's own defaults; they wait for Yaseen, see `script.ts` c5-13), until the card settles into the outline of a person as a steady
+ * where the time line stretches as the gaps grow (a few days, about 2 weeks, about 6 weeks, about 4 months: the gaps the
+ * voice says in c5-13, the app's own scheduler with its default settings, see `script.ts` c5-13), until the card settles into the outline of a person as a steady
  * light; Niklas Luhmann's slips and books; Ryan Holiday's index cards; the meeting, the language, the subject.
  * Cues land on the real voice's words (`marks` in `script.ts`).
  */
@@ -242,11 +242,15 @@ function Pile(props: SceneProps) {
   )
 }
 
-/** One card's path: the days it comes back on when it is remembered each time (the voice's gaps, `script.ts` c5-13). */
-const REVIEW_DAYS = [0, 2, 13, 59, 222]
-const GAPS = ['2 days', '11 days', 'about 6 weeks', 'about 5 months']
+/**
+ * One card's path: the days it comes back on when it is remembered each time (the voice's gaps, `script.ts` c5-13): the
+ * app's default gaps of about 4, 14, 45 and 135 days. The last review lands about two months in (day 63); the next gap
+ * ends about six and a half months in (day 198).
+ */
+const REVIEW_DAYS = [0, 4, 18, 63, 198]
+const GAPS = ['a few days', 'about 2 weeks', 'about 6 weeks', 'about 4 months']
 /** The days the line shows while each hop is drawn: it stretches as the gaps grow. */
-const SPANS = [3, 16, 70, 250]
+const SPANS = [6, 22, 75, 225]
 const TICKS: readonly [number, string][] = [
   [7, '1 week'],
   [30, '1 month'],
@@ -282,12 +286,12 @@ function Path({ beat, draws, span, here = 0, away = 0, opacity = 1 }: { beat: Be
         <path className={`kit-path__arc${last && away > 0 ? ' is-away' : ''}`} d={`M${xa.toFixed(2)} ${AX.y} Q${((xa + xc) / 2).toFixed(2)} ${(AX.y - h * 2).toFixed(2)} ${xc.toFixed(2)} ${AX.y}`} pathLength={1} strokeDasharray="1 1" strokeDashoffset={1 - q} opacity={d > 0 ? 1 : 0} />
         <circle className="kit-dot" cx={xc} cy={AX.y} r={4.5} opacity={q >= 1 ? 1 : 0} />
         <text className="kit-svg-label kit-path__gap" x={(xa + xc) / 2} y={AX.y - h - 10} textAnchor="middle" opacity={labelOpacity}>
-          {last && away > 0 ? (away > 0.5 ? '5 months away' : GAPS[i]) : GAPS[i]}
+          {last && away > 0 ? (away > 0.5 ? '4 months away' : GAPS[i]) : GAPS[i]}
         </text>
       </g>
     )
   })
-  const youX = x(60)
+  const youX = x(REVIEW_DAYS[3])
   let shownX = x(0)
   return (
     <svg className="kit-path" viewBox="0 0 600 260" preserveAspectRatio="xMidYMid meet" aria-hidden="true" style={{ opacity }}>
@@ -329,12 +333,12 @@ function Journey(props: SceneProps) {
   const b = useBeat(props)
   const id = props.clip.id
   if (id === 'c5-13') {
-    const lands = [cue(b, 0, 0.359), cue(b, 1, 0.516), cue(b, 2, 0.691), cue(b, 3, 0.875)]
+    const lands = [cue(b, 0, 0.332), cue(b, 1, 0.485), cue(b, 2, 0.663), cue(b, 3, 0.849)]
     const draws = lands.map((l) => since(b, l - 0.06, 0.9))
     let logSpan = Math.log(SPANS[0])
     for (let k = 1; k < SPANS.length; k++) logSpan = lerp(logSpan, Math.log(SPANS[k]), moved(b, between(b, lands[k] - 0.12, lands[k] + 0.02)))
     return (
-      <Stage beat={b} label="One card you keep remembering comes back after 2 days, then 11, then about 6 weeks, then about 5 months">
+      <Stage beat={b} label="One card you keep remembering comes back after a few days, then about 2 weeks, then about 6 weeks, then about 4 months">
         <Layer style={{ opacity: since(b, 0, 0.5) }}>
           <Path beat={b} draws={draws} span={Math.exp(logSpan)} />
         </Layer>

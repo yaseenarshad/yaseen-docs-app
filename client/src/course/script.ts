@@ -313,8 +313,8 @@ export const COURSE: CourseChapter[] = [
       { id: 'c5-04', text: 'Say you make five cards a day. In a year, that is more than 1,800 small things you still know.', marks: [0.112, 0.346, 0.534] },
       // The pile grows tall; the daily stack beside it stays small.
       { id: 'c5-05', text: 'And known cards come back less often, so the daily review stays small as the pile grows.', marks: [0.469, 0.773] },
-      // One card on a time line; four marks appear: "2 days", "11 days", "6 weeks", "5 months". The gaps stretch across the stage.
-      // SOURCE: ts-fsrs 5.4.2 with its own defaults (FSRS-6 weights, 90% retention, no fuzz), each answer Remembered on the due day: gaps of 2, 11, 46 and 163 days. This app's scheduler with its default settings gives about 4 days, 2 weeks, 6 weeks and 4 months, then the longest gap of 365 days (shared/reviews.ts `maxDays`). The words wait for Yaseen (YAZ-5128).
+      // One card on a time line; four marks appear: "a few days", "about 2 weeks", "about 6 weeks", "about 4 months". The gaps stretch across the stage.
+      // SOURCE: the app's own scheduler with its default settings (shared/cardSchedule.ts, shared/reviews.ts DEFAULT_REVIEW_SETTINGS), each answer Remembered on the due day: gaps of about 4, 14, 45 and 135 days, then the default longest gap of 365 days (`maxDays`).
       { id: 'c5-13', text: 'Follow one card you keep remembering. It comes back after a few days. Then about two weeks. Then about six weeks. Then about four months.', marks: [0.332, 0.485, 0.663, 0.849] },
       // The time line zooms out: the card's next mark is far off to the right, past "2 months in".
       { id: 'c5-14', text: 'So a couple of months in, that card is already months away.', marks: [0.203, 0.719] },
