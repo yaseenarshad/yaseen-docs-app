@@ -10,25 +10,34 @@
  *  - EDIT CARD (YAZ-5026) as in the card window: Done writes the card's text by its ID on the newest bytes, ONE
  *    `transformFile` (`changeCardTextIn`). A read-only vault or a `readonly: true` file has no Edit card; ⋯ and
  *    reviews still write, as reviews do in a locked page. A Done that changed the title then names the file after it
- *    (`onRetitle`, YAZ-5044 pick 1). A card New card just made opens in Edit card with "Title" selected.
+ *    (`onRetitle`, YAZ-5044 pick 1). A card New card just made opens in Edit card: the caret after the title its name box gave (YAZ-5101), or the
+ *    placeholder "Title" selected.
  *  - A FILE THAT IS NOT VALID (`cardFileShape`) stays a card file: one notice at the top (`CardFileNotice`), and
  *    nothing is deleted. 2+ cards: "This card file holds 3 cards.", the first card under it (each one stays in review).
  *    Text outside the card: the notice, and that text below it, muted. No card: the notice, and the file's text.
  *  - THE CONVERT ACTIONS (YAZ-5037 phase 5, `review/cardConvert.ts`), in a vault with IDs and on a file that is not
  *    `readonly: true`: ⋯ › Turn into a page; the notice's fixes, "Split into 3 card files", "Move into the card", and
  *    with no card "Make a card from the text" and "Turn into a page". The vault's Read only asks first.
+ *  - THE TOP BAR (YAZ-5102): a page's bar, from the same `StatusChips` — the cog, the zoom, the "Read only" chip while the
+ *    vault or the file is read only, Sync and Saved. The chip turns Read only off as on a page: a time choice unlocks
+ *    this tab (`useTimedUnlock`; the vault's lock stays in its file), "Turn Read only off" writes the file's own switch.
+ *    While locked there is no Edit card; at the unlock's end an open Edit card is Done first, then the tab locks. The
+ *    cog has what applies to a card: "Read only" and the counts. A page's rows (line numbers, folding, the table of
+ *    contents, the widths, "Turn into a card file", …) and Collapse all are not there: a card has none of them.
  *  - ON DISK: the tab reads the file again on each new index version, as the card window does. A file that lost
  *    `kind: card` goes back to the page view (`onPage`, with the bytes just read); a second card is the notice above.
  */
-import { useCallback, useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { NEW_CARD_TEXT, cardFileShape, isCardFileContent } from '@shared/cardFileFormat'
 import { cardTitle } from '@shared/cardText'
 import { splitFrontmatter } from '@shared/frontmatter'
 import type { GestureAction } from '@shared/keys'
-import { isNoteReadOnly } from '@shared/readOnly'
+import { isNoteReadOnly, setNoteReadOnly } from '@shared/readOnly'
 import { withCardNext, type CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
-import type { FileResponse } from '@shared/types'
+import type { FileResponse, GithubSyncStatus, ZoomStep } from '@shared/types'
+import type { SaveStatus } from '../lib/autosave'
+import { transformFile } from '../views/writeProperty'
 import { api, BridgeRequestError } from '../api'
 import { CardReviewDoor } from '../review/cardReviewDoor'
 import { cardInContent } from '../review/cardFile'
@@ -41,6 +50,12 @@ import { ContextMenu } from '../sidebar/ContextMenu'
 import type { MenuSection } from '../sidebar/menuSections'
 import { VaultReadOnly } from '../vault/readOnlyVault'
 import { CardFileNotice } from './CardFileNotice'
+import { stepZoomByKey } from './DocumentZoom'
+import { noteCardViewOfDom } from './noteCard/noteCardView'
+import { PageSettings } from './PageSettings'
+import { StatusChips } from './StatusChips'
+import { useTimedUnlock } from './useTimedUnlock'
+import { ZOOM_EVENT } from './zoomRequest'
 import { runConvert } from './useCardConvert'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
@@ -68,6 +83,9 @@ export interface CardFileViewProps {
   onRetitle?: (path: string, title: string, kind: 'file') => void
   /** The tab's own convert ended (YAZ-5037 phase 5: Turn into a page): the editor reads the file again, with no notice. */
   onReread?: () => void
+  /** The top bar's sync chip (YAZ-5102), as a page's: App's `useGithubSync`. */
+  sync?: GithubSyncStatus | null
+  onSyncNow?: () => void
 }
 
 const NO_CANDIDATES: WikilinkCandidateSource = { candidates: [], subscribe: () => () => undefined }
@@ -91,7 +109,7 @@ function folderOf(root: string, path: string): string {
   return folder === '' ? base.slice(base.lastIndexOf('/') + 1) : folder.split('/').join(' / ')
 }
 
-export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle, onReread }: CardFileViewProps) {
+export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle, onReread, sync, onSyncNow }: CardFileViewProps) {
   const path = file.path
   const [content, setContent] = useState<string | null>(file.content)
   /** "Turn into a page" runs: the file losing `kind: card` is this tab's own doing, and says nothing. */
@@ -136,16 +154,27 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const door = useContext(CardReviewDoor)
   const vaultScope = useContext(VaultReadOnly)
   const vaultLocked = vaultScope.on
-  const canEdit = card !== null && content !== null && !vaultLocked && !isNoteReadOnly(content)
-  const vault = useMemo(
-    (): ExploreVault => ({ root, wikilinks, wikilinkCandidates: wikilinkCandidates ?? NO_CANDIDATES, viewOnlyLinks, readOnly: vaultLocked, review: door === null || settings === undefined ? undefined : { settings, deleteReview: door.deleteReview } }),
-    [root, wikilinks, wikilinkCandidates, viewOnlyLinks, vaultLocked, door, settings],
-  )
+  /** The file's own switch (`readonly: true`) or the vault's: the top bar's "Read only" chip shows while this is true. */
+  const diskReadOnly = content !== null && isNoteReadOnly(content)
+  const lockedBase = diskReadOnly || vaultLocked
   // A card New card just made (YAZ-5037) opens in Edit card, its "Title" selected so typing replaces it: one time only.
   const [fresh] = useState(() => isNewCard(path))
   useEffect(() => forgetNewCard(path), [path])
   const [editing, setEditing] = useState(fresh)
+  const editingRef = useRef(editing)
+  editingRef.current = editing
   const bodyRef = useRef<HTMLDivElement>(null)
+  /** This tab's timed "Allow edits" (YAZ-4939, YAZ-5102): at its end an open Edit card is Done first, then the tab locks. */
+  const unlock = useTimedUnlock(() => {
+    if (!editingRef.current) return
+    noteCardViewOfDom(bodyRef.current?.querySelector('[data-explore-card-edit] .note-card') ?? null)?.done()
+  })
+  const locked = lockedBase && unlock.until === null
+  const canEdit = card !== null && content !== null && !locked
+  const vault = useMemo(
+    (): ExploreVault => ({ root, wikilinks, wikilinkCandidates: wikilinkCandidates ?? NO_CANDIDATES, viewOnlyLinks, readOnly: locked, review: door === null || settings === undefined ? undefined : { settings, deleteReview: door.deleteReview } }),
+    [root, wikilinks, wikilinkCandidates, viewOnlyLinks, locked, door, settings],
+  )
   const wasEditing = useRef(editing)
   useEffect(() => {
     // Out of Edit card the tab takes the keyboard back, so E edits again.
@@ -154,6 +183,33 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   }, [editing])
 
   const writes = cardWrites(path, card, read, onNotice, vault.review)
+  /** The top bar's save chip (YAZ-5102): Edit card's Done is the card file's one save; ⋯'s writes land at once. */
+  const [save, setSave] = useState<SaveStatus>('saved')
+  /** This tab's text size (YAZ-5102), as a page's: per tab, never stored. ⌘+ / ⌘− / ⌘0 with the focus in the tab. */
+  const [zoom, setZoom] = useState(100)
+  const zoomRef = useRef(zoom)
+  zoomRef.current = zoom
+  const present = content !== null
+  useEffect(() => {
+    const section = bodyRef.current?.closest('.editor')
+    if (!section) return
+    const onZoom = (event: Event) => {
+      event.preventDefault()
+      const step = (event as CustomEvent<ZoomStep>).detail
+      setZoom(step === 0 ? 100 : (stepZoomByKey(zoomRef.current, step) ?? zoomRef.current))
+    }
+    section.addEventListener(ZOOM_EVENT, onZoom)
+    return () => section.removeEventListener(ZOOM_EVENT, onZoom)
+  }, [present])
+  /** The chip's "Allow edits?" box is open; gone once Read only is. */
+  const [asking, setAsking] = useState(false)
+  useEffect(() => {
+    if (!lockedBase) setAsking(false)
+  }, [lockedBase])
+  /** The cog's row and the chip's "Turn Read only off": the file's own `readonly` key, on the newest bytes. */
+  const setReadOnly = (on: boolean) =>
+    void transformFile(path, (text) => setNoteReadOnly(text, on)).then(read, (err: unknown) => onNotice(`Read only could not change: ${err instanceof Error ? err.message : String(err)}`))
+  const giveKeysBack = () => bodyRef.current?.focus({ preventScroll: true })
   /**
    * Done (YAZ-5044 pick 1): the card's text, then — when its title changed — the file's name follows the title through
    * the title edit door, which asks before renaming as a page's title does. The placeholder "Title" and an empty title
@@ -162,10 +218,16 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const editDone = (text: string) => {
     const title = cardTitle(text)
     const named = onRetitle !== undefined && card !== null && card.id !== null && title !== '' && title !== NEW_CARD_TEXT && title !== cardTitle(card.text)
-    writes.editDone(text, () => {
-      setEditing(false)
-      if (named) onRetitle(path, title, 'file')
-    })
+    setSave('saving')
+    writes.editDone(
+      text,
+      () => {
+        setSave('saved')
+        setEditing(false)
+        if (named) onRetitle(path, title, 'file')
+      },
+      () => setSave('error'),
+    )
   }
   const onKeyDown = (event: ReactKeyboardEvent) => {
     if (editing || !canEdit || !isCardEditKey(event)) return
@@ -220,10 +282,32 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
       </>
     ) : null
 
+  // The chip's box and the cog's row, as a page's: a time choice unlocks this tab; "Turn Read only off" writes the file's
+  // own switch, and is not there while the vault's lock would keep the card locked anyway.
+  const readOnlyChip = !lockedBase
+    ? null
+    : {
+        asking,
+        onAsk: () => setAsking(true),
+        onAllow: (choice: Parameters<typeof unlock.allow>[0]) => {
+          setAsking(false)
+          unlock.allow(choice)
+        },
+        onCancel: () => setAsking(false),
+        onTurnOff: diskReadOnly && !vaultLocked ? () => (setAsking(false), setReadOnly(false)) : undefined,
+        editingUntil: unlock.until,
+        onLock: unlock.lock,
+        onReturn: giveKeysBack,
+      }
+  const cardText = card?.text ?? ''
+
   return (
     <>
+      <StatusChips zoom={zoom} onZoom={setZoom} readOnly={readOnlyChip} sync={sync} onSyncNow={onSyncNow} save={save}>
+        <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : setAsking(true)) : setReadOnly(true))} readText={() => cardText} />
+      </StatusChips>
       {notice !== null && <CardFileNotice text={notice}>{fixes}</CardFileNotice>}
-      <div ref={bodyRef} className="card-file" tabIndex={-1} data-card-file data-card-file-body onKeyDown={onKeyDown}>
+      <div ref={bodyRef} className="card-file" tabIndex={-1} data-card-file data-card-file-body onKeyDown={onKeyDown} style={{ '--document-zoom': zoom / 100 } as CSSProperties}>
         <div className="card-file__page">
           <header className="card-file__head">
             <div className="card-file__path">{folderOf(root, path)}</div>

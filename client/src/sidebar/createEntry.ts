@@ -6,10 +6,13 @@
  */
 import { BOARD_EXTENSION, boardBaseName, fileKind } from '@shared/fileKind'
 import type { BoardKind } from '@shared/types'
-import { validateEntryName } from '@shared/entryName'
+import { validateEntryName, type EntryKind } from '@shared/entryName'
 import { basename, dirname } from '../lib/paths'
 
 export { plainEntryName, validateEntryName, type EntryKind } from '@shared/entryName'
+
+/** What the sidebar's name box makes: an entry, or a CARD FILE (YAZ-5101: New card names it first, as New note does). */
+export type CreateKind = EntryKind | 'card'
 
 /** The name an empty board box gives (YAZ-3028 D9): `Untitled`, then `Untitled 2`, … */
 const UNTITLED = 'Untitled'

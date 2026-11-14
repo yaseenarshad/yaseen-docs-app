@@ -81,3 +81,7 @@
 .card-file__outside p + p {
   margin-top: 8px;
 }
+/* The top bar's zoom (YAZ-5102), as a page's: on the content, never on the column shell (app.css, YAZ-1710 D14). */
+.card-file__page > * {
+  zoom: var(--document-zoom, 1);
+}

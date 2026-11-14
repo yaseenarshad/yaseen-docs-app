@@ -54,14 +54,20 @@ export type CardLineChange = Parameters<typeof changeCardLine>[2]
 export function cardWrites(path: string, card: CardAtPage | null, read: () => void, onNotice: (message: string) => void, review?: ExploreVault['review']) {
   const failed = (what: string) => (err: unknown) => onNotice(`Can't ${what}: ${err instanceof Error ? err.message : String(err)}`)
   return {
-    /** Edit card's Done (YAZ-5003): the card's text by its ID, the rest of the file as it is on disk now. */
-    editDone(text: string, after: () => void) {
+    /** Edit card's Done (YAZ-5003): the card's text by its ID, the rest of the file as it is on disk now. `onFail` after the notice (a card file tab's "Save failed", YAZ-5102). */
+    editDone(text: string, after: () => void, onFail?: () => void) {
       if (card === null) return
       if (text.replace(/\n+$/, '') === card.text) return after()
-      changeCardTextIn(path, card.id, text, card.index).then(() => {
-        read()
-        after()
-      }, failed('save the card'))
+      changeCardTextIn(path, card.id, text, card.index).then(
+        () => {
+          read()
+          after()
+        },
+        (err: unknown) => {
+          failed('save the card')(err)
+          onFail?.()
+        },
+      )
     },
     changeLine(change: CardLineChange) {
       if (card === null || card.id === null) return

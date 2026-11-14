@@ -19,7 +19,8 @@ import { findDirNode, treeHasPath } from '../../lib/treeState'
 import type { Move } from '../../links/shortcuts'
 import { createNote, folderPath } from '../../views/scaffold'
 import { setSidebarDrag } from '../sidebarDrag'
-import { boardPath, renamedPath, targetDirFor, untitledNames, type EntryKind } from '../createEntry'
+import { boardPath, renamedPath, targetDirFor, untitledNames, type CreateKind } from '../createEntry'
+import { createCardFile } from '../../review/newCardFile'
 import { dragPill, pillLabel } from '../dragPill'
 import type { MenuTargets, SidebarClipboard, SidebarVault } from '../Sidebar'
 import type { CreatePlace, PendingCreate, PendingRename, ReorderOver, TreeFileMove, TreeReorder, TreeSelection } from '../Tree'
@@ -824,7 +825,7 @@ export function useInlineEdits(
   /** A New … in a read-only vault asks first (YAZ-4939), before the name field opens: App's sheet, true = go on. Absent: the field opens at once. */
   allowFileAction?: (root: string) => Promise<boolean>,
 ) {
-  const [creating, setCreating] = useState<{ kind: EntryKind; seed: string; parentDir: string; top: string | null; place?: CreatePlace } | null>(null)
+  const [creating, setCreating] = useState<{ kind: CreateKind; seed: string; parentDir: string; top: string | null; place?: CreatePlace } | null>(null)
   const [renamingEntry, setRenamingEntry] = useState<{ path: string; kind: 'file' | 'dir'; top: string | null } | null>(null)
 
   /**
@@ -832,7 +833,7 @@ export function useInlineEdits(
    * (⌘N, YAZ-3556 D4), which asks for it in Files with no menu open.
    */
   const startCreateNow = useCallback(
-    (kind: EntryKind, seed: string, at: { targetDir: string; lens: SidebarLens; top: string | null; place?: CreatePlace | null }) => {
+    (kind: CreateKind, seed: string, at: { targetDir: string; lens: SidebarLens; top: string | null; place?: CreatePlace | null }) => {
       const menu = at
       // A New … on the Focus or the Favorites tab with a place in its list (YAZ-4782: a pinned file row, a focus folder,
       // blank space): the field opens there, on the tab, and the item joins the list there (`submitCreate`). The tab
@@ -866,7 +867,7 @@ export function useInlineEdits(
 
   /** The door every New … takes (YAZ-4939): a read-only vault asks first, then the field opens. */
   const startCreateAt = useCallback(
-    (kind: EntryKind, seed: string, at: { targetDir: string; lens: SidebarLens; top: string | null; place?: CreatePlace | null }) => {
+    (kind: CreateKind, seed: string, at: { targetDir: string; lens: SidebarLens; top: string | null; place?: CreatePlace | null }) => {
       if (allowFileAction === undefined) startCreateNow(kind, seed, at)
       else void allowFileAction(vaultOf(at.targetDir).root).then((ok) => ok && startCreateNow(kind, seed, at))
     },
@@ -874,7 +875,7 @@ export function useInlineEdits(
   )
 
   const startCreate = useCallback(
-    (kind: EntryKind, seed = '') => {
+    (kind: CreateKind, seed = '') => {
       if (menu === null || menu.targetDir === null) return
       startCreateAt(kind, seed, { targetDir: menu.targetDir, lens: menu.lens, top: menu.top, place: menu.place })
       setMenu(null)
@@ -901,7 +902,10 @@ export function useInlineEdits(
       // In a vault that does not use IDs it is the name itself (YAZ-2523 🔒 V3).
       let note: string | null = null
       let made: string
-      if (creating.kind === 'dir') {
+      // A card file (YAZ-5101): what was typed is the card's first line, its title, and the file is named after it
+      // (`cardFileName`). Its tab opens in Edit card, the caret after the title.
+      if (creating.kind === 'card') made = note = await createCardFile(creating.parentDir, name)
+      else if (creating.kind === 'dir') {
         made = folderPath(creating.parentDir, name, index.ids)
         await api.createDir({ path: made, ...(index.ids && { title: name }) })
       } else made = note = await createNote(creating.parentDir, name, index.ids)

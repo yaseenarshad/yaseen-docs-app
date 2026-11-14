@@ -4,6 +4,8 @@ import { keyHint, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { FileClipState } from '@shared/types'
 import { countItems, countKinds, type NoticeKind, type NoticeType } from '../lib/notice'
 import { CopyIcon, EyeIcon, FolderIcon, HeartIcon } from '../views/view/icons'
+import type { CreateKind } from './createEntry'
+import { NewKindIcon } from './FileIcon'
 import type { MenuTargets } from './Sidebar'
 
 /**
@@ -426,48 +428,51 @@ const copyPath: Leaf = (t, h) => {
 // 🔒 E1's own group. With no directory to target —
 // blank space under two or more vaults (YAZ-2602 S10) — there is nothing to create in. ----
 
-const create = (id: string, label: string, pick: (h: MenuHandlers) => () => void): Leaf => (t, h) => (t.targetDir === null ? null : { id, label: unit(t, label), onSelect: pick(h) })
+/** The icon of what a New row makes (YAZ-5100): the tree's own icon for that kind. */
+const kindIcon = (kind: CreateKind): ReactNode => createElement(NewKindIcon, { kind })
 
-const newNote = create('new-note', 'New note', (h) => h.onNewNote)
+const create = (id: string, label: string, kind: CreateKind, pick: (h: MenuHandlers) => () => void): Leaf => (t, h) => (t.targetDir === null ? null : { id, label: unit(t, label), icon: kindIcon(kind), onSelect: pick(h) })
 
-const newFolder = create('new-folder', 'New folder', (h) => h.onNewFolder)
+const newNote = create('new-note', 'New note', 'file', (h) => h.onNewNote)
 
-const newDatedNote = create('new-dated-note', 'New dated note', (h) => h.onNewDatedNote)
+const newFolder = create('new-folder', 'New folder', 'dir', (h) => h.onNewFolder)
 
-const newDatedFolder = create('new-dated-folder', 'New dated folder', (h) => h.onNewDatedFolder)
+const newDatedNote = create('new-dated-note', 'New dated note', 'file', (h) => h.onNewDatedNote)
+
+const newDatedFolder = create('new-dated-folder', 'New dated folder', 'dir', (h) => h.onNewDatedFolder)
 
 // The boards (YAZ-3028 D9): Draw's names (YAZ-1802 D13), in "New drawing ▸"; one dated twin, the drawing's.
-const newDrawing = create('new-drawing', 'New Excalidraw drawing', (h) => h.onNewDrawing)
+const newDrawing = create('new-drawing', 'New Excalidraw drawing', 'drawing', (h) => h.onNewDrawing)
 
-const newDatedDrawing = create('new-dated-drawing', 'New dated Excalidraw drawing', (h) => h.onNewDatedDrawing)
+const newDatedDrawing = create('new-dated-drawing', 'New dated Excalidraw drawing', 'drawing', (h) => h.onNewDatedDrawing)
 
-const newDiagram = create('new-diagram', 'New draw.io diagram', (h) => h.onNewDiagram)
+const newDiagram = create('new-diagram', 'New draw.io diagram', 'diagram', (h) => h.onNewDiagram)
 
 /**
  * A create parent (YAZ-3085 D1): its click IS the first leaf of its flyout, so the two can never
  * disagree, and no leaf means no parent — `create`'s null-directory rule reaches it through them.
  */
-const createParent = (id: string, label: string, sections: readonly (readonly Leaf[])[]): Item => (t, h) => {
+const createParent = (id: string, label: string, kind: CreateKind, sections: readonly (readonly Leaf[])[]): Item => (t, h) => {
   const children = sections.map((section) => build(section, t, h))
   const first = children.flat()[0]
   if (first === undefined) return null
-  return { id, label: unit(t, label), onSelect: first.onSelect, children }
+  return { id, label: unit(t, label), icon: kindIcon(kind), onSelect: first.onSelect, children }
 }
 
 /**
- * "New card" (YAZ-5037): after New note and before New drawing, a plain item with no flyout and no name box — the card
- * file is `<id>.md` until its title names it. Only where the vault makes cards: it uses IDs and its Review is on
+ * "New card" (YAZ-5037): after New note and before New drawing, a plain item with no flyout. It opens the name box as
+ * New note does (YAZ-5101); the typed name is the card's title, and the file is named after it. Only where the vault makes cards: it uses IDs and its Review is on
  * (`cardDir`). "Card" is no page word: it never goes through the vault's word (`unit`).
  */
 const newCard: Leaf = (t, h) => {
   const dir = t.cardDir ?? null
-  return t.targetDir === null || dir === null ? null : { id: 'new-card', label: 'New card', onSelect: () => h.onNewCard(dir) }
+  return t.targetDir === null || dir === null ? null : { id: 'new-card', label: 'New card', icon: kindIcon('card'), onSelect: () => h.onNewCard(dir) }
 }
 
 // The order is note, drawing, folder (Yasin, YAZ-3085 D3); the separator in the drawing flyout keeps the two apps apart.
-const newNoteMenu = createParent('new-note-menu', 'New note', [[newNote, newDatedNote]])
-const newDrawingMenu = createParent('new-drawing-menu', 'New drawing', [[newDrawing, newDatedDrawing], [newDiagram]])
-const newFolderMenu = createParent('new-folder-menu', 'New folder', [[newFolder, newDatedFolder]])
+const newNoteMenu = createParent('new-note-menu', 'New note', 'file', [[newNote, newDatedNote]])
+const newDrawingMenu = createParent('new-drawing-menu', 'New drawing', 'drawing', [[newDrawing, newDatedDrawing], [newDiagram]])
+const newFolderMenu = createParent('new-folder-menu', 'New folder', 'dir', [[newFolder, newDatedFolder]])
 
 // ---- (4) This row: acts ON the right-clicked row, so it sits after the Create group ----
 

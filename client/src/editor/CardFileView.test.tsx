@@ -14,6 +14,7 @@ import { noteCardViewOfDom } from './noteCard/noteCardView'
 import { VaultReadOnly } from '../vault/readOnlyVault'
 import { useReviewSettings } from '../review/useReviewSettings'
 import { createCardFile } from '../review/newCardFile'
+import { cardFileName } from '@shared/cardFileFormat'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -303,6 +304,84 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
 })
 
 /**
+ * THE TOP BAR (YAZ-5102): a card file's tab has a page's bar, from the same `StatusChips` — the cog, the zoom, the
+ * "Read only" chip while the vault or the file is read only, Sync and Saved. The chip turns Read only off as on a page:
+ * a time choice unlocks this tab (the vault's lock stays in its file), "Turn Read only off" writes the file's own switch.
+ */
+describe('the top bar of a card file (YAZ-5102)', () => {
+  const bar = () => el.querySelector<HTMLElement>('.status-chips')
+  const chip = () => el.querySelector<HTMLButtonElement>('.read-only-chip__button')
+  const askButton = (label: string) => act(() => [...el.querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === label)!.click())
+  const cogRows = () => {
+    act(() => el.querySelector<HTMLButtonElement>('.status-chips [aria-label="Page settings"]')!.click())
+    return [...document.querySelectorAll('.page-settings__menu button, .page-settings__menu p')].map((b) => b.textContent ?? '')
+  }
+
+  it('shows the cog, the zoom, Saved; no Read only chip on a card file that is not read only', async () => {
+    await mount(FILE)
+    expect(bar()).not.toBeNull()
+    expect(bar()!.querySelector('.page-settings')).not.toBeNull()
+    expect(bar()!.querySelector('.document-zoom')).not.toBeNull()
+    expect(bar()!.querySelector('.save-indicator')?.textContent).toBe('Saved')
+    expect(chip()).toBeNull()
+  })
+
+  it('a read-only vault: the Read only chip shows; "Until I close this tab" unlocks the tab, and Edit card works', async () => {
+    await mount(FILE, { readOnly: true })
+    expect(chip()?.textContent).toContain('Read only')
+    expect(editButton()).toBeNull()
+    act(() => chip()!.click())
+    // The vault's lock is the vault's: no "Turn Read only off" here, as on a page.
+    expect([...el.querySelectorAll('.read-only-chip__ask button')].map((b) => b.textContent)).not.toContain('Turn Read only off')
+    askButton('Until I close this tab')
+    expect(editButton()).not.toBeNull()
+    act(() => editButton()!.click())
+    const dom = await cardEditor()
+    const view = noteCardViewOfDom(dom.closest('.note-card'))!.cardEditor!.view()!
+    act(() => view.dispatch(view.state.tr.insertText(' (Seine)', view.state.doc.content.size - 1)))
+    key(dom, { key: 'Enter', metaKey: true })
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('Paris\n```', 'Paris (Seine)\n```')))
+  })
+
+  it('Lock now locks the tab again: no Edit card', async () => {
+    await mount(FILE, { readOnly: true })
+    act(() => chip()!.click())
+    askButton('Until I close this tab')
+    expect(editButton()).not.toBeNull()
+    act(() => el.querySelector<HTMLButtonElement>('.read-only-chip__lock')!.click())
+    await vi.waitFor(() => expect(editButton()).toBeNull())
+  })
+
+  it('a `readonly: true` card file: "Turn Read only off" writes the file`s switch off; the chip goes and Edit card shows', async () => {
+    const locked = FILE.replace('kind: card\n', 'kind: card\nreadonly: true\n')
+    await mount(locked)
+    act(() => chip()!.click())
+    askButton('Turn Read only off')
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE))
+    await vi.waitFor(() => expect(chip()).toBeNull())
+    expect(editButton()).not.toBeNull()
+  })
+
+  it('the cog: Read only (it writes the file`s switch) and the counts; none of a page`s rows', async () => {
+    await mount(FILE)
+    const rows = cogRows()
+    expect(rows[0]).toContain('Read only')
+    for (const pageRow of ['Line numbers', 'Section indent', 'Guide lines', 'Folding', 'Bullet threading', 'Heading levels', 'Table of contents', 'Turn into a card file']) expect(rows.join('|')).not.toContain(pageRow)
+    expect(rows.some((r) => / words$/.test(r))).toBe(true)
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('.page-settings__menu button')].find((b) => b.textContent?.startsWith('Read only'))!.click())
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toContain('readonly: true'))
+    await vi.waitFor(() => expect(chip()).not.toBeNull())
+    expect(editButton()).toBeNull()
+  })
+
+  it('the zoom: Zoom in sizes the card up, as a page`s text', async () => {
+    await mount(FILE)
+    act(() => bar()!.querySelector<HTMLButtonElement>('[aria-label="Zoom in"]')!.click())
+    expect(el.querySelector<HTMLElement>('[data-card-file]')!.style.getPropertyValue('--document-zoom')).toBe('1.25')
+  })
+})
+
+/**
  * NEW CARD (YAZ-5037 phase 4): the sidebar makes `<id>.md` and opens it; its tab starts in Edit card with "Title"
  * selected, so typing replaces it. On Done the file takes its name from the title through the title edit door (the
  * App's `onRetitle`, which asks before renaming as a page's title does). The placeholder "Title" gives no rename.
@@ -330,6 +409,22 @@ describe('a new card file (YAZ-5037 phase 4)', () => {
     key(dom, { key: 'Enter', metaKey: true })
     await vi.waitFor(() => expect(onRetitle).toHaveBeenCalledExactlyOnceWith(NEW, 'Capital of France', 'file'))
     expect(disk.files.get(NEW)).toBe('---\nkind: card\n---\n```card\nCapital of France\n```\n<!-- card: WIKI-10 -->\n')
+  })
+
+  it('named in the sidebar`s name box (YAZ-5101): the file is named after the title, the title is the card`s first line, and Edit card opens with the caret after it', async () => {
+    const made = await createCardFile('/v/Geography', 'Capital of France')
+    expect(made).toBe(`/v/Geography/${cardFileName('Capital of France', 'WIKI-10')}`)
+    expect(disk.files.get(made)).toBe('---\nkind: card\n---\n```card\nCapital of France\n```\n<!-- card: WIKI-10 -->\n')
+    const { onRetitle } = await mount(disk.files.get(made)!, { path: made })
+    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .note-card__editor .ProseMirror')?.textContent).toContain('Capital of France'))
+    const dom = el.querySelector<HTMLElement>('[data-explore-card-edit] .note-card__editor .ProseMirror')!
+    const view = noteCardViewOfDom(dom.closest('.note-card'))!.cardEditor!.view()!
+    expect(view.state.selection.empty).toBe(true)
+    act(() => view.dispatch(view.state.tr.insertText('\n---\nParis', view.state.doc.content.size - 1)))
+    key(dom, { key: 'Enter', metaKey: true })
+    await vi.waitFor(() => expect(disk.files.get(made)).toContain('Paris'))
+    // Already named after its title: Done renames nothing.
+    expect(onRetitle).not.toHaveBeenCalled()
   })
 
   it('Done with the placeholder "Title" kept renames nothing; the tab opens in Edit card one time only', async () => {

@@ -4,7 +4,6 @@ import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
 import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api } from '../api'
-import { createCardFile } from '../review/newCardFile'
 import { osVerbs } from '../lib/osVerbs'
 import { CalendarIcon, GridIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -1611,27 +1610,6 @@ export function Sidebar({
   const addAt = lists.addAt
   const placeMade = useCallback((place: CreatePlace, path: string) => addAt(place.list, path, place.folder, place.after), [addAt])
   const { setRenamingEntry, startCreate, startCreateAt, renaming, pending } = useInlineEdits(multi ? null : root, vaultOf, menu, setMenu, favoriteNodes, focusNodes, onLensChange, refresh, onOpenFile, onRenameFile, onRetitle, openTo, placeMade, onFileAction)
-  /**
-   * "New card" (YAZ-5037): no name box — the card file is made at once (`createCardFile`), then it opens, in Edit card.
-   * A read-only vault asks first, as every New … does (YAZ-4939). Made on the Focus or the Favorites tab, it joins the
-   * list there, as a new note does (YAZ-4782). A failure is a notice, and nothing is made.
-   */
-  const newCard = useCallback(
-    async (dir: string, place: CreatePlace | null | undefined) => {
-      const vault = vaultOf(dir).root
-      if (onFileAction !== undefined && !(await onFileAction(vault))) return
-      let path: string
-      try {
-        path = await createCardFile(dir)
-      } catch (err) {
-        return onNotice(`Can't make the card: ${err instanceof Error ? err.message : String((err as { message?: unknown })?.message ?? err)}`, 'error')
-      }
-      refresh(vault)
-      if (place != null) placeMade(place, path)
-      onOpenFile(path)
-    },
-    [vaultOf, onFileAction, refresh, placeMade, onOpenFile, onNotice],
-  )
   /** A New … on a focus or favorite folder's menu (YAZ-4782): the field first in that folder; the item in a vault's root (`vaultOfFolder`), then in the folder. */
   const newInFolder = (list: 'focus' | 'favorites') => (id: string, kind: EntryKind) => {
     const folder = (list === 'focus' ? lists.focusTab : lists.favoritesTab).folders.find((f) => f.id === id)
@@ -2400,10 +2378,8 @@ export function Sidebar({
               onNewDrawing: viaTree(() => startCreate('drawing')),
               onNewDatedDrawing: viaTree(() => startCreate('drawing', datedSeed())),
               onNewDiagram: viaTree(() => startCreate('diagram')),
-              onNewCard: (dir) => {
-                setMenu(null)
-                void newCard(dir, menu.place)
-              },
+              // A card file (YAZ-5101): the name box first, as New note's; the menu's folder is the card's (`cardDir`).
+              onNewCard: viaTree(() => startCreate('card')),
               onToggleFavorite: toggleFavorite,
               onReviewFolder,
               onReviewPage,

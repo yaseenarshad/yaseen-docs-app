@@ -15,6 +15,7 @@ import { boardBaseName, fileKind } from '@shared/fileKind'
 import { basename, rootOfPath } from '@shared/types'
 import { iconVars } from './materialIcons'
 import { rowIcon, type RowIcons } from './rowIcons'
+import type { CreateKind } from './createEntry'
 
 /** What the window knows of its icons: the vaults' picks and the rules (`useVaultIcons`), and its vaults. */
 export interface IconsHere {
@@ -55,12 +56,24 @@ export function fileIconDecoration(here: IconsHere | null, path: string, folder:
   return { ...attrs, class: `file-icon file-icon--${folder ? 'dir' : 'file'}`, style: css }
 }
 
-/** The icon before a name: a closed folder for a folder, else the file's. The caller puts it first in the name's label. */
-export const FileIcon = memo(function FileIcon({ path, folder = false }: { path: string; folder?: boolean }) {
+/**
+ * The icon before a name: a closed folder for a folder, else the file's. The caller puts it first in the name's label.
+ * `card`: a card file's icon (YAZ-5037), as its tree row and its tab show it, for a path the index does not know yet.
+ */
+export const FileIcon = memo(function FileIcon({ path, folder = false, card = false }: { path: string; folder?: boolean; card?: boolean }) {
   const here = useContext(IconsContext)
-  const { style, ...attrs } = fileIconAttrs(here, path, folder)
+  const { style, ...attrs } = card ? { 'data-kind': CARD_KIND_ICON, style: NO_STYLE } : fileIconAttrs(here, path, folder)
   return <span className={`file-icon file-icon--${folder ? 'dir' : 'file'}`} {...attrs} style={style} aria-hidden />
 })
+
+/** A name of each kind a New row makes: its icon is the tree's for that name (YAZ-5100). */
+const NEW_KIND_SAMPLE: Readonly<Record<CreateKind, string>> = { file: 'note.md', card: 'card.md', drawing: 'drawing.excalidraw', diagram: 'diagram.drawio', dir: 'folder' }
+
+/**
+ * The icon of what a New row makes (YAZ-5100: "New note", "New card", "New drawing", "New folder" and their flyouts): the
+ * icon a tree row of that kind shows, from the same `FileIcon`, so the icon set, the file icon style and Off apply.
+ */
+export const NewKindIcon = ({ kind }: { kind: CreateKind }) => <FileIcon path={NEW_KIND_SAMPLE[kind]} folder={kind === 'dir'} card={kind === 'card'} />
 
 /**
  * A drawing's or a diagram's extension after its name (YAZ-3536 D4): app.css shows it only with File icons Off,

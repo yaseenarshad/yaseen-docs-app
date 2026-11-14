@@ -6,6 +6,8 @@
  * keeps only the component's mechanics.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { ReactElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { buildMenuSections, type MenuAction, type MenuHandlers, type MenuParent, type MenuSection, type MenuSectionTargets, scopeGroup, SCOPE_TIPS } from './menuSections'
 
 const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => ({
@@ -304,6 +306,18 @@ describe('create parents (YAZ-3085 D1, D3)', () => {
     expect(labelsOf(build({ ...FILE_ROW, cardDir: '/v', unit: (text) => text.replace(/note/g, 'page') }))).toContain('New card')
     // No folder to create in: no card either.
     expect(labelsOf(build({ targetDir: null, cardDir: '/v' }))).not.toContain('New card')
+  })
+
+  it('YAZ-5100: each New row has the icon of what it makes, the tree`s own (`FileIcon`): a page, a card file, a drawing, a folder; the flyouts` rows too', () => {
+    const sections = build({ ...FILE_ROW, cardDir: '/v' })
+    /** The `data-kind` of a row's icon, as the tree draws it; undefined: no icon. */
+    const kindOf = (icon: unknown) => (icon === undefined ? undefined : /data-kind="([^"]+)"/.exec(renderToStaticMarkup(icon as ReactElement))?.[1])
+    const top = Object.fromEntries(sections[2].map((i) => [i.label, kindOf(i.icon)]))
+    expect(top).toEqual({ 'New note': 'markdown', 'New card': 'card', 'New drawing': 'drawing', 'New folder': 'folder' })
+    const flyouts = Object.fromEntries(['New note', 'New drawing', 'New folder'].flatMap((label) => parentOf(sections, label)!.children.flat().map((c) => [c.label, kindOf(c.icon)])))
+    expect(flyouts).toEqual({ 'New note': 'markdown', 'New dated note': 'markdown', 'New Excalidraw drawing': 'drawing', 'New dated Excalidraw drawing': 'drawing', 'New draw.io diagram': 'diagram', 'New folder': 'folder', 'New dated folder': 'folder' })
+    // The label stays the bare words: the icon holds no text.
+    expect(labelsOf(sections)).toContain('New card')
   })
 
   it('edge cases 3, 4, 6: offered on every row type — a file row, a folder row, a vault row, blank space — the group targets a DIRECTORY, never the clicked row', () => {
