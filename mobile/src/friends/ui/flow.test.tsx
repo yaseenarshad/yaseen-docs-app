@@ -16,6 +16,11 @@ import { createFriendsService } from './service'
 const ALI = 'github_pat_11FLOWTEST_ali' + '0'.repeat(62)
 const BEA = 'github_pat_11FLOWTEST_bea' + '0'.repeat(62)
 
+/** Waits for the lazy "You vs" chunk (slow under load). */
+const until = async (x: Harness, selector: string) => {
+  for (let i = 0; i < 100 && x.host.querySelector(selector) === null; i++) await x.settle()
+}
+
 let h: Harness | null = null
 afterEach(() => {
   h?.unmount()
@@ -114,6 +119,7 @@ describe('add a friend, both orders, on the real friends logic', () => {
 
     // Cheer: Ali taps Cheer on "You vs BEA"; Bea's next read has the mark.
     await h.click(/^Number \d, BEA/)
+    await until(h, '.fr-week')
     await settleAll(h)
     await h.click('Cheer')
     await settleAll(h)

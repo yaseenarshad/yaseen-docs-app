@@ -13,12 +13,29 @@ import { demoBoard, demoFriend, demoGroup, demoMe, fakeService, fakeServices } f
  * whole test run (the machine can be under load).
  */
 const days = (seed: number): [number, { cards: number; seconds: number; done: boolean; newCards: number; remembered: number; forgot: number }][] =>
-  Array.from({ length: 90 }, (_, i) => [-i, { cards: (seed * 7 + i * 3) % 60, seconds: ((seed + i) % 50) * 60, done: (seed + i) % 3 !== 0, newCards: i % 5, remembered: 20, forgot: 2 }])
+  Array.from({ length: 90 }, (_, i) => [
+    -i,
+    { cards: (seed * 7 + i * 3) % 60, seconds: ((seed + i) % 50) * 60, done: (seed + i) % 3 !== 0, newCards: i % 5, remembered: 20, forgot: 2 },
+  ])
 const BIG = (() => {
   const friends = Array.from({ length: 30 }, (_, i) => demoFriend(NOW, `Friend ${i + 1}`, { days: days(i) }))
   const groups = Array.from({ length: 5 }, (_, g) => {
     const v = demoGroup(NOW, { group: String(g + 1).repeat(32), name: `Group ${g + 1}` })
-    return { ...v, members: [...v.members, ...friends.slice(0, 6).map((f, k) => ({ ...v.members[1], login: `m${k}`, name: f.name, pointer: `${g}${k}`.padEnd(32, 'f'), read: { kind: 'ok' as const, stats: f.stats!, pointer: { v: 1 as const, stats: 'a'.repeat(32) }, updatedAt: NOW } }))] }
+    return {
+      ...v,
+      members: [
+        ...v.members,
+        ...friends
+          .slice(0, 6)
+          .map((f, k) => ({
+            ...v.members[1],
+            login: `m${k}`,
+            name: f.name,
+            pointer: `${g}${k}`.padEnd(32, 'f'),
+            read: { kind: 'ok' as const, stats: f.stats!, pointer: { v: 1 as const, stats: 'a'.repeat(32) }, updatedAt: NOW },
+          })),
+      ],
+    }
   })
   return demoBoard(NOW, { friends, groups })
 })()
@@ -31,7 +48,10 @@ afterEach(() => {
 
 describe('30 friends and 5 groups', () => {
   it('the rules of one screen take far less than 50 ms', () => {
-    const entries: BoardEntry[] = [{ key: 'me', name: 'You', you: true, stats: demoMe(NOW).stats }, ...BIG.friends.map((f) => ({ key: f.theirs, name: f.name, you: false, stats: f.stats }))]
+    const entries: BoardEntry[] = [
+      { key: 'me', name: 'You', you: true, stats: demoMe(NOW).stats },
+      ...BIG.friends.map((f) => ({ key: f.theirs, name: f.name, you: false, stats: f.stats })),
+    ]
     let worst = 0
     for (let run = 0; run < 20; run++) {
       const t = performance.now()

@@ -1,3 +1,4 @@
+import { FRIEND_LINK_BASE } from '@shared/friendsList'
 import type { Root } from 'react-dom/client'
 import { App } from '../../App'
 import type { AppServices } from '../../app/AppState'
@@ -37,7 +38,7 @@ function boardOf(name: string): Board {
           demoFriend(NOW, 'Ben', { state: 'gone', label: 'No longer shares with you', stats: null }),
           demoFriend(NOW, 'Cy', { state: 'newer-app', label: 'Needs a newer app', stats: null }),
         ],
-        shared: [{ mine: 'a'.repeat(32), link: 'https://notecards.yaseenarshad.com/friend#' + 'a'.repeat(32), at: new Date(NOW - 3 * 3600_000).toISOString() }],
+        shared: [{ mine: 'a'.repeat(32), link: `${FRIEND_LINK_BASE}#` + 'a'.repeat(32), at: new Date(NOW - 3 * 3600_000).toISOString() }],
       })
     case 'friends-repair':
       return { kind: 'needs-repair' }
@@ -74,7 +75,8 @@ export async function mountFriendsFixture(root: Root, name: string): Promise<voi
   }
   await saveVaultList(store, { vaults, open: vaultId(vaults[0]) })
   const service = fakeService(boardOf(name))
-  if (name === 'friends-cheer-wait') service.markAnswer = async (_m, kind) => ({ kind: 'waiting', mark: { kind, at: '' }, why: 'budget', retryAt: NOW + 12 * 60_000 })
+  if (name === 'friends-cheer-wait')
+    service.markAnswer = async (_m, kind) => ({ kind: 'waiting', mark: { kind, at: '' }, why: 'budget', retryAt: NOW + 12 * 60_000 })
   const services: AppServices = { store, tokens, sync: fakeSync(), friends: fakeServices(store, service), scanner: fakeScanner(), now: () => NOW }
   root.render(<App services={services} />)
   await until('section[aria-label="Friends"]:not([aria-busy])')
@@ -97,7 +99,8 @@ export async function mountFriendsFixture(root: Root, name: string): Promise<voi
       if (name === 'friends-cheer-wait') {
         press('Nudge')
         await wait(50)
-        document.querySelector('[role="status"]')?.scrollIntoView()
+        const screen = document.querySelector('.screen')
+        if (screen !== null) screen.scrollTop = screen.scrollHeight
       }
       break
     case 'friends-group':

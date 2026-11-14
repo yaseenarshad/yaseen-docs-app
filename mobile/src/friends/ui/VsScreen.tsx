@@ -3,7 +3,7 @@ import { useApp } from '../../app/AppState'
 import type { Route } from '../../app/nav'
 import { Confirm } from '../../screens/Confirm'
 import { Frame, Problem } from '../../screens/Frame'
-import { MARK_LINE, cleanName, markToShow, updatedLabel, vsBoard, type VsLine } from './board'
+import { MARK_LINE, cleanName, initialOf, markToShow, updatedLabel, vsBoard, type VsLine } from './board'
 import './friends.css'
 import type { MarkKind, MarkSend } from './marks'
 import type { GroupView } from './groups'
@@ -45,7 +45,7 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
   }, [service, friend, shownMark])
 
   const frame = (body: React.ReactNode) => (
-    <Frame title={`You vs ${name}`} back={back} gear tabs>
+    <Frame title={name} back={back} gear tabs>
       {body}
     </Frame>
   )
@@ -97,8 +97,8 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
             }`}
           >
             <span aria-hidden="true">{d.weekday.slice(0, 2)}</span>
-            <span aria-hidden="true">{d.you ? '✓' : '·'}</span>
-            <span aria-hidden="true">{d.them ? '✓' : '·'}</span>
+            <span aria-hidden="true">{d.you ? 'Y' : '·'}</span>
+            <span aria-hidden="true">{d.them ? initialOf(name) : '·'}</span>
           </li>
         ))}
       </ul>
@@ -122,7 +122,7 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
               ? `Remove ${name}? ${name} stops seeing your numbers, and you stop seeing theirs.`
               : `Remove ${name} from ${cleanName(group !== undefined && group.kind === 'ok' ? group.name : '')}?`
           }
-          yes="Remove"
+          yes={`Remove ${name}`}
           busy={busy}
           onYes={() => void removeFriend()}
           onNo={() => setAsking(null)}

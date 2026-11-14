@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { friendCodeFrom, friendLink } from '../../pwa/friendLink'
 import { MARK_SIGN, initialOf, markWords, type DailyMark, type Period } from './board'
 
 /**
@@ -73,3 +74,12 @@ export const SHARED_WORDS: Record<'shared' | 'copied' | 'cancelled' | 'show', st
 
 /** The time of day, as the phone says it (for "goes at 14:05"). */
 export const clockTime = (t: number): string => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+/**
+ * 5- (YAZ-5087): the link that the share sheet sends points at the landing page of the site the app runs on, so the
+ * preview and the stable site each make their own (`friendLink`). 4E2's link carries the same code.
+ */
+export function ownSiteLink(link: string, origin: string = globalThis.location?.origin ?? 'null'): string {
+  const code = friendCodeFrom(link)
+  return code !== null && /^https:\/\//.test(origin) ? friendLink(origin, code) : link
+}

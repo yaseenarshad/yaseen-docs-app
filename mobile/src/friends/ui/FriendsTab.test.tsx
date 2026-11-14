@@ -13,6 +13,11 @@ import { demoBoard, demoFriend, demoGroup, fakeService, fakeServices, DEMO_AVATA
  * YAZ-5085 (4E4): the Friends tab and "You vs <friend>" in the real app (4A's shell, store and navigation), with a fake
  * friends service (no network). The rules are `board.ts`'s (its own tests); this file checks what the screens draw.
  */
+/** Waits for the lazy "You vs" chunk (slow under load). */
+const until = async (x: Harness, selector: string) => {
+  for (let i = 0; i < 100 && x.host.querySelector(selector) === null; i++) await x.settle()
+}
+
 let h: Harness | null = null
 afterEach(() => {
   h?.unmount()
@@ -445,8 +450,9 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
   it('a tap on a friend opens it: the numbers side by side, their vault, the last 7 days', async () => {
     ;({ h } = await open(demoBoard(NOW)))
     await h.click(/^Number 1, Sam/)
+    await until(h, '.fr-week')
     await h.settle()
-    expect(h.host.querySelector('.topbar__title')?.textContent).toBe('You vs Sam')
+    expect(h.host.querySelector('.topbar__title')?.textContent).toBe('Sam')
     const lines = [...h.host.querySelectorAll('li.fr-vs')].map((l) => l.getAttribute('aria-label'))
     expect(lines.slice(0, 3)).toEqual(['cards today: you 31, Sam 44', 'due cards: you 22, Sam 30', 'new cards: you 9, Sam 14'])
     expect(lines).toContain('remembered: you 91%, Sam 92%')
@@ -459,7 +465,7 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
     // The dot stays in the top bar (4D), with the gear.
     expect(h.button('Settings')).not.toBeNull()
     await h.click('‹ Back')
-    expect(h.host.querySelector('.topbar__title')?.textContent).not.toBe('You vs Sam')
+    expect(h.host.querySelector('.topbar__title')?.textContent).not.toBe('Sam')
   })
 
   it('Cheer: one tap, one send (a double tap sends once), then an honest "sent"', async () => {
@@ -476,6 +482,7 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
             })),
       )
     await h.click(/^Number 1, Sam/)
+    await until(h, '.fr-week')
     const cheer = h.button('Cheer')!
     await act(async () => {
       cheer.click()
@@ -498,6 +505,7 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
       retryAt: NOW + 10 * 60_000,
     })
     await h.click(/^Number 1, Sam/)
+    await until(h, '.fr-week')
     await h.click('Nudge')
     expect(statusText(h)).toMatch(/GitHub lets the app write only so often\. Your nudge goes at .+\./)
     s.markAnswer = async (_m, kind) => ({
@@ -525,6 +533,7 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
       },
     }))
     await h.click(/^Number 1, Sam/)
+    await until(h, '.fr-week')
     expect(statusText(h)).toMatch(/Your cheer goes at/)
   })
 
@@ -533,6 +542,7 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
     let s: FakeService
     ;({ h, s } = await open(board))
     await h.click(/^Number 1, Sam/)
+    await until(h, '.fr-week')
     await h.click('Remove friend')
     expect(h.host.querySelector('[role="alertdialog"]')?.textContent).toContain('Remove Sam? Sam stops seeing your numbers, and you stop seeing theirs.')
     await act(async () => (h!.host.querySelector('[role="alertdialog"] .btn--danger') as HTMLButtonElement).click())
@@ -545,7 +555,8 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
     ;({ h } = await open({ ...demoBoard(NOW), groups: [group] }))
     await h.click('Study group')
     await h.click(/^Number 2, Mina/)
-    expect(h.host.querySelector('.topbar__title')?.textContent).toBe('You vs Mina')
+    await until(h, '.fr-week')
+    expect(h.host.querySelector('.topbar__title')?.textContent).toBe('Mina')
     expect(h.button('Cheer')).toBeNull()
     expect(h.button('Remove from group')).not.toBeNull()
   })

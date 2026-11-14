@@ -1,3 +1,5 @@
+import { groupLink } from '@shared/friendGroups'
+import { FRIEND_LINK_BASE } from '@shared/friendsList'
 import type { FriendDay, FriendStats } from '@shared/friendStats'
 import { localFriends } from '../../app/friendsPort'
 import type { VaultStore } from '../../store'
@@ -249,7 +251,7 @@ export function fakeService(board: Board, options: { groups?: boolean } = {}): F
     create: groupCall('create', {
       kind: 'ok',
       group: 'a'.repeat(32),
-      link: `https://notecards.yaseenarshad.com/group#${'a'.repeat(32)}`,
+      link: groupLink('a'.repeat(32)),
       title: 'Notecards group link',
       text: 'Join my group.',
     }),
@@ -267,7 +269,7 @@ export function fakeService(board: Board, options: { groups?: boolean } = {}): F
     next: board,
     shareAnswer: {
       kind: 'ok',
-      link: `https://notecards.yaseenarshad.com/friend#${'b'.repeat(32)}`,
+      link: `${FRIEND_LINK_BASE}#${'b'.repeat(32)}`,
       title: 'Notecards friend link',
       text: 'Add me as a friend on Notecards.',
       whatFriendsSee: 'Friends see your review numbers only.',
