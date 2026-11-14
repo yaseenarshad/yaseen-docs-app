@@ -2104,3 +2104,34 @@
   margin: 6px 0 0;
 }
 
+
+/* Settings › Review › Phone and friends (YAZ-5098): how to make a GitHub token, shown only while none is saved. */
+.settings__steps {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+/* The "Connect your phone" dialog: a sheet wide enough for a code a phone reads from across a desk. */
+.confirm.phone-code {
+  width: min(360px, calc(100vw - 24px));
+}
+
+/* Black on white in each theme, sharp at any size: the canvas holds 8 pixels a square. */
+.phone-code__canvas {
+  display: block;
+  width: 240px;
+  height: 240px;
+  margin: 0 auto 8px;
+  border-radius: 6px;
+  background: #fff;
+  image-rendering: pixelated;
+}
+
+.phone-code__repo {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-align: center;
+}

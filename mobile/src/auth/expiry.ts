@@ -7,6 +7,11 @@
  * from the Mac's code (`scanCode.ts`, `expires`), which reads the header with no CORS. A native app later reads it.
  */
 
+import { parseEndDate } from '@shared/tokenEnd'
+
+/** In `shared/` since YAZ-5098: the Mac's code (`shared/scanCode.ts`) reads the same end date. */
+export { parseEndDate }
+
 export const EXPIRY_HEADER = 'github-authentication-token-expiration'
 /** The warning shows this many days before the end. */
 export const WARN_DAYS = 7
@@ -17,27 +22,6 @@ const DAY = 86_400_000
 export function readTokenEnd(headers: Headers): string | null {
   const value = headers.get(EXPIRY_HEADER)
   return value === null ? null : parseEndDate(value)
-}
-
-/** Reads `2026-12-31 00:00:00 UTC` (GitHub), `… +0000`, an ISO time, or a day `2026-12-31`. Null when it is none of them. */
-export function parseEndDate(text: string): string | null {
-  const t = text.trim()
-  const github = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) (UTC|[+-]\d{4})$/.exec(t)
-  let iso: string
-  if (github) {
-    const zone = github[3] === 'UTC' ? 'Z' : `${github[3].slice(0, 3)}:${github[3].slice(3)}`
-    iso = `${github[1]}T${github[2]}${zone}`
-  } else if (/^\d{4}-\d{2}-\d{2}$/.test(t)) iso = `${t}T00:00:00Z`
-  else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(t)) iso = t
-  else return null
-  const ms = Date.parse(iso)
-  if (Number.isNaN(ms)) return null
-  // Date.parse rolls 2026-02-30 over to March: refuse a day that does not exist.
-  const day = iso.slice(0, 10)
-  if (github?.[3] === 'UTC' || iso.endsWith('Z')) {
-    if (new Date(ms).toISOString().slice(0, 10) !== day) return null
-  }
-  return new Date(ms).toISOString()
 }
 
 export type TokenEndWarning =
