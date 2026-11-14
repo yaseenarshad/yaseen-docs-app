@@ -9,10 +9,12 @@ import {
   cardReviewIndex,
   changeCard,
   changeCardText,
+  rewritePageCards,
   withCardFix,
   withCardNext,
   withCardReview,
   withCardReviewAt,
+  withCardTitle,
   withoutCardReview,
   type CardLine,
   type CardReview,
@@ -21,7 +23,7 @@ import { BridgeRequestError, api } from '../api'
 import { cardInContent, cardOnPageIn, type CardAtPage, type CardOnPage } from './cardRead'
 
 // The pure read moved to `cardRead.ts` (YAZ-5161), so the phone reads a card with no bridge; its names stay here too.
-export { cardInContent, cardOnPageIn, isCardGone, titleOfCard, type CardAtPage, type CardOnPage } from './cardRead'
+export { cardInContent, cardOnPageIn, isCardGone, type CardAtPage, type CardOnPage } from './cardRead'
 import { announcedWrite } from '../lib/twinEditors'
 import { transformFile } from '../views/writeProperty'
 
@@ -47,9 +49,7 @@ async function readOrGone(path: string): Promise<string | null> {
 
 /**
  * Card `id` of page `path` (the first that holds it), or null when the page or the card is gone (deleted, moved, or its
- * ID changed). This is the Inbox's read, so a CARD FILE's card comes with its `title` as its text's first line
- * (`cardWithTitle`, YAZ-5044): "Title on the front" Show puts the title above the front and Hide leaves it out until
- * the card is fully shown, the one rule cards in pages follow. The Inbox writes only the card line, never the text.
+ * ID changed). This is the Inbox's read: both kinds of card come alike, the title off the card line (YAZ-5308).
  */
 export async function readCard(path: string, id: string): Promise<CardOnPage | null> {
   const content = await readOrGone(path)
@@ -65,15 +65,21 @@ export const changeCardLine = (path: string, id: string, change: (line: CardLine
   announcedWrite(path, () => transformFile(path, (c) => changeCard(c, id, change, index)))
 
 /**
- * Card `id`'s TEXT replaced by `text` (YAZ-5003, Edit card in the card window): ONE `transformFile`, as the app's own
- * write, so a page open in a tab takes it quietly. With no ID, the card at `index`. Throws `CardNotFoundError`.
- * `fixed` (YAZ-5097): the edit is the fix, so the line's `fix` goes in the same write.
+ * Card `id`'s TEXT replaced by `text` (YAZ-5003, Edit card in the card window) and, when given, its `title` on its card
+ * line (YAZ-5308, Edit card's Title field): ONE `transformFile`, as the app's own write, so a page open in a tab takes
+ * it quietly. With no ID, the card at `index`. Throws `CardNotFoundError`. `fixed` (YAZ-5097): the edit is the fix, so
+ * the line's `fix` goes in the same write.
  */
-export const changeCardTextIn = (path: string, id: string | null, text: string, index: number, fixed = false): Promise<unknown> =>
+export const changeCardTextIn = (path: string, id: string | null, text: string, index: number, title?: string, fixed = false): Promise<unknown> =>
   announcedWrite(path, () =>
     transformFile(path, (c) => {
       const next = changeCardText(c, id, text, index)
-      return fixed && id !== null ? changeCard(next, id, (l) => withCardFix(l, false), index) : next
+      if (title === undefined && !fixed) return next
+      const line = (l: CardLine): CardLine => {
+        const titled = title === undefined ? l : withCardTitle(l, title)
+        return fixed ? withCardFix(titled, false) : titled
+      }
+      return id === null ? rewritePageCards(next, (card, n) => (n === index ? line(card.line) : undefined)) : changeCard(next, id, line, index)
     }),
   )
 

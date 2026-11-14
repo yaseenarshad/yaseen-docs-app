@@ -1,7 +1,7 @@
 /**
  * Edit card in the card window (YAZ-5003), against the real page card editor (`createCrepe`, the card view, Crepe's
- * code block): E enters it, Done (⌘↵ here) writes the new text into the page, a window opened in Edit card (the
- * Inbox's E) reads on Done (YAZ-5009), and a read-only vault blocks E but not the Inbox's E.
+ * code block): E enters it, Done (⌘↵ here) writes the new text into the page, and a read-only vault blocks E. The
+ * Inbox no longer opens the card window (YAZ-5145: its E edits in Explore's own page layer).
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -40,7 +40,7 @@ afterEach(() => {
   el?.remove()
 })
 
-async function mount(opts: { startInEdit?: boolean; readOnly?: boolean } = {}) {
+async function mount(opts: { readOnly?: boolean } = {}) {
   disk.set(PATH, PAGE)
   // A vault that gives IDs: a ```card block is a card there (D8).
   const wikilinks = createWikilinkResolveSource()
@@ -50,7 +50,7 @@ async function mount(opts: { startInEdit?: boolean; readOnly?: boolean } = {}) {
   el = document.createElement('div')
   document.body.append(el)
   root = createRoot(el)
-  await act(async () => root?.render(<ExploreCard path={PATH} cardId="WIKI-9" index={0} startInEdit={opts.startInEdit} pageName="Cards" vault={vault} onOpenPage={vi.fn()} onOpenLink={vi.fn()} onOpenTab={vi.fn()} onOpenInTab={vi.fn()} onNotice={vi.fn()} onClose={onClose} active />))
+  await act(async () => root?.render(<ExploreCard path={PATH} cardId="WIKI-9" index={0} pageName="Cards" vault={vault} onOpenPage={vi.fn()} onOpenLink={vi.fn()} onOpenTab={vi.fn()} onOpenInTab={vi.fn()} onNotice={vi.fn()} onClose={onClose} active />))
   await vi.waitFor(() => expect(el.querySelector('.card__hidden, .cm-content')).not.toBeNull())
   return { onClose, body: el.querySelector<HTMLElement>('[data-explore-card]')! }
 }
@@ -82,32 +82,6 @@ describe('Edit card in the card window (YAZ-5003)', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
-  it('YAZ-5009: opened in Edit card (the Inbox`s E): the editor shows at once; Esc is Done and the window READS (it stays open); the same text writes nothing', async () => {
-    const { onClose } = await mount({ startInEdit: true })
-    const cm = await codeMirror()
-    key(cm, { key: 'Escape' })
-    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
-    expect(el.querySelector('.card-screen')?.textContent).toContain('Paris')
-    expect(onClose).not.toHaveBeenCalled()
-    expect(disk.get(PATH)).toBe(PAGE)
-  })
-
-  it('YAZ-5009: in a READ-ONLY vault the Inbox`s E opens Edit card at once, with no "Allow edits?" box; Esc saves into the file and reads; then the card is locked again (E does nothing)', async () => {
-    const { body, onClose } = await mount({ readOnly: true, startInEdit: true })
-    const cm = await codeMirror()
-    expect(document.querySelector('[role="dialog"], .read-only-ask')).toBeNull()
-    const view = CodeMirrorView.findFromDOM(cm)!
-    act(() => view.dispatch({ changes: { from: view.state.doc.length, insert: ' (Seine)' } }))
-    key(cm, { key: 'Escape' })
-    await vi.waitFor(() => expect(disk.get(PATH)).toBe(PAGE.replace('Paris\n```', 'Paris (Seine)\n```')))
-    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
-    await vi.waitFor(() => expect(el.querySelector('.card-screen')?.textContent).toContain('Paris (Seine)'))
-    expect(onClose).not.toHaveBeenCalled()
-    // Locked again: the window's own E is the read-only vault's, blocked as in the page.
-    key(body, { key: 'e' })
-    expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
-  })
-
   it('a read-only vault blocks the card window`s own E, as the page does', async () => {
     const { body } = await mount({ readOnly: true })
     key(body, { key: 'e' })
@@ -137,15 +111,6 @@ describe('Edit card in the card window with the page`s editor (YAZ-5026)', () =>
     await vi.waitFor(() => expect(disk.get(PATH)).toBe(PAGE.replace('Paris\n```', 'Paris (Seine)\n```')))
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
     await vi.waitFor(() => expect(el.querySelector('.card-screen')?.textContent).toContain('Paris (Seine)'))
-    expect(onClose).not.toHaveBeenCalled()
-  })
-
-  it('YAZ-5009 in a READ-ONLY vault: the Inbox`s E opens the page`s editor at once; Esc with no change writes nothing and reads', async () => {
-    const { onClose } = await mount({ readOnly: true, startInEdit: true })
-    const dom = await pageEditor()
-    key(dom, { key: 'Escape' })
-    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
-    expect(disk.get(PATH)).toBe(PAGE)
     expect(onClose).not.toHaveBeenCalled()
   })
 })

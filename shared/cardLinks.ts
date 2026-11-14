@@ -18,7 +18,7 @@ export interface CardLink {
   path: string
   /** The card's place among the page's cards (`pageCards` order, 0 first). */
   index: number
-  /** The card's title (`cardTitle`), '' for an empty card. */
+  /** The card's title (its card line's, `cardTitleOf`), '' for a card with none. */
   title: string
   /** The title is hidden on the Inbox's front (`notitle`). */
   notitle: boolean

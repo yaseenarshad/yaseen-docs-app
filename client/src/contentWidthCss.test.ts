@@ -10,10 +10,9 @@ const maxWidthFor = (css: string, selector: string): string | undefined => {
 }
 
 describe('content-width CSS contract (YAZ-1176)', () => {
-  it('maps the three presets once on the app container', () => {
-    expect(appCss).toMatch(/\.app\s*\{[^}]*--content-max-width:\s*1040px;/s)
-    expect(appCss).toMatch(/\.app\[data-content-width=['"]medium['"]\]\s*\{[^}]*--content-max-width:\s*1440px;/s)
-    expect(appCss).toMatch(/\.app\[data-content-width=['"]full['"]\]\s*\{[^}]*--content-max-width:\s*none;/s)
+  it('the column is the text`s widest (App sets it from `CONTENT_TEXT_WIDTHS`, YAZ-5144) and its 48 px sides; no second table of steps here', () => {
+    expect(appCss).toMatch(/\.app\s*\{[^}]*--content-max-width:\s*calc\(var\(--content-text-width\) \+ 96px\);/s)
+    expect(appCss).not.toMatch(/data-content-width/)
   })
 
   it('routes every aligned shell through the one shared token', () => {

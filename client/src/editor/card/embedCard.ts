@@ -21,13 +21,16 @@ export interface CardEmbedDoors {
    * card's key row to go under it. Absent: no Edit card. A door, not an import: the card editor's module reaches the
    * page's marks, which reach this host.
    */
-  edit?: (root: HTMLElement, text: string, done: () => void) => { editor: CardEditor; keys: HTMLElement }
+  /** `title`: the card's, for Edit card's Title field (YAZ-5164 part 3); `fileCard`: a card file's, its title read only here. */
+  edit?: (root: HTMLElement, text: string, title: string, done: () => void, fileCard: boolean) => { editor: CardEditor; keys: HTMLElement }
   /** The editor's one link follower: the name's click and the card's pills. */
   follow?: LinkFollow
   hotkeys?: () => HotkeyOverrides | undefined
   /** A Markdown link's open in the card. Absent → nothing. */
   openHref?: (href: string) => void
   onNotice?: (message: string) => void
+  /** The vault's card review (YAZ-5105 round 4): the Reviews strip under a card with reviews. Absent (a hover preview): none. */
+  reviews?: import('./cardBlockView').CardReviewDoorApi
   /** "Put back into this page" (YAZ-5037 phase 5): the page's convert door (`CardConvertDoor.putBack`). Absent → not offered. */
   putBack?: (card: { id: string; path: string }, inner: string, nth: number) => void
 }

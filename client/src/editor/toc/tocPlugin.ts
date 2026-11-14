@@ -59,7 +59,7 @@ import { findNestedLists, isListItem, itemLabelText, LIST_NODE_NAMES, UNTITLED_I
 import { collapsedItemsHiding, isOutlineItemCollapsed, setOutlineFoldSet } from '../outline/outlineFolding'
 import { getZoomedItemPos, zoomOutFully } from '../outline/zoom'
 import { DEEPEST_TOC_LEVEL, ENOUGH_ROWS, type TocChannel, type TocController, type TocLevel, type TocRow } from './tocChannel'
-import { FLASH_FRAMES, FLASH_MS, GLIDE_MS, GLIDE_SCREENS, glideEase, LANDING_PX, reducedMotion } from './tocMotion'
+import { GLIDE_MS, GLIDE_SCREENS, glideEase, landingTop, landOn, reducedMotion } from './tocMotion'
 
 /** How long the document must rest before it is scanned again. */
 export const SCAN_DELAY_MS = 150
@@ -285,22 +285,6 @@ const nestedListElements = (view: EditorView, itemPos: number): HTMLElement[] =>
     .filter((dom): dom is HTMLElement => dom instanceof HTMLElement)
 }
 
-/** Where `scroller` must stand for `element` to sit `LANDING_PX` below its top edge, as far as it can scroll. */
-export const landingTop = (scroller: HTMLElement, element: HTMLElement): number =>
-  Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight, scroller.scrollTop + element.getBoundingClientRect().top - scroller.getBoundingClientRect().top - LANDING_PX))
-
-/**
- * The outline's landing outside the outline (YAZ-4962: a page opened at a card): `element` placed `LANDING_PX`
- * below the top of its scroller — a page's `.editor-host`, or an Explore read layer's `.explore__body` — then one flash.
- */
-export function landOn(element: HTMLElement): void {
-  const scroller = element.closest<HTMLElement>('.editor-host, .explore__body')
-  if (scroller !== null) scroller.scrollTop = landingTop(scroller, element)
-  if (typeof element.animate === 'function' && !reducedMotion()) element.animate(FLASH_FRAMES, { duration: FLASH_MS, easing: 'ease-out' })
-}
-
-/** jsdom has no `matchMedia`, and the contract runs there. */
-
 /** How the rows name a line's links (YAZ-3744 D6): the text as the page shows it, and the index's change to scan again on. */
 export interface TocLinks {
   linkText: (text: string) => string
@@ -337,19 +321,6 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
           let stopGlide: (() => void) | null = null
 
           /**
-           * The landing: exactly on the row, then one flash — a band that holds, then fades. The
-           * engine places the row itself, `LANDING_PX` below the scroller's edge, by its own
-           * arithmetic: `scrollIntoView` would pull the row flush against the edge. An editor
-           * that is not inside a page's scroller (the unit tests) has nothing to scroll.
-           */
-          const land = (element: HTMLElement, scroller: HTMLElement | null): void => {
-            if (scroller !== null) scroller.scrollTop = landingTop(scroller, element)
-            // jsdom has no `animate`.
-            if (typeof element.animate === 'function' && !reducedMotion())
-              element.animate(FLASH_FRAMES, { duration: FLASH_MS, easing: 'ease-out' })
-          }
-
-          /**
            * What a jump unfolded EASES in, each block once, top to bottom. Web Animations only:
            * no attribute, no class and no style is written, so ProseMirror sees no mutation and
            * the fold plugins know nothing of it. Under reduced motion, or where the DOM cannot
@@ -378,7 +349,7 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
             stopGlide?.()
             const scroller = element.closest<HTMLElement>('.editor-host')
             if (scroller === null || reducedMotion() || typeof requestAnimationFrame !== 'function') {
-              land(element, scroller)
+              landOn(element, scroller)
               return
             }
             const to = landingTop(scroller, element)
@@ -404,7 +375,7 @@ export const createTableOfContents = (channel: TocChannel, links?: TocLinks) =>
                 return
               }
               stop()
-              land(element, scroller)
+              landOn(element, scroller)
             }
             scroller.addEventListener('wheel', stop, { passive: true })
             scroller.addEventListener('pointerdown', stop, { passive: true })

@@ -6,9 +6,10 @@
  * bytes, by the card's ID), the ⋯ rows of the card, E, and the read again on each new index version of the file.
  * The heads are each one's own: the window's speaks of the page the card is on, the tab IS the card's file.
  */
+import { previewCard } from '../editor/card/cardOpen'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { cardBlock, EMPTY_CARD_LINE, withCardFix, withCardNext, withCardNoTitle, withCardOff, withoutCardReviews, type CardReview } from '@shared/cardLine'
+import { cardBlock, EMPTY_CARD_LINE, withCardFix, withCardNext, withCardNoTitle, withCardOff, withCardTitle, withoutCardReviews, type CardReview } from '@shared/cardLine'
 import { cardBacklinks, cardEmbedders } from '@shared/cardLinks'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
@@ -44,6 +45,16 @@ export function onIndexVersion(wikilinks: WikilinkResolveSource, path: string, r
 export const isCardEditKey = (event: ReactKeyboardEvent): boolean =>
   !event.metaKey && !event.ctrlKey && !event.altKey && (event.key === 'e' || event.key === 'E') && !(event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]') !== null)
 
+/** P on a shown card (YAZ-5152): Preview. Not in a field, no modifier. */
+export const isCardPreviewKey = (event: ReactKeyboardEvent): boolean =>
+  !event.metaKey && !event.ctrlKey && !event.altKey && (event.key === 'p' || event.key === 'P') && !(event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]') !== null)
+
+/** Preview a shown card (YAZ-5152), from `from`, as the Inbox reads it. */
+export function previewCardOf(from: Element | null, path: string, card: CardAtPage): void {
+  if (from === null) return
+  previewCard(from, { path, id: card.id, text: card.text, title: card.title, notitle: card.notitle === true, reviews: card.reviews })
+}
+
 /** A ⋯ change of the card line (D13): `changeCardLine`'s change. */
 export type CardLineChange = Parameters<typeof changeCardLine>[2]
 
@@ -55,14 +66,16 @@ export function cardWrites(path: string, card: CardAtPage | null, read: () => vo
   const failed = (what: string) => (err: unknown) => onNotice(`Can't ${what}: ${err instanceof Error ? err.message : String(err)}`)
   return {
     /**
-     * Edit card's Done (YAZ-5003): the card's text by its ID, the rest of the file as it is on disk now. `onFail` after
-     * the notice (a card file tab's "Save failed", YAZ-5102). A changed card marked Fix later loses the mark in the
-     * same write (YAZ-5097: the edit is the fix; it asks nothing). No change: the mark stays.
+     * Edit card's Done (YAZ-5003): the card's text by its ID and, when given, its `title` on its card line (YAZ-5308), in
+     * one write; the rest of the file as it is on disk now. `onFail` after the notice (a card file tab's "Save failed",
+     * YAZ-5102). A changed card marked Fix later loses the mark in the same write (YAZ-5097: the edit is the fix; it
+     * asks nothing). No change: the mark stays.
      */
-    editDone(text: string, after: () => void, onFail?: () => void) {
+    editDone(text: string, after: () => void, onFail?: () => void, title?: string) {
       if (card === null) return
-      if (text.replace(/\n+$/, '') === card.text) return after()
-      changeCardTextIn(path, card.id, text, card.index, card.fix === true).then(
+      const retitled = title !== undefined && title !== card.title ? title : undefined
+      if (text.replace(/\n+$/, '') === card.text && retitled === undefined) return after()
+      changeCardTextIn(path, card.id, text, card.index, retitled, card.fix === true).then(
         () => {
           read()
           after()
@@ -93,8 +106,10 @@ export function cardWrites(path: string, card: CardAtPage | null, read: () => vo
  * Reset history; then Copy card ID and, with `link`, Copy card link (`[[ID]]`, YAZ-5037). None of them for a card with
  * no ID yet, but its copy rows once it has one.
  */
-export function cardMenuSections(card: CardAtPage | null, id: string | null, changeLine: (change: CardLineChange) => void, onNotice: (message: string) => void, opts: { inbox: boolean; link: boolean }): MenuSection[] {
+export function cardMenuSections(card: CardAtPage | null, id: string | null, changeLine: (change: CardLineChange) => void, onNotice: (message: string) => void, opts: { inbox: boolean; link: boolean; preview?: () => void }): MenuSection[] {
   const rows: MenuSection[] = []
+  // Preview (YAZ-5152): the card as the Inbox shows it, nothing saved.
+  if (card !== null && opts.preview !== undefined) rows.push([{ id: 'preview', label: 'Preview', hint: 'P', onSelect: opts.preview }])
   if (card !== null && card.id !== null)
     rows.push([
       ...(opts.inbox ? [{ id: 'next', label: card.next ? 'Remove from top of Inbox' : 'Put at top of Inbox', onSelect: () => changeLine((l) => withCardNext(l, !card.next)) }] : []),
@@ -118,8 +133,8 @@ interface CardPaneProps {
   path: string
   vault: ExploreVault
   editing: boolean
-  /** Edit card's Done, with the card's text. */
-  onEditDone: (text: string) => void
+  /** Edit card's Done, with the card's text and its Title field's title (YAZ-5164 part 3). */
+  onEditDone: (text: string, title: string) => void
   /** What Edit card selects as it opens (offsets in the card's text): a new card's "Title" (YAZ-5037). Absent: the caret at the end. */
   select?: { from: number; to: number }
   doors: CardLinkDoors
@@ -132,14 +147,17 @@ interface CardPaneProps {
   onDeleteReview?: (review: CardReview) => void
   /** "Embedded in (n)" after the mentions (a card file's tab). */
   embeds?: boolean
+  /** The Title field shows the title only (a card file's card where nothing renames its file). */
+  titleReadOnly?: boolean
 }
 
 /** The card's body: the card or its editor, its Reviews strip, the facts strip, "Linked mentions" and, in a tab, "Embedded in". */
-export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false }: CardPaneProps) {
+export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false, titleReadOnly = false }: CardPaneProps) {
+  // The head shows the title (off the card line); the card is its text, its sides only (YAZ-5308).
   return (
     <>
       {editing ? (
-        <CardPaneEditor key={`${card.index}`} text={card.text} path={path} vault={vault} onDone={onEditDone} select={select} />
+        <CardPaneEditor key={`${card.index}`} text={card.text} title={card.title} path={path} vault={vault} onDone={onEditDone} select={select} titleReadOnly={titleReadOnly} />
       ) : (
         <div className="card card-screen">
           <CardBody text={card.text} path={path} vault={vault} doors={doors} />
@@ -159,30 +177,31 @@ const CARD_EDIT_FEATURES = { ...features, [CrepeFeature.BlockEdit]: false, [Crep
 
 /**
  * Edit card (YAZ-5003): the page card's own view, in a small Crepe of the card block alone, with Edit card on at
- * once — the card editor (YAZ-5026) or Crepe's code block, its Done (button, Esc, ⌘↵). Done hands the text over.
- * Made once per edit: the text it starts from is the card's when Edit card began, and a read again under it (an
- * outside write) does not touch it.
+ * once — the card editor (YAZ-5026) or Crepe's code block, its Done (button, Esc, ⌘↵). Done hands the text and the
+ * title over. Made once per edit: the text and title it starts from are the card's when Edit card began, and a read
+ * again under it (an outside write) does not touch them.
  */
-function CardPaneEditor({ text, path, vault, onDone, select }: { text: string; path: string; vault: ExploreVault; onDone: (text: string) => void; select?: { from: number; to: number } }) {
+function CardPaneEditor({ text, title, path, vault, onDone, select, titleReadOnly }: { text: string; title: string; path: string; vault: ExploreVault; onDone: (text: string, title: string) => void; select?: { from: number; to: number }; titleReadOnly: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const doneRef = useRef(onDone)
   doneRef.current = onDone
-  const start = useRef({ text, path, vault, select })
+  const start = useRef({ text, title, path, vault, select, titleReadOnly })
   useEffect(() => {
     const host = hostRef.current
     if (host === null) return
-    const { text, path, vault, select } = start.current
+    const { text, title, path, vault, select, titleReadOnly } = start.current
     const el = document.createElement('div')
     el.className = 'editor-instance'
     host.appendChild(el)
     const crepe = createCrepe({
       root: el,
-      defaultValue: `${cardBlock(text, EMPTY_CARD_LINE)}\n`,
+      // The card with its title on its line: Edit card's Title field reads it there, as in a page.
+      defaultValue: `${cardBlock(text, withCardTitle(EMPTY_CARD_LINE, title))}\n`,
       features: CARD_EDIT_FEATURES,
       wikilinks: vault.wikilinks,
       viewOnlyLinks: vault.viewOnlyLinks,
       image: { root: vault.root, pagePath: path },
-      cards: { path, onEditDone: (t) => doneRef.current(t) },
+      cards: { path, onEditDone: (t, next) => doneRef.current(t, next), titleReadOnly },
     })
     let live = true
     void crepe.create().then(() => {

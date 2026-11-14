@@ -13,10 +13,13 @@ import { tree } from '../fs/tree'
 import { subscribe } from '../fs/watchers'
 import { writeConfig } from '../vaultConfig'
 import { _resetIndexCache } from './cache'
-import { carryFolderValues, sweepIds } from './idSweep'
+import { CARD_TITLES_MOVED, carryFolderValues, sweepIds } from './idSweep'
 import { _evictAll, flushIndexCache, getColdStartDiff, getIndex, initIndexCache } from './index'
 import { COUNT_DIR, countsOf, doorOf, macId } from './mint'
 import { scanFile, walk } from './scan'
+
+/** The folder of the sweep's one-time marks in the config folder (YAZ-5308). */
+const ONCE = path.basename(path.dirname(CARD_TITLES_MOVED))
 
 // Passthrough, with one seam: what ANOTHER WRITER does between the sweep's read of a file — found
 // or not — and its write (scenario A9). Unset, the sweep reads exactly as it does in the app.
@@ -405,8 +408,8 @@ describe('sweepIds: every folder holds its id in a `.folder.md` (D13)', () => {
     await mkdir(at('Shown', '.cache', 'deep'), { recursive: true })
     await sweepFolders()
     for (const dir of skipped) {
-      // The count files stand in the config folder (YAZ-2677 R14): hidden, so never a folder of the vault.
-      expect(await names(dir)).toEqual(dir === VAULT_CONFIG_DIR ? [COUNT_DIR, IDS_FILE, 'inner'] : ['inner'])
+      // The count files and the sweep's one-time marks (YAZ-5308) stand in the config folder (YAZ-2677 R14): hidden, so never a folder of the vault.
+      expect(await names(dir)).toEqual(dir === VAULT_CONFIG_DIR ? [COUNT_DIR, IDS_FILE, 'inner', ONCE] : ['inner'])
       expect(await names(dir, 'inner')).toEqual([])
     }
     expect(await names('Shown')).toEqual(['.cache', FOLDER_SETTINGS_FILE])
@@ -729,7 +732,7 @@ describe('sweepIds, wired into the live index', () => {
     expect((await folders()).map((r) => r.folder)).toEqual(['Empty', 'Pictures', 'Projects'])
     for (const r of await folders()) expect(await readFile(r.path, 'utf8')).toBe(`---\nid: ${r.id}\n---\n`)
     expect((await readdir(root)).sort()).toEqual([VAULT_CONFIG_DIR, 'Empty', 'Pictures', 'Projects'])
-    expect((await readdir(at(VAULT_CONFIG_DIR))).sort()).toEqual([COUNT_DIR, IDS_FILE])
+    expect((await readdir(at(VAULT_CONFIG_DIR))).sort()).toEqual([COUNT_DIR, IDS_FILE, ONCE])
     expect(await readdir(at('Pictures', '.thumbs'))).toEqual([])
     expect((await readdir(at('Projects'))).sort()).toEqual([FOLDER_SETTINGS_FILE, 'a.md'])
   })

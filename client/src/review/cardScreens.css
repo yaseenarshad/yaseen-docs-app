@@ -90,32 +90,89 @@
   color: var(--warn);
 }
 
-/* "4 Reviews" (YAZ-5032, as Mochi's tab): a ✓ and the count, a soft fill while open; then the table. */
+/* THE REVIEWS STRIP (YAZ-5032; YAZ-5105 rounds 2 and 4), as Mochi's bottom strip: ONE look wherever a card's reviews
+   show — the Inbox, the card file tab, the card window, a card in a page and a card embed (`CardReviews`). A slim band
+   tucked under the card's text: its top hidden under the text's lower edge, its own lower corners round; "✓ 4 Reviews"
+   on its left (a page's card and an embed add the card's facts on its right); the table opens inside it.
+   Round 4 (Yaseen: "it just seems to merge … i dont want to make it too much stand out but a bit"): one step darker
+   than what it sits on, in light and dark — a tint of the text colour over the side colour, and a hairline edge. */
 .card-reviews {
-  margin-top: 16px;
+  --strip-fill: color-mix(in srgb, var(--fg) 6%, var(--bg-side));
+  --strip-edge: color-mix(in srgb, var(--fg) 16%, var(--bg));
 }
-/* YAZ-5105 round 2, as Mochi's bottom strip: a slim, quiet band tucked under the card box above it (outside it), its
-   top hidden under the card's lower edge, its own lower corners round; the table opens inside it. The card box sits
-   over it. Its tint is the side colour mixed toward the text, so it reads as part of the card, not of the page. */
 .card-reviews--strip {
   position: relative;
   margin: -12px 0 0;
   padding: 12px 8px 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--strip-edge);
   border-top: 0;
   border-radius: 0 0 12px 12px;
-  background: color-mix(in srgb, var(--fg) 2%, var(--bg-side));
+  background: var(--strip-fill);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  user-select: none;
 }
+/* What the strip tucks under sits over it: the Inbox's card, the card file tab's and the card window's card. */
 :is(.card-inbox__panel, .card-screen, .explore-card__edit):has(+ .card-reviews--strip) {
   position: relative;
   z-index: 1;
 }
-.card-reviews--strip .card-reviews__bar {
+/* In a page's card and an embed the card's frame is the strip's frame: the strip fills its bottom, and the card's text
+   is the box it tucks under — the same rounded lower edge and hairline as the Inbox's card over it. */
+.card > .card__reviews {
+  display: contents;
+}
+.card > .card__reviews > .card-reviews--strip {
+  margin: -12px 0 0;
+  padding: 12px 8px 0;
+  border: 0;
+  border-radius: 0 0 7px 7px;
+  box-shadow: none;
+}
+.card > .card__body:has(+ .card__reviews) {
+  position: relative;
+  z-index: 1;
+  border-radius: 0 0 12px 12px;
+  background: var(--bg);
+  box-shadow: 0 1px 0 var(--strip-edge, color-mix(in srgb, var(--fg) 16%, var(--bg))), 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+.card--editing .card-reviews {
+  display: none;
+}
+.card-reviews__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
   min-height: 36px;
 }
-.card-reviews--strip .card-reviews__toggle {
+.card-reviews .card-reviews__toggle {
+  flex: none;
+  width: auto;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
   font-size: 12.5px;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.card-reviews .card-reviews__toggle:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.card-reviews .card-reviews__toggle[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
+}
+.card-reviews__toggle .backlinks__title {
+  font-weight: 500;
+}
+/* The card's facts on the strip's right (a page's card, an embed): when they do not fit beside "4 Reviews", they take
+   their own line under it, on the right, so their parts never break in the middle. */
+.card-reviews__bar .card-reviews__facts {
+  margin: 0 4px 0 auto;
 }
 .card-reviews--strip .card-reviews__scroll {
   padding: 2px 4px 12px;
@@ -248,12 +305,6 @@
     margin-right: 0;
   }
 }
-/* The page's Reviews row (round 2): when the strip does not fit beside "4 Reviews", it takes its own line under it,
-   on the right, so its parts never break in the middle. */
-.card .card-reviews__bar {
-  flex-wrap: wrap;
-  row-gap: 2px;
-}
 .card-strip__line > * {
   white-space: nowrap;
 }
@@ -261,6 +312,11 @@
 /* ---------- the card window (an Explore layer) ---------- */
 .explore__body--card {
   padding-top: 16px;
+}
+/* Card width (YAZ-5144): the card, its strips and its mentions, as wide as `card.css`'s Card width rule lets them,
+   centred in a wider window. */
+.explore__body--card > :not(.find-bar-dock--page) {
+  margin-inline: auto;
 }
 /* Edit card in the card window (YAZ-5003): the page card's editor; the window's head has the ID, so the card's head
    keeps only "Done esc ⌘↵". */
@@ -420,7 +476,7 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-/* Time so far, hidden (YAZ-5130): a small quiet clock in the time's place; a click shows the time in the same spot. */
+/* Time so far, hidden (YAZ-5130): a small quiet clock in the time's place; round 2: its hover box shows the time, no click. */
 .card-inbox__time-tip {
   display: inline-flex;
   vertical-align: middle;
@@ -430,21 +486,31 @@
   align-items: center;
   min-height: 18px;
   padding: 0 3px;
-  border: 0;
   border-radius: 5px;
-  background: none;
-  color: inherit;
-  font: inherit;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
+  cursor: default;
 }
 .card-inbox__time:hover {
   background: color-mix(in srgb, var(--fg) 7%, transparent);
   color: var(--fg);
 }
+/* Round 3: the hover box in two lines, "Time so far:" over the time, which is a little stronger. */
+.card-inbox__time-label,
+.card-inbox__time-value {
+  display: block;
+}
+.card-inbox__time-label {
+  color: var(--fg-muted);
+}
+.card-inbox__time-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
 .card-inbox__time:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+.card-inbox__time:focus:not(:focus-visible) {
+  outline: none;
 }
 .card-inbox__bar > .card-inbox__today + .card-inbox__place {
   margin-left: 12px;
@@ -600,7 +666,9 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  width: min(640px, 100%);
+  /* Settings › Review › Card width (YAZ-5144): the card's text at most `--card-text-width`, with the card's own sides.
+     A drag of its edge sets the width for this run (`inboxCardWidth.ts`, inline). */
+  width: min(calc(var(--card-text-width) + 2 * var(--inbox-card-pad, 28px)), 100%);
   margin-top: 5vh;
 }
 /* YAZ-5027: the row above the card holds the state chip, on the card's left edge. Its fixed height keeps the card in
@@ -744,14 +812,10 @@ body.card-inbox--sizing {
   flex: none;
   padding: 24px var(--inbox-card-pad, 28px) 28px;
 }
-/* Card spacing Clean (YAZ-5050 round 4) and Custom: Mochi's room inside the card, and its line of about 62 letters,
-   centred in the card (a wider card, dragged, keeps the line and centres it). */
+/* Card spacing Clean (YAZ-5050 round 4) and Custom: Mochi's room inside the card. Its short line is Card width now
+   (YAZ-5144): Clean sets it to Custom 520 px, Mochi's line, so one rule sets a card's line. */
 [data-card-clean] {
   --inbox-card-pad: 44px;
-}
-[data-card-clean] .card-inbox__card .card__side {
-  max-width: 31em;
-  margin-inline: auto;
 }
 /* The buttons and their line (YAZ-5049 round 2): at the bottom of the view while a long card scrolls under them, so
    an answer is always one click away; under a short card, where they always were. The page colour, fading in at the
@@ -870,6 +934,24 @@ body.card-inbox--sizing {
 }
 .card-inbox__answers .card-inbox__answer:hover {
   background: color-mix(in srgb, var(--fg) 6%, var(--bg));
+}
+/* THE END's cue (YAZ-5049 round 3): one more Space when nothing is left gives the buttons one soft ring, then it
+   fades. A ring, no movement, so it stays with Reduce motion. Two names, so each new Space plays it again. */
+.card-inbox__answers[data-nudge='a'] .card-inbox__answer {
+  animation: card-inbox-nudge-a 700ms ease-out;
+}
+.card-inbox__answers[data-nudge='b'] .card-inbox__answer {
+  animation: card-inbox-nudge-b 700ms ease-out;
+}
+@keyframes card-inbox-nudge-a {
+  from {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+}
+@keyframes card-inbox-nudge-b {
+  from {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
 }
 .card-inbox__answers .card-inbox__answer kbd {
   margin-left: 0;
@@ -1127,4 +1209,20 @@ body.card-inbox--sizing {
 .card-inbox__archived-title.card__title--empty {
   color: var(--fg-muted);
   font-weight: 400;
+}
+
+/* PREVIEW A CARD (YAZ-5152): the Inbox's screen over the window — above Explore, under the notices — with its card as
+   the Inbox draws it; only the bottom bar is its own, "Preview · Esc to close", quiet and centred. */
+.card-preview {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-explore) + 1);
+}
+.card-preview > .card-inbox {
+  padding-top: 24px;
+}
+.card-preview__foot {
+  justify-content: center;
+  color: var(--fg-muted);
+  font-size: 12.5px;
 }

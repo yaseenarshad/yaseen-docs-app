@@ -23,7 +23,7 @@ import {
 } from '@shared/cardLine'
 import { CARD_LEARNING_STEPS, CARD_RELEARNING_STEPS, CARD_STEP, addStep, answerLabel, answerRatings, cardHistory, cardPlan, cardQueue, cardState, isCardDue, pageCardCounts, previewAnswers, recallChance } from '@shared/cardSchedule'
 import { FSRS, Rating, createEmptyCard, generatorParameters } from 'ts-fsrs'
-import { cardPieces, cardSides, cardTitle, hiddenCount, markHidden } from '@shared/cardText'
+import { cardPieces, cardSides, hiddenCount, markHidden } from '@shared/cardText'
 import { DEFAULT_CARD_WEIGHTS, DEFAULT_REVIEW_SETTINGS, sanitizeReviewSettings } from '@shared/reviews'
 
 /** Cards' shared core (YAZ-4959): the card line, the card text, the FSRS schedule and the settings. */
@@ -104,8 +104,8 @@ describe('the card line (D3)', () => {
       [8, 12, null, '  ', 'Two {{word}}\n---\nBack'],
     ])
     expect(cardRecords(page)).toEqual([
-      { id: 'WIKI-1', off: false, next: false, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }], title: 'One' },
-      { id: null, off: false, next: false, reviews: [], title: 'Two word' },
+      { id: 'WIKI-1', off: false, next: false, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }] },
+      { id: null, off: false, next: false, reviews: [] },
     ])
     const given = rewritePageCards(page, (card, i) => (i === 1 ? withCardId(card.line, 'WIKI-2') : undefined))
     expect(given).toBe(page.replace('  Back\n  ```\n', '  Back\n  ```\n  <!-- card: WIKI-2 -->\n'))
@@ -120,7 +120,7 @@ describe('the card line (D3)', () => {
 })
 
 describe('the card text (D10, D19, idea 3)', () => {
-  it('splits sides on a lone ---, reads {{1::word}} as {{word}}, and titles the card with its first plain line', () => {
+  it('splits sides on a lone ---, and reads {{1::word}} as {{word}}', () => {
     const text = '\n## The **capital** of {{1::France}}\n\nis [[Paris|the city]].\n---\n```\n---\n```\nParis, {{c2::on the Seine}}\n'
     expect(cardSides(text)).toEqual(['## The **capital** of {{1::France}}\n\nis [[Paris|the city]].', '```\n---\n```\nParis, {{c2::on the Seine}}'])
     expect(cardPieces('A {{1::b}} c {{d e}}')).toEqual([
@@ -130,9 +130,6 @@ describe('the card text (D10, D19, idea 3)', () => {
       { kind: 'hidden', text: 'd e' },
     ])
     expect(markHidden('{{1::Paris}} and {{Rome}}', (word, n) => `${n}:${word}`)).toBe('0:Paris and 1:Rome')
-    expect(cardTitle(text)).toBe('The capital of France')
-    expect(cardTitle('- [x] *Read* `x` [the doc](http://a.b) and ![img](a.png)')).toBe('Read x the doc and img')
-    expect(cardTitle('')).toBe('')
   })
 })
 
@@ -143,7 +140,6 @@ describe('code in a card is literal (the one fence walk, `shared/fences.ts`)', (
     expect(cardPieces(side).filter((p) => p.kind === 'hidden').map((p) => p.text)).toEqual(['b', 'c'])
     expect(hiddenCount(side)).toBe(2)
     expect(markHidden(side, (w) => `[${w}]`)).toBe(side.replace('{{b}}', '[b]').replace('{{c}}', '[c]'))
-    expect(cardTitle('`{{x}}` first')).toBe('{{x}} first')
   })
 })
 
@@ -379,7 +375,7 @@ describe('the schedule (D5): FSRS 5.4.2 replay', () => {
     const text = '<!-- card: WIKI-512, next, 2026-11-12T14:05Z good -->'
     const line = parseCardLine(text)!
     expect([isCardNext(line), cardNextIndex(line), formatCardLine(line)]).toEqual([true, 1, text])
-    expect(cardRecords(`\`\`\`card\nQ\n\`\`\`\n${text}`)).toEqual([{ id: 'WIKI-512', off: false, next: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }], title: 'Q' }])
+    expect(cardRecords(`\`\`\`card\nQ\n\`\`\`\n${text}`)).toEqual([{ id: 'WIKI-512', off: false, next: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }] }])
     const plain = parseCardLine('<!-- card: WIKI-512, off, 2026-11-12T14:05Z good -->')!
     expect(formatCardLine(withCardNext(plain, true))).toBe('<!-- card: WIKI-512, off, next, 2026-11-12T14:05Z good -->')
     expect(formatCardLine(withCardNext(EMPTY_CARD_LINE, true))).toBe('<!-- card: next -->')

@@ -8844,7 +8844,7 @@ describe('card files (YAZ-5037)', () => {
     await act(async () => undefined)
   }
 
-  it('"New card" opens the name box as "New page" does (YAZ-5101); Enter takes ONE ID and writes the card file named after the title: `kind: card`, the title in `title` and an empty card (YAZ-5044); then the file opens', async () => {
+  it('"New card" opens the name box as "New page" does (YAZ-5101); Enter takes ONE ID and writes the card file named after the title: `kind: card` and an empty card, the title on its card line (YAZ-5308); then the file opens', async () => {
     const { el, bridge, props } = await mount({ review: true })
     rightClick(rowAt(el, '/v/sub'))
     await act(async () => itemByLabel(el, 'New card')?.click())
@@ -8856,7 +8856,7 @@ describe('card files (YAZ-5037)', () => {
     expect(bridge.mintPageId).toHaveBeenCalledExactlyOnceWith('/v/sub')
     const path = `/v/sub/${cardFileName('Capital of France', 'YAZ-1')}`
     expect(path).not.toBe('/v/sub/yaz-1.md')
-    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path, content: '---\nkind: card\ntitle: Capital of France\n---\n```card\n\n```\n<!-- card: YAZ-1 -->\n' })
+    expect(bridge.createFile).toHaveBeenCalledExactlyOnceWith({ path, content: '---\nkind: card\n---\n```card\n\n```\n<!-- card: YAZ-1, title "Capital of France" -->\n' })
     expect(nameBox(el)).toBeNull()
     expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(path)
   })

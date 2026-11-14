@@ -4,20 +4,23 @@
  * file; the ⋯ menu; the missing look; the read once per file version and only near the screen; "Show as embed" on a
  * card pill and the paste chip's "Embed" for a card link.
  */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { CardRecord } from '@shared/cardLine'
 import type { IndexRecord } from '@shared/types'
+import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { createWikilinkCandidateSource } from '../wikilink/wikilinkPicker'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { BOARD_EMBED_SYNTAX_CLASS } from '../drawing/boardEmbed'
 import { CARD_OPEN, setCardEditorKind, type CardOpenRequest } from './cardBlockView'
 import { takeCardLanding } from './cardOpen'
+import { act } from 'react'
 import { cardEmbedOfDom } from './cardEmbed'
 import { loadCardEmbed } from './embedCard'
+import { READ_ONLY_EDIT, type ReadOnlyEditEvent } from '../readOnlyEdit'
 
 /** The vault's files in memory: the card embed reads them (`api.readFile`), the card's writes change them. */
 const disk = vi.hoisted(() => ({ files: new Map<string, string>(), reads: [] as string[] }))
@@ -63,8 +66,8 @@ const CARD_FILE = '/v/cards/capital-of-france-geo-140.md'
 const EUROPE = '/v/geo/Europe.md'
 const PLAN = '/v/pages/plan.md'
 
-const cardFileText = '---\nkind: card\ntitle: Capital of France\n---\n```card\nWhat is the capital of **France**?\n---\nParis\n```\n<!-- card: GEO-140 -->\n'
-const europeText = '# Europe\n\n```card\nLargest country?\n---\nRussia\n```\n<!-- card: GEO-1 -->\n\n```card\nSmallest country?\n---\nVatican City\n```\n<!-- card: GEO-2, off -->\n'
+const cardFileText = '---\nkind: card\n---\n```card\nWhat is the capital of **France**?\n---\nParis\n```\n<!-- card: GEO-140, title "Capital of France" -->\n'
+const europeText = '# Europe\n\n```card\nWhich is the largest?\n---\nRussia\n```\n<!-- card: GEO-1, title "Largest country?" -->\n\n```card\nWhich is the smallest?\n---\nVatican City\n```\n<!-- card: GEO-2, title "Smallest country?", off -->\n'
 
 const card = (id: string, title: string, over: Partial<CardRecord> = {}): CardRecord => ({ id, off: false, next: false, reviews: [], title, ...over })
 
@@ -109,8 +112,8 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-async function mount(markdown: string, extra: Partial<CreateCrepeOptions> = {}) {
-  disk.files.set(CARD_FILE, cardFileText)
+async function mount(markdown: string, extra: Partial<CreateCrepeOptions> = {}, cardFile = cardFileText) {
+  disk.files.set(CARD_FILE, cardFile)
   disk.files.set(EUROPE, europeText)
   disk.reads.length = 0
   const root = document.createElement('div')
@@ -162,6 +165,28 @@ describe('the embed and its head (Q4, locked)', () => {
     expect(getMarkdownForSave(crepe)).toBe(markdown)
   })
 
+  it('YAZ-5164 part 3: a card in a page shows its title first in the head (the page title`s component), and its card never repeats it; a click renames it in its page', async () => {
+    const flag = globalThis as unknown as Record<string, unknown>
+    flag.IS_REACT_ACT_ENVIRONMENT = true
+    onTestFinished(() => void delete flag.IS_REACT_ACT_ENVIRONMENT)
+    const { root } = await mount('![[GEO-140]]\n\n![[GEO-1]]\n')
+    // The boxes, as drawn now (the page draws its widgets again as the index lands).
+    const inPage = () => boxes(root)[1]!
+    await vi.waitFor(() => expect(inPage().querySelector('.card__head .card__title .page-title__text')?.textContent).toBe('Largest country?'))
+    await vi.waitFor(() => expect(inPage().querySelector('.card__body')?.textContent).toContain('Russia'))
+    expect(inPage().querySelector('.card__body')?.textContent).not.toContain('Largest country?')
+    // A card file's title is the head's name already: no second title.
+    expect(boxes(root)[0]!.querySelector<HTMLElement>('.card__title')?.hidden).toBe(true)
+    press(inPage().querySelector('.card__title .page-title__text'))
+    act(() => inPage().querySelector<HTMLElement>('.card__title .page-title__text')!.click())
+    const field = inPage().querySelector<HTMLTextAreaElement>('.card__title .page-title__input')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, 'Biggest country?')
+      field.blur()
+    })
+    await vi.waitFor(() => expect(disk.files.get(EUROPE)).toContain('```card\nWhich is the largest?\n---\nRussia\n```\n<!-- card: GEO-1, title "Biggest country?" -->'))
+  })
+
   it('a click on the name opens the original: the card file\'s tab, or the page landed on the card', async () => {
     const { root, nav } = await mount('![[GEO-140]]\n\n![[GEO-2]]\n')
     const [file, inPage] = boxes(root)
@@ -192,6 +217,31 @@ describe('the embed and its head (Q4, locked)', () => {
     await drawn()
     expect(boxes(root)).toHaveLength(1)
     expect(root.textContent).toContain('![[Plan]]')
+  })
+})
+
+describe('YAZ-5105 round 4: the Reviews strip in an embed, the same strip as the Inbox and the page card', () => {
+  const LINE = '<!-- card: GEO-140, 2026-11-01T09:00Z good, 2026-11-06T09:00Z again 12s -->'
+  it('a card with reviews shows THE strip (`CardReviews`) under its text, with its facts; a click opens the table; the delete writes the original; no door: no strip', async () => {
+    const deleteReview = vi.fn(async () => {})
+    const settings = () => DEFAULT_REVIEW_SETTINGS
+    const { root } = await mount('Plan\n\n![[GEO-140]]\n', { cardReviews: { settings, deleteReview }, wikilinks: vault(records({ cardFile: { mtime: 51 } })) }, cardFileText.replace('<!-- card: GEO-140, title "Capital of France" -->', LINE))
+    const box = boxes(root)[0]!
+    await vi.waitFor(() => expect(box.querySelector('.card-reviews .backlinks__title')?.textContent).toBe('2 Reviews'))
+    const strip = box.querySelector('.card-reviews')!
+    expect(strip.classList.contains('card-reviews--strip')).toBe(true)
+    expect(strip.parentElement?.previousElementSibling?.classList.contains('card__body')).toBe(true)
+    expect(box.querySelector('.card-reviews__facts')?.textContent).toMatch(/^Due /)
+    ;(box.querySelector('.card-reviews__toggle') as HTMLButtonElement).click()
+    await vi.waitFor(() => expect(box.querySelectorAll('.card-reviews__table tbody tr')).toHaveLength(3))
+    // A press in the strip never selects the embed; the delete asks, then writes the ORIGINAL through the vault's door.
+    box.querySelectorAll<HTMLButtonElement>('.card-reviews__delete')[1].click()
+    await vi.waitFor(() => expect(document.querySelector('.confirm')).not.toBeNull())
+    ;[...document.querySelectorAll<HTMLButtonElement>('.confirm button')].find((b) => b.textContent === 'Remove review')!.click()
+    await vi.waitFor(() => expect(deleteReview).toHaveBeenCalledWith(CARD_FILE, 'GEO-140', { at: '2026-11-06T09:00Z', rating: 'again', seconds: 12 }))
+    const plain = await mount('Plan\n\n![[GEO-140]]\n')
+    await tick(10)
+    expect(boxes(plain.root)[0]!.querySelector('.card-reviews')).toBeNull()
   })
 })
 
@@ -261,7 +311,7 @@ describe('Edit card writes the original', () => {
 
   it('YAZ-5097: Done on an edited card marked Fix later takes the mark off in the same write', async () => {
     const { root, wikilinks } = await mount('Plan\n\n![[GEO-140]]\n')
-    disk.files.set(CARD_FILE, cardFileText.replace('<!-- card: GEO-140 -->', '<!-- card: GEO-140, fix -->'))
+    disk.files.set(CARD_FILE, cardFileText.replace('<!-- card: GEO-140, title "Capital of France" -->', '<!-- card: GEO-140, title "Capital of France", fix -->'))
     update(wikilinks, records({ cardFile: { mtime: 2, cards: [card('GEO-140', 'Capital of France', { fix: true })] } }))
     const box = boxes(root)[0]!
     await vi.waitFor(() => expect(box.querySelector<HTMLElement>('.card__fix')?.hidden).toBe(false))
@@ -275,7 +325,7 @@ describe('Edit card writes the original', () => {
     expect(box.querySelector<HTMLElement>('.card__fix')?.hidden).toBe(true)
   })
 
-  it('Done with no change writes nothing; a read-only page has no Edit card', async () => {
+  it('Done with no change writes nothing; a read-only page asks first, then opens Edit card', async () => {
     const { root, view } = await mount('![[GEO-140]]\n')
     const box = boxes(root)[0]!
     await vi.waitFor(() => expect(box.querySelector('.card__body')?.textContent).toContain('Paris'))
@@ -285,8 +335,15 @@ describe('Edit card writes the original', () => {
     await tick()
     expect(disk.files.get(CARD_FILE)).toBe(cardFileText)
     view.setProps({ editable: () => false })
+    // YAZ-5145 round 2: read only, Edit card is an edit attempt that carries itself; "Allow edits" then opens it.
+    const told: ReadOnlyEditEvent[] = []
+    root.addEventListener(READ_ONLY_EDIT, (e) => told.push(e as ReadOnlyEditEvent))
     press(box.querySelector('.card__edit'))
     expect(cardEmbedOfDom(box)!.cardEditor).toBeNull()
+    expect(told.map((e) => e.detail)).toEqual(['card'])
+    view.setProps({ editable: () => true })
+    told[0].resume?.()
+    expect(cardEmbedOfDom(box)!.cardEditor).not.toBeNull()
   })
 })
 
@@ -295,7 +352,7 @@ describe('the ⋯ menu', () => {
     const { crepe, root } = await mount('Plan ![[GEO-140]] end\n')
     const box = boxes(root)[0]!
     press(box.querySelector('.card__more'))
-    expect(menuLabels()).toEqual(['Open card', 'Show as link', 'Archive card', 'Fix later', 'Copy card ID'])
+    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Show as link', 'Archive card', 'Fix later', 'Copy card ID'])
     // Open card: the card window, through the one open hook.
     const opened: CardOpenRequest[] = []
     const listen = (e: Event) => opened.push((e as CustomEvent<CardOpenRequest>).detail)
@@ -306,7 +363,7 @@ describe('the ⋯ menu', () => {
     // Archive card: the card line of the card file.
     press(box.querySelector('.card__more'))
     menuItem('Archive card')!.click()
-    await vi.waitFor(() => expect(disk.files.get(CARD_FILE)).toContain('<!-- card: GEO-140, off -->'))
+    await vi.waitFor(() => expect(disk.files.get(CARD_FILE)).toContain('<!-- card: GEO-140, title "Capital of France", off -->'))
     // Show as link: the embed becomes the card's link, in the page.
     press(box.querySelector('.card__more'))
     menuItem('Show as link')!.click()
@@ -318,7 +375,7 @@ describe('the ⋯ menu', () => {
     const { root, view } = await mount('![[GEO-2]]\n')
     view.setProps({ editable: () => false })
     press(boxes(root)[0]!.querySelector('.card__more'))
-    expect(menuLabels()).toEqual(['Open card', 'Unarchive card', 'Fix later', 'Copy card ID'])
+    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Unarchive card', 'Fix later', 'Copy card ID'])
   })
 
   it('YAZ-5097: Fix later writes `fix` on the ORIGINAL; a card marked in the index says "To fix" in the head and Remove Fix later', async () => {
@@ -327,10 +384,10 @@ describe('the ⋯ menu', () => {
     expect(box.querySelector<HTMLElement>('.card__fix')?.hidden).toBe(true)
     press(box.querySelector('.card__more'))
     menuItem('Fix later')!.click()
-    await vi.waitFor(() => expect(disk.files.get(CARD_FILE)).toContain('<!-- card: GEO-140, fix -->'))
+    await vi.waitFor(() => expect(disk.files.get(CARD_FILE)).toContain('<!-- card: GEO-140, title "Capital of France", fix -->'))
     // The phone's mark lands: a new version of the card file in the index.
     const marked = await mount('Plan ![[GEO-140]] end\n')
-    disk.files.set(CARD_FILE, cardFileText.replace('<!-- card: GEO-140 -->', '<!-- card: GEO-140, fix -->'))
+    disk.files.set(CARD_FILE, cardFileText.replace('<!-- card: GEO-140, title "Capital of France" -->', '<!-- card: GEO-140, title "Capital of France", fix -->'))
     update(marked.wikilinks, records({ cardFile: { mtime: 2, cards: [card('GEO-140', 'Capital of France', { fix: true })] } }))
     const markedBox = boxes(marked.root)[0]!
     await vi.waitFor(() => expect(markedBox.querySelector<HTMLElement>('.card__fix')?.hidden).toBe(false))
@@ -388,7 +445,7 @@ describe('the convert rows (YAZ-5037 phase 5): Move to its own file, Put back in
     const { root } = await mount('Intro.\n\n![[GEO-140]]\n\nMid ![[GEO-140]] text.\n\n- Item\n\n  ![[GEO-140]]\n', { cards: { path: PLAN, convert } })
     const [lone, inline, inList] = boxes(root)
     press(lone!.querySelector('.card__more'))
-    expect(menuLabels()).toEqual(['Open card', 'Show as link', 'Put back into this page', 'Archive card', 'Fix later', 'Copy card ID'])
+    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Show as link', 'Put back into this page', 'Archive card', 'Fix later', 'Copy card ID'])
     menuItem('Put back into this page')!.click()
     expect(convert.putBack).toHaveBeenCalledWith({ id: 'GEO-140', path: CARD_FILE }, 'GEO-140', 0)
     // With words around it: no card block can go there.
@@ -416,7 +473,7 @@ describe('the convert rows (YAZ-5037 phase 5): Move to its own file, Put back in
     const { root } = await mount(`# Plan\n\n${pageCard('GEO-1', 'Largest country?')}\n${pageCard('GEO-2', 'Smallest country?')}\n\`\`\`card\nNo ID yet\n\`\`\`\n`, { cards: { path: PLAN, convert } })
     const cards = [...root.querySelectorAll<HTMLElement>('.card:not(.card-embed)')]
     press(cards[1]!.querySelector('.card__more'))
-    expect(menuLabels().slice(0, 2)).toEqual(['Open card', 'Move to its own file'])
+    expect(menuLabels().slice(0, 3)).toEqual(['Open card', 'Preview', 'Move to its own file'])
     menuItem('Move to its own file')!.click()
     expect(convert.move).toHaveBeenCalledWith('GEO-2', 1)
     press(cards[2]!.querySelector('.card__more'))

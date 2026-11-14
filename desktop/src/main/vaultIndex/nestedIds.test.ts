@@ -10,7 +10,7 @@ import { IDS_FILE } from '@shared/pageId'
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import { makeFirstMac, removeVault, sleep, vaultFiles } from '../fs/testFixture'
 import { _evictAll, changeLetters, checkDuplicates, getIndex, giveIdsNow } from './index'
-import { _swept } from './idSweep'
+import { CARD_TITLES_MOVED, _swept } from './idSweep'
 import { COUNT_DIR, mintIds } from './mint'
 
 let root: string
@@ -36,7 +36,7 @@ async function make(files: Record<string, string>): Promise<void> {
 
 /** Each page and settings file of both vaults: what an ID pass may change. The count files are left out (a pass that gives nothing writes none). */
 const pages = async (): Promise<Record<string, string>> =>
-  Object.fromEntries(Object.entries(await vaultFiles(root)).filter(([rel]) => !rel.endsWith('/') && !rel.includes(`${VAULT_CONFIG_DIR}/${COUNT_DIR}/`)))
+  Object.fromEntries(Object.entries(await vaultFiles(root)).filter(([rel]) => !rel.endsWith('/') && !rel.includes(`${VAULT_CONFIG_DIR}/${COUNT_DIR}/`) && !rel.includes(`${path.dirname(CARD_TITLES_MOVED)}/`)))
 
 /** Both indexes built (each runs its first sweep), then "Give IDs" on each, the user's pass on this Mac: every sweep of both vaults. */
 async function sweepBoth(): Promise<void> {

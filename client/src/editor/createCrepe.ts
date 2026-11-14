@@ -865,12 +865,14 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
                 edit:
                   cardDeps.editor === undefined
                     ? undefined
-                    : (root, text, done) => ({ editor: mountCardEditor({ root, text, make: cardDeps.editor!, doors: { done, changed: () => {} } }), keys: cardKeyRow() }),
+                    : // A card file's title shows in the Title field, unchanged here: the file's own tab renames it (YAZ-5164 part 3).
+                      (root, text, title, done, fileCard) => ({ editor: mountCardEditor({ root, text, title, make: cardDeps.editor!, titleReadOnly: fileCard, doors: { done, changed: () => {} } }), keys: cardKeyRow() }),
                 follow,
                 hotkeys: cardDeps.hotkeys,
                 openHref: cardDeps.openHref,
                 onNotice: cardDeps.onNotice,
                 putBack: opts.cards?.convert?.putBack,
+                reviews: cardDeps.reviews,
               },
       }),
     )

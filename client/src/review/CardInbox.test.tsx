@@ -8,6 +8,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { CardAnswer } from '@shared/cardSchedule'
+import { formatCardLine, parseCardLine, type CardLine } from '@shared/cardLine'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { createViewOnlyLinkSource } from '../editor/wikilink/viewOnlyLinkSource'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
@@ -34,6 +35,13 @@ vi.mock('../api', () => ({
   },
 }))
 
+/** The card line writes (YAZ-5164 part 3: the head's rename, YAZ-5308 on the card line), recorded instead of written. */
+const lineWrites = vi.hoisted(() => [] as unknown[][])
+vi.mock('./cardFile', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./cardFile')>()),
+  changeCardLine: vi.fn(async (...args: unknown[]) => void lineWrites.push(args)),
+}))
+
 const PATH = '/v/cards.md'
 const TWO_SIDES = 'Capital of {{France}}\n---\n{{Paris}} on the {{Seine}}'
 const AT = '2026-11-12T14:05Z'
@@ -46,8 +54,11 @@ let session: CardReviewSession
 let review: CardReviewApi
 let props: CardInboxProps
 
-function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], size: 12, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, lastAdd: null, archived: [], toFix: [], ...over }
+/** The card's title, off its card line (YAZ-5308). */
+const TITLE = 'Capital of France'
+
+function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}, title = TITLE): CardReviewSession {
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], size: 12, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, lastAdd: null, archived: [], toFix: [], ...over }
 }
 
 function render() {
@@ -87,7 +98,7 @@ function mount(text: string | null, settings: ReviewSettings = DEFAULT_REVIEW_SE
     vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: { candidates: [], subscribe: () => () => undefined } as never }),
     nameOf: () => 'Cards',
     openPage: vi.fn(),
-    openCard: vi.fn(),
+    editCard: vi.fn(),
     openInTab: vi.fn(),
     openLinkIn: vi.fn(),
     openLayer: vi.fn(),
@@ -116,11 +127,15 @@ afterEach(() => {
 })
 
 describe('the Inbox screen (YAZ-4962)', () => {
-  it('YAZ-5044: the head reads "WIKI-9" while the title holds a hidden word (it would tell the answer), then "Capital of France · WIKI-9" (YAZ-5132: the page is in the breadcrumb, not "in Cards"); the hint row shows only keys that act now', async () => {
+  it('YAZ-5308: the head reads "Capital of France · WIKI-9" from the start, its title off the card line, never a word of the front (YAZ-5132: the page is in the breadcrumb, not "in Cards"); the hint row shows only keys that act now', async () => {
     mount(TWO_SIDES)
     expect(el.querySelector('.explore__title')).toBeNull()
     const head = () => [...el.querySelector('.card-inbox__head')!.children].map((c) => [c.className, c.textContent])
-    expect(head()).toEqual([['card__id', 'WIKI-9']])
+    expect(head()).toEqual([
+      ['card-inbox__name', 'Capital of France'],
+      ['card-inbox__dot', '·'],
+      ['card__id', 'WIKI-9'],
+    ])
     // YAZ-5017: "3 of 12" moved to the top row, on the right.
     expect(el.querySelector('.card-inbox__bar .card-inbox__place')?.textContent).toBe('3 of 12')
     const hints = () => [...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)
@@ -194,10 +209,10 @@ describe('the Inbox screen (YAZ-4962)', () => {
     render()
     expect(hasE()).toBe(true)
     press('e')
-    expect(props.openCard).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', 0, true)
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, 0)
   })
 
-  it('YAZ-5009: in a read-only vault the row offers "E Edit card", and E opens the card window in Edit card at once (no ask); the Inbox keeps its card and step under it', () => {
+  it('YAZ-5145: in a read-only vault the row offers "E Edit card", and E asks Explore to edit (its own "Allow edits?" asks there); the Inbox keeps its card and step under it', () => {
     mount(TWO_SIDES)
     const plain = props.vaultOf
     props.vaultOf = (path) => ({ ...plain(path), readOnly: true })
@@ -206,9 +221,9 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(shown()).toEqual(['France'])
     expect([...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)).toContain('E Edit card')
     press('e')
-    expect(props.openCard).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', 0, true)
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, 0)
     expect(props.openPage).not.toHaveBeenCalled()
-    // Back from the card window (the stack closed): the same card, the same step.
+    // Back from Explore (the stack closed): the same card, the same step.
     render()
     expect(shown()).toEqual(['France'])
     expect(el.querySelector('.card-inbox__place')?.textContent).toBe('3 of 12')
@@ -367,13 +382,13 @@ describe('the Inbox screen (YAZ-4962)', () => {
     palette.remove()
   })
 
-  it('YAZ-5022: O opens the page on top at its TOP (no card index: no scroll to the card); YAZ-5003: E opens only the card, in the card window, in Edit card; ⌘↵ in a tab; ⌘Z undoes only when there is an answer to undo; YAZ-5011: Esc does not close the Inbox (a tab), and the key is not taken', () => {
+  it('YAZ-5022: O opens the page on top at its TOP (no card index: no scroll to the card); YAZ-5145: E asks Explore to edit the page, landed on the card (its index); ⌘↵ in a tab; ⌘Z undoes only when there is an answer to undo; YAZ-5011: Esc does not close the Inbox (a tab), and the key is not taken', () => {
     mount(TWO_SIDES)
     press('o')
     expect(props.openPage).toHaveBeenLastCalledWith(PATH)
     expect(vi.mocked(props.openPage).mock.calls[0]).toHaveLength(1)
     press('e')
-    expect(props.openCard).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', 0, true)
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, 0)
     expect(props.openPage).toHaveBeenCalledOnce()
     press('Enter', { metaKey: true })
     expect(props.openInTab).toHaveBeenCalledExactlyOnceWith(PATH)
@@ -604,8 +619,9 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.setNext).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', true)
     run('Fix later')
     expect(review.setFix).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', true)
+    // YAZ-5145: Open card opens as O does: Explore's own layer.
     run('Open card')
-    expect(props.openCard).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', 0, false)
+    expect(props.openPage).toHaveBeenCalledExactlyOnceWith(PATH)
     expect(actions()).toEqual([])
   })
 
@@ -911,7 +927,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
 })
 
 describe('the title on the front (YAZ-5030)', () => {
-  const TITLED = '###### {{Capital of France}}\n\nWhat is the capital of {{France}}?\n---\n{{Paris}}'
+  const TITLED = 'What is the capital of {{France}}?\n---\n{{Paris}}'
   const withLine = (notitle: boolean) => {
     mount(TITLED)
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, notitle } } }
@@ -943,17 +959,14 @@ describe('the title on the front (YAZ-5030)', () => {
     expect(text()).not.toContain('Capital of France')
   })
 
-  it('Show (an old card, no part): the title is part of the front as before, its hidden word the first Space step; the head waits for the last step to show it, as the title tells the answer (YAZ-5044)', async () => {
+  it('Show (no part): the head shows the title from the start; it is no part of the front, so never a Space step (YAZ-5308)', async () => {
     withLine(false)
     await flush()
-    expect(blanks()).toBe(2)
-    press(' ')
-    expect(shown()).toEqual(['Capital of France'])
-    press(' ')
-    press(' ')
-    press(' ')
-    expect(shown()).toEqual(['Capital of France', 'France', 'Paris'])
     expect(label()).toBe('Capital of France')
+    expect(text()).not.toContain('Capital of France')
+    expect(blanks()).toBe(1)
+    press(' ')
+    expect(shown()).toEqual(['France'])
   })
 
   it('the answer line names the card by its title, a hidden title too (the answer is given)', async () => {
@@ -967,7 +980,7 @@ describe('the title on the front (YAZ-5030)', () => {
 })
 
 describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the breadcrumb`s last part), "Open card" for a card file', () => {
-  const PLAIN = 'Capital of France\n\nWhat is the capital of {{France}}?'
+  const PLAIN = 'What is the capital of {{France}}?'
   const headText = () => el.querySelector('.card-inbox__head')!.textContent
   const hints = () => [...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)
   /** The card's file is a card file (`kind: card`), as the index says. */
@@ -975,11 +988,11 @@ describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the brea
     const record = { path: PATH, name: 'cards.md', basename: 'cards', title: 'Capital of France', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, properties: { kind: 'card' }, aliases: [], tags: [], links: [], embeds: [], kind: 'card' as const }
     const wikilinks = createWikilinkResolveSource()
     wikilinks.update(() => null, [record])
-    props = { ...props, vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: { candidates: [], subscribe: () => () => undefined } as never }), openTab: vi.fn() }
+    props = { ...props, vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: { candidates: [], subscribe: () => () => undefined } as never }) }
     render()
   }
 
-  it('a card in a page: "Capital of France · WIKI-9" from the start (no hidden word in its title), no "in Cards"; the breadcrumb`s page part and O open the page', () => {
+  it('a card in a page: "Capital of France · WIKI-9" from the start, no "in Cards"; the breadcrumb`s page part and O open the page', () => {
     mount(PLAIN)
     session = { ...session, place: [{ kind: 'vault', label: 'Demo', path: '/v' }, { kind: 'page', label: 'Cards', path: PATH }] }
     render()
@@ -994,7 +1007,56 @@ describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the brea
     expect(hints()).toContain('O Open page')
   })
 
-  it('a card file adds nothing: "Capital of France · WIKI-9"; its title is the link, and it and O open the card file`s tab ("Open card")', () => {
+  // YAZ-5307: Settings › Cards › Inbox: O opens the page at. The top (the default) asks for the page alone, as YAZ-5022;
+  // The card asks for it landed on the card (its index: Explore's page layer `card`, the one landing, YAZ-5164). The
+  // breadcrumb's page part and ⋯ › Open card open as O does. E and a card file do not change.
+  it.each([
+    ['top', [PATH]],
+    ['card', [PATH, 1]],
+  ] as const)('YAZ-5307: with "%s", O, the breadcrumb`s page part and ⋯ › Open card ask for %j; E is unchanged', (openAt, asked) => {
+    mount(PLAIN)
+    props = { ...props, openAt }
+    session = { ...session, card: { ...session.card!, index: 1 }, place: [{ kind: 'vault', label: 'Demo', path: '/v' }, { kind: 'page', label: 'Cards', path: PATH }] }
+    render()
+    press('o')
+    expect(vi.mocked(props.openPage).mock.lastCall).toEqual(asked)
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__path-part[data-kind="page"]')!.click())
+    expect(vi.mocked(props.openPage).mock.lastCall).toEqual(asked)
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-action[aria-label="Open card"]')!.click())
+    expect(vi.mocked(props.openPage).mock.calls).toEqual([asked, asked, asked])
+    press('e')
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, 1)
+  })
+
+  it('YAZ-5307: with "card", a card FILE still opens as itself (no card index)', () => {
+    mount(PLAIN)
+    asCardFile()
+    props = { ...props, openAt: 'card' }
+    render()
+    press('o')
+    expect(vi.mocked(props.openPage).mock.calls).toEqual([[PATH]])
+  })
+
+  it('YAZ-5164 part 3: the front never shows the title; a click on the head`s title renames the card on its card line (YAZ-5308), one write', async () => {
+    lineWrites.length = 0
+    mount(PLAIN)
+    expect(el.querySelector('.card-inbox__card')?.textContent).not.toContain('Capital of France')
+    expect(el.querySelector('.card-inbox__card')?.textContent).toContain('What is the capital of')
+    act(() => el.querySelector<HTMLElement>('.card-inbox__name .page-title__text')!.click())
+    const field = el.querySelector<HTMLTextAreaElement>('.card-inbox__name .page-title__input')!
+    expect(field.value).toBe('Capital of France')
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, 'France')
+      field.blur()
+    })
+    expect(lineWrites).toHaveLength(1)
+    expect(lineWrites[0].slice(0, 2)).toEqual([PATH, 'WIKI-9'])
+    const change = lineWrites[0][2] as (line: CardLine) => CardLine
+    expect(formatCardLine(change(parseCardLine('<!-- card: WIKI-9, title "Capital of France" -->')!))).toBe('<!-- card: WIKI-9, title "France" -->')
+  })
+
+  it('a card file adds nothing: "Capital of France · WIKI-9"; its title is the link, and it and O open it in Explore ("Open card", YAZ-5145: as Explore opens it, not its tab); E edits it there, with no card index', () => {
     mount(PLAIN)
     asCardFile()
     expect(headText()).toBe('Capital of France·WIKI-9')
@@ -1002,13 +1064,14 @@ describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the brea
     expect(hints()).toContain('O Open card')
     expect(hints()).not.toContain('O Open page')
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__name')!.click())
-    expect(props.openTab).toHaveBeenCalledExactlyOnceWith(PATH)
+    expect(props.openPage).toHaveBeenCalledExactlyOnceWith(PATH)
     press('o')
-    expect(props.openTab).toHaveBeenCalledTimes(2)
-    expect(props.openPage).not.toHaveBeenCalled()
+    expect(props.openPage).toHaveBeenCalledTimes(2)
+    press('e')
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, null)
   })
 
-  it('a card file with `notitle`: the ID only until the card is fully shown, then the title; O opens its tab all along', async () => {
+  it('a card file with `notitle`: the ID only until the card is fully shown, then the title; O opens it all along', async () => {
     mount(PLAIN)
     asCardFile()
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, notitle: true } } }
@@ -1016,7 +1079,7 @@ describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the brea
     await flush()
     expect(headText()).toBe('WIKI-9')
     press('o')
-    expect(props.openTab).toHaveBeenCalledOnce()
+    expect(props.openPage).toHaveBeenCalledOnce()
     press(' ')
     expect(headText()).toBe('Capital of France·WIKI-9')
   })
@@ -1263,40 +1326,72 @@ describe("YAZ-5033: today's total — the top row and the done screen", () => {
   })
 })
 
-describe('YAZ-5130: Time so far — hidden behind a click (the default), shown, or off', () => {
+describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default), shown, or off', () => {
   const today = { cards: 31, reviews: 35, seconds: 9 * 60 + 10 }
   const bar = () => el.querySelector('.card-inbox__bar .card-inbox__today')
-  const clock = () => el.querySelector<HTMLButtonElement>('.card-inbox__bar .card-inbox__time')
+  const clock = () => el.querySelector<HTMLElement>('.card-inbox__bar .card-inbox__time')
+  const tip = () => document.body.querySelector<HTMLElement>('.hover-tip[role="tooltip"]')
+  /** The mouse on the clock, past the hover box's wait. */
+  const hover = (on: Element) => {
+    vi.useFakeTimers()
+    try {
+      act(() => void on.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })))
+      act(() => void vi.advanceTimersByTime(400))
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+  const unhover = (on: Element) => act(() => void on.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })))
 
-  it('hidden: the cards, then a clock in the time\'s place; a click shows the time, a second click hides it again', () => {
+  it('hidden (round 2, Yaseen: "its not a click"): a clock in the time`s place; the time shows ONLY in its hover box while the mouse is on it; a click shows nothing that stays', () => {
     mount(TWO_SIDES)
     expect(review.settings.timeSoFar).toBe('hidden')
     session = { ...session, today }
     render()
     expect(bar()?.textContent).toBe('Today: 31 cards · ')
-    expect(clock()?.getAttribute('aria-label')).toBe('Show time so far')
-    expect(clock()?.getAttribute('aria-pressed')).toBe('false')
     expect(clock()?.querySelector('svg')).not.toBeNull()
-    act(() => clock()!.click())
-    expect(bar()?.textContent).toBe('Today: 31 cards · 9 min')
-    expect(clock()?.getAttribute('aria-label')).toBe('Hide time so far')
-    expect(clock()?.getAttribute('aria-pressed')).toBe('true')
-    act(() => clock()!.click())
+    expect(clock()?.getAttribute('aria-label')).toBe('Time so far: 9 min')
+    expect(tip()).toBeNull()
+    hover(clock()!)
+    // Round 3 (Yaseen: "time so far: then next line"): the words, then the time on its own line, a little stronger.
+    expect([...tip()!.children].map((c) => [c.className, c.textContent])).toEqual([
+      ['card-inbox__time-label', 'Time so far:'],
+      ['card-inbox__time-value', '9 min'],
+    ])
+    // Round 3: one box only — no native tooltip on the clock or the line it sits in.
+    expect(clock()!.closest('[title]:not([title=""])')).toBeNull()
+    // Never on screen: the line keeps the clock.
     expect(bar()?.textContent).toBe('Today: 31 cards · ')
-    // The keyboard stays in the Inbox: a press on the clock takes no focus.
+    unhover(clock()!)
+    expect(tip()).toBeNull()
+    // A click is no toggle: the line stays the same, and the press takes no focus (the keyboard stays in the Inbox).
     const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
     clock()!.dispatchEvent(down)
     expect(down.defaultPrevented).toBe(true)
+    act(() => clock()!.click())
+    expect(bar()?.textContent).toBe('Today: 31 cards · ')
+    expect(tip()).toBeNull()
   })
 
-  it('hidden: the done screen hides the time the same way, and a click there shows it', () => {
+  it('hidden: the keyboard reaches the clock; its focus shows the box, the blur hides it', () => {
+    mount(TWO_SIDES)
+    session = { ...session, today }
+    render()
+    expect(clock()?.tabIndex).toBe(0)
+    act(() => clock()!.focus())
+    expect(tip()?.textContent).toBe('Time so far:9 min')
+    act(() => clock()!.blur())
+    expect(tip()).toBeNull()
+  })
+
+  it('hidden: the done screen has the same clock and box', () => {
     mount(TWO_SIDES)
     session = { ...session, card: null, today }
     render()
     const done = () => el.querySelector('.card-inbox__done-today')
     expect(done()?.textContent).toBe('Today: 31 cards · ')
-    act(() => done()!.querySelector<HTMLButtonElement>('.card-inbox__time')!.click())
-    expect(done()?.textContent).toBe('Today: 31 cards · 9 min')
+    hover(done()!.querySelector('.card-inbox__time')!)
+    expect(tip()?.textContent).toBe('Time so far:9 min')
   })
 
   it('hidden with no seconds today: no clock, as there is no time to show', () => {
@@ -1506,20 +1601,20 @@ describe('YAZ-5046: archived cards in the Inbox, to look at (not to review)', ()
     expect(review.setFilter).toHaveBeenCalledExactlyOnceWith('archived')
   })
 
-  it('Archived lists the cards: each its title ("New card" when empty) and its page; a click opens the card window to look at it; Unarchive unarchives it; no answer buttons, no "3 of 12"', () => {
+  it('Archived lists the cards: each its title (its ID when it has none) and its page; a click opens it as O does (YAZ-5145); Unarchive unarchives it; no answer buttons, no "3 of 12"', () => {
     mount(TWO_SIDES)
     session = { ...session, filter: 'archived', card: null, archived: ARCHIVED }
     render()
     expect(el.querySelector('.card-inbox__filter')?.textContent).toBe('Archived')
     expect(listRows().map((r) => [r.querySelector('.card-inbox__archived-title')?.textContent, r.querySelector('.card-inbox__archived-page')?.textContent])).toEqual([
       ['Old fact', 'Cards'],
-      ['New card', 'Cards'],
+      ['WIKI-8', 'Cards'],
     ])
     expect(buttons()).toEqual([])
     expect(el.querySelector('.card-inbox__place')).toBeNull()
     expect(el.querySelector('.card-inbox__done')).toBeNull()
     act(() => listRows()[0].querySelector<HTMLButtonElement>('.card-inbox__archived-open')!.click())
-    expect(props.openCard).toHaveBeenCalledExactlyOnceWith('/v/a.md', 'WIKI-4', 2, false)
+    expect(props.openPage).toHaveBeenCalledExactlyOnceWith('/v/a.md')
     act(() => listRows()[1].querySelector<HTMLButtonElement>('.card-inbox__archived-unarchive')!.click())
     expect(review.unarchive).toHaveBeenCalledExactlyOnceWith('/v/b.md', 'WIKI-8')
     expect(listRows()[1].querySelector('.card-inbox__archived-unarchive')?.textContent).toBe('Unarchive')
@@ -1554,7 +1649,7 @@ describe('YAZ-5097: Fix later in the Inbox, and the To fix list', () => {
     expect(review.setFilter).toHaveBeenCalledExactlyOnceWith('fix')
   })
 
-  it('To fix lists the cards: each its title and its page; a click opens the card window in Edit card; Fixed takes the mark off; no answer buttons, no "3 of 12"', () => {
+  it('To fix lists the cards: each its title (YAZ-5308: else its ID) and its page; a click opens it in Edit card, as E does; Fixed takes the mark off; no answer buttons, no "3 of 12"', () => {
     mount(TWO_SIDES)
     session = { ...session, filter: 'fix', card: null, toFix: TO_FIX }
     render()
@@ -1562,12 +1657,12 @@ describe('YAZ-5097: Fix later in the Inbox, and the To fix list', () => {
     expect(el.querySelector('.card-inbox__archived')?.getAttribute('aria-label')).toBe('Cards to fix')
     expect(listRows().map((r) => [r.querySelector('.card-inbox__archived-title')?.textContent, r.querySelector('.card-inbox__archived-page')?.textContent])).toEqual([
       ['Typo in carf', 'Cards'],
-      ['New card', 'Cards'],
+      ['WIKI-8', 'Cards'],
     ])
     expect(buttons()).toEqual([])
     expect(el.querySelector('.card-inbox__place')).toBeNull()
     act(() => listRows()[0].querySelector<HTMLButtonElement>('.card-inbox__archived-open')!.click())
-    expect(props.openCard).toHaveBeenCalledExactlyOnceWith('/v/a.md', 'WIKI-4', 2, true)
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith('/v/a.md', 2)
     const fixed = listRows()[1].querySelector<HTMLButtonElement>('.card-inbox__archived-unarchive')!
     expect(fixed.textContent).toBe('Fixed')
     // YAZ-5196 (WCAG 2.5.3, Label in Name): the accessible name starts with the word on the button, so "Click Fixed" finds it.
@@ -1631,11 +1726,11 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
     const above = el.querySelector('.card-inbox__above')!
     const panel = el.querySelector('.card-inbox__panel')!
     expect([...above.children].map((c) => c.className).slice(0, 2)).toEqual(['card-inbox__state', 'card-inbox__head'])
-    expect([...above.querySelector('.card-inbox__head')!.children].map((c) => c.textContent)).toEqual(['WIKI-9'])
+    expect([...above.querySelector('.card-inbox__head')!.children].map((c) => c.textContent)).toEqual(['Capital of France', '·', 'WIKI-9'])
     expect(panel.querySelector('.card-inbox__head, .explore__head, .card-inbox__page, .card__id')).toBeNull()
   })
 
-  describe('YAZ-5049: Space brings the word it shows into view (round 2: one long page, with room below the word)', () => {
+  describe('YAZ-5049: Space keeps the NEXT blank in view (round 2: one long page, with room below; round 3: the next blank, and the end)', () => {
     const box = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 100, width: 100, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
     let place: Record<string, [number, number]>
     let scrollTo: ReturnType<typeof vi.fn>
@@ -1646,7 +1741,7 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         if (this.classList.contains('card-inbox')) return box(0, 600)
         if (this.classList.contains('card-inbox__top')) return box(0, 100)
         if (this.classList.contains('card-inbox__dock')) return box(400, 480)
-        const key = this.dataset.hidden !== undefined ? `word${this.dataset.hidden}` : this.dataset.side !== undefined ? `side${this.dataset.side}` : ''
+        const key = this.dataset.hidden !== undefined ? `word${this.dataset.hidden}` : this.dataset.side !== undefined ? `side${this.dataset.side}` : this.classList.contains('card-reviews--strip') ? 'strip' : this.classList.contains('card-inbox__panel') ? 'panel' : ''
         const [top, bottom] = place[key] ?? [150, 170]
         return box(top, bottom)
       })
@@ -1660,50 +1755,277 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
       view.scrollTop = scrollTop
       return view
     }
+    /** One side, three blanks. */
+    const THREE = 'A {{one}} b {{two}} c {{three}}'
 
-    it('a word in the top two thirds of the room: no movement', () => {
-      mount(TWO_SIDES)
+    it('round 3 (Yaseen: "the thing it should be following is the NEXT fill in"): the scroll follows the blank the next Space shows — the `data-next` the mark colours — not the word just shown', () => {
+      mount(THREE)
       scroller()
-      place.word0 = [270, 290]
+      // The word just shown is high; the next blank sits in the lower third: it comes up to a third of the way down.
+      place.word0 = [150, 170]
+      place.word1 = [320, 340]
+      press(' ')
+      expect(el.querySelector('[data-next]')?.getAttribute('data-hidden')).toBe('1')
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 320 - 200 }))
+    })
+
+    it('the next blank in the top two thirds of the room: no movement, wherever the word just shown is', () => {
+      mount(THREE)
+      scroller()
+      place.word0 = [320, 340]
+      place.word1 = [270, 290]
       press(' ')
       expect(scrollTo).not.toHaveBeenCalled()
     })
 
-    it('a word in the lower third, or below the view: it comes up to a third of the way down (never the centre), so what comes next shows', () => {
-      mount(TWO_SIDES)
+    it('the next blank below the view comes up a third of the way down; above the view (scrolled past), the least scroll, a small gap kept', () => {
+      mount(THREE)
       scroller()
-      place.word0 = [320, 340]
-      press(' ')
-      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 320 - 200 }))
-      // Below the view: the same place.
-      mount(TWO_SIDES)
-      scroller()
-      place.word0 = [700, 720]
+      place.word1 = [700, 720]
       press(' ')
       expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 200 }))
-    })
-
-    it('a word above the view (scrolled past): the least scroll that shows it, a small gap kept', () => {
-      mount(TWO_SIDES)
+      mount(THREE)
       scroller(300)
-      place.word0 = [40, 60]
+      place.word1 = [40, 60]
       press(' ')
       expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 300 + 40 - 100 - 6 }))
     })
 
-    it('a new side low in the view comes up by its top; a new card starts at its top, with no glide', () => {
+    it('the side`s last word, with the next blank on a side not shown yet: the word just shown, as round 2', () => {
+      mount(TWO_SIDES)
+      scroller()
+      place.word0 = [320, 340]
+      press(' ')
+      expect(el.querySelector('[data-next]')).toBeNull()
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 320 - 200 }))
+    })
+
+    it('a new side: its first blank, low in the view, comes up a third of the way down; a new card starts at its top, with no glide', () => {
       mount(TWO_SIDES)
       scroller()
       press(' ')
+      scrollTo.mockClear()
       place.side1 = [350, 900]
+      place.word1 = [600, 620]
       press(' ')
-      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 350 - 200 }))
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 600 - 200 }))
       scrollTo.mockClear()
       const view = scroller(500)
       session = { ...sessionOf(TWO_SIDES), position: 4, card: { ...sessionOf(TWO_SIDES).card!, id: 'WIKI-10' } }
       render()
       expect(scrollTo).not.toHaveBeenCalled()
       expect(view.scrollTop).toBe(0)
+    })
+
+    it('THE END (no blank left): the end of the card comes into view as far as the word just shown stays in sight; it shows already: nothing moves', () => {
+      mount(THREE)
+      scroller()
+      press(' ')
+      press(' ')
+      scrollTo.mockClear()
+      // The last word at 200; the card ends at 700, past the buttons (400): up by 94, so the word stays at the room's top.
+      place.word2 = [200, 220]
+      place.panel = [110, 700]
+      press(' ')
+      expect(blanks()).toBe(0)
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 200 - 100 - 6 }))
+      // A short end: all of it, a small gap kept.
+      mount(THREE)
+      scroller()
+      press(' ')
+      press(' ')
+      scrollTo.mockClear()
+      place.word2 = [200, 220]
+      place.panel = [110, 450]
+      press(' ')
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 450 - 400 + 6 }))
+      // The end shows already: nothing moves.
+      mount(THREE)
+      scroller()
+      press(' ')
+      press(' ')
+      scrollTo.mockClear()
+      place.word2 = [200, 220]
+      place.panel = [110, 380]
+      press(' ')
+      expect(scrollTo).not.toHaveBeenCalled()
+    })
+
+    it('THE END with reviews: the end is the Reviews strip under the card (YAZ-5105)', async () => {
+      mount(THREE)
+      session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }] } } }
+      render()
+      await flush()
+      scroller()
+      press(' ')
+      press(' ')
+      scrollTo.mockClear()
+      place.word2 = [200, 220]
+      place.panel = [110, 380]
+      place.strip = [384, 420]
+      press(' ')
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 420 - 400 + 6 }))
+    })
+
+    describe('round 5 (Yaseen: "Yes, build it"): Space never shows a blank you cannot see', () => {
+      it('the marked blank in view (between the top row and the buttons): Space shows it', () => {
+        mount(THREE)
+        scroller()
+        place.word0 = [150, 170]
+        press(' ')
+        expect(shown()).toEqual(['one'])
+      })
+
+      it('the marked blank off screen: Space only glides it in, a third of the way down, and shows nothing; the next Space shows it', () => {
+        mount(THREE)
+        scroller()
+        place.word0 = [700, 720]
+        press(' ')
+        expect(shown()).toEqual([])
+        expect(blanks()).toBe(3)
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 200 }))
+        // The glide put it in view: now Space shows it.
+        place.word0 = [200, 220]
+        press(' ')
+        expect(shown()).toEqual(['one'])
+      })
+
+      it('a blank cut by the buttons` edge, or by the top row`s, is not in view: Space only moves it', () => {
+        mount(THREE)
+        scroller()
+        place.word0 = [390, 410]
+        press(' ')
+        expect(shown()).toEqual([])
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 390 - 200 }))
+        mount(THREE)
+        scroller(300)
+        place.word0 = [90, 110]
+        press(' ')
+        expect(shown()).toEqual([])
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 300 + 90 - 100 - 6 }))
+      })
+
+      it('after a scroll by hand took the next blank out of view: Space only brings it back', () => {
+        mount(THREE)
+        scroller()
+        press(' ')
+        expect(shown()).toEqual(['one'])
+        // The person scrolled down: the next blank is above the top row now.
+        place.word1 = [-200, -180]
+        scrollTo.mockClear()
+        press(' ')
+        expect(shown()).toEqual(['one'])
+        expect(scrollTo).toHaveBeenCalledOnce()
+      })
+
+      it('a new side shows no blank: Space shows the side, the view follows its first blank; a blank still out of view only moves on the next Space', () => {
+        mount(TWO_SIDES)
+        scroller()
+        press(' ')
+        place.word1 = [700, 720]
+        press(' ')
+        expect(sides()).toBe(2)
+        expect(shown()).toEqual(['France'])
+        // The glide is under way (the mock never moves): the blank is not in view yet, so Space moves only.
+        scrollTo.mockClear()
+        press(' ')
+        expect(shown()).toEqual(['France'])
+        expect(scrollTo).toHaveBeenCalledOnce()
+      })
+    })
+
+    describe('round 4 (Yaseen: "mouse behavior and spacebar behavior is a little bit different"): a click shows THAT word and the view stays put', () => {
+      const word = (n: number) => el.querySelector<HTMLElement>(`[data-hidden="${n}"]`)!
+      const click = (target: Element) => act(() => void target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })))
+      const nextMark = () => el.querySelector('[data-next]')?.getAttribute('data-hidden') ?? null
+
+      it('a click on a hidden word shows that word — not the marked one — and nothing scrolls, even with the next blank below the view', () => {
+        mount(THREE)
+        scroller()
+        place.word1 = [320, 340]
+        place.word2 = [700, 720]
+        click(word(1))
+        expect(shown()).toEqual(['two'])
+        expect(scrollTo).not.toHaveBeenCalled()
+        // The mark goes to the next blank still hidden AFTER the clicked word, in reading order.
+        expect(nextMark()).toBe('2')
+      })
+
+      it('nothing hidden after the clicked word: the mark goes to the first hidden word before it; the next Space shows the marked word and follows the round-3 rule from where the view is', () => {
+        mount(THREE)
+        scroller()
+        click(word(2))
+        expect(shown()).toEqual(['three'])
+        expect(nextMark()).toBe('0')
+        expect(scrollTo).not.toHaveBeenCalled()
+        // Space: the marked word shows; the scroll follows the NEW next blank (word 1), low in the room.
+        place.word1 = [320, 340]
+        press(' ')
+        expect(shown()).toEqual(['one', 'three'])
+        expect(nextMark()).toBe('1')
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 320 - 200 }))
+      })
+
+      it('a click on a word already shown does nothing new; a click elsewhere on the card shows the marked word, and the view stays put too', () => {
+        mount(THREE)
+        scroller()
+        click(word(1))
+        const before = shown()
+        click(el.querySelector('.card__hidden')!)
+        expect(shown()).toEqual(before)
+        expect(nextMark()).toBe('2')
+        // Elsewhere on the card (the text around the words): the marked word, a mouse step, so no scroll.
+        place.word0 = [700, 720]
+        click(el.querySelector('.card__side')!)
+        expect(shown()).toEqual(['two', 'three'])
+        expect(scrollTo).not.toHaveBeenCalled()
+        expect(nextMark()).toBe('0')
+      })
+
+      it('the clicks show every word: the card is fully shown, as by Space (the answers, the hint row without Space)', () => {
+        mount(THREE)
+        scroller()
+        for (const n of [2, 0, 1]) click(word(n))
+        expect(blanks()).toBe(0)
+        const hints = [...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)
+        expect(hints).not.toContain('Space Show')
+        expect(scrollTo).not.toHaveBeenCalled()
+      })
+
+      it('on two sides: clicks on the front`s words, then Space shows the next side as before', () => {
+        mount(TWO_SIDES)
+        scroller()
+        click(word(0))
+        expect(sides()).toBe(1)
+        press(' ')
+        expect(sides()).toBe(2)
+        expect(nextMark()).toBe('1')
+      })
+    })
+
+    it('THE END: the hint row drops Space; one more Space moves nothing and gives the answer buttons one soft nudge, each time', () => {
+      mount(THREE)
+      scroller()
+      const hints = () => [...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)
+      const answers = () => el.querySelector('.card-inbox__answers')!
+      press(' ')
+      press(' ')
+      expect(hints()[0]).toBe('Space Show')
+      press(' ')
+      expect(hints()).not.toContain('Space Show')
+      expect(answers().hasAttribute('data-nudge')).toBe(false)
+      scrollTo.mockClear()
+      press(' ')
+      expect(scrollTo).not.toHaveBeenCalled()
+      const first = answers().getAttribute('data-nudge')
+      expect(first).not.toBeNull()
+      press(' ')
+      // A new value each time, so the nudge plays again.
+      expect(answers().getAttribute('data-nudge')).not.toBe(first)
+      // The next card: no nudge.
+      session = { ...sessionOf(THREE), position: 4, card: { ...sessionOf(THREE).card!, id: 'WIKI-10' } }
+      render()
+      expect(answers().hasAttribute('data-nudge')).toBe(false)
     })
   })
 })

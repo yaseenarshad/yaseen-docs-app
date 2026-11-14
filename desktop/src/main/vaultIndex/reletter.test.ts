@@ -140,13 +140,13 @@ describe('Change letters: each ID of the vault follows (S81, S86, S87)', () => {
 
 describe('Change letters: a card file (YAZ-5037)', () => {
   it('its name is built from its card\'s ID, so it keeps it: a page `id:` it kept follows the letters, and its card line stays', async () => {
-    const card = '```card\n---\nParis\n```\n<!-- card: YAZ-50, 2026-11-10T09:12Z good -->\n'
-    // A card file holds its title in `title` (YAZ-5044): the name is built from it and the card's ID.
-    await make(root, { [CONFIG]: config({ enabled: true, letters: 'YAZ' }), 'capital-of-france-yaz-50.md': `---\nkind: card\nid: YAZ-7\ntitle: Capital of France\n---\n${card}`, 'yaz-7.md': `---\nkind: card\ntitle: Title\n---\n${card.replace('YAZ-50', 'YAZ-51')}` })
+    const card = '```card\n---\nParis\n```\n<!-- card: YAZ-50, title "Capital of France", 2026-11-10T09:12Z good -->\n'
+    // A card file's title is on its card line (YAZ-5308): the name is built from it and the card's ID.
+    await make(root, { [CONFIG]: config({ enabled: true, letters: 'YAZ' }), 'capital-of-france-yaz-50.md': `---\nkind: card\nid: YAZ-7\n---\n${card}`, 'yaz-7.md': `---\nkind: card\n---\n${card.replace('YAZ-50', 'YAZ-51').replace('Capital of France', 'Title')}` })
     const renames: RenameFileResponse[] = []
     await changeLetters(root, 'doc', async (res) => void renames.push(res))
     expect(renames).toEqual([])
-    expect(await readFile(path.join(root, 'capital-of-france-yaz-50.md'), 'utf8')).toBe(`---\nkind: card\nid: DOC-7\ntitle: Capital of France\n---\n${card}`)
+    expect(await readFile(path.join(root, 'capital-of-france-yaz-50.md'), 'utf8')).toBe(`---\nkind: card\nid: DOC-7\n---\n${card}`)
   })
 })
 

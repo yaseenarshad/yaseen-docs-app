@@ -7,6 +7,7 @@ import path from 'node:path'
 import { IDS_FILE } from '@shared/pageId'
 import { removeVault } from '../fs/testFixture'
 import { writeConfig } from '../vaultConfig'
+import { CARD_TITLES_MOVED } from './idSweep'
 import { _evictAll, getIndex } from './index'
 
 const N = 5000
@@ -21,13 +22,18 @@ async function fill(root: string, content: (i: number) => string): Promise<void>
 beforeAll(async () => {
   cardsRoot = await mkdtemp(path.join(tmpdir(), 'mdapp-cardfiles-scale-'))
   pagesRoot = await mkdtemp(path.join(tmpdir(), 'mdapp-pages-scale-'))
-  const card = (i: number, title: string) => `\`\`\`card\n${title}---\nIts meaning {{${i}}}.\n\`\`\`\n<!-- card: WIKI-${i + 1}, 2026-11-10T09:12Z good -->\n`
-  // A card file holds its title in `title` (YAZ-5044); a card in a page holds it as its first line.
-  await fill(cardsRoot, (i) => `---\nkind: card\ntitle: What is word ${i}?\ntags: [import]\n---\n${card(i, '')}`)
-  await fill(pagesRoot, (i) => `---\nid: WIKI-${N + i + 1}\ntags: [import]\n---\n${card(i, `What is word ${i}?\n`)}`)
+  // Every card holds its title on its card line, in a page or a card file (YAZ-5308).
+  const card = (i: number) => `\`\`\`card\n---\nIts meaning {{${i}}}.\n\`\`\`\n<!-- card: WIKI-${i + 1}, title "What is word ${i}?", 2026-11-10T09:12Z good -->\n`
+  await fill(cardsRoot, (i) => `---\nkind: card\ntags: [import]\n---\n${card(i)}`)
+  await fill(pagesRoot, (i) => `---\nid: WIKI-${N + i + 1}\ntags: [import]\n---\n${card(i)}`)
   // Vaults that give IDs (only those have cards, YAZ-4946 D8); every page and card already holds one, and every card
-  // file its `title`, so the sweep writes nothing.
+  // its title on its line, so the sweep writes nothing.
   for (const root of [cardsRoot, pagesRoot]) await writeConfig(root, IDS_FILE, { enabled: true, letters: 'WIKI' })
+  // Vaults whose one-time title move is done (YAZ-5308): the sweep reads no card's page for it.
+  for (const root of [cardsRoot, pagesRoot]) {
+    await mkdir(path.dirname(path.join(root, CARD_TITLES_MOVED)), { recursive: true })
+    await writeFile(path.join(root, CARD_TITLES_MOVED), '{}\n')
+  }
 }, 120_000)
 afterAll(async () => {
   _evictAll()

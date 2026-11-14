@@ -239,14 +239,14 @@ export interface IndexRecord {
   embeds: string[]
   /**
    * The page's cards (`shared/cardLine.ts`, YAZ-4960 D4), in page order: each card's ID (null before the sweep
-   * gives one), whether review is off, and its reviews as its card line holds them; its title (its first line, what a
-   * `[[card ID]]` link shows) and whether the title is hidden on the Inbox's front (YAZ-5030). No other card text: it is
+   * gives one), whether review is off, and its reviews as its card line holds them; its title (its card line's `title`,
+   * YAZ-5308: what a `[[card ID]]` link shows) and whether the title is hidden on the Inbox's front (YAZ-5030). No other card text: it is
    * read when a card shows. Absent when the page has no card, or was not read. When a card is due is computed (`cardSchedule.ts`).
    */
   cards?: CardRecord[]
   /**
    * `card` when the file is a CARD FILE (YAZ-5037): its properties hold `kind: card` (`shared/cardFileFormat.ts`). Its
-   * `title` is then its card's title, and `cards` holds every card in it (one, unless the file is not valid). Absent
+   * `title` is then its card's title (off its card line, YAZ-5308; its file name when it has none), and `cards` holds every card in it (one, unless the file is not valid). Absent
    * for a page.
    */
   kind?: 'card'
@@ -1371,6 +1371,25 @@ export function defaultRightPanelIdentity(): RightPanelIdentity {
 /** Global content-width presets, ordered exactly as shown in Settings (YAZ-1176). */
 export const CONTENT_WIDTHS = ['narrow', 'medium', 'full'] as const
 export type ContentWidth = (typeof CONTENT_WIDTHS)[number]
+/**
+ * Each Content width step as the widest the text gets, px; `null` is the whole window (YAZ-5144, Yaseen: "even though
+ * its set to "narrow" it doesnt look like there's a big change bw the options?"). The steps were the shell's 1040 px
+ * and 1440 px: at a 1180 px page (a 1440 px window less the sidebar) the text was 944 px, then 1084 px for Medium AND
+ * Full. Now: Narrow 640 px, about 75 letters of 16 px text, a book's line; Medium 900 px; Full the window. Each step
+ * is about 250 px apart at a common window. The pages' column adds its 48 px sides (`--content-max-width`); Card
+ * width uses the same steps for a card's text (`--card-text-width`).
+ */
+export const CONTENT_TEXT_WIDTHS: Readonly<Record<ContentWidth, number | null>> = { narrow: 640, medium: 900, full: null }
+/**
+ * Settings › Review › Card width, Custom (YAZ-5144 round 2, Yaseen: "custom gives you a px that you can adjust"): the
+ * card's text at most this many px. It starts at Narrow's 640; Clean sets Mochi's line, about 62 letters (31em of the
+ * Inbox's 16.8 px text, so 520 px).
+ */
+export const CARD_WIDTH_MIN = 400
+export const CARD_WIDTH_MAX = 1600
+export const CARD_WIDTH_START = 640
+export const CARD_WIDTH_CLEAN = 520
+export const isCardWidth = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= CARD_WIDTH_MIN && v <= CARD_WIDTH_MAX
 
 /**
  * `AppState.settings` — app-global editor preferences (GRO-2024). Applied as CSS custom
@@ -2143,7 +2162,7 @@ export interface SettingsState {
   foldingOnByDefault: boolean
   /** Appearance (Desktop K, GRO-2218): explicit values win; `system` tracks the OS live. */
   theme: Theme
-  /** Global reading surface width (YAZ-1176): 1040px, 1440px, or fluid within the workspace. */
+  /** Global reading surface width (YAZ-1176): its text at most `CONTENT_TEXT_WIDTHS` (YAZ-5144: 640 px, 900 px, or the window). */
   contentWidth: ContentWidth
   /** Files & Links (Links C2-, GRO-2240): where a BARE unresolved `[[link]]` creates its page. */
   newPageLocation: NewPageLocation
@@ -2229,6 +2248,26 @@ export interface SettingsState {
    * uses them, with Mochi's softer text, Inbox padding and line length (`data-card-clean` on `.app`); Custom keeps that look.
    */
   cardSpacing: CardSpacing
+  /**
+   * Settings › Review › Card width (YAZ-5144, Yaseen: "a global setting for card pages to have a certain width ... same as
+   * pages or select a different one"): how wide a card's text reads in the Inbox, the card window and a card file's
+   * tab. `null`, Same as pages (the default), follows Content width; round 2: else Custom, whole px (`isCardWidth`).
+   * `--card-text-width` on `.app`. Card spacing's Clean sets it to `CARD_WIDTH_CLEAN`, Mochi's line.
+   */
+  cardWidth: number | null
+  /**
+   * Settings › Review › Card look › Card tables (YAZ-5136 round 3, Yaseen: "it might be different for cards vs pages"):
+   * where a table sits in a card, read anywhere and in Edit card. `pages` (the default) follows `tablePosition`.
+   * `--card-table-inline` on `.app`, read by the one Table position rule (`table.css`).
+   */
+  cardTablePosition: CardTablePosition
+  /**
+   * Settings › Cards › Inbox: O opens the page at (YAZ-5307, Yaseen: "by default it open at top of page but if someone
+   * wants to change it to go to the card on the page they can"): where the Inbox's O (and the links that open as O does)
+   * opens a card that lives in a page. `top` (the default) is the page's top, as YAZ-5022; `card` lands on the card with
+   * the one flash every way to a card in its page has (Explore's page layer `card`, `landOn`, YAZ-5164). A card file and E do not change.
+   */
+  inboxOpenAt: InboxOpenAt
   /** Card spacing, Custom (YAZ-5050): the card's line spacing, as `lineSpacing`. */
   cardLineSpacing: number
   /** Card spacing, Custom (YAZ-5050): the card's space between blocks, px per side, as `blockGap`. */
@@ -2285,6 +2324,11 @@ export interface SettingsState {
   tableStickyHeader: boolean
   /** Settings › Tables › All tables › Text in cells (YAZ-4900): every page table's cells Wrap (default) or Clip (one line, cut with "…"). A table's own `wrap` / `nowrap` wins, and a column's own `text` over that. `data-table-text` on `.app`. */
   tableTextInCells: TableTextInCells
+  /**
+   * Settings › Tables › Table position (YAZ-5136 round 2): `center` centres every table, in pages (edited and read) and in
+   * cards read anywhere: `data-table-position` on `.app`, one rule in `table.css`. The file never changes.
+   */
+  tablePosition: TablePosition
   /** Settings › Editor › Calendar tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
   /** Settings › Editor › Calendar tables › Now button (the YAZ-4163 demo): the "Now" chip under a calendar table whose now row is off the screen. A table's own `nonow` turns off its chip alone. `data-table-now-button` on `.app`. */
@@ -2615,6 +2659,15 @@ export type TableRowBand = 'off' | 'calendar' | 'all'
 export const TABLE_NEW_STYLES = ['plain', 'super'] as const
 export type TableNewStyle = (typeof TABLE_NEW_STYLES)[number]
 /** Text in a page table's cells (YAZ-4900): Wrap onto more lines, or Clip to one line cut with "…". */
+/** Settings › Tables › Table position (YAZ-5136 round 2, Yaseen's pick A): every table at the left (the look before) or centred. */
+export const TABLE_POSITIONS = ['left', 'center'] as const
+export type TablePosition = (typeof TABLE_POSITIONS)[number]
+/** Settings › Review › Card look › Card tables (YAZ-5136 round 3): Same as pages (Table position), or the cards' own. */
+export const CARD_TABLE_POSITIONS = ['pages', ...TABLE_POSITIONS] as const
+export type CardTablePosition = (typeof CARD_TABLE_POSITIONS)[number]
+/** Settings › Cards › Inbox: O opens the page at (YAZ-5307): the page's top (the default), or the card. */
+export const INBOX_OPEN_AT = ['top', 'card'] as const
+export type InboxOpenAt = (typeof INBOX_OPEN_AT)[number]
 export const TABLE_TEXT_IN_CELLS = ['wrap', 'clip'] as const
 export type TableTextInCells = (typeof TABLE_TEXT_IN_CELLS)[number]
 export const TABLE_ROW_BANDS: readonly TableRowBand[] = ['off', 'calendar', 'all']
@@ -2973,6 +3026,9 @@ export const DEFAULT_SETTINGS: SettingsState = {
   markNextHidden: true,
   nextHiddenColour: null,
   cardSpacing: 'pages',
+  cardWidth: null,
+  cardTablePosition: 'pages',
+  inboxOpenAt: 'top',
   ...CARD_SPACING_CLEAN,
   tableOfContents: 'auto',
   tocOnByDefault: true,
@@ -2993,6 +3049,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableStickySubheaders: true,
   tableStickyHeader: true,
   tableTextInCells: 'wrap',
+  tablePosition: 'left',
   tableNowMark: 'line',
   tableNowButton: true,
   tableCellNoteButton: false,

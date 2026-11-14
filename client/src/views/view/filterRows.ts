@@ -5,6 +5,7 @@ import { DateValue, type Expr, LinkValue, type Value, compile, fromYaml, isEmpty
 import { renderDate } from '../expr/dates'
 import type { FilterNode } from '../viewSchema'
 import { canonicalKey } from './keys'
+import type { OperatorId } from './operatorId'
 
 /**
  * Filter builder rows ↔ expression strings (GRO-2135), back from the YAZ-846 amputation
@@ -15,13 +16,7 @@ import { canonicalKey } from './keys'
 
 export type PropertyType = 'text' | 'number' | 'date' | 'checkbox' | 'list' | 'tags' | 'file' | 'link' | 'multi-link' | 'select' | 'multi-select' | 'image' | 'mentions'
 
-export type OperatorId =
-  | 'is' | 'isNot' | 'contains' | 'notContains' | 'startsWith' | 'endsWith' | 'isEmpty' | 'isNotEmpty'
-  | 'eq' | 'ne' | 'lt' | 'gt' | 'le' | 'ge'
-  | 'dateIs' | 'dateBefore' | 'dateAfter' | 'dateIsToday' | 'dateInThisWeek' | 'dateInThisMonth'
-  | 'checked' | 'unchecked'
-  | 'hasTag' | 'inFolder' | 'hasLink'
-  | 'isAnyOf' | 'isNoneOf' | 'hasAnyOf' | 'hasNoneOf' | 'hasAllOf'
+export type { OperatorId }
 
 export interface Rule {
   /** Canonical key: `note.x`, `file.x` or `formula.x` (see `canonicalKey`). */

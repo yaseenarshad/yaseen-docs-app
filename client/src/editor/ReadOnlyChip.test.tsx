@@ -303,6 +303,63 @@ describe('the edit-attempt message (YAZ-4446)', () => {
 
   afterEach(() => vi.useRealTimers())
 
+  describe('YAZ-5145 round 2: unlock, then continue', () => {
+    const tellWith = (selector: string, resume?: () => void) => act(() => tellReadOnlyEdit(container.querySelector(selector)!, 'card', resume))
+    const pick = (label: string) => act(() => [...pane('a').querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === label)!.click())
+    const settle = () => act(() => void vi.runAllTimers())
+
+    it('a refused action runs ONCE after a choice in the box, with no second key; the card says "This card is Read only."', () => {
+      vi.useFakeTimers()
+      mountPanes()
+      const resume = vi.fn()
+      tellWith('[data-body="a"]', resume)
+      expect(card('a')?.textContent).toBe('This card is Read only.Press Enter to allow edits.')
+      act(() => paneChip('a').click())
+      expect(resume).not.toHaveBeenCalled()
+      pick('Allow edits for 1 minute')
+      settle()
+      expect(resume).toHaveBeenCalledOnce()
+      // Asked again later with no new attempt: nothing runs again.
+      act(() => paneChip('a').click())
+      pick('10 minutes')
+      settle()
+      expect(resume).toHaveBeenCalledOnce()
+    })
+
+    it.each(['Cancel', 'Esc', 'a press outside'])('nothing runs after %s', (way) => {
+      vi.useFakeTimers()
+      mountPanes()
+      const resume = vi.fn()
+      tellWith('[data-body="a"]', resume)
+      act(() => paneChip('a').click())
+      if (way === 'Cancel') pick('Cancel')
+      else if (way === 'Esc') act(() => void pane('a').querySelector('.read-only-chip__allow')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+      else act(() => void document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })))
+      settle()
+      expect(pane('a').querySelector('.read-only-chip__ask')).toBeNull()
+      // The next unlock, asked for itself, runs nothing either.
+      act(() => paneChip('a').click())
+      pick('Allow edits for 1 minute')
+      settle()
+      expect(resume).not.toHaveBeenCalled()
+    })
+
+    it('a newer attempt with nothing to carry (typing) drops the older one; another pane\'s attempt is not this chip\'s', () => {
+      vi.useFakeTimers()
+      mountPanes()
+      const resume = vi.fn()
+      const other = vi.fn()
+      tellWith('[data-body="a"]', resume)
+      tellWith('[data-body="b"]', other)
+      attempt('[data-body="a"]')
+      act(() => paneChip('a').click())
+      pick('Allow edits for 1 minute')
+      settle()
+      expect(resume).not.toHaveBeenCalled()
+      expect(other).not.toHaveBeenCalled()
+    })
+  })
+
   it('an attempt shows the card in plain words, as a status, under the chip; the chip pulses', () => {
     vi.useFakeTimers()
     mountPanes()

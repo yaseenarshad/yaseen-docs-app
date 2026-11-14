@@ -17,53 +17,47 @@ import { _swept, sweepIds } from './vaultIndex/idSweep'
 import { _evictAll, getIndex, indexWrote } from './vaultIndex'
 import { scanFile } from './vaultIndex/scan'
 
-const LINE = '<!-- card: GEO-140, 2026-11-01T09:00Z good 12s, 2026-11-05T09:00Z again -->'
+const LINE = '<!-- card: GEO-140, title "Capital of France", 2026-11-01T09:00Z good 12s, 2026-11-05T09:00Z again -->'
 const BLOCK = ['```card', 'What is the capital of **France**?', '---', 'The capital is {{Paris}}.', '```', LINE].join('\n')
 const indented = (block: string, indent: string) => block.split('\n').map((l) => indent + l).join('\n')
-/** The block as a card file holds it (YAZ-5044): its first line is the file's `title`, the card holds its sides only. */
-const FILE_BLOCK = ['```card', '---', 'The capital is {{Paris}}.', '```', LINE].join('\n')
-const TITLE = 'What is the capital of France?'
-const titledFile = (title: string, block: string, props = '') => `---\nkind: card\n${props}title: ${title}\n---\n${block}\n`
+const TITLE = 'Capital of France'
+/** A card file (YAZ-5308): `kind: card` (and `props`), then the block as it is, its title on its card line. */
+const cardFileOf = (block: string, props = '') => `---\nkind: card\n${props}---\n${block}\n`
 const props = (content: string) => parseFrontmatter(splitFrontmatter(content).frontmatter).properties
 
 describe('Move to its own file', () => {
-  it('the card file takes the card`s first line as its `title` (YAZ-5044), and the rest of the block byte for byte; the page holds `![[GEO-140]]` at its place; the rest of the page stays', () => {
+  it('the card file holds the block byte for byte, its title on its card line (YAZ-5308): nothing is translated; the page holds `![[GEO-140]]` at its place; the rest of the page stays', () => {
     const page = `---\nid: GEO-1\n---\n# Europe\n\nAbove.\n\n${BLOCK}\n\nBelow.\n`
     const { page: next, card } = moveCardOut(page, 'GEO-140')
-    expect(card).toEqual({ content: titledFile(TITLE, FILE_BLOCK), name: 'what-is-the-capital-of-france-geo-140.md', id: 'GEO-140', title: TITLE })
+    expect(card).toEqual({ content: cardFileOf(BLOCK), name: 'capital-of-france-geo-140.md', id: 'GEO-140', title: TITLE })
     expect(next).toBe('---\nid: GEO-1\n---\n# Europe\n\nAbove.\n\n![[GEO-140]]\n\nBelow.\n')
   })
 
   it('an indented card (in a list) leaves without its indent, and its embed keeps the indent', () => {
     const page = `- Capitals\n${indented(BLOCK, '  ')}\n- Next\n`
     const { page: next, card } = moveCardOut(page, 'GEO-140')
-    expect(card.content).toBe(titledFile(TITLE, FILE_BLOCK))
+    expect(card.content).toBe(cardFileOf(BLOCK))
     expect(next).toBe('- Capitals\n  ![[GEO-140]]\n- Next\n')
   })
 
-  it('two cards with one ID: the one at `index` moves; an ID no card holds throws, and a card with no ID cannot move', () => {
-    const page = `${BLOCK}\n\n${BLOCK.replace('France', 'Spain')}\n`
-    expect(moveCardOut(page, 'GEO-140', 1).card.title).toBe('What is the capital of Spain?')
+  it('two cards with one ID: the one at `index` moves; a card with no title is named by its ID; an ID no card holds throws, and a card with no ID cannot move', () => {
+    const page = `${BLOCK}\n\n${BLOCK.replace('France', 'Spain').replace(' title "Capital of France",', '')}\n`
+    const out = moveCardOut(page, 'GEO-140', 1)
+    expect([out.card.title, out.card.name]).toEqual(['', 'geo-140.md'])
     expect(() => moveCardOut(page, 'GEO-9')).toThrow(CardNotFoundError)
     expect(() => moveCardOut('```card\nNo ID\n```\n', 'GEO-140')).toThrow(CardNotFoundError)
   })
 })
 
 describe('Put back into this page', () => {
-  const cardFile = `---\nkind: card\ntags: [geo]\n---\n${BLOCK}\n`
+  const cardFile = cardFileOf(BLOCK, 'tags: [geo]\n')
 
-  it('the embed alone on its line becomes the block and card line, at the embed\'s indent: Move and Put back give the page back, its title line plain text (YAZ-5044)', () => {
+  it('the embed alone on its line becomes the block and card line, at the embed\'s indent: Move and Put back give the page back byte for byte', () => {
     const page = `# Europe\n\nAbove.\n\n${BLOCK}\n\n- Item\n${indented(BLOCK, '  ')}\n`
     const moved = moveCardOut(page, 'GEO-140', 1)
-    expect(putCardBack(moved.page, 'GEO-140', 0, moved.card.content, 'GEO-140')).toBe(`# Europe\n\nAbove.\n\n${BLOCK}\n\n- Item\n${indented(BLOCK.replace('**France**', 'France'), '  ')}\n`)
-    // A card file from before YAZ-5044 (its title still its first line) goes back byte for byte.
+    expect(putCardBack(moved.page, 'GEO-140', 0, moved.card.content, 'GEO-140')).toBe(page)
     const first = moveCardOut(page, 'GEO-140', 0)
     expect(putCardBack(first.page, 'GEO-140', 0, cardFile, 'GEO-140')).toBe(page)
-  })
-
-  it('a card file`s `title` is the card`s first line again (YAZ-5044); its card line, reviews and all, stays', () => {
-    const file = titledFile('Capital of France', FILE_BLOCK, 'tags: [geo]\n')
-    expect(putCardBack('# Europe\n\n![[GEO-140]]\n', 'GEO-140', 0, file, 'GEO-140')).toBe(`# Europe\n\n\`\`\`card\nCapital of France\n---\nThe capital is {{Paris}}.\n\`\`\`\n${LINE}\n`)
   })
 
   it('the nth embed of that text: an embed inside a code block, a card or a line with other words is none', () => {
@@ -78,29 +72,36 @@ describe('Put back into this page', () => {
 })
 
 describe('Turn into a page, Turn into a card file', () => {
-  it('a card file turns into a page: `kind: card` goes, `title:` stays the title, and the card in the page takes it back as its first line (YAZ-5044)', () => {
-    const { content, title } = cardFileAsPage(titledFile('Capital of France', FILE_BLOCK, 'tags: [geo]\n'))
-    expect(title).toBe('Capital of France')
-    expect(content).toBe(`---\ntags: [geo]\ntitle: Capital of France\n---\n\`\`\`card\nCapital of France\n---\nThe capital is {{Paris}}.\n\`\`\`\n${LINE}\n`)
+  it('a card file turns into a page: `kind: card` goes, the card`s title is the page`s `title:` too, and the card stays byte for byte', () => {
+    const { content, title } = cardFileAsPage(cardFileOf(BLOCK, 'tags: [geo]\n'))
+    expect(title).toBe(TITLE)
+    expect(content).toBe(`---\ntags: [geo]\ntitle: ${TITLE}\n---\n${BLOCK}\n`)
     expect(isCardFileContent(content)).toBe(false)
-    // One from before YAZ-5044: `title:` is the card`s title, the card stays byte for byte.
-    const old = cardFileAsPage(`---\nkind: card\ntags: [geo]\n---\n${BLOCK}\n`)
-    expect(old).toEqual({ title: TITLE, content: `---\ntags: [geo]\ntitle: ${TITLE}\n---\n${BLOCK}\n` })
+    // A card with no title: the page takes none.
+    const untitled = BLOCK.replace(' title "Capital of France",', '')
+    expect(cardFileAsPage(cardFileOf(untitled))).toEqual({ title: '', content: `---\n---\n${untitled}\n` })
   })
 
-  it('a page with one card and no other text turns into a card file: `kind: card`, its title among `aliases`, its `id:` kept, the card\'s name', () => {
+  it('a page with one card and no other text turns into a card file: `kind: card`, its title among `aliases`, its `id:` kept, the card\'s name; no `title:` property', () => {
     const page = `---\nid: GEO-7\ntitle: Capitals\naliases: [Caps]\n---\n${BLOCK}\n`
     const out = pageAsCardFile(page)!
-    expect(out.name).toBe('what-is-the-capital-of-france-geo-140.md')
-    expect(props(out.content)).toEqual({ id: 'GEO-7', aliases: ['Caps', 'Capitals'], kind: 'card', title: TITLE })
-    expect(splitFrontmatter(out.content).body).toBe(`${FILE_BLOCK}\n`)
+    expect(out.name).toBe('capital-of-france-geo-140.md')
+    expect(props(out.content)).toEqual({ id: 'GEO-7', aliases: ['Caps', 'Capitals'], kind: 'card' })
+    expect(splitFrontmatter(out.content).body).toBe(`${BLOCK}\n`)
     expect(cardFileShape(splitFrontmatter(out.content).body).problem).toBe('ok')
-    // And back: Turn into a page keeps the card's title; the old page title stays among the aliases.
+    // And back: Turn into a page takes the card's title; the old page title stays among the aliases.
     expect(props(cardFileAsPage(out.content).content)).toEqual({ id: 'GEO-7', aliases: ['Caps', 'Capitals'], title: TITLE })
   })
 
+  it('a card with no title takes the page`s title onto its card line', () => {
+    const untitled = BLOCK.replace(' title "Capital of France",', '')
+    const out = pageAsCardFile(`---\nid: GEO-7\ntitle: Capitals\n---\n${untitled}\n`)!
+    expect(out.name).toBe('capitals-geo-140.md')
+    expect(splitFrontmatter(out.content).body).toBe(`${untitled.replace('GEO-140,', 'GEO-140, title "Capitals",')}\n`)
+  })
+
   it('a page with no title line takes no aliases; a page with other text, two cards, or a card with no ID cannot', () => {
-    expect(props(pageAsCardFile(`---\nid: GEO-7\n---\n\n${BLOCK}\n\n`)!.content)).toEqual({ id: 'GEO-7', kind: 'card', title: TITLE })
+    expect(props(pageAsCardFile(`---\nid: GEO-7\n---\n\n${BLOCK}\n\n`)!.content)).toEqual({ id: 'GEO-7', kind: 'card' })
     expect(canBeCardFile(`# Head\n\n${BLOCK}\n`)).toBe(false)
     expect(canBeCardFile(`${BLOCK}\n\n${BLOCK}\n`)).toBe(false)
     expect(canBeCardFile('```card\nNo ID\n```\n')).toBe(false)
@@ -110,15 +111,15 @@ describe('Turn into a page, Turn into a card file', () => {
 })
 
 describe('the notice\'s fixes', () => {
-  it('Split: the first card stays; each other leaves byte for byte, with its ID and history, for a card file of its name', () => {
-    const second = BLOCK.replace('France', 'Spain').replace('GEO-140', 'GEO-141')
+  it('Split: the first card stays; each other leaves byte for byte, with its ID, title and history, for a card file of its name', () => {
+    const second = BLOCK.replace('France', 'Spain').replace('GEO-140', 'GEO-141').replace('Capital of France', 'Capital of Spain')
     const third = '```card\nThird\n```\n<!-- card: GEO-142 -->'
     const out = splitCardFile(`---\nkind: card\n---\n${BLOCK}\n\n${second}\n\n${third}\n`)!
     expect(out.keep).toBe(`---\nkind: card\n---\n${BLOCK}\n`)
     expect(cardFileShape(splitFrontmatter(out.keep).body).problem).toBe('ok')
     expect(out.cards.map((c) => [c.name, c.content])).toEqual([
-      ['what-is-the-capital-of-spain-geo-141.md', titledFile('What is the capital of Spain?', FILE_BLOCK.replace('GEO-140', 'GEO-141'))],
-      ['third-geo-142.md', titledFile('Third', '```card\n\n```\n<!-- card: GEO-142 -->')],
+      ['capital-of-spain-geo-141.md', cardFileOf(second)],
+      ['geo-142.md', cardFileOf(third)],
     ])
     expect(splitCardFile(`---\nkind: card\n---\n${BLOCK}\n`)).toBeNull()
     expect(splitCardFile(`---\nkind: card\n---\n${BLOCK}\n\n\`\`\`card\nNo ID yet\n\`\`\`\n`)).toBeNull()
@@ -131,10 +132,9 @@ describe('the notice\'s fixes', () => {
     expect(moveTextIntoCard(`---\nkind: card\n---\n${BLOCK}\n`)).toBeNull()
   })
 
-  it('Make a card from the text: the body becomes one card with no ID yet; its properties stay; with no `title`, the first line is the title (YAZ-5044), "Title" for an empty body', () => {
-    expect(cardFromText('---\nkind: card\ntags: [geo]\n---\nParis is the capital.\n\nOf France.\n')).toBe('---\nkind: card\ntags: [geo]\ntitle: Paris is the capital.\n---\n```card\nOf France.\n```\n')
-    expect(cardFromText('---\nkind: card\ntitle: Kept\n---\nParis.\n')).toBe('---\nkind: card\ntitle: Kept\n---\n```card\nParis.\n```\n')
-    expect(cardFromText('---\nkind: card\n---\n\n')).toBe('---\nkind: card\ntitle: Title\n---\n```card\n\n```\n')
+  it('Make a card from the text: the body becomes one card with no ID yet and no title (no line is read as one); its properties stay; an empty body gives an empty card titled "Title"', () => {
+    expect(cardFromText('---\nkind: card\ntags: [geo]\n---\nParis is the capital.\n\nOf France.\n')).toBe('---\nkind: card\ntags: [geo]\n---\n```card\nParis is the capital.\n\nOf France.\n```\n')
+    expect(cardFromText('---\nkind: card\n---\n\n')).toBe('---\nkind: card\n---\n```card\n\n```\n<!-- card: title "Title" -->\n')
     expect(cardFromText(`---\nkind: card\n---\n${BLOCK}\n`)).toBeNull()
   })
 })

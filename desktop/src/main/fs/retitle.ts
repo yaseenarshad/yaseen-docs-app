@@ -1,8 +1,7 @@
 import { lstat, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { cardFileTitleMoved } from '@shared/cardConvert'
 import { cardFileCard, cardFileName, isCardFileContent } from '@shared/cardFileFormat'
-import { cardIdOf } from '@shared/cardLine'
+import { cardIdOf, rewritePageCards, withCardTitle } from '@shared/cardLine'
 import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { PAGE_ID_KEY, vaultPageId } from '@shared/pageId'
 import { TITLE_KEY, kebabTitle, pageFileName } from '@shared/pageName'
@@ -16,8 +15,9 @@ import { requireRequest } from './validate'
 
 /**
  * A title edit (YAZ-2420 🔒 D16), the one operation behind the page title, the sidebar's rename
- * and a table's Name cell: the `title:` line is written, then the page or folder is renamed to
- * the name built from it. The title goes FIRST, so a rename that fails leaves the title right
+ * and a table's Name cell: the `title:` line is written (a CARD FILE's title goes onto its card
+ * line, YAZ-5308: `writeCardTitle`), then the page, card file or folder is renamed to the name
+ * built from it. The title goes FIRST, so a rename that fails leaves the title right
  * and the name stale, and the next edit fixes the name. A title whose built name is the one on
  * disk moves nothing: `newPath` is `oldPath`.
  *
@@ -52,33 +52,34 @@ export async function retitle(root: string, req: unknown): Promise<RenameFileRes
   } else {
     requireMarkdownFile(p)
     const page = await readPage(p)
-    if (isCardFileContent(page.content)) return retitleCard(p, page, title)
-    const { letters } = await vaultIds(root)
-    const held = idOf(p, page.content, letters)
-    const id = held ?? (await giveId(p, undefined, letters, nextId(root)))
-    // `giveId` gives none only to a page that changed under the edit: nothing is written.
-    if (id === undefined) throw new BridgeFailure('CONFLICT', 'this page changed on disk; try again', { path: p })
-    await writeTitle(p, held === undefined ? await readPage(p) : page, title)
-    name = pageFileName(title, id)
+    if (isCardFileContent(page.content)) name = await writeCardTitle(p, page, title)
+    else {
+      const { letters } = await vaultIds(root)
+      const held = idOf(p, page.content, letters)
+      const id = held ?? (await giveId(p, undefined, letters, nextId(root)))
+      // `giveId` gives none only to a page that changed under the edit: nothing is written.
+      if (id === undefined) throw new BridgeFailure('CONFLICT', 'this page changed on disk; try again', { path: p })
+      await writeTitle(p, held === undefined ? await readPage(p) : page, title)
+      name = pageFileName(title, id)
+    }
   }
   const newPath = path.join(path.dirname(p), name)
   return newPath === p ? { oldPath: p, newPath, kind: src.isDirectory() ? 'dir' : 'file' } : renameFile({ oldPath: p, newPath })
 }
 
 /**
- * A card file's title edit (YAZ-5037, YAZ-5044 decision A): its title is its `title` property, as a page's, so the new
- * words go there (`writeTitle`), and the file then takes the name built from them and the CARD's ID (`cardFileName`).
- * No page ID is given (D29 is for pages): the card's ID is the file's. A card file from before A has its old title
- * line moved out first, in the same write (`cardFileTitleMoved`), so the title is never in two places. A card with no
- * ID yet keeps its name; the sweep gives it one.
+ * A card file's title (YAZ-5037, YAZ-5308 decision D): its title is on its card's line, as every card's, so the new
+ * words go there, and `retitle` then gives the file the name built from them and the CARD's ID (`cardFileName`). No
+ * page ID is given (D29 is for pages): the card's ID is the file's. A card with no ID yet keeps its name; the sweep
+ * gives it one. Resolves to the file's new name.
  */
-async function retitleCard(p: string, page: { content: string; mtime?: number }, title: string): Promise<RenameFileResponse> {
-  const card = cardFileCard(page.content)
+async function writeCardTitle(p: string, { content, mtime }: { content: string; mtime?: number }, title: string): Promise<string> {
+  const card = cardFileCard(content)
   if (card === null) throw new BridgeFailure('BAD_REQUEST', 'this card file has no card', { path: p })
+  const titled = rewritePageCards(content, (c, n) => (n === 0 ? withCardTitle(c.line, title) : undefined))
+  if (titled !== content) await writeFile({ path: p, content: titled, ...(mtime !== undefined && { expectedMtime: mtime }) })
   const id = cardIdOf(card.line)
-  await writeTitle(p, { content: cardFileTitleMoved(page.content) ?? page.content, mtime: page.mtime }, title)
-  const newPath = id === null ? p : path.join(path.dirname(p), cardFileName(title, id))
-  return newPath === p ? { oldPath: p, newPath, kind: 'file' } : renameFile({ oldPath: p, newPath })
+  return id === null ? path.basename(p) : cardFileName(title, id)
 }
 
 const unparsed = (file: string): BridgeFailure => new BridgeFailure('BAD_REQUEST', isFolderSettingsPath(file) ? "this folder's settings do not parse" : "this page's properties do not parse", { path: file })

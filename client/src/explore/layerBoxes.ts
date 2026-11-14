@@ -189,7 +189,7 @@ export function useLayerBoxes(rootRef: RefObject<HTMLDivElement | null>, layers:
 
   const reset = useCallback(
     (id: number, event: ReactMouseEvent) => {
-      if (event.target instanceof Element && event.target.closest('button, input') !== null) return
+      if (event.target instanceof Element && event.target.closest('button, input, textarea') !== null) return
       pinAbove(id)
       moved.current.delete(id)
       placeAll()

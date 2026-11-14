@@ -65,9 +65,9 @@ export const cardInboxHints = ({ card, cardFile = false, answering, canUndo, mov
   ...(card && audio ? [{ keys: 'P', label: 'Play' }] : []),
   ...(card && moves ? [{ keys: '← →', label: 'Other cards' }] : []),
   ...(canUndo ? [{ keys: '⌘Z', label: 'Undo' }] : []),
-  // A card file (YAZ-5037) opens its own tab: "Open card".
+  // O opens what Explore opens (YAZ-5145): a card file's card, "Open card"; a card in a page, its page.
   ...(card ? [{ keys: 'O', label: cardFile ? 'Open card' : 'Open page' }] : []),
-  // E in every vault (YAZ-5009): a read-only one unlocks the card's text alone, for the one edit.
+  // E edits in Explore (YAZ-5145), as Explore's own E: in a read-only vault it asks "Allow edits?" first.
   ...(card ? [{ keys: 'E', label: 'Edit card' }] : []),
   // Short (YAZ-5024): the row is one line.
   ...(card ? [{ keys: '⌘↵', label: 'New tab' }] : []),

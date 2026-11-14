@@ -51,6 +51,8 @@ export interface SearchCandidate {
    * row keyed by path stays one; it opens the page at the card, and it stands under its page in the search tree.
    */
   page?: string
+  /** A card inside a page: its place among the page's cards (`pageCards` order, 0 first), where Explore's page layer lands (YAZ-5164). */
+  index?: number
 }
 
 /** A card-in-a-page row's own path (YAZ-5037): its page's, `#`, its ID. No file has it: it keys the row, never a read. */
@@ -83,11 +85,11 @@ export function searchCandidates(records: readonly IndexRecord[], letters: reado
     const rows = [head, ...aliases.map((alias) => row(alias, `${alias} — ${r.title}`))]
     if (ownFileName(r)) rows.push(row(r.basename, `${r.basename} — ${r.title}`))
     if (cards && !card && r.cards !== undefined) {
-      for (const c of r.cards) {
-        if (c.id === null) continue
+      r.cards.forEach((c, index) => {
+        if (c.id === null) return
         const name = c.title ?? c.id
-        rows.push({ kind: 'file', name, lower: name.toLowerCase(), label: name, path: cardRowPath(r.path, c.id), folder: r.folder, id: c.id, ...was, card: true, page: r.path })
-      }
+        rows.push({ kind: 'file', name, lower: name.toLowerCase(), label: name, path: cardRowPath(r.path, c.id), folder: r.folder, id: c.id, ...was, card: true, page: r.path, index })
+      })
     }
     return rows
   })

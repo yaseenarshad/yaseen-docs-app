@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { cardBlock, cardRecords, cardReviewsOf, pageCards, parseCardLine } from '@shared/cardLine'
-import { cardWithTitle } from '@shared/cardText'
 import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import { useCardReview, type CardReviewApi } from './useCardReview'
@@ -33,13 +32,13 @@ const source = {
   },
 }
 
-/** The index of a file: a CARD FILE (`kind: card`) is a record of kind `card` with its `title`. */
+/** The index of a file: a CARD FILE (`kind: card`) is a record of kind `card`, titled by its card line (YAZ-5308). */
 function scan(path: string, content: string): IndexRecord {
   const name = path.slice(path.lastIndexOf('/') + 1)
   const folder = path.slice(ROOT.length + 1, Math.max(ROOT.length + 1, path.lastIndexOf('/')))
   const title = /^---\n[^]*?^title: (.*)$/m.exec(content)?.[1]
   const file = /^---\nkind: card\n/.test(content)
-  return { path, name, basename: name.replace(/\.md$/, ''), title: title ?? name.replace(/\.md$/, ''), folder, ext: 'md', size: content.length, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [], cards: cardRecords(content), ...(file && { kind: 'card' as const }) }
+  return { path, name, basename: name.replace(/\.md$/, ''), title: (file ? cardRecords(content)[0]?.title : title) ?? name.replace(/\.md$/, ''), folder, ext: 'md', size: content.length, ctime: 0, mtime: 0, properties: {}, aliases: [], tags: [], links: [], embeds: [], cards: cardRecords(content), ...(file && { kind: 'card' as const }) }
 }
 function reindex(): void {
   records = [...host.files].map(([path, content]) => scan(path, content))
@@ -155,15 +154,15 @@ describe('useCardReview with a host of its own (YAZ-5067)', () => {
     for (const door of doors) expect(door).not.toHaveBeenCalled()
   })
 
-  it('a card FILE`s card and a page`s card: both review; the card file shows its `title` (YAZ-5044), as on the Mac', async () => {
+  it('a card FILE`s card and a page`s card: both review; the card file`s title is on its card line (YAZ-5308), as on the Mac', async () => {
     host.files.clear()
-    host.files.set(`${ROOT}/Bio/Mitosis.md`, `---\nkind: card\ntitle: Mitosis\n---\n${cardBlock('Cells {{split}}', parseCardLine('<!-- card: WIKI-30 -->')!)}`)
+    host.files.set(`${ROOT}/Bio/Mitosis.md`, `---\nkind: card\n---\n${cardBlock('Cells {{split}}', parseCardLine('<!-- card: WIKI-30, title "Mitosis" -->')!)}`)
     page('Bio/Cells.md', ['What is a {{cell}}?', 'WIKI-31'])
     await mount()
     expect(review.dueCount).toBe(2)
     await act(async () => review.start())
     await shown('WIKI-30')
-    expect(review.session?.card?.page).toMatchObject({ fileTitle: 'Mitosis', text: cardWithTitle('Mitosis', 'Cells {{split}}') })
+    expect(review.session?.card?.page).toMatchObject({ title: 'Mitosis', text: 'Cells {{split}}' })
     expect(review.session?.place.map((p) => [p.kind, p.label])).toEqual([
       ['vault', 'Phone vault'],
       ['folder', 'Bio'],
@@ -171,10 +170,10 @@ describe('useCardReview with a host of its own (YAZ-5067)', () => {
     await answer('WIKI-30', 'good')
     expect(cardReviewsOf(pageCards(host.files.get(`${ROOT}/Bio/Mitosis.md`)!)[0].line).map((r) => r.rating)).toEqual(['good'])
     // The card file's properties stay byte for byte.
-    expect(host.files.get(`${ROOT}/Bio/Mitosis.md`)).toMatch(/^---\nkind: card\ntitle: Mitosis\n---\n/)
+    expect(host.files.get(`${ROOT}/Bio/Mitosis.md`)).toMatch(/^---\nkind: card\n---\n/)
+    expect(host.files.get(`${ROOT}/Bio/Mitosis.md`)).toContain('<!-- card: WIKI-30, title "Mitosis", 2')
     await shown('WIKI-31')
-    expect(review.session?.card?.page).toMatchObject({ text: 'What is a {{cell}}?' })
-    expect(review.session?.card?.page?.fileTitle).toBeUndefined()
+    expect(review.session?.card?.page).toMatchObject({ text: 'What is a {{cell}}?', title: '' })
     expect(review.session?.place.map((p) => [p.kind, p.label])).toEqual([
       ['vault', 'Phone vault'],
       ['folder', 'Bio'],

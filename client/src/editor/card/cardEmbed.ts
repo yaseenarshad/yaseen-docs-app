@@ -15,16 +15,20 @@
  *    The head needs no read: the index knows the name, the ID and the state.
  *  - EDIT CARD: the card editor (YAZ-5026, `mountCardEditor`, through `doors.edit`) in the box, with the page card's key row. Done writes the
  *    ORIGINAL file, one `transformFile` (`changeCardTextIn`, the app's own write: an open tab of that file takes it
- *    quietly). The page that embeds it does not change. Read only: no Edit card (the card's text is locked, as in the page).
+ *    quietly). The page that embeds it does not change. Read only: Edit card asks first, as the page's card does, and opens after "Allow edits" (YAZ-5145 round 2).
  *  - ⋯ (`cardEmbedMenuRows`): Open card (the card window), Show as link, Put back into this page (YAZ-5037 phase 5:
  *    a card file's card, from an embed alone on its line; the page's convert door writes it), Archive / Unarchive card
  *    (the original's card line, as the page card's row: shown in a read-only page too), Copy card ID.
  *  - MISSING: an ID of this vault that names nothing (`missingId`) says "Missing card · GEO-140", quietly. A pill keeps
  *    its own look ("Missing page · …").
  *
+ *  - REVIEWS (YAZ-5105 round 4): a card with reviews has THE Reviews strip under its text, as a card in a page has it
+ *    (`reviewsStrip.ts`: the Inbox's own `CardReviews`), with the card's facts on its right; closed until asked for.
+ *    Its delete writes the ORIGINAL file through the vault's door (`doors.reviews`). No door (a hover preview): none.
+ *
  * Not here: an embed inside a card (card-in-card is off in the card editor; a card's own render keeps `![[…]]` as text).
  */
-import { withCardFix, withCardOff } from '@shared/cardLine'
+import { cleanCardTitle, withCardFix, withCardOff, withCardTitle } from '@shared/cardLine'
 import type { CardLink } from '@shared/cardLinks'
 import { BridgeRequestError, api } from '../../api'
 import { keyCapsDom } from '../../keys/keyWords'
@@ -37,8 +41,12 @@ import { missingId, type WikilinkResolveSource } from '../wikilink/wikilinkPlugi
 import type { CardEditor } from './cardEditor'
 import { embedCard, recordAt, type CardEmbedHandle, type CardEmbedHost } from './embedCard'
 import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from './cardMedia'
-import { openCardWindow } from './cardOpen'
+import { openCardWindow, previewCard } from './cardOpen'
+import { mountCardTitle } from './cardTitle'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard } from './cardRender'
+import type { CardReviewDoorApi } from './cardBlockView'
+import { mountReviewsStrip, type ReviewsStripHandle } from './reviewsStrip'
+import { tellReadOnlyEdit } from '../readOnlyEdit'
 import { pathUnit } from '../../vault/unitWord'
 import './cardEmbed.css'
 
@@ -47,7 +55,7 @@ const NEAR = '600px 0px'
 
 /** The name in the head: a card file's card title, else the title of the page the card is on. */
 export function embedName(card: CardLink, source: WikilinkResolveSource): string {
-  if (recordAt(source.records, card.path)?.kind === 'card') return card.title === '' ? 'Untitled card' : card.title
+  if (recordAt(source.records, card.path)?.kind === 'card') return card.title === '' ? card.id : card.title
   return pageLabel(card.path, false, pathTitles(source.records, source.folders))
 }
 
@@ -133,6 +141,8 @@ export function cardEmbedMenuRows(o: {
   target: string
   from: EventTarget
   replace: (text: string) => void
+  /** Preview (YAZ-5152), once the card is read. */
+  preview?: (() => void) | null
   onNotice: (message: string) => void
   /** "Put back into this page" (YAZ-5037 phase 5): the card is in a card file, the embed stands alone on its line, and the page's door is there. Else null. */
   putBack?: (() => void) | null
@@ -141,6 +151,8 @@ export function cardEmbedMenuRows(o: {
   const failed = (err: unknown) => o.onNotice(`Can't change the card: ${err instanceof Error ? err.message : String(err)}`)
   const rows: Array<MenuRow | null> = [
     { label: 'Open card', run: () => openCardWindow(card.path, card.id, card.index, o.from) },
+    // Preview (YAZ-5152): the card as the Inbox shows it, once it is read; nothing saved.
+    ...(o.preview == null ? [] : [{ label: 'Preview', run: o.preview }]),
     o.editable ? { label: 'Show as link', run: () => o.replace(`[[${o.target}]]`) } : null,
     o.putBack == null ? null : { label: pathUnit(card.path)('Put back into this page'), run: o.putBack },
     { label: off ? 'Unarchive card' : 'Archive card', divider: true, run: () => void changeCardLine(card.path, card.id, (l) => withCardOff(l, !off), card.index).catch(failed) },
@@ -178,7 +190,10 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   const editButton = button('card__edit', 'Edit card')
   const more = button('card__more', 'Card menu')
   more.textContent = '⋯'
-  head.append(from, dot, idButton, state, fixMark, editButton, more)
+  // A card in a page: its title first (YAZ-5164 part 3), the page title's own component; a click renames it in its page.
+  // A card file's title is the head's name already ("Embedded from …").
+  const title = mountCardTitle()
+  head.append(title.dom, from, dot, idButton, state, fixMark, editButton, more)
   const body = document.createElement('div')
   body.className = 'card__body'
 
@@ -194,6 +209,9 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   let stopWatch: (() => void) | null = null
   let closeMenu: (() => void) | null = null
   let edit: { editor: CardEditor; mount: HTMLElement; keys: HTMLElement; base: CardAtPage } | null = null
+  /** The Reviews strip (YAZ-5105 round 4), while the card read has reviews; open or closed is this box's. */
+  let strip: ReviewsStripHandle | null = null
+  let stripOpen = false
 
   const off = (c: CardLink): boolean => read?.id === c.id ? read.off : recordAt(source.records, c.path)?.cards?.[c.index]?.off === true
   const fix = (c: CardLink): boolean => (read?.id === c.id ? read.fix === true : recordAt(source.records, c.path)?.cards?.[c.index]?.fix === true)
@@ -202,6 +220,8 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   const draw = (): void => {
     if (card === null) {
       closeMenu?.()
+      strip?.destroy()
+      strip = null
       dom.className = 'card-embed card-embed--missing'
       dom.replaceChildren(`Missing card · ${missingId(host.target, source) ?? host.target}`)
       return
@@ -213,6 +233,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     const className = `card card-embed${isOff ? ' card--off' : ''}${edit !== null ? ' card--editing' : ''}${folded ? ' card-embed--folded' : ''}${selected ? ' ProseMirror-selectednode' : ''}`
     if (dom.className !== className) dom.className = className
     set(fromText, `Embedded from "${embedName(card, source)}"`)
+    drawTitle(card)
     set(idButton, card.id)
     set(state, isOff ? 'Archived' : '')
     const isFix = fix(card)
@@ -222,9 +243,63 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     editButton.setAttribute('aria-label', edit === null ? 'Edit card' : 'Done')
   }
 
+  /** Is the card a card file's (its title is its file's: only its tab renames it)? */
+  const isFileCard = (c: CardLink): boolean => recordAt(source.records, c.path)?.kind === 'card'
+
+  /** The head's title (YAZ-5164 part 3), a card in a page's: from the index until read, then off its card line. */
+  const drawTitle = (c: CardLink, now = false): void => {
+    title.dom.hidden = isFileCard(c)
+    if (title.dom.hidden) return
+    title.render({ title: read === null ? c.title : read.title, readOnly: !host.editable(), onRetitle: retitle }, now)
+  }
+
+  /** The rename: the title on the card's line (YAZ-5308), in its ORIGINAL file (one write, as Done), shown at once. */
+  const retitle = (next: string): void => {
+    const r = read
+    if (r === null || r.id === null || r.cardFile === true || !host.editable()) return
+    const clean = cleanCardTitle(next)
+    if (clean === r.title) return
+    read = { ...r, title: clean }
+    changeCardLine(r.path, r.id, (l) => withCardTitle(l, clean), r.index).catch((err: unknown) => {
+      onNotice(`Can't rename the card: ${err instanceof Error ? err.message : String(err)}`)
+      read = r
+      draw()
+      paint()
+    })
+    draw()
+    paint()
+  }
+
   const paint = (): void => {
     if (card === null || edit !== null) return
+    // The head shows the title (off the card line); the card's text is its sides only (YAZ-5308).
     body.replaceChildren(read === null ? '' : renderCard(read.text, {}, doors.look(card.path)))
+    drawReviews()
+  }
+
+  /** The Reviews strip under the card's text, for the card as read: none with no reviews or no door. */
+  const drawReviews = (): void => {
+    const door: CardReviewDoorApi | undefined = doors.reviews
+    const c = read
+    if (door === undefined || c === null || c.reviews.length === 0 || card === null) {
+      strip?.destroy()
+      strip = null
+      return
+    }
+    strip ??= mountReviewsStrip()
+    if (strip.dom.parentNode !== dom) body.after(strip.dom)
+    const id = c.id
+    strip.render({
+      reviews: c.reviews,
+      settings: door.settings(),
+      onDelete: id === null ? undefined : (review) => void door.deleteReview(c.path, id, review),
+      open: stripOpen,
+      onToggle: () => {
+        stripOpen = !stripOpen
+        drawReviews()
+      },
+      facts: true,
+    })
   }
 
   /** The card read from its file, once near the screen, again only for a new version of that file. */
@@ -266,11 +341,13 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
 
   const startEdit = (): void => {
     const base = read
-    if (edit !== null || card === null || base === null || doors.edit === undefined || !host.editable()) return
+    if (edit !== null || card === null || base === null || doors.edit === undefined) return
+    // A page locked by Read only (YAZ-5145 round 2): an edit attempt that carries itself; "Allow edits" opens Edit card.
+    if (!host.editable()) return tellReadOnlyEdit(dom, 'card', startEdit)
     const mount = document.createElement('div')
     mount.className = 'card__editor'
     dom.append(mount)
-    const { editor, keys } = doors.edit(mount, base.text, () => finishEdit())
+    const { editor, keys } = doors.edit(mount, base.text, base.title, () => finishEdit(), base.cardFile === true)
     dom.append(keys)
     edit = { editor, mount, keys, base }
     draw()
@@ -281,17 +358,19 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     const e = edit
     if (e === null) return
     const text = e.editor.text()
+    // A card file's title is read only here (its tab renames the file); a card in a page's goes on its card line.
+    const title = e.base.cardFile === true ? e.base.title : e.editor.title()
     e.editor.destroy()
     e.mount.remove()
     e.keys.remove()
     edit = null
     draw()
-    if (text.replace(/\n+$/, '') !== e.base.text) {
+    if (text.replace(/\n+$/, '') !== e.base.text || title !== e.base.title) {
       // YAZ-5097: the edit is the fix: a card marked Fix later loses the mark in the same write.
       const { fix: wasFix, ...rest } = e.base
-      read = { ...rest, text }
+      read = { ...rest, text, title }
       draw()
-      changeCardTextIn(e.base.path, e.base.id, text, e.base.index, wasFix === true).catch((err: unknown) => {
+      changeCardTextIn(e.base.path, e.base.id, text, e.base.index, title === e.base.title ? undefined : title, wasFix === true).catch((err: unknown) => {
         onNotice(`Can't save the card: ${err instanceof Error ? err.message : String(err)}`)
         read = e.base
         paint()
@@ -301,6 +380,13 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     host.select()
   }
 
+  /** Preview (YAZ-5152): the card as read, as the Inbox reads it. */
+  const previewRead = (): void => {
+    const r = read
+    if (r === null) return
+    previewCard(dom, { path: r.path, id: r.id, text: r.text, title: r.title, notitle: r.notitle === true, reviews: r.reviews })
+  }
+
   const openMenu = (x: number, y: number): void => {
     const c = card
     if (c === null) return
@@ -308,7 +394,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     // Put back: only a card file's card (a card in a page stays where it is), and only from an embed alone on its line.
     const place = doors.putBack !== undefined && recordAt(source.records, c.path)?.kind === 'card' ? host.place() : null
     const putBack = place === null ? null : () => doors.putBack!({ id: c.id, path: c.path }, place.inner, place.nth)
-    const close = openMenuAt(host.menuParent(), x, y, cardEmbedMenuRows({ card: c, off: off(c), fix: fix(c), editable: host.editable(), target: host.target, from: dom, replace: host.replace, onNotice, putBack }))
+    const close = openMenuAt(host.menuParent(), x, y, cardEmbedMenuRows({ card: c, off: off(c), fix: fix(c), editable: host.editable(), target: host.target, from: dom, replace: host.replace, onNotice, putBack, preview: read === null ? null : previewRead }))
     closeMenu = () => {
       close()
       closeMenu = null
@@ -319,8 +405,12 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     const target = event.target instanceof Element ? event.target : null
     // The card editor's own presses.
     if (target === null || event.button !== 0 || edit?.mount.contains(target) === true) return
+    // The Reviews strip is React's (its toggle, its table): a press in it never selects the embed.
+    if (strip?.dom.contains(target) === true) return
     const c = card
     if (c === null) return
+    // The title is the page title's (YAZ-5164 part 3): its click renames, or asks to unlock a locked page.
+    if (title.dom.contains(target)) return drawTitle(c, true)
     if (target.closest('.card__more') !== null) {
       event.preventDefault()
       const rect = more.getBoundingClientRect()
@@ -407,6 +497,9 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
       closeMenu?.()
       edit?.editor.destroy()
       edit = null
+      strip?.destroy()
+      strip = null
+      title.destroy()
       boxes.delete(dom)
     },
   }

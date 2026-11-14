@@ -137,8 +137,8 @@ export async function putCardBackIntoPage(page: string, cardPath: string, id: st
 }
 
 /**
- * TURN INTO A PAGE: the card file `path` loses `kind: card`; its `title:` stays, and is the card's first line again
- * (YAZ-5044: a card in a page is titled by its first line); then the page name
+ * TURN INTO A PAGE: the card file `path` loses `kind: card`; the card's title (on its card line, YAZ-5308) is the page's
+ * `title:` too; then the page name
  * rule (`retitle`: the page's own ID, and `<title>-<id>.md`). Resolves to its path after. A rename that fails keeps
  * the name: the file is a page all the same.
  */
@@ -155,7 +155,7 @@ export async function turnIntoPage(path: string): Promise<string> {
 
 /**
  * TURN INTO A CARD FILE: the page `path` (one card with its ID, no other text) takes `kind: card`, its `title:` goes to
- * `aliases`, its `id:` stays, and the card's first line becomes its `title:` (YAZ-5044); then it takes the card's name. Resolves to its path after (a rename that fails keeps the name).
+ * `aliases` (and onto a card line with no title, YAZ-5308), its `id:` stays; then it takes the card's name. Resolves to its path after (a rename that fails keeps the name).
  */
 export async function turnIntoCardFile(path: string): Promise<string> {
   const file = await readSaved(path)

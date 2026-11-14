@@ -36,11 +36,16 @@
  * Enter types nothing (the page is locked) and a held Enter opens nothing: its repeats are no answer, in the box too.
  * Then Enter takes the focused choice, or ↓ ↑ move first. While the page is unlocked, the host's ⌘↵ and Esc lock it
  * again (`lockKeys`: a page's text, `createCrepe`'s `lockAgain`; an Explore edit layer): the hover says so.
+ *
+ * UNLOCK, THEN CONTINUE (YAZ-5145 round 2): an attempt that carries what it was going to do (`ReadOnlyEditEvent.resume`:
+ * Edit card, the title's rename) has it kept here, the last attempt's. A choice in the box (or Turn Read only off) runs
+ * it once the page is unlocked and the keyboard is back, so the action happens with no second key. Cancel, Esc, a
+ * press outside, the window's blur, or a newer attempt with none drops it; so does `RESUME_MS` with no answer.
  */
 import { useEffect, useReducer, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import { useUnit } from '../vault/unitWord'
 import { LockIcon } from '../views/view/icons'
-import { READ_ONLY_EDIT, READ_ONLY_MESSAGE_GAP_MS, READ_ONLY_MESSAGE_MS, READ_ONLY_PAGE, READ_ONLY_PANE, type ReadOnlyWhat } from './readOnlyEdit'
+import { READ_ONLY_EDIT, READ_ONLY_MESSAGE_GAP_MS, READ_ONLY_MESSAGE_MS, READ_ONLY_PAGE, READ_ONLY_PANE, RESUME_MS, ReadOnlyEditEvent, type ReadOnlyWhat } from './readOnlyEdit'
 import type { AllowFor } from './useTimedUnlock'
 import { choiceKey } from '../components/choiceKeys'
 
@@ -80,11 +85,18 @@ export function editingLabel(until: number, now: number): string {
 export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, editingUntil = null, onLock, lockKeys = false, onReturn }: ReadOnlyChipProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const chipRef = useRef<HTMLButtonElement>(null)
-  const cancelRef = useRef(onCancel)
-  cancelRef.current = onCancel
+  /** The refused action to carry out once the person allows edits (YAZ-5145 round 2), and when it was tried. */
+  const pending = useRef<{ run: () => void; at: number } | null>(null)
+  /** Every way the box closes with no answer drops the refused action: nothing happens on Cancel. */
+  const cancel = () => {
+    pending.current = null
+    onCancel()
+  }
+  const cancelRef = useRef(cancel)
+  cancelRef.current = cancel
   const askRef = useRef(onAsk)
   askRef.current = onAsk
-  const message = useReadOnlyMessage(rootRef, chipRef, asking)
+  const message = useReadOnlyMessage(rootRef, chipRef, asking, pending)
   const giveBack = useGiveBack(onReturn)
   useEnterAsks(rootRef, message !== null && !asking, askRef)
   // The vault's word for a page (YAZ-4938): "This card is Read only." in a vault of cards.
@@ -112,10 +124,12 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, edit
     }
   }, [asking])
 
-  /** An answer in the box, then the keyboard back to where it was when the box opened. */
-  const answer = (run: () => void) => {
+  /** An answer in the box, then the keyboard back to where it was when the box opened, then the refused action (YAZ-5145 round 2). */
+  const answer = (run: () => void, unlocks: boolean) => {
+    const p = pending.current
+    pending.current = null
     run()
-    giveBack('ask')
+    giveBack('ask', unlocks && p !== null && Date.now() - p.at <= RESUME_MS ? p.run : undefined)
   }
 
   return (
@@ -128,11 +142,11 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, edit
         if (!asking || event.key !== 'Escape') return
         event.preventDefault()
         event.stopPropagation()
-        onCancel()
+        cancel()
         if (onReturn !== undefined) giveBack('ask')
         else chipRef.current?.focus()
       }}>
-      <button ref={chipRef} type="button" className={`read-only-chip__button${editing ? ' read-only-chip__button--editing' : ''}${message === null ? '' : ' read-only-chip__button--pulse'}`} title={editing ? `Edits are allowed for now. Click for another time.${lockKeys ? ' ⌘↵ or Esc locks it again.' : ''}` : 'Click to allow edits'} aria-haspopup="dialog" aria-expanded={asking} onClick={asking ? onCancel : onAsk}>
+      <button ref={chipRef} type="button" className={`read-only-chip__button${editing ? ' read-only-chip__button--editing' : ''}${message === null ? '' : ' read-only-chip__button--pulse'}`} title={editing ? `Edits are allowed for now. Click for another time.${lockKeys ? ' ⌘↵ or Esc locks it again.' : ''}` : 'Click to allow edits'} aria-haspopup="dialog" aria-expanded={asking} onClick={asking ? cancel : onAsk}>
         {editing ? <EditingIcon /> : <LockIcon size={12} />}
         <span>{editing ? editingLabel(editingUntil, Date.now()) : 'Read only'}</span>
       </button>
@@ -154,7 +168,7 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, edit
               <LockIcon size={13} />
             </span>
             <span className="read-only-message__text">
-              <strong>{message.what === 'drawing' ? 'This drawing is Read only.' : unit('This page is Read only.')}</strong>
+              <strong>{message.what === 'drawing' ? 'This drawing is Read only.' : message.what === 'card' ? 'This card is Read only.' : unit('This page is Read only.')}</strong>
               <span>Press Enter to allow edits.</span>
             </span>
           </div>
@@ -164,13 +178,13 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, edit
         <div className="read-only-chip__ask" role="dialog" aria-label="Allow edits">
           <p>Allow edits?</p>
           <div className="read-only-chip__times">
-            <button type="button" className="read-only-chip__allow" autoFocus onClick={() => answer(() => onAllow('minute'))}>Allow edits for 1 minute</button>
-            <button type="button" onClick={() => answer(() => onAllow('ten'))}>10 minutes</button>
-            <button type="button" onClick={() => answer(() => onAllow('close'))}>Until I close this tab</button>
+            <button type="button" className="read-only-chip__allow" autoFocus onClick={() => answer(() => onAllow('minute'), true)}>Allow edits for 1 minute</button>
+            <button type="button" onClick={() => answer(() => onAllow('ten'), true)}>10 minutes</button>
+            <button type="button" onClick={() => answer(() => onAllow('close'), true)}>Until I close this tab</button>
           </div>
           <div className="read-only-chip__actions">
-            {onTurnOff !== undefined && <button type="button" onClick={() => answer(onTurnOff)}>Turn Read only off</button>}
-            <button type="button" onClick={() => answer(onCancel)}>Cancel</button>
+            {onTurnOff !== undefined && <button type="button" onClick={() => answer(onTurnOff, true)}>Turn Read only off</button>}
+            <button type="button" onClick={() => answer(cancel, false)}>Cancel</button>
           </div>
         </div>
       )}
@@ -192,13 +206,16 @@ const EditingIcon = () => (
  * not). The Enter that answered may be held: its repeats would type new lines in the page now unlocked, so each one is
  * dropped until that Enter is let go (a held Enter is no answer, YAZ-3076).
  */
-function useGiveBack(onReturn: ((to: 'ask' | 'lock') => void) | undefined): (to: 'ask' | 'lock') => void {
-  const [back, setBack] = useState<{ to: 'ask' | 'lock' } | null>(null)
+function useGiveBack(onReturn: ((to: 'ask' | 'lock') => void) | undefined): (to: 'ask' | 'lock', then?: () => void) => void {
+  const [back, setBack] = useState<{ to: 'ask' | 'lock'; then?: () => void } | null>(null)
   const returnRef = useRef(onReturn)
   returnRef.current = onReturn
   useEffect(() => {
     if (back === null) return
     returnRef.current?.(back.to)
+    // The refused action (YAZ-5145 round 2): after this commit's effects, so the host's unlock has reached its editor.
+    const then = back.then
+    const resume = then === undefined ? undefined : setTimeout(then, 0)
     const held = (event: KeyboardEvent) => {
       if (event.key === 'Enter' && event.repeat) {
         event.preventDefault()
@@ -214,10 +231,14 @@ function useGiveBack(onReturn: ((to: 'ask' | 'lock') => void) | undefined): (to:
     }
     window.addEventListener('keydown', held, true)
     window.addEventListener('keyup', done, true)
-    return stop
+    return () => {
+      stop()
+      // Unmounted before it ran (the box's host went): it never runs late.
+      if (resume !== undefined && back !== null) clearTimeout(resume)
+    }
   }, [back])
-  return (to) => {
-    if (returnRef.current !== undefined) setBack({ to })
+  return (to, then) => {
+    if (returnRef.current !== undefined || then !== undefined) setBack({ to, then })
   }
 }
 
@@ -260,7 +281,7 @@ const ARROW_FALLBACK = 40
  * The card of an edit attempt (see the module doc): an attempt from this chip's own page shows it, more attempts keep it
  * up, and it goes after the last one. The "Allow edits?" box closes it.
  */
-function useReadOnlyMessage(rootRef: RefObject<HTMLDivElement | null>, chipRef: RefObject<HTMLButtonElement | null>, asking: boolean): ReadOnlyMessage | null {
+function useReadOnlyMessage(rootRef: RefObject<HTMLDivElement | null>, chipRef: RefObject<HTMLButtonElement | null>, asking: boolean, pending: RefObject<{ run: () => void; at: number } | null>): ReadOnlyMessage | null {
   const [message, setMessage] = useState<ReadOnlyMessage | null>(null)
   const clock = useRef<{ timer: ReturnType<typeof setTimeout> | undefined; shownAt: number; showing: boolean }>({ timer: undefined, shownAt: -Infinity, showing: false })
   const askingRef = useRef(asking)
@@ -278,6 +299,9 @@ function useReadOnlyMessage(rootRef: RefObject<HTMLDivElement | null>, chipRef: 
     }
     const onEdit = (event: Event) => {
       if (askingRef.current || !(event.target instanceof Element) || event.target.closest(READ_ONLY_PAGE) !== page) return
+      // The last attempt's action waits for the answer (YAZ-5145 round 2); an attempt with none (typing) drops an older one.
+      const resume = event instanceof ReadOnlyEditEvent ? event.resume : undefined
+      pending.current = resume === undefined ? null : { run: resume, at: Date.now() }
       if (!state.showing) {
         const now = Date.now()
         if (now - state.shownAt < READ_ONLY_MESSAGE_GAP_MS) return
@@ -294,7 +318,7 @@ function useReadOnlyMessage(rootRef: RefObject<HTMLDivElement | null>, chipRef: 
       pane.removeEventListener(READ_ONLY_EDIT, onEdit)
       clearTimeout(state.timer)
     }
-  }, [rootRef, chipRef])
+  }, [rootRef, chipRef, pending])
 
   // The "Allow edits?" box answers the chip now.
   useEffect(() => {

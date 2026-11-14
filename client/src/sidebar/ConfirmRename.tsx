@@ -68,7 +68,7 @@ type ConfirmRenameProps = {
  */
 export function ConfirmRename({ oldPath, kind, count, titles, unit, onConfirm, onCancel, ...to }: ConfirmRenameProps) {
   const dontAskRef = useRef<HTMLInputElement>(null)
-  // A title already in (a card file's Done wrote its first line, YAZ-5037): what changes is the file's name, so it is named.
+  // A title already in (a card file's Done wrote it on its card line, YAZ-5037): what changes is the file's name, so it is named.
   const shown = pageLabel(oldPath, kind === 'dir', titles)
   const from = to.title !== undefined && shown === to.title ? basename(oldPath) : shown
   const confirm = useCallback(() => onConfirm(dontAskRef.current?.checked === true), [onConfirm])

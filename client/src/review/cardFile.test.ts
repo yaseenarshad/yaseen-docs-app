@@ -1,10 +1,9 @@
 /**
- * A card file's card as review reads it (YAZ-5044, decision A): its title is the file's `title`, never its text. The
- * card window titles it by `title`; the Inbox reads it with the title as its first line, so "Title on the front"
- * Show / Hide is one rule for both kinds. A card in a page, and a card file from before A, read as before.
+ * A card as review reads it (YAZ-5308, decision D): its title is on its card line wherever it lives, never its text,
+ * never a card file's properties. Both kinds of card read alike; a card file's card says so (`cardFile`).
  */
 import { describe, expect, it, vi } from 'vitest'
-import { cardInContent, readCard, titleOfCard } from './cardFile'
+import { cardInContent, readCard } from './cardFile'
 
 const files = vi.hoisted(() => new Map<string, string>())
 vi.mock('../api', async (importOriginal) => {
@@ -12,28 +11,24 @@ vi.mock('../api', async (importOriginal) => {
   return { ...real, api: { ...real.api, readFile: vi.fn(async (path: string) => ({ path, content: files.get(path)!, mtime: 1, size: 1 })) } }
 })
 
-const CARD = '```card\n---\nThe capital is {{Paris}}.\n```\n<!-- card: GEO-140, notitle -->\n'
-const FILE = `---\nkind: card\ntitle: Capital of France\n---\n${CARD}`
+const CARD = '```card\nWhat is it?\n---\nThe capital is {{Paris}}.\n```\n<!-- card: GEO-140, title "Capital of France", notitle -->\n'
+const FILE = `---\nkind: card\n---\n${CARD}`
 
-describe('a card file`s card (YAZ-5044)', () => {
-  it('the card window: its title is the file`s `title`; its text is its sides only', () => {
+describe('a card`s title is its card line`s (YAZ-5308)', () => {
+  it('a card file`s card: the title off its line, its text its sides only, marked as a card file`s', () => {
     const card = cardInContent('/v/c.md', FILE, 'GEO-140', 0)!
-    expect(card.text).toBe('---\nThe capital is {{Paris}}.')
-    expect(card.fileTitle).toBe('Capital of France')
-    expect(titleOfCard(card)).toBe('Capital of France')
+    expect(card).toMatchObject({ text: 'What is it?\n---\nThe capital is {{Paris}}.', title: 'Capital of France', notitle: true, cardFile: true })
   })
 
-  it('the Inbox`s read: the title is the first line of the text, as a card in a page holds it; `notitle` stays on the card', async () => {
+  it('the Inbox`s read: the same card, the same title; the text holds no title line', async () => {
     files.set('/v/c.md', FILE)
-    expect(await readCard('/v/c.md', 'GEO-140')).toMatchObject({ text: 'Capital of France\n---\nThe capital is {{Paris}}.', notitle: true })
+    expect(await readCard('/v/c.md', 'GEO-140')).toMatchObject({ text: 'What is it?\n---\nThe capital is {{Paris}}.', title: 'Capital of France', notitle: true })
   })
 
-  it('a card in a page, and a card file from before A, read as before: the first line is the title', async () => {
-    const page = `---\ntitle: Europe\n---\n\`\`\`card\nCapital of France\n---\nParis\n\`\`\`\n<!-- card: GEO-1 -->\n`
-    expect(cardInContent('/v/p.md', page, 'GEO-1', 0)!.fileTitle).toBeUndefined()
-    expect(titleOfCard(cardInContent('/v/p.md', page, 'GEO-1', 0)!)).toBe('Capital of France')
-    const old = `---\nkind: card\n---\n\`\`\`card\nCapital of France\n---\nParis\n\`\`\`\n<!-- card: GEO-2 -->\n`
-    files.set('/v/old.md', old)
-    expect(await readCard('/v/old.md', 'GEO-2')).toMatchObject({ text: 'Capital of France\n---\nParis' })
+  it('a card in a page reads alike; a card with no title on its line has none, whatever its first line', () => {
+    const page = `---\ntitle: Europe\n---\n${CARD}\n\`\`\`card\nCapital of Spain\n---\nMadrid\n\`\`\`\n<!-- card: GEO-1 -->\n`
+    const first = cardInContent('/v/p.md', page, 'GEO-140', 0)!
+    expect([first.title, first.cardFile]).toEqual(['Capital of France', undefined])
+    expect(cardInContent('/v/p.md', page, 'GEO-1', 1)).toMatchObject({ title: '', text: 'Capital of Spain\n---\nMadrid' })
   })
 })
