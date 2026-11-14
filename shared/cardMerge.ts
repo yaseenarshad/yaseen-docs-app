@@ -70,7 +70,7 @@ function uniteLine(base: CardLine | null, theirs: CardLine, mine: CardLine): Car
   // A mark both sides agree on stays as they have it; else the side that changed it from the base wins.
   const keep = (k: string): boolean => (t.has(k) === m.has(k) ? t.has(k) : t.has(k) === b.has(k) ? m.has(k) : t.has(k))
   let parts = withCardReviews(theirs, cardReviewsOf(mine)).parts.filter((p) => !keyOf(p).startsWith('mark ') || keep(keyOf(p)))
-  // A mark only mine has goes after the part it follows in mine (`off` after the ID, `fix` after the reviews), else first.
+  // A mark only mine has goes after the part it follows in mine (`next` after the ID, `fix` after the reviews), else first.
   for (let i = 0; i < mine.parts.length; i++) {
     const part = mine.parts[i]
     const k = keyOf(part)
@@ -83,7 +83,11 @@ function uniteLine(base: CardLine | null, theirs: CardLine, mine: CardLine): Car
         break
       }
     }
+    // The app's own marks keep its order: `off`, then `next`, then `notitle` (`withCardNext`, `withCardNoTitle`).
+    while (rank(parts[at]) > 0 && rank(parts[at]) < rank(part)) at++
     parts = [...parts.slice(0, at), part, ...parts.slice(at)]
   }
   return { parts }
 }
+
+const rank = (p: CardPart | undefined): number => (p?.kind === 'off' ? 1 : p?.kind === 'next' ? 2 : p?.kind === 'notitle' ? 3 : 0)
