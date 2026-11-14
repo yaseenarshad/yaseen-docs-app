@@ -137,7 +137,8 @@ export function lostRows(lost: readonly LostAnswer[]): LostRow[] {
     // The review is the answer the person gave; an action that only came with it (Up next off) does not name the row.
     const rank = l.op.kind === 'review' ? 2 : l.op.kind === 'next' && !l.op.on ? 0 : 1
     const row = rows.get(l.op.id)
-    if (row === undefined) rows.set(l.op.id, { id: l.op.id, title: l.title, answer: ANSWER_WORDS[l.op.kind](l.op), seqs: [l.seq], rank })
+    // YAZ-5245: a card with no title is named by its ID, as Review's lost line names it.
+    if (row === undefined) rows.set(l.op.id, { id: l.op.id, title: l.title.trim() === '' ? l.op.id : l.title, answer: ANSWER_WORDS[l.op.kind](l.op), seqs: [l.seq], rank })
     else {
       row.seqs.push(l.seq)
       if (rank > row.rank) Object.assign(row, { answer: ANSWER_WORDS[l.op.kind](l.op), rank })

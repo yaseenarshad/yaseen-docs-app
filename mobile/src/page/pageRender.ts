@@ -1,5 +1,5 @@
 import { isAudioRef } from '@client/editor/card/cardMedia'
-import { LOCAL_SRC, cleanLocal } from '@client/editor/card/localOnly'
+import { LOCAL_SRC, cleanLocal, urlOf } from '@client/editor/card/localOnly'
 import { parseAlt } from '@client/editor/image/imageSrc'
 import { cardIdOf, parseCardLine } from '@shared/cardLine'
 import { Marked, type TokenizerAndRendererExtension, type Tokens } from 'marked'
@@ -77,9 +77,15 @@ export interface PieceStats {
 /** A page this long or shorter is one piece. */
 export const ONE_PIECE = 64_000
 /** The first piece of a longer page; it shrinks while a piece takes too long. */
-const FIRST_PIECE = 4_000
+const FIRST_PIECE = 1_500
 const SLOW_PIECE_MS = 10
+const QUICK_PIECE_MS = 4
 const SMALLEST_PIECE = 1_000
+const LARGEST_PIECE = 8_000
+
+/** A small text with each kind of block: drawn once, cold, in its own slices, so the first real piece is not slow. */
+const WARM_UP = ['w', '## w\n\n**b** *i* `c`', '[[l]] [a](#a) ==h==', '- x\n- [ ] y', '| a | b |\n| - | - |\n| 1 | 2 |', '> q\n\n```\nc\n```']
+let warm = false
 
 const escapeHtml = (text: string): string => text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 
@@ -276,18 +282,22 @@ function drawLinks(root: DocumentFragment, look: PageLook): void {
       }
       continue
     }
-    // A web picture, sound or video: a link that `cleanLocal` made; it opens Safari as it is.
-    if (a.classList.contains('page-media--web')) continue
-    const href = a.getAttribute('href')
-    a.className = ''
+    // Every other link, by what the browser would open (`urlOf`, YAZ-5243): the web opens Safari; mail stays; a part of
+    // the page stays; a vault file opens in the app; anything else is text. A class from the text changes nothing.
+    const web = a.classList.contains('page-media--web')
     a.removeAttribute('class')
-    if (href === null || href.startsWith('#')) continue
-    if (WEB.test(href)) {
+    const href = a.getAttribute('href')
+    if (href === null) continue
+    const { kind, href: url } = urlOf(href)
+    if (kind === 'web') {
+      if (web) a.className = 'page-media page-media--web'
+      a.setAttribute('href', url)
       a.target = '_blank'
       a.rel = 'noopener noreferrer'
       continue
     }
-    const path = SCHEME.test(href) ? null : look.asset(href.split('#')[0])
+    if (kind === 'mail' || (kind === 'path' && href.trim().startsWith('#'))) continue
+    const path = kind === 'path' ? look.asset(href.split('#')[0]) : null
     if (path === null) a.removeAttribute('href')
     else opens(a, /\.(md|markdown)$/i.test(path) ? { kind: 'page', path } : { kind: 'file', path })
   }
@@ -299,7 +309,7 @@ function drawPictures(root: DocumentFragment, look: PageLook): void {
     const src = img.getAttribute(LOCAL_SRC)
     const alt = img.getAttribute('alt') ?? ''
     if (src === null) {
-      if (!/^(data|blob):/i.test(img.getAttribute('src') ?? '')) img.remove()
+      if (urlOf(img.getAttribute('src') ?? '').kind !== 'own') img.remove()
       continue
     }
     const path = look.asset(src)
@@ -458,7 +468,24 @@ export function splitBlocks(text: string, size: number): string[] {
  * piece by piece, with `slice()` between pieces. `live()` false: stop (the page changed again, or closed).
  */
 export async function renderPage(body: string, look: PageLook, into: HTMLElement, slice?: Slice, live: () => boolean = () => true, stats?: PieceStats): Promise<void> {
-  if (body.length <= ONE_PIECE || slice === undefined) {
+  if (slice === undefined) {
+    into.replaceChildren(renderPiece(body, look))
+    return
+  }
+  // YAZ-5244: the first start of `marked` and DOMPurify is slow (40 to 50 ms of CPU in jsdom), also for a short page (the
+  // first that opens). It runs once, cut into its own slices: the cleaner, then small texts with each kind of block.
+  // Then the pieces of a long page start small and grow while they are quick.
+  if (!warm) {
+    cleanLocal('<p>w</p>')
+    await slice()
+    for (const text of WARM_UP) {
+      renderPiece(text, look)
+      await slice()
+    }
+    warm = true
+    if (!live()) return
+  }
+  if (body.length <= ONE_PIECE) {
     into.replaceChildren(renderPiece(body, look))
     return
   }
@@ -475,6 +502,7 @@ export async function renderPage(body: string, look: PageLook, into: HTMLElement
     const ms = performance.now() - t0
     stats?.times.push(ms)
     if (ms > SLOW_PIECE_MS && size > SMALLEST_PIECE) size = Math.max(SMALLEST_PIECE, Math.floor(size / 2))
+    else if (ms < QUICK_PIECE_MS && size < LARGEST_PIECE) size = Math.min(LARGEST_PIECE, size * 2)
     from = end
     await slice()
     if (!live()) return

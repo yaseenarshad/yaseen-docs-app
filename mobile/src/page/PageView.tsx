@@ -6,6 +6,7 @@ import { setSearchNotice } from '../search/searchState'
 import { useVaultData } from '../search/vaultData'
 import { uiSlicer } from '../sync/yieldToUi'
 import { useMediaWatch, useVaultMedia } from '../media/ui/useVaultMedia'
+import { guardLink } from '../media/ui/safeLinks'
 import { openFile } from '../media/ui/vaultMedia'
 import { fillCardEmbeds, tapOf } from './pageDom'
 import { pageLook } from './pageLook'
@@ -117,7 +118,8 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
   const onTap = async (event: React.MouseEvent) => {
     if (data === null) return
     const tap = tapOf(event.target, data)
-    if (tap === null) return
+    // Any other link: the web opens Safari, the app's window stays (YAZ-5243).
+    if (tap === null) return void guardLink(event)
     event.preventDefault()
     if (tap.kind === 'go') app.go(tap.action)
     else if (tap.kind === 'missing') setNotice(tap.text)

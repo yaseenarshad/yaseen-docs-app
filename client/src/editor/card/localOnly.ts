@@ -35,38 +35,99 @@ export const LOCAL_SRC = 'data-local-src'
 /** A web source, until `finish` makes the element a link. */
 const WEB_SRC = 'data-web-src'
 
-const WEB = /^(https?:|mailto:|tel:)/i
-const SCHEME = /^\s*[a-z][a-z0-9+.-]*:/i
-const OWN_BYTES = /^\s*(data|blob):/i
-/** A value that names a host or loads something. */
-export const NAMES_A_HOST = (value: string): boolean => /[a-z][a-z0-9+.-]*:\/\//i.test(value) || /(^|[\s"'(=,])\/\/[^/\s]/.test(value) || /url\(|image-set\(|@import/i.test(value)
+/**
+ * WHAT A URL IS, AS THE BROWSER WILL READ IT (YAZ-5242): the ONE test of the phone, for the page, the card and Review.
+ * The WHATWG rules first: tab, new line and carriage return go from anywhere; C0 controls and spaces go from both ends.
+ * Then the URL is parsed against the app's page (`base`), as the browser parses it, so `ht\ntps://host`, `\\host\x`,
+ * `/\host`, `https:\\host` and `http:host` read as the address the browser would fetch.
+ *  - `path`: a reference relative to the page (a vault path as a page writes it, or `#part`); it names no other host.
+ *  - `own`: bytes the app holds: a `blob:` URL (of the app's own origin, or opaque), or a `data:` picture (an SVG
+ *    in `<img>` loads nothing more: browsers run no script and fetch nothing from a picture).
+ *  - `web`: `http:` or `https:` (on any host but the app's own); `mail`: `mailto:` or `tel:`.
+ *  - `none`: anything else (`javascript:`, `data:` text or SVG, `file:`, another origin's `blob:`, a URL that fails to
+ *    parse, an absolute URL of the app's own host).
+ */
+export type UrlKind = 'path' | 'own' | 'web' | 'mail' | 'none'
+
+/** A base that no real URL has: a reference that keeps it is relative. */
+const PROBE = 'https://relative.invalid/'
+
+export function urlOf(value: string, base: string = location.href): { kind: UrlKind; href: string } {
+  const clean = value.replace(/[\t\n\r]/g, '').replace(/^[\u0000- ]+|[\u0000- ]+$/g, '')
+  if (clean === '') return { kind: 'none', href: '' }
+  let url: URL
+  try {
+    // Relative, as the browser reads it against any page: it stays on the page's own host.
+    if (new URL(clean, PROBE).origin === new URL(PROBE).origin) return { kind: 'path', href: clean }
+    url = new URL(clean, base)
+  } catch {
+    return { kind: 'none', href: '' }
+  }
+  const own = new URL(base).origin
+  switch (url.protocol) {
+    case 'http:':
+    case 'https:':
+      return { kind: url.origin === own ? 'none' : 'web', href: url.href }
+    case 'mailto:':
+    case 'tel:':
+      return { kind: 'mail', href: url.href }
+    case 'blob:': {
+      // A blob URL is bytes in this browser: no request leaves it. One that names ANOTHER origin is refused all the same.
+      let origin: string | null = null
+      try {
+        origin = new URL(url.pathname).origin
+      } catch {
+        // Opaque (no origin in it): bytes of this page only.
+      }
+      return { kind: origin === null || origin === 'null' || origin === own ? 'own' : 'none', href: url.href }
+    }
+    case 'data:':
+      return { kind: /^image\/(png|jpeg|gif|webp|avif|bmp|svg\+xml)[;,]/i.test(url.pathname) ? 'own' : 'none', href: url.href }
+    default:
+      return { kind: 'none', href: '' }
+  }
+}
+
+/** A value that names a host or loads something, in any attribute: a web or script address, or a CSS loader. */
+export const NAMES_A_HOST = (value: string): boolean => {
+  if (/url\(|image-set\(|@import/i.test(value)) return true
+  const { kind } = urlOf(value)
+  return kind === 'web' || (kind === 'none' && /^[a-z][a-z0-9+.-]*:/i.test(value.replace(/[\t\n\r]/g, '').trim()) && !/^[a-z][a-z0-9+.-]*:\s/i.test(value.trim()))
+}
+
+/** The phone's own marks: a text may not bring them (YAZ-5243). They are set only here, after the check. */
+const RESERVED = [LOCAL_SRC, WEB_SRC, 'data-vault-src', 'data-vault-sound']
 
 /** The allow list for one element's attributes (a DOMPurify hook: it runs on the inert document). */
 function keepLocal(node: Element): void {
   const tag = node.tagName
+  for (const name of RESERVED) node.removeAttribute(name)
   for (const { name, value } of [...node.attributes]) {
     if (name === 'href') {
-      const ok = tag === 'A' && (WEB.test(value) || value.startsWith('#') || !SCHEME.test(value)) && !value.trim().startsWith('//')
-      if (!ok) node.removeAttribute(name)
+      const { kind, href } = urlOf(value)
+      node.removeAttribute(name)
+      if (tag !== 'A') continue
+      if (kind === 'web' || kind === 'mail') node.setAttribute(name, href)
+      else if (kind === 'path') node.setAttribute(name, value.replace(/[\t\n\r]/g, '').trim())
       continue
     }
     if (name === 'src') {
       node.removeAttribute(name)
-      if (tag === 'IMG' && OWN_BYTES.test(value)) {
-        node.setAttribute(name, value)
+      const { kind, href } = urlOf(value)
+      if (tag === 'IMG' && kind === 'own') {
+        node.setAttribute(name, href)
         continue
       }
       // A `<source>` gives its source to its video or audio.
       const holder = tag === 'SOURCE' && (node.parentElement?.tagName === 'VIDEO' || node.parentElement?.tagName === 'AUDIO') ? node.parentElement : node
-      if (SCHEME.test(value) || value.trim().startsWith('//')) {
-        if (/^\s*https?:|^\s*\/\//i.test(value) && !holder.hasAttribute(WEB_SRC)) holder.setAttribute(WEB_SRC, value.trim().startsWith('//') ? `https:${value.trim()}` : value.trim())
-      } else if (value.trim() !== '') holder.setAttribute(LOCAL_SRC, value)
+      if (kind === 'web' && !holder.hasAttribute(WEB_SRC)) holder.setAttribute(WEB_SRC, href)
+      else if (kind === 'path' && !holder.hasAttribute(LOCAL_SRC)) holder.setAttribute(LOCAL_SRC, value.replace(/[\t\n\r]/g, '').trim())
       continue
     }
-    if (name !== WEB_SRC && NAMES_A_HOST(value)) node.removeAttribute(name)
+    if (NAMES_A_HOST(value)) node.removeAttribute(name)
   }
   // A web link opens Safari: a new browsing context, no opener, no referrer.
-  if (tag === 'A' && WEB.test(node.getAttribute('href') ?? '')) {
+  if (tag === 'A' && urlOf(node.getAttribute('href') ?? '').kind === 'web') {
     node.setAttribute('target', '_blank')
     node.setAttribute('rel', 'noopener noreferrer')
   }
@@ -86,7 +147,11 @@ const nameOf = (src: string) => {
 function finish(root: DocumentFragment): void {
   const doc = root.ownerDocument
   for (const el of [...root.querySelectorAll<HTMLElement>(`[${WEB_SRC}]`)]) {
-    const url = el.getAttribute(WEB_SRC)!
+    const { kind: urlKind, href: url } = urlOf(el.getAttribute(WEB_SRC)!)
+    if (urlKind !== 'web') {
+      el.remove()
+      continue
+    }
     const kind = el.tagName === 'VIDEO' ? 'Video' : el.tagName === 'AUDIO' || AUDIO.test(url) ? 'Sound' : 'Picture'
     const a = doc.createElement('a')
     a.className = 'page-media page-media--web'

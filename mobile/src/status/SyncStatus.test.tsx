@@ -187,6 +187,17 @@ describe('a lost answer (round 12 item 9): the title, the answer, and Discard', 
     expect(h.text()).not.toContain('Speed of light')
   })
 
+  it('YAZ-5245: a lost answer whose card has no title: the row and the ask name the card ID', async () => {
+    let answers: FakeAnswers
+    ;({ h, answers } = await signedIn())
+    await answersDo(h, () => answers.set({ lost: [lostAnswer(7, '', 'good', 'NC-40')] }))
+    await h.click('Sync status: 1 answer could not be saved')
+    expect(h.host.querySelector('[role="dialog"] li .row__main')?.textContent).toContain('NC-40')
+    await h.click('Discard the answer to NC-40')
+    expect(h.text()).toContain('Discard your answer "Remembered" to "NC-40"? It cannot be taken back.')
+    expect(h.text()).not.toContain('to ""')
+  })
+
   it('2 lost answers: "2 answers could not be saved", one row each, "Forgot" for again', async () => {
     let answers: FakeAnswers
     ;({ h, answers } = await signedIn())
