@@ -72,7 +72,16 @@ export interface GroupFile {
   /** The admin's login. */
   admin: string
   members: GroupMember[]
+  /**
+   * YAZ-5240: the pointers the admin removed (the newest 200). A person whom the admin removed before their app ever
+   * read the group sees "removed" by this, not "waiting". Absent: none.
+   */
+  removed?: string[]
 }
+
+/** YAZ-5240: never added, this long after the ask: "The admin did not add you" (Yaseen to confirm the 7 days). */
+export const NOT_ADDED_AFTER_MS = 7 * 86400_000
+const REMOVED_MAX = 200
 
 export const groupLink = (group: string): string => `${GROUP_LINK_BASE}#${group.toLowerCase()}`
 export const joinLink = (group: string, pointer: string): string => `${JOIN_LINK_BASE}#${group.toLowerCase()}-${pointer.toLowerCase()}`
@@ -164,8 +173,10 @@ export function parseGroupFile(text: string | null | undefined): FileState<Group
   // YAZ-5241: a field there with the wrong shape makes the file unreadable, never an empty value that a write saves.
   if ('members' in raw && !Array.isArray(raw.members)) return { kind: 'unreadable', why: 'members is not a list' }
   for (const key of ['name', 'admin'] as const) if (key in raw && typeof raw[key] !== 'string') return { kind: 'unreadable', why: `${key} is not a text` }
+  if ('removed' in raw && !Array.isArray(raw.removed)) return { kind: 'unreadable', why: 'removed is not a list' }
+  const removed = Array.isArray(raw.removed) ? raw.removed.filter(isGistId).map((x) => x.toLowerCase()).slice(-REMOVED_MAX) : undefined
   const members = (Array.isArray(raw.members) ? raw.members : []).filter(memberOk).map((m) => ({ login: shown(m.login, ''), pointer: (m.pointer as string).toLowerCase() }))
-  return { kind: 'ok', value: { v: 1, name: shown(raw.name, 'Group'), admin: shown(raw.admin, ''), members }, raw }
+  return { kind: 'ok', value: { v: 1, name: shown(raw.name, 'Group'), admin: shown(raw.admin, ''), members, ...(removed !== undefined && { removed }) }, raw }
 }
 
 /** The text of a group file to write: the known fields over the unknown ones; each member keeps its own; bad ones stay. */
@@ -349,7 +360,7 @@ export async function joinGroup(api: GistsApi, handle: IndexHandle, text: string
     const pointer = await makePointer(api, base.index.stats, opts)
     await opts.sleep(1000)
     base = await freshList(api, base, opts)
-    const next = await writeFriendsIndex(api, base, { ...base.index, groups: [...base.index.groups, { name: file.value.name, group, mine: pointer, admin: false }] })
+    const next = await writeFriendsIndex(api, base, { ...base.index, groups: [...base.index.groups, { name: file.value.name, group, mine: pointer, admin: false, asked: new Date(opts.now()).toISOString() }] })
     return { kind: 'joined', name: file.value.name, group, sendToAdmin: joinLink(group, pointer), handle: next }
   } catch (err) {
     return failure(err)
@@ -481,7 +492,11 @@ export async function addMember(api: GistsApi, handle: IndexHandle, group: strin
     // YAZ-5239: a login already in the group (a member, or the admin) is never replaced: a duplicate is refused.
     const same = (l: string) => l.toLowerCase() === who.login.toLowerCase()
     if (current.file.members.some((m) => same(m.login)) || same(current.file.admin)) return { kind: 'duplicate', login: who.login }
-    const file: GroupFile = { ...current.file, members: [...current.file.members, { login: who.login, pointer: link.pointer }] }
+    const file: GroupFile = {
+      ...current.file,
+      members: [...current.file.members, { login: who.login, pointer: link.pointer }],
+      ...(current.file.removed !== undefined && { removed: current.file.removed.filter((p) => p !== link.pointer) }),
+    }
     await api.update(group, { [GROUP_FILE]: groupFileText(file, current.raw) })
     void opts
     return { kind: 'done', file }
@@ -498,7 +513,11 @@ export async function removeMember(api: GistsApi, handle: IndexHandle, group: st
     const mine = handle.index.groups.find((g) => g.group === group)?.mine
     if (pointer === mine) return { kind: 'not-admin' } // the admin's way out is "Delete group"
     if (!current.file.members.some((m) => m.pointer === pointer)) return { kind: 'not-a-member' }
-    const file: GroupFile = { ...current.file, members: current.file.members.filter((m) => m.pointer !== pointer) }
+    const file: GroupFile = {
+      ...current.file,
+      members: current.file.members.filter((m) => m.pointer !== pointer),
+      removed: [...(current.file.removed ?? []).filter((p) => p !== pointer), pointer].slice(-REMOVED_MAX),
+    }
     await api.update(group, { [GROUP_FILE]: groupFileText(file, current.raw) })
     void opts
     return { kind: 'done', file }
@@ -698,6 +717,8 @@ export type GroupView =
   /** `firstSeen`: I see myself in the file for the first time: call `markJoined` (then "not in it" later means removed). */
   | { kind: 'ok'; group: string; name: string; admin: string; iAmAdmin: boolean; members: GroupMemberRow[]; streak: number; firstSeen: boolean }
   | { kind: 'waiting'; group: string; name: string; sendToAdmin: string }
+  /** YAZ-5240: never added, `NOT_ADDED_AFTER_MS` after the ask. The way out: send the join link again, or Leave. */
+  | { kind: 'not-added'; group: string; name: string; sendToAdmin: string }
   | { kind: 'removed'; group: string; name: string }
   | { kind: 'gone'; group: string; name: string }
   | { kind: 'needs-repair'; group: string; name: string }
@@ -724,6 +745,8 @@ export function groupViewMessage(view: GroupView): string | null {
       return 'No connection.'
     case 'removing':
       return 'Removing…'
+    case 'not-added':
+      return 'The admin did not add you. Send them your join link again, or tap Leave.'
     default:
       return null
   }
@@ -756,7 +779,10 @@ export async function readGroup(api: GistsApi, handle: IndexHandle, group: strin
   if (state.kind === 'unreadable') return { kind: 'needs-repair', ...base }
   const file = state.value
   if (!file.members.some((m) => m.pointer === entry.mine)) {
-    if (entry.admin || entry.joined) return { kind: 'removed', ...base }
+    // YAZ-5240: by state first: the file records the admin's removes. `joined`: I saw myself in it before.
+    if (entry.admin || entry.joined || (file.removed ?? []).includes(entry.mine)) return { kind: 'removed', ...base }
+    const asked = entry.asked === undefined ? NaN : Date.parse(entry.asked)
+    if (Number.isFinite(asked) && now - asked >= NOT_ADDED_AFTER_MS) return { kind: 'not-added', ...base, sendToAdmin: joinLink(group, entry.mine) }
     return { kind: 'waiting', ...base, sendToAdmin: joinLink(group, entry.mine) }
   }
   const today = localDay(now)

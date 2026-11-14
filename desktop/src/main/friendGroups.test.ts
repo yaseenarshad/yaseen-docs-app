@@ -6,6 +6,7 @@ import {
   GROUP_LINK_BASE,
   GROUP_NAME_MAX,
   JOIN_LINK_BASE,
+  NOT_ADDED_AFTER_MS,
   ORPHAN_AGE_MS,
   addMember,
   cleanGroupName,
@@ -15,6 +16,7 @@ import {
   groupFileText,
   groupLink,
   groupStreak,
+  groupViewMessage,
   joinGroup,
   joinLink,
   joinMessage,
@@ -441,6 +443,45 @@ describe('YAZ-5239: the login of a join request is the one GitHub vouches for', 
     const aliH = await fresh(c.ali.api, w)
     expect(await readJoinRequest(blind, aliH, joined.sendToAdmin)).toEqual({ kind: 'unverified' })
     expect(await addMember(blind, aliH, c.group, joined.sendToAdmin, opts(w))).toEqual({ kind: 'unverified' })
+  })
+})
+
+describe('YAZ-5240: "removed" by state, and "not added" when the admin never adds', () => {
+  it('a person added and removed before their app ever read the group sees "removed" (the file records the remove)', async () => {
+    const w = people()
+    const c = await club(w, ['bea'])
+    expect(c.members.bea.handle.index.groups[0].joined).toBeUndefined() // her app never read the group
+    expect(await removeMember(c.ali.api, c.ali.handle, c.group, c.members.bea.pointer, opts(w))).toMatchObject({ kind: 'done' })
+    w.advance(90 * 86400_000)
+    expect(await readGroup(c.members.bea.api, c.members.bea.handle, c.group, newListCache(), w.now())).toEqual({ kind: 'removed', group: c.group, name: 'Club' })
+  })
+
+  it('never added: "waiting" for 7 days after the ask, then "not-added" with the way out; nothing leaves by itself', async () => {
+    const w = people()
+    const ali = await person(w, 'ali')
+    const made = await createGroup(ali.api, ali.handle, 'Club', 'ali', opts(w))
+    if (made.kind !== 'ok') throw new Error(made.kind)
+    const bea = await person(w, 'bea')
+    const joined = await joinGroup(bea.api, bea.handle, made.link, opts(w))
+    if (joined.kind !== 'joined') throw new Error(joined.kind)
+    expect(joined.handle.index.groups[0].asked).toEqual(expect.any(String))
+    w.advance(NOT_ADDED_AFTER_MS - 60_000)
+    expect((await readGroup(bea.api, joined.handle, made.group, newListCache(), w.now())).kind).toBe('waiting')
+    w.advance(2 * 60_000)
+    const view = await readGroup(bea.api, joined.handle, made.group, newListCache(), w.now())
+    expect(view).toEqual({ kind: 'not-added', group: made.group, name: 'Club', sendToAdmin: joined.sendToAdmin })
+    expect(groupViewMessage(view)).toBe('The admin did not add you. Send them your join link again, or tap Leave.')
+    expect(NOT_ADDED_AFTER_MS).toBe(7 * 86400_000)
+  })
+
+  it('the remove mark is bounded and goes when the person is added again', async () => {
+    const w = people()
+    const c = await club(w, ['bea'])
+    await removeMember(c.ali.api, c.ali.handle, c.group, c.members.bea.pointer, opts(w))
+    expect(JSON.parse(w.text(c.group, GROUP_FILE)!).removed).toEqual([c.members.bea.pointer])
+    const read = parseGroupFile(JSON.stringify({ v: 1, name: 'x', admin: 'ali', members: [], removed: Array.from({ length: 300 }, (_, i) => i.toString(16).padStart(32, '0')) }))
+    expect(read.kind === 'ok' && read.value.removed!.length).toBe(200)
+    expect(parseGroupFile(JSON.stringify({ v: 1, name: 'x', admin: 'ali', members: [], removed: 'x' })).kind).toBe('unreadable')
   })
 })
 
