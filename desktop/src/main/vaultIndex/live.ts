@@ -15,7 +15,8 @@ import { loadIndexCache, schedulePersist } from './cache'
 import { changeIds, highestFrom, highestNumber, seenFrom, vaultIds } from './mint'
 import { reconcile, SCAN_CONCURRENCY, type ColdStartDiff } from './reconcile'
 import { backfill, configWithLetters, idsStateOf, isKept, planLeft, reletter, type Pass, type Renamed } from './reletter'
-import { fileTitle, idsOwnedBy, ownOnly, scanFile, walk } from './scan'
+import { fileTitle } from '@shared/indexRecord'
+import { idsOwnedBy, ownOnly, scanFile, walk } from './scan'
 
 interface Entry {
   records: Map<string, IndexRecord>

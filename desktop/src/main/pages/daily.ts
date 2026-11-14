@@ -12,7 +12,8 @@ import { dailyPages, dailyPagesFolder, makeDailyPage, type FoundPage } from '@sh
 import type { IndexRecord, SettingsState } from '@shared/types'
 import { appDataDir, vaultIds } from '../vaultIndex/mint'
 import { scanAll } from '../vaultIndex/reconcile'
-import { fileTitle, scanFile } from '../vaultIndex/scan'
+import { fileTitle } from '@shared/indexRecord'
+import { scanFile } from '../vaultIndex/scan'
 import { pageDisk } from './disk'
 import { LOCK_DIR, onlyOne } from '../fs/lock'
 

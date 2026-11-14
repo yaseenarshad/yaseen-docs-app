@@ -61,7 +61,8 @@ import { STATE_FILE, userDataDir } from '../main/userData'
 import { giveId, nextId, readPage } from '../main/vaultIndex/idSweep'
 import { idVault, macId, mintIds, vaultIds } from '../main/vaultIndex/mint'
 import { scanAll } from '../main/vaultIndex/reconcile'
-import { fileTitle, scanFile, walk } from '../main/vaultIndex/scan'
+import { fileTitle } from '@shared/indexRecord'
+import { scanFile, walk } from '../main/vaultIndex/scan'
 
 export interface Io {
   /** The whole of stdin, for `--body -`. */

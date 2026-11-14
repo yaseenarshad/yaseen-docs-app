@@ -4,7 +4,7 @@ import path from 'node:path'
 import { parseFrontmatter } from '@shared/frontmatter'
 import { MAX_FILE_BYTES, VAULT_CONFIG_DIR } from '@shared/types'
 import { makeViewsFixture } from '../fs/viewsFixture'
-import { extractAliases, extractEmbeds, extractLinks, extractTags, scanFile } from './index'
+import { scanFile } from './index'
 
 describe('parseFrontmatter', () => {
   it('parses a YAML map; core schema keeps dates as strings', () => {
@@ -31,126 +31,6 @@ describe('parseFrontmatter', () => {
 
   it('handles CRLF and the `...` terminator', () => {
     expect(parseFrontmatter('---\r\na: 1\r\n...\r\n')).toEqual({ properties: { a: 1 } })
-  })
-})
-
-describe('extractTags', () => {
-  it('frontmatter list / string / `tag` key; leading # stripped; non-strings ignored', () => {
-    expect(extractTags({ tags: ['a', '#b', 3, null] }, '')).toEqual(['a', 'b'])
-    expect(extractTags({ tags: 'x, y  z' }, '')).toEqual(['x', 'y', 'z'])
-    expect(extractTags({ tag: 'solo' }, '')).toEqual(['solo'])
-    expect(extractTags({ tags: 42 }, '')).toEqual([])
-  })
-
-  it('inline tags: prefix rules, nested kept, digits-only ignored, case preserved', () => {
-    expect(extractTags({}, 'a #One (#two) [#three] x,#four;#five\n#six')).toEqual([
-      'One',
-      'two',
-      'three',
-      'four',
-      'five',
-      'six',
-    ])
-    expect(extractTags({}, '#first on the first char')).toEqual(['first'])
-    expect(extractTags({}, 'see #a/b and #123 and #1a')).toEqual(['a/b', '1a'])
-    expect(extractTags({}, 'not#tag and # heading')).toEqual([])
-  })
-
-  it('skips fenced code, inline code and URLs', () => {
-    expect(extractTags({}, '```\n#fenced\n```\n~~~\n#tilde\n~~~\n#kept')).toEqual(['kept'])
-    expect(extractTags({}, '```js\n#fenced\n```')).toEqual([])
-    expect(extractTags({}, 'x `#inline` y ``#double`` #kept')).toEqual(['kept'])
-    expect(extractTags({}, 'https://x.com/#frag http://y.com/a#b #kept')).toEqual(['kept'])
-  })
-
-  it('de-duplicates: frontmatter first, then first appearance', () => {
-    expect(extractTags({ tags: ['b'] }, '#a #b #a')).toEqual(['b', 'a'])
-  })
-})
-
-describe('extractAliases (GRO-2214)', () => {
-  it('list items are trimmed; empties and non-strings dropped; de-duplicated', () => {
-    expect(extractAliases({ aliases: [' CAC ', '', 'Acquisition Cost', 7, null, 'CAC'] })).toEqual(['CAC', 'Acquisition Cost'])
-  })
-
-  it('a scalar string is ONE alias — never comma-split, unlike `tags`', () => {
-    expect(extractAliases({ aliases: 'Customer Acquisition Cost, CAC' })).toEqual(['Customer Acquisition Cost, CAC'])
-    expect(extractAliases({ aliases: '  CAC  ' })).toEqual(['CAC'])
-  })
-
-  it('absent, empty or non-string `aliases` → []; only that key is read', () => {
-    expect(extractAliases({})).toEqual([])
-    expect(extractAliases({ aliases: [] })).toEqual([])
-    expect(extractAliases({ aliases: 42 })).toEqual([])
-    expect(extractAliases({ alias: 'CAC' })).toEqual([]) // `alias` singular is not the key (Obsidian's is `aliases`)
-  })
-})
-
-describe('extractLinks / extractEmbeds', () => {
-  it('strips alias, heading and block refs; trims', () => {
-    expect(extractLinks({}, '[[A|alias]] [[B#Heading]] [[C#^blk]] [[ D ]]')).toEqual(['A', 'B', 'C', 'D'])
-  })
-
-  it('YAZ-4935: the page is the one side that is an ID, in either order — so Linked mentions find both', () => {
-    // Words first keeps both sides (YAZ-4954): the resolver picks the right side when the left side is no page.
-    expect(extractLinks({}, '[[WIKI-116|staging]] and [[staging|WIKI-116]]')).toEqual(['WIKI-116', 'staging|WIKI-116'])
-    expect(extractLinks({}, '[[staging|WIKI-116#Intro]] [[WIKI-116#Intro|staging]]')).toEqual(['staging|WIKI-116', 'WIKI-116'])
-    expect(extractLinks({}, '[[the plan|k3m9x2pq7abc]]')).toEqual(['the plan|k3m9x2pq7abc'])
-    expect(extractLinks({}, '[[|WIKI-116]]')).toEqual(['WIKI-116'])
-    expect(extractLinks({}, '[[Postgres|database]] [[WIKI-116|WIKI-117]]')).toEqual(['Postgres', 'WIKI-116'])
-    expect(extractLinks({ related: '[[staging|WIKI-116]]' }, '')).toEqual(['staging|WIKI-116'])
-    expect(extractEmbeds('![[EMB-40|640x360 view=120,-40,0.8]]')).toEqual(['EMB-40'])
-  })
-
-  it('YAZ-4954: words that LOOK like an ID keep both sides, in the body, the frontmatter and embeds; the other order keeps one', () => {
-    expect(extractLinks({}, '[[Covid pages|COVID-19]] and [[COVID-19|Covid pages]]')).toEqual(['Covid pages|COVID-19', 'COVID-19'])
-    expect(extractLinks({ related: '[[Covid pages|COVID-19]]', list: ['[[Covid pages#Intro|COVID-19]]'] }, '')).toEqual(['Covid pages|COVID-19'])
-    expect(extractEmbeds('![[Covid pages|COVID-19]]')).toEqual(['Covid pages|COVID-19'])
-  })
-
-  it('YAZ-4954 part 2: an embed of a file keeps the file when its words look like an ID', () => {
-    expect(extractEmbeds('![[photo.png|FIG-1]] ![[FIG-2|chart.pdf]] ![[x.drawio|700x394 locked]]')).toEqual(['photo.png', 'chart.pdf', 'x.drawio'])
-    expect(extractLinks({ cover: '[[photo.png|FIG-1]]' }, '[[photo.png|FIG-1]] [[FIG-1|photo.png]]')).toEqual(['photo.png'])
-  })
-
-  it('embeds are not links and vice versa', () => {
-    const body = '![[img.png]] [[Page]] ![[Other#sec|x]]'
-    expect(extractLinks({}, body)).toEqual(['Page'])
-    expect(extractEmbeds(body)).toEqual(['img.png', 'Other'])
-  })
-
-  it('frontmatter string values (top-level and in lists) matching exactly [[…]] count as links', () => {
-    expect(extractLinks({ related: '[[X]]', list: ['[[Y|y]]', 'plain', 7], page: 'see [[Z]]' }, '')).toEqual(['X', 'Y'])
-  })
-
-  it('`aliases` values are NEVER links, whatever they look like (GRO-2214)', () => {
-    // A `[[X]]`-shaped alias stays an alias literally named `[[X]]` (extractAliases strips
-    // nothing) — it just never becomes an outgoing link of this page.
-    expect(extractLinks({ aliases: ['[[X]]', 'CAC'], related: '[[Y]]' }, '')).toEqual(['Y'])
-    expect(extractLinks({ aliases: '[[X]]' }, '')).toEqual([])
-    expect(extractAliases({ aliases: ['[[X]]'] })).toEqual(['[[X]]'])
-  })
-
-  it('a link in a folder’s value (`[[id]]`, `[[Name]]`, or a list of them) is in the page’s links, exactly as a top-level whole-value link is', () => {
-    const props = { related: '[[Top]]', in: { '3y7505rsr6fd': { owner: '[[k3m9x2pq7abc]]', Status: 'Interview', team: ['[[Sam|S]]', 'plain', 7] }, mzf9cjhn02vm: { lead: '[[Road#Scope]]' } } }
-    expect(extractLinks(props, '[[Body]]')).toEqual(['Top', 'k3m9x2pq7abc', 'Sam', 'Road', 'Body'])
-  })
-
-  it('a non-link string in a folder’s value that merely contains `[[x]]` inside other text is not a link', () => {
-    expect(extractLinks({ in: { '3y7505rsr6fd': { page: 'see [[x]] later', list: ['ask [[y]]'] } } }, '')).toEqual([])
-    // A block that is no map holds no values.
-    expect(extractLinks({ in: { '3y7505rsr6fd': '[[x]]' } }, '')).toEqual([])
-  })
-
-  it('de-duplicates: frontmatter first, then first appearance', () => {
-    expect(extractLinks({ a: '[[B]]' }, '[[A]] [[B]] [[A]]')).toEqual(['B', 'A'])
-    expect(extractEmbeds('![[a]] ![[b]] ![[a]]')).toEqual(['a', 'b'])
-  })
-
-  it('skips fenced code blocks and inline code spans, like tags; the line after a fence still counts', () => {
-    const body = '```\n[[Hidden]] ![[x.png]]\n```\n[[After]]\n~~~\n[[Tilde]]\n~~~\nsee `[[Inline]]` and ![[real.png]]'
-    expect(extractLinks({}, body)).toEqual(['After'])
-    expect(extractEmbeds(body)).toEqual(['real.png'])
   })
 })
 

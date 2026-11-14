@@ -13,7 +13,8 @@ import { subscribe } from '../fs/watchers'
 import { writeConfig } from '../vaultConfig'
 import { _swept, giveCardIds, sweepIds } from './idSweep'
 import { _evictAll, getIndex } from './index'
-import { extractLinks, extractTags, scanFile } from './scan'
+import { extractLinks, extractTags } from '@shared/indexRecord'
+import { scanFile } from './scan'
 
 let root: string
 beforeEach(async () => {

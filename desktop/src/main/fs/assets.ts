@@ -2,7 +2,7 @@ import { mkdir, readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { AssetResponse, AssetWriteRequest, AssetWriteResponse } from '@shared/types'
 import { DRAWING_EXTENSIONS, IMAGE_EXTENSIONS, MAX_FILE_BYTES } from '@shared/types'
-import { linkTarget } from '../vaultIndex/scan'
+import { linkTarget } from '@shared/indexRecord'
 import { atomicWrite, BridgeFailure, byNameCi, createDurable, fsCall, isSkipped, requireAbsPath, requireDir, resolveUnderRoot } from './fsUtils'
 import { requireRequest } from './validate'
 
