@@ -58,7 +58,7 @@ let props: CardInboxProps
 const TITLE = 'Capital of France'
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}, title = TITLE): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], size: 12, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, lastAdd: null, archived: [], ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], size: 12, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, upNext: true, lastAdd: null, archived: [], ...over }
 }
 
 function render() {
@@ -208,7 +208,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     render()
     expect(hasE()).toBe(true)
     press('e')
-    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, 0)
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, { id: 'WIKI-9', index: 0 })
   })
 
   it('YAZ-5145: in a read-only vault the row offers "E Edit card", and E asks Explore to edit (its own "Allow edits?" asks there); the Inbox keeps its card and step under it', () => {
@@ -220,7 +220,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(shown()).toEqual(['France'])
     expect([...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)).toContain('E Edit card')
     press('e')
-    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, 0)
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, { id: 'WIKI-9', index: 0 })
     expect(props.openPage).not.toHaveBeenCalled()
     // Back from Explore (the stack closed): the same card, the same step.
     render()
@@ -387,7 +387,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(props.openPage).toHaveBeenLastCalledWith(PATH)
     expect(vi.mocked(props.openPage).mock.calls[0]).toHaveLength(1)
     press('e')
-    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, 0)
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, { id: 'WIKI-9', index: 0 })
     expect(props.openPage).toHaveBeenCalledOnce()
     press('Enter', { metaKey: true })
     expect(props.openInTab).toHaveBeenCalledExactlyOnceWith(PATH)
@@ -675,6 +675,38 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.setFilter).toHaveBeenLastCalledWith('all')
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
     expect(rows()[1].querySelector('.card-inbox__count')?.hasAttribute('data-empty')).toBe(true)
+  })
+
+  /**
+   * YAZ-5321 (Yaseen: "Up next should only show if they have in the card base, in the vault, up next selected"): with no
+   * card of the vault marked Up next, the cards menu has no Up next row and the done screen says nothing of Up next. The
+   * row stays while Up next is the filter on show (its last card answered just now); one mark brings it back.
+   */
+  it('YAZ-5321: no card marked Up next: no Up next row in the menu, none on the done screen; one mark brings the row back', () => {
+    mount(TWO_SIDES)
+    session = { ...session, upNext: false }
+    render()
+    const open = () => act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
+    const rows = () => [...document.querySelectorAll<HTMLButtonElement>('.card-inbox__filter-item')].map((r) => r.textContent)
+    open()
+    expect(rows()).toEqual(['All cards12', 'Due today9', 'New cards3', 'Archived0'])
+    open()
+    // The done screen: nothing of Up next (nothing waits, no add).
+    session = { ...session, card: null, counts: { all: 0, next: 0, due: 0, new: 0 } }
+    render()
+    expect(el.querySelector('.card-inbox__done')?.textContent).not.toContain('Up next')
+    expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('Inbox complete.')
+    // Up next on show, its last card just answered: the row stays, checked, so the menu says where you are.
+    session = { ...session, filter: 'next', counts: { all: 10, next: 0, due: 7, new: 3 } }
+    render()
+    open()
+    expect(rows()).toEqual(['All cards10', 'Up next0', 'Due today7', 'New cards3', 'Archived0'])
+    open()
+    // One card marked Up next: the row is back.
+    session = { ...session, filter: 'all', upNext: true }
+    render()
+    open()
+    expect(rows()).toEqual(['All cards10', 'Up next0', 'Due today7', 'New cards3', 'Archived0'])
   })
 
   it('YAZ-5018: the buttons wear their glyphs — ✕ Forgot and ✓ Remembered; with four buttons ↺ Again, ~ Hard, ✓ Good, ⇈ Easy — each a round pill with its digit', async () => {
@@ -1003,11 +1035,11 @@ describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the brea
   })
 
   // YAZ-5307: Settings › Cards › Inbox: O opens the page at. The top (the default) asks for the page alone, as YAZ-5022;
-  // The card asks for it landed on the card (its index: Explore's page layer `card`, the one landing, YAZ-5164). The
+  // The card asks for it landed on the card (its ID and index: Explore's page layer `card`, found by its ID, the one landing, YAZ-5164). The
   // breadcrumb's page part and ⋯ › Open card open as O does. E and a card file do not change.
   it.each([
     ['top', [PATH]],
-    ['card', [PATH, 1]],
+    ['card', [PATH, { id: 'WIKI-9', index: 1 }]],
   ] as const)('YAZ-5307: with "%s", O, the breadcrumb`s page part and ⋯ › Open card ask for %j; E is unchanged', (openAt, asked) => {
     mount(PLAIN)
     props = { ...props, openAt }
@@ -1021,7 +1053,7 @@ describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the brea
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-action[aria-label="Open card"]')!.click())
     expect(vi.mocked(props.openPage).mock.calls).toEqual([asked, asked, asked])
     press('e')
-    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, 1)
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, { id: 'WIKI-9', index: 1 })
   })
 
   it('YAZ-5307: with "card", a card FILE still opens as itself (no card index)', () => {

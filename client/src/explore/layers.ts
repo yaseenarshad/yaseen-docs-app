@@ -5,6 +5,7 @@
  * keeps the list in state and the DOM keeps each layer's scroll.
  */
 import { fileKind } from '@shared/fileKind'
+import type { CardPlace } from '../editor/card/cardOpen'
 import { LEGACY_EXPLORE_PAGE_BOX_KEY, movedStorageItem } from '@shared/legacyNames'
 
 export type ExploreLayer =
@@ -22,8 +23,8 @@ export type ExploreLayer =
       editAsk?: number
       /** Bumped by ⌘↵ in edit (YAZ-4988): the layer saves, locks again if its timed unlock runs (Lock now), and reads. */
       leaveAsk?: number
-      /** The card to land on when the page opens (YAZ-4962): its place among the page's cards. */
-      card?: number
+      /** The card to land on when the page opens (YAZ-4962): its ID, and its place among the page's cards (YAZ-5164: found by its ID). */
+      card?: CardPlace
       /** The Inbox's E on a card in a page (YAZ-5145): once the layer edits, the card at `card` opens in Edit card. A card file's opens by itself (round 3). */
       editCard?: boolean
       /** Opened from the Inbox (YAZ-5009, YAZ-5145): ⌘↵ while reading goes back to the Inbox, not to a tab. */
@@ -82,7 +83,7 @@ export type FileLayer = Extract<ExploreLayer, { kind: 'page' | 'board' | 'card' 
  * `editCard` opens the landed card's Edit card (a card in a page), and
  * `fromInbox` makes ⌘↵ while reading go back to the Inbox.
  */
-export type ExploreRequest = { kind: 'page'; path: string; card?: number; edit?: boolean; editCard?: boolean; fromInbox?: boolean } | { kind: 'card'; path: string; cardId: string | null; index: number }
+export type ExploreRequest = { kind: 'page'; path: string; card?: CardPlace; edit?: boolean; editCard?: boolean; fromInbox?: boolean } | { kind: 'card'; path: string; cardId: string | null; index: number }
 
 /** The page, board or card layer nearest the top, or null: what ⌘↵ opens in a tab (a card's page). */
 export function topPage(layers: readonly ExploreLayer[]): FileLayer | null {

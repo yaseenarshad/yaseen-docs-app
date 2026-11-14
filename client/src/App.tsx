@@ -64,7 +64,7 @@ import { dropPageWindowsAt, renamePageWindows } from './views/view/PageWindow'
 import { moveExploreRecent, rememberExploreRecent } from './explore/exploreRecents'
 import type { ExploreRequest } from './explore/layers'
 import { CARD_OPEN, type CardOpenRequest } from './editor/card/cardBlockView'
-import { CARD_PREVIEW, type CardPreviewRequest } from './editor/card/cardOpen'
+import { CARD_PREVIEW, type CardPlace, type CardPreviewRequest } from './editor/card/cardOpen'
 import type { SearchVault } from './search/useSearchResults'
 import { dropHistoryPaths, renameHistoryPaths } from './views/view/valueHistory'
 import { setTypingArrows } from './editor/typingArrows'
@@ -1515,8 +1515,8 @@ export function App() {
    * here; a card file by the layer's own rule, as Explore's E on it (round 3).
    */
   // YAZ-5307: `card` (Settings › Cards › Inbox: O opens the page at › The card) lands on it as E and Explore's card rows do.
-  const openFromInbox = useCallback((path: string, card?: number) => openExploreWith({ kind: 'page', path, fromInbox: true, ...(card !== undefined && { card }) }), [openExploreWith])
-  const editFromInbox = useCallback((path: string, index: number | null) => openExploreWith({ kind: 'page', path, edit: true, fromInbox: true, ...(index !== null && { card: index, editCard: true }) }), [openExploreWith])
+  const openFromInbox = useCallback((path: string, card?: CardPlace) => openExploreWith({ kind: 'page', path, fromInbox: true, ...(card !== undefined && { card }) }), [openExploreWith])
+  const editFromInbox = useCallback((path: string, card: CardPlace | null) => openExploreWith({ kind: 'page', path, edit: true, fromInbox: true, ...(card !== null && { card, editCard: true }) }), [openExploreWith])
   // The card window (YAZ-4962, D13): every editor sends `mdapp:card-open` from its card (a click on the title,
   // ⋯ › Open card, ⌘↵); it bubbles to the document. A preview that does not know its page sends no path: nothing opens.
   useEffect(() => {

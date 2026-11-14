@@ -18,7 +18,7 @@ import { features } from '../featureConfig'
 import { CARD_OPEN, cardLanguage, cardBlockViewAt, setCardEditorKind, type CardOpenRequest } from './cardBlockView'
 import { refreshCardLook, renderCard } from './cardRender'
 import { READ_ONLY_EDIT, type ReadOnlyEditEvent } from '../readOnlyEdit'
-import { CARD_PREVIEW, landOnCard, takeCardLanding, type CardPreviewRequest } from './cardOpen'
+import { CARD_PREVIEW, landOnCard, pageCardIn, takeCardLanding, type CardPreviewRequest } from './cardOpen'
 import { FLASH_FRAMES } from '../toc/tocMotion'
 import { pageCards } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
@@ -267,6 +267,17 @@ describe('the card in the page', () => {
     expect(opened).toEqual([])
     const bare = await mount(CARD, { cards: { path: '/v/Page.md' } })
     expect(bare.root.querySelector<HTMLButtonElement>('.card__id')?.hidden).toBe(true)
+  })
+
+  it('YAZ-5164: each of the page\'s own cards carries its ID (`data-page-card`, `data-card-id`); Explore finds a card by its ID, its index only for one with none', async () => {
+    const { root } = await mount(`${CARD}<!-- card: WIKI-7 -->\n\n${CARD}<!-- card: WIKI-8 -->\n\n${CARD}`, { cards: { path: '/v/Page.md' } })
+    const own = [...root.querySelectorAll<HTMLElement>('.card')]
+    expect(own.map((c) => [c.dataset.pageCard, c.dataset.cardId])).toEqual([['', 'WIKI-7'], ['', 'WIKI-8'], ['', undefined]])
+    // By ID, whatever the index says (an index read before a card was added above it).
+    expect(pageCardIn(root, { id: 'WIKI-8', index: 0 })).toBe(own[1])
+    expect(pageCardIn(root, { id: 'wiki-404', index: 1 })).toBeNull()
+    // A card with no ID yet: its place.
+    expect(pageCardIn(root, { id: null, index: 2 })).toBe(own[2])
   })
 
   it('YAZ-5152: ⋯ › Preview, P on the selected card, and Edit card\'s Preview each send the one preview ask, with the card as shown (the typed text in Edit card); none writes', async () => {

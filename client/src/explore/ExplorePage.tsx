@@ -48,6 +48,7 @@ import { useTimedUnlock } from '../editor/useTimedUnlock'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { landOn } from '../editor/toc/tocMotion'
 import { cardBlockViewOfDom } from '../editor/card/cardBlockView'
+import { pageCardIn, type CardPlace } from '../editor/card/cardOpen'
 import { recordAt } from '../editor/card/embedCard'
 import { KeyCaps } from '../keys/KeyCaps'
 
@@ -94,8 +95,8 @@ interface ExplorePageProps {
   editAsk?: number
   /** Bumped by ⌘↵ in edit (YAZ-4988): save, lock again at once while the timed unlock runs (Lock now), and read. */
   leaveAsk?: number
-  /** The card to land on once the page shows (YAZ-4962): its place among the page's cards. */
-  card?: number
+  /** The card to land on once the page shows (YAZ-4962): found by its ID (YAZ-5164, `pageCardIn`), its index only while it has none. */
+  card?: CardPlace
   /** The Inbox's E on a card in a page (YAZ-5145): once the layer edits, the card at `card` opens in Edit card, one time. A card file's opens by itself (round 3). */
   editCard?: boolean
   /** Opened by the Inbox (YAZ-5145): ⌘↵ while reading goes back to it, so ↗ does not say ⌘↵. */
@@ -402,8 +403,8 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
     let timer: ReturnType<typeof setTimeout> | undefined
     const tick = () => {
       const scope = mode === 'read' ? mountRef.current : editBodyRef.current
-      const target = scope?.querySelectorAll<HTMLElement>('.card')[card]
-      if (target !== undefined) {
+      const target = pageCardIn(scope, card)
+      if (target !== null) {
         landed.current = true
         landOn(target)
         return
@@ -434,7 +435,7 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
     let timer: ReturnType<typeof setTimeout> | undefined
     const tick = () => {
       const scope = editBodyRef.current
-      const view = pageCard === undefined ? null : cardBlockViewOfDom(scope?.querySelectorAll<HTMLElement>('.card')[pageCard] ?? null)
+      const view = pageCard === undefined ? null : cardBlockViewOfDom(pageCardIn(scope, pageCard))
       const fileEdit = pageCard === undefined ? (scope?.querySelector<HTMLButtonElement>('[data-card-file-edit]') ?? null) : null
       if ((view !== null && view.view.editable) || fileEdit !== null) {
         cardOpened.current = true
