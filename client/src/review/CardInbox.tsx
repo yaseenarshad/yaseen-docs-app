@@ -60,9 +60,10 @@
  *    mouse; the answer writes its active seconds on its review part (`… good 13s`). The top row says today's work
  *    across the vault, "Today: 31 cards · 9 min" (`session.today`, from the index), and the done screen says it too.
  *  - REVIEWS AT THE BOTTOM OF THE LAST SIDE (YAZ-5105, as Mochi; it amends YAZ-5000, which took them out of the Inbox):
- *    once the card is fully shown, a card with reviews has the Reviews strip ("✓ 4 Reviews") right under the card,
- *    outside its frame (round 2): the card window's own `CardReviews`, closed until asked for, with no delete here.
- *    Never on the front or an earlier side. It is no Space step, and the scroll never goes to it; the buttons' band
+ *    a card with reviews has the Reviews strip ("✓ 4 Reviews") right under the card, outside its frame (round 2): the
+ *    card window's own `CardReviews`, closed until asked for, with no delete here. Round 3: it shows as soon as the
+ *    LAST side shows, its hidden words shown or not (a one-side card: after its first Space, or at once with nothing
+ *    hidden). Never on the front or an earlier side. It is no Space step, and the scroll never goes to it; the buttons' band
  *    stays at the bottom of the view over it.
  *  - Nothing left: "Inbox complete." for the vault; for one page or folder "This page is done." and, quiet, "21 more in
  *    the Inbox", which starts the vault's review.
@@ -254,6 +255,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   const done = text !== null && step.sides >= counts.length && step.shown >= hiddenUpTo(counts.length)
   // YAZ-5048: the next Space shows the next side (the sides that show have no hidden word left).
   const nextSide = !done && text !== null && step.shown >= hiddenUpTo(step.sides)
+  // YAZ-5105 round 3 (Yaseen: "just show on the last side … regardless of it hidden words are all revealed or not"):
+  // the card's last side shows, past its front. A one-side card's front IS its last side: past it means its first
+  // Space has shown something, or it has nothing to show (fully shown at once).
+  const onLastSide = text !== null && step.sides >= counts.length && (step.sides > 1 || step.shown > 0 || done)
 
   // YAZ-5049 (Yaseen: "kinda like we have in the app our CMD F search"): the word a Space shows, or the side it adds,
   // comes into view, gliding; never centred. Only a step of the same card moves it. The card's render runs first.
@@ -512,9 +517,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
             )}
           </div>
         </div>
-        {/* YAZ-5105 round 2: the Reviews strip, as Mochi's, under the card and outside its frame, once the last side is
-            fully shown; closed again for each card. The buttons' band stays at the bottom of the view over it. */}
-        {card?.page != null && text !== null && session.filter !== 'archived' && done && card.page.reviews.length > 0 && <CardReviews key={cardKey} reviews={card.page.reviews} settings={review.settings} />}
+        {/* YAZ-5105 round 2: the Reviews strip, as Mochi's, under the card and outside its frame; round 3: as soon as the
+            last side shows, its hidden words shown or not; closed again for each card. The buttons' band stays at the
+            bottom of the view over it. */}
+        {card?.page != null && session.filter !== 'archived' && onLastSide && card.page.reviews.length > 0 && <CardReviews key={cardKey} reviews={card.page.reviews} settings={review.settings} />}
         {/* Under the card, outside its frame, as in Mochi (YAZ-5002): the answer buttons, then the keys. No "Press Space"
             line between them (YAZ-5021): the key row at the bottom already says Space. */}
         {/* YAZ-5049 round 2: the buttons and their line stay at the bottom of the view while a long card scrolls under them. */}
