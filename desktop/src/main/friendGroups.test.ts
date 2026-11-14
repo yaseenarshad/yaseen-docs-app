@@ -534,7 +534,19 @@ describe('reading a group (decisions 23 and 25; round 10, addition 13)', () => {
       ['ali', 'done'],
       ['bea', 'not-started'],
     ])
-    expect(view.streak).toBe(0) // the 13th: Ali has no entry (her first answer is the 14th)
+    // Bea joined today: the streak counts her from tomorrow, so today it is Ali's own day (her first answer is the 14th).
+    expect(view.streak).toBe(1)
+    expect(view.members.map((m) => [m.login, m.joinedToday])).toEqual([
+      ['ali', false],
+      ['bea', true],
+    ])
+    expect(groupViewMessage(view)).toBe('Bea joined today. The group streak counts them from tomorrow.')
+    w.advance(24 * 60 * 60_000)
+    await members.bea.api.update(beaStats, { [NUMBERS_FILE]: JSON.stringify(stats('bea', [day('2026-11-15', 0, false), day('2026-11-14', 0, false), day('2026-11-13', 4, true)])) })
+    const tomorrow = await readGroup(ali.api, ali.handle, group, newListCache(), w.now())
+    if (tomorrow.kind !== 'ok') throw new Error(tomorrow.kind)
+    expect(tomorrow.members.every((m) => !m.joinedToday)).toBe(true)
+    expect(groupViewMessage(tomorrow)).toBeNull()
   })
 })
 
@@ -561,6 +573,23 @@ describe('groupStreak (round 10, addition 13; decision 9: each member`s own loca
     expect(groupStreak([ny, stale], T)).toBe(0)
     expect(groupStreak([], T)).toBe(0)
     expect(groupStreak([ny, m()], T)).toBe(0)
+  })
+
+  it('a member who joins today is not counted in the group streak until the next day', () => {
+    const ny = m(day(T, 1, true), day('2026-11-13', 1, true), day('2026-11-12', 1, true))
+    // Added today (14 November, 10:00 in New York): no answer yet, and not finished today.
+    const fresh = { days: [day(T, 0, false)], since: '2026-11-14T15:00:00Z' }
+    const none = { days: [] as FriendDay[], since: '2026-11-14T15:00:00Z' }
+    expect(groupStreak([ny, fresh], T)).toBe(3)
+    expect(groupStreak([ny, none], T)).toBe(3)
+    // The next day the new member counts, for that day on: today may still wait; an unfinished day after it stops it.
+    const next = '2026-11-15'
+    const ny2 = m(day(next, 1, true), ...ny.days)
+    expect(groupStreak([ny2, { days: [day(next, 2, true), day(T, 0, false)], since: fresh.since }], next)).toBe(4)
+    expect(groupStreak([ny2, { days: [day(next, 0, false), day(T, 0, false)], since: fresh.since }], next)).toBe(3)
+    expect(groupStreak([ny2, { days: [day('2026-11-16', 0, false), day(next, 0, false)], since: fresh.since }], '2026-11-16')).toBe(0)
+    // A member with no `since` (a file from before) counts on every day, as before.
+    expect(groupStreak([ny, m(day(T, 0, false))], T)).toBe(0)
   })
 
   it('dailyMark (decision 25): not started, started, done; null with no entry for today', () => {

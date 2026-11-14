@@ -70,6 +70,11 @@ export interface GroupMember {
   login: string
   /** The member's pointer gist for this group. */
   pointer: string
+  /**
+   * When the admin added the member (ISO). The group streak counts a member from the day AFTER this day (the reader's
+   * local day). Absent (the admin, and members added before this field): counted on every day.
+   */
+  since?: string
 }
 
 /** A group, in ONE secret gist of its admin (decision 18). Members read it; only the admin can change it. */
@@ -185,7 +190,10 @@ export function parseGroupFile(text: string | null | undefined): FileState<Group
   for (const key of ['name', 'admin'] as const) if (key in raw && typeof raw[key] !== 'string') return { kind: 'unreadable', why: `${key} is not a text` }
   if ('removed' in raw && !Array.isArray(raw.removed)) return { kind: 'unreadable', why: 'removed is not a list' }
   const removed = Array.isArray(raw.removed) ? raw.removed.filter(isGistId).map((x) => x.toLowerCase()).slice(-REMOVED_MAX) : undefined
-  const members = (Array.isArray(raw.members) ? raw.members : []).filter(memberOk).map((m) => ({ login: shown(m.login, ''), pointer: (m.pointer as string).toLowerCase() }))
+  const sinceOk = (v: unknown): v is string => typeof v === 'string' && v.length <= 40 && Number.isFinite(Date.parse(v))
+  const members = (Array.isArray(raw.members) ? raw.members : [])
+    .filter(memberOk)
+    .map((m) => ({ login: shown(m.login, ''), pointer: (m.pointer as string).toLowerCase(), ...(sinceOk(m.since) && { since: m.since }) }))
   return { kind: 'ok', value: { v: 1, name: shown(raw.name, 'Group'), admin: shown(raw.admin, ''), members, ...(removed !== undefined && { removed }) }, raw }
 }
 
@@ -506,11 +514,10 @@ export async function addMember(api: GistsApi, handle: IndexHandle, group: strin
     if (current.file.members.some((m) => same(m.login)) || same(current.file.admin)) return { kind: 'duplicate', login: who.login }
     const file: GroupFile = {
       ...current.file,
-      members: [...current.file.members, { login: who.login, pointer: link.pointer }],
+      members: [...current.file.members, { login: who.login, pointer: link.pointer, since: new Date(opts.now()).toISOString() }],
       ...(current.file.removed !== undefined && { removed: current.file.removed.filter((p) => p !== link.pointer) }),
     }
     await api.update(group, { [GROUP_FILE]: groupFileText(file, current.raw) })
-    void opts
     return { kind: 'done', file }
   } catch (err) {
     return failure(err)
@@ -675,25 +682,32 @@ const dayBefore = (day: string): string => {
  * - The two newest days (today and yesterday) may wait: a member who has not finished their own today, or who has not
  *   reached the date yet (another time zone), does not stop the streak there; that day just does not count yet.
  * - Any other day stops the streak unless every member has it and finished it. A member who stopped sending stops it.
- * Pure. Nobody, or a member with no day at all: 0.
+ * - A member who joined (`since`, when the admin added them) counts from the next day on: not on the day they joined,
+ *   and not on the days before it.
+ * Pure. Nobody, or a member with no day at all (and no `since`): 0.
  */
-export function groupStreak(members: readonly { days: readonly FriendDay[] }[], today: string): number {
+export function groupStreak(members: readonly { days: readonly FriendDay[]; since?: string }[], today: string): number {
   if (members.length === 0) return 0
+  const joined = members.map((m) => (m.since === undefined || !Number.isFinite(Date.parse(m.since)) ? null : localDay(Date.parse(m.since))))
   let streak = 0
   let date = today
   for (let walked = 0; walked < 90; walked++, date = dayBefore(date)) {
     let all = true
     let wait = false
-    for (const m of members) {
+    let counted = 0
+    for (const [i, m] of members.entries()) {
+      if (joined[i] !== null && date <= joined[i]!) continue
+      counted++
       const newest = m.days[0]?.day
-      if (newest === undefined) return 0
+      if (newest === undefined && joined[i] === null) return 0
       const entry = m.days.find((d) => d.day === date)
       if (entry?.done) continue
       all = false
-      const pending = (entry !== undefined && date === newest) || (entry === undefined && date > newest)
+      const pending = (entry !== undefined && date === newest) || (entry === undefined && (newest === undefined || date > newest))
       if (walked < 2 && pending) wait = true
       else return streak
     }
+    if (counted === 0) return streak
     if (all) streak++
     else if (!wait) return streak
   }
@@ -714,6 +728,8 @@ export interface GroupMemberRow {
   read: FriendRead | null
   label: string | null
   mark: DailyMark | null
+  /** The admin added this member today (the reader's day): the group streak counts them from tomorrow. */
+  joinedToday?: boolean
 }
 
 /**
@@ -740,7 +756,7 @@ export type GroupView =
   | { kind: 'removing'; group: string; name: string }
   | { kind: 'not-found' }
 
-/** Plain words for a group view that is not `ok` (round 14), or null. */
+/** Plain words for a group view that is not `ok` (round 14), or null. For `ok`: who joined today (or null). */
 export function groupViewMessage(view: GroupView): string | null {
   switch (view.kind) {
     case 'waiting':
@@ -759,6 +775,12 @@ export function groupViewMessage(view: GroupView): string | null {
       return 'Removing…'
     case 'not-added':
       return 'The admin did not add you. Send them your join link again, or tap Leave.'
+    case 'ok': {
+      // The group streak counts a member from the day after the admin added them.
+      const fresh = view.members.filter((m) => m.joinedToday === true)
+      if (fresh.length === 0) return null
+      return `${fresh.length === 1 ? fresh[0].name : `${fresh.length} people`} joined today. The group streak counts them from tomorrow.`
+    }
     default:
       return null
   }
@@ -801,7 +823,8 @@ export async function readGroup(api: GistsApi, handle: IndexHandle, group: strin
   const rows: GroupMemberRow[] = []
   for (const m of file.members) {
     const read = await readFriend(api, m.pointer, cache.reads)
-    const row: GroupMemberRow = { login: m.login, name: m.login || 'Friend', pointer: m.pointer, me: m.pointer === entry.mine, admin: m.login !== '' && m.login === file.admin, state: 'offline', read, label: null, mark: null }
+    const joinedToday = m.since !== undefined && localDay(Date.parse(m.since)) === today
+    const row: GroupMemberRow = { login: m.login, name: m.login || 'Friend', pointer: m.pointer, me: m.pointer === entry.mine, admin: m.login !== '' && m.login === file.admin, state: 'offline', read, label: null, mark: null, joinedToday }
     switch (read.kind) {
       case 'ok':
         row.state = 'ok'
@@ -829,7 +852,8 @@ export async function readGroup(api: GistsApi, handle: IndexHandle, group: strin
     }
     rows.push(row)
   }
-  const numbers = rows.flatMap((r) => (r.read?.kind === 'ok' ? [r.read.stats] : []))
+  const since = new Map(file.members.map((m) => [m.pointer, m.since]))
+  const numbers = rows.flatMap((r) => (r.read?.kind === 'ok' ? [{ days: r.read.stats.days, since: since.get(r.pointer) }] : []))
   return { kind: 'ok', ...base, name: file.name, admin: file.admin, iAmAdmin: entry.admin, members: rows, streak: groupStreak(numbers, today), firstSeen: !entry.admin && entry.joined !== true }
 }
 
