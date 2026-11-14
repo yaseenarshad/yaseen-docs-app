@@ -19,7 +19,7 @@ import { cancelHelperInstall } from './ipc/lsp'
 import { ensureLibraryFolder } from './library/folder'
 import { broadcastAll, rootsOf, senderRoots } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
-import { registerPhoneIpc } from './ipc/phone'
+import { phoneConfirmOptions, registerPhoneIpc } from './ipc/phone'
 import { registerFriendsIpc } from './ipc/friends'
 import { onRendererSecretSet } from './ipc/secrets'
 import { startFriendsSend } from './friends'
@@ -435,17 +435,10 @@ app.whenReady().then(() => {
     build: (root) => buildPhoneCode(phoneCodeDeps(secrets), root),
     // YAZ-5218: a real click or key that main saw, then main's own confirm, which page code cannot click.
     lastInputAt,
-    confirm: async (sender) => {
+    confirm: async (sender, repo) => {
       const win = BrowserWindow.fromWebContents(sender)
       if (win === null) return false
-      const { response } = await dialog.showMessageBox(win, {
-        type: 'warning',
-        buttons: ['Show code', 'Cancel'],
-        defaultId: 1,
-        cancelId: 1,
-        message: 'Show the phone code of this vault?',
-        detail: 'Anyone who can see this code can change your vault. It hides after 60 seconds.',
-      })
+      const { response } = await dialog.showMessageBox(win, phoneConfirmOptions(repo))
       return response === 0
     },
     now: () => Date.now(),
