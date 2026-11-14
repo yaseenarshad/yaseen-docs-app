@@ -20,7 +20,7 @@ import { inLineEnds, withLf } from './lineEnds'
  * seconds, `2026-11-12T14:05Z good 13s`; an older review has none). `off` takes the card out of review. `next` puts it at the top of the Inbox
  * (YAZ-4999 D3, "Up next"): its first answer removes it, in the same write. `notitle` hides the card's title (its
  * first line, `cardTitle`) on the Inbox's front (YAZ-5030, "Title on the front: Hide"); absent, the title shows, as on
- * every card before it. A card takes its ID when it is
+ * every card before it. `fix` marks the card "Fix later" (YAZ-5097): it has a mistake to fix at the desk; it stays in review. A card takes its ID when it is
  * made (`/card` asks the vault's door, `yaseendocs card add` too); one that has none (an agent's text, a paste) gets
  * it from the index's sweep (YAZ-4960). The due date is never written: `cardSchedule.ts` replays the reviews.
  *
@@ -48,7 +48,7 @@ export interface CardReview {
 export const CARD_SECONDS_MAX = 86400
 
 /** One part of a card line, in the order the line holds them. */
-export type CardPart = { kind: 'id'; id: string } | { kind: 'review'; review: CardReview } | { kind: 'off' } | { kind: 'next' } | { kind: 'notitle' } | { kind: 'other'; text: string }
+export type CardPart = { kind: 'id'; id: string } | { kind: 'review'; review: CardReview } | { kind: 'off' } | { kind: 'next' } | { kind: 'notitle' } | { kind: 'fix' } | { kind: 'other'; text: string }
 
 /** What a card line holds. `parts` keeps every part in place; the getters below read it. */
 export interface CardLine {
@@ -103,6 +103,7 @@ export function parseCardLine(value: string): CardLine | null {
     else if (text === 'off') parts.push({ kind: 'off' })
     else if (text === 'next') parts.push({ kind: 'next' })
     else if (text === 'notitle') parts.push({ kind: 'notitle' })
+    else if (text === 'fix') parts.push({ kind: 'fix' })
     else if (!id && isNumberId(text)) {
       id = true
       parts.push({ kind: 'id', id: canonicalPageId(text) })
@@ -187,20 +188,21 @@ export function withCardNoTitle(line: CardLine, hide: boolean): CardLine {
 }
 
 /**
- * The "Fix later" mark (YAZ-5097; round 10, addition 3 of YAZ-5055): the word `fix` on the card line. The phone writes
- * it (YAZ-5073). Until YAZ-5097 gives it a part kind of its own, it is the unknown part `fix`, which every build of the
- * app keeps as its text, in its place (the older-app rule, addition 17). YAZ-5097 changes these two functions only.
+ * The "Fix later" mark (YAZ-5097; round 10, addition 3 of YAZ-5055): the word `fix` on the card line, its own part kind
+ * as `off`, `next` and `notitle` are. The phone writes it (YAZ-5073, the `fix` action), the Mac's ⋯ menus too; the
+ * To fix list reads it off the index (`CardRecord.fix`). An older build reads it as the unknown part `fix` and keeps it
+ * as its text, in its place (the older-app rule, addition 17): the bytes on disk are the same for both.
  */
 export const CARD_FIX = 'fix'
-export const isCardFix = (line: CardLine): boolean => line.parts.some((p) => p.kind === 'other' && p.text === CARD_FIX)
+export const isCardFix = (line: CardLine): boolean => line.parts.some((p) => p.kind === 'fix')
 
 /** Fix later on or off: `fix` goes after the ID and any `off` / `next` / `notitle` right after it, or first; off removes every `fix`. */
 export function withCardFix(line: CardLine, on: boolean): CardLine {
   if (isCardFix(line) === on) return line
-  if (!on) return { parts: line.parts.filter((p) => !(p.kind === 'other' && p.text === CARD_FIX)) }
+  if (!on) return { parts: line.parts.filter((p) => p.kind !== 'fix') }
   let i = line.parts.findIndex((p) => p.kind === 'id') + 1
   while (line.parts[i]?.kind === 'off' || line.parts[i]?.kind === 'next' || line.parts[i]?.kind === 'notitle') i++
-  return { parts: [...line.parts.slice(0, i), { kind: 'other', text: CARD_FIX }, ...line.parts.slice(i)] }
+  return { parts: [...line.parts.slice(0, i), { kind: 'fix' }, ...line.parts.slice(i)] }
 }
 
 /** The place among the line's parts of its `next` part, or -1 when the card is not up next. */

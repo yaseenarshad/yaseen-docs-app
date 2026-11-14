@@ -68,15 +68,28 @@ describe('the `fix` part (YAZ-5097)', () => {
 })
 
 describe('the older-app rule (round 10, addition 17): a build that does not know `fix` keeps it', () => {
-  // An older Mac build reads a word it does not know as `{ kind: 'other', text }` and writes it back in its place. The
-  // phone's `fix` is held in exactly that shape (`isCardFix` reads it), so this build and an older one read the same
-  // parts, and each of the older build's own writes (an answer, Archive, Up next, an ID) keeps it byte for byte.
-  it('a card line with `fix` parses to the unknown-part shape an older build has, and writes back byte for byte', () => {
-    for (const body of [`WIKI-5, fix, ${R1}`, `WIKI-5, off, next, notitle, fix, ${R1}, ${R2}`, `fix`, `WIKI-5, ${R1}, fix, future-part`]) {
+  // An older Mac build (before YAZ-5097) has no `fix` kind: its parser reads the word as `{ kind: 'other', text: 'fix' }`
+  // and writes it back as its text, in its place. `asOlderBuild` turns this build's parts into that build's parts.
+  const asOlderBuild = (line: CardLine): CardLine => ({ parts: line.parts.map((p) => (p.kind === 'fix' ? { kind: 'other', text: 'fix' } : p)) })
+
+  it('this build reads `fix` as its own part kind, and writes the line back byte for byte', () => {
+    for (const body of [`WIKI-5, fix, ${R1}`, `WIKI-5, off, next, notitle, fix, ${R1}, ${R2}`, 'fix', `WIKI-5, ${R1}, fix, future-part`]) {
       const line = parse(body)
-      expect(line.parts.filter((p) => p.kind === 'other' && p.text === 'fix')).toHaveLength(1)
+      expect(line.parts.filter((p) => p.kind === 'fix')).toHaveLength(1)
       expect(write(line)).toBe(body)
     }
+  })
+
+  it('an older build holds `fix` as an unknown part, writes the same bytes, and each of its own writes keeps the mark', () => {
+    const body = `WIKI-5, next, fix, ${R1}, future-part`
+    const older = asOlderBuild(parse(body))
+    expect(older.parts[2]).toEqual({ kind: 'other', text: 'fix' })
+    expect(write(older)).toBe(body)
+    // The older build's writes (an answer, Archive, Up next off, Reset history, a new ID): `fix` stays in its place.
+    const saved = withCardId(withoutCardReviews(withCardNext(withCardOff(withCardReview(older, { at: '2026-11-13T10:00Z', rating: 'again', seconds: 7 }), true), false)), 'WIKI-9')
+    expect(write(saved)).toBe('WIKI-9, off, fix, future-part')
+    // ... and this build reads what the older build saved as the mark again.
+    expect(isCardFix(parse(write(saved)))).toBe(true)
   })
 
   it('an unknown word in the place of `fix` (the next mark a newer phone may write) is kept the same way', () => {

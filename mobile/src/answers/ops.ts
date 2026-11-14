@@ -91,13 +91,13 @@ export class UnsentChangeError extends Error {
 /**
  * A change of card `id`'s line (the review host's `changeCardLine`, the ⋯ menu) as actions: each mark that changed,
  * then each review taken out, then each review added. Applied to `before`, they give `after`'s marks and reviews.
- * Any other change (the title on the front, an ID, an unknown part other than `fix`) cannot be sent: it throws
+ * Any other change (the title on the front, an ID, an unknown part) cannot be sent: it throws
  * `UnsentChangeError`, so nothing is half saved.
  */
 export function opsBetween(id: string, before: CardLine, after: CardLine): CardOp[] {
   const rest = (line: CardLine) =>
     line.parts
-      .filter((p) => p.kind !== 'review' && p.kind !== 'off' && p.kind !== 'next' && !(p.kind === 'other' && p.text === 'fix'))
+      .filter((p) => p.kind !== 'review' && p.kind !== 'off' && p.kind !== 'next' && p.kind !== 'fix')
       .map((p) => (p.kind === 'id' ? `id:${p.id}` : p.kind === 'other' ? `other:${p.text}` : p.kind))
       .join(',')
   if (rest(before) !== rest(after)) throw new UnsentChangeError(id)
