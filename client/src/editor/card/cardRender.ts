@@ -22,6 +22,9 @@
  *    its text; a link to a card (YAZ-5030, `look.link` gives `card`) is the card pill, title, ID and card icon.
  *    `look.image` gives an image's URL (the vault's `app://vault/…`, `imageSrc.ts`); Obsidian's `alt|300`
  *    is the width. Without `look`, a link shows its text and an image keeps its source.
+ *  - A GFM table (YAZ-5136) is a real table, its hidden words as anywhere else, in a box that scrolls sideways
+ *    (`.card__table`); DOMPurify's HTML profile keeps the table tags and `align`, and drops a handler as anywhere.
+ *    `card.css` and `table.css` draw it as the page's tables.
  *  - A sound (`![](x.mp3)`, `![[x.mp3]]`; YAZ-5014) is the one-line player, its URL by `look.image`; a board embed
  *    (`![[x.excalidraw]]`, `![[x.drawio]]`; YAZ-5015) is the board's still picture, its file by `look.board` (no
  *    `look.board`: its text; it does not resolve: the unresolved pill). Both are built AFTER DOMPurify from a marker
@@ -119,6 +122,16 @@ function sanitize(html: string): DocumentFragment {
 
 /** One side's or one hidden word's Markdown as a sanitised fragment. */
 const fragmentOf = (text: string, inline: boolean): DocumentFragment => sanitize(inline ? markdown.parseInline(text, { async: false }) : markdown.parse(text, { async: false }))
+
+/** Each table of `root` in a box that scrolls sideways (YAZ-5136): a wide table scrolls in the card, not the view. */
+function boxTables(root: ParentNode): void {
+  for (const table of root.querySelectorAll('table')) {
+    const box = document.createElement('div')
+    box.className = 'card__table'
+    table.replaceWith(box)
+    box.append(table)
+  }
+}
 
 /** The text nodes of `root` that hold a placeholder. */
 function placeholderTexts(root: Node): Text[] {
@@ -295,6 +308,7 @@ export function renderCard(text: string, show: CardShow = {}, look?: CardLook): 
     side.className = 'card__side'
     side.dataset.side = String(i)
     side.append(fragmentOf(marked, false))
+    boxTables(side)
     fillHidden(side, words, shown)
     applyLook(side, look)
     if (i > 0) {
