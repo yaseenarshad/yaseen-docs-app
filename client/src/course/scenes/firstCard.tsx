@@ -377,10 +377,25 @@ function CardBase(props: SceneProps) {
 
 /** The example for the hands-on steps: a person who skips typing still makes a card. */
 const EXAMPLE_FRONT = 'Your body builds and repairs with protein.'
+const EXAMPLE_WORD = 'protein.'
 const EXAMPLE_BACK = 'An egg is mostly protein and fat.'
+/** The back's example when the person wrote their own front: true of any card made here. */
+const EXAMPLE_BACK_ANY = 'I learned this this week.'
+/** The label of each quiet button that fills in an example, the same everywhere in the course. */
+export const USE_AN_EXAMPLE = 'Use an example'
 
 /** A word's core, for the blank: no punctuation around it. */
 const wordCore = (w: string): string => w.replace(/^[("“‘]+|[.,!?;:)"”’]+$/g, '')
+
+/** The word the course suggests to hide: the example's key word; in the person's own front, the longest word. */
+export function suggestedWord(words: readonly string[]): number {
+  if (words.join(' ') === EXAMPLE_FRONT) return words.indexOf(EXAMPLE_WORD)
+  let best = -1
+  words.forEach((w, i) => {
+    if (wordCore(w).length > 0 && (best < 0 || wordCore(w).length >= wordCore(words[best]).length)) best = i
+  })
+  return best
+}
 
 /**
  * c2-06 to c2-13, one span: the person makes a first card. The steps that wait (c2-07, c2-08, c2-28, c2-10, c2-11)
@@ -409,6 +424,8 @@ function MakeCard(props: SceneProps) {
   useEffect(() => {
     // The layer holds a clip that waits each time it starts, so a clip entered again gets its own `done`.
     doneFor.current.delete(id)
+    // The back starts with the example's detail as real text, so Add works at once; the person may change it.
+    if (id === 'c2-28' && back === null && backDraft === '' && front === EXAMPLE_FRONT) setBackDraft(EXAMPLE_BACK)
     if (!waits) return
     const already = (id === 'c2-07' && front !== '') || (id === 'c2-08' && hide >= 0) || (id === 'c2-28' && back !== null) || (id === 'c2-10' && reveal >= 1) || (id === 'c2-11' && answer !== null)
     if (already) finish(id)
@@ -423,6 +440,7 @@ function MakeCard(props: SceneProps) {
 
   const words = (front === '' ? EXAMPLE_FRONT : front).split(/\s+/).filter((w) => w !== '')
   const text = draftText(words, hide, back ?? '')
+  const suggested = suggestedWord(words)
   const submitFront = (e?: FormEvent): void => {
     e?.preventDefault()
     if (front !== '') return
@@ -447,6 +465,13 @@ function MakeCard(props: SceneProps) {
     e?.preventDefault()
     if (back !== null) return
     setBack(skip ? '' : backDraft.trim())
+    finish('c2-28')
+  }
+  const useExampleBack = (): void => {
+    if (back !== null) return
+    const value = front === EXAMPLE_FRONT ? EXAMPLE_BACK : EXAMPLE_BACK_ANY
+    setBackDraft(value)
+    setBack(value)
     finish('c2-28')
   }
   const tapCard = (): void => {
@@ -500,7 +525,7 @@ function MakeCard(props: SceneProps) {
             Next
           </button>
           <button type="button" className="kit-link" disabled={front !== ''} onClick={useExample}>
-            Use this example
+            {USE_AN_EXAMPLE}
           </button>
         </div>
       </form>
@@ -511,12 +536,19 @@ function MakeCard(props: SceneProps) {
         <p className="kit-words-pick" role="group" aria-label="Tap the word to hide">
           {words.map((w, i) => (
             <span key={`${w}-${i}`}>
-              <button type="button" className="kit-word" aria-pressed={i === hide} onClick={() => pick(i)}>
+              <button type="button" className={`kit-word${hide < 0 && i === suggested ? ' is-suggested' : ''}`} aria-pressed={i === hide} onClick={() => pick(i)}>
                 {w}
               </button>{' '}
             </span>
           ))}
         </p>
+        {hide < 0 && suggested >= 0 && (
+          <div className="kit-make__row">
+            <button type="button" className="kit-link" onClick={() => pick(suggested)}>
+              {USE_AN_EXAMPLE}
+            </button>
+          </div>
+        )}
         {hide >= 0 && (
           <p className="kit-showonly">
             Saved as <code>{`{{${wordCore(words[hide])}}}`}</code>
@@ -587,7 +619,6 @@ function MakeCard(props: SceneProps) {
                 value={back !== null ? back : backDraft}
                 readOnly={back !== null}
                 maxLength={200}
-                placeholder={EXAMPLE_BACK}
                 onChange={(e) => setBackDraft(e.target.value)}
               />
             </div>
@@ -595,6 +626,11 @@ function MakeCard(props: SceneProps) {
               <button type="submit" className="course__btn course__btn--primary" disabled={back !== null}>
                 Add
               </button>
+              {back === null && backDraft.trim() === '' && (
+                <button type="button" className="kit-link" onClick={useExampleBack}>
+                  {USE_AN_EXAMPLE}
+                </button>
+              )}
               <button type="button" className="kit-link" disabled={back !== null} onClick={() => submitBack(undefined, true)}>
                 Skip
               </button>

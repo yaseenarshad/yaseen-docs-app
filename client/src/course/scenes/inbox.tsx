@@ -50,7 +50,7 @@ import {
 import type { ChapterScenes } from './registry'
 import './inbox.css'
 
-/** The card the person made in chapter 2, as "Use this example" makes it. */
+/** The card the person made in chapter 2, as "Use an example" makes it. */
 const FIRST_FRONT = 'Your body builds and repairs with {{protein}}.'
 const FIRST = { title: draftTitle(FIRST_FRONT), id: 'DEMO-10', text: `${FIRST_FRONT}\n---\nAn egg is mostly protein and fat.` }
 
