@@ -7,10 +7,11 @@ import { courseTranscript, TRANSCRIPT_FIRST_LINE } from './transcript'
 /** The skill's page made from the script. `UPDATE_COURSE_TRANSCRIPT=1 npx vitest run client/src/course/script.test.ts` writes it again. */
 const PAGE = resolve(__dirname, '../../../skills/card-skill/Course transcript.md')
 
-describe('the course script (YAZ-5119)', () => {
-  it('has the 8 chapters, and chapter 1 keeps the sample\'s ids', () => {
-    expect(COURSE).toHaveLength(8)
-    expect(COURSE[0].clips.slice(0, 6).map((c) => c.id)).toEqual(['s1a', 's1b', 's2a', 's2b', 's3a', 's3b'])
+describe('the course script (YAZ-5119, version 2 YAZ-5147)', () => {
+  it('has the 11 chapters with unique ids, and chapter 1 keeps the two sample clips whose words did not change', () => {
+    expect(COURSE).toHaveLength(11)
+    expect(new Set(COURSE.map((ch) => ch.id)).size).toBe(COURSE.length)
+    expect(COURSE[0].clips.filter((c) => /^s\d[ab]$/.test(c.id)).map((c) => c.id)).toEqual(['s2b', 's3a'])
   })
 
   it('gives each clip a unique id of the form c<chapter>-<nn>', () => {

@@ -2,33 +2,61 @@ The words of the card course.
 
 ## Chapter 1. Why you forget, and the fix
 
-You learn something today.
+Say you learn something today. A week from now, your brain will have forgotten most of it.
 
-A week later, most of it is gone.
+In the 1880s, Hermann Ebbinghaus measured this on himself, with lists of made-up syllables.
 
-But look at it again, right before you forget, and it sticks longer.
+After just one day, learning a list again took him about two thirds of the time it took at first.
+
+But review it again before you forget, and it sticks longer.
 
 Each time, the gap grows. A day. A week. A month.
 
+A new memory starts out fragile. Over time, the brain makes it stable. Scientists call this consolidation.
+
+Each review, near the point where you would forget, pushes the memory further into long-term memory.
+
 That's all spaced repetition is.
 
-The app keeps the calendar. You only answer: forgot, or remembered.
+It is one of the most tested ideas about memory. One review of 317 experiments found that spaced study beats cramming.
 
-The thing you look at is a card. A card is one small fact, with part of it hidden.
+So where does each thing you learn go? Picture a paper index card, the kind people study with.
 
-You try to recall the hidden part. Then you check.
+That is a card: one small fact, with part of it hidden.
 
-A few minutes a day is enough. The cards you know well come back less and less.
+You will have many cards, one for each thing you want to keep.
 
-This course takes about twelve minutes, in eight short chapters.
+The app keeps a calendar for every card. On the day a card is due, it shows it to you.
+
+You try to recall the hidden part, then check. And you answer: forgot, or remembered.
+
+The app sets each date with an open scheduling method called FSRS. It brings a card back when your chance of recalling it drops to about ninety percent.
+
+This course takes about twenty-five minutes, in eleven short chapters.
 
 Some chapters let you try the steps in the real app. That part is always your choice.
 
-By the end, you will have real cards of your own. Let's make the first one.
+If you remember one thing, make it this. Review just before you forget, and each memory lasts longer.
 
-## Chapter 2. Your first card
+Next: why a card is the right shape for what you learn. And you make your first one.
 
-A good card holds one small fact. Think of something you learned this week.
+## Chapter 2. The card: one small fact
+
+Quick recap. Each thing you want to learn goes on a card, and the app brings it back on time.
+
+Now, why a card is small, and how to make one.
+
+A good card is atomic. That means it holds one small idea, and nothing else.
+
+Small pieces can be mixed and matched, wherever you need them.
+
+Piotr Wozniak, who built the program SuperMemo, made this a rule: keep each card as simple as you can.
+
+A simple card is easier to remember. And a hard part on its own card gets the reviews it needs.
+
+All your cards together are your card base. It grows one small piece at a time.
+
+So a good card holds one small fact. Think of something you learned this week.
 
 Type one thing you want to remember. One short sentence is best.
 
@@ -41,8 +69,6 @@ Tap it to check yourself.
 Did you remember it?
 
 Either answer is fine. The app saves it with the card.
-
-A new card asks you twice. Remember it two times in a row, and then it waits a day or more.
 
 Your card is now a real file, in a folder called Course Cards. It sits at the top of your vault, the folder the app has open.
 
@@ -62,7 +88,11 @@ On the back, put the answer, or a short line that explains it.
 
 When you are done, press Escape. The card saves, and the file takes its name from the title.
 
+One card, one small fact. Everything else is built from that.
+
 To make one in the real app now, choose Try it in the app. Or go on to the next chapter.
+
+Next: the one place you open each day, where your cards come back.
 
 ### Try it in the app
 
@@ -74,6 +104,8 @@ To make one in the real app now, choose Try it in the app. Or go on to the next 
 
 ## Chapter 3. The Inbox, each day
 
+You made your first card. Here is the short daily habit that brings it back.
+
 So which card do you look at, and when?
 
 The app keeps track of the dates for you. All you do is open the Inbox every day.
@@ -81,6 +113,10 @@ The app keeps track of the dates for you. All you do is open the Inbox every day
 The Inbox is in the sidebar. The number beside it is how many cards are due now.
 
 The Inbox shows one card at a time. Look at the card, and try to recall what is hidden.
+
+Trying to recall is what makes it stick. In one study, students who tested themselves remembered 61 percent of a text a week later.
+
+Students who only re-read it remembered 40 percent.
 
 Press Space to show the hidden words, one at a time, and then the back.
 
@@ -108,7 +144,11 @@ To keep it light, the Inbox brings at most ten new cards a day. You can change t
 
 When nothing is left, the Inbox says Inbox complete. That's it for today.
 
+Open the Inbox each day, answer honestly, and let the app keep the dates.
+
 To answer your own card in the real app, choose Try it in the app.
+
+Next: a card can also live right inside your notes.
 
 ### Try it in the app
 
@@ -119,6 +159,8 @@ To answer your own card in the real app, choose Try it in the app.
 5. From tomorrow, start here. Click Inbox to see what is due.
 
 ## Chapter 4. Where a card lives
+
+So far, your card is a file of its own. But it can also sit beside the notes it came from.
 
 A card can live in three places. The review works the same in each one.
 
@@ -144,7 +186,11 @@ You can move a card between these places at any time. Its history goes with it.
 
 Use a card file for a fact on its own. Use a card in a page when it belongs with your notes.
 
+This is the mix and match from before. One card, one home, shown wherever it helps.
+
 To embed your first card in a page, choose Try it in the app.
+
+That's the how. Next, a short break, to see where all this can take you.
 
 ### Try it in the app
 
@@ -153,9 +199,81 @@ To embed your first card in a page, choose Try it in the app.
 3. Now open Course page, in the Course Cards folder.
 4. Click in the page, and paste with Command V. Then choose Embed.
 
-## Chapter 5. What makes a good card
+## Chapter 5. Why it is worth it
 
-Now the most important part: what to put on a card.
+You can make a card, review it, and place it in your notes. Now, why it is worth doing.
+
+What you learn this way compounds. To compound is to grow on itself, like interest.
+
+Each thing you keep gives the next thing something to hold on to.
+
+Say you make five cards a day. In a year, that is more than 1,800 small things you still know.
+
+And because known cards come back less and less often, the daily review stays small while the pile grows.
+
+The sociologist Niklas Luhmann kept a box of paper slips for about 45 years. It grew to around 90,000 of them.
+
+He wrote nearly 600 publications, among them more than 40 books.
+
+The writer Ryan Holiday has kept tens of thousands of index cards, over twenty years.
+
+He says the most value came years later, from all the cards added up.
+
+You do not need to write books. Think of the meeting where the right fact is there when you need it.
+
+The language you keep. The subject you finally understand.
+
+Over time, your card base becomes a record of what you know. Because you review it, you still know it.
+
+Small cards, every day, add up to a lot.
+
+But only if the cards are truly yours. That is next.
+
+## Chapter 6. Your card base is your knowledge base
+
+Your cards add up, and what you know compounds. So what should go into them?
+
+Your card base is your knowledge base. It is a picture of what you know.
+
+So the goal is not to copy the internet into it. There is always more. You would never finish.
+
+The goal is to distil. Take what you learned, and put it in your own words and your own formats.
+
+Think of it like digestion. You do not have to know a thing fully before you make its card.
+
+But you do have to digest it first.
+
+To digest is to think it through, until you can say it simply.
+
+Memory researchers call this depth of processing. The more you think about what something means, the longer you keep it.
+
+In one classic study, people remembered words they came up with themselves better than words they only read.
+
+That is why copying someone else's cards makes no sense. It skips the very part that makes you learn.
+
+So here is the habit. When you hear something worth keeping, write it down somewhere. A note, a list, anywhere.
+
+Do not make the card in that moment. A card made in a hurry is usually a poor card.
+
+Poor cards pile up. Review turns into a chore, and you stop opening the Inbox.
+
+Make the card later, when you have time to sit and think. Capture first, make later.
+
+Ryan Holiday does this with books. He lets a book sit, then makes his cards on a second pass.
+
+Remember the ten new cards a day. If sixty are waiting, a new card can take about a week to reach you.
+
+When it comes, it is no surprise. You made it, you digested it, and you have been looking forward to it.
+
+You carry a picture of your card base in your head, because you put each card there.
+
+Keep this: your card base is your knowledge base. Make it yours, one digested card at a time.
+
+So what does a good card look like? That is next.
+
+## Chapter 7. What makes a good card
+
+You have digested an idea. Here is how to make its card a good one.
 
 Many people paste a whole page of notes into one card. Then they review it, and nothing sticks.
 
@@ -175,39 +293,65 @@ The second one. The first card hides the subject of its own question. Without it
 
 So, rule one. Hide the answer, not the clue. The front must make sense to someone who does not know the answer.
 
+Reading is not recalling. A large review of study methods rated re-reading and highlighting low, and testing yourself high.
+
 Rule two. In a question, keep the subject in view. Ask what DNS stands for, and hide only the meaning.
 
 Rule three. Hide a phrase that means something, not a few scattered words.
 
-Different things need different cards. A word, a person, a process, or a quote each has its own format.
+When you check yourself, the same meaning in other words counts as remembered. Exact words matter only for things like a quote or a command.
 
-There is a format for acronyms, for concepts, for comparisons, for steps, for quotes, and more.
+Name the card after the idea, not after where you found it. Picture looking for it again in six months.
+
+Different things need different cards. A word, a person, a process, or a quote each has its own format.
 
 Each format is a short page in the card skill, with an example. You will see where it is in the last chapter.
 
 One thing to recall. Hide the answer, not the clue. Small cards beat big ones.
 
-## Chapter 6. Make cards with your AI
+Good cards take thought. Next, a tool that can help make them, and how it can hurt.
 
-Good cards take time to write. An AI agent can write the first draft for you.
+## Chapter 8. Make cards with your AI, without vibe writing
+
+You know a good card starts with digestion. Now, a tool that makes cards fast, and why that speed is also its danger.
+
+First, a fact that matters here. Each card is a plain Markdown file on your computer.
+
+Markdown is plain text with a few light marks, so any tool that reads files can read your cards.
 
 An agent is an AI tool that can read and write files on your computer. Any agent like that works here.
 
 The app has no AI inside, and it sends nothing anywhere. You use your own agent.
 
-First, paste some of your notes here. Or use the example notes.
+Now the warning. Do not vibe write your cards.
+
+Vibe writing means letting an AI pour out cards you never thought through.
+
+That is the fastest way to ruin your card base. And your card base is your knowledge base.
+
+Your Inbox fills with cards you do not know, and the whole system becomes worthless.
+
+If you want this system to fail, vibe write your cards. If you want what you know to compound, do not.
+
+Ryan Holiday puts it in four words: "The inefficiency is the efficiency." The slow part, the thinking, is where you learn.
+
+The right way: the AI helps you make cards from what you have already digested.
+
+You bring notes you thought through. The agent shapes them into cards, by the rules you just learned.
+
+Then you read each one.
+
+Let's try it. Paste some notes you have already digested. Or use the example notes.
 
 Next, copy the prompt.
 
-The prompt tells your agent to read the card skill first. Then it asks for three cards from your notes, in Course Cards.
-
-It also asks the agent to check each card with the app's own command.
+The prompt tells your agent to read the card skill first. Then it asks for three cards from your notes, in Course Cards, and a check of each one.
 
 The skill teaches your agent the same rules you just learned.
 
 Paste the prompt into your agent, and let it work.
 
-The cards show up here as soon as your agent writes them. You do not need to do anything else.
+The cards show up here as soon as your agent writes them.
 
 If nothing shows up after a minute, check with your agent. The course keeps waiting.
 
@@ -215,19 +359,63 @@ Then the app checks each card for sure mistakes. For example, a card with nothin
 
 You see how many cards pass, and what to fix in the others. Fix them yourself, or ask your agent.
 
-Later, the same check shows on the card itself. A card with a fault says 1 thing to check, in its head.
-
 No agent? Skip this step. The course shows three example cards, and makes them only if you say so.
 
 An agent drafts fast, but you decide. Read each card, and keep only what you want to recall.
 
+Where a card does not sound like you, put it in your own words.
+
 You can copy the same prompt at any time. Right-click the card skill in the sidebar, and choose Copy prompt for your agent.
 
-## Chapter 7. Look after your cards
+So, the line to keep: you digest and decide. Your agent only shapes.
 
-Cards need a little care over time. Here are the things you will use most.
+Making cards is one of three habits. Next, all three.
+
+## Chapter 9. Three habits: make, review, tend
+
+You can now make cards by hand and with your agent. Let's step back and see the whole system.
+
+It has three habits: making cards, reviewing cards, and tending cards. Tending means fixing and improving the cards you have.
+
+Reviewing is the daily one. You open the Inbox, and the app picks the cards.
+
+Trust the schedule, even when it feels slow. In one study, spacing worked better than cramming for 90 percent of learners.
+
+Yet 72 percent of them believed cramming had worked better.
+
+Tending needs no time of its own. It happens while you review.
+
+This card is not clear. That one needs a link. You notice it right there, in the review.
+
+With an agent, you send the fix in that moment, and keep going.
+
+Tending used to need time of its own. Now it rides along with the review.
+
+Even with a large card base, review and tending together can fit in fifteen to twenty minutes a day.
+
+Making is the one you set time aside for. Digesting takes thought, so give it a quiet moment.
+
+Make with time set aside. Review every day. Tend as you review.
+
+Next, the tending itself, and why it is learning too.
+
+## Chapter 10. Be a gardener
+
+Tending happens as you review. Here is how, and why it is worth it.
+
+Think of a gardener. A garden does well when someone clears it and prunes it.
+
+That is not a chore apart from learning. Each fix makes you think about the idea again, and that is learning too.
+
+A card you keep missing is not a failure. It is a sign to look at it.
+
+Often the wording is unclear, or it is two cards in one.
 
 To fix a card, click Edit card, or press E in the Inbox. Press Escape when you are done.
+
+Or, since each card is a file, tell your agent what to change, and keep reviewing.
+
+Some cards no longer earn their place. Pruning is part of it.
 
 To stop reviewing a card, open its menu and choose Archive card. It keeps its history.
 
@@ -245,11 +433,11 @@ If a card changed a lot, choose Reset history. It starts again as a new card.
 
 Want more today? In the All cards menu, click Add for more new cards. Tomorrow, the usual number comes back.
 
-Changed your mind? Command Z takes the add back.
-
-To review only one folder, right-click it, and choose Review this folder.
+Prune a little each day, and your card base stays a true picture of what you know.
 
 To try Archive and Up next on your own card, choose Try it in the app.
+
+One chapter left: where things are, and your first week.
 
 ### Try it in the app
 
@@ -261,9 +449,11 @@ To try Archive and Up next on your own card, choose Try it in the app.
 6. Open the card's menu once more.
 7. Choose Put at top of Inbox. Next time you open the Inbox, it comes first.
 
-## Chapter 8. Where things are
+## Chapter 11. Where things are, and your first week
 
-Last, where to find things. The card skill is at the bottom of the sidebar.
+You know the three habits, and how to tend as you go. To finish: where to find things, and how to start.
+
+The card skill is at the bottom of the sidebar.
 
 It is a short guide for you and your agent: the rules, the formats with examples, and the words of this course.
 
@@ -271,15 +461,25 @@ It is read only. To change it, duplicate it into your vault, and make it your ow
 
 Your copy syncs with your vault. The built-in skill still gets each update of the app.
 
-Your agent can find it too. The command yaseendocs card guide prints its first page.
+Your agent can find it too. One command prints its first page.
 
 In Settings, under Review, one switch shows or hides the card skill. Open the course brings you back here.
 
-The same place holds your review settings, like new cards a day, and two or four answer buttons.
+Now, your first week.
+
+Today, make one card, from something you already understand well.
+
+Each day, open the Inbox, and answer what is due.
+
+Keep one place to capture things as you hear them. Once this week, set time aside to make a few cards from it.
+
+As you review, fix what is unclear. That is tending, and it is how your card base stays yours.
+
+Ryan Holiday says the best time to start a system like this was years ago. The second best time is now.
 
 That's the whole course. Make one card today. Open the Inbox tomorrow.
 
-A few minutes a day, and what you learn stays with you.
+Your card base is your knowledge base. Build it one digested card at a time, and what you learn stays with you.
 
 ### Try it in the app
 
