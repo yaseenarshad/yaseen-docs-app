@@ -243,7 +243,7 @@ describe('friendStats (YAZ-5069)', () => {
     )
     const pageCard = indexRecord(
       { path: '/v/trip.md', name: 'trip.md', basename: 'trip', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1 },
-      ['Trip notes', '', '![[GEO-140]]', '', '```card', 'Hidden question', '---', 'Hidden answer', '```', '<!-- card: GEO-141, 2026-11-13T15:10Z again 4s -->', ''].join('\n'),
+      ['Trip plan', '', '![[GEO-140]]', '', '```card', 'Hidden question', '---', 'Hidden answer', '```', '<!-- card: GEO-141, 2026-11-13T15:10Z again 4s -->', ''].join('\n'),
     )
     const otherPage = indexRecord({ path: '/v/b.md', name: 'b.md', basename: 'b', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1 }, '![[GEO-140]] and ![[GEO-140]] again\n')
     const s = friendStats([{ pages: [cardFile, pageCard, otherPage], settings: S }], NOW)
