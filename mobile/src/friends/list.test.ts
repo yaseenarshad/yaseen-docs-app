@@ -102,6 +102,24 @@ describe('createFriendsList (YAZ-5083)', () => {
     expect(await ali.list.port.hasFriends()).toBe(true)
   })
 
+  it('a new phone of the same person finds the list with GET /gists: the same friends, the same settings, no second list', async () => {
+    const { clock, world } = setup()
+    const ali = await phone(world, clock, ALI, 'ali')
+    const bea = await phone(world, clock, BEA, 'bea')
+    const share = await ali.list.share()
+    if (share.kind !== 'ok') throw new Error(share.kind)
+    const pasted = await bea.list.paste(share.link)
+    if (pasted.kind !== 'added') throw new Error(pasted.kind)
+    await ali.list.paste(pasted.sendBack!)
+    const second = await phone(world, clock, ALI, 'ali')
+    expect(await second.list.port.hasFriends()).toBe(false) // nothing on this phone yet
+    expect(await second.list.rows()).toMatchObject({ kind: 'ok', rows: [{ name: 'BEA', state: 'ok' }] })
+    expect(await second.list.port.hasFriends()).toBe(true)
+    expect(await second.list.port.settings()).toEqual({ vaults: second.vaults.map(vaultId), nickname: null })
+    expect(await second.list.paste(pasted.sendBack!)).toMatchObject({ kind: 'already', name: 'BEA' })
+    expect(world.owned('ali').filter((g) => INDEX_FILE in g.files)).toHaveLength(1)
+  })
+
   it('a token with no Gists permission: "no-gists" for each action, and nothing is made', async () => {
     const { clock, world } = setup()
     const ali = await phone(world, clock, NOGISTS, 'ali', ['ali/vault'], 'no')
@@ -146,7 +164,7 @@ describe('createFriendsList (YAZ-5083)', () => {
     for (let i = 0; i < 3; i++) await ali.list.share() // three links shared, not used yet
     const old = indexOf(world, 'ali').stats!
     // The Mac and cheers used the hour: the budget the sender keeps says 3 are left.
-    await ali.store.setState('', 'friendsSend', { lastSentAt: null, lastKey: null, pointers: 4, budget: { updates: [], seen: { remaining: 3, resetAt: clock.now() + 3600_000, at: clock.now() }, blockedUntil: null } })
+    await ali.store.setState('', 'friendsSend', { lastSentAt: null, lastKey: null, pointers: 4, budget: { updates: [], seen: { remaining: 3, resetAt: clock.now() + 3600_000, at: clock.now(), after: 0 }, blockedUntil: null } })
     const rows = await ali.list.rows()
     if (rows.kind !== 'ok') throw new Error(rows.kind)
     expect(await ali.list.remove(rows.rows[0].mine)).toMatchObject({ kind: 'paused', retryAt: expect.any(Number) })

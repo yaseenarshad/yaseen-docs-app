@@ -110,7 +110,7 @@ export interface GistBudget {
   /** The times of MY updates in the last hour. */
   updates: number[]
   /** GitHub's count at my last update: `remaining` at `at`, until `resetAt`. It includes the Mac's and the marks'. */
-  seen: { remaining: number; resetAt: number; at: number } | null
+  seen: { remaining: number; resetAt: number; at: number; after?: number } | null
   /** GitHub said "rate limit": no update before this time. */
   blockedUntil: number | null
 }
@@ -122,7 +122,13 @@ const inHour = (b: GistBudget, now: number) => b.updates.filter((at) => at > now
 /** One update made at `now`, with GitHub's count from its answer (or from a failure). */
 export function noteUpdate(b: GistBudget, now: number, rate: GistRate | null): GistBudget {
   const updates = [...inHour(b, now), now]
-  const seen = rate !== null && rate.remaining !== null ? { remaining: rate.remaining, resetAt: rate.resetAt ?? now + HOUR, at: now } : b.seen
+  // `after` counts my updates since GitHub's count (YAZ-5083): updates in the same millisecond as it count too.
+  const seen =
+    rate !== null && rate.remaining !== null
+      ? { remaining: rate.remaining, resetAt: rate.resetAt ?? now + HOUR, at: now, after: 0 }
+      : b.seen === null
+        ? null
+        : { ...b.seen, after: (b.seen.after ?? inHour(b, now).filter((at) => at > b.seen!.at).length) + 1 }
   return { updates, seen, blockedUntil: b.blockedUntil !== null && b.blockedUntil > now ? b.blockedUntil : null }
 }
 
@@ -131,7 +137,7 @@ export function budgetLeft(b: GistBudget, now: number): number {
   const mine = inHour(b, now)
   const own = GIST_UPDATES_PER_HOUR - mine.length
   if (b.seen === null || now >= b.seen.resetAt) return own
-  const since = mine.filter((at) => at > b.seen!.at).length
+  const since = b.seen.after ?? mine.filter((at) => at > b.seen!.at).length
   return Math.max(0, Math.min(own, b.seen.remaining - since))
 }
 
@@ -264,7 +270,7 @@ export async function sendNumbers(api: GistsApi, input: SendInput): Promise<{ ou
       case 'RATE_LIMITED': {
         const retryAt = Math.max(now + 60_000, gistErrorResetAt(err) ?? 0)
         const rate = gistErrorRate(err)
-        const seen = rate !== null && rate.remaining !== null ? { remaining: rate.remaining, resetAt: rate.resetAt ?? retryAt, at: now } : budget.seen
+        const seen = rate !== null && rate.remaining !== null ? { remaining: rate.remaining, resetAt: rate.resetAt ?? retryAt, at: now, after: 0 } : budget.seen
         return { outcome: { kind: 'rate-limited', retryAt }, budget: { ...budget, seen, blockedUntil: retryAt } }
       }
       case 'OFFLINE':

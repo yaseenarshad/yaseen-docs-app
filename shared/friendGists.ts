@@ -169,6 +169,11 @@ export interface FriendsIndex {
   stats: string | null
   friends: { name: string; theirs: string; mine: string }[]
   groups: { name: string; group: string; mine: string; admin: boolean }[]
+  /**
+   * 4E2 (YAZ-5083): the links this person shared that no friend has used yet ("Share my link" made a pointer; the
+   * friend's link has not been pasted). Each is a pointer like `mine`, so a remove updates it too. Absent: none.
+   */
+  shared?: { mine: string; at: string }[]
 }
 
 const MAX_ENTRIES = 1000
@@ -189,6 +194,9 @@ function parseIndex(text: string): { ok: true; value: FriendsIndex } | { ok: fal
   const entry = (e: unknown): e is Record<string, unknown> => typeof e === 'object' && e !== null && !Array.isArray(e)
   for (const f of friends) if (!entry(f) || !name(f.name) || !isGistId(f.theirs) || !isGistId(f.mine)) return { ok: false, why: 'a friend is not readable' }
   for (const g of groups) if (!entry(g) || !name(g.name) || !isGistId(g.group) || !isGistId(g.mine) || typeof g.admin !== 'boolean') return { ok: false, why: 'a group is not readable' }
+  const shared = o.shared ?? []
+  if (!Array.isArray(shared) || shared.length > MAX_ENTRIES) return { ok: false, why: 'shared is not a list' }
+  for (const x of shared) if (!entry(x) || !isGistId(x.mine) || typeof x.at !== 'string' || x.at.length > 40) return { ok: false, why: 'a shared link is not readable' }
   return {
     ok: true,
     value: {
@@ -198,6 +206,7 @@ function parseIndex(text: string): { ok: true; value: FriendsIndex } | { ok: fal
       stats: (o.stats as string | null | undefined) ?? null,
       friends: (friends as Record<string, unknown>[]).map((f) => ({ name: f.name as string, theirs: f.theirs as string, mine: f.mine as string })),
       groups: (groups as Record<string, unknown>[]).map((g) => ({ name: g.name as string, group: g.group as string, mine: g.mine as string, admin: g.admin as boolean })),
+      ...(o.shared !== undefined && { shared: (shared as Record<string, unknown>[]).map((x) => ({ mine: x.mine as string, at: x.at as string })) }),
     },
   }
 }
@@ -213,8 +222,8 @@ export function parseFriendsIndex(text: string | null | undefined): FileState<Fr
   })
 }
 
-/** The pointers that this person writes: one for each friend and each group. */
-export const pointersOf = (index: FriendsIndex): string[] => [...index.friends.map((f) => f.mine), ...index.groups.map((g) => g.mine)]
+/** The pointers that this person writes: one for each friend and each group, and each shared link not used yet (4E2). */
+export const pointersOf = (index: FriendsIndex): string[] => [...index.friends.map((f) => f.mine), ...index.groups.map((g) => g.mine), ...(index.shared ?? []).map((x) => x.mine)]
 
 /** The text of a list to write: the known fields over the fields this app does not know; each entry keeps its own. */
 export function indexText(index: FriendsIndex, raw: Record<string, unknown> = {}): string {

@@ -26,6 +26,7 @@ import {
   type SendReason,
 } from '@shared/friendSend'
 import { friendStats } from '@shared/friendStats'
+import { finishRemove, pendingRemove } from '@shared/friendsList'
 import { recordGistsRefused } from '../auth/friends'
 import type { FetchLike } from '../github/client'
 import { PHONE, type TokenStore, type VaultStore } from '../store'
@@ -212,9 +213,28 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
     const { api, vault, account } = friends
 
     try {
-      const handle = await readIndex(api, now, reason)
+      let handle = await readIndex(api, now, reason)
       if (handle === 'newer') return set({ status: 'needs-newer-app' })
       if (handle === null) return set({ status: 'no-friends' })
+      // 4E2 (YAZ-5083): a remove waits in the list (the app closed, or the budget ran out). Finish it first; never
+      // send to the old numbers gist while it waits, so the removed friend's last numbers do not change.
+      if (pendingRemove(handle) !== null) {
+        const finished = await finishRemove(api, handle, saved.budget, { ...writeOptions, now: () => clock.now() })
+        saved.budget = finished.budget
+        await save({ budget: finished.budget })
+        index = finished.handle
+        if (finished.kind === 'paused') {
+          if (finished.why === 'refused') {
+            await recordGistsRefused(store, vault)
+            return set({ status: 'no-gists' })
+          }
+          if (finished.why === 'unauthorized') return set({ status: 'sign-in-again' })
+          if (finished.why === 'offline') return set({ status: 'offline' })
+          if (finished.retryAt !== null) schedule(finished.retryAt)
+          return set({ status: 'slowed', retryAt: finished.retryAt })
+        }
+        handle = finished.handle
+      }
       const pointers = pointersOf(handle.index).length
       const vaults = await countedVaults(store, handle.index.vaults)
       const gate = sendGate({ pointers, passSeen, holdsAll: vaults !== null, lastSentAt: saved.lastSentAt, now, reason, budget: saved.budget })

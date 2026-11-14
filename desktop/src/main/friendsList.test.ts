@@ -313,8 +313,14 @@ describe('remove a friend (round 16)', () => {
       const handle = await fresh(w.api('ali'), w)
       const done = await finishRemove(w.api('ali'), handle, emptyBudget(), opts(w))
       expect(done.kind, `stop at write ${k}`).toBe('done')
-      expect(done.handle.index.friends.map((f) => f.name)).toEqual(['F0', 'F1'])
-      expect(w.text(aliForBea, POINTER_FILE)).toBeNull()
+      if (k === 1) {
+        // The first write is the list itself: it failed, so the remove never started. Bea stays; nothing changed.
+        expect(done.handle.index.friends.map((f) => f.name)).toEqual(['Bea', 'F0', 'F1'])
+        expect(w.text(aliForBea, POINTER_FILE)).not.toBeNull()
+      } else {
+        expect(done.handle.index.friends.map((f) => f.name)).toEqual(['F0', 'F1'])
+        expect(w.text(aliForBea, POINTER_FILE)).toBeNull()
+      }
       expectClean(w, 'ali', done.handle)
     }
     expect(points).toBeGreaterThanOrEqual(7)
