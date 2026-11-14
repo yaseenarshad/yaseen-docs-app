@@ -13,6 +13,7 @@ import {
   withCardReview,
   withoutCardReview,
   type CardLine,
+  type CardRating,
   type CardReview,
 } from '@shared/cardLine'
 
@@ -22,7 +23,7 @@ import {
  */
 export type CardOp =
   | { kind: 'review'; id: string; review: CardReview } // an answer
-  | { kind: 'unreview'; id: string; at: string } // undo of a sent answer
+  | { kind: 'unreview'; id: string; at: string; rating: CardRating } // undo of a sent answer: names ONE review (YAZ-5181)
   | { kind: 'off'; id: string; on: boolean } // archive, unarchive
   | { kind: 'next'; id: string; on: boolean } // Up next
   | { kind: 'fix'; id: string; on: boolean } // Fix later (round 10, YAZ-5097)
@@ -38,8 +39,15 @@ export function applyOp(line: CardLine, op: CardOp): CardLine {
       const key = cardReviewKey(op.review)
       return cardReviewsOf(line).some((r) => cardReviewKey(r) === key) ? line : withCardReview(line, op.review)
     }
-    case 'unreview':
-      return withoutCardReview(line, op.at)
+    case 'unreview': {
+      // YAZ-5181: the review at `at` WITH this rating, the last one (as `withoutCardReview` picks). Gone already: no
+      // change, so an `unreview` sent again never takes a second review of the same minute. A list stored before the
+      // rating was named (no `rating`) keeps the old reading.
+      if ((op as { rating?: CardRating }).rating === undefined) return withoutCardReview(line, op.at)
+      const key = cardReviewKey({ at: op.at, rating: op.rating })
+      const i = line.parts.map((p) => p.kind === 'review' && cardReviewKey(p.review) === key).lastIndexOf(true)
+      return i === -1 ? line : { parts: line.parts.filter((_, j) => j !== i) }
+    }
     case 'off':
       return withCardOff(line, op.on)
     case 'next':
@@ -91,13 +99,13 @@ export class UnsentChangeError extends Error {
 /**
  * A change of card `id`'s line (the review host's `changeCardLine`, the ⋯ menu) as actions: each mark that changed,
  * then each review taken out, then each review added. Applied to `before`, they give `after`'s marks and reviews.
- * Any other change (the title on the front, an ID, an unknown part other than `fix`) cannot be sent: it throws
+ * Any other change (the title on the front, an ID, an unknown part) cannot be sent: it throws
  * `UnsentChangeError`, so nothing is half saved.
  */
 export function opsBetween(id: string, before: CardLine, after: CardLine): CardOp[] {
   const rest = (line: CardLine) =>
     line.parts
-      .filter((p) => p.kind !== 'review' && p.kind !== 'off' && p.kind !== 'next' && !(p.kind === 'other' && p.text === 'fix'))
+      .filter((p) => p.kind !== 'review' && p.kind !== 'off' && p.kind !== 'next' && p.kind !== 'fix')
       .map((p) => (p.kind === 'id' ? `id:${p.id}` : p.kind === 'other' ? `other:${p.text}` : p.kind))
       .join(',')
   if (rest(before) !== rest(after)) throw new UnsentChangeError(id)
@@ -109,7 +117,7 @@ export function opsBetween(id: string, before: CardLine, after: CardLine): CardO
   const now = cardReviewsOf(after)
   const keys = new Set(now.map(cardReviewKey))
   const had = new Set(was.map(cardReviewKey))
-  for (const r of was) if (!keys.has(cardReviewKey(r))) ops.push({ kind: 'unreview', id, at: r.at })
+  for (const r of was) if (!keys.has(cardReviewKey(r))) ops.push({ kind: 'unreview', id, at: r.at, rating: r.rating })
   for (const r of now) if (!had.has(cardReviewKey(r))) ops.push({ kind: 'review', id, review: r })
   return ops
 }

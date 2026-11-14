@@ -720,6 +720,14 @@ describe('cards: due and card add (YAZ-4963)', () => {
     expect(day(Date.parse((JSON.parse((await run(['due', deck, '--json'])).out) as { due: string }[])[1].due))).not.toBe(day(Date.now()))
   })
 
+  it('YAZ-5097: a page`s list shows Fix later where it shows off: "fix" after the title, and `fix: true` in --json', async () => {
+    const root = await vault('cards', { 'deck.md': `---\nid: YAZ-1\n---\n# Deck\n\n${card('Typo in carf', 'YAZ-10, fix')}\n${card('Fine', 'YAZ-11')}\n${card('Both', 'YAZ-12, off, fix')}` })
+    const deck = path.join(root, 'deck.md')
+    expect((await run(['due', deck])).out).toBe('new         YAZ-10  Typo in carf  fix\nnew         YAZ-11  Fine\noff         YAZ-12  Both  fix\n')
+    const json = JSON.parse((await run(['due', deck, '--json'])).out) as { id: string; fix?: boolean }[]
+    expect(json.map((r) => [r.id, r.fix])).toEqual([['YAZ-10', true], ['YAZ-11', undefined], ['YAZ-12', true]])
+  })
+
   it('card add writes a card with the next number of the vault counter, at the end of the heading\'s section, in order, atomically', async () => {
     const root = await vault('cards', {
       'geo.md': '---\nid: YAZ-5\n---\n# Geography\n\n## Cards\n\nIntro.\n\n## Later\n\nText.\n',

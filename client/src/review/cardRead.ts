@@ -3,7 +3,7 @@
  * `cardFile.ts` and every other review host (the phone's, a test's) read a card the same way. `cardFile.ts` gives out
  * the same names.
  */
-import { CardNotFoundError, cardIdOf, cardReviewsOf, isCardNext, isCardNoTitle, isCardOff, pageCards, type CardReview } from '@shared/cardLine'
+import { CardNotFoundError, cardIdOf, cardReviewsOf, isCardFix, isCardNext, isCardNoTitle, isCardOff, pageCards, type CardReview } from '@shared/cardLine'
 import { isCardKind } from '@shared/cardFileFormat'
 import { cardTitle, cardWithTitle } from '@shared/cardText'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
@@ -23,6 +23,8 @@ export interface CardOnPage {
   next: boolean
   /** The title is hidden on the Inbox's front (YAZ-5030): the line's `notitle`. Absent: it shows. */
   notitle?: boolean
+  /** Marked "Fix later" (YAZ-5097): the line's `fix`. Absent: no mark. */
+  fix?: true
   /** A CARD FILE's card (YAZ-5044): the file's `title`, which `readCard` also puts above `text`. Absent for a card in a page. */
   fileTitle?: string
 }
@@ -51,7 +53,7 @@ export function cardInContent(path: string, content: string, id: string | null, 
   // A card file's own card (its first): the file's `title`, read off its properties, when it has one (YAZ-5044).
   const { properties, error } = at === 0 ? parseFrontmatter(splitFrontmatter(content).frontmatter) : { properties: {}, error: 'none' }
   const fileTitle = error === undefined && isCardKind(properties) ? titleOf(properties, '') : ''
-  return { path, id: cardIdOf(card.line), index: at, text: card.text, reviews: cardReviewsOf(card.line), off: isCardOff(card.line), next: isCardNext(card.line), notitle: isCardNoTitle(card.line), ...(fileTitle !== '' && { fileTitle }) }
+  return { path, id: cardIdOf(card.line), index: at, text: card.text, reviews: cardReviewsOf(card.line), off: isCardOff(card.line), next: isCardNext(card.line), notitle: isCardNoTitle(card.line), ...(isCardFix(card.line) && { fix: true as const }), ...(fileTitle !== '' && { fileTitle }) }
 }
 
 /**

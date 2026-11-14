@@ -321,6 +321,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               {state !== null && <span className="card-file__state">{state}</span>}
               {reviewOn && card?.next === true && <CardNextChip onRemove={() => writes.changeLine((l) => withCardNext(l, false))} />}
               {reviewOn && card?.notitle === true && <span className="card__state card__notitle">Hidden in review</span>}
+              {card?.fix === true && <span className="card__state card__fix">To fix</span>}
             </div>
           </header>
           {outside.length > 0 && (

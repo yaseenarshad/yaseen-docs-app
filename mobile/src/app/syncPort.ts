@@ -39,6 +39,8 @@ export interface ShellSync {
   open(vault: PhoneVault | null): Promise<void>
   /** A pass now ("Try again" on the download view). */
   syncNow(): Promise<void>
+  /** Resolves when no pass runs, also a pass of a vault that was open before (YAZ-5175: the erase waits for it). */
+  idle(): Promise<void>
 }
 
 export const IDLE: ShellSyncState = Object.freeze({ status: 'idle', vault: null, problem: null, retryAt: null, progress: null, ready: false })
