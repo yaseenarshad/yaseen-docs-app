@@ -3,7 +3,8 @@
  * `c8-16`. It is a view over `host.agentStep`, whose state lives in the host, so each clip can mount it again and find
  * the text, the copied prompt and the Read ticks as they were.
  *
- * 1. `text`: a box for the person's own digested text, and "Use the example".
+ * 1. `text`: a box for the person's own digested text, and "Use the example". Typing never ends the step: the person
+ *    gives the text with a paste or "Use the example" (YAZ-5270), or presses the course's Next.
  * 2. `prompt`: the prompt for the person's own agent, and Copy. Its first sentence is `AGENT_PROMPT` with the path of
  *    the card skill this vault uses; then 3 cards as card files in "Course Cards"; then the text.
  * 3. `cards`: each card that comes into "Course Cards" after Copy, as the agent writes it. After 60 seconds with no
@@ -23,7 +24,8 @@ import './agentStep.css'
 export type AgentStepPart = 'text' | 'prompt' | 'cards' | 'skip'
 
 /**
- * What the person did: `text` (the box holds text: theirs or the example), `copied` (Copy put the prompt on the
+ * What the person did: `text` (the person gave their text: "Use the example", or a paste that left text in the box;
+ * typing alone never tells it, YAZ-5270), `copied` (Copy put the prompt on the
  * clipboard), `arrived` (the first new card came into Course Cards), `read` (each new card was opened), `made` (the
  * three example cards are files).
  */
@@ -92,12 +94,12 @@ export function AgentStepPanel({ host, parts = ALL_PARTS, onStep }: AgentStepPan
       told.current.add(event)
       onStepRef.current?.(event)
     }
-    tell('text', hasText)
+    tell('text', state.given && hasText)
     tell('copied', state.copiedAt !== null)
     tell('arrived', state.cards.length > 0)
     tell('read', allRead)
     tell('made', Array.isArray(state.examples))
-  }, [hasText, state.copiedAt, state.cards.length, allRead, state.examples])
+  }, [hasText, state.given, state.copiedAt, state.cards.length, allRead, state.examples])
 
   const openCard = (card: CourseCard): void => {
     const key = courseCardKey(card)
@@ -109,6 +111,13 @@ export function AgentStepPanel({ host, parts = ALL_PARTS, onStep }: AgentStepPan
     })
   }
 
+  // A paste fires before the change it makes: the change that follows is the paste's (YAZ-5270).
+  const pasting = useRef(false)
+  const onPaste = (): void => {
+    pasting.current = true
+    setTimeout(() => (pasting.current = false), 0)
+  }
+
   const prompt = state.prompt
   return (
     <div className="agent-step">
@@ -117,7 +126,17 @@ export function AgentStepPanel({ host, parts = ALL_PARTS, onStep }: AgentStepPan
           <label className="agent-step__label" htmlFor="agent-step-text">
             Paste something you have digested
           </label>
-          <textarea id="agent-step-text" className="agent-step__text" rows={6} value={state.text} onChange={(e) => step.setText(e.target.value)} />
+          <textarea
+            id="agent-step-text"
+            className="agent-step__text"
+            rows={6}
+            value={state.text}
+            onPaste={onPaste}
+            onChange={(e) => {
+              step.setText(e.target.value, pasting.current ? 'pasted' : 'typed')
+              pasting.current = false
+            }}
+          />
           <button type="button" className="course__btn" onClick={() => step.useExample()} disabled={state.example}>
             Use the example
           </button>

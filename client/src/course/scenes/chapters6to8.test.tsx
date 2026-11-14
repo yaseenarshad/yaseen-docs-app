@@ -169,11 +169,13 @@ describe('the AI step (c8-11 to c8-16, YAZ-5121 with YAZ-5124)', () => {
     scene.render(clipOf('c8-12'))
     await flush()
     expect(done).toHaveBeenCalledTimes(1)
-    expect(scene.el.querySelector('#agent-step-text')).toBeNull()
+    // YAZ-5270: the text stays, editable, until the prompt is copied.
+    expect(scene.el.querySelector<HTMLTextAreaElement>('#agent-step-text')?.value).toBe('Example text')
     expect(scene.el.querySelector('.agent-step__prompt')?.textContent).toContain('Example text')
     click(button(scene.el, 'Copy'))
     await flush()
     expect(done).toHaveBeenCalledTimes(2)
+    expect(scene.el.querySelector('#agent-step-text')).toBeNull()
 
     scene.render(clipOf('c8-13'))
     await flush()
@@ -213,6 +215,57 @@ describe('the AI step (c8-11 to c8-16, YAZ-5121 with YAZ-5124)', () => {
     scene.render(clipOf('c8-12'))
     await flush()
     expect(done).toHaveBeenCalledTimes(6)
+    scene.unmount()
+  })
+
+  // YAZ-5270: typing never ends the step; a paste or "Use the example" does, and Next always does (the player's).
+  const typeInto = (box: HTMLTextAreaElement, value: string) =>
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(box, value)
+      box.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+  it('YAZ-5270: c8-11 does not end on the letters typed, and the box stays with the text on c8-12 until the prompt is copied', async () => {
+    const done = vi.fn()
+    const host = memoryHost()
+    const { clock, at } = testClock(5)
+    const scene = mountScene(courseScenes('c8-11'), chapter('ai'), { clock, done, host, waits: (c) => WAITING_CLIPS.has(c.id) })
+    scene.render(clipOf('c8-11'))
+    at(1)
+    act(() => host.agentStep.setText('S'))
+    const box = scene.el.querySelector<HTMLTextAreaElement>('#agent-step-text')!
+    typeInto(box, 'Sleep debt adds up over the week.')
+    at(4)
+    expect(done).not.toHaveBeenCalled()
+    expect(scene.el.querySelector<HTMLTextAreaElement>('#agent-step-text')?.value).toBe('Sleep debt adds up over the week.')
+
+    // The person presses Next (the player moves on): c8-12 shows the text, still editable, with the prompt for it.
+    scene.render(clipOf('c8-12'))
+    await flush()
+    const again = scene.el.querySelector<HTMLTextAreaElement>('#agent-step-text')!
+    expect(again.value).toBe('Sleep debt adds up over the week.')
+    typeInto(again, 'Sleep debt adds up over the week. A lie-in does not pay it back.')
+    await flush()
+    expect(scene.el.querySelector('.agent-step__prompt')?.textContent).toContain('A lie-in does not pay it back.')
+    click(button(scene.el, 'Copy'))
+    await flush()
+    expect(done).toHaveBeenCalledTimes(1)
+    expect(scene.el.querySelector('#agent-step-text')).toBeNull()
+    scene.unmount()
+  })
+
+  it('YAZ-5270: a paste into the box ends c8-11', () => {
+    const done = vi.fn()
+    const host = memoryHost()
+    const { clock, at } = testClock(5)
+    const scene = mountScene(courseScenes('c8-11'), chapter('ai'), { clock, done, host, waits: (c) => WAITING_CLIPS.has(c.id) })
+    scene.render(clipOf('c8-11'))
+    at(1)
+    const box = scene.el.querySelector<HTMLTextAreaElement>('#agent-step-text')!
+    act(() => void box.dispatchEvent(new Event('paste', { bubbles: true })))
+    typeInto(box, 'A page I digested on sleep.')
+    expect(done).toHaveBeenCalledTimes(1)
+    expect(host.agentStep.state().text).toBe('A page I digested on sleep.')
     scene.unmount()
   })
 

@@ -4,7 +4,8 @@
  * sends nothing. THE WARNING: the screen goes quiet for "Do not vibe write your cards."; the flood of grey cards; the
  * Inbox goes dark; two paths; Ryan Holiday's line. Then the hands-on step with the person's own agent: the real
  * `AgentStepPanel` (YAZ-5124) with the parts of each clip, and `done()` on the event each clip waits for (`text`,
- * `copied`, `arrived`; and `read`, `made` on the clips that show them). The scene writes no file: the host does.
+ * `copied`, `arrived`; and `read`, `made` on the clips that show them). `text` comes from a paste or "Use the example",
+ * never from typing (YAZ-5270). The scene writes no file: the host does.
  */
 import { useRef, useSyncExternalStore, type CSSProperties } from 'react'
 import { cardFileContent, cardFileName } from '@shared/cardFileFormat'
@@ -388,6 +389,16 @@ const STEP_PARTS: Readonly<Record<string, readonly AgentStepPart[]>> = {
   'c8-15': ['cards'],
   'c8-16': ['skip'],
 }
+/**
+ * The parts a clip shows now (YAZ-5270): until the prompt is copied, the clips after `c8-11` that use the agent show the
+ * text box and the prompt first, so the person can still change the text (Next moves on with or without it).
+ */
+function partsOf(id: string, copied: boolean): readonly AgentStepPart[] {
+  const parts = STEP_PARTS[id] ?? ['text']
+  if (copied || id === 'c8-11' || id === 'c8-16') return parts
+  return [...new Set<AgentStepPart>(['text', 'prompt', ...parts])]
+}
+
 const STEP_KICKER: Readonly<Record<string, string>> = {
   'c8-11': 'Step 1 · Something you have digested',
   'c8-12': 'Step 2 · Copy the prompt',
@@ -480,7 +491,7 @@ function AgentStep(props: SceneProps) {
             </>
           )}
           <div className="ai-panel">
-            <AgentStepPanel key={id} host={host} parts={STEP_PARTS[id] ?? ['text']} onStep={onStep} />
+            <AgentStepPanel key={id} host={host} parts={partsOf(id, state.copiedAt !== null)} onStep={onStep} />
           </div>
         </div>
       </Layer>

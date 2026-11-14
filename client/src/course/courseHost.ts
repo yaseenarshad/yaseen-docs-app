@@ -76,11 +76,22 @@ export interface CourseSummary {
   cards: { path: string; title: string; due: number | null }[]
 }
 
+/** How the box's text changed: typed (the step waits on), or pasted (the person gave their text). */
+export type TextChange = 'typed' | 'pasted'
+
+/** `given` after a change of the box to `text` (YAZ-5270): a paste with text gives it; an empty box takes it back. */
+export const givenAfter = (was: boolean, text: string, how: TextChange): boolean => text.trim() !== '' && (was || how === 'pasted')
+
 /** Where the AI step is. `text`: the box; `copied`: the prompt was copied, the course waits for cards. */
 export interface AgentStepState {
   text: string
   /** The person used the example text (the box holds it unchanged). */
   example: boolean
+  /**
+   * The person gave their text (YAZ-5270): "Use the example", or a paste that left text in the box. Typing alone never
+   * gives it (the person may still be typing); an empty box takes it back. The course's Next always moves on.
+   */
+  given: boolean
   /** The full prompt, or the one line that says why the course only shows (then nothing can be copied). */
   prompt: { text: string; folder: string } | { showOnly: string } | null
   /** When Copy was clicked (ms); null before. Only cards that are new after it count. */
@@ -102,7 +113,8 @@ export interface AgentStepState {
 export interface AgentStep {
   state(): AgentStepState
   subscribe(listener: () => void): () => void
-  setText(text: string): void
+  /** The box's new text; `pasted`: the change was a paste (it gives the text, YAZ-5270). */
+  setText(text: string, how?: TextChange): void
   useExample(): void
   /** Builds the prompt for the text (makes the folder when needed). */
   preparePrompt(): Promise<void>
@@ -158,7 +170,7 @@ export const SHOW_ONLY_NOT_YET = 'In this build the course only shows. It makes 
 const EMPTY_SUMMARY: CourseSummary = Object.freeze({ folder: null, cards: [] })
 
 function blankStep(showOnly: string | null): AgentStepState {
-  return { text: '', example: false, prompt: showOnly === null ? null : { showOnly }, copiedAt: null, cards: [], read: [], quiet: false, examples: 'hidden', problem: null }
+  return { text: '', example: false, given: false, prompt: showOnly === null ? null : { showOnly }, copiedAt: null, cards: [], read: [], quiet: false, examples: 'hidden', problem: null }
 }
 
 /** An AI step that can only show: it keeps the text and shows the examples, and writes nothing. */
@@ -172,7 +184,7 @@ function showOnlyStep(reason: string): AgentStep {
   return {
     state: () => state,
     subscribe: (l) => (listeners.add(l), () => void listeners.delete(l)),
-    setText: (text) => set({ text, example: false }),
+    setText: (text, how = 'typed') => set({ text, example: false, given: givenAfter(state.given, text, how) }),
     useExample: () => undefined,
     preparePrompt: () => Promise.resolve(),
     copy: () => Promise.resolve(),
@@ -251,8 +263,9 @@ export function memoryHost(vault = '/vault'): MemoryHost {
     agentStep: {
       state: () => state,
       subscribe: (l) => (listeners.add(l), () => void listeners.delete(l)),
-      setText: (text) => set({ text, example: false }),
-      useExample: () => set({ text: 'Example text', example: true }),
+      // As the real step: a new text needs a new prompt.
+      setText: (text, how = 'typed') => set({ text, example: false, given: givenAfter(state.given, text, how), prompt: null, problem: null }),
+      useExample: () => set({ text: 'Example text', example: true, given: true, prompt: null, problem: null }),
       preparePrompt: () => (set({ prompt: { text: `Prompt\n\n${state.text}`, folder } }), Promise.resolve()),
       copy: () => (set({ copiedAt: Date.now() }), Promise.resolve()),
       markRead: (card) => set({ read: [...new Set([...state.read, courseCardKey(card)])] }),

@@ -37,6 +37,7 @@ import { bridgeDisk } from '../views/scaffold'
 import { cardSkillPrompt } from '../vault/cardSkill'
 import {
   courseCardKey,
+  givenAfter,
   type AgentStep,
   type AgentStepState,
   type CourseCard,
@@ -507,7 +508,7 @@ export function forgetAgentSteps(): void {
 }
 
 function createAgentStep(ref: { current: VaultHost }): { step: AgentStep; attach(): void } {
-  let state: AgentStepState = { text: '', example: false, prompt: null, copiedAt: null, cards: [], read: [], quiet: false, examples: 'hidden', problem: null }
+  let state: AgentStepState = { text: '', example: false, given: false, prompt: null, copiedAt: null, cards: [], read: [], quiet: false, examples: 'hidden', problem: null }
   const listeners = new Set<() => void>()
   let unwatch: (() => void) | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -569,8 +570,8 @@ function createAgentStep(ref: { current: VaultHost }): { step: AgentStep; attach
       listeners.add(listener)
       return () => void listeners.delete(listener)
     },
-    setText: (text) => set({ text, example: false, prompt: null, problem: null }),
-    useExample: () => set({ text: EXAMPLE_TEXT, example: true, prompt: null, problem: null }),
+    setText: (text, how = 'typed') => set({ text, example: false, given: givenAfter(state.given, text, how), prompt: null, problem: null }),
+    useExample: () => set({ text: EXAMPLE_TEXT, example: true, given: true, prompt: null, problem: null }),
     preparePrompt,
     async copy() {
       // The folder is made (again, when the person deleted it) before the agent is asked to write into it.

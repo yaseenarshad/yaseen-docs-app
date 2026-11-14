@@ -60,6 +60,26 @@ describe('AgentStepPanel', () => {
     expect(events).toEqual(['text', 'copied', 'arrived', 'read'])
   })
 
+  it('YAZ-5270: typing in the box tells nothing; a paste tells `text`; an empty box takes it back', () => {
+    act(() => root.render(<AgentStepPanel host={host} parts={['text']} onStep={(e) => events.push(e)} />))
+    const box = el.querySelector<HTMLTextAreaElement>('#agent-step-text')!
+    const change = (value: string) =>
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(box, value)
+        box.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    change('S')
+    change('Sleep')
+    expect(events).toEqual([])
+    expect(host.agentStep.state().given).toBe(false)
+    act(() => void box.dispatchEvent(new Event('paste', { bubbles: true })))
+    change('Sleep debt adds up.')
+    expect(events).toEqual(['text'])
+    expect(host.agentStep.state().given).toBe(true)
+    change('')
+    expect(host.agentStep.state().given).toBe(false)
+  })
+
   it('YAZ-5202: names the real folder when the course made "Course Cards 2"', async () => {
     act(() => root.render(<AgentStepPanel host={host} onStep={(e) => events.push(e)} />))
     act(() => host.set({ text: 'Some text', prompt: { text: 'Prompt', folder: '/vault/course-cards-2' }, folderTitle: 'Course Cards 2', copiedAt: 1 }))
