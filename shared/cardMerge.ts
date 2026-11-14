@@ -1,4 +1,4 @@
-import { cardIdOf, cardReviewKey, cardReviewsOf, formatCardLine, formatCardReview, pageCards, rewritePageCards, withCardReviews, type CardBlock, type CardLine, type CardPart } from './cardLine'
+import { cardIdOf, cardReviewKey, cardReviewsOf, cardTitleOf, formatCardLine, formatCardReview, pageCards, rewritePageCards, withCardReviews, type CardBlock, type CardLine, type CardPart } from './cardLine'
 
 /**
  * THE CARD RULE OF SYNC (YAZ-5089, decision 5 on YAZ-5055). A card line is ONE line, so one card answered on two Macs
@@ -9,6 +9,9 @@ import { cardIdOf, cardReviewKey, cardReviewsOf, formatCardLine, formatCardRevie
  *    with and without seconds, the timed one);
  *  - the marks (`off`, `next`, `notitle`, and each part this app does not know yet, such as `fix`): a three-way result
  *    against the base. A mark that one side changed takes that change; a mark both sides left alone stays as it was.
+ *  - the title (YAZ-5308: the `title` part, YAZ-5309): a three-way result against the base, as a mark's, by its text. A
+ *    title one side changed (a rename on the Mac, while the phone answers) takes that change; both sides changed it,
+ *    each to a new title: theirs. A title neither side changed keeps its bytes;
  *  - the ID and the order of the parts: theirs (it is already everywhere else); a mark that only mine adds goes after
  *    the part it follows in mine.
  * So the two card lines are now the same, and git's line merge sees no clash there. What the rule never does:
@@ -59,9 +62,9 @@ function byId(cards: readonly CardBlock[]): Map<string, CardBlock> {
 
 const same = (a: CardLine, b: CardLine): boolean => formatCardLine(a) === formatCardLine(b)
 
-/** What a part is, for the three-way result: the ID, one review (its time and rating), or one mark by its text. */
+/** What a part is, for the three-way result: the ID, the title (`uniteTitle`), one review (its time and rating), or one mark by its text. */
 const keyOf = (p: CardPart): string =>
-  p.kind === 'id' ? 'id' : p.kind === 'review' ? `review ${cardReviewKey(p.review)}` : p.kind === 'other' ? `mark ${p.text}` : `mark ${p.kind}`
+  p.kind === 'id' ? 'id' : p.kind === 'title' ? 'title' : p.kind === 'review' ? `review ${cardReviewKey(p.review)}` : p.kind === 'other' ? `mark ${p.text}` : `mark ${p.kind}`
 
 const marksOf = (line: CardLine | null): Set<string> => new Set((line?.parts ?? []).map(keyOf).filter((k) => k.startsWith('mark ')))
 
@@ -91,7 +94,27 @@ function uniteLine(base: CardLine | null, theirs: CardLine, mine: CardLine): Car
     while (rank(parts[at]) > 0 && rank(parts[at]) < rank(part)) at++
     parts = [...parts.slice(0, at), part, ...parts.slice(at)]
   }
-  return { parts }
+  return uniteTitle(base, theirs, mine, { parts })
+}
+
+/**
+ * The title three ways (YAZ-5309), by its text (`cardTitleOf`): the side that changed it from the base wins; both
+ * changed it, each to a new one: theirs. `line` holds theirs' title part; mine's part (its own bytes) takes its place,
+ * or comes right after the ID when theirs has none; a title mine removed goes.
+ */
+function uniteTitle(base: CardLine | null, theirs: CardLine, mine: CardLine, line: CardLine): CardLine {
+  const [b, t, m] = [base === null ? null : cardTitleOf(base), cardTitleOf(theirs), cardTitleOf(mine)]
+  if (t === m || m === b) return line
+  if (t !== b && b !== null) return line
+  // Mine changed the title, and theirs did not (or the base is not known: then the two differ, and mine is kept only when theirs has none).
+  if (b === null && t !== '') return line
+  const own = mine.parts.find((p) => p.kind === 'title')
+  const at = line.parts.findIndex((p) => p.kind === 'title')
+  const rest = line.parts.filter((p) => p.kind !== 'title')
+  if (own === undefined) return { parts: rest }
+  if (at !== -1) return { parts: line.parts.flatMap((p, i): CardPart[] => (i === at ? [own] : p.kind === 'title' ? [] : [p])) }
+  const after = rest.findIndex((p) => p.kind === 'id') + 1
+  return { parts: [...rest.slice(0, after), own, ...rest.slice(after)] }
 }
 
 /**

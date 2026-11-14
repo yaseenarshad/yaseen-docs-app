@@ -2,6 +2,8 @@ import { act, createElement } from 'react'
 import { vi } from 'vitest'
 import { createRoot } from 'react-dom/client'
 import { SAME_WORD } from '@client/vault/unitWordText'
+import { cardIdOf, pageCards, rewritePageCards, withCardTitle } from '@shared/cardLine'
+import { splitFrontmatter } from '@shared/frontmatter'
 import { answersSetup } from '../answers/testing'
 import { BRANCH, VAULT } from '../sync/testing'
 import type { VaultMedia } from '../media/ui/vaultMedia'
@@ -25,8 +27,11 @@ export const NOW = new Date(2026, 10, 13, 10, 0, 0).getTime()
 export const cardBlock = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->`
 /** A made-up page with the cards given, as the Mac writes it. */
 export const page = (title: string, ...cards: string[]) => `---\ntitle: ${title}\n---\n\n# ${title}\n\n${cards.join('\n\n')}\n`
-/** A made-up card file (YAZ-5037). */
-export const cardFile = (title: string, block: string, extra = '') => `---\nkind: card\ntitle: ${title}\n---\n\n${block}\n${extra}`
+/**
+ * A made-up card file (YAZ-5037) in the form of YAZ-5308 (decision D): its properties hold only `kind: card`, and
+ * `title` goes on the card line of `block`, right after its ID (`withCardTitle`, as the Mac writes it).
+ */
+export const cardFile = (title: string, block: string, extra = '') => `---\nkind: card\n---\n\n${rewritePageCards(block, (c, n) => (n === 0 ? withCardTitle(c.line, title) : undefined))}\n${extra}`
 
 const named = (el: Element) => (el.getAttribute('aria-label') ?? el.textContent ?? '').replace(/\s+/g, ' ').trim()
 
@@ -73,7 +78,8 @@ export async function mountReview(t: Awaited<ReturnType<typeof answersSetup>>, o
     const lines: Record<string, string> = {}
     for (const [path, content] of Object.entries(files)) {
       if (typeof content !== 'string' || !path.endsWith('.md')) continue
-      for (const m of content.matchAll(/<!-- card: ([^,\s>]+)[^>]*-->/g)) lines[m[1]] = m[0]
+      // By the card's own line, as written: a title may hold `\>` (YAZ-5308), so no pattern on `>` reads it.
+      for (const c of pageCards(content)) if (c.lineAt !== null) lines[cardIdOf(c.line) ?? '?'] = splitFrontmatter(content).body.split('\n')[c.lineAt].trim()
     }
     return lines
   }

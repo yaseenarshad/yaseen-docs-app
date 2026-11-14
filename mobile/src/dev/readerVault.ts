@@ -1,7 +1,7 @@
 import { saveAccount } from '../auth/account'
 import { saveVaultList, vaultId, type PhoneVault, type TokenStore, type VaultStore } from '../store'
 import { gitBlobSha } from '../sync/gitSha'
-import { INDEX_STATE, phoneRecord, type PhoneIndex } from '../sync/phoneIndex'
+import { INDEX_RULES, INDEX_STATE, phoneRecord, type PhoneIndex } from '../sync/phoneIndex'
 
 /**
  * A made-up vault for the reader (4C, YAZ-5079): the tests and the screen fixtures put it on a phone as 3B would leave it
@@ -30,7 +30,7 @@ export const READER_FILES: Record<string, string | Uint8Array> = {
       '## Places',
       '- [x] Book the train\n- [ ] Learn the numbers\n- Museums\n  - El Prado',
       '| Spanish | English |\n| --- | --- |\n| la biblioteca | the library |\n| el tren | the train |',
-      cardBlock('DEMO-12', 'la biblioteca\n---\nthe library', ['2026-11-01T10:00Z good', '2026-11-04T09:30Z good']),
+      cardBlock('DEMO-12', 'la biblioteca\n---\nthe library', ['title "la biblioteca"', '2026-11-01T10:00Z good', '2026-11-04T09:30Z good']),
       '> [!tip] Good to know\n> Shops close from 2 to 5 pm.',
       '> Un poco cada día.',
       '![The plaza at noon](assets/plaza.png)',
@@ -43,11 +43,11 @@ export const READER_FILES: Record<string, string | Uint8Array> = {
       '<script>window.readerRan = 1</script><img src="x.png" onerror="window.readerRan = 2">',
     ].join('\n\n'),
   ),
-  'git/Git cheat sheet.md': page('title: Git cheat sheet\nid: DEMO-2\n', `Short notes.\n\n${cardBlock('DEMO-38', 'git pull\n---\nFetch and merge')}`),
+  'git/Git cheat sheet.md': page('title: Git cheat sheet\nid: DEMO-2\n', `Short notes.\n\n${cardBlock('DEMO-38', 'git pull\n---\nFetch and merge', ['title "git pull"'])}`),
   'Trip plan.md': page('title: Trip plan\nid: DEMO-3\n', 'Madrid, May 3 to 10.\n\n1. Pack\n2. Fly\n\nBack to [[Spanish words]].'),
   'Café notes.md': page('title: Café notes\nid: DEMO-4\n', 'Über straße 🙂'),
-  'cards/capital-of-spain-demo-40.md': page('kind: card\ntitle: Capital of Spain\n', cardBlock('DEMO-40', 'Madrid\n---\nOn the Manzanares river.', ['2026-10-20T08:00Z good', '2026-10-24T08:00Z good', '2026-11-02T08:00Z hard'])),
-  'cards/two-cards-demo-41.md': page('kind: card\ntitle: Two cards in one\n', `${cardBlock('DEMO-41', 'One')}\n\n${cardBlock('DEMO-42', 'Two')}`),
+  'cards/capital-of-spain-demo-40.md': page('kind: card\n', cardBlock('DEMO-40', 'Madrid\n---\nOn the Manzanares river.', ['title "Capital of Spain"', '2026-10-20T08:00Z good', '2026-10-24T08:00Z good', '2026-11-02T08:00Z hard'])),
+  'cards/two-cards-demo-41.md': page('kind: card\n', `${cardBlock('DEMO-41', 'One', ['title "Two cards in one"'])}\n\n${cardBlock('DEMO-42', 'Two')}`),
   '.yaseendocs/review.json': '{"enabled": true}',
   '.yaseendocs/ids.json': '{"enabled": true, "letters": "DEMO"}',
   'assets/sun.png': SUN_PNG,
@@ -82,7 +82,7 @@ export async function writeVaultFiles(store: VaultStore, files: Record<string, s
     if (/\.md$/.test(path) && !path.startsWith('.')) records[path] = phoneRecord(path, bytes.length, typeof content === 'string' ? content : null, { ctime: 1, mtime: 1 })
   }
   for (const [path, bytes] of Object.entries(notStored)) shas[path] = await gitBlobSha(bytes)
-  const index: PhoneIndex = { commit, records }
+  const index: PhoneIndex = { commit, rules: INDEX_RULES, records }
   await store.setState(READER_ID, INDEX_STATE, index)
   await store.setCheckpoint(READER_ID, { commit, etag: null, shas })
   return index

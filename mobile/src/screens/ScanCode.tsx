@@ -110,7 +110,7 @@ export function ScanCode({ vault }: { vault?: string }) {
 
   return (
     <Frame title="Scan a code" back={() => app.go({ type: 'back' })}>
-      <p className="lead">On your Mac, open Settings › Review › Connect your phone. Point the camera at the code.</p>
+      <p className="lead">On your Mac, open Settings › Cards › Connect your phone. Point the camera at the code.</p>
       <div className="camera">
         <video ref={video} aria-label="Camera" playsInline muted />
       </div>

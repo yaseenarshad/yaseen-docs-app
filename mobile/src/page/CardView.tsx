@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { cardInContent, titleOfCard, type CardAtPage } from '@client/review/cardRead'
+import { cardInContent, type CardAtPage } from '@client/review/cardRead'
 import { cardDueWords, cardFacts, cardFullDate, cardNextReview, reviewsTitle } from '@client/review/cardWords'
 import { cardFileShape } from '@shared/cardFileFormat'
 import { answerLabel, cardHistory } from '@shared/cardSchedule'
@@ -11,14 +11,15 @@ import { useMediaWatch, useVaultMedia } from '../media/ui/useVaultMedia'
 import { guardLink } from '../media/ui/safeLinks'
 import { openFile } from '../media/ui/vaultMedia'
 import { tapOf } from './pageDom'
-import { drawCard } from './pageLook'
+import { UNTITLED_CARD, drawCard } from './pageLook'
 
 /** The words of a card file that is not valid (round 15, item 3). */
 export const NEEDS_A_FIX = 'This card file needs a fix on the Mac.'
 
 /**
  * A CARD ALONE, READ ONLY (YAZ-5079, 4C; round 12 item 10): a tap on a card in Search opens it here. The card as Review
- * draws it (`renderCard`), its head "Title · ID", when it is due and how sure you are, its review history, and "Open
+ * draws it (`renderCard`), its head "Title · ID" (the title off its card line, YAZ-5308; "Untitled card · ID" with none,
+ * and VoiceOver names it by its ID), when it is due and how sure you are, its review history, and "Open
  * page" for a card in a page (a card file's card has no other page: 4B, round 15). No Edit card and no ⋯ in stage one.
  *
  * A card file that is not valid (2 or more cards, text outside the card, or no card; from git or an agent): the first
@@ -63,7 +64,11 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   const shape = typeof text === 'string' && isFile ? cardFileShape(splitFrontmatter(text).body) : null
   // The card by its ID; a card file shows its first card (also when that card's ID is not the one asked for).
   const card: CardAtPage | null = typeof text !== 'string' ? null : (cardInContent(path, text, id, -1) ?? (isFile ? cardInContent(path, text, null, 0) : null))
-  const title = card !== null ? titleOfCard(card) : (record?.title ?? id)
+  // The title off the card line (YAZ-5308): the card's own, else the index's for it until the file is read.
+  const listed = record?.cards?.find((c) => c.id !== null && c.id.toLowerCase() === id.toLowerCase())
+  const name = card !== null ? card.title : (listed?.title ?? '')
+  const title = name === '' ? UNTITLED_CARD : name
+  const label = name === '' ? (card?.id ?? id) : name
 
   useEffect(() => {
     const el = host.current
@@ -89,7 +94,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   const facts = card === null || data === null ? null : cardFacts(card.reviews, data.review, now)
   return (
     <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs>
-      <article className="reader card-view" aria-label={title}>
+      <article className="reader card-view" aria-label={label}>
         <h2 className="reader__title">
           {title}
           <span className="card-view__id"> · {card?.id ?? id}</span>

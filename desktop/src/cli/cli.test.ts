@@ -723,7 +723,7 @@ describe('cards: due and card add (YAZ-4963)', () => {
   })
 
   it('YAZ-5097: a page`s list shows Fix later where it shows off: "fix" after the title, and `fix: true` in --json', async () => {
-    const root = await vault('cards', { 'deck.md': `---\nid: YAZ-1\n---\n# Deck\n\n${card('Typo in carf', 'YAZ-10, fix')}\n${card('Fine', 'YAZ-11')}\n${card('Both', 'YAZ-12, off, fix')}` })
+    const root = await vault('cards', { 'deck.md': `---\nid: YAZ-1\n---\n# Deck\n\n${card('Q1', 'YAZ-10, title "Typo in carf", fix')}\n${card('Q2', 'YAZ-11, title "Fine"')}\n${card('Q3', 'YAZ-12, title "Both", off, fix')}` })
     const deck = path.join(root, 'deck.md')
     expect((await run(['due', deck])).out).toBe('new         YAZ-10  Typo in carf  fix\nnew         YAZ-11  Fine\noff         YAZ-12  Both  fix\n')
     const json = JSON.parse((await run(['due', deck, '--json'])).out) as { id: string; fix?: boolean }[]

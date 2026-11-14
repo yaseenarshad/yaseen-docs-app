@@ -65,7 +65,8 @@ describe('sendOutbox (decision 2): ONE commit through the Git Data API', () => {
     expect(now['a.md']).toContain('<!-- card: NC-3, fix -->')
     expect(now['b.md']).toContain('<!-- card: NC-5, off -->')
     expect(await t.reviewsOf('cards/speed-of-light-nc-17.md', 'NC-17')).toEqual([at(2)])
-    expect(now['cards/speed-of-light-nc-17.md'].startsWith('---\nkind: card\ntitle: Speed of light\n---\n')).toBe(true)
+    expect(now['cards/speed-of-light-nc-17.md'].startsWith('---\nkind: card\n---\n')).toBe(true)
+    expect(now['cards/speed-of-light-nc-17.md']).toContain(`<!-- card: NC-17, title "Speed of light", ${at(2)} good -->`)
     expect(now['embeds.md']).toBe(FILES['embeds.md'])
     expect(p.box.waiting()).toEqual([])
     // The phone's copy now holds the commit: the next send has nothing to do and costs no write.
@@ -108,8 +109,9 @@ describe('sendOutbox (decision 2): ONE commit through the Git Data API', () => {
     const report = await p.send()
     expect(report).toMatchObject({ result: 'sent', lost: 0 })
     const now = await t.remoteFiles()
-    expect(now['cards/what-nc-2.md']).toContain(`<!-- card: NC-2, next, ${at(1)} good -->`)
-    expect(now['cards/what-nc-2.md'].startsWith('---\nkind: card\ntitle: What\n---\n')).toBe(true)
+    // YAZ-5308: the title the Mac moved onto the card line stays right after the ID.
+    expect(now['cards/what-nc-2.md']).toContain(`<!-- card: NC-2, title "What", next, ${at(1)} good -->`)
+    expect(now['cards/what-nc-2.md'].startsWith('---\nkind: card\n---\n')).toBe(true)
     expect(now['a.md']).toBe(pageText('A', 'NC-1', ['NC-3'], 'See ![[NC-2]].\n\n'))
   })
 

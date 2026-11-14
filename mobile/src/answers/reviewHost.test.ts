@@ -9,7 +9,7 @@ import { answersSetup, at } from './testing'
 const R: CardReview = { at: at(1), rating: 'good', seconds: 7 }
 const FILES = {
   'a.md': pageText('A', 'NC-1', ['NC-2', 'NC-3']).replace('<!-- card: NC-2 -->', '<!-- card: NC-2, next -->'),
-  'cards/speed-of-light-nc-17.md': '---\nkind: card\ntitle: Speed of light\n---\n\n```card\nHow fast?\n---\nVery\n```\n<!-- card: NC-17 -->\n',
+  'cards/speed-of-light-nc-17.md': '---\nkind: card\n---\n\n```card\nHow fast?\n---\nVery\n```\n<!-- card: NC-17, title "Speed of light" -->\n',
 }
 
 async function setup() {
@@ -29,7 +29,7 @@ describe('the phone\'s ReviewHost (2A interface): it writes ACTIONS, never files
     expect(await t.host.writeCardAnswer('a.md', 'NC-2', R)).toBe(1)
     expect(t.answers.waiting().map((w) => w.op)).toEqual([{ kind: 'next', id: 'NC-2', on: false }, { kind: 'review', id: 'NC-2', review: R }])
     expect(new Set(t.answers.waiting().map((w) => w.group)).size).toBe(1)
-    expect(t.answers.waiting()[0].title).toBe('What is NC-2?') // the card's title as plain text (`cardTitle`)
+    expect(t.answers.waiting()[0].title).toBe('') // YAZ-5308: the card line holds no title, and its text is never one
     expect(await t.host.readCard('a.md', 'NC-2')).toMatchObject({ next: false, reviews: [R] })
     expect(await t.stored()).toBe(FILES['a.md']) // the stored copy is GitHub's until the send
   })
@@ -92,7 +92,7 @@ describe('the phone\'s ReviewHost (2A interface): it writes ACTIONS, never files
 
   it('a card file\'s card comes with its title; its answer is an action on the card file', async () => {
     const t = await setup()
-    expect(await t.host.readCard('cards/speed-of-light-nc-17.md', 'NC-17')).toMatchObject({ id: 'NC-17', fileTitle: 'Speed of light' })
+    expect(await t.host.readCard('cards/speed-of-light-nc-17.md', 'NC-17')).toMatchObject({ id: 'NC-17', title: 'Speed of light', text: 'How fast?\n---\nVery' })
     await t.host.writeCardAnswer('cards/speed-of-light-nc-17.md', 'NC-17', R)
     expect(t.answers.waiting()[0]).toMatchObject({ path: 'cards/speed-of-light-nc-17.md', title: 'Speed of light' })
   })

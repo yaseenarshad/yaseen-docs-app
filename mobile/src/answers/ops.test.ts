@@ -29,9 +29,10 @@ describe('applyOps (decision 2): each kind of action, by card ID, on the newest 
     it(`${name}: on a card file, the card line changes and the properties stay byte for byte`, () => {
       const out = applyOps(file, ops.map((op) => ({ ...op, id: 'NC-17' }) as CardOp))
       expect(out.lost).toEqual([])
-      expect(lineOf(out.content, 'NC-17')).toBe(want.replace('NC-2', 'NC-17'))
+      // YAZ-5308: the card file's title is on its card line, right after the ID; the action keeps it there.
+      expect(lineOf(out.content, 'NC-17')).toBe(want.replace('NC-2', 'NC-17, title "Speed of light"'))
       expect(frontmatter(out.content)).toBe(frontmatter(file))
-      expect(frontmatter(out.content)).toBe('---\nkind: card\ntitle: Speed of light\n---\n')
+      expect(frontmatter(out.content)).toBe('---\nkind: card\n---\n')
     })
   }
 

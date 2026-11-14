@@ -22,16 +22,16 @@ const FILES = { '.yaseendocs/review.json': '{}', 'p.md': page('P', ...[1, 2, 3].
 const ops = (hh: ReviewHarness) => hh.answers.waiting().map((w) => `${w.op.kind}:${w.op.id}${'on' in w.op ? `:${w.op.on}` : ''}`)
 
 async function archiveThenUndo(hh: ReviewHarness, between: () => Promise<void>) {
-  expect(hh.head()).toBe('Q1? · AU-1 · in P')
+  expect(hh.head()).toBe('AU-1 · in P')
   expect(hh.text()).toContain('1 of 3')
   await hh.click('More card actions')
   await hh.click('Archive card')
-  expect(hh.head()).toBe('Q2? · AU-2 · in P')
+  expect(hh.head()).toBe('AU-2 · in P')
   expect(hh.last()).toBe('Archived·Undo')
   await between()
   await hh.click('Undo')
   // Back in the session, at its place, with the same counts.
-  expect(hh.head()).toBe('Q1? · AU-1 · in P')
+  expect(hh.head()).toBe('AU-1 · in P')
   expect(hh.text()).toContain('1 of 3')
   expect(hh.last()).not.toContain('Archived')
 }

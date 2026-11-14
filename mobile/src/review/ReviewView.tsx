@@ -8,7 +8,7 @@ import type { UnitText } from '@client/vault/unitWordText'
 import { cardFileShape } from '@shared/cardFileFormat'
 import { cardIdOf, isCardFix, pageCards, withCardFix, type CardRating } from '@shared/cardLine'
 import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
-import { cardSides, cardTitle, cardWithoutTitle, hiddenCount } from '@shared/cardText'
+import { cardSides, hiddenCount } from '@shared/cardText'
 import { splitFrontmatter } from '@shared/frontmatter'
 import type { ReviewHost } from '@client/review/reviewHost'
 import { openPhoneDays, phoneReviewHost } from '../answers/reviewHost'
@@ -33,8 +33,11 @@ import './review.css'
  *  - The top row: the filter "All cards ▾" (round 10, addition 1: All cards, Up next, Due today, New cards, with
  *    counts) and today's work, "Today: 31 cards · 9 min".
  *  - Above the card: its state ("Due today", "New card") and "3 of 12"; then the head, "Title · ID", with "in <page>"
- *    for a card in a page (round 15, item 4). "Title on the front: Hide" (`notitle`): the ID alone until the card is
- *    fully shown. A card file that is not valid says so (round 15, item 3).
+ *    for a card in a page (round 15, item 4). The title is the card line's (YAZ-5308, decision D; YAZ-5309): never a
+ *    line of the card's text, so the text is drawn whole. A card with no title: the ID alone, as the Mac's Inbox head.
+ *    "Title on the front: Hide" (`notitle`): the ID alone until the card is fully shown; so too a title that holds a
+ *    hidden-word mark (YAZ-5314: a title never gives the answer away). A card file that is not valid says so (round
+ *    15, item 3).
  *  - A TAP ON THE CARD shows the next hidden word, else the next side: what Space does on the Mac. No swipes.
  *  - At the bottom, in reach of the thumb: ✕ Forgot and ✓ Remembered (or four by the setting), then ⋯: Archive card,
  *    Up next, Fix later, Open page (a card file: Open card). The answer buttons work at any step, as on the Mac.
@@ -198,14 +201,13 @@ function SessionScreen({
   const card = session.card
   const page = card?.page ?? null
   const pageText = page?.text ?? null
-  // "Title on the front: Hide" (YAZ-5030): the front is drawn without its title line; the head shows it at the end.
+  // The head's title, off the card line (YAZ-5308; the Mac's `useCardFront`): never part of the text, so the front is
+  // the whole text. "Title on the front: Hide" (YAZ-5030) makes it wait for the card's last step; so does a title that
+  // holds a hidden-word mark (YAZ-5314): its words may be the answer.
+  const text = pageText
+  const cardName = page?.title ?? ''
   const hideTitle = page?.notitle === true
-  const text = useMemo(() => (pageText !== null && hideTitle ? cardWithoutTitle(pageText) : pageText), [pageText, hideTitle])
-  const title = useMemo(() => {
-    if (pageText === null) return { text: '', waits: false }
-    const tells = hiddenCount(cardSides(pageText)[0]) > hiddenCount(cardSides(cardWithoutTitle(pageText))[0])
-    return { text: cardTitle(pageText), waits: hideTitle || tells }
-  }, [pageText, hideTitle])
+  const title = useMemo(() => ({ text: pageText === null ? '' : cardName, waits: hideTitle || hiddenCount(cardName) > 0 }), [pageText, cardName, hideTitle])
   const record = card === null ? undefined : source.records.find((r) => r.path === card.path)
   const cardFile = record?.kind === 'card'
   const cardKey = card === null ? null : `${session.position}\n${card.path}\n${card.id}`
@@ -552,11 +554,6 @@ export function spokenText(el: Element): string {
 /** A tap on these in a card is theirs (open, play, look), never a step. */
 /** What a tap keeps for itself (never a step): a link, a pill, a picture, a board, and a sound's Play and bar (YAZ-5298). */
 const CARD_OWN_TAPS = 'a[href], [data-card-link], [data-card-board], img, .card__audio-play, .card__audio-bar, .page-media'
-
-const shortName = (page: { text: string; fileTitle?: string } | null, id: string): string => {
-  const t = page === null ? '' : (page.fileTitle ?? cardTitle(page.text)).trim()
-  return t === '' ? id : t
-}
 
 /** "Today: 31 cards · 9 min" (YAZ-5033), with the time as the setting says (YAZ-5130: hidden behind a tap by default). */
 function TodayLine({ session, mode: setting }: { session: CardReviewSession; mode: CardReviewApi['settings']['timeSoFar'] }) {

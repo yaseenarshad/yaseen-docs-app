@@ -22,7 +22,7 @@ afterEach(() => {
 
 const FILES = {
   '.yaseendocs/review.json': '{}',
-  'spanish.md': page('Spanish words', 'Words for a trip to Madrid.', cardBlock('Hola?\n---\n{{Hello}}', 'TB-1'), cardBlock('Adios?\n---\n{{Bye}} and {{so long}}', 'TB-3')),
+  'spanish.md': page('Spanish words', 'Words for a trip to Madrid.', cardBlock('Hola?\n---\n{{Hello}}', 'TB-1, title "Hola"'), cardBlock('Adios?\n---\n{{Bye}} and {{so long}}', 'TB-3')),
   'cards/light.md': cardFile('Speed of light', cardBlock('How fast?\n---\n{{very}}', 'TB-2')),
 }
 
@@ -42,7 +42,7 @@ async function app() {
 describe('the Review tab in the app shell', () => {
   it('reviews; ⋯ › Open page opens 4C\'s page at the card; Back comes back to the card', async () => {
     await app()
-    expect(h.text()).toContain('Hola? · TB-1 · in Spanish words')
+    expect(h.text()).toContain('Hola · TB-1 · in Spanish words')
     await h.click('More card actions')
     await h.click('Open page')
     for (let i = 0; i < 30 && !h.text().includes('Madrid'); i++) await h.settle()
@@ -51,7 +51,7 @@ describe('the Review tab in the app shell', () => {
     expect(h.button('Remembered')).toBeNull()
     await h.click('‹ Back')
     for (let i = 0; i < 30 && !h.text().includes('TB-1'); i++) await h.settle()
-    expect(h.text()).toContain('Hola? · TB-1 · in Spanish words')
+    expect(h.text()).toContain('Hola · TB-1 · in Spanish words')
   })
 
   it('a card file\'s ⋯ › Open card opens 4C\'s card view', async () => {

@@ -97,4 +97,12 @@ describe('what the phone app reaches through its imports', () => {
   it('the walk follows @shared imports (it reaches shared/fileKind.ts)', () => {
     expect(reachedFiles().map((f) => relative(REPO, f))).toContain('shared/fileKind.ts')
   })
+
+  // YAZ-5309 (point 5): the one-time move of the card titles (YAZ-5308) is the Mac's job. The phone never rewrites a
+  // vault's files: no file it reaches holds the move, and nothing reads a title off a card's text or properties.
+  it('the phone never reaches the one-time title move (`shared/cardTitleSweep.ts`) nor the card convert actions', () => {
+    const reached = reachedFiles().map((f) => relative(REPO, f))
+    expect(reached).toContain('shared/cardLine.ts')
+    expect(reached.filter((f) => /cardTitleSweep|cardConvert/.test(f))).toEqual([])
+  })
 })

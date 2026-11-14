@@ -14,7 +14,8 @@ function block(id: string, body: string, line: string[] = []): string {
   return `\`\`\`card\n${body}\n\`\`\`\n<!-- card: ${[id, ...line].join(', ')} -->`
 }
 const page = (title: string, blocks: string[], extra = '') => `---\ntitle: ${title}\n---\n\n# ${title}\n\n${extra}${blocks.join('\n\n')}\n`
-const cardFile = (title: string, b: string) => `---\nkind: card\ntitle: ${title}\n---\n\n${b}\n`
+/** A card file in the form of YAZ-5308: `kind: card` alone; its title on its card line, right after the ID. */
+const cardFile = (title: string, b: string) => `---\nkind: card\n---\n\n${b.replace(/<!-- card: ([^,\s]+)/, `<!-- card: $1, title "${title}"`)}\n`
 
 function vault(files: Record<string, string>) {
   const records: Record<string, IndexRecord> = {}

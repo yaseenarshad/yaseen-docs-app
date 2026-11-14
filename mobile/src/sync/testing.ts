@@ -83,7 +83,7 @@ export function pageText(title: string, id: string, cards: string[] = [], extra 
   return `---\nid: ${id}\ntitle: ${title}\n---\n\n# ${title}\n\n${extra}${cards.map((c) => `${card(c)}\n\n`).join('')}`
 }
 
-/** A made-up card file (YAZ-5037): `kind: card`, its `title`, and one card. */
+/** A made-up card file (YAZ-5037) in the form of YAZ-5308: `kind: card` alone, and one card with its title on its card line. */
 export function cardFileText(title: string, cardId: string): string {
-  return `---\nkind: card\ntitle: ${title}\n---\n\n${card(cardId, `${title}\n---\nThe answer`)}\n`
+  return `---\nkind: card\n---\n\n${card(cardId, `${title}\n---\nThe answer`).replace(`<!-- card: ${cardId} -->`, `<!-- card: ${cardId}, title "${title.replace(/[\\">]/g, (c) => `\\${c}`)}" -->`)}\n`
 }

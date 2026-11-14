@@ -2,7 +2,7 @@ import { MAX_FILE_BYTES, type IndexRecord } from '@shared/types'
 import { kindOnPhone, type FileContent, type VaultStore } from '../store'
 import { gitBlobSha } from './gitSha'
 import type { GithubRemote } from './githubRemote'
-import { INDEX_STATE, phoneRecord, type PhoneIndex } from './phoneIndex'
+import { INDEX_RULES, INDEX_STATE, ofTheseRules, phoneRecord, type PhoneIndex } from './phoneIndex'
 import { diffTrees, isEager, isIndexed, type TreeDiff } from './plan'
 import { uiSlicer, yieldToUi as defaultYield } from './yieldToUi'
 
@@ -82,7 +82,8 @@ export async function syncPass(options: PassOptions): Promise<PassResult> {
   const diff = diffTrees(checkpoint?.shas ?? null, tree)
   const stored = new Set((await store.list(vault)).map((e) => e.path))
   const saved = await store.getState<PhoneIndex>(vault, INDEX_STATE)
-  const trusted = checkpoint !== null && saved !== undefined && saved.commit === checkpoint.commit
+  // An index of an older build's rules (YAZ-5309) is not trusted: every record is built again from the stored files.
+  const trusted = checkpoint !== null && saved !== undefined && saved.commit === checkpoint.commit && ofTheseRules(saved)
   await slice()
 
   const wanted = (path: string) => isEager(path) || (options.alsoEager?.(path) ?? false)
@@ -161,7 +162,7 @@ export async function syncPass(options: PassOptions): Promise<PassResult> {
     }
     await slice()
   }
-  const index: PhoneIndex = { commit: head.sha, records }
+  const index: PhoneIndex = { commit: head.sha, rules: INDEX_RULES, records }
   await store.setState(vault, INDEX_STATE, index)
   // LAST: until this lands, the next pass starts from the old checkpoint and continues (F5).
   await store.setCheckpoint(vault, { commit: head.sha, etag: head.etag === '' ? null : head.etag, shas: Object.fromEntries(tree) })

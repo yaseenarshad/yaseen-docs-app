@@ -1,5 +1,5 @@
 /**
- * Settings › Review › "Phone and friends" › Friends (YAZ-5086, decision 16): what the Mac sends and to whom, and why it
+ * Settings › Cards › "Phone and friends" › Friends (YAZ-5086, decision 16): what the Mac sends and to whom, and why it
  * did not send, in plain words. No switch (decision 22). The bridge is mocked: no real main process, token or GitHub.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -47,7 +47,7 @@ async function mount(v: FriendsSendView) {
   document.body.appendChild(el)
   root = createRoot(el)
   act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange: vi.fn(), review: { settings: DEFAULT_REVIEW_SETTINGS, save: vi.fn() }, vaultRoot: '/v' }} onClose={vi.fn()} />))
-  act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === 'Review')?.click())
+  act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === 'Cards')?.click()) // YAZ-5154: the Review section is Cards now
   await act(async () => void (await Promise.all([import('./GithubTokenControl'), import('./ConnectPhoneControl'), import('./FriendsSendControl')])))
   for (let i = 0; i < 4; i++) await act(async () => await Promise.resolve())
 }

@@ -84,11 +84,27 @@ export function drawCard(data: VaultData, holder: string, text: string): HTMLEle
   return drawLocalCard(text, {}, { links: resolveSourceOf(data), files: data.files, holder })
 }
 
-/** The title an embedded card's head names (the Mac's `embedName`): a card file's card title, else the title of its page. */
+/**
+ * What a card's head says for a card with no title (YAZ-5308: the Mac's `UNTITLED_CARD`, `cardTitle.ts`). A link, a
+ * search row, an embed's "Embedded from" and a VoiceOver label say the card's ID instead.
+ */
+export const UNTITLED_CARD = 'Untitled card'
+
+/** The title an embedded card's head names (the Mac's `embedName`): a card file's card title (its ID with none), else the title of its page. */
 export function embedName(data: VaultData, card: CardLink): string {
   const record = data.byPath[card.path]
-  if (record?.kind === 'card') return card.title === '' ? 'Untitled card' : card.title
+  if (record?.kind === 'card') return card.title === '' ? card.id : card.title
   return record?.title ?? card.path
+}
+
+/**
+ * An embedded card's head (YAZ-5164 part 3 on the Mac's `cardEmbed.ts`): a card in a page first shows its own title
+ * (`title`, off its card line; "Untitled card" with none), then where it is from; a card file's title is the name in
+ * "Embedded from" already.
+ */
+export function embedHead(data: VaultData, card: CardLink, title: string): string {
+  const from = `Embedded from "${embedName(data, card)}" · ${card.id}`
+  return data.byPath[card.path]?.kind === 'card' ? from : `${title === '' ? UNTITLED_CARD : title} · ${from}`
 }
 
 /** The card an `![[ID]]` or `[[ID]]` names, or null. */

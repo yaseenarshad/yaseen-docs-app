@@ -3,7 +3,6 @@ import { cardOnPageIn, type CardOnPage } from '@client/review/cardRead'
 import type { ReviewHost } from '@client/review/reviewHost'
 import { CardNotFoundError, cardIdOf, cardNextIndex, cardReviewIndex, cardReviewKey, cardReviewsOf, pageCards, type CardLine, type CardReview } from '@shared/cardLine'
 import { NOTHING_ADDED, type CardsAddedToday } from '@shared/cardSchedule'
-import { cardTitle } from '@shared/cardText'
 import type { VaultStore } from '../store'
 import type { Answers } from './answers'
 import { opsBetween, type CardOp } from './ops'
@@ -104,7 +103,8 @@ export function phoneReviewHost(options: PhoneReviewHostOptions): ReviewHost {
     const card = text === null ? null : cardOnPageIn(path, text, id)
     const block = text === null ? undefined : pageCards(text).find((c) => cardIdOf(c.line) === card?.id)
     if (card === null || block === undefined) throw new CardNotFoundError(id)
-    return { line: block.line, title: card.fileTitle ?? cardTitle(card.text) }
+    // The title off the card line (YAZ-5308), '' for a card with none: the lost-answer line then names the card by its ID.
+    return { line: block.line, title: card.title }
   }
   const add = (path: string, title: string, ops: readonly CardOp[]) => answers.add(ops.map((op) => ({ op, path, title })))
   /** The review action for `review` on `line`: a second one of the same minute and rating says so (`nth`, YAZ-5078). */

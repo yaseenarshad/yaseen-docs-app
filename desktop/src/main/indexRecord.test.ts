@@ -43,25 +43,29 @@ describe('indexRecord: text to record (YAZ-5068)', () => {
     expect(Object.keys(r)).toEqual(['path', 'name', 'basename', 'title', 'folder', 'ext', 'size', 'ctime', 'mtime', 'properties', 'aliases', 'tags', 'links', 'embeds', 'id', 'kind', 'cards'])
   })
 
-  it('a card file with a `title`: kind card, its title, and its card takes the same title', () => {
-    const r = indexRecord(meta('capital-geo-150.md'), ['---', 'kind: card', 'title: Capital of France', '---', '```card', 'Which city?', '---', 'Paris', '```', '<!-- card: GEO-150, 2026-11-10T09:12Z good 12s -->', ''].join('\n'))
+  it('YAZ-5308: a card file is titled by its card line; a `title` property is not its title', () => {
+    const r = indexRecord(meta('capital-of-france-geo-150.md'), ['---', 'kind: card', '---', '```card', 'Which city?', '---', 'Paris', '```', '<!-- card: GEO-150, title "Capital of France", 2026-11-10T09:12Z good 12s -->', ''].join('\n'))
     expect(r.kind).toBe('card')
     expect(r.title).toBe('Capital of France')
     expect(r.cards).toEqual([{ id: 'GEO-150', off: false, next: false, reviews: [{ at: '2026-11-10T09:12Z', rating: 'good', seconds: 12 }], title: 'Capital of France' }])
   })
 
-  it('an old card file with no `title`: its card`s first line is the title', () => {
-    const r = indexRecord(meta('old-geo-140.md'), ['---', 'kind: " CARD "', '---', '```card', '###### Capital of **France**?', '---', 'Paris', '```', '<!-- card: GEO-140 -->', ''].join('\n'))
-    expect(r).toMatchObject({ kind: 'card', title: 'Capital of France?' })
-    expect(r.id).toBeUndefined()
-    expect(r.cards?.[0].title).toBe('Capital of France?')
+  it('YAZ-5309: a card file with no title on its card line is named by its card`s ID (a link, search, a label: the ID); one with no card by its file name', () => {
+    // Not moved yet by the Mac (a `title` property, a first line): neither is read.
+    const old = indexRecord(meta('old-geo-140.md'), ['---', 'kind: " CARD "', 'title: Capital of France', '---', '```card', '###### Capital of **France**?', '---', 'Paris', '```', '<!-- card: GEO-140 -->', ''].join('\n'))
+    expect(old).toMatchObject({ kind: 'card', title: 'GEO-140' })
+    expect(old.id).toBeUndefined()
+    expect(old.cards?.[0].title).toBeUndefined()
+    expect(indexRecord(meta('geo-141.md'), '---\nkind: card\n---\n```card\nQ\n```\n<!-- card: GEO-141 -->\n').title).toBe('GEO-141')
+    expect(indexRecord(meta('no-card.md'), '---\nkind: card\n---\nJust text.\n').title).toBe('no-card')
   })
 
-  it('a card file with 2 cards keeps both in review; only the first takes the file`s title', () => {
-    const r = indexRecord(meta('two.md'), ['---', 'kind: card', 'title: Pair', '---', '```card', 'First', '```', '<!-- card: GEO-141 -->', '', '```card', 'Second', '```', '<!-- card: GEO-142 -->', ''].join('\n'))
+  it('a card file with 2 cards keeps both in review; the file is titled by its first card', () => {
+    const r = indexRecord(meta('two.md'), ['---', 'kind: card', '---', '```card', 'First', '```', '<!-- card: GEO-141, title "Pair" -->', '', '```card', 'Second', '```', '<!-- card: GEO-142 -->', ''].join('\n'))
+    expect(r.title).toBe('Pair')
     expect(r.cards?.map((c) => [c.id, c.title])).toEqual([
       ['GEO-141', 'Pair'],
-      ['GEO-142', 'Second'],
+      ['GEO-142', undefined],
     ])
   })
 

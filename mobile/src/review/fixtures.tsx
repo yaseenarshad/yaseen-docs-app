@@ -21,22 +21,22 @@ const FILES: Record<string, string> = {
     'Spanish words',
     block('What does "la biblioteca" mean?\n---\nThe {{library}}. A bookshop is "la {{librería}}".', `DEMO-12, ${DUE}`),
     block('Hola\n---\n{{Hello}}', 'DEMO-13'),
-    block('Verbs: ser\n\n| | ser |\n| -- | -- |\n| yo | {{soy}} |\n| tú | {{eres}} |\n| él | {{es}} |', 'DEMO-14, next'),
+    block('| | ser |\n| -- | -- |\n| yo | {{soy}} |\n| tú | {{eres}} |\n| él | {{es}} |', 'DEMO-14, title "Verbs: ser", next'),
   ),
   'git-cheat-sheet.md': page(
     'Git cheat sheet',
     block('What does git pull do?\n---\nIt {{fetches}} and then {{merges}}.', `DEMO-38, ${DUE}`),
-    block('What prints?\n\n```js\nconsole.log([1, 2, 3].map((n) => n * 2))\n```\n---\n{{[2, 4, 6]}}', 'DEMO-39', '````'),
+    block('```js\nconsole.log([1, 2, 3].map((n) => n * 2))\n```\n---\n{{[2, 4, 6]}}', 'DEMO-39, title "What prints?"', '````'),
   ),
-  'cards/speed-of-light.md': `---\nkind: card\ntitle: Speed of light\n---\n\n${block('How fast is light?\n---\nAbout {{300,000 km}} each second.', 'DEMO-40')}\n`,
-  'birds.md': page('Birds', block('Which bird is this?\n\n![a robin](robin.png)\n---\nA {{robin}}.', 'DEMO-41'), block('Which bird sings this?\n\n![[blackbird.mp3]]\n---\nA {{blackbird}}.', 'DEMO-42')),
+  'cards/speed-of-light-demo-40.md': `---\nkind: card\n---\n\n${block('How fast is light?\n---\nAbout {{300,000 km}} each second.', 'DEMO-40, title "Speed of light"')}\n`,
+  'birds.md': page('Birds', block('![a robin](robin.png)\n---\nA {{robin}}.', 'DEMO-41, title "Which bird is this?"'), block('![[blackbird.mp3]]\n---\nA {{blackbird}}.', 'DEMO-42, title "Which bird sings this?"')),
   'robin.png': 'made-up picture bytes',
   'blackbird.mp3': 'made-up sound bytes',
   'history.md': page(
     'History',
     block(
-      `The long card\n\n${Array.from({ length: 30 }, (_, i) => `${i + 1}. A long line of made-up notes about the history of the printing press, line ${i + 1}.`).join('\n')}\n---\nThe press came to Europe in about {{1450}}.`,
-      'DEMO-50',
+      `${Array.from({ length: 30 }, (_, i) => `${i + 1}. A long line of made-up notes about the history of the printing press, line ${i + 1}.`).join('\n')}\n---\nThe press came to Europe in about {{1450}}.`,
+      'DEMO-50, title "The long card"',
     ),
   ),
 }

@@ -128,7 +128,7 @@ describe('Review: the kinds of card', () => {
   })
 
   it('"Title on the front: Hide" (notitle): the ID alone until the card is fully shown, then the title', async () => {
-    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('Secret title\nWhat is {{this}}?', 'QA-1, notitle')) })
+    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('What is {{this}}?', 'QA-1, title "Secret title", notitle')) })
     expect(h.head()).toBe('QA-1 · in P')
     expect(h.cardText()).not.toContain('Secret title')
     await h.tap()

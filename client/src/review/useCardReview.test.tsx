@@ -1012,7 +1012,7 @@ describe('YAZ-5046: archived cards, to look at (not to review)', () => {
 
 describe('YAZ-5097: Fix later, and the To fix list', () => {
   it('the session lists the scope`s cards marked `fix`; a marked card stays in review; To fix shows no card to review; setFix clears the mark and the card leaves the list', async () => {
-    page('Fix.md', ['Typo in this {{carf}}', 'WIKI-8, fix'], ['Kept', 'WIKI-9'])
+    page('Fix.md', ['Typo in this {{carf}}', 'WIKI-8, title "Typo in this carf", fix'], ['Kept', 'WIKI-9'])
     await mount()
     await act(async () => review.start())
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
@@ -1022,7 +1022,7 @@ describe('YAZ-5097: Fix later, and the To fix list', () => {
     act(() => review.setFilter('fix'))
     expect(review.session).toMatchObject({ filter: 'fix', card: null, position: 0, total: 1 })
     await step(() => review.setFix(`${ROOT}/Fix.md`, 'WIKI-8', false))
-    expect(vault.get(`${ROOT}/Fix.md`)).toContain('<!-- card: WIKI-8 -->')
+    expect(vault.get(`${ROOT}/Fix.md`)).toContain('<!-- card: WIKI-8, title "Typo in this carf" -->')
     await vi.waitFor(() => expect(review.session?.toFix).toEqual([]))
     expect(review.session?.counts.all).toBe(4)
   })

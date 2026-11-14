@@ -182,10 +182,11 @@ export function indexRecord(meta: IndexRecordMeta, text: string | null): IndexRe
   const cards = cardRecords(body)
   // A card file (YAZ-5037): the mark in its properties, never its shape — a file with 2 cards, or none, stays a card
   // file, and its tab says so. Its title is its card's, off the card line (YAZ-5308, decision D), so card pills, the
-  // `[[` picker, search and the Inbox read one title; a card with none: the file's name (`<id>.md`, its ID).
+  // `[[` picker, search and the Inbox read one title; a card with none: its card's ID (YAZ-5309: as a link to it says,
+  // never the lower-case file name `<id>.md`); a file with no card: its file name.
   if (isCardKind(properties)) {
     record.kind = 'card'
-    record.title = cards[0]?.title ?? fileTitle(meta)
+    record.title = cards[0]?.title ?? cards[0]?.id ?? fileTitle(meta)
   }
   return { ...record, ...extractBody(properties, body), ...(cards.length > 0 && { cards }) }
 }

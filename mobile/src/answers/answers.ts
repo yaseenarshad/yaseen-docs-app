@@ -313,7 +313,7 @@ export function createAnswers(options: AnswersOptions): Answers {
         shownAt.set(path, { text: shown, mtime })
         records[path] = phoneRecord(path, new TextEncoder().encode(shown).length, shown, { ctime: old.ctime, mtime })
       }
-      return { commit: index.commit, records }
+      return { ...index, records }
     },
     sendNow,
     setVisible(visible) {

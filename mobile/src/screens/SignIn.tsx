@@ -126,7 +126,7 @@ export function SignIn({ mode }: { mode: SignInMode }) {
       <button type="button" className="btn btn--wide" onClick={() => app.go({ type: 'open', route: { kind: 'scan', vault: mode.kind === 'again' ? mode.vault : undefined } })}>
         Scan a code
       </button>
-      <p className="muted">On your Mac: Settings › Review › Connect your phone.</p>
+      <p className="muted">On your Mac: Settings › Cards › Connect your phone.</p>
       {mode.kind === 'again' && !ready && again !== null && (
         <div>
           {asking ? (

@@ -4,7 +4,7 @@ import { cardInContent } from '@client/review/cardRead'
 import type { NavAction } from '../app/nav'
 import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
-import { cardOf, drawCard, embedName, resolveSourceOf } from './pageLook'
+import { cardOf, drawCard, embedHead, resolveSourceOf } from './pageLook'
 
 /**
  * What a drawn page or card does once it is on screen (YAZ-5079): its pictures and sounds get their bytes
@@ -29,7 +29,7 @@ export async function fillCardEmbeds(root: ParentNode, data: VaultData, store: V
     const head = document.createElement('button')
     head.type = 'button'
     head.className = 'card-embed__from'
-    head.textContent = `Embedded from "${embedName(data, card)}" · ${card.id}`
+    head.textContent = embedHead(data, card, card.title)
     head.addEventListener('click', () => go({ type: 'open', route: { kind: 'card', path: card.path, id: card.id } }))
     const body = document.createElement('div')
     body.className = 'card__body card-embed__body'
@@ -45,6 +45,8 @@ export async function fillCardEmbeds(root: ParentNode, data: VaultData, store: V
           box.textContent = `Missing card · ${card.id}`
           return
         }
+        // The file holds the card's title now (the index may be a pass behind).
+        if (read.title !== card.title) head.textContent = embedHead(data, card, read.title)
         if (read.off) {
           const state = document.createElement('span')
           state.className = 'card-embed__state'

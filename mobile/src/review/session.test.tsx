@@ -8,8 +8,8 @@ import { NOW, cardBlock, page, reviewSetup, type ReviewHarness } from './testing
  */
 const FILES = {
   '.yaseendocs/review.json': '{}',
-  'spanish.md': page('Spanish words', cardBlock('What does "la biblioteca" mean?\n---\nThe {{library}}. A bookshop is "la {{librería}}".', 'DEMO-12'), cardBlock('Hola\n---\n{{Hello}}', 'DEMO-13')),
-  'git.md': page('Git cheat sheet', cardBlock('What does git pull do?\n---\nIt {{fetches}} and then {{merges}}.', 'DEMO-38')),
+  'spanish.md': page('Spanish words', cardBlock('What does "la biblioteca" mean?\n---\nThe {{library}}. A bookshop is "la {{librería}}".', 'DEMO-12, title "la biblioteca"'), cardBlock('Hola\n---\n{{Hello}}', 'DEMO-13, title "Hola"')),
+  'git.md': page('Git cheat sheet', cardBlock('What does git pull do?\n---\nIt {{fetches}} and then {{merges}}.', 'DEMO-38, title "git pull"')),
 }
 
 let h: ReviewHarness
@@ -31,7 +31,7 @@ describe('Review: a full session (decision 11)', () => {
     expect(h.text()).toContain('All cards ▾')
     expect(h.text()).toContain('New card')
     expect(h.text()).toContain('1 of 3')
-    expect(h.head()).toBe('What does "la biblioteca" mean? · DEMO-12 · in Spanish words')
+    expect(h.head()).toBe('la biblioteca · DEMO-12 · in Spanish words')
     expect(h.cardText()).toBe('What does "la biblioteca" mean?')
     expect(h.button('Forgot')).not.toBeNull()
     expect(h.button('Remembered')).not.toBeNull()
@@ -53,7 +53,7 @@ describe('Review: a full session (decision 11)', () => {
     expect(ops()).toEqual(['review:DEMO-12:good'])
 
     await h.click('Forgot')
-    expect(h.head()).toBe('What does git pull do? · DEMO-38 · in Git cheat sheet')
+    expect(h.head()).toBe('git pull · DEMO-38 · in Git cheat sheet')
     expect(ops()).toEqual(['review:DEMO-12:good', 'review:DEMO-13:again'])
 
     // Undo takes back the last answer: the card shows again, at its first step; its action leaves the list.
@@ -78,7 +78,7 @@ describe('Review: a full session (decision 11)', () => {
     // ⋯ › Archive card: the card leaves the session.
     await h.click('Archive card')
     expect(ops()).toEqual(['review:DEMO-12:good', 'next:DEMO-13:true', 'fix:DEMO-13:true', 'off:DEMO-13:true'])
-    expect(h.head()).toBe('What does git pull do? · DEMO-38 · in Git cheat sheet')
+    expect(h.head()).toBe('git pull · DEMO-38 · in Git cheat sheet')
 
     // ⋯ › Open page: 4C's read-only page, by its path in the repo, at this card.
     await h.click('More card actions')
@@ -91,8 +91,8 @@ describe('Review: a full session (decision 11)', () => {
     expect(h.commits()).toBe(1)
     expect(h.answers.waiting()).toEqual([])
     const lines = await h.remoteLines()
-    expect(lines['DEMO-12']).toMatch(/^<!-- card: DEMO-12, 2026-11-13T\d\d:00Z good 0s -->$/)
-    expect(lines['DEMO-13']).toBe('<!-- card: DEMO-13, off, next, fix -->')
-    expect(lines['DEMO-38']).toBe('<!-- card: DEMO-38 -->')
+    expect(lines['DEMO-12']).toMatch(/^<!-- card: DEMO-12, title "la biblioteca", 2026-11-13T\d\d:00Z good 0s -->$/)
+    expect(lines['DEMO-13']).toBe('<!-- card: DEMO-13, title "Hola", off, next, fix -->')
+    expect(lines['DEMO-38']).toBe('<!-- card: DEMO-38, title "git pull" -->')
   })
 })

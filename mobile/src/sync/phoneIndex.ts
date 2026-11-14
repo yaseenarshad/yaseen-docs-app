@@ -1,5 +1,6 @@
 import { indexRecord, type IndexRecordMeta } from '@shared/indexRecord'
 import type { IndexRecord } from '@shared/types'
+import type { VaultStore } from '../store'
 
 /**
  * The phone's index of the open vault: one record for each page and card file, built with the Mac's own
@@ -8,13 +9,23 @@ import type { IndexRecord } from '@shared/types'
  *
  * It is kept as the vault's phone-only state `INDEX_STATE`, written by the sync pass just BEFORE the checkpoint. It
  * is trusted only when its `commit` is the checkpoint's; else the pass builds it again in full (after "Reset local
- * copy", a format change, or a stop between the two writes).
+ * copy", a format change, or a stop between the two writes). It is trusted only when its `rules` are this build's
+ * too (`INDEX_RULES`): an update of the app builds its records again from the stored files, with no network.
  */
 export const INDEX_STATE = 'index'
+
+/**
+ * The rules the records are built by, as the Mac's `CACHE_VERSION` (`desktop/.../vaultIndex/cache.ts`). Raise it when
+ * `indexRecord` reads a file in a new way. 2 (YAZ-5309): a card's title is its card line's `title` part (YAZ-5308),
+ * never its first line nor a card file's `title` property. Absent (1): every index stored before it.
+ */
+export const INDEX_RULES = 2
 
 export interface PhoneIndex {
   /** The commit the records are of. */
   commit: string
+  /** The rules the records are built by (`INDEX_RULES`); absent in an index of an older build. */
+  rules?: number
   /** Path in the vault (`folder/name.md`, no leading `/`) → its record. */
   records: Record<string, IndexRecord>
 }
@@ -41,4 +52,21 @@ export function phoneRecord(path: string, size: number, text: string | null, tim
     mtime: times.mtime,
   }
   return indexRecord(meta, text)
+}
+
+/** Was `index` built by this build's rules (`INDEX_RULES`)? */
+export const ofTheseRules = (index: PhoneIndex): boolean => index.rules === INDEX_RULES
+
+/**
+ * `index` built again by this build's rules (YAZ-5309), from the files the phone holds: each record's file read from
+ * `store`, with its size and times kept. A file the phone does not hold as text (over the size limit, F7) keeps a
+ * record of its metadata only. No network.
+ */
+export async function rebuiltIndex(store: Pick<VaultStore, 'read'>, vault: string, index: PhoneIndex): Promise<PhoneIndex> {
+  const records: Record<string, IndexRecord> = {}
+  for (const [path, held] of Object.entries(index.records)) {
+    const file = await store.read(vault, path)
+    records[path] = phoneRecord(path, held.size, file !== null && typeof file.content === 'string' ? file.content : null, { ctime: held.ctime, mtime: held.mtime })
+  }
+  return { commit: index.commit, rules: INDEX_RULES, records }
 }

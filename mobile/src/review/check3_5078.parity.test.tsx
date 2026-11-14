@@ -254,8 +254,8 @@ const R3 = (id: string, front: string, extra = '') => `\`\`\`card\n${front}\n---
 const VR3: Record<string, string> = {
   '.yaseendocs/review.json': '{"newPerDay": 2, "upNextPerDay": 1, "fuzz": false}',
   'garden/plants.md': `---\ntitle: Plant notes (round 3)\n---\n\n# Plants\n\nSome text before the cards.\n\n${R3('PL-1', 'What is a fern?', ', 2026-09-20T08:00Z good, 2026-10-10T08:00Z good')}\n\n${R3('PL-2', 'Moss or lichen?')}\n\n${R3('PL-3', 'Which tree loses leaves?', ', next')}\n\n${R3('PL-4', 'Cactus water?', ', 2026-11-12T09:00Z again, 2026-11-13T07:00Z hard')}\n\n${R3('PL-5', 'Secret title\nWhat is a {{bulb}}?', ', notitle, 2026-10-25T08:00Z good')}\n`,
-  'cards/pl-6.md': `---\nkind: card\ntitle: Oak\n---\n\n${R3('PL-6', 'How old can an oak get?', ', 2026-08-01T08:00Z easy, 2026-09-15T08:00Z good')}\n`,
-  'cards/pl-7.md': `---\nkind: card\ntitle: Ivy\n---\n\n${R3('PL-7', 'Does ivy climb?', ', next')}\n`,
+  'cards/pl-6.md': `---\nkind: card\n---\n\n${R3('PL-6', 'How old can an oak get?', ', title "Oak", 2026-08-01T08:00Z easy, 2026-09-15T08:00Z good')}\n`,
+  'cards/pl-7.md': `---\nkind: card\n---\n\n${R3('PL-7', 'Does ivy climb?', ', title "Ivy", next')}\n`,
   'garden/more.md': `---\ntitle: More\n---\n\n${R3('PL-8', 'Archived one?', ', off, 2026-10-01T08:00Z good')}\n\n${R3('PL-9', 'Rose thorns?', ', fix')}\n\n${R3('PL-10', 'Tulip from?')}\n\n${R3('PL-11', 'Daisy?', ', 2026-11-01T08:00Z good')}\n\n![[cards/pl-6]]\n\n![[PL-7]]\n`,
 }
 const SCRIPT_R3: Action[] = ['again', 'good', 'undo', 'good', 'next', 'good', 'f-new', 'again', 'good', 'undo', 'undo', 'f-next', 'good', 'f-due', 'archive', 'good', 'fix', 'f-all', 'add-new', 'good', 'again', 'add-next', 'good', 'unnext', 'good', 'undo', 'good', 'again', 'again', 'next', 'good', 'archive', 'undo', 'f-new', 'good', 'add-new', 'good', 'good', 'again', 'good']

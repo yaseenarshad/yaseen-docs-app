@@ -5,18 +5,18 @@ import { describe, expect, it } from 'vitest'
 import { phoneRecord } from '../sync/phoneIndex'
 import { buildRows, emptyBoxRows, findRows, searchRecords, type PhoneType, type SearchSource } from './searchRun'
 
-/** One card block with its line, as the Mac writes it. */
-const card = (id: string, body: string) => `\`\`\`card\n${body}\n\`\`\`\n<!-- card: ${id} -->`
+/** One card block with its line, as the Mac writes it: its title on its card line (YAZ-5308), when it has one. */
+const card = (id: string, body: string, title?: string) => `\`\`\`card\n${body}\n\`\`\`\n<!-- card: ${id}${title === undefined ? '' : `, title "${title}"`} -->`
 const page = (title: string, body: string, extra = '') => `---\ntitle: ${title}\n${extra}---\n\n${body}\n`
-const cardFile = (title: string, id: string, body = 'Front\n---\nBack') => `---\nkind: card\ntitle: ${title}\n---\n\n${card(id, body)}\n`
+const cardFile = (title: string, id: string, body = 'Front\n---\nBack') => `---\nkind: card\n---\n\n${card(id, body, title)}\n`
 
 /** A made-up vault, as the phone's index holds it (the real `indexRecord` of 2B). */
 const FILES: Record<string, string> = {
-  'Spanish words.md': page('Spanish words', `Words for a trip.\n\n${card('DEMO-12', 'la biblioteca\n---\nthe library')}\n\n${card('DEMO-13', 'el tren\n---\nthe train')}\n\n![[DEMO-40]]`, 'id: DEMO-1\naliases: [Español]\n'),
-  'git/Git cheat sheet.md': page('Git cheat sheet', card('DEMO-38', 'git pull\n---\nFetch and merge'), 'id: DEMO-2\n'),
+  'Spanish words.md': page('Spanish words', `Words for a trip.\n\n${card('DEMO-12', 'la biblioteca\n---\nthe library', 'la biblioteca')}\n\n${card('DEMO-13', 'el tren\n---\nthe train', 'el tren')}\n\n![[DEMO-40]]`, 'id: DEMO-1\naliases: [Español]\n'),
+  'git/Git cheat sheet.md': page('Git cheat sheet', card('DEMO-38', 'git pull\n---\nFetch and merge', 'git pull'), 'id: DEMO-2\n'),
   'Trip plan.md': page('Trip plan', 'Madrid in May. [[Spanish words]] [[Nowhere page]]', 'id: DEMO-3\n'),
   'cards/capital-of-spain-demo-40.md': cardFile('Capital of Spain', 'DEMO-40'),
-  'cards/broken-demo-41.md': `---\nkind: card\ntitle: Two cards in one\n---\n\n${card('DEMO-41', 'One')}\n\n${card('DEMO-42', 'Two')}\n`,
+  'cards/broken-demo-41.md': `---\nkind: card\n---\n\n${card('DEMO-41', 'One', 'Two cards in one')}\n\n${card('DEMO-42', 'Two')}\n`,
   'Café notes.md': page('Café notes', 'Über straße 🙂', 'id: DEMO-4\n'),
   'Regex (a+b)*.md': page('Regex (a+b)*', 'Text with [brackets].', 'id: DEMO-5\n'),
   '2026-10-28.md': page('Weekly sync', 'Named by hand.', 'id: DEMO-6\n'),

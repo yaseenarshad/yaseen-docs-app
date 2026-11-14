@@ -53,9 +53,14 @@ export interface CardReview {
 export const CARD_SECONDS_MAX = 86400
 
 /** One part of a card line, in the order the line holds them. */
-export type CardPart = { kind: 'id'; id: string } | { kind: 'title'; title: string } | { kind: 'review'; review: CardReview } | { kind: 'off' } | { kind: 'next' } | { kind: 'notitle' } | { kind: 'fix' } | { kind: 'other'; text: string }
+export type CardPart = { kind: 'id'; id: string } | { kind: 'title'; title: string; raw?: string } | { kind: 'review'; review: CardReview } | { kind: 'off' } | { kind: 'next' } | { kind: 'notitle' } | { kind: 'fix' } | { kind: 'other'; text: string }
 
-/** What a card line holds. `parts` keeps every part in place; the getters below read it. */
+/**
+ * What a card line holds. `parts` keeps every part in place; the getters below read it. A title part read off a line
+ * in a form this app does not write (a bare `>`, extra spaces, a tab after `title`, an odd escape) keeps that part's
+ * text as `raw`, so a write that does not change the title writes its bytes back (YAZ-5309: an answer on the phone
+ * never changes a title); a new title (`withCardTitle`) is written in the app's own form.
+ */
 export interface CardLine {
   parts: CardPart[]
 }
@@ -126,6 +131,8 @@ export const cleanCardTitle = (title: string): string => title.replace(/\s+/g, '
 /** The title part's text as the line writes it, quotes and all: `\` and `"` escaped, and `>` so no `-->` can end the line. */
 const quoteTitle = (title: string): string => `"${title.replace(/[\\">]/g, (c) => `\\${c}`)}"`
 const unquoteTitle = (quoted: string): string => quoted.replace(/\\(.)/g, '$1')
+/** The title part as this app writes it. */
+const titlePart = (title: string): string => `title ${quoteTitle(title)}`
 
 /** The card line `value` holds (one line, trimmed or not), or null when it is no card line. */
 export function parseCardLine(value: string): CardLine | null {
@@ -143,7 +150,8 @@ export function parseCardLine(value: string): CardLine | null {
       parts.push({ kind: 'review', review: seconds === undefined ? { at: review[1], rating: review[2] as CardRating } : { at: review[1], rating: review[2] as CardRating, seconds } })
     else if (title !== null && cleanCardTitle(unquoteTitle(title[1])) !== '') {
       titled = true
-      parts.push({ kind: 'title', title: cleanCardTitle(unquoteTitle(title[1])) })
+      const clean = cleanCardTitle(unquoteTitle(title[1]))
+      parts.push(text === titlePart(clean) ? { kind: 'title', title: clean } : { kind: 'title', title: clean, raw: text })
     } else if (text === 'off') parts.push({ kind: 'off' })
     else if (text === 'next') parts.push({ kind: 'next' })
     else if (text === 'notitle') parts.push({ kind: 'notitle' })
@@ -170,7 +178,7 @@ export const cardReviewKey = (r: CardReview): string => `${r.at} ${r.rating}`
 
 /** The card line for `line`, or null when it holds no part (a card with no ID and no review writes no line). */
 export function formatCardLine(line: CardLine): string | null {
-  const parts = line.parts.map((p) => (p.kind === 'id' ? p.id : p.kind === 'title' ? `title ${quoteTitle(p.title)}` : p.kind === 'review' ? formatCardReview(p.review) : p.kind === 'other' ? p.text : p.kind))
+  const parts = line.parts.map((p) => (p.kind === 'id' ? p.id : p.kind === 'title' ? (p.raw ?? titlePart(p.title)) : p.kind === 'review' ? formatCardReview(p.review) : p.kind === 'other' ? p.text : p.kind))
   return parts.length === 0 ? null : `<!-- card: ${parts.join(', ')} -->`
 }
 
@@ -265,11 +273,14 @@ export function withCardNoTitle(line: CardLine, hide: boolean): CardLine {
 export const CARD_FIX = 'fix'
 export const isCardFix = (line: CardLine): boolean => line.parts.some((p) => p.kind === 'fix')
 
-/** Fix later on or off: `fix` goes after the ID and any `off` / `next` / `notitle` right after it, or first; off removes every `fix`. */
+/**
+ * Fix later on or off: `fix` goes after the ID, the title (YAZ-5309: the card's head, `afterHead`) and any `off` /
+ * `next` / `notitle` right after them, or first; off removes every `fix`.
+ */
 export function withCardFix(line: CardLine, on: boolean): CardLine {
   if (isCardFix(line) === on) return line
   if (!on) return { parts: line.parts.filter((p) => p.kind !== 'fix') }
-  let i = line.parts.findIndex((p) => p.kind === 'id') + 1
+  let i = afterHead(line)
   while (line.parts[i]?.kind === 'off' || line.parts[i]?.kind === 'next' || line.parts[i]?.kind === 'notitle') i++
   return { parts: [...line.parts.slice(0, i), { kind: 'fix' }, ...line.parts.slice(i)] }
 }

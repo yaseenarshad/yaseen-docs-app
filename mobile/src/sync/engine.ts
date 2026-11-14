@@ -3,7 +3,7 @@ import { StorageFullError, vaultId, type PhoneVault, type StoredFile, type Token
 import { POLL_MS } from './cadence'
 import { githubRemote, type Change, type GithubRemote } from './githubRemote'
 import { syncPass, type PassProgress, type PassResult } from './pass'
-import { INDEX_STATE, type PhoneIndex } from './phoneIndex'
+import { INDEX_STATE, ofTheseRules, rebuiltIndex, type PhoneIndex } from './phoneIndex'
 import { isEager, type TreeDiff } from './plan'
 import { yieldToUi as defaultYield } from './yieldToUi'
 
@@ -263,12 +263,20 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   }
 
   async function loadIndex(id: string, gen: number) {
-    const saved = await store.getState<PhoneIndex>(id, INDEX_STATE)
+    let saved = await store.getState<PhoneIndex>(id, INDEX_STATE)
     const checkpoint = await store.checkpoint(id)
     if (gen !== generation) return
     // The stored index counts only with its checkpoint: a first download that stopped shows no partial vault (F5, F6).
     if (saved === undefined || checkpoint === null || saved.commit !== checkpoint.commit) return
-    if (current?.commit === saved.commit) return
+    if (current?.commit === saved.commit && ofTheseRules(current)) return
+    // An index of an older build's rules (YAZ-5309: the card titles of before YAZ-5308) is built again from the stored
+    // files before any screen reads it, and kept, so the next open reads it as it is.
+    if (!ofTheseRules(saved)) {
+      saved = await rebuiltIndex(store, id, saved)
+      if (gen !== generation) return
+      await store.setState(id, INDEX_STATE, saved)
+      if (gen !== generation) return
+    }
     current = saved
     setState({ ready: true })
     emit({ type: 'changed', vault: id, commit: saved.commit, diff: null, settings: [], index: saved })

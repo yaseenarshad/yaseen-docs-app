@@ -1,5 +1,5 @@
 /**
- * Settings › Review › "Phone and friends" (YAZ-5098; round 12, item 8): the GitHub token row and "Connect your phone".
+ * Settings › Cards › "Phone and friends" (YAZ-5098; round 12, item 8): the GitHub token row and "Connect your phone".
  * The bridge is mocked: no row reaches a real main process, secrets file, git or GitHub. The canvas is a fake 2D
  * context that records each square, so a test can read the code back with the phone's own reader.
  *
@@ -137,7 +137,7 @@ async function mountReview(reviewOn = true) {
   root = createRoot(el)
   const review = { settings: { ...DEFAULT_REVIEW_SETTINGS, enabled: reviewOn }, save: vi.fn() }
   act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange, review, vaultRoot: ROOT }} onClose={vi.fn()} />))
-  act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === 'Review')?.click())
+  act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === 'Cards')?.click()) // YAZ-5154: the Review section is Cards now
   // The two rows are lazy chunks (the first load stays the same).
   await act(async () => void (await Promise.all([import('./GithubTokenControl'), import('./ConnectPhoneControl')])))
   await flush()
@@ -163,7 +163,7 @@ async function openCode() {
   await settle()
 }
 
-describe('Settings › Review › Phone and friends (YAZ-5098)', () => {
+describe('Settings › Cards › Phone and friends (YAZ-5098)', () => {
   it('is a group of the Review page, with the token row and Connect your phone, only while review is on', async () => {
     await mountReview()
     expect([...el.querySelectorAll('.settings-group__title')].map((t) => t.textContent)).toContain('Phone and friends')

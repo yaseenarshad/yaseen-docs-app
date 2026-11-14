@@ -184,7 +184,8 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await mount(FILE)
     await menu()
     pick('Fix later')
-    await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('<!-- card: WIKI-9 -->', '<!-- card: WIKI-9, fix -->')))
+    // YAZ-5309: `fix` goes after the ID and the title.
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", fix -->')))
     await vi.waitFor(() => expect(el.querySelector('.card-file__facts .card__fix')?.textContent).toBe('To fix'))
     expect(await menu()).toContain('Remove Fix later')
     pick('Remove Fix later')

@@ -284,7 +284,7 @@ describe('nothing loads from another host (YAZ-5208, YAZ-5209)', () => {
     const files: Record<string, string | Uint8Array> = {
       ...READER_FILES,
       'Attack.md': `---\ntitle: Attack\nid: DEMO-90\n---\n\n${ATTACK}\n\n${cardBlock('DEMO-91', ATTACK)}\n\n![[DEMO-92]]\n`,
-      'cards/attack-demo-92.md': `---\nkind: card\ntitle: Attack card\n---\n\n${cardBlock('DEMO-92', ATTACK)}\n`,
+      'cards/attack-demo-92.md': `---\nkind: card\n---\n\n${cardBlock('DEMO-92', ATTACK, ['title "Attack card"'])}\n`,
     }
     h = await openSearch(files)
     await openPage(h, 'Attack')
@@ -388,9 +388,10 @@ describe('a card alone (YAZ-5079; round 12 item 10)', () => {
   })
 
   it('a page with every block type and a card file with no card: both still show', async () => {
-    h = await openSearch({ ...READER_FILES, 'cards/empty-demo-50.md': '---\nkind: card\ntitle: Empty card\n---\n\nJust text, no card.\n', 'Blocks.md': `---\ntitle: Blocks\n---\n\n${cardBlock('DEMO-60', 'Front')}\n` })
-    await typeQuery(h, 'empty card')
-    await h.click(/^Empty card/)
+    // YAZ-5308: a card file with no card has no card line to hold a title: it is named by its file.
+    h = await openSearch({ ...READER_FILES, 'cards/empty-demo-50.md': '---\nkind: card\n---\n\nJust text, no card.\n', 'Blocks.md': `---\ntitle: Blocks\n---\n\n${cardBlock('DEMO-60', 'Front')}\n` })
+    await typeQuery(h, 'empty-demo-50')
+    await h.click(/^empty-demo-50/)
     await waitFor(h, () => h!.text().includes('needs a fix'))
     expect(h.text()).toContain('This card file needs a fix on the Mac.')
   })

@@ -203,11 +203,14 @@ export function searchRows(candidates: readonly SearchCandidate[], query: string
   const holds = holdsId(query)
   if (holds === null) return searchTitles(candidates, query, first)
   const held: SearchCandidate[] = []
-  for (const c of candidates) if (c.id !== undefined && holds(c.id, c.was)) held.push(c.id.includes('-') ? { ...c, label: `${c.id} — ${c.label}` } : c)
+  for (const c of candidates) if (c.id !== undefined && holds(c.id, c.was)) held.push(c.id.includes('-') ? { ...c, label: idLabel(c.id, c.label) } : c)
   if (held.length === 0) return searchTitles(candidates, query, first)
   const shown = new Set(held.map((c) => c.path))
   return [...firstRows(held, first), ...searchTitles(candidates, query, first).filter((c) => !shown.has(c.path))].slice(0, SEARCH_CAP)
 }
+
+/** A row found by its ID: `ID — label`; a card with no title (YAZ-5308) is named by its ID already, so it says it one time (YAZ-5309). */
+const idLabel = (id: string, label: string): string => (label === id ? id : `${id} — ${label}`)
 
 /** The number a search by ID asks for (YAZ-2571 round 5): `#5` → `5`, `#` and digits alone; any other text → null. */
 export function idQuery(query: string): string | null {
@@ -232,7 +235,7 @@ export function numberRows(candidates: readonly SearchCandidate[], digits: strin
     any = true
     const id = c.id as string
     if (!id.startsWith(digits, dash + 1)) continue
-    const row = { ...c, label: `${id} — ${c.label}` }
+    const row = { ...c, label: idLabel(id, c.label) }
     if (id.length - dash - 1 === digits.length) exact.push(row)
     else longer.push({ row, number: Number(id.slice(dash + 1)) })
   }

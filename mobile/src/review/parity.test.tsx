@@ -8,7 +8,8 @@ import { desktopReviewHost } from '@client/review/desktopReviewHost'
 import type { ReviewHost } from '@client/review/reviewHost'
 import { useCardReview, type CardReviewApi } from '@client/review/useCardReview'
 import { storage } from '@client/lib/storage'
-import { cardIdOf, formatCardLine, pageCards } from '@shared/cardLine'
+import { cardIdOf, pageCards } from '@shared/cardLine'
+import { splitFrontmatter } from '@shared/frontmatter'
 import { sanitizeReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import { answersSetup } from '../answers/testing'
@@ -21,8 +22,10 @@ import { NOW, cardBlock, cardFile, page } from './testing'
 /**
  * Decision 3, "one review logic": the SAME made-up vault and the SAME taps through the Mac's host
  * (`desktopReviewHost`, its files through a fake bridge, as `useCardReview.test.tsx` does) and the phone's host (the
- * answer list on the real engine and the fake GitHub). The due list after each step and the card lines at the end
- * must be the same.
+ * answer list on the real engine and the fake GitHub). The due list after each step, its order, the title each card
+ * shows, and the card lines and files at the end must be the same, byte for byte. YAZ-5309: the titles are on the card
+ * lines (YAZ-5308, decision D), some with a quote, a comma, `-->`, a backslash, non-ASCII letters and an emoji; a card
+ * file's properties hold only `kind: card`.
  */
 const ROOT = '/vault'
 let disk = new Map<string, string>()
@@ -58,12 +61,12 @@ const FILES: Record<string, string> = {
   '.yaseendocs/review.json': JSON.stringify({ newPerDay: 3, fuzz: false }),
   'spanish.md': page(
     'Spanish words',
-    cardBlock('Old one?\n---\n{{viejo}}', 'PA-1, 2026-10-01T09:00Z good, 2026-10-05T09:00Z good'),
-    cardBlock('Hola?\n---\n{{hello}}', 'PA-2'),
+    cardBlock('Old one?\n---\n{{viejo}}', 'PA-1, title "Viejo", 2026-10-01T09:00Z good, 2026-10-05T09:00Z good'),
+    cardBlock('Hola?\n---\n{{hello}}', 'PA-2, title "Hola, \\"mundo\\" --\\> \\\\ ñandú 🙂"'),
     cardBlock('Adios?\n---\n{{bye}}', 'PA-3, next'),
   ),
-  'cards/light.md': cardFile('Speed of light', cardBlock('How fast?\n---\n{{300,000 km/s}}', 'PA-4')),
-  'git.md': page('Git', cardBlock('git pull?\n---\nIt {{fetches}} and {{merges}}.', 'PA-5, 2026-11-10T09:00Z again'), cardBlock('git push?\n---\n{{uploads}}', 'PA-6'), '![[PA-4]]'),
+  'cards/speed-of-light-pa-4.md': cardFile('Speed of light', cardBlock('How fast?\n---\n{{300,000 km/s}}', 'PA-4')),
+  'git.md': page('Git', cardBlock('git pull?\n---\nIt {{fetches}} and {{merges}}.', 'PA-5, title "a > b, by hand", 2026-11-10T09:00Z again'), cardBlock('git push?\n---\n{{uploads}}', 'PA-6, title ""'), '![[PA-4]]'),
 }
 
 /** One run: the hook with a host, and the steps. Returns what showed after each step, and the card lines. */
@@ -71,6 +74,8 @@ interface Run {
   review: () => CardReviewApi
   settle: () => Promise<void>
   lines: () => Promise<Record<string, string>>
+  /** Each file as it is now, by its path in the vault. */
+  files: () => Promise<Record<string, string>>
   stop: () => void
 }
 
@@ -105,8 +110,9 @@ async function desktopRun(files: Record<string, string> = FILES): Promise<Run> {
     for (let i = 0; i < 4; i++) await act(async () => void (await new Promise((r) => setTimeout(r, 0))))
     await act(async () => reindex())
   }
-  const lines = async () => linesOf(Object.fromEntries([...disk].map(([p, c]) => [p.slice(ROOT.length + 1), c])))
-  return { review: m.get, settle, lines, stop: () => act(() => m.root.unmount()) }
+  const onDisk = async () => Object.fromEntries([...disk].map(([p, c]) => [p.slice(ROOT.length + 1), c]))
+  const lines = async () => linesOf(await onDisk())
+  return { review: m.get, settle, lines, files: onDisk, stop: () => act(() => m.root.unmount()) }
 }
 
 async function phoneRun(files: Record<string, string> = FILES): Promise<Run> {
@@ -121,17 +127,22 @@ async function phoneRun(files: Record<string, string> = FILES): Promise<Run> {
   const settle = async () => {
     for (let i = 0; i < 6; i++) await act(async () => void (await new Promise((r) => setTimeout(r, 0))))
   }
-  const lines = async () => {
+  const shown = async () => {
     const out: Record<string, string> = {}
     for (const p of Object.keys(files)) out[p] = (await t.answers.text(p)) ?? ''
-    return linesOf(out)
+    return out
   }
-  return { review: m.get, settle, lines, stop: () => (act(() => m.root.unmount()), source.stop()) }
+  const lines = async () => linesOf(await shown())
+  return { review: m.get, settle, lines, files: shown, stop: () => (act(() => m.root.unmount()), source.stop()) }
 }
 
+/** Each card's line as the file holds it: its bytes, not the parser's reading of them. */
 function linesOf(files: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const content of Object.values(files)) for (const c of pageCards(content)) out[cardIdOf(c.line) ?? '?'] = formatCardLine(c.line) ?? ''
+  for (const content of Object.values(files)) {
+    const body = splitFrontmatter(content).body.split('\n')
+    for (const c of pageCards(content)) out[cardIdOf(c.line) ?? '?'] = c.lineAt === null ? '' : body[c.lineAt]
+  }
   return out
 }
 
@@ -140,7 +151,7 @@ async function script(run: Run): Promise<string[]> {
   const seen: string[] = []
   const look = () => {
     const s = run.review().session
-    seen.push(s === null ? 'none' : `${s.card?.id ?? 'done'} ${s.position}/${s.total} due:${run.review().dueCount} [${s.counts.all}/${s.counts.next}/${s.counts.due}/${s.counts.new}]`)
+    seen.push(s === null ? 'none' : `${s.card?.id ?? 'done'} "${s.card?.page?.title ?? '-'}" ${s.position}/${s.total} due:${run.review().dueCount} [${s.counts.all}/${s.counts.next}/${s.counts.due}/${s.counts.new}]`)
   }
   const minute = (m: number) => vi.setSystemTime(NOW + m * 60_000)
   const step = async (m: number, fn: () => unknown) => {
@@ -156,6 +167,7 @@ async function script(run: Run): Promise<string[]> {
   await step(4, () => run.review().answer('good', 5))
   const c = () => run.review().session!.card!
   await step(5, () => run.review().setNext(c().path, c().id, true))
+  await step(5, () => run.review().setFix(c().path, c().id, true))
   await step(6, () => run.review().turnOff())
   await step(7, () => run.review().answer('again', 9))
   await step(7, () => run.review().answer('good', 4)) // the same minute: a second review (YAZ-5078)
@@ -180,9 +192,18 @@ describe('one review logic (decision 3): the Mac host and the phone host give th
     const phone = await phoneRun()
     const phoneSeen = await script(phone)
     const phoneLines = await phone.lines()
+    const [macFiles, phoneFiles] = [await mac.files(), await phone.files()]
     phone.stop()
     expect(phoneSeen).toEqual(macSeen)
     expect(phoneLines).toEqual(macLines)
+    expect(phoneFiles).toEqual(macFiles)
+    // The titles showed, and each title part is where it was, with its bytes, on both.
+    expect(macSeen.join('\n')).toContain('PA-2 "Hola, "mundo" --> \\ ñandú 🙂"')
+    expect(macSeen.join('\n')).toContain('"Speed of light"')
+    for (const [id, part] of [['PA-1', 'title "Viejo"'], ['PA-2', 'title "Hola, \\"mundo\\" --\\> \\\\ ñandú 🙂"'], ['PA-4', 'title "Speed of light"'], ['PA-5', 'title "a > b, by hand"'], ['PA-6', 'title ""']])
+      expect(macLines[id].startsWith(`<!-- card: ${id}, ${part}`), id).toBe(true)
+    expect(macFiles['cards/speed-of-light-pa-4.md'].startsWith('---\nkind: card\n---\n')).toBe(true)
+    expect(Object.values(macLines).join('\n')).toMatch(/fix/)
     // The run did something: answers, Up next, an archive, two reviews in one minute.
     expect(Object.values(macLines).join('\n')).toMatch(/off/)
     expect(macSeen.length).toBeGreaterThan(8)

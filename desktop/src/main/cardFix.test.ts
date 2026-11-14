@@ -62,8 +62,9 @@ describe('the `fix` part (YAZ-5097)', () => {
   it('the index record holds it (`fix: true`), so the To fix count reads no file; a card with none has no key', () => {
     const page = `# P\n\n\`\`\`card\nHola\n\`\`\`\n<!-- card: WIKI-5, fix, ${R1} -->\n\n\`\`\`card\nAdios\n\`\`\`\n<!-- card: WIKI-6 -->\n`
     const [a, b] = cardRecords(page)
-    expect(a).toEqual({ id: 'WIKI-5', off: false, next: false, reviews: [{ at: '2026-11-01T09:00Z', rating: 'good' }], title: 'Hola', fix: true })
-    expect(b).toEqual({ id: 'WIKI-6', off: false, next: false, reviews: [], title: 'Adios' })
+    // YAZ-5308: no line of the text is a title; these cards have none on their card lines.
+    expect(a).toEqual({ id: 'WIKI-5', off: false, next: false, reviews: [{ at: '2026-11-01T09:00Z', rating: 'good' }], fix: true })
+    expect(b).toEqual({ id: 'WIKI-6', off: false, next: false, reviews: [] })
   })
 })
 
