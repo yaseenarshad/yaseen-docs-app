@@ -14,7 +14,8 @@ From the repo root:
 | `npx vitest run --project mobile` | Runs this workspace's tests only. `npm test` runs them with all the others. |
 | `npm run typecheck` | Checks `mobile/tsconfig.json` (the app) and `mobile/tsconfig.test.json` (tests, config) with the rest. |
 
-The tests run in vitest, in Node. Storage tests use `fake-indexeddb`. A test that draws React says
+The tests run in vitest, in Node. The `mobile` test project uses the build's aliases and one React, but NOT the
+build's import guard: tests are never bundled (`testConfig.test.ts` checks this). Storage tests use `fake-indexeddb`. A test that draws React says
 `// @vitest-environment jsdom` on its first line. There are no browser tests: no Playwright, no browser window.
 
 ## The rule: no Electron, no Node
@@ -92,9 +93,10 @@ Where the next units go (from the issues): `src/sync/` (3B, 3C, 3D), `src/screen
 * A page, a card file and a settings file are never dropped. When the phone is full, EVERY write (files,
   checkpoints, phone-only state such as the answer list) drops the media viewed longest ago and tries again (row P2).
   It says which in `dropped`. When that cannot help, it throws `StorageFullError`.
-* A picture or a sound takes room only from its own vault, and only when the room left plus that vault's media is
-  enough: a file that can never fit drops nothing. A page, a checkpoint and state may take room from any vault.
-  The room left comes from `navigator.storage.estimate()` (`Backend.room`).
+* A write takes room from its own vault's media first, then from the other vaults' media, oldest view first (a
+  coordinator pick for Yaseen to confirm). A file write drops nothing when the room left plus all media that may go
+  is too small, and never drops more than the bytes it adds. The room left comes from `navigator.storage.estimate()`
+  (`Backend.room`), but the store does not trust it after the browser has refused the write.
 * Every write resolves only after IndexedDB committed it. Await it before the screen moves on.
 * `STORE_FORMAT` is one number. A start with another stored number discards the files and checkpoints and keeps the
   phone-only state (so unsent answers can still go). Raise it when the stored shape changes.

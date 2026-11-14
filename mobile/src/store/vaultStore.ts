@@ -153,58 +153,76 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
   if (stored === undefined) await backend.apply([{ put: 'meta', key: 'format', value: format }])
   else if (formatReset) await backend.apply([...clearCopy(), { put: 'meta', key: 'format', value: format }])
 
-  /** The media that may go, oldest view first: of one vault, or of every vault when `vault` is undefined; never `except`. */
-  async function mediaByAge(vault: string | undefined, except: FileRef | undefined): Promise<FileEntry[]> {
-    const entries = (await backend.all('entries', vault)) as FileEntry[]
-    return entries.filter((e) => e.kind === 'media' && !(except && e.vault === except.vault && e.path === except.path)).sort((a, b) => a.viewedAt - b.viewedAt)
+  /**
+   * The media that may go for a write of `vault`, in the order it goes: that vault's own media first, oldest view first,
+   * then the media of the other vaults, oldest view first (decision (coordinator, for Yaseen to confirm), YAZ-5071).
+   * Pages, card files, settings, checkpoints and phone-only state are never in it. `except` (the file being written) neither.
+   */
+  async function mediaToDrop(vault: string, except: FileRef | undefined): Promise<FileEntry[]> {
+    const entries = (await backend.all('entries')) as FileEntry[]
+    const media = entries.filter((e) => e.kind === 'media' && !(except && e.vault === except.vault && e.path === except.path))
+    const own = media.filter((e) => e.vault === vault)
+    const others = media.filter((e) => e.vault !== vault)
+    const byAge = (a: FileEntry, b: FileEntry) => a.viewedAt - b.viewedAt
+    return [...own.sort(byAge), ...others.sort(byAge)]
   }
 
   /**
    * Applies `ops`. When storage is full, drops media (row P2) and tries again. EVERY write of the store goes through
    * here, not only `write()` (YAZ-5156): a full phone must never refuse the answer list while media can go.
    *
-   * - `from`: whose media may go. A picture or a sound takes room only from its own vault (YAZ-5157). A page, a card
-   *   file, a settings file, a checkpoint and phone-only state (the answer list) may take it from any vault: they are
-   *   never dropped, and the vault cannot work, or an answer is lost, without them.
-   * - `bytes`: what the write adds, when known. Then the store first checks that the room left plus all the media
-   *   that may go is enough, and drops nothing when it is not (YAZ-5157), and it drops only as much as it needs.
-   *   Without it (state, checkpoints: small, and they must land), the oldest media goes one by one until the write fits.
+   * - `bytes`: what a file write adds. The refused write proves that the real room is LESS than `bytes`, so an estimate
+   *   that says it fits is wrong and counts as 0 (YAZ-5157 round 2: `navigator.storage.estimate()` gives the browser's
+   *   quota, not the free disk). The store drops nothing when the room left plus all media that may go is less than
+   *   `bytes`. It never drops more than `bytes` of media (plus the last file it needed to pass that), and it stops at the
+   *   first write that still fails after that: a file that cannot fit costs at most its own size in media.
+   * - No `bytes` (phone-only state such as the answer list, checkpoints, `markViewed`): small, and they must land. The
+   *   oldest media goes one file at a time until the write fits, or no media is left.
    */
-  async function applyMakingRoom(ops: Op[], target: { vault: string; item: string; from: string | undefined; except?: FileRef; bytes?: number }): Promise<FileRef[]> {
+  async function applyMakingRoom(ops: Op[], target: { vault: string; item: string; except?: FileRef; bytes?: number }): Promise<FileRef[]> {
     const dropped: FileRef[] = []
     const full = () => new StorageFullError(target.vault, target.item, dropped)
-    try {
-      await backend.apply(ops)
-      return dropped
-    } catch (error) {
-      if (!isQuotaError(error)) throw error
-    }
-    const media = await mediaByAge(target.from, target.except)
-    const drop = async () => {
-      const victim = media.shift()!
-      await backend.apply(dropOps(victim))
-      dropped.push({ vault: victim.vault, path: victim.path })
-      return victim.size
-    }
-    if (target.bytes !== undefined) {
-      const free = (await backend.room?.()) ?? 0
-      const evictable = media.reduce((sum, e) => sum + e.size, 0)
-      if (target.bytes > free + evictable) throw full()
-      for (let freed = 0; media.length > 0 && free + freed < target.bytes; ) freed += await drop()
-    } else {
-      if (media.length === 0) throw full()
-      await drop()
-    }
-    for (;;) {
+    const tryApply = async (): Promise<boolean> => {
       try {
         await backend.apply(ops)
-        return dropped
+        return true
       } catch (error) {
         if (!isQuotaError(error)) throw error
-        if (media.length === 0) throw full()
-        await drop()
+        return false
       }
     }
+    if (await tryApply()) return dropped
+    const media = await mediaToDrop(target.vault, target.except)
+    let freed = 0
+    const dropUntil = async (goal: number) => {
+      while (freed < goal && media.length > 0) {
+        const victim = media.shift()!
+        await backend.apply(dropOps(victim))
+        dropped.push({ vault: victim.vault, path: victim.path })
+        freed += victim.size
+      }
+    }
+
+    if (target.bytes === undefined) {
+      while (media.length > 0) {
+        await dropUntil(freed + 1)
+        if (await tryApply()) return dropped
+      }
+      throw full()
+    }
+
+    const bytes = target.bytes
+    const estimate = (await backend.room?.()) ?? 0
+    // The write was refused, so the room left is less than `bytes`; an estimate that says otherwise is wrong.
+    const free = estimate < bytes ? Math.max(0, estimate) : 0
+    const evictable = media.reduce((sum, e) => sum + e.size, 0)
+    if (bytes > free + evictable) throw full()
+    // First on the estimate (a picture the estimate says is nearly there drops little), then on no room at all.
+    for (const goal of free > 0 ? [bytes - free, bytes] : [bytes]) {
+      await dropUntil(goal)
+      if (await tryApply()) return dropped
+    }
+    throw full()
   }
 
   return {
@@ -225,7 +243,7 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
       ]
       const before = (await backend.get('entries', [vault, path])) as FileEntry | undefined
       const file = { vault, path }
-      const dropped = await applyMakingRoom(ops, { vault, item: path, from: entry.kind === 'media' ? vault : undefined, except: file, bytes: Math.max(0, entry.size - (before?.size ?? 0)) })
+      const dropped = await applyMakingRoom(ops, { vault, item: path, except: file, bytes: Math.max(0, entry.size - (before?.size ?? 0)) })
       return { dropped }
     },
 
@@ -237,14 +255,14 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
 
     async markViewed(vault, path) {
       const entry = (await backend.get('entries', [vault, path])) as FileEntry | undefined
-      if (entry !== undefined) await applyMakingRoom([{ put: 'entries', key: [vault, path], value: { ...entry, viewedAt: now() } }], { vault, item: path, from: undefined, except: { vault, path } })
+      if (entry !== undefined) await applyMakingRoom([{ put: 'entries', key: [vault, path], value: { ...entry, viewedAt: now() } }], { vault, item: path, except: { vault, path } })
     },
 
     async checkpoint(vault) {
       return ((await backend.get('checkpoints', vault)) as Checkpoint | undefined) ?? null
     },
     async setCheckpoint(vault, checkpoint) {
-      await applyMakingRoom([{ put: 'checkpoints', key: vault, value: checkpoint }], { vault, item: 'checkpoint', from: undefined })
+      await applyMakingRoom([{ put: 'checkpoints', key: vault, value: checkpoint }], { vault, item: 'checkpoint' })
     },
 
     async getState<T>(scope: string, name: string) {
@@ -253,7 +271,7 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
     },
     async setState(scope, name, value) {
       notTheToken(name)
-      await applyMakingRoom([{ put: 'state', key: [scope, name], value }], { vault: scope, item: `state:${name}`, from: undefined })
+      await applyMakingRoom([{ put: 'state', key: [scope, name], value }], { vault: scope, item: `state:${name}` })
     },
     async removeState(scope, name) {
       notTheToken(name)
