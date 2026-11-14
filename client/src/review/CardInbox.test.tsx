@@ -700,7 +700,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     const open = () => act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
     const rows = () => [...document.querySelectorAll<HTMLButtonElement>('.card-inbox__filter-item')].map((r) => r.textContent)
     open()
-    expect(rows()).toEqual(['All cards12', 'Due today9', 'New cardsfrom All folders ›3'])
+    expect(rows()).toEqual(['All cards12', 'Due today9', 'New cardsfrom All folders ›3', 'To fix0'])
     open()
     // The done screen: nothing of Up next (nothing waits, no add).
     session = { ...session, card: null, counts: { all: 0, next: 0, due: 0, new: 0 } }
@@ -711,13 +711,13 @@ describe('the Inbox screen (YAZ-4962)', () => {
     session = { ...session, filter: 'next', counts: { all: 10, next: 0, due: 7, new: 3 } }
     render()
     open()
-    expect(rows()).toEqual(['All cards10', 'Up next0', 'Due today7', 'New cardsfrom All folders ›3'])
+    expect(rows()).toEqual(['All cards10', 'Up next0', 'Due today7', 'New cardsfrom All folders ›3', 'To fix0'])
     open()
     // One card marked Up next: the row is back.
     session = { ...session, filter: 'all', upNext: true }
     render()
     open()
-    expect(rows()).toEqual(['All cards10', 'Up next0', 'Due today7', 'New cardsfrom All folders ›3'])
+    expect(rows()).toEqual(['All cards10', 'Up next0', 'Due today7', 'New cardsfrom All folders ›3', 'To fix0'])
   })
 
   it('YAZ-5018: the buttons wear their glyphs — ✕ Forgot and ✓ Remembered; with four buttons ↺ Again, ~ Hard, ✓ Good, ⇈ Easy — each a round pill with its digit', async () => {
@@ -2056,7 +2056,7 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     expect(el.querySelector('.card-inbox__pick-chip')).toBeNull()
     act(() => from.click())
     expect(review.setFilter).not.toHaveBeenCalled()
-    expect(rows()).toHaveLength(4)
+    expect(rows()).toHaveLength(5)
     // All folders, then each folder with its new cards, a subfolder under its parent.
     expect(pickerRows().map((r) => r.textContent)).toEqual(['All folders38', 'Spanish24', 'Verbs4', 'Geography12'])
     expect(pickerRows()[0].querySelector('input')!.checked).toBe(true)

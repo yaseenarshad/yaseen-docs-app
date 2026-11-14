@@ -196,11 +196,11 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     pick('Fix later')
     // YAZ-5309: `fix` goes after the ID and the title.
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", fix -->')))
-    await vi.waitFor(() => expect(el.querySelector('.card-file__facts .card__fix')?.textContent).toBe('To fix'))
+    await vi.waitFor(() => expect(el.querySelector('.card__head .card__fix')?.textContent).toBe('To fix'))
     expect(await menu()).toContain('Remove Fix later')
     pick('Remove Fix later')
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE))
-    await vi.waitFor(() => expect(el.querySelector('.card-file__facts .card__fix')).toBeNull())
+    await vi.waitFor(() => expect(el.querySelector('.card__head .card__fix')).toBeNull())
   })
 
   it('with the vault`s Review off nothing asks you to review it: no due state, no Inbox row, no Reviews', async () => {

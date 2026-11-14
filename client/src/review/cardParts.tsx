@@ -8,7 +8,7 @@
  * icons, so the phone's build stops it. What the phone's Review screen shares is in bridge-free files: the drawing
  * (`renderCard`, `cardLook`), the words (`cardWords.ts`), the answer labels (`cardInboxChip.tsx`), the review hook.
  */
-import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { Suspense, lazy, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { CardLine, CardPropertyValue, CardReview } from '@shared/cardLine'
 import { cardBacklinks, cardEmbedders } from '@shared/cardLinks'
@@ -28,7 +28,7 @@ import { hrefTarget } from '../editor/pathLinks'
 import { cardResolverOf, linkCard, linkPath, type WikilinkResolveSource } from '../editor/wikilink/linkResolve'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import { pageLabel, pathTitles } from '../lib/pageLabel'
-import { FrontmatterPanel, type FrontmatterPanelProps } from '../editor/FrontmatterPanel'
+import type { FrontmatterPanelProps } from '../editor/FrontmatterPanel'
 import { useProperties } from '../views/useProperties'
 import { landOnCard, openCardWindow } from '../editor/card/cardOpen'
 import type { ExploreVault } from '../explore/ExplorePage'
@@ -335,6 +335,13 @@ function StripToggle({ part, open, label, count, empty = count === 0, icon, onTo
 }
 
 /**
+ * The page properties panel, loaded when a Properties part first opens (YAZ-5067: the Inbox and the card body load
+ * without the editor; the panel's image cell reaches ProseMirror). The app loads the panel for every page anyway, so
+ * the part opens at once after the first page.
+ */
+const FrontmatterPanel = lazy(() => import('../editor/FrontmatterPanel').then((m) => ({ default: m.FrontmatterPanel })))
+
+/**
  * The Properties part open (YAZ-5383): the page properties panel's own rows (`FrontmatterPanel` with its card target) —
  * the same look, types, menus and "+ Add property" — over the card's own properties; an edit writes the card's line.
  * Typed by the vault's declarations (`properties.json`). With no `edit` door (a preview), the rows read only.
@@ -345,15 +352,17 @@ function CardPropertiesPart({ values, edit }: CardStripProperties) {
   const card = useMemo(() => ({ values, change: change ?? (() => Promise.resolve()) }), [values, change])
   const file = useMemo(() => ({ path: edit?.path ?? '', content: '', mtime: 0 }), [edit?.path])
   return (
-    <FrontmatterPanel
-      file={file}
-      root={edit?.root ?? null}
-      properties={decls}
-      wikilinks={edit?.wikilinks}
-      readOnly={change === undefined || edit?.readOnly === true}
-      card={card}
-      onNotice={edit?.onNotice === undefined ? undefined : (message, icon, type, action) => edit.onNotice?.(message, icon, type, action)}
-    />
+    <Suspense fallback={null}>
+      <FrontmatterPanel
+        file={file}
+        root={edit?.root ?? null}
+        properties={decls}
+        wikilinks={edit?.wikilinks}
+        readOnly={change === undefined || edit?.readOnly === true}
+        card={card}
+        onNotice={edit?.onNotice === undefined ? undefined : (message, icon, type, action) => edit.onNotice?.(message, icon, type, action)}
+      />
+    </Suspense>
   )
 }
 
