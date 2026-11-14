@@ -38,6 +38,8 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
   const name = /fixture=([\w-]+)/.exec(hash)?.[1] ?? 'sign-in'
   // 4C (YAZ-5242): Review with a card of the 90 attack vectors, for a net log in headless Chrome.
   if (name === 'attack-review') return (await import('../page/attackFixtures')).mountAttackFixture(root)
+  if (name.startsWith('c4erase')) return (await import('./check4Fixtures')).mountCheck4Erase(root, name)
+  if (name.startsWith('c4-')) return (await import('./check4Fixtures')).mountCheck4Fixture(root, name)
   if (name.startsWith('c3-')) return (await import('../review/check3Fixtures')).mountCheck3Fixture(root, name)
   // 4B (YAZ-5078): the Review tab's fixtures run the real engine and answer list on the fake GitHub.
   if (name.startsWith('review-'))

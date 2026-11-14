@@ -229,7 +229,9 @@ function SessionScreen({
   const { shown: cardShown } = guard
   // A DRAWING is one read of a card (its page object): the hook keeps the old card's object on the screen while the
   // next one reads, and a card that comes back is read again (a new object).
-  const drawing = page === null ? null : drawingOf(page)
+  // YAZ-5335: only a card that is LIVE counts (its answers are fixed: the hook gives none to the card before, which it
+  // keeps on show while the next one reads). So a sync pass that redraws the answered card starts no 400 ms.
+  const drawing = page === null || session.answers === null ? null : drawingOf(page)
   useEffect(() => {
     if (drawing !== null) cardShown(drawing)
   }, [drawing, cardShown])
@@ -334,8 +336,18 @@ function SessionScreen({
   const act = (text: string, run: () => Promise<unknown>, undoIt?: () => Promise<unknown>) => {
     setMenu(null)
     setNotice(null)
-    setLine({ kind: 'mark', text, key: cardKey, undo: undoIt })
-    void run().catch(() => setNotice('That did not save. Try again.'))
+    const saved = run().then(
+      () => true,
+      () => {
+        setNotice('That did not save. Try again.')
+        return false
+      },
+    )
+    // YAZ-5334: the Undo waits for the mark's own save, so it never reads the line before the mark is in it (a tap
+    // during the save was lost). Then the host's rule decides: an unsent mark leaves the list; a tried one gets its
+    // inverse as an action. A mark that did not save has nothing to take back.
+    const undoAfter = undoIt === undefined ? undefined : () => saved.then((ok) => (ok ? undoIt() : undefined))
+    setLine({ kind: 'mark', text, key: cardKey, undo: undoAfter })
   }
   // YAZ-5078 (the phone's decision): Archive card is on the hook's Undo stack; the line says "Archived · Undo".
   const archive = () => {
@@ -438,6 +450,8 @@ function SessionScreen({
             // card. The capture sees every tap first; only the player's own controls keep theirs.
             onClickCapture={(e) => {
               if (e.target instanceof Element && e.target.closest(CARD_OWN_TAPS) !== null) return
+              // The bar's own listener (the Mac's seek) never runs on the phone: the tap is a step (YAZ-5333).
+              if (e.target instanceof Element && e.target.closest('.card__audio-bar') !== null) e.stopPropagation()
               advance()
             }}
           >
@@ -549,9 +563,12 @@ export function spokenText(el: Element): string {
   return parts.join('').replace(/\s+/g, ' ').replace(/\s+([.,;:!?])/g, '$1').trim()
 }
 
-/** A tap on these in a card is theirs (open, play, look), never a step. */
-/** What a tap keeps for itself (never a step): a link, a pill, a picture, a board, and a sound's Play and bar (YAZ-5298). */
-const CARD_OWN_TAPS = 'a[href], [data-card-link], [data-card-board], img, .card__audio-play, .card__audio-bar, .page-media'
+/**
+ * What a tap keeps for itself (never a step): a link, a pill, a picture, a board, and a sound's Play (YAZ-5298). The
+ * sound's progress bar is NOT a control on the phone (YAZ-5333): a 4 px line is no tap target (YAZ-5317), and a
+ * 44 pt box around it covered the middle of a short card. A tap on it steps, as anywhere on the card.
+ */
+const CARD_OWN_TAPS = 'a[href], [data-card-link], [data-card-board], img, .card__audio-play, .page-media'
 
 const shortName = (page: { text: string; fileTitle?: string } | null, id: string): string => {
   const t = page === null ? '' : (page.fileTitle ?? cardTitle(page.text)).trim()

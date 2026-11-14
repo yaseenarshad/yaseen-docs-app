@@ -144,9 +144,7 @@ async function desktopRun(files: Record<string, string>): Promise<Run> {
   }
   reindex()
   const source = { get records() { return records }, folders: [] as IndexRecord[], letters: undefined, subscribe: (l: () => void) => (listeners.add(l), () => void listeners.delete(l)) }
-  // (builder, YAZ-5078) The phone's Undo takes back Archive card (a decision for the phone only; the Mac says no). To
-  // compare ONE logic, the Mac's run here says yes too: the same hook path, the Mac's own file writes.
-  const host: ReviewHost = { ...desktopReviewHost, undoesArchive: true }
+  const host: ReviewHost = desktopReviewHost
   const m = mount(source, host, ROOT, settingsOf(files))
   const settle = async () => {
     for (let i = 0; i < 4; i++) await act(async () => void (await new Promise((r) => setTimeout(r, 0))))
@@ -258,7 +256,10 @@ const VR3: Record<string, string> = {
   'cards/pl-7.md': `---\nkind: card\ntitle: Ivy\n---\n\n${R3('PL-7', 'Does ivy climb?', ', next')}\n`,
   'garden/more.md': `---\ntitle: More\n---\n\n${R3('PL-8', 'Archived one?', ', off, 2026-10-01T08:00Z good')}\n\n${R3('PL-9', 'Rose thorns?', ', fix')}\n\n${R3('PL-10', 'Tulip from?')}\n\n${R3('PL-11', 'Daisy?', ', 2026-11-01T08:00Z good')}\n\n![[cards/pl-6]]\n\n![[PL-7]]\n`,
 }
-const SCRIPT_R3: Action[] = ['again', 'good', 'undo', 'good', 'next', 'good', 'f-new', 'again', 'good', 'undo', 'undo', 'f-next', 'good', 'f-due', 'archive', 'good', 'fix', 'f-all', 'add-new', 'good', 'again', 'add-next', 'good', 'unnext', 'good', 'undo', 'good', 'again', 'again', 'next', 'good', 'archive', 'undo', 'f-new', 'good', 'add-new', 'good', 'good', 'again', 'good']
+// (builder, YAZ-5336) The REAL Mac host, on the actions both apps have. An Undo right after Archive card is the one
+// designed difference (the phone takes back the archive; the Mac, the answer before): it is not in this script. The
+// phone's Undo of Archive card has its own test (`archiveUndo.test.tsx`).
+const SCRIPT_R3: Action[] = ['again', 'good', 'undo', 'good', 'next', 'good', 'f-new', 'again', 'good', 'undo', 'undo', 'f-next', 'good', 'f-due', 'archive', 'good', 'fix', 'f-all', 'add-new', 'good', 'again', 'add-next', 'good', 'unnext', 'good', 'undo', 'good', 'again', 'again', 'next', 'good', 'archive', 'good', 'f-new', 'good', 'add-new', 'good', 'good', 'again', 'good']
 const CASES: [string, Record<string, string>, Action[]][] = [['R3 checker round 3 vault', VR3, SCRIPT_R3]]
 
 describe('checker 4B r3: the same answers as the Mac, one new vault, 40 actions', () => {

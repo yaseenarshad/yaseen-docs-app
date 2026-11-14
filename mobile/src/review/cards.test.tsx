@@ -142,17 +142,15 @@ describe('Review: the kinds of card', () => {
     expect(h.answers.waiting().map((w) => w.op.id)).toEqual(['NC-1'])
   })
 
-  it('YAZ-5298: a short card with a sound: a tap on the middle (the player\'s name, time or empty part) shows side 2; only Play and the bar are the player\'s', async () => {
+  it('YAZ-5298: a short card with a sound: a tap on the middle (the player\'s name, time or empty part) shows side 2; only Play is the player\'s', async () => {
     const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve())
     const media: VaultMedia = { show: async (path) => ({ status: 'ready', path, url: 'blob:fake-fifth', type: 'audio/mpeg' }) }
     h = await reviewSetup(one('Listen. Which interval is this?\n\n![[fifth.mp3]]\n---\n{{A fifth}}', { 'fifth.mp3': 'made-up bytes' }), { media })
     await h.seen()
     const before = h.cardText()
-    for (const own of ['.card__audio-play', '.card__audio-bar']) {
-      await act(async () => h.host.querySelector<HTMLElement>(`.review__card ${own}`)!.click())
-      await h.settle()
-      expect([own, h.cardText()]).toEqual([own, before])
-    }
+    await act(async () => h.host.querySelector<HTMLElement>('.review__card .card__audio-play')!.click())
+    await h.settle()
+    expect(h.cardText()).toBe(before)
     expect(play).toHaveBeenCalledTimes(1)
     // The middle of a short card is on the player's pill: its name. A tap there steps, as on any card (decision 11).
     await act(async () => h.host.querySelector<HTMLElement>('.review__card .card__audio-name')!.click())
@@ -160,6 +158,20 @@ describe('Review: the kinds of card', () => {
     // Side 2 shows, with its hidden word as "_" (the next tap shows it).
     expect(h.cardText()).toBe(`${before} _`)
     play.mockRestore()
+  })
+
+  it('YAZ-5333: a tap on the progress bar steps the card and does not seek (the bar is no control on the phone)', async () => {
+    const media: VaultMedia = { show: async (path) => ({ status: 'ready', path, url: 'blob:fake-fifth', type: 'audio/mpeg' }) }
+    h = await reviewSetup(one('Listen.\n\n![[fifth.mp3]]\n---\n{{A fifth}}', { 'fifth.mp3': 'made-up bytes' }), { media })
+    await h.seen()
+    const before = h.cardText()
+    const seeks: string[] = []
+    const bar = h.host.querySelector<HTMLElement>('.review__card .card__audio-bar')!
+    bar.addEventListener('click', () => void seeks.push('bar'))
+    await act(async () => bar.click())
+    await h.settle()
+    expect(h.cardText()).not.toBe(before)
+    expect(seeks).toEqual([])
   })
 
   it('YAZ-5298: a tap on the pill itself (between its parts) steps too', async () => {
