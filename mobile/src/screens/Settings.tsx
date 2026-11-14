@@ -136,6 +136,7 @@ function FriendsPart() {
   const app = useApp()
   const [editing, setEditing] = useState<'account' | 'vaults' | 'name' | 'zone' | null>(null)
   const toggle = (part: 'account' | 'vaults' | 'name' | 'zone') => setEditing(editing === part ? null : part)
+  const [zoneSaid, setZoneSaid] = useState<string | null>(null)
   const fa = app.friendsAccount
   const alert = friendsMessage(fa)
   const choices = app.list.vaults.filter((v) => app.accounts[vaultId(v)]?.gists === 'yes')
@@ -219,14 +220,26 @@ function FriendsPart() {
             </button>
             <span className="row__side">{homeZone ?? 'This phone'}</span>
           </div>
+          {zoneSaid !== null && editing !== 'zone' && (
+            <p className="muted" role="status">
+              {zoneSaid}
+            </p>
+          )}
           {editing === 'zone' && (
             <label className="field sheet">
-              <span className="field__label">Your days start at midnight in this zone, on each device. Days already sent stay as they are.</span>
+              <span className="field__label">
+                Your friends see your days in this time zone. Friends do not see the zone. Each day starts at midnight in it, on each device.
+              </span>
               <select
+                aria-label="Home time zone"
                 value={homeZone ?? ''}
                 onChange={(e) => {
                   const zone = e.target.value
-                  if (isTimeZone(zone)) void app.saveFriendsSettings({ ...app.friendsSettings, zone }).then(() => setEditing(null))
+                  if (isTimeZone(zone))
+                    void app.saveFriendsSettings({ ...app.friendsSettings, zone }).then(() => {
+                      setEditing(null)
+                      setZoneSaid('Saved. Your days use the new time zone from your next day. Days already sent do not change.')
+                    })
                 }}
               >
                 {zones.map((z) => (

@@ -212,7 +212,7 @@ describe('the Friends tab (decisions 21, 24, 25)', () => {
       '2 A Ana Waiting for Ana to add you · 2h ago ◐ 10 cards 10 min',
       'B Ben No longer shares with you Remove',
       'C Cy Needs a newer app',
-      "D Di Can't read their numbers",
+      "D Di Can't read their numbers Remove",
     ])
     expect(h.host.querySelector('.fr-row--gone')?.textContent).toContain('Ben')
     // Remove asks first, in plain words; Cancel has the focus and changes nothing.
@@ -726,5 +726,45 @@ describe('an action that cannot finish now says so (YAZ-5257)', () => {
     s.pasteAnswer = { kind: 'unverified' } as never
     await tap(h, 'Add')
     expect(statusText(h)).toContain('The app cannot check who sent this join link.')
+  })
+})
+
+describe('the states of the friends list v2 (round 3) on the tab', () => {
+  it('B8: a member who joined today: one quiet line under the group streak, the name cleaned', async () => {
+    const group = demoGroup(NOW)
+    group.members[1] = { ...group.members[1], name: '\u2068Mina\u2069', joinedToday: true }
+    ;({ h } = await open({ ...demoBoard(NOW), groups: [group] }))
+    await tap(h, 'Study group')
+    expect(plain(h.text())).toContain('Group streak: 4 days that everyone finished')
+    expect(plain(h.text())).toContain('Mina joined today. The group streak counts them from tomorrow.')
+  })
+
+  it('a remove that waits because the token lost the Gists permission says so, with the way forward', async () => {
+    let s: FakeService
+    ;({ h, s } = await open(demoBoard(NOW)))
+    s.answers.friend = async () => ({ kind: 'paused', why: 'refused', retryAt: null })
+    await tap(h, /^Number 1, Sam/)
+    await until(h, '.fr-week')
+    await tap(h, 'Remove friend')
+    await act(async () => (h!.host.querySelector('[role="alertdialog"] .btn--danger') as HTMLButtonElement).click())
+    for (let i = 0; i < 4; i++) await h.settle()
+    expect(statusText(h)).toContain('Not removed yet: your token has no Gists permission. Add it on GitHub; then the remove finishes by itself.')
+  })
+
+  it('a friend whose numbers cannot be read can be removed; a friend not read yet with no signal says so', async () => {
+    const board = demoBoard(NOW, {
+      friends: [
+        demoFriend(NOW, 'Di', { state: 'unreadable', label: "Can't read their numbers", stats: null }),
+        demoFriend(NOW, 'Ed', { state: 'offline', label: null, stats: null }),
+      ],
+    })
+    let s: FakeService
+    ;({ h, s } = await open(board))
+    expect(rows(h)).toContain('E Ed No connection. Not read yet.')
+    await tap(h, 'Remove')
+    expect(plain(h.host.querySelector('[role="alertdialog"]')?.textContent)).toContain('Remove Di? You cannot read their numbers now.')
+    await act(async () => (h!.host.querySelector('[role="alertdialog"] .btn--danger') as HTMLButtonElement).click())
+    await h.settle()
+    expect(s.calls.remove).toEqual([board.friends[0].mine])
   })
 })
