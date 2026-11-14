@@ -361,7 +361,8 @@
 .note-card .note-card__side li {
   position: relative;
   margin: 0;
-  padding: var(--card-list-row) 0 var(--card-list-row) calc(var(--card-list-gutter) + var(--card-list-gap));
+  padding: var(--card-list-row) 0;
+  padding-left: calc(var(--card-list-gutter) + var(--card-list-gap));
 }
 .note-card .note-card__side li > :is(ul, ol) {
   margin: 0 0 calc(-1 * var(--card-list-row));
