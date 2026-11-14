@@ -75,6 +75,7 @@ import { outlineFoldKeyStem } from '../outline/outlineFoldKeys'
 import { beginTocResize, ChevronIcon, CLICK_GUARD_MS, EDGE_PX, PinIcon, RAIL_PADDING_PX, shown, useTocBox, useTocCard, useTocLinger, useTocShortcut, useTocWidthVar } from './tocFrame'
 import { ZoomStepper } from '../../sidebar/ZoomStepper'
 import { ZOOM_EVENT } from '../zoomRequest'
+import { columnMax } from '../../lib/contentWidth'
 import './toc.css'
 
 /**
@@ -86,8 +87,8 @@ export const TOC_WIDTH = TOC_DEFAULT_W
 export const NAMES_FLOOR = 700
 /** The least pinned names leave the text, px: what it has at `NAMES_FLOOR` beside names of `TOC_WIDTH`. */
 export const TEXT_FLOOR = NAMES_FLOOR - TOC_WIDTH
-/** The widest the text column gets per content width: app.css's `--content-max-width` rules on `.app`. */
-export const COLUMN_MAX: Record<ContentWidth, number> = { narrow: 1040, medium: 1440, full: Infinity }
+/** The widest the text column gets per content width, its sides in: app.css's `--content-max-width` (YAZ-5144: one table, `columnMax`). */
+export const COLUMN_MAX: Record<ContentWidth, number> = { narrow: columnMax('narrow'), medium: columnMax('medium'), full: columnMax('full') }
 
 /**
  * Names, or lines? `auto` shows the names only when the text column keeps its full width beside

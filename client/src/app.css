@@ -173,18 +173,12 @@ button {
 }
 
 .app {
-  --content-max-width: 1040px;
+  /* Content width (YAZ-5144): the text's widest, `--content-text-width` (App, `lib/contentWidth.ts`), and the column's
+     48 px sides. Full is the window. */
+  --content-max-width: calc(var(--content-text-width) + 96px);
   display: flex;
   height: 100%;
   overflow: hidden;
-}
-
-.app[data-content-width='medium'] {
-  --content-max-width: 1440px;
-}
-
-.app[data-content-width='full'] {
-  --content-max-width: none;
 }
 
 /* ---------- editor ---------- */

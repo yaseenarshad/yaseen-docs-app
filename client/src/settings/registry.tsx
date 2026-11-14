@@ -73,7 +73,7 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, cardSpacingOptions, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
+import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, cardSpacingOptions, cardWidthOptions, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
 
 /** A cell bullet's px setting (the YAZ-3818 demo): the stepper, and Reset when it is not the default. */
 function CellBulletStepper({ settings, onChange, field, name, min, max, step }: { settings: SettingsState; onChange: (next: SettingsState) => void; field: 'tableCellBulletIndent' | 'tableCellBulletGap'; name: string; min: number; max: number; step: number }) {
@@ -2054,19 +2054,39 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
+            // YAZ-5144 (Yaseen: "a global setting for card pages to have a certain width ... same as pages or select a
+            // different one? kinda like we have for card spacing"): the app's settings, beside Card spacing, in its words.
+            id: 'cardWidth',
+            label: 'Card width',
+            hint: (ctx) => unit(ctx, "How wide a card's text reads in the Inbox, the card window and a card file. Same as pages follows Appearance › Content width."),
+            keywords: [...CARD_SPACING_KEYWORDS, 'width', 'content width', 'narrow', 'medium', 'full', 'line length', 'wide'],
+            available: reviewOn,
+            render: (ctx) => (
+              <Segmented options={cardWidthOptions((text) => unit(ctx, text))} value={ctx.settings.cardWidth} onChange={(cardWidth) => ctx.onChange({ ...ctx.settings, cardWidth })} ariaLabel="Card width" />
+            ),
+          },
+          {
             // YAZ-5050 (Yaseen: "adjust that different from the default or return to the default"): the app's settings,
             // as Shown hidden words. Same as pages is the way back; Clean is Mochi's look in one click (round 4); Custom
-            // starts from Clean and shows the rows.
+            // starts from Clean and shows the rows. YAZ-5144: Clean's short line is Card width Narrow, set by the click.
             id: 'cardSpacing',
             label: 'Card spacing',
-            hint: (ctx) => unit(ctx, 'How a card reads in the Inbox, the card window and the page. Same as pages follows Appearance. Clean reads as in Mochi: more room, softer text, shorter lines. Custom starts from Clean; you set its spacing.'),
+            hint: (ctx) => unit(ctx, 'How a card reads in the Inbox, the card window and the page. Same as pages follows Appearance. Clean reads as in Mochi: more room, softer text, and Card width Narrow. Custom starts from Clean; you set its spacing.'),
             keywords: CARD_SPACING_KEYWORDS,
             available: reviewOn,
             render: (ctx) => (
               <Segmented
                 options={cardSpacingOptions((text) => unit(ctx, text))}
                 value={ctx.settings.cardSpacing}
-                onChange={(cardSpacing) => ctx.onChange(cardSpacing === 'custom' && ctx.settings.cardSpacing !== 'custom' ? { ...ctx.settings, cardSpacing, ...CARD_SPACING_CLEAN } : { ...ctx.settings, cardSpacing })}
+                onChange={(cardSpacing) =>
+                  ctx.onChange(
+                    cardSpacing === 'clean'
+                      ? { ...ctx.settings, cardSpacing, cardWidth: 'narrow' }
+                      : cardSpacing === 'custom' && ctx.settings.cardSpacing !== 'custom'
+                        ? { ...ctx.settings, cardSpacing, ...CARD_SPACING_CLEAN }
+                        : { ...ctx.settings, cardSpacing },
+                  )
+                }
                 ariaLabel="Card spacing"
               />
             ),
