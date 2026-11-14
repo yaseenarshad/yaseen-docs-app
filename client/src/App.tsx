@@ -75,6 +75,7 @@ import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import type { CardReviewResume, CardReviewScope, CardReviewSession } from './review/useCardReview'
 import { cardLookAttrs, cardSpacingVars } from './review/cardSpacing'
+import { useReviewOnRoots } from './review/useReviewSettings'
 import { contentWidthVars, tablePositionVars } from './lib/contentWidth'
 import { nextHiddenAttrs, nextHiddenVars } from './review/nextHidden'
 import { QuickLook } from './search/QuickLook'
@@ -1549,6 +1550,8 @@ export function App() {
   const exploreOpen = exploreRequest > 0
   // A folder of a vault (YAZ-4922 🔒 D3): the stack reads the vault's index and finds only the pages and folders under
   // the folder (`useSearchCandidates` cuts each snapshot to `folder`; its folders are cut here, `inPlace`).
+  // The vaults whose Cards are on (YAZ-5164): their cards are rows, inside pages too, as in the sidebar's search (one source).
+  const exploreCards = useReviewOnRoots(roots)
   const exploreVaults = useMemo<readonly SearchVault[]>(
     () =>
       !exploreOpen
@@ -1557,9 +1560,9 @@ export function App() {
             const folder = storage.folderIn(vault)
             const dirs = allDirs(exploreTrees[i]?.tree ?? [])
             const boards = otherFiles(exploreTrees[i]?.tree ?? []).filter(isBoardFile)
-            return { root: vault, watch: live.current.vaults[i].watch, dirs: folder === null ? dirs : dirs.filter((dir) => inPlace(folder, dir)), files: folder === null ? boards : boards.filter((path) => inPlace(folder, path)), idsInSearch: live.current.vaults[i].showIds.inSearch, idsInTitle: live.current.vaults[i].showIds.inTitle, ...(folder !== null && { folder }) }
+            return { root: vault, watch: live.current.vaults[i].watch, dirs: folder === null ? dirs : dirs.filter((dir) => inPlace(folder, dir)), files: folder === null ? boards : boards.filter((path) => inPlace(folder, path)), idsInSearch: live.current.vaults[i].showIds.inSearch, idsInTitle: live.current.vaults[i].showIds.inTitle, ...(folder !== null && { folder }), ...(exploreCards.has(vault) && { cards: true }) }
           }),
-    [exploreOpen, roots, exploreTrees],
+    [exploreOpen, roots, exploreTrees, exploreCards],
   )
   const exploreVaultOf = useCallback((path: string) => {
     const scope = scopeOf(path)

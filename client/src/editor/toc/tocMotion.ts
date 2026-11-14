@@ -1,7 +1,8 @@
 /**
  * How a jump from a table of contents MOVES (YAZ-2700; shared since YAZ-3486): the glide to the row
  * and the one flash on it. A page's table of contents (`tocPlugin.ts`) and a code tab's Outline
- * (`code/outline/codeJump.ts`) move the same way, so both read these numbers.
+ * (`code/outline/codeJump.ts`) move the same way, so both read these numbers. The landing itself (`landOn`) is the
+ * outline's and every card's (YAZ-5164: a page opened at a card lands on it as a jump does).
  */
 
 /** How long a jump's glide takes, however far it goes. */
@@ -28,3 +29,20 @@ export const glideEase = (t: number): number => (t < 0.5 ? 4 * t * t * t : 1 - (
 
 /** "Reduce Motion" is on: a jump lands at once, with no glide and no flash. */
 export const reducedMotion = (): boolean => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+/** Where `scroller` must stand for `element` to sit `LANDING_PX` below its top edge, as far as it can scroll. */
+export const landingTop = (scroller: HTMLElement, element: HTMLElement): number =>
+  Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight, scroller.scrollTop + element.getBoundingClientRect().top - scroller.getBoundingClientRect().top - LANDING_PX))
+
+/**
+ * THE landing, the table of contents' own: exactly on `element`, `LANDING_PX` below the top of its scroller, then one
+ * flash, a band that holds, then fades. The scroller is a page's `.editor-host`, or an Explore read layer's
+ * `.explore__body`, unless the caller has it; none (the unit tests), nothing scrolls. Used by the outline's jump, and by
+ * each way to a card in its page (YAZ-4962, YAZ-5164): search, Explore, a card link, the card window's page.
+ * `scrollIntoView` would pull the row flush against the edge, so the arithmetic is its own.
+ */
+export function landOn(element: HTMLElement, scroller: HTMLElement | null = element.closest<HTMLElement>('.editor-host, .explore__body')): void {
+  if (scroller !== null) scroller.scrollTop = landingTop(scroller, element)
+  // jsdom has no `animate`.
+  if (typeof element.animate === 'function' && !reducedMotion()) element.animate(FLASH_FRAMES, { duration: FLASH_MS, easing: 'ease-out' })
+}

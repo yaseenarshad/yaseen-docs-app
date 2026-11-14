@@ -38,6 +38,7 @@ import { ExploreArrange } from './ExploreArrange'
 import { GRIPS, useLayerBoxes } from './layerBoxes'
 import { layoutForCount, pickRecent, TILE_MS, TILE_PLACES, tileBoxes, tileOrder, type ArrangeLayout, type TileLayout } from './tile'
 import { frontOrder, layerKindOf, MAX_LAYERS, PAGE_MS, newLayerId, pushLayer, raiseLayer, saveExploreZoom, savedExploreZoom, SEARCH_MS, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type ExploreRequest } from './layers'
+import { landOnCard } from '../editor/card/cardOpen'
 import './explore.css'
 
 export interface ExploreStackProps {
@@ -301,7 +302,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     },
     [push],
   )
-  /** A card window's page (YAZ-4962): on top, landed on the card. */
+  /** A card window's page (YAZ-4962), or a card row's (YAZ-5164): on top, landed on the card. */
   const openPageAt = useCallback((path: string, card: number) => {
     const layer = fileLayer(path)
     if (layer.kind === 'page' && push({ ...layer, card })) rememberExploreRecent(path)
@@ -317,10 +318,12 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   /** A row of search layer `search` at `at` (round 3): the layer remembers them, so ‹ › step through that search. */
   const openRow = useCallback(
     (search: number, row: SearchCandidate, at: number) => {
+      // A card inside a page (YAZ-5164): its page on top, landed on the card, as the Inbox's E lands. Not a step of ‹ ›.
+      if (row.page !== undefined) return openPageAt(row.page, row.index ?? 0)
       if (layerKindOf(row.path) === null) return openPath(row.path)
       if (push(fileLayer(row.path, { search, at }))) rememberExploreRecent(row.path)
     },
-    [push, openPath],
+    [push, openPath, openPageAt],
   )
 
   /**
@@ -476,7 +479,9 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   const rowToTab = useCallback(
     (row: SearchCandidate) => {
       flushEdits()
-      doors.current.openInTab(row.path)
+      // A card inside a page (YAZ-5164): its page's tab, landed on the card.
+      if (row.page !== undefined && row.id !== undefined) landOnCard(row.page, row.id)
+      doors.current.openInTab(row.page ?? row.path)
       doors.current.onClose()
     },
     [flushEdits],
@@ -721,7 +726,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
               <>
                 {/* The search moves by its top edge (round 3): the input keeps its text selection. */}
                 <div className="explore__grab" title="Drag to move; double-click to put back" onMouseDown={(e) => gestures.onHeadDown(layer.id, e)} onDoubleClick={(e) => gestures.reset(layer.id, e)} />
-                <ExploreSearch candidates={candidates} link={linkOf(layer.id)} markedRow={marked} recent={recent} rowOf={rowOf} roots={roots} nameOf={nameOf} onOpen={(row, at) => openRow(layer.id, row, at)} onOpenInTab={rowToTab} onRowMenu={(row, x, y) => setMenu({ x, y, path: row.path })} idsInSearch={idsInSearch} active={!covered} />
+                <ExploreSearch candidates={candidates} link={linkOf(layer.id)} markedRow={marked} recent={recent} rowOf={rowOf} roots={roots} nameOf={nameOf} onOpen={(row, at) => openRow(layer.id, row, at)} onOpenInTab={rowToTab} onRowMenu={(row, x, y) => setMenu({ x, y, path: row.page ?? row.path })} idsInSearch={idsInSearch} active={!covered} />
               </>
             ) : layer.kind === 'card' ? (
               <ExploreCard

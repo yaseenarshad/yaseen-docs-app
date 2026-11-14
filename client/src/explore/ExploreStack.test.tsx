@@ -62,6 +62,9 @@ vi.mock('../editor/createCrepe', () => ({
   editorViewOf: (crepe: Crepe) => ({ dom: crepe.opts.root.firstChild, state: {}, dispatch: folds.dispatch }),
 }))
 const folds = vi.hoisted(() => ({ dispatch: vi.fn(), next: 'collapse' as 'collapse' | 'expand' | 'none', runs: [] as boolean[] }))
+/** The table of contents' landing (YAZ-5164: a page opened at a card lands as a jump from the outline does), recorded. */
+const landed = vi.hoisted(() => vi.fn())
+vi.mock('../editor/toc/tocMotion', async (importOriginal) => ({ ...(await importOriginal<typeof import('../editor/toc/tocMotion')>()), landOn: landed }))
 vi.mock('../editor/outline/foldAllHotkeys', () => ({
   FOLDS_CHANGED_EVENT: 'yaseendocs:folds-changed',
   nextDocumentFold: () => folds.next,
@@ -2955,5 +2958,52 @@ describe('YAZ-4990: Explore follows a page that changes', () => {
         vi.useRealTimers()
       }
     })
+  })
+})
+
+/**
+ * YAZ-5164 part 1 (YAZ-5037 pick 3): while the vault's Cards are on (`cards` on its search vault, App's `useReviewOnRoots`,
+ * the sidebar search's own source), a card INSIDE a page is its own Explore row: the card icon, its title, its page
+ * quietly after it. Enter opens the page landed on that card (part 2: the table of contents' landing, `landOn`).
+ */
+describe('YAZ-5164: cards inside pages in Explore', () => {
+  const GEO = '/v/geo.md'
+  const GEO_CARDS = [
+    { id: 'GEO-140', off: false, next: false, reviews: [], title: 'Capital of France' },
+    { id: 'GEO-141', off: false, next: false, reviews: [], title: 'River of Paris' },
+  ]
+  beforeEach(() => {
+    landed.mockClear()
+    index.mockResolvedValue({ root: '/v', records: [...RECORDS, rec(GEO, 'Geography', { cards: GEO_CARDS })], folders: [], generatedAt: 1, ids: true, size: 4 })
+  })
+  const rowEls = () => [...top().querySelectorAll<HTMLElement>('.search-results__row')]
+
+  it('Cards on: "river" lists the card as its own row, with the card icon and its page quietly; Enter opens the page landed on that card', async () => {
+    props = { ...props, vaults: [{ ...vaults[0], cards: true }] }
+    await mount()
+    await typeQuery('river')
+    expect(rows()).toEqual(['River of Paris'])
+    expect(rowEls()[0].querySelector('.file-icon')?.getAttribute('data-kind')).toBe('card')
+    expect(rowEls()[0].querySelector('.search-results__folder')?.textContent).toBe('Geography')
+    // Its page is a row of its own too, by its title.
+    await typeQuery('geogr')
+    expect(rows()).toEqual(['Geography'])
+    await typeQuery('river')
+    await openResult()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'page'])
+    expect(readFile).toHaveBeenLastCalledWith(GEO)
+    // The read-only page's cards, as the card view draws them: the second one is landed on.
+    const page = crepes[crepes.length - 1].opts.root
+    const cards = [0, 1].map(() => page.appendChild(Object.assign(document.createElement('div'), { className: 'card' })))
+    await vi.waitFor(() => expect(landed).toHaveBeenCalled())
+    expect(landed.mock.calls.map(([target]) => target)).toEqual([cards[1]])
+  })
+
+  it('Cards off (or IDs off: the vault then says Cards are off): no card row', async () => {
+    await mount()
+    await typeQuery('river')
+    expect(rows()).toEqual([])
+    await typeQuery('geogr')
+    expect(rows()).toEqual(['Geography'])
   })
 })

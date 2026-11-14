@@ -42,7 +42,7 @@ import { storage } from '../lib/storage'
 import { editingLabel, ReadOnlyChip } from '../editor/ReadOnlyChip'
 import { useTimedUnlock } from '../editor/useTimedUnlock'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
-import { landOn } from '../editor/toc/tocPlugin'
+import { landOn } from '../editor/toc/tocMotion'
 import { cardBlockViewOfDom } from '../editor/card/cardBlockView'
 import { KeyCaps } from '../keys/KeyCaps'
 
