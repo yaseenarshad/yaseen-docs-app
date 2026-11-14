@@ -5,6 +5,7 @@ import { loadAccount } from '../auth/account'
 import { formatScanCode } from '../auth/scanCode'
 import { loadVaultList, PHONE, type VaultStore } from '../store'
 import { UNIT_WORD_PATH } from '../app/unitWord'
+import { REMOVE_QUEUE } from '../friends/removeQueue'
 import { GOOD, mount, newPhone, NO_CONTENTS, READ_ONLY, SECOND, signInWithForm, WRONG, type Harness } from './testing'
 
 let h: Harness | null = null
@@ -267,7 +268,8 @@ describe('Sign out and erase this phone (row N7)', () => {
     await signInWithForm(h, 'yaseen/vault', GOOD)
     await h.click('Settings')
     await h.click('Sign out and erase this phone')
-    expect(h.text()).toContain('This phone loses the pages and cards it keeps, your token and its settings. Nothing on GitHub is deleted: your vaults stay there.')
+    expect(h.text()).toContain('This phone loses the pages and cards it keeps. It also loses your tokens and its settings.')
+    expect(h.text()).toContain('Nothing on GitHub is deleted. Your vaults stay there.')
     expect(h.text()).not.toContain('not sent yet')
     expect(h.text()).not.toContain('friends list')
     // Cancel is the default: it has the focus.
@@ -286,9 +288,37 @@ describe('Sign out and erase this phone (row N7)', () => {
     h = await mount({ phone, hasFriends: true })
     await h.click('Settings')
     await h.click('Sign out and erase this phone')
-    expect(h.text()).toContain('3 answers are not sent yet and will be lost.')
-    expect(h.text()).toContain('your friends still see your last numbers. To stop that, remove each friend in the Friends tab first.')
+    expect(h.text()).toContain('3 answers are not sent yet. They will be lost.')
+    expect(h.text()).toContain('To stop that, remove each friend and leave each group in the Friends tab first.')
     expect(document.activeElement?.textContent).toBe('Cancel')
+  })
+
+  it('YAZ-5343: a friends remove that waits on the phone: the ask names it, and "Finish it in Friends" opens the Friends tab', async () => {
+    const phone = await newPhone()
+    h = await mount({ phone })
+    await signInWithForm(h, 'yaseen/vault', GOOD)
+    h.unmount()
+    await phone.store.setState(PHONE, REMOVE_QUEUE, [{ mine: 'gist-for-bea', at: 1 }])
+    h = await mount({ phone, hasFriends: true })
+    await h.click('Settings')
+    await h.click('Sign out and erase this phone')
+    expect(h.text()).toContain('1 remove in Friends is not done yet. If you erase now, that friend or group can still see your numbers.')
+    await h.click('Finish it in Friends')
+    expect(h.host.querySelector('[role="alertdialog"]')).toBeNull()
+    expect(h.host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Friends')
+    expect(await phone.store.getState(PHONE, REMOVE_QUEUE)).toHaveLength(1)
+  })
+
+  it('YAZ-5344: Escape closes the ask as Cancel does; nothing is erased', async () => {
+    h = await mount()
+    await signInWithForm(h, 'yaseen/vault', GOOD)
+    await h.click('Settings')
+    await h.click('Sign out and erase this phone')
+    expect(h.host.querySelector('[role="alertdialog"]')).not.toBeNull()
+    await act(async () => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    await h.settle()
+    expect(h.host.querySelector('[role="alertdialog"]')).toBeNull()
+    expect(await h.tokens.read('yaseen/vault@main')).toBe(GOOD)
   })
 
   it('removes every token and every stored file and state, then shows the sign-in', async () => {
