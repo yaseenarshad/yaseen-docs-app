@@ -147,6 +147,19 @@ describe('the course sound downloads when needed (YAZ-5159)', () => {
     expect(srv.calls.map((c) => c.url.split('/').pop())).toEqual([manifest.chapters.why.file, manifest.chapters.inbox.file, manifest.chapters['first-card'].file])
   })
 
+  it('YAZ-5346: a started chapter that waits behind another download tells the course at once that it is loading', async () => {
+    const { audio, srv, changes } = setup()
+    srv.hold()
+    audio.chapterStarting(1, 'why')
+    audio.chapterStarting(1, 'inbox')
+    await tick()
+    // "inbox" waits behind "why": the course hears at once that it is on its way.
+    expect(changes).toContainEqual({ chapter: 'inbox', state: 'loading' })
+    srv.release()
+    await audio.idle()
+    expect(changes.filter((c) => c.chapter === 'inbox').at(-1)).toEqual({ chapter: 'inbox', state: 'here' })
+  })
+
   it('a file on disk whose hash matches is used with no fetch', async () => {
     const { audio: first } = setup()
     first.chapterStarting(1, 'why')

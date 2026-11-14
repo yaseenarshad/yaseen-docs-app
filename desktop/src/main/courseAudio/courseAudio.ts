@@ -269,6 +269,8 @@ export function createCourseAudio({ folder, manifest, source, fetch, onChange, n
   function enqueue(job: Job): void {
     if (openIn.size === 0 || chapters[job.chapter] === undefined) return
     if (running?.chapter === job.chapter) {
+      // A background download the person now starts: the course hears it is downloading (YAZ-5346: it holds for it).
+      if (job.started && !running.started) tell(job.chapter, 'loading')
       running.started ||= job.started
       return
     }
@@ -280,6 +282,8 @@ export function createCourseAudio({ folder, manifest, source, fetch, onChange, n
     // A started chapter goes first; a background one waits behind.
     if (job.started) queue.unshift(job)
     else queue.push(job)
+    // A started chapter that waits behind another download: the course hears now that it is on its way (YAZ-5346).
+    if (job.started && running !== null && !here.has(job.chapter)) tell(job.chapter, 'loading')
     pump()
   }
 

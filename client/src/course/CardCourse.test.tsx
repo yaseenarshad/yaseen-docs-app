@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { defaultCourseState, type CourseState } from '@shared/courseState'
 import { storage } from '../lib/storage'
 import type { CourseChapter } from './script'
-import { CardCourse, VOICE_LOADING_LINE, type CardCourseProps } from './CardCourse'
+import { CardCourse, PLAY_WITHOUT_SOUND, VOICE_DOWNLOAD_LIMIT, VOICE_LOADING_LINE, type CardCourseProps } from './CardCourse'
 import type { CourseTour } from './courseTour'
 import { useEscapeLast } from '../lib/escapeOrder'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
@@ -410,7 +410,7 @@ describe('the voice starts with the first word (YAZ-5159)', () => {
     await flush()
     act(() => button('Play')!.click())
     frames(6)
-    expect(pages()).toEqual([VOICE_LOADING_LINE])
+    expect(pages()).toEqual([`${VOICE_LOADING_LINE} ${PLAY_WITHOUT_SOUND}`])
     frames(15)
     expect(pages().some((n) => n?.includes(VOICE_LOADING_LINE))).toBe(false)
     expect(button('Try again')).toBeDefined()
@@ -428,6 +428,94 @@ describe('the voice starts with the first word (YAZ-5159)', () => {
     frames(25)
     expect(caption()).toBe('Four five six.')
     expect(pages()).toEqual([])
+  })
+
+  describe('while the voice downloads, the course holds (YAZ-5346)', () => {
+    const loadingLine = () => pages().find((n) => n?.includes(VOICE_LOADING_LINE))
+    const tryAgain = () => pages().find((n) => n?.includes('The sound is not here'))
+    async function downloading() {
+      const v = memoryVoice()
+      mount({ voice: v.voice })
+      await flush()
+      act(() => v.load('a'))
+      return v
+    }
+
+    it('holds at the first word with "Loading the voice…" and "Play without sound"; starts at word one when the voice arrives', async () => {
+      const v = await downloading()
+      act(() => button('Play')!.click())
+      frames(1)
+      expect(loadingLine()).toBeDefined()
+      expect(button(PLAY_WITHOUT_SOUND)).toBeDefined()
+      // Ten seconds of play: still the first frame, no sound, no "Try again".
+      frames(100)
+      expect(caption()).toBe('One two three.')
+      expect(document.querySelector<HTMLElement>('.course__bar span')!.style.transform).toMatch(/scaleX\(0(\.0+)?\)|^$/)
+      expect(playedSrc()).toBeUndefined()
+      expect(tryAgain()).toBeUndefined()
+      await act(async () => v.arrive('a', A))
+      expect(playedSrc()).toBe('blob:a1')
+      expect(caption()).toBe('One two three.')
+      expect(loadingLine()).toBeUndefined()
+    })
+
+    it('"Play without sound": the chapter plays on at once, with no "Try again"; going back to its start does not hold again', async () => {
+      await downloading()
+      act(() => button('Play')!.click())
+      frames(2)
+      act(() => button(PLAY_WITHOUT_SOUND)!.click())
+      expect(loadingLine()).toBeUndefined()
+      frames(25)
+      expect(caption()).toBe('Four five six.')
+      expect(tryAgain()).toBeUndefined()
+      expect(playedSrc()).toBeUndefined()
+    })
+
+    it('Mute: no hold at all', async () => {
+      await downloading()
+      act(() => button('Mute')!.click())
+      act(() => button('Play')!.click())
+      frames(25)
+      expect(caption()).toBe('Four five six.')
+      expect(loadingLine()).toBeUndefined()
+    })
+
+    it('the download fails: the hold ends at once, the chapter plays without the voice, and "Try again" shows', async () => {
+      const v = await downloading()
+      act(() => button('Play')!.click())
+      frames(30)
+      expect(caption()).toBe('One two three.')
+      act(() => v.fail('a'))
+      frames(1)
+      expect(loadingLine()).toBeUndefined()
+      expect(tryAgain()).toBeDefined()
+      frames(25)
+      expect(caption()).toBe('Four five six.')
+    })
+
+    it(`a download slower than ${VOICE_DOWNLOAD_LIMIT} s: then it plays without the voice, and the line says so`, async () => {
+      await downloading()
+      act(() => button('Play')!.click())
+      frames(VOICE_DOWNLOAD_LIMIT * 10 - 2)
+      expect(caption()).toBe('One two three.')
+      expect(loadingLine()).toBeDefined()
+      frames(3)
+      expect(loadingLine()).toBeUndefined()
+      expect(tryAgain()).toBeDefined()
+      frames(25)
+      expect(caption()).toBe('Four five six.')
+    })
+
+    it('a chapter whose voice is here already does not wait, though the next one downloads', async () => {
+      const v = memoryVoice({ a: A })
+      mount({ voice: v.voice })
+      await flush()
+      act(() => v.load('b'))
+      act(() => button('Play')!.click())
+      frames(1)
+      expect(playedSrc()).toBe('blob:a1')
+      expect(loadingLine()).toBeUndefined()
+    })
   })
 
   it("the next chapter's sound is asked for once this chapter's is here; the next chapter then starts with its sound", async () => {

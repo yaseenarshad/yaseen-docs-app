@@ -38,6 +38,24 @@ function fakeMain() {
 const WHY: CourseAudioSound = { clips: { 'c1-01': { url: 'app://course-voice/why/c1-01.m4a?v=1bff852e', seconds: 5.55 } } }
 
 describe('the downloaded voice fills the seam (YAZ-5159)', () => {
+  it('onLoading (YAZ-5346): loading true, then false on here or missing; a new listener hears what loads now', () => {
+    const main = fakeMain()
+    const voice = downloadedVoice(main.bridge)
+    const heard: string[] = []
+    const off = voice.onLoading!((id, loading) => heard.push(`${id}:${loading}`))
+    main.send({ chapter: 'why', state: 'loading' })
+    const late: string[] = []
+    const off2 = voice.onLoading!((id, loading) => late.push(`${id}:${loading}`))
+    expect(late).toEqual(['why:true'])
+    main.send({ chapter: 'why', state: 'here' }, WHY)
+    main.send({ chapter: 'inbox', state: 'loading' })
+    main.send({ chapter: 'inbox', state: 'missing' })
+    expect(heard).toEqual(['why:true', 'why:false', 'inbox:true', 'inbox:false'])
+    off()
+    off2()
+    expect(main.listeners.size).toBe(0)
+  })
+
   it('null before the sound is here; onArrive when it arrives; then each clip with its URL and seconds', async () => {
     const main = fakeMain()
     const voice = downloadedVoice(main.bridge)

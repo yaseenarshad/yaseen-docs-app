@@ -111,6 +111,7 @@ export function memoryVoice(initial: Record<string, Record<string, ClipSound>> =
   const here = new Map(Object.entries(initial))
   const listeners = new Set<(chapterId: string) => void>()
   const missing = new Set<(chapterId: string, missing: boolean) => void>()
+  const loading = new Set<(chapterId: string, loading: boolean) => void>()
   const started: string[] = []
   const retried: string[] = []
   const soundOf = (clips: Record<string, ClipSound>): ChapterSound => ({ clip: (id) => clips[id] ?? null })
@@ -125,6 +126,10 @@ export function memoryVoice(initial: Record<string, Record<string, ClipSound>> =
       missing.add(fn)
       return () => missing.delete(fn)
     },
+    onLoading: (fn) => {
+      loading.add(fn)
+      return () => loading.delete(fn)
+    },
     retry: (id) => {
       retried.push(id)
       missing.forEach((fn) => fn(id, false))
@@ -136,11 +141,17 @@ export function memoryVoice(initial: Record<string, Record<string, ClipSound>> =
     retried,
     arrive(chapterId: string, clips: Record<string, ClipSound>) {
       here.set(chapterId, clips)
+      loading.forEach((fn) => fn(chapterId, false))
       missing.forEach((fn) => fn(chapterId, false))
       listeners.forEach((fn) => fn(chapterId))
     },
     fail(chapterId: string) {
+      loading.forEach((fn) => fn(chapterId, false))
       missing.forEach((fn) => fn(chapterId, true))
+    },
+    /** The downloader says the chapter's sound is downloading (YAZ-5346). */
+    load(chapterId: string) {
+      loading.forEach((fn) => fn(chapterId, true))
     },
   }
 }

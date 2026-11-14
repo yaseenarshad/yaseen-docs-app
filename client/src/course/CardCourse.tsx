@@ -59,10 +59,17 @@ export interface CardCourseProps {
  * The voice starts with the first word (YAZ-5159): a chapter whose sound is not here yet holds its first clip at its
  * first frame this long at most (seconds of play), waiting for the sound; after `VOICE_LOADING_LINE_AFTER` the quiet
  * line says so. The same limit holds the clip's clock while its audio element has not started to move.
+ *
+ * While the downloader says the chapter's sound is DOWNLOADING (YAZ-5346), the hold lasts up to
+ * `VOICE_DOWNLOAD_LIMIT` instead, with the line and "Play without sound" at once. It ends when the sound arrives (the
+ * first word), when the download fails ("Try again"), on "Play without sound", on Mute, or at the limit (then the
+ * chapter plays without the voice, and the "Try again" line says so).
  */
 export const VOICE_WAIT_LIMIT = 2
+export const VOICE_DOWNLOAD_LIMIT = 20
 export const VOICE_LOADING_LINE_AFTER = 0.5
 export const VOICE_LOADING_LINE = 'Loading the voice…'
+export const PLAY_WITHOUT_SOUND = 'Play without sound'
 
 const SPEED_LABEL: Record<CourseSpeed, string> = { 1: '1×', 1.25: '1.25×', 1.5: '1.5×' }
 const FIELD = 'input, textarea, select, [contenteditable="true"], [contenteditable=""]'
@@ -138,6 +145,10 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
   /** The first clip of a chapter whose sound is not here yet: held at its first frame, `held` seconds of play so far. */
   const voiceWait = useRef<{ clip: string; chapter: string; held: number } | null>(null)
   const [loadingVoice, setLoadingVoice] = useState(false)
+  /** The chapters the downloader says are downloading now (YAZ-5346): their first clip holds longer. */
+  const downloading = useRef(new Set<string>())
+  /** The chapters the person chose to play without sound ("Play without sound"): no hold on them again. */
+  const silentByChoice = useRef(new Set<string>())
   /** The chapters whose sound did not come within the wait: the "Try again" line shows on them. */
   const [late, setLate] = useState<ReadonlySet<string>>(() => new Set())
   const endVoiceWait = useCallback(() => {
@@ -161,7 +172,7 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
   const startVoiceWait = useCallback(
     (chapterId: string, clipId: string) => {
       const p = player.current
-      if (voice === SILENT_VOICE || p.muted || p.t !== 0 || sounds.current.has(chapterId) || missingRef.current.has(chapterId)) return
+      if (voice === SILENT_VOICE || p.muted || p.t !== 0 || sounds.current.has(chapterId) || missingRef.current.has(chapterId) || silentByChoice.current.has(chapterId)) return
       voiceWait.current = { clip: clipId, chapter: chapterId, held: 0 }
     },
     [voice],
@@ -215,8 +226,18 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
   const [missing, setMissing] = useState<ReadonlySet<string>>(() => new Set())
   useEffect(
     () =>
+      voice.onLoading?.((chapterId, isLoading) => {
+        if (isLoading) downloading.current.add(chapterId)
+        else downloading.current.delete(chapterId)
+      }),
+    [voice],
+  )
+  useEffect(
+    () =>
       voice.onMissing?.((chapterId, isMissing) =>
         setMissing((before) => {
+          // The download failed: a first clip that waits for it plays now, without the voice ("Try again" shows).
+          if (isMissing && voiceWait.current?.chapter === chapterId) endVoiceWait()
           if (before.has(chapterId) === isMissing) return before
           const next = new Set(before)
           if (isMissing) next.add(chapterId)
@@ -224,7 +245,7 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
           return next
         }),
       ),
-    [voice],
+    [voice, endVoiceWait],
   )
   missingRef.current = missing
   const [page, setPage] = useState<string | null>(null)
@@ -382,11 +403,12 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
       if (wait !== null && wait.clip === clip.id && p.t === 0 && !p.muted) {
         // The chapter's sound is on its way: the first frame and the caption hold, so the voice starts with the first word.
         wait.held += dt
-        if (wait.held >= VOICE_WAIT_LIMIT) {
+        const loadingNow = downloading.current.has(wait.chapter)
+        if (wait.held >= (loadingNow ? VOICE_DOWNLOAD_LIMIT : VOICE_WAIT_LIMIT)) {
           endVoiceWait()
           setLate((before) => (before.has(wait.chapter) ? before : new Set([...before, wait.chapter])))
         } else {
-          if (wait.held >= VOICE_LOADING_LINE_AFTER) setLoadingVoice(true)
+          if (loadingNow || wait.held >= VOICE_LOADING_LINE_AFTER) setLoadingVoice(true)
           raf = requestAnimationFrame(frame)
           return
         }
@@ -618,7 +640,18 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
         )}
         {loadingVoice && !(missing.has(chapter.id) || late.has(chapter.id)) && (
           <p className="course__note" role="status">
-            {VOICE_LOADING_LINE}
+            {VOICE_LOADING_LINE}{' '}
+            <button
+              type="button"
+              className="course__btn course__btn--quiet"
+              onClick={() => {
+                const wait = voiceWait.current
+                if (wait !== null) silentByChoice.current.add(wait.chapter)
+                endVoiceWait()
+              }}
+            >
+              {PLAY_WITHOUT_SOUND}
+            </button>
           </p>
         )}
         {(missing.has(chapter.id) || late.has(chapter.id)) && voice.retry !== undefined && (

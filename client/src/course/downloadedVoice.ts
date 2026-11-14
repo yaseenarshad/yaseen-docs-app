@@ -6,7 +6,8 @@
  * - `chapter(id)` is the chapter's sound when its checked file is here: each clip plays from
  *   `app://course-voice/<chapter>/<clip>.m4a`, for the seconds the manifest names. Else null: the chapter plays silent.
  * - `onArrive` hears main's `here`; `onMissing` hears `missing` (true) and `loading` / `here` (false), for the quiet
- *   line; `retry` ("Try again") asks for the chapter again.
+ *   line; `onLoading` hears `loading` (true) and `here` / `missing` (false), and tells a new listener what loads now
+ *   (YAZ-5346: the course holds while its chapter downloads); `retry` ("Try again") asks for the chapter again.
  *
  * A bridge call that fails is silence, never an error the person sees. The course layer opens and closes it in main
  * (`open`), so main never downloads while the course is closed.
@@ -31,6 +32,9 @@ interface DownloadedVoice extends Voice {
 export function downloadedVoice(bridge: CourseAudioBridge = api.courseAudio): DownloadedVoice {
   const arrive = new Set<(chapterId: string) => void>()
   const missing = new Set<(chapterId: string, missing: boolean) => void>()
+  const loading = new Set<(chapterId: string, loading: boolean) => void>()
+  /** The chapters main said are downloading now. */
+  const loadingNow = new Set<string>()
   /** Subscribed to main while anyone listens. */
   let off: (() => void) | null = null
   const follow = () => {
@@ -38,6 +42,9 @@ export function downloadedVoice(bridge: CourseAudioBridge = api.courseAudio): Do
     try {
       off = bridge.onChange(({ chapter, state }) => {
         missing.forEach((fn) => fn(chapter, state === 'missing'))
+        if (state === 'loading') loadingNow.add(chapter)
+        else loadingNow.delete(chapter)
+        loading.forEach((fn) => fn(chapter, state === 'loading'))
         if (state === 'here') arrive.forEach((fn) => fn(chapter))
       })
     } catch {
@@ -46,9 +53,10 @@ export function downloadedVoice(bridge: CourseAudioBridge = api.courseAudio): Do
     }
   }
   const unfollow = () => {
-    if (arrive.size > 0 || missing.size > 0 || off === null) return
+    if (arrive.size > 0 || missing.size > 0 || loading.size > 0 || off === null) return
     off()
     off = null
+    loadingNow.clear()
   }
   const listen = <F>(set: Set<F>, fn: F): (() => void) => {
     set.add(fn)
@@ -66,6 +74,11 @@ export function downloadedVoice(bridge: CourseAudioBridge = api.courseAudio): Do
     chapter: (chapterId) => bridge.chapter(chapterId).then((sound) => (sound === null ? null : soundOf(sound)), () => null),
     onArrive: (fn) => listen(arrive, fn),
     onMissing: (fn) => listen(missing, fn),
+    onLoading: (fn) => {
+      const stop = listen(loading, fn)
+      for (const chapter of loadingNow) fn(chapter, true)
+      return stop
+    },
     retry: start,
   }
 }

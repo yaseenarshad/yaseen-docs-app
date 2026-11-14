@@ -18,6 +18,9 @@
  * - Optional, for the quiet line (6D1): `onMissing(listener)` calls `listener(chapterId, true)` when a chapter's sound
  *   could not come (offline, a failed download) and `listener(chapterId, false)` when it is coming again or here.
  *   `retry(chapterId)` is the line's "Try again". A voice without them shows no line.
+ * - Optional (YAZ-5346): `onLoading(listener)` calls `listener(chapterId, true)` while a chapter's sound is downloading
+ *   for the person (the downloader said `loading`; on subscribe, for each chapter that is loading now) and
+ *   `listener(chapterId, false)` when it is here or missing. While it loads, the chapter holds at its start.
  */
 export interface ClipSound {
   url: string
@@ -34,6 +37,7 @@ export interface Voice {
   onArrive(listener: (chapterId: string) => void): () => void
   onMissing?(listener: (chapterId: string, missing: boolean) => void): () => void
   retry?(chapterId: string): void
+  onLoading?(listener: (chapterId: string, loading: boolean) => void): () => void
 }
 
 /** No sound at all: each clip runs on its estimate, with captions (a chapter whose sound is not here yet). */
