@@ -3,6 +3,7 @@
  * a 1.3 line, `currentColor`), so each follows light and dark with the text it sits by.
  */
 import type { ReactElement } from 'react'
+import { INBOX_TRAY_PATH } from '../views/view/icons'
 
 const glyph = (body: ReactElement, size = 14): ReactElement => (
   <svg className="card-inbox__glyph" width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -10,8 +11,8 @@ const glyph = (body: ReactElement, size = 14): ReactElement => (
   </svg>
 )
 
-/** All cards: an inbox tray, as Mochi's menu draws it. */
-export const InboxTrayIcon = () => glyph(<path d="M2.5 9.5 4 3.5h8l1.5 6v3h-11zM2.5 9.5h3.2l.8 1.5h3l.8-1.5h3.2" />)
+/** All cards: an inbox tray, as Mochi's menu draws it; the sidebar's Inbox row wears the same shape (YAZ-5131). */
+export const InboxTrayIcon = () => glyph(<path d={INBOX_TRAY_PATH} />)
 /** Archived (YAZ-5046): an archive box, the Inbox ⋯'s Archive card glyph. */
 export const ArchiveIcon = () => glyph(<path d="M2.5 3.5h11v3h-11zM3.5 6.5v6h9v-6M6.5 9h3" />)
 /** Up next (YAZ-5028): the ⋯ row's "Put at top of Inbox" arrow, a line with an arrow up to it. */

@@ -8653,6 +8653,17 @@ describe('Inbox row (YAZ-2322)', () => {
     expect(inbox(el)?.getAttribute('aria-label')).toBe('Inbox')
   })
 
+  it('YAZ-5131: an inbox tray before the name, in the sidebar\'s icon size; cards due today make the count a filled pill — nothing due, no count', async () => {
+    const { el, rerender } = await mount({ review: true, dueCount: 3 })
+    const parts = () => [...inbox(el)!.children].map((c) => c.getAttribute('class'))
+    expect(parts()).toEqual(['sidebar__inbox-icon', 'sidebar__inbox-name', 'tree__count sidebar__inbox-count'])
+    const icon = inbox(el)!.querySelector('svg.sidebar__inbox-icon')!
+    expect([icon.getAttribute('width'), icon.getAttribute('aria-hidden')]).toEqual(['14', 'true'])
+    expect(inbox(el)!.querySelector('.sidebar__inbox-count')?.textContent).toBe('3')
+    await rerender({ dueCount: 0 })
+    expect(parts()).toEqual(['sidebar__inbox-icon', 'sidebar__inbox-name'])
+  })
+
   it('a click asks App to open the Inbox', async () => {
     const { el, props } = await mount({ review: true, dueCount: 3 })
     act(() => inbox(el)?.click())

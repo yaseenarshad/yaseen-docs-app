@@ -5,7 +5,7 @@ import { titleWithKey } from '@shared/hotkeyBindings'
 import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api } from '../api'
 import { osVerbs } from '../lib/osVerbs'
-import { CalendarIcon, GridIcon, SidebarPanelIcon } from '../views/view/icons'
+import { CalendarIcon, GridIcon, InboxIcon, SidebarPanelIcon } from '../views/view/icons'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { embeddedCards, makeCardResolver } from '@shared/cardLinks'
 import type { WatchSource } from '../hooks/useWatch'
@@ -1842,7 +1842,9 @@ export function Sidebar({
         )}
       </div>
       {/* The Inbox (YAZ-4967), with card review on: above the tabs, so it shows on every tab — the Search tab too.
-          One row per vault that has it (YAZ-2602 R5), in vault order; two or more say whose each is. Silent with no card due. */}
+          One row per vault that has it (YAZ-2602 R5), in vault order; two or more say whose each is. Silent with no card due.
+          YAZ-5131 (Yaseen: "polish around [it] so it actually stands out"): a place, not a line — the tray icon, then
+          the name, and with cards left for today the count as a filled accent pill, the row's one mark. */}
       {inboxes.map((vault) => {
         const label = inboxes.length > 1 ? `Inbox · ${vault.name}` : 'Inbox'
         return (
@@ -1860,8 +1862,9 @@ export function Sidebar({
               setInboxMenu({ root: vault.root, x: e.clientX, y: e.clientY })
             }}
           >
-            {label}
-            {vault.dueCount > 0 && <span className="tree__count">{vault.dueCount}</span>}
+            <InboxIcon className="sidebar__inbox-icon" />
+            <span className="sidebar__inbox-name">{label}</span>
+            {vault.dueCount > 0 && <span className="tree__count sidebar__inbox-count">{vault.dueCount}</span>}
           </button>
         )
       })}
