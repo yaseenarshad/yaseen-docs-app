@@ -84,6 +84,7 @@ import { namingTab } from '../lib/focusHandoff'
 import { flushRenamedPath, takeRenameBuffer } from '../lib/renameContinuity'
 import { isAnnouncedWrite, onTwinSave } from '../lib/twinEditors'
 import { registerPageView } from '../lib/pageView'
+import { showPagePlace } from './pagePlace'
 import { appliedTheme } from '../lib/theme'
 import { storage } from '../lib/storage'
 import { transformFile } from '../views/writeProperty'
@@ -1168,7 +1169,14 @@ function CrepeHost({
       // A copy starts where its source stood (YAZ-2940 D7) — after the caret grab, which may scroll,
       // and after the start drill-in, which the editor state already holds (YAZ-2951 S6).
       const scroller = hostRef.current?.closest('.editor-host')
-      if (start !== undefined && scroller) scroller.scrollTop = start.scrollTop
+      // Explore's reading layer gives its place in the text (YAZ-5164): px of that other view would land elsewhere. Once
+      // more a frame later, when the blocks above have drawn (a card, a picture).
+      const top = start?.top
+      if (start !== undefined && scroller && (top === undefined || !showPagePlace(editorViewOf(crepe), scroller, top))) scroller.scrollTop = start.scrollTop
+      if (top !== undefined && scroller)
+        requestAnimationFrame(() => {
+          if (!cancelled) showPagePlace(editorViewOf(crepe), scroller, top)
+        })
       startViewRef.current = undefined
       // This tab's page view, read only when a copy action asks (YAZ-2951 D4): nothing runs per keystroke. The folder
       // page's scroller is the folder tab's, not the Page tab's (YAZ-4584 D38).
