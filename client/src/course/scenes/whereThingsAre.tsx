@@ -5,6 +5,7 @@
  * finale: the course's main pictures one last time (the curve, the hub, the tree, the garden), then a card that
  * settles into the person, and the end screen (`finale.tsx`). A quiet finish, not a firework.
  */
+import type { ReactNode } from 'react'
 import { useUnit } from '../../vault/unitWord'
 import type { SceneProps } from '../scene'
 import { CARD_SKILL_MENU } from '../../sidebar/menuSections'
@@ -239,6 +240,179 @@ function SettingsCards(props: SceneProps) {
   )
 }
 
+/** One row of Settings › Cards, in the app's own words (`settings/registry.tsx`): its label and its value. */
+interface SetRow {
+  label: string
+  /** The row's control: segments (the one on), or a value in a box. */
+  seg?: readonly string[]
+  on?: string
+  value?: string
+}
+/** The groups of Settings › Cards that the walk shows (`registry.tsx`, the section `cards`), with the defaults on. */
+const CARD_LOOK: readonly SetRow[] = [
+  { label: 'Shown hidden words', seg: ['Highlight', 'Underline', 'Box'], on: 'Highlight' },
+  { label: 'Card width', value: '640 px' },
+  { label: 'Card tables', seg: ['Same as pages', 'Left', 'Centre'], on: 'Same as pages' },
+]
+const DAILY: readonly SetRow[] = [
+  { label: 'New cards a day', value: '10 cards' },
+  { label: 'New cards first', seg: ['Oldest first', 'Newest first'], on: 'Oldest first' },
+]
+const SCHEDULING: readonly SetRow[] = [
+  { label: 'Remember rate', value: '90 %' },
+  { label: 'Longest wait', value: '365 days' },
+  { label: 'Spread due dates', seg: ['On', 'Off'], on: 'On' },
+]
+const SECTION_GROUPS = ['Use cards in this vault', 'Daily limits', 'Answers', 'Scheduling', 'Card look']
+
+/** A row of the walk: `lit` glows it; `rec` brings in its "Recommended" mark. */
+function WalkRow({ beat, row, lit = 0, rec = 0, p = 1 }: { beat: Beat; row: SetRow; lit?: number; rec?: number; p?: number }) {
+  return (
+    <div className="later-settings__row kit-glowable" style={{ ...rise(beat, p, 6), boxShadow: lit > 0 ? `0 0 0 ${(2 * clamp(lit)).toFixed(2)}px var(--accent)` : undefined }}>
+      <span>{row.label}</span>
+      <span className="later-walk__control">
+        {rec > 0 && (
+          <span className="later-walk__rec" style={pop(beat, rec, 0.7)}>
+            Recommended
+          </span>
+        )}
+        {row.seg !== undefined ? (
+          <span className="later-seg">
+            {row.seg.map((o) => (
+              <b key={o} data-on={o === row.on ? 'true' : undefined}>
+                {o}
+              </b>
+            ))}
+          </span>
+        ) : (
+          <span className="later-walk__value">{row.value}</span>
+        )}
+      </span>
+    </div>
+  )
+}
+
+/**
+ * c12-17 to c12-21, one span (YAZ-5331): a walk through Settings › Cards, in the app's labels. c12-17: the whole
+ * section, its groups, and room for the settings to come. c12-18: Card look, row by row. c12-19: Daily limits; the
+ * folder for new cards is an IDEA, not a row (it is not in the app yet): a dashed "Coming soon" line. c12-20: each
+ * default with its "Recommended" mark. c12-21: Scheduling, with a quiet amber edge: be careful.
+ */
+function SettingsWalk(props: SceneProps) {
+  const b = useBeat(props)
+  const id = props.clip.id
+  const at = (c: string) => id === c
+  let body: ReactNode = null
+  let label = ''
+  if (at('c12-17')) {
+    const section = cue(b, 0, 0.163)
+    const updates = cue(b, 2, 0.437)
+    const here = cue(b, 3, 0.893)
+    label = 'Settings has a whole section for cards; new settings will always show here'
+    body = (
+      <>
+        <p className="later-settings__title kit-glowable" style={{ boxShadow: `0 0 0 ${(2 * showFor(since(b, here, 0.4), 0)).toFixed(2)}px var(--accent)`, borderRadius: 6 }}>
+          Cards
+        </p>
+        <ul className="later-walk__groups">
+          {SECTION_GROUPS.map((g, i) => (
+            <li key={g} style={rise(b, since(b, section + i * 0.03, 0.4), 6)}>
+              {g}
+            </li>
+          ))}
+          <li className="later-walk__soon" style={rise(b, since(b, updates, 0.5), 6)}>
+            + New settings will show here
+          </li>
+        </ul>
+      </>
+    )
+  } else if (at('c12-18')) {
+    const lits = [cue(b, 0, 0.162), cue(b, 1, 0.412), cue(b, 2, 0.674)]
+    label = 'Card look: how hidden words look, how wide a card is, and how tables show on a card'
+    body = (
+      <>
+        <p className="later-walk__group">Card look</p>
+        {CARD_LOOK.map((row, i) => (
+          <WalkRow key={row.label} beat={b} row={row} lit={showFor(since(b, lits[i], 0.3), since(b, lits[i + 1] ?? 2, 0.3))} />
+        ))}
+      </>
+    )
+  } else if (at('c12-19')) {
+    const fresh = cue(b, 0, 0.112)
+    const oldest = cue(b, 1, 0.357)
+    const folder = cue(b, 3, 0.711)
+    label = 'Daily limits: new cards a day, and the oldest or the newest first. A folder for new cards is an idea, coming later'
+    body = (
+      <>
+        <p className="later-walk__group">Daily limits</p>
+        <WalkRow beat={b} row={DAILY[0]} lit={showFor(since(b, fresh, 0.3), since(b, oldest - 0.03, 0.3))} />
+        <WalkRow beat={b} row={DAILY[1]} lit={showFor(since(b, oldest, 0.3), since(b, folder - 0.03, 0.3))} />
+        <p className="later-walk__idea" style={rise(b, since(b, folder, 0.5), 6)}>
+          <span className="later-walk__soon-tag">Coming soon</span> An idea: choose the folder new cards come from
+        </p>
+      </>
+    )
+  } else if (at('c12-20')) {
+    const rec = cue(b, 0, 0.2)
+    const keep = cue(b, 2, 0.861)
+    label = 'Each setting starts at what we recommend: change it if you know what you want, else keep the defaults'
+    body = (
+      <>
+        <p className="later-walk__group">Card look</p>
+        {CARD_LOOK.map((row, i) => (
+          <WalkRow key={row.label} beat={b} row={row} rec={since(b, rec + i * 0.04, 0.4)} />
+        ))}
+        <p className="later-walk__group">Daily limits</p>
+        {DAILY.map((row, i) => (
+          <WalkRow key={row.label} beat={b} row={row} rec={since(b, rec + 0.12 + i * 0.04, 0.4)} />
+        ))}
+        <span className="kit-chip later-walk__keep" style={pop(b, since(b, keep, 0.5))}>
+          Not sure? Keep the defaults
+        </span>
+      </>
+    )
+  } else {
+    const warning = cue(b, 0, 0.046)
+    const sched = cue(b, 1, 0.321)
+    const back = cue(b, 2, 0.784)
+    label = 'One warning: be careful with the scheduling settings; they decide when each card comes back'
+    body = (
+      <div className="later-walk__warn" data-on={since(b, warning, 0.4) > 0.5 ? 'true' : undefined}>
+        <p className="later-walk__group">
+          Scheduling{' '}
+          <span className="later-walk__careful" style={pop(b, since(b, warning, 0.5), 0.8)}>
+            ⚠ Be careful
+          </span>
+        </p>
+        {SCHEDULING.map((row, i) => (
+          <WalkRow key={row.label} beat={b} row={row} p={since(b, sched - 0.06 + i * 0.03, 0.4)} />
+        ))}
+        <p className="later-walk__why" style={rise(b, since(b, back - 0.05, 0.5), 6)}>
+          They decide when each card comes back.
+        </p>
+      </div>
+    )
+  }
+  return (
+    <Stage beat={b} label={label}>
+      <Layer>
+        <div className="later-settings later-walk" style={rise(b, since(b, 0, 0.5), 10)}>
+          <ul className="later-settings__nav">
+            {NAV.map((n) => (
+              <li key={n} data-on={n === 'Cards' ? 'true' : undefined}>
+                {n}
+              </li>
+            ))}
+          </ul>
+          <div className="later-settings__page" key={id}>
+            {body}
+          </div>
+        </div>
+      </Layer>
+    </Stage>
+  )
+}
+
 const DAYS = ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7']
 const COL = (i: number) => 50 + i * 100
 
@@ -463,6 +637,7 @@ export const WHERE_THINGS_ARE_SCENES: ChapterScenes = {
     { clips: ['c12-01', 'c12-02', 'c12-03', 'c12-04', 'c12-05'], scene: CardSkill },
     { clips: ['c12-06'], scene: Guide },
     { clips: ['c12-07'], scene: SettingsCards },
+    { clips: ['c12-17', 'c12-18', 'c12-19', 'c12-20', 'c12-21'], scene: SettingsWalk },
     { clips: ['c12-08', 'c12-09', 'c12-10', 'c12-11', 'c12-16', 'c12-12'], scene: FirstWeek },
     { clips: ['c12-13'], scene: Now },
     { clips: ['c12-14'], scene: Tomorrow },

@@ -29,7 +29,7 @@ afterEach(() => {
 
 describe('chapters 9 to 12 (YAZ-5121)', () => {
   it('have their clips', () => {
-    expect(MINE.map((id) => chapter(id).clips.length)).toEqual([15, 29, 18, 16])
+    expect(MINE.map((id) => chapter(id).clips.length)).toEqual([15, 31, 18, 21])
   })
 
   it('have marks on the clips the voice times: sorted fractions in (0, 1)', () => {
@@ -41,7 +41,7 @@ describe('chapters 9 to 12 (YAZ-5121)', () => {
         for (const m of marks) expect(m > 0 && m < 1, `${clip.id} ${m}`).toBe(true)
         expect([...marks].sort((a, b) => a - b)).toEqual(marks)
       }
-    expect(marked).toBe(77)
+    expect(marked).toBe(84)
   })
 
   it('have no clip that waits, so no scene calls done()', () => {

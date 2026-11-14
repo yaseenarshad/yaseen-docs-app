@@ -164,7 +164,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
     </div>
   )
   const section = (s: SettingsSection) => (
-    <section key={s.id} id={`settings-${s.id}`} data-section={s.id} className="settings-section">
+    <section key={s.id} id={`settings-${s.id}`} data-section={s.id} className="settings-section" data-tour={s.id === 'cards' ? 'settings-cards-section' : undefined}>
       <h2 className="settings-section__title">{s.title}</h2>
       {s.vault === true && vaultLine('settings-section__note')}
       {s.page !== undefined && <p className="settings-section__note">{s.page}</p>}

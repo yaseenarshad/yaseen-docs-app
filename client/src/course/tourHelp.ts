@@ -52,6 +52,7 @@ export const TARGET_HELP: Record<string, TargetHelp> = {
   'card-link-pill': { where: 'Save the card first: press Escape, or click Done.' },
   'card-skill-row': { where: 'The card skill is at the bottom of the sidebar. If it is not there, turn it on in Settings, under Cards.', show: () => ({ kind: 'sidebar' }) },
   'settings-review': { where: 'Press Command comma to open Settings.', show: () => ({ kind: 'settings' }) },
+  'settings-cards-section': { where: 'Open Settings, and click Cards.', show: () => ({ kind: 'settings', page: 'cards' }) },
   'settings-card-skill': { where: 'Open Settings, and click Cards.', show: () => ({ kind: 'settings', page: 'cards' }) },
   'settings-course': { where: 'Open Settings, and click Cards.', show: () => ({ kind: 'settings', page: 'cards' }) },
 }
