@@ -206,12 +206,17 @@ try {
     await open(`${ORIGIN}/`)
     const before = await evaluate(`[navigator.serviceWorker.controller !== null, document.querySelector('script[src*="/assets/index-"]').getAttribute('src')]`)
     record('0a the profile runs the previous build from its worker', before[0] === true && before[1] !== liveEntry, `page ${before[1]}, live ${liveEntry}`)
+    // The old app asks for a new version at its start; the new one installs and waits (the open page stays old).
+    const waits = await until(`navigator.serviceWorker.getRegistration().then(r => !!r.waiting && r.waiting.state === 'installed')`, 30_000)
+    record('0b the new build installs in the background and waits', waits)
+    // The next open: the old app asks the waiting version to take over (Chrome does it once the old worker is idle).
     const t0 = Date.now()
-    const took = await until(`navigator.serviceWorker.getRegistration().then(r => !r.waiting && !r.installing && r.active.state === 'activated').then(ok => ok && caches.keys()).then(ks => ks && ks.filter(k => k.startsWith('notecards-shell-')).length === 2)`, 60_000)
-    record('0b the new build installs in the background and takes over (old build kept)', took, `${((Date.now() - t0) / 1000).toFixed(1)} s`)
+    await open(`${ORIGIN}/`)
+    const took = await until(`navigator.serviceWorker.getRegistration().then(r => !r.waiting && !r.installing && r.active.state === 'activated')`, 60_000)
+    record('0c it takes over at the next open (the old build stays kept)', took, `${((Date.now() - t0) / 1000).toFixed(1)} s`)
     await open(`${ORIGIN}/`)
     const after = await evaluate(`document.querySelector('script[src*="/assets/index-"]').getAttribute('src')`)
-    record('0c the next open runs the new build', after === liveEntry, after)
+    record('0d the open after that runs the new build', after === liveEntry, after)
   }
 
   // 1. Online, the first open.
