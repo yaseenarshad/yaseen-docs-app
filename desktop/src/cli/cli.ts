@@ -408,7 +408,7 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
       const state = cardState(card.reviews, settings)
       return { id: card.id, page: target, title: titles[i] ?? '', due: card.off ? null : state.isNew || card.next ? iso(now) : iso(state.due!), isNew: state.isNew, next: card.next, off: card.off, inSteps: state.inSteps, ...inCardFile(record) }
     })
-    if (!settings.enabled && rows.length > 0) io.stderr(`review is off for this vault (Settings › Review › Review cards): no card is due\n`)
+    if (!settings.enabled && rows.length > 0) io.stderr(`cards are off for this vault (Settings › Cards › Use cards in this vault): no card is due\n`)
     if (json) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
     else
       io.stdout(
@@ -432,7 +432,7 @@ async function due(target: string, json: boolean, io: Io): Promise<void> {
   const inSteps = (q: (typeof queue)[number]): boolean => !q.isNew && cardState(byPath.get(q.path)?.cards?.[q.index]?.reviews ?? [], settings).inSteps
   const rows = queue.map((q) => ({ id: q.id, page: q.path, title: titles.get(q.path)?.[q.index] ?? '', due: iso(q.due), isNew: q.isNew, next: q.next, inSteps: inSteps(q), ...inCardFile(byPath.get(q.path)) }))
   if (json) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
-  else if (!settings.enabled) io.stdout(`review is off for this vault (Settings › Review › Review cards): no card is due\n`)
+  else if (!settings.enabled) io.stdout(`cards are off for this vault (Settings › Cards › Use cards in this vault): no card is due\n`)
   else io.stdout(rows.length === 0 ? `nothing is due under ${target}\n` : rows.map((r) => `${r.next ? 'next      ' : r.isNew ? 'new       ' : r.inSteps ? 'steps     ' : day(Date.parse(r.due))}  ${r.id}  ${r.title}  ${r.page}\n`).join(''))
 }
 

@@ -178,7 +178,7 @@ const FILES_ROWS = ['newPageLocation', 'newPageTitleTemplate', 'confirmDelete', 
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and their style (YAZ-4798) after Group indent.
 const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
 // YAZ-5050 round 2: in groups — Daily limits, Answers, Scheduling, Card look (with its preview).
-const REVIEW_ROWS = ['enabled', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTablePosition', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
+const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTablePosition', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
  * so the "Used by macOS" rows are not there; with no key changed, neither is "Reset all hotkeys".
@@ -358,11 +358,11 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(navShape(withSync.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Folder pages', 'Sync', '—', 'Memory', 'Hotkeys'])
     unmount()
     const withVault = mount({ ...DEFAULT_SETTINGS }, status(), REVIEW_ON)
-    expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Folder pages', 'Review', 'Sync', '—', 'Memory', 'Hotkeys'])
+    expect(navShape(withVault.el)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Folder pages', 'Cards', 'Sync', '—', 'Memory', 'Hotkeys'])
   })
 
   it('the registry order once both YAZ-3028 halves land: canvas and images after Editor (YAZ-3037, YAZ-3038), storage and sharing after Sync (YAZ-3039, YAZ-3040), Hotkeys last', () => {
-    expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'tables', 'code', 'canvas', 'images', 'files', 'folderPages', 'review', 'sync', 'memory', 'storage', 'sharing', 'hotkeys'])
+    expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual(['general', 'appearance', 'sidebar', 'notifications', 'editor', 'tables', 'code', 'canvas', 'images', 'files', 'folderPages', 'cards', 'sync', 'memory', 'storage', 'sharing', 'hotkeys'])
   })
 
   it('opens on General, the first page: the one section in the pane, anchored by id, with only its rows — no row of a later section is there (YAZ-3276 D7)', () => {
@@ -400,7 +400,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       page('Images', 'settings-images', IMAGES_ROWS),
       page('Files & Links', 'settings-files', FILES_ROWS),
       page('Folder pages', 'settings-folderPages', FOLDER_PAGES_ROWS),
-      page('Review', 'settings-review', REVIEW_ROWS),
+      page('Cards', 'settings-cards', REVIEW_ROWS),
       page('Sync', 'settings-sync', ['githubSync']),
       page('Memory', 'settings-memory', ['memoryWindows', 'tabSleepAfter', 'embedPictures', 'memoryReload']),
       page('Hotkeys', 'settings-hotkeys', HOTKEY_ROWS),
@@ -466,7 +466,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Images', []],
       ['Files & Links', []],
       ['Folder pages', []],
-      ['Review', [['settings-review', "These settings are saved in this vault's .yaseendocs folder and sync with it."]]],
+      ['Cards', [['settings-cards', "These settings are saved in this vault's .yaseendocs folder and sync with it."]]],
       ['Sync', [['settings-sync', "These settings are saved in this vault's .yaseendocs folder, not app-wide."]]],
       ['Memory', [['settings-memory', 'The app frees memory by itself. A tab that you do not use goes to sleep. A window that gets too big reloads. You do not need to do anything here.']]],
       ['Hotkeys', []],
@@ -493,12 +493,12 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Images', []],
       ['Files & Links', [{ text: 'Vault: Work', under: 'This vault', className: 'settings-group__hint' }]],
       ['Folder pages', []],
-      ['Review', [{ text: 'Vault: Work', under: 'Review', className: 'settings-section__note' }]],
+      ['Cards', [{ text: 'Vault: Work', under: 'Cards', className: 'settings-section__note' }]],
       ['Sync', [{ text: 'Vault: Work', under: 'Sync', className: 'settings-section__note' }]],
       ['Memory', []],
       ['Hotkeys', []],
     ])
-    clickNav(el, 'Review')
+    clickNav(el, 'Cards')
     expect([...el.querySelectorAll('.settings-section__note')].map((n) => n.textContent)).toEqual(['Vault: Work', "These settings are saved in this vault's .yaseendocs folder and sync with it."])
     unmount()
     const one = mount({ ...DEFAULT_SETTINGS }, status(), REVIEW_ON, { enabled: true, held: false })
@@ -1440,23 +1440,23 @@ describe('SettingsDialog rows write through the popover contracts', () => {
 describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, D14)', () => {
   const S = REVIEW_ON
   const input = (el: HTMLElement, id: string) => row(el, id)?.querySelector<HTMLInputElement>('.settings__input') as HTMLInputElement
-  const reviewRows = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('#settings-review .setting')].map((r) => r.dataset.setting)
+  const reviewRows = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('#settings-cards .setting')].map((r) => r.dataset.setting)
   const ALL = REVIEW_ROWS
 
   it('is absent with no vault open: no Review item in the nav, and no page holds its section or a row of it', () => {
     const { el } = mount()
-    expect(navByTitle(el, 'Review')).toBeUndefined()
-    const found = onEachPage(el, () => [el.querySelector('#settings-review'), row(el, 'enabled'), row(el, 'weights')])
+    expect(navByTitle(el, 'Cards')).toBeUndefined()
+    const found = onEachPage(el, () => [el.querySelector('#settings-cards'), row(el, 'enabled'), row(el, 'weights')])
     expect(found.map(([title]) => title)).toEqual(['General', 'Appearance', 'Sidebar', 'Notifications', 'Editor', 'Tables', 'Code', 'Drawings and diagrams', 'Images', 'Files & Links', 'Folder pages', 'Memory', 'Hotkeys'])
     for (const [, nodes] of found) expect(nodes).toEqual([null, null, null])
   })
 
   it('on: the card rows in order, with their words and values; off: the switch alone. No upkeep row is left', () => {
-    const { el, rerender } = mountOn('Review', { ...DEFAULT_SETTINGS }, status(), S)
+    const { el, rerender } = mountOn('Cards', { ...DEFAULT_SETTINGS }, status(), S)
     expect(reviewRows(el)).toEqual(ALL)
-    expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Review cards', 'New cards a day', 'Up next a day', 'New cards first', 'Answer buttons', 'Pause the timer after', 'Time so far', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card width', 'Card tables', 'Card spacing'])
+    expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Use cards in this vault', undefined, 'New cards a day', 'Up next a day', 'New cards first', 'Answer buttons', 'Pause the timer after', 'Time so far', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card width', 'Card tables', 'Card spacing'])
     // YAZ-5050 round 2: the groups, in order; the card preview is the last row of Card look.
-    expect([...el.querySelectorAll('#settings-review .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look'])
+    expect([...el.querySelectorAll('#settings-cards .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look'])
     // YAZ-5020: "How cards come back" is a quiet closed line; open, it says the same-day rules and why.
     const how = row(el, 'howCardsComeBack')!.querySelector('details')!
     expect([how.open, how.querySelector('summary')?.textContent]).toEqual([false, 'How cards come back'])
@@ -1466,14 +1466,14 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(input(el, 'weights').value).toBe(DEFAULT_REVIEW_SETTINGS.weights.join(', '))
     // A box that grows to its text (YAZ-4964, `settings.css.test.ts`), 3 lines at the least: the 21 numbers need 3 at 960 px.
     expect([input(el, 'weights').tagName, input(el, 'weights').getAttribute('rows')]).toEqual(['TEXTAREA', '3'])
-    expect(el.querySelector('#settings-review .settings-section__note')).not.toBeNull()
+    expect(el.querySelector('#settings-cards .settings-section__note')).not.toBeNull()
     rerender(REVIEW_OFF)
-    expect(reviewRows(el)).toEqual(['enabled'])
+    expect(reviewRows(el)).toEqual(['enabled', 'whatThisAdds'])
     expect(rowButtons(el, 'enabled').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
   })
 
   it('YAZ-5053: Shown hidden words is Highlight · Underline · Box; Box is an app setting (onChange), never the vault\'s review.json', () => {
-    const { el, save, onChange } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
+    const { el, save, onChange } = mountOn('Cards', { ...DEFAULT_SETTINGS }, undefined, S)
     expect(rowButtons(el, 'shownHiddenWords').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Highlight', 'true'], ['Underline', 'false'], ['Box', 'false']])
     act(() => rowButtons(el, 'shownHiddenWords')[2].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, shownHiddenWords: 'box' })
@@ -1481,7 +1481,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   })
 
   it('YAZ-5053 round 3: Mark the next hidden word is On by default, with its colour (a picker and Reset) under it; Off hides the colour; both are app settings', () => {
-    const { el, onChange, save } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
+    const { el, onChange, save } = mountOn('Cards', { ...DEFAULT_SETTINGS }, undefined, S)
         expect(row(el, 'markNextHidden')?.querySelector('.setting__label')?.textContent).toBe('Mark the next hidden word')
     expect(rowButtons(el, 'markNextHidden').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
     const picker = row(el, 'nextHiddenColour')?.querySelector<HTMLInputElement>('input[type="color"]')
@@ -1499,11 +1499,11 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
 
   it('YAZ-5053 round 3: a picked colour shows in the picker; Reset goes back to the default; Off has no colour row', () => {
     const picked = { ...DEFAULT_SETTINGS, nextHiddenColour: '#aa3399' }
-    const { el, onChange } = mountOn('Review', picked, undefined, S)
+    const { el, onChange } = mountOn('Cards', picked, undefined, S)
     expect(row(el, 'nextHiddenColour')?.querySelector<HTMLInputElement>('input[type="color"]')?.value).toBe('#aa3399')
     act(() => [...(row(el, 'nextHiddenColour')?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Reset')?.click())
     expect(onChange).toHaveBeenLastCalledWith({ ...picked, nextHiddenColour: null })
-    expect(row(mountOn('Review', { ...DEFAULT_SETTINGS, markNextHidden: false }, undefined, S).el, 'nextHiddenColour')).toBeNull()
+    expect(row(mountOn('Cards', { ...DEFAULT_SETTINGS, markNextHidden: false }, undefined, S).el, 'nextHiddenColour')).toBeNull()
   })
 
   // YAZ-5053 round 4 (Yaseen: "clicking these options on or off doesnt stick… it doesnt select"): each choice of each
@@ -1519,27 +1519,27 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     ['cardBulletSpace', { cardSpacing: 'custom' }],
   ]
   it.each(CHOICE_ROWS)('YAZ-5053 round 4: each choice of %s, clicked, is sent, and shows selected once it comes back', (id, start) => {
-    const count = rowButtons(mountOn('Review', { ...DEFAULT_SETTINGS, ...start }, undefined, S).el, id).length
+    const count = rowButtons(mountOn('Cards', { ...DEFAULT_SETTINGS, ...start }, undefined, S).el, id).length
     unmount()
     expect(count).toBeGreaterThan(1)
     for (let at = 0; at < count; at++) {
       // Start from another choice, so each click is a change.
-      const from = mountOn('Review', { ...DEFAULT_SETTINGS, ...start }, undefined, S)
+      const from = mountOn('Cards', { ...DEFAULT_SETTINGS, ...start }, undefined, S)
       act(() => rowButtons(from.el, id)[(at + 1) % count].click())
       const other = from.onChange.mock.lastCall?.[0] as SettingsState | undefined
       unmount()
-      const mid = mountOn('Review', other ?? { ...DEFAULT_SETTINGS, ...start }, undefined, S)
+      const mid = mountOn('Cards', other ?? { ...DEFAULT_SETTINGS, ...start }, undefined, S)
       act(() => rowButtons(mid.el, id)[at].click())
       const sent = mid.onChange.mock.lastCall?.[0] as SettingsState
       unmount()
-      const back = mountOn('Review', sent, undefined, S)
+      const back = mountOn('Cards', sent, undefined, S)
       expect(rowButtons(back.el, id).map((b) => b.getAttribute('aria-pressed'))).toEqual(Array.from({ length: count }, (_, i) => String(i === at)))
       unmount()
     }
   })
 
   it('YAZ-5144 round 2: Card width sits before Card spacing: Same as pages · Custom; Custom starts at 640 px; an app setting', () => {
-    const { el, onChange, save } = mountOn('Review', { ...DEFAULT_SETTINGS, contentWidth: 'full' }, undefined, S)
+    const { el, onChange, save } = mountOn('Cards', { ...DEFAULT_SETTINGS, contentWidth: 'full' }, undefined, S)
     const ids = reviewRows(el)
     expect(ids.slice(ids.indexOf('cardWidth'), ids.indexOf('cardWidth') + 3)).toEqual(['cardWidth', 'cardTablePosition', 'cardSpacing'])
     expect(row(el, 'cardWidth')?.querySelector('.setting__label')?.textContent).toBe('Card width')
@@ -1552,7 +1552,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   })
 
   it('YAZ-5136 round 3: Card tables is Same as pages (the default, Settings › Tables) · Left · Centre, beside Card width; an app setting', () => {
-    const { el, onChange, save } = mountOn('Review', { ...DEFAULT_SETTINGS, tablePosition: 'center' }, undefined, S)
+    const { el, onChange, save } = mountOn('Cards', { ...DEFAULT_SETTINGS, tablePosition: 'center' }, undefined, S)
     expect(row(el, 'cardTablePosition')?.querySelector('.setting__label')?.textContent).toBe('Card tables')
     expect(rowButtons(el, 'cardTablePosition').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Same as pages', 'true'], ['Left', 'false'], ['Centre', 'false']])
     expect(row(el, 'cardTablePosition')?.textContent).toMatch(/Same as pages follows Settings › Tables › Table position/)
@@ -1563,7 +1563,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
 
   it('YAZ-5144 round 2: Custom shows its px, typed and kept on Enter, held to 400–1600; Reset goes back to 640; Same as pages goes back', () => {
     const custom = { ...DEFAULT_SETTINGS, cardWidth: 720 }
-    const { el, onChange } = mountOn('Review', custom, undefined, S)
+    const { el, onChange } = mountOn('Cards', custom, undefined, S)
     expect(rowButtons(el, 'cardWidth').slice(0, 2).map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
     const px = row(el, 'cardWidth')!.querySelector<HTMLInputElement>('input[aria-label="Card width in px"]')!
     expect(px.value).toBe('720')
@@ -1581,14 +1581,14 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     act(() => rowButtons(el, 'cardWidth')[0].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardWidth: null })
     // At its start, Reset has nothing to do.
-    expect(rowButtons(mountOn('Review', { ...DEFAULT_SETTINGS, cardWidth: 640 }, undefined, S).el, 'cardWidth').map((b) => b.textContent)).toEqual(['Same as pages', 'Custom'])
+    expect(rowButtons(mountOn('Cards', { ...DEFAULT_SETTINGS, cardWidth: 640 }, undefined, S).el, 'cardWidth').map((b) => b.textContent)).toEqual(['Same as pages', 'Custom'])
   })
 
   const CUSTOM_ROWS = ['cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace']
   const CUSTOM = { cardSpacing: 'custom' as const, cardLineSpacing: 2, cardBlockGap: 8, cardBulletIndent: 40, cardBulletGap: 12, cardBulletSpace: 4 }
   it('YAZ-5050 round 3: Card spacing is Same as pages by default, with no other row; Custom starts at Mochi\'s clean values (not the pages\'), and shows its rows', () => {
     const page = { ...DEFAULT_SETTINGS, lineSpacing: 1.15, blockGap: 2, pageBulletIndent: 40, pageBulletGap: 12, ...CUSTOM, cardSpacing: 'pages' as const }
-    const { el, onChange } = mountOn('Review', page, undefined, S)
+    const { el, onChange } = mountOn('Cards', page, undefined, S)
     expect(rowButtons(el, 'cardSpacing').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Same as pages', 'true'], ['Clean', 'false'], ['Custom', 'false']])
     for (const id of CUSTOM_ROWS) expect(row(el, id)).toBeNull()
     act(() => rowButtons(el, 'cardSpacing')[2].click())
@@ -1597,11 +1597,11 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
 
   it('YAZ-5050 round 4: Clean is one click, with no rows; Custom from Clean starts at Clean\'s values', () => {
     const page = { ...DEFAULT_SETTINGS, ...CUSTOM, cardSpacing: 'pages' as const }
-    const { el, onChange } = mountOn('Review', page, undefined, S)
+    const { el, onChange } = mountOn('Cards', page, undefined, S)
     act(() => rowButtons(el, 'cardSpacing')[1].click())
     // YAZ-5144 round 2: Clean's short line is Card width Custom 520 px (Mochi's line), set by the same click.
     expect(onChange).toHaveBeenLastCalledWith({ ...page, cardSpacing: 'clean', cardWidth: 520 })
-    const clean = mountOn('Review', { ...page, cardSpacing: 'clean' }, undefined, S)
+    const clean = mountOn('Cards', { ...page, cardSpacing: 'clean' }, undefined, S)
     expect(rowButtons(clean.el, 'cardSpacing').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false'])
     for (const id of CUSTOM_ROWS) expect(row(clean.el, id)).toBeNull()
     act(() => rowButtons(clean.el, 'cardSpacing')[2].click())
@@ -1610,7 +1610,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
 
   it('YAZ-5050: Custom card spacing: its rows under Card spacing, in the pages\' words; a change is an app setting; Reset goes to Custom\'s start; Same as pages goes back', () => {
     const custom = { ...DEFAULT_SETTINGS, ...CUSTOM }
-    const { el, onChange } = mountOn('Review', custom, undefined, S)
+    const { el, onChange } = mountOn('Cards', custom, undefined, S)
     expect(reviewRows(el).slice(-8)).toEqual(['cardSpacing', ...CUSTOM_ROWS, 'cardSpacingPreview', 'howCardsComeBack'])
     expect(CUSTOM_ROWS.map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Line spacing', 'Space between blocks', 'Bullet indent', 'Bullet gap', 'Space between bullets'])
     act(() => rowButtons(el, 'cardBlockGap')[3].click())
@@ -1629,7 +1629,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   })
 
   it('the switches save the whole object with one field changed — never onChange', () => {
-    const { el, save, onChange } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
+    const { el, save, onChange } = mountOn('Cards', { ...DEFAULT_SETTINGS }, undefined, S)
     act(() => rowButtons(el, 'buttons')[1].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, buttons: 4 })
     act(() => rowButtons(el, 'fuzz')[1].click())
@@ -1653,7 +1653,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   })
 
   it('a valid field commits on Enter or blur: the remember rate as a percent, the weights as numbers; an unchanged one saves nothing', () => {
-    const { el, save } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
+    const { el, save } = mountOn('Cards', { ...DEFAULT_SETTINGS }, undefined, S)
     blur(input(el, 'maxDays'))
     expect(save).not.toHaveBeenCalled()
     type(input(el, 'retention'), '85')
@@ -1685,7 +1685,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   })
 
   it('a draft the rules refuse is marked while it stands, is not saved, and gives way to the last good value', () => {
-    const { el, save } = mountOn('Review', { ...DEFAULT_SETTINGS }, undefined, S)
+    const { el, save } = mountOn('Cards', { ...DEFAULT_SETTINGS }, undefined, S)
     // Each is one of `sanitizeReviewSettings`' rules: 70 to 99 %, whole days from 1, whole cards from 0, 17, 19 or 21 numbers.
     const weights = S.weights.join(', ')
     for (const [id, draft, stored] of [['retention', '50', '90'], ['retention', '', '90'], ['maxDays', '0', '365'], ['maxDays', '7.5', '365'], ['newPerDay', 'many', '10'], ['weights', '1, 2, 3', weights], ['weights', `${weights}, x`, weights]] as const) {
@@ -1703,7 +1703,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
 
   it('review off: search finds the switch and none of the rows it hides; turned on, it finds them', () => {
     const { el, rerender } = mount({ ...DEFAULT_SETTINGS }, undefined, REVIEW_OFF)
-    type(searchInput(el), 'review cards')
+    type(searchInput(el), 'use cards')
     expect(rowIds(el)).toEqual(['enabled'])
     type(searchInput(el), 'longest wait')
     expect(rowIds(el)).toEqual([])
@@ -2440,5 +2440,97 @@ describe('SettingsDialog: Show IDs (YAZ-4940), three rows in one block under "Th
     unmount()
     const none = mountOn('Files & Links')
     expect(rowIds(none.el).filter((id) => id?.startsWith('showIds'))).toEqual([])
+  })
+})
+
+/**
+ * YAZ-5154 (Yaseen: "Yes, build it"): the section is Cards, its switch "Use cards in this vault", a closed "What this
+ * adds" under it; Cards need IDs, so turning Cards on in a vault with IDs off asks once, with the IDs box's own words and
+ * letters field, and turning IDs off while Cards are on asks too. Cancel changes nothing.
+ */
+describe('YAZ-5154: the Cards section, and Cards with IDs', () => {
+  const ASK = { pages: 3, folders: 1, foreign: 0 }
+  const sheetBtn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label) as HTMLButtonElement
+  const field = (el: HTMLElement) => el.querySelector('.confirm__input') as HTMLInputElement
+  const OFF = { ...DEFAULT_REVIEW_SETTINGS, enabled: false }
+
+  it('the section is Cards; its switch is "Use cards in this vault"; "What this adds" is closed under it and names what shows', () => {
+    const { el } = mountOn('Cards', { ...DEFAULT_SETTINGS }, undefined, OFF)
+    expect(headings(el)).toEqual(['Cards'])
+    expect(row(el, 'enabled')?.querySelector('.setting__label')?.textContent).toBe('Use cards in this vault')
+    const adds = row(el, 'whatThisAdds')!.querySelector('details')!
+    expect([adds.open, adds.querySelector('summary')?.textContent]).toEqual([false, 'What this adds'])
+    expect([...adds.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['The Inbox in the sidebar.', 'New card, and Card in the Type filters and search.', 'Review this page and Review this folder.', 'The card settings below.'])
+  })
+
+  it('IDs on: On turns Cards on at once, with no box', () => {
+    const { el, save, setIds } = mountOn('Cards', { ...DEFAULT_SETTINGS }, undefined, OFF, { enabled: true, held: true })
+    act(() => rowButtons(el, 'enabled')[0].click())
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(save).toHaveBeenLastCalledWith({ ...OFF, enabled: true })
+    expect(setIds).not.toHaveBeenCalled()
+  })
+
+  it('IDs off: On asks "Cards need IDs. Turn on IDs too?" with the IDs box`s words and letters field; Cancel changes nothing', () => {
+    const { el, save, setIds } = mountOn('Cards', { ...DEFAULT_SETTINGS }, undefined, OFF, { enabled: false, held: false, ask: ASK })
+    act(() => rowButtons(el, 'enabled')[0].click())
+    expect(el.querySelector('.confirm__text')?.textContent).toBe(`Cards need IDs. Turn on IDs too? ${idsAskMessage(ASK)}`)
+    expect(el.querySelector('.confirm__letters')?.textContent).toBe(idsLettersAsk(undefined))
+    expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Turn on both'])
+    expect(sheetBtn(el, 'Turn on both').disabled).toBe(true)
+    act(() => sheetBtn(el, 'Cancel').click())
+    expect(el.querySelector('.confirm')).toBeNull()
+    expect(save).not.toHaveBeenCalled()
+    expect(setIds).not.toHaveBeenCalled()
+    expect(rowButtons(el, 'enabled').slice(0, 2).map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
+  })
+
+  it('IDs off: letters, then "Turn on both", turns IDs on with those letters and Cards on', async () => {
+    const { el, save, setIds } = mountOn('Cards', { ...DEFAULT_SETTINGS }, undefined, OFF, { enabled: false, held: false, ask: ASK })
+    act(() => rowButtons(el, 'enabled')[0].click())
+    type(field(el), 'bus')
+    await act(async () => sheetBtn(el, 'Turn on both').click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(true, 'BUS')
+    expect(save).toHaveBeenLastCalledWith({ ...OFF, enabled: true })
+    expect(el.querySelector('.confirm')).toBeNull()
+  })
+
+  it('IDs off in a vault whose pages hold number IDs: the keep-letters box, with "Cards need IDs" first', async () => {
+    const ask = { ...ASK, groups: [{ letters: 'DOC', count: 4 }] }
+    const { el, save, setIds } = mountOn('Cards', { ...DEFAULT_SETTINGS }, undefined, OFF, { enabled: false, held: false, ask })
+    act(() => rowButtons(el, 'enabled')[0].click())
+    expect(el.querySelector('.confirm__text')?.textContent).toMatch(/^Cards need IDs\. Turn on IDs too\? Give the pages/)
+    await act(async () => sheetBtn(el, 'Keep DOC').click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(true, 'DOC')
+    expect(save).toHaveBeenLastCalledWith({ ...OFF, enabled: true })
+  })
+
+  it('IDs Off while Cards are on asks "Cards will turn off. Your cards and reviews stay in the files."; Turn off does both; Cancel nothing', async () => {
+    const { el, save, setIds } = mountOn('Files & Links', { ...DEFAULT_SETTINGS }, undefined, { ...DEFAULT_REVIEW_SETTINGS }, { enabled: true, held: false })
+    act(() => rowButtons(el, 'ids')[1].click())
+    expect(el.querySelector('.confirm__text')?.textContent).toBe('Cards will turn off. Your cards and reviews stay in the files.')
+    act(() => sheetBtn(el, 'Cancel').click())
+    expect(setIds).not.toHaveBeenCalled()
+    expect(save).not.toHaveBeenCalled()
+    act(() => rowButtons(el, 'ids')[1].click())
+    await act(async () => sheetBtn(el, 'Turn off').click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(false)
+    expect(save).toHaveBeenLastCalledWith({ ...DEFAULT_REVIEW_SETTINGS, enabled: false })
+  })
+})
+
+describe('YAZ-5154: Cards change only once IDs saved', () => {
+  it('a refused IDs save leaves Cards as they were', async () => {
+    const { el, save, setIds } = mountOn('Cards', { ...DEFAULT_SETTINGS }, undefined, { ...DEFAULT_REVIEW_SETTINGS, enabled: false }, { enabled: false, held: false, ask: { pages: 1, folders: 0, foreign: 0 } })
+    setIds.mockResolvedValue(false)
+    act(() => rowButtons(el, 'enabled')[0].click())
+    act(() => {
+      const field = el.querySelector('.confirm__input') as HTMLInputElement
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set?.call(field, 'bus')
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === 'Turn on both')!.click())
+    expect(setIds).toHaveBeenCalledExactlyOnceWith(true, 'BUS')
+    expect(save).not.toHaveBeenCalled()
   })
 })

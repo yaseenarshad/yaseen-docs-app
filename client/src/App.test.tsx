@@ -6181,12 +6181,27 @@ describe('App "Give this vault\u2019s pages IDs" in Settings (YAZ-2523 V4, YAZ-2
     expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', false, undefined)
   })
 
-  it('an ID vault with no page holding one yet: Off saves no at once', async () => {
-    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(true, [], { enabled: true }))
+  it('an ID vault with no page holding one yet, Cards off: Off saves no at once', async () => {
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, (b) => {
+      feed(true, [], { enabled: true })(b)
+      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'review.json' ? { enabled: false } : null))
+    })
     act(() => emitSettings())
     settingsPage(el, 'Files & Links')
     await act(async () => idsButtons(el)[1].click())
     expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', false, undefined)
+  })
+
+  it('YAZ-5154: Off with Cards on asks "Cards will turn off"; Turn off saves IDs off, then Cards off in review.json', async () => {
+    const { bridge, el, emitSettings } = await mount(defaultAppState(), VAULT, {}, feed(true, [], { enabled: true }))
+    act(() => emitSettings())
+    settingsPage(el, 'Files & Links')
+    await act(async () => idsButtons(el)[1].click())
+    expect(bridge.ids.set).not.toHaveBeenCalled()
+    expect(el.querySelector('.confirm__text')?.textContent).toBe('Cards will turn off. Your cards and reviews stay in the files.')
+    await act(async () => sheetBtn(el, 'Turn off')?.click())
+    expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', false, undefined)
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', 'review.json', expect.objectContaining({ enabled: false }))
   })
 
   it('`ids.json` that is not valid JSON: On and Off save nothing, the front end never reads the file, and a notice says why', async () => {
@@ -6214,6 +6229,8 @@ describe('App "Give this vault\u2019s pages IDs" in Settings (YAZ-2523 V4, YAZ-2
     act(() => on.emitSettings())
     settingsPage(on.el, 'Files & Links')
     await act(async () => idsButtons(on.el)[1].click())
+    // Cards are on (no review.json): Off asks first (YAZ-5154); IDs refuse, so Cards stay as they were.
+    await act(async () => sheetBtn(on.el, 'Turn off')?.click())
     expect(on.el.querySelector('.link-notice')?.textContent).toBe("Couldn't save this vault's answer: ids.json is not valid JSON")
     expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
     expect(on.bridge.vaultConfig.write).not.toHaveBeenCalled()
@@ -6520,7 +6537,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       b.bridge.github.status.mockImplementation(async (vault) => ({ root: vault, state: 'off' as const, enabled: vault === '/v' }))
     })
     // Each of the three rows is on the page of its own section.
-    const PAGE: Record<string, string> = { ids: 'Files & Links', enabled: 'Review', githubSync: 'Sync' }
+    const PAGE: Record<string, string> = { ids: 'Files & Links', enabled: 'Cards', githubSync: 'Sync' }
     const pressed = (setting: string) => {
       settingsPage(el, PAGE[setting])
       return [...el.querySelectorAll(`[data-setting="${setting}"] button`)].map((b) => b.getAttribute('aria-pressed'))
@@ -6547,7 +6564,14 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/w', true, 'WRK')
     expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
     settingsPage(el, PAGE.enabled)
+    // The index still says IDs off here (the bridge is a stub), so Cards ask for IDs first (YAZ-5154).
     await act(async () => turnOn('enabled'))
+    act(() => {
+      const field = el.querySelector('.confirm__input') as HTMLInputElement
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set?.call(field, 'wrk')
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => sheetBtn(el, 'Turn on both')?.click())
     expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/w', 'review.json', expect.objectContaining({ enabled: true }))
     settingsPage(el, PAGE.githubSync)
     await act(async () => turnOn('githubSync'))
@@ -6569,11 +6593,11 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
         })
     act(() => emitSettings())
     // Files & Links names it twice: its "This vault" group and its "Link pills" group (YAZ-4924).
-    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Files & Links', 'Vault: v'], ['Review', 'Vault: v'], ['Sync', 'Vault: v'], ['Storage', 'Vault: v'], ['Sharing', 'Vault: v']])
+    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Files & Links', 'Vault: v'], ['Cards', 'Vault: v'], ['Sync', 'Vault: v'], ['Storage', 'Vault: v'], ['Sharing', 'Vault: v']])
     act(() => button(el, 'Close settings')?.click())
     show('/w/b.md')
     act(() => emitSettings())
-    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Files & Links', 'Vault: w'], ['Review', 'Vault: w'], ['Sync', 'Vault: w'], ['Storage', 'Vault: w'], ['Sharing', 'Vault: w']])
+    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Files & Links', 'Vault: w'], ['Cards', 'Vault: w'], ['Sync', 'Vault: w'], ['Storage', 'Vault: w'], ['Sharing', 'Vault: w']])
   })
 
   it('two vaults that have no answer on IDs: no box for either, and nothing is written (YAZ-2677 S4)', async () => {
