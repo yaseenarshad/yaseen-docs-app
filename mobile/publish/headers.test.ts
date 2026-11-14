@@ -47,6 +47,14 @@ describe('the Content-Security-Policy of the app', () => {
     expect(csp.get('connect-src')).toEqual(called)
   })
 
+  it('the follow-up of YAZ-5280: no app code fetches anything but GitHub (a fetch of a blob: or of this site would break connect-src); the viewer opens only blob: pictures, sounds, videos and PDFs, which the CSP lets through', () => {
+    const fetching = appSources(join(here, 'src'))
+      .filter((f) => /(^|[^.\w])fetch\(|globalThis\.fetch\(|XMLHttpRequest/.test(readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')))
+      .map((f) => f.slice(here.length))
+    // The GitHub client and the friends guard (both send to api.github.com only); the worker, which has its own CSP.
+    expect(fetching.sort()).toEqual(['src/friends/guard.ts', 'src/github/client.ts', 'src/pwa/swCore.ts'])
+  })
+
   it('each origin in the code is either called (connect-src) or listed here with its reason', () => {
     for (const [origin, files] of originsInCode) {
       expect([origin, files, origin in NOT_CALLED || csp.get('connect-src')!.includes(origin)]).toEqual([origin, files, true])
