@@ -1945,6 +1945,9 @@ export const GITHUB_TOKEN_SECRET = 'githubToken'
 
 /** Why "Connect your phone" has no code for a vault (YAZ-5098). Each has plain words in `ConnectPhoneSheet`. */
 export type PhoneCodeProblem = 'no-token' | 'no-git' | 'not-a-repo' | 'no-remote' | 'not-github' | 'no-branch'
+  /** YAZ-5218: the person said Cancel in main's confirm. YAZ-5217: the window was not in front when the code was made. */
+  | 'cancelled'
+  | 'not-in-front'
 
 /**
  * `phone:code` (YAZ-5098): the vault's code as a QR grid (`true` = a dark square, rows top to bottom, no quiet zone),

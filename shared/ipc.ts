@@ -203,6 +203,8 @@ export const CONTRACT = {
    */
   phone: {
     code: invoke<[root: string], PhoneCodeAnswer>('phone:code', 1),
+    /** YAZ-5218: the dialog hid or closed the code. Main then lets this window ask for a new one (with a click and a confirm). */
+    hide: invoke<[], void>('phone:hide', 0),
   },
   /** Targeted mutators (not a generic patch) so several windows never lose each other's writes. */
   state: {
