@@ -9,9 +9,9 @@ import { githubRemote, type GithubRemote } from './githubRemote'
  * real API. The fake answers as GitHub did in proof 1B (YAZ-5063).
  */
 export const TOKEN = 'github_pat_11TESTTESTTEST_sync0000000000000000000000000000000000000000000000000000000000000'
-export const REPO = 'yaseen/notes'
+export const REPO = 'yaseen/vault'
 export const BRANCH = 'main'
-export const VAULT = 'yaseen/notes@main'
+export const VAULT = 'yaseen/vault@main'
 
 export interface FakeClock extends Clock {
   /** Moves the time on and runs each timer that is due, in order. */

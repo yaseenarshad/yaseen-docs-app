@@ -26,7 +26,7 @@ describe('GithubRemote: the four calls, on the one client of 3E', () => {
     const moved = await s.remote.head(head.etag)
     expect(moved).not.toBe('unchanged')
     const calls = s.github.calls.filter((c) => c.url.includes('/git/ref/'))
-    expect(calls.map((c) => c.url)).toEqual(Array(3).fill(`https://api.github.com/repos/yaseen/notes/git/ref/heads/main`))
+    expect(calls.map((c) => c.url)).toEqual(Array(3).fill(`https://api.github.com/repos/yaseen/vault/git/ref/heads/main`))
   })
 
   it('head of a branch with slashes keeps them', async () => {
