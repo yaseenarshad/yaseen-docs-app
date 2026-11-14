@@ -280,8 +280,8 @@ const Dot = () => <span className="card-strip__dot"> · </span>
  * days (Apr 28, 2027) · 99% chance you remember it". No "Last: …" (round 2: "i think thats useless"). The values are
  * emphasised, the words muted; the recall chance alone has a small (i), the app's own tip (`InfoTip`: a native title
  * shows nothing in the app, which was round 2's "the tool tip doesnt work"). An overdue date shows in red. A fragment
- * of one span: the card window's strip holds it after the page name; the page's card block holds it on the Reviews
- * row, closed or open.
+ * of one span: the card window's facts strip holds it after the page name. The card's strip says nothing on its right
+ * (YAZ-5381): its Reviews table's last line holds the due date and the chance.
  */
 export function CardFacts({ reviews, settings, now = Date.now() }: { reviews: readonly CardReview[]; settings: ReviewSettings; now?: number }) {
   const facts = cardFacts(reviews, settings, now)
@@ -324,8 +324,6 @@ export interface CardStripProps extends CardReviewsProps {
   open?: CardStripPart | null
   /** A click on a part's toggle, with `open`: the caller opens it, or closes it when it is the open one. */
   onToggle?: (part: CardStripPart) => void
-  /** The card's facts on the strip's right, "Due in 3 days · 92% chance you remember it": where they show today (a page's card, an embed). */
-  facts?: boolean
   properties?: CardStripProperties
 }
 
@@ -364,10 +362,11 @@ function CardPropertyRows({ values }: { values: Readonly<Record<string, CardProp
  * YAZ-5105 round 2 (Yaseen: "this clean slip that shows up at the bottom", as Mochi's). Round 4 (Yaseen: "should be the
  * same in the card page, and on inbox and in embeds and in cards that are on pages"): this ONE component everywhere a
  * card shows — the Inbox's last side and its Preview, the card file tab and the card window, and, mounted by
- * `editor/card/reviewsStrip.ts`, a card in a page and a card embed. A page's card and an embed add the card's facts on
- * the strip's right (`facts`); the look is `cardScreens.css`'s one strip, a step darker than what it sits on.
+ * `editor/card/reviewsStrip.ts`, a card in a page and a card embed. Its right side is empty (YAZ-5381): the due date
+ * and the recall chance are the open table's last line. The look is `cardScreens.css`'s one strip, a step darker
+ * than what it sits on.
  */
-export function CardStrip({ reviews, settings, onDelete, now, open: held, onToggle, facts = false, properties }: CardStripProps) {
+export function CardStrip({ reviews, settings, onDelete, now, open: held, onToggle, properties }: CardStripProps) {
   const [own, setOwn] = useState<CardStripPart | null>(null)
   const open = held === undefined ? own : held
   const toggle = onToggle ?? ((part: CardStripPart) => setOwn((o) => (o === part ? null : part)))
@@ -377,11 +376,6 @@ export function CardStrip({ reviews, settings, onDelete, now, open: held, onTogg
       <div className="card-reviews__bar">
         <StripToggle part="reviews" open={open === 'reviews'} label={reviewsTitle(reviews.length)} empty={reviews.length === 0} icon={<ReviewsIcon />} onToggle={toggle} />
         {properties !== undefined && <StripToggle part="properties" open={open === 'properties'} label="Properties" count={propertyCount} onToggle={toggle} />}
-        {facts && (
-          <span className="card-strip card-reviews__facts">
-            <CardFacts reviews={reviews} settings={settings} now={now} />
-          </span>
-        )}
       </div>
       {open === 'reviews' && <CardReviewsTable reviews={reviews} settings={settings} onDelete={onDelete} now={now} />}
       {open === 'properties' && properties !== undefined && (
@@ -443,6 +437,8 @@ export function CardReviewsTable({ reviews, settings, onDelete, now = Date.now()
   const last = rows.at(-1)
   // A new card is due today, as the Inbox shows it.
   const next = last === undefined ? cardNextReview(now, false, now) : cardNextReview(last.due, last.inSteps, now)
+  // The chance for a card with reviews (none for a new card: there is nothing to remember yet).
+  const recall = last === undefined ? null : recallChance(reviews, settings, now)
   const [asking, setAsking] = useState<CardReview | null>(null)
   const askId = useId()
   return (
@@ -477,9 +473,22 @@ export function CardReviewsTable({ reviews, settings, onDelete, now = Date.now()
               </td>
             </tr>
           ))}
-          {/* The review to come, in the strip's words: no answer yet, no bin. Across every column, the bin's too. */}
+          {/* The review to come: no answer yet, no bin, across every column. YAZ-5381 (Yaseen): the due date on the LEFT,
+              "90% chance you remember it" on the RIGHT, with its (i). */}
           <tr className="card-reviews__next">
-            <td colSpan={REVIEW_COLUMNS.length + 1}>{cardDueWords(next)}</td>
+            <td colSpan={REVIEW_COLUMNS.length + 1}>
+              <div className="card-reviews__next-line">
+                <span className="card-reviews__due">{cardDueWords(next)}</span>
+                {recall !== null && (
+                  <span className="card-reviews__chance card-strip__recall">
+                    <b className="card-strip__value">{`${Math.round(recall * 100)}%`}</b> chance you remember it
+                    <span className="card-strip__info" onMouseDown={(e) => e.preventDefault()}>
+                      <InfoTip text={RECALL_HELP} />
+                    </span>
+                  </span>
+                )}
+              </div>
+            </td>
           </tr>
         </tbody>
       </table>

@@ -569,14 +569,8 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     expect(header(root)?.querySelector('svg')).not.toBeNull()
     expect(header(root)?.getAttribute('aria-expanded')).toBe('false')
     expect(root.querySelector('.card-reviews__table')).toBeNull()
-    // Closed, the facts show as one line of words (YAZ-5032; round 2: no "Last"): when it is due, the recall chance with its (i).
-    await vi.waitFor(() => expect(cards[0].querySelector('.card-reviews__facts .card-strip__line')).not.toBeNull())
-    const facts = cards[0].querySelector('.card-reviews__facts')!
-    expect(facts.textContent).toMatch(/^Due (today|later today|(tomorrow|yesterday|in \d+ days|\d+ days ago) \([A-Z][a-z]{2} \d{1,2}, \d{4}\)) · \d+% chance you remember it$/)
-    // The (i) is the app's own tip (round 2: a native title shows nothing in the app); no other hover to puzzle out.
-    expect(facts.querySelector('.card-strip__info .info-tip__button')).not.toBeNull()
-    expect(facts.querySelectorAll('[title]')).toHaveLength(0)
-    expect(facts.querySelectorAll('svg')).toHaveLength(1)
+    // YAZ-5381: closed, the strip says nothing on its right: the due date and the chance are in the open table.
+    expect(cards[0].querySelector('.card-reviews__facts')).toBeNull()
     await vi.waitFor(() => expect(cards[1].querySelector('.card-reviews__toggle[data-part="reviews"]')?.textContent).toBe('0 Reviews'))
     expect(cards[1].querySelector('.card-reviews__toggle[data-part="reviews"]')?.hasAttribute('data-empty')).toBe(true)
     expect(cards[1].querySelector('.card-reviews__facts .card-strip__line')).toBeNull()
@@ -601,7 +595,13 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
       ['Nov 6, 2026', 'Remembered', '1 day', '1 min 4 s'],
     ])
     expect(table[0][4]).toMatch(/^[A-Z][a-z]{2} \d{1,2}, \d{4}$/)
-    expect(table[3][0]).toMatch(/^Due (today|later today|(tomorrow|yesterday|in \d+ days|\d+ days ago) \([A-Z][a-z]{2} \d{1,2}, \d{4}\))$/)
+    // YAZ-5381: the last line, due on the LEFT and the chance on the RIGHT with its (i), the app's own tip.
+    const due = root.querySelector('.card-reviews__next .card-reviews__due')!
+    expect(due.textContent).toMatch(/^Due (today|later today|(tomorrow|yesterday|in \d+ days|\d+ days ago) \([A-Z][a-z]{2} \d{1,2}, \d{4}\))$/)
+    const chance = root.querySelector('.card-reviews__next .card-reviews__chance')!
+    expect(chance.textContent).toMatch(/^\d+% chance you remember it$/)
+    expect(due.compareDocumentPosition(chance) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(chance.querySelector('.card-strip__info .info-tip__button')).not.toBeNull()
     const trs = root.querySelectorAll('.card-reviews__table tbody tr')
     expect([...trs].map((tr) => tr.querySelector('button')?.getAttribute('title') ?? null)).toEqual(['Remove this review', 'Remove this review', 'Remove this review', null])
     expect(trs[3].classList.contains('card-reviews__next')).toBe(true)

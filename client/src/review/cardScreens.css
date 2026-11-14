@@ -205,11 +205,6 @@
 .card-strip__prop-name {
   color: var(--fg-muted);
 }
-/* The card's facts on the strip's right (a page's card, an embed): when they do not fit beside "4 Reviews", they take
-   their own line under it, on the right, so their parts never break in the middle. */
-.card-reviews__bar .card-reviews__facts {
-  margin: 0 4px 0 auto;
-}
 .card-reviews--strip .card-reviews__scroll {
   padding: 2px 4px 12px;
 }
@@ -302,6 +297,18 @@
 .card-reviews__next td,
 .card-reviews__next .card-reviews__unit {
   color: var(--fg-muted);
+}
+/* YAZ-5381: the table's last line, due on the left and the recall chance on the right; a narrow table puts the chance
+   on its own line, still on the right. */
+.card-reviews__next-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px 16px;
+}
+.card-reviews__chance {
+  margin-left: auto;
 }
 .card-reviews__delete {
   display: inline-flex;

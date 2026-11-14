@@ -21,8 +21,6 @@ export interface ReviewsStripProps {
   open: StripPart | null
   /** A click on a part's toggle: the host opens it, or closes it when it is the open one. */
   onToggle: (part: StripPart) => void
-  /** The card's facts on the strip's right (a page's card, an embed). */
-  facts: boolean
   /** The card's own properties (YAZ-5379), for the Properties part. */
   properties: Readonly<Record<string, CardPropertyValue>>
 }
@@ -47,9 +45,9 @@ const loadKit = (): Promise<Kit> =>
     return kit
   }))
 
-/** Whether two draws of the strip show the same: its reviews, settings, open part, facts and properties (the doors are read at click time). */
+/** Whether two draws of the strip show the same: its reviews, settings, open part and properties (the doors are read at click time). */
 const same = (a: ReviewsStripProps, b: ReviewsStripProps): boolean =>
-  a.settings === b.settings && a.open === b.open && a.facts === b.facts && JSON.stringify(a.properties) === JSON.stringify(b.properties) && a.reviews.length === b.reviews.length && a.reviews.every((r, i) => r === b.reviews[i] || (r.at === b.reviews[i].at && r.rating === b.reviews[i].rating && r.seconds === b.reviews[i].seconds))
+  a.settings === b.settings && a.open === b.open && JSON.stringify(a.properties) === JSON.stringify(b.properties) && a.reviews.length === b.reviews.length && a.reviews.every((r, i) => r === b.reviews[i] || (r.at === b.reviews[i].at && r.rating === b.reviews[i].rating && r.seconds === b.reviews[i].seconds))
 
 export function mountReviewsStrip(): ReviewsStripHandle {
   const dom = document.createElement('div')

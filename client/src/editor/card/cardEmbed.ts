@@ -24,7 +24,7 @@
  *    its own look ("Missing page · …").
  *
  *  - REVIEWS (YAZ-5105 round 4): a card with reviews has THE Reviews strip under its text, as a card in a page has it
- *    (`reviewsStrip.ts`: the Inbox's own `CardReviews`), with the card's facts on its right; closed until asked for.
+ *    (`reviewsStrip.ts`: the Inbox's own `CardStrip`, YAZ-5380), its parts Reviews and Properties; closed until asked for.
  *    Its delete writes the ORIGINAL file through the vault's door (`doors.reviews`). No door (a hover preview): none.
  *
  * Not here: an embed inside a card (card-in-card is off in the card editor; a card's own render keeps `![[…]]` as text).
@@ -286,7 +286,6 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
         stripOpen = stripOpen === part ? null : part
         drawReviews()
       },
-      facts: true,
       properties: c.properties ?? {},
     })
   }

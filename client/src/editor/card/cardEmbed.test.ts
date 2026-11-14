@@ -228,7 +228,7 @@ describe('the embed and its head (Q4, locked)', () => {
 
 describe('YAZ-5105 round 4: the Reviews strip in an embed, the same strip as the Inbox and the page card', () => {
   const LINE = '<!-- card: GEO-140, 2026-11-01T09:00Z good, 2026-11-06T09:00Z again 12s -->'
-  it('a card with reviews shows THE strip (`CardReviews`) under its text, with its facts; a click opens the table; the delete writes the original; no door: no strip', async () => {
+  it('a card with reviews shows THE strip (`CardStrip`) under its text, its right side empty (YAZ-5381); a click opens the table; the delete writes the original; no door: no strip', async () => {
     const deleteReview = vi.fn(async () => {})
     const settings = () => DEFAULT_REVIEW_SETTINGS
     const { root } = await mount('Plan\n\n![[GEO-140]]\n', { cardReviews: { settings, deleteReview }, wikilinks: vault(records({ cardFile: { mtime: 51 } })) }, cardFileText.replace('<!-- card: GEO-140, title "Capital of France" -->', LINE))
@@ -237,7 +237,7 @@ describe('YAZ-5105 round 4: the Reviews strip in an embed, the same strip as the
     const strip = box.querySelector('.card-reviews')!
     expect(strip.classList.contains('card-reviews--strip')).toBe(true)
     expect(strip.parentElement?.previousElementSibling?.classList.contains('card__body')).toBe(true)
-    expect(box.querySelector('.card-reviews__facts')?.textContent).toMatch(/^Due /)
+    expect(box.querySelector('.card-reviews__facts')).toBeNull()
     ;(box.querySelector('.card-reviews__toggle') as HTMLButtonElement).click()
     await vi.waitFor(() => expect(box.querySelectorAll('.card-reviews__table tbody tr')).toHaveLength(3))
     // A press in the strip never selects the embed; the delete asks, then writes the ORIGINAL through the vault's door.
