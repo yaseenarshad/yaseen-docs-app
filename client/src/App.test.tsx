@@ -8,6 +8,7 @@ import { FORMATS_CHAPTER_TITLE, requestCourse } from './course/openCourse'
 import { showTourPlace } from './course/tourBus'
 import { COURSE_NOTICE } from './course/courseFacts'
 import { COURSE } from './course/script'
+import { cardSkillReadOnlyVault } from './vault/cardSkill'
 import { CARD_FORMATS_OPEN } from './editor/card/cardFormatHint'
 import { defaultCourseState } from '@shared/courseState'
 import { LINK_NOTICE_MS, type NoticeKind, type NoticeType } from './lib/notice'
@@ -7728,6 +7729,18 @@ describe('App: the card skill in the sidebar (YAZ-5108)', () => {
     await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/v'))
     expect(bridge.cardSkill.duplicate).toHaveBeenCalledExactlyOnceWith('/v', false)
     expect(el.querySelector('.link-notice__text')?.textContent).toBe('Duplicated the card skill into v: "Card skill". You can change it there.')
+  })
+
+  it('YAZ-5204: "Duplicate into <vault>…" into a read-only vault writes nothing and says why in one line; a writable vault of the window still takes it', async () => {
+    const readOnlyV = (b: ReturnType<typeof installBridge>) =>
+      b.bridge.vaultConfig.read.mockImplementation(async (root?: string, name?: string) => (name === 'review.json' ? { enabled: root !== SKILL } : name === 'read-only.json' ? { on: root === SKILL || root === '/v' } : null))
+    const { bridge, el } = await mount(skillOn(), { id: 'w1', root: '/v', roots: ['/v', '/w'], file: null, tabs: [], cardSkill: SKILL }, {}, readOnlyV)
+    await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/v'))
+    expect(bridge.cardSkill.duplicate).not.toHaveBeenCalled()
+    expect(el.querySelector('#confirm-read-only-vault-text')).toBeNull()
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe(cardSkillReadOnlyVault('v'))
+    await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/w'))
+    expect(bridge.cardSkill.duplicate).toHaveBeenCalledExactlyOnceWith('/w', false)
   })
 
   it('YAZ-5109: with `Card skill` in the vault already, one sheet asks before a second copy; Cancel makes nothing, the other button makes `Card skill 2`', async () => {

@@ -115,7 +115,7 @@ import { SAME_WORD, UnitContext, vaultUnit, type UnitText } from './vault/unitWo
 import { folderHome } from './vault/folderHome'
 import { inPlace } from './vault/placeScope'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
-import { CARD_SKILL_HIDDEN, CARD_SKILL_NAME, CARD_SKILL_READ_ONLY, cardSkillAgain, cardSkillDuplicated } from './vault/cardSkill'
+import { CARD_SKILL_HIDDEN, CARD_SKILL_NAME, CARD_SKILL_READ_ONLY, cardSkillAgain, cardSkillDuplicated, cardSkillReadOnlyVault } from './vault/cardSkill'
 import { inAppVault, isAppVault } from '@shared/appVaults'
 import { FILE_ACTIONS_ALLOW, READ_ONLY_VAULT_FILE, sanitizeReadOnlyVault, type FileActionsFor } from './vault/readOnlyVault'
 import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
@@ -3543,10 +3543,13 @@ export function App() {
    * "Duplicate into <vault>…" (YAZ-5109; decision 5): main copies the app's skill into the top of the vault as `Card
    * skill`, writable, and from then on `cardSkillFolder` picks it (the command, the format hint, the prompt). With
    * `Card skill` there already, one sheet asks before a second copy (`Card skill 2`); nothing is ever written over.
+   * A read-only vault gets no write (YAZ-5204): one line says why, and how to go on (turn it off, or pick another vault).
    */
   const [skillAgain, setSkillAgain] = useState<string | null>(null)
   const duplicateCardSkill = useCallback((vault: string, again = false) => {
-    const name = live.current.vaults[live.current.roots.indexOf(vault)]?.name ?? storage.vaultName(vault)
+    const scope = live.current.vaults[live.current.roots.indexOf(vault)]
+    const name = scope?.name ?? storage.vaultName(vault)
+    if (scope?.readOnlyVault.settings.on === true) return notify(cardSkillReadOnlyVault(name), 'error')
     api.cardSkill.duplicate(vault, again).then(
       (out) => {
         if ('exists' in out) return setSkillAgain(vault)

@@ -25,3 +25,6 @@ export const cardSkillAgain = (vault: string): string => `Card skill is already 
 
 /** A duplicate that landed: where it is. */
 export const cardSkillDuplicated = (vault: string, folder: string): string => `Duplicated the card skill into ${vault}: "${folder}". You can change it there.`
+
+/** "Duplicate into <vault>…" into a read-only vault (YAZ-5204): nothing is written, and this one line says why. */
+export const cardSkillReadOnlyVault = (vault: string): string => `${vault} is read only, so the card skill was not duplicated. Turn that off in Settings, or pick another vault.`
