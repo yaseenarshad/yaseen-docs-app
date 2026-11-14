@@ -1505,7 +1505,6 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     ['shownHiddenWords', {}],
     ['markNextHidden', {}],
     ['cardSpacing', {}],
-    ['cardWidth', {}],
     ['cardLineSpacing', { cardSpacing: 'custom' }],
     ['cardBlockGap', { cardSpacing: 'custom' }],
     ['cardBulletSpace', { cardSpacing: 'custom' }],
@@ -1530,16 +1529,40 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     }
   })
 
-  it('YAZ-5144: Card width sits before Card spacing, a pair in the same words: Same as pages · Narrow · Medium · Full; an app setting', () => {
+  it('YAZ-5144 round 2: Card width sits before Card spacing: Same as pages · Custom; Custom starts at 640 px; an app setting', () => {
     const { el, onChange, save } = mountOn('Review', { ...DEFAULT_SETTINGS, contentWidth: 'full' }, undefined, S)
     const ids = reviewRows(el)
     expect(ids.slice(ids.indexOf('cardWidth'), ids.indexOf('cardWidth') + 2)).toEqual(['cardWidth', 'cardSpacing'])
     expect(row(el, 'cardWidth')?.querySelector('.setting__label')?.textContent).toBe('Card width')
-    expect(rowButtons(el, 'cardWidth').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Same as pages', 'true'], ['Narrow', 'false'], ['Medium', 'false'], ['Full', 'false']])
+    expect(rowButtons(el, 'cardWidth').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Same as pages', 'true'], ['Custom', 'false']])
+    expect(row(el, 'cardWidth')?.querySelector('input')).toBeNull()
     expect(row(el, 'cardWidth')?.textContent).toMatch(/Same as pages follows Appearance › Content width/)
-    act(() => rowButtons(el, 'cardWidth')[2].click())
-    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, contentWidth: 'full', cardWidth: 'medium' })
+    act(() => rowButtons(el, 'cardWidth')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, contentWidth: 'full', cardWidth: 640 })
     expect(save).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-5144 round 2: Custom shows its px, typed and kept on Enter, held to 400–1600; Reset goes back to 640; Same as pages goes back', () => {
+    const custom = { ...DEFAULT_SETTINGS, cardWidth: 720 }
+    const { el, onChange } = mountOn('Review', custom, undefined, S)
+    expect(rowButtons(el, 'cardWidth').slice(0, 2).map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
+    const px = row(el, 'cardWidth')!.querySelector<HTMLInputElement>('input[aria-label="Card width in px"]')!
+    expect(px.value).toBe('720')
+    type(px, '900')
+    pressEnter(px)
+    expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardWidth: 900 })
+    type(px, '5000')
+    pressEnter(px)
+    expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardWidth: 1600 })
+    type(px, '100')
+    blur(px)
+    expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardWidth: 400 })
+    act(() => rowButtons(el, 'cardWidth').find((b) => b.textContent === 'Reset')!.click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardWidth: 640 })
+    act(() => rowButtons(el, 'cardWidth')[0].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardWidth: null })
+    // At its start, Reset has nothing to do.
+    expect(rowButtons(mountOn('Review', { ...DEFAULT_SETTINGS, cardWidth: 640 }, undefined, S).el, 'cardWidth').map((b) => b.textContent)).toEqual(['Same as pages', 'Custom'])
   })
 
   const CUSTOM_ROWS = ['cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace']
@@ -1557,8 +1580,8 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     const page = { ...DEFAULT_SETTINGS, ...CUSTOM, cardSpacing: 'pages' as const }
     const { el, onChange } = mountOn('Review', page, undefined, S)
     act(() => rowButtons(el, 'cardSpacing')[1].click())
-    // YAZ-5144: Clean's short line is Card width Narrow, set by the same click.
-    expect(onChange).toHaveBeenLastCalledWith({ ...page, cardSpacing: 'clean', cardWidth: 'narrow' })
+    // YAZ-5144 round 2: Clean's short line is Card width Custom 520 px (Mochi's line), set by the same click.
+    expect(onChange).toHaveBeenLastCalledWith({ ...page, cardSpacing: 'clean', cardWidth: 520 })
     const clean = mountOn('Review', { ...page, cardSpacing: 'clean' }, undefined, S)
     expect(rowButtons(clean.el, 'cardSpacing').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false'])
     for (const id of CUSTOM_ROWS) expect(row(clean.el, id)).toBeNull()
@@ -1581,9 +1604,9 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardBulletGap: 10 })
     act(() => rowButtons(el, 'cardSpacing')[0].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardSpacing: 'pages' })
-    // Clean keeps Custom's values for a later Custom; the choice and Card width (Narrow, YAZ-5144) change.
+    // Clean keeps Custom's values for a later Custom; the choice and Card width (520 px, YAZ-5144) change.
     act(() => rowButtons(el, 'cardSpacing')[1].click())
-    expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardSpacing: 'clean', cardWidth: 'narrow' })
+    expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardSpacing: 'clean', cardWidth: 520 })
   })
 
   it('the switches save the whole object with one field changed — never onChange', () => {

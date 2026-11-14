@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { CARD_SPACING_CLEAN, CARD_SPACINGS, CARD_WIDTHS, DEFAULT_SETTINGS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, SHOWN_HIDDEN_WORDS, type SettingsState } from '@shared/types'
+import { CARD_SPACING_CLEAN, CARD_SPACINGS, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, DEFAULT_SETTINGS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, SHOWN_HIDDEN_WORDS, type SettingsState } from '@shared/types'
 import { createStore, isSettings } from './store'
 
 let dir: string
@@ -28,8 +28,8 @@ const CARD_LOOK: { [K in keyof SettingsState]?: readonly SettingsState[K][] } = 
   // The picker sends a hex colour; Reset sends null.
   nextHiddenColour: ['#2a8bd1', '#aa3399', null],
   cardSpacing: CARD_SPACINGS,
-  // YAZ-5144: Same as pages, Narrow, Medium, Full.
-  cardWidth: CARD_WIDTHS,
+  // YAZ-5144 round 2: Same as pages (null), or Custom px: its ends, its start (Reset) and Clean's.
+  cardWidth: [null, CARD_WIDTH_MIN, CARD_WIDTH_CLEAN, CARD_WIDTH_START, CARD_WIDTH_MAX],
   cardLineSpacing: [1, 1.15, 1.5, 2],
   cardBlockGap: [2, 4, 8, 12],
   // The px rows: their ends, and Reset's value.
@@ -40,6 +40,11 @@ const CARD_LOOK: { [K in keyof SettingsState]?: readonly SettingsState[K][] } = 
 const CASES = Object.entries(CARD_LOOK).flatMap(([key, vals]) => (vals as unknown[]).map((value) => [key, value] as const))
 
 describe('YAZ-5053 round 4: each Card look setting is saved and reads back', () => {
+  it('YAZ-5144 round 2: a Card width out of range, not whole, or one of round 1\'s steps does not pass the door', () => {
+    for (const cardWidth of [CARD_WIDTH_MIN - 1, CARD_WIDTH_MAX + 1, 640.5, 'narrow', 'pages', '640'])
+      expect(isSettings({ ...DEFAULT_SETTINGS, cardWidth }), String(cardWidth)).toBe(false)
+  })
+
   it.each(CASES)('%s = %j passes the door, is saved, and reads back after a restart', async (key, value) => {
     const next = { ...DEFAULT_SETTINGS, [key]: value } as SettingsState
     expect(isSettings(next)).toBe(true)

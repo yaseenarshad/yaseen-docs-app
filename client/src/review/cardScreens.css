@@ -802,7 +802,7 @@ body.card-inbox--sizing {
   padding: 24px var(--inbox-card-pad, 28px) 28px;
 }
 /* Card spacing Clean (YAZ-5050 round 4) and Custom: Mochi's room inside the card. Its short line is Card width now
-   (YAZ-5144): Clean sets it to Narrow, so one rule sets a card's line. */
+   (YAZ-5144): Clean sets it to Custom 520 px, Mochi's line, so one rule sets a card's line. */
 [data-card-clean] {
   --inbox-card-pad: 44px;
 }

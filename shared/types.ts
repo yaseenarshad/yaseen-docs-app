@@ -1380,9 +1380,16 @@ export type ContentWidth = (typeof CONTENT_WIDTHS)[number]
  * width uses the same steps for a card's text (`--card-text-width`).
  */
 export const CONTENT_TEXT_WIDTHS: Readonly<Record<ContentWidth, number | null>> = { narrow: 640, medium: 900, full: null }
-/** Settings › Review › Card width (YAZ-5144): Same as pages (Appearance › Content width), or a step of its own. */
-export type CardWidth = 'pages' | ContentWidth
-export const CARD_WIDTHS: readonly CardWidth[] = ['pages', ...CONTENT_WIDTHS]
+/**
+ * Settings › Review › Card width, Custom (YAZ-5144 round 2, Yaseen: "custom gives you a px that you can adjust"): the
+ * card's text at most this many px. It starts at Narrow's 640; Clean sets Mochi's line, about 62 letters (31em of the
+ * Inbox's 16.8 px text, so 520 px).
+ */
+export const CARD_WIDTH_MIN = 400
+export const CARD_WIDTH_MAX = 1600
+export const CARD_WIDTH_START = 640
+export const CARD_WIDTH_CLEAN = 520
+export const isCardWidth = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= CARD_WIDTH_MIN && v <= CARD_WIDTH_MAX
 
 /**
  * `AppState.settings` — app-global editor preferences (GRO-2024). Applied as CSS custom
@@ -2180,10 +2187,10 @@ export interface SettingsState {
   /**
    * Settings › Review › Card width (YAZ-5144, Yaseen: "a global setting for card pages to have a certain width ... same as
    * pages or select a different one"): how wide a card's text reads in the Inbox, the card window and a card file's
-   * tab. `pages` (the default) follows Content width; else that step (`CONTENT_TEXT_WIDTHS`). `--card-text-width` on `.app`.
-   * Card spacing's Clean sets it to Narrow, the step nearest Mochi's line.
+   * tab. `null`, Same as pages (the default), follows Content width; round 2: else Custom, whole px (`isCardWidth`).
+   * `--card-text-width` on `.app`. Card spacing's Clean sets it to `CARD_WIDTH_CLEAN`, Mochi's line.
    */
-  cardWidth: CardWidth
+  cardWidth: number | null
   /** Card spacing, Custom (YAZ-5050): the card's line spacing, as `lineSpacing`. */
   cardLineSpacing: number
   /** Card spacing, Custom (YAZ-5050): the card's space between blocks, px per side, as `blockGap`. */
@@ -2928,7 +2935,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   markNextHidden: true,
   nextHiddenColour: null,
   cardSpacing: 'pages',
-  cardWidth: 'pages',
+  cardWidth: null,
   ...CARD_SPACING_CLEAN,
   tableOfContents: 'auto',
   tocOnByDefault: true,

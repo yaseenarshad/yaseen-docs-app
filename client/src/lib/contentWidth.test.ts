@@ -11,15 +11,15 @@ describe('Content width and Card width (YAZ-5144)', () => {
     expect([columnMax('narrow'), columnMax('medium'), columnMax('full')]).toEqual([736, 996, Infinity])
   })
 
-  it('Card width Same as pages follows Content width; a step of its own does not', () => {
-    expect(vars({ contentWidth: 'medium', cardWidth: 'pages' })['--card-text-width']).toBe('900px')
-    expect(vars({ contentWidth: 'full', cardWidth: 'narrow' })['--card-text-width']).toBe('640px')
-    expect(vars({ contentWidth: 'narrow', cardWidth: 'full' })['--card-text-width']).toBe('100vw')
+  it('round 2: Card width Same as pages (null) follows Content width; Custom is its own px', () => {
+    expect(vars({ contentWidth: 'medium', cardWidth: null })['--card-text-width']).toBe('900px')
+    expect(vars({ contentWidth: 'full', cardWidth: null })['--card-text-width']).toBe('100vw')
+    expect(vars({ contentWidth: 'full', cardWidth: 720 })['--card-text-width']).toBe('720px')
   })
 
-  it('a field a main process older than it did not send, or a value that is not a step, reads the default', () => {
+  it('a field a main process older than it did not send, or a value it would not take, reads the default', () => {
     const { cardWidth: _gone, ...older } = DEFAULT_SETTINGS
     expect(contentWidthVars({ ...older, contentWidth: 'medium' } as SettingsState)['--card-text-width']).toBe('900px')
-    expect(vars({ contentWidth: 'wide' as never, cardWidth: 'huge' as never })).toEqual({ '--content-text-width': '640px', '--card-text-width': '640px' })
+    expect(vars({ contentWidth: 'wide' as never, cardWidth: 'narrow' as never })).toEqual({ '--content-text-width': '640px', '--card-text-width': '640px' })
   })
 })
