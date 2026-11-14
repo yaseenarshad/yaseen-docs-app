@@ -15,7 +15,8 @@
  * its own press: it plays, and selects no card. Images resolve as the page's do (`imageSrc`). On an index change only the pills
  * draw again (`refreshCardLook`). In a vault that gives no IDs a ```` ```card ```` block is a code block (D8).
 
- * READ ONLY (a read-only page or vault): the card's TEXT is locked — no Edit card — but its review is not. The ⋯
+ * READ ONLY (a read-only page or vault): the card's TEXT is locked — Edit card (its button, a double-click, Enter)
+ * asks "Allow edits?" first, then opens (YAZ-5145); a preview has none — but its review is not. The ⋯
  * menu's Archive card / Unarchive card and Reset history write the card line to the FILE (`changeCardLine`, the app's own
  * write), as the Inbox does; the open page takes it quietly.
  *

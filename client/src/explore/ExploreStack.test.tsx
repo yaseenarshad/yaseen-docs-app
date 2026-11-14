@@ -2798,9 +2798,12 @@ describe('YAZ-5145: the Inbox\'s O and E open Explore\'s own page layer', () => 
 
   it.each([false, true])('round 2: E on a card FILE goes straight into its Edit card (read only %s: after "Allow edits?", with no second E; nothing before)', async (readOnly) => {
     const editCard = vi.fn()
+    // The index says the file is a card file (round 3: the layer's own rule, not a flag of the Inbox's).
+    const index = createWikilinkResolveSource()
+    index.update(null, [rec(PAGE, 'Cards', { kind: 'card' })])
     props = {
       ...props,
-      ...(readOnly && { vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, readOnly: true }) }),
+      vaultOf: () => ({ root: '/v', wikilinks: index, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, readOnly }),
       // The card file view in the edit layer: its own Edit card button.
       renderEditor: (path): ReactNode => (
         <div className="editor" data-editor={path}>
@@ -2808,7 +2811,7 @@ describe('YAZ-5145: the Inbox\'s O and E open Explore\'s own page layer', () => 
         </div>
       ),
     }
-    props.requestLayer = { kind: 'page', path: PAGE, edit: true, editCard: true, fromInbox: true }
+    props.requestLayer = { kind: 'page', path: PAGE, edit: true, fromInbox: true }
     await mount()
     const wait = async () => {
       for (let i = 0; i < 3; i++) await act(async () => await new Promise((r) => setTimeout(r, 20)))
@@ -2912,6 +2915,122 @@ describe('YAZ-5145: the Inbox\'s O and E open Explore\'s own page layer', () => 
     await mount()
     for (let i = 0; i < 3; i++) await act(async () => await new Promise((r) => setTimeout(r, 20)))
     expect(edit).toHaveBeenCalledOnce()
+  })
+
+  /**
+   * Round 3 (Q38, Yaseen: "if you're opening a card file. Then it makes sense that if you're editing, you're going to
+   * edit the card"; the Decision: "E edits the thing you're looking at, in one press"). After "Allow edits?" the action
+   * that asked goes on: no second E. A card file: its Edit card. A page, cards or not: the page, never a card.
+   */
+  describe('round 3: E edits the thing you look at, in one press', () => {
+    const CARD_FILE = '/v/the-four-agreements.md'
+    const CARD_TEXT = '---\nkind: card\n---\n\nBe impeccable with your word.\n'
+    const lockedVault = () => ({ root: '/v', wikilinks, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, readOnly: true })
+    const settle = async () => {
+      for (let i = 0; i < 3; i++) await act(async () => await new Promise((r) => setTimeout(r, 20)))
+    }
+    const allow = () => act(() => [...top().querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === 'Allow edits for 1 minute')!.click())
+    const pressE = () => key(document.activeElement ?? top(), { key: 'e' })
+    /** The card file view's own Edit card button, and the first card of a page. */
+    let fileEditCard: Mock
+    let pageCardEdit: Mock
+    /** The page's "Move to its own file" (Yaseen's flow): the editor opens the new card file through the layer's link door. */
+    const moveToOwnFile = () => act(() => top().querySelector<HTMLButtonElement>('[data-move-card]')!.click())
+    beforeEach(() => {
+      fileEditCard = vi.fn()
+      pageCardEdit = vi.fn()
+      const read = readFile.getMockImplementation()!
+      readFile.mockImplementation(async (path) => (path === CARD_FILE ? { path, content: CARD_TEXT, mtime: 1, size: 1 } : read(path)))
+      props.renderEditor = (path, openLink): ReactNode =>
+        path === CARD_FILE ? (
+          <div className="editor" data-editor={path}>
+            <button type="button" data-card-file-edit onClick={fileEditCard} />
+          </div>
+        ) : (
+          <div className="editor" data-editor={path}>
+            <div className="card" ref={(c) => void (c !== null && fakeCards.set(c, { view: { editable: true }, edit: pageCardEdit }))} />
+            <button type="button" data-move-card onClick={() => openLink(CARD_FILE)} />
+          </div>
+        )
+    })
+
+    it.each([false, true])('Explore on a card file (read only %s): E is editing the card, in Edit card, with no second E', async (readOnly) => {
+      if (readOnly) props.vaultOf = lockedVault
+      props.requestLayer = { kind: 'page', path: CARD_FILE }
+      await mount()
+      await settle()
+      pressE()
+      await flush()
+      if (readOnly) {
+        expect(top().querySelector('.explore__body--edit')).toBeNull()
+        expect(fileEditCard).not.toHaveBeenCalled()
+        allow()
+      }
+      await settle()
+      expect(top().querySelector(`.explore__body--edit [data-editor="${CARD_FILE}"]`)).not.toBeNull()
+      expect(fileEditCard).toHaveBeenCalledOnce()
+    })
+
+    it('Explore on a card file, read only, then Cancel: no edit, no Edit card', async () => {
+      props.vaultOf = lockedVault
+      props.requestLayer = { kind: 'page', path: CARD_FILE }
+      await mount()
+      await settle()
+      pressE()
+      await flush()
+      act(() => [...top().querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === 'Cancel')!.click())
+      await settle()
+      expect(top().querySelector('.explore__body--edit')).toBeNull()
+      expect(fileEditCard).not.toHaveBeenCalled()
+    })
+
+    it('Explore on a page with cards, read only: E is editing the page, not a card', async () => {
+      props.vaultOf = lockedVault
+      props.requestLayer = { kind: 'page', path: PAGE }
+      await mount()
+      await settle()
+      pressE()
+      await flush()
+      allow()
+      await settle()
+      expect(top().querySelector(`.explore__body--edit [data-editor="${PAGE}"]`)).not.toBeNull()
+      expect(pageCardEdit).not.toHaveBeenCalled()
+      expect(fileEditCard).not.toHaveBeenCalled()
+    })
+
+    it('the Inbox on a card in a page, read only: E is editing that card after "Allow edits?"', async () => {
+      props.vaultOf = lockedVault
+      props.requestLayer = { kind: 'page', path: PAGE, edit: true, card: 0, editCard: true, fromInbox: true }
+      await mount()
+      await settle()
+      expect(pageCardEdit).not.toHaveBeenCalled()
+      allow()
+      await settle()
+      expect(pageCardEdit).toHaveBeenCalledOnce()
+    })
+
+    it('Yaseen\'s flow, read only: a card in a page, Move to its own file, Explore opens the new card file, and ONE E (then Allow edits) is editing it', async () => {
+      props.vaultOf = lockedVault
+      props.requestLayer = { kind: 'page', path: PAGE }
+      await mount()
+      await settle()
+      pressE()
+      await flush()
+      allow()
+      await settle()
+      // The index does not know the new file yet: the layer goes by the text it read.
+      moveToOwnFile()
+      await settle()
+      expect(top().querySelector('.explore__body--edit')).toBeNull()
+      expect(crepes[crepes.length - 1].opts.defaultValue).toContain('Be impeccable')
+      pressE()
+      await flush()
+      allow()
+      await settle()
+      expect(top().querySelector(`.explore__body--edit [data-editor="${CARD_FILE}"]`)).not.toBeNull()
+      expect(fileEditCard).toHaveBeenCalledOnce()
+      expect(pageCardEdit).not.toHaveBeenCalled()
+    })
   })
 })
 
