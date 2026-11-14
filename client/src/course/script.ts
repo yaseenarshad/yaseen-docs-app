@@ -10,14 +10,14 @@
  * adds links and scheduled agents to the gardener (now 11). A clip whose words changed keeps its id; a new clip takes
  * the next free number. The gardener and the last chapter moved from 10 and 11 to 11 and 12, so their ids did too.
  *
- * Version 3, round 2 (written by hand after Yaseen's notes on YAZ-5148): a card is the hub of one idea, not a line or two.
+ * Version 3, round 2 (written by hand after Yaseen's comments on YAZ-5148): a card is the hub of one idea, not a line or two.
  * Chapter 2 shows a real card and its parts (a small front to recall, a back with room to understand, links at the
  * bottom). Chapter 7 teaches the umbrella card and its branches. Chapters 10 and 11 carry the same tree on: links join
  * branches across trees, and the gardener grows and prunes them. One example runs through all four: protein, carbs and
  * fat. The shape of the example card follows Yaseen's own cards (a front of a sentence or two with one or two hidden
  * parts; a back in sections; each link with a few words on why).
  *
- * Round 3 (Yaseen's notes on the doc YAS-2084): the front is the short version of the idea, with the key part hidden;
+ * Round 3 (Yaseen's comments in the doc YAS-2084): the front is the short version of the idea, with the key part hidden;
  * the back has the details, in sections (his word). A front may be a question, or a sentence with a hidden part
  * ("cloze deletion" to memory scientists, "hidden words" in the app). Links are made with the agent, handmade: the
  * agent shows each one in the chat, and the person reads and approves it.
