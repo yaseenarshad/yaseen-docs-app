@@ -5,7 +5,7 @@ const FriendsTab = lazy(() => import('../friends/ui/FriendsTab'))
 
 export function Friends() {
   return (
-    <Suspense fallback={<div className="fr-wait" aria-busy="true" />}>
+    <Suspense fallback={<section className="fr-wait" aria-label="Friends" aria-busy="true" />}>
       <FriendsTab />
     </Suspense>
   )
