@@ -64,7 +64,8 @@ describe('the first screen (YAZ-5260)', () => {
 
   it("the fact's name is the one 4E2's list writes", async () => {
     const { readFileSync } = await import('node:fs')
-    const source = readFileSync(new URL('../list.ts', import.meta.url), 'utf8')
+    const { join } = await import('node:path')
+    const source = readFileSync(join(import.meta.dirname, '..', 'list.ts'), 'utf8')
     expect(source).toContain(`const HAS = '${HAS_FRIENDS_STATE}'`)
   })
 })
