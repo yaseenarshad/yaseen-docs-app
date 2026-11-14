@@ -37,11 +37,16 @@
   --table-text-brown: #8b5a2b;
 }
 
-/* Settings › Tables › Table position Centre (YAZ-5136 round 2): every table centred, a page's (its block, for a block
-   with Settings' Width; its table, for one with dragged columns) and a card's read one. Left is no rule. A wider table
+/* Table position (YAZ-5136 rounds 2 and 3): ONE rule, from ONE variable, `--table-inline`: a page table's block (for a
+   block with Settings' Width), its table (for one with dragged columns) and a card's read table. A page reads
+   Settings › Tables › Table position (`--page-table-inline: auto` for Centre, on `.app`); a card, read or in Edit card,
+   reads Card look › Card tables (`--card-table-inline`), else the pages'. Left is 0, the look before. A wider table
    gets no margin and scrolls in its box as before. */
-.app[data-table-position='center'] :is(.milkdown-table-block, .milkdown-table-block table, .card__table > table) {
-  margin-inline: auto;
+.app :is(.milkdown-table-block, .milkdown-table-block table, .card__table > table) {
+  margin-inline: var(--table-inline, var(--page-table-inline, 0));
+}
+.card {
+  --table-inline: var(--card-table-inline, var(--page-table-inline, 0));
 }
 
 /* Crepe's outline colour (its frame and frame-dark themes, `crepeTheme.ts`), for a table that Crepe's theme does not

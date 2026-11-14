@@ -87,12 +87,16 @@ describe('card.css: a card`s table looks like the page`s (YAZ-5136)', () => {
     expect(shared(/border-bottom-width:\s*3px/)).toHaveLength(1)
   })
 
-  it('round 2: Table position Centre is ONE rule on `.app`: a page table block, its table, and a card`s table; Left has none', () => {
-    const centre = rules(tableCss, "[data-table-position='center']")
-    expect(centre).toHaveLength(1)
-    expect(centre[0].selector).toBe(".app[data-table-position='center'] :is(.milkdown-table-block, .milkdown-table-block table, .card__table > table)")
-    expect(centre[0].body.trim()).toBe('margin-inline: auto;')
-    expect(rules(tableCss, "[data-table-position='left']")).toHaveLength(0)
+  it('rounds 2 and 3: Table position is ONE rule from ONE variable: a page table block, its table and a card`s table; a card reads Card tables, falling back to the pages`', () => {
+    expect(rules(tableCss, '.card__table > table').filter((r) => /margin-inline/.test(r.body))).toEqual([
+      { selector: '.app :is(.milkdown-table-block, .milkdown-table-block table, .card__table > table)', body: expect.stringMatching(/^\s*margin-inline: var\(--table-inline, var\(--page-table-inline, 0\)\);\s*$/) },
+    ])
+    const card = rules(tableCss, '.card').filter((r) => r.selector === '.card' && /--table-inline/.test(r.body))
+    expect(card).toHaveLength(1)
+    expect(card[0].body).toMatch(/--table-inline:\s*var\(--card-table-inline, var\(--page-table-inline, 0\)\)/)
+    expect(tableCss).not.toMatch(/data-table-position/)
+    // No card rule sets a table's inline margin over it.
+    expect(rules(cardCss, 'table').filter((r) => /\stable(\[[^\]]*\])?$/.test(r.selector) && /(^|[\s;])margin(-inline)?(-left|-right)?\s*:/.test(r.body))).toEqual([])
     // The card's table sits in its scroll box (`.card__table`), so a centred table wider than the card still scrolls.
     expect(rules(cardCss, '.card__sides .card__table').some((r) => /overflow-x:\s*auto/.test(r.body))).toBe(true)
   })

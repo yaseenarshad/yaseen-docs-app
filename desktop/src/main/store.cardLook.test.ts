@@ -28,6 +28,8 @@ const CARD_LOOK: { [K in keyof SettingsState]?: readonly SettingsState[K][] } = 
   // The picker sends a hex colour; Reset sends null.
   nextHiddenColour: ['#2a8bd1', '#aa3399', null],
   cardSpacing: CARD_SPACINGS,
+  // YAZ-5136 round 3: Card tables.
+  cardTablePosition: ['pages', 'left', 'center'],
   // YAZ-5144 round 2: Same as pages (null), or Custom px: its ends, its start (Reset) and Clean's.
   cardWidth: [null, CARD_WIDTH_MIN, CARD_WIDTH_CLEAN, CARD_WIDTH_START, CARD_WIDTH_MAX],
   cardLineSpacing: [1, 1.15, 1.5, 2],
@@ -69,6 +71,6 @@ describe('YAZ-5053 round 4: each Card look setting is saved and reads back', () 
   })
 
   it('every Card look row is in the list above', () => {
-    expect(Object.keys(CARD_LOOK).sort()).toEqual(['cardBlockGap', 'cardBulletGap', 'cardBulletIndent', 'cardBulletSpace', 'cardLineSpacing', 'cardSpacing', 'cardWidth', 'markNextHidden', 'nextHiddenColour', 'shownHiddenWords'])
+    expect(Object.keys(CARD_LOOK).sort()).toEqual(['cardBlockGap', 'cardBulletGap', 'cardBulletIndent', 'cardBulletSpace', 'cardLineSpacing', 'cardSpacing', 'cardTablePosition', 'cardWidth', 'markNextHidden', 'nextHiddenColour', 'shownHiddenWords'])
   })
 })

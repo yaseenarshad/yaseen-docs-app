@@ -178,7 +178,7 @@ const FILES_ROWS = ['newPageLocation', 'newPageTitleTemplate', 'confirmDelete', 
 // Column type icons (YAZ-4779) and the "+ New" buttons (13BL) after Row numbers; sticky group headers, group lines and their style (YAZ-4798) after Group indent.
 const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
 // YAZ-5050 round 2: in groups — Daily limits, Answers, Scheduling, Card look (with its preview).
-const REVIEW_ROWS = ['enabled', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
+const REVIEW_ROWS = ['enabled', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTablePosition', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
  * so the "Used by macOS" rows are not there; with no key changed, neither is "Reset all hotkeys".
@@ -1454,7 +1454,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   it('on: the card rows in order, with their words and values; off: the switch alone. No upkeep row is left', () => {
     const { el, rerender } = mountOn('Review', { ...DEFAULT_SETTINGS }, status(), S)
     expect(reviewRows(el)).toEqual(ALL)
-    expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Review cards', 'New cards a day', 'Up next a day', 'New cards first', 'Answer buttons', 'Pause the timer after', 'Time so far', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card width', 'Card spacing'])
+    expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Review cards', 'New cards a day', 'Up next a day', 'New cards first', 'Answer buttons', 'Pause the timer after', 'Time so far', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card width', 'Card tables', 'Card spacing'])
     // YAZ-5050 round 2: the groups, in order; the card preview is the last row of Card look.
     expect([...el.querySelectorAll('#settings-review .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look'])
     // YAZ-5020: "How cards come back" is a quiet closed line; open, it says the same-day rules and why.
@@ -1513,6 +1513,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     ['shownHiddenWords', {}],
     ['markNextHidden', {}],
     ['cardSpacing', {}],
+    ['cardTablePosition', {}],
     ['cardLineSpacing', { cardSpacing: 'custom' }],
     ['cardBlockGap', { cardSpacing: 'custom' }],
     ['cardBulletSpace', { cardSpacing: 'custom' }],
@@ -1540,13 +1541,23 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   it('YAZ-5144 round 2: Card width sits before Card spacing: Same as pages · Custom; Custom starts at 640 px; an app setting', () => {
     const { el, onChange, save } = mountOn('Review', { ...DEFAULT_SETTINGS, contentWidth: 'full' }, undefined, S)
     const ids = reviewRows(el)
-    expect(ids.slice(ids.indexOf('cardWidth'), ids.indexOf('cardWidth') + 2)).toEqual(['cardWidth', 'cardSpacing'])
+    expect(ids.slice(ids.indexOf('cardWidth'), ids.indexOf('cardWidth') + 3)).toEqual(['cardWidth', 'cardTablePosition', 'cardSpacing'])
     expect(row(el, 'cardWidth')?.querySelector('.setting__label')?.textContent).toBe('Card width')
     expect(rowButtons(el, 'cardWidth').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Same as pages', 'true'], ['Custom', 'false']])
     expect(row(el, 'cardWidth')?.querySelector('input')).toBeNull()
     expect(row(el, 'cardWidth')?.textContent).toMatch(/Same as pages follows Appearance › Content width/)
     act(() => rowButtons(el, 'cardWidth')[1].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, contentWidth: 'full', cardWidth: 640 })
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-5136 round 3: Card tables is Same as pages (the default, Settings › Tables) · Left · Centre, beside Card width; an app setting', () => {
+    const { el, onChange, save } = mountOn('Review', { ...DEFAULT_SETTINGS, tablePosition: 'center' }, undefined, S)
+    expect(row(el, 'cardTablePosition')?.querySelector('.setting__label')?.textContent).toBe('Card tables')
+    expect(rowButtons(el, 'cardTablePosition').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Same as pages', 'true'], ['Left', 'false'], ['Centre', 'false']])
+    expect(row(el, 'cardTablePosition')?.textContent).toMatch(/Same as pages follows Settings › Tables › Table position/)
+    act(() => rowButtons(el, 'cardTablePosition')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tablePosition: 'center', cardTablePosition: 'left' })
     expect(save).not.toHaveBeenCalled()
   })
 
