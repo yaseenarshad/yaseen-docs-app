@@ -23,7 +23,7 @@ describe('the course script (YAZ-5119, version 2 YAZ-5147, version 3 YAZ-5148)',
   })
 
   it('keeps the words plain: no exclamation mark, never "note card"', () => { // rename-note-to-page: keep (the old name stays out of the course)
-    const lines = [...COURSE.flatMap((ch) => [...ch.clips.map((c) => c.text), ...(ch.tryIt ?? []).map((s) => s.say)]), NO_CARDS_YET]
+    const lines = [...COURSE.flatMap((ch) => [...ch.clips.flatMap((c) => [c.text, ...(c.live ?? []).flatMap((s) => (s.say === undefined ? [] : [s.say]))]), ...(ch.tryIt ?? []).map((s) => s.say)]), NO_CARDS_YET]
     for (const line of lines) {
       expect(line).not.toContain('!')
       expect(line.toLowerCase()).not.toContain('note card') // rename-note-to-page: keep
@@ -38,7 +38,7 @@ describe('the course script (YAZ-5119, version 2 YAZ-5147, version 3 YAZ-5148)',
   })
 
   it('names each tour target in kebab case', () => {
-    for (const step of COURSE.flatMap((ch) => ch.tryIt ?? [])) expect(step.target).toMatch(/^[a-z]+(-[a-z]+)*$/)
+    for (const step of COURSE.flatMap((ch) => [...(ch.tryIt ?? []), ...ch.clips.flatMap((c) => c.live ?? [])])) expect(step.target).toMatch(/^[a-z]+(-[a-z]+)*$/)
   })
 
   it('holds the prompt\'s first sentence with a {path} place', () => {

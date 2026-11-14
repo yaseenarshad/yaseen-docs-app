@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { TourStep } from './tour'
 import { COURSE } from './script'
-import { coachPlace, currentStep, dimPath, eventCounts, holeOf, lookingFor, offersShowMe, SETTLE_MS, SHOW_ME_AFTER_MS, startTour, tourStep, type TourAction, type TourState } from './tourEngine'
+import { coachPlace, currentStep, dimPath, eventCounts, exampleSafe, holeOf, lookingFor, offersShowMe, SETTLE_MS, SHOW_ME_AFTER_MS, shownStep, startTour, tourStep, type TourAction, type TourState } from './tourEngine'
+import { tourStepsOf } from './live'
 
 const STEPS: TourStep[] = [
   { target: 'sidebar-course-cards', say: 'Right-click the folder.', done: { event: 'folder-menu-open' } },
@@ -44,7 +45,10 @@ describe('the tour engine (YAZ-5123)', () => {
 
   it("a path event counts only for the tour's own folder", () => {
     const s = ready()
-    expect(tourStep(s, { type: 'event', name: 'folder-menu-open', detail: '/v/Other', at: 0 })).toBe(s)
+    // Another folder's menu does not end the step (it is only kept as where the person is, for the safe example).
+    const other = tourStep(s, { type: 'event', name: 'folder-menu-open', detail: '/v/Other', at: 0 })
+    expect(other.index).toBe(s.index)
+    expect(other.lastMenu).toBe('/v/Other')
     expect(eventCounts('card-file-open', '/v/Course Cards/A.md', PLACES)).toBe(true)
     expect(eventCounts('card-file-open', '/v/Course Cards 2/A.md', PLACES)).toBe(false)
     expect(eventCounts('card-file-created', '/v/Elsewhere/A.md', PLACES)).toBe(false)
@@ -99,20 +103,108 @@ describe('the tour engine (YAZ-5123)', () => {
   })
 
   it('every tryIt of the script walks from its first to its last step on fake real actions', () => {
-    const tours = COURSE.filter((ch) => (ch.tryIt?.length ?? 0) > 0)
-    expect(tours.length).toBeGreaterThanOrEqual(6)
-    for (const chapter of tours) {
+    // YAZ-5366: the six hands-on chapters moved to live steps; a chapter that keeps a tour still walks.
+    for (const chapter of COURSE.filter((ch) => (ch.tryIt?.length ?? 0) > 0)) {
       let s = ready(chapter.tryIt!)
       let at = 0
       for (const [i, step] of chapter.tryIt!.entries()) {
         expect(currentStep(s), `${chapter.id} step ${i + 1}`).toBe(step)
         at += 10
-        const detail = step.done !== 'click' && step.done.event === 'folder-menu-open' ? PLACES.folder : step.done !== 'click' && step.done.event.startsWith('card-file') ? `${PLACES.folder}/A.md` : undefined
-        s = step.done === 'click' ? tourStep(s, { type: 'click', target: step.target }) : tourStep(s, { type: 'event', name: step.done.event, detail, at })
+        s = act(s, step, at)
         at += SETTLE_MS
         s = tourStep(s, { type: 'frame', at, onScreen: true })
       }
       expect(s.status, chapter.id).toBe('finished')
+    }
+  })
+})
+
+/** The fake real action that ends a step: its click, or its event (with the path, in the course's folder). */
+function act(s: TourState, step: TourStep, at: number): TourState {
+  if (step.done === 'show') return s
+  if (step.done === 'click') return tourStep(s, { type: 'click', target: step.target })
+  const event = step.done.event
+  const detail = event === 'folder-menu-open' ? PLACES.folder : event.startsWith('card-file') ? `${PLACES.folder}/A.md` : undefined
+  return tourStep(s, { type: 'event', name: event, detail, at })
+}
+
+describe('live steps in the engine (YAZ-5366)', () => {
+  const LIVE: TourStep[] = [
+    { target: 'sidebar-inbox', say: '', done: 'show' },
+    { target: 'sidebar-course-cards', say: 'Right-click.', done: { event: 'folder-menu-open' } },
+    { target: 'new-card', say: 'Choose New card.', done: 'click' },
+    { target: 'settings-course', say: '', done: 'show' },
+  ]
+  const live = () => run(startTour(LIVE, 0), { type: 'ready', places: PLACES })
+
+  it('a step is shown only once its moment has come; a show step moves on at the next moment', () => {
+    let s = live()
+    expect(currentStep(s)).toBe(LIVE[0])
+    expect(shownStep(s)).toBeNull()
+    // Not looked for before its moment.
+    s = tourStep(s, { type: 'frame', at: 10, onScreen: false })
+    expect(lookingFor(s)).toBe(false)
+    s = tourStep(s, { type: 'reach', count: 1 })
+    expect(shownStep(s)).toBe(LIVE[0])
+    s = tourStep(s, { type: 'reach', count: 2 })
+    expect(shownStep(s)).toBe(LIVE[1])
+    // A show step takes no action.
+    expect(tourStep(run(startTour(LIVE, 1), { type: 'ready', places: PLACES }), { type: 'click', target: 'sidebar-inbox' }).index).toBe(0)
+  })
+
+  it("the person's action counts before its moment: ahead of the voice, never left waiting", () => {
+    let s = tourStep(live(), { type: 'reach', count: 2 })
+    s = tourStep(s, { type: 'event', name: 'folder-menu-open', detail: PLACES.folder, at: 1 })
+    expect(currentStep(s)).toBe(LIVE[2])
+    // New card is clicked before George says it: the step is done, and the last show step waits for its moment.
+    s = tourStep(s, { type: 'click', target: 'new-card' })
+    expect(currentStep(s)).toBe(LIVE[3])
+    expect(shownStep(s)).toBeNull()
+    s = tourStep(s, { type: 'reach', count: 4 })
+    expect(shownStep(s)).toBe(LIVE[3])
+    // The last show step stays lit until the clip ends.
+    expect(tourStep(s, { type: 'reach', count: 4 })).toBe(s)
+    expect(s.status).toBe('running')
+  })
+
+  it('"Use an example" is safe only in Course Cards: the name box of its own folder, the editor of a card file in it', () => {
+    const name: TourStep = { target: 'new-card-name', say: 'Type a title.', done: { event: 'card-file-created' }, example: { text: 'Protein', enter: true } }
+    const front: TourStep = { target: 'card-editor', say: 'Type.', done: { event: 'card-text-changed' }, example: { text: 'A line.' } }
+    let s = ready([name, front])
+    expect(exampleSafe(s, name)).toBe(false)
+    // Another folder's menu: its name box is not the course's.
+    s = tourStep(s, { type: 'event', name: 'folder-menu-open', detail: '/v/Other', at: 1 })
+    expect(exampleSafe(s, name)).toBe(false)
+    s = tourStep(s, { type: 'event', name: 'folder-menu-open', detail: PLACES.folder, at: 2 })
+    expect(exampleSafe(s, name)).toBe(true)
+    // A card file outside Course Cards is open: no example in its editor.
+    s = tourStep(s, { type: 'event', name: 'card-file-open', detail: '/v/Notes/B.md', at: 3 })
+    expect(exampleSafe(s, front)).toBe(false)
+    s = tourStep(s, { type: 'event', name: 'card-file-open', detail: `${PLACES.folder}/A.md`, at: 4 })
+    expect(exampleSafe(s, front)).toBe(true)
+    // With no course folder at all: never.
+    expect(exampleSafe(startTour([front]), front)).toBe(false)
+    // A step without an example: never.
+    expect(exampleSafe(s, { ...front, example: undefined })).toBe(false)
+  })
+
+  it('every live clip of the script walks from its first to its last step on fake real actions', () => {
+    const clips = COURSE.flatMap((ch) => ch.clips.filter((c) => (c.live?.length ?? 0) > 0))
+    expect(clips.length).toBeGreaterThanOrEqual(20)
+    for (const clip of clips) {
+      const steps = tourStepsOf(clip)
+      let s = run(startTour(steps, 0), { type: 'ready', places: PLACES })
+      let at = 0
+      for (const [i, step] of steps.entries()) {
+        s = tourStep(s, { type: 'reach', count: i + 1 })
+        expect(shownStep(s), `${clip.id} step ${i + 1}`).toBe(step)
+        at += 10
+        s = act(s, step, at)
+        at += SETTLE_MS
+        s = tourStep(s, { type: 'frame', at, onScreen: true })
+      }
+      const doneOrShowing = s.status === 'finished' || (s.status === 'running' && s.steps.slice(s.index).every((st) => st.done === 'show'))
+      expect(doneOrShowing, clip.id).toBe(true)
     }
   })
 })

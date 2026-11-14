@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { COURSE } from './script'
 import { TARGET_HELP } from './tourHelp'
 import { TOUR_EVENTS } from './tourBus'
+import { tourStepsOf } from './live'
 import { SETTINGS_SECTIONS } from '../settings/registry'
 
 const SRC = resolve(__dirname, '..')
@@ -41,7 +42,11 @@ function marksInCode(): Map<string, string[]> {
   return marks
 }
 
-const steps = COURSE.flatMap((ch) => (ch.tryIt ?? []).map((step, i) => ({ chapter: ch.id, n: i + 1, step })))
+// The tours' steps and the live steps of the clips (YAZ-5366): the same targets and events.
+const steps = [
+  ...COURSE.flatMap((ch) => (ch.tryIt ?? []).map((step, i) => ({ chapter: ch.id, n: i + 1, step }))),
+  ...COURSE.flatMap((ch) => ch.clips.flatMap((clip) => tourStepsOf(clip).map((step, i) => ({ chapter: `${ch.id} ${clip.id}`, n: i + 1, step })))),
+]
 const targets = new Set(steps.map((s) => s.step.target))
 
 describe("the tour's targets are real controls (YAZ-5123)", () => {
@@ -67,11 +72,12 @@ describe("the tour's targets are real controls (YAZ-5123)", () => {
 })
 
 describe("the tour's events are real moments (YAZ-5123)", () => {
-  const events = new Set(steps.flatMap((s) => (s.step.done === 'click' ? [] : [s.step.done.event])))
+  const events = new Set(steps.flatMap((s) => (typeof s.step.done === 'object' ? [s.step.done.event] : [])))
 
   it('each event a step waits for is one the bus knows, and each the bus knows is used', () => {
     expect([...events].filter((e) => !(TOUR_EVENTS as readonly string[]).includes(e))).toEqual([])
-    expect(TOUR_EVENTS.filter((e) => !events.has(e))).toEqual([])
+    // `tour-next` is the old tour coach's Next: chapter 12's reading steps are show steps now (YAZ-5366).
+    expect(TOUR_EVENTS.filter((e) => e !== 'tour-next' && !events.has(e))).toEqual([])
   })
 
   it("a real component fires each app event (the coach card's Next is tour-next)", () => {
@@ -101,7 +107,7 @@ describe('the course names the Settings sections the app has (YAZ-5271)', () => 
 
   it('the clips and the tour`s steps name real sections', () => {
     const clips = COURSE.flatMap((ch) => ch.clips)
-    const tour = COURSE.flatMap((ch) => (ch.tryIt ?? []).map((s) => s.say))
+    const tour = steps.map((s) => s.step.say)
     expect([...clips.map((c) => c.text), ...tour].flatMap(named).filter((n) => !sections.has(n))).toEqual([])
     // c12-07 and chapter 12's Settings step name Cards (both checked above, so neither can fall back to "Review").
     expect(named(clips.find((c) => c.id === 'c12-07')!.text)).toEqual(['Cards'])

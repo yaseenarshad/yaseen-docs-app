@@ -7887,8 +7887,10 @@ describe('App: the card course (YAZ-5120)', () => {
     // The person brings vault B to the front in the middle of the course (the tour lets them use the whole app).
     act(() => showTourPlace({ kind: 'file', path: '/b/y.md' }))
     await vi.waitFor(() => expect(document.querySelector('.tabbar__tab--active')?.textContent ?? '').toContain('y'))
-    const tryIt = [...document.querySelectorAll<HTMLButtonElement>('.course button')].find((b) => b.textContent === 'Try it in the app')!
-    act(() => tryIt.click())
+    // YAZ-5366: chapter 2's hands-on part is live steps now. Next up to the first one (c2-13): its check makes the folder.
+    const next = () => [...document.querySelectorAll<HTMLButtonElement>('.course button')].find((b) => b.getAttribute('aria-label') === 'Next step')!
+    for (let i = 0; i < 40 && !(document.querySelector('.course__caption')?.textContent ?? '').startsWith('Your card is now a real file'); i++) act(() => next().click())
+    expect(document.querySelector('.course__caption')?.textContent).toContain('Your card is now a real file')
     const createDir = (bridge as unknown as { createDir: ReturnType<typeof vi.fn> }).createDir
     await vi.waitFor(() => expect(createDir).toHaveBeenCalled(), { timeout: SLOW_RUNNER_MS })
     expect(createDir.mock.calls.map(([req]) => (req as { path: string }).path)).toEqual(['/a/course-cards'])

@@ -14,6 +14,7 @@ import { CreateInline } from '../sidebar/CreateInline'
 import { COURSE } from './script'
 import { setTourTyper } from './tourBus'
 import { litBox, setCourseArea } from './dockArea'
+import { tourStepsOf } from './live'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -255,7 +256,8 @@ describe('the tour layer (YAZ-5123)', () => {
 })
 
 describe('"Use an example" on a step that asks for typing (YAZ-5125)', () => {
-  const typing = COURSE.flatMap((ch) => ch.tryIt ?? []).filter((st) => st.example !== undefined)
+  // YAZ-5366: the steps that ask for typing are live steps of the clips now.
+  const typing = COURSE.flatMap((ch) => ch.clips.flatMap((c) => tourStepsOf(c))).filter((st) => st.example !== undefined)
 
   it('only the steps that ask for typing have an example; every step keeps Skip', () => {
     expect(typing.map((st) => st.target)).toEqual(['new-card-name', 'card-editor', 'card-editor', 'card-editor'])
@@ -284,6 +286,10 @@ describe('"Use an example" on a step that asks for typing (YAZ-5125)', () => {
     await mount({ steps: [step, { target: 'x', say: 'Next one.', done: 'click' }] })
     frames(1)
     expect(button('Skip')).toBeDefined()
+    // The name box is the course folder's only once its menu was opened (YAZ-5366: the example writes only there).
+    expect(button('Use an example')).toBeUndefined()
+    act(() => tourEvent('folder-menu-open', FOLDER))
+    frames(1)
     act(() => button('Use an example')!.click())
     await flush()
     expect(made).toEqual(['Protein'])
@@ -299,6 +305,12 @@ describe('"Use an example" on a step that asks for typing (YAZ-5125)', () => {
     const typed: Array<[string, unknown]> = []
     setTourTyper(editable, { type: (text, o) => (typed.push([text, o]), tourEvent('card-side-added')) })
     await mount({ steps: [typing[2], { target: 'card-editor', say: 'No example here.', done: { event: 'card-edit-done' } }] })
+    frames(1)
+    // A card file outside Course Cards is open: no example (YAZ-5366). One in Course Cards: the example.
+    act(() => tourEvent('card-file-open', '/v/Elsewhere/B.md'))
+    frames(1)
+    expect(button('Use an example')).toBeUndefined()
+    act(() => tourEvent('card-file-open', `${FOLDER}/A.md`))
     frames(1)
     act(() => button('Use an example')!.click())
     expect(typed).toEqual([['An egg is mostly protein and fat.', { newSide: true, lineEnd: false }]])
