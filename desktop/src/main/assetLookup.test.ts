@@ -26,8 +26,8 @@ const FILES = [
   '.obsidian/hidden.webp',
   'node_modules/x/inmods.png',
   'cc/.dot.png',
-  'Notes/Page.md',
-  'Notes/img/local.png',
+  'Pages/Page.md',
+  'Pages/img/local.png',
   'img/local.png',
   'b/c/d/e.png',
   'a/z/e.png',
@@ -53,7 +53,7 @@ const TARGETS: [string, string?][] = [
   ['inmods.png'],
   ['.dot.png'],
   ['local.png'],
-  ['img/local.png', 'Notes'],
+  ['img/local.png', 'Pages'],
   ['img/local.png'],
   ['e.png'],
   ['missing.png'],
@@ -68,7 +68,7 @@ describe('the asset lookup from a file list (YAZ-5068)', () => {
     expect(resolve('dup.png', 'bb')).toBe('bb/dup.png')
     expect(resolve('../bb/dup.png', 'aa')).toBe('bb/dup.png')
     expect(resolve('aa/dup.png', 'bb')).toBe('aa/dup.png')
-    expect(resolve('img/local.png', 'Notes')).toBe('Notes/img/local.png')
+    expect(resolve('img/local.png', 'Pages')).toBe('Pages/img/local.png')
     expect(resolve('img/local.png')).toBe('img/local.png')
     expect(resolve('dup.png')).toBe('aa/dup.png')
     expect(resolve('shallow.png')).toBe('bb/shallow.png')

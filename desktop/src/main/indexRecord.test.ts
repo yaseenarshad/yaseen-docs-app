@@ -16,13 +16,13 @@ const meta = (rel: string, size = 100): IndexRecordMeta => {
 
 describe('indexRecord: text to record (YAZ-5068)', () => {
   it('a page: properties, ID, title, tags, links and embeds; the record keeps its metadata', () => {
-    const r = indexRecord(meta('Notes/Paris.md'), '---\nid: WIKI-12\ntitle: Paris\ntags: [city]\naliases: [Lutetia]\n---\nSee [[France]] #europe and ![[map.png]]\n')
+    const r = indexRecord(meta('Pages/Paris.md'), '---\nid: WIKI-12\ntitle: Paris\ntags: [city]\naliases: [Lutetia]\n---\nSee [[France]] #europe and ![[map.png]]\n')
     expect(r).toEqual({
-      path: '/vault/Notes/Paris.md',
+      path: '/vault/Pages/Paris.md',
       name: 'Paris.md',
       basename: 'Paris',
       title: 'Paris',
-      folder: 'Notes',
+      folder: 'Pages',
       ext: 'md',
       size: 100,
       ctime: 1,
