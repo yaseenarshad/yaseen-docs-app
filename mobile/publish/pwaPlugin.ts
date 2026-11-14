@@ -14,7 +14,9 @@ import type { ShellBuild } from '../src/pwa/swCore'
  */
 
 /** The page files under the address the host serves them at (`html_handling: auto-trailing-slash`). */
-const SERVED: Record<string, string> = { 'index.html': '/', 'friend.html': '/friend' }
+const SERVED: Record<string, string> = { 'index.html': '/', 'friend.html': '/friend', 'group.html': '/group', 'join.html': '/join' }
+/** YAZ-5290: the landing page serves the three shared links; `group.html` and `join.html` are copies of `friend.html`. */
+const LANDING_COPIES = ['group.html', 'join.html']
 
 /**
  * What the worker keeps: every build file (ALL chunks, the lazy ones too, so the sync engine and the QR reader work
@@ -66,20 +68,29 @@ export function notecardsPwa(): Plugin {
       if (mode === 'fixtures') return
       // Only the app's own build: another build with this config (the phone wall tests build single files) has no page.
       if (!('index.html' in bundle)) return
+      const friendPage = bundle['friend.html']
+      if (!friendPage || friendPage.type !== 'asset') this.error('notecards-pwa: no friend.html in the build')
+      for (const copy of LANDING_COPIES) this.emitFile({ type: 'asset', fileName: copy, source: friendPage.source })
       const publicFiles = publicDir ? walk(publicDir).map((p) => relative(publicDir, p).replaceAll('\\', '/')) : []
-      const files = shellFiles(Object.keys(bundle), publicFiles)
+      const files = shellFiles([...Object.keys(bundle), ...LANDING_COPIES], publicFiles)
+      const landingChunk = Object.values(bundle).find((o) => o.type === 'chunk' && o.isEntry && /\/friend\.html$/.test(o.facadeModuleId ?? ''))
+      if (!landingChunk) this.error('notecards-pwa: no entry chunk for friend.html')
       const entryChunk = Object.values(bundle).find((o) => o.type === 'chunk' && o.isEntry && /\/index\.html$|\/src\/main\.tsx$/.test(o.facadeModuleId ?? ''))
       if (!entryChunk) this.error('notecards-pwa: no entry chunk for index.html')
       const hash = createHash('sha256')
       for (const path of files) {
         const name = Object.entries(SERVED).find(([, served]) => served === path)?.[0] ?? path.slice(1)
-        const out = bundle[name]
+        const out = bundle[LANDING_COPIES.includes(name) ? 'friend.html' : name]
         const bytes = out ? (out.type === 'chunk' ? out.code : out.source) : readFileSync(join(publicDir, name))
         hash.update(path).update('\0').update(bytes).update('\0')
       }
-      const shell: ShellBuild = { version: hash.digest('hex').slice(0, 16), files, entry: `/${entryChunk.fileName}` }
+      const entry = `/${entryChunk.fileName}`
+      const landing = `/${landingChunk.fileName}`
+      const shell: ShellBuild = { version: hash.digest('hex').slice(0, 16), files, entry, pages: { '/': entry, '/friend': landing, '/group': landing, '/join': landing } }
+      // YAZ-5285: the kill switch replaces the worker (`npm run mobile:publish:preview:kill-switch`).
+      const kill = process.env.NOTECARDS_KILL_SWITCH === '1'
       const result = await esbuild({
-        entryPoints: [fileURLToPath(new URL('../src/pwa/sw.ts', import.meta.url))],
+        entryPoints: [fileURLToPath(new URL(kill ? '../src/pwa/swKill.ts' : '../src/pwa/sw.ts', import.meta.url))],
         bundle: true,
         write: false,
         format: 'iife',
@@ -90,8 +101,8 @@ export function notecardsPwa(): Plugin {
       })
       // `/version.txt`: which build runs (the commit, "-dirty" with uncommitted changes, and the worker version). Not a
       // secret; it tells Yaseen which build his phone runs.
-      this.emitFile({ type: 'asset', fileName: 'version.txt', source: `${commitOf()}\n${shell.version}\n` })
-      this.emitFile({ type: 'asset', fileName: 'sw.js', source: `// Notecards service worker, version ${shell.version} (YAZ-5087)\n${result.outputFiles[0].text}` })
+      this.emitFile({ type: 'asset', fileName: 'version.txt', source: `${commitOf()}\n${kill ? 'kill-switch' : shell.version}\n` })
+      this.emitFile({ type: 'asset', fileName: 'sw.js', source: `// Notecards service worker, ${kill ? 'THE KILL SWITCH (YAZ-5285)' : `version ${shell.version} (YAZ-5087)`}\n${result.outputFiles[0].text}` })
     },
   }
 }

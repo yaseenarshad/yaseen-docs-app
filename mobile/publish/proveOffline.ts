@@ -67,6 +67,15 @@ const v3 = LIVE ? '' : deploy(v2, 'v3', (dir) => {
   unlinkSync(join(dir, 'assets', engine))
 })
 
+// The kill switch (YAZ-5285): the v2 deploy with `src/pwa/swKill.ts` as its worker (local only; never published here).
+const vkill = LIVE ? '' : join(work, 'vkill')
+if (!LIVE) {
+  const { build } = await import('esbuild')
+  cpSync(v2, vkill, { recursive: true })
+  const out = await build({ entryPoints: [join(mobile, 'src/pwa/swKill.ts')], bundle: true, write: false, format: 'iife', minify: true, target: 'safari15' })
+  writeFileSync(join(vkill, 'sw.js'), `// kill switch (proof)\n${out.outputFiles[0].text}`)
+}
+
 // ---- the host: serve.ts in this process (stopped for real: every open connection is cut) ----
 process.env.NOTECARDS_SERVE = 'no'
 const { serveDist } = await import('./serve')
@@ -243,6 +252,19 @@ try {
   record('1e the friend page shows the code; no request carries it', shows && leaked.length === 0 && requested.length > sentBefore, `${requested.length - sentBefore} requests, ${leaked.length} with the code`)
   await open(`${ORIGIN}/`)
 
+  // 1f. YAZ-5290: the group and join links have their landing page; the code stays in the fragment.
+  for (const [path, code, shown] of [
+    ['/group', CODE, CODE],
+    ['/join', `${CODE}-${CODE}`, `${ORIGIN}/join#${CODE}-${CODE}`],
+  ] as const) {
+    const before = requested.length
+    await open(`${ORIGIN}${path}#${code}`)
+    const ok = await until(`document.getElementById('code')?.value === '${shown}' && !document.getElementById('has-code').hidden`)
+    const leaked = requested.slice(before).filter((u) => u.includes(CODE))
+    record(`1f ${path}#… shows its landing page and code; no request carries it`, ok && leaked.length === 0, `${requested.length - before} requests, ${leaked.length} with the code`)
+  }
+  await open(`${ORIGIN}/`)
+
   // 2. The CSP is live: a call to another origin is refused (this violation is on purpose).
   const before = csp().length
   const refused = await evaluate(`fetch('https://example.com/').then(() => 'allowed', () => 'refused')`)
@@ -325,6 +347,21 @@ try {
     // A finding, not a step of 5-: Chrome keeps a failed import of an address for the life of the page (the module map),
     // so a "Try again" that imports the same chunk again fails again until the page loads again.
     console.log(`NOTE  8b the SAME chunk address imported again after a failure: ${first}, then ${again}${again === 'failed' ? ' (the browser keeps the failure until a reload)' : ''}`)
+    await host(null)
+  }
+  if (!LIVE) {
+    // 9. The kill switch (YAZ-5285): a page with data in IndexedDB; the kill switch is published; the next open.
+    await host(v2)
+    await open(`${ORIGIN}/`)
+    await evaluate(`new Promise((ok, no) => { const r = indexedDB.open('proof-kill', 1); r.onupgradeneeded = () => r.result.createObjectStore('s'); r.onsuccess = () => { const t = r.result.transaction('s', 'readwrite'); t.objectStore('s').put('answer', 'waiting'); t.oncomplete = () => { r.result.close(); ok(true) } }; r.onerror = () => no(r.error) })`)
+    const shellBefore = (await evaluate(shellCaches)).length
+    await host(vkill)
+    await open(`${ORIGIN}/`)
+    const cleared = await until(`caches.keys().then(ks => !ks.some(k => k.startsWith('notecards-')))`, 60_000)
+    const unregistered = await until(`navigator.serviceWorker.getRegistrations().then(rs => rs.length === 0)`, 20_000)
+    const data = await evaluate(`new Promise(ok => { const r = indexedDB.open('proof-kill', 1); r.onsuccess = () => { const g = r.result.transaction('s').objectStore('s').get('waiting'); g.onsuccess = () => { ok(g.result); r.result.close() } } })`)
+    const shows = await until(`document.body.innerText.includes('Connect vault')`)
+    record('9 the kill switch clears the shell caches, unregisters, and keeps IndexedDB; the app still opens', shellBefore > 0 && cleared && unregistered && data === 'answer' && shows, `${shellBefore} shell caches before; cleared ${cleared}; unregistered ${unregistered}; IndexedDB "${data}"`)
     await host(null)
   }
   const unexpected = csp().slice(onPurpose)

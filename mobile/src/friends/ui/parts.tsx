@@ -94,18 +94,17 @@ export function ownSiteLink(link: string, origin: string = globalThis.location?.
 }
 
 /**
- * YAZ-5263: the words that go with a group link and a join link. No page of the site shows a code for them yet (5-'s
- * landing page is for `/friend`), so the words tell the true step: copy the whole message, then paste it in the app
- * (4E3's paste box reads a link anywhere in the text).
+ * YAZ-5263, YAZ-5290: the words that go with a group link and a join link. Each opens a landing page of the site
+ * (`/group`, `/join`, as `/friend`) with the code and Copy; the paste box reads it.
  */
 export const groupShareText = (name: string, url: string) => ({
   title: 'Notecards group link',
-  text: `Join my group ${name} on Notecards. Copy this whole message. Then open Notecards, tap + Add, and tap Paste a friend's link.`,
+  text: `Join my group ${name} on Notecards. Open this link, copy the code, then paste it in the app.`,
   url,
 })
 export const joinShareText = (name: string, url: string) => ({
   title: 'Notecards join link',
-  text: `Please add me to ${name} on Notecards. Copy this whole message. Then open Notecards, tap + Add, and tap Paste a friend's link.`,
+  text: `Please add me to ${name} on Notecards. Open this link, copy the code, then paste it in the app.`,
   url,
 })
 

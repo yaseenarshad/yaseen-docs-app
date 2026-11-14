@@ -70,15 +70,21 @@ export function fakeServer(files: Record<string, FakeFile>, origin = 'https://no
 type Listener = (event: any) => void
 
 /** A service worker global scope with its events: `dispatch('fetch', …)` returns what the worker answered, or `null` (it did not touch it). */
-export function fakeScope(server: ReturnType<typeof fakeServer>, caches = fakeCaches()) {
+export function fakeScope(server: Pick<ReturnType<typeof fakeServer>, 'fetch' | 'origin'>, caches = fakeCaches()) {
   const listeners = new Map<string, Listener[]>()
   const log: string[] = []
+  /** The open pages of the app (their addresses). */
+  const windows: string[] = []
   const scope: SwScope = {
     location: { origin: server.origin },
     caches,
-    fetch: (input) => server.fetch(input),
+    fetch: (input, init) => (server.fetch as (i: string | RequestLike, n?: RequestInit) => Promise<Response>)(input, init),
     skipWaiting: async () => void log.push('skipWaiting'),
-    clients: { claim: async () => void log.push('claim') },
+    clients: {
+      claim: async () => void log.push('claim'),
+      matchAll: async () => windows.map((url) => ({ url, navigate: async (to: string) => void log.push(`navigate ${to}`) })),
+    },
+    registration: { unregister: async () => (log.push('unregister'), true) },
     addEventListener: (type: string, fn: Listener) => listeners.set(type, [...(listeners.get(type) ?? []), fn]),
   }
   const run = async (type: string, extra: Record<string, unknown>) => {
@@ -93,6 +99,7 @@ export function fakeScope(server: ReturnType<typeof fakeServer>, caches = fakeCa
     scope,
     caches,
     log,
+    windows,
     install: () => run('install', {}),
     activate: () => run('activate', {}),
     message: (data: unknown) => run('message', { data }),

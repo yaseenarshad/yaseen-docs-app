@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { FRIEND_PATH, friendCodeFrom, friendLink } from './friendLink'
+import { FRIEND_PATH, LANDING_KINDS, friendCodeFrom, friendLink, groupLinkFor, joinLinkFor, landingCodeFrom } from './friendLink'
 
 /**
  * The friend link (decision 20, round 10 item 7): `https://<site>/friend#<pointer gist ID>`. The ID is after `#`, so the
@@ -56,5 +56,29 @@ describe('the landing page sends the ID nowhere', () => {
   it('the words of round 10, item 7', () => {
     expect(html).toContain('Copy this code. Open the app. Tap Paste.')
     expect(html).toMatch(/>Copy</)
+  })
+
+  it('YAZ-5288: with no app yet, the person comes back to the link after the vault is connected (the token copy replaces the clipboard)', () => {
+    expect(html).not.toContain('It stays on the clipboard')
+    expect(html).toContain('After you connect your vault, tap the link in Messages again, and tap Copy.')
+  })
+})
+
+describe('YAZ-5290: the three kinds of link, each on the site the app runs on', () => {
+  const site = 'https://preview.notecards.yaseenarshad.com'
+  it('makes /group#<id> and /join#<group>-<pointer>', () => {
+    expect(groupLinkFor(site, ID)).toBe(`${site}/group#${ID}`)
+    expect(joinLinkFor(site, ID, ID)).toBe(`${site}/join#${ID}-${ID}`)
+    expect(() => groupLinkFor(site, 'x')).toThrow()
+  })
+  it('reads the code of each landing page from the fragment', () => {
+    expect(LANDING_KINDS).toEqual(['friend', 'group', 'join'])
+    expect(landingCodeFrom('/friend', `#${ID}`)).toEqual({ kind: 'friend', code: ID })
+    expect(landingCodeFrom('/group', `#${ID}`)).toEqual({ kind: 'group', code: ID })
+    expect(landingCodeFrom('/group/', `#${ID}`)).toEqual({ kind: 'group', code: ID })
+    expect(landingCodeFrom('/join', `#${ID}-${ID}`)).toEqual({ kind: 'join', code: `${ID}-${ID}` })
+    expect(landingCodeFrom('/join', `#${ID}`)).toEqual({ kind: 'join', code: null })
+    expect(landingCodeFrom('/group', '')).toEqual({ kind: 'group', code: null })
+    expect(landingCodeFrom('/friend', '#<b>x</b>')).toEqual({ kind: 'friend', code: null })
   })
 })
