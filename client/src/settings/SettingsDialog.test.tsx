@@ -1454,7 +1454,7 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   it('on: the card rows in order, with their words and values; off: the switch alone. No upkeep row is left', () => {
     const { el, rerender } = mountOn('Cards', { ...DEFAULT_SETTINGS }, status(), S)
     expect(reviewRows(el)).toEqual(ALL)
-    expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Use cards in this vault', undefined, 'New cards a day', 'Up next a day', 'New cards first', 'Answer buttons', 'Pause the timer after', 'Time so far', 'Inbox: O opens the page at', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card width', 'Card tables', 'Card spacing'])
+    expect(ALL.slice(0, -2).map((id) => row(el, id)?.querySelector('.setting__label')?.textContent)).toEqual(['Use cards in this vault', undefined, 'New cards a day', 'Up next a day', 'New cards order', 'Answer buttons', 'Pause the timer after', 'Time so far', 'Inbox: O opens the page at', 'Remember rate', 'Longest wait', 'Spread due dates', 'Weights', 'Shown hidden words', 'Mark the next hidden word', 'Colour', 'Card width', 'Card tables', 'Card spacing'])
     // YAZ-5050 round 2: the groups, in order; the card preview is the last row of Card look.
     expect([...el.querySelectorAll('#settings-cards .settings-group__title')].map((t) => t.textContent)).toEqual(['Daily limits', 'Answers', 'Scheduling', 'Card look'])
     // YAZ-5020: "How cards come back" is a quiet closed line; open, it says the same-day rules and why.
@@ -1647,10 +1647,12 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(save).toHaveBeenLastCalledWith({ ...S, buttons: 4 })
     act(() => rowButtons(el, 'fuzz')[1].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, fuzz: false })
-    // YAZ-4999 D2: New cards first.
-    expect(rowButtons(el, 'newOrder').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Oldest first', 'true'], ['Newest first', 'false']])
+    // YAZ-4999 D2: New cards order (YAZ-5322: with Random).
+    expect(rowButtons(el, 'newOrder').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Oldest first', 'true'], ['Newest first', 'false'], ['Random', 'false']])
     act(() => rowButtons(el, 'newOrder')[1].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, newOrder: 'newest' })
+    act(() => rowButtons(el, 'newOrder')[2].click())
+    expect(save).toHaveBeenLastCalledWith({ ...S, newOrder: 'random' })
     // YAZ-5033: Pause the timer after — four choices, 60 s by default, saved in review.json; its hint says "with no key or mouse".
     expect(rowButtons(el, 'pauseAfter').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['30 s', 'false'], ['60 s', 'true'], ['2 min', 'false'], ['5 min', 'false']])
     expect(row(el, 'pauseAfter')?.textContent).toMatch(/Pause the timer after[\s\S]*With no key or mouse/)

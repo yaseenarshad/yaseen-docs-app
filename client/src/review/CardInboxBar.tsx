@@ -19,6 +19,12 @@
  * says "22 / 48 · Reset": Reset sets today back to the Settings number, never below today's work. No pop-up: it
  * changes today only, and the line under the buttons (Undo, ⌘Z) takes back the last add or Reset.
  *
+ * Where new cards come from (YAZ-5322, "Final mockup — the New cards row"): the New cards row reads "New cards  from
+ * Spanish ›  10 / 24" — the folder part between the name and the count, so it reads as New cards' only; grey "from All
+ * folders ›" with no pick. A click on it opens the folder picker (`NewCardsPicker`) beside the menu; a click on the rest
+ * of the row is the filter, as before. While a folder is picked, the chip "New cards: Spanish ×" sits by the filter;
+ * × goes back to All folders. The count follows the pick (`cardPlan`).
+ *
  * No Archived row (YAZ-5319, Yaseen: "there will be too many to review that way"): a folder page's table finds archived
  * cards (Show cards as rows, Card status), and a card's ⋯ menu unarchives it.
  */
@@ -26,13 +32,16 @@ import { Fragment, useRef, useState, type MouseEvent, type ReactElement } from '
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import type { CardRating } from '@shared/cardLine'
 import type { AddKind } from '@shared/cardSchedule'
-import type { CardFilter, CardPlacePart, CardReviewSession } from './useCardReview'
+import type { CardFilter, CardPlacePart, CardReviewApi, CardReviewSession } from './useCardReview'
 import { FileIcon } from '../sidebar/FileIcon'
 import { todayCards } from './reviewTime'
 import { TodayWork } from './TodayWork'
 import type { TimeSoFar } from '@shared/reviews'
 import { AddMoreField } from './AddMoreField'
+import { pickLabel, useNewCardsPicker } from './NewCardsPicker'
 import { ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
+
+const NO_PICK: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders'> = { setNewFrom: () => undefined, newCardFolders: () => ({ all: 0, folders: [] }) }
 
 /** The filters in menu order, with their names and glyphs. */
 export const CARD_FILTERS: readonly {
@@ -76,17 +85,22 @@ interface CardInboxBarProps {
   openPlace?: (part: CardPlacePart) => void
   /** Time so far (YAZ-5130): how today's time shows, Settings › Review. */
   time: TimeSoFar
+  /** The folder pick for new cards (YAZ-5322): the picker's rows and its save; without it the row has no "from". */
+  pick?: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders'>
 }
 
-export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace, time }: CardInboxBarProps) {
+export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace, time, pick }: CardInboxBarProps) {
   const button = useRef<HTMLButtonElement>(null)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   // YAZ-5042 round 2: the row whose count turned into "Add [n] more"; it closes with the menu.
   const [adding, setAdding] = useState<AddKind | null>(null)
+  const picker = useNewCardsPicker(pick ?? NO_PICK, session)
   const closeMenu = () => {
     setMenu(null)
     setAdding(null)
+    picker.close()
   }
+  const picked = pickLabel(session.newFrom)
   const current = CARD_FILTERS.find((f) => f.id === session.filter) ?? CARD_FILTERS[0]
   const ScopeIcon = session.scope === 'page' ? PageIcon : session.scope === 'folder' ? FolderIcon : VaultIcon
   const toggle = () => {
@@ -114,6 +128,15 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
           <span>{current.label}</span>
           <ChevronIcon />
         </button>
+        {/* YAZ-5322: the saved pick, while it is on; × goes back to All folders. */}
+        {pick !== undefined && picked !== '' && (
+          <span className="card-inbox__pick-chip" title={`New cards come from ${picked}`}>
+            <span className="card-inbox__pick-chip-name">New cards: {picked}</span>
+            <button type="button" className="card-inbox__pick-chip-x" aria-label="New cards from All folders" onMouseDown={(e) => e.preventDefault()} onClick={() => pick.setNewFrom([])}>
+              ×
+            </button>
+          </span>
+        )}
         {/* The scope only when narrower than the vault (YAZ-5017 round 2): the whole vault says nothing here. */}
         {session.scope !== 'vault' && (
           <span className="card-inbox__from" title={`Reviewing ${session.from.join(' / ')}`}>
@@ -179,6 +202,9 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
                   </div>
                 )
               const pick = (e: MouseEvent) => {
+                // YAZ-5322: a click on "from … ›" opens the folder picker beside the menu (the menu stays open).
+                const from = e.target instanceof Element ? e.target.closest('.card-inbox__new-from') : null
+                if (from !== null) return picker.open(from, 'right')
                 // A click on a count while cards wait: "Add [n] more" (the menu stays open); elsewhere on the row: the filter.
                 if (kind !== null && add > 0 && e.target instanceof Element && e.target.closest('.card-inbox__count') !== null) return setAdding(kind)
                 closeMenu()
@@ -190,6 +216,11 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
                     <span className="card-inbox__filter-name">
                       <f.icon />
                       {f.label}
+                      {f.id === 'new' && pick !== undefined && (
+                        <span className="card-inbox__new-from" data-on={picked !== '' || undefined} title="Which folders new cards come from">
+                          from <span className="card-inbox__new-from-name">{picked === '' ? 'All folders' : picked}</span> ›
+                        </span>
+                      )}
                     </span>
                     <span
                       className="card-inbox__count"
@@ -211,6 +242,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
             })}
           </ContextMenuSurface>
         )}
+        {menu !== null && picker.picker}
       </div>
       <div className="card-inbox__progress" role="progressbar" aria-label="Cards answered" aria-valuemin={0} aria-valuemax={session.size} aria-valuenow={session.answered.length}>
         {progressRuns(session.answered).map((run, i) => (

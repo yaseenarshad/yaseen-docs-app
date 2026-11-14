@@ -1998,11 +1998,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           // YAZ-5028: beside New cards a day, the same box.
           reviewField('upNextPerDay', UP_NEXT_PER_DAY_FIELD, 'Up next a day', 'How many Up next cards go first in the Inbox each day. The others wait for another day. Empty means no limit.', 'cards'),
           {
-            // YAZ-4999 D2: by the card's ID number, which grows as cards are made.
+            // YAZ-4999 D2: by the card's ID number, which grows as cards are made. YAZ-5322: "New cards order", with
+            // Random (one order for the day). The folder pick lives in the Inbox, not here.
             id: 'newOrder',
-            label: 'New cards first',
-            hint: 'Which new cards the Inbox shows first: the cards you made first, or the cards you made last.',
-            keywords: [...REVIEW_KEYWORDS, 'order', 'oldest', 'newest'],
+            label: 'New cards order',
+            hint: 'Which new cards the Inbox shows first. Random keeps one order for the whole day.',
+            keywords: [...REVIEW_KEYWORDS, 'order', 'oldest', 'newest', 'random', 'shuffle'],
             available: reviewOn,
             render: ({ review }) =>
               review && (
@@ -2010,10 +2011,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                   options={[
                     { label: 'Oldest first', value: 'oldest' as const },
                     { label: 'Newest first', value: 'newest' as const },
+                    { label: 'Random', value: 'random' as const },
                   ]}
                   value={review.settings.newOrder}
                   onChange={(newOrder) => review.save({ ...review.settings, newOrder })}
-                  ariaLabel="New cards first"
+                  ariaLabel="New cards order"
                 />
               ),
           },

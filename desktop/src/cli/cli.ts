@@ -148,7 +148,8 @@ card line by hand: \`card add\` and \`card new\` write it, and the app writes ea
 
 \`due\` lists the cards due now under a folder (the whole vault for its root), as the app's Inbox
 shows them: first the cards up next (see \`card next\`), then the cards due today, most overdue first, then
-new cards, oldest or newest first by the vault's "New cards first", as many as its "New cards a day" leaves
+new cards in the vault's "New cards order" (oldest first, newest first, or random for the day), from the
+folders the Inbox picked for new cards when any (all folders when they have none left), as many as its "New cards a day" leaves
 for today (all of them when that box is empty). A line is the day it was due (\`next\` for a card up next,
 \`new\` for a new card, \`steps\` for a card in its same-day steps: Forgot, or a new card not yet Remembered
 twice; it is due now, minutes after its last answer), the card's id, its title (\`title "…"\` on its card line) and its page.
