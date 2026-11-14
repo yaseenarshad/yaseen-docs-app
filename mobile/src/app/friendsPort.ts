@@ -20,6 +20,8 @@ export interface FriendsPort {
   hasFriends(): Promise<boolean>
   settings(): Promise<FriendsSettings>
   saveSettings(settings: FriendsSettings): Promise<void>
+  /** YAZ-5195 (4E4 wires it): before "Sign out and erase this phone", stop each friends request and timer. */
+  stop?(): Promise<void>
 }
 
 export const NO_FRIENDS_SETTINGS: FriendsSettings = Object.freeze({ vaults: null, nickname: null })

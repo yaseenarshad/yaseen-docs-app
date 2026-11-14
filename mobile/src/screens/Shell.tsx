@@ -18,6 +18,8 @@ import { SignIn } from './SignIn'
 const routeWaiting = <div className="app" aria-busy="true" />
 const PageView = lazyScreen(() => import('../page/PageView'), { waiting: routeWaiting })
 const CardView = lazyScreen(() => import('../page/CardView'), { waiting: routeWaiting })
+/** "You vs <friend>" (4E4, YAZ-5085): in the friends chunk. */
+const VsScreen = lazyScreen(() => import('../friends/ui/VsScreen'), { waiting: routeWaiting })
 
 /** Each tab draws one component from its own file; 4B, 4C and 4E replace the placeholders (decision 21). */
 const TAB_SCREENS: Record<Exclude<Tab, 'review'>, () => React.JSX.Element> = { friends: Friends, search: Search }
@@ -112,6 +114,8 @@ function RouteScreen({ route }: { route: Route }) {
       return <ScanCode vault={route.vault} />
     case 'page':
       return <PageView key={route.path} path={route.path} at={route.at} onBack={back} />
+    case 'friend':
+      return <VsScreen route={route} onBack={back} />
     case 'card':
       return <CardView key={`${route.path}#${route.id}`} path={route.path} id={route.id} onBack={back} />
   }

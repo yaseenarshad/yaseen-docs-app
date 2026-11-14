@@ -2,6 +2,7 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from '../App'
 import type { AppServices } from '../app/AppState'
+import type { FriendsPort } from '../app/friendsPort'
 import { fakeFriends, fakeScanner, fakeSync, type FakeScanner, type FakeSync } from '../dev/fakes'
 import { fakeGithub, type FakeGithub, type FakeRepo, type FakeToken } from '../github/testing'
 import { memoryBackend, openVaultStore, tokenStoreOn, type TokenStore, type VaultStore } from '../store'
@@ -60,7 +61,7 @@ export async function newPhone(): Promise<{ store: VaultStore; tokens: TokenStor
 const named = (el: Element) => (el.getAttribute('aria-label') ?? el.textContent ?? '').replace(/\s+/g, ' ').trim()
 const matches = (el: Element, name: string | RegExp) => (typeof name === 'string' ? named(el) === name : name.test(named(el)))
 
-export async function mount(options: { phone?: { store: VaultStore; tokens: TokenStore }; hasFriends?: boolean; download?: boolean } = {}): Promise<Harness> {
+export async function mount(options: { phone?: { store: VaultStore; tokens: TokenStore }; hasFriends?: boolean; download?: boolean; friends?: (store: VaultStore) => FriendsPort } = {}): Promise<Harness> {
   const { store, tokens } = options.phone ?? (await newPhone())
   const github = fakeGithub({ tokens: TOKENS, repos: REPOS })
   const sync = fakeSync({ download: options.download })
@@ -70,7 +71,7 @@ export async function mount(options: { phone?: { store: VaultStore; tokens: Toke
     tokens,
     sync,
     scanner,
-    friends: fakeFriends(store, options.hasFriends ?? false),
+    friends: options.friends?.(store) ?? fakeFriends(store, options.hasFriends ?? false),
     fetch: github.fetch,
     now: () => NOW,
     keepStorage: async () => 'kept',
