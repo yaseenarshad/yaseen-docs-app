@@ -17,6 +17,7 @@ import { answerLine, cardStateText } from './cardInboxChip'
 import { foldHints } from './CardInboxHints'
 import { CARD_MIN_WIDTH, clampCardWidth, inboxCardWidth, setInboxCardWidth } from './inboxCardWidth'
 import { useReadOnlyVault } from '../vault/readOnlyVault'
+import { ZOOM_EVENT } from '../editor/zoomRequest'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -66,6 +67,11 @@ function render() {
 }
 
 function mount(text: string | null, settings: ReviewSettings = DEFAULT_REVIEW_SETTINGS) {
+  // A second mount in one test drops the first Inbox, so no stale one keeps its document listeners (YAZ-5372's zoom keys).
+  if (root !== null) {
+    act(() => root?.unmount())
+    el.remove()
+  }
   session = sessionOf(text)
   review = {
     dueCount: 12,
@@ -1948,5 +1954,54 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
       render()
       expect(answers().hasAttribute('data-nudge')).toBe(false)
     })
+  })
+})
+
+describe('the Inbox zoom (YAZ-5372)', () => {
+  const zoomKey = (step: -1 | 0 | 1, target: EventTarget = el.querySelector('.card-inbox')!) => {
+    const event = new CustomEvent(ZOOM_EVENT, { detail: step, bubbles: true, cancelable: true })
+    act(() => void target.dispatchEvent(event))
+    return event.defaultPrevented
+  }
+  const level = () => el.querySelector<HTMLElement>('.card-inbox')!.style.getPropertyValue('--inbox-zoom')
+  beforeEach(() => localStorage.removeItem('inbox:zoom'))
+
+  it('the page zoom\'s own pill sits at the bar\'s end, after "3 of 12"; its + and − zoom the card\'s text and the value is kept', () => {
+    mount(TWO_SIDES)
+    const bar = el.querySelector('.card-inbox__bar')!
+    const pill = bar.querySelector('.card-inbox__tools > .document-zoom')!
+    expect(pill.getAttribute('aria-label')).toBe('Inbox zoom')
+    expect(bar.querySelector('.card-inbox__place + .card-inbox__tools')).not.toBeNull()
+    expect(level()).toBe('1')
+    act(() => pill.querySelector<HTMLButtonElement>('[aria-label="Zoom in"]')!.click())
+    expect([level(), localStorage.getItem('inbox:zoom')]).toEqual(['1.25', '125'])
+    // A new Inbox (a restart) opens at the kept zoom.
+    mount(TWO_SIDES)
+    expect(level()).toBe('1.25')
+  })
+
+  it('⌘+ / ⌘− / ⌘0 while the Inbox shows are its own — from the Inbox, the body, the tab row — never the sidebar\'s; a key in the sidebar or a claimed one is left alone', () => {
+    mount(TWO_SIDES)
+    expect(zoomKey(1)).toBe(true)
+    expect(level()).toBe('1.25')
+    expect(zoomKey(-1, document.body)).toBe(true)
+    expect(level()).toBe('1')
+    expect(zoomKey(1, document.body)).toBe(true)
+    expect(zoomKey(0)).toBe(true)
+    expect([level(), localStorage.getItem('inbox:zoom')]).toEqual(['1', null])
+    const sidebar = document.createElement('aside')
+    sidebar.className = 'sidebar'
+    document.body.appendChild(sidebar)
+    expect(zoomKey(1, sidebar)).toBe(false)
+    sidebar.remove()
+    // Explore's stack (or a page) claimed it first: not the Inbox's.
+    const claim = (e: Event) => e.preventDefault()
+    document.addEventListener(ZOOM_EVENT, claim, true)
+    zoomKey(1)
+    document.removeEventListener(ZOOM_EVENT, claim, true)
+    expect(level()).toBe('1')
+    // Behind a page tab, the Inbox takes no zoom key.
+    act(() => root?.render(<CardInbox {...props} review={review} session={session} shown={false} />))
+    expect(zoomKey(1, document.body)).toBe(false)
   })
 })
