@@ -20,21 +20,33 @@ const bad = { ok: false, error: expect.objectContaining({ code: 'BAD_REQUEST' })
 const GRID = [[true, false], [false, true]]
 
 let focused: boolean
+let now: number
+let lastInput: number | null
+let answer: boolean
 const build = vi.fn(async (_root: string): Promise<PhoneCodeAnswer> => ({ ok: true, repo: 'yaseen/vault', branch: 'main', grid: GRID }))
+const confirm = vi.fn(async () => answer)
 
 beforeEach(() => {
   vi.mocked(ipcMain.handle).mockClear()
   build.mockClear()
+  confirm.mockClear()
   focused = true
+  now = 1_000_000
+  lastInput = now - 500 // the click on "Show code", which main saw
+  answer = true
   registerPhoneIpc({ idFor: (wc) => (wc.id === 1 ? 'w1' : undefined) }, {
     rendererUrl: 'app://yaseen/index.html',
     isFocused: () => focused,
     roots: () => ['/vaults/a'],
     build,
+    lastInputAt: () => lastInput,
+    confirm,
+    now: () => now,
   })
 })
 
 const code = (e: unknown, ...args: unknown[]) => registered(CONTRACT.phone.code)(e, ...args)
+const hide = (e: unknown) => registered(CONTRACT.phone.hide)(e)
 
 describe('phone:code (YAZ-5098)', () => {
   it("answers the grid for a vault of the sender's window", async () => {
@@ -71,6 +83,58 @@ describe('phone:code (YAZ-5098)', () => {
 
   it('no channel of the contract reads a secret: `secrets` writes and asks, `phone` answers a grid', () => {
     expect(Object.keys(CONTRACT.secrets).sort()).toEqual(['has', 'set'])
-    expect(Object.keys(CONTRACT.phone)).toEqual(['code'])
+    expect(Object.keys(CONTRACT.phone)).toEqual(['code', 'hide'])
+  })
+
+describe('phone:code needs a real action that MAIN saw, and a confirm in main (YAZ-5218)', () => {
+  it('no click or key that main saw: no grid, no confirm, no build', async () => {
+    lastInput = null
+    expect(await code(event, '/vaults/a')).toEqual(bad)
+    expect(confirm).not.toHaveBeenCalled()
+    expect(build).not.toHaveBeenCalled()
+  })
+
+  it('a stale action (over 5 seconds ago): no grid', async () => {
+    lastInput = now - 5_001
+    expect(await code(event, '/vaults/a')).toEqual(bad)
+    expect(build).not.toHaveBeenCalled()
+  })
+
+  it('the person cancels the confirm of main: no grid, no build', async () => {
+    answer = false
+    expect(await code(event, '/vaults/a')).toEqual({ ok: true, value: { ok: false, problem: 'cancelled' } })
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(build).not.toHaveBeenCalled()
+  })
+
+  it('a second request while a code is shown gets nothing, until the dialog hides it', async () => {
+    expect(await code(event, '/vaults/a')).toMatchObject({ ok: true, value: { ok: true } })
+    expect(await code(event, '/vaults/a')).toEqual(bad)
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(await hide(event)).toEqual({ ok: true, value: undefined })
+    expect(await code(event, '/vaults/a')).toMatchObject({ ok: true, value: { ok: true } })
+  })
+
+  it('a code stops counting as shown after 60 seconds', async () => {
+    await code(event, '/vaults/a')
+    now += 60_001
+    lastInput = now - 100
+    expect(await code(event, '/vaults/a')).toMatchObject({ ok: true, value: { ok: true } })
+  })
+
+  it('hide from another window or page does not unlock the code', async () => {
+    await code(event, '/vaults/a')
+    expect(await hide({ ...event, sender: { ...sender, id: 9 } })).toEqual(bad)
+    const evil = { url: 'https://evil.example/index.html' }
+    expect(await hide({ sender: { ...sender, mainFrame: evil }, senderFrame: evil })).toEqual(bad)
+    expect(await code(event, '/vaults/a')).toEqual(bad)
+  })
+
+  it('the window lost the focus while the code was made (YAZ-5217): no grid', async () => {
+    build.mockImplementationOnce(async () => {
+      focused = false
+      return { ok: true, repo: 'yaseen/vault', branch: 'main', grid: GRID }
+    })
+    expect(await code(event, '/vaults/a')).toEqual({ ok: true, value: { ok: false, problem: 'not-in-front' } })
   })
 })
