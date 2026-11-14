@@ -78,6 +78,10 @@ describe('Settings › Phone and friends › Friends (YAZ-5086)', () => {
     [{ status: 'slowed', retryAt: NOW + 20 * 60_000 }, '100 changes an hour'],
     [{ status: 'needs-repair' }, 'notecards-friends.json'],
     [{ status: 'needs-newer-app' }, 'newer app'],
+    // YAZ-5083: the list in a vault repo: one not open on this Mac (named), or one the token cannot read.
+    [{ status: 'list-elsewhere', home: 'ali/vault' }, 'your friends list is in the vault ali/vault'],
+    [{ status: 'no-list-access' }, 'Contents (Read and write)'],
+    [{ status: 'needs-repair' }, '.yaseendocs/friends.json'],
     [{ status: 'failed' }, 'tries again'],
   ])('%o: %s', async (patch, words) => {
     await mount(view(patch))
