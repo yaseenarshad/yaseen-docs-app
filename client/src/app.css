@@ -231,9 +231,13 @@ button {
    ProseMirror node itself and that chrome stays at 100% — floating-ui then positions it in
    unzoomed space, which is the only space it gets right. The properties panel is `display: contents`
    and is NOT listed a second time: zoom propagates through its computed style to its pieces, so a
-   second rule on those pieces zoomed the chip twice (6B1). */
+   second rule on those pieces zoomed the chip twice (6B1).
+   The Inbox's card (YAZ-5372) is zoomed by this same rule: the Inbox carries `--document-zoom` as a page's scroller does,
+   and its card's frame (`.card-inbox__panel`: text, title band, sides, pictures, spacing) scales; its bar, the row above
+   the card and the buttons stay at 100%, as a page's chrome does. The card's width grows with it (cardScreens.css). */
 .editor-host > :not(.editor-mount) > *,
-.editor-instance .milkdown > .ProseMirror {
+.editor-instance .milkdown > .ProseMirror,
+.card-inbox__panel {
   zoom: var(--document-zoom, 1);
 }
 

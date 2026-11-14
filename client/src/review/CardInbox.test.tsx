@@ -774,7 +774,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     }
     drag('right', 900, 950)
     expect(inboxCardWidth()).toBe(740)
-    expect(column().style.width).toBe('min(740px, 100%)')
+    expect(column().style.width).toBe('min(calc(740px * var(--document-zoom, 1)), 100%)')
     column().getBoundingClientRect = () => ({ width: 740 }) as DOMRect
     drag('left', 300, 400) // the left edge in: narrower by 200
     expect(inboxCardWidth()).toBe(540)
@@ -785,12 +785,12 @@ describe('the Inbox screen (YAZ-4962)', () => {
     // Another card: the same width.
     session = { ...session, position: 4, card: { ...session.card!, id: 'WIKI-10', page: { ...session.card!.page!, id: 'WIKI-10' } } }
     render()
-    expect(column().style.width).toBe(`min(${CARD_MIN_WIDTH}px, 100%)`)
+    expect(column().style.width).toBe(`min(calc(${CARD_MIN_WIDTH}px * var(--document-zoom, 1)), 100%)`)
     // The Inbox tab closed and opened again (the app still runs): the same width.
     act(() => root?.unmount())
     el.remove()
     mount(TWO_SIDES)
-    expect(column().style.width).toBe(`min(${CARD_MIN_WIDTH}px, 100%)`)
+    expect(column().style.width).toBe(`min(calc(${CARD_MIN_WIDTH}px * var(--document-zoom, 1)), 100%)`)
     setInboxCardWidth(null)
   })
 
@@ -2020,7 +2020,7 @@ describe('the Inbox zoom (YAZ-5372)', () => {
     act(() => void target.dispatchEvent(event))
     return event.defaultPrevented
   }
-  const level = () => el.querySelector<HTMLElement>('.card-inbox')!.style.getPropertyValue('--inbox-zoom')
+  const level = () => el.querySelector<HTMLElement>('.card-inbox')!.style.getPropertyValue('--document-zoom')
   beforeEach(() => localStorage.removeItem('inbox:zoom'))
 
   it('the page zoom\'s own pill sits at the bar\'s end, after "3 of 12"; its + and − zoom the card\'s text and the value is kept', () => {
@@ -2060,6 +2060,29 @@ describe('the Inbox zoom (YAZ-5372)', () => {
     // Behind a page tab, the Inbox takes no zoom key.
     act(() => root?.render(<CardInbox {...props} review={review} session={session} shown={false} />))
     expect(zoomKey(1, document.body)).toBe(false)
+  })
+
+  it('YAZ-5372 Decision: the zoom scales the whole card as a page\'s does — the card\'s width grows with it (capped by the window), and a drag of its edge at 125% sets the width at 100%', () => {
+    localStorage.setItem('inbox:zoom', '125')
+    setInboxCardWidth(null)
+    mount(TWO_SIDES)
+    expect(level()).toBe('1.25')
+    const column = el.querySelector<HTMLElement>('.card-inbox__column')!
+    const inbox = el.querySelector<HTMLElement>('.card-inbox')!
+    Object.defineProperty(inbox, 'clientWidth', { configurable: true, value: 1032 }) // 1000 px of room on screen: 800 at 100%
+    column.getBoundingClientRect = () => ({ width: 800 }) as DOMRect // 640 at 100%
+    const drag = (side: 'left' | 'right', from: number, to: number) => {
+      const edge = el.querySelector<HTMLElement>(`.card-inbox__edge[data-side="${side}"]`)!
+      act(() => void edge.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, clientX: from, button: 0 })))
+      act(() => void window.dispatchEvent(new MouseEvent('pointermove', { clientX: to })))
+      act(() => void window.dispatchEvent(new MouseEvent('pointerup', { clientX: to })))
+    }
+    drag('right', 900, 950) // 100 px wider on screen: 80 at 100%
+    expect(inboxCardWidth()).toBe(720)
+    expect(column.style.width).toBe('min(calc(720px * var(--document-zoom, 1)), 100%)')
+    drag('left', 300, 0) // far out: the room, at 100%
+    expect(inboxCardWidth()).toBe(800)
+    setInboxCardWidth(null)
   })
 })
 

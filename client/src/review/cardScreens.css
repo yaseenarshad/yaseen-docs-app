@@ -610,11 +610,6 @@
 .card-inbox__tools:has(.card-inbox__focus[aria-pressed='true']) {
   opacity: 1;
 }
-/* The Inbox's zoom (YAZ-5372) on the card's text only, as a page's is on its content (app.css, YAZ-1710 D14): the
-   card's frame, its width and the rule between two sides stay in unzoomed px. */
-.card-inbox__card .card__side {
-  zoom: var(--inbox-zoom, 1);
-}
 /* The progress bar (YAZ-5020, as Mochi's): thin, under the row; a Remembered fills grey, a Forgot red. */
 .card-inbox__progress {
   display: flex;
@@ -761,8 +756,9 @@
   flex-direction: column;
   align-items: stretch;
   /* Settings › Review › Card width (YAZ-5144): the card's text at most `--card-text-width`, with the card's own sides.
-     A drag of its edge sets the width for this run (`inboxCardWidth.ts`, inline). */
-  width: min(calc(var(--card-text-width) + 2 * var(--inbox-card-pad, 28px)), 100%);
+     A drag of its edge sets the width for this run (`inboxCardWidth.ts`, inline). The Inbox zoom (YAZ-5372) widens it
+     as a page's zoom widens its column, up to the window's edge: the card's frame inside is zoomed by app.css's page rule. */
+  width: min(calc((var(--card-text-width) + 2 * var(--inbox-card-pad, 28px)) * var(--document-zoom, 1)), 100%);
   /* YAZ-5375 A: 12 px under the bar (it was 5vh), as close as the card's head row allows. */
   margin-top: 12px;
 }

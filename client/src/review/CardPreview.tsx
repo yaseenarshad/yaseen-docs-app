@@ -25,7 +25,7 @@ import { toggleCardAudio } from '../editor/card/cardMedia'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { CardBand, CardId, CardStrip, type CardLinkDoors } from './cardParts'
 import { CardSideCount, InboxCardFace, InboxCardPanel, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
-import { useInboxCardWidth } from './inboxCardWidth'
+import { cardColumnStyle, useInboxCardWidth } from './inboxCardWidth'
 import { KeyLabel } from '../keys/KeyLabel'
 import { EyeIcon } from '../views/view/icons'
 import '../explore/explore.css'
@@ -125,7 +125,7 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose, l
         </button>
       </div>
       <div ref={rootRef} className="card-inbox card-inbox--preview" tabIndex={-1}>
-        <div ref={columnRef} className="card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
+        <div ref={columnRef} className="card-inbox__column" style={cardColumnStyle(width)}>
           <div className="card-inbox__above">
             <span className="card-inbox__head">{card.id !== null && <CardId id={card.id} onNotice={onNotice} />}</span>
             {text !== null && <CardSideCount steps={steps} />}
