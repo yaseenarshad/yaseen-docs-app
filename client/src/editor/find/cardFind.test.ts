@@ -156,7 +156,7 @@ describe('⌘F finds the text a card in the page shows (YAZ-5378 part 1)', () =>
 })
 
 describe('⌘F finds the text of a card embed (YAZ-5378 part 1)', () => {
-  it('`![[WIKI-140]]`: its sides count, after the text before it; its raw `**` does not', async () => {
+  it('`![[WIKI-140]]`: its title and sides count, after the text before it; its raw `**` does not', async () => {
     const { channel } = await mountFind('Lima first.\n\n![[WIKI-140]]\n', { boardEmbeds: { root: '/v' } })
     await loadCardEmbed()
     channel.open()
@@ -165,8 +165,9 @@ describe('⌘F finds the text of a card embed (YAZ-5378 part 1)', () => {
     await vi.waitFor(() => expect(channel.getState().total).toBe(3))
     channel.setQuery('**')
     expect(channel.getState().total).toBe(0)
+    // The embed's title band ("Capital of Peru") and side 1 ("The capital of **Peru**").
     channel.setQuery('capital of peru')
-    expect(channel.getState().total).toBe(1)
+    expect(channel.getState().total).toBe(2)
   })
 })
 
