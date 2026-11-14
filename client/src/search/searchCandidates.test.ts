@@ -526,11 +526,11 @@ describe('YAZ-5037 cards inside pages in search (YAZ-5047 pick 3)', () => {
     ],
   }
 
-  it('Review on: one row per card with an ID, under its title, from the index alone; its own path (the page`s, `#`, the ID), its page, a Card', () => {
+  it('Review on: one row per card with an ID, under its title, from the index alone; its own path (the page`s, `#`, the ID), its page, its place among the page`s cards (YAZ-5164), a Card', () => {
     const rows = searchCandidates([page], [], true)
     expect(rows.slice(1)).toEqual([
-      { kind: 'file', name: 'Capital of France', lower: 'capital of france', label: 'Capital of France', path: '/vault/geo/Geography.md#GEO-140', folder: 'geo', id: 'GEO-140', card: true, page: '/vault/geo/Geography.md' },
-      { kind: 'file', name: 'River of Paris', lower: 'river of paris', label: 'River of Paris', path: '/vault/geo/Geography.md#GEO-141', folder: 'geo', id: 'GEO-141', card: true, page: '/vault/geo/Geography.md' },
+      { kind: 'file', name: 'Capital of France', lower: 'capital of france', label: 'Capital of France', path: '/vault/geo/Geography.md#GEO-140', folder: 'geo', id: 'GEO-140', card: true, page: '/vault/geo/Geography.md', index: 0 },
+      { kind: 'file', name: 'River of Paris', lower: 'river of paris', label: 'River of Paris', path: '/vault/geo/Geography.md#GEO-141', folder: 'geo', id: 'GEO-141', card: true, page: '/vault/geo/Geography.md', index: 1 },
     ])
     expect(cardRowPath('/vault/geo/Geography.md', 'GEO-140')).toBe(rows[1].path)
   })
