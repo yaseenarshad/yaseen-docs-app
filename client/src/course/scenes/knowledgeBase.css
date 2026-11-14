@@ -1,0 +1,509 @@
+/*
+ * Chapter 6's own layout (YAZ-5121, `knowledgeBase.tsx`). The kit's look is in `kit/kit.css` and `kit/kit68.css`.
+ * App tokens only, but for the paper-like sheets.
+ */
+
+/* The card base as a map of small cards */
+.kb-base {
+  position: relative;
+  width: min(40cqw, 46cqh, 15em);
+  aspect-ratio: 1;
+}
+.kb-base__links {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.kb-base__links line {
+  stroke: color-mix(in srgb, var(--accent) 45%, transparent);
+  stroke-width: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+.kb-tile {
+  position: absolute;
+  width: 15%;
+  aspect-ratio: 4 / 3;
+  margin: -5.6% 0 0 -7.5%;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg));
+  box-shadow: inset 0 -0.25em 0 0 color-mix(in srgb, var(--accent) 65%, transparent);
+}
+.kb-tile--hub {
+  border-color: var(--accent);
+}
+.kb-tile--grey {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--fg-muted) 12%, var(--bg));
+  box-shadow: none;
+}
+.kb-ask {
+  display: grid;
+  place-items: center;
+  width: min(30cqmin, 7em);
+  aspect-ratio: 5 / 3;
+  border: 2px dashed var(--accent);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--accent);
+  font-size: clamp(28px, 10cqmin, 70px);
+  font-weight: 800;
+}
+.kb-match {
+  align-items: center;
+}
+.kb-match__side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6em;
+}
+.kb-eq {
+  color: var(--accent);
+  font-size: clamp(26px, 9cqmin, 60px);
+  font-weight: 800;
+}
+
+/* The internet */
+.kb-web {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(transparent, #000 12%, #000 55%, transparent 80%);
+  mask-image: linear-gradient(transparent, #000 12%, #000 55%, transparent 80%);
+}
+.kb-web__strip {
+  display: grid;
+  grid-template-columns: repeat(3, min(26cqw, 9em));
+  justify-content: center;
+  gap: 14px;
+}
+.kb-web__page {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  box-sizing: border-box;
+  height: 50px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+}
+.kb-web__page i {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--kit-faint);
+}
+.kb-web__page i.kb-web__bar {
+  width: 40%;
+  height: 6px;
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.kb-tiny {
+  position: relative;
+  font-size: 0.5em;
+}
+.kb-tiny .kb-base {
+  width: min(18cqw, 18cqh, 6em);
+}
+.kb-tiny__cross {
+  position: absolute;
+  top: -0.2em;
+  right: -1.4em;
+  color: var(--danger);
+  font-size: 3em;
+  font-weight: 800;
+}
+
+/* A page, distilled */
+.kb-page {
+  box-sizing: border-box;
+  width: min(44cqw, 17em);
+  padding: 1em 1.1em;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+  color: var(--fg-muted);
+  font-size: 0.78em;
+  line-height: 1.5;
+  text-align: left;
+}
+.kb-page__line.is-kept {
+  background-image: linear-gradient(color-mix(in srgb, var(--accent) 28%, transparent), color-mix(in srgb, var(--accent) 28%, transparent));
+  background-repeat: no-repeat;
+  color: var(--fg);
+}
+.kb-distilled {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9em;
+  width: min(44cqw, 17em);
+}
+.kb-distilled > div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4em;
+}
+
+/* Digestion */
+.kb-digest {
+  position: relative;
+  width: min(52cqmin, 16em);
+  aspect-ratio: 1;
+  margin-bottom: 3.4em;
+}
+.kb-digest__svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.kb-digest__vessel {
+  fill: color-mix(in srgb, var(--accent) 7%, var(--bg));
+  stroke: color-mix(in srgb, var(--accent) 50%, transparent);
+  stroke-width: 2.5;
+}
+.kb-digest__swirl {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 60%, transparent);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.kb-digest__swirl--in {
+  stroke-width: 2;
+  opacity: 0.6;
+}
+.kb-known__track {
+  fill: none;
+  stroke: var(--kit-faint);
+  stroke-width: 5;
+}
+.kb-known__fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+.kb-bit {
+  position: absolute;
+  padding: 0.15em 0.6em;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-size: 0.72em;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+}
+.kb-kept {
+  position: absolute;
+  left: 50%;
+  top: 98%;
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  width: 6.5em;
+  padding: 0.7em 0.8em;
+  border: 1.5px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.kb-kept i {
+  flex: 1;
+  height: 0.35em;
+  border-radius: 2px;
+  background: var(--kit-faint);
+}
+.kb-kept b {
+  flex: 0.8;
+  height: 0.35em;
+  border-bottom: 2px solid var(--accent);
+}
+.kb-say {
+  gap: clamp(10px, 3cqmin, 30px);
+}
+.kb-bubble {
+  position: relative;
+  min-width: 8em;
+  padding: 0.8em 1.1em;
+  border: 1.5px solid var(--accent);
+  border-radius: 14px 14px 14px 4px;
+  background: var(--bg);
+  font-size: clamp(14px, 4cqmin, 26px);
+  font-weight: 600;
+  text-align: left;
+}
+
+/* Depth of processing */
+.kb-cites {
+  position: absolute;
+  inset: 0;
+}
+.kb-cites i {
+  position: absolute;
+  width: 1.6em;
+  height: 2.1em;
+  margin: -1em 0 0 -0.8em;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: linear-gradient(var(--kit-faint), var(--kit-faint)) 50% 30% / 70% 2px no-repeat, linear-gradient(var(--kit-faint), var(--kit-faint)) 50% 55% / 70% 2px no-repeat, var(--bg);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.07);
+}
+.kb-depth {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(86cqw, 26em);
+}
+.kb-depth__level {
+  display: grid;
+  grid-template-columns: 9em 1fr;
+  align-items: center;
+  gap: 1em;
+  padding: 0.9em 1em;
+  border-radius: 6px;
+  text-align: left;
+}
+.kb-depth__level--0 {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.kb-depth__level--1 {
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.kb-depth__level--2 {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  font-weight: 700;
+}
+.kb-depth__track {
+  display: block;
+  height: 0.7em;
+  border-radius: 4px;
+  background: var(--kit-faint);
+}
+.kb-depth__track i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--accent);
+}
+.kb-depth__probe {
+  position: absolute;
+  left: -1.2em;
+  color: var(--accent);
+}
+.kb-depth__axis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--fg-muted);
+  font-size: 0.75em;
+}
+
+/* Someone else's deck */
+.kb-deck {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.2em;
+  padding-top: 0.6em;
+}
+.kb-deck__card {
+  position: absolute;
+  top: 0;
+  width: 6em;
+  height: 4em;
+  border: 1px solid var(--fg-muted);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fg-muted) 14%, var(--bg));
+}
+.kb-deck .kit-words {
+  margin-top: 4.6em;
+}
+.kb-skip {
+  width: min(70cqw, 18em);
+  overflow: visible;
+}
+.kb-skip__think {
+  fill: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.kb-skip__arc {
+  fill: none;
+  stroke: var(--danger);
+  stroke-width: 2;
+  stroke-dasharray: 1;
+}
+
+/* Capture first, make later */
+.kb-phone {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  box-sizing: border-box;
+  width: min(36cqw, 11em);
+  min-height: min(56cqh, 15em);
+  padding: 0.7em 0.9em;
+  border: 2px solid color-mix(in srgb, var(--fg) 70%, transparent);
+  border-radius: 1.4em;
+  background: var(--bg);
+  text-align: left;
+}
+.kb-phone__time {
+  align-self: center;
+  color: var(--fg-muted);
+  font-size: 0.7em;
+  font-weight: 600;
+}
+.kb-phone__head {
+  font-size: 0.78em;
+  font-weight: 700;
+}
+.kb-phone__line {
+  font-size: 0.82em;
+  line-height: 1.4;
+}
+.kb-talk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kb-talk i {
+  display: block;
+  width: 1.4em;
+  height: 3.4em;
+  border: 3px solid var(--accent);
+  border-left-color: transparent;
+  border-top-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+}
+.kb-heap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6em;
+  min-width: 13em;
+  min-height: 11em;
+}
+.kb-messy {
+  position: absolute;
+  bottom: 2.2em;
+  box-sizing: border-box;
+  width: 11em;
+  min-height: 5em;
+  padding: 0.6em 0.8em;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fg-muted) 10%, var(--bg));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  color: var(--fg);
+  font-family: 'Bradley Hand', 'Segoe Print', 'Comic Sans MS', cursive;
+  font-size: 0.85em;
+  text-align: left;
+}
+.kb-messy--still {
+  position: static;
+  transform: rotate(-4deg);
+}
+.kb-messy__mark {
+  position: absolute;
+  top: -0.6em;
+  right: -0.6em;
+  display: grid;
+  place-items: center;
+  width: 1.7em;
+  height: 1.7em;
+  border-radius: 50%;
+  background: var(--danger);
+  color: var(--bg);
+  font-family: var(--font);
+  font-weight: 800;
+}
+.kb-later__side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7em;
+}
+.kb-arrow {
+  color: var(--accent);
+  font-size: 2em;
+  font-weight: 700;
+}
+
+/* The wait */
+.kb-queue {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1em;
+}
+.kb-queue__line {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 1.05em;
+}
+.kb-queue__line b {
+  color: var(--fg);
+}
+.kb-queue__rate {
+  color: var(--accent);
+  font-weight: 600;
+}
+.kb-queue__grid {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 5px;
+  width: min(70cqw, 20em);
+}
+.kb-queue__grid i {
+  display: block;
+  aspect-ratio: 4 / 3;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+}
+.kb-queue__grid i.is-yours {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.kb-week {
+  display: flex;
+  gap: 6px;
+}
+.kb-week span {
+  padding: 0.2em 0.55em;
+  border-radius: 6px;
+  color: var(--fg-muted);
+  font-size: 0.8em;
+}
+.kb-week span.is-past {
+  background: var(--kit-faint);
+  color: var(--fg);
+}
+.kb-week span[data-today] {
+  background: var(--accent);
+  color: var(--bg);
+}
+.kb-arrive {
+  border-radius: 12px;
+}
+
+/* A card in a box of this chapter takes the box's width. */
+.kb-distilled .kit-cardview,
+.kb-later__side .kit-cardview {
+  width: 100%;
+  min-width: 0;
+}
+.kb-later__side {
+  width: min(40cqw, 16em);
+}

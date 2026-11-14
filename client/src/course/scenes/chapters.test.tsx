@@ -63,7 +63,7 @@ describe('the built chapters, in the course layer (YAZ-5121)', () => {
     let last = ''
     let still = 0
     for (let i = 0; i < 6000 && caption() !== "That's the whole course."; i++) {
-      if (caption().startsWith('Chapter 1 done')) act(() => [...document.querySelectorAll<HTMLButtonElement>('.course__end-actions button')].find((b) => b.textContent === 'Next chapter')!.click())
+      if (/^Chapter \d+ done/.test(caption())) act(() => [...document.querySelectorAll<HTMLButtonElement>('.course__end-actions button')].find((b) => b.textContent === 'Next chapter')!.click())
       frame()
       // A step that waits: the caption holds; the person presses Next.
       still = caption() === last ? still + 1 : 0

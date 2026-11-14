@@ -345,38 +345,38 @@ export const COURSE: CourseChapter[] = [
     title: 'Your card base is your knowledge base',
     clips: [
       // The large card base from chapter 5.
-      { id: 'c6-01', text: 'Your cards add up, and what you know compounds. So what should go into them?' },
+      { id: 'c6-01', text: 'Your cards add up, and what you know compounds. So what should go into them?', marks: [0.441, 0.698] },
       // The card base, and a head in profile; the two match.
-      { id: 'c6-02', text: 'Your card base is your knowledge base. It is a picture of what you know.' },
+      { id: 'c6-02', text: 'Your card base is your knowledge base. It is a picture of what you know.', marks: [0.294, 0.675] },
       // An endless scroll of web pages pours past; a tiny card base under it.
-      { id: 'c6-03', text: 'The goal is not to copy the internet into it. There is always more.' },
+      { id: 'c6-03', text: 'The goal is not to copy the internet into it. There is always more.', marks: [0.229, 0.637] },
       // A page of text boils down to two short cards in plain words.
-      { id: 'c6-04', text: 'The goal is to distil. Take what you learned, and put it in your own words and your own formats.' },
+      { id: 'c6-04', text: 'The goal is to distil. Take what you learned, and put it in your own words and your own formats.', marks: [0.141, 0.598, 0.762] },
       // A simple picture of digestion: food in, a smaller, useful part kept.
-      { id: 'c6-05', text: 'Think of it like digestion. You do not have to know a thing fully before you make its card.' },
+      { id: 'c6-05', text: 'Think of it like digestion. You do not have to know a thing fully before you make its card.', marks: [0.137, 0.492, 0.848] },
       // The useful part is kept; the rest passes.
-      { id: 'c6-06', text: 'But you do have to digest it first.' },
+      { id: 'c6-06', text: 'But you do have to digest it first.', marks: [0.427] },
       // A person thinks over an idea, then says it in one simple line.
-      { id: 'c6-07', text: 'To digest is to think it through, until you can say it simply.' },
+      { id: 'c6-07', text: 'To digest is to think it through, until you can say it simply.', marks: [0.302, 0.764] },
       // A shallow glance versus a deep look; the deep one leaves a lasting mark.
       // SOURCE: Craik & Lockhart 1972, "Levels of processing: A framework for memory research", Journal of Verbal Learning and Verbal Behavior.
-      { id: 'c6-08', text: 'Memory researchers call this depth of processing. It is one of the most cited ideas in the science of memory: the more you think about what something means, the longer you keep it.' },
+      { id: 'c6-08', text: 'Memory researchers call this depth of processing. It is one of the most cited ideas in the science of memory: the more you think about what something means, the longer you keep it.', marks: [0.157, 0.403, 0.643, 0.868] },
       // Someone else's deck is copied in; the cards stay grey.
-      { id: 'c6-09', text: "That is why copying someone else's cards makes no sense: it skips the thinking that makes you learn." },
+      { id: 'c6-09', text: "That is why copying someone else's cards makes no sense: it skips the thinking that makes you learn.", marks: [0.103, 0.618] },
       // A phone note: a quick line written down while someone talks. (rename-note-to-page: keep)
-      { id: 'c6-10', text: 'So when you hear something worth keeping, write it down somewhere.' },
+      { id: 'c6-10', text: 'So when you hear something worth keeping, write it down somewhere.', marks: [0.574] },
       // A rushed, messy card is made on the spot; it gets a red mark.
-      { id: 'c6-11', text: 'Do not make the card in that moment. Rushed cards are poor cards, they pile up, and review becomes a chore.' },
+      { id: 'c6-11', text: 'Do not make the card in that moment. Rushed cards are poor cards, they pile up, and review becomes a chore.', marks: [0.336, 0.632, 0.809] },
       // Later, at a quiet desk: the note becomes a clean card. (rename-note-to-page: keep)
-      { id: 'c6-12', text: 'Make the card later, when you have time to sit and think. Capture first, make later.' },
+      { id: 'c6-12', text: 'Make the card later, when you have time to sit and think. Capture first, make later.', marks: [0.231, 0.607, 0.801] },
       // The new-card line: "New cards · 60 waiting", ten a day; a week of days ticks past.
-      { id: 'c6-13', text: 'With ten new cards a day and sixty waiting, a new card can take about a week to reach you.' },
+      { id: 'c6-13', text: 'With ten new cards a day and sixty waiting, a new card can take about a week to reach you.', marks: [0.05, 0.316, 0.766] },
       // The card arrives in the Inbox; it looks familiar, like a friend.
-      { id: 'c6-14', text: 'When it comes, it is no surprise. You made it, you digested it, and you have been looking forward to it.' },
+      { id: 'c6-14', text: 'When it comes, it is no surprise. You made it, you digested it, and you have been looking forward to it.', marks: [0.373, 0.516, 0.785] },
       // A mental map of the card base, with the cards in their places.
-      { id: 'c6-15', text: 'You carry a picture of your card base in your head, because you put each card there.' },
+      { id: 'c6-15', text: 'You carry a picture of your card base in your head, because you put each card there.', marks: [0.134, 0.698] },
       // The card base and the head in profile, matching; then a clean card next to a messy one.
-      { id: 'c6-16', text: 'Your card base is your knowledge base: make it yours. Next: how to make a card you will be glad to see again.' },
+      { id: 'c6-16', text: 'Your card base is your knowledge base: make it yours. Next: how to make a card you will be glad to see again.', marks: [0.182, 0.317, 0.499] },
     ],
   },
   {
@@ -384,70 +384,70 @@ export const COURSE: CourseChapter[] = [
     title: 'What makes a good card',
     clips: [
       // A digested idea, and an empty card beside it.
-      { id: 'c7-01', text: 'You have digested an idea. Here is how to make its card a good one.' },
+      { id: 'c7-01', text: 'You have digested an idea. Here is how to make its card a good one.', marks: [0.499] },
       // A long page of text is pasted into one card; the card bulges.
-      { id: 'c7-02', text: 'Many people paste a whole page of text into one card. Then they review it, and nothing sticks.' },
+      { id: 'c7-02', text: 'Many people paste a whole page of text into one card. Then they review it, and nothing sticks.', marks: [0.23, 0.494, 0.774] },
       // The wall of text, with a question mark over it.
-      { id: 'c7-03', text: 'A wall of text is not a card. It asks you to recall everything at once, so you recall nothing well.' },
+      { id: 'c7-03', text: 'A wall of text is not a card. It asks you to recall everything at once, so you recall nothing well.', marks: [0.036, 0.479, 0.827] },
       // The other extreme: a card with one bare line and an empty back.
-      { id: 'c7-20', text: 'A single bare line is the other extreme. You may recall the words, and still not understand the idea.' },
+      { id: 'c7-20', text: 'A single bare line is the other extreme. You may recall the words, and still not understand the idea.', marks: [0.043, 0.585, 0.744] },
       // One sentence in the wall lights up.
-      { id: 'c7-04', text: 'So before you make a card, ask one question. What is the short version of this idea?' },
+      { id: 'c7-04', text: 'So before you make a card, ask one question. What is the short version of this idea?', marks: [0.29, 0.656] },
       // The lit sentence moves to a card's front and gets a blank; the rest of the page sorts itself into sections on the back.
-      { id: 'c7-21', text: 'That goes on the front, with the key part hidden. The details go on the back, in sections.' },
+      { id: 'c7-21', text: 'That goes on the front, with the key part hidden. The details go on the back, in sections.', marks: [0.287, 0.524, 0.824] },
       // The real card of chapter 2 in the Inbox: the blank on the front fills in; then the back shows, section by section.
-      { id: 'c7-22', text: 'So a review is quick: you fill in the front. Then the back gives you the details again.' },
+      { id: 'c7-22', text: 'So a review is quick: you fill in the front. Then the back gives you the details again.', marks: [0.333, 0.621] },
       // One card alone, with an umbrella drawn over it: "Protein, carbs and fat".
-      { id: 'c7-05', text: 'Now, how cards grow. Start with an umbrella: one card that covers a whole topic.' },
+      { id: 'c7-05', text: 'Now, how cards grow. Start with an umbrella: one card that covers a whole topic.', marks: [0.394, 0.479, 0.845] },
       // The real card of chapter 2 again: "Protein, carbs and fat", light, three short lines on its back.
-      { id: 'c7-06', text: 'Say, how protein, carbs and fat differ. One light card is enough to start.' },
+      { id: 'c7-06', text: 'Say, how protein, carbs and fat differ. One light card is enough to start.', marks: [0.193, 0.612] },
       // Lines about protein pile up on the umbrella card's back until they no longer fit; they lift off into a new card, "Protein".
-      { id: 'c7-07', text: 'As you learn more about protein, it outgrows that card. So protein gets a card of its own.' },
+      { id: 'c7-07', text: 'As you learn more about protein, it outgrows that card. So protein gets a card of its own.', marks: [0.198, 0.346, 0.655] },
       // A line joins the two cards, with a pill at each end; the umbrella card keeps one line about protein.
-      { id: 'c7-18', text: 'The two link to each other. The umbrella stays the overview, and protein becomes a branch.' },
+      { id: 'c7-18', text: 'The two link to each other. The umbrella stays the overview, and protein becomes a branch.', marks: [0.075, 0.325, 0.811] },
       // More branches: "Carbs", then "Fibre" from it. A small tree, the umbrella at its root. The words "Node: a point where branches meet".
-      { id: 'c7-23', text: 'Over time you get a tree: the umbrella, its branches, and smaller branches from those. Each card is a node, a point where branches meet.' },
+      { id: 'c7-23', text: 'Over time you get a tree: the umbrella, its branches, and smaller branches from those. Each card is a node, a point where branches meet.', marks: [0.114, 0.346, 0.411, 0.723] },
       // The tree with only two cards on day one; more appear as a calendar runs.
       // Yaseen's own wording, from the doc (YAS-2084).
-      { id: 'c7-19', text: 'The tree grows as your understanding grows. So start light, and do not feel like you have to build the whole tree on day one.' },
+      { id: 'c7-19', text: 'The tree grows as your understanding grows. So start light, and do not feel like you have to build the whole tree on day one.', marks: [0.064, 0.418, 0.755] },
       // An old paper flashcard: "What does DNS stand for?" on one side, "Domain Name System" on the other.
-      { id: 'c7-24', text: 'Now, the front itself. Most people think a card is a question on one side, and the answer on the other.' },
+      { id: 'c7-24', text: 'Now, the front itself. Most people think a card is a question on one side, and the answer on the other.', marks: [0.311, 0.583, 0.783] },
       // The question card stays; beside it, a sentence card: "DNS stands for {{Domain Name System}}." Both get a tick.
-      { id: 'c7-25', text: 'You can ask a question. Or you can just write the idea as a sentence, and hide the key part.' },
+      { id: 'c7-25', text: 'You can ask a question. Or you can just write the idea as a sentence, and hide the key part.', marks: [0.125, 0.424, 0.761] },
       // The words "cloze deletion" over the blank, in small type; then the app's own words: "hidden word".
       // SOURCE: Taylor 1953, "Cloze procedure: A new tool for measuring readability", Journalism Quarterly 30 (the origin of the word "cloze").
-      { id: 'c7-26', text: 'Memory scientists call that cloze deletion. In this app, we just call them hidden words.' },
+      { id: 'c7-26', text: 'Memory scientists call that cloze deletion. In this app, we just call them hidden words.', marks: [0.27, 0.773] },
       // "DNS stands for" and a blank; the blank fills in: "Domain Name System".
-      { id: 'c7-27', text: '"DNS stands for", then a blank. You jump straight in and fill it. It is faster to make, and faster to review.' },
+      { id: 'c7-27', text: '"DNS stands for", then a blank. You jump straight in and fill it. It is faster to make, and faster to review.', marks: [0.28, 0.542, 0.665, 0.822] },
       // The DNS card grows a first line above it, an example, in the shape of Yaseen's cards:
       //   "When you type a website's name, {{DNS}} finds the number your computer needs."
       //   "DNS stands for {{Domain Name System}}."
       // Its back: the details of DNS, in sections.
-      { id: 'c7-28', text: 'An example on the front helps too. With your agent, one is easy to get.' },
+      { id: 'c7-28', text: 'An example on the front helps too. With your agent, one is easy to get.', marks: [0.027, 0.479] },
       // Card A: "{{DNS}} stands for {{Domain Name System}}." Card B: "DNS stands for {{Domain Name System}}." WAITS: the person picks one.
-      { id: 'c7-08', text: 'Your turn. Which of these two cards is better?' },
+      { id: 'c7-08', text: 'Your turn. Which of these two cards is better?', marks: [0.488] },
       // Card B gets the check; card A is all blanks.
-      { id: 'c7-09', text: 'The second one. The first card hides everything that matters, so there is no clue to recall from.' },
+      { id: 'c7-09', text: 'The second one. The first card hides everything that matters, so there is no clue to recall from.', marks: [0.036, 0.348, 0.702] },
       // Rule 1 as a title; card B's front shows, the answer hidden.
-      { id: 'c7-10', text: 'So, rule one. Hide the answer, not the clue. The front must still make sense with the blank in it.' },
+      { id: 'c7-10', text: 'So, rule one. Hide the answer, not the clue. The front must still make sense with the blank in it.', marks: [0.075, 0.236, 0.58] },
       // A report card with ten rows, the ten ways to learn; "Re-reading" and "Highlighting" get the lowest grade.
       // SOURCE: Dunlosky, Rawson, Marsh, Nathan & Willingham 2013, "Improving students' learning with effective learning techniques", Psychological Science in the Public Interest 14(1): ten techniques; rereading and highlighting rated low utility.
-      { id: 'c7-11', text: 'Reading is not recalling. Researchers graded ten of the most common ways to learn. Re-reading and highlighting got the lowest grade.' },
+      { id: 'c7-11', text: 'Reading is not recalling. Researchers graded ten of the most common ways to learn. Re-reading and highlighting got the lowest grade.', marks: [0.125, 0.266, 0.386, 0.652] },
       // Two rows light up with the top grade: "Testing yourself", "Spacing it out"; a card sits on both.
       // SOURCE: the same review: practice testing and distributed practice rated high utility.
-      { id: 'c7-29', text: 'Only two got the top grade: testing yourself, and spacing it out over time. A card does both.' },
+      { id: 'c7-29', text: 'Only two got the top grade: testing yourself, and spacing it out over time. A card does both.', marks: [0.156, 0.292, 0.463, 0.735] },
       // Rule 2; "{{It}} is a system." with a question mark, then "DNS stands for {{Domain Name System}}." with a tick.
-      { id: 'c7-12', text: 'Rule two. Leave enough in view to point to one answer. A blank that could be many things teaches you nothing.' },
+      { id: 'c7-12', text: 'Rule two. Leave enough in view to point to one answer. A blank that could be many things teaches you nothing.', marks: [0.048, 0.336, 0.581] },
       // Rule 3; a sentence with three scattered blanks, then one blank over a whole phrase.
-      { id: 'c7-13', text: 'Rule three. Hide a phrase that means something, not a few scattered words.' },
+      { id: 'c7-13', text: 'Rule three. Hide a phrase that means something, not a few scattered words.', marks: [0.067, 0.306, 0.665] },
       // The answer shows; the person's own words differ, and still get the check.
-      { id: 'c7-14', text: 'When you check yourself, the same meaning in other words counts. Exact words matter only for quotes and commands.' },
+      { id: 'c7-14', text: 'When you check yourself, the same meaning in other words counts. Exact words matter only for quotes and commands.', marks: [0.217, 0.403, 0.534, 0.791] },
       // A title changes from "From the podcast, part 3" to the name of the idea.
-      { id: 'c7-15', text: 'Name each card after the idea, not after where you found it.' },
+      { id: 'c7-15', text: 'Name each card after the idea, not after where you found it.', marks: [0.363, 0.598] },
       // Four small cards: a word, a person, a process, a quote; then the card skill's Formats folder.
-      { id: 'c7-16', text: 'Different things need different formats: a word, a person, a process, a quote. Each has a short page in the card skill.' },
+      { id: 'c7-16', text: 'Different things need different formats: a word, a person, a process, a quote. Each has a short page in the card skill.', marks: [0.304, 0.391, 0.477, 0.581, 0.755] },
       // The small tree of cards; then a terminal window with an agent in it.
-      { id: 'c7-17', text: 'The short version on the front, the details on the back, and a tree that grows with you. Next, a tool that can help, and hurt.' },
+      { id: 'c7-17', text: 'The short version on the front, the details on the back, and a tree that grows with you. Next, a tool that can help, and hurt.', marks: [0.117, 0.302, 0.411, 0.729] },
     ],
   },
   {
@@ -455,44 +455,44 @@ export const COURSE: CourseChapter[] = [
     title: 'Make cards with your AI, without vibe writing',
     clips: [
       // A terminal window with an agent in it, next to the app.
-      { id: 'c8-01', text: 'A good card starts with digestion. Now, a tool that makes cards fast, and why that is a danger.' },
+      { id: 'c8-01', text: 'A good card starts with digestion. Now, a tool that makes cards fast, and why that is a danger.', marks: [0.219, 0.468, 0.853] },
       // A card file opens as plain text: the title line, the fact, the hidden word in marks; the word "Markdown".
-      { id: 'c8-02', text: 'One fact matters here: each card is a plain Markdown file, plain text with a few light marks.' },
+      { id: 'c8-02', text: 'One fact matters here: each card is a plain Markdown file, plain text with a few light marks.', marks: [0.465, 0.85] },
       // The agent's window reads a card file.
-      { id: 'c8-03', text: 'An agent is an AI tool that can read and write files on your computer. Any agent like that works here.' },
+      { id: 'c8-03', text: 'An agent is an AI tool that can read and write files on your computer. Any agent like that works here.', marks: [0.308, 0.372, 0.659] },
       // The app with a line through a cloud: no AI inside, nothing sent.
-      { id: 'c8-04', text: 'The app has no AI inside, and it sends nothing anywhere. You use your own agent.' },
+      { id: 'c8-04', text: 'The app has no AI inside, and it sends nothing anywhere. You use your own agent.', marks: [0.123, 0.395, 0.679] },
       // The screen goes quiet; one line: "Do not vibe write your cards."
-      { id: 'c8-05', text: 'Now the warning. Do not vibe write your cards.' },
+      { id: 'c8-05', text: 'Now the warning. Do not vibe write your cards.', marks: [0.377, 0.428, 0.51, 0.622, 0.673, 0.846] },
       // An agent pours out card after card; nobody reads them.
-      { id: 'c8-06', text: 'Vibe writing means letting an AI pour out cards you never thought through.' },
+      { id: 'c8-06', text: 'Vibe writing means letting an AI pour out cards you never thought through.', marks: [0.475, 0.709] },
       // The card base floods with grey cards; the Inbox row dims, then goes dark.
-      { id: 'c8-07', text: 'It is the fastest way to ruin your card base, which is your knowledge base, and to make the whole system worthless.' },
+      { id: 'c8-07', text: 'It is the fastest way to ruin your card base, which is your knowledge base, and to make the whole system worthless.', marks: [0.213, 0.516, 0.853] },
       // Two paths: "Vibe write" leads down; "Digest, then make" leads up.
-      { id: 'c8-08', text: 'If you want this system to fail, vibe write your cards. If you want what you know to compound, do not.' },
+      { id: 'c8-08', text: 'If you want this system to fail, vibe write your cards. If you want what you know to compound, do not.', marks: [0.233, 0.775] },
       // The name "Ryan Holiday" and his line, in quotes.
       // SOURCE: Ryan Holiday, YouTube video UBdlprawTkA, on taking notes by hand: "The inefficiency is the efficiency." (rename-note-to-page: keep)
-      { id: 'c8-09', text: 'Ryan Holiday puts it this way: "The inefficiency is the efficiency." The thinking is where you learn.' },
+      { id: 'c8-09', text: 'Ryan Holiday puts it this way: "The inefficiency is the efficiency." The thinking is where you learn.', marks: [0.32, 0.691] },
       // Digested ideas go into the agent; well-made cards come out; a person reads them.
-      { id: 'c8-10', text: 'The right way: bring ideas you have already digested. The agent shapes them into cards, and you read each one.' },
+      { id: 'c8-10', text: 'The right way: bring ideas you have already digested. The agent shapes them into cards, and you read each one.', marks: [0.168, 0.543, 0.819] },
       // A text box with "Use the example" under it. WAITS: the person pastes text or picks the example.
-      { id: 'c8-11', text: "Let's try it. Paste something you have digested, or use the example." },
+      { id: 'c8-11', text: "Let's try it. Paste something you have digested, or use the example.", marks: [0.286, 0.751] },
       // The prompt with a Copy button; its lines light up: the skill, three cards, Course Cards. WAITS: the person clicks Copy.
-      { id: 'c8-12', text: 'Copy the prompt. It tells your agent to read the card skill, then make three cards in Course Cards.' },
+      { id: 'c8-12', text: 'Copy the prompt. It tells your agent to read the card skill, then make three cards in Course Cards.', marks: [0.069, 0.481, 0.818] },
       // The agent's window; a paste; card files appear in the course, one by one. WAITS: the agent writes card files in Course Cards.
-      { id: 'c8-13', text: 'Paste it into your agent. The cards show up here as it writes them.' },
+      { id: 'c8-13', text: 'Paste it into your agent. The cards show up here as it writes them.', marks: [0.216, 0.433] },
       // The quiet line "No new cards yet. Did you check with your agent?"
-      { id: 'c8-14', text: 'If nothing shows up after a minute, check with your agent.' },
+      { id: 'c8-14', text: 'If nothing shows up after a minute, check with your agent.', marks: [0.428, 0.571] },
       // The three new cards open one by one; the person reads each; "Read" ticks beside it. The word "Handmade". (The card check was removed, YAZ-5060.)
-      { id: 'c8-15', text: 'Now read each one. That is the handmade part: nothing stays that you have not read.' },
+      { id: 'c8-15', text: 'Now read each one. That is the handmade part: nothing stays that you have not read.', marks: [0.059, 0.387, 0.609] },
       // Skip, then three ready example cards with "Make these cards".
-      { id: 'c8-16', text: 'No agent? Skip this step. The course shows three example cards, and makes them only if you say so.' },
+      { id: 'c8-16', text: 'No agent? Skip this step. The course shows three example cards, and makes them only if you say so.', marks: [0.161, 0.472, 0.708] },
       // A person reads a card, rewrites a line, and deletes another card.
-      { id: 'c8-17', text: 'Your agent drafts fast, but you decide. Keep only what you want to recall, in your own words.' },
+      { id: 'c8-17', text: 'Your agent drafts fast, but you decide. Keep only what you want to recall, in your own words.', marks: [0.343, 0.487, 0.787] },
       // The card skill's right-click menu: "Copy prompt for your agent".
-      { id: 'c8-18', text: 'To copy the prompt later, right-click the card skill, and choose Copy prompt for your agent.' },
+      { id: 'c8-18', text: 'To copy the prompt later, right-click the card skill, and choose Copy prompt for your agent.', marks: [0.272, 0.617] },
       // The loop: you digest, the agent shapes, you decide; then three icons: a pen, the Inbox, shears.
-      { id: 'c8-19', text: 'You digest and decide; your agent only shapes. Next: the three habits that keep it all alive.' },
+      { id: 'c8-19', text: 'You digest and decide; your agent only shapes. Next: the three habits that keep it all alive.', marks: [0.128, 0.464, 0.681] },
     ],
   },
   {
