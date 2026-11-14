@@ -20,7 +20,7 @@ import { KeyCaps } from '../../../keys/KeyCaps'
 import { clamp, ease, lerp, type Beat } from './beat'
 import { CardView, type CardViewProps } from './CardView'
 import { Pointer } from './AppFrame'
-import './screens.css'
+import './kit.css'
 
 interface InboxAnswerLook {
   /** 0..1: the button comes in (default: shown). */

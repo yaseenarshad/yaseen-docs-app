@@ -1,0 +1,143 @@
+/*
+ * Chapter 9's own layout (YAZ-5121, `habits.tsx`). The kit's look is in `kit/kit.css`.
+ */
+.later-zoom {
+  transform-origin: 50% 50%;
+}
+.later-sun {
+  width: min(70cqw, 30em);
+}
+.later-sun__disc {
+  fill: color-mix(in srgb, var(--warn, var(--accent)) 55%, var(--bg));
+}
+.later-sun__horizon {
+  stroke: var(--kit-line);
+  stroke-width: 2;
+}
+.later-picks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+.later-picks__card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.later-picks__card .kit-mini {
+  width: min(28cqw, 13em);
+}
+.later-gut {
+  position: relative;
+  width: min(44cqw, 22em);
+}
+.later-gut .kit-head {
+  width: 100%;
+}
+.later-bubble {
+  position: absolute;
+  top: 2%;
+  right: -6%;
+  padding: 0.5em 0.9em;
+  font-size: clamp(12px, 2.8cqmin, 18px);
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: 1.2em;
+  box-shadow: var(--kit-shadow);
+}
+.later-bubble--card {
+  top: -0.9em;
+  right: -0.6em;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.later-tend {
+  align-items: center;
+}
+.later-tend__card {
+  position: relative;
+  width: min(60cqw, 26em);
+  height: min(62cqh, 20em);
+}
+.later-tend__shears {
+  position: absolute;
+  bottom: -0.4em;
+  left: -0.6em;
+  display: grid;
+  place-items: center;
+  width: 2.6em;
+  height: 2.6em;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 50%;
+}
+.later-tend__chat {
+  overflow: hidden;
+  flex: none;
+}
+.later-tend__chat .kit-chat {
+  width: min(40cqw, 22em);
+}
+.later-legend {
+  display: flex;
+  gap: 18px;
+  font-size: clamp(12px, 2.6cqmin, 16px);
+  color: var(--fg-muted);
+}
+.later-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.later-legend__key {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.later-legend__key--soft {
+  background: color-mix(in srgb, var(--accent) 45%, var(--bg));
+}
+.later-desk {
+  width: min(80cqw, 120cqh);
+  max-height: 56cqh;
+}
+.later-desk__light {
+  fill: color-mix(in srgb, var(--warn, var(--accent)) 40%, transparent);
+}
+.later-desk__top {
+  stroke: var(--fg-muted);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.later-desk__lamp {
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+.later-desk__shade {
+  fill: var(--fg-muted);
+}
+.later-desk__book {
+  fill: var(--bg);
+  stroke: var(--border);
+  stroke-width: 2;
+}
+.later-desk__line {
+  stroke: var(--kit-faint);
+  stroke-width: 3;
+}
+.later-desk__mug {
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 3;
+}
+.later-desk__thought {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}

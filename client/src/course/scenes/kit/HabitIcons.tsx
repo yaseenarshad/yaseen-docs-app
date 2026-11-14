@@ -8,7 +8,7 @@
  * - `HabitGlyph`: one icon alone (a corner of a scene: the shears inside the Inbox in chapter 9).
  */
 import { clamp, pop, rise, type Beat } from './beat'
-import './kitMore.css'
+import './kit.css'
 
 export type Habit = 'make' | 'review' | 'tend'
 

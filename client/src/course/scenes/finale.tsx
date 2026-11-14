@@ -9,7 +9,7 @@
  */
 import { useEffect, useState, type CSSProperties } from 'react'
 import type { CourseHost, CourseSummary } from '../courseHost'
-import './later.css'
+import './finale.css'
 
 export const LAST_LINE = 'Your card base is your knowledge base. Build it one card at a time, and what you learn becomes part of who you are.'
 

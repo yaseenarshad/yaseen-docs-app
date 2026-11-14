@@ -11,7 +11,7 @@
  * With reduced motion the lines appear whole, nothing grows, and no pulse travels: the light cross-fades.
  */
 import { clamp, ease, lerp, type Beat } from './beat'
-import './kitMore.css'
+import './kit.css'
 
 export interface WebNode {
   id: string

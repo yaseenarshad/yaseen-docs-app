@@ -9,7 +9,7 @@
  */
 import type { CSSProperties } from 'react'
 import { clamp, ease, rise, typedText, type Beat } from './beat'
-import './kitMore.css'
+import './kit.css'
 
 interface ChatAsk {
   title: string

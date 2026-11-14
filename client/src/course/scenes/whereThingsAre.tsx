@@ -11,7 +11,7 @@ import { InboxIcon, LockIcon } from '../../views/view/icons'
 import { AgentTerminal, AppWindow, Curve, Layer, MenuPreview, MiniCard, SAMPLE_REVIEWS, Stage, Tree, Words, between, clamp, cue, ease, hub, lerp, moved, pop, rise, showFor, since, useBeat, type Beat, Habits, HabitGlyph, Garden, Seedling, Head, Web, type WebNode } from './kit'
 import { GARDEN } from './care'
 import type { ChapterScenes } from './registry'
-import './later.css'
+import './whereThingsAre.css'
 
 /** One row of the sidebar copy: a folder, a page or a card, with the card skill's lock. */
 interface Row {

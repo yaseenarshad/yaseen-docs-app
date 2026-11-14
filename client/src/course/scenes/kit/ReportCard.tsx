@@ -7,7 +7,7 @@
  */
 import type { ReactNode } from 'react'
 import { clamp, ease, lerp, type Beat } from './beat'
-import './kit68.css'
+import './kit.css'
 
 export type Grade = 'High' | 'Moderate' | 'Low'
 

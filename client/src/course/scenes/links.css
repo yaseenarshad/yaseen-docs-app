@@ -1,0 +1,129 @@
+/*
+ * Chapter 10's own layout (YAZ-5121, `links.tsx`). The kit's look is in `kit/kit.css`.
+ */
+.later-hover-card {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.later-qmark {
+  fill: var(--accent);
+  font-family: var(--font);
+  font-size: max(34px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
+  font-weight: 700;
+}
+.later-headbox {
+  fill: color-mix(in srgb, var(--kind-folder, var(--accent)) 30%, var(--bg));
+  stroke: color-mix(in srgb, var(--kind-folder, var(--accent)) 60%, var(--border));
+  stroke-width: 1.5;
+}
+.later-strike {
+  stroke: var(--danger);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+.later-walls {
+  position: absolute;
+}
+.later-wall {
+  fill: none;
+  stroke: color-mix(in srgb, var(--kind-folder, var(--fg)) 60%, var(--border));
+  stroke-width: 3;
+}
+.later-apart {
+  stroke: var(--danger);
+  stroke-width: 2;
+  stroke-dasharray: 4 6;
+}
+.later-join {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.later-arm {
+  width: min(86cqw, 140cqh);
+  max-height: 74cqh;
+}
+.later-arm__limb {
+  fill: none;
+  stroke: color-mix(in srgb, var(--fg) 45%, var(--bg));
+  stroke-width: 34;
+  stroke-linecap: round;
+}
+.later-arm__bicep {
+  fill: color-mix(in srgb, var(--fg) 45%, var(--bg));
+}
+.later-arm__weight,
+.later-arm__plate {
+  fill: var(--fg-muted);
+}
+.later-arm__block {
+  fill: var(--accent);
+}
+.later-big .kit-words--display {
+  font-size: clamp(22px, 8.5cqmin, 68px);
+}
+.later-big .kit-words--kicker {
+  font-size: clamp(12px, 3cqmin, 18px);
+}
+.later-questions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(12px, 5cqmin, 48px);
+  width: min(96cqw, 70em);
+}
+@container (max-aspect-ratio: 1/1) {
+  .later-questions {
+    grid-template-columns: 1fr;
+  }
+}
+.later-q {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(4px, 1.4cqmin, 12px);
+  min-width: 0;
+}
+.later-q__art {
+  width: min(42cqw, 20em);
+  height: min(32cqh, 12em);
+}
+.later-q__art .kit-web {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+}
+.later-page {
+  fill: var(--bg);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+.later-handmade {
+  margin-top: 4px;
+}
+.later-byhand {
+  position: relative;
+  text-align: left;
+}
+.later-reason {
+  color: var(--fg-muted);
+}
+.later-raw {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--accent);
+}
+.later-byhand .kit-picker {
+  position: absolute;
+  z-index: 3;
+  width: min(60%, 18em);
+  margin-top: 4px;
+}
+.later-window {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.later-remove {
+  width: min(84cqw, 30em);
+  text-align: left;
+}

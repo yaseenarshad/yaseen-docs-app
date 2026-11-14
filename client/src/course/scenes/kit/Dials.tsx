@@ -3,7 +3,7 @@
  * `ClockArc` (a clock face with arcs on it: "fifteen to twenty minutes a day"). Drawings, pure functions of the beat.
  */
 import { clamp, ease, lerp, type Beat } from './beat'
-import './kitMore.css'
+import './kit.css'
 
 const rad = (deg: number): number => (deg * Math.PI) / 180
 

@@ -16,7 +16,7 @@ import { ArchiveIcon, DueIcon, ForgotIcon, InboxTrayIcon, NewIcon, RememberedIco
 import { reviewsTitle } from '../../../review/cardParts'
 import { glowStyle } from './AppFrame'
 import { clamp, ease, rise, type Beat } from './beat'
-import './kitMore.css'
+import './kit.css'
 
 /** The `[[` list: its rows, one of them under the pointer (`active` 0..1). */
 export function LinkPicker({ beat, p, rows }: { beat: Beat; p: number; rows: readonly { label: string; kind: 'page' | 'card'; active?: number }[] }) {

@@ -11,7 +11,7 @@
  */
 import type { CSSProperties } from 'react'
 import { typedText, type Beat } from './beat'
-import './kit68.css'
+import './kit.css'
 
 export interface TermLine {
   text: string

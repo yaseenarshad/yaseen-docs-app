@@ -13,7 +13,7 @@ import { PAPERS } from './papers'
 import { MUSCLE, PROTEIN_BRANCH, UMBRELLA, sampleId } from './cards'
 import { EditCard, AppWindow, Caret, CardView, Cite, Fit, Keys, Layer, Paper, Pointer, SidebarPreview, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, typedText, useBeat, type Beat, Habits, Web, scatterWeb, type WebEdge, type WebNode, Folder, cardTop, AgentChat, CardPill, LinkPicker, LinkedMentions, Garden, type PlantSpec, Head } from './kit'
 import type { ChapterScenes } from './registry'
-import './later.css'
+import './links.css'
 
 /** The two cards the chapter joins, as two nodes and a link. */
 const PAIR: { nodes: WebNode[]; edges: WebEdge[] } = {

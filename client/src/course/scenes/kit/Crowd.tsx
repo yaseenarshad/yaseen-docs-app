@@ -7,7 +7,7 @@
  *   and a dashed line at the guess; `missP` marks the gap between the guess and each bar.
  */
 import { clamp, ease, lerp, type Beat } from './beat'
-import './kitMore.css'
+import './kit.css'
 
 const STEP = 46
 

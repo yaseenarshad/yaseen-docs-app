@@ -15,7 +15,7 @@ import { CardDoneKeys, CardEditKeyRow } from './EditKeys'
 import { glowStyle } from './AppFrame'
 import '../../../editor/card/card.css'
 import '../../../editor/card/cardEmbed.css'
-import './screens.css'
+import './kit.css'
 
 export function PageView({ title, children, style, label }: { title: string; children?: ReactNode; style?: CSSProperties; label?: string }) {
   return (

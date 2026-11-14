@@ -1,0 +1,249 @@
+/*
+ * Chapter 12's own layout (YAZ-5121, `whereThingsAre.tsx`). The kit's look is in `kit/kit.css`.
+ */
+.later-sidebar.kit-app__sidebar {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+}
+.later-sidebar__foot {
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.later-lock {
+  display: inline-flex;
+  margin-left: 6px;
+  opacity: 0.6;
+}
+.later-skill {
+  text-align: left;
+}
+.later-skill__line {
+  margin: 0 0 8px;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+.later-skill__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.later-skill__list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 0;
+  font-size: 14px;
+}
+.later-skill__formats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: 100%;
+  padding-left: 20px;
+}
+.later-skill__ro {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 6px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.later-settings {
+  display: grid;
+  grid-template-columns: minmax(90px, 28%) 1fr;
+  box-sizing: border-box;
+  width: min(92cqw, 40em);
+  overflow: hidden;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--kit-shadow);
+}
+.later-settings__nav {
+  margin: 0;
+  padding: 10px 6px;
+  list-style: none;
+  background: var(--bg-side);
+}
+.later-settings__nav li {
+  padding: 5px 10px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+.later-settings__nav li[data-on] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.later-settings__page {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+}
+.later-settings__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.later-settings__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  font-size: 14px;
+  border-radius: 8px;
+}
+.later-seg {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.later-seg b {
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.later-seg b[data-on] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.later-week {
+  display: flex;
+  gap: 8px;
+}
+.later-week__day {
+  display: grid;
+  place-items: center;
+  width: 2.2em;
+  height: 2.2em;
+  font-size: clamp(11px, 2.4cqmin, 14px);
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.later-weekart {
+  width: min(96cqw, 160cqh);
+  max-height: 80cqh;
+}
+.later-wk__col {
+  fill: color-mix(in srgb, var(--fg) 3%, var(--bg));
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+.later-wk__col[data-lit] {
+  stroke: var(--accent);
+}
+.later-wk__card {
+  fill: var(--bg);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+.later-wk__card--accent {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.later-wk__inbox {
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+.later-wk__inbox.is-on {
+  stroke: var(--accent);
+}
+.later-wk__tick {
+  fill: var(--ok);
+  font-family: var(--font);
+  font-size: max(16px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
+  font-weight: 700;
+}
+.later-wk__shears {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.later-wk__pen {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+.later-wk__capture {
+  stroke: color-mix(in srgb, var(--fg) 30%, transparent);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+.later-wk__link {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-dasharray: 6 5;
+}
+.later-page-cal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: min(40cqw, 15em);
+  padding: 0 14px 16px;
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--kit-shadow);
+  transform-origin: 50% 0;
+}
+.later-page-cal__top {
+  align-self: stretch;
+  height: 14px;
+  margin: 0 -14px;
+  background: var(--accent);
+}
+.later-page-cal__day {
+  font-size: clamp(16px, 4.4cqmin, 28px);
+  font-weight: 700;
+}
+.later-inbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: clamp(14px, 3.2cqmin, 20px);
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.later-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: clamp(6px, 2cqmin, 18px);
+  width: min(96cqw, 64em);
+}
+.later-tile {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 10;
+  padding: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.later-tile > svg {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+}

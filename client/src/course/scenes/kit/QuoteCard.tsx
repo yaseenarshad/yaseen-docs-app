@@ -4,7 +4,7 @@
  * test holds each under 15 words, `papers.ts`).
  */
 import { clamp, ease, type Beat } from './beat'
-import './kit68.css'
+import './kit.css'
 
 export function QuoteCard({ beat, text, by, where, p, sweep = 0 }: { beat: Beat; text: string; by: string; where?: string; p: number; sweep?: number }) {
   const q = clamp(p)

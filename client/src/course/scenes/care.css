@@ -1,0 +1,318 @@
+/*
+ * Chapter 11's own layout (YAZ-5121, `care.tsx`). The kit's look is in `kit/kit.css`.
+ */
+.later-reword {
+  box-sizing: border-box;
+  width: min(84cqw, 30em);
+  padding: 18px 20px;
+  text-align: left;
+  font-size: clamp(14px, 3.2cqmin, 19px);
+}
+.later-reword p {
+  margin: 0;
+}
+.later-reword__old {
+  color: var(--fg-muted);
+  text-decoration: line-through;
+}
+.later-reword__new {
+  margin-top: 8px !important;
+}
+.later-blank {
+  display: inline-block;
+  padding: 0 4px;
+  border-bottom: 2px solid var(--accent);
+  color: transparent;
+}
+.later-misses {
+  display: flex;
+  gap: 8px;
+}
+.later-miss {
+  display: grid;
+  place-items: center;
+  width: 1.8em;
+  height: 1.8em;
+  border-radius: 50%;
+  font-weight: 700;
+  color: var(--bg);
+}
+.later-miss--forgot {
+  background: var(--danger);
+}
+.later-miss--remembered {
+  background: var(--ok);
+}
+.later-redcard {
+  position: relative;
+  width: min(80cqw, 30em);
+  height: min(46cqh, 14em);
+  border-radius: 12px;
+}
+.later-glass {
+  position: absolute;
+  top: 18%;
+  width: 4.5em;
+  height: 4.5em;
+  pointer-events: none;
+}
+.later-glass circle {
+  fill: color-mix(in srgb, var(--accent-soft) 40%, transparent);
+  stroke: var(--fg);
+  stroke-width: 4;
+}
+.later-glass line {
+  stroke: var(--fg);
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+.later-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.later-file {
+  box-sizing: border-box;
+  padding: 10px 12px;
+  text-align: left;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: clamp(11px, 2.2cqmin, 13px);
+  background: color-mix(in srgb, var(--fg) 4%, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.later-file p {
+  margin: 0;
+}
+.later-file__name {
+  margin-bottom: 4px !important;
+  font-weight: 700;
+  color: var(--fg-muted);
+}
+.later-file__del {
+  color: var(--danger);
+  text-decoration: line-through;
+}
+.later-file__add {
+  color: var(--ok);
+}
+.later-editswap {
+  position: relative;
+  width: min(80cqw, 28em);
+  min-height: min(40cqh, 12em);
+}
+.later-editcard {
+  text-align: left;
+}
+/* c11-05: Explore's page layer over the Inbox, with the card in it. */
+.later-pagelayer {
+  position: absolute;
+  inset: 4% 3% auto;
+  padding: 0.8em;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+  text-align: left;
+}
+.later-days {
+  display: flex;
+  gap: 8px;
+}
+.later-day {
+  padding: 4px 9px;
+  font-size: clamp(11px, 2.2cqmin, 13px);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.later-day[data-on] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.later-base {
+  box-sizing: border-box;
+  width: min(34cqw, 16em);
+  padding: 10px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.later-base__title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--fg-muted);
+}
+.later-base__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.later-base__card {
+  padding: 4px 6px;
+  overflow: hidden;
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+.later-base__card[data-scan] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.later-base__card[data-changed] {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+.later-base__note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.later-shears {
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+}
+.later-shears-svg {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.later-cutlink {
+  position: absolute;
+}
+.later-menuwrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(84cqw, 30em);
+}
+.later-menuwrap .kit-app__menu {
+  position: absolute;
+  z-index: 3;
+}
+.later-archived {
+  align-self: flex-start;
+}
+.later-inbox {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: min(80cqw, 22em);
+  text-align: left;
+}
+.later-inbox__bar {
+  display: flex;
+  width: 100%;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.later-inbox__filter {
+  padding: 3px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.later-archived-list {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.later-archived-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.later-archived-list__page {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.later-unarchive {
+  margin-left: auto;
+  padding: 2px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.later-unarchive[data-on] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.later-branch {
+  align-items: center;
+  gap: 0;
+}
+.later-branch__card {
+  width: min(48cqw, 24em);
+  height: min(70cqh, 24em);
+}
+.later-branch__link {
+  flex: none;
+  overflow: visible;
+}
+.later-branch__link line {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-dasharray: 5 5;
+}
+.later-branch__new {
+  flex: none;
+  overflow: hidden;
+}
+.later-branch__new .kit-cardview {
+  width: min(36cqw, 18em);
+  font-size: 13px;
+}
+.later-queue {
+  position: relative;
+  box-sizing: border-box;
+  width: min(80cqw, 22em);
+  height: 13.4em;
+  padding: 8px 10px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.later-queue__head {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--fg-muted);
+}
+.later-queue__row {
+  position: absolute;
+  right: 10px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 2.2em;
+  padding: 0 8px;
+  font-size: 14px;
+  background: var(--bg);
+  border-radius: 6px;
+}
+.later-queue__row[data-it] {
+  z-index: 1;
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.later-upnext {
+  margin-left: auto;
+}

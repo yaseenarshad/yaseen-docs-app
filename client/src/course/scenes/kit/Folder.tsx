@@ -9,7 +9,7 @@
  * `cardTop(folder)` gives where the top of its card stands once in, for a line drawn to it.
  */
 import { clamp, ease, lerp, type Beat } from './beat'
-import './kitMore.css'
+import './kit.css'
 
 const FOLDER_W = 160
 const FOLDER_H = 140

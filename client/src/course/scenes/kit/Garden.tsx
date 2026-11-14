@@ -6,7 +6,7 @@
  */
 import type { ReactNode } from 'react'
 import { clamp, ease, lerp, type Beat } from './beat'
-import './kitMore.css'
+import './kit.css'
 
 interface Branch {
   /** Where on the trunk it starts, 0 (ground) to 1 (top). */

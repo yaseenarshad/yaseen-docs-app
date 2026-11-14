@@ -10,7 +10,7 @@ import { MANY_TITLES, PROTEIN_BRANCH, SLEEP_DEBT } from './cards'
 import { PAPERS } from './papers'
 import { Answers, AppWindow, CardView, Cite, Fit, Layer, MiniCard, Paper, SidebarPreview, Stage, Tally, Timeline, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat, HabitGlyph, Habits, AgentChat, Crowd, GuessBars, ClockArc, Gauge, Head, Web, type WebEdge, type WebNode } from './kit'
 import type { ChapterScenes } from './registry'
-import './later.css'
+import './habits.css'
 
 /** c9-01, c9-02 and c9-03, one span: step back from the cards; the three habits; reviewing is the daily one. */
 function ThreeHabits(props: SceneProps) {

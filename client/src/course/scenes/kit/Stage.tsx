@@ -17,6 +17,10 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
 import type { SceneProps } from '../../scene'
 import { firedCount, type Beat } from './beat'
+// The app's own looks first: the kit's rules place and size them, so they come after.
+import '../../../editor/card/card.css'
+import '../../../editor/card/cardEmbed.css'
+import '../../../review/cardScreens.css'
 import './kit.css'
 
 /** The beat of the scene's clip, from the layer's clock; the scene draws again on each frame, pause, play and seek. */

@@ -6,7 +6,7 @@
  * `p`: the cover comes in; `out`: it steps back and dims as the paper comes out of it.
  */
 import { clamp, ease, lerp, type Beat } from './beat'
-import './screens.css'
+import './kit.css'
 
 interface JournalIssue {
   journal: string
