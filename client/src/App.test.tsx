@@ -224,7 +224,7 @@ vi.mock('./sidebar/Sidebar', () => ({
     const { root, review, dueCount, reviewing } = props.vaults[0]
     captured.sidebar = { ...props, root, review, dueCount, reviewing, onOpenInbox: () => props.onInbox(root) }
     captured.sidebarRenders++
-    return <aside ref={props.asideRef} data-sidebar data-root={root} />
+    return <aside ref={props.asideRef} className="sidebar" data-sidebar data-root={root} />
   },
 }))
 
@@ -5753,12 +5753,78 @@ describe('App: the card flow (YAZ-4962)', () => {
     await vi.waitFor(() => expect(document.querySelector('.card-preview .card-inbox__card .card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
     const preview = document.querySelector<HTMLElement>('.card-preview')!
     expect(preview.closest('.app')).not.toBeNull()
-    expect(preview.querySelector('.card-preview__foot')?.textContent).toBe('Preview · Close (Esc)')
+    expect(preview.querySelector('.card-preview__label')?.textContent).toBe('Preview')
     await act(async () => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })))
     expect([...preview.querySelectorAll('.card__hidden')].map((h) => h.textContent)).toEqual(['France'])
     await act(async () => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
     await vi.waitFor(() => expect(document.querySelector('.card-preview')).toBeNull())
     expect(bridge.writeFile.mock.calls.length).toBe(writesBefore)
+  })
+
+  /** YAZ-5152 option A (Yaseen: "Yes, A"): the preview is inside the app, as the Inbox tab is. */
+  describe('YAZ-5152 A: the preview fills the page area', () => {
+    const TWO: IdentityFixture = { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] }
+    const stripLabels = (el: HTMLElement) => [...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.textContent)
+    const activeLabel = (el: HTMLElement) => el.querySelector('[role="tab"][aria-selected="true"]')?.textContent
+    const tabNamed = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.tabbar [role="tab"]')].find((t) => t.textContent === label)!
+    const mountTwo = () => {
+      const files = { [PAGE]: { content: page('<!-- card: WIKI-9 -->'), mtime: 1 }, '/v/a.md': { content: '# A\n', mtime: 1 }, '/v/b.md': { content: '# B\n', mtime: 1 } }
+      return mount(defaultAppState(), TWO, files, (b) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [record()], folders: [], generatedAt: 1, ids: true }))
+    }
+    const openPreview = async (from: Element) => {
+      act(() => void from.dispatchEvent(new CustomEvent(CARD_PREVIEW, { bubbles: true, detail: { path: PAGE, id: 'WIKI-9', text: 'Capital of {{France}}\n---\n{{Paris}}', title: '', notitle: false, reviews: [] } })))
+      await vi.waitFor(() => expect(document.querySelector('.card-preview .card-inbox__card .card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+      return document.querySelector<HTMLElement>('.card-preview')!
+    }
+    const press = (el: Element, init: MouseEventInit = {}) => act(() => void el.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, ...init })))
+    const gone = () => vi.waitFor(() => expect(document.querySelector('.card-preview')).toBeNull())
+
+    it('the frame stays: the preview is in the tab stack, the sidebar and the tab row show beside it, the tab you came from stays active; ⌘W closes only the preview', async () => {
+      const { el, emitCloseTab } = await mountTwo()
+      const preview = await openPreview(el.querySelector('.tabstack')!)
+      expect(preview.parentElement?.classList.contains('tabstack')).toBe(true)
+      expect(el.querySelector('.tabbar-row')).not.toBeNull()
+      expect(el.querySelector('aside.sidebar')).not.toBeNull()
+      expect([stripLabels(el), activeLabel(el)]).toEqual([['a', 'b'], 'a'])
+      act(() => emitCloseTab())
+      await gone()
+      expect([stripLabels(el), activeLabel(el)]).toEqual([['a', 'b'], 'a'])
+    })
+
+    it('ONE click on a tab closes the preview and switches to that tab; ONE click in the sidebar closes it and opens the page', async () => {
+      const { el } = await mountTwo()
+      await openPreview(el.querySelector('.tabstack')!)
+      const b = tabNamed(el, 'b')
+      press(b)
+      act(() => b.click())
+      await gone()
+      expect(activeLabel(el)).toBe('b')
+      await openPreview(el.querySelector('.tabstack')!)
+      press(el.querySelector('aside.sidebar')!)
+      act(() => captured.sidebar?.onOpenFile('/v/a.md'))
+      await gone()
+      expect([stripLabels(el), activeLabel(el)]).toEqual([['a', 'b'], 'a'])
+    })
+
+    it('from Explore: Explore hides while the preview shows (its layers kept), and Esc brings it back; a click on a tab leaves both', async () => {
+      const { el, emitExplore } = await mountTwo()
+      act(() => emitExplore())
+      await vi.waitFor(() => expect(document.querySelector('.explore')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+      const explore = document.querySelector<HTMLElement>('.explore')!
+      await openPreview(explore)
+      expect(explore.hidden).toBe(true)
+      await act(async () => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+      await gone()
+      expect(document.querySelector('.explore')).toBe(explore)
+      expect(explore.hidden).toBe(false)
+      await openPreview(explore)
+      const b = tabNamed(el, 'b')
+      press(b)
+      act(() => b.click())
+      await gone()
+      await vi.waitFor(() => expect(document.querySelector('.explore')).toBeNull())
+      expect(activeLabel(el)).toBe('b')
+    })
   })
 
   /**

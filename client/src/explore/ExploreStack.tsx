@@ -76,6 +76,8 @@ export interface ExploreStackProps {
   onChangeCommentsOrder: (order: CommentsOrder) => void
   /** The last Esc, ⌘↵ and the click outside: App unmounts the stack and the keyboard goes back where it was. */
   onClose: () => void
+  /** A card preview shows over the page area (YAZ-5152 A): the stack hides, every layer kept, until it closes. */
+  hidden?: boolean
   /** The empty box (YAZ-4945): a vault's open history (`storage.getOpens`) and its save log (`storage.getEdits`). */
   opensOf?: (root: string) => Readonly<Record<string, OpenStat>>
   editsOf?: (root: string) => Readonly<Record<string, number>>
@@ -142,7 +144,7 @@ function focusCardFile(layer: HTMLElement): boolean {
   return body !== null && document.activeElement === body
 }
 
-export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf }: ExploreStackProps) {
+export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf, hidden = false }: ExploreStackProps) {
   const [layers, setLayers] = useState<readonly ExploreLayer[]>([])
   const layersRef = useRef(layers)
   layersRef.current = layers
@@ -656,7 +658,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   }
 
   return (
-    <div ref={rootRef} className="explore" role="dialog" aria-modal="true" aria-label="Explore the vault" onKeyDown={onKeyDown} onKeyDownCapture={onKeyDownCapture} onMouseDown={onBackdropMouseDown} onPointerDownCapture={onPointerDownCapture}>
+    <div ref={rootRef} className="explore" role="dialog" aria-modal="true" aria-label="Explore the vault" hidden={hidden} onKeyDown={onKeyDown} onKeyDownCapture={onKeyDownCapture} onMouseDown={onBackdropMouseDown} onPointerDownCapture={onPointerDownCapture}>
       {/* The trail (YAZ-4925): one chip per layer from two layers on, in the open order, the front one bold; a click brings that layer to the front (round 6). */}
       {live.length > 1 && (
         <nav className="explore__trail" aria-label="Layers">
