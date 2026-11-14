@@ -12,7 +12,7 @@
  */
 import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardFoldArrowsRequest, BoardHeadResponse, BoardHoverLinksRequest, BoardHoverOutlineRequest, BoardPicturesRequest, BoardPicturesResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DuplicateRequest, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, TextHead, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageDownloadRequest, ImageDownloadResponse, ImageResponse, IndexResponse, InboxCarry, MediaDrawingIndexResponse, MediaDrawingRequest, MediaDrawingResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaLibraryFile, MediaUsedRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PickPicturesFolderRequest, PickPicturesFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SavePdfRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep, ScreenPoint, TearOffResult, MemoryReport, StartView } from './types'
 import type { FoundPage } from './pageBirth'
-import type { CardSkillDuplicate } from './cardSkillFolder'
+import type { CardSkillDuplicate, CardSkillFormats } from './cardSkillFolder'
 import type { CopyAsMode, CopyAsRich, FavoriteCopiesStatus, FavoriteElementsSaveRequest, FocusFolder, ListScope, PageMenuAction, PageMenuArg, MemoryTabFacts } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
@@ -744,6 +744,12 @@ export const CONTRACT = {
     sound: invoke<[kind: GestureSound], void>('app:sound', 1),
     /** This user's home folder (YAZ-3886 P2): the Welcome screen shows it as "~" in a folder's path. Never fails. */
     home: invoke<[], string>('app:home', 0),
+    /**
+     * The format hint on a new card (YAZ-5114): the `formats` folder of the card skill that `vault` uses (its own
+     * `Card skill` folder, else the app's copy, `cardSkillFolder`) and the format names in it, A to Z. Null when that
+     * skill has no `formats` folder. `vault` null: the app's copy. Never writes.
+     */
+    cardFormats: invoke<[vault: string | null], CardSkillFormats | null>('app:card-formats', 1),
   },
   /** The updater (YAZ-2976 D2): main owns it, and every window reads the same state. */
   update: {

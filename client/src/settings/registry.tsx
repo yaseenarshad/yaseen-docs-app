@@ -1908,6 +1908,19 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
         ],
       },
+      // YAZ-5114 (YAZ-5059 decision 8): the app's settings, for every vault, so it shows with Review off too: cards are
+      // made in a vault with IDs whether or not it reviews them.
+      {
+        items: [
+          {
+            id: 'cardTips',
+            label: 'Card tips',
+            hint: 'The format hint on a new card: the formats in your card skill, and a way to learn them.',
+            keywords: [...REVIEW_KEYWORDS, 'tips', 'hint', 'formats', 'card skill'],
+            render: ({ settings, onChange }) => <Segmented options={ON_OFF_OPTIONS} value={settings.cardTips !== false} onChange={(cardTips) => onChange({ ...settings, cardTips })} ariaLabel="Card tips" />,
+          },
+        ],
+      },
       // YAZ-5050 round 2 (Yaseen: "the review page is getting a lot in one block should we split it out?"): the same
       // rows, in groups by what they are for. Only the grouping and the order changed.
       {

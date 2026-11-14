@@ -2165,6 +2165,11 @@ export interface SettingsState {
   /** Its colour: `null` is the theme's calm default (`--next-hidden` in `app.css`, light and dark); else a hex colour for both. */
   nextHiddenColour: string | null
   /**
+   * Settings › Review › Card tips (YAZ-5114, YAZ-5059 decision 8): the quiet format hint under a new, empty card in Edit
+   * card names the formats of the card skill. On by default; Off hides it. For the whole app.
+   */
+  cardTips: boolean
+  /**
    * Settings › Review › Card spacing (YAZ-5050): how a card reads in the Inbox, the card window and the page.
    * `pages` (the default) follows the pages' Line spacing, Space between blocks, Bullet indent and Bullet gap; `custom`
    * uses the four `card*` values below, on `.app` as `--card-line-height`, `--card-block-gap`, `--card-bullet-indent`
@@ -2916,6 +2921,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   shownHiddenWords: 'highlight',
   markNextHidden: true,
   nextHiddenColour: null,
+  cardTips: true,
   cardSpacing: 'pages',
   ...CARD_SPACING_CLEAN,
   tableOfContents: 'auto',

@@ -26,3 +26,21 @@ export function cardSkillFolder(vault: string | null, appCopy: string, isFolder:
  * the vault, and nothing was made (the caller asks before a second copy).
  */
 export type CardSkillDuplicate = { made: string } | { exists: string }
+
+/** The skill's folder of formats: one page for each format (YAZ-5114). */
+export const CARD_SKILL_FORMATS = 'formats'
+
+/** What the format hint (YAZ-5114) needs: the `formats` folder of the skill in use, and its format names. */
+export interface CardSkillFormats {
+  folder: string
+  formats: string[]
+}
+
+/** The format names from the file names of the `formats` folder: each `.md` page without `.md`, a dot file skipped, A to Z. */
+export function cardFormatNames(files: readonly string[]): string[] {
+  return files
+    .filter((name) => name.toLowerCase().endsWith('.md') && !name.startsWith('.'))
+    .map((name) => name.slice(0, -3))
+    .filter((name) => name.trim() !== '')
+    .sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }))
+}

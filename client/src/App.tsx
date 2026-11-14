@@ -64,6 +64,7 @@ import { dropPageWindowsAt, renamePageWindows } from './views/view/PageWindow'
 import { moveExploreRecent, rememberExploreRecent } from './explore/exploreRecents'
 import type { ExploreRequest } from './explore/layers'
 import { CARD_OPEN, type CardOpenRequest } from './editor/card/cardBlockView'
+import { CARD_FORMATS_OPEN, cardFormatsOpenIn, setCardFormatHints, type CardFormatsOpenRequest } from './editor/card/cardFormatHint'
 import type { SearchVault } from './search/useSearchResults'
 import { dropHistoryPaths, renameHistoryPaths } from './views/view/valueHistory'
 import { setTypingArrows } from './editor/typingArrows'
@@ -1537,6 +1538,36 @@ export function App() {
     document.addEventListener(CARD_OPEN, onOpenCard)
     return () => document.removeEventListener(CARD_OPEN, onOpenCard)
   }, [openExploreWith])
+  // The format hint on a new card (YAZ-5114): Card tips, and the formats of each vault's card skill, read again when the
+  // window comes to the front (a Duplicate of the skill, an agent's new format page). "Learn the formats" opens the
+  // skill's `formats` folder: in Files when it is in a vault of the window (the vault's own `Card skill`); the app's
+  // copy is outside every vault, and the skill's sidebar row (YAZ-5108) and the course (YAZ-5120) are not on this
+  // branch, so it shows in Finder until one of them is.
+  const cardTipsOn = settings.cardTips !== false
+  useEffect(() => setCardFormatHints({ on: cardTipsOn }), [cardTipsOn])
+  useEffect(() => {
+    if (!cardTipsOn) return
+    let live = true
+    const read = () =>
+      void Promise.all(roots.map((vault) => api.app.cardFormats(vault).then((skill) => [vault, skill] as const, () => [vault, null] as const))).then((byVault) => {
+        if (live) setCardFormatHints({ byVault: new Map(byVault) })
+      })
+    read()
+    window.addEventListener('focus', read)
+    return () => {
+      live = false
+      window.removeEventListener('focus', read)
+    }
+  }, [roots, cardTipsOn])
+  useEffect(() => {
+    const onOpenFormats = (event: Event) => {
+      const { folder } = (event as CustomEvent<CardFormatsOpenRequest>).detail
+      if (cardFormatsOpenIn(folder, roots) === 'files') showRowInFiles(folder)
+      else void api.shell.reveal({ path: folder }).catch((err: unknown) => notify(`Can't open the formats: ${err instanceof Error ? err.message : String(err)}`, 'error'))
+    }
+    document.addEventListener(CARD_FORMATS_OPEN, onOpenFormats)
+    return () => document.removeEventListener(CARD_FORMATS_OPEN, onOpenFormats)
+  }, [roots, showRowInFiles, notify])
   /** This vault's "Clicking a link" (YAZ-4936), for the editors of `path`: read at each click. */
   const exploreOnClickFor = useCallback((path: string) => scopeOf(path).linkClick.isExplore, [scopeOf])
   const closeExplore = useCallback(() => {

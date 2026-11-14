@@ -23,6 +23,7 @@ import { registerFocusFoldersIpc } from './focusFolders'
 import { registerFsIpc } from './fs'
 import { registerGithubIpc } from './github'
 import { registerHomeIpc } from './home'
+import { registerCardFormatsIpc } from './cardFormats'
 import { registerLspIpc } from './lsp'
 import { registerMediaLibraryIpc } from './mediaLibrary'
 import { registerMediaStudioIpc } from './mediaStudio'
@@ -81,6 +82,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerPictureFoldersIpc(store, pickedPictureFolders)
   registerSoundIpc()
   registerHomeIpc()
+  registerCardFormatsIpc(userData)
   // The code tabs' language helpers (YAZ-3454, YAZ-3455): the quit sequence stops them (`stopAllLanguageServers`).
   // They run only while Settings › Code › "Jump across files" is on, and are a download in `<userData>/lsp`
   // (YAZ-3500). A dev build also takes the `node_modules` copies, unless YASEEN_DOCS_LSP_DOWNLOAD_ONLY=1

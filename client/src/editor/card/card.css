@@ -208,6 +208,22 @@
   border: 1px solid var(--border);
   border-radius: 3px;
 }
+/* The format hint (YAZ-5114): one quiet line under the key row, on a new, empty card only (`cardFormatHint.ts`). */
+.card .card__formats {
+  padding: 6px 14px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  border-top: 1px solid var(--border);
+  user-select: none;
+}
+.card .card__formats-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
 /* Edit card has the writing look (YAZ-5007, Yaseen's decision): the page's font, no line numbers or fold arrows, the
    rendered card's padding (`.card__body`), so Edit card / Done does not jump. Other code blocks keep the code look.
    The marks on other copies of the selected word are off in `cardEdit.ts`. */

@@ -220,6 +220,8 @@ A guide for you and your AI agent on how to make good cards. It ships with the a
 
 For agents: `yaseendocs card guide` prints the skill's start page; run it before you add or change a card. `--path` prints the skill's folder, in double quotes. Inside a vault that has its own `Card skill` folder at the top, the command uses that folder; else the app's copy. Before the app has started once, there is no copy yet, and the command says so (exit 1).
 
+**The format hint** (YAZ-5114): a new, empty card in Edit card shows one quiet line under the keys: "Formats in your card skill: acronym · book · comparison · 8 more. Learn the formats". The names are the pages of the skill's `formats` folder (your own `Card skill` folder when the vault has one). The line goes when you type. A card that already has text never shows it. "Learn the formats" shows the `formats` folder: in Files for your own copy, in Finder for the app's copy. Settings › Review › Card tips (On by default) turns the line off.
+
 ## Two kinds of vault
 
 A vault is one of two kinds. A folder you open is a **plain** vault: the app asks nothing and writes nothing you did not ask for. IDs are a setting, for the vault where you want them: Settings › Files & Links › **Give this vault's pages IDs**.
