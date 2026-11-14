@@ -1,14 +1,11 @@
-import { useApp } from '../app/AppState'
+import { lazyScreen } from './LazyScreen'
 
 /**
- * The Friends tab: a slot that 4E (YAZ-5081) fills. The shell (4A) draws this component for the tab "Friends"; it reads the
- * app's state with `useApp()` (the open vault, its word for "page" as `unit`, the sync state, `go` to move).
+ * The Friends tab (4E4, YAZ-5085): the screens and the friends logic are a chunk of their own (`friends/ui/`). The
+ * shared boundary (`lazyScreen`) says so in plain words, with Try again, when the chunk does not load.
  */
+const FriendsTab = lazyScreen(() => import('../friends/ui/FriendsTab'), { waiting: <section className="fr-wait" aria-label="Friends" aria-busy="true" /> })
+
 export function Friends() {
-  const { unit } = useApp()
-  return (
-    <section className="placeholder" aria-label="Friends">
-      <p>{unit('Friends comes in the next build.')}</p>
-    </section>
-  )
+  return <FriendsTab />
 }

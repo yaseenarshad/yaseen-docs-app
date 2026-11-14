@@ -262,6 +262,8 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   )
 
   const eraseAll = useCallback(async () => {
+    // YAZ-5195: the friends sender, list and marks stop first; nothing of theirs is stored after the erase.
+    await friends.stop?.()
     await stopSync(sync)
     await signOutAndErase(store, tokens)
     // YAZ-5194: the other tabs of the app stop too and show the first-run screen. The store already refuses their
@@ -269,7 +271,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
     tellOtherTabs({ type: 'erased' })
     await load(false)
     setNav({ tab: 'review', stack: [] })
-  }, [store, tokens, sync, load])
+  }, [store, tokens, sync, load, friends])
 
   // Another tab erased the phone: stop the sync here and show the sign-in (YAZ-5194).
   useEffect(

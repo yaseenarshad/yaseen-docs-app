@@ -32,6 +32,9 @@ export type Route =
   | { kind: 'page'; path: string; at?: string }
   /** 4C (round 12, item 10): a card alone, read only: the card, its review history, "Open page" for a card in a page. */
   | { kind: 'card'; path: string; id: string }
+  /** 4E4 (decision 23): "You vs <friend>". `theirs`: the friend's pointer; or `group` and `pointer`: a member of a group. */
+  | { kind: 'friend'; theirs: string; group?: undefined; pointer?: undefined }
+  | { kind: 'friend'; group: string; pointer: string; theirs?: undefined }
 
 export interface NavState {
   tab: Tab
