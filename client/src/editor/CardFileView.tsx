@@ -276,8 +276,8 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
     })
   }
   const sections = (): MenuSection[] => [
-    ...cardMenuSections(card, id, writes.changeLine, onNotice, { inbox: reviewOn, link: true, preview }),
-    ...(converts ? [[{ id: 'to-page', label: unit('Turn into a page'), onSelect: toPage }]] : []),
+    // Reset history stays the last row (YAZ-5376): "Turn into a page" goes in before it.
+    ...cardMenuSections(card, id, writes.changeLine, onNotice, { inbox: reviewOn, link: true, preview, more: converts ? [[{ id: 'to-page', label: unit('Turn into a page'), onSelect: toPage }]] : [] }),
   ]
   const fixes =
     !converts ? null : shape.problem === 'many' ? (

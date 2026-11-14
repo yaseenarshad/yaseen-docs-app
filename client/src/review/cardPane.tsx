@@ -25,6 +25,7 @@ import { cardResolverOf, type WikilinkResolveSource } from '../editor/wikilink/w
 import type { ExploreVault } from '../explore/ExplorePage'
 import { pageLabel, pathTitles } from '../lib/pageLabel'
 import type { MenuSection } from '../sidebar/menuSections'
+import { askResetHistory } from '../editor/card/askResetHistory'
 import { changeCardLine, changeCardTextIn, type CardAtPage } from './cardFile'
 import { CardBody, CardReviews, type CardLinkDoors } from './cardParts'
 
@@ -102,11 +103,12 @@ export function cardWrites(path: string, card: CardAtPage | null, read: () => vo
 }
 
 /**
- * The card's own ⋯ rows (D13): Put at top of Inbox (with `inbox`: the vault reviews), Archive, Title on the front,
- * Reset history; then Copy card ID and, with `link`, Copy card link (`[[ID]]`, YAZ-5037). None of them for a card with
- * no ID yet, but its copy rows once it has one.
+ * The card's own ⋯ rows (D13): Put at top of Inbox (with `inbox`: the vault reviews), Archive, Title on the front; then
+ * Copy card ID and, with `link`, Copy card link (`[[ID]]`, YAZ-5037); then the caller's `more` (the card file tab's
+ * "Turn into a page"); and LAST, alone, Reset history (YAZ-5376), which asks by typing (`askResetHistory`). None of
+ * them for a card with no ID yet, but its copy rows once it has one.
  */
-export function cardMenuSections(card: CardAtPage | null, id: string | null, changeLine: (change: CardLineChange) => void, onNotice: (message: string) => void, opts: { inbox: boolean; link: boolean; preview?: () => void }): MenuSection[] {
+export function cardMenuSections(card: CardAtPage | null, id: string | null, changeLine: (change: CardLineChange) => void, onNotice: (message: string) => void, opts: { inbox: boolean; link: boolean; preview?: () => void; more?: MenuSection[] }): MenuSection[] {
   const rows: MenuSection[] = []
   // Preview (YAZ-5152): the card as the Inbox shows it, nothing saved.
   if (card !== null && opts.preview !== undefined) rows.push([{ id: 'preview', label: 'Preview', hint: 'P', onSelect: opts.preview }])
@@ -116,13 +118,14 @@ export function cardMenuSections(card: CardAtPage | null, id: string | null, cha
       { id: 'review-off', label: card.off ? 'Unarchive card' : 'Archive card', onSelect: () => changeLine((l) => withCardOff(l, !card.off)) },
       // ONE toggle row (YAZ-5030): the hint is the state now; a click turns it to the other.
       { id: 'title-front', label: 'Title on the front', hint: card.notitle === true ? 'Hide' : 'Show', onSelect: () => changeLine((l) => withCardNoTitle(l, card.notitle !== true)) },
-      ...(card.reviews.length === 0 ? [] : [{ id: 'reset', label: 'Reset history', danger: true, onSelect: () => changeLine(withoutCardReviews) }]),
     ])
   if (id !== null)
     rows.push([
       { id: 'copy-id', label: 'Copy card ID', hint: id, onSelect: () => copyText(id, 'card ID', onNotice, undefined, true) },
       ...(opts.link ? [{ id: 'copy-link', label: 'Copy card link', hint: `[[${id}]]`, onSelect: () => copyText(`[[${id}]]`, 'card link', onNotice, undefined, true) }] : []),
     ])
+  rows.push(...(opts.more ?? []))
+  if (card !== null && card.id !== null && card.reviews.length > 0) rows.push([{ id: 'reset', label: 'Reset history', danger: true, onSelect: () => askResetHistory(card.id, () => changeLine(withoutCardReviews)) }])
   return rows
 }
 
