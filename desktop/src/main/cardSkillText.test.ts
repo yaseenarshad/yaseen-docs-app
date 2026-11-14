@@ -9,8 +9,8 @@ import { HELP } from '../cli/cli'
  * top-level `card` fence: a duplicate in a vault with IDs would turn it into a real card. A `card` fence shown
  * inside a `markdown` example block is text, and fine.
  *
- * Example fences: a GOOD card goes in a ```markdown block (cardCheck.test.ts runs the six checks on each one); a card
- * that is bad on purpose (every "Before", every weak card) goes in a ```text block, which nothing checks.
+ * Example fences: a GOOD card goes in a ```markdown block; a card that is bad on purpose (every "Before", every weak
+ * card) goes in a ```text block, so a reader can tell the two apart.
  */
 
 const SKILL = fileURLToPath(new URL('../../../skills/card-skill', import.meta.url))
@@ -53,11 +53,11 @@ function topFences(text: string): Fence[] {
 }
 
 describe('the card skill pages (YAZ-5112)', () => {
-  it('ships the start page, the four guides and the 11 formats', async () => {
+  it('ships the start page, the three guides and the 11 formats', async () => {
     const names = (await pages(SKILL)).map((p) => relative(SKILL, p))
     expect(names).toEqual(
       expect.arrayContaining([
-        'Start here.md', 'Rules for a good card.md', 'Titles.md', 'Check your card.md', 'What changed.md',
+        'Start here.md', 'Rules for a good card.md', 'Titles.md', 'What changed.md',
         ...['acronym', 'concept', 'comparison', 'vocabulary', 'book', 'person', 'fact', 'procedure', 'quote', 'story', 'script and sounds'].map((f) => `formats/${f}.md`),
       ]),
     )
@@ -71,6 +71,16 @@ describe('the card skill pages (YAZ-5112)', () => {
       const cards = topFences(text).filter((f) => f.lang === 'card').map((f) => `${name}:${f.line}`)
       expect(cards, 'a bare card fence would become a real card').toEqual([])
     }
+  })
+
+  it('each example is in a `markdown` block (a good card) or a `text` block (a bad one on purpose)', async () => {
+    const other: string[] = []
+    for (const page of await pages(SKILL)) {
+      const name = relative(SKILL, page)
+      if (NO_PLACEHOLDER.has(name)) continue
+      for (const f of topFences(await readFile(page, 'utf8'))) if (f.lang !== 'markdown' && f.lang !== 'text') other.push(`${name}:${f.line} ${f.lang || '(none)'}`)
+    }
+    expect(other).toEqual([])
   })
 
   it('reads a `card` fence inside a four-backtick `markdown` block as text, and a bare one as a card', () => {

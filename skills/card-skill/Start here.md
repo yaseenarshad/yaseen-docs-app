@@ -54,19 +54,17 @@ The app writes the card line under the block. Never change a card line that the 
 1. **Pick a format** by what the learner must recall. The `formats` folder has one page for each.
 2. **Draft it** with the format's skeleton, the [[Rules for a good card]] and [[Titles]].
 3. **Read it with the answers hidden,** as someone who does not know them.
-4. **Check it** with [[Check your card]].
-5. **Add it** with a command, or in the app.
+4. **Add it** with a command, or in the app.
 
 ## Commands for an agent
 
 - Add a card to the end of a page: `yaseendocs card add <page.md> --title <text> --body <text>`
 - Make a card file in a folder: `yaseendocs card new <folder> --title <text> --body <text>`
-- Check the cards of a page: `yaseendocs card check <page.md>`
 - Print this skill: `yaseendocs card guide`
 
 With `card add`, `--title` is the card's first line, and `--body` is the rest. With `card new`, `--title` is the file's `title:`, and `--body` is the card. `--body -` reads the body from standard input. `--hide-title` hides the title on the front.
 
 ## The pages
 
-- [[Rules for a good card]], [[Titles]], [[Check your card]], [[What changed]].
+- [[Rules for a good card]], [[Titles]], [[What changed]].
 - Formats: [[acronym]], [[concept]], [[comparison]], [[vocabulary]], [[book]], [[person]], [[fact]], [[procedure]], [[quote]], [[story]], [[script and sounds]].

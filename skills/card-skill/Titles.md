@@ -12,7 +12,7 @@ A card inside a page has its title as its first line. A card file has its title 
 - **Use the established name** when there is one: "Compound interest". When there is none, write a short plain phrase.
 - **Make it distinct, not too broad.** "Decision making" could head fifty cards. Pick the widest name that only this card covers.
 - **Do not write a question.** The title is a name. The question goes below it.
-- **Never leave it as "Title".** The card check flags that.
+- **Never leave it as "Title".**
 - **Keep two terms on one line:** "Weather vs climate".
 
 ## Patterns for some formats
