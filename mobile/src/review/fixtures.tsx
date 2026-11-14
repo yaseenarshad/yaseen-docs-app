@@ -73,8 +73,8 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
   const vault = { repo: REPO, branch: BRANCH, addedAt: 1 }
   await saveVaultList(store, { vaults: [vault], open: VAULT })
   const sync = fakeSync()
-  sync.review = async () => ({ engine: t.engine, answers: t.answers, store: t.store, media })
-  const services: AppServices = { store, tokens, sync, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: async () => new Response('{}', { status: 401 }) }
+  sync.review = async () => ({ engine: t.engine, answers: t.answers, store: t.store })
+  const services: AppServices = { store, tokens, sync, media, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: async () => new Response('{}', { status: 401 }) }
   root.render(<App services={services} />)
   step('render')
   await wait(400)
