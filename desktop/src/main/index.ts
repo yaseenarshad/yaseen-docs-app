@@ -17,8 +17,10 @@ import type { GitSyncManager } from './git/manager'
 import { registerIpc } from './ipc'
 import { cancelHelperInstall } from './ipc/lsp'
 import { ensureLibraryFolder } from './library/folder'
-import { broadcastAll, rootsOf } from './ipc/broadcast'
+import { broadcastAll, rootsOf, senderRoots } from './ipc/broadcast'
 import { registerClipboardIpc } from './ipc/clipboard'
+import { registerPhoneIpc } from './ipc/phone'
+import { buildPhoneCode, phoneCodeDeps } from './phoneCode'
 import { registerSpellerIpc } from './ipc/speller'
 import { registerUpdateIpc } from './ipc/update'
 import { askHeap, askTabs, askViews, registerMemoryIpc } from './ipc/memory'
@@ -418,6 +420,14 @@ app.whenReady().then(() => {
     appPath: app.getAppPath(),
     macId: () => macId(),
   }, settingsFolder)
+  // "Connect your phone" (YAZ-5098): the vault's code, made here from the GitHub token in `secrets`; a renderer gets
+  // the QR grid only, for a vault of its own window, while that window is in front.
+  registerPhoneIpc(manager, {
+    rendererUrl: process.env.ELECTRON_RENDERER_URL ?? 'app://yaseen/index.html',
+    isFocused: (sender) => BrowserWindow.fromWebContents(sender)?.isFocused() === true,
+    roots: (e) => senderRoots(store, manager, e),
+    build: (root) => buildPhoneCode(phoneCodeDeps(secrets), root),
+  })
   // The one library folder every vault shares (YAZ-3038; Draw's 🔒 YAZ-1775 D5). Made at startup, detached: a
   // launch must not wait on a disk, and a path that cannot be made is still what the Settings row names.
   void ensureLibraryFolder(store.get().settings.libraryFolder, app.getPath('userData'), store.get().settingsFolder)

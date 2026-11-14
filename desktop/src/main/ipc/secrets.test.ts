@@ -48,7 +48,7 @@ describe('registerSecretsIpc (🔒 YAZ-1775 D4, YAZ-1817)', () => {
     expect(await has({ name: 'a' })).toEqual(ok(false))
   })
 
-  it("set refuses any name but the Pixabay key — sharing's token and upload password are main's to write", async () => {
+  it("set refuses any name but the Pixabay key and the GitHub token — sharing's token and upload password are main's to write", async () => {
     await secrets.set('cloudflareApiToken', 'real-token')
     for (const name of ['cloudflareApiToken', 'shareUploadPassword', 'anythingElse']) {
       expect(await set({ name, value: 'overwritten' })).toEqual(bad('BAD_REQUEST'))
@@ -56,5 +56,28 @@ describe('registerSecretsIpc (🔒 YAZ-1775 D4, YAZ-1817)', () => {
     }
     expect(await secrets.read('cloudflareApiToken')).toBe('real-token')
     expect(await has({ name: 'shareUploadPassword' })).toEqual(ok(false))
+  })
+
+  // YAZ-5098: the GitHub token of "Phone and friends" (Settings › Review). One token for the phone's code and for the
+  // friends sender (4E5, YAZ-5086), which reads it in main with `secrets.read(GITHUB_TOKEN_SECRET)`.
+  it('the GitHub token: a renderer may write it (cleaned) and remove it, ask whether it is there, never read it', async () => {
+    const token = 'github_pat_EXAMPLE0' + 'x'.repeat(74)
+    expect(await has({ name: 'githubToken' })).toEqual(ok(false))
+    expect(await set({ name: 'githubToken', value: `  ${token}\n` })).toEqual(ok(undefined))
+    expect(await has({ name: 'githubToken' })).toEqual(ok(true))
+    expect(await secrets.read('githubToken')).toBe(token)
+    expect((await stat(path.join(userData, 'secrets.json'))).mode & 0o777).toBe(0o600)
+    expect(await set({ name: 'githubToken', value: null })).toEqual(ok(undefined))
+    expect(await has({ name: 'githubToken' })).toEqual(ok(false))
+    expect(await secrets.read('githubToken')).toBeNull()
+  })
+
+  it('refuses a GitHub token that cannot be one, and the refusal does not repeat what was pasted', async () => {
+    for (const value of ['my password', 'short', 'github_pat_<script>', 'x'.repeat(300)]) {
+      const answer = await set({ name: 'githubToken', value })
+      expect(answer).toEqual(bad('BAD_REQUEST'))
+      expect(JSON.stringify(answer)).not.toContain(value)
+    }
+    expect(await has({ name: 'githubToken' })).toEqual(ok(false))
   })
 })

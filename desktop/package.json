@@ -14,7 +14,8 @@
     "chokidar": "^4.0.3",
     "electron": "43.4.1",
     "electron-builder": "^26.15.3",
-    "electron-vite": "^5.0.0"
+    "electron-vite": "^5.0.0",
+    "qr": "0.7.2"
   },
   "build": {
     "appId": "com.yasinarshad.yaseendocs",

@@ -473,7 +473,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
             {session.filter === 'archived' ? (
               <CardList cards={session.archived} label="Archived cards" empty="No archived cards." edit={false} action={{ text: 'Unarchive', run: review.unarchive }} session={session} nameOf={nameOf} openCard={openCard} backToAll={() => review.setFilter('all')} />
             ) : session.filter === 'fix' ? (
-              <CardList cards={session.toFix} label="Cards to fix" empty="No cards to fix." edit action={{ text: 'Fixed', label: 'Remove Fix later', run: (path, id) => void review.setFix(path, id, false) }} session={session} nameOf={nameOf} openCard={openCard} backToAll={() => review.setFilter('all')} />
+              <CardList cards={session.toFix} label="Cards to fix" empty="No cards to fix." edit action={{ text: 'Fixed', label: 'Fixed: remove Fix later', run: (path, id) => void review.setFix(path, id, false) }} session={session} nameOf={nameOf} openCard={openCard} backToAll={() => review.setFilter('all')} />
             ) : card === null ? (
               <div className="card-inbox__done" role="status">
                 {/* YAZ-5033: today's work across the vault, under whatever the screen says. */}
