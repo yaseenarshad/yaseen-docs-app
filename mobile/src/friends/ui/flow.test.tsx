@@ -192,4 +192,21 @@ describe('add a friend, both orders, on the real friends logic', () => {
     }
     expect(lines.join(' ')).toContain('\u2068evil <img src=x onerror=alert(1)> secon…\u2069')
   })
+
+  it('YAZ-5259: a start with no signal keeps the groups, with their last numbers', async () => {
+    const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: () => NOW })
+    const p = await phoneOf(ALI, 'ali')
+    const first = serviceOn(world, p)
+    const made = await first.groups!.create('Study group')
+    expect(made.kind).toBe('ok')
+    const online = await first.board()
+    expect(online.kind === 'ok' && online.groups.map((g) => g.kind)).toEqual(['ok'])
+    world.offline = true
+    const again = serviceOn(world, p)
+    const read = await again.board()
+    expect(read.kind).toBe('ok')
+    if (read.kind !== 'ok') return
+    expect(read.offline).toBe(true)
+    expect(read.groups.map((g) => (g.kind === 'not-found' ? null : [g.kind, plain(g.name)]))).toEqual([['ok', 'Study group']])
+  })
 })

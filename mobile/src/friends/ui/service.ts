@@ -211,7 +211,19 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
       const read = f.stats === null ? null : parseFriendStats(JSON.stringify(f.stats))
       return { ...f, stats: read !== null && read.ok ? read.value : null }
     })
-    return { friends, shared: copy.shared ?? [], groups: [] }
+    // YAZ-5259: the groups too, each member's numbers checked again as a friend's file.
+    const groups = (Array.isArray(copy.groups) ? copy.groups : []).map((g): GroupView => {
+      if (g.kind !== 'ok') return g
+      return {
+        ...g,
+        members: g.members.map((m) => {
+          if (m.read === null || m.read.kind !== 'ok') return m
+          const read = parseFriendStats(JSON.stringify(m.read.stats))
+          return read.ok ? { ...m, read: { ...m.read, stats: read.value } } : { ...m, read: null, state: 'unreadable' as const }
+        }),
+      }
+    })
+    return { friends, shared: copy.shared ?? [], groups }
   }
 
   return {
@@ -226,11 +238,14 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
       const [mine, seen, outbox] = await Promise.all([me(), marks.seen(), marks.outbox()])
       if (rows.kind === 'ok') {
         const all = await groups.all()
-        const groupViews = Array.isArray(all) ? all.map(cleanGroup) : []
+        // YAZ-5259: a group that cannot be read now keeps its last view (its members' "updated … ago" say how old).
+        const kept = Array.isArray(all) && all.every((g) => g.kind !== 'offline') ? [] : (await loadCopy())?.groups ?? []
+        const last = (g: GroupView) => (g.kind === 'offline' ? kept.find((k) => k.kind === 'ok' && k.group === g.group) ?? g : g)
+        const groupViews = Array.isArray(all) ? all.map(cleanGroup).map(last) : kept
         const friends = rows.rows.map(entryOf)
         pointerCount = rows.rows.length + rows.shared.length + groupViews.length
         const offline = rows.rows.some((r) => r.read?.kind === 'ok' && r.read.stale !== undefined) || rows.rows.some((r) => r.state === 'offline')
-        await saveCopy({ friends, shared: rows.shared, groups: [] })
+        await saveCopy({ friends, shared: rows.shared, groups: groupViews })
         return {
           kind: 'ok',
           me: mine,
