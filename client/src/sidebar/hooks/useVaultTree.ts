@@ -83,6 +83,10 @@ export function useVaultTree(
   const names = useSameList(vaults.map((vault) => vault.name))
   // A folder of a vault (YAZ-4922 D3): where this window shows one, the vault's tree is cut to it for what the panel draws.
   const folders = useSameList(vaults.map((vault) => vault.folder))
+  // The app's own vault (the card skill, YAZ-5108): last in `vaults`, one row at the bottom, never a vault of the person.
+  // With ONE vault of the person their tree keeps its look (no vault row for it), and the skill's row follows it.
+  const appRoots = useSameList(vaults.flatMap((vault) => (vault.app === true ? [vault.root] : [])))
+  const single = roots.length - appRoots.length === 1
   const root = roots[0]
   // What the callbacks below ask at call time, so each keeps its identity under the memoised Tree (YAZ-2194).
   const live = useRef({ roots, closedVaults, onSetVaultOpen, onRootMissing, liveTimes })
@@ -120,14 +124,19 @@ export function useVaultTree(
   const shown = useMemo<ReadonlyMap<string, TreeResponse>>(() => (folders.every((folder) => folder === undefined) ? trees : new Map([...trees].map(([vault, landed]) => [vault, folderTree(landed, folders[roots.indexOf(vault)])]))), [trees, roots, folders])
   const forest = useMemo<TreeNode[] | null>(() => {
     if (roots.length === 1) return shown.get(roots[0])?.tree ?? null
-    const rows = roots.flatMap((vault, i): TreeNode[] => {
+    const rowOf = (vault: string, i: number): TreeNode[] => {
       const landed = shown.get(vault)
       return landed === undefined ? [] : [{ type: 'dir', name: names[i], path: stripSlash(vault), children: landed.tree }]
-    })
+    }
+    if (single) {
+      const own = shown.get(roots[0])
+      return own === undefined ? null : [...own.tree, ...roots.flatMap((vault, i) => (i === 0 ? [] : rowOf(vault, i)))]
+    }
+    const rows = roots.flatMap(rowOf)
     return rows.length === 0 ? null : rows
-  }, [shown, roots, names])
-  /** The vault rows' paths, each with what the app calls its vault; empty with one vault, which has no row (S11). */
-  const vaultRows = useMemo<ReadonlyMap<string, string>>(() => new Map(roots.length === 1 ? [] : roots.map((vault, i) => [stripSlash(vault), names[i]])), [roots, names])
+  }, [shown, roots, names, single])
+  /** The vault rows' paths, each with what the app calls its vault; empty with one vault, which has no row (S11). The app's own vault always has its row. */
+  const vaultRows = useMemo<ReadonlyMap<string, string>>(() => new Map(roots.length === 1 ? [] : roots.flatMap((vault, i): [string, string][] => (single && i === 0 ? [] : [[stripSlash(vault), names[i]]]))), [roots, names, single])
   const vaultRowsRef = useRef(vaultRows)
   vaultRowsRef.current = vaultRows
   /** The load errors to draw, in vault order; with two or more vaults each names its vault. */
@@ -256,6 +265,8 @@ export function useVaultTree(
     if (expanded === startList.current) return
     startList.current = null
     for (const vault of roots) {
+      // The app's own vault keeps its open folders for the session only (YAZ-5108): nothing of it goes to the store.
+      if (appRoots.includes(vault)) continue
       // A folder of no vault of the window stays in the first vault's list, where one vault keeps it.
       const own = roots.length === 1 ? expanded : expanded.filter((dir) => (rootOfPath(roots, dir) ?? roots[0]) === vault)
       // Idempotent (⚡ YAZ-874): the first render holds exactly what was
@@ -263,7 +274,7 @@ export function useVaultTree(
       if (sameList(storage.getExpanded(vault), own)) continue
       storage.setExpanded(vault, own)
     }
-  }, [roots, expanded])
+  }, [roots, appRoots, expanded])
 
   // The file this mount woke up with is SHOWN, not revealed (YAZ-1642): a relaunch restores the
   // tab and leaves the tree collapsed. Any file opened after that still opens its folders.
@@ -363,7 +374,7 @@ export function useVaultTree(
 
   // Stable for the per-level memoised Tree (YAZ-2194). A vault row is open unless the user closed
   // it (YAZ-2602 R9): App's list, for the session, so it is neither in `expanded` nor in the store.
-  const expandedSet = useMemo(() => new Set([...expanded, ...(roots.length === 1 ? [] : roots.filter((vault) => !closedVaults.includes(vault)).map(stripSlash))]), [expanded, roots, closedVaults])
+  const expandedSet = useMemo(() => new Set([...expanded, ...(roots.length === 1 ? [] : roots.filter((vault, i) => !(single && i === 0) && !closedVaults.includes(vault)).map(stripSlash))]), [expanded, roots, closedVaults, single])
   const toggleDir = useCallback(
     (dir: string) => {
       if (!vaultRowsRef.current.has(dir)) return dispatch({ type: 'toggle', dir })
@@ -373,5 +384,5 @@ export function useVaultTree(
     [rootOf],
   )
 
-  return { roots, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs }
+  return { roots, appRoots, single, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs }
 }

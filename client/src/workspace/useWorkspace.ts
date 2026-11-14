@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
+import { inAppVault } from '@shared/appVaults'
 import { cleanVaultName, defaultRightPanelIdentity, type RightPanelIdentity, type StoredTab } from '@shared/types'
 import { storage } from '../lib/storage'
 import { carryEditorAcrossPane, flushRenamedPath } from '../lib/renameContinuity'
@@ -922,9 +923,12 @@ export function bootTabs(root: string | null): TabsState {
   // No restored file: the window opens blank (YAZ-3487 D7) — or, with "Open on: Its last page" (D15), on the vault's last
   // file, unless it was opened empty on purpose (YAZ-3343).
   const fallback = storage.getSettings().vaultOpensOn === 'last' && !storage.isEmptyByChoice() ? storage.getLastFile(root) : null
-  const active = hashFilePath(location.hash) ?? storage.getFile() ?? fallback
+  const asked = hashFilePath(location.hash) ?? storage.getFile() ?? fallback
+  // A tab of the card skill (YAZ-5108; suggestion 7) does not come back while Settings › Review hides the skill.
+  const skipped = (path: string): boolean => !storage.getSettings().cardSkillInSidebar && inAppVault(path)
+  const active = asked !== null && skipped(asked) ? null : asked
   // The copies and display names come back with the window (YAZ-3057), and with a tab "Move to new window" brought (S19).
-  return tabsReducer(EMPTY, { type: 'reset', tabs: storage.getTabStrip(), active })
+  return tabsReducer(EMPTY, { type: 'reset', tabs: storage.getTabStrip().filter((tab) => !skipped(tab.path)), active })
 }
 
 export function bootWorkspace(root: string | null): WorkspaceState {
@@ -932,7 +936,7 @@ export function bootWorkspace(root: string | null): WorkspaceState {
   if (root === null) return { ...main, ...rightDefault() }
   const stored = storage.getRightPanel()
   const mainPaths = new Set(storedTabs(main.tabs))
-  const items = stored.items.filter((path) => !mainPaths.has(path))
+  const items = stored.items.filter((path) => !mainPaths.has(path) && (storage.getSettings().cardSkillInSidebar || !inAppVault(path)))
   const expanded = stored.expanded !== null && items.includes(stored.expanded) ? stored.expanded : null
   return {
     ...main,

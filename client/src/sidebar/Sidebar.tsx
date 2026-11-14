@@ -33,7 +33,7 @@ import { isIconRules, MAX_ICON_MATCH, MAX_ICON_RULES } from '@shared/vaultIcons'
 import { oneRule, rowIcon, ruleFor, withRule } from './rowIcons'
 import { IconsContext } from './FileIcon'
 import { PICKER_W, suggestIcons } from './iconSuggestions'
-import { keepsOrder, shownLabel, sortLevel, sortSections } from './treeSort'
+import { appRowsLast, keepsOrder, shownLabel, sortLevel, sortSections } from './treeSort'
 import { ACTIVE_TAB_SELECTOR, SidebarTabs } from './SidebarTabs'
 import { folderShortcuts } from './folderShortcuts'
 import { folderPageRows, showFolderPageFiles } from './folderPageRows'
@@ -112,6 +112,11 @@ export interface SidebarVault {
   readOnly?: boolean
   /** The vault's timed allowance of file changes (YAZ-4985): when it ends, or null. The lock counts it down. */
   fileChangesUntil?: number | null
+  /**
+   * The app's own vault (the card skill, YAZ-5108), LAST in `vaults`: one row at the bottom with a lock, read only, never
+   * a vault of the person. It does not make the window "two vaults": blank space and the person's own tree are as before.
+   */
+  app?: true
 }
 
 interface SidebarProps {
@@ -132,6 +137,8 @@ interface SidebarProps {
   onRemoveVault: (root: string) => void
   /** A drag of a vault row (YAZ-2631 D5): the window's vaults in the new order, for App to store. */
   onReorderVaults: (next: string[]) => void
+  /** "Hide card skill" on the card skill's row (YAZ-5108): App sets the switch to Hide, closes its tabs and says where the switch is. */
+  onHideCardSkill?: () => void
   /** The width in px (YAZ-738), set on this aside alone (YAZ-2194). */
   width: number
   /** This aside, for App's resize drag, which writes the live width to it between renders (YAZ-2239). */
@@ -566,6 +573,11 @@ export interface MenuTargets {
   removeVault: string | null
   /** "Open by itself" (YAZ-2858 D4) — a VAULT row only: that vault's root. Equal to `removeVault` today; its OWN field. */
   openAlone: string | null
+  /**
+   * The card skill's row (YAZ-5108): the app's own vault's root. Its menu is its own (`cardSkillSections`): Copy path and
+   * Hide card skill, none of a vault's rows. Null or absent on every other row.
+   */
+  cardSkill?: string | null
   /** A row of the new tab page's "Recently closed" (YAZ-3487 D14): its path, for "Remove from" and "Clear Recently closed". */
   forgetClosed: string | null
   /**
@@ -641,6 +653,12 @@ const NO_PAGE_ROWS: ReadonlySet<string> = new Set()
  * A folder page row's menu (YAZ-4587, D37): the folder page's own items — open it, in a new tab, copy its path, reveal
  * it, show it in the sidebar — and nothing that creates in, clips, renames, deletes, pins, marks or changes the folder.
  */
+/**
+ * A row inside the app's own vault (the card skill, YAZ-5108): it opens, copies and shows in Finder like any row, and
+ * nothing of the menu writes into the skill or puts it in a list of the person — no create, paste, rename, delete,
+ * focus, favorite, icon, shortcut or review.
+ */
+const READ_ONLY_APP_ROW: Partial<MenuTargets> = { targetDir: null, cardDir: null, place: null, renamePath: null, deletePaths: null, focusPaths: null, favoritePaths: null, iconPaths: null, iconRule: null, shortcutDir: null, reviewDir: null, reviewPage: null, removeShortcut: null }
 const PAGE_ROW_MENU = {
   targetDir: null,
   clipPaths: null,
@@ -670,6 +688,7 @@ export function Sidebar({
   onPickVault,
   onRemoveVault,
   onReorderVaults,
+  onHideCardSkill,
   activeFile,
   onOpenFile,
   onKeepFile,
@@ -759,14 +778,18 @@ export function Sidebar({
   // The file times stay live (D2) while something reads them: the tab's Last updated sort, any tab's dates (D10), or a
   // time filter (D14). Any tab's, not the shown one's: a tab change then reads no vault again (6 µs a save, not 42 ms a switch).
   const liveTimes = sort?.by === 'updated' || Object.values(settings.rowDates).some(Boolean) || searchFilter.time !== 'any'
-  const { roots, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, lists, liveTimes)
+  const { roots, appRoots, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs } = useVaultTree(vaults, closedVaults, onSetVaultOpen, activeFile, onRootMissing, onFileMissing, lists, liveTimes)
   // The FIRST vault: the one a window with one vault has.
   const root = roots[0]
-  const places = useSameList(roots.map((vault, i) => vaults[i]?.folder ?? vault))
+  /** The person's own vaults: every vault of the window but the app's own (the card skill, YAZ-5108), which is last. */
+  const ownRoots = useSameList(roots.filter((vault) => !appRoots.includes(vault)))
+  /** The app's own vault rows (YAZ-5108), as `Tree` reads them: one Set while the vaults stay. */
+  const appRows = useMemo<ReadonlySet<string>>(() => new Set(appRoots.map(stripSlash)), [appRoots])
+  const places = useSameList(ownRoots.map((vault, i) => vaults[i]?.folder ?? vault))
   /** The top of what a window with one vault shows: the vault, or the folder of it that the window is (YAZ-4922 D3). Blank space makes and drops there. */
   const top = vaults[0]?.folder ?? root
   /** Two or more vaults (YAZ-2602 D3): each is a row of the tree, and blank space is no one vault's. */
-  const multi = roots.length > 1
+  const multi = ownRoots.length > 1
   // The vaults' own icons (YAZ-3440 D8, D9): `.yaseendocs/icons.json` of each vault of the window, for the tree's rows. App's (D11).
   const { rowIcons, pick: pickIcons } = icons
   // The window's card files (YAZ-5037): App's, from the vaults' index (`useCardFiles`), so a card file's row shows the card icon.
@@ -1124,8 +1147,8 @@ export function Sidebar({
   // highlight moves to the row below on screen.
   const searchLevel = useCallback(
     (nodes: readonly TreeNode[], depth: number, top: boolean, scores: ReadonlyMap<string, number>) =>
-      keepsOrder(depth, searchSort, { keepTop: top, vaults: vaultRows.size > 0 }) ? nodes : sortLevel(nodes, searchSort, shownLabel(titles), scores),
-    [vaultRows, searchSort, titles],
+      appRowsLast(nodes, depth, appRows, (level) => (keepsOrder(depth, searchSort, { keepTop: top, vaults: vaultRows.size > appRows.size }) ? level : sortLevel(level, searchSort, shownLabel(titles), scores))),
+    [vaultRows, appRows, searchSort, titles],
   )
   const { searchInput, query, results, typed, found, cardRows, scores, searchFold, searchOpen, toggleSearchDir, searchCursor, marks, changeQuery, searchKeyDown, searchEsc, atTop } = useSidebarSearch(searchVaults, forest ?? NO_NODES, pinned, searching, leaveSearch, pendingSearchFocus, onSearchFocusHandled, activate, previewPath, onPreview, searchLevel, searchSort.by === 'best', searchFilter, setSearchFilter, pendingSearchClear, openSearchCard)
   // A new query moves the results under a still pointer: the panel of the row that was there goes (YAZ-3403).
@@ -1350,6 +1373,9 @@ export function Sidebar({
       // It creates and pastes like a folder; it is not opened, clipped, renamed, deleted, favorited,
       // reviewed or put in the focus list (S13, A2). A selection that holds one has no plural item (A3).
       const vaultRow = node !== null && vaultRows.has(node.path) ? rootOf(node.path) : null
+      // The app's own vault (the card skill, YAZ-5108): its row has a menu of its own, and a row inside it reads only.
+      const skillRow = vaultRow !== null && appRoots.includes(vaultRow) ? vaultRow : null
+      const inSkill = node !== null && skillRow === null && appRoots.includes(rootOf(node.path)) && (plural ?? [node.path]).every((path) => appRoots.includes(rootOf(path)))
       const holdsVault = plural !== null && plural.some((path) => vaultRows.has(path))
       const pluralRows = holdsVault ? null : plural
       const home = node === null ? vaultsRef.current[0] : vaultOf(node.path)
@@ -1450,9 +1476,10 @@ export function Sidebar({
         infoPath: plural === null && shortcutIn === null && filePath !== null && isBoard(filePath) ? filePath : null,
         folderPaths: node === null ? [] : (plural ?? [node.path]).filter((path) => (path === node.path ? node.type === 'dir' : dirs.includes(path))),
         ...(node?.pageOf !== undefined ? PAGE_ROW_MENU : {}),
+        ...(skillRow !== null ? { cardSkill: skillRow } : inSkill ? READ_ONLY_APP_ROW : {}),
       })
     },
-    [root, roots, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, dirs, iconTargets, focusOnly],
+    [root, roots, appRoots, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, dirs, iconTargets, focusOnly],
   )
   // A right-click on a Recents row (YAZ-3235 D7, S20): the one-row file menu, "Show in sidebar" first,
   // as a row of the new tab page. Through a ref, so the memo list does not draw again on each selection.
@@ -1652,7 +1679,7 @@ export function Sidebar({
   // window in the tab's order (D1), every focus item of the window by the same rule (YAZ-2702 Decision 3), or the vault rows of Files (D5).
   // The Sessions and Recents tabs draw no tree, so nothing drags there (YAZ-3147: no drag reorder; YAZ-3235: no drag); they keep the Files default.
   const orderRef = useRef<readonly string[]>([])
-  orderRef.current = lens === 'favorites' ? favoritePaths : lens === 'focus' ? focusList : roots.map(stripSlash)
+  orderRef.current = lens === 'favorites' ? favoritePaths : lens === 'focus' ? focusList : ownRoots.map(stripSlash)
   const saveOrder = lens === 'favorites' ? saveFavoriteOrder : lens === 'focus' ? reorderFocus : onReorderVaults
   const finderDrag = useMemo(() => ({ nameOf, onImport: importFiles, onDraggedOut }), [nameOf, importFiles, onDraggedOut])
   /**
@@ -1730,6 +1757,7 @@ export function Sidebar({
     // Above the vault rows no one directory stands (YAZ-2602 D3).
     dirPath: multi ? '' : root,
     vaultRows,
+    appRows,
     expanded: expandedSet,
     activeFile,
     activeTop,
@@ -1821,7 +1849,7 @@ export function Sidebar({
           hotkeys={settings.hotkeys}
         />
         {/* The lock of each read-only vault (YAZ-4985), beside the vault's name: the page chip's box and countdown. */}
-        {onAllowFileChanges !== undefined && vaults.filter((vault) => vault.readOnly === true).map((vault) => (
+        {onAllowFileChanges !== undefined && vaults.filter((vault) => vault.readOnly === true && vault.app !== true).map((vault) => (
           <VaultLock
             key={vault.root}
             name={multi ? vault.name : undefined}
@@ -2082,7 +2110,7 @@ export function Sidebar({
           <SessionList onFold={setListFold} titles={titles} onOpenFile={onOpenFile} onRestore={onRestoreSession} onSave={onSaveSession} onUpdate={onUpdateSession} renameRequest={sessionNameRequest} onRenameConsumed={onSessionNameConsumed} />
         ) : lens === 'recents' ? (
           // The Recents tab (YAZ-3235 D3 to D7): the files the app saved last, of every vault of the window, by day.
-          <RecentList onFold={setListFold} trees={shown} roots={roots} only={recentVault} type={recentType} groups={recentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
+          <RecentList onFold={setListFold} trees={shown} roots={ownRoots} only={recentVault} type={recentType} groups={recentGroups} titles={titles} activeFile={activeFile} onOpenFile={onOpenFile} onKeepFile={onKeepFile} onOpenFileBackground={onOpenFileBackground} onMenu={recentMenu} onHoverFile={hoverFile} />
         ) : lens === 'favorites' ? (
           // The Favorites tab (YAZ-1766): the pinned rows in the user's order, each a full tree row —
           // a favorited folder unfolds in place through the SAME `expanded` set as Files (D7) and
@@ -2407,6 +2435,7 @@ export function Sidebar({
               onInfo: (path) => setInfoPopover({ x: menu.x, y: menu.y, path, now: Date.now(), info: null }),
               onHistory: (path) => onHistoryFile?.(path),
               onShare: (path) => onShareFile?.(path),
+              onHideCardSkill,
             },
           )}
           onClose={() => setMenu(null)}

@@ -12303,3 +12303,90 @@ describe('Show IDs in the files list (YAZ-4940 part 2)', () => {
     expect(idOf(el, '/v/a.md')).toBe('#46')
   })
 })
+
+/**
+ * The card skill as the app's own vault (YAZ-5108): App hands it LAST in `vaults`, with `app: true`. The person's own
+ * vault keeps its look — no vault row for it — and the skill is one more row at the bottom, with a lock. Its row has
+ * its own menu, and a row inside it reads only. Made-up paths only.
+ */
+describe('the card skill in the sidebar (YAZ-5108)', () => {
+  const SKILL = '/demo-profile/card-skill'
+  const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
+  const SKILL_TREE: TreeNode[] = [file(`${SKILL}/Start here.md`), { type: 'dir', name: 'formats', path: `${SKILL}/formats`, children: [file(`${SKILL}/formats/Concept.md`)] }]
+  const vault = (root: string, name: string, over: Partial<Vault> = {}): Vault => ({ root, name, watch: { subscribe: () => () => undefined }, index: indexFor(true), review: false, dueCount: 0, reviewing: false, ...over })
+  const skill = (): Vault => vault(SKILL, 'Card skill', { index: indexFor(false), readOnly: true, app: true })
+  const pagesTree = (root: string): TreeNode[] => [{ type: 'dir', name: 'sub', path: `${root}/sub`, children: [] }, file(`${root}/a.md`)]
+  const mountWith = (vaults: Vault[], over: Partial<SidebarProps> = {}) =>
+    mount({ vaults, ...over }, async (bridge) => {
+      bridge.tree.mockImplementation(async (root: string) => ({ root, tree: root === SKILL ? SKILL_TREE : pagesTree(root), generatedAt: 1 }))
+      bridge.window.identity.mockResolvedValue({ id: 'w1', root: vaults[0].root, roots: vaults.filter((v) => v.app !== true).map((v) => v.root), file: null, tabs: [], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', cardSkill: SKILL })
+      await storage.init()
+    })
+  const rowByPath = (el: HTMLElement, path: string) => el.querySelector<HTMLButtonElement>(`.tree__row[data-path="${path}"]`)
+  const topLabels = (el: HTMLElement) => [...el.querySelectorAll('ul.tree[role="tree"] > li > .tree__row .tree__label')].map((l) => l.textContent)
+  const rightClick = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
+  const topItems = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.ctx-menu:not(.ctx-menu__sub) > .ctx-menu__group > .ctx-menu__item, .ctx-menu:not(.ctx-menu__sub) > .ctx-menu__group > .ctx-menu__parent > .ctx-menu__item')].map((b) => b.textContent)
+  const escape = () => act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+  /** The first mount of a test leaves, as `afterEach` does, so a second one is the only panel. */
+  const unmountPanel = () => {
+    act(() => root?.unmount())
+    root = null
+    container?.remove()
+    container = null
+  }
+
+  it('a window with one vault keeps its rows and its blank-space menu; the card skill is one more row at the bottom, with a lock, closed', async () => {
+    const one = await mountWith([vault('/cs1/pages', 'Pages')])
+    const before = { top: topLabels(one.el), rows: [...one.el.querySelectorAll<HTMLElement>('.tree__row')].map((r) => r.dataset.path) }
+    rightClick(one.el.querySelector('.sidebar__body'))
+    const blankBefore = topItems(one.el)
+    escape()
+    unmountPanel()
+    const { el } = await mountWith([vault('/cs1/pages', 'Pages'), skill()], { closedVaults: [SKILL] })
+    expect(topLabels(el)).toEqual([...before.top, 'Card skill'])
+    expect([...el.querySelectorAll<HTMLElement>('.tree__row')].map((r) => r.dataset.path)).toEqual([...before.rows, SKILL])
+    // Only the skill is a vault row: the person's vault has none, as before.
+    expect([...el.querySelectorAll('.tree__row--vault')].map((r) => (r as HTMLElement).dataset.path)).toEqual([SKILL])
+    const row = rowByPath(el, SKILL)!
+    expect(row.querySelector('[aria-label="Read only"]')).not.toBeNull()
+    expect(row.dataset.tour).toBe('card-skill-row')
+    expect(row.draggable).toBe(false)
+    expect(row.closest('[role="treeitem"]')?.getAttribute('aria-expanded')).toBe('false')
+    rightClick(el.querySelector('.sidebar__body'))
+    expect(topItems(el)).toEqual(blankBefore)
+  })
+
+  it('a window with two vaults: their rows as today, then "Card skill" last; the header shows no lock for it', async () => {
+    const { el } = await mountWith([vault('/cs2/pages', 'Pages'), vault('/cs2/work', 'Work'), skill()], { onAllowFileChanges: vi.fn() })
+    expect(topLabels(el)).toEqual(['Pages', 'Work', 'Card skill'])
+    expect(el.querySelector('.vault-lock')).toBeNull()
+  })
+
+  it('stays last whatever the sort, and opens like a vault row: its pages show below it, and nothing of it goes to the store', async () => {
+    const { el, props, bridge, rerender } = await mountWith([vault('/cs3/pages', 'Pages'), skill()], { closedVaults: [SKILL], settings: { ...TEST_SETTINGS, sidebarSort: { ...TEST_SETTINGS.sidebarSort, files: { by: 'name', reverse: true } } } })
+    expect(topLabels(el).at(-1)).toBe('Card skill')
+    act(() => rowByPath(el, SKILL)?.click())
+    expect(props.onSetVaultOpen).toHaveBeenCalledWith(SKILL, true)
+    await rerender({ closedVaults: [] })
+    expect(rowByPath(el, `${SKILL}/Start here.md`)).not.toBeNull()
+    act(() => rowByPath(el, `${SKILL}/formats`)?.click())
+    expect((bridge.state.setFolder.mock.calls as unknown as [string][]).map(([root]) => root)).not.toContain(SKILL)
+  })
+
+  it('its row\'s menu is Copy path and Hide card skill; Hide runs App\'s door', async () => {
+    const onHideCardSkill = vi.fn()
+    const { el } = await mountWith([vault('/cs4/pages', 'Pages'), skill()], { onHideCardSkill })
+    rightClick(rowByPath(el, SKILL))
+    expect(topItems(el)).toEqual(['Copy path', 'Hide card skill'])
+    act(() => itemByLabel(el, 'Hide card skill')?.click())
+    expect(onHideCardSkill).toHaveBeenCalledOnce()
+  })
+
+  it('a page inside it reads only: no rename, delete, create, focus or favorite', async () => {
+    const { el } = await mountWith([vault('/cs5/pages', 'Pages'), skill()])
+    rightClick(rowByPath(el, `${SKILL}/Start here.md`))
+    const items = topItems(el)
+    for (const label of ['Rename', 'Delete', 'New page', 'Paste', 'Add to focus', 'Add to favorites', 'Change icon']) expect(items).not.toContain(label)
+    expect(items).toContain('Copy path')
+  })
+})

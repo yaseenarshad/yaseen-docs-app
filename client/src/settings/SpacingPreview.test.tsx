@@ -45,7 +45,7 @@ it('YAZ-5050 round 2: Settings › Review is split into groups by purpose, every
   const review = SETTINGS_SECTIONS.find((s) => s.id === 'review')!
   expect(review.groups.map((g) => g.title ?? null)).toEqual([null, 'Daily limits', 'Answers', 'Scheduling', 'Card look', null])
   expect(review.groups.map((g) => g.items.map((i) => i.id))).toEqual([
-    ['enabled'],
+    ['enabled', 'cardSkillInSidebar'],
     ['newPerDay', 'upNextPerDay', 'newOrder'],
     ['buttons', 'pauseAfter', 'timeSoFar'],
     ['retention', 'maxDays', 'fuzz', 'weights'],

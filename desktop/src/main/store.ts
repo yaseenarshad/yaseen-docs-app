@@ -679,6 +679,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   commentsOrder: (v): v is CommentsOrder => typeof v === 'string' && (COMMENTS_ORDERS as readonly string[]).includes(v),
   commentsResolved: (v): v is CommentsResolvedPlace => typeof v === 'string' && (COMMENTS_RESOLVED_PLACES as readonly string[]).includes(v),
   commentsHint: (v): v is boolean => typeof v === 'boolean',
+  cardSkillInSidebar: (v): v is boolean => typeof v === 'boolean',
   profile: (v): v is CommentProfile | null => v === null || isCommentProfile(v),
   sidebarSort: isSidebarSort,
   searchSort: (v): v is TabSort => isTabSort(v, false, true),

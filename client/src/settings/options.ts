@@ -303,6 +303,12 @@ export const ON_OFF_OPTIONS: readonly Option<boolean>[] = [
   { label: 'Off', value: false },
 ]
 
+/** Show · Hide, for a thing the app shows or not (YAZ-5108: the card skill in the sidebar). */
+export const SHOW_HIDE_OPTIONS: readonly Option<boolean>[] = [
+  { label: 'Show', value: true },
+  { label: 'Hide', value: false },
+]
+
 /**
  * Obsidian's "Default location for new pages" options and order (Files & Links, Links C2- —
  * GRO-2240): drives where clicking a bare unresolved [[link]] creates its page. The labels

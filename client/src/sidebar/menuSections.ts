@@ -226,6 +226,8 @@ export interface MenuHandlers {
   onHistory: (path: string) => void
   /** "Share" (YAZ-3040, Draw's YAZ-1799 D6): open the Share dialog on the board — Info's gate. */
   onShare: (path: string) => void
+  /** "Hide card skill" on the card skill's row (YAZ-5108): the switch goes to Hide, its tabs close, and a notice says where the switch is. */
+  onHideCardSkill?: () => void
 }
 
 type Item = (t: MenuSectionTargets, h: MenuHandlers) => MenuItem | null
@@ -730,8 +732,22 @@ const DELETE_GROUP: readonly Item[] = [share, history, info, del, removeShortcut
 const build = <T extends MenuItem>(group: readonly ((t: MenuSectionTargets, h: MenuHandlers) => T | null)[], t: MenuSectionTargets, h: MenuHandlers): T[] =>
   group.map((rule) => rule(t, h)).filter((item): item is T => item !== null)
 
+/** The words of the card skill's own rows (YAZ-5108): one place, for the menu and its tests. */
+export const CARD_SKILL_MENU = { copyPath: 'Copy path', hide: 'Hide card skill' } as const
+
+/**
+ * The card skill's row (YAZ-5108; decision 4): the app's own vault, read only, so none of a vault's rows (Rename, Remove
+ * from this window, Open by itself, New …, Paste). Two groups: Copy path · Hide card skill.
+ */
+function cardSkillSections(root: string, t: MenuSectionTargets, h: MenuHandlers): MenuSection[] {
+  const copy = copyPath({ ...t, copyPath: root }, h)!
+  const hide: MenuAction = { id: 'hide-card-skill', label: CARD_SKILL_MENU.hide, onSelect: () => h.onHideCardSkill?.() }
+  return [[copy], h.onHideCardSkill === undefined ? [] : [hide]]
+}
+
 /** The six groups of 🔒 D7 (as amended), in order, every null item dropped. An empty group is the component's to skip. */
 export function buildMenuSections(targets: MenuSectionTargets, handlers: MenuHandlers): MenuSection[] {
+  if (targets.cardSkill != null) return cardSkillSections(targets.cardSkill, targets, handlers)
   // A row of "Recently closed" (YAZ-3487 D14) adds its own group in front; every other menu keeps its six.
   return [...(targets.forgetClosed === null ? [] : [CLOSED_GROUP]), OPEN_GROUP, CLIPBOARD_GROUP, CREATE_GROUP, ROW_GROUP, OPEN_IN_GROUP, DELETE_GROUP].map((group) => build(group, targets, handlers))
 }

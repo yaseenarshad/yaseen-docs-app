@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { buildMenuSections, type MenuAction, type MenuHandlers, type MenuParent, type MenuSection, type MenuSectionTargets, scopeGroup, SCOPE_TIPS } from './menuSections'
+import { buildMenuSections, CARD_SKILL_MENU, type MenuAction, type MenuHandlers, type MenuParent, type MenuSection, type MenuSectionTargets, scopeGroup, SCOPE_TIPS } from './menuSections'
 
 const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => ({
   x: 0,
@@ -956,5 +956,35 @@ describe('scopeGroup', () => {
     // Off already, the list on screen's check turns it on with two clicks.
     expect(scopeGroup('favorites', { workspace: false, vault: true }, set, { scope: 'workspace', ask })[1].twoClick).toBe(true)
     expect(set).not.toHaveBeenCalled()
+  })
+})
+
+describe('the card skill\'s row (YAZ-5108)', () => {
+  const SKILL = '/Users/demo/Library/Application Support/Yaseen Docs/card-skill'
+  /** The skill's row as the sidebar pins it: a vault row, with every vault item a user vault would have. */
+  const SKILL_ROW: Partial<MenuSectionTargets> = { rowKind: 'dir', copyPath: SKILL, openPath: SKILL, revealPath: SKILL, openVsCodePath: SKILL, removeVault: SKILL, openAlone: SKILL, targetDir: SKILL, cardSkill: SKILL }
+
+  it('has its own menu: Copy path, then Hide card skill — none of a vault\'s rows', () => {
+    const sections = build(SKILL_ROW, { onHideCardSkill: vi.fn() })
+    expect(groupsOf(sections)).toEqual([[CARD_SKILL_MENU.copyPath], [CARD_SKILL_MENU.hide]])
+    expect(CARD_SKILL_MENU).toEqual({ copyPath: 'Copy path', hide: 'Hide card skill' })
+    for (const label of ['Rename', 'Remove from this window', 'Open by itself', 'Set shortcut', 'New page', 'Paste', 'Open folder page']) expect(allLabelsOf(sections)).not.toContain(label)
+  })
+
+  it('Copy path puts the copy\'s path on the clipboard; Hide card skill runs its door', async () => {
+    const writeText = installClipboard()
+    const onHideCardSkill = vi.fn()
+    const onNotice = vi.fn()
+    const sections = build(SKILL_ROW, { onHideCardSkill, onNotice })
+    select(sections, 'Copy path')
+    await Promise.resolve()
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(SKILL)
+    expect(onNotice).toHaveBeenCalledWith('Copied path', 'info', 'clipboard')
+    select(sections, 'Hide card skill')
+    expect(onHideCardSkill).toHaveBeenCalledOnce()
+  })
+
+  it('a row that is not the skill\'s keeps the menu it had', () => {
+    expect(labelsOf(build({ ...FILE_ROW, cardSkill: null }))).toEqual(labelsOf(build(FILE_ROW)))
   })
 })
