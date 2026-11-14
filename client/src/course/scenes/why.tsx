@@ -88,7 +88,7 @@ function Forget(props: SceneProps) {
             label: String(d),
             p: between(b, week + (d - 1) * 0.07, week + 0.06 + (d - 1) * 0.07),
           }))}
-          notes={[
+          pages={[
             {
               day: 6.6,
               r: memory(7, 1.6) + 0.09,
@@ -394,7 +394,7 @@ function Cells(props: SceneProps) {
           <Medal beat={b} p={medal} shine={since(b, 0.8, 1.1)} year="2000" />
           <div style={rise(b, since(b, 0.74, 0.6))}>
             <Words size="title">Nobel Prize</Words>
-            <Words size="note">Physiology or Medicine · how brain cells store memory</Words>
+            <Words size="page">Physiology or Medicine · how brain cells store memory</Words>
           </div>
         </Layer>
       )}
@@ -583,7 +583,7 @@ function Model(props: SceneProps) {
             lo={CLOSE}
             line90={line}
             yLabel="Chance you remember"
-            notes={[
+            pages={[
               {
                 day: Math.max(1.6, cursor),
                 r: Math.min(0.99, memory(cursor, S9) + 0.03),
@@ -769,7 +769,7 @@ function TryIt(props: SceneProps) {
               inbox={4}
               rows={[
                 { name: 'Course Cards', kind: 'folder' },
-                { name: 'Notes', kind: 'folder' },
+                { name: 'Pages', kind: 'folder' },
                 { name: 'Reading list', kind: 'page' },
               ]}
             />

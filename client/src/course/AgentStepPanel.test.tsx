@@ -88,7 +88,7 @@ describe('AgentStepPanel', () => {
 
   it('in a vault where the course only shows, the prompt part says why in one line', async () => {
     const shown = showOnlyHost('/vault', 'This vault is read only, so the course only shows. It makes no files.')
-    act(() => shown.agentStep.setText('My notes.'))
+    act(() => shown.agentStep.setText('My pages.'))
     act(() => root.render(<AgentStepPanel host={shown} parts={['prompt']} />))
     expect(el.textContent).toBe('This vault is read only, so the course only shows. It makes no files.')
   })

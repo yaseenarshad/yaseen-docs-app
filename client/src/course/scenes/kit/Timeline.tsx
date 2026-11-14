@@ -78,7 +78,7 @@ export function Calendar({ beat, today, chips, glowToday = 0, draw = 1, dim = 0,
         {title}
       </text>
       {WEEKDAYS.map((d, i) => (
-        <text key={i} className="kit-svg-note" x={i * (cell + gap) + cell / 2} y={38} textAnchor="middle">
+        <text key={i} className="kit-svg-page" x={i * (cell + gap) + cell / 2} y={38} textAnchor="middle">
           {d}
         </text>
       ))}
@@ -88,7 +88,7 @@ export function Calendar({ beat, today, chips, glowToday = 0, draw = 1, dim = 0,
         return (
           <g key={i} opacity={isToday ? 1 : 1 - 0.6 * clamp(dim)}>
             <rect className={`kit-cal__day${isToday ? ' is-today' : ''}`} x={x} y={y} width={cell} height={cell} rx={8} style={isToday && g > 0 ? { fillOpacity: 0.15 + 0.6 * g } : undefined} />
-            <text className="kit-svg-note" x={x + 8} y={y + 16}>
+            <text className="kit-svg-page" x={x + 8} y={y + 16}>
               {i + 1}
             </text>
           </g>

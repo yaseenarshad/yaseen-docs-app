@@ -231,7 +231,7 @@ function Sizes(props: SceneProps) {
             }}
           >
             <span className="kit-sizes__bare">Protein: builds muscle</span>
-            <Words size="note">One line</Words>
+            <Words size="page">One line</Words>
           </div>
           <div className="kit-sizes__card" style={rise(b, since(b, 0, 0.6))}>
             <CardView beat={b} title={PROTEIN.title} text={PROTEIN.text} links={PROTEIN.links} shown={PROTEIN.hidden} className="kit-cardview--small" lit={[pick, pick]} />
@@ -251,7 +251,7 @@ function Sizes(props: SceneProps) {
                 <i key={i} style={{ width: `${70 + ((i * 37) % 30)}%` }} />
               ))}
             </span>
-            <Words size="note">A whole page</Words>
+            <Words size="page">A whole page</Words>
           </div>
         </div>
         <div className="kit-tags">
@@ -564,7 +564,7 @@ function MakeCard(props: SceneProps) {
           card
         )}
         {id === 'c2-10' && (
-          <Words size="note">{reveal === 0 ? 'Tap the card to show the hidden word' : (back ?? '') !== '' && reveal === 1 ? 'Tap again to show the back' : 'That is the check'}</Words>
+          <Words size="page">{reveal === 0 ? 'Tap the card to show the hidden word' : (back ?? '') !== '' && reveal === 1 ? 'Tap again to show the back' : 'That is the check'}</Words>
         )}
         {showBackLine && (
           <form className="kit-make kit-make--back" onSubmit={(e) => submitBack(e)} style={rise(b, since(b, 0.1, 0.5))}>
@@ -613,7 +613,7 @@ function MakeCard(props: SceneProps) {
         active: true,
         glow: since(b, 0.3, 0.6) * (1 - since(b, 0.85, 0.6)),
       },
-      { name: 'Notes', kind: 'folder' },
+      { name: 'Pages', kind: 'folder' },
       { name: 'Reading list', kind: 'page' },
     ]
     stage = (
@@ -703,7 +703,7 @@ function InTheApp(props: SceneProps) {
           },
         ]
       : []),
-    { name: 'Notes', kind: 'folder' },
+    { name: 'Pages', kind: 'folder' },
     { name: 'Reading list', kind: 'page' },
   ]
 
@@ -1019,7 +1019,7 @@ function HubAndInbox(props: SceneProps) {
               rows={[
                 { name: 'Course Cards', kind: 'folder', open: true },
                 { name: 'Sleep debt adds up', kind: 'card', depth: 1 },
-                { name: 'Notes', kind: 'folder' },
+                { name: 'Pages', kind: 'folder' },
               ]}
             />
           }

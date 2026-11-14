@@ -61,10 +61,10 @@ export function BrainCells({ beat, draw, pulses, strength, switches = [], labels
         return <circle key={i} className="kit-cell__pulse" cx={x} cy={A.y} r={7} opacity={beat.reduced ? 1 - q : 1} />
       })}
       <g opacity={clamp(labels)}>
-        <text className="kit-svg-note" x={A.x} y={A.y + 112} textAnchor="middle">
+        <text className="kit-svg-page" x={A.x} y={A.y + 112} textAnchor="middle">
           Brain cell
         </text>
-        <text className="kit-svg-note" x={B.x} y={B.y + 112} textAnchor="middle">
+        <text className="kit-svg-page" x={B.x} y={B.y + 112} textAnchor="middle">
           Brain cell
         </text>
         <text className="kit-svg-label kit-svg-label--accent" x={(AXON_END.x + SYNAPSE.x) / 2} y={A.y - 40} textAnchor="middle">

@@ -119,7 +119,7 @@
   text-transform: uppercase;
   color: var(--fg-muted);
 }
-.kit-words--note {
+.kit-words--page {
   font-size: clamp(11px, 2.3cqmin, 14px);
   color: var(--fg-muted);
 }
@@ -329,12 +329,12 @@
   max-height: 100%;
   overflow: visible;
 }
-.kit-svg-note {
+.kit-svg-page {
   fill: var(--fg-muted);
   font-family: var(--font);
   font-size: 13px;
 }
-.kit-svg-note--accent,
+.kit-svg-page--accent,
 .kit-svg-label--accent {
   fill: var(--accent);
 }

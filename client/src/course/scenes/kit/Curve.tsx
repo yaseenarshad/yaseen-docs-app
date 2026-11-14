@@ -98,7 +98,7 @@ export interface CurveProps {
   /** Points as dots (an old study's), as [day, memory 0..1], with their opacity. */
   dots?: { points: readonly (readonly [number, number])[]; p: number }
   /** Words on the stage, at a day and a memory level. */
-  notes?: readonly { day: number; r: number; text: string; p: number; tone?: 'accent' | 'muted' | 'strong'; anchor?: 'start' | 'middle' | 'end' }[]
+  pages?: readonly { day: number; r: number; text: string; p: number; tone?: 'accent' | 'muted' | 'strong'; anchor?: 'start' | 'middle' | 'end' }[]
   /** 0..1: the main curve's opacity (default 1). */
   opacity?: number
   /** 0..1: the curve glows (it is the one to look at). */
@@ -112,7 +112,7 @@ export interface CurveProps {
   children?: ReactNode
 }
 
-export function Curve({ beat, axis, axes, cursor, reviews = [], jumps = [], s0 = S0, ghost = 0, line90 = 0, ticks = [], dots, notes = [], opacity = 1, glow = 0, yLabel = 'How much you remember', xLabel = 'Days', lo = 0, today = true, children }: CurveProps) {
+export function Curve({ beat, axis, axes, cursor, reviews = [], jumps = [], s0 = S0, ghost = 0, line90 = 0, ticks = [], dots, pages = [], opacity = 1, glow = 0, yLabel = 'How much you remember', xLabel = 'Days', lo = 0, today = true, children }: CurveProps) {
   const pts = cursor > 0 ? curvePoints(axis, cursor, reviews, jumps, s0, lo) : []
   const head = pts.length > 0 ? pts[pts.length - 1] : null
   const a = clamp(axes)
@@ -122,17 +122,17 @@ export function Curve({ beat, axis, axes, cursor, reviews = [], jumps = [], s0 =
         <line className="kit-ax" x1={VIEW.l} y1={VIEW.b} x2={VIEW.r} y2={VIEW.b} />
         <line className="kit-ax" x1={VIEW.l} y1={VIEW.t - 8} x2={VIEW.l} y2={VIEW.b} />
         <line className="kit-grid" x1={VIEW.l} y1={yOf(1, lo)} x2={VIEW.r} y2={yOf(1, lo)} />
-        <text className="kit-svg-note" x={VIEW.l - 24} y={(VIEW.t + VIEW.b) / 2} textAnchor="middle" transform={`rotate(-90 ${VIEW.l - 24} ${(VIEW.t + VIEW.b) / 2})`}>
+        <text className="kit-svg-page" x={VIEW.l - 24} y={(VIEW.t + VIEW.b) / 2} textAnchor="middle" transform={`rotate(-90 ${VIEW.l - 24} ${(VIEW.t + VIEW.b) / 2})`}>
           {yLabel}
         </text>
-        <text className="kit-svg-note" x={VIEW.r} y={VIEW.b + 40} textAnchor="end">
+        <text className="kit-svg-page" x={VIEW.r} y={VIEW.b + 40} textAnchor="end">
           {xLabel}
         </text>
       </g>
       {ticks.map((tick) => (
         <g key={tick.label} opacity={clamp(tick.p) * a}>
           <line className="kit-ax" x1={xOf(axis, tick.day)} y1={VIEW.b} x2={xOf(axis, tick.day)} y2={VIEW.b + 4} />
-          <text className="kit-svg-note" x={xOf(axis, tick.day)} y={VIEW.b + 20} textAnchor="middle">
+          <text className="kit-svg-page" x={xOf(axis, tick.day)} y={VIEW.b + 20} textAnchor="middle">
             {tick.label}
           </text>
         </g>
@@ -140,7 +140,7 @@ export function Curve({ beat, axis, axes, cursor, reviews = [], jumps = [], s0 =
       {line90 > 0 && (
         <g opacity={clamp(line90)}>
           <line className="kit-line90" x1={VIEW.l} y1={yOf(0.9, lo)} x2={lerp(VIEW.l, VIEW.r, beat.reduced ? 1 : ease.out(clamp(line90)))} y2={yOf(0.9, lo)} />
-          <text className="kit-svg-note kit-svg-note--accent" x={VIEW.r} y={yOf(0.9, lo) - 8} textAnchor="end">
+          <text className="kit-svg-page kit-svg-page--accent" x={VIEW.r} y={yOf(0.9, lo) - 8} textAnchor="end">
             90%
           </text>
         </g>
@@ -177,8 +177,8 @@ export function Curve({ beat, axis, axes, cursor, reviews = [], jumps = [], s0 =
         </text>
       </g>
       {head !== null && cursor > 0.05 && <circle className="kit-dot-hollow" cx={head[0]} cy={head[1]} r={4.5} opacity={clamp(opacity)} />}
-      {notes.map((n) => (
-        <text key={n.text} className={`kit-svg-label${n.tone === 'accent' ? ' kit-svg-label--accent' : n.tone === 'muted' ? ' kit-svg-note' : ''}`} x={xOf(axis, n.day)} y={yOf(n.r, lo)} textAnchor={n.anchor ?? 'middle'} opacity={clamp(n.p)}>
+      {pages.map((n) => (
+        <text key={n.text} className={`kit-svg-label${n.tone === 'accent' ? ' kit-svg-label--accent' : n.tone === 'muted' ? ' kit-svg-page' : ''}`} x={xOf(axis, n.day)} y={yOf(n.r, lo)} textAnchor={n.anchor ?? 'middle'} opacity={clamp(n.p)}>
           {n.text}
         </text>
       ))}
@@ -224,16 +224,16 @@ export function Ridge({ beat, draw, early = 0, late = 0, peak = 0, peakAt = 0.36
       <g opacity={clamp(draw * 3)}>
         <line className="kit-ax" x1={VIEW.l} y1={VIEW.b} x2={VIEW.r} y2={VIEW.b} />
         <line className="kit-ax" x1={VIEW.l} y1={VIEW.t - 8} x2={VIEW.l} y2={VIEW.b} />
-        <text className="kit-svg-note" x={VIEW.l - 24} y={(VIEW.t + VIEW.b) / 2} textAnchor="middle" transform={`rotate(-90 ${VIEW.l - 24} ${(VIEW.t + VIEW.b) / 2})`}>
+        <text className="kit-svg-page" x={VIEW.l - 24} y={(VIEW.t + VIEW.b) / 2} textAnchor="middle" transform={`rotate(-90 ${VIEW.l - 24} ${(VIEW.t + VIEW.b) / 2})`}>
           Memory kept
         </text>
-        <text className="kit-svg-note" x={VIEW.l} y={VIEW.b + 22} textAnchor="start">
+        <text className="kit-svg-page" x={VIEW.l} y={VIEW.b + 22} textAnchor="start">
           Short gap
         </text>
-        <text className="kit-svg-note" x={VIEW.r} y={VIEW.b + 22} textAnchor="end">
+        <text className="kit-svg-page" x={VIEW.r} y={VIEW.b + 22} textAnchor="end">
           Long gap
         </text>
-        <text className="kit-svg-note" x={(VIEW.l + VIEW.r) / 2} y={VIEW.b + 40} textAnchor="middle">
+        <text className="kit-svg-page" x={(VIEW.l + VIEW.r) / 2} y={VIEW.b + 40} textAnchor="middle">
           The gap before the review
         </text>
       </g>

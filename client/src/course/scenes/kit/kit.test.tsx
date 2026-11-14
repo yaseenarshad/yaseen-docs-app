@@ -72,7 +72,7 @@ const PIECES: Record<string, (b: Beat) => ReactElement> = {
   Tree: (b) => <Tree beat={b} nodes={H.nodes} edges={H.edges} show={Object.fromEntries([...H.nodes.map((n) => [n.id, b.progress]), ...H.edges.map((e) => [`${e.from}>${e.to}`, b.progress])])} glow={b.progress} />,
   BrainCells: (b) => <BrainCells beat={b} draw={1} pulses={b.marks.map((m) => since(b, m, 0.5))} strength={b.progress} switches={[b.progress]} labels={1} />,
   AppFrame: (b) => (
-    <AppWindow sidebar={<SidebarPreview inbox={4} inboxGlow={b.progress} rows={[{ name: 'Course Cards', kind: 'folder', open: true }, { name: 'x', kind: 'card', depth: 1, typing: 'Sle' }, { name: 'Notes', kind: 'page', glow: 1 }]} />}>
+    <AppWindow sidebar={<SidebarPreview inbox={4} inboxGlow={b.progress} rows={[{ name: 'Course Cards', kind: 'folder', open: true }, { name: 'x', kind: 'card', depth: 1, typing: 'Sle' }, { name: 'Pages', kind: 'page', glow: 1 }]} />}>
       <MenuPreview beat={b} items={[{ label: 'New card', active: b.progress }]} x={10} y={10} p={b.progress} />
       <ToolbarPreview beat={b} items={[{ label: 'Hide word', key: '⌘L', active: 1 }]} x={50} y={30} p={b.progress} />
       <SlashPreview beat={b} rows={[{ label: 'New side', key: '⌘⇧↵' }]} x={30} y={40} p={b.progress} />

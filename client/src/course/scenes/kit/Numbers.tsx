@@ -23,8 +23,8 @@ export interface Bar {
   /** 0 to 100. */
   value: number
   tone?: 'accent' | 'muted' | 'ok' | 'danger'
-  /** The note under the bar's label. */
-  note?: string
+  /** The page under the bar's label. */
+  page?: string
 }
 
 /**
@@ -46,7 +46,7 @@ export function Bars({ beat, bars, at, seconds = 1.1, unit = '%' }: { beat: Beat
               <span className="kit-bar__fill" style={{ height: `${(bar.value * h).toFixed(2)}%` }} />
             </span>
             <span className="kit-bar__label">{bar.label}</span>
-            {bar.note !== undefined && <span className="kit-bar__note">{bar.note}</span>}
+            {bar.page !== undefined && <span className="kit-bar__note">{bar.page}</span>}
           </div>
         )
       })}
