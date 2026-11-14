@@ -322,3 +322,20 @@
 .later-upnext {
   margin-left: auto;
 }
+
+/* c11-06: the card and the agent share the row; each keeps its own half, so neither runs onto the other. */
+.later-fix__card {
+  width: min(44cqw, 24em);
+}
+.later-fix__chat {
+  width: min(46cqw, 24em);
+}
+/* A narrow stage shows less at once: the chat and the file's change carry the step; the card steps out. */
+@container (max-width: 560px) {
+  .later-fix__card {
+    display: none;
+  }
+  .later-fix__chat {
+    width: 88cqw;
+  }
+}

@@ -686,10 +686,14 @@ function TryIt(props: SceneProps) {
   const tryAt = cue(b, 0, 0.649)
   return (
     <Stage beat={b} label="Try it in the app: answer your own card in the real Inbox">
-      <Layer style={{ opacity: 0.5 * since(b, 0, 0.6) }}>
+      <Layer style={{ opacity: since(b, 0, 0.6) }}>
         <AppWindow sidebar={<SidebarPreview inbox={1} rows={SIDEBAR.map((r) => (r.name === 'Course Cards' ? { ...r, glow: showFor(since(b, 0.1, 0.4), since(b, 0.55, 0.4)) } : r))} />}>
           <MenuPreview beat={b} x={2} y={30} p={showFor(since(b, 0.15, 0.4), since(b, 0.55, 0.4))} items={[{ label: 'New card' }, { label: 'Review this folder', active: since(b, 0.3, 0.3), rule: true }, { label: 'Rename' }]} />
         </AppWindow>
+      </Layer>
+      {/* The app behind "Try it in the app", stepped back by a veil: its parts still cover each other as in the app. */}
+      <Layer place="fill" style={{ padding: 0, opacity: since(b, 0, 0.6) }}>
+        <div className="kit-veil" />
       </Layer>
       <Layer>
         <TryChip beat={b} p={since(b, 0.04, 0.6)} glow={showFor(since(b, tryAt - 0.04, 0.4), since(b, 0.97, 0.4))} beside={<span className="course__btn">Next chapter</span>} />

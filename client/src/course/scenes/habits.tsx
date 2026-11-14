@@ -31,7 +31,7 @@ function ThreeHabits(props: SceneProps) {
     <Stage beat={b} label={id === 'c9-01' ? 'The whole system, from a step back' : id === 'c9-02' ? 'Three habits: make, review, tend' : 'Reviewing is the daily habit: open the Inbox, and the app picks the cards'}>
       {cardsOut < 1 && (
         <Layer style={{ opacity: 1 - cardsOut }}>
-          <div className="later-zoom" style={{ transform: b.reduced ? undefined : `scale(${lerp(1.35, 0.72, back).toFixed(3)})`, opacity: lerp(1, 0.55, back) }}>
+          <div className="later-zoom" style={{ transform: b.reduced ? undefined : `scale(${lerp(1.35, 0.85, back).toFixed(3)})`, opacity: lerp(1, 0.55, back) }}>
             <div className="kit-many">
               {MANY_TITLES.slice(0, 9).map((title, i) => (
                 <MiniCard key={title} title={title} style={pop(b, since(b, i * 0.03, 0.4), 0.8)} />
@@ -48,7 +48,7 @@ function ThreeHabits(props: SceneProps) {
           </svg>
         </Layer>
       )}
-      <Layer style={{ transform: b.reduced ? undefined : `translateY(${lerp(0, -30, up).toFixed(2)}cqh) scale(${lerp(1, 0.62, up).toFixed(3)})` }}>
+      <Layer style={{ transform: b.reduced ? undefined : `translateY(${lerp(0, -30, up).toFixed(2)}cqh) scale(${lerp(1, 0.85, up).toFixed(3)})` }}>
         <Habits beat={b} show={show} lit={id === 'c9-03' ? [0, since(b, 0, 0.6), 0] : [0, 0, tendLit]} pages={id === 'c9-02' ? [undefined, undefined, 'fixing and improving'] : undefined} pageP={[0, 0, tendLit]} />
       </Layer>
       {id === 'c9-03' && inbox > 0 && (

@@ -548,15 +548,17 @@ function TryIt(props: SceneProps) {
   const tryAt = cue(b, 0, 0.621)
   return (
     <Stage beat={b} label={unit('Try it in the app: embed your first card in a page')}>
-      <Layer style={{ opacity: 0.5 * since(b, 0, 0.6) }}>
+      <Layer style={{ opacity: since(b, 0, 0.6) }}>
         <AppWindow sidebar={<SidebarPreview inbox={4} rows={rows(CARD.title)} />}>
           <Tab name={CARD.title}>
-            <CardFile
-              beat={b}
-              menu={<MenuPreview beat={b} x={46} y={20} p={showFor(since(b, 0.12, 0.4), since(b, 0.6, 0.4))} items={cardMenuItems('file', { 'Copy card link': since(b, 0.3, 0.3) }, 'Show', unit)} />}
-            />
+            {/* Behind the button, the card file alone: its menu would lie on the card's words. */}
+            <CardFile beat={b} glow={showFor(since(b, 0.12, 0.4), since(b, 0.6, 0.4))} />
           </Tab>
         </AppWindow>
+      </Layer>
+      {/* The app behind "Try it in the app", stepped back by a veil: its parts still cover each other as in the app. */}
+      <Layer place="fill" style={{ padding: 0, opacity: since(b, 0, 0.6) }}>
+        <div className="kit-veil" />
       </Layer>
       <Layer>
         <TryChip beat={b} p={since(b, 0.04, 0.6)} glow={showFor(since(b, tryAt - 0.04, 0.4), since(b, 0.97, 0.4))} beside={<span className="course__btn">Next chapter</span>} />
@@ -597,15 +599,20 @@ function Everywhere(props: SceneProps) {
           </svg>
           {AROUND.map(([x, y, title], i) => (
             <div key={title} className="kit-every__page" style={{ left: `${x}%`, top: `${y}%`, ...pop(b, since(b, shown + 0.04 + i * 0.04, 0.5), 0.7) }}>
-              <span className="kit-every__title">{title}</span>
+              <span className="kit-every__title" style={{ opacity: 1 - widen }}>
+                {title}
+              </span>
               <i />
-              <span className="kit-every__embed">↗ {CARD.title}</span>
+              {/* As the view widens, the page's and the embed's words step out (they would be too small to read); its box stays. */}
+              <span className="kit-every__embed">
+                <span style={{ opacity: 1 - widen }}>↗ {CARD.title}</span>
+              </span>
               <i style={{ width: '70%' }} />
             </div>
           ))}
           <div className="kit-every__card" style={pop(b, since(b, one - 0.06, 0.5), 0.7)}>
             <span className="kit-every__cardtitle">{CARD.title}</span>
-            <span className="kit-every__home" style={{ opacity: since(b, 0.36, 0.4) }}>
+            <span className="kit-every__home" style={{ opacity: since(b, 0.36, 0.4) * (1 - widen) }}>
               <span className="kit-app__icon kit-app__icon--card" /> One home
             </span>
           </div>

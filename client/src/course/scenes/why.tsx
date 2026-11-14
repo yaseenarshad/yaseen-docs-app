@@ -441,7 +441,7 @@ function Experiments(props: SceneProps) {
           paddingTop: '2%',
         }}
       >
-        <BigNumber beat={b} p={big} value={317} label="experiments" />
+        <BigNumber beat={b} p={big} value={317} label="experiments" up={up > 0.5} />
       </Layer>
       <Layer style={{ opacity: wall, paddingTop: '22%' }}>
         <Tally beat={b} count={317} fill={fill} win={won} columns={29} />
@@ -733,11 +733,12 @@ function Chapters(props: SceneProps) {
     <Stage beat={b} label={`About ${COURSE_MINUTES} minutes, in 12 short chapters`}>
       <Layer
         place="top"
+        className="kit-minutes"
         style={{
           transform: b.reduced ? undefined : `translateY(${lerp(28, 0, up).toFixed(2)}%) scale(${lerp(1, 0.5, up).toFixed(3)})`,
         }}
       >
-        <BigNumber beat={b} p={since(b, cue(b, 0, 0.266) - 0.02, 0.8)} value={COURSE_MINUTES} label="minutes" />
+        <BigNumber beat={b} p={since(b, cue(b, 0, 0.266) - 0.02, 0.8)} value={COURSE_MINUTES} label="minutes" up={up > 0.5} />
       </Layer>
       <Layer style={{ paddingTop: '20%', opacity: since(b, 0.52, 0.5) }}>
         <ol className="kit-chapters">
@@ -764,7 +765,7 @@ function TryIt(props: SceneProps) {
   const b = useBeat(props)
   return (
     <Stage beat={b} label="Try it in the app: optional, always your choice">
-      <Layer style={{ opacity: since(b, 0.38, 0.7) * 0.55 }}>
+      <Layer style={{ opacity: since(b, 0.38, 0.7) }}>
         <AppWindow
           sidebar={
             <SidebarPreview
@@ -777,6 +778,10 @@ function TryIt(props: SceneProps) {
             />
           }
         />
+      </Layer>
+      {/* The app behind "Try it in the app", stepped back by a veil: its parts still cover each other as in the app. */}
+      <Layer place="fill" style={{ padding: 0, opacity: since(b, 0.38, 0.7) }}>
+        <div className="kit-veil" />
       </Layer>
       <Layer>
         <TryChip

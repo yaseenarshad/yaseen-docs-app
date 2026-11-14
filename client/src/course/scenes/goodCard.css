@@ -82,9 +82,12 @@
   width: min(70cqw, 20em);
 }
 .gc-bare__q {
+  /* Beside the card, never on its head ("Side 2 of 2"). */
   position: absolute;
-  top: -0.4em;
-  right: -0.3em;
+  top: 50%;
+  left: 100%;
+  margin: -0.65em 0 0 0.2em;
+  line-height: 1.3;
   color: var(--danger);
   font-size: 2.6em;
   font-weight: 800;

@@ -250,6 +250,20 @@
   width: min(54cqw, 22em);
   max-height: 80cqh;
 }
+/* A narrow stage: the calendar takes most of the row, so its days and weekdays keep the readable size. */
+@container (max-width: 560px) {
+  .kit-sooner__card .kit-mini {
+    width: 8.5em;
+  }
+  .kit-sooner__cal {
+    width: 64cqw;
+    max-height: 90cqh;
+  }
+  .kit-sooner__cal .kit-cal__weekday,
+  .kit-sooner__cal .kit-cal__num {
+    display: none;
+  }
+}
 
 /* c3-14: today's line of cards */
 .kit-queue {

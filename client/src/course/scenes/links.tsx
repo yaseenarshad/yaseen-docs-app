@@ -455,11 +455,12 @@ function AnyTarget(props: SceneProps) {
               {t.kind === 'file' && (
                 <>
                   <rect className="kit-web__card" x={-46} y={-28} width={92} height={56} rx={7} />
-                  <text className="kit-svg-page" y={-6} textAnchor="middle">
+                  {/* One text, two lines: the second line's place follows the label's size, so they never meet. */}
+                  <text className="kit-svg-page" y={-4} textAnchor="middle">
                     How muscle
-                  </text>
-                  <text className="kit-svg-page" y={10} textAnchor="middle">
-                    grows
+                    <tspan x={0} dy="1.2em">
+                      grows
+                    </tspan>
                   </text>
                 </>
               )}

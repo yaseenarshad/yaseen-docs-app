@@ -76,14 +76,15 @@ export function Cite({ beat, paper, p }: { beat: Beat; paper: PaperCite; p: numb
  * THE BIG NUMBER: a number that lifts out of the page and grows, counting up while it grows. `value` is the number;
  * `text` (optional) is how it is written when it lands ("1,350+"); `label` the words under it.
  */
-export function BigNumber({ beat, p, value, text, label, prefix = '', suffix = '', tone = 'accent' }: { beat: Beat; p: number; value: number; text?: string; label?: string; prefix?: string; suffix?: string; tone?: 'accent' | 'ok' | 'fg' }) {
+/** `up`: the number moved up and drew smaller; at a narrow stage its label then steps out (it would be under the readable size). */
+export function BigNumber({ beat, p, value, text, label, prefix = '', suffix = '', tone = 'accent', up = false }: { beat: Beat; p: number; value: number; text?: string; label?: string; prefix?: string; suffix?: string; tone?: 'accent' | 'ok' | 'fg'; up?: boolean }) {
   const q = clamp(p)
   const grow = moved(beat, q, ease.back)
   const count = beat.reduced ? value : Math.round(value * ease.out(clamp(q * 1.25)))
   const shown = q >= 0.8 || beat.reduced ? (text ?? `${prefix}${value.toLocaleString('en-US')}${suffix}`) : `${prefix}${count.toLocaleString('en-US')}${suffix}`
   return (
     <div
-      className={`kit-big kit-big--${tone}`}
+      className={`kit-big kit-big--${tone}${up ? ' kit-big--up' : ''}`}
       style={{
         opacity: clamp(q * 3),
         transform: beat.reduced ? undefined : `translateY(${lerp(28, 0, ease.out(q)).toFixed(2)}%) scale(${lerp(0.35, 1, grow).toFixed(4)})`,

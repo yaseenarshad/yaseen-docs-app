@@ -288,12 +288,15 @@ function Path({ beat, draws, span, here = 0, away = 0, opacity = 1 }: { beat: Be
     )
   })
   const youX = x(60)
+  let shownX = x(0)
   return (
     <svg className="kit-path" viewBox="0 0 600 260" preserveAspectRatio="xMidYMid meet" aria-hidden="true" style={{ opacity }}>
       <line className="kit-ax" x1={AX.l} y1={AX.y} x2={AX.r} y2={AX.y} />
       {TICKS.map(([day, label]) => {
         const tx = x(day)
-        const room = clamp((tx - AX.l - 30) / 50) * clamp((AX.r + 10 - tx) / 20)
+        // A tick's label shows only with room beside the last one shown: two labels never sit on each other.
+        const room = clamp((tx - AX.l - 30) / 50) * clamp((AX.r + 10 - tx) / 20) * clamp((tx - shownX - 80) / 20)
+        if (room > 0.5) shownX = tx
         return (
           <g key={label} opacity={room * 0.9}>
             <line className="kit-grid" x1={tx} y1={AX.y - 4} x2={tx} y2={AX.y + 4} />

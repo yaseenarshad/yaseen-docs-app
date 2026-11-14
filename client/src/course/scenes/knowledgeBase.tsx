@@ -245,7 +245,8 @@ function Digester({ beat, into, churn, keep, pass, known }: { beat: Beat; into: 
         if (p <= 0) return null
         const fall = moved(beat, p, ease.out)
         const a = ((i * 60 + turn) * Math.PI) / 180
-        const inside = { x: Math.cos(a) * 52, y: Math.sin(a) * 44 }
+        // A ring wider than the vessel, so two bits next to each other never sit on each other.
+        const inside = { x: Math.cos(a) * 92, y: Math.sin(a) * 66 }
         const out = moved(beat, clamp(pass * 1.4 - i * 0.07))
         const x = lerp(lerp((i - 2.5) * 30, inside.x, fall), 170, out)
         const y = lerp(lerp(-170, inside.y, fall), 40 + i * 6, out)

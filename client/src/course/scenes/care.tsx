@@ -174,14 +174,14 @@ function FixIt(props: SceneProps) {
       {agent ? (
         <Layer>
           <div className="kit-row">
-            <div className="later-tend__card">
+            <div className="later-tend__card later-fix__card">
               <Fit>
                 <CardView beat={b} title={b.progress >= keep + 0.06 ? PROTEIN_BRANCH.title : TOO_MUCH.title} id={b.progress >= keep + 0.06 ? PROTEIN_BRANCH.id : TOO_MUCH.id} text={b.progress >= keep + 0.06 ? PROTEIN_BRANCH.text : TOO_MUCH.text} sides={1} state="Due today" className="kit-cardview--small" />
                 <Answers beat={b} forgot={1} remembered={1} chosen={showFor(since(b, keep, 0.3), since(b, keep + 0.06, 0.2)) > 0.3 ? 'remembered' : null} />
               </Fit>
             </div>
-            <div className="later-stack">
-              <AgentChat beat={b} lines={[{ who: 'you', text: 'Make the Sleep card clearer: one idea, one hidden word.', p: between(b, tell, tell + 0.2) }, { who: 'agent', text: 'Done. Here is the change.', p: since(b, file - 0.04, 0.5) }]} style={{ width: 'min(46cqw, 24em)' }} />
+            <div className="later-stack later-fix__chat">
+              <AgentChat beat={b} lines={[{ who: 'you', text: 'Make the Sleep card clearer: one idea, one hidden word.', p: between(b, tell, tell + 0.2) }, { who: 'agent', text: 'Done. Here is the change.', p: since(b, file - 0.04, 0.5) }]} style={{ width: '100%' }} />
               <div className="later-file" style={rise(b, since(b, file, 0.6), 10)}>
                 <p className="later-file__name">sleep.md</p>
                 <p className="later-file__del" style={{ opacity: 1 - edited * 0.4 }}>
