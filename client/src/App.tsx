@@ -116,6 +116,7 @@ import { FILE_ACTIONS_ALLOW, READ_ONLY_VAULT_FILE, sanitizeReadOnlyVault, type F
 import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
 import { duplicateTabIds, nearSteps, stepIdOf, tabById, tabOf, useWorkspace, type ZoomFrom } from './workspace/useWorkspace'
+import { cycleStop, type InboxSlot } from './workspace/tabCycle'
 import { useTabSleep } from './workspace/useTabSleep'
 import { restoreSession } from './workspace/restoreSession'
 import { Welcome } from './Welcome'
@@ -395,7 +396,7 @@ export function App() {
   // id (YAZ-2940 D1): `active`, `mounted` and `preview` are ids, and two tabs may show one file.
   const {
     tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, openBackgroundAt, activate, sleep: sleepTabs, wake: wakeTab, close: closeTab, closeMany: closeTabs, openStored, move: moveTab,
-    closeActive, next: nextTab, prev: prevTab, back, forward, go: goToStep, openStep, canBack, canForward, history: tabHistory, reset: resetTabs,
+    closeActive, back, forward, go: goToStep, openStep, canBack, canForward, history: tabHistory, reset: resetTabs,
     renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
     moveRight, transferMainToRight, transferRightToMain,
@@ -1616,6 +1617,9 @@ export function App() {
   const inboxAt = inboxAnchor === null ? 0 : tabs.findIndex((t) => t.id === inboxAnchor) + 1
   const inboxAtRef = useRef(inboxAt)
   inboxAtRef.current = inboxAt
+  /** The Inbox tab's slot for ⌃Tab (YAZ-5373): null while no session is open. */
+  const inboxNow = useRef<InboxSlot | null>(null)
+  inboxNow.current = reviewer === null ? null : { at: inboxAt, front: inboxFront }
   /** A close from the Inbox tab's menu took the active page tab (YAZ-5016): the Inbox tab stays in front. */
   const inboxStays = useRef(false)
   /** The Inbox tab to the front: the blank tab, unused, goes (YAZ-2655 S73), and the tab board gives way. */
@@ -1794,16 +1798,24 @@ export function App() {
     setOverview(OVERVIEW_CLOSED)
     openKept(path, true)
   }, [openKept])
-  const toNextTab = useCallback(() => {
+  /**
+   * ⌃Tab / ⌃⇧Tab (rule 9): the next or previous tab of the strip as it shows — the Inbox tab one of them, where it stands
+   * (YAZ-5373: from it, the tab right after it, not the one after the page tab behind it). Read from `now` and `inboxNow`, so
+   * the menu's handlers stay put.
+   */
+  const toCycleTab = useCallback((dir: 1 | -1) => {
+    const { tabs: strip, active, blank: blankShows } = now.current
+    const stop = cycleStop(strip.map((t) => t.id), active, blankShows, inboxNow.current, dir)
+    if (stop === null) return
     setOverview(OVERVIEW_CLOSED)
-    setInboxFront(false)
-    nextTab()
-  }, [nextTab])
-  const toPrevTab = useCallback(() => {
-    setOverview(OVERVIEW_CLOSED)
-    setInboxFront(false)
-    prevTab()
-  }, [prevTab])
+    if ('inbox' in stop) showInbox()
+    else {
+      setInboxFront(false)
+      activate(stop.tab)
+    }
+  }, [activate, showInbox])
+  const toNextTab = useCallback(() => toCycleTab(1), [toCycleTab])
+  const toPrevTab = useCallback(() => toCycleTab(-1), [toCycleTab])
   // ⌘⌥← / ⌘⌥→ (YAZ-3647 D7), as ⌃Tab: a step to another page closes the tab board. The ‹ › buttons and a row of their
   // menu (E3) close it the same way: a zoom step in one tab moves neither the tab nor the file, so the effect above cannot.
   const toBack = useCallback(() => {

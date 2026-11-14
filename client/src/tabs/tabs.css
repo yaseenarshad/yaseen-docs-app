@@ -302,6 +302,13 @@
   mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
 }
 
+/* The Inbox tab's tray (YAZ-5374): the sidebar Inbox row's icon, placed and coloured as a page tab's file icon. */
+.tabbar__inbox-icon {
+  flex: none;
+  margin-right: 6px;
+  color: var(--fg-muted);
+}
+
 /* The name after the file icon and a sleeping tab's zzz (YAZ-4003): it runs on under the label's end and fades there. */
 .tabbar__name {
   min-width: 0;

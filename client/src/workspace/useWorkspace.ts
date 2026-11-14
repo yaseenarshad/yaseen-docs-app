@@ -218,7 +218,6 @@ export type TabsAction =
   | { type: 'close'; id: string } // ✕ / ⌘W: this tab only, a copy too (S11); the active tab closes to its right neighbour, else left
   | { type: 'close-many'; ids: readonly string[] } // the tab board's "Close them", "Close the others" and an island's ✕: each tab by `close`, in ONE change
   | { type: 'move'; from: number; to: number } // drag-to-reorder (I3): the tab at `from` lands at final index `to`
-  | { type: 'cycle'; dir: 1 | -1 } // ⌃Tab / ⌃⇧Tab: wraparound, plain left→right order
   | { type: 'back' } // the window steps back through its ONE list (YAZ-3647 D1)
   | { type: 'forward' } // …and forward again, as far as the list was walked back
   | { type: 'go'; id: number } // a row of the menu of ‹ or › (YAZ-3647 E3): straight to the step with that id, as that many Backs or Forwards would; a step that is gone: nothing (YAZ-3678 F4)
@@ -551,13 +550,6 @@ function tabsStep(s: TabsState, a: TabsAction): TabsState {
       const [moved] = tabs.splice(a.from, 1)
       tabs.splice(to, 0, moved)
       return { ...s, tabs, preview: moved.id === s.preview ? null : s.preview }
-    }
-    case 'cycle': {
-      // From the blank tab, which stands last (YAZ-2655): on to the first tab, back to the last real one.
-      if (s.blank) return s.tabs.length === 0 ? s : withActive(s, s.tabs[a.dir === 1 ? 0 : s.tabs.length - 1].id)
-      if (s.active === null || s.tabs.length < 2) return s
-      const i = s.tabs.findIndex((t) => t.id === s.active)
-      return withActive(s, s.tabs[(i + a.dir + s.tabs.length) % s.tabs.length].id)
     }
     case 'open-stored': {
       // A restore (YAZ-3147 D3, S16–S19, S27): each page that no tab shows joins the end in the saved
@@ -1000,8 +992,6 @@ export interface UseWorkspace extends WorkspaceState {
   move: (from: number, to: number) => void
   /** ⌘W: closes the active tab — the blank tab alone, while it shows (YAZ-2655 S75); false when there is none (App escalates to `closeSelf`). */
   closeActive: () => boolean
-  next: () => void
-  prev: () => void
   /** YAZ-3647 D1: step the window through its ONE Back list; no-ops at either bound. */
   back: () => void
   forward: () => void
@@ -1154,8 +1144,6 @@ export function useWorkspace(root: string | null): UseWorkspace {
     dispatch({ type: 'close', id: active })
     return true
   }, [dispatch, closeBlank, pageClosed])
-  const next = useCallback(() => dispatch({ type: 'cycle', dir: 1 }), [dispatch])
-  const prev = useCallback(() => dispatch({ type: 'cycle', dir: -1 }), [dispatch])
   const back = useCallback(() => dispatch({ type: 'back' }), [dispatch])
   const forward = useCallback(() => dispatch({ type: 'forward' }), [dispatch])
   const go = useCallback((id: number) => dispatch({ type: 'go', id }), [dispatch])
@@ -1198,7 +1186,7 @@ export function useWorkspace(root: string | null): UseWorkspace {
   return {
     ...state,
     file: activePath(state),
-    openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName, newTab, closeBlank, openBackground, openBackgroundAt, activate, sleep, wake, close, closeMany, openStored, move, closeActive, next, prev, back, forward, go, openStep, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
+    openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName, newTab, closeBlank, openBackground, openBackgroundAt, activate, sleep, wake, close, closeMany, openStored, move, closeActive, back, forward, go, openStep, reset, renamePath, renameDirPath, deletePath, deleteDirPath,
     openRight: openRightCallback,
     openRightBackground,
     navigateRight: navigateRightCallback,
