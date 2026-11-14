@@ -1,4 +1,4 @@
-import { AGENT_PROMPT } from '../course/script'
+import { AGENT_PROMPT } from '../course/prompt'
 
 /**
  * The card skill in the window (YAZ-5059 decisions 2 to 4, YAZ-5108): the words the app says about the app's own vault,

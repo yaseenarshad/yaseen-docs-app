@@ -21,9 +21,9 @@ export interface CardFormatsOpenRequest {
 }
 
 /**
- * Where "Learn the formats" opens `folder` (YAZ-5114): `files`, the sidebar's Files on that folder, when it is in a vault
- * of the window (the vault's own `Card skill`); else `finder`. The app's copy is outside every vault, and the skill's
- * sidebar row (YAZ-5108) and the course (YAZ-5120) that the issue names are not built yet.
+ * Where "Learn the formats" opens `folder` (YAZ-5114) when the course cannot open (App opens the course at its chapter
+ * on good cards and formats first: `requestCourseChapter`, YAZ-5120): `files`, the sidebar's Files on that folder, when
+ * it is in a vault of the window (the vault's own `Card skill`); else `finder`, as the app's copy is outside every vault.
  */
 export function cardFormatsOpenIn(folder: string, roots: readonly string[]): 'files' | 'finder' {
   return roots.some((root) => folder.startsWith(`${root.replace(/\/+$/, '')}/`)) ? 'files' : 'finder'

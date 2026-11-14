@@ -21,7 +21,7 @@ describe('the course facts the app has before the course loads (YAZ-5120)', () =
     expect(offerInInbox(c, DEFAULT_SETTINGS, true)).toBe(false)
     expect(offerInInbox({ ...c, done: true }, DEFAULT_SETTINGS, false)).toBe(false)
     expect(offerInInbox({ ...c, dismissed: true }, DEFAULT_SETTINGS, false)).toBe(false)
-    expect(offerInInbox(c, { ...DEFAULT_SETTINGS, cardTips: false } as typeof DEFAULT_SETTINGS, false)).toBe(false)
+    expect(offerInInbox(c, { ...DEFAULT_SETTINGS, cardTips: false }, false)).toBe(false)
   })
 
   it('the notice shows once, with Review on, Card tips on and the course not done', () => {
@@ -30,7 +30,7 @@ describe('the course facts the app has before the course loads (YAZ-5120)', () =
     expect(offerNotice(c, DEFAULT_SETTINGS, false)).toBe(false)
     expect(offerNotice({ ...c, offered: true }, DEFAULT_SETTINGS, true)).toBe(false)
     expect(offerNotice({ ...c, done: true }, DEFAULT_SETTINGS, true)).toBe(false)
-    expect(offerNotice(c, { ...DEFAULT_SETTINGS, cardTips: false } as typeof DEFAULT_SETTINGS, true)).toBe(false)
+    expect(offerNotice(c, { ...DEFAULT_SETTINGS, cardTips: false }, true)).toBe(false)
   })
 })
 

@@ -2,7 +2,7 @@
  * The course is a lazy chunk (YAZ-5120): nothing the window loads at start imports the course itself. The test walks
  * the static import graph from the renderer's entry (`main.tsx`), as the build does: `import … from`, `export … from`
  * and side-effect imports; never `import type` or `import()`. The only course files it may reach are the small
- * eager ones: the facts, the door, and the Settings row.
+ * eager ones: the facts, the door, the Settings row, and the agent prompt (`prompt.ts`, for the sidebar's "Copy prompt").
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 const SRC = resolve(__dirname, '..')
 const SHARED = resolve(__dirname, '../../../shared')
 const COURSE_DIR = resolve(__dirname)
-const EAGER_OK = new Set(['courseFacts.ts', 'openCourse.ts', 'courseSettings.tsx'])
+const EAGER_OK = new Set(['courseFacts.ts', 'openCourse.ts', 'courseSettings.tsx', 'prompt.ts'])
 
 function resolveImport(from: string, spec: string): string | null {
   const base = spec.startsWith('@shared/') ? join(SHARED, spec.slice('@shared/'.length)) : spec.startsWith('.') ? resolve(dirname(from), spec) : null

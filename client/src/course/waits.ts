@@ -14,7 +14,7 @@ export const WAITING_CLIPS: ReadonlySet<string> = new Set([
   // Chapter 7: picks the better of two cards.
   'c7-08',
   // Chapter 8: the AI step (issue 6F).
-  'c8-11', // pastes notes or uses the example
+  'c8-11', // pastes their own text or uses the example
   'c8-12', // copies the prompt
   'c8-13', // the agent writes card files in Course Cards
 ])

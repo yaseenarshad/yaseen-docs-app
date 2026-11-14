@@ -143,7 +143,7 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
     startChapter(course[player.current.chapter].id)
     return voice.onArrive(fetchSound)
   }, [voice, course, startChapter, fetchSound])
-  const [note, setNote] = useState<string | null>(null)
+  const [page, setPage] = useState<string | null>(null)
   const [touring, setTouring] = useState(false)
 
   const clockRef = useRef<ReturnType<typeof createClock>>(null as unknown as ReturnType<typeof createClock>)
@@ -355,13 +355,13 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
   }
 
   // ---- the tour ----
-  const tour = useMemo(() => tourIn ?? comingNextTour((line) => setNote(line)), [tourIn])
+  const tour = useMemo(() => tourIn ?? comingNextTour((line) => setPage(line)), [tourIn])
   const host = useMemo(() => hostIn ?? showOnlyHost(vault), [hostIn, vault])
   const tryIt = useCallback(() => {
     const chapter = ctxRef.current.course[player.current.chapter]
     if (!hasTour(chapter)) return
     keys.current.dispatch({ type: 'pause' })
-    setNote(null)
+    setPage(null)
     setTouring(true)
     void tour
       .start(chapter, chapter.tryIt ?? [])
@@ -460,9 +460,9 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
         <p className="course__caption" aria-live="polite">
           {caption}
         </p>
-        {note !== null && (
+        {page !== null && (
           <p className="course__note" role="status">
-            {note}
+            {page}
           </p>
         )}
         <div className="course__bar" aria-hidden="true">

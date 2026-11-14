@@ -13,7 +13,7 @@ export const WORDS_PER_MINUTE = 145
  * The course's length in minutes, from the script's words at `WORDS_PER_MINUTE`. A test (`courseFacts.test.ts`)
  * computes it from `COURSE` and fails when the script changed and this number did not.
  */
-export const COURSE_MINUTES = 26
+export const COURSE_MINUTES = 28
 
 /** Settings › Review › Card course: the row's hint. */
 export const COURSE_HINT = `About ${COURSE_MINUTES} minutes. Learn how cards work, and make your first ones.`
@@ -25,11 +25,10 @@ export const COURSE_NOTICE = `New to cards? Take the ${COURSE_MINUTES}-minute co
 export const COURSE_INBOX_LINE = 'No cards yet. Take the course, or make a card.'
 
 /**
- * "Card tips" (issue 4 of YAZ-5059) turns off each offer of the course: the notice and the empty Inbox's line. The
- * Settings button always shows. The switch is `SettingsState.cardTips` when issue 4 has added it; until then, and for
- * any value but an explicit false, the tips are on.
+ * "Card tips" (issue 4 of YAZ-5059, `SettingsState.cardTips`) turns off each offer of the course: the notice and the
+ * empty Inbox's line. The Settings button always shows. Any value but an explicit false is on (the default).
  */
-export const cardTipsOn = (settings: SettingsState): boolean => (settings as SettingsState & { cardTips?: unknown }).cardTips !== false
+export const cardTipsOn = (settings: SettingsState): boolean => settings.cardTips !== false
 
 /** The empty Inbox offers the course only to a beginner (Yaseen): the vault has no card, the course is not done, and no "Don't show again". */
 export const offerInInbox = (course: CourseState, settings: SettingsState, vaultHasCards: boolean): boolean =>

@@ -18,7 +18,7 @@ beforeEach(async () => {
   userData = join(dir, 'profile')
   vault = join(dir, 'Demo vault')
   await mkdir(join(userData, 'card-skill', 'formats'), { recursive: true })
-  for (const name of ['vocabulary.md', 'acronym.md', 'Book.md', 'concept.md', '.DS_Store', 'notes.txt']) await writeFile(join(userData, 'card-skill', 'formats', name), 'x')
+  for (const name of ['vocabulary.md', 'acronym.md', 'Book.md', 'concept.md', '.DS_Store', 'pages.txt']) await writeFile(join(userData, 'card-skill', 'formats', name), 'x')
   await mkdir(vault, { recursive: true })
 })
 afterEach(async () => {
@@ -27,7 +27,7 @@ afterEach(async () => {
 
 describe('the format names (YAZ-5114)', () => {
   it('each `.md` page without `.md`, A to Z with no case; dot files and other files left out', () => {
-    expect(cardFormatNames(['vocabulary.md', 'acronym.md', 'Book.md', '.hidden.md', 'notes.txt', 'script and sounds.md'])).toEqual(['acronym', 'Book', 'script and sounds', 'vocabulary'])
+    expect(cardFormatNames(['vocabulary.md', 'acronym.md', 'Book.md', '.hidden.md', 'pages.txt', 'script and sounds.md'])).toEqual(['acronym', 'Book', 'script and sounds', 'vocabulary'])
     expect(cardFormatNames([])).toEqual([])
   })
 })

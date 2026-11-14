@@ -1,7 +1,7 @@
 /**
  * The one door to the card course for any part of the app (YAZ-5120): Settings › Review, the notice, the empty Inbox,
- * and later the format hint's "Learn the formats" (issue 4 opens one chapter). App listens and opens the course layer.
- * A DOM event, as the card UI calls the app (`NOTE_CARD_OPEN`): a caller needs no prop chain and no import of the
+ * and the format hint's "Learn the formats" (issue 4 opens one chapter: `requestCourseChapter`). App listens and opens the course layer.
+ * A DOM event, as the card UI calls the app (`CARD_OPEN`): a caller needs no prop chain and no import of the
  * course itself, which loads only when it opens.
  */
 
@@ -28,4 +28,23 @@ export function onCourseRequest(open: (request: CourseRequest) => void): () => v
   }
   window.addEventListener(COURSE_OPEN_EVENT, listener)
   return () => window.removeEventListener(COURSE_OPEN_EVENT, listener)
+}
+
+/** The title of the course's chapter on good cards and formats in `script.ts`: "Learn the formats" (YAZ-5114) opens it. */
+export const FORMATS_CHAPTER_TITLE = 'What makes a good card'
+
+/**
+ * Open the course at the chapter titled `title` (YAZ-5114 with YAZ-5120). The chapter's id comes from `COURSE` in the
+ * script, loaded here with `import()`, so the startup bundle still holds no script (the course loads it to open
+ * anyway). `fallback` runs instead when the course cannot open: the script does not load, or it has no such chapter.
+ */
+export async function requestCourseChapter(title: string, fallback: () => void, load: () => Promise<{ COURSE: readonly { id: string; title: string }[] }> = () => import('./script')): Promise<void> {
+  let id: string | undefined
+  try {
+    id = (await load()).COURSE.find((chapter) => chapter.title === title)?.id
+  } catch {
+    id = undefined
+  }
+  if (id === undefined) fallback()
+  else requestCourse(id)
 }

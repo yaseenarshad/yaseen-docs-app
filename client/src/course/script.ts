@@ -33,11 +33,8 @@ export interface CourseClip { id: string; text: string; marks?: number[] }
 /** One chapter: what is shown, then the optional steps to try in the real app. */
 export interface CourseChapter { id: string; title: string; clips: CourseClip[]; tryIt?: TourStep[] }
 
-/** The first sentence of the prompt for the person's own agent (issue 1C, "Copy prompt for your agent"). `{path}` is the card skill's folder. */
-export const AGENT_PROMPT = 'Read the card skill at "{path}" before you make or change cards in this vault.'
-
-/** Chapter 8: the one line after 60 seconds with no new card from the agent (YAZ-5124). The course keeps waiting. */
-export const NO_CARDS_YET = 'No new cards yet. Did you check with your agent?'
+/** `AGENT_PROMPT` and `NO_CARDS_YET` live in `prompt.ts`, so the sidebar can use the prompt without loading this script. */
+export { AGENT_PROMPT, NO_CARDS_YET } from './prompt'
 
 export const COURSE: CourseChapter[] = [
   {

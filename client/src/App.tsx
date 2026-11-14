@@ -39,7 +39,7 @@ import { absFrom, basename, dirname, relTo, stripExt } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
-import { onCourseRequest } from './course/openCourse'
+import { FORMATS_CHAPTER_TITLE, onCourseRequest, requestCourseChapter } from './course/openCourse'
 import { COURSE_NOTICE, offerInInbox, offerNotice } from './course/courseFacts'
 import { resolveItem } from './lists/focusFolders'
 import { useVaultListsHere } from './lists/useVaultListsHere'
@@ -1592,8 +1592,12 @@ export function App() {
   useEffect(() => {
     const onOpenFormats = (event: Event) => {
       const { folder } = (event as CustomEvent<CardFormatsOpenRequest>).detail
-      if (cardFormatsOpenIn(folder, roots) === 'files') showRowInFiles(folder)
-      else void api.shell.reveal({ path: folder }).catch((err: unknown) => notify(`Can't open the formats: ${err instanceof Error ? err.message : String(err)}`, 'error'))
+      // YAZ-5114 with YAZ-5120: the course at its chapter on good cards and formats. The folder only when the course
+      // cannot open: in Files for the vault's own copy, in Finder for the app's copy.
+      void requestCourseChapter(FORMATS_CHAPTER_TITLE, () => {
+        if (cardFormatsOpenIn(folder, roots) === 'files') showRowInFiles(folder)
+        else void api.shell.reveal({ path: folder }).catch((err: unknown) => notify(`Can't open the formats: ${err instanceof Error ? err.message : String(err)}`, 'error'))
+      })
     }
     document.addEventListener(CARD_FORMATS_OPEN, onOpenFormats)
     return () => document.removeEventListener(CARD_FORMATS_OPEN, onOpenFormats)
