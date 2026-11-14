@@ -1,5 +1,10 @@
 import { expect, it } from 'vitest'
-import { ensureFriendsFiles, findFriendsIndex, POINTER_FILE, type GistsApi, type IndexHandle } from '@shared/friendGists'
+import {
+  POINTER_FILE,
+  type GistsApi,
+  type IndexHandle,
+} from '@shared/friendGists'
+import { ensureFriendsFiles, findFriendsIndex } from '@shared/friendListHome'
 import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
 import { newListCache, pasteLink, pendingRemove, readFriends, removeFriend, shareLink, type ListOptions } from '@shared/friendsList'
 import { emptyBudget, recordUpdate } from '@shared/friendSend'
@@ -36,7 +41,9 @@ it('check3: a remove added to a re-key that already made its new numbers gist: t
   // Ali cancels an unused link (a remove). The hour runs out after the first pointers move: the re-key waits.
   const extra = await shareLink(ali.api, await fresh(ali.api, w), opts(w))
   let budget = emptyBudget()
-  for (let i = 0; i < 96; i++) budget = recordUpdate(budget, w.now(), null)
+  // YAZ-5083: the list's own writes are commits of the vault repo now (no gist update): one update is left, for one
+  // pointer move.
+  for (let i = 0; i < 99; i++) budget = recordUpdate(budget, w.now(), null)
   const first = await removeFriend(ali.api, await fresh(ali.api, w), extra.pointer, budget, opts(w))
   expect(first.kind).toBe('paused')
   const waiting = pendingRemove(await fresh(ali.api, w))!

@@ -9,6 +9,10 @@
  * THE MAC ONLY SENDS (YAZ-5086: "The Mac only sends"). Its one write is the `PATCH` of the numbers gist. It never makes,
  * joins or edits the friends list, a pointer or a numbers gist: a remove that waits, a numbers gist to make again, or
  * two lists to join is `phone-first` (the phone does it, 4E1 and 4E2), and the Mac sends nothing meanwhile.
+ * YAZ-5083: the list is in the person's home vault repo (`.yaseendocs/friends.json`). The Mac READS it there, in the
+ * main process, with the shared reader (`findFriendsIndex`, `latestList`) on a read-only port (`repoHttp.ts`). A list
+ * not moved yet (an old gist list) is read as before; the phone moves it. A list in a vault this Mac does not have:
+ * `list-elsewhere`.
  *
  * The rules, as on the phone:
  * - only with at least one friend or group (decision 22): with none, no call writes and no gist is made;
@@ -20,7 +24,9 @@
  * for Settings; never a dialog, a throw or a log line. The stored state holds no token and no gist ID.
  */
 import { createHash } from 'node:crypto'
-import { findFriendsIndex, gistErrorCode, gistErrorResetAt, pointersOf, readListGist, type GistsApi, type IndexHandle, type WriteOptions } from '@shared/friendGists'
+import { gistErrorCode, gistErrorResetAt, pointersOf, readListGist, type GistsApi, type IndexHandle, type WriteOptions } from '@shared/friendGists'
+import { BrokenList, NewerList, findFriendsIndex, latestList, listErrorCode } from '@shared/friendListHome'
+import { ListError, type RepoPort } from '@shared/friendListStore'
 import { emptyBudget, numbersFor, numbersKey, reserveFor, sendGap, sendGate, sendNumbers, type GistBudget, type SendReason } from '@shared/friendSend'
 import { dayIn, type FriendStats, type FriendVault } from '@shared/friendStats'
 import type { ClosedVault } from './closedVaults'
@@ -58,6 +64,11 @@ export interface MacSenderDeps {
   profile(token: string): Promise<{ login: string; name: string | null; avatar: string }>
   /** The vaults open on this Mac, by repo (`owner/name`, lower case) → root. */
   vaults(): Promise<Map<string, string>>
+  /**
+   * YAZ-5083: the READ-ONLY port of the friends list in one vault repo: an open vault (`root`, its branch), or a repo the
+   * note names that is not open here (`root` null: its default branch). Absent: the Mac reads only an old gist list.
+   */
+  repo?(token: string, repo: string, root: string | null): Promise<RepoPort | null>
   /** One vault's index records and review settings. */
   count(root: string): Promise<FriendVault>
   /**
@@ -101,7 +112,9 @@ const turn = () => new Promise<void>((done) => setImmediate(done))
 
 /** The list for writes the Mac never makes: `findFriendsIndex` may join two lists; the Mac leaves that to the phone. */
 class PhoneFirst extends Error {}
-const readOnly = (api: GistsApi): GistsApi => ({
+const readOnly = (api: GistsApi, repos?: () => Promise<readonly RepoPort[]>, repo?: (full: string) => Promise<RepoPort>): GistsApi => ({
+  ...(repos !== undefined && { repos }),
+  ...(repo !== undefined && { repo }),
   list: () => api.list(),
   read: (id, etag) => api.read(id, etag),
   create: async () => {
@@ -129,7 +142,7 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
   let tokenEpoch = 0
 
   const set = (status: FriendsSendStatus, patch: Partial<FriendsSendView> = {}) => {
-    view = { ...view, retryAt: null, missing: 0, login: null, status, ...patch }
+    view = { ...view, retryAt: null, missing: 0, login: null, home: null, status, ...patch }
     return view
   }
   const schedule = (at: number) => {
@@ -168,22 +181,42 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
     return profile.value
   }
 
-  async function readList(api: GistsApi): Promise<IndexHandle | 'none' | 'newer' | 'broken'> {
+  async function readList(api: GistsApi, token: string): Promise<IndexHandle | 'none' | 'newer' | 'broken' | { elsewhere: string }> {
     if (index !== null) {
       try {
+        // YAZ-5083: a list in the vault repo: an ETag read of the branch (free when nothing changed).
+        if (index.store !== undefined) return (index = await latestList(index))
         const answer = await api.read(index.id, index.etag)
         if (answer === 'unchanged') return index
         // YAZ-5312: the list is the head and one file for each entry: read the whole gist.
         const read = readListGist(answer)
         if (read.kind === 'newer') return 'newer'
+        // An old list that was moved meanwhile (its head is the note now) is found again below.
         if (read.kind === 'ok') return (index = { ...index, index: read.value, raw: read.raw, etag: answer.etag, files: read.files, state: read.list })
       } catch (err) {
-        if (gistErrorCode(err) !== 'NOT_FOUND') throw err
+        if (err instanceof NewerList) return 'newer'
+        if (!(err instanceof BrokenList) && listErrorCode(err) === null && gistErrorCode(err) !== 'NOT_FOUND') throw err
       }
       index = null
     }
-    const found = await findFriendsIndex(readOnly(api), writeOptions)
-    if (found.kind === 'none') return 'none'
+    const repos = async (): Promise<readonly RepoPort[]> => {
+      if (deps.repo === undefined) return []
+      const out: RepoPort[] = []
+      for (const [repo, root] of await deps.vaults()) {
+        const port = await deps.repo(token, repo, root)
+        if (port !== null) out.push(port)
+      }
+      return out
+    }
+    const repo = async (full: string): Promise<RepoPort> => {
+      const root = (await deps.vaults()).get(full) ?? null
+      const port = deps.repo === undefined ? null : await deps.repo(token, full, root)
+      if (port === null) throw new ListError('NO_LIST_ACCESS', 'No port for the vault of the friends list')
+      return port
+    }
+    const found = await findFriendsIndex(readOnly(api, repos, deps.repo === undefined ? undefined : repo), writeOptions)
+    if (found.kind === 'none' || found.kind === 'no-vault') return 'none'
+    if (found.kind === 'elsewhere') return { elsewhere: found.home }
     if (found.kind === 'newer' || found.kind === 'broken') return found.kind
     return (index = found.handle)
   }
@@ -225,7 +258,7 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
     }
     const api = deps.api(token)
     try {
-      const list = await readList(api)
+      const list = await readList(api, token)
       if (list === 'none') {
         await store({ friends: 0, groups: 0 })
         // YAZ-5254: no friends list on THIS token's account. Name the account: friends use one GitHub account (round
@@ -235,6 +268,8 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
       }
       if (list === 'newer') return set('needs-newer-app')
       if (list === 'broken') return set('needs-repair')
+      // YAZ-5083: the list is in a vault this Mac does not have open: say which, and send nothing.
+      if ('elsewhere' in list) return set('list-elsewhere', { home: list.elsewhere })
       const friends = list.index.friends.length
       const groups = list.index.groups.length
       const pointers = pointersOf(list.index).length
@@ -312,6 +347,7 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
       }
     } catch (err) {
       if (err instanceof PhoneFirst) return set('phone-first')
+      if (listErrorCode(err) === 'NO_LIST_ACCESS') return set('no-list-access')
       switch (gistErrorCode(err)) {
         case 'OFFLINE':
         case 'GITHUB_DOWN':

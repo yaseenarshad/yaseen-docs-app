@@ -23,6 +23,7 @@ import { makeCounter } from './countJob'
 import { gitFolderFacts, knownClosedVaults } from './closedVaults'
 import countWorker from './countWorker?modulePath'
 import { macGistsApi, readProfile } from './gistsHttp'
+import { macRepoPort } from './repoHttp'
 import { createMacSender, type MacSendSaved, type MacSender } from './macSender'
 
 export const FRIENDS_SEND_FILE = 'friends-send.json'
@@ -70,6 +71,14 @@ export function startFriendsSend(store: Store, secrets: Pick<Secrets, 'read'>, u
         if (repo !== null && !out.has(repo.toLowerCase())) out.set(repo.toLowerCase(), root)
       }
       return out
+    },
+    // YAZ-5083: the friends list in one open vault: read only, on the vault's own branch (the one this Mac syncs).
+    async repo(token, repo, root) {
+      // A vault that is not open here: the repo's default branch (the one the phone syncs, unless it chose another).
+      if (root === null) return macRepoPort(token, fetch, repo, null)
+      const bin = await resolveGit()
+      const facts = bin === null ? null : await detectRepo(bin, root).catch(() => null)
+      return macRepoPort(token, fetch, repo, facts?.branch ?? null)
     },
     async count(root) {
       const [index, config] = await Promise.all([getIndex(root), readConfigDetailed(root, REVIEW_SETTINGS_FILE)])

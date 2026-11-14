@@ -1,6 +1,16 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { CardRecord } from '@shared/cardLine'
-import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, ensureFriendsFiles, makePointer, parseFriendsIndex, readListFiles, writeFriendsIndex, type WriteOptions } from '@shared/friendGists'
+import {
+  INDEX_FILE,
+  NUMBERS_FILE,
+  POINTER_FILE,
+  makePointer,
+  parseFriendsIndex,
+  readListFiles,
+  type WriteOptions,
+} from '@shared/friendGists'
+import { ensureFriendsFiles, writeFriendsIndex } from '@shared/friendListHome'
+import { LIST_PATH, parseListFile } from '@shared/friendListStore'
 import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
 import { PUBLISH_EVERY_MS, reserveFor } from '@shared/friendSend'
 import { deviceZone, type FriendDay } from '@shared/friendStats'
@@ -95,9 +105,17 @@ async function phone(world: FakeGistWorld, clock: FakeClock, token: string, opti
   return { store, tokens, sender, sync, review }
 }
 
+/** YAZ-5083: the list as it is in the vault repo (`.yaseendocs/friends.json`). */
+function listNow(world: FakeGistWorld) {
+  const f = parseListFile(world.repos!.file(REPO, LIST_PATH) ?? '')
+  return f.kind === 'ok' ? readListFiles(f.files) : f
+}
+
 /** The person's friends files on the fake GitHub: the index, the numbers gist, and `friends` pointers. */
 async function friendsOf(world: FakeGistWorld, token: string, friends: number, groups = 0, vaults = [REPO], zone: string | null = deviceZone()) {
-  const api = gistsApi(githubClient(token, { fetch: gistsFetch(world).fetch, now: world.now }))
+  // YAZ-5083: the phone's real gist calls, with the account's vault repos for the list (the fake's own ports).
+  const mem = world.api(token)
+  const api = gistsApi(githubClient(token, { fetch: gistsFetch(world).fetch, now: world.now }), mem.repos, mem.repo)
   const made = await ensureFriendsFiles(api, { vaults, nickname: null, zone }, opts)
   if (made.kind !== 'ok') throw new Error('no index')
   const stats = made.handle.index.stats!
@@ -367,14 +385,17 @@ describe('createFriendsSender (YAZ-5082)', () => {
     const { clock, world } = setup()
     const { index } = await friendsOf(world, PHONE_TOKEN, 1, 0, [REPO], null)
     const p = await phone(world, clock, PHONE_TOKEN)
-    const n = patches(world).length
+    void index
+    // YAZ-5083: the list is in the vault repo; its write is one commit (a ref move), not a gist update.
+    const moves = () => world.repos!.calls.filter((c) => c.method === 'PATCH' && c.status === 200).length
+    const n = moves()
     await p.review(answered(2))
-    const read = readListFiles(world.owned('yaseen').find((g) => g.id === index)!.files)
+    const read = listNow(world)
     expect(read.kind === 'ok' && read.value.zone).toBe(deviceZone())
-    expect(patches(world).filter((c) => c.id === index)).toHaveLength(patches(world).slice(0, n).filter((c) => c.id === index).length + 1)
+    expect(moves()).toBe(n + 1)
     clock.advance(PUBLISH_EVERY_MS + 1)
     await p.review(answered(3))
-    expect(patches(world).filter((c) => c.id === index)).toHaveLength(patches(world).slice(0, n).filter((c) => c.id === index).length + 1)
+    expect(moves()).toBe(n + 1)
   })
 
   it('the numbers gist was deleted on GitHub: a new one, each pointer and the index updated, then the send', async () => {
@@ -383,7 +404,8 @@ describe('createFriendsSender (YAZ-5082)', () => {
     await api.remove(stats)
     const p = await phone(world, clock, PHONE_TOKEN)
     await p.review(answered(2))
-    const read = readListFiles(world.owned('yaseen').find((g) => g.id === index)!.files)
+    void index
+    const read = listNow(world)
     if (read.kind !== 'ok') throw new Error('index')
     const fresh = read.value.stats!
     expect(fresh).not.toBe(stats)

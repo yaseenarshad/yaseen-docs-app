@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { LIST_NEEDS_REPAIR } from '@shared/friendGists'
-import { pasteMessage, type PasteResult } from '@shared/friendsList'
+import { NO_LIST_ACCESS, listElsewhereMessage, pasteMessage, type PasteResult } from '@shared/friendsList'
 import { useApp } from '../../app/AppState'
 import { friendsMessage } from '../../auth/friends'
 import { Confirm } from '../../screens/Confirm'
@@ -106,6 +106,10 @@ function Unreadable({ board, refresh }: { board: Unavailable; refresh: () => Pro
       )
     case 'no-account':
       return <Problem quiet message="Friends starts after the app checks your token. Open the app once with a connection." />
+    case 'list-elsewhere':
+      return <Problem message={listElsewhereMessage(board.home)} />
+    case 'no-list-access':
+      return <Problem message={NO_LIST_ACCESS} action="Try again" onAction={() => void refresh()} />
     case 'offline':
       return <Problem quiet message="No connection. Your friends show when you are online." action="Try again" onAction={() => void refresh()} />
     case 'rate-limited':
@@ -544,6 +548,8 @@ const UNAVAILABLE_WORDS: Record<Unavailable['kind'], string> = {
   unauthorized: 'Sign in again, then try again.',
   'newer-app': 'Your friends list was written by a newer Notecard. Update this app.',
   'needs-repair': LIST_NEEDS_REPAIR,
+  'list-elsewhere': 'Your friends list is in another of your vaults. Add that vault on this phone to use Friends here.',
+  'no-list-access': NO_LIST_ACCESS,
   failed: 'Something went wrong. Try again.',
 }
 
@@ -604,6 +610,7 @@ function SharePanel({ service, close, refresh }: { service: FriendsService; clos
 
 /** Words for each answer to a paste: a friend link (4E2), a group link or a join request (4E3). */
 function pasteWords(answer: PasteAnswer): string {
+  if (answer.kind === 'list-elsewhere' && 'home' in answer && typeof answer.home === 'string') return listElsewhereMessage(answer.home)
   if (answer.kind in UNAVAILABLE_WORDS && !('name' in answer)) return UNAVAILABLE_WORDS[answer.kind as Unavailable['kind']]
   if (['request', 'already-member', 'not-your-group', 'not-a-join-link', 'duplicate', 'unverified'].includes(answer.kind))
     return adminWords(answer as JoinRequest)

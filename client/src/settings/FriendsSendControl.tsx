@@ -52,6 +52,11 @@ function sendLine(v: FriendsSendView, now: number): string {
       return `Not sent. ${LIST_NEEDS_REPAIR}`
     case 'needs-newer-app':
       return 'Not sent: your friends list is from a newer app. Update this app.'
+    case 'list-elsewhere':
+      // YAZ-5083: the list is in one vault of the person; this Mac reads it there.
+      return `Not sent: your friends list is in the vault ${v.home ?? 'of the phone app'}. Open that vault once in this app, and the numbers go.`
+    case 'no-list-access':
+      return 'Not sent: the token cannot read the vault that holds your friends list. On GitHub, give it Contents (Read and write) on that vault, then save it again above.'
     case 'failed':
       return 'Not sent: something went wrong. The app tries again when your cards change.'
     default: {

@@ -1,4 +1,5 @@
 import { isGistId, type GistDoc, type GistListItem, type GistRate, type GistsApi } from '@shared/friendGists'
+import type { RepoPort } from '@shared/friendListStore'
 import { GithubError, type GithubClient, type RateLimit } from '../github/client'
 
 /**
@@ -22,6 +23,7 @@ interface RawGist {
   created_at: string
   updated_at: string
   files: Record<string, { content?: unknown; truncated?: unknown } | null>
+  truncated?: unknown
 }
 
 const asList = (data: unknown): RawGist[] => (Array.isArray(data) ? (data as RawGist[]).filter((g) => g !== null && typeof g === 'object' && typeof g.id === 'string') : [])
@@ -36,6 +38,8 @@ function toDoc(data: unknown, etag: string | null): GistDoc {
     createdAt: g.created_at,
     updatedAt: g.updated_at,
     etag,
+    // YAZ-5350: GitHub's own `truncated` of the gist (it gave only its first 300 files).
+    ...(g.truncated === true && { truncated: true }),
     files: Object.fromEntries(
       Object.entries(g.files ?? {}).map(([name, f]) => [name, { content: f !== null && typeof f.content === 'string' ? f.content : null, truncated: f?.truncated === true }]),
     ),
@@ -57,7 +61,8 @@ function gistPath(id: string): string {
 /** A file's new text, or `null`: GitHub deletes that one file (YAZ-5312). */
 const filesBody = (files: Record<string, string | null>) => Object.fromEntries(Object.entries(files).map(([name, content]) => [name, content === null ? null : { content }]))
 
-export function gistsApi(client: GithubClient): GistsApi {
+/** `repos` (YAZ-5083): this phone's vaults on the friends account, where the friends list can live. */
+export function gistsApi(client: GithubClient, repos?: () => Promise<readonly RepoPort[]>, repo?: (full: string) => Promise<RepoPort>): GistsApi {
   /** YAZ-5238: GitHub's time at its last answer (the `Date` header, or a lower bound from the core reset). */
   let serverTime: number | null = null
   const request: GithubClient['request'] = async (path, options) => {
@@ -69,6 +74,8 @@ export function gistsApi(client: GithubClient): GistsApi {
     return answer
   }
   return {
+    ...(repos !== undefined && { repos }),
+    ...(repo !== undefined && { repo }),
     serverTime: () => serverTime,
     async list(): Promise<GistListItem[]> {
       const out: GistListItem[] = []
@@ -97,7 +104,9 @@ export function gistsApi(client: GithubClient): GistsApi {
           const answer = await request(gistPath(id), { method: 'PATCH', body: { files: filesBody(files) } })
           return { gist: answer.data === null ? null : toDoc(answer.data, answer.etag), rate: gistRate(answer.rateLimit) }
         } catch (err) {
-          if (!(err instanceof GithubError && err.status === 409) || attempt >= CONFLICT_RETRIES) throw err
+          if (!(err instanceof GithubError && err.status === 409)) throw err
+          // Round 4, Nit 3: still refused after the retries: quiet ("try again later"), never an exception on a screen.
+          if (attempt >= CONFLICT_RETRIES) throw new GithubError('GITHUB_DOWN', 409, 'GitHub answered 409: the gist is being written', null, err.said, err.rateLimit)
           await new Promise((r) => setTimeout(r, CONFLICT_WAIT_MS * (attempt + 1)))
         }
       }

@@ -1,14 +1,13 @@
 import {
-  INDEX_FILE,
   LIST_NEEDS_REPAIR,
   NUMBERS_FILE,
   POINTER_FILE,
   emptyNumbers,
-  findFriendsIndex,
   gistErrorCode,
   gistErrorResetAt,
   isGistId,
   listFile,
+  listPatch,
   PARKED,
   makeParkedPointer,
   pointersOf,
@@ -19,7 +18,6 @@ import {
   readPointerFile,
   readStatsFile,
   relinkPointers,
-  writeFriendsIndex,
   type FriendRead,
   type FriendReadCache,
   type FriendsIndex,
@@ -27,9 +25,9 @@ import {
   type GistsApi,
   type IndexHandle,
   type EntryKind,
-  type ListState,
   type WriteOptions,
 } from './friendGists'
+import { BrokenList, ListError, NewerList, findFriendsIndex, latestList, listErrorCode, openFriendsList, updateList, writeList } from './friendListHome'
 import { mayUpdate, recordUpdate, sendGap, type GistBudget } from './friendSend'
 
 /**
@@ -53,6 +51,11 @@ import { mayUpdate, recordUpdate, sendGap, type GistBudget } from './friendSend'
  * Remove (round 16): the list loses the entry, my pointer for them goes, a NEW numbers gist gets the numbers, each
  * other pointer moves to it, the old one goes. The steps are written into the list first (`rekey`), so a stop at any
  * point (the app closed, no network, the `gist_update` budget used up) is finished by the next start (`finishRemove`).
+ *
+ * YAZ-5083: the list is in the vault repo (`friendListStore.ts`). Each change of it is an OPERATION on the newest copy,
+ * written with compare-and-swap (`updateList`): a device that wrote from an old copy gets "not a fast forward", reads
+ * again and applies its change again. The gist steps of a remove are a saga driven from the list: the intent is in the
+ * list first, then the gist step, then its result (each step safe to repeat, on any device).
  */
 
 /** The friend link: the landing page of the app's site (5-) with the pointer ID after `#`, which no server log sees. */
@@ -123,6 +126,7 @@ export interface ListOptions extends WriteOptions {
   now: () => number
 }
 
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Small helpers.
 
@@ -139,32 +143,38 @@ async function removeQuietly(api: GistsApi, id: string): Promise<void> {
   }
 }
 
-/** The list as it is on GitHub now (GitHub has no conditional write: read just before each write). */
+/**
+ * The list as it is on GitHub now (an ETag read of the vault's branch). An old gist list (not moved yet) is moved into
+ * the vault first: every write goes to the vault.
+ */
 async function latest(api: GistsApi, handle: IndexHandle, opts: WriteOptions): Promise<IndexHandle> {
-  try {
-    const gist = await api.read(handle.id)
-    if (gist === 'unchanged') return handle
-    const read = readListGist(gist)
-    if (read.kind === 'ok') return { ...handle, index: read.value, raw: read.raw, etag: gist.etag, files: read.files, state: read.list, owner: gist.owner ?? handle.owner ?? null }
-    if (read.kind === 'newer') throw new NewerList()
-    // YAZ-5191: never go on with an old copy of a list that cannot be read now: nothing is written to it.
-    throw new BrokenList()
-  } catch (err) {
-    if (gistErrorCode(err) !== 'NOT_FOUND') throw err
-    const found = await findFriendsIndex(api, opts)
-    if (found.kind === 'ok') return found.handle
-    if (found.kind === 'newer') throw new NewerList()
-    if (found.kind === 'broken') throw new BrokenList()
-    throw err
+  if (handle.store !== undefined) return latestList(handle)
+  const found = await openFriendsList(api, opts)
+  if (found.kind === 'ok' && found.handle.store !== undefined) return found.handle
+  if (found.kind === 'newer') throw new NewerList()
+  if (found.kind === 'elsewhere') throw new Elsewhere(found.home)
+  if (found.kind === 'ok' || found.kind === 'broken') throw new BrokenList()
+  throw Object.assign(new Error('The friends list is gone'), { code: 'NOT_FOUND' })
+}
+
+/** YAZ-5083: the list is in a vault this device does not have. Nothing is written. */
+export class Elsewhere extends Error {
+  constructor(readonly home: string) {
+    super('The friends list is in another vault')
   }
 }
-class NewerList extends Error {}
-/** The list is not a JSON object with `v: 1`: the app writes nothing to it (YAZ-5191, `LIST_NEEDS_REPAIR`). */
-class BrokenList extends Error {}
 
-/** Writes the changes from `handle` to `next` (and `extra` files), file by file (YAZ-5312). */
-async function writeList(api: GistsApi, handle: IndexHandle, next: FriendsIndex, extra: Record<string, string | null> = {}): Promise<IndexHandle> {
-  return writeFriendsIndex(api, handle, next, extra)
+/** One change of the list, as an operation on the newest copy (`f` gets the copy as it is then). */
+function change(handle: IndexHandle, f: (index: FriendsIndex, cur: IndexHandle) => FriendsIndex | null, opts: WriteOptions, extra: (cur: IndexHandle) => Record<string, string | null> = () => ({})): Promise<IndexHandle> {
+  return writeList(
+    handle,
+    (cur) => {
+      const next = f(cur.index, cur)
+      const patch = { ...(next === null ? {} : listPatch(cur, next)), ...extra(cur) }
+      return Object.keys(patch).length === 0 ? null : patch
+    },
+    opts,
+  )
 }
 
 /**
@@ -173,43 +183,56 @@ async function writeList(api: GistsApi, handle: IndexHandle, next: FriendsIndex,
  */
 export async function pinPointer(api: GistsApi, handle: IndexHandle, pointer: string, opts: ListOptions): Promise<IndexHandle> {
   const now = await latest(api, handle, opts)
-  if (now.index.stats !== null && pointersOf(now.index).includes(pointer)) await relinkPointers(api, [pointer], now.index.stats, opts)
+  if (now.index.stats !== null && pointersOf(now.index).includes(pointer) && pendingRemove(now) === null) await relinkPointers(api, [pointer], now.index.stats, opts)
   return now
 }
 
-/**
- * YAZ-5312: once each session (the phone's `rows()`), each pointer of the list that is still parked (a stop between
- * "the list names it" and "it names the numbers") or names an OLDER numbers gist than a finished generation moves to
- * the list's numbers gist. Forward only; nothing while a remove waits (its own steps move the pointers).
- */
-export async function settlePointers(api: GistsApi, handle: IndexHandle, opts: ListOptions): Promise<IndexHandle> {
-  const base = await latest(api, handle, opts)
-  const st = base.state
-  const target = base.index.stats
-  if (st === undefined || target === null || pendingRemove(base) !== null) return base
-  const targetRank = rankOf(st, target) ?? Infinity
-  for (const pointer of pointersOf(base.index)) {
-    let gist: GistDoc | 'unchanged'
-    try {
-      gist = await api.read(pointer)
-    } catch (err) {
-      if (gistErrorCode(err) === 'NOT_FOUND') continue
-      throw err
+/** A pointer read (with an ETag cache, so an unchanged pointer is a free 304). */
+type PointerCache = Map<string, { etag: string | null; gist: GistDoc }>
+async function readPointer(api: GistsApi, id: string, cache?: PointerCache): Promise<GistDoc | null> {
+  const kept = cache?.get(id)
+  let gist: GistDoc | 'unchanged'
+  try {
+    gist = await api.read(id, kept?.etag ?? null)
+  } catch (err) {
+    if (gistErrorCode(err) === 'NOT_FOUND') {
+      cache?.delete(id)
+      return null
     }
-    if (gist === 'unchanged') continue
+    throw err
+  }
+  if (gist === 'unchanged') return kept?.gist ?? null
+  cache?.set(id, { etag: gist.etag, gist })
+  return gist
+}
+
+/**
+ * Each pointer of the list moves to the list's CURRENT numbers gist when it names anything else (YAZ-5354): a pointer
+ * that is still parked, one an older generation left, or one that a slow device wrote back after another device
+ * finished. Only while no remove waits (the remove's own steps move the pointers then). The phone runs it once each
+ * session (the rows) and before each send of the numbers, so a kept friend reads the numbers just sent (I6).
+ */
+export async function settlePointers(api: GistsApi, handle: IndexHandle, opts: ListOptions, cache?: PointerCache, only: 'all' | 'stats' = 'all'): Promise<IndexHandle> {
+  const base = await latest(api, handle, opts)
+  const target = base.index.stats
+  if (base.state === undefined || target === null || pendingRemove(base) !== null) return base
+  for (const pointer of pointersOf(base.index)) {
+    const gist = await readPointer(api, pointer, cache)
+    if (gist === null) continue
     const state = readPointerFile(fileText(gist, POINTER_FILE))
     if (state.kind !== 'ok') continue
     // A friend's entry: my pointer for them reads THEIR pointer that the entry names (a stop between the list write
     // and the pointer write of a paste leaves it reading the old one).
     const friend = base.index.friends.find((f) => f.mine === pointer)
-    const reads = friend !== undefined && state.value.reads !== friend.theirs ? friend.theirs : state.value.reads
-    const rank = rankOf(st, state.value.stats)
-    const move = state.value.stats !== target && (state.value.stats === PARKED || (rank !== undefined && rank <= targetRank))
+    const reads = only === 'all' && friend !== undefined && state.value.reads !== friend.theirs ? friend.theirs : state.value.reads
+    const move = state.value.stats !== target
     if (!move && reads === state.value.reads) continue
     try {
-      await api.update(pointer, { [POINTER_FILE]: JSON.stringify({ ...state.raw, v: 1, stats: move ? target : state.value.stats, ...(reads !== undefined && { reads }) }) })
+      await api.update(pointer, { [POINTER_FILE]: JSON.stringify({ ...state.raw, v: 1, stats: target, ...(reads !== undefined && { reads }) }) })
+      cache?.delete(pointer)
     } catch (err) {
-      if (gistErrorCode(err) !== 'NOT_FOUND') throw err
+      // Gone (a remove at this moment), or GitHub's 409 (another write of it now): the next settle looks again.
+      if (gistErrorCode(err) !== 'NOT_FOUND' && gistErrorCode(err) !== 'GITHUB_DOWN') throw err
     }
   }
   return base
@@ -217,10 +240,14 @@ export async function settlePointers(api: GistsApi, handle: IndexHandle, opts: L
 
 const isMine = (index: FriendsIndex, id: string) => pointersOf(index).includes(id)
 
+/** The kind of entry that my pointer `mine` is in the list now, or null. */
+export const kindOf = (index: FriendsIndex, mine: string): EntryKind | null =>
+  index.friends.some((f) => f.mine === mine) ? 'friend' : index.groups.some((g) => g.mine === mine) ? 'group' : (index.shared ?? []).some((x) => x.mine === mine) ? 'shared' : null
+
 /** Writes `reads` into one of my pointers; keeps its other fields (`mark`, and what a newer app added). */
-async function setReads(api: GistsApi, pointer: string, reads: string, stats: string, held: readonly string[] = []): Promise<void> {
-  const gist = await api.read(pointer)
-  if (gist === 'unchanged') return
+async function setReads(api: GistsApi, pointer: string, reads: string, held: readonly string[] = []): Promise<void> {
+  const gist = await readPointer(api, pointer)
+  if (gist === null) return
   const state = readPointerFile(fileText(gist, POINTER_FILE))
   // YAZ-5241: a pointer this app cannot read (or a newer one) is never written over.
   if (state.kind !== 'ok') return
@@ -229,41 +256,53 @@ async function setReads(api: GistsApi, pointer: string, reads: string, stats: st
   const before = heldOf(state.raw)
   const allHeld = [...new Set([...before, ...held.filter(isGistId)])]
   if (state.value.reads === reads && allHeld.length === before.length) return
-  void stats
-  await api.update(pointer, { [POINTER_FILE]: JSON.stringify({ ...state.raw, v: 1, stats: state.value.stats, reads, ...(allHeld.length > 0 && { held: allHeld }) }) })
+  try {
+    await api.update(pointer, { [POINTER_FILE]: JSON.stringify({ ...state.raw, v: 1, stats: state.value.stats, reads, ...(allHeld.length > 0 && { held: allHeld }) }) })
+  } catch (err) {
+    if (gistErrorCode(err) !== 'NOT_FOUND') throw err
+  }
+}
+
+/**
+ * A pointer of mine that an entry stops using (a heal, a new link of the same friend). The list keeps it as a shared
+ * link until its gist is deleted, so a stop in between never leaves a pointer that no list names and that the friend
+ * may still read (it moves with the numbers, and the next remove ends it). Then it goes from the gist and the list.
+ */
+async function retire(api: GistsApi, handle: IndexHandle, old: string, opts: ListOptions): Promise<IndexHandle> {
+  await removeQuietly(api, old)
+  return writeList(handle, (cur) => ((cur.index.shared ?? []).some((x) => x.mine === old) && (cur.files ?? {})[listFile.shared(old)] !== undefined ? { [listFile.shared(old)]: null } : null), opts)
 }
 
 /** The friend's links that a pointer says its owner holds (`held`, YAZ-5235). Untrusted: gist IDs only, at most 50. */
 export const heldOf = (raw: Record<string, unknown>): string[] => (Array.isArray(raw.held) ? raw.held.filter(isGistId).slice(0, 50).map((x) => x.toLowerCase()) : [])
 
-/** The raw pointer behind `theirs` (a fresh read, or the reader's cached copy), or null when it cannot be read now. */
+/** The raw pointer behind `theirs` (a fresh read), or null when it cannot be read now. */
 async function theirRaw(api: GistsApi, theirs: string): Promise<Record<string, unknown> | null> {
-  try {
-    const gist = await api.read(theirs)
-    if (gist === 'unchanged') return null
-    const state = readPointerFile(fileText(gist, POINTER_FILE))
-    return state.kind === 'ok' ? state.raw : null
-  } catch (err) {
-    if (gistErrorCode(err) === 'NOT_FOUND') return null
-    throw err
-  }
+  const gist = await readPointer(api, theirs)
+  if (gist === null) return null
+  const state = readPointerFile(fileText(gist, POINTER_FILE))
+  return state.kind === 'ok' ? state.raw : null
 }
 
 /**
  * YAZ-5235: deletes my shared links that a friend says it holds (`held` in the pointer it gives me), and takes them out
  * of `shared`. That friend has paired with another of my pointers, so nobody uses them, and a remove of that friend
- * must not leave them leading to my numbers.
+ * must not leave them leading to my numbers. Only the links that are STILL shared links in the newest list go.
  */
 export async function dropHeldShares(api: GistsApi, handle: IndexHandle, ids: readonly string[], opts: ListOptions): Promise<IndexHandle> {
-  let base = await latest(api, handle, opts)
-  const drop = (base.index.shared ?? []).filter((x) => ids.includes(x.mine)).map((x) => x.mine)
-  if (drop.length === 0) return base
-  base = await writeList(api, base, { ...base.index, shared: (base.index.shared ?? []).filter((x) => !drop.includes(x.mine)) })
+  const base = await latest(api, handle, opts)
+  const { handle: next, result: drop } = await updateList(
+    base,
+    (cur) => {
+      const drop = (cur.index.shared ?? []).filter((x) => ids.includes(x.mine)).map((x) => x.mine)
+      return { patch: drop.length === 0 ? null : listPatch(cur, { ...cur.index, shared: (cur.index.shared ?? []).filter((x) => !drop.includes(x.mine)) }), result: drop }
+    },
+    opts,
+  )
   for (const id of drop) await removeQuietly(api, id)
-  return base
+  return next
 }
 
-/** The ID of the friend's numbers gist behind one of their pointers, or null when it cannot be read now. */
 /** Who is behind one of a friend's pointers: GitHub's owner of the gist, and the numbers gist it names. */
 async function whoBehind(api: GistsApi, pointer: string): Promise<{ owner: string | null; stats: string | null }> {
   try {
@@ -286,8 +325,8 @@ export async function shareLink(api: GistsApi, handle: IndexHandle, opts: ListOp
   if (base.index.stats === null) throw new Error('The list has no numbers gist')
   const pointer = await makeParkedPointer(api, opts)
   await opts.sleep(1000)
-  const shared = [...(base.index.shared ?? []), { mine: pointer, at: new Date(opts.now()).toISOString() }]
-  const written = await writeList(api, base, { ...base.index, shared })
+  const at = new Date(opts.now()).toISOString()
+  const written = await writeList(base, () => ({ [listFile.shared(pointer)]: JSON.stringify({ v: 1, at }) }), opts)
   const next = await pinPointer(api, written, pointer, opts)
   return { handle: next, pointer, link: friendLink(pointer) }
 }
@@ -305,6 +344,10 @@ export type PasteResult =
   | { kind: 'newer-app' }
   /** My own friends list cannot be read: nothing is changed (YAZ-5191). */
   | { kind: 'needs-repair' }
+  /** YAZ-5083: my friends list is in the vault `home`, which this device does not have: nothing is changed. */
+  | { kind: 'list-elsewhere'; home: string }
+  /** YAZ-5083: the token cannot read or write the vault that holds my friends list. */
+  | { kind: 'no-list-access' }
   | { kind: 'offline' }
   | { kind: 'rate-limited'; retryAt?: number | null }
   | { kind: 'refused' }
@@ -339,6 +382,10 @@ export function pasteMessage(result: PasteResult): string {
       return 'Friends needs the Gists permission on your token.'
     case 'needs-repair':
       return LIST_NEEDS_REPAIR
+    case 'list-elsewhere':
+      return listElsewhereMessage(result.home)
+    case 'no-list-access':
+      return NO_LIST_ACCESS
     case 'unauthorized':
       return 'Sign in again, then paste the link.'
     default:
@@ -346,8 +393,17 @@ export function pasteMessage(result: PasteResult): string {
   }
 }
 
-/** A thrown gist failure as a paste result. */
+/** YAZ-5083: the words when the list is in a vault this device does not have. */
+export const listElsewhereMessage = (home: string): string => `Your friends list is in the vault ${home}. Add that vault on this device to use Friends here.`
+/** YAZ-5083: the words when the token cannot read or write the vault that holds the list. */
+export const NO_LIST_ACCESS = 'Your token cannot write to the vault that holds your friends list. Give the token Contents (read and write) on that vault, then try again.'
+
+/** A thrown failure as a paste result. */
 function failureResult(err: unknown): PasteResult {
+  if (err instanceof NewerList) return { kind: 'newer-app' }
+  if (err instanceof BrokenList) return { kind: 'needs-repair' }
+  if (err instanceof Elsewhere) return { kind: 'list-elsewhere', home: err.home }
+  if (listErrorCode(err) === 'NO_LIST_ACCESS') return { kind: 'no-list-access' }
   switch (gistErrorCode(err)) {
     case 'OFFLINE':
     case 'GITHUB_DOWN':
@@ -359,94 +415,129 @@ function failureResult(err: unknown): PasteResult {
     case 'UNAUTHORIZED':
       return { kind: 'unauthorized' }
     case null:
-      if (err instanceof NewerList) return { kind: 'newer-app' }
-      if (err instanceof BrokenList) return { kind: 'needs-repair' }
       throw err
     default:
       return { kind: 'failed' }
   }
 }
 
-/** "Paste a friend's link" (decision 20). The list must exist (`ensureFriendsFiles`). */
+/** "Paste a friend's link" (decision 20). The list must exist (`openFriendsList` with a seed). */
 export async function pasteLink(api: GistsApi, handle: IndexHandle, text: string, opts: ListOptions): Promise<PasteResult> {
   const link = parseFriendLink(text)
   if (link.kind !== 'ok') return link
   const id = link.id
   try {
     let base = await latest(api, handle, opts)
-    const index = base.index
-    if (id === base.id || id === index.stats || isMine(index, id)) return { kind: 'own-link' }
-
-    let gist: GistDoc | 'unchanged'
-    try {
-      gist = await api.read(id)
-    } catch (err) {
-      if (gistErrorCode(err) === 'NOT_FOUND') return { kind: 'not-found' }
-      throw err
-    }
-    if (gist === 'unchanged') return { kind: 'failed' }
-    const pointer = readPointerFile(fileText(gist, POINTER_FILE))
-    if (pointer.kind === 'newer') return { kind: 'newer-app' }
-    if (pointer.kind === 'unreadable') return { kind: 'not-a-friend-link' }
-    const theirStats = pointer.value.stats
-    // A pointer of my own account (my other device's link, not in this list yet): GitHub's owner is mine, or it names
-    // my numbers gist.
-    if (sameLogin(gist.owner, base.owner) || theirStats === index.stats) return { kind: 'own-link' }
-    const name = await friendName(api, theirStats)
-    const reads = pointer.value.reads
-    const shared = index.shared ?? []
-    const readsMyShare = reads !== undefined && shared.some((s) => s.mine === reads)
-
-    // The same friend already in the list: by the pointer; else by GitHub's owner of their pointers (YAZ-5312: two
-    // links of one person can name two numbers gists, one on each side of their re-key); else by their numbers gist.
-    let same = index.friends.find((f) => f.theirs === id)
-    if (same === undefined)
-      for (const f of index.friends) {
-        const who = await whoBehind(api, f.theirs)
-        if ((who.owner !== null && sameLogin(who.owner, gist.owner)) || (who.owner === null && who.stats !== null && who.stats === theirStats)) {
-          same = f
-          break
-        }
-      }
-
-    if (same !== undefined) {
-      if (same.theirs === id && (reads === undefined || reads === same.mine || !readsMyShare)) return { kind: 'already', name: same.name }
-      // They read one of my shared links: take it as my pointer for them, and drop the extra one.
-      const mine = readsMyShare ? reads! : same.mine
+    // A paste reads the friend's files, then writes the list as an operation. When the newest list shows the same
+    // friend (another device pasted at the same moment) or the entry it changes is gone, it starts again from there.
+    for (let round = 0; round < 4; round++) {
+      const r = await pasteOnce(api, base, id, opts)
+      if (r.kind !== 'again') return r
       base = await latest(api, base, opts)
-      // `paired` is about the link the entry holds NOW: a new link is paired only when the friend already reads my
-      // pointer through it; else it waits for their app to confirm (markPaired). A link of mine that a remove has
-      // already ended may still answer for a moment, so an old `paired` must never carry over to a new link.
-      const friends = base.index.friends.map((f) => (f === same || f.mine === same!.mine ? { name: f.name, theirs: id, mine, ...(reads === mine && { paired: true as const }) } : f))
-      const next = await writeList(api, base, { ...base.index, friends, shared: (base.index.shared ?? []).filter((s) => s.mine !== mine) })
-      // YAZ-5312: the list first, then my pointer. A stop in between leaves my new entry unpaired ("waiting"), and the
-      // friend still sees my pointer read their OLD link, so their app keeps it. `settlePointers` finishes the step.
-      // Their earlier link (`same.theirs`) stays with me unused: tell them in `held`, so their app deletes it.
-      await setReads(api, mine, id, index.stats!, same.theirs !== id ? [same.theirs] : [])
-      if (mine !== same.mine) await removeQuietly(api, same.mine)
-      return { kind: 'added', name: same.name, paired: reads === mine, sendBack: reads === mine ? null : friendLink(mine), handle: next }
     }
-
-    // A new friend. If they read one of my shared links, that link is my pointer for them; else make one.
-    let mine: string
-    if (readsMyShare) mine = reads!
-    else mine = await makeParkedPointer(api, opts, { reads: id })
-    await opts.sleep(1000)
-    base = await latest(api, base, opts)
-    const next = await writeList(api, base, {
-      ...base.index,
-      friends: [...base.index.friends.filter((f) => f.theirs !== id), { name, theirs: id, mine, ...(readsMyShare && { paired: true as const }) }],
-      shared: (base.index.shared ?? []).filter((s) => s.mine !== mine),
-    })
-    // The list first, then my pointer's `reads` (YAZ-5312: a stop in between is finished by `settlePointers`).
-    if (readsMyShare) await setReads(api, mine, id, index.stats!)
-    const paired = readsMyShare
-    const pinned = readsMyShare ? next : await pinPointer(api, next, mine, opts)
-    return { kind: 'added', name, paired, sendBack: paired ? null : friendLink(mine), handle: pinned }
+    return { kind: 'failed' }
   } catch (err) {
     return failureResult(err)
   }
 }
+
+async function pasteOnce(api: GistsApi, base: IndexHandle, id: string, opts: ListOptions): Promise<PasteResult | { kind: 'again' }> {
+  const index = base.index
+  if (id === base.id || id === index.stats || isMine(index, id)) return { kind: 'own-link' }
+
+  let gist: GistDoc | 'unchanged'
+  try {
+    gist = await api.read(id)
+  } catch (err) {
+    if (gistErrorCode(err) === 'NOT_FOUND') return { kind: 'not-found' }
+    throw err
+  }
+  if (gist === 'unchanged') return { kind: 'failed' }
+  const pointer = readPointerFile(fileText(gist, POINTER_FILE))
+  if (pointer.kind === 'newer') return { kind: 'newer-app' }
+  if (pointer.kind === 'unreadable') return { kind: 'not-a-friend-link' }
+  const theirStats = pointer.value.stats
+  // A pointer of my own account (my other device's link, not in this list yet): GitHub's owner is mine, or it names
+  // my numbers gist.
+  if (sameLogin(gist.owner, base.owner) || theirStats === index.stats) return { kind: 'own-link' }
+  const login = typeof gist.owner === 'string' && gist.owner !== '' ? gist.owner.slice(0, 100) : undefined
+  const name = await friendName(api, theirStats)
+  const reads = pointer.value.reads
+  const shared = index.shared ?? []
+  const readsMyShare = reads !== undefined && shared.some((s) => s.mine === reads)
+
+  // The same friend already in the list: by the pointer; by GitHub's owner kept in the entry (YAZ-5353); else by
+  // GitHub's owner of their pointers (YAZ-5312: two links of one person can name two numbers gists); else by their
+  // numbers gist.
+  let same = index.friends.find((f) => f.theirs === id) ?? index.friends.find((f) => login !== undefined && sameLogin(f.login, login))
+  if (same === undefined)
+    for (const f of index.friends) {
+      if (f.login !== undefined) continue
+      const who = await whoBehind(api, f.theirs)
+      if ((who.owner !== null && sameLogin(who.owner, gist.owner)) || (who.owner === null && who.stats !== null && who.stats === theirStats)) {
+        same = f
+        break
+      }
+    }
+
+  if (same !== undefined) {
+    if (same.theirs === id && (reads === undefined || reads === same.mine || !readsMyShare)) return { kind: 'already', name: same.name }
+    // They read one of my shared links: take it as my pointer for them, and drop the extra one.
+    const mine = readsMyShare ? reads! : same.mine
+    const sameMine = same.mine
+    // `paired` is about the link the entry holds NOW: a new link is paired only when the friend already reads my
+    // pointer through it; else it waits for their app to confirm (markPaired). A link of mine that a remove has
+    // already ended may still answer for a moment, so an old `paired` must never carry over to a new link.
+    const { handle: next, result } = await updateList(
+      base,
+      (cur) => {
+        // The entry this paste changes must still be there, and the link it takes must still be a shared link.
+        if (!cur.index.friends.some((f) => f.mine === sameMine) || (readsMyShare && mine !== sameMine && !(cur.index.shared ?? []).some((s) => s.mine === mine))) return { patch: null, result: 'again' as const }
+        const friends = cur.index.friends.map((f) => (f.mine === sameMine ? { name: f.name, theirs: id, mine, ...(reads === mine && { paired: true as const }), ...(login !== undefined && { login }) } : f))
+        // The pointer the entry stops using stays in the list (as a shared link) until its gist is gone (`retire`).
+        const shared = [...(cur.index.shared ?? []).filter((s) => s.mine !== mine), ...(mine !== sameMine ? [{ mine: sameMine, at: new Date(opts.now()).toISOString() }] : [])]
+        return { patch: listPatch(cur, { ...cur.index, friends, shared }), result: 'ok' as const }
+      },
+      opts,
+    )
+    if (result === 'again') return { kind: 'again' }
+    // YAZ-5312: the list first, then my pointer. A stop in between leaves my new entry unpaired ("waiting"), and the
+    // friend still sees my pointer read their OLD link, so their app keeps it. `settlePointers` finishes the step.
+    // Their earlier link (`same.theirs`) stays with me unused: tell them in `held`, so their app deletes it.
+    await setReads(api, mine, id, same.theirs !== id ? [same.theirs] : [])
+    const after = mine !== sameMine ? await retire(api, next, sameMine, opts) : next
+    return { kind: 'added', name: same.name, paired: reads === mine, sendBack: reads === mine ? null : friendLink(mine), handle: after }
+  }
+
+  // A new friend. If they read one of my shared links, that link is my pointer for them; else make one.
+  let mine: string
+  if (readsMyShare) mine = reads!
+  else mine = await makeParkedPointer(api, opts, { reads: id })
+  await opts.sleep(1000)
+  // YAZ-5353: the write checks the NEWEST list: when another device of mine added this friend a moment ago (the same
+  // link, or GitHub's owner of it), this paste adds no second entry; its own new pointer goes.
+  const { handle: next, result } = await updateList(
+    base,
+    (cur) => {
+      const dup = cur.index.friends.some((f) => f.theirs === id || (login !== undefined && sameLogin(f.login, login)))
+      if (dup) return { patch: null, result: 'again' as const }
+      if (readsMyShare && !(cur.index.shared ?? []).some((s) => s.mine === mine)) return { patch: null, result: 'again' as const }
+      const entry = { name, theirs: id, mine, ...(readsMyShare && { paired: true as const }), ...(login !== undefined && { login }) }
+      return { patch: listPatch(cur, { ...cur.index, friends: [...cur.index.friends, entry], shared: (cur.index.shared ?? []).filter((s) => s.mine !== mine) }), result: 'ok' as const }
+    },
+    opts,
+  )
+  if (result === 'again') {
+    if (!readsMyShare) await removeQuietly(api, mine)
+    return { kind: 'again' }
+  }
+  // The list first, then my pointer's `reads` (YAZ-5312: a stop in between is finished by `settlePointers`).
+  if (readsMyShare) await setReads(api, mine, id)
+  const paired = readsMyShare
+  const pinned = readsMyShare ? next : await pinPointer(api, next, mine, opts)
+  return { kind: 'added', name, paired, sendBack: paired ? null : friendLink(mine), handle: pinned }
+}
+
 
 /** The friend's name from their numbers (the nickname or the GitHub name), or "Friend". */
 async function friendName(api: GistsApi, statsId: string): Promise<string> {
@@ -513,8 +604,7 @@ export interface ListRows {
 /** YAZ-5274: writes `paired` for these friends (by my pointer), so a later 404 reads "No longer shares with you". */
 export async function markPaired(api: GistsApi, handle: IndexHandle, mines: readonly string[], opts: ListOptions): Promise<IndexHandle> {
   const base = await latest(api, handle, opts)
-  if (!base.index.friends.some((f) => mines.includes(f.mine) && f.paired !== true)) return base
-  return writeList(api, base, { ...base.index, friends: base.index.friends.map((f) => (mines.includes(f.mine) ? { ...f, paired: true as const } : f)) })
+  return change(base, (index) => (index.friends.some((f) => mines.includes(f.mine) && f.paired !== true) ? { ...index, friends: index.friends.map((f) => (mines.includes(f.mine) ? { ...f, paired: true as const } : f)) } : null), opts)
 }
 
 /** Reads each friend (the pointer, then the numbers, with ETags) and gives the rows. Never throws for GitHub's answers. */
@@ -587,10 +677,22 @@ export async function repairPairs(api: GistsApi, handle: IndexHandle, repairs: L
     base = await latest(api, base, opts)
     const f = base.index.friends.find((x) => x.theirs === theirs)
     if (f === undefined || !(base.index.shared ?? []).some((s) => s.mine === use)) continue
-    await setReads(api, use, theirs, base.index.stats!)
-    const friends = base.index.friends.map((x) => (x.theirs === theirs ? { ...x, mine: use } : x))
-    base = await writeList(api, base, { ...base.index, friends, shared: (base.index.shared ?? []).filter((s) => s.mine !== use) })
-    await removeQuietly(api, f.mine)
+    await setReads(api, use, theirs)
+    // On the NEWEST list: the friend's entry and the shared link must both still be there.
+    const { handle: next, result: old } = await updateList(
+      base,
+      (cur) => {
+        const entry = cur.index.friends.find((x) => x.theirs === theirs)
+        if (entry === undefined || !(cur.index.shared ?? []).some((s) => s.mine === use)) return { patch: null, result: null }
+        const friends = cur.index.friends.map((x) => (x.theirs === theirs ? { ...x, mine: use } : x))
+        // The old pointer stays in the list (as a shared link) until its gist is gone (`retire`).
+        const shared = [...(cur.index.shared ?? []).filter((s) => s.mine !== use), ...(entry.mine !== use ? [{ mine: entry.mine, at: new Date(opts.now()).toISOString() }] : [])]
+        return { patch: listPatch(cur, { ...cur.index, friends, shared }), result: entry.mine }
+      },
+      opts,
+    )
+    base = next
+    if (old !== null && old !== use) base = await retire(api, base, old, opts)
   }
   return base
 }
@@ -626,16 +728,33 @@ export function pendingRemove(handle: IndexHandle): Rekey | null {
 }
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
+/**
+ * YAZ-5361: the removes that wait in the list (the saga state, not the phone's queue): the names of the friends and
+ * groups in them, and how many removes. The erase ask counts these too.
+ */
+export function waitingRemoves(handle: IndexHandle): { count: number; names: string[] } {
+  const pending = handle.state?.pending ?? []
+  const waiting = pendingRemove(handle)
+  if (waiting === null) return { count: 0, names: [] }
+  const named = pending.filter((t) => t.kinds.length > 0)
+  return { count: Math.max(1, named.length), names: Object.values(waiting.names ?? {}) }
+}
+
 export type RemoveResult =
-  | { kind: 'done'; handle: IndexHandle; budget: GistBudget }
-  /** It stopped; the list holds what is left, and the next start (or `retryAt`) finishes it. */
-  | { kind: 'paused'; handle: IndexHandle; budget: GistBudget; why: 'budget' | 'rate-limited' | 'offline' | 'refused' | 'unauthorized' | 'needs-repair'; retryAt: number | null }
+  | { kind: 'done'; handle: IndexHandle; budget: GistBudget; took?: string[] }
+  /**
+   * It stopped; the list holds what is left, and the next start (or `retryAt`) finishes it. `took` (YAZ-5352): the
+   * pointers whose remove this call wrote into the list. A pointer not in it was not taken: GitHub refused the first
+   * write, or the entry is not of the kind asked for any more (a shared link that a friend now uses).
+   * `busy` (YAZ-5083): another device of mine makes the new numbers gist of this remove now.
+   */
+  | { kind: 'paused'; handle: IndexHandle; budget: GistBudget; why: 'budget' | 'rate-limited' | 'offline' | 'refused' | 'unauthorized' | 'needs-repair' | 'busy' | 'list-elsewhere' | 'no-list-access'; retryAt: number | null; took?: string[] }
   | { kind: 'not-found'; handle: IndexHandle; budget: GistBudget }
 
 /**
  * Remove a friend, a group I am in (4E3: "Leave group"), or a shared link, by my pointer for them (`mine`). This is
- * also how sharing stops for that person (decision 22). Each `PATCH` counts on `gist_update`: one for each other
- * pointer and three for the list. A remove may use the reserve that the sender keeps for it (4E1).
+ * also how sharing stops for that person (decision 22). Each `PATCH` of a pointer counts on `gist_update`; the list's
+ * own writes go to the vault repo and do not. A remove may use the reserve that the sender keeps for it (4E1).
  */
 export async function removeFriend(
   api: GistsApi,
@@ -644,7 +763,7 @@ export async function removeFriend(
   budget: GistBudget,
   opts: ListOptions,
   /** 4E3: more of my gists to delete in the same safe steps (the group file of "Delete group"). */
-  more: { drop?: string[] } = {},
+  more: { drop?: string[]; kinds?: Record<string, EntryKind> } = {},
 ): Promise<RemoveResult> {
   return removeMany(api, handle, [mine], budget, opts, more)
 }
@@ -652,18 +771,21 @@ export async function removeFriend(
 /**
  * YAZ-5236: removes several friends, groups or shared links in ONE re-key (one new numbers gist, each other pointer
  * moved once). 30 removes in a row cost about as much as one.
- * The first write puts the remove in the list (`rekey`), so it is kept until it is done. A remove has priority over a
- * numbers update: that one write is tried also when this device's count says the hour is used up; only GitHub's own
- * "rate limit" stops it. Then the result is `paused` before any write, and the caller keeps the request (the phone:
- * `friendsRemoveQueue`) to try again.
+ * The first write puts the remove in the list (a tombstone for each pointer), so it is kept until it is done. It is a
+ * compare-and-swap commit of the vault repo (no `gist_update`), checked on the NEWEST list: a pointer is ended only as
+ * the kind of entry it is then (YAZ-5352: `kinds` says which kind the caller meant), and a shared link that a friend I
+ * keep uses now is that friend's pointer, not an unused link (YAZ-5311). Only GitHub's own "rate limit" or no
+ * connection stops it before that write: then the result is `paused` with nothing in `took`, and the caller keeps the
+ * request (the phone: `friendsRemoveQueue`) to try again.
  */
-export async function removeMany(api: GistsApi, handle: IndexHandle, mines: readonly string[], budget: GistBudget, opts: ListOptions, more: { drop?: string[] } = {}): Promise<RemoveResult> {
+export async function removeMany(api: GistsApi, handle: IndexHandle, mines: readonly string[], budget: GistBudget, opts: ListOptions, more: { drop?: string[]; kinds?: Record<string, EntryKind> } = {}): Promise<RemoveResult> {
   const now = opts.now()
   let fresh = handle
   try {
     let base = await latest(api, handle, opts)
     fresh = base
-    const todo = [...new Set(mines)].filter((m) => isMine(base.index, m))
+    const wanted = (index: FriendsIndex) => [...new Set(mines)].filter((m) => kindOf(index, m) !== null && (more.kinds?.[m] === undefined || kindOf(index, m) === more.kinds[m]))
+    let todo = wanted(base.index)
     if (todo.length === 0) return pendingRemove(base) === null ? { kind: 'not-found', handle: base, budget } : finishRemove(api, base, budget, opts)
     if (budget.blockedUntil !== null && now < budget.blockedUntil) return paused(base, budget, 'rate-limited', budget.blockedUntil)
     // YAZ-5311: decide what is "unused" from fresh facts. First the pairs: a friend I keep who reads one of my shared
@@ -682,8 +804,7 @@ export async function removeMany(api: GistsApi, handle: IndexHandle, mines: read
     }
     // A shared link that a friend turned out to use is now that friend's pointer: cancelling the LINK must not remove
     // the friend (the friend's own Remove does that). It is no longer an unused link, so it is not in this remove.
-    const usedNow = new Set(repairs.map((r) => r.use))
-    for (let i = todo.length - 1; i >= 0; i--) if (usedNow.has(todo[i]) && base.index.friends.some((f) => f.mine === todo[i])) todo.splice(i, 1)
+    todo = wanted(base.index)
     if (todo.length === 0) return pendingRemove(base) === null ? { kind: 'not-found', handle: base, budget } : finishRemove(api, base, budget, opts)
     // YAZ-5235: my shared links that each removed friend says it holds go too.
     const heldShares: string[] = []
@@ -692,25 +813,36 @@ export async function removeMany(api: GistsApi, handle: IndexHandle, mines: read
       const theirs = friend === undefined ? null : await theirRaw(api, friend.theirs)
       if (theirs !== null) for (const id of heldOf(theirs)) if ((base.index.shared ?? []).some((x) => x.mine === id) && !heldShares.includes(id)) heldShares.push(id)
     }
-    // YAZ-5274: every link I shared that no friend uses stops too: I cannot tell who holds it.
-    const unusedShares = (base.index.shared ?? []).map((x) => x.mine).filter((m) => !todo.includes(m) && !heldShares.includes(m))
-    const nameOf = (m: string) => base.index.friends.find((f) => f.mine === m)?.name ?? base.index.groups.find((g) => g.mine === m)?.name
     const at = new Date(now).toISOString()
-    // The remove's first write: a tombstone for each pointer (YAZ-5312: a file of its own; a stale write cannot undo it).
-    const tombs: Record<string, string> = {}
-    // Each tombstone ends only the kinds of entry that this read saw for that pointer (YAZ-5312: a device that re-adds
-    // a friend through the same link at the same moment keeps its new entry).
-    const kindsOf = (m: string): EntryKind[] => [
-      ...(base.index.friends.some((f) => f.mine === m) ? (['friend'] as const) : []),
-      ...(base.index.groups.some((g) => g.mine === m) ? (['group'] as const) : []),
-      ...((base.index.shared ?? []).some((x) => x.mine === m) ? (['shared'] as const) : []),
-    ]
-    for (const [i, m] of [...todo, ...heldShares, ...unusedShares].entries()) {
-      const name = nameOf(m)
-      tombs[listFile.tomb(m, tombTag(kindsOf(m), true, at))] = tombText({ kinds: kindsOf(m), rekey: true, at, ...(name !== undefined && { name }), drop: i === 0 ? (more.drop ?? []).filter(isGistId) : [] })
-    }
-    const written = await writeList(api, base, base.index, tombs)
-    return finishRemove(api, written, recordUpdate(budget, now, null), opts)
+    // The remove's first write, on the newest list: a tombstone for each pointer that is still of the kind asked, each
+    // held link, and (YAZ-5274) every link I shared that no friend uses: I cannot tell who holds it.
+    const { handle: written, result: took } = await updateList(
+      base,
+      (cur) => {
+        const ix = cur.index
+        const now2 = wanted(ix)
+        const held = heldShares.filter((m) => kindOf(ix, m) === 'shared' && !now2.includes(m))
+        const unused = (ix.shared ?? []).map((x) => x.mine).filter((m) => !now2.includes(m) && !held.includes(m))
+        const all = [...now2, ...held, ...unused]
+        if (now2.length === 0) return { patch: null, result: [] as string[] }
+        const kindsOf = (m: string): EntryKind[] => [
+          ...(ix.friends.some((f) => f.mine === m) ? (['friend'] as const) : []),
+          ...(ix.groups.some((g) => g.mine === m) ? (['group'] as const) : []),
+          ...((ix.shared ?? []).some((x) => x.mine === m) ? (['shared'] as const) : []),
+        ]
+        const nameOf = (m: string) => ix.friends.find((f) => f.mine === m)?.name ?? ix.groups.find((g) => g.mine === m)?.name
+        const tombs: Record<string, string> = {}
+        for (const [i, m] of all.entries()) {
+          const name = nameOf(m)
+          tombs[listFile.tomb(m, tombTag(kindsOf(m), true, at))] = tombText({ kinds: kindsOf(m), rekey: true, at, ...(name !== undefined && { name }), drop: i === 0 ? (more.drop ?? []).filter(isGistId) : [] })
+        }
+        return { patch: tombs, result: now2 }
+      },
+      opts,
+    )
+    if (took.length === 0) return pendingRemove(written) === null ? { kind: 'not-found', handle: written, budget } : finishRemove(api, written, budget, opts)
+    const r = await finishRemove(api, written, budget, opts)
+    return r.kind === 'not-found' ? r : { ...r, took }
   } catch (err) {
     // The list as last read: the caller sees which removes the list does not hold yet.
     return pauseOn(err, fresh, budget, now)
@@ -722,6 +854,10 @@ function paused(handle: IndexHandle, budget: GistBudget, why: Extract<RemoveResu
 }
 
 function pauseOn(err: unknown, handle: IndexHandle, budget: GistBudget, now: number): RemoveResult {
+  if (err instanceof NewerList) return paused(handle, budget, 'refused', null)
+  if (err instanceof BrokenList) return paused(handle, budget, 'needs-repair', null)
+  if (err instanceof Elsewhere) return paused(handle, budget, 'list-elsewhere', null)
+  if (listErrorCode(err) === 'NO_LIST_ACCESS') return paused(handle, budget, 'no-list-access', null)
   switch (gistErrorCode(err)) {
     case 'OFFLINE':
     case 'GITHUB_DOWN':
@@ -735,32 +871,44 @@ function pauseOn(err: unknown, handle: IndexHandle, budget: GistBudget, now: num
     case 'UNAUTHORIZED':
       return paused(handle, budget, 'unauthorized', null)
     default:
-      if (err instanceof NewerList) return paused(handle, budget, 'refused', null)
-      if (err instanceof BrokenList) return paused(handle, budget, 'needs-repair', null)
       throw err
   }
 }
 
+/** Another run takes over a generation that a device started this long ago and did not finish (it stopped). */
+export const INTENT_LEASE_MS = 2 * 60_000
+
+/** An intent of another run is live while its time is within the lease of this device's clock (either way: a clock
+ *  far ahead or behind never holds a generation for good; a take-over is safe, step 2c keeps one gist per generation). */
+const liveIntent = (at: string, now: number) => Math.abs(now - (Date.parse(at) || 0)) < INTENT_LEASE_MS
+
+/** The tag of this run of the app, for a device that gives none (`WriteOptions.device`). */
+const RUN_TAG = `r${Math.floor(Math.random() * 36 ** 8).toString(36)}`
+
 /**
- * Finishes a remove that waits in the list (YAZ-5310, YAZ-5312). Each step can run again safely, on any device:
+ * Finishes a remove that waits in the list (YAZ-5310, YAZ-5312, and the saga of YAZ-5083). Each step can run again
+ * safely, on any device; each list write is a compare-and-swap of the vault repo:
  * 1. the removed pointers (and their extra gists, the group file of "Delete group") are deleted FIRST;
- * 2. a NEW numbers generation is made for the removes that no generation covers yet. When the set of removes grows
- *    while a generation waits, another new generation follows: a numbers gist is only good for the removes it was made
- *    after (a removed friend may have read an earlier one);
- * 3. each pointer of the list as it is now (the friends and groups I keep) moves FORWARD to the newest generation,
- *    never back to an older one;
- * 4. a fresh read proves it: no remove waits, no newer generation, every pointer names it;
- * 5. the older numbers gists go (by their IDs in the list, and only when provably ours), then the generation is
- *    marked done. Two devices that run it at once end on the same generation; each deletes only its own extra gist.
+ * 2. a NEW numbers generation k for the removes that the current generation does not cover. The saga: (a) the INTENT
+ *    `i.k` goes into the list first, with the set of removes FIXED (YAZ-5310: a generation's gist is only good for the
+ *    removes it was made after); only the run whose intent the list holds goes on; (b) it makes the numbers gist;
+ *    (c) it writes the generation `n.k-<id>` only while its own intent is still there and no generation k exists, so
+ *    there is never a second gist for one generation; a run that lost deletes its own gist. A run that stopped between
+ *    (a) and (c) is taken over after `INTENT_LEASE_MS`. The gist's ID is in the list before any pointer names it;
+ * 3. each pointer of the list as it is now (the friends and groups I keep) moves to the current generation;
+ * 4. a fresh read proves it: no remove waits, the same generation, every pointer names it;
+ * 5. the older numbers gists go (by their IDs in the list, and only when provably ours), then the generation is marked
+ *    done, and the records that only the remove needed leave the list (so it stays small).
  * The sender (4E1) does not send while a remove waits. `done` only after a fresh read shows nothing waits.
  */
 export async function finishRemove(api: GistsApi, handle: IndexHandle, budget: GistBudget, opts: ListOptions): Promise<RemoveResult> {
   const now = opts.now()
+  const me = (opts.device ?? RUN_TAG).slice(0, 40)
   let base = handle
   /** The numbers gists that THIS run made: the only new numbers gists it may delete (YAZ-5276). */
   const made = new Set<string>()
   try {
-    for (let round = 0; round < 8; round++) {
+    for (let round = 0; round < 12; round++) {
       base = await latest(api, base, opts)
       const st = base.state
       if (st === undefined) return pendingRemove(base) === null ? { kind: 'done', handle: base, budget } : paused(base, budget, 'needs-repair', null)
@@ -776,9 +924,32 @@ export async function finishRemove(api: GistsApi, handle: IndexHandle, budget: G
         if (t.kinds.length > 0 && !live.has(t.mine)) await removeQuietly(api, t.mine)
         for (const d of t.drop) await removeQuietly(api, d)
       }
-      // 2. A new generation for the removes that no generation covers yet.
+      // 2. A new generation for the removes that the current generation does not cover.
       if (st.pending.length > 0) {
-        if (!mayUpdate(budget, now, 2, 0)) return paused(base, budget, 'budget', now + sendGap(budget, now, 0))
+        const k = (current?.k ?? -1) + 1
+        const intent = st.intents.find((i) => i.k === k)
+        const fresh = intent !== undefined && intent.by !== me && liveIntent(intent.at, now)
+        if (fresh) return paused(base, budget, 'busy', (Date.parse(intent.at) || now) + INTENT_LEASE_MS)
+        if (intent === undefined || intent.by !== me) {
+          // (a) The intent, on the newest list: generation k is still the next one, and no live run of another
+          // device holds it.
+          const claim = await updateList(
+            base,
+            (cur) => {
+              const s = cur.state!
+              const c = s.gens.at(-1)
+              if ((c?.k ?? -1) + 1 !== k || s.pending.length === 0) return { patch: null, result: false }
+              const other = s.intents.find((i) => i.k === k)
+              if (other !== undefined && other.by !== me && liveIntent(other.at, now)) return { patch: null, result: false }
+              const covers = [...new Set([...(c?.covers ?? []), ...s.pending.map((t) => t.id)])]
+              return { patch: { [listFile.intent(k)]: JSON.stringify({ v: 1, covers, by: me, at: new Date(now).toISOString() }) }, result: true }
+            },
+            opts,
+          )
+          base = claim.handle
+          continue
+        }
+        // (b) The numbers gist, a copy of the numbers as they are.
         let text = JSON.stringify(emptyNumbers(now))
         if (base.index.stats !== null)
           try {
@@ -790,18 +961,29 @@ export async function finishRemove(api: GistsApi, handle: IndexHandle, budget: G
         const id = (await api.create(opts.describe('numbers'), { [NUMBERS_FILE]: text })).id
         made.add(id)
         await opts.sleep(1000)
-        const k = (current?.k ?? -1) + 1
-        const covers = [...new Set([...(current?.covers ?? []), ...st.pending.map((t) => t.id)])]
-        base = await writeList(api, base, base.index, { [listFile.gen(k, id)]: JSON.stringify({ v: 1, stats: id, covers }) })
-        budget = recordUpdate(budget, now, null)
+        // (c) Its ID into the list, only while the intent is still mine and generation k is not there.
+        const rec = await updateList(
+          base,
+          (cur) => {
+            const s = cur.state!
+            const mineNow = s.intents.find((i) => i.k === k)
+            if (mineNow === undefined || mineNow.by !== me || s.gens.some((g) => g.k === k)) return { patch: null, result: false }
+            return { patch: { [listFile.gen(k, id)]: JSON.stringify({ v: 1, stats: id, covers: mineNow.covers }), [listFile.intent(k)]: null }, result: true }
+          },
+          opts,
+        )
+        base = rec.handle
+        if (!rec.result) {
+          await removeQuietly(api, id)
+          made.delete(id)
+        }
         continue
       }
-      // 3. Every pointer I keep moves forward to the newest generation.
+      // 3. Every pointer I keep moves to the current generation.
       const target = current!.stats
       const moved = await moveForward(api, base, target, budget, now, opts)
       budget = moved.budget
       if (moved.stop !== null) return moved.stop
-      if (moved.changed) continue
       // 4. A fresh read proves it.
       const proof = await latest(api, base, opts)
       const st2 = proof.state!
@@ -813,83 +995,82 @@ export async function finishRemove(api: GistsApi, handle: IndexHandle, budget: G
         base = proof
         continue
       }
-      // 5. The older numbers gists go; then the generation is done (and the files that only old state needed go).
+      // 5. The older numbers gists go; then the generation is done, and the records that only the remove needed go.
       for (const g of st2.gens) if (g.stats !== target) await removeIfOurNumbers(api, g.stats)
       if (st2.legacyStats !== null && st2.legacyStats !== target) await removeIfOurNumbers(api, st2.legacyStats)
       for (const id of made) if (id !== target) await removeQuietly(api, id)
-      if (!mayUpdate(budget, now, 1, 0)) return paused(proof, budget, 'budget', now + sendGap(budget, now, 0))
-      const last = st2.gens.at(-1)!
-      const patch: Record<string, string | null> = { [listFile.done(last.stats)]: '{"v":1}' }
-      for (const g of st2.gens) if (g !== last) {
-        if (proof.files?.[listFile.gen(g.k, g.stats)] !== undefined) patch[listFile.gen(g.k, g.stats)] = null
-        if (proof.files?.[listFile.done(g.stats)] !== undefined) patch[listFile.done(g.stats)] = null
-      }
-      // The file of each entry that a tombstone ended (the tombstone stays, so a stale write cannot bring it back).
-      const fileOf = { friend: listFile.friend, group: listFile.group, shared: listFile.shared } as const
-      for (const t of st2.tombs) for (const kind of t.kinds) if (proof.files?.[fileOf[kind](t.mine)] !== undefined) patch[fileOf[kind](t.mine)] = null
-      base = await writeList(api, proof, proof.index, patch)
-      budget = recordUpdate(budget, now, null)
+      base = await writeList(
+        proof,
+        (cur) => {
+          const s = cur.state!
+          const last = s.gens.at(-1)
+          if (last === undefined || last.stats !== target || s.pending.length > 0) return null
+          const files = cur.files ?? {}
+          const patch: Record<string, string | null> = { [listFile.done(last.stats)]: '{"v":1}' }
+          for (const g of s.gens) if (g !== last) {
+            if (files[listFile.gen(g.k, g.stats)] !== undefined) patch[listFile.gen(g.k, g.stats)] = null
+            if (files[listFile.done(g.stats)] !== undefined) patch[listFile.done(g.stats)] = null
+          }
+          // The record of each entry that a tombstone ended, then each tombstone the done generation covers (no stale
+          // write can bring an entry back: every write is a compare-and-swap). The intents of older generations go.
+          const fileOf = { friend: listFile.friend, group: listFile.group, shared: listFile.shared } as const
+          const covered = new Set(last.covers)
+          for (const t of s.tombs) {
+            for (const kind of t.kinds) if (files[fileOf[kind](t.mine)] !== undefined) patch[fileOf[kind](t.mine)] = null
+            const name = listFile.tomb(t.mine, t.id.slice(t.mine.length + 1))
+            if ((covered.has(t.id) || !t.rekey) && files[name] !== undefined) patch[name] = null
+          }
+          for (const i of s.intents) if (i.k <= last.k && files[listFile.intent(i.k)] !== undefined) patch[listFile.intent(i.k)] = null
+          if (s.legacyStats !== null && files[INDEX_FILE_NAME] !== undefined) {
+            const head = JSON.parse(files[INDEX_FILE_NAME]) as Record<string, unknown>
+            if ('stats' in head) {
+              const { stats: _old, ...rest } = head
+              patch[INDEX_FILE_NAME] = JSON.stringify(rest)
+            }
+          }
+          return patch
+        },
+        opts,
+      )
     }
     return paused(base, budget, 'offline', null)
   } catch (err) {
     return pauseOn(err, base, budget, now)
   }
 }
-
-/** The rank of a numbers gist in the list: its generation, -1 for a version 1 list's, undefined when the list does not name it. */
-const rankOf = (st: ListState, id: string): number | undefined => st.gens.find((g) => g.stats === id)?.k ?? (id === st.legacyStats ? -1 : undefined)
+const INDEX_FILE_NAME = 'notecards-friends.json'
 
 /**
- * Moves each pointer of the list to `target`, never back: a pointer that names a NEWER generation stays; one that names
- * a gist the list does not know makes a fresh read first (another device may have made a newer generation).
+ * Moves each pointer of the list to `target` (the current generation of the list as just read). One that a slow run
+ * wrote back to an older gist is moved again by the next round, by `settlePointers`, or by the next send (YAZ-5354).
  */
-async function moveForward(api: GistsApi, base: IndexHandle, target: string, budget: GistBudget, now: number, opts: ListOptions): Promise<{ budget: GistBudget; stop: RemoveResult | null; changed: boolean }> {
-  let st = base.state!
-  const targetRank = rankOf(st, target) ?? Infinity
+async function moveForward(api: GistsApi, base: IndexHandle, target: string, budget: GistBudget, now: number, opts: ListOptions): Promise<{ budget: GistBudget; stop: RemoveResult | null }> {
   for (const pointer of pointersOf(base.index)) {
-    let gist: GistDoc | 'unchanged'
-    try {
-      gist = await api.read(pointer)
-    } catch (err) {
-      if (gistErrorCode(err) === 'NOT_FOUND') continue
-      throw err
-    }
-    if (gist === 'unchanged') continue
+    const gist = await readPointer(api, pointer)
+    if (gist === null) continue
     const state = readPointerFile(fileText(gist, POINTER_FILE))
     if (state.kind !== 'ok' || state.value.stats === target) continue
-    let rank = rankOf(st, state.value.stats)
-    if (rank === undefined) {
-      const again = await latest(api, base, opts)
-      if (again.state === undefined || again.state.gens.at(-1)?.stats !== target || again.state.pending.length > 0) return { budget, stop: null, changed: true }
-      st = again.state
-      rank = rankOf(st, state.value.stats)
-    }
-    if (rank !== undefined && rank > targetRank) continue
-    // Keep one update for the done mark.
-    if (!mayUpdate(budget, now, 2, 0)) return { budget, stop: paused(base, budget, 'budget', now + sendGap(budget, now, 0)), changed: false }
+    if (!mayUpdate(budget, now, 1, 0)) return { budget, stop: paused(base, budget, 'budget', now + sendGap(budget, now, 0)) }
     try {
       await api.update(pointer, { [POINTER_FILE]: JSON.stringify({ ...state.raw, v: 1, stats: target }) })
     } catch (err) {
       if (gistErrorCode(err) === 'NOT_FOUND') continue // deleted in the meantime (a remove on another device)
+      // GitHub's 409 (another device of mine writes this pointer at this moment, to the same generation): the proof of
+      // step 4 reads it again, and the next round moves it if it still needs it.
+      if (gistErrorCode(err) === 'GITHUB_DOWN') continue
       throw err
     }
     budget = recordUpdate(budget, now, null)
     await opts.sleep(1000)
   }
-  return { budget, stop: null, changed: false }
+  return { budget, stop: null }
 }
 
 /** Does every pointer of the list name `target` (a pointer that is gone does not count against it)? */
 async function allNamed(api: GistsApi, base: IndexHandle, target: string): Promise<boolean> {
   for (const pointer of pointersOf(base.index)) {
-    let gist: GistDoc | 'unchanged'
-    try {
-      gist = await api.read(pointer)
-    } catch (err) {
-      if (gistErrorCode(err) === 'NOT_FOUND') continue
-      throw err
-    }
-    if (gist === 'unchanged') continue
+    const gist = await readPointer(api, pointer)
+    if (gist === null) continue
     const state = readPointerFile(fileText(gist, POINTER_FILE))
     if (state.kind === 'ok' && state.value.stats !== target) return false
   }
@@ -910,3 +1091,22 @@ async function removeIfOurNumbers(api: GistsApi, id: string): Promise<void> {
   if (names.length !== 1 || names[0] !== NUMBERS_FILE || readStatsFile(fileText(gist, NUMBERS_FILE)).kind !== 'ok') return
   await removeQuietly(api, id)
 }
+
+/**
+ * The numbers gist is gone on GitHub (deleted by hand): a new one, as a remove with no friend in it (a tombstone of no
+ * entry). The same saga makes it, moves each pointer to it, and writes it in the list: one generation, never two.
+ */
+export async function remakeNumbers(api: GistsApi, handle: IndexHandle, budget: GistBudget, opts: ListOptions): Promise<RemoveResult> {
+  const now = opts.now()
+  try {
+    const base = await latest(api, handle, opts)
+    const at = new Date(now).toISOString()
+    const written = pendingRemove(base) !== null ? base : await writeList(base, (cur) => (pendingRemove(cur) !== null ? null : { [listFile.tomb(PARKED, tombTag([], true, at))]: tombText({ kinds: [], rekey: true, at, drop: [] }) }), opts)
+    return await finishRemove(api, written, budget, opts)
+  } catch (err) {
+    return pauseOn(err, handle, budget, now)
+  }
+}
+
+/** Reads the list (read only), for a caller that holds no handle yet. */
+export { findFriendsIndex, ListError }

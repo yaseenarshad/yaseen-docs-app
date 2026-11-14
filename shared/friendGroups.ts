@@ -2,26 +2,25 @@ import {
   INDEX_FILE,
   NUMBERS_FILE,
   POINTER_FILE,
-  findFriendsIndex,
   gistErrorCode,
   gistErrorResetAt,
   isGistId,
   makeParkedPointer,
   makePointer,
   parseFriendsIndex,
-  readListGist,
+  listPatch,
   pointersOf,
   readFriend,
   readPointerFile,
   readStatsFile,
-  writeFriendsIndex,
   type FileState,
   type FriendRead,
   type GistDoc,
   type GistsApi,
   type IndexHandle,
 } from './friendGists'
-import { pinPointer, pendingRemove, removeFriend, type ListCache, type ListOptions, type RemoveResult } from './friendsList'
+import { BrokenList, ListError, NewerList, latestList, listErrorCode, openFriendsList, writeList } from './friendListHome'
+import { Elsewhere, pinPointer, pendingRemove, removeFriend, type ListCache, type ListOptions, type RemoveResult } from './friendsList'
 import type { GistBudget } from './friendSend'
 import type { FriendDay, FriendStats } from './friendStats'
 
@@ -232,28 +231,41 @@ class Stop extends Error {
   }
 }
 
-/** My friends list as it is on GitHub now. A list that cannot be read stops the action (YAZ-5191). */
+/** My friends list as it is on GitHub now (in the vault repo). A list that cannot be read stops the action (YAZ-5191). */
 async function freshList(api: GistsApi, handle: IndexHandle, opts: ListOptions): Promise<IndexHandle> {
-  let gist: GistDoc | 'unchanged'
   try {
-    gist = await api.read(handle.id)
+    if (handle.store !== undefined) return await latestList(handle)
+    const found = await openFriendsList(api, opts)
+    if (found.kind === 'ok' && found.handle.store !== undefined) return found.handle
+    if (found.kind === 'elsewhere') throw new Elsewhere(found.home)
+    throw new Stop(found.kind === 'newer' ? 'newer-app' : found.kind === 'none' || found.kind === 'no-vault' ? 'not-found' : 'needs-repair')
   } catch (err) {
-    if (gistErrorCode(err) !== 'NOT_FOUND') throw err
-    const found = await findFriendsIndex(api, opts)
-    if (found.kind === 'ok') return found.handle
-    throw new Stop(found.kind === 'newer' ? 'newer-app' : found.kind === 'broken' ? 'needs-repair' : 'not-found')
+    if (err instanceof NewerList) throw new Stop('newer-app')
+    if (err instanceof BrokenList) throw new Stop('needs-repair')
+    throw err
   }
-  if (gist === 'unchanged') return handle
-  const read = readListGist(gist)
-  if (read.kind === 'newer') throw new Stop('newer-app')
-  if (read.kind === 'unreadable') throw new Stop('needs-repair')
-  return { ...handle, index: read.value, raw: read.raw, etag: gist.etag, files: read.files, state: read.list }
+}
+
+/** One change of my list (my group entries), as an operation on the newest copy (compare-and-swap, YAZ-5083). */
+function changeGroups(handle: IndexHandle, f: (groups: IndexHandle['index']['groups']) => IndexHandle['index']['groups'] | null, opts: ListOptions): Promise<IndexHandle> {
+  return writeList(
+    handle,
+    (cur) => {
+      const groups = f(cur.index.groups)
+      if (groups === null) return null
+      const patch = listPatch(cur, { ...cur.index, groups })
+      return Object.keys(patch).length === 0 ? null : patch
+    },
+    opts,
+  )
 }
 
 type Failure = { kind: 'offline' } | { kind: 'rate-limited'; retryAt: number | null } | { kind: 'refused' } | { kind: 'unauthorized' } | { kind: 'failed' }
 
 function failure(err: unknown): Failure | { kind: 'needs-repair' } | { kind: 'newer-app' } | { kind: 'not-found' } {
   if (err instanceof Stop) return { kind: err.kind }
+  // YAZ-5083: the list in a vault this device does not have, or one the token cannot write: nothing is written.
+  if (err instanceof Elsewhere || listErrorCode(err) === 'NO_LIST_ACCESS' || err instanceof ListError) return { kind: 'failed' }
   switch (gistErrorCode(err)) {
     case 'OFFLINE':
     case 'GITHUB_DOWN':
@@ -333,7 +345,7 @@ export async function createGroup(api: GistsApi, handle: IndexHandle, name: stri
     const made = await api.create(opts.describe('index').replace(/index|friends list/gi, 'group'), { [GROUP_FILE]: groupFileText(file) })
     await opts.sleep(1000)
     base = await freshList(api, base, opts)
-    const written = await writeFriendsIndex(api, base, { ...base.index, groups: [...base.index.groups, { name: clean, group: made.id, mine: pointer, admin: true, joined: true }] })
+    const written = await changeGroups(base, (groups) => [...groups, { name: clean, group: made.id, mine: pointer, admin: true, joined: true }], opts)
     const next = await pinPointer(api, written, pointer, opts)
     return { kind: 'ok', handle: next, group: made.id, link: groupLink(made.id) }
   } catch (err) {
@@ -379,7 +391,14 @@ export async function joinGroup(api: GistsApi, handle: IndexHandle, text: string
     const pointer = await makeParkedPointer(api, opts)
     await opts.sleep(1000)
     base = await freshList(api, base, opts)
-    const written = await writeFriendsIndex(api, base, { ...base.index, groups: [...base.index.groups, { name: file.value.name, group, mine: pointer, admin: false, asked: new Date(opts.now()).toISOString() }] })
+    const asked = new Date(opts.now()).toISOString()
+    const written = await changeGroups(base, (groups) => (groups.some((g) => g.group === group) ? null : [...groups, { name: file.value.name, group, mine: pointer, admin: false, asked }]), opts)
+    // YAZ-5353 for groups: another device of mine joined this group at the same moment: its entry stays, mine goes.
+    if (!written.index.groups.some((g) => g.mine === pointer)) {
+      await removeQuietly(api, pointer)
+      const kept = written.index.groups.find((g) => g.group === group)!
+      return { kind: 'already', name: kept.name, sendToAdmin: kept.joined ? null : joinLink(group, kept.mine) }
+    }
     const next = await pinPointer(api, written, pointer, opts)
     return { kind: 'joined', name: file.value.name, group, sendToAdmin: joinLink(group, pointer), handle: next }
   } catch (err) {
@@ -587,11 +606,15 @@ export async function sweepOrphans(api: GistsApi, handle: IndexHandle, _deviceNo
     const serverNow = api.serverTime?.() ?? null
     if (serverNow === null || !Number.isFinite(serverNow)) return []
     const listNow = async (): Promise<IndexHandle | null> => {
-      const gist = await api.read(handle.id)
-      if (gist === 'unchanged') return null
-      const read = readListGist(gist)
-      if (read.kind !== 'ok') return null
-      const h = { ...handle, index: read.value, raw: read.raw, etag: gist.etag, files: read.files, state: read.list }
+      // YAZ-5083: the list in the vault repo, read fresh. An old gist list (not moved yet) or one that cannot be read:
+      // nothing is deleted.
+      if (handle.store === undefined) return null
+      let h: IndexHandle
+      try {
+        h = await latestList({ ...handle, etag: null })
+      } catch {
+        return null
+      }
       return pendingRemove(h) === null ? h : null
     }
     const list = await listNow()
@@ -676,6 +699,36 @@ const dayBefore = (day: string): string => {
   return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`
 }
 
+/** The widest UTC offsets of a time zone (−12 h, +14 h). */
+const MIN_OFFSET_MS = -12 * 3600_000
+const MAX_OFFSET_MS = 14 * 3600_000
+const DAY_MS = 86_400_000
+const utcDate = (ms: number) => new Date(ms).toISOString().slice(0, 10)
+
+/**
+ * YAZ-5355: the last day that can be the member's OWN join day, in the member's own zone (which stays private). Their
+ * numbers say their date (`days[0]`, their today) at the time of their count (`at`): that bounds their UTC offset, so
+ * `since` falls on one, at most two, of their days; the later one is taken. With no such fact: the reader's join day
+ * and the day after it (the member's own join day is one of the two, for a member in any zone ahead of the reader).
+ * Null: no `since` (a member from before the rule, or the admin).
+ */
+export function joinDayOf(m: { days: readonly FriendDay[]; since?: string; at?: string }): string | null {
+  const since = m.since === undefined ? NaN : Date.parse(m.since)
+  if (!Number.isFinite(since)) return null
+  const at = m.at === undefined ? NaN : Date.parse(m.at)
+  const d0 = m.days[0]?.day
+  const d0Start = d0 === undefined ? NaN : Date.parse(`${d0}T00:00:00Z`)
+  if (Number.isFinite(at) && Number.isFinite(d0Start)) {
+    // Their date at `at` is d0: their offset o has d0Start <= at + o < d0Start + one day.
+    const lo = Math.max(MIN_OFFSET_MS, d0Start - at)
+    const hi = Math.min(MAX_OFFSET_MS, d0Start + DAY_MS - 1 - at)
+    if (lo <= hi) return utcDate(since + hi)
+  }
+  const reader = localDay(since)
+  const [y, mo, d] = reader.split('-').map(Number)
+  return utcDate(Date.UTC(y, mo - 1, d + 1))
+}
+
 /**
  * The group streak (round 10, addition 13): the days in a row, up to the reader's `today`, that EVERY member finished
  * their due cards. Each member's days are their own local days (decision 9), so a day is matched by its date:
@@ -683,12 +736,13 @@ const dayBefore = (day: string): string => {
  *   reached the date yet (another time zone), does not stop the streak there; that day just does not count yet.
  * - Any other day stops the streak unless every member has it and finished it. A member who stopped sending stops it.
  * - A member who joined (`since`, when the admin added them) counts from the next day on: not on the day they joined,
- *   and not on the days before it.
+ *   and not on the days before it. YAZ-5355: the join day is the MEMBER's own day (their days are in their home zone),
+ *   which can be the reader's day before or after (`joinDayOf`).
  * Pure. Nobody, or a member with no day at all (and no `since`): 0.
  */
-export function groupStreak(members: readonly { days: readonly FriendDay[]; since?: string }[], today: string): number {
+export function groupStreak(members: readonly { days: readonly FriendDay[]; since?: string; at?: string }[], today: string): number {
   if (members.length === 0) return 0
-  const joined = members.map((m) => (m.since === undefined || !Number.isFinite(Date.parse(m.since)) ? null : localDay(Date.parse(m.since))))
+  const joined = members.map((m) => joinDayOf(m))
   let streak = 0
   let date = today
   for (let walked = 0; walked < 90; walked++, date = dayBefore(date)) {
@@ -853,7 +907,7 @@ export async function readGroup(api: GistsApi, handle: IndexHandle, group: strin
     rows.push(row)
   }
   const since = new Map(file.members.map((m) => [m.pointer, m.since]))
-  const numbers = rows.flatMap((r) => (r.read?.kind === 'ok' ? [{ days: r.read.stats.days, since: since.get(r.pointer) }] : []))
+  const numbers = rows.flatMap((r) => (r.read?.kind === 'ok' ? [{ days: r.read.stats.days, since: since.get(r.pointer), at: r.read.stats.at }] : []))
   return { kind: 'ok', ...base, name: file.name, admin: file.admin, iAmAdmin: entry.admin, members: rows, streak: groupStreak(numbers, today), firstSeen: !entry.admin && entry.joined !== true }
 }
 
@@ -862,7 +916,7 @@ export async function markJoined(api: GistsApi, handle: IndexHandle, group: stri
   try {
     const base = await freshList(api, handle, opts)
     if (!base.index.groups.some((g) => g.group === group && g.joined !== true)) return base
-    return await writeFriendsIndex(api, base, { ...base.index, groups: base.index.groups.map((g) => (g.group === group ? { ...g, joined: true as const } : g)) })
+    return await changeGroups(base, (groups) => (groups.some((g) => g.group === group && g.joined !== true) ? groups.map((g) => (g.group === group ? { ...g, joined: true as const } : g)) : null), opts)
   } catch (err) {
     return failure(err)
   }

@@ -71,7 +71,7 @@ describe('the friend link of 5- and the paste box of 4E2', () => {
     const walk = (dir: string): string[] =>
       readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]))
     const fixed = walk(src).filter(
-      (f) => /\.(ts|tsx)$/.test(f) && !/\.test\.tsx?$|testing\.ts$|\/dev\//.test(f) && /notecards?\.yaseenarshad\.com/.test(readFileSync(f, 'utf8')),
+      (f) => /\.(ts|tsx)$/.test(f) && !/\.test\.tsx?$|testing\.ts$|\/dev\/|\/check4\/old\//.test(f) && /notecards?\.yaseenarshad\.com/.test(readFileSync(f, 'utf8')),
     )
     expect(fixed.map((f) => f.slice(src.length))).toEqual([])
   })

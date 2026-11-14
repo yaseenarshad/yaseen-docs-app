@@ -1,4 +1,5 @@
-import { readListGist, DESCRIPTIONS, INDEX_FILE, emptyNumbers, pointersOf, ensureFriendsFiles, findFriendsIndex, gistErrorCode, parseFriendsIndex, writeFriendsIndex, type GistsApi, type IndexHandle } from '@shared/friendGists'
+import { DESCRIPTIONS, emptyNumbers, gistErrorCode, listPatch, type EntryKind, type GistsApi, type IndexHandle } from '@shared/friendGists'
+import { BrokenList, NewerList, latestList, listErrorCode, openFriendsList, writeList } from '@shared/friendListHome'
 import { emptyBudget, recordUpdate, type GistBudget } from '@shared/friendSend'
 import { deviceZone } from '@shared/friendStats'
 import {
@@ -20,8 +21,11 @@ import {
   type LeaveResult,
 } from '@shared/friendGroups'
 import {
+  Elsewhere,
   WHAT_FRIENDS_SEE,
   dropHeldShares,
+  kindOf,
+  waitingRemoves,
   markPaired,
   settlePointers,
   finishRemove,
@@ -47,6 +51,7 @@ import { PHONE, VaultClosedError, loadVaultList, vaultId, type TokenStore, type 
 import type { Clock } from '../sync/engine'
 import { openFriendsApi } from './friendsApi'
 import { friendsGuard } from './guard'
+import { deviceTag } from './deviceTag'
 import { dequeueRemove, drainQueue, enqueueRemove, queuedMines } from './removeQueue'
 import { SEND_STATE } from './sender'
 
@@ -69,6 +74,10 @@ export type Unavailable =
   | { kind: 'newer-app' }
   /** My friends list on GitHub cannot be read: nothing is written to it (YAZ-5191). Show `LIST_NEEDS_REPAIR`. */
   | { kind: 'needs-repair' }
+  /** YAZ-5083: my friends list is in the vault `home` (`owner/name`), which this phone does not have. Nothing is written. */
+  | { kind: 'list-elsewhere'; home: string }
+  /** YAZ-5083: the token cannot read or write the vault that holds my friends list (Contents permission). */
+  | { kind: 'no-list-access' }
   | { kind: 'failed' }
 
 export interface ShareResult {
@@ -137,6 +146,11 @@ export interface FriendsListOptions {
 /** Phone-only state: whether there is a friend or group (the opening tab, decision 21), and a copy of the settings. */
 const HAS = 'friendsHas'
 const COPY = 'friendsListCopy'
+/**
+ * YAZ-5361: the removes that wait in the list on GitHub (the saga state: "Removing…"), as last read, for the erase ask.
+ * Phone-only state; the list on GitHub stays the truth.
+ */
+export const WAITING_REMOVES = 'friendsWaitingRemoves'
 interface ListCopy {
   vaults: string[]
   nickname: string | null
@@ -192,50 +206,58 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     if (!(await guard.live())) return // YAZ-5195: nothing comes back after an erase
     await phoneStore.setState(PHONE, HAS, h.index.friends.length + h.index.groups.length > 0)
     await phoneStore.setState(PHONE, COPY, { vaults: h.index.vaults, nickname: h.index.nickname, ...(h.index.zone !== undefined && { zone: h.index.zone }) } satisfies ListCopy)
+    const waiting = waitingRemoves(h).count
+    if (waiting > 0) await phoneStore.setState(PHONE, WAITING_REMOVES, waiting)
+    else await phoneStore.removeState(PHONE, WAITING_REMOVES)
   }
 
   /** This session's copy of the list, read again with its ETag (a free 304 when nothing changed, also on another device). */
-  async function refreshed(api: GistsApi, h: IndexHandle): Promise<IndexHandle | 'newer' | 'broken'> {
+  async function refreshed(h: IndexHandle): Promise<IndexHandle | Unavailable> {
     try {
-      const answer = await api.read(h.id, h.etag)
-      if (answer === 'unchanged') return h
-      const read = readListGist(answer)
-      if (read.kind === 'newer') return 'newer'
-      if (read.kind === 'unreadable') {
-        handle = null
-        return 'broken'
-      }
-      const next = { ...h, index: read.value, raw: read.raw, etag: answer.etag, files: read.files, state: read.list }
-      await remember(next)
+      const next = await latestList(h)
+      if (next !== h) await remember(next)
       return next
     } catch (err) {
-      if (gistErrorCode(err) !== 'NOT_FOUND') throw err
       handle = null
-      return h
+      if (err instanceof NewerList) return { kind: 'newer-app' }
+      if (err instanceof BrokenList) return { kind: 'needs-repair' }
+      throw err
     }
   }
 
-  /** The list: this session's copy, or found by its file name; made (with the carried-over settings) when `make`. */
-  async function list(api: GistsApi, login: string, make: boolean, vault = ''): Promise<IndexHandle | null | 'newer' | 'broken'> {
+  /**
+   * The list: this session's copy, or found by the note in the list gist (YAZ-5083: in the home vault). An old gist list
+   * is moved into the vault here. Made (with the carried-over settings) when `make`. Null: no list and `make` is false.
+   */
+  async function list(api: GistsApi, login: string, make: boolean, vault = ''): Promise<IndexHandle | Unavailable | null> {
     if (handle !== null) return handle
-    const found = await findFriendsIndex(api, opts)
-    if (found.kind === 'newer') return 'newer'
-    if (found.kind === 'broken') return 'broken'
-    if (found.kind === 'ok') {
-      await remember(found.handle)
-      return found.handle
+    let seed = null
+    if (make) {
+      const settings = await local.settings()
+      // The first numbers file names the person at once (the sender fills the numbers after the next sync pass).
+      const account = vault === '' ? undefined : await loadAccount(store, vault)
+      const numbers = { ...emptyNumbers(now()), login, name: settings.nickname ?? account?.name ?? login, avatar: account?.avatarUrl ?? '' }
+      // YAZ-5251: the first device writes the home time zone: the one chosen in Settings, or its own.
+      seed = { vaults: await idsToRepos(settings.vaults, login), nickname: settings.nickname, numbers, zone: settings.zone ?? deviceZone() }
     }
-    if (!make) return null
-    const settings = await local.settings()
-    // The first numbers file names the person at once (the sender fills the numbers after the next sync pass).
-    const account = vault === '' ? undefined : await loadAccount(store, vault)
-    const numbers = { ...emptyNumbers(now()), login, name: settings.nickname ?? account?.name ?? login, avatar: account?.avatarUrl ?? '' }
-    // YAZ-5251: the first device writes the home time zone: the one chosen in Settings, or its own.
-    const made = await ensureFriendsFiles(api, { vaults: await idsToRepos(settings.vaults, login), nickname: settings.nickname, numbers, zone: settings.zone ?? deviceZone() }, opts)
-    if (made.kind !== 'ok') return made.kind
-    await remember(made.handle)
-    return made.handle
+    const found = await openFriendsList(api, opts, seed)
+    switch (found.kind) {
+      case 'ok':
+        await remember(found.handle)
+        return found.handle
+      case 'none':
+        return null
+      case 'newer':
+        return { kind: 'newer-app' }
+      case 'broken':
+        return { kind: 'needs-repair' }
+      case 'elsewhere':
+        return { kind: 'list-elsewhere', home: found.home }
+      default:
+        return { kind: 'no-list-access' }
+    }
   }
+  const isHandle = (x: IndexHandle | Unavailable | null): x is IndexHandle => x !== null && 'index' in x
 
   async function budget(): Promise<GistBudget> {
     return (await store.getState<{ budget?: GistBudget }>(PHONE, SEND_STATE))?.budget ?? emptyBudget()
@@ -250,6 +272,8 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     if (!(await guard.live())) return { kind: 'no-account' }
     // YAZ-5195: the phone-wide session of this action; after an erase in any tab its writes throw VaultClosedError.
     phoneStore = await store.session(PHONE)
+    // YAZ-5083: this phone's tag in the list's steps (stable across restarts).
+    opts.device ??= await deviceTag(phoneStore)
     const friends = await openFriendsApi(store, tokens, { fetch: guard.fetch, now })
     if (friends.kind !== 'ok') return { kind: friends.kind }
     return lock('notecards-friends', async () => {
@@ -257,6 +281,14 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         return await fn(friends.api, friends.account.login, friends.vault)
       } catch (err) {
         if (err instanceof VaultClosedError) return { kind: 'no-account' as const }
+        // YAZ-5083: the list in the vault repo.
+        if (err instanceof NewerList) return { kind: 'newer-app' as const }
+        if (err instanceof BrokenList) return { kind: 'needs-repair' as const }
+        if (err instanceof Elsewhere) return { kind: 'list-elsewhere' as const, home: err.home }
+        if (listErrorCode(err) === 'NO_LIST_ACCESS') {
+          handle = null
+          return { kind: 'no-list-access' as const }
+        }
         switch (gistErrorCode(err)) {
           case 'READ_ONLY':
             if (await guard.live()) await recordGistsRefused(store, friends.vault)
@@ -278,17 +310,24 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     })
   }
 
-  const mapRemove = async (r: RemoveResult, vault: string, queue?: { mine: string; drop?: string[] }) => {
+  /**
+   * `queue`: the remove this call asked for, with the kind of entry it was then. YAZ-5352: the phone keeps it only when
+   * the list does not hold it (GitHub refused the first write, `took` is empty) AND my pointer is still that same kind
+   * of entry. A shared link that a friend took meanwhile is that friend's pointer now: a later drain must never remove
+   * the friend for a cancel of the link.
+   */
+  const mapRemove = async (r: RemoveResult, vault: string, queue?: { mine: string; kind: EntryKind; drop?: string[] }) => {
     await saveBudget(r.budget)
     await remember(r.handle)
-    // YAZ-5236: GitHub refused the first write: the list does not hold the remove yet, so the phone keeps it.
-    if (queue !== undefined && r.kind === 'paused' && pointersOf(r.handle.index).includes(queue.mine)) {
+    if (queue !== undefined && r.kind === 'paused' && !(r.took ?? []).includes(queue.mine) && kindOf(r.handle.index, queue.mine) === queue.kind && (r.why === 'offline' || r.why === 'rate-limited')) {
       await enqueueRemove(phoneStore, { ...queue, at: now() })
       return { kind: 'paused' as const, why: r.why, retryAt: r.retryAt }
     }
     if (r.kind === 'done') return { kind: 'done' as const }
     if (r.kind === 'not-found') return { kind: 'not-found' as const }
     if (r.why === 'needs-repair') return { kind: 'needs-repair' as const }
+    if (r.why === 'list-elsewhere') return { kind: 'failed' as const }
+    if (r.why === 'no-list-access') return { kind: 'no-list-access' as const }
     if (r.why === 'refused') {
       if (await guard.live()) await recordGistsRefused(store, vault)
       return { kind: 'no-gists' as const }
@@ -308,20 +347,26 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
       const copy = await store.getState<ListCopy>(PHONE, COPY)
       if (copy === undefined) return // no list yet: the first share or paste carries them over
       const result = await withApi(async (api, login) => {
-        handle = null // read it again just before the write
         const fresh = await list(api, login, false)
-        if (fresh === 'broken') return { kind: 'needs-repair' as const }
-        if (fresh === null || fresh === 'newer') return { kind: 'failed' as const }
+        if (!isHandle(fresh)) return { kind: 'failed' as const }
         // YAZ-5237: a write changes only what the person changed. The vaults that this phone does not hold (the Mac's)
         // stay; only the phone's own vaults follow the choice. An unchanged name keeps the list's own (also a long one).
+        // YAZ-5083: an operation on the NEWEST list (compare-and-swap): another device's change at the same moment stays.
         const onPhone = (await loadVaultList(store)).vaults.map((v) => v.repo.toLowerCase())
         const chosen = await idsToRepos(settings.vaults, login)
-        const listed = fresh.index.vaults
-        const vaults = [...listed.filter((v) => !onPhone.includes(v) || chosen.includes(v)), ...chosen.filter((v) => !listed.includes(v))]
-        const nickname = settings.nickname === copy.nickname ? fresh.index.nickname : settings.nickname
-        // YAZ-5251: the home time zone changes only when the person changed it here.
-        const zone = settings.zone === undefined || settings.zone === null || settings.zone === (copy.zone ?? null) ? fresh.index.zone : settings.zone
-        const next = await writeFriendsIndex(api, fresh, { ...fresh.index, vaults, nickname, ...(zone !== undefined && { zone }) })
+        const next = await writeList(
+          fresh,
+          (cur) => {
+            const listed = cur.index.vaults
+            const vaults = [...listed.filter((v) => !onPhone.includes(v) || chosen.includes(v)), ...chosen.filter((v) => !listed.includes(v))]
+            const nickname = settings.nickname === copy.nickname ? cur.index.nickname : settings.nickname
+            // YAZ-5251: the home time zone changes only when the person changed it here.
+            const zone = settings.zone === undefined || settings.zone === null || settings.zone === (copy.zone ?? null) ? cur.index.zone : settings.zone
+            const patch = listPatch(cur, { ...cur.index, vaults, nickname, ...(zone !== undefined && { zone }) })
+            return Object.keys(patch).length === 0 ? null : patch
+          },
+          opts,
+        )
         await remember(next)
         return { kind: 'ok' as const }
       })
@@ -335,8 +380,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     if (link.kind !== 'ok') return link
     return withApi(async (api, login, vault) => {
       const h = await list(api, login, true, vault)
-      if (h === 'broken') return { kind: 'needs-repair' as const }
-      if (h === null || h === 'newer') return { kind: 'newer-app' as const }
+      if (!isHandle(h)) return h ?? { kind: 'failed' as const }
       const result = await pasteLink(api, h, text, opts)
       if (result.kind === 'refused') {
         if (await guard.live()) await recordGistsRefused(store, vault)
@@ -349,7 +393,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
       if (result.kind === 'added' || result.kind === 'already') {
         const link = parseFriendLink(text)
         const now = await list(api, login, false)
-        const index = result.kind === 'added' ? result.handle.index : now !== null && now !== 'newer' && now !== 'broken' ? now.index : null
+        const index = result.kind === 'added' ? result.handle.index : isHandle(now) ? now.index : null
         const kept = index?.friends.find((f) => link.kind === 'ok' && f.theirs === link.id)?.mine
         if (kept !== undefined) await dequeueRemove(phoneStore, kept)
       }
@@ -360,22 +404,17 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
   /** The list, read again with its ETag just before a group action (another device may have changed it). */
   async function current(api: GistsApi, login: string): Promise<IndexHandle | Unavailable> {
     const h = await list(api, login, false)
-    if (h === 'broken') return { kind: 'needs-repair' }
-    if (h === 'newer') return { kind: 'newer-app' }
     if (h === null) return { kind: 'failed' }
-    const r = await refreshed(api, h)
-    if (r === 'broken') return { kind: 'needs-repair' }
-    if (r === 'newer') return { kind: 'newer-app' }
-    return handle ?? r
+    if (!isHandle(h)) return h
+    return refreshed(h)
   }
-  const isHandle = (x: IndexHandle | Unavailable): x is IndexHandle => 'index' in x
   /** One `gist_update` made by a group action: counted on the budget the sender keeps. */
   async function counted(n = 1): Promise<void> {
     let b = await budget()
     for (let i = 0; i < n; i++) b = recordUpdate(b, now(), null)
     await saveBudget(b)
   }
-  const leaveOutcome = async (r: LeaveResult, vault: string, queue?: { mine: string; drop?: string[] }): Promise<LeaveOutcome | Unavailable> =>
+  const leaveOutcome = async (r: LeaveResult, vault: string, queue?: { mine: string; kind: EntryKind; drop?: string[] }): Promise<LeaveOutcome | Unavailable> =>
     r.kind === 'admin-cannot-leave' ? r : r.kind === 'not-found' && !('handle' in r) ? { kind: 'not-found' } : mapRemove(r as RemoveResult, vault, queue)
   let swept = false
   /** YAZ-5312: `settlePointers` ran in this session. */
@@ -385,8 +424,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     create: (name) =>
       withApi(async (api, login, vault) => {
         const h = await list(api, login, true, vault)
-        if (h === 'broken') return { kind: 'needs-repair' as const }
-        if (h === null || h === 'newer') return { kind: 'newer-app' as const }
+        if (!isHandle(h)) return h ?? { kind: 'failed' as const }
         const made = await createGroup(api, h, name, login, opts)
         if (made.kind === 'refused') {
           if (await guard.live()) await recordGistsRefused(store, vault)
@@ -402,8 +440,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         const link = parseAnyLink(text)
         if (link.kind === 'empty' || link.kind === 'other-app' || link.kind === 'not-a-link') return link
         const h = await list(api, login, true, vault)
-        if (h === 'broken') return { kind: 'needs-repair' as const }
-        if (h === null || h === 'newer') return { kind: 'newer-app' as const }
+        if (!isHandle(h)) return h ?? { kind: 'failed' as const }
         const joined = await joinGroup(api, h, text, opts)
         if (joined.kind === 'refused') {
           if (await guard.live()) await recordGistsRefused(store, vault)
@@ -441,14 +478,14 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         const h = await current(api, login)
         if (!isHandle(h)) return h
         const mine = h.index.groups.find((g) => g.group === group)?.mine
-        return leaveOutcome(await leaveGroup(api, h, group, await budget(), opts), vault, mine === undefined ? undefined : { mine })
+        return leaveOutcome(await leaveGroup(api, h, group, await budget(), opts), vault, mine === undefined ? undefined : { mine, kind: 'group' })
       }),
     delete: (group) =>
       withApi(async (api, login, vault) => {
         const h = await current(api, login)
         if (!isHandle(h)) return h
         const mine = h.index.groups.find((g) => g.group === group && g.admin)?.mine
-        return leaveOutcome(await deleteGroup(api, h, group, await budget(), opts), vault, mine === undefined ? undefined : { mine, drop: [group] })
+        return leaveOutcome(await deleteGroup(api, h, group, await budget(), opts), vault, mine === undefined ? undefined : { mine, kind: 'group', drop: [group] })
       }),
     read: (group) => withApi(async (api, login, vault) => readOne(api, login, vault, group)),
     all: () =>
@@ -504,8 +541,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     share: () =>
       withApi(async (api, login, vault) => {
         const h = await list(api, login, true, vault)
-        if (h === 'broken') return { kind: 'needs-repair' as const }
-        if (h === null || h === 'newer') return { kind: 'newer-app' as const }
+        if (!isHandle(h)) return h ?? { kind: 'failed' as const }
         const shared = await shareLink(api, h, opts)
         await remember(shared.handle)
         return { kind: 'ok' as const, link: shared.link, ...shareText(shared.link), whatFriendsSee: WHAT_FRIENDS_SEE }
@@ -513,24 +549,34 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     paste: (text) => pasteText(text),
     remove: (mine) =>
       withApi(async (api, login, vault) => {
-        const h = await list(api, login, false)
-        if (h === 'broken') return { kind: 'needs-repair' as const }
-        if (h === null || h === 'newer') return { kind: 'not-found' as const }
-        return mapRemove(await removeFriend(api, h, mine, await budget(), opts), vault, { mine })
+        const h0 = await list(api, login, false)
+        if (h0 === null) return { kind: 'not-found' as const }
+        if (!isHandle(h0)) return h0
+        // YAZ-5352: the kind of entry the person removes (a friend, a group, or a shared link), from the newest list; with
+        // no connection, from this session's copy (the remove then waits on the phone, YAZ-5236).
+        let h: IndexHandle | Unavailable
+        try {
+          h = await refreshed(h0)
+        } catch (err) {
+          if (gistErrorCode(err) !== 'OFFLINE' && gistErrorCode(err) !== 'GITHUB_DOWN') throw err
+          h = h0
+        }
+        if (!isHandle(h)) return h
+        const kind = kindOf(h.index, mine)
+        if (kind === null && pendingRemove(h) === null) return { kind: 'not-found' as const }
+        return mapRemove(await removeFriend(api, h, mine, await budget(), opts, kind === null ? {} : { kinds: { [mine]: kind } }), vault, kind === null ? undefined : { mine, kind })
       }),
     rows: () =>
       withApi(async (api, login, vault) => {
-        let h = await list(api, login, false)
-        if (h !== null && h !== 'newer' && h !== 'broken') {
-          h = await refreshed(api, h)
-          if (h !== 'newer' && h !== 'broken' && handle === null) h = await list(api, login, false)
-        }
-        if (h === 'broken') return { kind: 'needs-repair' as const }
-        if (h === 'newer') return { kind: 'newer-app' as const }
-        if (h === null) {
+        const found = await list(api, login, false)
+        if (found === null) {
           if (await guard.live()) await phoneStore.setState(PHONE, HAS, false)
           return { kind: 'ok' as const, rows: [], shared: [], repairs: [], held: [], newlyPaired: [] }
         }
+        if (!isHandle(found)) return found
+        const fresh = await refreshed(found)
+        if (!isHandle(fresh)) return fresh
+        let h: IndexHandle = fresh
         // YAZ-5236: the removes that wait on the phone run first, then a remove that waits in the list.
         const drained = await drainQueue(api, h, phoneStore, await budget(), opts)
         if (drained !== null) {

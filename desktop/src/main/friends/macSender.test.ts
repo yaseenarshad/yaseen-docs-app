@@ -7,13 +7,22 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CardRecord } from '@shared/cardLine'
-import { INDEX_FILE, NUMBERS_FILE, emptyNumbers, ensureFriendsFiles, findFriendsIndex, makePointer, writeFriendsIndex, type GistsApi, type WriteOptions } from '@shared/friendGists'
+import {
+  INDEX_FILE,
+  NUMBERS_FILE,
+  emptyNumbers,
+  makePointer,
+  type GistsApi,
+  type WriteOptions,
+} from '@shared/friendGists'
+import { ensureFriendsFiles, findFriendsIndex, writeFriendsIndex } from '@shared/friendListHome'
 import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
 import { PUBLISH_EVERY_MS, mergeNeverLower, numbersFor, reserveFor } from '@shared/friendSend'
 import { friendStats, type FriendStats, type FriendVault } from '@shared/friendStats'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { macGistsApi, readProfile } from './gistsHttp'
 import { createMacSender, type MacSendSaved, type MacSender } from './macSender'
+import { macRepoPort } from './repoHttp'
 import { worldFetch } from './testing'
 
 const TZ = process.env.TZ
@@ -71,6 +80,8 @@ function makeRig(accounts: Record<string, { login: string; gists?: boolean }> = 
         api: (token) => macGistsApi(token, wire.fetch, () => world.now()),
         profile: (token) => readProfile(token, wire.fetch),
         vaults: async () => new Map(r.held),
+        // YAZ-5083: the list in the vault repo, read (only) with the Mac's own HTTP calls.
+        repo: async (token, repo) => macRepoPort(token, wire.fetch, repo, 'main'),
         count: async () => vaultWith(r.cards.value),
         state: { load: async () => r.saved.value, save: async (s) => void (r.saved.value = structuredClone(s)) },
         clock: { now: () => world.now(), setTimeout: () => 0, clearTimeout: () => undefined },
@@ -153,8 +164,11 @@ describe('the Mac sends the numbers too (YAZ-5086, decision 16)', () => {
     expect(Object.keys(sent).sort()).toEqual(['at', 'avatar', 'days', 'login', 'name', 'totals', 'v'])
     expect(Object.keys(JSON.parse(patch.body!))).toEqual(['files'])
     expect(Object.keys(JSON.parse(patch.body!).files)).toEqual([NUMBERS_FILE])
-    // The addresses hold no repo, no vault and no token either.
-    for (const q of rig.wire.requests) for (const secret of ['vault', 'Secret', MAC]) expect(q.url).not.toContain(secret)
+    // The addresses hold no token. YAZ-5083: the only addresses with the repo are the Mac's READS of its own list in its
+    // own vault (`GET /repos/…`); every gist address holds no repo and no vault.
+    for (const q of rig.wire.requests) for (const secret of ['Secret', MAC]) expect(q.url).not.toContain(secret)
+    for (const q of rig.wire.requests.filter((x) => !x.url.includes('/repos/'))) expect(q.url).not.toContain('vault')
+    expect(rig.wire.requests.filter((x) => x.url.includes('/repos/')).every((x) => x.method === 'GET')).toBe(true)
   })
 
   it('the Mac does not hold every vault that counts: no send', async () => {
@@ -514,6 +528,7 @@ function depsOf(r: Rig) {
     api: (token: string) => macGistsApi(token, r.wire.fetch, () => r.world.now()),
     profile: (token: string) => readProfile(token, r.wire.fetch),
     vaults: async () => new Map(r.held),
+    repo: async (token: string, repo: string) => macRepoPort(token, r.wire.fetch, repo, 'main'),
     count: async () => vaultWith(r.cards.value),
     state: { load: async () => r.saved.value, save: async (s: MacSendSaved) => void (r.saved.value = structuredClone(s)) },
     clock: { now: () => r.world.now(), setTimeout: () => 0, clearTimeout: () => undefined },

@@ -1,5 +1,9 @@
 import { expect, it } from 'vitest'
-import { INDEX_FILE, NUMBERS_FILE, ensureFriendsFiles } from '@shared/friendGists'
+import {
+  INDEX_FILE,
+  NUMBERS_FILE,
+} from '@shared/friendGists'
+import { ensureFriendsFiles } from '@shared/friendListHome'
 import { fakeGistWorld } from '@shared/friendGistsFake'
 
 it('check3: a list with no stats adopts another tool`s gist that has a file named notecards-stats.json', async () => {

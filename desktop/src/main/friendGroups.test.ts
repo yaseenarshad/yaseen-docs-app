@@ -1,5 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, ensureFriendsFiles, findFriendsIndex, makePointer, pointersOf, type GistsApi, type IndexHandle } from '@shared/friendGists'
+import {
+  INDEX_FILE,
+  NUMBERS_FILE,
+  POINTER_FILE,
+  makePointer,
+  pointersOf,
+  type GistsApi,
+  type IndexHandle,
+} from '@shared/friendGists'
+import { ensureFriendsFiles, findFriendsIndex } from '@shared/friendListHome'
+import { LIST_PATH } from '@shared/friendListStore'
 import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
 import {
   GROUP_FILE,
@@ -325,9 +335,13 @@ describe('remove a member, leave, "Delete group" (round 14)', () => {
       const w = people()
       const ali = await person(w, 'ali')
       let count = 0
+      // Stops 1 and 2: the pointer and the group file are made, then no connection. Stop 3 (YAZ-5083): the list's own
+      // write (a commit of the vault repo) gets no answer.
       w.failNext = (call) => (call.op !== 'list' && call.op !== 'read' && ++count === stopAt ? 'OFFLINE' : undefined)
+      if (stopAt === 3) w.repos!.failNext = (call) => (call.method === 'POST' ? 503 : undefined)
       const made = await createGroup(ali.api, ali.handle, 'Club', 'ali', opts(w))
       w.failNext = null
+      w.repos!.failNext = null
       expect(made.kind).toBe('offline')
       const handle = await fresh(ali.api, w)
       expect(await sweepOrphans(ali.api, handle, w.now())).toEqual([]) // too new: another device may be at work
@@ -387,10 +401,11 @@ describe('YAZ-5238: the sweep deletes only what is provably an orphan, by GitHub
     expect(await sweepOrphans(ali.api, handle, w.now())).toEqual([])
     const noClock: GistsApi = { ...ali.api, serverTime: () => null }
     expect(await sweepOrphans(noClock, handle, w.now())).toEqual([])
-    const listFiles = { ...w.owned('ali').find((g) => g.id === handle.id)!.files }
-    w.setFiles(handle.id, { ...listFiles, [INDEX_FILE]: '{"v":1,"friends":' })
+    // YAZ-5083: the list is the file of the vault repo: one that cannot be read stops the sweep too.
+    const good = w.repos!.file('ali/vault', LIST_PATH)!
+    w.repos!.push('ali/vault', { [LIST_PATH]: '{"v":1,"head":' })
     expect(await sweepOrphans(ali.api, handle, w.now())).toEqual([])
-    w.setFiles(handle.id, listFiles)
+    w.repos!.push('ali/vault', { [LIST_PATH]: good })
     expect(w.text(orphan, POINTER_FILE)).not.toBeNull()
     expect(await sweepOrphans(ali.api, handle, w.now())).toEqual([orphan])
   })
@@ -578,16 +593,17 @@ describe('groupStreak (round 10, addition 13; decision 9: each member`s own loca
   it('a member who joins today is not counted in the group streak until the next day', () => {
     const ny = m(day(T, 1, true), day('2026-11-13', 1, true), day('2026-11-12', 1, true))
     // Added today (14 November, 10:00 in New York): no answer yet, and not finished today.
-    const fresh = { days: [day(T, 0, false)], since: '2026-11-14T15:00:00Z' }
+    // YAZ-5355: `at` is the member's own count time; with `days[0]` it bounds the member's zone (here New York too).
+    const fresh = { days: [day(T, 0, false)], since: '2026-11-14T15:00:00Z', at: '2026-11-14T16:00:00Z' }
     const none = { days: [] as FriendDay[], since: '2026-11-14T15:00:00Z' }
     expect(groupStreak([ny, fresh], T)).toBe(3)
     expect(groupStreak([ny, none], T)).toBe(3)
     // The next day the new member counts, for that day on: today may still wait; an unfinished day after it stops it.
     const next = '2026-11-15'
     const ny2 = m(day(next, 1, true), ...ny.days)
-    expect(groupStreak([ny2, { days: [day(next, 2, true), day(T, 0, false)], since: fresh.since }], next)).toBe(4)
-    expect(groupStreak([ny2, { days: [day(next, 0, false), day(T, 0, false)], since: fresh.since }], next)).toBe(3)
-    expect(groupStreak([ny2, { days: [day('2026-11-16', 0, false), day(next, 0, false)], since: fresh.since }], '2026-11-16')).toBe(0)
+    expect(groupStreak([ny2, { days: [day(next, 2, true), day(T, 0, false)], since: fresh.since, at: '2026-11-15T16:00:00Z' }], next)).toBe(4)
+    expect(groupStreak([ny2, { days: [day(next, 0, false), day(T, 0, false)], since: fresh.since, at: '2026-11-15T16:00:00Z' }], next)).toBe(3)
+    expect(groupStreak([ny2, { days: [day('2026-11-16', 0, false), day(next, 0, false)], since: fresh.since, at: '2026-11-16T16:00:00Z' }], '2026-11-16')).toBe(0)
     // A member with no `since` (a file from before) counts on every day, as before.
     expect(groupStreak([ny, m(day(T, 0, false))], T)).toBe(0)
   })

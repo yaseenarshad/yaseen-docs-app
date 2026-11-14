@@ -1,18 +1,5 @@
-import {
-  readListGist,
-  DESCRIPTIONS,
-  INDEX_FILE,
-  findFriendsIndex,
-  gistErrorCode,
-  gistErrorResetAt,
-  parseFriendsIndex,
-  pointersOf,
-  replaceNumbersGist,
-  type GistsApi,
-  type IndexHandle,
-  writeFriendsIndex,
-  type WriteOptions,
-} from '@shared/friendGists'
+import { DESCRIPTIONS, gistErrorCode, gistErrorResetAt, listPatch, pointersOf, type GistDoc, type GistsApi, type IndexHandle, type WriteOptions } from '@shared/friendGists'
+import { BrokenList, NewerList, latestList, listErrorCode, openFriendsList, writeList } from '@shared/friendListHome'
 import {
   PUBLISH_EVERY_MS,
   emptyBudget,
@@ -28,7 +15,7 @@ import {
   type SendReason,
 } from '@shared/friendSend'
 import { deviceZone, friendStats } from '@shared/friendStats'
-import { finishRemove, pendingRemove } from '@shared/friendsList'
+import { finishRemove, pendingRemove, remakeNumbers, settlePointers } from '@shared/friendsList'
 import { recordGistsRefused } from '../auth/friends'
 import type { FetchLike } from '../github/client'
 import { PHONE, VaultClosedError, type TokenStore, type VaultStore } from '../store'
@@ -36,6 +23,7 @@ import type { Clock, SyncEvent } from '../sync/engine'
 import { countedVaults, openFriendsApi } from './friendsApi'
 import type { OwnNumbers } from './ownNumbers'
 import { friendsGuard } from './guard'
+import { deviceTag } from './deviceTag'
 import { drainQueue, loadQueue } from './removeQueue'
 
 /**
@@ -50,7 +38,7 @@ import { drainQueue, loadQueue } from './removeQueue'
  * - never lower: read the gist, merge, write.
  * A refused write (no Gists permission) calls 3E's `recordGistsRefused`. No connection, a rate limit, GitHub down:
  * quiet; it tries again at the time GitHub gives or at the next pass. The numbers gist deleted on GitHub: a new one,
- * each pointer and the list updated (`replaceNumbersGist`; the list is what 4E2 keeps, so this is not "alone").
+ * each pointer and the list updated (`remakeNumbers`: the same saga as a remove, so one generation, never two).
  *
  * Statuses (for 4E4, never a message with a secret):
  * `idle`, `no-pass`, `no-account` (no vault with a checked token), `no-gists`, `no-friends`, `missing-vaults`,
@@ -71,6 +59,10 @@ export type FriendsSendStatus =
   | 'unchanged'
   | 'needs-newer-app'
   | 'needs-repair'
+  /** YAZ-5083: the friends list is in a vault this phone does not have; nothing is sent from here. */
+  | 'list-elsewhere'
+  /** YAZ-5083: the token cannot read the vault that holds the friends list. */
+  | 'no-list-access'
   | 'sign-in-again'
   | 'failed'
 
@@ -184,22 +176,23 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
     return saved ?? { lastSentAt: null, lastKey: null, budget: emptyBudget(), pointers: 0 }
   }
 
-  /** The list: the copy of this session (an ETag read), or found by its file name. Null: no list. */
-  async function readIndex(api: GistsApi, now: number, reason: SendReason): Promise<IndexHandle | 'newer' | 'broken' | null> {
+  /** YAZ-5354: the pointers as last read (ETags: an unchanged pointer is a free 304), for the check before each send. */
+  const pointerCache = new Map<string, { etag: string | null; gist: GistDoc }>()
+
+  /** The list: the copy of this session (an ETag read of the vault's branch), or found by the note. Null: no list. */
+  async function readIndex(api: GistsApi, now: number, reason: SendReason): Promise<IndexHandle | 'newer' | 'broken' | 'elsewhere' | 'no-access' | null> {
     if (index !== null) {
       try {
-        const answer = await api.read(index.id, index.etag)
-        if (answer === 'unchanged') return index
-        const read = readListGist(answer)
-        if (read.kind === 'newer') return 'newer'
-        if (read.kind === 'ok') return (index = { ...index, index: read.value, raw: read.raw, etag: answer.etag, files: read.files, state: read.list })
+        return (index = await latestList(index))
       } catch (err) {
-        if (gistErrorCode(err) !== 'NOT_FOUND') throw err
+        if (err instanceof NewerList) return 'newer'
+        if (!(err instanceof BrokenList) && listErrorCode(err) === null) throw err
       }
-      index = null // deleted (another device kept a twin), or broken: find it again
+      index = null // gone or broken: find it again
     }
     if (noIndexAt !== null && reason !== 'background' && now < noIndexAt + PUBLISH_EVERY_MS) return null
-    const found = await findFriendsIndex(api, writeOptions)
+    // YAZ-5083: an old gist list is moved into the vault here too; the sender never MAKES a list (decision 22).
+    const found = await openFriendsList(api, writeOptions)
     if (found.kind === 'none') {
       noIndexAt = now
       return null
@@ -207,6 +200,8 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
     noIndexAt = null
     if (found.kind === 'newer') return 'newer'
     if (found.kind === 'broken') return 'broken'
+    if (found.kind === 'elsewhere') return 'elsewhere'
+    if (found.kind === 'no-vault') return 'no-access'
     return (index = found.handle)
   }
 
@@ -218,6 +213,8 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
     // YAZ-5195: the phone-wide session of this try. After "Sign out and erase this phone" (in any tab) its writes
     // throw `VaultClosedError`, so nothing of this try is stored again.
     const session = await store.session(PHONE)
+    // YAZ-5083: this phone's tag in the list's steps (stable across restarts).
+    writeOptions.device ??= await deviceTag(session)
     // YAZ-5195: after an erase or a stop, nothing of the friends state is stored again.
     const save = async (patch: Partial<Saved>) => {
       if (await guard.live()) await session.setState(PHONE, SEND_STATE, { ...saved, ...patch })
@@ -242,6 +239,8 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
       if (handle === 'newer') return set({ status: 'needs-newer-app' })
       // YAZ-5191: a list that cannot be read: no send and no write; 4E4 shows LIST_NEEDS_REPAIR.
       if (handle === 'broken') return set({ status: 'needs-repair' })
+      if (handle === 'elsewhere') return set({ status: 'list-elsewhere' })
+      if (handle === 'no-access') return set({ status: 'no-list-access' })
       if (handle === null) return set({ status: 'no-friends' })
       // YAZ-5236: removes that wait on the phone go first: a remove has priority over a numbers update.
       if ((await loadQueue(session)).length > 0) {
@@ -280,14 +279,13 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
         handle = finished.handle
       }
       const pointers = pointersOf(handle.index).length
-      // YAZ-5251: a list with no home time zone gets this phone's zone, one write, once (inside the budget, with the
-      // reserve for a remove kept). Until it is written, the count uses this phone's zone, as before.
+      // YAZ-5251: a list with no home time zone gets this phone's zone, one write, once. Until it is written, the count
+      // uses this phone's zone, as before. YAZ-5083: a commit of the vault repo (compare-and-swap; no `gist_update`):
+      // a zone that another device wrote at the same moment stays.
       const own = deviceZone()
-      if (handle.index.zone === undefined && own !== null && pointers > 0 && mayUpdate(saved.budget, now, 2, reserveFor(pointers))) {
-        handle = await writeFriendsIndex(api, handle, { ...handle.index, zone: own })
+      if (handle.index.zone === undefined && own !== null && pointers > 0) {
+        handle = await writeList(handle, (cur) => (cur.index.zone !== undefined ? null : listPatch(cur, { ...cur.index, zone: own })), writeOptions)
         index = handle
-        saved.budget = recordUpdate(saved.budget, now, null)
-        await save({ budget: saved.budget })
       }
       const zone = handle.index.zone ?? null
       const kept = options.numbers === undefined ? undefined : await options.numbers.counted(handle.index.vaults, now, zone)
@@ -310,6 +308,11 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
         await save({ pointers })
         return set({ status: 'unchanged' })
       }
+      // YAZ-5354: each pointer of the list names the numbers gist this send writes (a pointer that a slow run of another
+      // device wrote back to an older gist moves now), so every kept friend reads these numbers (I6). Reads with ETags
+      // (free when nothing changed); a write only for a pointer that is wrong.
+      handle = await settlePointers(api, handle, { ...writeOptions, now: () => clock.now() }, pointerCache, 'stats')
+      index = handle
       const reserve = reserveFor(pointers)
       let outcome
       let budget = saved.budget
@@ -317,19 +320,30 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
       else ({ outcome, budget } = await sendNumbers(api, { statsId: handle.index.stats, fresh, budget, reserve, now }))
 
       if (outcome.kind === 'numbers-gone') {
-        // Made again with the list: one update for each pointer and one for the list. This may use the reserve, which
-        // is kept for exactly this kind of change; it waits when even that is not there.
-        if (!mayUpdate(budget, now, pointers + 1, 0)) {
+        // Made again as a remove with no friend in it (one generation, each pointer moved): this may use the reserve,
+        // which is kept for exactly this kind of change; it waits when even that is not there.
+        if (!mayUpdate(budget, now, pointers, 0)) {
           const at = now + sendGap(budget, now, 0)
           schedule(at)
           return set({ status: 'slowed', retryAt: at })
         }
-        const result = await replaceNumbersGist(api, handle, JSON.stringify(fresh), writeOptions)
+        const result = await remakeNumbers(api, handle, budget, { ...writeOptions, now: () => clock.now() })
         index = result.handle
-        for (let i = 0; i < result.pointers.updated.length + 1; i++) budget = recordUpdate(budget, now, null)
-        dirty = false
-        await save({ lastSentAt: now, lastKey: key, budget, pointers })
-        return set({ status: 'sent', lastSentAt: now, remade: true })
+        budget = result.budget
+        await save({ budget, pointers })
+        if (result.kind !== 'done') {
+          if (result.kind === 'paused' && result.retryAt !== null) schedule(result.retryAt)
+          return set({ status: result.kind === 'paused' && result.why === 'offline' ? 'offline' : 'slowed', retryAt: result.kind === 'paused' ? result.retryAt : null })
+        }
+        // The new numbers gist is in the list: these numbers go to it now.
+        handle = result.handle
+        if (handle.index.stats === null) return set({ status: 'failed' })
+        ;({ outcome, budget } = await sendNumbers(api, { statsId: handle.index.stats, fresh, budget, reserve, now }))
+        if (outcome.kind === 'sent' || outcome.kind === 'unchanged') {
+          dirty = false
+          await save({ lastSentAt: now, lastKey: key, budget, pointers })
+          return set({ status: 'sent', lastSentAt: now, remade: true })
+        }
       }
       switch (outcome.kind) {
         case 'sent':
@@ -359,6 +373,10 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
       }
     } catch (err) {
       if (err instanceof VaultClosedError) throw err
+      // YAZ-5083: the list in the vault repo.
+      if (err instanceof NewerList) return set({ status: 'needs-newer-app' })
+      if (err instanceof BrokenList) return set({ status: 'needs-repair' })
+      if (listErrorCode(err) === 'NO_LIST_ACCESS') return set({ status: 'no-list-access' })
       // A failure while the list is found or the numbers gist is made again.
       switch (gistErrorCode(err)) {
         case 'OFFLINE':

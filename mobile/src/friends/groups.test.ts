@@ -36,8 +36,9 @@ function setup(names = ['ali', 'bea', 'cem']) {
   return { clock, world }
 }
 const listOf = (world: FakeGistWorld, login: string) => {
-  const g = world.owned(login).find((x) => INDEX_FILE in x.files)
-  const read = g ? readListFiles(g.files) : parseFriendsIndex(null)
+  // YAZ-5083: the list in the vault the note names.
+  const files = world.listFiles(login)
+  const read = files !== null ? readListFiles(files) : parseFriendsIndex(null)
   if (read.kind !== 'ok') throw new Error('no list')
   return read.value
 }
@@ -143,10 +144,10 @@ describe('list.groups (YAZ-5084)', () => {
     const { clock, world } = setup()
     const ali = await phone(world, clock, 'ali')
     await ali.list.share()
-    let count = 0
-    world.failNext = (call) => (call.op !== 'list' && call.op !== 'read' && ++count === 3 ? 'OFFLINE' : undefined)
+    // YAZ-5083: the stop hits the list's own write (a commit of the vault repo) after the two gists were made.
+    world.repos!.failNext = (call) => (call.method === 'POST' ? 503 : undefined)
     expect(await ali.list.groups.create('Club')).toEqual({ kind: 'offline' })
-    world.failNext = null
+    world.repos!.failNext = null
     expect(world.owned('ali').filter((g) => GROUP_FILE in g.files)).toHaveLength(1)
     clock.advance(ORPHAN_AGE_MS + 1000)
     const fresh = await phone(world, clock, 'ali') // the next start

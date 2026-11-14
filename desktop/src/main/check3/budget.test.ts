@@ -1,5 +1,10 @@
 import { expect, it } from 'vitest'
-import { ensureFriendsFiles, findFriendsIndex, makePointer, pointersOf, writeFriendsIndex, type GistsApi } from '@shared/friendGists'
+import {
+  makePointer,
+  pointersOf,
+  type GistsApi,
+} from '@shared/friendGists'
+import { ensureFriendsFiles, findFriendsIndex, writeFriendsIndex } from '@shared/friendListHome'
 import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
 import { removeFriend, type ListOptions } from '@shared/friendsList'
 import { emptyBudget, recordUpdate, reserveFor, budgetLeft, mayMark, mayUpdate } from '@shared/friendSend'

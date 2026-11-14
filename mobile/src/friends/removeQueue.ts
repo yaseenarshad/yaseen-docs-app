@@ -1,6 +1,5 @@
-import type { GistsApi, IndexHandle } from '@shared/friendGists'
-import { pointersOf } from '@shared/friendGists'
-import { removeMany, type ListOptions, type RemoveResult } from '@shared/friendsList'
+import type { EntryKind, GistsApi, IndexHandle } from '@shared/friendGists'
+import { kindOf, removeMany, type ListOptions, type RemoveResult } from '@shared/friendsList'
 import type { GistBudget } from '@shared/friendSend'
 import { PHONE, type VaultStore } from '../store'
 
@@ -16,6 +15,12 @@ export interface QueuedRemove {
   mine: string
   /** More of my gists to delete with it ("Delete group": the group file). */
   drop?: string[]
+  /**
+   * YAZ-5352: the kind of entry the person removed (a friend, a group, a shared link). The drain removes the pointer
+   * only while it is still that kind: a shared link that a friend took since then is that friend's pointer now.
+   * Absent (a queue of an older app): any kind, as before.
+   */
+  kind?: EntryKind
   at: number
 }
 
@@ -32,15 +37,20 @@ export async function enqueueRemove(store: VaultStore, item: QueuedRemove): Prom
 }
 
 /**
- * Runs the queue as one `removeMany`. The queue is cleared once the list holds the remove (its first write went), or
- * when none of its pointers is in the list any more. Null: the queue is empty.
+ * Runs the queue as one `removeMany`. A queued remove leaves the queue once the list holds it (its first write went:
+ * `took`), or when its pointer is not that kind of entry in the list any more (gone, or a shared link that a friend took,
+ * YAZ-5352). Null: the queue is empty.
  */
 export async function drainQueue(api: GistsApi, handle: IndexHandle, store: VaultStore, budget: GistBudget, opts: ListOptions): Promise<RemoveResult | null> {
   const q = await loadQueue(store)
   if (q.length === 0) return null
-  const result = await removeMany(api, handle, q.map((x) => x.mine), budget, opts, { drop: q.flatMap((x) => x.drop ?? []) })
-  const listed = pointersOf(result.handle.index)
-  if (q.every((x) => !listed.includes(x.mine))) await store.removeState(PHONE, REMOVE_QUEUE)
+  const kinds = Object.fromEntries(q.filter((x) => x.kind !== undefined).map((x) => [x.mine, x.kind!]))
+  const result = await removeMany(api, handle, q.map((x) => x.mine), budget, opts, { drop: q.flatMap((x) => x.drop ?? []), kinds })
+  const took = new Set(result.kind === 'not-found' ? [] : (result.took ?? []))
+  const index = result.handle.index
+  const left = q.filter((x) => !took.has(x.mine) && kindOf(index, x.mine) !== null && (x.kind === undefined || kindOf(index, x.mine) === x.kind))
+  if (left.length === 0) await store.removeState(PHONE, REMOVE_QUEUE)
+  else if (left.length < q.length) await store.setState(PHONE, REMOVE_QUEUE, left)
   return result
 }
 

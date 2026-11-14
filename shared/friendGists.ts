@@ -1,4 +1,6 @@
 import { isTimeZone, parseFriendPointer, parseFriendStats, type FriendPointer, type FriendStats } from './friendStats'
+import type { ListStore } from './friendListHome'
+import type { RepoPort } from './friendListStore'
 
 /**
  * THE FRIENDS GISTS (YAZ-5082, 4E1; decisions 14 as changed in round 16, 15, 16 and 17 on YAZ-5057). Pure logic that the
@@ -8,14 +10,10 @@ import { isTimeZone, parseFriendPointer, parseFriendStats, type FriendPointer, t
  * - ONE numbers gist (`notecards-stats.json`, `FriendStats`). A send is one update of it, for any number of friends.
  * - ONE pointer gist for each friend and each group (`notecards-pointer.json`, `FriendPointer`). The friend's link is its
  *   ID. It holds the ID of the numbers gist (`stats`), and `reads` and `mark` for that one friend.
- * - ONE friends list (`notecards-friends.json`, `FriendsIndex`). Each device FINDS it by its file name in the person's
- *   own gists (proof 1C: `GET /gists` lists secret gists, with file names), so a reinstall or a second device makes no
- *   second one. The list names the numbers gist (`stats`), so the numbers gist is found through it.
- *
- * Two devices that start at the same time (both find nothing, both make one): each device that made a file looks again
- * after `SETTLE_MS`. When two lists are there, every device keeps the SAME one, the oldest (`created_at`, then the ID),
- * joins the friends of the other into it, and deletes the other with its numbers gist. GitHub has no conditional write
- * for a gist, so this is the rule; a device that still holds a deleted list's ID gets 404 and finds the list again.
+ * - YAZ-5083: the person's own friends LIST is in one of their vault repos (`.yaseendocs/friends.json`, written with
+ *   compare-and-swap: `friendListStore.ts`, `friendListHome.ts`). The gist `notecards-friends.json` of decision 15 is
+ *   now a small note that names that vault. An old list (version 1 or 2, in that gist) is read here and moved once.
+ * Two devices that make a note at the same time each look again after `SETTLE_MS`: every device keeps the oldest.
  */
 
 export const NUMBERS_FILE = 'notecards-stats.json'
@@ -75,6 +73,11 @@ export interface GistDoc {
    * person. Optional: undefined when the adapter does not give it.
    */
   owner?: string | null
+  /**
+   * YAZ-5350: GitHub's `truncated` of the GIST: it gave only the first 300 files. A list read from such an answer is
+   * never read as whole ("needs repair").
+   */
+  truncated?: boolean
 }
 
 export interface GistListItem {
@@ -109,6 +112,18 @@ export interface GistsApi {
    * the device clock. Optional: an adapter without it makes the clean-up sweep delete nothing.
    */
   serverTime?(): number | null
+  /**
+   * YAZ-5083 (the list in the vault repo): the repos of this device's vaults on the friends account, in the order to
+   * choose a home vault (the friends account's vault first). The list file lives in one of them. Absent or empty: this
+   * device has no vault for the list.
+   */
+  repos?(): Promise<readonly RepoPort[]>
+  /**
+   * YAZ-5083: the port of any repo of the account by name (the vault the note names), also one this device has not
+   * added: on its own vault's branch when it has it, else on the repo's default branch. A token with no access to it
+   * fails the first call with `NO_LIST_ACCESS`.
+   */
+  repo?(full: string): Promise<RepoPort>
 }
 
 /** The code of a failed call, or null when `err` is not a gist failure (a bug: the caller lets it throw). */
@@ -182,7 +197,7 @@ export interface FriendsIndex {
   vaults: string[]
   stats: string | null
   /** `paired` (YAZ-5274): the friend has read my pointer for them at least once (both added each other). */
-  friends: { name: string; theirs: string; mine: string; paired?: true }[]
+  friends: { name: string; theirs: string; mine: string; paired?: true; /** YAZ-5353: GitHub's owner of `theirs` when it was added (one entry for one friend). */ login?: string }[]
   /** `joined` (4E3): this person has seen their pointer in the group file at least once (so "not in it" now means removed). */
   groups: { name: string; group: string; mine: string; admin: boolean; joined?: true; /** YAZ-5240: when I asked to join (ISO). */ asked?: string }[]
   /**
@@ -260,46 +275,10 @@ export function parseFriendsIndex(text: string | null | undefined): FileState<Fr
 }
 
 /** The words for a list that cannot be read (YAZ-5191; round 13, item 4: say what is wrong and what to do). */
-export const LIST_NEEDS_REPAIR = 'Your friends list on GitHub cannot be read, so the app changes nothing in it. Open your gists on GitHub and fix or delete the file notecards-friends.json.'
+export const LIST_NEEDS_REPAIR = 'Your friends list on GitHub cannot be read, so the app changes nothing in it. Open the file .yaseendocs/friends.json in your vault on GitHub (or, from an older app, your gist notecards-friends.json) and fix it.'
 
 /** The pointers that this person writes: one for each friend and each group, and each shared link not used yet (4E2). */
 export const pointersOf = (index: FriendsIndex): string[] => [...index.friends.map((f) => f.mine), ...index.groups.map((g) => g.mine), ...(index.shared ?? []).map((x) => x.mine)]
-
-/**
- * The text of a list to write: the known fields over the fields this app does not know. Each entry keeps its own
- * unknown fields, and its own name when the app did not change it (a long name stays whole). Each entry that this app
- * could not read stays as it is, at the end of its list (YAZ-5191). A vault that is not a text stays too.
- */
-function indexText(index: FriendsIndex, raw: Record<string, unknown> = {}): string {
-  type Entry = { mine: string; name?: string; admin?: boolean }
-  const merge = (key: 'friends' | 'groups' | 'shared', entries: Entry[] | undefined, ok: (e: unknown) => boolean): unknown[] | undefined => {
-    const rawList = list(raw[key])
-    if (entries === undefined) return raw[key] === undefined ? undefined : rawList
-    const out = entries.map((e) => {
-      const r = rawList.find((x) => isObject(x) && ok(x) && x.mine === e.mine) as Record<string, unknown> | undefined
-      if (r === undefined) return e
-      const m: Record<string, unknown> = { ...r, ...e }
-      if (e.name !== undefined && e.name === shownName(r.name)) m.name = r.name
-      if (e.admin === false && typeof r.admin !== 'boolean') m.admin = r.admin
-      return m
-    })
-    return [...out, ...rawList.filter((x) => !ok(x))]
-  }
-  const nickname = index.nickname === shownNickname(raw.nickname) && raw.nickname !== undefined ? raw.nickname : index.nickname
-  const vaults = [...index.vaults, ...list(raw.vaults).filter((v) => typeof v !== 'string')]
-  const stats = index.stats === null && raw.stats !== undefined && raw.stats !== null && !isGistId(raw.stats) ? raw.stats : index.stats
-  const shared = merge('shared', index.shared, sharedOk)
-  return JSON.stringify({
-    ...raw,
-    ...index,
-    nickname,
-    vaults,
-    stats,
-    friends: merge('friends', index.friends, friendOk),
-    groups: merge('groups', index.groups, groupOk),
-    ...(shared !== undefined && { shared }),
-  })
-}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The list gist, version 2 (YAZ-5312): one file for each entry, inside the SAME gist (decisions 14 and 15 stand).
@@ -328,8 +307,10 @@ export const listFile = {
   /** Generation k with its numbers gist: a unique name, so two devices never write over each other's generation. */
   gen: (k: number, stats: string) => `${LIST_PREFIX}n.${k}-${stats}.json`,
   done: (stats: string) => `${LIST_PREFIX}d.${stats}.json`,
+  /** YAZ-5083: the intent of generation k (a device makes its numbers gist now; the removes it covers are fixed). */
+  intent: (k: number) => `${LIST_PREFIX}i.${k}.json`,
 }
-const LIST_FILE_RE = /^notecards-friends\.([fgsxnd])\.([0-9a-z-]{1,90})\.json$/
+const LIST_FILE_RE = /^notecards-friends\.([fgsxndi])\.([0-9a-z-]{1,90})\.json$/
 /** Is this a file of the list gist (the head, or an entry, tombstone or generation file)? */
 export const isListFile = (name: string): boolean => name === INDEX_FILE || LIST_FILE_RE.test(name)
 
@@ -350,6 +331,15 @@ export interface Tombstone {
   drop: string[]
 }
 
+/** YAZ-5083: a generation that a device makes now: the removes it covers are FIXED at its start (YAZ-5310). */
+export interface Intent {
+  k: number
+  covers: string[]
+  /** The device run that makes it; another run takes it over only after `INTENT_LEASE_MS`. */
+  by: string
+  at: string
+}
+
 /** A numbers generation. */
 export interface Generation {
   k: number
@@ -365,6 +355,8 @@ export interface ListState {
   legacyStats: string | null
   /** Removes (tombstones with `rekey`) that no generation covers yet. */
   pending: Tombstone[]
+  /** YAZ-5083: generations a device makes now (in the vault repo list only). */
+  intents: Intent[]
 }
 
 export type ListRead = { kind: 'ok'; value: FriendsIndex; raw: Record<string, unknown>; files: Record<string, string>; list: ListState } | { kind: 'newer' } | { kind: 'unreadable'; why: string }
@@ -407,13 +399,15 @@ export function readListFiles(input: Record<string, string | null | undefined>):
   const tombs: Tombstone[] = []
   const gens: Generation[] = []
   const done = new Set<string>()
+  const intents: Intent[] = []
   for (const [name, text] of Object.entries(files)) {
     const m = LIST_FILE_RE.exec(name)
     if (m === null) continue
     const [, kind, key] = m
     const o = parseJson(text)
     if (kind === 'f') {
-      if (isGistId(key) && isObject(o) && isGistId(o.theirs)) friends.set(key, { name: shownName(o.name), theirs: (o.theirs as string).toLowerCase(), mine: key, ...(o.paired === true && { paired: true as const }) })
+      if (isGistId(key) && isObject(o) && isGistId(o.theirs))
+        friends.set(key, { name: shownName(o.name), theirs: (o.theirs as string).toLowerCase(), mine: key, ...(o.paired === true && { paired: true as const }), ...(typeof o.login === 'string' && o.login !== '' && o.login.length <= 100 && { login: o.login }) })
     } else if (kind === 'g') {
       if (isGistId(key) && isObject(o) && isGistId(o.group))
         groups.set(key, {
@@ -440,6 +434,11 @@ export function readListFiles(input: Record<string, string | null | undefined>):
       gens.push({ k, stats: (o.stats as string).toLowerCase(), covers: o.covers as string[], done: false })
     } else if (kind === 'd') {
       if (isGistId(key)) done.add(key)
+    } else if (kind === 'i') {
+      // A hint only (who makes generation k now): one that cannot be read is left out, never a reason to stop.
+      const k = Number(key)
+      if (Number.isInteger(k) && k >= 0 && isObject(o) && Array.isArray(o.covers) && o.covers.every((c) => typeof c === 'string' && /^[0-9a-z-]{1,90}$/.test(c)) && typeof o.by === 'string' && typeof o.at === 'string')
+        intents.push({ k, covers: o.covers as string[], by: o.by.slice(0, 40), at: o.at.slice(0, 40) })
     }
   }
   gens.sort((a, b) => a.k - b.k || (a.stats < b.stats ? -1 : a.stats > b.stats ? 1 : 0))
@@ -469,8 +468,11 @@ export function readListFiles(input: Record<string, string | null | undefined>):
   }
   const { rekey: _legacyRekey, ...headRest } = head
   const waiting = pending.length > 0 || (current !== undefined && !current.done)
+  // The names of the removes that are not done: those no generation covers yet, and (YAZ-5083) those the current
+  // generation covers while it is not done (its pointers still move): the rows say "Removing…" until the end.
+  const unfinished = current !== undefined && !current.done ? tombs.filter((t) => t.rekey && (pending.includes(t) || current.covers.includes(t.id))) : pending
   const names: Record<string, string> = {}
-  for (const t of pending) if (t.name !== undefined) names[t.mine] = t.name
+  for (const t of unfinished) if (t.name !== undefined) names[t.mine] = t.name
   const previous = gens.length >= 2 ? gens[gens.length - 2].stats : legacyStats
   const raw: Record<string, unknown> = {
     ...headRest,
@@ -484,11 +486,13 @@ export function readListFiles(input: Record<string, string | null | undefined>):
       },
     }),
   }
-  return { kind: 'ok', value, raw, files, list: { tombs, gens, legacyStats, pending } }
+  return { kind: 'ok', value, raw, files, list: { tombs, gens, legacyStats, pending, intents } }
 }
 
 /** The list from a gist answer (its files; a file cut short reads as missing). */
 export function readListGist(gist: GistDoc): ListRead {
+  // YAZ-5350: GitHub gave only the first 300 files: the list is not whole, so it is not read (and never written).
+  if (gist.truncated === true) return { kind: 'unreadable', why: 'GitHub gave only part of the list (more than 300 files)' }
   const files: Record<string, string | null> = {}
   for (const [name, f] of Object.entries(gist.files)) files[name] = f.truncated ? null : f.content
   return readListFiles(files)
@@ -532,6 +536,15 @@ export function listPatch(handle: IndexHandle, next: FriendsIndex): Record<strin
     patch[INDEX_FILE] = JSON.stringify({ ...rawHead, v: LIST_VERSION, nickname, vaults: [...next.vaults, ...keptVaults], ...(next.zone !== undefined && next.zone !== base.zone && { zone: next.zone }) })
   }
   const endTomb = (mine: string, kinds: EntryKind[]) => {
+    // YAZ-5083: in the vault repo each write is a compare-and-swap, so no stale write can bring an entry back: an entry
+    // that goes loses its record. Only an entry of a version 1 head (no record of its own) needs a tombstone.
+    if (handle.store !== undefined) {
+      const name = kinds[0] === 'friend' ? listFile.friend(mine) : kinds[0] === 'group' ? listFile.group(mine) : listFile.shared(mine)
+      if (files[name] !== undefined) {
+        patch[name] = null
+        return
+      }
+    }
     if ((handle.state?.tombs ?? []).some((t) => t.mine === mine && kinds.every((k) => t.kinds.includes(k)))) return
     patch[listFile.tomb(mine, tombTag(kinds, false))] = tombText({ kinds, rekey: false, at: '', drop: [] })
   }
@@ -540,8 +553,8 @@ export function listPatch(handle: IndexHandle, next: FriendsIndex): Record<strin
   for (const f of next.friends) {
     const name = listFile.friend(f.mine)
     const old = base.friends.find((x) => x.mine === f.mine)
-    if (old !== undefined && files[name] !== undefined && old.name === f.name && old.theirs === f.theirs && (old.paired === true) === (f.paired === true)) continue
-    const text = entryText(files[name], { name: f.name, theirs: f.theirs, paired: f.paired === true ? true : undefined })
+    if (old !== undefined && files[name] !== undefined && old.name === f.name && old.theirs === f.theirs && (old.paired === true) === (f.paired === true) && old.login === f.login) continue
+    const text = entryText(files[name], { name: f.name, theirs: f.theirs, paired: f.paired === true ? true : undefined, login: f.login })
     if (files[name] !== text) patch[name] = text
   }
   for (const f of base.friends) if (!nextFriends.has(f.mine)) endTomb(f.mine, ['friend'])
@@ -602,16 +615,31 @@ export interface IndexHandle {
   state?: ListState
   /** The GitHub login that owns the list gist (GitHub's answer): "my own link" and "the same friend" use owners. */
   owner?: string | null
+  /** YAZ-5083: the commit of the vault repo that this copy of the list was read at (the parent of the next write). */
+  sha?: string
+  /** YAZ-5083: where the list lives (the home vault's repo). Absent: an old gist list, read only, not moved yet. */
+  store?: ListStore
+  /** YAZ-5083: the list file's fields that this app does not know (kept on each write). */
+  extra?: Record<string, unknown>
 }
 
-/** `broken`: the list is not a JSON object with `v: 1` (YAZ-5191). The app writes NOTHING to it: `LIST_NEEDS_REPAIR`. */
-export type IndexFind = { kind: 'none' } | { kind: 'newer'; id: string } | { kind: 'broken'; id: string } | { kind: 'ok'; handle: IndexHandle }
+/**
+ * `broken`: the list is not a JSON object with `v: 1` (YAZ-5191). The app writes NOTHING to it: `LIST_NEEDS_REPAIR`.
+ * `elsewhere` (YAZ-5083): the list is in the vault `home`, which this device does not have: it says so, and writes
+ * nothing. `no-vault`: this device has no vault on the friends account to hold a new list.
+ */
+export type IndexFind = { kind: 'none' } | { kind: 'newer'; id: string } | { kind: 'broken'; id: string } | { kind: 'ok'; handle: IndexHandle } | { kind: 'elsewhere'; home: string } | { kind: 'no-vault' }
 
 /** How a write is labelled and spaced. `describe` gives the gist's description (the live test starts it "notecards-test"). */
 export interface WriteOptions {
   describe: (kind: 'numbers' | 'index' | 'pointer') => string
   sleep: (ms: number) => Promise<void>
   now?: () => number
+  /**
+   * YAZ-5083: this device's own tag (stable across its restarts), so it knows its own step of a remove that it began
+   * before a stop. Absent: one tag for this run of the app.
+   */
+  device?: string
 }
 
 /** Default descriptions: what a person sees in their own gist list on GitHub. */
@@ -631,170 +659,10 @@ function writer(opts: WriteOptions) {
   }
 }
 
-const older = (a: { createdAt: string; id: string }, b: { createdAt: string; id: string }) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
-
-/** Deletes a gist; a gist already gone is fine (another device deleted it first). */
-async function removeQuietly(api: GistsApi, id: string): Promise<void> {
-  try {
-    await api.remove(id)
-  } catch (err) {
-    if (gistErrorCode(err) !== 'NOT_FOUND') throw err
-  }
-}
-
-async function readIndex(api: GistsApi, id: string, createdAt: string): Promise<IndexFind | null> {
-  let gist: GistDoc | 'unchanged'
-  try {
-    gist = await api.read(id)
-  } catch (err) {
-    if (gistErrorCode(err) === 'NOT_FOUND') return null
-    throw err
-  }
-  if (gist === 'unchanged') throw new Error('a read with no ETag cannot be unchanged')
-  const state = readListGist(gist)
-  if (state.kind === 'newer') return { kind: 'newer', id }
-  // YAZ-5191: a list that cannot be read is NEVER read as empty: an empty list would be written over the real one.
-  if (state.kind === 'unreadable') return { kind: 'broken', id }
-  return { kind: 'ok', handle: { id, index: state.value, raw: state.raw, etag: gist.etag, createdAt, files: state.files, state: state.list, owner: gist.owner ?? null } }
-}
-
-/** Joins `other` into `keep`: the friends and groups of both (by pointer), the vaults of both, a name and stats if missing. */
-function joinIndex(keep: FriendsIndex, other: FriendsIndex): FriendsIndex {
-  return {
-    ...keep,
-    nickname: keep.nickname ?? other.nickname,
-    vaults: [...new Set([...keep.vaults, ...other.vaults])],
-    stats: keep.stats ?? other.stats,
-    ...((keep.zone ?? other.zone) !== undefined && { zone: keep.zone ?? other.zone }),
-    friends: [...keep.friends, ...other.friends.filter((f) => !keep.friends.some((k) => k.mine === f.mine))],
-    groups: [...keep.groups, ...other.groups.filter((g) => !keep.groups.some((k) => k.mine === g.mine))],
-  }
-}
-
-/**
- * Finds the list by its file name in the person's own gists. When there are two or more (two devices made one at the
- * same time, or an old stop halfway), it keeps the oldest, joins the others into it, points their friends' pointers at
- * the kept numbers gist, and deletes the others and their numbers gists. `none`: the person has no list (no friend yet).
- */
-export async function findFriendsIndex(api: GistsApi, opts: WriteOptions): Promise<IndexFind> {
-  const all = (await api.list()).filter((g) => g.files.includes(INDEX_FILE)).sort(older)
-  if (all.length === 0) return { kind: 'none' }
-  const write = writer(opts)
-  const [first, ...others] = all
-  const kept = await readIndex(api, first.id, first.createdAt)
-  if (kept === null) return findFriendsIndex(api, opts) // deleted by another device just now
-  if (kept.kind !== 'ok') return kept
-  let handle = kept.handle
-  for (const other of others) {
-    const read = await readIndex(api, other.id, other.createdAt)
-    if (read === null) continue
-    if (read.kind === 'newer') return { kind: 'newer', id: other.id }
-    // A twin this app cannot read is not joined and not deleted: stop, and say so.
-    if (read.kind === 'broken') return { kind: 'broken', id: other.id }
-    if (read.kind !== 'ok') continue
-    const joined = joinIndex(handle.index, read.handle.index)
-    handle = await write(() => writeFriendsIndex(api, handle, joined))
-    const lostStats = read.handle.index.stats
-    if (lostStats !== null && lostStats !== handle.index.stats) {
-      // The other list's friends read the other numbers gist: point them at the kept one, then delete it.
-      if (handle.index.stats !== null) await relinkPointers(api, pointersOf(read.handle.index), handle.index.stats, opts)
-      await write(() => removeQuietly(api, lostStats))
-    }
-    await write(() => removeQuietly(api, other.id))
-  }
-  return { kind: 'ok', handle }
-}
-
-/**
- * Writes the changes from `handle` (as read) to `next`, and NOTHING else (YAZ-5312): one file for each entry that
- * changed, a tombstone for each entry that went, the head only when the name or the vaults changed, and a new numbers
- * generation when `stats` changed. GitHub keeps every file that the call does not name, so another device's new entry
- * or remove is never written over. `extra` adds files of the caller (tombstones, generations). No change: no call.
- */
-export async function writeFriendsIndex(api: GistsApi, handle: IndexHandle, next: FriendsIndex, extra: Record<string, string | null> = {}): Promise<IndexHandle> {
-  const patch = { ...listPatch(handle, next), ...extra }
-  if (Object.keys(patch).length === 0) return handle
-  const { gist } = await api.update(handle.id, patch)
-  const files: Record<string, string> = { ...(handle.files ?? { [INDEX_FILE]: indexText(handle.index, handle.raw) }) }
-  for (const [name, text] of Object.entries(patch)) {
-    if (text === null) delete files[name]
-    else files[name] = text
-  }
-  const read = readListFiles(files)
-  if (read.kind !== 'ok') return { ...handle, index: next, etag: gist?.etag ?? null }
-  return { ...handle, index: read.value, raw: read.raw, files: read.files, state: read.list, etag: gist?.etag ?? null }
-}
-
 /** An empty but valid numbers file: a friend who reads it before the first send sees zeros, not an error. */
 export function emptyNumbers(now: number): FriendStats {
   const zero = { cards: 0, inReview: 0, newLeft: 0, mature: 0, dueLeft: 0, addedThisWeek: 0, streak: 0, bestStreak: 0, bestDay: 0, bestWeek: 0 }
   return { v: 1, login: '', name: '', avatar: '', days: [], totals: zero, at: new Date(now).toISOString() }
-}
-
-export type EnsureResult = { kind: 'ok'; handle: IndexHandle } | { kind: 'newer' } | { kind: 'broken' }
-
-/**
- * Make or find the person's friends files: ONE list and ONE numbers gist (round 16). 4E2 calls it before the first
- * friend is added; the sender only finds (it never makes files for a person with no friend, decision 22).
- * `seed` fills a NEW list only; a found list keeps its own vaults and nickname.
- */
-export async function ensureFriendsFiles(api: GistsApi, seed: { vaults: string[]; nickname: string | null; numbers?: FriendStats; zone?: string | null }, opts: WriteOptions): Promise<EnsureResult> {
-  const now = opts.now ?? Date.now
-  const write = writer(opts)
-  const numbersText = JSON.stringify(seed.numbers ?? emptyNumbers(now()))
-  let found = await findFriendsIndex(api, opts)
-  if (found.kind === 'newer') return { kind: 'newer' }
-  if (found.kind === 'broken') return { kind: 'broken' }
-  if (found.kind === 'none') {
-    // Numbers first, then the list that names it: the list is never without its numbers gist.
-    const numbers = await write(() => api.create(opts.describe('numbers'), { [NUMBERS_FILE]: numbersText }))
-    const made = await write(() =>
-      api.create(opts.describe('index'), {
-        [INDEX_FILE]: JSON.stringify({ v: LIST_VERSION, nickname: seed.nickname, vaults: seed.vaults.map((v) => v.toLowerCase()), ...(isTimeZone(seed.zone) && { zone: seed.zone }) }),
-        [listFile.gen(0, numbers.id)]: JSON.stringify({ v: 1, stats: numbers.id, covers: [] }),
-        [listFile.done(numbers.id)]: '{"v":1}',
-      }),
-    )
-    // Look again after a while: another device may have made its own at the same time. Both keep the oldest.
-    await opts.sleep(SETTLE_MS)
-    found = await findFriendsIndex(api, opts)
-    if (found.kind === 'newer') return { kind: 'newer' }
-    if (found.kind === 'broken') return { kind: 'broken' }
-    if (found.kind === 'none') throw new Error('the friends list was deleted while it was made')
-    if (found.handle.id !== made.id && found.handle.index.stats !== numbers.id) await write(() => removeQuietly(api, numbers.id))
-  }
-  let handle = found.handle
-  if (handle.index.stats === null) {
-    const withStats = await ensureNumbersGist(api, handle, numbersText, opts)
-    if (withStats === 'broken') return { kind: 'broken' }
-    if (withStats === 'newer') return { kind: 'newer' }
-    handle = withStats
-  }
-  return { kind: 'ok', handle }
-}
-
-/**
- * A list with no numbers gist (an older list, or a stop halfway): finds a numbers gist by its file name (the oldest),
- * or makes one, and writes its ID into the list. Other numbers gists that no list names are left alone: 4E2 owns them.
- */
-async function ensureNumbersGist(api: GistsApi, handle: IndexHandle, numbersText: string, opts: WriteOptions): Promise<IndexHandle | 'broken' | 'newer'> {
-  const write = writer(opts)
-  // check3 Nit: adopt only a gist that is provably ours (one file, our format), never another tool's by its file name.
-  let id: string | null = null
-  for (const g of (await api.list()).filter((x) => x.files.length === 1 && x.files[0] === NUMBERS_FILE).sort(older)) {
-    if (await isOurNumbersGist(api, g.id)) {
-      id = g.id
-      break
-    }
-  }
-  if (id === null) id = (await write(() => api.create(opts.describe('numbers'), { [NUMBERS_FILE]: numbersText }))).id
-  const adopted = id
-  const fresh = await readIndex(api, handle.id, handle.createdAt)
-  if (fresh?.kind === 'broken') return 'broken'
-  if (fresh?.kind === 'newer') return 'newer'
-  const base = fresh?.kind === 'ok' ? fresh.handle : handle
-  if (base.index.stats !== null) return base
-  return write(() => writeFriendsIndex(api, base, { ...base.index, stats: adopted }))
 }
 
 /**
@@ -839,24 +707,6 @@ export async function relinkPointers(api: GistsApi, pointers: readonly string[],
     updated.push(id)
   }
   return { updated, gone }
-}
-
-/**
- * A NEW numbers gist (round 16): when the old one was deleted on GitHub, and for a remove (4E2: delete that friend's
- * pointer and take it out of the list first, then call this). In this order, so a stop halfway loses nothing:
- * 1. make the new numbers gist with `numbersText`; 2. write its ID into every pointer of the list; 3. write it into the
- * list; 4. delete the old numbers gist. It costs one `gist_update` for each pointer and one for the list.
- */
-export async function replaceNumbersGist(api: GistsApi, handle: IndexHandle, numbersText: string, opts: WriteOptions): Promise<{ handle: IndexHandle; pointers: { updated: string[]; gone: string[] }; old: string | null }> {
-  const write = writer(opts)
-  const old = handle.index.stats
-  const made = await write(() => api.create(opts.describe('numbers'), { [NUMBERS_FILE]: numbersText }))
-  await opts.sleep(WRITE_GAP_MS)
-  const pointers = await relinkPointers(api, pointersOf(handle.index), made.id, opts)
-  await opts.sleep(WRITE_GAP_MS)
-  const next = await writeFriendsIndex(api, handle, { ...handle.index, stats: made.id })
-  if (old !== null && (await isOurNumbersGist(api, old))) await write(() => removeQuietly(api, old))
-  return { handle: next, pointers, old }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

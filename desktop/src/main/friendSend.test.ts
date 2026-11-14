@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { CardRecord } from '@shared/cardLine'
-import { NUMBERS_FILE, ensureFriendsFiles, makePointer, type WriteOptions } from '@shared/friendGists'
+import {
+  NUMBERS_FILE,
+  makePointer,
+  type WriteOptions,
+} from '@shared/friendGists'
+import { ensureFriendsFiles } from '@shared/friendListHome'
 import { fakeGistWorld } from '@shared/friendGistsFake'
 import {
   GIST_UPDATES_PER_HOUR,

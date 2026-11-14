@@ -2002,6 +2002,10 @@ export type FriendsSendStatus =
   | 'offline'
   | 'needs-repair'
   | 'needs-newer-app'
+  /** YAZ-5083: the friends list is in a vault (`home`) that is not open on this Mac. */
+  | 'list-elsewhere'
+  /** YAZ-5083: the token cannot read the vault that holds the friends list. */
+  | 'no-list-access'
   | 'failed'
 
 export interface FriendsSendView {
@@ -2016,6 +2020,8 @@ export interface FriendsSendView {
   missing: number
   /** For `no-list`: the GitHub login of the Mac's token, or null when GitHub did not say. */
   login?: string | null
+  /** For `list-elsewhere` (YAZ-5083): the vault (`owner/name`) that holds the friends list. */
+  home?: string | null
 }
 
 /** The choices of each Settings › Folder pages row that is not a switch (YAZ-4585). The first is the default. */

@@ -4,16 +4,15 @@ import {
   NUMBERS_FILE,
   POINTER_FILE,
   emptyNumbers,
-  ensureFriendsFiles,
   isOurNumbersGist,
-  findFriendsIndex,
   makePointer,
   pointersOf,
-  writeFriendsIndex,
   type GistsApi,
   type IndexHandle,
   type WriteOptions,
 } from '@shared/friendGists'
+import { ensureFriendsFiles, findFriendsIndex, writeFriendsIndex } from '@shared/friendListHome'
+import { LIST_PATH } from '@shared/friendListStore'
 import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
 import {
   FRIEND_LINK_BASE,
@@ -28,6 +27,7 @@ import {
   readFriends,
   dropHeldShares,
   markPaired,
+  pinPointer,
   removeFriend,
   removeMany,
   repairPairs,
@@ -137,7 +137,8 @@ describe('add a friend: share, then paste, on both sides (decision 20; round 12,
     const pasted = await pasteLink(bea.api, bea.handle, `Add me: ${share.link}`, opts(w))
     expect(pasted).toMatchObject({ kind: 'added', name: 'Ali', paired: false, sendBack: expect.stringContaining(FRIEND_LINK_BASE) })
     if (pasted.kind !== 'added') return
-    expect(pasted.handle.index.friends).toEqual([{ name: 'Ali', theirs: share.pointer, mine: expect.any(String) }])
+    // YAZ-5353: the entry keeps GitHub's owner of the friend's pointer (one entry for one friend).
+    expect(pasted.handle.index.friends).toEqual([{ name: 'Ali', theirs: share.pointer, mine: expect.any(String), login: 'ali' }])
     const beaMine = pasted.handle.index.friends[0].mine
     expect(JSON.parse(w.text(beaMine, POINTER_FILE)!)).toEqual({ v: 1, stats: bea.handle.index.stats, reads: share.pointer })
 
@@ -149,7 +150,7 @@ describe('add a friend: share, then paste, on both sides (decision 20; round 12,
     const back = await pasteLink(ali.api, share.handle, pasted.sendBack!, opts(w))
     expect(back).toMatchObject({ kind: 'added', name: 'Bea', paired: true, sendBack: null })
     if (back.kind !== 'added') return
-    expect(back.handle.index.friends).toEqual([{ name: 'Bea', theirs: beaMine, mine: share.pointer, paired: true }])
+    expect(back.handle.index.friends).toEqual([{ name: 'Bea', theirs: beaMine, mine: share.pointer, paired: true, login: 'bea' }])
     expect(back.handle.index.shared).toEqual([])
     expect(JSON.parse(w.text(share.pointer, POINTER_FILE)!)).toEqual({ v: 1, stats: ali.handle.index.stats, reads: beaMine })
 
@@ -312,9 +313,12 @@ describe('remove a friend (round 16)', () => {
       const w = people()
       const { ali, aliForBea } = await paired(w, 2)
       let writes = 0
+      // YAZ-5083: a write is a gist write, or a write call of the list's commit in the vault repo (tree, commit, ref).
       w.failNext = (call) => (call.op !== 'list' && call.op !== 'read' && ++writes === k ? 'OFFLINE' : undefined)
+      w.repos!.failNext = (call) => (call.method !== 'GET' && ++writes === k ? 503 : undefined)
       const first = await removeFriend(ali.api, ali.handle, aliForBea, emptyBudget(), opts(w))
       w.failNext = null
+      w.repos!.failNext = null
       if (first.kind === 'done') break
       points++
       expect(first).toMatchObject({ kind: 'paused', why: 'offline' })
@@ -325,9 +329,10 @@ describe('remove a friend (round 16)', () => {
       w.advance(ORPHAN_AGE_MS + 1000)
       await sweepOrphans(w.api('ali'), done.handle)
       expect(done.kind, `stop at write ${k}`).toBe('done')
-      if (k === 1) {
-        // The first write is the list itself: it failed, so the remove never started. Bea stays; nothing changed.
-        expect(done.handle.index.friends.map((f) => f.name)).toEqual(['Bea', 'F0', 'F1'])
+      if (k <= 3) {
+        // The first writes are the list's own commit: it failed, so the remove never started. Bea stays; nothing changed.
+        // (YAZ-5083: the records of the list file are kept in key order, not in the order they came.)
+        expect(done.handle.index.friends.map((f) => f.name).sort()).toEqual(['Bea', 'F0', 'F1'])
         expect(w.text(aliForBea, POINTER_FILE)).not.toBeNull()
       } else {
         expect(done.handle.index.friends.map((f) => f.name)).toEqual(['F0', 'F1'])
@@ -346,9 +351,9 @@ describe('remove a friend (round 16)', () => {
     const before = w.updates('ali')
     const full = await removeFriend(ali.api, ali.handle, aliForBea, emptyBudget(), opts(w))
     expect(full.kind).toBe('done')
-    // One update for each other pointer and three for the list: inside the reserve (32 + 5) the sender keeps.
-    // YAZ-5274: the unused shared link is deleted, not moved: 29 friends and 1 group move, and 3 list writes.
-    expect(w.updates('ali') - before).toBe(30 + 3)
+    // One update for each other pointer: inside the reserve (32 + 5) the sender keeps. YAZ-5274: the unused shared link
+    // is deleted, not moved: 29 friends and 1 group move. YAZ-5083: the list's own writes are commits of the vault repo.
+    expect(w.updates('ali') - before).toBe(30)
     expectClean(w, 'ali', full.handle)
 
     const w2 = people()
@@ -467,8 +472,10 @@ describe('YAZ-5236: a remove is kept until it is done', () => {
     const s = await shareLink(ali.api, ali.handle, opts(w))
     const b = await pasteLink(bea.api, bea.handle, s.link, opts(w))
     if (b.kind !== 'added') throw new Error(b.kind)
-    const a = await pasteLink(ali.api, s.handle, b.sendBack!, opts(w))
-    if (a.kind !== 'added') throw new Error(a.kind)
+    const a0 = await pasteLink(ali.api, s.handle, b.sendBack!, opts(w))
+    if (a0.kind !== 'added') throw new Error(a0.kind)
+    // YAZ-5083: the list's writes are free of the hour now; a kept friend's pointer must move, which the hour stops.
+    const a = { handle: await pinPointer(ali.api, await writeFriendsIndex(ali.api, await fresh(ali.api, w), { ...(await fresh(ali.api, w)).index, groups: [{ name: 'Club', group: ID, mine: await makePointer(ali.api, '0'.repeat(32), opts(w)), admin: false }] }), (await fresh(ali.api, w)).index.groups[0]?.mine ?? '', opts(w)) }
     let used = emptyBudget()
     for (let i = 0; i < 100; i++) used = recordUpdate(used, w.now(), null)
     expect((await removeFriend(ali.api, a.handle, s.pointer, used, opts(w))).kind).toBe('paused')
@@ -493,8 +500,9 @@ describe('YAZ-5236: a remove is kept until it is done', () => {
     expect(done.kind).toBe('done')
     expect(done.handle.index.friends.map((f) => f.mine)).not.toContain(mines[0])
     expect(done.handle.index.friends).toHaveLength(2)
-    // One re-key for four removes: the list 3 times, and each of the 3 other pointers (2 friends, 1 group) once.
-    expect(w.updates('ali') - before).toBe(3 + 3) // YAZ-5274: the unused shared link is deleted, not moved
+    // One re-key for four removes: each of the 3 other pointers (2 friends, 1 group) once (YAZ-5083: the list's own
+    // writes are commits of the vault repo). YAZ-5274: the unused shared link is deleted, not moved.
+    expect(w.updates('ali') - before).toBe(3)
     expect((await readFriends(ali.api, done.handle, newListCache(), w.now())).rows.every((r) => r.state !== 'removing')).toBe(true)
   })
 })
@@ -673,8 +681,9 @@ describe('YAZ-5191 in 4E2: add and remove never write over a list that cannot be
   it('paste, share, remove and finish stop with "needs-repair" and change nothing', async () => {
     const w = people()
     const { ali, aliForBea } = await paired(w, 1)
-    const text = '{"v":1,"friends":['
-    w.setFiles(ali.handle.id, { [INDEX_FILE]: text })
+    const text = '{"v":1,"head":{"v":2},"records":{"f.'
+    // YAZ-5083: the list file of the vault repo cannot be read (a hand edit, a bad merge).
+    w.repos!.push('ali/vault', { [LIST_PATH]: text })
     const writes = () => w.calls.filter((c) => c.op !== 'list' && c.op !== 'read').length
     const n = writes()
     expect(await pasteLink(ali.api, ali.handle, ID, opts(w))).toEqual({ kind: 'needs-repair' })
@@ -683,7 +692,7 @@ describe('YAZ-5191 in 4E2: add and remove never write over a list that cannot be
     expect(await removeFriend(ali.api, ali.handle, aliForBea, emptyBudget(), opts(w))).toMatchObject({ kind: 'paused', why: 'needs-repair' })
     expect(await finishRemove(ali.api, ali.handle, emptyBudget(), opts(w))).toMatchObject({ kind: 'paused', why: 'needs-repair' })
     expect(writes()).toBe(n)
-    expect(w.text(ali.handle.id, INDEX_FILE)).toBe(text)
+    expect(w.repos!.file('ali/vault', LIST_PATH)).toBe(text)
     expect(w.text(aliForBea, POINTER_FILE)).not.toBeNull()
   })
 })

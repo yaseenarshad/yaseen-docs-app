@@ -8,20 +8,20 @@ import {
   SETTLE_MS,
   WRITE_GAP_MS,
   agoLabel,
-  ensureFriendsFiles,
-  findFriendsIndex,
   makePointer,
   parseFriendsIndex,
   readListFiles,
   readFriend,
   relinkPointers,
-  replaceNumbersGist,
   updatedAgo,
-  writeFriendsIndex,
   type FriendReadCache,
   type FriendsIndex,
   type WriteOptions,
 } from '@shared/friendGists'
+import { ensureFriendsFiles, findFriendsIndex, writeFriendsIndex } from '@shared/friendListHome'
+import { LIST_PATH, NOTE_VERSION, parseListFile, readNote } from '@shared/friendListStore'
+import { remakeNumbers } from '@shared/friendsList'
+import { emptyBudget } from '@shared/friendSend'
 import { fakeGistWorld } from '@shared/friendGistsFake'
 import type { FriendStats } from '@shared/friendStats'
 
@@ -36,8 +36,14 @@ const NOW = Date.parse('2026-11-14T06:00:00Z')
 const opts: WriteOptions = { describe: (kind) => `notecards-test ${kind}`, sleep: async () => {} }
 /** For the races: each wait gives the other device real time to run (the fake's calls also wait 0 to 3 ms at random). */
 const raceOpts: WriteOptions = { ...opts, sleep: (ms) => new Promise((done) => setTimeout(done, ms >= 5000 ? 25 : 2)) }
-/** The friends list as the app reads it: every list file of the gist (YAZ-5312, version 2). */
-const listIn = (w: ReturnType<typeof fakeGistWorld>, id: string) => readListFiles(w.owned('yaseen').find((g) => g.id === id)?.files ?? {})
+/** The friends list as the app reads it: YAZ-5083, the file `.yaseendocs/friends.json` of the vault repo. */
+const listIn = (w: ReturnType<typeof fakeGistWorld>, _id?: string) => {
+  const text = w.repos!.file('yaseen/vault', LIST_PATH)
+  const f = text === null ? null : parseListFile(text)
+  return f === null || f.kind !== 'ok' ? { kind: 'unreadable' as const } : readListFiles(f.files)
+}
+/** The raw records of the list file. */
+const recordsIn = (w: ReturnType<typeof fakeGistWorld>) => JSON.parse(w.repos!.file('yaseen/vault', LIST_PATH)!) as { head: Record<string, unknown>; records: Record<string, Record<string, unknown>> }
 const world = () =>
   fakeGistWorld({ accounts: { [T1]: { login: 'yaseen' }, [T2]: { login: 'yaseen' }, [SAM]: { login: 'sam' }, 'tok-nogists': { login: 'yaseen', gists: false } }, start: NOW })
 
@@ -76,10 +82,13 @@ describe('make or find the files (one of each, on each device)', () => {
     expect(made.kind).toBe('ok')
     if (made.kind !== 'ok') return
     const mine = w.owned('yaseen')
+    // YAZ-5083: the gist `notecards-friends.json` is the NOTE that names the vault; the list is in the vault repo.
     expect(mine.map((g) => Object.keys(g.files)[0]).sort()).toEqual([INDEX_FILE, NUMBERS_FILE])
     expect(mine.every((g) => !g.public)).toBe(true)
+    expect(readNote(mine.find((g) => INDEX_FILE in g.files)!.files[INDEX_FILE])).toEqual({ kind: 'note', home: 'yaseen/vault' })
     expect(made.handle.index.stats).toBe(mine.find((g) => NUMBERS_FILE in g.files)!.id)
     expect(made.handle.index.vaults).toEqual(['yaseen/vault'])
+    expect(listIn(w)).toMatchObject({ kind: 'ok', value: { stats: made.handle.index.stats } })
   })
 
   it('a reinstall and a second device FIND the files by name: no duplicate', async () => {
@@ -109,9 +118,9 @@ describe('make or find the files (one of each, on each device)', () => {
       expect(a.handle.index.stats).toBe(b.handle.index.stats)
       const index = listIn(w, a.handle.id)
       expect(index.kind === 'ok' && index.value.stats).toBe(a.handle.index.stats)
-      if (w.calls.filter((c) => c.op === 'create').length === 4) twins++
+      if (w.calls.filter((c) => c.op === 'create').length >= 3) twins++
     }
-    // The race is real in these rounds: both devices made a list and a numbers gist, and one pair was deleted.
+    // The race is real in these rounds: both devices made a numbers gist (and maybe a note); one of each was deleted.
     expect(twins).toBeGreaterThan(0)
   })
 
@@ -131,16 +140,22 @@ describe('make or find the files (one of each, on each device)', () => {
     const found = await findFriendsIndex(api, opts)
     expect(found.kind).toBe('ok')
     if (found.kind !== 'ok') return
+    // YAZ-5083: found as an old list (read only); the phone moves it, with the twin's friends, into the vault.
     expect(found.handle.id).toBe(old.id)
-    expect(found.handle.index.friends.map((f) => f.name)).toEqual(['Sam', 'Ali'])
-    expect(found.handle.index.groups).toHaveLength(1)
-    expect(found.handle.index.nickname).toBe('Y')
-    expect(w.owned('yaseen')).toHaveLength(1)
+    const moved = await ensureFriendsFiles(api, seed, opts)
+    if (moved.kind !== 'ok') throw new Error(moved.kind)
+    expect(moved.handle.id).toBe(old.id)
+    expect(moved.handle.index.friends.map((f) => f.name)).toEqual(['Sam', 'Ali'])
+    expect(moved.handle.index.groups).toHaveLength(1)
+    expect(moved.handle.index.nickname).toBe('Y')
+    // The twin is gone; the old list's gist is the note (and the numbers gist made for a list that had none).
+    expect(w.owned('yaseen').filter((g) => INDEX_FILE in g.files).map((g) => g.id)).toEqual([old.id])
   })
 
   it('an index written by a newer app is not touched', async () => {
     const w = world()
-    await w.api(T1).create('x', { [INDEX_FILE]: JSON.stringify({ v: LIST_VERSION + 1, anything: true }) })
+    // YAZ-5083: v 3 is the note now; a newer app writes above it.
+    await w.api(T1).create('x', { [INDEX_FILE]: JSON.stringify({ v: NOTE_VERSION + 1, anything: true }) })
     expect((await ensureFriendsFiles(w.api(T1), seed, opts)).kind).toBe('newer')
     expect(w.owned('yaseen')).toHaveLength(1)
   })
@@ -150,11 +165,13 @@ describe('make or find the files (one of each, on each device)', () => {
     const api = w.api(T1)
     const made = await ensureFriendsFiles(api, seed, opts)
     if (made.kind !== 'ok') throw new Error('no index')
-    await api.update(made.handle.id, { [INDEX_FILE]: JSON.stringify({ ...made.handle.index, later: [1, 2] }) })
+    // YAZ-5083: a newer app's field in the head of the list file (a commit of another device).
+    const rec = recordsIn(w)
+    w.repos!.push('yaseen/vault', { [LIST_PATH]: JSON.stringify({ ...rec, head: { ...rec.head, later: [1, 2] } }) })
     const found = await findFriendsIndex(api, opts)
     if (found.kind !== 'ok') throw new Error('no index')
     await writeFriendsIndex(api, found.handle, { ...found.handle.index, nickname: 'Yas' })
-    expect(JSON.parse(w.text(made.handle.id, INDEX_FILE)!)).toMatchObject({ v: LIST_VERSION, nickname: 'Yas', later: [1, 2] })
+    expect(recordsIn(w).head).toMatchObject({ v: LIST_VERSION, nickname: 'Yas', later: [1, 2] })
   })
 })
 
@@ -168,7 +185,9 @@ describe('YAZ-5191: a friends list that this app cannot read is never written ov
       { name: 'Sam', theirs: 'cc33', mine: 'dd44' },
     ], groups: [] }) })
     await ensureFriendsFiles(api, seed, opts)
-    expect(JSON.parse(w.text(listId, INDEX_FILE)!).friends).toHaveLength(2) // now: 0
+    // YAZ-5083: moved into the vault repo, both friends kept, the long name whole.
+    void listId
+    expect(Object.values(recordsIn(w).records).filter((r) => typeof r.theirs === 'string').map((r) => r.name)).toEqual(['x'.repeat(201), 'Sam'])
   })
 
   it('a write keeps each entry that this app cannot read, and each long name whole (cut only for the screens)', async () => {
@@ -183,15 +202,20 @@ describe('YAZ-5191: a friends list that this app cannot read is never written ov
     const found = await findFriendsIndex(api, opts)
     if (found.kind !== 'ok') throw new Error(found.kind)
     expect(found.handle.index.friends).toEqual([{ name: long.slice(0, 200), theirs: 'aa11', mine: 'bb22' }])
-    await writeFriendsIndex(api, found.handle, { ...found.handle.index, friends: [...found.handle.index.friends, { name: 'Sam', theirs: 'cc33', mine: 'dd44' }] })
-    // YAZ-5312: the version 1 array stays as it was (each long name whole, the entry this app cannot read); Sam has his own file.
-    const after = JSON.parse(w.text(listId, INDEX_FILE)!)
-    expect(after.friends).toEqual([{ name: long, theirs: 'aa11', mine: 'bb22' }, odd])
-    const read = listIn(w, listId)
+    // YAZ-5083: the phone moves the list into the vault repo first; then it writes there.
+    const moved = await ensureFriendsFiles(api, seed, opts)
+    if (moved.kind !== 'ok') throw new Error(moved.kind)
+    await writeFriendsIndex(api, moved.handle, { ...moved.handle.index, friends: [...moved.handle.index.friends, { name: 'Sam', theirs: 'cc33', mine: 'dd44' }] })
+    void listId
+    // Each long name whole; the entry this app cannot read stays (in the head); Sam has his own record.
+    const after = recordsIn(w)
+    expect(after.records['f.bb22']).toMatchObject({ name: long, theirs: 'aa11' })
+    expect(after.head.friends).toEqual([odd])
+    const read = listIn(w)
     expect(read.kind === 'ok' && read.value.friends).toEqual([{ name: long.slice(0, 200), theirs: 'aa11', mine: 'bb22' }, { name: 'Sam', theirs: 'cc33', mine: 'dd44' }])
-    expect(after.nickname).toBe('N'.repeat(250))
-    expect(after.vaults).toEqual(['a/b', 7])
-    expect(after.groups).toEqual([{ name: 'G', group: 'ee55', mine: 'ff66' }])
+    expect(after.head.nickname).toBe('N'.repeat(250))
+    expect(after.head.vaults).toEqual(['a/b', 7])
+    expect(after.records['g.ff66']).toMatchObject({ name: 'G', group: 'ee55' })
   })
 
   it('a list that is not JSON: find says "broken", and NO call writes to it (ensure, add, remove)', async () => {
@@ -204,6 +228,7 @@ describe('YAZ-5191: a friends list that this app cannot read is never written ov
     expect(w.calls.filter((c) => c.op !== 'list' && c.op !== 'read')).toEqual([])
     expect(w.text(listId, INDEX_FILE)).toBe(text)
     expect(LIST_NEEDS_REPAIR).toContain('notecards-friends.json')
+    expect(LIST_NEEDS_REPAIR).toContain('.yaseendocs/friends.json')
   })
 
   it('a list with broken JSON is never written over', async () => {
@@ -251,7 +276,7 @@ describe('YAZ-5241: a field of the wrong shape makes the list "needs repair"; it
 })
 
 describe('a deleted numbers gist is made again (round 16: new numbers gist, update the other pointers)', () => {
-  it('makes a new numbers gist, writes its ID into every pointer, keeps each pointer`s own fields, and updates the index', async () => {
+  it('makes a new numbers gist, writes its ID into every pointer, keeps each pointer`s own fields, and updates the list', async () => {
     const w = world()
     const api = w.api(T1)
     const made = await ensureFriendsFiles(api, seed, opts)
@@ -273,26 +298,28 @@ describe('a deleted numbers gist is made again (round 16: new numbers gist, upda
     await api.remove(oldStats) // deleted on GitHub
     const before = w.updates('yaseen')
 
-    const result = await replaceNumbersGist(api, handle, JSON.stringify({ ...STATS, login: 'yaseen' }), opts)
+    // YAZ-5083: the same saga as a remove with no friend in it: one generation, each pointer moved.
+    const result = await remakeNumbers(api, handle, emptyBudget(), { ...opts, now: w.now })
+    expect(result.kind).toBe('done')
     const fresh = result.handle.index.stats!
     expect(fresh).not.toBe(oldStats)
-    expect(w.text(fresh, NUMBERS_FILE)).toContain('"login":"yaseen"')
+    expect(w.text(fresh, NUMBERS_FILE)).not.toBeNull()
     expect(JSON.parse(w.text(p1, POINTER_FILE)!)).toEqual({ v: 1, stats: fresh, reads: 'abcdef01', mark: { kind: 'cheer', at: '2026-11-14T05:00:00.000Z' }, later: 'kept' })
     expect(JSON.parse(w.text(p2, POINTER_FILE)!)).toEqual({ v: 1, stats: fresh })
-    expect(result.pointers).toEqual({ updated: [p1, p2], gone: [gone] })
-    expect(listIn(w, handle.id)).toMatchObject({ kind: 'ok', value: { stats: fresh } })
-    // Two pointer updates and one index update: gist_update counts each PATCH.
-    expect(w.updates('yaseen') - before).toBe(3)
+    expect(listIn(w)).toMatchObject({ kind: 'ok', value: { stats: fresh } })
+    // Two pointer updates (the list's own write is a commit of the vault repo, not a gist update).
+    expect(w.updates('yaseen') - before).toBe(2)
   })
 
-  it('with the old numbers gist still there (a remove, 4E2), the old one is deleted at the end', async () => {
+  it('with the old numbers gist still there, the old one is deleted at the end', async () => {
     const w = world()
     const api = w.api(T1)
     const made = await ensureFriendsFiles(api, seed, opts)
     if (made.kind !== 'ok') throw new Error('no index')
     const old = made.handle.index.stats!
-    const result = await replaceNumbersGist(api, made.handle, JSON.stringify(STATS), opts)
-    expect(result.old).toBe(old)
+    const result = await remakeNumbers(api, made.handle, emptyBudget(), { ...opts, now: w.now })
+    expect(result.kind).toBe('done')
+    expect(result.handle.index.stats).not.toBe(old)
     expect(w.text(old, NUMBERS_FILE)).toBeNull()
   })
 

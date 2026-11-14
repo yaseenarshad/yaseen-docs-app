@@ -1,6 +1,15 @@
 import { deviceZone } from '@shared/friendStats'
 import { describe, expect, it } from 'vitest'
-import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, findFriendsIndex, makePointer, parseFriendsIndex, readListFiles, writeFriendsIndex } from '@shared/friendGists'
+import {
+  INDEX_FILE,
+  NUMBERS_FILE,
+  POINTER_FILE,
+  makePointer,
+  parseFriendsIndex,
+  readListFiles,
+} from '@shared/friendGists'
+import { findFriendsIndex, writeFriendsIndex } from '@shared/friendListHome'
+import { LIST_PATH } from '@shared/friendListStore'
 import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
 import { FRIEND_LINK_BASE, WHAT_FRIENDS_SEE } from '@shared/friendsList'
 import type { IndexRecord } from '@shared/types'
@@ -53,10 +62,34 @@ const setup = () => {
 /** The same phone after a restart: a new list object on the same store and tokens. */
 const phone2 = async (world: FakeGistWorld, clock: FakeClock, p: Phone) => createFriendsList({ store: p.store, tokens: p.tokens, clock, fetch: gistsFetch(world).fetch, sleep: async () => {} })
 const indexOf = (world: FakeGistWorld, login: string) => {
-  const g = world.owned(login).find((x) => INDEX_FILE in x.files)
-  const read = g ? readListFiles(g.files) : parseFriendsIndex(null)
+  // YAZ-5083: the list in the vault the note names.
+  const files = world.listFiles(login)
+  const read = files !== null ? readListFiles(files) : parseFriendsIndex(null)
   if (read.kind !== 'ok') throw new Error('no list')
   return read.value
+}
+
+/** YAZ-5083: the list file of the vault the note names (the list is in the vault repo). */
+const homeOf = (world: FakeGistWorld, login: string) => {
+  const g = world.owned(login).find((x) => INDEX_FILE in x.files)!
+  return (JSON.parse(g.files[INDEX_FILE]) as { home: string }).home
+}
+/** A change of the list's head made elsewhere (another device of the person, an older list): a commit of the repo. */
+function editHead(world: FakeGistWorld, login: string, f: (head: Record<string, unknown>) => Record<string, unknown>) {
+  const home = homeOf(world, login)
+  const doc = JSON.parse(world.repos!.file(home, LIST_PATH)!) as { head: Record<string, unknown> }
+  world.repos!.push(home, { [LIST_PATH]: JSON.stringify({ ...doc, head: f(doc.head) }) })
+}
+const headOf = (world: FakeGistWorld, login: string) => (JSON.parse(world.repos!.file(homeOf(world, login), LIST_PATH)!) as { head: Record<string, unknown> }).head
+/** GitHub refuses every list write for now (its rate limit on the repo's ref move): a remove's first write waits. */
+function blockListWrites(world: FakeGistWorld): () => void {
+  const repos = world.repos!
+  const inner = repos.http.bind(repos)
+  repos.http = async (method, path, ...rest) =>
+    method === 'PATCH' && path.includes('/git/refs/')
+      ? { status: 403, body: { message: 'API rate limit exceeded' }, headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(Math.ceil((world.now() + 3600_000) / 1000)) } }
+      : inner(method, path, ...rest)
+  return () => void (repos.http = inner)
 }
 
 describe('createFriendsList (YAZ-5083)', () => {
@@ -130,9 +163,10 @@ describe('createFriendsList (YAZ-5083)', () => {
     const ali = await phone(world, clock, ALI, 'ali')
     const share = await ali.list.share()
     if (share.kind !== 'ok') throw new Error(share.kind)
-    const listId = world.owned('ali').find((g) => INDEX_FILE in g.files)!.id
-    world.setFiles(listId, { [INDEX_FILE]: 'not json' })
+    // YAZ-5083: the list file in the vault repo cannot be read (a hand edit).
+    world.repos!.push(homeOf(world, 'ali'), { [LIST_PATH]: 'not json' })
     const n = world.calls.filter((c) => c.op !== 'list' && c.op !== 'read').length
+    const moves = world.repos!.calls.filter((c) => c.method !== 'GET').length
     expect(await ali.list.rows()).toEqual({ kind: 'needs-repair' })
     expect(await ali.list.share()).toEqual({ kind: 'needs-repair' })
     expect(await ali.list.paste('a1b2c3d4e5f60718293a4b5c6d7e8f90')).toEqual({ kind: 'needs-repair' })
@@ -142,7 +176,8 @@ describe('createFriendsList (YAZ-5083)', () => {
     await sender.idle()
     expect(sender.state().status).toBe('needs-repair')
     expect(world.calls.filter((c) => c.op !== 'list' && c.op !== 'read').length).toBe(n)
-    expect(world.text(listId, INDEX_FILE)).toBe('not json')
+    expect(world.repos!.calls.filter((c) => c.method !== 'GET').length).toBe(moves)
+    expect(world.repos!.file(homeOf(world, 'ali'), LIST_PATH)).toBe('not json')
   })
 
   it('YAZ-5195: after "Sign out and erase this phone" the list starts no call and stores nothing; stop() aborts a running one', async () => {
@@ -184,15 +219,15 @@ describe('createFriendsList (YAZ-5083)', () => {
     const ali = await phone(world, clock, ALI, 'ali')
     const share = await ali.list.share()
     if (share.kind !== 'ok') throw new Error(share.kind)
-    const api = gistsApi(githubClient(ALI, { fetch: gistsFetch(world).fetch, now: world.now }))
+    const mem = world.api(ALI)
+    const api = gistsApi(githubClient(ALI, { fetch: gistsFetch(world).fetch, now: world.now }), mem.repos, mem.repo)
     const found = await findFriendsIndex(api, { describe: () => 'notecards-test', sleep: async () => {} })
     if (found.kind !== 'ok') throw new Error(found.kind)
     const pointers: string[] = []
     for (let i = 0; i < 30; i++) pointers.push(await makePointer(api, found.handle.index.stats!, { describe: () => 'notecards-test', sleep: async () => {} }))
     await writeFriendsIndex(api, found.handle, { ...found.handle.index, friends: pointers.map((mine, i) => ({ name: `F${i}`, theirs: `abc${i}`, mine })) })
-    // The Mac used the hour: GitHub refuses each gist update now.
-    const stats = found.handle.index.stats!
-    while (world.updates('ali') < 100) await api.update(stats, { [NUMBERS_FILE]: world.text(stats, NUMBERS_FILE)! })
+    // YAZ-5083: GitHub refuses each list write now (its rate limit): no remove's first write goes.
+    const unblock = blockListWrites(world)
     for (const mine of pointers) expect(await ali.list.remove(mine)).toMatchObject({ kind: 'paused' })
     const rows = await ali.list.rows()
     if (rows.kind !== 'ok') throw new Error(rows.kind)
@@ -200,9 +235,15 @@ describe('createFriendsList (YAZ-5083)', () => {
     expect(rows.rows.every((r) => r.state === 'removing' && r.label === 'Removing…')).toBe(true)
 
     clock.advance(61 * 60_000)
+    unblock()
     const restart = await phone2(world, clock, ali)
+    const before = world.repos!.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/git/commits')).length
     const after = await restart.rows()
     expect(after).toMatchObject({ kind: 'ok', rows: [] })
+    // ONE re-key for the 30: one numbers generation (the remove's commits: its first write, the intent, the generation,
+    // and done).
+    expect(world.owned('ali').filter((g) => NUMBERS_FILE in g.files)).toHaveLength(1)
+    expect(world.repos!.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/git/commits')).length - before).toBe(4)
     expect(indexOf(world, 'ali').friends).toEqual([])
     for (const p of pointers) expect(world.text(p, POINTER_FILE)).toBeNull()
     expect(await ali.store.getState('', 'friendsRemoveQueue')).toBeUndefined()
@@ -220,11 +261,12 @@ describe('createFriendsList (YAZ-5083)', () => {
     const old = indexOf(world, 'ali').stats!
     const api = gistsApi(githubClient(BEA, { fetch: gistsFetch(world).fetch, now: world.now }))
     void api
-    const mac = gistsApi(githubClient(ALI, { fetch: gistsFetch(world).fetch, now: world.now }))
-    while (world.updates('ali') < 100) await mac.update(old, { [NUMBERS_FILE]: world.text(old, NUMBERS_FILE)! })
     const rows = await ali.list.rows()
     if (rows.kind !== 'ok') throw new Error(rows.kind)
+    // YAZ-5083: GitHub refuses the list write (its rate limit): the remove waits on the phone.
+    const unblock = blockListWrites(world)
     expect(await ali.list.remove(rows.rows[0].mine)).toMatchObject({ kind: 'paused' })
+    unblock()
     clock.advance(61 * 60_000)
     const listeners = new Set<(e: SyncEvent) => void>()
     const sender = createFriendsSender({ store: ali.store, tokens: ali.tokens, sync: { subscribe: (l) => (listeners.add(l), () => listeners.delete(l)) }, clock, fetch: gistsFetch(world).fetch, sleep: async () => {} })
@@ -245,9 +287,7 @@ describe('createFriendsList (YAZ-5083)', () => {
     const ali = await phone(world, clock, ALI, 'ali', ['ali/vault'])
     await localFriends(ali.store).saveSettings({ vaults: null, nickname: null })
     await ali.list.share()
-    const g = world.owned('ali').find((x) => INDEX_FILE in x.files)!
-    const o = JSON.parse(world.text(g.id, INDEX_FILE)!)
-    world.setFiles(g.id, { [INDEX_FILE]: JSON.stringify({ ...o, vaults: ['ali/vault', 'ali/macvault'] }) })
+    editHead(world, 'ali', (o) => ({ ...o, vaults: ['ali/vault', 'ali/macvault'] }))
     await ali.list.rows()
     await ali.list.port.saveSettings({ ...(await ali.list.port.settings()), nickname: 'Al' })
     expect(indexOf(world, 'ali').vaults).toEqual(['ali/vault', 'ali/macvault']) // now: ['ali/vault']
@@ -258,13 +298,11 @@ describe('createFriendsList (YAZ-5083)', () => {
     const ali = await phone(world, clock, ALI, 'ali', ['ali/one', 'ali/two'])
     await localFriends(ali.store).saveSettings({ vaults: null, nickname: 'Al' })
     await ali.list.share()
-    const g = world.owned('ali').find((x) => INDEX_FILE in x.files)!
-    const o = JSON.parse(world.text(g.id, INDEX_FILE)!)
-    world.setFiles(g.id, { [INDEX_FILE]: JSON.stringify({ ...o, vaults: ['ali/mac', ...o.vaults], nickname: 'A'.repeat(150) }) })
+    editHead(world, 'ali', (o) => ({ ...o, vaults: ['ali/mac', ...(o.vaults as string[])], nickname: 'A'.repeat(150) }))
     await ali.list.rows()
     const now = await ali.list.port.settings()
     await ali.list.port.saveSettings({ ...now, vaults: [vaultId(ali.vaults[1])] })
-    const after = JSON.parse(world.text(g.id, INDEX_FILE)!)
+    const after = headOf(world, 'ali')
     expect(after.vaults).toEqual(['ali/mac', 'ali/two'])
     expect(after.nickname).toBe('A'.repeat(150)) // kept whole: only the vaults changed
   })
@@ -336,9 +374,13 @@ describe('createFriendsList (YAZ-5083)', () => {
     if (pasted.kind !== 'added') throw new Error(pasted.kind)
     await ali.list.paste(pasted.sendBack!)
     for (let i = 0; i < 3; i++) await ali.list.share() // three links shared, not used yet
+    // A group of Ali's (YAZ-5083: a kept pointer that the remove must move, so the hour can stop it half way).
+    const club = await ali.list.groups.create('Club')
+    if (club.kind !== 'ok') throw new Error(club.kind)
     const old = indexOf(world, 'ali').stats!
-    // The Mac and cheers used the hour: the budget the sender keeps says 1 is left (the remove's first write).
-    await ali.store.setState('', 'friendsSend', { lastSentAt: null, lastKey: null, pointers: 4, budget: { updates: [], seen: { remaining: 1, resetAt: clock.now() + 3600_000, at: clock.now(), after: 0 }, blockedUntil: null } })
+    // The Mac and cheers used the hour: the budget the sender keeps says 0 are left (the list's own writes are commits
+    // of the vault repo, so the remove's first steps go; the pointer move waits).
+    await ali.store.setState('', 'friendsSend', { lastSentAt: null, lastKey: null, pointers: 5, budget: { updates: [], seen: { remaining: 0, resetAt: clock.now() + 3600_000, at: clock.now(), after: 0 }, blockedUntil: null } })
     const rows = await ali.list.rows()
     if (rows.kind !== 'ok') throw new Error(rows.kind)
     expect(await ali.list.remove(rows.rows[0].mine)).toMatchObject({ kind: 'paused', retryAt: expect.any(Number) })
@@ -353,9 +395,10 @@ describe('createFriendsList (YAZ-5083)', () => {
     expect(index.stats).not.toBe(old)
     expect(world.text(old, NUMBERS_FILE)).toBeNull()
     expect(world.owned('ali').filter((g) => NUMBERS_FILE in g.files).map((g) => g.id)).toEqual([index.stats])
-    // YAZ-5274: the three unused shared links stopped with the remove; nothing else is left to send to.
+    // YAZ-5274: the three unused shared links stopped with the remove; the group is left to send to.
     expect(index.shared).toEqual([])
-    expect(sender.state().status).toBe('no-friends')
+    expect(index.groups).toHaveLength(1)
+    expect(sender.state().status).toBe('sent')
     expect(world.calls.filter((c) => c.op === 'update' && c.id === old && c.at > START + 3600_000 - 1)).toHaveLength(0)
   })
 })

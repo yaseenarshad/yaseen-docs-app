@@ -79,6 +79,8 @@ async function failure(response: Response, method: string, now: number): Promise
   if (status === 401) return make('UNAUTHORIZED')
   if (status === 403) return make(method === 'GET' ? 'NO_ACCESS' : 'READ_ONLY')
   if (status === 404) return make('NOT_FOUND')
+  // GitHub's 409 "Gist cannot be updated" (a write of the same gist at that moment): quiet, the next try sends again.
+  if (status === 409) return make('GITHUB_DOWN')
   if (status >= 500) return make('GITHUB_DOWN')
   return make('UNEXPECTED')
 }
