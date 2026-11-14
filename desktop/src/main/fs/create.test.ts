@@ -5,7 +5,7 @@ import path from 'node:path'
 import { NEW_CARD_TEXT, cardFileContent } from '@shared/cardFileFormat'
 import { EMPTY_CARD_LINE, withCardId } from '@shared/cardLine'
 import { setFrontmatterProperty } from '@shared/frontmatter'
-import { NOTE_ID_KEY, isNoteId } from '@shared/noteId'
+import { PAGE_ID_KEY, isPageId } from '@shared/pageId'
 import { FOLDER_SETTINGS_FILE } from '@shared/types'
 import { createDir, createFile } from './create'
 import { readFile as readText, writeFile as writeText } from './file'
@@ -44,9 +44,9 @@ describe('createDir', () => {
     expect((await stat(p)).isDirectory()).toBe(true)
     expect(await readdir(p)).toEqual([FOLDER_SETTINGS_FILE])
     const id = /^---\nid: (.+)\n---\n$/.exec(await settingsIn(p))?.[1]
-    expect(isNoteId(id)).toBe(true)
+    expect(isPageId(id)).toBe(true)
     // The bytes the frontmatter writer gives an empty file: a later settings write is a normal edit.
-    expect(await settingsIn(p)).toBe(setFrontmatterProperty('', NOTE_ID_KEY, id))
+    expect(await settingsIn(p)).toBe(setFrontmatterProperty('', PAGE_ID_KEY, id))
   })
 
   it('C: a folder made in the app, titled `Upwork 2026`, is born holding `id` and `title: Upwork 2026` (YAZ-2420 D6)', async () => {
@@ -55,12 +55,12 @@ describe('createDir', () => {
     expect(await settingsIn(p)).toMatch(/^---\nid: YAZ-\d+\ntitle: Upwork 2026\n---\n$/)
   })
 
-  it('S33: a new folder gets the next number of the vault, like a note', async () => {
-    const [dir, note] = [path.join(root, 'numbered'), path.join(root, 'numbered-note.md')]
+  it('S33: a new folder gets the next number of the vault, like a page', async () => {
+    const [dir, page] = [path.join(root, 'numbered'), path.join(root, 'numbered-page.md')]
     await createDir({ path: dir }, door)
     const folder = door.given[door.given.length - 1]
     expect(await settingsIn(dir)).toBe(`---\nid: ${folder}\n---\n`)
-    expect((await createFile(note, door)).id).toBe(`YAZ-${Number(folder.slice(4)) + 1}`)
+    expect((await createFile(page, door)).id).toBe(`YAZ-${Number(folder.slice(4)) + 1}`)
   })
 
   it('a folder whose number cannot be given still stands, with no `.folder.md`: the sweep gives it one', async () => {
@@ -75,7 +75,7 @@ describe('createDir', () => {
     await expect(stat(path.join(root, 'bad-title'))).rejects.toThrow()
   })
 
-  it('the id is fresh, like a note born in the app: the same folder name twice is two ids', async () => {
+  it('the id is fresh, like a page born in the app: the same folder name twice is two ids', async () => {
     const [a, b] = [path.join(root, 'Zeta', 'Twin'), path.join(root, 'alpha', 'Twin')]
     await createDir({ path: a }, door)
     await createDir({ path: b }, door)
@@ -107,10 +107,10 @@ describe('createDir', () => {
 
 describe('createFile', () => {
   it('creates a markdown file holding only its id, and returns path, mtime, size, id (YAZ-2293 D3)', async () => {
-    const p = path.join(root, 'NewFolder', 'note.md')
+    const p = path.join(root, 'NewFolder', 'page.md')
     const body = await createFile(p, door)
     expect(body.path).toBe(p)
-    expect(isNoteId(body.id)).toBe(true)
+    expect(isPageId(body.id)).toBe(true)
     expect(await readFile(p, 'utf8')).toBe(`---\nid: ${body.id}\n---\n`)
     expect(body.size).toBe((await stat(p)).size)
     expect(body.mtime).toBeGreaterThan(0)
@@ -119,13 +119,13 @@ describe('createFile', () => {
   it("a folder's hidden settings file is markdown to every door: created, written and read back (YAZ-2290 D1)", async () => {
     const p = path.join(root, 'Empty', FOLDER_SETTINGS_FILE) // a folder made outside the app: it has no file yet
     const created = await createFile(p, door)
-    expect(isNoteId(created.id)).toBe(true) // born with its id like any note: the folder's id (YAZ-2293 D7)
+    expect(isPageId(created.id)).toBe(true) // born with its id like any page: the folder's id (YAZ-2293 D7)
     await writeText({ path: p, content: '---\nfolder_settings: {}\n---\n', expectedMtime: created.mtime })
     expect((await readText(p)).content).toBe('---\nfolder_settings: {}\n---\n')
   })
 
   it('UNSUPPORTED_EXTENSION for other extensions', async () => {
-    expect(await code(createFile(path.join(root, 'note.txt'), door))).toBe('UNSUPPORTED_EXTENSION')
+    expect(await code(createFile(path.join(root, 'page.txt'), door))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(createFile(path.join(root, 'data.json'), door))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(createFile(path.join(root, 'script.py'), door))).toBe('UNSUPPORTED_EXTENSION')
     expect(await code(createFile(path.join(root, 'report.pdf'), door))).toBe('UNSUPPORTED_EXTENSION')
@@ -165,7 +165,7 @@ describe('createFile with content (Bible B, GRO-2202)', () => {
     expect(body.size).toBe(Buffer.byteLength(written))
   })
 
-  it('the object form without content creates a note holding only its id', async () => {
+  it('the object form without content creates a page holding only its id', async () => {
     const md = path.join(root, 'NewFolder', 'plain.md')
     const body = await createFile({ path: md }, door)
     expect(await readFile(md, 'utf8')).toBe(`---\nid: ${body.id}\n---\n`)
@@ -186,7 +186,7 @@ describe('createFile with content (Bible B, GRO-2202)', () => {
   })
 })
 
-describe('createFile gives the note its id (YAZ-2293 D3, YAZ-2677 D4)', () => {
+describe('createFile gives the page its id (YAZ-2293 D3, YAZ-2677 D4)', () => {
   const at = (name: string) => path.join(root, 'NewFolder', name)
 
   it('a body with no frontmatter gains a block and keeps its bytes', async () => {
@@ -197,7 +197,7 @@ describe('createFile gives the note its id (YAZ-2293 D3, YAZ-2677 D4)', () => {
   it("an id already in the seed (a template's) is replaced, never copied", async () => {
     const body = await createFile({ path: at('from-template.md'), content: '---\nid: k3m9x2pq7abc\nstatus: idea\n---\n' }, door)
     expect(body.id).not.toBe('k3m9x2pq7abc')
-    expect(isNoteId(body.id)).toBe(true)
+    expect(isPageId(body.id)).toBe(true)
     expect(await readFile(at('from-template.md'), 'utf8')).toBe(`---\nid: ${body.id}\nstatus: idea\n---\n`)
   })
 
@@ -214,7 +214,7 @@ describe('createFile gives the note its id (YAZ-2293 D3, YAZ-2677 D4)', () => {
     expect(body.id).toMatch(/^YAZ-[1-9]\d*$/)
   })
 
-  it('uses the id the caller took from the door (`fs:mint-note-id`), and takes no second number for it', async () => {
+  it('uses the id the caller took from the door (`fs:mint-page-id`), and takes no second number for it', async () => {
     const [id] = await door.mint(1)
     const taken = door.given.length
     const body = await createFile({ path: at('given.md'), id }, door)
@@ -241,7 +241,7 @@ describe('createFile gives the note its id (YAZ-2293 D3, YAZ-2677 D4)', () => {
     await expect(stat(at('bad-id.md'))).rejects.toThrow()
   })
 
-  it('S31: a create that fails after its number was taken leaves a gap: the next note gets the next number', async () => {
+  it('S31: a create that fails after its number was taken leaves a gap: the next page gets the next number', async () => {
     await createFile(at('taken-name.md'), door)
     const before = door.given.length
     expect(await code(createFile(at('taken-name.md'), door))).toBe('ALREADY_EXISTS')
@@ -250,11 +250,11 @@ describe('createFile gives the note its id (YAZ-2293 D3, YAZ-2677 D4)', () => {
     expect((await createFile(at('after-the-gap.md'), door)).id).toBe(`YAZ-${Number(lost.slice(4)) + 1}`)
   })
 
-  it('R18: the number is taken before the note is written', async () => {
+  it('R18: the number is taken before the page is written', async () => {
     const order: string[] = []
-    const watched = { letters: ['YAZ'], mint: async () => (order.push(`mint, note there: ${await stat(at('ordered.md')).then(() => true, () => false)}`), ['YAZ-900']) }
+    const watched = { letters: ['YAZ'], mint: async () => (order.push(`mint, page there: ${await stat(at('ordered.md')).then(() => true, () => false)}`), ['YAZ-900']) }
     await createFile(at('ordered.md'), watched)
-    expect(order).toEqual(['mint, note there: false'])
+    expect(order).toEqual(['mint, page there: false'])
     expect(await readFile(at('ordered.md'), 'utf8')).toBe('---\nid: YAZ-900\n---\n')
   })
 })
@@ -273,22 +273,22 @@ describe('in a vault that does not use IDs, a create is what Finder would make (
     expect(await readdir(p)).toEqual([])
   })
 
-  it('a request shaped for a vault that uses IDs — a folder with a `title`, a note with an `id` — is refused, and nothing is made: a window one answer behind writes nothing here', async () => {
+  it('a request shaped for a vault that uses IDs — a folder with a `title`, a page with an `id` — is refused, and nothing is made: a window one answer behind writes nothing here', async () => {
     const dir = path.join(plain, 'q3-plans')
-    const note = path.join(plain, 'linked-k3m9x2pq7abc.md')
+    const page = path.join(plain, 'linked-k3m9x2pq7abc.md')
     expect(await code(createDir({ path: dir, title: 'Q3 Plans' }, null))).toBe('BAD_REQUEST')
-    expect(await code(createFile({ path: note, content: '---\ntitle: Linked\n---\n', id: 'YAZ-12' }, null))).toBe('BAD_REQUEST')
-    expect((await readdir(plain)).filter((name) => name === 'q3-plans' || name === path.basename(note))).toEqual([])
+    expect(await code(createFile({ path: page, content: '---\ntitle: Linked\n---\n', id: 'YAZ-12' }, null))).toBe('BAD_REQUEST')
+    expect((await readdir(plain)).filter((name) => name === 'q3-plans' || name === path.basename(page))).toEqual([])
   })
 
-  it('a new note is empty, and the answer carries no id', async () => {
-    const p = path.join(plain, 'Meeting notes.md')
+  it('a new page is empty, and the answer carries no id', async () => {
+    const p = path.join(plain, 'Meeting pages.md')
     const body = await createFile(p, null)
     expect(body).toEqual({ path: p, mtime: expect.any(Number), size: 0 })
     expect(await readFile(p, 'utf8')).toBe('')
   })
 
-  it('a note created with content holds exactly that content: a template\u2019s own `id:` and `title:` lines stay as they are', async () => {
+  it('a page created with content holds exactly that content: a template\u2019s own `id:` and `title:` lines stay as they are', async () => {
     const content = '---\nid: k3m9x2pq7abc\ntitle: From the template\nstatus: idea\n---\n# Body\n'
     const body = await createFile({ path: path.join(plain, 'From template.md'), content }, null)
     expect(body.id).toBeUndefined()
@@ -297,21 +297,21 @@ describe('in a vault that does not use IDs, a create is what Finder would make (
 
 
   it('a name that is taken is refused, and nothing is written', async () => {
-    expect(await code(createFile({ path: path.join(plain, 'Meeting notes.md'), content: 'clobber' }, null))).toBe('ALREADY_EXISTS')
+    expect(await code(createFile({ path: path.join(plain, 'Meeting pages.md'), content: 'clobber' }, null))).toBe('ALREADY_EXISTS')
     expect(await code(createDir({ path: path.join(plain, 'Q3 Plans') }, null))).toBe('ALREADY_EXISTS')
   })
 
   it('after all of it the vault holds what was asked for and nothing else', async () => {
     expect(await vaultFiles(plain)).toEqual({
       'Q3 Plans/': '',
-      'Meeting notes.md': '',
+      'Meeting pages.md': '',
       'From template.md': '---\nid: k3m9x2pq7abc\ntitle: From the template\nstatus: idea\n---\n# Body\n',
     })
   })
 })
 
 describe('a created file can be seen to go (YAZ-2380)', () => {
-  it('deleting a note the app created, from outside the app, is announced by the watcher', async () => {
+  it('deleting a page the app created, from outside the app, is announced by the watcher', async () => {
     const seen: string[] = []
     let ready!: () => void
     const listening = new Promise<void>((resolve) => (ready = resolve))

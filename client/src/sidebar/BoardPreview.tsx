@@ -4,7 +4,7 @@
  * never a surface: nothing in it can be clicked, and it never steals the hover from the row.
  *
  * The Sidebar decides WHEN (the dwell and every close); this decides WHAT, and `previewPlacement`
- * WHERE. A note's panel (`NotePreview`, YAZ-3075 D2) takes the same box, in its taller `'note'` shape.
+ * WHERE. A page's panel (`PagePreview`, YAZ-3075 D2) takes the same box, in its taller `'page'` shape.
  */
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'

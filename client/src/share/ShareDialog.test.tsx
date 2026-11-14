@@ -26,7 +26,7 @@ vi.mock('./shareContent', () => ({ buildShareContent: vi.fn(async () => '{"type"
 
 import { api, BridgeRequestError } from '../api'
 import { buildShareContent } from './shareContent'
-import { noteBoardSaved, resetLiveShareForTests } from './liveShare'
+import { pageBoardSaved, resetLiveShareForTests } from './liveShare'
 import { ShareDialog } from './ShareDialog'
 import { liveLine } from './shareText'
 
@@ -164,7 +164,7 @@ describe('Share dialog states (YAZ-1888)', () => {
     expect(status().textContent).toBe('Uploading…')
     expect(status().className).toContain('share-status--busy')
     act(() => root?.unmount())
-    noteBoardSaved(ROOT, P, 1e9)
+    pageBoardSaved(ROOT, P, 1e9)
     share.get.mockResolvedValue(entry())
     await mount()
     expect(status().textContent).toBe('Waiting to upload changes…')

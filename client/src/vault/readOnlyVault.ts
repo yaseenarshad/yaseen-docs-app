@@ -1,8 +1,8 @@
 /**
  * READ ONLY FOR THE WHOLE VAULT (YAZ-4939): Settings › This vault › "Read only", Off (default) · On, in
  * `.yaseendocs/read-only.json` through the vault-config door, as "Clicking a link" is (`linkClick.ts`): re-read when
- * the file changes, Off with no file, nothing written until `save`. With On every note, drawing, diagram, code tab,
- * folder page cell and property of the vault opens read only; the setting writes NOTHING into a note or a board (each
+ * the file changes, Off with no file, nothing written until `save`. With On every page, drawing, diagram, code tab,
+ * folder page cell and property of the vault opens read only; the setting writes NOTHING into a page or a board (each
  * keeps its own switch, `shared/readOnly.ts`). `Editor` hands the vault's On to every page it draws through
  * `VaultReadOnly`; each page's timed "Allow edits" is its own (`useTimedUnlock`).
  *
@@ -31,7 +31,7 @@ export const FILE_ACTIONS_ALLOW_MS = FILE_ACTIONS_ALLOW.ten
 /** What a refused file action says (the sheet's first words; a folder page's create error). */
 export const VAULT_READ_ONLY_TIP = 'This vault is read only'
 
-/** What the file holds, or the default for anything else: only `true` counts, as a note's `readonly` does. */
+/** What the file holds, or the default for anything else: only `true` counts, as a page's `readonly` does. */
 export function sanitizeReadOnlyVault(raw: unknown): ReadOnlyVaultSettings {
   const on = typeof raw === 'object' && raw !== null ? (raw as { on?: unknown }).on : undefined
   return { on: on === true }

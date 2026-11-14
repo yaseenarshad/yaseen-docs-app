@@ -1,8 +1,8 @@
 /**
- * The marker plugin's step on one keystroke (YAZ-3727 D2, B4). Three 6,000-line notes: bullets with numbered children,
- * a flat list of top-level bullets (the most common note shape), and one flat numbered list (YAZ-3855); a character
+ * The marker plugin's step on one keystroke (YAZ-3727 D2, B4). Three 6,000-line pages: bullets with numbered children,
+ * a flat list of top-level bullets (the most common page shape), and one flat numbered list (YAZ-3855); a character
  * typed into a line in the middle. Runs in the `perf` project (YAZ-740); the budget holds the median of 50, after 10
- * warm-up runs (`test-perf.ts`), and the worst run gets a loose ceiling. Mounting a note takes ~10 s in jsdom, so each
+ * warm-up runs (`test-perf.ts`), and the worst run gets a loose ceiling. Mounting a page takes ~10 s in jsdom, so each
  * test has 60 s.
  *
  * The budget is the PLUGIN'S OWN WORK: its `appendTransaction` on the typed transaction, which is built and applied
@@ -16,13 +16,13 @@ import { listMarkersKey } from './listMarkers'
 
 afterEach(unmountAll)
 
-const NOTE = `${Array.from({ length: 1000 }, (_, i) => `* item ${i}\n  1. a ${i}\n  2. b ${i}\n     * c ${i}\n  3. d ${i}\n* tail ${i}`).join('\n')}\n`
+const PAGE = `${Array.from({ length: 1000 }, (_, i) => `* item ${i}\n  1. a ${i}\n  2. b ${i}\n     * c ${i}\n  3. d ${i}\n* tail ${i}`).join('\n')}\n`
 const FLAT_BULLETS = `${Array.from({ length: 6000 }, (_, i) => `* line ${i}`).join('\n')}\n`
 const FLAT_NUMBERS = `${Array.from({ length: 6000 }, (_, i) => `${i + 1}. line ${i}`).join('\n')}\n`
 
 /** 60 keystrokes at the end of `text`'s first character; the plugin step of the last 50, logged as `name`. */
-async function keystroke(note: string, text: string, name: string): Promise<{ median: number; worst: number }> {
-  const { crepe, view } = await mount(note)
+async function keystroke(page: string, text: string, name: string): Promise<{ median: number; worst: number }> {
+  const { crepe, view } = await mount(page)
   const plugin = listMarkersKey.get(view.state)!
   const at = posOf(crepe, text) + 1
   const ms: number[] = []
@@ -42,16 +42,16 @@ async function keystroke(note: string, text: string, name: string): Promise<{ me
   return { median: median(ms), worst }
 }
 
-describe('list markers on a big note', () => {
+describe('list markers on a big page', () => {
   it('perf smoke: one keystroke at 6,000 lines, the plugin step takes under 1 ms', async () => {
-    expect((await keystroke(NOTE, 'b 500', '6,000 lines')).median).toBeLessThan(budgetMs(1))
+    expect((await keystroke(PAGE, 'b 500', '6,000 lines')).median).toBeLessThan(budgetMs(1))
   }, 60_000)
 
   it.each([
     ['6,000 top-level bullets', FLAT_BULLETS],
     ['a 6,000-item numbered list', FLAT_NUMBERS],
-  ])('perf smoke: one keystroke in %s, the plugin step takes under 1 ms', async (name, note) => {
-    const { median: mid, worst } = await keystroke(note, 'line 3000', name)
+  ])('perf smoke: one keystroke in %s, the plugin step takes under 1 ms', async (name, page) => {
+    const { median: mid, worst } = await keystroke(page, 'line 3000', name)
     expect(mid).toBeLessThan(budgetMs(1))
     expect(worst).toBeLessThan(budgetMs(20))
   }, 60_000)

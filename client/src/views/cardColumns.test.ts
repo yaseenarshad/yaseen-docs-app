@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { NoteCardRecord } from '@shared/cardLine'
+import type { CardRecord } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import { defaultLabel, propertyKeys, runView } from './engine'
@@ -8,12 +8,12 @@ import { propertyValues } from './view/filterRows'
 import { typeWord } from './view/typeWord'
 
 /**
- * The folder tables' note card counts (YAZ-4967, idea 2): "Cards" (`file.cards`) and "Due" (`file.due`), one row per
+ * The folder tables' card counts (YAZ-4967, idea 2): "Cards" (`file.cards`) and "Due" (`file.due`), one row per
  * page, read off the index's `cards` — no file read. Opt-in like the other file fields: offered among the hidden
  * columns only where a row holds a card. Blank, not 0, where there is nothing to count.
  */
 const NOW = new Date(2026, 10, 12, 9, 0).getTime()
-const page = (name: string, cards?: NoteCardRecord[]): IndexRecord => ({
+const page = (name: string, cards?: CardRecord[]): IndexRecord => ({
   path: `/v/Deck/${name}.md`, name: `${name}.md`, basename: name, title: name, folder: 'Deck', ext: 'md', size: 1, ctime: 1, mtime: 1,
   properties: {}, aliases: [], tags: [], links: [], embeds: [], ...(cards !== undefined && { cards }),
 })
@@ -88,20 +88,20 @@ describe('YAZ-5047: the Type column (`file.kind`): Page, Card, Folder', () => {
   const kinds = (opts: Parameters<typeof runView>[3]) => runView({ views: [TV] }, TV, recs, { now: NOW, ...opts }).rows.map((r) => [r.record.title, r.values['file.kind']])
   const ON = { ...DEFAULT_REVIEW_SETTINGS, enabled: true }
 
-  it('is labelled "Type"; with Review on its values are note, card and folder, which the cell says as Page, Card and Folder', () => {
+  it('is labelled "Type"; with Review on its values are page, card and folder, which the cell says as Page, Card and Folder', () => {
     expect(defaultLabel('file.kind')).toBe('Type')
-    expect(kinds({ cardSettings: ON })).toEqual([['Sub', 'folder'], ['Plain', 'note'], ['Capital of France', 'card']])
-    expect(['note', 'card', 'folder'].map(typeWord)).toEqual(['Page', 'Card', 'Folder'])
+    expect(kinds({ cardSettings: ON })).toEqual([['Sub', 'folder'], ['Plain', 'page'], ['Capital of France', 'card']])
+    expect(['page', 'card', 'folder'].map(typeWord)).toEqual(['Page', 'Card', 'Folder'])
   })
 
   it('with Review off (or no settings for the vault) a card file reads as a Page', () => {
-    for (const cardSettings of [{ ...DEFAULT_REVIEW_SETTINGS, enabled: false }, undefined]) expect(kinds({ cardSettings })[2]).toEqual(['Capital of France', 'note'])
+    for (const cardSettings of [{ ...DEFAULT_REVIEW_SETTINGS, enabled: false }, undefined]) expect(kinds({ cardSettings })[2]).toEqual(['Capital of France', 'page'])
   })
 
-  it('the formula value `file.kind` is `card` for a card file; a page stays `note` (until YAZ-5036)', () => {
+  it('the formula value `file.kind` is `card` for a card file; a page stays `page` (until YAZ-5036)', () => {
     const view = { type: 'table' as const, name: 'T', order: ['file.name', 'formula.k'] }
     const values = runView({ views: [view], formulas: { k: 'file.kind' } }, view, recs.slice(0, 2), { now: NOW }).rows.map((r) => r.values['formula.k'])
-    expect(values).toEqual(['note', 'card'])
+    expect(values).toEqual(['page', 'card'])
   })
 
   it('is off by default; offered among the hidden columns where a row is a card file, and its filter offers card', () => {
@@ -109,8 +109,8 @@ describe('YAZ-5047: the Type column (`file.kind`): Page, Card, Folder', () => {
     expect(propertyKeys({ views: [plain] }, plain, recs)).not.toContain('file.kind')
     expect(allPropertyKeys({ views: [plain] }, plain, recs)).toContain('file.kind')
     expect(allPropertyKeys({ views: [plain] }, plain, [page('Plain')])).not.toContain('file.kind')
-    expect(propertyValues('file.kind', recs, null)).toEqual(['note', 'card', 'folder'])
-    expect(propertyValues('file.kind', [page('Plain')], null)).toEqual(['note', 'folder'])
+    expect(propertyValues('file.kind', recs, null)).toEqual(['page', 'card', 'folder'])
+    expect(propertyValues('file.kind', [page('Plain')], null)).toEqual(['page', 'folder'])
   })
 
   it('Cards, Due and Archived count the cards that live in the file, never the cards it embeds', () => {

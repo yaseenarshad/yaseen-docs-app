@@ -1,5 +1,5 @@
 /**
- * The note's fold-all button (YAZ-3938 D1, D2, D9) on a real editor, with a read, a run and a subscribe like the ones
+ * The page's fold-all button (YAZ-3938 D1, D2, D9) on a real editor, with a read, a run and a subscribe like the ones
  * `Editor.tsx` gives it: the folds are the ⌘⇧U / ⌘⇧I command's. The wiring in `Editor.tsx` itself is
  * pinned in `Editor.test.tsx`; the code tab's button is in `code/CodeEditor.test.tsx`.
  */
@@ -40,7 +40,7 @@ afterEach(async () => {
   }
 })
 
-/** A real note and the button as the note's chips row draws it. */
+/** A real page and the button as the page's chips row draws it. */
 async function mount(markdown: string, read?: (view: EditorView) => FoldNext, options: Pick<Parameters<typeof createCrepe>[0], 'folding' | 'headingFolding'> = {}) {
   const host = document.createElement('div')
   document.body.appendChild(host)
@@ -64,7 +64,7 @@ async function mount(markdown: string, read?: (view: EditorView) => FoldNext, op
           view.dom.addEventListener(FOLDS_CHANGED_EVENT, changed)
           return () => view.dom.removeEventListener(FOLDS_CHANGED_EVENT, changed)
         }}
-        keys={{ collapse: 'note.foldAll', expand: 'note.unfoldAll' }}
+        keys={{ collapse: 'page.foldAll', expand: 'page.unfoldAll' }}
       />,
     ),
   )
@@ -83,28 +83,28 @@ const chevrons = (button: HTMLButtonElement): 'up' | 'down' | 'other' =>
 /** The pointer comes to the button: React's onPointerEnter, from a pointerover. */
 const hover = (button: HTMLButtonElement) => act(async () => void button.dispatchEvent(new MouseEvent('pointerover', { bubbles: true })))
 
-/** Enter through the note's own key chain. */
+/** Enter through the page's own key chain. */
 function enter(view: EditorView): boolean {
   const event = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true })
   return view.someProp('handleKeyDown', (handler) => handler(view, event)) ?? false
 }
 
-/** ⌘Z (Ctrl+Z in jsdom) through the note's own key chain. */
+/** ⌘Z (Ctrl+Z in jsdom) through the page's own key chain. */
 function undo(view: EditorView): boolean {
   const event = new KeyboardEvent('keydown', { key: 'z', code: 'KeyZ', keyCode: 90, ...(/Mac/.test(navigator.platform) ? { metaKey: true } : { ctrlKey: true }), bubbles: true, cancelable: true })
   return view.someProp('handleKeyDown', (handler) => handler(view, event)) ?? false
 }
 
-describe('the note fold-all button (YAZ-3938)', () => {
+describe('the page fold-all button (YAZ-3938)', () => {
   it('D1: a click folds every bullet and heading, the next opens them all; one ⌘Z undoes a click; the Markdown never changes', async () => {
     const { host, view, button, crepe } = await mount(MIXED)
     const before = getMarkdownForSave(crepe)
     await hover(button)
-    expect(button.getAttribute('aria-label')).toBe(`Collapse all (${hintOf('note.foldAll')})`)
+    expect(button.getAttribute('aria-label')).toBe(`Collapse all (${hintOf('page.foldAll')})`)
 
     await click(button)
     expect(folded(host)).toBe(3)
-    expect(button.getAttribute('aria-label')).toBe(`Expand all (${hintOf('note.unfoldAll')})`)
+    expect(button.getAttribute('aria-label')).toBe(`Expand all (${hintOf('page.unfoldAll')})`)
     expect(undo(view)).toBe(true)
     expect(folded(host)).toBe(0)
 
@@ -132,7 +132,7 @@ describe('the note fold-all button (YAZ-3938)', () => {
     expect(chevrons(button)).toBe('up')
     await click(button)
     expect(chevrons(button)).toBe('down')
-    // A chevron in the note, with the pointer elsewhere: the fold change alone turns the button back.
+    // A chevron in the page, with the pointer elsewhere: the fold change alone turns the button back.
     await act(async () => host.querySelector<HTMLButtonElement>(`.${OUTLINE_TOGGLE_CLASS}`)!.click())
     expect(chevrons(button)).toBe('up')
     expect(button.getAttribute('aria-label')).toMatch(/^Collapse all/)
@@ -144,7 +144,7 @@ describe('the note fold-all button (YAZ-3938)', () => {
     expect(chevrons(button)).toBe('up')
   })
 
-  it('D9: a note that opens again with every fold closed shows "Expand all" before any look', async () => {
+  it('D9: a page that opens again with every fold closed shows "Expand all" before any look', async () => {
     let bullets: readonly string[] = []
     let headings: readonly string[] = []
     const first = await mount(MIXED, undefined, { folding: { onCollapsedKeysChange: (keys) => void (bullets = keys) }, headingFolding: { onCollapsedKeysChange: (keys) => void (headings = keys) } })
@@ -162,7 +162,7 @@ describe('the note fold-all button (YAZ-3938)', () => {
     expect(folded(host)).toBe(0)
   })
 
-  it('works in a read-only note: the folds are a view action, not an edit (YAZ-3125)', async () => {
+  it('works in a read-only page: the folds are a view action, not an edit (YAZ-3125)', async () => {
     const { host, button, crepe } = await mount(MIXED)
     crepe.setReadonly(true)
     await click(button)
@@ -171,12 +171,12 @@ describe('the note fold-all button (YAZ-3938)', () => {
 
   it("the label names the user's key from Settings › Hotkeys, and none for \"No key\"", async () => {
     const settings = storage.getSettings()
-    storage.setSettings({ ...settings, hotkeys: { 'note.foldAll': 'CmdOrCtrl+Alt+K', 'note.unfoldAll': null } })
+    storage.setSettings({ ...settings, hotkeys: { 'page.foldAll': 'CmdOrCtrl+Alt+K', 'page.unfoldAll': null } })
     try {
       const { button } = await mount(MIXED)
       await hover(button)
-      expect(button.getAttribute('aria-label')).toBe(`Collapse all (${hintOf('note.foldAll')})`)
-      expect(hintOf('note.foldAll')).toMatch(/K$/)
+      expect(button.getAttribute('aria-label')).toBe(`Collapse all (${hintOf('page.foldAll')})`)
+      expect(hintOf('page.foldAll')).toMatch(/K$/)
       await click(button)
       expect(button.getAttribute('aria-label')).toBe('Expand all')
     } finally {

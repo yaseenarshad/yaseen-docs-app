@@ -1,7 +1,7 @@
 /**
- * The page settings cog and the line numbers of a note, in the REAL app (YAZ-2643):
- *  - THE COG is the first chip of a Markdown note. Its menu has the switch "Line numbers" and the
- *    word and character count of the note body. (The other switches of the menu are YAZ-2700's,
+ * The page settings cog and the line numbers of a page, in the REAL app (YAZ-2643):
+ *  - THE COG is the first chip of a Markdown page. Its menu has the switch "Line numbers" and the
+ *    word and character count of the page body. (The other switches of the menu are YAZ-2700's,
  *    `tableOfContents.spec.ts`, and "Section indent", YAZ-2709, `sectionIndent.spec.ts`.)
  *  - A LINE NUMBER is a line of the file ON DISK, frontmatter included. The numbers are built when
  *    the switch turns on, when an outside change lands, and when a save settles. This is the one
@@ -9,7 +9,7 @@
  *  - A block of two or more lines carries its END too (D7), a code block's own gutter counts in
  *    lines of the file (D8), and the scroller makes the numbers' lane with 64px of left padding (D9).
  *  - NOTHING IS STORED: the switch is state of the mounted editor. It never reaches the state file,
- *    and a note opened again starts with the numbers off.
+ *    and a page opened again starts with the numbers off.
  *
  * Every expected number was counted by hand in the file text. The second check cannot be fooled by
  * a wrong count: the line of the file on disk at each number holds that block's first word.
@@ -24,7 +24,7 @@ import { appWindow, clickMenuItem, editorOf, fileRow, launchApp, layer, readStat
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = 'Skill.md'
+const PAGE = 'Skill.md'
 /** What an AI writes: frontmatter, `-` bullets, a run of blank lines. */
 const BODY = [
   '---', //                    1
@@ -48,7 +48,7 @@ const BODY = [
   'Last paragraph.', //        19
   '',
 ].join('\n')
-/** The same note after an agent's edit: one more property, and a paragraph under the heading. */
+/** The same page after an agent's edit: one more property, and a paragraph under the heading. */
 const ADDED = 'agent-added-line-e2e'
 const EDITED = [
   '---', //                    1
@@ -79,7 +79,7 @@ const TYPED = 'typed-line-e2e'
 
 let userData: string
 let vault: string
-let notePath: string
+let pagePath: string
 let app: ElectronApplication
 let win: Page
 
@@ -89,7 +89,7 @@ const menu = (w: Page) => layer(w).locator('.page-settings__menu')
 const lineSwitch = (w: Page) => menu(w).locator('button[aria-pressed]', { hasText: 'Line numbers' })
 const host = (w: Page) => layer(w).locator('.editor-host')
 
-/** Each numbered block of the visible note, in page order: its number, its tag, the first word of its text. */
+/** Each numbered block of the visible page, in page order: its number, its tag, the first word of its text. */
 const numbered = (w: Page) =>
   editorOf(w)
     .locator('[data-line]')
@@ -110,7 +110,7 @@ const codeGutter = (w: Page): Promise<string[]> =>
 
 /** The first word of each numbered paragraph and heading must be on the line of the file ON DISK that its number names. */
 async function expectWordsOnTheirDiskLines(w: Page): Promise<void> {
-  const disk = (await readFile(notePath, 'utf8')).split('\n')
+  const disk = (await readFile(pagePath, 'utf8')).split('\n')
   const blocks = (await numbered(w)).filter(({ tag, word }) => /^(P|H[1-6])$/.test(tag) && word !== '')
   expect(blocks.length).toBeGreaterThan(0)
   for (const { line, word } of blocks) expect(disk[line - 1], `line ${line} should hold "${word}"`).toContain(word)
@@ -119,8 +119,8 @@ async function expectWordsOnTheirDiskLines(w: Page): Promise<void> {
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'pagesettings-userdata-'))
   vault = await mkdtemp(path.join(tmpdir(), 'pagesettings-vault-'))
-  notePath = path.join(vault, NOTE)
-  await writeFile(notePath, BODY)
+  pagePath = path.join(vault, PAGE)
+  await writeFile(pagePath, BODY)
 })
 
 test.afterAll(async () => {
@@ -129,7 +129,7 @@ test.afterAll(async () => {
 })
 
 test('step 1 — the cog opens the menu; "Line numbers" shows each block’s line in the file, frontmatter counted', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
+  app = await launchApp({ userData, seedState: seededState(vault, pagePath) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win).locator('p:text-is("Last paragraph.")')).toBeVisible()
 
@@ -159,7 +159,7 @@ test('step 1 — the cog opens the menu; "Line numbers" shows each block’s lin
   await expect.poll(() => codeGutter(win)).toEqual(['16'])
   // The numbers' own lane: the scroller's left padding, so the page slides right while they show.
   await expect(host(win)).toHaveCSS('padding-left', '64px')
-  expect(await readFile(notePath, 'utf8')).toBe(BODY)
+  expect(await readFile(pagePath, 'utf8')).toBe(BODY)
   await shoot(win, 'line-numbers-01-on')
 
   // Esc closes the menu and gives the focus back to the cog.
@@ -170,7 +170,7 @@ test('step 1 — the cog opens the menu; "Line numbers" shows each block’s lin
 })
 
 test('step 2 — an agent edits the file on disk; the numbers follow the new file', async () => {
-  await writeFile(notePath, EDITED)
+  await writeFile(pagePath, EDITED)
 
   await expect(editorOf(win)).toContainText(ADDED, { timeout: 15_000 })
   await expect.poll(() => numbers(win), { timeout: 15_000 }).toEqual([7, 9, 12, 14, 15, 16, 18, 22])
@@ -179,7 +179,7 @@ test('step 2 — an agent edits the file on disk; the numbers follow the new fil
   await expect(codeBlock(win)).toHaveAttribute('data-line-end', '20')
   await expect.poll(() => codeGutter(win)).toEqual(['19'])
   await expect(win.locator('.conflict-bar')).toHaveCount(0)
-  expect(await readFile(notePath, 'utf8')).toBe(EDITED)
+  expect(await readFile(pagePath, 'utf8')).toBe(EDITED)
   await shoot(win, 'line-numbers-02-outside-change')
 })
 
@@ -189,8 +189,8 @@ test('step 3 — a typed block gets its number when the save settles, from the f
   await win.keyboard.press('Enter')
   await win.keyboard.type(TYPED, { delay: 5 })
 
-  await expect.poll(async () => readFile(notePath, 'utf8'), { timeout: 10_000 }).toContain(TYPED)
-  const saved = await readFile(notePath, 'utf8')
+  await expect.poll(async () => readFile(pagePath, 'utf8'), { timeout: 10_000 }).toContain(TYPED)
+  const saved = await readFile(pagePath, 'utf8')
   expect(saved.startsWith('---\nstatus: done\nowner: e2e\nreviewed: true\n---\n'), saved.slice(0, 200)).toBe(true)
   // The editor wrote the body again in its own style, so the expected line comes from the saved bytes.
   const typedLine = saved.split('\n').findIndex((text) => text.includes(TYPED)) + 1
@@ -214,16 +214,16 @@ test('step 4 — the switch turns the numbers off; a second click on the cog clo
 
   await cog(win).click()
   await expect(menu(win)).toHaveCount(0)
-  expect(await readFile(notePath, 'utf8')).toContain(TYPED)
+  expect(await readFile(pagePath, 'utf8')).toContain(TYPED)
 })
 
-test('step 5 — the switch is never stored: a note closed with the numbers on opens again with them off', async () => {
+test('step 5 — the switch is never stored: a page closed with the numbers on opens again with them off', async () => {
   await cog(win).click()
   await lineSwitch(win).click()
   await cog(win).click()
   await expect.poll(async () => (await numbers(win)).length, { timeout: 10_000 }).toBe(9)
 
-  // Nothing of the switch in the state file (the vault's own temp name aside; the note is `Skill.md`).
+  // Nothing of the switch in the state file (the vault's own temp name aside; the page is `Skill.md`).
   expect(JSON.stringify(await readState(userData)).replaceAll(vault, '')).not.toMatch(/line.?numbers|page.?settings/i)
 
   await clickMenuItem(app, 'menu.file.close-tab', 'w1')

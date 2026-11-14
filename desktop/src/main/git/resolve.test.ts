@@ -13,7 +13,7 @@ import { syncPass } from './sync'
  * YAZ-1897 (Draw) as ported by YAZ-3039, against REAL git: two machines and a bare-repo "GitHub",
  * driven through the real `syncPass`. Every scenario ends the same way — both machines sync until
  * they agree, and then they must hold byte-identical vaults — plus the scenario's own outcome (the
- * S-numbers are the catalogue on YAZ-1897). The Docs half (YAZ-3028 D4): a NOTE conflict still
+ * S-numbers are the catalogue on YAZ-1897). The Docs half (YAZ-3028 D4): a PAGE conflict still
  * stops with today's words, and leaves both vaults exactly as they were.
  */
 
@@ -80,8 +80,8 @@ describe('resolveRebase via syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     const { a } = await twoMachines({ 'b.excalidraw': board([r1]) })
     await syncPass(a.root)
     await a.git('config', 'core.ignorecase', 'false')
-    expect(await a.git('check-attr', 'merge', '--', 'lo.drawio', 'UP.DRAWIO', 'Mixed.DrawIO', 'E.EXCALIDRAW', 'x.drawio.svg', 'notes.md')).toBe(
-      ['lo.drawio: merge: unset', 'UP.DRAWIO: merge: unset', 'Mixed.DrawIO: merge: unset', 'E.EXCALIDRAW: merge: unset', 'x.drawio.svg: merge: unspecified', 'notes.md: merge: unspecified'].join('\n'),
+    expect(await a.git('check-attr', 'merge', '--', 'lo.drawio', 'UP.DRAWIO', 'Mixed.DrawIO', 'E.EXCALIDRAW', 'x.drawio.svg', 'pages.md')).toBe(
+      ['lo.drawio: merge: unset', 'UP.DRAWIO: merge: unset', 'Mixed.DrawIO: merge: unset', 'E.EXCALIDRAW: merge: unset', 'x.drawio.svg: merge: unspecified', 'pages.md: merge: unspecified'].join('\n'),
     )
   })
 
@@ -286,7 +286,7 @@ describe('resolveRebase via syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     expect(shapesOf(a.read('b.excalidraw'))[0]?.updated).toBe(3000)
   })
 
-  // ---------- the Docs half (YAZ-3028 D4, D12): a note conflict never merges ----------
+  // ---------- the Docs half (YAZ-3028 D4, D12): a page conflict never merges ----------
 
   const STOP = 'the same lines changed on two machines — nothing was lost, but this needs a human'
 
@@ -305,18 +305,18 @@ describe('resolveRebase via syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     expect((await a.git('rev-parse', '--verify', '-q', BEFORE_MERGE_REF)) === '').toBe(true)
   }
 
-  // YAZ-4615 D4, D9 (reversing YAZ-3028 D4/D12 for notes): a note no longer stops the vault's sync.
-  const NOTE = (comments: string) => `---\ntitle: Plan\n${comments === '' ? '' : `comments:\n${comments}`}---\nline one\nline two\n`
+  // YAZ-4615 D4, D9 (reversing YAZ-3028 D4/D12 for pages): a page no longer stops the vault's sync.
+  const PAGE = (comments: string) => `---\ntitle: Plan\n${comments === '' ? '' : `comments:\n${comments}`}---\nline one\nline two\n`
   const entry = (id: string, n: number, at: string, body: string, by?: string) =>
     `  - id: ${id}\n    n: ${n}\n    at: ${at}\n${by === undefined ? '' : `    by: ${by}\n`}    body: ${body}\n`
 
-  it('YAZ-4615 D4: two people comment on one note between syncs — both comments stay, and my clashing #2 becomes #3', async () => {
+  it('YAZ-4615 D4: two people comment on one page between syncs — both comments stay, and my clashing #2 becomes #3', async () => {
     const one = entry('aaaa0001', 1, '2026-11-01T10:00:00Z', 'First')
-    const { a, b } = await twoMachines({ 'plan.md': NOTE(one) })
-    await b.write('plan.md', NOTE(one + entry('bbbb0002', 2, '2026-11-02T10:00:00Z', 'From Sam', 'sam')))
-    await a.write('plan.md', NOTE(one + entry('cccc0003', 2, '2026-11-02T11:00:00Z', 'From me', 'yaseen')))
+    const { a, b } = await twoMachines({ 'plan.md': PAGE(one) })
+    await b.write('plan.md', PAGE(one + entry('bbbb0002', 2, '2026-11-02T10:00:00Z', 'From Sam', 'sam')))
+    await a.write('plan.md', PAGE(one + entry('cccc0003', 2, '2026-11-02T11:00:00Z', 'From me', 'yaseen')))
     const status = await meet(a, b)
-    expect(status.merged).toEqual([{ path: 'plan.md', author: 'Sam', clashes: 0, kind: 'note', title: 'Plan', renumbered: [{ from: '#2', to: '#3' }] }])
+    expect(status.merged).toEqual([{ path: 'plan.md', author: 'Sam', clashes: 0, kind: 'page', title: 'Plan', renumbered: [{ from: '#2', to: '#3' }] }])
     const list = readComments(a.read('plan.md'))
     expect(list.map((c) => [c.id, c.n, c.body])).toEqual([
       ['aaaa0001', 1, 'First'],
@@ -329,10 +329,10 @@ describe('resolveRebase via syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
   it('YAZ-4615 D4: a resolve on one machine and a reply on the other merge key by key; an edit beats a delete', async () => {
     const one = entry('aaaa0001', 1, '2026-11-01T10:00:00Z', 'First')
     const two = entry('dddd0004', 2, '2026-11-01T11:00:00Z', 'Second')
-    const { a, b } = await twoMachines({ 'plan.md': NOTE(one + two) })
+    const { a, b } = await twoMachines({ 'plan.md': PAGE(one + two) })
     // Sam resolves #1 and deletes #2; I reply to #1 and edit #2.
-    await b.write('plan.md', NOTE(one.replace('    body: First', '    resolved: 2026-11-02T09:00:00Z\n    resolved_by: sam\n    body: First')))
-    await a.write('plan.md', NOTE(one + two.replace('body: Second', 'body: Second, edited') + `  - id: eeee0005\n    n: 1\n    at: 2026-11-02T10:00:00Z\n    reply_to: aaaa0001\n    body: Reply\n`))
+    await b.write('plan.md', PAGE(one.replace('    body: First', '    resolved: 2026-11-02T09:00:00Z\n    resolved_by: sam\n    body: First')))
+    await a.write('plan.md', PAGE(one + two.replace('body: Second', 'body: Second, edited') + `  - id: eeee0005\n    n: 1\n    at: 2026-11-02T10:00:00Z\n    reply_to: aaaa0001\n    body: Reply\n`))
     await meet(a, b)
     const list = readComments(a.read('plan.md'))
     expect(list.find((c) => c.id === 'aaaa0001')).toMatchObject({ resolved: '2026-11-02T09:00:00Z', resolved_by: 'sam' })
@@ -340,15 +340,15 @@ describe('resolveRebase via syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     expect(list.find((c) => c.id === 'eeee0005')?.reply_to).toBe('aaaa0001')
   })
 
-  it('YAZ-4615 D9: a note whose text changed on both machines keeps both — theirs at the path with every comment, mine beside it with none — and sync goes on', async () => {
+  it('YAZ-4615 D9: a page whose text changed on both machines keeps both — theirs at the path with every comment, mine beside it with none — and sync goes on', async () => {
     const one = entry('aaaa0001', 1, '2026-11-01T10:00:00Z', 'First')
-    const { a, b } = await twoMachines({ 'plan.md': NOTE(one) })
-    await b.write('plan.md', NOTE(one).replace('line one', 'line one CHANGED ON B'))
-    await a.write('plan.md', NOTE(one + entry('cccc0003', 2, '2026-11-02T11:00:00Z', 'Mine')).replace('line one', 'line one CHANGED ON A'))
+    const { a, b } = await twoMachines({ 'plan.md': PAGE(one) })
+    await b.write('plan.md', PAGE(one).replace('line one', 'line one CHANGED ON B'))
+    await a.write('plan.md', PAGE(one + entry('cccc0003', 2, '2026-11-02T11:00:00Z', 'Mine')).replace('line one', 'line one CHANGED ON A'))
     const status = await meet(a, b)
     const copy = status.merged?.[0]?.copy ?? ''
     expect(copy).toMatch(/^plan \(conflict, .+\)\.md$/)
-    expect(status.merged?.[0]).toMatchObject({ path: 'plan.md', kind: 'note' })
+    expect(status.merged?.[0]).toMatchObject({ path: 'plan.md', kind: 'page' })
     expect(a.read('plan.md')).toContain('line one CHANGED ON B')
     expect(readComments(a.read('plan.md')).map((c) => c.id)).toEqual(['aaaa0001', 'cccc0003'])
     expect(a.read(copy)).toBe('---\ntitle: Plan\n---\nline one CHANGED ON A\nline two\n')
@@ -356,27 +356,27 @@ describe('resolveRebase via syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     expect((await syncPass(a.root)).state).toBe('synced')
   })
 
-  it('YAZ-4615 D9: a note conflict and a drawing conflict in one pass are both settled', async () => {
-    const { a, b } = await twoMachines({ 'note.md': 'x\n', 'b.excalidraw': board([r1, r2]) })
-    await b.write('note.md', 'sam\n')
+  it('YAZ-4615 D9: a page conflict and a drawing conflict in one pass are both settled', async () => {
+    const { a, b } = await twoMachines({ 'page.md': 'x\n', 'b.excalidraw': board([r1, r2]) })
+    await b.write('page.md', 'sam\n')
     await b.write('b.excalidraw', board([{ ...r1, x: 7, version: 2, updated: 2000 }, r2]))
-    await a.write('note.md', 'me\n')
+    await a.write('page.md', 'me\n')
     await a.write('b.excalidraw', board([r1, { ...r2, x: 13, version: 2, updated: 2000 }]))
     const status = await meet(a, b)
     expect(shapesOf(a.read('b.excalidraw')).map((e) => e.x)).toEqual([7, 13])
-    expect(a.read('note.md')).toBe('sam\n')
-    expect(a.read(status.merged?.find((m) => m.kind === 'note')?.copy ?? '')).toBe('me\n')
+    expect(a.read('page.md')).toBe('sam\n')
+    expect(a.read(status.merged?.find((m) => m.kind === 'page')?.copy ?? '')).toBe('me\n')
   })
 
-  it('YAZ-4615 D9: a note deleted on one machine and edited on the other keeps the edit', async () => {
-    const { a, b } = await twoMachines({ 'note.md': 'x\n' })
-    await b.remove('note.md')
-    await a.write('note.md', 'edited\n')
+  it('YAZ-4615 D9: a page deleted on one machine and edited on the other keeps the edit', async () => {
+    const { a, b } = await twoMachines({ 'page.md': 'x\n' })
+    await b.remove('page.md')
+    await a.write('page.md', 'edited\n')
     await meet(a, b)
-    expect(a.read('note.md')).toBe('edited\n')
+    expect(a.read('page.md')).toBe('edited\n')
   })
 
-  it('YAZ-4615 D9 (audit 8): a note whose `comments` is a value of the user\'s own keeps both whole files, and sync goes on', async () => {
+  it('YAZ-4615 D9 (audit 8): a page whose `comments` is a value of the user\'s own keeps both whole files, and sync goes on', async () => {
     const { a, b } = await twoMachines({ 'odd.md': '---\ncomments: "my own"\n---\nx\n' })
     await b.write('odd.md', '---\ncomments: "sam"\n---\nx\n')
     await a.write('odd.md', '---\ncomments: "me"\n---\nx\n')
@@ -420,7 +420,7 @@ describe('resolveRebase via syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     await a.git('add', '-A')
     await a.git('commit', '-m', 'local work')
     // A user hook that refuses any commit made while a rebase is stopped — and, standing in for the
-    // app's autosave, writes a note exactly then. The merge cannot be committed, so the pass aborts.
+    // app's autosave, writes a page exactly then. The merge cannot be committed, so the pass aborts.
     await writeFile(path.join(a.root, '.git', 'hooks', 'pre-commit'), `#!/bin/sh\nif [ -d "$(git rev-parse --git-dir)/rebase-merge" ]; then echo "saved mid-rebase" > other.md; exit 1; fi\n`, { mode: 0o755 })
     const before = vault(a.root)
     const status = await syncPass(a.root)
@@ -431,12 +431,12 @@ describe('resolveRebase via syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     expect(await a.git('rev-parse', '--verify', '-q', BEFORE_MERGE_REF)).toBe('')
   })
 
-  it('YAZ-3044 A1: a note autosaved between the commit and the rebase is never touched — the pass says pending, and the next one syncs it', async () => {
-    const { a, b } = await twoMachines({ 'note.md': 'one\n', 'other.md': 'x\n' })
+  it('YAZ-3044 A1: a page autosaved between the commit and the rebase is never touched — the pass says pending, and the next one syncs it', async () => {
+    const { a, b } = await twoMachines({ 'page.md': 'one\n', 'other.md': 'x\n' })
     await b.write('other.md', 'from sam\n')
     expect((await syncPass(b.root)).state).toBe('synced')
-    await a.write('note.md', 'typed\n')
-    // A git that stands in for the app's autosave: just before `rebase @{u}` runs, the note is saved
+    await a.write('page.md', 'typed\n')
+    // A git that stands in for the app's autosave: just before `rebase @{u}` runs, the page is saved
     // again — after the pass's commit, so git refuses to start the rebase. A hard link outside the
     // vault pins the saved file's inode: any rewrite (a checkout, a copy put back) would break it.
     const real = await requireGit()
@@ -446,15 +446,15 @@ describe('resolveRebase via syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     const wrapper = path.join(dir, 'git')
     await writeFile(
       wrapper,
-      `#!/bin/sh\nif [ "$1" = rebase ] && [ "$2" = '@{u}' ]; then printf 'autosaved\\n' > note.md; ln -f note.md '${probe}'; fi\nexec '${real}' "$@"\n`,
+      `#!/bin/sh\nif [ "$1" = rebase ] && [ "$2" = '@{u}' ]; then printf 'autosaved\\n' > page.md; ln -f page.md '${probe}'; fi\nexec '${real}' "$@"\n`,
       { mode: 0o755 },
     )
 
     const status = await syncPass(a.root, { candidates: [wrapper] })
 
-    expect(a.read('note.md')).toBe('autosaved\n')
-    expect(statSync(path.join(a.root, 'note.md')).ino).toBe(statSync(probe).ino)
-    expect(statSync(path.join(a.root, 'note.md')).nlink).toBe(2)
+    expect(a.read('page.md')).toBe('autosaved\n')
+    expect(statSync(path.join(a.root, 'page.md')).ino).toBe(statSync(probe).ino)
+    expect(statSync(path.join(a.root, 'page.md')).nlink).toBe(2)
     expect(status.state).toBe('pending')
     expect(status.message).toMatch(/cannot rebase/i)
     expect(await a.git('status')).not.toMatch(/rebase in progress/i)
@@ -462,7 +462,7 @@ describe('resolveRebase via syncPass', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
     expect((await syncPass(a.root)).state).toBe('synced')
     expect((await syncPass(b.root)).state).toBe('synced')
     expect(vault(b.root)).toEqual(vault(a.root))
-    expect(a.read('note.md')).toBe('autosaved\n')
+    expect(a.read('page.md')).toBe('autosaved\n')
     expect(a.read('other.md')).toBe('from sam\n')
   })
 })

@@ -1,7 +1,7 @@
 /**
  * YAZ-3609 in a window with two vaults: a `[[link]]` is a pill with its file icon (D13), a Markdown link
  * into the other vault opens in a tab and Back returns (D14; the window's one Back list, YAZ-3647 D4), a pasted path of the other vault is a
- * relative link (D15), and Settings › "Open a link in" › A new background tab keeps the note in front (D11).
+ * relative link (D15), and Settings › "Open a link in" › A new background tab keeps the page in front (D11).
  * The paste is a synthetic event, so the real clipboard stays the person's own. Serial: each step
  * continues the previous state.
  */
@@ -32,7 +32,7 @@ let archive: string
 let app: ElectronApplication
 let win: Page
 
-/** Both vaults in one window, on Work's Today note; the key and click changes (`hotkeys`, YAZ-3936) as the step needs them. */
+/** Both vaults in one window, on Work's Today page; the key and click changes (`hotkeys`, YAZ-3936) as the step needs them. */
 function workspaceState(hotkeys: AppState['settings']['hotkeys'] = {}): AppState {
   const state = seededState(work, path.join(work, TODAY))
   state.windows[0]!.roots = [work, personal]
@@ -65,7 +65,7 @@ test.beforeAll(async () => {
   }
   await writeFile(path.join(personal, PLAN), `# Plan\n\n${PLAN_BODY}\n`)
   await writeFile(path.join(archive, 'Old.md'), `# Old\n\n${OLD_BODY}\n`)
-  await writeFile(path.join(work, TODAY), `# Today\n\nSee [[Ideas]] here.\n\nThen [the gym plan](../${PERSONAL}/${PLAN}) after.\n\nEnds with [the plan](../${PERSONAL}/${PLAN})\n\nOld: [the old note](../${ARCHIVE}/Old.md)\n\nPaste:\n`)
+  await writeFile(path.join(work, TODAY), `# Today\n\nSee [[Ideas]] here.\n\nThen [the gym plan](../${PERSONAL}/${PLAN}) after.\n\nEnds with [the plan](../${PERSONAL}/${PLAN})\n\nOld: [the old page](../${ARCHIVE}/Old.md)\n\nPaste:\n`)
 })
 
 test.afterAll(async () => {
@@ -127,8 +127,8 @@ test('step 1d — find inside a pill shows the find colour, and a cut pill keeps
 test('step 1e — a rest on a pill into the other vault previews its note, as a [[link]] does; no address bar (D20)', async () => {
   await editorOf(win).getByText('See').click() // the editor has focus: Crepe would show its address bar on a link
   await editorOf(win).locator('.link-pill--first', { hasText: 'the gym plan' }).hover()
-  const preview = win.locator('.note-preview')
-  await expect(preview.locator('.note-preview__body')).toContainText(PLAN_BODY)
+  const preview = win.locator('.page-preview')
+  await expect(preview.locator('.page-preview__body')).toContainText(PLAN_BODY)
   await expect(editorOf(win).locator('xpath=ancestor-or-self::*[contains(@class,"milkdown")][1]')).toHaveAttribute('data-pill-hover', '')
   // Crepe's address bar, in this editor, takes no room while the pointer is on the pill.
   expect(await win.locator('.milkdown[data-pill-hover] .milkdown-link-preview').evaluateAll((bars) => bars.every((bar) => getComputedStyle(bar).display === 'none'))).toBe(true)
@@ -155,7 +155,7 @@ test('step 1f — a pill into the other vault names it (D22); a pill and a [[lin
   await expect.poll(rows).toEqual(['Ideas', ...LINK_ROWS])
   await win.keyboard.press('Escape')
   await expect(win.locator('.ctx-menu--editor')).toHaveCount(0)
-  // D17: words selected in the note, right-click › Add link… (the note menu, YAZ-3653) opens the link box on them.
+  // D17: words selected in the page, right-click › Add link… (the page menu, YAZ-3653) opens the link box on them.
   await editorOf(win).getByText('Paste:').click()
   const box = await win.evaluate(() => {
     const line = Array.from(document.querySelectorAll('.ProseMirror p')).find((p) => p.textContent === 'Paste:')!
@@ -170,7 +170,7 @@ test('step 1f — a pill into the other vault names it (D22); a pill and a [[lin
   await win.locator('.ctx-overlay [role="menuitem"]', { hasText: 'Add link…' }).click()
   await expect(win.locator('.milkdown-link-edit input')).toBeVisible()
   await shoot(win, 'workspace-links-01f-add-link')
-  // The box stands by the words it links (Crepe puts it just above or below them), never at the top of the note.
+  // The box stands by the words it links (Crepe puts it just above or below them), never at the top of the page.
   const edit = (await win.locator('.milkdown-link-edit').boundingBox())!
   expect(Math.abs(edit.y - box.y)).toBeLessThan(80)
   await win.keyboard.press('Escape')
@@ -185,7 +185,7 @@ test('step 2 — a Markdown link into the other vault opens in this tab on ⌘-c
   await shoot(win, 'workspace-links-02-back')
 })
 
-test('step 3 — a pasted path of the other vault is a relative link named after the note (D15)', async () => {
+test('step 3 — a pasted path of the other vault is a relative link named after the page (D15)', async () => {
   await editorOf(win).getByText('Paste:').click()
   await win.keyboard.press('End')
   await pasteText(win, path.join(personal, PLAN))
@@ -208,7 +208,7 @@ test('step 5 — Links › "Open in a new tab" on ⌥-click (Settings › Hotkey
   await quitApp(app)
 })
 
-test('step 4 — Links › "Open in a background tab" (⌘⇧-click by default, YAZ-3936) keeps this note in front; Back in the new tab returns (YAZ-3647 D4)', async () => {
+test('step 4 — Links › "Open in a background tab" (⌘⇧-click by default, YAZ-3936) keeps this page in front; Back in the new tab returns (YAZ-3647 D4)', async () => {
   app = await launchApp({ userData, seedState: workspaceState() })
   win = await appWindow(app, 'w1')
   await editorOf(win).locator('a', { hasText: 'the gym plan' }).click({ modifiers: ['Meta'] })
@@ -229,7 +229,7 @@ test('step 6 — a link into a vault the app knows but this window does not show
   app = await launchApp({ userData, seedState: workspaceState() })
   win = await appWindow(app, 'w1')
   const sheet = win.locator('.confirm[role="dialog"]')
-  const link = editorOf(win).locator('a', { hasText: 'the old note' })
+  const link = editorOf(win).locator('a', { hasText: 'the old page' })
   // V3: Cancel changes nothing.
   await link.click({ modifiers: LINK_HERE })
   await expect(sheet).toContainText(`This file (Old) is not in this vault. It is in another vault (${ARCHIVE}), which is not open in this window.`)
@@ -246,19 +246,19 @@ test('step 6 — a link into a vault the app knows but this window does not show
   await win.getByRole('button', { name: 'Back' }).click()
   await expect(activeTab(win)).toHaveText('Today')
   // YAZ-3664: the link into the vault that just joined the window is a pill now, with no edit.
-  await expect(editorOf(win).locator('.link-pill--first', { hasText: 'the old note' })).toHaveCount(1)
+  await expect(editorOf(win).locator('.link-pill--first', { hasText: 'the old page' })).toHaveCount(1)
   await quitApp(app)
 })
 
-test('step 7 — a link into a vault that joins the window turns into a pill at once, in the note that stays open (YAZ-3664)', async () => {
+test('step 7 — a link into a vault that joins the window turns into a pill at once, in the page that stays open (YAZ-3664)', async () => {
   app = await launchApp({ userData, seedState: workspaceState() })
   win = await appWindow(app, 'w1')
-  const link = editorOf(win).locator('a', { hasText: 'the old note' })
+  const link = editorOf(win).locator('a', { hasText: 'the old page' })
   await expect(link.locator('.link-pill')).toHaveCount(0) // Archive is not in the window: a plain link
-  await link.click({ modifiers: ['Meta'] }) // a background tab: Today stays on screen, as Yaseen's note did
+  await link.click({ modifiers: ['Meta'] }) // a background tab: Today stays on screen, as Yaseen's page did
   await win.locator('.confirm[role="dialog"]').getByRole('button', { name: 'Add vault to this window' }).click()
   await expect(tabsOf(win).filter({ hasText: 'Old' })).toHaveCount(1)
   await expect(activeTab(win)).toHaveText('Today')
-  await expect(editorOf(win).locator('.link-pill--first', { hasText: 'the old note' })).toHaveCount(1)
+  await expect(editorOf(win).locator('.link-pill--first', { hasText: 'the old page' })).toHaveCount(1)
   await quitApp(app)
 })

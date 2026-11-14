@@ -299,7 +299,7 @@ describe('the edit-attempt message (YAZ-4446)', () => {
   const card = (id: string) => pane(id).querySelector<HTMLElement>('.read-only-message__card')
   const status = (id: string) => pane(id).querySelector<HTMLElement>('[role="status"]')
   const paneChip = (id: string) => pane(id).querySelector<HTMLButtonElement>('.read-only-chip__button')!
-  const attempt = (selector: string, what: 'note' | 'drawing' = 'note') => act(() => tellReadOnlyEdit(container.querySelector(selector)!, what))
+  const attempt = (selector: string, what: 'page' | 'drawing' = 'page') => act(() => tellReadOnlyEdit(container.querySelector(selector)!, what))
 
   afterEach(() => vi.useRealTimers())
 
@@ -309,7 +309,7 @@ describe('the edit-attempt message (YAZ-4446)', () => {
     expect(card('a')).toBeNull()
     expect(paneChip('a').classList.contains('read-only-chip__button--pulse')).toBe(false)
     attempt('[data-body="a"]')
-    expect(card('a')?.textContent).toBe('This note is Read only.Press Enter to allow edits.')
+    expect(card('a')?.textContent).toBe('This page is Read only.Press Enter to allow edits.')
     expect(status('a')?.contains(card('a'))).toBe(true)
     expect(card('a')?.querySelector('.read-only-message__arrow svg')).not.toBeNull()
     expect(paneChip('a').classList.contains('read-only-chip__button--pulse')).toBe(true)
@@ -359,7 +359,7 @@ describe('the edit-attempt message (YAZ-4446)', () => {
     expect([enter.defaultPrevented, pane('a').querySelector('.read-only-chip__ask')]).toEqual([false, null])
   })
 
-  it('the vault\'s word for a note (YAZ-4938): in a vault of cards the card says "This card is Read only."', () => {
+  it('the vault\'s word for a page (YAZ-4938): in a vault of cards the card says "This card is Read only."', () => {
     vi.useFakeTimers()
     container = document.createElement('div')
     document.body.append(container)

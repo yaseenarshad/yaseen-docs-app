@@ -11,7 +11,7 @@ import { searchSettings, settingCandidates, wordMatches, type SettingHit } from 
 
 const ctx = (sync?: SettingsCtx['sync'], review?: SettingsCtx['review']): SettingsCtx => ({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined, sync, review })
 const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_REVIEW_SETTINGS, save: () => undefined }
-// Settings › Review (YAZ-4967, D14): the note card settings.
+// Settings › Review (YAZ-4967, D14): the card settings.
 const REVIEW_ROWS = ['enabled', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview', 'howCardsComeBack']
 // Settings › Link pills (YAZ-4924): the preview row, then one row for each choice, after This vault.
 const LINK_PILL_ROWS = ['linkPills']
@@ -60,7 +60,7 @@ describe('settingCandidates', () => {
       'sidebarRevealActive',
       'sidebarIconSet',
       'sidebarFileIcons',
-      ...['note', 'text', 'pdf', 'image', 'drawing', 'diagram'].map((k) => `sidebarIconColors.${k}`),
+      ...['page', 'text', 'pdf', 'image', 'drawing', 'diagram'].map((k) => `sidebarIconColors.${k}`),
       // The icon rules (YAZ-3440 D9).
       'sidebarIconRules',
       // ⌘D's place (YAZ-3556 D8).
@@ -68,7 +68,7 @@ describe('settingCandidates', () => {
       // Settings › Notifications (YAZ-3303), under Appearance.
       ...['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds'],
       // Settings › Editor › Outline (YAZ-4094).
-      ...['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'noteBulletIndent', 'noteBulletGap'],
+      ...['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'pageBulletIndent', 'pageBulletGap'],
       'bulletThreading',
       'threadWidth',
       'threadColor',
@@ -77,8 +77,8 @@ describe('settingCandidates', () => {
       'selectionToolbar',
       // Settings › Editor › Typing (YAZ-4273 D8).
       'typingArrows',
-      // Enter keeps the text style: notes, then drawing text boxes (YAZ-3746 13AB).
-      'enterKeepsStyleNotes',
+      // Enter keeps the text style: pages, then drawing text boxes (YAZ-3746 13AB).
+      'enterKeepsStylePages',
       'enterKeepsStyleBoxes',
       'tocOnByDefault',
       'tableOfContents',
@@ -142,25 +142,25 @@ describe('settingCandidates', () => {
       'mediaHoverZoom',
       // Its size beside it (YAZ-4447 demo round 2), Filter › Hover size.
       'mediaHoverZoomSize',
-      // Settings › Files & Links › New notes (YAZ-4246), its first group.
-      'newNoteLocation',
-      'newNoteTitleTemplate',
+      // Settings › Files & Links › New pages (YAZ-4246), its first group.
+      'newPageLocation',
+      'newPageTitleTemplate',
       'confirmDelete',
       'confirmRename',
       'newTabPlace',
       // YAZ-3943 demo 2 and round 3: where a new board keeps its pictures, and this Mac's allowed outside folders.
       'newBoardPictures',
       'allowedPictureFolders',
-      // Settings › Files & Links › Daily notes (YAZ-3607): the switch, then the rows it shows.
-      'dailyNotes',
-      'dailyNoteFolder',
-      'dailyNoteFormat',
-      'dailyNoteDayFolder',
-      'dailyNoteOpens',
+      // Settings › Files & Links › Daily pages (YAZ-3607): the switch, then the rows it shows.
+      'dailyPages',
+      'dailyPageFolder',
+      'dailyPageFormat',
+      'dailyPageDayFolder',
+      'dailyPageOpens',
       // Settings › Files & Links › Preview on hover (YAZ-3403): the master switch, then one row per place.
       'hoverPreview',
       ...['sidebar', 'search', 'newTab', 'tabBoard', 'tabs', 'backlinks', 'links', 'drawings'].map((place) => `hoverPreviewIn.${place}`),
-      // This vault (YAZ-4938, YAZ-4940, YAZ-4936, YAZ-4939): the word for a note, the Show IDs block (search, title, files list), Clicking a link, Read only, then the IDs rows.
+      // This vault (YAZ-4938, YAZ-4940, YAZ-4936, YAZ-4939): the word for a page, the Show IDs block (search, title, files list), Clicking a link, Read only, then the IDs rows.
       'unitWord',
       'showIds',
       'showIds.title',
@@ -191,7 +191,7 @@ describe('settingCandidates', () => {
     // The shared keys a pick settles come first: ⌘D's card, then ⌘K's.
     expect(rows.slice(1, 6)).toEqual(['hotkey-goTo', 'hotkey-drawing-duplicate', 'hotkey-diagram-duplicate', 'hotkey-code-addSelectionToNextFindMatch', 'hotkey-search'])
     for (const id of ['newTab', 'newWindow', 'newFilesWindow', 'newItem', 'goTo', 'closeTab', 'closeWindow', 'switchVault', 'openFolder', 'search', 'settings', 'toggleSidebar', 'copyPath', 'tabOverview', 'nextTab', 'prevTab', 'back', 'forward']) expect(rows).toContain(`hotkey-${id}`)
-    expect(rows).toContain('hotkey-note-toc')
+    expect(rows).toContain('hotkey-page-toc')
     expect(rows).toContain('hotkey-macos-spotlight')
     expect(rows[rows.length - 1]).toBe('hotkeys-reset-all')
     expect(new Set(rows).size).toBe(rows.length)
@@ -218,7 +218,7 @@ describe('settingCandidates', () => {
 
   it('a candidate carries label, hint, keywords, group title and section title, case-folded in `lower`', () => {
     const confirm = settingCandidates(ctx()).find((h) => h.item.id === 'confirmDelete')
-    expect(confirm?.name).toBe('Confirm before deleting Deleted notes and folders move to the Trash either way. Files & Links')
+    expect(confirm?.name).toBe('Confirm before deleting Deleted pages and folders move to the Trash either way. Files & Links')
     expect(confirm?.lower).toBe(confirm?.name.toLowerCase())
     const width = settingCandidates(ctx()).find((h) => h.item.id === 'threadWidth')
     expect(width?.name).toBe('Line width thread width Bullet threading The coloured path from each list down to the bullet at the caret. Editor')
@@ -230,8 +230,8 @@ describe('settingCandidates', () => {
   })
 
   it('the sync hint is the live repo fact, so a remote URL is searchable', () => {
-    const hit = settingCandidates(ctx({ status: { root: '/v', state: 'synced', repo: { remoteUrl: 'git@github.com:me/notes.git', branch: 'main' } }, setEnabled: () => undefined })).find((h) => h.item.id === 'githubSync')
-    expect(hit?.name).toContain('repo git@github.com:me/notes.git · branch main')
+    const hit = settingCandidates(ctx({ status: { root: '/v', state: 'synced', repo: { remoteUrl: 'git@github.com:me/pages.git', branch: 'main' } }, setEnabled: () => undefined })).find((h) => h.item.id === 'githubSync')
+    expect(hit?.name).toContain('repo git@github.com:me/pages.git · branch main')
   })
 })
 
@@ -265,7 +265,7 @@ describe('searchSettings', () => {
   })
 
   it('matches on the section title, returning every row of that section', () => {
-    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['newNoteLocation', 'newNoteTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyNotes', 'dailyNoteFolder', 'dailyNoteFormat', 'dailyNoteDayFolder', 'dailyNoteOpens', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'unitWord', 'showIds', 'showIds.title', 'showIds.files', 'linkClick', 'readOnlyVault', 'ids', 'duplicates', 'idLetters', 'oldIds', ...LINK_PILL_ROWS])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'files & links'))).toEqual(['newPageLocation', 'newPageTitleTemplate', 'confirmDelete', 'confirmRename', 'newTabPlace', 'newBoardPictures', 'allowedPictureFolders', 'dailyPages', 'dailyPageFolder', 'dailyPageFormat', 'dailyPageDayFolder', 'dailyPageOpens', 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'unitWord', 'showIds', 'showIds.title', 'showIds.files', 'linkClick', 'readOnlyVault', 'ids', 'duplicates', 'idLetters', 'oldIds', ...LINK_PILL_ROWS])
   })
 
   it('"startup" and "launch" find the row that says which windows come back (YAZ-2589 D2)', () => {
@@ -279,7 +279,7 @@ describe('searchSettings', () => {
     for (const query of ['outline', 'headings']) expect(ids(searchSettings(settingCandidates(ctx()), query))).toContain('tableOfContents')
     // The settings folder's hint names the table of contents width, which stays on this Mac (YAZ-3276 D7); General comes first.
     // "Table of contents default" and the ⌘J row's label start with the words, so they rank first (a prefix hit, YAZ-3397 D5).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'table of contents'))).toEqual(['tocOnByDefault', 'hotkey-note-toc', 'settingsFolder', 'tableOfContents', 'tocLines'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'table of contents'))).toEqual(['tocOnByDefault', 'hotkey-page-toc', 'settingsFolder', 'tableOfContents', 'tocLines'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'pin'))[0]).toBe('tableOfContents')
     expect(ids(searchSettings(settingCandidates(ctx()), 'default'))).toEqual(expect.arrayContaining(['tocOnByDefault', 'tableOfContents']))
   })
@@ -292,7 +292,7 @@ describe('searchSettings', () => {
     // Settings › Editor › Outline (YAZ-4094) names its four rows.
     // A board's colour letters (YAZ-4348) come last: each names the outline its ⇧ colours, and T takes an icon's off.
     const outline = ids(searchSettings(settingCandidates(ctx()), 'outline'))
-    expect(outline.slice(0, 14)).toEqual(['hotkey-diagram-outline', 'guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'noteBulletIndent', 'noteBulletGap', 'bulletThreading', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'canvas.hoverOutline', 'canvas.framesVisible', 'hotkey-diagram-colourOther'])
+    expect(outline.slice(0, 14)).toEqual(['hotkey-diagram-outline', 'guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'pageBulletIndent', 'pageBulletGap', 'bulletThreading', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'canvas.hoverOutline', 'canvas.framesVisible', 'hotkey-diagram-colourOther'])
     expect(outline.slice(14).sort()).toEqual(hotkeyRows().filter((id) => id.startsWith('hotkey-drawing-color')).sort())
     expect(outline).toHaveLength(14 + 15)
     // "guide" names the guide lines' rows (YAZ-4094; Bullet threading's hint no longer says it: one name for one thing) and is a keyword of the Section indent lines; "hover" is the other grey lines' word too, and the board preview's (YAZ-3044 A20).
@@ -302,7 +302,7 @@ describe('searchSettings', () => {
     // leads: its label starts with the word, after the drawing's Hover outline (YAZ-4469 demo), which comes first in registry order.
     expect(ids(searchSettings(settingCandidates(ctx()), 'hover'))).toEqual(['canvas.hoverOutline', 'mediaHoverZoom', 'mediaHoverZoomSize', 'sidebarLines', 'guideLinesShow', 'sectionLines', 'tocLines', 'tableTextInCells' /* its hint says hover a cut cell (YAZ-4900) */, 'tableRowBand' /* its hint names Folder pages › Row band on hover (YAZ-4608 C5) */, 'hoverPreview', 'hoverPreviewIn.sidebar', 'hoverPreviewIn.search', 'hoverPreviewIn.newTab', 'hoverPreviewIn.tabBoard', 'hoverPreviewIn.tabs', 'hoverPreviewIn.backlinks', 'hoverPreviewIn.links', 'hoverPreviewIn.drawings', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.groupLines' /* On hover (YAZ-4798) */, 'hotkey-code-showHover'])
     // The row says its group and its page to search, as each other row does.
-    expect(settingCandidates(ctx()).find((h) => h.item.id === 'tocLines')?.name).toBe('Level lines outline toc hierarchy guide hover Table of contents The headings or the bullets of a note, at its right edge. Editor')
+    expect(settingCandidates(ctx()).find((h) => h.item.id === 'tocLines')?.name).toBe('Level lines outline toc hierarchy guide hover Table of contents The headings or the bullets of a page, at its right edge. Editor')
   })
 
   it('the sidebar\'s level lines (YAZ-3309 D6, D7, D9, S12): "sidebar" finds the three rows of the group first; "folder", "tree" and "indent" find Show, not the TOC row; "thread" finds Style and Thread colour beside Bullet threading; "accent" finds the two colour pickers', () => {
@@ -319,8 +319,8 @@ describe('searchSettings', () => {
 
   it('matches on the group title: "section indent" finds the two rows of that group, "spacing" the two of Spacing', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'section indent'))).toEqual(['sectionStep', 'sectionLines'])
-    // The note's bullet spacing (the YAZ-3818 demo) says "spacing" too.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['lineSpacing', 'blockGap', 'pageSpacingPreview', 'noteBulletIndent', 'noteBulletGap'])
+    // The page's bullet spacing (the YAZ-3818 demo) says "spacing" too.
+    expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['lineSpacing', 'blockGap', 'pageSpacingPreview', 'pageBulletIndent', 'pageBulletGap'])
   })
 
   it('matches on the group hint too: "guide lines" finds the three guide line rows of Outline (YAZ-4094); "threading" finds the three threading rows and the two Section indent rows, whose hint names Bullet threading (and the line style of the sidebar, whose hint does too, YAZ-3309 D7)', () => {
@@ -366,10 +366,10 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'close tab'))).toEqual(['hotkey-closeTab'])
     // ⌥⌘W (the code tab's Match whole word) holds the text "⌘W" too; Close tab comes first.
     expect(ids(searchSettings(settingCandidates(ctx()), '⌘W'))).toEqual(['hotkey-closeTab', 'hotkey-code-findWholeWord'])
-    // "underline" is also a word of Appearance › Text formatting (YAZ-3068); a note and a draw.io diagram both
-    // underline with ⌘U (YAZ-3037): both rows answer, the note's first (its label is the word). The Selection toolbar
+    // "underline" is also a word of Appearance › Text formatting (YAZ-3068); a page and a draw.io diagram both
+    // underline with ⌘U (YAZ-3037): both rows answer, the page's first (its label is the word). The Selection toolbar
     // row has the word among its keywords (YAZ-3806 T7), and so do the two "Enter keeps the text style" rows (YAZ-3746 13AB).
-    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkey-note-underline', 'hotkey-drawing-textUnderline', 'hotkey-diagram-underline', 'textFormatting', 'selectionToolbar', 'enterKeepsStyleNotes', 'enterKeepsStyleBoxes', 'linkPills'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'underline'))).toEqual(['hotkey-page-underline', 'hotkey-drawing-textUnderline', 'hotkey-diagram-underline', 'textFormatting', 'selectionToolbar', 'enterKeepsStylePages', 'enterKeepsStyleBoxes', 'linkPills'])
     expect(ids(searchSettings(settingCandidates(ctx()), 'export excalidraw'))).toEqual(['hotkey-app-menuExportExcalidrawDrawing', 'hotkey-drawing-saveAs'])
     // A changed key is searched by the key it has NOW.
     const moved = { ...ctx(), settings: { ...DEFAULT_SETTINGS, hotkeys: { search: 'CmdOrCtrl+Shift+K' } } }
@@ -379,10 +379,10 @@ describe('searchSettings', () => {
     expect(ids(searchSettings(settingCandidates(moved), '⌘K'))).not.toContain('hotkey-search')
   })
 
-  it('"review", "note cards", "inbox" and "fsrs" each find every row of the Review section; "upkeep" finds none (YAZ-4967)', () => {
+  it('"review", "cards", "inbox" and "fsrs" each find every row of the Review section; "upkeep" finds none (YAZ-4967)', () => {
     const candidates = settingCandidates(ctx(undefined, REVIEW))
     expect(searchSettings(candidates, 'upkeep').filter((h) => h.section.id === 'review')).toEqual([])
-    for (const query of ['review', 'note cards', 'inbox', 'fsrs']) {
+    for (const query of ['review', 'cards', 'inbox', 'fsrs']) {
       expect(ids(searchSettings(candidates, query).filter((h) => h.section.id === 'review')).sort()).toEqual([...REVIEW_ROWS].sort())
     }
   })

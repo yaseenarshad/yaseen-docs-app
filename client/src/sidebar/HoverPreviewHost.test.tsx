@@ -1,4 +1,4 @@
-/** The hover preview's dwell, driven directly on the Sidebar's half (Draw's YAZ-1800; ported by YAZ-3028 D11; notes by YAZ-3075). */
+/** The hover preview's dwell, driven directly on the Sidebar's half (Draw's YAZ-1800; ported by YAZ-3028 D11; pages by YAZ-3075). */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -14,18 +14,18 @@ vi.mock('../api', async (original) => ({
 }))
 
 /** The lazy panel, stood in: it reports the cache key the host handed it. */
-const panel = vi.hoisted(() => ({ keys: [] as string[], notes: [] as { path: string; size: unknown }[], code: [] as string[] }))
+const panel = vi.hoisted(() => ({ keys: [] as string[], pages: [] as { path: string; size: unknown }[], code: [] as string[] }))
 vi.mock('./BoardPreview', () => ({
   default: ({ cacheKey }: { cacheKey: string }) => {
     panel.keys.push(cacheKey)
     return <div className="fake-board-preview" />
   },
 }))
-/** The lazy note panel, stood in: it reports which note and which text formatting the host handed it. */
-vi.mock('./NotePreview', () => ({
+/** The lazy page panel, stood in: it reports which page and which text formatting the host handed it. */
+vi.mock('./PagePreview', () => ({
   default: ({ node, textVars }: { node: { path: string }; textVars: Record<string, unknown> }) => {
-    panel.notes.push({ path: node.path, size: textVars['--text-size'] })
-    return <div className="fake-note-preview" />
+    panel.pages.push({ path: node.path, size: textVars['--text-size'] })
+    return <div className="fake-page-preview" />
   },
 }))
 
@@ -100,8 +100,8 @@ describe('useHoverPreview', () => {
   })
 })
 
-describe('a board or a note row opens a preview (YAZ-3028 D11, YAZ-3075 D6)', () => {
-  it('C1, C31: a note row waits the same 400 ms and shows; a PDF or an image row too (YAZ-3746 13R, overturning YAZ-3075 D6); a video row starts no dwell at all', () => {
+describe('a board or a page row opens a preview (YAZ-3028 D11, YAZ-3075 D6)', () => {
+  it('C1, C31: a page row waits the same 400 ms and shows; a PDF or an image row too (YAZ-3746 13R, overturning YAZ-3075 D6); a video row starts no dwell at all', () => {
     render()
     act(() => hook.hoverFile({ path: '/v/clip.mp4' }))
     wait(HOVER_PREVIEW_DWELL_MS)
@@ -113,11 +113,11 @@ describe('a board or a note row opens a preview (YAZ-3028 D11, YAZ-3075 D6)', ()
       wait(1)
       expect(state()).toEqual({ path, shown: true })
     }
-    act(() => hook.hoverFile({ path: '/v/Note.md' }))
+    act(() => hook.hoverFile({ path: '/v/Page.md' }))
     wait(HOVER_PREVIEW_DWELL_MS - 1)
-    expect(state()).toEqual({ path: '/v/Note.md', shown: false })
+    expect(state()).toEqual({ path: '/v/Page.md', shown: false })
     wait(1)
-    expect(state()).toEqual({ path: '/v/Note.md', shown: true })
+    expect(state()).toEqual({ path: '/v/Page.md', shown: true })
     act(() => hook.hoverFile({ path: '/v/Flow.drawio' }))
     wait(HOVER_PREVIEW_DWELL_MS)
     expect(state()).toEqual({ path: '/v/Flow.drawio', shown: true })
@@ -141,7 +141,7 @@ describe('HoverPreviewHost', () => {
   beforeEach(() => {
     vi.useRealTimers()
     panel.keys = []
-    panel.notes = []
+    panel.pages = []
     vi.mocked(api.boardHead).mockReset()
   })
 
@@ -186,14 +186,14 @@ describe('HoverPreviewHost', () => {
     panel.code = []
     await show({ type: 'file', name: 'app.ts', path: '/v/src/app.ts', size: 10, mtime: 1000, kind: 'text' })
     expect(panel.code.at(-1)).toBe('/v/src/app.ts')
-    expect(panel.notes).toEqual([])
+    expect(panel.pages).toEqual([])
     expect(api.boardHead).not.toHaveBeenCalled()
   })
 
-  it('YAZ-3075 C20, C27: a note opens its own panel in its vault`s text formatting, with no board head read and no watch subscription', async () => {
+  it('YAZ-3075 C20, C27: a page opens its own panel in its vault`s text formatting, with no board head read and no watch subscription', async () => {
     listeners.clear()
     await show({ type: 'file', name: 'Plan.md', path: '/v/Plan.md', size: 10, mtime: 1000, kind: 'markdown' })
-    expect(panel.notes.at(-1)).toEqual({ path: '/v/Plan.md', size: '18px' })
+    expect(panel.pages.at(-1)).toEqual({ path: '/v/Plan.md', size: '18px' })
     expect(api.boardHead).not.toHaveBeenCalled()
     expect(listeners.size).toBe(0)
     expect(panel.keys).toEqual([])

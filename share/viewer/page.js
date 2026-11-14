@@ -50,7 +50,7 @@ const STYLE = `
   .bar button:hover { border-color: var(--accent); color: var(--accent); }
   .bar button:disabled { opacity: .5; cursor: default; }
   #canvas { position: absolute; top: 52px; left: 0; right: 0; bottom: 0; }
-  .note { position: absolute; inset: 52px 0 0 0; display: grid; place-items: center; color: var(--muted); }
+  .page { position: absolute; inset: 52px 0 0 0; display: grid; place-items: center; color: var(--muted); }
   @media (max-width: 560px) { .bar .meta { display: none; } .bar button { padding: 6px 8px; } }
 `
 
@@ -75,7 +75,7 @@ export function viewerPage({ id, kind, allowDownload, name, updatedAt }) {
   <span class="spacer"></span>
   ${downloads ? page.downloads : ''}
 </header>
-<div id="canvas"><div class="note" id="note">Loading ${page.noun}…</div></div>
+<div id="canvas"><div class="page" id="page">Loading ${page.noun}…</div></div>
 <script id="board" type="application/json">${scriptJson({ id, allowDownload: downloads, name, updatedAt })}</script>
 ${page.scripts}
 </body>

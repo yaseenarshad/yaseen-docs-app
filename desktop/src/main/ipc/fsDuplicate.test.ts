@@ -1,5 +1,5 @@
 /**
- * "Duplicate note" (YAZ-4592 S26): `fs:duplicate` copies one note beside itself, as a Paste of a Copy into
+ * "Duplicate page" (YAZ-4592 S26): `fs:duplicate` copies one page beside itself, as a Paste of a Copy into
  * its own folder does (`copyEntry`), and never touches the app's clipboard or the system clipboard.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -62,7 +62,7 @@ afterAll(async () => {
 })
 
 describe('fs:duplicate (YAZ-4592 S26)', () => {
-  it('copies the note beside itself as "<title> copy" with a fresh id and the same values; the clipboards stay as they were', async () => {
+  it('copies the page beside itself as "<title> copy" with a fresh id and the same values; the clipboards stay as they were', async () => {
     const plans = path.join(vault, 'Plans')
     const from = path.join(plans, 'Trip.md')
     const before = await readFile(from, 'utf8')
@@ -80,7 +80,7 @@ describe('fs:duplicate (YAZ-4592 S26)', () => {
     expect(idOf(copy)).toBeDefined()
     expect(idOf(copy)).not.toBe(idOf(before))
     expect(await readFile(from, 'utf8')).toBe(before)
-    // Only the two notes: a `.folder.md` the id sweep may write is no concern of this door.
+    // Only the two pages: a `.folder.md` the id sweep may write is no concern of this door.
     expect((await readdir(plans)).filter((name) => !name.startsWith('.')).sort()).toEqual(['Trip.md', path.basename(res.value.to)])
     expect(fileClip.get()).toBeNull()
     expect(clipboard.writeBuffer).not.toHaveBeenCalled()

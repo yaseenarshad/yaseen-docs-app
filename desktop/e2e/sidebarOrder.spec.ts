@@ -31,8 +31,8 @@ import { activeTab, appWindow, buildFixtureVault, dragAbove, launchApp, lensTab,
 test.describe.configure({ mode: 'serial' })
 
 /** The two vaults' FOLDER names — what the vault rows, the header and a top row's vault name show. */
-const ALPHA = 'Alpha Notes'
-const BETA = 'Beta Notes'
+const ALPHA = 'Alpha Pages'
+const BETA = 'Beta Pages'
 
 let userData: string
 let vaultSrc: string
@@ -98,7 +98,7 @@ test.beforeAll(async () => {
   vaultA = path.join(vaultsDir, ALPHA)
   vaultB = path.join(vaultsDir, BETA)
   await Promise.all([cp(vaultSrc, vaultA, { recursive: true }), cp(vaultSrc, vaultB, { recursive: true })])
-  // Each vault has said no to IDs ("Two kinds of vault"): the app writes nothing into a note. No vault is asked when it opens (YAZ-2677 D1).
+  // Each vault has said no to IDs ("Two kinds of vault"): the app writes nothing into a page. No vault is asked when it opens (YAZ-2677 D1).
   for (const vault of [vaultA, vaultB]) {
     await mkdir(path.join(vault, '.yaseendocs'), { recursive: true })
     await writeFile(path.join(vault, '.yaseendocs', 'ids.json'), JSON.stringify({ enabled: false }))

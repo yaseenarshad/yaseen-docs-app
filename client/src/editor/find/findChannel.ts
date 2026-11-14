@@ -10,7 +10,7 @@
  * `close()` keeps the query so the next CMD+F can offer it again, but the engine has dropped its
  * matches by then — which is why the counter goes back to 0 / −1 and reopening re-runs the search.
  *
- * Folds (YAZ-4787): the channel also holds what find does with folds (`FindFolds`). The editor sets it from the note's
+ * Folds (YAZ-4787): the channel also holds what find does with folds (`FindFolds`). The editor sets it from the page's
  * `find-folds` key or the app setting; a change while a search is open runs the search again.
  */
 import type { FindFolds } from '@shared/types'

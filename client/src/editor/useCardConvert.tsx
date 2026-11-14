@@ -14,7 +14,7 @@ import { cardIdOf } from '@shared/cardLine'
 import { cardEmbedders } from '@shared/cardLinks'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { ConfirmSheet } from '../components/ConfirmSheet'
-import type { CardConvertDoor } from './noteCard/noteCardView'
+import type { CardConvertDoor } from './card/cardBlockView'
 import type { PageSwitch } from './PageSettings'
 import { linkCard, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 

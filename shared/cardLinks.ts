@@ -1,10 +1,10 @@
 /**
- * LINKS TO A NOTE CARD (YAZ-5030, D7 of YAZ-4948 brought in): `[[WIKI-512]]` names the CARD whose card line holds the
- * ID `WIKI-512`. IDs come from one vault counter for notes, boards and cards (D2), so an ID is one thing's. The file
+ * LINKS TO A PAGE CARD (YAZ-5030, D7 of YAZ-4948 brought in): `[[WIKI-512]]` names the CARD whose card line holds the
+ * ID `WIKI-512`. IDs come from one vault counter for pages, boards and cards (D2), so an ID is one thing's. The file
  * keeps `[[WIKI-512]]`: the ID never changes, so a move or a rename of the card's page touches no such link.
  *
  * Read off the index alone (`IndexRecord.cards`: each card's ID, place and title): no page is read. A target is read
- * as the note resolver reads an ID (`targetKey`, `idKey`): any case, the `|words` and a `#part` off, and an ID with
+ * as the page resolver reads an ID (`targetKey`, `idKey`): any case, the `|words` and a `#part` off, and an ID with
  * letters the vault had before as the same number. Two cards with one ID (a copy the sweep has not met yet): the first
  * in path order, then in page order. Pure: no DOM, no Node.
  */

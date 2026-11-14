@@ -1,25 +1,25 @@
 /**
- * WHERE A READ-ONLY NOTE'S KEYS GO (YAZ-3076 D8; YAZ-3127, YAZ-3128): the one rule the window-level
- * listeners ask, so a read-only note keeps the keys a normal note keeps.
+ * WHERE A READ-ONLY PAGE'S KEYS GO (YAZ-3076 D8; YAZ-3127, YAZ-3128): the one rule the window-level
+ * listeners ask, so a read-only page keeps the keys a normal page keeps.
  *
- * A read-only note editor takes the focus itself (`tabindex="-1"` while it is not editable,
+ * A read-only page editor takes the focus itself (`tabindex="-1"` while it is not editable,
  * `editor/readOnlyKeys.ts`), so most keys start INSIDE it. When the focus is on `<body>` all the
- * same — a click on the page's margin, a tab switch — the reader's DOM selection says which note
+ * same — a click on the page's margin, a tab switch — the reader's DOM selection says which page
  * they are in, but only in a VISIBLE one: the shell keeps a switched-away tab mounted under
  * `visibility: hidden`, and the DOM selection stays there after the switch.
  */
 
 /**
- * A ProseMirror root that is not editable: a read-only preview's body, or a read-only note editor's body, which keeps
+ * A ProseMirror root that is not editable: a read-only preview's body, or a read-only page editor's body, which keeps
  * its caret as `contenteditable="true"` and says it is locked with `data-read-only` (YAZ-4433, `editor/readOnlyKeys.ts`).
  */
 const READ_ONLY_BODY = '.ProseMirror[contenteditable="false"], .ProseMirror[data-read-only]'
 
 /**
- * A note PAGE: the scroller `Editor.tsx` draws for a note, in a tab or the right panel — its title,
+ * A page PAGE: the scroller `Editor.tsx` draws for a page, in a tab or the right panel — its title,
  * properties, body, comments, backlinks and reviews (YAZ-3140).
  */
-export const NOTE_PAGE = '[data-page="note"]'
+export const PAGE_SURFACE = '[data-page="page"]'
 
 const elementOf = (node: Node | null): Element | null => (node === null ? null : node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement)
 
@@ -36,7 +36,7 @@ let claimed: Element | null = null
 
 /** Claims the page `el` is in for the keys; ends the claim when `el` is null or outside every page. */
 export function claimPage(el: Element | null): void {
-  claimed = el?.closest(NOTE_PAGE) ?? null
+  claimed = el?.closest(PAGE_SURFACE) ?? null
 }
 
 const pressedOrFocused = (event: Event): void => claimPage(event.target instanceof Element ? event.target : null)
@@ -60,22 +60,22 @@ export function readOnlySelectionHolder(doc: Document = document): Element | nul
 }
 
 /**
- * Whether a key at `target` belongs to a read-only note: the target is inside one, or the focus is
+ * Whether a key at `target` belongs to a read-only page: the target is inside one, or the focus is
  * nowhere (`<body>`) and the reader's selection is in a visible one. The window's file clipboard
- * (⌘C / ⌘X / ⌘V), the sidebar's arrows "from nowhere" and the like then leave the key to the note.
+ * (⌘C / ⌘X / ⌘V), the sidebar's arrows "from nowhere" and the like then leave the key to the page.
  */
-export function readOnlyNoteHoldsKeys(target: EventTarget | null): boolean {
+export function readOnlyPageHoldsKeys(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false
   if (target.closest(READ_ONLY_BODY) !== null) return true
   const doc = target.ownerDocument
   return (target === doc.body || target === doc.documentElement) && readOnlySelectionHolder(doc) !== null
 }
 
-/** The visible note page that holds either end of the reader's DOM selection (a caret counts), when it is the page they last clicked in (YAZ-3145); null otherwise. */
+/** The visible page page that holds either end of the reader's DOM selection (a caret counts), when it is the page they last clicked in (YAZ-3145); null otherwise. */
 export function pageSelectionHolder(doc: Document = document): Element | null {
   const sel = doc.getSelection()
   for (const node of [sel?.anchorNode ?? null, sel?.focusNode ?? null]) {
-    const page = elementOf(node)?.closest(NOTE_PAGE) ?? null
+    const page = elementOf(node)?.closest(PAGE_SURFACE) ?? null
     if (page !== null && isShown(page) && claims(page)) return page
   }
   return null
@@ -84,14 +84,14 @@ export function pageSelectionHolder(doc: Document = document): Element | null {
 /**
  * A PAGE HOLDS THE KEYS (YAZ-3140): the rule of the window's file clipboard (⌘C / ⌘X / ⌘V) and the
  * sidebar's arrows "from nowhere". A key belongs to the page when the target is a read-only body
- * (`readOnlyNoteHoldsKeys`), or the focus is nowhere (`<body>`) and the reader's selection is
- * anywhere in a visible note page — the title of a read-only note takes no focus, and neither does
+ * (`readOnlyPageHoldsKeys`), or the focus is nowhere (`<body>`) and the reader's selection is
+ * anywhere in a visible page page — the title of a read-only page takes no focus, and neither does
  * the text of its properties, comments, backlinks or reviews. Only while that page has the reader's
  * last click (YAZ-3145): a press outside every page ends it. A focused control (a sidebar row)
  * keeps its own keys, and a real "nowhere" (no claimed selection in a page) stays the sidebar's.
  */
 export function pageHoldsKeys(target: EventTarget | null): boolean {
-  if (readOnlyNoteHoldsKeys(target)) return true
+  if (readOnlyPageHoldsKeys(target)) return true
   if (!(target instanceof Element)) return false
   const doc = target.ownerDocument
   return (target === doc.body || target === doc.documentElement) && pageSelectionHolder(doc) !== null

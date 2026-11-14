@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { copyFoldKey, copyFoldParts } from '@shared/foldKey'
 import type { TreeNode } from '@shared/types'
-import { allDirs, ancestorDirs, copyDirs, firstCopy, atOrBelow, favoriteOrder, favoriteRoots, findDirNode, findNode, notesAt, otherFiles, pinnedRoots, treeHasFile, treeHasPath, treeReducer, withoutPaths } from './treeState'
+import { allDirs, ancestorDirs, copyDirs, firstCopy, atOrBelow, favoriteOrder, favoriteRoots, findDirNode, findNode, pagesAt, otherFiles, pinnedRoots, treeHasFile, treeHasPath, treeReducer, withoutPaths } from './treeState'
 
 describe('treeReducer', () => {
   it('toggle adds then removes a dir', () => {
@@ -78,11 +78,11 @@ describe('allDirs', () => {
 
 /**
  * The copies of Focus and Favorites (YAZ-3131): folder `F` and its subfolder `F/S` are both top rows,
- * so `F/S` and the note in it stand under two tops. Each copy folds under its own key.
+ * so `F/S` and the page in it stand under two tops. Each copy folds under its own key.
  */
 describe('copy folds (YAZ-3131)', () => {
-  const note: TreeNode = { type: 'file', name: 'n.md', path: '/v/F/S/n.md', size: 1, mtime: 1, kind: 'markdown' }
-  const sub: TreeNode = { type: 'dir', name: 'S', path: '/v/F/S', children: [note] }
+  const page: TreeNode = { type: 'file', name: 'n.md', path: '/v/F/S/n.md', size: 1, mtime: 1, kind: 'markdown' }
+  const sub: TreeNode = { type: 'dir', name: 'S', path: '/v/F/S', children: [page] }
   const tops: TreeNode[] = [{ type: 'dir', name: 'F', path: '/v/F', children: [sub] }, sub]
   const key = copyFoldKey
 
@@ -103,12 +103,12 @@ describe('copy folds (YAZ-3131)', () => {
   })
 
   it('firstCopy (S12): the first top whose folds show the path, else the first that holds it, else null', () => {
-    // Nothing open: no copy shows the note, so the first holder takes it.
-    expect(firstCopy(tops, note.path, new Set())).toBe('/v/F')
-    // Only the second copy is open down to the note: it takes the light.
-    expect(firstCopy(tops, note.path, new Set([key('/v/F/S', '/v/F/S')]))).toBe('/v/F/S')
+    // Nothing open: no copy shows the page, so the first holder takes it.
+    expect(firstCopy(tops, page.path, new Set())).toBe('/v/F')
+    // Only the second copy is open down to the page: it takes the light.
+    expect(firstCopy(tops, page.path, new Set([key('/v/F/S', '/v/F/S')]))).toBe('/v/F/S')
     // Both open: the first from the top wins.
-    expect(firstCopy(tops, note.path, new Set([key('/v/F', '/v/F'), key('/v/F', '/v/F/S'), key('/v/F/S', '/v/F/S')]))).toBe('/v/F')
+    expect(firstCopy(tops, page.path, new Set([key('/v/F', '/v/F'), key('/v/F', '/v/F/S'), key('/v/F/S', '/v/F/S')]))).toBe('/v/F')
     // A top row is shown by itself; a path no top holds lights nowhere.
     expect(firstCopy(tops, '/v/F/S', new Set())).toBe('/v/F/S')
     expect(firstCopy(tops, '/v/other.md', new Set())).toBeNull()
@@ -185,7 +185,7 @@ describe('findNode (YAZ-1766)', () => {
 
 describe('favoriteRoots (YAZ-1766 D4)', () => {
   const tree: TreeNode[] = [
-    { type: 'dir', name: 'Notes', path: '/v/Notes', children: [] },
+    { type: 'dir', name: 'Pages', path: '/v/Pages', children: [] },
     {
       type: 'dir',
       name: 'Projects',
@@ -196,7 +196,7 @@ describe('favoriteRoots (YAZ-1766 D4)', () => {
   ]
 
   it('returns the favorites in STORED order, files and dirs alike — never tree order', () => {
-    expect(favoriteRoots(tree, ['/v/top.md', '/v/Projects', '/v/Notes']).map((n) => n.path)).toEqual(['/v/top.md', '/v/Projects', '/v/Notes'])
+    expect(favoriteRoots(tree, ['/v/top.md', '/v/Projects', '/v/Pages']).map((n) => n.path)).toEqual(['/v/top.md', '/v/Projects', '/v/Pages'])
   })
 
   it('keeps a favorite INSIDE a favorited folder as its own root row too (redundancy; YAZ-2619 S7, S8 on the Focus tab)', () => {
@@ -204,7 +204,7 @@ describe('favoriteRoots (YAZ-1766 D4)', () => {
   })
 
   it('a path the tree no longer holds yields no row, and no favorites yields nothing', () => {
-    expect(favoriteRoots(tree, ['/v/Gone.md', '/v/Notes']).map((n) => n.path)).toEqual(['/v/Notes'])
+    expect(favoriteRoots(tree, ['/v/Gone.md', '/v/Pages']).map((n) => n.path)).toEqual(['/v/Pages'])
     expect(favoriteRoots(tree, [])).toEqual([])
   })
 })
@@ -238,7 +238,7 @@ describe('favoriteOrder (YAZ-2631 D1)', () => {
   })
 })
 
-describe('notesAt (YAZ-2420 3E1)', () => {
+describe('pagesAt (YAZ-2420 3E1)', () => {
   const file = (path: string, kind: 'markdown' | 'pdf' = 'markdown'): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind })
   const tree: TreeNode[] = [
     { type: 'dir', name: 'a', path: '/v/a', children: [{ type: 'dir', name: 'b', path: '/v/a/b', children: [file('/v/a/b/deep.md'), file('/v/a/b/scan.pdf', 'pdf')] }, file('/v/a/one.md')] },
@@ -246,11 +246,11 @@ describe('notesAt (YAZ-2420 3E1)', () => {
     file('/v/top.md'),
   ]
 
-  it('a note is itself; a folder is every note under it at any depth, never a file that is no note nor a sibling whose name it begins', () => {
-    expect(notesAt(tree, '/v/top.md')).toEqual(['/v/top.md'])
-    expect(notesAt(tree, '/v/a')).toEqual(['/v/a/b/deep.md', '/v/a/one.md'])
-    expect(notesAt(tree, '/v/a/b/scan.pdf')).toEqual([])
-    expect(notesAt(tree, '/v/gone')).toEqual([])
+  it('a page is itself; a folder is every page under it at any depth, never a file that is no page nor a sibling whose name it begins', () => {
+    expect(pagesAt(tree, '/v/top.md')).toEqual(['/v/top.md'])
+    expect(pagesAt(tree, '/v/a')).toEqual(['/v/a/b/deep.md', '/v/a/one.md'])
+    expect(pagesAt(tree, '/v/a/b/scan.pdf')).toEqual([])
+    expect(pagesAt(tree, '/v/gone')).toEqual([])
   })
 })
 
@@ -262,7 +262,7 @@ describe('otherFiles (YAZ-2620 D3)', () => {
     file('/r/scan.pdf', 'pdf'),
   ]
 
-  it('every file that is no note, at any depth, in tree order — one the app can show and one it cannot alike; never a note, never a folder', () => {
+  it('every file that is no page, at any depth, in tree order — one the app can show and one it cannot alike; never a page, never a folder', () => {
     expect(otherFiles(tree)).toEqual(['/r/skills/get-transcript.py', '/r/scan.pdf'])
     expect(otherFiles([])).toEqual([])
   })

@@ -72,9 +72,9 @@ describe('rewriteIds: an ID becomes its new ID wherever a file names it', () => 
 
   it('a function from an ID to its new ID: every ID of the vault from old letters to new letters (D5)', () => {
     const letters = (id: string): string | undefined => (id.startsWith('YAZ-') ? `DOC-${id.slice(4)}` : undefined)
-    const before = '---\nid: YAZ-3\nalso_in:\n  - YAZ-7\nin:\n  YAZ-7:\n    Status: open\n---\n[[YAZ-1]] [[yaz-12|x]] [[BUS-4]] [[6cbnmcq5n2sj]] [[Some note]]\n'
+    const before = '---\nid: YAZ-3\nalso_in:\n  - YAZ-7\nin:\n  YAZ-7:\n    Status: open\n---\n[[YAZ-1]] [[yaz-12|x]] [[BUS-4]] [[6cbnmcq5n2sj]] [[Some page]]\n'
     expect(rewriteIds(before, letters, { own: true })).toEqual({
-      content: '---\nid: DOC-3\nalso_in:\n  - DOC-7\nin:\n  DOC-7:\n    Status: open\n---\n[[DOC-1]] [[DOC-12|x]] [[BUS-4]] [[6cbnmcq5n2sj]] [[Some note]]\n',
+      content: '---\nid: DOC-3\nalso_in:\n  - DOC-7\nin:\n  DOC-7:\n    Status: open\n---\n[[DOC-1]] [[DOC-12|x]] [[BUS-4]] [[6cbnmcq5n2sj]] [[Some page]]\n',
       changed: 5,
     })
   })
@@ -105,28 +105,28 @@ describe('rewriteIds: an ID becomes its new ID wherever a file names it', () => 
 describe('exactLinkTarget: a settings link leaf follows the rule of YAZ-4935 (YAZ-4954 part 2)', () => {
   const only = (...names: string[]) => (page: string) => names.includes(page)
 
-  it('with the notes known: the left side wins when it is a page, in both orders', () => {
-    expect(exactLinkTarget('[[Covid notes|COVID-19]]', only('Covid notes', 'COVID-19'))).toBe('Covid notes')
-    expect(exactLinkTarget('[[Covid notes|COVID-19]]', only('COVID-19'))).toBe('COVID-19')
-    expect(exactLinkTarget('[[COVID-19|Covid notes]]', only('Covid notes', 'COVID-19'))).toBe('COVID-19')
-    expect(exactLinkTarget(' [[Covid notes#Intro|COVID-19]] ', only('Covid notes'))).toBe('Covid notes')
+  it('with the pages known: the left side wins when it is a page, in both orders', () => {
+    expect(exactLinkTarget('[[Covid pages|COVID-19]]', only('Covid pages', 'COVID-19'))).toBe('Covid pages')
+    expect(exactLinkTarget('[[Covid pages|COVID-19]]', only('COVID-19'))).toBe('COVID-19')
+    expect(exactLinkTarget('[[COVID-19|Covid pages]]', only('Covid pages', 'COVID-19'))).toBe('COVID-19')
+    expect(exactLinkTarget(' [[Covid pages#Intro|COVID-19]] ', only('Covid pages'))).toBe('Covid pages')
   })
 
-  it('with no notes: it keeps both sides when only the notes can pick, as the index does', () => {
-    expect(exactLinkTarget('[[Covid notes|COVID-19]]')).toBe('Covid notes|COVID-19')
-    expect(exactLinkTarget('[[COVID-19|Covid notes]]')).toBe('COVID-19')
+  it('with no pages: it keeps both sides when only the pages can pick, as the index does', () => {
+    expect(exactLinkTarget('[[Covid pages|COVID-19]]')).toBe('Covid pages|COVID-19')
+    expect(exactLinkTarget('[[COVID-19|Covid pages]]')).toBe('COVID-19')
     expect(exactLinkTarget('[[staging|WIKI-116]]')).toBe('staging|WIKI-116')
     expect(exactLinkTarget('[[Postgres|database]]')).toBe('Postgres')
     expect(exactLinkTarget('[[|WIKI-116]]')).toBe('WIKI-116')
   })
 
-  it('a file is the page in both orders, with or without the notes', () => {
+  it('a file is the page in both orders, with or without the pages', () => {
     expect(exactLinkTarget('[[photo.png|FIG-1]]')).toBe('photo.png')
     expect(exactLinkTarget('[[FIG-1|photo.png]]', only('FIG-1'))).toBe('photo.png')
   })
 
   it('no exact link, or an empty page: null', () => {
-    expect(exactLinkTarget('Covid notes')).toBeNull()
+    expect(exactLinkTarget('Covid pages')).toBeNull()
     expect(exactLinkTarget('[[#Intro]]')).toBeNull()
   })
 })

@@ -1,8 +1,8 @@
 /**
- * Link pills in folder cells (YAZ-4601, YAZ-4501 D47-D49). A link value is the note editor's wikilink pill: it reads
+ * Link pills in folder cells (YAZ-4601, YAZ-4501 D47-D49). A link value is the page editor's wikilink pill: it reads
  * as the linked page's title, a click opens that page (⌘ a background tab) and edits nothing, and a hover shows the
  * LINKED page's card in place of the row's. A text value with an inline `[[link]]` shows text and a pill. The cells'
- * `[[` picker offers notes AND folders, as the note editor's does. These mount the whole `ViewsPane`.
+ * `[[` picker offers pages AND folders, as the page editor's does. These mount the whole `ViewsPane`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -24,8 +24,8 @@ vi.mock('../../editor/createCrepe', () => ({
     return { create: vi.fn(async () => {}), setReadonly: vi.fn(), destroy: vi.fn() }
   }),
 }))
-// The sidebar's note panel: a stand-in that says which note it shows.
-vi.mock('../../sidebar/NotePreview', () => ({ default: ({ name }: { name: string }) => <div className="note-preview" aria-label={`Preview of ${name}`} /> }))
+// The sidebar's page panel: a stand-in that says which page it shows.
+vi.mock('../../sidebar/PagePreview', () => ({ default: ({ name }: { name: string }) => <div className="page-preview" aria-label={`Preview of ${name}`} /> }))
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -37,11 +37,11 @@ const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecor
 const ALPHA = '/vault/Pills/Alpha.md'
 const BOB = '/vault/People/Bob.md'
 const CAROL = '/vault/People/Carol.md'
-const ROWS = [rec(ALPHA, { owner: '[[Bob]]', team: ['[[Bob]]', '[[Carol]]'], note: 'see [[Bob]] now' })]
+const ROWS = [rec(ALPHA, { owner: '[[Bob]]', team: ['[[Bob]]', '[[Carol]]'], page: 'see [[Bob]] now' })]
 const VAULT = [...ROWS, rec(BOB), rec(CAROL)]
 const DIRS: TreeNode[] = ['People', 'Pills'].map((name) => ({ type: 'dir', name, path: `/vault/${name}`, children: [] }))
 
-const TABLE = 'views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.owner\n      - note.team\n      - note.note\n'
+const TABLE = 'views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.owner\n      - note.team\n      - note.page\n'
 const CARDS = 'views:\n  - type: cards\n    name: C\n    order:\n      - file.name\n      - note.owner\n'
 
 let root: Root | null = null
@@ -102,7 +102,7 @@ const input = (el: HTMLInputElement, value: string) => act(() => {
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(el, value)
   el.dispatchEvent(new Event('input', { bubbles: true }))
 })
-const preview = () => document.body.querySelector('.note-preview')?.getAttribute('aria-label') ?? null
+const preview = () => document.body.querySelector('.page-preview')?.getAttribute('aria-label') ?? null
 
 describe('D47: a link value is a pill', () => {
   it('reads as the linked title, with the wikilink pill class, in Link and Multi-link cells', () => {
@@ -111,7 +111,7 @@ describe('D47: a link value is a pill', () => {
     expect(pills(cell(el, 2)).map((p) => p.dataset.linkPath)).toEqual([BOB, CAROL])
   })
 
-  it('a pill wears its page’s file icon, as a note’s pill does (YAZ-4544 4G)', () => {
+  it('a pill wears its page’s file icon, as a page’s pill does (YAZ-4544 4G)', () => {
     const { el } = mount(TABLE)
     // The icon is a `FileIcon` inside the pill, before the name (YAZ-4924: after the head piece the look may add).
     const pill = pills(cell(el, 1))[0]
@@ -135,7 +135,7 @@ describe('D47: a link value is a pill', () => {
     expect([...pills(cell(el, 1))[0].querySelectorAll('span')].map((s) => s.className.replace(/file-icon.*/, 'file-icon'))).toEqual(['link-pill__tail', 'link-pill__text', 'link-pill__icon', 'file-icon'])
     act(() => wikilinks.setLook({ format: '{name}' }, 'Mine'))
     expect(pills(cell(el, 1))[0].querySelector('.file-icon')).toBeNull()
-    // Round 5: a note without an ID loses `#{number}`; `{mark}` is the same small icon the note's pill draws.
+    // Round 5: a page without an ID loses `#{number}`; `{mark}` is the same small icon the page's pill draws.
     act(() => wikilinks.setLook({ format: '{name} #{number}{mark}', parts: { mark: { icon: 'link' } } }, 'Mine'))
     const marked = pills(cell(el, 1))[0]
     expect([marked.textContent, (marked.querySelector('.link-pill__tail .link-pill__mark') as HTMLElement | null)?.dataset.mark, (marked.querySelector('.link-pill__mark') as HTMLElement | null)?.style.getPropertyValue('--pill-mark-icon').startsWith('url(') === true]).toEqual(['Bob', 'link', true])
@@ -218,7 +218,7 @@ describe('D48: a text value with an inline link', () => {
   })
 })
 
-describe('D49: one picker with notes and folders', () => {
+describe('D49: one picker with pages and folders', () => {
   it('the link editor offers the folders too', () => {
     const { el } = mount(TABLE)
     act(() => void cell(el, 1).dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))

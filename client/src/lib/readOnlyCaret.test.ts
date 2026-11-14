@@ -1,17 +1,17 @@
 /**
  * "A page holds the keys" (YAZ-3140): with the focus nowhere (`<body>`) and the reader's DOM
- * selection anywhere in a visible note page — its title, properties, body, comments, backlinks or
+ * selection anywhere in a visible page page — its title, properties, body, comments, backlinks or
  * reviews — the window's file clipboard and the sidebar's arrows leave the key to the page. A
  * focused control (a sidebar row) keeps its own keys, and a real "nowhere" stays the sidebar's.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { claimPage, pageHoldsKeys, pageSelectionHolder, readOnlyNoteHoldsKeys } from './readOnlyCaret'
+import { claimPage, pageHoldsKeys, pageSelectionHolder, readOnlyPageHoldsKeys } from './readOnlyCaret'
 
-/** A note page as `Editor.tsx` draws it: the title block, then the body, then the backlinks. */
+/** A page page as `Editor.tsx` draws it: the title block, then the body, then the backlinks. */
 function page(readOnly: boolean, parent: HTMLElement = document.body) {
   const host = document.createElement('div')
   host.className = 'editor-host'
-  host.dataset.page = 'note'
+  host.dataset.page = 'page'
   if (readOnly) host.dataset.readOnly = 'true'
   const title = document.createElement('div')
   title.className = 'page-title'
@@ -99,9 +99,9 @@ describe('pageHoldsKeys (YAZ-3140): the page the reader is in holds its keys', (
     const { title, body } = page(true)
     pointAt(title.parentElement!)
     document.getSelection()!.setBaseAndExtent(title, 0, title, 2)
-    expect(readOnlyNoteHoldsKeys(document.body)).toBe(false)
+    expect(readOnlyPageHoldsKeys(document.body)).toBe(false)
     document.getSelection()!.collapse(body, 1)
-    expect(readOnlyNoteHoldsKeys(document.body)).toBe(true)
+    expect(readOnlyPageHoldsKeys(document.body)).toBe(true)
   })
 })
 
@@ -135,7 +135,7 @@ describe('the last click decides (YAZ-3145, option 1): a press outside every pag
     document.getSelection()!.collapse(body, 2)
     const blank = sidebar()
     pointAt(blank)
-    expect(readOnlyNoteHoldsKeys(document.body)).toBe(false)
+    expect(readOnlyPageHoldsKeys(document.body)).toBe(false)
     expect(pageHoldsKeys(document.body)).toBe(false)
     pointAt(title.parentElement!)
     document.getSelection()!.collapse(title, 1)

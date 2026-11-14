@@ -1,7 +1,7 @@
 /**
  * Editor type inference for inline cell editors (5B, GRO-2142). Locked precedence: the FOLDER
- * PAGE's own view-scoped declaration wins, then a vault-wide one; otherwise the note's own YAML
- * value decides; a note without the key borrows the dominant value type across the view's
+ * PAGE's own view-scoped declaration wins, then a vault-wide one; otherwise the page's own YAML
+ * value decides; a page without the key borrows the dominant value type across the view's
  * records; text is the fallback. `file.*` and `formula.*` never get an editor.
  *
  * TOMBSTONE (⚡ YAZ-815): the rung-3 cases — an explicit `.obsidian/types.json` assignment, and
@@ -63,7 +63,7 @@ describe('columnTyping + cellEditor', () => {
     expect(cellEditor('high', col)).toBe('text')
   })
 
-  it('a note without the key borrows the dominant value type across the view records', () => {
+  it('a page without the key borrows the dominant value type across the view records', () => {
     const recs = [record({ n: 1 }, 1), record({ n: 2 }, 2), record({ n: 'three' }, 3), record({}, 4)]
     const col = columnTyping('n', recs)
     expect(col?.dominant).toBe('number')
@@ -100,7 +100,7 @@ describe('declaration precedence (5E, GRO-2217 — locked amendment on GRO-2120;
     const col = columnTyping('owner', recs, none)
     expect(col?.assigned).toBeNull()
     expect(col?.target).toBeUndefined()
-    expect(cellEditor(7, col)).toBe('number') // the note's own value decides, as before
+    expect(cellEditor(7, col)).toBe('number') // the page's own value decides, as before
   })
 
   it('vault-wide declarations beat the value and carry the target onto the column', () => {

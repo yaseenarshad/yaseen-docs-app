@@ -1,7 +1,7 @@
 import { isRecord } from './guards'
 
 /**
- * A vault's note card review settings (YAZ-4959 D14): `<root>/.yaseendocs/review.json`, per vault, so every Mac
+ * A vault's card review settings (YAZ-4959 D14): `<root>/.yaseendocs/review.json`, per vault, so every Mac
  * computes the same due dates. They replace page upkeep review (YAZ-2322, D6: no legacy). A missing or malformed file
  * is the defaults; each bad field falls back to its default alone, and a key this build does not know is ignored.
  * The schedule that reads them is `cardSchedule.ts`.

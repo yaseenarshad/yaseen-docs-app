@@ -20,13 +20,13 @@ interface PageContextMenuProps {
   onOpen?: (path: string) => void
   onOpenRight?: (path: string) => void
   onOpenBackground?: (path: string) => void
-  /** "Open in mini window ⇧↩" (YAZ-4547, D57; the key is YAZ-4605 D56): the card over the folder page. Every folder view passes it when the host has a note editor. */
+  /** "Open in mini window ⇧↩" (YAZ-4547, D57; the key is YAZ-4605 D56): the card over the folder page. Every folder view passes it when the host has a page editor. */
   onOpenWindow?: (path: string) => void
   onNotice?: (message: string) => void
   onClose: () => void
   /** A surface's own items, each entry a group after the page actions: the folder table's edit groups, then its view groups (YAZ-4608 C8: open, edit, view, destructive). */
   extra?: ReactNode[]
-  /** The destructive items, the LAST group (YAZ-4608 C8): the table's "Delete note…". After "Move to Other files". */
+  /** The destructive items, the LAST group (YAZ-4608 C8): the table's "Delete page…". After "Move to Other files". */
   danger?: ReactNode
 }
 
@@ -36,7 +36,7 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
   // A folder row's page is its folder (YAZ-4579 D32): Copy path and Reveal name the directory, not its hidden `.folder.md`.
   const page = rowPage(path)
   // "Move to Other files" (YAZ-4597 D46): its own group, after the surface's groups and before the destructive one (C8),
-  // on a note row of a folder page whose tray takes moves.
+  // on a page row of a folder page whose tray takes moves.
   const moveToTray = useContext(OtherFilesMove)
   // A whole subfolder (YAZ-4747 OF1): the one directly under the page that holds this row.
   const folderTray = useContext(OtherFilesFolderMove)
@@ -44,10 +44,10 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
   const doors = useContext(PageActions)
   const lists = doors?.listState?.(page) ?? null
   const flyout = useFlyout<string>()
-  // YAZ-4797 demo: a note row's shortcut items, on a folder page of a vault with IDs; a folder row has none (only notes are shortcuts).
+  // YAZ-4797 demo: a page row's shortcut items, on a folder page of a vault with IDs; a folder row has none (only pages are shortcuts).
   const shortcuts = useContext(ShortcutActions)
-  const noteRow = movesToOtherFiles(path) && shortcuts !== null && !shortcuts.locked(path)
-  const home = noteRow ? shortcuts.homeOf(path) : null
+  const pageRow = movesToOtherFiles(path) && shortcuts !== null && !shortcuts.locked(path)
+  const home = pageRow ? shortcuts.homeOf(path) : null
   const [folderQuery, setFolderQuery] = useState('')
   const run = (action: () => void) => () => {
     onClose()
@@ -107,8 +107,8 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
     </>
   )
   /**
-   * "Move to Other files" (D46; YAZ-4747 OF1): a note of the page itself moves at a click. A note in a subfolder gets the
-   * sidebar's "New note ›" kind of parent: a click still moves the note; its flyout names the note and the folder. A
+   * "Move to Other files" (D46; YAZ-4747 OF1): a page of the page itself moves at a click. A page in a subfolder gets the
+   * sidebar's "New page ›" kind of parent: a click still moves the page; its flyout names the page and the folder. A
    * folder row moves its folder (its own row IS the folder, so the words need no name).
    */
   const trayItems = (): ReactNode[] => {
@@ -126,7 +126,7 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
         onChoose={run(() => moveToTray(path))}
       >
         <div className="ctx-menu__group" role="group">
-          {item(<span className="ctx-menu__label"><FileIcon path={path} />{title} ({unit('note')})</span>, () => moveToTray(path), undefined, true)}
+          {item(<span className="ctx-menu__label"><FileIcon path={path} />{title} ({unit('page')})</span>, () => moveToTray(path), undefined, true)}
           {item(<span className="ctx-menu__label"><FileIcon path={subfolder.dir} folder />{subfolder.name} (folder)</span>, () => folderTray.move(subfolder.dir), undefined, true)}
         </div>
       </FlyoutParent>,
@@ -134,16 +134,16 @@ export function PageContextMenu({ x, y, path, title, onOpen, onOpenRight, onOpen
   }
   /**
    * The shortcut items (YAZ-4797 demo): on a shortcut row, "Go to where it lives" and "Remove shortcut from <page>" (the
-   * note stays where it lives); on every note row, "Add shortcut to ›", the vault's folders with a search box, less the
+   * page stays where it lives); on every page row, "Add shortcut to ›", the vault's folders with a search box, less the
    * folder it lives in and this page.
    */
   const shortcutItems = (): ReactNode[] => {
-    if (!noteRow || shortcuts === null) return []
+    if (!pageRow || shortcuts === null) return []
     const needle = folderQuery.trim().toLowerCase()
     const held = shortcuts.holders(path)
     const choices = shortcuts
       .folders()
-      // Every folder that shows the note already: where it lives, and each one it is a shortcut in, this page too (checker 8A).
+      // Every folder that shows the page already: where it lives, and each one it is a shortcut in, this page too (checker 8A).
       .filter((f) => !held.has(f.dir))
       .filter((f) => needle === '' || f.name.toLowerCase().includes(needle) || f.path.toLowerCase().includes(needle))
     return [

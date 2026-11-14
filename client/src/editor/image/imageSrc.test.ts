@@ -1,11 +1,11 @@
 /**
  * `imageSrc` (YAZ-1656): the src as written → the URL the `<img>` loads. Pinned: schemed srcs pass
  * through untouched, a leading `/` is root-relative, the vault URL's shape and encoding (spaces,
- * unicode, `?`/`#` inside a path segment, the note's directory in `from`), and the `alt|width`
+ * unicode, `?`/`#` inside a path segment, the page's directory in `from`), and the `alt|width`
  * pair's round trips.
  */
 import { describe, expect, it } from 'vitest'
-import { formatAlt, hasScheme, imageSrc, noteDirRel, parseAlt } from './imageSrc'
+import { formatAlt, hasScheme, imageSrc, pageDirRel, parseAlt } from './imageSrc'
 
 const ROOT = '/Users/me/My Vault'
 const ENC_ROOT = encodeURIComponent(ROOT)
@@ -13,18 +13,18 @@ const ENC_ROOT = encodeURIComponent(ROOT)
 describe('imageSrc', () => {
   it('passes any schemed src through untouched', () => {
     for (const src of ['https://x/y.png', 'http://x/y.png', 'data:image/png;base64,AAAA', 'blob:app://x/uuid', 'app://fs/foreign.png', 'file:///tmp/a.png', 'HTTPS://X/Y.PNG']) {
-      expect(imageSrc(ROOT, 'notes', src)).toBe(src)
+      expect(imageSrc(ROOT, 'pages', src)).toBe(src)
       expect(hasScheme(src)).toBe(true)
     }
   })
 
-  it('a relative src becomes the vault URL with the note directory as `from`', () => {
-    expect(imageSrc(ROOT, 'notes/sub', 'images/a.png')).toBe(`app://vault/${ENC_ROOT}/images/a.png?from=notes%2Fsub`)
+  it('a relative src becomes the vault URL with the page directory as `from`', () => {
+    expect(imageSrc(ROOT, 'pages/sub', 'images/a.png')).toBe(`app://vault/${ENC_ROOT}/images/a.png?from=pages%2Fsub`)
     expect(imageSrc(ROOT, '', 'a.png')).toBe(`app://vault/${ENC_ROOT}/a.png?from=`)
   })
 
   it('a leading slash is root-relative, not an OS path', () => {
-    expect(imageSrc(ROOT, 'notes', '/assets/a.png')).toBe(`app://vault/${ENC_ROOT}/assets/a.png?from=notes`)
+    expect(imageSrc(ROOT, 'pages', '/assets/a.png')).toBe(`app://vault/${ENC_ROOT}/assets/a.png?from=pages`)
     expect(hasScheme('/assets/a.png')).toBe(false)
   })
 
@@ -48,16 +48,16 @@ describe('imageSrc', () => {
   })
 })
 
-describe('noteDirRel', () => {
-  it('is the root-relative directory of the note, posix, empty at the root', () => {
-    expect(noteDirRel(ROOT, `${ROOT}/a.md`)).toBe('')
-    expect(noteDirRel(ROOT, `${ROOT}/notes/a.md`)).toBe('notes')
-    expect(noteDirRel(ROOT, `${ROOT}/notes/sub dir/a.md`)).toBe('notes/sub dir')
-    expect(noteDirRel(`${ROOT}/`, `${ROOT}/notes/a.md`)).toBe('notes')
+describe('pageDirRel', () => {
+  it('is the root-relative directory of the page, posix, empty at the root', () => {
+    expect(pageDirRel(ROOT, `${ROOT}/a.md`)).toBe('')
+    expect(pageDirRel(ROOT, `${ROOT}/pages/a.md`)).toBe('pages')
+    expect(pageDirRel(ROOT, `${ROOT}/pages/sub dir/a.md`)).toBe('pages/sub dir')
+    expect(pageDirRel(`${ROOT}/`, `${ROOT}/pages/a.md`)).toBe('pages')
   })
-  it('is empty for a note outside the root (never a `..`)', () => {
-    expect(noteDirRel(ROOT, '/elsewhere/notes/a.md')).toBe('')
-    expect(noteDirRel(ROOT, `${ROOT}2/a.md`)).toBe('')
+  it('is empty for a page outside the root (never a `..`)', () => {
+    expect(pageDirRel(ROOT, '/elsewhere/pages/a.md')).toBe('')
+    expect(pageDirRel(ROOT, `${ROOT}2/a.md`)).toBe('')
   })
 })
 

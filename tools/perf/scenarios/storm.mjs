@@ -1,11 +1,11 @@
 /**
- * storm: 230 notes added, then those 230 renamed, outside the app (a git pull, a bulk rename) in a
- * 2k-note vault it has open. Per phase until main settles: main CPU seconds, main's peak RSS, and
+ * storm: 230 pages added, then those 230 renamed, outside the app (a git pull, a bulk rename) in a
+ * 2k-page vault it has open. Per phase until main settles: main CPU seconds, main's peak RSS, and
  * the longest IPC round trip the renderer saw (`state.get` every 50 ms: the stall a user feels).
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { writeNote, writeVault } from '../genVault.mjs'
+import { writePageFile, writeVault } from '../genVault.mjs'
 import { sleep, usage } from '../lib/app.mjs'
 import { session } from '../lib/session.mjs'
 
@@ -15,7 +15,7 @@ const IPC_PROBE = `window.__ipc ??= (() => { const s = { max: 0 }; (async () => 
 
 export function setup(dir) {
   const vault = writeVault(path.join(dir, 'vault'), 2000)
-  return { profile: path.join(dir, 'profile'), vault, small: writeNote(vault, 'Small', 'bullets', 20), storm: path.join(vault, 'Storm') }
+  return { profile: path.join(dir, 'profile'), vault, small: writePageFile(vault, 'Small', 'bullets', 20), storm: path.join(vault, 'Storm') }
 }
 
 /** Runs `act`, then samples main every 250 ms until its CPU stays flat for 1 s; metrics prefixed with `name`. */

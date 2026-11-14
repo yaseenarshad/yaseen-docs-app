@@ -12,7 +12,7 @@
  * A clean twin reloads as a diff (folds, caret and scroll stay); a dirty twin shows the conflict
  * bar. The watcher event for the same write then matches the twin's new mtime and is skipped.
  *
- * Module-scoped, i.e. PER RENDERER: two windows on one note still sync through the watcher (YAZ-2942).
+ * Module-scoped, i.e. PER RENDERER: two windows on one page still sync through the watcher (YAZ-2942).
  */
 
 type TwinSaveListener = (mtime: number) => void
@@ -45,7 +45,7 @@ const writing = new Map<string, number>()
 const announced = new Map<string, number>()
 
 /**
- * An app write to a note that is no typing of its editor (YAZ-4946: an Inbox answer, a review delete, the card window's
+ * An app write to a page that is no typing of its editor (YAZ-4946: an Inbox answer, a review delete, the card window's
  * ⋯): the open editors of `path` take the new bytes QUIETLY, as a twin's save — out of the undo history, with no
  * "outside changes" bar, no glow and no entry in the change list. While the write runs the editors ignore the watcher
  * for `path`, and after it the watcher's event that carries the write's mtime (`isAnnouncedWrite`): that event cannot
@@ -57,7 +57,7 @@ export async function announcedWrite<T extends { mtime: number }>(path: string, 
     const landed = await write()
     announced.delete(path)
     announced.set(path, landed.mtime)
-    // One mtime for each path written: never more entries than the notes the app wrote this way.
+    // One mtime for each path written: never more entries than the pages the app wrote this way.
     if (announced.size > 500) announced.delete(announced.keys().next().value!)
     announceTwinSave(path, landed.mtime)
     return landed

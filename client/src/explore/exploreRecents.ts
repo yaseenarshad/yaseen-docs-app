@@ -1,5 +1,5 @@
 /**
- * The files the explore stack opened, newest first (YAZ-2571; kept after a restart since YAZ-4945): the notes and
+ * The files the explore stack opened, newest first (YAZ-2571; kept after a restart since YAZ-4945): the pages and
  * boards it opened as layers, and App's active tab. The empty search's **Opened** section reads them, with the vault's
  * own open history (`storage.getOpens`, the tabs of every window); see `recentSections.ts`. Kept in this app's
  * localStorage (`explore:opened`), every vault in one list of at most `MAX_EXPLORE_RECENTS`, each window reading its
@@ -49,14 +49,14 @@ export function rememberExploreRecent(path: string, at = Date.now()): void {
 /** Newest first. The same list while nothing was remembered: a render that reads it twice reads one object. */
 export const exploreRecents = (): readonly ExploreOpen[] => list()
 
-/** The open stack hears each move too (check 21 of YAZ-2571): a layer on the note follows a rename, and says so after a delete. */
+/** The open stack hears each move too (check 21 of YAZ-2571): a layer on the page follows a rename, and says so after a delete. */
 const movers = new Set<(from: string, to: string | null) => void>()
 export function onExploreMove(listener: (from: string, to: string | null) => void): () => void {
   movers.add(listener)
   return () => void movers.delete(listener)
 }
 
-/** `paths` after a move of `from` (a note or a folder) to `to`, or without it when it is gone; the same list when it holds none. */
+/** `paths` after a move of `from` (a page or a folder) to `to`, or without it when it is gone; the same list when it holds none. */
 export function movedPaths(paths: readonly string[], from: string, to: string | null): string[] {
   const at = (path: string) => path === from || path.startsWith(`${from}/`)
   if (!paths.some(at)) return paths as string[]
@@ -73,7 +73,7 @@ export function movedOpens(opens: readonly ExploreOpen[], from: string, to: stri
   return opens.filter((e) => kept.has(e.path))
 }
 
-/** A note that is gone (App's `file:deleted`) or moved (`file:renamed`, `to` its new path): the list follows, and the stack. */
+/** A page that is gone (App's `file:deleted`) or moved (`file:renamed`, `to` its new path): the list follows, and the stack. */
 export function moveExploreRecent(from: string, to: string | null): void {
   const now = list()
   const next = movedOpens(now, from, to)

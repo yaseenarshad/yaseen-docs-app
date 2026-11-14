@@ -35,7 +35,7 @@ import { GroupLevelStepsContext } from '../groupLevelSteps'
  * `∅` for the trailing "No value" group, `v:<render(key)>` otherwise (the prefix keeps any
  * rendered value from colliding with the sentinel). Deterministic across sessions — and `render`
  * with NO resolver on purpose (YAZ-2293 D8): the key is the link as STORED, `v:[[<id>]]`, so
- * renaming the note a group is headed by never reopens the group.
+ * renaming the page a group is headed by never reopens the group.
  */
 export const groupKeyOf = (key: Value | null): string => (key === null ? '∅' : `v:${render(key)}`)
 
@@ -56,7 +56,7 @@ export function summaryKindOf(view: ViewDef, key: string): string | undefined {
   return k !== undefined && typeof s[k] === 'string' ? s[k] : undefined
 }
 
-/** One value inside a list / link cell (shared with TableView's cells); through `resolve`, an id link reads as its note's title (`linkText`, YAZ-2293 D8). */
+/** One value inside a list / link cell (shared with TableView's cells); through `resolve`, an id link reads as its page's title (`linkText`, YAZ-2293 D8). */
 export function chip(v: Value, key?: number, resolve?: Resolver) {
   if (v instanceof LinkValue || v instanceof FileValue) return <LinkChip key={key} link={v} resolve={resolve} />
   const text = render(v, resolve)
@@ -74,7 +74,7 @@ export function chip(v: Value, key?: number, resolve?: Resolver) {
 export const LinkPills = createContext(false)
 
 /**
- * A link value (YAZ-4601 D47): the note editor's wikilink pill on the page it resolves to, by its title. A link that
+ * A link value (YAZ-4601 D47): the page editor's wikilink pill on the page it resolves to, by its title. A link that
  * resolves to nothing has no pill and no path: it reads as the editor's unresolved link. Off a folder page: the chip.
  */
 function LinkChip({ link, resolve }: { link: LinkValue | FileValue; resolve?: Resolver }) {
@@ -97,10 +97,10 @@ function LinkChip({ link, resolve }: { link: LinkValue | FileValue; resolve?: Re
 }
 
 /**
- * A resolved pill with the icon its page has in the sidebar (YAZ-4544 4G), as the note editor's pill has (YAZ-3609
+ * A resolved pill with the icon its page has in the sidebar (YAZ-4544 4G), as the page editor's pill has (YAZ-3609
  * D13): a `FileIcon` inside the pill, before the name and after the head piece (YAZ-4924), so the pill reads as the
- * note's. Settings › File icons reach it through the app's CSS (`data-sidebar-file-icons`) and `IconsContext`, as
- * they reach the note's pills.
+ * page's. Settings › File icons reach it through the app's CSS (`data-sidebar-file-icons`) and `IconsContext`, as
+ * they reach the page's pills.
  */
 function PillWithIcon({ path, text, info }: { path: string; text: string; info?: PathInfo }) {
   // A folder resolves to its directory, the editor's rule (no file kind); a folder row's page is its `.folder.md`.
@@ -153,9 +153,9 @@ export interface FolderPagesValue {
   folder: string
   title: (dir: string) => string
   open?: (dir: string) => void
-  /** How many notes a folder's page shows (YAZ-4579 D32): a folder row's "N inside". */
+  /** How many pages a folder's page shows (YAZ-4579 D32): a folder row's "N inside". */
   inside?: (dir: string) => number
-  /** The view's "Folder icon" and "Notes inside count" (YAZ-4848), Settings filled in: ONE place reads them (`ViewsPane`). */
+  /** The view's "Folder icon" and "Pages inside count" (YAZ-4848), Settings filled in: ONE place reads them (`ViewsPane`). */
   folderIcons: boolean
   folderCounts: boolean
   /** The Folder column's look (YAZ-4801): the path from the page, or the last folder only (the look before). */
@@ -165,24 +165,24 @@ export const FolderPages = createContext<FolderPagesValue | null>(null)
 
 /**
  * The folder's column declarations, by bare name (YAZ-4591): a Number or Date cell reads its column's
- * `format` here. Provided around the views alone (`ViewsPane`), so a note's own properties panel —
- * the note window's included — shows its values as stored.
+ * `format` here. Provided around the views alone (`ViewsPane`), so a page's own properties panel —
+ * the page window's included — shows its values as stored.
  */
 export const ColumnDecls = createContext<Readonly<Record<string, PropertyDecl>>>({})
 
-/** The `file.folder` column (YAZ-4564 D26): every view draws its cell here; a note key's through its column's format (YAZ-4591), the rest through `cellContent`. */
+/** The `file.folder` column (YAZ-4564 D26): every view draws its cell here; a page key's through its column's format (YAZ-4591), the rest through `cellContent`. */
 export const rowCell = (row: Row, key: string, resolve?: Resolver): ReactNode => {
   const c = canonicalKey(key)
   if (c === 'file.folder') return <FolderCell row={row} value={row.values[key]} resolve={resolve} />
   if (c === 'file.kind') return typeWord(row.values[key])
-  if (c.startsWith('note.')) return <NoteCell value={row.values[key]} name={c.slice('note.'.length)} resolve={resolve} />
+  if (c.startsWith('note.')) return <PageCell value={row.values[key]} name={c.slice('note.'.length)} resolve={resolve} />
   return cellContent(row.values[key], resolve)
 }
 
 /** The pills a Linked mentions cell shows (YAZ-4738 L3); the rest are "+N", their titles in its tooltip. */
 export const MENTIONS_SHOWN = 3
 
-function NoteCell({ value, name, resolve }: { value: Value; name: string; resolve?: Resolver }) {
+function PageCell({ value, name, resolve }: { value: Value; name: string; resolve?: Resolver }) {
   const decl = useContext(ColumnDecls)[name]
   // An Image column's picture (YAZ-4802), at its column's size and shape: a board card's line, a read-only cell.
   if (decl?.kind === 'image') return <ImageOf value={value} decl={decl} />
@@ -201,8 +201,8 @@ function NoteCell({ value, name, resolve }: { value: Value; name: string; resolv
 }
 
 /**
- * The chip of the folder the note lives in, by the title its Folder group shows (YAZ-4801 demo: "how come no folder
- * showing up here?" — a note directly in the page shows the page, never a blank). A click opens that folder's page,
+ * The chip of the folder the page lives in, by the title its Folder group shows (YAZ-4801 demo: "how come no folder
+ * showing up here?" — a page directly in the page shows the page, never a blank). A click opens that folder's page,
  * the vault root's too (YAZ-4921: `absFrom(root, '')` is the root itself).
  */
 function FolderCell({ row, value, resolve }: { row: Row; value: Value; resolve?: Resolver }) {
@@ -230,14 +230,14 @@ function FolderCell({ row, value, resolve }: { row: Row; value: Value; resolve?:
 
 /**
  * The Folder column as a path (YAZ-4801: "the breadcrumb … wouldnt u want to know what category (aka page) that thing is
- * in regardless?"): the folders from this page down to the note's, by title, each a link to its page, › between. A
+ * in regardless?"): the folders from this page down to the page's, by title, each a link to its page, › between. A
  * note that lives outside this page (a shortcut) shows where it lives from the vault's top, after ↗. A narrow column
  * lets the middle parts shrink to "…"; the last part keeps its width.
  */
 function FolderPath({ dir, pages }: { dir: string; pages: FolderPagesValue }) {
   const inside = pages.folder === '' || dir === pages.folder || dir.startsWith(`${pages.folder}/`)
-  // Every folder from the vault's top down to the note's; "From this page" (YAZ-4801 demo: "does it hide recipes?")
-  // starts at the page itself, "Full path" and a note outside the page keep them all.
+  // Every folder from the vault's top down to the page's; "From this page" (YAZ-4801 demo: "does it hide recipes?")
+  // starts at the page itself, "Full path" and a page outside the page keep them all.
   const all = dir.split('/').filter(Boolean).map((_, i, segs) => segs.slice(0, i + 1).join('/'))
   const from = inside && pages.folderColumn !== 'full' && pages.folder !== '' ? all.indexOf(pages.folder) : 0
   const parts = all.slice(Math.max(0, from))
@@ -272,7 +272,7 @@ function FolderPath({ dir, pages }: { dir: string; pages: FolderPagesValue }) {
 function RowTitle({ row }: { row: Row }) {
   const folder = useContext(ViewFolder)
   const pages = useContext(FolderPages)
-  // A subfolder's row (YAZ-4579 D32): the folder icon, its title, and how many notes its page shows; each one the
+  // A subfolder's row (YAZ-4579 D32): the folder icon, its title, and how many pages its page shows; each one the
   // view's switch (YAZ-4848: the icon on, the count off by default).
   if (isFolderRow(row.record)) {
     // Outside a folder page (no context) a folder row shows its icon and no count, as the defaults say.
@@ -288,7 +288,7 @@ function RowTitle({ row }: { row: Row }) {
   return (
     <>
       {row.record.title}
-      {/* YAZ-4797 demo: the ↗ says where the note lives, on hover. */}
+      {/* YAZ-4797 demo: the ↗ says where the page lives, on hover. */}
       {folder !== null && isShortcut(row.record, folder) && (
         <HoverTip className="view-shortcut-tip" text={`Shortcut. Lives in ${row.record.folder === '' ? 'the vault' : row.record.folder.split('/').join(' › ')}`}>
           <ShortcutIcon />
@@ -361,11 +361,11 @@ export interface GroupHeaderProps {
   rows: readonly Row[]
   collapsed: boolean
   onToggle: () => void
-  /** Create a note in this group (5D, GRO-2144); absent → no "+" affordance. */
+  /** Create a page in this group (5D, GRO-2144); absent → no "+" affordance. */
   onNew?: () => void
-  /** "Show New buttons" (YAZ-3746 13BL, demo): false hides the "+"; the right-click "New note in this group" stays. */
+  /** "Show New buttons" (YAZ-3746 13BL, demo): false hides the "+"; the right-click "New page in this group" stays. */
   newButton?: boolean
-  /** The vault's resolver: a group keyed by an id link is headed by that note's title (YAZ-2293 D8). */
+  /** The vault's resolver: a group keyed by an id link is headed by that page's title (YAZ-2293 D8). */
   resolve?: Resolver
   /** The group's `groupBy` level, outer = 0 (the default): its spec gives the header's style (YAZ-3742). */
   level?: number
@@ -438,7 +438,7 @@ export function GroupHeader({ def, view, columns, groupKey, label, rows, collaps
         </button>
       )}
       {onNew !== undefined && newButton && (
-        <button type="button" className="view-group__new" aria-label={unit(`New note in group ${label}`)} title={unit('New note')} onClick={onNew}>
+        <button type="button" className="view-group__new" aria-label={unit(`New page in group ${label}`)} title={unit('New page')} onClick={onNew}>
           <svg width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M8 3v10M3 8h10" />
           </svg>

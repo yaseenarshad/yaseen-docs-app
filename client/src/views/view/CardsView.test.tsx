@@ -66,7 +66,7 @@ const GROUPED_BASE = `views:
       note.priority: Sum
 `
 
-/** Five one-note records exercising every cover shape; based on the fixture's first record. */
+/** Five one-page records exercising every cover shape; based on the fixture's first record. */
 const cover = (name: string, properties: Record<string, unknown>): IndexRecord => ({
   ...TEST_RECORDS[0],
   path: `/vault/${name}.md`,
@@ -175,7 +175,7 @@ const toggleOf = (el: ParentNode, label: string): HTMLElement => byLabel(el, `To
 // ---------- tests ----------
 
 describe('grid', () => {
-  it('renders one flat grid of cards — file name title over typed label/value rows; the title opens the note', () => {
+  it('renders one flat grid of cards — file name title over typed label/value rows; the title opens the page', () => {
     const { el, onOpenFile } = mount(CARDS_BASE)
     expect(el.querySelector('.view-cards__grid')).not.toBeNull()
     expect(el.querySelector('.view-cards__group')).toBeNull()
@@ -192,7 +192,7 @@ describe('grid', () => {
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
   })
 
-  it('a right-click on a card opens the page menu: "Copy path", and no "Copy ID" though its note has an id (YAZ-2420 D31)', () => {
+  it('a right-click on a card opens the page menu: "Copy path", and no "Copy ID" though its page has an id (YAZ-2420 D31)', () => {
     const { el } = mount(CARDS_BASE, { records: TEST_RECORDS.map((r) => ({ ...r, id: 'k3m9x2pq7abc' })) })
     act(() => void cardOf(el, 'Agentic Agency').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
     const labels = [...document.querySelectorAll('.ctx-menu__item')].map((item) => item.textContent)
@@ -202,7 +202,7 @@ describe('grid', () => {
 })
 
 describe('the title (YAZ-2420 D14)', () => {
-  it('E: a card\'s title shows the note\'s title, not its file name; a note with none shows its file name', () => {
+  it('E: a card\'s title shows the page\'s title, not its file name; a page with none shows its file name', () => {
     const { el } = mount(CARDS_BASE, { records: TEST_RECORDS.map((r, i) => (i === 0 ? { ...r, title: 'UP-001 - Abdul' } : r)) })
     const titles = [...el.querySelectorAll('.view-card__title')].map((b) => b.textContent)
     expect(titles).toContain('UP-001 - Abdul')
@@ -212,7 +212,7 @@ describe('the title (YAZ-2420 D14)', () => {
 })
 
 describe('an id link (YAZ-2293 D8)', () => {
-  it('a card property and a group header both read as the title of the note the id names', () => {
+  it('a card property and a group header both read as the title of the page the id names', () => {
     const ID = 'k3m9x2pq7abc'
     const records = TEST_RECORDS.map((r) =>
       r.basename === 'Attribution' ? { ...r, id: ID } : r.basename === 'VSL-v1' ? { ...r, properties: { ...r.properties, related: `[[${ID}]]` } } : r,

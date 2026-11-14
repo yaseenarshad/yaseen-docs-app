@@ -3,7 +3,7 @@
  * The body is the board embed's own view-only window (`editor/embed/boardWindow.ts`) in its `fill` mode: it fills
  * the layer, fitted on open; the wheel, a drag, ⌘ + the wheel and the window's zoom % pan and zoom freely; nothing is
  * ever written (no `onOptions`). A diagram's pages are tabs under the board. A click on a link of the board (its
- * pills, a shape's link) opens that page on top, as a note layer's links do. No Edit, no E, no note zoom pill: ↗
+ * pills, a shape's link) opens that page on top, as a page layer's links do. No Edit, no E, no page zoom pill: ↗
  * (or ⌘↵) opens the board in a tab to edit it. No "Reading" label (YAZ-4944): a board layer only reads. The window loads the board's picture once; a covered layer keeps it.
  */
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
@@ -15,10 +15,10 @@ import type { BoardLinkSpot } from '../editor/embed/boardLinks'
 import { loadBoardWindow, type BoardWindowHandle } from '../editor/embed/types'
 import { hrefTarget } from '../editor/pathPaste'
 import { linkPath } from '../editor/wikilink/wikilinkPlugin'
-import { useNoteId } from '../search/showIds'
-import { ExploreSteps, keepFocus, openRows, stepRows, type ExploreVault, type LayerSteps } from './ExploreNote'
+import { usePageId } from '../search/showIds'
+import { ExploreSteps, keepFocus, openRows, stepRows, type ExploreVault, type LayerSteps } from './ExplorePage'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
-import { NOTE_WIDTH } from './layers'
+import { PAGE_WIDTH } from './layers'
 
 interface ExploreBoardProps {
   path: string
@@ -26,9 +26,9 @@ interface ExploreBoardProps {
   /** YAZ-4940: the vault's "Show IDs in the title"; On draws the board's ID after the title. */
   idInTitle?: boolean
   vault: ExploreVault
-  /** ‹ › (round 3): a board opened from a search steps through its rows, as a note does. */
+  /** ‹ › (round 3): a board opened from a search steps through its rows, as a page does. */
   steps?: LayerSteps
-  /** A link on the board to a page of the window's vaults: a note or a board goes on top; another file opens in a tab. */
+  /** A link on the board to a page of the window's vaults: a page or a board goes on top; another file opens in a tab. */
   onOpenLink: (path: string) => void
   onNotice: (message: string) => void
   onHeadDown?: (event: ReactMouseEvent) => void
@@ -51,7 +51,7 @@ const WEB = /^[a-z][a-z0-9+.-]*:/i
 const NO_PAGES: { list: readonly DiagramPageRef[]; page: string | null } = { list: [], page: null }
 
 export function ExploreBoard({ path, title, idInTitle = false, vault, steps, onOpenLink, onNotice, onHeadDown, onHeadReset, onOpenInTab, onHeadMenu, onClose, registerZoom, active }: ExploreBoardProps) {
-  const noteId = useNoteId(idInTitle ? vault.wikilinks : undefined, path)
+  const pageId = usePageId(idInTitle ? vault.wikilinks : undefined, path)
   const boxRef = useRef<HTMLDivElement>(null)
   // A head narrower than it needs folds into ⋯ (YAZ-4956).
   const headRef = useRef<HTMLDivElement>(null)
@@ -83,7 +83,7 @@ export function ExploreBoard({ path, title, idInTitle = false, vault, steps, onO
         else go(target)
         return
       }
-      const inApp = WEB.test(spot.inner) ? null : hrefTarget(spot.inner, { root: v.root, notePath: path, candidates: v.wikilinkCandidates })
+      const inApp = WEB.test(spot.inner) ? null : hrefTarget(spot.inner, { root: v.root, pagePath: path, candidates: v.wikilinkCandidates })
       if (inApp !== null) go(inApp)
       else void api.shell.openLink({ href: spot.inner, sourcePath: path })
     }
@@ -97,7 +97,7 @@ export function ExploreBoard({ path, title, idInTitle = false, vault, steps, onO
             // Reading only: never locked here (`fill`), and with no `onOptions` nothing is ever written.
             editable: false,
             fill: true,
-            columnWidth: () => box.clientWidth || NOTE_WIDTH,
+            columnWidth: () => box.clientWidth || PAGE_WIDTH,
             scrollRoot: null,
             onLink: open,
             onPages: (list, page) => setPages((prev) => (prev.list === list && prev.page === page ? prev : { list, page })),
@@ -151,7 +151,7 @@ export function ExploreBoard({ path, title, idInTitle = false, vault, steps, onO
         <span ref={titleRef} className="explore__title" title={path}>
           {title}
         </span>
-        {noteId !== undefined && <span className="explore__id">{noteId}</span>}
+        {pageId !== undefined && <span className="explore__id">{pageId}</span>}
         {/* The parts a narrow layer folds into ⋯ one by one (YAZ-4956, YAZ-4986), the ID stays; `display: contents`, so a wide head is laid out as before. */}
         <span className="explore__fold">
           {steps !== undefined && <ExploreSteps steps={steps} />}
@@ -159,7 +159,7 @@ export function ExploreBoard({ path, title, idInTitle = false, vault, steps, onO
             ↗
           </button>
         </span>
-        <HeadMore sections={() => [steps === undefined ? [] : stepRows(steps), openRows(onOpenInTab, noteId, onNotice)]} />
+        <HeadMore sections={() => [steps === undefined ? [] : stepRows(steps), openRows(onOpenInTab, pageId, onNotice)]} />
         <button type="button" className="explore__button" onMouseDown={keepFocus} onClick={onClose} title="Close this layer (Esc)" aria-label="Close this layer">
           ×
         </button>

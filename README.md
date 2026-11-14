@@ -16,27 +16,27 @@
 </p>
 
 <p align="center">
-  <b>Write like Google Docs. Organise like Notion. Own your files like Obsidian.<br>And your AI agent reads every note.</b>
+  <b>Write like Google Docs. Organise like Notion. Own your files like Obsidian.<br>And your AI agent reads every page.</b>
 </p>
 
 <p align="center">
-  <img src="docs/assets/hero.gif" width="860" alt="A heading section folds in a note. A folder opens as a board, and a card moves to a new column. Then you ask your AI agent to check a headline. It runs one command, and its comment shows below the open note.">
+  <img src="docs/assets/hero.gif" width="860" alt="A heading section folds in a page. A folder opens as a board, and a card moves to a new column. Then you ask your AI agent to check a headline. It runs one command, and its comment shows below the open page.">
 </p>
 
 <p align="center">
   <a href="https://github.com/yaseenarshad/yaseen-docs-app/releases/latest"><b>Download for Mac</b></a> · <a href="https://github.com/yaseenarshad/yaseen-docs-app/releases/latest"><b>Download for Windows</b></a><br>
-  <sub>Free · No account · No server · Your notes stay on your computer</sub>
+  <sub>Free · No account · No server · Your pages stay on your computer</sub>
 </p>
 
 ## The problem
 
-I used Notion for the databases, Logseq for the outliner, Obsidian for the plain files and Google Docs for the smooth writing. Each one is the best at one thing. None of them has all four. Then I started to work with AI agents all day, and agents need notes that are files on your computer. So I built one app where you get the best part of each, on files that your agent can read.
+I used Notion for the databases, Logseq for the outliner, Obsidian for the plain files and Google Docs for the smooth writing. Each one is the best at one thing. None of them has all four. Then I started to work with AI agents all day, and agents need pages that are files on your computer. So I built one app where you get the best part of each, on files that your agent can read.
 
 You know these moments:
 
 - You write in Notion, and each paragraph is a block. Your agent goes through an API for each page.
 - You move to Obsidian for the files. Then you want to zoom into one bullet, and you need a plugin. You want sync, and it costs from $4 each month.
-- You try an outliner. Each line is a bullet, and your notes are on a server or in a database.
+- You try an outliner. Each line is a bullet, and your pages are on a server or in a database.
 - You open Google Docs, because it is smooth. Your bullets do not fold, and there is no file for your agent to open.
 
 <p align="center">
@@ -53,9 +53,9 @@ Yaseen Docs gives you the outliner, the databases and the smooth writing in one 
 
 <table>
   <tr>
-    <td align="center" width="33%"><img src="docs/assets/step-1.png" width="260" alt="The Notes folder in the sidebar, with its folders and notes"><br><b>1. Open a folder</b><br>Any folder of <code>.md</code> files. No import, no account.</td>
-    <td align="center" width="33%"><img src="docs/assets/step-2.png" width="260" alt="A note with nested bullets and a line that shows the path to the current bullet"><br><b>2. Write and organise</b><br>Bullets, tables and boards, all on those files.</td>
-    <td align="center" width="33%"><img src="docs/assets/step-3.png" width="260" alt="A comment from an AI agent below a note"><br><b>3. Give it to your agent</b><br>It reads the same files and leaves comments.</td>
+    <td align="center" width="33%"><img src="docs/assets/step-1.png" width="260" alt="The Pages folder in the sidebar, with its folders and pages"><br><b>1. Open a folder</b><br>Any folder of <code>.md</code> files. No import, no account.</td>
+    <td align="center" width="33%"><img src="docs/assets/step-2.png" width="260" alt="A page with nested bullets and a line that shows the path to the current bullet"><br><b>2. Write and organise</b><br>Bullets, tables and boards, all on those files.</td>
+    <td align="center" width="33%"><img src="docs/assets/step-3.png" width="260" alt="A comment from an AI agent below a page"><br><b>3. Give it to your agent</b><br>It reads the same files and leaves comments.</td>
   </tr>
 </table>
 
@@ -67,7 +67,7 @@ Each list is an outline. Fold a bullet, or fold a full heading section. Click th
 
 All of it is built in. There is no plugin to find and no setting to turn on.
 
-**So what:** a note of 2,000 lines is as easy to work in as a note of 20 lines. And a fold or a zoom is only a view. It never changes your file.
+**So what:** a page of 2,000 lines is as easy to work in as a page of 20 lines. And a fold or a zoom is only a view. It never changes your file.
 
 <p align="center">
   <img src="docs/assets/outline.gif" width="860" alt="A bullet folds with Command and the up arrow. A heading section folds with a click. Then Command and the full stop zoom into one bullet, and it becomes the page.">
@@ -75,7 +75,7 @@ All of it is built in. There is no plugin to find and no setting to turn on.
 
 ### Turn any folder into a table or a board
 
-Right-click a folder and select **Open folder page**. It opens as a page, and the notes in it are the rows. There is no setup file and no import. The columns are the properties that your notes already have. Add a Board view, and drag a card to a different column.
+Right-click a folder and select **Open folder page**. It opens as a page, and the pages in it are the rows. There is no setup file and no import. The columns are the properties that your pages already have. Add a Board view, and drag a card to a different column.
 
 It works like a spreadsheet:
 
@@ -87,28 +87,28 @@ It works like a spreadsheet:
 
 You get five views: Table, Board, Cards, List and Outline.
 
-**So what:** your projects, your reading list and your meetings each get a database, and there is no database to manage. A column is one line in each note. When you drag a card, the app changes one line in one file, and your agent reads it at once.
+**So what:** your projects, your reading list and your meetings each get a database, and there is no database to manage. A column is one line in each page. When you drag a card, the app changes one line in one file, and your agent reads it at once.
 
 <p align="center">
-  <img src="docs/assets/board.gif" width="860" alt="The Projects folder opens as a table of 8 notes. It changes to a board, and the card Customer interviews moves from Todo to In progress.">
+  <img src="docs/assets/board.gif" width="860" alt="The Projects folder opens as a table of 8 pages. It changes to a board, and the card Customer interviews moves from Todo to In progress.">
 </p>
 
 ### Your agent comments. It does not edit behind your back.
 
-Each note has a comment thread below it. The app ships a command, `yaseendocs`, that your agent runs. The comment shows in your open note at once. You read it and you answer it in the app, as you do with a person.
+Each page has a comment thread below it. The app ships a command, `yaseendocs`, that your agent runs. The comment shows in your open page at once. You read it and you answer it in the app, as you do with a person.
 
 The command can edit or delete only the comments that an agent wrote. It refuses to change yours.
 
 **So what:** you see what your agent thinks before it changes one word of your text.
 
 <p align="center">
-  <img src="docs/assets/comment.gif" width="860" alt="In a chat window, you ask your AI agent to check a headline. The agent runs the yaseendocs comment command, and comment 1 from the agent shows below the open note.">
+  <img src="docs/assets/comment.gif" width="860" alt="In a chat window, you ask your AI agent to check a headline. The agent runs the yaseendocs comment command, and comment 1 from the agent shows below the open page.">
 </p>
 
 To set it up on a Mac, put these two lines in the instructions file of your agent (`CLAUDE.md` or `AGENTS.md`). Your agent reads the help and learns the rest.
 
 ```
-To comment on one of my notes, use this command. Run it with --help first:
+To comment on one of my pages, use this command. Run it with --help first:
 "/Applications/Yaseen Docs.app/Contents/Resources/bin/yaseendocs"
 ```
 
@@ -116,15 +116,15 @@ To comment on one of my notes, use this command. Run it with --help first:
 
 Turn on GitHub sync for a folder that is a git repo. The app commits and pushes 30 seconds after you stop typing. It pulls when you open the folder and when you come back to the window. It uses the git on your computer, so the app never sees your password.
 
-**So what:** your notes are on each of your computers, with the full history, and you pay for no sync plan.
+**So what:** your pages are on each of your computers, with the full history, and you pay for no sync plan.
 
 <p align="center">
-  <img src="docs/assets/sync.png" width="720" alt="The status at the top of a note: Synced and Saved">
+  <img src="docs/assets/sync.png" width="720" alt="The status at the top of a page: Synced and Saved">
 </p>
 
-### Draw and diagram beside your notes
+### Draw and diagram beside your pages
 
-Excalidraw drawings (`.excalidraw`) and draw.io diagrams (`.drawio`) open in tabs, the same as notes. Right-click a folder and click New drawing for an Excalidraw drawing, or hold the pointer on New drawing and pick New draw.io diagram. Each one saves 500 ms after your last change.
+Excalidraw drawings (`.excalidraw`) and draw.io diagrams (`.drawio`) open in tabs, the same as pages. Right-click a folder and click New drawing for an Excalidraw drawing, or hold the pointer on New drawing and pick New draw.io diagram. Each one saves 500 ms after your last change.
 
 - **draw.io is built in.** It works offline, and it sends nothing to the internet.
 - **The canvas panel.** Find images and icons in the Image Studio, keep shapes you reuse as Components, and present a drawing frame by frame.
@@ -132,24 +132,24 @@ Excalidraw drawings (`.excalidraw`) and draw.io diagrams (`.drawio`) open in tab
 - **Share links.** Share a board as a live link on your own free Cloudflare account (`⌘⇧L`). Each save updates the link.
 - **Version history.** See each saved version of a board in git, with what changed, and restore one.
 - **A look before you open.** Rest the mouse on a board in the sidebar to see all of it. Info shows its type and dates.
-- **Sync that merges.** When two computers change one drawing, sync merges it shape by shape. A diagram keeps both copies. Your notes sync as before.
+- **Sync that merges.** When two computers change one drawing, sync merges it shape by shape. A diagram keeps both copies. Your pages sync as before.
 - **From Yaseen Draw.** The first time you open a vault from Yaseen Draw, its favorites, sync switch and share links come over. Yaseen Draw stays installed and keeps its own files.
 
-**So what:** your notes and your pictures of the work live in one folder and one app, and both are plain files.
+**So what:** your pages and your pictures of the work live in one folder and one app, and both are plain files.
 
-### Always know where you are in a long note
+### Always know where you are in a long page
 
-A table of contents sits at the right edge of each note. It lists your headings from H1 to H5, or your bullets when the note has no headings. Each level has its own tone and its own line, and a marker follows you while you scroll. Click a name to jump there, or press `⌘J` on a Mac. Drag its edge to make it wider.
+A table of contents sits at the right edge of each page. It lists your headings from H1 to H5, or your bullets when the page has no headings. Each level has its own tone and its own line, and a marker follows you while you scroll. Click a name to jump there, or press `⌘J` on a Mac. Drag its edge to make it wider.
 
-**So what:** you jump to any part of a long note in one click, and you always see where you are.
+**So what:** you jump to any part of a long page in one click, and you always see where you are.
 
 <p align="center">
-  <img src="docs/assets/toc.png" width="860" alt="A long note with the table of contents at the right. Lines show three levels of headings, and the current heading, Support, is marked.">
+  <img src="docs/assets/toc.png" width="860" alt="A long page with the table of contents at the right. Lines show three levels of headings, and the current heading, Support, is marked.">
 </p>
 
 ### It is all one file
 
-Here is the note from the pictures above, as it is on disk: its place on the board, and the comment from the agent.
+Here is the page from the pictures above, as it is on disk: its place on the board, and the comment from the agent.
 
 ```markdown
 ---
@@ -175,16 +175,16 @@ comments:
 - Pay for 10 months, get 12
 ```
 
-**So what:** open it in any editor. Keep the folder in git. If you stop using Yaseen Docs, your notes are still your notes.
+**So what:** open it in any editor. Keep the folder in git. If you stop using Yaseen Docs, your pages are still your pages.
 
 ### Also in the box
 
-- **Links that do not break.** Type `[[` to link to a note. Rename or move a note, and its links follow. Rename it outside the app, and the app offers to repair them.
-- **Search.** `⌘K` finds a note by title, alias or folder, and a drawing or diagram by its name, across each vault in the window.
+- **Links that do not break.** Type `[[` to link to a page. Rename or move a page, and its links follow. Rename it outside the app, and the app offers to repair them.
+- **Search.** `⌘K` finds a page by title, alias or folder, and a drawing or diagram by its name, across each vault in the window.
 - **Many vaults, one window.** Put up to 8 folders side by side, and save the set as a workspace.
-- **Live reload.** A file that your agent or a different editor changes updates in your open note. If you have edits that are not saved, the app asks first.
-- **Permanent IDs, if you want them.** Turn them on for a vault, and each note gets a short ID such as `DOC-12` that you and your agent can say, type and search.
-- **Review inbox.** Turn it on, and a note that you did not touch for 30 days comes back for a quick "Still relevant?" check.
+- **Live reload.** A file that your agent or a different editor changes updates in your open page. If you have edits that are not saved, the app asks first.
+- **Permanent IDs, if you want them.** Turn them on for a vault, and each page gets a short ID such as `DOC-12` that you and your agent can say, type and search.
+- **Review inbox.** Turn it on, and a page that you did not touch for 30 days comes back for a quick "Still relevant?" check.
 
 The full list, with each shortcut, is in [docs/FEATURES.md](docs/FEATURES.md).
 
@@ -196,10 +196,10 @@ Each number is measured, not estimated.
 | -- | -- |
 | Automatic tests | 6,719 |
 | Releases | 60 in less than 8 weeks |
-| From the start of the app to your note on the screen | 385 ms |
-| To open a note of 5,000 lines | 1.04 s |
-| An edit by your agent shows in your open note | 137 ms |
-| From a key press to the screen, at the end of a note of 5,000 lines | 32 ms |
+| From the start of the app to your page on the screen | 385 ms |
+| To open a page of 5,000 lines | 1.04 s |
+| An edit by your agent shows in your open page | 137 ms |
+| From a key press to the screen, at the end of a page of 5,000 lines | 32 ms |
 
 <sub>The speeds are medians on an Apple M3, measured with version 0.9.28.</sub>
 
@@ -207,17 +207,17 @@ What the app does not need:
 
 - No account.
 - No payment.
-- No server and no telemetry. The app uses the network only when you turn on GitHub sync, or when a note shows a picture from the web.
+- No server and no telemetry. The app uses the network only when you turn on GitHub sync, or when a page shows a picture from the web.
 
 ## The doubts
 
 **Will it change my files?**<br>
-Opening a note never writes to it, and your frontmatter stays as it is. The first time that you edit a note, the app saves it in one tidy markdown style: `*` bullets and 2-space indents. IDs stay off until you turn them on.
+Opening a page never writes to it, and your frontmatter stays as it is. The first time that you edit a page, the app saves it in one tidy markdown style: `*` bullets and 2-space indents. IDs stay off until you turn them on.
 
 **Does it work with my Obsidian vault?**<br>
 Yes. Open the same folder, and your `[[wikilinks]]` work. Tags show as plain text. The app does not read Obsidian plugins or `.base` files.
 
-**Where do my notes go?**<br>
+**Where do my pages go?**<br>
 Nowhere. They stay in your folder. GitHub sync is off until you turn it on, and then it pushes to your own repo with your own git.
 
 **Does it cost money?**<br>
@@ -237,14 +237,14 @@ On a Mac:
 
 1. Open the `.dmg`. Drag **Yaseen Docs** to **Applications**.
 2. Open the app. macOS blocks it one time. Go to **System Settings › Privacy & Security** and click **Open Anyway**.
-3. Click **Open folder…** and select the folder with your notes.
+3. Click **Open folder…** and select the folder with your pages.
 
 After that, the app updates itself. When a new version is ready, a blue **🎉 New update ready** pill shows next to the settings cog. Click it to see what is new, then click **Restart to update**. Or just quit as usual, and the next launch is the new version. macOS keeps the permissions that you gave the app.
 
 On Windows:
 
 1. Run the `setup.exe`. SmartScreen shows a warning one time. Click **More info**, then **Run anyway**.
-2. Click **Open folder…** and select the folder with your notes.
+2. Click **Open folder…** and select the folder with your pages.
 3. Where this page says `⌘`, press `Ctrl`. A small number of keys, such as `⌘J`, are for the Mac only.
 
 When a new version is out, a blue **🎉 New update ready** pill shows next to the settings cog. Click it to see what is new, then click **Download** to get the new installer.
@@ -253,7 +253,7 @@ The first three things to try:
 
 1. Click the dot of a bullet to zoom into it. Press `⌘.` to do the same from the keyboard.
 2. Right-click a folder and select **Open folder page**. Click **+**, add a **Board**, and drag a card.
-3. Give your agent the two lines from above, and ask it to comment on a note.
+3. Give your agent the two lines from above, and ask it to comment on a page.
 
 ## For developers
 

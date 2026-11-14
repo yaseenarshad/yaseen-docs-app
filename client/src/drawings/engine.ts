@@ -2,14 +2,14 @@
  * THE ENGINE'S NAME, AND THE TWO GLOBALS IT READS AT IMPORT TIME (YAZ-878, carried into the
  * document by Draw's 🔒 YAZ-1810; moved here from `renderScene.ts` by YAZ-3028).
  *
- * `@excalidraw/excalidraw` is NAMED here and nowhere else: every other module — the note
+ * `@excalidraw/excalidraw` is NAMED here and nowhere else: every other module — the page
  * preview's `renderScene.ts`, the ONE canvas `ExcalidrawSurface.tsx` — reaches it through
  * `loadExcalidraw()`, so the package's identity, its lazy loading and its two startup pins live
  * in one file.
  *
  * LAZY BY CONTRACT: a dynamic `import()` fired on the first preview render or canvas mount, so the
  * renderer's entry chunk never carries the package (≈250 transitive packages and megabytes of
- * fonts). A note with no drawing embed, and a window with no drawing tab, loads none of it.
+ * fonts). A page with no drawing embed, and a window with no drawing tab, loads none of it.
  *
  * OFFLINE BY CONTRACT (🔒 locked): the renderer must NEVER reach a CDN. Excalidraw resolves its
  * font files against `window.EXCALIDRAW_ASSET_PATH` and falls back to esm.sh only when that URL
@@ -139,7 +139,7 @@ export function loadExcalidraw(): Promise<ExcalidrawModule> {
 }
 
 /**
- * The text box editor (YAZ-4277 D1, `textBoxEditor.ts`): the notes engine in a drawing's text box. It loads with the
+ * The text box editor (YAZ-4277 D1, `textBoxEditor.ts`): the pages engine in a drawing's text box. It loads with the
  * engine, in its own chunk, never in the entry one; the canvas mounts once both are here.
  */
 export function loadTextBoxEditor(): Promise<typeof import('./textBoxEditor')> {
@@ -150,7 +150,7 @@ export function loadTextBoxEditor(): Promise<typeof import('./textBoxEditor')> {
  * THE BOOT-TIME WARM-UP (Draw's YAZ-2073 4B, ported by YAZ-3044 A39): a window restored onto a
  * drawing mounts the canvas next, so the engine's download and compile start at boot, in parallel
  * with the first render, instead of after it. The same ONE promise `ExcalidrawSurface` waits on; a
- * window on a note, a folder or a diagram loads nothing, as before.
+ * window on a page, a folder or a diagram loads nothing, as before.
  */
 export function warmEngineFor(file: string | null): void {
   if (file === null || !isDrawing(file)) return

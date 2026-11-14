@@ -33,7 +33,7 @@ export interface EscapeFacts {
   owner: boolean
   /** The Explore stack showed (step 3). */
   explore: boolean
-  /** The keyboard was in text: a field, a note's body (an unlocked page's too: its own Esc, YAZ-4997), or the page's selection. */
+  /** The keyboard was in text: a field, a page's body (an unlocked page's too: its own Esc, YAZ-4997), or the page's selection. */
   inText: boolean
   /** The sidebar shows. */
   sidebarShown: boolean

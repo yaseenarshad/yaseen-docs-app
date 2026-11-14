@@ -107,7 +107,7 @@ describe('hotkeyRecording (YAZ-3397 D6)', () => {
     expect(hotkeyRecording.active()).toBe(false)
   })
 
-  it("'each' tells every window's change, and has() answers per window (a drawing over a note, YAZ-3564 K9)", () => {
+  it("'each' tells every window's change, and has() answers per window (a drawing over a page, YAZ-3564 K9)", () => {
     const front = createHotkeyRecording('each')
     const changed = vi.fn()
     front.onChange(changed)

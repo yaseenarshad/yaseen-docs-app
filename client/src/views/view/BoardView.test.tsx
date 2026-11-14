@@ -243,8 +243,8 @@ const cardNamed = (el: ParentNode, title: string): HTMLElement => {
 
 // ---------- tests ----------
 
-describe('YAZ-4834 P5: "Card style ›" on a Board card (the card shows the note\'s style, so it sets it here too)', () => {
-  it('a card\'s right-click has Card style; Fill › Blue writes `color: blue` and the card wears it at once; a read-only note has no item', () => {
+describe('YAZ-4834 P5: "Card style ›" on a Board card (the card shows the page\'s style, so it sets it here too)', () => {
+  it('a card\'s right-click has Card style; Fill › Blue writes `color: blue` and the card wears it at once; a read-only page has no item', () => {
     vi.mocked(writeProperty).mockReset().mockResolvedValue({ mtime: 1 } as never)
     const { el } = mount(BOARD_BASE, { readOnly: new Set([TEST_RECORDS[1]!.path]) })
     const card = cardNamed(el, TEST_RECORDS[0]!.title)
@@ -297,7 +297,7 @@ describe('board columns', () => {
 })
 
 describe('the title (YAZ-2420 D14)', () => {
-  it('E: a board card\'s title shows the note\'s title, not its file name; a note with none shows its file name', () => {
+  it('E: a board card\'s title shows the page\'s title, not its file name; a page with none shows its file name', () => {
     const { el } = mount(BOARD_BASE, { records: TEST_RECORDS.map((r, i) => (i === 0 ? { ...r, title: 'UP-001 - Abdul' } : r)) })
     const titles = [...el.querySelectorAll('.view-board__title')].map((b) => b.textContent)
     expect(titles).toContain('UP-001 - Abdul')
@@ -305,14 +305,14 @@ describe('the title (YAZ-2420 D14)', () => {
     expect(titles).toContain('Attribution')
   })
 
-  it('E: a card that shows no Name is still named by its note\'s title', () => {
+  it('E: a card that shows no Name is still named by its page\'s title', () => {
     const { el } = mount('views:\n  - type: board\n    name: B\n    order: []\n    groupBy:\n      property: note.status\n', { records: TEST_RECORDS.map((r, i) => (i === 0 ? { ...r, title: 'UP-001 - Abdul' } : r)) })
     expect([...el.querySelectorAll('.view-board__card')].map((card) => card.getAttribute('aria-label'))).toContain('UP-001 - Abdul')
   })
 })
 
 describe('an id link (YAZ-2293 D8)', () => {
-  it('a column header and a card property both read as the title of the note the id names', () => {
+  it('a column header and a card property both read as the title of the page the id names', () => {
     const ID = 'k3m9x2pq7abc'
     const records = TEST_RECORDS.map((r) =>
       r.basename === 'Attribution' ? { ...r, id: ID } : r.basename === 'VSL-v1' ? { ...r, properties: { ...r.properties, related: `[[${ID}]]` } } : r,
@@ -376,7 +376,7 @@ describe('cards', () => {
     expect(openBackground).not.toHaveBeenCalled()
   })
 
-  it('⇧⌘-click opens the card\'s note in a new window, title or body (YAZ-4444 D32): no tab', () => {
+  it('⇧⌘-click opens the card\'s page in a new window, title or body (YAZ-4444 D32): no tab', () => {
     const agentic = '/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md'
     vi.mocked(api.window.open).mockClear()
     const openRight = vi.fn()
@@ -544,7 +544,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
   })
 
-  it('a card whose note has an id offers "Copy path" and no "Copy ID" (YAZ-2420 D31)', () => {
+  it('a card whose page has an id offers "Copy path" and no "Copy ID" (YAZ-2420 D31)', () => {
     const records = TEST_RECORDS.map((r) => (r.path === agenticPath ? { ...r, id: 'k3m9x2pq7abc' } : r))
     const { el } = mount(BOARD_BASE, { records, folder: testFolderHost({ vaultRecords: records }) })
     rightClick(cardNamed(el, 'Agentic Agency'))
@@ -683,7 +683,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(document.querySelector('.ctx-menu')).toBeNull()
     // A group header's right-click opens the group menu (YAZ-4604, D55), never the card menu. One level: no level steps (YAZ-3746 13AT).
     expect(rightClick(q(el, '.view-group')).defaultPrevented).toBe(true)
-    expect([...document.querySelectorAll('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)).toEqual(['New note in this group', 'Collapse this group'])
+    expect([...document.querySelectorAll('.ctx-menu [role="menuitem"]')].map((b) => b.textContent)).toEqual(['New page in this group', 'Collapse this group'])
     act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     click(byLabel(el, 'New card'))
     expect(rightClick(byLabel(el, 'New card name')).defaultPrevented).toBe(false)
@@ -699,7 +699,7 @@ describe('Board-card page context menu (YAZ-1243)', () => {
     expect(rightClick(q(nested.el, '.view-board__subgroup > .view-group')).defaultPrevented).toBe(true)
     // The header's own group ends with its toggle; two levels add the level steps after it (YAZ-3746 13AT).
     expect([...document.querySelectorAll('.ctx-menu .ctx-menu__group')].map((g) => [...g.querySelectorAll('[role="menuitem"]')].map((b) => b.textContent))).toEqual([
-      ['New note in this group', 'Collapse this group'],
+      ['New page in this group', 'Collapse this group'],
       ['Collapse one level', 'Expand one level'],
     ])
 

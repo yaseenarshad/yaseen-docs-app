@@ -22,14 +22,14 @@ import { GROUP_OPEN_TEXT, GROUP_NOT_OPEN_TEXT, GROUP_SETS_TEXT, MISSING_TEXT, NO
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-const ROOT = '/v/Notes'
+const ROOT = '/v/Pages'
 const NOW = 1_700_000_000_000
-/** MRU order: the current vault first (it always is — the renderer bumps it on open), then three others; two share the basename "Notes". */
+/** MRU order: the current vault first (it always is — the renderer bumps it on open), then three others; two share the basename "Pages". */
 const RECENTS: RecentRoots = [
   { path: ROOT, lastOpened: NOW - 60_000 },
-  { path: '/w/Notes', lastOpened: NOW - 2 * 3_600_000 },
+  { path: '/w/Pages', lastOpened: NOW - 2 * 3_600_000 },
   { path: '/v/Archive', lastOpened: NOW - 86_400_000 },
-  { path: '/v/Notes Archive', lastOpened: NOW - 3 * 86_400_000 },
+  { path: '/v/Pages Archive', lastOpened: NOW - 3 * 86_400_000 },
 ]
 
 let openRecent: ReturnType<typeof vi.fn>
@@ -169,7 +169,7 @@ describe('VaultSwitcher: the trigger (D6)', () => {
   it('is one line — the bold basename and a chevron, no "change" — with the full path as its tooltip', () => {
     const { el } = render()
     const t = trigger(el)
-    expect(t.querySelector('.sidebar__root-name')?.textContent).toBe('Notes')
+    expect(t.querySelector('.sidebar__root-name')?.textContent).toBe('Pages')
     expect(t.querySelector('.sidebar__root-hint svg')?.getAttribute('style') ?? '').not.toContain('rotate')
     expect(t.querySelector('.sidebar__root-hint')?.getAttribute('aria-hidden')).toBe('true')
     expect(t.textContent).not.toContain('change')
@@ -218,7 +218,7 @@ describe('VaultSwitcher: the rows (D3/D4/D5)', () => {
   it('lists every recent vault in MRU order — the current vault included and marked aria-current — with name and relative time; Open folder… is the last row', () => {
     const { el } = render()
     openPanel(el)
-    expect(names(el)).toEqual(['Notes', 'Notes', 'Archive', 'Notes Archive'])
+    expect(names(el)).toEqual(['Pages', 'Pages', 'Archive', 'Pages Archive'])
     const [current, other] = rows(el)
     expect(current.getAttribute('aria-current')).toBe('true')
     expect(other.getAttribute('aria-current')).toBeNull()
@@ -237,7 +237,7 @@ describe('VaultSwitcher: the rows (D3/D4/D5)', () => {
     openPanel(el)
     act(() => broadcast(seeded({ recents: RECENTS.slice(0, 2) })))
     openPanel(el)
-    expect(names(el)).toEqual(['Notes', 'Notes'])
+    expect(names(el)).toEqual(['Pages', 'Pages'])
     expect(listSpy).toHaveBeenCalledTimes(2)
   })
 
@@ -315,19 +315,19 @@ describe('VaultSwitcher: filter + keyboard (D7)', () => {
   it('ranks like the [[ picker over basenames: exact, then prefix, then substring; an empty query is MRU order', async () => {
     const { el } = render()
     openPanel(el)
-    await type(el, 'notes')
-    expect(names(el)).toEqual(['Notes', 'Notes', 'Notes Archive'])
+    await type(el, 'pages')
+    expect(names(el)).toEqual(['Pages', 'Pages', 'Pages Archive'])
     await type(el, 'arch')
-    expect(names(el)).toEqual(['Archive', 'Notes Archive'])
+    expect(names(el)).toEqual(['Archive', 'Pages Archive'])
     await type(el, '')
-    expect(names(el)).toEqual(['Notes', 'Notes', 'Archive', 'Notes Archive'])
+    expect(names(el)).toEqual(['Pages', 'Pages', 'Archive', 'Pages Archive'])
   })
 
   it('with an empty query the highlight starts on the first row that is NOT the current vault (⌘O ⏎ = last-used other vault)', () => {
     const { el } = render()
     openPanel(el)
     expect(activeRow(el)).toBe(rows(el)[1])
-    expect(pathOf(activeRow(el)!)).toBe('/w/Notes')
+    expect(pathOf(activeRow(el)!)).toBe('/w/Pages')
   })
 
   it('when every row is the current vault the highlight starts on the first row', () => {
@@ -387,17 +387,17 @@ describe('VaultSwitcher: filter + keyboard (D7)', () => {
     openPanel(el)
     key(el, 'Enter')
     await settle()
-    expect(openRecent).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(openRecent).toHaveBeenCalledExactlyOnceWith('/w/Pages')
     expect(panel(el)).toBeNull()
   })
 
   it('Enter after typing opens the top match', async () => {
     const { el } = render()
     openPanel(el)
-    await type(el, 'notes arch')
+    await type(el, 'pages arch')
     key(el, 'Enter')
     await settle()
-    expect(openRecent).toHaveBeenCalledExactlyOnceWith('/v/Notes Archive')
+    expect(openRecent).toHaveBeenCalledExactlyOnceWith('/v/Pages Archive')
   })
 
   it('⇧⏎ / ⇧-click open the vault IN this window (YAZ-1974 D8): onOpenHere, never openRecent; on the current vault they are a plain ⏎', async () => {
@@ -405,7 +405,7 @@ describe('VaultSwitcher: filter + keyboard (D7)', () => {
     openPanel(el)
     act(() => void filter(el).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true })))
     await settle()
-    expect(props.onOpenHere).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(props.onOpenHere).toHaveBeenCalledExactlyOnceWith('/w/Pages')
     expect(openRecent).not.toHaveBeenCalled()
     expect(panel(el)).toBeNull()
 
@@ -509,21 +509,21 @@ describe('VaultSwitcher: pure helpers', () => {
   const rowsOf = (...paths: string[]) => paths.map((path, i) => ({ name: path.slice(path.lastIndexOf('/') + 1), folder: path.slice(path.lastIndexOf('/') + 1), path, lastUsed: i, open: false, key: null }))
 
   it('rankVaultRows: empty query keeps MRU order, otherwise exact > prefix > substring, uncapped', () => {
-    const list = rowsOf('/a/Notes', '/b/Old Notes', '/c/Notes Archive', '/d/Other', '/e/n1', '/f/n2', '/g/n3', '/h/n4', '/i/n5', '/j/n6')
+    const list = rowsOf('/a/Pages', '/b/Old Pages', '/c/Pages Archive', '/d/Other', '/e/n1', '/f/n2', '/g/n3', '/h/n4', '/i/n5', '/j/n6')
     expect(rankVaultRows(list, '  ').map((r) => r.path)).toEqual(list.map((r) => r.path))
-    expect(rankVaultRows(list, 'notes').map((r) => r.path)).toEqual(['/a/Notes', '/c/Notes Archive', '/b/Old Notes'])
+    expect(rankVaultRows(list, 'pages').map((r) => r.path)).toEqual(['/a/Pages', '/c/Pages Archive', '/b/Old Pages'])
     // The [[ picker caps at 8; the switcher shows every match.
     expect(rankVaultRows(list, 'n')).toHaveLength(9)
   })
 
   it('rankVaultRows matches the display name AND the folder name, one row per vault at its best rank (YAZ-1974 D6)', () => {
-    const [wiki, notes, lead] = rowsOf('/v/business-wiki-MASTER', '/v/Notes', '/v/leadnurtureai')
-    const list = [{ ...wiki, name: 'Business Wiki' }, { ...notes, name: 'Wiki Notes' }, lead]
+    const [wiki, pages, lead] = rowsOf('/v/business-wiki-MASTER', '/v/Pages', '/v/leadnurtureai')
+    const list = [{ ...wiki, name: 'Business Wiki' }, { ...pages, name: 'Wiki Pages' }, lead]
     expect(rankVaultRows(list, 'busi').map((r) => r.path)).toEqual(['/v/business-wiki-MASTER']) // display-name prefix (and folder prefix: still once)
     expect(rankVaultRows(list, 'wiki-MASTER').map((r) => r.path)).toEqual(['/v/business-wiki-MASTER']) // folder-name match
-    // "wiki": Wiki Notes is a prefix match, Business Wiki a substring on both names — once, after it.
-    expect(rankVaultRows(list, 'wiki').map((r) => r.path)).toEqual(['/v/Notes', '/v/business-wiki-MASTER'])
-    expect(rankVaultRows(list, 'notes').map((r) => r.path)).toEqual(['/v/Notes']) // the folder name still finds a renamed vault
+    // "wiki": Wiki Pages is a prefix match, Business Wiki a substring on both names — once, after it.
+    expect(rankVaultRows(list, 'wiki').map((r) => r.path)).toEqual(['/v/Pages', '/v/business-wiki-MASTER'])
+    expect(rankVaultRows(list, 'pages').map((r) => r.path)).toEqual(['/v/Pages']) // the folder name still finds a renamed vault
     expect(rankVaultRows(list, 'lead').map((r) => r.path)).toEqual(['/v/leadnurtureai']) // un-renamed: as before
   })
 
@@ -688,7 +688,7 @@ describe('VaultSwitcher: display names (YAZ-1974 D4/D5)', () => {
     expect(trigger(el).querySelector('.sidebar__root-name')?.textContent).toBe('Docs Vault')
     expect(trigger(el).title).toBe(ROOT)
     openPanel(el)
-    expect(names(el)).toEqual(['Docs Vault', 'Notes', '🚀 Launch', 'Notes Archive'])
+    expect(names(el)).toEqual(['Docs Vault', 'Pages', '🚀 Launch', 'Pages Archive'])
   })
 
   it('a rename landing from another window updates the header live (S12)', () => {
@@ -704,7 +704,7 @@ describe('VaultSwitcher: display names (YAZ-1974 D4/D5)', () => {
     await type(el, 'old')
     expect(names(el)).toEqual(['Old Stuff'])
     await type(el, 'archive')
-    expect(names(el)).toEqual(['Old Stuff', 'Notes Archive'])
+    expect(names(el)).toEqual(['Old Stuff', 'Pages Archive'])
   })
 
   it('Set display name on a row: a focused field, name selected, folder name as placeholder — ⏎ saves, the row shows it, the panel stays with the filter focused', async () => {
@@ -780,7 +780,7 @@ describe('VaultSwitcher: display names (YAZ-1974 D4/D5)', () => {
       rows(el)[1].click()
     })
     await settle()
-    expect(openRecent).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(openRecent).toHaveBeenCalledExactlyOnceWith('/w/Pages')
   })
 
   it('an empty field, or the folder name itself, is no custom name: back to the folder name, no Reset item', async () => {
@@ -880,7 +880,7 @@ describe('VaultSwitcher: a vault\'s number (YAZ-2555 D2)', () => {
 
 describe('VaultSwitcher: the open group, the key badges, the window\'s blur (YAZ-2555 D1, D4, A1, A4, A6)', () => {
   const ARCHIVE = RECENTS[2].path
-  const NOTES_ARCHIVE = RECENTS[3].path
+  const PAGES_ARCHIVE = RECENTS[3].path
   /** Seeds the cache, beside the four recents: one window per `open` root (null = a Welcome window), and each vault's number. */
   const seed = (open: (string | null)[], keys: Record<string, number> = {}) =>
     act(() =>
@@ -895,17 +895,17 @@ describe('VaultSwitcher: the open group, the key badges, the window\'s blur (YAZ
   it('open vaults first under "Open", the rest under "Not open" — recents, then open or numbered vaults that fell out of them, with no time — and a ⌘<n> badge on every numbered row (S1, S3–S6, S8, S9, S18)', async () => {
     // Archive is open in two windows and Loose (trailing slash, not a recent) in one; a Welcome window is no vault.
     // Two and Seven have a number but no window and no place in the recents.
-    seed([ROOT, null, ARCHIVE, ARCHIVE, '/x/Loose/'], { [ARCHIVE]: 3, '/w/Notes': 1, '/x/Seven': 7, '/x/Two': 2 })
+    seed([ROOT, null, ARCHIVE, ARCHIVE, '/x/Loose/'], { [ARCHIVE]: 3, '/w/Pages': 1, '/x/Seven': 7, '/x/Two': 2 })
     const { el } = render()
     openPanel(el)
     expect(listing(el)).toEqual([
       `# ${GROUP_OPEN_TEXT}`,
-      'Notes · 1 minute ago',
+      'Pages · 1 minute ago',
       'Archive · ⌘3 · yesterday',
       'Loose',
       `# ${GROUP_NOT_OPEN_TEXT}`,
-      'Notes · ⌘1 · 2 hours ago',
-      'Notes Archive · 3 days ago',
+      'Pages · ⌘1 · 2 hours ago',
+      'Pages Archive · 3 days ago',
       'Two · ⌘2',
       'Seven · ⌘7',
     ])
@@ -921,7 +921,7 @@ describe('VaultSwitcher: the open group, the key badges, the window\'s blur (YAZ
     key(el, 'ArrowDown')
     expect(activeRow(el)).toBe(openFolderRow(el))
     expect(el.querySelectorAll('.vault-switcher__row--active')).toHaveLength(1)
-    expect(rows(el).map(pathOf)).toEqual([ROOT, ARCHIVE, '/x/Loose', '/w/Notes', NOTES_ARCHIVE, '/x/Two', '/x/Seven']) // one row per vault, the slash off
+    expect(rows(el).map(pathOf)).toEqual([ROOT, ARCHIVE, '/x/Loose', '/w/Pages', PAGES_ARCHIVE, '/x/Two', '/x/Seven']) // one row per vault, the slash off
     // ⌘O ⏎ (S3–S5): one call to the one door, whatever the vault's windows are doing.
     openPanel(el)
     openPanel(el)
@@ -934,21 +934,21 @@ describe('VaultSwitcher: the open group, the key badges, the window\'s blur (YAZ
     seed([ROOT])
     const { el } = render()
     openPanel(el)
-    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Notes · 1 minute ago', `# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 2 hours ago', 'Archive · yesterday', 'Notes Archive · 3 days ago'])
+    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Pages · 1 minute ago', `# ${GROUP_NOT_OPEN_TEXT}`, 'Pages · 2 hours ago', 'Archive · yesterday', 'Pages Archive · 3 days ago'])
     expect(rows(el)[0].getAttribute('aria-current')).toBe('true')
     expect(activeRow(el)).toBe(rows(el)[1])
-    expect(pathOf(activeRow(el)!)).toBe('/w/Notes')
+    expect(pathOf(activeRow(el)!)).toBe('/w/Pages')
   })
 
   it('a filter ranks the matches as before, THEN puts them in the two groups, badges kept; a group with no match shows no label (S7, A6)', async () => {
-    seed([ROOT, NOTES_ARCHIVE], { [NOTES_ARCHIVE]: 4 })
+    seed([ROOT, PAGES_ARCHIVE], { [PAGES_ARCHIVE]: 4 })
     const { el } = render()
     openPanel(el)
-    // "notes": both exact matches outrank the prefix match, but Notes Archive is open, so it stands above the Notes that is not.
-    await type(el, 'notes')
-    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Notes · 1 minute ago', 'Notes Archive · ⌘4 · 3 days ago', `# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 2 hours ago'])
+    // "pages": both exact matches outrank the prefix match, but Pages Archive is open, so it stands above the Pages that is not.
+    await type(el, 'pages')
+    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Pages · 1 minute ago', 'Pages Archive · ⌘4 · 3 days ago', `# ${GROUP_NOT_OPEN_TEXT}`, 'Pages · 2 hours ago'])
     await type(el, 'arch')
-    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Notes Archive · ⌘4 · 3 days ago', `# ${GROUP_NOT_OPEN_TEXT}`, 'Archive · yesterday'])
+    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Pages Archive · ⌘4 · 3 days ago', `# ${GROUP_NOT_OPEN_TEXT}`, 'Archive · yesterday'])
     expect(activeRow(el)).toBe(rows(el)[0])
     await type(el, 'archive')
     await type(el, 'w') // no vault name has a "w": nothing matches
@@ -969,28 +969,28 @@ describe('VaultSwitcher: the open group, the key badges, the window\'s blur (YAZ
     seed([ROOT], { '/x/Two': 2 })
     const { el } = render()
     openPanel(el)
-    expect(listing(el).slice(-2)).toEqual(['Notes Archive · 3 days ago', 'Two · ⌘2'])
+    expect(listing(el).slice(-2)).toEqual(['Pages Archive · 3 days ago', 'Two · ⌘2'])
     rightClick(rows(el)[4])
     pick('Set shortcut')
     pick('No shortcut')
     expect(storage.vaultKey('/x/Two')).toBeNull()
-    expect(listing(el).slice(-2)).toEqual(['Notes Archive · 3 days ago', 'Two']) // the badge goes at once, the row does not
+    expect(listing(el).slice(-2)).toEqual(['Pages Archive · 3 days ago', 'Two']) // the badge goes at once, the row does not
     openPanel(el)
     openPanel(el)
-    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Notes · 1 minute ago', `# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 2 hours ago', 'Archive · yesterday', 'Notes Archive · 3 days ago'])
+    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Pages · 1 minute ago', `# ${GROUP_NOT_OPEN_TEXT}`, 'Pages · 2 hours ago', 'Archive · yesterday', 'Pages Archive · 3 days ago'])
   })
 
   it('"Remove from recent vaults" on a vault that has a window: the row goes at once, and the next open lists it under "Open" with no time and no number (A1, A2, ruled on YAZ-2560)', () => {
     seed([ROOT, ARCHIVE], { [ARCHIVE]: 3 })
     const { el } = render()
     openPanel(el)
-    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Notes · 1 minute ago', 'Archive · ⌘3 · yesterday', `# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 2 hours ago', 'Notes Archive · 3 days ago'])
+    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Pages · 1 minute ago', 'Archive · ⌘3 · yesterday', `# ${GROUP_NOT_OPEN_TEXT}`, 'Pages · 2 hours ago', 'Pages Archive · 3 days ago'])
     rightClick(rows(el)[1])
     pick('Remove from recent vaults')
-    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Notes · 1 minute ago', `# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 2 hours ago', 'Notes Archive · 3 days ago'])
+    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Pages · 1 minute ago', `# ${GROUP_NOT_OPEN_TEXT}`, 'Pages · 2 hours ago', 'Pages Archive · 3 days ago'])
     openPanel(el)
     openPanel(el)
-    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Notes · 1 minute ago', 'Archive', `# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 2 hours ago', 'Notes Archive · 3 days ago'])
+    expect(listing(el)).toEqual([`# ${GROUP_OPEN_TEXT}`, 'Pages · 1 minute ago', 'Archive', `# ${GROUP_NOT_OPEN_TEXT}`, 'Pages · 2 hours ago', 'Pages Archive · 3 days ago'])
   })
 
   it('the panel closes when its window loses focus — a row\'s menu with it, the ⇧ cue dropped — and a rename under way is saved by its own blur first (S10, A4)', async () => {
@@ -1057,15 +1057,15 @@ describe('VaultSwitcher: one-line rows and the ⓘ path tooltip (YAZ-1974 D2)', 
     expect(tooltip()).toBeNull()
   })
 
-  it('the two "Notes" vaults tell apart by their tooltips; a dead row still shows its path', async () => {
+  it('the two "Pages" vaults tell apart by their tooltips; a dead row still shows its path', async () => {
     openRecent.mockResolvedValueOnce(false)
     const { el } = render()
     openPanel(el)
-    expect([pathOf(rows(el)[0]), pathOf(rows(el)[1])]).toEqual([ROOT, '/w/Notes'])
+    expect([pathOf(rows(el)[0]), pathOf(rows(el)[1])]).toEqual([ROOT, '/w/Pages'])
     act(() => rows(el)[1].click())
     await settle()
     expect(rows(el)[1].disabled).toBe(true)
-    expect(pathOf(rows(el)[1])).toBe('/w/Notes')
+    expect(pathOf(rows(el)[1])).toBe('/w/Pages')
   })
 
   it('the ⓘ is part of its row: a click opens the vault, a right-click is the row\'s menu', async () => {
@@ -1098,34 +1098,34 @@ describe('VaultSwitcher: several vaults in one window (YAZ-2602 S15, S8)', () =>
   const ARCHIVE = '/v/Archive'
   const headerName = (el: HTMLElement) => trigger(el).querySelector('.sidebar__root-name')?.textContent
   const currentPaths = (el: HTMLElement) => rows(el).filter((r) => r.getAttribute('aria-current') === 'true').map(pathOf)
-  /** The row of `path`, found by its ⓘ tooltip: two vaults share the name "Notes". */
+  /** The row of `path`, found by its ⓘ tooltip: two vaults share the name "Pages". */
   const rowOf = (el: HTMLElement, path: string) => rows(el).find((r) => pathOf(r) === path)!
 
   it('the header joins the vault names with " + ": two names, then "+ N more"; one vault reads as before (S15)', () => {
     const { el, rerender } = render()
-    expect(headerName(el)).toBe('Notes')
+    expect(headerName(el)).toBe('Pages')
     rerender({ roots: [ROOT, ARCHIVE] })
-    expect(headerName(el)).toBe('Notes + Archive')
+    expect(headerName(el)).toBe('Pages + Archive')
     expect(trigger(el).title).toBe(`${ROOT}\n${ARCHIVE}`)
-    rerender({ roots: [ROOT, ARCHIVE, '/w/Notes'] })
-    expect(headerName(el)).toBe('Notes + Archive + 1 more')
-    rerender({ roots: [ROOT, ARCHIVE, '/w/Notes', '/v/Notes Archive'] })
-    expect(headerName(el)).toBe('Notes + Archive + 2 more')
+    rerender({ roots: [ROOT, ARCHIVE, '/w/Pages'] })
+    expect(headerName(el)).toBe('Pages + Archive + 1 more')
+    rerender({ roots: [ROOT, ARCHIVE, '/w/Pages', '/v/Pages Archive'] })
+    expect(headerName(el)).toBe('Pages + Archive + 2 more')
   })
 
   it('the header uses each vault\'s display name, and follows a rename made in another window', () => {
     const { el } = render({ roots: [ROOT, ARCHIVE] })
-    act(() => broadcast(withNames({ [ARCHIVE]: 'Old notes' })))
-    expect(headerName(el)).toBe('Notes + Old notes')
+    act(() => broadcast(withNames({ [ARCHIVE]: 'Old pages' })))
+    expect(headerName(el)).toBe('Pages + Old pages')
   })
 
   it('a click opens the same list: each vault of this window is marked current, and the highlight starts on the first vault that is not in it', () => {
-    const { el } = render({ roots: [ROOT, '/w/Notes'] })
+    const { el } = render({ roots: [ROOT, '/w/Pages'] })
     openPanel(el)
     expect(panel(el)).not.toBeNull()
     // Read first: a hover moves the highlight, and a row's path is read by hovering its ⓘ.
     const highlighted = activeRow(el)!
-    expect(currentPaths(el)).toEqual([ROOT, '/w/Notes'])
+    expect(currentPaths(el)).toEqual([ROOT, '/w/Pages'])
     expect(pathOf(highlighted)).toBe(ARCHIVE)
   })
 
@@ -1137,12 +1137,12 @@ describe('VaultSwitcher: several vaults in one window (YAZ-2602 S15, S8)', () =>
   })
 
   it('a row\'s menu: a vault that is not in this window leads with "Add to this window", then "Open in this window"; a vault that is in it has neither, and no Remove (S8) — each below "Open by itself" (YAZ-2858 D2, S11)', () => {
-    const { el } = render({ roots: [ROOT, '/w/Notes'], onAddHere: vi.fn(async () => true) })
+    const { el } = render({ roots: [ROOT, '/w/Pages'], onAddHere: vi.fn(async () => true) })
     openPanel(el)
     rightClick(rowOf(el, ARCHIVE))
     expect(menuLabels()).toEqual(['Open by itself', 'Open in Files window', 'Add to this window', 'Open in this window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code', 'Remove from recent vaults'])
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
-    for (const inWindow of [ROOT, '/w/Notes']) {
+    for (const inWindow of [ROOT, '/w/Pages']) {
       rightClick(rowOf(el, inWindow))
       expect(menuLabels()).toEqual(['Open by itself', 'Open in Files window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
       act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
@@ -1174,14 +1174,14 @@ describe('VaultSwitcher: several vaults in one window (YAZ-2602 S15, S8)', () =>
   it('⇧⏎ on a vault of this window has nothing to open here: it opens that vault by itself (YAZ-3487 D4, S16; it was a plain open)', async () => {
     const openAlone = vi.fn(async () => true)
     Object.assign((window as unknown as { yaseenDocs: { window: object } }).yaseenDocs.window, { openAlone })
-    const { el, props } = render({ roots: [ROOT, '/w/Notes'] })
+    const { el, props } = render({ roots: [ROOT, '/w/Pages'] })
     openPanel(el)
-    const second = rowOf(el, '/w/Notes')
+    const second = rowOf(el, '/w/Pages')
     act(() => void second.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
     await settle()
     expect(props.onOpenHere).not.toHaveBeenCalled()
     expect(openRecent).not.toHaveBeenCalled()
-    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/w/Pages')
   })
 })
 
@@ -1194,10 +1194,10 @@ describe('VaultSwitcher: several vaults in one window (YAZ-2602 S15, S8)', () =>
  */
 describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
   const ARCHIVE = '/v/Archive'
-  const WORK: VaultSet = { id: 'set-work', name: 'Work', roots: [ARCHIVE, '/w/Notes'], lastUsed: NOW - 3_600_000 }
-  const READING: VaultSet = { id: 'set-reading', name: 'Reading', roots: [ROOT, ARCHIVE, '/v/Notes Archive'], lastUsed: NOW - 86_400_000 }
+  const WORK: VaultSet = { id: 'set-work', name: 'Work', roots: [ARCHIVE, '/w/Pages'], lastUsed: NOW - 3_600_000 }
+  const READING: VaultSet = { id: 'set-reading', name: 'Reading', roots: [ROOT, ARCHIVE, '/v/Pages Archive'], lastUsed: NOW - 86_400_000 }
   /** The list with no workspace, and no window seeded: the four recents under "Not open" — as every older test reads it. */
-  const VAULTS = [`# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 1 minute ago', 'Notes · 2 hours ago', 'Archive · yesterday', 'Notes Archive · 3 days ago']
+  const VAULTS = [`# ${GROUP_NOT_OPEN_TEXT}`, 'Pages · 1 minute ago', 'Pages · 2 hours ago', 'Archive · yesterday', 'Pages Archive · 3 days ago']
   const seedSets = (...vaultSets: VaultSet[]) => act(() => broadcast(seeded({ vaultSets })))
   const headerName = (el: HTMLElement) => trigger(el).querySelector('.sidebar__root-name')?.textContent
   const when = (row: HTMLElement) => row.querySelector('.vault-switcher__when')
@@ -1241,7 +1241,7 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     expect(rows(el)[0].getAttribute('role')).toBe('menuitem')
     // The start is where it was before workspaces (YAZ-2555): the last used vault that is not this window's.
     expect(activeRow(el)).toBe(rows(el)[3])
-    expect(pathOf(activeRow(el)!)).toBe('/w/Notes')
+    expect(pathOf(activeRow(el)!)).toBe('/w/Pages')
     key(el, 'ArrowUp') // pathOf hovered the row: the highlight is still on it
     key(el, 'ArrowUp')
     expect(activeRow(el)).toBe(rows(el)[1])
@@ -1286,18 +1286,18 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
   })
 
   it('the filter matches a workspace by its name, ranked like a vault; a group with no match shows no label (S64)', async () => {
-    seedSets({ ...READING, id: 'set-homework', name: 'Homework' }, WORK, { ...READING, id: 'set-plan', name: 'Notes plan' })
+    seedSets({ ...READING, id: 'set-homework', name: 'Homework' }, WORK, { ...READING, id: 'set-plan', name: 'Pages plan' })
     const { el } = render()
     openPanel(el)
     await type(el, 'work') // exact, then substring — whatever was used last
     expect(listing(el)).toEqual([`# ${GROUP_SETS_TEXT}`, 'Work · 2 vaults', 'Homework · 3 vaults'])
     expect(el.querySelector('.vault-switcher__empty')).toBeNull()
     expect(activeRow(el)).toBe(rows(el)[0])
-    await type(el, 'notes') // a workspace and vaults: the workspaces still stand first
-    expect(listing(el)).toEqual([`# ${GROUP_SETS_TEXT}`, 'Notes plan · 3 vaults', `# ${GROUP_NOT_OPEN_TEXT}`, 'Notes · 1 minute ago', 'Notes · 2 hours ago', 'Notes Archive · 3 days ago'])
+    await type(el, 'pages') // a workspace and vaults: the workspaces still stand first
+    expect(listing(el)).toEqual([`# ${GROUP_SETS_TEXT}`, 'Pages plan · 3 vaults', `# ${GROUP_NOT_OPEN_TEXT}`, 'Pages · 1 minute ago', 'Pages · 2 hours ago', 'Pages Archive · 3 days ago'])
     expect(activeRow(el)).toBe(rows(el)[0])
     await type(el, 'arch') // vaults only
-    expect(listing(el)).toEqual([`# ${GROUP_NOT_OPEN_TEXT}`, 'Archive · yesterday', 'Notes Archive · 3 days ago'])
+    expect(listing(el)).toEqual([`# ${GROUP_NOT_OPEN_TEXT}`, 'Archive · yesterday', 'Pages Archive · 3 days ago'])
     await type(el, 'zzz')
     expect(el.querySelectorAll('.vault-switcher__label')).toHaveLength(0)
     expect(el.querySelector('.vault-switcher__empty')?.textContent).toBe(NO_MATCH_TEXT)
@@ -1315,7 +1315,7 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     expect(listing(el).slice(0, 3)).toEqual([`# ${GROUP_SETS_TEXT}`, 'Work · 2 vaults', 'Reading · 3 vaults'])
     key(el, 'Enter')
     await settle()
-    expect(openRecent).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(openRecent).toHaveBeenCalledExactlyOnceWith('/w/Pages')
     expect(openSet).not.toHaveBeenCalled()
     expect(panel(el)).toBeNull()
   })
@@ -1323,7 +1323,7 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
   it('the workspace that this window shows is marked like the current vault; with an empty query the highlight never starts on a workspace row — with no vault outside this window it is the first vault row, as before workspaces', () => {
     seedSets(WORK, READING)
     // Work's vaults in the other order, one with a trailing slash: still exactly that workspace.
-    const { el, rerender } = render({ roots: ['/w/Notes', `${ARCHIVE}/`] })
+    const { el, rerender } = render({ roots: ['/w/Pages', `${ARCHIVE}/`] })
     openPanel(el)
     expect(rows(el).slice(0, 2).map((r) => r.getAttribute('aria-current'))).toEqual(['true', null])
     expect(activeRow(el)).toBe(rows(el)[2])
@@ -1365,15 +1365,15 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
   })
 
   it('a folder of the workspace is gone: it opens without it and a notice names it. Every folder gone: nothing opens, the row says "Folders not found" like a dead vault row, and the panel stays (S66)', async () => {
-    act(() => broadcast(seeded({ vaultSets: [WORK, READING], folders: { '/w/Notes': { ...defaultFolderState(), name: 'Field notes' } } })))
+    act(() => broadcast(seeded({ vaultSets: [WORK, READING], folders: { '/w/Pages': { ...defaultFolderState(), name: 'Field pages' } } })))
     const { el, props } = render()
-    openSet.mockResolvedValueOnce({ opened: true, missing: [ARCHIVE, '/w/Notes'] })
+    openSet.mockResolvedValueOnce({ opened: true, missing: [ARCHIVE, '/w/Pages'] })
     openPanel(el)
     toFirstRow(el)
     key(el, 'Enter')
     await settle()
     expect(panel(el)).toBeNull()
-    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Not found: Archive, Field notes')
+    expect(props.onNotice).toHaveBeenCalledExactlyOnceWith('Not found: Archive, Field pages')
 
     openSet.mockResolvedValueOnce({ opened: false, missing: WORK.roots })
     openPanel(el)
@@ -1493,9 +1493,9 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
   })
 
   it('"Save as workspace…": the header\'s name becomes a field that holds every vault name joined with " + "; ⏎ saves this window\'s vaults through window.saveSet and says so; Esc or an empty name cancels (S63)', async () => {
-    act(() => broadcast(withNames({ [ARCHIVE]: 'Old notes' })))
-    const { el, props } = render({ roots: [ROOT, ARCHIVE, '/w/Notes'] })
-    expect(headerName(el)).toBe('Notes + Old notes + 1 more')
+    act(() => broadcast(withNames({ [ARCHIVE]: 'Old pages' })))
+    const { el, props } = render({ roots: [ROOT, ARCHIVE, '/w/Pages'] })
+    expect(headerName(el)).toBe('Pages + Old pages + 1 more')
     expect(rightClick(trigger(el))).toBe(true)
     expect(menuLabels()).toEqual([SAVE_SET_TEXT])
     expect(SAVE_SET_TEXT).toBe('Save as workspace…')
@@ -1503,7 +1503,7 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     const input = field(el)!
     expect(trigger(el).tagName).toBe('DIV')
     expect(document.activeElement).toBe(input)
-    const all = 'Notes + Old notes + Notes' // the full list, never "+ 1 more"
+    const all = 'Pages + Old pages + Pages' // the full list, never "+ 1 more"
     expect([input.value, input.selectionStart, input.selectionEnd]).toEqual([all, 0, all.length])
     fieldKey(el, 'Enter') // the name is right as it stands
     await settle()
@@ -1570,14 +1570,14 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     const read = vi.spyOn(storage, 'getVaultSets')
     seedSets(WORK, READING)
     rerender({})
-    expect(headerName(el)).toBe('Notes')
+    expect(headerName(el)).toBe('Pages')
     expect(read).not.toHaveBeenCalled()
     read.mockRestore()
   })
 
   it('the header shows the workspace\'s name while the window\'s vaults are exactly a saved workspace — the first one that matches — and follows a save, a rename and a remove in the cache, and a vault added or removed (S15)', async () => {
     const { el, rerender } = render({ roots: [ROOT, ARCHIVE] })
-    expect(headerName(el)).toBe('Notes + Archive')
+    expect(headerName(el)).toBe('Pages + Archive')
     const pair: VaultSet = { id: 'set-pair', name: 'Pair', roots: [`${ARCHIVE}/`, ROOT], lastUsed: NOW }
     seedSets(WORK, pair) // saved, here or in any window: the order and a trailing slash do not count
     expect(headerName(el)).toBe('Pair')
@@ -1588,16 +1588,16 @@ describe('VaultSwitcher: workspaces (YAZ-2602 D8, S15, S63 to S70)', () => {
     expect(headerName(el)).toBe('First')
     // "Save as workspace…" still starts from the vault names: a new name is a new workspace.
     await saveAs(el)
-    expect(field(el)!.value).toBe('Notes + Archive')
+    expect(field(el)!.value).toBe('Pages + Archive')
     fieldKey(el, 'Escape')
 
     seedSets(WORK, { ...pair, name: 'Duo' })
-    rerender({ roots: [ROOT, ARCHIVE, '/w/Notes'] }) // one vault more is not that workspace
-    expect(headerName(el)).toBe('Notes + Archive + 1 more')
-    rerender({ roots: [ARCHIVE, '/w/Notes'] })
+    rerender({ roots: [ROOT, ARCHIVE, '/w/Pages'] }) // one vault more is not that workspace
+    expect(headerName(el)).toBe('Pages + Archive + 1 more')
+    rerender({ roots: [ARCHIVE, '/w/Pages'] })
     expect(headerName(el)).toBe('Work')
     seedSets()
-    expect(headerName(el)).toBe('Archive + Notes')
+    expect(headerName(el)).toBe('Archive + Pages')
     seedSets(WORK)
     rerender({ roots: [ARCHIVE] }) // one vault is never a workspace
     expect(headerName(el)).toBe('Archive')
@@ -1659,9 +1659,9 @@ describe('VaultSwitcher: Open by itself (YAZ-2858 D2, D3, S9 to S14)', () => {
   })
 
   it('S11: in a workspace window, each of its vaults keeps "Open by itself" — and only that from the first group', () => {
-    const { el } = render({ roots: [ROOT, '/w/Notes'] })
+    const { el } = render({ roots: [ROOT, '/w/Pages'] })
     openPanel(el)
-    for (const inWindow of [ROOT, '/w/Notes']) {
+    for (const inWindow of [ROOT, '/w/Pages']) {
       rightClick(rowOf(el, inWindow))
       expect(menuLabels()).toEqual(['Open by itself', 'Open in Files window', 'Set display name', 'Set shortcut', 'Copy vault name', 'Copy path', 'Reveal in Finder', 'Open in VS Code'])
       escape()
@@ -1669,12 +1669,12 @@ describe('VaultSwitcher: Open by itself (YAZ-2858 D2, D3, S9 to S14)', () => {
   })
 
   it('S12: the item goes through window.openAlone — never openRecent, never onOpenHere — and closes the panel; a folder that is gone greys the row and keeps the panel (S5)', async () => {
-    const { el, props } = render({ roots: [ROOT, '/w/Notes'] })
+    const { el, props } = render({ roots: [ROOT, '/w/Pages'] })
     openPanel(el)
-    rightClick(rowOf(el, '/w/Notes'))
+    rightClick(rowOf(el, '/w/Pages'))
     pick('Open by itself')
     await settle()
-    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/w/Pages')
     expect(openRecent).not.toHaveBeenCalled()
     expect(props.onOpenHere).not.toHaveBeenCalled()
     expect(panel(el)).toBeNull()
@@ -1694,7 +1694,7 @@ describe('VaultSwitcher: Open by itself (YAZ-2858 D2, D3, S9 to S14)', () => {
     openPanel(el)
     altEnter(el)
     await settle()
-    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/w/Pages')
     expect(panel(el)).toBeNull()
 
     openPanel(el)
@@ -1707,14 +1707,14 @@ describe('VaultSwitcher: Open by itself (YAZ-2858 D2, D3, S9 to S14)', () => {
     expect(activeRow(el)!.querySelector('.vault-switcher__when')?.textContent).not.toBe(OPEN_HERE_TEXT)
     altEnter(el, true)
     await settle()
-    expect(openAlone).toHaveBeenLastCalledWith('/w/Notes')
+    expect(openAlone).toHaveBeenLastCalledWith('/w/Pages')
     expect(openAlone).toHaveBeenCalledTimes(3)
     expect(props.onOpenHere).not.toHaveBeenCalled()
     expect(openRecent).not.toHaveBeenCalled()
   })
 
   it('S14: ⌥ on a workspace row opens the workspace as ⏎ does; ⌥ on "Open folder…" runs the picker', async () => {
-    act(() => broadcast(seeded({ vaultSets: [{ id: 'set-work', name: 'Work', roots: [ARCHIVE, '/w/Notes'], lastUsed: NOW }] })))
+    act(() => broadcast(seeded({ vaultSets: [{ id: 'set-work', name: 'Work', roots: [ARCHIVE, '/w/Pages'], lastUsed: NOW }] })))
     const { el, props } = render()
     openPanel(el)
     for (let i = 0; i < 8; i++) key(el, 'ArrowUp')
@@ -1758,26 +1758,26 @@ describe('VaultSwitcher: the held-key cue and ⇧ in a workspace window (YAZ-348
   })
 
   it('S16: ⇧⏎ on a vault of this workspace window → window.openAlone; never onOpenHere or openRecent', async () => {
-    const { el, props } = render({ roots: [ROOT, '/w/Notes'] })
+    const { el, props } = render({ roots: [ROOT, '/w/Pages'] })
     openPanel(el)
-    hover(rowOf(el, '/w/Notes'))
+    hover(rowOf(el, '/w/Pages'))
     act(() => void filter(el).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true })))
     await settle()
-    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/w/Pages')
     expect(props.onOpenHere).not.toHaveBeenCalled()
     expect(openRecent).not.toHaveBeenCalled()
     expect(panel(el)).toBeNull()
   })
 
   it('D11: a plain ⏎ or click on a vault of this workspace window opens it by itself, and that row always says so; a vault not in it opens as before', async () => {
-    const { el, props } = render({ roots: [ROOT, '/w/Notes'] })
+    const { el, props } = render({ roots: [ROOT, '/w/Pages'] })
     openPanel(el)
-    const notes = rowOf(el, '/w/Notes')
-    hover(notes)
-    expect(when(notes)).toBe(OPEN_ALONE_TEXT)
+    const pages = rowOf(el, '/w/Pages')
+    hover(pages)
+    expect(when(pages)).toBe(OPEN_ALONE_TEXT)
     act(() => void filter(el).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })))
     await settle()
-    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(openAlone).toHaveBeenCalledExactlyOnceWith('/w/Pages')
     expect(openRecent).not.toHaveBeenCalled()
     openPanel(el)
     const other = rowOf(el, ARCHIVE) // found once: reading a row's path hovers it
@@ -1822,7 +1822,7 @@ describe('VaultSwitcher: the held-key cue and ⇧ in a workspace window (YAZ-348
   })
 
   it('S19: no cue on a workspace row', () => {
-    act(() => broadcast(seeded({ vaultSets: [{ id: 'set-work', name: 'Work', roots: [ARCHIVE, '/w/Notes'], lastUsed: NOW }] })))
+    act(() => broadcast(seeded({ vaultSets: [{ id: 'set-work', name: 'Work', roots: [ARCHIVE, '/w/Pages'], lastUsed: NOW }] })))
     const { el } = render()
     openPanel(el)
     hold('keydown', { altKey: true })
@@ -1832,26 +1832,26 @@ describe('VaultSwitcher: the held-key cue and ⇧ in a workspace window (YAZ-348
   })
 
   it('S20: ⇧ held in a workspace window → a vault of this window says "Open by itself", a vault not in it says "Open here"', () => {
-    const { el } = render({ roots: [ROOT, '/w/Notes'] })
+    const { el } = render({ roots: [ROOT, '/w/Pages'] })
     openPanel(el)
     // Found first: reading a row's path hovers it.
-    const notes = rowOf(el, '/w/Notes')
+    const pages = rowOf(el, '/w/Pages')
     const archive = rowOf(el, ARCHIVE)
     hold('keydown', { shiftKey: true })
-    hover(notes)
-    expect(when(notes)).toBe(OPEN_ALONE_TEXT)
+    hover(pages)
+    expect(when(pages)).toBe(OPEN_ALONE_TEXT)
     hover(archive)
     expect(when(archive)).toBe(OPEN_HERE_TEXT)
-    expect(when(notes)).not.toBe(OPEN_ALONE_TEXT)
+    expect(when(pages)).not.toBe(OPEN_ALONE_TEXT)
   })
 
   it('S23: in a Files window the menu\'s "Open by itself" changes THIS window (onOpenHere); main opens no window', async () => {
-    const { el, props } = render({ roots: [ROOT, '/w/Notes'], onOpenSetHere: vi.fn(async () => true) })
+    const { el, props } = render({ roots: [ROOT, '/w/Pages'], onOpenSetHere: vi.fn(async () => true) })
     openPanel(el)
-    rightClick(rowOf(el, '/w/Notes'))
+    rightClick(rowOf(el, '/w/Pages'))
     pick('Open by itself')
     await settle()
-    expect(props.onOpenHere).toHaveBeenCalledExactlyOnceWith('/w/Notes')
+    expect(props.onOpenHere).toHaveBeenCalledExactlyOnceWith('/w/Pages')
     expect(openAlone).not.toHaveBeenCalled()
     expect(panel(el)).toBeNull()
   })

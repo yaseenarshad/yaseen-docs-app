@@ -455,7 +455,7 @@ export function useVaultListsHere(roots: readonly string[], onNotice: Notice, se
   // The Focus tab's items (YAZ-2619 D2): ONE flat list across the vaults of the window (YAZ-2602 A1, A4),
   // in ITS order, never the tree's. `focusList` is every focus item in the tab's order — the store's
   // order across vaults over each vault's own file (`favoriteOrder`; YAZ-2702 Decision 3) — and also
-  // holds the items this Mac has no file for, which draw no row and STAY in the list (S13): the note
+  // holds the items this Mac has no file for, which draw no row and STAY in the list (S13): the page
   // may simply not have synced yet.
   const focusOrder = useSyncExternalStore(storage.subscribe, storage.getFocusOrder)
   const focusList = useMemo(() => favoriteOrder(roots, focusByRoot, focusOrder), [roots, focusByRoot, focusOrder])
@@ -694,7 +694,7 @@ export function useVaultListsHere(roots: readonly string[], onNotice: Notice, se
   )
 
   /**
-   * A New note / New folder / New drawing picked on the Focus or the Favorites tab (YAZ-4782): the item, just made on
+   * A New page / New folder / New drawing picked on the Focus or the Favorites tab (YAZ-4782): the item, just made on
    * disk at `path`, joins that tab's list where the gesture was — in focus or favorite folder `folder`, or (null) at the
    * top level; right after `after`, the row the menu was opened on, or (null: blank space, a folder's own menu) last.
    * The tab's order is written as a drag writes it (`saveOrder`): each vault's file, and the order across the vaults.

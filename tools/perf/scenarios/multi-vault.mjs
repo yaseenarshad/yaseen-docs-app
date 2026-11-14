@@ -1,6 +1,6 @@
 /**
- * multi-vault: ONE window on two 2k-note vaults (YAZ-2602), two 200-line bullet notes of each open
- * as tabs. Spawn → the restored note painted; then click a tab → its note painted plus a frame, as
+ * multi-vault: ONE window on two 2k-page vaults (YAZ-2602), two 200-line bullet pages of each open
+ * as tabs. Spawn → the restored page painted; then click a tab → its page painted plus a frame, as
  * `tab-switch` measures a revisit, 20 switches round a ring: every other one stays INSIDE a vault and
  * every other one goes BETWEEN the two. S80 is the claim: the two measure the same, within noise,
  * because every vault of the window stays loaded (D1). S79, a window on one vault, is `launch`,
@@ -13,23 +13,23 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { writeNote, writeVault } from '../genVault.mjs'
+import { writePageFile, writeVault } from '../genVault.mjs'
 import { launch, sleep } from '../lib/app.mjs'
 import { clickUntilPainted, painted, tab } from '../lib/session.mjs'
 import { PAGE_PROBES, quantiles } from '../lib/stats.mjs'
 import { writeState } from '../lib/work.mjs'
 
-/** The tabs, left to right: two notes of the first vault, then two of the second. The switches go round it. */
+/** The tabs, left to right: two pages of the first vault, then two of the second. The switches go round it. */
 export const RING = ['Alpha 1', 'Alpha 2', 'Beta 1', 'Beta 2']
 /** Switch `i` lands on `RING[i % 4]`: an even one crosses to the other vault, an odd one stays inside its own. */
 export const crosses = (i) => i % 2 === 0
 const SWITCHES = 20
 /** The size `storm` and `watcher` use: a switch that read a vault's index again would show at it. */
-const NOTES = 2000
+const PAGES = 2000
 
 export function setup(dir) {
-  const vaults = ['a', 'b'].map((key) => writeVault(path.join(dir, `vault-${key}`), NOTES))
-  return { profile: path.join(dir, 'profile'), vaults, files: RING.map((name, i) => writeNote(vaults[i < 2 ? 0 : 1], name, 'bullets', 200)) }
+  const vaults = ['a', 'b'].map((key) => writeVault(path.join(dir, `vault-${key}`), PAGES))
+  return { profile: path.join(dir, 'profile'), vaults, files: RING.map((name, i) => writePageFile(vaults[i < 2 ? 0 : 1], name, 'bullets', 200)) }
 }
 
 /**
@@ -44,7 +44,7 @@ export function seedVaults(profile, vaults, tabs) {
   fs.writeFileSync(file, JSON.stringify(state, null, 2))
 }
 
-/** `session` with that seed (lib/session.mjs seeds through `writeState`): launch, wait for the restored note, act, always quit. */
+/** `session` with that seed (lib/session.mjs seeds through `writeState`): launch, wait for the restored page, act, always quit. */
 export async function run(app, { profile, vaults, files }) {
   seedVaults(profile, vaults, files)
   const proc = await launch({ ...app, profile })

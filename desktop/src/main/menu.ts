@@ -24,8 +24,8 @@ export interface MenuHandlers {
   newItem(): void
   /** File › Show in Sidebar (⌘D, YAZ-3556 D1): the focused window's renderer shows the place of `settings.goTo`. */
   goTo(): void
-  /** File › Open Today's Daily Note (YAZ-3607 D11): the focused window's renderer opens today's daily note, made first when today has none. */
-  dailyNote(): void
+  /** File › Open Today's Daily Page (YAZ-3607 D11): the focused window's renderer opens today's daily page, made first when today has none. */
+  dailyPage(): void
   /** File › New Tab (⌘T, YAZ-2655 D10): the focused window's renderer shows its blank tab and puts the caret in its search bar. */
   newTab(): void
   /** File › New Window (⌘⇧N, D6): the focused window calls `window:duplicate` — a window on its vaults with no tab (YAZ-3343 D35). */
@@ -69,7 +69,7 @@ export interface MenuHandlers {
   reload(): void
   /** View › Save Heap Snapshot, dev builds only (YAZ-3737 D9): the focused window's page heap into a file, shown in Finder; with a debugger already attached, a notice in that window and nothing else (S23). */
   saveHeapSnapshot(): void
-  /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the renderer routes it to the focused note (YAZ-1710), else the sidebar zoom (YAZ-3389). */
+  /** View › Zoom In / Out / Actual Size (⌘+ / ⌘− / ⌘0): the renderer routes it to the focused page (YAZ-1710), else the sidebar zoom (YAZ-3389). */
   zoom(step: ZoomStep): void
   openHelp(): void
   /** Yaseen Docs › Check for Updates… (YAZ-2976 D7): one check now; main answers in the window in front with a notice or the "What's new" sheet (S4–S6). */
@@ -106,7 +106,7 @@ export interface MenuInputs {
    * `subscribeMenuRebuildOnActiveFile` and the focus hook are what make a rebuild happen.
    */
   activeKind: FileKind | null
-  /** What is in front when it is not the tab's file: a drawing open over a note (YAZ-3564 K9). The keys follow it. */
+  /** What is in front when it is not the tab's file: a drawing open over a page (YAZ-3564 K9). The keys follow it. */
   frontKind?: FileKind | null
   /**
    * The user's key changes (YAZ-3397 D2), straight from `settings.hotkeys`: every changeable item takes its
@@ -121,8 +121,8 @@ export interface MenuInputs {
    * hears it; recording ⌘W must not close the tab, nor ⌘Q quit. Absent = false.
    */
   suspendKeys?: boolean
-  /** Settings › Files & Links › Daily notes (YAZ-3607): File › Open Today's Daily Note shows, with its key, only while it is on. Absent = off. */
-  dailyNotes?: boolean
+  /** Settings › Files & Links › Daily pages (YAZ-3607): File › Open Today's Daily Page shows, with its key, only while it is on. Absent = off. */
+  dailyPages?: boolean
 }
 
 /**
@@ -148,7 +148,7 @@ const menuLabel = (text: string): string => text.replace(/&/g, '&&')
  * The whole menu bar as a template. Item `id`s are stable so a live check (Playwright) can
  * drive items through `Menu.getApplicationMenu().getMenuItemById(...)`.
  */
-export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, frontKind = activeKind, hotkeys, hotkeysAside, suspendKeys = false, dailyNotes = false }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
+export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, frontKind = activeKind, hotkeys, hotkeysAside, suspendKeys = false, dailyPages = false }: MenuInputs, handlers: MenuHandlers): MenuItemConstructorOptions[] {
   const recentItems: MenuItemConstructorOptions[] =
     recents.length === 0
       ? [{ label: 'No Recent Folders', enabled: false }]
@@ -195,7 +195,7 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
       submenu: [
         // ⌘T is New Tab (YAZ-2655 D10): the renderer owns the tabs, so the gesture goes to the focused window's renderer.
         { id: 'menu.file.new-tab', label: 'New Tab', ...key('newTab'), click: () => handlers.newTab() },
-        // ⌘N, right under New Tab, opens the New… box (YAZ-3556 D1): a menu key, so it works with the caret in a note too.
+        // ⌘N, right under New Tab, opens the New… box (YAZ-3556 D1): a menu key, so it works with the caret in a page too.
         { id: 'menu.file.new-item', label: 'New…', ...key('newItem'), click: () => handlers.newItem() },
         { id: 'menu.file.new-window', label: 'New Window', ...key('newWindow'), click: () => handlers.newWindow() },
         // ⌘⇧W (YAZ-3357 D15, Yaseen: "can we change the hotkey for this to CMD SHIFT W? and remove whatever the hotkey for that is right now?"): Close Window gave it up.
@@ -214,8 +214,8 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
         { id: 'menu.file.go-to', label: 'Show in Sidebar', ...key('goTo'), click: () => handlers.goTo() },
         // ⌘⇧F (YAZ-2571): the explore stack, a search panel in the middle of the window. A diagram keeps draw.io's To front on it by default (K9).
         { id: 'menu.file.explore', label: 'Explore Vault…', ...key('explore'), click: () => handlers.explore() },
-        // YAZ-3607 D11: a hidden item keeps no key, so with Daily notes off its key is free for the page.
-        { id: 'menu.file.daily-note', label: "Open Today's Daily Note", visible: dailyNotes, ...(dailyNotes ? key('dailyNote') : {}), click: () => handlers.dailyNote() },
+        // YAZ-3607 D11: a hidden item keeps no key, so with Daily pages off its key is free for the page.
+        { id: 'menu.file.daily-page', label: "Open Today's Daily Page", visible: dailyPages, ...(dailyPages ? key('dailyPage') : {}), click: () => handlers.dailyPage() },
         { type: 'separator' },
         // The board items (YAZ-3037, YAZ-3028 D10; Draw's 🔒 YAZ-1775 D3 / D10, YAZ-1799): greyed out unless
         // the active tab is a board they work for. Export Image… and Share Link work on any board, Export
@@ -223,9 +223,9 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
         // A greyed-out item holds no key (YAZ-3564 K13): on macOS a disabled item still takes its key from the page.
         // On a drawing its box also makes a PDF (YAZ-3943 D13), so it says so; a diagram's stays "Export Image…". The key does not change.
         { id: 'menu.file.export-image', label: onDrawing ? 'Export Image or PDF…' : 'Export Image…', ...(onBoard ? { accelerator: 'CmdOrCtrl+Shift+E' } : {}), enabled: onBoard, click: () => handlers.exportImage() },
-        // ⌘⇧S is also the review's Skip (YAZ-2322), and the note keeps its key (D10): a registered
+        // ⌘⇧S is also the review's Skip (YAZ-2322), and the page keeps its key (D10): a registered
         // accelerator never reaches the page on macOS, so the item carries the key ONLY while it is
-        // enabled. On a note tab nothing in the menu owns ⌘⇧S; a review over a drawing tab is App's to route.
+        // enabled. On a page tab nothing in the menu owns ⌘⇧S; a review over a drawing tab is App's to route.
         { id: 'menu.file.export-drawing', label: 'Export Excalidraw Drawing…', ...(onDrawing ? { accelerator: EXPORT_DRAWING_ACCELERATOR } : {}), enabled: onDrawing, click: () => handlers.exportDrawing() },
         { id: 'menu.file.share-link', label: 'Share Link', ...(onBoard ? { accelerator: 'CmdOrCtrl+Shift+L' } : {}), enabled: onBoard, click: () => handlers.shareLink() },
         { type: 'separator' },
@@ -243,7 +243,7 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
     {
       label: 'View',
       submenu: [
-        // ⌘⇧B, a menu key since YAZ-3564 D10: it fires in a note too, where ⌘B is Bold. A note's Quote gave the key up.
+        // ⌘⇧B, a menu key since YAZ-3564 D10: it fires in a page too, where ⌘B is Bold. A page's Quote gave the key up.
         { id: 'menu.view.toggle-sidebar', label: 'Toggle Sidebar', ...key('toggleSidebar'), click: () => handlers.toggleSidebar() },
         { type: 'separator' },
         // Not the stock role (YAZ-3737 D2): `role: 'reload'` reloads with no flush, so typing that waits to save was lost.
@@ -251,7 +251,7 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
         ...(isDev ? [{ role: 'toggleDevTools' } satisfies MenuItemConstructorOptions, { id: 'menu.view.heap-snapshot', label: 'Save Heap Snapshot', click: () => handlers.saveHeapSnapshot() } satisfies MenuItemConstructorOptions] : []),
         { type: 'separator' },
         // Not the stock zoom roles (YAZ-1710): a registered accelerator never reaches the page on
-        // macOS, so main forwards the step and the renderer decides — the focused note or the app.
+        // macOS, so main forwards the step and the renderer decides — the focused page or the app.
         { id: 'menu.view.zoom-reset', label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: () => handlers.zoom(0) },
         { id: 'menu.view.zoom-in', label: 'Zoom In', accelerator: 'CmdOrCtrl+Plus', click: () => handlers.zoom(1) },
         // Electron's own zoomIn role also answers ⌘= (no shift); keep that hidden twin.
@@ -285,7 +285,7 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
         { id: 'menu.window.prev-tab-alt', label: 'Previous Tab', accelerator: 'CmdOrCtrl+Shift+[', visible: false, acceleratorWorksWhenHidden: true, click: () => handlers.prevTab() },
         // The tab overview (YAZ-2648 D5): the same key opens it and closes it.
         { id: 'menu.window.tab-overview', label: 'Tab Overview', ...key('tabOverview'), click: () => handlers.tabOverview() },
-        // The window's one Back list (YAZ-3647 D7): the tab bar's ← → as keys. The MENU owns them, so they answer in a note too.
+        // The window's one Back list (YAZ-3647 D7): the tab bar's ← → as keys. The MENU owns them, so they answer in a page too.
         { id: 'menu.window.back', label: 'Back', ...key('back'), click: () => handlers.back() },
         { id: 'menu.window.forward', label: 'Forward', ...key('forward'), click: () => handlers.forward() },
         // …and a ⌘-click on them as keys (YAZ-4156 7): no key until the user gives one.
@@ -477,8 +477,8 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
     goTo() {
       host.focusedWebContents()?.send(CONTRACT.menu.onGoTo.channel)
     },
-    dailyNote() {
-      host.focusedWebContents()?.send(CONTRACT.menu.onDailyNote.channel)
+    dailyPage() {
+      host.focusedWebContents()?.send(CONTRACT.menu.onDailyPage.channel)
     },
     newWindow() {
       // Through the focused window, which calls `window:duplicate` (YAZ-3343 D35): main names the caller from the
@@ -615,7 +615,7 @@ export function menuKeyedVaults(state: AppState): KeyedVault[] {
  * sub-objects, so reference identity of `state.recents` and `state.folders` skips every
  * settings/window write for free. `state.folders` is a new object on every folder write (a fold, a
  * last file), so the rows (YAZ-2555 D3) compare by value: one pass over the folders per FOLDER write.
- * The user's keys (YAZ-3397 D2) too: `settings.hotkeys` by reference, then by value. And the Daily notes switch (YAZ-3607).
+ * The user's keys (YAZ-3397 D2) too: `settings.hotkeys` by reference, then by value. And the Daily pages switch (YAZ-3607).
  */
 export function subscribeMenuRebuild(store: Store, rebuild: () => void): () => void {
   let last = store.get().recents
@@ -624,7 +624,7 @@ export function subscribeMenuRebuild(store: Store, rebuild: () => void): () => v
   let lastHotkeys = store.get().settings.hotkeys
   let lastAside = store.get().settings.hotkeysAside
   let lastKeys = JSON.stringify([lastHotkeys, lastAside])
-  let lastDaily = store.get().settings.dailyNotes
+  let lastDaily = store.get().settings.dailyPages
   return store.onChange((state) => {
     const vaults = state.folders === lastFolders ? lastVaults : JSON.stringify(menuKeyedVaults(state))
     lastFolders = state.folders
@@ -634,12 +634,12 @@ export function subscribeMenuRebuild(store: Store, rebuild: () => void): () => v
     const keys = state.settings.hotkeys === lastHotkeys && state.settings.hotkeysAside === lastAside ? lastKeys : JSON.stringify([state.settings.hotkeys, state.settings.hotkeysAside])
     lastHotkeys = state.settings.hotkeys
     lastAside = state.settings.hotkeysAside
-    // The Daily notes switch (YAZ-3607) shows or hides File › Open Today's Daily Note.
-    if (state.recents === last && vaults === lastVaults && keys === lastKeys && state.settings.dailyNotes === lastDaily) return
+    // The Daily pages switch (YAZ-3607) shows or hides File › Open Today's Daily Page.
+    if (state.recents === last && vaults === lastVaults && keys === lastKeys && state.settings.dailyPages === lastDaily) return
     last = state.recents
     lastVaults = vaults
     lastKeys = keys
-    lastDaily = state.settings.dailyNotes
+    lastDaily = state.settings.dailyPages
     rebuild()
   })
 }
@@ -648,12 +648,12 @@ export function subscribeMenuRebuild(store: Store, rebuild: () => void): () => v
  * The menu's apply step, twice (YAZ-3044 A32): `apply` always rebuilds (a recents change, the first
  * build); `applyIfMoved` rebuilds only when the board items' answer moves — the file in front of the
  * asked window going between a drawing, a diagram, code and anything else. A focus change or a tab switch
- * from note to note then costs one `fileKind`, not a whole new menu.
+ * from page to page then costs one `fileKind`, not a whole new menu.
  */
 export function gateOnBoardKind(kindNow: () => FileKind | null, apply: () => void, frontNow: () => FileKind | null = kindNow): { apply: () => void; applyIfMoved: () => void } {
   // A code tab is a bucket of its own (YAZ-3556): the App keys that step aside in code (YAZ-3564 K9) change with it.
   const of = (kind: FileKind | null): 'drawing' | 'diagram' | 'code' | 'other' => (kind === 'drawing' || kind === 'diagram' ? kind : kind === 'text' ? 'code' : 'other')
-  // The tab's kind gates the board items; what is in front (a drawing over a note, YAZ-3564 K9) gates the keys.
+  // The tab's kind gates the board items; what is in front (a drawing over a page, YAZ-3564 K9) gates the keys.
   const bucket = (): string => `${of(kindNow())}|${of(frontNow())}`
   let last: ReturnType<typeof bucket> | null = null
   const always = (): void => {
@@ -665,7 +665,7 @@ export function gateOnBoardKind(kindNow: () => FileKind | null, apply: () => voi
 
 /**
  * What the menu follows in the window it would act on (YAZ-5041): `activeKind` gates the board items, `frontKind` the
- * App keys that step aside (YAZ-3564 K9). `file` is the window's stored tab; a drawing open over a note is in front of
+ * App keys that step aside (YAZ-3564 K9). `file` is the window's stored tab; a drawing open over a page is in front of
  * it; with NO page on show (the Inbox tab, the blank tab) the menu follows no tab at all, whatever is stored under it.
  */
 export function menuKindsInFront(file: string | null, front: { drawingOver: boolean; noPage: boolean }): { activeKind: FileKind | null; frontKind: FileKind | null } {

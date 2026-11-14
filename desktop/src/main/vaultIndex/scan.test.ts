@@ -103,9 +103,9 @@ describe('extractLinks / extractEmbeds', () => {
   })
 
   it('YAZ-4954: words that LOOK like an ID keep both sides, in the body, the frontmatter and embeds; the other order keeps one', () => {
-    expect(extractLinks({}, '[[Covid notes|COVID-19]] and [[COVID-19|Covid notes]]')).toEqual(['Covid notes|COVID-19', 'COVID-19'])
-    expect(extractLinks({ related: '[[Covid notes|COVID-19]]', list: ['[[Covid notes#Intro|COVID-19]]'] }, '')).toEqual(['Covid notes|COVID-19'])
-    expect(extractEmbeds('![[Covid notes|COVID-19]]')).toEqual(['Covid notes|COVID-19'])
+    expect(extractLinks({}, '[[Covid pages|COVID-19]] and [[COVID-19|Covid pages]]')).toEqual(['Covid pages|COVID-19', 'COVID-19'])
+    expect(extractLinks({ related: '[[Covid pages|COVID-19]]', list: ['[[Covid pages#Intro|COVID-19]]'] }, '')).toEqual(['Covid pages|COVID-19'])
+    expect(extractEmbeds('![[Covid pages|COVID-19]]')).toEqual(['Covid pages|COVID-19'])
   })
 
   it('YAZ-4954 part 2: an embed of a file keeps the file when its words look like an ID', () => {
@@ -114,30 +114,30 @@ describe('extractLinks / extractEmbeds', () => {
   })
 
   it('embeds are not links and vice versa', () => {
-    const body = '![[img.png]] [[Note]] ![[Other#sec|x]]'
-    expect(extractLinks({}, body)).toEqual(['Note'])
+    const body = '![[img.png]] [[Page]] ![[Other#sec|x]]'
+    expect(extractLinks({}, body)).toEqual(['Page'])
     expect(extractEmbeds(body)).toEqual(['img.png', 'Other'])
   })
 
   it('frontmatter string values (top-level and in lists) matching exactly [[…]] count as links', () => {
-    expect(extractLinks({ related: '[[X]]', list: ['[[Y|y]]', 'plain', 7], note: 'see [[Z]]' }, '')).toEqual(['X', 'Y'])
+    expect(extractLinks({ related: '[[X]]', list: ['[[Y|y]]', 'plain', 7], page: 'see [[Z]]' }, '')).toEqual(['X', 'Y'])
   })
 
   it('`aliases` values are NEVER links, whatever they look like (GRO-2214)', () => {
     // A `[[X]]`-shaped alias stays an alias literally named `[[X]]` (extractAliases strips
-    // nothing) — it just never becomes an outgoing link of this note.
+    // nothing) — it just never becomes an outgoing link of this page.
     expect(extractLinks({ aliases: ['[[X]]', 'CAC'], related: '[[Y]]' }, '')).toEqual(['Y'])
     expect(extractLinks({ aliases: '[[X]]' }, '')).toEqual([])
     expect(extractAliases({ aliases: ['[[X]]'] })).toEqual(['[[X]]'])
   })
 
-  it('a link in a folder’s value (`[[id]]`, `[[Name]]`, or a list of them) is in the note’s links, exactly as a top-level whole-value link is', () => {
+  it('a link in a folder’s value (`[[id]]`, `[[Name]]`, or a list of them) is in the page’s links, exactly as a top-level whole-value link is', () => {
     const props = { related: '[[Top]]', in: { '3y7505rsr6fd': { owner: '[[k3m9x2pq7abc]]', Status: 'Interview', team: ['[[Sam|S]]', 'plain', 7] }, mzf9cjhn02vm: { lead: '[[Road#Scope]]' } } }
     expect(extractLinks(props, '[[Body]]')).toEqual(['Top', 'k3m9x2pq7abc', 'Sam', 'Road', 'Body'])
   })
 
   it('a non-link string in a folder’s value that merely contains `[[x]]` inside other text is not a link', () => {
-    expect(extractLinks({ in: { '3y7505rsr6fd': { note: 'see [[x]] later', list: ['ask [[y]]'] } } }, '')).toEqual([])
+    expect(extractLinks({ in: { '3y7505rsr6fd': { page: 'see [[x]] later', list: ['ask [[y]]'] } } }, '')).toEqual([])
     // A block that is no map holds no values.
     expect(extractLinks({ in: { '3y7505rsr6fd': '[[x]]' } }, '')).toEqual([])
   })
@@ -159,12 +159,12 @@ describe('scanFile', () => {
   let cleanup: () => Promise<void>
   beforeAll(async () => ({ root, cleanup } = await makeViewsFixture()))
   afterAll(() => cleanup())
-  const note = (...p: string[]) => path.join(root, 'Content Pillars', ...p)
+  const page = (...p: string[]) => path.join(root, 'Content Pillars', ...p)
 
   it('identity + stat fields', async () => {
-    const r = await scanFile(root, note('1. Agentic Agency', 'Agentic Agency.md'))
+    const r = await scanFile(root, page('1. Agentic Agency', 'Agentic Agency.md'))
     expect(r).toMatchObject({
-      path: note('1. Agentic Agency', 'Agentic Agency.md'),
+      path: page('1. Agentic Agency', 'Agentic Agency.md'),
       name: 'Agentic Agency.md',
       basename: 'Agentic Agency',
       title: 'Agentic Agency',
@@ -181,7 +181,7 @@ describe('scanFile', () => {
     expect(r.frontmatterError).toBeUndefined()
   })
 
-  it('a note at the root has folder ""; `pillar: null` is present', async () => {
+  it('a page at the root has folder ""; `pillar: null` is present', async () => {
     const r = await scanFile(root, path.join(root, 'VSL-v1.md'))
     expect(r.folder).toBe('')
     expect(r.basename).toBe('VSL-v1')
@@ -190,20 +190,20 @@ describe('scanFile', () => {
   })
 
   it('invalid frontmatter → frontmatterError set and properties {}', async () => {
-    const r = await scanFile(root, note('4. Tech & Silicon Valley', 'Tech & Silicon Valley.md'))
+    const r = await scanFile(root, page('4. Tech & Silicon Valley', 'Tech & Silicon Valley.md'))
     expect(r.properties).toEqual({})
     expect(r.frontmatterError).toMatch(/\S/)
   })
 
   it('frontmatter wikilinks count as links; nested tag kept', async () => {
-    const r = await scanFile(root, note('1. Agentic Agency', 'The Levels of an Agency.md'))
+    const r = await scanFile(root, page('1. Agentic Agency', 'The Levels of an Agency.md'))
     expect(r.tags).toEqual(['agentic/levels'])
     expect(r.links).toEqual(['levels.png', 'Agentic Agency'])
     expect(r.embeds).toEqual([])
   })
 
   it('no frontmatter: tag inside the fenced block ignored, embed collected', async () => {
-    const r = await scanFile(root, note('3. Trust Economy & Paid Ads', 'Attribution.md'))
+    const r = await scanFile(root, page('3. Trust Economy & Paid Ads', 'Attribution.md'))
     expect(r.properties).toEqual({})
     expect(r.frontmatterError).toBeUndefined()
     expect(r.tags).toEqual(['attribution'])
@@ -211,7 +211,7 @@ describe('scanFile', () => {
     expect(r.embeds).toEqual(['chart.png'])
   })
 
-  it('`id` is the frontmatter id when it has the note-id shape, else absent (YAZ-2293 D1)', async () => {
+  it('`id` is the frontmatter id when it has the page-id shape, else absent (YAZ-2293 D1)', async () => {
     const withId = path.join(root, 'With id.md')
     const foreign = path.join(root, 'Foreign id.md')
     await writeFile(withId, '---\nid: k3m9x2pq7abc\n---\nbody\n')
@@ -254,7 +254,7 @@ describe('scanFile', () => {
   })
 
   it('string `tags:` is split', async () => {
-    const r = await scanFile(root, note('2. Creator Economy', 'The Gold In Your Archive.md'))
+    const r = await scanFile(root, page('2. Creator Economy', 'The Gold In Your Archive.md'))
     expect(r.tags).toEqual(['creator'])
   })
 
@@ -266,7 +266,7 @@ describe('scanFile', () => {
     expect(r.links).toEqual(['Attribution', 'Ideas'])
   })
 
-  it('frontmatter `comments` are the note\'s own, never a property; the other keys stay (YAZ-1472)', async () => {
+  it('frontmatter `comments` are the page\'s own, never a property; the other keys stay (YAZ-1472)', async () => {
     const commented = path.join(root, 'commented.md')
     await writeFile(
       commented,
@@ -278,7 +278,7 @@ describe('scanFile', () => {
     expect(r.links).toEqual([])
   })
 
-  it('indexing a note never removes a block of `in`: the record carries every folder’s values as written, their links counted, and the file is left byte for byte', async () => {
+  it('indexing a page never removes a block of `in`: the record carries every folder’s values as written, their links counted, and the file is left byte for byte', async () => {
     const held = path.join(root, 'held.md')
     const content = '---\nin:\n  3y7505rsr6fd:\n    owner: "[[Sam]]"\n  mzf9cjhn02vm:\n    Status: 2-Todo\n---\nbody\n'
     await writeFile(held, content)
@@ -288,7 +288,7 @@ describe('scanFile', () => {
     expect(await readFile(held, 'utf8')).toBe(content)
   })
 
-  it('note cards land on the record in page order: ID, off and reviews off each card line, and the title (YAZ-5030), no other card text; `reviews` is a property like any other (YAZ-4960 D4, D6)', async () => {
+  it('cards land on the record in page order: ID, off and reviews off each card line, and the title (YAZ-5030), no other card text; `reviews` is a property like any other (YAZ-4960 D4, D6)', async () => {
     const file = path.join(root, 'cards.md')
     const bytes = [
       '---',

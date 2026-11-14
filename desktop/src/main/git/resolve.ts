@@ -3,9 +3,9 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { mergeBoards } from '@shared/boardMerge'
-import { mergeNoteComments, noteRest } from '@shared/commentMerge'
+import { mergePageComments, pageRest } from '@shared/commentMerge'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
-import { titleOf } from '@shared/noteName'
+import { titleOf } from '@shared/pageName'
 import { isBoard, isDiagram, isDrawing, isMarkdown } from '@shared/fileKind'
 import { mergePeopleFile, PEOPLE_FILE } from '@shared/people'
 import { VAULT_CONFIG_DIR, type GithubSyncMerge } from '@shared/types'
@@ -30,12 +30,12 @@ import { git, zList } from './exec'
  *    unrelated new drawings at one path;
  *  - the vault's `shares.json`, `favorites.json` (and `favorites-workspace.json`, YAZ-4450) and `icons.json` (YAZ-3440 D8) merge per entry;
  *  - a board one side deleted and the other edited keeps the edit;
- *  - a NOTE (YAZ-4615 D4, D9 — `shared/commentMerge.ts`): its comments merge by id, and a clashing
- *    number goes to the local comment; when both sides changed the REST of the note (the same lines,
+ *  - a PAGE (YAZ-4615 D4, D9 — `shared/commentMerge.ts`): its comments merge by id, and a clashing
+ *    number goes to the local comment; when both sides changed the REST of the page (the same lines,
  *    or git would have merged them), the remote's stays at the path with every comment merged into
  *    it, and ours goes beside it as `<name> (conflict, YYYY-MM-DD).md`, with no comments — so one
- *    note never stops the whole vault's sync again. (This reverses YAZ-3028 D12's "a note never gets
- *    a conflicted copy". A note still never gets a `<<<<<<<` marker.) A `.folder.md` is a note here;
+ *    page never stops the whole vault's sync again. (This reverses YAZ-3028 D12's "a page never gets
+ *    a conflicted copy". A page still never gets a `<<<<<<<` marker.) A `.folder.md` is a page here;
  *  - the vault's `people.json` (YAZ-4615 D1) merges card by card, the newer card winning.
  *
  * Everything else — any other file, any other `.yaseendocs/` config — is NOT settled here: one such
@@ -157,7 +157,7 @@ export async function rebaseStopped(bin: string, root: string): Promise<boolean>
  * and only a merge that LANDED moves "before the merge" — a failed one leaves the last one's pointer.
  *
  * A rebase that never STARTED is not ours to touch (YAZ-3044 A1): it answers null at once, before
- * anything is parked. Parking there would check the user's note out to the committed text and write
+ * anything is parked. Parking there would check the user's page out to the committed text and write
  * it back a moment later — two disk changes in one pass, which can reload a clean tab with old text.
  */
 export async function resolveRebase(bin: string, root: string, span: RebaseSpan): Promise<GithubSyncMerge[] | null> {
@@ -171,7 +171,7 @@ export async function resolveRebase(bin: string, root: string, span: RebaseSpan)
       const conflicted = [...new Set(zList(await git(bin, root, ['ls-files', '-z', '--unmerged'])).map((line) => line.slice(line.indexOf('\t') + 1)))]
       if (conflicted.length === 0) return null // stopped for something that is not a conflict
       // YAZ-3028 D12: a file sync does not merge stops the pass as it always did — checked BEFORE
-      // anything is written, so the abort has nothing of ours to undo. (A note settles: YAZ-4615 D4, D9.)
+      // anything is written, so the abort has nothing of ours to undo. (A page settles: YAZ-4615 D4, D9.)
       if (!conflicted.every(settles)) return null
       for (const rel of conflicted) {
         const settled = await settle(bin, root, rel, copies, () => authorOf(bin, root, span, rel))
@@ -221,8 +221,8 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
   const stages = await stagesOf(bin, root, rel)
   if (stages === null) return null
   const { base, theirs, mine } = stages
-  // A board or note deleted on one side, edited on the other: the edit stays (S11). Nothing to tell anyone.
-  // (`settles` already let only boards, notes and the list files through; a list file is never deleted by the app.)
+  // A board or page deleted on one side, edited on the other: the edit stays (S11). Nothing to tell anyone.
+  // (`settles` already let only boards, pages and the list files through; a list file is never deleted by the app.)
   if (theirs === null || mine === null) {
     const kept = theirs ?? mine
     if (kept === null) return null
@@ -233,22 +233,22 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
     // YAZ-4615 D4, D9: comments by id; the rest merged line by line, kept both ways only when the
     // same lines changed on both sides.
     const [b, t, m] = [base?.toString('utf8') ?? null, theirs.toString('utf8'), mine.toString('utf8')]
-    let merged = mergeNoteComments(b, t, m)
+    let merged = mergePageComments(b, t, m)
     if (merged?.copy !== undefined && b !== null) {
-      const lined = await lineMerge(bin, root, noteRest(b), noteRest(t), noteRest(m))
-      if (lined !== null) merged = mergeNoteComments(b, t, m, () => lined)
+      const lined = await lineMerge(bin, root, pageRest(b), pageRest(t), pageRest(m))
+      if (lined !== null) merged = mergePageComments(b, t, m, () => lined)
     }
     // Comments that are not ours to read (a value of the user's own, a block that does not parse):
-    // the whole note is kept both ways, as a board is (D9 — one note never stops the vault's sync).
+    // the whole page is kept both ways, as a board is (D9 — one page never stops the vault's sync).
     if (merged === null) return keepBoth(root, rel, theirs, mine, copies, author)
     await atomicWrite(abs(root, rel), merged.text)
     const renumbered = merged.renumbered.length === 0 ? {} : { renumbered: merged.renumbered }
-    const note = { kind: 'note' as const, title: noteTitle(rel, merged.text), ...renumbered }
-    if (merged.copy === undefined) return { staged: [rel], report: { path: rel, author: await author(), clashes: 0, ...note } }
+    const page = { kind: 'page' as const, title: pageTitle(rel, merged.text), ...renumbered }
+    if (merged.copy === undefined) return { staged: [rel], report: { path: rel, author: await author(), clashes: 0, ...page } }
     const copy = copies.get(rel) ?? freeCopyName(root, rel)
     copies.set(rel, copy)
     await atomicWrite(abs(root, copy), merged.copy)
-    return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy, ...note } }
+    return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy, ...page } }
   }
   const merged = mergeText(rel, base?.toString('utf8') ?? null, theirs.toString('utf8'), mine.toString('utf8'))
   if (merged !== null) {
@@ -283,18 +283,18 @@ async function keepBoth(root: string, rel: string, theirs: Buffer, mine: Buffer,
   copies.set(rel, copy)
   await atomicWrite(abs(root, rel), theirs)
   await atomicWrite(abs(root, copy), mine)
-  return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy, ...(isMarkdown(rel) ? { kind: 'note' as const, title: noteTitle(rel, theirs.toString('utf8')) } : {}) } }
+  return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy, ...(isMarkdown(rel) ? { kind: 'page' as const, title: pageTitle(rel, theirs.toString('utf8')) } : {}) } }
 }
 
-/** A note as the notice names it: its `title`, else its file name, and a folder page its folder's name. */
-function noteTitle(rel: string, text: string): string {
+/** A page as the notice names it: its `title`, else its file name, and a folder page its folder's name. */
+function pageTitle(rel: string, text: string): string {
   const name = path.posix.basename(rel)
   const dir = path.posix.basename(path.posix.dirname(rel))
   const fallback = name === '.folder.md' && dir !== '.' ? dir : path.posix.basename(name, path.posix.extname(name)).replace(/^\.+/, '')
   return titleOf(parseFrontmatter(splitFrontmatter(text).frontmatter).properties, fallback)
 }
 
-/** Whether sync may settle a conflict on `rel` at all: a board, a note (YAZ-4615 D4, D9), or one of the per-entry list files. */
+/** Whether sync may settle a conflict on `rel` at all: a board, a page (YAZ-4615 D4, D9), or one of the per-entry list files. */
 const settles = (rel: string): boolean =>
   isBoard(rel) || isMarkdown(rel) || rel === SHARES_PATH || rel === FAVORITES_PATH || rel === FAVORITES_WORKSPACE_PATH || rel === ICONS_PATH || rel === PEOPLE_PATH
 
@@ -362,7 +362,7 @@ async function authorOf(bin: string, root: string, span: RebaseSpan, rel?: strin
 /**
  * Dirty tracked files — a save that landed mid-rebase — held by copy and checked out, so nothing git
  * does next can reset them away. A still-UNMERGED path is not a save: it is git's own conflict text
- * (a note this pass will not settle, YAZ-3028 D4), so it is never parked — the abort puts it back.
+ * (a page this pass will not settle, YAZ-3028 D4), so it is never parked — the abort puts it back.
  */
 async function park(bin: string, root: string, parked: Map<string, Buffer | null>): Promise<void> {
   const unmerged = new Set(zList(await git(bin, root, ['ls-files', '-z', '--unmerged'])).map((line) => line.slice(line.indexOf('\t') + 1)))

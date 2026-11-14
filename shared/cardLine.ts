@@ -1,10 +1,10 @@
 import { splitFrontmatter } from './frontmatter'
 import { closesFence, fenceOf } from './fences'
-import { canonicalNoteId, isNumberId } from './noteId'
+import { canonicalPageId, isNumberId } from './pageId'
 import { cardTitle } from './cardText'
 
 /**
- * NOTE CARDS (YAZ-4946, YAZ-4959 D3): a note card is a ```` ```card ```` fence in a Markdown page, and its ONE card line
+ * PAGE CARDS (YAZ-4946, YAZ-4959 D3): a card is a ```` ```card ```` fence in a Markdown page, and its ONE card line
  * right under the closing fence:
  *
  *   ```card
@@ -58,7 +58,7 @@ export interface CardLine {
  * What the index keeps of each card (`IndexRecord.cards`, D4), in page order: no card text but its title (YAZ-5030:
  * what a link to the card shows, and what the `[[` picker finds it by).
  */
-export interface NoteCardRecord {
+export interface CardRecord {
   /** The card's ID as the line holds it (canonical form, `WIKI-512`); null before the sweep gives one. */
   id: string | null
   /** The card is archived (the line's `off` part, YAZ-5046): out of review, its history kept. */
@@ -102,7 +102,7 @@ export function parseCardLine(value: string): CardLine | null {
     else if (text === 'notitle') parts.push({ kind: 'notitle' })
     else if (!id && isNumberId(text)) {
       id = true
-      parts.push({ kind: 'id', id: canonicalNoteId(text) })
+      parts.push({ kind: 'id', id: canonicalPageId(text) })
     } else parts.push({ kind: 'other', text })
   }
   return { parts }
@@ -137,7 +137,7 @@ export const cardReviewsOf = (line: CardLine): CardReview[] => line.parts.flatMa
 export const isCardNext = (line: CardLine): boolean => line.parts.some((p) => p.kind === 'next')
 /** Is the card's title hidden on the Inbox's front (YAZ-5030)? */
 export const isCardNoTitle = (line: CardLine): boolean => line.parts.some((p) => p.kind === 'notitle')
-const cardRecordOf = (line: CardLine, text: string): NoteCardRecord => {
+const cardRecordOf = (line: CardLine, text: string): CardRecord => {
   const title = cardTitle(text)
   return { id: cardIdOf(line), off: isCardOff(line), next: isCardNext(line), reviews: cardReviewsOf(line), ...(title !== '' && { title }), ...(isCardNoTitle(line) && { notitle: true as const }) }
 }
@@ -261,7 +261,7 @@ export interface CardCopySettled {
 /**
  * THE NO-DROP RULE (YAZ-4998, from Yaseen's decision on YAZ-4948): no step empties a card's history, or drops a review,
  * unless each review it holds is already on the card that keeps the ID, or is written onto that card in the SAME step.
- * The ONE copy of the rule: the editor's copy rule (`noteCardCopies`, one transaction) and the sweep (`giveCardIds`,
+ * The ONE copy of the rule: the editor's copy rule (`cardCopies`, one transaction) and the sweep (`giveCardIds`,
  * the keeper written first) both settle each copy here, and write both lines it returns.
  *
  * `copy` gives up its ID because `keeper` holds it (the caller gives the copy a new ID; this rule reads only reviews):
@@ -285,15 +285,15 @@ export function settleCardCopy(keeper: CardSide | null, copy: CardSide): CardCop
 
 // ---------- cards in a page ----------
 
-/** A fence that opens a note card: three or more backticks or tildes, then the language `card` and nothing else. */
+/** A fence that opens a card: three or more backticks or tildes, then the language `card` and nothing else. */
 const CARD_FENCE_RE = /^([ \t]*)(`{3,}|~{3,})[ \t]*card[ \t]*$/
 /** A cheap first look: no page without a card fence pays for the line walk. */
 const ANY_CARD_FENCE_RE = /^[ \t]*(?:`{3,}|~{3,})[ \t]*card[ \t]*$/m
 
-/** Is `line` the opening fence of a note card? (The line numbers read the card line as its block's comment.) */
+/** Is `line` the opening fence of a card? (The line numbers read the card line as its block's comment.) */
 export const isCardFence = (line: string): boolean => CARD_FENCE_RE.test(line)
 
-/** One note card of a page, by line number (0-based, in the text it was found in). */
+/** One card of a page, by line number (0-based, in the text it was found in). */
 export interface CardBlock {
   /** The opening fence's line. */
   open: number
@@ -310,7 +310,7 @@ export interface CardBlock {
 }
 
 /**
- * Every note card in `text` (a page's body, or the whole file), in page order. A code block of any other language is
+ * Every card in `text` (a page's body, or the whole file), in page order. A code block of any other language is
  * skipped whole, so a ```` ```card ```` written inside a ```` ```markdown ```` block is no card.
  */
 export function findCards(text: string): CardBlock[] {
@@ -350,7 +350,7 @@ export function findCards(text: string): CardBlock[] {
 }
 
 /** What the index keeps of a page's cards (D4, YAZ-5030 its title): one entry per card, in page order. */
-export const cardRecords = (text: string): NoteCardRecord[] => findCards(text).map((c) => cardRecordOf(c.line, c.text))
+export const cardRecords = (text: string): CardRecord[] => findCards(text).map((c) => cardRecordOf(c.line, c.text))
 
 /**
  * `text` with the card line of each card `change` names rewritten: `change` gets each card in page order and returns
@@ -398,7 +398,7 @@ export function rewritePageCards(content: string, change: (card: CardBlock, inde
 /** Thrown when a page holds no card with the ID asked for: the card was deleted, or the page changed under the caller. */
 export class CardNotFoundError extends Error {
   constructor(readonly id: string) {
-    super(`no note card ${id} on this page`)
+    super(`no card ${id} on this page`)
     this.name = 'CardNotFoundError'
   }
 }

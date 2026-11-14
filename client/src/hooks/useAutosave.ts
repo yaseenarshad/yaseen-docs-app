@@ -39,7 +39,7 @@ export interface AutosaveHandle {
   /** Save now, with the live content (YAZ-4939: a timed "Allow edits" saves at zero, then locks). A retired editor does nothing. */
   flushNow: () => void
   /**
-   * The live content counts as saved (YAZ-4939: a table section collapsed in a read-only note is a view change), so no
+   * The live content counts as saved (YAZ-4939: a table section collapsed in a read-only page is a view change), so no
    * flush writes it; the next edit's save writes it with the edit. Nothing happens while an edit is still unsaved.
    */
   keepAsSaved: () => void
@@ -128,7 +128,7 @@ export function useAutosave(path: string): AutosaveHandle {
 
   useEffect(() => {
     // The close/quit handshake (GRO-2160): main holds the window open until this settles (5s cap in main).
-    // It answers whether this note is clean (YAZ-3737 D2); a retired editor handed its text on, so it is.
+    // It answers whether this page is clean (YAZ-3737 D2); a retired editor handed its text on, so it is.
     const offFlush = api.window.onFlush(async () => {
       const s = ref.current
       if (s === null || retiredRef.current) return true

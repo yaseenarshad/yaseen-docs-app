@@ -1,11 +1,11 @@
 /**
- * Writing a drawing back from the note's popup (YAZ-879). One guarded write, and on `CONFLICT` a question, not a second write.
+ * Writing a drawing back from the page's popup (YAZ-879). One guarded write, and on `CONFLICT` a question, not a second write.
  *
  * THE TAB'S DOOR (YAZ-3943 1A1). The popup saves through `drawing:save`, as a drawing tab does: the
  * small scene (`files: {}`) plus only the pictures main does not have yet (`newFiles`). Main puts the
  * pictures inside the file (D5), applies the 50 MB rule, keeps the `yaseendraw` block and guards the
  * mtime. So a popup and a tab write the same file the same way, and a board past 10 MiB (the asset
- * pipe's cap, `writeAsset`) still saves. A note embed's own sidecar in `assets/drawings/` takes the
+ * pipe's cap, `writeAsset`) still saves. A page embed's own sidecar in `assets/drawings/` takes the
  * same door: it is a drawing with its pictures inside, which is what main writes by default.
  *
  * THE FIRST SAVE WINS (YAZ-3028 edge case, YAZ-3044 A4). Since YAZ-3028 the same drawing can be

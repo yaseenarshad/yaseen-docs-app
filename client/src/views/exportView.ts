@@ -17,7 +17,7 @@ export interface CellTextContext {
   resolve?: Resolver
   /** The folder's declarations by bare name: a Number or Date column's `format` (YAZ-4591). */
   decls: Readonly<Record<string, PropertyDecl>>
-  /** The folder page's own folder, as the index names it: a note directly in it has an empty Folder cell. */
+  /** The folder page's own folder, as the index names it: a page directly in it has an empty Folder cell. */
   pageFolder: string
   /** A folder's title, as its Folder chip shows it (YAZ-4564). */
   folderTitle: (dir: string) => string
@@ -30,7 +30,7 @@ const inlineLinkText = (text: string, resolve: Resolver | undefined): string =>
     return link instanceof LinkValue ? linkText(link, resolve) : whole
   })
 
-/** One value as a cell shows it: a link by its note's title, a list joined by ", ", a formatted Number or Date. */
+/** One value as a cell shows it: a link by its page's title, a list joined by ", ", a formatted Number or Date. */
 function valueText(v: Value | undefined, resolve: Resolver | undefined, decl?: PropertyDecl): string {
   if (v === undefined || v === null) return ''
   if (v instanceof ErrorValue) return '#ERROR'
@@ -55,7 +55,7 @@ export function cellText(row: Row, key: string, ctx: CellTextContext): string {
 
 /**
  * The rows in the order the view shows them: group by group, a group's direct rows before its inner groups (the
- * table's walk). Each note once: a fanned-out row that shows under two groups is one line in a file. A collapsed
+ * table's walk). Each page once: a fanned-out row that shows under two groups is one line in a file. A collapsed
  * group's rows are in: they are the view's rows, only folded away.
  */
 export function shownRows(rows: readonly Row[], groups: readonly Group[] | null): Row[] {
@@ -89,7 +89,7 @@ export function toCsv(table: readonly (readonly string[])[]): string {
   return table.map((line) => line.map(field).join(',')).join('\r\n') + '\r\n'
 }
 
-/** Tab-separated, for Sheets or a note's table: a tab or a line break inside a cell becomes a space. */
+/** Tab-separated, for Sheets or a page's table: a tab or a line break inside a cell becomes a space. */
 export function toTsv(table: readonly (readonly string[])[]): string {
   return table.map((line) => line.map((s) => s.replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\n')
 }

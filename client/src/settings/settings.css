@@ -179,7 +179,7 @@
   color: var(--fg);
 }
 
-/* The one section-level note (Sync: these settings travel with the vault, not the app). */
+/* The one section-level page (Sync: these settings travel with the vault, not the app). */
 .settings-section__note {
   margin: -6px 0 14px;
   font-size: 13px;
@@ -1728,8 +1728,8 @@
   text-decoration: underline;
 }
 
-/* The live preview (YAZ-4794): a sample note table header row and one row under it, the `table.css` variables painted
-   as a note table paints them. Fixed layout at the card's width, so it never widens the dialog. */
+/* The live preview (YAZ-4794): a sample page table header row and one row under it, the `table.css` variables painted
+   as a page table paints them. Fixed layout at the card's width, so it never widens the dialog. */
 .header-row-preview {
   grid-column: 1 / -1;
   width: 100%;
@@ -1933,8 +1933,8 @@
 }
 
 /* Settings › Link pills (YAZ-4924, `LinkPillsControl.tsx`): one row — the format box with its chips and the ready
-   formats, the vault rule, the preview (a "Preview" label and ONE sample pill; it wears the vault's look as a note
-   does, in the note's text size) and, under it, the toolbar of the part clicked. */
+   formats, the vault rule, the preview (a "Preview" label and ONE sample pill; it wears the vault's look as a page
+   does, in the page's text size) and, under it, the toolbar of the part clicked. */
 .link-pills-row {
   display: flex;
   flex-direction: column;

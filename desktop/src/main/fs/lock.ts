@@ -1,7 +1,7 @@
 /**
  * One maker at a time for `key` on this Mac, across the app and the command (YAZ-4269 D2): a file made with `wx` in
  * `<app data>/locks` (`LOCK_DIR`), never in the vault, so no sync carries it. It holds the maker's process id, and it
- * goes when the work ends. At most one file for each note, or each vault's ID count (`mint.ts`), being made.
+ * goes when the work ends. At most one file for each page, or each vault's ID count (`mint.ts`), being made.
  */
 import { createHash } from 'node:crypto'
 import { mkdir, open, readFile, rm, stat } from 'node:fs/promises'

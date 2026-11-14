@@ -1,5 +1,5 @@
 import { cleanIconRules, isIconRules } from '@shared/vaultIcons'
-import { isValidDailyNoteFormat } from '@shared/dailyNote'
+import { isValidDailyPageFormat } from '@shared/dailyPage'
 import { isCalendarDayTime, isValidTimeFormat } from '@shared/timeFormat'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, renameSync } from 'node:fs'
@@ -32,7 +32,7 @@ import {
   MAX_SESSIONS,
   MAX_SESSION_TABS,
   MAX_VAULT_SETS,
-  NEW_NOTE_LOCATIONS,
+  NEW_PAGE_LOCATIONS,
   NEW_BOARD_PICTURES,
   NEW_TAB_PLACES,
   type NewBoardPictures,
@@ -46,12 +46,12 @@ import {
   TABLE_SHADE_MIN,
   TABLE_SHADE_STEP,
   TABLE_CELL_BULLET_GAP_MAX,
-  NOTE_BULLET_GAP_MAX,
-  NOTE_BULLET_GAP_MIN,
-  NOTE_BULLET_INDENT_MAX,
-  NOTE_BULLET_INDENT_MIN,
+  PAGE_BULLET_GAP_MAX,
+  PAGE_BULLET_GAP_MIN,
+  PAGE_BULLET_INDENT_MAX,
+  PAGE_BULLET_INDENT_MIN,
   CELL_NOTE_TEMPLATE_MAX,
-  NEW_NOTE_TITLE_MAX,
+  NEW_PAGE_TITLE_MAX,
   TABLE_CELL_BULLET_GAP_MIN,
   TABLE_CELL_BULLET_INDENT_MAX,
   TABLE_CELL_BULLET_INDENT_MIN,
@@ -63,8 +63,8 @@ import {
   isBandColour,
   isBlockWidth,
   type TableBandRows,
-  DAILY_NOTE_OPENS,
-  type DailyNoteOpens,
+  DAILY_PAGE_OPENS,
+  type DailyPageOpens,
   type TableDimPast,
   type TableNowMark,
   type TableRowBand,
@@ -124,7 +124,7 @@ import {
   freeVaultKey,
   isSidebarLens,
   isTocSource,
-  isValidNewNoteFolder,
+  isValidNewPageFolder,
   mergeFavoritesOrder,
   normalizeRoots,
   rootOfPath,
@@ -142,7 +142,7 @@ import {
   type GoToPlace,
   type HeadingStyles,
   type HoverPlace,
-  type NewNoteLocation,
+  type NewPageLocation,
   type NoticeLength,
   type MediaHoverZoomSize,
   type TabSleepAfter,
@@ -270,13 +270,13 @@ export interface Store {
   removeRecent(path: string): void
   setFolder(root: string, patch: FolderPatch): void
   setFolds(root: string, file: string, keys: readonly string[]): void
-  /** The folded rows of one note's table of contents (YAZ-3939 D1); an empty list removes the entry. */
+  /** The folded rows of one page's table of contents (YAZ-3939 D1); an empty list removes the entry. */
   setTocFolds(root: string, file: string, keys: readonly string[]): void
-  /** What one note's table of contents is built from (YAZ-2700 D14). `null` is Auto: the entry goes, and Auto is never stored. */
+  /** What one page's table of contents is built from (YAZ-2700 D14). `null` is Auto: the entry goes, and Auto is never stored. */
   setTocSource(root: string, file: string, source: TocSource | null): void
-  /** One code file's "Table of contents" switch (YAZ-2950, YAZ-3506). `true` and `false` are both stored; nothing here removes an entry. A note's switch is in its frontmatter (YAZ-4094 G4). */
+  /** One code file's "Table of contents" switch (YAZ-2950, YAZ-3506). `true` and `false` are both stored; nothing here removes an entry. A page's switch is in its frontmatter (YAZ-4094 G4). */
   setTocSwitch(root: string, file: string, on: boolean): void
-  /** The one-time move of a note's switch into its frontmatter (`movePageSwitches.ts`, YAZ-4094 G4) is done: the entry goes. */
+  /** The one-time move of a page's switch into its frontmatter (`movePageSwitches.ts`, YAZ-4094 G4) is done: the entry goes. */
   dropPageSwitch(root: string, file: string, list: 'sectionIndents' | 'tocSwitches'): void
   setBaseGroups(root: string, key: string, collapsed: readonly string[]): void
   /**
@@ -292,7 +292,7 @@ export interface Store {
    * or of a hidden file of the vault (a dot name inside it), commits nothing.
    */
   addEdit(roots: readonly string[], file: string, now?: number): void
-  /** Closed notes (YAZ-3487 D9): each of `files` goes to the vault of `roots` that holds it (the most specific), at `now`, in ONE commit. A file no vault holds is left out; nothing left commits nothing. */
+  /** Closed pages (YAZ-3487 D9): each of `files` goes to the vault of `roots` that holds it (the most specific), at `now`, in ONE commit. A file no vault holds is left out; nothing left commits nothing. */
   addClosed(roots: readonly string[], files: readonly string[], now?: number): void
   /** "Remove from Recently closed" (YAZ-3487 D14): drop `files` from their vaults' lists; with `null`, clear the list of each vault of `roots`. ONE commit; nothing to drop commits nothing. */
   forgetClosed(roots: readonly string[], files: readonly string[] | null): void
@@ -556,7 +556,7 @@ export const sanitizeSubheaderRow = (raw: unknown): HeaderRow => ({ ...DEFAULT_S
 const isHotkeyEntry = ([id, key]: [string, unknown]): boolean => {
   // A click's gesture (YAZ-3936): 'links.thisTab' → 'CmdOrCtrl+Click', or null for "No gesture".
   if (gestureRow(id) !== undefined) return isGestureEntry(id, key)
-  // Any place's key since YAZ-3564 (K2): a scoped id of a changeable row ('note.bold'), or an old unscoped App id.
+  // Any place's key since YAZ-3564 (K2): a scoped id of a changeable row ('page.bold'), or an old unscoped App id.
   const row = keyRow(id)
   if (row === undefined || !row.changeable) return false
   if (key === null) return true
@@ -640,7 +640,7 @@ export function sanitizeOutlineHidden(raw: unknown): CodeSymbolKind[] {
 
 /**
  * ⌘D's place (YAZ-3556 D2), strict: a known tab, a folder or a file by a root-relative path ('' only for the vault root,
- * a folder), or today's daily note (YAZ-3607 D1). Only the keys of its kind: a value with extra keys does not read, so a
+ * a folder), or today's daily page (YAZ-3607 D1). Only the keys of its kind: a value with extra keys does not read, so a
  * merge by part can never mix two places.
  */
 export const isGoToPlace = (v: unknown): v is GoToPlace => {
@@ -649,7 +649,7 @@ export const isGoToPlace = (v: unknown): v is GoToPlace => {
   if (v.kind === 'tab') return keys === 'kind,tab' && isSidebarLens(v.tab)
   if (v.kind === 'daily') return keys === 'kind'
   if (v.kind !== 'folder' && v.kind !== 'file') return false
-  return keys === 'kind,path' && typeof v.path === 'string' && isValidNewNoteFolder(v.path) && (v.kind === 'folder' || v.path !== '')
+  return keys === 'kind,path' && typeof v.path === 'string' && isValidNewPageFolder(v.path) && (v.kind === 'folder' || v.path !== '')
 }
 
 /** Per-field guards shared by the loader, `sanitizeSettings` and the IPC boundary (`isSettings`). */
@@ -665,8 +665,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   foldingOnByDefault: (v): v is boolean => typeof v === 'boolean',
   theme: (v): v is Theme => typeof v === 'string' && (THEMES as readonly string[]).includes(v),
   contentWidth: (v): v is ContentWidth => typeof v === 'string' && (CONTENT_WIDTHS as readonly string[]).includes(v),
-  newNoteLocation: (v): v is NewNoteLocation => typeof v === 'string' && (NEW_NOTE_LOCATIONS as readonly string[]).includes(v),
-  newNoteFolder: (v): v is string => typeof v === 'string' && isValidNewNoteFolder(v),
+  newPageLocation: (v): v is NewPageLocation => typeof v === 'string' && (NEW_PAGE_LOCATIONS as readonly string[]).includes(v),
+  newPageFolder: (v): v is string => typeof v === 'string' && isValidNewPageFolder(v),
   confirmDelete: (v): v is boolean => typeof v === 'boolean',
   newTabPlace: (v): v is NewTabPlace => typeof v === 'string' && (NEW_TAB_PLACES as readonly string[]).includes(v),
   newBoardPictures: (v): v is NewBoardPictures => typeof v === 'string' && (NEW_BOARD_PICTURES as readonly string[]).includes(v),
@@ -695,8 +695,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   cardSpacing: (v): v is CardSpacing => typeof v === 'string' && (CARD_SPACINGS as readonly string[]).includes(v),
   cardLineSpacing: (v): v is number => isFiniteNumber(v) && v >= 1 && v <= 3,
   cardBlockGap: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= 0 && v <= CARD_BLOCK_GAP_MAX,
-  cardBulletIndent: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= NOTE_BULLET_INDENT_MIN && v <= NOTE_BULLET_INDENT_MAX,
-  cardBulletGap: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= NOTE_BULLET_GAP_MIN && v <= NOTE_BULLET_GAP_MAX,
+  cardBulletIndent: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= PAGE_BULLET_INDENT_MIN && v <= PAGE_BULLET_INDENT_MAX,
+  cardBulletGap: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= PAGE_BULLET_GAP_MIN && v <= PAGE_BULLET_GAP_MAX,
   cardBulletSpace: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= 0 && v <= CARD_BLOCK_GAP_MAX,
   tableOfContents: (v): v is TableOfContents => typeof v === 'string' && (TABLE_OF_CONTENTS as readonly string[]).includes(v),
   tocOnByDefault: (v): v is boolean => typeof v === 'boolean',
@@ -724,17 +724,17 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tableNewStyle: (v): v is TableNewStyle => typeof v === 'string' && (TABLE_NEW_STYLES as readonly string[]).includes(v),
   tableDimPast: (v): v is TableDimPast => typeof v === 'string' && (TABLE_DIM_PASTS as readonly string[]).includes(v),
   tableShadeDarkness: (v): v is number => isFiniteNumber(v) && v >= TABLE_SHADE_MIN && v <= TABLE_SHADE_MAX && v % TABLE_SHADE_STEP === 0,
-  noteBulletIndent: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= NOTE_BULLET_INDENT_MIN && v <= NOTE_BULLET_INDENT_MAX,
-  noteBulletGap: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= NOTE_BULLET_GAP_MIN && v <= NOTE_BULLET_GAP_MAX,
+  pageBulletIndent: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= PAGE_BULLET_INDENT_MIN && v <= PAGE_BULLET_INDENT_MAX,
+  pageBulletGap: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= PAGE_BULLET_GAP_MIN && v <= PAGE_BULLET_GAP_MAX,
   tableCellBulletIndent: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= TABLE_CELL_BULLET_INDENT_MIN && v <= TABLE_CELL_BULLET_INDENT_MAX,
   tableCellBulletGap: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= TABLE_CELL_BULLET_GAP_MIN && v <= TABLE_CELL_BULLET_GAP_MAX,
   tableCellNoteTemplate: (v): v is string => typeof v === 'string' && v.length <= CELL_NOTE_TEMPLATE_MAX,
   tableCellNotePinned: (v): v is boolean => typeof v === 'boolean',
   typingArrows: (v): v is boolean => typeof v === 'boolean',
-  enterKeepsStyleNotes: (v): v is boolean => typeof v === 'boolean',
+  enterKeepsStylePages: (v): v is boolean => typeof v === 'boolean',
   enterKeepsStyleBoxes: (v): v is boolean => typeof v === 'boolean',
   tableAllNotesOpensAt: (v): v is AllNotesOpensAt => typeof v === 'string' && (ALL_NOTES_OPENS_AT as readonly string[]).includes(v),
-  newNoteTitleTemplate: (v): v is string => typeof v === 'string' && v.length <= NEW_NOTE_TITLE_MAX && !v.includes('/'),
+  newPageTitleTemplate: (v): v is string => typeof v === 'string' && v.length <= NEW_PAGE_TITLE_MAX && !v.includes('/'),
   tableDayStart: isCalendarDayTime,
   tableDayEnd: isCalendarDayTime,
   tableTimeFormat: (v): v is string => typeof v === 'string' && isValidTimeFormat(v),
@@ -785,11 +785,11 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   codeOutlineLocals: (v): v is boolean => typeof v === 'boolean',
   codeLanguageHelpers: (v): v is boolean => typeof v === 'boolean',
   goTo: isGoToPlace,
-  dailyNotes: (v): v is boolean => typeof v === 'boolean',
-  dailyNoteFolder: (v): v is string => typeof v === 'string' && isValidNewNoteFolder(v),
-  dailyNoteFormat: (v): v is string => typeof v === 'string' && isValidDailyNoteFormat(v),
-  dailyNoteDayFolder: (v): v is boolean => typeof v === 'boolean',
-  dailyNoteOpens: (v): v is DailyNoteOpens => typeof v === 'string' && (DAILY_NOTE_OPENS as readonly string[]).includes(v),
+  dailyPages: (v): v is boolean => typeof v === 'boolean',
+  dailyPageFolder: (v): v is string => typeof v === 'string' && isValidNewPageFolder(v),
+  dailyPageFormat: (v): v is string => typeof v === 'string' && isValidDailyPageFormat(v),
+  dailyPageDayFolder: (v): v is boolean => typeof v === 'boolean',
+  dailyPageOpens: (v): v is DailyPageOpens => typeof v === 'string' && (DAILY_PAGE_OPENS as readonly string[]).includes(v),
   tabSleepAfter: (v): v is TabSleepAfter => typeof v === 'string' && (TAB_SLEEP_AFTER as readonly string[]).includes(v),
   memoryReload: (v): v is boolean => typeof v === 'boolean',
   folderPages: isFolderPages,
@@ -1029,7 +1029,7 @@ function sanitizeTocSources(raw: unknown): Record<string, TocSource> {
   return out
 }
 
-/** A page switch of the cog — "Section indent" (YAZ-2709 D2) and "Table of contents" (YAZ-2950): page → `true` or `false`. A wrong entry drops alone — a path that is not absolute, or a value that is not a boolean (`1`, `"true"`, `null`) — and the note then reads as a note with no entry. */
+/** A page switch of the cog — "Section indent" (YAZ-2709 D2) and "Table of contents" (YAZ-2950): page → `true` or `false`. A wrong entry drops alone — a path that is not absolute, or a value that is not a boolean (`1`, `"true"`, `null`) — and the page then reads as a page with no entry. */
 function sanitizeSwitches(raw: unknown): Record<string, boolean> {
   if (!isRecord(raw)) return {}
   const out: Record<string, boolean> = {}
@@ -1443,7 +1443,7 @@ export function createStore(filePath: string): Store {
 
     setTocSource(root, file, source) {
       const cur = folderOf(root)
-      // Auto on a note that is on Auto already: nothing to write, nothing to tell the windows.
+      // Auto on a page that is on Auto already: nothing to write, nothing to tell the windows.
       if (source === null ? !(file in cur.tocSources) : cur.tocSources[file] === source) return
       const tocSources = { ...cur.tocSources }
       if (source === null) delete tocSources[file]
@@ -1610,11 +1610,11 @@ export function createStore(filePath: string): Store {
             opens: remapKeys(folder.opens, remap),
             // The save log (YAZ-3235 S5), keyed by file as well: a renamed file keeps its last save.
             edits: remapKeys(folder.edits, remap),
-            // And the closed notes (YAZ-3487 D9): a renamed note stays in "Recently closed".
+            // And the closed pages (YAZ-3487 D9): a renamed page stays in "Recently closed".
             closed: remapKeys(folder.closed, remap),
-            // And the table of contents source (YAZ-2700 D14), keyed the same way: the choice follows its note.
+            // And the table of contents source (YAZ-2700 D14), keyed the same way: the choice follows its page.
             tocSources: remapKeys(folder.tocSources, remap),
-            // And the folded rows of the table of contents (YAZ-3939 D1): they follow their note.
+            // And the folded rows of the table of contents (YAZ-3939 D1): they follow their page.
             tocFolds: remapKeys(folder.tocFolds, remap),
             // And the "Table of contents" switch (YAZ-2950).
             tocSwitches: remapKeys(folder.tocSwitches, remap),

@@ -1,5 +1,5 @@
 /**
- * Reading a drawing back off disk: the note embed's sidecar (YAZ-878) and, since YAZ-3028, the
+ * Reading a drawing back off disk: the page embed's sidecar (YAZ-878) and, since YAZ-3028, the
  * scene text a drawing TAB loads through `drawing:load` (`parseSceneText`, `openViewport`, ported
  * from Draw's `drawingScene.ts`).
  *

@@ -3,9 +3,9 @@
  * `kind: card` (the mark, `isCardKind`) and whose body is exactly ONE card: its ```` ```card ```` block and its card line,
  * with no other text but blank lines. The card's ID (on its card line) is the file's ID: the sweep gives a card file no
  * page `id:` (one already there stays, YAZ-5037 pick 6). Its title is its card's title (the 5030 rule: the first line),
- * and its name is built from that title and the card's ID as a page's is (`noteFileName`, YAZ-2420 🔒 D3).
+ * and its name is built from that title and the card's ID as a page's is (`pageFileName`, YAZ-2420 🔒 D3).
  *
- * The mark is the key `kind`, never `type` (pick 4): many people use `type:` for their own notes. Only the value `card`
+ * The mark is the key `kind`, never `type` (pick 4): many people use `type:` for their own pages. Only the value `card`
  * (trimmed, any case) is the mark; any other `kind` value is an ordinary property, and the properties panel shows it.
  *
  * Named `cardFileFormat`, not `cardFile`: `client/src/review/cardFile.ts` is a card's reads and writes in its file.
@@ -14,7 +14,7 @@
 import { cardBlock, cardIdOf, findCards, type CardBlock, type CardLine } from './cardLine'
 import { cardTitle } from './cardText'
 import { buildFrontmatter, parseFrontmatter, splitFrontmatter } from './frontmatter'
-import { noteFileName } from './noteName'
+import { pageFileName } from './pageName'
 
 /** The property key that marks a card file. Hidden in the properties panel when it holds `card`. */
 export const CARD_KIND_KEY = 'kind'
@@ -115,11 +115,11 @@ export function cardFileWithBlock(block: string, extra: Record<string, unknown> 
 }
 
 /**
- * A card file's name (YAZ-5044 pick 1): `<kebab-title>-<id>.md`, as a page's (`noteFileName`). The placeholder title of
+ * A card file's name (YAZ-5044 pick 1): `<kebab-title>-<id>.md`, as a page's (`pageFileName`). The placeholder title of
  * a new card (`NEW_CARD_TEXT`) and an empty title give `<id>.md`.
  */
 export function cardFileName(title: string, id: string): string {
-  return noteFileName(title.trim() === NEW_CARD_TEXT ? '' : title, id)
+  return pageFileName(title.trim() === NEW_CARD_TEXT ? '' : title, id)
 }
 
 /**

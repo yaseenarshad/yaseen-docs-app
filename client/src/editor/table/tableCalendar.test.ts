@@ -143,7 +143,7 @@ describe('the now row and the past rows (D2, D14)', () => {
     expect(pastRows(view)).toEqual([])
   })
 
-  it('a read-only note shows the marker', async () => {
+  it('a read-only page shows the marker', async () => {
     const { crepe, view } = await mountAt(11, 40, calendar(DAY))
     crepe.setReadonly(true)
     expect(nowRows(view)).toEqual([{ i: 16, now: '0.333' }])
@@ -325,7 +325,7 @@ describe('the marker in table.css (D2, D6, D14)', () => {
     const shade = past.find(({ body }) => body.includes('--table-past:'))
     expect(shade?.selector).toMatch(/^\[data-table-dim-past='shade'\]/)
     // Each cell rule (a cell, a frozen cell, a sticky subheader cell, YAZ-4899) paints the shade as a layer, under the band and over a fill.
-    const paint = rules.filter(({ body }) => /background-image:\s*var\(--table-note-mark, none\), var\(--table-open-ring, none\), var\(--table-band, none\)/.test(body))
+    const paint = rules.filter(({ body }) => /background-image:\s*var\(--table-page-mark, none\), var\(--table-open-ring, none\), var\(--table-band, none\)/.test(body))
     expect(paint.length).toBe(3)
     for (const { body } of paint) expect(body).toMatch(/var\(--table-band, none\), var\(--table-past, none\)/)
   })

@@ -1,5 +1,5 @@
 /**
- * Pasted / dropped image bytes → a file in the vault → an image node in the note (YAZ-1656 /
+ * Pasted / dropped image bytes → a file in the vault → an image node in the page (YAZ-1656 /
  * YAZ-1662, 🔒 D6: BYTES WIN OVER MARKUP — when the clipboard carries both an image file and HTML,
  * the file is written and the HTML is ignored, so a screenshot never lands as a dead
  * `<img src="blob:…">`).
@@ -15,7 +15,7 @@
  *
  * The node is `schema.nodes.image` — the commonmark node the editor already has (🔒 D2), so the
  * markdown out is a plain `![name](assets/images/name.png)`. The src is written ROOT-RELATIVE,
- * which is what main resolves second after note-relative, and what Obsidian would resolve too.
+ * which is what main resolves second after page-relative, and what Obsidian would resolve too.
  * The insert lands at the LIVE selection at the moment the write resolves (never one captured
  * across the await), carries `closeHistory` so undo removes exactly the paste, and the paste
  * metas the rest of the clipboard code uses so paste rules and listeners treat it alike. A
@@ -71,22 +71,22 @@ export function imageFile(dt: DataTransfer | null): File | null {
 }
 
 /**
- * `<note>-20260918-143005[-2].png` — local time, second-granular. Whitespace in the note's name
- * becomes `-`: remark writes a src with a space as `(<assets/images/My Note….png>)`, and while that
+ * `<page>-20260918-143005[-2].png` — local time, second-granular. Whitespace in the page's name
+ * becomes `-`: remark writes a src with a space as `(<assets/images/My Page….png>)`, and while that
  * is valid CommonMark it is a form no other tool of ours produces; a space-free name keeps the
- * link a plain `(assets/images/My-Note….png)` and the src attr exactly the path on disk.
+ * link a plain `(assets/images/My-Page….png)` and the src attr exactly the path on disk.
  */
-export function imageName(noteBase: string, now: Date, ext: string, suffix = 0): string {
+export function imageName(pageBase: string, now: Date, ext: string, suffix = 0): string {
   const p = (n: number) => String(n).padStart(2, '0')
   const stamp = `${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}-${p(now.getHours())}${p(now.getMinutes())}${p(now.getSeconds())}`
-  const base = noteBase.trim().replace(/\s+/g, '-') || 'image'
+  const base = pageBase.trim().replace(/\s+/g, '-') || 'image'
   return `${base}-${stamp}${suffix === 0 ? '' : `-${suffix + 1}`}.${ext}`
 }
 
 /** Writes `bytes` under `IMAGES_DIR`, never overwriting; resolves the root-relative path written. */
-export async function writeImage(root: string, noteBase: string, bytes: Uint8Array, ext: string, now: Date): Promise<string> {
+export async function writeImage(root: string, pageBase: string, bytes: Uint8Array, ext: string, now: Date): Promise<string> {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const path = `${IMAGES_DIR}/${imageName(noteBase, now, ext, attempt)}`
+    const path = `${IMAGES_DIR}/${imageName(pageBase, now, ext, attempt)}`
     try {
       await api.writeAsset({ root, path, content: bytes, create: true })
       return path
@@ -143,7 +143,7 @@ export async function insertPastedImage(opts: ImageOptions, view: EditorView, fi
   try {
     const bytes = new Uint8Array(await file.arrayBuffer())
     const width = await naturalWidth(file)
-    const path = await writeImage(opts.root, stripExt(basename(opts.notePath)), bytes, extFor(file.type), now)
+    const path = await writeImage(opts.root, stripExt(basename(opts.pagePath)), bytes, extFor(file.type), now)
     const name = basename(path)
     const text = name.slice(0, name.lastIndexOf('.'))
     const alt = width !== null && width > PASTED_IMAGE_WIDTH ? formatAlt(text, PASTED_IMAGE_WIDTH) : text

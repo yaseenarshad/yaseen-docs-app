@@ -1,10 +1,10 @@
 /**
- * THE PAGE TITLE (⚡ YAZ-888) — block ZERO of the note's own scroller, above `.editor-mount`.
+ * THE PAGE TITLE (⚡ YAZ-888) — block ZERO of the page's own scroller, above `.editor-mount`.
  *
  * It shows the page's TITLE (YAZ-2420 🔒 D14, `pageLabel`) and edits it (🔒 D16): the name on
  * disk is built from the title, never typed. It is React-side chrome and never a ProseMirror
- * node — the note's markdown round-trips byte-identically past it, and an in-document
- * `# Heading` is a block of the note like any other (syncing the two is deliberately out of scope).
+ * node — the page's markdown round-trips byte-identically past it, and an in-document
+ * `# Heading` is a block of the page like any other (syncing the two is deliberately out of scope).
  *
  * Editing copies `RenameInline`'s patterns: click swaps the heading for an input prefilled with
  * the current title, and LEAVING the field commits (YAZ-1553) — click-away, Enter, ArrowDown and
@@ -29,12 +29,12 @@ interface PageTitleProps {
   /** `dir` = a folder's title (YAZ-2290 D9). */
   kind?: 'file' | 'dir'
   /**
-   * The note is read only (YAZ-3076 D2, S22): the heading does not open the field, and a field that
+   * The page is read only (YAZ-3076 D2, S22): the heading does not open the field, and a field that
    * is open when the switch turns on is put down unchanged. The sidebar still renames the file.
    */
   readOnly?: boolean
   /**
-   * The note's ID (YAZ-4940 "In the title"): drawn after the title, small and muted, as its own element — never part
+   * The page's ID (YAZ-4940 "In the title"): drawn after the title, small and muted, as its own element — never part
    * of the title text, so a rename and a copy of the title never take it. A click copies it. Absent: nothing drawn.
    */
   id?: string

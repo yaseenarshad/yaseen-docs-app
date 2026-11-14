@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { IDS_FILE, vaultNoteId } from '@shared/noteId'
+import { IDS_FILE, vaultPageId } from '@shared/pageId'
 import { VAULT_CONFIG_DIR, type RenameFileResponse } from '@shared/types'
 import { failure, removeVault, vaultFiles } from '../fs/testFixture'
 import { _evictAll, changeLetters, getIndex, idsState } from './index'
@@ -25,7 +25,7 @@ const OLD_2 = 'bbbbbbbbbbb2'
 const CONFIG = `${VAULT_CONFIG_DIR}/${IDS_FILE}`
 const config = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`
 
-/** A vault with the letters `YAZ`: built names, a name the app did not build, each place that holds an ID, and two notes with an old ID. */
+/** A vault with the letters `YAZ`: built names, a name the app did not build, each place that holds an ID, and two pages with an old ID. */
 const VAULT: Record<string, string> = {
   [CONFIG]: config({ enabled: true, letters: 'YAZ', other: 'kept' }),
   'foo-yaz-1.md': '---\nid: YAZ-1\ntitle: Foo\n---\nFoo\n',
@@ -64,7 +64,7 @@ describe('Change letters: each ID of the vault follows (S81, S86, S87)', () => {
     const renames: RenameFileResponse[] = []
     const seen: unknown[] = []
     const state = await changeLetters(root, 'doc', async (res) => {
-      // S81: the letters are saved before any note changes.
+      // S81: the letters are saved before any page changes.
       if (renames.length === 0) seen.push(await ids(root))
       renames.push(res)
     })
@@ -76,17 +76,17 @@ describe('Change letters: each ID of the vault follows (S81, S86, S87)', () => {
       ['foo-yaz-1.md', 'foo-doc-1.md'],
     ])
     expect(renames.every((r) => r.kind === 'file')).toBe(true)
-    expect(state).toEqual({ letters: 'DOC', notes: 4, stale: 0, old: 2, unfinished: false })
+    expect(state).toEqual({ letters: 'DOC', pages: 4, stale: 0, old: 2, unfinished: false })
   })
 
-  it('a link to a note the vault does not hold keeps its ID as written (YAZ-4922, Yaseen: "Yes, leave them"): only links to the vault\'s own notes follow', async () => {
-    // `[[YAZ-500]]` names a note of another vault (the vault around this folder); `[[YAZ-12]]` names a note of this one.
+  it('a link to a page the vault does not hold keeps its ID as written (YAZ-4922, Yaseen: "Yes, leave them"): only links to the vault\'s own pages follow', async () => {
+    // `[[YAZ-500]]` names a page of another vault (the vault around this folder); `[[YAZ-12]]` names a page of this one.
     await make(root, { ...VAULT, 'link-out.md': '---\nrelated: "[[YAZ-500]]"\nalso_in:\n  - YAZ-501\n---\n[[YAZ-500]] [[YAZ-500|Home]] [[YAZ-12]]\n' })
     await changeLetters(root, 'DOC')
     expect(await files(root)).toEqual({ ...CHANGED, 'link-out.md': '---\nrelated: "[[YAZ-500]]"\nalso_in:\n  - YAZ-501\n---\n[[YAZ-500]] [[YAZ-500|Home]] [[DOC-12]]\n' })
   })
 
-  it('a run that stopped: a note that already took the new letters still draws its old-letter links after it', async () => {
+  it('a run that stopped: a page that already took the new letters still draws its old-letter links after it', async () => {
     // `foo` took DOC-1 in the run that stopped; `bar` still links to YAZ-1. The next run finds DOC-1 held, so the link follows.
     await make(root, { ...VAULT, [CONFIG]: config({ enabled: true, letters: 'DOC', other: 'kept', was: ['YAZ'] }), 'foo-yaz-1.md': '---\nid: DOC-1\ntitle: Foo\n---\nFoo\n' })
     await changeLetters(root, 'DOC')
@@ -114,7 +114,7 @@ describe('Change letters: each ID of the vault follows (S81, S86, S87)', () => {
   it('S85: the same letters change nothing, and letters in `was` move back to `letters`', async () => {
     await make(root)
     const before = await files(root)
-    expect(await changeLetters(root, 'yaz')).toEqual({ letters: 'YAZ', notes: 4, stale: 0, old: 2, unfinished: false })
+    expect(await changeLetters(root, 'yaz')).toEqual({ letters: 'YAZ', pages: 4, stale: 0, old: 2, unfinished: false })
     expect(await files(root)).toEqual(before)
     await changeLetters(root, 'DOC')
     await changeLetters(root, 'YAZ')
@@ -150,14 +150,14 @@ describe('Change letters: a card file (YAZ-5037)', () => {
 })
 
 describe('Change letters: a change that did not reach each file (S82, S83)', () => {
-  it('S83: the app quits in the middle: `ids.json` has the new letters, each note opens, Settings counts the notes that are left, and "Finish" ends at the bytes of a run that did not stop', async () => {
+  it('S83: the app quits in the middle: `ids.json` has the new letters, each page opens, Settings counts the pages that are left, and "Finish" ends at the bytes of a run that did not stop', async () => {
     await make(root)
     const quit = changeLetters(root, 'DOC', async () => {
       throw new Error('the app quit')
     })
     await expect(quit).rejects.toThrow('the app quit')
     expect(await ids(root)).toEqual({ enabled: true, letters: 'DOC', other: 'kept', was: ['YAZ'] })
-    // Each note opens: the index hands each number ID out with the letters of now.
+    // Each page opens: the index hands each number ID out with the letters of now.
     _evictAll()
     const index = await getIndex(root)
     expect(index.letters).toEqual(['DOC', 'YAZ'])
@@ -166,11 +166,11 @@ describe('Change letters: a change that did not reach each file (S82, S83)', () 
     expect(state.letters).toBe('DOC')
     expect(state.stale).toBeGreaterThan(0)
     // "Finish" is the same change again.
-    expect(await changeLetters(root, 'DOC')).toEqual({ letters: 'DOC', notes: 4, stale: 0, old: 2, unfinished: false })
+    expect(await changeLetters(root, 'DOC')).toEqual({ letters: 'DOC', pages: 4, stale: 0, old: 2, unfinished: false })
     expect(await files(root)).toEqual(CHANGED)
   })
 
-  it('S83: a note whose content changed and whose file kept the old name is counted, and is renamed by "Finish"', async () => {
+  it('S83: a page whose content changed and whose file kept the old name is counted, and is renamed by "Finish"', async () => {
     const { 'foo-doc-1.md': foo, ...rest } = CHANGED
     await make(root, { ...rest, 'foo-yaz-1.md': foo })
     expect((await idsState(root)).stale).toBe(1)
@@ -180,14 +180,14 @@ describe('Change letters: a change that did not reach each file (S82, S83)', () 
     expect(await files(root)).toEqual(CHANGED)
   })
 
-  it('S82: a link `[[YAZ-1]]` in a file that came later still opens note 1, is counted, and "Finish" changes it', async () => {
+  it('S82: a link `[[YAZ-1]]` in a file that came later still opens page 1, is counted, and "Finish" changes it', async () => {
     await make(root)
     await changeLetters(root, 'DOC')
     await writeFile(path.join(root, 'late.md'), '---\nid: DOC-20\n---\n[[YAZ-1]]\n')
     _evictAll()
     const index = await getIndex(root)
     const foo = index.records.find((r) => r.title === 'Foo')
-    expect(vaultNoteId('YAZ-1', index.letters ?? [])).toBe(foo?.id)
+    expect(vaultPageId('YAZ-1', index.letters ?? [])).toBe(foo?.id)
     expect((await idsState(root)).stale).toBe(1)
     expect((await changeLetters(root, 'DOC')).stale).toBe(0)
     expect(await readFile(path.join(root, 'late.md'), 'utf8')).toBe('---\nid: DOC-20\n---\n[[DOC-1]]\n')
@@ -195,11 +195,11 @@ describe('Change letters: a change that did not reach each file (S82, S83)', () 
 })
 
 describe('Change letters: a vault with no `letters` in its `ids.json` (R11)', () => {
-  it('the row shows the default letters, and a change saves the new letters and changes the notes that carry the default', async () => {
+  it('the row shows the default letters, and a change saves the new letters and changes the pages that carry the default', async () => {
     // The default of a folder named `mdapp-reletter-…` is `MDA`.
     await make(root, { [CONFIG]: config({ enabled: true }), 'one-mda-1.md': '---\nid: MDA-1\ntitle: One\n---\n[[MDA-1]]\n', 'two.md': `---\nid: ${OLD}\n---\n` })
-    expect(await idsState(root)).toEqual({ letters: 'MDA', notes: 1, stale: 0, old: 1, unfinished: false })
-    expect(await changeLetters(root, 'DOC')).toEqual({ letters: 'DOC', notes: 1, stale: 0, old: 1, unfinished: false })
+    expect(await idsState(root)).toEqual({ letters: 'MDA', pages: 1, stale: 0, old: 1, unfinished: false })
+    expect(await changeLetters(root, 'DOC')).toEqual({ letters: 'DOC', pages: 1, stale: 0, old: 1, unfinished: false })
     expect(await files(root)).toEqual({ [CONFIG]: config({ enabled: true, letters: 'DOC', was: ['MDA'] }), 'one-doc-1.md': '---\nid: DOC-1\ntitle: One\n---\n[[DOC-1]]\n', 'two.md': `---\nid: ${OLD}\n---\n` })
   })
 })

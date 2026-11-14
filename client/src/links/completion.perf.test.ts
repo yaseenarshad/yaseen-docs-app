@@ -27,10 +27,10 @@ const rec = (path: string, aliases: string[] = []): IndexRecord => {
 
 describe('linkCandidates', () => {
   it('perf smoke: 5,000 records derive and match well under a keystroke budget', () => {
-    const records = Array.from({ length: 5000 }, (_, i) => rec(`/vault/folder${i % 50}/Note ${i}.md`, [`N${i}`]))
+    const records = Array.from({ length: 5000 }, (_, i) => rec(`/vault/folder${i % 50}/Page ${i}.md`, [`N${i}`]))
     const derive = () => {
       const candidates = linkCandidates(records)
-      for (let i = 0; i < 10; i++) matchLinkCandidates(candidates, `Note 49`)
+      for (let i = 0; i < 10; i++) matchLinkCandidates(candidates, `Page 49`)
       return candidates
     }
     derive() // warm-up (JIT)

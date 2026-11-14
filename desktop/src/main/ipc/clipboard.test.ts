@@ -102,7 +102,7 @@ describe('private explicit copy IPC', () => {
   })
 })
 
-describe('the note menu runs its row on the window that sent it (YAZ-3653)', () => {
+describe('the page menu runs its row on the window that sent it (YAZ-3653)', () => {
   const edit = (ev: unknown, ...args: unknown[]) => {
     const handler = vi.mocked(ipcMain.handle).mock.calls.find(([ch]) => ch === SPECIAL.menuEdit.channel)?.[1]
     return (handler as unknown as (event: unknown, ...args: unknown[]) => Promise<Envelope<void>>)(ev, ...args)

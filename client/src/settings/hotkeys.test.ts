@@ -3,14 +3,14 @@ import { MOUSE_TIPS, shortLabel } from './hotkeys'
 
 /** The built-in clicks of Settings › Hotkeys: no key, and not the user's to change. The changeable ones are `shared/keys/gestures.ts` (YAZ-3936). */
 describe('MOUSE_TIPS', () => {
-  it('the built-in tips carry the I3 and folder-view click rulings; links in a note and bullet dots are rows of their own now (YAZ-3936)', () => {
+  it('the built-in tips carry the I3 and folder-view click rulings; links in a page and bullet dots are rows of their own now (YAZ-3936)', () => {
     const tip = (gesture: string, place: string) => MOUSE_TIPS.find((t) => t.gesture === gesture && t.place === place)
-    // The sidebar's ⌘-click (I3) and the folder views' (YAZ-1557) stay built in; a link in a note is no longer this tip's (C4).
+    // The sidebar's ⌘-click (I3) and the folder views' (YAZ-1557) stay built in; a link in a page is no longer this tip's (C4).
     expect(tip('⌘-click', 'Sidebar, tables and boards')?.label).toMatch(/background tab/i)
     expect(MOUSE_TIPS.some((t) => /link/i.test(t.place) || /bullet dot|glyph/i.test(t.place))).toBe(false)
     expect(tip('Right-click', 'Sidebar')?.label).toMatch(/new window/i)
     // Copy path is that menu's one copy item (YAZ-2420 🔒 D22, D31), so the tip names no other.
-    expect(tip('Right-click', 'Sidebar')?.label).toMatch(/Copy path, New note/)
+    expect(tip('Right-click', 'Sidebar')?.label).toMatch(/Copy path, New page/)
     // The vault menu (YAZ-1798): the one in-place open lives there, so the tip names it — and the display name (YAZ-1974 D5) and the number (YAZ-2555 D2).
     expect(tip('Right-click', 'Vaults')?.label).toMatch(/Open in this window/)
     expect(tip('Right-click', 'Vaults')?.label).toMatch(/Set display name, Set shortcut/)
@@ -35,6 +35,6 @@ describe('MOUSE_TIPS', () => {
       expect(tip.place.length).toBeGreaterThan(0)
       expect(tip.label.length).toBeGreaterThan(0)
     }
-    expect(shortLabel('Select it — the title opens the note in the current tab')).toBe('Select it')
+    expect(shortLabel('Select it — the title opens the page in the current tab')).toBe('Select it')
   })
 })

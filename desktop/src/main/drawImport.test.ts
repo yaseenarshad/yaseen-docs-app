@@ -74,7 +74,7 @@ async function seedDraw(): Promise<void> {
   await put(path.join(drawDir, 'media-cache', 'c.json'), '{}')
 }
 
-/** A Draw vault: notes, a board, a diagram, and Draw's dotfolder. */
+/** A Draw vault: pages, a board, a diagram, and Draw's dotfolder. */
 async function seedVault(): Promise<void> {
   await put(path.join(vault, 'a.md'), '# A\n')
   await put(path.join(vault, 'd.md'), '# D\n')

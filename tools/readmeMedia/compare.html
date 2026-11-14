@@ -42,7 +42,7 @@
   .cell.us { border-top-color: rgba(255, 255, 255, .26); }
   .cell svg { width: 42px; height: 42px; display: block; flex: none; }
   .cell.us svg { width: 48px; height: 48px; filter: drop-shadow(0 4px 10px rgba(30, 27, 110, .45)); }
-  /* A note hangs below its mark, so the marks of a row stay on one line. */
+  /* A page hangs below its mark, so the marks of a row stay on one line. */
   .cell span { position: absolute; left: 50%; top: calc(50% + 25px); transform: translateX(-50%); white-space: nowrap; font-size: 15px; font-weight: 600; line-height: 1.1; color: #fca5a5; }
 </style>
 </head>
@@ -72,7 +72,7 @@
     ['Outliners', '', ['Logseq', 'Roam Research', 'Workflowy']],
   ]
   // [what the reader gets, its small print, Notion, Obsidian, Google Docs, the outliners, Yaseen Docs]
-  // — a cell is yes / no, or [yes / no, a note]. A tick of Yaseen Docs has no note.
+  // — a cell is yes / no, or [yes / no, a page]. A tick of Yaseen Docs has no page.
   const ROWS = [
     ['Local Markdown', 'agent native', [false, 'Cloud'], true, [false, 'Cloud'], [false, 'Cloud or a database'], true],
     ['Sync across devices included', '', true, [false, 'Add-on, from $4/month'], true, true, true],
@@ -94,8 +94,8 @@
   for (const [name, small, ...cells] of ROWS) {
     add('name', `<div>${name}</div>` + (small ? `<small>${small}</small>` : ''))
     cells.forEach((cell, column) => {
-      const [yes, note] = Array.isArray(cell) ? cell : [cell, '']
-      add(column === OUR_COLUMN ? 'cell us' : 'cell', (column === OUR_COLUMN ? OURS : yes ? YES : NO) + (note ? `<span>${note}</span>` : ''))
+      const [yes, page] = Array.isArray(cell) ? cell : [cell, '']
+      add(column === OUR_COLUMN ? 'cell us' : 'cell', (column === OUR_COLUMN ? OURS : yes ? YES : NO) + (page ? `<span>${page}</span>` : ''))
     })
   }
   document.getElementById('icon').src = new URLSearchParams(location.search).get('icon')

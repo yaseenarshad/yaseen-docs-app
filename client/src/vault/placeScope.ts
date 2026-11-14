@@ -1,6 +1,6 @@
 /**
  * THE SCOPE OF A "FOLDER OF <VAULT>" WINDOW (YAZ-4922 🔒 D3). Such a window reads its vault's index, IDs and links, but
- * what it FINDS — the sidebar's tree, Search (⌘K), Recents and Find in files (⌘⇧F, YAZ-2571) — is the notes under its
+ * what it FINDS — the sidebar's tree, Search (⌘K), Recents and Find in files (⌘⇧F, YAZ-2571) — is the pages under its
  * folder. `folder` is `storage.folderIn(vault)`: undefined (or null) where the window shows the whole vault, and then
  * every path is in scope. One rule, so each finder draws the same line.
  */

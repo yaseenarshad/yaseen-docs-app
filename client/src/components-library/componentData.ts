@@ -73,7 +73,7 @@ export function assertSupportedComponentElements(elements: readonly unknown[]): 
   }
 }
 
-/** `serializeSavedComponent`'s size guard, on the elements alone (see the constant's note). */
+/** `serializeSavedComponent`'s size guard, on the elements alone (see the constant's page). */
 export function assertComponentElementsSize(elements: readonly unknown[]): void {
   const bytes = new TextEncoder().encode(JSON.stringify(elements)).byteLength
   if (bytes > MAX_COMPONENT_ELEMENTS_BYTES) throw new Error(`Component payloads must be ${MAX_COMPONENT_ELEMENTS_BYTES.toLocaleString('en-US')} bytes or smaller`)

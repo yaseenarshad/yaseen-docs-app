@@ -19,11 +19,11 @@ afterEach(() => {
 
 it('YAZ-5050 round 2: the card preview is the card`s own render in the card`s classes — one word shown, one still hidden, a list with a child', () => {
   act(() => root.render(<CardSpacingPreview />))
-  const card = el.querySelector('.spacing-preview .note-card > .note-card__body > .note-card__sides > .note-card__side')!
+  const card = el.querySelector('.spacing-preview .card > .card__body > .card__sides > .card__side')!
   expect(card).not.toBeNull()
   expect(card.querySelectorAll(':scope > p')).toHaveLength(3)
-  expect(card.querySelector('.note-card__hidden')?.textContent).toBe('Seine')
-  expect(card.querySelector('.note-card__blank')).not.toBeNull()
+  expect(card.querySelector('.card__hidden')?.textContent).toBe('Seine')
+  expect(card.querySelector('.card__blank')).not.toBeNull()
   expect(card.querySelector('li li')).not.toBeNull()
   expect(el.querySelector('.spacing-preview')?.getAttribute('aria-hidden')).toBe('true')
 })
@@ -38,7 +38,7 @@ it('YAZ-5050 round 2: the previews copy no text style — SpacingPreview.css sty
   const css = readFileSync(`${__dirname}/SpacingPreview.css`, 'utf8')
   const preview = css.slice(css.indexOf('.spacing-preview {'))
   expect(preview).not.toMatch(/line-height|--edit-|--card-/)
-  expect(preview).not.toMatch(/\b(p|li|h3|\.note-card__side)\s*[{,]/)
+  expect(preview).not.toMatch(/\b(p|li|h3|\.card__side)\s*[{,]/)
 })
 
 it('YAZ-5050 round 2: Settings › Review is split into groups by purpose, every row kept; each spacing has its preview right after its rows', () => {

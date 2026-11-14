@@ -29,7 +29,7 @@ const FILE_FIELDS: Record<string, (r: FileRecordLike) => Value> = {
   folder: r => r.folder,
   // A folder page's subfolder row is the folder's `.folder.md` (YAZ-4579 D31): `folder`; a card file (YAZ-5037, the
   // index's `kind`): `card`; every other record is a `note` (YAZ-5036 renames it `page`).
-  kind: r => (r.name === FOLDER_SETTINGS_FILE ? 'folder' : r.kind === 'card' ? 'card' : 'note'),
+  kind: r => (r.name === FOLDER_SETTINGS_FILE ? 'folder' : r.kind === 'card' ? 'card' : 'page'),
   ext: r => r.ext,
   size: r => r.size,
   // 0 = no file yet: the row of a folder with no `.folder.md` (YAZ-4579 D31) has no dates, never 1970 (YAZ-3746 2D).
@@ -148,7 +148,7 @@ const median = (ns: number[]): number => {
 }
 
 const LIST: Table<Value[]> = {
-  // Resolved like `==` (YAZ-1469): a link in the list matches a link to the same note, not merely the same text.
+  // Resolved like `==` (YAZ-1469): a link in the list matches a link to the same page, not merely the same text.
   contains: (l, [x], { resolve }) => l.some(v => equals(v, x ?? null, resolve)),
   containsAll: (l, xs, { resolve }) => xs.every(x => l.some(v => equals(v, x, resolve))),
   containsAny: (l, xs, { resolve }) => xs.some(x => l.some(v => equals(v, x, resolve))),

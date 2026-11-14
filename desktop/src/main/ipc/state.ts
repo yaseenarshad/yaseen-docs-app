@@ -112,7 +112,7 @@ export function registerStateIpc(store: Store, settingsFolder: Pick<SettingsFold
     if (typeof on !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'on' must be a boolean")
     hotkeyRecording.set(event.sender, on)
   })
-  // A drawing opens over a note in the calling window, or closes (YAZ-3564 K9); `main/index.ts` rebuilds the menu as for a drawing tab.
+  // A drawing opens over a page in the calling window, or closes (YAZ-3564 K9); `main/index.ts` rebuilds the menu as for a drawing tab.
   handleWithEvent(CONTRACT.hotkeys.drawingInFront, async (event, on: unknown) => {
     if (typeof on !== 'boolean') throw new BridgeFailure('BAD_REQUEST', "'on' must be a boolean")
     drawingInFront.set(event.sender, on)

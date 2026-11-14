@@ -1,6 +1,6 @@
 /**
  * Header row Black fill and White text (YAZ-4794 demo: "option for white text and option for black fill" … "add that to
- * the tables also please not only the folder pages table"), and the note table's Header row flyout made like the folder
+ * the tables also please not only the folder pages table"), and the page table's Header row flyout made like the folder
  * page's ("shouldnt it folow?"): Plain on top, then Fill · Text · Style tabs, Fill's Off · Light · Medium · Strong a
  * short switch (`bar`) over the colours. Both table kinds read the same choices and paint through the same attributes.
  */
@@ -10,7 +10,7 @@ import { DEFAULT_HEADER_ROW, HEADER_ROW_CHOICES, headerRowAttrs, headerRowLabel,
 import { getMarkdownForSave } from '../createCrepe'
 import { formatTableComment, parseTableComment, plainTable, type TableStyle } from './tableComment'
 import { headerSwatch } from './colours'
-import { mountNote, unmountAll } from './tableTestKit'
+import { mountPage, unmountAll } from './tableTestKit'
 import { setHeaderRowSetting } from './timeFormatSetting'
 import { headerRowOfView, parseViews } from '../../views/viewSchema'
 import { setHeaderRowPart, shownHeaderRow } from '../../views/view/TableLookSettings'
@@ -44,7 +44,7 @@ describe('YAZ-4794 demo: Black fill and White text are choices', () => {
   })
 })
 
-describe('YAZ-4794 demo: a note table saves them in its comment', () => {
+describe('YAZ-4794 demo: a page table saves them in its comment', () => {
   const style = (parts: Partial<TableStyle>): TableStyle => ({ ...plainTable(), ...parts })
 
   it('YAZ-4794 demo: `header black strong text-white` reads and writes back the same', () => {
@@ -76,7 +76,7 @@ describe('YAZ-4794 demo: table.css paints every header choice, in both table kin
     return m === null ? null : { scope: m[1].split(',').map((s) => s.trim()), body: m[2] }
   }
 
-  it('YAZ-4794 demo: Black fills with the solid black, White sets the ink to white; both for a note table and a folder table', () => {
+  it('YAZ-4794 demo: Black fills with the solid black, White sets the ink to white; both for a page table and a folder table', () => {
     const black = rule('color', 'black')
     expect(black?.body).toContain('--table-header-hue: var(--table-fill-solid-black)')
     expect(black?.scope).toEqual(expect.arrayContaining(['.milkdown-table-block', '.view-table']))
@@ -95,9 +95,9 @@ describe('YAZ-4794 demo: table.css paints every header choice, in both table kin
   })
 })
 
-describe('YAZ-4794 demo: the note table Header row flyout, as the folder page', () => {
+describe('YAZ-4794 demo: the page table Header row flyout, as the folder page', () => {
   async function openHeaderRow(markdown = '| a | b |\n| - | - |\n| 1 | 2 |\n') {
-    const { crepe, view } = await mountNote(markdown)
+    const { crepe, view } = await mountPage(markdown)
     const handle = document.createElement('div')
     handle.className = 'milkdown-block-handle'
     const item = document.createElement('div')
@@ -185,7 +185,7 @@ describe('YAZ-4794 demo: the note table Header row flyout, as the folder page', 
     expect(plain().dataset.hint).toBeUndefined()
     plain().click()
     const md = getMarkdownForSave(crepe)
-    // Full text is a note table's own default, so it saves no part.
+    // Full text is a page table's own default, so it saves no part.
     expect(parseTableComment(md.slice(md.indexOf('<!--')).trim())?.header).toEqual({ strength: 'off', weight: 'regular' })
     reopen()
     expect(plain().dataset.hint).toBe('✓')

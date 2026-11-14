@@ -51,7 +51,7 @@ describe('viewOnlyLinkTarget: the page side of the link (YAZ-4935)', () => {
   it('reads the page before the |, with its heading apart', () => {
     expect(viewOnlyLinkTarget('deep/report.pdf|the report')).toEqual({ page: 'deep/report.pdf', raw: 'deep/report.pdf', hasSubtarget: false })
     expect(viewOnlyLinkTarget(' report.pdf#p2 |the report')).toEqual({ page: 'report.pdf', raw: 'report.pdf#p2', hasSubtarget: true })
-    expect(viewOnlyLinkTarget('Note|words')).toBeNull()
+    expect(viewOnlyLinkTarget('Page|words')).toBeNull()
   })
 
   it('a view-only name is no ID, so words first keep the left side as the page: null, as for any name', () => {

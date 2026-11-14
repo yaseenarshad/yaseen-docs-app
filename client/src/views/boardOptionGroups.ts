@@ -35,7 +35,7 @@ export function boardOptionGroups(
       const destination = (group: Group, option: string): Group => ({ ...group, optionValue: option, fannedOut: column.assigned === 'multi-select' })
       const empty = (option: string): Group => destination({ key: option, label: option, rows: [], summaries: {}, fannedOut: false }, option)
       // An empty group (YAZ-4799 demo: "Not set" vs "Any"): under a parent group, only an option whose parent it is, or one
-      // picked as "Any". A "Not set" option shows only where its notes are; its own groups come from the engine.
+      // picked as "Any". A "Not set" option shows only where its pages are; its own groups come from the engine.
       const emptyHere = (option: string) => !tied || ties.of[option] === outerKey || ties.any?.includes(option) === true
       if (spec.by === 'value') {
         // A → Z or Z → A (YAZ-3940): the engine's value order stays, and an empty option goes in its place by value.

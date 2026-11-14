@@ -103,7 +103,7 @@ export function setHeaderRowPart(view: ViewDef, part: keyof HeaderRowOwn, value:
 /** Does the header row look like any row (YAZ-4793, YAZ-4794): no shade, regular, full text? */
 export const plainHeaderRow = (shown: Required<HeaderRowOwn>): boolean => shown.strength === 'off' && shown.weight === 'regular' && shown.text === 'full'
 
-/** "Plain, like any row" (YAZ-4794, as a note table's YAZ-4793): one pick sets the three parts; on a plain row it hands them back to Settings. */
+/** "Plain, like any row" (YAZ-4794, as a page table's YAZ-4793): one pick sets the three parts; on a plain row it hands them back to Settings. */
 export function toggleHeaderRowPlain(view: ViewDef): void {
   const next: HeaderRowOwn = { ...headerRowOfView(view) }
   if (plainHeaderRow(shownHeaderRow(view))) {

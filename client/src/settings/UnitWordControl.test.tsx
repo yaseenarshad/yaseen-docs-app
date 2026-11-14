@@ -1,4 +1,4 @@
-/** "Call a note a …" in a vault with note cards (YAZ-4946 D16): the word Card warns; Note card keeps its name. */
+/** "Call a page a …" in a vault with cards (YAZ-4946 D16): the word Card warns; Card keeps its name. */
 import { afterEach, describe, expect, it } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -13,20 +13,20 @@ afterEach(() => {
   root = null
 })
 
-function show(settings: UnitWordSettings, hasNoteCards: boolean): HTMLElement {
+function show(settings: UnitWordSettings, hasCards: boolean): HTMLElement {
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
   const word = settings.unit === 'own' ? settings.own : UNIT_WORDS[settings.unit]
-  act(() => root!.render(<UnitWordControl unitWord={{ settings, word, unit: ((t: string) => t) as never, save: () => {} }} hasNoteCards={hasNoteCards} />))
+  act(() => root!.render(<UnitWordControl unitWord={{ settings, word, unit: ((t: string) => t) as never, save: () => {} }} hasCards={hasCards} />))
   return host
 }
 
-describe('the unit word row and note cards', () => {
-  it('warns only when a vault with note cards calls its pages cards', () => {
-    expect(show({ ...DEFAULT_UNIT_WORD, unit: 'card' }, true).textContent).toContain('Pages and note cards would both be called cards.')
+describe('the unit word row and cards', () => {
+  it('warns only when a vault with cards calls its pages cards', () => {
+    expect(show({ ...DEFAULT_UNIT_WORD, unit: 'card' }, true).textContent).toContain('Pages and cards would both be called cards.')
     act(() => root?.unmount())
-    expect(show({ ...DEFAULT_UNIT_WORD, unit: 'own', own: { one: 'Card', many: 'Cards' } }, true).textContent).toContain('Pages and note cards would both be called cards.')
+    expect(show({ ...DEFAULT_UNIT_WORD, unit: 'own', own: { one: 'Card', many: 'Cards' } }, true).textContent).toContain('Pages and cards would both be called cards.')
     act(() => root?.unmount())
     expect(show({ ...DEFAULT_UNIT_WORD, unit: 'card' }, false).textContent).not.toContain('would both be called cards')
     act(() => root?.unmount())

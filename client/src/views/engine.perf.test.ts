@@ -8,19 +8,19 @@ import type { FolderSettings } from './folderSettings'
 describe('perf (GRO-2133)', () => {
   function record(i: number): IndexRecord {
     return {
-      path: `/vault/Library/${i % 7}/Note ${i}.md`,
-      name: `Note ${i}.md`,
-      basename: `Note ${i}`,
-      title: `Note ${i}`,
+      path: `/vault/Library/${i % 7}/Page ${i}.md`,
+      name: `Page ${i}.md`,
+      basename: `Page ${i}`,
+      title: `Page ${i}`,
       folder: `Library/${i % 7}`,
       ext: 'md',
       size: i * 10,
       ctime: 1_700_000_000_000 + i,
       mtime: 1_750_000_000_000 + i * 1000,
-      properties: { status: i % 3 ? 'todo' : 'done', price: i % 50, title: `Note ${i}`, due: '2026-08-01', tags: ['a', 'b'] },
+      properties: { status: i % 3 ? 'todo' : 'done', price: i % 50, title: `Page ${i}`, due: '2026-08-01', tags: ['a', 'b'] },
       aliases: [],
       tags: ['book', `genre/${i % 5}`],
-      links: [`Note ${i + 1}`],
+      links: [`Page ${i + 1}`],
       embeds: [],
     }
   }
@@ -114,9 +114,9 @@ describe('perf (GRO-2133)', () => {
     expect(ms).toBeLessThan(budgetMs(50))
   })
 
-  it('1000 notes in a 5-level folder tree × Folder (All) nested, then Status, under 50 ms, one group per folder (YAZ-4918)', () => {
-    // 1000 notes over 5 folder levels under the page `Library`: a fixed tree, 4 subfolders at each step, so the tree is
-    // built from the paths alone, and every folder has notes of its own and in its subfolders.
+  it('1000 pages in a 5-level folder tree × Folder (All) nested, then Status, under 50 ms, one group per folder (YAZ-4918)', () => {
+    // 1000 pages over 5 folder levels under the page `Library`: a fixed tree, 4 subfolders at each step, so the tree is
+    // built from the paths alone, and every folder has pages of its own and in its subfolders.
     const dirs: string[] = []
     const grow = (dir: string, level: number) => {
       dirs.push(dir)
@@ -127,7 +127,7 @@ describe('perf (GRO-2133)', () => {
     expect(dirs).toHaveLength(341)
     const records = Array.from({ length: 1000 }, (_, i) => {
       const folder = dirs[i % dirs.length]
-      return { ...record(i), path: `/vault/${folder}/Note ${i}.md`, folder }
+      return { ...record(i), path: `/vault/${folder}/Page ${i}.md`, folder }
     })
     const folders: IndexRecord[] = dirs.map((folder, i) => ({ ...record(i), path: `/vault/${folder}/.folder.md`, name: '.folder.md', folder, title: `T ${folder}` }))
     const page = { folder: 'Library', folders, vault: 'V' }
@@ -138,8 +138,8 @@ describe('perf (GRO-2133)', () => {
     go()
     const { result: r, median: ms, worst } = timeMedian(7, go)
     expect(r.errors).toEqual([])
-    // Count guards (no slack): one group per folder, the Status groups inside each DEEPEST folder (a folder's own notes
-    // above its subfolders sit unsplit, the merge rule; the page's own notes form a group with no subfolder under it,
+    // Count guards (no slack): one group per folder, the Status groups inside each DEEPEST folder (a folder's own pages
+    // above its subfolders sit unsplit, the merge rule; the page's own pages form a group with no subfolder under it,
     // so it gets them too), and every row placed once.
     const leaves = new Map<string, Set<string>>()
     for (const r of records) if (r.folder === 'Library' || r.folder.split('/').length === 5) (leaves.get(r.folder) ?? leaves.set(r.folder, new Set()).get(r.folder)!).add(r.properties.status as string)
@@ -163,7 +163,7 @@ describe('perf (GRO-2133)', () => {
     expect(statusGroups).toBe([...leaves.values()].reduce((n, set) => n + set.size, 0))
     expect(placed).toBe(1000)
     // eslint-disable-next-line no-console
-    console.log(`engine perf: 1000 notes, Folder (All) then Status, median ${ms.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 7`)
+    console.log(`engine perf: 1000 pages, Folder (All) then Status, median ${ms.toFixed(1)} ms, worst ${worst.toFixed(1)} ms of 7`)
     expect(ms).toBeLessThan(budgetMs(50))
   })
 

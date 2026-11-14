@@ -18,7 +18,7 @@ import { isTableCell } from '../outline/listNodes'
 import { isCellNote } from './cellNotes'
 
 /** Is `$pos` inside a table cell or a cell note, at any depth? What they hold is lines and lists (D1). */
-export const inCellOrNote = ($pos: ResolvedPos): boolean => {
+export const inCellOrPage = ($pos: ResolvedPos): boolean => {
   for (let depth = $pos.depth; depth > 0; depth--) if (isTableCell($pos.node(depth)) || isCellNote($pos.node(depth))) return true
   return false
 }
@@ -94,7 +94,7 @@ function othersIn(doc: ProseNode, ranges: Inserted[]): Array<{ pos: number; node
   for (const { from, to } of ranges) {
     doc.nodesBetween(from, to, (node, pos) => {
       if (found.has(pos)) return false
-      if (!isOther(node) || !inCellOrNote(doc.resolve(pos))) return !node.isTextblock
+      if (!isOther(node) || !inCellOrPage(doc.resolve(pos))) return !node.isTextblock
       found.set(pos, node)
       return false
     })

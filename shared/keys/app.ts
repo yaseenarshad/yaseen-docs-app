@@ -34,10 +34,10 @@ export const APP_KEYS: readonly KeyRow[] = [
   { id: 'app.cutFiles', scope: 'app', label: 'Cut the selected files and folders', keys: ['CmdOrCtrl+X'], changeable: false, macStandard: true, passesToPages: true },
   { id: 'app.copyFiles', scope: 'app', label: 'Copy the selected files and folders', keys: ['CmdOrCtrl+C'], changeable: false, macStandard: true, passesToPages: true },
   { id: 'app.pasteFiles', scope: 'app', label: 'Paste beside the first selected row', keys: ['CmdOrCtrl+V'], changeable: false, macStandard: true, passesToPages: true },
-  { id: 'app.undoMove', scope: 'app', label: 'Undo / redo the last move, delete or rename of files', hint: 'Outside a note, a drawing, a diagram or a field', keys: ['CmdOrCtrl+Z', 'CmdOrCtrl+Shift+Z'], changeable: false, macStandard: true, passesToPages: true },
-  { id: 'app.trash', scope: 'app', label: 'Move the selected files and folders to the Trash', hint: 'Outside a note, a drawing, a diagram or a field', keys: ['CmdOrCtrl+Backspace'], changeable: false, passesToPages: true },
+  { id: 'app.undoMove', scope: 'app', label: 'Undo / redo the last move, delete or rename of files', hint: 'Outside a page, a drawing, a diagram or a field', keys: ['CmdOrCtrl+Z', 'CmdOrCtrl+Shift+Z'], changeable: false, macStandard: true, passesToPages: true },
+  { id: 'app.trash', scope: 'app', label: 'Move the selected files and folders to the Trash', hint: 'Outside a page, a drawing, a diagram or a field', keys: ['CmdOrCtrl+Backspace'], changeable: false, passesToPages: true },
   // A review's keys answer in the page while a review is open (YAZ-2322): they take no key from an editor.
-  { id: 'app.reviewNext', scope: 'app', label: 'In a review: still relevant, on to the next note', keys: ['CmdOrCtrl+Shift+Enter'], changeable: false, passesToPages: true },
+  { id: 'app.reviewNext', scope: 'app', label: 'In a review: still relevant, on to the next page', keys: ['CmdOrCtrl+Shift+Enter'], changeable: false, passesToPages: true },
   { id: 'app.reviewSkip', scope: 'app', label: 'In a review: skip', keys: ['CmdOrCtrl+Shift+S'], changeable: false, passesToPages: true },
   // The Edit menu's roles hand their key to the page in front (an editor's own Undo, Copy, Select all), so they block no place.
   ...APP_STANDARD_KEYS.map((k): KeyRow => ({ id: `app.mac.${k.label.toLowerCase().replace(/\W+/g, '-')}`, scope: 'app', label: k.label, keys: [k.accelerator], changeable: false, macStandard: true, ...(EDIT_ROLES.has(k.label) ? { passesToPages: true as const } : {}) })),

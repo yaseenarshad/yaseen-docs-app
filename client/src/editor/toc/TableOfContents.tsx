@@ -1,19 +1,19 @@
 /**
- * THE TABLE OF CONTENTS (YAZ-2700): a note's rows at its right edge, as the React surface of the
+ * THE TABLE OF CONTENTS (YAZ-2700): a page's rows at its right edge, as the React surface of the
  * engine in `tocPlugin.ts`. The two talk through the ONE `TocChannel` the host also hands
  * `createCrepe`: this component draws the channel's snapshot (`useSyncExternalStore`) and calls
  * its two commands, `jump` and `current`. It never reads the document.
  *
  * A ROW is a `{ level, text }` and nothing more. The engine decides what the rows are — the
- * note's H1-H5, or the bullets of a note that has no headings to speak of, or what the reader
- * chose for this note in the page cog (D14) — and this component is never told which.
+ * page's H1-H5, or the bullets of a page that has no headings to speak of, or what the reader
+ * chose for this page in the page cog (D14) — and this component is never told which.
  *
  * TWO LOOKS, one `<nav>`:
  *  - NAMES (`data-names`): a quiet column of the rows' names beside the text. toc.css pads the
- *    scroller on the right by the column's width, so the names never cover the note.
+ *    scroller on the right by the column's width, so the names never cover the page.
  *  - LINES: a rail of small lines, one per row, in the page's right gutter. The mouse on the
  *    rail, a click on it, or ⌘J opens a card with the same names ON TOP of the text. A scroll
- *    of the note never opens it (YAZ-2886): only the rail's lines change.
+ *    of the page never opens it (YAZ-2886): only the rail's lines change.
  * `namesShow` picks between them from the setting and the width of this editor's `section.editor`
  * — measured by a ResizeObserver, so it runs on a resize and never on a scroll or a keystroke.
  *
@@ -27,10 +27,10 @@
  * THE HIERARCHY OF THE NAMES (YAZ-2762) is toc.css's work: a tone for each level, and thin level
  * lines as backgrounds of each name. This component gives it two attributes. `data-path` on a name
  * (`pathLines`) says which level line is on the way from the current row up to its parents. And
- * `data-reading` on the `<nav>` says the reader is moving the note with the wheel: with the setting
+ * `data-reading` on the `<nav>` says the reader is moving the page with the wheel: with the setting
  * "Level lines" on "On hover", the path then shows without the mouse on the list.
  *
- * It renders nothing when the setting is off, or when the note has fewer than two rows to show.
+ * It renders nothing when the setting is off, or when the page has fewer than two rows to show.
  * Then it also holds no listener. A bullet zoom does not hide it (YAZ-4094 demo, 4C): the names
  * stay, the section that holds the zoomed bullet is current, and a jump out of the zoom ends it.
  *
@@ -38,16 +38,16 @@
  * channel answers which shown row is current. Lines above it are read, the line itself is the
  * accent. State is set only when that index changes, so a scroll inside one section renders nothing.
  * A JUMP names its own row current and holds it until the reader's next wheel, press or key in
- * the note: the last rows of a note can never reach the top of the scroller, and without the
+ * the page: the last rows of a page can never reach the top of the scroller, and without the
  * hold a click on one of them would light the row below it.
  *
  * A wheel over the table of contents moves ONE thing: a list longer than its box, which stops at
- * its ends, or else the note (`onWheelOverToc`).
+ * its ends, or else the page (`onWheelOverToc`).
  *
  * 🔒 ⌘J is a WINDOW CAPTURE listener, one per table of contents and with no coordinator between
  * them (the find bar's idiom, `FindBar.tsx`): it claims the key while focus stands inside its own
  * `section.editor`; with focus inside no `section.editor` at all, the first visible one in
- * document order claims. A hidden editor never claims, and a note that shows no table of contents
+ * document order claims. A hidden editor never claims, and a page that shows no table of contents
  * never does either.
  *
  * THE FRAME — the measure, the width and its drag, ⌘J, the card's open and close — is
@@ -55,16 +55,16 @@
  *
  * FOLDS (YAZ-3939): a row with rows under it folds and opens, as in an outline — by its arrow, by
  * ← and →, or all at once by the fold-all button. A fold hides rows of the TABLE OF CONTENTS only:
- * the note never folds (D2). The list, the rail and the scroll spy read only the rows a fold leaves
+ * the page never folds (D2). The list, the rail and the scroll spy read only the rows a fold leaves
  * on show, so a folded row is current while the reader is in its section, and nothing opens by
- * itself (D5). The folded rows are saved for each note (`folders[root].tocFolds`, D1) by their fold
+ * itself (D5). The folded rows are saved for each page (`folders[root].tocFolds`, D1) by their fold
  * key (`tocFoldKeys`): a fold stays on its row through edits elsewhere, and a renamed row opens again.
  *
- * ZOOM (YAZ-3939 D7–D10): the names have their own zoom, `settings.tocZoom`, one for every note. The
+ * ZOOM (YAZ-3939 D7–D10): the names have their own zoom, `settings.tocZoom`, one for every page. The
  * sidebar's "− 100% +" (`ZoomStepper`) sets it from the header, beside the fold-all button; where the
  * header has no room for it (the card, a narrow column) a zoom icon opens it in a small box.
  * ⌘+ / ⌘− / ⌘0 with the mouse over the table of contents, or the focus in it, zoom the names and never
- * the note: a DOCUMENT CAPTURE listener claims the step before the note's own listener sees it.
+ * the page: a DOCUMENT CAPTURE listener claims the step before the page's own listener sees it.
  */
 import { useUnit } from '../../vault/unitWord'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type RefObject, type WheelEvent as ReactWheelEvent } from 'react'
@@ -82,7 +82,7 @@ import './toc.css'
  * column until the reader drags its edge. toc.css's `--toc-width` on `:root` is the same number.
  */
 export const TOC_WIDTH = TOC_DEFAULT_W
-/** A note narrower than this shows lines even when the names are pinned. */
+/** A page narrower than this shows lines even when the names are pinned. */
 export const NAMES_FLOOR = 700
 /** The least pinned names leave the text, px: what it has at `NAMES_FLOOR` beside names of `TOC_WIDTH`. */
 export const TEXT_FLOOR = NAMES_FLOOR - TOC_WIDTH
@@ -94,19 +94,19 @@ export const COLUMN_MAX: Record<ContentWidth, number> = { narrow: 1040, medium: 
  * them — so never at content width `full`, where the text takes all the room there is. `pinned`
  * shows them down to `NAMES_FLOOR`, at the cost of a narrower column.
  */
-export const namesShow = (mode: TableOfContentsMode, noteWidth: number, columnMax: number): boolean =>
-  mode === 'pinned' ? noteWidth >= NAMES_FLOOR : mode === 'auto' && noteWidth - TOC_WIDTH >= columnMax
+export const namesShow = (mode: TableOfContentsMode, pageWidth: number, columnMax: number): boolean =>
+  mode === 'pinned' ? pageWidth >= NAMES_FLOOR : mode === 'auto' && pageWidth - TOC_WIDTH >= columnMax
 
 /**
- * The widest the names column gets in a note that shows it (YAZ-2752): never past `TOC_MAX_W`.
+ * The widest the names column gets in a page that shows it (YAZ-2752): never past `TOC_MAX_W`.
  * `pinned` leaves the text `TEXT_FLOOR`. `auto` takes the empty margin beside the text column and
- * no more, so a wider column never narrows the text: the margin is what the note has left of its
+ * no more, so a wider column never narrows the text: the margin is what the page has left of its
  * own scrollbar (`gutter`) and its text column — and never less than the `TOC_WIDTH` that
  * `namesShow` gave the names. So where `namesShow` says names, this is `TOC_WIDTH` or more, and
  * `TOC_MIN_W` always fits.
  */
-export const namesRoom = (mode: TableOfContentsMode, noteWidth: number, columnMax: number, gutter = 0): number =>
-  Math.min(TOC_MAX_W, mode === 'pinned' ? noteWidth - TEXT_FLOOR : Math.max(TOC_WIDTH, noteWidth - gutter - columnMax))
+export const namesRoom = (mode: TableOfContentsMode, pageWidth: number, columnMax: number, gutter = 0): number =>
+  Math.min(TOC_MAX_W, mode === 'pinned' ? pageWidth - TEXT_FLOOR : Math.max(TOC_WIDTH, pageWidth - gutter - columnMax))
 
 /** The most rows a table of contents draws, and the most the scroll spy reads per frame. */
 export const MAX_ROWS = 200
@@ -117,7 +117,7 @@ export interface ShownRow extends TocRow {
 }
 
 /**
- * The rows a note shows: every level (H1-H5, or three depths of bullets) when that is `MAX_ROWS`
+ * The rows a page shows: every level (H1-H5, or three depths of bullets) when that is `MAX_ROWS`
  * or fewer, else it drops the deepest level and tries again — levels 1-4, then 1-3, then 1-2
  * (YAZ-3051) — else level 1 only (its first `MAX_ROWS`). A row remembers where it stands in the
  * full list.
@@ -133,7 +133,7 @@ export const shownRows = (all: readonly TocRow[]): ShownRow[] => {
 
 /**
  * A FOLD KEY for each row (YAZ-3939 D1): its level, the hash of its text, and which row of that
- * level and text it is. The text is hashed as the note's own fold keys hash it
+ * level and text it is. The text is hashed as the page's own fold keys hash it
  * (`outlineFoldKeyStem`), so a long bullet costs the state file a short key. A fold stays on its
  * row through edits elsewhere; a renamed row opens again.
  */
@@ -214,11 +214,11 @@ export interface TableOfContentsProps {
   onChangeWidth: (width: number) => void
   /** An element inside this editor's scroller: its `.editor-host` and `section.editor` are found from it. */
   hostRef: RefObject<HTMLElement | null>
-  /** Esc and a second ⌘J hand the caret back to the note. */
+  /** Esc and a second ⌘J hand the caret back to the page. */
   onReturnFocus: () => void
-  /** The folded rows (`tocFoldKeys`), as saved for this note when it mounted (YAZ-3939 D1). */
+  /** The folded rows (`tocFoldKeys`), as saved for this page when it mounted (YAZ-3939 D1). */
   folds: readonly string[]
-  /** A fold, an unfold and the fold-all button write the note's folded rows through this. */
+  /** A fold, an unfold and the fold-all button write the page's folded rows through this. */
   onChangeFolds: (keys: string[]) => void
   /** The zoom of the names in percent (the setting, YAZ-3939 D9). */
   zoom: number
@@ -249,20 +249,20 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   const { open, setOpen, hoverRef, openedAt, openCard, closeSoon, cancelGrace } = useTocCard()
   const columnMax = COLUMN_MAX[contentWidth]
   const names = shows && namesShow(mode, box.width, columnMax)
-  // Read only while the names show: the saved width, or the room this note has when that is less.
+  // Read only while the names show: the saved width, or the room this page has when that is less.
   const room = namesRoom(mode, box.width, columnMax, box.gutter)
   const shownWidth = Math.min(width, room)
   const at = Math.min(current, rows.length - 1)
 
   const navRef = useRef<HTMLElement>(null)
   const trackRef = useRef<HTMLSpanElement>(null)
-  /** The row a jump landed on, held as current until the reader moves the note themselves. */
+  /** The row a jump landed on, held as current until the reader moves the page themselves. */
   const lock = useRef<number | null>(null)
   /** ⌘J on a closed card: the names do not exist yet, so the focus lands in a layout effect on the open. */
   const pendingFocus = useRef(false)
   /** Ends the drag of the column's edge that is under way, with nothing saved. */
   const endResize = useRef<(() => void) | null>(null)
-  /** The wheel effect's `turn`, for a wheel over the table of contents that moves the note (`onWheelOverToc`). */
+  /** The wheel effect's `turn`, for a wheel over the table of contents that moves the page (`onWheelOverToc`). */
   const wheelTurn = useRef<(() => void) | null>(null)
   /** The next new current row or list came from the reader's hand IN the list (a pick, a fold): the list holds still (`Names`). */
   const hold = useRef(false)
@@ -285,7 +285,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     onReturnFocus()
   }
   const jump = (row: number): void => {
-    // A new row only: the same one renders nothing, and the hold would wait for the next move of the note.
+    // A new row only: the same one renders nothing, and the hold would wait for the next move of the page.
     if (row !== at) hold.current = true
     lock.current = row
     currentRef.current = row
@@ -296,12 +296,12 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     channel.jump(rows[row].index)
   }
   /**
-   * Every fold and unfold (YAZ-3939 D2): no `channel.jump`, so the note never folds. The current
+   * Every fold and unfold (YAZ-3939 D2): no `channel.jump`, so the page never folds. The current
    * row moves at once to the row the reader is in, or to the folded row over it (D5): the spy reads
    * again only after the render, and the marker must not light another row first. Only the keys
-   * that a row of the note still has are saved: the fold of a renamed or deleted row goes. In a
+   * that a row of the page still has are saved: the fold of a renamed or deleted row goes. In a
    * bullet zoom the list can be the zoom's own (YAZ-4094 4D): the folds of the rows it does not
-   * show stay, for the note's own list after the zoom.
+   * show stay, for the page's own list after the zoom.
    */
   const saveFolds = (chosen: ReadonlySet<string>): void => {
     const own = new Set(keys)
@@ -378,7 +378,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     }
   }, [shows, rows, box, names, shownWidth, zoomed, channel, hostRef]) // eslint-disable-line react-hooks/exhaustive-deps -- `scrollerOf` reads only `hostRef`
 
-  // The reader's own moves in the note: each lets go of a jump's hold, and a turn of the wheel
+  // The reader's own moves in the page: each lets go of a jump's hold, and a turn of the wheel
   // shows the path in the names. It never opens the card (YAZ-2886): a reader who scrolls is
   // reading, and the card would cover the text. ONE linger timer serves a whole burst of wheel
   // events: an event only stamps the time, and the timer re-arms itself for what is left.
@@ -408,7 +408,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
       }
       reading(false)
     }
-    /** The reader moved the note with the wheel. */
+    /** The reader moved the page with the wheel. */
     const turn = (): void => {
       lastTurn = performance.now()
       if (timer === null) {
@@ -418,7 +418,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     }
     const onWheel = (event: WheelEvent): void => {
       unlock()
-      // A sideways turn or a pinch (ctrlKey) is not reading down the note.
+      // A sideways turn or a pinch (ctrlKey) is not reading down the page.
       if (event.deltaY === 0 || event.ctrlKey) return
       turn()
     }
@@ -440,7 +440,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   useTocShortcut(shows, hostRef, navRef, live)
 
   // ⌘+ / ⌘− / ⌘0 over the table of contents (YAZ-3939 D8): the mouse over it or the focus in it. A click on
-  // a name hands the focus to the note, so the mouse alone must be enough. Capture, so the note never sees it.
+  // a name hands the focus to the page, so the mouse alone must be enough. Capture, so the page never sees it.
   useEffect(() => {
     if (!shows) return
     const onZoom = (event: Event): void => {
@@ -454,7 +454,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
     return () => document.removeEventListener(ZOOM_EVENT, onZoom, true)
   }, [shows])
 
-  // A card that lost its reason to be open (names took over, the note zoomed, the setting went
+  // A card that lost its reason to be open (names took over, the page zoomed, the setting went
   // off) must not come back open when the lines do.
   useEffect(() => {
     if (!shows || names) setOpen(false)
@@ -498,11 +498,11 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   useLayoutEffect(() => {
     const track = trackRef.current
     if (track === null || fits) return
-    // In step with the note, as the names are: the current line is as far down the rail as it is down the list.
+    // In step with the page, as the names are: the current line is as far down the rail as it is down the list.
     track.scrollTop = rows.length > 1 ? (at / (rows.length - 1)) * (track.scrollHeight - track.clientHeight) : 0
   }, [at, rows.length, pitch, fits, shows, names])
 
-  // The held room (toc.css pads the note for it): no names, nothing to read or press.
+  // The held room (toc.css pads the page for it): no names, nothing to read or press.
   if (!shows) return null
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>): void => {
@@ -544,11 +544,11 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
   /**
    * The wheel over the table of contents moves ONE thing, never one and then the other:
    *  - a list that is longer than its box scrolls itself, and STOPS at its ends (toc.css:
-   *    `overscroll-behavior`): the note must not move under a reader who is only looking
+   *    `overscroll-behavior`): the page must not move under a reader who is only looking
    *    through the names;
-   *  - a list that fits has nothing to scroll, so the note moves — no dead strip beside the text.
+   *  - a list that fits has nothing to scroll, so the page moves — no dead strip beside the text.
    * (`section.editor` does not scroll, so nothing else answers a wheel here.)
-   * Where the NOTE moves, the reader is reading down it as with a wheel over the note itself — an
+   * Where the PAGE moves, the reader is reading down it as with a wheel over the page itself — an
    * event the scroller's own listener never gets — so the path shows by the same rule (`wheelTurn`).
    */
   const onWheelOverToc = (event: ReactWheelEvent<HTMLElement>): void => {
@@ -564,7 +564,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
 
   /**
    * The drag of the column's left edge (`tocFrame.tsx`): each move writes `--toc-width` with no
-   * render, and the release writes the setting once. It stops at `TOC_MIN_W` and at the room this note has.
+   * render, and the release writes the setting once. It stops at `TOC_MIN_W` and at the room this page has.
    */
   const startResize = (event: ReactMouseEvent<HTMLElement>): void => beginTocResize(event, sectionOf(), shownWidth, room, onChangeWidth, endResize)
 
@@ -596,7 +596,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
       aria-label="Table of contents"
       style={{ top: box.top, '--toc-height': `${box.height}px`, '--toc-gutter': `${box.gutter}px`, '--toc-zoom': zoom / 100 } as CSSProperties}
       onKeyDown={onKeyDown}
-      // The names column lies over the scroller's own padding: a wheel there still moves the note.
+      // The names column lies over the scroller's own padding: a wheel there still moves the page.
       onWheel={names ? onWheelOverToc : undefined}
       onBlur={(event) => {
         if (!names && !event.currentTarget.contains(event.relatedTarget)) closeSoon()
@@ -635,7 +635,7 @@ export function TableOfContents({ channel, mode, contentWidth, onChangeMode, wid
                 {ends}
                 {/* Offered only where it does something: names need `NAMES_FLOOR` of width even when pinned. */}
                 {mode === 'auto' && box.width >= NAMES_FLOOR && (
-                  <button type="button" className="toc__pin" title={unit('Pin: keep the table of contents open beside the note')} onClick={() => onChangeMode('pinned')}>
+                  <button type="button" className="toc__pin" title={unit('Pin: keep the table of contents open beside the page')} onClick={() => onChangeMode('pinned')}>
                     <PinIcon />
                     <span>Pin</span>
                   </button>
@@ -766,13 +766,13 @@ function Names({ rows, at, onPick, parents, isFolded, onFold, hold }: {
     marker.style.height = `${name.offsetHeight}px`
     const held = hold.current
     hold.current = false
-    // A list longer than its box moves WITH the note, like a scrollbar's thumb: the current name
+    // A list longer than its box moves WITH the page, like a scrollbar's thumb: the current name
     // stands as far down the box as it is down the list — at the top on the first row, at the
     // bottom on the last, and in step in between. So the marker only ever travels one way while the
     // reader does, and the eye can find it without reading. The first placement does not glide,
     // and under "Reduce Motion" none does: toc.css stops the marker's slide the same way.
     // A click or a fold in the list is not reading (YAZ-3939, demo): the list stays under the mouse,
-    // and the next move of the note brings it back in step.
+    // and the next move of the page brings it back in step.
     const range = list.scrollHeight - list.clientHeight
     const span = list.scrollHeight - name.offsetHeight
     if (range > 0 && span > 0 && !held) {

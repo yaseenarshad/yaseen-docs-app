@@ -128,7 +128,7 @@ When nothing is left, the Inbox says Inbox complete. That's it for today.
 
 To answer your own card in the real app, choose Try it in the app.
 
-Open the Inbox each day, and let the app keep the dates. Next: cards that live inside your notes.
+Open the Inbox each day, and let the app keep the dates. Next: cards that live inside your pages.
 
 ### Try it in the app
 
@@ -140,13 +140,13 @@ Open the Inbox each day, and let the app keep the dates. Next: cards that live i
 
 ## Chapter 4. Where a card lives
 
-So far, your card is a file of its own. It can also live beside your notes.
+So far, your card is a file of its own. It can also live beside your pages.
 
 A card can live in three places. The review works the same in each one.
 
 First, a card by itself. That's the card file you made: one file, one card.
 
-Second, a card inside a page. Your notes on a topic can hold cards right beside the text.
+Second, a card inside a page. Your pages on a topic can hold cards right beside the text.
 
 In a page, type slash card, and press Return. A new card opens, ready to edit.
 
@@ -164,7 +164,7 @@ Edit an embed, and you change the one real card. Its history stays with it.
 
 You can move a card between these places at any time. Its history goes with it.
 
-Use a card file for a fact on its own. Use a card in a page when it belongs with your notes.
+Use a card file for a fact on its own. Use a card in a page when it belongs with your pages.
 
 To embed your first card in a page, choose Try it in the app.
 
@@ -241,15 +241,15 @@ Your card base is your knowledge base: make it yours. Next, what a good card loo
 
 You have digested an idea. Here is how to make its card a good one.
 
-Many people paste a whole page of notes into one card. Then they review it, and nothing sticks.
+Many people paste a whole page of text into one card. Then they review it, and nothing sticks.
 
-A wall of notes is not a card. It asks you to recall everything at once, so you recall nothing well.
+A wall of text is not a card. It asks you to recall everything at once, so you recall nothing well.
 
 Before you make a card, ask one question. What is the one thing I want to recall?
 
 Then split it. One card for each thing. Small cards are quick to answer, and easy to remember.
 
-For example, notes about a new word become four cards. What it means, how to say it, one example, and where it comes from.
+For example, what you learn about a new word becomes four cards. What it means, how to say it, one example, and where it comes from.
 
 If a card is hard every time, it is often two cards in one. Split it again.
 
@@ -293,9 +293,9 @@ If you want this system to fail, vibe write your cards. If you want what you kno
 
 Ryan Holiday puts it this way: "The inefficiency is the efficiency." The thinking is where you learn.
 
-The right way: bring notes you have already digested. The agent shapes them into cards, and you read each one.
+The right way: bring ideas you have already digested. The agent shapes them into cards, and you read each one.
 
-Let's try it. Paste some digested notes, or use the example notes.
+Let's try it. Paste something you have digested, or use the example.
 
 Copy the prompt. It tells your agent to read the card skill, then make three cards in Course Cards.
 

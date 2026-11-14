@@ -11,11 +11,11 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuAction, MenuItem } from '../../sidebar/menuSections'
 import type { MenuStrip } from '../blockHandleMenu'
 import { getMarkdownForSave } from '../createCrepe'
-import { noteMenuSections } from '../noteMenu'
+import { pageMenuSections } from '../pageMenu'
 import { calendarTableNode, setTimeSlots } from './tableCalendar'
 import { formatTableComment, parseTableComment, plainTable, type TableStyle } from './tableComment'
 import { tableRows } from './tableRows'
-import { cellPos, mountNote, unmountAll } from './tableTestKit'
+import { cellPos, mountPage, unmountAll } from './tableTestKit'
 import tableCss from './table.css?inline'
 
 afterEach(unmountAll)
@@ -42,7 +42,7 @@ const valigns = (view: EditorView): unknown[][] => {
   return rows
 }
 const menuItem = (view: EditorView, row: number, col: number, id: string): MenuAction => {
-  const items = noteMenuSections(view, null, vi.fn(), cellPos(view, row, col) + 2)
+  const items = pageMenuSections(view, null, vi.fn(), cellPos(view, row, col) + 2)
     .flat()
     .flatMap((item: MenuItem) => (item.children === undefined ? [item] : item.children.flat()))
   const found = items.find((item) => item.id === id)
@@ -80,7 +80,7 @@ describe('in the editor', () => {
   const STYLED = `${TABLE}\n<!-- table: valign middle A2 top B3 bottom -->\n`
 
   it('loads into the table and the cells, saves byte for byte, and shows data attributes; the cell wins', async () => {
-    const { crepe, view } = await mountNote(STYLED)
+    const { crepe, view } = await mountPage(STYLED)
     expect(getMarkdownForSave(crepe)).toBe(STYLED)
     expect(firstTable(view).node.attrs.valign).toBe('middle')
     expect(valigns(view)).toEqual([[null, null], ['top', null], [null, 'bottom']])
@@ -100,7 +100,7 @@ describe('in the editor', () => {
   })
 
   it('a copy keeps the cell\'s own value as an inline `vertical-align`, and the table\'s on a copied table', async () => {
-    const { view } = await mountNote(STYLED)
+    const { view } = await mountPage(STYLED)
     view.dispatch(view.state.tr.setSelection(CellSelection.create(view.state.doc, cellPos(view, 1, 0), cellPos(view, 2, 1))))
     const box = document.createElement('div')
     box.appendChild(view.serializeForClipboard(view.state.selection.content()).dom)
@@ -116,10 +116,10 @@ describe('in the editor', () => {
 
 describe('the menus, one undo step each', () => {
   it('Align ▸ has a second group Top · Middle · Bottom; a column handle\'s pick sets the whole column', async () => {
-    const { crepe, view } = await mountNote(TABLE)
+    const { crepe, view } = await mountPage(TABLE)
     const before = getMarkdownForSave(crepe)
     // YAZ-4970: Align is Format ›'s first tab; its rows lead Format's.
-    const format = noteMenuSections(view, null, vi.fn(), cellPos(view, 1, 0) + 2).flat().find((item) => item.id === 'table-format')!
+    const format = pageMenuSections(view, null, vi.fn(), cellPos(view, 1, 0) + 2).flat().find((item) => item.id === 'table-format')!
     expect(format.children!.slice(0, 2).map((group) => group.map((item) => item.label))).toEqual([['Left', 'Center', 'Right'], ['Top', 'Middle', 'Bottom']])
     view.dispatch(view.state.tr.setSelection(CellSelection.colSelection(view.state.doc.resolve(cellPos(view, 0, 1)))))
     menuItem(view, 0, 1, 'table-align-middle').onSelect()
@@ -135,14 +135,14 @@ describe('the menus, one undo step each', () => {
   })
 
   it('a row handle\'s pick sets the whole row', async () => {
-    const { view } = await mountNote(TABLE)
+    const { view } = await mountPage(TABLE)
     view.dispatch(view.state.tr.setSelection(CellSelection.rowSelection(view.state.doc.resolve(cellPos(view, 2, 0)))))
     menuItem(view, 2, 0, 'table-align-bottom').onSelect()
     expect(valigns(view)).toEqual([[null, null], [null, null], ['bottom', 'bottom']])
   })
 
   it('the six-dot Text strip\'s Align top / middle / bottom set the table default; Top is the default and saves no part', async () => {
-    const { crepe, view } = await mountNote(TABLE)
+    const { crepe, view } = await mountPage(TABLE)
     const before = getMarkdownForSave(crepe)
     const { pos } = firstTable(view)
     const button = (label: string) =>
@@ -168,26 +168,26 @@ describe('a new row takes the valign of the cell above it, in each column', () =
     // Above the first body row: that row's own, not the header's (YAZ-4173 12C).
     ['table-insert-row-above', 1, ['middle', null]],
   ])('%s on row %i', async (id, at, row) => {
-    const { view } = await mountNote(SET)
+    const { view } = await mountPage(SET)
     menuItem(view, at, 0, id).onSelect()
     const index = id === 'table-insert-row-below' ? at + 1 : at
     expect(valigns(view)[index]).toEqual(row)
   })
 
   it('Insert row above the first body row of a calendar table: the new time is Middle, as its column (YAZ-4173 12C)', async () => {
-    const { view } = await mountNote('| Time | Plan |\n| - | - |\n| 9:00 am | x |\n| 9:30 am | y |\n\n<!-- table: valign A2:A3 middle, calendar 30m -->\n')
+    const { view } = await mountPage('| Time | Plan |\n| - | - |\n| 9:00 am | x |\n| 9:30 am | y |\n\n<!-- table: valign A2:A3 middle, calendar 30m -->\n')
     menuItem(view, 1, 0, 'table-insert-row-above').onSelect()
     expect(valigns(view)[1]).toEqual(['middle', null])
   })
 
   it('Duplicate row keeps its own', async () => {
-    const { view } = await mountNote(SET)
+    const { view } = await mountPage(SET)
     menuItem(view, 2, 0, 'table-duplicate-rows').onSelect()
     expect(valigns(view)[3]).toEqual([null, 'bottom'])
   })
 
   it('Time slots: a new grid row takes the cells above it', async () => {
-    const { view } = await mountNote('| Time | Plan |\n| - | - |\n| 9:00 am | x |\n| 10:00 am | y |\n\n<!-- table: valign A2:A3 middle B3 bottom, calendar 60m -->\n')
+    const { view } = await mountPage('| Time | Plan |\n| - | - |\n| 9:00 am | x |\n| 10:00 am | y |\n\n<!-- table: valign A2:A3 middle B3 bottom, calendar 60m -->\n')
     setTimeSlots(view, firstTable(view).pos, 30)
     const texts: string[] = []
     firstTable(view).node.forEach((row) => texts.push(row.firstChild!.textContent))
@@ -198,7 +198,7 @@ describe('a new row takes the valign of the cell above it, in each column', () =
 
 describe('"/Calendar table" (D10)', () => {
   it('sets column A\'s body cells to middle', async () => {
-    const { view } = await mountNote(TABLE)
+    const { view } = await mountPage(TABLE)
     const table = calendarTableNode(view.state.schema, 'h:mm a')
     const column: unknown[] = []
     table.forEach((row) => column.push(row.firstChild!.attrs.valign))

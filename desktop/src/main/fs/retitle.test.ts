@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { isNoteId } from '@shared/noteId'
+import { isPageId } from '@shared/pageId'
 import { FOLDER_SETTINGS_FILE } from '@shared/types'
 import { giveId } from '../vaultIndex/idSweep'
 import { retitle } from './retitle'
 import { failure } from './testFixture'
 
-// A pass-through spy: one test has the id sweep reach a note between retitle's read and `giveId`'s.
+// A pass-through spy: one test has the id sweep reach a page between retitle's read and `giveId`'s.
 vi.mock('../vaultIndex/idSweep', async (importOriginal) => {
   const m = await importOriginal<typeof import('../vaultIndex/idSweep')>()
   return { ...m, giveId: vi.fn(m.giveId) }
@@ -29,7 +29,7 @@ const at = (...p: string[]) => path.join(root, ...p)
 /** What the vault holds at `dir`, without its config folder. */
 const listed = async (dir: string) => (await readdir(dir)).filter((name) => name !== '.yaseendocs')
 const read = (...p: string[]) => readFile(at(...p), 'utf8')
-const note = async (rel: string, content: string): Promise<string> => {
+const page = async (rel: string, content: string): Promise<string> => {
   await mkdir(path.dirname(at(rel)), { recursive: true })
   await writeFile(at(rel), content)
   return at(rel)
@@ -37,9 +37,9 @@ const note = async (rel: string, content: string): Promise<string> => {
 
 const ID = 'k3m9x2pq7abc'
 
-describe('retitle: a note (table B)', () => {
+describe('retitle: a page (table B)', () => {
   it('the title is edited in the app: the `title:` line is written, then the file is renamed to the built name, and the id part does not change', async () => {
-    const old = await note('up/abdul-k3m9x2pq7abc.md', `---\nid: ${ID}\ntitle: Abdul\nstatus: new # keep\n---\nbody\n`)
+    const old = await page('up/abdul-k3m9x2pq7abc.md', `---\nid: ${ID}\ntitle: Abdul\nstatus: new # keep\n---\nbody\n`)
     const newPath = at('up', `up-001-abdul-sample-r-${ID}.md`)
     expect(await retitle(root, { path: old, title: 'UP-001 - Abdul Sample R' })).toEqual({ oldPath: old, newPath, kind: 'file' })
     expect(await readFile(newPath, 'utf8')).toBe(`---\nid: ${ID}\ntitle: UP-001 - Abdul Sample R\nstatus: new # keep\n---\nbody\n`)
@@ -47,54 +47,54 @@ describe('retitle: a note (table B)', () => {
   })
 
   it('a file made outside the app, on its first title edit: `title:` is written and the file takes the built name (D5)', async () => {
-    const old = await note('Plan.md', `---\nid: ${ID}\n---\nbody\n`)
+    const old = await page('Plan.md', `---\nid: ${ID}\n---\nbody\n`)
     expect((await retitle(root, { path: old, title: 'Big Plan' })).newPath).toBe(at(`big-plan-${ID}.md`))
     expect(await read(`big-plan-${ID}.md`)).toBe(`---\nid: ${ID}\ntitle: Big Plan\n---\nbody\n`)
   })
 
-  it('a note the app has not given an id yet is given one first, then titled and named like any other (D29)', async () => {
-    const old = await note('Plan.md', '---\nstatus: new\n---\nbody\n')
+  it('a page the app has not given an id yet is given one first, then titled and named like any other (D29)', async () => {
+    const old = await page('Plan.md', '---\nstatus: new\n---\nbody\n')
     const { newPath } = await retitle(root, { path: old, title: 'Big Plan' })
     const id = /^id: (.+)$/m.exec(await readFile(newPath, 'utf8'))?.[1]
-    expect(isNoteId(id)).toBe(true)
+    expect(isPageId(id)).toBe(true)
     // The vault's next number, from the door (YAZ-2677 R32), and in lowercase in the file name (R8).
     expect(id).toBe('YAZ-1')
     expect(newPath).toBe(at('big-plan-yaz-1.md'))
     expect(await readFile(newPath, 'utf8')).toContain('title: Big Plan\n')
   })
 
-  it('an `id` with letters that are not this vault\'s is another tool\'s: the note is given the next number first (YAZ-2677 R7, S23)', async () => {
-    const old = await note('Plan.md', '---\nid: BUS-12\n---\nbody\n')
+  it('an `id` with letters that are not this vault\'s is another tool\'s: the page is given the next number first (YAZ-2677 R7, S23)', async () => {
+    const old = await page('Plan.md', '---\nid: BUS-12\n---\nbody\n')
     const { newPath } = await retitle(root, { path: old, title: 'Big Plan' })
     expect(newPath).toBe(at('big-plan-yaz-1.md'))
     expect(await readFile(newPath, 'utf8')).toBe('---\nid: YAZ-1\ntitle: Big Plan\n---\nbody\n')
   })
 
-  it('a note with a number ID keeps it, as an old ID is kept: written in any case, the file is not rewritten for the case (YAZ-2677 S18)', async () => {
-    const old = await note('Plan.md', '---\nid: yaz-12\n---\nbody\n')
+  it('a page with a number ID keeps it, as an old ID is kept: written in any case, the file is not rewritten for the case (YAZ-2677 S18)', async () => {
+    const old = await page('Plan.md', '---\nid: yaz-12\n---\nbody\n')
     const { newPath } = await retitle(root, { path: old, title: 'Big Plan' })
     expect(newPath).toBe(at('big-plan-yaz-12.md'))
     expect(await readFile(newPath, 'utf8')).toBe('---\nid: yaz-12\ntitle: Big Plan\n---\nbody\n')
     await expect(readdir(path.join(root, '.yaseendocs', 'ids'))).rejects.toThrow() // no number was taken
   })
 
-  it('a note with no frontmatter block gets one', async () => {
-    const old = await note('Plan.md', 'just a body\n')
+  it('a page with no frontmatter block gets one', async () => {
+    const old = await page('Plan.md', 'just a body\n')
     const { newPath } = await retitle(root, { path: old, title: 'Big Plan' })
     expect(await readFile(newPath, 'utf8')).toMatch(/^---\nid: YAZ-1\ntitle: Big Plan\n---\njust a body\n$/)
   })
 
   it('a properties block that does not parse: refused, saying so, and nothing is written or renamed (D24)', async () => {
     const broken = '---\nid: [unclosed\n---\nbody\n'
-    const old = await note('Plan.md', broken)
+    const old = await page('Plan.md', broken)
     const err = await failure(retitle(root, { path: old, title: 'Big Plan' }))
-    expect(err.message).toBe("this note's properties do not parse")
+    expect(err.message).toBe("this page's properties do not parse")
     expect(await read('Plan.md')).toBe(broken)
     expect(await listed(root)).toEqual(['Plan.md'])
   })
 
-  it('a note that changes on disk as it is given its id: refused, and nothing is written or renamed', async () => {
-    const old = await note('Plan.md', '---\nstatus: new\n---\n')
+  it('a page that changes on disk as it is given its id: refused, and nothing is written or renamed', async () => {
+    const old = await page('Plan.md', '---\nstatus: new\n---\n')
     const swept = `---\nstatus: new\nid: ${ID}\n---\n`
     const real = vi.mocked(giveId).getMockImplementation()!
     vi.mocked(giveId).mockImplementationOnce(async (...args) => {
@@ -108,39 +108,39 @@ describe('retitle: a note (table B)', () => {
   })
 
   it('a title edit that gives the same kebab-case (a capital letter, a comma): only the `title:` line changes, the file is not renamed', async () => {
-    const old = await note(`big-plan-${ID}.md`, `---\nid: ${ID}\ntitle: big plan\n---\n`)
+    const old = await page(`big-plan-${ID}.md`, `---\nid: ${ID}\ntitle: big plan\n---\n`)
     expect(await retitle(root, { path: old, title: 'Big, Plan' })).toEqual({ oldPath: old, newPath: old, kind: 'file' })
     expect(await read(`big-plan-${ID}.md`)).toBe(`---\nid: ${ID}\ntitle: Big, Plan\n---\n`)
   })
 
   it('the rename fails after the title was written: the title is right, the file name is stale, and the error is reported', async () => {
-    const old = await note('Plan.md', `---\nid: ${ID}\n---\n`)
-    await note(`big-plan-${ID}.md`, 'in the way\n')
+    const old = await page('Plan.md', `---\nid: ${ID}\n---\n`)
+    await page(`big-plan-${ID}.md`, 'in the way\n')
     expect((await failure(retitle(root, { path: old, title: 'Big Plan' }))).code).toBe('ALREADY_EXISTS')
     expect(await read('Plan.md')).toBe(`---\nid: ${ID}\ntitle: Big Plan\n---\n`)
     expect(await read(`big-plan-${ID}.md`)).toBe('in the way\n')
   })
 
   it.each(['', '   '])('an empty title (%j) is not accepted: nothing changes', async (title) => {
-    const old = await note('Plan.md', `---\nid: ${ID}\n---\n`)
+    const old = await page('Plan.md', `---\nid: ${ID}\n---\n`)
     expect((await failure(retitle(root, { path: old, title }))).code).toBe('BAD_REQUEST')
     expect(await read('Plan.md')).toBe(`---\nid: ${ID}\n---\n`)
   })
 
   it('a title containing `/`, `:`, `?` or quotes is allowed: the title is free text', async () => {
-    const old = await note('Plan.md', `---\nid: ${ID}\n---\n`)
+    const old = await page('Plan.md', `---\nid: ${ID}\n---\n`)
     const { newPath } = await retitle(root, { path: old, title: 'Q3/Q4: "what now"?' })
     expect(newPath).toBe(at(`q3-q4-what-now-${ID}.md`))
     expect(await readFile(newPath, 'utf8')).toBe(`---\nid: ${ID}\ntitle: 'Q3/Q4: "what now"?'\n---\n`)
   })
 
-  it('a note title with no letter or digit: the file is the id alone', async () => {
-    const old = await note('Plan.md', `---\nid: ${ID}\n---\n`)
+  it('a page title with no letter or digit: the file is the id alone', async () => {
+    const old = await page('Plan.md', `---\nid: ${ID}\n---\n`)
     expect((await retitle(root, { path: old, title: '—' })).newPath).toBe(at(`${ID}.md`))
   })
 
-  it.each(['report.pdf', 'photo.png', 'notes.txt'])('%s is not retitled: it has no title, and it is left as it is', async (name) => {
-    const old = await note(name, 'bytes')
+  it.each(['report.pdf', 'photo.png', 'pages.txt'])('%s is not retitled: it has no title, and it is left as it is', async (name) => {
+    const old = await page(name, 'bytes')
     expect((await failure(retitle(root, { path: old, title: 'Big Plan' }))).code).toBe('UNSUPPORTED_EXTENSION')
     expect(await listed(root)).toEqual([name])
     expect(await read(name)).toBe('bytes')
@@ -151,8 +151,8 @@ describe('retitle: a folder (table C)', () => {
   const FOLDER_ID = 'a1b2c3d4e5f6'
 
   it('a folder renamed in the app: the `title:` line in its `.folder.md` is written, then the folder is renamed, and nothing inside it is renamed', async () => {
-    await note(`upwork/${FOLDER_SETTINGS_FILE}`, `---\nid: ${FOLDER_ID}\ntitle: Upwork\n---\n`)
-    await note(`upwork/abdul-${ID}.md`, `---\nid: ${ID}\n---\n`)
+    await page(`upwork/${FOLDER_SETTINGS_FILE}`, `---\nid: ${FOLDER_ID}\ntitle: Upwork\n---\n`)
+    await page(`upwork/abdul-${ID}.md`, `---\nid: ${ID}\n---\n`)
     expect(await retitle(root, { path: at('upwork'), title: 'Upwork 2026' })).toEqual({ oldPath: at('upwork'), newPath: at('upwork-2026'), kind: 'dir' })
     expect(await read('upwork-2026', FOLDER_SETTINGS_FILE)).toBe(`---\nid: ${FOLDER_ID}\ntitle: Upwork 2026\n---\n`)
     expect((await readdir(at('upwork-2026'))).sort()).toEqual([FOLDER_SETTINGS_FILE, `abdul-${ID}.md`])
@@ -166,7 +166,7 @@ describe('retitle: a folder (table C)', () => {
   })
 
   it('a new title that gives the same kebab-case: only the `title:` line changes', async () => {
-    await note(`candidates/${FOLDER_SETTINGS_FILE}`, `---\nid: ${FOLDER_ID}\n---\n`)
+    await page(`candidates/${FOLDER_SETTINGS_FILE}`, `---\nid: ${FOLDER_ID}\n---\n`)
     expect(await retitle(root, { path: at('candidates'), title: 'Candidates!' })).toEqual({ oldPath: at('candidates'), newPath: at('candidates'), kind: 'dir' })
     expect(await read('candidates', FOLDER_SETTINGS_FILE)).toBe(`---\nid: ${FOLDER_ID}\ntitle: Candidates!\n---\n`)
   })
@@ -183,7 +183,7 @@ describe('retitle: a folder (table C)', () => {
   })
 
   it('a title whose kebab-case another folder beside it already has: refused, and the title is not left written (D25)', async () => {
-    await note(`upwork/${FOLDER_SETTINGS_FILE}`, `---\nid: ${FOLDER_ID}\ntitle: Upwork\n---\n`)
+    await page(`upwork/${FOLDER_SETTINGS_FILE}`, `---\nid: ${FOLDER_ID}\ntitle: Upwork\n---\n`)
     await mkdir(at('upwork-2026'))
     const err = await failure(retitle(root, { path: at('upwork'), title: 'Upwork 2026' }))
     expect(err.code).toBe('ALREADY_EXISTS')
@@ -192,7 +192,7 @@ describe('retitle: a folder (table C)', () => {
   })
 
   it('a `.folder.md` whose properties do not parse: refused, and nothing is written or renamed (D24)', async () => {
-    await note(`upwork/${FOLDER_SETTINGS_FILE}`, '---\nid: [unclosed\n---\n')
+    await page(`upwork/${FOLDER_SETTINGS_FILE}`, '---\nid: [unclosed\n---\n')
     expect((await failure(retitle(root, { path: at('upwork'), title: 'Upwork 2026' }))).message).toBe("this folder's settings do not parse")
     expect(await read('upwork', FOLDER_SETTINGS_FILE)).toBe('---\nid: [unclosed\n---\n')
     expect(await listed(root)).toEqual(['upwork'])
@@ -202,7 +202,7 @@ describe('retitle: a folder (table C)', () => {
     expect(await retitle(root, { path: root, title: 'My Wiki' })).toEqual({ oldPath: root, newPath: root, kind: 'dir' })
     expect(await read(FOLDER_SETTINGS_FILE)).toBe('---\ntitle: My Wiki\n---\n')
     expect(await listed(root)).toEqual([FOLDER_SETTINGS_FILE])
-    await note(FOLDER_SETTINGS_FILE, `---\nid: ${FOLDER_ID}\ntitle: My Wiki\nviews: []\n---\n`)
+    await page(FOLDER_SETTINGS_FILE, `---\nid: ${FOLDER_ID}\ntitle: My Wiki\nviews: []\n---\n`)
     expect(await retitle(root, { path: root, title: 'Wiki 2' })).toEqual({ oldPath: root, newPath: root, kind: 'dir' })
     expect(await read(FOLDER_SETTINGS_FILE)).toBe(`---\nid: ${FOLDER_ID}\ntitle: Wiki 2\nviews: []\n---\n`)
     expect(path.basename(root)).toMatch(/^mdapp-retitle-/)
@@ -214,7 +214,7 @@ describe('retitle: a card file (YAZ-5037, YAZ-5044 pick 1)', () => {
 
   it('the new words go into the card\'s first line, its marks kept; the file takes the name built from them and the CARD\'s ID; no page ID is given', async () => {
     vi.mocked(giveId).mockClear()
-    const old = await note('Cards/yaz-140.md', cardFile('###### Title\n---\nParis'))
+    const old = await page('Cards/yaz-140.md', cardFile('###### Title\n---\nParis'))
     const newPath = at('Cards', 'capital-of-france-yaz-140.md')
     expect(await retitle(root, { path: old, title: 'Capital of France' })).toEqual({ oldPath: old, newPath, kind: 'file' })
     expect(await readFile(newPath, 'utf8')).toBe(cardFile('###### Capital of France\n---\nParis'))
@@ -222,21 +222,21 @@ describe('retitle: a card file (YAZ-5037, YAZ-5044 pick 1)', () => {
   })
 
   it('the placeholder title keeps the `<id>.md` name; the same name moves nothing', async () => {
-    const old = await note('Cards/yaz-140.md', cardFile('Old words'))
+    const old = await page('Cards/yaz-140.md', cardFile('Old words'))
     expect(await retitle(root, { path: old, title: 'Title' })).toEqual({ oldPath: old, newPath: old, kind: 'file' })
     expect(await read('Cards/yaz-140.md')).toBe(cardFile('Title'))
   })
 
   it('a title the card already has (Edit card`s Done wrote it) writes nothing, so its line keeps its own bold and link; only the name follows', async () => {
     const text = 'Capital of **France**, see [[GEO-1]]\n---\nParis'
-    const old = await note('Cards/yaz-141.md', cardFile(text, '<!-- card: YAZ-141 -->'))
+    const old = await page('Cards/yaz-141.md', cardFile(text, '<!-- card: YAZ-141 -->'))
     const newPath = at('Cards', 'capital-of-france-see-geo-1-yaz-141.md')
     expect(await retitle(root, { path: old, title: 'Capital of France, see GEO-1' })).toEqual({ oldPath: old, newPath, kind: 'file' })
     expect(await readFile(newPath, 'utf8')).toBe(cardFile(text, '<!-- card: YAZ-141 -->'))
   })
 
   it('a card with no ID yet takes the words and keeps its name', async () => {
-    const old = await note('Cards/fresh.md', '---\nkind: card\n---\n```card\nTitle\n```\n')
+    const old = await page('Cards/fresh.md', '---\nkind: card\n---\n```card\nTitle\n```\n')
     expect(await retitle(root, { path: old, title: 'Fresh words' })).toEqual({ oldPath: old, newPath: old, kind: 'file' })
     expect(await read('Cards/fresh.md')).toBe('---\nkind: card\n---\n```card\nFresh words\n```\n')
   })

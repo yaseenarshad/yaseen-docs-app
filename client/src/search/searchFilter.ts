@@ -31,7 +31,7 @@ export const filterOn = (filter: SearchFilter): boolean => filter.type !== 'all'
  */
 const TYPES: ReadonlyArray<[SearchType, string, string?]> = [
   ['all', 'All types'],
-  ['pages', 'Pages', 'note.md'],
+  ['pages', 'Pages', 'page.md'],
   ['cards', 'Cards', 'card'],
   ['drawings', 'Drawings', 'drawing.excalidraw'],
   ['diagrams', 'Diagrams', 'diagram.drawio'],

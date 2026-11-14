@@ -1,8 +1,8 @@
 /**
  * The folder view (YAZ-2290): a real FOLDER, opened as a tab (D3), shown as views over its
- * notes. Its subject is a DIRECTORY, never a note.
+ * pages. Its subject is a DIRECTORY, never a page.
  *
- *  - ROWS (D4): the notes under the folder, at any depth — never a subfolder itself — plus its
+ *  - ROWS (D4): the pages under the folder, at any depth — never a subfolder itself — plus its
  *    SHORTCUTS (D2, `links/shortcuts.ts`). Their links resolve through the whole vault.
  *  - SETTINGS (D1/E2): the folder's hidden `.folder.md`. Born holding only the folder's id (D13),
  *    or missing where the vault does not use IDs: either way the defaults (`folderSettings`) until
@@ -13,22 +13,22 @@
  *  - COLUMNS (YAZ-4713 C2): the page's own columns and its parent folders' (`columnInheritance.ts`), the nearest
  *    declaration of a key first — unless "Show parent folders' columns" is off (the folder's ⚙, else Settings ›
  *    Folder pages). The views read them as `settings.columns`, and `columns` says which folder owns each.
- *  - VALUES (C1): a note's value for a column is the note's own top-level field, one per key, the same on every
- *    page. This host is the one seam: the views get rows whose `properties` are the note's fields less the app's
+ *  - VALUES (C1): a page's value for a column is the page's own top-level field, one per key, the same on every
+ *    page. This host is the one seam: the views get rows whose `properties` are the page's fields less the app's
  *    keys, and every value they write comes back through `writeValues` (`writeRouted`). A column set to "Separate
  *    value for <folder>" (C3, vaults with IDs) reads and writes this folder's block of `in` instead
- *    (`shared/folderValues.ts`). A column is never stamped into a note (E1), and a write drops no value (C9). Where
+ *    (`shared/folderValues.ts`). A column is never stamped into a page (E1), and a write drops no value (C9). Where
  *    the vault does not use IDs (YAZ-2523 🔒 V6) no column is deleted.
  *  - SUBFOLDERS AS ROWS (YAZ-4579 D31): each direct subfolder is a row too, for the views whose "Subfolders"
- *    switch asks for it — its `.folder.md`, read and written like a note: its values are its own top-level keys
+ *    switch asks for it — its `.folder.md`, read and written like a page: its values are its own top-level keys
  *    (a separate column's, its block of `in`), and its first write creates the file.
  *  - THE PAGE AROUND THE VIEWS (D9/D10): the title (a commit renames the directory), the folder's
  *    OWN properties and comments, both stored in `.folder.md`, and its linked mentions — the
- *    components a note uses.
+ *    components a page uses.
  *  - OTHER FILES (YAZ-4597, D43-D46): a tray under the views (`view/OtherFiles.tsx`): the folder's files that are not
- *    notes, then the notes moved there — `other_files` links in the settings, written through the one writer. A moved
- *    note leaves every view (the views' records). "Show Other files" in the cog (`show_other_files`) beats Settings ›
- *    Folder pages; with the tray off, every note shows in the views again and nothing moves.
+ *    pages, then the pages moved there — `other_files` links in the settings, written through the one writer. A moved
+ *    page leaves every view (the views' records). "Show Other files" in the cog (`show_other_files`) beats Settings ›
+ *    Folder pages; with the tray off, every page shows in the views again and nothing moves.
  *
  * Feed: the window's ONE `WikilinkResolveSource`, so the view costs no fetch or watcher of its own.
  */
@@ -66,9 +66,9 @@ import { vaultDirs } from '../links/folderLinks'
 import { type ParsedViews, type ViewDef, type ViewSet, parseViews, rewriteViews, serializeViews, updateViews } from './viewSchema'
 import { ViewsPane, type FolderHost } from './ViewsPane'
 import { folderSettings, moveFolderColumn, rewriteFolderViews, writeFolderSettings, writeFolderColumn, type FolderSettings } from './folderSettings'
-import { deleteColumn as deleteColumnEverywhere, notesHolding } from './deleteColumn'
-import { renameNotice, renameOptionInFilters, renameOptionInNotes, restoreInPaths, type ValueHome } from './renameOption'
-import { createNote } from './scaffold'
+import { deleteColumn as deleteColumnEverywhere, pagesHolding } from './deleteColumn'
+import { renameNotice, renameOptionInFilters, renameOptionInPages, restoreInPaths, type ValueHome } from './renameOption'
+import { createPage } from './scaffold'
 import { propertyLabel, type RunOptions } from './engine'
 import { mentionsColumns } from './mentionsColumn'
 import { addTiedColumn, removeTiedColumn, tiedKeyFor, tiedKeyOf, writeTiedCell, type PairWritten } from './relationPair'
@@ -81,7 +81,7 @@ import { FOLDER_READ_ONLY_TIP, FolderPageChips, FolderToolbar, type FolderChipsS
 import { useTimedUnlock } from '../editor/useTimedUnlock'
 import { VAULT_READ_ONLY_TIP, VaultReadOnly } from '../vault/readOnlyVault'
 import { ViewFolder } from './view/GroupHeader'
-import { noteLinkOf } from './view/fills'
+import { pageLinkOf } from './view/fills'
 import { OtherFiles, trayBackTarget } from './view/OtherFiles'
 import { OtherFilesFolderMove, OtherFilesMove, type FolderTray } from './view/otherFilesMove'
 import { ConfirmSheet } from '../components/ConfirmSheet'
@@ -100,7 +100,7 @@ export interface FolderViewProps {
   root: string
   /** The window's link feed (`Editor`'s `wikilinks`): the snapshot, and the folder settings records riding it. */
   source: WikilinkResolveSource
-  // The rest are `Editor`'s own props, threaded through as it hands them to a note (`EditorProps`).
+  // The rest are `Editor`'s own props, threaded through as it hands them to a page (`EditorProps`).
   properties?: PropertiesResponse | null
   onOpenFile: (path: string) => void
   onOpenFileRight?: (path: string) => void
@@ -109,13 +109,13 @@ export interface FolderViewProps {
   onOpenFolderPage?: (path: string) => void
   /** The mini window's ↗ (YAZ-3746 13I): App's `openNewTabPage`. Handed to `ViewsPane` as `FolderHost.openNewTab`. */
   onOpenFileNewTab?: (path: string) => void
-  /** A full editor on a note, for the table's note window (YAZ-4547): handed to `ViewsPane` as `FolderHost.renderNoteEditor`. */
-  renderNoteEditor?: (path: string) => ReactNode
+  /** A full editor on a page, for the table's page window (YAZ-4547): handed to `ViewsPane` as `FolderHost.renderPageEditor`. */
+  renderPageEditor?: (path: string) => ReactNode
   /** App's `trashMany` (YAZ-4592 S26), the sidebar's delete: handed to `ViewsPane` as `FolderHost.trash`. */
   onDeleteEntries?: (paths: readonly string[], asked?: boolean) => Promise<void>
-  /** The Page tab's note editor on this folder's `.folder.md` (YAZ-4584 D38), built by `Editor`: handed to `ViewsPane` as `FolderHost.renderPage`. */
+  /** The Page tab's page editor on this folder's `.folder.md` (YAZ-4584 D38), built by `Editor`: handed to `ViewsPane` as `FolderHost.renderPage`. */
   renderPage?: () => ReactNode
-  /** The app tab that shows this folder (`Editor`'s `tabId`): handed to `ViewsPane`, whose note window is that tab's (YAZ-4544). */
+  /** The app tab that shows this folder (`Editor`'s `tabId`): handed to `ViewsPane`, whose page window is that tab's (YAZ-4544). */
   tabId?: string
   /** The main tab's Back step (`Editor`'s `viewKey`): handed to `ViewsPane`, which shows the view tab this step left (YAZ-4544). */
   viewKey?: string
@@ -142,18 +142,18 @@ export interface FolderViewProps {
  * A `.folder.md` key the cog writes (YAZ-3746 D36, D37): shown at once, then the index's value again once the index
  * echoes the write, or the write fails.
  */
-/** The two Other files lists as one write (YAZ-4747): `other_files`, and its folders that keep their notes. */
+/** The two Other files lists as one write (YAZ-4747): `other_files`, and its folders that keep their pages. */
 interface TrayLists {
   links: string[]
   keep: string[]
 }
 
-/** One render's tray moves: a note's, a folder's (YAZ-4747), and the folder door's questions. */
+/** One render's tray moves: a page's, a folder's (YAZ-4747), and the folder door's questions. */
 interface TrayMoves {
   toTray: (path: string, undoable?: boolean) => void
-  /** Back to the table: a moved note, or a moved folder by its directory. */
+  /** Back to the table: a moved page, or a moved folder by its directory. */
   back: (path: string, undoable?: boolean) => void
-  toTrayFolder: (dir: string, notes: boolean, undoable?: boolean) => void
+  toTrayFolder: (dir: string, pages: boolean, undoable?: boolean) => void
   folderOf: FolderTray['folderOf']
   folderAt: FolderTray['folderAt']
   askFolder: (dir: string, shown: readonly string[]) => void
@@ -208,8 +208,8 @@ function withTied(properties: Record<string, unknown>, row: IndexRecord, tied: R
  * may still show (YAZ-3130) — and each separate column's value from this page's block. The same object when nothing changes.
  *
  * YAZ-4769 (one key, capitals ignored): each field whose key is a page column's in other capitals reads under the
- * column's spelling (`spell`, `respell`): a note's `dessert column` is the `Dessert Column` cell, so every view, filter,
- * sort, group, board and calendar reads it with no fold of its own. A note holding two spellings shows the column's;
+ * column's spelling (`spell`, `respell`): a page's `dessert column` is the `Dessert Column` cell, so every view, filter,
+ * sort, group, board and calendar reads it with no fold of its own. A page holding two spellings shows the column's;
  * the other stays in the file, and is no second column. The app's keys are never moved. A separate value is found in
  * the page's block in any capitals too.
  */
@@ -256,13 +256,13 @@ function columnsChanged(base: Readonly<Record<string, ColumnDecl>>, from: Readon
 
 /** The comparable tuple every stamp below is spelled as — everything `folderViewSet` builds: views, formulas, labels (YAZ-1513) and the saved START. */
 /**
- * The ask's text under its title (YAZ-4747 OF2): how many of the folder's notes the table shows, with the subfolders
+ * The ask's text under its title (YAZ-4747 OF2): how many of the folder's pages the table shows, with the subfolders
  * that hold some, and what each answer does to them.
  */
 export function folderTrayMessage(count: number, inside: readonly string[]): string {
-  const notes = `${count} ${count === 1 ? 'note' : 'notes'}`
+  const pages = `${count} ${count === 1 ? 'page' : 'pages'}`
   const where = inside.length === 0 ? '' : inside.length <= 2 ? `, with the ones in ${inside.join(' and ')}` : `, with the ones in its ${inside.length} subfolders`
-  return `It holds ${notes}${where}. Move them with it, and they leave this table. Move the folder only, and they stay.`
+  return `It holds ${pages}${where}. Move them with it, and they leave this table. Move the folder only, and they stay.`
 }
 
 const stampOf = (s: Pick<FolderSettings, 'views' | 'formulas' | 'properties' | 'defaultView'>): string =>
@@ -281,7 +281,7 @@ export function FolderView({
   onOpenFileBackground,
   onOpenFolderPage,
   onOpenFileNewTab,
-  renderNoteEditor,
+  renderPageEditor,
   onDeleteEntries,
   renderPage,
   tabId,
@@ -316,26 +316,26 @@ export function FolderView({
   const indexed = feed.resolve !== null
   const settings = useMemo(() => (indexed ? folderSettings(record, ids) : null), [indexed, record, ids])
   const rows = useMemo(() => folderRows(feed.records, feed.folders, folder), [feed.records, feed.folders, folder])
-  /** The folder's id: the name of its block in a note. None until its `.folder.md` holds one — then every value reads as empty. */
+  /** The folder's id: the name of its block in a page. None until its `.folder.md` holds one — then every value reads as empty. */
   const id = record?.id
 
   // ---------- Other files (YAZ-4597, D43-D46) ----------
   /** The folder's own "Show Other files": `undefined` follows Settings › Folder pages (default on). */
   const [showOtherFiles, setShowOtherFiles] = useAheadKey(record === undefined ? undefined : showOtherFilesOf(record.properties))
   const trayOn = showOtherFiles ?? (folderPages ?? DEFAULT_FOLDER_PAGES).showOtherFiles
-  /** The `other_files` and `other_files_keep_notes` links AHEAD of the index, as `ahead` holds the columns: a move shows at once; null = the index leads. */
+  /** The `other_files` and `other_files_keep_pages` links AHEAD of the index, as `ahead` holds the columns: a move shows at once; null = the index leads. */
   const [aheadOther, setAheadOtherState] = useState<TrayLists | null>(null)
   const aheadOtherRef = useRef<TrayLists | null>(null)
   const setAheadOther = (next: TrayLists | null): void => {
     aheadOtherRef.current = next
     setAheadOtherState(next)
   }
-  const indexOther = JSON.stringify({ links: settings?.otherFiles ?? [], keep: settings?.otherFilesKeepNotes ?? [] })
+  const indexOther = JSON.stringify({ links: settings?.otherFiles ?? [], keep: settings?.otherFilesKeepPages ?? [] })
   const otherLinks = aheadOther?.links ?? settings?.otherFiles
-  const keepLinks = aheadOther?.keep ?? settings?.otherFilesKeepNotes
+  const keepLinks = aheadOther?.keep ?? settings?.otherFilesKeepPages
   /**
-   * The moved notes, note path → its link, in `other_files` order: a link that names a note of this folder (`rows`),
-   * once. The next write keeps only these, so a deleted or moved-away note leaves the list then, as fills do (D44).
+   * The moved pages, page path → its link, in `other_files` order: a link that names a page of this folder (`rows`),
+   * once. The next write keeps only these, so a deleted or moved-away page leaves the list then, as fills do (D44).
    * None while the tray is off.
    */
   const moved = useMemo(() => {
@@ -363,7 +363,7 @@ export function FolderView({
     }),
     [],
   )
-  /** The ask before a folder moves with notes the table shows (YAZ-4747 OF2). */
+  /** The ask before a folder moves with pages the table shows (YAZ-4747 OF2). */
   const [folderAsk, setFolderAsk] = useState<{ dir: string; name: string; count: number; inside: string[] } | null>(null)
   /** A tied cell's replace ask (YAZ-4781 R2), open: its words and the answer's door. */
   const [pairAsk, setPairAsk] = useState<{ text: string; answer: (ok: boolean) => void } | null>(null)
@@ -376,12 +376,12 @@ export function FolderView({
    */
   const subfolders = useMemo(() => subfolderRows(root, folder, vaultDirs(root), feed.folders), [root, folder, feed.folders, feed.resolve])
   /**
-   * The subfolders moved to Other files (YAZ-4747 OF5), directory → its link and whether its notes go with it, in
-   * `other_files` order: a link that names a direct subfolder of this page. A folder in `other_files_keep_notes` keeps
-   * its notes in the views. None while the tray is off.
+   * The subfolders moved to Other files (YAZ-4747 OF5), directory → its link and whether its pages go with it, in
+   * `other_files` order: a link that names a direct subfolder of this page. A folder in `other_files_keep_pages` keeps
+   * its pages in the views. None while the tray is off.
    */
   const movedFolders = useMemo(() => {
-    const out = new Map<string, { link: string; notes: boolean; name: string }>()
+    const out = new Map<string, { link: string; pages: boolean; name: string }>()
     const resolve = feed.resolve
     if (!trayOn || resolve === null || otherLinks === undefined) return out
     const names = new Map(subfolders.map((row) => [rowPage(row.path), row.title]))
@@ -393,15 +393,15 @@ export function FolderView({
     for (const link of otherLinks) {
       const dir = pathOf(link)
       const name = dir === null ? undefined : names.get(dir)
-      if (dir !== null && name !== undefined && !out.has(dir)) out.set(dir, { link, notes: !keep.has(dir), name })
+      if (dir !== null && name !== undefined && !out.has(dir)) out.set(dir, { link, pages: !keep.has(dir), name })
     }
     return out
   }, [trayOn, otherLinks, keepLinks, subfolders, feed.resolve])
-  /** The directories whose notes left the views with their folder: a note under one is in no view. */
-  const goneDirs = useMemo(() => [...movedFolders].filter(([, f]) => f.notes).map(([dir]) => `${dir}/`), [movedFolders])
-  const inGoneDir = useCallback((notePath: string) => goneDirs.some((prefix) => notePath.startsWith(prefix)), [goneDirs])
-  /** The tray's moved notes: a note inside a folder that went with its notes shows under that folder, not on its own. */
-  const trayNotes = useMemo(() => {
+  /** The directories whose pages left the views with their folder: a page under one is in no view. */
+  const goneDirs = useMemo(() => [...movedFolders].filter(([, f]) => f.pages).map(([dir]) => `${dir}/`), [movedFolders])
+  const inGoneDir = useCallback((pagePath: string) => goneDirs.some((prefix) => pagePath.startsWith(prefix)), [goneDirs])
+  /** The tray's moved pages: a page inside a folder that went with its pages shows under that folder, not on its own. */
+  const trayPages = useMemo(() => {
     const byPath = new Map(rows.map((row) => [row.path, row]))
     return [...moved.keys()].filter((p) => !inGoneDir(p)).map((p) => byPath.get(p)!)
   }, [moved, rows, inGoneDir])
@@ -411,8 +411,8 @@ export function FolderView({
   const unlock = useTimedUnlock(noFlush)
   const vaultLockedHere = vault.on && unlock.until === null
   /**
-   * The read-only notes (YAZ-3076 D6), read off each note's OWN properties before `shown` swaps in the folder's values; a folder row's off its `.folder.md` (D32).
-   * In a read-only vault (YAZ-4939) every row's cell is locked until this tab's unlock; each note's own switch then still holds.
+   * The read-only pages (YAZ-3076 D6), read off each page's OWN properties before `shown` swaps in the folder's values; a folder row's off its `.folder.md` (D32).
+   * In a read-only vault (YAZ-4939) every row's cell is locked until this tab's unlock; each page's own switch then still holds.
    */
   const locked = useMemo(() => (vaultLockedHere ? new Set([...rows, ...subfolders].map((r) => r.path)) : readOnlyPaths([...rows, ...subfolders])), [rows, subfolders, vaultLockedHere])
   /**
@@ -423,42 +423,42 @@ export function FolderView({
   const shortcutDoors = useMemo((): ShortcutDoors | null => {
     if (!ids) return null
     const nameAt = (rel: string) => folderName(folderMap, rel, vaultName)
-    const titleOf = (note: string) => rows.find((r) => r.path === note)?.title ?? note.slice(note.lastIndexOf('/') + 1)
+    const titleOf = (page: string) => rows.find((r) => r.path === page)?.title ?? page.slice(page.lastIndexOf('/') + 1)
     const fail = (err: unknown) => onNotice?.(err instanceof Error ? err.message : String(err), 'error')
     const pageName = nameAt(folder)
     // Each Undo takes back exactly what its action changed (checker 8E): never a folder under it, never one that was there before.
-    const undo = (note: string, change: { drop?: readonly unknown[]; restore?: readonly unknown[] }) => () => void setShortcutEntries(note, change).catch(fail)
-    const remove = (note: string): void =>
-      void removeShortcut(path, note, feed.folders).then(
-        (removed) => removed.length > 0 && onNotice?.(`Removed the shortcut to "${titleOf(note)}" from ${pageName}`, 'info', 'undo', { label: 'Undo', run: undo(note, { restore: removed }), fades: true }),
+    const undo = (page: string, change: { drop?: readonly unknown[]; restore?: readonly unknown[] }) => () => void setShortcutEntries(page, change).catch(fail)
+    const remove = (page: string): void =>
+      void removeShortcut(path, page, feed.folders).then(
+        (removed) => removed.length > 0 && onNotice?.(`Removed the shortcut to "${titleOf(page)}" from ${pageName}`, 'info', 'undo', { label: 'Undo', run: undo(page, { restore: removed }), fades: true }),
         fail,
       )
-    const add = (note: string, dir: string): void =>
-      void addShortcut(dir, note).then(
+    const add = (page: string, dir: string): void =>
+      void addShortcut(dir, page).then(
         (added) =>
           added === null
-            ? onNotice?.(`"${titleOf(note)}" is already in ${nameAt(relTo(root, dir))}`, 'info')
-            : onNotice?.(`Added a shortcut to "${titleOf(note)}" in ${nameAt(relTo(root, dir))}`, 'info', 'undo', { label: 'Undo', run: undo(note, { drop: [added] }), fades: true }),
+            ? onNotice?.(`"${titleOf(page)}" is already in ${nameAt(relTo(root, dir))}`, 'info')
+            : onNotice?.(`Added a shortcut to "${titleOf(page)}" in ${nameAt(relTo(root, dir))}`, 'info', 'undo', { label: 'Undo', run: undo(page, { drop: [added] }), fades: true }),
         fail,
       )
     return {
       pageName,
-      homeOf: (note) => {
-        const record = rows.find((r) => r.path === note)
+      homeOf: (page) => {
+        const record = rows.find((r) => r.path === page)
         return record === undefined || !isShortcut(record, folder) ? null : { dir: absFrom(root, record.folder), name: nameAt(record.folder) }
       },
       goHome: (dir) => onOpenFolderPage?.(dir),
-      remove: (note) => remove(note),
-      add: (note, dir) => add(note, dir),
+      remove: (page) => remove(page),
+      add: (page, dir) => add(page, dir),
       folders: () => vaultDirs(root).map((dir) => ({ dir, name: nameAt(relTo(root, dir)), path: relTo(root, dir) })),
-      holders: (note) => {
-        const record = rows.find((r) => r.path === note)
-        if (record === undefined) return new Set([note.slice(0, note.lastIndexOf('/'))])
+      holders: (page) => {
+        const record = rows.find((r) => r.path === page)
+        if (record === undefined) return new Set([page.slice(0, page.lastIndexOf('/'))])
         const ids = new Set(alsoIn(record.properties))
         const shortcutDirs = [...folderMap].filter(([, f]) => f.id != null && ids.has(f.id)).map(([rel]) => absFrom(root, rel))
         return new Set([absFrom(root, record.folder), ...shortcutDirs])
       },
-      locked: (note) => locked.has(note),
+      locked: (page) => locked.has(page),
     }
   }, [ids, folderMap, vaultName, rows, folder, path, root, feed.folders, onNotice, onOpenFolderPage, locked])
   /** The folder's own properties panel opens its link pills as the cells do (YAZ-4544 4G); the cells' card is the views' own. */
@@ -467,7 +467,7 @@ export function FolderView({
   // ---------- The toolbar (YAZ-3746 D35) ----------
   /** The toolbar's store: the save state of the folder's own writes, the Page tab's part, and the lock for the Page tab. */
   const [chips] = useState(() => createStore<FolderChipsState>({ save: 'saved', page: null, readOnly: false }))
-  /** The folder page's own Read only (D36): `readonly: true` in its `.folder.md`. The notes inside keep their own rule. */
+  /** The folder page's own Read only (D36): `readonly: true` in its `.folder.md`. The pages inside keep their own rule. */
   const [pageLocked, setPageLocked] = useAheadKey(record !== undefined && isReadOnlyProperties(record.properties))
   /** The page is under Read only — its own switch or the vault's (YAZ-4939): the chip shows. Locked for real until this tab's unlock. */
   const pageBase = pageLocked || vault.on
@@ -492,13 +492,13 @@ export function FolderView({
     chips.set({ readOnly: pageEffective })
     if (!pageBase) setAskingUnlock(false)
   }, [chips, pageEffective, pageBase])
-  /** Per app tab and never stored, as a note's (D35). */
+  /** Per app tab and never stored, as a page's (D35). */
   const [zoom, setZoom] = useState(100)
   /** The folder's writes in flight, and whether one of them failed: the save chip says 'saving' until all settle. */
   const writing = useRef({ count: 0, failed: false })
   const hostRef = useRef<HTMLDivElement>(null)
   const ready = feed.resolve !== null && settings !== null
-  // This page owns ⌘+ / ⌘− / ⌘0 while focus is in its section, as a note does (YAZ-1710). A note inside it (the Page
+  // This page owns ⌘+ / ⌘− / ⌘0 while focus is in its section, as a page does (YAZ-1710). A page inside it (the Page
   // tab) claims them first.
   useEffect(() => {
     const section = hostRef.current?.closest('.editor')
@@ -514,7 +514,7 @@ export function FolderView({
   }, [ready])
 
   /**
-   * The settings file's own BYTES (D9), which the properties panel and the comments read as a note's
+   * The settings file's own BYTES (D9), which the properties panel and the comments read as a page's
    * do its `diskFile`: re-read whenever the index record moves — the watcher's word that the file
    * changed, our own writes included. A folder the index knows no settings file for is '' with
    * nothing read, and this page writes nothing until its first change creates it (`writeProperty.ts`).
@@ -617,7 +617,7 @@ export function FolderView({
     if (aheadOtherRef.current !== null && (echoed || JSON.stringify(aheadOtherRef.current) === indexOther)) setAheadOther(null)
   }, [indexColumns, indexOther, revision, landed])
   const liveSettings = useMemo(
-    () => (settings === null ? null : ahead === null && aheadOther === null ? settings : { ...settings, columns: ahead ?? settings.columns, otherFiles: aheadOther?.links ?? settings.otherFiles, otherFilesKeepNotes: aheadOther?.keep ?? settings.otherFilesKeepNotes }),
+    () => (settings === null ? null : ahead === null && aheadOther === null ? settings : { ...settings, columns: ahead ?? settings.columns, otherFiles: aheadOther?.links ?? settings.otherFiles, otherFilesKeepPages: aheadOther?.keep ?? settings.otherFilesKeepPages }),
     [settings, ahead, aheadOther],
   )
   /** The page's columns (YAZ-4713 C2): its own live declarations over its parent folders', each with the folder that owns it. Once per snapshot. */
@@ -722,7 +722,7 @@ export function FolderView({
   const reserved = columnReservedKeys(ids)
   /**
    * The page's column spellings (YAZ-4769), the columns of its chain and its subfolders' (C11), as one string so a column
-   * edit that changes no spelling remaps no row. A Linked mentions column holds no note value (YAZ-4738 L1), so a field
+   * edit that changes no spelling remaps no row. A Linked mentions column holds no page value (YAZ-4738 L1), so a field
    * of its name is left as it is.
    */
   const spellKeys =
@@ -730,7 +730,7 @@ export function FolderView({
       ? ''
       : [...Object.keys(columns).filter((key) => columns[key].decl.kind !== 'mentions'), ...Object.keys(belowColumns).filter((key) => belowColumns[key].decl?.kind !== 'mentions')].join('\n')
   const spell = useMemo(() => spellings(spellKeys === '' ? [] : spellKeys.split('\n')), [spellKeys])
-  /** The rows as the views read them (C1/C3, `rowValues`). A note moved to Other files is in none of them. */
+  /** The rows as the views read them (C1/C3, `rowValues`). A page moved to Other files is in none of them. */
   const shown = useMemo(() => {
     const inViews = moved.size === 0 && goneDirs.length === 0 ? rows : rows.filter((row) => !moved.has(row.path) && !inGoneDir(row.path))
     return inViews.map((row) => {
@@ -831,7 +831,7 @@ export function FolderView({
 
   /**
    * The declarations' ONE write (YAZ-895/1549): ahead first, then disk; a refusal puts the ahead copy
-   * back, shows the banner and REJECTS — so a caller that must not go on (a column delete's note
+   * back, shows the banner and REJECTS — so a caller that must not go on (a column delete's page
    * strips) does not.
    */
   /**
@@ -840,7 +840,7 @@ export function FolderView({
    * did not change is the base's, so the rebase leaves it to disk: a move to Other files in flight, or an outside
    * column change, is kept either way.
    */
-  const block = (base: FolderSettings, changes: Partial<Pick<FolderSettings, 'columns' | 'otherFiles' | 'otherFilesKeepNotes' | 'views' | 'properties' | 'defaultView'>>): FolderSettings => ({
+  const block = (base: FolderSettings, changes: Partial<Pick<FolderSettings, 'columns' | 'otherFiles' | 'otherFilesKeepPages' | 'views' | 'properties' | 'defaultView'>>): FolderSettings => ({
     ...base,
     views: parsed.def.views,
     properties: parsed.def.properties,
@@ -986,30 +986,30 @@ export function FolderView({
   /** A folder's name as the UI says it (C6, C11): its title, else its directory's name; the vault's at the root. */
   const nameOf = (dir: string): string => folderName(folderMap, dir, vaultName)
   /**
-   * The notes whose own field (C1) holds the value of `owner`'s column `key` (C6, C7, 7A 9): the notes under `owner`
+   * The pages whose own field (C1) holds the value of `owner`'s column `key` (C6, C7, 7A 9): the pages under `owner`
    * (shortcuts too) and the subfolder `.folder.md`s below it (D31) — less those under a subfolder that defines the key
    * itself, whose page shows that definition. A subfolder row's value shows on its parent's page, so its `.folder.md`
-   * asks from the folder above it. The one scope of an option rename and of a delete; read-only notes are in it.
+   * asks from the folder above it. The one scope of an option rename and of a delete; read-only pages are in it.
    */
   const sharedHolders = (owner: string, key: string): IndexRecord[] => {
     const cache = new Map<string, boolean>()
     const takes = (dir: string) => takesFrom(folderMap, ids, dir, owner, key, cache)
-    const notes = owner === folder ? rows : folderRows(feed.records, feed.folders, owner)
-    return [...notes.filter((r) => takes(r.folder)), ...feed.folders.filter((r) => r.folder !== owner && inFolder(r.folder, owner) && takes(dirname(r.folder)))]
+    const pages = owner === folder ? rows : folderRows(feed.records, feed.folders, owner)
+    return [...pages.filter((r) => takes(r.folder)), ...feed.folders.filter((r) => r.folder !== owner && inFolder(r.folder, owner) && takes(dirname(r.folder)))]
   }
   /**
-   * S24 (YAZ-4591): the renamed option in every note that holds it — the note's own field (YAZ-4713 C1) in the column
-   * owner's scope (`sharedHolders`); for a separate column (C3), this page's block of each indexed note — one guarded
-   * write per note, read-only notes kept (YAZ-4637 M6: on disk too, wherever the note is).
+   * S24 (YAZ-4591): the renamed option in every page that holds it — the page's own field (YAZ-4713 C1) in the column
+   * owner's scope (`sharedHolders`); for a separate column (C3), this page's block of each indexed page — one guarded
+   * write per page, read-only pages kept (YAZ-4637 M6: on disk too, wherever the page is).
    * Then the toast, whose Undo puts the declaration and the filters back through the LATEST host's door (its ahead copy
-   * is current) and gives each changed note its exact previous value (M5).
+   * is current) and gives each changed page its exact previous value (M5).
    */
-  const renameInNotes = async (key: string, next: ColumnDecl, base: ColumnDecl | undefined, { from, to }: { from: string; to: string }): Promise<void> => {
+  const renameInPages = async (key: string, next: ColumnDecl, base: ColumnDecl | undefined, { from, to }: { from: string; to: string }): Promise<void> => {
     const own = separate.has(key)
     if (own && id === undefined) return // a page with no id holds no values of its own
     const home: ValueHome = own ? { block: id! } : null
     const scope = own ? [...feed.records, ...feed.folders] : sharedHolders(columns[key]?.owner ?? folder, key)
-    const result = await track(renameOptionInNotes(scope, home, key, from, to, readOnlyPaths(scope)))
+    const result = await track(renameOptionInPages(scope, home, key, from, to, readOnlyPaths(scope)))
     const undo = () => {
       const now = latestDeclaration.current
       if (base === undefined) return
@@ -1024,11 +1024,11 @@ export function FolderView({
 
   /**
    * "Separate value for <folder>" on or off (YAZ-4713 C3, 1B). On: this folder's declaration gains `separate: true` (an
-   * inherited column is then declared here, with the definition the page shows). Nothing in the notes moves: the page
+   * inherited column is then declared here, with the definition the page shows). Nothing in the pages moves: the page
    * reads its block of `in`, which is empty for a new column, and shows at once any value an earlier separate column
-   * left there (7A 19). Off: the declaration loses it first; then each note's page value moves into its own field and leaves the block
+   * left there (7A 19). Off: the declaration loses it first; then each page's page value moves into its own field and leaves the block
    * (`separateValues.ts`; `keep` says whose value stays where they differ), and the toast's Undo puts the declaration
-   * and every changed note back. When the declaration, less the switch, is the parent's definition, Off removes it: the
+   * and every changed page back. When the declaration, less the switch, is the parent's definition, Off removes it: the
    * page takes the parent's column again (C6), with no copy here that a later edit on the parent would miss.
    */
   const setSeparate = async (key: string, decl: ColumnDecl, on: boolean, keep: SeparateKeep): Promise<void> => {
@@ -1052,13 +1052,13 @@ export function FolderView({
     const pageId = id
     const holders = separateHolders([...feed.records, ...feed.folders], pageId, key).filter((r) => !locked.has(r.path))
     const { changed, failed } = await track(mergeSeparateValues(holders.map((r) => r.path), pageId, key, keep))
-    if (failed > 0) setColumnError(`Could not move the ${nameOf(folder)} value of "${propertyLabel(parsed.def, `note.${key}`)}" into ${failed} ${failed === 1 ? 'note' : 'notes'}`)
+    if (failed > 0) setColumnError(`Could not move the ${nameOf(folder)} value of "${propertyLabel(parsed.def, `note.${key}`)}" into ${failed} ${failed === 1 ? 'page' : 'pages'}`)
     const undo = () =>
       void latestDeclaration.current(key, { ...shared, separate: true }, after, undefined, true).then(
         () => track(restoreSeparateValues(changed, pageId, key)),
         (err: unknown) => onNotice?.(err instanceof Error ? err.message : String(err), 'error'),
       )
-    onNotice?.(`${propertyLabel(parsed.def, `note.${key}`)} has one value per note again`, 'info', 'undo', { label: 'Undo', run: undo, fades: true })
+    onNotice?.(`${propertyLabel(parsed.def, `note.${key}`)} has one value per page again`, 'info', 'undo', { label: 'Undo', run: undo, fades: true })
   }
 
   /**
@@ -1070,7 +1070,7 @@ export function FolderView({
     setSettingsError(null)
     const before = aheadOtherRef.current
     setAheadOther(next)
-    return sendSettings((base) => block(base, { otherFiles: next.links, otherFilesKeepNotes: next.keep })).then(
+    return sendSettings((base) => block(base, { otherFiles: next.links, otherFilesKeepPages: next.keep })).then(
       () => undefined,
       (err: unknown) => {
         setAheadOther(before)
@@ -1079,13 +1079,13 @@ export function FolderView({
       },
     )
   }
-  // A move shows the S6 toast (YAZ-4541): its Undo moves the note the other way through the moves current then, with no toast.
-  // The lists as they stand, the moved notes then the moved folders; the next write keeps only these (D44).
-  const noteLinks = [...moved.values()]
+  // A move shows the S6 toast (YAZ-4541): its Undo moves the page the other way through the moves current then, with no toast.
+  // The lists as they stand, the moved pages then the moved folders; the next write keeps only these (D44).
+  const pageLinks = [...moved.values()]
   const folderLinks = [...movedFolders.values()]
-  const lists = (notes: string[], folders: { link: string; notes: boolean }[]): TrayLists => ({
-    links: [...notes, ...folders.map((f) => f.link)],
-    keep: folders.filter((f) => !f.notes).map((f) => f.link),
+  const lists = (pages: string[], folders: { link: string; pages: boolean }[]): TrayLists => ({
+    links: [...pages, ...folders.map((f) => f.link)],
+    keep: folders.filter((f) => !f.pages).map((f) => f.link),
   })
   /** The subfolder directly under this page that holds `dir`, while it has not moved: its directory and name. */
   const directSubfolder = (dir: string): { dir: string; name: string } | null => {
@@ -1096,33 +1096,33 @@ export function FolderView({
   }
   const folderLabel = (name: string): string => `${name} (folder)`
   latestTray.current = {
-    toTray: (notePath, undoable = true) => {
-      const row = rows.find((r) => r.path === notePath)
-      if (row === undefined || moved.has(notePath)) return
-      writeOtherFiles(lists([...noteLinks, noteLinkOf(row, resolveLink)], folderLinks)).then(
-        () => undoable && onNotice?.('Moved to Other files', 'info', 'undo', { label: 'Undo', run: () => latestTray.current?.back(notePath, false), fades: true }),
+    toTray: (pagePath, undoable = true) => {
+      const row = rows.find((r) => r.path === pagePath)
+      if (row === undefined || moved.has(pagePath)) return
+      writeOtherFiles(lists([...pageLinks, pageLinkOf(row, resolveLink)], folderLinks)).then(
+        () => undoable && onNotice?.('Moved to Other files', 'info', 'undo', { label: 'Undo', run: () => latestTray.current?.back(pagePath, false), fades: true }),
         () => undefined,
       )
     },
-    back: (notePath, undoable = true) => {
-      const folderMoved = movedFolders.get(notePath)
+    back: (pagePath, undoable = true) => {
+      const folderMoved = movedFolders.get(pagePath)
       if (folderMoved !== undefined) {
-        writeOtherFiles(lists(noteLinks, folderLinks.filter((f) => f !== folderMoved))).then(
-          () => undoable && onNotice?.(`Moved ${folderLabel(folderMoved.name)} back to the table`, 'info', 'undo', { label: 'Undo', run: () => latestTray.current?.toTrayFolder(notePath, folderMoved.notes, false), fades: true }),
+        writeOtherFiles(lists(pageLinks, folderLinks.filter((f) => f !== folderMoved))).then(
+          () => undoable && onNotice?.(`Moved ${folderLabel(folderMoved.name)} back to the table`, 'info', 'undo', { label: 'Undo', run: () => latestTray.current?.toTrayFolder(pagePath, folderMoved.pages, false), fades: true }),
           () => undefined,
         )
         return
       }
-      if (!moved.has(notePath)) return
-      writeOtherFiles(lists([...moved].filter(([p]) => p !== notePath).map(([, link]) => link), folderLinks)).then(
-        () => undoable && onNotice?.('Moved back to the table', 'info', 'undo', { label: 'Undo', run: () => latestTray.current?.toTray(notePath, false), fades: true }),
+      if (!moved.has(pagePath)) return
+      writeOtherFiles(lists([...moved].filter(([p]) => p !== pagePath).map(([, link]) => link), folderLinks)).then(
+        () => undoable && onNotice?.('Moved back to the table', 'info', 'undo', { label: 'Undo', run: () => latestTray.current?.toTray(pagePath, false), fades: true }),
         () => undefined,
       )
     },
-    toTrayFolder: (dir, notes, undoable = true) => {
+    toTrayFolder: (dir, pages, undoable = true) => {
       const row = subfolders.find((r) => rowPage(r.path) === dir)
       if (row === undefined || movedFolders.has(dir)) return
-      writeOtherFiles(lists(noteLinks, [...folderLinks, { link: noteLinkOf(row, resolveLink), notes }])).then(
+      writeOtherFiles(lists(pageLinks, [...folderLinks, { link: pageLinkOf(row, resolveLink), pages }])).then(
         () => undoable && onNotice?.(`Moved ${folderLabel(row.title)} to Other files`, 'info', 'undo', { label: 'Undo', run: () => latestTray.current?.back(dir, false), fades: true }),
         () => undefined,
       )
@@ -1133,27 +1133,27 @@ export function FolderView({
       const target = rel === '' ? null : directSubfolder(absFrom(root, rel))
       return target !== null && target.dir === absFrom(root, rel) ? target : null
     },
-    // The ask only when the answer changes what the table shows (OF2): the notes of the folder this view shows.
+    // The ask only when the answer changes what the table shows (OF2): the pages of the folder this view shows.
     askFolder: (dir, shown) => {
       const target = directSubfolder(dir)
       if (target === null) return
-      const notes = shown.filter((p) => p.startsWith(`${dir}/`))
-      if (notes.length === 0) return latestTray.current?.toTrayFolder(dir, true)
-      const inside = [...new Set(notes.map((p) => dirname(p)).filter((d) => d !== dir).map((d) => d.slice(dir.length + 1).split('/')[0]))].sort()
-      setFolderAsk({ dir, name: target.name, count: notes.length, inside })
+      const pages = shown.filter((p) => p.startsWith(`${dir}/`))
+      if (pages.length === 0) return latestTray.current?.toTrayFolder(dir, true)
+      const inside = [...new Set(pages.map((p) => dirname(p)).filter((d) => d !== dir).map((d) => d.slice(dir.length + 1).split('/')[0]))].sort()
+      setFolderAsk({ dir, name: target.name, count: pages.length, inside })
     },
   }
   /** The tray takes moves while it shows and the page is not read only (D36). */
   const trayMoves = trayOn && !pageEffective
 
   /**
-   * Whose value a delete of this folder's column clears, and where it is (YAZ-4713 C7). A shared column: the note's own
-   * field (C1) in the notes under this folder (shortcuts too) and the subfolder `.folder.md`s (D31) — less those under a
+   * Whose value a delete of this folder's column clears, and where it is (YAZ-4713 C7). A shared column: the page's own
+   * field (C1) in the pages under this folder (shortcuts too) and the subfolder `.folder.md`s (D31) — less those under a
    * subfolder that defines the key itself, whose page shows that definition. A separate column (C3): this page's block
-   * in every indexed note. A read-only note is never cleared, and is not counted.
+   * in every indexed page. A read-only page is never cleared, and is not counted.
    */
   const valueScope = (key: string): { records: IndexRecord[]; home: ValueHome } => {
-    // A Linked mentions column has no values in the notes (YAZ-4738 L1): its delete clears none, and a same-named field stays.
+    // A Linked mentions column has no values in the pages (YAZ-4738 L1): its delete clears none, and a same-named field stays.
     if (columns[key]?.decl.kind === 'mentions') return { records: [], home: null }
     const writable = (r: IndexRecord) => !isReadOnlyProperties(r.properties)
     if (separate.has(key)) return { records: id === undefined ? [] : [...feed.records, ...feed.folders].filter(writable), home: { block: id ?? '' } }
@@ -1161,7 +1161,7 @@ export function FolderView({
   }
 
   sourceMoves.current = {
-    // "Change on <folder> only": the definition the page shows becomes this folder's own; the note values stay one (C1).
+    // "Change on <folder> only": the definition the page shows becomes this folder's own; the page values stay one (C1).
     here: (key) => (columns[key] === undefined ? Promise.resolve() : writeDeclaration(key, columns[key].decl, liveSettings.columns[key], undefined, true)),
     // "Use <parent>'s": this folder's declaration goes; the views keep the column, which now shows the parent's definition.
     useParent: async (key) => {
@@ -1192,7 +1192,7 @@ export function FolderView({
 
   /** Whether a link's side names a page: a link with two sides takes the left one when it does (YAZ-4954). */
   const isPage = (page: string): boolean => resolveLink(page) !== null
-  /** The folder a link names (a Relation's target, a tied column's `from.folder`, YAZ-4781), root-relative; null when it names none, or names a note. */
+  /** The folder a link names (a Relation's target, a tied column's `from.folder`, YAZ-4781), root-relative; null when it names none, or names a page. */
   const folderOfLink = (link: string | undefined): string | null => {
     if (link === undefined || link.trim() === '') return null
     const hit = resolveLink(exactLinkTarget(link, isPage) ?? link.trim())
@@ -1204,24 +1204,24 @@ export function FolderView({
   const tiedOn = (target: string, key: string, owner: string): string | undefined =>
     tiedKeyOf(columnsOf(target), key, (link) => (link === undefined ? owner === '' : folderOfLink(link) === owner))
   /**
-   * R2: one tied cell's write, as the link column's writes in the linking notes (`writeTiedCell`). The list before is
+   * R2: one tied cell's write, as the link column's writes in the linking pages (`writeTiedCell`). The list before is
    * the snapshot's, or this page's last write of the cell while the index has not shown it.
    */
-  const writeTied = async (note: string, { key, value }: PropertyWrite): Promise<PairWritten> => {
+  const writeTied = async (page: string, { key, value }: PropertyWrite): Promise<PairWritten> => {
     const decl = pageSettings.columns[key]
     const column = decl.from?.column
     const owner = decl.from?.folder === undefined ? '' : folderOfLink(decl.from.folder)
     if (column === undefined || owner === null) throw new Error(`Can't find the folder of ${propertyLabel(parsed.def, `note.${key}`)}`)
-    const row = rows.find((r) => r.path === note) ?? subfolders.find((r) => r.path === note)
-    if (row === undefined || tied === undefined) throw new Error(`Can't find ${note.slice(note.lastIndexOf('/') + 1)}`)
-    const at = `${note}\n${key}`
+    const row = rows.find((r) => r.path === page) ?? subfolders.find((r) => r.path === page)
+    if (row === undefined || tied === undefined) throw new Error(`Can't find ${page.slice(page.lastIndexOf('/') + 1)}`)
+    const at = `${page}\n${key}`
     const sent = tiedSent.current.get(at)
     const pageOf = (link: string) => resolveLink(exactLinkTarget(link, isPage) ?? link)
     const recordOf = (page: string) => feed.records.find((r) => r.path === page) ?? folderMap.get(relTo(root, page))
     const result = await writeTiedCell({
       unit,
       row,
-      rowLink: noteLinkOf(row, resolveLink),
+      rowLink: pageLinkOf(row, resolveLink),
       column,
       owner: owner === '' ? root.replace(/\/+$/, '') : absFrom(root, owner),
       ownerName: nameOf(owner),
@@ -1246,7 +1246,7 @@ export function FolderView({
   }
   /**
    * YAZ-4781 R1: a link column's other side. Both ways adds the tied Linked mentions column to the folder its Relation
-   * names, One way takes it off: ONE write to that folder's `.folder.md` (a read-only one refuses, D36), no note value
+   * names, One way takes it off: ONE write to that folder's `.folder.md` (a read-only one refuses, D36), no page value
    * changes, then a toast with Undo.
    */
   const relation: NonNullable<FolderHost['relation']> = {
@@ -1277,7 +1277,7 @@ export function FolderView({
         if (existing !== undefined) return
         const name = tiedKeyFor(`${nameOf(owner)} · ${key}`, there)
         const record = folderMap.get(owner)
-        const from = owner === '' ? { column: key } : { column: key, folder: record === undefined ? `[[${owner}]]` : noteLinkOf(record, resolveLink) }
+        const from = owner === '' ? { column: key } : { column: key, folder: record === undefined ? `[[${owner}]]` : pageLinkOf(record, resolveLink) }
         const tiedDecl: ColumnDecl = { kind: 'mentions', from, pair: true }
         await track(addTiedColumn(at, name, tiedDecl, ids))
         onNotice?.(`Added ${name} to ${nameOf(target)}`, 'info', 'undo', { label: 'Undo', run: () => void track(removeTiedColumn(at, name, tiedDecl, null)).catch(report), fades: true })
@@ -1299,21 +1299,21 @@ export function FolderView({
     vaultName,
     resolveLink,
     // A group "+" under group-by-Folder is born in that group's folder — a subfolder of this one; any other birth is here.
-    // Wherever it is born, the seeded values are the note's own fields (YAZ-4713 C1) — a separate column's (C3) go to
+    // Wherever it is born, the seeded values are the page's own fields (YAZ-4713 C1) — a separate column's (C3) go to
     // THIS page's block, and a page with no id is given one first (`folderId`). It is titled `Untitled`, every time
     // (YAZ-2420 🔒 D20: the ids keep the files apart), unless the caller knows what it is called (YAZ-943's inline board
-    // add types one). In a vault that does not use IDs (YAZ-2523 🔒 V3) only the name keeps two notes apart, so an
+    // add types one). In a vault that does not use IDs (YAZ-2523 🔒 V3) only the name keeps two pages apart, so an
     // untyped one is `Untitled`, then `Untitled 2`, `Untitled 3`, …
     create: async (seed, name) => {
-      // A new note in a read-only vault asks first (YAZ-4939); a refusal is the pane's one-line error.
+      // A new page in a read-only vault asks first (YAZ-4939); a refusal is the pane's one-line error.
       if (!(await vault.allowFileAction(root))) throw new Error(VAULT_READ_ONLY_TIP)
       const into = seed.folder !== undefined && inFolder(seed.folder, folder) ? seed.folder : folder
       const dir = into === folder ? path : absFrom(root, into)
       const pageSeed = Object.fromEntries(Object.entries(seed.properties).filter(([key]) => separate.has(key)))
       const block = Object.keys(pageSeed).length === 0 ? undefined : id ?? (await folderId(path))
-      // No note holds a Linked mentions column, a tied one (YAZ-4781) neither: a seed of one is dropped.
+      // No page holds a Linked mentions column, a tied one (YAZ-4781) neither: a seed of one is dropped.
       const fields = Object.fromEntries(Object.entries(seed.properties).filter(([key]) => !separate.has(key) && pageSettings.columns[key]?.kind !== 'mentions'))
-      // No seed when the view seeds nothing: the note is then its folder's template as it is. A template field in other
+      // No seed when the view seeds nothing: the page is then its folder's template as it is. A template field in other
       // capitals than a seeded column takes the column's spelling first (YAZ-4769), so the seed replaces it: one key.
       const seeded =
         Object.keys(seed.properties).length === 0 && seed.tags === undefined
@@ -1327,20 +1327,20 @@ export function FolderView({
               }
             }
       const typed = (name ?? '').trim()
-      if (ids || typed !== '') return createNote(dir, typed === '' ? 'Untitled' : typed, ids, seeded)
+      if (ids || typed !== '') return createPage(dir, typed === '' ? 'Untitled' : typed, ids, seeded)
       for (let n = 1; ; n += 1) {
         try {
-          return await createNote(dir, n === 1 ? 'Untitled' : `Untitled ${n}`, false, seeded)
+          return await createPage(dir, n === 1 ? 'Untitled' : `Untitled ${n}`, false, seeded)
         } catch (err) {
           if (!(err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS')) throw err
         }
       }
     },
-    // ONE guarded write per note (YAZ-4713 C1): each value is the note's own field; a separate column's (C3) is this
+    // ONE guarded write per page (YAZ-4713 C1): each value is the page's own field; a separate column's (C3) is this
     // page's block, and a page with no id is given one first — the path its first shortcut uses (`folderId`). No value
-    // is dropped (C9). A key no column may have is refused, and so is a read-only note's write: this is the one door
+    // is dropped (C9). A key no column may have is refused, and so is a read-only page's write: this is the one door
     // every view write passes (YAZ-3076 D6, S54).
-    writeValues: guardReadOnly(locked, async (note, asked) => {
+    writeValues: guardReadOnly(locked, async (page, asked) => {
       const refused = asked.find(({ key }) => reserved.has(key))
       if (refused !== undefined) throw new Error(reservedKeyText(refused.key))
       // YAZ-4769: a view key in other capitals than its column (a view that still names `Dessert Column`) writes the column.
@@ -1348,26 +1348,26 @@ export function FolderView({
         const column = spell.get(keyFold(write.key))
         return column === undefined || column === write.key ? write : { ...write, key: column }
       })
-      // The backstop of a Linked mentions column (YAZ-4738 L1): the app works it out, and no note holds it. The views'
+      // The backstop of a Linked mentions column (YAZ-4738 L1): the app works it out, and no page holds it. The views'
       // columns, so a subfolder's Linked mentions column shown here (C11) is refused too.
-      // A tied column (YAZ-4781 R2) is the exception: its write is the linking notes' writes, and this note holds none of it.
+      // A tied column (YAZ-4781 R2) is the exception: its write is the linking pages' writes, and this page holds none of it.
       const isTied = (key: string) => pageSettings.columns[key]?.pair === true
       const worked = writes.find(({ key }) => pageSettings.columns[key]?.kind === 'mentions' && !isTied(key))
-      if (worked !== undefined) throw new Error(`${worked.key} is a Linked mentions column: the app works it out, and no note holds it`)
+      if (worked !== undefined) throw new Error(`${worked.key} is a Linked mentions column: the app works it out, and no page holds it`)
       const pairs = writes.filter(({ key }) => isTied(key))
       const own = pairs.length === 0 ? writes : writes.filter(({ key }) => !isTied(key))
       const undos: PairWritten[] = []
-      for (const write of pairs) undos.push(await writeTied(note, write))
-      // YAZ-4769: under the column's spelling; the note's other spellings of the key go in the same write, the app's keys never.
-      const written = pairs.length > 0 && own.length === 0 ? undefined : await writeRouted(note, own, separate, own.some(({ key }) => separate.has(key)) ? id ?? (await folderId(path)) : undefined)
-      // One Undo for the cell (R2): the table's ⌘Z step puts back exactly the notes this wrote.
+      for (const write of pairs) undos.push(await writeTied(page, write))
+      // YAZ-4769: under the column's spelling; the page's other spellings of the key go in the same write, the app's keys never.
+      const written = pairs.length > 0 && own.length === 0 ? undefined : await writeRouted(page, own, separate, own.some(({ key }) => separate.has(key)) ? id ?? (await folderId(path)) : undefined)
+      // One Undo for the cell (R2): the table's ⌘Z step puts back exactly the pages this wrote.
       return pairs.length === 0 ? written : ({ undoPair: async () => { for (const undo of undos.reverse()) await undo.undoPair() } } satisfies PairWritten)
     }, unit),
-    // ONE declaration through `writeDeclaration`. An option rename (YAZ-4591 S24) goes on to the notes once the
+    // ONE declaration through `writeDeclaration`. An option rename (YAZ-4591 S24) goes on to the pages once the
     // declaration has landed: a refused declaration touches none.
     setColumn: (key, next, base, rename) => {
       const written = writeDeclaration(key, next, base, rename)
-      return rename === undefined ? written : written.then(() => renameInNotes(key, next, base, rename))
+      return rename === undefined ? written : written.then(() => renameInPages(key, next, base, rename))
     },
     // `settings` is the index SNAPSHOT, so it can be behind: `parsed` is rebuilt from it and is
     // otherwise ahead by unechoed local writes. Reading the def instead keeps an in-flight
@@ -1412,10 +1412,10 @@ export function FolderView({
       }, failed)
     },
     // Delete column (YAZ-1513): the settings half is `commitSettings` — the same one door, the same
-    // echo behaviour — AWAITED, so a refused write aborts before any note is touched; the
-    // strips report into the column banner, no rollback. They reach every indexed note holding
+    // echo behaviour — AWAITED, so a refused write aborts before any page is touched; the
+    // strips report into the column banner, no rollback. They reach every indexed page holding
     // the field in this folder's block. Not offered where the vault does not use IDs (YAZ-2523 🔒 V11):
-    // a column there is the notes' own property, and is hidden instead.
+    // a column there is the pages' own property, and is hidden instead.
     ...(ids && {
       deleteColumn: (key: string, clear = true) =>
         deleteColumnEverywhere(key, {
@@ -1425,7 +1425,7 @@ export function FolderView({
           below: foldersTaking(folderMap, ids, folder, key.replace(/^note\./, '')),
           writeSettings: commitSettings,
           // The settings half offers Undo (YAZ-4608 C6): one settings write puts the column back; a refusal shows the banner as any settings write does.
-          // Its values back too (YAZ-3746 13AY); a note it could not write back is said in the column banner.
+          // Its values back too (YAZ-3746 13AY); a page it could not write back is said in the column banner.
           notice: (message, restore) => onNotice?.(message, 'info', 'undo', { label: 'Undo', run: () => void restore().catch((err: unknown) => setColumnError(err instanceof Error ? err.message : String(err))), fades: true }),
           // The Undo runs later (YAZ-4637 M3): it inverts the delete on the live declarations and def current then.
           current: () => ({ columns: latestOwnColumns.current, def: latestParsed.current.def, writeSettings: latestCommit.current ?? commitSettings }),
@@ -1433,7 +1433,7 @@ export function FolderView({
     }),
     valueCount: (key: string) => {
       const { records, home } = valueScope(key.replace(/^note\./, ''))
-      return notesHolding(records, home, key).length
+      return pagesHolding(records, home, key).length
     },
     // "Separate value for <folder>" (YAZ-4713 C3): only where the vault uses IDs — the page's block is named by its id.
     ...(ids && {
@@ -1443,24 +1443,24 @@ export function FolderView({
       },
     }),
     // A folder row's title is its folder's (YAZ-4579 D32): the folder is renamed, title and directory, as its page title does.
-    retitle: (note, title) => {
-      if (locked.has(note)) return
-      if (rowPage(note) !== note) onRetitle(rowPage(note), title, 'dir')
-      else onRetitle(note, title, 'file')
+    retitle: (page, title) => {
+      if (locked.has(page)) return
+      if (rowPage(page) !== page) onRetitle(rowPage(page), title, 'dir')
+      else onRetitle(page, title, 'file')
     },
     openRight: onOpenFileRight,
     openFolderPage: onOpenFolderPage,
     openNewTab: onOpenFileNewTab,
-    renderNoteEditor,
+    renderPageEditor,
     openBackground: onOpenFileBackground,
-    // "Delete note…" and "Duplicate note" (YAZ-4592 S26): the sidebar's delete, and a copy beside the note.
+    // "Delete page…" and "Duplicate page" (YAZ-4592 S26): the sidebar's delete, and a copy beside the page.
     trash: onDeleteEntries,
     // A read-only vault asks before the delete sheet (YAZ-4985), and the delete then does not ask again.
     allowDelete: () => vault.allowFileAction(root),
-    // A duplicate is a New note: a read-only vault asks first (YAZ-4985), as the page's New does.
-    duplicate: (note) =>
+    // A duplicate is a New page: a read-only vault asks first (YAZ-4985), as the page's New does.
+    duplicate: (page) =>
       void vault.allowFileAction(root).then((ok) => {
-        if (ok) return api.file.duplicate({ path: note })
+        if (ok) return api.file.duplicate({ path: page })
       }).catch((err: unknown) => onNotice?.(`Can't duplicate: ${err instanceof Error ? err.message : String(err)}`, 'error')),
     onNotice,
     relation,
@@ -1471,8 +1471,8 @@ export function FolderView({
   const visibleError = settingsError ?? columnError
 
   return (
-    // The note editor's own scroller and blocks in a note's order (D9) — title and properties, the
-    // views where the body would be, the comments — so the page lines up with a note's column and
+    // The page editor's own scroller and blocks in a page's order (D9) — title and properties, the
+    // views where the body would be, the comments — so the page lines up with a page's column and
     // the table's sticky header finds the scroller it bridges to (YAZ-1151).
     <>
       <FolderToolbar
@@ -1480,7 +1480,7 @@ export function FolderView({
         zoom={zoom}
         onZoom={setZoom}
         readOnly={pageBase}
-        // As a note's cog (YAZ-3076 D4): off turns it on at once; on opens the chip's "Allow edits?" box; on while a timed unlock runs locks now (YAZ-4939).
+        // As a page's cog (YAZ-3076 D4): off turns it on at once; on opens the chip's "Allow edits?" box; on while a timed unlock runs locks now (YAZ-4939).
         onToggleReadOnly={() => (pageBase ? (unlock.until !== null ? unlock.lock() : setAskingUnlock(true)) : setPageLocked(true, writeOwnKey(READ_ONLY_KEY, true)))}
         asking={askingUnlock}
         onAsk={() => setAskingUnlock(true)}
@@ -1521,7 +1521,7 @@ export function FolderView({
       />
       <div ref={hostRef} className="editor-host" style={{ '--document-zoom': zoom / 100 } as CSSProperties}>
         <div className="page-header">
-          {/* Read only (D36) locks the title and the folder's own properties, as a note's does. */}
+          {/* Read only (D36) locks the title and the folder's own properties, as a page's does. */}
           <PageTitle path={path} kind="dir" titles={titles} readOnly={pageEffective} onRetitle={(title) => onRetitle(path, title, 'dir')} />
           {disk !== null && <MemoFrontmatterPanel file={disk} root={root} properties={properties} wikilinks={source} readOnly={pageEffective} links={panelLinks} inheritColumns={folderPages?.inheritColumns} onNotice={onNotice} />}
         </div>
@@ -1535,7 +1535,7 @@ export function FolderView({
           <FolderPageChips.Provider value={chips}>
             {/* The skins mark a row that is here by a shortcut (D2): they are told which folder "here" is. */}
             <ViewFolder.Provider value={folder}>
-              {/* The views' row menus and drags reach the tray through this door; a tray note dropped here moves back (YAZ-4597). */}
+              {/* The views' row menus and drags reach the tray through this door; a tray page dropped here moves back (YAZ-4597). */}
               <OtherFilesMove.Provider value={trayMoves ? moveToTray : null}>
               <OtherFilesFolderMove.Provider value={trayMoves ? folderDoor : null}>
               <ShortcutActions.Provider value={shortcutDoors}>
@@ -1572,7 +1572,7 @@ export function FolderView({
             <OtherFiles
               root={root}
               dir={path}
-              notes={trayNotes}
+              pages={trayPages}
               folders={trayFolders}
               onOpen={onOpenFile}
               onOpenBackground={onOpenFileBackground}
@@ -1594,7 +1594,7 @@ export function FolderView({
                 {folderTrayMessage(folderAsk.count, folderAsk.inside)}
               </>
             }
-            confirmLabel={unit('Move the folder and its notes')}
+            confirmLabel={unit('Move the folder and its pages')}
             focusConfirm
             onConfirm={() => {
               setFolderAsk(null)
@@ -1632,7 +1632,7 @@ export function FolderView({
           />
         )}
         {disk !== null && <MemoCommentsSection file={disk} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} />}
-        {/* The notes and folders that link to the FOLDER (D10): its path is what such a link resolves to. */}
+        {/* The pages and folders that link to the FOLDER (D10): its path is what such a link resolves to. */}
         <MemoBacklinksSection path={path} source={source} openCurrent={onOpenFile} openBackground={onOpenFileBackground} />
       </div>
     </>

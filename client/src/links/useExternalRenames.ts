@@ -13,13 +13,13 @@
  * for THIS SESSION (a keyed dismissed set — the next refetch will re-detect the same pair and
  * must not re-offer it). Update marks the pair handled the same way, then (1) repairs the app
  * over `api.file.repairRename` — main runs the E1 store repair and pushes `file:renamed`, so tabs
- * and editors follow through the EXISTING downstream — and (2) rewrites the referencing notes
+ * and editors follow through the EXISTING downstream — and (2) rewrites the referencing pages
  * through the E1/E1b engine against fresh index/tree snapshots re-pathed to the pre-rename
  * view, surfacing the usual summary notice.
  *
  * In-app renames echo through the watcher as the same unlink+add pair, so App forwards every
  * `file:renamed` push into `suppress` — an exact pair for files, a prefix mapping for dirs
- * (a folder rename shows up as one pair PER moved note) — and those echoes never banner.
+ * (a folder rename shows up as one pair PER moved page) — and those echoes never banner.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DiffFileStat, IndexRecord, TreeNode } from '@shared/types'
@@ -32,7 +32,7 @@ import { basenameKey } from '@shared/linkResolver'
 export interface RenameBannerItem {
   oldPath: string
   newPath: string
-  /** The rewrite engine's referencing-note count (always > 0 — N === 0 never banners). */
+  /** The rewrite engine's referencing-page count (always > 0 — N === 0 never banners). */
   count: number
 }
 
@@ -55,7 +55,7 @@ export function useExternalRenames(root: string | null, notify: (message: string
   const [queue, setQueue] = useState<RenameBannerItem[]>([])
   /** Session-level: handled or dismissed pairs, never offered again (keys are absolute-path pairs, so they survive root switches). */
   const dismissed = useRef(new Set<string>())
-  /** In-app DIR renames (`file:renamed` kind 'dir'): each moved note echoes as its own pair — suppress by prefix mapping. */
+  /** In-app DIR renames (`file:renamed` kind 'dir'): each moved page echoes as its own pair — suppress by prefix mapping. */
   const dirRenames = useRef<{ oldDir: string; newDir: string }[]>([])
   /** The previous ready snapshot (the while-running diff base); null = next snapshot is the first for this root. */
   const prev = useRef<IndexRecord[] | null>(null)
@@ -186,7 +186,7 @@ export function useExternalRenames(root: string | null, notify: (message: string
         notify(`Can't update links: ${err instanceof Error ? err.message : String(err)}`)
         return
       }
-      // (2) Rewrite the referencing notes through the E1/E1b engine, against FRESH snapshots
+      // (2) Rewrite the referencing pages through the E1/E1b engine, against FRESH snapshots
       // re-pathed to the pre-rename view (the engine's referencing set needs the index as it was).
       // No index snapshot → the repair stands, links stay as they are.
       const { records, folders, ids } = await api.index(r).catch(() => ({ records: [] as IndexRecord[], folders: [] as IndexRecord[], ids: false }))

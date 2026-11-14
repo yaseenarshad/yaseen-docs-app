@@ -28,7 +28,7 @@
  * the cells' own alignment (YAZ-3819) in the same step. Its value
  * is the alignment all columns share; mixed columns light no button. While any cell has its own
  * alignment it reads "Mixed": no button is lit, so a pick of the shown value clears them too. "Fit
- * columns to the page" clears every cell's `colwidth`, and is disabled while no column has a width. A read-only note
+ * columns to the page" clears every cell's `colwidth`, and is disabled while no column has a width. A read-only page
  * shows no rows (R3).
  */
 import { closeHistory } from '@milkdown/kit/prose/history'
@@ -123,7 +123,7 @@ export const swatchIcon = (background: string) => (): SVGElement => {
 /**
  * "Header row ›" (YAZ-4774) and "Subheader row ›" (YAZ-4899): "Plain, like any row", the Sticky switch, then each part's
  * choices in the Fill · Text · Style tabs, a ✓ at what the table shows: its own part, else Settings' (no Text colour in
- * Settings is Full, a note table's look). A pick that equals Settings removes the part. YAZ-4794: Text colour (Muted,
+ * Settings is Full, a page table's look). A pick that equals Settings removes the part. YAZ-4794: Text colour (Muted,
  * Full, the eight colours) and Align (Follow column, Left, Center, Right) are parts too. The cell's right-click menu draws
  * the same row as its "Header row style ›" / "Subheader row style ›" panel (`tableMenu.ts`, YAZ-4899).
  */

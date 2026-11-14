@@ -1,18 +1,18 @@
 /**
- * The New… box (⌘N, YAZ-3556 D5, D7; YAZ-4252): four tiles in a row — Note, Excalidraw drawing, draw.io diagram,
- * Folder — and under them the folder the item goes to, three place shortcuts and "Choose…". It always opens on Note,
- * in "Default location for new notes".
+ * The New… box (⌘N, YAZ-3556 D5, D7; YAZ-4252): four tiles in a row — Page, Excalidraw drawing, draw.io diagram,
+ * Folder — and under them the folder the item goes to, three place shortcuts and "Choose…". It always opens on Page,
+ * in "Default location for new pages".
  *
  * Two rows, kind then place (YAZ-4252 keys): an outline bar marks the row the keys act on, and each row's choice has
  * a check. Row 1: 1–4 pick the kind and move to row 2; ⏎ or ↓ move on too. Row 2: 1–3 pick a shortcut, 4 opens
- * Choose…, ⏎ makes the item. ↑ goes back to row 1, ← → move in a row, Esc closes. So `1`, `3`, ⏎ makes a note in the
+ * Choose…, ⏎ makes the item. ↑ goes back to row 1, ← → move in a row, Esc closes. So `1`, `3`, ⏎ makes a page in the
  * third place. A click picks a tile, a double click makes it.
  *
  * The shortcuts (D2, D3) are the vault's, `.yaseendocs/new-places.json`: the vault the "Goes to" folder is in, so a
  * pick in another vault of the window shows that vault's. An empty one reads "+ Add place" and opens the picker to
  * save one; a right-click on one offers "Change place" and "Remove". A shortcut to a folder that is no longer in its
  * vault shows muted; its use (a click, its key, ⏎) says "This folder is gone. Change place or remove it." and keeps
- * the folder on show (the checker's round 1). ← → land on it with no note and step on past it (YAZ-4266). A shortcut
+ * the folder on show (the checker's round 1). ← → land on it with no page and step on past it (YAZ-4266). A shortcut
  * save that fails says "Could not save this place." and the slot keeps its old place. Choose… (D4) opens the picker
  * with the last places used on this Mac at the top (`recentPlaces`).
  *
@@ -35,7 +35,7 @@ export type NewItemKind = EntryKind
 
 /** The tiles, in their order: the icon is the one the sidebar gives a file of that kind (a folder's for Folder). */
 export const NEW_ITEM_KINDS: readonly { kind: NewItemKind; label: (unit: UnitText) => string; sample: string }[] = [
-  { kind: 'file', label: (unit) => unit('Note'), sample: 'a.md' },
+  { kind: 'file', label: (unit) => unit('Page'), sample: 'a.md' },
   { kind: 'drawing', label: () => 'Excalidraw drawing', sample: 'a.excalidraw' },
   { kind: 'diagram', label: () => 'draw.io diagram', sample: 'a.drawio' },
   { kind: 'dir', label: () => 'Folder', sample: 'a' },
@@ -88,7 +88,7 @@ function useNewPlaces(root: string): Array<string | null> {
 interface NewItemBoxProps {
   /** The window's vaults, the vault in front first; never empty. */
   vaults: readonly PlaceVault[]
-  /** The folder the item goes to (absolute): "Default location for new notes", or the vault root (`missing`). */
+  /** The folder the item goes to (absolute): "Default location for new pages", or the vault root (`missing`). */
   dir: string
   /** The set folder that the vault does not have (D3): the box goes to the vault root and says so. */
   missing: string | null
@@ -219,7 +219,7 @@ export function NewItemBox({ vaults, dir: startDir, missing, onMake, onClose }: 
       else return
     } else {
       // The filled shortcuts, in order: ← → step through them. A gone one is a step too: the arrows stand on it with
-      // no note, so the next arrow goes on past it (YAZ-4266); ⏎ on it says it is gone.
+      // no page, so the next arrow goes on past it (YAZ-4266); ⏎ on it says it is gone.
       const filled = places.flatMap((p, i) => (p === null ? [] : [i]))
       const step = (by: -1 | 1) => {
         const next = filled[filled.indexOf(chosenSlot) + by] ?? (chosenSlot < 0 ? filled[by < 0 ? filled.length - 1 : 0] : undefined)

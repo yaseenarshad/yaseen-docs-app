@@ -104,7 +104,7 @@ describe('Escape returns to the sidebar (YAZ-947)', () => {
 
 /**
  * A page unlocked for a time (YAZ-4997, "hit CMD Enter and/or esc to go back to read only mode"): the editor asks the
- * host's `lockAgain` at Esc (before the sidebar) and at ⌘↵ (above the note's own ⌘↵). A menu's Esc wins first.
+ * host's `lockAgain` at Esc (before the sidebar) and at ⌘↵ (above the page's own ⌘↵). A menu's Esc wins first.
  */
 describe('Esc and ⌘↵ lock an unlocked page again (YAZ-4997)', () => {
   it('Esc locks it, and does NOT go to the sidebar; only a later Esc goes on (here: with nothing to lock, to the row)', async () => {
@@ -136,7 +136,7 @@ describe('Esc and ⌘↵ lock an unlocked page again (YAZ-4997)', () => {
     expect(lockAgain).toHaveBeenCalledTimes(1)
   })
 
-  it('⌘↵ locks it, above the note\'s own ⌘↵ (the task box cycle); with nothing to lock ⌘↵ keeps its meaning', async () => {
+  it('⌘↵ locks it, above the page\'s own ⌘↵ (the task box cycle); with nothing to lock ⌘↵ keeps its meaning', async () => {
     let unlocked = true
     const lockAgain = vi.fn(() => unlocked)
     const { view } = await mount('- item\n', lockAgain)

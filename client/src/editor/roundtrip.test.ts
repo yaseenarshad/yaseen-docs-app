@@ -1,6 +1,6 @@
 /**
  * Crepe round-trip (GRO-1961): a synthetic fixture plus, when ROUNDTRIP_FILES
- * names some (paths joined by the OS path delimiter), real notes of your own
+ * names some (paths joined by the OS path delimiter), real pages of your own
  * (read-only) go through createCrepe() +
  * getMarkdownForSave(). Formatting normalisation is accepted (CONTRACTS.md
  * "Editor rules" 5); the assertions are on stable invariants: headings and words.
@@ -246,7 +246,7 @@ describe('locked editor rules (createCrepe)', () => {
       'See [[a#^block]] with a block ref.\n',
       'Adjacent [[a]][[b]] links.\n',
       '**see [[a]]**\n',
-      'Unicode [[Café Notes/Über plan]] with spaces.\n',
+      'Unicode [[Café Pages/Über plan]] with spaces.\n',
       'An unclosed [[ stays literal.\n',
     ]
     for (const md of cases) expect(await roundTrip(md)).toBe(md)
@@ -262,7 +262,7 @@ describe('locked editor rules (createCrepe)', () => {
     const root = document.createElement('div')
     document.body.appendChild(root)
     const boards = { place: (src: string) => ({ root: '/w', path: `/w/${src}`, vault: 'Work' }) }
-    const crepe = createCrepe({ root, defaultValue: md, boardEmbeds: { root: '/v' }, image: { root: '/v', notePath: '/v/n.md', boards } })
+    const crepe = createCrepe({ root, defaultValue: md, boardEmbeds: { root: '/v' }, image: { root: '/v', pagePath: '/v/n.md', boards } })
     await crepe.create()
     await new Promise((resolve) => setTimeout(resolve, 0)) // the window chunk's load settles
     expect(getMarkdownForSave(crepe)).toBe(md)
@@ -412,8 +412,8 @@ describe('the text rules never change code (YAZ-2660)', () => {
     inBullet: TRIGGERS, // C11
   }
   const fenced = (fence: string, code: string[], indent = ''): string[] => [fence, ...code, fence].map((line) => indent + line)
-  /** The note, with the fence of the C5 block and of the C6 block as given. */
-  const note = (c5: string, c6: string): string =>
+  /** The page, with the fence of the C5 block and of the C6 block as given. */
+  const page = (c5: string, c6: string): string =>
     [
       'Intro.',
       '',
@@ -434,11 +434,11 @@ describe('the text rules never change code (YAZ-2660)', () => {
       '',
     ].join('\n')
 
-  it('one note with every trigger inside code: each code line is the same on the page and in the saved file', async () => {
-    const first = await codeRoundTrip(note('~~~', FENCE))
+  it('one page with every trigger inside code: each code line is the same on the page and in the saved file', async () => {
+    const first = await codeRoundTrip(page('~~~', FENCE))
     expect(first.code).toEqual([CODE.plain, CODE.inner, CODE.inner, CODE.info, CODE.inBullet].map((code) => code.join('\n')))
     // Byte for byte the file, but for the fences of the C5 and C6 blocks, which remark spells with 4 backticks.
-    expect(first.saved).toBe(note('````', '````'))
+    expect(first.saved).toBe(page('````', '````'))
     expect(await codeRoundTrip(first.saved)).toEqual(first)
   })
 })

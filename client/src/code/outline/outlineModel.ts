@@ -17,7 +17,7 @@
  *  - The DISPLAY order is the reader's sort ("…" › Sort by): Position, Name or Type (`displayOrder`).
  *    The rows (`visibleRows`) follow it.
  *
- * NO DEPTH CAP and NO ROW CAP: the note table of contents keeps 5 levels and 200 rows, the Outline
+ * NO DEPTH CAP and NO ROW CAP: the page table of contents keeps 5 levels and 200 rows, the Outline
  * keeps every symbol. The list draws only the rows on screen (`CodeOutline.tsx`).
  */
 import type { CodeOutlineSort } from '@shared/types'

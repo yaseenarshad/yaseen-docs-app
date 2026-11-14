@@ -1,7 +1,7 @@
 /**
  * Every key on one page (YAZ-3564) against the REAL app, on a temp vault:
- *   1 Settings › Hotkeys › Note: Bold moves from ⌘B to ⌥⌘B with the recorder and Save (K7, K8)
- *   2 a note opened after it bolds with ⌥⌘B, and ⌘B bolds nothing (K4: a note reads its keys when it opens)
+ *   1 Settings › Hotkeys › Page: Bold moves from ⌘B to ⌥⌘B with the recorder and Save (K7, K8)
+ *   2 a page opened after it bolds with ⌥⌘B, and ⌘B bolds nothing (K4: a page reads its keys when it opens)
  * The menu item is clicked by id with no focus step (`clickMenuItemQuietly`): a hidden run never takes the focus.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
@@ -33,11 +33,11 @@ test.afterAll(async () => {
 
 const dialog = () => win.locator('.settings-dialog')
 
-test('Settings › Hotkeys › Note: Bold moves to ⌥⌘B', async () => {
+test('Settings › Hotkeys › Page: Bold moves to ⌥⌘B', async () => {
   await clickMenuItemQuietly(app, 'menu.app.settings')
   await dialog().locator('.settings-nav__item', { hasText: /^Hotkeys$/ }).click()
-  await dialog().locator('.hotkeys__chip', { hasText: /^Note$/ }).click()
-  const bold = dialog().locator('[data-setting="hotkey-note-bold"]')
+  await dialog().locator('.hotkeys__chip', { hasText: /^Page$/ }).click()
+  const bold = dialog().locator('[data-setting="hotkey-page-bold"]')
   await expect(bold.locator('.hotkeys__key')).toHaveText('⌘B')
   await bold.locator('.hotkeys__key').click()
   await win.keyboard.press('Meta+Alt+KeyB')
@@ -47,7 +47,7 @@ test('Settings › Hotkeys › Note: Bold moves to ⌥⌘B', async () => {
   await expect(dialog()).toHaveCount(0)
 })
 
-test('a note opened after the change bolds with ⌥⌘B, and ⌘B bolds nothing', async () => {
+test('a page opened after the change bolds with ⌥⌘B, and ⌘B bolds nothing', async () => {
   await fileRow(win, 'Plain').click()
   const editor = editorOf(win)
   await editor.getByText('plain words').click()

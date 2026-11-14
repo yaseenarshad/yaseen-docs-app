@@ -8,7 +8,7 @@ import { canBeCardFile, cardFileAsPage, cardFromText, embedLine, moveCardOut, mo
 import { cardFileShape, isCardFileContent } from '@shared/cardFileFormat'
 import { CardNotFoundError, cardRecords } from '@shared/cardLine'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
-import { IDS_FILE } from '@shared/noteId'
+import { IDS_FILE } from '@shared/pageId'
 import type { IndexRecord } from '@shared/types'
 import { makeFirstMac, removeVault, sleep } from './fs/testFixture'
 import { subscribe } from './fs/watchers'

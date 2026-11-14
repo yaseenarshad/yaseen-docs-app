@@ -1,12 +1,12 @@
 import { FSRS, Rating, State, createEmptyCard, generatorParameters, type Card, type Grade, type StepUnit } from 'ts-fsrs'
-import { cardReviewsOf, cardTime, withoutCardReview, type CardRating, type CardReview, type NoteCardRecord } from './cardLine'
+import { cardReviewsOf, cardTime, withoutCardReview, type CardRating, type CardReview, type CardRecord } from './cardLine'
 import { embeddedCards, makeCardResolver } from './cardLinks'
-import { hasLetters, noteIdNumber } from './noteId'
+import { hasLetters, pageIdNumber } from './pageId'
 import type { ReviewSettings } from './reviews'
 import { inFolder } from './types'
 
 /**
- * The note card schedule (YAZ-4959 D5): FSRS through `ts-fsrs` 5.4.2, pinned. The ONE place a card's due date is
+ * The card schedule (YAZ-4959 D5): FSRS through `ts-fsrs` 5.4.2, pinned. The ONE place a card's due date is
  * computed — never stored. A card's reviews (its card line, `cardLine.ts`) are REPLAYED from an empty card: the same
  * log and the same settings give the same due date every time, on every Mac, also with fuzz on — ts-fsrs seeds its
  * fuzz from the review time, the review count, and difficulty × stability, all of which the log fixes.
@@ -225,7 +225,7 @@ interface CardFacts {
 }
 
 /** A page as the index hands it: `mtime` and `size` say its bytes did not change; `embeds`, its `![[…]]` targets. */
-type CardPage = { path: string; folder: string; mtime?: number; size?: number; cards?: readonly NoteCardRecord[]; embeds?: readonly string[] }
+type CardPage = { path: string; folder: string; mtime?: number; size?: number; cards?: readonly CardRecord[]; embeds?: readonly string[] }
 
 /** Each page's facts by its PATH, with the mtime and size they are for: one entry per page, never per save. */
 const pageCache = new WeakMap<ReviewSettings, Map<string, { mtime: number; size: number; facts: readonly CardFacts[] }>>()
@@ -311,7 +311,7 @@ export function archivedCards(records: readonly CardPage[], folder = '', page?: 
  */
 function idAge(id: string, letters: readonly string[] | undefined): number {
   if (letters !== undefined && letters.length > 0 && !hasLetters(letters, id.slice(0, id.indexOf('-')))) return Number.POSITIVE_INFINITY
-  return noteIdNumber(id) ?? Number.POSITIVE_INFINITY
+  return pageIdNumber(id) ?? Number.POSITIVE_INFINITY
 }
 
 /**
@@ -513,7 +513,7 @@ export interface ReviewedToday {
  * is a UTC minute that sorts as a string, so each one is two string compares with the day's bounds (`cardTime`): no
  * date parsed per review. Off cards count too: their reviews were made.
  */
-export function reviewedToday(pages: readonly { cards?: readonly NoteCardRecord[] }[], now: number): ReviewedToday {
+export function reviewedToday(pages: readonly { cards?: readonly CardRecord[] }[], now: number): ReviewedToday {
   const start = new Date(now)
   start.setHours(0, 0, 0, 0)
   const end = new Date(start)

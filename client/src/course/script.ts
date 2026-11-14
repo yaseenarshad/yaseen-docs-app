@@ -169,8 +169,8 @@ export const COURSE: CourseChapter[] = [
       { id: 'c3-20', text: "When nothing is left, the Inbox says Inbox complete. That's it for today." },
       // The "Try it in the app" button and "Next chapter".
       { id: 'c3-21', text: 'To answer your own card in the real app, choose Try it in the app.' },
-      // A page of notes, with a space between two paragraphs.
-      { id: 'c3-22', text: 'Open the Inbox each day, and let the app keep the dates. Next: cards that live inside your notes.' },
+      // A page of text, with a space between two paragraphs.
+      { id: 'c3-22', text: 'Open the Inbox each day, and let the app keep the dates. Next: cards that live inside your pages.' },
     ],
     tryIt: [
       { target: 'sidebar-course-cards', say: 'Right-click the Course Cards folder.', done: { event: 'folder-menu-open' } },
@@ -185,13 +185,13 @@ export const COURSE: CourseChapter[] = [
     title: 'Where a card lives',
     clips: [
       // The card file and the Inbox, side by side.
-      { id: 'c4-01', text: 'So far, your card is a file of its own. It can also live beside your notes.' },
+      { id: 'c4-01', text: 'So far, your card is a file of its own. It can also live beside your pages.' },
       // Three empty frames side by side: "By itself", "In a page", "Embedded".
       { id: 'c4-02', text: 'A card can live in three places. The review works the same in each one.' },
       // The card file from chapter 2 in its own tab.
       { id: 'c4-03', text: "First, a card by itself. That's the card file you made: one file, one card." },
-      // A page of notes with a card between two paragraphs.
-      { id: 'c4-04', text: 'Second, a card inside a page. Your notes on a topic can hold cards right beside the text.' },
+      // A page of text with a card between two paragraphs.
+      { id: 'c4-04', text: 'Second, a card inside a page. Your pages on a topic can hold cards right beside the text.' },
       // A "/card" typed in a page; a new card opens for editing.
       { id: 'c4-05', text: 'In a page, type slash card, and press Return. A new card opens, ready to edit.' },
       // A card in a page with its ⋯ menu, its Reviews, and the Inbox behind it.
@@ -208,8 +208,8 @@ export const COURSE: CourseChapter[] = [
       { id: 'c4-11', text: 'Edit an embed, and you change the one real card. Its history stays with it.' },
       // A card moves between the three frames; its history line follows.
       { id: 'c4-12', text: 'You can move a card between these places at any time. Its history goes with it.' },
-      // Two labels: "A fact on its own" under the card file, "Part of your notes" under the page.
-      { id: 'c4-13', text: 'Use a card file for a fact on its own. Use a card in a page when it belongs with your notes.' },
+      // Two labels: "A fact on its own" under the card file, "Part of your pages" under the page.
+      { id: 'c4-13', text: 'Use a card file for a fact on its own. Use a card in a page when it belongs with your pages.' },
       // The "Try it in the app" button and "Next chapter".
       { id: 'c4-14', text: 'To embed your first card in a page, choose Try it in the app.' },
       // One card shown in three pages at once; lines lead back to it. Then the stage widens.
@@ -237,13 +237,13 @@ export const COURSE: CourseChapter[] = [
       // The pile grows tall; the daily stack beside it stays small.
       { id: 'c5-05', text: 'And known cards come back less often, so the daily review stays small as the pile grows.' },
       // Wooden boxes of paper slips; the name "Niklas Luhmann", "1951 to 1996", "about 90,000 cards".
-      // SOURCE: Niklas Luhmann-Archiv, Bielefeld University: about 90,000 notes, made between 1951 and 1996.
+      // SOURCE: Niklas Luhmann-Archiv, Bielefeld University: about 90,000 notes, made between 1951 and 1996. (rename-note-to-page: keep)
       { id: 'c5-06', text: 'The sociologist Niklas Luhmann kept a box of paper slips for about 45 years. It grew to around 90,000 of them.' },
       // A shelf of his books fills in: "nearly 600 publications", "over 40 books".
       // SOURCE: Niklas Luhmann-Archiv, Bielefeld University: nearly 600 publications, among them over 40 monographs.
       { id: 'c5-07', text: 'He wrote nearly 600 publications, among them more than 40 books.' },
       // Long boxes of 4 by 6 index cards; the name "Ryan Holiday".
-      // SOURCE: Ryan Holiday, YouTube video UBdlprawTkA (his note card system): tens of thousands of cards, over 20 years.
+      // SOURCE: Ryan Holiday, YouTube video UBdlprawTkA (his card system): tens of thousands of cards, over 20 years.
       { id: 'c5-08', text: 'The writer Ryan Holiday has kept tens of thousands of index cards over twenty years. He says the most value came later, from all of them added up.' },
       // Three small scenes: a meeting, a page in another language, a field that becomes clear.
       { id: 'c5-09', text: 'You do not need to write books. Think of the meeting where the right fact is there when you need it.' },
@@ -265,24 +265,24 @@ export const COURSE: CourseChapter[] = [
       { id: 'c6-02', text: 'Your card base is your knowledge base. It is a picture of what you know.' },
       // An endless scroll of web pages pours past; a tiny card base under it.
       { id: 'c6-03', text: 'The goal is not to copy the internet into it. There is always more.' },
-      // A page of notes boils down to two short cards in plain words.
+      // A page of text boils down to two short cards in plain words.
       { id: 'c6-04', text: 'The goal is to distil. Take what you learned, and put it in your own words and your own formats.' },
       // A simple picture of digestion: food in, a smaller, useful part kept.
       { id: 'c6-05', text: 'Think of it like digestion. You do not have to know a thing fully before you make its card.' },
       // The useful part is kept; the rest passes.
       { id: 'c6-06', text: 'But you do have to digest it first.' },
-      // A person thinks over a note, then says it in one simple line.
+      // A person thinks over an idea, then says it in one simple line.
       { id: 'c6-07', text: 'To digest is to think it through, until you can say it simply.' },
       // A shallow glance versus a deep look; the deep one leaves a lasting mark.
       // SOURCE: Craik & Lockhart 1972, "Levels of processing: A framework for memory research", Journal of Verbal Learning and Verbal Behavior.
       { id: 'c6-08', text: 'Memory researchers call this depth of processing. The more you think about what something means, the longer you keep it.' },
       // Someone else's deck is copied in; the cards stay grey.
       { id: 'c6-09', text: "That is why copying someone else's cards makes no sense: it skips the thinking that makes you learn." },
-      // A phone note: a quick line written down while someone talks.
+      // A phone note: a quick line written down while someone talks. (rename-note-to-page: keep)
       { id: 'c6-10', text: 'So when you hear something worth keeping, write it down somewhere.' },
       // A rushed, messy card is made on the spot; it gets a red mark.
       { id: 'c6-11', text: 'Do not make the card in that moment. Rushed cards are poor cards, they pile up, and review becomes a chore.' },
-      // Later, at a quiet desk: the note becomes a clean card.
+      // Later, at a quiet desk: the note becomes a clean card. (rename-note-to-page: keep)
       { id: 'c6-12', text: 'Make the card later, when you have time to sit and think. Capture first, make later.' },
       // The new-card line: "New cards · 60 waiting", ten a day; a week of days ticks past.
       { id: 'c6-13', text: 'With ten new cards a day and sixty waiting, a new card can take about a week to reach you.' },
@@ -298,18 +298,18 @@ export const COURSE: CourseChapter[] = [
     id: 'good-card',
     title: 'What makes a good card',
     clips: [
-      // A digested note, and an empty card beside it.
+      // A digested idea, and an empty card beside it.
       { id: 'c7-01', text: 'You have digested an idea. Here is how to make its card a good one.' },
-      // A long page of notes is pasted into one card; the card bulges.
-      { id: 'c7-02', text: 'Many people paste a whole page of notes into one card. Then they review it, and nothing sticks.' },
-      // The wall of notes, with a question mark over it.
-      { id: 'c7-03', text: 'A wall of notes is not a card. It asks you to recall everything at once, so you recall nothing well.' },
+      // A long page of text is pasted into one card; the card bulges.
+      { id: 'c7-02', text: 'Many people paste a whole page of text into one card. Then they review it, and nothing sticks.' },
+      // The wall of text, with a question mark over it.
+      { id: 'c7-03', text: 'A wall of text is not a card. It asks you to recall everything at once, so you recall nothing well.' },
       // One sentence in the wall lights up.
       { id: 'c7-04', text: 'Before you make a card, ask one question. What is the one thing I want to recall?' },
       // The wall splits into four small cards, one fact each.
       { id: 'c7-05', text: 'Then split it. One card for each thing. Small cards are quick to answer, and easy to remember.' },
-      // Notes about one word become four cards: meaning, how to say it, an example, where it comes from.
-      { id: 'c7-06', text: 'For example, notes about a new word become four cards. What it means, how to say it, one example, and where it comes from.' },
+      // What you learn about one word becomes four cards: meaning, how to say it, an example, where it comes from.
+      { id: 'c7-06', text: 'For example, what you learn about a new word becomes four cards. What it means, how to say it, one example, and where it comes from.' },
       // A card that turns red each time splits in two.
       { id: 'c7-07', text: 'If a card is hard every time, it is often two cards in one. Split it again.' },
       // Card A: "What does {{DNS}} stand for?" Card B: "What does DNS stand for?" with the back "{{Domain Name System}}". WAITS: the person picks one.
@@ -356,12 +356,12 @@ export const COURSE: CourseChapter[] = [
       // Two paths: "Vibe write" leads down; "Digest, then make" leads up.
       { id: 'c8-08', text: 'If you want this system to fail, vibe write your cards. If you want what you know to compound, do not.' },
       // The name "Ryan Holiday" and his line, in quotes.
-      // SOURCE: Ryan Holiday, YouTube video UBdlprawTkA, on taking notes by hand: "The inefficiency is the efficiency."
+      // SOURCE: Ryan Holiday, YouTube video UBdlprawTkA, on taking notes by hand: "The inefficiency is the efficiency." (rename-note-to-page: keep)
       { id: 'c8-09', text: 'Ryan Holiday puts it this way: "The inefficiency is the efficiency." The thinking is where you learn.' },
-      // A digested note goes into the agent; well-made cards come out; a person reads them.
-      { id: 'c8-10', text: 'The right way: bring notes you have already digested. The agent shapes them into cards, and you read each one.' },
-      // A text box with "Use the example notes" under it. WAITS: the person pastes notes or picks the example.
-      { id: 'c8-11', text: "Let's try it. Paste some digested notes, or use the example notes." },
+      // Digested ideas go into the agent; well-made cards come out; a person reads them.
+      { id: 'c8-10', text: 'The right way: bring ideas you have already digested. The agent shapes them into cards, and you read each one.' },
+      // A text box with "Use the example" under it. WAITS: the person pastes text or picks the example.
+      { id: 'c8-11', text: "Let's try it. Paste something you have digested, or use the example." },
       // The prompt with a Copy button; its lines light up: the skill, three cards, Course Cards, the check. WAITS: the person clicks Copy.
       { id: 'c8-12', text: 'Copy the prompt. It tells your agent to read the card skill, then make three cards in Course Cards.' },
       // The agent's window; a paste; card files appear in the course, one by one. WAITS: the agent writes card files in Course Cards.
@@ -421,7 +421,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c10-04', text: 'A card you keep missing is a sign to look at it. Often it is unclear, or two cards in one.' },
       // Edit card on a card; then E in the Inbox.
       { id: 'c10-05', text: 'To fix a card, click Edit card, or press E in the Inbox. Press Escape when you are done.' },
-      // A short note to the agent: "Make this card's clue clearer"; the card file changes.
+      // A short message to the agent: "Make this card's clue clearer"; the card file changes.
       { id: 'c10-06', text: 'Or, since each card is a file, tell your agent what to change, and keep reviewing.' },
       // A branch is cut; the plant looks better for it.
       { id: 'c10-07', text: 'Some cards no longer earn their place. Pruning is part of it.' },
@@ -474,7 +474,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c11-09', text: 'Today, make one card, from something you already understand well.' },
       // Each day ticks: the Inbox row lights up.
       { id: 'c11-10', text: 'Each day, open the Inbox, and answer what is due.' },
-      // A capture note fills during the week; on one day, a desk and a few new cards.
+      // A capture note fills during the week; on one day, a desk and a few new cards. (rename-note-to-page: keep)
       { id: 'c11-11', text: 'Keep one place to capture things as you hear them. Once this week, set time aside to make a few cards from it.' },
       // In the Inbox, a small fix to a card.
       { id: 'c11-12', text: 'As you review, fix what is unclear. That is tending, and it is how your card base stays yours.' },

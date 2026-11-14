@@ -11,7 +11,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { GithubSyncStatus } from '@shared/types'
 
 import { BridgeRequestError } from '../api'
-import { noteBoardSaved } from '../share/liveShare'
+import { pageBoardSaved } from '../share/liveShare'
 import type { Autosave } from '../lib/autosave'
 import { _resetRenameContinuity, flushRenamedPath, retireDeletedPath } from '../lib/renameContinuity'
 import { BOARD_COMMAND_EVENT, requestBoardCommand } from './boardCommand'
@@ -28,7 +28,7 @@ function menuIn(scope: ParentNode): HTMLElement | null {
   return id == null ? null : document.getElementById(id)
 }
 
-vi.mock('../share/liveShare', () => ({ noteBoardSaved: vi.fn() }))
+vi.mock('../share/liveShare', () => ({ pageBoardSaved: vi.fn() }))
 
 const ROOT = '/vault'
 const PATH = '/vault/Board.excalidraw'
@@ -509,12 +509,12 @@ describe('a file with no read-only switch (YAZ-3448: a code file)', () => {
     edit(1)
     await after(500)
     expect(write).toHaveBeenCalledTimes(1)
-    expect(noteBoardSaved).not.toHaveBeenCalled()
+    expect(pageBoardSaved).not.toHaveBeenCalled()
     act(() => root?.render(null))
     opened()
     edit(1)
     await after(500)
-    expect(noteBoardSaved).toHaveBeenCalledExactlyOnceWith(ROOT, PATH)
+    expect(pageBoardSaved).toHaveBeenCalledExactlyOnceWith(ROOT, PATH)
   })
 
   it('a reload that answers nothing leaves it off', async () => {

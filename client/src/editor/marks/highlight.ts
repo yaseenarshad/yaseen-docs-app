@@ -10,7 +10,7 @@
  *  - A custom colour (YAZ-4348 demo round 2, the ▾ panel's shades, hex code and picker) is `color: '#rrggbb'`, inline
  *    HTML `<mark style="background-color: #rrggbb">`: the one form that renders in any Markdown
  *    viewer without our CSS. Only that exact spelling (lowercase hex) is read, so any other
- *    `<mark style>` stays HTML with its bytes. The note paints it as a translucent wash, as the
+ *    `<mark style>` stays HTML with its bytes. The page paints it as a translucent wash, as the
  *    named colours, so the text keeps its own colour and stays readable in both themes.
  *  - `setHighlightCommand(color)` is the one command behind the toolbar's highlight buttons,
  *    `Mod-Shift-h` (yellow) and the `==x==` typing rule (yellow) — Bold's toggle rule (🔒 D5).
@@ -342,7 +342,7 @@ export function highlightColorsIn(state: EditorState, type: MarkType): Highlight
 
 /**
  * Whether a highlight on the visible selection (at a caret: the marks it would type with) has a colour that passes
- * `test`. The walk stops at the first one: the toolbar's ▾ asks on each update, also after ⌘A on a long note.
+ * `test`. The walk stops at the first one: the toolbar's ▾ asks on each update, also after ⌘A on a long page.
  */
 export function someHighlightColor(state: EditorState, type: MarkType, test: (color: HighlightColor) => boolean): boolean {
   const hit = (marks: readonly Mark[]) => marks.some((mark) => mark.type === type && test((mark.attrs.color ?? null) as HighlightColor))

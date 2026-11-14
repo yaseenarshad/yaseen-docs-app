@@ -98,8 +98,8 @@ test('step 1 — "Add to focus" on a folder shows the Focus tab with the folder 
   await lensTab(win, 'Files').click()
   await expect(lensTab(win, 'Files')).toHaveAttribute('aria-selected', 'true')
   await expect(fileRow(win, 'Ideas')).toBeVisible()
-  await expect(fileRow(win, 'Welcome note')).toBeVisible()
-  await expect(topLabels(win)).toHaveCount(3) // Projects + Ideas, Welcome note
+  await expect(fileRow(win, 'Welcome page')).toBeVisible()
+  await expect(topLabels(win)).toHaveCount(3) // Projects + Ideas, Welcome page
   await expect(countLine(win)).toHaveCount(0)
   await dirRow(win, 'Projects').click({ button: 'right' })
   await expect(menuItem(win, 'Remove from focus')).toBeVisible()

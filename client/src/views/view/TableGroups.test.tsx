@@ -139,7 +139,7 @@ const headers = (el: ParentNode): HTMLTableRowElement[] => [...el.querySelectorA
 const headerTexts = (el: ParentNode): string[] => headers(el).map((h) => q(h, '.view-group__value').textContent ?? '')
 const toggleOf = (el: ParentNode, label: string): HTMLElement => byLabel(el, `Toggle group ${label}`)
 
-/** 600 notes split into two groups for the grouped windowing tests. */
+/** 600 pages split into two groups for the grouped windowing tests. */
 function manyRecords(n = 600): IndexRecord[] {
   return Array.from({ length: n }, (_, i) => {
     const basename = `n${String(i).padStart(3, '0')}`
@@ -255,10 +255,10 @@ describe('collapse', () => {
     expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::T', [])
   })
 
-  it('a group of an id link is headed by the note title but collapses under the STORED id, so a rename never reopens it (YAZ-2293 D8)', async () => {
+  it('a group of an id link is headed by the page title but collapses under the STORED id, so a rename never reopens it (YAZ-2293 D8)', async () => {
     const { storage } = await import('../../lib/storage')
     const ID = 'k3m9x2pq7abc'
-    /** "Creator Economy" carries the id (under whatever title), and the first two notes are grouped under it BY that id. */
+    /** "Creator Economy" carries the id (under whatever title), and the first two pages are grouped under it BY that id. */
     const vault = (title: string): IndexRecord[] =>
       TEST_RECORDS.map((r, i) => (i === 2 ? { ...r, id: ID, basename: title, title: title, name: `${title}.md` } : i < 2 ? { ...r, properties: { ...r.properties, status: `[[${ID}]]` } } : r))
     let records = vault('Creator Economy')

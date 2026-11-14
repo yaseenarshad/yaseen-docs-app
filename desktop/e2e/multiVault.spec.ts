@@ -5,7 +5,7 @@
  * vault, and the window title follows the vault of the tab in front → a folder of each vault on the
  * Focus tab, each with its vault's name → a favorite in each vault, both in the one flat list of the
  * ♥ tab, each with its vault's name (YAZ-2631 D1) → a search, on the Search tab (YAZ-2638 D2), that
- * finds a note of the same name in both — a match of a pinned item in the top group, under a top
+ * finds a page of the same name in both — a match of a pinned item in the top group, under a top
  * row that names its vault (YAZ-2662 D2), every other match under its vault's row →
  * "Save as workspace…" from the header → "Remove from this
  * window" on Beta's row → the workspace opened from the ⌘O list, in a NEW window with both vaults →
@@ -40,11 +40,11 @@ import { activeTab, appWindow, buildFixtureVault, clickMenuItem, editorOf, extra
 test.describe.configure({ mode: 'serial' })
 
 /** The two vaults' FOLDER names — what the vault rows, the header and the titles show. */
-const ALPHA = 'Alpha Notes'
-const BETA = 'Beta Notes'
+const ALPHA = 'Alpha Pages'
+const BETA = 'Beta Pages'
 /** The name step 6 saves the two vaults under. */
 const WORKSPACE = 'Client work'
-/** Beta's `Ideas.md` is rewritten before the launch, so the editor says which vault's note is in front. */
+/** Beta's `Ideas.md` is rewritten before the launch, so the editor says which vault's page is in front. */
 const BETA_IDEAS_BODY = 'beta-idea-body'
 
 /** The OS window title contract (client/src/lib/windowTitle.ts): `<vault NAME — page>`, the vault of the tab in front (YAZ-2602 R3). */
@@ -140,7 +140,7 @@ test.beforeAll(async () => {
   vaultB = path.join(vaultsDir, BETA)
   await Promise.all([cp(vaultSrc, vaultA, { recursive: true }), cp(vaultSrc, vaultB, { recursive: true })])
   await writeFile(path.join(vaultB, 'Ideas.md'), `# Ideas\n\n${BETA_IDEAS_BODY}\n`)
-  // Each vault has said no to IDs ("Two kinds of vault"): the app writes nothing into a note. No vault is asked when it opens (YAZ-2677 D1).
+  // Each vault has said no to IDs ("Two kinds of vault"): the app writes nothing into a page. No vault is asked when it opens (YAZ-2677 D1).
   for (const vault of [vaultA, vaultB]) {
     await mkdir(path.join(vault, '.yaseendocs'), { recursive: true })
     await writeFile(path.join(vault, '.yaseendocs', 'ids.json'), JSON.stringify({ enabled: false }))
@@ -192,7 +192,7 @@ test('step 1 — "Add vault to this window ▸" on the blank space adds a known 
 
 // ---------------------------------------------------------------- tabs of two vaults
 
-test('step 2 — a tab of each vault: the switch shows each note, and the window title starts with the vault of the tab in front', async () => {
+test('step 2 — a tab of each vault: the switch shows each page, and the window title starts with the vault of the tab in front', async () => {
   const welcomeA = path.join(vaultA, SEED_FILE)
   const ideasB = path.join(vaultB, 'Ideas.md')
   // ⌘-click opens a background tab (I3): the strip holds a tab of each vault (S29).
@@ -211,7 +211,7 @@ test('step 2 — a tab of each vault: the switch shows each note, and the window
   await expect(editorOf(win)).toContainText(SEED_BODY)
   await expect.poll(() => win.title()).toBe(titleOf(SEED_FILE, ALPHA))
   await expect.poll(async () => (await readState(userData)).windows[0]?.tabs).toEqual([welcomeA, ideasB])
-  // A note is the last file of the vault that HOLDS it, not of the window's first vault.
+  // A page is the last file of the vault that HOLDS it, not of the window's first vault.
   expect((await readState(userData)).folders[vaultB]?.lastFile).toBe(ideasB)
 })
 
@@ -259,17 +259,17 @@ test('step 4 — a favorite in each vault is written to THAT vault\'s favorites.
   // ONE flat list across the vaults, and no vault row (S2): with no stored order, in vault order (S3).
   await expect(vaultRows(win)).toHaveCount(0)
   await expect(win.locator('.sidebar__body .tree__row--file')).toHaveCount(2)
-  await expect(topLabels(win)).toHaveText(['Ideas', 'Welcome note'])
+  await expect(topLabels(win)).toHaveText(['Ideas', 'Welcome page'])
   await expect(fileAt(win, ideasA)).toBeVisible()
   await expect(fileAt(win, welcomeB)).toBeVisible()
-  // Two notes of two vaults: each top row says whose it is (S41).
+  // Two pages of two vaults: each top row says whose it is (S41).
   await expect(vaultTags(win)).toHaveText([ALPHA, BETA])
   await shoot(win, 'multi-vault-05-favorites-two-vaults')
 })
 
 // ---------------------------------------------------------------- search across vaults
 
-test('step 5 — a search finds the note of the same name in both vaults: a match inside a pinned folder in the top group, each top row with its vault\'s name, and a match that is no pinned item under its vault\'s row; Esc goes back to Files', async () => {
+test('step 5 — a search finds the page of the same name in both vaults: a match inside a pinned folder in the top group, each top row with its vault\'s name, and a match that is no pinned item under its vault\'s row; Esc goes back to Files', async () => {
   await lensTab(win, 'Files').click()
   // The bar is on the Search tab only (YAZ-2638 D2): show the tab, then type.
   await showSearchTab(win)
@@ -339,7 +339,7 @@ test('step 7 — "Remove from this window" on a vault row closes that vault\'s t
   const betaRow = win.locator(`.sidebar__body .tree__row--vault[data-path="${vaultB}"]`)
   await betaRow.click({ button: 'right' })
   // A vault row is a folder that is a vault (S13, A2): it creates and pastes; it is not renamed, deleted, favorited or put in focus.
-  await expect(menuItem(win, 'New note')).toBeVisible()
+  await expect(menuItem(win, 'New page')).toBeVisible()
   await expect(menuItem(win, 'Copy path')).toBeVisible()
   for (const label of ['Add to focus', 'Add to favorites', 'Rename', 'Delete', 'Cut', 'Copy']) await expect(menuItem(win, label)).toHaveCount(0)
   await menuItem(win, 'Remove from this window').click()

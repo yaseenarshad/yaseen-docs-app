@@ -28,7 +28,7 @@ describe('YAZ-4769 demo: finding the spelling a set of keys holds', () => {
     expect(findKey(['tags'], 'status')).toBeUndefined()
   })
 
-  it('YAZ-4769 demo: heldKey / foldedValue read a note under whichever spelling it holds', () => {
+  it('YAZ-4769 demo: heldKey / foldedValue read a page under whichever spelling it holds', () => {
     const p = { 'dessert column': 'pie', Other: 1 }
     expect(heldKey(p, 'Dessert Column')).toBe('dessert column')
     expect(foldedValue(p, 'DESSERT COLUMN')).toBe('pie')
@@ -49,10 +49,10 @@ describe('YAZ-4769 demo: finding the spelling a set of keys holds', () => {
   })
 })
 
-describe('YAZ-4769 demo: respell reads a note in the page column spelling', () => {
+describe('YAZ-4769 demo: respell reads a page in the page column spelling', () => {
   const spell = spellings(['Dessert Column'])
 
-  it("YAZ-4769 demo: a note's `dessert column` reads as `Dessert Column`", () => {
+  it("YAZ-4769 demo: a page's `dessert column` reads as `Dessert Column`", () => {
     expect(respell({ 'dessert column': 'pie', other: 1 }, spell)).toEqual({ 'Dessert Column': 'pie', other: 1 })
   })
 
@@ -70,14 +70,14 @@ describe('YAZ-4769 demo: respell reads a note in the page column spelling', () =
 })
 
 describe('YAZ-4769 demo: setOneSpelling writes the key once', () => {
-  it('YAZ-4769 demo: a write under another spelling renames the note’s spelling in place, keeping its line', () => {
+  it('YAZ-4769 demo: a write under another spelling renames the page’s spelling in place, keeping its line', () => {
     const out = setOneSpelling('---\na: 1\ndessert column: cake\nb: 2\n---\nbody\n', 'Dessert Column', 'pie')
     expect(props(out)).toEqual({ a: 1, 'Dessert Column': 'pie', b: 2 })
     expect(out.indexOf('Dessert Column')).toBeLessThan(out.indexOf('b: 2'))
     expect(out.endsWith('body\n')).toBe(true)
   })
 
-  it('YAZ-4769 demo: a note holding two spellings keeps only the written one', () => {
+  it('YAZ-4769 demo: a page holding two spellings keeps only the written one', () => {
     const out = setOneSpelling('---\nDessert Column: cake\nDESSERT COLUMN: tart\n---\n', 'Dessert Column', 'pie')
     expect(props(out)).toEqual({ 'Dessert Column': 'pie' })
   })

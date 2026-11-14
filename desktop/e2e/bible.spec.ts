@@ -3,9 +3,9 @@
  * committed encyclopedia driven through the REAL app, with the index, the wiki-link graph and the
  * folders all answering the same questions about it.
  *
- * The fixture (`fixtures/bible-vault/`) is five real FOLDERS of notes — `Funnel Stages`,
+ * The fixture (`fixtures/bible-vault/`) is five real FOLDERS of pages — `Funnel Stages`,
  * `Industries`, `KPIs`, `Problems`, `Roles` — four of them carrying a hidden `.folder.md` with its
- * columns and views, plus the two loose `inbox/` notes. A note
+ * columns and views, plus the two loose `inbox/` pages. A page
  * belongs to a folder by living in it: nothing in its frontmatter says so, and step 1 proves the
  * counts off the disk.
  *
@@ -16,9 +16,9 @@
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1  the vault is sound: zero `page_type` keys, zero broken links, and the tree shows its six
- *      folders — each holding the notes the map says, read off the disk
+ *      folders — each holding the pages the map says, read off the disk
  *   3  wiki-link navigation: click → current tab, ⌘-click → background tab (the LOCKED model)
- *   4  the backlinks panel finds every note that names a KPI, and the ones that live in `Problems`
+ *   4  the backlinks panel finds every page that names a KPI, and the ones that live in `Problems`
  *      are exactly the two problems whose relations point at it
  *   5  rename an entity page — relations, body links, backlinks AND its place in its folder all
  *      survive, still zero broken links
@@ -67,13 +67,13 @@ const FOLDERS = ['Funnel Stages', 'inbox', 'Industries', 'KPIs', 'Problems', 'Ro
 
 /** The five folders of the encyclopedia proper. */
 const TOPICS = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', 'Roles']
-/** The notes living directly in each, in the same order — the shape of the whole map. */
+/** The pages living directly in each, in the same order — the shape of the whole map. */
 const TOPIC_COUNTS = ['3', '2', '5', '4', '3']
 
-/** The folder the note step 5 renames lives in. */
+/** The folder the page step 5 renames lives in. */
 const KPIS = 'KPIs'
 
-/** Every note in `Problems` — the fixture's own answer to "which mentions are problems?". */
+/** Every page in `Problems` — the fixture's own answer to "which mentions are problems?". */
 const PROBLEMS = ['CRM Hygiene', 'Lead Quality Scoring', 'Nurture Sequencing', 'Stage Accuracy']
 
 const FUNNEL = path.join('Funnel Stages', 'Sales-Conversion.md')
@@ -83,13 +83,13 @@ const RENAMED = 'Deal Win Rate'
  * Step 6 (YAZ-864): the folder whose name is spelled in two frontmatter places that are NESTED
  * inside `folder_settings`, where the index never looked for links — `Problems`' `sold_to`
  * column `target`, and its own `reports_to` target. A link to a folder resolves to it when no
- * note holds the name (YAZ-2290 D10), so renaming the folder has to rewrite both.
+ * page holds the name (YAZ-2290 D10), so renaming the folder has to rewrite both.
  */
 const ROLES = 'Roles'
 const ROLES_RENAMED = 'Buyer Roles'
 /** The directory a rename gives the folder in a plain vault: the typed name (YAZ-2523 🔒 V3). */
 const ROLES_RENAMED_DIR = ROLES_RENAMED
-/** The notes in it, alphabetically. */
+/** The pages in it, alphabetically. */
 const ROLE_MEMBERS = ['CEO', 'Head of Sales', 'RevOps Lead']
 const TOPICS_AFTER = ['Funnel Stages', 'Industries', 'KPIs', 'Problems', ROLES_RENAMED_DIR]
 
@@ -100,7 +100,7 @@ let win: Page
 
 const linkIn = (w: Page, text: string) => editorOf(w).locator('.wikilink', { hasText: text }).first()
 const backlinksHeader = (w: Page) => layer(w).locator('.backlinks__header')
-const backlinkNotes = (w: Page) => layer(w).locator('.backlinks__note')
+const backlinkPages = (w: Page) => layer(w).locator('.backlinks__page')
 /** The section is collapsed by default (locked) but survives a remount expanded — so check first. */
 const expandBacklinks = async (w: Page): Promise<void> => {
   if ((await backlinksHeader(w).getAttribute('aria-expanded')) === 'false') await backlinksHeader(w).click()
@@ -110,7 +110,7 @@ const expandBacklinks = async (w: Page): Promise<void> => {
 const read = (rel: string) => readFile(path.join(vault, rel), 'utf8')
 /**
  * What the name column shows. The Name cell is keyed to `file.name` (TableView's `nameCol`), and
- * it reads the page TITLE as plain text (YAZ-2420 🔒 D18, D26): a note's `title:`, or, for a note
+ * it reads the page TITLE as plain text (YAZ-2420 🔒 D18, D26): a page's `title:`, or, for a page
  * that has none, its file name without the extension — never `CAC.md`.
  */
 const rowNames = (scope: Locator) => scope.locator('.view-row__link, .view-table__name')
@@ -148,11 +148,11 @@ async function walk(dir: string, dirs: string[] = []): Promise<{ files: string[]
 }
 
 /**
- * Every wiki link in every note AND every folder settings file — frontmatter relation values and
+ * Every wiki link in every page AND every folder settings file — frontmatter relation values and
  * column targets as much as body prose and `![[…]]` embeds — whose target names nothing in the
  * vault: no file, by basename or by root-relative path, with or without extension, no FOLDER
- * either, by name or by path (a link resolves to a folder when no note has the name, YAZ-2290
- * D10), and no page by its `title:` (YAZ-2420 🔒 D17 — a note's own, or a folder's in its settings
+ * either, by name or by path (a link resolves to a folder when no page has the name, YAZ-2290
+ * D10), and no page by its `title:` (YAZ-2420 🔒 D17 — a page's own, or a folder's in its settings
  * file). The durable result GRO-2203 asks for is that this is `[]` both before and after a rename.
  */
 async function brokenLinks(root: string): Promise<string[]> {
@@ -185,10 +185,10 @@ async function brokenLinks(root: string): Promise<string[]> {
 }
 
 /**
- * How many notes live DIRECTLY in each of `folders`, read straight off the disk. Markdown files
+ * How many pages live DIRECTLY in each of `folders`, read straight off the disk. Markdown files
  * only, and never the folder's own settings file.
  */
-async function notesIn(root: string, folders: readonly string[]): Promise<string[]> {
+async function pagesIn(root: string, folders: readonly string[]): Promise<string[]> {
   return Promise.all(
     folders.map(async (folder) => {
       const entries = await readdir(path.join(root, folder), { withFileTypes: true })
@@ -197,7 +197,7 @@ async function notesIn(root: string, folders: readonly string[]): Promise<string
   )
 }
 
-/** Any note still carrying the retired type key. The old migration's own post-check, re-asked here. */
+/** Any page still carrying the retired type key. The old migration's own post-check, re-asked here. */
 async function withPageType(root: string): Promise<string[]> {
   const out: string[] = []
   for (const f of (await walk(root)).files.filter((x) => x.endsWith('.md'))) {
@@ -220,7 +220,7 @@ test.afterAll(async () => {
 
 // ---------- the scenario ----------
 
-test('step 1 — the encyclopedia is sound, and every folder holds exactly the notes the map says', async () => {
+test('step 1 — the encyclopedia is sound, and every folder holds exactly the pages the map says', async () => {
   // The fixture itself is sound before anything runs: not one `page_type` key, and not one
   // dangling wiki link — the column targets inside the folders' settings files included.
   expect(await withPageType(vault)).toEqual([])
@@ -231,13 +231,13 @@ test('step 1 — the encyclopedia is sound, and every folder holds exactly the n
 
   // The map of an encyclopedia that maintains no list: six folders, and nothing else at the root.
   await expect(topLabels(win)).toHaveText(FOLDERS)
-  // THE WHOLE MAP, asked of the vault itself: the notes that LIVE in each folder — 17 notes in
+  // THE WHOLE MAP, asked of the vault itself: the pages that LIVE in each folder — 17 pages in
   // the five folders. The tree shows no number of them (YAZ-2631 D2).
-  expect(await notesIn(vault, TOPICS)).toEqual(TOPIC_COUNTS)
+  expect(await pagesIn(vault, TOPICS)).toEqual(TOPIC_COUNTS)
   await shoot(win, 'bible-01-folders')
 
   // A launch is collapsed since YAZ-1642: open the six folders once for every step that clicks a
-  // note's row.
+  // page's row.
   await expandDirs(win, FOLDERS.map((f) => path.join(vault, f)))
 })
 
@@ -261,7 +261,7 @@ test('step 3 — navigating the encyclopedia: click → current tab, ⌘-click �
 })
 
 test('step 4 — the backlinks panel finds the whole mention set, problems included', async () => {
-  // Who the problems ARE is the folder's own answer, not this file's: the four notes that
+  // Who the problems ARE is the folder's own answer, not this file's: the four pages that
   // live in `Problems`, read straight off its Table — the one default view of a plain vault
   // (YAZ-2523 🔒 V11), since its settings file declares columns and lists no views of its own.
   await openFolder(win, path.join(vault, 'Problems'))
@@ -272,16 +272,16 @@ test('step 4 — the backlinks panel finds the whole mention set, problems inclu
   await expect(activeTab(win)).toHaveText('Win Rate')
   await expect(editorOf(win)).toContainText('Closed-won as a share of closed pipeline')
 
-  // Four notes mention Win Rate: the two problems that name it ONLY in their `kpis_impacted`
+  // Four pages mention Win Rate: the two problems that name it ONLY in their `kpis_impacted`
   // relation property — frontmatter links are first-class to the index — plus the funnel page
   // and the owning role, via body prose. Path-sorted.
   await expect(backlinksHeader(win)).toHaveText('Linked mentions (4)')
   await expandBacklinks(win)
-  await expect(backlinkNotes(win)).toHaveText(['Sales-Conversion', 'CRM Hygiene', 'Stage Accuracy', 'Head of Sales'])
+  await expect(backlinkPages(win)).toHaveText(['Sales-Conversion', 'CRM Hygiene', 'Stage Accuracy', 'Head of Sales'])
 
   // Convergence: the mentions that LIVE IN `Problems` are exactly the two problems whose
   // relations point at this KPI — prose, relations and folders answering the same question.
-  const mentions = await backlinkNotes(win).allTextContents()
+  const mentions = await backlinkPages(win).allTextContents()
   expect(mentions.filter((n) => PROBLEMS.includes(n)).sort()).toEqual(['CRM Hygiene', 'Stage Accuracy'])
   await shoot(win, 'bible-04-backlinks-agree')
 })
@@ -292,13 +292,13 @@ test('step 5 — renaming an entity page: relations, body links, backlinks and i
   await expect(win.locator('.create-inline__input')).toHaveValue('Win Rate')
   await win.locator('.create-inline__input').fill(RENAMED)
   await win.keyboard.press('Enter')
-  // The name-change confirm (⚡ YAZ-888), whose count is the notes the rewrite touches — the FOUR
+  // The name-change confirm (⚡ YAZ-888), whose count is the pages the rewrite touches — the FOUR
   // that spell the name in prose and relations. No folder's settings name it: an outline holds a
   // link only when somebody types one (YAZ-2290 D5), and nobody has.
-  await confirmRename(win, `Rename 'Win Rate' to '${RENAMED}'? Links in 4 notes will be updated.`)
+  await confirmRename(win, `Rename 'Win Rate' to '${RENAMED}'? Links in 4 pages will be updated.`)
 
-  // Four referencing notes: two through frontmatter relations, two through body prose.
-  await expect(win.locator('.link-notice__text')).toHaveText(`Renamed to "${RENAMED}". Updated links in 4 notes`) // with Undo (YAZ-3268 D18)
+  // Four referencing pages: two through frontmatter relations, two through body prose.
+  await expect(win.locator('.link-notice__text')).toHaveText(`Renamed to "${RENAMED}". Updated links in 4 pages`) // with Undo (YAZ-3268 D18)
   await expect(activeTab(win)).toHaveText(RENAMED)
 
   const crmHygiene = path.join('Problems', 'CRM Hygiene.md')
@@ -306,17 +306,17 @@ test('step 5 — renaming an entity page: relations, body links, backlinks and i
   await expect.poll(() => read(crmHygiene)).toContain(`[[${RENAMED}]]`)
   expect(await read(crmHygiene)).toContain('[[Sales Cycle Time]]') // the sibling relation is untouched
   await expect.poll(() => read(path.join('Problems', 'Stage Accuracy.md'))).toContain(`[[${RENAMED}]]`)
-  // … and body links, including a note that was never opened in this run.
+  // … and body links, including a page that was never opened in this run.
   await expect.poll(() => read(path.join('Roles', 'Head of Sales.md'))).toContain(`[[${RENAMED}]]`)
   await expect.poll(() => read(FUNNEL)).toContain(`[[${RENAMED}]]`)
 
-  // The backlinks panel still finds the same FOUR notes on the renamed page.
+  // The backlinks panel still finds the same FOUR pages on the renamed page.
   await expect(backlinksHeader(win)).toHaveText('Linked mentions (4)')
   await expandBacklinks(win)
-  await expect(backlinkNotes(win)).toHaveText(['Sales-Conversion', 'CRM Hygiene', 'Stage Accuracy', 'Head of Sales'])
+  await expect(backlinkPages(win)).toHaveText(['Sales-Conversion', 'CRM Hygiene', 'Stage Accuracy', 'Head of Sales'])
 
-  // And it still lives where it lived: a note belongs to a folder by BEING in it, so renaming
-  // the note is nothing the folder has to be told about — it is the same row, under its new
+  // And it still lives where it lived: a page belongs to a folder by BEING in it, so renaming
+  // the page is nothing the folder has to be told about — it is the same row, under its new
   // name, in the path order its new file name (`Deal Win Rate.md`, a plain vault) now sorts to.
   expect(await read(path.join('KPIs', `${RENAMED}.md`))).toContain('unit: percent')
   await openFolder(win, path.join(vault, KPIS))
@@ -340,12 +340,12 @@ test('step 6 — renaming a FOLDER: the links to it INSIDE folder_settings follo
   await win.locator('.create-inline__input').fill(ROLES_RENAMED)
   await win.keyboard.press('Enter')
   // The confirm's count sees what the rewrite sees — settings-only references included (YAZ-864).
-  await confirmRename(win, `Rename '${ROLES}' to '${ROLES_RENAMED}'? Links in 2 notes will be updated.`)
+  await confirmRename(win, `Rename '${ROLES}' to '${ROLES_RENAMED}'? Links in 2 pages will be updated.`)
 
   // TWO files, and both are folder settings files: the two that name Roles ONLY from inside
-  // `folder_settings`, which the index never extracted as links. The three notes in the
+  // `folder_settings`, which the index never extracted as links. The three pages in the
   // folder link to each other by BARE name, which a folder rename leaves byte-identical (E1b).
-  await expect(win.locator('.link-notice__text')).toHaveText(`Renamed to "${ROLES_RENAMED}". Updated links in 2 notes`) // with Undo (YAZ-3268 D18)
+  await expect(win.locator('.link-notice__text')).toHaveText(`Renamed to "${ROLES_RENAMED}". Updated links in 2 pages`) // with Undo (YAZ-3268 D18)
 
   // A column `target` on ANOTHER folder, its column's other keys intact …
   const problems = path.join('Problems', '.folder.md')
@@ -357,15 +357,15 @@ test('step 6 — renaming a FOLDER: the links to it INSIDE folder_settings follo
   await expect.poll(() => read(renamedSettings).catch(() => '')).toContain(`target: "[[${ROLES_RENAMED}]]"`)
   expect(titleOf(await read(renamedSettings))).toBe('')
   expect(await read(renamedSettings)).toContain('kind: link')
-  // … and the notes moved with their folder, their names and their own bare links untouched.
+  // … and the pages moved with their folder, their names and their own bare links untouched.
   expect(await read(path.join(ROLES_RENAMED_DIR, 'Head of Sales.md'))).toContain('reports_to: "[[CEO]]"')
 
   // And everything still browses: the folder opens under its new name, holding the same three
-  // notes — on the first of the default views, since its settings list none.
+  // pages — on the first of the default views, since its settings list none.
   await openFolder(win, path.join(vault, ROLES_RENAMED_DIR))
   await expect(activeTab(win)).toHaveText(ROLES_RENAMED)
   await expect(rowNames(contents(win))).toHaveText(ROLE_MEMBERS)
-  expect(await notesIn(vault, TOPICS_AFTER)).toEqual(TOPIC_COUNTS)
+  expect(await pagesIn(vault, TOPICS_AFTER)).toEqual(TOPIC_COUNTS)
 
   // The durable result again, with the settings targets inside the audit's reach.
   await expect.poll(() => brokenLinks(vault)).toEqual([])

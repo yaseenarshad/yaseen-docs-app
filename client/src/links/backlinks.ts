@@ -1,18 +1,18 @@
 /**
- * Backlinks — "Linked mentions" (Links D, GRO-2193; decision D of GRO-2096, LOCKED): the notes
+ * Backlinks — "Linked mentions" (Links D, GRO-2193; decision D of GRO-2096, LOCKED): the pages
  * and folders that link to the open page, computed CLIENT-SIDE in ONE pass over the index snapshot this
  * window already holds, through THE shared resolver (`views/engine.ts` `resolverFor`, the one
  * behind views, wikilink decorations and clicks). No reverse map in the main process, no
- * new IPC, no new index field — and alias-awareness comes free: a note linking `[[CAC]]` IS a
+ * new IPC, no new index field — and alias-awareness comes free: a page linking `[[CAC]]` IS a
  * linked mention of the page whose frontmatter aliases it (E2, GRO-2214).
  *
  * A mention is a `links` OR an `embeds` entry that resolves to the open path — an `![[embed]]`
  * mentions its target exactly like a `[[link]]` does (locked). The open page never lists itself.
- * One entry per referencing NOTE (however many mentions it holds), path-sorted, so the section
+ * One entry per referencing PAGE (however many mentions it holds), path-sorted, so the section
  * renders the same order for the same snapshot.
  *
  * A FOLDER's page mentions what its settings record links by the rename engine's rule
- * (`referenceTargets`: the links of its Page, the `.folder.md` body, as a note's (YAZ-4584 D40); its
+ * (`referenceTargets`: the links of its Page, the `.folder.md` body, as a page's (YAZ-4584 D40); its
  * own link properties, a view's `order` entry, a link column's `target`). Its entry is that record,
  * sorted by its path.
  *
@@ -37,7 +37,7 @@ import { mentionsOf } from '@shared/mentions'
  */
 const mentionsCache = new WeakMap<ResolveLink, ReadonlyMap<string, readonly IndexRecord[]>>()
 
-/** Path → the notes and folders (as their settings records) that mention it in this snapshot: path-sorted, self excluded, embeds included. */
+/** Path → the pages and folders (as their settings records) that mention it in this snapshot: path-sorted, self excluded, embeds included. */
 export function mentionsMap(records: readonly IndexRecord[], folders: readonly IndexRecord[], resolve: ResolveLink): ReadonlyMap<string, readonly IndexRecord[]> {
   let map = mentionsCache.get(resolve)
   if (map === undefined) mentionsCache.set(resolve, (map = mentionsOf(records, folders, resolve)))
@@ -46,7 +46,7 @@ export function mentionsMap(records: readonly IndexRecord[], folders: readonly I
 
 const NONE: readonly IndexRecord[] = []
 
-/** The notes — and the folders, as their settings records (`folders`) — mentioning `path` in this snapshot: path-sorted, self excluded, embeds included. */
+/** The pages — and the folders, as their settings records (`folders`) — mentioning `path` in this snapshot: path-sorted, self excluded, embeds included. */
 export function backlinksFor(path: string, records: readonly IndexRecord[], resolve: ResolveLink, folders: readonly IndexRecord[]): readonly IndexRecord[] {
   return mentionsMap(records, folders, resolve).get(path) ?? NONE
 }
@@ -56,7 +56,7 @@ export function backlinksFor(path: string, records: readonly IndexRecord[], reso
 /** Longest snippet text before windowing; the ellipses ride on top. */
 export const SNIPPET_MAX_CHARS = 120
 
-/** Snippet LINES shown per referencing note (FN10: one snippet per line, however many mentions it holds). */
+/** Snippet LINES shown per referencing page (FN10: one snippet per line, however many mentions it holds). */
 export const MAX_SNIPPETS = 5
 
 const ELLIPSIS = '…'
@@ -70,7 +70,7 @@ export interface MentionRange {
 export interface MentionSnippet {
   /**
    * The mention's line AS THE EDITOR SHOWS IT — every wikilink on it replaced by its display
-   * text (`linkDisplayText`; an id link by its note's title, YAZ-2293; embeds and empty-display
+   * text (`linkDisplayText`; an id link by its page's title, YAZ-2293; embeds and empty-display
    * forms stay raw, exactly the decorations' rule) — whitespace-trimmed and windowed to
    * ~`SNIPPET_MAX_CHARS` around the first mention (FN9, GRO-2197).
    */
@@ -80,7 +80,7 @@ export interface MentionSnippet {
    * Never empty; a range the window cut off is dropped, the first one never is.
    */
   ranges: MentionRange[]
-  /** The label of the cell note (YAZ-3818) the line is in, `cell-N`, or absent: a click opens that note's card. */
+  /** The label of the cell note (YAZ-3818) the line is in, `cell-N`, or absent: a click opens that page's card. */
   cellNote?: string
 }
 
@@ -150,7 +150,7 @@ export function cellSyntaxAsText(text: string, ranges: readonly MentionRange[]):
 /**
  * One snippet for the line owning the matches `line[first..]` (content coords) of `matches`,
  * anchored on `matches[first]` — the first TARGET mention on the line. Builds the display line
- * (every match replaced per `linkDisplayText`, with `titleOf` naming the note an id link points
+ * (every match replaced per `linkDisplayText`, with `titleOf` naming the page an id link points
  * at), records the [from, to) of each target mention, then trims and windows centred on the
  * first of them. Returns the content offset the line ends at, so the caller can skip the matches
  * this snippet consumed.
@@ -227,19 +227,19 @@ function lineSnippet(
 }
 
 /**
- * The mention lines of one referencing note's raw file content: every line holding a `[[link]]`
+ * The mention lines of one referencing page's raw file content: every line holding a `[[link]]`
  * / `![[embed]]` whose page name resolves to `target`, in document order, at most `limit` LINES —
  * one snippet per line with every mention on it highlighted (FN10, GRO-2197). Code is skipped
  * through the rename engine's length-preserving `maskCode` — the same fence/inline-span
  * discipline the index's link extraction uses, so a snippet can only highlight a link the index
  * actually counted. Frontmatter is scanned like any other line (the index reads links there too).
- * `titles` names the note an id link points at (`idLinkTitle`).
+ * `titles` names the page an id link points at (`idLinkTitle`).
  */
 export function mentionSnippets(content: string, target: string, resolve: ResolveLink, titles: PathTitles, limit = MAX_SNIPPETS): MentionSnippet[] {
   const masked = maskCode(content)
   const matches = [...masked.matchAll(WIKILINK_RE)]
   const isMention = (m: RegExpExecArray): boolean => {
-    // The left side is the page when it resolves (YAZ-4935 round 2: `[[Covid notes|COVID-19]]`).
+    // The left side is the page when it resolves (YAZ-4935 round 2: `[[Covid pages|COVID-19]]`).
     const page = linkPageName(m[2], { resolve })
     return page !== '' && resolve(page) === target // '' = the same-file `[[#heading]]` form
   }

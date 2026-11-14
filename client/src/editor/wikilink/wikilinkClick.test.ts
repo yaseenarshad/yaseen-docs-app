@@ -2,16 +2,16 @@
  * Wikilink click navigation (Links C, GRO-2192): real editor (`createCrepe({ wikilinkNav })`),
  * real mousedown events on the rendered `.wikilink` spans. Pinned here: navigation happens on
  * MOUSEDOWN with the default prevented (no caret in the match, no raw-text flash), by the
- * gestures of Settings › Hotkeys › "Links in a note" (YAZ-3936): ⌘-click → `openCurrent`,
+ * gestures of Settings › Hotkeys › "Links in a page" (YAZ-3936): ⌘-click → `openCurrent`,
  * ⌘⇧-click → `openBackground`, a changed binding as it is at the click,
  * an unresolved link creates its page first (bare targets under `nav.createFolder()` — the
  * Files & Links location setting, C2- GRO-2240; '' = the vault root, the default) and then
  * opens by the same gesture, `[[#h]]` no-ops, revealed raw text and alt/shift/ctrl-modified
  * clicks fall through to plain editing, and failures land in `onNotice` — never a dialog.
  * F2 (GRO-2197) added two more notices for otherwise invisible outcomes: a click during the
- * pre-index window, and a background open whose freshly created note landed in a background tab.
- * An id link (YAZ-2293) opens from its title widget like any link; an id no note has is NEVER
- * created — a passive notice says the note is gone.
+ * pre-index window, and a background open whose freshly created page landed in a background tab.
+ * An id link (YAZ-2293) opens from its title widget like any link; an id no page has is NEVER
+ * created — a passive notice says the page is gone.
  * A link to a FOLDER (YAZ-2290 D10) is a resolved link whose path is the directory: the same two
  * gestures open the folder's tab, and nothing is created.
  */
@@ -39,13 +39,13 @@ vi.mock('../../api', async (importOriginal) => ({
     index: vi.fn(),
     readFile: vi.fn(),
     // The door in the main process (YAZ-2677 D4): the vault's next number.
-    mintNoteId: (await import('../../testNoteIds')).testDoor(),
+    mintPageId: (await import('../../testPageIds')).testDoor(),
   },
 }))
 
 const createDir = vi.mocked(api.createDir)
 const createFile = vi.mocked(api.createFile)
-const mintNoteId = vi.mocked(api.mintNoteId)
+const mintPageId = vi.mocked(api.mintPageId)
 
 interface NavMocks {
   root: string
@@ -102,7 +102,7 @@ function mousedown(el: Element, init: MouseEventInit = {}): boolean {
   return el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, ...init }))
 }
 /**
- * The "Links in a note" gestures (YAZ-3936). Browser style by default (YAZ-3747 demo): ⌘-click opens a background tab,
+ * The "Links in a page" gestures (YAZ-3936). Browser style by default (YAZ-3747 demo): ⌘-click opens a background tab,
  * ⌘⇧-click a new tab in front, and "Open in this tab" has no click. The suite binds ⌘⌥-click to it (`SUITE_KEYS`), so its
  * tests of what an open does read as before; a test that sets `nav.hotkeys` has the defaults and its own changes.
  */
@@ -258,7 +258,7 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
   /** What the create at `call` sent. */
   const born = (call = 0) => createFile.mock.calls[call][0] as { path: string; content: string; id: string }
 
-  it('B: an open gesture on a name link that points at nothing creates the note titled by it — `<root>/<kebab-title>-<id>.md`, at the VAULT ROOT (locked default) — and opens that path in the current tab (YAZ-2420 D20)', async () => {
+  it('B: an open gesture on a name link that points at nothing creates the page titled by it — `<root>/<kebab-title>-<id>.md`, at the VAULT ROOT (locked default) — and opens that path in the current tab (YAZ-2420 D20)', async () => {
     const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown)
     expect(open(linkSpan(root, 'Missing'))).toBe(false) // default prevented
     await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalled())
@@ -297,14 +297,14 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     expect(nav.openCurrent).not.toHaveBeenCalled()
   })
 
-  it('a background open that CREATES notices too, naming the note — the background tab is invisible (GRO-2197)', async () => {
+  it('a background open that CREATES notices too, naming the page — the background tab is invisible (GRO-2197)', async () => {
     const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown)
     openBehind(linkSpan(root, 'Missing'))
     await vi.waitFor(() => expect(nav.openBackground).toHaveBeenCalled())
     expect(nav.onNotice).toHaveBeenCalledWith('Created "Missing" in a background tab')
   })
 
-  it('C: a pathed target creates the folders it names and the note in them, root-relatively (YAZ-2420 D6)', async () => {
+  it('C: a pathed target creates the folders it names and the page in them, root-relatively (YAZ-2420 D6)', async () => {
     const { root, nav } = await mount('go [[Sub Folder/Page]] now\n', () => null)
     open(linkSpan(root, 'Sub Folder/Page'))
     await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalled())
@@ -314,11 +314,11 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
   })
 
   it("a bare target creates under nav.createFolder() — the Files & Links setting's folder, read at CLICK time (C2-, GRO-2240)", async () => {
-    let base = 'Notes/Inbox'
+    let base = 'Pages/Inbox'
     const { root, nav } = await mount('pad [[Missing]] and [[Other]] tail\n', resolveKnown, () => base)
     open(linkSpan(root, 'Missing'))
-    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith(`/vault/Notes/Inbox/missing-${born().id.toLowerCase()}.md`))
-    expect(createDir.mock.calls.map((c) => c[0])).toEqual([{ path: '/vault/Notes' }, { path: '/vault/Notes/Inbox' }])
+    await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith(`/vault/Pages/Inbox/missing-${born().id.toLowerCase()}.md`))
+    expect(createDir.mock.calls.map((c) => c[0])).toEqual([{ path: '/vault/Pages' }, { path: '/vault/Pages/Inbox' }])
     // The getter is live: a settings change lands on the NEXT click without any remount.
     base = ''
     open(linkSpan(root, 'Other'))
@@ -326,7 +326,7 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
   })
 
   it('a PATHED target stays root-relative whatever the base — an explicit path is an explicit aim (Obsidian)', async () => {
-    const { root, nav } = await mount('go [[Sub/Page]] now\n', () => null, () => 'Notes')
+    const { root, nav } = await mount('go [[Sub/Page]] now\n', () => null, () => 'Pages')
     open(linkSpan(root, 'Sub/Page'))
     await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledWith(`/vault/sub/page-${born().id.toLowerCase()}.md`))
     expect(createDir.mock.calls.map((c) => c[0])).toEqual([{ path: '/vault/sub', title: 'Sub' }])
@@ -342,7 +342,7 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     expect(nav.openBackground).not.toHaveBeenCalled()
   })
 
-  it('clicking a dead `[[Sub/Page]]` twice quickly makes ONE note; once the index holds it the link resolves to it, and a click opens it (YAZ-2478)', async () => {
+  it('clicking a dead `[[Sub/Page]]` twice quickly makes ONE page; once the index holds it the link resolves to it, and a click opens it (YAZ-2478)', async () => {
     const { root, nav, source } = await mount('go [[Sub/Page]] now\n', linkResolver([], '/vault', [], []))
     open(linkSpan(root, 'Sub/Page'))
     open(linkSpan(root, 'Sub/Page'))
@@ -351,7 +351,7 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     expect(createFile).toHaveBeenCalledTimes(1)
     expect(born().path).toBe(`/vault/sub/page-${born().id.toLowerCase()}.md`)
     expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith(born().path)
-    // The index echo: the note, titled Page, and the folder it was put in, titled Sub.
+    // The index echo: the page, titled Page, and the folder it was put in, titled Sub.
     const record = (path: string, title: string, folder: string): IndexRecord => ({ path, name: path.slice(path.lastIndexOf('/') + 1), basename: '', title, folder, ext: 'md', size: 1, ctime: 1, mtime: 1, properties: {}, aliases: [], tags: [], links: [], embeds: [] })
     source.update(linkResolver([record(born().path, 'Page', 'sub')], '/vault', ['/vault/sub'], [record('/vault/sub/.folder.md', 'Sub', 'sub')]))
     // Found, it shows only its name (YAZ-3778 D3); dead, it showed its whole text (S12).
@@ -362,7 +362,7 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     expect(createFile).toHaveBeenCalledTimes(1)
   })
 
-  it('a repeat click after the note was made, before the index holds it, opens that note and makes no second one (YAZ-2478)', async () => {
+  it('a repeat click after the page was made, before the index holds it, opens that page and makes no second one (YAZ-2478)', async () => {
     const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown)
     openBehind(linkSpan(root, 'Missing'))
     await vi.waitFor(() => expect(nav.openBackground).toHaveBeenCalledExactlyOnceWith(born().path))
@@ -372,7 +372,7 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
     expect(createFile).toHaveBeenCalledTimes(1)
   })
 
-  it('a dead link whose note could not be made can be clicked again', async () => {
+  it('a dead link whose page could not be made can be clicked again', async () => {
     createFile.mockRejectedValueOnce(new BridgeRequestError('IO_ERROR', 'disk on fire'))
     const { root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown)
     open(linkSpan(root, 'Missing'))
@@ -394,7 +394,7 @@ describe('wikilink click: unresolved links create the page (GRO-2192)', () => {
 })
 
 // The ID vault's half of each row is `unresolved links create the page`, above.
-describe('wikilink click: in a vault that does not use IDs a dead link\u2019s note is made the plain way (YAZ-2523 V3)', () => {
+describe('wikilink click: in a vault that does not use IDs a dead link\u2019s page is made the plain way (YAZ-2523 V3)', () => {
   it('a click makes `<typed>.md`, empty, with no id and no title, opens it, and leaves the link as typed', async () => {
     const { crepe, root, nav } = await mount('pad [[Missing]] tail\n', resolveKnown, () => '', undefined, false)
     open(linkSpan(root, 'Missing'))
@@ -404,8 +404,8 @@ describe('wikilink click: in a vault that does not use IDs a dead link\u2019s no
     expect(getMarkdownForSave(crepe)).toBe('pad [[Missing]] tail\n')
   })
 
-  it('a pathed link makes each folder under the name typed, with no title, and the note in it', async () => {
-    const { root, nav } = await mount('go [[Sub Folder/Page]] now\n', () => null, () => 'Notes', undefined, false)
+  it('a pathed link makes each folder under the name typed, with no title, and the page in it', async () => {
+    const { root, nav } = await mount('go [[Sub Folder/Page]] now\n', () => null, () => 'Pages', undefined, false)
     open(linkSpan(root, 'Sub Folder/Page'))
     await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith('/vault/Sub Folder/Page.md'))
     expect(createDir).toHaveBeenCalledExactlyOnceWith({ path: '/vault/Sub Folder' })
@@ -427,7 +427,7 @@ describe('wikilink click: id links (YAZ-2293)', () => {
   const DEAD = 'zzzzzzzzzzz9'
   const resolveId = (target: string) => (target === ID ? '/vault/Projects/Road Map.md' : resolveKnown(target))
 
-  it('a click on the rendered TITLE opens the note the id names; the link stays collapsed', async () => {
+  it('a click on the rendered TITLE opens the page the id names; the link stays collapsed', async () => {
     const { root, nav } = await mount(`pad [[${ID}]] tail\n`, resolveId)
     expect(open(linkSpan(root, 'Road Map'))).toBe(false) // default prevented
     expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith('/vault/Projects/Road Map.md')
@@ -438,7 +438,7 @@ describe('wikilink click: id links (YAZ-2293)', () => {
     expect(createFile).not.toHaveBeenCalled()
   })
 
-  it('[[id#Heading]] opens the note from the title and from the heading segment alike', async () => {
+  it('[[id#Heading]] opens the page from the title and from the heading segment alike', async () => {
     const { root, nav } = await mount(`pad [[${ID}#Heading]] tail\n`, resolveId)
     open(linkSpan(root, 'Road Map'))
     open(linkSpan(root, 'Heading'))
@@ -447,14 +447,14 @@ describe('wikilink click: id links (YAZ-2293)', () => {
 
   it.each([
     // The pill says so (YAZ-3905 S10).
-    ['an open in this tab', `pad [[${DEAD}]] tail\n`, `Missing note · ${DEAD}`, OPEN],
-    ['an open in a background tab', `pad [[${DEAD}]] tail\n`, `Missing note · ${DEAD}`, BEHIND],
+    ['an open in this tab', `pad [[${DEAD}]] tail\n`, `Missing page · ${DEAD}`, OPEN],
+    ['an open in a background tab', `pad [[${DEAD}]] tail\n`, `Missing page · ${DEAD}`, BEHIND],
     ['an open on its label', `pad [[${DEAD}|old label]] tail\n`, 'old label', OPEN],
-  ])('an id no note has is never created — %s says the note is gone and does nothing else', async (_name, markdown, shown, init) => {
+  ])('an id no page has is never created — %s says the page is gone and does nothing else', async (_name, markdown, shown, init) => {
     const { root, nav } = await mount(markdown, resolveId)
     expect(mousedown(linkSpan(root, shown), init)).toBe(false) // still swallowed: no caret, no reveal
     await vi.advanceTimersByTimeAsync(0)
-    expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith('That note no longer exists')
+    expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith('That page no longer exists')
     expect(nav.openCurrent).not.toHaveBeenCalled()
     expect(nav.openBackground).not.toHaveBeenCalled()
     expect(createFile).not.toHaveBeenCalled()
@@ -473,13 +473,13 @@ describe('wikilink click: id links (YAZ-2293)', () => {
 
 // Number IDs (YAZ-2677 D3): scenario record section B, through THE resolver the bridge feeds.
 describe('wikilink click: number IDs, and what is an ID of this vault (YAZ-2677 R5, R6)', () => {
-  const note = (path: string, title: string, id?: string): IndexRecord => {
+  const page = (path: string, title: string, id?: string): IndexRecord => {
     const name = path.slice(path.lastIndexOf('/') + 1)
     return { path, name, basename: name.replace(/\.md$/, ''), title, folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, ...(id !== undefined && { id }), properties: {}, aliases: [], tags: [], links: [], embeds: [] }
   }
   const LETTERS = ['YAZ', 'OLD']
-  // The vault `YAZ`, which was `OLD` before: note 12, and a note that is only NAMED like an ID.
-  const records = [note('/vault/plan-yaz-12.md', 'Plan', 'YAZ-12'), note('/vault/YAZ-7.md', 'YAZ-7', 'YAZ-30')]
+  // The vault `YAZ`, which was `OLD` before: page 12, and a page that is only NAMED like an ID.
+  const records = [page('/vault/plan-yaz-12.md', 'Plan', 'YAZ-12'), page('/vault/YAZ-7.md', 'YAZ-7', 'YAZ-30')]
   const resolve = linkResolver(records, '/vault', [], [], LETTERS)
   /** The editor on the vault's whole snapshot, as the bridge feeds it: the resolver, its records, the vault's kind and letters. */
   const mounted = async (markdown: string) => {
@@ -488,7 +488,7 @@ describe('wikilink click: number IDs, and what is an ID of this vault (YAZ-2677 
     return m
   }
 
-  it('S16, S17: `[[YAZ-12]]` and `[[yaz-12]]`, typed by hand or by an agent, show the title and open the note: an ID is read in any case', async () => {
+  it('S16, S17: `[[YAZ-12]]` and `[[yaz-12]]`, typed by hand or by an agent, show the title and open the page: an ID is read in any case', async () => {
     for (const typed of ['YAZ-12', 'yaz-12', 'Yaz-12']) {
       const { root, nav } = await mounted(`pad [[${typed}]] tail\n`)
       open(linkSpan(root, 'Plan'))
@@ -497,16 +497,16 @@ describe('wikilink click: number IDs, and what is an ID of this vault (YAZ-2677 
     }
   })
 
-  it('S82: a link with letters the vault had before, `[[OLD-12]]`, opens note 12', async () => {
+  it('S82: a link with letters the vault had before, `[[OLD-12]]`, opens page 12', async () => {
     const { root, nav } = await mounted('pad [[OLD-12]] and [[old-12#Heading]] tail\n')
     for (const span of Array.from(root.querySelectorAll(`.${WIKILINK_CLASS}`)).filter((el) => el.textContent === 'Plan')) open(span)
     expect(nav.openCurrent.mock.calls).toEqual([['/vault/plan-yaz-12.md'], ['/vault/plan-yaz-12.md']])
   })
 
   it.each([
-    ['S21: `[[GPT-4]]`, where no note has that ID', 'GPT-4', 'gpt-4'],
+    ['S21: `[[GPT-4]]`, where no page has that ID', 'GPT-4', 'gpt-4'],
     ['S22: `[[BUS-12]]`, pasted from the vault `BUS`', 'BUS-12', 'bus-12'],
-  ])('%s, is a NAME link: it does not open note 12, and a click creates the note titled by it', async (_name, typed, kebab) => {
+  ])('%s, is a NAME link: it does not open page 12, and a click creates the page titled by it', async (_name, typed, kebab) => {
     const { root, nav } = await mounted(`pad [[${typed}]] tail\n`)
     expect(linkSpan(root, typed).classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(true)
     open(linkSpan(root, typed))
@@ -521,18 +521,18 @@ describe('wikilink click: number IDs, and what is an ID of this vault (YAZ-2677 
     ['with the vault\'s letters', 'YAZ-99'],
     ['in another case', 'yaz-99'],
     ['with letters the vault had before', 'OLD-99'],
-  ])('S25: a link to a deleted note %s is shown as missing, with the ID as the app writes it (YAZ-3905 S10), and a click does not offer to create it', async (_name, typed) => {
+  ])('S25: a link to a deleted page %s is shown as missing, with the ID as the app writes it (YAZ-3905 S10), and a click does not offer to create it', async (_name, typed) => {
     const { root, nav } = await mounted(`pad [[${typed}]] tail\n`)
-    expect(linkSpan(root, 'Missing note · YAZ-99').classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(true)
-    expect(open(linkSpan(root, 'Missing note · YAZ-99'))).toBe(false)
+    expect(linkSpan(root, 'Missing page · YAZ-99').classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(true)
+    expect(open(linkSpan(root, 'Missing page · YAZ-99'))).toBe(false)
     await vi.advanceTimersByTimeAsync(0)
-    expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith('That note no longer exists')
+    expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith('That page no longer exists')
     expect(nav.openCurrent).not.toHaveBeenCalled()
     expect(createFile).not.toHaveBeenCalled()
-    expect(mintNoteId).not.toHaveBeenCalled()
+    expect(mintPageId).not.toHaveBeenCalled()
   })
 
-  it('S26: a note named "YAZ-7", and no note has the ID `YAZ-7`: `[[YAZ-7]]` falls back to the name and opens that note', async () => {
+  it('S26: a page named "YAZ-7", and no page has the ID `YAZ-7`: `[[YAZ-7]]` falls back to the name and opens that page', async () => {
     const { root, nav } = await mounted('pad [[YAZ-7]] tail\n')
     expect(linkSpan(root, 'YAZ-7').classList.contains(WIKILINK_UNRESOLVED_CLASS)).toBe(false)
     open(linkSpan(root, 'YAZ-7'))
@@ -563,14 +563,14 @@ describe('wikilink click: number IDs, and what is an ID of this vault (YAZ-2677 
     expect(nav.openCurrent).not.toHaveBeenCalled()
     expect(nav.openBackground).not.toHaveBeenCalled()
     expect(createFile).not.toHaveBeenCalled()
-    expect(mintNoteId).not.toHaveBeenCalled()
+    expect(mintPageId).not.toHaveBeenCalled()
   })
 
-  it('S23: this vault\'s letters win — `[[YAZ-99]]` is a deleted note of this vault, whatever another vault uses', async () => {
+  it('S23: this vault\'s letters win — `[[YAZ-99]]` is a deleted page of this vault, whatever another vault uses', async () => {
     const { root, nav } = await mount('pad [[YAZ-99]] tail\n', resolve, undefined, undefined, true, LETTERS, () => ['Elsewhere'])
-    open(linkSpan(root, 'Missing note · YAZ-99'))
+    open(linkSpan(root, 'Missing page · YAZ-99'))
     await vi.advanceTimersByTimeAsync(0)
-    expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith('That note no longer exists')
+    expect(nav.onNotice).toHaveBeenCalledExactlyOnceWith('That page no longer exists')
   })
 })
 
@@ -580,7 +580,7 @@ describe('wikilink click: a link to a FOLDER (YAZ-2290 D10)', () => {
     path: '/vault/Projects/.folder.md', name: '.folder.md', basename: '.folder', title: '.folder', folder: 'Projects', ext: 'md',
     size: 1, ctime: 1, mtime: 1, id: FOLDER_ID, properties: {}, aliases: [], tags: [], links: [], embeds: [],
   }
-  /** THE resolver the bridge feeds: no note at all, one folder, and its settings file's id. */
+  /** THE resolver the bridge feeds: no page at all, one folder, and its settings file's id. */
   const resolveFolder = linkResolver([], '/vault', ['/vault/Projects'], [settings])
 
   it('is styled as a RESOLVED link; an open gesture opens the directory path in the current tab, ⌘-click in a background tab', async () => {
@@ -604,7 +604,7 @@ describe('wikilink click: a link to a FOLDER (YAZ-2290 D10)', () => {
     expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith('/vault/Projects')
   })
 
-  it('an unresolved link beside it still creates a NOTE', async () => {
+  it('an unresolved link beside it still creates a PAGE', async () => {
     const { root, nav } = await mount('pad [[Projects]] and [[Missing]] tail\n', resolveFolder)
     open(linkSpan(root, 'Missing'))
     await vi.waitFor(() => expect(nav.openCurrent).toHaveBeenCalled())
@@ -713,7 +713,7 @@ describe('wikilink click: the gestures of Settings › Hotkeys, read at the clic
     expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith('/vault/Known.md')
   })
 
-  it('a read-only note keeps "a click opens" (YAZ-3879 point 6): a plain click opens in this tab; the gestures still work', async () => {
+  it('a read-only page keeps "a click opens" (YAZ-3879 point 6): a plain click opens in this tab; the gestures still work', async () => {
     const { crepe, root, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
     crepe.setReadonly(true)
     expect(mousedown(linkSpan(root, 'Known'))).toBe(false)
@@ -723,7 +723,7 @@ describe('wikilink click: the gestures of Settings › Hotkeys, read at the clic
     expect(mousedown(linkSpan(root, 'Known'), { altKey: true })).toBe(true) // a click no gesture has stays the editor's
   })
 
-  it('the vault\'s "Clicking a link: Explore" (YAZ-4936) holds on a read-only note too (YAZ-4939): a plain click opens Explore, ⌘-click still opens behind', async () => {
+  it('the vault\'s "Clicking a link: Explore" (YAZ-4936) holds on a read-only page too (YAZ-4939): a plain click opens Explore, ⌘-click still opens behind', async () => {
     const { crepe, root, nav } = await mount('pad [[Known]] tail\n', resolveKnown)
     const explore = { openExplore: vi.fn(), exploreClick: () => true }
     Object.assign(nav, explore)
@@ -737,7 +737,7 @@ describe('wikilink click: the gestures of Settings › Hotkeys, read at the clic
     expect(nav.openCurrent).not.toHaveBeenCalled()
     openBehind(linkSpan(root, 'Known'))
     expect(nav.openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Known.md')
-    // Back to "Opens the note": the read-only rule again.
+    // Back to "Opens the page": the read-only rule again.
     Object.assign(nav, { exploreClick: () => false })
     mousedown(linkSpan(root, 'Known'), { detail: 1 })
     expect(nav.openCurrent).toHaveBeenCalledExactlyOnceWith('/vault/Known.md')

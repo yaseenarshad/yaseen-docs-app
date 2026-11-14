@@ -16,7 +16,7 @@ import path from 'node:path'
 import { usage, helpers, sleep } from '../lib/app.mjs'
 import { js, row, session } from '../lib/session.mjs'
 import { PAGE_PROBES, quantiles } from '../lib/stats.mjs'
-import { writeDrawing, writeGifDrawing, writeNote } from '../genVault.mjs'
+import { writeDrawing, writeGifDrawing, writePageFile } from '../genVault.mjs'
 
 export const optIn = true
 
@@ -51,7 +51,7 @@ export function setup(dir) {
   return {
     profile: path.join(dir, 'profile'),
     vault,
-    small: writeNote(vault, 'Small', 'bullets', 20),
+    small: writePageFile(vault, 'Small', 'bullets', 20),
     gifs: writeGifDrawing(vault, 'GIFs', GIFS),
     stills: writeDrawing(vault, 'Stills', { boxes: 0, images: GIFS }),
   }

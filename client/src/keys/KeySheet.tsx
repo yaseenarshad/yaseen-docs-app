@@ -1,5 +1,5 @@
 /**
- * THE KEYS OF THIS TAB (YAZ-3564 K11): a sheet that lists the keys of the place in front — a note, a drawing, a
+ * THE KEYS OF THIS TAB (YAZ-3564 K11): a sheet that lists the keys of the place in front — a page, a drawing, a
  * diagram or a code file — as they are now, with the user's changes, then the App keys that work there. It reads the
  * one key list (`shared/keys`), so it never shows a key the user moved away. It replaces the drawing engine's own
  * help dialog, which knows only the engine's defaults. Help › Keys of This Tab…, its App key, and ? on a drawing open
@@ -9,7 +9,7 @@ import { useEffect, useRef } from 'react'
 import { toDisplay, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { ALL_KEYS, blockersOf, keysOf, stepsAside, type HotkeyAside, type KeyRow, type KeyScope } from '@shared/keys'
 
-const PLACE_TITLES: Record<KeyScope, string> = { app: 'App', note: 'Note', drawing: 'Drawing', diagram: 'Diagram', code: 'Code', views: 'Folder views', explore: 'Explore' }
+const PLACE_TITLES: Record<KeyScope, string> = { app: 'App', page: 'Page', drawing: 'Drawing', diagram: 'Diagram', code: 'Code', views: 'Folder views', explore: 'Explore' }
 
 const keysText = (row: KeyRow, overrides: HotkeyOverrides): string => {
   const keys = keysOf(row, overrides).map((k) => k.split(' ').map(toDisplay).join(' '))

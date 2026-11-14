@@ -10,7 +10,7 @@ This skill tells you, or your AI agent, how to make good cards in Yaseen Docs.
 
 A card is a short text that the app asks you to recall on a schedule. You read the front, try to recall the hidden part, then show the answer and say how well you knew it.
 
-A card lives in one of three places: **by itself** in a card file, **inside a page** in a `card` block, or **embedded in a page** with `![[ID]]`. Cards need a vault that gives its notes IDs (Settings).
+A card lives in one of three places: **by itself** in a card file, **inside a page** in a `card` block, or **embedded in a page** with `![[ID]]`. Cards need a vault that gives its pages IDs (Settings).
 
 ## How a card is written
 

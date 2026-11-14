@@ -1,6 +1,6 @@
 /**
- * The Other files tray (YAZ-4597, D43-D46): the folder's files that are not notes, off the window's Files tree, then
- * the notes moved there (`folder_settings.other_files`). Mounted as `FolderView.toolbar.test.tsx` is: the `api` mock
+ * The Other files tray (YAZ-4597, D43-D46): the folder's files that are not pages, off the window's Files tree, then
+ * the pages moved there (`folder_settings.other_files`). Mounted as `FolderView.toolbar.test.tsx` is: the `api` mock
  * sits under the real `writeProperty` over a tiny in-memory disk.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -57,7 +57,7 @@ let source: MutableWikilinkResolveSource
 let disk: Map<string, { content: string; mtime: number }>
 let clock = 100
 
-/** The index's snapshot of the disk: the notes, and the settings file's record. */
+/** The index's snapshot of the disk: the pages, and the settings file's record. */
 function feed(): void {
   const records = [rec(LEAD), rec(SALES)]
   const settings = disk.get(SETTINGS_FILE)
@@ -137,7 +137,7 @@ function drag(target: Element, type: string, dt: ReturnType<typeof transfer>): v
 }
 
 describe('what the tray lists (D44, D45)', () => {
-  it('the files directly in the folder that are not notes, with their type and size; the header counts them', async () => {
+  it('the files directly in the folder that are not pages, with their type and size; the header counts them', async () => {
     const el = await mount()
     expect(trayLines(el)).toEqual([
       ['Deck.pdf', 'PDF', '2.0 KB'],
@@ -192,29 +192,29 @@ describe('a big folder: the tray mounts a limit, and "Show all" adds the rest (Y
   })
 })
 
-describe('moving a note (D44, D46)', () => {
-  it('the row menu ends with the page group — Copy path, then "Move to Other files" — then Delete note… last (YAZ-4592; the C8 order of YAZ-4608; YAZ-3746 13AW)', async () => {
+describe('moving a page (D44, D46)', () => {
+  it('the row menu ends with the page group — Copy path, then "Move to Other files" — then Delete page… last (YAZ-4592; the C8 order of YAZ-4608; YAZ-3746 13AW)', async () => {
     const el = await mount({ onDeleteEntries: vi.fn() })
     rightClick(nameCell(el, 'Lead Gen'))
     const groups = [...el.querySelectorAll('.ctx-menu__group')].map((g) => [...g.querySelectorAll('[role^="menuitem"]')].map((b) => b.textContent))
-    expect(groups.at(-1)).toEqual(['Delete note…'])
-    // "Add shortcut to ›" (YAZ-4797 demo) sits between them on a note row of a vault with IDs.
+    expect(groups.at(-1)).toEqual(['Delete page…'])
+    // "Add shortcut to ›" (YAZ-4797 demo) sits between them on a page row of a vault with IDs.
     expect(groups.at(-2)).toEqual(['Copy path', 'Add shortcut to', 'Move to Other files'])
-    expect(groups.flat()).toContain('Duplicate note')
+    expect(groups.flat()).toContain('Duplicate page')
     expect(groups.flat()).toContain('Filter') // "Filter ›": Show only this value, Hide this value (YAZ-3746 13AW)
   })
 
-  it('row right-click "Move to Other files": the link is written, the note leaves the views and shows in the tray, with Undo', async () => {
+  it('row right-click "Move to Other files": the link is written, the page leaves the views and shows in the tray, with Undo', async () => {
     const onNotice = vi.fn()
     const el = await mount({ onNotice })
     rightClick(nameCell(el, 'Lead Gen'))
     click(menuItem(el, 'Move to Other files'))
-    // Ahead of the index: the note leaves the table at once.
+    // Ahead of the index: the page leaves the table at once.
     expect(rowNames(el)).toEqual(['Sales'])
     await settle()
     expect(otherFiles()).toEqual(['[[Lead Gen]]'])
     expect(rowNames(el)).toEqual(['Sales'])
-    expect(trayLines(el).at(-1)).toEqual(['Lead Gen', 'Note', expect.any(String)])
+    expect(trayLines(el).at(-1)).toEqual(['Lead Gen', 'Page', expect.any(String)])
     expect(onNotice).toHaveBeenCalledExactlyOnceWith('Moved to Other files', 'info', 'undo', expect.objectContaining({ label: 'Undo', fades: true }))
     await act(async () => onNotice.mock.calls[0][3].run())
     await settle()
@@ -223,7 +223,7 @@ describe('moving a note (D44, D46)', () => {
     expect(onNotice).toHaveBeenCalledTimes(1) // an Undo says nothing itself
   })
 
-  it('tray right-click "Move back to the table": the note is back in the views and the key is gone', async () => {
+  it('tray right-click "Move back to the table": the page is back in the views and the key is gone', async () => {
     disk.set(SETTINGS_FILE, { content: VIEWS.replace('      name: Pipeline\n', '      name: Pipeline\n  other_files:\n    - "[[Sales]]"\n'), mtime: 50 })
     const el = await mount()
     expect(rowNames(el)).toEqual(['Lead Gen'])
@@ -237,7 +237,7 @@ describe('moving a note (D44, D46)', () => {
     expect(trayLines(el).map(([name]) => name)).toEqual(['Deck.pdf', 'Flow.excalidraw', 'photo.png'])
   })
 
-  it('a link that names no note of the folder is no line, and the next write drops it', async () => {
+  it('a link that names no page of the folder is no line, and the next write drops it', async () => {
     disk.set(SETTINGS_FILE, { content: VIEWS.replace('      name: Pipeline\n', '      name: Pipeline\n  other_files:\n    - "[[Gone]]"\n    - "[[Sales]]"\n'), mtime: 50 })
     const el = await mount()
     expect(trayLines(el).map(([name]) => name)).toEqual(['Deck.pdf', 'Flow.excalidraw', 'photo.png', 'Sales'])
@@ -259,7 +259,7 @@ describe('moving a note (D44, D46)', () => {
     expect(otherFiles()).toEqual(['[[Lead Gen]]'])
   })
 
-  it('drag both ways: a table row onto the tray, and a tray note onto the view body', async () => {
+  it('drag both ways: a table row onto the tray, and a tray page onto the view body', async () => {
     const el = await mount()
     const out = transfer()
     drag(gripOf(el, 'Sales'), 'dragstart', out)
@@ -275,7 +275,7 @@ describe('moving a note (D44, D46)', () => {
     // The Page tab's editor inserts the `text/plain` of a drop (YAZ-4635 P2): a tray drag carries none, only its own type.
     expect(back.types).not.toContain('text/plain')
     expect(back.types).toHaveLength(1)
-    // The tray takes no drop of its own note.
+    // The tray takes no drop of its own page.
     drag(q(el, '.other-files'), 'drop', back)
     await settle()
     expect(otherFiles()).toEqual(['[[Sales]]'])

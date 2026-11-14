@@ -384,7 +384,7 @@ describe('Settings › Code: read only, wrap, minimap (YAZ-3449)', () => {
     return rows
   }
   const clickRow = (id: string, label: string): void => {
-    // The menu stays open after a row (as a note's does): open it only when it is closed.
+    // The menu stays open after a row (as a page's does): open it only when it is closed.
     if (menuIn(tab(id)) === null) act(() => tab(id).querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
     act(() => [...(menuIn(tab(id))?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent?.startsWith(label))!.click())
   }
@@ -698,7 +698,7 @@ describe('text size, scroll and Duplicate tab (YAZ-3451)', () => {
     return event
   }
 
-  it("⌘+ / ⌘− / ⌘0 reach the code tab as the note's ZOOM_EVENT: the tab claims them and Monaco's text size follows the note's steps", async () => {
+  it("⌘+ / ⌘− / ⌘0 reach the code tab as the page's ZOOM_EVENT: the tab claims them and Monaco's text size follows the page's steps", async () => {
     await opened(FILE)
     expect(editor().options.fontSize).toBe(13)
     expect(zoomStep(1).defaultPrevented).toBe(true)

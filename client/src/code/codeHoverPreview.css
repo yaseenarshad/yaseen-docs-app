@@ -1,7 +1,7 @@
 /*
  * A code file's hover card (YAZ-3508): the top of the file, coloured by Monaco's `colorize` (its `mtkN` classes,
- * styled by the app's Monaco theme), in the note card's frame (`boardPreview.css`). No scroll, no click; the last
- * 64 px fade out, as a note's do. Lazy with the card, in Monaco's chunk.
+ * styled by the app's Monaco theme), in the card's frame (`boardPreview.css`). No scroll, no click; the last
+ * 64 px fade out, as a page's do. Lazy with the card, in Monaco's chunk.
  */
 .code-hover__body {
   flex: 1;

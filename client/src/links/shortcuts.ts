@@ -1,20 +1,20 @@
 /**
- * Shortcuts (YAZ-2290 D2): a note lives in exactly ONE folder and may also APPEAR in others.
- * The shortcut is stored on the note — `also_in`, a list of FOLDER IDS, a folder's id being the
+ * Shortcuts (YAZ-2290 D2): a page lives in exactly ONE folder and may also APPEAR in others.
+ * The shortcut is stored on the page — `also_in`, a list of FOLDER IDS, a folder's id being the
  * `id` of its `.folder.md` (YAZ-2293) — so it is the same file wherever it shows, and nothing is
- * rewritten when a folder or a note is renamed or moved. This module is the one door to that key.
+ * rewritten when a folder or a page is renamed or moved. This module is the one door to that key.
  *
- * WHAT A FOLDER SHOWS (D4): the notes under it at any depth, plus those whose `also_in` holds its
+ * WHAT A FOLDER SHOWS (D4): the pages under it at any depth, plus those whose `also_in` holds its
  * id or the id of a folder under it — each once, in the index's order (`foldersShowing` is the
- * rule from the note's side). The vault root's entry is the notes directly in it. An `also_in`
+ * rule from the page's side). The vault root's entry is the pages directly in it. An `also_in`
  * entry no folder has is ignored.
  */
 import { ALSO_IN_KEY, alsoIn, alsoInEntries } from '@shared/alsoIn'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
-import { NOTE_ID_KEY, canonicalNoteId, isNoteId } from '@shared/noteId'
+import { PAGE_ID_KEY, canonicalPageId, isPageId } from '@shared/pageId'
 import { FOLDER_SETTINGS_FILE, folderSettingsPath, inFolder, isFolderSettingsPath, type IndexRecord } from '@shared/types'
 import { absFrom, basename, dirname, relTo } from '../lib/paths'
-import { takeNoteId } from '../views/scaffold'
+import { takePageId } from '../views/scaffold'
 import { transformFile } from '../views/writeProperty'
 
 /** The settings record of the folder at `dir`; undefined while it has no `.folder.md`. */
@@ -29,7 +29,7 @@ export const folderTitle = (folders: readonly IndexRecord[], dir: string): strin
 /** The settings records by the directory each is the folder of. */
 export const foldersByDir = (folders: readonly IndexRecord[]): Map<string, IndexRecord> => new Map(folders.map((r) => [dirname(r.path), r]))
 
-/** How a folder's name reads where a note's could stand: the `[[` picker's row, an id link's menu. */
+/** How a folder's name reads where a page's could stand: the `[[` picker's row, an id link's menu. */
 export const folderLabel = (name: string): string => `${name} (folder)`
 
 /** The settings records by folder id. Of two folders still sharing an id the first in path order is the one it names — the id sweep's own choice. */
@@ -62,9 +62,9 @@ function addWithParents(shown: Set<string>, folder: string): void {
 }
 
 /**
- * The folders that SHOW a note, in order: the folder it lives in (`folder`, as the index names it)
+ * The folders that SHOW a page, in order: the folder it lives in (`folder`, as the index names it)
  * and each folder above it, nearest first, then each folder its `also_in` names with the folders
- * above that one — and last the vault root (''), whose own page lists every note (YAZ-4921). A note
+ * above that one — and last the vault root (''), whose own page lists every page (YAZ-4921). A page
  * directly in the root is shown by the root alone.
  */
 export function foldersShowing(folder: string, properties: Record<string, unknown>, byId: ReadonlyMap<string, IndexRecord>): string[] {
@@ -104,12 +104,12 @@ export const directlyIn = (record: IndexRecord, folder: string): boolean => reco
 
 /**
  * Whether a row is a SUBFOLDER's (YAZ-4579 D31): its record is the folder's `.folder.md`, which the
- * index never hands out as a note (D8), so the file name is the kind marker. By the name, never the
+ * index never hands out as a page (D8), so the file name is the kind marker. By the name, never the
  * path: the engine asks it of every row.
  */
 export const isFolderRow = (record: Pick<IndexRecord, 'name'>): boolean => record.name === FOLDER_SETTINGS_FILE
 
-/** The page a row opens (YAZ-4579 D32): a folder row's is its folder, by the directory path a folder tab holds (D3); a note's is the note. */
+/** The page a row opens (YAZ-4579 D32): a folder row's is its folder, by the directory path a folder tab holds (D3); a page's is the page. */
 export const rowPage = (path: string): string => (isFolderSettingsPath(path) ? dirname(path) : path)
 
 /** The parent of a folder as the index names it ('' for one in the root). */
@@ -119,7 +119,7 @@ const parentOf = (folder: string): string => folder.slice(0, Math.max(0, folder.
  * The DIRECT subfolders of `folder` (as the index names it) as rows, in path order (YAZ-4579 D31):
  * each the subfolder's own `.folder.md` record, or, while it has none, an empty stand-in at the path
  * its first write creates (`readForWrite`). Its `folder` is the PARENT, so it sits among the
- * page's own notes; its properties are the file's own, for the host to read its values from.
+ * page's own pages; its properties are the file's own, for the host to read its values from.
  * `dirs` are the Files tree's (absolute, `vaultDirs`): a folder with no `.folder.md` is known only there.
  */
 export function subfolderRows(root: string, folder: string, dirs: readonly string[], folders: readonly IndexRecord[]): IndexRecord[] {
@@ -166,23 +166,23 @@ const propertiesOf = (content: string): Record<string, unknown> => parseFrontmat
 export async function folderId(dir: string): Promise<string> {
   const file = folderSettingsPath(dir)
   const held = (bytes: string): string | undefined => {
-    const id = propertiesOf(bytes)[NOTE_ID_KEY]
-    return isNoteId(id) ? canonicalNoteId(id) : undefined
+    const id = propertiesOf(bytes)[PAGE_ID_KEY]
+    return isPageId(id) ? canonicalPageId(id) : undefined
   }
   // A transform that changes nothing is a read: it writes nothing, and makes no file where there is none.
   const there = held((await transformFile(file, (bytes) => bytes)).content)
   if (there !== undefined) return there
-  const fresh = await takeNoteId(dir)
+  const fresh = await takePageId(dir)
   // Written against the file's bytes as they are now: an id that arrived since the read above stays.
   // Quiet (YAZ-3235 D1): a folder's id is the app's bookkeeping, not an edit the user made.
-  const { content } = await transformFile(file, (bytes) => (held(bytes) === undefined ? setFrontmatterProperty(bytes, NOTE_ID_KEY, fresh) : bytes), true)
+  const { content } = await transformFile(file, (bytes) => (held(bytes) === undefined ? setFrontmatterProperty(bytes, PAGE_ID_KEY, fresh) : bytes), true)
   return held(content) ?? fresh
 }
 
 /**
- * Make the note at `path` also appear in the folder at `dir` (D2): the folder's id joins the
- * note's `also_in` — once, and beside every entry already there, understood or not. Answers the id
- * it added, or null when the note held it already (checker 8E: an Undo then has nothing to take back).
+ * Make the page at `path` also appear in the folder at `dir` (D2): the folder's id joins the
+ * page's `also_in` — once, and beside every entry already there, understood or not. Answers the id
+ * it added, or null when the page held it already (checker 8E: an Undo then has nothing to take back).
  */
 export async function addShortcut(dir: string, path: string): Promise<string | null> {
   const id = await folderId(dir)
@@ -197,7 +197,7 @@ export async function addShortcut(dir: string, path: string): Promise<string | n
 }
 
 /**
- * The exact Undo of one add or one remove (checker 8E): `drop` leaves the note's `also_in`, `restore` joins it again
+ * The exact Undo of one add or one remove (checker 8E): `drop` leaves the page's `also_in`, `restore` joins it again
  * (each once, beside what is there), and nothing else changes — never the folders under one, as `removeShortcut` does.
  */
 export function setShortcutEntries(path: string, change: { drop?: readonly unknown[]; restore?: readonly unknown[] }): Promise<unknown> {
@@ -213,15 +213,15 @@ export function setShortcutEntries(path: string, change: { drop?: readonly unkno
 }
 
 /** An `also_in` entry as the id it names (`alsoIn`'s reading, YAZ-2677 R2: `yaz-12` names `YAZ-12`); any other entry as it is. */
-const asId = (entry: unknown): unknown => (isNoteId(entry) ? canonicalNoteId(entry) : entry)
+const asId = (entry: unknown): unknown => (isPageId(entry) ? canonicalPageId(entry) : entry)
 
 /** The ids of the folder at `dir` and of every folder under it. */
 const idsUnder = (folders: readonly IndexRecord[], dir: string): Set<unknown> => new Set(folders.filter((folder) => inFolder(dirname(folder.path), dir)).map((folder) => folder.id))
 
 /**
- * Take the note at `path` out of the folder at `dir` (E5): the ids of that folder and of every
+ * Take the page at `path` out of the folder at `dir` (E5): the ids of that folder and of every
  * folder under it leave its `also_in`, and the key goes with its last entry — an emptied list is
- * no list, the comments store's rule (`shared/comments.ts`). The note itself stays where it lives,
+ * no list, the comments store's rule (`shared/comments.ts`). The page itself stays where it lives,
  * and keeps every value (YAZ-4713 C9): a value that folder kept for it is listed in its properties, with Clear.
  */
 export async function removeShortcut(dir: string, path: string, folders: readonly IndexRecord[]): Promise<unknown[]> {
@@ -237,7 +237,7 @@ export async function removeShortcut(dir: string, path: string, folders: readonl
   return removed
 }
 
-/** One in-app move or rename of a note or a folder, as the rename door and a pasted Cut name it. */
+/** One in-app move or rename of a page or a folder, as the rename door and a pasted Cut name it. */
 export interface Move {
   oldPath: string
   newPath: string

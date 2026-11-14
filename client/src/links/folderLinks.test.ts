@@ -1,5 +1,5 @@
 /**
- * Links to folders (YAZ-2290 D10): each case pins ONE locked rule — a note, path or alias of
+ * Links to folders (YAZ-2290 D10): each case pins ONE locked rule — a page, path or alias of
  * the name always wins, the shallowest of two folders takes the bare name, an id reaches its
  * folder, the root is not linkable — then the picker rows and the belongs-to picker built on them.
  * The resolvers are pure over a folder list; only the belongs-to picker reads the Files tree, so
@@ -42,28 +42,28 @@ const rec = (path: string, over: Partial<IndexRecord> = {}): IndexRecord => {
   }
 }
 
-const NOTE_ID = 'k3m9x2pq7abc'
+const PAGE_ID = 'k3m9x2pq7abc'
 const FOLDER_ID = 'f7n2w8rt4xyz'
 
 /** The Files tree's folders, outer before inner (`allDirs`): two named Projects, one of them deeper. */
 const DIRS = ['/vault/Archive', '/vault/Archive/Old', '/vault/Projects', '/vault/Work', '/vault/Work/Projects']
 
 describe('linkResolver: a board by its ID (YAZ-3943 4C)', () => {
-  it("comes first, as a note's ID does: before a note only NAMED so; of two boards with one ID the first by path; any other target is the note's or the folder's", () => {
+  it("comes first, as a page's ID does: before a page only NAMED so; of two boards with one ID the first by path; any other target is the page's or the folder's", () => {
     const boards = [{ path: '/vault/A/Plan copy.excalidraw', id: 'DEM-5' }, { path: '/vault/B/Plan.excalidraw', id: 'DEM-5' }, { path: '/vault/Sketch.excalidraw', id: 'DEM-6' }]
-    const resolve = linkResolver([rec('/vault/DEM-6.md'), rec('/vault/Note.md')], '/vault', DIRS, [], ['DEM'], boards)
+    const resolve = linkResolver([rec('/vault/DEM-6.md'), rec('/vault/Page.md')], '/vault', DIRS, [], ['DEM'], boards)
     expect(resolve('DEM-5')).toBe('/vault/A/Plan copy.excalidraw')
     expect(resolve('[[dem-6|the sketch]]')).toBe('/vault/Sketch.excalidraw')
     // YAZ-4935: the ID on either side of the `|`; two plain words keep the left side.
     expect(resolve('[[the sketch|dem-6]]')).toBe('/vault/Sketch.excalidraw')
     expect(resolve('the sketch|DEM-6#Top')).toBe('/vault/Sketch.excalidraw')
     expect(resolve('[[the work|Projects]]')).toBeNull()
-    expect(resolve('Note')).toBe('/vault/Note.md')
+    expect(resolve('Page')).toBe('/vault/Page.md')
     expect(resolve('Projects')).toBe('/vault/Projects')
     expect(resolve('DEM-7')).toBeNull()
   })
 
-  it('YAZ-4071 7I: an ID the board held before a two-Mac merge still opens it, unless a note holds that ID now', () => {
+  it('YAZ-4071 7I: an ID the board held before a two-Mac merge still opens it, unless a page holds that ID now', () => {
     const boards = [{ path: '/vault/Plan.excalidraw', id: 'DEM-5', was: ['DEM-9', 'DEM-12'] }]
     const resolve = linkResolver([rec('/vault/Later.md', { id: 'DEM-12' })], '/vault', DIRS, [], ['DEM'], boards)
     expect(resolve('DEM-5')).toBe('/vault/Plan.excalidraw')
@@ -73,20 +73,20 @@ describe('linkResolver: a board by its ID (YAZ-3943 4C)', () => {
 })
 
 describe('linkResolver (YAZ-2290 D10): a folder takes a name only when nothing else holds it', () => {
-  it('`[[Projects]]` is the folder when no note is named Projects', () => {
-    const resolve = linkResolver([rec('/vault/Note.md')], '/vault', DIRS)
+  it('`[[Projects]]` is the folder when no page is named Projects', () => {
+    const resolve = linkResolver([rec('/vault/Page.md')], '/vault', DIRS)
     expect(resolve('Projects')).toBe('/vault/Projects')
     expect(resolve('[[Projects|the work]]')).toBe('/vault/Projects')
     expect(resolve('Projects#Scope')).toBe('/vault/Projects')
     expect(resolve('Nowhere')).toBeNull()
   })
 
-  it('a note named Projects wins, wherever it lives', () => {
+  it('a page named Projects wins, wherever it lives', () => {
     const resolve = linkResolver([rec('/vault/Archive/Old/Projects.md')], '/vault', DIRS)
     expect(resolve('Projects')).toBe('/vault/Archive/Old/Projects.md')
   })
 
-  it('so does a note merely ALIASED Projects', () => {
+  it('so does a page merely ALIASED Projects', () => {
     const resolve = linkResolver([rec('/vault/Roadmap.md', { aliases: ['Projects'] })], '/vault', DIRS)
     expect(resolve('Projects')).toBe('/vault/Roadmap.md')
   })
@@ -100,7 +100,7 @@ describe('linkResolver (YAZ-2290 D10): a folder takes a name only when nothing e
     expect(resolve('Work/Old')).toBeNull() // a path is exact: no name fallback behind it
   })
 
-  it('is case-insensitive, like note names', () => {
+  it('is case-insensitive, like page names', () => {
     const resolve = linkResolver([], '/vault', DIRS)
     expect(resolve('pROJECTS')).toBe('/vault/Projects')
     expect(resolve('work/projects')).toBe('/vault/Work/Projects')
@@ -114,24 +114,24 @@ describe('linkResolver (YAZ-2290 D10): a folder takes a name only when nothing e
     expect(resolve(FOLDER_ID)).toBeNull()
   })
 
-  it('`[[<id>]]` of a `.folder.md` is its folder; a note id is still the note', () => {
-    const records = [rec('/vault/Projects/Plan.md', { id: NOTE_ID })]
+  it('`[[<id>]]` of a `.folder.md` is its folder; a page id is still the page', () => {
+    const records = [rec('/vault/Projects/Plan.md', { id: PAGE_ID })]
     const resolve = linkResolver(records, '/vault', DIRS, [rec('/vault/Work/Projects/.folder.md', { id: FOLDER_ID })])
     expect(resolve(FOLDER_ID)).toBe('/vault/Work/Projects')
     expect(resolve(`[[${FOLDER_ID}]]`)).toBe('/vault/Work/Projects')
-    expect(resolve(NOTE_ID)).toBe('/vault/Projects/Plan.md')
+    expect(resolve(PAGE_ID)).toBe('/vault/Projects/Plan.md')
   })
 
-  it('E: `[[Title]]` is the folder with that title, before a folder merely NAMED so; a note of the title wins (YAZ-2420 D17)', () => {
+  it('E: `[[Title]]` is the folder with that title, before a folder merely NAMED so; a page of the title wins (YAZ-2420 D17)', () => {
     const folders = [rec('/vault/Archive/Old/.folder.md', { title: 'Legacy' }), rec('/vault/Work/.folder.md', { title: 'Old' })]
     const resolve = linkResolver([], '/vault', DIRS, folders)
     expect(resolve('[[legacy]]')).toBe('/vault/Archive/Old')
     expect(resolve('Old')).toBe('/vault/Work') // the title, not the directory `Archive/Old`
     expect(resolve('Work')).toBe('/vault/Work') // and a titled folder still answers to its directory's name
-    expect(linkResolver([rec('/vault/Notes/legacy-k3m9x2pq7abc.md', { title: 'Legacy' })], '/vault', DIRS, folders)('Legacy')).toBe('/vault/Notes/legacy-k3m9x2pq7abc.md')
+    expect(linkResolver([rec('/vault/Pages/legacy-k3m9x2pq7abc.md', { title: 'Legacy' })], '/vault', DIRS, folders)('Legacy')).toBe('/vault/Pages/legacy-k3m9x2pq7abc.md')
   })
 
-  it('E: `[[My Folder/Page]]` is the note titled Page in the folder titled My Folder, for a link and for a view alike (YAZ-2478)', () => {
+  it('E: `[[My Folder/Page]]` is the page titled Page in the folder titled My Folder, for a link and for a view alike (YAZ-2478)', () => {
     const records = [rec('/vault/my-folder/page-k3m9x2pq7abc.md', { title: 'Page' })]
     const folders = [rec('/vault/my-folder/.folder.md', { title: 'My Folder' })]
     const link = linkResolver(records, '/vault', ['/vault/my-folder'], folders)
@@ -139,7 +139,7 @@ describe('linkResolver (YAZ-2290 D10): a folder takes a name only when nothing e
     expect(pageResolver(records, folders, '/vault', link)('[[My Folder/Page]]')?.record).toBe(records[0])
   })
 
-  it('E: `[[My Folder/Old Clients]]` is the folder titled Old Clients in the folder titled My Folder, as `[[My Folder/Page]]` is the note (YAZ-2478)', () => {
+  it('E: `[[My Folder/Old Clients]]` is the folder titled Old Clients in the folder titled My Folder, as `[[My Folder/Page]]` is the page (YAZ-2478)', () => {
     const folders = [rec('/vault/my-folder/.folder.md', { title: 'My Folder' }), rec('/vault/my-folder/clients/.folder.md', { title: 'Old Clients' })]
     const resolve = linkResolver([], '/vault', ['/vault/my-folder', '/vault/my-folder/clients', '/vault/my-folder/plain'], folders)
     expect(resolve('[[My Folder/Old Clients]]')).toBe('/vault/my-folder/clients')
@@ -178,25 +178,25 @@ describe('folderLinkCandidates: the `[[` picker offers folders', () => {
     expect(folderLinkCandidates('/vault', DIRS, linkResolver([], '/vault', DIRS), []).map((c) => c.insert)).toEqual(['Archive', 'Old', 'Projects', 'Work', 'Work/Projects'])
   })
 
-  it('and its path when a note has the name; every row links back to its own folder', () => {
-    const records = [rec('/vault/Notes/Old.md')]
+  it('and its path when a page has the name; every row links back to its own folder', () => {
+    const records = [rec('/vault/Pages/Old.md')]
     const resolve = linkResolver(records, '/vault', DIRS)
     const candidates = folderLinkCandidates('/vault', DIRS, resolve, [])
     expect(candidates.map((c) => c.insert)).toEqual(['Archive', 'Archive/Old', 'Projects', 'Work', 'Work/Projects'])
     expect(candidates.map((c) => resolve(c.insert))).toEqual(DIRS)
   })
 
-  it('a folder whose very path a note holds gets no row: nothing inserted would reach it', () => {
+  it('a folder whose very path a page holds gets no row: nothing inserted would reach it', () => {
     const records = [rec('/vault/Projects.md'), rec('/vault/Work/Projects.md')]
     expect(folderLinkCandidates('/vault', DIRS, linkResolver(records, '/vault', DIRS), []).map((c) => c.insert)).toEqual(['Archive', 'Old', 'Work'])
   })
 
-  it('on an equal match the note ranks above the folder', () => {
-    // Both are prefix matches, and the folder sorts first by name: the note still leads.
+  it('on an equal match the page ranks above the folder', () => {
+    // Both are prefix matches, and the folder sorts first by name: the page still leads.
     const matches = matchLinkCandidates(rows([rec('/vault/Zed/Prospect.md')]), 'pro')
     expect(matches.map((c) => c.insert)).toEqual(['Prospect', 'Projects', 'Work/Projects'])
-    // The same name on both: the note has it, and the folder is offered by its path.
-    const taken = matchLinkCandidates(rows([rec('/vault/Notes/Old.md')]), 'old')
+    // The same name on both: the page has it, and the folder is offered by its path.
+    const taken = matchLinkCandidates(rows([rec('/vault/Pages/Old.md')]), 'old')
     expect(taken.map((c) => c.insert)).toEqual(['Old', 'Archive/Old'])
   })
 })
@@ -225,12 +225,12 @@ describe('folderLinkCandidates: a folder is linked by its ID and reads "(folder)
     expect(picked.map((c) => resolve(c.insert))).toEqual(['/vault/Projects', '/vault/Work/Projects'])
   })
 
-  it('K3 — a folder and a note share a name: two rows, "<name>" and "<name> (folder)", each inserting its own id', () => {
-    const { resolve, rows: all } = rows([rec('/vault/Projects.md', { id: NOTE_ID })])
+  it('K3 — a folder and a page share a name: two rows, "<name>" and "<name> (folder)", each inserting its own id', () => {
+    const { resolve, rows: all } = rows([rec('/vault/Projects.md', { id: PAGE_ID })])
     const picked = matchLinkCandidates(all, 'projects').slice(0, 2) // the two exact matches
-    expect(picked.map(row)).toEqual([['Projects', NOTE_ID], ['Projects (folder)', FOLDER_ID]])
+    expect(picked.map(row)).toEqual([['Projects', PAGE_ID], ['Projects (folder)', FOLDER_ID]])
     expect(picked.map((c) => resolve(c.insert))).toEqual(['/vault/Projects.md', '/vault/Projects'])
-    // Deeper, a note of the name takes nothing from the folder's row either: it links by id.
+    // Deeper, a page of the name takes nothing from the folder's row either: it links by id.
     const deep = rows([rec('/vault/Old.md'), rec('/vault/Archive/Old.md')], [rec('/vault/Archive/Old/.folder.md', { id: WORK_ID })])
     expect(matchLinkCandidates(deep.rows, 'old').map(row)).toEqual([['Old', 'Old'], ['Old (folder)', WORK_ID], ['Archive/Old', 'Archive/Old']])
   })
@@ -242,11 +242,11 @@ describe('folderLinkCandidates: a folder is linked by its ID and reads "(folder)
       expect(all.map(row)).toEqual([['Archive (folder)', 'Archive'], ['Old (folder)', 'Old'], ['Projects (folder)', 'Projects'], ['Work (folder)', 'Work'], ['Work/Projects (folder)', 'Work/Projects']])
       expect(all.map((c) => resolve(c.insert))).toEqual(DIRS)
     }
-    // Without an id nothing reaches a folder whose name a note holds: still no row.
+    // Without an id nothing reaches a folder whose name a page holds: still no row.
     expect(rows([rec('/vault/Projects.md')], []).rows.map((c) => c.label)).not.toContain('Projects (folder)')
   })
 
-  it('K6 — `[[Name]]` typed by hand is unchanged: a note of that name, then an alias, then the folder', () => {
+  it('K6 — `[[Name]]` typed by hand is unchanged: a page of that name, then an alias, then the folder', () => {
     const resolve = (records: IndexRecord[]) => linkResolver(records, '/vault', DIRS, FOLDERS)('[[Projects]]')
     expect(resolve([rec('/vault/Archive/Projects.md'), rec('/vault/Roadmap.md', { aliases: ['Projects'] })])).toBe('/vault/Archive/Projects.md')
     expect(resolve([rec('/vault/Roadmap.md', { aliases: ['Projects'] })])).toBe('/vault/Roadmap.md')
@@ -269,15 +269,15 @@ describe('folderLinkCandidates: a folder is linked by its ID and reads "(folder)
   })
 })
 
-describe('belongsToTitles: a link column narrowed to the notes in a FOLDER', () => {
+describe('belongsToTitles: a link column narrowed to the pages in a FOLDER', () => {
   const dir = (path: string, children: TreeNode[] = []): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
 
-  /** A vault under its own root: People holds two notes and a subfolder's one, Empty holds none. */
+  /** A vault under its own root: People holds two pages and a subfolder's one, Empty holds none. */
   async function vault(root: string): Promise<{ records: IndexRecord[]; names: (target: string) => string[] }> {
     const records = [
-      rec(`${root}/Empty Note.md`),
+      rec(`${root}/Empty Page.md`),
       rec(`${root}/KPIs.md`),
-      rec(`${root}/People/Alice.md`, { id: NOTE_ID }),
+      rec(`${root}/People/Alice.md`, { id: PAGE_ID }),
       rec(`${root}/People/Bob.md`),
       rec(`${root}/People/Teams/Core.md`),
     ]
@@ -285,7 +285,7 @@ describe('belongsToTitles: a link column narrowed to the notes in a FOLDER', () 
     await fetchTree(root)
     return { records, names: (target) => belongsToTitles(records, [], linkResolver(records, root, vaultDirs(root)), root, target).map((c) => c.name) }
   }
-  const ALL = ['Empty Note', 'KPIs', 'Alice', 'Bob', 'Core']
+  const ALL = ['Empty Page', 'KPIs', 'Alice', 'Bob', 'Core']
 
   it('reads the folders off the Files tree', async () => {
     await vault('/dirs')
@@ -294,15 +294,15 @@ describe('belongsToTitles: a link column narrowed to the notes in a FOLDER', () 
     expect(vaultDirs('/no-tree-yet')).toEqual([])
   })
 
-  it('a link column whose `target` is `[[Folder]]` narrows to that folder’s rows — its subfolders’ notes included — written by id', async () => {
+  it('a link column whose `target` is `[[Folder]]` narrows to that folder’s rows — its subfolders’ pages included — written by id', async () => {
     const { records, names } = await vault('/narrow')
     expect(names('[[People]]')).toEqual(['Alice', 'Bob', 'Core'])
     expect(names('People')).toEqual(['Alice', 'Bob', 'Core']) // a bare name is the same target
     expect(names('[[People/Teams]]')).toEqual(['Core'])
-    expect(belongsToTitles(records, [], linkResolver(records, '/narrow', vaultDirs('/narrow')), '/narrow', '[[People]]').map((c) => c.insert)).toEqual([NOTE_ID, 'Bob', 'Core'])
+    expect(belongsToTitles(records, [], linkResolver(records, '/narrow', vaultDirs('/narrow')), '/narrow', '[[People]]').map((c) => c.insert)).toEqual([PAGE_ID, 'Bob', 'Core'])
   })
 
-  it("a note that is in the target folder by a SHORTCUT is offered with the ones that live there (D2)", async () => {
+  it("a page that is in the target folder by a SHORTCUT is offered with the ones that live there (D2)", async () => {
     const { records } = await vault('/shortcut')
     const shortcut = rec('/shortcut/Guest.md', { properties: { also_in: [FOLDER_ID] } })
     const folders = [rec('/shortcut/People/.folder.md', { id: FOLDER_ID })]
@@ -313,10 +313,10 @@ describe('belongsToTitles: a link column narrowed to the notes in a FOLDER', () 
     expect(belongsToTitles(all, folders, resolve, '/shortcut', `[[${FOLDER_ID}]]`).map((c) => c.name)).toEqual(['Guest', 'Alice', 'Bob', 'Core'])
   })
 
-  it('falls back to ALL notes when the target is no folder, or the folder is empty', async () => {
+  it('falls back to ALL pages when the target is no folder, or the folder is empty', async () => {
     const { names } = await vault('/fallback')
     expect(names('[[Nowhere]]')).toEqual(ALL)
     expect(names('[[Empty]]')).toEqual(ALL)
-    expect(names('[[Empty Note]]')).toEqual(ALL) // a note, not a folder
+    expect(names('[[Empty Page]]')).toEqual(ALL) // a page, not a folder
   })
 })

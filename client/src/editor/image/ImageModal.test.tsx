@@ -16,9 +16,9 @@ import type { GalleryImage } from './imageOptions'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-const SRC = 'app://vault/%2Fv/images/a.png?from=notes'
-const SRC_B = 'app://vault/%2Fv/images/b.png?from=notes'
-const SRC_C = 'app://vault/%2Fv/images/c.png?from=notes'
+const SRC = 'app://vault/%2Fv/images/a.png?from=pages'
+const SRC_B = 'app://vault/%2Fv/images/b.png?from=pages'
+const SRC_C = 'app://vault/%2Fv/images/c.png?from=pages'
 /** Three images, as the node view hands them over: resolved srcs and alt TEXT halves. */
 const THREE = [
   { src: SRC, alt: 'first' },

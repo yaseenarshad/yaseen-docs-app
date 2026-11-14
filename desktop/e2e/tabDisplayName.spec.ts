@@ -18,7 +18,7 @@ import { activeTab, appWindow, buildFixtureVault, copyVault, extraWindow, launch
 test.describe.configure({ mode: 'serial' })
 
 const NAME = SEED_FILE.replace(/\.md$/, '')
-const LONG = 'Welcome note · the outline I keep open on the left'
+const LONG = 'Welcome page · the outline I keep open on the left'
 
 let userData: string
 let vaultSrc: string
@@ -41,8 +41,8 @@ const groups = (w: Page) =>
   w.locator('.ctx-overlay .ctx-menu > [role="group"]').evaluateAll((nodes) => nodes.map((g) => Array.from(g.querySelectorAll('[role="menuitem"]'), (b) => b.textContent)))
 
 test('right-click a tab › Set display name: the copy gets its own name, on the strip and the board, and Reset puts the page name back', async () => {
-  const notePath = path.join(vault, SEED_FILE)
-  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
+  const pagePath = path.join(vault, SEED_FILE)
+  app = await launchApp({ userData, seedState: seededState(vault, pagePath) })
   win = await appWindow(app, 'w1')
   await expect(tabsOf(win)).toHaveText([NAME])
 
@@ -78,7 +78,7 @@ test('right-click a tab › Set display name: the copy gets its own name, on the
   await expect(tabsOf(win)).toHaveText([NAME, LONG])
   // S7: after ⏎ the tab is as wide as every tab again: 200 px at most, its long name fades out.
   expect((await win.locator('.tabbar__tab').nth(1).boundingBox())!.width).toBeLessThanOrEqual(202)
-  await expect(tabsOf(win).nth(1)).toHaveAttribute('title', `${NAME}\n${notePath}`)
+  await expect(tabsOf(win).nth(1)).toHaveAttribute('title', `${NAME}\n${pagePath}`)
   await shoot(win, 'display-name-3-strip')
 
   // S12, S13: the board shows the name, and its filter finds the tab by it.
@@ -155,18 +155,18 @@ test('YAZ-3057: a copy, its display name and the copy on show come back after a 
   await shoot(win, 'display-name-6-after-restart')
 })
 
-/** A note long enough that its editor is still mounting when the second click of a double-click lands. */
-const BIG = `# Big\n\n${Array.from({ length: 3000 }, (_, i) => `- line ${i} of a long note`).join('\n')}\n`
+/** A page long enough that its editor is still mounting when the second click of a double-click lands. */
+const BIG = `# Big\n\n${Array.from({ length: 3000 }, (_, i) => `- line ${i} of a long page`).join('\n')}\n`
 const BOARD = `${JSON.stringify({ type: 'excalidraw', version: 2, source: 'yaseen-docs', elements: [], appState: {}, files: {} }, null, 2)}\n`
 const DIAGRAM = '<mxfile><diagram id="p1" name="Page-1"><mxGraphModel><root><mxCell id="0" /><mxCell id="1" parent="0" /></root></mxGraphModel></diagram></mxfile>\n'
 
 test('YAZ-3059: a double-click names a tab — also one whose page was never shown (YAZ-3084), never on the board or the blank tab', async () => {
   test.setTimeout(60_000) // a relaunch, then three pages that mount
   await quitApp(app)
-  const files = { note: path.join(vault, 'Big.md'), board: path.join(vault, 'Board.excalidraw'), diagram: path.join(vault, 'Flow.drawio') }
-  await Promise.all([writeFile(files.note, BIG), writeFile(files.board, BOARD), writeFile(files.diagram, DIAGRAM)])
+  const files = { page: path.join(vault, 'Big.md'), board: path.join(vault, 'Board.excalidraw'), diagram: path.join(vault, 'Flow.drawio') }
+  await Promise.all([writeFile(files.page, BIG), writeFile(files.board, BOARD), writeFile(files.diagram, DIAGRAM)])
   const state = seededState(vault, path.join(vault, SEED_FILE))
-  state.windows[0].tabs = [path.join(vault, SEED_FILE), files.note, files.board, files.diagram]
+  state.windows[0].tabs = [path.join(vault, SEED_FILE), files.page, files.board, files.diagram]
   app = await launchApp({ userData, seedState: state })
   win = await appWindow(app, 'w1')
   await expect(tabsOf(win)).toHaveCount(4)
@@ -174,7 +174,7 @@ test('YAZ-3059: a double-click names a tab — also one whose page was never sho
 
   // S7, YAZ-3084: only the first tab's page is mounted. The second click opens the field while each page mounts;
   // the mount must leave the caret in the field, so the name goes to the tab and the file does not change.
-  for (const [i, name, file] of [[1, 'Today', files.note], [2, 'Sketch', files.board], [3, 'Flowchart', files.diagram]] as const) {
+  for (const [i, name, file] of [[1, 'Today', files.page], [2, 'Sketch', files.board], [3, 'Flowchart', files.diagram]] as const) {
     const before = await readFile(file, 'utf8')
     await tabsOf(win).nth(i).dblclick()
     await expect(field).toBeFocused()

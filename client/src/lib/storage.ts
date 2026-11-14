@@ -383,13 +383,13 @@ export const storage = {
   /** A vault's open history (YAZ-2663 D1): page → how much it is used, and when it was last on show. Read-only here: main alone adds a use, and the cache follows the broadcast. */
   getOpens: (root: string): Readonly<Record<string, OpenStat>> => folderOf(root).opens,
 
-  /** A vault's closed notes (YAZ-3487 D9): file → when it closed. Read-only here: main alone adds one, and the cache follows the broadcast. */
+  /** A vault's closed pages (YAZ-3487 D9): file → when it closed. Read-only here: main alone adds one, and the cache follows the broadcast. */
   getClosed: (root: string): Readonly<Record<string, number>> => folderOf(root).closed,
-  /** Tabs closed in this window (YAZ-3487 D10): main puts their notes in "Recently closed". */
-  noteClosed(files: readonly string[]): void {
-    send('window.noteClosed', () => api.window.noteClosed([...files]))
+  /** Tabs closed in this window (YAZ-3487 D10): main puts their pages in "Recently closed". */
+  pageClosed(files: readonly string[]): void {
+    send('window.pageClosed', () => api.window.pageClosed([...files]))
   },
-  /** "Remove from Recently closed" / "Clear Recently closed" (YAZ-3487 D14): these notes, or with null all of this window's vaults. */
+  /** "Remove from Recently closed" / "Clear Recently closed" (YAZ-3487 D14): these pages, or with null all of this window's vaults. */
   forgetClosed(files: readonly string[] | null): void {
     send('window.forgetClosed', () => api.window.forgetClosed(files === null ? null : [...files]))
   },
@@ -498,9 +498,9 @@ export const storage = {
     send('state.setFolds', () => api.state.setFolds(root, file, keys))
   },
 
-  /** What this note's table of contents is built from (YAZ-2700 D14): `headings`, `bullets`, or `null` — Auto, the note's own structure decides, which is no entry at all. */
+  /** What this page's table of contents is built from (YAZ-2700 D14): `headings`, `bullets`, or `null` — Auto, the page's own structure decides, which is no entry at all. */
   getTocSource: (root: string, file: string): TocSource | null => folderOf(root).tocSources[file] ?? null,
-  /** The reader's choice for one note; `null` (Auto) removes the entry. The same choice again writes nothing. */
+  /** The reader's choice for one page; `null` (Auto) removes the entry. The same choice again writes nothing. */
   setTocSource(root: string, file: string, source: TocSource | null): void {
     if (source === (folderOf(root).tocSources[file] ?? null)) return
     const tocSources = { ...folderOf(root).tocSources }
@@ -510,9 +510,9 @@ export const storage = {
     send('state.setTocSource', () => api.state.setTocSource(root, file, source))
   },
 
-  /** The folded rows of this note's table of contents (YAZ-3939 D1): `tocFoldKeys` keys. */
+  /** The folded rows of this page's table of contents (YAZ-3939 D1): `tocFoldKeys` keys. */
   getTocFolds: (root: string, file: string): string[] => folderOf(root).tocFolds[file] ?? [],
-  /** Replace them for one note; an empty list removes the entry. */
+  /** Replace them for one page; an empty list removes the entry. */
   setTocFolds(root: string, file: string, keys: readonly string[]): void {
     const tocFolds = { ...folderOf(root).tocFolds }
     if (keys.length === 0) delete tocFolds[file]
@@ -521,7 +521,7 @@ export const storage = {
     send('state.setTocFolds', () => api.state.setTocFolds(root, file, keys))
   },
 
-  /** This code file's own "Table of contents" choice (YAZ-2950, YAZ-3506). No entry is `undefined`: Settings › "Table of contents default" decides (YAZ-3558 D1). A note's choice is in its frontmatter (YAZ-4094 G4). */
+  /** This code file's own "Table of contents" choice (YAZ-2950, YAZ-3506). No entry is `undefined`: Settings › "Table of contents default" decides (YAZ-3558 D1). A page's choice is in its frontmatter (YAZ-4094 G4). */
   getTocSwitch: (root: string, file: string): boolean | undefined => folderOf(root).tocSwitches[file],
   /** The reader's switch for one code file. On and off are both stored; the same value again writes nothing. */
   setTocSwitch(root: string, file: string, on: boolean): void {

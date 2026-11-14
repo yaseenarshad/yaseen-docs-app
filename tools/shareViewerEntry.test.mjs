@@ -68,7 +68,7 @@ describe('the shared drawing viewer', () => {
     expect(props.initialData).toMatchObject({ elements: [rect('a')], appState: { viewBackgroundColor: '#fafafa', theme: 'light' }, scrollToContent: true })
     expect(props.UIOptions.tools.image).toBe(false)
     expect(Object.values(props.UIOptions.canvasActions).every((on) => on === false)).toBe(true)
-    expect(el('note')).toBeNull()
+    expect(el('page')).toBeNull()
     expect(fetches).toEqual([`/scene/${ID}`])
   })
 
@@ -122,7 +122,7 @@ describe('the shared drawing viewer', () => {
     process.on('unhandledRejection', rejected)
     try {
       const { el } = await open({ scene: new Error('offline') })
-      await vi.waitFor(() => expect(el('note').textContent).toBe('This drawing could not be loaded. The link may have just been stopped.'))
+      await vi.waitFor(() => expect(el('page').textContent).toBe('This drawing could not be loaded. The link may have just been stopped.'))
       expect(render).not.toHaveBeenCalled()
       await vi.waitFor(() => expect(rejected).toHaveBeenCalled())
     } finally {

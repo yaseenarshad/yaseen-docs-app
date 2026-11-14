@@ -24,7 +24,7 @@
   color: #1f1f1f;
 }
 
-/* A zero-height dock keeps the floating bar out of document flow. Notes anchor to their page; a
+/* A zero-height dock keeps the floating bar out of document flow. Pages anchor to their page; a
    folder's Page tab (YAZ-4584) and its views (YAZ-4613) stick to the folder page's scroller so the bar follows the reader. */
 .find-bar-dock {
   z-index: 3;
@@ -32,9 +32,9 @@
   pointer-events: none;
 }
 
-/* The note's bar opens over the status chips row (zoom, sync, save), which sits at z-index 7 (app.css), so it goes one
+/* The page's bar opens over the status chips row (zoom, sync, save), which sits at z-index 7 (app.css), so it goes one
    above it. At 3 the chips drew through the open bar (YAZ-4784). */
-.find-bar-dock--note {
+.find-bar-dock--page {
   position: absolute;
   top: 8px;
   right: 0;
@@ -112,7 +112,7 @@
   line-height: 1;
 }
 
-/* The fold button and its menu (YAZ-4787): what find does with folded bullets, for this note. */
+/* The fold button and its menu (YAZ-4787): what find does with folded bullets, for this page. */
 .find-bar__folds {
   position: relative;
   display: flex;

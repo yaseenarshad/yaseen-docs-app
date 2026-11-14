@@ -31,7 +31,7 @@ import {
 import { cardFileShape } from '@shared/cardFileFormat'
 import { CardNotFoundError } from '@shared/cardLine'
 import { splitFrontmatter } from '@shared/frontmatter'
-import { isNoteReadOnly } from '@shared/readOnly'
+import { isPageReadOnly } from '@shared/readOnly'
 import type { FileResponse } from '@shared/types'
 import { BridgeRequestError, api } from '../api'
 import { flushRenamedPath } from '../lib/renameContinuity'
@@ -55,7 +55,7 @@ const folderOf = (path: string): string => path.slice(0, path.lastIndexOf('/'))
 async function readSaved(path: string): Promise<FileResponse> {
   await flushRenamedPath(path)
   const file = await api.readFile(path)
-  if (isNoteReadOnly(file.content)) throw new ConvertStopped('it is read only.')
+  if (isPageReadOnly(file.content)) throw new ConvertStopped('it is read only.')
   return file
 }
 

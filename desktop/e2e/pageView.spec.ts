@@ -3,7 +3,7 @@
  * the drilled-in bullet with its breadcrumbs, the live folds, the scroll spot and the text size (D1, D2).
  * Since YAZ-3343 D35, ⌘⇧N (File › New Window) opens a blank tab and takes no page view (step 3).
  * The source here is drilled into "Alpha parent", has "Alpha sibling" folded and stands at 125% (⌘+ through View › Zoom In, the app's own zoom path).
- * Each copy must show the same three things. The note on disk never changes: a page view is view
+ * Each copy must show the same three things. The page on disk never changes: a page view is view
  * state only, never stored (S18). Since YAZ-3647 D2 the tab itself holds its zoom level: its label stays the
  * page name (YAZ-3646 D12), and its tooltip names the bullet (YAZ-3647 E4).
  *
@@ -20,14 +20,14 @@ import { activeTab, appWindow, clickMenuItem, closeWindow, editorOf, extraWindow
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = 'Outline.md'
+const PAGE = 'Outline.md'
 /** The first crumb is the page's title (YAZ-2420 D14): for a file made outside the app, its name without the extension. */
 const TITLE = 'Outline'
 const BODY = '* Alpha parent\n  * Alpha child\n    * Alpha grandchild\n  * Alpha sibling\n    * Sibling kid\n* Beta parent\n'
 
 let userData: string
 let vault: string
-let notePath: string
+let pagePath: string
 let app: ElectronApplication
 let win: Page
 
@@ -54,8 +54,8 @@ async function expectSourceView(w: Page, shot: string): Promise<void> {
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'yaz2951-userdata-'))
   vault = await mkdtemp(path.join(tmpdir(), 'yaz2951-vault-'))
-  notePath = path.join(vault, NOTE)
-  await writeFile(notePath, BODY)
+  pagePath = path.join(vault, PAGE)
+  await writeFile(pagePath, BODY)
 })
 
 test.afterAll(async () => {
@@ -64,7 +64,7 @@ test.afterAll(async () => {
 })
 
 test('step 1 — the source: drilled into a bullet, one bullet folded, text size 125%', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
+  app = await launchApp({ userData, seedState: seededState(vault, pagePath) })
   win = await appWindow(app, 'w1')
   await expect(line(win, 'Beta parent')).toBeVisible()
 
@@ -72,13 +72,13 @@ test('step 1 — the source: drilled into a bullet, one bullet folded, text size
   await expect(crumbs(win)).toHaveText([TITLE, 'Alpha parent'])
   // The tab's label stays the page name (YAZ-3646 D12, option 2); its tooltip names the bullet (YAZ-3647 E4).
   await expect(tabsOf(win)).toHaveText([TITLE])
-  await expect(tabsOf(win).first()).toHaveAttribute('title', `${TITLE} › Alpha parent\n${notePath}`)
+  await expect(tabsOf(win).first()).toHaveAttribute('title', `${TITLE} › Alpha parent\n${pagePath}`)
 
   await line(win, 'Alpha sibling').hover() // reveal the chevron (opacity)
   await toggle(win, 'Collapse', 'Alpha sibling').click()
   await expect(line(win, 'Sibling kid')).toBeHidden()
 
-  // ⌘+ goes to the note that holds the focus (YAZ-1710): put the caret in it first.
+  // ⌘+ goes to the page that holds the focus (YAZ-1710): put the caret in it first.
   await line(win, 'Alpha child').click()
   await clickMenuItem(app, 'menu.view.zoom-in', 'w1')
   await expectSourceView(win, 'pageview-1-source')
@@ -94,7 +94,7 @@ test('step 2 — Duplicate tab: the copy shows the same breadcrumbs, fold and te
   await expect(tabsOf(win).nth(1)).toHaveAttribute('aria-selected', 'true')
   await expectSourceView(win, 'pageview-2-duplicate')
   // The copy holds the same zoom level (YAZ-3647 E10), so its tooltip names the same bullet.
-  await expect(tabsOf(win).nth(1)).toHaveAttribute('title', `${TITLE} › Alpha parent\n${notePath}`)
+  await expect(tabsOf(win).nth(1)).toHaveAttribute('title', `${TITLE} › Alpha parent\n${pagePath}`)
 
   // Back to the source, for the two new-window actions below.
   await tabsOf(win).nth(0).click()
@@ -130,5 +130,5 @@ test('step 4 — Move to new window: the new window shows the page with the same
   await expectSourceView(popped, 'pageview-5-moved')
   await expect(tabsOf(win)).toHaveText([TITLE]) // the copy from step 2 stays
 
-  expect(await readFile(notePath, 'utf8')).toBe(BODY)
+  expect(await readFile(pagePath, 'utf8')).toBe(BODY)
 })

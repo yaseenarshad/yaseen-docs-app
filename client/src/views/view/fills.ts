@@ -1,6 +1,6 @@
 /**
  * Cell and row fills in the folder table (YAZ-4536, D3 / D12). A view keeps them in its own YAML:
- * `fills: [{ note: "[[…]]", column?, fill }]`. `note` is a link, so a rename keeps the fill
+ * `fills: [{ page: "[[…]]", column?, fill }]`. `page` is a link, so a rename keeps the fill
  * (`mapFolderSettingsLinks`). No `column` means the whole row. `fill` is a table-block colour name
  * (`TABLE_COLORS`) or `#rrggbb`. A cell fill wins over its row's fill.
  */
@@ -14,7 +14,7 @@ import type { ViewSet } from '../viewSchema'
 import { canonicalKey } from './keys'
 
 export interface ViewFill {
-  note: string
+  page: string
   column?: string
   fill: string
 }
@@ -23,23 +23,23 @@ export interface ViewFill {
 const ROW = '*'
 
 /**
- * Row page → canonical column key (or `*` for the row) → fill. A row's page (`rowPage`) is the note's path, or a
+ * Row page → canonical column key (or `*` for the row) → fill. A row's page (`rowPage`) is the page's path, or a
  * folder row's FOLDER (YAZ-4644 E1): a link to a folder resolves to its directory, never to its `.folder.md`.
  */
 export type FillIndex = ReadonlyMap<string, ReadonlyMap<string, string>>
 
-/** The note a fill's link names, or null when the link resolves to none. */
-const noteOf = (note: string, resolveLink: ResolveLink): string | null => {
-  const target = exactLinkTarget(note, (page) => resolveLink(page) !== null)
+/** The page a fill's link names, or null when the link resolves to none. */
+const pageOf = (page: string, resolveLink: ResolveLink): string | null => {
+  const target = exactLinkTarget(page, (page) => resolveLink(page) !== null)
   return target === null ? null : resolveLink(target)
 }
 
-/** A usable entry's note path, its slot (`ROW` or the canonical column) and its checked fill, else null. */
+/** A usable entry's page path, its slot (`ROW` or the canonical column) and its checked fill, else null. */
 function readFill(entry: unknown, resolveLink: ResolveLink): { path: string; slot: string; fill: string } | null {
-  if (!isRecord(entry) || typeof entry.note !== 'string') return null
+  if (!isRecord(entry) || typeof entry.page !== 'string') return null
   if (entry.column !== undefined && typeof entry.column !== 'string') return null
   const fill = cellColor(entry.fill)
-  const path = noteOf(entry.note, resolveLink)
+  const path = pageOf(entry.page, resolveLink)
   if (fill === null || path === null) return null
   return { path, slot: entry.column === undefined ? ROW : canonicalKey(entry.column), fill }
 }
@@ -69,11 +69,11 @@ export const fillPaint = (fill: string): string =>
   fill.startsWith('#') ? `color-mix(in srgb, ${fill} var(--table-fill-wash), transparent)` : `var(--table-fill-${fill})`
 
 /**
- * The link a fill names its note by, as every link the app writes (YAZ-2293): the note's id when it has
+ * The link a fill names its page by, as every link the app writes (YAZ-2293): the page's id when it has
  * one, else its title while the title resolves to it, else its root-relative path without the extension.
  * A folder row (YAZ-4644 E1) is its folder: the title or the path that resolves to the directory, never `.folder`.
  */
-export function noteLinkOf(record: IndexRecord, resolveLink: ResolveLink): string {
+export function pageLinkOf(record: IndexRecord, resolveLink: ResolveLink): string {
   if (record.id !== undefined) return `[[${record.id}]]`
   const page = rowPage(record.path)
   if (resolveLink(record.title) === page) return `[[${record.title}]]`
@@ -83,7 +83,7 @@ export function noteLinkOf(record: IndexRecord, resolveLink: ResolveLink): strin
 
 /**
  * The ONE fills write, as a `Mutate` body: `record`'s cell in `column` (undefined = its row) takes `fill`,
- * or loses its fill when `fill` is null. Every other entry stays as it is (YAZ-4636 T9b): a note the view
+ * or loses its fill when `fill` is null. Every other entry stays as it is (YAZ-4636 T9b): a page the view
  * does not show now (Subfolders: Hide) or a link that does not resolve at this moment keeps its fill.
  */
 export function setViewFill(d: ViewSet, viewIndex: number, record: IndexRecord, column: string | undefined, fill: string | null, resolveLink: ResolveLink, prune = false): void {
@@ -92,8 +92,8 @@ export function setViewFill(d: ViewSet, viewIndex: number, record: IndexRecord, 
 
 /**
  * The same write for several cells or rows at once (YAZ-4593: a fill on a selection): one pass over the list. With
- * `prune` (YAZ-4637, after T9b) — the table, whose `resolveLink` is the loaded vault index — an entry whose note link
- * names no note of the vault goes: the note was deleted, and the list would only grow. A hidden note's entry, or one
+ * `prune` (YAZ-4637, after T9b) — the table, whose `resolveLink` is the loaded vault index — an entry whose page link
+ * names no page of the vault goes: the page was deleted, and the list would only grow. A hidden page's entry, or one
  * of a shape that is not ours to judge, stays.
  */
 export function setViewFills(d: ViewSet, viewIndex: number, targets: readonly { record: IndexRecord; column?: string }[], fill: string | null, resolveLink: ResolveLink, prune = false): void {
@@ -102,7 +102,7 @@ export function setViewFills(d: ViewSet, viewIndex: number, targets: readonly { 
   /** Each target's `path` + slot → its new entry (null: no fill), in the targets' order. */
   const made = new Map<string, ViewFill | null>()
   for (const { record, column } of targets)
-    made.set(`${rowPage(record.path)}\n${column === undefined ? ROW : canonicalKey(column)}`, checked === null ? null : { note: noteLinkOf(record, resolveLink), ...(column === undefined ? {} : { column }), fill: checked })
+    made.set(`${rowPage(record.path)}\n${column === undefined ? ROW : canonicalKey(column)}`, checked === null ? null : { page: pageLinkOf(record, resolveLink), ...(column === undefined ? {} : { column }), fill: checked })
   // A changed fill keeps its place in the list, so the YAML changes one line.
   const placed = new Set<string>()
   const kept: unknown[] = []
@@ -111,7 +111,7 @@ export function setViewFills(d: ViewSet, viewIndex: number, targets: readonly { 
   for (const entry of Array.isArray(view.fills) ? view.fills : []) {
     const read = readFill(entry, resolveLink)
     if (read === null) {
-      if (prune && isRecord(entry) && typeof entry.note === 'string' && noteOf(entry.note, resolveLink) === null) stale.add(entry)
+      if (prune && isRecord(entry) && typeof entry.page === 'string' && pageOf(entry.page, resolveLink) === null) stale.add(entry)
       kept.push(entry)
       continue
     }

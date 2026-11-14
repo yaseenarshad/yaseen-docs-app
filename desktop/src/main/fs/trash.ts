@@ -9,7 +9,7 @@ import { requireRequest } from './validate'
 /**
  * The Trash of an undone delete (YAZ-3268 D16). `shell.trashItem` answers nothing about where the
  * item went, and the Trash can give it a new name ("Plan 10.21.33.md") when it holds one of that
- * name. So `removeEntry` notes the item's file ID (`ino` + `dev`) before the move, and looks for the
+ * name. So `removeEntry` pages the item's file ID (`ino` + `dev`) before the move, and looks for the
  * entry with that ID after it, here. A move into the Trash keeps the ID: it is a rename on that disk.
  *
  * macOS protects `~/.Trash`: without Full Disk Access a `readdir` there fails `EPERM`, but a `stat`

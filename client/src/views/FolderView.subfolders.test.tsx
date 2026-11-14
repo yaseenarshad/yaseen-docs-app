@@ -79,7 +79,7 @@ const SETTINGS = { columns: { order: { kind: 'number' } }, views: [{ type: 'tabl
 let source: MutableWikilinkResolveSource
 const onRetitle = vi.fn()
 
-/** The index's records, as the window holds them: `archive` is the subfolder's `.folder.md` properties, `lead` the note's. */
+/** The index's records, as the window holds them: `archive` is the subfolder's `.folder.md` properties, `lead` the page's. */
 function feed(ids: boolean, archive: Record<string, unknown>, lead: Record<string, unknown> = { order: 2 }): void {
   const id = (value: string) => (ids ? { id: value } : {})
   const records: IndexRecord[] = [rec(LEAD, lead), rec('/vault/stages/archive/Old.md')]
@@ -133,7 +133,7 @@ describe('in a vault that uses IDs: the values are the subfolder’s `.folder.md
   /** Its own `order`, and an old per-page value of another page (D19), which is not read. */
   const ARCHIVE = { title: 'Archive', order: 3, in: { [KPIS_ID]: { order: 8 } } }
 
-  it('a row per direct subfolder — one with no `.folder.md` too — first, then the page’s own note; each reads its own field', async () => {
+  it('a row per direct subfolder — one with no `.folder.md` too — first, then the page’s own page; each reads its own field', async () => {
     const el = await mount(true, ARCHIVE)
     expect(names(el)).toEqual(['archive', 'plain', 'Lead'])
     expect([0, 1, 2].map((r) => cell(el, r, 1).textContent)).toEqual(['3', 'Empty', '2'])
@@ -173,13 +173,13 @@ describe('in a vault that uses IDs: the values are the subfolder’s `.folder.md
 
   it('read-only from its own `readonly`: the write is refused and nothing is renamed', async () => {
     await mount(true, { ...ARCHIVE, readonly: true })
-    await expect(captured.folder!.writeValues(ARCHIVE_FILE, [{ key: 'order', value: 1 }])).rejects.toThrow('This note is read only')
+    await expect(captured.folder!.writeValues(ARCHIVE_FILE, [{ key: 'order', value: 1 }])).rejects.toThrow('This page is read only')
     captured.folder!.retitle(ARCHIVE_FILE, 'x')
     expect(onRetitle).not.toHaveBeenCalled()
     expect(api.writeFile).not.toHaveBeenCalled()
   })
 
-  // YAZ-4713 C7: the delete clears the notes' own fields — a subfolder row's is its `.folder.md`'s top-level key (D31).
+  // YAZ-4713 C7: the delete clears the pages' own fields — a subfolder row's is its `.folder.md`'s top-level key (D31).
   it('Delete column clears the subfolder’s `.folder.md` too, and the confirm count includes it', async () => {
     disk.set(ARCHIVE_FILE, `---\nid: ${ARCHIVE_ID}\norder: 3\n---\n`)
     disk.set(LEAD, `---\norder: 2\n---\n`)

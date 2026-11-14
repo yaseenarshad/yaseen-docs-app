@@ -5,7 +5,7 @@
  */
 export const board = JSON.parse(document.getElementById('board').textContent)
 if (board.updatedAt > 0) document.getElementById('meta').textContent = `${board.allowDownload ? 'View and download' : 'View only'} · updated ${new Date(board.updatedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`
-export const note = document.getElementById('note')
+export const page = document.getElementById('page')
 export const safeName = board.name.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'board'
 
 export function save(blob, filename) {
@@ -29,7 +29,7 @@ export async function loadBoard(noun) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return await res.text()
   } catch (err) {
-    note.textContent = `This ${noun} could not be loaded. The link may have just been stopped.`
+    page.textContent = `This ${noun} could not be loaded. The link may have just been stopped.`
     throw err
   }
 }

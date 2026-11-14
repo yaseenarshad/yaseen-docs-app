@@ -24,8 +24,8 @@
  *    Empty task items are `* [ ]` on disk and `* [ ] <br />` inside Milkdown (GRO-2018).
  *  - Obsidian hotkeys (GRO-2027, `outline/hotkeys.ts` + `outline/foldAllHotkeys.ts`): Mod-Enter
  *    task cycle, Mod-Shift-u/i fold/unfold all bullets + headings, Mod-Shift-x strikethrough.
- *  - The keys are the defaults of `shared/keys/note.ts` with the user's changes (YAZ-3564 K4,
- *    `noteKeys.ts`): read once in a config, before create, so an open note keeps its keys.
+ *  - The keys are the defaults of `shared/keys/page.ts` with the user's changes (YAZ-3564 K4,
+ *    `pageKeys.ts`): read once in a config, before create, so an open page keeps its keys.
  *  - Underline mark (GRO-2028, `marks/underline.ts`): Mod-u ↔ `<u>text</u>` inline HTML.
  *  - Highlight mark (YAZ-1480, `marks/highlight.ts`): ONE mark with an optional `color`. Yellow
  *    (Mod-Shift-h / typing `==x==` / the first toolbar swatch) is Obsidian's `==text==` on disk —
@@ -59,7 +59,7 @@
  *  - Wikilinks (GRO-2190, `wikilink/wikilinkPlugin.ts`): `[[target]]` renders Obsidian
  *    live-preview style via decorations only (brackets hidden, alias/heading display,
  *    caret-adjacency reveal, resolved/unresolved via `opts.wikilinks`; an id link's id hidden
- *    too, its note's current title drawn by a widget, YAZ-2293) — never a schema or serializer
+ *    too, its page's current title drawn by a widget, YAZ-2293) — never a schema or serializer
  *    change, round-trip byte-identical. Every link is one unit (YAZ-3744 D1, YAZ-3935): it opens
  *    its raw text only from "Edit link".
  *  - Link caret (YAZ-3744 D1, YAZ-3935, `wikilink/idLinkCaret.ts`): a caret that lands inside a
@@ -68,15 +68,15 @@
  *  - Pill selection (YAZ-3747 demo, `wikilink/pillSelection.ts`): a link inside a selection lights
  *    up as one box, its icon and padding too.
  *  - Wikilink clicks (GRO-2192, YAZ-3935, YAZ-3936, `wikilink/wikilinkClick.ts`): MOUSEDOWN on a
- *    collapsed `.wikilink` span. In an editable note a plain click puts the caret at the pill's
+ *    collapsed `.wikilink` span. In an editable page a plain click puts the caret at the pill's
  *    nearer edge and a double-click selects the link; the gestures of Settings › Hotkeys ›
- *    "Links in a note" open it (⌘ → background tab, ⌘⇧ → new tab in front by default; unresolved →
- *    create-then-open via `createFromLink`); a read-only note opens on a plain click. Both
+ *    "Links in a page" open it (⌘ → background tab, ⌘⇧ → new tab in front by default; unresolved →
+ *    create-then-open via `createFromLink`); a read-only page opens on a plain click. Both
  *    preventDefault, so the link never flashes its raw text; revealed raw text stays editable.
  *    Registered only when `opts.wikilinkNav` provides the handlers.
  *  - Wikilink hover (YAZ-3403, `wikilink/wikilinkHover.ts`): the pointer on a resolved `.wikilink` span tells the
  *    host which page it opens, for the hover panel. Registered only when `opts.wikilinkHover` is passed: the
- *    note editor's, never a read-only preview's.
+ *    page editor's, never a read-only preview's.
  *  - Link menu (YAZ-2293, YAZ-3609 D23, YAZ-3740, `wikilink/wikilinkMenu.ts`): right-click on a rendered
  *    `[[link]]` shows the one link menu (`linkMenu.ts`): its name and id, the Open rows and Show in
  *    sidebar, the copy rows, Focus, Favorites and "Open in ▸", Edit link, Remove link. Registered with
@@ -88,7 +88,7 @@
  *    priority 100 and equal priorities run in addition order — the picker wins while open and
  *    declines (falls through) while closed.
  *  - Standard Markdown links (YAZ-1309, `markdownLink.ts`): an open gesture (YAZ-3936; a plain
- *    click in an editable note puts the caret, YAZ-3935) opens before caret placement — a link into
+ *    click in an editable page puts the caret, YAZ-3935) opens before caret placement — a link into
  *    a vault of the window in a tab (where the gesture says, YAZ-3609 D8, D14),
  *    anything else through the host — and such a link draws as a pill (D19); right-click shows the
  *    one link menu (D23, `linkMenu.ts`). Edit/remove
@@ -128,9 +128,9 @@
  *    removed text is a thin red mark, each changed line has a Checked button on hover; the one-line note reads
  *    the count and drives Next through the `OutsideChangesChannel` the host also gives the bar. Registered only
  *    when `opts.outsideChanges` supplies that channel. Memory only; every transaction it makes is metadata-only.
- *  - Table of contents (YAZ-2700, `toc/tocPlugin.ts`): the note's rows — its H1-H5 outside lists,
+ *  - Table of contents (YAZ-2700, `toc/tocPlugin.ts`): the page's rows — its H1-H5 outside lists,
  *    or its bullets three levels deep when it has fewer than two of those, or what the reader
- *    chose for this note (the channel's source, D14: every heading, or the bullets) — scanned at
+ *    chose for this page (the channel's source, D14: every heading, or the bullets) — scanned at
  *    view creation, 150 ms after the last document change and at once when the source changes,
  *    published through the `TocChannel` the host also gives `toc/TableOfContents.tsx`; the same
  *    channel carries the jump and the scroll spy. No state field, no decorations. Registered
@@ -165,9 +165,9 @@
  *    stays byte-identical. Vault-relative srcs
  *    load through main's `app://vault/` protocol (`image/imageSrc.ts`); eight aspect-locked handles
  *    resize into Obsidian's `alt|width`; double-click opens the host's lightbox (`image/ImageModal`).
- *    Paste/drop of image BYTES writes `assets/images/<note>-<stamp>.<ext>` and inserts the node
+ *    Paste/drop of image BYTES writes `assets/images/<page>-<stamp>.<ext>` and inserts the node
  *    (`image/insertImage.ts`, wired in `clipboardPaste.ts` through the `imageOptionsCtx` slice).
- *    Registered only when `opts.image` supplies the root + note path; without it images render as
+ *    Registered only when `opts.image` supplies the root + page path; without it images render as
  *    Crepe's stock `<img>` — the folder outline (its bullets-only lock has no `image`) and the
  *    hover preview card (no root in reach) say so where they mount.
  *  - The line's style (YAZ-3164, `line/lineStyle.ts`): the `hr` node gains `darkness`, `thickness`,
@@ -190,7 +190,7 @@
  *    the fence then `<!-- code: width 1300 -->` on the line right under it, joined on load as the
  *    table's. A node decoration sizes the box; its right edge drags the width, written on mouseup.
  *  - Cell notes (YAZ-3818 D4, D12, `table/cellNotes.ts`): a footnote labelled `cell-N` is a `cell_note` block, hidden
- *    in the note view; after a table, a cell note or a mark moves, each cell note goes back under its table. Its mark
+ *    in the page view; after a table, a cell note or a mark moves, each cell note goes back under its table. Its mark
  *    is a corner triangle; the "Add cell note" button (`table/cellNoteButton.ts`), a click on the mark, ⌘. on a plain
  *    cell line and the table menu open it as a card beside its cell (`table/cellNoteCard.ts`, the YAZ-3818 demo); a
  *    rest on the cell previews it (`table/cellNotePreview.ts`, D14). A cell's and a cell note's bullets hold lines and lists only: another block put
@@ -232,7 +232,7 @@
  *  - Table menus (YAZ-3766): the table's settings on its six-dot handle (`table/tableRows.ts`), the
  *    cell toolbar over two or more selected cells (`table/cellToolbar.ts`; its custom colour pick,
  *    `table/colours.ts`), and frozen rows and columns (`table/tableFreeze.ts`; the right-click
- *    Table part is `noteMenu.tsx`'s).
+ *    Table part is `pageMenu.tsx`'s).
  */
 import { fileKind } from '@shared/fileKind'
 import { Crepe, CrepeFeature } from './crepe'
@@ -288,7 +288,7 @@ import { highlight, highlightKeymap, highlightSchema, rangeHasHighlight, setHigh
 import { highlightPanel, MORE_KEY, panelColour, toggleHighlightPanel } from './highlightPanel'
 import { showMoreColour } from './toolbarHost'
 import { allLinesAre, LIST_KINDS, listButtons, toggleListKind } from './listButtons'
-import { noteCrepeIcons, ownIcon, TOOLBAR_GROUP_LABELS, TOOLBAR_LABELS } from './toolbarButtons'
+import { recordCrepeIcons, ownIcon, TOOLBAR_GROUP_LABELS, TOOLBAR_LABELS } from './toolbarButtons'
 import { arrangeToolbar, toolbarPrefs } from './toolbarPrefs'
 import { inlineBreaks } from './inlineBreaks'
 import { textStringify } from './textStringify'
@@ -344,7 +344,7 @@ import { enterTracker, outlinerKeymap } from './outline/listCommands'
 import { listMarkers } from './outline/listMarkers'
 import { listMarkerTyping, undoListMarker, wrapInTaskListInputRule } from './listMarkerTyping'
 import { typingArrows, undoTypingArrow } from './typingArrows'
-import { enterKeepsStyle, enterKeepsStyleInNotes } from './enterKeepsStyle'
+import { enterKeepsStyle, enterKeepsStyleInPages } from './enterKeepsStyle'
 import { createFoldingSwitch } from './outline/foldingSwitch'
 import { createOutlineFolding, type OutlineFoldingOptions } from './outline/outlineFolding'
 import { caretIntoZoom, createOutlineZoom, getZoomKey, getZoomLabel, zoomKeymap, zoomToKey, type ZoomOptions } from './outline/zoom'
@@ -358,11 +358,11 @@ import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPick
 import { cardLinkTitle, createWikilink, createWikilinkResolveSource, linkCard, linkIsResolved, linkPath, linksAsShown, type LinkLook, type VaultsOfLetters, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { languages as codeLanguages } from '@codemirror/language-data'
 import { basename } from '@shared/types'
-import { imageSrc, noteDirRel } from './image/imageSrc'
-import { flushNoteCardEditor, NOTE_CARD_ID_META, NOTE_CARD_MIRROR_META, noteCardCodeKeys, noteCardKeyRow, noteCardLanguage, noteCardPlugins, noteCardRow, type NoteCardDeps, type NoteCardHost, type NoteCardReviewDoor } from './noteCard/noteCardView'
-import type { NoteCardLook } from './noteCard/noteCardRender'
-import { cardEditorOptions } from './noteCard/cardEditorFeatures'
-import { mountCardEditor } from './noteCard/cardEditor'
+import { imageSrc, pageDirRel } from './image/imageSrc'
+import { flushCardEditor, CARD_ID_META, CARD_MIRROR_META, cardCodeKeys, cardKeyRow, cardLanguage, cardBlockPlugins, cardRow, type CardDeps, type CardHost, type CardReviewDoorApi } from './card/cardBlockView'
+import type { CardLook } from './card/cardRender'
+import { cardEditorOptions } from './card/cardEditorFeatures'
+import { mountCardEditor } from './card/cardEditor'
 import { changeCardLine } from '../review/cardFile'
 import { createIdLinkCaret } from './wikilink/idLinkCaret'
 import { createPillSelection } from './wikilink/pillSelection'
@@ -371,7 +371,7 @@ import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/vi
 import { claimPage } from '../lib/readOnlyCaret'
 import { toDisplay, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import { keyRow, keysOf } from '@shared/keys'
-import { applyNoteKeys, noteHotkeysCtx } from './noteKeys'
+import { applyPageKeys, pageHotkeysCtx } from './pageKeys'
 import { codeBlockFind } from './find/codeBlockFind'
 import { blockConfig } from '@milkdown/kit/plugin/block'
 
@@ -396,7 +396,7 @@ export interface CreateCrepeOptions {
   find?: FindChannel
   /** Outside changes channel (YAZ-3704 D6): the host's one channel per mount, shared with the one-line note. Absent → no change list at all. */
   outsideChanges?: OutsideChangesChannel
-  /** Table of contents channel (YAZ-2700): the host's one channel per mount, shared with the table of contents. Absent → the note is never scanned. */
+  /** Table of contents channel (YAZ-2700): the host's one channel per mount, shared with the table of contents. Absent → the page is never scanned. */
   toc?: TocChannel
   /** Wikilink resolve source (GRO-2190): App keeps it fed from the vault index. Defaults to a never-updated source (all links render resolved). */
   wikilinks?: WikilinkResolveSource
@@ -423,22 +423,22 @@ export interface CreateCrepeOptions {
    * Absent → `![[x.excalidraw]]` and `![[x.drawio]]` stay plain text.
    */
   boardEmbeds?: { root: string; onEditInPopup?: (target: string) => void }
-  /** First-class images (YAZ-1656): root + note path for src resolution, the lightbox opener, the paste notice. Absent → stock `<img>`, and pasted image bytes are not written. */
+  /** First-class images (YAZ-1656): root + page path for src resolution, the lightbox opener, the paste notice. Absent → stock `<img>`, and pasted image bytes are not written. */
   image?: ImageOptions
   /**
-   * Feature overrides for a NON-note instance (a drawing's text box). The note editor passes
+   * Feature overrides for a NON-page instance (a drawing's text box). The page editor passes
    * none and gets `featureConfig.ts`'s allowlist
    * verbatim — which is what `featureConfig.test.ts` keeps honest.
    */
   features?: Partial<Record<CrepeFeature, boolean>>
   /**
-   * The note editor (a tab, the right panel): while read only it takes the focus and answers its view
+   * The page editor (a tab, the right panel): while read only it takes the focus and answers its view
    * keys itself (`readOnlyKeys.ts`, YAZ-3125, YAZ-3127). Absent on the read-only previews.
    */
   readOnlyKeys?: boolean
   /**
-   * `settings.hotkeys` (YAZ-3564 K4): the note keys the user changed. Read once, here: a change applies to the notes
-   * that open next (`noteKeys.ts`). Absent = the defaults.
+   * `settings.hotkeys` (YAZ-3564 K4): the page keys the user changed. Read once, here: a change applies to the pages
+   * that open next (`pageKeys.ts`). Absent = the defaults.
    */
   hotkeys?: HotkeyOverrides
   /** Copy as › Without folded lines' toast (YAZ-3653): how many folded lines the copy left out. Absent → no toast. */
@@ -449,45 +449,45 @@ export interface CreateCrepeOptions {
    */
   lockAgain?: () => boolean
   /**
-   * The note editor (YAZ-4162 D2, D9): a calendar table's current-time marker moves each minute (`table/tableCalendar.ts`).
+   * The page editor (YAZ-4162 D2, D9): a calendar table's current-time marker moves each minute (`table/tableCalendar.ts`).
    * Absent on the hover preview card and the other previews: they show the marker of the time they opened and start no timer.
    */
   calendarClock?: boolean
   /**
-   * The note editor (YAZ-4091, YAZ-4176): the table zoom pill on each table (`table/tableZoomPill.tsx`). Absent on the
+   * The page editor (YAZ-4091, YAZ-4176): the table zoom pill on each table (`table/tableZoomPill.tsx`). Absent on the
    * hover preview card, the read-only previews and the outline view: they mount no React root for each table.
    */
   tableZoomPill?: boolean
   /**
-   * A NON-note instance's rows that never show (YAZ-4277 D4, a drawing text box): toolbar buttons and slash rows by
-   * key. Absent → every row, as a note.
+   * A NON-page instance's rows that never show (YAZ-4277 D4, a drawing text box): toolbar buttons and slash rows by
+   * key. Absent → every row, as a page.
    */
   hidden?: { toolbar?: readonly string[]; slash?: readonly string[] }
   /**
-   * A NON-note instance's own toolbar buttons (YAZ-4277 1E: a drawing text box's letter colors), added before the build.
+   * A NON-page instance's own toolbar buttons (YAZ-4277 1E: a drawing text box's letter colors), added before the build.
    * They form the strip's last group ("Other", `arrangeToolbar`), unless it returns `{ after }`: that group goes right
    * after the group of that key (the card editor's "Hide word" after the heading buttons, YAZ-5026 round 2).
    */
   extendToolbar?: (builder: ToolbarBuilder) => void | { after: string }
-  /** Whether Enter keeps the line's style (YAZ-3746 13AB). Absent → the notes' switch; a drawing text box passes its own. */
+  /** Whether Enter keeps the line's style (YAZ-3746 13AB). Absent → the pages' switch; a drawing text box passes its own. */
   enterKeepsStyle?: () => boolean
   /**
-   * Note cards (YAZ-4961): the page's path and the vault's ID door. Absent → no "Note card" slash row; a card still
+   * Cards (YAZ-4961): the page's path and the vault's ID door. Absent → no "Card" slash row; a card still
    * draws (a preview, a read layer). The row also hides while the vault gives no IDs (idea 9, `wikilinks.ids`).
    */
-  noteCards?: NoteCardHost
+  cards?: CardHost
   /** The vault's card review (YAZ-5000): "Reviews (n)" under each card with reviews. Absent (a hover preview) → no section. */
-  noteCardReviews?: NoteCardReviewDoor
+  cardReviews?: CardReviewDoorApi
   /**
-   * Does a ```` ```card ```` block draw as a note card here? False: a code block, as in a vault with no IDs — the card
+   * Does a ```` ```card ```` block draw as a card here? False: a code block, as in a vault with no IDs — the card
    * editor's own editor (YAZ-5026: no card in a card). Absent → it does.
    */
-  noteCardBlocks?: boolean
+  cardBlocks?: boolean
   /** Zoom into a bullet (GRO-2029): its click and its keys. False in the card editor (YAZ-5026). Absent → on. */
   outlineZoom?: boolean
   /** Cell notes' button, preview, card and keys (YAZ-3818). False in the card editor (YAZ-5026). Absent → on. */
   cellNotes?: boolean
-  /** A NON-note instance's own `/` rows (YAZ-5026: the card editor's "New side"), added after the Drawing row. */
+  /** A NON-page instance's own `/` rows (YAZ-5026: the card editor's "New side"), added after the Drawing row. */
   extendSlash?: (builder: SlashMenuGroups) => void
 }
 
@@ -581,8 +581,8 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
   formatting.addItem('underline', {
     icon: ownIcon('underline'),
     label: TOOLBAR_LABELS.underline,
-    // Underline's key is the app's own keymap, not a Milkdown slice `keymapRef` can name: its row, as the note opened.
-    shortcut: toDisplay(keysOf(keyRow('note.underline')!, hotkeys)[0] ?? null) || undefined,
+    // Underline's key is the app's own keymap, not a Milkdown slice `keymapRef` can name: its row, as the page opened.
+    shortcut: toDisplay(keysOf(keyRow('page.underline')!, hotkeys)[0] ?? null) || undefined,
     active: (ctx) => visibleRangeHasMark(viewState(ctx), underlineSchema.type(ctx)),
     onRun: (ctx) => runOnView(ctx, toggleUnderline(ctx)),
   })
@@ -618,7 +618,7 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
   // The default order leads with the Heading group (YAZ-2700): the toolbar opens over the start of
   // the selection, so its first buttons are the ones under the hand after a double click.
   const groups = builder.build()
-  noteCrepeIcons(groups)
+  recordCrepeIcons(groups)
   arrangeToolbar(groups, toolbarPrefs.value)
   if (place) {
     // The instance's own buttons right after the group it names; that group hidden in Settings: first.
@@ -652,9 +652,9 @@ const escapeToSidebar = (lockAgain?: () => boolean) =>
 
 /**
  * ⌘↵ in a page unlocked for a time (YAZ-4997, Yaseen: "hit CMD Enter and/or esc to go back to read only mode"): save and
- * lock it again at once, as Lock now. Priority 300, above the note's own ⌘↵ (a note card's Open card at 220, a line
+ * lock it again at once, as Lock now. Priority 300, above the page's own ⌘↵ (a card's Open card at 220, a line
  * below a table or an embed at 200 and 210, the task box's cycle): while the page is unlocked, the lock wins in the
- * text. Inside a code block, or a note card's text, the key stays theirs (their editor takes it first). It DECLINES
+ * text. Inside a code block, or a card's text, the key stays theirs (their editor takes it first). It DECLINES
  * on a page with nothing to lock: there ⌘↵ keeps its meaning.
  */
 const lockAgainKey = (lockAgain: () => boolean) =>
@@ -667,8 +667,8 @@ const lockAgainKey = (lockAgain: () => boolean) =>
   }))
 
 export function createCrepe(opts: CreateCrepeOptions): Crepe {
-  // The "Note card" row (YAZ-4961, idea 9): only in a vault that gives IDs, read at each update of the menu's flags.
-  const noteCardSlash = opts.noteCards === undefined ? undefined : { row: noteCardRow(opts.noteCards), on: () => (opts.wikilinks?.ids ?? false) }
+  // The "Card" row (YAZ-4961, idea 9): only in a vault that gives IDs, read at each update of the menu's flags.
+  const cardSlash = opts.cards === undefined ? undefined : { row: cardRow(opts.cards), on: () => (opts.wikilinks?.ids ?? false) }
   const drawingRows = opts.drawing === undefined ? undefined : drawingMenu(opts.drawing)
   const extendSlash = opts.extendSlash
   const slashRows =
@@ -678,7 +678,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
           drawingRows?.(builder)
           extendSlash(builder)
         }
-  const slashMenu = createSlashMenu(slashRows, opts.hidden?.slash, noteCardSlash)
+  const slashMenu = createSlashMenu(slashRows, opts.hidden?.slash, cardSlash)
   const crepe = new Crepe({
     root: opts.root,
     defaultValue: normalizeEmptyItems(opts.defaultValue ?? ''),
@@ -705,9 +705,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
       // app.css `--code-*` so they follow Appearance (codeTheme.ts replaces Crepe's One Dark).
       // `codeLines` (YAZ-2643 D8): a code block's own line numbers are lines of the file while the numbers show.
       // `addLineCodeKeys` (YAZ-4800 demo): ⌘↵ / ⌘⇧↵ add a line below / above the code block, before Crepe's exit-code.
-      // `noteCardCodeKeys` (YAZ-4961): in a note card's editor ⌘↵ opens the card and Esc is Done, before `addLineCodeKeys`.
+      // `cardCodeKeys` (YAZ-4961): in a card's editor ⌘↵ opens the card and Esc is Done, before `addLineCodeKeys`.
       // The `card` language: Markdown with spell check (idea 8).
-      [CrepeFeature.CodeMirror]: { theme: codeTheme, languages: [...codeLanguages, noteCardLanguage], extensions: [CodeMirrorView.lineWrapping, codeLines, codeBlockFind, noteCardCodeKeys, addLineCodeKeys] },
+      [CrepeFeature.CodeMirror]: { theme: codeTheme, languages: [...codeLanguages, cardLanguage], extensions: [CodeMirrorView.lineWrapping, codeLines, codeBlockFind, cardCodeKeys, addLineCodeKeys] },
     },
   })
   crepe.editor.use(
@@ -756,7 +756,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(breakMarks)
   // Milkdown's text handler saves a line that is only `1. ` or `# ` raw, so it reloads as a list or a heading (YAZ-3727 B5); ours escapes it.
   crepe.editor.config(textStringify)
-  // Milkdown's list-number plugin walks the whole note on each change and fixes numbered lists only (YAZ-3727 D2); ours replaces it.
+  // Milkdown's list-number plugin walks the whole page on each change and fixes numbered lists only (YAZ-3727 D2); ours replaces it.
   void crepe.editor.remove(syncListOrderPlugin)
   crepe.editor.use(listMarkers)
   // Before the fold plugins: their `apply` reads the switch's NEW value off the state being built (YAZ-4094 F1).
@@ -772,10 +772,10 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // A missing catalog must stay passive: recognized non-Markdown targets can never fall through
   // to Markdown creation, including in isolated createCrepe consumers outside App.
   const viewOnlyLinks = opts.viewOnlyLinks ?? createViewOnlyLinkSource()
-  // ⌘F reads a pill as the note draws it (YAZ-3744 S9): the same two sources.
+  // ⌘F reads a pill as the page draws it (YAZ-3744 S9): the same two sources.
   if (opts.find !== undefined) crepe.editor.use(createFindInPage(opts.find, { wikilinks, viewOnly: viewOnlyLinks }))
   if (opts.outsideChanges !== undefined) crepe.editor.use(createOutsideChanges(opts.outsideChanges))
-  // A row of the table of contents, a crumb, the tab's tooltip and its Back list name a line's links as the note shows them (YAZ-3744 D6).
+  // A row of the table of contents, a crumb, the tab's tooltip and its Back list name a line's links as the page shows them (YAZ-3744 D6).
   const linkText = (text: string) => linksAsShown(text, wikilinks, viewOnlyLinks)
   if (opts.toc !== undefined) crepe.editor.use(createTableOfContents(opts.toc, { linkText, subscribe: wikilinks.subscribe }))
   if (opts.outlineZoom !== false) crepe.editor.use(createOutlineZoom({ title: () => 'Untitled', ...opts.zoom, linkText }))
@@ -802,24 +802,24 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // The cell toolbar (YAZ-3696 D8): our own strip over two or more selected cells.
   crepe.editor.use(cellToolbar)
   // Cell notes (YAZ-3818 D8, D14): the "Add cell note" button in a cell's corner, the preview on a cell with a note,
-  // and the open note's card beside its cell (the demo): Esc and the arrows at its edges at priority 90.
+  // and the open page's card beside its cell (the demo): Esc and the arrows at its edges at priority 90.
   if (opts.cellNotes !== false) crepe.editor.use(cellNoteButton).use(cellNotePreview).use(cellNoteCard).use(cellNoteCardKeymap)
-  // ⌘A on a bullet (YAZ-4348 demo round 2): its line first, then the whole note; priority 80, under the cell's 90.
+  // ⌘A on a bullet (YAZ-4348 demo round 2): its line first, then the whole page; priority 80, under the cell's 90.
   crepe.editor.use(bulletSelectAllKeymap)
   // The table menu's Custom colour… box and its target cells (YAZ-3817, YAZ-4366), kept through edits while it is open.
   crepe.editor.use(customColourPick)
   // Frozen rows and columns (YAZ-3696 S3): the counts kept inside the table, the frozen cells' decorations, the rows' offset.
   crepe.editor.use(tableFreeze)
-  // Calendar tables (YAZ-4162): the now row and the past rows; the minute clock in the note editor only.
+  // Calendar tables (YAZ-4162): the now row and the past rows; the minute clock in the page editor only.
   crepe.editor.use(createTableCalendar(opts.calendarClock === true))
   // The row band on the caret's row (YAZ-4167): one row decoration, moved only when the caret goes to another row.
   crepe.editor.use(tableRowBand)
-  // The table zoom (YAZ-4091): the page zoom pill in a widget before each table, for the table's own `zoom`; the note editor only (YAZ-4176).
+  // The table zoom (YAZ-4091): the page zoom pill in a widget before each table, for the table's own `zoom`; the page editor only (YAZ-4176).
   if (opts.tableZoomPill === true) crepe.editor.use(tableZoomPill)
-  // Super tables (YAZ-4869): the active tab, the redraw of a changed table's view, the header rename and find; the note
-  // editor only, beside the zoom pill whose anchor draws the views. The note's place keys what this Mac remembers.
-  if (opts.tableZoomPill === true) crepe.editor.use(createSuperTables(opts.image === undefined ? null : { root: opts.image.root, notePath: opts.image.notePath }))
-  // A read-only NOTE's keyboard (YAZ-3125, YAZ-3127): the note editor only, never a preview.
+  // Super tables (YAZ-4869): the active tab, the redraw of a changed table's view, the header rename and find; the page
+  // editor only, beside the zoom pill whose anchor draws the views. The page's place keys what this Mac remembers.
+  if (opts.tableZoomPill === true) crepe.editor.use(createSuperTables(opts.image === undefined ? null : { root: opts.image.root, pagePath: opts.image.pagePath }))
+  // A read-only PAGE's keyboard (YAZ-3125, YAZ-3127): the page editor only, never a preview.
   if (opts.readOnlyKeys === true) crepe.editor.use(readOnlyKeys)
   crepe.editor.use(createWikilink(wikilinks, viewOnlyLinks, opts.linkLook, opts.vaultsOfLetters))
   // Every [[link]] is one unit (YAZ-3744 D1, YAZ-3935): the caret steps over it, Backspace removes it whole.
@@ -830,17 +830,17 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   const follow = opts.wikilinkNav === undefined ? undefined : wikilinkFollower(wikilinks, opts.wikilinkNav, viewOnlyLinks, opts.vaultsOfLetters)
   if (opts.wikilinkNav !== undefined && follow !== undefined) {
     const nav = opts.wikilinkNav
-    // A plain click opens a note pill in Explore while the vault says so (YAZ-4936): a note that is there, never a board or a folder.
-    // A card link's plain click always opens its card window (YAZ-5030), as Explore does a note's with the setting on.
+    // A plain click opens a page pill in Explore while the vault says so (YAZ-4936): a page that is there, never a board or a folder.
+    // A card link's plain click always opens its card window (YAZ-5030), as Explore does a page's with the setting on.
     const exploreClick = (inner: string): boolean => linkCard(inner, wikilinks) !== null || (nav.exploreClick?.() === true && fileKind(linkPath(inner, wikilinks, viewOnlyLinks) ?? '') === 'markdown')
     crepe.editor.use(createWikilinkClick(follow, () => nav.hotkeys?.(), exploreClick)).use(createWikilinkMenu(wikilinks, opts.wikilinkNav, follow, viewOnlyLinks, opts.vaultsOfLetters))
   }
   if (opts.wikilinkHover !== undefined) crepe.editor.use(createWikilinkHover(wikilinks, opts.wikilinkHover, viewOnlyLinks))
-  // Note cards (YAZ-4961): a ```card block draws as a card in every editor that has code blocks (idea 10: the hover
-  // preview, QuickLook, read-only notes and Explore too); its pills, images and links as the note's.
-  const cardsHere = { ...features, ...opts.features }[CrepeFeature.CodeMirror] !== false && opts.noteCardBlocks !== false
-  const cardDeps = cardsHere ? noteCardDeps(opts, wikilinks, viewOnlyLinks, follow) : undefined
-  if (cardDeps !== undefined) crepe.editor.use(noteCardPlugins(cardDeps))
+  // Cards (YAZ-4961): a ```card block draws as a card in every editor that has code blocks (idea 10: the hover
+  // preview, QuickLook, read-only pages and Explore too); its pills, images and links as the page's.
+  const cardsHere = { ...features, ...opts.features }[CrepeFeature.CodeMirror] !== false && opts.cardBlocks !== false
+  const cardDeps = cardsHere ? cardDepsOf(opts, wikilinks, viewOnlyLinks, follow) : undefined
+  if (cardDeps !== undefined) crepe.editor.use(cardBlockPlugins(cardDeps))
   if (opts.markdownLinkNav !== undefined) crepe.editor.use(createMarkdownLink(opts.markdownLinkNav, wikilinks)).config(noPreviewOnPills)
   crepe.editor.use(createWikilinkPicker(opts.wikilinkCandidates ?? createWikilinkCandidateSource(), wikilinks, opts.wikilinkNav, opts.linkLook))
   if (opts.boardEmbeds !== undefined) {
@@ -860,16 +860,16 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
           cardDeps === undefined
             ? undefined
             : {
-                look: (path) => noteCardLook(wikilinks, viewOnlyLinks, opts.image === undefined ? undefined : { ...opts.image, notePath: path }, opts.linkLook),
+                look: (path) => cardLook(wikilinks, viewOnlyLinks, opts.image === undefined ? undefined : { ...opts.image, pagePath: path }, opts.linkLook),
                 edit:
                   cardDeps.editor === undefined
                     ? undefined
-                    : (root, text, done) => ({ editor: mountCardEditor({ root, text, make: cardDeps.editor!, doors: { done, changed: () => {} } }), keys: noteCardKeyRow() }),
+                    : (root, text, done) => ({ editor: mountCardEditor({ root, text, make: cardDeps.editor!, doors: { done, changed: () => {} } }), keys: cardKeyRow() }),
                 follow,
                 hotkeys: cardDeps.hotkeys,
                 openHref: cardDeps.openHref,
                 onNotice: cardDeps.onNotice,
-                putBack: opts.noteCards?.convert?.putBack,
+                putBack: opts.cards?.convert?.putBack,
               },
       }),
     )
@@ -880,19 +880,19 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.config((ctx) => {
     ctx.inject(imageOptionsCtx, opts.image ?? null)
     ctx.inject(copyNoticeCtx, opts.onCopyNotice ?? null)
-    // A plain-text copy names each link as the note shows it, an ID link with its ID (YAZ-3744 S8).
+    // A plain-text copy names each link as the page shows it, an ID link with its ID (YAZ-3744 S8).
     ctx.inject(copyLinkTextCtx, (text) => linksAsShown(text, wikilinks, viewOnlyLinks, true))
     // Copy as Markdown writes each `[[link]]` as a save does, never `\[\[link]]` (YAZ-3747).
     ctx.inject(copyMarkdownCtx, postProcessMarkdown)
   })
-  // The note keys (YAZ-3564 K4): the user's changes for the app's keymaps, and Milkdown's keymap slices set from them,
+  // The page keys (YAZ-3564 K4): the user's changes for the app's keymaps, and Milkdown's keymap slices set from them,
   // before any keymap is read.
   crepe.editor.config((ctx) => {
-    ctx.inject(noteHotkeysCtx, opts.hotkeys ?? {})
-    applyNoteKeys(ctx)
+    ctx.inject(pageHotkeysCtx, opts.hotkeys ?? {})
+    applyPageKeys(ctx)
     // YAZ-3695 D3: Delete at a line's start deletes the next character. Milkdown's `LiftFirstListItem` (a `joinBackward`)
     // keeps Backspace only, and `DowngradeHeading` (a heading one level BIGGER) loses both: the outliner's join (D6) owns
-    // Backspace at a heading's start. `applyNoteKeys` leaves both entries alone: they are on no key row.
+    // Backspace at a heading's start. `applyPageKeys` leaves both entries alone: they are on no key row.
     ctx.update(listItemKeymap.key, (prev) => ({ ...prev, LiftFirstListItem: { ...prev.LiftFirstListItem, shortcuts: 'Backspace' } }))
     ctx.update(headingKeymap.key, (prev) => ({ ...prev, DowngradeHeading: { ...prev.DowngradeHeading, shortcuts: [] } }))
   })
@@ -932,8 +932,8 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   crepe.editor.use(listMarkerTyping).use(undoListMarker).use(wrapInTaskListInputRule)
   // Arrows while typing (YAZ-4273): `->` → `→` and the rest, off from Settings › Editor › Typing.
   crepe.editor.use(typingArrows).use(undoTypingArrow)
-  // Enter keeps the text style (YAZ-3746 13AB): off in notes, on in drawing text boxes, from Settings › Editor › Typing.
-  crepe.editor.use(enterKeepsStyle(opts.enterKeepsStyle ?? enterKeepsStyleInNotes))
+  // Enter keeps the text style (YAZ-3746 13AB): off in pages, on in drawing text boxes, from Settings › Editor › Typing.
+  crepe.editor.use(enterKeepsStyle(opts.enterKeepsStyle ?? enterKeepsStyleInPages))
   // The bullet's menu, top to bottom (YAZ-3646 D9): where it opens (Open in new tab), its kind (the toolbar's list
   // buttons and T in one strip, YAZ-3727 D13, D14), its children (Number children, when it has any), its
   // own numbered list as bullets with written numbers (YAZ-3727 D12),
@@ -1013,9 +1013,9 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
         const key = new PluginKey<number>('mdapp-board-view-save')
         return new Plugin({
           key,
-          // A new note card's ID (YAZ-4961) is such a write too: out of undo, so ⌘Z removes the card in one step.
+          // A new card's ID (YAZ-4961) is such a write too: out of undo, so ⌘Z removes the card in one step.
           // So is the card editor's mirror of a card's text (YAZ-5026): out of undo, so Done is ONE undo step.
-          state: { init: () => 0, apply: (tr, n) => (tr.docChanged && (tr.getMeta(BOARD_VIEW_META) === true || tr.getMeta(NOTE_CARD_ID_META) === true || tr.getMeta(NOTE_CARD_MIRROR_META) === true) ? n + 1 : n) },
+          state: { init: () => 0, apply: (tr, n) => (tr.docChanged && (tr.getMeta(BOARD_VIEW_META) === true || tr.getMeta(CARD_ID_META) === true || tr.getMeta(CARD_MIRROR_META) === true) ? n + 1 : n) },
           view: () => {
             let timer: ReturnType<typeof setTimeout> | undefined
             return {
@@ -1035,13 +1035,13 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
 }
 
 /**
- * A note card's look in a vault (YAZ-4961; YAZ-4962 for the card window and the Inbox): the link pills as the note's
- * (label, resolved, icon), the images and sounds by the note's folder, the board embeds by their links. One function for the page and the screens outside it.
+ * A card's look in a vault (YAZ-4961; YAZ-4962 for the card window and the Inbox): the link pills as the page's
+ * (label, resolved, icon), the images and sounds by the page's folder, the board embeds by their links. One function for the page and the screens outside it.
  */
-export function noteCardLook(wikilinks: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined, image?: ImageOptions, linkLook?: LinkLook): NoteCardLook {
+export function cardLook(wikilinks: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined, image?: ImageOptions, linkLook?: LinkLook): CardLook {
   return {
     link: (inner) => {
-      // A link to a note card (YAZ-5030): its title, its ID and the card icon, as the note's card pill.
+      // A link to a card (YAZ-5030): its title, its ID and the card icon, as the page's card pill.
       const card = inner.includes('|') ? null : linkCard(inner, wikilinks)
       if (card !== null) return { label: cardLinkTitle(card), resolved: true, card: card.id }
       const path = linkPath(inner, wikilinks, viewOnly)
@@ -1051,8 +1051,8 @@ export function noteCardLook(wikilinks: WikilinkResolveSource, viewOnly: ViewOnl
         attrs: path === null || linkLook === undefined ? undefined : linkLook.icon(path, fileKind(basename(path)) === null),
       }
     },
-    image: image === undefined ? undefined : (src) => imageSrc(image.root, noteDirRel(image.root, image.notePath), src),
-    // A board embed's file (YAZ-5015): where its link resolves, in the note's vault.
+    image: image === undefined ? undefined : (src) => imageSrc(image.root, pageDirRel(image.root, image.pagePath), src),
+    // A board embed's file (YAZ-5015): where its link resolves, in the page's vault.
     board:
       image === undefined
         ? undefined
@@ -1063,14 +1063,14 @@ export function noteCardLook(wikilinks: WikilinkResolveSource, viewOnly: ViewOnl
   }
 }
 
-/** What the note cards of one editor read (YAZ-4961): the editor's own link sources, follower, images and doors. */
-function noteCardDeps(opts: CreateCrepeOptions, wikilinks: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource, follow: LinkFollow | undefined): NoteCardDeps {
+/** What the cards of one editor read (YAZ-4961): the editor's own link sources, follower, images and doors. */
+function cardDepsOf(opts: CreateCrepeOptions, wikilinks: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource, follow: LinkFollow | undefined): CardDeps {
   const image = opts.image
   const nav = opts.markdownLinkNav
-  const look = noteCardLook(wikilinks, viewOnly, image, opts.linkLook)
+  const look = cardLook(wikilinks, viewOnly, image, opts.linkLook)
   return {
-    host: opts.noteCards,
-    path: image?.notePath ?? null,
+    host: opts.cards,
+    path: image?.pagePath ?? null,
     ids: () => opts.wikilinks?.ids ?? true,
     writeLine: changeCardLine,
     look: () => look,
@@ -1086,7 +1086,7 @@ function noteCardDeps(opts: CreateCrepeOptions, wikilinks: WikilinkResolveSource
             else void nav.open(href)
           },
     onNotice: opts.wikilinkNav?.onNotice ?? nav?.onNotice,
-    reviews: opts.noteCardReviews,
+    reviews: opts.cardReviews,
     // Edit card with the page's editor (YAZ-5026): a second editor of this one's kind, with the card's on/off list.
     editor: (root) => {
       const crepe = createCrepe(cardEditorOptions(opts, root))
@@ -1114,7 +1114,7 @@ export function getMarkdownForSave(crepe: Crepe): string {
   const saved = crepe.editor.action((ctx) => {
     flushBoardWindows(ctx.get(editorViewCtx))
     // A card in Edit card (YAZ-5026): its text as it is now, into the page, before the page is read.
-    flushNoteCardEditor(ctx.get(editorViewCtx))
+    flushCardEditor(ctx.get(editorViewCtx))
     return savedMarkdown(ctx)
   })
   return postProcessMarkdown(saved ?? crepe.getMarkdown())
@@ -1140,7 +1140,7 @@ export function setMarkdown(crepe: Crepe, markdown: string): void {
   })
 }
 
-/** The note's ProseMirror view, for what lives beside the editor and acts on it: the note's right-click menu (YAZ-3653). */
+/** The page's ProseMirror view, for what lives beside the editor and acts on it: the page's right-click menu (YAZ-3653). */
 export const editorViewOf = (crepe: Crepe): EditorView => crepe.editor.action((ctx) => ctx.get(editorViewCtx))
 
 /** Move keyboard focus into the document (e.g. right after opening a file from the sidebar). */
@@ -1183,7 +1183,7 @@ export function placeCaret(crepe: Crepe, at: { anchor: number; head: number }): 
   })
 }
 
-/** The note's caret, for its page view (YAZ-3737 D3). */
+/** The page's caret, for its page view (YAZ-3737 D3). */
 export function getCaretOf(crepe: Crepe): { anchor: number; head: number } {
   const { anchor, head } = editorViewOf(crepe).state.selection
   return { anchor, head }
@@ -1195,14 +1195,14 @@ export interface KeptCaret {
   doc: unknown
 }
 
-/** Keep the note's caret or selection as it is now, for `giveCaretBack`. */
+/** Keep the page's caret or selection as it is now, for `giveCaretBack`. */
 export function keepCaretOf(crepe: Crepe): KeptCaret {
   const { selection, doc } = editorViewOf(crepe).state
   return { selection, doc }
 }
 
 /**
- * The keyboard back to the note (YAZ-4997 round 2, Yaseen: "return the caret to where I was previously or where I was
+ * The keyboard back to the page (YAZ-4997 round 2, Yaseen: "return the caret to where I was previously or where I was
  * selecting"): the kept selection, exactly (a node or a cell selection too), when the document is the same; cut to it
  * when the document changed meanwhile (an outside change). Then the focus, with no scroll: the page stays where it is.
  * No `kept`: the focus alone, the caret where it is. Locked or not, `view.focus` lands in the body (`focusReadOnlyBody`).

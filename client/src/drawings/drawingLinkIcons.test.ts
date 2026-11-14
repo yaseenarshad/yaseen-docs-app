@@ -75,7 +75,7 @@ describe("a pill's file icon (YAZ-4110 5B)", () => {
     delete document.documentElement.dataset.theme
   })
 
-  it('with file icons off the CSS draws nothing: null, no icon, as in a note', () => {
+  it('with file icons off the CSS draws nothing: null, no icon, as in a page', () => {
     before = () => ({ content: 'none' })
     document.querySelector<HTMLElement>('.app')!.dataset.sidebarFileIcons = 'off'
     expect(drawingLinkIcon('/v/Plan.md', false, () => {})).toBeNull()

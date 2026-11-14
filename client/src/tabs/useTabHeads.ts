@@ -3,13 +3,13 @@ import { BOARD_TYPE_NAME, isBoard, isDrawing, isMarkdown } from '@shared/fileKin
 import type { FileHead } from '@shared/types'
 import { api } from '../api'
 
-/** How many lines of a note are kept at most: a page's own clamp shows fewer, the peek more. */
+/** How many lines of a page are kept at most: a page's own clamp shows fewer, the peek more. */
 const PAGE_LINES = 24
 
 /**
- * A note's first lines, by its path, with the mtime they were read at (YAZ-2648 D6). For the
+ * A page's first lines, by its path, with the mtime they were read at (YAZ-2648 D6). For the
  * session only, and never bigger than the tab strip: every answer drops the paths that are no
- * longer open. A note that could not be read is held too, with no lines, so it is not asked again
+ * longer open. A page that could not be read is held too, with no lines, so it is not asked again
  * while its page stands.
  */
 const cache = new Map<string, { mtime: number; lines: string }>()
@@ -29,7 +29,7 @@ const charOf = (ref: string, hex: string | undefined, dec: string | undefined): 
 }
 
 /**
- * The head of a note as a page shows it: plain text, a few lines. Markdown's marks come off — a
+ * The head of a page as a page shows it: plain text, a few lines. Markdown's marks come off — a
  * heading's `#`, a bullet, a task box, a quote mark, emphasis, the pipes at the ends of a table
  * row — a link shows its text, a wiki link its alias or its target, an HTML tag goes, and a line
  * that is only marks goes whole: a rule, a table's rule, a code fence with or without a language.
@@ -62,8 +62,8 @@ export function plainLines(text: string): string {
 
 /**
  * The feature hook of the tab board's pages (YAZ-2648 D6): the first lines of every open tab
- * that is a note. ONE bridge call for all of them when the board opens — the lines held from
- * the last time show at once, and a note whose mtime moved gets new ones when the call answers. A
+ * that is a page. ONE bridge call for all of them when the board opens — the lines held from
+ * the last time show at once, and a page whose mtime moved gets new ones when the call answers. A
  * tab that joins while the board stands asks for itself alone. A folder, a PDF, an image and
  * view-only text have no lines and are never asked for.
  */
@@ -71,8 +71,8 @@ export function useTabHeads(tabs: readonly string[]): (path: string) => string {
   const [, landed] = useReducer((n: number) => n + 1, 0)
   const live = useRef({ tabs, opened: false })
   live.current.tabs = tabs
-  const notes = tabs.filter(isMarkdown)
-  const fresh = notes.filter((path) => !cache.has(path) && !pending.has(path))
+  const pages = tabs.filter(isMarkdown)
+  const fresh = pages.filter((path) => !cache.has(path) && !pending.has(path))
   const wanted = fresh.join('\n')
 
   useEffect(() => {
@@ -81,8 +81,8 @@ export function useTabHeads(tabs: readonly string[]): (path: string) => string {
   }, [])
 
   useEffect(() => {
-    // The open asks for every note, so a change made since the last time shows; after it, only a tab that joined.
-    const paths = (live.current.opened ? fresh : notes).filter((path) => !pending.has(path))
+    // The open asks for every page, so a change made since the last time shows; after it, only a tab that joined.
+    const paths = (live.current.opened ? fresh : pages).filter((path) => !pending.has(path))
     live.current.opened = true
     if (paths.length === 0) return
     for (const path of paths) pending.add(path)

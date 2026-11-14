@@ -4,7 +4,7 @@
  * (`cli.ts`, `card add --after`) all read code through here, so one fence rule holds for all.
  *
  * A fence is three or more backticks or tildes; it closes on the same character, at least as long, with nothing after
- * it. A NOTE CARD's text (a ```` ```card ```` block, `cardLine.ts`) is Markdown (YAZ-4960 D17): its lines are `card`,
+ * it. A PAGE CARD's text (a ```` ```card ```` block, `cardLine.ts`) is Markdown (YAZ-4960 D17): its lines are `card`,
  * not code — but a code block INSIDE a card is code again (audit 7: its `[[x]]` is no link, its `{{x}}` no hidden word).
  * Pure: no fs, no DOM.
  */
@@ -13,7 +13,7 @@
 export type LineKind = 'text' | 'fence' | 'code' | 'card'
 
 const FENCE_RE = /^[ \t]*(`{3,}|~{3,})/
-/** The fence of a note card: the language `card` and nothing else (`cardLine.ts` `isCardFence`). */
+/** The fence of a card: the language `card` and nothing else (`cardLine.ts` `isCardFence`). */
 const CARD_FENCE_RE = /^[ \t]*(`{3,}|~{3,})[ \t]*card[ \t]*$/
 const CODE_SPAN_RE = /(`+)[\s\S]*?\1/g
 

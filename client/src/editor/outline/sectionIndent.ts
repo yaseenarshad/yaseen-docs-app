@@ -1,5 +1,5 @@
 /**
- * Section indent (YAZ-2709): in a note that uses headings, the text stands below its heading, one
+ * Section indent (YAZ-2709): in a page that uses headings, the text stands below its heading, one
  * step in for each section that holds it, and thin vertical lines show the sections. The lines on
  * the way to the caret take bullet threading's colour.
  *
@@ -13,7 +13,7 @@
  * Drawing is pure CSS (sectionIndent.css): the indent is a transparent left border and the lines
  * are a gradient inside it.
  *
- * Steps count by NESTING, not by heading number: a note that starts at H2 has its H2s at the edge,
+ * Steps count by NESTING, not by heading number: a page that starts at H2 has its H2s at the edge,
  * and an H4 right under an H2 is one step in, not two. All six levels make a section; folds stay
  * H1-H3 (headingFolding.ts). Only a direct child of the doc counts: a heading inside a list or a
  * quote makes no section. Nothing is indented while a bullet is zoomed.
@@ -95,7 +95,7 @@ class SectionSet extends HandBuiltSet {
 /**
  * How many sections hold each top-level block: the steps it stands in. A stack of the open heading
  * levels: a heading closes every open level at or below its own, stands at the depth that is left,
- * and opens its own. So the first headings of a note stand at the edge whatever their number, and a
+ * and opens its own. So the first headings of a page stand at the edge whatever their number, and a
  * skipped level is no extra step.
  */
 export const sectionDepths = (doc: ProseNode): Uint8Array => {
@@ -164,7 +164,7 @@ export const sectionLineAtOffset = (offset: number, step: number, depth: number)
 
 /**
  * The line of `block` under viewport `x`, or null. The indent is the block's own left border, so
- * its width is depth × step whatever the setting, the narrow-note step and the document zoom are.
+ * its width is depth × step whatever the setting, the narrow-page step and the document zoom are.
  * Shared with the block-handle gate (blockHandleGate.ts), so both hit the same drawn line.
  */
 export const sectionLineAt = (x: number, block: Element): number | null => {
@@ -264,7 +264,7 @@ export const sectionIndent = $prose(() => {
 
 /**
  * Sends the page's switch to the plugin: a metadata-only transaction that is not a step of the
- * history, so ⌘Z never undoes it and the note never turns unsaved.
+ * history, so ⌘Z never undoes it and the page never turns unsaved.
  */
 export const showSectionIndent = (crepe: Crepe, on: boolean): void =>
   crepe.editor.action((ctx) => {

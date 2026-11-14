@@ -178,7 +178,7 @@ describe('escapeBlockStart: text that would re-parse as a BLOCK stays literal te
   it('a number that is not a list marker is untouched', () => {
     expect(escapeBlockStart('1.5 tokens per word')).toBe('1.5 tokens per word')
     expect(escapeBlockStart('1.foo')).toBe('1.foo')
-    expect(escapeBlockStart('v2) see notes')).toBe('v2) see notes')
+    expect(escapeBlockStart('v2) see pages')).toBe('v2) see pages')
   })
 
   it('escapes bullet markers, headings, quotes, fences and thematic breaks', () => {
@@ -200,7 +200,7 @@ describe('escapeBlockStart: text that would re-parse as a BLOCK stays literal te
   it('plain text, wikilinks, inline html, existing escapes and seven hashes pass through unchanged', () => {
     expect(escapeBlockStart('hello world')).toBe('hello world')
     expect(escapeBlockStart('')).toBe('')
-    expect(escapeBlockStart('[[Sub Note]]')).toBe('[[Sub Note]]')
+    expect(escapeBlockStart('[[Sub Page]]')).toBe('[[Sub Page]]')
     expect(escapeBlockStart('**<u>Solving Business Problems with AI</u>**')).toBe('**<u>Solving Business Problems with AI</u>**')
     expect(escapeBlockStart('2\\) what surface do you use?')).toBe('2\\) what surface do you use?')
     expect(escapeBlockStart('\\*')).toBe('\\*')
@@ -218,14 +218,14 @@ describe('escapeOutlineMarkdown: every bullet line armored, every other byte unt
   })
 
   it('a document with nothing to escape comes back identical', () => {
-    const doc = '- a\n    - b\n- [[Sub Note]]'
+    const doc = '- a\n    - b\n- [[Sub Page]]'
     expect(escapeOutlineMarkdown(doc)).toBe(doc)
   })
 })
 
 describe('escapeBlockStart: footnote definitions — the one GFM dropper the scan missed (YAZ-974)', () => {
   it('escapes a footnote definition, and only a definition', () => {
-    expect(escapeBlockStart('[^1]: note')).toBe('\\[^1]: note')
+    expect(escapeBlockStart('[^1]: page')).toBe('\\[^1]: page')
     expect(escapeBlockStart('[^long-name]: see below')).toBe('\\[^long-name]: see below')
     // A plain link-reference-style line survives the editor as literal text already — untouched.
     expect(escapeBlockStart('[x]: /url')).toBe('[x]: /url')

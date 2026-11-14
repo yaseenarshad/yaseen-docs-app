@@ -5,7 +5,7 @@ import { HoverTip } from '../../components/HoverTip'
 /**
  * The six header states (YAZ-4713 C11, locked 2026-11-08; C11B, demo 2026-11-09; YAZ-4769 demo): none (this folder's own),
  * from a parent, this folder's own settings over a parent's ("Desserts only", ✎), from a subfolder, a separate value, and
- * ◌, a field only in the notes, so "no mark" always means this folder's own column.
+ * ◌, a field only in the pages, so "no mark" always means this folder's own column.
  */
 type Mark = { icon: 'parent' | 'copy' | 'below' | 'lock' | 'loose'; title: string; name: string }
 
@@ -17,7 +17,7 @@ export function columnMark(sources: ColumnSources, key: string, separate: boolea
   // YAZ-4769 demo: a copy of a parent's column ("Change on Desserts only") was no mark at all, so it read as the folder's own.
   if (over !== undefined) return { icon: 'copy', title: `Own settings on ${sources.folderName} (${over} keeps the shared ones). Same values.`, name: sources.folderName }
   if (below !== undefined) return { icon: 'below', title: `From ${below}`, name: below }
-  if (loose === true) return { icon: 'loose', title: unit('Only in the notes. This page has no column for it.'), name: unit('Notes only') }
+  if (loose === true) return { icon: 'loose', title: unit('Only in the pages. This page has no column for it.'), name: unit('Pages only') }
   return null
 }
 

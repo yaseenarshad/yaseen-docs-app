@@ -21,7 +21,7 @@ const rec = (title: string, folder: string, properties: Record<string, unknown>)
 
 const RECORDS = [
   rec('Alpha', 'Tasks', { price: 1234.5, due: '2026-11-07', owner: '[[Bravo]]', tags: ['a', 'b'], done: true }),
-  rec('Bravo', 'Tasks/Sub', { price: 2, note: 'says "hi", then\nleaves', see: 'ask [[Alpha]] and ![[pic.png]]' }),
+  rec('Bravo', 'Tasks/Sub', { price: 2, page: 'says "hi", then\nleaves', see: 'ask [[Alpha]] and ![[pic.png]]' }),
 ]
 const resolve = resolverFor(RECORDS, '/vault')
 const ctx: CellTextContext = {
@@ -48,7 +48,7 @@ properties:
 `)
     expect(viewTable(def, def.views[0].order!, result.rows, ctx)).toEqual([
       ['Name', 'Cost', 'Due', 'Owner', 'Tags', 'Done', 'Folder'],
-      // A number in its format (11B), a date in its format, a link by its note's title, a list joined, the folder by its title.
+      // A number in its format (11B), a date in its format, a link by its page's title, a list joined, the folder by its title.
       ['Alpha', '1,234.50', 'Nov 7, 2026', 'Bravo', 'a, b', 'true', ''],
       ['Bravo', '2.00', '', '', '', '', 'Title of Tasks/Sub'],
     ])
@@ -65,7 +65,7 @@ properties:
     expect(viewTable(def, ['note.price'], result.rows, ctx)[0]).toEqual(['Name', 'Price'])
   })
 
-  it('a grouped view: group by group, and a note shown under two groups is one line', () => {
+  it('a grouped view: group by group, and a page shown under two groups is one line', () => {
     const { result } = run(`views:
   - type: table
     name: T
@@ -79,15 +79,15 @@ properties:
 
 describe('the two formats (S30)', () => {
   const table = [
-    ['Name', 'Note'],
+    ['Name', 'Page'],
     ['Bravo', 'says "hi", then\nleaves'],
     ['Tab', 'a\tb'],
   ]
   it('CSV quotes a field with a quote, a comma or a line break, doubles its quotes, and ends lines in CRLF (RFC 4180)', () => {
-    expect(toCsv(table)).toBe('Name,Note\r\nBravo,"says ""hi"", then\nleaves"\r\nTab,a\tb\r\n')
+    expect(toCsv(table)).toBe('Name,Page\r\nBravo,"says ""hi"", then\nleaves"\r\nTab,a\tb\r\n')
   })
   it('tab-separated text puts a space for a tab or a line break inside a cell', () => {
-    expect(toTsv(table)).toBe('Name\tNote\nBravo\tsays "hi", then leaves\nTab\ta b')
+    expect(toTsv(table)).toBe('Name\tPage\nBravo\tsays "hi", then leaves\nTab\ta b')
   })
   it('the file name is the folder and the view, with no path separator', () => {
     expect(csvName('Tasks', 'Board: a/b')).toBe('Tasks - Board- a-b.csv')

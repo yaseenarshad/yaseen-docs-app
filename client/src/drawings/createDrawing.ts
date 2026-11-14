@@ -1,14 +1,14 @@
 /**
- * A new board for a note (YAZ-877; named after the note since YAZ-4831 items 2, 3): "/drawing" and "/diagram" make
- * `<Note title> drawing.excalidraw` or `<Note title> diagram.drawio` and embed it.
+ * A new board for a page (YAZ-877; named after the page since YAZ-4831 items 2, 3): "/drawing" and "/diagram" make
+ * `<Page title> drawing.excalidraw` or `<Page title> diagram.drawio` and embed it.
  *
- * WHERE: Settings › `newBoardFolder` — `'note'` (the default) puts it in the note's own folder, `'assets'` in the vault's
+ * WHERE: Settings › `newBoardFolder` — `'page'` (the default) puts it in the page's own folder, `'assets'` in the vault's
  * `assets/drawings/` (made on the way, level by level). The write is `fs:create-board` (YAZ-3028 D9): the empty board,
  * born stamped, at an EXPLICIT path, never fuzzy, and never over a file. A name that is taken there comes back
  * `ALREADY_EXISTS` and the loop tries ` 2`, ` 3`, … (bounded by `MAX_ATTEMPTS`). Any other failure goes to the caller's
  * notice untouched.
  *
- * WHAT THE NOTE GETS: the embed's target. The bare file name when no other file of the vault has that name (it then
+ * WHAT THE PAGE GETS: the embed's target. The bare file name when no other file of the vault has that name (it then
  * resolves to this one alone), else the vault-relative path.
  */
 import { api, BridgeRequestError } from '../api'
@@ -34,21 +34,21 @@ export function boardFileName(title: string, kind: NewBoardKind, attempt = 0): s
 
 export interface NewBoardPlace {
   root: string
-  /** The note's absolute path: its folder is the default home. */
-  notePath: string
-  /** The note's title, as its tab shows it. */
+  /** The page's absolute path: its folder is the default home. */
+  pagePath: string
+  /** The page's title, as its tab shows it. */
   title: string
   /** True when a file of the vault already has this name (the index's answer); absent → always the path. */
   nameTaken?: (name: string) => boolean
 }
 
-/** Makes one empty board for the note; resolves the embed's target (see the module doc). */
-export async function createBoardForNote(place: NewBoardPlace, kind: NewBoardKind): Promise<string> {
-  const { root, notePath, title } = place
-  const noteDir = notePath.slice(0, Math.max(notePath.lastIndexOf('/'), 0))
+/** Makes one empty board for the page; resolves the embed's target (see the module doc). */
+export async function createBoardForPage(place: NewBoardPlace, kind: NewBoardKind): Promise<string> {
+  const { root, pagePath, title } = place
+  const pageDir = pagePath.slice(0, Math.max(pagePath.lastIndexOf('/'), 0))
   // A10: inside the vault means the root itself or under `root/`; `/a/Vault 2/` is not inside `/a/Vault`.
-  const inVault = noteDir === root || noteDir.startsWith(`${root}/`)
-  const dir = storage.getSettings().newBoardFolder === 'assets' || !inVault ? await ensureFolder(root, DRAWINGS_DIR) : noteDir
+  const inVault = pageDir === root || pageDir.startsWith(`${root}/`)
+  const dir = storage.getSettings().newBoardFolder === 'assets' || !inVault ? await ensureFolder(root, DRAWINGS_DIR) : pageDir
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const name = boardFileName(title, kind, attempt)
     // Asked before the write: after it, the index holds this file too.

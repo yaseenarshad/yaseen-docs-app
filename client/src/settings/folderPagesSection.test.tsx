@@ -78,7 +78,7 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
     }
   })
 
-  it('every default shows: Sunday, short rows, numbers on, by kind, Medium, empty groups on, Their notes, Month, Clip, files off, Confirm changes on', async () => {
+  it('every default shows: Sunday, short rows, numbers on, by kind, Medium, empty groups on, Their pages, Month, Clip, files off, Confirm changes on', async () => {
     await open('Folder pages')
     expect(pressed('folderPages.weekStartsOn')).toBe('Sunday') // Sunday to Saturday (YAZ-3746 demo round 2)
     expect(pressed('folderPages.rowHeight')).toBe('Short')
@@ -91,15 +91,15 @@ describe('Settings › Folder pages (YAZ-4585)', () => {
     expect(pressed('folderPages.groupLineStyle')).toBe('Lines')
     expect(pressed('folderPages.showEmptyGroups')).toBe('On') // YAZ-3746 demo round 2 (F2)
     expect(pressed('folderPages.showEmptyColumns')).toBe('Off')
-    expect(pressed('folderPages.subfolders')).toBe('Their notes')
+    expect(pressed('folderPages.subfolders')).toBe('Their pages')
     expect(pressed('folderPages.foldersFirst')).toBe('On')
     expect(pressed('folderPages.calendarScale')).toBe('Month')
     expect(pressed('folderPages.cardTitles')).toBe('Clip')
     expect(pressed('folderPages.hideWeekends')).toBe('Off')
     expect(pressed('folderPages.showFolderPageFiles')).toBe('Off')
-    // Delete note… asks first unless this is turned off (YAZ-4592 S26).
+    // Delete page… asks first unless this is turned off (YAZ-4592 S26).
     expect(pressed('folderPages.askBeforeDelete')).toBe('On')
-    expect(pressed('folderPages.confirmChanges')).toBe('On') // a folder page asks before it changes a note (YAZ-3746 13AN)
+    expect(pressed('folderPages.confirmChanges')).toBe('On') // a folder page asks before it changes a page (YAZ-3746 13AN)
     expect(pressed('folderPages.showOtherFiles')).toBe('On')
     expect(pressed('folderPages.inheritColumns')).toBe('On') // YAZ-4713 C12: a page shows its parent folders' columns
     expect(pressed('folderPages.columnMarks')).toBe('Icon') // C11: the header's mark is an icon by default

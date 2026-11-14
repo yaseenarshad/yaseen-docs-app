@@ -1,6 +1,6 @@
 /**
  * The right-click menu's Table part (YAZ-3769, YAZ-3696 D5 / S3) on the real editor in jsdom: the
- * rows through `noteMenuSections` (the pointer is the document position right-clicked), what each
+ * rows through `pageMenuSections` (the pointer is the document position right-clicked), what each
  * does, one undo step each, freeze save and reload, and the freeze counts clamped to the table.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -12,9 +12,9 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuAction, MenuItem, MenuParent, MenuSection } from '../../sidebar/menuSections'
 import { getMarkdownForSave } from '../createCrepe'
-import { noteMenuSections } from '../noteMenu'
+import { pageMenuSections } from '../pageMenu'
 import { handleKind } from './tableMenu'
-import { cellDOM, cellPos, mountNote as mount, unmountAll } from './tableTestKit'
+import { cellDOM, cellPos, mountPage as mount, unmountAll } from './tableTestKit'
 import { setStickyHeaderSetting } from './timeFormatSetting'
 
 afterEach(unmountAll)
@@ -22,7 +22,7 @@ afterEach(unmountAll)
 const TABLE = '| h1 | h2 |\n| -- | -- |\n| a  | b  |\n| c  | d  |\n'
 /** The position inside the text of the cell at (row, col): where a right-click there lands. */
 const inCell = (view: EditorView, row: number, col: number) => cellPos(view, row, col) + 2
-const sectionsAt = (view: EditorView, row: number, col: number) => noteMenuSections(view, null, vi.fn(), inCell(view, row, col))
+const sectionsAt = (view: EditorView, row: number, col: number) => pageMenuSections(view, null, vi.fn(), inCell(view, row, col))
 const all = (sections: MenuSection[]): MenuAction[] => sections.flat().flatMap((item: MenuItem) => (item.children === undefined ? [item] : item.children.flat()))
 const row = (view: EditorView, r: number, c: number, id: string) => {
   const found = all(sectionsAt(view, r, c)).find((item) => item.id === id)
@@ -79,7 +79,7 @@ describe('the Table part', () => {
     const { view } = await mount(TABLE)
     view.dispatch(view.state.tr.setSelection(CellSelection.rowSelection(view.state.doc.resolve(cellPos(view, 1, 0)))))
     expect(handleKind(view.state.selection)).toBe('row')
-    expect(shape(noteMenuSections(view, null, vi.fn(), inCell(view, 1, 0), false, 'row'))).toEqual([
+    expect(shape(pageMenuSections(view, null, vi.fn(), inCell(view, 1, 0), false, 'row'))).toEqual([
       CLIPBOARD,
       ['Insert row above', 'Insert row below', 'Duplicate row'],
       ['Delete row', 'Clear cells', 'Merge cells'],
@@ -89,7 +89,7 @@ describe('the Table part', () => {
     ])
     view.dispatch(view.state.tr.setSelection(CellSelection.colSelection(view.state.doc.resolve(cellPos(view, 0, 1)))))
     expect(handleKind(view.state.selection)).toBe('column')
-    expect(shape(noteMenuSections(view, null, vi.fn(), inCell(view, 0, 1), false, 'column'))).toEqual([
+    expect(shape(pageMenuSections(view, null, vi.fn(), inCell(view, 0, 1), false, 'column'))).toEqual([
       CLIPBOARD,
       ['Insert column left', 'Insert column right', 'Duplicate column'],
       ['Delete column', 'Clear cells', 'Merge cells'],
@@ -97,7 +97,7 @@ describe('the Table part', () => {
       [FREEZE],
     ])
     // Selected cells are not words: no Add link….
-    expect(all(noteMenuSections(view, null, vi.fn(), inCell(view, 0, 1), false, 'column')).map((item) => item.id)).not.toContain('add-link')
+    expect(all(pageMenuSections(view, null, vi.fn(), inCell(view, 0, 1), false, 'column')).map((item) => item.id)).not.toContain('add-link')
   })
 
   it('YAZ-4970: "Insert 3 columns left" is in Insert › of a 3-column cell selection, and inserts 3', async () => {
@@ -109,9 +109,9 @@ describe('the Table part', () => {
     expect(texts(view)[0]).toEqual(['h1', '', '', '', 'h2', 'h3', 'h4'])
   })
 
-  it('is absent outside a table and in a read-only note', async () => {
+  it('is absent outside a table and in a read-only page', async () => {
     const { crepe, view } = await mount(`text\n\n${TABLE}`)
-    const ids = (pointer: number) => all(noteMenuSections(view, null, vi.fn(), pointer)).map((item) => item.id)
+    const ids = (pointer: number) => all(pageMenuSections(view, null, vi.fn(), pointer)).map((item) => item.id)
     expect(ids(2)).not.toContain('table-insert-row-above')
     crepe.setReadonly(true)
     expect(ids(inCell(view, 1, 0))).not.toContain('table-insert-row-above')

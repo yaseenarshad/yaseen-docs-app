@@ -1,8 +1,8 @@
 /*
  * The comment stream (YAZ-1472) — owned by CommentsSection.tsx (the feature-CSS convention). The
- * block sits INSIDE the editor's scroller, after the note's body or a folder's views and BEFORE "Linked
+ * block sits INSIDE the editor's scroller, after the page's body or a folder's views and BEFORE "Linked
  * mentions", and repeats `.editor-instance`'s content column (backlinks.css's rule, byte for byte)
- * so it lines up with the note's text and scrolls with it, and draws NO hairline of its own
+ * so it lines up with the page's text and scrolls with it, and draws NO hairline of its own
  * (YAZ-1675 — the body flows straight into the header; YAZ-1680 did the same for Linked mentions). The header is the properties panel's
  * control (chevron, muted label, plain count, collapses the rest) at the backlinks' size, with one
  * fold-all button at its right. Below it, Linear's shape with the outliner's folding: every thread is ONE white card —
@@ -84,7 +84,7 @@
   background: var(--bg-hover);
 }
 
-/* The one line a note gets instead of a composer when `comments` is not ours to write. */
+/* The one line a page gets instead of a composer when `comments` is not ours to write. */
 .comments__notice {
   margin: 0;
   font-size: 13px;
@@ -255,7 +255,7 @@
   margin-left: 48px;
 }
 
-/* The body is rendered Markdown (D9 as amended): the note's own typography, one size down, boxed. */
+/* The body is rendered Markdown (D9 as amended): the page's own typography, one size down, boxed. */
 .comments__body {
   font-size: 14px;
   line-height: 1.55;

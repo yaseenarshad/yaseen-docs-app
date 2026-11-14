@@ -3,7 +3,7 @@
  * preview in the settings itself?"). Loaded only when Settings shows one (`registry.tsx`, lazy).
  *
  * - `CardSpacingPreview` (Settings › Review › Card spacing): a small sample card, drawn by the card's own render
- *   (`renderNoteCard`) in the card's own classes, one word shown and one still hidden.
+ *   (`renderCard`) in the card's own classes, one word shown and one still hidden.
  * - `PageSpacingPreview` (Settings › Appearance › Spacing): a heading and two paragraphs in the page editor's classes
  *   (`.editor-instance .milkdown .ProseMirror`).
  *
@@ -12,8 +12,8 @@
  * moment a setting changes. The text is made up; nothing reads the vault.
  */
 import { useEffect, useRef } from 'react'
-import { renderNoteCard } from '../editor/noteCard/noteCardRender'
-import '../editor/noteCard/noteCard.css'
+import { renderCard } from '../editor/card/cardRender'
+import '../editor/card/card.css'
 import './SpacingPreview.css'
 
 /** The sample card: a title line, a paragraph with two hidden words, and a list with a child, so every spacing shows. */
@@ -23,13 +23,13 @@ export function CardSpacingPreview() {
   const body = useRef<HTMLDivElement>(null)
   useEffect(() => {
     // The first hidden word shows, the second waits: both looks of Shown hidden words at once.
-    body.current?.replaceChildren(renderNoteCard(PREVIEW_CARD, { shown: 1 }))
+    body.current?.replaceChildren(renderCard(PREVIEW_CARD, { shown: 1 }))
   }, [])
   return (
     <div className="spacing-preview" aria-hidden="true" data-preview="card">
       <span className="spacing-preview__label">Preview</span>
-      <div className="note-card spacing-preview__card">
-        <div ref={body} className="note-card__body" />
+      <div className="card spacing-preview__card">
+        <div ref={body} className="card__body" />
       </div>
     </div>
   )

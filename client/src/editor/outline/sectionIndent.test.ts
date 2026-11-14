@@ -19,10 +19,10 @@ import { SECTION_DEPTH_ATTR, SECTION_LINE_HOVER_CLASS, SECTION_PATH_ATTR, sectio
 import { headingFoldHidden } from './headingFoldTestKit'
 
 /**
- * Seventeen top-level blocks. The note starts at H2, skips from H2 to H4, goes down to H6, and holds
+ * Seventeen top-level blocks. The page starts at H2, skips from H2 to H4, goes down to H6, and holds
  * a list and a quote that each have a heading inside (neither makes a section).
  */
-const NOTE = `Intro paragraph
+const PAGE = `Intro paragraph
 
 ## Alpha
 
@@ -64,7 +64,7 @@ const DEPTHS = [0,   0,    1,    1,   2,   2,   3,   3,  4,  4,   4,    1,   2, 
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
-async function mount(markdown = NOTE, opts: Omit<CreateCrepeOptions, 'root' | 'defaultValue'> = {}) {
+async function mount(markdown = PAGE, opts: Omit<CreateCrepeOptions, 'root' | 'defaultValue'> = {}) {
   const root = document.createElement('div')
   document.body.appendChild(root)
   const crepe = createCrepe({ root, defaultValue: markdown, ...opts })
@@ -119,7 +119,7 @@ function plugin(crepe: Crepe) {
 }
 
 describe('section depths', () => {
-  it('counts by nesting: an H2-first note starts at the edge, a skipped level is one step, H4-H6 make sections, and a heading inside a list or a quote makes none', async () => {
+  it('counts by nesting: an H2-first page starts at the edge, a skipped level is one step, H4-H6 make sections, and a heading inside a list or a quote makes none', async () => {
     const { crepe } = await mount()
     expect(Array.from(sectionDepths(viewOf(crepe).state.doc))).toEqual(DEPTHS)
     turnOn(crepe)
@@ -150,7 +150,7 @@ describe('section depths', () => {
 
   it('never changes the markdown and never fires markdownUpdated', async () => {
     const onMarkdownUpdated = vi.fn()
-    const { crepe } = await mount(NOTE, { onMarkdownUpdated })
+    const { crepe } = await mount(PAGE, { onMarkdownUpdated })
     const before = getMarkdownForSave(crepe)
     turnOn(crepe)
     caretIn(crepe, 'six text')
@@ -199,7 +199,7 @@ describe('the purple path', () => {
 
   it("follows CMD+F's active match after a query and a step, and a caret move gives it back (YAZ-3166)", async () => {
     const channel = createFindChannel()
-    const { crepe } = await mount(NOTE, { find: channel })
+    const { crepe } = await mount(PAGE, { find: channel })
     turnOn(crepe)
     caretIn(crepe, 'Intro paragraph')
     expect(pathShown(crepe)).toEqual(DEPTHS.map(() => 0))
@@ -248,7 +248,7 @@ describe('a click on a section line', () => {
     expect([5, 10, 15].map((x) => sectionLineAtOffset(x, 30, 2))).toEqual([1, 1, 1])
     expect([35, 40, 45].map((x) => sectionLineAtOffset(x, 30, 2))).toEqual([2, 2, 2])
     expect([-1, 4, 16, 29, 34, 46, 60, 70].map((x) => sectionLineAtOffset(x, 30, 2))).toEqual([null, null, null, null, null, null, null, null])
-    // The narrow-note step of 18px: centred at 6 and 24.
+    // The narrow-page step of 18px: centred at 6 and 24.
     expect([1, 6, 11, 12, 19, 24].map((x) => sectionLineAtOffset(x, 18, 2))).toEqual([1, 1, 1, null, 2, 2])
     // A block with no measured indent (jsdom, or a page that is off) has no line.
     expect(sectionLineAtOffset(10, Number.NaN, 2)).toBeNull()

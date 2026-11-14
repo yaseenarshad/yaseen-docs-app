@@ -26,8 +26,8 @@ export interface ReadOnlyChipState {
 }
 
 /**
- * The page's top-right toolbar (YAZ-3746 D35): what a note page and a folder page share, in one order —
- * the host's own chips first (`children`: a note's fold-all button and cog, a folder page's cog), then the
+ * The page's top-right toolbar (YAZ-3746 D35): what a page page and a folder page share, in one order —
+ * the host's own chips first (`children`: a page's fold-all button and cog, a folder page's cog), then the
  * zoom pill, the "Read only" chip while the page is locked, the sync chip when the vault has one, and the save chip.
  */
 export function StatusChips({ children, zoom, onZoom, readOnly, sync, onSyncNow, save }: {

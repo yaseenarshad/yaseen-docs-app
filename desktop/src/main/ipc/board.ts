@@ -11,7 +11,7 @@
  * the save log (YAZ-3235 D1), which reaches the windows with the app state. A window with the
  * same board open learns of the change from the shared watcher, like any edit made outside the
  * app, and decides for itself (reload when clean, the conflict bar when dirty). A create is an
- * `add` on the same watcher, as a new note is.
+ * `add` on the same watcher, as a new page is.
  */
 import path from 'node:path'
 import { CONTRACT } from '@shared/ipc'
@@ -45,7 +45,7 @@ export function registerBoardIpc(store: Pick<Store, 'get' | 'addEdit' | 'approve
   handle(CONTRACT.boardHead, boardHead)
   // Only a request with `imageMaxPx` — a picture of the scene, never an editor — reaches the cache.
   handle(CONTRACT.drawing.load, (req: unknown) => loadDrawing(req, thumbs === null ? undefined : (files, elements, px) => thumbs.fit(files, elements, px)))
-  // A drawing's and a diagram's save go in the save log, as a note's does (YAZ-3235 D1, S10).
+  // A drawing's and a diagram's save go in the save log, as a page's does (YAZ-3235 D1, S10).
   // A save that gave the board its ID (YAZ-3943 4C) tells the index at once: a `[[` pick right after it writes the ID.
   // A save writes to an outside pictures folder only when the user picked it (YAZ-3943 demo round 3, `approvedPictureFolders`).
   const save = async (req: unknown) => {

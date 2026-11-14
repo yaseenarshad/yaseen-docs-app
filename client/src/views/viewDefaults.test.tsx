@@ -13,7 +13,7 @@ import { ViewsPane, type ViewsPaneProps } from './ViewsPane'
 import { testFolderHost } from './testFolderHost'
 import { TEST_RECORDS } from './testRecords'
 import { chooseOwn, withDefaults } from './viewDefaults'
-import { dropAllNoteWindows, noteWindowMemory } from './view/NoteWindow'
+import { dropAllPageWindows, pageWindowMemory } from './view/PageWindow'
 import { cellNotePinnedAtStart } from '../editor/table/cellNoteCard'
 
 vi.mock('../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
@@ -31,7 +31,7 @@ const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecor
   const title = name === '.folder.md' ? rel.split('/').at(-2)! : name.replace(/\.md$/, '')
   return { ...TEST_RECORDS[0], path, name, basename: name.replace(/\.md$/, ''), title, folder: rel.slice(0, rel.lastIndexOf('/')), properties }
 }
-const NOTES = [rec('/vault/Page/Alpha.md', { tags: ['a', 'b'], status: 'open', due: '2026-12-08' }), rec('/vault/Page/Sub/Beta.md', { tags: ['c'], status: 'done', due: '2026-12-09' })]
+const PAGES = [rec('/vault/Page/Alpha.md', { tags: ['a', 'b'], status: 'open', due: '2026-12-08' }), rec('/vault/Page/Sub/Beta.md', { tags: ['c'], status: 'done', due: '2026-12-09' })]
 const FOLDER_ROWS = [{ ...rec('/vault/Page/Sub/.folder.md'), folder: 'Page' }]
 
 let root: Root | null = null
@@ -53,9 +53,9 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
           }}
           root="/vault"
           folderPath="/vault/Page"
-          records={NOTES}
+          records={PAGES}
           folderRows={FOLDER_ROWS}
-          folder={testFolderHost({ vaultRecords: NOTES, renderNoteEditor: (path) => <div className="stub-editor">{path}</div> })}
+          folder={testFolderHost({ vaultRecords: PAGES, renderPageEditor: (path) => <div className="stub-editor">{path}</div> })}
           onOpenFile={vi.fn()}
           {...props}
         />,
@@ -70,7 +70,7 @@ afterEach(() => {
   root = null
   container?.remove()
   container = null
-  dropAllNoteWindows()
+  dropAllPageWindows()
   vi.useRealTimers()
 })
 
@@ -131,7 +131,7 @@ describe('withDefaults and chooseOwn (YAZ-4585)', () => {
     // Show empty groups is on by default (YAZ-3746 demo round 2): a Table with no key of its own shows its empty groups.
     // Column type icons (YAZ-4779), sticky group headers and group lines on hover (YAZ-4798) are on by default too: every
     // view with no key of its own takes them (plain lines are the look before, so `groupLineStyle` is not filled).
-    // The notes inside count is off by default (YAZ-4848): a view with no key of its own reads it off.
+    // The pages inside count is off by default (YAZ-4848): a view with no key of its own reads it off.
     const NEW_ON = { columnTypeIcons: true, stickyGroups: true, groupLines: 'hover', folderCounts: false } as const
     expect(withDefaults(view, DEFAULT_FOLDER_PAGES)).toEqual({ ...view, ...NEW_ON, showEmptyColumns: true })
     const board: ViewDef = { type: 'board', name: 'B' }
@@ -165,8 +165,8 @@ describe('withDefaults and chooseOwn (YAZ-4585)', () => {
     expect(v).not.toHaveProperty('groupIndent')
     chooseOwn(v, 'groupIndent', 'medium', fp({ groupIndent: 'small' }))
     expect(v.groupIndent).toBe('medium')
-    chooseOwn(v, 'subfolders', 'notes', fp({ subfolders: 'rows' }))
-    expect(v.subfolders).toBe('notes')
+    chooseOwn(v, 'subfolders', 'pages', fp({ subfolders: 'rows' }))
+    expect(v.subfolders).toBe('pages')
   })
 })
 
@@ -212,7 +212,7 @@ describe('each reader: no view key → Settings; a view key → the view (YAZ-45
     act(() => root?.unmount())
     expect(names(mount(table(), { folderPages: fp({ subfolders: 'both', foldersFirst: false }) }).el)).toEqual(['Alpha', 'Beta', 'Sub'])
     act(() => root?.unmount())
-    expect(names(mount(table('    subfolders: notes\n'), { folderPages: fp({ subfolders: 'rows' }) }).el)).toEqual(['Alpha', 'Beta'])
+    expect(names(mount(table('    subfolders: pages\n'), { folderPages: fp({ subfolders: 'rows' }) }).el)).toEqual(['Alpha', 'Beta'])
     act(() => root?.unmount())
     expect(names(mount(table('    subfolders: both\n    foldersFirst: true\n'), { folderPages: fp({ foldersFirst: false }) }).el)).toEqual(['Sub', 'Alpha', 'Beta'])
   })
@@ -244,14 +244,14 @@ describe('each reader: no view key → Settings; a view key → the view (YAZ-45
     expect(weekdays(el)[0]).toBe('Sun')
   })
 
-  it('the note window’s pin: Settings › Folder pages, else "Keep cell notes open"', () => {
-    expect(noteWindowMemory('/a.md', false).pinned).toBe(false)
-    expect(noteWindowMemory('/a.md', true).pinned).toBe(true)
-    expect(noteWindowMemory('/a.md').pinned).toBe(cellNotePinnedAtStart())
+  it('the page window’s pin: Settings › Folder pages, else "Keep cell notes open"', () => {
+    expect(pageWindowMemory('/a.md', false).pinned).toBe(false)
+    expect(pageWindowMemory('/a.md', true).pinned).toBe(true)
+    expect(pageWindowMemory('/a.md').pinned).toBe(cellNotePinnedAtStart())
     const { el } = mount(table(), { folderPages: fp({ keepWindowPinned: false }) })
     rightClick([...el.querySelectorAll('.view-table__name')][0])
     click(menuItem('Open in mini window'))
-    expect(q(document, '.note-window [aria-label="Pin mini window"]').getAttribute('aria-pressed')).toBe('false')
+    expect(q(document, '.page-window [aria-label="Pin mini window"]').getAttribute('aria-pressed')).toBe('false')
   })
 })
 
@@ -330,8 +330,8 @@ describe('the menus: "from Settings", Reset, and a choice equal to Settings (YAZ
     const subfolders = () => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Subfolders"]')
     expect(subfolders().value).toBe('rows')
     expect(follows(subfolders().closest('label')!.querySelector('.view-from-settings'))).toBe(true)
-    choose(subfolders(), 'notes')
-    expect(yaml()).toContain('subfolders: notes')
+    choose(subfolders(), 'pages')
+    expect(yaml()).toContain('subfolders: pages')
     choose(subfolders(), 'rows')
     expect(yaml()).not.toContain('subfolders')
   })
@@ -403,12 +403,12 @@ describe('the view tab right-click (YAZ-4585, D41)', () => {
   })
 
   it('"View settings…" makes the view active and opens its Properties menu; the Page has none (YAZ-4584 D38)', () => {
-    const { el } = mount(`${TWO}  - type: page\n    name: Notes\n`)
+    const { el } = mount(`${TWO}  - type: page\n    name: Pages\n`)
     rightClick(tab(el, 'Second'))
     click(menuItem('View settings…'))
     expect(activeTab(el)).toBe('Second')
     expect(el.querySelector('.view-popover--properties')).not.toBeNull()
-    rightClick(tab(el, 'Notes'))
+    rightClick(tab(el, 'Pages'))
     expect((menuItem('View settings…') as HTMLButtonElement).disabled).toBe(true)
   })
 })

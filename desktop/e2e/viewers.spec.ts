@@ -27,7 +27,7 @@ import { SMALL_HEIGHT, SMALL_WIDTH, smallPng } from './imageFixtures'
 
 test.describe.configure({ mode: 'serial' })
 
-const TEXT_FILE = 'Notes.txt'
+const TEXT_FILE = 'Pages.txt'
 /** Exact whitespace is part of the viewer's contract: two spaces and a tab must survive. */
 const TEXT_BODY = 'viewer-text-body  two-spaces\tone-tab\nsecond line'
 const PDF_FILE = 'Brief.pdf'
@@ -97,7 +97,7 @@ test.afterAll(async () => {
   await Promise.all([userData, vaultSrc, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — a .txt opens in the code tab (YAZ-3448), and no note editor mounts for it', async () => {
+test('step 1 — a .txt opens in the code tab (YAZ-3448), and no page editor mounts for it', async () => {
   app = await launchApp({ userData, seedState: seededState(vault, null) })
   win = await appWindow(app, 'w1')
   // View-only rows keep their FULL filename (stripExt strips `.md` only) — that is the label clicked.
@@ -106,7 +106,7 @@ test('step 1 — a .txt opens in the code tab (YAZ-3448), and no note editor mou
   const code = layer(win).locator('.editor--code .monaco-editor')
   await expect(code).toBeVisible()
   await expect(code.locator('.view-lines')).toContainText('second line')
-  await expect(editorOf(win)).toHaveCount(0) // no note editor was mounted for it
+  await expect(editorOf(win)).toHaveCount(0) // no page editor was mounted for it
   await expect(tabsOf(win)).toHaveText([TEXT_FILE])
   await shoot(win, 'viewers-01-text')
 })

@@ -15,8 +15,8 @@ const zOf = (css: string, end: string): number => {
   return Number(/z-index:\s*(\d+)/.exec(rule!.body)?.[1] ?? 0)
 }
 
-describe('the bar\'s menus stay above the note (YAZ-4271)', () => {
-  it('`.status-chips` is above every layer in the note: a frozen table row, the Now chip, the cell note card and its grips', () => {
+describe('the bar\'s menus stay above the page (YAZ-4271)', () => {
+  it('`.status-chips` is above every layer in the page: a frozen table row, the Now chip, the cell note card and its grips', () => {
     const bar = zOf(appCss, '.status-chips')
     const layers = {
       frozenRow: zOf(tableCss, '.table-frozen-row'),
@@ -27,7 +27,7 @@ describe('the bar\'s menus stay above the note (YAZ-4271)', () => {
     for (const [name, z] of Object.entries(layers)) expect(bar, name).toBeGreaterThan(z)
   })
 
-  it('the note is no stacking level of its own: the table of contents (z 1) and the card (z 5) keep their order', () => {
+  it('the page is no stacking level of its own: the table of contents (z 1) and the card (z 5) keep their order', () => {
     const host = rulesOf(appCss).filter(({ selector }) => selector === '.editor-host')
     expect(host.some(({ body }) => /isolation:\s*isolate/.test(body))).toBe(false)
     expect(zOf(tocCss, '.toc')).toBeLessThan(zOf(tableCss, '.cell-note.cell-note--open'))

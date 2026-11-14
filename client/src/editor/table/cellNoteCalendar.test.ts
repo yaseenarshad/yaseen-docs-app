@@ -11,7 +11,7 @@ import { redo, undo } from '@milkdown/kit/prose/history'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { getMarkdownForSave, setMarkdown } from '../createCrepe'
-import { NOTE_KEYS } from '@shared/keys/note'
+import { PAGE_KEYS } from '@shared/keys/page'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { mount, pressKey, unmountAll } from '../marks/markTestKit'
 import { calendarBuilds, CELL_NOTE_CALENDAR_CLASS, CELL_NOTE_OPEN_CLASS, openCellNote, setAllNotesOpensAt, setCellNotePinnedAtStart } from './cellNoteCard'
@@ -280,8 +280,8 @@ describe('where it opens, and how it closes (D, A9, A10)', () => {
   })
 
   it('A6: "All notes of a calendar table" has no key by default; given one, it opens from a cell with no note, and again goes back to the card', async () => {
-    expect(NOTE_KEYS.find((row) => row.id === 'note.allCellNotes')?.keys).toEqual([])
-    const { crepe, root, view } = await mount(DAY, { hotkeys: { 'note.allCellNotes': 'CmdOrCtrl+Alt+A' } })
+    expect(PAGE_KEYS.find((row) => row.id === 'page.allCellNotes')?.keys).toEqual([])
+    const { crepe, root, view } = await mount(DAY, { hotkeys: { 'page.allCellNotes': 'CmdOrCtrl+Alt+A' } })
     caretIn(view, 'read')
     expect(altMod(crepe, 'a')).toBe(true)
     expect(head(root)).not.toBeNull()
@@ -293,7 +293,7 @@ describe('where it opens, and how it closes (D, A9, A10)', () => {
     expect(head(root)).toBeNull()
   })
 
-  it('A10: a whole-note rebuild (the file read again) closes the card cleanly', async () => {
+  it('A10: a whole-page rebuild (the file read again) closes the card cleanly', async () => {
     const { crepe, root, view } = await openAll()
     setMarkdown(crepe, DAY)
     expect(openCellNoteLabel(view.state)).toBeNull()

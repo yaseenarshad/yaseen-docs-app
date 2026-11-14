@@ -31,9 +31,9 @@
   --fg-dir: #444444;
   --reveal-bg: #ffe36e;
   --reveal-fg: #2d2500;
-  /* The sidebar tree's file icons (YAZ-3440 D4): one colour per kind; a note's only with "All colour", a PDF's is
-     the danger red. `sidebarIconColors` overrides each one on `.app`. Folders, notes and other files stay grey. */
-  --kind-note: #3d8fb8;
+  /* The sidebar tree's file icons (YAZ-3440 D4): one colour per kind; a page's only with "All colour", a PDF's is
+     the danger red. `sidebarIconColors` overrides each one on `.app`. Folders, pages and other files stay grey. */
+  --kind-page: #3d8fb8;
   --kind-text: #3a7fc2;
   --kind-pdf: var(--danger);
   --kind-image: #1d9e75;
@@ -95,7 +95,7 @@
   --fg-dir: #b8b8bd;
   --reveal-bg: #d9b72a;
   --reveal-fg: #1e1900;
-  --kind-note: #6cb2d6;
+  --kind-page: #6cb2d6;
   --kind-text: #6aa7e0;
   --kind-image: #4cc79a;
   --kind-drawing: #e0aa3e;
@@ -192,11 +192,11 @@ button {
   overflow: hidden;
 }
 
-/* The note's scroller. Stacked blocks live inside it: `.page-header` (block ZERO since YAZ-918 —
+/* The page's scroller. Stacked blocks live inside it: `.page-header` (block ZERO since YAZ-918 —
    ⚡ YAZ-888's title and ⚡ YAZ-883's properties panel sharing one row), `.editor-mount`, where
    CrepeHost appends its `.editor-instance`, and — for markdown files — the comment stream and the
    "Linked mentions" section (Links D, GRO-2193; styled by links/backlinks.css), all of which
-   therefore scroll WITH the note. A folder's tab reuses it for the folder view (YAZ-2290). */
+   therefore scroll WITH the page. A folder's tab reuses it for the folder view (YAZ-2290). */
 .editor-host {
   flex: 1;
   min-height: 0;
@@ -205,9 +205,9 @@ button {
      zero-height runner wider than the scroller adds blank room on the right so the view can be
      dragged left when deep bullets drift right. `--zoom-slack` is MEASURED by Editor.tsx — how far
      the deepest bullet moved because of the zoom — so a full drag parks it where it sits at 100%
-     and never further; 0 at 100% and for a note with no bullets. */
+     and never further; 0 at 100% and for a page with no bullets. */
   overflow-x: auto;
-  /* The page's ONE tail (YAZ-1680): the blocks below the note stack flush, and whichever is last
+  /* The page's ONE tail (YAZ-1680): the blocks below the page stack flush, and whichever is last
      still ends 64px above the bottom — each block used to carry this itself, so every pair of
      blocks sat 64px apart. */
   padding-bottom: 64px;
@@ -253,7 +253,7 @@ button {
 /* The title item (⚡ YAZ-888, at the editor's own h1 scale — GRO-2009): GROWS to fill the row
    (the chip's margin-left: auto still parks it at the right edge), so the rename field —
    width: 100% of this box — keeps the title's full breadth while editing. The 16px base, not
-   the app's 14px, lands the em scale on exactly the size the note's own `# H1` renders at. */
+   the app's 14px, lands the em scale on exactly the size the page's own `# H1` renders at. */
 .page-header .page-title {
   flex: 1 1 auto;
   min-width: 0;
@@ -295,7 +295,7 @@ button {
   background: var(--bg-hover);
 }
 
-/* The note's ID after its title (YAZ-4940 "In the title"): its own element on the title's line, small and muted,
+/* The page's ID after its title (YAZ-4940 "In the title"): its own element on the title's line, small and muted,
    never in the heading's text. The box wraps, so a title too long for the ID beside it sends the ID to the next
    line by itself. A click copies it; it is no part of a selection of the title. */
 .page-title {
@@ -455,7 +455,7 @@ button {
   align-items: center;
 }
 
-/* The add form is 371px with its type (YAZ-4551): on a narrow note, Add and Cancel wrap to the next line (YAZ-4544). */
+/* The add form is 371px with its type (YAZ-4551): on a narrow page, Add and Cancel wrap to the next line (YAZ-4544). */
 .frontmatter-panel__new {
   flex-wrap: wrap;
 }
@@ -464,7 +464,7 @@ button {
   width: 150px;
 }
 
-/* The note's Add property row (YAZ-4713 C8A, YAZ-4769): one row, as a property's — the name in the names' column, then
+/* The page's Add property row (YAZ-4713 C8A, YAZ-4769): one row, as a property's — the name in the names' column, then
    Type, Column on, Cancel and Add in the values' place, on a light wash so it reads as the row being added. A picker's
    list opens as a full line under the row. */
 .frontmatter-add {
@@ -652,7 +652,7 @@ button {
 
 /* The highlight buttons and their ▾ are the board toolbar's tiles (YAZ-4445): `editor/swatchTile.css`. */
 
-/* The note's selection toolbar, tighter (YAZ-4348 demo round 2, Yasin: "everything so spaced out … decently spaced
+/* The page's selection toolbar, tighter (YAZ-4348 demo round 2, Yasin: "everything so spaced out … decently spaced
    out but not so close together"): Crepe gives each 32 px button 6 px on every side (12 px between two) and each
    divider 10 px; now 4 px between buttons, 6 px either side of a divider, the same height. */
 .milkdown .milkdown-toolbar {
@@ -675,7 +675,7 @@ button {
   box-shadow: inset 0 0 0 2px var(--crepe-color-primary);
 }
 
-/* The highlight ▾ panel (YAZ-4348 demo round 2, `editor/highlightPanel.ts`): the board's colour popup in the note's
+/* The highlight ▾ panel (YAZ-4348 demo round 2, `editor/highlightPanel.ts`): the board's colour popup in the page's
    own tokens, its values ported from `engine/…/ColorPicker/ColorPicker.scss`, `Island.scss` (the popup: 0.75rem
    padding, 8 px radius, the island shadow, at most 13rem wide) and `EyeDropper.scss` (the Hex code's trailing button)
    (YAZ-4388). On the body, fixed under the ▾, so the toolbar's `overflow: hidden` cannot cut it off. The text box's
@@ -754,7 +754,7 @@ button {
 .text-color-panel__none:hover {
   background: var(--bg-hover);
 }
-/* A dark note is the panel's own colour: a hairline keeps its edge, where the board's darker canvas needs none. */
+/* A dark page is the panel's own colour: a hairline keeps its edge, where the board's darker canvas needs none. */
 [data-theme='dark'] .highlight-panel,
 [data-theme='dark'] .text-color-panel {
   box-shadow:
@@ -1053,7 +1053,7 @@ button {
 }
 
 /* Heading margins scale with the block-gap setting (GRO-2071). Every level gets 3 × gap above
-   and 1 × gap below (YAZ-3794): the size already marks a new section, so a dense note keeps its
+   and 1 × gap below (YAZ-3794): the size already marks a new section, so a dense page keeps its
    rhythm, and a heading stays closer to the text it starts than to the text above.
    sectionIndent.css reaches its lines across these margins — change one, change both.
    Heading styles (YAZ-3049 D2): each level reads its own `--hN-*` variables, set on each page
@@ -1072,7 +1072,7 @@ button {
 /* A heading BETWEEN blocks earns its lead-in; the document's FIRST block does not (YAZ-918,
    selector fixed twice in YAZ-932 — probe-verified) — it sits on the title row's own gap,
    exactly like a first paragraph. The outline editor wraps its blocks in `.content-dom`,
-   so both the direct note block and the wrapped outline block are covered. */
+   so both the direct page block and the wrapped outline block are covered. */
 .editor-instance .milkdown .ProseMirror > :first-child,
 .editor-instance .milkdown .ProseMirror > .content-dom > :first-child {
   margin-top: 0;
@@ -1215,7 +1215,7 @@ button {
 }
 
 /* The width for EVERY code block and every table (YAZ-4783 layers 2 and 3): `--code-block-width` / `--table-width`, each
-   with its `data-code-block-width` / `data-table-width`, on the editor's mount (this note's `code-width` / `table-width`
+   with its `data-code-block-width` / `data-table-width`, on the editor's mount (this page's `code-width` / `table-width`
    key, the page cog) or on `.app` (Settings › Editor › Code blocks › Width, Settings › Tables › All tables › Width). The
    nearest one wins, as a CSS variable does, and `:is([data-…] *)` finds either. A code box with its own width
    (`data-code-width`) and a table whose every column has a width (`data-table-sized`) keep theirs, so a change in
@@ -1247,7 +1247,7 @@ button {
   display: none;
 }
 
-/* A read-only note (YAZ-3076 D2) has no block handle: its drag and its menu would change the note. */
+/* A read-only page (YAZ-3076 D2) has no block handle: its drag and its menu would change the page. */
 .editor-host[data-read-only] .editor-instance .milkdown .milkdown-block-handle {
   display: none;
 }
@@ -1321,7 +1321,7 @@ button {
   border-top: 1px solid var(--border);
 }
 
-/* Under "Folders", the empty note lines up with the label. */
+/* Under "Folders", the empty page lines up with the label. */
 .welcome__label--rule + .welcome__empty {
   align-self: stretch;
   padding: 0 14px;
@@ -1422,9 +1422,9 @@ button {
   flex-shrink: 0;
   justify-content: flex-end;
   padding: 5px 16px;
-  /* The bar's menus (the page cog's, the zoom pill's) drop over the note (YAZ-4271): above every layer in it — a frozen
+  /* The bar's menus (the page cog's, the zoom pill's) drop over the page (YAZ-4271): above every layer in it — a frozen
      table row (2), the calendar's "Now" chip (3), the cell note card (5) and its grips (6). At 2, a frozen row, later
-     in the page, rose over the cog's menu. The note itself gets no stacking level of its own: the table of contents
+     in the page, rose over the cog's menu. The page itself gets no stacking level of its own: the table of contents
      (1) and the card must keep their order. */
   z-index: 7;
   display: flex;
@@ -1835,7 +1835,7 @@ button {
 
 /* ---------- sync attention banner (YAZ-1081 3B) ----------
    The rename-banner idiom exactly — same amber toast, same explicit buttons, never a modal.
-   It sits lowest of the three: sync is the least urgent thing on screen, and the note the
+   It sits lowest of the three: sync is the least urgent thing on screen, and the page the
    user is actually looking at is untouched by it. */
 
 .sync-banner {
@@ -2726,7 +2726,7 @@ body.drag-held iframe {
 }
 
 /* A folder row (🔒 D4, YAZ-1491): a small folder glyph before the label. Inline, so the label
-   stays the block that owns the overflow and a long folder name still ellipsizes like a note's. */
+   stays the block that owns the overflow and a long folder name still ellipsizes like a page's. */
 .search-results__glyph {
   width: 12px;
   height: 12px;
@@ -2777,7 +2777,7 @@ body.drag-held iframe {
   background: var(--bg-hover);
 }
 
-/* The footer's daily note button (YAZ-3607 D7): the cog's quiet look, after the zoom chip. */
+/* The footer's daily page button (YAZ-3607 D7): the cog's quiet look, after the zoom chip. */
 .sidebar__daily {
   display: flex;
   flex: none;
@@ -3212,8 +3212,8 @@ body.drag-held iframe {
   margin-right: auto;
 }
 
-/* Three answers need a wider sheet (YAZ-4747: "Move the folder only" · Cancel · "Move the folder and its notes"; the
-   delete column sheet's "Keep the values in the notes"); a window too narrow for one row wraps them. */
+/* Three answers need a wider sheet (YAZ-4747: "Move the folder only" · Cancel · "Move the folder and its pages"; the
+   delete column sheet's "Keep the values in the pages"); a window too narrow for one row wraps them. */
 .confirm:has(.confirm__btn--other) {
   width: min(500px, calc(100vw - 24px));
 }
@@ -3270,7 +3270,7 @@ body.drag-held iframe {
   cursor: default;
 }
 
-/* The box in Settings that asks before a vault's notes get IDs (YAZ-2677 D2): one line, and the
+/* The box in Settings that asks before a vault's pages get IDs (YAZ-2677 D2): one line, and the
    text field for the vault's ID letters under it. */
 .confirm__letters {
   display: grid;
@@ -3763,7 +3763,7 @@ body.drag-held iframe {
    more. Two sets (`sidebarIconSet`, `data-sidebar-icon-set` on `.app`): Material Icon Theme's (below) and the
    app's own Line glyphs (here), one per kind by the row's `data-kind` (Tree.tsx), drawn as a mask: 14px glyphs on a
    16px grid, 1.2px strokes. The file rows' look is `data-sidebar-file-icons` (`sidebarFileIcons`): "Colour"
-   (`quiet`, the default) colours each kind but notes, "All colour" (`color`) notes too, `grey` none, `off` hides
+   (`quiet`, the default) colours each kind but pages, "All colour" (`color`) pages too, `grey` none, `off` hides
    them. The folders' is `data-sidebar-folder-icons` (`sidebarFolderIcons`), on its own: grey, open while the folder
    is; `off` hides them. `plain` and `named` draw alike here: which Material folder a row has is `rowIcon`'s
    (YAZ-3554), in its `data-icon`. A vault row has none. A row in rename is an input: no icon.
@@ -3856,7 +3856,7 @@ body.drag-held iframe {
 }
 
 .app[data-sidebar-file-icons='color'] :is(.tree__row, .file-icon)[data-kind='markdown'] {
-  --kind-color: var(--kind-note);
+  --kind-color: var(--kind-page);
 }
 
 .app[data-sidebar-file-icons='grey'] :is(.tree__row, .file-icon)[data-kind] {
@@ -3867,7 +3867,7 @@ body.drag-held iframe {
    the row as the inline `--icon` (and `--icon-light`, its light theme twin, when it has one), with its id as
    `data-icon`: any of Material's icons shows with no rule of its own, and a row loads only its own file
    (`/material-icons/`, `materialIcons.ts`). Folders keep their colours; `grey` draws the file icons as grey
-   silhouettes (the icon as a mask), and `quiet` every note's (`data-kind='markdown'`, whatever its name icon:
+   silhouettes (the icon as a mask), and `quiet` every page's (`data-kind='markdown'`, whatever its name icon:
    README.md, SKILL.md, todo.md too, D4). A row the user gave its own icon (a pick in `.yaseendocs/icons.json`, D8,
    or a rule in settings, D9: `data-icon-custom`) shows it in the Line set too, and in its own colours in `quiet`. */
 .app[data-sidebar-icon-set='material']:not([data-sidebar-file-icons='off']) :is(.tree__row--file[data-icon] .tree__label, .file-icon--file[data-icon])::before,
@@ -3897,7 +3897,7 @@ body.drag-held iframe {
 }
 
 /* A drawing's or a diagram's extension (YAZ-3536 D4, D5): hidden while its icon says the kind; with File icons
-   Off nothing else says it, so it shows. A note has none: no extension reads as a note. */
+   Off nothing else says it, so it shows. A page has none: no extension reads as a page. */
 .name-ending {
   display: none;
 }
@@ -4005,7 +4005,7 @@ body.drag-held iframe {
   margin-left: 0;
 }
 
-/* A note row's ID (YAZ-4940 "In the files list"): as quiet as the date, at the right end, so the IDs line up in a
+/* A page row's ID (YAZ-4940 "In the files list"): as quiet as the date, at the right end, so the IDs line up in a
    column and the names stay where they are; a long name is cut (the label's ellipsis) before the ID. After a vault
    tag it gives up its own push to the right, as the date does; a date after it does the same. */
 .tree__id {
@@ -4022,7 +4022,7 @@ body.drag-held iframe {
   margin-left: 0;
 }
 
-/* The shortcut mark (YAZ-2290 D2): this note shows here and lives elsewhere. Quiet, after the
+/* The shortcut mark (YAZ-2290 D2): this page shows here and lives elsewhere. Quiet, after the
    name, never squeezed by a long one — one rule for the tree row and for a title in a folder's views. */
 .shortcut-mark {
   flex: none;
@@ -4205,7 +4205,7 @@ body.drag-held iframe {
   display: none;
 }
 
-/* The in-note menus' line between groups (the bullet's and the link's, `renderMenu`) spaces as the app menus'
+/* The in-page menus' line between groups (the bullet's and the link's, `renderMenu`) spaces as the app menus'
    (`.ctx-menu__group + .ctx-menu__group`): 4px above and below (YAZ-3727 D21). */
 .ctx-menu--editor > .document-zoom__divider {
   margin: 4px 0;
@@ -4250,8 +4250,8 @@ body.drag-held iframe {
 /* The block handle menu's strip (YAZ-3727 D14): the selection toolbar's list buttons and T in one menu row, drawn
    as the toolbar draws them (Crepe's `toolbar.css`): 32px boxes, 24px glyphs in the outline colour, the toolbar's
    hover. The lit one sits in a soft accent box in the accent colour (D16): the toolbar's dark-on-grey was too faint. Scoped under `.ctx-menu--editor` so Crepe's `.milkdown button` reset does not win;
-   a note's right-click menu (D15) draws it in a `.ctx-menu__group`. */
-/* Both menus take the app's tokens (6B nit): a note's right-click menu (D15) is drawn outside the editor, where
+   a page's right-click menu (D15) draws it in a `.ctx-menu__group`. */
+/* Both menus take the app's tokens (6B nit): a page's right-click menu (D15) is drawn outside the editor, where
    Crepe's theme sets no `--crepe-color-*`, and the bullet's menu inside it must look the same. */
 :is(.ctx-menu--editor, .ctx-menu__group) > .ctx-menu__strip {
   --crepe-color-outline: var(--fg-muted);
@@ -4909,8 +4909,8 @@ body.drag-held iframe {
   border-color: var(--accent);
 }
 
-/* "Code block width" / "Table width" (YAZ-4783 layer 2): beside Default, the note's own px as a field, pressed (the
-   accent) while the note has one. */
+/* "Code block width" / "Table width" (YAZ-4783 layer 2): beside Default, the page's own px as a field, pressed (the
+   accent) while the page has one. */
 .page-settings__px {
   display: flex;
   flex: 1 1 0;
@@ -5165,7 +5165,7 @@ body.drag-held iframe {
   overflow: visible;
 }
 
-/* A code block with its own width, or the note's or Settings' (YAZ-4783), has no right edge on the column's, so its number goes from its LEFT edge,
+/* A code block with its own width, or the page's or Settings' (YAZ-4783), has no right edge on the column's, so its number goes from its LEFT edge,
    the column's at the top level. */
 .editor-host[data-line-numbers] .ProseMirror .milkdown-code-block[data-code-width][data-line]::after,
 .editor-host[data-line-numbers] .ProseMirror .milkdown-code-block[data-line]:is([data-code-block-width] *)::after {
@@ -5797,7 +5797,7 @@ body.drag-held iframe {
 }
 
 /* The keys of this tab (YAZ-3564 K11): two columns, the key then what it does; the list scrolls inside the sheet. */
-/* Above a drawing open over a note (z-index 70), whose ? opens it (YAZ-3564 K11): every sheet is (`--z-sheet`, YAZ-4987). */
+/* Above a drawing open over a page (z-index 70), whose ? opens it (YAZ-3564 K11): every sheet is (`--z-sheet`, YAZ-4987). */
 .confirm.key-sheet {
   width: min(520px, 92vw);
   max-height: min(640px, 86vh);

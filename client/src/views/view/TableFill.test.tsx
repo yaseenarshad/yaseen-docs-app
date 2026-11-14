@@ -89,9 +89,9 @@ function rightClick(el: Element): void {
 describe('fills paint the folder table (YAZ-4536)', () => {
   it('a row fill paints every cell of its row, a cell fill wins on its cell, a hex paints at the custom wash', () => {
     const { el } = mount(`${TABLE}    fills:
-      - note: "[[Agentic Agency]]"
+      - page: "[[Agentic Agency]]"
         fill: red
-      - note: "[[Agentic Agency]]"
+      - page: "[[Agentic Agency]]"
         column: note.status
         fill: "#00ff00"
 `)
@@ -108,7 +108,7 @@ describe('fills paint the folder table (YAZ-4536)', () => {
   it('a frozen cell keeps its fill and its sticky offset', () => {
     const { el } = mount(`${TABLE}    frozenColumns: 1
     fills:
-      - note: "[[Agentic Agency]]"
+      - page: "[[Agentic Agency]]"
         fill: blue
 `)
     const name = q<HTMLElement>(rowNamed(el, 'Agentic Agency'), 'td[data-cell]')
@@ -145,14 +145,14 @@ describe('"Fill ›" in the row right-click: a cell, its row or its column (YAZ-
     expect(item(el, 'Fill').getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('a colour in Fill › Cell writes a cell fill for that note and column, and closes the menu', () => {
+  it('a colour in Fill › Cell writes a cell fill for that page and column, and closes the menu', () => {
     const { el, yaml } = mount(TABLE)
     rightClick(q(rowNamed(el, 'Agentic Agency'), 'td[data-cell$=":1"]'))
     openFill(el, 'Cell')
     click(item(el, 'Blue'))
     expect(el.querySelector('.ctx-menu')).toBeNull()
     expect(yaml()).toContain(`    fills:
-      - note: "[[Agentic Agency]]"
+      - page: "[[Agentic Agency]]"
         column: note.priority
         fill: blue
 `)
@@ -165,7 +165,7 @@ describe('"Fill ›" in the row right-click: a cell, its row or its column (YAZ-
     openFill(el, 'Row')
     click(item(el, 'Pink'))
     expect(yaml()).toContain(`    fills:
-      - note: "[[Attribution]]"
+      - page: "[[Attribution]]"
         fill: pink
 `)
     rightClick(q(rowNamed(el, 'Attribution'), 'td[data-cell$=":0"]'))
@@ -188,7 +188,7 @@ describe('"Fill ›" in the row right-click: a cell, its row or its column (YAZ-
       act(() => void field.dispatchEvent(new Event('input', { bubbles: true })))
     }
     act(() => void r.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
-    expect(yaml()).toContain(`      - note: "[[Agentic Agency]]"
+    expect(yaml()).toContain(`      - page: "[[Agentic Agency]]"
         fill: "#12ab34"
 `)
     expect(el.querySelector('.ctx-menu__sub .colour-box')).not.toBeNull()
@@ -220,7 +220,7 @@ describe('a folder row fills (YAZ-4644 E1): Subfolders: As rows on a Schema page
     const title = name === '.folder.md' ? rel.split('/').at(-2)! : name.replace(/\.md$/, '')
     return { ...TEST_RECORDS[0], id: undefined, path, name, basename: name.replace(/\.md$/, ''), title, folder: rel.slice(0, rel.lastIndexOf('/')), properties }
   }
-  const NOTES = [rec('/vault/Schema/Overview.md', { priority: 1 }), rec('/vault/Schema/Orders/total.md', { priority: 2 })]
+  const PAGES = [rec('/vault/Schema/Overview.md', { priority: 1 }), rec('/vault/Schema/Orders/total.md', { priority: 2 })]
   const FOLDER_ROWS = [{ ...rec('/vault/Schema/Orders/.folder.md'), folder: 'Schema' }]
   const DIRS = ['/vault/Schema', '/vault/Schema/Orders']
   const SCHEMA = `${TABLE}    subfolders: rows
@@ -228,29 +228,29 @@ describe('a folder row fills (YAZ-4644 E1): Subfolders: As rows on a Schema page
   const schema = (text: string) =>
     mount(text, {
       folderPath: '/vault/Schema',
-      records: NOTES,
+      records: PAGES,
       folderRows: FOLDER_ROWS,
-      folder: testFolderHost({ vaultRecords: NOTES, resolveLink: linkResolver(NOTES, '/vault', DIRS) }),
+      folder: testFolderHost({ vaultRecords: PAGES, resolveLink: linkResolver(PAGES, '/vault', DIRS) }),
     })
   /** The Orders row: its Name cell holds the folder icon and "N inside" after the title. */
   const orders = (el: ParentNode) => [...el.querySelectorAll<HTMLTableRowElement>('.view-table tbody tr')].find((tr) => tr.querySelector('.view-table__name')?.textContent?.startsWith('Orders'))!
 
-  it('a stored row fill on the folder paints every cell of the folder row; the notes stay as they are', () => {
+  it('a stored row fill on the folder paints every cell of the folder row; the pages stay as they are', () => {
     const { el } = schema(`${SCHEMA}    fills:
-      - note: "[[Schema/Orders]]"
+      - page: "[[Schema/Orders]]"
         fill: pink
 `)
     expect([...orders(el).querySelectorAll<HTMLElement>('td[data-cell]')].map(fillOf)).toEqual(Array(3).fill('var(--table-fill-pink)'))
     expect([...rowNamed(el, 'Overview').querySelectorAll<HTMLElement>('td[data-cell]')].map(fillOf)).toEqual(['', '', ''])
   })
 
-  it('Fill › Row on the folder row writes a link to the folder (its title, as a note\'s), and the row is drawn filled at once; Fill › Cell paints its one cell', () => {
+  it('Fill › Row on the folder row writes a link to the folder (its title, as a page\'s), and the row is drawn filled at once; Fill › Cell paints its one cell', () => {
     const { el, yaml } = schema(SCHEMA)
     rightClick(q(orders(el), 'td[data-cell$=":1"]'))
     openFill(el, 'Row')
     click(item(el, 'Pink'))
     expect(yaml()).toContain(`    fills:
-      - note: "[[Orders]]"
+      - page: "[[Orders]]"
         fill: pink
 `)
     expect([...orders(el).querySelectorAll<HTMLElement>('td[data-cell]')].map(fillOf)).toEqual(Array(3).fill('var(--table-fill-pink)'))
@@ -260,6 +260,6 @@ describe('a folder row fills (YAZ-4644 E1): Subfolders: As rows on a Schema page
     expect(fillOf(q(orders(el), 'td[data-cell$=":1"]'))).toBe('var(--table-fill-blue)')
     expect(fillOf(q(orders(el), 'td[data-cell$=":2"]'))).toBe('var(--table-fill-pink)')
     // One entry per slot: the second write did not add a twin of the first.
-    expect((yaml().match(/- note: /g) ?? []).length).toBe(2)
+    expect((yaml().match(/- page: /g) ?? []).length).toBe(2)
   })
 })

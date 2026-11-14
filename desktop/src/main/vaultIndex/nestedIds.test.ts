@@ -1,12 +1,12 @@
-// A vault inside a vault (YAZ-4922 🔒 D1): a note's ID vault is the NEAREST folder above it with its own
-// `ids.json` answer (`idVault`). The outer vault still lists the inner vault's notes, but it never gives, changes
-// or settles their IDs, and the inner vault never does so for notes outside it. With the same letters, the inner
+// A vault inside a vault (YAZ-4922 🔒 D1): a page's ID vault is the NEAREST folder above it with its own
+// `ids.json` answer (`idVault`). The outer vault still lists the inner vault's pages, but it never gives, changes
+// or settles their IDs, and the inner vault never does so for pages outside it. With the same letters, the inner
 // vault's counter starts above the numbers it can see under the outer vault. Temp vaults only.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { IDS_FILE } from '@shared/noteId'
+import { IDS_FILE } from '@shared/pageId'
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import { makeFirstMac, removeVault, sleep, vaultFiles } from '../fs/testFixture'
 import { _evictAll, changeLetters, checkDuplicates, getIndex, giveIdsNow } from './index'
@@ -34,8 +34,8 @@ async function make(files: Record<string, string>): Promise<void> {
   }
 }
 
-/** Each note and settings file of both vaults: what an ID pass may change. The count files are left out (a pass that gives nothing writes none). */
-const notes = async (): Promise<Record<string, string>> =>
+/** Each page and settings file of both vaults: what an ID pass may change. The count files are left out (a pass that gives nothing writes none). */
+const pages = async (): Promise<Record<string, string>> =>
   Object.fromEntries(Object.entries(await vaultFiles(root)).filter(([rel]) => !rel.endsWith('/') && !rel.includes(`${VAULT_CONFIG_DIR}/${COUNT_DIR}/`)))
 
 /** Both indexes built (each runs its first sweep), then "Give IDs" on each, the user's pass on this Mac: every sweep of both vaults. */
@@ -71,21 +71,21 @@ const outer = (letters: string, innerLetters: string, from = 1): Record<string, 
   }
 }
 
-describe('a vault inside a vault: each note gets its ID from one vault only (D1)', () => {
+describe('a vault inside a vault: each page gets its ID from one vault only (D1)', () => {
   it('different letters (gap 2): both vaults open, every sweep of both run two times, and 0 IDs change: no flip-flop', async () => {
     await make(outer('YAS', 'TECH'))
     await makeFirstMac(root)
     await makeFirstMac(inner)
-    const before = await notes()
+    const before = await pages()
     await sweepBoth()
-    expect(await notes()).toEqual(before)
+    expect(await pages()).toEqual(before)
     await sweepBoth()
-    expect(await notes()).toEqual(before)
-    // The outer vault still LISTS the inner vault's notes: its sidebar, its search and its links show them.
+    expect(await pages()).toEqual(before)
+    // The outer vault still LISTS the inner vault's pages: its sidebar, its search and its links show them.
     expect((await getIndex(root)).records.map((r) => path.relative(root, r.path))).toContain('Wiki/react.md')
   })
 
-  it('a note added inside the inner vault takes the inner vault’s next ID, and one added outside it the outer vault’s', async () => {
+  it('a page added inside the inner vault takes the inner vault’s next ID, and one added outside it the outer vault’s', async () => {
     await make(outer('YAS', 'TECH'))
     await makeFirstMac(root)
     await makeFirstMac(inner)
@@ -93,30 +93,30 @@ describe('a vault inside a vault: each note gets its ID from one vault only (D1)
     await writeFile(path.join(inner, 'new.md'), 'new\n')
     await writeFile(path.join(root, 'out.md'), 'out\n')
     await sweepBoth()
-    const files = await notes()
+    const files = await pages()
     expect(files['Wiki/new.md']).toBe('---\nid: TECH-5\n---\nnew\n')
     expect(files['out.md']).toBe('---\nid: YAS-4\n---\nout\n')
   })
 
-  it('"Check for duplicates" of the outer vault does not settle two notes of the inner vault, nor one of each', async () => {
+  it('"Check for duplicates" of the outer vault does not settle two pages of the inner vault, nor one of each', async () => {
     await make({ ...outer('YAS', 'YAS', 11), 'Wiki/copy.md': '---\nid: YAS-14\ntitle: Copy\n---\n', 'Projects/again.md': '---\nid: YAS-1\ntitle: Again\n---\n' })
     await makeFirstMac(root)
     await makeFirstMac(inner)
-    const before = await notes()
+    const before = await pages()
     await checkDuplicates(root)
     await _swept(root)
     await sleep(300)
     // `Projects/again.md` and `home.md` are both the outer's: that copy is the outer's to settle. Nothing of the inner vault changes.
-    const after = await notes()
+    const after = await pages()
     for (const rel of Object.keys(before).filter((r) => r.startsWith('Wiki/'))) expect(after[rel]).toBe(before[rel])
   })
 
   it('"Change letters" of the outer vault does not reach into the inner vault', async () => {
     await make(outer('YAS', 'YAS', 11))
     await makeFirstMac(root)
-    const before = await notes()
+    const before = await pages()
     await changeLetters(root, 'ABC')
-    const after = await notes()
+    const after = await pages()
     for (const rel of Object.keys(before).filter((r) => r.startsWith('Wiki/'))) expect(after[rel]).toBe(before[rel])
     expect(after['home.md']).toContain('id: ABC-1')
   })
@@ -129,7 +129,7 @@ describe('a vault inside a vault with the SAME letters (gap 3): no number is giv
     expect(await mintIds(inner, 2)).toEqual(['YAS-1884', 'YAS-1885'])
   })
 
-  it('and above the highest number the outer vault’s notes hold, when its index is open on this Mac', async () => {
+  it('and above the highest number the outer vault’s pages hold, when its index is open on this Mac', async () => {
     await make({ ...outer('YAS', 'YAS', 11), 'Projects/high.md': '---\nid: YAS-950\ntitle: High\n---\n' })
     await makeFirstMac(root)
     await makeFirstMac(inner)
@@ -137,25 +137,25 @@ describe('a vault inside a vault with the SAME letters (gap 3): no number is giv
     expect(await mintIds(inner, 1)).toEqual(['YAS-951'])
   })
 
-  it('the outer vault counts above the inner vault’s notes, which it lists', async () => {
+  it('the outer vault counts above the inner vault’s pages, which it lists', async () => {
     await make({ ...outer('YAS', 'YAS', 11), 'Wiki/high.md': '---\nid: YAS-700\ntitle: High\n---\n' })
     await makeFirstMac(root)
     await getIndex(root)
     expect(await mintIds(root, 1)).toEqual(['YAS-701'])
   })
 
-  it('both vaults open and swept: 0 IDs change, and a note added in each takes a number no other note holds', async () => {
+  it('both vaults open and swept: 0 IDs change, and a page added in each takes a number no other page holds', async () => {
     await make(outer('YAS', 'YAS', 11))
     await makeFirstMac(root)
     await makeFirstMac(inner)
-    const before = await notes()
+    const before = await pages()
     await sweepBoth()
-    expect(await notes()).toEqual(before)
+    expect(await pages()).toEqual(before)
     await writeFile(path.join(inner, 'new.md'), 'new\n')
     await sweepBoth()
     await writeFile(path.join(root, 'out.md'), 'out\n')
     await sweepBoth()
-    const ids = Object.values(await notes()).flatMap((text) => /^id: (.+)$/m.exec(text)?.[1] ?? [])
+    const ids = Object.values(await pages()).flatMap((text) => /^id: (.+)$/m.exec(text)?.[1] ?? [])
     expect(new Set(ids).size).toBe(ids.length)
     expect(ids).toContain('YAS-15')
     expect(ids).toContain('YAS-16')

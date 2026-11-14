@@ -86,7 +86,7 @@ interface RecentListProps {
   onOpenFileBackground: (path: string) => void
   /** A right-click on a row (D7, S20): the Sidebar opens the one-row file menu, "Show in sidebar" first. */
   onMenu: (path: string, e: MouseEvent) => void
-  /** The sidebar's hover preview (YAZ-3403): a note or board row previews beside the sidebar, as a Files row does. */
+  /** The sidebar's hover preview (YAZ-3403): a page or board row previews beside the sidebar, as a Files row does. */
   onHoverFile?: (node: { path: string } | null) => void
 }
 
@@ -192,7 +192,7 @@ interface RecentRowProps extends Pick<RecentListProps, 'titles' | 'onOpenFile' |
 /** One file (D6, S18): its page name, and the time of its save on the right; the path is the tooltip. */
 function RecentRow({ file, active, indent, titles, onOpenFile, onKeepFile, onOpenFileBackground, onMenu, onHoverFile }: RecentRowProps) {
   const { path, edited } = file
-  // A board or note row's hover handlers, as a Files row's (YAZ-3403): pointer and focus alike. The item's `data-path`
+  // A board or page row's hover handlers, as a Files row's (YAZ-3403): pointer and focus alike. The item's `data-path`
   // puts a Files window's floating panel level with the row (`previewRowRect`); the button has none, for the keys: it walks by `data-walk`.
   const hover = onHoverFile === undefined || !hasHoverPreview(path) ? {} : { onMouseEnter: () => onHoverFile({ path }), onMouseLeave: () => onHoverFile(null), onFocus: () => onHoverFile({ path }), onBlur: () => onHoverFile(null) }
   return (

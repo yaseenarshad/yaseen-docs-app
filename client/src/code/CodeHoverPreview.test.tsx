@@ -1,6 +1,6 @@
 /**
  * A code file's hover card (YAZ-3508): the top of the file, coloured by Monaco's `colorize` with the language a tab
- * would get, at most `TEXT_HEAD_LINES` lines, read only, in the note card's frame; a file that cannot be read shows
+ * would get, at most `TEXT_HEAD_LINES` lines, read only, in the card's frame; a file that cannot be read shows
  * the hover's "Preview unavailable". `api` and Monaco are stand-ins; the real colours are checked in the real app
  * (`desktop/e2e/hoverPreview.spec.ts`).
  */
@@ -68,7 +68,7 @@ describe('CodeHoverPreview', () => {
     // Monaco escapes the text: a `<` in the code is text, never markup.
     expect(card.querySelector('.code-hover__body')!.textContent).toContain('1 < 2')
     expect(applyAppTheme).toHaveBeenCalledWith('light')
-    // The note card's header: the file's name and its folder.
+    // The card's header: the file's name and its folder.
     expect(card.querySelector('.board-preview__name')!.textContent).toBe('app.ts')
     expect(card.querySelector('.board-preview__folder')!.textContent).toBe('src')
   })

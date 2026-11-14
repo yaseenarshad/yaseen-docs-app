@@ -85,7 +85,7 @@ describe('TabMenu "Rename file" (YAZ-4248)', () => {
 })
 
 describe('TabMenu "Move to ▸" (YAZ-3091 D3)', () => {
-  const TARGETS = [{ id: 'w2', label: 'Work — Meeting notes · 2 tabs' }, { id: 'w3', label: 'Work · 0 tabs' }]
+  const TARGETS = [{ id: 'w2', label: 'Work — Meeting pages · 2 tabs' }, { id: 'w3', label: 'Work · 0 tabs' }]
   /** The flyout's groups, after a click on "Move to" opens it. */
   const flyout = (el: HTMLElement) => {
     act(() => item(el, 'Move to')?.click())
@@ -97,7 +97,7 @@ describe('TabMenu "Move to ▸" (YAZ-3091 D3)', () => {
     const el = mount(props)
     const parent = item(el, 'Move to')
     expect(parent?.getAttribute('aria-haspopup')).toBe('menu')
-    expect(flyout(el)).toEqual([['Work — Meeting notes · 2 tabs', 'Work · 0 tabs'], ['Right panel']])
+    expect(flyout(el)).toEqual([['Work — Meeting pages · 2 tabs', 'Work · 0 tabs'], ['Right panel']])
     act(() => item(el, 'Work · 0 tabs')?.click())
     expect(props.onMoveToWindow).toHaveBeenCalledWith('w3', '/v/a.md', 't1')
     expect(props.onMoveToRight).not.toHaveBeenCalled()
@@ -117,7 +117,7 @@ describe('TabMenu "Move to ▸" (YAZ-3091 D3)', () => {
 
   it('an empty group is left out, and with no group there is no "Move to" item', () => {
     let el = mount(all({ onMoveToRight: undefined, moveTargets: TARGETS, onMoveToWindow: vi.fn() }))
-    expect(flyout(el)).toEqual([['Work — Meeting notes · 2 tabs', 'Work · 0 tabs']])
+    expect(flyout(el)).toEqual([['Work — Meeting pages · 2 tabs', 'Work · 0 tabs']])
     act(() => root?.unmount())
     el = mount(all({ onMoveToRight: undefined, moveTargets: [], onMoveToWindow: vi.fn() }))
     expect(groups(el)[0]).toEqual(['Move to new window', 'Duplicate tab'])

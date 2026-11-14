@@ -33,8 +33,8 @@ const at = (body: string) => css.indexOf(body)
 const LINE = rules.find((rule) => /mask:\s*var\(--kind-icon\)/.test(rule.body))
 const IMAGE = rules.find((rule) => /background:\s*var\(--icon\) center/.test(rule.body))
 const SILHOUETTE = rules.find((rule) => /background:\s*var\(--fg-muted\);/.test(rule.body) && /mask:\s*var\(--icon\)/.test(rule.body))
-/** The Line set's colour for a note: "All colour" alone. */
-const NOTE_COLOUR = rules.find((rule) => /--kind-color:\s*var\(--kind-note\)/.test(rule.body))
+/** The Line set's colour for a page: "All colour" alone. */
+const PAGE_COLOUR = rules.find((rule) => /--kind-color:\s*var\(--kind-page\)/.test(rule.body))
 
 type App = { set: 'material' | 'line'; files: 'quiet' | 'color' | 'grey' | 'off'; folders?: 'plain' | 'named' | 'off' }
 type Row = { folder?: boolean; kind?: string; icon?: string; custom?: boolean }
@@ -77,33 +77,33 @@ function look(app: App, row: Row): 'line' | 'image' | 'silhouette' | 'none' {
 }
 
 const README: Row = { kind: 'markdown', icon: 'readme' }
-const NOTE: Row = { kind: 'markdown', icon: 'markdown' }
+const PAGE: Row = { kind: 'markdown', icon: 'markdown' }
 const TS: Row = { kind: 'text', icon: 'typescript' }
 const FOLDER: Row = { folder: true, kind: 'folder', icon: 'folder-docs' }
 
 describe('file and folder icons CSS contract (YAZ-3440 D4, D5)', () => {
   it('finds the three ways an icon draws, and the silhouette comes after the image and its light twin', () => {
-    expect(LINE && IMAGE && SILHOUETTE && NOTE_COLOUR).toBeTruthy()
+    expect(LINE && IMAGE && SILHOUETTE && PAGE_COLOUR).toBeTruthy()
     const light = rules.find((rule) => /background-image:\s*var\(--icon-light, var\(--icon\)\)/.test(rule.body))
     expect(light).toBeDefined()
     expect(at(SILHOUETTE?.body ?? '')).toBeGreaterThan(at(light?.body ?? ''))
     expect(at(SILHOUETTE?.body ?? '')).toBeGreaterThan(at(IMAGE?.body ?? ''))
   })
 
-  it('Material, "Colour" (`quiet`, the default): every note is a grey silhouette, README.md, SKILL.md and todo.md too; the other kinds and the folders keep their colours', () => {
+  it('Material, "Colour" (`quiet`, the default): every page is a grey silhouette, README.md, SKILL.md and todo.md too; the other kinds and the folders keep their colours', () => {
     const quiet: App = { set: 'material', files: 'quiet' }
     expect(look(quiet, README)).toBe('silhouette')
     for (const icon of ['skill', 'todo', 'claude', 'changelog', 'agent']) expect(look(quiet, { kind: 'markdown', icon }), icon).toBe('silhouette')
-    expect(look(quiet, NOTE)).toBe('silhouette')
+    expect(look(quiet, PAGE)).toBe('silhouette')
     expect(look(quiet, TS)).toBe('image')
     expect(look(quiet, FOLDER)).toBe('image')
-    // A note's own pick or a rule (D8, D9) is a deliberate choice: it keeps its colours.
+    // A page's own pick or a rule (D8, D9) is a deliberate choice: it keeps its colours.
     expect(look(quiet, { ...README, custom: true })).toBe('image')
   })
 
-  it('Material, "All colour" colours notes too; "Grey" greys every file, not the folders; "Off" hides the files and keeps the folders', () => {
+  it('Material, "All colour" colours pages too; "Grey" greys every file, not the folders; "Off" hides the files and keeps the folders', () => {
     expect(look({ set: 'material', files: 'color' }, README)).toBe('image')
-    expect(look({ set: 'material', files: 'color' }, NOTE)).toBe('image')
+    expect(look({ set: 'material', files: 'color' }, PAGE)).toBe('image')
     const grey: App = { set: 'material', files: 'grey' }
     expect(look(grey, TS)).toBe('silhouette')
     expect(look(grey, README)).toBe('silhouette')
@@ -140,14 +140,14 @@ describe('file and folder icons CSS contract (YAZ-3440 D4, D5)', () => {
     expect(look({ set: 'line', files: 'quiet', folders: 'off' }, FOLDER)).toBe('none')
   })
 
-  it("the Line set draws each kind's glyph; a pick or a rule shows its Material icon there too; only \"All colour\" colours a note", () => {
+  it("the Line set draws each kind's glyph; a pick or a rule shows its Material icon there too; only \"All colour\" colours a page", () => {
     const line: App = { set: 'line', files: 'quiet' }
     expect(look(line, TS)).toBe('line')
     expect(look(line, README)).toBe('line')
     expect(look(line, FOLDER)).toBe('line')
     expect(look(line, { ...TS, custom: true })).toBe('image')
     expect(look({ set: 'line', files: 'off' }, TS)).toBe('none')
-    const colours = (files: App['files']) => draws({ selectors: NOTE_COLOUR?.selectors.map((s) => `${s}::before`) ?? [] }, build({ set: 'line', files }, NOTE, 'tree').closest('.tree__row') as Element)
+    const colours = (files: App['files']) => draws({ selectors: PAGE_COLOUR?.selectors.map((s) => `${s}::before`) ?? [] }, build({ set: 'line', files }, PAGE, 'tree').closest('.tree__row') as Element)
     expect(colours('color')).toBe(true)
     expect(colours('quiet')).toBe(false)
   })

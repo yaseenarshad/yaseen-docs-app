@@ -10,7 +10,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { FileResponse, IndexRecord } from '@shared/types'
 import { createWikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { CardFileView } from './CardFileView'
-import { noteCardViewOfDom } from './noteCard/noteCardView'
+import { cardBlockViewOfDom } from './card/cardBlockView'
 import { VaultReadOnly } from '../vault/readOnlyVault'
 import { useReviewSettings } from '../review/useReviewSettings'
 import { createCardFile } from '../review/newCardFile'
@@ -31,7 +31,7 @@ vi.mock('../api', async (importOriginal) => {
     api: {
       ...real.api,
       // New card (YAZ-5037 phase 4): one ID from the door, then the file made at once.
-      mintNoteId: vi.fn(async () => 'WIKI-10'),
+      mintPageId: vi.fn(async () => 'WIKI-10'),
       createFile: vi.fn(async (req: { path: string; content: string }) => {
         disk.files.set(req.path, req.content)
         return { path: req.path, mtime: 1, size: req.content.length }
@@ -72,7 +72,7 @@ const rec = (path: string, extra: Partial<IndexRecord> = {}): IndexRecord => {
 /** The vault's index: the card file, a page that links to the card, two that embed it. */
 const records = (mtime: number): IndexRecord[] => [
   rec(PATH, { mtime, kind: 'card', cards: [{ id: 'WIKI-9', off: false, next: false, reviews: [], title: 'Capital of France' }] }),
-  rec('/v/notes.md', { links: ['WIKI-9'] }),
+  rec('/v/pages.md', { links: ['WIKI-9'] }),
   rec('/v/europe.md', { embeds: ['WIKI-9'] }),
   rec('/v/trips.md', { embeds: ['wiki-9'] }),
 ]
@@ -145,11 +145,11 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     expect(disk.reads).toBe(0)
     expect(el.querySelector('.card-file__path')?.textContent).toBe('Geography')
     expect(el.querySelector('.card-file__title')?.textContent).toBe('Capital of France')
-    expect(el.querySelector('[data-card-file] .note-card__id')?.textContent).toBe('WIKI-9')
+    expect(el.querySelector('[data-card-file] .card__id')?.textContent).toBe('WIKI-9')
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('New'))
-    expect(el.querySelector('.note-card-screen')?.textContent).toContain('Paris')
+    expect(el.querySelector('.card-screen')?.textContent).toContain('Paris')
     expect(notice()).toBeNull()
-    expect(el.querySelector('.note-card-backlinks .backlinks__title')?.textContent).toBe('Linked mentions (1)')
+    expect(el.querySelector('.card-backlinks .backlinks__title')?.textContent).toBe('Linked mentions (1)')
     expect(el.querySelector('.card-file__embeds .backlinks__title')?.textContent).toBe('Embedded in (2)')
     expect(el.querySelector('.card-file__embeds')?.textContent).toContain('europe')
     // The tab is the card's own page: none of the card window's words for a separate page.
@@ -181,7 +181,7 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     // Give the settings their read: they stay off.
     await act(async () => undefined)
     expect(el.querySelector('.card-file__state')).toBeNull()
-    expect(el.querySelector('.note-card-reviews')).toBeNull()
+    expect(el.querySelector('.card-reviews')).toBeNull()
     expect(el.textContent).not.toContain('Due')
     const rows = await menu()
     expect(rows).not.toContain('Put at top of Inbox')
@@ -191,7 +191,7 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
   it('with Review on, a reviewed card says when it is due, and its history shows', async () => {
     await mount(FILE.replace('<!-- card: WIKI-9 -->', '<!-- card: WIKI-9, 2026-11-01T09:00Z good -->'))
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toMatch(/^Due /))
-    expect(el.querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('1 Review')
+    expect(el.querySelector('.card-reviews .backlinks__title')?.textContent).toBe('1 Review')
   })
 })
 
@@ -201,17 +201,17 @@ describe('the notices of a card file that is not valid (nothing deleted)', () =>
     await mount(many)
     expect(notice()?.querySelector('.card-file-notice__text')?.textContent).toBe('This card file holds 3 cards.')
     expect(fixes()).toEqual(['Split into 3 card files'])
-    expect(el.querySelector('.note-card-screen')?.textContent).toContain('Paris')
-    expect(el.querySelector('.note-card-screen')?.textContent).not.toContain('Second')
+    expect(el.querySelector('.card-screen')?.textContent).toContain('Paris')
+    expect(el.querySelector('.card-screen')?.textContent).not.toContain('Second')
   })
 
   it('text outside the card: "This card file has text outside the card.", that text shown below, muted', async () => {
-    await mount(`---\nkind: card\n---\nA note above.\n\n${CARD}\nA note below.\n`)
+    await mount(`---\nkind: card\n---\nA page above.\n\n${CARD}\nA page below.\n`)
     expect(notice()?.querySelector('.card-file-notice__text')?.textContent).toBe('This card file has text outside the card.')
     expect(fixes()).toEqual(['Move into the card'])
-    expect(el.querySelector('.card-file__outside')?.textContent).toContain('A note above.')
-    expect(el.querySelector('.card-file__outside')?.textContent).toContain('A note below.')
-    expect(el.querySelector('.note-card-screen')?.textContent).toContain('Paris')
+    expect(el.querySelector('.card-file__outside')?.textContent).toContain('A page above.')
+    expect(el.querySelector('.card-file__outside')?.textContent).toContain('A page below.')
+    expect(el.querySelector('.card-screen')?.textContent).toContain('Paris')
   })
 
   it('no card: "This card file has no card.", its text shown muted, no Edit card', async () => {
@@ -219,7 +219,7 @@ describe('the notices of a card file that is not valid (nothing deleted)', () =>
     expect(notice()?.querySelector('.card-file-notice__text')?.textContent).toBe('This card file has no card.')
     expect(fixes()).toEqual(['Make a card from the text', 'Turn into a page'])
     expect(el.querySelector('.card-file__outside')?.textContent).toContain('Just some words.')
-    expect(el.querySelector('.note-card-screen')).toBeNull()
+    expect(el.querySelector('.card-screen')).toBeNull()
     expect(editButton()).toBeNull()
   })
 })
@@ -248,8 +248,8 @@ describe('when the file changes on disk', () => {
 
 /** The card editor in the tab, once it holds the card's text (YAZ-5026). */
 const cardEditor = async () => {
-  await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .note-card__editor .ProseMirror')).not.toBeNull())
-  const dom = el.querySelector<HTMLElement>('[data-explore-card-edit] .note-card__editor .ProseMirror')!
+  await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .card__editor .ProseMirror')).not.toBeNull())
+  const dom = el.querySelector<HTMLElement>('[data-explore-card-edit] .card__editor .ProseMirror')!
   await vi.waitFor(() => expect(dom.textContent).toContain('Paris'))
   return dom
 }
@@ -259,12 +259,12 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
     await mount(FILE)
     act(() => editButton()!.click())
     const dom = await cardEditor()
-    const view = noteCardViewOfDom(dom.closest('.note-card'))!.cardEditor!.view()!
+    const view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
     act(() => view.dispatch(view.state.tr.insertText(' (Seine)', view.state.doc.content.size - 1)))
     key(dom, { key: 'Enter', metaKey: true })
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('Paris\n```', 'Paris (Seine)\n```')))
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
-    await vi.waitFor(() => expect(el.querySelector('.note-card-screen')?.textContent).toContain('Paris (Seine)'))
+    await vi.waitFor(() => expect(el.querySelector('.card-screen')?.textContent).toContain('Paris (Seine)'))
   })
 
   it('an outside change to the same card while you edit: the editor stays; Done writes your text by the card`s ID on the NEWEST bytes (the card window`s rule: the outside change to the rest of the file stays, yours wins in the card)', async () => {
@@ -276,8 +276,8 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
     disk.files.set(PATH, outside)
     indexSees(2)
     await act(async () => undefined)
-    expect(el.querySelector('[data-explore-card-edit] .note-card__editor .ProseMirror')).toBe(dom)
-    const view = noteCardViewOfDom(dom.closest('.note-card'))!.cardEditor!.view()!
+    expect(el.querySelector('[data-explore-card-edit] .card__editor .ProseMirror')).toBe(dom)
+    const view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
     act(() => view.dispatch(view.state.tr.insertText(' (Seine)', view.state.doc.content.size - 1)))
     key(dom, { key: 'Enter', metaKey: true })
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(outside.replace('Paris!\n```', 'Paris (Seine)\n```')))
@@ -337,7 +337,7 @@ describe('the top bar of a card file (YAZ-5102)', () => {
     expect(editButton()).not.toBeNull()
     act(() => editButton()!.click())
     const dom = await cardEditor()
-    const view = noteCardViewOfDom(dom.closest('.note-card'))!.cardEditor!.view()!
+    const view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
     act(() => view.dispatch(view.state.tr.insertText(' (Seine)', view.state.doc.content.size - 1)))
     key(dom, { key: 'Enter', metaKey: true })
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('Paris\n```', 'Paris (Seine)\n```')))
@@ -396,9 +396,9 @@ describe('a new card file (YAZ-5037 phase 4)', () => {
     return mount(disk.files.get(NEW)!, { path: NEW })
   }
   const editorView = async () => {
-    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .note-card__editor .ProseMirror')?.textContent).toContain('Title'))
-    const dom = el.querySelector<HTMLElement>('[data-explore-card-edit] .note-card__editor .ProseMirror')!
-    return { dom, view: noteCardViewOfDom(dom.closest('.note-card'))!.cardEditor!.view()! }
+    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .card__editor .ProseMirror')?.textContent).toContain('Title'))
+    const dom = el.querySelector<HTMLElement>('[data-explore-card-edit] .card__editor .ProseMirror')!
+    return { dom, view: cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()! }
   }
 
   it('opens in Edit card with "Title" selected: typing replaces it; Done writes the card, then names the file after the title', async () => {
@@ -416,9 +416,9 @@ describe('a new card file (YAZ-5037 phase 4)', () => {
     expect(made).toBe(`/v/Geography/${cardFileName('Capital of France', 'WIKI-10')}`)
     expect(disk.files.get(made)).toBe('---\nkind: card\n---\n```card\nCapital of France\n```\n<!-- card: WIKI-10 -->\n')
     const { onRetitle } = await mount(disk.files.get(made)!, { path: made })
-    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .note-card__editor .ProseMirror')?.textContent).toContain('Capital of France'))
-    const dom = el.querySelector<HTMLElement>('[data-explore-card-edit] .note-card__editor .ProseMirror')!
-    const view = noteCardViewOfDom(dom.closest('.note-card'))!.cardEditor!.view()!
+    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .card__editor .ProseMirror')?.textContent).toContain('Capital of France'))
+    const dom = el.querySelector<HTMLElement>('[data-explore-card-edit] .card__editor .ProseMirror')!
+    const view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
     expect(view.state.selection.empty).toBe(true)
     act(() => view.dispatch(view.state.tr.insertText('\n---\nParis', view.state.doc.content.size - 1)))
     key(dom, { key: 'Enter', metaKey: true })
@@ -447,7 +447,7 @@ describe('a new card file (YAZ-5037 phase 4)', () => {
     expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
     act(() => editButton()!.click())
     let dom = await cardEditor()
-    let view = noteCardViewOfDom(dom.closest('.note-card'))!.cardEditor!.view()!
+    let view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
     act(() => view.dispatch(view.state.tr.insertText(' (Seine)', view.state.doc.content.size - 1)))
     key(dom, { key: 'Enter', metaKey: true })
     await vi.waitFor(() => expect(disk.files.get(PATH)).toContain('Paris (Seine)'))
@@ -455,7 +455,7 @@ describe('a new card file (YAZ-5037 phase 4)', () => {
     expect(onRetitle).not.toHaveBeenCalled()
     act(() => editButton()!.click())
     dom = await cardEditor()
-    view = noteCardViewOfDom(dom.closest('.note-card'))!.cardEditor!.view()!
+    view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
     let start = -1
     view.state.doc.descendants((node, at) => {
       if (start === -1 && node.isText) start = at

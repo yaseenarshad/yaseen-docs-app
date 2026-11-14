@@ -9,7 +9,7 @@ Use it to learn an idea, a principle, a term or a tool: what it is and how it is
 - Title: the term. Hide it on the front.
 - Front, part 1: a concrete situation that shows it in use, with the term hidden.
 - Front, part 2: a one-sentence definition, with the meaning visible and the term hidden again.
-- Back: the term visible and its core meaning hidden. Then notes, mechanisms or a picture as needed.
+- Back: the term visible and its core meaning hidden. Then extra detail, mechanisms or a picture as needed.
 - For a short list, such as three levels, hide the items on the front. The back explains them.
 
 ## Example

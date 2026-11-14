@@ -38,12 +38,12 @@
  *    in the middle of a FOLDED one the tail becomes a heading of the same level after the hidden section.
  *  - Backspace at the START of an item's first block, a top-level heading or a top-level paragraph, and
  *    Delete at the END of a line, join two VISIBLE lines by ONE rule (`joinLines`, YAZ-3695 D4-D7,
- *    YAZ-3780): the lower line's text goes to the end of the upper line (in the note, a bullet or a
+ *    YAZ-3780): the lower line's text goes to the end of the upper line (in the page, a bullet or a
  *    quote), whose format wins, with one space between two words; an empty line just goes; a removed
  *    bullet's children keep their place on screen; a fold the lines would move into opens, and ⌘Z
  *    closes it again (`foldReveal.ts`). Into a code block or a table, or at the top of a zoom, nothing
- *    happens; a rule next to the caret is selected; at the top of the note an empty line goes, a bullet
- *    lifts and a heading becomes text. A table cell is a small note (YAZ-3818): its lines join, and at its
+ *    happens; a rule next to the caret is selected; at the top of the page an empty line goes, a bullet
+ *    lifts and a heading becomes text. A table cell is a small page (YAZ-3818): its lines join, and at its
  *    edge a bullet lifts (Backspace) or nothing happens (Delete). Crepe's `joinBackward` produced stray
  *    `* * child` lists, second paragraphs and bigger headings, and joined text into hidden lines. The item above is the one above on screen, also the last item of
  *    a list that ends right above the line's own list (YAZ-3727 D5).
@@ -58,7 +58,7 @@ import { canJoin, ReplaceAroundStep } from '@milkdown/kit/prose/transform'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import { deleteBlockAndEmptyWrappers, emptyWrapperDepth, liftHeadlessItem, nextVisibleTextblock, onCoveredLines } from '../lineSelection'
-import { rowShortcuts } from '../noteKeys'
+import { rowShortcuts } from '../pageKeys'
 import { type Folds, openFolds, recordOpenedFolds } from './foldReveal'
 import { headingLevel, isHeadingCollapsed } from './headingFolding'
 import { cellPosAround, findNestedList, findNestedLists, isListItem, itemInCell, LIST_NODE_NAMES } from './listNodes'
@@ -187,7 +187,7 @@ const indentCommand = (itemType: NodeType, bulletType: NodeType): Command =>
   })
 
 /**
- * Tab and ⌘] in a bullet in a table cell indent it, as in the note (YAZ-3818 D5); on a plain cell line they decline, so
+ * Tab and ⌘] in a bullet in a table cell indent it, as in the page (YAZ-3818 D5); on a plain cell line they decline, so
  * the table's `NextCell` runs. Shift-Tab and ⌘[ need no twin: the outliner's run before `PrevCell` (50).
  */
 const cellIndentCommand = (itemType: NodeType, bulletType: NodeType): Command => (state, dispatch, view) =>
@@ -256,7 +256,7 @@ const headingEnterCommand = (paragraphType: NodeType): Command => (state, dispat
   if ($from.parentOffset === heading.content.size || !isHeadingCollapsed(state, pos)) return false
   if (!dispatch) return true
 
-  // After the hidden section: before the next heading of the same or a higher level, or at the end of the note.
+  // After the hidden section: before the next heading of the same or a higher level, or at the end of the page.
   let sectionEnd = $from.after()
   for (let index = $from.index(0) + 1; index < state.doc.childCount; index++) {
     const block = state.doc.child(index)
@@ -300,13 +300,13 @@ export const enterTracker = $prose(
     }),
 )
 
-/** A line the joins act on: a textblock straight in the note, in a list item or in a quote (YAZ-3783). */
+/** A line the joins act on: a textblock straight in the page, in a list item or in a quote (YAZ-3783). */
 const isLine = ($pos: ResolvedPos): boolean => $pos.depth === 1 || isListItem($pos.node(-1)) || $pos.node(-1).type.name === 'blockquote'
 
 /**
- * `$line` sits in a table cell and `$other` is not in that cell: for the joins, a cell's edge is the note's edge
+ * `$line` sits in a table cell and `$other` is not in that cell: for the joins, a cell's edge is the page's edge
  * (YAZ-3818). Nothing joins into or out of a table (YAZ-3783), nor across a cell's edge; two lines in one cell join,
- * as in the note (D1).
+ * as in the page (D1).
  */
 const pastCellEdge = ($line: ResolvedPos, $other: ResolvedPos): boolean => cellPosAround($line) !== null && cellPosAround($other) !== cellPosAround($line)
 
@@ -471,7 +471,7 @@ const besideLeaf = (state: EditorState, dispatch: ((tr: Transaction) => void) | 
 /**
  * Backspace (and ⇧⌫, ⌃H, ⌥⌫, ⌘⌫) at the START of an item's first block, of a top-level heading or of a top-level
  * paragraph (D5, D6, YAZ-3780): join into the previous VISIBLE line, never a hidden one. No space right after an Enter,
- * so undoing a slip gives the word back (D7). A rule above is selected (an empty caret line goes first). At the top of the note an item lifts to a
+ * so undoing a slip gives the word back (D7). A rule above is selected (an empty caret line goes first). At the top of the page an item lifts to a
  * paragraph (GRO-2012), an empty line goes and the next line moves up (YAZ-3798), a heading becomes a paragraph and a
  * paragraph declines; at the top of a zoom nothing happens. The first line of a table cell is at the top (YAZ-3818).
  * Mid-line it declines: native deletion.
@@ -482,13 +482,13 @@ const backspaceCommand = (itemType: NodeType, paragraphType: NodeType): Command 
   const topLevel = $from.depth === 1 && ($from.parent.type.name === 'heading' || $from.parent.type === paragraphType)
   if (!empty || $from.parentOffset !== 0 || !(inItem || topLevel)) return false
   const $above = nextVisibleTextblock(state, $from, -1)
-  // The first line of a cell: as at the top of the note (YAZ-3818), the bullet lifts.
+  // The first line of a cell: as at the top of the page (YAZ-3818), the bullet lifts.
   const $prev = $above !== null && pastCellEdge($from, $above instanceof NodeSelection ? $above.$from : $above) ? null : $above
   if ($prev instanceof NodeSelection) return besideLeaf(state, dispatch, $from, $prev)
   if ($prev === null) {
     if (getZoomedItemPos(state) !== null) return true
     if (inItem) return liftListItem(itemType)(state, dispatch)
-    // An empty line at the top of the note just goes: the next line moves up with its format and fold (YAZ-3798).
+    // An empty line at the top of the page just goes: the next line moves up with its format and fold (YAZ-3798).
     const $next = isEmptyLine($from) ? nextVisibleTextblock(state, $from, 1) : null
     if ($next instanceof NodeSelection) return besideLeaf(state, dispatch, $from, $next)
     if ($next !== null) return joinLines(state, dispatch, $from, $next, false)
@@ -499,7 +499,7 @@ const backspaceCommand = (itemType: NodeType, paragraphType: NodeType): Command 
 
 /**
  * Delete (and ⌃D, ⌥⌦, ⌘⌦, ⌃⌥⌫, ⌥D) at the END of a line (D4): the next VISIBLE line joins here; a rule there is
- * selected (an empty caret line goes first). Anywhere else it declines (D3: the next character, natively). At the end of the note it declines; at the
+ * selected (an empty caret line goes first). Anywhere else it declines (D3: the next character, natively). At the end of the page it declines; at the
  * end of a zoom and of a table cell (YAZ-3818) nothing happens.
  */
 const deleteCommand: Command = (state, dispatch) => {
@@ -527,11 +527,11 @@ export const outlinerKeymap = $shortcut((ctx: Ctx) => {
   const bulletType = bulletListSchema.type(ctx)
   return {
     CellTab: { key: 'Tab', priority: CELL_PRIORITY, onRun: () => cellIndentCommand(itemType, bulletType) },
-    ...rowShortcuts(ctx, 'note.indent', 'CellIndentBracket', { priority: CELL_PRIORITY, onRun: () => cellIndentCommand(itemType, bulletType) }),
+    ...rowShortcuts(ctx, 'page.indent', 'CellIndentBracket', { priority: CELL_PRIORITY, onRun: () => cellIndentCommand(itemType, bulletType) }),
     Tab: { key: 'Tab', priority: PRIORITY, onRun: () => indentCommand(itemType, bulletType) },
-    ...rowShortcuts(ctx, 'note.indent', 'IndentBracket', { priority: PRIORITY, onRun: () => indentCommand(itemType, bulletType) }),
+    ...rowShortcuts(ctx, 'page.indent', 'IndentBracket', { priority: PRIORITY, onRun: () => indentCommand(itemType, bulletType) }),
     Outdent: { key: 'Shift-Tab', priority: PRIORITY, onRun: () => outdentCommand(itemType) },
-    ...rowShortcuts(ctx, 'note.outdent', 'OutdentBracket', { priority: PRIORITY, onRun: () => outdentCommand(itemType) }),
+    ...rowShortcuts(ctx, 'page.outdent', 'OutdentBracket', { priority: PRIORITY, onRun: () => outdentCommand(itemType) }),
     Enter: { key: 'Enter', priority: PRIORITY, onRun: () => enterCommand(itemType, paragraphType) },
     HeadingEnter: { key: 'Enter', priority: PRIORITY, onRun: () => headingEnterCommand(paragraphType) },
     ...Object.fromEntries(BACKSPACE_KEYS.map((key) => [`Backspace:${key}`, { key, priority: PRIORITY, onRun: () => backspaceCommand(itemType, paragraphType) }])),

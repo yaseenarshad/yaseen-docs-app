@@ -4,7 +4,7 @@
  *    text formatting travels): the box (`--pill-bg`, `--pill-pad`, `--pill-radius`, `--pill-decoration`) and each
  *    part's weight, style, decoration, colour and size (`--pill-<part>-*`). `wikilink.css` and `views.css` read them
  *    with today's look as each fallback, so a vault that changed nothing sets none, and a change costs one style
- *    update on the layers, never a redraw of a note.
+ *    update on the layers, never a redraw of a page.
  *  - `pillParts`: the PIECES a pill gains under its FORMAT, drawn by the two link plugins as widgets at the pill's
  *    ends (`headSpan`, `tailSpan`) and by a folder page's cells as spans (`LinkPillParts.tsx`): what the format puts
  *    before `{name}` is the head, what it puts after is the tail — your own text, the ID, the ID's number, the vault's
@@ -15,7 +15,7 @@
  *    a Map built once per snapshot, as `pathTitles` is.
  */
 import { DEFAULT_LINK_PILL_FORMAT, DEFAULT_LINK_PILL_MARK, LINK_PILL_PARTS, parseLinkPillFormat, type LinkPillMark, type LinkPillPartColor, type LinkPillSegment, type LinkPillToken, type LinkPills } from '@shared/linkPills'
-import { idNumber } from '@shared/noteId'
+import { idNumber } from '@shared/pageId'
 import type { IndexRecord } from '@shared/types'
 import { dirname } from '../../lib/paths'
 
@@ -83,7 +83,7 @@ export const LINK_PILL_MARK_SVG: Readonly<Record<LinkPillMark, string>> = {
 export const LINK_PILL_MARK_MASK = Object.fromEntries(
   Object.entries(LINK_PILL_MARK_SVG).map(([mark, icon]) => [mark, `url("data:image/svg+xml,${encodeURIComponent(icon.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" '))}")`]),
 ) as Readonly<Record<LinkPillMark, string>>
-/** What the index knows of a page: its ID (a note with one) and its root-relative folder ('' at the root). */
+/** What the index knows of a page: its ID (a page with one) and its root-relative folder ('' at the root). */
 export interface PathInfo {
   id?: string
   folder: string
@@ -146,7 +146,7 @@ export const pillIconPlace = (pills: LinkPills): PillIconPlace => compiled(pills
 export const pillsNeedInfo = (pills: LinkPills): boolean => compiled(pills).needsInfo
 export const pillsShowVault = (pills: LinkPills): boolean => compiled(pills).hasVault
 
-/** What is known of one pill's page. `otherVault`: the name of its vault when that is not the note's own (YAZ-3609 D22), else null. */
+/** What is known of one pill's page. `otherVault`: the name of its vault when that is not the page's own (YAZ-3609 D22), else null. */
 export interface PillMeta {
   info?: PathInfo
   otherVault: string | null
@@ -159,7 +159,7 @@ export interface PillEnd {
   pieces: readonly PillPiece[]
 }
 
-/** The vault's name a pill shows, or '': other vaults only (absent, today), every pill (the note's own vault's name then), never. */
+/** The vault's name a pill shows, or '': other vaults only (absent, today), every pill (the page's own vault's name then), never. */
 function vaultShown(pills: LinkPills, meta: PillMeta, ownVault: string | null): string {
   if (pills.vault === 'never') return ''
   return meta.otherVault ?? (pills.vault === 'always' ? ownVault ?? '' : '')
@@ -202,7 +202,7 @@ const CLOSE = [')', ']', '}', '»', '>', '”']
  * IDs, `{folder}` at the root, `{vault}` on a pill of this vault); text that stands only beside empty parts, up to the
  * pill's edge, is dropped (`{name} ({id})` with no ID is just the name); between two shown parts only the first piece
  * of text stays (`{name} · {folder} · {id}` with no folder is "Name · ID"). The icon is no part for this rule: `icon`
- * false (a pill with no icon to draw, a missing note) removes `{icon}` and one blank text beside it, so `{icon} {name}`
+ * false (a pill with no icon to draw, a missing page) removes `{icon}` and one blank text beside it, so `{icon} {name}`
  * leaves no stray space and `({icon}{name})` keeps its brackets. `{icon}` right before `{name}` is no piece either: the
  * name's own span draws it (`pillIconPlace` 'name'). Today's look gives only the other vault's name, in its brackets, at
  * the tail.

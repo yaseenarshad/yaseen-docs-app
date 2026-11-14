@@ -14,7 +14,7 @@ vi.mock('../api', () => ({ api: { readFile: vi.fn(), writeFile: vi.fn(), shell: 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
 const reads = vi.mocked(readCommentsAndShape)
-const note = (body: string) => `---\ntitle: Plan\ncomments:\n  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T20:00:00Z\n    body: ${body}\n---\nBody\n`
+const page = (body: string) => `---\ntitle: Plan\ncomments:\n  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T20:00:00Z\n    body: ${body}\n---\nBody\n`
 
 let root: Root | null = null
 let host: HTMLElement | null = null
@@ -31,17 +31,17 @@ describe('CommentsSection: one parse per content', () => {
     root = createRoot(host)
     const render = (content: string, order: 'oldest' | 'newest' = 'oldest') =>
       act(() => root?.render(<CommentsSection file={{ path: '/v/plan.md', content }} order={order} onChangeOrder={() => undefined} />))
-    render(note('First'))
+    render(page('First'))
     const afterMount = reads.mock.calls.length
     expect(afterMount).toBe(1)
 
-    render(note('First'))
-    render(note('First'), 'newest')
+    render(page('First'))
+    render(page('First'), 'newest')
     act(() => host?.querySelector<HTMLButtonElement>('button.comments__header')?.click())
     act(() => host?.querySelector<HTMLButtonElement>('button.comments__header')?.click())
     expect(reads.mock.calls.length).toBe(afterMount)
 
-    render(note('Second'))
+    render(page('Second'))
     expect(reads.mock.calls.length).toBe(afterMount + 1)
   })
 })

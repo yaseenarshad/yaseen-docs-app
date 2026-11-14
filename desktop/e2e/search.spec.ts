@@ -3,10 +3,10 @@
  * tab (YAZ-2638 D2: the second tab of the sidebar, and the only one with the search bar of
  * YAZ-801), the search TREE that is its body while text is typed (YAZ-2620: the Files tree cut
  * down to the matches and their parent folders) and the title/alias ranking behind it (YAZ-802),
- * over a COPY of the committed encyclopedia fixture (`fixtures/bible-vault`) plus ONE seeded note
+ * over a COPY of the committed encyclopedia fixture (`fixtures/bible-vault`) plus ONE seeded page
  * that makes the ranking and the alias deterministic.
  *
- * That seeded note is `Nurture.md` at the vault root, aliased `Zephyr Codename`. It turns the
+ * That seeded page is `Nurture.md` at the vault root, aliased `Zephyr Codename`. It turns the
  * query "Nurture" into one match of each rank bucket — exact `Nurture`, prefix `Nurture
  * Sequencing`, substring `Lead Nurture` — in three places of the tree: the root, `Problems/` and
  * `Funnel Stages/`. The tree draws the exact match LAST, which is the only way this fixture can
@@ -49,7 +49,7 @@ test.describe.configure({ mode: 'serial' })
 /** The committed encyclopedia — copied per run; the source is never opened by the app. */
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
 
-/** The seeded note (see the module doc): the exact hit for "Nurture", and the ONE alias in the vault. */
+/** The seeded page (see the module doc): the exact hit for "Nurture", and the ONE alias in the vault. */
 const SEEDED = 'Nurture.md'
 const SEEDED_BODY = 'search-seeded-nurture-body'
 const ALIAS = 'Zephyr Codename'
@@ -204,7 +204,7 @@ test('step 1 — ⌘K shows the Search tab, its bar, one line of help and the ke
   await expect(searchTab(win)).toHaveAttribute('aria-selected', 'true')
   await expect(searchBar(win)).toBeFocused()
   // With no text the body is one line and no tree (S7), and the `esc` keycap is in the bar already (S13).
-  await expect(bodyMsg(win)).toHaveText('Type to search every note and folder.')
+  await expect(bodyMsg(win)).toHaveText('Type to search every page and folder.')
   await expect(treeRows(win)).toHaveCount(0)
   await expect(keycap(win)).toBeVisible()
   // Below the line, the keys of the search (YAZ-2662 S59): seven rows, each key in a keycap.
@@ -228,7 +228,7 @@ test('step 1 — ⌘K shows the Search tab, its bar, one line of help and the ke
   await shoot(win, 'search-01-tree')
 
   // Enter opens the highlight by the preview rule (YAZ-2648 D1, S28): a NEW tab at the end, italic,
-  // and the launch's tab — a kept tab — stays. Before YAZ-2648 the note took that tab's place.
+  // and the launch's tab — a kept tab — stays. Before YAZ-2648 the page took that tab's place.
   await searchBar(win).press('Enter')
   await expect(activeTab(win)).toHaveText('Nurture')
   await expect(editorOf(win)).toContainText(SEEDED_BODY)
@@ -251,7 +251,7 @@ test('step 1 — ⌘K shows the Search tab, its bar, one line of help and the ke
   await expect(matchLabels(win)).toHaveText(NURTURE)
 })
 
-test('step 2 — a frontmatter alias finds its note: ONE row, under its title, with nothing bold', async () => {
+test('step 2 — a frontmatter alias finds its page: ONE row, under its title, with nothing bold', async () => {
   await reset(win)
   // Nothing in the vault is CALLED Zephyr: the only way to this row is through the alias.
   await search(win, 'Zephyr', ['Nurture'])
@@ -338,7 +338,7 @@ test('step 5 — a fold in the search lasts as long as its query; a matched fold
   // Esc goes back to the lens the window last showed — Files — and the text STAYS (YAZ-2638 S12;
   // before, Esc emptied the query). The Files tree is there with its own folds: the swap is a
   // conditional render, never a teardown. The caret leaves the bar with the tab (YAZ-2662 D9: it
-  // goes into the open page; step 9 reads it on a note).
+  // goes into the open page; step 9 reads it on a page).
   await searchBar(win).press('Escape')
   await expect(lensTab(win, 'Files')).toHaveAttribute('aria-selected', 'true')
   await expect(searchBar(win)).toHaveCount(0)
@@ -519,7 +519,7 @@ test('step 9 — ⌘K, a query: the match of a pinned folder shows FIRST, under 
   await expect(dirRow(win, 'Funnel Stages')).toBeVisible()
   await expect(dirItem(win, funnel)).toHaveAttribute('aria-expanded', 'false')
 
-  // ⌘K, then the query. "Stage" finds the folder `Funnel Stages`, which CONTAINS it, and the note
+  // ⌘K, then the query. "Stage" finds the folder `Funnel Stages`, which CONTAINS it, and the page
   // `Stage Accuracy` in `Problems/`, which STARTS with it — the better rank.
   await clickMenuItem(app, 'menu.file.search', 'w1')
   await expect(searchTab(win)).toHaveAttribute('aria-selected', 'true')

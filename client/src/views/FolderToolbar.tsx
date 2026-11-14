@@ -1,13 +1,13 @@
 /**
- * The folder page's top-right toolbar (YAZ-3746 D35): the note page's chips (`StatusChips`) with the folder's own cog.
+ * The folder page's top-right toolbar (YAZ-3746 D35): the page page's chips (`StatusChips`) with the folder's own cog.
  *
  *  - THE COG: a "This folder page" group — "Read only" (D36, `readonly: true` in `.folder.md`), "Show folder page
  *    file" (D37, `show_page_file` in `.folder.md`: On, Off, or Settings — no key, which follows Settings › Folder pages),
  *    "Preview rows on hover" and "Preview links on hover" (YAZ-4601 D51, split by demo 13D: `hover_rows` and
  *    `hover_links` in `.folder.md`, the old `hover_preview` read where a new key is absent) and "Show Other files"
  *    (YAZ-4597 D43, `show_other_files`), each with the same three choices.
- *    On the Page tab, the note's page switches follow it, and the note's fold-all button stands left of it (`FolderPageTab`).
- *  - ZOOM: per app tab and never stored, as a note's. The host keeps it.
+ *    On the Page tab, the page's page switches follow it, and the page's fold-all button stands left of it (`FolderPageTab`).
+ *  - ZOOM: per app tab and never stored, as a page's. The host keeps it.
  *  - SAVED / SAVING: the folder's own writes — its settings writes, and the Page body's saves (`FolderPageTab.save`).
  *
  * The parts that change often (the save state, the Page tab's part) live in a small store, so a save re-renders this
@@ -30,13 +30,13 @@ import type { AllowFor } from '../editor/useTimedUnlock'
  */
 export interface FolderPageTab {
   /**
-   * The note's page switches, as a note's `Editor` hands its own cog: every `PageSettings` prop but the folder's
+   * The page's page switches, as a page's `Editor` hands its own cog: every `PageSettings` prop but the folder's
    * own rows. They show after the "This folder page" group: Line numbers, Section indent, …, the counts.
    */
   cog: Omit<PageSettingsProps, 'readOnly' | 'onToggleReadOnly' | 'switches' | 'switchesHeading' | 'rows'>
   /** The Page body's save state: the save chip shows it with the settings writes' (the worse of the two). */
   save: SaveStatus
-  /** The note's fold-all button (YAZ-3746 10D): it stands left of the cog, as on a note page. Null while Folding is off. */
+  /** The page's fold-all button (YAZ-3746 10D): it stands left of the cog, as on a page page. Null while Folding is off. */
   foldAll: ReactNode
 }
 
@@ -65,7 +65,7 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
   onZoom: (zoom: number) => void
   /** The folder page is under Read only: its own switch, or the vault's (YAZ-4939). The chip shows while it is. */
   readOnly: boolean
-  /** Off → the host turns it on; on → the host opens the chip's "Allow edits?" box, as a note's cog does; on while a timed unlock runs → "Lock now". */
+  /** Off → the host turns it on; on → the host opens the chip's "Allow edits?" box, as a page's cog does; on while a timed unlock runs → "Lock now". */
   onToggleReadOnly: () => void
   asking: boolean
   onAsk: () => void
@@ -135,7 +135,7 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
         [<MarkGlyph key="copy" icon="copy" />, "This folder's own settings for a parent's column"],
         [<MarkGlyph key="below" icon="below" />, 'From a subfolder'],
         [<MarkGlyph key="lock" icon="lock" />, 'This folder keeps its own value'],
-        [<MarkGlyph key="loose" icon="loose" />, 'Only in the notes: no column'],
+        [<MarkGlyph key="loose" icon="loose" />, 'Only in the pages: no column'],
         ['None', "This folder's own column"],
       ],
     },
@@ -152,8 +152,8 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
       'Show',
       [
         choiceRow('Page file in the sidebar', "This folder's page file in the sidebar, first under its folder.", showPageFile, onChangeShowPageFile),
-        choiceRow('Other files', "A tray at the foot of this page: the folder's files that are not notes, and the notes moved out of its views.", showOtherFiles, onChangeShowOtherFiles),
-        ...(onChangeShowNewButtons === undefined ? [] : [choiceRow('New buttons', { lead: 'Shows or hides:', rows: [['+ New', 'At the top right'], ['+ New', 'At the end of a table and of each group'], ['+ New card', 'At the end of each board column'], ['+', 'On each group header']], foot: 'Off: right-click a row or a group header to add a note.' }, showNewButtons, onChangeShowNewButtons)]),
+        choiceRow('Other files', "A tray at the foot of this page: the folder's files that are not pages, and the pages moved out of its views.", showOtherFiles, onChangeShowOtherFiles),
+        ...(onChangeShowNewButtons === undefined ? [] : [choiceRow('New buttons', { lead: 'Shows or hides:', rows: [['+ New', 'At the top right'], ['+ New', 'At the end of a table and of each group'], ['+ New card', 'At the end of each board column'], ['+', 'On each group header']], foot: 'Off: right-click a row or a group header to add a page.' }, showNewButtons, onChangeShowNewButtons)]),
         choiceRow("Parent folders' columns", { lead: 'This page shows the columns of the folders above it too.', rows: [['Here', 'For every view of this page'], ['One view', 'Columns › From <parent folder> › Hide all']] }, inheritColumns, onChangeInheritColumns),
         ...(onChangeColumnMarks === undefined ? [] : [marksRow(columnMarks, onChangeColumnMarks)]),
       ],
@@ -177,11 +177,11 @@ export function FolderToolbar({ store, zoom, onZoom, readOnly, onToggleReadOnly,
         ])),
     ...section('Preview on hover', [
       choiceRow('Rows', 'Rest the mouse on a row, a card or a line of Other files to see the file.', hoverRows, onChangeHoverRows),
-      choiceRow('Links', 'Rest the mouse on a link pill in a cell to see the linked note.', hoverLinks, onChangeHoverLinks),
+      choiceRow('Links', 'Rest the mouse on a link pill in a cell to see the linked page.', hoverLinks, onChangeHoverLinks),
     ]),
     ...section('Safety', [
-      { label: 'Read only', readOnlySlot: true, inline: true, hint: "Locks this folder page: its title, its columns and its settings. Sort, filter and the other view changes still work. Each note keeps its own Read only." },
-      ...(onChangeConfirmChanges === undefined ? [] : [choiceRow('Confirm changes', 'A change to a note from this page (a typed cell, Delete, Paste, a drag to another group or day, a rename) asks first.', confirmChanges, onChangeConfirmChanges)]),
+      { label: 'Read only', readOnlySlot: true, inline: true, hint: "Locks this folder page: its title, its columns and its settings. Sort, filter and the other view changes still work. Each page keeps its own Read only." },
+      ...(onChangeConfirmChanges === undefined ? [] : [choiceRow('Confirm changes', 'A change to a page from this page (a typed cell, Delete, Paste, a drag to another group or day, a rename) asks first.', confirmChanges, onChangeConfirmChanges)]),
     ]),
   ]
   return (

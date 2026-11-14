@@ -65,7 +65,7 @@ const h = vi.hoisted(() => {
     check: vi.fn(async (): Promise<{ kind: string }> => ({ kind: 'idle' })),
     checks: true,
     state: vi.fn(() => ({ kind: updater.kind })),
-    notes: vi.fn(async () => []),
+    pages: vi.fn(async () => []),
     installOnExit: vi.fn((reopen: boolean) => void s.order.push(`installOnExit:${String(reopen)}`)),
   }
   const gitSync = { notifyFocus: vi.fn(), notifyWake: vi.fn(), flushForQuit: vi.fn(async (): Promise<void> => void s.order.push('gitSync.flushForQuit')) }
@@ -134,7 +134,7 @@ vi.mock('./menu', () => ({
   subscribeMenuRebuildOnActiveFile: vi.fn(),
 }))
 
-const NOTE = '/vault/Plans/Roadmap.md'
+const PAGE = '/vault/Plans/Roadmap.md'
 const event = () => ({ preventDefault: vi.fn() })
 /** Lets `whenReady().then(…)` and a `.then` chain run to their ends. */
 const settle = () => new Promise((r) => setTimeout(r, 0))
@@ -180,7 +180,7 @@ describe('main startup order (YAZ-2172)', () => {
     expect(h.s.order).toEqual(expect.arrayContaining(['on:second-instance', 'on:open-url', 'on:open-file']))
     expect(h.s.order).not.toContain('ready')
     const e = event()
-    h.s.on.get('open-file')!(e, NOTE)
+    h.s.on.get('open-file')!(e, PAGE)
     expect(e.preventDefault).toHaveBeenCalled()
     expect(h.manager.routeToFile).not.toHaveBeenCalled()
     h.s.ready()
@@ -188,10 +188,10 @@ describe('main startup order (YAZ-2172)', () => {
     // Every door registered before the windows restore; the cold-start link routes only after them.
     const at = (entry: string) => h.s.order.indexOf(entry)
     for (const door of ['registerClipboardIpc', 'registerIpc']) expect(at(door)).toBeGreaterThan(at('ready'))
-    for (const door of ['registerClipboardIpc', 'registerIpc']) expect(at(door)).toBeLessThan(at(`restore:root-of:${NOTE}`))
-    expect(at(`route:${NOTE}`)).toBeGreaterThan(at(`restore:root-of:${NOTE}`))
-    expect(h.manager.rootFor).toHaveBeenCalledExactlyOnceWith(NOTE, null)
-    expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith([`root-of:${NOTE}`])
+    for (const door of ['registerClipboardIpc', 'registerIpc']) expect(at(door)).toBeLessThan(at(`restore:root-of:${PAGE}`))
+    expect(at(`route:${PAGE}`)).toBeGreaterThan(at(`restore:root-of:${PAGE}`))
+    expect(h.manager.rootFor).toHaveBeenCalledExactlyOnceWith(PAGE, null)
+    expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith([`root-of:${PAGE}`])
   })
 
   it('a launch with two waiting links asks for both vaults; a link that cannot be read and a path that cannot open ask for nothing, and are handled all the same (YAZ-2589 S6, S7, A6)', async () => {
@@ -229,8 +229,8 @@ describe('main startup order (YAZ-2172)', () => {
   it('after ready a link routes at once, and a bad one gets the notice instead of a route', async () => {
     h.s.ready()
     await settle()
-    h.s.on.get('open-url')!(event(), fileLink(NOTE))
-    expect(h.manager.routeToFile).toHaveBeenCalledWith(NOTE, null)
+    h.s.on.get('open-url')!(event(), fileLink(PAGE))
+    expect(h.manager.routeToFile).toHaveBeenCalledWith(PAGE, null)
     h.s.on.get('open-url')!(event(), 'https://example.com')
     expect(h.manager.linkNotice).toHaveBeenCalledWith("Can't open link: https://example.com")
   })
@@ -240,8 +240,8 @@ describe('main startup order (YAZ-2172)', () => {
     await settle()
     const win = { isDestroyed: () => false, isMinimized: () => true, restore: vi.fn(), focus: vi.fn() }
     h.s.windows = [win]
-    h.s.on.get('second-instance')!(event(), ['/Applications/Yaseen Docs.app/Contents/MacOS/Yaseen Docs', fileLink(NOTE)])
-    expect(h.manager.routeToFile).toHaveBeenCalledWith(NOTE, null)
+    h.s.on.get('second-instance')!(event(), ['/Applications/Yaseen Docs.app/Contents/MacOS/Yaseen Docs', fileLink(PAGE)])
+    expect(h.manager.routeToFile).toHaveBeenCalledWith(PAGE, null)
     expect(win.focus).not.toHaveBeenCalled()
     // Draw's scheme rides the same door (YAZ-3028 D7).
     h.s.on.get('second-instance')!(event(), ['/Applications/Yaseen Docs.app/Contents/MacOS/Yaseen Docs', 'yaseendraw:///vault/Board%20one.excalidraw'])
@@ -272,7 +272,7 @@ describe('a window focus is a pull trigger (YAZ-1081 D2)', () => {
   it('asks the sync manager to pull EVERY vault the focused window shows, and no vault of another window; a Welcome window or an unknown one asks for none (YAZ-2602 S43)', async () => {
     h.s.ready()
     await settle() // `whenReady` ran: registerIpc handed back the sync manager (and the one secrets instance)
-    h.s.stored = [{ id: 'w1', roots: ['/notes', '/work'] }, { id: 'w2', roots: ['/other'] }, { id: 'w3', roots: [] }]
+    h.s.stored = [{ id: 'w1', roots: ['/pages', '/work'] }, { id: 'w2', roots: ['/other'] }, { id: 'w3', roots: [] }]
     const focus = (id: string | undefined) => {
       const webContents = { id: 7 }
       h.manager.idFor.mockReturnValue(id)
@@ -281,7 +281,7 @@ describe('a window focus is a pull trigger (YAZ-1081 D2)', () => {
       expect(h.manager.idFor).toHaveBeenLastCalledWith(webContents)
       return h.gitSync.notifyFocus.mock.calls
     }
-    expect(focus('w1')).toEqual([['/notes'], ['/work']])
+    expect(focus('w1')).toEqual([['/pages'], ['/work']])
     expect(focus('w2')).toEqual([['/other']])
     expect(focus('w3')).toEqual([])
     expect(focus(undefined)).toEqual([])

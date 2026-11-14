@@ -1,5 +1,5 @@
 /**
- * Super tables (YAZ-4869, S1–S5; CONTRACTS rule 41a): a note table whose views show as tabs over it. The table stays
+ * Super tables (YAZ-4869, S1–S5; CONTRACTS rule 41a): a page table whose views show as tabs over it. The table stays
  * the source: tab "Table" is the table itself, as before, and each other tab is a VIEW of the same rows, drawn by the
  * zoom pill's anchor (`tableZoomPill.tsx`, the lazy `SuperTable.tsx`). The views live in the table comment
  * (`viewGrammar.ts`); a plain table costs nothing.
@@ -35,7 +35,7 @@ export const SUPER_HIDDEN_CLASS = 'table-super-hidden'
 /** Where the note is, for what this Mac remembers of its tables (the active tab, the collapsed groups). */
 export interface SuperPlace {
   root: string
-  notePath: string
+  pagePath: string
 }
 
 /** A table anchor's doors (`tableZoomPill.tsx`): draw the pill again, draw the Super table again (debounced while typing), and show a found row. */
@@ -143,7 +143,7 @@ export function headerKeys(table: ProseNode): string[] {
 const memory = new Map<string, string[]>()
 
 /** The key of one table's remembered list: `<note>::table:<index>::<what>`. */
-const memoryKey = (place: SuperPlace | null, index: number, what: string): string => `${place?.notePath ?? ''}::table:${index}::${what}`
+const memoryKey = (place: SuperPlace | null, index: number, what: string): string => `${place?.pagePath ?? ''}::table:${index}::${what}`
 
 export function remembered(place: SuperPlace | null, index: number, what: string): string[] {
   const key = memoryKey(place, index, what)

@@ -3,7 +3,7 @@
  * the peek box opened with Enter or a double click. Monaco asks its editor opener for any file that
  * is not the editor's own model; this module answers for `file://` targets.
  *
- * THE DOOR. The tab's `onOpenFile` — the same one a note's link uses (`navigate`: this tab, with
+ * THE DOOR. The tab's `onOpenFile` — the same one a page's link uses (`navigate`: this tab, with
  * history, or the tab that already shows the file) — so Back returns the way it does for a link.
  * The place rides beside it: `openCodeAt` keeps it for the file, and the code tab that shows the
  * file takes it — a new tab when it mounts, a tab already open at once. One jump, one place: a tab

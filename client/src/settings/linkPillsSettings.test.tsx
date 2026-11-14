@@ -18,9 +18,9 @@ import type { SettingsCtx } from './registry'
 let root: Root | null = null
 let container: HTMLElement | null = null
 
-function mount(pills: LinkPills | undefined, ids = false, word = UNIT_WORDS.note) {
+function mount(pills: LinkPills | undefined, ids = false, word = UNIT_WORDS.page) {
   const save = vi.fn()
-  const ctx: SettingsCtx = { unitWord: { settings: { unit: 'note', own: { one: '', many: '' } }, word, unit: unitTextOf(word), save: vi.fn() }, settings: { ...DEFAULT_SETTINGS }, onChange: vi.fn(), linkPills: pills === undefined ? undefined : { pills, save }, textFormatting: { vaults: [{ root: '/v', name: 'Mine', state: { formatting: {}, save: vi.fn() } }], activeRoot: '/v' } }
+  const ctx: SettingsCtx = { unitWord: { settings: { unit: 'page', own: { one: '', many: '' } }, word, unit: unitTextOf(word), save: vi.fn() }, settings: { ...DEFAULT_SETTINGS }, onChange: vi.fn(), linkPills: pills === undefined ? undefined : { pills, save }, textFormatting: { vaults: [{ root: '/v', name: 'Mine', state: { formatting: {}, save: vi.fn() } }], activeRoot: '/v' } }
   if (ids) ctx.ids = { enabled: true, held: true, ask: undefined, set: vi.fn(), check: vi.fn(async () => ''), old: 0, unfinished: false, state: () => new Promise<IdsState>(() => undefined), reletter: vi.fn(), backfill: vi.fn() }
   container = document.createElement('div')
   document.body.appendChild(container)
@@ -236,7 +236,7 @@ describe('Settings › Link pills (YAZ-4924)', () => {
     expect(save).toHaveBeenLastCalledWith({})
   })
 
-  it('the sample note has every part: each token of the format shows on it, in a vault without IDs too; "never" hides the vault name', () => {
+  it('the sample page has every part: each token of the format shows on it, in a vault without IDs too; "never" hides the vault name', () => {
     const format = '{icon}{name} · {id} · {vault} · {folder} · {path} ·'
     const { row } = mount({ format })
     expect(pillTexts(row)).toEqual(['Roadmap · YAS-12 · Mine · Plans · Projects › Plans ·'])
@@ -324,7 +324,7 @@ describe('Settings › Link pills (YAZ-4924)', () => {
   })
 
   it("the hint under the chips says the vault's word (YAZ-4950): a Card vault reads \"card\"", () => {
-    expect(mount(NO_LINK_PILLS).row.querySelector('.settings__tokens')?.textContent).toBe('Other text shows as you type it. An empty part, like the ID of a note without one, takes its text with it.')
+    expect(mount(NO_LINK_PILLS).row.querySelector('.settings__tokens')?.textContent).toBe('Other text shows as you type it. An empty part, like the ID of a page without one, takes its text with it.')
     act(() => root?.unmount())
     container?.remove()
     expect(mount(NO_LINK_PILLS, false, UNIT_WORDS.card).row.querySelector('.settings__tokens')?.textContent).toBe('Other text shows as you type it. An empty part, like the ID of a card without one, takes its text with it.')

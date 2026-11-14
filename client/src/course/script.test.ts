@@ -22,11 +22,11 @@ describe('the course script (YAZ-5119, version 2 YAZ-5147)', () => {
     })
   })
 
-  it('keeps the words plain: no exclamation mark, never "note card"', () => {
+  it('keeps the words plain: no exclamation mark, never "note card"', () => { // rename-note-to-page: keep (the old name stays out of the course)
     const lines = [...COURSE.flatMap((ch) => [...ch.clips.map((c) => c.text), ...(ch.tryIt ?? []).map((s) => s.say)]), NO_CARDS_YET]
     for (const line of lines) {
       expect(line).not.toContain('!')
-      expect(line.toLowerCase()).not.toContain('note card')
+      expect(line.toLowerCase()).not.toContain('note card') // rename-note-to-page: keep
     }
   })
 

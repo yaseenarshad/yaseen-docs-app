@@ -1,10 +1,10 @@
 /**
- * Sync's merge of a NOTE whose rebase stopped (YAZ-4615 D4, D9). Pure: three versions in, the
- * settled note out — `desktop/src/main/git/resolve.ts` writes it.
+ * Sync's merge of a PAGE whose rebase stopped (YAZ-4615 D4, D9). Pure: three versions in, the
+ * settled page out — `desktop/src/main/git/resolve.ts` writes it.
  *
- * Two people who comment on one note between syncs both append to the end of `comments`, so git
+ * Two people who comment on one page between syncs both append to the end of `comments`, so git
  * sees two edits at one place and stops. Here:
- *  - the `comments` key comes out of all three versions; what is left is "the rest" of the note;
+ *  - the `comments` key comes out of all three versions; what is left is "the rest" of the page;
  *  - the lists merge BY ID, key by key: a key my side changed keeps my value, any other keeps
  *    theirs; an entry one side deleted and the other edited stays (an edit beats a delete); an entry
  *    deleted on one side and untouched on the other goes;
@@ -28,8 +28,8 @@ export interface Renumbered {
   to: string
 }
 
-export interface NoteMerge {
-  /** The note to write at the path. */
+export interface PageMerge {
+  /** The page to write at the path. */
   text: string
   /** My comments that took a new number (the notice names them). */
   renumbered: Renumbered[]
@@ -45,9 +45,9 @@ const ours = (content: string): boolean => {
   return shape === 'absent' || shape === 'list'
 }
 
-/** The note with its comments taken out: what `mergeLines` merges. */
-export const noteRest = (content: string): string => setFrontmatterProperty(content, COMMENTS_KEY, undefined)
-const restOf = noteRest
+/** The page with its comments taken out: what `mergeLines` merges. */
+export const pageRest = (content: string): string => setFrontmatterProperty(content, COMMENTS_KEY, undefined)
+const restOf = pageRest
 
 /** Entries by id; an entry that is not a comment we know is kept by its exact JSON. */
 function keyed(list: readonly unknown[]): Map<string, unknown> {
@@ -82,7 +82,7 @@ const label = (list: readonly unknown[], e: Entry, n: number): string => {
  */
 export type LineMerge = (base: string, theirs: string, mine: string) => string | null
 
-export function mergeNoteComments(base: string | null, theirs: string, mine: string, mergeLines?: LineMerge): NoteMerge | null {
+export function mergePageComments(base: string | null, theirs: string, mine: string, mergeLines?: LineMerge): PageMerge | null {
   if (!ours(theirs) || !ours(mine) || (base !== null && !ours(base))) return null // resolve.ts keeps both whole files (D9)
   const [b, t, m] = [base === null ? new Map<string, unknown>() : keyed(writableComments(base)), keyed(writableComments(theirs)), keyed(writableComments(mine))]
 
@@ -125,7 +125,7 @@ export function mergeNoteComments(base: string | null, theirs: string, mine: str
   const [restB, restT, restM] = [base === null ? null : restOf(base), restOf(theirs), restOf(mine)]
   const both = restT !== restM && restB !== restT && restB !== restM
   // Both changed the rest: lines that differ on one side only merge as git merges them (D9 is only
-  // for the SAME lines). The base is needed for that; two new notes at one path keep both.
+  // for the SAME lines). The base is needed for that; two new pages at one path keep both.
   const lined = both && restB !== null && mergeLines !== undefined ? mergeLines(restB, restT, restM) : null
   const rest = lined ?? (restT === restM || restB === restM ? restT : restB === restT ? restM : restT)
   const text = withComments(rest, list)

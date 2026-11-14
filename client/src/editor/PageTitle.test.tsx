@@ -19,7 +19,7 @@ afterEach(() => {
   container = null
 })
 
-const PATH = '/vault/Docs/Old Note.md'
+const PATH = '/vault/Docs/Old Page.md'
 
 function mount(opts: { path?: string; kind?: 'file' | 'dir'; titles?: PathTitles; readOnly?: boolean } = {}) {
   const onRetitle = vi.fn()
@@ -56,13 +56,13 @@ function type(el: HTMLElement, value: string, key = 'Enter') {
 }
 
 describe('PageTitle (⚡ YAZ-888)', () => {
-  it('a note with no title shows its file name minus the extension', () => {
+  it('a page with no title shows its file name minus the extension', () => {
     const { el } = mount()
-    expect(heading(el)?.textContent).toBe('Old Note')
+    expect(heading(el)?.textContent).toBe('Old Page')
     expect(input(el)).toBeNull()
   })
 
-  it('E: the page title shows the note\'s title, and a folder\'s page its folder\'s (YAZ-2420 D14)', () => {
+  it('E: the page title shows the page\'s title, and a folder\'s page its folder\'s (YAZ-2420 D14)', () => {
     const titles = new Map([['/vault/Docs/up-001-abdul-k3m9x2pq7abc.md', 'UP-001 - Abdul'], ['/vault/Docs', 'Upwork 2026']])
     expect(heading(mount({ path: '/vault/Docs/up-001-abdul-k3m9x2pq7abc.md', titles }).el)?.textContent).toBe('UP-001 - Abdul')
     act(() => root?.unmount())
@@ -73,29 +73,29 @@ describe('PageTitle (⚡ YAZ-888)', () => {
     const { el } = mount()
     act(() => heading(el)?.click())
     expect(heading(el)).toBeNull()
-    expect(input(el)?.defaultValue).toBe('Old Note')
+    expect(input(el)?.defaultValue).toBe('Old Page')
   })
 
   it('Enter commits the TITLE typed: the name on disk is not the heading\'s to build (YAZ-2420 D16)', () => {
     const { el, onRetitle } = mount()
     act(() => heading(el)?.click())
-    type(el, 'New Note')
-    expect(onRetitle).toHaveBeenCalledExactlyOnceWith('New Note')
+    type(el, 'New Page')
+    expect(onRetitle).toHaveBeenCalledExactlyOnceWith('New Page')
     // The input closes on commit; the heading still reads the OLD name until the path changes.
     expect(input(el)).toBeNull()
-    expect(heading(el)?.textContent).toBe('Old Note')
+    expect(heading(el)?.textContent).toBe('Old Page')
   })
 
-  it('the field edits the TITLE, for a note and for a folder: it is prefilled with it, and the title unchanged commits nothing (YAZ-2420 D16)', () => {
+  it('the field edits the TITLE, for a page and for a folder: it is prefilled with it, and the title unchanged commits nothing (YAZ-2420 D16)', () => {
     const titles = new Map([['/vault/Docs/up-001-abdul-k3m9x2pq7abc.md', 'UP-001 - Abdul'], ['/vault/Docs', 'Upwork 2026']])
-    const note = mount({ path: '/vault/Docs/up-001-abdul-k3m9x2pq7abc.md', titles })
-    act(() => heading(note.el)?.click())
-    expect(input(note.el)?.defaultValue).toBe('UP-001 - Abdul')
-    type(note.el, 'UP-001 - Abdul')
-    expect(note.onRetitle).not.toHaveBeenCalled()
-    act(() => heading(note.el)?.click())
-    type(note.el, 'up-001-abdul-k3m9x2pq7abc') // the file name is not what the field compares with
-    expect(note.onRetitle).toHaveBeenCalledExactlyOnceWith('up-001-abdul-k3m9x2pq7abc')
+    const page = mount({ path: '/vault/Docs/up-001-abdul-k3m9x2pq7abc.md', titles })
+    act(() => heading(page.el)?.click())
+    expect(input(page.el)?.defaultValue).toBe('UP-001 - Abdul')
+    type(page.el, 'UP-001 - Abdul')
+    expect(page.onRetitle).not.toHaveBeenCalled()
+    act(() => heading(page.el)?.click())
+    type(page.el, 'up-001-abdul-k3m9x2pq7abc') // the file name is not what the field compares with
+    expect(page.onRetitle).toHaveBeenCalledExactlyOnceWith('up-001-abdul-k3m9x2pq7abc')
     act(() => root?.unmount())
     const folder = mount({ path: '/vault/Docs', kind: 'dir', titles })
     act(() => heading(folder.el)?.click())
@@ -109,7 +109,7 @@ describe('PageTitle (⚡ YAZ-888)', () => {
     act(() => heading(el)?.click())
     type(el, 'Discarded', 'Escape')
     expect(onRetitle).not.toHaveBeenCalled()
-    expect(heading(el)?.textContent).toBe('Old Note')
+    expect(heading(el)?.textContent).toBe('Old Page')
   })
 
   it('leaving the field commits — click-away is the same gesture as Enter (YAZ-1553)', () => {
@@ -132,7 +132,7 @@ describe('PageTitle (⚡ YAZ-888)', () => {
       f.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
     })
     expect(onRetitle).not.toHaveBeenCalled()
-    expect(heading(el)?.textContent).toBe('Old Note')
+    expect(heading(el)?.textContent).toBe('Old Page')
   })
 
   it('one leave commits ONCE even when the trailing blur follows it (YAZ-1553)', () => {
@@ -153,7 +153,7 @@ describe('PageTitle (⚡ YAZ-888)', () => {
     type(el, '   ')
     expect(onRetitle).not.toHaveBeenCalled()
     act(() => heading(el)?.click())
-    type(el, 'Old Note')
+    type(el, 'Old Page')
     expect(onRetitle).not.toHaveBeenCalled()
   })
 
@@ -175,7 +175,7 @@ describe('PageTitle (⚡ YAZ-888)', () => {
     expect(input(el)).toBeNull()
   })
 
-  it('a note named Home renames like any other note (YAZ-2290)', () => {
+  it('a page named Home renames like any other page (YAZ-2290)', () => {
     const { el, onRetitle } = mount({ path: '/vault/Home.md' })
     expect(heading(el)?.textContent).toBe('Home')
     expect(heading(el)?.tabIndex).toBe(0)
@@ -188,11 +188,11 @@ describe('PageTitle (⚡ YAZ-888)', () => {
     const { el } = mount()
     expect(heading(el)?.tabIndex).toBe(0)
     press(heading(el)!, 'Enter')
-    expect(input(el)?.value).toBe('Old Note')
+    expect(input(el)?.value).toBe('Old Page')
   })
 })
 
-describe('PageTitle on a read-only note (YAZ-3076 S22)', () => {
+describe('PageTitle on a read-only page (YAZ-3076 S22)', () => {
   it('neither a click nor Enter opens the field; the heading is not a tab stop', () => {
     const { el } = mount({ readOnly: true })
     act(() => heading(el)?.click())
@@ -210,7 +210,7 @@ describe('PageTitle on a read-only note (YAZ-3076 S22)', () => {
     render(true)
     expect(input(el)).toBeNull()
     expect(onRetitle).not.toHaveBeenCalled()
-    expect(heading(el)?.textContent).toBe('Old Note')
+    expect(heading(el)?.textContent).toBe('Old Page')
   })
 })
 
@@ -266,7 +266,7 @@ describe('the ID after the title (YAZ-4940 "In the title")', () => {
     expect(idButton(el)?.textContent).toBe('EMB-46')
   })
 
-  it('a read-only note shows the ID too', () => {
+  it('a read-only page shows the ID too', () => {
     const { el } = mountWithId('EMB-46', { readOnly: true })
     expect(idButton(el)?.textContent).toBe('EMB-46')
   })

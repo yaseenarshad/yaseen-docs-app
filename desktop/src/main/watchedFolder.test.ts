@@ -96,7 +96,7 @@ describe('createWatchedFolder', () => {
       await mkdir(dir)
       const own = path.join(dir, 'own.json')
       await writeFile(own, '{}')
-      watched.noteOwnWrite(own, (await stat(own)).mtimeMs)
+      watched.recordOwnWrite(own, (await stat(own)).mtimeMs)
       await sleep(QUIET_MS)
       await writeFile(path.join(dir, 'outside.json'), '{}')
       await until(() => calls.some((c) => c.includes(path.join(dir, 'outside.json'))), POLL_PATIENCE_MS)

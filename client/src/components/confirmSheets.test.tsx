@@ -43,7 +43,7 @@ const KEYS: Record<string, Keys> = {
 }
 
 const SHEETS: Array<[string, () => ReactElement]> = [
-  ['ConfirmDelete', () => <ConfirmDelete target={{ path: '/v/Projects', kind: 'dir', children: { notes: 3, folders: 1 }, backlinks: 2 }} titles={new Map()} {...cb} />],
+  ['ConfirmDelete', () => <ConfirmDelete target={{ path: '/v/Projects', kind: 'dir', children: { pages: 3, folders: 1 }, backlinks: 2 }} titles={new Map()} {...cb} />],
   ['ConfirmRename', () => <ConfirmRename oldPath="/v/Old.md" newPath="/v/New.md" kind="file" count={2} titles={new Map()} {...cb} />],
   ['ConfirmDeleteComment', () => <ConfirmDeleteComment label="#3" replies={2} {...cb} />],
   ['ConfirmDeleteColumn', () => <ConfirmDeleteColumn columnKey="note.status" def={{ views: [], properties: { status: { displayName: 'Status' } } }} folderName="Projects" count={() => 5} {...cb} />],

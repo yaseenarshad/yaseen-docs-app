@@ -193,7 +193,7 @@ export interface InboxTab {
 
 /** The Inbox tab's id in the strip's own list (YAZ-5016): no page tab has it, so every slot counts it as a tab. */
 export const INBOX_TAB = ':inbox'
-/** The one type an Inbox tab's drag carries (YAZ-5016): no page, so no other window, panel or note takes it. */
+/** The one type an Inbox tab's drag carries (YAZ-5016): no page, so no other window, panel or page takes it. */
 export const INBOX_DRAG_MIME = 'application/x-yaseen-inbox-tab'
 
 /** In-flight drag state: the grabbed tab's index + the hovered insertion slot (0…tabs.length). */
@@ -254,7 +254,7 @@ const Chevron = ({ d }: { d: string }) => (
  * The window tab strip (Tabs I2/I3, GRO-2234/2235): each tab keyed by its own id, since two tabs
  * may show one file (YAZ-2940 D1) — ViewTabs' tablist
  * semantics (role=tab, aria-selected). The tabs are pills (YAZ-2656 R40, R41): each has a fill of
- * its own, the active one the brightest, and none joins the page. Labels hide the extension of a note,
+ * its own, the active one the brightest, and none joins the page. Labels hide the extension of a page,
  * a drawing and a diagram (YAZ-3536 D1); other files keep theirs, a folder's is its whole name (YAZ-2290) and
  * every full path lives in the title tooltip. Tabs reorder by HTML5 drag (the
  * groupDrag idiom: `dataTransfer` guarded — jsdom's synthetic drags have none), the other tabs
@@ -298,7 +298,7 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
   const [externalOver, setExternalOver] = useState<number | null>(null)
   // Right-click menu (YAZ-922): the tab IS the file, so it offers the sidebar row's Copy path —
   // and since YAZ-963 that row's OS actions too (Reveal in Finder, Open in VS Code). The items are
-  // `TabMenu`'s, which the board's pages open too (YAZ-2648). The note's review state (YAZ-2322)
+  // `TabMenu`'s, which the board's pages open too (YAZ-2648). The page's review state (YAZ-2322)
   // is read when the menu opens, so the review item is about the tab that was right-clicked; a
   // null state hides it. Focus and Favorites (YAZ-3264 D2) are read the same way.
   const [menu, setMenu] = useState<TabMenuAt | null>(null)
@@ -1213,7 +1213,7 @@ export function TabBar({ roots, windowId, tabs: pages, active, preview = null, b
               className={pages.length === 0 ? 'ctx-menu__item' : 'ctx-menu__item ctx-menu__item--danger'}
               role="menuitem"
               disabled={pages.length === 0}
-              // So does the press on the item: a sheet that is cancelled then gives the keys back to the board, or to the note.
+              // So does the press on the item: a sheet that is cancelled then gives the keys back to the board, or to the page.
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 setGridMenu(null)

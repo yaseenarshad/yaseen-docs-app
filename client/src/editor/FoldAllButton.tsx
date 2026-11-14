@@ -1,7 +1,7 @@
 /**
- * The fold-all button (YAZ-3938 D1, D4): the chevrons, left of the cog, in a note and in a code tab. One
+ * The fold-all button (YAZ-3938 D1, D4): the chevrons, left of the cog, in a page and in a code tab. One
  * button for both directions, the sidebar's rule (YAZ-862): while anything is open it collapses all; once
- * everything is folded it expands all. The host gives `run`: in a note the ⌘⇧U / ⌘⇧I command
+ * everything is folded it expands all. The host gives `run`: in a page the ⌘⇧U / ⌘⇧I command
  * (`foldAllHotkeys.ts`), so one ⌘Z undoes it; in a code tab Monaco's own fold action.
  *
  * D9: the chevrons show what a click does: they point up for "Collapse all" and down for "Expand all".

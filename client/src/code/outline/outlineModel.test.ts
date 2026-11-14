@@ -56,7 +56,7 @@ describe('buildTree', () => {
     const step3 = tree.children[pipe][2]
     expect([tree.depth[step3], tree.parent[step3], tree.kind[step3], tree.nameLine[step3], tree.nameColumn[step3]]).toEqual([1, pipe, METHOD, 22, 3])
 
-    // A chain 300 deep: every level is a row (the note TOC stops at 5).
+    // A chain 300 deep: every level is a row (the page TOC stops at 5).
     let deep: CodeSymbol = sym('leaf', VARIABLE, 300, 300)
     for (let d = 299; d >= 1; d--) deep = sym(`n${d}`, FUNCTION, d, 600 - d, [deep])
     const chain = build([deep])

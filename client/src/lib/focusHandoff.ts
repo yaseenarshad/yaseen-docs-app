@@ -13,11 +13,11 @@
 /**
  * Focus the document on screen. The VISIBLE one, never the first in the DOM: a visited tab that
  * is not asleep keeps its editor mounted and hidden (YAZ-3737), and a folder's outline is an editor too. `offsetParent` is
- * the cheap "actually rendered" question — null for a `display: none` subtree. The note in the
- * preview panel of the search is no page (YAZ-2662 R4), and nor is the note in the sidebar's hover
+ * the cheap "actually rendered" question — null for a `display: none` subtree. The page in the
+ * preview panel of the search is no page (YAZ-2662 R4), and nor is the page in the sidebar's hover
  * preview (YAZ-3075 C29): each wears the editor's class for its stylesheets, and the caret never
  * goes into it. `within` is where to look: the new tab page asks for the tab stack alone
- * (YAZ-2663), so the caret does not go into a note of the right panel.
+ * (YAZ-2663), so the caret does not go into a page of the right panel.
  */
 export function focusOpenDocument(within: ParentNode = document, inPlace = false): boolean {
   const docs = Array.from(within.querySelectorAll<HTMLElement>('.editor-instance .ProseMirror')).filter(

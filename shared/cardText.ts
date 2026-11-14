@@ -1,5 +1,5 @@
 /**
- * A note card's text (YAZ-4959 D10, D19, idea 3), Mochi's notation: `---` alone on a line splits the sides, `{{word}}`
+ * A card's text (YAZ-4959 D10, D19, idea 3), Mochi's notation: `---` alone on a line splits the sides, `{{word}}`
  * hides a word. `{{1::word}}` reads as `{{word}}`: there are no cloze groups, and all hidden words on a card are ONE
  * review. The text is the card's raw Markdown between its fences (`cardLine.ts` `findCards`). Code in the card — a
  * code block, a code span — is literal: a `---` there splits nothing and a `{{x}}` there hides nothing (the one fence

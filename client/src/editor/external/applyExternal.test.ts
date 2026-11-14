@@ -308,7 +308,7 @@ Another paragraph.
 
   it('a rewrite that keeps the zoomed bullet keeps the page there, and the tab is never told "no zoom" (YAZ-3647 E1)', async () => {
     const onZoom = vi.fn()
-    const { crepe } = await mount({ defaultValue: OUTLINE, zoom: { title: () => 'Notes', onZoom } })
+    const { crepe } = await mount({ defaultValue: OUTLINE, zoom: { title: () => 'Pages', onZoom } })
     const keyOf = (text: string): string =>
       crepe.editor.action((ctx) => {
         const { doc } = ctx.get(editorViewCtx).state

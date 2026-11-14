@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { IDS_FILE, isNoteId } from '@shared/noteId'
+import { IDS_FILE, isPageId } from '@shared/pageId'
 import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR } from '@shared/types'
 import { makeFirstMac, removeVault, sleep, vaultFiles } from '../fs/testFixture'
 import { subscribe } from '../fs/watchers'
@@ -60,10 +60,10 @@ const quiet = () => sleep(300)
 const indexed = async (rel: string) => (await getIndex(root)).records.find((r) => r.path === at(rel))
 
 describe('the one gate: an id is written only where the vault said yes', () => {
-  const NOTES = { 'a.md': 'body\n', 'Projects/b.md': '---\nid: 42\n---\nbody\n' }
+  const PAGES = { 'a.md': 'body\n', 'Projects/b.md': '---\nid: 42\n---\nbody\n' }
 
-  it('a vault holding `.yaseendocs/favorites.json` and no answer is not written to: every file keeps its bytes, no folder is given a `.folder.md`, and a note added afterwards is left as it is', async () => {
-    await vault({ ...NOTES, [`${VAULT_CONFIG_DIR}/favorites.json`]: '[]\n' })
+  it('a vault holding `.yaseendocs/favorites.json` and no answer is not written to: every file keeps its bytes, no folder is given a `.folder.md`, and a page added afterwards is left as it is', async () => {
+    await vault({ ...PAGES, [`${VAULT_CONFIG_DIR}/favorites.json`]: '[]\n' })
     const before = await vaultFiles(root)
     await opened()
     await quiet()
@@ -74,16 +74,16 @@ describe('the one gate: an id is written only where the vault said yes', () => {
     expect(await vaultFiles(root)).toEqual({ ...before, 'late.md': 'late\n' })
   })
 
-  it('the same vault once it says yes: its notes are given ids, another tool’s `id` is written over, and each folder is given its `.folder.md`', async () => {
-    await vault({ ...NOTES, [`${VAULT_CONFIG_DIR}/favorites.json`]: '[]\n' })
+  it('the same vault once it says yes: its pages are given ids, another tool’s `id` is written over, and each folder is given its `.folder.md`', async () => {
+    await vault({ ...PAGES, [`${VAULT_CONFIG_DIR}/favorites.json`]: '[]\n' })
     await answers(true)
     await makeFirstMac(root)
     await opened()
-    await until(async () => isNoteId(await idIn('a.md')) && isNoteId(await idIn('Projects', 'b.md')) && isNoteId(await idIn('Projects', FOLDER_SETTINGS_FILE)))
+    await until(async () => isPageId(await idIn('a.md')) && isPageId(await idIn('Projects', 'b.md')) && isPageId(await idIn('Projects', FOLDER_SETTINGS_FILE)))
   })
 
   it('a vault that said no is not written to, and a `.folder.md` deleted there is not put back, though it held an id', async () => {
-    await vault({ ...NOTES, [`Kept/${FOLDER_SETTINGS_FILE}`]: '---\nid: k3m9x2pq7abc\n---\n' })
+    await vault({ ...PAGES, [`Kept/${FOLDER_SETTINGS_FILE}`]: '---\nid: k3m9x2pq7abc\n---\n' })
     await answers(false)
     const before = await vaultFiles(root)
     await opened()
@@ -95,14 +95,14 @@ describe('the one gate: an id is written only where the vault said yes', () => {
     expect(await readdir(at('Kept'))).toEqual([])
   })
 
-  it('a yes written after the index was built: the next `getIndex` answers `ids: true` and starts the pass over the notes and folders already there', async () => {
-    await vault(NOTES)
+  it('a yes written after the index was built: the next `getIndex` answers `ids: true` and starts the pass over the pages and folders already there', async () => {
+    await vault(PAGES)
     await opened()
     expect((await getIndex(root)).ids).toBe(false)
     await makeFirstMac(root)
     await answers(true)
     expect((await getIndex(root)).ids).toBe(true)
-    await until(async () => isNoteId((await indexed('a.md'))?.id) && isNoteId(await idIn('Projects', 'b.md')) && isNoteId(await idIn('Projects', FOLDER_SETTINGS_FILE)))
+    await until(async () => isPageId((await indexed('a.md'))?.id) && isPageId(await idIn('Projects', 'b.md')) && isPageId(await idIn('Projects', FOLDER_SETTINGS_FILE)))
   })
 
   it('a vault that said no also gets `ask`, the counts of what a yes would write; a vault that said yes gets none (YAZ-2677 S12)', async () => {
@@ -110,19 +110,19 @@ describe('the one gate: an id is written only where the vault said yes', () => {
     await answers(false)
     const index = await getIndex(root)
     expect(index.ids).toBe(false)
-    expect(index.ask).toEqual({ notes: 3, folders: 1, foreign: 1 })
+    expect(index.ask).toEqual({ pages: 3, folders: 1, foreign: 1 })
     await quiet()
     expect(await read('a.md')).toBe('body\n')
     await answers(true)
     expect(await getIndex(root)).not.toHaveProperty('ask')
   })
 
-  it('a no written after a yes: the next `getIndex` answers plain, a note arriving afterwards is given no id, and nothing is removed', async () => {
+  it('a no written after a yes: the next `getIndex` answers plain, a page arriving afterwards is given no id, and nothing is removed', async () => {
     await vault({ 'a.md': 'body\n' })
     await answers(true)
     await makeFirstMac(root)
     await opened()
-    await until(async () => isNoteId((await indexed('a.md'))?.id))
+    await until(async () => isPageId((await indexed('a.md'))?.id))
     const given = await read('a.md')
     await answers(false)
     const index = await getIndex(root)
@@ -137,7 +137,7 @@ describe('the one gate: an id is written only where the vault said yes', () => {
 })
 
 describe('a vault with no answer', () => {
-  it('every note holds an id and every folder its settings file: yes is saved without asking, the index answers `ids: true`, and nothing else is written', async () => {
+  it('every page holds an id and every folder its settings file: yes is saved without asking, the index answers `ids: true`, and nothing else is written', async () => {
     await vault({ 'a.md': '---\nid: k3m9x2pq7abc\n---\n', 'Projects/b.md': '---\nid: p1a1n0000001\n---\n', [`Projects/${FOLDER_SETTINGS_FILE}`]: '---\nid: f0dr00000001\n---\n' })
     const before = await vaultFiles(root)
     const index = await getIndex(root)
@@ -161,12 +161,12 @@ describe('a vault with no answer', () => {
     expect(await read(VAULT_CONFIG_DIR, IDS_FILE)).toBe('{ "enabled": tr')
   })
 
-  it('every note holds an id but a folder has no settings file: a yes would write one, so the vault is asked and nothing is saved or written', async () => {
+  it('every page holds an id but a folder has no settings file: a yes would write one, so the vault is asked and nothing is saved or written', async () => {
     await vault({ 'a.md': '---\nid: k3m9x2pq7abc\n---\n', 'Projects/b.md': '---\nid: p1a1n0000001\n---\n' })
     const before = await vaultFiles(root)
     const index = await getIndex(root)
     expect(index.ids).toBe(false)
-    expect(index.ask).toEqual({ notes: 0, folders: 1, foreign: 0 })
+    expect(index.ask).toEqual({ pages: 0, folders: 1, foreign: 0 })
     await quiet()
     expect(await vaultFiles(root)).toEqual(before)
   })
@@ -174,26 +174,26 @@ describe('a vault with no answer', () => {
   it('what a yes would write follows the folders: one made after the index was built is counted, one removed is not', async () => {
     await vault({ 'a.md': 'a\n' })
     await opened()
-    expect((await getIndex(root)).ask).toEqual({ notes: 1, folders: 0, foreign: 0 })
+    expect((await getIndex(root)).ask).toEqual({ pages: 1, folders: 0, foreign: 0 })
     await mkdir(at('Later'))
     await until(async () => (await getIndex(root)).ask?.folders === 1)
     await rm(at('Later'), { recursive: true })
     await until(async () => (await getIndex(root)).ask?.folders === 0)
   })
 
-  it('its only notes cannot be given an id (their properties do not parse): it is not taken for an ID vault, and nothing is saved', async () => {
+  it('its only pages cannot be given an id (their properties do not parse): it is not taken for an ID vault, and nothing is saved', async () => {
     await vault({ 'broken.md': '---\nstatus: [unclosed\n---\n' })
     const index = await getIndex(root)
-    expect(index).toMatchObject({ ids: false, ask: { notes: 0 } })
+    expect(index).toMatchObject({ ids: false, ask: { pages: 0 } })
     await quiet()
     expect(await readConfig(root, IDS_FILE)).toBeNull()
   })
 
-  it('some notes lack an id: `ids: false`, `ask` counts what a yes would write, and nothing is saved or written', async () => {
+  it('some pages lack an id: `ids: false`, `ask` counts what a yes would write, and nothing is saved or written', async () => {
     await vault({
       'has.md': '---\nid: k3m9x2pq7abc\n---\n',
       'bare.md': 'body\n',
-      'foreign.md': '---\nid: 42\n---\n', // another tool's `id`: a note that would be written, and one of the `foreign`
+      'foreign.md': '---\nid: 42\n---\n', // another tool's `id`: a page that would be written, and one of the `foreign`
       'broken.md': '---\nstatus: [unclosed\n---\n', // cannot be given an id: not counted
       'No file/in.md': 'body\n',
       [`Has id/${FOLDER_SETTINGS_FILE}`]: '---\nid: p1a1n0000001\n---\n', // the one folder a yes would not write to
@@ -203,17 +203,17 @@ describe('a vault with no answer', () => {
     const before = await vaultFiles(root)
     const index = await getIndex(root)
     expect(index.ids).toBe(false)
-    expect(index.ask).toEqual({ notes: 3, folders: 3, foreign: 1 })
+    expect(index.ask).toEqual({ pages: 3, folders: 3, foreign: 1 })
     expect([...index.records, ...index.folders].every((r) => r.id === undefined)).toBe(true)
     await quiet()
     expect(await vaultFiles(root)).toEqual(before)
   })
 
-  it('no notes at all (a folder of PDFs): `ids: false`, `ask` counts no notes, and nothing is saved', async () => {
+  it('no pages at all (a folder of PDFs): `ids: false`, `ask` counts no pages, and nothing is saved', async () => {
     await vault({ 'Papers/a.pdf': 'pdf' })
     const index = await getIndex(root)
     expect(index.ids).toBe(false)
-    expect(index.ask).toEqual({ notes: 0, folders: 1, foreign: 0 })
+    expect(index.ask).toEqual({ pages: 0, folders: 1, foreign: 0 })
     await quiet()
     expect(await vaultFiles(root)).toEqual({ 'Papers/': '', 'Papers/a.pdf': 'pdf' })
   })
@@ -225,7 +225,7 @@ describe('the index hands out a vault by its kind (V12)', () => {
     [`Projects/${FOLDER_SETTINGS_FILE}`]: '---\nid: p1a1n0000001\ntitle: All projects\n---\n',
   }
 
-  it('a vault that does not use IDs: a note goes out with no `id` and its file name as its title, a `.folder.md` with no `id` and its folder’s name; `id` and `title` are still among their properties', async () => {
+  it('a vault that does not use IDs: a page goes out with no `id` and its file name as its title, a `.folder.md` with no `id` and its folder’s name; `id` and `title` are still among their properties', async () => {
     await vault(FILES)
     await answers(false)
     const { ids, records, folders } = await getIndex(root)
@@ -246,7 +246,7 @@ describe('the index hands out a vault by its kind (V12)', () => {
   })
 })
 
-// THE SEAT BELT (YAZ-2677 D3, R3): a real vault holds 745 notes with an old ID and 854 links to
+// THE SEAT BELT (YAZ-2677 D3, R3): a real vault holds 745 pages with an old ID and 854 links to
 // them. The app still reads each one, and never writes over one.
 describe('a vault that has only old IDs behaves as it did before number IDs (YAZ-2677 R3, S19)', () => {
   const OLD: Record<string, string> = {
@@ -278,7 +278,7 @@ describe('a vault that has only old IDs behaves as it did before number IDs (YAZ
     ])
     expect(index.records.find((r) => r.id === 'k3m9x2pq7abc')?.links).toEqual(['p1a1n0000001', 'f0dr00000001'])
 
-    // An edit of a note that holds an old ID: the watcher scans and sweeps it, and writes nothing.
+    // An edit of a page that holds an old ID: the watcher scans and sweeps it, and writes nothing.
     const edited = `${OLD['home-k3m9x2pq7abc.md']}more\n`
     await writeFile(at('home-k3m9x2pq7abc.md'), edited)
     await until(async () => (await indexed('home-k3m9x2pq7abc.md'))?.size === Buffer.byteLength(edited))
@@ -293,7 +293,7 @@ describe('a vault that has only old IDs behaves as it did before number IDs (YAZ
     expect(await read(VAULT_CONFIG_DIR, IDS_FILE)).toBe(config)
   })
 
-  it('S20: a new note there gets a number ID, starting at 1: old IDs do not count, and each keeps its bytes', async () => {
+  it('S20: a new page there gets a number ID, starting at 1: old IDs do not count, and each keeps its bytes', async () => {
     await vault({ ...OLD, [`${VAULT_CONFIG_DIR}/${IDS_FILE}`]: '{ "enabled": true, "letters": "YAZ" }' })
     const before = await vaultFiles(root)
     await opened()
@@ -358,7 +358,7 @@ describe('the index hands out the IDs of THIS vault (YAZ-2677 R2, R5)', () => {
 })
 
 describe('the door asks the live index for the highest number of the vault (YAZ-2677 R16)', () => {
-  it('S27, S28: the highest number is 41, so a new note gets 42; it is deleted, and the next note gets 43', async () => {
+  it('S27, S28: the highest number is 41, so a new page gets 42; it is deleted, and the next page gets 43', async () => {
     await vault({ [`${VAULT_CONFIG_DIR}/${IDS_FILE}`]: '{ "enabled": true, "letters": "YAZ" }', 'a.md': '---\nid: YAZ-41\n---\n', 'b.md': '---\nid: YAZ-7\n---\n' })
     await opened()
     const door = (await doorOf(root))!
@@ -368,7 +368,7 @@ describe('the door asks the live index for the highest number of the vault (YAZ-
     expect((await createFile(at('d.md'), door)).id).toBe('YAZ-43')
   })
 
-  it('S37: a number written by hand that is higher than the count is seen before the next note is made', async () => {
+  it('S37: a number written by hand that is higher than the count is seen before the next page is made', async () => {
     await vault({ [`${VAULT_CONFIG_DIR}/${IDS_FILE}`]: '{ "enabled": true, "letters": "YAZ" }' })
     await opened()
     const door = (await doorOf(root))!
@@ -378,12 +378,12 @@ describe('the door asks the live index for the highest number of the vault (YAZ-
     expect((await createFile(at('b.md'), door)).id).toBe('YAZ-901')
   })
 
-  it('with no index built yet, the first number waits for it: a create never gets a number some note holds', async () => {
+  it('with no index built yet, the first number waits for it: a create never gets a number some page holds', async () => {
     await vault({ [`${VAULT_CONFIG_DIR}/${IDS_FILE}`]: '{ "enabled": true, "letters": "YAZ" }', 'a.md': '---\nid: YAZ-41\n---\n' })
     expect((await createFile(at('c.md'), await doorOf(root))).id).toBe('YAZ-42')
   })
 
-  it('the count files are never notes of the vault: the index and the tree of folders do not hold them', async () => {
+  it('the count files are never pages of the vault: the index and the tree of folders do not hold them', async () => {
     await vault({ [`${VAULT_CONFIG_DIR}/${IDS_FILE}`]: '{ "enabled": true, "letters": "YAZ" }', 'a.md': 'body\n' })
     await makeFirstMac(root)
     await opened()

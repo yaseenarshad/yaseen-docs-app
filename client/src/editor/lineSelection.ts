@@ -54,7 +54,7 @@ const edgeAt = ($head: ResolvedPos, dir: 1 | -1): Edge | null => {
  * hide things, through their own state: outside the zoomed item's subtree (`getZoomedItemPos` — the zoom decorations
  * hide every block off the root → item path, the ancestors' own text included), inside a collapsed heading's section
  * (`collapsedSectionAround`), inside a collapsed bullet's nested list (`collapsedItemsHiding`), or inside a hidden cell
- * note (`isCellNoteHidden`, YAZ-3818 D4). All answer from plugin state, which is what their `display: none` is computed
+ * page (`isCellNoteHidden`, YAZ-3818 D4). All answer from plugin state, which is what their `display: none` is computed
  * from — no DOM, no re-derived fold logic.
  * A folded ANCESTOR of the zoomed item hides nothing: the zoom shows it expanded (zoom.css), so only a fold at or below
  * the zoomed item counts (YAZ-3209 bug 1B1). The run is the OUTERMOST one — all of the zoom's outside, the whole
@@ -72,15 +72,15 @@ const hiddenRun = (state: EditorState, $pos: ResolvedPos): { from: number; to: n
   const section = collapsedSectionAround(state, pos)
   if (section !== null) return section
   // A hidden cell note and a folded item's nested list can hold each other: the one that starts first is the outer.
-  const notePos = cellNoteAround($pos)
-  const note = notePos !== null && isCellNoteHidden(state, notePos) ? { from: notePos, to: notePos + state.doc.nodeAt(notePos)!.nodeSize } : null
+  const pagePos = cellNoteAround($pos)
+  const page = pagePos !== null && isCellNoteHidden(state, pagePos) ? { from: pagePos, to: pagePos + state.doc.nodeAt(pagePos)!.nodeSize } : null
   const fold = collapsedItemsHiding(state, pos).find((itemPos) => zoomed === null || itemPos >= zoomed)
-  if (fold === undefined) return note
+  if (fold === undefined) return page
   // The folded item's nested list that holds `pos`: the child one level below the item.
   for (let depth = 1; depth < $pos.depth; depth++) {
-    if ($pos.before(depth) === fold) return note !== null && note.from < $pos.before(depth + 1) ? note : { from: $pos.before(depth + 1), to: $pos.after(depth + 1) }
+    if ($pos.before(depth) === fold) return page !== null && page.from < $pos.before(depth + 1) ? page : { from: $pos.before(depth + 1), to: $pos.after(depth + 1) }
   }
-  return note
+  return page
 }
 
 /** Is the textblock around `$pos` hidden from view (D6)? See `hiddenRun`. */

@@ -37,7 +37,7 @@ export function SidebarPanelIcon() {
   )
 }
 
-/** A calendar page, for the sidebar footer's "Open today's daily note" (YAZ-3607 D7). The cog's size and line. */
+/** A calendar page, for the sidebar footer's "Open today's daily page" (YAZ-3607 D7). The cog's size and line. */
 export function CalendarIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" aria-hidden="true">
@@ -195,7 +195,7 @@ export const MoreIcon = () => (
   </svg>
 )
 
-/** The shortcut mark (YAZ-2290 D2): a file manager's alias arrow, beside a note's name wherever it shows in a folder it does not live in — the tree row and every view's title. */
+/** The shortcut mark (YAZ-2290 D2): a file manager's alias arrow, beside a page's name wherever it shows in a folder it does not live in — the tree row and every view's title. */
 export const ShortcutIcon = () => (
   <svg {...svg} width={11} height={11} className="shortcut-mark">
     <path d="M5.5 4H12v6.5M12 4 4 12" />
@@ -266,7 +266,7 @@ export function ViewTypeIcon({ type }: { type: string }) {
   return <svg {...svg}>{TYPE_GLYPHS[type] ?? <rect x="2" y="3" width="12" height="10" rx="1.2" />}</svg>
 }
 
-/** A `file.*` field in the properties list (YAZ-1513): the page's own facts, never a note property. */
+/** A `file.*` field in the properties list (YAZ-1513): the page's own facts, never a page property. */
 export const FileFieldIcon = () => (
   <svg {...svg}>
     <path d="M4 2h5l3 3v9H4z" />

@@ -1,12 +1,12 @@
-// Note cards in the index (YAZ-4960): the sweep's card rules, the one counter, and links inside cards.
+// Cards in the index (YAZ-4960): the sweep's card rules, the one counter, and links inside cards.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { cardIdOf, cardRecords, formatCardLine, pageCards } from '@shared/cardLine'
 import { splitFrontmatter } from '@shared/frontmatter'
-import { maskCode, rewriteNoteLinks } from '@shared/linkRewrite'
-import { IDS_FILE } from '@shared/noteId'
+import { maskCode, rewritePageLinks } from '@shared/linkRewrite'
+import { IDS_FILE } from '@shared/pageId'
 import type { IndexRecord } from '@shared/types'
 import { makeFirstMac, removeVault, sleep } from '../fs/testFixture'
 import { subscribe } from '../fs/watchers'
@@ -49,11 +49,11 @@ const rescan = async (records: Map<string, IndexRecord>, rel: string, content: s
   return r
 }
 
-describe('the sweep gives note cards their IDs (YAZ-4960 D2)', () => {
-  it('no ID, another vault\'s letters, a note\'s ID, a copy on the page: each gets the next number of the one counter, history kept but for the copy (the same text twice)', async () => {
+describe('the sweep gives cards their IDs (YAZ-4960 D2)', () => {
+  it('no ID, another vault\'s letters, a page\'s ID, a copy on the page: each gets the next number of the one counter, history kept but for the copy (the same text twice)', async () => {
     const records = await vault({
       // The highest number in the vault is a CARD's (YAZ-50): every number given is above it.
-      'deck.md': `---\nid: YAZ-1\n---\n# Deck\n\n${card('Fresh')}\n${card('From BUS', `BUS-12, ${HISTORY}`)}\n${card('Note ID', `YAZ-1, ${HISTORY}`)}\n${card('Mine', `YAZ-50, off, ${HISTORY}`)}\n${card('Mine', `YAZ-50, off, ${HISTORY}`)}`,
+      'deck.md': `---\nid: YAZ-1\n---\n# Deck\n\n${card('Fresh')}\n${card('From BUS', `BUS-12, ${HISTORY}`)}\n${card('Page ID', `YAZ-1, ${HISTORY}`)}\n${card('Mine', `YAZ-50, off, ${HISTORY}`)}\n${card('Mine', `YAZ-50, off, ${HISTORY}`)}`,
       'plain.md': 'No ID yet.\n',
     })
     await sweepIds(root, records, [...records.values()], () => undefined)
@@ -68,7 +68,7 @@ describe('the sweep gives note cards their IDs (YAZ-4960 D2)', () => {
       { id: 'YAZ-50', off: true, next: false, reviews },
       { id: 'YAZ-55', off: true, next: false, reviews: [] },
     ])
-    // The note's own ID is untouched; the note with none took the first number, above the card's YAZ-50.
+    // The page's own ID is untouched; the page with none took the first number, above the card's YAZ-50.
     expect(await read('deck.md')).toMatch(/^---\nid: YAZ-1\n---\n# Deck\n\n```card\nFresh\n```\n<!-- card: YAZ-52 -->\n/)
     expect(await read('plain.md')).toMatch(/^---\nid: YAZ-51\n---\n/)
     // A second pass gives nothing more.
@@ -239,7 +239,7 @@ describe('one card ID on two pages (YAZ-4960): a cut and paste keeps the card, a
     const result = await sweepIds(root, both, [...both.values()], () => undefined)
     expect((await cardsIn('c.md')).map((c) => c.id)).toEqual(['YAZ-7'])
     expect(await cardsIn('d.md')).toEqual([{ id: 'YAZ-9', off: false, next: false, reviews: [] }])
-    expect(result.copies).toEqual([{ title: 'd', id: 'YAZ-9' }].map(({ id }) => ({ title: 'a note card on "d"', id })))
+    expect(result.copies).toEqual([{ title: 'd', id: 'YAZ-9' }].map(({ id }) => ({ title: 'a card on "d"', id })))
   })
 
   it('in the live index: the paste lands while page A still holds the card, and no file changes', async () => {
@@ -385,7 +385,7 @@ describe('links inside cards (YAZ-4960 D17)', () => {
     expect(masked).toContain('Front [[Old Name|words]]')
     expect(masked).not.toContain('[[In code]]')
     expect(masked).not.toContain('```')
-    const renamed = rewriteNoteLinks(page, (t) => t === 'Old Name', () => 'New Name')
+    const renamed = rewritePageLinks(page, (t) => t === 'Old Name', () => 'New Name')
     expect(renamed).toBe(page.replace('[[Old Name|words]]', '[[New Name|words]]'))
     const records = await vault({ 'deck.md': page })
     expect(records.get(at('deck.md'))).toMatchObject({ links: ['Outside', 'Old Name'], embeds: ['pic.png'], tags: ['card-tag'], cards: [{ id: 'YAZ-3', off: false, next: false, reviews: [] }] })

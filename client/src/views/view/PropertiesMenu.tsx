@@ -74,7 +74,7 @@ export interface PropertiesMenuProps {
  *  on hover — the whole label area opens the column — then the show switch (writes `view.order`; Table and Board may
  *  hide `file.name`, Cards and List keep it). "New column" closes the list (YAZ-3746 demo polish).
  *  Hidden is in parts by where each column comes from (YAZ-4713 C4): the folder's own ("Recipes"), "From <owner>" for
- *  each parent folder, nearest first, and "Other properties in these notes" — the notes' fields that no column on the
+ *  each parent folder, nearest first, and "Other properties in these pages" — the pages' fields that no column on the
  *  chain declares (`tags`, a value from a former folder, a column of a subfolder only). Such a row has Show (this view
  *  only) and "Add to Recipes" (a column here, so every view and every page below gets it) in place of the switch.
  *
@@ -109,7 +109,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
   const isShown = (key: string) => shown.some((k) => canonicalKey(k) === canonicalKey(key))
   /** The page's folder (root-relative): the owner of its own columns, its built-in fields and its formulas. */
   const here = useContext(ViewFolder) ?? ''
-  /** Where a key comes from (C2/C4): the folder that declares it, the page's folder for a built-in key, or null for a note field no column declares. */
+  /** Where a key comes from (C2/C4): the folder that declares it, the page's folder for a built-in key, or null for a page field no column declares. */
   const ownerOf = (key: string): string | null => {
     const c = canonicalKey(key)
     return c.startsWith('note.') ? folder.columns[c.slice('note.'.length)]?.owner ?? null : here
@@ -177,7 +177,7 @@ export function PropertiesMenu({ def, view, viewIndex, records, onUpdate, proper
   const hiddenParts: { title: string; keys: string[]; parent?: boolean }[] = [
     { title: folderTitle, keys: hiddenMatches.filter((key) => ownerOf(key) === here) },
     ...owners.map((owner) => ({ title: `From ${folderName(folderMap, owner, folder.vaultName)}`, keys: hiddenMatches.filter((key) => ownerOf(key) === owner), parent: true })),
-    { title: unit('Other properties in these notes'), keys: hiddenMatches.filter((key) => ownerOf(key) === null) },
+    { title: unit('Other properties in these pages'), keys: hiddenMatches.filter((key) => ownerOf(key) === null) },
   ].filter((part) => part.keys.length > 0)
   /** Hide all / Show all: Table and Board may hide every column; Cards and List keep the name (as before). */
   const hideable = view.type === 'table' || view.type === 'board'

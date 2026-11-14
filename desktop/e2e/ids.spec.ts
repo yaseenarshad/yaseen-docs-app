@@ -1,16 +1,16 @@
 /**
  * Number IDs (YAZ-2677) end-to-end against the REAL app, on a vault that starts with two plain
  * files and no answer on IDs: the vault opens with no question, IDs are a switch in Settings that
- * asks first, and a note's ID is the vault's letters and its next number.
+ * asks first, and a page's ID is the vault's letters and its next number.
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1 a vault with no answer opens with no box, and nothing is written (D1, S1)
  *   2 Settings › On opens a box; "Give IDs" does nothing until the ID letters are typed; then the
- *     notes get their numbers (D2, S5 to S7)
- *   3 a note made in the app is born with the next number, in its `id:` line and its file name (D3, D4, S14)
- *   4 a file from outside gets the next number at once, and a link typed in lowercase opens its note (S17, S59)
- *   5 the `[[` picker's Create row: the number first, then the link by that ID, then the note (S35)
- *   6 the search box finds the note by its bare number, and the row shows the full ID (D9, S69 to S72)
+ *     pages get their numbers (D2, S5 to S7)
+ *   3 a page made in the app is born with the next number, in its `id:` line and its file name (D3, D4, S14)
+ *   4 a file from outside gets the next number at once, and a link typed in lowercase opens its page (S17, S59)
+ *   5 the `[[` picker's Create row: the number first, then the link by that ID, then the page (S35)
+ *   6 the search box finds the page by its bare number, and the row shows the full ID (D9, S69 to S72)
  *   7 "Change letters": each ID, link and file name follows, and a link with the old letters still opens (D5, S81, S82)
    8 "Change letters" in one window: a second window on the vault opens a link of the old letters at once (YAZ-3102)
  *
@@ -84,10 +84,10 @@ async function openSettings(w: Page): Promise<void> {
   await expect(row(w, 'ids')).toBeVisible()
 }
 
-/** "New note" from the sidebar's blank-space menu, typed and committed (the idiom of names.spec.ts). */
-async function newNote(w: Page, typed: string): Promise<void> {
+/** "New page" from the sidebar's blank-space menu, typed and committed (the idiom of names.spec.ts). */
+async function newPage(w: Page, typed: string): Promise<void> {
   await w.locator('.sidebar__body').click({ button: 'right', position: { x: 40, y: 500 } })
-  await menuItem(w, 'New note').click()
+  await menuItem(w, 'New page').click()
   await inline(w).fill(typed)
   await w.keyboard.press('Enter')
 }
@@ -125,7 +125,7 @@ test('step 1 — a vault with no answer on IDs opens with no box, and nothing is
   await shoot(win, 'ids-01-no-box')
 })
 
-test('step 2 — Settings › On opens the box; "Give IDs" does nothing until the letters are typed; then the notes get their numbers', async () => {
+test('step 2 — Settings › On opens the box; "Give IDs" does nothing until the letters are typed; then the pages get their numbers', async () => {
   await openSettings(win)
   // A vault with no answer reads Off, and the rows that need IDs are not there yet.
   await expect(rowButton(win, 'ids', 'Off')).toHaveAttribute('aria-pressed', 'true')
@@ -136,8 +136,8 @@ test('step 2 — Settings › On opens the box; "Give IDs" does nothing until th
   const box = confirmSheet(win)
   await expect(box).toBeVisible()
   // What an ID is, what a yes would write (counted), and how to undo it. A click on On wrote nothing.
-  await expect(box).toContainText('Give the notes in this vault IDs?')
-  await expect(box).toContainText('write an ID into 2 notes')
+  await expect(box).toContainText('Give the pages in this vault IDs?')
+  await expect(box).toContainText('write an ID into 2 pages')
   await expect(box).toContainText('To undo, turn it off.')
   await expect(box).toContainText('Type the ID letters for this vault: 2 to 5 letters, like BUS.')
   await expect(field(win)).toBeFocused()
@@ -164,7 +164,7 @@ test('step 2 — Settings › On opens the box; "Give IDs" does nothing until th
   await expect.poll(idsConfig).toMatchObject({ enabled: true, letters: LETTERS })
   await expect(rowButton(win, 'ids', 'On')).toHaveAttribute('aria-pressed', 'true')
 
-  // This Mac gives the numbers at once (R32): each note holds one, and neither file was renamed.
+  // This Mac gives the numbers at once (R32): each page holds one, and neither file was renamed.
   await expect.poll(async () => numberOf(idOf(await read(path.join(vault, 'Hub.md'))), LETTERS)).toBeGreaterThan(0)
   await expect.poll(async () => numberOf(idOf(await read(path.join(vault, 'Plan.md'))), LETTERS)).toBeGreaterThan(0)
   hubId = idOf(await read(path.join(vault, 'Hub.md')))
@@ -175,25 +175,25 @@ test('step 2 — Settings › On opens the box; "Give IDs" does nothing until th
   // The rows that need IDs are there now.
   await expect(row(win, 'duplicates')).toBeVisible()
   await expect(row(win, 'idLetters').getByRole('status')).toHaveText(`This vault's ID letters are ${LETTERS}.`)
-  await expect(row(win, 'oldIds')).toHaveCount(0) // no note holds an old 12-character ID
+  await expect(row(win, 'oldIds')).toHaveCount(0) // no page holds an old 12-character ID
   await shoot(win, 'ids-02b-on')
   await closeSettings(win).click()
   await expect(dialog(win)).toHaveCount(0)
 })
 
-test('step 3 — a note made in the app is born with the next number, in its `id:` line and in its file name', async () => {
-  await newNote(win, 'Guide')
+test('step 3 — a page made in the app is born with the next number, in its `id:` line and in its file name', async () => {
+  await newPage(win, 'Guide')
   await expect.poll(() => only(vault, /^guide-yaz-[1-9]\d*\.md$/)).not.toBe('')
   const guide = await only(vault, /^guide-yaz-[1-9]\d*\.md$/)
   guideId = idOf(await read(path.join(vault, guide)))
   expect(guideId).toBe(`${LETTERS}-3`) // the highest number in the vault plus 1
   expect(guide).toBe('guide-yaz-3.md') // the file name holds the ID in lowercase
-  expect(await counts()).toEqual([3]) // the count was saved before the note was written
+  expect(await counts()).toEqual([3]) // the count was saved before the page was written
   await expect(fileRow(win, 'Guide')).toBeVisible()
   await shoot(win, 'ids-03-born')
 })
 
-test('step 4 — a file from outside gets the next number at once, and a link typed in lowercase opens its note', async () => {
+test('step 4 — a file from outside gets the next number at once, and a link typed in lowercase opens its page', async () => {
   // Made outside the app, as an agent would: no ID of its own, and a link in lowercase.
   await writeFile(path.join(vault, 'Typed.md'), `See [[${guideId.toLowerCase()}]] here.\n`)
   await expect(fileRow(win, 'Typed')).toBeVisible()
@@ -208,7 +208,7 @@ test('step 4 — a file from outside gets the next number at once, and a link ty
   await expect(activeTab(win)).toHaveText('Guide')
 })
 
-test('step 5 — the picker’s Create row takes the number first, links by that ID, and makes the note', async () => {
+test('step 5 — the picker’s Create row takes the number first, links by that ID, and makes the page', async () => {
   await fileRow(win, 'Hub').click()
   await expect(editorOf(win)).toContainText(HUB_BODY)
   // Type at the end of the hub's paragraph (never Enter — see smoke.spec step 3).
@@ -237,10 +237,10 @@ test('step 5 — the picker’s Create row takes the number first, links by that
   await shoot(win, 'ids-05b-linked')
 })
 
-test('step 6 — the search box finds the note by its bare number, and the row shows the full ID', async () => {
+test('step 6 — the search box finds the page by its bare number, and the row shows the full ID', async () => {
   const bare = String(numberOf(freshId, LETTERS))
   await showSearchTab(win)
-  // A bare number: the note of that number, its full ID in front of its title. No title holds "5".
+  // A bare number: the page of that number, its full ID in front of its title. No title holds "5".
   await searchBar(win).fill(bare)
   await expect(results(win)).toHaveText([`${freshId} — Fresh idea`])
   await shoot(win, 'ids-06-search-by-number')
@@ -249,7 +249,7 @@ test('step 6 — the search box finds the note by its bare number, and the row s
     await searchBar(win).fill(typed)
     await expect(results(win)).toHaveText([`${freshId} — Fresh idea`])
   }
-  // An ID matches whole: a longer number is another note's, and no note has it.
+  // An ID matches whole: a longer number is another page's, and no page has it.
   await searchBar(win).fill(`yaz-${bare}0`)
   await expect(results(win)).toHaveCount(0)
   // Found by its title, the row reads as the title alone.
@@ -276,7 +276,7 @@ test('step 7 — "Change letters": each ID, link and file name follows, and a li
   await field(win).fill(NEW_LETTERS.toLowerCase())
   await sheetButton(win, 'Change letters').click()
   await expect(box).toHaveCount(0)
-  // The row waits for the main process, then shows what the vault holds: the new letters, and no note left behind.
+  // The row waits for the main process, then shows what the vault holds: the new letters, and no page left behind.
   await expect(row(win, 'idLetters').getByRole('status')).toHaveText(`This vault's ID letters are ${NEW_LETTERS}.`)
   await shoot(win, 'ids-07a-letters-changed')
 
@@ -292,7 +292,7 @@ test('step 7 — "Change letters": each ID, link and file name follows, and a li
   await closeSettings(win).click()
   await expect(dialog(win)).toHaveCount(0)
 
-  // A file that comes later, with a link the change did not reach: it still opens the note (S82).
+  // A file that comes later, with a link the change did not reach: it still opens the page (S82).
   await writeFile(path.join(vault, 'Late.md'), `See [[${freshId}]] here.\n`)
   await expect(fileRow(win, 'Late')).toBeVisible()
   await fileRow(win, 'Late').click()
@@ -308,7 +308,7 @@ test('step 8 — "Change letters" in one window: a second window on the vault op
   app = await launchApp({ userData, seedState: openLinksHere(seededState(vault, path.join(vault, 'Hub.md'))) })
   win = await appWindow(app, 'w1')
   await expect(linkIn(win, 'Fresh idea')).toBeVisible()
-  // ⌘⇧N: a second window on the same vault, on the blank tab (YAZ-3343 D35); the search there opens the same note.
+  // ⌘⇧N: a second window on the same vault, on the blank tab (YAZ-3343 D35); the search there opens the same page.
   await clickMenuItem(app, 'menu.file.new-window', 'w1')
   const other = await extraWindow(app, ['w1'])
   await openFromBlankTab(other, 'Hub')
@@ -325,7 +325,7 @@ test('step 8 — "Change letters" in one window: a second window on the vault op
   expect(await only(vault, /^fresh-idea-.*\.md$/)).toBe(`fresh-idea-${THIRD_LETTERS.toLowerCase()}-${number}.md`)
 
   // The OTHER window hears that the change ended (`ids:changed`) and reads its index at once: a
-  // file that comes now, with a link of the letters of just before, opens the note with no wait.
+  // file that comes now, with a link of the letters of just before, opens the page with no wait.
   await writeFile(path.join(vault, 'Later.md'), `See [[${NEW_LETTERS}-${number}]] here.\n`)
   await expect(fileRow(other, 'Later')).toBeVisible()
   await fileRow(other, 'Later').click()

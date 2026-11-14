@@ -1,5 +1,5 @@
 /**
- * Merge an outside edit into a note that has unsaved typing (YAZ-3704 D1, D2).
+ * Merge an outside edit into a page that has unsaved typing (YAZ-3704 D1, D2).
  *
  * Three bodies: the BASE (the body as last saved or read — `useAutosave`'s `diskParts().body`),
  * YOURS (the live doc) and THEIRS (the new file). `diffDocs` gives each side's ranges against the
@@ -8,7 +8,7 @@
  * through such a transaction, so ⌘Z keeps undoing your typing and never the outside edit.
  *
  * Three refusals, all 'conflict' (the caller shows the conflict bar, nothing is dispatched):
- *  - a rewrite: one outside range covers `REWRITE_SHARE` of the note — the rule `applyExternalMarkdown`
+ *  - a rewrite: one outside range covers `REWRITE_SHARE` of the page — the rule `applyExternalMarkdown`
  *    rebuilds on, so a rewrite never lands as one huge glow with every fold mapped onto one point;
  *  - D2: a range of yours and a range of theirs touch the same block (line, bullet, heading, cell)
  *    — "the AI rewrote the line you are typing in" must never merge silently. An attr change that you
@@ -72,11 +72,11 @@ const touchSameBlock = (base: ProseNode, mine: readonly ReplaceRange[], theirs: 
 }
 
 /**
- * `quiet` (a copy of this note in another tab saved — the user's own typing) leaves the change list
+ * `quiet` (a copy of this page in another tab saved — the user's own typing) leaves the change list
  * alone, exactly as `applyExternalMarkdown`'s own flag does.
  */
 /**
- * 'unchanged': the new file already IS the live note, apart from what the editor works out itself (a
+ * 'unchanged': the new file already IS the live page, apart from what the editor works out itself (a
  * heading's id): nothing lands, and the caller has nothing to save either (YAZ-3704 4A).
  */
 export const mergeExternalMarkdown = (crepe: Crepe, baseBody: string, diskBody: string, quiet = false): 'merged' | 'unchanged' | 'conflict' => {
@@ -90,7 +90,7 @@ export const mergeExternalMarkdown = (crepe: Crepe, baseBody: string, diskBody: 
     const live = view.state.doc
     const theirsDoc = withTrailingParagraphOf(live, fresh)
     if (diffDocs(live, theirsDoc).every(onlyDerived)) {
-      result = 'unchanged' // both sides made the same note
+      result = 'unchanged' // both sides made the same page
       return
     }
     const baseDoc = withTrailingParagraphOf(live, base)

@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
-import { boardPath, datedSeed, DEFAULT_NEW_NOTE_TITLE, plainEntryName, renamedPath, renderTitleTemplate, targetDirFor, untitledNames, validateEntryName } from './createEntry'
+import { boardPath, datedSeed, DEFAULT_NEW_PAGE_TITLE, plainEntryName, renamedPath, renderTitleTemplate, targetDirFor, untitledNames, validateEntryName } from './createEntry'
 
 const dir = (path: string): TreeNode => ({ type: 'dir', name: path.split('/').pop()!, path, children: [] })
 const file = (path: string): TreeNode => ({ type: 'file', name: path.split('/').pop()!, path, size: 0, mtime: 1, kind: 'markdown' })
 
 describe('validateEntryName', () => {
   it('accepts plain names', () => {
-    expect(validateEntryName('Notes')).toBeNull()
+    expect(validateEntryName('Pages')).toBeNull()
     expect(validateEntryName('my file.md')).toBeNull()
   })
 
@@ -23,8 +23,8 @@ describe('renderTitleTemplate (YAZ-4246)', () => {
   it('each token', () => {
     expect(renderTitleTemplate('{YYYY}|{YY}|{MM}|{DD}|{HH}|{mm}', at)).toBe('2026|26|07|04|09|05')
   })
-  it('the default is the Dated note seed', () => {
-    expect(renderTitleTemplate(DEFAULT_NEW_NOTE_TITLE, at)).toBe(datedSeed(at))
+  it('the default is the Dated page seed', () => {
+    expect(renderTitleTemplate(DEFAULT_NEW_PAGE_TITLE, at)).toBe(datedSeed(at))
   })
   it('other text and unknown braces stay as typed; an empty template is an empty title', () => {
     expect(renderTitleTemplate('Meeting {DD}.{MM} {Q} {mm', at)).toBe('Meeting 04.07 {Q} {mm')
@@ -32,7 +32,7 @@ describe('renderTitleTemplate (YAZ-4246)', () => {
   })
 })
 
-describe('datedSeed (YAZ-1604; notes too since YAZ-2242)', () => {
+describe('datedSeed (YAZ-1604; pages too since YAZ-2242)', () => {
   it('is MM_DD of the given day, zero-padded, then "- " so the title lands one space after the dash', () => {
     expect(datedSeed(new Date(2026, 5, 22))).toBe('06_22- ')
     expect(datedSeed(new Date(2026, 11, 3))).toBe('12_03- ')
@@ -50,7 +50,7 @@ describe('targetDirFor', () => {
     expect(targetDirFor(null, '/r')).toBe('/r')
   })
 
-  it('a shortcut row → the folder it stands in, not the folder its note lives in (YAZ-2290 D2)', () => {
+  it('a shortcut row → the folder it stands in, not the folder its page lives in (YAZ-2290 D2)', () => {
     expect(targetDirFor({ type: 'file', path: '/r/areas/a.md', shortcutIn: '/r/sub' }, '/r')).toBe('/r/sub')
   })
 })
@@ -103,16 +103,16 @@ describe('renamedPath (Links E1, GRO-2194): a view-only file', () => {
 })
 
 describe('plainEntryName (YAZ-2523 V3): the one rule for a name typed in a vault that does not use IDs', () => {
-  it('a note takes the name typed, with `.md` unless a Markdown suffix was typed; any other suffix is part of the name', () => {
-    expect(plainEntryName('  Meeting notes  ', 'file')).toBe('Meeting notes.md')
+  it('a page takes the name typed, with `.md` unless a Markdown suffix was typed; any other suffix is part of the name', () => {
+    expect(plainEntryName('  Meeting pages  ', 'file')).toBe('Meeting pages.md')
     expect(plainEntryName('v1.2', 'file')).toBe('v1.2.md')
     expect(plainEntryName('talk.pdf', 'file')).toBe('talk.pdf.md')
     expect(plainEntryName('Old name.md', 'file')).toBe('Old name.md')
     expect(plainEntryName('Old name.markdown', 'file')).toBe('Old name.markdown')
   })
 
-  it('a note that is renamed keeps the Markdown suffix it has', () => {
-    expect(plainEntryName('Meeting notes', 'file', '.markdown')).toBe('Meeting notes.markdown')
+  it('a page that is renamed keeps the Markdown suffix it has', () => {
+    expect(plainEntryName('Meeting pages', 'file', '.markdown')).toBe('Meeting pages.markdown')
   })
 
   it('a folder takes the name typed whole: no suffix is added, and one that reads as an extension is kept', () => {

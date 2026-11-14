@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { validateEntryName } from './createEntry'
 
 interface RenameInlineProps {
-  /** The prefill: a note's or a folder's title, any other file's full name. */
+  /** The prefill: a page's or a folder's title, any other file's full name. */
   initial: string
   /** The box edits a TITLE (YAZ-2420 🔒 D16): free text, where a file's name is held to the name rules. */
   title: boolean

@@ -45,7 +45,7 @@ describe('revealItem (GRO-2274 A1)', () => {
   })
 
   it('reveals a non-vault file: revealing is read-only, so there is no extension gate', async () => {
-    const p = path.join(root, 'notes.txt')
+    const p = path.join(root, 'pages.txt')
     expect(await revealItem({ path: p })).toEqual({ path: p })
   })
 

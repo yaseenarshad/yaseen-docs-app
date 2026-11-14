@@ -38,7 +38,7 @@ const rec = (name: string, properties: Record<string, unknown>): IndexRecord => 
   title: name,
   properties,
 })
-/** 600 notes, n000…n599, for the windowing case. */
+/** 600 pages, n000…n599, for the windowing case. */
 const manyRecords = (n = 600): IndexRecord[] => Array.from({ length: n }, (_, i) => rec(`n${String(i).padStart(3, '0')}`, { tags: ['a', 'b'], status: 'idea' }))
 
 let root: Root | null = null

@@ -1,29 +1,29 @@
 /**
  * The Excalidraw embed (YAZ-852) end-to-end against the REAL app: a drawing is a SIDECAR FILE
- * in the vault plus one plain-markdown embed line in the note — never a schema node, never a
+ * in the vault plus one plain-markdown embed line in the page — never a schema node, never a
  * blob inside the page.
  *
  * The arc, in order (serial by design — each step continues the previous state):
  *   1 typing `/` offers **Drawing** on Crepe's own block menu; choosing it writes an empty scene
- *     named after the note in the note's folder (YAZ-4831 items 2, 3: `Drawings drawing.excalidraw`)
- *     and leaves `![[<name>.excalidraw]]` at the caret, every other byte of the note untouched —
+ *     named after the page in the page's folder (YAZ-4831 items 2, 3: `Drawings drawing.excalidraw`)
+ *     and leaves `![[<name>.excalidraw]]` at the caret, every other byte of the page untouched —
  *     twice in a row, and the second drawing gets its OWN file (` 2`; create-only writes never
  *     overwrite, YAZ-876)
- *   2 the two embeds RENDER as board windows (YAZ-4820): decorations only, so the note on disk is
+ *   2 the two embeds RENDER as board windows (YAZ-4820): decorations only, so the page on disk is
  *     the same bytes it was — the window's picture stands where the raw `![[…]]` text is, which is
  *     hidden, never duplicated beside it
  *   3 a sidecar CORRUPTED on disk (the scene replaced by junk) reopens as a window that says
- *     "Can't show drawing: <name>" (YAZ-4834 A4) — no crash, no rewrite: the note is still
+ *     "Can't show drawing: <name>" (YAZ-4834 A4) — no crash, no rewrite: the page is still
  *     byte-identical and the healthy drawing beside it still renders
  *   4 "Edit in a popup" on a window's right-click menu opens the MODAL (YAZ-4820 D7): a rectangle
  *     drawn there with the real mouse is AUTOSAVED to the sidecar while the modal is open
  *     (YAZ-3528) — same shape, still pretty-printed — a second one drawn just before ✕ is on disk
  *     once the modal is gone, the window redraws from the watcher WITHOUT a remount, and reopening
- *     the saved drawing writes nothing: the label says Saved and Esc closes it outright. The note
+ *     the saved drawing writes nothing: the label says Saved and Esc closes it outright. The page
  *     never moves.
  *   5 the saved rectangle SURVIVES the app (YAZ-880): quit, relaunch, and it is back on the page
  *     read cold from the sidecar alone — still without a single request leaving the app
- *   6 and it was never the note's drawing: a SECOND note embedding the same `![[…]]` line draws
+ *   6 and it was never the page's drawing: a SECOND page embedding the same `![[…]]` line draws
  *     the very same scene from the one file, which is what the modular sidecar buys (🔒 locked)
  *
  * Same harness as title.spec.ts (temp `--user-data-dir`, a COPY of a generated fixture vault,
@@ -38,15 +38,15 @@ import { activeTab, appWindow, buildFixtureVault, copyVault, editorOf, fileRow, 
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = 'Drawings.md'
+const PAGE = 'Drawings.md'
 /** Already in remark's normalised form, so the ONLY diff a save can make is the inserted line. */
-const NOTE_BODY = `# Drawings\n\ndrawing-note-body\n`
-/** "/drawing" puts the board in the note's own folder (YAZ-4831 item 3): here, the vault root. */
+const PAGE_BODY = `# Drawings\n\ndrawing-page-body\n`
+/** "/drawing" puts the board in the page's own folder (YAZ-4831 item 3): here, the vault root. */
 const DRAWINGS_DIR = ''
 /** Step 7's second home for the SAME drawing; its body needs a name only step 1 knows. */
-const REUSE_NOTE = 'Reuse.md'
-const reuseNoteBody = () => `# Reuse\n\nreuse-note-body\n\n![[${second}]]\n`
-/** `<note title> drawing[ n].excalidraw` — the board is named after the note (YAZ-4831 item 2). */
+const REUSE_PAGE = 'Reuse.md'
+const reusePageBody = () => `# Reuse\n\nreuse-page-body\n\n![[${second}]]\n`
+/** `<page title> drawing[ n].excalidraw` — the board is named after the page (YAZ-4831 item 2). */
 const DRAWING_NAME = /^Drawings drawing( \d+)?\.excalidraw$/
 /** What step 4 writes over a sidecar: still a `.excalidraw` file, no longer a scene. */
 const JUNK = 'this file is not a scene any more\n'
@@ -142,10 +142,10 @@ const modalCanvas = (w: Page) => modal(w).locator('.drawing-modal__canvas')
 /** The save label where the Save button was (YAZ-3528 D2). */
 const saveLabel = (w: Page) => modal(w).locator('.drawing-modal__bar .save-indicator')
 
-const readNote = () => readFile(path.join(vault, NOTE), 'utf8')
+const readPageFile = () => readFile(path.join(vault, PAGE), 'utf8')
 const readSidecar = (name: string) => readFile(path.join(vault, DRAWINGS_DIR, name), 'utf8')
 const readScene = async (name: string) => JSON.parse(await readSidecar(name)) as { type: string; source: string; elements: Array<{ type: string }>; files: unknown }
-/** The note's boards in the drawings home, an in-flight atomic write's `.tmp-<hex>` sibling included. */
+/** The page's boards in the drawings home, an in-flight atomic write's `.tmp-<hex>` sibling included. */
 const drawingsDir = async () => (await readdir(path.join(vault, DRAWINGS_DIR)).catch(() => [])).filter((name) => name.startsWith('Drawings drawing')).sort()
 /** The drawings a user has: a new file is born `tmp → fsync → link` (YAZ-2177), and its tmp name is never a drawing (YAZ-2179). */
 const listDrawings = async () => (await drawingsDir()).filter((name) => !isAtomicTmp(name))
@@ -154,7 +154,7 @@ test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'drawing-userdata-'))
   vaultSrc = await buildFixtureVault()
   vault = await copyVault(vaultSrc)
-  await writeFile(path.join(vault, NOTE), NOTE_BODY)
+  await writeFile(path.join(vault, PAGE), PAGE_BODY)
 })
 
 test.afterAll(async () => {
@@ -173,14 +173,14 @@ async function newBlockAfter(w: Page, afterText: string): Promise<void> {
 }
 
 test('step 1 — "/" offers Drawing; each pick writes its own empty scene and leaves only the embed line behind', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, NOTE)) })
+  app = await launchApp({ userData, seedState: seededState(vault, path.join(vault, PAGE)) })
   win = await appWindow(app, 'w1')
-  await expect(editorOf(win)).toContainText('drawing-note-body')
+  await expect(editorOf(win)).toContainText('drawing-page-body')
   // Nothing exists yet.
   expect(await listDrawings()).toEqual([])
 
   // --- first drawing ---
-  await newBlockAfter(win, 'drawing-note-body')
+  await newBlockAfter(win, 'drawing-page-body')
   await win.keyboard.type('/')
   await expect(slashMenu(win)).toBeVisible()
   await expect(slashItem(win, 'Drawing')).toBeVisible()
@@ -193,8 +193,8 @@ test('step 1 — "/" offers Drawing; each pick writes its own empty scene and le
   // On disk it is a valid EMPTY Excalidraw scene, not a placeholder.
   const scene = JSON.parse(await readFile(path.join(vault, DRAWINGS_DIR, first), 'utf8')) as Record<string, unknown>
   expect(scene).toEqual({ type: 'excalidraw', version: 2, source: 'yaseen-docs', elements: [], appState: {}, files: {} })
-  // The note gained ONE line — the plain-markdown embed — and nothing else moved.
-  await expect.poll(readNote).toBe(`${NOTE_BODY}\n![[${first}]]\n`)
+  // The page gained ONE line — the plain-markdown embed — and nothing else moved.
+  await expect.poll(readPageFile).toBe(`${PAGE_BODY}\n![[${first}]]\n`)
   await expect(editorOf(win)).toContainText(`![[${first}]]`)
   await shoot(win, 'drawing-02-embed-inserted')
 
@@ -213,7 +213,7 @@ test('step 1 — "/" offers Drawing; each pick writes its own empty scene and le
   expect(new Set(both).size).toBe(2)
   second = both.find((n) => n !== first) as string
   // The first scene is still exactly where it was; the second is its own file.
-  await expect.poll(readNote).toBe(`${NOTE_BODY}\n![[${first}]]\n\n![[${second}]]\n`)
+  await expect.poll(readPageFile).toBe(`${PAGE_BODY}\n![[${first}]]\n\n![[${second}]]\n`)
   expect(await readFile(path.join(vault, DRAWINGS_DIR, first), 'utf8')).toBe(await readFile(path.join(vault, DRAWINGS_DIR, second), 'utf8'))
   // Every write finished: no tmp sibling outlives it.
   await expect.poll(drawingsDir).toEqual([first, second].sort())
@@ -222,11 +222,11 @@ test('step 1 — "/" offers Drawing; each pick writes its own empty scene and le
   await quitApp(app)
 })
 
-test('step 2 — both embeds render as windows: the picture stands where the raw text is, and the note is untouched', async () => {
-  const before = await readNote()
+test('step 2 — both embeds render as windows: the picture stands where the raw text is, and the page is untouched', async () => {
+  const before = await readPageFile()
   app = await launchApp({ userData }) // NO re-seed: restore is whatever quit wrote
   win = await appWindow(app, 'w1')
-  await expect(editorOf(win)).toContainText('drawing-note-body')
+  await expect(editorOf(win)).toContainText('drawing-page-body')
 
   await expect(previews(win)).toHaveCount(2)
   await expect(rendered(win)).toHaveCount(2)
@@ -237,12 +237,12 @@ test('step 2 — both embeds render as windows: the picture stands where the raw
   await expect(editorOf(win)).toContainText(`![[${second}]]`)
   await shoot(win, 'drawing-04-previews')
 
-  expect(await readNote()).toBe(before)
+  expect(await readPageFile()).toBe(before)
   await quitApp(app)
 })
 
 test('step 3 — a scene with real elements draws, TEXT INCLUDED, without a single request leaving the app', async () => {
-  const before = await readNote()
+  const before = await readPageFile()
   // What YAZ-879's modal will one day save: replace the first empty scene with a real drawing.
   await writeFile(path.join(vault, DRAWINGS_DIR, first), DRAWN_SCENE)
 
@@ -254,7 +254,7 @@ test('step 3 — a scene with real elements draws, TEXT INCLUDED, without a sing
   win.on('request', (req) => {
     if (/^https?:/i.test(req.url())) external.push(req.url())
   })
-  await expect(editorOf(win)).toContainText('drawing-note-body')
+  await expect(editorOf(win)).toContainText('drawing-page-body')
 
   await expect(rendered(win)).toHaveCount(2)
   // The drawn scene has real extent — an empty one shows "Empty drawing", no picture.
@@ -269,18 +269,18 @@ test('step 3 — a scene with real elements draws, TEXT INCLUDED, without a sing
   await shoot(win, 'drawing-05-drawn-scene')
 
   expect(external).toEqual([])
-  expect(await readNote()).toBe(before)
+  expect(await readPageFile()).toBe(before)
   await quitApp(app)
 })
 
 test('step 4 — a corrupted sidecar says "Can\'t show drawing"; nothing crashes and nothing is rewritten', async () => {
-  const before = await readNote()
+  const before = await readPageFile()
   // The file is still there and still named a drawing — only its bytes are no longer a scene.
   await writeFile(path.join(vault, DRAWINGS_DIR, first), JUNK)
 
   app = await launchApp({ userData })
   win = await appWindow(app, 'w1')
-  await expect(editorOf(win)).toContainText('drawing-note-body')
+  await expect(editorOf(win)).toContainText('drawing-page-body')
 
   await expect(brokenChips(win)).toHaveCount(1)
   // A4: the file is there, so it is not "Missing"; it would not draw.
@@ -289,17 +289,17 @@ test('step 4 — a corrupted sidecar says "Can\'t show drawing"; nothing crashes
   await expect(rendered(win)).toHaveCount(1)
   await shoot(win, 'drawing-06-broken-chip')
 
-  // No repair, no rewrite: the note is the same bytes and the junk is still junk.
-  expect(await readNote()).toBe(before)
+  // No repair, no rewrite: the page is the same bytes and the junk is still junk.
+  expect(await readPageFile()).toBe(before)
   expect(await readFile(path.join(vault, DRAWINGS_DIR, first), 'utf8')).toBe(JUNK)
   await quitApp(app)
 })
 
 test('step 5 — "Edit in a popup" opens the modal; a rectangle DRAWN there is saved back and the window redraws', async () => {
-  const before = await readNote()
+  const before = await readPageFile()
   app = await launchApp({ userData })
   win = await appWindow(app, 'w1')
-  await expect(editorOf(win)).toContainText('drawing-note-body')
+  await expect(editorOf(win)).toContainText('drawing-page-body')
   // `first` is still the junk step 4 wrote, and `second` is an empty scene: its window says "Empty drawing".
   await expect(rendered(win)).toHaveCount(0)
   await expect(previewOf(win, second)).toHaveClass(/board-window--empty/)
@@ -370,25 +370,25 @@ test('step 5 — "Edit in a popup" opens the modal; a rectangle DRAWN there is s
   await expect(modal(win)).toHaveCount(0)
   expect(await readSidecar(second)).toBe(raw)
 
-  // The NOTE never moved: the modal edits a sidecar, never the page (decorations only, rule 27).
-  expect(await readNote()).toBe(before)
+  // The PAGE never moved: the modal edits a sidecar, never the page (decorations only, rule 27).
+  expect(await readPageFile()).toBe(before)
   await quitApp(app)
 })
 
 test('step 6 — the saved drawing survives quit → relaunch: read cold from the sidecar, still offline', async () => {
-  const beforeNote = await readNote()
+  const beforePage = await readPageFile()
   const beforeSidecar = await readSidecar(second)
   app = await launchApp({ userData }) // NO re-seed: restore is whatever step 5's quit wrote
   win = await appWindow(app, 'w1')
-  // 🔒 The offline rule again, on the path a user actually lives on: reopening yesterday's note.
+  // 🔒 The offline rule again, on the path a user actually lives on: reopening yesterday's page.
   const external: string[] = []
   win.on('request', (req) => {
     if (/^https?:/i.test(req.url())) external.push(req.url())
   })
-  await expect(editorOf(win)).toContainText('drawing-note-body')
+  await expect(editorOf(win)).toContainText('drawing-page-body')
 
   // A new process, a new editor, a new read — and the rectangle is on screen again, because the
-  // sidecar is the only place it ever lived: nothing about it is in the note or in the app state.
+  // sidecar is the only place it ever lived: nothing about it is in the page or in the app state.
   await expect(rendered(win)).toHaveCount(1)
   await expect(brokenChips(win)).toHaveCount(1) // `first` is still step 4's junk, still inert
   const svg = await pictureOf(win, second)
@@ -401,35 +401,35 @@ test('step 6 — the saved drawing survives quit → relaunch: read cold from th
 
   expect(external).toEqual([])
   // Reopening reads and never writes: both files are the bytes step 5 left behind.
-  expect(await readNote()).toBe(beforeNote)
+  expect(await readPageFile()).toBe(beforePage)
   expect(await readSidecar(second)).toBe(beforeSidecar)
 })
 
-test('step 7 — one drawing, two notes: a SECOND note embedding the same sidecar draws the same scene', async () => {
-  const beforeNote = await readNote()
+test('step 7 — one drawing, two pages: a SECOND page embedding the same sidecar draws the same scene', async () => {
+  const beforePage = await readPageFile()
   const beforeSidecar = await readSidecar(second)
   // Written straight onto disk — the honest path for a line someone typed in another editor — and
   // it is the SAME embed text, because a sidecar is a file in the vault like any other: nothing
-  // about it belongs to the note that happened to create it.
-  await writeFile(path.join(vault, REUSE_NOTE), reuseNoteBody())
+  // about it belongs to the page that happened to create it.
+  await writeFile(path.join(vault, REUSE_PAGE), reusePageBody())
 
   await fileRow(win, 'Reuse').click()
   await expect(activeTab(win)).toHaveText('Reuse')
-  await expect(editorOf(win)).toContainText('reuse-note-body')
+  await expect(editorOf(win)).toContainText('reuse-page-body')
 
-  // Its own note, its own editor mount, its own read of the ONE file on disk — and the same
+  // Its own page, its own editor mount, its own read of the ONE file on disk — and the same
   // rectangle comes out. This is what the modular sidecar is FOR (🔒 the locked decision).
   await expect(previews(win)).toHaveCount(1)
   await expect(rendered(win)).toHaveCount(1)
   const svg = await pictureOf(win, second)
   expect(svg.length).toBeGreaterThan(0)
   expect(svg).toBe(savedSvg)
-  await shoot(win, 'drawing-11-second-note')
+  await shoot(win, 'drawing-11-second-page')
 
-  // Nothing was copied to make that happen: still two sidecars, and both notes are as written.
+  // Nothing was copied to make that happen: still two sidecars, and both pages are as written.
   expect(await listDrawings()).toEqual([first, second].sort())
-  expect(await readFile(path.join(vault, REUSE_NOTE), 'utf8')).toBe(reuseNoteBody())
+  expect(await readFile(path.join(vault, REUSE_PAGE), 'utf8')).toBe(reusePageBody())
   expect(await readSidecar(second)).toBe(beforeSidecar)
-  expect(await readNote()).toBe(beforeNote)
+  expect(await readPageFile()).toBe(beforePage)
   await quitApp(app)
 })

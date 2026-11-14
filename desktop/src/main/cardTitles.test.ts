@@ -61,11 +61,11 @@ describe('the title on the front: the card line part `notitle` (YAZ-5030)', () =
 
 describe('links to a card: `[[DEMO-127]]` (YAZ-5030, D7)', () => {
   const page = rec('/v/Spanish/verbs.md', { cards: [cardOf('DEMO-126', 'Ser'), cardOf(null, 'Draft'), cardOf('DEMO-127', 'Estar', true)] })
-  const linker = rec('/v/notes.md', { id: 'DEMO-5', links: ['demo-127', 'Other'] })
+  const linker = rec('/v/pages.md', { id: 'DEMO-5', links: ['demo-127', 'Other'] })
   const viaWords = rec('/v/words.md', { links: ['DEMO-127|estar'] })
-  const records = [page, linker, viaWords, rec('/v/DEMO-127.md'), rec('/v/note.md', { id: 'DEMO-9' })]
+  const records = [page, linker, viaWords, rec('/v/DEMO-127.md'), rec('/v/page.md', { id: 'DEMO-9' })]
 
-  it('resolves a card`s ID in any case, piped or not, to the card: its page, place and title; a note`s ID or a name is no card', () => {
+  it('resolves a card`s ID in any case, piped or not, to the card: its page, place and title; a page`s ID or a name is no card', () => {
     const resolve = makeCardResolver(records, ['DEMO'])
     expect(resolve('[[DEMO-127]]')).toEqual({ id: 'DEMO-127', path: '/v/Spanish/verbs.md', index: 2, title: 'Estar', notitle: true })
     expect(resolve('demo-127')?.index).toBe(2)
@@ -78,20 +78,20 @@ describe('links to a card: `[[DEMO-127]]` (YAZ-5030, D7)', () => {
     expect(makeCardResolver(records, ['NEW', 'DEMO'])('NEW-127')?.id).toBe('DEMO-127')
   })
 
-  it('the note resolver finds the card`s PAGE (a link into it), after the notes` own IDs and before names; not in the rename probe', () => {
+  it('the page resolver finds the card`s PAGE (a link into it), after the pages` own IDs and before names; not in the rename probe', () => {
     const files = records.map((record) => ({ record }))
     const resolve = makeResolver(files, '/v', { letters: ['DEMO'] })
     expect(resolve('DEMO-127')?.record.path).toBe('/v/Spanish/verbs.md')
     // A page merely NAMED like the card's ID never takes its link.
     expect(resolve('[[demo-127]]')?.record.path).toBe('/v/Spanish/verbs.md')
-    expect(resolve('DEMO-9')?.record.path).toBe('/v/note.md')
+    expect(resolve('DEMO-9')?.record.path).toBe('/v/page.md')
     // The rename probe reads no IDs: a rename of the card's page rewrites no `[[DEMO-127]]`.
     expect(makeResolver(files, '/v', { ids: false })('DEMO-127')?.record.path).toBe('/v/DEMO-127.md')
   })
 
   it('a card`s backlinks: the pages whose links name its ID, in records order', () => {
     const resolve = makeCardResolver(records, ['DEMO'])
-    expect(cardBacklinks(records, 'DEMO-127', resolve).map((r) => r.path)).toEqual(['/v/notes.md', '/v/words.md'])
+    expect(cardBacklinks(records, 'DEMO-127', resolve).map((r) => r.path)).toEqual(['/v/pages.md', '/v/words.md'])
     expect(cardBacklinks(records, 'DEMO-126', resolve)).toEqual([])
   })
 
@@ -100,7 +100,7 @@ describe('links to a card: `[[DEMO-127]]` (YAZ-5030, D7)', () => {
     const resolve = makeCardResolver(all, ['DEMO', 'OLD'])
     expect(cardEmbedders(all, 'DEMO-127', resolve).map((r) => r.path)).toEqual(['/v/a.md', '/v/b.md'])
     // A page that only LINKS to the card is a mention, not an embedder.
-    expect(cardEmbedders(all, 'DEMO-127', resolve).some((r) => r.path === '/v/notes.md')).toBe(false)
+    expect(cardEmbedders(all, 'DEMO-127', resolve).some((r) => r.path === '/v/pages.md')).toBe(false)
     expect(cardEmbedders(all, 'DEMO-9', resolve)).toEqual([])
   })
 })

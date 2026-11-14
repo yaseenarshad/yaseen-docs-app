@@ -103,7 +103,7 @@ protocol.registerSchemesAsPrivileged([APP_SCHEME])
 const RENDERER_DIR = join(__dirname, '../renderer')
 // The macOS spell checker's guesses for both right-click menus (YAZ-4464): one helper, started at the first ask.
 const speller = createSpeller(spellerPath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, mainDir: __dirname }))
-/** The native menu's wait for its guesses, as the note menu's (S2): 1 s until the helper first answers, then 400 ms. */
+/** The native menu's wait for its guesses, as the page menu's (S2): 1 s until the helper first answers, then 400 ms. */
 const nativeSpellWait = createSpellWait()
 /** The draw.io webapp (YAZ-3028 D5, Draw's 🔒 YAZ-1802 D4/D5): the pack cache in dev, `out/drawio` in a build. */
 const DRAWIO_DIR = resolveDrawioDir({ mainDir: __dirname, appPath: app.getAppPath(), isPackaged: app.isPackaged, exists: existsSync })
@@ -205,7 +205,7 @@ const manager = createWindowManager(store, {
         revealImage: (src) => void revealVaultImage(src, (file) => revealItem({ path: file })),
       })).popup({ window: win })
     })
-    // The window's own zoom is the App size and nothing else (YAZ-3432; ⌘+ zooms a note or the sidebar, YAZ-3389), a
+    // The window's own zoom is the App size and nothing else (YAZ-3432; ⌘+ zooms a page or the sidebar, YAZ-3389), a
     // Files window too. Chromium keeps a zoom per origin, so each load sets it again: a zoom from an older build goes.
     win.webContents.on('did-finish-load', () => win.webContents.setZoomFactor(appZoomFactor(store.get().settings)))
     // `<renderer>?win=<id>` so the renderer can ask `window.identity()` who it is.
@@ -378,7 +378,7 @@ app.whenReady().then(() => {
   // The board items (YAZ-3037, YAZ-3028 D10; Draw's 🔒 YAZ-1775 D10) are enabled only while the window a
   // menu action would target has a board of the right kind in front. Read at build time from the same
   // window `menuTarget` names, so the answer and the send target can never disagree.
-  // What the keys follow (YAZ-3564 K9): a drawing open over the note is in front of it; the board items stay the tab's.
+  // What the keys follow (YAZ-3564 K9): a drawing open over the page is in front of it; the board items stay the tab's.
   // With no page on show (YAZ-5041: the Inbox tab, the blank tab), neither follows the tab stored under it.
   const kindsInFront = () => {
     const wc = menuTarget()
@@ -393,7 +393,7 @@ app.whenReady().then(() => {
       Menu.buildFromTemplate(
         buildMenuTemplate(
           // The user's keys (YAZ-3397 D2), and none at all while a key recorder listens (D6).
-          { recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind(), frontKind: frontKind(), hotkeys: store.get().settings.hotkeys, hotkeysAside: store.get().settings.hotkeysAside, suspendKeys: hotkeyRecording.active(), dailyNotes: store.get().settings.dailyNotes },
+          { recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind(), frontKind: frontKind(), hotkeys: store.get().settings.hotkeys, hotkeysAside: store.get().settings.hotkeysAside, suspendKeys: hotkeyRecording.active(), dailyPages: store.get().settings.dailyPages },
           handlers,
         ),
       ),
@@ -480,8 +480,8 @@ app.whenReady().then(() => {
   // drops the windows a launch does not bring back: every vault of the last session gets its copy.
   // It never holds up a window: a renderer that read no file yet hears the write as a change.
   void moveLegacyHeadingStyles(store).catch((err: unknown) => console.error(`[textFormatting] the move failed: ${String(err)}`))
-  // The page switches the app state held for notes move once into the notes (YAZ-4094 G4). The same terms: a
-  // window that has the note open hears the write as an outside change of its frontmatter.
+  // The page switches the app state held for pages move once into the pages (YAZ-4094 G4). The same terms: a
+  // window that has the page open hears the write as an outside change of its frontmatter.
   void movePageSwitches(store).catch((err: unknown) => console.error(`[pageSwitches] the move failed: ${String(err)}`))
   // A launch that was asked for something opens only that (YAZ-2589 D1): the windows of the vault
   // each waiting link belongs to. A plain launch follows the setting (D2), and a request that cannot

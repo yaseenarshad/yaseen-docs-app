@@ -8,7 +8,7 @@ Use it to recall an action or the steps of a task. **Title: shown.** The title n
 
 - Title: the task, in a few words.
 - Front: the situation, and the question of what to do.
-- Back: the steps that matter, hidden. A note on what to watch for.
+- Back: the steps that matter, hidden. A line on what to watch for.
 - For a long procedure, make one card for each stage or decision. Keep the source's order.
 
 ## Example

@@ -11,7 +11,7 @@ import { DEFAULT_SETTINGS } from '@shared/types'
 import { storage } from '../../../lib/storage'
 import { getMarkdownForSave } from '../../createCrepe'
 import { mergeRect } from '../tableMerge'
-import { cellPos, mountNote, unmountAll } from '../tableTestKit'
+import { cellPos, mountPage, unmountAll } from '../tableTestKit'
 import { newTableNode } from './superTables'
 
 afterEach(unmountAll)
@@ -29,7 +29,7 @@ const firstTable = (view: EditorView): number => {
 
 /** The table's six-dot menu, opened as `tableRows.test.ts` opens it. */
 async function openMenu(markdown: string) {
-  const m = await mountNote(markdown)
+  const m = await mountPage(markdown)
   const handle = document.createElement('div')
   handle.className = 'milkdown-block-handle'
   const item = document.createElement('div')
@@ -77,7 +77,7 @@ describe('YAZ-4872 S1: Super table on and off', () => {
   })
 
   it('item 17: in a Super table, cells merge in one row but never across rows', async () => {
-    const { view } = await mountNote(`${SMALL}\n<!-- table: super -->\n`)
+    const { view } = await mountPage(`${SMALL}\n<!-- table: super -->\n`)
     const select = (a: [number, number], b: [number, number]) => CellSelection.create(view.state.doc, cellPos(view, ...a), cellPos(view, ...b))
     expect(mergeRect(select([1, 0], [1, 1]))).not.toBeNull()
     expect(mergeRect(select([1, 0], [2, 0]))).toBeNull()
@@ -85,7 +85,7 @@ describe('YAZ-4872 S1: Super table on and off', () => {
 
   it('item 22: Settings › Tables › New tables start as: plain by default; Super makes the slash menu’s table a Super table', async () => {
     expect(DEFAULT_SETTINGS.tableNewStyle).toBe('plain')
-    const { view } = await mountNote(SMALL)
+    const { view } = await mountPage(SMALL)
     const table = view.state.doc.nodeAt(firstTable(view))!
     expect(newTableNode(table).attrs.superTable).toBe(false)
     const spy = vi.spyOn(storage, 'getSettings').mockReturnValue({ ...storage.getSettings(), tableNewStyle: 'super' })

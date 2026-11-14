@@ -18,7 +18,7 @@ import { CardNotFoundError, EMPTY_CARD_LINE, cardBlock, cardIdOf, changeCardText
 import { cardTitle } from './cardText'
 import { lineKinds } from './fences'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
-import { TITLE_KEY } from './noteName'
+import { TITLE_KEY } from './pageName'
 
 /** A card that leaves its page or its card file: the new card file's bytes, its name, its ID and its title. */
 export interface CardFileOut {

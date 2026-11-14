@@ -1,8 +1,8 @@
 /**
- * The comment stream (YAZ-1472) — a Linear-style block of the note's own, INSIDE the editor's
- * scroller after the note's body, or a folder's views, and before "Linked mentions" (🔒 D4). Always
+ * The comment stream (YAZ-1472) — a Linear-style block of the page's own, INSIDE the editor's
+ * scroller after the page's body, or a folder's views, and before "Linked mentions" (🔒 D4). Always
  * rendered, unlike the backlinks: the composer is the door to the first comment. Storage is the
- * note's frontmatter (`shared/comments.ts`, 🔒 D1), so this block is a VIEW over the same disk
+ * page's frontmatter (`shared/comments.ts`, 🔒 D1), so this block is a VIEW over the same disk
  * truth the properties panel reads — `file.content` is CrepeHost's `disk` — with no watcher of
  * its own.
  *
@@ -11,7 +11,7 @@
  * exactly the bytes that landed. The watcher then echoes the write back through the Editor's
  * `absorbFrontmatterOnly` → `setDisk`, which the snapshot below recognises as the same content.
  *
- * Shapes (`commentsShape`): a note whose `comments` is a value of the user's own, or whose block
+ * Shapes (`commentsShape`): a page whose `comments` is a value of the user's own, or whose block
  * does not parse, gets the header and one line saying why — no composer, nothing overwritten.
  * Threads are one level deep; an orphaned reply shows at top level (`threadsOf`).
  *
@@ -52,13 +52,13 @@ import { CommentPrefsContext, saveCard, usePeople } from './usePeople'
 import './comments.css'
 
 export interface CommentsSectionProps {
-  /** The open note as the Editor last saw it on disk — the block's truth until its own write moves it. */
+  /** The open page as the Editor last saw it on disk — the block's truth until its own write moves it. */
   file: Pick<FileResponse, 'path' | 'content'>
   /** How the stream READS (YAZ-1515): a global setting handed down as a prop, never read from storage here. */
   order: CommentsOrder
   /** The header's Oldest/Newest toggle writes the setting through this; the block holds no order of its own. */
   onChangeOrder: (order: CommentsOrder) => void
-  /** The vault the note is in (YAZ-4615 D1): whose people file names the writers. Null shows handles only. */
+  /** The vault the page is in (YAZ-4615 D1): whose people file names the writers. Null shows handles only. */
   root?: string | null
 }
 
@@ -98,7 +98,7 @@ export const UNDO_MS = 5000
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
 const NOTICE = {
-  foreign: "This note's comments property isn't a comment list, so nothing can be added here.",
+  foreign: "This page's comments property isn't a comment list, so nothing can be added here.",
   invalid: "The properties block doesn't parse. Fix it in Properties to comment here.",
 } as const
 

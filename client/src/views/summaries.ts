@@ -79,5 +79,5 @@ export function summarize(kind: string, values: readonly Value[], custom?: Recor
   if (src === undefined) return new ErrorValue(`unknown summary kind: ${kind}`)
   const compiled = compile(src)
   if (compiled.error) return new ErrorValue(`summary ${kind}: ${compiled.error.message}`)
-  return evaluate(compiled.expr, { note: {}, file: null, formulas: {}, this: null, extra: { values: [...values] } })
+  return evaluate(compiled.expr, { page: {}, file: null, formulas: {}, this: null, extra: { values: [...values] } })
 }

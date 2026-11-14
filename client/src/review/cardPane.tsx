@@ -16,15 +16,15 @@ import { createCrepe } from '../editor/createCrepe'
 import { CrepeFeature } from '../editor/crepe'
 import { features } from '../editor/featureConfig'
 import { copyText } from '../editor/linkMenu'
-import { isNoteCardNode } from '../editor/noteCard/noteCardLine'
-import { noteCardViewAt } from '../editor/noteCard/noteCardView'
+import { isCardNode } from '../editor/card/cardBlockLine'
+import { cardBlockViewAt } from '../editor/card/cardBlockView'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import { cardResolverOf, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
-import type { ExploreVault } from '../explore/ExploreNote'
+import type { ExploreVault } from '../explore/ExplorePage'
 import { pageLabel, pathTitles } from '../lib/pageLabel'
 import type { MenuSection } from '../sidebar/menuSections'
 import { changeCardLine, changeCardTextIn, type CardAtPage } from './cardFile'
-import { NoteCardBody, NoteCardReviews, type NoteCardLinkDoors } from './noteCardParts'
+import { CardBody, CardReviews, type CardLinkDoors } from './cardParts'
 
 /**
  * Runs `run` on each new version of `path` in the index (its mtime): an answer in the Inbox, an agent's write or a
@@ -117,7 +117,7 @@ interface CardPaneProps {
   onEditDone: (text: string) => void
   /** What Edit card selects as it opens (offsets in the card's text): a new card's "Title" (YAZ-5037). Absent: the caret at the end. */
   select?: { from: number; to: number }
-  doors: NoteCardLinkDoors
+  doors: CardLinkDoors
   /** A page in "Linked mentions" or "Embedded in". */
   onOpenPage: (path: string) => void
   /** Under the card: the card window's strip. */
@@ -134,16 +134,16 @@ export function CardPane({ card, path, vault, editing, onEditDone, select, doors
   return (
     <>
       {editing ? (
-        <NoteCardEditor key={`${card.index}`} text={card.text} path={path} vault={vault} onDone={onEditDone} select={select} />
+        <CardPaneEditor key={`${card.index}`} text={card.text} path={path} vault={vault} onDone={onEditDone} select={select} />
       ) : (
-        <div className="note-card note-card-screen">
-          <NoteCardBody text={card.text} path={path} vault={vault} doors={doors} />
+        <div className="card card-screen">
+          <CardBody text={card.text} path={path} vault={vault} doors={doors} />
         </div>
       )}
       {strip}
-      {reviews !== undefined && <NoteCardReviews reviews={card.reviews} settings={reviews} onDelete={onDeleteReview} />}
-      {card.id !== null && <NoteCardPages which="links" id={card.id} wikilinks={vault.wikilinks} onOpen={onOpenPage} />}
-      {embeds && card.id !== null && <NoteCardPages which="embeds" id={card.id} wikilinks={vault.wikilinks} onOpen={onOpenPage} />}
+      {reviews !== undefined && <CardReviews reviews={card.reviews} settings={reviews} onDelete={onDeleteReview} />}
+      {card.id !== null && <CardPages which="links" id={card.id} wikilinks={vault.wikilinks} onOpen={onOpenPage} />}
+      {embeds && card.id !== null && <CardPages which="embeds" id={card.id} wikilinks={vault.wikilinks} onOpen={onOpenPage} />}
     </>
   )
 }
@@ -157,7 +157,7 @@ const CARD_EDIT_FEATURES = { ...features, [CrepeFeature.BlockEdit]: false, [Crep
  * Made once per edit: the text it starts from is the card's when Edit card began, and a read again under it (an
  * outside write) does not touch it.
  */
-function NoteCardEditor({ text, path, vault, onDone, select }: { text: string; path: string; vault: ExploreVault; onDone: (text: string) => void; select?: { from: number; to: number } }) {
+function CardPaneEditor({ text, path, vault, onDone, select }: { text: string; path: string; vault: ExploreVault; onDone: (text: string) => void; select?: { from: number; to: number } }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const doneRef = useRef(onDone)
   doneRef.current = onDone
@@ -175,8 +175,8 @@ function NoteCardEditor({ text, path, vault, onDone, select }: { text: string; p
       features: CARD_EDIT_FEATURES,
       wikilinks: vault.wikilinks,
       viewOnlyLinks: vault.viewOnlyLinks,
-      image: { root: vault.root, notePath: path },
-      noteCards: { path, onEditDone: (t) => doneRef.current(t) },
+      image: { root: vault.root, pagePath: path },
+      cards: { path, onEditDone: (t) => doneRef.current(t) },
     })
     let live = true
     void crepe.create().then(() => {
@@ -184,10 +184,10 @@ function NoteCardEditor({ text, path, vault, onDone, select }: { text: string; p
       const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
       let pos = -1
       view.state.doc.descendants((node, at) => {
-        if (pos === -1 && isNoteCardNode(node)) pos = at
+        if (pos === -1 && isCardNode(node)) pos = at
         return pos === -1
       })
-      if (pos >= 0) noteCardViewAt(view, pos)?.edit(select)
+      if (pos >= 0) cardBlockViewAt(view, pos)?.edit(select)
     })
     return () => {
       live = false
@@ -199,8 +199,8 @@ function NoteCardEditor({ text, path, vault, onDone, select }: { text: string; p
 }
 
 const PAGES = {
-  links: { label: 'Linked mentions', none: 'No page links to this card yet.', of: cardBacklinks, className: 'note-card-backlinks' },
-  embeds: { label: 'Embedded in', none: 'No page embeds this card yet.', of: cardEmbedders, className: 'note-card-backlinks card-file__embeds' },
+  links: { label: 'Linked mentions', none: 'No page links to this card yet.', of: cardBacklinks, className: 'card-backlinks' },
+  embeds: { label: 'Embedded in', none: 'No page embeds this card yet.', of: cardEmbedders, className: 'card-backlinks card-file__embeds' },
 } as const
 
 /**
@@ -208,7 +208,7 @@ const PAGES = {
  * (n)" (YAZ-5037): the pages whose `![[…]]` names it (`cardEmbedders`). From the index, live with it; each row is the
  * page's name, and a click opens it. Open while there are any.
  */
-function NoteCardPages({ which, id, wikilinks, onOpen }: { which: keyof typeof PAGES; id: string; wikilinks: WikilinkResolveSource; onOpen: (path: string) => void }) {
+function CardPages({ which, id, wikilinks, onOpen }: { which: keyof typeof PAGES; id: string; wikilinks: WikilinkResolveSource; onOpen: (path: string) => void }) {
   const { label, none, of, className } = PAGES[which]
   const feed = useIndexFeed(wikilinks)
   const pages = useMemo((): IndexRecord[] => {
@@ -229,13 +229,13 @@ function NoteCardPages({ which, id, wikilinks, onOpen }: { which: keyof typeof P
         </span>
       </button>
       {shown && (
-        <ul className="note-card-backlinks__list">
+        <ul className="card-backlinks__list">
           {pages.length === 0 ? (
-            <li className="note-card-backlinks__none">{none}</li>
+            <li className="card-backlinks__none">{none}</li>
           ) : (
             pages.map((page) => (
               <li key={page.path}>
-                <button type="button" className="note-card-strip__page note-card-backlinks__page" onMouseDown={(e) => e.preventDefault()} onClick={() => onOpen(page.path)}>
+                <button type="button" className="card-strip__page card-backlinks__page" onMouseDown={(e) => e.preventDefault()} onClick={() => onOpen(page.path)}>
                   {pageLabel(page.path, false, titles)}
                 </button>
               </li>

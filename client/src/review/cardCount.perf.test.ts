@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cardTime, type CardRating, type NoteCardRecord } from '@shared/cardLine'
+import { cardTime, type CardRating, type CardRecord } from '@shared/cardLine'
 import { cardPlan, cardQueue } from '@shared/cardSchedule'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { budgetMs, timeMedian } from '../test-perf'
@@ -13,7 +13,7 @@ const DAY = 86_400_000
 const NOW = new Date(2026, 10, 12, 9, 0).getTime()
 const RATINGS: CardRating[] = ['good', 'good', 'again', 'good', 'hard', 'good', 'easy', 'good', 'good', 'good']
 
-function cards(page: number, extra = 0): NoteCardRecord[] {
+function cards(page: number, extra = 0): CardRecord[] {
   return Array.from({ length: 10 }, (_, c) => {
     const start = NOW - 500 * DAY + ((page * 10 + c) % 97) * DAY
     const reviews = RATINGS.map((rating, r) => ({ at: cardTime(start + r * 20 * DAY + c * 60_000), rating }))

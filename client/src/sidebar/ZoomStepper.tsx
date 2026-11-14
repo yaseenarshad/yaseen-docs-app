@@ -1,10 +1,10 @@
 /**
  * THE ZOOM STEPPER, a quiet "− 100% +": the two rows of the footer's zoom menu (`ZoomMenu`, YAZ-3432) are one each.
  *  - `sidebar` (YAZ-3389): the sidebar's lists only (`settings.sidebarZoom`, one value for every full window; a Files
- *    window's own `WindowEntry.zoom`, D13) — never the frame, never a note, which has its own zoom
- *    (`editor/DocumentZoom.tsx`). ⌘+ / ⌘− / ⌘0 step it too when no note claims them.
+ *    window's own `WindowEntry.zoom`, D13) — never the frame, never a page, which has its own zoom
+ *    (`editor/DocumentZoom.tsx`). ⌘+ / ⌘− / ⌘0 step it too when no page claims them.
  *  - `app` (YAZ-3432): the App size of every window (`settings.appZoom`). Mouse only.
- *  - `toc` (YAZ-3939 D7): the names of a note's table of contents (`settings.tocZoom`), on the sidebar's steps.
+ *  - `toc` (YAZ-3939 D7): the names of a page's table of contents (`settings.tocZoom`), on the sidebar's steps.
  * − and + walk the kind's steps (`stepZoom`) and stop at the walls; a click on the percent goes back to 100%. A step
  * that reaches a wall turns its own button off, so the focus moves to the percent first: it stays in the row instead
  * of falling to the page (YAZ-3434).

@@ -1,8 +1,8 @@
 /**
- * One note card in its page, read and written by ID (YAZ-4967): what the Inbox and the card window (YAZ-4962) do to
+ * One card in its page, read and written by ID (YAZ-4967): what the Inbox and the card window (YAZ-4962) do to
  * a card file, usable with or without a review session. The index holds no card text (D4), so a card shows from the
  * page as it is on disk now. Each write is ONE `transformFile` (`changeCard` on the bytes just read, a re-read and a
- * second try on a conflict): the page may be open in a tab, and the app merges an outside write into an open note.
+ * second try on a conflict): the page may be open in a tab, and the app merges an outside write into an open page.
  */
 import {
   CardNotFoundError,

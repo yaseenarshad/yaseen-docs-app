@@ -37,7 +37,7 @@ describe('drawingDropLinks', () => {
   })
 
   it('a drop from Finder, or one with no path, is not the host\'s: the engine goes on as before', () => {
-    expect(drawingDropLinks(['/Users/me/Desktop/notes.md'], ['/vault'], linkOf)).toBeNull()
+    expect(drawingDropLinks(['/Users/me/Desktop/pages.md'], ['/vault'], linkOf)).toBeNull()
     expect(drawingDropLinks(['/vault/Growth plan.md', '/elsewhere/a.md'], ['/vault'], linkOf)).toBeNull()
     expect(drawingDropLinks([], ['/vault'], linkOf)).toBeNull()
   })

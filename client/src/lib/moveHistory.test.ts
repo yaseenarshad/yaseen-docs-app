@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { createMoveHistory, invertMoves, type MovedGesture } from './moveHistory'
 
-/** A gesture of one move, named by its note. */
+/** A gesture of one move, named by its page. */
 const gesture = (name: string): MovedGesture => ({ moves: [{ oldPath: `/v/${name}.md`, newPath: `/v/B/${name}.md`, kind: 'file' }] })
 const name = (entry: MovedGesture | undefined): string | undefined => entry?.moves[0].oldPath.slice(3, -3)
 

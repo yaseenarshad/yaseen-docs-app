@@ -1,5 +1,5 @@
 /**
- * YAZ-3943 1A1 through the real code path: the note's popup (`DrawingModal`) on a board past the asset
+ * YAZ-3943 1A1 through the real code path: the page's popup (`DrawingModal`) on a board past the asset
  * pipe's 10 MiB cap. With pictures inside by default (D5), any board with about 7 MB of pictures is
  * past it. The popup must open it AND save it, through main's REAL doors (`readAsset`, `drawing:load`,
  * `drawing:save`) on a real temp vault; only the engine is a stand-in.

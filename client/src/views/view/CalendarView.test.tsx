@@ -139,7 +139,7 @@ describe('calendar grid (YAZ-4540 D11)', () => {
 
   it('a card goes on the date part as written: a time zone does not move it (S3)', () => {
     const { el } = mount(CALENDAR)
-    // Both stay on Dec 3; the timed one comes first, as in Week (YAZ-4558 D22, so the note window steps as the day shows).
+    // Both stay on Dec 3; the timed one comes first, as in Week (YAZ-4558 D22, so the page window steps as the day shows).
     expect(titlesIn(day(el, '2026-12-03'))).toEqual(['Late zone', 'Bare'])
     expect(titlesIn(day(el, '2026-12-04'))).toEqual(['Timed'])
   })
@@ -172,7 +172,7 @@ describe('calendar grid (YAZ-4540 D11)', () => {
     expect(titlesIn(q(el, '.view-cal__tray'))).toEqual(['Nothing', 'Odd'])
   })
 
-  it('a note with no date sits in the "No date" tray below the grid', () => {
+  it('a page with no date sits in the "No date" tray below the grid', () => {
     const { el } = mount(CALENDAR)
     expect(titlesIn(q(el, '.view-cal__tray'))).toEqual(['Nothing'])
   })
@@ -239,7 +239,7 @@ describe('calendar moves (YAZ-4540 D4)', () => {
     expect(cardOf(el, 'Bare').querySelector('[role="alert"]')?.textContent).toBe('Move failed')
   })
 
-  it('a read-only note does not drag', () => {
+  it('a read-only page does not drag', () => {
     const { el } = mount(CALENDAR, { readOnly: new Set(['/vault/Locked.md']) })
     expect(cardOf(el, 'Locked').getAttribute('draggable')).toBeNull()
     expect(cardOf(el, 'Bare').getAttribute('draggable')).toBe('true')
@@ -249,10 +249,10 @@ describe('calendar moves (YAZ-4540 D4)', () => {
 })
 
 describe('calendar "+" on a day (YAZ-4540 S10) and "Show by"', () => {
-  it('"+" on a day makes a new note with that date', async () => {
+  it('"+" on a day makes a new page with that date', async () => {
     const create = vi.fn(() => Promise.resolve('/vault/Untitled.md'))
     const { el, onOpenFile } = mount(CALENDAR, { folder: testFolderHost({ create }) })
-    click(q(day(el, '2026-12-09'), '[aria-label="New note on 2026-12-09"]'))
+    click(q(day(el, '2026-12-09'), '[aria-label="New page on 2026-12-09"]'))
     await flush()
     expect(create).toHaveBeenCalledExactlyOnceWith({ properties: { due: '2026-12-09' } }, undefined)
     expect(onOpenFile).toHaveBeenCalledWith('/vault/Untitled.md')
@@ -309,15 +309,15 @@ describe('Back returns to the view tab it left (YAZ-4544, finding 24)', () => {
     return mount(TWO, props)
   }
 
-  it('"+" on a calendar day opens the new note; the folder page that mounts again on that Back step shows the Calendar', async () => {
+  it('"+" on a calendar day opens the new page; the folder page that mounts again on that Back step shows the Calendar', async () => {
     const create = vi.fn(async () => '/vault/Tasks/Untitled.md')
     const { el, onOpenFile } = mount(TWO, { viewKey: 'step-1', folder: testFolderHost({ create }) })
     expect(activeTab(el)).toBe('Table')
     act(() => [...el.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent === 'Calendar')!.click())
     draw()
-    await act(async () => q<HTMLButtonElement>(el, '[aria-label="New note on 2026-12-03"]').click())
+    await act(async () => q<HTMLButtonElement>(el, '[aria-label="New page on 2026-12-03"]').click())
     expect(onOpenFile).toHaveBeenCalledWith('/vault/Tasks/Untitled.md')
-    // The tab moves on to the note: this page unmounts. Back mounts it again under the same step.
+    // The tab moves on to the page: this page unmounts. Back mounts it again under the same step.
     expect(activeTab(remount({ viewKey: 'step-1' }).el)).toBe('Calendar')
     // A new step (the folder opened again from the sidebar) starts on the saved start, as before.
     expect(activeTab(remount({ viewKey: 'step-2' }).el)).toBe('Table')
@@ -413,7 +413,7 @@ describe('calendar week view (YAZ-4558 D22)', () => {
     expect(el.querySelector('.view-cal__grid .view-cal__more')).toBeNull()
   })
 
-  it('a drag to a day writes it and keeps the time; "+" on a day makes a note with that date', async () => {
+  it('a drag to a day writes it and keeps the time; "+" on a day makes a page with that date', async () => {
     const create = vi.fn(() => Promise.resolve('/vault/Untitled.md'))
     const { el } = mount(WEEK, { folder: testFolderHost({ create }) })
     click(q(el, '[aria-label="Previous week"]'))
@@ -421,7 +421,7 @@ describe('calendar week view (YAZ-4558 D22)', () => {
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Timed.md', 'due', '2026-12-01 10:30')
     expect(titlesIn(day(el, '2026-12-01'))).toEqual(['Timed'])
     await flush()
-    click(q(day(el, '2026-12-02'), '[aria-label="New note on 2026-12-02"]'))
+    click(q(day(el, '2026-12-02'), '[aria-label="New page on 2026-12-02"]'))
     await flush()
     expect(create).toHaveBeenCalledExactlyOnceWith({ properties: { due: '2026-12-02' } }, undefined)
   })
@@ -488,7 +488,7 @@ describe('hide weekends (YAZ-4595 S33)', () => {
     draw()
   }
 
-  it('Month shows Monday to Friday only; a weekend note sits on the Friday before, marked Sat or Sun', () => {
+  it('Month shows Monday to Friday only; a weekend page sits on the Friday before, marked Sat or Sun', () => {
     const { el } = mount(HIDE, { records })
     expect(weekdays(el)).toEqual(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
     expect(shownDays(el)).toHaveLength(25)
@@ -718,7 +718,7 @@ describe('"Cross out when" (YAZ-4864)', () => {
     return q<HTMLElement>(el, '.view-popover--properties [aria-label="Cross out when"]')
   }
 
-  it('a card whose note matches has its name struck through; the others do not', () => {
+  it('a card whose page matches has its name struck through; the others do not', () => {
     const { el } = mount(CROSS('note.done == true'), { records })
     expect(crossed(el)).toEqual(['Done task'])
     // The whole card is crossed out, its column lines too (YAZ-4864, demo request); a folder row's icon stays outside the name.
@@ -828,7 +828,7 @@ describe('cards over several days (YAZ-4858)', () => {
     expect(pieces[1].querySelector('.view-cal__edge--start')).toBeNull()
   })
 
-  it('a note with an end and no start goes on its end day (item 5); with no End date chosen, every card is on its start', () => {
+  it('a page with an end and no start goes on its end day (item 5); with no End date chosen, every card is on its start', () => {
     const { el } = mount(SPAN, { records })
     expect(titlesIn(day(el, '2026-12-17'))).toEqual(['Ends only'])
     act(() => root?.unmount())
@@ -933,7 +933,7 @@ describe('cards over several days (YAZ-4858)', () => {
     expect(titlesIn(day(el, '2026-12-22'))).toEqual(['One day'])
   })
 
-  it('a read-only note has no edges', () => {
+  it('a read-only page has no edges', () => {
     const { el } = mount(SPAN, { records, readOnly: new Set(['/vault/Trip.md']) })
     expect(barsOf(el, 'Trip')[0].querySelector('.view-cal__edge')).toBeNull()
     expect(cardOf(el, 'Bare').querySelector('.view-cal__edge')).not.toBeNull()
@@ -1205,7 +1205,7 @@ describe("a card styled by hand (YAZ-4906): \"Card style ›\", the table's Head
     expect(attrs(el, 'Bare')).toEqual({ 'data-color': 'green', 'data-color-strength': 'medium' })
   })
 
-  it('⌘Z on a card writes the value the note had back, one step per pick; ⇧⌘Z the pick again', async () => {
+  it('⌘Z on a card writes the value the page had back, one step per pick; ⇧⌘Z the pick again', async () => {
     const { el } = mount(CALENDAR)
     openStyle(el, 'Bare')
     click(menuItem('Green'))
@@ -1222,7 +1222,7 @@ describe("a card styled by hand (YAZ-4906): \"Card style ›\", the table's Head
     expect(write).toHaveBeenLastCalledWith('/vault/Bare.md', 'color', 'green')
   })
 
-  it('a stored style the app reads dresses the card; a crossed-out card keeps it; a value it cannot read gives none; a read-only note has no Card style item', () => {
+  it('a stored style the app reads dresses the card; a crossed-out card keeps it; a value it cannot read gives none; a read-only page has no Card style item', () => {
     const records = [rec('Tinted', { due: '2026-12-03', color: 'Purple strong', text_color: 'White', weight: 'Bold' }), rec('Odd', { due: '2026-12-03', color: 'turquoise', text_color: 'neon', weight: 'heavy' }), rec('Sealed', { due: '2026-12-04', color: 'red' })]
     const { el } = mount(`${CALENDAR}    crossOut:\n      and:\n        - note.weight == "Bold"\n`, { records, readOnly: new Set(['/vault/Sealed.md']) })
     expect(attrs(el, 'Tinted')).toEqual({ 'data-color': 'purple', 'data-color-strength': 'strong', 'data-text': 'white', 'data-weight': 'bold' })

@@ -2,7 +2,7 @@
  * SETTINGS › CANVAS (YAZ-3037, YAZ-3028 D10; ported from Draw's 🔒 YAZ-1775 D9): one row per `CanvasPrefs`
  * key, writing the whole `SettingsState` with only `canvas` changed — the same store the rail's Writing /
  * Frames toggles and the engine's own read-back write, so the three can never disagree about a value.
- * Every drawing reads it: a drawing tab and the note embed's modal alike.
+ * Every drawing reads it: a drawing tab and the page embed's modal alike.
  *
  * Row ids are `canvas.<key>` — the registry's "the id names the field" rule, one level down, so a
  * spec that knows the field knows the row.
@@ -185,7 +185,7 @@ export const CANVAS_SECTION: SettingsSection = {
           // YAZ-4247: the same size on screen at every zoom; old text keeps its size.
           id: 'canvas.newTextScreenSize',
           label: 'New text size',
-          hint: 'How big new text looks on screen, at any zoom. 16 is the size of note text.',
+          hint: 'How big new text looks on screen, at any zoom. 16 is the size of page text.',
           keywords: ['text size', 'font size', 'drawing', 'zoom', 'new text', 'big', 'small'],
           render: ({ settings, onChange }) => (
             <PxStepper name="New text size" value={settings.canvas.newTextScreenSize ?? DEFAULT_CANVAS_PREFS.newTextScreenSize} fallback={DEFAULT_CANVAS_PREFS.newTextScreenSize}
@@ -267,14 +267,14 @@ export const CANVAS_SECTION: SettingsSection = {
       ],
     },
     {
-      // YAZ-4820: a drawing or a diagram shown in a note as a window (D9), and a new one made from a note (item 3).
+      // YAZ-4820: a drawing or a diagram shown in a page as a window (D9), and a new one made from a page (item 3).
       // Before the draw.io group, which stays last (YAZ-4748 D11).
-      title: (ctx) => unit(ctx, 'Embeds in notes'),
+      title: (ctx) => unit(ctx, 'Embeds in pages'),
       items: [
         {
           id: 'embedRestSeconds',
           label: 'Embeds stop moving after',
-          hint: 'An embed that you do not move for this time rests. Then the wheel scrolls the note. A click on the embed makes it move again.',
+          hint: 'An embed that you do not move for this time rests. Then the wheel scrolls the page. A click on the embed makes it move again.',
           keywords: ['embed', 'window', 'rest', 'resting', 'idle', 'scroll', 'wheel', 'freeze', 'timeout', 'drawing', 'diagram'],
           render: ({ settings, onChange }) => (
             <Segmented options={EMBED_REST_OPTIONS} value={settings.embedRestSeconds} onChange={(embedRestSeconds) => onChange({ ...settings, embedRestSeconds })} ariaLabel="Embeds stop moving after" />
@@ -283,7 +283,7 @@ export const CANVAS_SECTION: SettingsSection = {
         {
           id: 'newBoardFolder',
           label: 'New drawings and diagrams go to',
-          hint: "Where /drawing and /diagram put the new file. The file gets the note's name.",
+          hint: "Where /drawing and /diagram put the new file. The file gets the page's name.",
           keywords: ['embed', 'new drawing', 'new diagram', 'folder', 'assets', 'slash', 'location'],
           render: (ctx) => (
             <Segmented options={newBoardFolderOptions((text) => unit(ctx, text))} value={ctx.settings.newBoardFolder} onChange={(newBoardFolder) => ctx.onChange({ ...ctx.settings, newBoardFolder })} ariaLabel="New drawings and diagrams go to" />

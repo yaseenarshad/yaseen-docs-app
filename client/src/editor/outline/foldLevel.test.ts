@@ -1,6 +1,6 @@
 /**
- * Collapse this level / Expand this level (YAZ-4786 demo: "expand / collapse a certain level in notes"), on a real
- * createCrepe: `setOutlineFoldLevel` folds every foldable bullet at the right-clicked bullet's depth, in the whole note,
+ * Collapse this level / Expand this level (YAZ-4786 demo: "expand / collapse a certain level in pages"), on a real
+ * createCrepe: `setOutlineFoldLevel` folds every foldable bullet at the right-clicked bullet's depth, in the whole page,
  * and opens every one above it; Expand opens that level and above, deeper folds stay; one ⌘Z undoes it; the rows show
  * in a bullet's handle menu only where that level folds. Folding never touches the markdown.
  */

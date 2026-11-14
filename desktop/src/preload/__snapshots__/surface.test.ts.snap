@@ -106,7 +106,7 @@ lsp.install/0: invoke lsp:install []; => "answer"; !> {"code":"NOT_FOUND","messa
 lsp.onInstallProgress/1: on lsp:install-progress -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off lsp:install-progress
 lsp.open/1: invoke lsp:open ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 lsp.references/1: invoke lsp:references ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-makeDailyNote/1: invoke fs:make-daily-note ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+makeDailyPage/1: invoke fs:make-daily-page ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.drawing/1: invoke media:drawing ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.drawingIndex/0: invoke media:drawing-index []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 media.favoriteCopies/0: invoke media:favorite-copies []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -129,7 +129,7 @@ menu.onBackNewTab/1: on menu:back-new-tab -> listener[[{"id":"0-0-0-0-0","ev":"e
 menu.onCanvasBackground/1: on menu:canvas-background -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:canvas-background
 menu.onCloseTab/1: on menu:close-tab -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:close-tab
 menu.onCopyAs/1: (no IPC)
-menu.onDailyNote/1: on menu:daily-note -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:daily-note
+menu.onDailyPage/1: on menu:daily-page -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:daily-page
 menu.onExplore/1: on menu:explore -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:explore
 menu.onExportDrawing/1: on menu:export-drawing -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:export-drawing
 menu.onExportImage/1: on menu:export-image -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:export-image
@@ -153,7 +153,7 @@ menu.onTabOverview/1: on menu:tab-overview -> listener[[{"id":"0-0-0-0-0","ev":"
 menu.onToggleSidebar/1: on menu:toggle-sidebar -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:toggle-sidebar
 menu.onWhatsNew/1: on menu:whats-new -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:whats-new
 menu.onZoom/1: on menu:zoom -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off menu:zoom
-mintNoteId/1: invoke fs:mint-note-id ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+mintPageId/1: invoke fs:mint-page-id ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 newPlaces.get/1: invoke newPlaces:get ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 newPlaces.onChanged/1: on newPlaces:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off newPlaces:changed
 newPlaces.set/2: invoke newPlaces:set ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -248,7 +248,7 @@ window.minimizedWindows/0: invoke window:minimized-windows-now []; => "answer"; 
 window.moveInboxTo/2: invoke window:move-inbox-to ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.moveTab/5: invoke window:move-tab ["a0","a1","a2",null,null]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.moveTo/3: invoke window:move-to ["a0","a1","a2"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
-window.noteClosed/1: invoke window:note-closed ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+window.pageClosed/1: invoke window:page-closed ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 window.onFlush/1: (no IPC)
 window.onGlow/1: on window:glow -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off window:glow
 window.onHiddenWindows/1: on window:hidden-windows -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off window:hidden-windows

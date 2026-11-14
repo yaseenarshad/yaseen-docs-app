@@ -63,7 +63,7 @@ describe('getIndex: cold scan', () => {
     await cleanup()
   })
 
-  it('indexes the 8 fixture notes, sorted by path; pngs and dot-dirs are not records', async () => {
+  it('indexes the 8 fixture pages, sorted by path; pngs and dot-dirs are not records', async () => {
     const t0 = performance.now()
     const res = await getIndex(root)
     console.log(`cold scan of the bases fixture: ${(performance.now() - t0).toFixed(1)} ms`)
@@ -154,7 +154,7 @@ describe('getIndex: incremental updates from the watcher', () => {
     }
   })
 
-  it('a changed note is re-scanned in place', async () => {
+  it('a changed page is re-scanned in place', async () => {
     const file = path.join(root, 'VSL-v1.md')
     await writeFile(file, '---\nstatus: done\ntags: [vsl]\n---\n\nUpdated #fresh\n')
     await until(async () => byName((await getIndex(root)).records, 'VSL-v1.md')?.properties.status === 'done')
@@ -163,18 +163,18 @@ describe('getIndex: incremental updates from the watcher', () => {
     expect((await getIndex(root)).records).toHaveLength(8)
   })
 
-  it('a new note appears; a non-vault file does not', async () => {
-    await writeFile(path.join(root, 'Content Pillars', 'New Note.md'), '# New\n#new [[VSL-v1]]\n')
+  it('a new page appears; a non-vault file does not', async () => {
+    await writeFile(path.join(root, 'Content Pillars', 'New Page.md'), '# New\n#new [[VSL-v1]]\n')
     await writeFile(path.join(root, 'Content Pillars', 'Other.base'), 'views: []\n') // a non-vault extension since YAZ-844
-    await until(async () => byName((await getIndex(root)).records, 'New Note.md') !== undefined)
-    const r = byName((await getIndex(root)).records, 'New Note.md')
+    await until(async () => byName((await getIndex(root)).records, 'New Page.md') !== undefined)
+    const r = byName((await getIndex(root)).records, 'New Page.md')
     expect(r).toMatchObject({ folder: 'Content Pillars', tags: ['new'], links: ['VSL-v1'] })
     expect((await getIndex(root)).records).toHaveLength(9)
   })
 
-  it('a deleted note disappears', async () => {
-    await rm(path.join(root, 'Content Pillars', 'New Note.md'))
-    await until(async () => byName((await getIndex(root)).records, 'New Note.md') === undefined)
+  it('a deleted page disappears', async () => {
+    await rm(path.join(root, 'Content Pillars', 'New Page.md'))
+    await until(async () => byName((await getIndex(root)).records, 'New Page.md') === undefined)
     expect((await getIndex(root)).records).toHaveLength(8)
   })
 
@@ -184,7 +184,7 @@ describe('getIndex: incremental updates from the watcher', () => {
     expect((await getIndex(root)).records.some((r) => r.folder.includes('Creator Economy'))).toBe(false)
   })
 
-  it('a note in a new folder appears', async () => {
+  it('a page in a new folder appears', async () => {
     const dir = path.join(root, 'Fresh')
     await mkdir(dir)
     await writeFile(path.join(dir, 'In Fresh.md'), 'hello\n')

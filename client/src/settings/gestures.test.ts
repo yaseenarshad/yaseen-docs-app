@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { GESTURE_ROWS, gestureAction, gestureClashes, gestureDisplay, gestureFor, gestureOf, gestureOfEvent, gestureRow, isDefaultGesture, isGestureEntry, parseGesture, sameGesture, withGesture } from '@shared/keys'
 
-/** YAZ-3936 (demo round 1 C4 of YAZ-3879): the clicks of "Links in a note" and "Bullet dots", stored with the keys' changes. */
+/** YAZ-3936 (demo round 1 C4 of YAZ-3879): the clicks of "Links in a page" and "Bullet dots", stored with the keys' changes. */
 const mods = (held: string) => ({ metaKey: held.includes('⌘'), ctrlKey: held.includes('⌃'), altKey: held.includes('⌥'), shiftKey: held.includes('⇧') })
 const row = (id: string) => {
   const found = gestureRow(id)

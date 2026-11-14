@@ -18,7 +18,7 @@ const noopHandlers = (): MenuHandlers => ({
   newItem: vi.fn(),
   goTo: vi.fn(),
   explore: vi.fn(),
-  dailyNote: vi.fn(),
+  dailyPage: vi.fn(),
   keySheet: vi.fn(),
   newWindow: vi.fn(),
   newFilesWindow: vi.fn(),
@@ -51,7 +51,7 @@ const noopHandlers = (): MenuHandlers => ({
 })
 
 const RECENTS: RecentRoots = [
-  { path: '/vaults/notes', lastOpened: 3 },
+  { path: '/vaults/pages', lastOpened: 3 },
   { path: '/vaults/work', lastOpened: 2 },
   { path: '/vaults/old', lastOpened: 1 },
 ]
@@ -169,12 +169,12 @@ describe('buildMenuTemplate', () => {
     const handlers = noopHandlers()
     const file = menuOf(build(RECENTS, false, handlers), 'File')
     const recent = file.find((i) => i.label === 'Open Recent')?.submenu as MenuItemConstructorOptions[]
-    expect(recent.map((i) => i.label)).toEqual(['/vaults/notes', '/vaults/work', '/vaults/old'])
+    expect(recent.map((i) => i.label)).toEqual(['/vaults/pages', '/vaults/work', '/vaults/old'])
 
     click(recent[1])
     expect(handlers.openRecent).toHaveBeenLastCalledWith('/vaults/work')
     click(recent[0], { altKey: true })
-    expect(handlers.openRecent).toHaveBeenLastCalledWith('/vaults/notes')
+    expect(handlers.openRecent).toHaveBeenLastCalledWith('/vaults/pages')
   })
 
   it('Open Recent with no recents shows one disabled placeholder', () => {
@@ -300,7 +300,7 @@ describe('buildMenuTemplate', () => {
     click(overview)
     expect(handlers.tabOverview).toHaveBeenCalledTimes(1)
 
-    // The window's one Back list (YAZ-3647 D7): ⌘⌥← / ⌘⌥→, menu keys, so they answer in a note too.
+    // The window's one Back list (YAZ-3647 D7): ⌘⌥← / ⌘⌥→, menu keys, so they answer in a page too.
     const back = byId('menu.window.back')
     const forward = byId('menu.window.forward')
     expect([back?.label, back?.accelerator, forward?.label, forward?.accelerator]).toEqual(['Back', 'CmdOrCtrl+Alt+Left', 'Forward', 'CmdOrCtrl+Alt+Right'])
@@ -323,20 +323,20 @@ describe('buildMenuTemplate', () => {
     const handlers = noopHandlers()
     const keyed = [
       { key: 2, path: '/vaults/work', name: 'Work' },
-      { key: 9, path: '/vaults/notes', name: 'notes' },
+      { key: 9, path: '/vaults/pages', name: 'pages' },
     ]
     const items = menuOf(build(RECENTS, false, handlers, keyed), 'Window')
     // The rows stand in the order they were given (number order is `menuKeyedVaults`' job).
     expect(items.slice(items.findIndex((i) => i.id === 'menu.window.forward-new-tab') + 1).map((i) => [i.role ?? i.id ?? i.type, i.label, i.accelerator])).toEqual([
       ['separator', undefined, undefined],
       ['menu.window.vault.2', 'Work', 'CmdOrCtrl+2'],
-      ['menu.window.vault.9', 'notes', 'CmdOrCtrl+9'],
+      ['menu.window.vault.9', 'pages', 'CmdOrCtrl+9'],
       ['separator', undefined, undefined],
       ['front', undefined, undefined],
     ])
     click(items.find((i) => i.id === 'menu.window.vault.9'))
     click(items.find((i) => i.id === 'menu.window.vault.2'))
-    expect(vi.mocked(handlers.goToVault).mock.calls).toEqual([['/vaults/notes', 'notes'], ['/vaults/work', 'Work']])
+    expect(vi.mocked(handlers.goToVault).mock.calls).toEqual([['/vaults/pages', 'pages'], ['/vaults/work', 'Work']])
     // The menu owns the key (S28): a plain click item, never a role, and nothing else in the bar has ⌘1–⌘9.
     const accelerators = build(RECENTS, true, handlers, keyed).flatMap((m) => (m.submenu as MenuItemConstructorOptions[]).flatMap((i) => [i, ...((i.submenu as MenuItemConstructorOptions[] | undefined) ?? [])]).map((i) => i.accelerator))
     expect(accelerators.filter((a) => /^CmdOrCtrl\+[1-9]$/.test(String(a)))).toEqual(['CmdOrCtrl+2', 'CmdOrCtrl+9'])
@@ -381,8 +381,8 @@ describe('buildMenuTemplate', () => {
     const handlers = noopHandlers()
     const file = menuOf(onTab('drawing', handlers), 'File')
     const at = (id: string) => file.findIndex((i) => i.id === id)
-    // Open Today's Daily Note (YAZ-3607 D11) stands right after Go to Your Place, hidden or not.
-    expect([at('menu.file.explore'), at('menu.file.daily-note'), at('menu.file.export-image')]).toEqual([at('menu.file.go-to') + 1, at('menu.file.go-to') + 2, at('menu.file.go-to') + 4])
+    // Open Today's Daily Page (YAZ-3607 D11) stands right after Go to Your Place, hidden or not.
+    expect([at('menu.file.explore'), at('menu.file.daily-page'), at('menu.file.export-image')]).toEqual([at('menu.file.go-to') + 1, at('menu.file.go-to') + 2, at('menu.file.go-to') + 4])
     expect([at('menu.file.export-drawing'), at('menu.file.share-link'), at('menu.file.close-tab')]).toEqual([at('menu.file.export-image') + 1, at('menu.file.export-image') + 2, at('menu.file.export-image') + 4])
     expect(file[at('menu.file.share-link') + 1].type).toBe('separator')
     expect(['menu.file.export-image', 'menu.file.export-drawing', 'menu.file.share-link'].map((id) => [file[at(id)].label, file[at(id)].accelerator, file[at(id)].enabled])).toEqual([
@@ -396,16 +396,16 @@ describe('buildMenuTemplate', () => {
     expect([handlers.exportImage, handlers.exportDrawing, handlers.shareLink].map((fn) => vi.mocked(fn).mock.calls.length)).toEqual([1, 1, 1])
   })
 
-  it("File › Open Today's Daily Note (YAZ-3607 D11): hidden and keyless while Daily notes is off; on, it shows, takes the key set for it, and calls its handler", () => {
+  it("File › Open Today's Daily Page (YAZ-3607 D11): hidden and keyless while Daily pages is off; on, it shows, takes the key set for it, and calls its handler", () => {
     const handlers = noopHandlers()
-    const daily = (dailyNotes: boolean) => item(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: null, hotkeys: { dailyNote: 'CmdOrCtrl+Alt+D' }, dailyNotes }, handlers), 'File', 'menu.file.daily-note')
+    const daily = (dailyPages: boolean) => item(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: null, hotkeys: { dailyPage: 'CmdOrCtrl+Alt+D' }, dailyPages }, handlers), 'File', 'menu.file.daily-page')
     expect([daily(false)?.visible, daily(false)?.accelerator]).toEqual([false, undefined])
     expect([daily(true)?.visible, daily(true)?.accelerator]).toEqual([true, 'CmdOrCtrl+Alt+D'])
     click(daily(true)!)
-    expect(handlers.dailyNote).toHaveBeenCalledTimes(1)
+    expect(handlers.dailyPage).toHaveBeenCalledTimes(1)
   })
 
-  it('the board items are enabled only on a board they work for (Draw\'s index.ts:201-212): a diagram gets Export Image… and Share Link only; a note, a PDF or no tab gets none', () => {
+  it('the board items are enabled only on a board they work for (Draw\'s index.ts:201-212): a diagram gets Export Image… and Share Link only; a page, a PDF or no tab gets none', () => {
     const enabled = (kind: FileKind | null) =>
       [item(onTab(kind), 'File', 'menu.file.export-image'), item(onTab(kind), 'File', 'menu.file.export-drawing'), item(onTab(kind), 'File', 'menu.file.share-link'), item(onTab(kind), 'View', 'menu.view.canvas-background')].map((i) => i?.enabled)
     expect(enabled('drawing')).toEqual([true, true, true, true])
@@ -423,16 +423,16 @@ describe('buildMenuTemplate', () => {
     for (const kind of ['drawing', 'diagram', 'text'] as const) expect(search(kind, { 'app.search': true }), kind).toBeUndefined()
     for (const kind of ['markdown', null] as const) expect(search(kind, { 'app.search': true }), String(kind)).toBe('CmdOrCtrl+K')
     expect(item(onTab('markdown'), 'View', 'menu.view.toggle-sidebar')?.accelerator).toBe('CmdOrCtrl+Shift+B')
-    // ⌘D steps aside by default (YAZ-3556 D1): Duplicate on a board, Add next match in code. A note and no tab keep it; the switch off takes it everywhere.
+    // ⌘D steps aside by default (YAZ-3556 D1): Duplicate on a board, Add next match in code. A page and no tab keep it; the switch off takes it everywhere.
     const goTo = (kind: FileKind | null, hotkeysAside?: Record<string, boolean>) =>
       item(buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: kind, hotkeys: {}, hotkeysAside }, noopHandlers()), 'File', 'menu.file.go-to')?.accelerator
     for (const kind of ['drawing', 'diagram', 'text'] as const) expect(goTo(kind), kind).toBeUndefined()
     for (const kind of ['markdown', null] as const) expect(goTo(kind), String(kind)).toBe('CmdOrCtrl+D')
     expect(goTo('drawing', { 'app.goTo': false })).toBe('CmdOrCtrl+D')
-    // A drawing open over a note is in front (the checker's YAZ-3605 find): ⌘D duplicates there, and the board items stay the note's.
-    const overNote = buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: 'markdown', frontKind: 'drawing', hotkeys: {} }, noopHandlers())
-    expect(item(overNote, 'File', 'menu.file.go-to')?.accelerator).toBeUndefined()
-    expect(item(overNote, 'File', 'menu.file.export-image')?.enabled).toBe(false)
+    // A drawing open over a page is in front (the checker's YAZ-3605 find): ⌘D duplicates there, and the board items stay the page's.
+    const overPage = buildMenuTemplate({ recents: RECENTS, keyedVaults: [], isDev: false, activeKind: 'markdown', frontKind: 'drawing', hotkeys: {} }, noopHandlers())
+    expect(item(overPage, 'File', 'menu.file.go-to')?.accelerator).toBeUndefined()
+    expect(item(overPage, 'File', 'menu.file.export-image')?.enabled).toBe(false)
     // ⌘N never steps aside: the New… box answers on every tab.
     for (const kind of ['drawing', 'diagram', 'text', 'markdown'] as const) expect(item(onTab(kind), 'File', 'menu.file.new-item')?.accelerator, kind).toBe('CmdOrCtrl+N')
     // ⌘⇧F is the explore stack's on every tab, a diagram too (YAZ-2571, Yaseen: "give priority to explore"); the switch gives it back to draw.io's To front.
@@ -541,7 +541,7 @@ describe('buildContextMenuTemplate', () => {
   // ---------- images (YAZ-1666) ----------
 
   it('an image under the cursor gets ONLY Copy Image and Reveal in Finder — no text rows, even mid-misspelling', () => {
-    const src = 'app://vault/%2Fv/pics/pic.png?from=notes'
+    const src = 'app://vault/%2Fv/pics/pic.png?from=pages'
     const items = buildContextMenuTemplate(context({ mediaType: 'image', srcURL: src, misspelledWord: 'teh', dictionarySuggestions: ['the'] }), noopActions())
     expect(shapeOf(items)).toEqual(['Copy Image', 'Reveal in Finder'])
   })
@@ -614,7 +614,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
-const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/notes', roots: ['/vaults/notes'], file: '/vaults/notes/a.md', tabs: ['/vaults/notes/a.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } }
+const ENTRY: WindowEntry = { id: 'w1', root: '/vaults/pages', roots: ['/vaults/pages'], file: '/vaults/pages/a.md', tabs: ['/vaults/pages/a.md'], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } }
 
 /** `folderExists` is the open-recent door's answer: `false` = the folder is gone (the door pruned it from the recents). */
 function makeHandlers(focused?: { id: number; send: ReturnType<typeof vi.fn> }, folderExists = true) {
@@ -913,12 +913,12 @@ describe('buildMenuTemplate — the user\'s keys (YAZ-3397 D2, D6)', () => {
   })
 
   it('while a recorder listens no item has a key — a role gets an empty one, so Electron gives it none', () => {
-    const template = build(RECENTS, true, noopHandlers(), [{ key: 2, path: '/vaults/notes', name: 'notes' }], 'drawing', {}, true)
+    const template = build(RECENTS, true, noopHandlers(), [{ key: 2, path: '/vaults/pages', name: 'pages' }], 'drawing', {}, true)
     const items = allItems(template).filter((i) => i.type !== 'separator')
     expect(items.filter((i) => i.accelerator !== undefined && i.accelerator !== '')).toEqual([])
     for (const i of items.filter((x) => x.role !== undefined)) expect(i.accelerator, String(i.role)).toBe('')
     // Everything else is as it was: the same ids, labels and clicks.
-    expect(allItems(template).map((i) => i.id ?? i.role ?? i.label)).toEqual(allItems(build(RECENTS, true, noopHandlers(), [{ key: 2, path: '/vaults/notes', name: 'notes' }], 'drawing')).map((i) => i.id ?? i.role ?? i.label))
+    expect(allItems(template).map((i) => i.id ?? i.role ?? i.label)).toEqual(allItems(build(RECENTS, true, noopHandlers(), [{ key: 2, path: '/vaults/pages', name: 'pages' }], 'drawing')).map((i) => i.id ?? i.role ?? i.label))
   })
 })
 
@@ -932,10 +932,10 @@ describe('subscribeMenuRebuild', () => {
     store.setSidebarWidth(321)
     store.setSettings(store.get().settings)
     store.upsertWindow(ENTRY)
-    store.setFolder('/vaults/notes', { lastFile: null })
+    store.setFolder('/vaults/pages', { lastFile: null })
     expect(rebuild).not.toHaveBeenCalled()
 
-    store.pushRecent('/vaults/notes')
+    store.pushRecent('/vaults/pages')
     expect(rebuild).toHaveBeenCalledTimes(1)
     store.pushRecent('/vaults/work')
     expect(rebuild).toHaveBeenCalledTimes(2)
@@ -949,10 +949,10 @@ describe('subscribeMenuRebuild', () => {
 
     // A number makes a row (S14); the rows are in number order, not in the order they were given.
     store.setFolder('/vaults/work', { key: 5 })
-    store.setFolder('/vaults/notes', { key: 1, name: 'Notes' })
+    store.setFolder('/vaults/pages', { key: 1, name: 'Pages' })
     expect(rebuild).toHaveBeenCalledTimes(2)
     expect(rows()).toEqual([
-      { key: 1, path: '/vaults/notes', name: 'Notes' },
+      { key: 1, path: '/vaults/pages', name: 'Pages' },
       { key: 5, path: '/vaults/work', name: 'work' },
     ])
 
@@ -967,15 +967,15 @@ describe('subscribeMenuRebuild', () => {
     store.setFolder('/vaults/work', { name: 'Work' })
     expect(rebuild).toHaveBeenCalledTimes(3)
     expect(rows()[1]).toEqual({ key: 5, path: '/vaults/work', name: 'Work' })
-    store.setFolder('/vaults/notes', { name: null })
+    store.setFolder('/vaults/pages', { name: null })
     expect(rebuild).toHaveBeenCalledTimes(4)
-    expect(rows()[0]).toEqual({ key: 1, path: '/vaults/notes', name: 'notes' })
+    expect(rows()[0]).toEqual({ key: 1, path: '/vaults/pages', name: 'pages' })
 
     // A number that moves (S15) is one commit, so one rebuild; a cleared number (S17) drops the row.
     store.setFolder('/vaults/old', { key: 5 })
     expect(rebuild).toHaveBeenCalledTimes(5)
-    expect(rows().map((v) => [v.key, v.name])).toEqual([[1, 'notes'], [5, 'Archive']])
-    store.setFolder('/vaults/notes', { key: null })
+    expect(rows().map((v) => [v.key, v.name])).toEqual([[1, 'pages'], [5, 'Archive']])
+    store.setFolder('/vaults/pages', { key: null })
     expect(rebuild).toHaveBeenCalledTimes(6)
     expect(rows().map((v) => v.path)).toEqual(['/vaults/old'])
   })
@@ -996,8 +996,8 @@ describe('subscribeMenuRebuild', () => {
     const rebuild = vi.fn()
     const off = subscribeMenuRebuild(store, rebuild)
     off()
-    store.pushRecent('/vaults/notes')
-    store.setFolder('/vaults/notes', { key: 1 })
+    store.pushRecent('/vaults/pages')
+    store.setFolder('/vaults/pages', { key: 1 })
     expect(rebuild).not.toHaveBeenCalled()
   })
 })
@@ -1015,7 +1015,7 @@ describe('gateOnBoardKind', () => {
       kind = next
       menu.applyIfMoved()
     }
-    expect(build).toHaveBeenCalledTimes(1) // note to note, to a PDF, to none: the board items say the same
+    expect(build).toHaveBeenCalledTimes(1) // page to page, to a PDF, to none: the board items say the same
     kind = 'drawing'
     menu.applyIfMoved()
     menu.applyIfMoved()
@@ -1025,7 +1025,7 @@ describe('gateOnBoardKind', () => {
     kind = 'markdown'
     menu.applyIfMoved()
     expect(build).toHaveBeenCalledTimes(4)
-    // A code tab rebuilds (YAZ-3556): ⌘D steps aside there (YAZ-3564 K9), and a note keeps it.
+    // A code tab rebuilds (YAZ-3556): ⌘D steps aside there (YAZ-3564 K9), and a page keeps it.
     kind = 'text'
     menu.applyIfMoved()
     menu.applyIfMoved()
@@ -1035,7 +1035,7 @@ describe('gateOnBoardKind', () => {
     expect(build).toHaveBeenCalledTimes(6)
     menu.apply() // a recents change still rebuilds
     expect(build).toHaveBeenCalledTimes(7)
-    // A drawing opened over the note moves what is in front, not the tab (YAZ-3564 K9): one rebuild each way.
+    // A drawing opened over the page moves what is in front, not the tab (YAZ-3564 K9): one rebuild each way.
     let front: FileKind | null = 'markdown'
     const over = gateOnBoardKind(() => 'markdown', build, () => front)
     over.apply()
@@ -1049,7 +1049,7 @@ describe('gateOnBoardKind', () => {
 })
 
 describe('menuKindsInFront (YAZ-5041)', () => {
-  it('the stored tab\'s kind, a drawing over a note in front of it, and NO page at all while the Inbox tab (or the blank tab) shows', () => {
+  it('the stored tab\'s kind, a drawing over a page in front of it, and NO page at all while the Inbox tab (or the blank tab) shows', () => {
     expect(menuKindsInFront('/v/Plan.excalidraw', { drawingOver: false, noPage: false })).toEqual({ activeKind: 'drawing', frontKind: 'drawing' })
     expect(menuKindsInFront('/v/a.md', { drawingOver: true, noPage: false })).toEqual({ activeKind: 'markdown', frontKind: 'drawing' })
     expect(menuKindsInFront(null, { drawingOver: false, noPage: false })).toEqual({ activeKind: null, frontKind: null })
@@ -1078,14 +1078,14 @@ describe('subscribeMenuRebuildOnActiveFile', () => {
     subscribeMenuRebuildOnActiveFile(store, rebuild)
 
     store.setSidebarWidth(300)
-    store.pushRecent('/vaults/notes')
+    store.pushRecent('/vaults/pages')
     store.setSettings(store.get().settings)
     expect(rebuild).not.toHaveBeenCalled()
 
-    store.upsertWindow({ ...ENTRY, file: '/vaults/notes/b.excalidraw', tabs: ['/vaults/notes/a.md', '/vaults/notes/b.excalidraw'] })
+    store.upsertWindow({ ...ENTRY, file: '/vaults/pages/b.excalidraw', tabs: ['/vaults/pages/a.md', '/vaults/pages/b.excalidraw'] })
     expect(rebuild).toHaveBeenCalledTimes(1)
     // A write that leaves every window's active file alone is not a reason to rebuild.
-    store.upsertWindow({ ...ENTRY, file: '/vaults/notes/b.excalidraw', tabs: ['/vaults/notes/a.md', '/vaults/notes/b.excalidraw'], sidebarCollapsed: true })
+    store.upsertWindow({ ...ENTRY, file: '/vaults/pages/b.excalidraw', tabs: ['/vaults/pages/a.md', '/vaults/pages/b.excalidraw'], sidebarCollapsed: true })
     expect(rebuild).toHaveBeenCalledTimes(1)
   })
 
@@ -1100,7 +1100,7 @@ describe('subscribeMenuRebuildOnActiveFile', () => {
 
 describe('the menu\'s fixed keys (YAZ-3419)', () => {
   it('every key the menu carries is a changeable command\'s, a numbered vault\'s, in MENU_FIXED_KEYS, or a Mac standard key (⌘R, YAZ-3737 D2) — so the recorder and the store refuse it', () => {
-    const vaults: MenuInputs['keyedVaults'] = [{ key: 1, name: 'Notes', path: '/vaults/notes' }]
+    const vaults: MenuInputs['keyedVaults'] = [{ key: 1, name: 'Pages', path: '/vaults/pages' }]
     const fixed = (['markdown', 'drawing', 'diagram', null] as const).flatMap((kind) =>
       allItems(build(RECENTS, true, noopHandlers(), vaults, kind)).filter((i) => typeof i.accelerator === 'string' && i.accelerator !== '' && !i.id?.startsWith('menu.window.vault.')),
     )

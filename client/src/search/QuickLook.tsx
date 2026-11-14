@@ -4,8 +4,8 @@
  * opens nothing, writes nothing and stores nothing (S42), and it takes no focus — the caret stays
  * in the search bar, whose keys show, move and close it (`useSidebarSearch`).
  *
- * READ, NEVER OPEN: a note is `ReadOnlyNote` — the saved text (S44) in the read-only render, the
- * same note the sidebar's hover preview shows (YAZ-3075 D1); never `Editor`, which would start an
+ * READ, NEVER OPEN: a page is `ReadOnlyPage` — the saved text (S44) in the read-only render, the
+ * same page the sidebar's hover preview shows (YAZ-3075 D1); never `Editor`, which would start an
  * autosave, store folds and take the caret. Each other kind is the read-only viewer of its page. A
  * code file is the code tab's Monaco, read only (`CodePreview`, YAZ-3450), in its own chunk: Monaco
  * loads only when a code file is held up.
@@ -13,7 +13,7 @@
 import { lazy, Suspense, type CSSProperties } from 'react'
 import { fileKind } from '@shared/fileKind'
 import type { DiagramDarkColors } from '@shared/types'
-import { ReadOnlyNote } from '../editor/ReadOnlyNote'
+import { ReadOnlyPage } from '../editor/ReadOnlyPage'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
 import { ImageViewer } from '../viewers/ImageViewer'
@@ -28,7 +28,7 @@ const CodePreview = lazy(() => import('../code/CodePreview'))
 interface QuickLookProps {
   /** The file on preview. */
   path: string
-  /** That file as the tree names it: the header, and the line of a note that is gone. */
+  /** That file as the tree names it: the header, and the line of a page that is gone. */
   title: string
   /** The watcher and the link source of the vault that holds the file. */
   watch: WatchSource
@@ -69,8 +69,8 @@ export function QuickLook({ path, title, watch, wikilinks, root = null, darkColo
       </header>
       <div className="quicklook__body">
         {kind === 'markdown' ? (
-          // A note that is gone, or that the app cannot read (S41), named as the tree names it.
-          <ReadOnlyNote key={path} className="quicklook__note" path={path} wikilinks={wikilinks} unreadable={<>Can&apos;t preview &quot;{title}&quot; — it is no longer there</>} />
+          // A page that is gone, or that the app cannot read (S41), named as the tree names it.
+          <ReadOnlyPage key={path} className="quicklook__page" path={path} wikilinks={wikilinks} unreadable={<>Can&apos;t preview &quot;{title}&quot; — it is no longer there</>} />
         ) : kind === 'text' ? (
           <Suspense fallback={null}>
             <CodePreview key={path} path={path} watch={watch} />

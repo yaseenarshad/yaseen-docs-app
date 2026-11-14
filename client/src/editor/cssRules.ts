@@ -1,6 +1,6 @@
 /**
  * CSS read as text, for the tests that check a rule beats Crepe's reset by specificity (jsdom computes no imported
- * sheet): `boardWindow.css.test.ts`, `noteCard.css.test.ts`. Test code only; nothing in the app imports it.
+ * sheet): `boardWindow.css.test.ts`, `card.css.test.ts`. Test code only; nothing in the app imports it.
  */
 
 /** Every rule of `css` whose selector holds `part`, with its body (comments out). */

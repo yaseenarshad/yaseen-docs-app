@@ -54,7 +54,7 @@ async function focused(markdown: string, options: Parameters<typeof mount>[1] = 
 }
 
 describe('Copy as › Without folded lines (YAZ-3653)', () => {
-  it('S1, S11, S17, S18: folded task bullets copy without their children; Copy, the folds and the note stay as they were', async () => {
+  it('S1, S11, S17, S18: folded task bullets copy without their children; Copy, the folds and the page stay as they were', async () => {
     const { crepe, view } = await focused('* Tasks\n  * [ ] 1) Move timelines\n    * move each file\n  * [ ] 2) Fill the gaps\n    * list the cases\n* Rules\n')
     fold(crepe, '1) Move timelines')
     fold(crepe, '2) Fill the gaps')
@@ -123,7 +123,7 @@ describe('Copy as › Without folded lines (YAZ-3653)', () => {
     expect(copyAs('visible')).toBe('first\nsecond')
   })
 
-  it('S16: the copy pastes back into a note as bullets, with no hidden children', async () => {
+  it('S16: the copy pastes back into a page as bullets, with no hidden children', async () => {
     const source = await focused('* Tasks\n  * [ ] one\n    * hidden\n  * [ ] two\n')
     fold(source.crepe, 'one')
     select(source.crepe, posOf(source.crepe, 'Tasks'), endOf(source.crepe, 'two'))
@@ -152,7 +152,7 @@ describe('Copy as › Without folded lines (YAZ-3653)', () => {
     copyVisibleNext(view, bullet)
     caretIn(crepe, 'two')
     expect(copyVisible().text).toBe('☐ two')
-    // The note changed: the stored bullet is not used.
+    // The page changed: the stored bullet is not used.
     caretIn(crepe, 'loose')
     copyVisibleNext(view, bullet)
     view.dispatch(view.state.tr.insertText('x', view.state.doc.content.size - 1))
@@ -214,7 +214,7 @@ describe('Copy as › Without folded lines (YAZ-3653)', () => {
     const plain = await focused('* A\n  * a1\n')
     caretIn(plain.crepe, 'A')
     expect(pressKey(plain.crepe, 'y', { mod: true, shift: true })).toBe(false)
-    const { crepe } = await focused('* A\n  * a1\n* B\n\nloose\n', { hotkeys: { 'note.copyVisible': 'CmdOrCtrl+Shift+Y' } })
+    const { crepe } = await focused('* A\n  * a1\n* B\n\nloose\n', { hotkeys: { 'page.copyVisible': 'CmdOrCtrl+Shift+Y' } })
     fold(crepe, 'A')
     caretIn(crepe, 'A')
     expect(pressKey(crepe, 'y', { mod: true, shift: true })).toBe(true)

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { hostname, tmpdir } from 'node:os'
 import path from 'node:path'
-import { IDS_FILE } from '@shared/noteId'
+import { IDS_FILE } from '@shared/pageId'
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import { COUNT_DIR, MADE_DAYS, MADE_MAX, _actAs, _resetMint, highestFrom, countsOf, firstMac, highestNumber, initMint, macId, madeBy, makersOf, mintIds, vaultIds, type CountFile } from './mint'
 
@@ -36,7 +36,7 @@ function onMac(dir: string): void {
   _resetMint()
   initMint(dir)
 }
-/** The vault's notes hold no number higher than `top`. */
+/** The vault's pages hold no number higher than `top`. */
 const vaultHolds = (top: number) => highestFrom(() => top)
 const countFile = async () => path.join(countDir(), `${await macId()}.json`)
 const countOf = async () => JSON.parse(await readFile(await countFile(), 'utf8')) as { name: string; since: string; last: number; made: { from: number; to: number; at: string }[] }
@@ -67,19 +67,19 @@ describe("this Mac's ID (R13)", () => {
 })
 
 describe('the next number (R16)', () => {
-  it('S15: the first note of a new vault is number 1, with the vault\'s letters', async () => {
+  it('S15: the first page of a new vault is number 1, with the vault\'s letters', async () => {
     expect(await mintIds(root, 1)).toEqual(['YAZ-1'])
   })
 
-  it('S27: the highest number in the vault is 41, so the note gets 42', async () => {
+  it('S27: the highest number in the vault is 41, so the page gets 42', async () => {
     vaultHolds(41)
     expect(await mintIds(root, 1)).toEqual(['YAZ-42'])
   })
 
-  it('S28: note 42 is deleted, and the next note gets 43: the count file remembers 42', async () => {
+  it('S28: page 42 is deleted, and the next page gets 43: the count file remembers 42', async () => {
     vaultHolds(41)
     expect(await mintIds(root, 1)).toEqual(['YAZ-42'])
-    // The note was made and deleted: the vault holds 41 again.
+    // The page was made and deleted: the vault holds 41 again.
     expect(await mintIds(root, 1)).toEqual(['YAZ-43'])
     onMac(pro) // and after the app starts again
     vaultHolds(41)
@@ -99,13 +99,13 @@ describe('the next number (R16)', () => {
     expect((await readdir(countDir())).sort()).toEqual([path.basename(proFile), path.basename(await countFile())].sort())
   })
 
-  it('S30, S31: a number that no note was written with is lost; the next note gets the next number', async () => {
+  it('S30, S31: a number that no page was written with is lost; the next page gets the next number', async () => {
     const [lost] = (await mintIds(root, 1))!
     expect(lost).toBe('YAZ-1')
     expect(await mintIds(root, 1)).toEqual(['YAZ-2'])
   })
 
-  it('S32: two notes at the same moment get two numbers; the door serves one request at a time', async () => {
+  it('S32: two pages at the same moment get two numbers; the door serves one request at a time', async () => {
     const given = await Promise.all(Array.from({ length: 40 }, () => mintIds(root, 1)))
     expect(given.flat().map((id) => Number(id!.slice(4))).sort((a, b) => a - b)).toEqual(Array.from({ length: 40 }, (_, i) => i + 1))
     expect((await countOf()).last).toBe(40)
@@ -117,17 +117,17 @@ describe('the next number (R16)', () => {
     expect(await mintIds(root, 1)).toEqual(['YAZ-901'])
   })
 
-  it('a caller that holds the notes gives their highest number itself, and the index is not asked', async () => {
+  it('a caller that holds the pages gives their highest number itself, and the index is not asked', async () => {
     highestFrom(() => {
       throw new Error('not asked')
     })
     expect(await mintIds(root, 1, 7)).toEqual(['YAZ-8'])
   })
 
-  it('the highest number of some notes: IDs of this vault only, whatever their letters before; old IDs do not count (S20, R5)', () => {
-    const notes = [{ id: 'YAZ-12' }, { id: 'OLD-40' }, { id: 'BUS-900' }, { id: 'k3m9x2pq7abc' }, {}, { id: 'yaz-13' }]
-    expect(highestNumber(notes, ['YAZ', 'OLD'])).toBe(40)
-    expect(highestNumber(notes, ['YAZ'])).toBe(13)
+  it('the highest number of some pages: IDs of this vault only, whatever their letters before; old IDs do not count (S20, R5)', () => {
+    const pages = [{ id: 'YAZ-12' }, { id: 'OLD-40' }, { id: 'BUS-900' }, { id: 'k3m9x2pq7abc' }, {}, { id: 'yaz-13' }]
+    expect(highestNumber(pages, ['YAZ', 'OLD'])).toBe(40)
+    expect(highestNumber(pages, ['YAZ'])).toBe(13)
     expect(highestNumber([{ id: 'k3m9x2pq7abc' }], ['YAZ'])).toBe(0)
   })
 })
@@ -164,7 +164,7 @@ describe('the count file (R14, R15, R18, R19)', () => {
     ])
   })
 
-  it('R19: a sweep of many notes takes all its numbers with one write: one run in `made`', async () => {
+  it('R19: a sweep of many pages takes all its numbers with one write: one run in `made`', async () => {
     vaultHolds(3)
     const given = (await mintIds(root, 745))!
     expect(given).toHaveLength(745)
@@ -224,7 +224,7 @@ describe('the count file (R14, R15, R18, R19)', () => {
 
   it('only `.json` files in the folder are count files; a folder or another file there is not read', async () => {
     await mkdir(path.join(countDir(), 'zzz.json'), { recursive: true })
-    await writeFile(path.join(countDir(), 'notes.txt'), '{ "last": 500 }')
+    await writeFile(path.join(countDir(), 'pages.txt'), '{ "last": 500 }')
     expect(await mintIds(root, 1)).toEqual(['YAZ-1'])
   })
 })
@@ -271,17 +271,17 @@ describe("the vault's answer and letters (R9 to R12)", () => {
   })
 
   it('R11: a vault with no letters uses the default of its folder name, saved with the first number; each other key stays (R10)', async () => {
-    await says({ enabled: true, was: ['OLD'], note: 'kept' })
+    await says({ enabled: true, was: ['OLD'], page: 'kept' })
     const letters = path.basename(root).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3)
     expect(await vaultIds(root)).toMatchObject({ answer: true, letters: [letters, 'OLD'], saved: false })
     expect(await mintIds(root, 1)).toEqual([`${letters}-1`])
-    expect(JSON.parse(await readFile(idsFile(), 'utf8'))).toEqual({ enabled: true, was: ['OLD'], note: 'kept', letters })
+    expect(JSON.parse(await readFile(idsFile(), 'utf8'))).toEqual({ enabled: true, was: ['OLD'], page: 'kept', letters })
     expect(await vaultIds(root)).toMatchObject({ answer: true, letters: [letters, 'OLD'], saved: true })
   })
 
   it('a no that arrives between the read of `ids.json` and the save of the default letters is not written over, and no number is given', async () => {
-    await says({ enabled: true, note: 'kept' })
-    const no = '{ "enabled": false, "note": "kept" }'
+    await says({ enabled: true, page: 'kept' })
+    const no = '{ "enabled": false, "page": "kept" }'
     // The door asks for the highest number between its read and its write: the user clicks Off at that moment.
     highestFrom(async () => {
       await writeFile(idsFile(), no)

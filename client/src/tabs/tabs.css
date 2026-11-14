@@ -806,7 +806,7 @@
 }
 
 /* A card (D15): short and wide, its title row, a "Page: …"
-   line when named, two lines of the note — at its place in its group. It lifts under the pointer. */
+   line when named, two lines of the page — at its place in its group. It lifts under the pointer. */
 .taboverview__page {
   position: absolute;
   z-index: 1;
@@ -938,7 +938,7 @@
   white-space: nowrap;
 }
 
-/* Under a folder line and a "Page:" line the note keeps one line; the card is 96 px. */
+/* Under a folder line and a "Page:" line the page keeps one line; the card is 96 px. */
 .taboverview__page--framed .taboverview__pagename + .taboverview__lines {
   -webkit-line-clamp: 1;
 }
@@ -985,7 +985,7 @@
   visibility: hidden;
 }
 
-/* The note's first lines (D6): plain text, the note's own line breaks kept, two at most on a card — the
+/* The page's first lines (D6): plain text, the page's own line breaks kept, two at most on a card — the
    preview panel is the place to read (D18). */
 .taboverview__lines {
   display: -webkit-box;

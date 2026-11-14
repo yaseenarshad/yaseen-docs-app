@@ -1,5 +1,5 @@
 /**
- * The calendar view's date rules (YAZ-4540, YAZ-949): which columns it can show by, the day a note
+ * The calendar view's date rules (YAZ-4540, YAZ-949): which columns it can show by, the day a page
  * goes on, the value a move writes, and the month grid. No date library: `expr/dates.ts` and the
  * native `Date` (D4).
  */
@@ -64,7 +64,7 @@ export interface Span {
 
 /**
  * A card's days (YAZ-4858): its start day and its end day (the `endKey` column's), the same day for a one-day card;
- * null for no day. A note with an end and no start goes on its end day (item 5); an end on or before the start is no
+ * null for no day. A page with an end and no start goes on its end day (item 5); an end on or before the start is no
  * span, the card is a one-day card on its start.
  */
 export function spanOf(properties: Readonly<Record<string, unknown>>, key: string | null, endKey: string | null): { start: DayKey; end: DayKey } | null {

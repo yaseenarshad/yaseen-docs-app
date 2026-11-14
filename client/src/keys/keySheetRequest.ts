@@ -6,7 +6,7 @@ import type { KeyScope } from '@shared/keys'
  */
 const requests = new EventTarget()
 
-/** A place open OVER the tab (a drawing over a note): the sheet lists its keys, not the tab's. */
+/** A place open OVER the tab (a drawing over a page): the sheet lists its keys, not the tab's. */
 let overTab: KeyScope | null = null
 
 export function setPlaceOverTab(place: KeyScope | null): void {
