@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { isRecord } from '@shared/guards'
 import { cleanToken } from '@shared/githubInput'
 import { REVIEW_SETTINGS_FILE, sanitizeReviewSettings } from '@shared/reviews'
-import { GITHUB_TOKEN_SECRET, type FriendsSendView } from '@shared/types'
+import { GITHUB_TOKEN_SECRET, listVaults, type FriendsSendView } from '@shared/types'
 import { atomicWrite, createChain, readOrQuarantine } from '../fs/fsUtils'
 import { subscribe } from '../fs/watchers'
 import { detectRepo } from '../git/detect'
@@ -19,7 +19,8 @@ import type { Store } from '../store'
 import { readConfigDetailed } from '../vaultConfig'
 import { getIndex } from '../vaultIndex'
 import { watchCardFiles } from './cardTrigger'
-import { countTextOffThread } from './countJob'
+import { makeCounter } from './countJob'
+import { gitFolderFacts, knownClosedVaults } from './closedVaults'
 import countWorker from './countWorker?modulePath'
 import { macGistsApi, readProfile } from './gistsHttp'
 import { createMacSender, type MacSendSaved, type MacSender } from './macSender'
@@ -53,6 +54,8 @@ export function startFriendsSend(store: Store, secrets: Pick<Secrets, 'read'>, u
     const stored = await secrets.read(GITHUB_TOKEN_SECRET)
     return stored === null ? null : cleanToken(stored)
   }
+  // YAZ-5250, YAZ-5252: one count worker for the open vaults' pack and the closed vaults' scans.
+  const counter = makeCounter(countWorker)
   const sender = createMacSender({
     readToken,
     api: (token) => macGistsApi(token, fetch),
@@ -74,7 +77,14 @@ export function startFriendsSend(store: Store, secrets: Pick<Secrets, 'read'>, u
     },
     state,
     // YAZ-5250: the count runs on a worker thread; main only packs the cards and waits.
-    stats: (text, now) => countTextOffThread(countWorker, text, now),
+    stats: (text, now, closed) => counter(text, now, closed),
+    // YAZ-5252: the closed vaults that count, among the vaults the app knows (never a path from a gist or a renderer).
+    async closed() {
+      const bin = await resolveGit()
+      if (bin === null) return new Map()
+      const state = store.get()
+      return knownClosedVaults(listVaults(state).map((v) => v.path), new Set(rootsOf(state)), gitFolderFacts(bin))
+    },
   })
   const stopTrigger = watchCardFiles({
     roots: () => rootsOf(store.get()),

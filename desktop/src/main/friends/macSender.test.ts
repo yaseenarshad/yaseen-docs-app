@@ -289,13 +289,14 @@ describe('the count runs on the worker (YAZ-5277), and a count that never answer
     const source = readFileSync(join(__dirname, 'macSender.ts'), 'utf8')
     expect(source).not.toMatch(/^import \{[^}]*\bfriendStats\b[^}]*\} from '@shared\/friendStats'/m)
     expect(source).not.toMatch(/\bfriendStats\(/)
-    expect(source).toMatch(/^\s+stats\(text: string, now: number\)/m)
+    expect(source).toMatch(/^\s+stats\(text: string, now: number, closed: readonly ClosedVault\[\]\)/m)
   })
 
   it("the app's sender counts on the worker thread: `stats` is the worker's count, with the built countWorker", () => {
     const source = readFileSync(join(__dirname, 'index.ts'), 'utf8')
     expect(source).toMatch(/^import countWorker from '\.\/countWorker\?modulePath'$/m)
-    expect(source).toMatch(/stats: \(text, now\) => countTextOffThread\(countWorker, text, now\)/)
+    expect(source).toMatch(/const counter = makeCounter\(countWorker\)/)
+    expect(source).toMatch(/stats: \(text, now, closed\) => counter\(text, now, closed\)/)
   })
 
   it('a count that never answers: that try ends as failed at the time limit, and the next try still runs', async () => {

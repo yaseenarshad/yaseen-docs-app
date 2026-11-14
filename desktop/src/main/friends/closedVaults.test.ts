@@ -3,14 +3,15 @@
  * found among the vaults the app knows (recent, open or keyed), by its GitHub remote. Only a real folder at the known
  * place: a symlink is not followed, a folder that is gone or not a repo or of another remote is "not on this Mac".
  */
-import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { knownClosedVaults, type FolderFacts } from './closedVaults'
 
 let dir: string
-beforeEach(async () => void (dir = await mkdtemp(path.join(tmpdir(), 'yd-closed-'))))
+// The real path: on macOS the temp folder itself is under a symlink (/var → /private/var), which the rule refuses.
+beforeEach(async () => void (dir = await realpath(await mkdtemp(path.join(tmpdir(), 'yd-closed-')))))
 afterEach(() => rm(dir, { recursive: true, force: true }))
 
 const remotes = new Map<string, FolderFacts>()

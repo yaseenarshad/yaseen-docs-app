@@ -36,7 +36,8 @@ function sendLine(v: FriendsSendView, now: number): string {
       // YAZ-5254 (round 13, item 4: one GitHub account for friends): say whose list is missing, and what to do.
       return `No friends list on ${v.login ? `@${v.login}` : 'this token\'s GitHub account'}, so nothing is sent. Friends use the GitHub account of the phone app. Add a friend there, or save a token of that account above.`
     case 'missing-vaults':
-      return `Not sent: ${v.missing === 1 ? '1 vault that counts for friends is' : `${v.missing} vaults that count for friends are`} not open in this app. Open ${v.missing === 1 ? 'it' : 'them'}, and the numbers go.`
+      // YAZ-5252: "holds" means "on this Mac": open, or a closed vault that the app knows.
+      return `Not sent: ${v.missing === 1 ? '1 vault that counts for friends is' : `${v.missing} vaults that count for friends are`} not on this Mac. Open ${v.missing === 1 ? 'it' : 'each'} once in this app (or clone ${v.missing === 1 ? 'it' : 'them'} from GitHub), and the numbers go.`
     case 'phone-first':
       return 'Not sent: open the phone app once. It finishes a change to your friends list, then this Mac sends again.'
     case 'no-gists':
