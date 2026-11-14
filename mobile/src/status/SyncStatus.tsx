@@ -4,6 +4,7 @@ import { tokenEndWarning } from '../auth/expiry'
 import { answersPart, syncDot, type Dot } from './dot'
 import { useLastSync } from './lastSync'
 import { StatusSheet } from './StatusSheet'
+import { useStuck } from './storeCheck'
 import { useDotAnswers } from './useDotAnswers'
 import { useOnline } from './useOnline'
 import './status.css'
@@ -25,7 +26,8 @@ export function SyncStatus() {
   }, [])
   const now = (app.services.now ?? Date.now)()
   const token = tokenEndWarning(app.vaultKey === null ? null : (app.accounts[app.vaultKey]?.expiresAt ?? null), now)
-  const dot = syncDot({ sync: app.sync, answers: answersPart(answers.state, answers.waiting, answers.noList), online, token })
+  const stuck = useStuck(app.services.store, app.vaultKey, answers.state !== null || answers.noList)
+  const dot = syncDot({ sync: app.sync, answers: answersPart(answers.state, answers.waiting, answers.noList, stuck), online, token })
   const lastAt = useLastSync(app.services.store, app.vaultKey, app.sync.lastSyncedAt, answers.state?.lastSentAt)
   return (
     <>

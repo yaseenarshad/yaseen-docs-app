@@ -15,7 +15,7 @@ export interface DotInput {
    * 3C's answer list, counted as the person counts (`answersPart`). `loaded`: the list has read its stored answers for
    * the open vault (YAZ-5297). Before that, the counts are not known, so the dot cannot say green.
    */
-  answers: { loaded: boolean; waiting: number; lost: number; sending: boolean; problem: string | null }
+  answers: { loaded: boolean; waiting: number; lost: number; sending: boolean; problem: string | null; stuck?: 'store' | 'list' | null }
   /** The phone's own signal (`navigator.onLine`). The engine learns it only at its next poll. */
   online: boolean
   /** The token's end date (3E, round 10 item 18). */
@@ -38,6 +38,8 @@ export type DotReason =
   | 'phone-full'
   | 'starting'
   | 'checking'
+  | 'no-storage'
+  | 'no-list'
 
 export interface Dot {
   /** The colour (decision 12): green, amber, blue, grey ring, red. */
@@ -66,6 +68,7 @@ const RED: Record<string, { reason: DotReason; words: string }> = {
  * THE DOT (decision 12; round 10 items 18 and 20; round 12 item 9; YAZ-5080). The first rule that is true wins:
  *
  * 0. (a cold start) grey "Checking…" until the answer list has read its stored answers: never green before (YAZ-5297).
+ *    It ends (YAZ-5302): red "Phone can't save" when the store does not answer, grey "Can't sync now" when it does.
  * 1. red: the person must act. A 401 or a token that ended ("Sign in again"), a vault that is gone, a vault too large,
  *    a full phone. Never for no signal, GitHub down, "slow down" or a failed read: those pass by themselves.
  * 2. amber "N answers could not be saved": a lost answer needs a tap (Discard). It stays until then.
@@ -100,7 +103,12 @@ function dotWords({ sync, answers, online, token }: DotInput): Omit<Dot, 'short'
           : null
   if (red !== null) return { state: 'attention', ...red }
   // YAZ-5297: a cold start. The list reads its stored answers after the first paint; until then nothing may say "Synced".
-  if (!answers.loaded) return { state: 'off', words: 'Checking…', reason: 'checking' }
+  if (!answers.loaded) {
+    // YAZ-5302: "Checking…" ends. The store did not answer: the person must act. The store answered: the sync did not start.
+    if (answers.stuck === 'store') return { state: 'attention', words: "Phone can't save", reason: 'no-storage' }
+    if (answers.stuck === 'list') return { state: 'off', words: "Can't sync now", reason: 'no-list' }
+    return { state: 'off', words: 'Checking…', reason: 'checking' }
+  }
   if (answers.lost > 0) return { state: 'pending', words: `${plural(answers.lost, 'answer', 'answers')} could not be saved`, reason: 'lost' }
   const waiting = plural(answers.waiting, 'answer', 'answers') + ' waiting'
   if (!online || sync.status === 'off')
@@ -158,8 +166,8 @@ export function lostRows(lost: readonly LostAnswer[]): LostRow[] {
  * The answer list's part of `DotInput`, from 3C's state and its waiting list. `state` null: the list has not read its
  * stored answers yet (`loaded: false`), unless the app has no list at all (`noList`: a sync with no `review()`).
  */
-export function answersPart(state: AnswersState | null, waiting: readonly WaitingAnswer[], noList = false): DotInput['answers'] {
-  if (state === null) return { loaded: noList, waiting: 0, lost: 0, sending: false, problem: null }
+export function answersPart(state: AnswersState | null, waiting: readonly WaitingAnswer[], noList = false, stuck: 'store' | 'list' | null = null): DotInput['answers'] {
+  if (state === null) return { loaded: noList, stuck, waiting: 0, lost: 0, sending: false, problem: null }
   return { loaded: true, waiting: waitingCount(waiting), lost: lostRows(state.lost).length, sending: state.sending, problem: state.problem }
 }
 

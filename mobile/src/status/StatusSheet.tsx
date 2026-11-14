@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { NO_STORAGE_MESSAGE } from '../App'
 import { useApp } from '../app/AppState'
 import { syncHelp } from '../app/help'
 import type { TokenEndWarning } from '../auth/expiry'
@@ -58,7 +59,17 @@ export function StatusSheet({ dot, token, answers, now, lastAt, onClose }: { dot
           </div>
         )}
 
+        {(dot.reason === 'no-storage' || dot.reason === 'no-list') && (
+          <div className="stack">
+            <p>{dot.reason === 'no-storage' ? NO_STORAGE_MESSAGE : 'The app could not start its sync. Your answers are safe on this phone.'}</p>
+            <button type="button" className="btn" onClick={() => location.reload()}>
+              Try again
+            </button>
+          </div>
+        )}
+
         {dot.state === 'attention' &&
+          dot.reason !== 'no-storage' &&
           (red !== null ? (
             <div className="stack">
               <p>{red.message}</p>
