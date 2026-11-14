@@ -16,6 +16,7 @@
   background: var(--bg);
   color: var(--fg);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px rgba(0, 0, 0, 0.06);
+  counter-reset: card-side 1;
   /* No overflow clip: the line number (`data-line`, drawn left of the block) stays visible. The head and the code
      editor round their own corners instead. */
 }
@@ -307,6 +308,25 @@
   outline: none;
 }
 
+/* YAZ-5103 (Yaseen: "the line alone is not cutting it"): the line between two sides says which side starts, "Side 2",
+   in the Inbox's words ("Side 1 of 2"), quiet and at the text's left, in the editor and the read card. Side 1 is the
+   card's top: no label. Drawn over the line, out of the flow: the text never moves, the `---` does not change. */
+.note-card :is(.note-card__side-break, .note-card__rule) {
+  counter-increment: card-side;
+}
+.note-card :is(.note-card__side-break, .note-card__rule)::before {
+  content: 'Side ' counter(card-side);
+  position: absolute;
+  top: 0;
+  left: 10px;
+  transform: translateY(-50%);
+  padding: 0 6px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-size: 11px;
+  line-height: 16px;
+  pointer-events: none;
+}
 /* The render (`renderNoteCard`): the sides, a thin rule between two. */
 .note-card__side > :first-child {
   margin-top: 0;
@@ -527,6 +547,7 @@
    Mochi's, darker than the card's borders and unlike a rule in the text (`---` is the side break, so a rule in a side is
    solid), with room on each side. The page and the card window; the Inbox gives it more room (`noteCardScreens.css`). */
 .note-card .note-card__rule {
+  position: relative;
   height: 0;
   margin: 16px -16px;
   border-top: 1px dashed color-mix(in srgb, var(--fg) 30%, transparent);

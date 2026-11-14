@@ -735,6 +735,10 @@ body.note-card-inbox--sizing {
 .note-card-inbox__card .note-card__rule {
   margin: 22px calc(-1 * var(--inbox-card-pad, 28px));
 }
+/* YAZ-5103: no "Side 2" on the line here: "Side 1 of 2" above the card says it. */
+.note-card-inbox__card .note-card__rule::before {
+  content: none;
+}
 /* The buttons row (YAZ-5004, as in Mochi): ← → on the left, the answers in the middle, ⋯ on the right. */
 .note-card-inbox__actions {
   display: grid;

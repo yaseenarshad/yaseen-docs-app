@@ -214,3 +214,19 @@ it('YAZ-5050 round 4: Clean (and Custom, which starts from it) adds Mochi\'s thr
   expect(side.body).toMatch(/max-width:\s*31em/)
   expect(side.body).toMatch(/margin-inline:\s*auto/)
 })
+
+it('YAZ-5103: the line between two sides carries a quiet "Side 2", "Side 3" in the editor (Edit card, a card in a page, a card file) and in the read card; the Inbox has "Side 1 of 2" above, so its line has none', () => {
+  const card = rules(cardCss, '.note-card').find((r) => r.selector === '.note-card' && /counter-reset/.test(r.body))!
+  expect(card.body).toMatch(/counter-reset:\s*card-side 1/)
+  const both = ':is(.note-card__side-break, .note-card__rule)'
+  expect(rules(cardCss, `.note-card ${both}`).some((r) => /counter-increment:\s*card-side/.test(r.body))).toBe(true)
+  const label = rules(cardCss, `.note-card ${both}::before`)[0]!
+  expect(label.body).toMatch(/content:\s*'Side ' counter\(card-side\)/)
+  // Quiet, and out of the flow: the text never moves for it, and the Markdown (`---`) does not change.
+  expect(label.body).toMatch(/position:\s*absolute/)
+  expect(label.body).toMatch(/color:\s*var\(--fg-muted\)/)
+  expect(label.body).toMatch(/font-size:\s*11px/)
+  expect(label.body).not.toMatch(/font-weight/)
+  const screens = read('../../review/noteCardScreens.css')
+  expect(rules(screens, '.note-card-inbox__card .note-card__rule::before').some((r) => /content:\s*none/.test(r.body))).toBe(true)
+})
