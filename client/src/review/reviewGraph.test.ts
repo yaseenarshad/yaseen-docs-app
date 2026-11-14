@@ -76,4 +76,14 @@ describe('the review screen loads without the editor (YAZ-5067)', () => {
     expect(graph.files).toContain('client/src/editor/wikilink/cardPill.ts')
     expect(editorParts(graph)).toEqual([])
   })
+
+  // YAZ-5153 (2A1): the review screen's parts and the helpers they read, for the phone's Review screen (4B).
+  it.each([
+    ['client/src/editor/wikilink/linkResolve.ts', 'how a link in a card resolves: linkCard, linkPath, linksAsShown'],
+    ['client/src/editor/card/cardLook.ts', 'a card`s look in a vault'],
+    ['client/src/review/cardParts.tsx', 'the card body, its ID and its Reviews table'],
+    ['client/src/review/CardInbox.tsx', 'the Inbox screen'],
+  ])('%s (%s): no link plugin, no Crepe, no Milkdown', async (entry) => {
+    expect(editorParts(await staticGraph(entry))).toEqual([])
+  })
 })

@@ -131,7 +131,7 @@ describe.each(Object.keys(backends))('VaultStore on %s', (name) => {
       expect((await store.read(A, 'Card.md'))?.content).toBe('x'.repeat(50))
     })
 
-    it('stops with StorageFullError when only pages and settings are left; nothing kept is dropped', async () => {
+    it('stops with StorageFullError when dropping all media cannot make room; it drops nothing then (YAZ-5157)', async () => {
       const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
       await store.write(A, 'a.md', 'x'.repeat(40))
       await store.write(A, 'pic.png', new Uint8Array(20))
@@ -139,8 +139,8 @@ describe.each(Object.keys(backends))('VaultStore on %s', (name) => {
 
       const error = await store.write(A, 'b.md', 'z'.repeat(60)).catch((e: unknown) => e)
       expect(error).toBeInstanceOf(StorageFullError)
-      expect((error as StorageFullError).dropped).toEqual([{ vault: A, path: 'pic.png' }])
-      expect((await store.list(A)).map((f) => f.path).sort()).toEqual(['.folder.md', 'a.md'])
+      expect((error as StorageFullError).dropped).toEqual([])
+      expect((await store.list(A)).map((f) => f.path).sort()).toEqual(['.folder.md', 'a.md', 'pic.png'])
     })
 
     it('a picture that cannot fit after every other picture is gone fails too, and does not drop itself', async () => {
@@ -160,6 +160,62 @@ describe.each(Object.keys(backends))('VaultStore on %s', (name) => {
       await expect(store.write(A, 'b.md', 'b')).rejects.toMatchObject({ name: 'UnknownError' })
       fail = false
       expect(await store.read(A, 'pic.png')).not.toBeNull()
+    })
+  })
+
+  describe('P2 on a full phone', () => {
+    // YAZ-5156 (3A1): the answer list is saved with setState; on a full phone it must make room, not fail.
+    it('saving the answer list drops old media to make room', async () => {
+      const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
+      await store.write(A, 'old.png', new Uint8Array(60))
+      await store.write(A, 'new.png', new Uint8Array(35))
+      await expect(store.setState(A, 'answers', [{ id: 'card-1', grade: 'good' }])).resolves.toBeUndefined()
+      expect(await store.getState(A, 'answers')).toEqual([{ id: 'card-1', grade: 'good' }])
+      expect(await store.read(A, 'old.png')).toBeNull()
+      expect(await store.read(A, 'new.png')).not.toBeNull()
+    })
+
+    it('the answer list of one vault may drop media of another vault: an answer is never lost while media can go', async () => {
+      const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
+      await store.write(B, 'theirs.png', new Uint8Array(90))
+      await store.setState(A, 'answers', [{ id: 'card-1', grade: 'good' }])
+      expect(await store.read(B, 'theirs.png')).toBeNull()
+    })
+
+    it('a checkpoint makes room the same way', async () => {
+      const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
+      await store.write(A, 'old.png', new Uint8Array(90))
+      await store.setCheckpoint(A, { commit: 'c1', etag: null, shas: { 'a.md': 's1' } })
+      expect(await store.checkpoint(A)).not.toBeNull()
+    })
+
+    // YAZ-5157 (3A2): check the size against what can ever fit BEFORE anything is dropped.
+    it('a picture that can never fit does not first drop every other picture', async () => {
+      const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
+      await store.write(A, 'a.png', new Uint8Array(20))
+      await store.write(A, 'b.png', new Uint8Array(20))
+      await store.write(A, 'c.png', new Uint8Array(20))
+      const error = await store.write(A, 'huge.mp4', new Uint8Array(500)).catch((e: unknown) => e)
+      expect(error).toBeInstanceOf(StorageFullError)
+      expect((await store.list(A)).map((f) => f.path)).toEqual(['a.png', 'b.png', 'c.png'])
+    })
+
+    it('a picture drops only the media of its own vault, and only as much as it needs', async () => {
+      const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
+      await store.write(B, 'theirs.png', new Uint8Array(40)) // oldest, but in another vault
+      await store.write(A, 'a1.png', new Uint8Array(20))
+      await store.write(A, 'a2.png', new Uint8Array(20))
+      const result = await store.write(A, 'new.png', new Uint8Array(35))
+      expect(result.dropped).toEqual([{ vault: A, path: 'a1.png' }])
+      expect(await store.read(B, 'theirs.png')).not.toBeNull()
+      expect(await store.read(A, 'a2.png')).not.toBeNull()
+    })
+
+    it('a picture that would fit only by dropping another vault\'s media fails, and drops nothing', async () => {
+      const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
+      await store.write(B, 'theirs.png', new Uint8Array(80))
+      await expect(store.write(A, 'mine.png', new Uint8Array(30))).rejects.toBeInstanceOf(StorageFullError)
+      expect(await store.read(B, 'theirs.png')).not.toBeNull()
     })
   })
 
