@@ -54,6 +54,15 @@ export interface CardCourseProps {
   lost?: { line: string; startOver?: { label: string; run: () => void } }
 }
 
+/**
+ * The voice starts with the first word (YAZ-5159): a chapter whose sound is not here yet holds its first clip at its
+ * first frame this long at most (seconds of play), waiting for the sound; after `VOICE_LOADING_LINE_AFTER` the quiet
+ * line says so. The same limit holds the clip's clock while its audio element has not started to move.
+ */
+export const VOICE_WAIT_LIMIT = 2
+export const VOICE_LOADING_LINE_AFTER = 0.5
+export const VOICE_LOADING_LINE = 'Loading the voice…'
+
 const SPEED_LABEL: Record<CourseSpeed, string> = { 1: '1×', 1.25: '1.25×', 1.5: '1.5×' }
 const FIELD = 'input, textarea, select, [contenteditable="true"], [contenteditable=""]'
 /** What Space already presses (a button, a link, a tab): Space is theirs there, not the player's. */
@@ -123,24 +132,69 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
   if (frozen.current.clip === '') frozen.current = { clip: course[player.current.chapter].clips[player.current.clip].id, sound: null }
   const [, setVersion] = useState(0)
   const rerender = useCallback(() => setVersion((v) => v + 1), [])
+  /** The next chapters already asked for (one ask each while the course is open). */
+  const asked = useRef(new Set<string>())
+  /** The first clip of a chapter whose sound is not here yet: held at its first frame, `held` seconds of play so far. */
+  const voiceWait = useRef<{ clip: string; chapter: string; held: number } | null>(null)
+  const [loadingVoice, setLoadingVoice] = useState(false)
+  /** The chapters whose sound did not come within the wait: the "Try again" line shows on them. */
+  const [late, setLate] = useState<ReadonlySet<string>>(() => new Set())
+  const endVoiceWait = useCallback(() => {
+    voiceWait.current = null
+    setLoadingVoice(false)
+  }, [])
+  const endLate = useCallback(
+    (chapterId: string) =>
+      setLate((before) => {
+        if (!before.has(chapterId)) return before
+        const next = new Set(before)
+        next.delete(chapterId)
+        return next
+      }),
+    [],
+  )
+  /** `syncSound`, for the sound that arrives (it is defined below, with the audio element). */
+  const syncSoundRef = useRef<(restart: boolean) => void>(() => undefined)
+  const missingRef = useRef<ReadonlySet<string>>(new Set())
+  /** A chapter starts with its first clip and no sound here yet: the clip waits for it (never on Mute, never with no voice). */
+  const startVoiceWait = useCallback(
+    (chapterId: string, clipId: string) => {
+      const p = player.current
+      if (voice === SILENT_VOICE || p.muted || p.t !== 0 || sounds.current.has(chapterId) || missingRef.current.has(chapterId)) return
+      voiceWait.current = { clip: clipId, chapter: chapterId, held: 0 }
+    },
+    [voice],
+  )
   const fetchSound = useCallback(
     (chapterId: string) => {
       void voice.chapter(chapterId).then(
         (sound) => {
           if (sound === null) return
           sounds.current.set(chapterId, sound)
-          // A clip that has not started yet takes the sound now; a clip that plays keeps its own to its end.
+          endLate(chapterId)
+          // A clip that has not started yet (or that waits for this sound) takes the sound now, from 0; a clip that
+          // plays keeps its own to its end.
           const p = player.current
           const clip = course[p.chapter].clips[p.clip]
-          if (p.phase === 'clip' && !p.playing && p.t === 0 && course[p.chapter].id === chapterId) {
+          const current = course[p.chapter].id === chapterId
+          const waiting = voiceWait.current?.clip === clip.id
+          if (current && p.phase === 'clip' && p.t === 0 && (!p.playing || waiting)) {
             frozen.current = { clip: clip.id, sound: soundOf(clip.id) }
+            endVoiceWait()
+            syncSoundRef.current(true)
             rerender()
+          }
+          // The next chapter's sound is asked for now, so the next chapter starts with its first word.
+          const next = course[p.chapter + 1]
+          if (current && next !== undefined && !sounds.current.has(next.id) && !asked.current.has(next.id)) {
+            asked.current.add(next.id)
+            fetchSound(next.id)
           }
         },
         () => undefined,
       )
     },
-    [voice, course, soundOf, rerender],
+    [voice, course, soundOf, rerender, endVoiceWait, endLate],
   )
   /** A chapter starts: the downloader hears of it, and the course takes its sound if it is here already. */
   const startChapter = useCallback(
@@ -151,9 +205,11 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
     [voice, fetchSound],
   )
   useEffect(() => {
-    startChapter(course[player.current.chapter].id)
+    const p = player.current
+    if (p.phase === 'clip') startVoiceWait(course[p.chapter].id, course[p.chapter].clips[p.clip].id)
+    startChapter(course[p.chapter].id)
     return voice.onArrive(fetchSound)
-  }, [voice, course, startChapter, fetchSound])
+  }, [voice, course, startChapter, fetchSound, startVoiceWait])
   /** The chapters whose sound could not come (6D1): the quiet line with "Try again" shows on them. */
   const [missing, setMissing] = useState<ReadonlySet<string>>(() => new Set())
   useEffect(
@@ -169,6 +225,7 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
       ),
     [voice],
   )
+  missingRef.current = missing
   const [page, setPage] = useState<string | null>(null)
   const [touring, setTouring] = useState(false)
 
@@ -190,6 +247,8 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
 
   // ---- the sound ----
   const audio = useRef<HTMLAudioElement | null>(null)
+  /** The next clip's file, loading while this clip plays, so a clip change in a chapter has no gap. */
+  const nextAudio = useRef<HTMLAudioElement | null>(null)
   const audioClip = useRef<string | null>(null)
   const broken = useRef(new Set<string>())
   const lastAudio = useRef({ at: -1, stalled: 0 })
@@ -221,6 +280,16 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
         el.src = url
         audioClip.current = clip.id
         lastAudio.current = { at: -1, stalled: 0 }
+        // The next clip of the chapter starts loading now.
+        const after = c.course[s.chapter].clips[s.clip + 1]
+        const nextUrl = after === undefined ? null : (soundOf(after.id)?.url ?? null)
+        if (nextUrl !== null && typeof Audio === 'function') {
+          if (nextAudio.current === null) {
+            nextAudio.current = new Audio()
+            nextAudio.current.preload = 'auto'
+          }
+          if (nextAudio.current.getAttribute('src') !== nextUrl) nextAudio.current.src = nextUrl
+        }
       }
       el.muted = s.muted
       el.playbackRate = s.speed
@@ -239,12 +308,14 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
         })
       } else el.pause()
     },
-    [audioOf],
+    [audioOf, soundOf],
   )
+  syncSoundRef.current = syncSound
   useEffect(
     () => () => {
       audio.current?.pause()
       audio.current = null
+      nextAudio.current = null
     },
     [],
   )
@@ -255,8 +326,12 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
       for (const e of events) {
         if (e.kind === 'mark') clockRef.current.mark(e.index)
         else if (e.kind === 'enter') {
+          const newChapter = e.chapter !== enteredChapter.current
+          // Asked before the clip freezes its sound: a sound that is here already is used from the first word.
+          if (newChapter) startChapter(e.chapter)
           frozen.current = { clip: e.clip, sound: soundOf(e.clip) }
-          if (e.chapter !== enteredChapter.current) startChapter(e.chapter)
+          if (voiceWait.current !== null && voiceWait.current.clip !== e.clip) endVoiceWait()
+          if (newChapter && frozen.current.sound === null) startVoiceWait(e.chapter, e.clip)
           enteredChapter.current = e.chapter
           storage.setCourse(placeOf(ctxRef.current, player.current))
         }
@@ -264,7 +339,7 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
         else storage.setCourse({ done: true, ...placeOf(ctxRef.current, player.current) })
       }
     },
-    [soundOf, startChapter],
+    [soundOf, startChapter, startVoiceWait, endVoiceWait],
   )
   const dispatch = useCallback(
     (action: PlayerAction) => {
@@ -302,6 +377,19 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
       last = now
       const p = player.current
       const clip = ctxRef.current.course[p.chapter].clips[p.clip]
+      const wait = voiceWait.current
+      if (wait !== null && wait.clip === clip.id && p.t === 0 && !p.muted) {
+        // The chapter's sound is on its way: the first frame and the caption hold, so the voice starts with the first word.
+        wait.held += dt
+        if (wait.held >= VOICE_WAIT_LIMIT) {
+          endVoiceWait()
+          setLate((before) => (before.has(wait.chapter) ? before : new Set([...before, wait.chapter])))
+        } else {
+          if (wait.held >= VOICE_LOADING_LINE_AFTER) setLoadingVoice(true)
+          raf = requestAnimationFrame(frame)
+          return
+        }
+      } else if (wait !== null) endVoiceWait()
       const el = audio.current
       const sounding = el !== null && audioClip.current === clip.id && !broken.current.has(clip.id) && !el.paused && !el.ended && p.t < ctxRef.current.seconds(clip)
       if (sounding) {
@@ -310,9 +398,10 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
           lastAudio.current = { at, stalled: 0 }
           dispatch({ type: 'clock', t: at })
         } else {
-          // Not started yet, or between coarse time updates: a short wait. A sound that does not move runs on the page clock.
+          // Not started yet (a new file loading), or between coarse time updates: the clip's clock waits for the
+          // element to move, so the first word is never cut. A sound that does not move runs on the page clock.
           lastAudio.current.stalled += dt
-          if (lastAudio.current.stalled > 1.5) {
+          if (lastAudio.current.stalled > VOICE_WAIT_LIMIT) {
             broken.current.add(clip.id)
             el.pause()
           }
@@ -321,7 +410,7 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
       raf = requestAnimationFrame(frame)
     })
     return () => cancelAnimationFrame(raf)
-  }, [running, dispatch, syncSound])
+  }, [running, dispatch, syncSound, endVoiceWait])
   useEffect(() => {
     paintBar()
   })
@@ -526,10 +615,22 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
             )}
           </p>
         )}
-        {missing.has(chapter.id) && voice.retry !== undefined && (
+        {loadingVoice && !(missing.has(chapter.id) || late.has(chapter.id)) && (
+          <p className="course__note" role="status">
+            {VOICE_LOADING_LINE}
+          </p>
+        )}
+        {(missing.has(chapter.id) || late.has(chapter.id)) && voice.retry !== undefined && (
           <p className="course__note" role="status">
             The sound is not here, so this chapter plays with captions.{' '}
-            <button type="button" className="course__btn" onClick={() => voice.retry?.(chapter.id)}>
+            <button
+              type="button"
+              className="course__btn"
+              onClick={() => {
+                endLate(chapter.id)
+                voice.retry?.(chapter.id)
+              }}
+            >
               Try again
             </button>
           </p>

@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { defaultCourseState, type CourseState } from '@shared/courseState'
 import { storage } from '../lib/storage'
 import type { CourseChapter } from './script'
-import { CardCourse, type CardCourseProps } from './CardCourse'
+import { CardCourse, VOICE_LOADING_LINE, type CardCourseProps } from './CardCourse'
 import type { CourseTour } from './courseTour'
 import { useEscapeLast } from '../lib/escapeOrder'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
@@ -258,7 +258,8 @@ describe('the course layer (YAZ-5120)', () => {
     mount({ voice: v.voice })
     expect(v.started).toEqual(['a'])
     act(() => button('Play')!.click())
-    frames(2)
+    // The first clip waits for the chapter's sound for at most VOICE_WAIT_LIMIT; then it plays silent.
+    frames(24)
     await act(async () => v.arrive('a', { a1: { url: 'blob:a1', seconds: 9 }, a2: { url: 'blob:a2', seconds: 1 } }))
     // a1 started silent: it keeps its estimate (about 2 s) and no sound.
     frames(19)
@@ -307,6 +308,95 @@ describe('the course layer (YAZ-5120)', () => {
     act(() => v.fail('a'))
     await act(async () => v.arrive('a', { a1: { url: 'blob:a1', seconds: 2 } }))
     expect(line()).toBeUndefined()
+  })
+})
+
+describe('the voice starts with the first word (YAZ-5159)', () => {
+  const A = { a1: { url: 'blob:a1', seconds: 3 }, a2: { url: 'blob:a2', seconds: 2 } }
+  const B = { b1: { url: 'blob:b1', seconds: 2 }, 'c2-07': { url: 'blob:c2-07', seconds: 2 } }
+  const playedSrc = () => (vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLAudioElement | undefined)?.src
+  const notes = () => [...document.querySelectorAll('.course__note')].map((p) => p.textContent)
+  const flush = () => act(async () => undefined)
+
+  it('a chapter whose sound is here already starts with its sound at t = 0', async () => {
+    const v = memoryVoice({ a: A })
+    mount({ voice: v.voice })
+    await flush()
+    act(() => button('Play')!.click())
+    frames(1)
+    expect(playedSrc()).toBe('blob:a1')
+    expect(notes()).toEqual([])
+  })
+
+  it('a sound that arrives after 300 ms: the first clip holds at its first frame, then starts with the sound from 0', async () => {
+    const v = memoryVoice()
+    mount({ voice: v.voice })
+    await flush()
+    act(() => button('Play')!.click())
+    frames(3)
+    expect(playedSrc()).toBeUndefined()
+    expect(notes()).toEqual([]) // no line before 0.5 s
+    await act(async () => v.arrive('a', A))
+    expect(playedSrc()).toBe('blob:a1')
+    expect(caption()).toBe('One two three.')
+  })
+
+  it('a sound that never comes: "Loading the voice…" after 0.5 s; after the limit the clip plays silent and "Try again" shows', async () => {
+    const v = memoryVoice()
+    mount({ voice: v.voice })
+    await flush()
+    act(() => button('Play')!.click())
+    frames(6)
+    expect(notes()).toEqual([VOICE_LOADING_LINE])
+    frames(15)
+    expect(notes().some((n) => n?.includes(VOICE_LOADING_LINE))).toBe(false)
+    expect(button('Try again')).toBeDefined()
+    frames(25)
+    expect(caption()).toBe('Four five six.')
+    expect(playedSrc()).toBeUndefined()
+  })
+
+  it('Mute: no wait at all', async () => {
+    const v = memoryVoice()
+    mount({ voice: v.voice })
+    await flush()
+    act(() => button('Mute')!.click())
+    act(() => button('Play')!.click())
+    frames(25)
+    expect(caption()).toBe('Four five six.')
+    expect(notes()).toEqual([])
+  })
+
+  it("the next chapter's sound is asked for once this chapter's is here; the next chapter then starts with its sound", async () => {
+    const v = memoryVoice({ a: A, b: B })
+    const asked = vi.spyOn(v.voice, 'chapter')
+    mount({ voice: v.voice })
+    await flush()
+    await flush()
+    expect(asked.mock.calls.map(([id]) => id)).toEqual(['a', 'b'])
+    expect(v.started).toEqual(['a'])
+    act(() => button('Next chapter')!.click())
+    act(() => button('Play')!.click())
+    frames(1)
+    expect(caption()).toBe('Seven eight.')
+    expect(playedSrc()).toBe('blob:b1')
+  })
+
+  it("the next clip's file is preloaded while this clip plays", async () => {
+    const made: HTMLAudioElement[] = []
+    const RealAudio = window.Audio
+    vi.spyOn(window, 'Audio').mockImplementation(function (this: unknown) {
+      const el = new RealAudio()
+      made.push(el)
+      return el
+    } as unknown as () => HTMLAudioElement)
+    const v = memoryVoice({ a: A })
+    mount({ voice: v.voice })
+    await flush()
+    act(() => button('Play')!.click())
+    frames(1)
+    expect(made.map((el) => el.getAttribute('src'))).toEqual(['blob:a1', 'blob:a2'])
+    expect(made[1].preload).toBe('auto')
   })
 })
 
