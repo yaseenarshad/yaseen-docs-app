@@ -60,7 +60,7 @@ describe('settingCandidates', () => {
       'sidebarRevealActive',
       'sidebarIconSet',
       'sidebarFileIcons',
-      ...['note', 'text', 'pdf', 'image', 'drawing', 'diagram'].map((k) => `sidebarIconColors.${k}`),
+      ...['note', 'card', 'drawing', 'diagram', 'folder', 'text', 'pdf', 'image'].map((k) => `sidebarIconColors.${k}`),
       // The icon rules (YAZ-3440 D9).
       'sidebarIconRules',
       // ⌘D's place (YAZ-3556 D8).

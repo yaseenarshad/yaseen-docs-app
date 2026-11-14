@@ -918,6 +918,17 @@ export function App() {
     // Each icon colour of the sidebar tree that is set (YAZ-3440 D4) over app.css's own `--kind-<kind>`: a CSS var, so no tree level renders.
     ...Object.fromEntries(Object.entries(settings.sidebarIconColors).map(([kind, colour]) => [`--kind-${kind}`, colour])),
   } as CSSProperties
+  /** The kinds with a picked icon colour (YAZ-5100 round 2), `data-icon-colors` on `.app`: app.css draws Material's icons of those kinds in it. */
+  const iconColorKinds = Object.keys(settings.sidebarIconColors).join(' ') || undefined
+  // A picked card colour reaches the hover preview's card icon too, which is portalled to the body, outside `.app`.
+  const cardColour = settings.sidebarIconColors.card
+  useEffect(() => {
+    if (cardColour === undefined) return
+    document.documentElement.style.setProperty('--kind-card', cardColour)
+    return () => {
+      document.documentElement.style.removeProperty('--kind-card')
+    }
+  }, [cardColour])
   /**
    * The text formatting of the vault that holds `path` (YAZ-3067 D12), as the style of the layer
    * that shows it: two vaults in one window look different. Each variable is there only for a
@@ -3652,7 +3663,7 @@ export function App() {
     <NoteWindowEditorProps.Provider value={noteWindowEditorProps}>
     <PageActions.Provider value={linkActions}>
     <CommentPrefsContext.Provider value={commentPrefs}>
-    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-code-block-width={settings.codeBlockWidth != null ? '' : undefined} data-table-width={settings.tableWidth != null ? '' : undefined} data-section-lines={settings.sectionLines} data-shown-hidden-words={settings.shownHiddenWords} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-folder-row-band={folderRowBandOn(settings) ? 'on' : 'off'} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-band-bold={settings.tableBandBold === false ? 'off' : 'on'} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} {...headerRowAttrs(headerRow)} {...subheaderRowAttrs(subheaderRow)} data-table-sticky-subheaders={stickySubheaders ? 'on' : 'off'} data-table-text={textInCells} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
+    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-code-block-width={settings.codeBlockWidth != null ? '' : undefined} data-table-width={settings.tableWidth != null ? '' : undefined} data-section-lines={settings.sectionLines} data-shown-hidden-words={settings.shownHiddenWords} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-folder-row-band={folderRowBandOn(settings) ? 'on' : 'off'} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-band-bold={settings.tableBandBold === false ? 'off' : 'on'} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} {...headerRowAttrs(headerRow)} {...subheaderRowAttrs(subheaderRow)} data-table-sticky-subheaders={stickySubheaders ? 'on' : 'off'} data-table-text={textInCells} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-icon-colors={iconColorKinds} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
       {(glow || takeGlow) && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
         // The bottom-left corner (YAZ-3262): ONE column, so the box after a drag out always stands

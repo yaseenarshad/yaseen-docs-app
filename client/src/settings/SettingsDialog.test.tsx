@@ -140,7 +140,13 @@ const GENERAL_ROWS = ['profile', 'settingsFolder', 'startupWindows', 'vaultOpens
 /** Text formatting (YAZ-3068) is one vault's, so a window with no vault has no such row. */
 const APPEARANCE_ROWS = ['theme', 'contentWidth', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'commentsOrder', 'commentsResolved', 'commentsHint']
 /** Settings › Sidebar (YAZ-3440 D7): the sidebar tree's look, after Appearance; the colours show only with the Line set. */
-const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', 'sidebarIconRules', 'goTo']
+/** The icon colour rows (YAZ-3440 D4, YAZ-5100 round 2), by kind. */
+const colourRows = (...kinds: string[]) => kinds.map((kind) => `sidebarIconColors.${kind}`)
+/** Settings › Sidebar with Material and "Colour" (the defaults), no vault open: a colour row per kind Material draws in one colour. */
+const SIDEBAR_ROWS = ['sidebarLines', 'sidebarLineStyle', 'sidebarThreadColor', 'sidebarStickyLevels', 'sidebarArrowMotion', 'sidebarFolderIcons', 'sidebarRevealActive', 'sidebarIconSet', 'sidebarFileIcons', ...colourRows('note', 'drawing', 'diagram', 'folder'), 'sidebarIconRules', 'goTo']
+const SIDEBAR_ROWS_BARE = SIDEBAR_ROWS.filter((id) => !id.startsWith('sidebarIconColors.'))
+/** The same with a vault whose Review is on: the Card colour row too. */
+const SIDEBAR_ROWS_REVIEW = SIDEBAR_ROWS.flatMap((id) => (id === 'sidebarIconColors.note' ? [id, 'sidebarIconColors.card'] : [id]))
 /** Settings › Notifications (YAZ-3303), under Appearance: the toasts, the three types, the sounds. */
 const NOTIFICATIONS_ROWS = ['noticeLength', 'noticeUndo', 'noticeClipboard', 'noticeLists', 'gestureSounds', 'hearSounds']
 const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkness', 'foldingOnByDefault', 'noteBulletIndent', 'noteBulletGap', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'selectionToolbar', 'typingArrows', 'enterKeepsStyleNotes', 'enterKeepsStyleBoxes', 'tocOnByDefault', 'tableOfContents', 'tocLines', 'findFolds', 'outsideChangeGlow', 'outsideListPinned', 'codeBlockWidth']
@@ -243,16 +249,57 @@ describe('SettingsDialog shell (D1)', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('Settings › Sidebar shows a colour row per kind with the Line set, while its icons have colour; Material, Grey and Off show none (YAZ-3440 D4)', () => {
-    const colourRows = ['note', 'text', 'pdf', 'image', 'drawing', 'diagram'].map((kind) => `sidebarIconColors.${kind}`)
-    const { el } = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconSet: 'line' })
-    expect(rowIds(el)).toEqual([...SIDEBAR_ROWS.slice(0, -2), ...colourRows, 'sidebarIconRules', 'goTo'])
-    for (const files of ['grey', 'off'] as const) {
-      act(() => root?.unmount())
-      container?.remove()
-      const again = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconSet: 'line', sidebarFileIcons: files })
-      expect(rowIds(again.el)).toEqual(SIDEBAR_ROWS)
+  it('Settings › Sidebar shows a colour row per kind while the icons have colour: every kind with the Line set, the one-colour kinds with Material; Grey and Off leave the folder alone (YAZ-3440 D4, YAZ-5100 round 2)', () => {
+    const withColours = (...kinds: string[]) => [...SIDEBAR_ROWS_BARE.slice(0, -2), ...colourRows(...kinds), 'sidebarIconRules', 'goTo']
+    const again = (...args: Parameters<typeof mount>) => {
+      unmount()
+      return rowIds(mountOn('Sidebar', ...args).el)
     }
+    const { el } = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconSet: 'line' })
+    expect(rowIds(el)).toEqual(withColours('note', 'drawing', 'diagram', 'folder', 'text', 'pdf', 'image'))
+    expect(again({ ...DEFAULT_SETTINGS })).toEqual(withColours('note', 'drawing', 'diagram', 'folder'))
+    for (const files of ['grey', 'off'] as const) {
+      expect(again({ ...DEFAULT_SETTINGS, sidebarIconSet: 'line', sidebarFileIcons: files }), files).toEqual(withColours('folder'))
+      expect(again({ ...DEFAULT_SETTINGS, sidebarFileIcons: files, sidebarFolderIcons: 'off' }), files).toEqual(SIDEBAR_ROWS_BARE)
+    }
+  })
+
+  it("Settings › Sidebar's Card colour shows only while the vault's Review is on (YAZ-5100 round 2)", () => {
+    const { el } = mountOn('Sidebar', { ...DEFAULT_SETTINGS }, undefined, REVIEW_ON)
+    expect(rowIds(el).filter((id) => id?.startsWith('sidebarIconColors.') === true)).toEqual(colourRows('note', 'card', 'drawing', 'diagram', 'folder'))
+    expect(row(el, 'sidebarIconColors.card')?.textContent).toContain('Card colour')
+    unmount()
+    const off = mountOn('Sidebar', { ...DEFAULT_SETTINGS }, undefined, REVIEW_OFF)
+    expect(row(off.el, 'sidebarIconColors.card')).toBeNull()
+    unmount()
+    const grey = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarFileIcons: 'grey' }, undefined, REVIEW_ON)
+    expect(row(grey.el, 'sidebarIconColors.card')).toBeNull()
+  })
+
+  it('a colour row picks a colour and Reset drops it; the swatch is the icon\'s colour as it shows now (YAZ-5100 round 2)', async () => {
+    const { el, onChange } = mountOn('Sidebar', { ...DEFAULT_SETTINGS }, undefined, REVIEW_ON)
+    // The control is its own chunk, loaded when the row shows.
+    await act(async () => await import('./IconColourControl'))
+    const picker = (id: string) => row(el, id)?.querySelector<HTMLInputElement>('input[type="color"]')
+    // Material's own colours, and the card's purple.
+    expect(picker('sidebarIconColors.drawing')?.value).toBe('#5c6bc0')
+    expect(picker('sidebarIconColors.folder')?.value).toBe('#90a4ae')
+    expect(picker('sidebarIconColors.card')?.value).toBe('#8a63c9')
+    expect(picker('sidebarIconColors.card')?.getAttribute('aria-label')).toBe('Card icon colour')
+    const reset = rowButtons(el, 'sidebarIconColors.card').find((b) => b.textContent === 'Reset')
+    expect(reset?.disabled).toBe(true)
+    act(() => {
+      const input = picker('sidebarIconColors.card')!
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, '#cc3366')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, sidebarIconColors: { card: '#cc3366' } })
+    unmount()
+    const picked = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconColors: { card: '#cc3366', folder: '#112233' } }, undefined, REVIEW_ON)
+    await act(async () => await import('./IconColourControl'))
+    expect(row(picked.el, 'sidebarIconColors.card')?.querySelector<HTMLInputElement>('input[type="color"]')?.value).toBe('#cc3366')
+    act(() => rowButtons(picked.el, 'sidebarIconColors.card').find((b) => b.textContent === 'Reset')?.click())
+    expect(picked.onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, sidebarIconColors: { folder: '#112233' } })
   })
 
   it('Settings › Sidebar › Folder icons is Plain, By name or Off, Plain first and chosen by default (YAZ-3554 D3, D5)', () => {
@@ -343,7 +390,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
     expect(seen).toEqual([
       page('General', 'settings-general', GENERAL_ROWS),
       page('Appearance', 'settings-appearance', APPEARANCE_ROWS),
-      page('Sidebar', 'settings-sidebar', SIDEBAR_ROWS),
+      page('Sidebar', 'settings-sidebar', SIDEBAR_ROWS_REVIEW),
       page('Notifications', 'settings-notifications', NOTIFICATIONS_ROWS),
       page('Editor', 'settings-editor', EDITOR_ROWS),
       page('Tables', 'settings-tables', TABLES_ROWS),

@@ -74,7 +74,7 @@ import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
 import { cardSpacingFromPages } from '../review/cardSpacing'
-import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, CARD_SPACING_OPTIONS, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
+import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, CARD_SPACING_OPTIONS, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
 
 /** A cell bullet's px setting (the YAZ-3818 demo): the stepper, and Reset when it is not the default. */
 function CellBulletStepper({ settings, onChange, field, name, min, max, step }: { settings: SettingsState; onChange: (next: SettingsState) => void; field: 'tableCellBulletIndent' | 'tableCellBulletGap'; name: string; min: number; max: number; step: number }) {
@@ -444,41 +444,35 @@ export interface SettingsSection {
 /** A section's groups as `ctx` has them. */
 export const groupsOf = (section: SettingsSection, ctx: SettingsCtx): readonly SettingsGroup[] => section.groupsFor?.(ctx) ?? section.groups
 
-/** A kind's built-in icon colour in this theme (app.css `--kind-<kind>` on the root; `.app` carries the set ones), else the light theme's. */
-function builtInIconColour(kind: SidebarIconKind): string {
-  const css = typeof document === 'undefined' ? '' : getComputedStyle(document.documentElement).getPropertyValue(`--kind-${kind}`).trim()
-  return /^#[0-9a-f]{6}$/i.test(css) ? css : SIDEBAR_ICON_SWATCHES[kind]
+/** The colour rows' control (YAZ-5100 round 2): loaded only when Settings shows one. */
+const IconColourControl = lazy(() => import('./IconColourControl'))
+
+/**
+ * Whether a kind's colour row shows (YAZ-5100 round 2): only where the colour shows. Grey and Off draw no colour, and a
+ * folder's follows Folder icons alone. A card's only while the vault's Review is on. Text, PDF and image files have an
+ * icon per file type in Material, so their rows are the Line set's.
+ */
+function iconColourShown(kind: SidebarIconKind, ctx: SettingsCtx): boolean {
+  const { settings } = ctx
+  if (kind === 'folder') return settings.sidebarFolderIcons !== 'off'
+  if (settings.sidebarFileIcons === 'grey' || settings.sidebarFileIcons === 'off') return false
+  if (kind === 'card') return reviewOn(ctx)
+  return settings.sidebarIconSet === 'line' || !(kind === 'text' || kind === 'pdf' || kind === 'image')
 }
 
-/** One kind's icon colour (YAZ-3440 D4): the picker of the thread colour's row, and Default, which drops the kind's colour. */
+/** One kind's icon colour (YAZ-3440 D4, YAZ-5100 round 2): its picker and Reset (`IconColourControl`). */
 function iconColourRow(kind: SidebarIconKind): SettingDef {
   const name = (ctx: SettingsCtx) => sidebarIconKindLabel(kind, (text) => unit(ctx, text))
   return {
     id: `sidebarIconColors.${kind}`,
     label: (ctx) => `${name(ctx)} colour`,
-    ...(kind === 'note' ? { hint: 'Used with All colour: Colour keeps notes grey.' } : {}),
-    keywords: ['sidebar', 'tree', 'icon', 'color', 'colour', kind === 'note' ? 'markdown' : kind],
-    // The Line set's alone: Material's icons keep their own colours.
-    available: ({ settings }) => settings.sidebarIconSet === 'line' && (settings.sidebarFileIcons === 'quiet' || settings.sidebarFileIcons === 'color'),
-    render: (ctx) => {
-      const { settings, onChange } = ctx
-      const own = settings.sidebarIconColors[kind]
-      const drop = (): SettingsState['sidebarIconColors'] => Object.fromEntries(Object.entries(settings.sidebarIconColors).filter(([k]) => k !== kind))
-      return (
-        <>
-          <input
-            type="color"
-            className="settings__color"
-            aria-label={`${name(ctx)} icon colour in the sidebar`}
-            value={own ?? builtInIconColour(kind)}
-            onChange={(e) => onChange({ ...settings, sidebarIconColors: { ...settings.sidebarIconColors, [kind]: e.target.value } })}
-          />
-          <button type="button" className={`settings__option${own === undefined ? ' settings__option--active' : ''}`} disabled={own === undefined} onClick={() => onChange({ ...settings, sidebarIconColors: drop() })}>
-            Default
-          </button>
-        </>
-      )
-    },
+    keywords: ['sidebar', 'tree', 'icon', 'icons', 'color', 'colour', 'appearance', kind === 'note' ? 'markdown' : kind, ...(kind === 'note' ? ['page'] : [])],
+    available: (ctx) => iconColourShown(kind, ctx),
+    render: (ctx) => (
+      <Suspense fallback={null}>
+        <IconColourControl kind={kind} name={name(ctx)} settings={ctx.settings} onChange={ctx.onChange} />
+      </Suspense>
+    ),
   }
 }
 
@@ -940,7 +934,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               <Segmented options={SIDEBAR_FILE_ICONS_OPTIONS} value={settings.sidebarFileIcons} onChange={(sidebarFileIcons) => onChange({ ...settings, sidebarFileIcons })} ariaLabel="File icons in the sidebar" />
             ),
           },
-          // YAZ-3440 D4: a colour of its own for each kind, while the icons have colour; a note's shows with "All colour" alone.
+          // YAZ-3440 D4, YAZ-5100 round 2: a colour of its own for each kind, in both icon sets, while the icons have colour.
           ...SIDEBAR_ICON_KINDS.map(iconColourRow),
         ],
       },

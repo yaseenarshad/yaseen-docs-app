@@ -2693,8 +2693,12 @@ export const SIDEBAR_FOLDER_ICONS: readonly SidebarFolderIcons[] = ['plain', 'na
 export type SidebarArrowMotion = 'instant' | 'smooth'
 export const SIDEBAR_ARROW_MOTIONS: readonly SidebarArrowMotion[] = ['instant', 'smooth']
 
-/** The sidebar tree (YAZ-3440 D4): the kinds whose icon has a colour of its own, in the order Settings shows them. `note` is a Markdown file's, coloured only with "All colour". */
-export const SIDEBAR_ICON_KINDS = ['note', 'text', 'pdf', 'image', 'drawing', 'diagram'] as const
+/**
+ * The sidebar tree (YAZ-3440 D4): the kinds whose icon has a colour of its own, in the order Settings shows them. `note`
+ * is a Markdown file's: grey with "Colour" until a colour is picked. `card` and `folder` (YAZ-5100 round 2) colour in both
+ * icon sets; `text`, `pdf` and `image` in the Line set alone (Material has an icon per file type for them).
+ */
+export const SIDEBAR_ICON_KINDS = ['note', 'card', 'drawing', 'diagram', 'folder', 'text', 'pdf', 'image'] as const
 export type SidebarIconKind = (typeof SIDEBAR_ICON_KINDS)[number]
 export type SidebarIconColors = Partial<Record<SidebarIconKind, string>>
 
