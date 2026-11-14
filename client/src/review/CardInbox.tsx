@@ -111,6 +111,7 @@ import { HoverTip } from '../components/HoverTip'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { CARD_FILTERS, CardInboxBar } from './CardInboxBar'
 import { CardStateChip, answerIcon, answerLine } from './cardInboxChip'
+import { FocusIcon } from './cardInboxIcons'
 import { useInboxCardWidth } from './inboxCardWidth'
 import { CardInboxHints } from './CardInboxHints'
 import { KeyLabel } from '../keys/KeyLabel'
@@ -152,6 +153,9 @@ export interface CardInboxProps {
   onNotice: (message: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void
   /** A folder of the top row's card place (YAZ-5017 round 2): the vault's or a folder's page, in a tab. The page part opens as O does. */
   openPlace?: (path: string) => void
+  /** Focus mode (YAZ-5375, App's, remembered): on, the tab row hides while the Inbox shows. The bar's button, F and Esc change it. */
+  focusMode?: boolean
+  onFocusMode?: (on: boolean) => void
 }
 
 const NO_TITLES: ReadonlyMap<string, string> = new Map()
@@ -211,7 +215,7 @@ export const addedLine = (kind: AddKind, n: number): string => `Added ${n} ${kin
 /** A Reset's line (YAZ-5042 round 2), after its "↺": "Reset today's new cards" (back to the Settings number). */
 export const resetLine = (kind: AddKind): string => `Reset today's ${kind === 'new' ? 'new cards' : 'Up next'}`
 
-export function CardInbox({ shown = true, review, session, vaultOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace }: CardInboxProps) {
+export function CardInbox({ shown = true, review, session, vaultOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, focusMode = false, onFocusMode }: CardInboxProps) {
   const unit = useUnit()
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
@@ -287,8 +291,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
   // The ⋯ row (YAZ-5004): open or closed; it closes with the card, Esc and a press outside it.
   const [moreState, setMore] = useState<string | null>(null)
   const moreOpen = moreState !== null && moreState === cardKey
-  const live = useRef({ steps, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile })
-  live.current = { steps, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile }
+  const live = useRef({ steps, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile, focusMode, onFocusMode })
+  live.current = { steps, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile, focusMode, onFocusMode }
 
   // The last answer's line (YAZ-5025 round 2): its words fixed when the answer is given, shown once the session counts
   // it (`count`: the session's answers with it), and only while that answer is still the session's last (an undo clears it).
@@ -339,12 +343,16 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
       if (!live.current.shown || !isInboxKeyTarget(event, rootRef.current)) return
       const key = cardInboxKey(event)
       if (key === null) return
-      const { card, session, review, ratings, moreOpen } = live.current
-      // Esc closes the ⋯ row only (YAZ-5011): the Inbox is a tab, so with the row closed the key goes on down the Esc order.
-      if (key.kind === 'close' && !moreOpen) return
+      const { card, session, review, ratings, moreOpen, focusMode, onFocusMode } = live.current
+      // Esc closes the ⋯ row (YAZ-5011), else leaves focus mode (YAZ-5375): the Inbox is a tab, so with neither the key
+      // goes on down the Esc order.
+      if (key.kind === 'close' && !moreOpen && !(focusMode && onFocusMode !== undefined)) return
+      if (key.kind === 'focus' && onFocusMode === undefined) return
       event.preventDefault()
       event.stopPropagation()
-      if (key.kind === 'close') return setMore(null)
+      if (key.kind === 'close') return moreOpen ? setMore(null) : onFocusMode?.(false)
+      // F (YAZ-5375): focus mode on or off, on the done screen too.
+      if (key.kind === 'focus') return event.repeat ? undefined : onFocusMode?.(!focusMode)
       if (key.kind === 'undo') {
         if (session.canUndo && !event.repeat) void review.undo()
         return
@@ -439,7 +447,18 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
         openPlace={(part) => (part.kind === 'page' ? (card !== null && part.path === card.path ? openCard(card, cardFile) : openFile(part.path)) : openPlace?.(part.path))}
         time={time}
         pick={review}
-        tools={<DocumentZoom value={zoom} onChange={setZoom} label="Inbox zoom" />}
+        tools={
+          <>
+            <DocumentZoom value={zoom} onChange={setZoom} label="Inbox zoom" />
+            {onFocusMode !== undefined && (
+              <HoverTip text={focusMode ? 'Exit focus mode (F)' : 'Focus mode (F)'}>
+                <button type="button" className="card-inbox__focus" aria-label="Focus mode" aria-pressed={focusMode} onMouseDown={(e) => e.preventDefault()} onClick={() => onFocusMode(!focusMode)}>
+                  <FocusIcon on={focusMode} />
+                </button>
+              </HoverTip>
+            )}
+          </>
+        }
       />
       <div ref={columnRef} className="card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
         {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height

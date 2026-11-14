@@ -117,6 +117,7 @@ import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './
 import { StartPage } from './workspace/StartPage'
 import { duplicateTabIds, nearSteps, stepIdOf, tabById, tabOf, useWorkspace, type ZoomFrom } from './workspace/useWorkspace'
 import { cycleStop, type InboxSlot } from './workspace/tabCycle'
+import { readInboxFocus, saveInboxFocus } from './review/inboxFocus'
 import { useTabSleep } from './workspace/useTabSleep'
 import { restoreSession } from './workspace/restoreSession'
 import { Welcome } from './Welcome'
@@ -529,6 +530,18 @@ export function App() {
    */
   const [inboxFront, setInboxFront] = useState(false)
   const inboxShown = reviewer !== null && inboxFront
+  /**
+   * FOCUS MODE (YAZ-5375, Yaseen: "a button that enables focus mode so someone can decide to turn it on vs not"): on, the
+   * tab row hides while the Inbox tab is the one on show, so the card gets its room; off, as before. The Inbox bar's
+   * button, F and Esc in the Inbox turn it off again; ⌃Tab and the sidebar still go to other tabs, where the row shows.
+   * Remembered across restarts (`inbox:focus` in localStorage), for every window.
+   */
+  const [inboxFocusMode, setInboxFocusMode] = useState(readInboxFocus)
+  const changeInboxFocus = useCallback((on: boolean) => {
+    setInboxFocusMode(on)
+    saveInboxFocus(on)
+  }, [])
+  const inboxFocused = inboxShown && inboxFocusMode
   /**
    * The page on show in the main pane: the active tab's — and none under the blank tab (YAZ-2655
    * D10), where `file` is still the last real active tab, the one the window stores, nor under the Inbox tab (YAZ-5038).
@@ -1806,8 +1819,9 @@ export function App() {
   const toCycleTab = useCallback((dir: 1 | -1) => {
     const { tabs: strip, active, blank: blankShows } = now.current
     const stop = cycleStop(strip.map((t) => t.id), active, blankShows, inboxNow.current, dir)
-    if (stop === null) return
+    // A trip from the tab board closes it, to the page already open too (one tab: no stop to go to).
     setOverview(OVERVIEW_CLOSED)
+    if (stop === null) return
     if ('inbox' in stop) showInbox()
     else {
       setInboxFront(false)
@@ -3933,7 +3947,7 @@ export function App() {
           <Welcome recents={storage.getRecentRoots()} sets={storage.getVaultSets()} onOpenRecent={openRoot} onOpenSet={openSetFromWelcome} onPickFolder={pick} picking={picking} onNotice={notify} />
         </section>
       ) : (
-        <div className="workspace">
+        <div className="workspace" data-inbox-focus={inboxFocused || undefined}>
           {/* One per vault (YAZ-2602 D1): each feeds its own vault's sources from that vault's index.
               In SLOT order: a new order of the vaults moves none, so none reads its index again (YAZ-2631 D5). */}
           {scopes.map((vault) => vault.root !== null && <WikilinkIndexBridge key={vault.root} root={vault.root} watch={vault.watch} source={vault.wikilinks} candidates={vault.wikilinkCandidates} viewOnly={vault.viewOnlyLinks} onSnapshot={vault.onSnapshot} />)}
@@ -4044,7 +4058,7 @@ export function App() {
                 under it stays as it was. Behind a page tab it stays mounted, hidden, so it comes back at its card and step. */}
             {session !== null && (
               <Suspense fallback={null}>
-                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} openPage={openFromInbox} openAt={settings.inboxOpenAt} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} />
+                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} openPage={openFromInbox} openAt={settings.inboxOpenAt} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} focusMode={inboxFocusMode} onFocusMode={changeInboxFocus} />
               </Suspense>
             )}
             {/* The tab board (YAZ-2648 D5) covers the stack while it shows; a review never has one over it. */}
@@ -4095,7 +4109,7 @@ export function App() {
           </div>
         </RightPanel>
       )}
-      {root !== null && !rightPanel.open && !filesWindow && (
+      {root !== null && !rightPanel.open && !filesWindow && !inboxFocused && (
         <button type="button" className="right-panel-reopen" aria-label="Show right panel" title="Show right panel" onClick={() => setRightOpen(true)}>
           ‹
         </button>

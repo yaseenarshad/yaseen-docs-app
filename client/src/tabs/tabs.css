@@ -47,6 +47,11 @@
   background: var(--tab-row);
 }
 
+/* Focus mode (YAZ-5375 C): while the Inbox tab shows, the tab row steps aside (App's `data-inbox-focus`). */
+.workspace[data-inbox-focus] > .tabbar-row {
+  display: none;
+}
+
 /* Room at the row's end for the floating "Show right panel" button while that panel is closed (S93). */
 .tabbar-row--end {
   padding-right: 44px;
