@@ -52,7 +52,7 @@ export const COURSE: CourseChapter[] = [
       // A review just before the curve drops; the curve lifts and falls slower.
       { id: 'c1-03', text: 'But review it again before you forget, and it sticks longer.' },
       // Three reviews; the gaps label "1 day", "1 week", "1 month" on the marks. (Approved sample, unchanged.)
-      { id: 's2b', text: 'Each time, the gap grows. A day. A week. A month.', marks: [0.439, 0.597, 0.74] },
+      { id: 's2b', text: 'Each time, the gap grows. A day. A week. A month.', marks: [0.431, 0.608, 0.786] },
       // A small glowing memory, faint at first, grows solid over time.
       // SOURCE: Squire, Genzel, Wixted & Morris 2015, "Memory Consolidation", Cold Spring Harb Perspect Biol.
       { id: 'c1-04', text: 'A new memory starts out fragile. Over time, the brain makes it stable. Scientists call this consolidation.' },
