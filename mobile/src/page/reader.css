@@ -1,0 +1,268 @@
+/* The reader (4C, YAZ-5079): a page and a card, read only, on the Mac's tokens (`styles.css`). The card's own look is the
+   Mac's `card.css` (imported with `renderCard`); the link pills are the Mac's `wikilink.css`. The look is tuned with Yaseen
+   in the demo round (7-); this is the clean first build. */
+:root {
+  /* The card icon of a card pill: the Mac's (`client/src/app.css`). */
+  --card-link-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='1.75' y='5.25' width='10' height='8' rx='1.25'/%3E%3Cpath d='M4.5 3h8.25a1.25 1.25 0 0 1 1.25 1.25v6.25'/%3E%3C/svg%3E");
+}
+
+.reader__title {
+  margin: 4px 0 12px;
+  font-size: 22px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.reader__notice {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--bg-side);
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+.reader__body {
+  overflow-wrap: anywhere;
+}
+
+.reader__body :is(h1, h2, h3, h4, h5, h6) {
+  margin: 1.2em 0 0.4em;
+  line-height: 1.3;
+}
+.reader__body h1 {
+  font-size: 1.5em;
+}
+.reader__body h2 {
+  font-size: 1.3em;
+}
+.reader__body h3 {
+  font-size: 1.12em;
+}
+.reader__body :is(h4, h5, h6) {
+  font-size: 1em;
+}
+.reader__body > :first-child {
+  margin-top: 0;
+}
+.reader__body p {
+  margin: 0.5em 0;
+}
+.reader__body :is(ul, ol) {
+  margin: 0.4em 0;
+  padding-left: 1.4em;
+}
+.reader__body li {
+  margin: 0.15em 0;
+}
+.reader__body li:has(> .page-task, > p:first-child > .page-task) {
+  list-style: none;
+  margin-left: -1.4em;
+}
+
+/* A task box: a mark, not a control (nothing is ticked in stage one). */
+.page-task {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.35em;
+  vertical-align: -0.12em;
+  border: 1.5px solid var(--fg-muted);
+  border-radius: 4px;
+}
+.page-task[data-checked='true'] {
+  border-color: var(--accent);
+  background: var(--accent)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E")
+    center / 100% no-repeat;
+}
+li:has(> .page-task[data-checked='true'], > p:first-child > .page-task[data-checked='true']) {
+  color: var(--fg-muted);
+}
+
+.reader__body code {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--bg-side);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+}
+.reader__body pre {
+  margin: 0.6em 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: var(--bg-side);
+}
+.reader__body pre code {
+  padding: 0;
+  background: none;
+  font-size: 13px;
+}
+
+.reader__body blockquote {
+  margin: 0.6em 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--border);
+  color: var(--fg-muted);
+}
+.reader__body .page-callout {
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.page-callout__title {
+  font-weight: 600;
+}
+.page-callout[data-callout='warning'],
+.page-callout[data-callout='caution'] {
+  border-left-color: var(--warn);
+}
+.page-callout[data-callout='danger'],
+.page-callout[data-callout='error'] {
+  border-left-color: var(--danger);
+}
+
+.reader__body hr {
+  margin: 1.2em 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.reader__body mark {
+  border-radius: 3px;
+  background: #fff3a3;
+  color: inherit;
+}
+@media (prefers-color-scheme: dark) {
+  .reader__body mark {
+    background: #6b5d1c;
+  }
+}
+
+/* A table scrolls sideways in its box; the screen does not. */
+.page-table {
+  margin: 0.6em 0;
+  overflow-x: auto;
+}
+.page-table table {
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.page-table :is(th, td) {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.page-table th {
+  background: var(--bg-side);
+}
+
+.reader__body img,
+.card-view__card img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.6em 0;
+  border-radius: 8px;
+}
+.reader__body audio {
+  width: 100%;
+}
+
+/* What the phone cannot show now: one calm line, the text around it still there (N3, C3). */
+.page-media {
+  display: block;
+  margin: 0.6em 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+.reader__body a.wikilink {
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* A card: the page's own, and an embedded one (round 15, item 1). */
+.card.page-card,
+.card.card-embed {
+  margin: 12px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px rgba(0, 0, 0, 0.06);
+}
+.card-embed__from {
+  display: block;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 7px 7px 0 0;
+  background: var(--bg-side);
+  color: var(--fg-muted);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.card-embed__state {
+  margin-left: 6px;
+}
+.card-embed--missing {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+/* A card alone. */
+.card-view__id {
+  color: var(--fg-muted);
+  font-weight: 400;
+  font-size: 0.8em;
+}
+.card-view__in {
+  margin: -8px 0 12px;
+}
+.card-view__card {
+  margin: 0 0 12px;
+}
+.card-view__facts {
+  margin: 0 0 4px;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+.card-view__history {
+  margin-bottom: 16px;
+}
+.card-view__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.card-view__table :is(th, td) {
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.card-view__table th {
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+
+/* The page's own first heading says its title: the reader's title then stays for VoiceOver only. */
+.reader__title--same {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}

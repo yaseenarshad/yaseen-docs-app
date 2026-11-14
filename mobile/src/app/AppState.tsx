@@ -4,6 +4,7 @@ import type { SignInInput } from '../auth/check'
 import { chooseFriendsVault, loadFriendsAccount, type FriendsAccount } from '../auth/friends'
 import { forgetVaultAndToken, signIn, signInAgain, signOutAndErase, startState, type SignInOutcome } from '../auth/signIn'
 import type { FetchLike } from '../github/client'
+import type { PageMedia } from '../page/media'
 import type { Scanner } from '../scan/scanner'
 import { loadVaultList, openVault, openVaultOf, saveVaultList, vaultId, type KeepStorage, type PhoneVault, type TokenStore, type VaultList, type VaultStore } from '../store'
 import type { FriendsPort, FriendsSettings } from './friendsPort'
@@ -24,6 +25,11 @@ export interface AppServices {
   /** 4E's Friends, or `localFriends(store)` until it lands. */
   friends: FriendsPort
   scanner: Scanner
+  /**
+   * 4C (YAZ-5079): one file's bytes for the reader (a picture, a sound, a PDF). 3D's `MediaAhead` (`mobile/src/media`)
+   * when it is wired; absent, the reader reads the store only (`storedMedia`).
+   */
+  media?: PageMedia
   /** The GitHub calls of the sign-in check. Default: the browser's `fetch`. Tests pass `fakeGithub(…).fetch`. */
   fetch?: FetchLike
   now?: () => number

@@ -1,4 +1,6 @@
 import type { PhoneVault } from '../store'
+import type { PhoneIndex } from '../sync/phoneIndex'
+import type { TreeDiff } from '../sync/plan'
 
 /**
  * What the shell needs from the sync engine (3B, YAZ-5072). It is a structural subset of 3B's `SyncEngine`
@@ -29,8 +31,14 @@ export interface ShellSyncState {
   lastSyncedAt?: number | null
 }
 
-/** The events the shell reads. 3B's `changed` event carries more (the diff, the index); the shell needs the settings files. */
-export type ShellSyncEvent = { type: 'state'; state: ShellSyncState } | { type: 'changed'; vault: string; settings: string[] }
+/**
+ * The events the shell reads. 3B's `changed` event carries the settings files, and (4C, YAZ-5079) the diff and the index:
+ * Search and the reader follow the index, and the open page follows the diff (R3 changed, R5 deleted, R6 renamed). Both
+ * are optional, so a fake may leave them out: then the screens read the stored index again.
+ */
+export type ShellSyncEvent =
+  | { type: 'state'; state: ShellSyncState }
+  | { type: 'changed'; vault: string; settings: string[]; diff?: TreeDiff | null; index?: PhoneIndex }
 
 export interface ShellSync {
   state(): ShellSyncState
