@@ -28,6 +28,8 @@ export interface Backend {
   get(table: Table, key: Key): Promise<unknown>
   /** Every value of the table, or of one scope, in key order. */
   all(table: Table, scope?: string): Promise<unknown[]>
+  /** Every key of the table, or of one scope, in key order. No values are read. */
+  keys(table: Table, scope?: string): Promise<Key[]>
   /**
    * Applies every op in ONE transaction: all of them land or none does. It resolves only when the transaction
    * is committed, so a caller that awaits it can move on (the answer list rule: iOS 17.4–18.1 could lose
