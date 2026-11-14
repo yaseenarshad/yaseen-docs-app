@@ -40,7 +40,10 @@ export const SECONDARY_LIMIT_WAIT_MS = 60_000
  */
 export const MIN_RATE_WAIT_MS = SECONDARY_LIMIT_WAIT_MS
 export const MAX_RATE_WAIT_MS = 60 * 60_000
-/** A request with no answer (no status, no error) stops after this (YAZ-5173), and reads as `OFFLINE`. */
+/**
+ * A request that is SILENT this long stops (YAZ-5173) and reads as `OFFLINE`: no answer, and no new bytes of its body.
+ * A download that still gets bytes goes on to its end (YAZ-5184).
+ */
 export const REQUEST_TIMEOUT_MS = 30_000
 
 /** When to try again: `until` (ms since 1970, or null: not said) held between the floor and the ceiling from `now`. */
@@ -123,8 +126,10 @@ export interface ClientOptions {
   fetch?: FetchLike
   /** The clock for `resetAt` from `Retry-After`. */
   now?: () => number
-  /** The time limit of one request, ms (default REQUEST_TIMEOUT_MS). */
+  /** The silence limit of one request, ms (default REQUEST_TIMEOUT_MS). */
   timeoutMs?: number
+  /** Called each time GitHub gives something: the answer's head, and each part of its body (YAZ-5184). */
+  onActivity?: () => void
 }
 
 /** A path on the API, never an address: it starts with one `/`, and has no host, no `..`, no `@`, no query. */
@@ -156,40 +161,62 @@ export function githubClient(token: string, options: ClientOptions = {}): Github
       if (opts.etag !== undefined) headers.set('If-None-Match', opts.etag)
       if (opts.body !== undefined) headers.set('Content-Type', 'application/json')
 
-      let response: Response
+      // The silence limit (YAZ-5173, YAZ-5184): it starts again at the answer and at each part of the body.
+      const limit = options.timeoutMs ?? REQUEST_TIMEOUT_MS
+      const abort = typeof AbortController === 'function' ? new AbortController() : null
+      let silence: ReturnType<typeof setTimeout> | null = null
+      const alive = () => {
+        if (silence !== null) clearTimeout(silence)
+        if (abort !== null) silence = setTimeout(() => abort.abort(), limit)
+      }
+      const heard = () => {
+        alive()
+        options.onActivity?.()
+      }
+      alive()
       try {
-        const query = opts.query === undefined ? '' : `?${new URLSearchParams(opts.query).toString()}`
-        response = await fetch(`${GITHUB_API}${path}${query}`, {
-          method,
-          headers,
-          body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
-          // No cookies. No browser cache: the ETag is ours (3B), and answers made with the token stay off the disk.
-          credentials: 'omit',
-          // A request with no answer stops after REQUEST_TIMEOUT_MS (YAZ-5173). The abort reads as OFFLINE below.
-          signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(options.timeoutMs ?? REQUEST_TIMEOUT_MS) : undefined,
-          cache: 'no-store',
-          referrerPolicy: 'no-referrer',
-        })
-      } catch {
-        // The fetch error is not kept: it can name the request. A CORS refusal looks the same as no network.
-        throw new GithubError('OFFLINE', null, 'No connection to GitHub')
+        return await send()
+      } finally {
+        if (silence !== null) clearTimeout(silence)
       }
 
-      const etag = response.headers.get('etag')
-      const rateLimit = readRateLimit(response.headers)
-      if (response.status === 304) return { status: 304, headers: response.headers, etag, data: null, rateLimit }
-      if (response.status >= 200 && response.status < 300) {
-        const data = await offlineOnError(() => (opts.raw ? response.arrayBuffer().then((b) => new Uint8Array(b)) : readJson(response)))
-        return { status: response.status, headers: response.headers, etag, data, rateLimit }
+      async function send(): Promise<GithubResponse> {
+        let response: Response
+        try {
+          const query = opts.query === undefined ? '' : `?${new URLSearchParams(opts.query).toString()}`
+          response = await fetch(`${GITHUB_API}${path}${query}`, {
+            method,
+            headers,
+            body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+            // No cookies. No browser cache: the ETag is ours (3B), and answers made with the token stay off the disk.
+            credentials: 'omit',
+            // A request that is silent for `limit` stops (YAZ-5173, YAZ-5184). The abort reads as OFFLINE below.
+            signal: abort?.signal,
+            cache: 'no-store',
+            referrerPolicy: 'no-referrer',
+          })
+        } catch {
+          // The fetch error is not kept: it can name the request. A CORS refusal looks the same as no network.
+          throw new GithubError('OFFLINE', null, 'No connection to GitHub')
+        }
+
+        heard()
+        const etag = response.headers.get('etag')
+        const rateLimit = readRateLimit(response.headers)
+        if (response.status === 304) return { status: 304, headers: response.headers, etag, data: null, rateLimit }
+        if (response.status >= 200 && response.status < 300) {
+          const data = await offlineOnError(() => (opts.raw ? readBytes(response, heard) : readJson(response, heard)))
+          return { status: response.status, headers: response.headers, etag, data, rateLimit }
+        }
+        const body = await offlineOnError(() => readJson(response, heard))
+        const said = body !== null && typeof body === 'object' && typeof (body as { message?: unknown }).message === 'string' ? (body as { message: string }).message : ''
+        const error = failure(response, method, scrub(said), now(), rateLimit)
+        // A status in `allow` comes back as an answer (its JSON body in `data`), but a rate limit never does: a probe
+        // that allows 403 must not read GitHub's "slow down" as "no access" (YAZ-5166).
+        if (error.code !== 'RATE_LIMITED' && (opts.allow ?? []).includes(response.status))
+          return { status: response.status, headers: response.headers, etag, data: body, rateLimit }
+        throw error
       }
-      const body = await offlineOnError(() => readJson(response))
-      const said = body !== null && typeof body === 'object' && typeof (body as { message?: unknown }).message === 'string' ? (body as { message: string }).message : ''
-      const error = failure(response, method, scrub(said), now(), rateLimit)
-      // A status in `allow` comes back as an answer (its JSON body in `data`), but a rate limit never does: a probe
-      // that allows 403 must not read GitHub's "slow down" as "no access" (YAZ-5166).
-      if (error.code !== 'RATE_LIMITED' && (opts.allow ?? []).includes(response.status))
-        return { status: response.status, headers: response.headers, etag, data: body, rateLimit }
-      throw error
     },
   }
 }
@@ -219,8 +246,30 @@ function readRateLimit(headers: Headers): RateLimit | null {
   return Object.values(rate).every((v) => v === null) ? null : rate
 }
 
-async function readJson(response: Response): Promise<unknown> {
-  const text = await response.text()
+/** The body's bytes, part by part: each part tells `heard`, so a slow but live body is never cut (YAZ-5184). */
+async function readBytes(response: Response, heard: () => void): Promise<Uint8Array> {
+  if (response.body === null) return new Uint8Array(await response.arrayBuffer())
+  const reader = response.body.getReader()
+  const parts: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    parts.push(value)
+    size += value.byteLength
+    heard()
+  }
+  const out = new Uint8Array(size)
+  let at = 0
+  for (const part of parts) {
+    out.set(part, at)
+    at += part.byteLength
+  }
+  return out
+}
+
+async function readJson(response: Response, heard: () => void = () => {}): Promise<unknown> {
+  const text = new TextDecoder().decode(await readBytes(response, heard))
   if (text === '') return null
   try {
     return JSON.parse(text)
