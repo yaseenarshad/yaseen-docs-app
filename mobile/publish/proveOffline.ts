@@ -314,7 +314,12 @@ try {
     const first = await evaluate(`import('/assets/${late}').then(() => 'loaded', () => 'failed')`)
     writeFileSync(join(v2, 'assets', late), 'export const late = 1\n')
     const again = await evaluate(`import('/assets/${late}').then(() => 'loaded', () => 'failed')`)
-    record('8 a chunk import that failed loads at the next try (no failure kept by the worker or the browser)', first === 'failed' && again === 'loaded', `${first}, then ${again}`)
+    // What keeps a failure: the worker (a fetch through it), or the browser's module map (the same address imported again)?
+    const fresh = await evaluate(`import('/assets/${late}?again').then(() => 'loaded', () => 'failed')`)
+    record('8a after a failed chunk, the worker passes the next request to the host (it keeps no failure)', fresh === 'loaded', `the same file under a new address: ${fresh}`)
+    // A finding, not a step of 5-: Chrome keeps a failed import of an address for the life of the page (the module map),
+    // so a "Try again" that imports the same chunk again fails again until the page loads again.
+    console.log(`NOTE  8b the SAME chunk address imported again after a failure: ${first}, then ${again}${again === 'failed' ? ' (the browser keeps the failure until a reload)' : ''}`)
     await host(null)
   }
   const unexpected = csp().slice(onPurpose)
