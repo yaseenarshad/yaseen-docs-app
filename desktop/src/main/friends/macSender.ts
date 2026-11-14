@@ -22,7 +22,7 @@
 import { createHash } from 'node:crypto'
 import { findFriendsIndex, gistErrorCode, gistErrorResetAt, pointersOf, readListGist, type GistsApi, type IndexHandle, type WriteOptions } from '@shared/friendGists'
 import { emptyBudget, numbersFor, numbersKey, reserveFor, sendGap, sendGate, sendNumbers, type GistBudget, type SendReason } from '@shared/friendSend'
-import type { FriendStats, FriendVault } from '@shared/friendStats'
+import { dayIn, type FriendStats, type FriendVault } from '@shared/friendStats'
 import type { ClosedVault } from './closedVaults'
 import { COUNT_LIMIT_MS, countPayload } from './countJob'
 import { pendingRemove } from '@shared/friendsList'
@@ -64,7 +64,8 @@ export interface MacSenderDeps {
    * The count of the packed cards (`countPayload`). YAZ-5250, YAZ-5277: the app runs it on a worker thread
    * (`countJob.ts`), so the main thread only packs and waits. Required: this file has no count of its own.
    */
-  stats(text: string, now: number, closed: readonly ClosedVault[]): Promise<Omit<FriendStats, 'login' | 'name' | 'avatar'>>
+  /** `zone`: the person's home time zone from the friends list (YAZ-5251); null: this Mac's own zone. */
+  stats(text: string, now: number, closed: readonly ClosedVault[], zone: string | null): Promise<Omit<FriendStats, 'login' | 'name' | 'avatar'>>
   /**
    * YAZ-5252: the vaults that count and are CLOSED on this Mac, by repo (`closedVaults.ts`): counted from their files,
    * in the same worker. Absent: only open vaults count.
@@ -96,11 +97,6 @@ const nodeClock: MacClock = {
 const MAX_TIMER_MS = 60 * 60_000
 const hash = (text: string) => createHash('sha256').update(text).digest('hex')
 const fresh = (): MacSendSaved => ({ lastSentAt: null, lastKey: null, budget: emptyBudget(), friends: 0, groups: 0, refused: false, lastCountAt: null, lastInput: null })
-/** The local day of `now`, as `friendStats` counts days: the same cards on another day can give other numbers. */
-const localDay = (now: number) => {
-  const d = new Date(now)
-  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
-}
 const turn = () => new Promise<void>((done) => setImmediate(done))
 
 /** The list for writes the Mac never makes: `findFriendsIndex` may join two lists; the Mac leaves that to the phone. */
@@ -269,14 +265,17 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
       // YAZ-5249: the same cards on the same local day as at the last count: the numbers cannot change. No count.
       const text = countPayload(counted)
       await turn()
-      const input = hash(`${localDay(now)}\n${list.index.nickname ?? ''}\n${closed.map((c) => `${c.root}\t${c.key}`).join('\n')}\n${text}`)
+      // YAZ-5251: the days are the person's HOME zone's (the list keeps it; the Mac never writes it). No zone yet: this
+      // Mac's own, as before. The zone is in the hash, so a new zone counts the same cards again.
+      const zone = list.index.zone ?? null
+      const input = hash(`${dayIn(now, zone)}\n${zone ?? ''}\n${list.index.nickname ?? ''}\n${closed.map((c) => `${c.root}\t${c.key}`).join('\n')}\n${text}`)
       await turn()
       if (input === s.lastInput) {
         await store({ lastCountAt: now })
         return set('unchanged')
       }
       const p = await account(token)
-      const numbers = numbersFor(await withLimit(deps.stats(text, now, closed)), { login: p.login, name: p.name, avatar: p.avatar, nickname: list.index.nickname }, now)
+      const numbers = numbersFor(await withLimit(deps.stats(text, now, closed, zone)), { login: p.login, name: p.name, avatar: p.avatar, nickname: list.index.nickname }, now)
       const key = hash(numbersKey(numbers))
       if (key === s.lastKey) {
         await store({ lastCountAt: now, lastInput: input })

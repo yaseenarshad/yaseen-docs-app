@@ -23,6 +23,8 @@ export function countPayload(vaults: readonly FriendVault[]): string {
 export interface CountJob {
   text: string
   now: number
+  /** YAZ-5251: the person's home time zone (`FriendsIndex.zone`); null: this Mac's own zone. */
+  zone?: string | null
   /**
    * YAZ-5252: the closed vaults that count, in the SAME worker. `text`: the packed cards of the last scan (its folder
    * did not change), or null: the worker scans the folder now (`scanVault.ts`) and sends the pack back.
@@ -40,8 +42,8 @@ export interface CountAnswer {
 export const vaultPack = (v: FriendVault): string => countPayload([v]).slice(1, -1)
 
 /** The count on a fresh worker thread. `workerFile` is the built `countWorker.ts` (`?modulePath` in `friends/index.ts`). */
-export function countOffThread(workerFile: string, vaults: readonly FriendVault[], now: number): Promise<Omit<FriendStats, 'login' | 'name' | 'avatar'>> {
-  return countTextOffThread(workerFile, countPayload(vaults), now)
+export function countOffThread(workerFile: string, vaults: readonly FriendVault[], now: number, zone: string | null = null): Promise<Omit<FriendStats, 'login' | 'name' | 'avatar'>> {
+  return countTextOffThread(workerFile, countPayload(vaults), now, COUNT_LIMIT_MS, zone)
 }
 
 /**
@@ -51,8 +53,8 @@ export function countOffThread(workerFile: string, vaults: readonly FriendVault[
 export const COUNT_LIMIT_MS = 60_000
 
 /** The same, for cards already packed (`countPayload`): the Mac's sender packs once, for its hash and for the count. */
-export async function countTextOffThread(workerFile: string, text: string, now: number, limitMs = COUNT_LIMIT_MS): Promise<Omit<FriendStats, 'login' | 'name' | 'avatar'>> {
-  return (await countJobOffThread(workerFile, { text, now }, limitMs)).stats
+export async function countTextOffThread(workerFile: string, text: string, now: number, limitMs = COUNT_LIMIT_MS, zone: string | null = null): Promise<Omit<FriendStats, 'login' | 'name' | 'avatar'>> {
+  return (await countJobOffThread(workerFile, { text, now, zone }, limitMs)).stats
 }
 
 /**
@@ -63,8 +65,8 @@ export async function countTextOffThread(workerFile: string, text: string, now: 
 export function makeCounter(workerFile: string, limitMs = COUNT_LIMIT_MS) {
   const kept = new Map<string, { key: string; text: string }>()
   let last: string[] = []
-  const count = async (text: string, now: number, closed: readonly { root: string; key: string }[] = []) => {
-    const job: CountJob = { text, now, closed: closed.map((c) => ({ root: c.root, text: kept.get(c.root)?.key === c.key ? kept.get(c.root)!.text : null })) }
+  const count = async (text: string, now: number, closed: readonly { root: string; key: string }[] = [], zone: string | null = null) => {
+    const job: CountJob = { text, now, zone, closed: closed.map((c) => ({ root: c.root, text: kept.get(c.root)?.key === c.key ? kept.get(c.root)!.text : null })) }
     const answer = await countJobOffThread(workerFile, job, limitMs)
     last = answer.scanned.map((x) => x.root)
     for (const x of answer.scanned) kept.set(x.root, { key: closed.find((c) => c.root === x.root)!.key, text: x.text })
