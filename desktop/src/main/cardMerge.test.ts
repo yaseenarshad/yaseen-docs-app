@@ -143,3 +143,46 @@ describe('uniteCardLines', () => {
     expect(uniteCardLines(base, theirs, mine)).toEqual([theirs, mine])
   })
 })
+
+describe('uniteCardLines: a review removed on one side stays removed (YAZ-5155)', () => {
+  const R1 = '2026-11-01T09:00Z good'
+  const R2 = '2026-11-05T09:00Z again'
+  const R3 = '2026-11-13T10:00Z good 4s'
+
+  it('base {R1, R2}, mine {R1} (an undo), theirs {R1, R2, R3}: {R1, R3}, both ways round', () => {
+    const base = page(card('Hola', `YAZ-7, ${R1}, ${R2}`))
+    const [t, m] = uniteCardLines(base, page(card('Hola', `YAZ-7, ${R1}, ${R2}, ${R3}`)), page(card('Hola', `YAZ-7, ${R1}`)))
+    expect(t).toBe(m)
+    expect(lineOf(t)).toBe(`<!-- card: YAZ-7, ${R1}, ${R3} -->`)
+    const [t2, m2] = uniteCardLines(base, page(card('Hola', `YAZ-7, ${R1}`)), page(card('Hola', `YAZ-7, ${R1}, ${R2}, ${R3}`)))
+    expect(t2).toBe(m2)
+    expect(lineOf(t2)).toBe(`<!-- card: YAZ-7, ${R1}, ${R3} -->`)
+  })
+
+  it('both sides remove R2, and one answers: {R1, R3}', () => {
+    const [t, m] = uniteCardLines(page(card('Hola', `YAZ-7, ${R1}, ${R2}`)), page(card('Hola', `YAZ-7, ${R1}, ${R3}`)), page(card('Hola', `YAZ-7, off, ${R1}`)))
+    expect(t).toBe(m)
+    expect(lineOf(t)).toBe(`<!-- card: YAZ-7, off, ${R1}, ${R3} -->`)
+  })
+
+  it('one side removes R2, the other changes R2 (its seconds): the changed R2 stays — a change wins over a remove', () => {
+    const [t, m] = uniteCardLines(page(card('Hola', `YAZ-7, ${R1}, ${R2}`)), page(card('Hola', `YAZ-7, ${R1}, ${R2} 9s`)), page(card('Hola', `YAZ-7, ${R1}`)))
+    expect(t).toBe(m)
+    expect(lineOf(t)).toBe(`<!-- card: YAZ-7, ${R1}, ${R2} 9s -->`)
+  })
+
+  it('Reset history on one side, an answer on the other: only the new answer', () => {
+    const [t, m] = uniteCardLines(page(card('Hola', `YAZ-7, ${R1}, ${R2}`)), page(card('Hola', 'YAZ-7')), page(card('Hola', `YAZ-7, ${R1}, ${R2}, ${R3}`)))
+    expect(t).toBe(m)
+    expect(lineOf(t)).toBe(`<!-- card: YAZ-7, ${R3} -->`)
+  })
+
+  it('no base (the page is new on both sides), or the card is not in the base: the union, as before', () => {
+    const [t, m] = uniteCardLines(null, page(card('Hola', `YAZ-7, ${R1}, ${R3}`)), page(card('Hola', `YAZ-7, ${R2}`)))
+    expect(t).toBe(m)
+    expect(lineOf(t)).toBe(`<!-- card: YAZ-7, ${R1}, ${R2}, ${R3} -->`)
+    const [t2, m2] = uniteCardLines(page(), page(card('Hola', `YAZ-7, ${R1}, ${R3}`)), page(card('Hola', `YAZ-7, ${R2}`)))
+    expect(t2).toBe(m2)
+    expect(lineOf(t2)).toBe(`<!-- card: YAZ-7, ${R1}, ${R2}, ${R3} -->`)
+  })
+})
