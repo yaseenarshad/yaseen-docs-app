@@ -9,7 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { CardRecord } from '@shared/cardLine'
 import { INDEX_FILE, NUMBERS_FILE, emptyNumbers, ensureFriendsFiles, findFriendsIndex, makePointer, writeFriendsIndex, type GistsApi, type WriteOptions } from '@shared/friendGists'
 import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
-import { PUBLISH_EVERY_MS, reserveFor } from '@shared/friendSend'
+import { PUBLISH_EVERY_MS, mergeNeverLower, numbersFor, reserveFor } from '@shared/friendSend'
 import { friendStats, type FriendStats, type FriendVault } from '@shared/friendStats'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { macGistsApi, readProfile } from './gistsHttp'
@@ -27,8 +27,8 @@ const NOGISTS = 'github_pat_11MACSEND_nogists00000000000000000000000000000000000
 const OTHER = 'github_pat_11MACSEND_other00000000000000000000000000000000000000000000000000000000000'
 /** The count on the test's own thread: the app gives the worker (`countJob.ts`); `stats` is required (YAZ-5277). */
 const closedData = new Map<string, FriendVault>()
-const countHere = async (text: string, now: number, closed: readonly { root: string }[] = []) =>
-  friendStats([...(JSON.parse(text) as FriendVault[]), ...closed.map((c) => closedData.get(c.root)!)], now)
+const countHere = async (text: string, now: number, closed: readonly { root: string }[] = [], zone: string | null = null) =>
+  friendStats([...(JSON.parse(text) as FriendVault[]), ...closed.map((c) => closedData.get(c.root)!)], now, zone)
 const opts: WriteOptions = { describe: (kind) => `notecards-test ${kind}`, sleep: async () => {} }
 
 /** Made-up cards, answered `n` times today: private words in every field the index has, so a leak shows. */
@@ -83,8 +83,8 @@ function makeRig(accounts: Record<string, { login: string; gists?: boolean }> = 
 }
 
 /** The phone made the friends files and added `friends` friends (4E2's calls), with the vaults that count. */
-async function withFriends(r: Rig, friends = 1, vaults = ['yaseen/vault']) {
-  const made = await ensureFriendsFiles(r.phone, { vaults, nickname: null }, opts)
+async function withFriends(r: Rig, friends = 1, vaults = ['yaseen/vault'], zone?: string) {
+  const made = await ensureFriendsFiles(r.phone, { vaults, nickname: null, ...(zone !== undefined && { zone }) }, opts)
   if (made.kind !== 'ok') throw new Error(made.kind)
   let handle = made.handle
   const list = [...handle.index.friends]
@@ -289,14 +289,14 @@ describe('the count runs on the worker (YAZ-5277), and a count that never answer
     const source = readFileSync(join(__dirname, 'macSender.ts'), 'utf8')
     expect(source).not.toMatch(/^import \{[^}]*\bfriendStats\b[^}]*\} from '@shared\/friendStats'/m)
     expect(source).not.toMatch(/\bfriendStats\(/)
-    expect(source).toMatch(/^\s+stats\(text: string, now: number, closed: readonly ClosedVault\[\]\)/m)
+    expect(source).toMatch(/^\s+stats\(text: string, now: number, closed: readonly ClosedVault\[\], zone: string \| null\)/m)
   })
 
   it("the app's sender counts on the worker thread: `stats` is the worker's count, with the built countWorker", () => {
     const source = readFileSync(join(__dirname, 'index.ts'), 'utf8')
     expect(source).toMatch(/^import countWorker from '\.\/countWorker\?modulePath'$/m)
     expect(source).toMatch(/const counter = makeCounter\(countWorker\)/)
-    expect(source).toMatch(/stats: \(text, now, closed\) => counter\(text, now, closed\)/)
+    expect(source).toMatch(/stats: \(text, now, closed, zone\) => counter\(text, now, closed, zone\)/)
   })
 
   it('a count that never answers: that try ends as failed at the time limit, and the next try still runs', async () => {
@@ -383,6 +383,67 @@ describe('a vault that counts and is closed on this Mac (YAZ-5252: "holds" means
     rig.sender = createMacSender({ ...depsOf(rig), closed: async () => new Map() })
     expect(await rig.sender.attempt('pass')).toMatchObject({ status: 'missing-vaults', missing: 1 })
     expect(macWrites(rig)).toBe(0)
+  })
+})
+
+describe('the home time zone of the numbers (YAZ-5251, pick B3)', () => {
+  // This file runs the Mac in New York. 10 answers at 00:31 to 00:40 New York time on Nov 15: 21:31 to 21:40 in Los
+  // Angeles on Nov 14.
+  const AT = Date.parse('2026-11-15T05:41:00Z')
+  const NOW = Date.parse('2026-11-15T06:00:00Z')
+  const LA = 'America/Los_Angeles'
+  const days = (f: FriendStats) => f.days.filter((d) => d.cards > 0).map((d) => [d.day, d.cards])
+
+  it('home zone Los Angeles: the Mac in New York counts the days in Los Angeles; with the phone\'s numbers, the friend sees 10 on ONE day', async () => {
+    rig = makeRig({ [PHONE]: { login: 'yaseen' }, [MAC]: { login: 'yaseen' } })
+    rig.world.advance(NOW - rig.world.now())
+    const handle = await withFriends(rig, 1, ['yaseen/vault'], LA)
+    rig.cards.value = answered(10, AT)
+    // The phone (in Los Angeles) sent first, with the shared rules and the same cards.
+    const phone = numbersFor(friendStats([vaultWith(rig.cards.value)], NOW, LA), { login: 'yaseen', name: 'Yaseen A', avatar: 'https://avatars.githubusercontent.com/u/7', nickname: null }, NOW)
+    await rig.phone.update(handle.index.stats!, { [NUMBERS_FILE]: JSON.stringify(mergeNeverLower(null, phone).file) })
+    const stats = vi.fn(countHere)
+    rig.sender = createMacSender({ ...depsOf(rig), stats })
+    expect((await rig.sender.attempt('pass')).status).toMatch(/^(sent|unchanged)$/)
+    expect(stats.mock.calls[0][3]).toBe(LA)
+    const seen = numbersOf(rig, handle.index.stats!)
+    expect(days(seen)).toEqual([['2026-11-14', 10]])
+    expect(seen.days.reduce((n, d) => n + d.cards, 0)).toBe(10)
+  })
+
+  it('no zone in the list (an older list): the Mac uses its own zone, as before', async () => {
+    rig = makeRig({ [PHONE]: { login: 'yaseen' }, [MAC]: { login: 'yaseen' } })
+    rig.world.advance(NOW - rig.world.now())
+    const handle = await withFriends(rig, 1)
+    rig.cards.value = answered(10, AT)
+    await rig.sender.attempt('pass')
+    expect(days(numbersOf(rig, handle.index.stats!))).toEqual([['2026-11-15', 10]])
+  })
+
+  it('the zone changes in the list: the next send uses it (and the same cards count again)', async () => {
+    rig = makeRig({ [PHONE]: { login: 'yaseen' }, [MAC]: { login: 'yaseen' } })
+    rig.world.advance(NOW - rig.world.now())
+    let handle = await withFriends(rig, 1, ['yaseen/vault'], 'America/New_York')
+    rig.cards.value = answered(10, AT)
+    const stats = vi.fn(countHere)
+    rig.sender = createMacSender({ ...depsOf(rig), stats })
+    await rig.sender.attempt('pass')
+    expect(stats.mock.calls[0][3]).toBe('America/New_York')
+    handle = await writeFriendsIndex(rig.phone, handle, { ...handle.index, zone: LA })
+    rig.world.advance(PUBLISH_EVERY_MS + 1)
+    await rig.sender.attempt('pass')
+    expect(stats).toHaveBeenCalledTimes(2)
+    expect(stats.mock.calls[1][3]).toBe(LA)
+  })
+
+  it('the Mac never writes the zone: no request body holds it (only the list keeps it)', async () => {
+    rig = makeRig({ [PHONE]: { login: 'yaseen' }, [MAC]: { login: 'yaseen' } })
+    rig.world.advance(NOW - rig.world.now())
+    await withFriends(rig, 1, ['yaseen/vault'], LA)
+    rig.cards.value = answered(10, AT)
+    expect((await rig.sender.attempt('pass')).status).toBe('sent')
+    const bodies = rig.wire.requests.map((q) => q.body ?? '').join('\n')
+    for (const word of [LA, 'Los_Angeles', '"zone"']) expect(bodies).not.toContain(word)
   })
 })
 
