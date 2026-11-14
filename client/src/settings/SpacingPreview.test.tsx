@@ -49,7 +49,7 @@ it('YAZ-5050 round 2: Settings › Review is split into groups by purpose, every
     ['newPerDay', 'upNextPerDay', 'newOrder'],
     ['buttons', 'pauseAfter', 'timeSoFar'],
     ['retention', 'maxDays', 'fuzz', 'weights'],
-    ['shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview'],
+    ['shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTablePosition', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview'],
     ['howCardsComeBack'],
   ])
   const spacing = SETTINGS_SECTIONS.find((s) => s.id === 'appearance')!.groups.find((g) => g.title === 'Spacing')!

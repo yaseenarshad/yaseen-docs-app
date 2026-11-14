@@ -5,7 +5,7 @@
  * resolution, the folder for a new page). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
 import type { UnitText } from '../vault/unitWord'
-import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyPageOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewPageLocation, type NoticeLength, type OutsideChangeGlow, type CardSpacing, type SectionLines, type ShownHiddenWords, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableNewStyle, type TableTextInCells, type TablePosition, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyPageOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewPageLocation, type NoticeLength, type OutsideChangeGlow, type CardSpacing, type SectionLines, type ShownHiddenWords, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableNewStyle, type TableTextInCells, type TablePosition, type CardTablePosition, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -226,6 +226,9 @@ export const TABLE_POSITION_OPTIONS: readonly Option<TablePosition>[] = [
   { label: 'Left', value: 'left' },
   { label: 'Centre', value: 'center' },
 ]
+
+/** Settings › Review › Card look › Card tables (YAZ-5136 round 3): the pages' Table position, or the cards' own. */
+export const cardTablePositionOptions = (unit: UnitText): readonly Option<CardTablePosition>[] => [{ label: unit('Same as pages'), value: 'pages' }, ...TABLE_POSITION_OPTIONS]
 
 export const TABLE_TEXT_IN_CELLS_OPTIONS: readonly Option<TableTextInCells>[] = [
   { label: 'Wrap', value: 'wrap' },

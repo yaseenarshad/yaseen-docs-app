@@ -20,6 +20,20 @@ export function contentWidthVars(s: SettingsState): Record<string, string> {
   return { '--content-text-width': px(page), '--card-text-width': isCardWidth(card) ? `${card}px` : px(page) }
 }
 
+/**
+ * Table position (YAZ-5136 rounds 2 and 3) as the variables of its one rule (`table.css`): the pages' Centre
+ * (`--page-table-inline: auto`), and the cards' own Left or Centre (`--card-table-inline`); none for Left and Same as
+ * pages, so a card falls back to the pages' and a page to the look before. A missing or unknown value is the default.
+ */
+export function tablePositionVars(s: SettingsState): Record<string, string> {
+  const card: unknown = (s as Partial<SettingsState>).cardTablePosition
+  return {
+    ...((s as Partial<SettingsState>).tablePosition === 'center' && { '--page-table-inline': 'auto' }),
+    ...(card === 'left' && { '--card-table-inline': '0' }),
+    ...(card === 'center' && { '--card-table-inline': 'auto' }),
+  }
+}
+
 /** The widest the pages' column gets, px, its 48 px sides in (the table of contents' room, `TableOfContents.tsx`). */
 export const columnMax = (step: ContentWidth): number => {
   const w = CONTENT_TEXT_WIDTHS[step]

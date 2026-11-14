@@ -2191,6 +2191,12 @@ export interface SettingsState {
    * `--card-text-width` on `.app`. Card spacing's Clean sets it to `CARD_WIDTH_CLEAN`, Mochi's line.
    */
   cardWidth: number | null
+  /**
+   * Settings › Review › Card look › Card tables (YAZ-5136 round 3, Yaseen: "it might be different for cards vs pages"):
+   * where a table sits in a card, read anywhere and in Edit card. `pages` (the default) follows `tablePosition`.
+   * `--card-table-inline` on `.app`, read by the one Table position rule (`table.css`).
+   */
+  cardTablePosition: CardTablePosition
   /** Card spacing, Custom (YAZ-5050): the card's line spacing, as `lineSpacing`. */
   cardLineSpacing: number
   /** Card spacing, Custom (YAZ-5050): the card's space between blocks, px per side, as `blockGap`. */
@@ -2585,6 +2591,9 @@ export type TableNewStyle = (typeof TABLE_NEW_STYLES)[number]
 /** Settings › Tables › Table position (YAZ-5136 round 2, Yaseen's pick A): every table at the left (the look before) or centred. */
 export const TABLE_POSITIONS = ['left', 'center'] as const
 export type TablePosition = (typeof TABLE_POSITIONS)[number]
+/** Settings › Review › Card look › Card tables (YAZ-5136 round 3): Same as pages (Table position), or the cards' own. */
+export const CARD_TABLE_POSITIONS = ['pages', ...TABLE_POSITIONS] as const
+export type CardTablePosition = (typeof CARD_TABLE_POSITIONS)[number]
 export const TABLE_TEXT_IN_CELLS = ['wrap', 'clip'] as const
 export type TableTextInCells = (typeof TABLE_TEXT_IN_CELLS)[number]
 export const TABLE_ROW_BANDS: readonly TableRowBand[] = ['off', 'calendar', 'all']
@@ -2944,6 +2953,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   nextHiddenColour: null,
   cardSpacing: 'pages',
   cardWidth: null,
+  cardTablePosition: 'pages',
   ...CARD_SPACING_CLEAN,
   tableOfContents: 'auto',
   tocOnByDefault: true,
