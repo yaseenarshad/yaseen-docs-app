@@ -385,6 +385,48 @@ describe('YAZ-5184: the time limit is a SILENCE limit', () => {
   })
 })
 
+describe('YAZ-5199: a commit of a big page on a slow upload', () => {
+  const run = async (bytes: number, upload: number) => {
+    const s = await syncSetup({ 'a.md': pageText('A', 'NC-1') })
+    const clock = fakeClock()
+    let started: () => void = () => {}
+    let finish: () => void = () => {}
+    const engine = createSyncEngine({
+      store: s.store,
+      tokens: s.tokens,
+      clock,
+      yieldToUi: async () => {},
+      makeRemote: (vault, token) => {
+        const real = githubRemote(githubClient(token, { fetch: s.github.fetch, now: clock.now }), vault.repo, vault.branch)
+        // The upload: no sign from GitHub until it ends (fetch gives no upload progress).
+        return { ...real, commit: async (parent, changes, message) => (started(), await new Promise<void>((r) => (finish = r)), real.commit(parent, changes, message)) }
+      },
+    })
+    await engine.open(VAULT_ROW)
+    await engine.idle()
+    const going = new Promise<void>((r) => (started = r))
+    const sent = engine.lane(async (remote) => {
+      const head = await remote.head()
+      if (head === 'unchanged') throw new Error('no')
+      return remote.commit(head.sha, [{ path: 'a.md', content: 'x'.repeat(bytes) }], 'sync (phone): a.md')
+    }).then(() => 'committed', (e: { code?: string }) => e.code ?? String(e))
+    await going
+    clock.advance(upload)
+    finish()
+    const got = await sent
+    engine.stop()
+    return got
+  }
+
+  it('2 MB that take 300 s to go up, with no sign from GitHub: inside the limit (150 s, plus 200 s for the body), so the commit is not cut', async () => {
+    expect(await run(2_000_000, 300_000)).toBe('committed')
+  })
+
+  it('a small commit that hears nothing for 10 minutes is still stopped (OFFLINE)', async () => {
+    expect(await run(1_000, 600_000)).toBe('OFFLINE')
+  })
+})
+
 describe('followPage: the page events', () => {
   it('hidden stops the polling, visible runs a pass at once, online runs a pass at once; the undo removes the listeners', async () => {
     const { followPage } = await import('./pageEvents')

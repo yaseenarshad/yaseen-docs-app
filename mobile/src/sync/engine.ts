@@ -1,7 +1,7 @@
-import { GithubError, MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS, REQUEST_TIMEOUT_MS, githubClient, type GithubErrorCode } from '../github/client'
+import { GithubError, MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS, REQUEST_TIMEOUT_MS, githubClient, uploadAllowanceMs, type GithubErrorCode } from '../github/client'
 import { StorageFullError, vaultId, type PhoneVault, type StoredFile, type TokenStore, type VaultStore } from '../store'
 import { POLL_MS } from './cadence'
-import { githubRemote, type GithubRemote } from './githubRemote'
+import { githubRemote, type Change, type GithubRemote } from './githubRemote'
 import { syncPass, type PassProgress, type PassResult } from './pass'
 import { INDEX_STATE, type PhoneIndex } from './phoneIndex'
 import { isEager, type TreeDiff } from './plan'
@@ -251,9 +251,17 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       head: (etag) => call(() => remote.head(etag)),
       tree: (commit) => call(() => remote.tree(commit)),
       blob: (sha) => call(() => remote.blob(sha)),
-      // A commit is up to 5 requests in a row.
-      commit: (parent, changes, message) => call(() => remote.commit(parent, changes, message), REQUEST_TIMEOUT_MS * 5),
+      // A commit is up to 5 requests in a row, and its files go UP with no sign (YAZ-5199): the time they need at the
+      // client's floor speed is added, as the client adds it for each request.
+      commit: (parent, changes, message) => call(() => remote.commit(parent, changes, message), REQUEST_TIMEOUT_MS * 5 + uploadAllowanceMs(changeBytes(changes))),
     }
+  }
+
+  /** The bytes a commit sends up (text as UTF-8; JSON adds a little, the floor speed covers it). */
+  const changeBytes = (changes: readonly Change[]): number => {
+    let n = 0
+    for (const c of changes) if (!('delete' in c)) n += typeof c.content === 'string' ? new TextEncoder().encode(c.content).byteLength : c.content.byteLength
+    return n
   }
 
   async function loadIndex(id: string, gen: number) {
