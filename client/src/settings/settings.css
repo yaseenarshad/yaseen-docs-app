@@ -2104,33 +2104,3 @@
   margin: 6px 0 0;
 }
 
-/* The live spacing previews (YAZ-5050 round 2, `SpacingPreview.tsx`): a quiet "Preview" word, then sample text on the
-   page colour, as it reads in a page or in a card. Only the box is styled here; the text's spacing is the page's and
-   the card's own rules, so the preview cannot drift from them. Not a control: no pointer, no selection. */
-.spacing-preview {
-  margin: 4px 0 8px;
-  pointer-events: none;
-  user-select: none;
-}
-.spacing-preview__label {
-  display: block;
-  margin-bottom: 6px;
-  color: var(--fg-muted);
-  font-size: 12px;
-}
-/* The page: the editor's column without its gutters, in a frame like the card's. */
-.spacing-preview .spacing-preview__page {
-  box-sizing: border-box;
-  max-width: none;
-  padding: 0 18px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
-}
-.spacing-preview .spacing-preview__page .milkdown .ProseMirror {
-  padding: 10px 0;
-}
-/* The card keeps its own frame (`.note-card`); its text at the page's size. */
-.spacing-preview .spacing-preview__card {
-  font-size: 16px;
-}

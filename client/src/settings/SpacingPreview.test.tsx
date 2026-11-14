@@ -34,8 +34,8 @@ it('YAZ-5050 round 2: the page preview is a heading and paragraphs in the page e
   expect(el.querySelector('.spacing-preview .editor-instance .milkdown .ProseMirror > h3')).not.toBeNull()
 })
 
-it('YAZ-5050 round 2: the previews copy no text style — settings.css styles only their box, so the page`s and the card`s own rules and variables draw the text', () => {
-  const css = readFileSync(`${__dirname}/settings.css`, 'utf8')
+it('YAZ-5050 round 2: the previews copy no text style — SpacingPreview.css styles only their box, so the page`s and the card`s own rules and variables draw the text', () => {
+  const css = readFileSync(`${__dirname}/SpacingPreview.css`, 'utf8')
   const preview = css.slice(css.indexOf('.spacing-preview {'))
   expect(preview).not.toMatch(/line-height|--edit-|--card-/)
   expect(preview).not.toMatch(/\b(p|li|h3|\.note-card__side)\s*[{,]/)

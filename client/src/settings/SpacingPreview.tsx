@@ -14,6 +14,7 @@
 import { useEffect, useRef } from 'react'
 import { renderNoteCard } from '../editor/noteCard/noteCardRender'
 import '../editor/noteCard/noteCard.css'
+import './SpacingPreview.css'
 
 /** The sample card: a title line, a paragraph with two hidden words, and a list with a child, so every spacing shows. */
 export const PREVIEW_CARD = ['**Rivers of Europe**', '', 'The {{Seine}} runs through Paris and reaches the sea at {{Le Havre}}.', '', 'Its valley is known for its bridges.', '', '- It is 777 km long', '  - its source is in Burgundy'].join('\n')
