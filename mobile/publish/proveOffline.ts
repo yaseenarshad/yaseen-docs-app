@@ -126,31 +126,31 @@ listeners.push((m) => {
 const csp = () => log.filter((l) => /Content Security Policy|Refused to/i.test(l.text))
 const errors = () => log.filter((l) => /error|exception/.test(l.level))
 
-listeners.push((m) => {
-  if (m.method === 'Target.attachedToTarget' && m.params.targetInfo.type === 'service_worker') {
-    const s = m.params.sessionId
-    void send('Runtime.enable', {}, s).catch(() => {})
-    void send('Log.enable', {}, s).catch(() => {})
-    void send('Runtime.runIfWaitingForDebugger', {}, s).catch(() => {})
-  }
-})
-await send('Target.setDiscoverTargets', { discover: true })
-listeners.push((m) => {
-  if (m.method === 'Target.targetCreated' && m.params.targetInfo.type === 'service_worker')
-    void send('Target.attachToTarget', { targetId: m.params.targetInfo.targetId, flatten: true }).catch(() => {})
-})
-
+// The worker is NOT attached to DevTools: an attached worker is restarted and held by Chrome, which changes the very
+// timing this check measures. Its errors still arrive through the page's ServiceWorker domain (below), and step 1c
+// proves that its own fetches worked (the whole shell is kept).
 const { targetId } = await send('Target.createTarget', { url: 'about:blank' })
 page = (await send('Target.attachToTarget', { targetId, flatten: true })).sessionId
 for (const domain of ['Page', 'Runtime', 'Log', 'Network']) await send(`${domain}.enable`, {}, page)
 // The worker versions as Chrome sees them (installing, installed, activating, activated, redundant).
 listeners.push((m) => {
   if (m.method === 'ServiceWorker.workerVersionUpdated')
-    for (const v of m.params.versions) versions.push(`${v.versionId}:${v.status}/${v.runningStatus}`)
+    for (const v of m.params.versions) {
+      versions.push(`${v.versionId}:${v.status}/${v.runningStatus}`)
+      if (process.env.PROOF_TRACE) console.log(`  sw ${new Date().toISOString().slice(14, 23)} ${v.versionId}:${v.status}/${v.runningStatus}`)
+    }
   if (m.method === 'ServiceWorker.workerErrorReported') log.push({ where: 'worker', level: 'error', text: m.params.errorMessage.errorMessage })
 })
 await send('ServiceWorker.enable', {}, page)
 const docHeaders: Record<string, string>[] = []
+// Trace only: the page's requests that are still open (a request the worker holds keeps the old worker busy).
+const open_ = new Map<string, { url: string; t: number }>()
+listeners.push((m) => {
+  if (!process.env.PROOF_TRACE || m.sessionId !== page) return
+  if (m.method === 'Network.requestWillBeSent') open_.set(m.params.requestId, { url: m.params.request.url, t: Date.now() })
+  if (m.method === 'Network.loadingFinished' || m.method === 'Network.loadingFailed') open_.delete(m.params.requestId)
+})
+if (process.env.PROOF_TRACE) setInterval(() => open_.size && console.log('  still open:', [...open_.values()].map((v) => `${v.url} ${Date.now() - v.t} ms`).join(', ')), 3000).unref()
 listeners.push((m) => m.sessionId === page && m.method === 'Network.responseReceived' && m.params.type === 'Document' && docHeaders.push(m.params.response.headers))
 
 const evaluate = async (expression: string) => {
@@ -162,6 +162,7 @@ const loaded = () => new Promise<void>((resolve) => listeners.push((m) => m.sess
 async function open(url: string) {
   const done = loaded()
   const t0 = Date.now()
+  if (process.env.PROOF_TRACE) console.log(`  ${new Date().toISOString().slice(14, 23)} open ${url}`)
   const went = await Promise.race([send('Page.navigate', { url }, page).then(() => true), wait(15_000).then(() => false)])
   if (!went) console.log(`  (the open of ${url} had no answer in 15 s)`)
   if (process.env.PROOF_TRACE) console.log(`  navigate ${url}: ${Date.now() - t0} ms`)
@@ -224,12 +225,12 @@ try {
   if (process.env.PROOF_TRACE) console.log('versions:', [...new Set(versions)].slice(-10).join(' '))
   record('4a the new version installs in the background; the open page stays on the old one', waits && stillOld)
   // The next open: the app asks the waiting version to take over before it starts. Chrome activates a new worker only
-  // when the old one is idle, some seconds after a page load; the app does not wait that long (3 s), so it starts the
+  // when the old one is idle: in these runs 1 to 31 s after a page load (31 s: the old worker's idle stop); the app does not wait that long (3 s), so it starts the
   // old version, and the new one takes over in the background. The open after that runs it.
   const t0 = Date.now()
   await open(`${ORIGIN}/`)
   if (process.env.PROOF_TRACE) console.log('4b versions:', versions.slice(-8).join(' '))
-  const took = await until(`navigator.serviceWorker.getRegistration().then(r => !r.waiting && r.active.state === 'activated')`, 30_000)
+  const took = await until(`navigator.serviceWorker.getRegistration().then(r => !r.waiting && r.active.state === 'activated')`, 60_000)
   const tookMs = Date.now() - t0
   await open(`${ORIGIN}/`)
   const swapped = await until(`!!document.querySelector('meta[name=proof]') && document.body.innerText.includes('Connect vault')`, 10_000)
