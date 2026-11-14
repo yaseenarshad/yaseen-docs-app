@@ -37,7 +37,7 @@ function mount(text = TEXT) {
   el = document.createElement('div')
   document.body.append(el)
   root = createRoot(el)
-  act(() => root?.render(<CardPreview card={{ path: PATH, id: 'WIKI-9', text, notitle: false, reviews: REVIEWS }} vault={vault} settings={DEFAULT_REVIEW_SETTINGS} doors={{ openLayer: vi.fn(), openTab: vi.fn(), onNotice: vi.fn() }} onNotice={vi.fn()} onClose={onClose} />))
+  act(() => root?.render(<CardPreview card={{ path: PATH, id: 'WIKI-9', text, title: '', notitle: false, reviews: REVIEWS }} vault={vault} settings={DEFAULT_REVIEW_SETTINGS} doors={{ openLayer: vi.fn(), openTab: vi.fn(), onNotice: vi.fn() }} onNotice={vi.fn()} onClose={onClose} />))
   return { onClose }
 }
 const press = (key: string) => act(() => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })))
@@ -62,7 +62,7 @@ describe('Preview a card (YAZ-5152)', () => {
     act(() => el.querySelector<HTMLButtonElement>('.card-reviews__toggle')!.click())
     expect(el.querySelector('.card-reviews__delete')).toBeNull()
     expect(el.querySelector('.card-inbox__answer, .card-inbox__actions')).toBeNull()
-    expect(el.querySelector('.card-preview__foot')?.textContent).toBe('Preview · Esc to close')
+    expect(el.querySelector('.card-preview__foot')?.textContent).toBe('Preview · Close (Esc)')
   })
 
   it('Space at the end starts again from the front; a click on the card is a Space too', () => {

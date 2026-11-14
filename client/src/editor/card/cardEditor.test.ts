@@ -9,13 +9,14 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state'
 import { undo, undoDepth } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { cardSides, cardTitleOut } from '@shared/cardText'
-import { cardIdOf, findCards } from '@shared/cardLine'
+import { cardSides } from '@shared/cardText'
+import { cardIdOf, cardTitleOf, findCards } from '@shared/cardLine'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { createWikilinkCandidateSource } from '../wikilink/wikilinkPicker'
 import { nameCandidate } from '../../links/completion'
 import { CARD_MIRROR_MS, cardBlockViewAt, setCardEditorKind, type CardBlockView } from './cardBlockView'
+import { cardLineOf } from './cardBlockLine'
 import { joinCardParts, splitCardText } from './cardEditorText'
 import { SIDE_BREAK } from './cardEditor'
 import { listenTour, tourTyperIn } from '../../course/tourBus'
@@ -42,10 +43,11 @@ function vault() {
 }
 
 /**
- * A page with one card: `title` its first line (YAZ-5164 part 3: the Title field holds it, out of the card editor), then
- * the card's `body`, what the card editor edits. `title` '': the body is the whole card.
+ * A page with one card: its `body`, what the card editor edits, and `title` on its card line (YAZ-5308: the Title field
+ * holds it). `title` '': none.
  */
-const page = (body: string, line = '<!-- card: WIKI-7 -->', title = 'Card title') => `# Page\n\n\`\`\`\`card\n${title === '' ? '' : `${title}\n\n`}${body}\n\`\`\`\`\n${line}\n\nAfter.\n`
+const page = (body: string, line = '<!-- card: WIKI-7 -->', title = 'Card title') =>
+  `# Page\n\n\`\`\`\`card\n${body}\n\`\`\`\`\n${title === '' ? line : line.replace(/^<!-- card: ([^,\s]+)/, `<!-- card: $1, title "${title}"`)}\n\nAfter.\n`
 
 async function mount(markdown: string, opts: Partial<CreateCrepeOptions> = {}): Promise<{ crepe: Crepe; root: HTMLElement; view: EditorView }> {
   const root = document.createElement('div')
@@ -67,8 +69,10 @@ const cardPos = (view: EditorView, n = 0): number => {
   return at[n]
 }
 const cardText = (view: EditorView, n = 0): string => view.state.doc.nodeAt(cardPos(view, n))!.textContent
-/** The card without its title line: what the card editor edits (`cardTitleOut`). */
-const cardBody = (view: EditorView, n = 0): string => cardTitleOut(cardText(view, n)).text
+/** The card's text: what the card editor edits (its title is on its card line, YAZ-5308). */
+const cardBody = cardText
+/** The card's title, off its card line. */
+const cardTitle = (view: EditorView, n = 0): string => cardTitleOf(cardLineOf(view.state.doc.nodeAt(cardPos(view, n))!))
 
 /** Edit card on the card, and its editor once it has the card's text. */
 async function edit(view: EditorView, n = 0): Promise<{ card: CardBlockView; inner: EditorView }> {
@@ -170,7 +174,7 @@ describe('Edit card with the page`s editor: the round-trip risks (YAZ-5026 scope
     const saved = getMarkdownForSave(crepe)
     const cards = findCards(saved)
     expect(cards).toHaveLength(1)
-    expect(cardTitleOut(cards[0].text).text).toBe('Front\n---\nBack\n\n```js\nlet a = 1\n```')
+    expect(cards[0].text).toBe('Front\n---\nBack\n\n```js\nlet a = 1\n```')
     expect(cardIdOf(cards[0].line)).toBe('WIKI-7')
   })
 
@@ -390,6 +394,18 @@ describe('the mirror, Done and the page`s undo', () => {
     second.card.done()
   })
 
+  it('YAZ-5332: a press on the head`s Done button is Done (the page`s editor has no CodeMirror)', async () => {
+    const { view } = await mount(page('One'))
+    const { card, inner } = await edit(view)
+    type(inner, '!')
+    const done = card.dom.querySelector<HTMLElement>('.card__edit')!
+    expect(done.getAttribute('aria-label')).toBe('Done')
+    done.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
+    expect(card.editing).toBe(false)
+    expect(cardBody(view)).toBe('One!')
+    expect(card.dom.querySelector('.card__edit')?.textContent).toBe('Edit card')
+  })
+
   it('the page`s selection is the card while it is edited, and the page never reads the inner editor', async () => {
     const { view } = await mount(page('Front'))
     const { card, inner } = await edit(view)
@@ -397,7 +413,8 @@ describe('the mirror, Done and the page`s undo', () => {
     expect(card.dom.classList.contains('card--editing')).toBe(true)
     expect(card.dom.classList.contains('ProseMirror-selectednode')).toBe(false)
     // The key row under the editor (YAZ-5034), kept.
-    expect(card.dom.querySelector('.card__editor + .card__keys')?.textContent).toBe('Cmd + L hide wordCmd + Shift + Enter new sideCmd + Enter / Esc Done')
+    // Each part the app's hotkey label (YAZ-5332): the action first, its keys in brackets.
+    expect([...card.dom.querySelectorAll('.card__editor + .card__keys > span')].map((s) => s.textContent)).toEqual(['Hide word (Cmd+L)', 'New side (Cmd+Shift+Enter)', 'Done (Cmd+Enter)'])
     const before = view.state.doc
     type(inner, ' more')
     await tick(20)
@@ -438,9 +455,9 @@ describe('an outside change of the card`s text while it is edited', () => {
     const notices: string[] = []
     const { view } = await mount(page('Front\n---\nBack'), { wikilinkNav: { onNotice: (m: string) => notices.push(m) } as never })
     const { card, inner } = await edit(view)
-    // An agent writes the card's front (an outside merge: out of the undo history), after its title line.
+    // An agent writes the card's front (an outside merge: out of the undo history).
     const pos = cardPos(view)
-    view.dispatch(view.state.tr.insertText('Theirs ', pos + 1 + 'Card title\n\n'.length).setMeta('addToHistory', false))
+    view.dispatch(view.state.tr.insertText('Theirs ', pos + 1).setMeta('addToHistory', false))
     expect(notices).toHaveLength(1)
     caretAfter(inner, 'Back')
     type(inner, '!')
@@ -519,7 +536,7 @@ describe('the card editor`s own on/off list (YAZ-5026 description)', () => {
 })
 
 describe('`/card` with the page`s editor', () => {
-  it('the new card opens in the card editor with "Title" selected in its Title field (YAZ-5164 part 3); typing replaces it; Enter goes down to Side 1; Done; ⌘Z takes the text back, the next ⌘Z the card', async () => {
+  it('the new card opens in the card editor with its empty Title field taking the keyboard (YAZ-5308); Enter goes down to Side 1; Done writes the text and the title on the card line; ⌘Z takes both back, the next ⌘Z the card', async () => {
     const { crepe, root, view } = await mount('x\n', { cards: { path: '/v/Page.md', mintId: () => Promise.resolve('WIKI-512') } })
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, view.state.doc.firstChild!.nodeSize - 1)).insertText('/card'))
     await tick(10)
@@ -533,48 +550,49 @@ describe('`/card` with the page`s editor', () => {
     const inner = card.cardEditor!.view()!
     const field = card.dom.querySelector<HTMLInputElement>('.card-editor__title')!
     expect(document.activeElement).toBe(field)
-    expect(field.value.slice(field.selectionStart!, field.selectionEnd!)).toBe('Title')
+    expect([field.value, field.placeholder]).toEqual(['', 'Title'])
     expect(inner.state.doc.textContent).toBe('')
-    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toBe('```card\nTitle\n```\n<!-- card: WIKI-512 -->\n'))
+    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toBe('```card\n```\n<!-- card: WIKI-512 -->\n'))
     field.value = 'Capitals'
     field.dispatchEvent(new Event('input', { bubbles: true }))
     key(field, 'Enter')
     type(inner, 'Capital of {{France}}')
     key(inner.dom, 'Enter', { metaKey: true, shiftKey: true })
     type(inner, 'Paris')
-    // The mirror wrote the text into the page meanwhile (out of the undo history).
+    // The mirror wrote the text into the page meanwhile (out of the undo history); the title waits for Done.
     await tick(CARD_MIRROR_MS + 50)
-    expect(cardText(view)).toBe('Capitals\n\nCapital of {{France}}\n---\nParis')
+    expect(cardText(view)).toBe('Capital of {{France}}\n---\nParis')
     card.done()
-    expect(getMarkdownForSave(crepe)).toBe('```card\nCapitals\n\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-512 -->\n')
+    expect(getMarkdownForSave(crepe)).toBe('```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-512, title "Capitals" -->\n')
     undo(view.state, view.dispatch)
-    expect(cardText(view)).toBe('Title')
+    expect([cardText(view), cardTitle(view)]).toEqual(['', ''])
     undo(view.state, view.dispatch)
     expect(cardPos(view)).toBeUndefined()
   })
 })
 
 /**
- * YAZ-5164 part 3: Edit card has a Title field above Side 1, for both kinds of card. A card in a page keeps its title as
- * its first line: the field shows it, the editor holds the card without it, and Done writes it back as the first line.
+ * YAZ-5164 part 3: Edit card has a Title field above Side 1, for both kinds of card. YAZ-5308: the field is the title on
+ * the card line; the editor holds the card's text, all of it; Done writes the title back on the line.
  */
 describe('YAZ-5164 part 3: Edit card`s Title field', () => {
   const titleField = (card: CardBlockView) => card.dom.querySelector<HTMLInputElement>('.card-editor__title')
 
-  it('the Title field sits above Side 1 with the title; the editor holds the card without it; nothing changed writes nothing', async () => {
-    const { view } = await mount(page('Capital of France\n\nWhich city?\n---\nParis', undefined, ''))
+  it('the Title field sits above Side 1 with the title off the card line; the editor holds the whole text; nothing changed writes nothing', async () => {
+    const { view } = await mount(page('Which city?\n---\nParis', undefined, 'Capital of France'))
     const { card, inner } = await edit(view)
     const field = titleField(card)!
     expect(field.value).toBe('Capital of France')
     expect(field.compareDocumentPosition(inner.dom) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(inner.state.doc.textContent).not.toContain('Capital of France')
     expect(inner.state.doc.textContent).toContain('Which city?')
+    const depth = undoDepth(view.state)
     card.done()
-    expect(cardText(view)).toBe('Capital of France\n\nWhich city?\n---\nParis')
+    expect([cardText(view), cardTitle(view), undoDepth(view.state)]).toEqual(['Which city?\n---\nParis', 'Capital of France', depth])
   })
 
-  it('a new title and a new front: Done writes the title as the first line, then the card, one undo step', async () => {
-    const { view } = await mount(page('Capital of France\n\nWhich city?\n---\nParis', undefined, ''))
+  it('a new title and a new front: Done writes the title on the card line and the text, one undo step', async () => {
+    const { view } = await mount(page('Which city?\n---\nParis', undefined, 'Capital of France'))
     const { card, inner } = await edit(view)
     const field = titleField(card)!
     field.value = 'France'
@@ -582,20 +600,20 @@ describe('YAZ-5164 part 3: Edit card`s Title field', () => {
     caretAfter(inner, 'Which city?')
     type(inner, ' Name it')
     card.done()
-    expect(cardText(view)).toBe('France\n\nWhich city? Name it\n---\nParis')
+    expect([cardText(view), cardTitle(view)]).toEqual(['Which city? Name it\n---\nParis', 'France'])
     undo(view.state, view.dispatch)
-    expect(cardText(view)).toBe('Capital of France\n\nWhich city?\n---\nParis')
+    expect([cardText(view), cardTitle(view)]).toEqual(['Which city?\n---\nParis', 'Capital of France'])
   })
 
-  it('a card whose first line holds a hidden word: that line stays in the editor; a title typed in the field goes above it', async () => {
-    const { view } = await mount(page('The capital is {{Paris}}\n---\nback', undefined, ''))
+  it('a first line is never the title: a card with none shows an empty field, and its first line stays in the editor', async () => {
+    const { view } = await mount(page('Capital of France\n\nThe capital is {{Paris}}\n---\nback', undefined, ''))
     const { card, inner } = await edit(view)
     const field = titleField(card)!
-    expect(field.value).toBe('The capital is Paris')
-    expect(inner.state.doc.textContent).toContain('The capital is')
+    expect(field.value).toBe('')
+    expect(inner.state.doc.textContent).toContain('Capital of France')
     field.value = 'Capital'
     field.dispatchEvent(new Event('input', { bubbles: true }))
     card.done()
-    expect(cardText(view)).toBe('Capital\n\nThe capital is {{Paris}}\n---\nback')
+    expect([cardText(view), cardTitle(view)]).toEqual(['Capital of France\n\nThe capital is {{Paris}}\n---\nback', 'Capital'])
   })
 })

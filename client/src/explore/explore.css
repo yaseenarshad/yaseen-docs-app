@@ -213,13 +213,6 @@
   color: var(--fg-muted);
   border-top: 1px solid var(--border);
 }
-.explore__foot kbd {
-  padding: 0 4px;
-  font-family: inherit;
-  font-size: 11px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-}
 
 /* ---------- the page panel ---------- */
 .explore__head {
@@ -328,11 +321,6 @@
 }
 .explore__button:hover {
   background: color-mix(in srgb, var(--fg) 8%, transparent);
-}
-.explore__button kbd {
-  margin-left: 4px;
-  font-family: inherit;
-  color: var(--fg-muted);
 }
 
 /* Reading: the body is the one scroller, so a covered layer keeps its place. Editing: the editor fills the body and
@@ -679,11 +667,6 @@
 .explore__arrange-apply:disabled {
   opacity: 0.5;
   cursor: default;
-}
-.explore__arrange-apply kbd {
-  margin-left: 4px;
-  font-family: inherit;
-  opacity: 0.8;
 }
 
 /* The empty box (YAZ-4945): Opened and Edited, a heading each inside the one list; each row's time, muted, on the right. */

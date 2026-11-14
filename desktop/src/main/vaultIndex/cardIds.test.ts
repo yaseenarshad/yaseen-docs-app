@@ -11,7 +11,7 @@ import type { IndexRecord } from '@shared/types'
 import { makeFirstMac, removeVault, sleep } from '../fs/testFixture'
 import { subscribe } from '../fs/watchers'
 import { writeConfig } from '../vaultConfig'
-import { _swept, giveCardIds, sweepIds } from './idSweep'
+import { CARD_TITLES_MOVED, _swept, giveCardIds, sweepIds } from './idSweep'
 import { _evictAll, getIndex } from './index'
 import { extractLinks, extractTags, scanFile } from './scan'
 
@@ -101,10 +101,10 @@ describe('a new card written by hand with `<!-- card: notitle -->` (YAZ-5139)', 
 
 describe('card files (YAZ-5037): the card\'s ID is the file\'s ID', () => {
   it('a card file takes no page ID: its card is given one, and a second pass gives nothing more', async () => {
-    const records = await vault({ 'new-card.md': `---\nkind: card\ntitle: Title\n---\n${card('')}`, 'plain.md': 'No ID yet.\n' })
+    const records = await vault({ 'new-card.md': `---\nkind: card\n---\n${card('', 'title "Title"')}`, 'plain.md': 'No ID yet.\n' })
     await sweepIds(root, records, [...records.values()], () => undefined)
     const content = await read('new-card.md')
-    expect(content).toMatch(/^---\nkind: card\ntitle: Title\n---\n```card\n\n```\n<!-- card: YAZ-\d+ -->\n$/)
+    expect(content).toMatch(/^---\nkind: card\n---\n```card\n\n```\n<!-- card: YAZ-\d+, title "Title" -->\n$/)
     expect(content).not.toMatch(/^id:/m)
     expect(await read('plain.md')).toMatch(/^---\nid: YAZ-\d+\n---\n/)
     // One number for the card, one for the page: the card file took no second.
@@ -117,7 +117,7 @@ describe('card files (YAZ-5037): the card\'s ID is the file\'s ID', () => {
   })
 
   it('a card file that keeps the `id:` of the page it was (pick 6) keeps it, and its card keeps its own', async () => {
-    const bytes = `---\nkind: card\nid: YAZ-7\ntitle: Capital of France\n---\n${card('---\nParis', `YAZ-9, ${HISTORY}`)}`
+    const bytes = `---\nkind: card\nid: YAZ-7\n---\n${card('---\nParis', `YAZ-9, title "Capital of France", ${HISTORY}`)}`
     const records = await vault({ 'capital-of-france-yaz-9.md': bytes })
     await sweepIds(root, records, [...records.values()], () => undefined)
     expect(await read('capital-of-france-yaz-9.md')).toBe(bytes)
@@ -135,7 +135,7 @@ describe('card files (YAZ-5037): the card\'s ID is the file\'s ID', () => {
     })
     await getIndex(root)
     await ready
-    await writeFile(at('Cards', 'fresh.md'), `---\nkind: card\ntitle: Fresh card\n---\n${card('')}`)
+    await writeFile(at('Cards', 'fresh.md'), `---\nkind: card\n---\n${card('', 'title "Fresh card"')}`)
     let content = ''
     for (let t0 = Date.now(); Date.now() - t0 < 5000; ) {
       await _swept(root)
@@ -145,49 +145,42 @@ describe('card files (YAZ-5037): the card\'s ID is the file\'s ID', () => {
     }
     await _swept(root)
     content = await read('Cards/fresh.md')
-    expect(content).toMatch(/<!-- card: YAZ-\d+ -->/)
+    expect(content).toMatch(/<!-- card: YAZ-\d+, title "Fresh card" -->/)
     expect(content).not.toMatch(/^id:/m)
   })
 })
 
-describe('the one-time move of a card file`s title into `title` (YAZ-5044 decision A, point 9)', () => {
-  it('a card file from before A: its first line moves into `title`; its card ID, history and the rest of the card stay; a second pass writes nothing', async () => {
-    const records = await vault({ 'Cards/capital-of-france-yaz-196.md': `---\nkind: card\ntags: [geo]\n---\n${card('Capital of France\n---\nThe capital is {{Paris}}.', `YAZ-196, ${HISTORY}`)}` })
-    const before = await cardsIn('Cards/capital-of-france-yaz-196.md')
-    await sweepIds(root, records, [...records.values()], () => undefined)
-    const moved = await read('Cards/capital-of-france-yaz-196.md')
-    expect(moved).toBe(`---\nkind: card\ntags: [geo]\ntitle: Capital of France\n---\n${card('---\nThe capital is {{Paris}}.', `YAZ-196, ${HISTORY}`)}`)
-    expect(await cardsIn('Cards/capital-of-france-yaz-196.md')).toEqual(before)
-    // The index reads the title from `title` now; the next pass moves nothing.
-    const r = await rescan(records, 'Cards/capital-of-france-yaz-196.md', moved)
-    expect(r.title).toBe('Capital of France')
-    expect(r.cards?.[0].title).toBe('Capital of France')
+describe('the one-time move of each card`s title onto its card line (YAZ-5308, decision D)', () => {
+  it('a card file`s `title` and a card in a page`s plain first line move onto their card lines; IDs, histories and the rest stay', async () => {
+    const records = await vault({
+      'Cards/capital-of-france-yaz-196.md': `---\nkind: card\ntitle: Capital of France\ntags: [geo]\n---\n${card('The capital is {{Paris}}.', `YAZ-196, ${HISTORY}`)}`,
+      'page.md': `---\nid: YAZ-3\n---\n# Rivers\n\n${card('Longest river\n\nWhich is it?\n---\nThe {{Nile}}.', `YAZ-4, ${HISTORY}`)}\n${card('###### {{Capital}}\n\nOf {{Spain}}?', 'YAZ-5')}`,
+    })
+    const before = [await cardsIn('Cards/capital-of-france-yaz-196.md'), await cardsIn('page.md')]
     await sweepIds(root, records, [...records.values()], (p) => records.get(p)?.id)
-    expect(await read('Cards/capital-of-france-yaz-196.md')).toBe(moved)
+    expect(await read('Cards/capital-of-france-yaz-196.md')).toBe(`---\nkind: card\ntags: [geo]\n---\n${card('The capital is {{Paris}}.', `YAZ-196, title "Capital of France", ${HISTORY}`)}`)
+    // A first line with a hidden word is the question: it stays, and that card has no title.
+    expect(await read('page.md')).toBe(`---\nid: YAZ-3\n---\n# Rivers\n\n${card('Which is it?\n---\nThe {{Nile}}.', `YAZ-4, title "Longest river", ${HISTORY}`)}\n${card('###### {{Capital}}\n\nOf {{Spain}}?', 'YAZ-5')}`)
+    expect([await cardsIn('Cards/capital-of-france-yaz-196.md'), await cardsIn('page.md')]).toEqual(before)
+    const r = await rescan(records, 'Cards/capital-of-france-yaz-196.md', await read('Cards/capital-of-france-yaz-196.md'))
+    expect([r.title, r.cards?.[0].title]).toEqual(['Capital of France', 'Capital of France'])
+    expect(await readFile(at(CARD_TITLES_MOVED), 'utf8')).toMatch(/"moved"/)
   })
 
-  it('a stray page `id:` (an old build gave it) goes in the same write when nothing links to it; one a page links to stays (pick 6)', async () => {
-    const records = await vault({
-      'test-yaz-212.md': `---\nkind: card\nid: YAZ-198\n---\n${card('test', 'YAZ-212')}`,
-      'linked-yaz-213.md': `---\nkind: card\nid: YAZ-201\n---\n${card('Linked', 'YAZ-213')}`,
-      'page.md': '---\nid: YAZ-1\n---\nSee [[YAZ-201]].\n',
-    })
+  it('one time: once the vault has its mark, a card written after with a plain first line keeps it as its question', async () => {
+    const records = await vault({ 'page.md': `---\nid: YAZ-3\n---\n${card('Done\nbefore', 'YAZ-4')}` })
     await sweepIds(root, records, [...records.values()], (p) => records.get(p)?.id)
-    expect(await read('test-yaz-212.md')).toBe(`---\nkind: card\ntitle: test\n---\n${card('', 'YAZ-212')}`)
-    expect(await read('linked-yaz-213.md')).toBe(`---\nkind: card\nid: YAZ-201\ntitle: Linked\n---\n${card('', 'YAZ-213')}`)
+    expect(await read('page.md')).toBe(`---\nid: YAZ-3\n---\n${card('before', 'YAZ-4, title "Done"')}`)
+    const later = `---\nid: YAZ-3\n---\n${card('Which river runs through Paris?\nThink of the Seine.', 'YAZ-4')}`
+    await rescan(records, 'page.md', later)
+    await sweepIds(root, records, [...records.values()], (p) => records.get(p)?.id)
+    expect(await read('page.md')).toBe(later)
   })
 
   it('a card file with no card ID yet: the title moves, and its card is given its number in the same pass', async () => {
-    const records = await vault({ 'fresh.md': `---\nkind: card\n---\n${card('Fresh words\n---\nBack')}` })
+    const records = await vault({ 'fresh.md': `---\nkind: card\ntitle: Fresh words\n---\n${card('---\nBack')}` })
     await sweepIds(root, records, [...records.values()], () => undefined)
-    expect(await read('fresh.md')).toMatch(/^---\nkind: card\ntitle: Fresh words\n---\n```card\n---\nBack\n```\n<!-- card: YAZ-\d+ -->\n$/)
-  })
-
-  it('a page is never touched: its cards keep their first lines as their titles', async () => {
-    const bytes = `---\nid: YAZ-3\n---\n${card('Capital of France\n---\nParis', 'YAZ-4')}`
-    const records = await vault({ 'page.md': bytes })
-    await sweepIds(root, records, [...records.values()], (p) => records.get(p)?.id)
-    expect(await read('page.md')).toBe(bytes)
+    expect(await read('fresh.md')).toMatch(/^---\nkind: card\n---\n```card\n---\nBack\n```\n<!-- card: YAZ-\d+, title "Fresh words" -->\n$/)
   })
 })
 

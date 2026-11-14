@@ -135,14 +135,14 @@ describe('the hint in Edit card (YAZ-5114)', () => {
 
   it('Card tips Off: no line on a new card', async () => {
     setCardFormatHints({ on: false })
-    const { root, view } = await mount(page('Title'))
+    const { root, view } = await mount(page(''))
     await edit(view)
     expect(hint(root)).toBeNull()
   })
 
   it('a skill with no `formats` folder, or an empty one: no line', async () => {
     setCardFormatHints({ byVault: new Map([['/v', null]]) })
-    const none = await mount(page('Title'))
+    const none = await mount(page(''))
     await edit(none.view)
     expect(hint(none.root)).toBeNull()
     setCardFormatHints({ byVault: new Map([['/v', { folder: '/v/Card skill/formats', formats: [] }]]) })
@@ -153,13 +153,13 @@ describe('the hint in Edit card (YAZ-5114)', () => {
 
   it('the names follow the folder of the skill in use', async () => {
     setCardFormatHints({ byVault: new Map([['/v', { folder: '/v/Card skill/formats', formats: ['recipe', 'verb'] }]]) })
-    const { root, view } = await mount(page('Title'))
+    const { root, view } = await mount(page(''))
     await edit(view)
     expect(hint(root)?.textContent).toBe('Formats in your card skill: recipe · verb. Learn the formats')
   })
 
   it('"Learn the formats" sends ONE bubbling event with the skill\'s formats folder, and does not select the card', async () => {
-    const { root, view } = await mount(page('Title'))
+    const { root, view } = await mount(page(''))
     const card = await edit(view)
     const heard: CardFormatsOpenRequest[] = []
     const listen = (e: Event) => heard.push((e as CustomEvent<CardFormatsOpenRequest>).detail)
@@ -175,7 +175,7 @@ describe('the hint in Edit card (YAZ-5114)', () => {
 
   it('the raw-text editor: the line shows on a new card and goes when the card has text', async () => {
     setCardEditorKind('code')
-    const { root, view } = await mount(page('Title'))
+    const { root, view } = await mount(page(''))
     const card = await edit(view)
     expect(card.editingText).toBe(true)
     expect(hint(root)).not.toBeNull()

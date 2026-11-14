@@ -34,36 +34,40 @@ Placeholder text. Yaseen's version replaces this page.
 
 Before: the question hides its own subject.
 
-```text
-DNS
-
+````text
+```card
 What does {{DNS}} stand for?
 ```
+<!-- card: title "DNS" -->
+````
 
 After: the subject stays visible, and the answer is hidden.
 
-```markdown
-DNS
-
+````markdown
+```card
 What does DNS stand for on the internet?
 ---
 DNS stands for {{Domain Name System}}.
 
 It turns a name like example.com into the address of a computer.
 ```
+<!-- card: title "DNS" -->
+````
 
 Before: small words are hidden, and nothing explains the term.
 
-```text
-Photosynthesis
-
+````text
+```card
 {{Photosynthesis}} is how {{plants}} make {{food}} from {{light}}.
 ```
+<!-- card: title "Photosynthesis", notitle -->
+````
 
 After: one term is hidden, and the clues stay visible.
 
-```markdown
-Photosynthesis
-
+````markdown
+```card
 Plants use sunlight to turn water and carbon dioxide into sugar and oxygen. This process is {{photosynthesis}}.
 ```
+<!-- card: title "Photosynthesis", notitle -->
+````

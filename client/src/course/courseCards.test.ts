@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cardFileContent, cardFileShape, isCardFileContent } from '@shared/cardFileFormat'
-import { EMPTY_CARD_LINE, cardReviewsOf, findCards, withCardId, withCardNoTitle, withCardReview } from '@shared/cardLine'
+import { EMPTY_CARD_LINE, cardReviewsOf, cardTitleOf, findCards, isCardNoTitle, withCardId, withCardNoTitle, withCardReview } from '@shared/cardLine'
 import { cardState, previewAnswers } from '@shared/cardSchedule'
 import { cardPieces, cardSides } from '@shared/cardText'
 import type { CourseMade } from '@shared/courseState'
@@ -120,7 +120,24 @@ const top = async (): Promise<string[]> => (await readdir(root)).filter((name) =
 const cardFilesIn = async (dir: string): Promise<string[]> => (await readdir(dir)).filter((name) => name.endsWith('.md') && name !== FOLDER_SETTINGS_FILE).sort()
 
 /** Writes a card file the way an agent would by hand (no card line), named as it likes. */
-const agentWrites = (dir: string, name: string, title: string, text: string): Promise<void> => writeFile(join(dir, name), `---\nkind: card\ntitle: ${title}\n---\n\`\`\`card\n${text}\n\`\`\`\n`)
+/** An agent's card file, as the card skill tells it to write one (YAZ-5308): `kind: card` alone, the title on the card line, no ID. */
+const agentWrites = (dir: string, name: string, title: string, text: string): Promise<void> =>
+  writeFile(join(dir, name), `---\nkind: card\n---\n\`\`\`card\n${text}\n\`\`\`\n<!-- card: title "${title}" -->\n`)
+
+/**
+ * A card file the course wrote, read back with the app's own reader (YAZ-5308): `kind: card` alone in its front matter,
+ * one card, its title on its card line (never its text's first line), and its sides.
+ */
+function readBack(content: string): { title: string; notitle: boolean; sides: string[]; line: string } {
+  const { frontmatter, body } = splitFrontmatter(content)
+  expect(parseFrontmatter(frontmatter).properties).toEqual({ kind: 'card' })
+  const cards = findCards(body)
+  expect(cards).toHaveLength(1)
+  const [card] = cards
+  const title = cardTitleOf(card.line)
+  expect(card.text.split('\n')[0].trim()).not.toBe(title)
+  return { title, notitle: isCardNoTitle(card.line), sides: cardSides(card.text), line: body.split('\n')[card.lineAt!] }
+}
 
 describe('the folder "Course Cards" (YAZ-5124)', () => {
   it('a vault still loading only shows for now; the same host makes the folder once the vault is read (YAZ-5128)', async () => {
@@ -299,6 +316,10 @@ describe('the first card (chapter 2)', () => {
     const sides = cardSides(shape.cards[0].text)
     expect(sides).toEqual(['{{Protein}} keeps you full for longer than carbs do. It digests slowly.', 'Eggs at breakfast are an easy way to get it.'])
     expect(cardPieces(sides[0]).filter((p) => p.kind === 'hidden')).toEqual([{ kind: 'hidden', text: 'Protein' }])
+    // YAZ-5308: the title is on the card line, right after the ID, then `notitle`; front matter holds only `kind: card`.
+    const back = readBack(content)
+    expect(back).toEqual({ title: made.title, notitle: true, sides, line: '<!-- card: TST-2, title "Protein keeps you full for longer than carbs do", notitle -->' })
+    expect(content).not.toMatch(/^title:/m)
     // The index reads it as one card, titled, with its ID.
     const record = await scanFile(root, made.path)
     expect(record.cards).toHaveLength(1)
@@ -347,6 +368,8 @@ describe('the first card (chapter 2)', () => {
       expect(record.cards).toHaveLength(1)
       // The host's title rule: the first sentence of the front, without its full stop.
       expect(record.cards?.[0]).toMatchObject({ title: 'Light from the Sun takes about eight minutes to reach Earth' })
+      // YAZ-5308: that title is on the card line, never the text's first line or a `title:` in front matter.
+      expect(readBack(content)).toMatchObject({ title: 'Light from the Sun takes about eight minutes to reach Earth', notitle: true, sides: ['Light from the Sun takes about {{eight}} minutes to reach Earth.', 'Light moves at about 300,000 km a second.'] })
       // YAZ-5203: "The app saves it with the card." The answer is the card's first review, as the Inbox writes it.
       const reviews = cardReviewsOf(shape.cards[0].line)
       expect(reviews).toHaveLength(1)
@@ -579,6 +602,14 @@ describe('"No agent? Skip"', () => {
       expect(sides).toHaveLength(2)
       expect(cardPieces(sides[0]).some((p) => p.kind === 'hidden')).toBe(true)
       expect(sides[1]).toContain('***')
+      // YAZ-5308: read back with the app's reader, each is one card with its title on its card line, and its text as written.
+      const back = readBack(content)
+      const example = EXAMPLE_CARDS.find((c) => c.title === back.title)!
+      expect(example).toBeDefined()
+      expect(back.notitle).toBe(false)
+      expect(back.sides).toEqual(cardSides(example.text))
+      expect(back.line).toMatch(new RegExp(`^<!-- card: TST-\\d+, title "${back.title}" -->$`))
+      expect((await scanFile(root, join(root, 'course-cards', name))).cards?.[0]).toMatchObject({ title: example.title })
     }
     expect(EXAMPLE_CARDS.map((c) => c.title)).toEqual(['How bread rises', 'A slow rise for flavour', 'The poke test for dough'])
     expect(made()[0].cards).toHaveLength(3)

@@ -21,17 +21,18 @@ function mount(props: Partial<Parameters<typeof KeySheet>[0]> = {}) {
   act(() => root?.render(<KeySheet place="drawing" overrides={{}} aside={{}} onChangeKeys={() => undefined} onClose={onClose} {...props} />))
   return { onClose }
 }
-const rows = () => [...el.querySelectorAll('.key-sheet__row')].map((r) => `${r.querySelector('dt')?.textContent} ${r.querySelector('dd')?.textContent}`)
+/** Each row the app's hotkey label (YAZ-5332): the action first, its keys in words in brackets. */
+const rows = () => [...el.querySelectorAll('.key-sheet__row')].map((r) => r.textContent)
 
 it("lists a drawing's keys with the user's changes, leaves out a blocked one, and the App keys less the ones that let drawings keep theirs", () => {
   mount({ overrides: { 'drawing.duplicate': 'CmdOrCtrl+Alt+D' } })
-  expect(rows()).toContain('⌥⌘D Duplicate')
-  expect(rows()).not.toContain('⌘D Duplicate')
+  expect(rows()).toContain('Duplicate (Option+Cmd+D)')
+  expect(rows()).not.toContain('Duplicate (Cmd+D)')
   // ⌘K is Search the vault's on a drawing: Add link never fires, so the sheet does not offer it.
-  expect(rows().some((r) => r.endsWith('Add link'))).toBe(false)
-  expect(rows()).toContain('⌘K Search the vault')
+  expect(rows().some((r) => r.startsWith('Add link ('))).toBe(false)
+  expect(rows()).toContain('Search the vault (Cmd+K)')
   // Show in sidebar lets drawings keep ⌘D (K9): it is no App key on a drawing.
-  expect(rows().some((r) => r.endsWith('Show in sidebar'))).toBe(false)
+  expect(rows().some((r) => r.startsWith('Show in sidebar ('))).toBe(false)
 })
 
 it('Esc closes it; ? on a drawing asks for it through one request', () => {

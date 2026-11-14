@@ -14,9 +14,8 @@ Use it when the learner must tell two or more related things apart. The differen
 
 ## Example
 
-```markdown
-Weather vs climate
-
+````markdown
+```card
 A rainy week in July tells you about the {{weather}}. Forty years of rainfall records tell you about the {{climate}}.
 
 The {{weather}} is the state of the air over hours or days.
@@ -25,3 +24,5 @@ The {{climate}} is the usual pattern of weather over many years.
 Weather is {{short term}}: today's rain, wind and heat.
 Climate is {{long term}}: the average and the range over decades.
 ```
+<!-- card: title "Weather vs climate", notitle -->
+````

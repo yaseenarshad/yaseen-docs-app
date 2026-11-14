@@ -11,6 +11,7 @@
  */
 import { memo, useRef, type MouseEvent } from 'react'
 import { APP_ZOOM_STEPS, SIDEBAR_ZOOM_STEPS, stepZoom } from '@shared/types'
+import { withKeys } from '@shared/keyLabel'
 
 /** Each kind's steps and words: the group's name, the accessible names and the titles of −, + and the percent. */
 const KINDS = {
@@ -19,8 +20,8 @@ const KINDS = {
     label: 'Sidebar zoom',
     out: 'Zoom the sidebar out',
     into: 'Zoom the sidebar in',
-    outTitle: 'Zoom the sidebar out (⌘−)',
-    intoTitle: 'Zoom the sidebar in (⌘+)',
+    outTitle: withKeys('Zoom the sidebar out', '⌘−'),
+    intoTitle: withKeys('Zoom the sidebar in', '⌘+'),
     valueTitle: 'Sidebar zoom. Click for 100%',
   },
   app: {
@@ -37,8 +38,8 @@ const KINDS = {
     label: 'Table of contents zoom',
     out: 'Zoom the table of contents out',
     into: 'Zoom the table of contents in',
-    outTitle: 'Zoom the table of contents out (⌘−)',
-    intoTitle: 'Zoom the table of contents in (⌘+)',
+    outTitle: withKeys('Zoom the table of contents out', '⌘−'),
+    intoTitle: withKeys('Zoom the table of contents in', '⌘+'),
     valueTitle: 'Table of contents zoom. Click for 100%',
   },
 } as const

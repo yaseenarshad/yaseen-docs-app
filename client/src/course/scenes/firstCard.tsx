@@ -980,7 +980,7 @@ function InTheApp(props: SceneProps) {
           />
           {id !== 'c2-15' && <Pointer beat={b} from={pointer.from} to={pointer.to} move={pointer.move} click={pointer.click} show={pointer.show} />}
         </AppWindow>
-        <Keys p={keys} items={id === 'c2-17' ? [{ keys: editKey('new side'), label: 'new side' }] : [{ keys: editKey('hide word'), label: 'hide word' }]} />
+        <Keys p={keys} items={id === 'c2-17' ? [{ keys: editKey('new side'), label: 'New side' }] : [{ keys: editKey('hide word'), label: 'Hide word' }]} />
       </Layer>
     </Stage>
   )

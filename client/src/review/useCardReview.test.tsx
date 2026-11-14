@@ -130,7 +130,7 @@ beforeEach(() => {
   // Due: answered "good" 30 days ago (still in its steps). Not due: two "good" an hour ago (out of its steps, YAZ-5020:
   // a new card needs two). New: no review. Off: never.
   page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, 2026-11-12T07:00Z good, 2026-11-12T07:01Z good'])
-  page('Bio/Cells.md', ['What is a {{cell}}?', 'WIKI-3'], ['Off card', 'WIKI-4, off'])
+  page('Bio/Cells.md', ['What is a {{cell}}?', 'WIKI-3'], ['Off card', 'WIKI-4, title "Off card", off'])
 })
 
 afterEach(() => {
@@ -203,6 +203,20 @@ describe('useCardReview', () => {
     await step(() => review.undo())
     expect(vault.get(`${ROOT}/Geo.md`)).toBe(before)
     expect(review.session?.card).toMatchObject({ id: 'WIKI-2', page: { next: true } })
+  })
+
+  it('YAZ-5321: `upNext` says whether any card of the vault is marked Up next (an archived one does not count): off when its last mark goes, on again with one', async () => {
+    page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, next, 2026-11-12T07:00Z good'], ['Capital of {{Chad}}?', 'WIKI-3, off, next'])
+    await mount()
+    await act(async () => review.start())
+    await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-2' }))
+    expect(review.session?.upNext).toBe(true)
+    // The answer takes the last mark off (WIKI-3 is archived): no Up next.
+    await step(() => review.answer('good'))
+    await vi.waitFor(() => expect(review.session?.upNext).toBe(false))
+    // Its undo puts the mark back.
+    await step(() => review.undo())
+    await vi.waitFor(() => expect(review.session?.upNext).toBe(true))
   })
 
   it('YAZ-4999: setNext (the Inbox chip`s ×) writes the mark off and reads the card again', async () => {
@@ -597,7 +611,7 @@ describe('useCardReview', () => {
     const lines = (marked: boolean) => {
       const n = marked ? ', next' : ''
       page('Geo.md', ['Capital of {{France}}?', `WIKI-1${n}, 2026-10-13T09:00Z good`], ['Capital of {{Peru}}?', `WIKI-2${n}, 2026-11-12T07:00Z good, 2026-11-12T07:01Z good`])
-      page('Bio/Cells.md', ['What is a {{cell}}?', `WIKI-3${n}`], ['Off card', 'WIKI-4, off'])
+      page('Bio/Cells.md', ['What is a {{cell}}?', `WIKI-3${n}`], ['Off card', 'WIKI-4, title "Off card", off'])
       page('Bio/Learn.md', ['A {{step}} card', `WIKI-8${n}, ${cardTime(NOW - 60_000)} good`])
     }
 
@@ -986,7 +1000,7 @@ describe('YAZ-5033: the answer saves how long it took; today`s total', () => {
 
 describe('YAZ-5046: archived cards, to look at (not to review)', () => {
   it('the session lists the scope`s archived cards in page order with their titles; Archived shows no card to review; unarchive takes `off` away, keeps the history, and the card leaves the list', async () => {
-    page('Old.md', ['Old fact', 'WIKI-8, off, 2025-01-01T09:00Z good'], ['Kept', 'WIKI-9'])
+    page('Old.md', ['Old fact', 'WIKI-8, title "Old fact", off, 2025-01-01T09:00Z good'], ['Kept', 'WIKI-9'])
     await mount()
     await act(async () => review.start())
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
@@ -999,7 +1013,7 @@ describe('YAZ-5046: archived cards, to look at (not to review)', () => {
     act(() => review.setFilter('archived'))
     expect(review.session).toMatchObject({ filter: 'archived', card: null })
     await step(() => review.unarchive(`${ROOT}/Old.md`, 'WIKI-8'))
-    expect(vault.get(`${ROOT}/Old.md`)).toContain('<!-- card: WIKI-8, 2025-01-01T09:00Z good -->')
+    expect(vault.get(`${ROOT}/Old.md`)).toContain('<!-- card: WIKI-8, title "Old fact", 2025-01-01T09:00Z good -->')
     await vi.waitFor(() => expect(review.session?.archived.map((c) => c.id)).toEqual(['WIKI-4']))
     expect(review.dueCount).toBe(4)
     // Back on All cards, the review goes on where it was.

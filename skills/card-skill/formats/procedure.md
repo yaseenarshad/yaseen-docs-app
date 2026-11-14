@@ -13,12 +13,13 @@ Use it to recall an action or the steps of a task. **Title: shown.** The title n
 
 ## Example
 
-```markdown
-Force quit a frozen app on a Mac
-
+````markdown
+```card
 An app on a Mac stops responding and will not close. What do you do?
 ---
 Press {{Option + Command + Esc}}, choose the app in the list, then click {{Force Quit}}.
 
 Any unsaved work in that app is lost.
 ```
+<!-- card: title "Force quit a frozen app on a Mac" -->
+````

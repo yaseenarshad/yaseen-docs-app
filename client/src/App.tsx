@@ -69,7 +69,7 @@ import { moveExploreRecent, rememberExploreRecent } from './explore/exploreRecen
 import type { ExploreRequest } from './explore/layers'
 import { CARD_OPEN, type CardOpenRequest } from './editor/card/cardBlockView'
 import { CARD_FORMATS_OPEN, cardFormatsOpenIn, setCardFormatHints, type CardFormatsOpenRequest } from './editor/card/cardFormatHint'
-import { CARD_PREVIEW, type CardPreviewRequest } from './editor/card/cardOpen'
+import { CARD_PREVIEW, type CardPlace, type CardPreviewRequest } from './editor/card/cardOpen'
 import type { SearchVault } from './search/useSearchResults'
 import { dropHistoryPaths, renameHistoryPaths } from './views/view/valueHistory'
 import { setTypingArrows } from './editor/typingArrows'
@@ -1612,10 +1612,12 @@ export function App() {
   /**
    * The Inbox's O and E (YAZ-5145): Explore's own page layer for the card's file — the view Explore opens for it — so
    * the card looks the same from both. ⌘↵ while reading goes back to the Inbox (YAZ-5009). E edits as Explore's E
-   * does, then the card opens in Edit card (round 2: no second E): a card in a page (`index`) landed on, or a card file.
+   * does, then the card opens in Edit card (round 2: no second E): a card in a page (`index`) landed on, as asked
+   * here; a card file by the layer's own rule, as Explore's E on it (round 3).
    */
-  const openFromInbox = useCallback((path: string) => openExploreWith({ kind: 'page', path, fromInbox: true }), [openExploreWith])
-  const editFromInbox = useCallback((path: string, index: number | null) => openExploreWith({ kind: 'page', path, edit: true, editCard: true, fromInbox: true, ...(index !== null && { card: index }) }), [openExploreWith])
+  // YAZ-5307: `card` (Settings › Cards › Inbox: O opens the page at › The card) lands on it as E and Explore's card rows do.
+  const openFromInbox = useCallback((path: string, card?: CardPlace) => openExploreWith({ kind: 'page', path, fromInbox: true, ...(card !== undefined && { card }) }), [openExploreWith])
+  const editFromInbox = useCallback((path: string, card: CardPlace | null) => openExploreWith({ kind: 'page', path, edit: true, fromInbox: true, ...(card !== null && { card, editCard: true }) }), [openExploreWith])
   // The card window (YAZ-4962, D13): every editor sends `mdapp:card-open` from its card (a click on the title,
   // ⋯ › Open card, ⌘↵); it bubbles to the document. A preview that does not know its page sends no path: nothing opens.
   useEffect(() => {
@@ -4223,7 +4225,7 @@ export function App() {
                 under it stays as it was. Behind a page tab it stays mounted, hidden, so it comes back at its card and step. */}
             {session !== null && (
               <Suspense fallback={null}>
-                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openFromInbox} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} courseOffer={inboxCourseOffer} />
+                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openFromInbox} openAt={settings.inboxOpenAt} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} courseOffer={inboxCourseOffer} />
               </Suspense>
             )}
             {/* The tab board (YAZ-2648 D5) covers the stack while it shows; a review never has one over it. */}

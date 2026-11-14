@@ -14,8 +14,26 @@
  * No React, no editor state: the editor's link follower, the card screens and the card view all reach it.
  */
 
-import type { CardReview } from '@shared/cardLine'
+import { cardPlace, type CardReview } from '@shared/cardLine'
 import { landOn } from '../toc/tocMotion'
+
+/** Where a card of a page is (YAZ-5164): its ID (null before it has one) and its place among the page's cards (`pageCards` order, 0 first). */
+export interface CardPlace {
+  id: string | null
+  index: number
+}
+
+/**
+ * The page's own card `at` drawn in `scope` (Explore's page layer: the Inbox's O and E, a card row of search, the card
+ * window's page name), by its ID as every write finds it (`cardPlace`); its index only for a card with no ID yet. Only
+ * the page's own cards count (`data-page-card`, `cardBlockView.ts`): a card embed is a `.card` too, and an index read off
+ * every `.card` landed on the card before (YAZ-5164). Null: not drawn yet.
+ */
+export function pageCardIn(scope: ParentNode | null | undefined, at: CardPlace): HTMLElement | null {
+  if (scope == null) return null
+  const cards = [...scope.querySelectorAll<HTMLElement>('[data-page-card]')]
+  return cards[cardPlace(cards.map((card) => card.dataset.cardId ?? null), at.id, at.index)] ?? null
+}
 
 /** The open hook (D13): sent from an editor's `.ProseMirror` or a card screen, it bubbles. App listens and opens the card window. */
 export const CARD_OPEN = 'mdapp:card-open'
@@ -46,8 +64,10 @@ export interface CardPreviewRequest {
   path: string
   /** The card's ID, or null before it has one. */
   id: string | null
-  /** The card's text, its title line included. */
+  /** The card's text, its sides only. */
   text: string
+  /** Its title, off its card line (YAZ-5308); '' for a card with none. */
+  title: string
   /** "Title on the front: Hide" (YAZ-5030). */
   notitle: boolean
   /** Its reviews, for the Reviews strip on the last side. */

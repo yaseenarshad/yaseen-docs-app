@@ -8,7 +8,7 @@
  * - The buttons row: ← →, Forgot and Remembered (the real glyphs, the 1 and 2 keys), ⋯. `hover` shows the app's
  *   hover box over a button ("Remembered · 9 days"); `press` lights a button as a key or a click picks it.
  * - The last answer's line: "✓ Remembered · DEMO-2 · back in 9 days · Undo Cmd + Z" (`last`).
- * - The key row, in the app's words (`cardInboxHints`, `KeyCaps`); `glowKey` lights one key ("Space").
+ * - The key row, in the app's words (`cardInboxHints`, `KeyLabel`: "Show (Space)"); `glowKey` lights one key ("Space").
  * - `done`: the done screen, "Inbox complete." and its quiet line.
  *
  * Everything is a pure function of its props (the beat and progress values), as every kit piece.
@@ -16,7 +16,7 @@
 import type { ReactNode } from 'react'
 import { cardInboxHints } from '../../../review/cardInboxKeys'
 import { ChevronIcon, ForgotIcon, InboxTrayIcon, RememberedIcon } from '../../../review/cardInboxIcons'
-import { KeyCaps } from '../../../keys/KeyCaps'
+import { KeyLabel } from '../../../keys/KeyLabel'
 import { clamp, ease, lerp, type Beat } from './beat'
 import { CardView, type CardViewProps } from './CardView'
 import { Pointer } from './AppFrame'
@@ -177,7 +177,7 @@ export function InboxView({ beat, card, position = 1, total = 4, answered = [], 
                 <span className="card-inbox__last-mark">{last.text.slice(0, last.text.indexOf(' '))}</span>
                 <span className="card-inbox__last-text">{last.text.slice(last.text.indexOf(' '))} · </span>
                 <span className="card-inbox__last-undo" style={{ boxShadow: glow(last.undo ?? 0) }}>
-                  Undo <KeyCaps keys="⌘Z" />
+                  <KeyLabel action="Undo" keys="⌘Z" />
                 </span>
               </>
             )}
@@ -188,7 +188,7 @@ export function InboxView({ beat, card, position = 1, total = 4, answered = [], 
             const g = clamp(glowKey[h.label] ?? 0)
             return (
               <span key={h.label} className={g > 0 ? 'kit-inbox__hint-on' : undefined} style={g > 0 ? { color: `color-mix(in srgb, var(--accent) ${(g * 100).toFixed(0)}%, var(--fg-muted))` } : undefined}>
-                <KeyCaps keys={h.keys} /> {h.label}
+                <KeyLabel action={h.label} keys={h.keys} />
               </span>
             )
           })}

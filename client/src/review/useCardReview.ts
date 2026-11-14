@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { isCardSeconds, withCardNext, withCardOff, type CardRating, type CardReview } from '@shared/cardLine'
-import { addStep, archivedCards, cardPlan, previewAnswers, reviewedToday, type AddKind, type ArchivedCard, type CardAnswer, type CardPlan, type CardsAddedToday, type DueCard, type ReviewedToday } from '@shared/cardSchedule'
+import { addStep, anyUpNext, archivedCards, cardPlan, previewAnswers, reviewedToday, type AddKind, type ArchivedCard, type CardAnswer, type CardPlan, type CardsAddedToday, type DueCard, type ReviewedToday } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
@@ -151,6 +151,8 @@ export interface CardReviewSession {
   limited: Record<AddKind, boolean>
   /** Whether Reset would lower today's number of each kind (YAZ-5042 round 2): today has an add above today's work. */
   canReset: Record<AddKind, boolean>
+  /** Some card of the vault is marked Up next (YAZ-5321, `anyUpNext`): with none, the Inbox offers no Up next. */
+  upNext: boolean
   /** The add or Reset, while it is the last thing done (YAZ-5042): the line under the buttons says it; null otherwise. */
   lastAdd: { kind: AddKind; count: number; reset: boolean } | null
 }
@@ -942,6 +944,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
   )
   // YAZ-5046: the open scope's archived cards, from the index.
   const archived = useMemo(() => (scope === undefined ? [] : archivedCards(records, scope.folder, scope.page)), [scope, records])
+  const upNext = useMemo(() => anyUpNext(records), [records])
   // YAZ-5029: the last card shown with its text, and its session: on show while the next card is read.
   const lastShown = useRef<{ session: number; card: ShownCard } | null>(null)
   const shownSession = useMemo<CardReviewSession | null>(() => {
@@ -983,10 +986,11 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       adds: addsOf(scopePlan, settings),
       limited: { new: settings.newPerDay !== null, next: settings.upNextPerDay !== null },
       canReset: { new: (added.newCards > scopePlan.floor.new), next: (added.upNext > scopePlan.floor.next) },
+      upNext,
       lastAdd: lastStep?.kind === 'add' ? { kind: lastStep.what, count: lastStep.count, reset: false } : lastStep?.kind === 'reset' ? { kind: lastStep.what, count: lastStep.count, reset: true } : null,
     }
     // `records`: a cached page is good only at its page's mtime.
-  }, [session, loaded, fixed, turnKey, root, vaultName, cached, records, folders, today, scopePlan, settings, archived, added])
+  }, [session, loaded, fixed, turnKey, root, vaultName, cached, records, folders, today, scopePlan, settings, archived, added, upNext])
 
   return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, move, turnOff, unarchive, setFilter, addCards, resetCards }
 }

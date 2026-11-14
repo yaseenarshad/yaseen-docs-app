@@ -12,9 +12,8 @@ Use it to recall a particular line, word for word, and when to use it. **Title: 
 
 ## Example
 
-```markdown
-Roosevelt on fear
-
+````markdown
+```card
 A team panics about a problem more than the problem calls for. Which line fits?
 
 "The only thing we have to fear is {{fear itself}}."
@@ -23,3 +22,5 @@ Franklin D. Roosevelt, first inaugural address, March 1933.
 
 Panic can do more harm than the danger that caused it.
 ```
+<!-- card: title "Roosevelt on fear", notitle -->
+````

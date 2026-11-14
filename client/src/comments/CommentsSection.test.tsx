@@ -396,7 +396,7 @@ describe('CommentsSection — composer', () => {
     const textarea = textareaOf(composer)
     expect(textarea?.placeholder).toBe('Leave a comment…')
     expect(titleInputOf(composer)).toBeNull()
-    expect(submitOf(composer)?.textContent).toBe('Comment')
+    expect(submitOf(composer)?.textContent).toBe('Comment (Cmd+Enter)')
     expect(submitOf(composer)?.disabled).toBe(true)
 
     focus(textarea)
@@ -492,7 +492,7 @@ describe('CommentsSection — reply', () => {
 
     setValue(textareaOf(composer), 'Third reply')
     expect(composer.classList.contains('comments__composer--collapsed')).toBe(false)
-    expect(submitOf(composer)?.textContent).toBe('Reply')
+    expect(submitOf(composer)?.textContent).toBe('Reply (Cmd+Enter)')
 
     click(submitOf(composer))
     await flush()
@@ -516,7 +516,7 @@ describe('CommentsSection — edit and delete', () => {
 
     setValue(textareaOf(composer), 'Parent comment revised')
     setValue(titleInputOf(composer), 'Churn revisited')
-    click(buttonNamed(composer, 'Save'))
+    click(buttonNamed(composer, 'Save (Cmd+Enter)'))
     await flush()
 
     expect(written()).toMatch(/ {4}title: Churn revisited\n {4}edited: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\n {4}body: Parent comment revised\n/)
@@ -536,7 +536,7 @@ describe('CommentsSection — edit and delete', () => {
     const composer = must(q<HTMLElement>(titled, '.comments__composer'), 'edit composer')
 
     setValue(titleInputOf(composer), '')
-    click(buttonNamed(composer, 'Save'))
+    click(buttonNamed(composer, 'Save (Cmd+Enter)'))
     await flush()
 
     expect(written()).not.toContain('    title:')

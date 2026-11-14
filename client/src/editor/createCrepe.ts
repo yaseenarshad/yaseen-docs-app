@@ -359,7 +359,8 @@ import { cardLinkTitle, createWikilink, createWikilinkResolveSource, linkCard, l
 import { languages as codeLanguages } from '@codemirror/language-data'
 import { basename } from '@shared/types'
 import { imageSrc, pageDirRel } from './image/imageSrc'
-import { flushCardEditor, CARD_ID_META, CARD_MIRROR_META, cardCodeKeys, cardKeyRow, cardLanguage, cardBlockPlugins, cardRow, type CardDeps, type CardHost, type CardReviewDoorApi } from './card/cardBlockView'
+import { flushCardEditor, CARD_ID_META, CARD_MIRROR_META, cardCodeKeys, cardLanguage, cardBlockPlugins, cardRow, type CardDeps, type CardHost, type CardReviewDoorApi } from './card/cardBlockView'
+import { cardKeyRow } from './card/cardEditKeys'
 import type { CardLook } from './card/cardRender'
 import { cardEditorOptions } from './card/cardEditorFeatures'
 import { mountCardEditor } from './card/cardEditor'
@@ -865,7 +866,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
                   cardDeps.editor === undefined
                     ? undefined
                     : // A card file's title shows in the Title field, unchanged here: the file's own tab renames it (YAZ-5164 part 3).
-                      (root, text, done, fileTitle) => ({ editor: mountCardEditor({ root, text, make: cardDeps.editor!, fileTitle, titleReadOnly: fileTitle !== undefined, doors: { done, changed: () => {} } }), keys: cardKeyRow() }),
+                      (root, text, title, done, fileCard) => ({ editor: mountCardEditor({ root, text, title, make: cardDeps.editor!, titleReadOnly: fileCard, doors: { done, changed: () => {} } }), keys: cardKeyRow() }),
                 follow,
                 hotkeys: cardDeps.hotkeys,
                 openHref: cardDeps.openHref,

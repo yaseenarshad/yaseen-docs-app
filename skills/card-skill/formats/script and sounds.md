@@ -13,12 +13,13 @@ Use it to learn to read a new alphabet: the sound of a letter, two letters that 
 
 ## Example
 
-```markdown
-Greek letter lambda
-
+````markdown
+```card
 The Greek letter λ makes the sound {{l}}, as in "lamp".
 ---
 Name: {{lambda}}.
 Capital form: Λ, like an upside-down V.
 Example: λάμπα (lampa) means "lamp".
 ```
+<!-- card: title "Greek letter lambda", notitle -->
+````

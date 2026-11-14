@@ -25,9 +25,9 @@ import { nameCandidate } from '../links/completion'
 
 const ROOT = '/v'
 const PATH = '/v/Geography/capital-of-france-wiki-9.md'
-const CARD = '```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'
-/** A card file holds its title in `title`, as a page does (YAZ-5044); its card holds only its sides. */
-const FILE = `---\nkind: card\ntitle: Capital of France\n---\n${CARD}`
+const CARD = '```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9, title "Capital of France" -->\n'
+/** A card file's title is on its card line, as every card's (YAZ-5308); its properties hold only `kind: card`. */
+const FILE = `---\nkind: card\n---\n${CARD}`
 const disk = vi.hoisted(() => ({ files: new Map<string, string>(), reads: 0, review: { enabled: true } as Record<string, unknown> }))
 
 vi.mock('../api', async (importOriginal) => {
@@ -180,12 +180,12 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await mount(FILE)
     await menu()
     pick('Archive card')
-    await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('<!-- card: WIKI-9 -->', '<!-- card: WIKI-9, off -->')))
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", off -->')))
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('Archived'))
   })
 
   it('with the vault`s Review off nothing asks you to review it: no due state, no Inbox row, no Reviews', async () => {
-    const reviewed = FILE.replace('<!-- card: WIKI-9 -->', '<!-- card: WIKI-9, 2026-11-01T09:00Z good -->')
+    const reviewed = FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", 2026-11-01T09:00Z good -->')
     await mount(reviewed, { review: false })
     // Give the settings their read: they stay off.
     await act(async () => undefined)
@@ -198,13 +198,13 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
   })
 
   it('with Review on, a reviewed card says when it is due, and its history shows', async () => {
-    await mount(FILE.replace('<!-- card: WIKI-9 -->', '<!-- card: WIKI-9, 2026-11-01T09:00Z good -->'))
+    await mount(FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", 2026-11-01T09:00Z good -->'))
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toMatch(/^Due /))
     expect(el.querySelector('.card-reviews .backlinks__title')?.textContent).toBe('1 Review')
   })
 
   it('YAZ-5105 round 2: Reviews is a strip right under the card (as Mochi), closed until clicked; Linked mentions and Embedded in stay under it', async () => {
-    await mount(FILE.replace('<!-- card: WIKI-9 -->', '<!-- card: WIKI-9, 2026-11-01T09:00Z good -->'))
+    await mount(FILE.replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", 2026-11-01T09:00Z good -->'))
     await vi.waitFor(() => expect(el.querySelector('.card-reviews')).not.toBeNull())
     const strip = el.querySelector('.card-reviews')!
     expect(strip.classList.contains('card-reviews--strip')).toBe(true)
@@ -297,7 +297,7 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
     key(el.querySelector('[data-card-file-body]')!, { key: 'e' })
     const dom = await cardEditor()
     // An agent writes the same card's text and a property, and reviews it.
-    const outside = `---\nkind: card\ntitle: Capital of France\ntags: geo\n---\n${CARD.replace('Paris', 'Paris!').replace('<!-- card: WIKI-9 -->', '<!-- card: WIKI-9, 2026-11-01T09:00Z good -->')}`
+    const outside = `---\nkind: card\ntags: geo\n---\n${CARD.replace('Paris', 'Paris!').replace('<!-- card: WIKI-9, title "Capital of France" -->', '<!-- card: WIKI-9, title "Capital of France", 2026-11-01T09:00Z good -->')}`
     disk.files.set(PATH, outside)
     indexSees(2)
     await act(async () => undefined)
@@ -324,7 +324,7 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
     expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
     await menu()
     pick('Archive card')
-    await vi.waitFor(() => expect(disk.files.get(PATH)).toContain('<!-- card: WIKI-9, off -->'))
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toContain('<!-- card: WIKI-9, title "Capital of France", off -->'))
   })
 })
 
@@ -380,7 +380,7 @@ describe('the guided tour hears the card file tab (YAZ-5123)', () => {
 })
 
 describe('Preview a card from its file (YAZ-5152)', () => {
-  it('P and ⋯ › Preview ask for the preview with the card as the Inbox reads it (the file\'s title first); no write', async () => {
+  it('P and ⋯ › Preview ask for the preview with the card as the Inbox reads it (its title off the card line); no write', async () => {
     await mount(FILE)
     const asks: CardPreviewRequest[] = []
     const listen = (e: Event) => asks.push((e as CustomEvent<CardPreviewRequest>).detail)
@@ -388,7 +388,7 @@ describe('Preview a card from its file (YAZ-5152)', () => {
     key(el.querySelector('[data-card-file-body]')!, { key: 'p' })
     expect(asks).toHaveLength(1)
     expect(asks[0]).toMatchObject({ path: PATH, id: 'WIKI-9', notitle: false })
-    expect(asks[0].text.split('\n')[0]).toBe('Capital of France')
+    expect([asks[0].title, asks[0].text]).toEqual(['Capital of France', 'Capital of {{France}}\n---\nParis'])
     await menu()
     pick('Preview')
     expect(asks).toHaveLength(2)
@@ -530,7 +530,7 @@ describe('a new card file (YAZ-5037 phase 4, YAZ-5044)', () => {
     expect(made).toBe(`/v/Geography/${cardFileName('Capital of France', 'WIKI-10')}`)
     // The guided tour (YAZ-5123) hears the new card file once, with its path.
     expect(heard).toEqual([['card-file-created', made]])
-    expect(disk.files.get(made)).toBe('---\nkind: card\ntitle: Capital of France\n---\n```card\n\n```\n<!-- card: WIKI-10 -->\n')
+    expect(disk.files.get(made)).toBe('---\nkind: card\n---\n```card\n\n```\n<!-- card: WIKI-10, title "Capital of France" -->\n')
     const { onRetitle } = await mount(disk.files.get(made)!, { path: made })
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .card__editor .ProseMirror')).not.toBeNull())
     const dom = el.querySelector<HTMLElement>('[data-explore-card-edit] .card__editor .ProseMirror')!
@@ -538,7 +538,7 @@ describe('a new card file (YAZ-5037 phase 4, YAZ-5044)', () => {
     act(() => view.dispatch(view.state.tr.insertText('Which city?\n---\nParis', 1)))
     key(dom, { key: 'Enter', metaKey: true })
     await vi.waitFor(() => expect(disk.files.get(made)).toContain('Paris'))
-    expect(disk.files.get(made)).toMatch(/^---\nkind: card\ntitle: Capital of France\n---\n/)
+    expect(disk.files.get(made)).toMatch(/^---\nkind: card\n---\n[\s\S]*<!-- card: WIKI-10, title "Capital of France" -->\n$/)
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
     expect(onRetitle).not.toHaveBeenCalled()
     // Opened again, it is a card file like any other: shown, not in Edit card.

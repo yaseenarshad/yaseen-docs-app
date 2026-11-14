@@ -242,14 +242,14 @@ export interface IndexRecord {
   embeds: string[]
   /**
    * The page's cards (`shared/cardLine.ts`, YAZ-4960 D4), in page order: each card's ID (null before the sweep
-   * gives one), whether review is off, and its reviews as its card line holds them; its title (its first line, what a
-   * `[[card ID]]` link shows) and whether the title is hidden on the Inbox's front (YAZ-5030). No other card text: it is
+   * gives one), whether review is off, and its reviews as its card line holds them; its title (its card line's `title`,
+   * YAZ-5308: what a `[[card ID]]` link shows) and whether the title is hidden on the Inbox's front (YAZ-5030). No other card text: it is
    * read when a card shows. Absent when the page has no card, or was not read. When a card is due is computed (`cardSchedule.ts`).
    */
   cards?: CardRecord[]
   /**
    * `card` when the file is a CARD FILE (YAZ-5037): its properties hold `kind: card` (`shared/cardFileFormat.ts`). Its
-   * `title` is then its card's title, and `cards` holds every card in it (one, unless the file is not valid). Absent
+   * `title` is then its card's title (off its card line, YAZ-5308; its file name when it has none), and `cards` holds every card in it (one, unless the file is not valid). Absent
    * for a page.
    */
   kind?: 'card'
@@ -2211,6 +2211,13 @@ export interface SettingsState {
    * `--card-table-inline` on `.app`, read by the one Table position rule (`table.css`).
    */
   cardTablePosition: CardTablePosition
+  /**
+   * Settings › Cards › Inbox: O opens the page at (YAZ-5307, Yaseen: "by default it open at top of page but if someone
+   * wants to change it to go to the card on the page they can"): where the Inbox's O (and the links that open as O does)
+   * opens a card that lives in a page. `top` (the default) is the page's top, as YAZ-5022; `card` lands on the card with
+   * the one flash every way to a card in its page has (Explore's page layer `card`, `landOn`, YAZ-5164). A card file and E do not change.
+   */
+  inboxOpenAt: InboxOpenAt
   /** Card spacing, Custom (YAZ-5050): the card's line spacing, as `lineSpacing`. */
   cardLineSpacing: number
   /** Card spacing, Custom (YAZ-5050): the card's space between blocks, px per side, as `blockGap`. */
@@ -2608,6 +2615,9 @@ export type TablePosition = (typeof TABLE_POSITIONS)[number]
 /** Settings › Review › Card look › Card tables (YAZ-5136 round 3): Same as pages (Table position), or the cards' own. */
 export const CARD_TABLE_POSITIONS = ['pages', ...TABLE_POSITIONS] as const
 export type CardTablePosition = (typeof CARD_TABLE_POSITIONS)[number]
+/** Settings › Cards › Inbox: O opens the page at (YAZ-5307): the page's top (the default), or the card. */
+export const INBOX_OPEN_AT = ['top', 'card'] as const
+export type InboxOpenAt = (typeof INBOX_OPEN_AT)[number]
 export const TABLE_TEXT_IN_CELLS = ['wrap', 'clip'] as const
 export type TableTextInCells = (typeof TABLE_TEXT_IN_CELLS)[number]
 export const TABLE_ROW_BANDS: readonly TableRowBand[] = ['off', 'calendar', 'all']
@@ -2970,6 +2980,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   cardSpacing: 'pages',
   cardWidth: null,
   cardTablePosition: 'pages',
+  inboxOpenAt: 'top',
   ...CARD_SPACING_CLEAN,
   tableOfContents: 'auto',
   tocOnByDefault: true,

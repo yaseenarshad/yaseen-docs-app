@@ -11,14 +11,14 @@
  * through `changeCardLineAt`, one transaction (one ⌘Z).
  *
  * UNDO (YAZ-4975): a change of the line is a `CardLineStep`, not a plain attribute step. It holds the line before and
- * after, and it applies only that DIFFERENCE to the line it finds: the ID, `off`, and each review added or removed. So
+ * after, and it applies only that DIFFERENCE to the line it finds: the ID, the title, `off`, and each review added or removed. So
  * the ⌘Z of "Turn review on" after an Inbox answer landed from outside turns review off again and keeps the answer.
  * A plain attribute step would write back the whole old line, and the answer would go.
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { AttrStep, Step, StepMap, StepResult, type Mappable } from '@milkdown/kit/prose/transform'
-import { EMPTY_CARD_LINE, cardIdOf, cardNextIndex, cardReviewsOf, formatCardLine, isCardNext, isCardNoTitle, isCardOff, parseCardLine, withCardId, withCardNext, withCardNoTitle, withCardOff, type CardLine, type CardPart, type CardReview } from '@shared/cardLine'
+import { EMPTY_CARD_LINE, cardIdOf, cardNextIndex, cardReviewsOf, cardTitleOf, formatCardLine, isCardNext, isCardNoTitle, isCardOff, parseCardLine, withCardId, withCardNext, withCardNoTitle, withCardOff, withCardTitle, type CardLine, type CardPart, type CardReview } from '@shared/cardLine'
 import type { Code, RootContent } from 'mdast'
 
 /** The language of a card's fence. */
@@ -44,14 +44,20 @@ export const cardLineOf = (node: ProseNode): CardLine => {
   return (text === null ? null : parseCardLine(text)) ?? EMPTY_CARD_LINE
 }
 
-/** The card line of `node` changed by `change`, as one transaction on `state`; null when `pos` holds no card or nothing changes. */
-export function changeCardLineAt(state: EditorState, pos: number, change: (line: CardLine) => CardLine): Transaction | null {
-  const node = state.doc.nodeAt(pos)
+/** The step that changes the card line of the card at `pos` in `doc` by `change`; null when `pos` holds no card or nothing changes. */
+export function cardLineStepAt(doc: ProseNode, pos: number, change: (line: CardLine) => CardLine): CardLineStep | null {
+  const node = doc.nodeAt(pos)
   if (node === null || !isCardNode(node)) return null
   const line = cardLineOf(node)
   const changed = change(line)
   if (changed === line || formatCardLine(changed) === cleanCardLine(node.attrs.cardLine)) return null
-  return state.tr.step(new CardLineStep(pos, formatCardLine(line), formatCardLine(changed)))
+  return new CardLineStep(pos, formatCardLine(line), formatCardLine(changed))
+}
+
+/** The card line of `node` changed by `change`, as one transaction on `state`; null when `pos` holds no card or nothing changes. */
+export function changeCardLineAt(state: EditorState, pos: number, change: (line: CardLine) => CardLine): Transaction | null {
+  const step = cardLineStepAt(state.doc, pos, change)
+  return step === null ? null : state.tr.step(step)
 }
 
 /** A review is its time and its rating (`cardReviewKey`): its seconds (YAZ-5033) are no part of it. */
@@ -80,13 +86,14 @@ function withReviewInOrder(line: CardLine, review: CardReview, place: number): C
 }
 
 /**
- * The line `now` with the change from `before` to `after` laid on it: the ID, `off`, `next` and `notitle` (YAZ-5030) as `after` has them where they
- * differ, each review `after` gained added, each review it lost removed. Everything else of `now` stays.
+ * The line `now` with the change from `before` to `after` laid on it: the ID, the title (YAZ-5308), `off`, `next` and
+ * `notitle` (YAZ-5030) as `after` has them where they differ, each review `after` gained added, each review it lost removed. Everything else of `now` stays.
  */
 export function rebaseCardLine(now: CardLine, before: CardLine, after: CardLine): CardLine {
   let line = now
   const id = cardIdOf(after)
   if (id !== cardIdOf(before)) line = id === null ? { parts: line.parts.filter((p) => p.kind !== 'id') } : withCardId(line, id)
+  if (cardTitleOf(after) !== cardTitleOf(before)) line = withCardTitle(line, cardTitleOf(after))
   if (isCardOff(after) !== isCardOff(before)) line = withCardOff(line, isCardOff(after))
   if (isCardNext(after) !== isCardNext(before)) line = withCardNext(line, isCardNext(after), isCardNext(after) ? cardNextIndex(after) : undefined)
   if (isCardNoTitle(after) !== isCardNoTitle(before)) line = withCardNoTitle(line, isCardNoTitle(after))

@@ -13,21 +13,22 @@
  *   deleted the course's and made their own); a folder at the top with the saved ID is the course's, renamed.
  * - A read-only vault, IDs off, or Review off: the course only shows. Nothing is written, and the step says why.
  * - Each card the course writes is a card file as "New card" and `yaseendocs card new` write it (`cardFileContent`,
- *   `cardFileName`): `kind: card`, the title in `title:`, one card with its sides, a new ID from the vault's door.
+ *   `cardFileName`): `kind: card` alone in its front matter, one card with its sides, and its card line with its new ID
+ *   from the vault's door and its title (`title "…"`, YAZ-5308: a card's title is on its card line, never in its text
+ *   or its front matter).
  *   A file is never written over; a repeat makes a second file.
  * - The AI step copies a prompt and watches the folder through the vault's index. The app runs no agent and sends
  *   nothing anywhere. Nothing grades the agent's cards: the person reads each.
  * - What the course made is kept in `AppState.course.made`, a record only: every file is in the sidebar.
  */
-import { NEW_CARD_TEXT, cardFileContent, cardFileName, isCardKind } from '@shared/cardFileFormat'
-import { EMPTY_CARD_LINE, cardTime, findCards, withCardId, withCardNext, withCardNoTitle, withCardReview, type CardReview } from '@shared/cardLine'
+import { cardFileContent, cardFileName, isCardKind } from '@shared/cardFileFormat'
+import { EMPTY_CARD_LINE, cardTime, cardTitleOf, findCards, withCardId, withCardNext, withCardNoTitle, withCardReview, type CardReview } from '@shared/cardLine'
 import { cardState, previewAnswers } from '@shared/cardSchedule'
 import { cardSkillFolder } from '@shared/cardSkillFolder'
-import { cardSides, cardTitle } from '@shared/cardText'
+import { cardSides } from '@shared/cardText'
 import type { CourseMade } from '@shared/courseState'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { createPage, folderPath, type PageDisk } from '@shared/pageBirth'
-import { TITLE_KEY } from '@shared/pageName'
 import type { ReviewSettings } from '@shared/reviews'
 import { PAGE_ID_KEY } from '@shared/pageId'
 import { FOLDER_SETTINGS_FILE, type IndexRecord } from '@shared/types'
@@ -272,14 +273,11 @@ function courseSummary(records: readonly IndexRecord[], root: string, folder: st
   return { folder, cards }
 }
 
-/** A card to read: its sides, from the file's text. A card file's title is its `title:`; a card in a page has its first line. */
+/** A card to read: its title off its card line (YAZ-5308, in a card file and in a page alike), and its sides. */
 function cardTextOf(content: string, index: number): CourseCardText | null {
-  const { frontmatter, body } = splitFrontmatter(content)
-  const card = findCards(body)[index]
+  const card = findCards(splitFrontmatter(content).body)[index]
   if (card === undefined) return null
-  const { properties } = parseFrontmatter(frontmatter)
-  const fileTitle = isCardKind(properties) && typeof properties[TITLE_KEY] === 'string' ? (properties[TITLE_KEY] as string) : null
-  return { title: fileTitle ?? cardTitle(card.text), sides: cardSides(card.text) }
+  return { title: cardTitleOf(card.line), sides: cardSides(card.text) }
 }
 
 const sameCards = (a: readonly CourseCard[], b: readonly CourseCard[]): boolean =>
@@ -315,14 +313,15 @@ function firstReview(answer: 'forgot' | 'remembered', settings: ReviewSettings, 
 }
 
 /**
- * Writes one card file in `dir`, as "New card" and `card new` do: a new ID, the name from the title, never over a file.
+ * Writes one card file in `dir`, as "New card" and `card new` do: a new ID, the title on the card line (`cardFileContent`,
+ * YAZ-5308), the name from the title, never over a file. An empty title: no title part, the name `<id>.md`.
  * `review`: the card's first review, on its line in the same write (the line the Inbox's answer gives a new card).
  */
 async function writeCardFile(disk: PageDisk, dir: string, title: string, text: string, titleHidden: boolean, review?: CardReview): Promise<MadeCard> {
   const id = await disk.mintId(dir)
   const fresh = withCardNoTitle(withCardId(EMPTY_CARD_LINE, id), titleHidden)
   const line = review === undefined ? fresh : withCardReview(withCardNext(fresh, false), review)
-  const name = title.trim() === '' ? NEW_CARD_TEXT : title
+  const name = title.trim()
   const path = `${dir}/${cardFileName(name, id)}`
   await disk.createFile({ path, content: cardFileContent(name, text, line) })
   return { path, title: name, text, titleHidden }

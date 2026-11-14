@@ -91,9 +91,9 @@ describe('the kit pieces of chapters 3 to 5 (YAZ-5121)', () => {
     expect(at(false)).not.toBe('157')
   })
 
-  it("writes Edit card's keys in the app's words (fix of the review: no key symbols)", () => {
+  it("writes Edit card's keys in the app's words (fix of the review: no key symbols), as the app's one hotkey label (YAZ-5332)", () => {
     const el = draw(<CardEditKeyRow />)
-    expect(el.textContent).toBe('Cmd + L hide wordCmd + Shift + Enter new sideCmd + Enter / Esc Done')
+    expect(el.textContent).toBe('Hide word (Cmd+L)New side (Cmd+Shift+Enter)Done (Cmd+Enter)')
   })
 
   it('follows the lit part of a long card (Fit pans to it), and jumps there with reduced motion', () => {

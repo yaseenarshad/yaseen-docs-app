@@ -47,11 +47,6 @@
 .card-file__button:hover {
   background: var(--bg-hover);
 }
-.card-file__button kbd {
-  margin-left: 4px;
-  font-family: inherit;
-  color: var(--fg-muted);
-}
 .card-file__facts {
   display: flex;
   flex-wrap: wrap;

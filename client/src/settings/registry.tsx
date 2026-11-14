@@ -26,7 +26,7 @@ import { COURSE_SETTINGS_GROUP } from '../course/courseSettings'
 import { HeaderStyleControl } from '../views/view/StylePanel'
 import { plainHeaderRow } from '../views/view/TableLookSettings'
 import { isIdLetters } from '@shared/pageId'
-import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
+import { keyFor, keyInWords, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
 import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
@@ -687,10 +687,10 @@ const LINK_PILL_WORDS = ['link', 'links', 'pill', 'pills', 'wikilink', 'look', '
 const HOVER_WORDS = ['hover', 'preview', 'page', 'markdown', 'drawing', 'diagram', 'board', 'excalidraw', 'draw.io', 'mouse']
 
 /** Settings › Files & Links › Preview on hover (YAZ-3403): one row per place, under the master switch. */
-/** An App command's key as the user set it, for a hint (YAZ-3564: no hint hard-codes a key); null for "No key". */
+/** An App command's key as the user set it, for a hint (YAZ-3564: no hint hard-codes a key), in words (YAZ-5332); null for "No key". */
 const menuKey = (id: HotkeyId, settings: SettingsState): string | null => {
   const key = keyFor(id, settings.hotkeys)
-  return key === null ? null : toDisplay(key)
+  return key === null ? null : keyInWords(key)
 }
 
 const HOVER_PLACE_ROWS: readonly { place: HoverPlace; label: string | ((ctx: SettingsCtx) => string); hint?: string; keywords: string[] }[] = [
@@ -2118,6 +2118,26 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                   ariaLabel="Time so far"
                 />
               ),
+          },
+          {
+            // YAZ-5307 (Yaseen: "by default it open at top of page but if someone wants to change it to go to the card on
+            // the page they can"): the app's settings, as Card look's rows: a habit of the person, not of the vault.
+            id: 'inboxOpenAt',
+            label: (ctx) => unit(ctx, 'Inbox: O opens the page at'),
+            hint: (ctx) => unit(ctx, 'Where O in the Inbox opens a card that is in a page: at the top of the page, or at the card, with one flash. A card file opens as before.'),
+            keywords: [...REVIEW_KEYWORDS, 'inbox', 'open', 'o', 'top', 'card', 'land', 'jump', 'scroll'],
+            available: reviewOn,
+            render: (ctx) => (
+              <Segmented
+                options={[
+                  { label: 'The top', value: 'top' as const },
+                  { label: 'The card', value: 'card' as const },
+                ]}
+                value={ctx.settings.inboxOpenAt}
+                onChange={(inboxOpenAt) => ctx.onChange({ ...ctx.settings, inboxOpenAt })}
+                ariaLabel={unit(ctx, 'Inbox: O opens the page at')}
+              />
+            ),
           },
         ],
       },

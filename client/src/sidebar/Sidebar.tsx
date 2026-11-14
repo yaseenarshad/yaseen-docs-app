@@ -2,6 +2,7 @@ import { Fragment, lazy, Suspense, useCallback, useContext, useEffect, useMemo, 
 import { useAllPathIds, type IdsInFiles, type IdsInSearch, type PathIdsSource } from '../search/showIds'
 import { isBoard } from '@shared/fileKind'
 import { titleWithKey } from '@shared/hotkeyBindings'
+import { KeyLabel } from '../keys/KeyLabel'
 import { hoverOn, rootOfPath, stripSlash, type BoardHeadResponse, type IndexRecord, type SettingsState, type SidebarLens, type SidebarTab, type SortMenuTab, type TabSort, type TreeNode, type UpdateState } from '@shared/types'
 import { api } from '../api'
 import { osVerbs } from '../lib/osVerbs'
@@ -634,15 +635,15 @@ export function countChildren(nodes: readonly TreeNode[], dir: string): { pages:
   return { pages, folders }
 }
 
-/** The keys of the search, as the empty Search tab lists them (YAZ-2662 D10, S59): the keycaps of a row, and what they do. */
-const SEARCH_KEYS: readonly (readonly [keys: readonly string[], does: string])[] = [
-  [['↑', '↓'], 'Move'],
-  [['↵'], 'Open'],
-  [['⌘↵'], 'Open in a background tab'],
-  [['⇧↵'], 'Show in Files'],
-  [['space'], 'Preview a file or open a folder, after ↑ or ↓'],
-  [['→', '←'], 'Open or close a folder, after ↑ or ↓'],
-  [['esc'], 'Back to the page'],
+/** The keys of the search, as the empty Search tab lists them (YAZ-2662 D10, S59), each the app's hotkey label (YAZ-5332): what it does, then its keys. */
+const SEARCH_KEYS: readonly (readonly [keys: string, does: string])[] = [
+  ['↑ / ↓', 'Move'],
+  ['↵', 'Open'],
+  ['⌘↵', 'Open in a background tab'],
+  ['⇧↵', 'Show in Files'],
+  ['space', 'Preview a file or open a folder, after Up or Down'],
+  ['→ / ←', 'Open or close a folder, after Up or Down'],
+  ['esc', 'Back to the page'],
 ]
 
 /** Which page is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
@@ -2098,18 +2099,13 @@ export function Sidebar({
           // (YAZ-2662 D10), and no tree.
           <>
             <p className="sidebar__msg">{unit('Type to search every page and folder.')}</p>
-            <dl className="sidebar__keys">
+            <ul className="sidebar__keys">
               {SEARCH_KEYS.map(([keys, does]) => (
-                <Fragment key={does}>
-                  <dt>
-                    {keys.map((cap) => (
-                      <kbd key={cap}>{cap}</kbd>
-                    ))}
-                  </dt>
-                  <dd>{does}</dd>
-                </Fragment>
+                <li key={does}>
+                  <KeyLabel action={does} keys={keys} />
+                </li>
               ))}
-            </dl>
+            </ul>
           </>
         ) : searching ? (
           // The Search tab with text typed (YAZ-2638 D2): its body is the Files tree cut down to

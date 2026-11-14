@@ -104,7 +104,6 @@ it('YAZ-5026 round 2: a card`s lists, read (the page, the card window, the Inbox
 it('YAZ-5026 round 2: Edit card`s key row has its own look in the page (explore.css loads only with the card window or the Inbox)', () => {
   const row = rules(cardCss, '.card .card__keys').find((r) => /display:\s*flex/.test(r.body))!
   expect(row.body).toMatch(/gap:\s*14px/)
-  expect(rules(cardCss, '.card .card__keys kbd').some((r) => /font-family:\s*inherit/.test(r.body) && /border:/.test(r.body))).toBe(true)
 })
 
 it('YAZ-5051: the line between two sides is clear — dashed, across the card, darker than its borders, unlike a rule in the text; the Inbox gives it more room, edge to edge', () => {
@@ -256,4 +255,10 @@ it('YAZ-5144 round 3: Card width is ONE rule for a card in a page (written there
   expect(rules(screens, '.explore__body--card').some((r) => /max-width/.test(r.body))).toBe(false)
   expect(rules(cardCss, '.milkdown .card').some((r) => /margin-inline:\s*auto/.test(r.body))).toBe(false)
   expect(rules(read('../cardFileView.css'), '.card-file__page').find((r) => r.selector === '.card-file__page')?.body).toMatch(/max-width:\s*var\(--content-max-width\)/)
+})
+
+it('YAZ-5145 round 3: a page locked by Read only (`data-read-only`, a page tab with its caret) shows the card\'s Edit card, which asks first; a preview (no caret) hides it', () => {
+  const hides = (part: string) => rules(cardCss, part).filter((r) => r.selector.split(',').some((s) => s.trim().startsWith(part)) && /display:\s*none/.test(r.body))
+  expect(hides(".ProseMirror[contenteditable='false'] .card__edit")).toHaveLength(1)
+  expect(hides('.ProseMirror[data-read-only] .card__edit')).toEqual([])
 })

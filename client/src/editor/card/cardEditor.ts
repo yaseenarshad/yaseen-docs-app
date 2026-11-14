@@ -36,9 +36,9 @@ import { wrapInTaskListInputRule } from '../listMarkerTyping'
 import { normalizeEmptyItems } from '../listItemRoundTrip'
 import type { SlashMenuGroups } from '../slashMenu'
 import type { ToolbarBuilder } from '../createCrepe'
+import { cleanCardTitle } from '@shared/cardLine'
 import { joinCardParts, sideMarkdown, sideWithEdges, splitCardText, type CardParts } from './cardEditorText'
 import { setTourTyper, tourEvent } from '../../course/tourBus'
-import { cardTitleOut, cardWithTitle } from '@shared/cardText'
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The hidden word: the `cloze` mark
@@ -408,12 +408,9 @@ export interface CardCrepe {
 export interface CardEditor {
   /** Made: the card's text is in it and it has the keyboard. */
   ready: Promise<void>
-  /**
-   * The card's text now: what Done writes. The text it started from until it is ready. A card in a page: with the Title
-   * field's title as its first line (`cardRetitled`); a card file: its card alone (its title is `title()`).
-   */
+  /** The card's text now, its sides only: what Done writes. The text it started from until it is ready. */
   text: () => string
-  /** The Title field's title now, plain text on one line (YAZ-5164 part 3). */
+  /** The Title field's title now, plain text on one line (YAZ-5164 part 3): what Done writes on the card line (YAZ-5308). */
   title: () => string
   view: () => EditorView | null
   destroy: () => void
@@ -497,11 +494,10 @@ function cardPlugins(doors: CardEditorDoors, escapeTaken: () => boolean) {
 }
 
 /**
- * THE TITLE FIELD (YAZ-5164 part 3, Yaseen: "Yes, build it"): above Side 1, for both kinds of card, bound to where each
- * keeps its title. A card in a page (`fileTitle` absent): its title line (`cardTitleOut`) is in the field and out of the
- * editor, and `text()` puts the field's title back as its first line; a first line that holds a hidden word or code is
- * the card's question and stays in the editor, and a title typed in the field goes above it. A card file: the field is
- * its `title` (`fileTitle`), and the editor is its card. Enter, ↓ and Tab go down into Side 1; ⌘↵ and Esc are Done.
+ * THE TITLE FIELD (YAZ-5164 part 3, Yaseen: "Yes, build it"): above Side 1, for both kinds of card: the card's title,
+ * off its card line (YAZ-5308), and the editor holds its text, its sides only. Done writes the field's title back on the
+ * card line (a card file's through its tab's title door, which renames the file). Enter, ↓ and Tab go down into Side 1;
+ * ⌘↵ and Esc are Done.
  */
 function titleField(value: string, doors: CardEditorDoors, down: () => void, readOnly: boolean): HTMLInputElement {
   const field = document.createElement('input')
@@ -525,19 +521,16 @@ function titleField(value: string, doors: CardEditorDoors, down: () => void, rea
 }
 
 /**
- * Mounts the card's editor in `root` with the card's `text`, its Title field above it. `select`: offsets in the card's
- * text to select in its first line (`/card`'s "Title": then in the Title field); absent → the caret at the end.
- * `fileTitle`: a card file's `title` (YAZ-5044); absent, the title is the card's first line. `titleReadOnly`: the field
- * shows the title only (an embed of a card file has no door to rename that file: its tab does).
+ * Mounts the card's editor in `root` with the card's `text` (its sides) and its `title` in the Title field above it.
+ * `select`: offsets in the card's text to select in its first line; absent → the caret at the end. `selectTitle`: the
+ * Title field has the keyboard instead, its text selected (`/card`, New card: typing names the card). `titleReadOnly`:
+ * the field shows the title only (an embed of a card file has no door to rename that file: its tab does).
  */
-export function mountCardEditor(o: { root: HTMLElement; text: string; make: (root: HTMLElement) => CardCrepe; doors: CardEditorDoors; select?: { from: number; to: number }; fileTitle?: string; titleReadOnly?: boolean }): CardEditor {
-  // A card in a page: the title line out of the editor, into the field (`cardTitleOut`, the rule that moves it to a card file).
-  const split = o.fileTitle === undefined ? cardTitleOut(o.text) : { title: o.fileTitle, text: o.text }
-  const taken = o.fileTitle === undefined && split.text !== o.text
-  const body = split.text
+export function mountCardEditor(o: { root: HTMLElement; text: string; title: string; make: (root: HTMLElement) => CardCrepe; doors: CardEditorDoors; select?: { from: number; to: number }; selectTitle?: boolean; titleReadOnly?: boolean }): CardEditor {
+  const body = o.text
   const parts: CardParts = splitCardText(body)
   let view: EditorView | null = null
-  const field = titleField(split.title, o.doors, () => {
+  const field = titleField(o.title, o.doors, () => {
     if (view === null) return
     view.dispatch(view.state.tr.setSelection(Selection.atStart(view.state.doc)))
     view.focus()
@@ -574,12 +567,12 @@ export function mountCardEditor(o: { root: HTMLElement; text: string; make: (roo
     start = sidesOf(v.state.doc)
     const { doc } = v.state
     let selection: Selection = Selection.atEnd(doc)
-    // `/card`'s "Title" (its first line) is the Title field's now: selected there, so typing replaces it.
-    if (o.select !== undefined && taken) {
+    // `/card`, New card: the Title field has the keyboard, its text selected, so typing names the card.
+    if (o.selectTitle === true && !field.readOnly) {
       v.dispatch(v.state.tr.setSelection(selection))
       view = v
       field.focus()
-      field.setSelectionRange(o.select.from, Math.min(o.select.to, field.value.length))
+      field.select()
       return
     }
     if (o.select !== undefined) {
@@ -595,17 +588,8 @@ export function mountCardEditor(o: { root: HTMLElement; text: string; make: (roo
   return {
     ready,
     view: () => view,
-    title: () => field.value.replace(/\s+/g, ' ').trim(),
-    text: () => {
-      const edited = bodyNow()
-      if (o.fileTitle !== undefined) return edited
-      const title = field.value.replace(/\s+/g, ' ').trim()
-      if (title === split.title && edited === body) return o.text
-      // The field's title as the first line, above the editor's text. A first line kept in the editor (a hidden word, code)
-      // is no title line: with the title as it was, the editor's text alone; a new title goes above it.
-      if (title === split.title && !taken) return edited
-      return cardWithTitle(title, edited)
-    },
+    title: () => cleanCardTitle(field.value),
+    text: () => bodyNow(),
     destroy: () => {
       if (destroyed) return
       destroyed = true
@@ -616,7 +600,7 @@ export function mountCardEditor(o: { root: HTMLElement; text: string; make: (roo
     },
   }
 
-  /** The editor's text now: its card without the title line; what it started from until it is ready. */
+  /** The editor's text now; what it started from until it is ready. */
   function bodyNow(): string {
     if (view === null || view.isDestroyed) return body
     const now = sidesOf(view.state.doc)

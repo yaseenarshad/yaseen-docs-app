@@ -230,15 +230,15 @@ describe('YAZ-5034: Edit card`s key row, and ⌘⇧↵ for a new side', () => {
   const shiftModEnter = (cm: CodeMirrorView) =>
     cm.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, metaKey: true, shiftKey: true, bubbles: true, cancelable: true }))
 
-  it('the key row shows only in Edit card, in words (YAZ-5035); the head`s Done too', async () => {
+  it('the key row shows only in Edit card, each part the app`s hotkey label (YAZ-5332); the head`s Done too', async () => {
     const { root, view, pos } = await mount()
     const card = () => root.querySelector<HTMLElement>('.card')!
     expect(card().querySelector('.card__keys')).toBeNull()
     await editCard(root, view, pos)
     const row = card().querySelector<HTMLElement>('.card__keys')!
-    expect(row.textContent).toBe('Cmd + L hide word' + 'Cmd + Shift + Enter new side' + 'Cmd + Enter / Esc Done')
+    expect(row.textContent).toBe('Hide word (Cmd+L)' + 'New side (Cmd+Shift+Enter)' + 'Done (Cmd+Enter)')
     expect(row.previousElementSibling?.classList.contains('card__code')).toBe(true)
-    expect(card().querySelector('.card__edit')!.textContent).toBe('DoneEscCmd + Enter')
+    expect(card().querySelector('.card__edit')!.textContent).toBe('Done (Esc / Cmd+Enter)')
     cardBlockViewAt(view, pos)!.done()
     expect(card().querySelector('.card__keys')).toBeNull()
   })

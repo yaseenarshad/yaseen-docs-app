@@ -244,16 +244,14 @@ export async function scanFile(root: string, absPath: string): Promise<IndexReco
   const id = properties[PAGE_ID_KEY]
   if (isPageId(id)) record.id = canonicalPageId(id)
   record.title = titleOf(properties, record.title)
-  // The page's cards (YAZ-4960 D4): ID, off and reviews off each card line, no card text.
+  // The page's cards (YAZ-4960 D4): ID, title, off and reviews off each card line, no card text.
   const cards = cardRecords(body)
   // A card file (YAZ-5037): the mark in its properties, never its shape — a file with 2 cards, or none, stays a card
-  // file, and its tab says so. Its title is its `title`, as a page's (YAZ-5044, decision A); one from before A that the
-  // sweep has not moved yet reads its card's first line; else the file's name. Its card's title IS the file's, so card
-  // pills, the `[[` picker, search and the Inbox read one title.
+  // file, and its tab says so. Its title is its card's, off the card line (YAZ-5308, decision D), so card pills, the
+  // `[[` picker, search and the Inbox read one title; a card with none: the file's name (`<id>.md`, its ID).
   if (isCardKind(properties)) {
     record.kind = 'card'
-    record.title = titleOf(properties, cards[0]?.title ?? fileTitle({ path: absPath, name, basename }))
-    if (cards.length > 0) cards[0] = { ...cards[0], title: record.title }
+    record.title = cards[0]?.title ?? fileTitle({ path: absPath, name, basename })
   }
   return { ...record, ...extractBody(properties, body), ...(cards.length > 0 && { cards }) }
 }

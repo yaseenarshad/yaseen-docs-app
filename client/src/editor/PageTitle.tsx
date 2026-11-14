@@ -34,7 +34,7 @@ interface PageTitleProps {
   path: string
   /** The window's titles (YAZ-2420 🔒 D14): the heading shows the page's title. */
   titles: PathTitles
-  /** The title itself, when it is no file's title (YAZ-5164: a card in a page's, its first line). Absent: the path's. */
+  /** The title itself, when it is no file's title (YAZ-5164: a card in a page's, off its card line). Absent: the path's. */
   text?: string
   /** Shown while the title is empty (a card with no title yet). */
   placeholder?: string

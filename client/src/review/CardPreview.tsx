@@ -6,7 +6,7 @@
  *
  *  - NOTHING IS SAVED: it has no answer buttons, no timer, no session, no review door. It writes nothing: no review,
  *    no schedule, no Up next and no counts. The Reviews strip has no delete here.
- *  - The bottom bar reads "Preview · Esc to close".
+ *  - The bottom bar reads "Preview · Close (Esc)" (the app's hotkey label, YAZ-5332).
  *  - SPACE: the next hidden word, then the next side, as in the Inbox; at the end, the card again from its front.
  *    A click on a blank shows that word, elsewhere on the card the marked one, as in the Inbox (YAZ-5049 round 4).
  *    P plays the card's sound, as in the Inbox.
@@ -22,6 +22,7 @@ import type { ExploreVault } from '../explore/ExplorePage'
 import { CardId, CardReviews, type CardLinkDoors } from './cardParts'
 import { CardSideCount, InboxCardFace, InboxCardPanel, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
 import { useInboxCardWidth } from './inboxCardWidth'
+import { KeyLabel } from '../keys/KeyLabel'
 import '../explore/explore.css'
 
 export interface CardPreviewProps {
@@ -39,7 +40,7 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose }:
   const columnRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const { width, startDrag } = useInboxCardWidth(columnRef, rootRef)
-  const { text, title } = useCardFront(card.text, card.notitle)
+  const { text, title } = useCardFront(card.text, card.title, card.notitle)
   // One preview is one card: a new ask (another card) starts at its front.
   const cardKey = `${card.path}\n${card.id ?? ''}\n${card.text}`
   const steps = useCardSteps(text, cardKey, rootRef)
@@ -112,7 +113,9 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose }:
           </InboxCardPanel>
           {/* The Reviews strip from the last side (YAZ-5105), as in the Inbox; no delete in a preview. */}
           {settings !== undefined && steps.onLastSide && card.reviews.length > 0 && <CardReviews key={cardKey} reviews={card.reviews} settings={settings} />}
-          <div className="explore__foot card-inbox__hints card-preview__foot">Preview · Esc to close</div>
+          <div className="explore__foot card-inbox__hints card-preview__foot">
+            Preview · <KeyLabel action="Close" keys="esc" />
+          </div>
         </div>
       </div>
     </div>

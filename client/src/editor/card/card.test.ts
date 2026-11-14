@@ -15,10 +15,10 @@ import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { createViewOnlyLinkSource } from '../wikilink/viewOnlyLinkSource'
 import { CrepeFeature } from '../crepe'
 import { features } from '../featureConfig'
-import { CARD_OPEN, CARD_TITLE_PLACEHOLDER, cardLanguage, cardBlockViewAt, setCardEditorKind, type CardOpenRequest } from './cardBlockView'
+import { CARD_OPEN, cardLanguage, cardBlockViewAt, setCardEditorKind, type CardOpenRequest } from './cardBlockView'
 import { refreshCardLook, renderCard } from './cardRender'
 import { READ_ONLY_EDIT, type ReadOnlyEditEvent } from '../readOnlyEdit'
-import { CARD_PREVIEW, landOnCard, takeCardLanding, type CardPreviewRequest } from './cardOpen'
+import { CARD_PREVIEW, landOnCard, pageCardIn, takeCardLanding, type CardPreviewRequest } from './cardOpen'
 import { FLASH_FRAMES } from '../toc/tocMotion'
 import { pageCards } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
@@ -114,11 +114,10 @@ describe('the "Card" slash row (D1, idea 9)', () => {
     // The card is edited at once: Crepe's code editor in the card, the caret in its text.
     expect(cardBlockViewAt(view, 0)?.editing).toBe(true)
     expect(view.state.selection.$from.parent.attrs.language).toBe('card')
-    // YAZ-5030: the card starts with its title line, "Title", selected whole, so typing replaces it.
-    expect(view.state.doc.textBetween(view.state.selection.from, view.state.selection.to)).toBe(CARD_TITLE_PLACEHOLDER)
+    // YAZ-5308: the card starts empty, its title on its card line (none yet); the caret in its text.
     expect(view.state.selection.from).toBe(1)
     // The ID lands without any sweep, on the line under the fence.
-    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toBe('```card\nTitle\n```\n<!-- card: WIKI-512 -->\n'))
+    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toBe('```card\n```\n<!-- card: WIKI-512 -->\n'))
     // The ID is out of the undo history: one ⌘Z takes the card away whole.
     undo(view.state, view.dispatch)
     expect(cardPos(view)).toBe(-1)
@@ -205,10 +204,10 @@ describe('the card in the page', () => {
       wikilinkNav: { root: '/v', createFolder: () => '', openCurrent: (p) => follow.push(['thisTab', p]), openBackground: (p) => follow.push(['backgroundTab', p]), openExplore: (p) => follow.push(['explore', p]), onNotice: () => {} },
     })
     const card = view.dom.querySelector<HTMLElement>('.card')!
-    // The head shows the title (YAZ-5164 part 3), as plain text. This first line holds a hidden word: it is the card's
-    // question, so it stays in the body too, its word hidden there.
+    // The head shows the title off the card line (YAZ-5308): this card has none, so the head says so; its first line is
+    // its question, in the body, its word hidden there.
     const shown = (el: Element | null) => [...(el?.children ?? [])].filter((c) => !(c as HTMLElement).hidden).map((c) => c.textContent).join('')
-    expect(shown(card.querySelector('.card__head'))).toBe('What is the capital of France (France, Gone)?Edit card⋯')
+    expect(shown(card.querySelector('.card__head'))).toBe('Untitled cardEdit card⋯')
     expect([...card.querySelectorAll('.card__side')].map((side) => side.textContent?.trim())).toEqual(['What is the capital of France (France, Gone)?', 'Paris'])
     expect(card.querySelector('.card__rule')).not.toBeNull()
     expect(card.querySelector('.card__hidden')?.textContent).toBe('France')
@@ -270,6 +269,17 @@ describe('the card in the page', () => {
     expect(bare.root.querySelector<HTMLButtonElement>('.card__id')?.hidden).toBe(true)
   })
 
+  it('YAZ-5164: each of the page\'s own cards carries its ID (`data-page-card`, `data-card-id`); Explore finds a card by its ID, its index only for one with none', async () => {
+    const { root } = await mount(`${CARD}<!-- card: WIKI-7 -->\n\n${CARD}<!-- card: WIKI-8 -->\n\n${CARD}`, { cards: { path: '/v/Page.md' } })
+    const own = [...root.querySelectorAll<HTMLElement>('.card')]
+    expect(own.map((c) => [c.dataset.pageCard, c.dataset.cardId])).toEqual([['', 'WIKI-7'], ['', 'WIKI-8'], ['', undefined]])
+    // By ID, whatever the index says (an index read before a card was added above it).
+    expect(pageCardIn(root, { id: 'WIKI-8', index: 0 })).toBe(own[1])
+    expect(pageCardIn(root, { id: 'wiki-404', index: 1 })).toBeNull()
+    // A card with no ID yet: its place.
+    expect(pageCardIn(root, { id: null, index: 2 })).toBe(own[2])
+  })
+
   it('YAZ-5152: ⋯ › Preview, P on the selected card, and Edit card\'s Preview each send the one preview ask, with the card as shown (the typed text in Edit card); none writes', async () => {
     const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, notitle, 2026-11-12T14:05Z good -->\n`, { cards: { path: '/v/Page.md' } })
     const asks: CardPreviewRequest[] = []
@@ -279,7 +289,7 @@ describe('the card in the page', () => {
     const row = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent?.startsWith('Preview'))!
     expect(row.textContent).toContain('P')
     row.click()
-    expect(asks).toEqual([{ path: '/v/Page.md', id: 'WIKI-7', text: 'What is the capital of {{France}}?\n---\nParis', notitle: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }] }])
+    expect(asks).toEqual([{ path: '/v/Page.md', id: 'WIKI-7', text: 'What is the capital of {{France}}?\n---\nParis', title: '', notitle: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }] }])
     // P with the card selected: Preview, and the card is not typed over.
     view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, cardPos(view))))
     view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', bubbles: true, cancelable: true }))
@@ -402,7 +412,7 @@ describe('the card in the page', () => {
     expect(getMarkdownForSave(crepe)).toContain('<!-- card: WIKI-7, 2026-11-12T14:05Z good -->')
   })
 
-  it('Edit card is Crepe\'s code editor (made only then); YAZ-5001: ⌘↵ there is Done, while ⌘↵ in another code block still adds a line; the head says "Done esc ⌘↵"', async () => {
+  it('Edit card is Crepe\'s code editor (made only then); YAZ-5001: ⌘↵ there is Done, while ⌘↵ in another code block still adds a line; the head says "Done (Esc / Cmd+Enter)"', async () => {
     // The raw-text fallback (YAZ-5026: `setCardEditorKind('code')`); the page's editor is `cardEditor.test.ts`.
     setCardEditorKind('code')
     const { root, view } = await mount(`${CARD}<!-- card: WIKI-8 -->\n\n\`\`\`js\nx\n\`\`\`\n`, { cards: { path: '/v/Page.md' } })
@@ -411,8 +421,9 @@ describe('the card in the page', () => {
     edit()
     const cm = card.querySelector<HTMLElement>('.cm-content')!
     expect(cm.textContent).toContain('What is the capital of {{France}}?')
-    expect([...card.querySelectorAll('.card__edit kbd')].map((k) => k.textContent)).toEqual(['Esc', 'Cmd', 'Enter'])
-    expect(card.querySelector('.card__edit')?.textContent).toBe('DoneEscCmd + Enter')
+    // The app's hotkey label (YAZ-5332): the action, then its keys in brackets, quieter.
+    expect(card.querySelector('.card__edit')?.textContent).toBe('Done (Esc / Cmd+Enter)')
+    expect(card.querySelector('.card__edit .key-label')?.textContent).toBe('(Esc / Cmd+Enter)')
     // The card language: Markdown with spell check (idea 8), once the language loads.
     await vi.waitFor(() => expect(cm.getAttribute('spellcheck')).toBe('true'))
     const opened: CardOpenRequest[] = []
@@ -494,6 +505,19 @@ describe('the card in the page', () => {
     expect(told.map((e) => e.detail)).toEqual(['card'])
     expect(root.querySelector('.card--editing')).toBeNull()
     // The chip's "Allow edits" unlocks the page, then runs what the attempt carried.
+    crepe.setReadonly(false)
+    told[0].resume?.()
+    await vi.waitFor(() => expect(root.querySelector('.card--editing')).not.toBeNull())
+  })
+
+  it('YAZ-5145 round 3: the Edit card BUTTON of a card in a page locked by Read only asks too, and opens Edit card once the page is editable', async () => {
+    const { crepe, root } = await mount(CARD)
+    crepe.setReadonly(true)
+    const told: ReadOnlyEditEvent[] = []
+    root.addEventListener(READ_ONLY_EDIT, (e) => told.push(e as ReadOnlyEditEvent))
+    root.querySelector('.card__edit')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    expect(told.map((e) => e.detail)).toEqual(['card'])
+    expect(root.querySelector('.card--editing')).toBeNull()
     crepe.setReadonly(false)
     told[0].resume?.()
     await vi.waitFor(() => expect(root.querySelector('.card--editing')).not.toBeNull())
@@ -773,11 +797,11 @@ describe('YAZ-5164: landing on a card in its page, as the table of contents land
  * head, in the page title's own component (`PageTitle`, as a card file's tab), and a click renames it; the body never
  * repeats it. Storage does not change: the title is the card's first line (`cardRetitled`).
  */
-describe('YAZ-5164 part 3: the card head shows the title, a click renames it, the body never repeats it', () => {
+describe('YAZ-5164 part 3: the card head shows the title (off its card line, YAZ-5308), a click renames it', () => {
   const flag = globalThis as unknown as Record<string, unknown>
   beforeEach(() => void (flag.IS_REACT_ACT_ENVIRONMENT = true))
   afterEach(() => void delete flag.IS_REACT_ACT_ENVIRONMENT)
-  const TITLED = '```card\nCapital of France\n\nWhich city is the capital?\n---\nParis\n```\n<!-- card: WIKI-7 -->\n'
+  const TITLED = '```card\nWhich city is the capital?\n---\nParis\n```\n<!-- card: WIKI-7, title "Capital of France" -->\n'
   /** The head's title once React drew it (the page title's own component). */
   const headTitle = (root: HTMLElement) => root.querySelector<HTMLElement>('.card__head .page-title .page-title__text')
   const setValue = (field: HTMLTextAreaElement, value: string) => {
@@ -785,7 +809,7 @@ describe('YAZ-5164 part 3: the card head shows the title, a click renames it, th
     field.dispatchEvent(new Event('input', { bubbles: true }))
   }
 
-  it('the head shows the title; the body starts after it', async () => {
+  it('the head shows the title off the card line; the body is the card`s text', async () => {
     const { root } = await mount(TITLED, { wikilinks: vault(true), cards: { path: '/v/Page.md' } })
     await vi.waitFor(() => expect(headTitle(root)?.textContent).toBe('Capital of France'))
     const body = root.querySelector('.card__body')!.textContent ?? ''
@@ -793,13 +817,13 @@ describe('YAZ-5164 part 3: the card head shows the title, a click renames it, th
     expect(body).toContain('Which city is the capital?')
   })
 
-  it('a first line with a hidden word is the card`s question: it stays in the body, and the head shows it as plain text', async () => {
+  it('a card with no title on its line: the head says "Untitled card", never its first line, which stays the question', async () => {
     const { root } = await mount(CARD, { wikilinks: vault(true), cards: { path: '/v/Page.md' } })
-    await vi.waitFor(() => expect(headTitle(root)?.textContent).toBe('What is the capital of France?'))
+    await vi.waitFor(() => expect(headTitle(root)?.textContent).toBe('Untitled card'))
     expect(root.querySelector('.card__body .card__hidden')?.textContent).toBe('France')
   })
 
-  it('a click on the title renames the card: its first line, one undo step; Esc changes nothing', async () => {
+  it('a click on the title renames the card: its card line, one undo step; Esc changes nothing', async () => {
     const { crepe, root, view } = await mount(`x\n\n${TITLED}`, { wikilinks: vault(true), cards: { path: '/v/Page.md' } })
     await vi.waitFor(() => expect(headTitle(root)).not.toBeNull())
     // A press, then its click, as the mouse gives them.
@@ -811,10 +835,10 @@ describe('YAZ-5164 part 3: the card head shows the title, a click renames it, th
       setValue(field, 'France`s capital')
       field.blur()
     })
-    expect(getMarkdownForSave(crepe)).toContain('```card\nFrance`s capital\n\nWhich city is the capital?\n---\nParis\n```\n<!-- card: WIKI-7 -->')
+    expect(getMarkdownForSave(crepe)).toContain('```card\nWhich city is the capital?\n---\nParis\n```\n<!-- card: WIKI-7, title "France`s capital" -->')
     await vi.waitFor(() => expect(headTitle(root)?.textContent).toBe('France`s capital'))
     undo(view.state, view.dispatch)
-    expect(getMarkdownForSave(crepe)).toContain('```card\nCapital of France\n\nWhich')
+    expect(getMarkdownForSave(crepe)).toContain('<!-- card: WIKI-7, title "Capital of France" -->')
   })
 
   it('in a page locked by Read only a click on the title is an edit attempt that carries the rename (unlock, then continue)', async () => {

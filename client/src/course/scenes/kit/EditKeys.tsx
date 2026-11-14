@@ -1,46 +1,42 @@
 /**
  * EDIT CARD (YAZ-5121; the kit's one copy, YAZ-5128) AND ITS KEYS, IN WORDS: the key row under the card editor and the
- * head's "Done Esc Cmd + Enter", as the app writes them. The keys come from the app's own list (`editor/card/cardEditKeys.ts`, `CARD_EDIT_KEYS`) and
- * its own words (`keys/KeyCaps.tsx`, `keyWords.ts`): "Cmd + L hide word · Cmd + Shift + Enter new side · Cmd + Enter /
- * Esc Done". Use these in any copy of the card editor; never type a key symbol by hand.
+ * head's Done, as the app writes them (YAZ-5332, one hotkey label: the action, then its keys in brackets). The keys come
+ * from the app's own list (`editor/card/cardEditKeys.ts`, `CARD_EDIT_KEYS`) and its own label (`keys/KeyLabel.tsx`):
+ * "Hide word (Cmd+L) · New side (Cmd+Shift+Enter) · Done (Cmd+Enter)", and the head's "Done (Esc / Cmd+Enter)". Use
+ * these in any copy of the card editor; never type a key symbol by hand.
  */
 import type { CSSProperties, ReactNode } from 'react'
+import { DONE_KEYS } from '@shared/keyLabel'
 import { CARD_EDIT_KEYS } from '../../../editor/card/cardEditKeys'
-import { KeyCaps } from '../../../keys/KeyCaps'
+import { KeyLabel } from '../../../keys/KeyLabel'
 
-/** The quiet key row under Edit card's editor (`cardKeyRow` in `cardBlockView.ts`), with the app's classes. */
+/** The quiet key row under Edit card's editor (`cardKeyRow` in `cardEditKeys.ts`), with the app's classes. */
 export function CardEditKeyRow() {
   return (
     <div className="explore__foot card__keys kit-editkeys" aria-hidden="true">
       {CARD_EDIT_KEYS.map(({ keys, label }) => (
-        <span key={label}>
-          <KeyCaps keys={keys} /> {label}
-        </span>
+        <KeyLabel key={label} action={label} keys={keys} />
       ))}
     </div>
   )
 }
 
-/** The head's edit button while editing: "Done", then Esc and Cmd + Enter (`cardEmbed.ts`, `cardBlockView.ts`). */
+/** The head's edit button while editing: "Done (Esc / Cmd+Enter)" (`drawEditButton`, `cardEditKeys.ts`). */
 export function CardDoneKeys() {
-  return (
-    <>
-      Done <KeyCaps keys="esc" /> <KeyCaps keys="⌘↵" />
-    </>
-  )
+  return <KeyLabel action="Done" keys={DONE_KEYS} />
 }
 
 /**
  * One of Edit card's key bindings, from the app's list, for `Keys` or a toolbar copy (they draw it in words):
- * `editKey('hide word')` → the binding `KeyCaps` writes "Cmd + L".
+ * `editKey('hide word')` → `⌘L`, which `KeyLabel` writes "Cmd+L" (the label's case does not count).
  */
 export function editKey(label: string): string {
-  return CARD_EDIT_KEYS.find((k) => k.label === label)?.keys.split(' / ')[0] ?? ''
+  return CARD_EDIT_KEYS.find((k) => k.label.toLowerCase() === label.toLowerCase())?.keys.split(' / ')[0] ?? ''
 }
 
 /**
  * A card in Edit card, as the app draws it in a page (`cardBlockView.ts`, `cardEditor.ts`): the head with the ID,
- * Preview (YAZ-5152), "Done Esc Cmd + Enter" and ⋯; the Title field above Side 1 (YAZ-5164; empty, it shows its placeholder "Title", as `cardEditor.ts` sets it);
+ * Preview (YAZ-5152), "Done (Esc / Cmd+Enter)" and ⋯; the Title field above Side 1 (YAZ-5164; empty, it shows its placeholder "Title", as `cardEditor.ts` sets it);
  * the sides (`children`); the key row. `title`: the field's text, or a node (a selection, a caret); `done` 0..1 brings in
  * the head's buttons; `keys` 0..1 the key row.
  */

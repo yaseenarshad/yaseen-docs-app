@@ -1,7 +1,7 @@
 /**
  * THE FORMAT HINT (YAZ-5114, YAZ-5059 decision 8, suggestion 18): one quiet line under the key row of Edit card, on a
- * NEW, EMPTY card only — its text is nothing, or only the placeholder "Title" (`CARD_TITLE_PLACEHOLDER`) — when Edit
- * card opens: "Formats in your card skill: acronym · book · comparison · 8 more. Learn the formats". The names are the
+ * NEW, EMPTY card only — its text (its sides; the title is on its card line, YAZ-5308) is nothing — when Edit card
+ * opens: "Formats in your card skill: acronym · book · comparison · 8 more. Learn the formats". The names are the
  * pages of the `formats` folder of the card skill the vault uses (its own `Card skill` folder, else the app's copy),
  * A to Z; App reads them (`api.app.cardFormats`) and hands them here (`setCardFormatHints`). The line goes at the first
  * text, and never shows on a card that has text when Edit card opens. Settings › Cards › Card tips Off: no line. A
@@ -55,8 +55,8 @@ export function cardFormatsFor(path: string | null): CardSkillFormats | null {
   return key === undefined ? null : (hints.byVault.get(key) ?? null)
 }
 
-/** Is a card with `text` new and empty for the hint: nothing, or only the placeholder title? */
-export const isEmptyNewCard = (text: string, placeholder: string): boolean => text.trim() === '' || text.trim() === placeholder
+/** Is a card with `text` (its sides, never its title: YAZ-5308) new and empty for the hint? */
+export const isEmptyNewCard = (text: string): boolean => text.trim() === ''
 
 /** The line's words before the link: "Formats in your card skill: a · b · c · 8 more." */
 export function cardFormatHintText(formats: readonly string[]): string {

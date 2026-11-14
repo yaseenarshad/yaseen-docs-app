@@ -12,12 +12,13 @@ Use it when the learner must recall what the letters stand for. To learn what th
 
 ## Example
 
-```markdown
-HTTP
-
+````markdown
+```card
 What does HTTP stand for on the web?
 ---
 HTTP stands for {{Hypertext Transfer Protocol}}.
 
 It is the set of rules a browser and a web server use to send pages to each other.
 ```
+<!-- card: title "HTTP" -->
+````

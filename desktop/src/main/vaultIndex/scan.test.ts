@@ -299,7 +299,7 @@ describe('scanFile', () => {
       '---',
       'Paris',
       '```',
-      '<!-- card: WIKI-512, 2026-11-12T14:05Z good, mochi abc, 2026-11-20T09:00Z again -->',
+      '<!-- card: WIKI-512, title "Capital of France?", 2026-11-12T14:05Z good, mochi abc, 2026-11-20T09:00Z again -->',
       '',
       '- in a list',
       '  ```card',
@@ -321,8 +321,8 @@ describe('scanFile', () => {
     const r = await scanFile(root, file)
     expect(r.cards).toEqual([
       { id: 'WIKI-512', off: false, next: false, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }, { at: '2026-11-20T09:00Z', rating: 'again' }], title: 'Capital of France?' },
-      { id: null, off: false, next: false, reviews: [], title: 'No ID yet' },
-      { id: 'WIKI-7', off: true, next: false, reviews: [], title: 'Off' },
+      { id: null, off: false, next: false, reviews: [] },
+      { id: 'WIKI-7', off: true, next: false, reviews: [] },
     ])
     expect(r.properties).toEqual({ reviews: ['old'] })
     expect(await readFile(file, 'utf8')).toBe(bytes)
@@ -340,7 +340,7 @@ describe('scanFile', () => {
 
   it('YAZ-5037: a card file (`kind: card`, any case) has kind card, its card\'s title, and its card\'s ID only — no page ID', async () => {
     const file = path.join(root, 'capital-of-france-geo-140.md')
-    await writeFile(file, ['---', 'kind: " CARD "', 'tags: [geo]', '---', '```card', '###### Capital of **France**?', '---', 'Paris', '```', '<!-- card: GEO-140, 2026-11-10T09:12Z good 12s -->', ''].join('\n'))
+    await writeFile(file, ['---', 'kind: " CARD "', 'tags: [geo]', '---', '```card', '###### Capital of **France**?', '---', 'Paris', '```', '<!-- card: GEO-140, title "Capital of France?", 2026-11-10T09:12Z good 12s -->', ''].join('\n'))
     const r = await scanFile(root, file)
     expect(r.kind).toBe('card')
     expect(r.title).toBe('Capital of France?')
@@ -349,17 +349,17 @@ describe('scanFile', () => {
     expect(r.properties).toEqual({ kind: ' CARD ', tags: ['geo'] })
   })
 
-  it('YAZ-5044 decision A: a card file`s title is its `title`, as a page`s, and its card is titled by it (pills, the `[[` picker, search, the Inbox); a second card keeps its first line', async () => {
+  it('YAZ-5308 decision D: a card file`s title is its card`s, off its card line, never a `title` property nor a line of its text', async () => {
     const file = path.join(root, 'capital-of-france-geo-150.md')
-    await writeFile(file, ['---', 'kind: card', 'title: Capital of France', '---', '```card', 'Which city?', '---', 'Paris', '```', '<!-- card: GEO-150 -->', '', '```card', 'Second', '```', '<!-- card: GEO-151 -->', ''].join('\n'))
+    await writeFile(file, ['---', 'kind: card', 'title: Not this', '---', '```card', 'Which city?', '---', 'Paris', '```', '<!-- card: GEO-150, title "Capital of France" -->', '', '```card', 'Second', '```', '<!-- card: GEO-151 -->', ''].join('\n'))
     const r = await scanFile(root, file)
     expect(r.title).toBe('Capital of France')
-    expect(r.cards?.map((c) => c.title)).toEqual(['Capital of France', 'Second'])
+    expect(r.cards?.map((c) => c.title)).toEqual(['Capital of France', undefined])
   })
 
   it('YAZ-5037: a card file with 2 cards stays a card file, and both cards stay in review; one with no card is titled by its name', async () => {
     const two = path.join(root, 'two-cards.md')
-    await writeFile(two, ['---', 'kind: card', '---', '```card', 'First', '```', '<!-- card: GEO-141 -->', '', '```card', 'Second', '```', '<!-- card: GEO-142 -->', ''].join('\n'))
+    await writeFile(two, ['---', 'kind: card', '---', '```card', 'First', '```', '<!-- card: GEO-141, title "First" -->', '', '```card', 'Second', '```', '<!-- card: GEO-142 -->', ''].join('\n'))
     const r = await scanFile(root, two)
     expect(r.kind).toBe('card')
     expect(r.title).toBe('First')

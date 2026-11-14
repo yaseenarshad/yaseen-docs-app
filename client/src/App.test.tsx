@@ -5749,7 +5749,7 @@ describe('App: the card flow (YAZ-4962)', () => {
   })
 
   it('the card window opens from the editor\'s open-card hook (`mdapp:card-open`): a card layer of the page, the card read-only; a hook with no page opens nothing', async () => {
-    const files = { [PAGE]: { content: page('<!-- card: WIKI-9, 2026-01-02T09:00Z good -->'), mtime: 1 } }
+    const files = { [PAGE]: { content: page('<!-- card: WIKI-9, title "Capital of France", 2026-01-02T09:00Z good -->'), mtime: 1 } }
     const { el } = await mount(defaultAppState(), TABS, files, (b) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [record()], folders: [], generatedAt: 1, ids: true }))
     act(() => void document.dispatchEvent(new CustomEvent(CARD_OPEN, { detail: { path: null, cardId: 'WIKI-9', index: 0 } })))
     await act(async () => {})
@@ -5771,7 +5771,7 @@ describe('App: the card flow (YAZ-4962)', () => {
     await vi.waitFor(() => expect(document.querySelector('.card-preview .card-inbox__card .card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
     const preview = document.querySelector<HTMLElement>('.card-preview')!
     expect(preview.closest('.app')).not.toBeNull()
-    expect(preview.querySelector('.card-preview__foot')?.textContent).toBe('Preview · Esc to close')
+    expect(preview.querySelector('.card-preview__foot')?.textContent).toBe('Preview · Close (Esc)')
     await act(async () => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })))
     expect([...preview.querySelectorAll('.card__hidden')].map((h) => h.textContent)).toEqual(['France'])
     await act(async () => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
@@ -6003,7 +6003,7 @@ describe('App: the card flow from /card, through the real editor (YAZ-4965)', ()
     const inbox = () => el.querySelector<HTMLElement>('.card-inbox')
     await vi.waitFor(() => expect(inbox()?.querySelector('.card__side')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
     // E Edit card in every vault (YAZ-5145: in a read-only one, Explore's own 'Allow edits?' asks first).
-    expect([...el.querySelectorAll('.card-inbox__hints kbd')].map((k) => k.textContent)).toContain('E')
+    expect([...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)).toContain('Edit card (E)')
     const press = (key: string) => act(async () => void inbox()?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })))
     await press(' ')
     await vi.waitFor(() => expect(el.querySelectorAll('.card-inbox__answer')).toHaveLength(2))

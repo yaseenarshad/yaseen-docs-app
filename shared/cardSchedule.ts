@@ -280,8 +280,17 @@ export interface ArchivedCard {
   /** Its place among the page's cards. */
   index: number
   id: string
-  /** Its title (its first line); absent for an empty card. */
+  /** Its title (off its card line, YAZ-5308); absent for a card with none. */
   title?: string
+}
+
+/**
+ * Whether any card of the vault is marked Up next (YAZ-5321: the line's `next`, on a card in review: an ID, not
+ * archived). With none, the Inbox offers no Up next: the cards menu has no Up next row, so it does not confuse
+ * someone who never uses it; one mark brings it back.
+ */
+export function anyUpNext(records: readonly CardPage[]): boolean {
+  return records.some((r) => r.cards !== undefined && r.cards.some((c) => c.next && !c.off && c.id !== null))
 }
 
 /**

@@ -144,7 +144,7 @@ describe('a folder with no `.folder.md`', () => {
     const el = await mount()
     click(q(el, '.comments__header'))
     setValue(q(el, '[aria-label="Leave a comment…"]'), 'First word on this folder')
-    click(button(el, 'Comment'))
+    click(button(el, 'Comment (Cmd+Enter)'))
     await flush()
     expect(writeFile).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ path: SETTINGS_FILE, expectedMtime: 0 }))
     expect(readComments(onDisk()).map((c) => c.body)).toEqual(['First word on this folder'])

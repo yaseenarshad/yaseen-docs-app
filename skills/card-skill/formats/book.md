@@ -13,9 +13,8 @@ Use it to recognize a book, recall who wrote it, and know why it matters. An ide
 
 ## Example
 
-```markdown
-On the Origin of Species by Charles Darwin (Book)
-
+````markdown
+```card
 Which 1859 book argued that living things change over generations by natural selection?
 ---
 Written by {{Charles Darwin}}, after years of study that began on the voyage of the Beagle.
@@ -26,3 +25,5 @@ WHY REMEMBER IT
 
 It made {{evolution by natural selection}} the central idea of modern biology.
 ```
+<!-- card: title "On the Origin of Species by Charles Darwin (Book)", notitle -->
+````

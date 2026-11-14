@@ -38,12 +38,10 @@ import { newestFile } from '@shared/settingsSync'
 import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { PAGE_ID_KEY, canonicalPageId, isNumberId, vaultPageId } from '@shared/pageId'
-import { cardBlock, changeCard, pageCards, withCardNext, withCardNoTitle, type CardLine } from '@shared/cardLine'
+import { cardBlock, cardTitleOf, changeCard, pageCards, withCardNext, withCardNoTitle, withCardTitle, type CardLine } from '@shared/cardLine'
 import { lineKinds } from '@shared/fences'
 import { inLineEnds, withLf } from '@shared/lineEnds'
 import { cardQueue, cardState } from '@shared/cardSchedule'
-import { cardTitle } from '@shared/cardText'
-import { cardFileTitle } from '@shared/cardConvert'
 import { cardFileContent, cardFileName, isCardFileContent } from '@shared/cardFileFormat'
 import { CARD_SKILL_START_PAGE, cardSkillFolder } from '@shared/cardSkillFolder'
 import { makeCardResolver } from '@shared/cardLinks'
@@ -147,41 +145,47 @@ a vault with IDs or without. A line is the title and the path of the page, or of
 the app counts it: by id, path, title, file name or alias, in the body or the properties.
 
 A card is a spaced-repetition card inside a page: a \`\`\`card\` fence with its text, and the card
-line under it, \`<!-- card: <id>, <time> <answer>, ... -->\`, which holds the card's id and each review.
+line under it, \`<!-- card: <id>, title "<title>", <time> <answer>, ... -->\`, which holds the card's id, its title and each review.
 \`---\` alone on a line splits the front from the back, and \`{{word}}\` hides a word. Only a vault that
-gives its pages IDs has cards, and \`due\` and \`card\` are refused in any other. \`card add\` and \`card new\`
-write the card line, and the app writes each review. Never change a card line that the app wrote: it holds the card's
-ID and its reviews. On a new card that you write by hand, you may put the line \`<!-- card: notitle -->\` directly
-below the closing fence; the app adds the ID and keeps the option. With the command, use \`--hide-title\`.
+gives its pages IDs has cards, and \`due\` and \`card\` are refused in any other.
+Every card's title is on its card line, right after its ID: \`title "<title>"\`. A card's text is only its
+sides: its first line is part of the question, never its title. A card file's front matter holds only
+\`kind: card\`, never a \`title:\`. The title is plain text on one line; in it, write \`\\"\` for a quote,
+\`\\\\\` for a backslash and \`\\>\` for \`>\`. A card with no title shows "Untitled card" in its head, and its ID in links.
+\`card add\` and \`card new\` write the card line, and the app writes each review. Never change a card line that the
+app wrote: it holds the card's ID, its title and its reviews. On a new card that you write by hand, put the line
+\`<!-- card: title "<title>" -->\` directly below the closing fence (add \`, notitle\` to hide the title on the
+front); the app adds the ID and keeps the rest. With the command, use \`--title\` and \`--hide-title\`.
 
 \`due\` lists the cards due now under a folder (the whole vault for its root), as the app's Inbox
 shows them: first the cards up next (see \`card next\`), then the cards due today, most overdue first, then
 new cards, oldest or newest first by the vault's "New cards first", as many as its "New cards a day" leaves
 for today (all of them when that box is empty). A line is the day it was due (\`next\` for a card up next,
 \`new\` for a new card, \`steps\` for a card in its same-day steps: Forgot, or a new card not yet Remembered
-twice; it is due now, minutes after its last answer), the card's id, its title (its first line; a card file's \`title:\`) and its page.
+twice; it is due now, minutes after its last answer), the card's id, its title (\`title "…"\` on its card line) and its page.
 Given a page, \`due\` lists every card on it, each with the day it is next due, \`next\`, \`new\`, \`steps\`, or
 \`off\` (archived: the app's "Archive card"). The app works the dates out from each card's reviews with FSRS and never writes
 them, so this is the place to read them. \`--json\` gives \`id\`, \`page\`, \`title\`, \`due\` (ISO time; the
 minute a step ends), \`isNew\`, \`next\` and \`inSteps\` (and \`off\` for a page), and \`cardFile: true\` for a card that lives in a card file.
 
 \`card add\` adds a card to a page, with a new id from the vault's counter, as the app gives one:
-\`--body\` (\`--body -\` for stdin) is the card's text, and \`--title\` (one line) its first line. A card inside a
-page has its title as its first line. The title is what the app and a \`[[<card id>]]\` link to the card show. It goes at the end of
+\`--body\` (\`--body -\` for stdin) is the card's text, its sides only, and \`--title\` (one line) its title, written
+on its card line as \`title "<text>"\`: what the app and a \`[[<card id>]]\` link to the card show. It goes at the end of
 the page, or with \`--after\` at the end of that heading's section (the heading's text, without the \`#\`
 marks; case does not count). It prints \`added <id> to <page>\`; \`--json\` gives \`id\`, \`page\` and \`title\`. A card file is refused:
 "This is a card file. Use \`card new\`."
 
 A card file is a card on its own: a page whose properties hold \`kind: card\` and whose body is one card and
-its card line, nothing else. The card's id is the file's id (the file has no \`id:\` line). A card file has its
-title in its \`title:\` property, as a page has, and its card holds only its sides. Its name is \`<kebab-title>-<id>.md\`.
+its card line, nothing else. The card's id is the file's id (the file has no \`id:\` line). Its title is on its
+card line, as every card's (never a \`title:\` property), and its name is \`<kebab-title>-<id>.md\`.
 \`card new\` makes one in a folder, with a new id from the vault's counter: \`--title\` (one line) is the
-file's \`title:\`, and \`--body\` (\`--body -\` for stdin) the card's text. A name that is already taken is refused. It prints \`made <path>\`; \`--json\` gives
+card's title, on its card line, and \`--body\` (\`--body -\` for stdin) the card's text. A name that is already taken is refused. It prints \`made <path>\`; \`--json\` gives
 \`id\`, \`path\` and \`title\`.
 
 \`--hide-title\` on \`card add\` and \`card new\` keeps the card's title off the front in review, as the app's
-⋯ › "Title on the front" › Hide: the card line gets the part \`notitle\`, and the title is never a step of the
-review. The part is the same for a card in a page and for a card file. Do not put the title in \`{{ }}\`. Use \`--hide-title\`.
+⋯ › "Title on the front" › Hide: the card line gets the part \`notitle\`, after the title
+(\`<!-- card: <id>, title "<title>", notitle -->\`), and the title shows only once the whole card is shown. The
+part is the same for a card in a page and for a card file. Do not put the title in \`{{ }}\`. Use \`--hide-title\`.
 
 \`card next <id>\` puts a card at the top of the Inbox, as the app's "Put at top of Inbox" does: the card
 line gets the part \`next\`, and the Inbox shows the card first, due or not and outside the new cards a
@@ -391,14 +395,10 @@ async function cardVault(dir: string, what: string): Promise<string> {
   return root
 }
 
-/**
- * The title of each card of a page (idea 3), in page order: its text is read here, the index does not hold it (D4). A
- * card file's card is titled by the file's `title` (YAZ-5044).
- */
+/** The title of each card of a page, in page order: off its card line (YAZ-5308), as the page is on disk now. */
 async function cardTitles(page: string): Promise<string[]> {
   const { content } = await readPage(page)
-  const file = isCardFileContent(content)
-  return pageCards(content).map((card, i) => (file && i === 0 ? cardFileTitle(content) : cardTitle(card.text)))
+  return pageCards(content).map((card) => cardTitleOf(card.line))
 }
 
 /** `cardFile: true` for a card that lives in a card file (YAZ-5037), nothing for a card in a page: a row's own key. */
@@ -614,7 +614,7 @@ function cardPlace(body: string, after: string | undefined): number {
 /** A card file holds one card (YAZ-5037): `card add` never puts a second one in it. */
 const CARD_FILE_REFUSED = 'This is a card file. Use `card new`.'
 
-/** The title flag of `card add` and `card new` (YAZ-5030: a card's first line; a card file's `title`, YAZ-5044): one line of text, '' when not given. */
+/** The title flag of `card add` and `card new` (YAZ-5308: the card's title, on its card line): one line of text, '' when not given. */
 function cardTitleFlag(flags: Map<string, string | true>): string {
   const titleFlag = flags.get('--title')
   if (titleFlag === true) throw new Usage('--title needs a text')
@@ -623,17 +623,19 @@ function cardTitleFlag(flags: Map<string, string | true>): string {
   return titleLine
 }
 
-/** The new card's line (YAZ-5135): its ID, and `notitle` with `--hide-title`, as ⋯ › "Title on the front" › Hide writes it. */
-const newCardLine = (id: string, flags: Map<string, string | true>): CardLine => withCardNoTitle({ parts: [{ kind: 'id', id }] }, flags.has('--hide-title'))
+/**
+ * The new card's line (YAZ-5135, YAZ-5308): its ID, its title (`title "<text>"`, none for an empty one), and `notitle`
+ * with `--hide-title`, as ⋯ › "Title on the front" › Hide writes it.
+ */
+const newCardLine = (id: string, title: string, flags: Map<string, string | true>): CardLine =>
+  withCardNoTitle(withCardTitle({ parts: [{ kind: 'id', id }] }, title), flags.has('--hide-title'))
 
 /** `card add` (YAZ-4963, idea 16): a card with a real ID from the vault's counter, written atomically. */
 async function cardAdd(page: string, flags: Map<string, string | true>, io: Io): Promise<void> {
   onlyFlags('card add', flags, ['--body', '--title', '--after', '--hide-title', '--json'])
   const body = (await bodyOf(flags, io)).replace(/\r\n/g, '\n').replace(/^\n+|\s+$/g, '')
   if (body === '') throw new Usage('card add needs a --body with text')
-  // The title is the card's first line (YAZ-5030): one line, before the body.
-  const titleLine = cardTitleFlag(flags)
-  const text = titleLine === '' ? body : `${titleLine}\n${body}`
+  const title = cardTitleFlag(flags)
   const root = await cardVault(dirname(page), page)
   const after = str(flags, '--after')
   // The page and the heading are checked before a number is taken: a refusal costs no number.
@@ -643,7 +645,7 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io):
   // The door (YAZ-2677 D4): the count file is on disk before the card is written (R18), the app's own number.
   const id = (await mintIds(root, 1))?.[0]
   if (id === undefined) throw new Error(`${page}'s vault does not give its pages IDs, so it has no cards`)
-  const block = cardBlock(text, newCardLine(id, flags))
+  const block = cardBlock(body, newCardLine(id, title, flags))
   // The page keeps its own line end, `\r\n` or `\n` (YAZ-5146): the card is written with it.
   await transformOnDisk(page, (fresh) => inLineEnds(fresh, (lf) => {
     if (isCardFileContent(lf)) throw new Error(CARD_FILE_REFUSED)
@@ -658,13 +660,12 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io):
     const next = [...before, ...(before.length > 0 ? [''] : []), block, ...(rest.length > 0 && rest.some((l) => l !== '') ? ['', ...rest] : [''])]
     return frontmatter + next.join('\n')
   }))
-  const title = cardTitle(text)
   io.stdout(flags.has('--json') ? `${JSON.stringify({ id, page, title }, null, 2)}\n` : `added ${id} to ${page}\n`)
 }
 
 /**
- * `card new` (YAZ-5037): a card file in `dir` — `kind: card`, the title in `title:` (YAZ-5044), and one card whose text
- * is the body when one is given — with a new ID from the vault's counter, named `<kebab-title>-<id>.md` as a page is.
+ * `card new` (YAZ-5037): a card file in `dir` — `kind: card`, and one card with the title on its card line (YAZ-5308)
+ * whose text is the body when one is given — with a new ID from the vault's counter, named `<kebab-title>-<id>.md` as a page is.
  * The folder is checked before a number is taken. The create never writes over a file: a name that is taken is refused
  * (the number is spent, as the app's New page spends one on a create that fails).
  */
@@ -683,7 +684,7 @@ async function cardNew(dir: string, flags: Map<string, string | true>, io: Io): 
   if (id === undefined) throw new Error(`${dir}'s vault does not give its pages IDs, so it has no cards`)
   const path = join(dir, cardFileName(title, id))
   // No door: a card file carries no page `id:` (its card's ID is the file's), so the content is written as it is.
-  await createFile({ path, content: cardFileContent(title, body, newCardLine(id, flags)) }, null).catch((err: unknown) => {
+  await createFile({ path, content: cardFileContent(title, body, newCardLine(id, title, flags)) }, null).catch((err: unknown) => {
     throw err instanceof BridgeFailure && err.code === 'ALREADY_EXISTS' ? new Error(`${path} is already there`) : err
   })
   io.stdout(flags.has('--json') ? `${JSON.stringify({ id, path, title }, null, 2)}\n` : `made ${path}\n`)

@@ -13,9 +13,8 @@ Use it to recall a story and tell it in your own words. A story has people, and 
 
 ## Example
 
-```markdown
-Story: Archimedes - The crown and the bath
-
+````markdown
+```card
 A friend says their best ideas come when they stop working on the problem. Which story fits, about a gold crown?
 ---
 **WANT:** A king wants to know if his new crown is pure gold. He asks Archimedes to find out without damaging it.
@@ -30,3 +29,5 @@ A friend says their best ideas come when they stop working on the problem. Which
 
 SOURCE: the Roman writer Vitruvius told it about two hundred years later. It may be a legend.
 ```
+<!-- card: title "Story: Archimedes - The crown and the bath", notitle -->
+````

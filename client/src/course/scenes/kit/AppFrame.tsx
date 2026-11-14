@@ -14,7 +14,8 @@
  */
 import type { CSSProperties, ReactNode } from 'react'
 import { InboxIcon } from '../../../views/view/icons'
-import { KeyCaps } from '../../../keys/KeyCaps'
+import { keysText } from '@shared/keyLabel'
+import { KeyLabel } from '../../../keys/KeyLabel'
 import { CARD_SKILL_MENU } from '../../../sidebar/menuSections'
 import { clamp, ease, lerp, pop, type Beat } from './beat'
 
@@ -147,9 +148,7 @@ export function ToolbarPreview({ beat, items, x, y, p }: { beat: Beat; items: re
         <span key={item.label} className={`kit-toolbar__item${item.wide === true ? ' kit-toolbar__item--wide' : ''}`} style={(item.active ?? 0) > 0 ? { background: `color-mix(in srgb, var(--accent-soft) ${(clamp(item.active ?? 0) * 100).toFixed(0)}%, transparent)`, color: 'var(--accent)' } : undefined}>
           {item.label}
           {item.key !== undefined && (
-            <span className="kit-keycaps">
-              <KeyCaps keys={item.key} />
-            </span>
+            <span className="kit-keycaps key-label">({keysText(item.key)})</span>
           )}
         </span>
       ))}
@@ -167,9 +166,7 @@ export function SlashPreview({ beat, rows, x, y, p }: { beat: Beat; rows: readon
         <span key={row.label} className="kit-slash__row" style={(row.active ?? 0) > 0 ? { background: `color-mix(in srgb, var(--accent-soft) ${(clamp(row.active ?? 0) * 100).toFixed(0)}%, transparent)` } : undefined}>
           {row.label}
           {row.key !== undefined && (
-            <span className="kit-keycaps">
-              <KeyCaps keys={row.key} />
-            </span>
+            <span className="kit-keycaps key-label">({keysText(row.key)})</span>
           )}
         </span>
       ))}
@@ -200,16 +197,14 @@ export function Pointer({ beat, from, to, move, click = 0, show = 1 }: { beat: B
 }
 
 /**
- * A row of keys, as the card's key row, in the app's words (`KeyCaps`): `{ keys: '⌘L', label: 'hide word' }` reads
- * "Cmd + L hide word". `keys` is the binding (a symbol string or `Mod-L`), never words typed by hand.
+ * A row of keys, as the card's key row, in the app's hotkey label (YAZ-5332, `KeyLabel`): `{ keys: '⌘L', label: 'Hide
+ * word' }` reads "Hide word (Cmd+L)". `keys` is the binding (a symbol string or `Mod-L`), never words typed by hand.
  */
 export function Keys({ items, p = 1 }: { items: readonly { keys: string; label: string }[]; p?: number }) {
   return (
     <div className="kit-keys" style={{ opacity: clamp(p) }}>
       {items.map((item) => (
-        <span key={item.label}>
-          <KeyCaps keys={item.keys} /> {item.label}
-        </span>
+        <KeyLabel key={item.label} action={item.label} keys={item.keys} />
       ))}
     </div>
   )
