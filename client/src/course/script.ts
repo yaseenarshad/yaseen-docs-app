@@ -130,9 +130,8 @@ export const COURSE: CourseChapter[] = [
       { id: 'c2-31', text: 'Its back has the details too: how to say it, where it comes from, more examples.', marks: [0.372, 0.53, 0.719] },
       // Three sizes side by side: one bare line, the real card, a full page of text. The real card gets the check; "Front: the short version", "Back: the details".
       { id: 'c2-23', text: 'So a card is more than one line, and far less than a page. The short version on the front, the details on the back.' },
-      // The name "Piotr Wozniak" and "1999"; on the real card, only the front's blanks glow.
-      // SOURCE: Wozniak 1999, "Effective learning: Twenty rules of formulating knowledge", rule 4, the minimum information principle (supermemo.com).
-      { id: 'c2-24', text: 'Piotr Wozniak, who built SuperMemo, made it a rule: keep the front simple. A simple front is easier to remember.' },
+      // The lesson highlights the blanks on the front of the example card.
+      { id: 'c2-24', text: 'Keep the front simple. A simple front is easier to remember.' },
       // The real card with a short back; a second and a third part join the back over time. It stays one card.
       { id: 'c2-25', text: 'A card is never finished. It starts light, and it grows as you learn more.' },
       // All the cards together form one growing set, labelled "Card base"; cards slide together in new groups, like pieces that fit many ways.

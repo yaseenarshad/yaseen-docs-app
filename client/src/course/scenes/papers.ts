@@ -86,16 +86,6 @@ export const PAPERS = {
     quote: false,
     source: 'script.ts c1-20: Cepeda et al. 2008, Psychological Science 19(11).',
   },
-  wozniak: {
-    id: 'wozniak',
-    journal: 'SuperMemo',
-    title: 'Effective Learning: Twenty Rules of Formulating Knowledge',
-    authors: ['Wozniak'],
-    year: 1999,
-    line: 'Rule 4, the minimum information principle: keep what you learn as simple as you can.',
-    quote: false,
-    source: 'script.ts c2-24: Wozniak 1999, rule 4, supermemo.com.',
-  },
   karpicke2008: KARPICKE_2008,
   // Chapters 6 to 8
   craikLockhart: {

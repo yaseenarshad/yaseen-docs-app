@@ -68,7 +68,7 @@ Its back has the details too: how to say it, where it comes from, more examples.
 
 So a card is more than one line, and far less than a page. The short version on the front, the details on the back.
 
-Piotr Wozniak, who built SuperMemo, made it a rule: keep the front simple. A simple front is easier to remember.
+Keep the front simple. A simple front is easier to remember.
 
 A card is never finished. It starts light, and it grows as you learn more.
 

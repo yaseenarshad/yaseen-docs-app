@@ -102,10 +102,10 @@
    }
   },
   "first-card": {
-   "file": "first-card-4d78df62.ydca",
-   "bytes": 1644489,
-   "sha256": "4d78df62002a0386466f155954e6bd3be25e1f9078c78245d0d8e6a44873f717",
-   "seconds": 189.499,
+   "file": "first-card-cf1271d0.ydca",
+   "bytes": 1612955,
+   "sha256": "cf1271d04fe27c5a885433f57c0f9a9e835183bfa1a93d4ff7b5832e9729924b",
+   "seconds": 185.645,
    "clips": {
     "c2-01": {
      "seconds": 7.616,
@@ -144,8 +144,8 @@
      "hash": "182c4b938c0ff9f1"
     },
     "c2-24": {
-     "seconds": 8.661,
-     "hash": "ad185afb2fb67d0c"
+     "seconds": 4.807,
+     "hash": "061ce6c83109c472"
     },
     "c2-25": {
      "seconds": 6.014,

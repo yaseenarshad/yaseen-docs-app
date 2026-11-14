@@ -7,7 +7,6 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import type { SceneProps } from '../scene'
 import { useUnit } from '../../vault/unitWord'
-import { PAPERS } from './papers'
 import { CANDID, MANY_TITLES, PROTEIN, SLEEP_DEBT, WALK } from './cards'
 import { draftText, draftTitle, firstCardInput, makeFirstCard, type MadeCard } from './makeCard'
 import {
@@ -23,7 +22,6 @@ import {
   Layer,
   MenuPreview,
   MiniCard,
-  Paper,
   Pointer,
   SidebarPreview,
   SlashPreview,
@@ -273,19 +271,20 @@ function Sizes(props: SceneProps) {
   )
 }
 
-/** c2-24: Wozniak's rule, 1999: keep the front simple; then the card's simple front, its blanks aglow. */
+/** c2-24: show the short front and draw attention to the parts to recall. */
 function SimpleFront(props: SceneProps) {
   const b = useBeat(props)
-  const card = since(b, 0.62, 0.7)
+  const card = since(b, 0.05, 0.5)
+  const blanks = since(b, 0.48, 0.65)
   return (
-    <Stage beat={b} label="Piotr Wozniak's rule: keep the front simple">
+    <Stage beat={b} label={props.clip.text}>
       <Layer>
-        <Paper beat={b} paper={PAPERS.wozniak} at={{ in: 0, highlight: 0.44, lift: 0.62, out: 0.7 }} />
-      </Layer>
-      <Layer style={{ opacity: card }}>
-        <div style={rise(b, card, 14)}>
-          <CardView beat={b} title={PROTEIN.title} text={PROTEIN.text} sides={1} blanks={since(b, 0.66, 0.8)} lit={[card, card]} />
-        </div>
+        <Words size="title" style={rise(b, since(b, 0, 0.45))}>Keep the front simple</Words>
+        <Fit min={0.8}>
+          <div style={rise(b, card, 14)}>
+            <CardView beat={b} title={PROTEIN.title} text={PROTEIN.text} sides={1} blanks={blanks} lit={[blanks, blanks]} />
+          </div>
+        </Fit>
       </Layer>
     </Stage>
   )
