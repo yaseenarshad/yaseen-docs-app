@@ -172,16 +172,7 @@ li:has(> .page-task[data-checked='true'], > p:first-child > .page-task[data-chec
   width: 100%;
 }
 
-/* What the phone cannot show now: one calm line, the text around it still there (N3, C3). */
-.page-media {
-  display: block;
-  margin: 0.6em 0;
-  padding: 10px 12px;
-  border: 1px dashed var(--border);
-  border-radius: 8px;
-  color: var(--fg-muted);
-  font-size: 14px;
-}
+/* The media line (`.page-media`) is in `media/mediaLine.css`: Review's card draws it too (YAZ-5363). */
 
 .reader__body a.wikilink {
   text-decoration: none;
@@ -274,11 +265,6 @@ li:has(> .page-task[data-checked='true'], > p:first-child > .page-task[data-chec
   display: none !important;
 }
 
-/* A web picture, sound or video: a link to tap (Safari), never loaded by the app (YAZ-5208). */
-a.page-media--web {
-  color: var(--accent);
-  text-decoration: none;
-}
 
 /* Footnotes (YAZ-5212): the mark, and the note where it is written, as the Mac's page shows them. */
 .page-fnref a {

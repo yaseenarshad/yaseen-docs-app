@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs'
+import { dirname, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createRoot } from 'react-dom/client'
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
+import { landingStylesheets, pageParts, phoneStylesheets } from '../publish/stylesheets'
 import { audit, type Finding, type Sheet, type Theme } from './dev/cssAudit'
-import { mountFixture } from './dev/fixtures'
 
 /**
  * YAZ-5179 round 4: the contrast of what the phone's screens REALLY draw. jsdom renders each screen fixture (the same
@@ -16,23 +18,31 @@ import { mountFixture } from './dev/fixtures'
  * checked, and every button keeps the Mac's light line (YAZ-5340: one rule for every button). Its text is checked.
  */
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = false
+// jsdom has no layout: a fixture's scroll to its part does nothing here.
+Element.prototype.scrollIntoView ??= function () {}
 
-const read = (path: string): Sheet => ({ file: path, css: readFileSync(new URL(path, import.meta.url), 'utf8') })
-/** The load order of the build: the first chunk's CSS, then `styles.css`, then each screen's own chunk (lazy). */
-export const SHEETS: Sheet[] = [
-  read('./status/status.css'),
-  read('./screens/discardAnswer.css'),
-  read('./search/search.css'),
-  read('./pwa/update.css'),
-  read('./pwa/landing.css'),
-  read('./styles.css'),
-  read('../../client/src/editor/card/card.css'),
-  read('../../client/src/editor/table/table.css'),
-  read('../../client/src/review/cardScreens.css'),
-  read('./review/review.css'),
-  read('./page/reader.css'),
-  read('./friends/ui/friends.css'),
-]
+const read = (file: string): Sheet => ({ file: relative(REPO, file), css: readFileSync(file, 'utf8') })
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..') + '/'
+
+/**
+ * YAZ-5358: the stylesheets of each screen come from the imports, not from a hand list. `vitest.config.ts` turns each
+ * stylesheet import into a call of `__notecardsCss`, so the test hears each stylesheet the code loads, in load order.
+ * The first load: the stylesheets of `index.html` and of `main.tsx`'s static imports. Then each screen: the module
+ * registry is reset, and the fixture loads its own code (its lazy chunks) again; the stylesheets it adds come after.
+ */
+const heard: string[] = []
+;(globalThis as { __notecardsCss?: (file: string) => void }).__notecardsCss = (file) => void heard.push(file)
+
+/** `main.tsx`'s static imports in order, run without `main.tsx` itself (which would start the app). */
+async function firstLoadSheets(): Promise<string[]> {
+  vi.resetModules()
+  heard.length = 0
+  const main = readFileSync(resolve(REPO, 'mobile/src/main.tsx'), 'utf8')
+  for (const m of main.matchAll(/^import\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/gm)) await import(/* @vite-ignore */ m[1])
+  return [...new Set([...pageParts('index.html').sheets, ...heard])]
+}
+let FIRST: string[] = []
+const loadedBy = new Map<string, string[]>()
 
 const FIXTURES = [
   'sign-in',
@@ -75,7 +85,12 @@ const FIXTURES = [
   'page-offline',
 ]
 
-const results: { name: string; ok: boolean; elements: number; findings: Finding[] }[] = []
+const results: { name: string; ok: boolean; elements: number; findings: Finding[]; unresolved: string[]; unstyled: string[] }[] = []
+
+/** The classes that some stylesheet of the phone styles: the class of each selector's last part. */
+const ALL_SHEETS = phoneStylesheets().map(read)
+const classesOf = (sheets: Sheet[]) => new Set(sheets.flatMap((sh) => [...sh.css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/\.([a-zA-Z][\w-]*)(?=[^{}]*\{)/g)].map((m) => m[1])))
+const STYLED_ANYWHERE = classesOf(ALL_SHEETS)
 const waitFor = async (test: () => boolean, ms: number) => {
   const end = Date.now() + ms
   while (!test()) {
@@ -92,24 +107,61 @@ async function screen(name: string) {
   const root = createRoot(host)
   delete document.documentElement.dataset.fixtureReady
   delete document.body.dataset.fixtureError
+  // A fresh module registry: the screen loads its own code (and so its own stylesheets) as a fresh page does.
+  vi.resetModules()
+  heard.length = 0
+  const { mountFixture } = await import('./dev/fixtures')
   void mountFixture(root, `#fixture=${name}`)
   const ok = await waitFor(() => document.documentElement.dataset.fixtureReady === name || document.body.dataset.fixtureError !== undefined, 20_000)
   await new Promise((r) => setTimeout(r, 50))
+  const files = [...new Set([...FIRST, ...heard])]
+  loadedBy.set(name, files)
+  const sheets = files.map(read)
   const findings: Finding[] = []
+  const unresolved = new Set<string>()
   let elements = 0
   for (const theme of ['light', 'dark'] as Theme[]) {
-    const out = audit(host, SHEETS, { theme })
+    const out = audit(host, sheets, { theme })
     elements += out.elements
     findings.push(...out.findings)
+    for (const u of out.unresolved) unresolved.add(`${theme} ${u}`)
   }
-  results.push({ name, ok: ok && document.body.dataset.fixtureError === undefined, elements, findings })
+  // YAZ-5363: a class that a phone stylesheet styles, drawn on a screen that does not load that stylesheet.
+  const own = classesOf(sheets)
+  const unstyled = [...new Set([...host.querySelectorAll('[class]')].flatMap((el) => [...el.classList]))].filter((c) => STYLED_ANYWHERE.has(c) && !own.has(c))
+  results.push({ name, ok: ok && document.body.dataset.fixtureError === undefined, elements, findings, unresolved: [...unresolved], unstyled })
   root.unmount()
   host.remove()
 }
 
+/** The landing page of shared links (`friend.html`, `group.html`, `join.html`): its own HTML and its own stylesheets. Each part shows. */
+async function landing() {
+  const host = document.createElement('div')
+  const html = readFileSync(resolve(REPO, 'mobile/friend.html'), 'utf8')
+  host.innerHTML = /<body>([\s\S]*)<\/body>/.exec(html)![1].replace(/<script[\s\S]*?<\/script>/g, '')
+  for (const el of host.querySelectorAll('[hidden]')) el.removeAttribute('hidden')
+  document.body.append(host)
+  const files = landingStylesheets()
+  loadedBy.set('landing', files)
+  const sheets = files.map(read)
+  const findings: Finding[] = []
+  const unresolved: string[] = []
+  let elements = 0
+  for (const theme of ['light', 'dark'] as Theme[]) {
+    const out = audit(host, sheets, { theme })
+    elements += out.elements
+    findings.push(...out.findings)
+    unresolved.push(...out.unresolved.map((u) => `${theme} ${u}`))
+  }
+  results.push({ name: 'landing', ok: true, elements, findings, unresolved, unstyled: [] })
+  host.remove()
+}
+
 describe('the contrast of every screen the phone draws (YAZ-5179, YAZ-5338 … YAZ-5341)', () => {
-  it('renders each screen fixture, light and dark', { timeout: 300_000 }, async () => {
+  it('renders each screen fixture, light and dark', { timeout: 600_000 }, async () => {
+    FIRST = await firstLoadSheets()
     for (const name of FIXTURES) await screen(name)
+    await landing()
     const broken = results.filter((r) => !r.ok || r.elements < 5).map((r) => r.name)
     expect(broken).toEqual([])
   })
@@ -117,6 +169,24 @@ describe('the contrast of every screen the phone draws (YAZ-5179, YAZ-5338 … Y
   it('each text 4.5:1 (large text 3:1), each placeholder 4.5:1, each icon and field border 3:1', () => {
     const low = results.flatMap((r) => r.findings.filter((f) => f.ratio < f.need).map((f) => `${r.name} ${f.theme} ${f.what} ${f.ratio}:1 < ${f.need}: "${f.text}" ${f.fg} on ${f.bg} (${f.where})`))
     expect([...new Set(low)]).toEqual([])
+  })
+
+  it('YAZ-5358: every stylesheet the phone loads is in the list of some screen; the first load has no lazy one', () => {
+    const used = new Set([...loadedBy.values()].flat())
+    expect(phoneStylesheets().filter((f) => !used.has(f)).map((f) => relative(REPO, f))).toEqual([])
+    expect(FIRST.map((f) => relative(REPO, f))).toContain('mobile/src/styles.css')
+    // The link pills' sheet comes with the reader and Review (cardPill.ts), not in the first load; Review does not load reader.css.
+    expect(loadedBy.get('page')!.map((f) => relative(REPO, f))).toContain('client/src/editor/wikilink/wikilink.css')
+    expect(loadedBy.get('review-shown')!.map((f) => relative(REPO, f))).not.toContain('mobile/src/page/reader.css')
+    expect(loadedBy.get('settings')!.map((f) => relative(REPO, f))).not.toContain('mobile/src/pwa/landing.css')
+  })
+
+  it('YAZ-5359: the engine read every colour value of every screen (none unresolved)', () => {
+    expect([...new Set(results.flatMap((r) => r.unresolved.map((u) => `${r.name}: ${u}`)))]).toEqual([])
+  })
+
+  it('YAZ-5363: each class a screen draws has its style in a stylesheet that screen loads', () => {
+    expect(results.filter((r) => r.unstyled.length > 0).map((r) => `${r.name}: ${r.unstyled.join(' ')}`)).toEqual([])
   })
 
   it('found the pairs it must (each kind, both themes)', () => {

@@ -11,6 +11,7 @@ import type { VaultData } from '../search/vaultData'
 import type { EmbedShow, LinkShow, PageLook } from './pageRender'
 // The Mac's card look (sides, hidden words, tables in a card), then the phone's reader.
 import '@client/editor/card/card.css'
+import '../media/mediaLine.css'
 import './reader.css'
 
 /**
