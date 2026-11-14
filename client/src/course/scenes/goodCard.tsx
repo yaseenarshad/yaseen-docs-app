@@ -13,8 +13,7 @@ import { PROTEIN, PROTEIN_BRANCH, PROTEIN_LINES, UMBRELLA } from './cards'
 import { AppWindow, CardView, Fit, IndexCard, Layer, Paper, SidebarPreview, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, typedText, useBeat, type Beat } from './kit'
 import { AgentTerminal } from './kit/AgentTerminal'
 import { ReportCard } from './kit/ReportCard'
-import { TreeCards, type TreeCardLook } from './kit/TreeCards'
-import type { TreeEdge, TreeNode } from './kit/Tree'
+import { Tree, type TreeCardLook, type TreeEdge, type TreeNode } from './kit/Tree'
 import { PAPERS, TEN_WAYS } from './papers'
 import type { ChapterScenes } from './registry'
 import './goodCard.css'
@@ -38,14 +37,14 @@ const LINKS = PROTEIN_BRANCH.links
 
 /** THE TREE: the umbrella at its root, three branches, and smaller branches from those. */
 const NODES: TreeNode[] = [
-  { id: 'u', x: 300, y: 296, label: 'Protein, carbs and fat' },
-  { id: 'p', x: 112, y: 186, label: 'Protein' },
-  { id: 'c', x: 300, y: 176, label: 'Carbs' },
-  { id: 'f', x: 488, y: 186, label: 'Fat' },
-  { id: 'a', x: 64, y: 62, label: 'Amino acids' },
-  { id: 'fi', x: 236, y: 56, label: 'Fibre' },
-  { id: 's', x: 364, y: 56, label: 'Sugar' },
-  { id: 'o', x: 536, y: 62, label: 'Omega-3' },
+  { id: 'u', x: 300, y: 296, label: 'Protein, carbs and fat', kind: 'branch' },
+  { id: 'p', x: 112, y: 186, label: 'Protein', kind: 'branch' },
+  { id: 'c', x: 300, y: 176, label: 'Carbs', kind: 'branch' },
+  { id: 'f', x: 488, y: 186, label: 'Fat', kind: 'branch' },
+  { id: 'a', x: 64, y: 62, label: 'Amino acids', kind: 'branch' },
+  { id: 'fi', x: 236, y: 56, label: 'Fibre', kind: 'branch' },
+  { id: 's', x: 364, y: 56, label: 'Sugar', kind: 'branch' },
+  { id: 'o', x: 536, y: 62, label: 'Omega-3', kind: 'branch' },
 ]
 const EDGES: TreeEdge[] = [
   { from: 'u', to: 'p', kind: 'branch' },
@@ -132,7 +131,7 @@ function WallAndLine(props: SceneProps) {
       <Layer>
         <div className="gc-wall" style={{ transform: b.reduced ? undefined : `scale(${(1 + 0.05 * moved(b, bulge, ease.back) + wobble).toFixed(4)}, ${(1 + 0.09 * moved(b, bulge, ease.back) - wobble).toFixed(4)})` }}>
           <div className="gc-wall__head">
-            <span className="card__id">K7Q2</span>
+            <span className="card__id">DEMO-17</span>
             <span>Food</span>
           </div>
           {WALL.map((line, i) => {
@@ -254,9 +253,9 @@ function Umbrella({ beat, open }: { beat: Beat; open: number }) {
 /** The tree's looks over the whole span: which cards are made (`at`), which glow. */
 function Grove({ beat, at, cards, children }: { beat: Beat; at: Record<string, number>; cards?: Record<string, TreeCardLook>; children?: ReactNode }) {
   return (
-    <TreeCards beat={beat} nodes={NODES} edges={EDGES} show={treeShow(at)} cards={{ u: { tone: 'root' }, ...cards }}>
+    <Tree beat={beat} nodes={NODES} edges={EDGES} show={treeShow(at)} cards={{ u: { tone: 'root' }, ...cards }}>
       {children}
-    </TreeCards>
+    </Tree>
   )
 }
 
@@ -277,7 +276,7 @@ function GrowingTree(props: SceneProps) {
         <Layer>
           <div className="gc-umbrella-wrap">
             <Umbrella beat={b} open={since(b, umbrella - 0.03, 0.9)} />
-            <span className="kit-treecard kit-treecard--root gc-umbrella-card" style={pop(b, since(b, start - 0.06, 0.6))}>
+            <span className="kit-tree__branch kit-tree__branch--root gc-umbrella-card" style={pop(b, since(b, start - 0.06, 0.6))}>
               Protein, carbs and fat
             </span>
             <span className="gc-umbrella__under">
@@ -556,7 +555,7 @@ function TheFront(props: SceneProps) {
       <Layer>
         <div className="kit-row gc-example">
           <div className="gc-example__card">
-            <CardView beat={b} title={DNS_FULL.title} text={DNS_FULL.text} id="D2NS" shown={0} sides={1} grow={[example, undefined]} lit={[showFor(example, since(b, agent + 0.2, 0.6)), 0]} />
+            <CardView beat={b} title={DNS_FULL.title} text={DNS_FULL.text} id="DEMO-13" shown={0} sides={1} grow={[example, undefined]} lit={[showFor(example, since(b, agent + 0.2, 0.6)), 0]} />
           </div>
           <div style={rise(b, term, 14)}>
             <AgentTerminal
@@ -614,7 +613,7 @@ function PickACard(props: SceneProps) {
             Hide the answer, not the clue.
           </Words>
           <div className="gc-pick__one" style={rise(b, since(b, 0.05, 0.6), 12)}>
-            <CardView beat={b} text={CARD_B} title="DNS" id="D2NS" state="Due today" lit={[since(b, front, 0.6)]} blanks={since(b, front + 0.08, 0.6)} />
+            <CardView beat={b} text={CARD_B} title="DNS" id="DEMO-13" state="Due today" lit={[since(b, front, 0.6)]} blanks={since(b, front + 0.08, 0.6)} />
           </div>
           <div className="kit-tags">
             <span className="kit-chip" style={pop(b, since(b, front, 0.5))}>
@@ -881,7 +880,7 @@ function Naming(props: SceneProps) {
         <div className="gc-naming" style={rise(b, since(b, 0, 0.6), 12)}>
           <div className="card gc-naming__card">
             <div className="card__head">
-              <span className="card__id">S3DB</span>
+              <span className="card__id">DEMO-18</span>
               <span className={`kit-cardview__title gc-naming__title${retype > 0 ? ' is-idea' : ''}`} style={retype > 0 ? undefined : { textDecorationLine: strike > 0 ? 'line-through' : 'none', textDecorationColor: 'var(--danger)', opacity: lerp(1, 0.5, strike) }}>
                 {title}
                 {retype > 0 && retype < 1 && !b.reduced && <span className="kit-caret" />}

@@ -478,9 +478,6 @@ button.gc-pick__card:hover {
 .gc-recap__tree {
   width: min(48cqw, 22em);
 }
-.gc-recap__tree .kit-treecards {
-  font-size: 0.6em;
-}
 
 /* A card in a box of this chapter takes the box's width (the kit's card is as wide as the stage allows). */
 .gc-pick__card .kit-cardview,

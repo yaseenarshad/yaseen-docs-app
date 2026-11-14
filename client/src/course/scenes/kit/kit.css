@@ -5,6 +5,8 @@
  * stops while the course is paused.
  */
 .course-kit {
+  /* The kit's one smallest readable size (`MIN_TEXT_PX` in `Stage.tsx`): no text on the stage is smaller. */
+  --kit-min-text: 11px;
   --kit-surface: var(--bg);
   --kit-line: color-mix(in srgb, var(--fg) 22%, transparent);
   --kit-faint: color-mix(in srgb, var(--fg) 9%, transparent);
@@ -113,7 +115,7 @@
   font-weight: 500;
 }
 .kit-words--kicker {
-  font-size: clamp(10px, 2.1cqmin, 13px);
+  font-size: clamp(var(--kit-min-text), 2.1cqmin, 13px);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -332,7 +334,7 @@
 .kit-svg-page {
   fill: var(--fg-muted);
   font-family: var(--font);
-  font-size: 13px;
+  font-size: max(13px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
 }
 .kit-svg-page--accent,
 .kit-svg-label--accent {
@@ -341,7 +343,7 @@
 .kit-svg-label {
   fill: var(--fg);
   font-family: var(--font);
-  font-size: 14px;
+  font-size: max(14px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
   font-weight: 600;
 }
 .kit-svg-label.kit-svg-label--accent {
@@ -450,6 +452,48 @@
   fill: var(--bg);
   stroke: var(--accent);
   stroke-width: 2;
+}
+/* A tree whose branches are cards: the drawing, and each card's title as HTML over it. */
+.kit-tree-box {
+  position: relative;
+  width: min(100%, calc(100cqh * 600 / 340 * 0.84));
+  aspect-ratio: 600 / 340;
+  font-size: max(var(--kit-min-text), 2.7cqmin);
+}
+.kit-tree-box > .kit-tree {
+  position: absolute;
+  inset: 0;
+}
+.kit-tree__branch {
+  position: absolute;
+  box-sizing: border-box;
+  max-width: 9.5em;
+  padding: 0.5em 0.8em;
+  border: 1px solid color-mix(in srgb, var(--fg) 28%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--fg) 6%, var(--bg));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 4px 14px rgba(0, 0, 0, 0.07);
+  color: var(--fg);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+}
+.kit-tree__branch--root {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 70%, var(--bg));
+  color: var(--accent);
+}
+.kit-tree__branch--ghost {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--fg) 30%, transparent);
+  background: transparent;
+  box-shadow: none;
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+.kit-tree__branch--grey {
+  color: var(--fg-muted);
+  filter: grayscale(1);
 }
 .kit-tree__card {
   fill: var(--bg);
@@ -1013,7 +1057,7 @@
 .kit-medal__year {
   fill: #4a3a06;
   font-family: var(--font);
-  font-size: 26px;
+  font-size: max(26px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
   font-weight: 800;
 }
 .kit-medal__shine {

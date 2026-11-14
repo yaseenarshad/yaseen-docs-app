@@ -13,7 +13,7 @@ import { showOnlyHost } from '../courseHost'
 import { SHOW_ONLY } from '../courseCards'
 import { CHAPTER_SCENES } from '.'
 import { COMPOUND_FACTS } from './compound'
-import { AgentChat, beatAt, CardEditKeyRow, EmbedView, InboxView, JournalCover, LinkPill, PageText, PageView, ReviewsLine, Head, litFocus, type Beat } from './kit'
+import { AgentChat, beatAt, CardEditKeyRow, EmbedView, InboxView, JournalCover, CardPill, PageText, PageView, ReviewsStrip, Head, litFocus, type Beat } from './kit'
 import { mountScene, testClock } from './testing'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -52,14 +52,14 @@ const pieces: [string, (b: Beat) => ReactElement][] = [
     ),
   ],
   [
-    'PageView, EmbedView, LinkPill, ReviewsLine',
+    'PageView, EmbedView, CardPill, ReviewsStrip',
     (b) => (
       <PageView title="Food basics">
         <PageText beat={b} p={b.progress}>
           Text.
         </PageText>
-        <LinkPill title="Protein" id="DEMO-7" glow={b.progress} />
-        <EmbedView beat={b} title="Protein" id="DEMO-7" text={'A {{b}} c.\n---\nBack.'} head={b.progress} name={b.progress} editing={b.progress === 0.5} editor={<p>x</p>} footer={<ReviewsLine beat={b} count={4} p={b.progress} />} />
+        <CardPill title="Protein" id="DEMO-7" glow={b.progress} />
+        <EmbedView beat={b} title="Protein" id="DEMO-7" text={'A {{b}} c.\n---\nBack.'} head={b.progress} name={b.progress} editing={b.progress === 0.5} editor={<p>x</p>} footer={<ReviewsStrip beat={b} count={4} p={b.progress} />} />
       </PageView>
     ),
   ],

@@ -6,15 +6,13 @@
  * - `EmbedView`: a card embedded in a page, as `editor/card/cardEmbed.ts` draws it: the head `↗ Embedded from
  *   "<title>" · ID`, Edit card, ⋯, then the card through the app's own `renderCard`. `head` lights the head (where it
  *   is from); `editing` shows the editor's key row (in words) and Done.
- * - `LinkPill`: a card's link in a page, as the app's card pill (`wikilinkPlugin.ts`, `cardPillSpan`): its title and
- *   its ID. `embed` 0..1 turns the pill into the embed (Show as embed).
- * - `ReviewsLine`: the Reviews strip under a card, closed ("✓ 4 Reviews"): the card's history.
  * A card inside a page is `CardView` with `chrome="block"`.
  */
 import { useLayoutEffect, useMemo, useRef, type CSSProperties, type ReactNode } from 'react'
 import { renderCard, type CardLook } from '../../../editor/card/cardRender'
 import { clamp, ease, lerp, type Beat } from './beat'
 import { CardDoneKeys, CardEditKeyRow } from './EditKeys'
+import { glowStyle } from './AppFrame'
 import '../../../editor/card/card.css'
 import '../../../editor/card/cardEmbed.css'
 import './screens.css'
@@ -37,17 +35,6 @@ export function PageText({ beat, children, p = 1 }: { beat: Beat; children: Reac
   )
 }
 
-const glowShadow = (g: number): string | undefined => (g > 0 ? `0 0 0 ${(2.5 * clamp(g)).toFixed(2)}px var(--accent), 0 0 ${(18 * clamp(g)).toFixed(1)}px color-mix(in srgb, var(--accent) 40%, transparent)` : undefined)
-
-/** A card's link pill in a page: its title and its ID. `glow` lights it. */
-export function LinkPill({ title, id, glow = 0 }: { title: string; id: string; glow?: number }) {
-  return (
-    <span className="wikilink wikilink--card kit-pill" style={{ boxShadow: glowShadow(glow) }}>
-      {title}
-      <span className="wikilink__card-id">{id}</span>
-    </span>
-  )
-}
 
 export interface EmbedViewProps {
   beat: Beat
@@ -80,7 +67,7 @@ export function EmbedView({ beat, title, id, text, shown = 0, sides, head = 0, n
   const h = clamp(head)
   const n = clamp(name)
   return (
-    <div className={`card card-embed kit-embed${editing ? ' card--editing' : ''}`} style={{ ...style, boxShadow: glowShadow(glow) }}>
+    <div className={`card card-embed kit-embed${editing ? ' card--editing' : ''}`} style={{ ...style, ...glowStyle(glow) }}>
       <div className="card__head card-embed__head" style={h > 0 ? { background: `color-mix(in srgb, var(--accent-soft) ${(h * 100).toFixed(0)}%, var(--bg-side))` } : undefined}>
         <span className="card-embed__from" style={{ color: h > 0 ? 'var(--fg)' : undefined }}>
           <span className="card-embed__arrow" aria-hidden="true">
@@ -108,13 +95,3 @@ export function EmbedView({ beat, title, id, text, shown = 0, sides, head = 0, n
   )
 }
 
-/** The Reviews strip under a card, closed: "✓ 4 Reviews" and the next date. `glow` lights it. */
-export function ReviewsLine({ count, next, glow = 0, beat, p = 1 }: { count: number; next?: string; glow?: number; beat: Beat; p?: number }) {
-  const q = clamp(p)
-  return (
-    <div className="kit-reviews" style={{ opacity: q, boxShadow: glowShadow(glow), transform: beat.reduced || q >= 1 ? undefined : `translateY(${lerp(4, 0, ease.out(q)).toFixed(2)}px)` }}>
-      <span className="kit-reviews__mark">✓</span> {count} Reviews
-      {next !== undefined && <span className="kit-reviews__next"> · next {next}</span>}
-    </div>
-  )
-}

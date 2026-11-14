@@ -14,9 +14,9 @@ import {
   Answers,
   AppWindow,
   Caret,
-  CardDoneKeys,
-  CardEditKeyRow,
+  cardMenuItems,
   CardView,
+  EditCard,
   Fit,
   IndexCard,
   Keys,
@@ -202,7 +202,7 @@ function CandidCard(props: SceneProps) {
               beat={b}
               title={CANDID.title}
               text={CANDID.text}
-              id="M3VD"
+              id={CANDID.id}
               shown={front ? 0 : CANDID.hidden}
               sides={front ? 1 : undefined}
               flip={front ? 1 : between(b, 0, 0.14)}
@@ -533,7 +533,7 @@ function MakeCard(props: SceneProps) {
         beat={b}
         title={title}
         text={text}
-        id="NEW1"
+        id="DEMO-11"
         state="New card"
         sides={sides}
         shown={shown}
@@ -628,7 +628,7 @@ function MakeCard(props: SceneProps) {
         <AppWindow sidebar={<SidebarPreview rows={rows} inbox={1} />} style={{ height: 'min(60cqh, 18em)' }} label="The sidebar: the folder Course Cards, with your new card file">
           <div className="kit-app__tab">
             <p className="kit-app__bigtitle">{title}</p>
-            <CardView beat={b} text={text} chrome="block" id="NEW1" shown={1} />
+            <CardView beat={b} text={text} chrome="block" id="DEMO-11" shown={1} />
           </div>
         </AppWindow>
         {made !== null && 'showOnly' in made && <p className="kit-showonly">{made.showOnly}</p>}
@@ -648,7 +648,8 @@ function MakeCard(props: SceneProps) {
 const { title: WALK_TITLE, renamed: WALK_NEW_TITLE, front: WALK_FRONT, word: WALK_WORD, back: WALK_BACK, section: WALK_SECTION } = WALK
 const WALK_TEXT = SLEEP_DEBT.text
 
-const NEW_MENU = ['New page', 'New card', 'New folder', 'New board']
+/** The folder's New rows, in the app's order (`sidebar/menuSections.ts`): page, card, drawing, folder. */
+const NEW_MENU = ['New page', 'New card', 'New drawing', 'New folder']
 
 /**
  * c2-15 to c2-21, one span: the same steps in the app, in a copy of its parts. A right-click on a folder, New card, the
@@ -813,15 +814,7 @@ function InTheApp(props: SceneProps) {
                 {id === 'c2-14' && b.progress >= 0.47 && b.progress < 0.67 && <Caret />}
               </p>
               {editing ? (
-                <div className="card card--editing kit-editcard">
-                  <div className="card__head">
-                    <span className="card__id">P2X9</span>
-                    <span className="card__edit">
-                      <CardDoneKeys />
-                    </span>
-                    <span className="card__more">⋯</span>
-                  </div>
-                  <div className="kit-editcard__text">
+                <EditCard id={SLEEP_DEBT.id} title={tabTitle}>
                     <p>
                       {hidden ? (
                         <>
@@ -863,9 +856,7 @@ function InTheApp(props: SceneProps) {
                         {id === 'c2-29' && <Caret />}
                       </p>
                     )}
-                  </div>
-                  <CardEditKeyRow />
-                </div>
+                </EditCard>
               ) : (
                 <div className="kit-readcard">
                   {titleHidden && <span className="card__state card__notitle kit-notitle">Title hidden in review</span>}
@@ -921,16 +912,7 @@ function InTheApp(props: SceneProps) {
             x={58}
             y={34}
             p={cardMenu}
-            items={[
-              { label: 'Put at top of Inbox' },
-              { label: 'Archive' },
-              {
-                label: 'Title on the front',
-                hint: titleHidden ? 'Hide' : 'Show',
-                active: since(b, 0.6, 0.2),
-                rule: true,
-              },
-            ]}
+            items={cardMenuItems('file', { 'Title on the front': since(b, 0.6, 0.2) }, titleHidden ? 'Hide' : 'Show')}
           />
           <Pointer beat={b} from={pointer.from} to={pointer.to} move={pointer.move} click={pointer.click} show={pointer.show} />
         </AppWindow>

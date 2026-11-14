@@ -142,26 +142,6 @@
   padding: 10px 16px 12px;
   line-height: 1.5;
 }
-.kit-reviews {
-  display: inline-flex;
-  align-self: flex-start;
-  align-items: center;
-  gap: 4px;
-  margin-top: 6px;
-  padding: 2px 9px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--fg-muted);
-  font-size: 12px;
-}
-.kit-reviews__mark {
-  color: var(--ok);
-  font-weight: 700;
-}
-.kit-reviews__next {
-  color: var(--fg-muted);
-}
 .kit-editkeys {
   display: flex;
   flex-wrap: wrap;

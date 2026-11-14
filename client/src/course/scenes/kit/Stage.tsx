@@ -7,8 +7,14 @@
  * - `<Layer>`: one centred layer on the stage (they stack); `<Words>`: the stage's type scale (`display`, `title`,
  *   `label`, `kicker`, `page`).
  * Light and dark come from the app's tokens (`--bg`, `--fg`, `--accent` …); nothing here sets a colour of its own.
+ *
+ * THE SMALLEST READABLE SIZE (YAZ-5128): no text on the stage is under `MIN_TEXT_PX` (11 px) as the person sees it.
+ * CSS sizes take `var(--kit-min-text)` as their floor; `Fit` never scales its content's body text below it; and the
+ * stage gives each drawing (`svg`) its scale (`--svg-scale`), so a drawing's labels grow back to it when the drawing
+ * is drawn small. A scene that does not fit then shows less at once, pans (`Fit`'s `focus`) or steps; it never shrinks
+ * the type.
  */
-import { useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useReducer, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
 import type { SceneProps } from '../../scene'
 import { firedCount, type Beat } from './beat'
 import './kit.css'
@@ -23,9 +29,47 @@ export function useBeat({ clock, clip, reducedMotion }: Pick<SceneProps, 'clock'
   return { t: now.t, length: now.length, progress, marks, fired: firedCount(marks, progress), reduced: reducedMotion, playing: now.playing }
 }
 
+/** The kit's one smallest readable size, in CSS px as the person sees it (`--kit-min-text` in `kit.css`). */
+export const MIN_TEXT_PX = 11
+
+/** Gives each drawing on the stage its scale on screen, as `--svg-scale` (rendered width / its view's width). */
+function useSvgScale(root: RefObject<HTMLDivElement | null>): void {
+  useLayoutEffect(() => {
+    const el = root.current
+    if (el === null || typeof ResizeObserver === 'undefined') return
+    const seen = new Set<SVGSVGElement>()
+    const rescale = (svg: SVGSVGElement): void => {
+      const view = svg.viewBox.baseVal
+      const width = svg.getBoundingClientRect().width
+      if (view === null || view.width === 0 || width === 0) return
+      const scale = Math.min(width / view.width, (svg.getBoundingClientRect().height || width) / (view.height || view.width))
+      svg.style.setProperty('--svg-scale', scale.toFixed(3))
+    }
+    const ro = new ResizeObserver((entries) => entries.forEach((e) => rescale(e.target as SVGSVGElement)))
+    const scan = (): void => {
+      for (const svg of el.querySelectorAll<SVGSVGElement>('svg[viewBox]')) {
+        if (seen.has(svg)) continue
+        seen.add(svg)
+        ro.observe(svg)
+        rescale(svg)
+      }
+    }
+    const mo = new MutationObserver(scan)
+    mo.observe(el, { childList: true, subtree: true })
+    scan()
+    return () => {
+      mo.disconnect()
+      ro.disconnect()
+    }
+  }, [root])
+}
+
 export function Stage({ beat, children, className, label }: { beat: Beat; children: ReactNode; className?: string; label?: string }) {
+  const root = useRef<HTMLDivElement>(null)
+  useSvgScale(root)
   return (
     <div
+      ref={root}
       className={`course-kit kit-stage${className === undefined ? '' : ` ${className}`}`}
       data-reduced={beat.reduced ? 'true' : undefined}
       data-paused={beat.playing ? undefined : 'true'}
@@ -61,9 +105,9 @@ export function Words({ size = 'title', tone, children, style, as: Tag = 'p' }: 
  * Fit: its content, scaled down (never up past `max`) to fit the layer it is in, so a long card or a big drawing
  * never runs off the stage at a small window. It measures with `ResizeObserver`; without one (a test), scale 1.
  *
- * `min` (YAZ-5121, the narrow window): the content never scales below it, so a card's text stays readable. When the
- * height does not fit at `min`, the content pans: `focus` 0 shows its top, 1 its bottom (a scene follows the part it
- * lights, `litFocus`). The width always fits.
+ * The floor (YAZ-5128): the content never scales below the size where its body text (the font size most of its text
+ * has) is `MIN_TEXT_PX`; `min` raises the floor. When the content does not fit at the floor, it pans: `focus` 0 shows
+ * its top, 1 its bottom (a scene follows the part it lights, `litFocus`); across, it keeps its middle in view.
  */
 export function Fit({ children, max = 1, min = 0, focus = 0.5 }: { children: ReactNode; max?: number; min?: number; focus?: number }) {
   const outer = useRef<HTMLDivElement>(null)
@@ -77,8 +121,8 @@ export function Fit({ children, max = 1, min = 0, focus = 0.5 }: { children: Rea
       const w = i.offsetWidth
       const h = i.offsetHeight
       if (w === 0 || h === 0) return
-      const byWidth = o.clientWidth / w
-      const next = Math.min(max, byWidth, Math.max(min, o.clientHeight / h))
+      const floor = Math.min(max, Math.max(min, MIN_TEXT_PX / bodyTextPx(i)))
+      const next = Math.max(floor, Math.min(max, o.clientWidth / w, o.clientHeight / h))
       const over = Math.max(0, h * next - o.clientHeight)
       setFit((f) => (Math.abs(f.scale - next) < 0.005 && Math.abs(f.over - over) < 1 ? f : { scale: next, over }))
     }
@@ -97,6 +141,23 @@ export function Fit({ children, max = 1, min = 0, focus = 0.5 }: { children: Rea
       </div>
     </div>
   )
+}
+
+/** The font size (px, before any scale) that most of the text in `el` has: its body text. */
+function bodyTextPx(el: HTMLElement): number {
+  const weight = new Map<number, number>()
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  for (let n = walker.nextNode(); n !== null; n = walker.nextNode()) {
+    const length = n.textContent?.trim().length ?? 0
+    const parent = n.parentElement
+    if (length === 0 || parent === null) continue
+    const px = parseFloat(getComputedStyle(parent).fontSize)
+    if (px > 0) weight.set(px, (weight.get(px) ?? 0) + length)
+  }
+  let best = MIN_TEXT_PX
+  let most = 0
+  for (const [px, n] of weight) if (n > most) [best, most] = [px, n]
+  return best
 }
 
 /**

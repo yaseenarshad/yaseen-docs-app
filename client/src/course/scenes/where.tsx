@@ -11,24 +11,25 @@ import { InboxIcon } from '../../views/view/icons'
 import { UMBRELLA } from './cards'
 import {
   AppWindow,
-  CardDoneKeys,
-  CardEditKeyRow,
   CardView,
   Caret,
   AgentChat,
   EmbedView,
+  EditCard,
   Fit,
   glowStyle,
   Layer,
-  LinkPill,
+  cardMenuItems,
+  CardPill,
   MenuPreview,
   PageText,
   PageView,
   Pointer,
-  ReviewsLine,
+  ReviewsStrip,
   SidebarPreview,
   SlashPreview,
   Stage,
+  TryChip,
   Words,
   between,
   clamp,
@@ -49,6 +50,8 @@ import './where.css'
 
 /** The card of this chapter: the protein card, short (its front and the first line of its back). */
 const CARD = { title: UMBRELLA.title, id: UMBRELLA.id, text: UMBRELLA.short }
+/** The ID of the new card that `/card` makes in c4-05. */
+const NEW_CARD_ID = 'DEMO-20'
 const ADDED = 'An egg is mostly protein and fat.'
 const EDITED = `${CARD.text}\n\n${ADDED}`
 
@@ -259,8 +262,8 @@ function InAPage(props: SceneProps) {
                     <PageText beat={b}>{P1}</PageText>
                   </div>
                   <div className="kit-where__slot" style={{ opacity: cardIn, maxHeight: b.reduced ? (cardIn > 0 ? '20em' : 0) : `${(ease.out(cardIn) * 20).toFixed(2)}em` }}>
-                    <CardView beat={b} text={CARD.text} id={CARD.id} chrome="block" sides={1} className="kit-cardview--small" />
-                    {history > 0 && <ReviewsLine beat={b} count={4} next="Nov 22" p={history} glow={step === 2 ? showFor(since(b, cue(b, 1, 0.595), 0.4), since(b, cue(b, 2, 0.784), 0.4)) : 0} />}
+                    <CardView beat={b} title={CARD.title} text={CARD.text} id={CARD.id} chrome="block" sides={1} className="kit-cardview--small" />
+                    {history > 0 && <ReviewsStrip beat={b} count={4} next="Nov 22" p={history} glow={step === 2 ? showFor(since(b, cue(b, 1, 0.595), 0.4), since(b, cue(b, 2, 0.784), 0.4)) : 0} />}
                   </div>
                   <div style={glowStyle(textLit * 0.6)}>
                     <PageText beat={b}>{P2}</PageText>
@@ -272,24 +275,20 @@ function InAPage(props: SceneProps) {
                     </p>
                   )}
                   {newCard && (
-                    <div className="card card--editing kit-where__newcard" style={pop(b, since(b, enter, 0.4), 0.9)}>
-                      <div className="card__head">
-                        <span className="card__id">F8N3</span>
-                        <span className="card__edit">
-                          <CardDoneKeys />
-                        </span>
-                        <span className="card__more">⋯</span>
-                      </div>
-                      <div className="kit-editcard__text">
-                        <p>
+                    <EditCard
+                      id={NEW_CARD_ID}
+                      className="kit-where__newcard"
+                      style={pop(b, since(b, enter, 0.4), 0.9)}
+                      keys={since(b, opens, 0.4)}
+                      title={
+                        <>
                           <span className="kit-selection">Title</span>
                           <Caret />
-                        </p>
-                      </div>
-                      <div style={{ opacity: since(b, opens, 0.4) }}>
-                        <CardEditKeyRow />
-                      </div>
-                    </div>
+                        </>
+                      }
+                    >
+                      <p>&nbsp;</p>
+                    </EditCard>
                   )}
                 </PageView>
                 <SlashPreview beat={b} x={6} y={72} p={slash} rows={[{ label: 'Card', active: since(b, 0.33, 0.2) }, { label: 'Heading 1' }, { label: 'Bullet list' }, { label: 'Quote' }]} />
@@ -298,7 +297,7 @@ function InAPage(props: SceneProps) {
                   x={52}
                   y={24}
                   p={menu}
-                  items={[{ label: 'Put at top of Inbox' }, { label: 'Archive card' }, { label: 'Title on the front', hint: 'Show' }, { label: 'Reset history' }, { label: 'Copy card ID', hint: CARD.id, rule: true }]}
+                  items={cardMenuItems('page')}
                 />
               </div>
             </Tab>
@@ -401,7 +400,7 @@ function Embedded(props: SceneProps) {
                         x={46}
                         y={20}
                         p={cardMenu}
-                        items={[{ label: 'Put at top of Inbox' }, { label: 'Archive card' }, { label: 'Title on the front', hint: 'Show' }, { label: 'Copy card ID', hint: CARD.id, rule: true }, { label: 'Copy card link', hint: `[[${CARD.id}]]`, active: copyActive }]}
+                        items={cardMenuItems('file', { 'Copy card link': copyActive })}
                       />
                     }
                   />
@@ -411,7 +410,7 @@ function Embedded(props: SceneProps) {
                       <PageText beat={b}>{tab === FOOD ? P1 : 'Breakfast this week: eggs and toast. Here is why that works.'}</PageText>
                       {pill > 0 && (
                         <p className="kit-page__p" style={{ opacity: pill }}>
-                          <LinkPill title={CARD.title} id={CARD.id} glow={showFor(since(b, cue(b, 2, 0.624), 0.3), since(b, cue(b, 3, 0.841), 0.3))} />
+                          <CardPill title={CARD.title} id={CARD.id} glow={showFor(since(b, cue(b, 2, 0.624), 0.3), since(b, cue(b, 3, 0.841), 0.3))} />
                         </p>
                       )}
                       {embed > 0 && (
@@ -439,7 +438,7 @@ function Embedded(props: SceneProps) {
                                 </p>
                               </>
                             }
-                            footer={history > 0 ? <ReviewsLine beat={b} count={4} next="Nov 22" p={1} glow={history} /> : undefined}
+                            footer={history > 0 ? <ReviewsStrip beat={b} count={4} next="Nov 22" glow={history} /> : undefined}
                           />
                         </div>
                       )}
@@ -548,18 +547,13 @@ function TryIt(props: SceneProps) {
           <Tab name={CARD.title}>
             <CardFile
               beat={b}
-              menu={<MenuPreview beat={b} x={46} y={20} p={showFor(since(b, 0.12, 0.4), since(b, 0.6, 0.4))} items={[{ label: 'Copy card ID', hint: CARD.id }, { label: 'Copy card link', hint: `[[${CARD.id}]]`, active: since(b, 0.3, 0.3) }]} />}
+              menu={<MenuPreview beat={b} x={46} y={20} p={showFor(since(b, 0.12, 0.4), since(b, 0.6, 0.4))} items={cardMenuItems('file', { 'Copy card link': since(b, 0.3, 0.3) })} />}
             />
           </Tab>
         </AppWindow>
       </Layer>
       <Layer>
-        <div className="kit-try" style={pop(b, since(b, 0.04, 0.6), 0.85)}>
-          <span className="course__btn course__btn--try" style={{ boxShadow: `0 0 0 ${(4 * showFor(since(b, tryAt - 0.04, 0.4), since(b, 0.97, 0.4))).toFixed(2)}px var(--accent-soft)` }}>
-            Try it in the app
-          </span>
-          <span className="course__btn">Next chapter</span>
-        </div>
+        <TryChip beat={b} p={since(b, 0.04, 0.6)} glow={showFor(since(b, tryAt - 0.04, 0.4), since(b, 0.97, 0.4))} beside={<span className="course__btn">Next chapter</span>} />
       </Layer>
     </Stage>
   )

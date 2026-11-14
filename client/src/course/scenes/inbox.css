@@ -256,7 +256,7 @@
   position: relative;
   width: min(94cqw, 40em);
   height: 9em;
-  font-size: clamp(10px, 2.8cqmin, 15px);
+  font-size: clamp(var(--kit-min-text), 2.8cqmin, 15px);
 }
 .kit-queue__now {
   position: absolute;

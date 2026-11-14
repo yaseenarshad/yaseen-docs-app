@@ -1,18 +1,20 @@
 /**
- * MORE OF THE APP, IN THE COURSE (YAZ-5121, chapters 10 to 12): copies of real parts, built from the app's own class
+ * MORE OF THE APP, IN THE COURSE (YAZ-5121, chapters 4 and 10 to 12): copies of real parts, built from the app's own class
  * names (as `AppFrame` is), with made-up data. The real components need the vault, the index and the bridge.
  *
  * - `LinkPicker`: the `[[` list (`wikilinkPicker.ts`: `.wikilink-picker`, `.wikilink-picker__item`, the card row's
  *   `.wikilink-picker__card-icon`), pages first, then cards with the card icon.
- * - `CardPill`: a link to a card (`wikilink.css`: `.wikilink.wikilink--card`, its ID in `.wikilink__card-id`).
+ * - `CardPill`: a link to a card, as `wikilinkPlugin.ts` `cardPillSpan` draws it (`.wikilink.wikilink--card`, its ID in
+ *   `.wikilink__card-id`): the kit's one pill (a card's text draws its own through `renderCard`).
  * - `LinkedMentions`: "Linked mentions (n)" under a card (`cardPane.tsx`: `.card-backlinks`).
  * - `FilterMenu`: the Inbox's All cards menu (`CardInboxBar.tsx`: its rows, counts, the line above Archived, and
  *   "Add [10] more new cards").
- * - `ReviewsStrip`: a card's Reviews (`cardParts.tsx`: each answer, its day, the bin).
- * - `Terminal`: a terminal window, for `yaseendocs card guide`.
+ * - `ReviewsStrip`: a card's Reviews strip (`cardParts.tsx`): the kit's one strip.
  */
 import type { ReactElement } from 'react'
-import { ArchiveIcon, DueIcon, ForgotIcon, InboxTrayIcon, NewIcon, RememberedIcon, TrashIcon, UpNextIcon } from '../../../review/cardInboxIcons'
+import { ArchiveIcon, DueIcon, ForgotIcon, InboxTrayIcon, NewIcon, RememberedIcon, ReviewsIcon, TrashIcon, UpNextIcon } from '../../../review/cardInboxIcons'
+import { reviewsTitle } from '../../../review/cardParts'
+import { glowStyle } from './AppFrame'
 import { clamp, ease, rise, type Beat } from './beat'
 import './kitMore.css'
 
@@ -128,40 +130,49 @@ export interface ReviewRow {
   bin?: number
 }
 
-/** A card's Reviews: the head with the count, then each answer with its day and its bin. `open` unfolds the table. */
-export function ReviewsStrip({ beat, rows, open = 1, empty }: { beat: Beat; rows: readonly ReviewRow[]; open?: number; empty?: string }) {
+/**
+ * A card's Reviews strip, as the app's one strip (`cardParts.tsx` `CardReviews`: "✓ 4 Reviews", closed until asked
+ * for; its class names, so the app's `cardScreens.css` gives its look). `count` (absent: the rows), `next` the card's
+ * next due day on the strip's right; `open` unfolds the rows: each answer, its day and its bin. `p` brings the strip in;
+ * `glow` lights it.
+ */
+export function ReviewsStrip({ beat, rows = [], count, next, open = 0, empty, p = 1, glow = 0 }: { beat: Beat; rows?: readonly ReviewRow[]; count?: number; next?: string; open?: number; empty?: string; p?: number; glow?: number }) {
   const o = beat.reduced ? (open > 0 ? 1 : 0) : ease.out(clamp(open))
   const live = rows.filter((r) => (r.gone ?? 0) < 1)
+  const q = clamp(p)
   return (
-    <section className="card-reviews card-reviews--strip kit-reviews">
-      <p className="kit-reviews__head">
-        <span className="kit-reviews__chev" data-open={beat.reduced && o > 0 ? 'true' : undefined} style={beat.reduced ? undefined : { transform: `rotate(${(o * 90).toFixed(1)}deg)` }} aria-hidden="true">
-          ›
+    <section className="card-reviews card-reviews--strip kit-reviews" style={{ ...rise(beat, q, 4), ...glowStyle(glow) }}>
+      <div className="card-reviews__bar">
+        <span className="backlinks__header card-reviews__toggle">
+          <ReviewsIcon />
+          <span className="backlinks__title">{reviewsTitle(count ?? live.length)}</span>
         </span>
-        <span className="backlinks__title">{live.length === 0 ? 'Reviews' : `Reviews (${live.length})`}</span>
-      </p>
-      <div className="kit-reviews__table" style={{ maxHeight: `${(o * 12).toFixed(2)}em`, opacity: clamp(open * 2) }}>
-        {rows.length === 0 || live.length === 0 ? (
-          <p className="kit-reviews__empty">{empty ?? 'No reviews yet.'}</p>
-        ) : (
-          rows.map((row) => {
-            const gone = clamp(row.gone ?? 0)
-            if (gone >= 1) return null
-            return (
-              <p key={row.when} className="kit-reviews__row" data-rating={row.answer === 'forgot' ? 'again' : 'good'} style={{ opacity: 1 - gone, transform: beat.reduced || gone === 0 ? undefined : `translateX(${(gone * 24).toFixed(1)}px)` }}>
-                <span className="kit-reviews__when">{row.when}</span>
-                <span className="card-answer kit-reviews__answer" data-rating={row.answer === 'forgot' ? 'again' : 'good'}>
-                  {row.answer === 'forgot' ? <ForgotIcon /> : <RememberedIcon />}
-                  {row.answer === 'forgot' ? 'Forgot' : 'Remembered'}
-                </span>
-                <span className="kit-reviews__bin" style={(row.bin ?? 0) > 0 ? { color: 'var(--danger)', opacity: 0.5 + 0.5 * clamp(row.bin ?? 0) } : undefined} aria-hidden="true">
-                  <TrashIcon size={13} />
-                </span>
-              </p>
-            )
-          })
-        )}
+        {next !== undefined && <span className="card-strip card-reviews__facts">Next due {next}</span>}
       </div>
+      {o > 0 && (
+        <div className="kit-reviews__table" style={{ maxHeight: `${(o * 12).toFixed(2)}em`, opacity: clamp(open * 2) }}>
+          {live.length === 0 ? (
+            <p className="kit-reviews__empty">{empty ?? 'No reviews yet.'}</p>
+          ) : (
+            rows.map((row) => {
+              const gone = clamp(row.gone ?? 0)
+              if (gone >= 1) return null
+              return (
+                <p key={row.when} className="kit-reviews__row" style={{ opacity: 1 - gone, transform: beat.reduced || gone === 0 ? undefined : `translateX(${(gone * 24).toFixed(1)}px)` }}>
+                  <span className="kit-reviews__when">{row.when}</span>
+                  <span className="card-answer kit-reviews__answer" data-rating={row.answer === 'forgot' ? 'again' : 'good'}>
+                    {row.answer === 'forgot' ? <ForgotIcon /> : <RememberedIcon />}
+                    {row.answer === 'forgot' ? 'Forgot' : 'Remembered'}
+                  </span>
+                  <span className="kit-reviews__bin" style={(row.bin ?? 0) > 0 ? { color: 'var(--danger)', opacity: 0.5 + 0.5 * clamp(row.bin ?? 0) } : undefined} aria-hidden="true">
+                    <TrashIcon size={13} />
+                  </span>
+                </p>
+              )
+            })
+          )}
+        </div>
+      )}
     </section>
   )
 }

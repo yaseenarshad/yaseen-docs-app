@@ -7,7 +7,7 @@
  */
 import type { SceneProps } from '../scene'
 import { SLEEP_DEBT, TOO_MUCH, PROTEIN_BRANCH, UMBRELLA } from './cards'
-import { Answers, CardView, Fit, Keys, Layer, MenuPreview, Pointer, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat } from './kit'
+import { Answers, CardView, EditCard, cardMenuItems, Fit, Keys, Layer, MenuPreview, Pointer, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat } from './kit'
 import { Habits, HabitGlyph } from './kit/HabitIcons'
 import { Garden, type PlantSpec } from './kit/Garden'
 import { AgentChat } from './kit/AgentChat'
@@ -148,7 +148,7 @@ function KeepMissing(props: SceneProps) {
             Unclear?
           </span>
           <span className="kit-chip" style={pop(b, since(b, tooMuch, 0.5))}>
-            Four blanks at once
+            Four hidden words at once
           </span>
         </div>
       </Layer>
@@ -165,12 +165,15 @@ function FixIt(props: SceneProps) {
   const keep = cue(b, 1, 0.42)
   const file = cue(b, 2, 0.65)
   const edited = agent ? since(b, file + 0.06, 0.8) : 0
-  // c11-05: Edit card (a click), then E in the Inbox, then Escape.
+  // c11-05: Edit card (a click) on a card in a page, then Escape; then E in the Inbox: the card opens in Edit card on a
+  // layer over the Inbox (YAZ-5145); Escape goes back to reading it there, and a second Escape back to the Inbox.
   const click = cue(b, 0, 0.3)
   const eKey = cue(b, 1, 0.53)
   const esc = cue(b, 2, 0.79)
-  const editing = !agent && ((b.progress >= click + 0.04 && b.progress < eKey - 0.04) || (b.progress >= eKey + 0.03 && b.progress < esc + 0.03))
+  const back = esc + 0.1
   const inbox = !agent && b.progress >= eKey - 0.04
+  const layer = inbox && b.progress >= eKey + 0.03 && b.progress < back
+  const editing = !agent && ((!inbox && b.progress >= click + 0.04) || (layer && b.progress < esc))
   return (
     <Stage beat={b} label={agent ? 'Tell your agent what to change, and keep reviewing: each card is a file' : 'Or do it yourself: Edit card, or E in the Inbox; Escape when you are done'}>
       {agent ? (
@@ -183,7 +186,7 @@ function FixIt(props: SceneProps) {
               </Fit>
             </div>
             <div className="later-stack">
-              <AgentChat beat={b} lines={[{ who: 'you', text: 'Make the Sleep card clearer: one idea, one blank.', p: between(b, tell, tell + 0.2) }, { who: 'agent', text: 'Done. Here is the change.', p: since(b, file - 0.04, 0.5) }]} style={{ width: 'min(46cqw, 24em)' }} />
+              <AgentChat beat={b} lines={[{ who: 'you', text: 'Make the Sleep card clearer: one idea, one hidden word.', p: between(b, tell, tell + 0.2) }, { who: 'agent', text: 'Done. Here is the change.', p: since(b, file - 0.04, 0.5) }]} style={{ width: 'min(46cqw, 24em)' }} />
               <div className="later-file" style={rise(b, since(b, file, 0.6), 10)}>
                 <p className="later-file__name">sleep.md</p>
                 <p className="later-file__del" style={{ opacity: 1 - edited * 0.4 }}>
@@ -199,29 +202,35 @@ function FixIt(props: SceneProps) {
       ) : (
         <Layer>
           <div className="later-editswap">
-            {editing ? (
-              <div className="card card--editing kit-editcard later-editcard">
-                <div className="card__head">
-                  <span className="card__id">{SLEEP_DEBT.id}</span>
-                  <span className="card__edit">
-                    Done <kbd>esc</kbd>
-                  </span>
-                  <span className="card__more">⋯</span>
-                </div>
-                <div className="kit-editcard__text">
-                  <p>
-                    Each hour of sleep you miss adds to your <span className="card__cloze">sleep debt</span>.
-                  </p>
-                </div>
-              </div>
+            {!inbox && editing ? (
+              <EditCard id={SLEEP_DEBT.id} title={SLEEP_DEBT.title} className="later-editcard" keys={0}>
+                <p>
+                  Each hour of sleep you miss adds to your <span className="card__cloze">sleep debt</span>.
+                </p>
+              </EditCard>
             ) : (
-              <Fit>
-                <CardView beat={b} title={SLEEP_DEBT.title} id={SLEEP_DEBT.id} text={SLEEP_DEBT.text} sides={1} chrome={inbox ? 'inbox' : 'block'} state="Due today" className="kit-cardview--small" />
-              </Fit>
+              <div style={{ opacity: layer ? 0.3 : 1 }}>
+                <Fit>
+                  <CardView beat={b} title={SLEEP_DEBT.title} id={SLEEP_DEBT.id} text={SLEEP_DEBT.text} sides={1} chrome={inbox ? 'inbox' : 'block'} state="Due today" className="kit-cardview--small" />
+                </Fit>
+              </div>
+            )}
+            {layer && (
+              <div className="later-pagelayer" style={rise(b, since(b, eKey + 0.03, 0.4), 12)}>
+                {editing ? (
+                  <EditCard id={SLEEP_DEBT.id} title={SLEEP_DEBT.title} className="later-editcard" keys={0}>
+                    <p>
+                      Each hour of sleep you miss adds to your <span className="card__cloze">sleep debt</span>.
+                    </p>
+                  </EditCard>
+                ) : (
+                  <CardView beat={b} title={SLEEP_DEBT.title} id={SLEEP_DEBT.id} text={SLEEP_DEBT.text} sides={1} chrome="block" />
+                )}
+              </div>
             )}
             <Pointer beat={b} from={[80, 90]} to={[78, 12]} move={between(b, 0.12, click - 0.02)} click={since(b, click - 0.02, 0.4)} show={1 - since(b, click + 0.08, 0.4)} />
           </div>
-          <Keys p={since(b, eKey - 0.04, 0.4)} items={[{ keys: 'E', label: 'Edit card, in the Inbox' }, ...(b.progress >= esc - 0.04 ? [{ keys: 'esc', label: 'Done' }] : [])]} />
+          <Keys p={since(b, eKey - 0.04, 0.4)} items={[{ keys: 'E', label: 'Edit card, in the Inbox' }, ...(b.progress >= esc - 0.04 ? [{ keys: 'esc', label: 'Done' }] : []), ...(b.progress >= back - 0.02 ? [{ keys: 'esc', label: 'Back to the Inbox' }] : [])]} />
         </Layer>
       )}
     </Stage>
@@ -263,7 +272,7 @@ function Scheduled(props: SceneProps) {
               style={{ width: 'min(60cqw, 30em)' }}
               lines={[
                 { who: 'agent', text: 'Good morning. Reading your card base.', p: wake },
-                { who: 'agent', text: 'One card asks too much at once:', p: fixes, ask: { title: 'Make the Sleep card’s clue clearer', reason: 'four blanks in one line', answer: 'yes', answerP: approve, yes: 'Approve' } },
+                { who: 'agent', text: 'One card asks too much at once:', p: fixes, ask: { title: 'Make the Sleep card’s clue clearer', reason: 'four hidden words in one line', answer: 'yes', answerP: approve, yes: 'Approve' } },
                 { who: 'agent', text: 'Two cards connect:', p: newLinks, ask: { title: 'Link Protein to How muscle grows', reason: 'muscle is built from protein', answer: 'skip', answerP: skip, yes: 'Approve' } },
               ]}
             />
@@ -288,12 +297,7 @@ function Scheduled(props: SceneProps) {
   )
 }
 
-const MENU = (archive: number, upNext = 0) => [
-  { label: 'Put at top of Inbox', active: upNext },
-  { label: 'Archive card', active: archive },
-  { label: 'Title on the front', rule: true },
-  { label: 'Reset history' },
-]
+const MENU = (archive: number, upNext = 0) => cardMenuItems('page', { 'Archive card': archive, 'Put at top of Inbox': upNext })
 
 const HISTORY: ReviewRow[] = [
   { when: '3 Nov', answer: 'remembered' },
@@ -516,7 +520,7 @@ function History(props: SceneProps) {
         <div className="later-menuwrap">
           <CardView beat={b} title={SLEEP_DEBT.title} id={SLEEP_DEBT.id} text={SLEEP_DEBT.text} sides={1} chrome="block" />
           <ReviewsStrip beat={b} rows={rows} open={since(b, open, 0.6)} empty="No reviews yet." />
-          <MenuPreview beat={b} x={58} y={14} p={showFor(since(b, reset - 0.06, 0.3), since(b, fresh - 0.05, 0.3))} items={[{ label: 'Put at top of Inbox' }, { label: 'Archive card' }, { label: 'Title on the front', rule: true }, { label: 'Reset history', active: since(b, reset, 0.2) }]} />
+          <MenuPreview beat={b} x={58} y={14} p={showFor(since(b, reset - 0.06, 0.3), since(b, fresh - 0.05, 0.3))} items={cardMenuItems('page', { 'Reset history': since(b, reset, 0.2) })} />
           {wiped > 0 && (
             <span className="kit-chip later-archived" style={pop(b, wiped)}>
               New

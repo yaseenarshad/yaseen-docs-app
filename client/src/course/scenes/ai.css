@@ -57,7 +57,7 @@
   margin: 0;
   padding: 0.9em 1.1em;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: clamp(10px, 2.5cqmin, 14px);
+  font-size: clamp(var(--kit-min-text), 2.5cqmin, 14px);
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -148,7 +148,7 @@
   display: grid;
   grid-template-columns: repeat(6, auto);
   gap: 5px;
-  font-size: clamp(6px, 1.6cqmin, 10px);
+  font-size: clamp(var(--kit-min-text), 1.6cqmin, 10px);
 }
 .ai-pour .kit-mini {
   width: 7em;

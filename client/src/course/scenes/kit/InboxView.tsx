@@ -7,7 +7,7 @@
  * - The card: `CardView` (the app's own `renderCard`, the state chip, "Title · ID", "Side 1 of 2").
  * - The buttons row: ← →, Forgot and Remembered (the real glyphs, the 1 and 2 keys), ⋯. `hover` shows the app's
  *   hover box over a button ("Remembered · 9 days"); `press` lights a button as a key or a click picks it.
- * - The last answer's line: "✓ Remembered · K7Q2 · back in 9 days · Undo Cmd + Z" (`last`).
+ * - The last answer's line: "✓ Remembered · DEMO-2 · back in 9 days · Undo Cmd + Z" (`last`).
  * - The key row, in the app's words (`cardInboxHints`, `KeyCaps`); `glowKey` lights one key ("Space").
  * - `done`: the done screen, "Inbox complete." and its quiet line.
  *

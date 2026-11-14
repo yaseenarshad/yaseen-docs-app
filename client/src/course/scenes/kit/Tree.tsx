@@ -4,15 +4,22 @@
  *
  * One piece draws all of them: nodes at positions in a 600 × 340 view, and edges between them. Each node and edge has
  * its own progress (`show`), so a scene grows the tree in step with the words. `hub()` lays out a hub and its spokes.
+ *
+ * A `branch` node is a small card with its title, set as HTML over the drawing: its box grows with its title, which
+ * wraps and stays sharp at any stage size, and keeps the kit's smallest readable size. `cards[id]` gives a branch its
+ * look: `glow` (look here), `tone` (`root`: the umbrella; `ghost`: not made yet; `grey`). Reduced motion: the
+ * branches and cards cross-fade; nothing grows or pops.
  */
+import type { ReactNode } from 'react'
 import { clamp, ease, lerp, type Beat } from './beat'
+import { glowStyle } from './AppFrame'
 
 export interface TreeNode {
   id: string
   x: number
   y: number
   label?: string
-  /** `hub`: the card, large; `branch`: a card under an umbrella; `leaf`: a small node; `card`: a small card shape. */
+  /** `hub`: the card, large; `branch`: a card with its title (HTML); `leaf`: a small node; `card`: a small card shape. */
   kind?: 'hub' | 'branch' | 'leaf' | 'card'
 }
 
@@ -35,10 +42,16 @@ export function hub(labels: readonly string[], { cx = 300, cy = 170, r = 120, st
   return { nodes, edges }
 }
 
+export interface TreeCardLook {
+  glow?: number
+  tone?: 'root' | 'ghost' | 'grey'
+}
+
 /** `show[id]` for a node, `show["a>b"]` for an edge: 0..1. Missing: hidden. `glow` lights the hub. */
-export function Tree({ beat, nodes, edges, show, glow = 0 }: { beat: Beat; nodes: readonly TreeNode[]; edges: readonly TreeEdge[]; show: Readonly<Record<string, number>>; glow?: number }) {
+export function Tree({ beat, nodes, edges, show, glow = 0, cards = {}, children }: { beat: Beat; nodes: readonly TreeNode[]; edges: readonly TreeEdge[]; show: Readonly<Record<string, number>>; glow?: number; cards?: Readonly<Record<string, TreeCardLook>>; children?: ReactNode }) {
   const at = new Map(nodes.map((n) => [n.id, n]))
-  return (
+  const branches = nodes.filter((n) => n.kind === 'branch')
+  const drawing = (
     <svg className="kit-tree" viewBox="0 0 600 340" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
       {edges.map((e) => {
         const a = at.get(e.from)
@@ -51,7 +64,7 @@ export function Tree({ beat, nodes, edges, show, glow = 0 }: { beat: Beat; nodes
       })}
       {nodes.map((n) => {
         const p = clamp(show[n.id] ?? 0)
-        if (p <= 0) return null
+        if (p <= 0 || n.kind === 'branch') return null
         const s = beat.reduced ? 1 : ease.back(p)
         const kind = n.kind ?? 'leaf'
         return (
@@ -62,7 +75,6 @@ export function Tree({ beat, nodes, edges, show, glow = 0 }: { beat: Beat; nodes
                 <circle className="kit-tree__hub" r={22} />
               </>
             )}
-            {kind === 'branch' && <rect className="kit-tree__card" x={-34} y={-20} width={68} height={40} rx={7} />}
             {kind === 'card' && <rect className="kit-tree__card" x={-22} y={-14} width={44} height={28} rx={5} />}
             {kind === 'leaf' && <circle className="kit-tree__leaf" r={7} />}
             {n.label !== undefined && (
@@ -74,5 +86,33 @@ export function Tree({ beat, nodes, edges, show, glow = 0 }: { beat: Beat; nodes
         )
       })}
     </svg>
+  )
+  if (branches.length === 0 && children === undefined) return drawing
+  return (
+    <div className="kit-tree-box">
+      {drawing}
+      {branches.map((n) => {
+        const p = clamp(show[n.id] ?? 0)
+        if (p <= 0) return null
+        const look = cards[n.id] ?? {}
+        const s = beat.reduced ? 1 : lerp(0.6, 1, ease.back(p))
+        return (
+          <span
+            key={n.id}
+            className={`kit-tree__branch${look.tone === undefined ? '' : ` kit-tree__branch--${look.tone}`}`}
+            style={{
+              left: `${((n.x / 600) * 100).toFixed(3)}%`,
+              top: `${((n.y / 340) * 100).toFixed(3)}%`,
+              opacity: beat.reduced ? p : clamp(p * 2),
+              transform: `translate(-50%, -50%) scale(${s.toFixed(4)})`,
+              ...glowStyle(look.glow ?? 0),
+            }}
+          >
+            {n.label}
+          </span>
+        )
+      })}
+      {children}
+    </div>
   )
 }

@@ -60,7 +60,7 @@
   align-items: center;
   justify-content: center;
   gap: clamp(4px, 1.4cqmin, 10px);
-  font-size: clamp(9px, 2.2cqmin, 13px);
+  font-size: clamp(var(--kit-min-text), 2.2cqmin, 13px);
 }
 .kit-five .kit-mini {
   width: 7.5em;
@@ -270,7 +270,7 @@
   border-radius: 10px;
   background: var(--bg);
   box-shadow: var(--kit-shadow);
-  font-size: clamp(10px, 2.6cqmin, 14px);
+  font-size: clamp(var(--kit-min-text), 2.6cqmin, 14px);
 }
 .kit-life__art {
   display: block;
@@ -339,7 +339,7 @@
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: clamp(4px, 1.4cqmin, 10px);
   width: min(96cqw, 46em);
-  font-size: clamp(7px, 1.8cqmin, 11px);
+  font-size: clamp(var(--kit-min-text), 1.8cqmin, 11px);
 }
 .kit-base2 .kit-mini {
   width: 100%;

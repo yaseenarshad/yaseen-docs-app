@@ -30,6 +30,7 @@ import {
   Pointer,
   SidebarPreview,
   Stage,
+  TryChip,
   Timeline,
   Words,
   between,
@@ -691,12 +692,7 @@ function TryIt(props: SceneProps) {
         </AppWindow>
       </Layer>
       <Layer>
-        <div className="kit-try" style={pop(b, since(b, 0.04, 0.6), 0.85)}>
-          <span className="course__btn course__btn--try" style={{ boxShadow: `0 0 0 ${(4 * showFor(since(b, tryAt - 0.04, 0.4), since(b, 0.97, 0.4))).toFixed(2)}px var(--accent-soft)` }}>
-            Try it in the app
-          </span>
-          <span className="course__btn">Next chapter</span>
-        </div>
+        <TryChip beat={b} p={since(b, 0.04, 0.6)} glow={showFor(since(b, tryAt - 0.04, 0.4), since(b, 0.97, 0.4))} beside={<span className="course__btn">Next chapter</span>} />
       </Layer>
     </Stage>
   )

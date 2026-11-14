@@ -220,7 +220,7 @@
 }
 .kit-cardview.kit-cardview--small {
   width: 100%;
-  font-size: clamp(9px, 1.9cqmin, 13px);
+  font-size: clamp(var(--kit-min-text), 1.9cqmin, 13px);
 }
 .kit-cardview--small .card-inbox__above {
   font-size: 11px;
@@ -232,7 +232,7 @@
   position: relative;
   width: 100%;
   height: 100%;
-  font-size: clamp(10px, 3.2cqmin, 17px);
+  font-size: clamp(var(--kit-min-text), 3.2cqmin, 17px);
 }
 .kit-base .kit-mini {
   position: absolute;
@@ -280,6 +280,10 @@
 /* Chapter 2's walk through the app */
 .kit-editcard {
   font-size: 14px;
+}
+.kit-editcard__title--empty {
+  color: var(--fg-muted);
+  font-weight: 400;
 }
 .kit-editcard__text {
   min-height: 3.5em;

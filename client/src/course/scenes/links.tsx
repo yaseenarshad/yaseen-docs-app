@@ -11,7 +11,7 @@ import { useUnit } from '../../vault/unitWord'
 import type { SceneProps } from '../scene'
 import { PAPERS } from './papers'
 import { MUSCLE, PROTEIN_BRANCH, UMBRELLA, sampleId } from './cards'
-import { AppWindow, Caret, CardView, Cite, Fit, Keys, Layer, Paper, Pointer, SidebarPreview, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, typedText, useBeat, type Beat } from './kit'
+import { EditCard, AppWindow, Caret, CardView, Cite, Fit, Keys, Layer, Paper, Pointer, SidebarPreview, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, typedText, useBeat, type Beat } from './kit'
 import { Habits } from './kit/HabitIcons'
 import { Web, scatterWeb, type WebEdge, type WebNode } from './kit/Web'
 import { Folder, cardTop } from './kit/Folder'
@@ -581,15 +581,7 @@ function ByHand(props: SceneProps) {
           <div className="kit-app__tab later-byhand">
             {opened < 0.5 &&
               (editing ? (
-                <div className="card card--editing kit-editcard" style={{ opacity: 1 - opened * 2 }}>
-                  <div className="card__head">
-                    <span className="card__id">{PROTEIN_BRANCH.id}</span>
-                    <span className="card__edit">
-                      Done <kbd>esc</kbd>
-                    </span>
-                    <span className="card__more">⋯</span>
-                  </div>
-                  <div className="kit-editcard__text">
+                <EditCard id={PROTEIN_BRANCH.id} title={PROTEIN_BRANCH.title} keys={0} style={{ opacity: 1 - opened * 2 }}>
                     <p>
                       Your body builds and repairs itself with <span className="card__cloze">protein</span>.
                     </p>
@@ -611,8 +603,7 @@ function ByHand(props: SceneProps) {
                       <Caret />
                     </p>
                     <LinkPicker beat={b} p={list} rows={PICKER.map((r) => ({ ...r, active: r.kind === 'card' && r.label === MUSCLE.title ? rowActive : 0 }))} />
-                  </div>
-                </div>
+                </EditCard>
               ) : (
                 <div style={{ opacity: at('c10-18') ? 1 - opened : 1 }}>
                   {at('c10-18') ? (
@@ -695,15 +686,7 @@ function RemoveLink(props: SceneProps) {
   return (
     <Stage beat={b} label="To remove a link, edit the card and delete the pill like a word">
       <Layer>
-        <div className="card card--editing kit-editcard later-remove" style={rise(b, since(b, 0, 0.6))}>
-          <div className="card__head">
-            <span className="card__id">{PROTEIN_BRANCH.id}</span>
-            <span className="card__edit" style={{ opacity: since(b, edit, 0.3) }}>
-              Done <kbd>esc</kbd>
-            </span>
-            <span className="card__more">⋯</span>
-          </div>
-          <div className="kit-editcard__text">
+        <EditCard id={PROTEIN_BRANCH.id} title={PROTEIN_BRANCH.title} done={since(b, edit, 0.3)} keys={0} className="later-remove" style={rise(b, since(b, 0, 0.6))}>
             <p>
               <b>CONNECTIONS</b>
               <br />
@@ -716,8 +699,7 @@ function RemoveLink(props: SceneProps) {
               )}
               {since(b, edit, 0.3) > 0 && <Caret />}
             </p>
-          </div>
-        </div>
+        </EditCard>
         <Keys p={since(b, del - 0.06, 0.4)} items={[{ keys: '⌫', label: 'Backspace' }]} />
         <span className="kit-chip" style={pop(b, since(b, word, 0.5))}>
           Like a word

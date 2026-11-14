@@ -89,7 +89,7 @@ describe('each scene of chapters 6 to 8 draws (YAZ-5121)', () => {
       const scene = mountScene(courseScenes(id), chapter(COURSE.find((ch) => ch.clips.some((c) => c.id === id))!.id), { clock, done: () => undefined, reducedMotion: true, host: memoryHost() })
       scene.render(clipOf(id))
       at(0.6, true)
-      for (const el of scene.el.querySelectorAll<HTMLElement>('.kit-treecard')) expect(el.style.transform).toBe('translate(-50%, -50%) scale(1.0000)')
+      for (const el of scene.el.querySelectorAll<HTMLElement>('.kit-tree__branch')) expect(el.style.transform).toBe('translate(-50%, -50%) scale(1.0000)')
       for (const el of scene.el.querySelectorAll<HTMLElement>('.kit-report, .kit-report__row')) expect(el.style.transform).toBe('')
       scene.unmount()
     }

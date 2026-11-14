@@ -153,7 +153,7 @@
 .later-qmark {
   fill: var(--accent);
   font-family: var(--font);
-  font-size: 34px;
+  font-size: max(34px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
   font-weight: 700;
 }
 .later-headbox {
@@ -376,6 +376,17 @@
   min-height: min(40cqh, 12em);
 }
 .later-editcard {
+  text-align: left;
+}
+/* c11-05: Explore's page layer over the Inbox, with the card in it. */
+.later-pagelayer {
+  position: absolute;
+  inset: 4% 3% auto;
+  padding: 0.8em;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
   text-align: left;
 }
 .later-days {
@@ -743,7 +754,7 @@
 .later-wk__tick {
   fill: var(--ok);
   font-family: var(--font);
-  font-size: 16px;
+  font-size: max(16px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
   font-weight: 700;
 }
 .later-wk__shears {

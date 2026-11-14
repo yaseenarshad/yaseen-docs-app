@@ -15,7 +15,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { InboxIcon } from '../../../views/view/icons'
 import { KeyCaps } from '../../../keys/KeyCaps'
-import { clamp, ease, lerp, type Beat } from './beat'
+import { clamp, ease, lerp, pop, type Beat } from './beat'
 
 /** A cropped app window: a sidebar on the left (optional), the content on the right. */
 export function AppWindow({ sidebar, children, style, label }: { sidebar?: ReactNode; children?: ReactNode; style?: CSSProperties; label?: string }) {
@@ -92,6 +92,18 @@ export interface MenuItem {
   active?: number
   /** A rule above this row. */
   rule?: boolean
+}
+
+/**
+ * A card's ⋯ menu, as the app lists it: a card in a page (`cardBlockView.ts`, `menuRows`) or a card file's tab
+ * (`CardFileView.tsx`, `cardMenuSections`). `active` lights rows by label; `titleHint` is "Title on the front"'s state.
+ */
+export function cardMenuItems(where: 'page' | 'file', active: Readonly<Record<string, number>> = {}, titleHint: 'Show' | 'Hide' = 'Show'): MenuItem[] {
+  const rows: MenuItem[] =
+    where === 'page'
+      ? [{ label: 'Open card' }, { label: 'Preview', hint: 'P' }, { label: 'Put at top of Inbox', rule: true }, { label: 'Archive card' }, { label: 'Title on the front', hint: titleHint }, { label: 'Reset history' }, { label: 'Copy card ID', rule: true }]
+      : [{ label: 'Preview', hint: 'P' }, { label: 'Put at top of Inbox', rule: true }, { label: 'Archive card' }, { label: 'Title on the front', hint: titleHint }, { label: 'Copy card ID', rule: true }, { label: 'Copy card link' }, { label: 'Turn into a page', rule: true }]
+  return rows.map((row) => (active[row.label] === undefined ? row : { ...row, active: active[row.label] }))
 }
 
 /** The right-click menu at (x%, y%) of the window, opening over `p`. */
@@ -186,6 +198,21 @@ export function Keys({ items, p = 1 }: { items: readonly { keys: string; label: 
           <KeyCaps keys={item.keys} /> {item.label}
         </span>
       ))}
+    </div>
+  )
+}
+
+/**
+ * The layer's "Try it in the app" button, as a drawing (`course__btn--try`), with what stands beside it (`beside`: the
+ * chip "Optional", or "Next chapter"). `p` brings it in; `glow` 0..1 rings the button on the word.
+ */
+export function TryChip({ beat, p, glow = 0, beside }: { beat: Beat; p: number; glow?: number; beside?: ReactNode }) {
+  return (
+    <div className="kit-try" style={pop(beat, p, 0.85)}>
+      <span className="course__btn course__btn--try" style={glow > 0 ? { boxShadow: `0 0 0 ${(4 * clamp(glow)).toFixed(2)}px var(--accent-soft)` } : undefined}>
+        Try it in the app
+      </span>
+      {beside}
     </div>
   )
 }

@@ -28,6 +28,7 @@ import {
   SAMPLE_REVIEWS,
   SidebarPreview,
   Stage,
+  TryChip,
   Tally,
   Words,
   between,
@@ -777,12 +778,15 @@ function TryIt(props: SceneProps) {
         />
       </Layer>
       <Layer>
-        <div className="kit-try" style={pop(b, since(b, 0.2, 0.6), 0.8)}>
-          <span className="course__btn course__btn--try">Try it in the app</span>
-          <span className="kit-chip" style={pop(b, since(b, 0.78, 0.5), 0.6)}>
-            Optional
-          </span>
-        </div>
+        <TryChip
+          beat={b}
+          p={since(b, 0.2, 0.6)}
+          beside={
+            <span className="kit-chip" style={pop(b, since(b, 0.78, 0.5), 0.6)}>
+              Optional
+            </span>
+          }
+        />
       </Layer>
     </Stage>
   )
