@@ -59,8 +59,8 @@
  *    it again), pauses while the Inbox is not in front and over any stretch of "Pause the timer after" with no key or
  *    mouse; the answer writes its active seconds on its review part (`… good 13s`). The top row says today's work
  *    across the vault, "Today: 31 cards · 9 min" (`session.today`, from the index), and the done screen says it too.
- *    TIME SO FAR (YAZ-5130, `TodayWork`): the time hides behind a small clock by default (a click shows it), or shows,
- *    or is off, by Settings › Review › Time so far. The timer and the saved seconds do not change with it.
+ *    TIME SO FAR (YAZ-5130, `TodayWork`): the time hides behind a small clock by default (round 2: only its hover box
+ *    shows it, and a keyboard focus), or shows, or is off, by Settings › Review › Time so far. The timer and the saved seconds do not change with it.
  *  - REVIEWS AT THE BOTTOM OF THE LAST SIDE (YAZ-5105, as Mochi; it amends YAZ-5000, which took them out of the Inbox):
  *    a card with reviews has the Reviews strip ("✓ 4 Reviews") right under the card, outside its frame (round 2): the
  *    card window's own `CardReviews`, closed until asked for, with no delete here. Round 3: it shows as soon as the
@@ -245,9 +245,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   const cardKey = card === null ? null : `${session.position}\n${card.path}\n${card.id}`
   // YAZ-5033: the active seconds on this card, from the moment its text shows; read at the answer.
   const answerSeconds = useAnswerTimer(card?.page == null ? null : cardKey, shown, review.settings.pauseAfter)
-  // Time so far (YAZ-5130): hidden behind a click by default; one click shows it in the top row and on the done screen.
-  const [timeOpen, setTimeOpen] = useState(false)
-  const time = { mode: review.settings.timeSoFar, open: timeOpen, setOpen: setTimeOpen }
+  // Time so far (YAZ-5130): hidden in the clock's hover box by default (round 2: hover only, never a click).
+  const time = review.settings.timeSoFar
 
   // The sides and their hidden words, once per card text.
   const counts = useMemo(() => (text === null ? [] : cardSides(text).map(hiddenCount)), [text])

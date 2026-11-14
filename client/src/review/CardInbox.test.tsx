@@ -1258,40 +1258,66 @@ describe("YAZ-5033: today's total — the top row and the done screen", () => {
   })
 })
 
-describe('YAZ-5130: Time so far — hidden behind a click (the default), shown, or off', () => {
+describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default), shown, or off', () => {
   const today = { cards: 31, reviews: 35, seconds: 9 * 60 + 10 }
   const bar = () => el.querySelector('.card-inbox__bar .card-inbox__today')
-  const clock = () => el.querySelector<HTMLButtonElement>('.card-inbox__bar .card-inbox__time')
+  const clock = () => el.querySelector<HTMLElement>('.card-inbox__bar .card-inbox__time')
+  const tip = () => document.body.querySelector<HTMLElement>('.hover-tip[role="tooltip"]')
+  /** The mouse on the clock, past the hover box's wait. */
+  const hover = (on: Element) => {
+    vi.useFakeTimers()
+    try {
+      act(() => void on.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })))
+      act(() => void vi.advanceTimersByTime(400))
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+  const unhover = (on: Element) => act(() => void on.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })))
 
-  it('hidden: the cards, then a clock in the time\'s place; a click shows the time, a second click hides it again', () => {
+  it('hidden (round 2, Yaseen: "its not a click"): a clock in the time`s place; the time shows ONLY in its hover box while the mouse is on it; a click shows nothing that stays', () => {
     mount(TWO_SIDES)
     expect(review.settings.timeSoFar).toBe('hidden')
     session = { ...session, today }
     render()
     expect(bar()?.textContent).toBe('Today: 31 cards · ')
-    expect(clock()?.getAttribute('aria-label')).toBe('Show time so far')
-    expect(clock()?.getAttribute('aria-pressed')).toBe('false')
     expect(clock()?.querySelector('svg')).not.toBeNull()
-    act(() => clock()!.click())
-    expect(bar()?.textContent).toBe('Today: 31 cards · 9 min')
-    expect(clock()?.getAttribute('aria-label')).toBe('Hide time so far')
-    expect(clock()?.getAttribute('aria-pressed')).toBe('true')
-    act(() => clock()!.click())
+    expect(clock()?.getAttribute('aria-label')).toBe('Time so far: 9 min')
+    expect(tip()).toBeNull()
+    hover(clock()!)
+    expect(tip()?.textContent).toBe('Time so far: 9 min')
+    // Never on screen: the line keeps the clock.
     expect(bar()?.textContent).toBe('Today: 31 cards · ')
-    // The keyboard stays in the Inbox: a press on the clock takes no focus.
+    unhover(clock()!)
+    expect(tip()).toBeNull()
+    // A click is no toggle: the line stays the same, and the press takes no focus (the keyboard stays in the Inbox).
     const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
     clock()!.dispatchEvent(down)
     expect(down.defaultPrevented).toBe(true)
+    act(() => clock()!.click())
+    expect(bar()?.textContent).toBe('Today: 31 cards · ')
+    expect(tip()).toBeNull()
   })
 
-  it('hidden: the done screen hides the time the same way, and a click there shows it', () => {
+  it('hidden: the keyboard reaches the clock; its focus shows the box, the blur hides it', () => {
+    mount(TWO_SIDES)
+    session = { ...session, today }
+    render()
+    expect(clock()?.tabIndex).toBe(0)
+    act(() => clock()!.focus())
+    expect(tip()?.textContent).toBe('Time so far: 9 min')
+    act(() => clock()!.blur())
+    expect(tip()).toBeNull()
+  })
+
+  it('hidden: the done screen has the same clock and box', () => {
     mount(TWO_SIDES)
     session = { ...session, card: null, today }
     render()
     const done = () => el.querySelector('.card-inbox__done-today')
     expect(done()?.textContent).toBe('Today: 31 cards · ')
-    act(() => done()!.querySelector<HTMLButtonElement>('.card-inbox__time')!.click())
-    expect(done()?.textContent).toBe('Today: 31 cards · 9 min')
+    hover(done()!.querySelector('.card-inbox__time')!)
+    expect(tip()?.textContent).toBe('Time so far: 9 min')
   })
 
   it('hidden with no seconds today: no clock, as there is no time to show', () => {

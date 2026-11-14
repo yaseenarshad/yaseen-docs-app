@@ -107,3 +107,64 @@ describe('YAZ-4797 demo: the shortcut ↗ says where the page lives', () => {
     expect(host!.querySelector('.view-shortcut-tip')).toBeNull()
   })
 })
+
+describe('YAZ-5130 round 2 (Yaseen: "why is the tool tip so far away?"): the box sits right under its mark', () => {
+  /** The mark's place on screen, and the box's real width (jsdom lays out nothing). */
+  function place(markLeft: number, boxWidth: number) {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('mark') ? ({ left: markLeft, right: markLeft + 16, top: 20, bottom: 38, width: 16, height: 18, x: markLeft, y: 20 } as DOMRect) : ({ left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 } as DOMRect)
+    })
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('hover-tip') ? boxWidth : 0
+    })
+  }
+  afterEach(() => vi.restoreAllMocks())
+
+  it('a short box near the window`s right edge starts at its mark, not 268 px from the edge', () => {
+    render(<HoverTip className="mark" text="Today: 9 min">◷</HoverTip>)
+    place(window.innerWidth - 120, 110)
+    enter(target())
+    wait(400)
+    expect(box()?.style.left).toBe(`${window.innerWidth - 120}px`)
+    expect(box()?.style.top).toBe('44px')
+  })
+
+  it('a box too wide for the room after its mark moves left only as far as it must, 8 px from the edge', () => {
+    render(<HoverTip className="mark" text="A long hint">◷</HoverTip>)
+    place(window.innerWidth - 120, 250)
+    enter(target())
+    wait(400)
+    expect(box()?.style.left).toBe(`${window.innerWidth - 258}px`)
+    // Far from the edge: at its mark, as before.
+    leave(target())
+    place(40, 250)
+    enter(target())
+    wait(400)
+    expect(box()?.style.left).toBe('40px')
+  })
+
+  it('`focus`: a keyboard focus on the mark shows the box at once; the blur hides it', () => {
+    render(
+      <HoverTip className="mark" text="Today: 9 min" focus>
+        <span className="clock" tabIndex={0}>
+          ◷
+        </span>
+      </HoverTip>,
+    )
+    act(() => host!.querySelector<HTMLElement>('.clock')!.focus())
+    expect(box()?.textContent).toBe('Today: 9 min')
+    act(() => host!.querySelector<HTMLElement>('.clock')!.blur())
+    expect(box()).toBeNull()
+  })
+
+  it('without `focus`, a focus shows nothing (the other boxes stay hover-only)', () => {
+    render(
+      <HoverTip className="mark" text="From Recipes">
+        <button type="button">↳</button>
+      </HoverTip>,
+    )
+    act(() => host!.querySelector('button')!.focus())
+    wait(1000)
+    expect(box()).toBeNull()
+  })
+})

@@ -1587,8 +1587,8 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(row(el, 'pauseAfter')?.textContent).toMatch(/Pause the timer after[\s\S]*With no key or mouse/)
     act(() => rowButtons(el, 'pauseAfter')[2].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, pauseAfter: 120 })
-    // YAZ-5130: Time so far — hidden behind a click by default, shown, or off; saved in review.json.
-    expect(rowButtons(el, 'timeSoFar').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Hidden (click to see)', 'true'], ['Shown', 'false'], ['Off', 'false']])
+    // YAZ-5130: Time so far — hidden by default (round 2: in the clock's hover box only), shown, or off; saved in review.json.
+    expect(rowButtons(el, 'timeSoFar').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Hidden (hover to see)', 'true'], ['Shown', 'false'], ['Off', 'false']])
     act(() => rowButtons(el, 'timeSoFar')[2].click())
     expect(save).toHaveBeenLastCalledWith({ ...S, timeSoFar: 'off' })
     act(() => rowButtons(el, 'enabled')[1].click())
