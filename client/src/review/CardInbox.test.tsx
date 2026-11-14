@@ -1738,6 +1738,73 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
       expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 420 - 400 + 6 }))
     })
 
+    describe('round 5 (Yaseen: "Yes, build it"): Space never shows a blank you cannot see', () => {
+      it('the marked blank in view (between the top row and the buttons): Space shows it', () => {
+        mount(THREE)
+        scroller()
+        place.word0 = [150, 170]
+        press(' ')
+        expect(shown()).toEqual(['one'])
+      })
+
+      it('the marked blank off screen: Space only glides it in, a third of the way down, and shows nothing; the next Space shows it', () => {
+        mount(THREE)
+        scroller()
+        place.word0 = [700, 720]
+        press(' ')
+        expect(shown()).toEqual([])
+        expect(blanks()).toBe(3)
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 200 }))
+        // The glide put it in view: now Space shows it.
+        place.word0 = [200, 220]
+        press(' ')
+        expect(shown()).toEqual(['one'])
+      })
+
+      it('a blank cut by the buttons` edge, or by the top row`s, is not in view: Space only moves it', () => {
+        mount(THREE)
+        scroller()
+        place.word0 = [390, 410]
+        press(' ')
+        expect(shown()).toEqual([])
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 390 - 200 }))
+        mount(THREE)
+        scroller(300)
+        place.word0 = [90, 110]
+        press(' ')
+        expect(shown()).toEqual([])
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 300 + 90 - 100 - 6 }))
+      })
+
+      it('after a scroll by hand took the next blank out of view: Space only brings it back', () => {
+        mount(THREE)
+        scroller()
+        press(' ')
+        expect(shown()).toEqual(['one'])
+        // The person scrolled down: the next blank is above the top row now.
+        place.word1 = [-200, -180]
+        scrollTo.mockClear()
+        press(' ')
+        expect(shown()).toEqual(['one'])
+        expect(scrollTo).toHaveBeenCalledOnce()
+      })
+
+      it('a new side shows no blank: Space shows the side, the view follows its first blank; a blank still out of view only moves on the next Space', () => {
+        mount(TWO_SIDES)
+        scroller()
+        press(' ')
+        place.word1 = [700, 720]
+        press(' ')
+        expect(sides()).toBe(2)
+        expect(shown()).toEqual(['France'])
+        // The glide is under way (the mock never moves): the blank is not in view yet, so Space moves only.
+        scrollTo.mockClear()
+        press(' ')
+        expect(shown()).toEqual(['France'])
+        expect(scrollTo).toHaveBeenCalledOnce()
+      })
+    })
+
     describe('round 4 (Yaseen: "mouse behavior and spacebar behavior is a little bit different"): a click shows THAT word and the view stays put', () => {
       const word = (n: number) => el.querySelector<HTMLElement>(`[data-hidden="${n}"]`)!
       const click = (target: Element) => act(() => void target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })))
