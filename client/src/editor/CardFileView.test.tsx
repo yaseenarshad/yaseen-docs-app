@@ -195,6 +195,22 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toMatch(/^Due /))
     expect(el.querySelector('.note-card-reviews .backlinks__title')?.textContent).toBe('1 Review')
   })
+
+  it('YAZ-5105 round 2: Reviews is a strip right under the card (as Mochi), closed until clicked; Linked mentions and Embedded in stay under it', async () => {
+    await mount(FILE.replace('<!-- card: WIKI-9 -->', '<!-- card: WIKI-9, 2026-11-01T09:00Z good -->'))
+    await vi.waitFor(() => expect(el.querySelector('.note-card-reviews')).not.toBeNull())
+    const strip = el.querySelector('.note-card-reviews')!
+    expect(strip.classList.contains('note-card-reviews--strip')).toBe(true)
+    expect(strip.previousElementSibling?.classList.contains('note-card-screen')).toBe(true)
+    expect(strip.nextElementSibling?.classList.contains('note-card-backlinks')).toBe(true)
+    const toggle = strip.querySelector<HTMLButtonElement>('.note-card-reviews__toggle')!
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(strip.querySelector('.note-card-reviews__table')).toBeNull()
+    act(() => toggle.click())
+    expect(strip.querySelector('.note-card-reviews__table')).not.toBeNull()
+    act(() => toggle.click())
+    expect(strip.querySelector('.note-card-reviews__table')).toBeNull()
+  })
 })
 
 describe('the notices of a card file that is not valid (nothing deleted)', () => {

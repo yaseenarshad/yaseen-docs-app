@@ -299,13 +299,16 @@ export function NoteCardFacts({ reviews, settings, now = Date.now() }: { reviews
 
 /**
  * "4 Reviews" (D3, D13, YAZ-5032): a toggle with a ✓, as Mochi's, CLOSED until asked for: the strip above it says the
- * state. Open, the full table (`NoteCardReviewsTable`). The card window has it; the page's card block draws the same
- * toggle and mounts the same table when opened (`noteCardView.ts`, YAZ-5000).
+ * state. Open, the full table (`NoteCardReviewsTable`). The page's card block draws the same toggle and mounts the same
+ * table when opened (`noteCardView.ts`, YAZ-5000).
+ * YAZ-5105 round 2 (Yaseen: "this clean slip that shows up at the bottom", as Mochi's): a slim strip tucked under the
+ * card box, outside it, Reviews its one item for now; a click opens the table in it, another closes it. The card file
+ * tab and the card window put it right under the card; the Inbox under the last side, once the card is fully shown.
  */
 export function NoteCardReviews({ reviews, settings, onDelete, now }: NoteCardReviewsProps) {
   const [open, setOpen] = useState(false)
   return (
-    <section className="note-card-reviews">
+    <section className="note-card-reviews note-card-reviews--strip">
       <div className="note-card-reviews__bar">
         <button type="button" className="backlinks__header note-card-reviews__toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)} onMouseDown={(e) => e.preventDefault()}>
           <ReviewsIcon />

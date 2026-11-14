@@ -435,7 +435,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.start).toHaveBeenCalledExactlyOnceWith({})
   })
 
-  it('YAZ-5105: a card with reviews shows its Reviews (the card window\'s own `NoteCardReviews`) at the bottom of the last side, only once the card is fully shown; never on the front or an earlier side', async () => {
+  it('YAZ-5105: a card with reviews shows its Reviews strip (the card window\'s own `NoteCardReviews`) under the card, outside its frame, only once the last side is fully shown; never on the front or an earlier side', async () => {
     mount(TWO_SIDES)
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }, { at: '2026-11-13T09:00Z', rating: 'again' }] } } }
     render()
@@ -448,10 +448,14 @@ describe('the Inbox screen (YAZ-4962)', () => {
     }
     await flush()
     expect(blanks()).toBe(0)
-    // Fully shown: under the card's text, in its frame, the last thing in it; the buttons stay in their band under the frame.
-    const body = el.querySelector('.note-card-inbox__body')!
-    expect(body.lastElementChild).toBe(reviews())
-    expect(reviews()?.previousElementSibling?.classList.contains('note-card-inbox__card')).toBe(true)
+    // Round 2 (as Mochi): fully shown, the Reviews strip sits OUTSIDE the card's frame, right under it, before the
+    // buttons' band; the buttons stay in their band.
+    const column = el.querySelector('.note-card-inbox__column')!
+    const panel = column.querySelector('.note-card-inbox__panel')!
+    expect(panel.contains(reviews())).toBe(false)
+    expect(reviews()?.classList.contains('note-card-reviews--strip')).toBe(true)
+    expect(reviews()?.previousElementSibling).toBe(panel)
+    expect([...column.children].map((c) => c.className)).toEqual(['note-card-inbox__above', 'note-card-inbox__panel', 'note-card-reviews note-card-reviews--strip', 'note-card-inbox__dock', 'explore__foot note-card-inbox__hints'])
     expect(el.querySelector('.note-card-inbox__dock')?.contains(reviews())).toBe(false)
     expect(el.querySelectorAll('.note-card-inbox__dock .note-card-inbox__answer')).toHaveLength(2)
     // The same toggle as the card window's: closed until asked for; open, the table, with no delete in the Inbox.

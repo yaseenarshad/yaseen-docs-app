@@ -94,6 +94,32 @@
 .note-card-reviews {
   margin-top: 16px;
 }
+/* YAZ-5105 round 2, as Mochi's bottom strip: a slim, quiet band tucked under the card box above it (outside it), its
+   top hidden under the card's lower edge, its own lower corners round; the table opens inside it. The card box sits
+   over it. Its tint is the side colour mixed toward the text, so it reads as part of the card, not of the page. */
+.note-card-reviews--strip {
+  position: relative;
+  margin: -12px 0 0;
+  padding: 12px 8px 0;
+  border: 1px solid var(--border);
+  border-top: 0;
+  border-radius: 0 0 12px 12px;
+  background: color-mix(in srgb, var(--fg) 2%, var(--bg-side));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+:is(.note-card-inbox__panel, .note-card-screen, .explore-card__edit):has(+ .note-card-reviews--strip) {
+  position: relative;
+  z-index: 1;
+}
+.note-card-reviews--strip .note-card-reviews__bar {
+  min-height: 36px;
+}
+.note-card-reviews--strip .note-card-reviews__toggle {
+  font-size: 12.5px;
+}
+.note-card-reviews--strip .note-card-reviews__scroll {
+  padding: 2px 4px 12px;
+}
 /* The card window's "Linked mentions" (YAZ-5030): the backlinks header, then one page name a row. */
 .note-card-backlinks {
   margin-top: 16px;
