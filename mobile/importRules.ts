@@ -26,6 +26,13 @@ export function forbiddenImport(id: string): string | null {
 const REPO_SOURCE = /(^|\/)(client\/src|shared|mobile\/src)\//
 const STORE = /(^|\/)mobile\/src\/store\//
 
+/**
+ * A read of the bridge global, in any form: `window.yaseenDocs`, `(window as any).yaseenDocs`, `window['yaseenDocs']`,
+ * `const { yaseenDocs } = window`. No other code has a property of that name. Its type (`interface Window { yaseenDocs: … }`)
+ * is not a read.
+ */
+const BRIDGE = [/\.\s*yaseenDocs\b/, /\[\s*['"`]yaseenDocs['"`]\s*\]/, /\{[^}]*\byaseenDocs\b[^}]*\}\s*=\s*(window|globalThis|self)\b/]
+
 /** The code with its comments taken out (roughly: a `//` after `:` stays, so a URL is kept). */
 const withoutComments = (code: string) => code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:\\])\/\/.*$/gm, '$1')
 
@@ -42,7 +49,7 @@ export function forbiddenUse(file: string, code: string): string | null {
   const path = file.split('?')[0].replaceAll('\\', '/')
   if (!REPO_SOURCE.test(path) || path.includes('/node_modules/')) return null
   const text = withoutComments(code)
-  if (/\b(window|globalThis|self)\s*\.\s*yaseenDocs\b/.test(text)) return 'the desktop bridge (window.yaseenDocs)'
+  if (BRIDGE.some((use) => use.test(text))) return 'the desktop bridge (window.yaseenDocs)'
   if (!STORE.test(path) && /\b(localStorage|sessionStorage|indexedDB)\b/.test(text)) return 'browser storage outside mobile/src/store'
   return null
 }

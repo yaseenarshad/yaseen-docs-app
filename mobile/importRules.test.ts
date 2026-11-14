@@ -33,6 +33,14 @@ describe('forbiddenUse: code that reaches the desktop bridge or browser storage 
     expect(forbiddenUse('/repo/mobile/src/screens/Review.tsx', 'indexedDB.open("x")')).toMatch(/browser storage/)
   })
 
+  it('the bridge in any form: a cast, a bracket, a destructure (round 3 nit)', () => {
+    expect(forbiddenUse(file, '(window as any).yaseenDocs.vault.list()')).toMatch(/desktop bridge/)
+    expect(forbiddenUse(file, '(globalThis as unknown as { yaseenDocs: Bridge }).yaseenDocs')).toMatch(/desktop bridge/)
+    expect(forbiddenUse(file, "window['yaseenDocs'].vault")).toMatch(/desktop bridge/)
+    expect(forbiddenUse(file, 'const { yaseenDocs } = window')).toMatch(/desktop bridge/)
+    expect(forbiddenUse(file, 'interface Window { yaseenDocs: YaseenDocsApi }')).toBeNull()
+  })
+
   it('a word in a comment is not a use', () => {
     expect(forbiddenUse(file, '// reads localStorage? no: window.yaseenDocs is the desktop\n/* indexedDB */ export const x = 1')).toBeNull()
   })

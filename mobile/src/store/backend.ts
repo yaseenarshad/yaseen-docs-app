@@ -36,11 +36,6 @@ export interface Backend {
    * writes that were not committed). When storage is full it rejects with a `QuotaExceededError`.
    */
   apply(ops: readonly Op[]): Promise<void>
-  /**
-   * The bytes this site may still store, or `null` when the backend cannot tell (YAZ-5157). On the phone it is
-   * `navigator.storage.estimate()`: quota minus usage. An estimate: the store still tries the write after it.
-   */
-  room?(): Promise<number | null>
   close(): void
 }
 

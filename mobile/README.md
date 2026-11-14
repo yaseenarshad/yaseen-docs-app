@@ -28,7 +28,8 @@ the code editor. Three checks hold the rule:
   every bundled module, also one that `client/src` pulls in:
   * by name or path (`forbiddenImport`): Electron, Node built-ins, `desktop/src`, the drawing engine, Monaco, the
     desktop bridge `client/src/api.ts` and the app's storage wrapper `client/src/lib/storage.ts`;
-  * by use (`forbiddenUse`), in every repo source file the bundle takes in: the bridge global `window.yaseenDocs`, and
+  * by use (`forbiddenUse`), in every repo source file the bundle takes in: the bridge global `window.yaseenDocs` (also
+    cast, in brackets or destructured), and
     `localStorage`, `sessionStorage` or `indexedDB` outside `mobile/src/store/`.
 * `src/rules.test.ts` reads the source, and every repo file the app reaches through its imports, with the same rules.
 
@@ -94,9 +95,9 @@ Where the next units go (from the issues): `src/sync/` (3B, 3C, 3D), `src/screen
   checkpoints, phone-only state such as the answer list) drops the media viewed longest ago and tries again (row P2).
   It says which in `dropped`. When that cannot help, it throws `StorageFullError`.
 * A write takes room from its own vault's media first, then from the other vaults' media, oldest view first (a
-  coordinator pick for Yaseen to confirm). A file write drops nothing when the room left plus all media that may go
-  is too small, and never drops more than the bytes it adds. The room left comes from `navigator.storage.estimate()`
-  (`Backend.room`), but the store does not trust it after the browser has refused the write.
+  coordinator pick for Yaseen to confirm). It drops one file at a time and tries again, so it drops only what the
+  write needs. A file write drops nothing when all the media that may go is smaller than the bytes it adds. The store
+  does not use `navigator.storage.estimate()`: it gives the browser's quota, not the free disk.
 * Every write resolves only after IndexedDB committed it. Await it before the screen moves on.
 * `STORE_FORMAT` is one number. A start with another stored number discards the files and checkpoints and keeps the
   phone-only state (so unsent answers can still go). Raise it when the stored shape changes.

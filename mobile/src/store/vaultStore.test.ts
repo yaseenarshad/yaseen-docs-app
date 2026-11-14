@@ -228,7 +228,7 @@ describe.each(Object.keys(backends))('VaultStore on %s', (name) => {
 
     // YAZ-5157 round 2: navigator.storage.estimate() can say there is room on a nearly full disk.
     it('estimate too high: a picture that can never fit does not drop every other picture', async () => {
-      const optimistic = (inner: Backend, room: number): Backend => ({ ...inner, room: async () => room })
+      const optimistic = (inner: Backend, room: number): Backend => ({ ...inner, room: async () => room }) as Backend
       const store = await openVaultStore(optimistic(limitedBackend(phone()(), 100), 1_000_000), { now: clock() })
       await store.write(A, 'a.png', new Uint8Array(20))
       await store.write(A, 'b.png', new Uint8Array(20))
@@ -252,6 +252,36 @@ describe.each(Object.keys(backends))('VaultStore on %s', (name) => {
       // 30 bytes needed: a.png and b.png (40) at most; c.png and d.png stay.
       expect((error as StorageFullError).dropped.map((f) => f.path)).toEqual(['a.png', 'b.png'])
       expect((await store.list(A)).map((f) => f.path)).toEqual(['c.png', 'd.png'])
+    })
+
+    // YAZ-5157 round 3: an estimate between the real room (40) and the file (500) passed the fit check.
+    const withRoom = (inner: Backend, room: number | null): Backend => ({ ...inner, room: async () => room }) as Backend
+    it('estimate too high but below the file (450 < 500, real room 40): a file that can never fit drops nothing', async () => {
+      const store = await openVaultStore(withRoom(limitedBackend(phone()(), 100), 450), { now: clock() })
+      for (const name of ['a.png', 'b.png', 'c.png']) await store.write(A, name, new Uint8Array(20))
+      await expect(store.write(A, 'huge.mp4', new Uint8Array(500))).rejects.toBeInstanceOf(StorageFullError)
+      expect((await store.list(A)).map((f) => f.path)).toEqual(['a.png', 'b.png', 'c.png'])
+    })
+
+    it('estimate too high: a write drops only what it needs (one picture of 20 bytes, not three)', async () => {
+      const store = await openVaultStore(withRoom(limitedBackend(phone()(), 100), 1_000_000), { now: clock() })
+      for (const name of ['a.png', 'b.png', 'c.png']) await store.write(A, name, new Uint8Array(20))
+      const result = await store.write(A, 'new.png', new Uint8Array(50)) // 40 free: it needs 10 more
+      expect(result.dropped).toEqual([{ vault: A, path: 'a.png' }])
+      expect((await store.list(A)).map((f) => f.path)).toEqual(['b.png', 'c.png', 'new.png'])
+    })
+
+    // Row P2: pages are never dropped, media may be. A page rewritten at the same size adds no bytes, but a disk that
+    // got fuller can still refuse it: then media goes, as for any page write.
+    it('a page rewritten at the same size on a disk that got fuller drops media, and the page lands', async () => {
+      let limit = 100
+      const store = await openVaultStore(limitedBackend(phone()(), () => limit), { now: clock() })
+      await store.write(A, 'pic.png', new Uint8Array(30))
+      await store.write(A, 'Page.md', 'x'.repeat(60))
+      limit = 85 // another app filled the disk
+      const result = await store.write(A, 'Page.md', 'y'.repeat(60))
+      expect(result.dropped).toEqual([{ vault: A, path: 'pic.png' }])
+      expect((await store.read(A, 'Page.md'))?.content).toBe('y'.repeat(60))
     })
 
     it('a picture that cannot fit even with every vault\'s media gone fails, and drops nothing', async () => {
