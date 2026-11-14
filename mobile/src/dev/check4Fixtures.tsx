@@ -73,7 +73,8 @@ export async function mountCheck4Fixture(root: Root, name: string): Promise<void
   document.documentElement.dataset.fixtureReady = name
 }
 
-// `#fixture=c4erase-<n>[-friends]`: Settings with the erase ask open; n answers waiting over two vaults (n split 2+rest).
+// `#fixture=c4erase-<n>[-friends][-removes<k>]`: Settings with the erase ask open; n answers waiting over two vaults (n split 2+rest);
+// k friends removes that wait on the phone (YAZ-5360: the longest ask is `c4erase-3-friends-removes3`).
 export async function mountCheck4Erase(root: Root, name: string): Promise<void> {
   const { saveAccount } = await import('../auth/account')
   const { vaultId } = await import('../store')
@@ -102,6 +103,12 @@ export async function mountCheck4Erase(root: Root, name: string): Promise<void> 
   const fix = <T,>(b: T) => b
   if (n > 0) await store.setState(vaultId(vaults[0]), ANSWERS_STATE, fix(book(Math.min(n, 2))))
   if (n > 2) await store.setState(vaultId(vaults[1]), ANSWERS_STATE, fix(book(n - 2)))
+  const removes = Number(/-removes(\d+)/.exec(name)?.[1] ?? '0')
+  if (removes > 0) {
+    const { PHONE } = await import('../store')
+    const { REMOVE_QUEUE_KEY } = await import('../screens/waitingRemoves')
+    await store.setState(PHONE, REMOVE_QUEUE_KEY, Array.from({ length: removes }, (_, i) => ({ mine: `gist-${i + 1}`, at: i + 1 })))
+  }
   const services: AppServices = { store, tokens, sync: fakeSync(), friends: fakeFriends(store, name.includes('friends')), scanner: fakeScanner(), fetch: async () => new Response('{}', { status: 401 }) }
   root.render(<App services={services} />)
   await wait(300)

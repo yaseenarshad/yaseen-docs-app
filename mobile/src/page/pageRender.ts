@@ -209,7 +209,9 @@ markdown.use({
         if (last !== undefined && last.id === null && line !== null) last.id = cardIdOf(line)
         return ''
       }
-      return /^\s*<!--/.test(text) ? '' : false
+      // YAZ-5364: only WHOLE comments show nothing. An unclosed `<!--` runs to the end of the text (CommonMark); hiding
+      // it would hide the rest of the page. It goes to `cleanLocal`, which shows it, and the rest, as text.
+      return text.replace(/<!--[\s\S]*?--!?>/g, '').trim() === '' ? '' : false
     },
   },
 })
