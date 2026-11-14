@@ -46,8 +46,12 @@ function boardOf(name: string): Board {
         friends: [
           demoFriend(NOW, 'Sam', { days: [[0, { cards: 44, seconds: 3960, done: true }]] }),
           { ...demoFriend(NOW, 'Ann'), theirs: '', state: 'removing', label: 'Removing…', stats: null },
+          demoFriend(NOW, 'Zoe', { state: 'stopped', label: 'This link stopped working. Share a new one.', stats: null }),
           demoFriend(NOW, 'Ben', { state: 'gone', label: 'No longer shares with you', stats: null }),
-          demoFriend(NOW, '\u202eevil\nsecond line ' + 'W'.repeat(200), { state: 'waiting', label: `Waiting for ${gistText('\u202eevil\nsecond line ' + 'W'.repeat(200))} to add you` }),
+          demoFriend(NOW, '\u202eevil\nsecond line ' + 'W'.repeat(200), {
+            state: 'waiting',
+            label: `Waiting for ${gistText('\u202eevil\nsecond line ' + 'W'.repeat(200))} to add you`,
+          }),
         ],
         groups: [{ kind: 'removing', group: '7'.repeat(32), name: 'Old group' }],
       })

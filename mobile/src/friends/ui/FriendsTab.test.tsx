@@ -227,6 +227,18 @@ describe('the Friends tab (decisions 21, 24, 25)', () => {
     expect(s.calls.remove).toEqual([board.friends[1].mine])
   })
 
+  it('YAZ-5274: a link that stopped working has its row and one action; a friend who added me back is said one time', async () => {
+    const board = demoBoard(NOW, {
+      friends: [demoFriend(NOW, 'Sam'), demoFriend(NOW, 'Zoe', { state: 'stopped', label: 'This link stopped working. Share a new one.', stats: null })],
+      newlyPaired: ['\u2068Sam\u2069'],
+    })
+    ;({ h } = await open(board))
+    expect(rows(h)).toContain('Z Zoe This link stopped working. Share a new one. New link')
+    expect(statusText(h)).toContain('Sam added you back. You are friends now.')
+    await tap(h, 'Share a new link')
+    expect(h.host.querySelector('.fr-panel[aria-label="Share my link"]')).not.toBeNull()
+  })
+
   it('the list needs repair; no Gists permission; a newer app; no signal with nothing read', async () => {
     ;({ h } = await open({ kind: 'needs-repair' }))
     expect(plain(h.text())).toContain(LIST_NEEDS_REPAIR)

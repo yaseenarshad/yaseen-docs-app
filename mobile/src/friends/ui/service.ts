@@ -56,6 +56,8 @@ export type Board =
       outbox: Record<string, OutMark>
       /** No answer from GitHub this time: the numbers are the last ones read. */
       offline: boolean
+      /** YAZ-5274: friends who added me back since the last read (their names): the tab says so one time. */
+      newlyPaired?: string[]
     }
   | Unavailable
 
@@ -255,6 +257,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
           seen,
           outbox,
           offline,
+          newlyPaired: rows.rows.filter((r) => rows.newlyPaired.includes(r.mine)).map((r) => gistText(r.name) || 'Your friend'),
         }
       }
       if (rows.kind === 'offline' || rows.kind === 'rate-limited') {

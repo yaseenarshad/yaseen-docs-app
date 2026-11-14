@@ -34,7 +34,10 @@ const resolve = (theme: Record<string, string>, value: string): string => (value
 const colourOf = (selector: string) => /color:\s*(var\([^)]+\)|#[0-9a-f]{6})/i.exec(block(css, `${selector} {`))![1]
 
 describe('the Friends colours (YAZ-5264)', () => {
-  for (const [mode, theme] of [['light', light], ['dark', dark]] as const) {
+  for (const [mode, theme] of [
+    ['light', light],
+    ['dark', dark],
+  ] as const) {
     it(`${mode}: the words of a row 4.5:1, the marks 3:1, on the page and on a panel`, () => {
       const seen: Record<string, number> = {}
       for (const bg of [theme['--bg'], theme['--bg-side']]) {

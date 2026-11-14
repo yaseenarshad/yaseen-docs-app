@@ -219,6 +219,12 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
   const entries = showGroup ? groupEntries : friendEntries
   const rows = boardRows(entries, period, now)
 
+  // YAZ-5274: a friend who just added me back: said one time (the list marks the pair, so the next read has none).
+  const paired = (board.newlyPaired ?? []).join(', ')
+  useEffect(() => {
+    if (paired !== '') setSaid(`${paired} added you back. You are friends now.`)
+  }, [paired])
+
   const nobody = board.friends.length === 0 && board.groups.length === 0 && board.shared.length === 0
 
   // Decision 24, YAZ-5262: a cheer or nudge is "seen" when its line was really on the screen (`CheerLine`).
@@ -343,6 +349,12 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
                       </span>
                     )}
                   </button>
+                  {entry.friend?.state === 'stopped' && (
+                    // YAZ-5274: the link I pasted is gone and they never added me: the one way on is a new link of mine.
+                    <button type="button" className="btn" aria-label="Share a new link" onClick={() => setPanel('share')}>
+                      New link
+                    </button>
+                  )}
                   {entry.friend?.state === 'gone' && (
                     <button
                       type="button"
