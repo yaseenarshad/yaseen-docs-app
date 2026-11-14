@@ -355,12 +355,12 @@ import { createWikilinkClick, wikilinkFollower, type LinkFollow, type WikilinkNa
 import { createWikilinkHover, type WikilinkHover } from './wikilink/wikilinkHover'
 import { createWikilinkMenu, linkMenuOf } from './wikilink/wikilinkMenu'
 import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
-import { cardLinkTitle, createWikilink, createWikilinkResolveSource, linkCard, linkIsResolved, linkPath, linksAsShown, type LinkLook, type VaultsOfLetters, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
+import { createWikilink, createWikilinkResolveSource, linkCard, linkPath, linksAsShown, type LinkLook, type VaultsOfLetters, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { languages as codeLanguages } from '@codemirror/language-data'
-import { basename } from '@shared/types'
-import { imageSrc, pageDirRel } from './image/imageSrc'
 import { flushCardEditor, CARD_ID_META, CARD_MIRROR_META, cardCodeKeys, cardKeyRow, cardLanguage, cardBlockPlugins, cardRow, type CardDeps, type CardHost, type CardReviewDoorApi } from './card/cardBlockView'
-import type { CardLook } from './card/cardRender'
+import { cardLook } from './card/cardLook'
+// A card's look moved to its own file (YAZ-5153); it is given out here as before.
+export { cardLook } from './card/cardLook'
 import { cardEditorOptions } from './card/cardEditorFeatures'
 import { mountCardEditor } from './card/cardEditor'
 import { changeCardLine } from '../review/cardFile'
@@ -1032,35 +1032,6 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
     )
   }
   return crepe
-}
-
-/**
- * A card's look in a vault (YAZ-4961; YAZ-4962 for the card window and the Inbox): the link pills as the page's
- * (label, resolved, icon), the images and sounds by the page's folder, the board embeds by their links. One function for the page and the screens outside it.
- */
-export function cardLook(wikilinks: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined, image?: ImageOptions, linkLook?: LinkLook): CardLook {
-  return {
-    link: (inner) => {
-      // A link to a card (YAZ-5030): its title, its ID and the card icon, as the page's card pill.
-      const card = inner.includes('|') ? null : linkCard(inner, wikilinks)
-      if (card !== null) return { label: cardLinkTitle(card), resolved: true, card: card.id }
-      const path = linkPath(inner, wikilinks, viewOnly)
-      return {
-        label: linksAsShown(`[[${inner}]]`, wikilinks, viewOnly),
-        resolved: linkIsResolved(inner, wikilinks, viewOnly),
-        attrs: path === null || linkLook === undefined ? undefined : linkLook.icon(path, fileKind(basename(path)) === null),
-      }
-    },
-    image: image === undefined ? undefined : (src) => imageSrc(image.root, pageDirRel(image.root, image.pagePath), src),
-    // A board embed's file (YAZ-5015): where its link resolves, in the page's vault.
-    board:
-      image === undefined
-        ? undefined
-        : (inner) => {
-            const path = linkPath(inner, wikilinks, viewOnly)
-            return path === null ? null : { root: image.root, path }
-          },
-  }
 }
 
 /** What the cards of one editor read (YAZ-4961): the editor's own link sources, follower, images and doors. */
