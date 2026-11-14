@@ -39,6 +39,7 @@ import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { PAGE_ID_KEY, canonicalPageId, isNumberId, vaultPageId } from '@shared/pageId'
 import { cardBlock, changeCard, pageCards, withCardNext } from '@shared/cardLine'
 import { lineKinds } from '@shared/fences'
+import { inLineEnds, withLf } from '@shared/lineEnds'
 import { cardQueue, cardState } from '@shared/cardSchedule'
 import { cardTitle } from '@shared/cardText'
 import { cardFileTitle } from '@shared/cardConvert'
@@ -618,14 +619,15 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io):
   // The page and the heading are checked before a number is taken: a refusal costs no number.
   const content = (await readFile(page)).content
   if (isCardFileContent(content)) throw new Error(CARD_FILE_REFUSED)
-  cardPlace(splitFrontmatter(content).body, after)
+  cardPlace(splitFrontmatter(withLf(content)).body, after)
   // The door (YAZ-2677 D4): the count file is on disk before the card is written (R18), the app's own number.
   const id = (await mintIds(root, 1))?.[0]
   if (id === undefined) throw new Error(`${page}'s vault does not give its pages IDs, so it has no cards`)
   const block = cardBlock(text, { parts: [{ kind: 'id', id }] })
-  await transformOnDisk(page, (fresh) => {
-    if (isCardFileContent(fresh)) throw new Error(CARD_FILE_REFUSED)
-    const { frontmatter, body } = splitFrontmatter(fresh)
+  // The page keeps its own line end, `\r\n` or `\n` (YAZ-5146): the card is written with it.
+  await transformOnDisk(page, (fresh) => inLineEnds(fresh, (text) => {
+    if (isCardFileContent(text)) throw new Error(CARD_FILE_REFUSED)
+    const { frontmatter, body } = splitFrontmatter(text)
     const lines = body.split('\n')
     const at = cardPlace(body, after)
     // One blank line before the card and one after it; the page's own blank lines stay.
@@ -635,7 +637,7 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io):
     const rest = lines.slice(at)
     const next = [...before, ...(before.length > 0 ? [''] : []), block, ...(rest.length > 0 && rest.some((l) => l !== '') ? ['', ...rest] : [''])]
     return frontmatter + next.join('\n')
-  })
+  }))
   const title = cardTitle(text)
   io.stdout(flags.has('--json') ? `${JSON.stringify({ id, page, title }, null, 2)}\n` : `added ${id} to ${page}\n`)
 }
