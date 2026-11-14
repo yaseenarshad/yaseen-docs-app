@@ -78,6 +78,16 @@ describe('Move to its own file', () => {
     await vi.waitFor(() => expect(host.onNotice).toHaveBeenCalledWith("Can't move the card: the file changed on disk. Nothing changed; try again."))
   })
 
+  it('YAZ-5133: the new card file opens in the tab once the move is done, never the page again; a failed move opens nothing', async () => {
+    const host = mount({ onOpenCardFile: vi.fn() })
+    hook.door.move('GEO-140', 0)
+    await vi.waitFor(() => expect(host.onOpenCardFile).toHaveBeenCalledExactlyOnceWith('/v/card.md'))
+    actions.moveCardToFile.mockRejectedValueOnce(new Error('the file changed on disk. Nothing changed; try again.'))
+    hook.door.move('GEO-140', 0)
+    await vi.waitFor(() => expect(host.onNotice).toHaveBeenCalled())
+    expect(host.onOpenCardFile).toHaveBeenCalledTimes(1)
+  })
+
   it('Review off: not offered. A read-only vault asks first, and Cancel runs nothing', async () => {
     mount({ reviewOn: false })
     expect(hook.door.canMove()).toBe(false)

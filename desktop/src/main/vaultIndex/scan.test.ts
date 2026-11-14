@@ -349,6 +349,14 @@ describe('scanFile', () => {
     expect(r.properties).toEqual({ kind: ' CARD ', tags: ['geo'] })
   })
 
+  it('YAZ-5044 decision A: a card file`s title is its `title`, as a page`s, and its card is titled by it (pills, the `[[` picker, search, the Inbox); a second card keeps its first line', async () => {
+    const file = path.join(root, 'capital-of-france-geo-150.md')
+    await writeFile(file, ['---', 'kind: card', 'title: Capital of France', '---', '```card', 'Which city?', '---', 'Paris', '```', '<!-- card: GEO-150 -->', '', '```card', 'Second', '```', '<!-- card: GEO-151 -->', ''].join('\n'))
+    const r = await scanFile(root, file)
+    expect(r.title).toBe('Capital of France')
+    expect(r.cards?.map((c) => c.title)).toEqual(['Capital of France', 'Second'])
+  })
+
   it('YAZ-5037: a card file with 2 cards stays a card file, and both cards stay in review; one with no card is titled by its name', async () => {
     const two = path.join(root, 'two-cards.md')
     await writeFile(two, ['---', 'kind: card', '---', '```card', 'First', '```', '<!-- card: GEO-141 -->', '', '```card', 'Second', '```', '<!-- card: GEO-142 -->', ''].join('\n'))

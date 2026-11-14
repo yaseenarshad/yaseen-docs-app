@@ -2,8 +2,11 @@
  * CARD FILES (YAZ-5037): a card that is its own file. A card file is a normal `.md` file whose properties hold
  * `kind: card` (the mark, `isCardKind`) and whose body is exactly ONE card: its ```` ```card ```` block and its card line,
  * with no other text but blank lines. The card's ID (on its card line) is the file's ID: the sweep gives a card file no
- * page `id:` (one already there stays, YAZ-5037 pick 6). Its title is its card's title (the 5030 rule: the first line),
- * and its name is built from that title and the card's ID as a page's is (`noteFileName`, YAZ-2420 🔒 D3).
+ * page `id:` (one already there stays, YAZ-5037 pick 6). ITS TITLE IS ITS `title` PROPERTY, as a page's is (YAZ-5044,
+ * decision A): the card's text holds only its sides, never the title. A card INSIDE A PAGE keeps the 5030 rule (its
+ * first line). The name is built from the title and the card's ID as a page's is (`noteFileName`, YAZ-2420 🔒 D3).
+ * A card file from before A (no `title`, the title as the card's first line) is moved one time by the ID sweep
+ * (`cardFileTitleMoved`, `shared/cardConvert.ts`); until then its title reads from that first line.
  *
  * The mark is the key `kind`, never `type` (pick 4): many people use `type:` for their own notes. Only the value `card`
  * (trimmed, any case) is the mark; any other `kind` value is an ordinary property, and the properties panel shows it.
@@ -12,15 +15,14 @@
  * Pure: no DOM, no Node.
  */
 import { cardBlock, cardIdOf, findCards, type CardBlock, type CardLine } from './cardLine'
-import { cardTitle } from './cardText'
 import { buildFrontmatter, parseFrontmatter, splitFrontmatter } from './frontmatter'
-import { noteFileName } from './noteName'
+import { TITLE_KEY, noteFileName } from './noteName'
 
 /** The property key that marks a card file. Hidden in the properties panel when it holds `card`. */
 export const CARD_KIND_KEY = 'kind'
 /** The value of `kind` that marks a card file. */
 export const CARD_KIND = 'card'
-/** The text a new card starts with, as `/card` starts (YAZ-5030): its title. A card file titled this keeps its `<id>.md` name. */
+/** The title a new card starts with, as `/card` starts (YAZ-5030). A card file titled this keeps its `<id>.md` name. */
 export const NEW_CARD_TEXT = 'Title'
 
 /** Is `value` the card file mark's value (`card`, trimmed, any letter case)? */
@@ -84,12 +86,6 @@ export function cardFileCard(content: string): CardBlock | null {
   return findCards(splitFrontmatter(content).body)[0] ?? null
 }
 
-/** A card file's title: its card's title (`cardTitle`), '' when it has no card or an empty one. */
-export function cardFileTitle(content: string): string {
-  const card = cardFileCard(content)
-  return card === null ? '' : cardTitle(card.text)
-}
-
 /** A card file's ID: its card's ID (`cardIdOf`), null when it holds no card or the card has none yet. */
 export function cardFileId(content: string): string | null {
   const card = cardFileCard(content)
@@ -97,17 +93,21 @@ export function cardFileId(content: string): string | null {
 }
 
 /**
- * The content of a NEW card file: `kind: card` (then `extra` properties, kept in their order), and one card with `text`
- * and `line`. The fence is the one `cardBlock` writes. The file ends with one newline.
+ * The content of a NEW card file: `kind: card`, its `title` (YAZ-5044; none when empty), then `extra` properties in their
+ * order, and one card with `text` (its sides only) and `line`. The fence is the one `cardBlock` writes. The file ends
+ * with one newline.
  */
-export function cardFileContent(text: string, line: CardLine, extra: Record<string, unknown> = {}): string {
-  const properties = { [CARD_KIND_KEY]: CARD_KIND, ...Object.fromEntries(Object.entries(extra).filter(([k]) => k !== CARD_KIND_KEY)) }
+export function cardFileContent(title: string, text: string, line: CardLine, extra: Record<string, unknown> = {}): string {
+  const clean = title.replace(/\s+/g, ' ').trim()
+  const rest = Object.entries(extra).filter(([k]) => k !== CARD_KIND_KEY && k !== TITLE_KEY)
+  const properties = { [CARD_KIND_KEY]: CARD_KIND, ...(clean !== '' && { [TITLE_KEY]: clean }), ...Object.fromEntries(rest) }
   return `${buildFrontmatter(properties)}${cardBlock(text, line)}\n`
 }
 
 /**
- * The content of a new card file holding a card block AS IT IS, byte for byte (Move to its own file, Split): `block`
- * is the card's lines from its opening fence to its card line, with the indent they had taken off (`unindentBlock`).
+ * The content of a new card file holding a card block AS IT IS, byte for byte (`block`: the card's lines from its opening
+ * fence to its card line, with the indent they had taken off, `unindentBlock`). Move to its own file and Split then move
+ * the title out (`cardFileTitleMoved`, `shared/cardConvert.ts`).
  */
 export function cardFileWithBlock(block: string, extra: Record<string, unknown> = {}): string {
   const properties = { [CARD_KIND_KEY]: CARD_KIND, ...Object.fromEntries(Object.entries(extra).filter(([k]) => k !== CARD_KIND_KEY)) }

@@ -792,7 +792,7 @@ function CrepeHost({
   const diskRef = useRef(disk)
   diskRef.current = disk
   const reviewOn = useReviewOn(root)
-  const convert = useCardConvert({ root, path: file.path, wikilinks, reviewOn, inFolderPage, disk: () => diskRef.current, allowFileAction: vaultScope.allowFileAction, onNotice, onReread })
+  const convert = useCardConvert({ root, path: file.path, wikilinks, reviewOn, inFolderPage, disk: () => diskRef.current, allowFileAction: vaultScope.allowFileAction, onNotice, onReread, onOpenCardFile: onOpenFile })
   /** The timed "Allow edits" of THIS tab (YAZ-4939): at zero the page saves, then locks again. */
   const unlock = useTimedUnlock(autosave.flushNow)
   const readOnly = lockedBase && unlock.until === null

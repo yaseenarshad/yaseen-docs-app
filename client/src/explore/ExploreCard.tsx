@@ -2,8 +2,8 @@
  * A card layer of the explore stack (YAZ-4962, D13): ONE note card of a page, read-only, with what review knows of it.
  *
  *  - Head: the card ID first, small and grey (a click copies it, D20) — its place in the page's card and the Inbox
- *    too —, then the card title (`cardTitle`, the layer's name, as every layer has one; "New note card" for an empty
- *    card), ↗, ⋯ and ×; the chip "Up next ×" after the ID while the card is at the top of the Inbox (YAZ-4999 D3). The
+ *    too —, then the card title (`titleOfCard`: a card file's `title`, YAZ-5044, else its first line; the layer's name,
+ *    as every layer has one; "New note card" for an empty card), ↗, ⋯ and ×; the chip "Up next ×" after the ID while the card is at the top of the Inbox (YAZ-4999 D3). The
  *    ⋯ menu: Open page, Open page in a new tab, Put at top of Inbox / Remove from top of Inbox, Archive card / Unarchive card (YAZ-5046),
  *    Reset history (D13, the card line through `changeCardLine`, the app's own write), Copy card ID.
  *  - The card, everything shown (`renderNoteCard`), its pills and links live: a click opens the page on top, a bound
@@ -37,10 +37,9 @@
  */
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { cardState } from '@shared/cardSchedule'
-import { cardTitle } from '@shared/cardText'
 import type { GestureAction } from '@shared/keys'
 import { withCardNext } from '@shared/cardLine'
-import { readCardAt, type CardAtPage } from '../review/cardFile'
+import { readCardAt, titleOfCard, type CardAtPage } from '../review/cardFile'
 import { CardPane, cardMenuSections, cardWrites, isCardEditKey, onIndexVersion } from '../review/cardPane'
 import { HoverTip } from '../components/HoverTip'
 import { NoteCardFacts, NoteCardId, NoteCardNextChip } from '../review/noteCardParts'
@@ -142,7 +141,7 @@ export function ExploreCard({ path, cardId, index, startInEdit = false, fromInbo
     setEditing(true)
   }
   const id = card?.id ?? cardId
-  const title = card === null ? '' : cardTitle(card.text)
+  const title = card === null ? '' : titleOfCard(card)
 
   return (
     <>

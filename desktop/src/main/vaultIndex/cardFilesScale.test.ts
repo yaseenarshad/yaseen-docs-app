@@ -21,10 +21,12 @@ async function fill(root: string, content: (i: number) => string): Promise<void>
 beforeAll(async () => {
   cardsRoot = await mkdtemp(path.join(tmpdir(), 'mdapp-cardfiles-scale-'))
   pagesRoot = await mkdtemp(path.join(tmpdir(), 'mdapp-pages-scale-'))
-  const card = (i: number) => `\`\`\`card\nWhat is word ${i}?\n---\nIts meaning {{${i}}}.\n\`\`\`\n<!-- card: WIKI-${i + 1}, 2026-11-10T09:12Z good -->\n`
-  await fill(cardsRoot, (i) => `---\nkind: card\ntags: [import]\n---\n${card(i)}`)
-  await fill(pagesRoot, (i) => `---\nid: WIKI-${N + i + 1}\ntags: [import]\n---\n${card(i)}`)
-  // Vaults that give IDs (only those have cards, YAZ-4946 D8); every page and card already holds one, so the sweep writes nothing.
+  const card = (i: number, title: string) => `\`\`\`card\n${title}---\nIts meaning {{${i}}}.\n\`\`\`\n<!-- card: WIKI-${i + 1}, 2026-11-10T09:12Z good -->\n`
+  // A card file holds its title in `title` (YAZ-5044); a card in a page holds it as its first line.
+  await fill(cardsRoot, (i) => `---\nkind: card\ntitle: What is word ${i}?\ntags: [import]\n---\n${card(i, '')}`)
+  await fill(pagesRoot, (i) => `---\nid: WIKI-${N + i + 1}\ntags: [import]\n---\n${card(i, `What is word ${i}?\n`)}`)
+  // Vaults that give IDs (only those have cards, YAZ-4946 D8); every page and card already holds one, and every card
+  // file its `title`, so the sweep writes nothing.
   for (const root of [cardsRoot, pagesRoot]) await writeConfig(root, IDS_FILE, { enabled: true, letters: 'WIKI' })
 }, 120_000)
 afterAll(async () => {

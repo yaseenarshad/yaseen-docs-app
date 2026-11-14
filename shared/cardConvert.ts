@@ -4,25 +4,79 @@
  * BYTE FOR BYTE (`unindentBlock`, `indentBlock`, `cardFileWithBlock`): the ID, the reviews and every `[[GEO-140]]`
  * link stay. The writes (one compare-and-set for each file) are `client/src/review/cardConvert.ts`'s. Pure: no DOM, no Node.
  *
+ * THE TITLE SWAPS PLACES (YAZ-5044, decision A): a card in a page has its title as its first line; a card file has it
+ * in `title`. A card that becomes a card file gives its first line to `title` (`cardFileTitleMoved`); a card file's card
+ * that goes back into a page takes `title` back as its first line (`cardWithTitle`). The title is plain text there.
+ *
  *  - Move to its own file (`moveCardOut`): the card file's bytes, and the page with `![[GEO-140]]` in the block's place,
  *    at its indent.
  *  - Put back into this page (`putCardBack`): the embed's line replaced by the block, at the embed's indent.
- *  - Turn into a page (`cardFileAsPage`): `kind: card` off, `title:` = the card's title.
+ *  - Turn into a page (`cardFileAsPage`): `kind: card` off; `title:` stays the page's title, and is the card's first line again.
  *  - Turn into a card file (`pageAsCardFile`): a page that holds exactly one card with an ID and no other text takes
- *    `kind: card`, its `title:` goes to `aliases` (so `[[Old title]]` still resolves), its `id:` stays (pick 6).
+ *    `kind: card`, its `title:` goes to `aliases` (so `[[Old title]]` still resolves), its `id:` stays (pick 6), and the
+ *    card's first line is its new `title`.
  *  - The notice's fixes: Split (`splitCardFile`), Move into the card (`moveTextIntoCard`), Make a card from the text
  *    (`cardFromText`).
  */
-import { cardFileName, cardFileShape, cardFileWithBlock, CARD_KIND, CARD_KIND_KEY, indentBlock, NEW_CARD_TEXT, unindentBlock } from './cardFileFormat'
+import { cardFileCard, cardFileName, cardFileShape, cardFileWithBlock, CARD_KIND, CARD_KIND_KEY, indentBlock, isCardFileContent, NEW_CARD_TEXT, unindentBlock } from './cardFileFormat'
 import { CardNotFoundError, EMPTY_CARD_LINE, cardBlock, cardIdOf, changeCardText, findCards, type CardBlock } from './cardLine'
-import { cardTitle } from './cardText'
+import { cardTitle, cardWithTitle, cardWithoutTitle, hiddenCount } from './cardText'
 import { lineKinds } from './fences'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
-import { TITLE_KEY } from './noteName'
+import { NOTE_ID_KEY } from './noteId'
+import { TITLE_KEY, titleOf } from './noteName'
+
+/**
+ * A card file's title (YAZ-5044): its `title` property, as a page's (`titleOf`). A card file with no `title` yet is one
+ * from before decision A: its card's first line (`cardTitle`) until the sweep moves it. '' when there is neither.
+ */
+export function cardFileTitle(content: string): string {
+  const { properties } = parseFrontmatter(splitFrontmatter(content).frontmatter)
+  const card = cardFileCard(content)
+  return titleOf(properties, card === null ? '' : cardTitle(card.text))
+}
+
+/** Does this card file hold its title in `title` (YAZ-5044)? False for one from before decision A, or with no properties that parse. */
+export function hasTitleProperty(content: string): boolean {
+  const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
+  return error === undefined && titleOf(properties, '') !== ''
+}
+
+/**
+ * A card's title line taken out of its text (YAZ-5044, decision A): a card that becomes a CARD FILE keeps its title in
+ * the file's `title`, so its text no longer starts with it. `title` is `cardTitle`'s plain text; `text` is the card
+ * without that line and the blank lines after it (`cardWithoutTitle`). A line that holds a hidden word, or a code line,
+ * stays in the text: no hidden word and no code is ever lost. A card with no title is its text unchanged.
+ */
+export function cardTitleOut(text: string): { title: string; text: string } {
+  const title = cardTitle(text)
+  if (title === '') return { title, text }
+  const lines = text.split('\n')
+  const kinds = lineKinds(lines)
+  const at = lines.findIndex((line) => cardTitle(line) !== '')
+  return { title, text: kinds[at] !== 'text' || hiddenCount(lines[at]) > 0 ? text : cardWithoutTitle(text) }
+}
+
+/**
+ * THE ONE-TIME MOVE (YAZ-5044 point 9): a card file from before decision A — `kind: card`, no `title` — with its card's
+ * first line moved into `title` (`cardTitleOut`). Only that line leaves the card: the card line (ID, reviews, every
+ * part), the fences and the rest of the text stay, and so do the other properties. With `dropPageId` the file's page
+ * `id:` goes in the same write (an old build gave some card files a stray one, YAZ-5037). Null when there is nothing to
+ * move: not a card file, a `title` already there, no card, or a card with no title.
+ */
+export function cardFileTitleMoved(content: string, dropPageId = false): string | null {
+  if (!isCardFileContent(content) || hasTitleProperty(content)) return null
+  const card = cardFileCard(content)
+  if (card === null) return null
+  const { title, text } = cardTitleOut(card.text)
+  if (title === '') return null
+  const moved = setFrontmatterProperty(changeCardText(content, null, text, 0), TITLE_KEY, title)
+  return dropPageId ? setFrontmatterProperty(moved, NOTE_ID_KEY, undefined) : moved
+}
 
 /** A card that leaves its page or its card file: the new card file's bytes, its name, its ID and its title. */
 export interface CardFileOut {
-  /** The new card file: `kind: card` and the block, byte for byte. */
+  /** The new card file: `kind: card`, its `title` (the card's first line, taken out of it), and the block. */
   content: string
   /** `cardFileName(title, id)`. */
   name: string
@@ -42,7 +96,8 @@ function cardOut(lines: readonly string[], card: CardBlock): CardFileOut {
   const id = cardIdOf(card.line)
   if (id === null) throw new CardNotFoundError('(no ID yet)')
   const title = cardTitle(card.text)
-  return { content: cardFileWithBlock(unindentBlock(lines, card)), name: cardFileName(title, id), id, title }
+  const block = cardFileWithBlock(unindentBlock(lines, card))
+  return { content: cardFileTitleMoved(block) ?? block, name: cardFileName(title, id), id, title }
 }
 
 /** The embed a card leaves in its place: `![[GEO-140]]`. */
@@ -80,12 +135,15 @@ export function embedLine(body: string, inner: string, nth: number): number {
 
 /**
  * PUT BACK INTO THIS PAGE: the page `page` with the `nth` lone embed `![[inner]]` replaced by card `id`'s block and card
- * line from the card file `cardFile`, at the embed's indent. Throws `CardNotFoundError` when the card file has no such
- * card, an Error when the page holds no such embed (it changed since).
+ * line from the card file `cardFile`, at the embed's indent; the card file's `title` is the card's first line again.
+ * Throws `CardNotFoundError` when the card file has no such card, an Error when the page holds no such embed (it changed since).
  */
 export function putCardBack(page: string, inner: string, nth: number, cardFile: string, id: string): string {
-  const card = splitFrontmatter(cardFile).body
-  const block = unindentBlock(card.split('\n'), cardOf(findCards(card), id))
+  const held = splitFrontmatter(cardFile).body
+  const cards = findCards(held)
+  const card = cardOf(cards, id)
+  const raw = unindentBlock(held.split('\n'), card)
+  const block = card === cards[0] && hasTitleProperty(cardFile) ? changeCardText(raw, null, cardWithTitle(cardFileTitle(cardFile), card.text), 0) : raw
   const { frontmatter, body } = splitFrontmatter(page)
   const at = embedLine(body, inner, nth)
   if (at === -1) throw new Error('the embed is no longer on its own line in this page')
@@ -96,13 +154,15 @@ export function putCardBack(page: string, inner: string, nth: number, cardFile: 
 }
 
 /**
- * TURN INTO A PAGE: the card file `content` without `kind: card`, with `title:` = its card's title (none for a card
- * with no title). The card stays inside, byte for byte. The page's own ID and name come after (`retitle`).
+ * TURN INTO A PAGE: the card file `content` without `kind: card`. Its `title:` stays the page's title (`cardFileTitle`;
+ * none for a card with no title), and the card, now in a page, takes it back as its first line (`cardWithTitle`); its
+ * card line stays byte for byte. The page's own ID and name come after (`retitle`).
  */
 export function cardFileAsPage(content: string): { content: string; title: string } {
   const card = findCards(splitFrontmatter(content).body)[0]
-  const title = card === undefined ? '' : cardTitle(card.text)
-  const titled = title === '' ? content : setFrontmatterProperty(content, TITLE_KEY, title)
+  const title = cardFileTitle(content)
+  const back = card !== undefined && hasTitleProperty(content) ? changeCardText(content, null, cardWithTitle(title, card.text), 0) : content
+  const titled = title === '' ? back : setFrontmatterProperty(back, TITLE_KEY, title)
   return { content: setFrontmatterProperty(titled, CARD_KIND_KEY, undefined), title }
 }
 
@@ -117,8 +177,8 @@ export function canBeCardFile(content: string): boolean {
 
 /**
  * TURN INTO A CARD FILE: the page `content` with `kind: card`, its `title:` moved to `aliases` (after the ones it has),
- * its `id:` kept (pick 6). `name`: the card file's name, `cardFileName(card title, card ID)`. Null when the page cannot
- * (`canBeCardFile`).
+ * its `id:` kept (pick 6), and the card's first line moved into `title` (`cardFileTitleMoved`). `name`: the card file's
+ * name, `cardFileName(card title, card ID)`. Null when the page cannot (`canBeCardFile`).
  */
 export function pageAsCardFile(content: string): { content: string; name: string } | null {
   if (!canBeCardFile(content)) return null
@@ -133,7 +193,7 @@ export function pageAsCardFile(content: string): { content: string; name: string
     if (title !== '' && !aliases.includes(title)) aliases.push(title)
     next = setFrontmatterProperty(setFrontmatterProperty(next, TITLE_KEY, undefined), 'aliases', aliases.length === 0 ? undefined : aliases)
   }
-  return { content: next, name: cardFileName(cardTitle(card.text), cardIdOf(card.line)!) }
+  return { content: cardFileTitleMoved(next) ?? next, name: cardFileName(cardTitle(card.text), cardIdOf(card.line)!) }
 }
 
 /**
@@ -174,11 +234,13 @@ export function moveTextIntoCard(content: string): string | null {
 
 /**
  * MAKE A CARD FROM THE TEXT: the card file `content` with no card, its body now one card (no ID yet: the sweep gives it
- * one). An empty body gives the card "Title", as New card starts. Its properties stay. Null when it holds a card.
+ * one). A file with no `title` takes the text's first line as its title (`cardFileTitleMoved`); an empty body gives the
+ * title "Title", as New card starts. Its properties stay. Null when it holds a card.
  */
 export function cardFromText(content: string): string | null {
   const { frontmatter, body } = splitFrontmatter(content)
   const shape = cardFileShape(body)
   if (shape.problem !== 'none') return null
-  return `${frontmatter}${cardBlock(shape.before === '' ? NEW_CARD_TEXT : shape.before, EMPTY_CARD_LINE)}\n`
+  const made = `${frontmatter}${cardBlock(shape.before === '' ? NEW_CARD_TEXT : shape.before, EMPTY_CARD_LINE)}\n`
+  return cardFileTitleMoved(made) ?? made
 }
