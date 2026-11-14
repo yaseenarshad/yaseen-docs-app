@@ -24,6 +24,16 @@
   color: #1f1f1f;
 }
 
+/* The same two looks in a card's drawn text (YAZ-5378, `cardFind.ts`): highlights over ranges, no DOM change. */
+::highlight(find-match) {
+  background-color: var(--find-match-bg);
+}
+
+::highlight(find-match-active) {
+  background-color: var(--find-match-active-bg);
+  color: #1f1f1f;
+}
+
 /* A zero-height dock keeps the floating bar out of document flow. Pages anchor to their page; a
    folder's Page tab (YAZ-4584) and its views (YAZ-4613) stick to the folder page's scroller so the bar follows the reader. */
 .find-bar-dock {
