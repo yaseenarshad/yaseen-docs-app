@@ -1282,7 +1282,7 @@ describe('card guide (YAZ-5110)', () => {
     expect(USAGE.indexOf('yaseendocs card guide')).toBe(USAGE.indexOf('\n', USAGE.indexOf('yaseendocs card next')) + 3)
     const help = HELP.replace(/\s+/g, ' ')
     for (const said of ['Run `yaseendocs card guide` before you add or change a card.', '`--path`', 'Card skill']) expect(help).toContain(said)
-    expect(help).not.toMatch(/card guide/)
+    expect(help).not.toMatch(/note card guide/) // rename-note-to-page: keep (the old name stays out of the help)
   })
 })
 
@@ -1306,9 +1306,9 @@ describe('--hide-title (YAZ-5135)', () => {
     const root = await vault('cards', { 'geo/a.md': '' })
     const geo = path.join(root, 'geo')
     expect((await run(['card', 'new', geo, '--title', 'Capital of France', '--body', '{{Paris}}', '--hide-title'])).code).toBe(0)
-    expect(await readFile(path.join(geo, 'capital-of-france-yaz-1.md'), 'utf8')).toBe(`---\nkind: card\n---\n${card('Capital of France\n\n{{Paris}}', 'YAZ-1, notitle')}`)
+    expect(await readFile(path.join(geo, 'capital-of-france-yaz-1.md'), 'utf8')).toBe(`---\nkind: card\ntitle: Capital of France\n---\n${card('{{Paris}}', 'YAZ-1, notitle')}`)
     expect((await run(['card', 'new', geo, '--title', 'Shown'])).code).toBe(0)
-    expect(await readFile(path.join(geo, 'shown-yaz-2.md'), 'utf8')).toBe(`---\nkind: card\n---\n${card('Shown', 'YAZ-2')}`)
+    expect(await readFile(path.join(geo, 'shown-yaz-2.md'), 'utf8')).toBe(`---\nkind: card\ntitle: Shown\n---\n${card('', 'YAZ-2')}`)
   })
 
   it('the help lists the flag on both commands and says not to hide the title in {{ }}', () => {
