@@ -24,6 +24,18 @@
 .milkdown .card {
   margin: 12px 0;
 }
+/* Settings › Review › Card width (YAZ-5144 rounds 1 and 3, Yaseen: "Shouldn't it also work on embeds, card embeds, on
+   actual pages as well as cards that are just on pages directly?"): ONE rule, from `--card-text-width`, with the card's
+   own sides (`.card__body`'s 16 px and the frame): a card in a page — written there or an embed, read or in Edit card —
+   and the card window's card, strips and mentions. In a page the card is a block: never wider than the column (its
+   `width`), at the column's left edge as the other blocks. Same as pages is the pages' step, so the card fills the
+   column. A card file's tab: its card, title, strips and mentions, at the column's left edge. The Inbox sets its own
+   column from the same variable, with its own sides (`cardScreens.css`). */
+.milkdown .card,
+.explore__body--card > :not(.find-bar-dock--page),
+.card-file__page > * {
+  max-width: calc(var(--card-text-width) + 34px);
+}
 .card.ProseMirror-selectednode {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
