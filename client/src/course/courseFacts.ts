@@ -13,7 +13,7 @@ export const WORDS_PER_MINUTE = 145
  * The course's length in minutes, from the script's words at `WORDS_PER_MINUTE`. A test (`courseFacts.test.ts`)
  * computes it from `COURSE` and fails when the script changed and this number did not.
  */
-export const COURSE_MINUTES = 28
+export const COURSE_MINUTES = 29
 
 /** Settings › Review › Card course: the row's hint. */
 export const COURSE_HINT = `About ${COURSE_MINUTES} minutes. Learn how cards work, and make your first ones.`
