@@ -1,8 +1,9 @@
 /**
  * CHAPTER 10, "Links: how cards connect" (YAZ-5121): the idea that changes how you organise. Folders (one thing, one
- * place; "where does this go?"); all cards in one open place; the mind as a web where light spreads along the links
+ * place; "where does this go?"); the app does not require folders, the choice is yours; our advice as a quiet frame,
+ * "Few folders. Many links." (YAZ-5329), and one folder made only when it is needed; the mind as a web where light spreads along the links
  * (Collins & Loftus 1975, on the page); a new idea that fits stays lit; two trees and the link a folder cannot show;
- * the protein card in Food and the muscle card in Exercise, the folders shut, a link across them; THE BIG FRAME:
+ * "what if" you sorted them: the protein card in Food and the muscle card in Exercise, the folders shut, a link across them; THE BIG FRAME:
  * "Folders ask: where does this go? Links ask: what does this connect to?"; the agent finds links and you approve each
  * one (handmade); the reason beside a link; by hand: `[[`, the list, the pill, Linked mentions; a hub; a base, not a
  * pile. The cues are `marks` in `script.ts`, from the real voice's word times.
@@ -24,16 +25,16 @@ const PAIR: { nodes: WebNode[]; edges: WebEdge[] } = {
   edges: [{ from: 'a', to: 'b', kind: 'link' }],
 }
 
-/** c10-01: the three habits step back; two cards, and a thin line drawn between them; why that beats folders. */
+/** c10-01: the four steps, each on its word; then two cards, and a thin line drawn between them; why that beats folders. */
 function Connect(props: SceneProps) {
   const b = useBeat(props)
   const how = cue(b, 0, 0.57)
   const beats = cue(b, 1, 0.86)
   const out = since(b, how - 0.06, 0.6)
   return (
-    <Stage beat={b} label="Make, review, tend; now, how cards connect, and why that beats folders">
+    <Stage beat={b} label="Capture, create, review, improve; now, how cards connect, and why that beats folders">
       <Layer style={{ opacity: 1 - out }}>
-        <Habits beat={b} show={[1, 1, 1]} lit={[since(b, 0.16, 0.4), since(b, 0.27, 0.4), since(b, 0.36, 0.4)]} />
+        <Habits beat={b} show={[1, 1, 1, 1]} lit={[0.17, 0.23, 0.34, 0.43].map((at) => since(b, at, 0.4))} />
       </Layer>
       <Layer style={{ opacity: out }}>
         <Web beat={b} nodes={PAIR.nodes} edges={PAIR.edges} show={{ a: since(b, how - 0.04, 0.5), b: since(b, how, 0.5), 'a>b': since(b, how + 0.06, 1) }} />
@@ -63,18 +64,20 @@ function OnePlace(props: SceneProps) {
   const hover = id === 'c10-03' ? since(b, 0.05, 0.6) : 0
   const sway = b.reduced ? 0 : Math.sin(b.t * 1.7) * 150
   const ask = id === 'c10-03' ? since(b, cue(b, 1, 0.61) - 0.05, 0.6) : 0
-  // c10-04: the folders go; one open box, and the cards all fall in.
-  const box = id === 'c10-04' ? since(b, 0.02, 0.6) : 0
-  const folders = id === 'c10-04' ? 1 - since(b, 0, 0.5) : 1
-  const fall = id === 'c10-04' ? cue(b, 0, 0.32) : 1
-  const atMost = id === 'c10-04' ? since(b, cue(b, 1, 0.65), 0.6) : 0
-  const pile = Array.from({ length: 9 }, (_, i) => ({ p: since(b, fall - 0.12 + i * 0.035, 0.6), dx: ((i * 37) % 9) / 4 - 1, tilt: ((i * 53) % 21) - 10 }))
+  // c10-04: the folders step aside; the cards can all lie in one open box; folders are not required; the choice is yours.
+  const aside = id === 'c10-04' ? moved(b, since(b, 0.02, 0.9)) : 0
+  const box = id === 'c10-04' ? since(b, 0.08, 0.6) : 0
+  const fall = id === 'c10-04' ? 0.14 : 1
+  const notRequired = id === 'c10-04' ? showFor(since(b, cue(b, 0, 0.492), 0.4), since(b, cue(b, 1, 0.723) - 0.04, 0.3)) : 0
+  const choice = id === 'c10-04' ? since(b, cue(b, 1, 0.723), 0.5) : 0
+  const pile = Array.from({ length: 9 }, (_, i) => ({ p: since(b, fall + i * 0.035, 0.6), dx: ((i * 37) % 9) / 4 - 1, tilt: ((i * 53) % 21) - 10 }))
+  const ASIDE_X = [318, 412, 506]
   return (
-    <Stage beat={b} label={id === 'c10-02' ? 'Files and folders: one thing, one place' : id === 'c10-03' ? 'A new card over three folders: where does this go?' : 'Cards can all live in one place, or one folder at most'}>
+    <Stage beat={b} label={id === 'c10-02' ? 'Files and folders: one thing, one place' : id === 'c10-03' ? 'A new card over three folders: where does this go?' : 'The app does not require folders: all your cards in one place, or in folders. The choice is yours'}>
       <Layer style={{ paddingBottom: '8%' }}>
         <svg className="kit-folders" viewBox="0 0 600 340" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
           {FOLDERS.map((f, i) => (
-            <Folder key={f.label} beat={b} x={f.x} y={150} label={f.label} p={(id === 'c10-02' ? since(b, i * 0.06, 0.5) : 1) * folders} card={i === 1 ? 'Meeting minutes' : undefined} cardIn={i === 1 ? drop : 0} shut={i === 1 ? shut : 0} />
+            <Folder key={f.label} beat={b} x={lerp(f.x, ASIDE_X[i], aside)} y={lerp(150, 168, aside)} scale={lerp(1, 0.56, aside)} label={f.label} p={id === 'c10-02' ? since(b, i * 0.06, 0.5) : 1} card={i === 1 ? 'Meeting minutes' : undefined} cardIn={i === 1 ? drop : 0} shut={i === 1 ? shut : 0} glow={choice} />
           ))}
           {hover > 0 && (
             <g transform={`translate(${(300 + sway * (1 - ask * 0.8) - 54).toFixed(2)} ${(40 + (b.reduced ? 0 : Math.sin(b.t * 3.1) * 5)).toFixed(2)})`} opacity={clamp(hover * 2)}>
@@ -89,7 +92,12 @@ function OnePlace(props: SceneProps) {
               </text>
             </g>
           )}
-          {box > 0 && <Folder beat={b} x={300 - 80 * 1.5} y={70} scale={1.5} label="Cards" p={box} pile={pile} />}
+          {box > 0 && <Folder beat={b} x={24} y={86} scale={1.45} label="Cards" p={box} pile={pile} glow={choice} />}
+          {box > 0 && (
+            <text className="kit-svg-label later-or" x={290} y={214} textAnchor="middle" opacity={box}>
+              or
+            </text>
+          )}
         </svg>
       </Layer>
       <Layer place="bottom">
@@ -103,11 +111,125 @@ function OnePlace(props: SceneProps) {
             Where does this go?
           </Words>
         )}
-        {id === 'c10-04' && (
-          <span className="kit-chip" style={pop(b, atMost)}>
-            One place, or one folder at most
+        {id === 'c10-04' && notRequired > 0 && (
+          <span className="kit-chip" style={pop(b, notRequired)}>
+            Folders: not required
           </span>
         )}
+        {id === 'c10-04' && (
+          <Words size="title" tone="accent" style={rise(b, choice)}>
+            Your choice.
+          </Words>
+        )}
+      </Layer>
+    </Stage>
+  )
+}
+
+/** The sidebar of c10-28: folders inside folders inside folders, all you could make. Made up. */
+const NESTED: readonly { name: string; depth: number }[] = [
+  { name: 'Food', depth: 0 },
+  { name: 'Breakfast', depth: 1 },
+  { name: 'Eggs', depth: 2 },
+  { name: 'Oats', depth: 2 },
+  { name: 'Lunch', depth: 1 },
+  { name: 'Snacks', depth: 1 },
+  { name: 'Exercise', depth: 0 },
+  { name: 'Gym', depth: 1 },
+  { name: 'Arms', depth: 2 },
+  { name: 'Legs', depth: 2 },
+  { name: 'Running', depth: 1 },
+  { name: 'Sleep', depth: 0 },
+  { name: 'Naps', depth: 1 },
+]
+
+/** A few cards, joined by links: the base the advice asks for (c10-29). */
+const LOOSE: { nodes: WebNode[]; edges: WebEdge[] } = {
+  nodes: [
+    { id: 'p', x: 170, y: 100, label: 'Protein', kind: 'card' },
+    { id: 'm', x: 430, y: 80, label: 'How muscle grows', kind: 'card' },
+    { id: 'c', x: 160, y: 260, label: 'Carbs', kind: 'card' },
+    { id: 's', x: 430, y: 250, label: 'Sleep debt adds up', kind: 'card' },
+  ],
+  edges: [
+    { from: 'p', to: 'm', kind: 'link' },
+    { from: 'p', to: 'c', kind: 'link' },
+    { from: 'm', to: 's', kind: 'link' },
+  ],
+}
+
+/** The advice, as a quiet frame: "Few folders. Many links." `few` and `many` bring each line in. */
+function Advice({ beat, few, many, small = false, kicker = 0 }: { beat: Beat; few: number; many: number; small?: boolean; kicker?: number }) {
+  return (
+    <div className={`later-advice${small ? ' later-advice--small' : ''}`}>
+      {!small && (
+        <Words size="kicker" style={{ opacity: kicker }}>
+          Our advice
+        </Words>
+      )}
+      <Words size={small ? 'label' : 'display'} style={rise(beat, few, 10)}>
+        Few folders.
+      </Words>
+      <Words size={small ? 'label' : 'display'} tone="accent" style={rise(beat, many, 10)}>
+        Many links.
+      </Words>
+    </div>
+  )
+}
+
+/**
+ * c10-28 and c10-29, one span (YAZ-5329). c10-28: with great power: folders inside folders fill a sidebar; then the
+ * quiet frame of our advice, "Few folders. Many links.", each line on its word. c10-29: the frame stays small at the top;
+ * a few cards joined by links; one folder is made, slowly and on purpose, only when it is truly needed.
+ */
+function FewFolders(props: SceneProps) {
+  const b = useBeat(props)
+  const id = props.clip.id
+  if (id === 'c10-29') {
+    const folder = cue(b, 0, 0.204)
+    const truly = cue(b, 1, 0.536)
+    const need = cue(b, 2, 0.663)
+    const draw = between(b, folder - 0.05, need)
+    const made = since(b, need, 0.5)
+    return (
+      <Stage beat={b} label="Make a folder only when you truly need one">
+        <Layer place="top">
+          <Advice beat={b} few={1} many={1} small />
+        </Layer>
+        <Layer style={{ paddingTop: '10%' }}>
+          <div className="kit-row later-onefolder">
+            <div className="later-onefolder__web">
+              <Web beat={b} nodes={LOOSE.nodes} edges={LOOSE.edges} />
+            </div>
+            <svg className="later-onefolder__art" viewBox="-10 -10 180 170" aria-hidden="true">
+              <rect className="later-onefolder__outline" x={4} y={12} width={152} height={130} rx={12} pathLength={1} strokeDasharray="1" strokeDashoffset={(1 - moved(b, draw, ease.linear)).toFixed(4)} opacity={1 - made} />
+              <Folder beat={b} x={0} y={0} label="Projects" p={made} glow={showFor(made, 0)} />
+            </svg>
+          </div>
+          <span className="kit-chip" style={pop(b, since(b, truly, 0.5))}>
+            Only when you need one
+          </span>
+        </Layer>
+      </Stage>
+    )
+  }
+  const power = cue(b, 0, 0.1)
+  const few = cue(b, 1, 0.657)
+  const links = cue(b, 2, 0.921)
+  const advice = since(b, 0.45, 0.6)
+  return (
+    <Stage beat={b} label="With great power comes great responsibility. Our advice: few folders, many links">
+      <Layer style={{ opacity: 1 - advice * 0.9 }}>
+        <AppWindow
+          sidebar={<SidebarPreview rows={NESTED.map((row, i) => ({ name: row.name, kind: 'folder', depth: row.depth, open: row.depth < 2 && NESTED[i + 1]?.depth > row.depth, p: since(b, power - 0.06 + i * 0.022, 0.25) }))} />}
+          label="A sidebar of folders inside folders"
+        />
+        <span className="kit-chip" style={pop(b, showFor(since(b, power + 0.05, 0.4), advice))}>
+          Any folders you like
+        </span>
+      </Layer>
+      <Layer style={{ opacity: advice }}>
+        <Advice beat={b} kicker={since(b, 0.47, 0.5)} few={since(b, few - 0.02, 0.5)} many={since(b, links - 0.03, 0.5)} />
       </Layer>
     </Stage>
   )
@@ -323,11 +445,12 @@ function AcrossTrees(props: SceneProps) {
   TREES.nodes.forEach((n, i) => (treeShow[n.id] = since(b, 0.02 + i * 0.035, 0.5)))
   TREES.edges.forEach((e, i) => (treeShow[`${e.from}>${e.to}`] = since(b, 0.06 + i * 0.04, 0.6)))
   treeShow['protein>muscle'] = across * lerp(1, 0.55, walls)
-  // c10-09 to c10-12: two folders.
-  const folders = at('c10-09') ? since(b, 0, 0.5) : at('c10-10') || at('c10-11') || at('c10-12') ? 1 : 0
-  const proteinIn = at('c10-09') ? since(b, cue(b, 0, 0.4), 0.9) : at('c10-10') || at('c10-11') || at('c10-12') ? 1 : 0
+  // c10-09 to c10-12: two folders, as a "what if" (YAZ-5329): say you did sort your cards into folders.
+  const folders = at('c10-09') ? since(b, 0.1, 0.5) : at('c10-10') || at('c10-11') || at('c10-12') ? 1 : 0
+  const whatIf = at('c10-09') ? since(b, cue(b, 0, 0.25), 0.5) : at('c10-10') || at('c10-12') ? 1 : 0
+  const proteinIn = at('c10-09') ? since(b, cue(b, 1, 0.698) - 0.06, 0.9) : at('c10-10') || at('c10-11') || at('c10-12') ? 1 : 0
   const muscleIn = at('c10-10') ? since(b, cue(b, 0, 0.28), 0.9) : at('c10-11') || at('c10-12') ? 1 : 0
-  const food = at('c10-09') ? showFor(since(b, cue(b, 2, 0.84), 0.4), 0) : 0
+  const food = at('c10-09') ? showFor(since(b, cue(b, 3, 0.886), 0.4), 0) : 0
   const exercise = at('c10-10') ? since(b, cue(b, 1, 0.82), 0.4) : 0
   const shut = at('c10-12') ? since(b, cue(b, 0, 0.22) - 0.1, 0.6) : at('c10-09') ? since(b, 0.7, 0.5) : at('c10-10') ? 1 : 0
   const shutB = at('c10-10') ? since(b, cue(b, 0, 0.28) + 0.12, 0.5) : at('c10-12') ? 1 : 0
@@ -340,7 +463,7 @@ function AcrossTrees(props: SceneProps) {
   const [bx, by] = cardTop(B)
   const j = b.reduced ? (join > 0 ? 1 : 0) : ease.inOut(join)
   return (
-    <Stage beat={b} label={at('c10-23') ? 'Ideas connect across trees, and a folder cannot show that' : at('c10-11') ? 'Your body builds muscle out of protein' : at('c10-12') ? 'The folders keep the two cards apart; a link joins them' : 'The protein card in Food; the muscle card in Exercise'}>
+    <Stage beat={b} label={at('c10-23') ? 'Ideas connect across trees, and a folder cannot show that' : at('c10-11') ? 'Your body builds muscle out of protein' : at('c10-12') ? 'What if: a card lives in only one folder, so the folders keep the two cards apart; a link joins them' : 'What if you sorted your cards into folders: the protein card in Food, the muscle card in Exercise'}>
       {trees > 0 && (
         <Layer>
           <Web beat={b} nodes={TREES.nodes} edges={[...TREES.edges, { from: 'protein', to: 'muscle', kind: 'link' }]} show={treeShow} lit={{ protein: across, muscle: across * (1 - walls) }} />
@@ -353,6 +476,7 @@ function AcrossTrees(props: SceneProps) {
       {folders > 0 && (
         <Layer style={{ opacity: folders * (1 - arm * 0.85), paddingBottom: '6%' }}>
           <svg className="kit-folders" viewBox="0 0 600 340" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            {whatIf > 0 && <rect className="later-whatif" x={34} y={92} width={532} height={226} rx={22} opacity={whatIf} />}
             <Folder beat={b} x={A.x} y={A.y} label="Food" card="Protein" cardIn={proteinIn} shut={shut} glow={food} />
             <Folder beat={b} x={B.x} y={B.y} label="Exercise" card="How muscle grows" cardIn={muscleIn} shut={shutB} glow={exercise} dim={at('c10-09') ? 0.5 : 0} />
             {apart > 0 && (
@@ -367,6 +491,11 @@ function AcrossTrees(props: SceneProps) {
       {arm > 0 && (
         <Layer style={{ opacity: arm }}>
           <Arm beat={b} lift={since(b, cue(b, 0, 0.44), 1.2)} blocks={since(b, cue(b, 1, 0.59), 1.6)} />
+        </Layer>
+      )}
+      {whatIf > 0 && (
+        <Layer place="top" style={{ opacity: whatIf * (1 - arm) }}>
+          <span className="kit-chip later-whatif__chip">What if you used folders?</span>
         </Layer>
       )}
       <Layer place="bottom">
@@ -786,6 +915,7 @@ export const LINKS_SCENES: ChapterScenes = {
   entries: [
     { clips: ['c10-01'], scene: Connect },
     { clips: ['c10-02', 'c10-03', 'c10-04'], scene: OnePlace },
+    { clips: ['c10-28', 'c10-29'], scene: FewFolders },
     { clips: ['c10-05'], scene: LinkHolds },
     { clips: ['c10-06', 'c10-07', 'c10-08'], scene: MindWeb },
     { clips: ['c10-23', 'c10-09', 'c10-10', 'c10-11', 'c10-12'], scene: AcrossTrees },

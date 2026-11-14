@@ -127,3 +127,63 @@
   width: min(84cqw, 30em);
   text-align: left;
 }
+
+/* The app leaves folders to you (c10-04); our advice (c10-28, c10-29); the "what if" of c10-09 to c10-12 (YAZ-5329). */
+.later-or {
+  fill: var(--fg-muted);
+}
+.later-whatif {
+  fill: color-mix(in srgb, var(--accent) 4%, transparent);
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 8 7;
+}
+.later-whatif__chip {
+  font-size: clamp(var(--kit-min-text), 2.3cqmin, 14px);
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+.later-advice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(4px, 1.4cqmin, 14px);
+  padding: clamp(14px, 5cqmin, 44px) clamp(18px, 7cqmin, 64px);
+  border: 1.5px solid var(--border);
+  border-radius: 18px;
+  background: var(--bg);
+  box-shadow: var(--kit-shadow);
+}
+.later-advice--small {
+  flex-direction: row;
+  gap: 0.5em;
+  padding: 6px 14px;
+  border-radius: 999px;
+  box-shadow: none;
+}
+.later-onefolder {
+  align-items: center;
+}
+.later-onefolder__web {
+  width: min(54cqw, 26em);
+}
+.later-onefolder__web .kit-web {
+  width: 100%;
+}
+.later-onefolder__art {
+  width: min(26cqw, 9em, 30cqh);
+  overflow: visible;
+}
+.later-onefolder__outline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+@container (max-aspect-ratio: 1/1) {
+  .later-onefolder__web {
+    width: min(90cqw, 24em);
+  }
+  .later-onefolder__art {
+    width: min(40cqw, 8em);
+  }
+}
