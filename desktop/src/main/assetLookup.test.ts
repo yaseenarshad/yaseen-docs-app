@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -28,6 +29,8 @@ const FILES = [
   'cc/.dot.png',
   'Pages/Page.md',
   'Pages/img/local.png',
+  'Pages/attach/a.png',
+  'attach/a.png',
   'img/local.png',
   'b/c/d/e.png',
   'a/z/e.png',
@@ -57,6 +60,9 @@ const TARGETS: [string, string?][] = [
   ['img/local.png'],
   ['e.png'],
   ['missing.png'],
+  ['deep/PIC.png'],
+  ['deep/pic.png', ''],
+  ['ATTACH/A.PNG', 'Pages'],
   ['aa'],
   [''],
 ]
@@ -75,6 +81,13 @@ describe('the asset lookup from a file list (YAZ-5068)', () => {
     expect(resolve('no-such-dir/shallow.png')).toBe('bb/shallow.png')
     expect(resolve('e.png')).toBe('a/z/e.png')
     expect(resolve('CASE.png')).toBe('zz/Case.PNG')
+  })
+
+  it('steps 1 and 2 ignore letter case, as the Mac`s disk does (checker, 2B1)', () => {
+    const r = makeAssetResolver(['pic.png', 'Deep/pic.png', 'Pages/attach/a.png', 'attach/a.png'])
+    expect(r('deep/PIC.png')).toBe('Deep/pic.png')
+    expect(r('deep/pic.png', '')).toBe('Deep/pic.png')
+    expect(r('ATTACH/A.PNG', 'Pages')).toBe('Pages/attach/a.png')
   })
 
   it('never finds a dot-entry or `node_modules`, never leaves the vault, and answers null for a miss', () => {
@@ -106,10 +119,12 @@ describe('the asset lookup from a file list (YAZ-5068)', () => {
       // The phone's list is the vault's files, as a tree listing gives them (dot-entries too: the rule skips them).
       const listed: string[] = []
       for await (const f of vaultFiles(root)) listed.push(path.relative(root, f.full).split(path.sep).join('/'))
+      const realRoot = realpathSync.native(root)
       const fromList = makeAssetResolver([...listed, '.obsidian/hidden.webp', 'node_modules/x/inmods.png', 'cc/.dot.png'])
       for (const [target, from] of TARGETS) {
         const onDisk = await resolveAsset(root, target, from)
-        const want = onDisk === null ? null : path.relative(root, onDisk).split(path.sep).join('/')
+        // The Mac answers the path as the link typed it; its disk ignores letter case. The real case names the file.
+        const want = onDisk === null ? null : path.relative(realRoot, realpathSync.native(onDisk)).split(path.sep).join('/')
         expect([target, from, fromList(target, from)]).toEqual([target, from, want])
       }
     })
