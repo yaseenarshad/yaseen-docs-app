@@ -171,17 +171,20 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
    * Applies `ops`. When storage is full, drops media (row P2) and tries again. EVERY write of the store goes through
    * here, not only `write()` (YAZ-5156): a full phone must never refuse the answer list while media can go.
    *
-   * - `bytes`: what a file write adds. The refused write proves that the real room is LESS than `bytes`, so an estimate
-   *   that says it fits is wrong and counts as 0 (YAZ-5157 round 2: `navigator.storage.estimate()` gives the browser's
-   *   quota, not the free disk). The store drops nothing when the room left plus all media that may go is less than
-   *   `bytes`. It never drops more than `bytes` of media (plus the last file it needed to pass that), and it stops at the
-   *   first write that still fails after that: a file that cannot fit costs at most its own size in media.
+   * After a refused write the store knows only one thing: the real room is less than the write. It does NOT use
+   * `navigator.storage.estimate()`: that gives the browser's quota, not the free disk, so it can be too high by any
+   * amount (YAZ-5157, rounds 2 and 3). So:
+   * - `bytes` (what a file write adds): the room left counts as 0. If all the media that may go is less than `bytes`,
+   *   the write cannot succeed, and nothing is dropped. Else the store drops ONE file, tries again, and goes on only while
+   *   the bytes dropped are less than the bytes the write adds: it drops only what the write needs, never more than
+   *   `bytes` plus the last file, and it stops when that was not enough.
+   * - A write that adds no bytes (a page rewritten at the same size) can still be refused by a disk that got fuller.
+   *   Row P2 keeps pages and lets media go, so it may drop one file (the least that can help) and try again.
    * - No `bytes` (phone-only state such as the answer list, checkpoints, `markViewed`): small, and they must land. The
    *   oldest media goes one file at a time until the write fits, or no media is left.
    */
   async function applyMakingRoom(ops: Op[], target: { vault: string; item: string; except?: FileRef; bytes?: number }): Promise<FileRef[]> {
     const dropped: FileRef[] = []
-    const full = () => new StorageFullError(target.vault, target.item, dropped)
     const tryApply = async (): Promise<boolean> => {
       try {
         await backend.apply(ops)
@@ -193,36 +196,17 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
     }
     if (await tryApply()) return dropped
     const media = await mediaToDrop(target.vault, target.except)
-    let freed = 0
-    const dropUntil = async (goal: number) => {
-      while (freed < goal && media.length > 0) {
-        const victim = media.shift()!
-        await backend.apply(dropOps(victim))
-        dropped.push({ vault: victim.vault, path: victim.path })
-        freed += victim.size
-      }
-    }
-
-    if (target.bytes === undefined) {
-      while (media.length > 0) {
-        await dropUntil(freed + 1)
-        if (await tryApply()) return dropped
-      }
-      throw full()
-    }
-
-    const bytes = target.bytes
-    const estimate = (await backend.room?.()) ?? 0
-    // The write was refused, so the room left is less than `bytes`; an estimate that says otherwise is wrong.
-    const free = estimate < bytes ? Math.max(0, estimate) : 0
     const evictable = media.reduce((sum, e) => sum + e.size, 0)
-    if (bytes > free + evictable) throw full()
-    // First on the estimate (a picture the estimate says is nearly there drops little), then on no room at all.
-    for (const goal of free > 0 ? [bytes - free, bytes] : [bytes]) {
-      await dropUntil(goal)
+    if (target.bytes !== undefined && target.bytes > evictable) throw new StorageFullError(target.vault, target.item, dropped)
+    const needed = target.bytes === undefined ? Infinity : Math.max(target.bytes, 1)
+    for (let freed = 0; freed < needed && media.length > 0; ) {
+      const victim = media.shift()!
+      await backend.apply(dropOps(victim))
+      dropped.push({ vault: victim.vault, path: victim.path })
+      freed += victim.size
       if (await tryApply()) return dropped
     }
-    throw full()
+    throw new StorageFullError(target.vault, target.item, dropped)
   }
 
   return {

@@ -78,12 +78,3 @@ describe('idbBackend: a database from a newer app (its schema number is higher)'
   })
 })
 
-describe('idbBackend: the room left (YAZ-5157)', () => {
-  it('is quota minus usage from navigator.storage.estimate(), or null when the browser cannot tell', async () => {
-    const estimate = (value: StorageEstimate) => ({ estimate: async () => value }) as unknown as StorageManager
-    const at = (storage: StorageManager | undefined) => idbBackend({ factory: new IDBFactory(), keyRange: IDBKeyRange, storage }).room!()
-    expect(await at(estimate({ quota: 1000, usage: 250 }))).toBe(750)
-    expect(await at(estimate({}))).toBeNull()
-    expect(await at(undefined)).toBeNull()
-  })
-})
