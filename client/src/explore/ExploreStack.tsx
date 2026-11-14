@@ -14,7 +14,7 @@
  * windows (round 6): a press on a layer behind brings it to the front (`frontOrder`); the keys and Esc go to the front one.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
-import { rootOfPath, type CommentsOrder, type OpenStat, type ZoomStep } from '@shared/types'
+import { rootOfPath, type CommentsOrder, type OpenStat, type PageView, type ZoomStep } from '@shared/types'
 import type { GestureAction } from '@shared/keys'
 import { stepZoomByKey } from '../editor/DocumentZoom'
 import type { LinkActions } from '../editor/linkMenu'
@@ -59,7 +59,7 @@ export interface ExploreStackProps {
   nameOf: (path: string) => string
   textVarsFor: (path: string) => CSSProperties
   /** `unlocked` (YAZ-4939): the layer's timed "Allow edits" runs, so the vault's Read only does not lock this editor. */
-  renderEditor: (path: string, openLink: (path: string) => void, unlocked: boolean) => ReactNode
+  renderEditor: (path: string, openLink: (path: string) => void, unlocked: boolean, start?: PageView) => ReactNode
   createFolder: (sourcePath: string) => string
   /** App's read-only door (YAZ-4985), for a reading layer's link to a missing page. */
   onFileAction?: (root: string) => Promise<boolean>

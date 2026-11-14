@@ -326,7 +326,7 @@ const PageWindowEditorProps = createContext<((path: string) => Omit<ComponentPro
  * The page window's editor: the editor a tab has, with all its parts (Properties, comments); memo, as a tab's is.
  * `openLink` (the explore stack, YAZ-2571): a link opened in this tab goes there instead; the other gestures keep their doors.
  */
-function PageWindowEditor({ path, openLink, unlocked = false }: { path: string; openLink?: (path: string) => void; unlocked?: boolean }) {
+function PageWindowEditor({ path, openLink, unlocked = false, startView }: { path: string; openLink?: (path: string) => void; unlocked?: boolean; startView?: PageView }) {
   const propsFor = useContext(PageWindowEditorProps)
   // An Explore layer's timed "Allow edits" (YAZ-4939): the vault's Read only does not lock this editor while it runs.
   const props = propsFor?.(path)
@@ -334,13 +334,13 @@ function PageWindowEditor({ path, openLink, unlocked = false }: { path: string; 
   const baseOpenLink = base?.onOpenLink
   const onOpenLink = useCallback((to: string, where?: GestureAction | 'explore') => (where === undefined || where === 'thisTab' || where === 'explore' ? openLink?.(to) : baseOpenLink?.(to, where)), [openLink, baseOpenLink])
   if (base === undefined) return null
-  return openLink === undefined ? <RetainedEditor {...base} path={path} /> : <RetainedEditor {...base} path={path} onOpenFile={openLink} onOpenLink={onOpenLink} />
+  return openLink === undefined ? <RetainedEditor {...base} path={path} /> : <RetainedEditor {...base} path={path} onOpenFile={openLink} onOpenLink={onOpenLink} startView={startView} />
 }
 
 /** `FolderHost.renderPageEditor` (YAZ-4547): one function, so it never renders a folder page again. */
 const renderPageEditor = (path: string) => <PageWindowEditor path={path} />
-/** The explore stack's editor (YAZ-2571): the same, with the stack's link door. */
-const renderExploreEditor = (path: string, openLink: (path: string) => void, unlocked: boolean) => <PageWindowEditor path={path} openLink={openLink} unlocked={unlocked} />
+/** The explore stack's editor (YAZ-2571): the same, with the stack's link door; it starts where the reading layer stood (YAZ-5164). */
+const renderExploreEditor = (path: string, openLink: (path: string) => void, unlocked: boolean, start?: PageView) => <PageWindowEditor path={path} openLink={openLink} unlocked={unlocked} startView={start} />
 
 /**
  * A new window's boot tab starts with the page view main gave it (YAZ-2951 D5), when that tab shows
