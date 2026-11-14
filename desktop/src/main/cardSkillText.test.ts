@@ -83,4 +83,16 @@ describe('the card skill pages (YAZ-5112)', () => {
     const start = await readFile(join(SKILL, 'Start here.md'), 'utf8')
     expect(start).toContain('The app replaces this copy on each update. Duplicate it to change it.')
   })
+
+  it('names the owner only in the placeholder line: the text is for anyone (YAZ-5140)', async () => {
+    const found: string[] = []
+    for (const page of await pages(SKILL)) {
+      const lines = (await readFile(page, 'utf8')).split('\n')
+      lines.forEach((line, i) => {
+        // The product's name ("Yaseen Docs") and the command (`yaseendocs`) are not the owner's.
+        if (i > 0 && /\bYaseen\b/.test(line.replace(/Yaseen Docs/g, ''))) found.push(`${relative(SKILL, page)}:${i + 1}: ${line}`)
+      })
+    }
+    expect(found).toEqual([])
+  })
 })
