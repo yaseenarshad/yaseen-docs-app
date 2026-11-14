@@ -10,6 +10,7 @@ import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { CardRecord } from '@shared/cardLine'
 import type { IndexRecord } from '@shared/types'
+import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { createCrepe, getMarkdownForSave, type CreateCrepeOptions } from '../createCrepe'
 import { createWikilinkCandidateSource } from '../wikilink/wikilinkPicker'
 import { createWikilinkResolveSource, type MutableWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
@@ -109,8 +110,8 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-async function mount(markdown: string, extra: Partial<CreateCrepeOptions> = {}) {
-  disk.files.set(CARD_FILE, cardFileText)
+async function mount(markdown: string, extra: Partial<CreateCrepeOptions> = {}, cardFile = cardFileText) {
+  disk.files.set(CARD_FILE, cardFile)
   disk.files.set(EUROPE, europeText)
   disk.reads.length = 0
   const root = document.createElement('div')
@@ -192,6 +193,31 @@ describe('the embed and its head (Q4, locked)', () => {
     await drawn()
     expect(boxes(root)).toHaveLength(1)
     expect(root.textContent).toContain('![[Plan]]')
+  })
+})
+
+describe('YAZ-5105 round 4: the Reviews strip in an embed, the same strip as the Inbox and the page card', () => {
+  const LINE = '<!-- card: GEO-140, 2026-11-01T09:00Z good, 2026-11-06T09:00Z again 12s -->'
+  it('a card with reviews shows THE strip (`CardReviews`) under its text, with its facts; a click opens the table; the delete writes the original; no door: no strip', async () => {
+    const deleteReview = vi.fn(async () => {})
+    const settings = () => DEFAULT_REVIEW_SETTINGS
+    const { root } = await mount('Plan\n\n![[GEO-140]]\n', { cardReviews: { settings, deleteReview }, wikilinks: vault(records({ cardFile: { mtime: 51 } })) }, cardFileText.replace('<!-- card: GEO-140 -->', LINE))
+    const box = boxes(root)[0]!
+    await vi.waitFor(() => expect(box.querySelector('.card-reviews .backlinks__title')?.textContent).toBe('2 Reviews'))
+    const strip = box.querySelector('.card-reviews')!
+    expect(strip.classList.contains('card-reviews--strip')).toBe(true)
+    expect(strip.parentElement?.previousElementSibling?.classList.contains('card__body')).toBe(true)
+    expect(box.querySelector('.card-reviews__facts')?.textContent).toMatch(/^Due /)
+    ;(box.querySelector('.card-reviews__toggle') as HTMLButtonElement).click()
+    await vi.waitFor(() => expect(box.querySelectorAll('.card-reviews__table tbody tr')).toHaveLength(3))
+    // A press in the strip never selects the embed; the delete asks, then writes the ORIGINAL through the vault's door.
+    box.querySelectorAll<HTMLButtonElement>('.card-reviews__delete')[1].click()
+    await vi.waitFor(() => expect(document.querySelector('.confirm')).not.toBeNull())
+    ;[...document.querySelectorAll<HTMLButtonElement>('.confirm button')].find((b) => b.textContent === 'Remove review')!.click()
+    await vi.waitFor(() => expect(deleteReview).toHaveBeenCalledWith(CARD_FILE, 'GEO-140', { at: '2026-11-06T09:00Z', rating: 'again', seconds: 12 }))
+    const plain = await mount('Plan\n\n![[GEO-140]]\n')
+    await tick(10)
+    expect(boxes(plain.root)[0]!.querySelector('.card-reviews')).toBeNull()
   })
 })
 

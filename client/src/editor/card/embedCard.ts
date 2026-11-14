@@ -28,6 +28,8 @@ export interface CardEmbedDoors {
   /** A Markdown link's open in the card. Absent → nothing. */
   openHref?: (href: string) => void
   onNotice?: (message: string) => void
+  /** The vault's card review (YAZ-5105 round 4): the Reviews strip under a card with reviews. Absent (a hover preview): none. */
+  reviews?: import('./cardBlockView').CardReviewDoorApi
   /** "Put back into this page" (YAZ-5037 phase 5): the page's convert door (`CardConvertDoor.putBack`). Absent → not offered. */
   putBack?: (card: { id: string; path: string }, inner: string, nth: number) => void
 }

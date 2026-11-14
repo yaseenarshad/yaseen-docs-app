@@ -22,6 +22,10 @@
  *  - MISSING: an ID of this vault that names nothing (`missingId`) says "Missing card · GEO-140", quietly. A pill keeps
  *    its own look ("Missing page · …").
  *
+ *  - REVIEWS (YAZ-5105 round 4): a card with reviews has THE Reviews strip under its text, as a card in a page has it
+ *    (`reviewsStrip.ts`: the Inbox's own `CardReviews`), with the card's facts on its right; closed until asked for.
+ *    Its delete writes the ORIGINAL file through the vault's door (`doors.reviews`). No door (a hover preview): none.
+ *
  * Not here: an embed inside a card (card-in-card is off in the card editor; a card's own render keeps `![[…]]` as text).
  */
 import { withCardOff } from '@shared/cardLine'
@@ -39,6 +43,8 @@ import { embedCard, recordAt, type CardEmbedHandle, type CardEmbedHost } from '.
 import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from './cardMedia'
 import { openCardWindow } from './cardOpen'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard } from './cardRender'
+import type { CardReviewDoorApi } from './cardBlockView'
+import { mountReviewsStrip, type ReviewsStripHandle } from './reviewsStrip'
 import { pathUnit } from '../../vault/unitWord'
 import './cardEmbed.css'
 
@@ -187,6 +193,9 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   let stopWatch: (() => void) | null = null
   let closeMenu: (() => void) | null = null
   let edit: { editor: CardEditor; mount: HTMLElement; keys: HTMLElement; base: CardAtPage } | null = null
+  /** The Reviews strip (YAZ-5105 round 4), while the card read has reviews; open or closed is this box's. */
+  let strip: ReviewsStripHandle | null = null
+  let stripOpen = false
 
   const off = (c: CardLink): boolean => read?.id === c.id ? read.off : recordAt(source.records, c.path)?.cards?.[c.index]?.off === true
 
@@ -194,6 +203,8 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   const draw = (): void => {
     if (card === null) {
       closeMenu?.()
+      strip?.destroy()
+      strip = null
       dom.className = 'card-embed card-embed--missing'
       dom.replaceChildren(`Missing card · ${missingId(host.target, source) ?? host.target}`)
       return
@@ -215,6 +226,32 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   const paint = (): void => {
     if (card === null || edit !== null) return
     body.replaceChildren(read === null ? '' : renderCard(read.text, {}, doors.look(card.path)))
+    drawReviews()
+  }
+
+  /** The Reviews strip under the card's text, for the card as read: none with no reviews or no door. */
+  const drawReviews = (): void => {
+    const door: CardReviewDoorApi | undefined = doors.reviews
+    const c = read
+    if (door === undefined || c === null || c.reviews.length === 0 || card === null) {
+      strip?.destroy()
+      strip = null
+      return
+    }
+    strip ??= mountReviewsStrip()
+    if (strip.dom.parentNode !== dom) body.after(strip.dom)
+    const id = c.id
+    strip.render({
+      reviews: c.reviews,
+      settings: door.settings(),
+      onDelete: id === null ? undefined : (review) => void door.deleteReview(c.path, id, review),
+      open: stripOpen,
+      onToggle: () => {
+        stripOpen = !stripOpen
+        drawReviews()
+      },
+      facts: true,
+    })
   }
 
   /** The card read from its file, once near the screen, again only for a new version of that file. */
@@ -306,6 +343,8 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     const target = event.target instanceof Element ? event.target : null
     // The card editor's own presses.
     if (target === null || event.button !== 0 || edit?.mount.contains(target) === true) return
+    // The Reviews strip is React's (its toggle, its table): a press in it never selects the embed.
+    if (strip?.dom.contains(target) === true) return
     const c = card
     if (c === null) return
     if (target.closest('.card__more') !== null) {
@@ -394,6 +433,8 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
       closeMenu?.()
       edit?.editor.destroy()
       edit = null
+      strip?.destroy()
+      strip = null
       boxes.delete(dom)
     },
   }

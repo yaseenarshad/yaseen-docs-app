@@ -230,3 +230,17 @@ it('YAZ-5103: the line between two sides carries a quiet "Side 2", "Side 3" in t
   const screens = read('../../review/cardScreens.css')
   expect(rules(screens, '.card-inbox__card .card__rule::before').some((r) => /content:\s*none/.test(r.body))).toBe(true)
 })
+
+it('YAZ-5105 round 4: ONE Reviews strip — card.css holds none of its rules; cardScreens.css draws it a step darker than the side colour, in the page too (over Crepe`s reset)', () => {
+  const screens = read('../../review/cardScreens.css')
+  expect(rules(cardCss, '.card-reviews')).toEqual([])
+  const tokens = rules(screens, '.card-reviews').find((r) => r.selector === '.card-reviews')!
+  expect(tokens.body).toMatch(/--strip-fill:\s*color-mix\(in srgb, var\(--fg\) 6%, var\(--bg-side\)\)/)
+  const strip = rules(screens, '.card-reviews--strip').find((r) => r.selector === '.card-reviews--strip')!
+  expect(strip.body).toMatch(/background:\s*var\(--strip-fill\)/)
+  expect(strip.body).toMatch(/border:\s*1px solid var\(--strip-edge\)/)
+  // In a page's card (inside `.milkdown`), the strip's own spacing weighs more than the reset.
+  const inCard = rules(screens, '.card > .card__reviews > .card-reviews--strip')[0]!
+  expect(inCard.body).toMatch(/padding:\s*12px 8px 0/)
+  expect(beats(specificity(inCard.selector), [0, 1, 0])).toBe(true)
+})
