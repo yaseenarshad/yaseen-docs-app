@@ -17,6 +17,8 @@ import { useReviewSettings } from '../review/useReviewSettings'
 import { createCardFile } from '../review/newCardFile'
 import { cardFileName } from '@shared/cardFileFormat'
 import { listenTour } from '../course/tourBus'
+import { createWikilinkCandidateSource, WIKILINK_PICKER_CLASS } from './wikilink/wikilinkPicker'
+import { nameCandidate } from '../links/completion'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -102,7 +104,7 @@ afterEach(() => {
   el?.remove()
 })
 
-async function mount(content: string, opts: { readOnly?: boolean; review?: boolean; path?: string; allow?: boolean } = {}) {
+async function mount(content: string, opts: { readOnly?: boolean; review?: boolean; path?: string; allow?: boolean; candidates?: ReturnType<typeof createWikilinkCandidateSource> } = {}) {
   const path = opts.path ?? PATH
   disk.files.set(path, content)
   if (opts.review === false) disk.review = { enabled: false }
@@ -120,7 +122,7 @@ async function mount(content: string, opts: { readOnly?: boolean; review?: boole
     root?.render(
       <VaultReadOnly.Provider value={{ on: opts.readOnly === true, allowFileAction }}>
         <ReviewScope />
-        <CardFileView file={file} root={ROOT} wikilinks={wikilinks} onOpenFile={onOpenFile} onNotice={onNotice} onPage={onPage} onRetitle={onRetitle} onReread={onReread} />
+        <CardFileView file={file} root={ROOT} wikilinks={wikilinks} wikilinkCandidates={opts.candidates} onOpenFile={onOpenFile} onNotice={onNotice} onPage={onPage} onRetitle={onRetitle} onReread={onReread} />
       </VaultReadOnly.Provider>,
     ),
   )
@@ -598,5 +600,22 @@ describe('the convert actions (YAZ-5037 phase 5)', () => {
     act(() => wikilinks.update(() => null, records(1), [], false, []))
     await mount(many)
     expect(fixes()).toEqual([])
+  })
+})
+
+describe('[[ in Edit card on a card file (YAZ-5185)', () => {
+  it('lists the vault\'s pages and cards, as in a page, not only "Create"', async () => {
+    const candidates = createWikilinkCandidateSource()
+    candidates.update([nameCandidate('Europe'), { name: 'Estar', insert: 'WIKI-12', label: 'Estar', lower: 'estar', card: true }])
+    await mount(FILE, { candidates })
+    act(() => editButton()!.click())
+    const dom = await cardEditor()
+    const view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
+    act(() => view.dispatch(view.state.tr.insertText('[[', view.state.doc.content.size - 1)))
+    act(() => view.dispatch(view.state.tr.insertText('e')))
+    const rows = () => [...document.querySelectorAll(`.${WIKILINK_PICKER_CLASS} [role="option"]`)].map((o) => o.textContent ?? '')
+    await vi.waitFor(() => expect(rows()).toContain('Europe'))
+    expect(rows().some((r) => r.includes('Estar'))).toBe(true)
+    document.querySelectorAll(`.${WIKILINK_PICKER_CLASS}`).forEach((p) => p.remove())
   })
 })

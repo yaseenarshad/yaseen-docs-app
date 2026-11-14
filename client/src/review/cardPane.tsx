@@ -175,6 +175,8 @@ function CardPaneEditor({ text, path, vault, onDone, select }: { text: string; p
       defaultValue: `${cardBlock(text, EMPTY_CARD_LINE)}\n`,
       features: CARD_EDIT_FEATURES,
       wikilinks: vault.wikilinks,
+      // The `[[` picker's pages and cards, as in a page (YAZ-5185): without it the picker had only "Create".
+      wikilinkCandidates: vault.wikilinkCandidates,
       viewOnlyLinks: vault.viewOnlyLinks,
       image: { root: vault.root, pagePath: path },
       cards: { path, onEditDone: (t) => doneRef.current(t) },
