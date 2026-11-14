@@ -12,13 +12,19 @@ import { cleanToken, isBranchName, parseRepo } from './input'
  * 3. `GET …/branches/{branch}`: the branch is there.
  * 3b. `GET …/contents/.yaseendocs?ref={branch}`: the repo has a vault at its top (round 16: a vault is the
  *    whole repo; no vault in a subfolder).
- * 4. Write probe: `POST …/git/blobs` with an empty body. GitHub checks the permission first: 403 means no write;
- *    422 (the body is wrong) means the token may write. Nothing is created. `permissions.push` of step 2 is the
- *    user's role, not the token's, so it cannot answer this.
- * 5. Gists probe (decision 17): `POST /gists` with no files, the same way (403 no, 422 yes). A classic token says
- *    its scopes in `X-OAuth-Scopes` instead. If this step fails, sign-in still works (`gists: 'unknown'`).
- * Proofs 1B and 1C confirm the probe status codes on the real API.
+ * 4. Write probe: `POST …/git/blobs` with `WRITE_PROBE`, a VALID body: 201 means the token may write, 403 or 404
+ *    means it may not. The body is valid, so the answer does not depend on GitHub's order of checks (permission
+ *    first, or body first: not proven). The blob is the same bytes each time, so git stores it once; no file,
+ *    commit or branch changes (proof 1B). `permissions.push` of step 2 is the user's role, not the token's, so it
+ *    cannot answer this.
+ * 5. Gists probe (decision 17): `POST /gists` with no files: 403 no, 422 yes. It creates nothing. If GitHub checks
+ *    the body first, a token with no Gists permission gets 422 too, and this says "yes" by mistake; then the first
+ *    gist write gets `READ_ONLY`, and the friends sender calls `recordGistsRefused` (friends.ts). A classic token
+ *    says its scopes in `X-OAuth-Scopes` instead. If this step fails, sign-in still works (`gists: 'unknown'`).
  */
+
+/** The write probe's blob: always these bytes, so GitHub keeps one copy for each repo. */
+export const WRITE_PROBE = 'Notecards checks that this token may write to this repo. This blob is in no commit.\n'
 
 export interface SignInInput {
   /** `owner/name`, or the repo's GitHub address. */
@@ -109,8 +115,12 @@ export async function checkSignIn(input: SignInInput, deps: CheckDeps = {}): Pro
     if (!Array.isArray(top)) return fail({ kind: 'no-vault', repo, branch })
 
     if (info.archived === true) return fail({ kind: 'read-only', repo })
-    const write = await client.request(repoPath(repo, 'git', 'blobs'), { method: 'POST', body: {}, allow: [403, 404, 422] })
-    if (write.status !== 422) return fail({ kind: 'read-only', repo })
+    const write = await client.request(repoPath(repo, 'git', 'blobs'), {
+      method: 'POST',
+      body: { content: WRITE_PROBE, encoding: 'utf-8' },
+      allow: [403, 404],
+    })
+    if (write.status === 403 || write.status === 404) return fail({ kind: 'read-only', repo })
 
     const account: VaultAccount = {
       login: u.login,

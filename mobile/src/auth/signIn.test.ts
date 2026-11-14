@@ -6,7 +6,8 @@ import { tokenStoreOn, type TokenStore } from '../store/tokenStore'
 import { PHONE, openVaultStore, type VaultStore } from '../store/vaultStore'
 import { loadVaultList } from '../store/vaults'
 import { loadAccount } from './account'
-import { checkSignIn, signInMessage, type SignInError } from './check'
+import { WRITE_PROBE, checkSignIn, signInMessage, type SignInError } from './check'
+import { loadFriendsAccount, recordGistsRefused } from './friends'
 import { forgetVaultAndToken, signIn, signInAgain, signOutAndErase, startState, type SignInDeps } from './signIn'
 
 const NOW = Date.UTC(2026, 10, 13, 12)
@@ -34,14 +35,14 @@ beforeEach(async () => {
       [READ_ONLY]: { login: 'yaseen', repos: { 'yaseen/vault': 'read' }, gists: true },
       [OTHER_REPO]: { login: 'yaseen', repos: { 'yaseen/other': 'write' }, gists: true },
       [CLASSIC]: { login: 'yaseen', kind: 'classic', repos: { 'yaseen/vault': 'write' }, gists: true },
-      [WORK]: { login: 'yaseen-work', repos: { 'acme/notes': 'write' }, gists: true },
+      [WORK]: { login: 'yaseen-work', repos: { 'acme/pages': 'write' }, gists: true },
     },
     repos: [
       { fullName: 'yaseen/vault', branches: ['main', 'phone'] },
       { fullName: 'yaseen/second' },
       { fullName: 'yaseen/other' },
-      { fullName: 'yaseen/public-notes', private: false },
-      { fullName: 'acme/notes' },
+      { fullName: 'yaseen/public-pages', private: false },
+      { fullName: 'acme/pages' },
       { fullName: 'yaseen/old', archived: true },
       { fullName: 'yaseen/code', vault: false },
     ],
@@ -113,9 +114,11 @@ describe('a good token', () => {
     expect(await startState(store, tokens)).toEqual({ kind: 'ready', vault: 'yaseen/vault@main' })
   })
 
-  it('the probes create nothing on GitHub: each sends a body that GitHub refuses (422)', async () => {
+  it('the write probe stores one fixed blob, the same bytes each time (it changes no file); the Gists probe creates nothing', async () => {
     await signIn({ repo: 'yaseen/vault', token: GOOD }, deps)
-    expect(github.answers.filter((a) => a.includes('"sha":"b10b"') || a.includes('"id":"g1"'))).toEqual([])
+    await signIn({ repo: 'yaseen/vault', branch: 'phone', token: GOOD }, deps)
+    expect([...github.blobs]).toEqual([`yaseen/vault:${WRITE_PROBE}`])
+    expect(github.answers.some((a) => a.includes('"id":"g1"'))).toBe(false)
   })
 
   it('takes a given branch', async () => {
@@ -201,7 +204,7 @@ describe('new row: the token has only read access', () => {
   })
 
   it("a public repo that is not in the token's list: it can be read, but not written", async () => {
-    await failsWith({ repo: 'yaseen/public-notes', token: GOOD }, { kind: 'read-only', repo: 'yaseen/public-notes' })
+    await failsWith({ repo: 'yaseen/public-pages', token: GOOD }, { kind: 'read-only', repo: 'yaseen/public-pages' })
   })
 
   it('an archived repo is read-only', async () => {
@@ -218,6 +221,32 @@ describe('new row: the token has only read access', () => {
     const error = await client.request('/repos/yaseen/vault/git/blobs', { method: 'POST', body: { content: 'x', encoding: 'utf-8' } }).catch((e: unknown) => e)
     expect(error).toBeInstanceOf(GithubError)
     expect((error as GithubError).code).toBe('READ_ONLY')
+  })
+})
+
+describe("GitHub's order of checks for a write is not proven (403 before 422, or the body first)", () => {
+  it('the write check does not depend on it: a read-only token is read-only in either order', async () => {
+    github.bodyFirst = true
+    await failsWith({ repo: 'yaseen/vault', token: READ_ONLY }, { kind: 'read-only', repo: 'yaseen/vault' })
+    expect(await signIn({ repo: 'yaseen/vault', token: GOOD }, deps)).toMatchObject({ ok: true })
+  })
+
+  it('permission first: a token with no Gists permission is "no" at sign-in', async () => {
+    expect(await signIn({ repo: 'yaseen/vault', token: NO_GISTS }, deps)).toMatchObject({ ok: true, account: { gists: 'no' } })
+  })
+
+  it('body first: the Gists probe says "yes" by mistake; the first refused gist write sets "no", and Friends says so', async () => {
+    github.bodyFirst = true
+    expect(await signIn({ repo: 'yaseen/vault', token: NO_GISTS }, deps)).toMatchObject({ ok: true, account: { gists: 'yes' } })
+    expect(await loadFriendsAccount(store)).toMatchObject({ kind: 'ok' })
+    // The friends sender (4E) writes its gist and gets 403: READ_ONLY on a write.
+    const refused = await githubClient(NO_GISTS, { fetch: github.fetch })
+      .request('/gists', { method: 'POST', body: { public: false, files: { 'notecards-friends.json': { content: '{}' } } } })
+      .catch((e: unknown) => e as GithubError)
+    expect((refused as GithubError).code).toBe('READ_ONLY')
+    await recordGistsRefused(store, 'yaseen/vault@main')
+    expect(await loadAccount(store, 'yaseen/vault@main')).toMatchObject({ gists: 'no' })
+    expect(await loadFriendsAccount(store)).toEqual({ kind: 'no-gists', logins: ['yaseen'] })
   })
 })
 
@@ -294,12 +323,12 @@ describe('N6: the token is cancelled while in use', () => {
 describe('N7: sign out and erase this phone', () => {
   it('removes every token and every stored file, checkpoint and state', async () => {
     await signIn({ repo: 'yaseen/vault', token: GOOD }, deps)
-    await signIn({ repo: 'acme/notes', token: WORK }, deps)
+    await signIn({ repo: 'acme/pages', token: WORK }, deps)
     await store.write('yaseen/vault@main', 'Page.md', '# Page')
     await store.setCheckpoint('yaseen/vault@main', { commit: 'c', etag: null, shas: {} })
     await signOutAndErase(store, tokens)
     expect(await tokens.read('yaseen/vault@main')).toBeNull()
-    expect(await tokens.read('acme/notes@main')).toBeNull()
+    expect(await tokens.read('acme/pages@main')).toBeNull()
     expect(await store.list('yaseen/vault@main')).toEqual([])
     expect(await store.checkpoint('yaseen/vault@main')).toBeNull()
     expect(await store.getState(PHONE, 'vaults')).toBeUndefined()

@@ -66,7 +66,7 @@ mobile/
       client.ts         `githubClient`: the ONE way to call GitHub; api.github.com only; typed `GithubError`s
       testing.ts        test help: `fakeGithub`, a fake API behind `fetch` (no test calls the real one)
     auth/               the sign-in logic, no screens (3E)
-      check.ts          the check on save: `GET /user`, the repo, the branch, `.yaseendocs` at the top, a write probe, a Gists probe
+      check.ts          the check on save: `GET /user`, the repo, the branch, `.yaseendocs` at the top, a write probe (one fixed blob), a Gists probe
       signIn.ts         `startState`, `signIn`, `signInAgain`, `forgetVaultAndToken`, `signOutAndErase`
       account.ts        what the check learned (login, name, avatar, Gists, end date), kept with the vault
       friends.ts        which account acts for friends, and its two alerts
