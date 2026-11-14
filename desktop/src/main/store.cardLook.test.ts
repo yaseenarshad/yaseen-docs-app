@@ -39,6 +39,19 @@ const CARD_LOOK: { [K in keyof SettingsState]?: readonly SettingsState[K][] } = 
 }
 const CASES = Object.entries(CARD_LOOK).flatMap(([key, vals]) => (vals as unknown[]).map((value) => [key, value] as const))
 
+describe('YAZ-5136 round 2: Settings › Tables › Table position', () => {
+  it('is Left by default; Left and Centre pass the door and read back; anything else does not', async () => {
+    expect(DEFAULT_SETTINGS.tablePosition).toBe('left')
+    for (const tablePosition of ['left', 'center'] as const) {
+      const store = createStore(file)
+      store.setSettings({ ...DEFAULT_SETTINGS, tablePosition })
+      await store.flush()
+      expect(createStore(file).get().settings.tablePosition).toBe(tablePosition)
+    }
+    for (const tablePosition of ['right', 'centre', null]) expect(isSettings({ ...DEFAULT_SETTINGS, tablePosition })).toBe(false)
+  })
+})
+
 describe('YAZ-5053 round 4: each Card look setting is saved and reads back', () => {
   it('YAZ-5144 round 2: a Card width out of range, not whole, or one of round 1\'s steps does not pass the door', () => {
     for (const cardWidth of [CARD_WIDTH_MIN - 1, CARD_WIDTH_MAX + 1, 640.5, 'narrow', 'pages', '640'])

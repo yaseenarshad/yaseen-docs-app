@@ -98,6 +98,7 @@ describe('settingCandidates', () => {
       'tableStickyHeader',
       'tableStickySubheaders',
       'tableWidth',
+      'tablePosition',
       // Text in cells (YAZ-4900).
       'tableTextInCells',
       'tableNewStyle',
