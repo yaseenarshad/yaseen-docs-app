@@ -23,10 +23,15 @@ export type FetchLike = (url: string, init: RequestInit) => Promise<Response>
  * - `OFFLINE`: no answer at all (N1, N2).
  * - `GITHUB_DOWN`: a 5xx answer (N5).
  * - `UNEXPECTED`: any other status, with GitHub's message in `said`.
- * 3B adds its own codes to this list (`STALE_HEAD`: 422 "Update is not a fast forward"; `TREE_TRUNCATED`).
+ * - `STALE_HEAD` (3B, `GithubRemote.commit`): the branch moved past the commit's parent. The ref `PATCH` with
+ *   `force: false` answered 422 "Update is not a fast forward" (proof 1B). Read the head again and repeat (3C).
+ * - `TREE_TRUNCATED` (3B, `GithubRemote.tree`): GitHub cut the recursive file list short (row F6).
  * Real codes (proof 1B): a bad token 401; a wrong repo, a wrong branch, a private repo with no access 404.
  */
-export type GithubErrorCode = 'UNAUTHORIZED' | 'NO_ACCESS' | 'READ_ONLY' | 'NOT_FOUND' | 'RATE_LIMITED' | 'OFFLINE' | 'GITHUB_DOWN' | 'UNEXPECTED'
+export type GithubErrorCode = 'UNAUTHORIZED' | 'NO_ACCESS' | 'READ_ONLY' | 'NOT_FOUND' | 'RATE_LIMITED' | 'OFFLINE' | 'GITHUB_DOWN' | 'UNEXPECTED' | 'STALE_HEAD' | 'TREE_TRUNCATED'
+
+/** GitHub's advice for its secondary limit when the answer has no `Retry-After`: wait at least one minute. */
+export const SECONDARY_LIMIT_WAIT_MS = 60_000
 
 /**
  * GitHub's count for one resource, from the `x-ratelimit-*` headers (all of them are visible to a web page).
@@ -199,7 +204,10 @@ function failure(response: Response, method: Method, said: string, now: number, 
     const reset = Number(headers.get('x-ratelimit-reset'))
     return make('RATE_LIMITED', Number.isFinite(reset) && reset > 0 ? reset * 1000 : null)
   }
-  if (status === 429) return make('RATE_LIMITED')
+  // GitHub's secondary limit ("slow down", round 10 item 20) can come with no Retry-After and with requests left. It is
+  // not a missing permission: wait one minute, as GitHub advises, instead of reading it as NO_ACCESS or READ_ONLY.
+  if ((status === 403 || status === 429) && /secondary rate limit|abuse detection/i.test(said)) return make('RATE_LIMITED', now + SECONDARY_LIMIT_WAIT_MS)
+  if (status === 429) return make('RATE_LIMITED', now + SECONDARY_LIMIT_WAIT_MS)
   if (status === 401) return make('UNAUTHORIZED')
   if (status === 403) return make(method === 'GET' ? 'NO_ACCESS' : 'READ_ONLY')
   if (status === 404) return make('NOT_FOUND')
