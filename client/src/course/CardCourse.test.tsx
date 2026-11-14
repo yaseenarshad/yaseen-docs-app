@@ -9,6 +9,10 @@ import { memoryVoice } from './courseVoice'
 import type { CourseTour } from './courseTour'
 import { TOUR_COMING_NEXT } from './courseTour'
 import { useEscapeLast } from '../lib/escapeOrder'
+import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
+import type { CourseHost, CourseVault } from './courseHost'
+import { SHOW_ONLY } from './courseCards'
+import type { SceneProps } from './scene'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -238,5 +242,24 @@ describe('the course layer (YAZ-5120)', () => {
     expect(caption()).toBe('Chapter 1 done. Next: Second.')
     act(() => [...document.querySelectorAll<HTMLButtonElement>('.course__end-actions button')].find((b) => b.textContent === 'Next chapter')!.click())
     expect(v.started).toEqual(['a', 'b'])
+  })
+})
+
+describe('the course host (YAZ-5124)', () => {
+  it('with a vault view and no host, each scene gets the real host of that vault; without one, the host that only shows', () => {
+    const seen: CourseHost[] = []
+    const Scene = ({ host }: SceneProps) => (seen.push(host), null)
+    const courseVault: CourseVault = {
+      root: '/demo',
+      index: { records: [], folders: [], ids: true, subscribe: () => () => undefined },
+      ready: () => true,
+      readOnly: () => true,
+      review: () => ({ ready: true, on: true, settings: DEFAULT_REVIEW_SETTINGS }),
+      cardSkill: null,
+    }
+    mount({ courseVault, scenes: () => Scene })
+    expect(seen.at(-1)?.vault).toBe('/demo')
+    expect(seen.at(-1)?.summary()).toEqual({ folder: null, cards: [] })
+    return seen.at(-1)!.courseCards().then((at) => expect(at).toEqual({ showOnly: SHOW_ONLY.readOnly }))
   })
 })

@@ -16,6 +16,16 @@ describe('AppState.course (YAZ-5120)', () => {
     expect(cleanCourseState({ chapter: 'a'.repeat(65) }).chapter).toBe('')
   })
 
+  it('made (YAZ-5124): one record per vault, absolute paths only; a bad record is dropped whole', () => {
+    const good = { vault: '/v', folder: '/v/course-cards', cards: ['/v/course-cards/a-tst-2.md', '/v/course-cards/a-tst-2.md'], page: null }
+    expect(cleanCourseState({ made: [good, { ...good, folder: '/v/other' }, { vault: 'v', folder: '/v/x', cards: [], page: null }, { ...good, vault: '/w', cards: ['rel.md'] }] }).made).toEqual([
+      { ...good, cards: ['/v/course-cards/a-tst-2.md'] },
+    ])
+    expect(cleanCourseState({ made: 'x' }).made).toEqual([])
+    const s = defaultCourseState()
+    expect(applyCoursePatch(s, { made: [] })).toBe(s)
+  })
+
   it('applyCoursePatch: the same object when nothing changed, else the new state', () => {
     const s = defaultCourseState()
     expect(applyCoursePatch(s, { muted: false })).toBe(s)

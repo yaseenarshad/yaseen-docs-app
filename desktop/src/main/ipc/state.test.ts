@@ -315,6 +315,17 @@ describe('state:set-course (YAZ-5120)', () => {
     }
     expect(store.get().course).toBe(before)
   })
+
+  it('takes what the course made (YAZ-5124): absolute paths, one record per vault; a bad record rejects the call', async () => {
+    const set = registered(CONTRACT.state.setCourse.channel)
+    const made = [{ vault: '/v', folder: '/v/course-cards', cards: ['/v/course-cards/a-tst-2.md'], page: '/v/course-cards/course-page-tst-3.md' }]
+    expect(await set({ sender }, { made })).toEqual(ok(undefined))
+    expect(store.get().course.made).toEqual(made)
+    for (const bad_ of [{ made: [{ ...made[0], cards: ['a.md'] }] }, { made: [made[0], made[0]] }, { made: [{ vault: '/v' }] }]) {
+      expect(await set({ sender }, bad_)).toEqual(bad('BAD_REQUEST'))
+    }
+    expect(store.get().course.made).toEqual(made)
+  })
 })
 
 describe('state:set-tab-canvas (YAZ-3343 D1)', () => {
