@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import type { ZoomStep } from '@shared/types'
 
 const PRESETS = [50, 75, 90, 100, 125, 150, 200, 300, 400]
 
@@ -19,6 +20,31 @@ export const stepZoomByKey = (value: number, direction: 1 | -1): number | null =
   if (direction === 1 ? value < 200 : value <= 200) return stepZoom(value, direction)
   const next = direction === 1 ? Math.floor(value / 25) * 25 + 25 : Math.ceil(value / 25) * 25 - 25
   return next > 400 ? null : next
+}
+
+/** ⌘+ / ⌘− / ⌘0 (`ZoomStep`) on a zoom: the key ladder up or down, 100 for ⌘0; at either end it stays. */
+export const zoomByKey = (value: number, step: ZoomStep): number => (step === 0 ? 100 : (stepZoomByKey(value, step) ?? value))
+
+/**
+ * A zoom kept across restarts in localStorage under `key` (the app's origin: every window): a whole percent in the
+ * page zoom's range (50–400), 100 by default and never written. Explore's page layers (`explore:zoom`) and the Inbox
+ * (`inbox:zoom`, YAZ-5372) each keep one; a page tab's zoom is its own, in its tab.
+ */
+export function savedZoom(key: string): number {
+  try {
+    const n = Number(localStorage.getItem(key))
+    return Number.isInteger(n) && n >= 50 && n <= 400 ? n : 100
+  } catch {
+    return 100
+  }
+}
+export function saveZoom(key: string, zoom: number): void {
+  try {
+    if (zoom === 100) localStorage.removeItem(key)
+    else localStorage.setItem(key, String(zoom))
+  } catch {
+    // No storage: the zoom lasts the run.
+  }
 }
 
 const parseZoom = (draft: string): number | null => {

@@ -7,6 +7,7 @@
 import { fileKind } from '@shared/fileKind'
 import type { CardPlace } from '../editor/card/cardOpen'
 import { LEGACY_EXPLORE_PAGE_BOX_KEY, movedStorageItem } from '@shared/legacyNames'
+import { savedZoom, saveZoom } from '../editor/DocumentZoom'
 
 export type ExploreLayer =
   | { id: number; kind: 'search' }
@@ -245,22 +246,8 @@ export function savedLayerBox(kind: ExploreLayer['kind']): LayerBox | null {
  * percent in the page zoom's range (50–400), 100 by default. A page tab's zoom is its own and never this one.
  */
 const ZOOM_KEY = 'explore:zoom'
-export function savedExploreZoom(): number {
-  try {
-    const n = Number(localStorage.getItem(ZOOM_KEY))
-    return Number.isInteger(n) && n >= 50 && n <= 400 ? n : 100
-  } catch {
-    return 100
-  }
-}
-export function saveExploreZoom(zoom: number): void {
-  try {
-    if (zoom === 100) localStorage.removeItem(ZOOM_KEY)
-    else localStorage.setItem(ZOOM_KEY, String(zoom))
-  } catch {
-    // No storage: the zoom lasts the stack.
-  }
-}
+export const savedExploreZoom = (): number => savedZoom(ZOOM_KEY)
+export const saveExploreZoom = (zoom: number): void => saveZoom(ZOOM_KEY, zoom)
 
 export function saveLayerBox(kind: ExploreLayer['kind'], box: LayerBox | null): void {
   try {

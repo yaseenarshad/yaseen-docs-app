@@ -87,11 +87,14 @@
  *  - ARCHIVED cards are not listed here (YAZ-5319): a folder page's table shows them (Show cards as rows, Card status
  *    is Archived), and a card's ⋯ menu unarchives it.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
 import { cardSides } from '@shared/cardText'
 import { withCardTitle } from '@shared/cardLine'
 import { PageTitle } from '../editor/PageTitle'
+import { DocumentZoom, savedZoom, saveZoom, zoomByKey } from '../editor/DocumentZoom'
+import { ZOOM_EVENT } from '../editor/zoomRequest'
+import type { ZoomStep } from '@shared/types'
 import { changeCardLine } from './cardFile'
 import { recordAt } from '../editor/card/embedCard'
 import type { GestureAction } from '@shared/keys'
@@ -118,6 +121,9 @@ import { todayCards } from './reviewTime'
 import '../explore/explore.css'
 import { useUnit } from '../vault/unitWord'
 import type { CardPlace } from '../editor/card/cardOpen'
+
+/** Where the Inbox's zoom is kept (YAZ-5372): `savedZoom`, localStorage. */
+const INBOX_ZOOM_KEY = 'inbox:zoom'
 
 export interface CardInboxProps {
   /** The Inbox tab is the one on show (YAZ-5011); false: behind a page tab, hidden, and deaf to keys. Default true. */
@@ -239,6 +245,32 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
   useEffect(() => {
     if (page !== null && session.answers === null) showAnswers()
   }, [page, session.answers, showAnswers])
+
+  /**
+   * THE INBOX'S ZOOM (YAZ-5372): the page zoom's own pill and key ladder (`DocumentZoom`), on the card's text only — the
+   * bar, the head and the buttons stay. One value for the Inbox, kept across restarts (`inbox:zoom` in localStorage).
+   * ⌘+ / ⌘− / ⌘0 while the Inbox shows are its own (they zoomed the sidebar): unclaimed by a page or Explore (Explore
+   * stops them on the document first), and not pressed from the sidebar or the right panel, which keep theirs.
+   */
+  const [zoom, setZoomState] = useState(() => savedZoom(INBOX_ZOOM_KEY))
+  const setZoom = useCallback((next: number) => {
+    setZoomState(next)
+    saveZoom(INBOX_ZOOM_KEY, next)
+  }, [])
+  useEffect(() => {
+    if (!shown) return
+    const onZoom = (event: Event) => {
+      if (event.defaultPrevented || (event.target instanceof Element && event.target.closest('.sidebar, .right-panel') !== null)) return
+      event.preventDefault()
+      setZoomState((was) => {
+        const next = zoomByKey(was, (event as CustomEvent<ZoomStep>).detail)
+        saveZoom(INBOX_ZOOM_KEY, next)
+        return next
+      })
+    }
+    document.addEventListener(ZOOM_EVENT, onZoom)
+    return () => document.removeEventListener(ZOOM_EVENT, onZoom)
+  }, [shown])
 
   // The keyboard comes to the Inbox when it opens and with each card; back from the Explore stack, App gives it back here.
   useEffect(() => {
@@ -372,8 +404,16 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
         ]
 
   return (
-    <div ref={rootRef} className="card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`}>
-      <CardInboxBar session={session} setFilter={review.setFilter} addCards={review.addCards} resetCards={review.resetCards} openPlace={(part) => (part.kind === 'page' ? (card !== null && part.path === card.path ? openCard(card, cardFile) : openFile(part.path)) : openPlace?.(part.path))} time={time} />
+    <div ref={rootRef} className="card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`} style={{ '--inbox-zoom': zoom / 100 } as CSSProperties}>
+      <CardInboxBar
+        session={session}
+        setFilter={review.setFilter}
+        addCards={review.addCards}
+        resetCards={review.resetCards}
+        openPlace={(part) => (part.kind === 'page' ? (card !== null && part.path === card.path ? openCard(card, cardFile) : openFile(part.path)) : openPlace?.(part.path))}
+        time={time}
+        tools={<DocumentZoom value={zoom} onChange={setZoom} label="Inbox zoom" />}
+      />
       <div ref={columnRef} className="card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
         {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height
             with no chip (the done screen), so the card does not move. YAZ-5051 (Yaseen: "so that the card is just pure"):
