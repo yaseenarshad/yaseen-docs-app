@@ -491,13 +491,17 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.answer).not.toHaveBeenCalled()
   })
 
-  it('YAZ-5105: no Reviews for a card with none, fully shown too; the next card hides it again and starts closed', async () => {
+  it('YAZ-5380: a card with no reviews, fully shown, has the strip too, "0 Reviews" dimmed beside Properties; the next card hides it again and starts closed', async () => {
     mount('Just a {{fact}}')
     await flush()
     press(' ')
     await flush()
     expect(blanks()).toBe(0)
-    expect(el.querySelector('.card-reviews')).toBeNull()
+    const parts = [...el.querySelectorAll<HTMLElement>('.card-reviews__toggle')]
+    expect(parts.map((p) => [p.dataset.part, p.textContent, p.hasAttribute('data-empty')])).toEqual([
+      ['reviews', '0 Reviews', true],
+      ['properties', 'Properties0', true],
+    ])
     session = { ...session, position: 4, card: { ...session.card!, id: 'WIKI-10', page: { ...session.card!.page!, id: 'WIKI-10', reviews: [{ at: AT, rating: 'good' }] } } }
     render()
     await flush()
@@ -1668,7 +1672,8 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         if (this.classList.contains('card-inbox__top')) return box(0, 100)
         if (this.classList.contains('card-inbox__dock')) return box(400, 480)
         const key = this.dataset.hidden !== undefined ? `word${this.dataset.hidden}` : this.dataset.side !== undefined ? `side${this.dataset.side}` : this.classList.contains('card-reviews--strip') ? 'strip' : this.classList.contains('card-inbox__panel') ? 'panel' : ''
-        const [top, bottom] = place[key] ?? [150, 170]
+        // The strip (YAZ-5380: on every card's last side) sits right under the card, as laid out.
+        const [top, bottom] = place[key] ?? (key === 'strip' && place.panel !== undefined ? [place.panel[1], place.panel[1] + 36] : [150, 170])
         return box(top, bottom)
       })
     })
@@ -1766,10 +1771,11 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(blanks()).toBe(0)
         expect(scrollTo).not.toHaveBeenCalled()
         press(' ')
-        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 400 + 6 }))
+        // The card's end is its strip (YAZ-5380: every card's last side has one), 36 tall under the panel.
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 + 36 - 400 + 6 }))
         expect(answers().hasAttribute('data-nudge')).toBe(false)
         scrollTo.mockClear()
-        place.panel = [110, 380]
+        place.panel = [110, 350]
         press(' ')
         expect(scrollTo).not.toHaveBeenCalled()
         expect(answers().getAttribute('data-nudge')).not.toBeNull()

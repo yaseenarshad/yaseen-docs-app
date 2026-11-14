@@ -46,7 +46,7 @@ import { openCardWindow, previewCard } from './cardOpen'
 import { mountCardTitle } from './cardTitle'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard } from './cardRender'
 import type { CardReviewDoorApi } from './cardBlockView'
-import { mountReviewsStrip, type ReviewsStripHandle } from './reviewsStrip'
+import { mountReviewsStrip, type ReviewsStripHandle, type StripPart } from './reviewsStrip'
 import { tellReadOnlyEdit } from '../readOnlyEdit'
 import { pathUnit } from '../../vault/unitWord'
 import './cardEmbed.css'
@@ -205,7 +205,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   let edit: { editor: CardEditor; mount: HTMLElement; keys: HTMLElement; base: CardAtPage } | null = null
   /** The Reviews strip (YAZ-5105 round 4), while the card read has reviews; open or closed is this box's. */
   let strip: ReviewsStripHandle | null = null
-  let stripOpen = false
+  let stripOpen: StripPart | null = null
 
   const off = (c: CardLink): boolean => read?.id === c.id ? read.off : recordAt(source.records, c.path)?.cards?.[c.index]?.off === true
 
@@ -264,11 +264,11 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     drawReviews()
   }
 
-  /** The Reviews strip under the card's text, for the card as read: none with no reviews or no door. */
+  /** The card's strip under its text (YAZ-5380: Reviews and Properties), for the card as read: none with no door. */
   const drawReviews = (): void => {
     const door: CardReviewDoorApi | undefined = doors.reviews
     const c = read
-    if (door === undefined || c === null || c.reviews.length === 0 || card === null) {
+    if (door === undefined || c === null || card === null) {
       strip?.destroy()
       strip = null
       return
@@ -281,11 +281,12 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
       settings: door.settings(),
       onDelete: id === null ? undefined : (review) => void door.deleteReview(c.path, id, review),
       open: stripOpen,
-      onToggle: () => {
-        stripOpen = !stripOpen
+      onToggle: (part) => {
+        stripOpen = stripOpen === part ? null : part
         drawReviews()
       },
       facts: true,
+      properties: c.properties ?? {},
     })
   }
 
@@ -368,7 +369,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
   const previewRead = (): void => {
     const r = read
     if (r === null) return
-    previewCard(dom, { path: r.path, id: r.id, text: r.text, title: r.title, notitle: r.notitle === true, reviews: r.reviews })
+    previewCard(dom, { path: r.path, id: r.id, text: r.text, title: r.title, notitle: r.notitle === true, reviews: r.reviews, properties: r.properties })
   }
 
   const openMenu = (x: number, y: number): void => {
