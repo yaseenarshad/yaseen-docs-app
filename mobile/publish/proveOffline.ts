@@ -224,9 +224,11 @@ try {
   if (LIVE && process.env.PROOF_EXPECT_UPDATE) {
     const liveEntry = /src="(\/assets\/index-[^"]+\.js)"/.exec(await fetch(`${ORIGIN}/`).then((r) => r.text()))![1]
     await open(`${ORIGIN}/`)
-    const before = await evaluate(`[navigator.serviceWorker.controller !== null, document.querySelector('script[src*="/assets/index-"]').getAttribute('src')]`)
+    // Which build runs: is the live worker's version stored yet? (An icon-only change keeps the entry's name.)
+    const liveVersion = /version:"([0-9a-z-]+)"/.exec(swText)![1]
+    const before = await evaluate(`Promise.all([navigator.serviceWorker.controller !== null, document.querySelector('script[src*="/assets/index-"]').getAttribute('src'), caches.has('notecards-shell-${liveVersion}')])`)
     if (process.env.PROOF_TRACE) console.log('  caches at 0a:', JSON.stringify(await evaluate(`caches.keys()`)))
-  record('0a the profile runs the previous build from its worker', before[0] === true && before[1] !== liveEntry, `page ${before[1]}, live ${liveEntry}`)
+  record('0a the profile runs the previous build from its worker', before[0] === true && before[2] === false, `page ${before[1]}; the live version ${liveVersion} ${before[2] ? 'IS already stored' : 'is not stored yet'}`)
     // The old app asks for a new version at its start; the new one installs and waits (the open page stays old).
     const waits = await until(`navigator.serviceWorker.getRegistration().then(r => !!r.waiting && r.waiting.state === 'installed')`, 30_000)
     record('0b the new build installs in the background and waits', waits)
