@@ -37,6 +37,16 @@
   --table-text-brown: #8b5a2b;
 }
 
+/* Crepe's outline colour (its frame and frame-dark themes, `crepeTheme.ts`), for a table that Crepe's theme does not
+   reach: a card's table read in the Inbox, Explore, the card file tab and the card window (YAZ-5136). In a page,
+   Crepe's own `--crepe-color-outline` wins. `cardTable.test.ts` checks both against Crepe's files. */
+:root {
+  --table-outline: #a8a8a8;
+}
+[data-theme='dark'] {
+  --table-outline: #757575;
+}
+
 /* The palette's fill swatches (YAZ-3803, decision 12): each colour at full strength, so a swatch
    reads as its colour in light and dark. The cells keep the wash. */
 :root {
@@ -78,10 +88,13 @@
   --table-text-brown: #c99a6e;
 }
 
-/* Border: Crepe's look (1px, 20% of the outline colour) unless the table sets its own. */
-.milkdown .ProseMirror .milkdown-table-block :is(th, td) {
+/* Border: Crepe's look (1px, 20% of the outline colour) unless the table sets its own. A card's table, read
+   (YAZ-5136, `cardRender.ts`), takes the same rules as a page's here and below: border, header row, Align. */
+.milkdown .ProseMirror .milkdown-table-block :is(th, td),
+.card__sides .card__side :is(th, td) {
+  border-style: solid;
   border-width: var(--table-border-width, 1px);
-  border-color: color-mix(in srgb, var(--crepe-color-outline) var(--table-border-darkness, 20%), transparent);
+  border-color: color-mix(in srgb, var(--crepe-color-outline, var(--table-outline)) var(--table-border-darkness, 20%), transparent);
 }
 
 /* A narrow column (YAZ-4791, `data-narrow` under 56 px, `tableStyle.ts`): 4 px padding, so a column of numbers can be
@@ -94,7 +107,8 @@
 /* Each cell's tint: the header shade, the stripes and the fills set `--table-cell-tint`, and this one
    rule paints it. A frozen cell paints it over a solid page colour instead (below). The row band
    (`--table-band`, YAZ-4167, below) is a layer over it, so the fill shows under the band. */
-.milkdown .ProseMirror .milkdown-table-block :is(th, td) {
+.milkdown .ProseMirror .milkdown-table-block :is(th, td),
+.card__sides .card__side :is(th, td) {
   background-color: var(--table-cell-tint, transparent);
   background-image: var(--table-page-mark, none), var(--table-open-ring, none), var(--table-band, none), var(--table-past, none);
 }
@@ -142,9 +156,11 @@
 :is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-align='center'] { --table-header-align: center; }
 :is(.app, .milkdown-table-block, .view-table, .header-row-preview, .view-cal__week, .view-style__chip, .super-view)[data-table-header-align='right'] { --table-header-align: right; }
 
-/* A page table's header row: bold in the text colour by default. A cell's own fill and text colour still win (below). */
-.milkdown .ProseMirror .milkdown-table-block th {
-  --table-cell-tint: color-mix(in srgb, var(--table-header-hue, var(--crepe-color-on-background)) calc(var(--table-header-strength, 6) * var(--table-header-scale, 1) * 1%), transparent);
+/* A page table's header row: bold in the text colour by default. A cell's own fill and text colour still win (below).
+   A card's header row too (YAZ-5136), with Settings › Tables › Header row on `.app`. */
+.milkdown .ProseMirror .milkdown-table-block th,
+.card__sides .card__side th {
+  --table-cell-tint: color-mix(in srgb, var(--table-header-hue, var(--crepe-color-on-background, var(--fg))) calc(var(--table-header-strength, 6) * var(--table-header-scale, 1) * 1%), transparent);
   font-weight: var(--table-header-weight, bold);
   color: var(--table-header-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-header-mute, 0) * 100%), currentColor));
 }
@@ -152,7 +168,8 @@
 /* The header row's Align (YAZ-4794): the table's own, else Settings' (on `.app`). `!important`, as GFM's column
    alignment and a cell's own are inline `text-align` (`tableStyle.ts`); the row's choice is for every header cell. */
 .milkdown .ProseMirror .milkdown-table-block[data-table-header-align]:not([data-table-header-align='follow']) th,
-.app[data-table-header-align]:not([data-table-header-align='follow']) .milkdown .ProseMirror .milkdown-table-block:not([data-table-header-align]) th {
+.app[data-table-header-align]:not([data-table-header-align='follow']) .milkdown .ProseMirror .milkdown-table-block:not([data-table-header-align]) th,
+.app[data-table-header-align]:not([data-table-header-align='follow']) .card__sides .card__side th {
   text-align: var(--table-header-align) !important;
 }
 
@@ -423,9 +440,10 @@
 /* The freeze line (YAZ-3804): a thicker border after the last frozen row and the last frozen column, the
    border colour 40% darker. The cells draw their own bottom and right borders (above), so the line moves
    with the frozen rows and sticks with the frozen columns. */
-.milkdown .ProseMirror .milkdown-table-block[data-table-frozen] .table-frozen-row-end > * {
+.milkdown .ProseMirror .milkdown-table-block[data-table-frozen] .table-frozen-row-end > *,
+.card__sides .card__side thead th {
   border-bottom-width: 3px;
-  border-bottom-color: color-mix(in srgb, var(--crepe-color-outline) min(100%, calc(var(--table-border-darkness, 20%) + 40%)), transparent);
+  border-bottom-color: color-mix(in srgb, var(--crepe-color-outline, var(--table-outline)) min(100%, calc(var(--table-border-darkness, 20%) + 40%)), transparent);
 }
 
 .milkdown .ProseMirror .milkdown-table-block[data-table-frozen] :is(th, td).table-frozen-col-end {

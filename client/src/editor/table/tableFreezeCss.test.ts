@@ -65,7 +65,8 @@ describe('the freeze line (YAZ-3804)', () => {
   const LINE = 'min(100%, calc(var(--table-border-darkness, 20%) + 40%))'
   it('the last frozen row draws a 3px bottom border, darker than the table\'s border', () => {
     expect(bodyOf(`${FROZEN} .table-frozen-row-end > *`)).toBe(
-      `border-bottom-width: 3px; border-bottom-color: color-mix(in srgb, var(--crepe-color-outline) ${LINE}, transparent);`,
+      // A card's header row draws the same line (YAZ-5136): outside a page, Crepe's outline is `--table-outline`.
+      `border-bottom-width: 3px; border-bottom-color: color-mix(in srgb, var(--crepe-color-outline, var(--table-outline)) ${LINE}, transparent);`,
     )
   })
 
