@@ -34,6 +34,17 @@ describe('the phone\'s ReviewHost (2A interface): it writes ACTIONS, never files
     expect(await t.stored()).toBe(FILES['a.md']) // the stored copy is GitHub's until the send
   })
 
+  it('YAZ-5078: a second answer in the same minute is a second review (a new card that comes back at once)', async () => {
+    const t = await setup()
+    await t.host.writeCardAnswer('a.md', 'NC-3', R)
+    await t.host.writeCardAnswer('a.md', 'NC-3', R)
+    expect(t.answers.waiting().map((w) => w.op)).toEqual([
+      { kind: 'review', id: 'NC-3', review: R },
+      { kind: 'review', id: 'NC-3', review: R, nth: 2 },
+    ])
+    expect((await t.host.readCard('a.md', 'NC-3'))!.reviews).toEqual([R, R])
+  })
+
   it('Undo of an UNSENT answer removes its actions: the card reads byte for byte as before', async () => {
     const t = await setup()
     const before = await t.answers.text('a.md')

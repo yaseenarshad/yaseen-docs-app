@@ -65,6 +65,20 @@ describe('applyOps (decision 2): each kind of action, by card ID, on the newest 
     expect(cardRecords(once)[0].reviews).toHaveLength(1)
   })
 
+  it('YAZ-5078: two answers in ONE minute with one rating are two reviews, as the Mac writes them; each still goes one time', () => {
+    // A new card comes back in the same session: Remembered, then Remembered again, in the same minute.
+    const twice: CardOp[] = [
+      { kind: 'review', id: 'NC-2', review: R1 },
+      { kind: 'review', id: 'NC-2', review: R1, nth: 2 },
+    ]
+    const once = applyOps(page, twice).content
+    expect(lineOf(once, 'NC-2')).toBe('<!-- card: NC-2, 2026-11-14T06:01Z good 9s, 2026-11-14T06:01Z good 9s -->')
+    // Sent again (the send reached GitHub, its answer was lost): no third review.
+    expect(applyOps(once, twice).content).toBe(once)
+    // An action from before this field (no `nth`) is the first of its minute, as before.
+    expect(applyOps(once, [{ kind: 'review', id: 'NC-2', review: R1 }]).content).toBe(once)
+  })
+
   it('the order of the actions is kept: archive then unarchive is not archived; unarchive then archive is', () => {
     expect(applyOps(page, [{ kind: 'off', id: 'NC-2', on: true }, { kind: 'off', id: 'NC-2', on: false }]).content).toBe(page)
     expect(lineOf(applyOps(page, [{ kind: 'off', id: 'NC-2', on: false }, { kind: 'off', id: 'NC-2', on: true }]).content, 'NC-2')).toBe('<!-- card: NC-2, off -->')

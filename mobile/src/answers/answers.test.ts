@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { cardPlan } from '@shared/cardSchedule'
+import { sanitizeReviewSettings } from '@shared/reviews'
 import { githubClient } from '../github/client'
 import { POLL_MS, SEND_AFTER_MS } from '../sync/cadence'
 import { createSyncEngine } from '../sync/engine'
@@ -96,6 +98,28 @@ describe('the local copy: an answer counts at once, with no connection', () => {
     expect(view.records['cards/light-nc-17.md'].cards![0].off).toBe(true)
     expect(view.records['cards/light-nc-17.md']).toMatchObject({ kind: 'card', title: 'Speed of light' })
     expect(t.events.some((e) => e.type === 'changed' && e.paths.includes('a.md'))).toBe(true)
+  })
+
+  it('YAZ-5078: a file that a waiting action changes gets a new mtime and size in the view, so the shared due list reads it again', async () => {
+    // `cardPlan` keeps each page's card facts by path, mtime and size (the Mac's index gives a new mtime on each
+    // write). With the stored file's mtime, the phone's due list kept the facts from before the answer.
+    const t = await answersSetup()
+    t.s.github.offline = true
+    const s = sanitizeReviewSettings({})
+    const index = t.engine.index()!
+    const due = async () => cardPlan(Object.values((await t.answers.view(index)).records), s, Date.UTC(2026, 10, 14, 6, 30)).queue.map((c) => `${c.id}${c.isNew ? ' new' : ''}`)
+    expect(await due()).toContain('NC-2 new')
+    const first = (await t.answers.view(index)).records['a.md']
+    await t.add(answer('NC-2', 1))
+    const after = (await t.answers.view(index)).records['a.md']
+    expect(after.mtime).not.toBe(first.mtime)
+    expect(after.size).toBe(new TextEncoder().encode((await t.answers.text('a.md'))!).length)
+    expect(await due()).not.toContain('NC-2 new')
+    // The same text again: the same mtime (the cache hits); an Undo back to the stored text: the stored record.
+    expect((await t.answers.view(index)).records['a.md'].mtime).toBe(after.mtime)
+    await t.answers.undo(t.answers.waiting()[0].group)
+    expect((await t.answers.view(index)).records['a.md']).toBe(index.records['a.md'])
+    expect(await due()).toContain('NC-2 new')
   })
 
   it('after the send the stored copy holds the answer, and the view does not lose it at any point', async () => {
