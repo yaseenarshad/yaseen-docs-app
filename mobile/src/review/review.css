@@ -1,0 +1,315 @@
+/* The Review tab (4B, YAZ-5078). Clean and plain on 4A's tokens; the fine look is tuned in the demo round (7-).
+   The card itself wears the Mac's own styles (`card.css`, `table.css`, `cardScreens.css`). These are the Mac's values of
+   the three tokens those styles read that the phone's frame does not set (`client/src/app.css`, light and dark). */
+:root {
+  --bg-hover: #eeeef0;
+  --next-hidden: #2a8bd1;
+  --mark-bg: rgba(255, 213, 0, 0.4);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-hover: #333336;
+    --next-hidden: #5ab4ea;
+  }
+}
+
+.review {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.review--waiting,
+.review--off {
+  justify-content: center;
+  text-align: center;
+}
+
+/* ---- The top row: the filter and today's work ---- */
+
+.review__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.review__filter {
+  min-height: var(--tap);
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.review__today {
+  font-size: 14px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.review__time {
+  min-height: var(--tap);
+  min-width: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+.review__menu {
+  margin: 0 0 10px;
+  padding: 2px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-side);
+}
+
+.review__menu-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  text-align: left;
+  font-size: 16px;
+}
+
+.review__menu-row:last-child {
+  border-bottom: 0;
+}
+
+.review__menu-row[aria-checked='true'] {
+  font-weight: 600;
+}
+
+.review__menu-row:disabled {
+  opacity: 0.5;
+}
+
+.review__count {
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+/* ---- Above the card ---- */
+
+.review__meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.review__head {
+  margin: 2px 0 8px;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.review__title {
+  font-weight: 600;
+}
+
+.review__id,
+.review__in {
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.review__fix {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--warn);
+}
+
+/* ---- The card: a tap shows the next part. A long card scrolls with the screen; the buttons stay at the bottom. ---- */
+
+.review__card {
+  flex: 1 0 auto;
+  min-height: 180px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-side);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.review__card pre,
+.review__card .card__table {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.review__card img {
+  max-width: 100%;
+  height: auto;
+}
+
+.review__card-wait {
+  min-height: 140px;
+}
+
+.phone-card__media {
+  display: block;
+  min-height: 24px;
+  margin: 6px 0;
+  font-size: 14px;
+  color: var(--fg-muted);
+}
+
+.review__sides {
+  margin: 6px 0 0;
+  text-align: right;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+/* ---- The buttons, in reach of the thumb ---- */
+
+.review__dock {
+  position: sticky;
+  bottom: 0;
+  margin: 12px -16px -24px;
+  padding: 10px 16px 16px;
+  background: var(--bg);
+}
+
+.review__answers {
+  display: flex;
+  gap: 8px;
+}
+
+.review__answer {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 56px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.review__answer[data-rating='again'] svg {
+  color: var(--danger);
+}
+
+.review__answer[data-rating='good'] svg,
+.review__answer[data-rating='easy'] svg {
+  color: var(--ok);
+}
+
+.review__answer:disabled {
+  opacity: 0.55;
+}
+
+.review__more {
+  min-width: 56px;
+  min-height: 56px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg);
+  font-size: 20px;
+}
+
+.review__menu--more {
+  margin: 8px 0 0;
+}
+
+.review__last {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: var(--tap);
+  font-size: 14px;
+  color: var(--fg-muted);
+}
+
+.review__undo {
+  min-width: 0;
+  font-size: 14px;
+}
+
+/* ---- Done ---- */
+
+.review__done {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 48px 0 24px;
+  text-align: center;
+}
+
+.review__done p {
+  margin: 0;
+}
+
+.review__done-title {
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.review__waits {
+  margin-top: 10px !important;
+}
+
+.review__add {
+  min-width: 200px;
+  font-weight: 600;
+}
+
+/* ---- Lines that need the person ---- */
+
+.review__lost {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--warn);
+  border-radius: 12px;
+}
+
+.review__lost-title {
+  margin: 0 0 4px;
+  color: var(--warn);
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.review__lost-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.review__lost-what {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.review__notice {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--danger);
+}

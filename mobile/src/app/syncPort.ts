@@ -1,3 +1,4 @@
+import type { ReviewLink } from '../review/link'
 import type { PhoneVault } from '../store'
 
 /**
@@ -37,6 +38,11 @@ export interface ShellSync {
   open(vault: PhoneVault | null): Promise<void>
   /** A pass now ("Try again" on the download view). */
   syncNow(): Promise<void>
+  /**
+   * 4B (YAZ-5078): the engine and the ONE answer list of the open vault, for the Review tab; null while no vault is open.
+   * Absent (a fake sync): the Review tab waits.
+   */
+  review?(): Promise<ReviewLink | null>
 }
 
 export const IDLE: ShellSyncState = Object.freeze({ status: 'idle', vault: null, problem: null, retryAt: null, progress: null, ready: false })

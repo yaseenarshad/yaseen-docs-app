@@ -5,6 +5,7 @@ import { FirstDownload } from './FirstDownload'
 import { ForwardButton, Frame, vaultName } from './Frame'
 import { Friends } from './Friends'
 import { Review } from './Review'
+import { ReadOnlySlot } from '../review/ReadOnlySlot'
 import { ScanCode } from './ScanCode'
 import { Search } from './Search'
 import { Settings } from './Settings'
@@ -64,5 +65,9 @@ function RouteScreen({ route }: { route: Route }) {
       return <SetupGuide />
     case 'scan':
       return <ScanCode vault={route.vault} />
+    // WIRE 4C (YAZ-5079): draw the read-only page view and the card view here.
+    case 'page':
+    case 'card':
+      return <ReadOnlySlot route={route} />
   }
 }
