@@ -365,7 +365,7 @@ describe('YAZ-5238: the sweep deletes only what is provably an orphan, by GitHub
     const w = people()
     const ali = await person(w, 'ali')
     const old = await makePointer(ali.api, ali.handle.index.stats!, opts(w))
-    const lookAlike = w.seed('ali', { [POINTER_FILE]: 'my own notes, not JSON' })
+    const lookAlike = w.seed('ali', { [POINTER_FILE]: 'my own text, not JSON' })
     const inUse = w.seed('ali', { [GROUP_FILE]: JSON.stringify({ v: 1, name: 'Lost', admin: 'ali', members: [{ login: 'ali', pointer: old }, { login: 'bea', pointer: P }] }) })
     w.advance(ORPHAN_AGE_MS + 1000)
     const midFlow = await makePointer(ali.api, ali.handle.index.stats!, opts(w)) // another device, one second ago
