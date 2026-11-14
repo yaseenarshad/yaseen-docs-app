@@ -47,6 +47,10 @@ export interface CardShow {
   sides?: number
   /** How many hidden words show, in page order over the whole card. */
   shown?: number
+  /** Words shown out of order (YAZ-5049 round 4: a click shows THAT word), by their number over the card. */
+  picked?: readonly number[]
+  /** The blank the next Space shows (`data-next`), when it is not the first hidden one (round 4: after a click). */
+  next?: number
 }
 
 /** What a `[[link]]` shows: its label, whether it resolves, and the icon attributes of its page (`LinkLook`). */
@@ -199,8 +203,8 @@ function placeholderTexts(root: Node): Text[] {
   return found
 }
 
-/** Each placeholder of `root` as its hidden word: the word highlighted while `n < shown`, else a blank. */
-function fillHidden(root: Node, words: readonly string[], shown: number): void {
+/** Each placeholder of `root` as its hidden word: the word highlighted while it shows (`open`), else a blank; `next` the marked blank. */
+function fillHidden(root: Node, words: readonly string[], open: (n: number) => boolean, next: number): void {
   for (const text of placeholderTexts(root)) {
     const value = text.nodeValue ?? ''
     const out = document.createDocumentFragment()
@@ -214,15 +218,15 @@ function fillHidden(root: Node, words: readonly string[], shown: number): void {
       const inner = document.createElement('span')
       inner.className = 'card__word'
       inner.append(inlineOf(word))
-      span.className = n < shown ? 'card__hidden' : 'card__blank'
-      if (n >= shown) {
+      span.className = open(n) ? 'card__hidden' : 'card__blank'
+      if (!open(n)) {
         span.setAttribute('role', 'img')
         span.setAttribute('aria-label', 'Hidden word')
         inner.setAttribute('aria-hidden', 'true')
       }
       span.dataset.hidden = String(n)
       // YAZ-5053 round 3: the blank the next Space shows (the Inbox's step, never computed again elsewhere).
-      if (n === shown) span.dataset.next = ''
+      if (n === next) span.dataset.next = ''
       span.append(inner)
       out.append(span)
       from = m.index + m[0].length
@@ -234,7 +238,7 @@ function fillHidden(root: Node, words: readonly string[], shown: number): void {
   for (const el of (root as ParentNode).querySelectorAll<HTMLElement>('[alt], [title]')) {
     for (const name of ['alt', 'title']) {
       const value = el.getAttribute(name)
-      if (value?.includes(OPEN) === true) el.setAttribute(name, value.replace(PLACEHOLDER_RE, (_, n: string) => (Number(n) < shown ? (words[Number(n)] ?? '') : '…')))
+      if (value?.includes(OPEN) === true) el.setAttribute(name, value.replace(PLACEHOLDER_RE, (_, n: string) => (open(Number(n)) ? (words[Number(n)] ?? '') : '…')))
     }
   }
 }
@@ -348,6 +352,9 @@ export function renderCard(text: string, show: CardShow = {}, look?: CardLook): 
   const sides = cardSides(text)
   const count = Math.max(1, Math.min(sides.length, show.sides ?? sides.length))
   const shown = show.shown ?? Number.POSITIVE_INFINITY
+  const picked = show.picked ?? []
+  const open = (n: number): boolean => n < shown || picked.includes(n)
+  const next = show.next ?? shown
   const out = document.createElement('div')
   out.className = 'card__sides'
   out.addEventListener('copy', copyWithoutHidden)
@@ -367,7 +374,7 @@ export function renderCard(text: string, show: CardShow = {}, look?: CardLook): 
     side.dataset.side = String(i)
     side.append(sideOf(marked))
     boxTables(side)
-    fillHidden(side, words, shown)
+    fillHidden(side, words, open, next)
     applyLook(side, look)
     if (i > 0) {
       const rule = document.createElement('div')
