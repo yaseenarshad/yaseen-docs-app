@@ -6,7 +6,7 @@
   "description": "Notecards: the phone web app (Vite + React). It never imports Electron or Node; see README.md",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && vite-node publish/checkBuildCli.ts",
     "preview": "vite preview",
     "build:fixtures": "vite build --mode fixtures --outDir dist-fixtures"
   },

@@ -30,11 +30,15 @@ export function parseRepo(text: string): RepoName | null {
 
 /**
  * The pasted token with the spaces and line breaks around it taken off; null when it cannot be a GitHub token.
- * Every GitHub token is letters, digits and `_` (`github_pat_…` is about 93 characters, `ghp_…` 40).
+ * Every GitHub token is letters, digits and `_` (`github_pat_…` is about 93 characters, `ghp_…` 40), and starts with
+ * one of GitHub's prefixes (YAZ-5220): `github_pat_` (fine-grained) or `ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`. So a long
+ * password of letters and digits is not taken for a token.
  */
+export const TOKEN_PREFIXES = ['github_pat_', 'ghp_', 'gho_', 'ghu_', 'ghs_', 'ghr_'] as const
+
 export function cleanToken(text: string): string | null {
   const token = text.trim()
-  return /^[A-Za-z0-9_]{20,255}$/.test(token) ? token : null
+  return /^[A-Za-z0-9_]{20,255}$/.test(token) && TOKEN_PREFIXES.some((p) => token.startsWith(p)) ? token : null
 }
 
 /** A name git accepts for a branch (the rules of `git check-ref-format`, for one branch name). */

@@ -29,7 +29,7 @@ vi.mock('../api', async (importOriginal) => {
     ...actual,
     api: {
       secrets: { has: vi.fn(), set: vi.fn() },
-      phone: { code: vi.fn() },
+      phone: { code: vi.fn(), hide: vi.fn(async () => undefined) },
       state: { settingsFolder: vi.fn(async () => ({ folder: null, missing: false })), setSettingsFolder: vi.fn() },
     },
   }
@@ -144,6 +144,7 @@ const row = (id: string) => el.querySelector<HTMLElement>(`[data-setting="${id}"
 const button = (scope: ParentNode, text: string) => [...scope.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === text)
 const sheet = () => document.querySelector<HTMLElement>('[role="dialog"][aria-labelledby="connect-phone-title"]')
 const canvas = () => sheet()?.querySelector('canvas') ?? null
+const removeSheet = () => document.querySelector<HTMLElement>('[role="dialog"][aria-labelledby="remove-github-token-text"]')
 /** Every word and every attribute on the page: the token must be in none. */
 const everything = () => document.documentElement.outerHTML
 
@@ -209,10 +210,62 @@ describe('Settings › Review › Phone and friends (YAZ-5098)', () => {
     await mountReview()
     expect(row('githubToken')!.textContent).toContain('Token saved.')
     await act(async () => button(row('githubToken')!, 'Remove token')!.click())
+    await act(async () => button(removeSheet()!, 'Remove')!.click())
     await flush()
     expect(secretSet).toHaveBeenCalledExactlyOnceWith({ name: 'githubToken', value: null })
     expect(row('githubToken')!.textContent).toContain('No token saved.')
     expect(button(row('connectPhone')!, 'Show code')!.disabled).toBe(true)
+  })
+})
+
+describe('the checker\'s bugs of YAZ-5098', () => {
+  it('Remove token asks first (YAZ-5219): no removal on the first click; Cancel keeps the token; Remove removes it', async () => {
+    secretHas.mockResolvedValue(true)
+    await mountReview()
+    await act(async () => button(row('githubToken')!, 'Remove token')!.click())
+    expect(secretSet).not.toHaveBeenCalled()
+    expect(removeSheet()!.textContent).toContain('A phone that is already connected keeps working')
+    expect(removeSheet()!.textContent).toContain('stops sending your numbers to friends')
+    await act(async () => button(removeSheet()!, 'Cancel')!.click())
+    expect(removeSheet()).toBeNull()
+    expect(secretSet).not.toHaveBeenCalled()
+    expect(row('githubToken')!.textContent).toContain('Token saved.')
+    await act(async () => button(row('githubToken')!, 'Remove token')!.click())
+    await act(async () => button(removeSheet()!, 'Remove')!.click())
+    await flush()
+    expect(secretSet).toHaveBeenCalledExactlyOnceWith({ name: 'githubToken', value: null })
+  })
+
+  it('a plain password of letters and digits is refused (YAZ-5220), and the words do not repeat it', async () => {
+    await mountReview()
+    await saveToken('CorrectHorseBatteryStaple2026')
+    expect(secretSet).not.toHaveBeenCalled()
+    expect(row('githubToken')!.textContent).toContain('This is not a GitHub token.')
+    expect(row('githubToken')!.textContent).toContain('github_pat_')
+    expect(everything()).not.toContain('CorrectHorse')
+  })
+
+  it('the window loses focus while the code is on its way: the code must not paint in a window that is not in front', async () => {
+    secretHas.mockResolvedValue(true)
+    let answer: (a: PhoneCodeAnswer) => void = () => undefined
+    phoneCode.mockImplementationOnce(() => new Promise((r) => (answer = r)))
+    await mountReview()
+    await openCode()
+    act(() => window.dispatchEvent(new Event('blur')))
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false)
+    await act(async () => answer(SHOWN))
+    await flush()
+    expect(canvas()).toBeNull()
+    expect([...contexts.values()].every((c) => c.squares.length === 0)).toBe(true)
+    expect(sheet()!.textContent).toContain('The code is hidden.')
+  })
+
+  it('each hide and each close tells main, so main lets a new code be asked (YAZ-5218)', async () => {
+    secretHas.mockResolvedValue(true)
+    await mountReview()
+    await openCode()
+    act(() => window.dispatchEvent(new Event('blur')))
+    expect(vi.mocked(api.phone.hide)).toHaveBeenCalled()
   })
 })
 

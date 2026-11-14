@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { onlyLocalMedia } from '@client/editor/card/cardSafety'
 import { App, NoStorage } from './App'
+import { startUpdates, swapWaitingVersion } from './pwa/browser'
 import { lazySync } from './app/lazySync'
 import { lazyMedia } from './media/ui/lazyMedia'
 import { lazyFriends } from './friends/ui/lazy'
@@ -17,7 +18,13 @@ const root = createRoot(document.getElementById('root')!)
 // The screen fixtures (made-up data, for the screenshots) exist only in a `--mode fixtures` build. In the real build
 // this test is `false` at build time, so the fixture code is not in the bundle.
 if (import.meta.env.MODE === 'fixtures' && location.hash.startsWith('#fixture')) void import('./dev/fixtures').then((m) => m.mountFixture(root, location.hash))
-else void start(root)
+else void boot(root)
+
+// YAZ-5087: a new version that waits starts now, before the app runs (nothing is open; the answer list is stored).
+async function boot(root: Root) {
+  if (await swapWaitingVersion()) return
+  await start(root)
+}
 
 async function start(root: Root) {
   let storage: Awaited<ReturnType<typeof openPhoneStorage>>
@@ -36,7 +43,7 @@ async function start(root: Root) {
   const services = { store, tokens, sync, media: lazyMedia(sync.loaded, store), friends, scanner: cameraScanner() }
   root.render(
     <StrictMode>
-      <App services={services} />
+      <App services={services} updates={startUpdates()} />
     </StrictMode>,
   )
 }
