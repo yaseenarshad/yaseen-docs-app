@@ -14,7 +14,8 @@ A card lives in one of three places: **by itself** in a card file, **inside a pa
 
 ## How a card is written
 
-- The **first line** is the card's title. The Inbox, search and links show it. It is plain text: to keep it off the front, hide it as [[Titles]] says, never with `{{ }}`.
+- Every card has a title. The Inbox, search and links show it. It is plain text: to keep it off the front, hide it as [[Titles]] says, never with `{{ }}`.
+- A card inside a page has its title as its first line. A card file has its title in its `title:` property, as a page has, and its card holds only its sides.
 - `{{word}}` hides a word or a phrase. A line with only `---` starts a new side. `***` divides sections on one side.
 - A picture is `![alt text](path)`. A link is `[[Name]]` or `[[ID]]`.
 
@@ -29,6 +30,22 @@ The capital city of Australia is {{Canberra}}.
 Many people guess Sydney. Canberra was built as a compromise between Sydney and Melbourne.
 ```
 ````
+
+The same card as a card file. The file's properties hold `kind: card` and the title. The app and `card new` name a card file `<kebab-title>-<id>.md`:
+
+````markdown
+---
+kind: card
+title: Capital of Australia
+---
+```card
+The capital city of Australia is {{Canberra}}.
+---
+Many people guess Sydney. Canberra was built as a compromise between Sydney and Melbourne.
+```
+````
+
+The examples in the formats show a card's text as it sits inside a page. In a card file, put the first line in `title:` instead.
 
 The app writes the card line under the block. Never change a card line that the app wrote: it holds the card's ID and its reviews. On a new card that you write by hand, you may put the line `<!-- card: notitle -->` directly below the closing fence; the app adds the ID and keeps the option. With the command, use `--hide-title`.
 
@@ -47,7 +64,7 @@ The app writes the card line under the block. Never change a card line that the 
 - Check the cards of a page: `yaseendocs card check <page.md>`
 - Print this skill: `yaseendocs card guide`
 
-`--title` is the card's first line, and `--body` is the rest. `--body -` reads the body from standard input. `--hide-title` hides the title on the front.
+With `card add`, `--title` is the card's first line, and `--body` is the rest. With `card new`, `--title` is the file's `title:`, and `--body` is the card. `--body -` reads the body from standard input. `--hide-title` hides the title on the front.
 
 ## The pages
 

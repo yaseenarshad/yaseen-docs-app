@@ -167,22 +167,22 @@ them, so this is the place to read them. \`--json\` gives \`id\`, \`page\`, \`ti
 minute a step ends), \`isNew\`, \`next\` and \`inSteps\` (and \`off\` for a page), and \`cardFile: true\` for a card that lives in a card file.
 
 \`card add\` adds a card to a page, with a new id from the vault's counter, as the app gives one:
-\`--body\` (\`--body -\` for stdin) is the card's text, and \`--title\` (one line) its first line: a card's
-first line is its title, what the app and a \`[[<card id>]]\` link to the card show. It goes at the end of
+\`--body\` (\`--body -\` for stdin) is the card's text, and \`--title\` (one line) its first line. A card inside a
+page has its title as its first line. The title is what the app and a \`[[<card id>]]\` link to the card show. It goes at the end of
 the page, or with \`--after\` at the end of that heading's section (the heading's text, without the \`#\`
 marks; case does not count). It prints \`added <id> to <page>\`; \`--json\` gives \`id\`, \`page\` and \`title\`. A card file is refused:
 "This is a card file. Use \`card new\`."
 
 A card file is a card on its own: a page whose properties hold \`kind: card\` and whose body is one card and
-its card line, nothing else. The card's id is the file's id (the file has no \`id:\` line). Its title is its
-\`title:\` property, as a page's, and its name is \`<kebab-title>-<id>.md\`; the card holds only its sides.
+its card line, nothing else. The card's id is the file's id (the file has no \`id:\` line). A card file has its
+title in its \`title:\` property, as a page has, and its card holds only its sides. Its name is \`<kebab-title>-<id>.md\`.
 \`card new\` makes one in a folder, with a new id from the vault's counter: \`--title\` (one line) is the
 file's \`title:\`, and \`--body\` (\`--body -\` for stdin) the card's text. A name that is already taken is refused. It prints \`made <path>\`; \`--json\` gives
 \`id\`, \`path\` and \`title\`.
 
 \`--hide-title\` on \`card add\` and \`card new\` keeps the card's title off the front in review, as the app's
 ⋯ › "Title on the front" › Hide: the card line gets the part \`notitle\`, and the title is never a step of the
-review. Do not put the title in \`{{ }}\`. Use \`--hide-title\`.
+review. The part is the same for a card in a page and for a card file. Do not put the title in \`{{ }}\`. Use \`--hide-title\`.
 
 \`card check\` lists each card of a page (a card file is its own page) with its sure mistakes: a \`{{\` with no
 \`}}\` after it on that side, an empty \`{{}}\`, a card with one side and nothing hidden, no title, the title still

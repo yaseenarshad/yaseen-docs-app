@@ -2,7 +2,9 @@ Placeholder text. Yaseen's version replaces this page.
 
 # Titles
 
-The first line of a card is its title. The Inbox, search, the list of cards and `[[ID]]` links show it. A good title tells you which idea you will open.
+Every card has a title. The Inbox, search, the list of cards and `[[ID]]` links show it. A good title tells you which idea you will open.
+
+A card inside a page has its title as its first line. A card file has its title in its `title:` property, as a page has, and its card holds only its sides. A card file with no `title:` gets its card's first line moved there by the app, one time.
 
 ## How to name a card
 
@@ -27,9 +29,9 @@ A title is shown when it is a cue. It is hidden when it would give the answer aw
 - **Shown:** the title names the task, and the answer is something else. "HTTP" on an acronym card. "Force quit a frozen app" on a procedure card.
 - **Hidden:** the title is the answer. A vocabulary card titled "Terse" must not show "Terse" on the front.
 
-The title is always a plain first line. Hiding it is an option of the card, not part of its text. Do not put the title in `{{ }}`.
+The title is always plain text: the first line in a page, `title:` in a card file. Hiding it is an option of the card, not part of its text. Do not put the title in `{{ }}`.
 
-How to hide it:
+How to hide it. Each way writes the part `notitle` on the card line, below the card's closing fence. This is the same for both kinds of card:
 
 - **With the command:** add `--hide-title` to `yaseendocs card add …` or `yaseendocs card new …`.
 - **In a file you write by hand:** put the line `<!-- card: notitle -->` below the fence, on a new card only.
@@ -43,6 +45,19 @@ A card inside a page, written by hand, with its title hidden:
 ```card
 Compound interest
 
+A savings account pays 5% a year and adds the interest to the balance. Next year, the 5% is paid on the larger sum. This is {{compound interest}}.
+```
+<!-- card: notitle -->
+````
+
+A card file, written by hand, with its title hidden:
+
+````markdown
+---
+kind: card
+title: Compound interest
+---
+```card
 A savings account pays 5% a year and adds the interest to the balance. Next year, the 5% is paid on the larger sum. This is {{compound interest}}.
 ```
 <!-- card: notitle -->

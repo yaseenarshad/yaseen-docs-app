@@ -11,8 +11,8 @@ The app finds these mistakes by itself. `yaseendocs card check <page.md>` lists 
 1. **A `{{` has no closing `}}`.** Nothing is hidden on that side.
 2. **A hidden word is empty.** `{{}}` hides nothing.
 3. **Nothing is hidden, and the card has no back.** A card with one side needs at least one hidden word.
-4. **The card has no title.** The first line is empty.
-5. **The title is still "Title".** Give it a real name.
+4. **The card has no title.** A card in a page has no first line with text. A card file has no `title:` and no first line.
+5. **The title is still "Title".** Give it a real name, in the first line or in `title:`.
 6. **The question hides its own subject.** "What does {{…}} stand for" or "What does {{…}} mean" cannot be answered.
 
 The app does not check text inside code spans or code blocks. It does not check length: a long card is fine when it holds one idea.

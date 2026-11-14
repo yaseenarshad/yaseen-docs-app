@@ -118,4 +118,24 @@ describe('the card skill pages (YAZ-5112)', () => {
     // The old, opposite rule is gone from each place.
     for (const [name, text] of Object.entries(places)) expect(text, name).not.toMatch(/Never write (?:or change )?(?:that|a card) line by hand/)
   })
+
+  /**
+   * Where a card's title lives (YAZ-5044, YAZ-5151): a card in a page has it as its first line, a card file in `title:`.
+   * Said the same way in the three places; the old rule ("a card's first line is its title", for every card) is gone.
+   */
+  it('HELP, Start here.md and Titles.md say the same rule for the title of each kind of card (YAZ-5151)', async () => {
+    const RULE = [
+      'A card inside a page has its title as its first line.',
+      'A card file has its title in its `title:` property, as a page has, and its card holds only its sides.',
+    ]
+    const flat = (text: string): string => text.replace(/\s+/g, ' ')
+    const places: Record<string, string> = {
+      HELP: flat(HELP),
+      'Start here.md': flat(await readFile(join(SKILL, 'Start here.md'), 'utf8')),
+      'Titles.md': flat(await readFile(join(SKILL, 'Titles.md'), 'utf8')),
+    }
+    const missing = Object.entries(places).flatMap(([name, text]) => RULE.filter((sentence) => !text.includes(sentence)).map((sentence) => `${name}: ${sentence}`))
+    expect(missing).toEqual([])
+    for (const [name, text] of Object.entries(places)) expect(text, name).not.toMatch(/The first line of a card is its title|The \*\*first line\*\* is the card's title|a card's first line is its title/)
+  })
 })
