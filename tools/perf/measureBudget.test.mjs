@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { measure, outOfBudget, plistFails } from './measureBudget.mjs'
+import { cardSkillFails, measure, outOfBudget, plistFails } from './measureBudget.mjs'
 
 const script = join(dirname(fileURLToPath(import.meta.url)), 'measureBudget.mjs')
 const budget = JSON.parse(readFileSync(new URL('./budget.json', import.meta.url), 'utf8'))
@@ -135,6 +135,22 @@ describe('the packaged rows', () => {
     const { code, text } = gate(['--app', app, '--dmg', join(out, 'missing.dmg')])
     expect(text).toContain(`INTEGRITY FAIL: no dmg at ${join(out, 'missing.dmg')}`)
     expect(code).toBe(1)
+  })
+})
+
+describe('the card skill in the packed app (YAZ-5107)', () => {
+  const build = JSON.parse(readFileSync(new URL('../../desktop/package.json', import.meta.url), 'utf8')).build
+
+  it('desktop/package.json ships skills/card-skill as Resources/card-skill', () => {
+    expect(build.extraResources).toContainEqual({ from: '../skills/card-skill', to: 'card-skill' })
+  })
+
+  it('passes an app with Resources/card-skill and its two vault files, and fails one without', () => {
+    const app = fakeApp()
+    expect(cardSkillFails(app)).toEqual(['Resources/card-skill/.yaseendocs/ids.json missing (the card skill, YAZ-5107)', 'Resources/card-skill/.yaseendocs/read-only.json missing (the card skill, YAZ-5107)'])
+    put('Fake.app/Contents/Resources/card-skill/.yaseendocs/ids.json', '{"enabled":false}')
+    put('Fake.app/Contents/Resources/card-skill/.yaseendocs/read-only.json', '{"on":true}')
+    expect(cardSkillFails(app)).toEqual([])
   })
 })
 

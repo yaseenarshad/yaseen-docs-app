@@ -37,6 +37,7 @@ import { moveLegacyHeadingStyles } from './textFormattingMove'
 import { movePageSwitches } from './movePageSwitches'
 import { runQuitSequence } from './quitSequence'
 import { createSpeller, nativeMenuAsker, spellerPath } from './speller'
+import { cardSkillStamp, ensureCardSkill, shippedCardSkill } from './cardSkill'
 import { stopAllLanguageServers } from './lsp/server'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
 import { appZoomFactor, subscribeAppZoom } from './appZoom'
@@ -489,9 +490,16 @@ app.whenReady().then(() => {
     const link = parseFileLink(url)
     return (link === null ? null : manager.rootFor(link.path, link.root)) ?? []
   })
+  // The card skill's copy in the profile (YAZ-5107): made before the first window, never while the app runs. A
+  // checkout stamps its version with the shipped files' hash, so an edit of `skills/card-skill` reaches the copy.
+  // A failed copy is logged and never stops the start.
+  const shippedSkill = shippedCardSkill({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, mainDir: __dirname })
+  const cardSkillReady = (app.isPackaged ? Promise.resolve(app.getVersion()) : cardSkillStamp(shippedSkill, app.getVersion()))
+    .then((version) => ensureCardSkill(app.getPath('userData'), shippedSkill, version))
+    .catch((err: unknown) => console.error(`[cardSkill] the copy failed: ${String(err)}`))
   // The first window waits for the settings folder's first read (YAZ-3276 D4), so a theme that the other Mac
   // changed shows no flash. At most 500 ms: a slow or lost folder never holds up a launch. No folder: at once.
-  void Promise.race([settingsFolder.ready, new Promise((done) => setTimeout(done, 500))]).then(() => {
+  void Promise.all([Promise.race([settingsFolder.ready, new Promise((done) => setTimeout(done, 500))]), cardSkillReady]).then(() => {
     manager.restore(asked.length > 0 ? asked : store.get().settings.startupWindows)
     links.flush()
   })

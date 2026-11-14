@@ -181,7 +181,18 @@ export function plistFails(plist) {
   return fails
 }
 
-/** Integrity of the packaged `.app`: Info.plist, the ad-hoc seal, the CLI shim, the asar payload. macOS only. */
+/**
+ * The card skill's folder (YAZ-5107), shipped as the `card-skill` extraResource: the app copies it into the profile at
+ * its start. Its two vault files keep the app from writing into the copy (IDs off, read only on), so both must ship.
+ */
+export function cardSkillFails(app) {
+  return ['ids.json', 'read-only.json']
+    .map((f) => `Resources/card-skill/.yaseendocs/${f}`)
+    .filter((p) => !existsSync(join(app, 'Contents', p)))
+    .map((p) => `${p} missing (the card skill, YAZ-5107)`)
+}
+
+/** Integrity of the packaged `.app`: Info.plist, the ad-hoc seal, the CLI shim, the card skill, the asar payload. macOS only. */
 function checkApp(app) {
   if (!existsSync(app)) return [`no app at ${app} (run npm run desktop:build, or use --out-only)`]
   const fails = []
@@ -194,6 +205,7 @@ function checkApp(app) {
   if (verify.status !== 0) fails.push(`codesign --verify --deep --strict failed: ${verify.stderr.toString().slice(0, 300)}`)
   const bin = statSync(join(app, 'Contents/Resources/bin/yaseendocs'), { throwIfNoEntry: false })
   if (!bin || !(bin.mode & 0o111)) fails.push('Resources/bin/yaseendocs missing or not executable (the command line agents run)')
+  fails.push(...cardSkillFails(app))
   const inAsar = new Set(asarFiles(join(app, 'Contents/Resources/app.asar')))
   for (const p of REQUIRED_OUT) if (!inAsar.has(`out/${p}`)) fails.push(`asar: missing out/${p}`)
   for (const d of DRAWIO_DIRS) if (![...inAsar].some((f) => f.startsWith(`out/${d}/`))) fails.push(`asar: out/${d}/ is empty (diagram library icons draw blank, math labels show raw TeX)`)
