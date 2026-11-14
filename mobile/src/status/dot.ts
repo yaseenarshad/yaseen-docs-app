@@ -1,11 +1,11 @@
 import type { AnswersState } from '../answers/answers'
 import type { LostAnswer, WaitingAnswer } from '../answers/outbox'
 import type { CardOp } from '../answers/ops'
-import type { PhoneSyncState } from '../answers/status'
 import type { ShellSyncStatus } from '../app/syncPort'
 import type { TokenEndWarning } from '../auth/expiry'
 
-export type { PhoneSyncState }
+/** The phone's sync state (decision 12): a dot and a few words in the top bar, always shown. AutoSync's five states. */
+export type PhoneSyncState = 'synced' | 'pending' | 'syncing' | 'attention' | 'off'
 
 /** What the dot reads. Four sources, each one small, so the dot is a pure function of them. */
 export interface DotInput {
