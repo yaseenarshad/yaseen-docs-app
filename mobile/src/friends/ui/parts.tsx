@@ -81,9 +81,33 @@ export const clockTime = (t: number): string => new Date(t).toLocaleTimeString([
  * preview and the stable site each make their own (`friendLink`). 4E2's link carries the same code.
  */
 export function ownSiteLink(link: string, origin: string = globalThis.location?.origin ?? 'null'): string {
+  if (!/^https:\/\//.test(origin)) return link
   const code = friendCodeFrom(link)
-  return code !== null && /^https:\/\//.test(origin) ? friendLink(origin, code) : link
+  if (code !== null) return friendLink(origin, code)
+  // YAZ-5263: a group or join link (4E3's) names the site the app runs on too; its path and code stay.
+  try {
+    const url = new URL(link)
+    return /^\/(group|join)\/?$/.test(url.pathname) ? `${origin.replace(/\/+$/, '')}${url.pathname}${url.hash}` : link
+  } catch {
+    return link
+  }
 }
+
+/**
+ * YAZ-5263: the words that go with a group link and a join link. No page of the site shows a code for them yet (5-'s
+ * landing page is for `/friend`), so the words tell the true step: copy the whole message, then paste it in the app
+ * (4E3's paste box reads a link anywhere in the text).
+ */
+export const groupShareText = (name: string, url: string) => ({
+  title: 'Notecards group link',
+  text: `Join my group ${name} on Notecards. Copy this whole message. Then open Notecards, tap + Add, and tap Paste a friend's link.`,
+  url,
+})
+export const joinShareText = (name: string, url: string) => ({
+  title: 'Notecards join link',
+  text: `Please add me to ${name} on Notecards. Copy this whole message. Then open Notecards, tap + Add, and tap Paste a friend's link.`,
+  url,
+})
 
 /**
  * YAZ-5257: the words for the answer of Remove, Cancel link, Leave group, Delete group and Remove a member, or null

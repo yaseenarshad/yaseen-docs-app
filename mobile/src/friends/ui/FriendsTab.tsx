@@ -19,7 +19,7 @@ import {
   type JoinRequest,
   type JoinResult,
 } from './groups'
-import { Avatar, LinkToCopy, Mark, SHARED_WORDS, actionWords, ownSiteLink, readClipboard, shareOut } from './parts'
+import { Avatar, LinkToCopy, Mark, SHARED_WORDS, actionWords, groupShareText, joinShareText, ownSiteLink, readClipboard, shareOut } from './parts'
 import type { Board, FriendEntry, FriendsService, PasteAnswer } from './service'
 import { useBoard, useNow, useService } from './useFriends'
 
@@ -431,34 +431,20 @@ function GroupActions({
   const groups = service.groups!
   const name = gistText(view.name) || 'this group'
   const [link, setLink] = useState<string | null>(null)
-  const invite = async (url: string, title: string, text: string) => {
-    const how = await shareOut({ title, text, url })
-    if (how === 'show') setLink(url)
+  const invite = async (data: { title: string; text: string; url: string }) => {
+    const how = await shareOut(data)
+    if (how === 'show') setLink(data.url)
     say(how === 'copied' ? 'Link copied. Send it.' : null)
   }
   return (
     <div className="stack" style={{ marginTop: 16 }}>
       {(view.kind === 'waiting' || view.kind === 'not-added') && (
-        <button
-          type="button"
-          className="btn btn--wide"
-          onClick={() => void invite(view.sendToAdmin, 'Notecards join link', `Please add me to ${name} on Notecards.`)}
-        >
+        <button type="button" className="btn btn--wide" onClick={() => void invite(joinShareText(name, ownSiteLink(view.sendToAdmin)))}>
           Send my join link to the admin
         </button>
       )}
       {view.kind === 'ok' && view.iAmAdmin && (
-        <button
-          type="button"
-          className="btn btn--wide"
-          onClick={() =>
-            void invite(
-              groupLink(view.group),
-              'Notecards group link',
-              `Join my group ${name} on Notecards. Open this link, copy the code, then paste it in the app.`,
-            )
-          }
-        >
+        <button type="button" className="btn btn--wide" onClick={() => void invite(groupShareText(name, ownSiteLink(groupLink(view.group))))}>
           Share the group link
         </button>
       )}
@@ -674,11 +660,15 @@ function PastePanel({ service, close, refresh }: { service: FriendsService; clos
           type="button"
           className="btn btn--wide"
           onClick={() =>
-            void shareOut({
-              title: 'Notecards friend link',
-              text: 'Add me as a friend on Notecards. Open this link, copy the code, then paste it in the app.',
-              url: ownSiteLink(sendBack),
-            }).then((how) => {
+            void shareOut(
+              answer?.kind === 'joined'
+                ? joinShareText(gistText(answer.name, 30), ownSiteLink(sendBack))
+                : {
+                    title: 'Notecards friend link',
+                    text: 'Add me as a friend on Notecards. Open this link, copy the code, then paste it in the app.',
+                    url: ownSiteLink(sendBack),
+                  },
+            ).then((how) => {
               if (how === 'show') setLink(ownSiteLink(sendBack))
               else if (SHARED_WORDS[how] !== null) setSaid(SHARED_WORDS[how])
             })
@@ -740,12 +730,10 @@ function GroupPanel({ service, close, refresh }: { service: FriendsService; clos
       if (made.kind === 'bad-name') return setSaid('Give the group a name.')
       if (made.kind !== 'ok') return setSaid(UNAVAILABLE_WORDS[made.kind])
       void refresh()
-      const how = await shareOut({
-        title: made.title,
-        text: made.text,
-        url: made.link,
-      })
-      if (how === 'show') setLink(made.link)
+      // YAZ-5263: the site the app runs on, and words that tell the true step (no page shows a group code yet).
+      const data = groupShareText(gistText(name, 30), ownSiteLink(made.link))
+      const how = await shareOut(data)
+      if (how === 'show') setLink(data.url)
       setSaid('Group made. Send its link to the people you want in it. Then paste the join link each one sends you.')
     } finally {
       running.current = false
