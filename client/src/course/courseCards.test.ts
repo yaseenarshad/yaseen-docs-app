@@ -25,6 +25,7 @@ import { COURSE } from './script'
 import { WAITING_CLIPS } from './waits'
 import { courseScenes } from './scenes'
 import { mountScene, testClock } from './scenes/testing'
+import { checkTour } from './tourHelp'
 import { memoryHost, showOnlyHost, type CourseHost, type CourseVault, type MadeCard } from './courseHost'
 import {
   COURSE_PAGE,
@@ -456,3 +457,31 @@ describe('the seam', () => {
 async function mkdirP(path: string): Promise<void> {
   await createDir({ path }, null).catch(() => undefined)
 }
+
+describe('chapter 4\'s tour and its Course page (YAZ-5123 with YAZ-5124)', () => {
+  it('the tour of chapter 4 asks the real host for Course page: the page is made once, and the tour marks that file', async () => {
+    const vault = vaultOf()
+    const host = vaultCourseHost(vault.view, depsOf().deps)
+    await host.makeFirstCard({ front: 'Water boils at 100 degrees at sea level.', hidden: '100', back: '' })
+    await vault.refresh()
+    const checked = await checkTour('where', host)
+    if (!('places' in checked)) throw new Error(`blocked: ${checked.blocked}`)
+    expect(checked.places.folder).toBe(`${root}/course-cards`)
+    const page = checked.places.page!
+    expect(splitFrontmatter(await readFile(page, 'utf8')).body).toBe(`${COURSE_PAGE_LINE}\n`)
+    await vault.refresh()
+    expect(await checkTour('where', host)).toEqual(checked)
+    expect((await cardFilesIn(join(root, 'course-cards'))).filter((name) => !name.includes('water'))).toEqual([page.slice(page.lastIndexOf('/') + 1)])
+  })
+
+  it('another chapter\'s tour makes no Course page; a read-only vault gives the tour its "cannot here" line and makes nothing', async () => {
+    const vault = vaultOf()
+    const host = vaultCourseHost(vault.view, depsOf().deps)
+    expect('places' in (await checkTour('first-card', host))).toBe(true)
+    expect(await cardFilesIn(join(root, 'course-cards'))).toEqual([])
+    await rm(join(root, 'course-cards'), { recursive: true })
+    const locked = vaultCourseHost(vaultOf({ readOnly: true }).view, depsOf().deps)
+    expect(await checkTour('where', locked)).toEqual({ blocked: SHOW_ONLY.readOnly })
+    expect(await top()).toEqual([])
+  })
+})

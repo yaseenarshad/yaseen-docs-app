@@ -57,21 +57,22 @@ export const TARGET_HELP: Record<string, TargetHelp> = {
   'settings-course': { where: 'Open Settings, and click Review.', show: () => ({ kind: 'settings', page: 'review' }) },
 }
 
-/** What a chapter's tour needs first: the Course Cards folder, and this many cards in it. */
+/** What a chapter's tour needs first: the Course Cards folder, this many cards in it, and its "Course page" (chapter 4). */
 export interface TourNeeds {
   folder: boolean
   cards: number
+  page?: boolean
 }
 const TOUR_NEEDS: Record<string, TourNeeds> = {
   'first-card': { folder: true, cards: 0 },
   inbox: { folder: true, cards: 1 },
-  where: { folder: true, cards: 1 },
+  where: { folder: true, cards: 1, page: true },
   links: { folder: true, cards: 2 },
   care: { folder: true, cards: 1 },
 }
 export const needsOf = (chapterId: string): TourNeeds => TOUR_NEEDS[chapterId] ?? { folder: false, cards: 0 }
 
-/** The name of the page that chapter 4's tour opens, in the Course Cards folder. */
+/** The name of the page that chapter 4's tour opens, in the Course Cards folder (the host's own file wins: `coursePage()`). */
 export const COURSE_PAGE = 'Course page.md'
 
 export const noCardsLine = (need: number): string =>
@@ -89,7 +90,13 @@ export async function checkTour(chapterId: string, host: CourseHost): Promise<{ 
   if (!needs.folder) return { places: { folder: null, page: null } }
   const found = await host.courseCards()
   if ('showOnly' in found) return { blocked: found.showOnly }
-  const places = { folder: found.path, page: `${found.path}/${COURSE_PAGE}` }
+  let places: TourPlaces = { folder: found.path, page: `${found.path}/${COURSE_PAGE}` }
+  // Chapter 4 opens "Course page": the host makes it once (YAZ-5124), and its file is the one the tour marks.
+  if (needs.page === true) {
+    const page = await host.coursePage()
+    if ('showOnly' in page) return { blocked: page.showOnly }
+    places = { ...places, page: page.path }
+  }
   if (needs.cards === 0) return { places }
   const cards = await new Promise<readonly CourseCard[] | null>((resolve) => {
     let stop: (() => void) | null = null
