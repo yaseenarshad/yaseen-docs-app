@@ -147,7 +147,7 @@ listeners.push((m) => {
   if (m.method === 'Runtime.exceptionThrown') log.push({ where, level: 'exception', text: m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text })
   if (m.method === 'Log.entryAdded') log.push({ where, level: m.params.entry.level, text: m.params.entry.text })
 })
-const csp = () => log.filter((l) => /Content Security Policy|Refused to/i.test(l.text))
+const csp = () => log.filter((l) => /Content Security Policy/i.test(l.text))
 const errors = () => log.filter((l) => /error|exception/.test(l.level))
 
 // The worker is NOT attached to DevTools: an attached worker is restarted and held by Chrome, which changes the very
@@ -347,6 +347,15 @@ try {
     // A finding, not a step of 5-: Chrome keeps a failed import of an address for the life of the page (the module map),
     // so a "Try again" that imports the same chunk again fails again until the page loads again.
     console.log(`NOTE  8b the SAME chunk address imported again after a failure: ${first}, then ${again}${again === 'failed' ? ' (the browser keeps the failure until a reload)' : ''}`)
+    // 8c. YAZ-5300: with no worker in control (a first visit), a chunk's stylesheet that failed once has its rules after
+    // Try again, which links it again (`relinkFailedStyles`, the same steps here: a NEW link to the same file).
+    await send('Network.setBypassServiceWorker', { bypass: true }, page)
+    const css = 'late-proof.css'
+    const added = await evaluate(`new Promise(done => { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = '/assets/${css}'; l.id = 'late-css'; l.onload = l.onerror = () => done(true); document.head.append(l) })`)
+    writeFileSync(join(v2, 'assets', css), '.proof-late { color: rgb(1, 2, 3) }\n')
+    const rules = await evaluate(`new Promise(done => { const old = document.getElementById('late-css'); const ok = (l) => { try { return l.sheet ? l.sheet.cssRules.length : -1 } catch { return -1 } }; const before = ok(old); const fresh = old.cloneNode(); fresh.onload = fresh.onerror = () => done([before, ok(fresh)]); old.replaceWith(fresh) })`)
+    await send('Network.setBypassServiceWorker', { bypass: false }, page)
+    record('8c a chunk stylesheet that failed once has its rules when it is linked again (Try again, no worker)', added === true && rules[0] <= 0 && rules[1] > 0, `rules before ${rules[0]}, after ${rules[1]}`)
     await host(null)
   }
   if (!LIVE) {

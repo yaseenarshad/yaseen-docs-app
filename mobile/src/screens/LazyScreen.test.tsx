@@ -37,4 +37,40 @@ describe('lazyScreen', () => {
     expect(host.textContent).toBe('Loaded yes')
     act(() => root.unmount())
   })
+
+  it("YAZ-5300: Try again links the chunk's FAILED stylesheet again (Vite's preload helper skips a CSS file it saw once); a loaded one stays", async () => {
+    // A stylesheet of a lazy chunk that failed (no sheet), and one of the first load that works.
+    const failed = Object.assign(document.createElement('link'), { rel: 'stylesheet', href: '/assets/ReviewTab-X.css' })
+    const good = Object.assign(document.createElement('link'), { rel: 'stylesheet', href: '/assets/index-Y.css' })
+    document.head.append(failed, good)
+    Object.defineProperty(good, 'sheet', { value: { cssRules: [{}] } })
+    let calls = 0
+    const Screen = lazyScreen(async () => {
+      calls++
+      if (calls === 1) throw new TypeError('Unable to preload CSS for /assets/ReviewTab-X.css')
+      return { default: () => createElement('p', null, 'Review') }
+    })
+    const host = document.createElement('div')
+    const root = createRoot(host)
+    const onError = (e: ErrorEvent) => e.preventDefault()
+    window.addEventListener('error', onError)
+    await act(async () => root.render(createElement(Screen, {})))
+    await settle()
+    const tryAgain = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Try again')!
+    await act(async () => tryAgain.click())
+    // The new link loads (jsdom does not fetch: say it did).
+    const relinked = [...document.head.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].filter((l) => l.getAttribute('href') === '/assets/ReviewTab-X.css')
+    expect(relinked).toHaveLength(1)
+    expect(relinked[0]).not.toBe(failed)
+    relinked[0].dispatchEvent(new Event('load'))
+    await settle()
+    window.removeEventListener('error', onError)
+    expect(failed.isConnected).toBe(false)
+    expect(good.isConnected).toBe(true)
+    expect(calls).toBe(2)
+    expect(host.textContent).toBe('Review')
+    act(() => root.unmount())
+    relinked[0].remove()
+    good.remove()
+  })
 })
