@@ -7,6 +7,7 @@ import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, isListFile, readListFiles, type
 import { fakeGistWorld, type FakeGistWorld, type FakeGist } from '@shared/friendGistsFake'
 import { GROUP_FILE } from '@shared/friendGroups'
 import { emptyBudget } from '@shared/friendSend'
+import { friendLink } from '@shared/friendsList' // BUILDER CHANGE: the paste builds the link with the app's own base (no host in a file of mobile/src)
 import type { IndexRecord } from '@shared/types'
 import { saveAccount } from '../../auth/account'
 import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn, vaultId, PHONE, type PhoneVault, type TokenStore, type VaultStore } from '../../store'
@@ -49,7 +50,7 @@ interface Device {
   fireCrash: () => void
   /**
    * BUILDER CHANGE (YAZ-5312, list v2): the files of the list gist as this device last read or wrote them (was: the text
-   * of `notecards-friends.json`). Version 2 keeps the list in the head file and one file for each entry.
+   * of the head file). Version 2 keeps the list in the head file and one file for each entry.
    */
   lastList: Record<string, string> | null
 }
@@ -315,9 +316,9 @@ export class Model {
     for (let i = 0; i < nC; i++) this.devs.C.push(await this.device('C', i))
     // Other tools' gists in A's account: one with a file named like ours, one with our pointer name and more, one plain.
     this.foreign.push(this.world.seed('ali', { [NUMBERS_FILE]: '{"my":"backup"}', 'README.md': 'my own copy' }))
-    this.foreign.push(this.world.seed('ali', { [NUMBERS_FILE]: '{"v":1,"note":"another tool"}' }))
+    this.foreign.push(this.world.seed('ali', { [NUMBERS_FILE]: '{"v":1,"by":"another tool"}' }))
     this.foreign.push(this.world.seed('ali', { [POINTER_FILE]: '{"v":1,"stats":"x"}', 'other.txt': 'x' }))
-    this.foreign.push(this.world.seed('ali', { 'notes.md': 'hello' }))
+    this.foreign.push(this.world.seed('ali', { 'readme.md': 'hello' }))
     // C is A's paired friend.
     const a = this.devs.A[0].list
     const c = this.devs.C[0].list
@@ -410,7 +411,7 @@ export class Model {
         else if (mode === 0) id = box[box.length - 1].id
         else id = box[Math.floor(this.rng() * box.length)].id
         if (id === undefined) break
-        const r = await this.act(d, 'paste', (l) => l.paste(`https://notecards.yaseenarshad.com/friend#${id}`))
+        const r = await this.act(d, 'paste', (l) => l.paste(friendLink(id)))
         out = `${id.slice(0, 6)} -> ${r === 'crash' ? 'crash' : r.kind}`
         if (r !== 'crash' && r.kind === 'added') {
           const other = box.find((x) => x.id === id)?.from
@@ -446,7 +447,7 @@ export class Model {
           out += `${m.slice(0, 6)}:${r === 'crash' ? 'crash' : r.kind} `
           if (r !== 'crash' && r.kind === 'done' && this.listOf('A')?.index.friends.some((f) => f.mine === m)) {
             this.st.doneButListed++
-            this.log.push(`  NOTE remove said done, but ${m.slice(0, 6)} is still in A's list`)
+            this.log.push(`  FLAG remove said done, but ${m.slice(0, 6)} is still in A's list`)
           }
         }
         break
@@ -545,7 +546,7 @@ export class Model {
       if (queuedB || Object.keys(names).some((m) => this.bMinesTargeted.has(m)) || bListed) this.st.queuedHonest++
       if (this.cutDone && bListed) {
         this.st.lostRemove++
-        this.log.push(`  NOTE B is back in A's list after a finished remove (no re-add by A)`)
+        this.log.push(`  FLAG B is back in A's list after a finished remove (no re-add by A)`)
         this.cutDone = false
       }
       return
