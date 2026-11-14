@@ -22,7 +22,8 @@ describe('the phone app has no editor, and the reader is a lazy chunk (YAZ-5079)
     expect(modules.filter((m) => EDITOR_PACKAGE.test(m) || EDITOR_FILE.test(m))).toEqual([])
     // The reader is there, in a chunk of its own.
     expect(modules.some((m) => m.endsWith('mobile/src/page/pageRender.ts'))).toBe(true)
-    const entry = chunks.find((c) => c.isEntry)!
+    // The app's entry (YAZ-5087 adds a second page, the friend landing page `friend.html`).
+    const entry = chunks.find((c) => c.isEntry && /\/index\.html$/.test(c.facadeModuleId ?? ''))!
     const first = new Set([entry.fileName, ...entry.imports])
     const eager = chunks.filter((c) => first.has(c.fileName)).flatMap((c) => Object.keys(c.modules))
     expect(eager.filter((m) => /node_modules\/(marked|dompurify)\//.test(m) || m.endsWith('page/pageRender.ts'))).toEqual([])
