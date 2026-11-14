@@ -1,11 +1,17 @@
 import { AppProvider, type AppServices } from './app/AppState'
 import { Shell } from './screens/Shell'
+import type { Updates } from './pwa/updates'
+import { UpdateLine } from './pwa/UpdateLine'
 
-/** Notecards: the app state (`AppProvider`) around the shell. `main.tsx` passes the real services; tests pass fakes. */
-export function App({ services }: { services: AppServices }) {
+/**
+ * Notecards: the app state (`AppProvider`) around the shell. `main.tsx` passes the real services; tests pass fakes.
+ * `updates` (YAZ-5087): the service worker's update, for the "A new version is ready" line; none in dev and tests.
+ */
+export function App({ services, updates }: { services: AppServices; updates?: Updates | null }) {
   return (
     <AppProvider services={services}>
       <Shell />
+      {updates && <UpdateLine updates={updates} />}
     </AppProvider>
   )
 }

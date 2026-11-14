@@ -1,0 +1,26 @@
+/* The friend landing page (YAZ-5087). The app's tokens come from styles.css. */
+.landing {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: calc(env(safe-area-inset-top, 0px) + 24px) 16px calc(env(safe-area-inset-bottom, 0px) + 32px);
+}
+
+.landing__icon {
+  display: block;
+  border-radius: 14px;
+  margin-bottom: 12px;
+}
+
+.landing__say {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+#code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
+}
+
+[hidden] {
+  display: none !important;
+}

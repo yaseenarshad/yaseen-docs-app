@@ -138,19 +138,57 @@ describe('while the app runs', () => {
     expect(u.ready()).toBe(true)
   })
 
-  it('apply: the waiting worker takes over, then ONE reload; a takeover the page did not ask for (the first claim) reloads nothing', async () => {
+  it('apply: the waiting worker takes over, then ONE reload', async () => {
     let reloads = 0
     const waiting = worker()
     const c = container({ waiting })
     const u = createUpdates({ container: c, reload: () => reloads++, now: () => 0 })
     await u.start()
-    c.change()
-    expect(reloads).toBe(0)
     u.apply()
     expect(waiting.sent).toEqual([{ type: SKIP_WAITING }])
+    expect(reloads).toBe(0) // not before the new worker runs the page
     c.change()
     c.change()
     expect(reloads).toBe(1)
+  })
+
+  it('the first install takes the page (clients.claim): no reload, no line', async () => {
+    let reloads = 0
+    const c = container({ controller: false })
+    const u = createUpdates({ container: c, reload: () => reloads++, now: () => 0 })
+    await u.start()
+    c.change()
+    expect(reloads).toBe(0)
+    expect(u.ready()).toBe(false)
+  })
+
+  it('prepare (the app goes to the background): the new worker takes over, the page is NOT loaded again; it is ready, and apply loads it at once', async () => {
+    let reloads = 0
+    const waiting = worker()
+    const c = container({ waiting })
+    const u = createUpdates({ container: c, reload: () => reloads++, now: () => 0 })
+    await u.start()
+    u.prepare()
+    expect(waiting.sent).toEqual([{ type: SKIP_WAITING }])
+    c.reg.waiting = null
+    c.change()
+    expect(reloads).toBe(0)
+    expect(u.tookOver()).toBe(true)
+    expect(u.ready()).toBe(true)
+    u.apply()
+    u.apply()
+    expect(reloads).toBe(1)
+  })
+
+  it('a takeover the page did not ask for (the start swap that came late, another tab): ready, no reload', async () => {
+    let reloads = 0
+    const c = container()
+    const u = createUpdates({ container: c, reload: () => reloads++, now: () => 0 })
+    await u.start()
+    expect(u.ready()).toBe(false)
+    c.change()
+    expect(reloads).toBe(0)
+    expect(u.ready()).toBe(true)
   })
 
   it(`asks for a new version when the app comes back, at most each ${CHECK_EVERY_MS / 60_000} minutes`, async () => {
@@ -158,11 +196,12 @@ describe('while the app runs', () => {
     const c = container()
     const u = createUpdates({ container: c, reload: () => {}, now: () => t })
     await u.start()
+    expect(c.reg.updates).toBe(1) // the start asks
     await u.check()
-    expect(c.reg.updates).toBe(0) // the start asked already
+    expect(c.reg.updates).toBe(1) // not again so soon
     t = CHECK_EVERY_MS
     await u.check()
     await u.check()
-    expect(c.reg.updates).toBe(1)
+    expect(c.reg.updates).toBe(2)
   })
 })
