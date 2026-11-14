@@ -25,15 +25,13 @@ const BIG = (() => {
       ...v,
       members: [
         ...v.members,
-        ...friends
-          .slice(0, 6)
-          .map((f, k) => ({
-            ...v.members[1],
-            login: `m${k}`,
-            name: f.name,
-            pointer: `${g}${k}`.padEnd(32, 'f'),
-            read: { kind: 'ok' as const, stats: f.stats!, pointer: { v: 1 as const, stats: 'a'.repeat(32) }, updatedAt: NOW },
-          })),
+        ...friends.slice(0, 6).map((f, k) => ({
+          ...v.members[1],
+          login: `m${k}`,
+          name: f.name,
+          pointer: `${g}${k}`.padEnd(32, 'f'),
+          read: { kind: 'ok' as const, stats: f.stats!, pointer: { v: 1 as const, stats: 'a'.repeat(32) }, updatedAt: NOW },
+        })),
       ],
     }
   })

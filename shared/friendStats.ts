@@ -128,12 +128,34 @@ function dayOf(bounds: readonly string[], at: string): number {
  * of an ID on the same page counts one time, as the Inbox shows it one time. A vault with review off has no due card.
  */
 export function friendStats(vaults: readonly FriendVault[], now: number): Omit<FriendStats, 'login' | 'name' | 'avatar'> {
+  const steps = friendStatsSteps(vaults, now)
+  for (let step = steps.next(); ; step = steps.next()) if (step.done === true) return step.value
+}
+
+/**
+ * The same count as `friendStats`, in small steps (YAZ-5255): it waits for `slice()` after each card, so the phone
+ * gives the UI thread back (`uiSlicer`) and no step comes near a long task (50 ms). Same numbers, same order.
+ */
+export async function friendStatsSliced(vaults: readonly FriendVault[], now: number, slice: () => Promise<void>): Promise<Omit<FriendStats, 'login' | 'name' | 'avatar'>> {
+  const steps = friendStatsSteps(vaults, now)
+  for (let step = steps.next(); ; step = steps.next()) {
+    if (step.done === true) return step.value
+    await slice()
+  }
+}
+
+/** The count of `friendStats` as steps: it yields after each card (and after each page in the first scan). */
+function* friendStatsSteps(vaults: readonly FriendVault[], now: number): Generator<void, Omit<FriendStats, 'login' | 'name' | 'avatar'>> {
   const today = new Date(now)
   today.setHours(0, 0, 0, 0)
   const todayEnd = cardTime(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1).getTime())
   // The first answer across all vaults, before the end of today: the history starts on its local day.
   let firstAt: string | null = null
-  for (const { pages } of vaults) for (const page of pages) for (const card of page.cards ?? []) for (const r of card.reviews) if (r.at < todayEnd && (firstAt === null || r.at < firstAt)) firstAt = r.at
+  for (const { pages } of vaults)
+    for (const page of pages) {
+      for (const card of page.cards ?? []) for (const r of card.reviews) if (r.at < todayEnd && (firstAt === null || r.at < firstAt)) firstAt = r.at
+      yield
+    }
   const start = firstAt === null ? new Date(today) : new Date(Date.parse(firstAt))
   start.setHours(0, 0, 0, 0)
   if (start > today) start.setTime(today.getTime())
@@ -163,6 +185,7 @@ export function friendStats(vaults: readonly FriendVault[], now: number): Omit<F
     for (const page of pages) {
       const ids = new Set<string>()
       for (const card of page.cards ?? []) {
+        yield
         totals.cards++
         const reviews = inOrder(card.reviews).filter((r) => r.at < todayEnd)
         // The day's numbers: every answer counts, archived cards too (their answers were made).

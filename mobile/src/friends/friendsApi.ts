@@ -46,7 +46,7 @@ async function settingsOf(store: VaultStore, vault: string): Promise<ReviewSetti
  * index records (3B's `PhoneIndex`) and its settings. Null when the phone does not hold ALL of them, or the list is
  * empty: then the phone sends nothing (round 12, item 3).
  */
-export async function countedVaults(store: VaultStore, repos: readonly string[]): Promise<FriendVault[] | null> {
+export async function countedVaults(store: VaultStore, repos: readonly string[], held?: (vault: string) => PhoneIndex | null): Promise<FriendVault[] | null> {
   if (repos.length === 0) return null
   const list = await loadVaultList(store)
   const out: FriendVault[] = []
@@ -54,7 +54,8 @@ export async function countedVaults(store: VaultStore, repos: readonly string[])
     const vault = list.vaults.find((v) => v.repo.toLowerCase() === repo)
     if (vault === undefined) return null
     const id = vaultId(vault)
-    const index = await store.getState<PhoneIndex>(id, INDEX_STATE)
+    // YAZ-5255: the open vault's index as the sync engine holds it (no read of the store), else the stored one.
+    const index = held?.(id) ?? (await store.getState<PhoneIndex>(id, INDEX_STATE))
     if (index === undefined || index === null || typeof index.records !== 'object') return null
     out.push({ pages: Object.values(index.records), settings: await settingsOf(store, id) })
   }

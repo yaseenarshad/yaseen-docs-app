@@ -32,6 +32,7 @@ import type { FetchLike } from '../github/client'
 import { PHONE, VaultClosedError, type TokenStore, type VaultStore } from '../store'
 import type { Clock, SyncEvent } from '../sync/engine'
 import { countedVaults, openFriendsApi } from './friendsApi'
+import type { OwnNumbers } from './ownNumbers'
 import { friendsGuard } from './guard'
 import { drainQueue, loadQueue } from './removeQueue'
 
@@ -107,6 +108,11 @@ export interface FriendsSenderOptions {
    * the running request is aborted and nothing is stored again.
    */
   signal?: AbortSignal
+  /**
+   * YAZ-5255: my numbers, counted once for each change and kept (`ownNumbers.ts`), shared with the Friends tab. Absent:
+   * the sender counts them itself (2C's `friendStats`) at each try.
+   */
+  numbers?: OwnNumbers
   /** The description of a gist the sender makes (only when the numbers gist must be made again). */
   describe?: WriteOptions['describe']
 }
@@ -273,8 +279,9 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
         handle = finished.handle
       }
       const pointers = pointersOf(handle.index).length
-      const vaults = await countedVaults(store, handle.index.vaults)
-      const gate = sendGate({ pointers, passSeen, holdsAll: vaults !== null, lastSentAt: saved.lastSentAt, now, reason, budget: saved.budget })
+      const kept = options.numbers === undefined ? undefined : await options.numbers.counted(handle.index.vaults, now)
+      const vaults = kept === undefined ? await countedVaults(store, handle.index.vaults) : null
+      const gate = sendGate({ pointers, passSeen, holdsAll: kept === undefined ? vaults !== null : kept !== null, lastSentAt: saved.lastSentAt, now, reason, budget: saved.budget })
       if (!gate.go) {
         if (gate.why === 'wait' || gate.why === 'budget') {
           schedule(gate.retryAt!)
@@ -285,7 +292,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
       }
 
       // The count: about 200 ms for a large vault (2C). It runs at most once each 5 minutes, and on a background send.
-      const fresh = numbersFor(friendStats(vaults!, now), { login: account.login, name: account.name, avatar: account.avatarUrl, nickname: handle.index.nickname }, now)
+      const fresh = numbersFor(kept ?? friendStats(vaults!, now), { login: account.login, name: account.name, avatar: account.avatarUrl, nickname: handle.index.nickname }, now)
       const key = numbersKey(fresh)
       if (key === saved.lastKey && handle.index.stats !== null) {
         dirty = false

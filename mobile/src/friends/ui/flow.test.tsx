@@ -6,6 +6,7 @@ import { saveAccount } from '../../auth/account'
 import { mount, newPhone, NOW, type Harness } from '../../screens/testing'
 import { saveVaultList, vaultId, type PhoneVault, type TokenStore, type VaultStore } from '../../store'
 import { gistsFetch } from '../testing'
+import { createOwnNumbers } from '../ownNumbers'
 import { createFriendsService } from './service'
 
 /**
@@ -127,5 +128,26 @@ describe('add a friend, both orders, on the real friends logic', () => {
     const read = await bea.board()
     if (read.kind !== 'ok') throw new Error(read.kind)
     expect(read.friends[0].mark).toMatchObject({ kind: 'cheer' })
+  })
+
+  it('YAZ-5255: board reads with no change of the data count my numbers ONCE', async () => {
+    const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: () => NOW })
+    const p = await phoneOf(ALI, 'ali')
+    await p.store.setState('ali/vault@main', 'index', {
+      commit: 'c1',
+      records: { 'a.md': { cards: [{ id: 'A-1', off: false, next: false, reviews: [{ at: '2026-11-12T10:00Z', rating: 'good' }] }] } },
+    })
+    let counts = 0
+    const service = createFriendsService({
+      ...p,
+      fetch: gistsFetch(world).fetch,
+      now: () => NOW,
+      sleep: async () => {},
+      numbers: createOwnNumbers(p.store, { onCount: () => counts++ }),
+    })
+    for (let i = 0; i < 4; i++) await service.board()
+    expect(counts).toBe(1)
+    const read = await service.board()
+    expect(read.kind === 'ok' && read.me.stats?.totals.cards).toBe(1)
   })
 })

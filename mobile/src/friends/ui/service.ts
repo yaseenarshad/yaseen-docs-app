@@ -1,13 +1,13 @@
 import { WHAT_FRIENDS_SEE, type FriendRow, type PasteResult } from '@shared/friendsList'
 import { numbersFor } from '@shared/friendSend'
-import { friendStats, parseFriendStats, type FriendMark, type FriendStats } from '@shared/friendStats'
+import { parseFriendStats, type FriendMark, type FriendStats } from '@shared/friendStats'
 import type { FriendsPort } from '../../app/friendsPort'
 import { loadAccount } from '../../auth/account'
 import { loadFriendsAccount } from '../../auth/friends'
 import type { FetchLike } from '../../github/client'
 import { PHONE, loadVaultList, vaultId, type TokenStore, type VaultStore } from '../../store'
 import type { SyncEngine } from '../../sync/engine'
-import { countedVaults } from '../friendsApi'
+import { createOwnNumbers, type OwnNumbers } from '../ownNumbers'
 import { createFriendsList, type FriendsList, type ShareResult, type Unavailable } from '../list'
 import { createFriendsSender, type FriendsSender } from '../sender'
 import { avatarUrl, cleanName, type SeenMark } from './board'
@@ -93,6 +93,8 @@ export interface ServiceOptions {
   /** 3B's engine once it loads: the sender listens to its passes (4E1). Absent in tests. */
   engine?: Promise<SyncEngine>
   sleep?: (ms: number) => Promise<void>
+  /** YAZ-5255: the kept count of my numbers (tests pass one to count the counts). */
+  numbers?: OwnNumbers
   lock?: <T>(name: string, fn: () => Promise<T>) => Promise<T>
 }
 
@@ -126,15 +128,20 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
   })
   // 4E3 (YAZ-5084): groups run by an admin, on the same list.
   const groups: GroupsPort = list.groups
+  // YAZ-5255: my numbers, counted once for each change and kept; my row and the sender read the same count.
+  const own: OwnNumbers = options.numbers ?? createOwnNumbers(store)
 
   let sender: FriendsSender | null = null
   let stopped = false
   const onHidden = () => {
     if (document.visibilityState === 'hidden') void sender?.background()
   }
+  let unfollow: (() => void) | null = null
   void options.engine?.then((engine) => {
     if (stopped) return
+    unfollow = own.follow(engine)
     sender = createFriendsSender({
+      numbers: own,
       store,
       tokens,
       sync: engine,
@@ -156,12 +163,12 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
     const phone = await loadVaultList(store)
     const ids = settings.vaults ?? phone.vaults.map(vaultId)
     const repos = phone.vaults.filter((v) => ids.includes(vaultId(v))).map((v) => v.repo.toLowerCase())
-    const vaults = await countedVaults(store, repos)
+    const counted = await own.counted(repos, now())
     const stats =
-      vaults === null
+      counted === null
         ? null
         : numbersFor(
-            friendStats(vaults, now()),
+            counted,
             {
               login: profile?.login ?? '',
               name: profile?.name ?? '',
@@ -244,6 +251,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
     see: (seen) => marks.see(seen),
     async stop() {
       stopped = true
+      unfollow?.()
       if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onHidden)
       list.stop()
       marks.stop()
