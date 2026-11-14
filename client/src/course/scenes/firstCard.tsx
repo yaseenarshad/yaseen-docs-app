@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent as Reac
 import type { SceneProps } from '../scene'
 import { useUnit } from '../../vault/unitWord'
 import { PAPERS } from './papers'
-import { CANDID, MANY_TITLES, PROTEIN } from './cards'
+import { CANDID, MANY_TITLES, PROTEIN, SLEEP_DEBT, WALK } from './cards'
 import { draftText, draftTitle, firstCardInput, makeFirstCard, type MadeCard } from './makeCard'
 import {
   Answers,
@@ -645,13 +645,8 @@ function MakeCard(props: SceneProps) {
 }
 
 /** The card the walk-through makes in the app (made up). */
-const WALK_TITLE = 'Sleep debt'
-const WALK_FRONT = 'Each hour of sleep you miss adds to your'
-const WALK_WORD = 'sleep debt'
-const WALK_BACK = 'It builds up: one short hour a night for a week is seven hours.'
-const WALK_SECTION = 'Five short nights, then a lazy Saturday: still behind.'
-const WALK_NEW_TITLE = 'Sleep debt adds up'
-const WALK_TEXT = `${WALK_FRONT} {{${WALK_WORD}}}.\n---\n${WALK_BACK}\n\n***\n\n**EXAMPLE**\n${WALK_SECTION}`
+const { title: WALK_TITLE, renamed: WALK_NEW_TITLE, front: WALK_FRONT, word: WALK_WORD, back: WALK_BACK, section: WALK_SECTION } = WALK
+const WALK_TEXT = SLEEP_DEBT.text
 
 const NEW_MENU = ['New page', 'New card', 'New folder', 'New board']
 
@@ -874,7 +869,7 @@ function InTheApp(props: SceneProps) {
               ) : (
                 <div className="kit-readcard">
                   {titleHidden && <span className="card__state card__notitle kit-notitle">Title hidden in review</span>}
-                  <CardView beat={b} text={WALK_TEXT} chrome="block" id="P2X9" shown={1} />
+                  <CardView beat={b} text={WALK_TEXT} chrome="block" id={SLEEP_DEBT.id} shown={1} />
                   {id === 'c2-20' && (
                     <span className="kit-chip" style={pop(b, since(b, 0.7, 0.5))}>
                       Saved

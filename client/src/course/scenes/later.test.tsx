@@ -12,8 +12,7 @@ import { WAITING_CLIPS } from '../waits'
 import { showOnlyHost, type CourseHost, type CourseSummary } from '../courseHost'
 import { SHOW_ONLY } from '../courseCards'
 import { CHAPTER_SCENES, courseScenes } from '.'
-import { lineWords } from './papers'
-import { LATER_PAPERS } from './papersLater'
+import { PAPERS } from './papers'
 import { CourseEnd, LAST_LINE, whenBack } from './finale'
 import { memoryHost, mountScene, testClock } from './testing'
 
@@ -107,19 +106,10 @@ describe('chapters 9 to 12 (YAZ-5121)', () => {
       }
   })
 
-  it('show the papers under the copyright rule: a paraphrase stays one short line', () => {
-    for (const paper of Object.values(LATER_PAPERS)) {
-      if (paper.quote) expect(lineWords(paper.line), paper.id).toBeLessThan(15)
-      else expect(lineWords(paper.line), paper.id).toBeLessThanOrEqual(20)
-      expect(paper.authors.length).toBeGreaterThan(0)
-      expect(paper.year).toBeGreaterThan(1800)
-    }
-  })
-
   it('pull up each paper on its clip, with its highlighted line', () => {
-    const cases: [string, string, keyof typeof LATER_PAPERS][] = [
+    const cases: [string, string, keyof typeof PAPERS][] = [
       ['habits', 'c9-05', 'kornell'],
-      ['habits', 'c9-11', 'karpicke'],
+      ['habits', 'c9-11', 'karpickeGuesses'],
       ['links', 'c10-07', 'collinsLoftus'],
     ]
     for (const [ch, clipId, paper] of cases) {
@@ -127,7 +117,7 @@ describe('chapters 9 to 12 (YAZ-5121)', () => {
       const scene = mountScene(courseScenes(clipId), chapter(ch), { clock, done: () => undefined, host: memoryHost() })
       scene.render(chapter(ch).clips.find((c) => c.id === clipId)!)
       at(0.3, true)
-      expect(scene.el.querySelector('.kit-paper__line')?.textContent, clipId).toBe(LATER_PAPERS[paper].line)
+      expect(scene.el.querySelector('.kit-paper__line')?.textContent, clipId).toBe(PAPERS[paper].line)
       scene.unmount()
     }
   })

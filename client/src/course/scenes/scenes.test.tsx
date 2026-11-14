@@ -11,9 +11,7 @@ import { WAITING_CLIPS } from '../waits'
 import { NO_VAULT, showOnlyHost } from '../courseHost'
 import { SHOW_ONLY } from '../courseCards'
 import { CHAPTER_SCENES, courseScenes } from '.'
-import { PAPERS, lineWords } from './papers'
-import { PAPERS_6_TO_8, QUOTES_6_TO_8 } from './papers6to8'
-import { LATER_PAPERS } from './papersLater'
+import { PAPERS, QUOTES, lineWords } from './papers'
 import { COULD_NOT_MAKE, draftText, draftTitle, firstCardInput, makeFirstCard } from './makeCard'
 import { memoryHost, mountScene, testClock } from './testing'
 
@@ -57,16 +55,16 @@ describe('the scene registry (YAZ-5121)', () => {
 
 describe('the papers (YAZ-5121, the copyright rule)', () => {
   it('defines each paper once: chapter 9 points at chapter 3\'s Karpicke & Roediger 2008 with its own line', () => {
-    const { line: _a, source: _b, ...later } = LATER_PAPERS.karpicke
-    const { line: _c, source: _d, ...first } = PAPERS.karpicke2008
+    const { id: _e, line: _a, source: _b, ...later } = PAPERS.karpickeGuesses
+    const { id: _f, line: _c, source: _d, ...first } = PAPERS.karpicke2008
     expect(later).toEqual(first)
-    const titles = [...Object.values(PAPERS), ...Object.values(PAPERS_6_TO_8), ...Object.values(LATER_PAPERS)].filter((p) => p !== LATER_PAPERS.karpicke).map((p) => p.title)
+    const titles = Object.values(PAPERS).filter((p) => p !== PAPERS.karpickeGuesses).map((p) => p.title)
     expect(new Set(titles).size).toBe(titles.length)
   })
 
-  it('quotes fewer than 15 words; a paraphrase stays one short line, in every paper file (papers.ts, papers6to8.ts, papersLater.ts)', () => {
-    for (const quote of Object.values(QUOTES_6_TO_8)) expect(lineWords(quote.line), quote.id).toBeLessThan(15)
-    for (const paper of [...Object.values(PAPERS), ...Object.values(PAPERS_6_TO_8), ...Object.values(LATER_PAPERS)]) {
+  it('quotes fewer than 15 words; a paraphrase stays one short line', () => {
+    for (const quote of Object.values(QUOTES)) expect(lineWords(quote.line), quote.id).toBeLessThan(15)
+    for (const paper of Object.values(PAPERS)) {
       expect(typeof paper.quote).toBe('boolean')
       if (paper.quote) expect(lineWords(paper.line), paper.id).toBeLessThan(15)
       else expect(lineWords(paper.line), paper.id).toBeLessThanOrEqual(20)

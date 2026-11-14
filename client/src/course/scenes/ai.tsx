@@ -18,15 +18,16 @@ import { AppWindow, CardView, Layer, MenuPreview, MiniCard, Pointer, SidebarPrev
 import { AgentTerminal, type TermLine } from './kit/AgentTerminal'
 import { HeadProfile } from './kit/HeadProfile'
 import { QuoteCard } from './kit/QuoteCard'
-import { QUOTES_6_TO_8 } from './papers6to8'
+import { QUOTES } from './papers'
+import { sampleId } from './cards'
 import type { ChapterScenes } from './registry'
 import './ai.css'
 
 const SLEEP_TITLE = 'Sleep debt'
 const SLEEP_TEXT = 'Each short night adds to a {{sleep debt}}, and one long lie-in does not pay it back.\n---\nSleep you miss adds up over the week.'
 /** The real card file, as the app writes it (`cardFileContent`, the writer of New card). */
-const SLEEP_FILE = cardFileContent(SLEEP_TITLE, SLEEP_TEXT, { parts: [{ kind: 'id', id: 'K7Q2' }] })
-const SLEEP_FILE_NAME = cardFileName(SLEEP_TITLE, 'K7Q2')
+const SLEEP_FILE = cardFileContent(SLEEP_TITLE, SLEEP_TEXT, { parts: [{ kind: 'id', id: sampleId(SLEEP_TITLE) }] })
+const SLEEP_FILE_NAME = cardFileName(SLEEP_TITLE, sampleId(SLEEP_TITLE))
 
 /** The app beside the agent: a small window with the Inbox and Course Cards. */
 const appSidebar = (inbox: number, extra: { glow?: number } = {}) => <SidebarPreview inbox={inbox} rows={[{ name: 'Course Cards', kind: 'folder', open: true, glow: extra.glow }, { name: SLEEP_TITLE, kind: 'card', depth: 1 }, { name: 'Projects', kind: 'folder' }]} />
@@ -316,7 +317,7 @@ function TwoPaths(props: SceneProps) {
 /** c8-09: Ryan Holiday's line, in quotes, swept as the voice says it; then a hand writes slowly. */
 function Holiday(props: SceneProps) {
   const b = useBeat(props)
-  const q = QUOTES_6_TO_8.holiday
+  const q = QUOTES.holiday
   const say = cue(b, 0, 0.32)
   const thinking = cue(b, 1, 0.691)
   const pen = since(b, thinking - 0.03, 1.6)
@@ -518,13 +519,13 @@ function YouDecide(props: SceneProps) {
             <span className="kit-chip" style={{ opacity: 1 - rewrite }}>
               Draft by your agent
             </span>
-            <CardView beat={b} chrome="block" title={SLEEP_TITLE} text={rewrite > 0.5 ? YOURS : DRAFT} id="K7Q2" editing={b.progress >= decide && b.progress < words + 0.1} lit={[showFor(since(b, decide, 0.4), 1) * (rewrite > 0.5 ? 1 : 0.5)]} />
+            <CardView beat={b} chrome="block" title={SLEEP_TITLE} text={rewrite > 0.5 ? YOURS : DRAFT} id={sampleId(SLEEP_TITLE)} editing={b.progress >= decide && b.progress < words + 0.1} lit={[showFor(since(b, decide, 0.4), 1) * (rewrite > 0.5 ? 1 : 0.5)]} />
             <span className="kit-chip" style={pop(b, rewrite)}>
               ✓ In your words
             </span>
           </div>
           <div className="ai-decide__card ai-decide__card--gone" style={{ ...rise(b, since(b, 0.05, 0.6), 12), opacity: clamp(since(b, 0.05, 0.6)) * (1 - del * 0.85), transform: b.reduced ? undefined : `translateY(${(moved(b, del) * 40).toFixed(1)}px) rotate(${(moved(b, del) * 8).toFixed(2)}deg)` }}>
-            <CardView beat={b} chrome="block" title="Sleep trivia" text="The podcast host’s dog is called {{Biscuit}}." id="T9R1" />
+            <CardView beat={b} chrome="block" title="Sleep trivia" text="The podcast host’s dog is called {{Biscuit}}." id={sampleId('Sleep trivia')} />
             <span className="kit-chip ai-chip--bad" style={pop(b, del)}>
               ✕ Deleted: not worth recalling
             </span>

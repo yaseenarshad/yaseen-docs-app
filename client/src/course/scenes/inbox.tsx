@@ -9,7 +9,7 @@ import { useUnit } from '../../vault/unitWord'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { InboxIcon } from '../../views/view/icons'
 import { PAPERS } from './papers'
-import { CANBERRA, CANDID, PROTEIN } from './cards'
+import { CANBERRA, CANDID, MOON, PROTEIN, sampleId } from './cards'
 import { draftTitle } from './makeCard'
 import {
   AppWindow,
@@ -51,32 +51,20 @@ import './inbox.css'
 
 /** The card the person made in chapter 2, as "Use this example" makes it. */
 const FIRST_FRONT = 'Your body builds and repairs with {{protein}}.'
-const FIRST = { title: draftTitle(FIRST_FRONT), text: `${FIRST_FRONT}\n---\nAn egg is mostly protein and fat.` }
+const FIRST = { title: draftTitle(FIRST_FRONT), id: 'DEMO-10', text: `${FIRST_FRONT}\n---\nAn egg is mostly protein and fat.` }
 
-/** The Inbox's card for the walk-through: two hidden words, then a back. Made up, and true. */
-const MOON = {
-  title: 'The Moon’s orbit',
-  id: 'R4M8',
-  text: [
-    'The Moon goes once around the Earth in about {{27 days}}.',
-    '',
-    'From one full moon to the next takes about {{29.5 days}}.',
-    '---',
-    'The two differ because the Earth moves around the Sun too: the Moon needs about two more days to line up with the Sun again.',
-  ].join('\n'),
-}
 
 const PLACE = ['My vault', 'Course Cards']
 
 /** The Inbox's four cards today, in order. */
 const TODAY = [
   { title: MOON.title, id: MOON.id },
-  { title: CANBERRA.title, id: 'K7Q2' },
-  { title: CANDID.title, id: 'M3VD' },
-  { title: PROTEIN.title, id: 'P5T1' },
+  { title: CANBERRA.title, id: CANBERRA.id },
+  { title: CANDID.title, id: CANDID.id },
+  { title: PROTEIN.title, id: PROTEIN.id },
 ]
 
-/** "✓ Remembered · The Moon's orbit (R4M8) · back in 9 days": the app's answer line (`answerLine`). */
+/** "✓ Remembered · The Moon's orbit (DEMO-6) · back in 9 days": the app's answer line (`answerLine`). */
 const answerLine = (mark: '✓' | '✕', word: string, card: { title: string; id: string }, back: string): string => `${mark} ${word} · ${card.title} (${card.id}) · back ${back}`
 
 const SIDEBAR: SidebarRow[] = [
@@ -128,7 +116,7 @@ function Habit(props: SceneProps) {
       <Layer>
         <div className="kit-habit">
           <div style={rise(b, since(b, 0, 0.7), 14)}>
-            <CardView beat={b} title={FIRST.title} text={FIRST.text} sides={1} chrome="block" id="P2X9" className="kit-cardview--small" lit={[showFor(since(b, 0.05, 0.5), since(b, daily, 0.5))]} />
+            <CardView beat={b} title={FIRST.title} text={FIRST.text} sides={1} chrome="block" id={FIRST.id} className="kit-cardview--small" lit={[showFor(since(b, 0.05, 0.5), since(b, daily, 0.5))]} />
           </div>
           <div style={{ opacity: since(b, daily - 0.04, 0.4) }}>
             <WeekStrip beat={b} lit={lit} cards={Object.fromEntries(WEEK.map((_, i) => [i, since(b, back + i * 0.025, 0.4)]))} />
@@ -247,19 +235,19 @@ function OneAtATime(props: SceneProps) {
   )
 }
 
-const ISSUE = { journal: 'Science', date: '15 February 2008', issue: 'Vol. 319 · No. 5865' }
-
 /** c3-06, c3-07 and c3-23, one span: recall is what makes it stick; the journal Science; then 80% against 36%. */
 function Retrieval(props: SceneProps) {
   const b = useBeat(props)
   const id = props.clip.id
   const paper = PAPERS.karpicke2008
   if (id === 'c3-06') {
+    const issue = { journal: paper.journal, year: paper.year }
     const journal = cue(b, 0, 0.613)
     const test = cue(b, 1, 0.801)
-    const words = showFor(since(b, 0, 0.6), since(b, 0.42, 0.4))
+    // The words stay until the cover comes, so the stage is never empty on "what makes it stick".
+    const words = showFor(since(b, 0, 0.6), since(b, journal - 0.06, 0.35))
     return (
-      <Stage beat={b} label="Trying to recall is what makes it stick. The journal Science, 15 February 2008: a study put it to the test">
+      <Stage beat={b} label="Trying to recall is what makes it stick. A study in the journal Science, 2008, put it to the test">
         <Layer style={{ opacity: words }}>
           <Words size="title">
             Trying to <span className="kit-tone--accent">recall</span>
@@ -269,7 +257,7 @@ function Retrieval(props: SceneProps) {
         </Layer>
         <Layer>
           <div className="kit-issue">
-            <JournalCover beat={b} issue={ISSUE} p={since(b, journal - 0.1, 0.8)} out={since(b, journal + 0.06, 0.6)} />
+            <JournalCover beat={b} issue={issue} p={since(b, journal - 0.04, 0.8)} out={since(b, journal + 0.06, 0.6)} />
             <div className="kit-issue__paper">
               <Paper beat={b} paper={paper} at={{ in: journal + 0.06, highlight: test - 0.02 }} />
             </div>
@@ -544,7 +532,7 @@ function TwoInARow(props: SceneProps) {
       <Layer>
         <div className="kit-tworow">
           <div className="kit-tworow__card" style={{ opacity: 1 - go * 0.9, transform: b.reduced ? undefined : `translateX(${(go * 40).toFixed(1)}%) scale(${lerp(1, 0.6, go).toFixed(3)})` }}>
-            <CardView beat={b} title={FIRST.title} text={FIRST.text} sides={1} state="New card" id="P2X9" className="kit-cardview--small" />
+            <CardView beat={b} title={FIRST.title} text={FIRST.text} sides={1} state="New card" id={FIRST.id} className="kit-cardview--small" />
             <div className="kit-tworow__checks">
               <span className="kit-answer-chip" data-rating="good" style={pop(b, since(b, two, 0.4))}>
                 ✓ Remembered
@@ -749,7 +737,7 @@ function Next(props: SceneProps) {
             <PageText beat={b}>White light is a mix of every colour. A prism splits it, because each colour bends by a different amount.</PageText>
             <div className="kit-next__slot" style={{ height: `${(lerp(0.4, 1, b.reduced ? (card > 0 ? 1 : 0) : ease.out(card)) * 4.6).toFixed(2)}em` }}>
               <div style={{ opacity: card, transform: b.reduced ? undefined : `translateY(${((1 - ease.out(card)) * -12).toFixed(2)}px)` }}>
-                <CardView beat={b} text={'White light is a mix of {{every colour}}.'} chrome="block" id="L1T3" className="kit-cardview--small" />
+                <CardView beat={b} text={'White light is a mix of {{every colour}}.'} chrome="block" id={sampleId('White light')} className="kit-cardview--small" />
               </div>
             </div>
             <PageText beat={b}>The sky looks blue because air scatters blue light more than red light.</PageText>

@@ -14,6 +14,7 @@
 import { useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 import { renderCard, type CardLook } from '../../../editor/card/cardRender'
 import { clamp, ease, lerp, type Beat } from './beat'
+import { SAMPLE_IDS, sampleId } from '../cards'
 import '../../../editor/card/card.css'
 import '../../../review/cardScreens.css'
 
@@ -22,7 +23,7 @@ export interface CardViewProps {
   /** The card's Markdown: sides split by a line `---`, sections in a side by `***`, hidden words in `{{ }}`. */
   text: string
   title?: string
-  /** The card ID in the head (made up). */
+  /** The card ID in the head; absent: the sample card's of that title (`cards.ts`). */
   id?: string
   /** How many hidden words show (default 0: all blanks). */
   shown?: number
@@ -53,24 +54,10 @@ export interface CardViewProps {
   label?: string
 }
 
-const ID_LETTERS = 'ABCDEFGHJKMNPQRSTVWXYZ23456789'
-
-/** A made-up card ID for a link's target: the same target always gets the same ID, and two targets get two IDs. */
-export function madeUpCardId(target: string): string {
-  let h = 2166136261
-  for (let i = 0; i < target.length; i++) h = Math.imul(h ^ target.charCodeAt(i), 16777619) >>> 0
-  let id = ''
-  for (let i = 0; i < 4; i++) {
-    id += ID_LETTERS[h % ID_LETTERS.length]
-    h = (Math.floor(h / ID_LETTERS.length) ^ Math.imul(h, 31 + i)) >>> 0
-  }
-  return id
-}
-
 function lookOf(links: Readonly<Record<string, string>> | undefined): CardLook | undefined {
   if (links === undefined) return undefined
-  // Each pill names its own target's ID (it was one fixed ID for every pill).
-  return { link: (inner) => ({ label: links[inner] ?? inner, resolved: true, card: madeUpCardId(inner) }) }
+  // Each pill names its own target's ID.
+  return { link: (inner) => ({ label: links[inner] ?? inner, resolved: true, card: sampleId(inner) }) }
 }
 
 /** The rendered sides (the app's own render), as a node to mount. */
@@ -94,7 +81,7 @@ function useRendered(text: string, shown: number, sides: number | undefined, lin
 }
 
 export function CardView(props: CardViewProps) {
-  const { beat, text, title, id = 'K7Q2', shown = 0, sides, flip = 0, flipFrom, lit = [], dim = 0, grow = [], chrome = 'inbox', state = 'New card', editing = false, blanks = 0, links, footer, className, label } = props
+  const { beat, text, title, id = (title === undefined ? undefined : SAMPLE_IDS[title]) ?? 'DEMO-1', shown = 0, sides, flip = 0, flipFrom, lit = [], dim = 0, grow = [], chrome = 'inbox', state = 'New card', editing = false, blanks = 0, links, footer, className, label } = props
   const turned = flip >= 0.5 || flipFrom === undefined
   const nowShown = turned ? shown : (flipFrom?.shown ?? shown)
   const nowSides = turned ? sides : (flipFrom?.sides ?? sides)

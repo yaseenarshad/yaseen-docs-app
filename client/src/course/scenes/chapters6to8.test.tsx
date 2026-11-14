@@ -12,8 +12,7 @@ import { courseScenes } from '.'
 import { KNOWLEDGE_BASE_SCENES } from './knowledgeBase'
 import { GOOD_CARD_SCENES } from './goodCard'
 import { AI_SCENES } from './ai'
-import { lineWords } from './papers'
-import { PAPERS_6_TO_8, QUOTES_6_TO_8, TEN_WAYS } from './papers6to8'
+import { TEN_WAYS } from './papers'
 import { memoryHost, mountScene, testClock } from './testing'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -40,17 +39,7 @@ describe('chapters 6 to 8 are built (YAZ-5121)', () => {
   })
 })
 
-describe('the papers and the quote of chapters 6 to 8 (the copyright rule)', () => {
-  it('quotes fewer than 15 words; a paraphrase stays one short line', () => {
-    for (const paper of Object.values(PAPERS_6_TO_8)) {
-      if (paper.quote) expect(lineWords(paper.line), paper.id).toBeLessThan(15)
-      else expect(lineWords(paper.line), paper.id).toBeLessThanOrEqual(20)
-      expect(paper.authors.length).toBeGreaterThan(0)
-      expect(paper.year).toBeGreaterThan(1800)
-    }
-    for (const quote of Object.values(QUOTES_6_TO_8)) expect(lineWords(quote.line), quote.id).toBeLessThan(15)
-  })
-
+describe('the ten ways of chapter 7', () => {
   it('grades the ten ways as the 2013 review did: only testing and spacing get the top grade; re-reading and highlighting the lowest', () => {
     expect(TEN_WAYS).toHaveLength(10)
     expect(TEN_WAYS.filter((w) => w.grade === 'High').map((w) => w.key)).toEqual(['test', 'space'])

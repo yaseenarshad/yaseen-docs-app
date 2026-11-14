@@ -96,7 +96,7 @@ function CardSkill(props: SceneProps) {
   const skill: Row[] = [
     { name: 'Card skill', kind: 'folder', open: open > 0.5, lock: true, glow: Math.max(skillGlow, lock, at('c12-05') ? showFor(updates, 0) : 0), active: open > 0.5 },
     { name: 'Start here', kind: 'page', depth: 1, p: open },
-    { name: 'Formats', kind: 'folder', depth: 1, p: open * formats },
+    { name: 'formats', kind: 'folder', depth: 1, p: open * formats },
     { name: 'Rules for a good card', kind: 'page', depth: 1, p: open * rules },
     { name: 'Course transcript', kind: 'page', depth: 1, p: open * words },
   ]
@@ -116,7 +116,7 @@ function CardSkill(props: SceneProps) {
                   <span className="kit-app__icon kit-app__icon--page" aria-hidden="true" /> Rules for a good card
                 </li>
                 <li style={rise(b, formats, 6)}>
-                  <span className="kit-app__icon kit-app__icon--folder" aria-hidden="true" /> Formats
+                  <span className="kit-app__icon kit-app__icon--folder" aria-hidden="true" /> formats
                   <span className="later-skill__formats">
                     {FORMATS.map((f, i) => (
                       <span key={f} className="kit-chip" style={pop(b, clamp(formats * 3 - i * 0.3), 0.7)}>

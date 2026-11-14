@@ -6,7 +6,7 @@
  * `marks` in `script.ts`, from the real voice's word times.
  */
 import type { SceneProps } from '../scene'
-import { SLEEP_DEBT, TOO_MUCH, PROTEIN_BRANCH } from './cardsLater'
+import { SLEEP_DEBT, TOO_MUCH, PROTEIN_BRANCH, UMBRELLA } from './cards'
 import { Answers, CardView, Fit, Keys, Layer, MenuPreview, Pointer, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat } from './kit'
 import { Habits, HabitGlyph } from './kit/HabitIcons'
 import { Garden, type PlantSpec } from './kit/Garden'
@@ -368,29 +368,6 @@ function Prune(props: SceneProps) {
   )
 }
 
-/** The umbrella card whose PROTEIN part keeps growing (c11-20). Parts: 0 the front; 1 the overview; 2 PROTEIN; 3 CARBS. */
-const UMBRELLA = {
-  title: 'Protein, carbs and fat',
-  text: [
-    'The three things food is mostly made of are {{protein, carbs and fat}}.',
-    '---',
-    'Each gives energy, and each does a job of its own.',
-    '',
-    '***',
-    '',
-    '**PROTEIN**',
-    'Builds and repairs. Eggs, beans, fish.',
-    'The body stores little of it.',
-    'Muscle is built from it.',
-    'About a palm of it a meal.',
-    '',
-    '***',
-    '',
-    '**CARBS**',
-    'Quick energy. Bread, rice, fruit.',
-  ].join('\n'),
-}
-
 /** c11-20: one part of a card keeps growing; it lifts off into its own card, and a line joins the two. */
 function NewBranch(props: SceneProps) {
   const b = useBeat(props)
@@ -400,7 +377,7 @@ function NewBranch(props: SceneProps) {
   const lift = since(b, own - 0.03, 0.8)
   const w = b.reduced ? (lift > 0 ? 1 : 0) : ease.out(lift)
   const lines = Math.min(4, Math.floor(between(b, 0.05, growing + 0.05) * 4) + 1)
-  const text = UMBRELLA.text
+  const text = UMBRELLA.grown
     .split('\n')
     .filter((line, i, all) => {
       const start = all.indexOf('**PROTEIN**')

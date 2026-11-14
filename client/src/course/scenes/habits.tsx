@@ -6,9 +6,8 @@
  * from the real voice's word times, read with `cue()`.
  */
 import type { SceneProps } from '../scene'
-import { MANY_TITLES } from './cards'
-import { PROTEIN_BRANCH, SLEEP_DEBT } from './cardsLater'
-import { LATER_PAPERS } from './papersLater'
+import { MANY_TITLES, PROTEIN_BRANCH, SLEEP_DEBT } from './cards'
+import { PAPERS } from './papers'
 import { Answers, AppWindow, CardView, Cite, Fit, Layer, MiniCard, Paper, SidebarPreview, Stage, Tally, Timeline, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat } from './kit'
 import { HabitGlyph, Habits } from './kit/HabitIcons'
 import { AgentChat } from './kit/AgentChat'
@@ -127,13 +126,13 @@ function SureItLost(props: SceneProps) {
   return (
     <Stage beat={b} label="In one experiment, spacing won for nine people of ten; seven of ten were sure it had lost">
       <Layer>
-        <Paper beat={b} paper={LATER_PAPERS.kornell} at={{ in: 0, highlight: 0.03, lift: crowdAt + 0.02, out: crowdAt + 0.08 }} />
+        <Paper beat={b} paper={PAPERS.kornell} at={{ in: 0, highlight: 0.03, lift: crowdAt + 0.02, out: crowdAt + 0.08 }} />
       </Layer>
       <Layer>
         <Crowd beat={b} appear={between(b, crowdAt, crowdAt + 0.14)} won={9} wonP={since(b, nine, 0.9)} wonText="Spacing won" wonTextP={since(b, nine + 0.04, 0.5)} doubt={7} doubtP={since(b, seven, 1.1)} doubtText="I think it lost" />
       </Layer>
       <Layer place="bottom">
-        <Cite beat={b} paper={LATER_PAPERS.kornell} p={since(b, crowdAt + 0.06, 0.6)} />
+        <Cite beat={b} paper={PAPERS.kornell} p={since(b, crowdAt + 0.06, 0.6)} />
       </Layer>
     </Stage>
   )
@@ -150,7 +149,7 @@ function GuessedHalf(props: SceneProps) {
   return (
     <Stage beat={b} label="Everyone guessed they would remember about half; some kept 80 percent, some kept a third">
       <Layer>
-        <Paper beat={b} paper={LATER_PAPERS.karpicke} at={{ in: 0, highlight: guessed, lift, out: lift + 0.06 }} />
+        <Paper beat={b} paper={PAPERS.karpickeGuesses} at={{ in: 0, highlight: guessed, lift, out: lift + 0.06 }} />
       </Layer>
       <Layer style={{ opacity: since(b, lift, 0.5) }}>
         <GuessBars
@@ -169,7 +168,7 @@ function GuessedHalf(props: SceneProps) {
         </Words>
       </Layer>
       <Layer place="bottom" style={{ opacity: since(b, lift, 0.5) }}>
-        <Cite beat={b} paper={LATER_PAPERS.karpicke} p={1} />
+        <Cite beat={b} paper={PAPERS.karpickeGuesses} p={1} />
       </Layer>
     </Stage>
   )

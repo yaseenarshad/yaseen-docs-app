@@ -8,7 +8,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import type { SceneProps } from '../scene'
 import { useUnit } from '../../vault/unitWord'
 import { InboxIcon } from '../../views/view/icons'
-import { PROTEIN } from './cards'
+import { UMBRELLA } from './cards'
 import {
   AppWindow,
   CardDoneKeys,
@@ -47,11 +47,7 @@ import type { ChapterScenes } from './registry'
 import './where.css'
 
 /** The card of this chapter: the protein card, short (its front and the first line of its back). */
-const CARD = {
-  title: PROTEIN.title,
-  id: 'P5T1',
-  text: 'The three things food is mostly made of are {{protein, carbs and fat}}.\n---\nProtein builds and repairs. Carbs are quick energy. Fat is slow energy, stored.',
-}
+const CARD = { title: UMBRELLA.title, id: UMBRELLA.id, text: UMBRELLA.short }
 const ADDED = 'An egg is mostly protein and fat.'
 const EDITED = `${CARD.text}\n\n${ADDED}`
 

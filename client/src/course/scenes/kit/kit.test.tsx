@@ -142,12 +142,13 @@ describe('the beat (YAZ-5121)', () => {
   })
 })
 
-describe('CardView\'s link pills (YAZ-5121 clean-up)', () => {
-  it('give each target its own made-up ID, the same one each time', async () => {
-    const { madeUpCardId } = await import('./CardView')
-    const ids = ['Protein', 'Protein, carbs and fat', 'Calories', 'How muscle grows'].map(madeUpCardId)
-    expect(new Set(ids).size).toBe(4)
-    for (const id of ids) expect(id).toMatch(/^[A-Z2-9]{4}$/)
-    expect(madeUpCardId('Protein')).toBe(ids[0])
+describe('the sample cards\' IDs (YAZ-5128)', () => {
+  it('take the shape the app writes, one ID for each title, and each card keeps its own', async () => {
+    const { SAMPLE_IDS, CANBERRA, CANDID, PROTEIN, UMBRELLA, PROTEIN_BRANCH, MUSCLE, SLEEP_DEBT, TOO_MUCH, MOON } = await import('../cards')
+    const { isNumberId } = await import('@shared/pageId')
+    const ids = Object.values(SAMPLE_IDS)
+    for (const id of ids) expect(isNumberId(id), id).toBe(true)
+    expect(new Set(ids).size).toBe(ids.length)
+    for (const card of [CANBERRA, CANDID, PROTEIN, UMBRELLA, PROTEIN_BRANCH, MUSCLE, SLEEP_DEBT, TOO_MUCH, MOON]) expect(SAMPLE_IDS[card.title], card.title).toBe(card.id)
   })
 })

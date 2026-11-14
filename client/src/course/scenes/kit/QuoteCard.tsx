@@ -1,7 +1,7 @@
 /**
  * A SPOKEN QUOTE (YAZ-5121, chapter 8): a person's short line, in quotation marks, with their name under it. A
  * highlighter sweeps it as the voice says it (`sweep`), as `Paper` does a paper's line. Only short quotes (the data's
- * test holds each under 15 words, `papers6to8.ts`).
+ * test holds each under 15 words, `papers.ts`).
  */
 import { clamp, ease, type Beat } from './beat'
 import './kit68.css'

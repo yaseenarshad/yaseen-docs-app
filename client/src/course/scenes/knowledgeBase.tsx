@@ -9,7 +9,7 @@ import type { CSSProperties } from 'react'
 import type { SceneProps } from '../scene'
 import { AppWindow, CardView, Fit, Layer, Paper, Cite, SidebarPreview, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat, type Beat } from './kit'
 import { HeadProfile, type HeadDot } from './kit/HeadProfile'
-import { PAPERS_6_TO_8 } from './papers6to8'
+import { PAPERS } from './papers'
 import type { ChapterScenes } from './registry'
 import './knowledgeBase.css'
 
@@ -342,7 +342,7 @@ function Depth(props: SceneProps) {
   return (
     <Stage beat={b} label="Craik and Lockhart, 1972: depth of processing. The more you think about meaning, the longer you keep it">
       <Layer>
-        <Paper beat={b} paper={PAPERS_6_TO_8.craikLockhart} at={{ in: 0, highlight: depth + 0.03, out: more - 0.05 }} />
+        <Paper beat={b} paper={PAPERS.craikLockhart} at={{ in: 0, highlight: depth + 0.03, out: more - 0.05 }} />
       </Layer>
       <Layer style={{ opacity: cites }} className="kb-cites-layer">
         <div className="kb-cites" aria-hidden="true">
@@ -382,7 +382,7 @@ function Depth(props: SceneProps) {
             <span>Deep</span>
           </div>
         </div>
-        <Cite beat={b} paper={PAPERS_6_TO_8.craikLockhart} p={since(b, more + 0.02, 0.6)} />
+        <Cite beat={b} paper={PAPERS.craikLockhart} p={since(b, more + 0.02, 0.6)} />
       </Layer>
     </Stage>
   )

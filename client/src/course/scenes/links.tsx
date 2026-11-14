@@ -9,8 +9,8 @@
  */
 import { useUnit } from '../../vault/unitWord'
 import type { SceneProps } from '../scene'
-import { LATER_PAPERS } from './papersLater'
-import { MUSCLE, PROTEIN_BRANCH } from './cardsLater'
+import { PAPERS } from './papers'
+import { MUSCLE, PROTEIN_BRANCH, UMBRELLA, sampleId } from './cards'
 import { AppWindow, Caret, CardView, Cite, Fit, Keys, Layer, Paper, Pointer, SidebarPreview, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat, type Beat } from './kit'
 import { Habits } from './kit/HabitIcons'
 import { Web, scatterWeb, type WebEdge, type WebNode } from './kit/Web'
@@ -240,7 +240,7 @@ function MindWeb(props: SceneProps) {
       )}
       {id === 'c10-07' && (
         <Layer>
-          <Paper beat={b} paper={LATER_PAPERS.collinsLoftus} at={{ in: 0, highlight: cue(b, 0, 0.14), lift, out: lift + 0.06 }} />
+          <Paper beat={b} paper={PAPERS.collinsLoftus} at={{ in: 0, highlight: cue(b, 0, 0.14), lift, out: lift + 0.06 }} />
         </Layer>
       )}
       {big > 0 && (
@@ -254,8 +254,8 @@ function MindWeb(props: SceneProps) {
         </Layer>
       )}
       <Layer place="bottom">
-        {id === 'c10-07' && <Cite beat={b} paper={LATER_PAPERS.collinsLoftus} p={since(b, lift, 0.6)} />}
-        {id === 'c10-08' && <Cite beat={b} paper={LATER_PAPERS.vanKesteren} p={since(b, 0.05, 0.6)} />}
+        {id === 'c10-07' && <Cite beat={b} paper={PAPERS.collinsLoftus} p={since(b, lift, 0.6)} />}
+        {id === 'c10-08' && <Cite beat={b} paper={PAPERS.vanKesteren} p={since(b, 0.05, 0.6)} />}
       </Layer>
     </Stage>
   )
@@ -596,7 +596,7 @@ function ByHand(props: SceneProps) {
                     <p>
                       <b>CONNECTIONS</b>
                       <br />
-                      <CardPill title="Protein, carbs and fat" id="DEMO-3" /> <i className="later-reason">its umbrella</i>
+                      <CardPill title={UMBRELLA.title} id={UMBRELLA.id} /> <i className="later-reason">its umbrella</i>
                       <br />
                       {pill > 0 ? (
                         <span style={{ opacity: clamp(pill * 2) }}>
@@ -625,14 +625,14 @@ function ByHand(props: SceneProps) {
                         <p>
                           <b>CONNECTIONS</b>
                           <br />
-                          <CardPill title="Protein, carbs and fat" id="DEMO-3" /> <i className="later-reason">its umbrella</i>
+                          <CardPill title={UMBRELLA.title} id={UMBRELLA.id} /> <i className="later-reason">its umbrella</i>
                           <br />
                           <CardPill title={MUSCLE.title} id={MUSCLE.id} glow={since(b, 0, 0.3) * (1 - opened)} />
                         </p>
                       </div>
                     </div>
                   ) : (
-                    <CardView beat={b} title={PROTEIN_BRANCH.title} id={PROTEIN_BRANCH.id} text={PROTEIN_BRANCH.text.split('\n[[How muscle grows]]')[0]} links={PROTEIN_BRANCH.links} chrome="block" shown={1} />
+                    <CardView beat={b} title={PROTEIN_BRANCH.title} id={PROTEIN_BRANCH.id} text={PROTEIN_BRANCH.early} links={PROTEIN_BRANCH.links} chrome="block" shown={1} />
                   )}
                 </div>
               ))}
@@ -706,11 +706,11 @@ function RemoveLink(props: SceneProps) {
             <p>
               <b>CONNECTIONS</b>
               <br />
-              <CardPill title="Protein, carbs and fat" id="DEMO-3" /> <i className="later-reason">its umbrella</i>
+              <CardPill title={UMBRELLA.title} id={UMBRELLA.id} /> <i className="later-reason">its umbrella</i>
               <br />
               {gone < 1 && (
                 <span style={{ opacity: 1 - gone, display: 'inline-block', transform: b.reduced ? undefined : `scale(${lerp(1, 0.6, gone).toFixed(3)})`, transformOrigin: 'right center' }}>
-                  <CardPill title="Muscle cramps" id="DEMO-19" glow={showFor(since(b, del - 0.1, 0.3), gone)} />
+                  <CardPill title="Muscle cramps" id={sampleId('Muscle cramps')} glow={showFor(since(b, del - 0.1, 0.3), gone)} />
                 </span>
               )}
               {since(b, edit, 0.3) > 0 && <Caret />}

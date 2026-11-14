@@ -205,7 +205,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c3-04', text: 'The Inbox is in the sidebar. The number beside it is how many cards are due now.', marks: [0.439, 0.798] },
       // The real Inbox on sample cards: one card in the middle, "1 of 4".
       { id: 'c3-05', text: 'The Inbox shows one card at a time. Look at the card, and try to recall what is hidden.', marks: [0.182, 0.752] },
-      // The cover of the journal Science, 15 February 2008; a paper slides out: "The Critical Importance of Retrieval for Learning"; one sentence is highlighted.
+      // The cover of the journal Science, 2008; a paper slides out: "The Critical Importance of Retrieval for Learning"; one sentence is highlighted.
       // SOURCE: Karpicke & Roediger 2008, "The Critical Importance of Retrieval for Learning", Science 319(5865):966-968.
       { id: 'c3-06', text: 'Trying to recall is what makes it stick. A study in the journal Science put it to the test.', marks: [0.613, 0.801] },
       // Two bars rise, one week later: "Kept testing themselves: 80%", "Kept re-reading, no testing: 36%".

@@ -9,13 +9,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useUnit } from '../../vault/unitWord'
 import type { SceneProps } from '../scene'
-import { PROTEIN } from './cards'
+import { PROTEIN, PROTEIN_BRANCH, PROTEIN_LINES, UMBRELLA } from './cards'
 import { AppWindow, CardView, Fit, IndexCard, Layer, Paper, SidebarPreview, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat, type Beat } from './kit'
 import { AgentTerminal } from './kit/AgentTerminal'
 import { ReportCard } from './kit/ReportCard'
 import { TreeCards, type TreeCardLook } from './kit/TreeCards'
 import type { TreeEdge, TreeNode } from './kit/Tree'
-import { PAPERS_6_TO_8, TEN_WAYS } from './papers6to8'
+import { PAPERS, TEN_WAYS } from './papers'
 import type { ChapterScenes } from './registry'
 import './goodCard.css'
 
@@ -35,24 +35,7 @@ const WALL = [
 /** The sentence of the wall that is its short version. */
 const SHORT = 0
 
-/** The umbrella card, light: one front, three short lines on its back. Parts: 0 front; 1, 2, 3 the back's lines. */
-const UMBRELLA = {
-  title: 'Protein, carbs and fat',
-  text: 'The three things food is mostly made of are {{protein, carbs and fat}}.\n---\nProtein builds and repairs.\n\nCarbs are quick energy.\n\nFat is slow energy, stored.',
-}
-/** What you learn about protein later: it piles up on the umbrella card's back. */
-const PROTEIN_LINES = ['Protein is made of amino acids.', 'The body cannot make 9 of the 20; food must give them.', 'Eggs, fish, beans and milk are rich in it.', 'A gram of it holds about 4 calories.']
-/** The umbrella, after: protein keeps one line, with a link. Parts: 0 front; 1 protein (the link); 2, 3. */
-const UMBRELLA_LINKED = {
-  title: 'Protein, carbs and fat',
-  text: 'The three things food is mostly made of are {{protein, carbs and fat}}.\n---\nProtein builds and repairs: [[Protein]]\n\nCarbs are quick energy.\n\nFat is slow energy, stored.',
-}
-/** The branch. Parts: 0 front; 1 back; 2 EXAMPLE; 3 CONNECTIONS (the link back). */
-const PROTEIN_BRANCH = {
-  title: 'Protein',
-  text: 'Your body builds and repairs with {{protein}}, made of {{amino acids}}.\n---\nThe body cannot make 9 of the 20 amino acids; food must give them.\n\n***\n\n**EXAMPLE**\nEggs, fish, beans and milk are rich in protein.\n\n***\n\n**CONNECTIONS**\n[[Protein, carbs and fat]] *the overview*',
-}
-const LINKS = { Protein: 'Protein', 'Protein, carbs and fat': 'Protein, carbs and fat' } as const
+const LINKS = PROTEIN_BRANCH.links
 
 /** THE TREE: the umbrella at its root, three branches, and smaller branches from those. */
 const NODES: TreeNode[] = [
@@ -327,7 +310,7 @@ function GrowingTree(props: SceneProps) {
         <Layer>
           <div className="kit-row gc-outgrow">
             <div className="gc-outgrow__card" data-spill={spill > 0 && lift < 1 ? 'true' : undefined} style={{ ...rise(b, six ? since(b, 0, 0.7) : 1, 14), width: six ? 'min(70cqw, 24em)' : undefined }}>
-              <CardView beat={b} title={UMBRELLA.title} text={UMBRELLA.text + extra} shown={1} lit={six ? [0, since(b, cue(b, 0, 0.193), 0.5) * 0.7, 0, 0] : [0, since(b, cue(b, 0, 0.198), 0.5) * (1 - lift), 0, 0]} className="kit-cardview--small" />
+              <CardView beat={b} title={UMBRELLA.title} text={UMBRELLA.light + extra} shown={1} lit={six ? [0, since(b, cue(b, 0, 0.193), 0.5) * 0.7, 0, 0] : [0, since(b, cue(b, 0, 0.198), 0.5) * (1 - lift), 0, 0]} className="kit-cardview--small" />
               {six && (
                 <span className="kit-chip" style={pop(b, since(b, cue(b, 1, 0.612), 0.5))}>
                   Light: three short lines
@@ -341,7 +324,7 @@ function GrowingTree(props: SceneProps) {
             </div>
             {!six && (
               <div style={{ ...rise(b, lift, 24), transform: b.reduced ? undefined : `translate(${lerp(-60, 0, moved(b, lift, ease.out)).toFixed(1)}px, ${lerp(-30, 0, moved(b, lift, ease.out)).toFixed(1)}px)` }}>
-                <CardView beat={b} title={PROTEIN_BRANCH.title} text={PROTEIN_BRANCH.text} links={LINKS} shown={2} id="P4N8" className="kit-cardview--small" state="New card" />
+                <CardView beat={b} title={PROTEIN_BRANCH.title} text={PROTEIN_BRANCH.early} links={LINKS} shown={2} id={PROTEIN_BRANCH.id} className="kit-cardview--small" state="New card" />
               </div>
             )}
           </div>
@@ -359,11 +342,11 @@ function GrowingTree(props: SceneProps) {
       <Stage beat={b} label="The two cards link to each other: the umbrella stays the overview, and protein becomes a branch">
         <Layer style={{ opacity: 1 - toTree }}>
           <div className="kit-row gc-linked">
-            <CardView beat={b} title={UMBRELLA_LINKED.title} text={UMBRELLA_LINKED.text} links={LINKS} shown={1} className="kit-cardview--small" lit={[0, line, 0, 0]} dim={since(b, umbrella, 0.6) * 0.5} />
+            <CardView beat={b} title={UMBRELLA.title} text={UMBRELLA.linked} links={LINKS} shown={1} className="kit-cardview--small" lit={[0, line, 0, 0]} dim={since(b, umbrella, 0.6) * 0.5} />
             <span className="gc-link" aria-hidden="true">
               <i style={{ transform: `scaleX(${moved(b, line, ease.out).toFixed(3)})` }} />
             </span>
-            <CardView beat={b} title={PROTEIN_BRANCH.title} text={PROTEIN_BRANCH.text} links={LINKS} shown={2} id="P4N8" className="kit-cardview--small" lit={[0, 0, 0, line]} />
+            <CardView beat={b} title={PROTEIN_BRANCH.title} text={PROTEIN_BRANCH.early} links={LINKS} shown={2} id={PROTEIN_BRANCH.id} className="kit-cardview--small" lit={[0, 0, 0, line]} />
           </div>
           <span className="kit-chip" style={pop(b, since(b, umbrella, 0.5))}>
             The umbrella: the overview
@@ -760,7 +743,7 @@ function ReportCardScene(props: SceneProps) {
       )}
       {first && (
         <Layer>
-          <Paper beat={b} paper={PAPERS_6_TO_8.dunlosky} at={{ in: researchers - 0.03, highlight: ten - 0.02, lift: ten + 0.08, out: ten + 0.14 }} />
+          <Paper beat={b} paper={PAPERS.dunlosky} at={{ in: researchers - 0.03, highlight: ten - 0.02, lift: ten + 0.08, out: ten + 0.14 }} />
         </Layer>
       )}
       <Layer style={{ opacity: clamp(sheet * 2) }}>

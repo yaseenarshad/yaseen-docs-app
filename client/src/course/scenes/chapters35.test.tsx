@@ -58,13 +58,13 @@ const pieces: [string, (b: Beat) => ReactElement][] = [
         <PageText beat={b} p={b.progress}>
           Text.
         </PageText>
-        <LinkPill title="Protein" id="P5T1" glow={b.progress} />
-        <EmbedView beat={b} title="Protein" id="P5T1" text={'A {{b}} c.\n---\nBack.'} head={b.progress} name={b.progress} editing={b.progress === 0.5} editor={<p>x</p>} footer={<ReviewsLine beat={b} count={4} p={b.progress} />} />
+        <LinkPill title="Protein" id="DEMO-7" glow={b.progress} />
+        <EmbedView beat={b} title="Protein" id="DEMO-7" text={'A {{b}} c.\n---\nBack.'} head={b.progress} name={b.progress} editing={b.progress === 0.5} editor={<p>x</p>} footer={<ReviewsLine beat={b} count={4} p={b.progress} />} />
       </PageView>
     ),
   ],
   ['ChatPreview', (b) => <ChatPreview beat={b} messages={[{ from: 'you', text: 'Embed my card.', p: b.progress }, { from: 'agent', text: 'Done.', p: b.progress, step: 'Edited Food basics' }]} />],
-  ['JournalCover', (b) => <JournalCover beat={b} issue={{ journal: 'Science', date: '15 February 2008', issue: 'Vol. 319 · No. 5865' }} p={b.progress} out={b.progress / 2} />],
+  ['JournalCover', (b) => <JournalCover beat={b} issue={{ journal: 'Science', year: 2008 }} p={b.progress} out={b.progress / 2} />],
   ['Silhouette', (b) => <Silhouette beat={b} draw={b.progress} arrive={b.progress} warm={b.progress} others={b.progress} />],
 ]
 
