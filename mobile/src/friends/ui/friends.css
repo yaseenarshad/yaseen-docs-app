@@ -159,9 +159,13 @@
 }
 
 .fr-sub {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   font-size: 13px;
   color: var(--fr-muted);
+  overflow: hidden;
   overflow-wrap: anywhere;
 }
 

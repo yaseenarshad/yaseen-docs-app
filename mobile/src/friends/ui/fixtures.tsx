@@ -5,6 +5,7 @@ import type { AppServices } from '../../app/AppState'
 import { saveAccount } from '../../auth/account'
 import { fakeScanner, fakeSync } from '../../dev/fakes'
 import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn, vaultId, type PhoneVault } from '../../store'
+import { gistText } from './board'
 import type { Board } from './service'
 import { demoBoard, demoFriend, demoGroup, fakeService, fakeServices } from './demo'
 
@@ -20,7 +21,7 @@ const until = async (selector: string) => {
 }
 const press = (name: string | RegExp) => {
   const el = [...document.querySelectorAll<HTMLElement>('button, a')].find((b) => {
-    const n = (b.getAttribute('aria-label') ?? b.textContent ?? '').trim()
+    const n = (b.getAttribute('aria-label') ?? b.textContent ?? '').replace(/[\u2068\u2069]/g, '').trim()
     return typeof name === 'string' ? n === name : name.test(n)
   })
   el?.click()
@@ -39,6 +40,16 @@ function boardOf(name: string): Board {
           demoFriend(NOW, 'Cy', { state: 'newer-app', label: 'Needs a newer app', stats: null }),
         ],
         shared: [{ mine: 'a'.repeat(32), link: `${FRIEND_LINK_BASE}#` + 'a'.repeat(32), at: new Date(NOW - 3 * 3600_000).toISOString() }],
+      })
+    case 'friends-removing':
+      return demoBoard(NOW, {
+        friends: [
+          demoFriend(NOW, 'Sam', { days: [[0, { cards: 44, seconds: 3960, done: true }]] }),
+          { ...demoFriend(NOW, 'Ann'), theirs: '', state: 'removing', label: 'Removing…', stats: null },
+          demoFriend(NOW, 'Ben', { state: 'gone', label: 'No longer shares with you', stats: null }),
+          demoFriend(NOW, '\u202eevil\nsecond line ' + 'W'.repeat(200), { state: 'waiting', label: `Waiting for ${gistText('\u202eevil\nsecond line ' + 'W'.repeat(200))} to add you` }),
+        ],
+        groups: [{ kind: 'removing', group: '7'.repeat(32), name: 'Old group' }],
       })
     case 'friends-repair':
       return { kind: 'needs-repair' }
@@ -76,7 +87,7 @@ export async function mountFriendsFixture(root: Root, name: string): Promise<voi
   await saveVaultList(store, { vaults, open: vaultId(vaults[0]) })
   const service = fakeService(boardOf(name))
   if (name === 'friends-cheer-wait')
-    service.markAnswer = async (_m, kind) => ({ kind: 'waiting', mark: { kind, at: '' }, why: 'budget', retryAt: NOW + 12 * 60_000 })
+    service.markAnswer = async (_m, kind) => ({ kind: 'waiting', mark: { kind, at: '' }, why: 'marks-limit', retryAt: NOW + 12 * 60_000 })
   const services: AppServices = { store, tokens, sync: fakeSync(), friends: fakeServices(store, service), scanner: fakeScanner(), now: () => NOW }
   root.render(<App services={services} />)
   await until('section[aria-label="Friends"]:not([aria-busy])')
