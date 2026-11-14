@@ -108,7 +108,7 @@ describe('the other headers', () => {
 
   it('hashed files: cached for a year; the page, the friend page, the worker and the manifest: always asked again', () => {
     expect(headersFor(rules, '/assets/index-abc.js')['cache-control']).toBe('public, max-age=31536000, immutable')
-    for (const path of ['/', '/index.html', '/friend', '/friend.html', '/sw.js', '/manifest.webmanifest']) {
+    for (const path of ['/', '/index.html', '/friend', '/friend.html', '/sw.js', '/manifest.webmanifest', '/version.txt']) {
       expect([path, headersFor(rules, path)['cache-control']]).toEqual([path, 'no-cache'])
     }
   })

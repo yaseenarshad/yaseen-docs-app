@@ -26,6 +26,8 @@
   Cache-Control: no-cache
 /manifest.webmanifest
   Cache-Control: no-cache
+/version.txt
+  Cache-Control: no-cache
 
 # The service worker: its own policy. It fetches this site's files (the shell) and nothing else.
 /sw.js

@@ -28,7 +28,7 @@ describe('checkDist', () => {
   })
 
   it('the parts the publish needs: the headers file, the worker, the manifest, the icons, the friend page', () => {
-    const all = ['index.html', 'friend.html', '_headers', 'sw.js', 'manifest.webmanifest', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png']
+    const all = ['index.html', 'friend.html', '_headers', 'sw.js', 'manifest.webmanifest', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'version.txt']
     expect(missingParts(all)).toEqual([])
     expect(missingParts(all.filter((p) => p !== 'sw.js' && p !== '_headers'))).toEqual(['_headers', 'sw.js'])
   })

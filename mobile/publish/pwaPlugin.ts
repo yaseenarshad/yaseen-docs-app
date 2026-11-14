@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
@@ -36,6 +37,17 @@ const walk = (dir: string): string[] =>
     const path = join(dir, name)
     return statSync(path).isDirectory() ? walk(path) : [path]
   })
+
+/** The short commit of the build, with "-dirty" when the tree has uncommitted changes; "unknown" outside git. */
+export function commitOf(): string {
+  try {
+    const hash = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+    const dirty = execSync('git status --porcelain', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() !== ''
+    return dirty ? `${hash}-dirty` : hash
+  } catch {
+    return 'unknown'
+  }
+}
 
 export function notecardsPwa(): Plugin {
   let publicDir = ''
@@ -76,6 +88,9 @@ export function notecardsPwa(): Plugin {
         legalComments: 'none',
         define: { __NOTECARDS_SHELL__: JSON.stringify(shell) },
       })
+      // `/version.txt`: which build runs (the commit, "-dirty" with uncommitted changes, and the worker version). Not a
+      // secret; it tells Yaseen which build his phone runs.
+      this.emitFile({ type: 'asset', fileName: 'version.txt', source: `${commitOf()}\n${shell.version}\n` })
       this.emitFile({ type: 'asset', fileName: 'sw.js', source: `// Notecards service worker, version ${shell.version} (YAZ-5087)\n${result.outputFiles[0].text}` })
     },
   }
