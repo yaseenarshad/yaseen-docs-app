@@ -10,7 +10,7 @@
  * page, are not its own.
  */
 
-export type ReadOnlyWhat = 'page' | 'drawing'
+export type ReadOnlyWhat = 'page' | 'drawing' | 'card'
 
 export const READ_ONLY_EDIT = 'mdapp:read-only-edit'
 

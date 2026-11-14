@@ -154,7 +154,7 @@ export function ReadOnlyChip({ asking, onAsk, onAllow, onCancel, onTurnOff, edit
               <LockIcon size={13} />
             </span>
             <span className="read-only-message__text">
-              <strong>{message.what === 'drawing' ? 'This drawing is Read only.' : unit('This page is Read only.')}</strong>
+              <strong>{message.what === 'drawing' ? 'This drawing is Read only.' : message.what === 'card' ? 'This card is Read only.' : unit('This page is Read only.')}</strong>
               <span>Press Enter to allow edits.</span>
             </span>
           </div>
