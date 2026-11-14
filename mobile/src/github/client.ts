@@ -79,7 +79,10 @@ export interface RequestOptions {
   accept?: string
   /** Read the answer as bytes, not JSON. */
   raw?: boolean
-  /** Statuses (other than 2xx and 304) that come back as an answer, not as a `GithubError`. */
+  /**
+   * Statuses (other than 2xx and 304) that come back as an answer, with the JSON body in `data`, not as a
+   * `GithubError`. A rate limit is never allowed: it always throws `RATE_LIMITED`.
+   */
   allow?: readonly number[]
   /** The query, encoded by the client (a path may not hold `?`). Never put the token here. */
   query?: Record<string, string>
@@ -155,14 +158,18 @@ export function githubClient(token: string, options: ClientOptions = {}): Github
       const etag = response.headers.get('etag')
       const rateLimit = readRateLimit(response.headers)
       if (response.status === 304) return { status: 304, headers: response.headers, etag, data: null, rateLimit }
-      const ok = (response.status >= 200 && response.status < 300) || (opts.allow ?? []).includes(response.status)
-      if (ok) {
+      if (response.status >= 200 && response.status < 300) {
         const data = opts.raw ? new Uint8Array(await response.arrayBuffer()) : await readJson(response)
         return { status: response.status, headers: response.headers, etag, data, rateLimit }
       }
       const body = await readJson(response)
       const said = body !== null && typeof body === 'object' && typeof (body as { message?: unknown }).message === 'string' ? (body as { message: string }).message : ''
-      throw failure(response, method, scrub(said), now(), rateLimit)
+      const error = failure(response, method, scrub(said), now(), rateLimit)
+      // A status in `allow` comes back as an answer (its JSON body in `data`), but a rate limit never does: a probe
+      // that allows 403 must not read GitHub's "slow down" as "no access" (YAZ-5166).
+      if (error.code !== 'RATE_LIMITED' && (opts.allow ?? []).includes(response.status))
+        return { status: response.status, headers: response.headers, etag, data: body, rateLimit }
+      throw error
     },
   }
 }

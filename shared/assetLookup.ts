@@ -39,11 +39,30 @@ function walkOrder(a: readonly string[], b: readonly string[]): number {
  * link `target` (the bare target: `linkTarget` took off the words and the heading) lands on, or null:
  *  1. relative to `from`, the linking page's folder, when given (a page's own `./pic.png` wins);
  *  2. relative to the vault's root;
+ *  Steps 1 and 2 match the path in any case, as the Mac's disk does, and answer the path's real case.
  *  3. Obsidian's shortest-path rule: the file of that name in any case, in the fewest folders, the first in the walk.
  * Steps 1 and 2 never leave the vault. Step 3 never finds a dot-entry, `node_modules`, or a file inside them.
  */
 export function makeAssetResolver(files: readonly string[]): (target: string, from?: string) => string | null {
-  const all = new Set(files)
+  /**
+   * Each file by its path in lowercase (steps 1 and 2): the Mac's disk (APFS) ignores letter case, so `deep/PIC.png`
+   * opens `Deep/pic.png` there (YAZ-5167). The answer is the path with its real case, as the list holds it. Two paths
+   * that differ only in case (a repo can hold both): the exact one, else the first in the walk's order.
+   */
+  const byPath = new Map<string, string[]>()
+  for (const file of files) {
+    const key = file.toLowerCase()
+    const list = byPath.get(key)
+    if (list === undefined) byPath.set(key, [file])
+    else list.push(file)
+  }
+  const fileAt = (p: string | null): string | null => {
+    if (p === null) return null
+    const found = byPath.get(p.toLowerCase())
+    if (found === undefined) return null
+    if (found.includes(p)) return p
+    return found.reduce((a, b) => (walkOrder(b.split('/'), a.split('/')) < 0 ? b : a))
+  }
   /** Each walkable file by its name in lowercase, with its parts. */
   const byName = new Map<string, string[][]>()
   for (const file of files) {
@@ -57,11 +76,11 @@ export function makeAssetResolver(files: readonly string[]): (target: string, fr
   return (target, from) => {
     if (target === '') return null
     if (from !== undefined) {
-      const viaPage = inVault(from, target)
-      if (viaPage !== null && all.has(viaPage)) return viaPage
+      const viaPage = fileAt(inVault(from, target))
+      if (viaPage !== null) return viaPage
     }
-    const viaRoot = inVault(target)
-    if (viaRoot !== null && all.has(viaRoot)) return viaRoot
+    const viaRoot = fileAt(inVault(target))
+    if (viaRoot !== null) return viaRoot
     const name = target.split('/').filter((p) => p !== '').pop()
     const found = name === undefined ? undefined : byName.get(name.toLowerCase())
     if (found === undefined) return null

@@ -1,8 +1,9 @@
 /**
  * YAZ-5067 (decision 3): the review hook and the card drawing load without the editor. The phone app builds its
  * review screen from `useCardReview` and `renderCard` (`cardRender.ts`), so neither may pull in the editor's link
- * plugin (`wikilinkPlugin.ts`), `createCrepe.ts` or Milkdown at load. esbuild reads the real module graph; only
- * static imports count (an `import()` is a lazy chunk, loaded when used).
+ * plugin (`wikilinkPlugin.ts`), `createCrepe.ts`, Milkdown, Crepe, ProseMirror, CodeMirror or Lezer at load. esbuild
+ * reads the real module graph, the packages' own files included (YAZ-5162: a package that pulls in the editor is seen
+ * too); only static imports count (an `import()` is a lazy chunk, loaded when used).
  */
 import { join, relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -24,7 +25,10 @@ async function esbuild(): Promise<typeof import('esbuild')> {
   return import('esbuild')
 }
 
-/** Every module `entry` loads at once (static imports only), and the packages it names. */
+/**
+ * Every module `entry` loads at once (static imports only): repo files and the files of the packages they load, by
+ * path (`node_modules/…`). `packages` holds what is left out of the bundle: Vite's suffixed imports.
+ */
 async function staticGraph(entry: string): Promise<{ files: string[]; packages: string[] }> {
   const { build } = await esbuild()
   const result = await build({
@@ -36,11 +40,20 @@ async function staticGraph(entry: string): Promise<{ files: string[]; packages: 
     format: 'esm',
     outdir: 'out',
     logLevel: 'silent',
-    packages: 'external',
     alias: { '@shared': join(REPO, 'shared') },
-    loader: { '.css': 'empty', '.svg': 'empty', '.png': 'empty' },
-    // Vite's own suffixes (`?worker`, `?inline`) are not modules esbuild knows.
-    plugins: [{ name: 'vite-suffix', setup: (b) => b.onResolve({ filter: /\?/ }, (a) => ({ path: a.path, external: true })) }],
+    // The graph, not the bytes: no file type stops the walk.
+    loader: { '.css': 'empty', '.svg': 'empty', '.png': 'empty', '.woff': 'empty', '.woff2': 'empty', '.ttf': 'empty', '.wasm': 'empty' },
+    plugins: [
+      {
+        name: 'static-only',
+        setup: (b) => {
+          // Vite's own suffixes (`?worker`, `?inline`) are not modules esbuild knows.
+          b.onResolve({ filter: /\?/ }, (a) => ({ path: a.path, external: true }))
+          // An `import()` is a lazy chunk: it is not walked (the drawing engine's chunk names files esbuild cannot read).
+          b.onResolve({ filter: /.*/ }, (a) => (a.kind === 'dynamic-import' ? { path: a.path, external: true } : undefined))
+        },
+      },
+    ],
   })
   const inputs = result.metafile.inputs
   const files = new Set<string>()
@@ -59,19 +72,25 @@ async function staticGraph(entry: string): Promise<{ files: string[]; packages: 
   return { files: [...files], packages: [...packages] }
 }
 
-const editorParts = (g: { files: string[]; packages: string[] }) => [
-  ...g.files.filter((f) => /wikilinkPlugin\.ts$|createCrepe\.ts$|editor\/crepe\.ts$/.test(f)),
-  ...g.packages.filter((p) => p.startsWith('@milkdown/')),
-]
+/** The editor's own repo files: the link plugin and Crepe's setup. */
+const EDITOR_FILE = /(^|\/)client\/src\/editor\/(wikilink\/wikilinkPlugin|createCrepe|crepe)\.ts$/
+/** The editor's packages (Milkdown and its Crepe, ProseMirror, CodeMirror, Lezer), as a name or a file inside node_modules. */
+const EDITOR_PACKAGE = /^(@milkdown\/|prosemirror-|@codemirror\/|codemirror(\/|$)|@lezer\/)/
+const isEditorModule = (path: string): boolean => {
+  const inPackage = /(^|\/)node_modules\/(.*)$/.exec(path)?.[2]
+  return EDITOR_FILE.test(path) || EDITOR_PACKAGE.test(inPackage ?? path)
+}
+const editorParts = (g: { files: string[]; packages: string[] }) => [...g.files, ...g.packages].filter(isEditorModule)
 
 describe('the review screen loads without the editor (YAZ-5067)', () => {
-  it('useCardReview: no link plugin, no Crepe, no Milkdown', async () => {
+  it('useCardReview: no editor module; no host either (YAZ-5161: the caller passes it, so no bridge comes in)', async () => {
     const graph = await staticGraph('client/src/review/useCardReview.ts')
-    expect(graph.files).toContain('client/src/review/reviewHost.ts')
+    expect(graph.files.filter((f) => /review\/desktopReviewHost\.ts$|client\/src\/api\.ts$|lib\/storage\.ts$/.test(f))).toEqual([])
+    expect(graph.files.some((f) => f.includes('node_modules/react/'))).toBe(true) // the walk goes into packages
     expect(editorParts(graph)).toEqual([])
   })
 
-  it('cardRender (the card drawing): the card pill from `cardPill.ts`; no link plugin, no Crepe, no Milkdown', async () => {
+  it('cardRender (the card drawing): the card pill from `cardPill.ts`; no editor module', async () => {
     const graph = await staticGraph('client/src/editor/card/cardRender.ts')
     expect(graph.files).toContain('client/src/editor/wikilink/cardPill.ts')
     expect(editorParts(graph)).toEqual([])
@@ -83,7 +102,22 @@ describe('the review screen loads without the editor (YAZ-5067)', () => {
     ['client/src/editor/card/cardLook.ts', 'a card`s look in a vault'],
     ['client/src/review/cardParts.tsx', 'the card body, its ID and its Reviews table'],
     ['client/src/review/CardInbox.tsx', 'the Inbox screen'],
-  ])('%s (%s): no link plugin, no Crepe, no Milkdown', async (entry) => {
+  ])('%s (%s): no editor module', async (entry) => {
     expect(editorParts(await staticGraph(entry))).toEqual([])
+  })
+
+  // YAZ-5162 (2A3): the guard knows every editor module: Milkdown and Crepe, ProseMirror, CodeMirror and Lezer, as a
+  // package a repo file names and as a file inside node_modules that a package pulls in.
+  it('the guard stops ProseMirror, CodeMirror, Lezer and Crepe, not only Milkdown', () => {
+    const graph = {
+      files: ['node_modules/prosemirror-state/dist/index.js', 'node_modules/@codemirror/view/dist/index.js', 'node_modules/@milkdown/crepe/lib/esm/index.js', 'client/src/editor/card/cardRender.ts', 'node_modules/marked/lib/marked.esm.js'],
+      packages: ['prosemirror-view', '@codemirror/state', 'codemirror', '@lezer/common', '@milkdown/kit/core', 'react'],
+    }
+    expect(editorParts(graph).sort()).toEqual(['@codemirror/state', '@lezer/common', '@milkdown/kit/core', 'codemirror', 'node_modules/@codemirror/view/dist/index.js', 'node_modules/@milkdown/crepe/lib/esm/index.js', 'node_modules/prosemirror-state/dist/index.js', 'prosemirror-view'].sort())
+  })
+
+  it('the walk finds the editor where it is: the page card block loads ProseMirror, CodeMirror and Milkdown from node_modules', async () => {
+    const found = editorParts(await staticGraph('client/src/editor/card/cardBlockView.ts'))
+    for (const p of [/node_modules\/prosemirror-/, /node_modules\/@codemirror\//, /node_modules\/@milkdown\//]) expect(found.some((f) => p.test(f))).toBe(true)
   })
 })

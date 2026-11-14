@@ -4,14 +4,15 @@ import { addStep, archivedCards, cardPlan, previewAnswers, reviewedToday, type A
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
-import { folderTitle } from '../links/shortcuts'
-import { isCardGone, type CardOnPage } from './cardFile'
-import { desktopReviewHost, type ReviewHost } from './reviewHost'
+import { folderTitle } from '../links/folderTitle'
+import { isCardGone, type CardOnPage } from './cardRead'
+import type { ReviewHost } from './reviewHost'
 
 /**
  * Card review as App sees it (YAZ-4967): how many cards are due, and the one review
  * session a vault can have open. The hook holds the review rules only; it reads and writes through its `host`
- * (YAZ-5067, `reviewHost.ts`): the desktop's files and app state by default, the phone's own store on the phone. The queue comes from the index (`cardQueue`) and is taken ONCE, at start; a card is
+ * (YAZ-5067, `reviewHost.ts`): the desktop passes `desktopReviewHost`, the phone its own store. No default (YAZ-5161).
+ * The queue comes from the index (`cardQueue`) and is taken ONCE, at start; a card is
  * checked against the live index only when its turn comes, and read from its page when it shows (the index holds no
  * text, D4). A card whose page or ID is gone is passed over.
  *
@@ -510,7 +511,7 @@ export function cardPlace(root: string, vault: string, folders: readonly IndexRe
   return records.find((r) => r.path === path)?.kind === 'card' ? top : [...top, { kind: 'page', label: titleOf(records, path), path }]
 }
 
-export function useCardReview(root: string | null, source: IndexSource, settings: ReviewSettings, onNotice: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void, vaultName?: string | null, host: ReviewHost = desktopReviewHost): CardReviewApi {
+export function useCardReview(root: string | null, source: IndexSource, settings: ReviewSettings, onNotice: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void, vaultName: string | null | undefined, host: ReviewHost): CardReviewApi {
   const records = useSyncExternalStore(source.subscribe, () => source.records)
   const [session, setSession] = useState<Session | null>(null)
   // The card showing, read from its page, and its fixed answers: each for one turn (`turnKey`).

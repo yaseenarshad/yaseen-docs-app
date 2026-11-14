@@ -264,7 +264,7 @@ function buildMedia(root: ParentNode, look: CardLook | undefined): void {
   for (const marker of root.querySelectorAll<HTMLElement>(`span[${CARD_BOARD_ATTR}]`)) {
     const inner = marker.getAttribute(CARD_BOARD_ATTR) ?? ''
     const file = look.board(inner)
-    marker.replaceWith(file === null ? missingBoard(inner) : boardPicture(inner, file.root, file.path))
+    marker.replaceWith(file === null ? missingBoard(inner) : boardPicture(inner, file.root, file.path, file.picture))
   }
 }
 
