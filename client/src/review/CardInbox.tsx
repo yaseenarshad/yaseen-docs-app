@@ -107,7 +107,8 @@ import { CARD_FILTERS, CardInboxBar } from './CardInboxBar'
 import { CardStateChip, answerIcon, answerLine } from './cardInboxChip'
 import { useInboxCardWidth } from './inboxCardWidth'
 import { CardInboxHints } from './CardInboxHints'
-import { KeyCaps } from '../keys/KeyCaps'
+import { KeyLabel } from '../keys/KeyLabel'
+import { withKeys } from '@shared/keyLabel'
 import { AddMoreField } from './AddMoreField'
 import { useAnswerTimer } from './answerTimer'
 import { TodayWork } from './TodayWork'
@@ -489,8 +490,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
                   <HoverTip key={rating} text={comesBack}>
                     <button type="button" className="explore__button card-inbox__answer" data-rating={rating} aria-description={comesBack} onMouseDown={(e) => e.preventDefault()} onClick={() => live.current.card?.page != null && answerWith(rating)}>
                       {answerIcon(rating, review.settings.buttons)}
-                      <span className="card-inbox__answer-label">{label}</span>
-                      <kbd>{i + 1}</kbd>
+                      <KeyLabel action={<span className="card-inbox__answer-label">{label}</span>} keys={String(i + 1)} />
                     </button>
                   </HoverTip>
                 )
@@ -500,7 +500,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
               {moreOpen && (
                 <div className="card-inbox__more-row" role="toolbar" aria-label="Card actions">
                   {moreActions.map((a) => (
-                    <HoverTip key={a.id} text={a.keys === undefined ? a.label : `${a.label} (${a.keys})`}>
+                    <HoverTip key={a.id} text={withKeys(a.label, a.keys)}>
                       <button
                         type="button"
                         className="explore__button card-inbox__more-action"
@@ -535,7 +535,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
               <span className="card-inbox__last-mark">{session.lastAdd.reset ? '↺' : '+'}</span>
               <span className="card-inbox__last-text"> {session.lastAdd.reset ? resetLine(session.lastAdd.kind) : addedLine(session.lastAdd.kind, session.lastAdd.count)} · </span>
               <button type="button" className="card-inbox__last-undo" disabled={!session.canUndo} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.undo()}>
-                Undo <KeyCaps keys="⌘Z" />
+                <KeyLabel action="Undo" keys="⌘Z" />
               </button>
             </>
           ) : (
@@ -544,7 +544,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
               <span className="card-inbox__last-mark">{line.text.slice(0, line.text.indexOf(' '))}</span>
               <span className="card-inbox__last-text">{line.text.slice(line.text.indexOf(' '))} · </span>
               <button type="button" className="card-inbox__last-undo" disabled={!session.canUndo} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.undo()}>
-                Undo <KeyCaps keys="⌘Z" />
+                <KeyLabel action="Undo" keys="⌘Z" />
               </button>
             </>
             )

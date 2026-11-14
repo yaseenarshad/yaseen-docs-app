@@ -202,7 +202,7 @@ describe('TabBar', () => {
 
     const nav = [...el.querySelectorAll<HTMLButtonElement>('.tabbar-nav__btn')]
     expect(nav.map((b) => b.getAttribute('aria-label'))).toEqual(['Back', 'Forward', 'Show all open tabs'])
-    expect([nav[2].title, nav[2].getAttribute('aria-pressed')]).toEqual(['Show all open tabs (⌘⇧M)', 'true'])
+    expect([nav[2].title, nav[2].getAttribute('aria-pressed')]).toEqual(['Show all open tabs (Cmd+Shift+M)', 'true'])
     act(() => nav[2].click())
     expect(onToggleOverview).toHaveBeenCalledTimes(1)
   })
@@ -289,7 +289,7 @@ describe('TabBar', () => {
     expect(el.querySelector('.ctx-menu')).toBeNull()
 
     const plus = el.querySelector<HTMLButtonElement>('button[aria-label="New tab"]')!
-    expect(plus.title).toBe('New tab (⌘T)')
+    expect(plus.title).toBe('New tab (Cmd+T)')
     // After the tabs, and no child of the scroller: it stays on show when the strip scrolls.
     expect(plus.closest('.tabbar')).toBeNull()
     expect(el.querySelector('.tabbar')?.compareDocumentPosition(plus)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
@@ -300,7 +300,7 @@ describe('TabBar', () => {
   it('the tooltips name the keys as they are NOW (YAZ-3410 item 3): a changed key, and no key at all', () => {
     const base = { tabs: ['/v/a.md'], active: '/v/a.md', onNewTab: vi.fn(), onToggleOverview: vi.fn(), ...noop, ...noNav }
     const titles = (el: HTMLElement) => [el.querySelector<HTMLButtonElement>('button[aria-label="New tab"]')?.title, el.querySelector<HTMLButtonElement>('[aria-label="Show all open tabs"]')?.title]
-    expect(titles(mount({ ...base, hotkeys: { newTab: 'CmdOrCtrl+Alt+T', tabOverview: null } }))).toEqual(['New tab (⌥⌘T)', 'Show all open tabs'])
+    expect(titles(mount({ ...base, hotkeys: { newTab: 'CmdOrCtrl+Alt+T', tabOverview: null } }))).toEqual(['New tab (Option+Cmd+T)', 'Show all open tabs'])
   })
 
   it('E: a tab is labelled with its title, a folder tab with its folder\'s; one the index does not hold keeps its file name (YAZ-2420 D14)', () => {
@@ -946,7 +946,7 @@ describe('TabBar history buttons (YAZ-721; the keys since YAZ-3647 D7)', () => {
     const el = mount({ ...tabs, ...noNav })
     const labels = [...el.querySelectorAll<HTMLButtonElement>('.tabbar-nav__btn')]
     expect(labels.map((b) => b.getAttribute('aria-label'))).toEqual(['Back', 'Forward'])
-    expect(labels.map((b) => b.title)).toEqual(['Back (⌥⌘←)', 'Forward (⌥⌘→)'])
+    expect(labels.map((b) => b.title)).toEqual(['Back (Option+Cmd+Left)', 'Forward (Option+Cmd+Right)'])
     // Outside .tabbar, so the strip's own drop guards (e.target !== e.currentTarget) are untouched.
     expect(el.querySelector('.tabbar .tabbar-nav__btn')).toBeNull()
   })
@@ -954,8 +954,8 @@ describe('TabBar history buttons (YAZ-721; the keys since YAZ-3647 D7)', () => {
   it('with a new tab to open a step in, the tooltip names the clicks that are not a step too (YAZ-4156 1)', () => {
     const el = mount({ ...tabs, ...noNav, onOpenStep: vi.fn() })
     expect([...el.querySelectorAll<HTMLButtonElement>('.tabbar-nav__btn')].map((b) => b.title)).toEqual([
-      'Back (⌥⌘←)\n⌘-click: open in a new tab\nRight-click or hold: history',
-      'Forward (⌥⌘→)\n⌘-click: open in a new tab\nRight-click or hold: history',
+      'Back (Option+Cmd+Left)\n⌘-click: open in a new tab\nRight-click or hold: history',
+      'Forward (Option+Cmd+Right)\n⌘-click: open in a new tab\nRight-click or hold: history',
     ])
   })
 

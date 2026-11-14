@@ -332,6 +332,18 @@ describe('the mirror, Done and the page`s undo', () => {
     second.card.done()
   })
 
+  it('YAZ-5332: a press on the head`s Done button is Done (the page`s editor has no CodeMirror)', async () => {
+    const { view } = await mount(page('One'))
+    const { card, inner } = await edit(view)
+    type(inner, '!')
+    const done = card.dom.querySelector<HTMLElement>('.card__edit')!
+    expect(done.getAttribute('aria-label')).toBe('Done')
+    done.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }))
+    expect(card.editing).toBe(false)
+    expect(cardBody(view)).toBe('One!')
+    expect(card.dom.querySelector('.card__edit')?.textContent).toBe('Edit card')
+  })
+
   it('the page`s selection is the card while it is edited, and the page never reads the inner editor', async () => {
     const { view } = await mount(page('Front'))
     const { card, inner } = await edit(view)
@@ -339,7 +351,8 @@ describe('the mirror, Done and the page`s undo', () => {
     expect(card.dom.classList.contains('card--editing')).toBe(true)
     expect(card.dom.classList.contains('ProseMirror-selectednode')).toBe(false)
     // The key row under the editor (YAZ-5034), kept.
-    expect(card.dom.querySelector('.card__editor + .card__keys')?.textContent).toBe('Cmd + L hide wordCmd + Shift + Enter new sideCmd + Enter / Esc Done')
+    // Each part the app's hotkey label (YAZ-5332): the action first, its keys in brackets.
+    expect([...card.dom.querySelectorAll('.card__editor + .card__keys > span')].map((s) => s.textContent)).toEqual(['Hide word (Cmd+L)', 'New side (Cmd+Shift+Enter)', 'Done (Cmd+Enter)'])
     const before = view.state.doc
     type(inner, ' more')
     await tick(20)

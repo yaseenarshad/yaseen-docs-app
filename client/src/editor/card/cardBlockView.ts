@@ -23,8 +23,9 @@
  * EDIT CARD (idea 8, idea 25): Crepe's own `CodeMirrorBlock`, made only then, from Crepe's factory in `nodeViewCtx`,
  * so the code editor, its keys, theme and extensions are every code block's; the `card` language is Markdown with
  * spell check (`cardLanguage`). "Done" (or Esc, or ⌘↵ in the editor, YAZ-5001) destroys it and draws the card
- * again; the head says the keys, as Explore's Done does ("Done esc ⌘↵"). Under the editor, only while it is open, a
- * quiet key row (YAZ-5034, `cardKeyRow`): "⌘L hide word · ⌘⇧↵ new side · ⌘↵ / esc Done". ⌘⇧↵ puts a side break
+ * again; the head says the keys, as Explore's Done does ("Done (Esc / Cmd+Enter)", `cardEditKeys.ts`). Under the editor,
+ * only while it is open, a quiet key row (YAZ-5034, `cardKeyRow`): "Hide word (Cmd+L) · New side (Cmd+Shift+Enter) ·
+ * Done (Cmd+Enter)". ⌘⇧↵ puts a side break
  * (`---` on its own line) at the caret (`insertSideBreak`). The card window's Edit card is this view, so it has both. A card that
  * is not being edited has no CodeMirror at all, and a caret that arrives in its text becomes the card's node
  * selection (`cardSelection`), so no key types into text that does not show.
@@ -65,7 +66,7 @@ import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
 import { codeWidthSchema } from '../code/codeWidth'
-import { keyCapsDom } from '../../keys/keyWords'
+import { cardKeyRow, drawEditButton } from './cardEditKeys'
 import { copyText, openMenuAt } from '../linkMenu'
 import type { MenuRow } from '../blockHandleMenu'
 import type { SlashRow } from '../slashMenu'
@@ -224,31 +225,6 @@ const button = (className: string, label: string, text: string): HTMLButtonEleme
   return b
 }
 
-/** The keys of Edit card (YAZ-5034), in the row under its editor. */
-export const CARD_EDIT_KEYS: ReadonlyArray<{ keys: string; label: string }> = [
-  { keys: '⌘L', label: 'hide word' },
-  { keys: '⌘⇧↵', label: 'new side' },
-  { keys: '⌘↵ / esc', label: 'Done' },
-]
-
-/**
- * The quiet key row under Edit card's editor, on one line, keycaps as the Inbox's (`.explore__foot kbd`), in words
- * (YAZ-5035, `keyCapsDom`): "Cmd + L hide word · Cmd + Shift + Enter new side · Cmd + Enter / Esc Done". A card embed's
- * Edit card has the same row (YAZ-5037, `cardEmbed.ts`).
- */
-export function cardKeyRow(): HTMLElement {
-  const row = document.createElement('div')
-  row.className = 'explore__foot card__keys'
-  row.contentEditable = 'false'
-  row.setAttribute('aria-hidden', 'true')
-  for (const { keys, label } of CARD_EDIT_KEYS) {
-    const part = document.createElement('span')
-    part.append(keyCapsDom(keys), ` ${label}`)
-    row.append(part)
-  }
-  return row
-}
-
 export class CardBlockView implements NodeView {
   dom: HTMLElement
   /** The card ID, first in the head (D20): a click copies it. Hidden while the card has none. */
@@ -366,10 +342,7 @@ export class CardBlockView implements NodeView {
     this.notitle.hidden = !isCardNoTitle(line)
     this.dom.classList.toggle('card--off', isCardOff(line))
     this.next.hidden = !isCardNext(line)
-    // Done says its keys, as Explore's head does (YAZ-5001), in words (YAZ-5035): "Done Esc Cmd + Enter".
-    if (!this.editing) this.editButton.textContent = 'Edit card'
-    else if (this.editButton.firstChild?.textContent !== 'Done') this.editButton.replaceChildren('Done', keyCapsDom('esc'), keyCapsDom('⌘↵'))
-    this.editButton.setAttribute('aria-label', this.editing ? 'Done' : 'Edit card')
+    drawEditButton(this.editButton, this.editing)
     this.dom.classList.toggle('card--editing', this.editing)
     this.previewButton.hidden = !this.editing
     this.drawReviews()
@@ -732,8 +705,9 @@ export class CardBlockView implements NodeView {
     }
     if (target.closest('.card__edit') !== null) {
       event.preventDefault()
-      if (this.code === null) this.edit()
-      else this.done()
+      // `editing`, not the raw-text box (YAZ-5332): with the page's editor (the default) `code` is null while edited.
+      if (this.editing) this.done()
+      else this.edit()
       return
     }
     if (target.closest('.card__id') !== null) {

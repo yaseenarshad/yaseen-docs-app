@@ -19,6 +19,7 @@ import { exploreRows } from './exploreRows'
 import { shownId, type IdsInSearch } from '../search/showIds'
 import { movedOpens, onExploreMove } from './exploreRecents'
 import { ago, type RecentSections } from './recentSections'
+import { KeyLabel } from '../keys/KeyLabel'
 
 /**
  * The stack's side of a search layer (round 3): the layer writes its rows here at each render, so the page layer
@@ -224,16 +225,16 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
       </div>
       <div className="explore__foot">
         <span>
-          <kbd>↑</kbd> <kbd>↓</kbd> select
+          <KeyLabel action="Select" keys="↑ / ↓" />
         </span>
         <span>
-          <kbd>↵</kbd> open
+          <KeyLabel action="Open" keys="↵" />
         </span>
         <span>
-          <kbd>⌘↵</kbd> open in a tab
+          <KeyLabel action="Open in a tab" keys="⌘↵" />
         </span>
         <span>
-          <kbd>esc</kbd> back
+          <KeyLabel action="Back" keys="esc" />
         </span>
       </div>
     </>
