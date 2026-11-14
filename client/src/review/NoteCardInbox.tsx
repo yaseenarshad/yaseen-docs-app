@@ -60,9 +60,10 @@
  *    mouse; the answer writes its active seconds on its review part (`… good 13s`). The top row says today's work
  *    across the vault, "Today: 31 cards · 9 min" (`session.today`, from the index), and the done screen says it too.
  *  - REVIEWS AT THE BOTTOM OF THE LAST SIDE (YAZ-5105, as Mochi; it amends YAZ-5000, which took them out of the Inbox):
- *    once the card is fully shown, a card with reviews has "✓ 4 Reviews" under its text, in its frame: the card window's
- *    own `NoteCardReviews`, closed until asked for, with no delete here. Never on the front or an earlier side. It is no
- *    Space step, and the scroll never goes to it; the buttons' band stays at the bottom of the view over it.
+ *    once the card is fully shown, a card with reviews has the Reviews strip ("✓ 4 Reviews") right under the card,
+ *    outside its frame (round 2): the card window's own `NoteCardReviews`, closed until asked for, with no delete here.
+ *    Never on the front or an earlier side. It is no Space step, and the scroll never goes to it; the buttons' band
+ *    stays at the bottom of the view over it.
  *  - Nothing left: "Inbox complete." for the vault; for one page or folder "This page is done." and, quiet, "21 more in
  *    the Inbox", which starts the vault's review.
  *  - ADD MORE FOR TODAY (YAZ-5042, Yaseen: "instead of having to go settings"): the done screen says what waits past
@@ -504,13 +505,14 @@ export function NoteCardInbox({ shown = true, review, session, vaultOf, nameOf, 
                   <div className="note-card note-card-screen note-card-inbox__card" onClick={(e) => e.target instanceof Element && e.target.closest(`a[href], ${NOTE_CARD_OPENS}, ${NOTE_CARD_MEDIA}`) === null && advance()}>
                     <NoteCardBody text={text} path={card.path} vault={vaultOf(card.path)} show={{ sides: step.sides, shown: step.shown }} doors={doors} />
                   </div>
-                  {/* YAZ-5105: the Reviews at the bottom of the last side, once it is fully shown; closed again for each card. */}
-                  {done && card.page.reviews.length > 0 && <NoteCardReviews key={cardKey} reviews={card.page.reviews} settings={review.settings} />}
                 </>
               )
             )}
           </div>
         </div>
+        {/* YAZ-5105 round 2: the Reviews strip, as Mochi's, under the card and outside its frame, once the last side is
+            fully shown; closed again for each card. The buttons' band stays at the bottom of the view over it. */}
+        {card?.page != null && text !== null && session.filter !== 'archived' && done && card.page.reviews.length > 0 && <NoteCardReviews key={cardKey} reviews={card.page.reviews} settings={review.settings} />}
         {/* Under the card, outside its frame, as in Mochi (YAZ-5002): the answer buttons, then the keys. No "Press Space"
             line between them (YAZ-5021): the key row at the bottom already says Space. */}
         {/* YAZ-5049 round 2: the buttons and their line stay at the bottom of the view while a long card scrolls under them. */}
