@@ -13,6 +13,7 @@ import { TARGET_HELP } from './tourHelp'
 import { CreateInline } from '../sidebar/CreateInline'
 import { COURSE } from './script'
 import { setTourTyper } from './tourBus'
+import { litBox, setCourseArea } from './dockArea'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -305,5 +306,28 @@ describe('"Use an example" on a step that asks for typing (YAZ-5125)', () => {
     expect(say()).toContain('No example here.')
     expect(button('Use an example')).toBeUndefined()
     setTourTyper(editable, null)
+  })
+})
+
+describe('the tour layer with a docked course (YAZ-5365)', () => {
+  it('leaves the course out of the dim, keeps the coach card off it, and tells the course where the light is', async () => {
+    Object.assign(window, { innerWidth: 1024, innerHeight: 768 })
+    const side = { left: 676, top: 0, width: 348, height: 768 }
+    setCourseArea(side)
+    try {
+      control('button', 'sidebar-course-cards', { left: 500, top: 300, width: 150, height: 28 })
+      await mount()
+      // The coach would sit right under the control, across the panel; it goes to the free side instead.
+      const left = Number.parseFloat(coach().style.left)
+      expect(left + 300).toBeLessThanOrEqual(side.left)
+      // The course is a hole in the dim (its top-left corner, rounded), so it stays bright and usable.
+      expect(document.querySelector('.course-tour__dim path')!.getAttribute('d')).toContain('M684 0H1016')
+      expect(litBox()).toEqual({ left: 496, top: 296, width: 158, height: 36 })
+    } finally {
+      setCourseArea(null)
+    }
+    act(() => root.unmount())
+    root = createRoot(host)
+    expect(litBox()).toBeNull()
   })
 })
