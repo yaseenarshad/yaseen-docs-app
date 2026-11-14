@@ -178,7 +178,8 @@ export interface FriendsIndex {
   nickname: string | null
   vaults: string[]
   stats: string | null
-  friends: { name: string; theirs: string; mine: string }[]
+  /** `paired` (YAZ-5274): the friend has read my pointer for them at least once (both added each other). */
+  friends: { name: string; theirs: string; mine: string; paired?: true }[]
   /** `joined` (4E3): this person has seen their pointer in the group file at least once (so "not in it" now means removed). */
   groups: { name: string; group: string; mine: string; admin: boolean; joined?: true; /** YAZ-5240: when I asked to join (ISO). */ asked?: string }[]
   /**
@@ -228,7 +229,7 @@ function parseIndex(text: string): { ok: true; value: FriendsIndex } | { ok: fal
       stats: isGistId(o.stats) ? o.stats : null,
       friends: list(o.friends)
         .filter(friendOk)
-        .map((f) => ({ name: shownName(f.name), theirs: f.theirs as string, mine: f.mine as string })),
+        .map((f) => ({ name: shownName(f.name), theirs: f.theirs as string, mine: f.mine as string, ...(f.paired === true && { paired: true as const }) })),
       groups: list(o.groups)
         .filter(groupOk)
         .map((g) => ({ name: shownName(g.name), group: g.group as string, mine: g.mine as string, admin: g.admin === true, ...(g.joined === true && { joined: true as const }), ...(typeof g.asked === 'string' && g.asked.length <= 40 && { asked: g.asked }) })),

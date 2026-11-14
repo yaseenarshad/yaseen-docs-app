@@ -268,6 +268,30 @@ describe('createFriendsList (YAZ-5083)', () => {
     expect(after.nickname).toBe('A'.repeat(150)) // kept whole: only the vaults changed
   })
 
+  it('a remove queued while offline, then the same friend added again before the queue runs: the friend stays', async () => {
+    const { clock, world } = setup()
+    const ali = await phone(world, clock, ALI, 'ali')
+    const bea = await phone(world, clock, BEA, 'bea')
+    const share = await ali.list.share()
+    if (share.kind !== 'ok') throw new Error(share.kind)
+    const pasted = await bea.list.paste(share.link)
+    if (pasted.kind !== 'added') throw new Error(pasted.kind)
+    await ali.list.paste(pasted.sendBack!)
+    const rows = await ali.list.rows()
+    if (rows.kind !== 'ok') throw new Error(rows.kind)
+    world.offline = true
+    expect((await ali.list.remove(rows.rows[0].mine)).kind).toBe('paused')
+    world.offline = false
+    const again = await bea.list.share()
+    if (again.kind !== 'ok') throw new Error(again.kind)
+    expect(await ali.list.paste(again.link)).toMatchObject({ kind: 'added' })
+    await ali.list.rows()
+    expect(indexOf(world, 'ali').friends).toHaveLength(1) // now: 0
+    expect(await ali.store.getState('', 'friendsRemoveQueue')).toBeUndefined()
+    const after = await ali.list.rows()
+    expect(after.kind === 'ok' && after.rows.map((r) => r.state)).not.toContain('removing')
+  })
+
   it('a token with no Gists permission: "no-gists" for each action, and nothing is made', async () => {
     const { clock, world } = setup()
     const ali = await phone(world, clock, NOGISTS, 'ali', ['ali/vault'], 'no')
@@ -293,6 +317,7 @@ describe('createFriendsList (YAZ-5083)', () => {
     const pasted = await bea.list.paste(share.link)
     if (pasted.kind !== 'added') throw new Error(pasted.kind)
     await ali.list.paste(pasted.sendBack!)
+    await bea.list.rows() // Bea's app sees the pair once (it marks "paired")
     const rows = await ali.list.rows()
     if (rows.kind !== 'ok') throw new Error(rows.kind)
     expect(await ali.list.remove(rows.rows[0].mine)).toEqual({ kind: 'done' })
@@ -311,8 +336,8 @@ describe('createFriendsList (YAZ-5083)', () => {
     await ali.list.paste(pasted.sendBack!)
     for (let i = 0; i < 3; i++) await ali.list.share() // three links shared, not used yet
     const old = indexOf(world, 'ali').stats!
-    // The Mac and cheers used the hour: the budget the sender keeps says 3 are left.
-    await ali.store.setState('', 'friendsSend', { lastSentAt: null, lastKey: null, pointers: 4, budget: { updates: [], seen: { remaining: 3, resetAt: clock.now() + 3600_000, at: clock.now(), after: 0 }, blockedUntil: null } })
+    // The Mac and cheers used the hour: the budget the sender keeps says 1 is left (the remove's first write).
+    await ali.store.setState('', 'friendsSend', { lastSentAt: null, lastKey: null, pointers: 4, budget: { updates: [], seen: { remaining: 1, resetAt: clock.now() + 3600_000, at: clock.now(), after: 0 }, blockedUntil: null } })
     const rows = await ali.list.rows()
     if (rows.kind !== 'ok') throw new Error(rows.kind)
     expect(await ali.list.remove(rows.rows[0].mine)).toMatchObject({ kind: 'paused', retryAt: expect.any(Number) })
@@ -327,8 +352,9 @@ describe('createFriendsList (YAZ-5083)', () => {
     expect(index.stats).not.toBe(old)
     expect(world.text(old, NUMBERS_FILE)).toBeNull()
     expect(world.owned('ali').filter((g) => NUMBERS_FILE in g.files).map((g) => g.id)).toEqual([index.stats])
-    for (const s of index.shared!) expect(JSON.parse(world.text(s.mine, POINTER_FILE)!).stats).toBe(index.stats)
-    expect(sender.state().status).toBe('sent')
+    // YAZ-5274: the three unused shared links stopped with the remove; nothing else is left to send to.
+    expect(index.shared).toEqual([])
+    expect(sender.state().status).toBe('no-friends')
     expect(world.calls.filter((c) => c.op === 'update' && c.id === old && c.at > START + 3600_000 - 1)).toHaveLength(0)
   })
 })
