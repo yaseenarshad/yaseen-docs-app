@@ -17,6 +17,7 @@ import { answerLine, cardStateText } from './cardInboxChip'
 import { foldHints } from './CardInboxHints'
 import { CARD_MIN_WIDTH, clampCardWidth, inboxCardWidth, setInboxCardWidth } from './inboxCardWidth'
 import { useReadOnlyVault } from '../vault/readOnlyVault'
+import { ZOOM_EVENT } from '../editor/zoomRequest'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -66,6 +67,11 @@ function render() {
 }
 
 function mount(text: string | null, settings: ReviewSettings = DEFAULT_REVIEW_SETTINGS) {
+  // A second mount in one test drops the first Inbox, so no stale one keeps its document listeners (YAZ-5372's zoom keys).
+  if (root !== null) {
+    act(() => root?.unmount())
+    el.remove()
+  }
   session = sessionOf(text)
   review = {
     dueCount: 12,
@@ -1648,7 +1654,7 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
     expect(panel.querySelector('.card-inbox__head, .explore__head, .card-inbox__page, .card__id')).toBeNull()
   })
 
-  describe('YAZ-5049: Space keeps the NEXT blank in view (round 2: one long page, with room below; round 3: the next blank, and the end)', () => {
+  describe('YAZ-5049: Space and the scroll (round 2: one long page, with room below; round 6: a Space that scrolls shows nothing, a Space that shows never scrolls)', () => {
     const box = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 100, width: 100, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
     let place: Record<string, [number, number]>
     let scrollTo: ReturnType<typeof vi.fn>
@@ -1676,139 +1682,40 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
     /** One side, three blanks. */
     const THREE = 'A {{one}} b {{two}} c {{three}}'
 
-    it('round 3 (Yaseen: "the thing it should be following is the NEXT fill in"): the scroll follows the blank the next Space shows — the `data-next` the mark colours — not the word just shown', () => {
-      mount(THREE)
-      scroller()
-      // The word just shown is high; the next blank sits in the lower third: it comes up to a third of the way down.
-      place.word0 = [150, 170]
-      place.word1 = [320, 340]
-      press(' ')
-      expect(el.querySelector('[data-next]')?.getAttribute('data-hidden')).toBe('1')
-      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 320 - 200 }))
-    })
-
-    it('the next blank in the top two thirds of the room: no movement, wherever the word just shown is', () => {
-      mount(THREE)
-      scroller()
-      place.word0 = [320, 340]
-      place.word1 = [270, 290]
-      press(' ')
-      expect(scrollTo).not.toHaveBeenCalled()
-    })
-
-    it('the next blank below the view comes up a third of the way down; above the view (scrolled past), the least scroll, a small gap kept', () => {
-      mount(THREE)
-      scroller()
-      place.word1 = [700, 720]
-      press(' ')
-      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 200 }))
-      mount(THREE)
-      scroller(300)
-      place.word1 = [40, 60]
-      press(' ')
-      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 300 + 40 - 100 - 6 }))
-    })
-
-    it('the side`s last word, with the next blank on a side not shown yet: the word just shown, as round 2', () => {
-      mount(TWO_SIDES)
-      scroller()
-      place.word0 = [320, 340]
-      press(' ')
-      expect(el.querySelector('[data-next]')).toBeNull()
-      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 320 - 200 }))
-    })
-
-    it('a new side: its first blank, low in the view, comes up a third of the way down; a new card starts at its top, with no glide', () => {
-      mount(TWO_SIDES)
-      scroller()
-      press(' ')
-      scrollTo.mockClear()
-      place.side1 = [350, 900]
-      place.word1 = [600, 620]
-      press(' ')
-      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 600 - 200 }))
-      scrollTo.mockClear()
-      const view = scroller(500)
-      session = { ...sessionOf(TWO_SIDES), position: 4, card: { ...sessionOf(TWO_SIDES).card!, id: 'WIKI-10' } }
-      render()
-      expect(scrollTo).not.toHaveBeenCalled()
-      expect(view.scrollTop).toBe(0)
-    })
-
-    it('THE END (no blank left): the end of the card comes into view as far as the word just shown stays in sight; it shows already: nothing moves', () => {
-      mount(THREE)
-      scroller()
-      press(' ')
-      press(' ')
-      scrollTo.mockClear()
-      // The last word at 200; the card ends at 700, past the buttons (400): up by 94, so the word stays at the room's top.
-      place.word2 = [200, 220]
-      place.panel = [110, 700]
-      press(' ')
-      expect(blanks()).toBe(0)
-      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 200 - 100 - 6 }))
-      // A short end: all of it, a small gap kept.
-      mount(THREE)
-      scroller()
-      press(' ')
-      press(' ')
-      scrollTo.mockClear()
-      place.word2 = [200, 220]
-      place.panel = [110, 450]
-      press(' ')
-      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 450 - 400 + 6 }))
-      // The end shows already: nothing moves.
-      mount(THREE)
-      scroller()
-      press(' ')
-      press(' ')
-      scrollTo.mockClear()
-      place.word2 = [200, 220]
-      place.panel = [110, 380]
-      press(' ')
-      expect(scrollTo).not.toHaveBeenCalled()
-    })
-
-    it('THE END with reviews: the end is the Reviews strip under the card (YAZ-5105)', async () => {
-      mount(THREE)
-      session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }] } } }
-      render()
-      await flush()
-      scroller()
-      press(' ')
-      press(' ')
-      scrollTo.mockClear()
-      place.word2 = [200, 220]
-      place.panel = [110, 380]
-      place.strip = [384, 420]
-      press(' ')
-      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 420 - 400 + 6 }))
-    })
-
-    describe('round 5 (Yaseen: "Yes, build it"): Space never shows a blank you cannot see', () => {
-      it('the marked blank in view (between the top row and the buttons): Space shows it', () => {
+    describe('round 6 (Yaseen: "there are certain space clicks that are actually oriented towards just moving the screen"): the word just shown stays still', () => {
+      it('the marked blank in view: Space shows it and NOTHING moves, even with the next blank low in the room or below the view', () => {
         mount(THREE)
         scroller()
         place.word0 = [150, 170]
+        place.word1 = [320, 340]
         press(' ')
         expect(shown()).toEqual(['one'])
+        expect(el.querySelector('[data-next]')?.getAttribute('data-hidden')).toBe('1')
+        place.word1 = [200, 220]
+        place.word2 = [700, 720]
+        press(' ')
+        expect(shown()).toEqual(['one', 'two'])
+        expect(scrollTo).not.toHaveBeenCalled()
       })
 
-      it('the marked blank off screen: Space only glides it in, a third of the way down, and shows nothing; the next Space shows it', () => {
+      it('the next blank off screen: that Space only glides it in, a third of the way down, and shows nothing; the next Space shows it, and nothing moves', () => {
         mount(THREE)
         scroller()
-        place.word0 = [700, 720]
         press(' ')
-        expect(shown()).toEqual([])
-        expect(blanks()).toBe(3)
-        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 200 }))
-        // The glide put it in view: now Space shows it.
-        place.word0 = [200, 220]
+        place.word1 = [700, 720]
         press(' ')
         expect(shown()).toEqual(['one'])
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 200 }))
+        // The glide put it in view: now Space shows it, and the view stays where it is.
+        place.word1 = [200, 220]
+        place.word2 = [700, 720]
+        scrollTo.mockClear()
+        press(' ')
+        expect(shown()).toEqual(['one', 'two'])
+        expect(scrollTo).not.toHaveBeenCalled()
       })
 
-      it('a blank cut by the buttons` edge, or by the top row`s, is not in view: Space only moves it', () => {
+      it('a blank cut by the buttons` edge, or by the top row`s, is not in view: Space only moves it (above the view: the least scroll, a small gap kept)', () => {
         mount(THREE)
         scroller()
         place.word0 = [390, 410]
@@ -1823,39 +1730,89 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 300 + 90 - 100 - 6 }))
       })
 
+      it('the next side: Space shows it when the card`s end sits in the top two thirds of the room; lower, that Space only brings the end up a third of the way down, and the next shows the side, with no move after', () => {
+        mount(TWO_SIDES)
+        scroller()
+        press(' ')
+        expect(shown()).toEqual(['France'])
+        place.panel = [110, 700]
+        press(' ')
+        expect(sides()).toBe(1)
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 200 }))
+        scrollTo.mockClear()
+        place.panel = [110, 200]
+        place.word1 = [700, 720]
+        press(' ')
+        expect(sides()).toBe(2)
+        expect(shown()).toEqual(['France'])
+        expect(scrollTo).not.toHaveBeenCalled()
+        // The side's first blank is below the view: the next Space only moves it.
+        press(' ')
+        expect(shown()).toEqual(['France'])
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 200 }))
+      })
+
+      it('THE END: the last word shows and nothing moves; then a Space brings the card`s end in (no ring), and the next one rings the buttons', () => {
+        mount(THREE)
+        scroller()
+        const answers = () => el.querySelector('.card-inbox__answers')!
+        press(' ')
+        press(' ')
+        place.word2 = [200, 220]
+        place.panel = [110, 700]
+        press(' ')
+        expect(blanks()).toBe(0)
+        expect(scrollTo).not.toHaveBeenCalled()
+        press(' ')
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 400 + 6 }))
+        expect(answers().hasAttribute('data-nudge')).toBe(false)
+        scrollTo.mockClear()
+        place.panel = [110, 380]
+        press(' ')
+        expect(scrollTo).not.toHaveBeenCalled()
+        expect(answers().getAttribute('data-nudge')).not.toBeNull()
+      })
+
+      it('THE END with reviews: the end is the Reviews strip under the card (YAZ-5105)', async () => {
+        mount(THREE)
+        session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }] } } }
+        render()
+        await flush()
+        scroller()
+        for (let i = 0; i < 3; i++) press(' ')
+        expect(scrollTo).not.toHaveBeenCalled()
+        place.panel = [110, 380]
+        place.strip = [384, 420]
+        press(' ')
+        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 420 - 400 + 6 }))
+      })
+
       it('after a scroll by hand took the next blank out of view: Space only brings it back', () => {
         mount(THREE)
         scroller()
         press(' ')
         expect(shown()).toEqual(['one'])
-        // The person scrolled down: the next blank is above the top row now.
         place.word1 = [-200, -180]
-        scrollTo.mockClear()
         press(' ')
         expect(shown()).toEqual(['one'])
         expect(scrollTo).toHaveBeenCalledOnce()
       })
 
-      it('a new side shows no blank: Space shows the side, the view follows its first blank; a blank still out of view only moves on the next Space', () => {
+      it('a new card starts at its top, with no glide', () => {
         mount(TWO_SIDES)
-        scroller()
-        press(' ')
-        place.word1 = [700, 720]
-        press(' ')
-        expect(sides()).toBe(2)
-        expect(shown()).toEqual(['France'])
-        // The glide is under way (the mock never moves): the blank is not in view yet, so Space moves only.
-        scrollTo.mockClear()
-        press(' ')
-        expect(shown()).toEqual(['France'])
-        expect(scrollTo).toHaveBeenCalledOnce()
+        const view = scroller(500)
+        session = { ...sessionOf(TWO_SIDES), position: 4, card: { ...sessionOf(TWO_SIDES).card!, id: 'WIKI-10' } }
+        render()
+        expect(scrollTo).not.toHaveBeenCalled()
+        expect(view.scrollTop).toBe(0)
       })
     })
 
-    describe('round 4 (Yaseen: "mouse behavior and spacebar behavior is a little bit different"): a click shows THAT word and the view stays put', () => {
+    describe('round 4 (Yaseen: "mouse behavior and spacebar behavior is a little bit different"): a click shows THAT word and the view stays put; round 6: a click on a shown word hides it again', () => {
       const word = (n: number) => el.querySelector<HTMLElement>(`[data-hidden="${n}"]`)!
       const click = (target: Element) => act(() => void target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })))
       const nextMark = () => el.querySelector('[data-next]')?.getAttribute('data-hidden') ?? null
+      const hints = () => [...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)
 
       it('a click on a hidden word shows that word — not the marked one — and nothing scrolls, even with the next blank below the view', () => {
         mount(THREE)
@@ -1869,30 +1826,22 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(nextMark()).toBe('2')
       })
 
-      it('nothing hidden after the clicked word: the mark goes to the first hidden word before it; the next Space shows the marked word and follows the round-3 rule from where the view is', () => {
+      it('nothing hidden after the clicked word: the mark goes to the first hidden word before it; the next Space shows the marked word', () => {
         mount(THREE)
         scroller()
         click(word(2))
         expect(shown()).toEqual(['three'])
         expect(nextMark()).toBe('0')
-        expect(scrollTo).not.toHaveBeenCalled()
-        // Space: the marked word shows; the scroll follows the NEW next blank (word 1), low in the room.
-        place.word1 = [320, 340]
         press(' ')
         expect(shown()).toEqual(['one', 'three'])
         expect(nextMark()).toBe('1')
-        expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 320 - 200 }))
+        expect(scrollTo).not.toHaveBeenCalled()
       })
 
-      it('a click on a word already shown does nothing new; a click elsewhere on the card shows the marked word, and the view stays put too', () => {
+      it('a click elsewhere on the card shows the marked word, and the view stays put too', () => {
         mount(THREE)
         scroller()
         click(word(1))
-        const before = shown()
-        click(el.querySelector('.card__hidden')!)
-        expect(shown()).toEqual(before)
-        expect(nextMark()).toBe('2')
-        // Elsewhere on the card (the text around the words): the marked word, a mouse step, so no scroll.
         place.word0 = [700, 720]
         click(el.querySelector('.card__side')!)
         expect(shown()).toEqual(['two', 'three'])
@@ -1900,14 +1849,48 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         expect(nextMark()).toBe('0')
       })
 
-      it('the clicks show every word: the card is fully shown, as by Space (the answers, the hint row without Space)', () => {
+      it('round 6 (Yaseen: "click on a hidden word in order to be able to hide it again"): a click on a shown word hides it; it becomes the marked blank, and the next Space shows it again; nothing scrolls', () => {
+        mount(THREE)
+        scroller()
+        press(' ')
+        press(' ')
+        expect(shown()).toEqual(['one', 'two'])
+        expect(nextMark()).toBe('2')
+        click(word(0))
+        expect(shown()).toEqual(['two'])
+        expect(blanks()).toBe(2)
+        expect(nextMark()).toBe('0')
+        expect(scrollTo).not.toHaveBeenCalled()
+        press(' ')
+        expect(shown()).toEqual(['one', 'two'])
+        expect(nextMark()).toBe('2')
+      })
+
+      it('round 6: the steps follow a hide — a fully shown card is not done any more (Space is back in the hint row); the click shows it again', () => {
         mount(THREE)
         scroller()
         for (const n of [2, 0, 1]) click(word(n))
         expect(blanks()).toBe(0)
-        const hints = [...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)
-        expect(hints).not.toContain('Show (Space)')
+        expect(hints()).not.toContain('Show (Space)')
+        click(word(1))
+        expect(shown()).toEqual(['one', 'three'])
+        expect(hints()[0]).toBe('Show (Space)')
+        click(word(1))
+        expect(blanks()).toBe(0)
+        expect(hints()).not.toContain('Show (Space)')
         expect(scrollTo).not.toHaveBeenCalled()
+      })
+
+      it('round 6: a shown word on an earlier side hides again too; the next side stays shown', () => {
+        mount(TWO_SIDES)
+        scroller()
+        press(' ')
+        press(' ')
+        expect(sides()).toBe(2)
+        click(word(0))
+        expect(sides()).toBe(2)
+        expect(shown()).toEqual([])
+        expect(nextMark()).toBe('0')
       })
 
       it('on two sides: clicks on the front`s words, then Space shows the next side as before', () => {
@@ -1924,8 +1907,8 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
     it('THE END: the hint row drops Space; one more Space moves nothing and gives the answer buttons one soft nudge, each time', () => {
       mount(THREE)
       scroller()
-      const hints = () => [...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)
       const answers = () => el.querySelector('.card-inbox__answers')!
+      const hints = () => [...el.querySelectorAll('.card-inbox__hints > span')].map((h) => h.textContent)
       press(' ')
       press(' ')
       expect(hints()[0]).toBe('Show (Space)')
@@ -1945,5 +1928,54 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
       render()
       expect(answers().hasAttribute('data-nudge')).toBe(false)
     })
+  })
+})
+
+describe('the Inbox zoom (YAZ-5372)', () => {
+  const zoomKey = (step: -1 | 0 | 1, target: EventTarget = el.querySelector('.card-inbox')!) => {
+    const event = new CustomEvent(ZOOM_EVENT, { detail: step, bubbles: true, cancelable: true })
+    act(() => void target.dispatchEvent(event))
+    return event.defaultPrevented
+  }
+  const level = () => el.querySelector<HTMLElement>('.card-inbox')!.style.getPropertyValue('--inbox-zoom')
+  beforeEach(() => localStorage.removeItem('inbox:zoom'))
+
+  it('the page zoom\'s own pill sits at the bar\'s end, after "3 of 12"; its + and − zoom the card\'s text and the value is kept', () => {
+    mount(TWO_SIDES)
+    const bar = el.querySelector('.card-inbox__bar')!
+    const pill = bar.querySelector('.card-inbox__tools > .document-zoom')!
+    expect(pill.getAttribute('aria-label')).toBe('Inbox zoom')
+    expect(bar.querySelector('.card-inbox__place + .card-inbox__tools')).not.toBeNull()
+    expect(level()).toBe('1')
+    act(() => pill.querySelector<HTMLButtonElement>('[aria-label="Zoom in"]')!.click())
+    expect([level(), localStorage.getItem('inbox:zoom')]).toEqual(['1.25', '125'])
+    // A new Inbox (a restart) opens at the kept zoom.
+    mount(TWO_SIDES)
+    expect(level()).toBe('1.25')
+  })
+
+  it('⌘+ / ⌘− / ⌘0 while the Inbox shows are its own — from the Inbox, the body, the tab row — never the sidebar\'s; a key in the sidebar or a claimed one is left alone', () => {
+    mount(TWO_SIDES)
+    expect(zoomKey(1)).toBe(true)
+    expect(level()).toBe('1.25')
+    expect(zoomKey(-1, document.body)).toBe(true)
+    expect(level()).toBe('1')
+    expect(zoomKey(1, document.body)).toBe(true)
+    expect(zoomKey(0)).toBe(true)
+    expect([level(), localStorage.getItem('inbox:zoom')]).toEqual(['1', null])
+    const sidebar = document.createElement('aside')
+    sidebar.className = 'sidebar'
+    document.body.appendChild(sidebar)
+    expect(zoomKey(1, sidebar)).toBe(false)
+    sidebar.remove()
+    // Explore's stack (or a page) claimed it first: not the Inbox's.
+    const claim = (e: Event) => e.preventDefault()
+    document.addEventListener(ZOOM_EVENT, claim, true)
+    zoomKey(1)
+    document.removeEventListener(ZOOM_EVENT, claim, true)
+    expect(level()).toBe('1')
+    // Behind a page tab, the Inbox takes no zoom key.
+    act(() => root?.render(<CardInbox {...props} review={review} session={session} shown={false} />))
+    expect(zoomKey(1, document.body)).toBe(false)
   })
 })

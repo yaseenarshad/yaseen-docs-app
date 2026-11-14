@@ -27,6 +27,7 @@ import { PageWindow, dropPageWindowsAt, pageWindowLink, pageWindowMemory, rename
 import type { Row } from '../views/engine'
 import { readPageView } from '../lib/pageView'
 import { writeProperty } from '../views/writeProperty'
+import { showPagePlace } from './pagePlace'
 import type { NoticeKind } from '../lib/notice'
 import { VIEW_ONLY_CHANGE } from './readOnlyEdit'
 
@@ -98,6 +99,9 @@ vi.mock('./createCrepe', () => {
     giveCaretBack: vi.fn(),
   }
 })
+
+// A start view's place in the text (YAZ-5164): the fake Crepe has no view to measure; the real pair is in pagePlace.test.ts.
+vi.mock('./pagePlace', () => ({ showPagePlace: vi.fn(() => false), readPagePlace: vi.fn(() => null) }))
 
 // Line numbers (YAZ-2643): jsdom has no Worker and the fake Crepe has no view. The request answers
 // with the real block index, in line; what the host SENDS to the editor is the thing under test.
@@ -1334,6 +1338,27 @@ describe('a page starts from a page view, and tells its own (YAZ-2951)', () => {
     expect(createCrepeMock.mock.calls.length).toBe(built + 1)
     expect(host.scrollTop).toBe(0)
     expect(crepeOptions().zoom?.startKey ?? null).toBeNull()
+  })
+
+  it('YAZ-5164: a view with a place in the text (Explore\'s reading layer) is put back by that place, after the caret grab; its px are the fallback when the block is not drawn', async () => {
+    const order: string[] = []
+    vi.mocked(focusEditor).mockImplementation(() => void order.push('focus'))
+    vi.mocked(showPagePlace).mockImplementation(() => {
+      order.push('place')
+      return true
+    })
+    const top = { pos: 40, offset: -12 }
+    const el = await mount(FM + BODY, 1, { startView: { ...VIEW, top } })
+    const host = el.querySelector<HTMLElement>('.editor-host')!
+    expect(showPagePlace).toHaveBeenCalledWith(expect.anything(), host, top)
+    expect(order.slice(0, 2)).toEqual(['focus', 'place'])
+    // The place was shown: the px of the other view are not used.
+    expect(host.scrollTop).toBe(0)
+    act(() => root?.unmount())
+    root = null
+    vi.mocked(showPagePlace).mockReset().mockReturnValue(false)
+    const again = await mount(FM + BODY, 1, { startView: { ...VIEW, top } })
+    expect(again.querySelector<HTMLElement>('.editor-host')!.scrollTop).toBe(420)
   })
 
   it('puts the caret in the start drill-in once the editor is made, before the caret grab', async () => {

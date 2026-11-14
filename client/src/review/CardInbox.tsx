@@ -13,10 +13,12 @@
  *    "Due · 3 days ago"), then THE HEAD: the card ID small and grey (a click copies it, D20). A card in a page says its
  *    page in the top row's ONE breadcrumb (YAZ-5132: no "in <page>" here), whose page part opens it as O does. Then the chip "Up next ×" for a card at the top of the Inbox (YAZ-4999 D3). A card of more than one
  *    side says "Side 1 of 2" on the row's right (YAZ-5048), and the key row's Space says "Next side" when the next Space shows a side.
- *  - SCROLL (YAZ-5049): round 3 follows the NEXT blank (`data-next`, the one "Mark the next hidden word" colours) after
- *    each Space, a new side's first blank, and at the end (no blank left) brings the card's end — the Reviews strip — in
- *    as far as the last word stays in sight; one more Space there gives the answer buttons a soft ring. Round 5: Space
- *    never shows a blank you cannot see — a marked blank not wholly between the top row and the buttons only glides in. Round 1: the word a Space shows, or the side it adds, comes into view, gliding; never centred. Round 2
+ *  - SCROLL (YAZ-5049): round 6 (Yaseen: "certain space clicks that are actually oriented towards just moving the
+ *    screen"): a Space that shows never scrolls, so the word just shown stays still to study. When what it would show is
+ *    out of view — the marked blank not wholly between the top row and the buttons (round 5), the next side's place
+ *    under the card low in the view, or at the end the card's end (the Reviews strip) — that Space only glides it in,
+ *    and the next Space shows (or, at the end, gives the answer buttons a soft ring). A click on a blank shows it, a
+ *    click on a shown word hides it again; a mouse never scrolls. Never centred. Round 2
  *    (as Mochi): the card is one long page — no scroll bar of its own; the Inbox's view scrolls, the top row stays on
  *    top and the buttons at the bottom — and a word that reaches the view's lower third comes up to its upper third,
  *    so what comes next shows (`inboxScroll.ts`).
@@ -86,11 +88,14 @@
  *  - ARCHIVED cards are not listed here (YAZ-5319): a folder page's table shows them (Show cards as rows, Card status
  *    is Archived), and a card's ⋯ menu unarchives it.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
 import { cardSides } from '@shared/cardText'
 import { withCardTitle } from '@shared/cardLine'
 import { PageTitle } from '../editor/PageTitle'
+import { DocumentZoom, savedZoom, saveZoom, zoomByKey } from '../editor/DocumentZoom'
+import { ZOOM_EVENT } from '../editor/zoomRequest'
+import type { ZoomStep } from '@shared/types'
 import { changeCardLine } from './cardFile'
 import { recordAt } from '../editor/card/embedCard'
 import type { GestureAction } from '@shared/keys'
@@ -117,6 +122,9 @@ import { todayCards } from './reviewTime'
 import '../explore/explore.css'
 import { useUnit } from '../vault/unitWord'
 import type { CardPlace } from '../editor/card/cardOpen'
+
+/** Where the Inbox's zoom is kept (YAZ-5372): `savedZoom`, localStorage. */
+const INBOX_ZOOM_KEY = 'inbox:zoom'
 
 export interface CardInboxProps {
   /** The Inbox tab is the one on show (YAZ-5011); false: behind a page tab, hidden, and deaf to keys. Default true. */
@@ -229,7 +237,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
   const steps = useCardSteps(text, cardKey, rootRef)
   const { counts, step, done, nextSide, onLastSide } = steps
   const bodyRef = useRef<HTMLDivElement>(null)
-  useStepScroll(steps, shown, bodyRef, rootRef)
+  useStepScroll(steps, shown, rootRef)
 
   // The buttons show with the card (YAZ-5010): their reviews are fixed now, so the hover and the write agree (D13). Again after a delete re-reads the card.
   // The page object, not its text (YAZ-5029): a card read again with the same text is a new page, and fixes again.
@@ -238,6 +246,32 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
   useEffect(() => {
     if (page !== null && session.answers === null) showAnswers()
   }, [page, session.answers, showAnswers])
+
+  /**
+   * THE INBOX'S ZOOM (YAZ-5372): the page zoom's own pill and key ladder (`DocumentZoom`), on the card's text only — the
+   * bar, the head and the buttons stay. One value for the Inbox, kept across restarts (`inbox:zoom` in localStorage).
+   * ⌘+ / ⌘− / ⌘0 while the Inbox shows are its own (they zoomed the sidebar): unclaimed by a page or Explore (Explore
+   * stops them on the document first), and not pressed from the sidebar or the right panel, which keep theirs.
+   */
+  const [zoom, setZoomState] = useState(() => savedZoom(INBOX_ZOOM_KEY))
+  const setZoom = useCallback((next: number) => {
+    setZoomState(next)
+    saveZoom(INBOX_ZOOM_KEY, next)
+  }, [])
+  useEffect(() => {
+    if (!shown) return
+    const onZoom = (event: Event) => {
+      if (event.defaultPrevented || (event.target instanceof Element && event.target.closest('.sidebar, .right-panel') !== null)) return
+      event.preventDefault()
+      setZoomState((was) => {
+        const next = zoomByKey(was, (event as CustomEvent<ZoomStep>).detail)
+        saveZoom(INBOX_ZOOM_KEY, next)
+        return next
+      })
+    }
+    document.addEventListener(ZOOM_EVENT, onZoom)
+    return () => document.removeEventListener(ZOOM_EVENT, onZoom)
+  }, [shown])
 
   // The keyboard comes to the Inbox when it opens and with each card; back from the Explore stack, App gives it back here.
   useEffect(() => {
@@ -286,8 +320,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
   // dropped Space, and one more Space moves nothing but gives the answer buttons one soft ring — where to go now.
   // A new value each time, so the ring plays again; none on the next card.
   const [nudge, setNudge] = useState<{ key: string | null; n: number }>({ key: null, n: 0 })
-  // Round 4: `by` says what showed it — Space (a key) scrolls to follow the next blank, a mouse never moves the view.
-  // The steps are the shared card's (`useCardSteps`); at the end, a key rings the buttons.
+  // Round 4: `by` says what asked — a key may scroll instead of a step (round 6), a mouse never moves the view.
+  // The steps are the shared card's (`useCardSteps`); at the end, with the end in view, a key rings the buttons.
   const advance = useCallback((by: 'key' | 'mouse' = 'key') => {
     const { steps, card } = live.current
     if (card?.page == null || steps.stepOn(by) || by !== 'key') return
@@ -371,8 +405,16 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
         ]
 
   return (
-    <div ref={rootRef} className="card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`}>
-      <CardInboxBar session={session} setFilter={review.setFilter} addCards={review.addCards} resetCards={review.resetCards} openPlace={(part) => (part.kind === 'page' ? (card !== null && part.path === card.path ? openCard(card, cardFile) : openFile(part.path)) : openPlace?.(part.path))} time={time} />
+    <div ref={rootRef} className="card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`} style={{ '--inbox-zoom': zoom / 100 } as CSSProperties}>
+      <CardInboxBar
+        session={session}
+        setFilter={review.setFilter}
+        addCards={review.addCards}
+        resetCards={review.resetCards}
+        openPlace={(part) => (part.kind === 'page' ? (card !== null && part.path === card.path ? openCard(card, cardFile) : openFile(part.path)) : openPlace?.(part.path))}
+        time={time}
+        tools={<DocumentZoom value={zoom} onChange={setZoom} label="Inbox zoom" />}
+      />
       <div ref={columnRef} className="card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>
         {/* YAZ-5027: the state chip sits right above the card, outside its frame, on the left. The row keeps its height
             with no chip (the done screen), so the card does not move. YAZ-5051 (Yaseen: "so that the card is just pure"):

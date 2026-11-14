@@ -193,9 +193,6 @@ describe('tabsReducer', () => {
       expect(tabsReducer(blank(), { type: 'open-current', path: '/v/a.md' })).toEqual(two())
       expect(tabsReducer(blank(), { type: 'activate', path: '/v/b.md' })).toMatchObject({ active: '/v/b.md', blank: false })
       expect(tabsReducer(blank(), { type: 'activate', path: '/v/a.md' })).toEqual(two())
-      // ⌃Tab from the blank tab, which stands last: on to the first tab, back to the last.
-      expect(tabsReducer(blank(), { type: 'cycle', dir: 1 })).toMatchObject({ active: '/v/a.md', blank: false })
-      expect(tabsReducer(blank(), { type: 'cycle', dir: -1 })).toMatchObject({ active: '/v/b.md', blank: false })
     })
 
     it('S75: close-blank closes the blank tab only: the tab that was active before is active again', () => {
@@ -332,23 +329,6 @@ describe('tabsReducer', () => {
       expect(tabsReducer(abc, { type: 'move', from: 3, to: 0 })).toBe(abc)
       expect(tabsReducer(abc, { type: 'move', from: -1, to: 0 })).toBe(abc)
       expect(tabsReducer(abc, { type: 'move', from: 2, to: 99 })).toBe(abc) // clamped to the last slot — its own
-    })
-  })
-
-  describe('cycle (rule 9: wraparound, plain left→right order)', () => {
-    const abc = state(['/v/a.md', '/v/b.md', '/v/c.md'], '/v/c.md')
-
-    it('next wraps from the last tab to the first; prev wraps back', () => {
-      const next = tabsReducer(abc, { type: 'cycle', dir: 1 })
-      expect(next.active).toBe('/v/a.md')
-      expect(tabsReducer(next, { type: 'cycle', dir: -1 }).active).toBe('/v/c.md')
-    })
-
-    it('is a no-op with fewer than two tabs', () => {
-      const one = state(['/v/a.md'], '/v/a.md')
-      expect(tabsReducer(one, { type: 'cycle', dir: 1 })).toBe(one)
-      const none = state([], null)
-      expect(tabsReducer(none, { type: 'cycle', dir: -1 })).toBe(none)
     })
   })
 
@@ -593,7 +573,7 @@ describe('useWorkspace legacy main-tab mirror', () => {
     act(() => latest.openBackground('/v/b.md'))
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/a.md', '/v/b.md'], '/v/a.md'))
 
-    act(() => latest.next())
+    act(() => latest.activate(idOf('/v/b.md')))
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/a.md', '/v/b.md'], '/v/b.md'))
 
     act(() => latest.close(idOf('/v/a.md')))
@@ -608,7 +588,6 @@ describe('useWorkspace legacy main-tab mirror', () => {
     act(() => latest.openCurrent('/v/a.md')) // the page already open: its sidebar row asks for it again (YAZ-2648 S46)
     act(() => latest.openKept('/v/a.md'))
     act(() => latest.openBackground('/v/a.md')) // already open
-    act(() => latest.prev()) // one tab: nothing to cycle
     act(() => latest.close(idOf('/v/zzz.md'))) // unknown
     expect(bridge.window.setIdentity).toHaveBeenCalledTimes(1)
     // A ⌘-click's background open of an open page is no no-op (YAZ-3943 5B): a copy opens, with one write.
@@ -1462,11 +1441,11 @@ describe('copies in the hook (YAZ-2940): the mirror stores every copy in the str
     act(() => void latest.duplicate(latest.tabs[1].id)) // a · b · b′ (active): the source b saves before its copy reads the file
     expect(flushed).toEqual(['b'])
     act(() => latest.activate(latest.tabs[1].id)) // b′ → b
-    act(() => latest.next()) // ⌃Tab: b → b′
+    act(() => latest.activate(latest.tabs[2].id)) // ⌃Tab (an activate, YAZ-5373): b → b′
     expect(flushed).toEqual(['b', 'b', 'b'])
     act(() => latest.activate(latest.tabs[0].id)) // b′ → a: another file
     act(() => latest.activate(latest.tabs[2].id)) // a → b′
-    act(() => latest.prev()) // ⌃⇧Tab: b′ → b
+    act(() => latest.activate(latest.tabs[1].id)) // ⌃⇧Tab: b′ → b
     expect(flushed).toEqual(['b', 'b', 'b', 'b'])
     act(() => latest.closeActive()) // b closes; its heir is b′
     expect(latest.tabs.map((t) => t.path)).toEqual(['/v/a.md', '/v/b.md'])

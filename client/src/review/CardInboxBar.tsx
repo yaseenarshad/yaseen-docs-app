@@ -22,7 +22,7 @@
  * No Archived row (YAZ-5319, Yaseen: "there will be too many to review that way"): a folder page's table finds archived
  * cards (Show cards as rows, Card status), and a card's ⋯ menu unarchives it.
  */
-import { Fragment, useRef, useState, type MouseEvent, type ReactElement } from 'react'
+import { Fragment, useRef, useState, type MouseEvent, type ReactElement, type ReactNode } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import type { CardRating } from '@shared/cardLine'
 import type { AddKind } from '@shared/cardSchedule'
@@ -76,9 +76,11 @@ interface CardInboxBarProps {
   openPlace?: (part: CardPlacePart) => void
   /** Time so far (YAZ-5130): how today's time shows, Settings › Review. */
   time: TimeSoFar
+  /** The bar's own controls at its right end, quiet until the bar is pointed at (YAZ-5372: the Inbox's zoom). */
+  tools?: ReactNode
 }
 
-export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace, time }: CardInboxBarProps) {
+export function CardInboxBar({ session, setFilter, addCards, resetCards, openPlace, time, tools }: CardInboxBarProps) {
   const button = useRef<HTMLButtonElement>(null)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   // YAZ-5042 round 2: the row whose count turned into "Add [n] more"; it closes with the menu.
@@ -149,6 +151,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
             {session.position} of {session.total}
           </span>
         )}
+        {tools !== undefined && <span className="card-inbox__tools">{tools}</span>}
         {menu !== null && (
           <ContextMenuSurface x={menu.x} y={menu.y} onClose={closeMenu} className="card-inbox__filter-menu">
             {inboxFilters(session).map((f) => {
