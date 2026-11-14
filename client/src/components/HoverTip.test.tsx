@@ -168,3 +168,17 @@ describe('YAZ-5130 round 2 (Yaseen: "why is the tool tip so far away?"): the box
     expect(box()).toBeNull()
   })
 })
+
+describe('YAZ-5130 round 3 (Yaseen: "im getting a macos tool tip also?"): one box, never the native tooltip too', () => {
+  it('the mark carries an empty `title`, so no native tooltip shows over it — not even an ancestor`s', () => {
+    render(
+      <div title="Reviewed today in this vault">
+        <HoverTip className="mark" text="Time so far">
+          ◷
+        </HoverTip>
+      </div>,
+    )
+    // An empty title is "no advisory information" for the mark and all inside it: the ancestor's stops here.
+    expect(target().getAttribute('title')).toBe('')
+  })
+})

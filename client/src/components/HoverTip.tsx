@@ -16,8 +16,11 @@ const EDGE = 8
  * box near the right edge stood far to the left of its mark.
  * `focus` (YAZ-5130 round 2): a keyboard focus on the mark shows the box at once, and the blur hides it. Off by
  * default: the other boxes stay hover-only, so a focus a menu gives back shows nothing.
+ * ONE BOX (YAZ-5130 round 3, Yaseen: "im getting a macos tool tip also?"): the mark has an empty `title`. An empty title
+ * is "no advisory information" for the mark and all inside it, so an ancestor's `title` (a line, a table cell) shows no
+ * native tooltip over this box. A `title` of its own is not allowed: the box says it.
  */
-export function HoverTip({ text, children, focus = false, ...rest }: { text: ReactNode; children: ReactNode; focus?: boolean } & Omit<HTMLAttributes<HTMLSpanElement>, 'onMouseEnter' | 'onMouseLeave' | 'onFocus' | 'onBlur'>) {
+export function HoverTip({ text, children, focus = false, ...rest }: { text: ReactNode; children: ReactNode; focus?: boolean } & Omit<HTMLAttributes<HTMLSpanElement>, 'onMouseEnter' | 'onMouseLeave' | 'onFocus' | 'onBlur' | 'title'>) {
   const [at, setAt] = useState<{ left: number; top: number } | null>(null)
   const box = useRef<HTMLSpanElement>(null)
   const timer = useRef<number | undefined>(undefined)
@@ -52,6 +55,7 @@ export function HoverTip({ text, children, focus = false, ...rest }: { text: Rea
   return (
     <span
       {...rest}
+      title=""
       onMouseEnter={(e) => {
         const el = e.currentTarget
         window.clearTimeout(timer.current)

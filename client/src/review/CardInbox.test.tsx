@@ -1285,7 +1285,13 @@ describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default
     expect(clock()?.getAttribute('aria-label')).toBe('Time so far: 9 min')
     expect(tip()).toBeNull()
     hover(clock()!)
-    expect(tip()?.textContent).toBe('Time so far: 9 min')
+    // Round 3 (Yaseen: "time so far: then next line"): the words, then the time on its own line, a little stronger.
+    expect([...tip()!.children].map((c) => [c.className, c.textContent])).toEqual([
+      ['card-inbox__time-label', 'Time so far:'],
+      ['card-inbox__time-value', '9 min'],
+    ])
+    // Round 3: one box only — no native tooltip on the clock or the line it sits in.
+    expect(clock()!.closest('[title]:not([title=""])')).toBeNull()
     // Never on screen: the line keeps the clock.
     expect(bar()?.textContent).toBe('Today: 31 cards · ')
     unhover(clock()!)
@@ -1305,7 +1311,7 @@ describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default
     render()
     expect(clock()?.tabIndex).toBe(0)
     act(() => clock()!.focus())
-    expect(tip()?.textContent).toBe('Time so far: 9 min')
+    expect(tip()?.textContent).toBe('Time so far:9 min')
     act(() => clock()!.blur())
     expect(tip()).toBeNull()
   })
@@ -1317,7 +1323,7 @@ describe('YAZ-5130: Time so far — hidden in the clock`s hover box (the default
     const done = () => el.querySelector('.card-inbox__done-today')
     expect(done()?.textContent).toBe('Today: 31 cards · ')
     hover(done()!.querySelector('.card-inbox__time')!)
-    expect(tip()?.textContent).toBe('Time so far: 9 min')
+    expect(tip()?.textContent).toBe('Time so far:9 min')
   })
 
   it('hidden with no seconds today: no clock, as there is no time to show', () => {
