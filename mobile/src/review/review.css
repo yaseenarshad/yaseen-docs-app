@@ -393,3 +393,27 @@
     min-width: var(--tap);
   }
 }
+
+/* A sound's progress bar (YAZ-5317): the Mac's 4 px line, with a 44 pt hit area on the phone (the look stays thin). */
+.review__card .card__audio-bar {
+  box-sizing: content-box;
+  padding: 20px 0;
+  margin: -20px 0;
+  background-clip: content-box;
+}
+
+.review__card .card__audio-fill {
+  inset: 20px auto 20px 0;
+}
+
+/* ---- "A new version is ready." (YAZ-5313) ----
+   The line is 5-'s (`pwa/update.css`): fixed over the tab bar. While it shows, the Review dock keeps the room it needs
+   above it, so the line never lies over Undo or the answer buttons. */
+#root:has(> .update-line) {
+  --update-room: 72px;
+}
+
+.review__dock {
+  bottom: calc(var(--update-room, 0px) - 24px);
+  margin-bottom: calc(var(--update-room, 0px) - 24px);
+}

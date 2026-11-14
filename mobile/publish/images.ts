@@ -12,22 +12,27 @@ export const BG_LIGHT = '#ffffff'
 export const BG_DARK = '#1e1e1e'
 
 /**
- * The icon: two cards on the accent colour. `scale` shrinks the cards (the maskable icon keeps them in the middle
- * 80%, which every mask shows). `round` gives the square round corners (the page icon; iOS rounds the others itself).
+ * THE ICON (Yaseen, 2026-11-14: logo option 1, "Hidden word"): a white card on the accent square, with lines of text and
+ * one word covered by a dark bar. Full-bleed (iOS rounds the corners itself). The shapes are the approved art, as drawn.
+ * `scale` shrinks the card's shapes on the same blue (the maskable icon keeps the card well inside the safe zone).
  */
-export function iconSvg({ scale = 1, round = false }: { scale?: number; round?: boolean } = {}): string {
-  const r = round ? 112 : 0
+const CARD = `<rect x="92" y="146" width="328" height="220" rx="30" fill="#ffffff"/>
+  <rect x="132" y="190" width="248" height="26" rx="13" fill="#c9cfff"/>
+  <rect x="132" y="243" width="56" height="26" rx="13" fill="#c9cfff"/>
+  <rect x="204" y="234" width="140" height="44" rx="12" fill="#1f1f1f"/>
+  <rect x="132" y="296" width="180" height="26" rx="13" fill="#c9cfff"/>`
+
+export function iconSvg({ scale = 1 }: { scale?: number } = {}): string {
+  const card = scale === 1 ? `  ${CARD}` : `  <g transform="translate(256 256) scale(${scale}) translate(-256 -256)">\n  ${CARD}\n  </g>`
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="${r}" fill="${ACCENT}"/>
-  <g transform="translate(256 256) scale(${scale}) translate(-256 -244)">
-    <rect x="150" y="122" width="236" height="168" rx="22" fill="#ffffff" fill-opacity="0.45" transform="rotate(-8 268 206)"/>
-    <rect x="126" y="196" width="260" height="184" rx="24" fill="#ffffff"/>
-    <rect x="162" y="246" width="150" height="20" rx="10" fill="${ACCENT}"/>
-    <rect x="162" y="288" width="110" height="20" rx="10" fill="${ACCENT}" fill-opacity="0.55"/>
-  </g>
+  <rect width="512" height="512" fill="${ACCENT}"/>
+${card}
 </svg>
 `
 }
+
+/** The maskable icon's scale: the card's corners then sit 158 px from the centre, inside a circle of 33% of the width. */
+export const MASKABLE_SCALE = 0.8
 
 /**
  * The iPhone screens that get a splash picture (CSS points and pixel ratio). With none, iOS shows a white screen
