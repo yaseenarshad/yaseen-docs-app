@@ -71,7 +71,7 @@ import type { SlashRow } from '../slashMenu'
 import type { LinkFollow } from '../wikilink/wikilinkClick'
 import { CardLineStep, changeCardLineAt, isCardNode, CARD_LANGUAGE, cardLineOf } from './cardBlockLine'
 import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from './cardMedia'
-import { CARD_OPEN, scrollIntoViewWhenShown, takeCardLanding, type CardOpenRequest } from './cardOpen'
+import { CARD_OPEN, previewCard, scrollIntoViewWhenShown, takeCardLanding, type CardOpenRequest } from './cardOpen'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard, type CardLook } from './cardRender'
 import { mountCardEditor, type CardCrepe, type CardEditor } from './cardEditor'
 import { mountReviewsStrip, type ReviewsStripHandle } from './reviewsStrip'
@@ -251,6 +251,7 @@ export class CardBlockView implements NodeView {
   /** The "Up next" chip (YAZ-4999 D3): shown while the line holds `next`; its × removes the mark. */
   private readonly next: HTMLElement
   private readonly editButton: HTMLButtonElement
+  private readonly previewButton: HTMLButtonElement
   private readonly more: HTMLButtonElement
   private readonly body: HTMLElement
   /** Crepe's code block while the card is edited with the raw-text fallback, else null. */
@@ -287,8 +288,10 @@ export class CardBlockView implements NodeView {
     this.next.className = 'card__next'
     this.next.append('Up next', button('card__next-remove', 'Remove from top of Inbox', '×'))
     this.editButton = button('card__edit', 'Edit card', 'Edit card')
+    // Preview (YAZ-5152): in Edit card's head, beside Done — the card as the Inbox shows it, with what is typed.
+    this.previewButton = button('card__preview', 'Preview card', 'Preview')
     this.more = button('card__more', 'Card menu', '⋯')
-    head.append(this.idButton, this.state, this.notitle, this.next, this.editButton, this.more)
+    head.append(this.idButton, this.state, this.notitle, this.next, this.previewButton, this.editButton, this.more)
     this.body = document.createElement('div')
     this.body.className = 'card__body'
     this.dom.append(head, this.body)
@@ -344,6 +347,7 @@ export class CardBlockView implements NodeView {
     else if (this.editButton.firstChild?.textContent !== 'Done') this.editButton.replaceChildren('Done', keyCapsDom('esc'), keyCapsDom('⌘↵'))
     this.editButton.setAttribute('aria-label', this.editing ? 'Done' : 'Edit card')
     this.dom.classList.toggle('card--editing', this.editing)
+    this.previewButton.hidden = !this.editing
     this.drawReviews()
     if (this.editing || this.drawn === text) return
     this.drawn = text
@@ -556,6 +560,18 @@ export class CardBlockView implements NodeView {
     this.view.focus()
   }
 
+  /**
+   * Preview (YAZ-5152): the card as the Inbox shows it, nothing saved (`CARD_PREVIEW`). While edited, what is typed —
+   * Edit card's text — saved or not. A preview that does not know its page sends nothing.
+   */
+  preview(): void {
+    const path = this.path
+    if (path === null) return
+    const line = cardLineOf(this.node)
+    const text = this.inner?.editor.text() ?? this.node.textContent
+    previewCard(this.dom, { path, id: cardIdOf(line), text, notitle: isCardNoTitle(line), reviews: cardReviewsOf(line) })
+  }
+
   /** Sends the open hook for this card (D13). */
   open(): void {
     const pos = this.pos
@@ -605,6 +621,7 @@ export class CardBlockView implements NodeView {
     const move = id !== null && pos !== null && convert?.canMove() === true ? { label: 'Move to its own file', run: () => convert.move(id, cardIndex(this.view.state.doc, pos)) } : null
     return [
       { label: 'Open card', hint: '⌘↵', run: () => this.open() },
+      { label: 'Preview', hint: 'P', disabled: this.path === null, run: () => this.preview() },
       ...(move === null ? [] : [move]),
       { label: isCardNext(line) ? 'Remove from top of Inbox' : 'Put at top of Inbox', disabled: !editable, divider: true, run: () => this.change((l) => withCardNext(l, !isCardNext(l))) },
       { label: isCardOff(line) ? 'Unarchive card' : 'Archive card', disabled: !editable, run: () => this.change((l) => withCardOff(l, !isCardOff(l))) },
@@ -639,6 +656,11 @@ export class CardBlockView implements NodeView {
     if (target.closest('.card__next-remove') !== null) {
       event.preventDefault()
       if (this.canChangeLine) this.change((l) => withCardNext(l, false))
+      return
+    }
+    if (target.closest('.card__preview') !== null) {
+      event.preventDefault()
+      this.preview()
       return
     }
     if (target.closest('.card__edit') !== null) {
@@ -864,10 +886,17 @@ function cardKeyGuard() {
             },
           },
           handleKeyDown: (view, event) => {
-            if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.metaKey || event.ctrlKey || event.isComposing) return false
+            if (event.shiftKey || event.altKey || event.metaKey || event.ctrlKey || event.isComposing) return false
+            // Enter edits the selected card; P previews it (YAZ-5152: P typed over a selected card would replace it).
+            if (event.key !== 'Enter' && event.key !== 'p' && event.key !== 'P') return false
             const pos = selected(view.state)
             if (pos === null) return false
-            cardBlockViewAt(view, pos)?.edit()
+            const card = cardBlockViewAt(view, pos)
+            if (event.key === 'Enter') card?.edit()
+            else {
+              event.preventDefault()
+              card?.preview()
+            }
             return true
           },
         },

@@ -93,7 +93,8 @@ import type { GestureAction } from '@shared/keys'
 import type { CardRating } from '@shared/cardLine'
 import type { ExploreVault } from '../explore/ExplorePage'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
-import { CardBody, CardId, CardNextChip, CardReviews, cardWait } from './cardParts'
+import { CardId, CardNextChip, CardReviews, cardWait } from './cardParts'
+import { CardSideCount, InboxCardFace, InboxCardPanel, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
 import { cardInboxHints, cardInboxKey } from './cardInboxKeys'
 import { CARD_MEDIA, CARD_OPENS, stopCardAudio, textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
 import { HoverTip } from '../components/HoverTip'
@@ -234,16 +235,9 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   const { width, startDrag } = useInboxCardWidth(columnRef, rootRef)
   const card = session.card
   const pageText = card?.page?.text ?? null
-  // "Title on the front: Hide" (YAZ-5030): the front is drawn without its title line, so the title is never a Space
-  // step (nor a hidden word in it); once the card is fully shown, the head shows it (YAZ-5044).
-  const hideTitle = card?.page?.notitle === true
-  const text = useMemo(() => (pageText !== null && hideTitle ? cardWithoutTitle(pageText) : pageText), [pageText, hideTitle])
-  // The head's title (YAZ-5044), and whether it waits for the card's last step: hidden on the front, or holding a hidden word.
-  const title = useMemo(() => {
-    if (pageText === null) return { text: '', waits: false }
-    const tells = hiddenCount(cardSides(pageText)[0]) > hiddenCount(cardSides(cardWithoutTitle(pageText))[0])
-    return { text: cardTitle(pageText), waits: hideTitle || tells }
-  }, [pageText, hideTitle])
+  // The Inbox's card (YAZ-5152: shared with the Preview, `inboxCard.tsx`): the front without a hidden title (YAZ-5030),
+  // and the head's title, which waits for the last step where it would tell the answer (YAZ-5044).
+  const { text, title } = useCardFront(pageText, card?.page?.notitle === true)
   // A card FILE (YAZ-5037): "Open card" in the key row, and no "in <page>". One look in the index the vault already holds.
   const cardFile = card !== null && recordAt(vaultOf(card.path).wikilinks.records, card.path)?.kind === 'card'
   const cardKey = card === null ? null : `${session.position}\n${card.path}\n${card.id}`
@@ -252,70 +246,12 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   // Time so far (YAZ-5130): hidden in the clock's hover box by default (round 2: hover only, never a click).
   const time = review.settings.timeSoFar
 
-  // The sides and their hidden words, once per card text.
-  const counts = useMemo(() => (text === null ? [] : cardSides(text).map(hiddenCount)), [text])
-  const [stepState, setStep] = useState<Step>({ key: cardKey, sides: 1, shown: 0 })
-  const step = stepState.key === cardKey ? stepState : { key: cardKey, sides: 1, shown: 0 }
-  // A card that goes and comes back (⌘Z after the last answer) starts again from its first step.
-  useEffect(() => setStep((s) => (s.key === cardKey ? s : { key: cardKey, sides: 1, shown: 0 })), [cardKey])
-  // The card's sound never outlives it (YAZ-5014): the next card, a hidden Inbox and its close stop it.
-  useEffect(() => stopCardAudio, [cardKey, shown])
-  const hiddenUpTo = (sides: number): number => counts.slice(0, sides).reduce((a, b) => a + b, 0)
-  const done = text !== null && step.sides >= counts.length && step.shown >= hiddenUpTo(counts.length)
-  // YAZ-5048: the next Space shows the next side (the sides that show have no hidden word left).
-  const nextSide = !done && text !== null && step.shown >= hiddenUpTo(step.sides)
-  // YAZ-5105 round 3 (Yaseen: "just show on the last side … regardless of it hidden words are all revealed or not"):
-  // the card's last side shows, past its front. A one-side card's front IS its last side: past it means its first
-  // Space has shown something, or it has nothing to show (fully shown at once).
-  const onLastSide = text !== null && step.sides >= counts.length && (step.sides > 1 || step.shown > 0 || done)
-
-  // YAZ-5049 (Yaseen: "kinda like we have in the app our CMD F search"): the word a Space shows, or the side it adds,
-  // comes into view, gliding; never centred. Only a step of the same card moves it. The card's render runs first.
-  // Round 2: the card is one long page, as in Mochi (no scroll bar of its own: the Inbox's view scrolls, the top row
-  // and the buttons stay), and the rule keeps room below the word, to see what comes next (`inboxScroll.ts`). A new
-  // card starts at its top, at once.
+  // Space's steps (D18, YAZ-5048, YAZ-5105 round 3) and the scroll that follows them (YAZ-5049): the Inbox's card,
+  // shared with the Preview (YAZ-5152, `inboxCard.tsx`). The card's sound stops with the card and a hidden Inbox.
+  const steps = useCardSteps(text, cardKey)
+  const { counts, step, done, nextSide, onLastSide } = steps
   const bodyRef = useRef<HTMLDivElement>(null)
-  const lastStep = useRef<Step | null>(null)
-  useEffect(() => {
-    const before = lastStep.current
-    lastStep.current = { key: step.key, sides: step.sides, shown: step.shown }
-    const body = bodyRef.current
-    const view = rootRef.current
-    if (!shown || body === null || view === null) return
-    if (before !== null && before.key !== step.key) {
-      view.scrollTop = 0
-      return
-    }
-    if (before === null) return
-    // What the step showed: the new side (by its top: its first line, the line between the sides above it), or the word.
-    const side = step.sides > before.sides ? body.querySelector(`.card__side[data-side="${step.sides - 1}"]`) : null
-    const word = side === null && step.shown > before.shown ? body.querySelector(`[data-hidden="${step.shown - 1}"]`) : null
-    const showed = side ?? word
-    if (showed === null) return
-    const s = showed.getBoundingClientRect()
-    const shownSpan = side === null ? { start: s.top, end: s.bottom } : { start: s.top, end: s.top }
-    // Round 3 (Yaseen: "the thing it should be following is the NEXT fill in"): the blank the next Space shows, the one
-    // "Mark the next hidden word" colours (`data-next`, the render's own; never worked out again here). None shown yet
-    // (the next Space shows a side): what the step showed, as round 2.
-    const next = body.querySelector('[data-next]')
-    const room = inboxRoom(view)
-    let dy: number
-    if (done) {
-      // THE END: no blank left. The card's end — the Reviews strip under it (YAZ-5105) or the card's frame — comes in,
-      // as far as what the step showed stays in sight (⌘F's rule over the two: a long end stops at the word).
-      const end = (rootRef.current?.querySelector('.card-reviews--strip') ?? body.closest('.card-inbox__panel') ?? body).getBoundingClientRect()
-      dy = leastScroll({ start: shownSpan.start, end: Math.max(shownSpan.end, end.bottom) }, room, SHOW_GAP)
-    } else if (next !== null) {
-      const n = next.getBoundingClientRect()
-      dy = readingScroll({ start: n.top, end: n.bottom }, room)
-    } else dy = readingScroll(shownSpan, room)
-    if (dy === 0) return
-    const top = view.scrollTop + dy / cssZoom(view)
-    const smooth = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches !== true
-    if (typeof view.scrollTo === 'function') view.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' })
-    else view.scrollTop = top
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `done` follows the step: it changes only with it
-  }, [step.key, step.sides, step.shown, shown])
+  useStepScroll(steps, shown, bodyRef, rootRef)
 
   // The buttons show with the card (YAZ-5010): their reviews are fixed now, so the hover and the write agree (D13). Again after a delete re-reads the card.
   // The page object, not its text (YAZ-5029): a card read again with the same text is a new page, and fixes again.
@@ -334,8 +270,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   // The ⋯ row (YAZ-5004): open or closed; it closes with the card, Esc and a press outside it.
   const [moreState, setMore] = useState<string | null>(null)
   const moreOpen = moreState !== null && moreState === cardKey
-  const live = useRef({ step, done, counts, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile })
-  live.current = { step, done, counts, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile }
+  const live = useRef({ steps, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile })
+  live.current = { steps, card, session, review, ratings, moreOpen, shown, answerSeconds, cardFile }
 
   // The last answer's line (YAZ-5025 round 2): its words fixed when the answer is given, shown once the session counts
   // it (`count`: the session's answers with it), and only while that answer is still the session's last (an undo clears it).
@@ -373,11 +309,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   // A new value each time, so the ring plays again; none on the next card.
   const [nudge, setNudge] = useState<{ key: string | null; n: number }>({ key: null, n: 0 })
   const advance = useCallback(() => {
-    const { step, done, counts, card } = live.current
-    if (done && card?.page != null) return setNudge((v) => ({ key: step.key, n: v.key === step.key ? v.n + 1 : 1 }))
-    if (done || card?.page == null) return
-    const before = counts.slice(0, step.sides).reduce((a, b) => a + b, 0)
-    setStep(step.shown < before ? { ...step, shown: step.shown + 1 } : { ...step, sides: step.sides + 1 })
+    const { steps, card } = live.current
+    if (card?.page == null || steps.stepOn()) return
+    const key = steps.step.key
+    setNudge((v) => ({ key, n: v.key === key ? v.n + 1 : 1 }))
   }, [])
 
   useEffect(() => {
@@ -484,13 +419,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
             </>
           )}
           {/* YAZ-5048: a card of more than one side says where you are, quietly, on the right; one side says nothing. */}
-          {card !== null && text !== null && counts.length > 1 && <span className="card-inbox__sides">{`Side ${Math.min(step.sides, counts.length)} of ${counts.length}`}</span>}
+          {card !== null && text !== null && <CardSideCount steps={steps} />}
         </div>
-        <div className="card-inbox__panel">
-          {/* The card's edges (YAZ-5019): a drag of either sizes the card, centred. */}
-          <div className="card-inbox__edge" data-side="left" role="separator" aria-orientation="vertical" aria-label="Card width" onPointerDown={startDrag(-1)} />
-          <div className="card-inbox__edge" data-side="right" role="separator" aria-orientation="vertical" aria-label="Card width" onPointerDown={startDrag(1)} />
-          <div ref={bodyRef} className="card-inbox__body">
+        {/* The card's frame and its width edges (YAZ-5019), shared with the Preview (YAZ-5152). */}
+        <InboxCardPanel startDrag={startDrag} bodyRef={bodyRef}>
             {session.filter === 'archived' ? (
               <ArchivedList session={session} nameOf={nameOf} openPage={openPage} unarchive={review.unarchive} backToAll={() => review.setFilter('all')} />
             ) : card === null ? (
@@ -533,15 +465,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
             ) : (
               text !== null &&
               card.page !== null && (
-                <>
-                  <div className="card card-screen card-inbox__card" onClick={(e) => e.target instanceof Element && e.target.closest(`a[href], ${CARD_OPENS}, ${CARD_MEDIA}`) === null && advance()}>
-                    <CardBody text={text} path={card.path} vault={vaultOf(card.path)} show={{ sides: step.sides, shown: step.shown }} doors={doors} />
-                  </div>
-                </>
+                <InboxCardFace text={text} path={card.path} vault={vaultOf(card.path)} step={step} doors={doors} onStep={advance} />
               )
             )}
-          </div>
-        </div>
+        </InboxCardPanel>
         {/* YAZ-5105 round 2: the Reviews strip, as Mochi's, under the card and outside its frame; round 3: as soon as the
             last side shows, its hidden words shown or not; closed again for each card. The buttons' band stays at the
             bottom of the view over it. */}

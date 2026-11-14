@@ -37,7 +37,7 @@ import { cardState } from '@shared/cardSchedule'
 import type { GestureAction } from '@shared/keys'
 import { withCardNext } from '@shared/cardLine'
 import { readCardAt, titleOfCard, type CardAtPage } from '../review/cardFile'
-import { CardPane, cardMenuSections, cardWrites, isCardEditKey, onIndexVersion } from '../review/cardPane'
+import { CardPane, cardMenuSections, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
 import { HoverTip } from '../components/HoverTip'
 import { CardFacts, CardId, CardNextChip } from '../review/cardParts'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
@@ -128,7 +128,14 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
   const changeLine = writes.changeLine
   const editDone = (text: string) => writes.editDone(text, () => setEditing(false))
   /** E on the card window: Edit card (YAZ-5003), as the page's Edit card. Not in a field, not read only. */
+  const preview = () => card !== null && previewCardOf(bodyRef.current, path, card)
   const onBodyKey = (event: React.KeyboardEvent) => {
+    // P (YAZ-5152): Preview, as the Inbox shows the card; nothing saved.
+    if (!editing && card !== null && isCardPreviewKey(event)) {
+      event.preventDefault()
+      event.stopPropagation()
+      return preview()
+    }
     if (editing || card === null || vault.readOnly === true || !isCardEditKey(event)) return
     event.preventDefault()
     event.stopPropagation()
@@ -167,7 +174,7 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
               { id: 'open-page', label: unit('Open page'), onSelect: () => onOpenPage(card?.index ?? index) },
               { id: 'open-tab', label: unit('Open page in a new tab'), hint: '⌘↵', onSelect: onOpenInTab },
             ],
-            ...cardMenuSections(card, id, changeLine, onNotice, { inbox: true, link: false }),
+            ...cardMenuSections(card, id, changeLine, onNotice, { inbox: true, link: false, preview }),
           ]}
         />
         <HoverTip text="Close (Esc)">

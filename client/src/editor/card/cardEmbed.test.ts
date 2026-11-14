@@ -313,7 +313,7 @@ describe('the ⋯ menu', () => {
     const { crepe, root } = await mount('Plan ![[GEO-140]] end\n')
     const box = boxes(root)[0]!
     press(box.querySelector('.card__more'))
-    expect(menuLabels()).toEqual(['Open card', 'Show as link', 'Archive card', 'Copy card ID'])
+    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Show as link', 'Archive card', 'Copy card ID'])
     // Open card: the card window, through the one open hook.
     const opened: CardOpenRequest[] = []
     const listen = (e: Event) => opened.push((e as CustomEvent<CardOpenRequest>).detail)
@@ -336,7 +336,7 @@ describe('the ⋯ menu', () => {
     const { root, view } = await mount('![[GEO-2]]\n')
     view.setProps({ editable: () => false })
     press(boxes(root)[0]!.querySelector('.card__more'))
-    expect(menuLabels()).toEqual(['Open card', 'Unarchive card', 'Copy card ID'])
+    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Unarchive card', 'Copy card ID'])
   })
 })
 
@@ -388,7 +388,7 @@ describe('the convert rows (YAZ-5037 phase 5): Move to its own file, Put back in
     const { root } = await mount('Intro.\n\n![[GEO-140]]\n\nMid ![[GEO-140]] text.\n\n- Item\n\n  ![[GEO-140]]\n', { cards: { path: PLAN, convert } })
     const [lone, inline, inList] = boxes(root)
     press(lone!.querySelector('.card__more'))
-    expect(menuLabels()).toEqual(['Open card', 'Show as link', 'Put back into this page', 'Archive card', 'Copy card ID'])
+    expect(menuLabels()).toEqual(['Open card', 'Preview', 'Show as link', 'Put back into this page', 'Archive card', 'Copy card ID'])
     menuItem('Put back into this page')!.click()
     expect(convert.putBack).toHaveBeenCalledWith({ id: 'GEO-140', path: CARD_FILE }, 'GEO-140', 0)
     // With words around it: no card block can go there.
@@ -416,7 +416,7 @@ describe('the convert rows (YAZ-5037 phase 5): Move to its own file, Put back in
     const { root } = await mount(`# Plan\n\n${pageCard('GEO-1', 'Largest country?')}\n${pageCard('GEO-2', 'Smallest country?')}\n\`\`\`card\nNo ID yet\n\`\`\`\n`, { cards: { path: PLAN, convert } })
     const cards = [...root.querySelectorAll<HTMLElement>('.card:not(.card-embed)')]
     press(cards[1]!.querySelector('.card__more'))
-    expect(menuLabels().slice(0, 2)).toEqual(['Open card', 'Move to its own file'])
+    expect(menuLabels().slice(0, 3)).toEqual(['Open card', 'Preview', 'Move to its own file'])
     menuItem('Move to its own file')!.click()
     expect(convert.move).toHaveBeenCalledWith('GEO-2', 1)
     press(cards[2]!.querySelector('.card__more'))

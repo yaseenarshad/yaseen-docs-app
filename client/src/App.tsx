@@ -64,6 +64,7 @@ import { dropPageWindowsAt, renamePageWindows } from './views/view/PageWindow'
 import { moveExploreRecent, rememberExploreRecent } from './explore/exploreRecents'
 import type { ExploreRequest } from './explore/layers'
 import { CARD_OPEN, type CardOpenRequest } from './editor/card/cardBlockView'
+import { CARD_PREVIEW, type CardPreviewRequest } from './editor/card/cardOpen'
 import type { SearchVault } from './search/useSearchResults'
 import { dropHistoryPaths, renameHistoryPaths } from './views/view/valueHistory'
 import { setTypingArrows } from './editor/typingArrows'
@@ -138,6 +139,7 @@ const ExploreStack = lazy(() => import('./explore/ExploreStack').then((m) => ({ 
 const inboxLabel = (session: CardReviewSession): string => (session.scope === 'vault' ? 'Inbox' : `Inbox · ${session.label}`)
 /** The Inbox screen (YAZ-4962): lazy, loaded with the first review. */
 const CardInbox = lazy(() => import('./review/CardInbox').then((m) => ({ default: m.CardInbox })))
+const CardPreview = lazy(() => import('./review/CardPreview').then((m) => ({ default: m.CardPreview })))
 
 /**
  * The tab board (YAZ-3343 D4): its own chunk — the canvas, its layout and its cards — loaded on idle after the
@@ -1520,6 +1522,15 @@ export function App() {
     document.addEventListener(CARD_OPEN, onOpenCard)
     return () => document.removeEventListener(CARD_OPEN, onOpenCard)
   }, [openExploreWith])
+  // Preview a card (YAZ-5152): every card sends `mdapp:card-preview` (⋯ › Preview, P, Edit card's Preview); the window
+  // shows it as the Inbox shows it, over everything, until Esc.
+  const [cardPreview, setCardPreview] = useState<CardPreviewRequest | null>(null)
+  useEffect(() => {
+    const onPreview = (event: Event) => setCardPreview((event as CustomEvent<CardPreviewRequest>).detail)
+    document.addEventListener(CARD_PREVIEW, onPreview)
+    return () => document.removeEventListener(CARD_PREVIEW, onPreview)
+  }, [])
+  const closeCardPreview = useCallback(() => setCardPreview(null), [])
   /** This vault's "Clicking a link" (YAZ-4936), for the editors of `path`: read at each click. */
   const exploreOnClickFor = useCallback((path: string) => scopeOf(path).linkClick.isExplore, [scopeOf])
   const closeExplore = useCallback(() => {
@@ -3711,6 +3722,19 @@ export function App() {
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Page (D7). */}
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
       {keySheetOpen && <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}
+      {/* Preview a card (YAZ-5152): the Inbox's card, nothing saved; a link in it closes it and opens as in the Inbox. */}
+      {cardPreview !== null && root !== null && (
+        <Suspense fallback={null}>
+          <CardPreview
+            card={cardPreview}
+            vault={exploreVaultOf(cardPreview.path)}
+            settings={exploreVaultOf(cardPreview.path).review?.settings}
+            doors={{ openLayer: (to) => (closeCardPreview(), openExploreOn(to)), openTab: (to, where) => (closeCardPreview(), openLink(to, where)), onNotice: notify }}
+            onNotice={notify}
+            onClose={closeCardPreview}
+          />
+        </Suspense>
+      )}
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
