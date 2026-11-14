@@ -88,6 +88,9 @@ const h = vi.hoisted(() => {
     registerClipboardIpc: vi.fn(log('registerClipboardIpc')),
     /** The Draw import's wiring (YAZ-3028 D6); `drawImport.test.ts` tests the import itself. */
     startDrawImport: vi.fn((_deps: Record<string, unknown>) => void s.order.push('startDrawImport')),
+    /** The card skill's copy (YAZ-5107); `cardSkill.test.ts` tests the copy itself. A real copy reads the disk, which ends after `settle` (YAZ-5149). */
+    ensureCardSkill: vi.fn(async (userData: string, _shipped: string, _version: string): Promise<string> => (s.order.push('ensureCardSkill'), `${userData}/card-skill`)),
+    cardSkillStamp: vi.fn(async (_shipped: string, version: string): Promise<string> => `${version}+dev.stub`),
   }
 })
 
@@ -120,6 +123,7 @@ vi.mock('./library/folder', () => ({ ensureLibraryFolder: vi.fn(async () => '/us
 vi.mock('./updater', async (importOriginal) => ({ shortVersion: (await importOriginal<typeof import('./updater')>()).shortVersion, createUpdater: h.createUpdater, runFile: vi.fn(), spawnDetached: vi.fn(), RELEASES_PAGE: 'https://github.com/yaseenarshad/yaseen-docs-app/releases/latest' }))
 vi.mock('./ipc/clipboard', () => ({ registerClipboardIpc: h.registerClipboardIpc }))
 vi.mock('./drawImport', async (importOriginal) => ({ ...(await importOriginal<typeof import('./drawImport')>()), startDrawImport: h.startDrawImport }))
+vi.mock('./cardSkill', async (importOriginal) => ({ ...(await importOriginal<typeof import('./cardSkill')>()), ensureCardSkill: h.ensureCardSkill, cardSkillStamp: h.cardSkillStamp }))
 vi.mock('./theme', () => ({ subscribeNativeTheme: vi.fn(), windowBackgroundColor: vi.fn() }))
 vi.mock('./appZoom', () => ({ subscribeAppZoom: vi.fn(), appZoomFactor: () => 1 }))
 vi.mock('./menu', () => ({
@@ -265,6 +269,23 @@ describe('main startup order (YAZ-2172)', () => {
     expect(h.startDrawImport).toHaveBeenCalledOnce()
     expect(h.startDrawImport.mock.calls[0]![0]).toMatchObject({ drawDir: '/profile/Yaseen Draw', userData: '/profile', appData: false })
     expect(h.s.order.indexOf('startDrawImport')).toBeLessThan(h.s.order.findIndex((e) => e.startsWith('restore:')))
+  })
+
+  it('copies the card skill into the profile before the windows restore, stamped with the app version (YAZ-5107, YAZ-5149)', async () => {
+    h.s.ready()
+    await settle()
+    expect(h.ensureCardSkill).toHaveBeenCalledExactlyOnceWith('/profile', '/Applications/Yaseen Docs.app/Contents/Resources/card-skill', '1.0.12')
+    expect(h.s.order.indexOf('ensureCardSkill')).toBeLessThan(h.s.order.indexOf('restore:none'))
+  })
+
+  it('a failed card skill copy is logged, and the windows restore all the same (YAZ-5149)', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    h.ensureCardSkill.mockRejectedValueOnce(new Error('EACCES'))
+    h.s.ready()
+    await settle()
+    expect(logged).toHaveBeenCalledWith('[cardSkill] the copy failed: Error: EACCES')
+    expect(h.manager.restore).toHaveBeenCalledExactlyOnceWith('none')
+    logged.mockRestore()
   })
 })
 
