@@ -159,6 +159,21 @@ describe('createFriendsList (YAZ-5083)', () => {
     expect(world.owned('bea')).toHaveLength(0)
   })
 
+  it('YAZ-5235: both share first; after the pair heals, rows() deletes the shared link the friend holds and does not use', async () => {
+    const { clock, world } = setup()
+    const ali = await phone(world, clock, ALI, 'ali')
+    const bea = await phone(world, clock, BEA, 'bea')
+    const aShare = await ali.list.share()
+    const bShare = await bea.list.share()
+    if (aShare.kind !== 'ok' || bShare.kind !== 'ok') throw new Error('share')
+    const a = await ali.list.paste(bShare.link)
+    const b = await bea.list.paste(aShare.link)
+    if (a.kind !== 'added' || b.kind !== 'added') throw new Error('paste')
+    expect(await ali.list.paste(b.sendBack!)).toMatchObject({ kind: 'added', paired: true })
+    expect(await bea.list.rows()).toMatchObject({ kind: 'ok', rows: [{ state: 'ok' }], shared: [] })
+    expect(world.owned('bea').filter((g) => POINTER_FILE in g.files)).toHaveLength(1)
+  })
+
   it('a token with no Gists permission: "no-gists" for each action, and nothing is made', async () => {
     const { clock, world } = setup()
     const ali = await phone(world, clock, NOGISTS, 'ali', ['ali/vault'], 'no')

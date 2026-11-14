@@ -20,6 +20,7 @@ import {
 } from '@shared/friendGroups'
 import {
   WHAT_FRIENDS_SEE,
+  dropHeldShares,
   finishRemove,
   newListCache,
   parseFriendLink,
@@ -490,7 +491,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         if (h === 'newer') return { kind: 'newer-app' as const }
         if (h === null) {
           if (await guard.live()) await phoneStore.setState(PHONE, HAS, false)
-          return { kind: 'ok' as const, rows: [], shared: [], repairs: [] }
+          return { kind: 'ok' as const, rows: [], shared: [], repairs: [], held: [] }
         }
         if (pendingRemove(h) !== null) {
           const r = await finishRemove(api, h, await budget(), opts)
@@ -498,6 +499,12 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
           h = r.handle
         }
         const read = await readFriends(api, h, cache, now())
+        // YAZ-5235: my shared links that a friend holds but does not use are deleted.
+        if (read.held.length > 0) {
+          h = await dropHeldShares(api, h, read.held, opts)
+          await remember(h)
+          read.shared = read.shared.filter((x) => !read.held.includes(x.mine))
+        }
         if (read.repairs.length > 0) {
           await remember(await repairPairs(api, h, read.repairs, opts))
           return { kind: 'ok' as const, ...(await readFriends(api, handle!, cache, now())) }
