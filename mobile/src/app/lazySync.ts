@@ -20,6 +20,8 @@ export function lazySync(store: VaultStore, tokens: TokenStore, load: () => Prom
   const listeners = new Set<(event: ShellSyncEvent) => void>()
   /** The vault id whose copy is whole on the phone (a checkpoint exists: 3B writes it last). */
   let held: string | null = null
+  /** Counts the `open` calls: only the last one may open the engine. */
+  let calls = 0
   const emit = (event: ShellSyncEvent) => {
     // The engine says `ready: false` while it reads the stored index on open; a whole copy is ready all the same.
     if (event.type === 'state') {
@@ -44,13 +46,28 @@ export function lazySync(store: VaultStore, tokens: TokenStore, load: () => Prom
       return () => void listeners.delete(listener)
     },
     async open(vault) {
-      if (engine === null && vault === null) {
-        if (state !== IDLE) emit({ type: 'state', state: IDLE })
+      // The LAST call wins (YAZ-5176): a call that waited for the chunk, or for the checkpoint, while a later call came
+      // does nothing when it wakes.
+      const call = ++calls
+      const id = vault === null ? null : vaultId(vault)
+      const whole = id !== null && (await store.checkpoint(id)) !== null
+      if (call !== calls) return
+      held = whole ? id : null
+      if (engine === null) {
+        if (vault === null) {
+          if (state !== IDLE) emit({ type: 'state', state: IDLE })
+          return
+        }
+        emit({ type: 'state', state: { ...IDLE, status: 'syncing', vault: id, ready: false } })
+        const loaded = await ready()
+        if (call !== calls) return
+        await loaded.open(vault)
         return
       }
-      held = vault !== null && (await store.checkpoint(vaultId(vault))) !== null ? vaultId(vault) : null
-      if (engine === null && vault !== null) emit({ type: 'state', state: { ...IDLE, status: 'syncing', vault: vaultId(vault), ready: false } })
-      await (await ready()).open(vault)
+      await engine.open(vault)
+    },
+    async idle() {
+      if (engine !== null) await engine.idle()
     },
     async syncNow() {
       if (engine !== null) await engine.syncNow()
