@@ -6,6 +6,8 @@
  * bytes, by the card's ID), the ⋯ rows of the card, E, and the read again on each new index version of the file.
  * The heads are each one's own: the window's speaks of the page the card is on, the tab IS the card's file.
  */
+import { cardWithTitle } from '@shared/cardText'
+import { previewCard } from '../editor/card/cardOpen'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { cardBlock, EMPTY_CARD_LINE, withCardNext, withCardNoTitle, withCardOff, withoutCardReviews, type CardReview } from '@shared/cardLine'
@@ -43,6 +45,17 @@ export function onIndexVersion(wikilinks: WikilinkResolveSource, path: string, r
 /** E, Edit card's key (YAZ-5003): no modifier, and not typed into a field. */
 export const isCardEditKey = (event: ReactKeyboardEvent): boolean =>
   !event.metaKey && !event.ctrlKey && !event.altKey && (event.key === 'e' || event.key === 'E') && !(event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]') !== null)
+
+/** P on a shown card (YAZ-5152): Preview. Not in a field, no modifier. */
+export const isCardPreviewKey = (event: ReactKeyboardEvent): boolean =>
+  !event.metaKey && !event.ctrlKey && !event.altKey && (event.key === 'p' || event.key === 'P') && !(event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]') !== null)
+
+/** Preview a shown card (YAZ-5152), from `from`: a card file's card with its `title` as its first line, as the Inbox reads it. */
+export function previewCardOf(from: Element | null, path: string, card: CardAtPage): void {
+  if (from === null) return
+  const text = card.fileTitle === undefined ? card.text : cardWithTitle(card.fileTitle, card.text)
+  previewCard(from, { path, id: card.id, text, notitle: card.notitle === true, reviews: card.reviews })
+}
 
 /** A ⋯ change of the card line (D13): `changeCardLine`'s change. */
 export type CardLineChange = Parameters<typeof changeCardLine>[2]
@@ -89,8 +102,10 @@ export function cardWrites(path: string, card: CardAtPage | null, read: () => vo
  * Reset history; then Copy card ID and, with `link`, Copy card link (`[[ID]]`, YAZ-5037). None of them for a card with
  * no ID yet, but its copy rows once it has one.
  */
-export function cardMenuSections(card: CardAtPage | null, id: string | null, changeLine: (change: CardLineChange) => void, onNotice: (message: string) => void, opts: { inbox: boolean; link: boolean }): MenuSection[] {
+export function cardMenuSections(card: CardAtPage | null, id: string | null, changeLine: (change: CardLineChange) => void, onNotice: (message: string) => void, opts: { inbox: boolean; link: boolean; preview?: () => void }): MenuSection[] {
   const rows: MenuSection[] = []
+  // Preview (YAZ-5152): the card as the Inbox shows it, nothing saved.
+  if (card !== null && opts.preview !== undefined) rows.push([{ id: 'preview', label: 'Preview', hint: 'P', onSelect: opts.preview }])
   if (card !== null && card.id !== null)
     rows.push([
       ...(opts.inbox ? [{ id: 'next', label: card.next ? 'Remove from top of Inbox' : 'Put at top of Inbox', onSelect: () => changeLine((l) => withCardNext(l, !card.next)) }] : []),

@@ -12,6 +12,8 @@
  * No React, no editor state: the editor's link follower, the card screens and the card view all reach it.
  */
 
+import type { CardReview } from '@shared/cardLine'
+
 /** The open hook (D13): sent from an editor's `.ProseMirror` or a card screen, it bubbles. App listens and opens the card window. */
 export const CARD_OPEN = 'mdapp:card-open'
 export interface CardOpenRequest {
@@ -27,6 +29,31 @@ export interface CardOpenRequest {
 export function openCardWindow(path: string, id: string, index: number, from: EventTarget = document): void {
   const detail: CardOpenRequest = { path, cardId: id, index }
   from.dispatchEvent(new CustomEvent<CardOpenRequest>(CARD_OPEN, { bubbles: true, detail }))
+}
+
+/**
+ * PREVIEW A CARD (YAZ-5152): `CARD_PREVIEW` (`mdapp:card-preview`, detail `CardPreviewRequest`), ONE bubbling DOM event
+ * from wherever the card shows — a page's card (⋯ › Preview, P, Edit card's Preview), a card file's tab, the card window,
+ * an embed. App listens on the document and shows the card as the Inbox shows it (`CardPreview`). It carries the text
+ * on show, so Edit card's Preview shows what is typed, saved or not.
+ */
+export const CARD_PREVIEW = 'mdapp:card-preview'
+export interface CardPreviewRequest {
+  /** The card's file: its images and links resolve against it. */
+  path: string
+  /** The card's ID, or null before it has one. */
+  id: string | null
+  /** The card's text, its title line included. */
+  text: string
+  /** "Title on the front: Hide" (YAZ-5030). */
+  notitle: boolean
+  /** Its reviews, for the Reviews strip on the last side. */
+  reviews: readonly CardReview[]
+}
+
+/** Shows `card` as the Inbox shows it, sent from `from`. */
+export function previewCard(from: EventTarget, card: CardPreviewRequest): void {
+  from.dispatchEvent(new CustomEvent<CardPreviewRequest>(CARD_PREVIEW, { bubbles: true, detail: card }))
 }
 
 /** How long an ask to land waits for its card's view: a page opened in a background tab may be made only when it shows. */

@@ -229,6 +229,7 @@ vi.mock('./sidebar/Sidebar', () => ({
 }))
 
 import { App, preloadTabBoard, replayNotice } from './App'
+import { CARD_PREVIEW } from './editor/card/cardOpen'
 import { CARD_OPEN, cardBlockViewOfDom } from './editor/card/cardBlockView'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
@@ -5742,6 +5743,22 @@ describe('App: the card flow (YAZ-4962)', () => {
     expect(layer.querySelector('.card__id')?.textContent).toBe('WIKI-9')
     expect(layer.querySelector('.card-reviews .backlinks__title')?.textContent).toBe('1 Review')
     expect(layer.querySelector('.card-strip__line')?.textContent).toMatch(/^Due /)
+  })
+
+  it('YAZ-5152: the preview ask (`mdapp:card-preview`) shows the card as the Inbox does, over the window, inside the app (its Card spacing); Space steps; Esc closes it; nothing is written', async () => {
+    const files = { [PAGE]: { content: page('<!-- card: WIKI-9, 2026-01-02T09:00Z good -->'), mtime: 1 } }
+    const { el, bridge } = await mount(defaultAppState(), TABS, files, (b) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [record()], folders: [], generatedAt: 1, ids: true }))
+    const writesBefore = bridge.writeFile.mock.calls.length
+    act(() => void el.querySelector('.tabstack')?.dispatchEvent(new CustomEvent(CARD_PREVIEW, { bubbles: true, detail: { path: PAGE, id: 'WIKI-9', text: 'Capital of {{France}}\n---\n{{Paris}}', notitle: false, reviews: [{ at: '2026-01-02T09:00Z', rating: 'good' }] } })))
+    await vi.waitFor(() => expect(document.querySelector('.card-preview .card-inbox__card .card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+    const preview = document.querySelector<HTMLElement>('.card-preview')!
+    expect(preview.closest('.app')).not.toBeNull()
+    expect(preview.querySelector('.card-preview__foot')?.textContent).toBe('Preview · Esc to close')
+    await act(async () => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })))
+    expect([...preview.querySelectorAll('.card__hidden')].map((h) => h.textContent)).toEqual(['France'])
+    await act(async () => void (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    await vi.waitFor(() => expect(document.querySelector('.card-preview')).toBeNull())
+    expect(bridge.writeFile.mock.calls.length).toBe(writesBefore)
   })
 
   /**

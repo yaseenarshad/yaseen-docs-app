@@ -41,7 +41,8 @@ import { missingId, type WikilinkResolveSource } from '../wikilink/wikilinkPlugi
 import type { CardEditor } from './cardEditor'
 import { embedCard, recordAt, type CardEmbedHandle, type CardEmbedHost } from './embedCard'
 import { CARD_BOARD_ATTR, CARD_MEDIA, CARD_OPENS } from './cardMedia'
-import { openCardWindow } from './cardOpen'
+import { openCardWindow, previewCard } from './cardOpen'
+import { cardWithTitle } from '@shared/cardText'
 import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard } from './cardRender'
 import type { CardReviewDoorApi } from './cardBlockView'
 import { mountReviewsStrip, type ReviewsStripHandle } from './reviewsStrip'
@@ -138,6 +139,8 @@ export function cardEmbedMenuRows(o: {
   target: string
   from: EventTarget
   replace: (text: string) => void
+  /** Preview (YAZ-5152), once the card is read. */
+  preview?: (() => void) | null
   onNotice: (message: string) => void
   /** "Put back into this page" (YAZ-5037 phase 5): the card is in a card file, the embed stands alone on its line, and the page's door is there. Else null. */
   putBack?: (() => void) | null
@@ -146,6 +149,8 @@ export function cardEmbedMenuRows(o: {
   const failed = (err: unknown) => o.onNotice(`Can't change the card: ${err instanceof Error ? err.message : String(err)}`)
   const rows: Array<MenuRow | null> = [
     { label: 'Open card', run: () => openCardWindow(card.path, card.id, card.index, o.from) },
+    // Preview (YAZ-5152): the card as the Inbox shows it, once it is read; nothing saved.
+    ...(o.preview == null ? [] : [{ label: 'Preview', run: o.preview }]),
     o.editable ? { label: 'Show as link', run: () => o.replace(`[[${o.target}]]`) } : null,
     o.putBack == null ? null : { label: pathUnit(card.path)('Put back into this page'), run: o.putBack },
     { label: off ? 'Unarchive card' : 'Archive card', divider: true, run: () => void changeCardLine(card.path, card.id, (l) => withCardOff(l, !off), card.index).catch(failed) },
@@ -328,6 +333,13 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     host.select()
   }
 
+  /** Preview (YAZ-5152): the card as read, a card file's with its `title` first, as the Inbox reads it. */
+  const previewRead = (): void => {
+    const r = read
+    if (r === null) return
+    previewCard(dom, { path: r.path, id: r.id, text: r.fileTitle === undefined ? r.text : cardWithTitle(r.fileTitle, r.text), notitle: r.notitle === true, reviews: r.reviews })
+  }
+
   const openMenu = (x: number, y: number): void => {
     const c = card
     if (c === null) return
@@ -335,7 +347,7 @@ export function mountCardEmbed(host: CardEmbedHost): CardEmbedHandle {
     // Put back: only a card file's card (a card in a page stays where it is), and only from an embed alone on its line.
     const place = doors.putBack !== undefined && recordAt(source.records, c.path)?.kind === 'card' ? host.place() : null
     const putBack = place === null ? null : () => doors.putBack!({ id: c.id, path: c.path }, place.inner, place.nth)
-    const close = openMenuAt(host.menuParent(), x, y, cardEmbedMenuRows({ card: c, off: off(c), editable: host.editable(), target: host.target, from: dom, replace: host.replace, onNotice, putBack }))
+    const close = openMenuAt(host.menuParent(), x, y, cardEmbedMenuRows({ card: c, off: off(c), editable: host.editable(), target: host.target, from: dom, replace: host.replace, onNotice, putBack, preview: read === null ? null : previewRead }))
     closeMenu = () => {
       close()
       closeMenu = null

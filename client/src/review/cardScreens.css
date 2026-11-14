@@ -1210,3 +1210,19 @@ body.card-inbox--sizing {
   color: var(--fg-muted);
   font-weight: 400;
 }
+
+/* PREVIEW A CARD (YAZ-5152): the Inbox's screen over the window — above Explore, under the notices — with its card as
+   the Inbox draws it; only the bottom bar is its own, "Preview · Esc to close", quiet and centred. */
+.card-preview {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-explore) + 1);
+}
+.card-preview > .card-inbox {
+  padding-top: 24px;
+}
+.card-preview__foot {
+  justify-content: center;
+  color: var(--fg-muted);
+  font-size: 12.5px;
+}

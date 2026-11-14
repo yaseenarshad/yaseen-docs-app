@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { TextSelection } from '@milkdown/kit/prose/state'
+import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state'
 import { undo, undoDepth } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave, cardLook, type CreateCrepeOptions } from '../createCrepe'
@@ -17,6 +17,7 @@ import { features } from '../featureConfig'
 import { CARD_OPEN, CARD_TITLE_PLACEHOLDER, cardLanguage, cardBlockViewAt, setCardEditorKind, type CardOpenRequest } from './cardBlockView'
 import { refreshCardLook, renderCard } from './cardRender'
 import { READ_ONLY_EDIT, type ReadOnlyEditEvent } from '../readOnlyEdit'
+import { CARD_PREVIEW, type CardPreviewRequest } from './cardOpen'
 import { pageCards } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 
@@ -265,6 +266,32 @@ describe('the card in the page', () => {
     expect(opened).toEqual([])
     const bare = await mount(CARD, { cards: { path: '/v/Page.md' } })
     expect(bare.root.querySelector<HTMLButtonElement>('.card__id')?.hidden).toBe(true)
+  })
+
+  it('YAZ-5152: ⋯ › Preview, P on the selected card, and Edit card\'s Preview each send the one preview ask, with the card as shown (the typed text in Edit card); none writes', async () => {
+    const { crepe, root, view } = await mount(`${CARD}<!-- card: WIKI-7, notitle, 2026-11-12T14:05Z good -->\n`, { cards: { path: '/v/Page.md' } })
+    const asks: CardPreviewRequest[] = []
+    document.addEventListener(CARD_PREVIEW, (e) => asks.push((e as CustomEvent<CardPreviewRequest>).detail))
+    const before = getMarkdownForSave(crepe)
+    root.querySelector<HTMLElement>('.card__more')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    const row = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu button')].find((b) => b.textContent?.startsWith('Preview'))!
+    expect(row.textContent).toContain('P')
+    row.click()
+    expect(asks).toEqual([{ path: '/v/Page.md', id: 'WIKI-7', text: 'What is the capital of {{France}}?\n---\nParis', notitle: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }] }])
+    // P with the card selected: Preview, and the card is not typed over.
+    view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, cardPos(view))))
+    view.dom.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', bubbles: true, cancelable: true }))
+    expect(asks).toHaveLength(2)
+    expect(getMarkdownForSave(crepe)).toBe(before)
+    // Edit card: its head has Preview beside Done (none while reading).
+    const preview = () => root.querySelector<HTMLButtonElement>('.card__preview')!
+    expect(preview().hidden).toBe(true)
+    cardBlockViewAt(view, cardPos(view))!.edit()
+    expect(preview().hidden).toBe(false)
+    preview().dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    expect(asks).toHaveLength(3)
+    expect(asks[2].text).toContain('What is the capital of {{France}}?')
+    expect(getMarkdownForSave(crepe)).toBe(before)
   })
 
   it('the ⋯ menu changes the card line in one undo step each; Copy card ID; Open card sends the one hook', async () => {

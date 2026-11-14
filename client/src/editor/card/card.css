@@ -144,6 +144,15 @@
 .card__head .card__edit {
   margin-left: auto;
 }
+/* Preview (YAZ-5152): in Edit card's head only (`hidden` otherwise), beside Done. */
+.card__head .card__preview {
+  flex: none;
+  margin-left: auto;
+  padding: 0 6px;
+}
+.card--editing > .card__head .card__edit {
+  margin-left: 0;
+}
 /* "Done Esc Cmd + Enter" (YAZ-5001, in words YAZ-5035): the keys, quiet, as in Explore's head (`.explore__button kbd`). */
 .card__head .card__edit kbd {
   margin-left: 4px;

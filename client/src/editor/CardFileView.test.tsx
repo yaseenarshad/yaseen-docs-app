@@ -4,6 +4,7 @@
  * that is not valid (and deletes nothing), hands a file that lost `kind: card` back to the page view, and writes Edit
  * card's Done by the card's ID on the newest bytes, as the card window does. Against the real card editor.
  */
+import { CARD_PREVIEW, type CardPreviewRequest } from './card/cardOpen'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -166,7 +167,7 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await mount(FILE)
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('New'))
     const rows = await menu()
-    expect(rows).toEqual(['Put at top of Inbox', 'Archive card', 'Title on the front', 'Copy card ID', 'Copy card link', 'Turn into a page'])
+    expect(rows).toEqual(['Preview', 'Put at top of Inbox', 'Archive card', 'Title on the front', 'Copy card ID', 'Copy card link', 'Turn into a page'])
     pick('Copy card link')
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('[[WIKI-9]]'))
   })
@@ -328,6 +329,24 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
  * "Read only" chip while the vault or the file is read only, Sync and Saved. The chip turns Read only off as on a page:
  * a time choice unlocks this tab (the vault's lock stays in its file), "Turn Read only off" writes the file's own switch.
  */
+describe('Preview a card from its file (YAZ-5152)', () => {
+  it('P and ⋯ › Preview ask for the preview with the card as the Inbox reads it (the file\'s title first); no write', async () => {
+    await mount(FILE)
+    const asks: CardPreviewRequest[] = []
+    const listen = (e: Event) => asks.push((e as CustomEvent<CardPreviewRequest>).detail)
+    document.addEventListener(CARD_PREVIEW, listen)
+    key(el.querySelector('[data-card-file-body]')!, { key: 'p' })
+    expect(asks).toHaveLength(1)
+    expect(asks[0]).toMatchObject({ path: PATH, id: 'WIKI-9', notitle: false })
+    expect(asks[0].text.split('\n')[0]).toBe('Capital of France')
+    await menu()
+    pick('Preview')
+    expect(asks).toHaveLength(2)
+    expect(disk.files.get(PATH)).toBe(FILE)
+    document.removeEventListener(CARD_PREVIEW, listen)
+  })
+})
+
 describe('the top bar of a card file (YAZ-5102)', () => {
   const bar = () => el.querySelector<HTMLElement>('.status-chips')
   const chip = () => el.querySelector<HTMLButtonElement>('.read-only-chip__button')

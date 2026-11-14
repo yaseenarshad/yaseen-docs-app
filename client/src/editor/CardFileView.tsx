@@ -46,7 +46,7 @@ import { api, BridgeRequestError } from '../api'
 import { CardReviewDoor } from '../review/cardReviewDoor'
 import { cardInContent } from '../review/cardFile'
 import { forgetNewCard, isNewCard } from '../review/newCardFile'
-import { CardPane, cardMenuSections, cardWrites, isCardEditKey, onIndexVersion } from '../review/cardPane'
+import { CardPane, cardMenuSections, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
 import { cardFacts, cardNextReview, CardId, CardNextChip } from '../review/cardParts'
 import { useVaultReviewSettings } from '../review/useReviewSettings'
 import type { ExploreVault } from '../explore/ExplorePage'
@@ -237,7 +237,14 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
     if (canEdit) return setEditing(true)
     if (card !== null && content !== null && lockedBase && bodyRef.current !== null) tellReadOnlyEdit(bodyRef.current, 'card', () => setEditing(true))
   }
+  const preview = () => card !== null && previewCardOf(bodyRef.current, path, card)
   const onKeyDown = (event: ReactKeyboardEvent) => {
+    // P (YAZ-5152): Preview, as the Inbox shows the card; nothing saved.
+    if (!editing && card !== null && isCardPreviewKey(event)) {
+      event.preventDefault()
+      event.stopPropagation()
+      return preview()
+    }
     if (editing || card === null || !isCardEditKey(event)) return
     if (!canEdit && !lockedBase) return
     event.preventDefault()
@@ -267,7 +274,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
     })
   }
   const sections = (): MenuSection[] => [
-    ...cardMenuSections(card, id, writes.changeLine, onNotice, { inbox: reviewOn, link: true }),
+    ...cardMenuSections(card, id, writes.changeLine, onNotice, { inbox: reviewOn, link: true, preview }),
     ...(converts ? [[{ id: 'to-page', label: unit('Turn into a page'), onSelect: toPage }]] : []),
   ]
   const fixes =
