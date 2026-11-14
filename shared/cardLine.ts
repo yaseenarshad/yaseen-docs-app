@@ -24,7 +24,8 @@ import { keyFold } from './propertyKeys'
  * THE TITLE (YAZ-5308, decision D: "a card's facts always live in its card line"): `title "Capital of France"`, right
  * after the ID. A card's text is only its sides: no line of it is ever read as its title, and a card file's title is
  * this part too, never its properties. The title is plain text on one line, in double quotes: `\"` is a quote, `\\`
- * a backslash and `\>` a `>`, so a comma, a quote or a `-->` in a title never ends the part or the line. A card
+ * a backslash, `\>` a `>` and `&#44;` a comma (YAZ-5393: an older build splits on every comma), so a comma, a quote or a
+ * `-->` in a title never ends the part or the line, in any build. A card
  * with no title has no `title` part (`cardTitleOf` is ''). A card takes its ID when it is
  * made (`/card` asks the vault's door, `yaseendocs card add` too); one that has none (an agent's text, a paste) gets
  * it from the index's sweep (YAZ-4960). The due date is never written: `cardSchedule.ts` replays the reviews.
@@ -106,39 +107,66 @@ const REVIEW_RE = /^(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2
 /** A review time as the line writes it: UTC, to the minute (`2026-11-12T14:05Z`). */
 export const cardTime = (ms: number): string => `${new Date(ms).toISOString().slice(0, 16)}Z`
 
-/** A title part: `title "…"`, its text with `\\`, `\"` and `\>` escapes. */
+/** A title part: `title "…"`, its text with `\\`, `\"`, `\>` and `&#44;` escapes (`quoteTitle`). */
 const TITLE_RE = /^title[ \t]+"((?:[^"\\]|\\.)*)"$/
 
+/** A part the line's own rules know by its text alone: a review, `off`, `next`, `notitle` or an ID. */
+const isKnownPart = (text: string): boolean => REVIEW_RE.test(text) || text === 'off' || text === 'next' || text === 'notitle' || isNumberId(text)
+
 /**
- * The parts of a line's body, split on its commas: a comma inside a quoted text (a title) splits nothing, and a quote
- * that is never closed takes the rest of the line into its part (an unknown part, kept as its text).
+ * The parts of a line's body, split on its commas: a comma inside a quoted text (a title, a property's value) splits
+ * nothing. A quote that is never closed (YAZ-5394: an agent's or a hand's line) never hides the parts after it: from
+ * the part it opens in, the rest is split on its commas again, and the pieces that are no known part (`isKnownPart`)
+ * stay one part with their own bytes, so a review, a mark or an answer written after it reads, and the rest is kept.
  */
 function splitParts(body: string): string[] {
   const parts: string[] = []
-  let part = ''
+  let start = 0
   let quoted = false
   for (let i = 0; i < body.length; i++) {
     const ch = body[i]
-    if (quoted && ch === '\\' && i + 1 < body.length) {
-      part += ch + body[++i]
-      continue
+    if (quoted && ch === '\\' && i + 1 < body.length) i++
+    else if (ch === '"') quoted = !quoted
+    else if (ch === ',' && !quoted) {
+      parts.push(body.slice(start, i).trim())
+      start = i + 1
     }
-    if (ch === '"') quoted = !quoted
-    if (ch === ',' && !quoted) {
-      parts.push(part.trim())
-      part = ''
-    } else part += ch
   }
-  parts.push(part.trim())
+  if (!quoted) return [...parts, body.slice(start).trim()]
+  // The unclosed tail: its known pieces stand alone; each run of other pieces is one part, its commas kept.
+  let run: number | null = null
+  let at = start
+  for (const piece of body.slice(start).split(',')) {
+    const end = at + piece.length
+    if (isKnownPart(piece.trim())) {
+      if (run !== null) parts.push(body.slice(run, at - 1).trim())
+      parts.push(piece.trim())
+      run = null
+    } else run ??= at
+    at = end + 1
+  }
+  if (run !== null) parts.push(body.slice(run).trim())
   return parts
 }
 
 /** A title as plain text on one line: every run of white space one space, none at either end (YAZ-5308). */
 export const cleanCardTitle = (title: string): string => title.replace(/\s+/g, ' ').trim()
 
-/** The title part's text as the line writes it, quotes and all: `\` and `"` escaped, and `>` so no `-->` can end the line. */
-const quoteTitle = (title: string): string => `"${title.replace(/[\\">]/g, (c) => `\\${c}`)}"`
-const unquoteTitle = (quoted: string): string => quoted.replace(/\\(.)/g, '$1')
+/**
+ * The title part's text as the line writes it, quotes and all: `\` and `"` escaped, and `>` so no `-->` can end the
+ * line. A comma is written `&#44;` (YAZ-5393, decision: encode commas): a build from before YAZ-5308 splits the line on
+ * every comma, also inside the quotes, so with none in it the title stays ONE part there, kept byte for byte, and no
+ * word of it can read as `next`, `off` or a review. An `&` that starts `&#44;` or `&#38;` is written `&#38;`, so a
+ * title that holds those letters reads back as it was; every other `&` stays as it is. A build of YAZ-5308 before this
+ * reads `&#44;` as those letters and writes them back the same.
+ */
+const quoteTitle = (title: string): string =>
+  `"${title
+    .replace(/&(?=#(?:44|38);)/g, '&#38;')
+    .replace(/,/g, '&#44;')
+    .replace(/[\\">]/g, (c) => `\\${c}`)}"`
+/** The title part's text read back (`quoteTitle`'s escapes, in one pass); a raw comma (an older line) reads as itself. */
+const unquoteTitle = (quoted: string): string => quoted.replace(/\\(.)|&#(44|38);/g, (_, c: string | undefined, code: string | undefined) => c ?? (code === '44' ? ',' : '&'))
 
 // ---------- properties (YAZ-5379, YAZ-5349 option A) ----------
 //
@@ -588,8 +616,10 @@ export function cardsWithIds(cards: readonly CardRecord[] | undefined): CardWith
 
 /**
  * `text` with the card line of each card `change` names rewritten: `change` gets each card in page order and returns
- * the new line, or undefined to leave that card as it is. A card that had no line gets one right under its fence;
- * a line that empties is removed. The ONE writer of card lines in a page: the sweep, the command and the Inbox.
+ * the new line, or undefined (or the card's own line, unchanged) to leave that card as it is: an older line keeps its
+ * bytes until a write changes it (YAZ-5393: a raw comma in its title is encoded then). A card that had no line gets one
+ * right under its fence; a line that empties is removed. The ONE writer of card lines in a page: the sweep, the command
+ * and the Inbox.
  */
 function rewriteCardLines(text: string, change: (card: CardBlock, index: number) => CardLine | undefined): string {
   const cards = findCards(text)
@@ -599,7 +629,7 @@ function rewriteCardLines(text: string, change: (card: CardBlock, index: number)
   for (let n = cards.length - 1; n >= 0; n--) {
     const card = cards[n]
     const next = change(card, n)
-    if (next === undefined) continue
+    if (next === undefined || next === card.line) continue
     const formatted = formatCardLine(next)
     const written = formatted === null ? [] : [card.indent + formatted]
     if (card.lineAt !== null) lines.splice(card.lineAt, 1, ...written)

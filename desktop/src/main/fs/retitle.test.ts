@@ -226,7 +226,7 @@ describe('retitle: a card file (YAZ-5037, YAZ-5308 decision D)', () => {
   it('a title with a comma, a quote and a `-->` is written so the card line still reads it', async () => {
     const old = await page('Cards/yaz-140.md', cardFile(null, '---\nParis'))
     const { newPath } = await retitle(root, { path: old, title: 'Paris, "the" --> city' })
-    expect(await readFile(newPath, 'utf8')).toContain('<!-- card: YAZ-140, title "Paris, \\"the\\" --\\> city", 2026-11-10T09:12Z good -->')
+    expect(await readFile(newPath, 'utf8')).toContain('<!-- card: YAZ-140, title "Paris&#44; \\"the\\" --\\> city", 2026-11-10T09:12Z good -->')
   })
 
   it('the placeholder title keeps the `<id>.md` name; the same name moves nothing', async () => {
