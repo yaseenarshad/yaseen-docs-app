@@ -287,6 +287,8 @@ export class CardBlockView implements NodeView {
   ) {
     this.dom = document.createElement('div')
     this.dom.className = 'card'
+    // The page's own card, its ID on it (YAZ-5164): what Explore's page layer lands on (`pageCardIn`); an embed has neither.
+    this.dom.dataset.pageCard = ''
     const head = document.createElement('div')
     head.className = 'card__head'
     this.idButton = button('card__id', 'Copy card ID', '')
@@ -356,6 +358,8 @@ export class CardBlockView implements NodeView {
     const line = cardLineOf(this.node)
     const id = cardIdOf(line)
     this.idButton.textContent = id ?? ''
+    if (id === null) delete this.dom.dataset.cardId
+    else this.dom.dataset.cardId = id
     this.idButton.hidden = id === null
     this.state.textContent = isCardOff(line) ? 'Archived' : ''
     this.notitle.hidden = !isCardNoTitle(line)

@@ -208,7 +208,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     render()
     expect(hasE()).toBe(true)
     press('e')
-    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, 0)
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, { id: 'WIKI-9', index: 0 })
   })
 
   it('YAZ-5145: in a read-only vault the row offers "E Edit card", and E asks Explore to edit (its own "Allow edits?" asks there); the Inbox keeps its card and step under it', () => {
@@ -220,7 +220,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(shown()).toEqual(['France'])
     expect([...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)).toContain('E Edit card')
     press('e')
-    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, 0)
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, { id: 'WIKI-9', index: 0 })
     expect(props.openPage).not.toHaveBeenCalled()
     // Back from Explore (the stack closed): the same card, the same step.
     render()
@@ -387,7 +387,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(props.openPage).toHaveBeenLastCalledWith(PATH)
     expect(vi.mocked(props.openPage).mock.calls[0]).toHaveLength(1)
     press('e')
-    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, 0)
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, { id: 'WIKI-9', index: 0 })
     expect(props.openPage).toHaveBeenCalledOnce()
     press('Enter', { metaKey: true })
     expect(props.openInTab).toHaveBeenCalledExactlyOnceWith(PATH)
@@ -1003,11 +1003,11 @@ describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the brea
   })
 
   // YAZ-5307: Settings › Cards › Inbox: O opens the page at. The top (the default) asks for the page alone, as YAZ-5022;
-  // The card asks for it landed on the card (its index: Explore's page layer `card`, the one landing, YAZ-5164). The
+  // The card asks for it landed on the card (its ID and index: Explore's page layer `card`, found by its ID, the one landing, YAZ-5164). The
   // breadcrumb's page part and ⋯ › Open card open as O does. E and a card file do not change.
   it.each([
     ['top', [PATH]],
-    ['card', [PATH, 1]],
+    ['card', [PATH, { id: 'WIKI-9', index: 1 }]],
   ] as const)('YAZ-5307: with "%s", O, the breadcrumb`s page part and ⋯ › Open card ask for %j; E is unchanged', (openAt, asked) => {
     mount(PLAIN)
     props = { ...props, openAt }
@@ -1021,7 +1021,7 @@ describe('YAZ-5044 the Inbox head: "Title · ID" (YAZ-5132: the page is the brea
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-action[aria-label="Open card"]')!.click())
     expect(vi.mocked(props.openPage).mock.calls).toEqual([asked, asked, asked])
     press('e')
-    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, 1)
+    expect(props.editCard).toHaveBeenCalledExactlyOnceWith(PATH, { id: 'WIKI-9', index: 1 })
   })
 
   it('YAZ-5307: with "card", a card FILE still opens as itself (no card index)', () => {

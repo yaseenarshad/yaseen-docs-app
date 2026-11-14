@@ -496,7 +496,7 @@ export function changeCardText(content: string, id: string | null, text: string,
 function changedCardText(content: string, id: string | null, text: string, index: number): string {
   const { frontmatter, body } = splitFrontmatter(content)
   const cards = findCards(body)
-  const at = id === null ? index : cards[index] !== undefined && cardIdOf(cards[index].line) === id ? index : cards.findIndex((card) => cardIdOf(card.line) === id)
+  const at = cardPlace(cards.map((card) => cardIdOf(card.line)), id, index)
   const card = cards[at]
   if (card === undefined) throw new CardNotFoundError(id ?? `#${index + 1}`)
   const wanted = withLf(text).replace(/\n+$/, '')
@@ -512,6 +512,17 @@ function changedCardText(content: string, id: string | null, text: string, index
 }
 
 /**
+ * Which of a page's cards is card `id` at `index` (their IDs in page order, `null` for one with none): the one at `index`
+ * when it holds `id` (two cards with one ID before the sweep settles the copy: each keeps its own), else the first that
+ * holds it; with no ID, the one at `index`. -1: none. The ONE choice of card for a write, a read and a landing
+ * (YAZ-5164: Explore lands on a card of its page by this, so an index gone stale, or a card embed above it, never moves it).
+ */
+export function cardPlace(ids: readonly (string | null)[], id: string | null, index = -1): number {
+  if (id === null) return index
+  return ids[index] === id ? index : ids.indexOf(id)
+}
+
+/**
  * The page `content` with the card line of card `id` changed by `change` — for the Inbox, the card window and the ⋯
  * menu: `transformFile(path, (c) => changeCard(c, 'WIKI-512', (l) => withCardReview(l, { at: cardTime(Date.now()), rating: 'good' })))`.
  * Throws `CardNotFoundError` when no card holds `id`. Two cards with one ID (a copy the sweep has not met): the one at
@@ -519,7 +530,7 @@ function changedCardText(content: string, id: string | null, text: string, index
  */
 export function changeCard(content: string, id: string, change: (line: CardLine) => CardLine, index?: number): string {
   const cards = pageCards(content)
-  const at = index !== undefined && cards[index] !== undefined && cardIdOf(cards[index].line) === id ? index : cards.findIndex((card) => cardIdOf(card.line) === id)
+  const at = cardPlace(cards.map((card) => cardIdOf(card.line)), id, index)
   if (at === -1) throw new CardNotFoundError(id)
   return rewritePageCards(content, (card, n) => (n === at ? change(card.line) : undefined))
 }
