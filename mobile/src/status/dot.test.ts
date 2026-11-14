@@ -116,7 +116,8 @@ describe('every combination', () => {
     ['attention', 'STORAGE_FULL'],
   ]
   const SEND_PROBLEMS = [null, 'OFFLINE', 'GITHUB_DOWN', 'RATE_LIMITED', 'FAILED', 'UNAUTHORIZED', 'READ_ONLY', 'NOT_FOUND', 'NO_ACCESS']
-  const all: { over: Parameters<typeof input>[0]; d: ReturnType<typeof syncDot> }[] = []
+  type Over = NonNullable<Parameters<typeof input>[0]>
+  const all: { over: Over; d: ReturnType<typeof syncDot> }[] = []
   for (const [status, problem] of STATUSES)
     for (const waiting of [0, 1, 3])
       for (const lost of [0, 1, 2])
@@ -124,7 +125,7 @@ describe('every combination', () => {
           for (const sendProblem of SEND_PROBLEMS)
             for (const online of [true, false])
               for (const token of [NONE, SOON, ENDED]) {
-                const over = { status, problem, waiting, lost, sending, sendProblem, online, token }
+                const over: Over = { status, problem, waiting, lost, sending, sendProblem, online, token }
                 all.push({ over, d: syncDot(input(over)) })
               }
 

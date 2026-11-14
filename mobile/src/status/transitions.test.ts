@@ -74,10 +74,12 @@ describe('the dot follows the engine and the answer list (decision 12)', () => {
     const t = await watch()
     t.s.github.offline = true
     t.setOnline(false)
-    await t.add(answer('NC-2', 1), answer('NC-3', 1))
+    await t.add(answer('NC-2', 1))
+    await t.add(answer('NC-3', 1))
     await t.tick(SEND_AFTER_MS)
     expect(t.seen.at(-1)).toBe('pending 2 answers waiting · no signal')
-    expect(t.seen).not.toContain('off No signal')
+    // Once an answer waits, the dot is never a plain grey: the person sees that answers wait.
+    expect(t.seen).toEqual(['synced Synced', 'off No signal', 'pending 1 answer waiting · no signal', 'pending 2 answers waiting · no signal'])
     t.s.github.offline = false
     t.setOnline(true)
     t.answers.online()

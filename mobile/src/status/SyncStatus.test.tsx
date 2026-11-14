@@ -152,7 +152,7 @@ describe('a tap on the dot shows the time of the last sync (decision 12)', () =>
     await h.syncSet({ status: 'slowed', problem: 'RATE_LIMITED', retryAt: NOW + 120_000 })
     await h.click('Sync status: Waiting for GitHub')
     expect(h.text()).toContain(`GitHub asked the app to slow down. It tries again at ${clockTime(NOW + 120_000)}.`)
-    expect(h.host.querySelectorAll('[role="dialog"] .btn')).toHaveLength(0)
+    expect([...h.host.querySelectorAll('[role="dialog"] button')].map((b) => b.textContent)).toEqual(['Close'])
   })
 
   it('red (401, N6): the reason and "Sign in again", which opens the token form; after a new token the dot is green', async () => {

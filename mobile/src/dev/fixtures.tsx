@@ -35,6 +35,8 @@ const fill = (name: string, value: string) => {
 
 export async function mountFixture(root: Root, hash: string): Promise<void> {
   const name = /fixture=([\w-]+)/.exec(hash)?.[1] ?? 'sign-in'
+  // The status dot's own fixtures (4D, YAZ-5080).
+  if (name.startsWith('dot')) return (await import('../status/fixtures')).mountDotFixture(root, name)
   const backend = memoryBackend()
   const store = await openVaultStore(backend)
   const tokens = tokenStoreOn(backend)

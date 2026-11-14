@@ -25,6 +25,8 @@ export interface ShellSyncState {
   progress: { done: number; total: number } | null
   /** The vault has a full copy on the phone. False until the first download ends: the shell shows the progress view. */
   ready: boolean
+  /** The end of the last good pass (ms since 1970). A tap on the dot shows it (4D, decision 12). */
+  lastSyncedAt?: number | null
 }
 
 /** The events the shell reads. 3B's `changed` event carries more (the diff, the index); the shell needs the settings files. */
