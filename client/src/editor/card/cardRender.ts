@@ -36,7 +36,7 @@ import { cardSides, hiddenCount, markHidden } from '@shared/cardText'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { GestureAction, MouseMods } from '@shared/keys'
 import { parseAlt } from '../image/imageSrc'
-import { cardPillSpan } from '../wikilink/wikilinkPlugin'
+import { cardPillSpan } from '../wikilink/cardPill'
 import { linkClickAction } from '../linkGesture'
 import { audioPlayer, boardPicture, isAudioRef, isBoardRef, missingBoard, CARD_AUDIO_ATTR, CARD_BOARD_ATTR, type CardBoardLook } from './cardMedia'
 
