@@ -126,7 +126,8 @@ interface Step {
 }
 
 /** The line under the buttons: the last answer, the last add, or a ⋯ action. */
-type Line = { kind: 'answer'; count: number; id: string } | { kind: 'mark'; text: string; key: string | null }
+/** The line under the buttons: the last answer, the last ⋯ mark (with its own Undo: YAZ-5078), or Archive card. */
+type Line = { kind: 'answer'; count: number; id: string } | { kind: 'mark'; text: string; key: string | null; undo?: () => Promise<unknown> } | { kind: 'archive' }
 
 function ReviewSession({ link, vault, vaultName, unit, open, source, host, media, shown = true }: ReviewViewProps & Setup) {
   const { ready, settings } = useSourceState(source)
@@ -222,6 +223,16 @@ function SessionScreen({
   const guarded = !guard.taps
   const liveKey = useRef(cardKey)
   liveKey.current = cardKey
+  const liveAnswered = useRef(session.answered.length)
+  liveAnswered.current = session.answered.length
+  // YAZ-5315: the guard's 400 ms start when the NEXT card is drawn on the screen (a new key, with its text).
+  const { shown: cardShown } = guard
+  // A DRAWING is one read of a card (its page object): the hook keeps the old card's object on the screen while the
+  // next one reads, and a card that comes back is read again (a new object).
+  const drawing = page === null ? null : drawingOf(page)
+  useEffect(() => {
+    if (drawing !== null) cardShown(drawing)
+  }, [drawing, cardShown])
   // Hidden and shown again: the guard starts from `ready` (YAZ-5266).
   const { reset: resetGuard } = guard
   useEffect(() => resetGuard(), [shown, resetGuard])
@@ -243,7 +254,8 @@ function SessionScreen({
       if (body == null) return
       if (step.sides > before.sides) {
         const side = body.querySelector(`.card__side[data-side="${step.sides - 1}"]`)
-        setRevealed((side?.textContent ?? '').trim())
+        // YAZ-5314: what VoiceOver reads of the side: a hidden word is "Hidden word", never its text.
+        setRevealed(side === null ? '' : spokenText(side))
       } else if (step.shown > before.shown) setRevealed((body.querySelectorAll('.card__hidden')[step.shown - 1]?.textContent ?? '').trim())
     }, 0)
     return () => clearTimeout(id)
@@ -285,16 +297,22 @@ function SessionScreen({
     if (page === null || card === null || guarded) return
     setMenu(null)
     setNotice(null)
-    const from = cardKey
-    setLine({ kind: 'answer', count: session.answered.length + 1, id: card.id })
+    const fromDrawing = drawingOf(page)
+    const earlier = line
+    const answeredBefore = session.answered.length
+    setLine({ kind: 'answer', count: answeredBefore + 1, id: card.id })
     // YAZ-5266: the guard's one way through an answer; a failed save keeps this card on the screen, and taps act again.
     void guard.answer(
       async () => {
         await review.answer(rating, seconds())
         // Let the next card draw before the guard reads the screen.
         await new Promise((r) => setTimeout(r, 0))
+        // YAZ-5316: a save that failed counts no answer; the line goes back to what it said (the earlier Undo stays).
+        if (liveAnswered.current === answeredBefore) setLine(earlier)
       },
-      () => ({ sameCard: liveKey.current === from, cardOnScreen: liveKey.current !== null }),
+      // `sameCard`: the save failed (no answer counted; the card stays). The next card's drawing starts the 400 ms.
+      () => ({ sameCard: liveAnswered.current === answeredBefore, cardOnScreen: liveKey.current !== null }),
+      fromDrawing,
     )
   }
   // YAZ-5228: an answer whose card was gone at the send is in the amber line. Its Undo takes it away cleanly (as
@@ -303,23 +321,37 @@ function SessionScreen({
   const undo = () => {
     setNotice(null)
     guard.undo()
+    // YAZ-5078: Undo of Up next or Fix later: the inverse, through the host (an unsent mark leaves the list).
+    if (line?.kind === 'mark' && line.undo !== undefined) {
+      const run = line.undo
+      setLine(null)
+      return void run().catch(() => setNotice('That did not save. Try again.'))
+    }
     if (lostRow === undefined) return void review.undo()
     setLine({ kind: 'mark', text: 'Answer removed', key: cardKey })
     void Promise.all(lostRow.seqs.map((seq) => link.answers.discard(seq)))
   }
-  const act = (text: string, run: () => Promise<unknown>) => {
+  const act = (text: string, run: () => Promise<unknown>, undoIt?: () => Promise<unknown>) => {
     setMenu(null)
     setNotice(null)
-    setLine({ kind: 'mark', text, key: cardKey })
+    setLine({ kind: 'mark', text, key: cardKey, undo: undoIt })
     void run().catch(() => setNotice('That did not save. Try again.'))
+  }
+  // YAZ-5078 (the phone's decision): Archive card is on the hook's Undo stack; the line says "Archived · Undo".
+  const archive = () => {
+    setMenu(null)
+    setNotice(null)
+    setLine({ kind: 'archive' })
+    void review.turnOff()
   }
   const toggleFix = () => {
     if (card === null) return
     const on = !fixed
-    act(on ? 'Marked: Fix later' : 'Removed: Fix later', async () => {
-      await host.changeCardLine(card.path, card.id, (l) => withCardFix(l, on))
-      setFixOn({ key: `${card.path}\n${card.id}`, on })
-    })
+    const set = (to: boolean) => async () => {
+      await host.changeCardLine(card.path, card.id, (l) => withCardFix(l, to))
+      setFixOn({ key: `${card.path}\n${card.id}`, on: to })
+    }
+    act(on ? 'Marked: Fix later' : 'Removed: Fix later', set(on), set(!on))
   }
 
   // The line under the buttons shows while what it names is still the last thing done.
@@ -329,8 +361,10 @@ function SessionScreen({
       ? { text: `${addedLine(session.lastAdd.kind, session.lastAdd.count)}`, undo: session.canUndo }
       : line?.kind === 'answer' && line.count === answeredNow && answeredNow > 0
         ? { text: 'Answered', undo: session.canUndo || lostRow !== undefined }
-        : line?.kind === 'mark' && (line.key === cardKey || line.text.startsWith('Archived'))
-          ? { text: line.text, undo: false }
+        : line?.kind === 'archive' && session.lastArchive !== null
+          ? { text: 'Archived', undo: session.canUndo }
+        : line?.kind === 'mark' && line.key === cardKey
+          ? { text: line.text, undo: line.undo !== undefined }
           : line?.kind === 'mark' && line.text === 'Answer removed'
             ? { text: line.text, undo: false }
           : null
@@ -437,7 +471,7 @@ function SessionScreen({
         )}
         {menu === 'more' && card !== null && (
           <div className="review__menu review__menu--more" role="menu" aria-label="Card actions">
-            <button type="button" role="menuitem" className="review__menu-row" disabled={page === null} onClick={() => act(`Archived · ${shortName(card.page, card.id)}`, () => review.turnOff())}>
+            <button type="button" role="menuitem" className="review__menu-row" disabled={page === null} onClick={archive}>
               Archive card
             </button>
             <button
@@ -447,7 +481,7 @@ function SessionScreen({
               disabled={page === null}
               onClick={() => {
                 const on = page?.next !== true
-                act(on ? 'Marked: Up next' : 'Removed: Up next', () => review.setNext(card.path, card.id, on))
+                act(on ? 'Marked: Up next' : 'Removed: Up next', () => review.setNext(card.path, card.id, on), () => review.setNext(card.path, card.id, !on))
               }}
             >
               {page?.next === true ? 'Remove from Up next' : 'Up next'}
@@ -486,6 +520,33 @@ function SessionScreen({
       </div>
     </div>
   )
+}
+
+const drawings = new WeakMap<object, string>()
+let drawingCount = 0
+/** One name for each read of a card (YAZ-5315): the guard counts its 400 ms from a NEW drawing. */
+function drawingOf(page: object): string {
+  let name = drawings.get(page)
+  if (name === undefined) drawings.set(page, (name = `d${++drawingCount}`))
+  return name
+}
+
+/**
+ * The accessible text of `el` (YAZ-5314): a part marked `aria-hidden` says nothing, a part with a role and a label (a
+ * hidden word: `role="img"`, "Hidden word") says its label, any other text as it is. Built from what SHOWS only.
+ */
+export function spokenText(el: Element): string {
+  const parts: string[] = []
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) return void parts.push(node.textContent ?? '')
+    if (!(node instanceof Element) || node.getAttribute('aria-hidden') === 'true') return
+    const label = node.getAttribute('aria-label')
+    if (label !== null && node.hasAttribute('role')) return void parts.push(` ${label} `)
+    for (const child of node.childNodes) walk(child)
+    if (/^(P|DIV|LI|TR|H[1-6])$/.test(node.tagName)) parts.push(' ')
+  }
+  walk(el)
+  return parts.join('').replace(/\s+/g, ' ').replace(/\s+([.,;:!?])/g, '$1').trim()
 }
 
 /** A tap on these in a card is theirs (open, play, look), never a step. */

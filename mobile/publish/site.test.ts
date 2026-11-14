@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { pngSize, SPLASH_SCREENS } from './images'
+import { MASKABLE_SCALE, iconSvg, pngSize, SPLASH_SCREENS } from './images'
 import { WORKER_SOURCES, shellFiles } from './pwaPlugin'
 
 /** The home-screen app (YAZ-5087): the manifest, the icons, the iOS tags, the splash, the publish config. */
@@ -38,6 +38,16 @@ describe('the web app manifest', () => {
   it("its colours are the app's tokens: the dark background (no white flash in dark mode), the light bar", () => {
     expect(manifest.background_color).toBe(token('dark', '--bg'))
     expect(manifest.theme_color).toBe(token('light', '--bg'))
+  })
+
+  it('the icon is logo option 1, "Hidden word" (Yaseen, 2026-11-14): the source in the repo is the approved art, full-bleed', () => {
+    const svg = read('public/icons/icon.svg')
+    expect(svg).toBe(iconSvg())
+    expect(svg).toContain('<rect width="512" height="512" fill="#5b6cff"/>')
+    expect(svg).toContain('<rect x="204" y="234" width="140" height="44" rx="12" fill="#1f1f1f"/>') // the covered word
+    // The maskable icon: the same card, scaled so its corners sit inside a circle of 66% of the width.
+    const corner = Math.hypot(420 - 256, 366 - 256) * MASKABLE_SCALE
+    expect(corner).toBeLessThan(0.33 * 512)
   })
 
   it('icons: 192, 512 and a maskable 512, each a real PNG of its size', () => {

@@ -70,7 +70,7 @@ describe('Settings › Phone and friends › Friends (YAZ-5086)', () => {
     [{ status: 'no-list', login: 'other', friends: 0, groups: 0 }, 'No friends list on @other'],
     [{ status: 'no-list', login: 'other', friends: 0, groups: 0 }, 'the GitHub account of the phone app'],
     [{ status: 'no-token' }, 'Save a GitHub token above first'],
-    [{ status: 'missing-vaults', missing: 1 }, '1 vault that counts for friends is not open'],
+    [{ status: 'missing-vaults', missing: 1 }, '1 vault that counts for friends is not on this Mac'],
     [{ status: 'phone-first' }, 'open the phone app once'],
     [{ status: 'no-gists' }, 'Gists (Read and write)'],
     [{ status: 'sign-in-again' }, 'GitHub does not accept the token'],

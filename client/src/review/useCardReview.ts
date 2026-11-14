@@ -160,6 +160,8 @@ export interface CardReviewSession {
   canReset: Record<AddKind, boolean>
   /** The add or Reset, while it is the last thing done (YAZ-5042): the line under the buttons says it; null otherwise. */
   lastAdd: { kind: AddKind; count: number; reset: boolean } | null
+  /** The phone (YAZ-5078): the last thing done was Archive card, and Undo takes it back. Always null on the Mac. */
+  lastArchive?: { id: string } | null
 }
 
 export interface CardReviewApi {
@@ -289,7 +291,17 @@ interface ResetStep {
   count: number
 }
 
-type UndoStep = AnswerStep | AddStep | ResetStep
+/**
+ * An Archive card that Undo can take back (YAZ-5078, the phone only: a host with `undoesArchive`): the card, and its
+ * place in the queue, so the undo puts it back where it was.
+ */
+interface ArchiveStep {
+  kind: 'archive'
+  card: QueueCard
+  at: number
+}
+
+type UndoStep = AnswerStep | AddStep | ResetStep | ArchiveStep
 
 /** A card of a session's queue; `repeat` (YAZ-5020): put back at the end by an answer that left it in its steps. */
 type QueueCard = DueCard & { repeat?: boolean }
@@ -784,11 +796,39 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     [root, source, host],
   )
 
+  /** The undo of an Archive card (YAZ-5078, a host with `undoesArchive`): `off` off its line, the card back at its place. */
+  const undoArchive = useCallback(
+    async (step: ArchiveStep) => {
+      if (busy.current) return
+      busy.current = true
+      forget(step.card.path)
+      const undone = await host.changeCardLine(step.card.path, step.card.id, (l) => withCardOff(l, false)).then(
+        () => true,
+        (err: unknown) => {
+          onNotice(`Can't undo the archive: ${reason(err)}`, 'error')
+          return false
+        },
+      )
+      busy.current = false
+      forget(step.card.path)
+      if (!undone) return
+      setSession((s) => {
+        if (s === null || s.undo.at(-1) !== step) return s
+        const rest = s.queue.filter((c) => !sameCard(c, step.card))
+        const at = Math.min(step.at, rest.length)
+        const filter = matchesFilter(step.card, s.filter) ? s.filter : 'all'
+        return { ...s, queue: [...rest.slice(0, at), step.card, ...rest.slice(at)], at, filter, turn: s.turn + 1, undo: s.undo.slice(0, -1) }
+      })
+    },
+    [onNotice, forget, host],
+  )
+
   const undo = useCallback(async () => {
     const last = live.current.session?.undo.at(-1)
     if (last === undefined || busy.current) return
     if (last.kind === 'add') return undoAdd(last)
     if (last.kind === 'reset') return undoReset(last)
+    if (last.kind === 'archive') return undoArchive(last)
     busy.current = true
     forget(last.card.path)
     const undone = await host.undoCardAnswer(last.card.path, last.card.id, last.review.at, last.next).then(
@@ -816,7 +856,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
         const filter = matchesFilter(card, s.filter) ? s.filter : 'all'
         return { ...s, queue: [...rest.slice(0, at), card, ...rest.slice(at)], at, total: s.total - (last.repeat ? 1 : 0), totals, turn: s.turn + 1, undo: s.undo.slice(0, -1), filter, answered: s.answered.slice(0, -1) }
       })
-  }, [onNotice, forget, root, undoAdd, undoReset, host])
+  }, [onNotice, forget, root, undoAdd, undoReset, undoArchive, host])
 
   const close = useCallback(() => setSession(null), [])
 
@@ -941,7 +981,13 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       },
     )
     forget(card.path)
-    if (written) setSession((s) => (s === null || !showing(s, card) ? s : without(s, s.at)))
+    if (!written) return
+    setSession((s) => {
+      if (s === null || !showing(s, card)) return s
+      const next = without(s, s.at)
+      // The phone's host takes an archive back with Undo (YAZ-5078); the Mac's does not, so its stack is as before.
+      return host.undoesArchive === true ? { ...next, undo: [...s.undo, { kind: 'archive' as const, card: s.queue[s.at], at: s.at }].slice(-UNDO_DEPTH) } : next
+    })
   }, [onNotice, forget, host])
 
   const folders = source.folders
@@ -997,6 +1043,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       adds: addsOf(scopePlan, settings),
       limited: { new: settings.newPerDay !== null, next: settings.upNextPerDay !== null },
       canReset: { new: (added.newCards > scopePlan.floor.new), next: (added.upNext > scopePlan.floor.next) },
+      lastArchive: lastStep?.kind === 'archive' ? { id: lastStep.card.id } : null,
       lastAdd: lastStep?.kind === 'add' ? { kind: lastStep.what, count: lastStep.count, reset: false } : lastStep?.kind === 'reset' ? { kind: lastStep.what, count: lastStep.count, reset: true } : null,
     }
     // `records`: a cached page is good only at its page's mtime.

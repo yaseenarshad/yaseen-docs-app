@@ -161,7 +161,17 @@ export function phoneReviewHost(options: PhoneReviewHostOptions): ReviewHost {
     async changeCardLine(path, id, change) {
       const { line, title } = await current(path, id)
       const ops = opsBetween(id, line, change(line))
-      if (ops.length > 0) await add(path, title, ops)
+      if (ops.length === 0) return
+      // YAZ-5078: the inverse of a mark the list still holds unsent (Undo of Archive card, Up next, Fix later): the
+      // mark's group leaves the list, so the card reads byte for byte as before. When a send has tried it (it may be on
+      // GitHub, YAZ-5180), the list keeps it and the inverse goes as an action, as an `unreview` does.
+      const only = ops.length === 1 ? ops[0] : null
+      if (only !== null && (only.kind === 'off' || only.kind === 'next' || only.kind === 'fix')) {
+        const waiting = answers.waiting()
+        const mark = [...waiting].reverse().find((w) => w.op.kind === only.kind && w.op.id === id && 'on' in w.op && w.op.on === !only.on)
+        if (mark !== undefined && waiting.filter((w) => w.group === mark.group).length === 1 && (await answers.undo(mark.group))) return
+      }
+      await add(path, title, ops)
     },
     upNextTakenToday: () => days.upNextTakenToday(),
     setUpNextTaken: (_root, id, taken) => days.setUpNextTaken(id, taken),
@@ -170,5 +180,7 @@ export function phoneReviewHost(options: PhoneReviewHostOptions): ReviewHost {
     setCardsAdded: (_root, added) => days.setCardsAdded(added),
     subscribeCardsAdded: (listener) => days.subscribeAdded(listener),
     vaultName: (root) => options.vaultName(root),
+    // YAZ-5078: on the phone, Undo takes back Archive card too (the Mac's host says no).
+    undoesArchive: true,
   }
 }

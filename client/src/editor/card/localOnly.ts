@@ -204,6 +204,20 @@ const CONFIG = {
   RETURN_DOM_FRAGMENT: true as const,
 }
 
+/**
+ * YAZ-5318: the elements whose content the HTML parser reads as RAW TEXT, up to their end tag or to the end of the input.
+ * A renderer of the app writes its own marks into the same HTML as the text's raw HTML, so one stray `<textarea>` would
+ * read the rest of the page, marks and secret name included, as its text, and hide it.
+ */
+const RAW_TEXT = /<(\/?)(textarea|title|xmp|noembed|noframes|plaintext|iframe|noscript|style|script)(?=[\s/>]|$)/gi
+
+/**
+ * Each raw-text tag of the input becomes plain text (`&lt;textarea>`), BEFORE the parse: no element of the text can
+ * swallow what comes after it. The app's renderers never write these tags (their own text is escaped), so only the
+ * text's tags change; they show as written, as any other text.
+ */
+const plainRawText = (html: string): string => html.replace(RAW_TEXT, '&lt;$1$2')
+
 let purifier: ReturnType<typeof DOMPurify> | null = null
 
 /** `html` cleaned to local media only (see the module doc), as a fragment of the inert document: nothing loaded yet. */
@@ -214,7 +228,7 @@ export function cleanLocal(html: string): DocumentFragment {
       if (node.nodeType === 1) keepLocal(node as Element)
     })
   }
-  const root = purifier.sanitize(html, CONFIG)
+  const root = purifier.sanitize(plainRawText(html), CONFIG)
   finish(root)
   restoreMarks(root)
   return root

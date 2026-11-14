@@ -267,9 +267,28 @@ describe('Sign out and erase this phone (row N7)', () => {
     await signInWithForm(h, 'yaseen/vault', GOOD)
     await h.click('Settings')
     await h.click('Sign out and erase this phone')
-    expect(h.text()).toContain('Every token and every stored page leave this phone.')
+    expect(h.text()).toContain('This phone loses the pages and cards it keeps, your token and its settings. Nothing on GitHub is deleted: your vaults stay there.')
+    expect(h.text()).not.toContain('not sent yet')
+    expect(h.text()).not.toContain('friends list')
+    // Cancel is the default: it has the focus.
+    expect(document.activeElement?.textContent).toBe('Cancel')
     await h.click('Cancel')
     expect(await h.tokens.read('yaseen/vault@main')).toBe(GOOD)
+  })
+
+  it('B7: with 3 answers not sent and with friends, the ask says both, and what stays on GitHub', async () => {
+    const phone = await newPhone()
+    h = await mount({ phone })
+    await signInWithForm(h, 'yaseen/vault', GOOD)
+    h.unmount()
+    const waiting = [1, 1, 2, 3].map((group, i) => ({ seq: i + 1, group, op: { kind: 'next', id: `NC-${group}`, on: false }, path: 'a.md', title: 'T', madeAt: 0 }))
+    await phone.store.setState('yaseen/vault@main', 'answers', { v: 1, next: 9, waiting, lost: [] })
+    h = await mount({ phone, hasFriends: true })
+    await h.click('Settings')
+    await h.click('Sign out and erase this phone')
+    expect(h.text()).toContain('3 answers are not sent yet and will be lost.')
+    expect(h.text()).toContain('your friends still see your last numbers. To stop that, remove each friend in the Friends tab first.')
+    expect(document.activeElement?.textContent).toBe('Cancel')
   })
 
   it('removes every token and every stored file and state, then shows the sign-in', async () => {

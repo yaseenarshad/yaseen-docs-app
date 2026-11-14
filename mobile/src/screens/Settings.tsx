@@ -4,6 +4,7 @@ import { cleanNickname } from '../app/friendsPort'
 import { friendsMessage } from '../auth/friends'
 import { vaultId, type PhoneVault } from '../store'
 import { Confirm } from './Confirm'
+import { eraseQuestion, unsentOnPhone } from './eraseWords'
 import { Frame, Problem } from './Frame'
 
 /**
@@ -15,7 +16,15 @@ export function Settings() {
   const app = useApp()
   const [open, setOpen] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [erasing, setErasing] = useState(false)
+  /** The ask's facts, read when the person taps "Sign out and erase this phone" (null: no ask). */
+  const [erasing, setErasing] = useState<{ unsent: number; friends: boolean } | null>(null)
+  const askErase = async () => {
+    const [unsent, friends] = await Promise.all([
+      unsentOnPhone(app.services.store, app.list.vaults.map(vaultId)).catch(() => 0),
+      app.services.friends.hasFriends().catch(() => false),
+    ])
+    setErasing({ unsent, friends })
+  }
 
   const run = async (step: () => Promise<void>) => {
     setBusy(true)
@@ -41,16 +50,10 @@ export function Settings() {
       <FriendsPart />
 
       <h2 className="section">This phone</h2>
-      {erasing ? (
-        <Confirm
-          question={app.unit('Erase this phone? Every token and every stored page leave this phone. Answers that are not sent yet are lost. Your vaults on GitHub do not change.')}
-          yes="Erase this phone"
-          busy={busy}
-          onYes={() => void run(app.eraseAll)}
-          onNo={() => setErasing(false)}
-        />
+      {erasing !== null ? (
+        <Confirm question={eraseQuestion({ ...erasing, unit: app.unit })} yes="Erase this phone" busy={busy} onYes={() => void run(app.eraseAll)} onNo={() => setErasing(null)} />
       ) : (
-        <button type="button" className="btn btn--wide btn--danger" onClick={() => setErasing(true)}>
+        <button type="button" className="btn btn--wide btn--danger" onClick={() => void askErase()}>
           Sign out and erase this phone
         </button>
       )}
