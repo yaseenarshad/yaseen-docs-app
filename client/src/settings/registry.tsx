@@ -28,7 +28,7 @@ import { isIdLetters } from '@shared/pageId'
 import { keyFor, keyInWords, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, isCardTextSize, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
@@ -74,7 +74,7 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, cardSpacingOptions, cardWidthOptions, cardTablePositionOptions, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, TABLE_POSITION_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
+import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, cardSpacingOptions, cardPagesOrCustomOptions, CARD_TITLE_SIZE_OPTIONS, cardTablePositionOptions, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, TABLE_POSITION_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
 
 /** A cell bullet's px setting (the YAZ-3818 demo): the stepper, and Reset when it is not the default. */
 function CellBulletStepper({ settings, onChange, field, name, min, max, step }: { settings: SettingsState; onChange: (next: SettingsState) => void; field: 'tableCellBulletIndent' | 'tableCellBulletGap'; name: string; min: number; max: number; step: number }) {
@@ -2183,7 +2183,32 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // Round 2 (Yaseen: "same as pages then custom ... a px that you can adjust"): the code block's width control.
             render: (ctx) => (
               <BlockWidthSetting name="Card width" value={isCardWidth(ctx.settings.cardWidth) ? ctx.settings.cardWidth : null} start={CARD_WIDTH_START} min={CARD_WIDTH_MIN} max={CARD_WIDTH_MAX} reset
-                options={cardWidthOptions((text) => unit(ctx, text))} onSet={(cardWidth) => ctx.onChange({ ...ctx.settings, cardWidth })} />
+                options={cardPagesOrCustomOptions((text) => unit(ctx, text))} onSet={(cardWidth) => ctx.onChange({ ...ctx.settings, cardWidth })} />
+            ),
+          },
+          {
+            // YAZ-5387 (Yaseen: "add text sizing for cards, and then that could be the same as pages versus custom"): Card
+            // width's control and words. Custom is whole px, 12–32, from 16.
+            id: 'cardTextSize',
+            label: 'Card text size',
+            hint: (ctx) => unit(ctx, "How big a card's text reads everywhere a card shows. Same as pages follows the page's Text size. Custom is your own size in px."),
+            keywords: [...CARD_SPACING_KEYWORDS, 'text size', 'font size', 'size', 'bigger', 'smaller', 'custom', 'px', 'pixels'],
+            available: reviewOn,
+            render: (ctx) => (
+              <BlockWidthSetting name="Card text size" value={isCardTextSize(ctx.settings.cardTextSize) ? ctx.settings.cardTextSize : null} start={CARD_TEXT_SIZE_START} min={CARD_TEXT_SIZE_MIN} max={CARD_TEXT_SIZE_MAX} reset
+                options={cardPagesOrCustomOptions((text) => unit(ctx, text))} onSet={(cardTextSize) => ctx.onChange({ ...ctx.settings, cardTextSize })} />
+            ),
+          },
+          {
+            // YAZ-5387 (Yaseen: "the title is massive … title sizing"): steps OF the card text, not px, so the title
+            // follows Card text size and never ends up smaller than the text it names. Medium is the calmer default.
+            id: 'cardTitleSize',
+            label: 'Card title size',
+            hint: `The title band's text, next to the card's text: Small is the same size, Medium ${CARD_TITLE_SCALE.medium}×, Large ${CARD_TITLE_SCALE.large}×.`,
+            keywords: [...CARD_SPACING_KEYWORDS, 'title', 'title size', 'band', 'heading', 'font size', 'size', 'small', 'medium', 'large'],
+            available: reviewOn,
+            render: ({ settings, onChange }) => (
+              <Segmented options={CARD_TITLE_SIZE_OPTIONS} value={settings.cardTitleSize ?? 'medium'} onChange={(cardTitleSize) => onChange({ ...settings, cardTitleSize })} ariaLabel="Card title size" />
             ),
           },
           {

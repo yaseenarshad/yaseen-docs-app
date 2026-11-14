@@ -262,3 +262,23 @@ it('YAZ-5145 round 3: a page locked by Read only (`data-read-only`, a page tab w
   expect(hides(".ProseMirror[contenteditable='false'] .card__edit")).toHaveLength(1)
   expect(hides('.ProseMirror[data-read-only] .card__edit')).toEqual([])
 })
+
+it('YAZ-5387: the title band reads Card title size over the card text, and its title beats the page`s h1 rule (it read at 1.802em in a page)', () => {
+  const app = read('../../app.css')
+  const h1 = rules(app, '.editor-instance .milkdown .ProseMirror h1').find((r) => /font-size:\s*var\(--h1-size, 1\.802em\)/.test(r.body))!
+  expect(h1).toBeDefined()
+  const title = rules(cardCss, '.card-band.card-band.card-band :is(.page-title__text, .page-title__input)')[0]!
+  expect(title.body).toMatch(/font:\s*inherit/)
+  expect(title.body).toMatch(/margin:\s*0 0 0 -4px/)
+  expect(beats(specificity(title.selector), specificity(h1.selector))).toBe(true)
+  // No "H1" tag after the title (headingLevelTag.css), however the page is set.
+  expect(rules(cardCss, '.card-band.card-band.card-band .page-title__text::after')[0]?.body).toMatch(/content:\s*none/)
+  // The band: a step of the card's text. The card: Custom's px, else its parent's size.
+  expect(rules(cardCss, '.card-band').find((r) => r.selector === '.card-band')?.body).toMatch(/font-size:\s*calc\(1em \* var\(--card-title-scale, 1\.125\)\)/)
+  expect(rules(cardCss, '.card').find((r) => r.selector === '.card')?.body).toMatch(/font-size:\s*var\(--card-text-size, 1em\)/)
+  // The Inbox and Preview: the card's text, and the band beside it (not inside it) from the same two variables.
+  const screens = read('../../review/cardScreens.css')
+  expect(rules(screens, '.card.card-inbox__card')[0]?.body).toMatch(/font-size:\s*var\(--card-text-size, 1\.05em\)/)
+  expect(rules(screens, '.card-inbox__panel > .card-band')[0]?.body).toMatch(/font-size:\s*calc\(var\(--card-text-size, 1\.05em\) \* var\(--card-title-scale, 1\.125\)\)/)
+  expect(rules(screens, '.card-inbox__card').filter((r) => r.selector === '.card-inbox__card').some((r) => /font-size/.test(r.body))).toBe(false)
+})

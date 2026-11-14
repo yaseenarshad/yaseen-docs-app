@@ -765,6 +765,8 @@
 /* The band at the top of the card's frame: the card's own sides. */
 .card-inbox__panel > .card-band {
   padding: 12px var(--inbox-card-pad, 28px);
+  /* Card title size (YAZ-5387): a step of the card's text, which is the card beside it (above), not this frame. */
+  font-size: calc(var(--card-text-size, 1.05em) * var(--card-title-scale, 1.125));
 }
 .card-inbox__panel {
   position: relative;
@@ -898,8 +900,11 @@ body.card-inbox--sizing {
 .card-inbox__card {
   border: 0;
   box-shadow: none;
-  font-size: 1.05em;
   cursor: default;
+}
+/* Its text (YAZ-5387): Card text size's Custom px, else the screen's own, a little larger. Two classes, over `.card`'s. */
+.card.card-inbox__card {
+  font-size: var(--card-text-size, 1.05em);
 }
 .card-inbox__card .card__body {
   padding: 4px 0;
