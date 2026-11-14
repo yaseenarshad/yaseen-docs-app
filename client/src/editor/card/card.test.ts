@@ -509,6 +509,19 @@ describe('the card in the page', () => {
     await vi.waitFor(() => expect(root.querySelector('.card--editing')).not.toBeNull())
   })
 
+  it('YAZ-5145 round 3: the Edit card BUTTON of a card in a page locked by Read only asks too, and opens Edit card once the page is editable', async () => {
+    const { crepe, root } = await mount(CARD)
+    crepe.setReadonly(true)
+    const told: ReadOnlyEditEvent[] = []
+    root.addEventListener(READ_ONLY_EDIT, (e) => told.push(e as ReadOnlyEditEvent))
+    root.querySelector('.card__edit')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    expect(told.map((e) => e.detail)).toEqual(['card'])
+    expect(root.querySelector('.card--editing')).toBeNull()
+    crepe.setReadonly(false)
+    told[0].resume?.()
+    await vi.waitFor(() => expect(root.querySelector('.card--editing')).not.toBeNull())
+  })
+
   it("the sweep's write of the open page lands as one change of the card's line, the text around it kept", async () => {
     const { crepe, view } = await mount(`# Page\n\nSome text above the card.\n\n${CARD}\nMore text below.\n`)
     const before = view.state.doc.child(0)

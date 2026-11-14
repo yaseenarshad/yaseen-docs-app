@@ -25,7 +25,7 @@ export type ExploreLayer =
       leaveAsk?: number
       /** The card to land on when the page opens (YAZ-4962): its ID, and its place among the page's cards (YAZ-5164: found by its ID). */
       card?: CardPlace
-      /** The Inbox's E (YAZ-5145): once the layer edits, the card opens in Edit card (`card` of a page, else the card file's). */
+      /** The Inbox's E on a card in a page (YAZ-5145): once the layer edits, the card at `card` opens in Edit card. A card file's opens by itself (round 3). */
       editCard?: boolean
       /** Opened from the Inbox (YAZ-5009, YAZ-5145): ⌘↵ while reading goes back to the Inbox, not to a tab. */
       fromInbox?: boolean
@@ -79,7 +79,8 @@ export type FileLayer = Extract<ExploreLayer, { kind: 'page' | 'board' | 'card' 
 /**
  * What App asks the stack to open (YAZ-4962): a page (landing on a card), or a card window (a page card's Open card).
  * The Inbox's O and E (YAZ-5145) ask for the page layer Explore itself opens: `edit` asks it to edit as Explore's own E
- * does (a Read only vault asks "Allow edits?" first), `editCard` then opens the landed card's Edit card, and
+ * does (a Read only vault asks "Allow edits?" first; a card file then opens in Edit card, as on Explore's own E),
+ * `editCard` opens the landed card's Edit card (a card in a page), and
  * `fromInbox` makes ⌘↵ while reading go back to the Inbox.
  */
 export type ExploreRequest = { kind: 'page'; path: string; card?: CardPlace; edit?: boolean; editCard?: boolean; fromInbox?: boolean } | { kind: 'card'; path: string; cardId: string | null; index: number }
