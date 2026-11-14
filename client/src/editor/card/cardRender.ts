@@ -38,6 +38,8 @@ import type { GestureAction, MouseMods } from '@shared/keys'
 import { parseAlt } from '../image/imageSrc'
 import { cardPillSpan } from '../wikilink/cardPill'
 import { linkClickAction } from '../linkGesture'
+import { cardSafety } from './cardSafety'
+import { cleanLocal, LOCAL_SRC } from './localOnly'
 import { audioPlayer, boardPicture, isAudioRef, isBoardRef, missingBoard, CARD_AUDIO_ATTR, CARD_BOARD_ATTR, type CardBoardLook } from './cardMedia'
 
 /** How much of the card shows (the Inbox's steps, D18). Absent: everything, as in the page. */
@@ -116,6 +118,8 @@ const PURIFY = { USE_PROFILES: { html: true }, FORBID_TAGS: ['style', 'form', 'i
 let purifier: ReturnType<typeof DOMPurify> | null = null
 /** The card's own DOMPurify copy: hooks another part of the app adds to the shared one never reach it. */
 function sanitize(html: string): DocumentFragment {
+  // The phone (YAZ-5209): local media only, by the one allow list of `localOnly.ts`. The Mac never sets it.
+  if (cardSafety.local) return cleanLocal(html)
   purifier ??= DOMPurify(window)
   return purifier.sanitize(html, { ...PURIFY, RETURN_DOM_FRAGMENT: true })
 }
@@ -241,6 +245,9 @@ export function refreshCardLook(root: ParentNode, look: CardLook | undefined): v
   }
 }
 
+/** A picture's source as written: its `src`, or on the phone (local media only) its vault path, `data-local-src`. */
+const srcOf = (img: Element): string | null => img.getAttribute('src') ?? img.getAttribute(LOCAL_SRC)
+
 /** The sounds of `root` as players and its board embeds as pictures (YAZ-5014, YAZ-5015): made after the sanitiser. */
 function buildMedia(root: ParentNode, look: CardLook | undefined): void {
   const url = (src: string) => (look?.image === undefined ? src : look.image(src))
@@ -249,7 +256,7 @@ function buildMedia(root: ParentNode, look: CardLook | undefined): void {
     marker.replaceWith(audioPlayer(url(src), src.slice(src.lastIndexOf('/') + 1)))
   }
   for (const img of root.querySelectorAll('img')) {
-    const src = img.getAttribute('src')
+    const src = srcOf(img)
     if (src === null || !isAudioRef(src)) continue
     let name = src.split(/[?#]/)[0]
     name = name.slice(name.lastIndexOf('/') + 1)
@@ -274,7 +281,8 @@ function applyLook(root: ParentNode, look: CardLook | undefined): void {
   refreshCardLook(root, look)
   for (const img of root.querySelectorAll('img')) {
     if (img.classList.contains('card__board-img')) continue
-    const src = img.getAttribute('src')
+    const src = srcOf(img)
+    img.removeAttribute(LOCAL_SRC)
     if (src !== null && look?.image !== undefined) img.setAttribute('src', look.image(src))
     const { text, width } = parseAlt(img.getAttribute('alt') ?? '')
     img.setAttribute('alt', text)

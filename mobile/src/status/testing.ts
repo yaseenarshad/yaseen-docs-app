@@ -5,8 +5,9 @@ import type { DotAnswers } from './useDotAnswers'
 /** A fake of 3C's answer list, for the dot's screen tests and fixtures. It never touches the store or GitHub. */
 export interface FakeAnswers extends DotAnswers {
   /** Changes the state (and the waiting list) and tells the listeners, as 3C's list does. */
-  set(next: { waiting?: number; lost?: LostAnswer[]; sending?: boolean; problem?: AnswersState['problem']; lastSentAt?: number | null }): void
+  set(next: { waiting?: number; lost?: LostAnswer[]; sending?: boolean; problem?: AnswersState['problem']; retryAt?: number | null; lastSentAt?: number | null }): void
   discarded: number[]
+  sendNowCalls: number
 }
 
 export const lostAnswer = (seq: number, title = 'Speed of light', rating: 'good' | 'again' = 'good', id = 'NC-17'): LostAnswer => ({
@@ -26,6 +27,10 @@ export function fakeAnswers(): FakeAnswers {
   }
   const fake: FakeAnswers = {
     discarded: [],
+    sendNowCalls: 0,
+    async sendNow() {
+      fake.sendNowCalls++
+    },
     state: () => state,
     waiting: () => list,
     subscribe(listener) {

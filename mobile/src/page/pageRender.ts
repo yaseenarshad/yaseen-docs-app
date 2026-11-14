@@ -1,7 +1,7 @@
 import { isAudioRef } from '@client/editor/card/cardMedia'
+import { LOCAL_SRC, cleanLocal } from '@client/editor/card/localOnly'
 import { parseAlt } from '@client/editor/image/imageSrc'
 import { cardIdOf, parseCardLine } from '@shared/cardLine'
-import DOMPurify from 'dompurify'
 import { Marked, type TokenizerAndRendererExtension, type Tokens } from 'marked'
 
 /**
@@ -123,6 +123,62 @@ const highlight: TokenizerAndRendererExtension = {
   },
 }
 
+/** `[^id]`: a footnote mark (as the Mac's GFM page). A table's cell note (`[^cell-N]`, YAZ-3818) is a small mark. */
+const footnoteRef: TokenizerAndRendererExtension = {
+  name: 'footnoteRef',
+  level: 'inline',
+  start(src) {
+    const at = src.indexOf('[^')
+    return at < 0 ? undefined : at
+  },
+  tokenizer(src) {
+    const m = /^\[\^([^\]\s]+)\](?!:)/.exec(src)
+    return m === null ? undefined : { type: 'footnoteRef', raw: m[0], id: m[1] }
+  },
+  renderer(token) {
+    const id = String(token.id)
+    if (/^cell-/i.test(id)) return '<sup class="page-cellnote" role="img" aria-label="Cell note">•</sup>'
+    return `<sup class="page-fnref"><a href="#fn-${escapeHtml(id)}">${escapeHtml(id)}</a></sup>`
+  },
+}
+
+/** `[^id]: text`: the note, where it is written (as the Mac's page). A cell note stays hidden under its table (YAZ-3818). */
+const footnoteDef: TokenizerAndRendererExtension = {
+  name: 'footnoteDef',
+  level: 'block',
+  start(src) {
+    return /^\[\^[^\]\s]+\]:/m.exec(src)?.index
+  },
+  tokenizer(src) {
+    const m = /^\[\^([^\]\s]+)\]:[ \t]*([^\n]*(?:\n(?![ \t]*\n)(?!\[\^)[^\n]*)*)(?:\n+|$)/.exec(src)
+    return m === null ? undefined : { type: 'footnoteDef', raw: m[0], id: m[1], tokens: this.lexer.inlineTokens(m[2]) }
+  },
+  renderer(token) {
+    const id = String(token.id)
+    if (/^cell-/i.test(id)) return ''
+    return `<div class="page-footnote" id="fn-${escapeHtml(id)}"><span class="page-footnote__label">${escapeHtml(id)}</span>${this.parser.parseInline(token.tokens ?? [])}</div>`
+  },
+}
+
+/**
+ * `$$ … $$` alone: block math. The Mac draws no math (its Latex feature is off, YAZ-977: dollars are text), and a math
+ * library is heavy: the phone shows the source in a code block. `$…$` inside a line stays text, as on the Mac.
+ */
+const blockMath: TokenizerAndRendererExtension = {
+  name: 'blockMath',
+  level: 'block',
+  start(src) {
+    return /^\$\$/m.exec(src)?.index
+  },
+  tokenizer(src) {
+    const m = /^\$\$([\s\S]+?)\$\$[ \t]*(?:\n+|$)/.exec(src)
+    return m === null ? undefined : { type: 'blockMath', raw: m[0], text: m[1].trim() }
+  },
+  renderer(token) {
+    return `<pre class="page-math"><code>${escapeHtml(String(token.text))}</code></pre>`
+  },
+}
+
 /** One parse: the page's own cards it met, in order, with the ID of the card line under each. */
 interface Parse {
   cards: { text: string; id: string | null }[]
@@ -131,7 +187,7 @@ let parse: Parse = { cards: [] }
 
 const markdown = new Marked({ gfm: true, breaks: true })
 markdown.use({
-  extensions: [wikilinks, highlight],
+  extensions: [blockMath, footnoteDef, wikilinks, footnoteRef, highlight],
   renderer: {
     checkbox: ({ checked }) => `<span class="page-task" role="img" aria-label="${checked ? 'Done' : 'Not done'}" data-checked="${checked}"></span> `,
     code(token) {
@@ -152,19 +208,11 @@ markdown.use({
   },
 })
 
-const PURIFY = {
-  USE_PROFILES: { html: true },
-  FORBID_TAGS: ['style', 'form', 'input', 'button', 'select', 'textarea', 'iframe', 'object', 'embed', 'link', 'meta', 'base'],
-  FORBID_ATTR: ['style'],
-  RETURN_DOM_FRAGMENT: true as const,
-}
-
-let purifier: ReturnType<typeof DOMPurify> | null = null
-/** The page's own DOMPurify copy: a hook another part of the app adds to the shared one never reaches it. */
-function clean(html: string): DocumentFragment {
-  purifier ??= DOMPurify(window)
-  return purifier.sanitize(html, PURIFY)
-}
+/**
+ * The page's text cleaned by THE phone's allow list (`cleanLocal`, `client/src/editor/card/localOnly.ts`), which every
+ * card on the phone goes through too: document markup only, and nothing that loads from another host (YAZ-5208).
+ */
+const clean = (html: string): DocumentFragment => cleanLocal(html)
 
 const WEB = /^(https?:|mailto:|tel:)/i
 const SCHEME = /^[a-z][a-z0-9+.-]*:/i
@@ -228,6 +276,8 @@ function drawLinks(root: DocumentFragment, look: PageLook): void {
       }
       continue
     }
+    // A web picture, sound or video: a link that `cleanLocal` made; it opens Safari as it is.
+    if (a.classList.contains('page-media--web')) continue
     const href = a.getAttribute('href')
     a.className = ''
     a.removeAttribute('class')
@@ -244,12 +294,12 @@ function drawLinks(root: DocumentFragment, look: PageLook): void {
 }
 
 function drawPictures(root: DocumentFragment, look: PageLook): void {
+  // A web picture is a link already (`cleanLocal`). A vault picture holds its path in `data-local-src`: no address.
   for (const img of root.querySelectorAll<HTMLImageElement>('img')) {
-    const src = img.getAttribute('src') ?? ''
+    const src = img.getAttribute(LOCAL_SRC)
     const alt = img.getAttribute('alt') ?? ''
-    if (/^(data|blob):/i.test(src)) continue
-    if (WEB.test(src) || SCHEME.test(src)) {
-      img.replaceWith(mediaLine('missing', `Picture from the web · ${parseAlt(alt).text || src}`))
+    if (src === null) {
+      if (!/^(data|blob):/i.test(img.getAttribute('src') ?? '')) img.remove()
       continue
     }
     const path = look.asset(src)

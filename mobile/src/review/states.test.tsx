@@ -142,6 +142,10 @@ describe('Review: a lost answer (round 12, item 9)', () => {
     expect(h.text()).toContain('1 answer could not be saved')
     expect(h.text()).toContain('Remembered · Card 1?')
     await h.click('Discard: Remembered · Card 1?')
+    // YAZ-5215: it asks first; nothing goes before the yes.
+    expect(h.answers.state().lost).toHaveLength(1)
+    expect(h.text()).toContain('Discard your answer "Remembered" to "Card 1?" It cannot be taken back.')
+    await h.click('Discard answer')
     expect(h.text()).not.toContain('could not be saved')
     expect(h.answers.state().lost).toEqual([])
   })
@@ -155,6 +159,7 @@ describe('Review: a lost answer (round 12, item 9)', () => {
     expect(h.text()).toContain('1 answer could not be saved')
     expect(h.text()).not.toContain('Remove from Up next')
     await h.click('Discard: Remembered · Marked?')
+    await h.click('Discard answer')
     expect(h.answers.state().lost).toEqual([])
   })
 })

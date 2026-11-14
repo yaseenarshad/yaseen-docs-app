@@ -502,7 +502,15 @@ export type RemoveResult =
  * also how sharing stops for that person (decision 22). Each `PATCH` counts on `gist_update`: one for each other
  * pointer and three for the list. A remove may use the reserve that the sender keeps for it (4E1).
  */
-export async function removeFriend(api: GistsApi, handle: IndexHandle, mine: string, budget: GistBudget, opts: ListOptions): Promise<RemoveResult> {
+export async function removeFriend(
+  api: GistsApi,
+  handle: IndexHandle,
+  mine: string,
+  budget: GistBudget,
+  opts: ListOptions,
+  /** 4E3: more of my gists to delete in the same safe steps (the group file of "Delete group"). */
+  more: { drop?: string[] } = {},
+): Promise<RemoveResult> {
   const now = opts.now()
   try {
     const base = await latest(api, handle, opts)
@@ -513,7 +521,7 @@ export async function removeFriend(api: GistsApi, handle: IndexHandle, mine: str
     if (!mayUpdate(budget, now, 1, 0)) return paused(base, budget, 'budget', now + sendGap(budget, now, 0))
     const rekey: Rekey = {
       old: waiting?.old ?? index.stats,
-      drop: [...(waiting?.drop ?? []), mine],
+      drop: [...(waiting?.drop ?? []), mine, ...(more.drop ?? [])],
       next: waiting?.next ?? null,
       at: waiting?.at ?? new Date(now).toISOString(),
     }

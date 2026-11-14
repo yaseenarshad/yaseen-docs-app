@@ -1,7 +1,28 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { uiSlicer } from '../sync/yieldToUi'
 import { renderPage, splitBlocks, type PageLook } from './pageRender'
+import { ATTACK, remoteAttributes, watchWrites } from './testing'
+
+/**
+ * A slicer that yields after each piece and records the CPU time of THIS thread (`process.threadCpuUsage`) spent between
+ * two yields: the renderer's own slice of work. Waiting for the machine is no CPU time, so the load does not count.
+ */
+function cpuSlices(): { slice: () => Promise<void>; work: number[] } {
+  const cpu = () => {
+    const u = process.threadCpuUsage()
+    return (u.user + u.system) / 1000
+  }
+  const work: number[] = []
+  let last = cpu()
+  return {
+    work,
+    async slice() {
+      work.push(cpu() - last)
+      await new Promise((r) => setTimeout(r, 0))
+      last = cpu()
+    },
+  }
+}
 
 /** A look with a made-up vault: two pages, one card file, one picture, one PDF. */
 const look: PageLook = {
@@ -118,6 +139,58 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
     expect(el.querySelector('hr')).not.toBeNull()
   })
 
+  it('YAZ-5212: footnotes, block math and table cell notes, as the Mac shows them (no raw Markdown)', async () => {
+    const el = await draw(
+      [
+        'Footnote here[^1]. And [^note].',
+        '[^1]: The note.',
+        '[^note]: A second note.',
+        'Dollars are text, as on the Mac: $500K–$1M.',
+        '$$\\int_0^1 x\\,dx$$',
+        '| Name | Value |\n| --- | --- |\n| a[^cell-1] | 1 |',
+        '[^cell-1]: The cell note.',
+      ].join('\n\n'),
+    )
+    const text = el.textContent ?? ''
+    expect(text).not.toContain('[^')
+    expect(text).not.toContain('$$')
+    expect([...el.querySelectorAll('sup.page-fnref a')].map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
+      ['1', '#fn-1'],
+      ['note', '#fn-note'],
+    ])
+    expect([...el.querySelectorAll('.page-footnote')].map((f) => [f.id, f.textContent])).toEqual([
+      ['fn-1', '1The note.'],
+      ['fn-note', 'noteA second note.'],
+    ])
+    // The Mac draws no math (its Latex feature is off: YAZ-977): a block shows its source as code, inline dollars stay.
+    expect(el.querySelector('pre.page-math code')?.textContent).toBe('\\int_0^1 x\\,dx')
+    expect(text).toContain('$500K–$1M.')
+    // A cell note is hidden under its table, as on the Mac (YAZ-3818); the cell keeps a small mark.
+    expect(el.querySelector('td sup.page-cellnote')).not.toBeNull()
+    expect(text).not.toContain('The cell note.')
+  })
+
+  it('YAZ-5208: an attack page fetches nothing from another host; a web picture, sound or video is a link to tap', async () => {
+    const watch = watchWrites()
+    const el = document.createElement('div')
+    document.body.append(el)
+    try {
+      await renderPage(ATTACK, look, el)
+    } finally {
+      watch.stop()
+    }
+    expect(watch.remote).toEqual([])
+    expect(remoteAttributes(el)).toEqual([])
+    expect(el.querySelector('video, audio, source, track, picture, object, embed, iframe, link, meta, base, svg, form, input, button, [background], [style], [srcset], [poster]')).toBeNull()
+    const web = [...el.querySelectorAll<HTMLAnchorElement>('a.page-media--web')]
+    expect(web.length).toBeGreaterThanOrEqual(4)
+    expect(web.every((a) => a.target === '_blank' && a.rel === 'noopener noreferrer')).toBe(true)
+    expect(web.map((a) => a.textContent)).toContain('Picture from the web · md picture')
+    expect(web.map((a) => a.textContent)).toContain('Sound from the web · md sound')
+    expect(web.map((a) => a.textContent)).toContain('Video from the web · video')
+    el.remove()
+  })
+
   it('a picture of the vault waits for its bytes: no address the browser would fetch', async () => {
     const el = await draw('![A picture](pic.png)\n\n![[pic.png]]\n\n![gone](missing.png)\n\n![web](https://example.com/x.png)')
     const pics = [...el.querySelectorAll<HTMLImageElement>('img[data-vault-src]')]
@@ -126,7 +199,9 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
       ['assets/pic.png', null, 'pic.png'],
     ])
     // A picture the vault does not have, and one from the web (the page's CSP loads none): a calm line, no fetch.
-    expect([...el.querySelectorAll('.page-media--missing')].map((m) => m.textContent)).toEqual(['Missing picture · missing.png', 'Picture from the web · web'])
+    expect([...el.querySelectorAll('.page-media--missing')].map((m) => m.textContent)).toEqual(['Missing picture · missing.png'])
+    // A web picture is never fetched: a link the person may tap (Safari).
+    expect(el.querySelector<HTMLAnchorElement>('a.page-media--web')?.textContent).toBe('Picture from the web · web')
     expect(el.querySelector('img[src^="http"]')).toBeNull()
   })
 
@@ -205,54 +280,39 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
     expect(splitBlocks('short', 10)).toEqual(['short'])
   })
 
-  it('a 2 MB page draws in slices: no hold of the thread over 50 ms (the numbers are printed)', async () => {
+  it('YAZ-5213: a 2 MB page draws in slices, and no slice of its work takes 50 ms (CPU time of this thread)', async () => {
     const block = (i: number) => `## Part ${i}\n\nSome **made-up** words, a [[Trip plan]] link and \`code\`. ${'More words here. '.repeat(20)}\n\n- one\n- two\n\n`
     let text = ''
     for (let i = 0; text.length < 2_000_000; i++) text += block(i)
     const parts = (text.match(/^## Part/gm) ?? []).length
-    let probing = true
-    let gaps: number[] = []
-    let last = performance.now()
-    const probe = () => {
-      const t = performance.now()
-      gaps.push(t - last)
-      last = t
-      if (probing) setTimeout(probe, 0)
-    }
-    setTimeout(probe, 0)
-    const realYield = () => new Promise<void>((r) => setTimeout(r, 0))
-    const pct = (list: number[], p: number) => [...list].sort((x, y) => x - y)[Math.min(list.length - 1, Math.floor(list.length * p))]
-    let best = { ms: 0, longest: Infinity, p99: Infinity, holds95: Infinity, pieces: 0, median: 0, p95: Infinity }
-    let idle = Infinity
-    let host: HTMLElement | null = null
-    for (let run = 0; run < 2 && best.holds95 >= 50; run++) {
-      await new Promise((r) => setTimeout(r, 100))
-      idle = Math.min(idle, Math.max(...gaps))
-      gaps = []
-      last = performance.now()
-      const t0 = performance.now()
-      host = document.createElement('div')
-      const stats = { times: [] as number[] }
-      await renderPage(text, look, host, uiSlicer(realYield), () => true, stats)
-      const run1 = { ms: performance.now() - t0, longest: Math.max(...gaps, performance.now() - last), p99: pct(gaps, 0.99), holds95: pct(gaps, 0.95), pieces: stats.times.length, median: pct(stats.times, 0.5), p95: pct(stats.times, 0.95) }
-      if (run1.holds95 < best.holds95) best = run1
-    }
-    probing = false
-    expect(host!.querySelectorAll('h2').length).toBe(parts)
-    console.log(
-      `[4C perf] a ${(text.length / 1e6).toFixed(1)} MB page (${parts} parts) in jsdom: ${best.ms.toFixed(0)} ms in all, ${best.pieces} pieces; a piece: median ${best.median.toFixed(1)} ms, 95th percentile ${best.p95.toFixed(1)} ms; holds of the thread: 95th percentile ${best.holds95.toFixed(1)} ms, 99th ${best.p99.toFixed(1)} ms, longest ${best.longest.toFixed(1)} ms; idle probe ${idle.toFixed(1)} ms`,
-    )
-    // The page is drawn in many small pieces, each far under a long task (50 ms). A hold of the probe also counts jsdom's
-    // garbage collection and the other work of this machine: on a busy machine (the idle probe alone waits) it is noise.
-    expect(best.pieces).toBeGreaterThan(100)
-    expect(best.median).toBeLessThan(25)
-    if (idle > 15 && best.holds95 >= 50) {
-      console.log('[4C perf] the machine is too busy to measure holds (the idle probe alone waited > 15 ms): check skipped')
-      return
-    }
-    expect(best.p95).toBeLessThan(50)
-    // The holds as the probe sees them: the 99th percentile and the longest are printed (jsdom's garbage collection of
-    // a 60,000-node page, and the other test files on the same cores, add to them); 95 in 100 must be short.
-    expect(best.holds95).toBeLessThan(50)
+    const host = document.createElement('div')
+    const t0 = performance.now()
+    const run = cpuSlices()
+    await renderPage(text, look, host, run.slice)
+    const ms = performance.now() - t0
+    expect(host.querySelectorAll('h2').length).toBe(parts)
+    const sorted = [...run.work].sort((x, y) => x - y)
+    console.log(`[4C perf] a ${(text.length / 1e6).toFixed(1)} MB page (${parts} parts) in jsdom: ${ms.toFixed(0)} ms in all, ${run.work.length} slices; CPU of a slice: median ${sorted[sorted.length >> 1].toFixed(1)} ms, longest ${sorted.at(-1)!.toFixed(1)} ms`)
+    expect(run.work.length).toBeGreaterThan(100)
+    // The page's own work between two yields, in CPU time of this thread: the load of the machine does not count.
+    expect(sorted.at(-1)!).toBeLessThan(50)
   }, 300_000)
+
+  it('YAZ-5213: the slice measure is honest: a 200 ms busy loop in one piece shows as a slice of 200 ms', async () => {
+    const slow: PageLook = {
+      ...look,
+      card: (t) => {
+        // 200 ms of this thread's CPU (a wall-clock loop on a busy machine gets less CPU).
+        const cpu = () => process.threadCpuUsage().user / 1000
+        const end = cpu() + 200
+        while (cpu() < end);
+        return look.card(t)
+      },
+    }
+    let text = `\`\`\`card\nslow\n\`\`\`\n\n`
+    while (text.length < 80_000) text += `${'Words. '.repeat(30)}\n\n`
+    const run = cpuSlices()
+    await renderPage(text, slow, document.createElement('div'), run.slice)
+    expect(Math.max(...run.work)).toBeGreaterThanOrEqual(150)
+  })
 })

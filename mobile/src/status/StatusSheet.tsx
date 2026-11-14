@@ -2,8 +2,9 @@ import { useEffect, useRef } from 'react'
 import { useApp } from '../app/AppState'
 import { syncHelp } from '../app/help'
 import type { TokenEndWarning } from '../auth/expiry'
+import { DiscardAnswer } from '../screens/DiscardAnswer'
 import { ForwardButton } from '../screens/Frame'
-import { clockTime, dayDate, lastSyncWords, lostRows, type Dot } from './dot'
+import { clockTime, dayDate, lastSyncWords, lostRows, nextTryWords, type Dot } from './dot'
 import type { DotAnswersView } from './useDotAnswers'
 
 /**
@@ -34,6 +35,8 @@ export function StatusSheet({ dot, token, answers, now, onClose }: { dot: Dot; t
   const last = Math.max(sync.lastSyncedAt ?? -1, answers.state?.lastSentAt ?? -1)
   const lastAt = last < 0 ? null : last
   const lost = lostRows(answers.state?.lost ?? [])
+  const listWait = dot.reason === 'waiting' ? waitWords(answers, now) : null
+  const said = listWait !== null ? null : why(dot, sync.status === 'slowed' ? sync.retryAt : null)
   const red = dot.state === 'attention' && app.vault !== null ? (syncHelp({ ...sync, problem: sync.status === 'attention' ? sync.problem : (answers.state?.problem ?? null) }, app.vault, app.unit, false) ?? null) : null
 
   return (
@@ -47,7 +50,15 @@ export function StatusSheet({ dot, token, answers, now, onClose }: { dot: Dot; t
           {lastSyncWords(lastAt, now)}
           {lastAt !== null && `, at ${clockTime(lastAt)}`}
         </p>
-        {why(dot, sync.status === 'slowed' ? sync.retryAt : null) && <p>{why(dot, sync.status === 'slowed' ? sync.retryAt : null)}</p>}
+        {said !== null && <p>{said}</p>}
+        {listWait !== null && (
+          <div className="stack">
+            <p>{listWait}</p>
+            <button type="button" className="btn" onClick={() => void answers.list?.sendNow()}>
+              Try now
+            </button>
+          </div>
+        )}
 
         {dot.state === 'attention' &&
           (red !== null ? (
@@ -82,16 +93,7 @@ export function StatusSheet({ dot, token, answers, now, onClose }: { dot: Dot; t
                     <br />
                     <span className="muted">{row.answer}</span>
                   </span>
-                  <button
-                    type="button"
-                    className="btn"
-                    aria-label={`Discard the answer to ${row.title}`}
-                    onClick={() => {
-                      for (const seq of row.seqs) void answers.list?.discard(seq)
-                    }}
-                  >
-                    Discard
-                  </button>
+                  <DiscardAnswer title={row.title} answer={row.answer} label={`Discard the answer to ${row.title}`} onDiscard={() => Promise.all(row.seqs.map((seq) => answers.list?.discard(seq)))} />
                 </li>
               ))}
             </ul>
@@ -104,6 +106,22 @@ export function StatusSheet({ dot, token, answers, now, onClose }: { dot: Dot; t
       </div>
     </div>
   )
+}
+
+/**
+ * YAZ-5214: the answer list waits by its OWN state, not the engine's: after "slow down" or a branch that kept moving
+ * (`STALE_HEAD`) it backs off 1, 2, 4 … up to 60 minutes; after a failed send it waits for the next sync. The sheet
+ * says when the next try is and that nothing is lost. Null: the list sends in a few seconds (the normal case).
+ */
+function waitWords(answers: DotAnswersView, now: number): string | null {
+  const state = answers.state
+  if (state === null || state.problem === null) return null
+  const safe = 'Nothing is lost: your answers are safe on this phone.'
+  if ((state.problem === 'RATE_LIMITED' || state.problem === 'STALE_HEAD') && state.retryAt !== null && state.retryAt > now) {
+    const cause = state.problem === 'RATE_LIMITED' ? 'GitHub asked the app to slow down.' : 'The vault changed on GitHub while the phone sent.'
+    return `${cause} ${safe} ${nextTryWords(state.retryAt, now)}`
+  }
+  return `The last send did not reach GitHub. ${safe} The phone tries again at the next sync.`
 }
 
 /** One sentence that says what the state means for the person. None for green, red and a lost answer (they have their own part). */

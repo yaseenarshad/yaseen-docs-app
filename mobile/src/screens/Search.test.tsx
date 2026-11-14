@@ -2,6 +2,7 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { READER_FILES, READER_ID, cardBlock, seedReaderVault, writeVaultFiles } from '../dev/readerVault'
+import { ATTACK, remoteAttributes } from '../page/testing'
 import { forgetSearch } from '../search/searchState'
 import { mount, newPhone, type Harness } from './testing'
 
@@ -275,6 +276,76 @@ describe('a page, read only (YAZ-5079)', () => {
     await waitFor(h, () => h!.host.querySelector('.search__rows') !== null)
     expect(box(h).value).toBe('trip')
     expect(rows(h)).toEqual(['Trip plan | page'])
+  })
+})
+
+describe('nothing loads from another host (YAZ-5208, YAZ-5209)', () => {
+  it('an attack page with its own attack card and an embedded attack card file; then the card view', async () => {
+    const files: Record<string, string | Uint8Array> = {
+      ...READER_FILES,
+      'Attack.md': `---\ntitle: Attack\nid: DEMO-90\n---\n\n${ATTACK}\n\n${cardBlock('DEMO-91', ATTACK)}\n\n![[DEMO-92]]\n`,
+      'cards/attack-demo-92.md': `---\nkind: card\ntitle: Attack card\n---\n\n${cardBlock('DEMO-92', ATTACK)}\n`,
+    }
+    h = await openSearch(files)
+    await openPage(h, 'Attack')
+    const body = h.host.querySelector('.reader__body')!
+    await waitFor(h, () => body.querySelector('.card-embed__body')?.childNodes.length !== 0 && body.querySelector('.card-embed__body') !== null)
+    expect(remoteAttributes(h.host)).toEqual([])
+    expect(body.querySelector('video, audio, source, [background], [style]:not(.card__audio *)')).toBeNull()
+    expect(body.querySelectorAll('a.page-media--web').length).toBeGreaterThanOrEqual(12)
+    await h.click(/^Embedded from "Attack card"/)
+    await waitFor(h, () => h!.host.querySelector('.card-view__card .card__sides') !== null)
+    expect(remoteAttributes(h.host)).toEqual([])
+  })
+})
+
+describe('the top bar and Back (YAZ-5210, YAZ-5211)', () => {
+  it("YAZ-5210: a page and a card show the page's name, the sync dot and the gear", async () => {
+    h = await openSearch()
+    await openPage(h, 'Trip plan')
+    expect(h.host.querySelector('.topbar__title')?.textContent).toBe('Trip plan')
+    expect(h.host.querySelector('.topbar .sync-status')).not.toBeNull()
+    expect(h.button('Settings')).not.toBeNull()
+    await h.click('‹ Back')
+    await typeQuery(h, 'capital')
+    await h.click(/^Capital of Spain/)
+    await waitFor(h, () => h!.host.querySelector('.card-view') !== null)
+    expect(h.host.querySelector('.topbar__title')?.textContent).toBe('Capital of Spain')
+    expect(h.host.querySelector('.topbar .sync-status')).not.toBeNull()
+  })
+
+  it('YAZ-5211: Back shows the list at the same place, with the same rows shown', async () => {
+    const files: Record<string, string | Uint8Array> = { ...READER_FILES }
+    for (let i = 0; i < 300; i++) files[`many/Page ${String(i).padStart(3, '0')}.md`] = `---\ntitle: Page ${String(i).padStart(3, '0')}\n---\n\nText ${i}.\n`
+    h = await openSearch(files)
+    await h.click('Show more')
+    const count = rows(h).length
+    expect(count).toBeGreaterThan(100)
+    const screen = () => h!.host.querySelector<HTMLElement>('.screen')!
+    screen().scrollTop = 900
+    screen().dispatchEvent(new Event('scroll'))
+    await h.click(/^Page 250/)
+    await waitFor(h, () => h!.host.querySelector('.reader__body')?.childNodes.length !== 0)
+    await h.click('‹ Back')
+    await waitFor(h, () => h!.host.querySelector('.search__rows') !== null)
+    await act(async () => void (await new Promise((r) => setTimeout(r, 30))))
+    expect(rows(h)).toHaveLength(count)
+    expect(screen().scrollTop).toBe(900)
+  })
+
+  it('YAZ-5211: Back from a linked page shows the first page at its reading place', async () => {
+    h = await openSearch()
+    await openPage(h, 'Spanish words')
+    const screen = () => h!.host.querySelector<HTMLElement>('.screen')!
+    screen().scrollTop = 300
+    screen().dispatchEvent(new Event('scroll'))
+    await h.click('Trip plan')
+    await waitFor(h, () => h!.host.querySelector('.reader__title')?.textContent === 'Trip plan')
+    expect(screen().scrollTop).toBe(0)
+    await h.click('‹ Back')
+    await waitFor(h, () => h!.host.querySelector('.reader__title')?.textContent === 'Spanish words')
+    await act(async () => void (await new Promise((r) => setTimeout(r, 50))))
+    expect(screen().scrollTop).toBe(300)
   })
 })
 

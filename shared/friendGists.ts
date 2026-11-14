@@ -168,7 +168,8 @@ export interface FriendsIndex {
   vaults: string[]
   stats: string | null
   friends: { name: string; theirs: string; mine: string }[]
-  groups: { name: string; group: string; mine: string; admin: boolean }[]
+  /** `joined` (4E3): this person has seen their pointer in the group file at least once (so "not in it" now means removed). */
+  groups: { name: string; group: string; mine: string; admin: boolean; joined?: true }[]
   /**
    * 4E2 (YAZ-5083): the links this person shared that no friend has used yet ("Share my link" made a pointer; the
    * friend's link has not been pasted). Each is a pointer like `mine`, so a remove updates it too. Absent: none.
@@ -214,7 +215,7 @@ function parseIndex(text: string): { ok: true; value: FriendsIndex } | { ok: fal
         .map((f) => ({ name: shownName(f.name), theirs: f.theirs as string, mine: f.mine as string })),
       groups: list(o.groups)
         .filter(groupOk)
-        .map((g) => ({ name: shownName(g.name), group: g.group as string, mine: g.mine as string, admin: g.admin === true })),
+        .map((g) => ({ name: shownName(g.name), group: g.group as string, mine: g.mine as string, admin: g.admin === true, ...(g.joined === true && { joined: true as const }) })),
       ...(o.shared !== undefined && { shared: list(o.shared).filter(sharedOk).map((x) => ({ mine: x.mine as string, at: x.at as string })) }),
     },
   }
