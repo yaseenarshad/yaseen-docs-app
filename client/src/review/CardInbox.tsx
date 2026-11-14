@@ -15,7 +15,9 @@
  *    (YAZ-5132: no "in <page>" here), whose page part opens it as O does; a card file (YAZ-5037): its title is the
  *    link, and it and O open it in Explore (YAZ-5145, "Open card"). Then the chip "Up next ×" for a card at the top of the Inbox (YAZ-4999 D3). A card of more than one
  *    side says "Side 1 of 2" on the row's right (YAZ-5048), and the key row's Space says "Next side" when the next Space shows a side.
- *  - SCROLL (YAZ-5049): the word a Space shows, or the side it adds, comes into view, gliding; never centred. Round 2
+ *  - SCROLL (YAZ-5049): round 3 follows the NEXT blank (`data-next`, the one "Mark the next hidden word" colours) after
+ *    each Space, a new side's first blank, and at the end (no blank left) brings the card's end — the Reviews strip — in
+ *    as far as the last word stays in sight; one more Space there gives the answer buttons a soft ring. Round 1: the word a Space shows, or the side it adds, comes into view, gliding; never centred. Round 2
  *    (as Mochi): the card is one long page — no scroll bar of its own; the Inbox's view scrolls, the top row stays on
  *    top and the buttons at the bottom — and a word that reaches the view's lower third comes up to its upper third,
  *    so what comes next shows (`inboxScroll.ts`).
@@ -107,6 +109,7 @@ import { TodayWork } from './TodayWork'
 import { todayCards } from './reviewTime'
 import { cssZoom } from '../lib/cssZoom'
 import { inboxRoom, readingScroll } from './inboxScroll'
+import { SHOW_GAP, leastScroll } from '../editor/find/leastScroll'
 import '../explore/explore.css'
 import { useUnit } from '../vault/unitWord'
 
@@ -284,18 +287,34 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
       return
     }
     if (before === null) return
+    // What the step showed: the new side (by its top: its first line, the line between the sides above it), or the word.
     const side = step.sides > before.sides ? body.querySelector(`.card__side[data-side="${step.sides - 1}"]`) : null
-    const target = side ?? (step.shown > before.shown ? body.querySelector(`[data-hidden="${step.shown - 1}"]`) : null)
-    if (target === null) return
-    const r = target.getBoundingClientRect()
-    // A side by its top: its first line, the line between the sides above it.
-    const thing = side === null ? { start: r.top, end: r.bottom } : { start: r.top, end: r.top }
-    const dy = readingScroll(thing, inboxRoom(view))
+    const word = side === null && step.shown > before.shown ? body.querySelector(`[data-hidden="${step.shown - 1}"]`) : null
+    const showed = side ?? word
+    if (showed === null) return
+    const s = showed.getBoundingClientRect()
+    const shownSpan = side === null ? { start: s.top, end: s.bottom } : { start: s.top, end: s.top }
+    // Round 3 (Yaseen: "the thing it should be following is the NEXT fill in"): the blank the next Space shows, the one
+    // "Mark the next hidden word" colours (`data-next`, the render's own; never worked out again here). None shown yet
+    // (the next Space shows a side): what the step showed, as round 2.
+    const next = body.querySelector('[data-next]')
+    const room = inboxRoom(view)
+    let dy: number
+    if (done) {
+      // THE END: no blank left. The card's end — the Reviews strip under it (YAZ-5105) or the card's frame — comes in,
+      // as far as what the step showed stays in sight (⌘F's rule over the two: a long end stops at the word).
+      const end = (rootRef.current?.querySelector('.card-reviews--strip') ?? body.closest('.card-inbox__panel') ?? body).getBoundingClientRect()
+      dy = leastScroll({ start: shownSpan.start, end: Math.max(shownSpan.end, end.bottom) }, room, SHOW_GAP)
+    } else if (next !== null) {
+      const n = next.getBoundingClientRect()
+      dy = readingScroll({ start: n.top, end: n.bottom }, room)
+    } else dy = readingScroll(shownSpan, room)
     if (dy === 0) return
     const top = view.scrollTop + dy / cssZoom(view)
     const smooth = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches !== true
     if (typeof view.scrollTo === 'function') view.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' })
     else view.scrollTop = top
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `done` follows the step: it changes only with it
   }, [step.key, step.sides, step.shown, shown])
 
   // The buttons show with the card (YAZ-5010): their reviews are fixed now, so the hover and the write agree (D13). Again after a delete re-reads the card.
@@ -349,8 +368,13 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   }, [moreOpen])
 
   /** One Space (D18): the next hidden word of the sides showing, else the next side. */
+  // THE END's cue (YAZ-5049 round 3, Yaseen: "there is no way to know they have hit the end"): the hint row has
+  // dropped Space, and one more Space moves nothing but gives the answer buttons one soft ring — where to go now.
+  // A new value each time, so the ring plays again; none on the next card.
+  const [nudge, setNudge] = useState<{ key: string | null; n: number }>({ key: null, n: 0 })
   const advance = useCallback(() => {
     const { step, done, counts, card } = live.current
+    if (done && card?.page != null) return setNudge((v) => ({ key: step.key, n: v.key === step.key ? v.n + 1 : 1 }))
     if (done || card?.page == null) return
     const before = counts.slice(0, step.sides).reduce((a, b) => a + b, 0)
     setStep(step.shown < before ? { ...step, shown: step.shown + 1 } : { ...step, sides: step.sides + 1 })
@@ -540,7 +564,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                 </button>
               </HoverTip>
             </div>
-            <div className="card-inbox__answers">
+            <div className="card-inbox__answers" data-nudge={nudge.key === cardKey && nudge.key !== null ? (nudge.n % 2 === 1 ? 'a' : 'b') : undefined}>
               {/* YAZ-5029: the buttons are the setting's, always there — never only once the card's answers are fixed, so
                   fast ← → never takes them away for a frame. The hover says when the card comes back once it is known. */}
               {ratings.map((rating, i) => {

@@ -1595,7 +1595,7 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
     expect(panel.querySelector('.card-inbox__head, .explore__head, .card-inbox__page, .card__id')).toBeNull()
   })
 
-  describe('YAZ-5049: Space brings the word it shows into view (round 2: one long page, with room below the word)', () => {
+  describe('YAZ-5049: Space keeps the NEXT blank in view (round 2: one long page, with room below; round 3: the next blank, and the end)', () => {
     const box = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 100, width: 100, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
     let place: Record<string, [number, number]>
     let scrollTo: ReturnType<typeof vi.fn>
@@ -1606,7 +1606,7 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
         if (this.classList.contains('card-inbox')) return box(0, 600)
         if (this.classList.contains('card-inbox__top')) return box(0, 100)
         if (this.classList.contains('card-inbox__dock')) return box(400, 480)
-        const key = this.dataset.hidden !== undefined ? `word${this.dataset.hidden}` : this.dataset.side !== undefined ? `side${this.dataset.side}` : ''
+        const key = this.dataset.hidden !== undefined ? `word${this.dataset.hidden}` : this.dataset.side !== undefined ? `side${this.dataset.side}` : this.classList.contains('card-reviews--strip') ? 'strip' : this.classList.contains('card-inbox__panel') ? 'panel' : ''
         const [top, bottom] = place[key] ?? [150, 170]
         return box(top, bottom)
       })
@@ -1620,50 +1620,141 @@ describe('the card as you read it (YAZ-5048, YAZ-5049, YAZ-5051)', () => {
       view.scrollTop = scrollTop
       return view
     }
+    /** One side, three blanks. */
+    const THREE = 'A {{one}} b {{two}} c {{three}}'
 
-    it('a word in the top two thirds of the room: no movement', () => {
-      mount(TWO_SIDES)
+    it('round 3 (Yaseen: "the thing it should be following is the NEXT fill in"): the scroll follows the blank the next Space shows — the `data-next` the mark colours — not the word just shown', () => {
+      mount(THREE)
       scroller()
-      place.word0 = [270, 290]
+      // The word just shown is high; the next blank sits in the lower third: it comes up to a third of the way down.
+      place.word0 = [150, 170]
+      place.word1 = [320, 340]
+      press(' ')
+      expect(el.querySelector('[data-next]')?.getAttribute('data-hidden')).toBe('1')
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 320 - 200 }))
+    })
+
+    it('the next blank in the top two thirds of the room: no movement, wherever the word just shown is', () => {
+      mount(THREE)
+      scroller()
+      place.word0 = [320, 340]
+      place.word1 = [270, 290]
       press(' ')
       expect(scrollTo).not.toHaveBeenCalled()
     })
 
-    it('a word in the lower third, or below the view: it comes up to a third of the way down (never the centre), so what comes next shows', () => {
-      mount(TWO_SIDES)
+    it('the next blank below the view comes up a third of the way down; above the view (scrolled past), the least scroll, a small gap kept', () => {
+      mount(THREE)
       scroller()
-      place.word0 = [320, 340]
-      press(' ')
-      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 320 - 200 }))
-      // Below the view: the same place.
-      mount(TWO_SIDES)
-      scroller()
-      place.word0 = [700, 720]
+      place.word1 = [700, 720]
       press(' ')
       expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 700 - 200 }))
-    })
-
-    it('a word above the view (scrolled past): the least scroll that shows it, a small gap kept', () => {
-      mount(TWO_SIDES)
+      mount(THREE)
       scroller(300)
-      place.word0 = [40, 60]
+      place.word1 = [40, 60]
       press(' ')
       expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 300 + 40 - 100 - 6 }))
     })
 
-    it('a new side low in the view comes up by its top; a new card starts at its top, with no glide', () => {
+    it('the side`s last word, with the next blank on a side not shown yet: the word just shown, as round 2', () => {
+      mount(TWO_SIDES)
+      scroller()
+      place.word0 = [320, 340]
+      press(' ')
+      expect(el.querySelector('[data-next]')).toBeNull()
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 320 - 200 }))
+    })
+
+    it('a new side: its first blank, low in the view, comes up a third of the way down; a new card starts at its top, with no glide', () => {
       mount(TWO_SIDES)
       scroller()
       press(' ')
+      scrollTo.mockClear()
       place.side1 = [350, 900]
+      place.word1 = [600, 620]
       press(' ')
-      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 350 - 200 }))
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 600 - 200 }))
       scrollTo.mockClear()
       const view = scroller(500)
       session = { ...sessionOf(TWO_SIDES), position: 4, card: { ...sessionOf(TWO_SIDES).card!, id: 'WIKI-10' } }
       render()
       expect(scrollTo).not.toHaveBeenCalled()
       expect(view.scrollTop).toBe(0)
+    })
+
+    it('THE END (no blank left): the end of the card comes into view as far as the word just shown stays in sight; it shows already: nothing moves', () => {
+      mount(THREE)
+      scroller()
+      press(' ')
+      press(' ')
+      scrollTo.mockClear()
+      // The last word at 200; the card ends at 700, past the buttons (400): up by 94, so the word stays at the room's top.
+      place.word2 = [200, 220]
+      place.panel = [110, 700]
+      press(' ')
+      expect(blanks()).toBe(0)
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 200 - 100 - 6 }))
+      // A short end: all of it, a small gap kept.
+      mount(THREE)
+      scroller()
+      press(' ')
+      press(' ')
+      scrollTo.mockClear()
+      place.word2 = [200, 220]
+      place.panel = [110, 450]
+      press(' ')
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 450 - 400 + 6 }))
+      // The end shows already: nothing moves.
+      mount(THREE)
+      scroller()
+      press(' ')
+      press(' ')
+      scrollTo.mockClear()
+      place.word2 = [200, 220]
+      place.panel = [110, 380]
+      press(' ')
+      expect(scrollTo).not.toHaveBeenCalled()
+    })
+
+    it('THE END with reviews: the end is the Reviews strip under the card (YAZ-5105)', async () => {
+      mount(THREE)
+      session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }] } } }
+      render()
+      await flush()
+      scroller()
+      press(' ')
+      press(' ')
+      scrollTo.mockClear()
+      place.word2 = [200, 220]
+      place.panel = [110, 380]
+      place.strip = [384, 420]
+      press(' ')
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ top: 420 - 400 + 6 }))
+    })
+
+    it('THE END: the hint row drops Space; one more Space moves nothing and gives the answer buttons one soft nudge, each time', () => {
+      mount(THREE)
+      scroller()
+      const hints = () => [...el.querySelectorAll('.card-inbox__hints span')].map((h) => h.textContent)
+      const answers = () => el.querySelector('.card-inbox__answers')!
+      press(' ')
+      press(' ')
+      expect(hints()[0]).toBe('Space Show')
+      press(' ')
+      expect(hints()).not.toContain('Space Show')
+      expect(answers().hasAttribute('data-nudge')).toBe(false)
+      scrollTo.mockClear()
+      press(' ')
+      expect(scrollTo).not.toHaveBeenCalled()
+      const first = answers().getAttribute('data-nudge')
+      expect(first).not.toBeNull()
+      press(' ')
+      // A new value each time, so the nudge plays again.
+      expect(answers().getAttribute('data-nudge')).not.toBe(first)
+      // The next card: no nudge.
+      session = { ...sessionOf(THREE), position: 4, card: { ...sessionOf(THREE).card!, id: 'WIKI-10' } }
+      render()
+      expect(answers().hasAttribute('data-nudge')).toBe(false)
     })
   })
 })

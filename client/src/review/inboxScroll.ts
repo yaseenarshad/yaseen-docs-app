@@ -9,6 +9,10 @@
  * - It is above the view (you scrolled down past it): the least scroll that shows it, a small gap kept, as ⌘F.
  *
  * The room is what you see of the card: the Inbox's view less its sticky top row and its sticky buttons at the bottom.
+ *
+ * Round 3 (Yaseen: "the thing it should be following is the NEXT fill in"): `CardInbox` aims this rule at the blank the
+ * next Space shows (`data-next`), a new side's first blank, and at the end (no blank left) brings the card's end in by
+ * ⌘F's rule over the last word and the end, so the last word stays in sight.
  */
 import type { Span } from '../editor/find/leastScroll'
 
