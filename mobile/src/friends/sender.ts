@@ -32,6 +32,7 @@ import type { FetchLike } from '../github/client'
 import { PHONE, type TokenStore, type VaultStore } from '../store'
 import type { Clock, SyncEvent } from '../sync/engine'
 import { countedVaults, openFriendsApi } from './friendsApi'
+import { friendsGuard } from './guard'
 
 /**
  * The phone's send of the numbers (YAZ-5082, 4E1). It listens to the sync engine (3B) and sends the person's ONE
@@ -100,6 +101,11 @@ export interface FriendsSenderOptions {
   sleep?: (ms: number) => Promise<void>
   /** One tab sends at a time. Default: the Web Lock `notecards-friends`, else no lock. */
   lock?: <T>(name: string, fn: () => Promise<T>) => Promise<T>
+  /**
+   * YAZ-5195: the app's erase. Aborted (before "Sign out and erase this phone"), the sender stops as `stop()` does:
+   * the running request is aborted and nothing is stored again.
+   */
+  signal?: AbortSignal
   /** The description of a gist the sender makes (only when the numbers gist must be made again). */
   describe?: WriteOptions['describe']
 }
@@ -112,7 +118,8 @@ export interface FriendsSender {
   attempt(reason: SendReason): Promise<FriendsSendState>
   /** Resolves when no try runs and none waits to run. */
   idle(): Promise<void>
-  stop(): void
+  /** Stops the timers and the polling, aborts a running request (YAZ-5195), and resolves when the running try ended. */
+  stop(): Promise<void>
 }
 
 const browserClock: Clock = {
@@ -138,6 +145,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
     now: () => clock.now(),
   }
 
+  const guard = friendsGuard(store, options.fetch, options.signal)
   let state: FriendsSendState = { status: 'idle', lastSentAt: null, retryAt: null, remade: false }
   let passSeen = false
   /** Something changed since the last send (the first pass of a session counts as a change). */
@@ -195,11 +203,14 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
   }
 
   async function run(reason: SendReason): Promise<void> {
-    if (stopped) return
+    if (stopped || guard.stopped) return
     const now = clock.now()
     if (!passSeen) return set({ status: 'no-pass' })
     const saved = await loadSaved()
-    const save = (patch: Partial<Saved>) => store.setState(PHONE, SEND_STATE, { ...saved, ...patch })
+    // YAZ-5195: after an erase or a stop, nothing of the friends state is stored again.
+    const save = async (patch: Partial<Saved>) => {
+      if (await guard.live()) await store.setState(PHONE, SEND_STATE, { ...saved, ...patch })
+    }
 
     // The cheap checks first: the 5-minute rule and the budget need no network and no count.
     // YAZ-5192: also for a background send. `lastSentAt` is phone-only state, so the rule holds after a restart too.
@@ -211,7 +222,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
       }
     }
 
-    const friends = await openFriendsApi(store, tokens, { fetch: options.fetch, now: () => clock.now() })
+    const friends = await openFriendsApi(store, tokens, { fetch: guard.fetch, now: () => clock.now() })
     if (friends.kind !== 'ok') return set({ status: friends.kind })
     const { api, vault, account } = friends
 
@@ -230,7 +241,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
         index = finished.handle
         if (finished.kind === 'paused') {
           if (finished.why === 'refused') {
-            await recordGistsRefused(store, vault)
+            if (await guard.live()) await recordGistsRefused(store, vault)
             return set({ status: 'no-gists' })
           }
           if (finished.why === 'unauthorized') return set({ status: 'sign-in-again' })
@@ -299,7 +310,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
           await save({ budget, pointers })
           return set({ status: 'slowed', retryAt: outcome.retryAt })
         case 'refused':
-          await recordGistsRefused(store, vault)
+          if (await guard.live()) await recordGistsRefused(store, vault)
           return set({ status: 'no-gists' })
         case 'offline':
           return set({ status: 'offline' })
@@ -317,7 +328,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
         case 'UNAUTHORIZED':
           return set({ status: 'sign-in-again' })
         case 'READ_ONLY':
-          await recordGistsRefused(store, vault)
+          if (await guard.live()) await recordGistsRefused(store, vault)
           return set({ status: 'no-gists' })
         case 'RATE_LIMITED': {
           const at = Math.max(now + 60_000, gistErrorResetAt(err) ?? 0)
@@ -331,7 +342,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
   }
 
   function attempt(reason: SendReason): Promise<FriendsSendState> {
-    if (stopped) return Promise.resolve(state)
+    if (stopped || guard.stopped) return Promise.resolve(state)
     if (queued !== null) {
       if (STRENGTH[reason] > STRENGTH[queued]) queued = reason
       return chain.then(() => state)
@@ -348,7 +359,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
   }
 
   const unsubscribe = options.sync.subscribe((event) => {
-    if (stopped) return
+    if (stopped || guard.stopped) return
     if (event.type === 'changed') {
       // Only a pass that read GitHub moves the numbers (`diff` null: the stored index was loaded on open).
       if (event.diff !== null) dirty = true
@@ -374,9 +385,11 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
     },
     stop() {
       stopped = true
+      guard.stop()
       unsubscribe()
       if (timer !== null) clock.clearTimeout(timer)
       timer = null
+      return chain.then(() => undefined)
     },
   }
 }

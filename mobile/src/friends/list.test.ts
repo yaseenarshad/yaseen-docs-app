@@ -140,6 +140,25 @@ describe('createFriendsList (YAZ-5083)', () => {
     expect(world.text(listId, INDEX_FILE)).toBe('not json')
   })
 
+  it('YAZ-5195: after "Sign out and erase this phone" the list starts no call and stores nothing; stop() aborts a running one', async () => {
+    const { clock, world } = setup()
+    const ali = await phone(world, clock, ALI, 'ali')
+    const share = await ali.list.share()
+    if (share.kind !== 'ok') throw new Error(share.kind)
+    await ali.tokens.clearAll()
+    await ali.store.eraseAll()
+    const n = world.calls.length
+    expect(await ali.list.rows()).toEqual({ kind: 'no-account' })
+    expect(await ali.list.share()).toEqual({ kind: 'no-account' })
+    expect(world.calls.length).toBe(n)
+    for (const name of ['friendsHas', 'friendsListCopy', 'friendsSend']) expect(await ali.store.getState('', name)).toBeUndefined()
+
+    const bea = await phone(world, clock, BEA, 'bea')
+    bea.list.stop()
+    expect(await bea.list.share()).toEqual({ kind: 'no-account' })
+    expect(world.owned('bea')).toHaveLength(0)
+  })
+
   it('a token with no Gists permission: "no-gists" for each action, and nothing is made', async () => {
     const { clock, world } = setup()
     const ali = await phone(world, clock, NOGISTS, 'ali', ['ali/vault'], 'no')

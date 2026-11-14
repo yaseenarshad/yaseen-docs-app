@@ -24,6 +24,7 @@ import type { FetchLike } from '../github/client'
 import { PHONE, loadVaultList, vaultId, type TokenStore, type VaultStore } from '../store'
 import type { Clock } from '../sync/engine'
 import { openFriendsApi } from './friendsApi'
+import { friendsGuard } from './guard'
 import { SEND_STATE } from './sender'
 
 /**
@@ -66,6 +67,8 @@ export interface FriendsList {
   rows(): Promise<({ kind: 'ok' } & ListRows) | Unavailable>
   /** 4A's port, on the list gist. */
   port: FriendsPort
+  /** YAZ-5195: before "Sign out and erase this phone": aborts a running request; no friends call or write after it. */
+  stop(): void
 }
 
 export interface FriendsListOptions {
@@ -76,6 +79,8 @@ export interface FriendsListOptions {
   sleep?: (ms: number) => Promise<void>
   lock?: <T>(name: string, fn: () => Promise<T>) => Promise<T>
   describe?: ListOptions['describe']
+  /** YAZ-5195: the app's erase signal; aborted, the list stops as `stop()` does. */
+  signal?: AbortSignal
 }
 
 /** Phone-only state: whether there is a friend or group (the opening tab, decision 21), and a copy of the settings. */
@@ -101,6 +106,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     now,
   }
   const cache = newListCache()
+  const guard = friendsGuard(store, options.fetch, options.signal)
   let handle: IndexHandle | null = null
   const local = localFriends(store)
 
@@ -128,6 +134,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
   async function remember(h: IndexHandle | null): Promise<void> {
     handle = h
     if (h === null) return
+    if (!(await guard.live())) return // YAZ-5195: nothing comes back after an erase
     await store.setState(PHONE, HAS, h.index.friends.length + h.index.groups.length > 0)
     await store.setState(PHONE, COPY, { vaults: h.index.vaults, nickname: h.index.nickname } satisfies ListCopy)
   }
@@ -180,12 +187,13 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
   }
   async function saveBudget(b: GistBudget): Promise<void> {
     const saved = (await store.getState<Record<string, unknown>>(PHONE, SEND_STATE)) ?? { lastSentAt: null, lastKey: null, pointers: 0 }
-    await store.setState(PHONE, SEND_STATE, { ...saved, budget: b })
+    if (await guard.live()) await store.setState(PHONE, SEND_STATE, { ...saved, budget: b })
   }
 
   /** Runs `fn` with the friends account, under the lock the sender takes; a gist failure becomes plain state. */
   async function withApi<T>(fn: (api: GistsApi, login: string, vault: string) => Promise<T | Unavailable>): Promise<T | Unavailable> {
-    const friends = await openFriendsApi(store, tokens, { fetch: options.fetch, now })
+    if (!(await guard.live())) return { kind: 'no-account' }
+    const friends = await openFriendsApi(store, tokens, { fetch: guard.fetch, now })
     if (friends.kind !== 'ok') return { kind: friends.kind }
     return lock('notecards-friends', async () => {
       try {
@@ -193,7 +201,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
       } catch (err) {
         switch (gistErrorCode(err)) {
           case 'READ_ONLY':
-            await recordGistsRefused(store, friends.vault)
+            if (await guard.live()) await recordGistsRefused(store, friends.vault)
             return { kind: 'no-gists' as const }
           case 'OFFLINE':
           case 'GITHUB_DOWN':
@@ -219,7 +227,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     if (r.kind === 'not-found') return { kind: 'not-found' as const }
     if (r.why === 'needs-repair') return { kind: 'needs-repair' as const }
     if (r.why === 'refused') {
-      await recordGistsRefused(store, vault)
+      if (await guard.live()) await recordGistsRefused(store, vault)
       return { kind: 'no-gists' as const }
     }
     return { kind: 'paused' as const, why: r.why, retryAt: r.retryAt }
@@ -251,6 +259,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
 
   return {
     port,
+    stop: () => guard.stop(),
     share: () =>
       withApi(async (api, login, vault) => {
         const h = await list(api, login, true, vault)
@@ -269,7 +278,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         if (h === null || h === 'newer') return { kind: 'newer-app' as const }
         const result = await pasteLink(api, h, text, opts)
         if (result.kind === 'refused') {
-          await recordGistsRefused(store, vault)
+          if (await guard.live()) await recordGistsRefused(store, vault)
           return { kind: 'no-gists' as const }
         }
         if (result.kind === 'added') await remember(result.handle)
@@ -293,7 +302,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         if (h === 'broken') return { kind: 'needs-repair' as const }
         if (h === 'newer') return { kind: 'newer-app' as const }
         if (h === null) {
-          await store.setState(PHONE, HAS, false)
+          if (await guard.live()) await store.setState(PHONE, HAS, false)
           return { kind: 'ok' as const, rows: [], shared: [], repairs: [] }
         }
         if (pendingRemove(h) !== null) {

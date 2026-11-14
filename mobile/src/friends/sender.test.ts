@@ -437,6 +437,72 @@ describe('createFriendsSender (YAZ-5082)', () => {
     expect(p.sync.listeners.size).toBe(0)
   })
 
+  it('the friends send that ends after "Sign out and erase this phone" leaves nothing of the account on the phone', async () => {
+    const { clock, world } = setup()
+    await friendsOf(world, PHONE_TOKEN, 1)
+    const p = await phone(world, clock, PHONE_TOKEN)
+    // The gist write is slow: it waits until the test lets it go.
+    let release!: () => void
+    const held = new Promise<void>((done) => (release = done))
+    const http = gistsFetch(world)
+    const slow = async (url: string, init: RequestInit) => {
+      if ((init.method ?? 'GET') === 'PATCH') await held
+      return http.fetch(url, init)
+    }
+    const sender = createFriendsSender({ store: p.store, tokens: p.tokens, sync: p.sync, clock, fetch: slow, sleep: async () => {} })
+    p.sender.stop()
+    await p.store.setState(`${REPO}@main`, INDEX_STATE, { commit: 'c', records: { 'cards.md': { path: 'cards.md', cards: answered(2) } } })
+    p.sync.pass()
+    await new Promise((done) => setTimeout(done, 20)) // the send now waits in its write
+    const before = patches(world).length
+    await p.tokens.clearAll()
+    await p.store.eraseAll()
+    release()
+    await sender.idle()
+    expect((await p.store.getState('', 'friendsSend')) ?? null).toBeNull()
+    expect(await p.store.getState(`${REPO}@main`, 'account')).toBeUndefined()
+    // With no abort signal, the one write already in flight cannot be called back; its result is dropped, and no
+    // other friends call starts after the erase.
+    expect(patches(world).length).toBeLessThanOrEqual(before + 1)
+    const n = world.calls.length
+    p.sync.pass()
+    await sender.idle()
+    await sender.background()
+    expect(world.calls.length).toBe(n)
+  })
+
+  it('YAZ-5195: stop() (the app calls it before the erase) aborts the running write and stores nothing', async () => {
+    const { clock, world } = setup()
+    const { stats } = await friendsOf(world, PHONE_TOKEN, 1)
+    const p = await phone(world, clock, PHONE_TOKEN)
+    const http = gistsFetch(world)
+    let aborted = false
+    const slow = (url: string, init: RequestInit) =>
+      (init.method ?? 'GET') !== 'PATCH'
+        ? http.fetch(url, init)
+        : new Promise<Response>((_, fail) =>
+            init.signal?.addEventListener('abort', () => {
+              aborted = true
+              fail(new DOMException('aborted', 'AbortError'))
+            }),
+          )
+    const erase = new AbortController()
+    const sender = createFriendsSender({ store: p.store, tokens: p.tokens, sync: p.sync, clock, fetch: slow, sleep: async () => {}, signal: erase.signal })
+    p.sender.stop()
+    await p.store.setState(`${REPO}@main`, INDEX_STATE, { commit: 'c', records: { 'cards.md': { path: 'cards.md', cards: answered(2) } } })
+    p.sync.pass()
+    await new Promise((done) => setTimeout(done, 20))
+    const before = JSON.stringify(await p.store.getState('', 'friendsSend'))
+    erase.abort()
+    await sender.stop()
+    expect(aborted).toBe(true)
+    expect(JSON.stringify(await p.store.getState('', 'friendsSend'))).toBe(before)
+    expect(numbers(world, stats)!.days).toEqual([])
+    p.sync.pass()
+    await sender.idle()
+    expect(world.calls.filter((c) => c.op === 'update' && c.id === stats)).toHaveLength(0)
+  })
+
   it('the token is never in an address, a log, the stored state or the gists', async () => {
     for (const level of ['log', 'info', 'warn', 'error', 'debug'] as const) vi.spyOn(console, level).mockImplementation((...args: unknown[]) => void consoleCalls.push(args))
     const { clock, world } = setup()
