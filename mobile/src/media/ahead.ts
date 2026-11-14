@@ -104,6 +104,12 @@ export interface MediaAhead {
   showLink(src: string, holder: string): Promise<MediaShow>
   /** The URL `show` made for `path`, or null: for a drawing that needs a URL at once (`CardLookPlace.src`). */
   urlNow(path: string): string | null
+  /**
+   * A screen no longer shows the URL that one `show` of `path` gave (its view closed, its element left the page:
+   * YAZ-5200). Each ready `show` counts one user; when the last one lets go, the URL waits among the
+   * `MEDIA_URL_IDLE_CAP` most recent idle ones (a quick show again), then is revoked.
+   */
+  releaseUrl(path: string): void
   stop(): void
 }
 
@@ -160,6 +166,9 @@ const MIME: Record<string, string> = {
   pdf: 'application/pdf',
   md: 'text/markdown',
 }
+/** How many object URLs that no screen uses stay alive for a quick show again (YAZ-5200). */
+export const MEDIA_URL_IDLE_CAP = 24
+
 /** The MIME type of a file, from its extension. */
 export function mediaType(path: string): string {
   const name = path.slice(path.lastIndexOf('/') + 1)
@@ -206,7 +215,10 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
   let sizesFromPass: { vault: string; commit: string; sizes: ReadonlyMap<string, number> } | null = null
   let resolver: { commit: string; resolve: (target: string, from?: string) => string | null } | null = null
   let settingsOf: { text: string | null; settings: ReviewSettings } | null = null
-  const urls = new Map<string, { sha: string | null; url: string }>()
+  /** The object URL of each shown file and how many screens use it (YAZ-5200). */
+  const urls = new Map<string, { sha: string | null; url: string; users: number }>()
+  /** URLs that no screen uses, oldest first: revoked past `MEDIA_URL_IDLE_CAP`. */
+  const idle = new Set<string>()
   let timer: unknown = null
   let round: Promise<void> | null = null
   let again = false
@@ -222,6 +234,7 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
   const revokeAll = () => {
     for (const { url } of urls.values()) revokeUrl(url)
     urls.clear()
+    idle.clear()
   }
 
   function switchTo(vault: string | null) {
@@ -489,13 +502,36 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
     if (failure !== null) throw (failure as { error: unknown }).error
   }
 
+  /** The URL for one more user of `path`: the one it has (same SHA), or a new one (the old one is revoked). */
   function urlFor(path: string, sha: string | null, bytes: Uint8Array): string {
     const had = urls.get(path)
-    if (had !== undefined && had.sha === sha) return had.url
-    if (had !== undefined) revokeUrl(had.url)
+    if (had !== undefined && had.sha === sha) {
+      had.users++
+      idle.delete(path)
+      return had.url
+    }
+    if (had !== undefined) {
+      revokeUrl(had.url)
+      idle.delete(path)
+    }
     const url = makeUrl(bytes, mediaType(path))
-    urls.set(path, { sha, url })
+    urls.set(path, { sha, url, users: 1 })
     return url
+  }
+
+  function releaseUrl(path: string) {
+    const held = urls.get(path)
+    if (held === undefined || held.users === 0) return
+    held.users--
+    if (held.users > 0) return
+    idle.add(path)
+    for (const oldest of idle) {
+      if (idle.size <= MEDIA_URL_IDLE_CAP) break
+      idle.delete(oldest)
+      const gone = urls.get(oldest)
+      if (gone !== undefined) revokeUrl(gone.url)
+      urls.delete(oldest)
+    }
   }
 
   /** Keeps a file that `show` downloaded: under the lock, only if the vault and the SHA did not change meanwhile. */
@@ -571,6 +607,7 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
       return path === null ? { status: 'missing', path: null, why: 'not-in-vault' } : show(path)
     },
     urlNow: (path) => urls.get(path)?.url ?? null,
+    releaseUrl,
     stop() {
       stopped = true
       generation++
