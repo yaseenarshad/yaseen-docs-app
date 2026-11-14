@@ -51,7 +51,16 @@ export type SyncEvent =
    * The open vault's files or index changed. `diff` names the files (R2–R6); `settings` the settings files (R13).
    * `diff` is null when the engine only loaded the stored index (on open, or another tab synced): read it all again.
    */
-  | { type: 'changed'; vault: string; commit: string; diff: TreeDiff | null; settings: string[]; index: PhoneIndex }
+  | {
+      type: 'changed'
+      vault: string
+      commit: string
+      diff: TreeDiff | null
+      settings: string[]
+      index: PhoneIndex
+      /** From a pass: each file's size in bytes at `commit` (3D's size limit). Absent when only the stored index loaded. */
+      sizes?: ReadonlyMap<string, number>
+    }
 
 export interface SyncEngineOptions {
   store: VaultStore
@@ -65,7 +74,7 @@ export interface SyncEngineOptions {
    */
   lock?: <T>(name: string, fn: () => Promise<T>) => Promise<T>
   yieldToUi?: () => Promise<void>
-  /** 3D's hook, passed to each pass. */
+  /** Passed to each pass (`PassOptions.alsoEager`). 3D does not use it: its media downloads after the pass. */
   alsoEager?: (path: string) => boolean
 }
 
@@ -96,6 +105,11 @@ export interface SyncEngine {
    * engine does. `vault` is the id of the vault the lane is for (the open vault when `lane` was called).
    */
   lane<T>(fn: (remote: GithubRemote, pass: () => Promise<PassResult>, vault: string) => Promise<T>): Promise<T>
+  /**
+   * 3D (YAZ-5074): the open vault's remote for a READ at once, with no lock and no wait for a pass (a picture that a
+   * screen shows now). Null with no vault open or no token. A write to the store still goes through `lane`.
+   */
+  reader(): Promise<{ vault: string; remote: GithubRemote } | null>
   /** Stops the timers and the polling. */
   stop(): void
 }
@@ -244,7 +258,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     if (result.kind === 'synced') {
       current = result.index
       setState({ ready: true })
-      emit({ type: 'changed', vault: id, commit: result.commit, diff: result.diff, settings: result.settings, index: result.index })
+      emit({ type: 'changed', vault: id, commit: result.commit, diff: result.diff, settings: result.settings, index: result.index, sizes: result.sizes })
     } else await loadIndex(id, gen) // another tab may have synced this vault (P4)
   }
 
@@ -408,6 +422,12 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
         return result
       }
       return exclusive(id, () => lock(lockName(id), () => fn(timed(makeRemote(open, token)), pass, id)))
+    },
+    async reader() {
+      if (vault === null) return null
+      const open = vault
+      const token = await tokens.read(vaultId(open))
+      return token === null ? null : { vault: vaultId(open), remote: timed(makeRemote(open, token)) }
     },
     stop() {
       generation++
