@@ -74,10 +74,11 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 /**
  * Never lower (decision 16; round 12, item 2): each day number is the larger of the gist's and the fresh count; `done`
  * stays true once true; a day only the gist holds (another device's count) stays. The totals, the name and `at` are
- * the fresh ones. Each field that this app does not know stays as the gist has it (round 10, item 17). A broken file
+ * the fresh ones; with `totalsNeverLower` (YAZ-5391: the Mac counted a closed vault, whose files can be older than the
+ * gist's numbers), each total is the larger of the two too. Each field that this app does not know stays as the gist has it (round 10, item 17). A broken file
  * on GitHub is replaced by the fresh numbers. `changed`: the result differs from the gist (beyond `at`).
  */
-export function mergeNeverLower(remote: unknown, fresh: FriendStats): { file: Record<string, unknown>; changed: boolean } {
+export function mergeNeverLower(remote: unknown, fresh: FriendStats, opts: { totalsNeverLower?: boolean } = {}): { file: Record<string, unknown>; changed: boolean } {
   const state = typeof remote === 'string' ? readStatsFile(remote) : isObject(remote) ? readStatsFile(JSON.stringify(remote)) : null
   if (state === null || state.kind !== 'ok') return { file: { ...fresh }, changed: true }
   const raw = state.raw
@@ -96,7 +97,17 @@ export function mergeNeverLower(remote: unknown, fresh: FriendStats): { file: Re
     days.set(day.day, merged)
   }
   const allDays = [...days.values()].sort((a, b) => (String(a.day) < String(b.day) ? 1 : -1)).slice(0, FRIEND_DAYS)
-  const file: Record<string, unknown> = { ...raw, ...fresh, totals: { ...(isObject(raw.totals) ? raw.totals : {}), ...fresh.totals }, days: allDays }
+  const rawTotals = isObject(raw.totals) ? raw.totals : {}
+  // YAZ-5391: a count from a copy that can be older than the gist's (the Mac's CLOSED vault) never lowers a total either.
+  const freshTotals: Readonly<Record<string, number>> = opts.totalsNeverLower
+    ? Object.fromEntries(
+        Object.entries(fresh.totals).map(([k, v]: [string, number]) => {
+          const had = rawTotals[k]
+          return [k, typeof had === 'number' && Number.isFinite(had) ? Math.max(had, v) : v]
+        }),
+      )
+    : { ...fresh.totals }
+  const file: Record<string, unknown> = { ...raw, ...fresh, totals: { ...rawTotals, ...freshTotals }, days: allDays }
   return { file, changed: numbersKey(file) !== numbersKey(raw) }
 }
 
@@ -247,6 +258,8 @@ export interface SendInput {
   budget: GistBudget
   reserve: number
   now: number
+  /** YAZ-5391: the totals never go lower than the gist's (`mergeNeverLower`). The Mac sets it when a closed vault counts. */
+  totalsNeverLower?: boolean
 }
 
 /** Reads the numbers gist, merges (never lower), and writes it ONLY when it changed and the budget allows. */
@@ -266,7 +279,7 @@ export async function sendNumbers(api: GistsApi, input: SendInput): Promise<{ ou
     const text = file === undefined || file.truncated ? null : file.content
     const state = readStatsFile(text)
     if (state.kind === 'newer') return { outcome: { kind: 'newer-app' }, budget }
-    const { file: merged, changed } = mergeNeverLower(state.kind === 'ok' ? state.raw : null, input.fresh)
+    const { file: merged, changed } = mergeNeverLower(state.kind === 'ok' ? state.raw : null, input.fresh, { totalsNeverLower: input.totalsNeverLower })
     if (!changed) return { outcome: { kind: 'unchanged' }, budget }
     if (!mayUpdate(budget, now, 1, input.reserve)) return { outcome: { kind: 'budget', retryAt: now + sendGap(budget, now, input.reserve) }, budget }
     const { rate } = await api.update(input.statsId, { [NUMBERS_FILE]: JSON.stringify(merged) })

@@ -12,8 +12,8 @@ import { friendStats, type FriendVault } from '@shared/friendStats'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { budgetMs, median } from '../../../../client/src/test-perf'
 import { writeFile } from 'node:fs/promises'
-import { mkdir, rm } from 'node:fs/promises'
-import { COUNT_LIMIT_MS, countOffThread, countPayload, countTextOffThread, makeCounter } from './countJob'
+import { mkdir, realpath, rm, symlink } from 'node:fs/promises'
+import { COUNT_LIMIT_MS, ClosedVaultsUnreadable, countOffThread, countPayload, countPayloadSliced, countTextOffThread, makeCounter } from './countJob'
 import { scanVaultForCount } from './scanVault'
 
 const TZ = process.env.TZ
@@ -76,6 +76,14 @@ describe('the count off the main thread (YAZ-5250)', () => {
     expect(await countOffThread(worker, [VAULT], NOW)).toEqual(friendStats([VAULT], NOW))
   }, 60_000)
 
+  it('the pack in slices (main\'s longest block, YAZ-5252) is the same text as the pack in one go', async () => {
+    let turns = 0
+    const empty = { pages: [{ cards: [] }, { path: 'x' }], settings: DEFAULT_REVIEW_SETTINGS } as unknown as FriendVault
+    const noSettings = { pages: VAULT.pages.slice(0, 3) } as unknown as FriendVault
+    for (const vaults of [[VAULT], [], [empty], [VAULT, empty, noSettings]]) expect(await countPayloadSliced(vaults, async () => void turns++)).toBe(countPayload(vaults))
+    expect(turns).toBeGreaterThanOrEqual(10)
+  })
+
   it('the pack holds the cards only: no title, no path, no card text', () => {
     const text = countPayload([VAULT])
     for (const secret of ['Secret', '/Users/', '.md']) expect(text).not.toContain(secret)
@@ -102,7 +110,8 @@ describe('a closed vault, scanned from its files in the same worker (YAZ-5252)',
   const R1 = '2026-11-14T13:00Z good 7s'
   const R2 = '2026-11-13T09:00Z again 4s'
   async function closedVault() {
-    const root = await mkdtemp(path.join(tmpdir(), 'yd-closed-vault-'))
+    // The real path: main hands the worker only a real path (`knownClosedVaults`); on macOS the temp folder is under /var → /private/var.
+    const root = await realpath(await mkdtemp(path.join(tmpdir(), 'yd-closed-vault-')))
     await mkdir(path.join(root, '.yaseendocs'), { recursive: true })
     await writeFile(path.join(root, '.yaseendocs', 'ids.json'), '{"enabled":true,"letters":"WIKI"}')
     await writeFile(path.join(root, 'Secret page.md'), `# Secret page\n\n\`\`\`card\nSecret question\n\`\`\`\n<!-- card: WIKI-5, ${R1}, ${R2} -->\n`)
@@ -117,7 +126,7 @@ describe('a closed vault, scanned from its files in the same worker (YAZ-5252)',
       const open = { pages: [{ cards: [{ id: 'X-1', off: false, next: false, reviews: [{ at: '2026-11-14T12:00Z', rating: 'good', seconds: 3 }] }] }], settings: DEFAULT_REVIEW_SETTINGS } as unknown as FriendVault
       const inThread = await scanVaultForCount(root)
       expect(inThread.pages.flatMap((p) => p.cards ?? []).map((c) => c.id)).toEqual(expect.arrayContaining(['WIKI-5', 'WIKI-6']))
-      const count = makeCounter(worker)
+      const count = makeCounter(worker, { scanDir: await mkdtemp(path.join(tmpdir(), 'yd-scan-cache-')) })
       const stats = await count(countPayload([open]), NOW, [{ root, key: 'h1' }])
       expect(stats).toEqual(friendStats([open, inThread], NOW))
       expect(stats.days.find((d) => d.day === '2026-11-14')?.cards).toBe(3)
@@ -141,6 +150,37 @@ describe('a closed vault, scanned from its files in the same worker (YAZ-5252)',
       await rm(root, { recursive: true, force: true })
     }
   })
+
+  it('a closed vault with a review.json that is not JSON: counted with the default settings (YAZ-5388)', async () => {
+    const root = await closedVault()
+    try {
+      await writeFile(path.join(root, '.yaseendocs', 'review.json'), '<<<<<<< HEAD\n{"newPerDay":20}\n=======\n')
+      const stats = await makeCounter(worker)(countPayload([]), NOW, [{ root, key: 'k' }])
+      expect(stats.days.find((d) => d.day === '2026-11-14')?.cards).toBe(2)
+      expect(stats).toEqual(friendStats([{ ...(await scanVaultForCount(root)), settings: DEFAULT_REVIEW_SETTINGS }], NOW))
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  it('one closed vault that cannot be read never stops the count: the worker answers, and names the vault it skipped (YAZ-5388)', async () => {
+    const good = await closedVault()
+    const bad = await closedVault()
+    try {
+      await rm(path.join(bad, '.yaseendocs', 'review.json'), { force: true })
+      await symlink(path.join(good, 'Card.md'), path.join(bad, '.yaseendocs', 'review.json'))
+      const count = makeCounter(worker, { scanDir: await mkdtemp(path.join(tmpdir(), 'yd-scan-cache-')) })
+      const failed = await count(countPayload([]), NOW, [{ root: good, key: 'g' }, { root: bad, key: 'b' }]).then(() => null, (err: unknown) => err)
+      expect(failed).toBeInstanceOf(ClosedVaultsUnreadable)
+      expect((failed as ClosedVaultsUnreadable).vaults).toEqual([{ root: bad, why: 'symlink' }])
+      // The good vault was still scanned (its pack is kept): the next count with the same key scans nothing.
+      expect(await count(countPayload([]), NOW, [{ root: good, key: 'g' }])).toEqual(friendStats([await scanVaultForCount(good)], NOW))
+      expect(count.scanned()).toEqual([])
+    } finally {
+      await rm(good, { recursive: true, force: true })
+      await rm(bad, { recursive: true, force: true })
+    }
+  }, 60_000)
 
   it('the worker counts the days in the home zone it is given (YAZ-5251)', async () => {
     const at = '2026-11-15T05:40Z' // 00:40 in New York (this file), 21:40 on Nov 14 in Los Angeles

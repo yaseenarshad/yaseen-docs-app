@@ -1980,7 +1980,8 @@ export type PhoneCodeAnswer = { ok: true; repo: string; branch: string; grid: bo
  * it. Numbers and words only: no token, no gist ID, no repo name.
  * - `no-token`: no GitHub token saved. `no-friends`: no friend and no group (decision 22). `no-list`: no friends list
  *   on the token's account (`login`): a person with no friends yet, or a token of another account (YAZ-5254).
- * - `missing-vaults`: this Mac does not have every vault that counts open (`missing` of them).
+ * - `missing-vaults`: this Mac cannot count every vault that counts (`missing` of them): not on this Mac, older than
+ *   GitHub's copy (`behind`), or not readable (`unreadable`). YAZ-5252: "holds" means "on this Mac".
  * - `phone-first`: the friends list waits for a change that the phone makes (a remove, a numbers gist to make again, two
  *   lists to join). The Mac only sends, so it waits.
  * - `waiting`: the 5-minute rule; `slowed`: near GitHub's limit or a rate limit; both say `retryAt`.
@@ -2016,8 +2017,15 @@ export interface FriendsSendView {
   /** Friends and groups in the friends list, as last read. */
   friends: number
   groups: number
-  /** For `missing-vaults`: how many vaults that count this Mac does not have open. */
+  /** For `missing-vaults`: how many vaults that count this Mac cannot count now (all three kinds below together). */
   missing: number
+  /**
+   * YAZ-5391: of `missing`, the closed vaults whose copy on this Mac is older than the newest the Mac knows (its HEAD is
+   * behind its remote-tracking branch, from the last fetch).
+   */
+  behind?: number
+  /** YAZ-5388, YAZ-5395, YAZ-5396: of `missing`, the closed vaults the count could not read (a link inside, a read error). */
+  unreadable?: number
   /** For `no-list`: the GitHub login of the Mac's token, or null when GitHub did not say. */
   login?: string | null
   /** For `list-elsewhere` (YAZ-5083): the vault (`owner/name`) that holds the friends list. */

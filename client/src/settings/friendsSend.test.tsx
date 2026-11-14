@@ -70,7 +70,13 @@ describe('Settings › Phone and friends › Friends (YAZ-5086)', () => {
     [{ status: 'no-list', login: 'other', friends: 0, groups: 0 }, 'No friends list on @other'],
     [{ status: 'no-list', login: 'other', friends: 0, groups: 0 }, 'the GitHub account of the phone app'],
     [{ status: 'no-token' }, 'Save a GitHub token above first'],
-    [{ status: 'missing-vaults', missing: 1 }, '1 vault that counts for friends is not on this Mac'],
+    [{ status: 'missing-vaults', missing: 1 }, '1 vault that counts for friends is not on this Mac. Clone it from GitHub, then open it once in this app'],
+    // YAZ-5391: a closed copy behind GitHub's; YAZ-5388, YAZ-5395, YAZ-5396: a closed vault that could not be read.
+    [{ status: 'missing-vaults', missing: 1, behind: 1 }, '1 vault that counts for friends is older on this Mac than on GitHub'],
+    [{ status: 'missing-vaults', missing: 2, unreadable: 2, retryAt: NOW + 5 * 60_000 }, '2 vaults that count for friends could not be read on this Mac: a link inside it, or a file the app cannot open. Next try at'],
+    [{ status: 'missing-vaults', missing: 3, behind: 1, unreadable: 1 }, '1 vault that counts for friends is not on this Mac'],
+    // YAZ-5389: after a failed count, the row says when the next try is.
+    [{ status: 'failed', retryAt: NOW + 5 * 60_000 }, 'tries again at'],
     [{ status: 'phone-first' }, 'open the phone app once'],
     [{ status: 'no-gists' }, 'Gists (Read and write)'],
     [{ status: 'sign-in-again' }, 'GitHub does not accept the token'],

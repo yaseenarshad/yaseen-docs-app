@@ -21,6 +21,7 @@ import { PUBLISH_EVERY_MS, mergeNeverLower, numbersFor, reserveFor } from '@shar
 import { friendStats, type FriendStats, type FriendVault } from '@shared/friendStats'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { macGistsApi, readProfile } from './gistsHttp'
+import { ClosedVaultsUnreadable } from './countJob'
 import { createMacSender, type MacSendSaved, type MacSender } from './macSender'
 import { macRepoPort } from './repoHttp'
 import { worldFetch } from './testing'
@@ -309,7 +310,7 @@ describe('the count runs on the worker (YAZ-5277), and a count that never answer
   it("the app's sender counts on the worker thread: `stats` is the worker's count, with the built countWorker", () => {
     const source = readFileSync(join(__dirname, 'index.ts'), 'utf8')
     expect(source).toMatch(/^import countWorker from '\.\/countWorker\?modulePath'$/m)
-    expect(source).toMatch(/const counter = makeCounter\(countWorker\)/)
+    expect(source).toMatch(/const counter = makeCounter\(countWorker, \{ scanDir: join\(userData, FRIENDS_SCAN_DIR\), indexDir: join\(userData, 'index-cache'\) \}\)/)
     expect(source).toMatch(/stats: \(text, now, closed, zone\) => counter\(text, now, closed, zone\)/)
   })
 
@@ -325,7 +326,64 @@ describe('the count runs on the worker (YAZ-5277), and a count that never answer
     for (const fire of timers.splice(0)) fire() // the time limit of the count
     expect((await first).status).toBe('failed')
     hang = false
+    // YAZ-5389: a failed count waits 5 minutes before the next one.
+    rig.world.advance(PUBLISH_EVERY_MS)
     expect((await rig.sender.attempt('pass')).status).toBe('sent')
+  })
+})
+
+describe('a count that fails waits before the next one (YAZ-5389)', () => {
+  it('a count that fails: the next count waits 5 minutes (a trigger before then starts no count)', async () => {
+    let calls = 0
+    const stats = async () => {
+      calls++
+      throw new Error('the count worker did not answer in time')
+    }
+    await withFriends(rig, 1)
+    rig.sender = createMacSender({ ...depsOf(rig), stats })
+    expect((await rig.sender.attempt('pass')).status).toBe('failed')
+    rig.world.advance(5_000)
+    const waiting = await rig.sender.attempt('pass')
+    expect(calls).toBe(1)
+    expect(waiting.status).toBe('failed')
+    expect(waiting.retryAt).toBe(START + PUBLISH_EVERY_MS)
+    rig.world.advance(PUBLISH_EVERY_MS)
+    await rig.sender.attempt('pass')
+    expect(calls).toBe(2)
+  })
+
+  it('each failure in a row doubles the wait, up to 1 hour; a count that works starts over; the wait holds after a restart', async () => {
+    let fail = true
+    let calls = 0
+    const stats = async (text: string, now: number) => {
+      calls++
+      if (fail) throw new Error('the count worker did not answer in time')
+      return countHere(text, now)
+    }
+    await withFriends(rig, 1)
+    const make = () => createMacSender({ ...depsOf(rig), stats })
+    rig.sender = make()
+    const waits: number[] = []
+    for (let i = 0; i < 6; i++) {
+      const view = await rig.sender.attempt('pass')
+      expect(view.status).toBe('failed')
+      waits.push((view.retryAt ?? 0) - rig.world.now())
+      rig.world.advance(view.retryAt! - rig.world.now())
+    }
+    expect(waits.map((w) => w / 60_000)).toEqual([5, 10, 20, 40, 60, 60])
+    expect(calls).toBe(6)
+    // A restart keeps the wait (the stored state): no count before the time.
+    await rig.sender.attempt('pass')
+    expect(calls).toBe(7)
+    await rig.sender.stop()
+    rig.sender = make()
+    rig.world.advance(60_000)
+    expect((await rig.sender.attempt('pass')).status).toBe('failed')
+    expect(calls).toBe(7)
+    fail = false
+    rig.world.advance(60 * 60_000)
+    expect((await rig.sender.attempt('pass')).status).toBe('sent')
+    expect(rig.saved.value?.countFails ?? 0).toBe(0)
   })
 })
 
@@ -390,6 +448,45 @@ describe('a vault that counts and is closed on this Mac (YAZ-5252: "holds" means
     expect((await rig.sender.attempt('pass')).status).toBe('sent')
     expect(stats).toHaveBeenCalledTimes(2)
     expect(stats.mock.calls[1][2]).toEqual([{ root: '/c', key: 'h2' }])
+  })
+
+  it('a closed vault with older files than the numbers file: the totals do not go lower (YAZ-5391)', async () => {
+    // The phone reviewed yaseen/cards and sent fresh totals: 30 cards in review. The Mac's copy of yaseen/cards is a
+    // week old (a closed vault is not synced): 20 cards. The Mac's send must not take the friend's totals down.
+    const handle = await withFriends(rig, 1, ['yaseen/cards'])
+    const phone = friendStats([vaultWith(answered(30, START - 60_000))], START)
+    await rig.phone.update(handle.index.stats!, { [NUMBERS_FILE]: JSON.stringify(numbersFor(phone, { login: 'yaseen', name: 'Yaseen A', avatar: 'https://avatars.githubusercontent.com/u/7', nickname: null }, START)) })
+    closedData.set('/old', vaultWith(answered(20, START - 7 * 86_400_000)))
+    rig.held.clear()
+    rig.cards.value = []
+    rig.sender = createMacSender({ ...depsOf(rig), closed: async () => new Map([['yaseen/cards', { root: '/old', key: 'week-old' }]]) })
+    await rig.sender.attempt('pass')
+    const after = numbersOf(rig, handle.index.stats!).totals
+    for (const k of Object.keys(phone.totals) as (keyof typeof phone.totals)[]) expect(after[k], k).toBeGreaterThanOrEqual(phone.totals[k])
+  })
+
+  it('a closed vault whose copy is behind the newest the Mac knows (its remote-tracking branch): not counted, nothing is sent (YAZ-5391)', async () => {
+    await withFriends(rig, 1, ['yaseen/vault', 'yaseen/cards'])
+    closedData.set('/behind', vaultWith(answered(2, START - 30_000)))
+    const stats = vi.fn(countHere)
+    rig.sender = createMacSender({ ...depsOf(rig), stats, closed: async () => new Map([['yaseen/cards', { root: '/behind', key: 'h1', behind: true }]]) })
+    expect(await rig.sender.attempt('pass')).toMatchObject({ status: 'missing-vaults', missing: 1, behind: 1 })
+    expect(stats).not.toHaveBeenCalled()
+    expect(macWrites(rig)).toBe(0)
+  })
+
+  it('a closed vault the worker cannot read (a symlink inside it): nothing is sent, and the view says it could not be read (YAZ-5388)', async () => {
+    await withFriends(rig, 1, ['yaseen/vault', 'yaseen/cards'])
+    const stats = vi.fn(async () => {
+      throw new ClosedVaultsUnreadable([{ root: '/c', why: 'symlink' }])
+    })
+    rig.sender = createMacSender({ ...depsOf(rig), stats, closed: async () => new Map([['yaseen/cards', { root: '/c', key: 'h1' }]]) })
+    expect(await rig.sender.attempt('pass')).toMatchObject({ status: 'missing-vaults', missing: 1, unreadable: 1 })
+    expect(macWrites(rig)).toBe(0)
+    // The wait after a failed count holds for this one too: a trigger 5 s later starts no count.
+    rig.world.advance(5_000)
+    await rig.sender.attempt('pass')
+    expect(stats).toHaveBeenCalledTimes(1)
   })
 
   it('a vault that counts and is not on this Mac (never opened, folder gone, another remote): nothing is sent', async () => {
