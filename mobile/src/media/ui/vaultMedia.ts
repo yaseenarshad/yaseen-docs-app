@@ -33,8 +33,8 @@ export interface VaultMedia {
   show(path: string): Promise<FileShow>
   /** The URL `show` made for `path` before, or null: for a card drawn at once (`CardLookPlace.src`). */
   urlNow?(path: string): string | null
-  /** The screen no longer uses the URL one `show` of `path` gave (YAZ-5200): 3D may revoke it. */
-  releaseUrl?(path: string): void
+  /** The screen no longer uses `url`, which one `show` of `path` gave (YAZ-5200, YAZ-5221): 3D may revoke it. */
+  releaseUrl?(path: string, url?: string): void
 }
 
 /** 3D's `MediaAhead` is a `VaultMedia` as it is: this line fails the typecheck if the two drift apart. */
@@ -137,7 +137,7 @@ const NEAR = '600px 0px'
 export function watchMedia(root: HTMLElement, media: VaultMedia, options: { online?: EventTarget } = {}): MediaWatch {
   let stopped = false
   /** Each element: what it asked last. `missing`: its calm line, asked again on `retry`. */
-  const state = new Map<Element, { path: string; asking: boolean; missing: HTMLElement | null; done: boolean }>()
+  const state = new Map<Element, { path: string; asking: boolean; missing: HTMLElement | null; done: boolean; url?: string }>()
   const near = new Set<Element>()
 
   const fill = (el: Element, url: string) => {
@@ -161,11 +161,12 @@ export function watchMedia(root: HTMLElement, media: VaultMedia, options: { onli
         held.asking = false
         if (stopped || !el.isConnected || state.get(el) !== held) {
           // A late answer for a view that closed or an element that left: its URL has no user.
-          if (show.status === 'ready') media.releaseUrl?.(held.path)
+          if (show.status === 'ready') media.releaseUrl?.(held.path, show.url)
           return
         }
         if (show.status === 'ready') {
           held.done = true
+          held.url = show.url
           held.missing?.remove()
           held.missing = null
           ;(el as HTMLElement).hidden = false
@@ -222,7 +223,7 @@ export function watchMedia(root: HTMLElement, media: VaultMedia, options: { onli
     near.delete(el)
     seen?.unobserve(el)
     held?.missing?.remove()
-    if (held?.done === true) media.releaseUrl?.(held.path)
+    if (held?.done === true) media.releaseUrl?.(held.path, held.url)
   }
   const added = new MutationObserver((records) => {
     for (const record of records) {
