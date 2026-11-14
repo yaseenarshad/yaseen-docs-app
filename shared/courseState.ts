@@ -10,11 +10,23 @@
  * - `dismissed`: "Don't show again" on the empty Inbox line.
  * - `offered`: the one notice "New to cards? …" has shown on this Mac. It never shows again.
  * - `muted`, `speed`: the player's Mute and Speed (suggestion 21: "the course remembers Mute").
+ * - `made` (YAZ-5124): what the course made, per vault: its "Course Cards" folder, the card files it wrote itself (the
+ *   first card, the example cards) and its "Course page". A record, never the truth: each thing stays a plain file the
+ *   person sees in the sidebar, and deleting any of it (the whole folder too) is safe; the course makes what a step
+ *   needs again.
  */
 
 /** The player's speeds (YAZ-5059 suggestion 21). */
 export const COURSE_SPEEDS = [1, 1.25, 1.5] as const
 export type CourseSpeed = (typeof COURSE_SPEEDS)[number]
+
+/** What the course made in one vault (YAZ-5124). Absolute paths. */
+export interface CourseMade {
+  vault: string
+  folder: string
+  cards: string[]
+  page: string | null
+}
 
 export interface CourseState {
   chapter: string
@@ -25,6 +37,7 @@ export interface CourseState {
   offered: boolean
   muted: boolean
   speed: CourseSpeed
+  made: CourseMade[]
 }
 
 /** One change to the course's state: only the fields it names. */
@@ -33,12 +46,26 @@ export type CoursePatch = Partial<CourseState>
 /** The longest id kept, and the most finished chapters kept: far above the script's, so junk cannot grow the file. */
 const MAX_ID = 64
 const MAX_FINISHED = 64
+/** The most vaults, card paths per vault, and the longest path kept in `made`. */
+const MAX_MADE_VAULTS = 32
+const MAX_MADE_CARDS = 256
+const MAX_PATH = 4096
 
 export function defaultCourseState(): CourseState {
-  return { chapter: '', clip: '', finished: [], done: false, dismissed: false, offered: false, muted: false, speed: 1 }
+  return { chapter: '', clip: '', finished: [], done: false, dismissed: false, offered: false, muted: false, speed: 1, made: [] }
 }
 
 const isId = (v: unknown): v is string => typeof v === 'string' && v.length <= MAX_ID && /^[A-Za-z0-9_-]*$/.test(v)
+const isPath = (v: unknown): v is string => typeof v === 'string' && v !== '' && v.length <= MAX_PATH && (v.startsWith('/') || /^[A-Za-z]:[\\/]/.test(v) || v.startsWith('\\\\'))
+
+/** One vault's record of `made`, or null when any part of it is not valid (the record is dropped whole, never half kept). */
+function cleanMade(raw: unknown): CourseMade | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const r = raw as Record<string, unknown>
+  if (!isPath(r.vault) || !isPath(r.folder) || !Array.isArray(r.cards) || !r.cards.every(isPath) || !(r.page === null || isPath(r.page))) return null
+  return { vault: r.vault, folder: r.folder, cards: [...new Set(r.cards as string[])].slice(0, MAX_MADE_CARDS), page: r.page as string | null }
+}
+
 const isSpeed = (v: unknown): v is CourseSpeed => (COURSE_SPEEDS as readonly unknown[]).includes(v)
 
 /**
@@ -59,13 +86,18 @@ export function cleanCourseState(raw: unknown, base: CourseState = defaultCourse
     offered: bool('offered'),
     muted: bool('muted'),
     speed: isSpeed(r.speed) ? r.speed : base.speed,
+    made: Array.isArray(r.made) ? uniqueVaults(r.made.map(cleanMade).filter((m): m is CourseMade => m !== null)).slice(0, MAX_MADE_VAULTS) : base.made,
   }
 }
+
+/** One record per vault: the first one kept. */
+const uniqueVaults = (made: CourseMade[]): CourseMade[] => made.filter((m, i) => made.findIndex((o) => o.vault === m.vault) === i)
 
 /** Two states with the same fields (the cache keeps its snapshot, the store skips a commit). */
 export function sameCourseState(a: CourseState, b: CourseState): boolean {
   return a.chapter === b.chapter && a.clip === b.clip && a.done === b.done && a.dismissed === b.dismissed && a.offered === b.offered && a.muted === b.muted && a.speed === b.speed
     && a.finished.length === b.finished.length && a.finished.every((id, i) => id === b.finished[i])
+    && JSON.stringify(a.made) === JSON.stringify(b.made)
 }
 
 /** Pure: `patch` applied to `state` by the rule of `cleanCourseState`; the same object when nothing changed. */

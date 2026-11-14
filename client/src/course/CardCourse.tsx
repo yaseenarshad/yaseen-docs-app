@@ -25,7 +25,8 @@ import { chapterFraction, clipFraction, placeOf, startState, step, waitingForPer
 import { SILENT_VOICE, type ChapterSound, type ClipSound, type Voice } from './courseVoice'
 import { downloadedVoice } from './downloadedVoice'
 import { comingNextTour, hasTour, type CourseTour } from './courseTour'
-import { showOnlyHost, type CourseHost } from './courseHost'
+import { showOnlyHost, type CourseHost, type CourseVault } from './courseHost'
+import { vaultCourseHost } from './courseCards'
 import { placeholderScenes } from './PlaceholderScene'
 import type { SceneClock, SceneFor, SceneTime } from './scene'
 import './course.css'
@@ -42,6 +43,8 @@ export interface CardCourseProps {
   voice?: Voice
   tour?: CourseTour
   host?: CourseHost
+  /** The live view of the course's vault (YAZ-5124): with it, and no `host`, the course makes real files (`vaultCourseHost`). */
+  courseVault?: CourseVault
 }
 
 const SPEED_LABEL: Record<CourseSpeed, string> = { 1: '1×', 1.25: '1.25×', 1.5: '1.5×' }
@@ -80,7 +83,7 @@ function createClock(read: () => SceneTime) {
   return { clock, frame: () => frames.forEach((fn) => fn()), mark: (index: number) => marks.forEach((fn) => fn(index)) }
 }
 
-export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, scenes = placeholderScenes, voice = SILENT_VOICE, tour: tourIn, host: hostIn }: CardCourseProps) {
+export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, scenes = placeholderScenes, voice = SILENT_VOICE, tour: tourIn, host: hostIn, courseVault }: CardCourseProps) {
   const reducedMotion = useReducedMotion()
 
   // ---- the voice (6D1): each chapter's sound once it is here; the clip that plays keeps what it started with ----
@@ -372,7 +375,9 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
 
   // ---- the tour ----
   const tour = useMemo(() => tourIn ?? comingNextTour((line) => setPage(line)), [tourIn])
-  const host = useMemo(() => hostIn ?? showOnlyHost(vault), [hostIn, vault])
+  const host = useMemo(() => hostIn ?? (courseVault === undefined ? showOnlyHost(vault) : vaultCourseHost(courseVault)), [hostIn, vault, courseVault])
+  // The AI step's watch and timer stop with the layer; its state stays for the next open (YAZ-5124).
+  useEffect(() => () => host.agentStep.stop(), [host])
   const tryIt = useCallback(() => {
     const chapter = ctxRef.current.course[player.current.chapter]
     if (!hasTour(chapter)) return
