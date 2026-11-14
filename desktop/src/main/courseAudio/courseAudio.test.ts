@@ -225,6 +225,32 @@ describe('the course sound downloads when needed (YAZ-5159)', () => {
     expect(audio.isOpen()).toBe(false)
   })
 
+  it('YAZ-5348: the course closes and opens again at once (React StrictMode mounts the layer twice): the started chapter still downloads', async () => {
+    // The dev app's StrictMode runs the course layer's effects, its clean-ups, and its effects again, so main hears
+    // start, open, close, start, open in one go, while the first start's job still runs. Its stop must not eat the
+    // second start: before the fix, no `loading`, no `here`, and no sound for the chapter until the person moved to another.
+    const packs = join(dir, 'packs')
+    await mkdir(packs)
+    const { files } = course()
+    for (const [name, bytes] of files) await writeFile(join(packs, name), bytes)
+    for (const source of [{ kind: 'url', base: BASE } as const, { kind: 'folder', dir: packs } as const]) {
+      await rm(folder, { recursive: true, force: true })
+      const { audio, changes } = setup({ source })
+      audio.chapterStarting(1, 'first-card')
+      audio.open(1)
+      audio.close(1)
+      audio.chapterStarting(1, 'first-card')
+      audio.open(1)
+      await audio.idle()
+      // `loading` (once, or again when the new job starts behind the stopped one), then `here`.
+      const states = changes.filter((c) => c.chapter === 'first-card').map((c) => c.state)
+      expect(states[0]).toBe('loading')
+      expect(states.at(-1)).toBe('here')
+      expect(states).not.toContain('missing')
+      expect(await audio.chapter('first-card')).not.toBeNull()
+    }
+  })
+
   it('nothing downloads at app start: the clean-up runs, and no fetch', async () => {
     const { audio, srv } = setup()
     expect(await audio.sweep()).toBe('none')
