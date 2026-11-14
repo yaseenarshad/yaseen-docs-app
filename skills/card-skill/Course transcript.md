@@ -30,7 +30,7 @@ You try to recall the hidden part, then check. And you answer: forgot, or rememb
 
 The app sets each date with an open scheduling method called FSRS. It brings a card back when your chance of recalling it drops to about ninety percent.
 
-This course takes about twenty-five minutes, in twelve short chapters.
+This course takes about twenty-six minutes, in twelve short chapters.
 
 Some chapters let you try the steps in the real app. That part is always your choice.
 
@@ -44,15 +44,19 @@ When most people hear "card", they picture a line or two on a small piece of pap
 
 Think of it another way. A card is the hub of one idea: the centre where what you know about it comes together.
 
-Here is a real one. The front asks you to recall one thing, with the answer hidden.
+Here is a real one. The front is the short version: the idea in a sentence or two, with the key part hidden.
 
-The back is where you understand it: the idea in plain words, an example, a hook to remember it by.
+The back has the details: how it works, an example, a hook to remember it by.
 
 And at the bottom, links to the cards it connects to. You will make those in chapter 10.
 
-So a card is more than one line, and far less than a page. It is small to recall, with room to understand.
+Here is another, for a new word. The front has a sentence that uses the word, then what it means. The word is hidden in both.
 
-Piotr Wozniak, who built SuperMemo, made it a rule: keep what you recall simple. A simple question is easier to remember.
+Its back has the details too: how to say it, where it comes from, more examples.
+
+So a card is more than one line, and far less than a page. The short version on the front, the details on the back.
+
+Piotr Wozniak, who built SuperMemo, made it a rule: keep the front simple. A simple front is easier to remember.
 
 A card is never finished. It starts light, and it grows as you learn more.
 
@@ -60,13 +64,13 @@ All your cards together are your card base. Each card is one idea, so cards can 
 
 Your turn. Think of something you learned this week.
 
-Type the one thing you want to recall about it, in a sentence or two.
+Type the short version of it, in a sentence or two.
 
 Now tap the word you want to hide.
 
 That's the front. The hidden word is the part you will try to recall.
 
-Now the back. In your own words, add a line that explains it, or an example.
+Now the back. Add one detail: how it works, or an example.
 
 Tap the card to check yourself.
 
@@ -82,7 +86,7 @@ To hide a word, select it, and click Hide word in the toolbar. The key is Comman
 
 For the back, type slash, and choose New side. The key is Command Shift Enter.
 
-To split the back into parts, type three stars on an empty line. They turn into a divider.
+You can add sections to the back. Type three stars on an empty line, and they turn into a line. Sections break up the details, so they are easier to take in.
 
 Press Escape, or click Done, and the card saves.
 
@@ -92,16 +96,16 @@ If the title gives the answer away, set Title on the front to Hide, in the card'
 
 To make one in the real app now, choose Try it in the app.
 
-A card is the hub of one idea: small to recall, with room to grow. Next: the place your cards come back to, each day.
+A card is the hub of one idea: the short version on the front, the details on the back, and room to grow. Next: the place your cards come back to, each day.
 
 ### Try it in the app
 
 1. Right-click the Course Cards folder in the sidebar.
 2. Choose New card.
 3. Type a title, and press Enter.
-4. Now type the front: the one thing you want to recall, in a sentence or two.
+4. Now type the front: the short version, in a sentence or two.
 5. Select one word. In the toolbar above it, click Hide word.
-6. Type slash, and choose New side. Then add a line that explains it.
+6. Type slash, and choose New side. Then add one detail.
 7. Press Escape, or click Done, to save your card.
 
 ## Chapter 3. The Inbox, each day
@@ -267,11 +271,11 @@ A wall of text is not a card. It asks you to recall everything at once, so you r
 
 A single bare line is the other extreme. You may recall the words, and still not understand the idea.
 
-So before you make a card, ask one question. What is the one thing I want to recall?
+So before you make a card, ask one question. What is the short version of this idea?
 
-That goes on the front, with the answer hidden. What helps you understand it goes on the back.
+That goes on the front, with the key part hidden. The details go on the back, in sections.
 
-You recall the front, and you read the back. That is how a card stays small to recall, with room to understand.
+So a review is quick: you fill in the front. Then the back gives you the details again.
 
 Now, how cards grow. Start with an umbrella: one card that covers a whole topic.
 
@@ -283,17 +287,27 @@ The two link to each other. The umbrella stays the overview, and protein becomes
 
 Over time you get a tree: the umbrella, its branches, and smaller branches from those. Each card is a node, a point where branches meet.
 
-The tree grows as your understanding grows. So start light, and do not build the whole tree on day one.
+The tree grows as your understanding grows. So start light, and do not feel like you have to build the whole tree on day one.
+
+Now, the front itself. Most people think a card is a question on one side, and the answer on the other.
+
+You can ask a question. Or you can just write the idea as a sentence, and hide the key part.
+
+Memory scientists call that cloze deletion. In this app, we just call them hidden words.
+
+"DNS stands for", then a blank. You jump straight in and fill it. It is faster to make, and faster to review.
+
+An example on the front helps too. With your agent, one is easy to get.
 
 Your turn. Which of these two cards is better?
 
-The second one. The first card hides the subject of its own question. Without it, there is no clue to recall from.
+The second one. The first card hides everything that matters, so there is no clue to recall from.
 
-So, rule one. Hide the answer, not the clue. The front must make sense to someone who does not know the answer.
+So, rule one. Hide the answer, not the clue. The front must still make sense with the blank in it.
 
 Reading is not recalling. A large review of study methods rated re-reading and highlighting low, and testing yourself high.
 
-Rule two. In a question, keep the subject in view. Ask what DNS stands for, and hide only the meaning.
+Rule two. Leave enough in view to point to one answer. A blank that could be many things teaches you nothing.
 
 Rule three. Hide a phrase that means something, not a few scattered words.
 
@@ -303,7 +317,7 @@ Name each card after the idea, not after where you found it.
 
 Different things need different formats: a word, a person, a process, a quote. Each has a short page in the card skill.
 
-One thing to recall, room to understand, and a tree that grows with you. Next, a tool that can help, and hurt.
+The short version on the front, the details on the back, and a tree that grows with you. Next, a tool that can help, and hurt.
 
 ## Chapter 8. Make cards with your AI, without vibe writing
 
@@ -405,7 +419,11 @@ A list shows what matches. Click the one with the card icon.
 
 The link turns into a pill: the other card's title, with its ID small beside it.
 
-After the pill, add a few words on why the two connect. The reason is worth as much as the link.
+Beside each link go a few words on why the two connect. The reason is worth as much as the link.
+
+You do not have to write these yourself. Ask your agent to find the connections.
+
+Keep it handmade: the agent shows you each one in the chat, and you read it and approve it.
 
 Click the pill, and that card opens. Under it, Linked mentions lists what links to it.
 
@@ -425,9 +443,8 @@ Ask what a card connects to, not where it goes. Next: tending your cards and lin
 2. Click Edit card, or press E.
 3. At the end of a line, type two square brackets. Then a few letters of another card's title.
 4. Click the row with the card icon.
-5. After the link, type a few words on why the two connect.
-6. Press Escape, or click Done. The link is now a pill.
-7. Click the pill. The other card opens, and Linked mentions lists your first card.
+5. Press Escape, or click Done. The link is now a pill.
+6. Click the pill. The other card opens, and Linked mentions lists your first card.
 
 ## Chapter 11. Be a gardener
 

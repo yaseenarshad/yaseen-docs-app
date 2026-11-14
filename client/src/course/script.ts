@@ -17,6 +17,11 @@
  * fat. The shape of the example card follows Yaseen's own cards (a front of a sentence or two with one or two hidden
  * parts; a back in sections; each link with a few words on why).
  *
+ * Round 3 (Yaseen's notes on the doc YAS-2084): the front is the short version of the idea, with the key part hidden;
+ * the back has the details, in sections (his word). A front may be a question, or a sentence with a hidden part
+ * ("cloze deletion" to memory scientists, "hidden words" in the app). Links are made with the agent, handmade: the
+ * agent shows each one in the chat, and the person reads and approves it.
+ *
  * Yaseen approves each chapter's words before its voice is made (issue 6D). `skills/card-skill/Course transcript.md` is
  * made from this file: run `UPDATE_COURSE_TRANSCRIPT=1 npx vitest run client/src/course/script.test.ts` after a change.
  */
@@ -73,7 +78,7 @@ export const COURSE: CourseChapter[] = [
       // SOURCE: shared/cardSchedule.ts (FSRS through ts-fsrs 5.4.2); shared/reviews.ts DEFAULT_REVIEW_SETTINGS.retention = 0.9.
       { id: 'c1-12', text: 'The app sets each date with an open scheduling method called FSRS. It brings a card back when your chance of recalling it drops to about ninety percent.' },
       // The chapter list lights up, 1 to 12.
-      { id: 'c1-13', text: 'This course takes about twenty-five minutes, in twelve short chapters.' },
+      { id: 'c1-13', text: 'This course takes about twenty-six minutes, in twelve short chapters.' },
       // The "Try it in the app" button, with "Optional" beside it.
       { id: 'c1-14', text: 'Some chapters let you try the steps in the real app. That part is always your choice.' },
       // The curve with its growing gaps, then the paper index card alone in the middle of the stage.
@@ -94,19 +99,27 @@ export const COURSE: CourseChapter[] = [
       //   "The three things food is mostly made of are {{protein, carbs and fat}}."
       //   "Your body builds and repairs with {{protein}}, and gets its quick energy from {{carbs}}."
       // The hidden parts show as blanks.
-      { id: 'c2-04', text: 'Here is a real one. The front asks you to recall one thing, with the answer hidden.' },
+      { id: 'c2-04', text: 'Here is a real one. The front is the short version: the idea in a sentence or two, with the key part hidden.' },
       // The same card turns to its back; three parts light up in turn, each under a thin line:
       //   "Protein builds and repairs. Carbs are quick energy. Fat is slow energy, stored."
       //   EXAMPLE: "An egg is mostly protein and fat. Bread is mostly carbs."
       //   MEMORY HOOK: "Protein is the bricks. Carbs are the kindling. Fat is the logs."
-      { id: 'c2-05', text: 'The back is where you understand it: the idea in plain words, an example, a hook to remember it by.' },
+      { id: 'c2-05', text: 'The back has the details: how it works, an example, a hook to remember it by.' },
       // The bottom of the back: CONNECTIONS, with one link pill and a few grey words after it.
       { id: 'c2-22', text: 'And at the bottom, links to the cards it connects to. You will make those in chapter 10.' },
-      // Three sizes side by side: one bare line, the real card, a full page of text. The real card gets the check.
-      { id: 'c2-23', text: 'So a card is more than one line, and far less than a page. It is small to recall, with room to understand.' },
+      // A SECOND REAL CARD, for a word. Title: "candid". The front lights up, two lines, the word a blank in both:
+      //   "I asked for {{candid}} feedback, and she told me plainly what did not work."
+      //   "Honest and direct, even when it is hard to hear, is {{candid}}."
+      { id: 'c2-30', text: 'Here is another, for a new word. The front has a sentence that uses the word, then what it means. The word is hidden in both.' },
+      // The word card turns to its back; its sections light up in turn:
+      //   "Candid means open and honest, with nothing held back."
+      //   PRONUNCIATION: "KAN-did". MEMORY HOOK: "A candid photo is one nobody posed for." EXAMPLES: two more sentences.
+      { id: 'c2-31', text: 'Its back has the details too: how to say it, where it comes from, more examples.' },
+      // Three sizes side by side: one bare line, the real card, a full page of text. The real card gets the check; "Front: the short version", "Back: the details".
+      { id: 'c2-23', text: 'So a card is more than one line, and far less than a page. The short version on the front, the details on the back.' },
       // The name "Piotr Wozniak" and "1999"; on the real card, only the front's blanks glow.
       // SOURCE: Wozniak 1999, "Effective learning: Twenty rules of formulating knowledge", rule 4, the minimum information principle (supermemo.com).
-      { id: 'c2-24', text: 'Piotr Wozniak, who built SuperMemo, made it a rule: keep what you recall simple. A simple question is easier to remember.' },
+      { id: 'c2-24', text: 'Piotr Wozniak, who built SuperMemo, made it a rule: keep the front simple. A simple front is easier to remember.' },
       // The real card with a short back; a second and a third part join the back over time. It stays one card.
       { id: 'c2-25', text: 'A card is never finished. It starts light, and it grows as you learn more.' },
       // All the cards together form one growing set, labelled "Card base"; cards slide together in new groups, like pieces that fit many ways.
@@ -114,13 +127,13 @@ export const COURSE: CourseChapter[] = [
       // A blank card in the middle of the stage.
       { id: 'c2-06', text: 'Your turn. Think of something you learned this week.' },
       // An empty card with a blinking caret. WAITS: the person types a sentence or two.
-      { id: 'c2-07', text: 'Type the one thing you want to recall about it, in a sentence or two.' },
+      { id: 'c2-07', text: 'Type the short version of it, in a sentence or two.' },
       // The words become buttons. WAITS: the person taps the word to hide.
       { id: 'c2-08', text: 'Now tap the word you want to hide.' },
       // The word turns into a blank; the card takes its frame; the label "Front".
       { id: 'c2-09', text: "That's the front. The hidden word is the part you will try to recall." },
       // A line labelled "Side 2" appears under the front, with a caret. WAITS: the person types a line (or skips).
-      { id: 'c2-28', text: 'Now the back. In your own words, add a line that explains it, or an example.' },
+      { id: 'c2-28', text: 'Now the back. Add one detail: how it works, or an example.' },
       // The card, front only. WAITS: the person taps the card to show the word, then the back.
       { id: 'c2-10', text: 'Tap the card to check yourself.' },
       // Forgot and Remembered under the card. WAITS: the person picks one.
@@ -138,9 +151,9 @@ export const COURSE: CourseChapter[] = [
       // "/" opens the menu; "New side" is chosen; a line labelled "Side 2" splits the card; then the key row "Cmd + Shift + Enter new side".
       // APP: client/src/editor/card/cardEditor.ts (`newSideSlashRow`: "New side", ⌘⇧↵), client/src/editor/card/card.css ("Side 2" label, YAZ-5103). The toolbar has no side button.
       { id: 'c2-17', text: 'For the back, type slash, and choose New side. The key is Command Shift Enter.' },
-      // On the back, "***" is typed on an empty line; it turns into a thin line; "EXAMPLE" is typed under it.
-      // APP: client/src/editor/card/cardEditor.ts (`***` on an empty line stays a line, an hr; `---` is a new side).
-      { id: 'c2-29', text: 'To split the back into parts, type three stars on an empty line. They turn into a divider.' },
+      // On the back, three stars are typed on an empty line; they turn into a thin line; "EXAMPLE" is typed under it. Yaseen's word for each part is a section.
+      // APP: client/src/editor/card/cardEditor.ts (three stars on an empty line stay a line, an hr; three dashes are a new side).
+      { id: 'c2-29', text: 'You can add sections to the back. Type three stars on an empty line, and they turn into a line. Sections break up the details, so they are easier to take in.' },
       // Esc, or the Done button in the card's head; the card shows again, saved.
       // APP: client/src/editor/card/cardBlockView.ts (the edit button reads "Done" while editing; "Cmd + Enter / Esc Done").
       { id: 'c2-20', text: 'Press Escape, or click Done, and the card saves.' },
@@ -153,15 +166,15 @@ export const COURSE: CourseChapter[] = [
       // The "Try it in the app" button and "Next chapter".
       { id: 'c2-18', text: 'To make one in the real app now, choose Try it in the app.' },
       // The real card as a hub, with its spokes; then the sidebar's Inbox row glows softly.
-      { id: 'c2-19', text: 'A card is the hub of one idea: small to recall, with room to grow. Next: the place your cards come back to, each day.' },
+      { id: 'c2-19', text: 'A card is the hub of one idea: the short version on the front, the details on the back, and room to grow. Next: the place your cards come back to, each day.' },
     ],
     tryIt: [
       { target: 'sidebar-course-cards', say: 'Right-click the Course Cards folder in the sidebar.', done: { event: 'folder-menu-open' } },
       { target: 'new-card', say: 'Choose New card.', done: 'click' },
       { target: 'new-card-name', say: 'Type a title, and press Enter.', done: { event: 'card-file-created' } },
-      { target: 'card-editor', say: 'Now type the front: the one thing you want to recall, in a sentence or two.', done: { event: 'card-text-changed' } },
+      { target: 'card-editor', say: 'Now type the front: the short version, in a sentence or two.', done: { event: 'card-text-changed' } },
       { target: 'card-editor', say: 'Select one word. In the toolbar above it, click Hide word.', done: { event: 'card-word-hidden' } },
-      { target: 'card-editor', say: 'Type slash, and choose New side. Then add a line that explains it.', done: { event: 'card-side-added' } },
+      { target: 'card-editor', say: 'Type slash, and choose New side. Then add one detail.', done: { event: 'card-side-added' } },
       { target: 'card-done', say: 'Press Escape, or click Done, to save your card.', done: { event: 'card-edit-done' } },
     ],
   },
@@ -352,11 +365,11 @@ export const COURSE: CourseChapter[] = [
       // The other extreme: a card with one bare line and an empty back.
       { id: 'c7-20', text: 'A single bare line is the other extreme. You may recall the words, and still not understand the idea.' },
       // One sentence in the wall lights up.
-      { id: 'c7-04', text: 'So before you make a card, ask one question. What is the one thing I want to recall?' },
-      // The lit sentence moves to a card's front and gets a blank; the lines that explain it move to the back.
-      { id: 'c7-21', text: 'That goes on the front, with the answer hidden. What helps you understand it goes on the back.' },
-      // The real card of chapter 2: the front glows with "Recall"; the back glows with "Read".
-      { id: 'c7-22', text: 'You recall the front, and you read the back. That is how a card stays small to recall, with room to understand.' },
+      { id: 'c7-04', text: 'So before you make a card, ask one question. What is the short version of this idea?' },
+      // The lit sentence moves to a card's front and gets a blank; the rest of the page sorts itself into sections on the back.
+      { id: 'c7-21', text: 'That goes on the front, with the key part hidden. The details go on the back, in sections.' },
+      // The real card of chapter 2 in the Inbox: the blank on the front fills in; then the back shows, section by section.
+      { id: 'c7-22', text: 'So a review is quick: you fill in the front. Then the back gives you the details again.' },
       // One card alone, with an umbrella drawn over it: "Protein, carbs and fat".
       { id: 'c7-05', text: 'Now, how cards grow. Start with an umbrella: one card that covers a whole topic.' },
       // The real card of chapter 2 again: "Protein, carbs and fat", light, three short lines on its back.
@@ -368,18 +381,33 @@ export const COURSE: CourseChapter[] = [
       // More branches: "Carbs", then "Fibre" from it. A small tree, the umbrella at its root. The words "Node: a point where branches meet".
       { id: 'c7-23', text: 'Over time you get a tree: the umbrella, its branches, and smaller branches from those. Each card is a node, a point where branches meet.' },
       // The tree with only two cards on day one; more appear as a calendar runs.
-      { id: 'c7-19', text: 'The tree grows as your understanding grows. So start light, and do not build the whole tree on day one.' },
-      // Card A: "What does {{DNS}} stand for?" Card B: "What does DNS stand for?" with the back "{{Domain Name System}}". WAITS: the person picks one.
+      // Yaseen's own wording, from the doc (YAS-2084).
+      { id: 'c7-19', text: 'The tree grows as your understanding grows. So start light, and do not feel like you have to build the whole tree on day one.' },
+      // An old paper flashcard: "What does DNS stand for?" on one side, "Domain Name System" on the other.
+      { id: 'c7-24', text: 'Now, the front itself. Most people think a card is a question on one side, and the answer on the other.' },
+      // The question card stays; beside it, a sentence card: "DNS stands for {{Domain Name System}}." Both get a tick.
+      { id: 'c7-25', text: 'You can ask a question. Or you can just write the idea as a sentence, and hide the key part.' },
+      // The words "cloze deletion" over the blank, in small type; then the app's own words: "hidden word".
+      // SOURCE: Taylor 1953, "Cloze procedure: A new tool for measuring readability", Journalism Quarterly 30 (the origin of the word "cloze").
+      { id: 'c7-26', text: 'Memory scientists call that cloze deletion. In this app, we just call them hidden words.' },
+      // "DNS stands for" and a blank; the blank fills in: "Domain Name System".
+      { id: 'c7-27', text: '"DNS stands for", then a blank. You jump straight in and fill it. It is faster to make, and faster to review.' },
+      // The DNS card grows a first line above it, an example, in the shape of Yaseen's cards:
+      //   "When you type a website's name, {{DNS}} finds the number your computer needs."
+      //   "DNS stands for {{Domain Name System}}."
+      // Its back: the details of DNS, in sections.
+      { id: 'c7-28', text: 'An example on the front helps too. With your agent, one is easy to get.' },
+      // Card A: "{{DNS}} stands for {{Domain Name System}}." Card B: "DNS stands for {{Domain Name System}}." WAITS: the person picks one.
       { id: 'c7-08', text: 'Your turn. Which of these two cards is better?' },
-      // Card B gets the check; card A's blank shows it hides the subject.
-      { id: 'c7-09', text: 'The second one. The first card hides the subject of its own question. Without it, there is no clue to recall from.' },
+      // Card B gets the check; card A is all blanks.
+      { id: 'c7-09', text: 'The second one. The first card hides everything that matters, so there is no clue to recall from.' },
       // Rule 1 as a title; card B's front shows, the answer hidden.
-      { id: 'c7-10', text: 'So, rule one. Hide the answer, not the clue. The front must make sense to someone who does not know the answer.' },
+      { id: 'c7-10', text: 'So, rule one. Hide the answer, not the clue. The front must still make sense with the blank in it.' },
       // A card with nothing hidden; under it, "Re-reading: low" and "Testing yourself: high".
       // SOURCE: Dunlosky, Rawson, Marsh, Nathan & Willingham 2013, "Improving students' learning with effective learning techniques", Psychological Science in the Public Interest.
       { id: 'c7-11', text: 'Reading is not recalling. A large review of study methods rated re-reading and highlighting low, and testing yourself high.' },
-      // Rule 2; "What does DNS stand for?" with "DNS" underlined.
-      { id: 'c7-12', text: 'Rule two. In a question, keep the subject in view. Ask what DNS stands for, and hide only the meaning.' },
+      // Rule 2; "{{It}} is a system." with a question mark, then "DNS stands for {{Domain Name System}}." with a tick.
+      { id: 'c7-12', text: 'Rule two. Leave enough in view to point to one answer. A blank that could be many things teaches you nothing.' },
       // Rule 3; a sentence with three scattered blanks, then one blank over a whole phrase.
       { id: 'c7-13', text: 'Rule three. Hide a phrase that means something, not a few scattered words.' },
       // The answer shows; the person's own words differ, and still get the check.
@@ -389,7 +417,7 @@ export const COURSE: CourseChapter[] = [
       // Four small cards: a word, a person, a process, a quote; then the card skill's Formats folder.
       { id: 'c7-16', text: 'Different things need different formats: a word, a person, a process, a quote. Each has a short page in the card skill.' },
       // The small tree of cards; then a terminal window with an agent in it.
-      { id: 'c7-17', text: 'One thing to recall, room to understand, and a tree that grows with you. Next, a tool that can help, and hurt.' },
+      { id: 'c7-17', text: 'The short version on the front, the details on the back, and a tree that grows with you. Next, a tool that can help, and hurt.' },
     ],
   },
   {
@@ -510,8 +538,12 @@ export const COURSE: CourseChapter[] = [
       // `[[DEMO-12]]` turns into a pill: the card icon, "How muscle grows", and the ID small and grey.
       // APP: docs/CONTRACTS.md "Links to a card": the pill shows the title, then the ID small and grey, with the card icon (`wikilink--card`).
       { id: 'c10-17', text: "The link turns into a pill: the other card's title, with its ID small beside it." },
-      // After the pill, a few words are typed: "muscle is built from protein". The pill and its reason sit on one line.
-      { id: 'c10-24', text: 'After the pill, add a few words on why the two connect. The reason is worth as much as the link.' },
+      // After the pill, a few grey words: "muscle is built from protein". The pill and its reason sit on one line.
+      { id: 'c10-24', text: 'Beside each link go a few words on why the two connect. The reason is worth as much as the link.' },
+      // The agent's window: "These two cards connect: Protein and How muscle grows. Add the link?"
+      { id: 'c10-26', text: 'You do not have to write these yourself. Ask your agent to find the connections.' },
+      // The agent shows the link and its reason in the chat; the person reads it and says yes; only then does the card change. The word "Handmade".
+      { id: 'c10-27', text: 'Keep it handmade: the agent shows you each one in the chat, and you read it and approve it.' },
       // A click on the pill; the muscle card opens in the card window; under it, "Linked mentions (1)" lists the protein card.
       // APP: client/src/editor/createCrepe.ts (a card pill's plain click opens the card window), client/src/review/cardPane.tsx ("Linked mentions (n)"), shared/cardLinks.ts (`cardBacklinks`), shared/fences.ts (a card's text counts).
       { id: 'c10-18', text: 'Click the pill, and that card opens. Under it, Linked mentions lists what links to it.' },
@@ -532,7 +564,6 @@ export const COURSE: CourseChapter[] = [
       { target: 'card-edit', say: 'Click Edit card, or press E.', done: { event: 'card-edit-open' } },
       { target: 'card-editor', say: "At the end of a line, type two square brackets. Then a few letters of another card's title.", done: { event: 'link-picker-open' } },
       { target: 'link-picker', say: 'Click the row with the card icon.', done: { event: 'card-link-added' } },
-      { target: 'card-editor', say: 'After the link, type a few words on why the two connect.', done: { event: 'card-text-changed' } },
       { target: 'card-done', say: 'Press Escape, or click Done. The link is now a pill.', done: { event: 'card-edit-done' } },
       { target: 'card-link-pill', say: 'Click the pill. The other card opens, and Linked mentions lists your first card.', done: 'click' },
     ],
