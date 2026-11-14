@@ -15,7 +15,7 @@ import {
   Counter,
   Layer,
   MiniCard,
-  Silhouette,
+  Head,
   Stage,
   Tally,
   Tree,
@@ -37,6 +37,18 @@ import {
 } from './kit'
 import type { ChapterScenes } from './registry'
 import './compound.css'
+
+/** c5-15: the other things you know, small lights around the new one (places in the head's mind). */
+const OTHERS: readonly (readonly [number, number])[] = [
+  [0.15, 0.2],
+  [0.82, 0.3],
+  [0.25, 0.75],
+  [0.7, 0.8],
+  [0.45, 0.12],
+  [0.9, 0.62],
+  [0.08, 0.5],
+  [0.6, 0.95],
+]
 
 /** c5-01: the four chapters so far, each with its tick; then this one. */
 function SoFar(props: SceneProps) {
@@ -343,7 +355,7 @@ function Journey(props: SceneProps) {
       </Stage>
     )
   }
-  // c5-15: the line goes; the card becomes a small steady light inside the outline of a person.
+  // c5-15: the line goes; the card becomes a small steady light inside the head, among the other things you know.
   const know = cue(b, 0, 0.478)
   const who = cue(b, 1, 0.724)
   const fade = since(b, 0, 0.9)
@@ -354,7 +366,7 @@ function Journey(props: SceneProps) {
       </Layer>
       <Layer>
         <div className="kit-who">
-          <Silhouette beat={b} draw={between(b, 0.12, know)} arrive={between(b, know - 0.16, know + 0.04)} warm={since(b, who, 1.4)} others={between(b, who + 0.04, 1)} from={[150, 380]} />
+          <Head beat={b} p={between(b, 0.12, know)} light={{ arrive: between(b, know - 0.16, know + 0.04) }} glow={since(b, who, 1.4)} dots={OTHERS.map(([x, y], i) => ({ x, y, p: clamp((between(b, who + 0.04, 1) - i / OTHERS.length) * 4), tone: 'fg' }))} />
         </div>
       </Layer>
       <Layer place="bottom">

@@ -1,7 +1,7 @@
 /**
  * THE COURSE'S END SCREEN (YAZ-5121, with YAZ-5124's `host.summary()`): the cards the course made in this vault and
- * when each comes back, then the last line. It shows twice: under the last clip's finale (`c12-15`, chapter 12), and on
- * the layer's own end ("That's the whole course.", `CardCourse`), so the person can read it at their pace.
+ * when each comes back, then the last line. It shows once, on the layer's own end ("That's the whole course.",
+ * `CardCourse`), after the last clip's finale (`c12-15`), so the person can read it at their pace.
  *
  * - The numbers are the host's: each card in "Course Cards" and its next due time (null: new, in the Inbox now). The
  *   list follows the folder (`watchCards`), so a card made a moment ago shows.

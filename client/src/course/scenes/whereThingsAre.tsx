@@ -8,13 +8,12 @@
 import { useUnit } from '../../vault/unitWord'
 import type { SceneProps } from '../scene'
 import { InboxIcon, LockIcon } from '../../views/view/icons'
-import { AppWindow, Curve, Layer, MenuPreview, MiniCard, SAMPLE_REVIEWS, Stage, Tree, Words, between, clamp, cue, ease, hub, lerp, moved, pop, rise, showFor, since, useBeat, type Beat } from './kit'
+import { AgentTerminal, AppWindow, Curve, Layer, MenuPreview, MiniCard, SAMPLE_REVIEWS, Stage, Tree, Words, between, clamp, cue, ease, hub, lerp, moved, pop, rise, showFor, since, useBeat, type Beat } from './kit'
 import { Habits, HabitGlyph } from './kit/HabitIcons'
-import { Terminal } from './kit/AppPanels'
-import { Garden, Profile, Seedling } from './kit/Garden'
+import { Garden, Seedling } from './kit/Garden'
+import { Head } from './kit/Head'
 import { Web, type WebNode } from './kit/Web'
 import { GARDEN } from './care'
-import { CourseEnd } from './finale'
 import type { ChapterScenes } from './registry'
 import './later.css'
 
@@ -186,8 +185,10 @@ function Guide(props: SceneProps) {
         <Words size="kicker" style={rise(b, since(b, 0, 0.5))}>
           Your agent can find it too
         </Words>
-        <Terminal
+        <AgentTerminal
           beat={b}
+          title="Terminal"
+          caret={b.progress < prints}
           lines={[
             { kind: 'cmd', text: 'yaseendocs card guide', p: between(b, cmd - 0.08, prints - 0.02) },
             { kind: 'head', text: '# Start here', p: out(0) },
@@ -425,10 +426,11 @@ const TREE_ART: WebNode[] = [
 ]
 
 /**
- * c12-15: the finale. The course's pictures come back, quietly, one by one on the words (the curve on "card base", the
- * hub on "knowledge base", the tree on "build it", the garden on "one card at a time"); then they step back, and one
- * card settles into the person ("becomes part of who you are"). The end screen follows: the cards the course made, and
- * when each comes back.
+ * c12-15: the finale, quiet. The course's pictures come back one by one on the words (the curve on "card base", the
+ * hub on "knowledge base", the tree on "build it", the garden on "one card at a time"). Then they go, and the head
+ * draws in alone: one card comes up into it as a small steady light, as in chapter 5, and the mind warms ("becomes part
+ * of who you are"). Each thing has its own time and place: nothing sits on another. The caption says the last line;
+ * the layer's end screen lists the cards the course made (`CourseEnd`).
  */
 function Finale(props: SceneProps) {
   const b = useBeat(props)
@@ -437,40 +439,31 @@ function Finale(props: SceneProps) {
   const gardenAt = cue(b, 2, 0.55)
   const partOf = cue(b, 3, 0.74)
   const tiles = [since(b, 0.01, 0.8), since(b, hubAt, 0.8), since(b, treeAt, 0.8), since(b, gardenAt - 0.08, 0.8)]
-  const back = since(b, partOf - 0.12, 0.8)
-  const settle = since(b, partOf - 0.08, 1.4)
-  const s = moved(b, settle, ease.inOut)
-  const end = since(b, 0.93, 0.6)
+  const go = since(b, partOf - 0.16, 0.6)
+  const head = since(b, partOf - 0.1, 1)
   return (
     <Stage beat={b} label="Your card base is your knowledge base: the curve, the hub, the tree, the garden; and what you learn becomes part of who you are">
-      <Layer place="top" style={{ opacity: lerp(1, 0.28, back) * (1 - end * 0.6) }}>
-        <div className="later-tiles">
-          <div className="later-tile" style={rise(b, tiles[0], 8)}>
-            <Curve beat={b} axis={{ days: 45, warp: 0.55 }} axes={0.5} cursor={45} reviews={SAMPLE_REVIEWS.map((r) => ({ ...r, label: undefined }))} jumps={[1, 1, 1, 1]} yLabel="" xLabel="" today={false} />
+      {go < 1 && (
+        <Layer style={{ opacity: 1 - go }}>
+          <div className="later-tiles">
+            <div className="later-tile" style={rise(b, tiles[0], 8)}>
+              <Curve beat={b} axis={{ days: 45, warp: 0.55 }} axes={0.5} cursor={45} reviews={SAMPLE_REVIEWS.map((r) => ({ ...r, label: undefined }))} jumps={[1, 1, 1, 1]} yLabel="" xLabel="" today={false} />
+            </div>
+            <div className="later-tile" style={rise(b, tiles[1], 8)}>
+              <Tree beat={b} nodes={HUB_ART.nodes.map((n) => ({ ...n, label: undefined }))} edges={HUB_ART.edges} show={Object.fromEntries([...HUB_ART.nodes.map((n) => [n.id, 1]), ...HUB_ART.edges.map((e) => [`${e.from}>${e.to}`, 1])])} glow={tiles[1]} />
+            </div>
+            <div className="later-tile" style={rise(b, tiles[2], 8)}>
+              <Web beat={b} nodes={TREE_ART} edges={[{ from: 'u', to: 'a' }, { from: 'u', to: 'b' }, { from: 'b', to: 'c' }]} />
+            </div>
+            <div className="later-tile" style={rise(b, tiles[3], 8)}>
+              <Garden beat={b} plants={GARDEN} grow={GARDEN.map((_, i) => since(b, gardenAt - 0.08 + i * 0.04, 1.2))} links={[{ a: [0, 1], b: [2, 0], p: since(b, gardenAt + 0.06, 0.8) }]} />
+            </div>
           </div>
-          <div className="later-tile" style={rise(b, tiles[1], 8)}>
-            <Tree beat={b} nodes={HUB_ART.nodes.map((n) => ({ ...n, label: undefined }))} edges={HUB_ART.edges} show={Object.fromEntries([...HUB_ART.nodes.map((n) => [n.id, 1]), ...HUB_ART.edges.map((e) => [`${e.from}>${e.to}`, 1])])} glow={tiles[1]} />
-          </div>
-          <div className="later-tile" style={rise(b, tiles[2], 8)}>
-            <Web beat={b} nodes={TREE_ART} edges={[{ from: 'u', to: 'a' }, { from: 'u', to: 'b' }, { from: 'b', to: 'c' }]} />
-          </div>
-          <div className="later-tile" style={rise(b, tiles[3], 8)}>
-            <Garden beat={b} plants={GARDEN} grow={GARDEN.map((_, i) => since(b, gardenAt - 0.08 + i * 0.04, 1.2))} links={[{ a: [0, 1], b: [2, 0], p: since(b, gardenAt + 0.06, 0.8) }]} />
-          </div>
-        </div>
-      </Layer>
-      <Layer style={{ opacity: since(b, partOf - 0.14, 0.8) * (1 - end * 0.75), paddingTop: '12%' }}>
-        <Profile beat={b} glow={since(b, partOf + 0.04, 1.6)}>
-          <g transform={`translate(${lerp(520, 312, s).toFixed(2)} ${lerp(250, 160, s).toFixed(2)}) scale(${lerp(1, 0.4, s).toFixed(3)})`} opacity={1 - since(b, partOf + 0.1, 1.2) * 0.85}>
-            <rect className="later-wk__card later-wk__card--accent" x={-40} y={-26} width={80} height={52} rx={7} />
-            <line className="kit-folder__card-line" x1={-26} y1={-8} x2={26} y2={-8} />
-            <line className="kit-folder__card-line" x1={-26} y1={6} x2={8} y2={6} />
-          </g>
-        </Profile>
-      </Layer>
-      {end > 0 && (
-        <Layer style={{ opacity: end }}>
-          <CourseEnd host={props.host} />
+        </Layer>
+      )}
+      {head > 0 && (
+        <Layer>
+          <Head beat={b} p={head} className="kit-head--large" light={{ arrive: between(b, partOf - 0.04, partOf + 0.08) }} glow={since(b, partOf + 0.04, 1.6)} />
         </Layer>
       )}
     </Stage>

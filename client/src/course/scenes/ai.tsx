@@ -16,7 +16,7 @@ import { CARD_SKILL_MENU } from '../../sidebar/menuSections'
 import { InboxIcon } from '../../views/view/icons'
 import { AppWindow, CardView, Layer, MenuPreview, MiniCard, Pointer, SidebarPreview, Stage, Tally, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat, type Beat } from './kit'
 import { AgentTerminal, type TermLine } from './kit/AgentTerminal'
-import { HeadProfile } from './kit/HeadProfile'
+import { Head } from './kit/Head'
 import { QuoteCard } from './kit/QuoteCard'
 import { QUOTES } from './papers'
 import { sampleId } from './cards'
@@ -273,7 +273,7 @@ function Flood(props: SceneProps) {
       <Layer>
         <div className="kit-row ai-pair">
           <div className="ai-darken" style={rise(b, since(b, knowledge - 0.05, 0.6), 12)}>
-            <HeadProfile beat={b} noise={between(b, knowledge, worthless)} dots={Array.from({ length: 10 }, (_, i) => ({ x: 0.2 + (i % 4) * 0.2, y: 0.25 + Math.floor(i / 4) * 0.25, p: 1, tone: 'accent' as const }))} />
+            <Head beat={b} noise={between(b, knowledge, worthless)} dots={Array.from({ length: 10 }, (_, i) => ({ x: 0.2 + (i % 4) * 0.2, y: 0.25 + Math.floor(i / 4) * 0.25, p: 1, tone: 'accent' as const }))} />
             <Words size="label">Your knowledge base</Words>
           </div>
           <div className="ai-darken">

@@ -14,7 +14,6 @@
 import type { ReactElement } from 'react'
 import { ArchiveIcon, DueIcon, ForgotIcon, InboxTrayIcon, NewIcon, RememberedIcon, TrashIcon, UpNextIcon } from '../../../review/cardInboxIcons'
 import { clamp, ease, rise, type Beat } from './beat'
-import { typedText } from './AgentChat'
 import './kitMore.css'
 
 /** The `[[` list: its rows, one of them under the pointer (`active` 0..1). */
@@ -167,33 +166,3 @@ export function ReviewsStrip({ beat, rows, open = 1, empty }: { beat: Beat; rows
   )
 }
 
-/** A terminal window: commands (`$ …`, typed over `p`) and what they print (it arrives whole, over `p`). */
-export function Terminal({ beat, lines, title = 'Terminal' }: { beat: Beat; lines: readonly { text: string; kind: 'cmd' | 'out' | 'head'; p: number }[]; title?: string }) {
-  return (
-    <div className="kit-term" role="img" aria-label={`${title}: ${lines.filter((l) => l.p > 0).map((l) => l.text).join(' ')}`}>
-      <div className="kit-chat__bar" aria-hidden="true">
-        <i />
-        <i />
-        <i />
-        <span className="kit-chat__title">{title}</span>
-      </div>
-      <div className="kit-term__body">
-        {lines.map((line, i) => {
-          if (line.p <= 0) return null
-          if (line.kind === 'cmd')
-            return (
-              <p key={i} className="kit-term__cmd">
-                <span className="kit-term__dollar">$</span> {typedText(beat, line.text, line.p)}
-                {line.p < 1 && !beat.reduced && <span className="kit-caret" />}
-              </p>
-            )
-          return (
-            <p key={i} className={line.kind === 'head' ? 'kit-term__head' : 'kit-term__out'} style={{ opacity: clamp(line.p * 2) }}>
-              {line.text}
-            </p>
-          )
-        })}
-      </div>
-    </div>
-  )
-}

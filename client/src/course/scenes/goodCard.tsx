@@ -10,7 +10,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useUnit } from '../../vault/unitWord'
 import type { SceneProps } from '../scene'
 import { PROTEIN, PROTEIN_BRANCH, PROTEIN_LINES, UMBRELLA } from './cards'
-import { AppWindow, CardView, Fit, IndexCard, Layer, Paper, SidebarPreview, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat, type Beat } from './kit'
+import { AppWindow, CardView, Fit, IndexCard, Layer, Paper, SidebarPreview, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, typedText, useBeat, type Beat } from './kit'
 import { AgentTerminal } from './kit/AgentTerminal'
 import { ReportCard } from './kit/ReportCard'
 import { TreeCards, type TreeCardLook } from './kit/TreeCards'
@@ -19,7 +19,6 @@ import { PAPERS, TEN_WAYS } from './papers'
 import type { ChapterScenes } from './registry'
 import './goodCard.css'
 
-const typed = (b: Beat, text: string, p: number): string => (b.reduced ? (p > 0 ? text : '') : text.slice(0, Math.round(text.length * clamp(p))))
 
 /** The wall: a whole page about food, pasted into one card. */
 const WALL = [
@@ -531,9 +530,9 @@ function TheFront(props: SceneProps) {
       <Stage beat={b} label="DNS stands for, then a blank: you jump in and fill it. Faster to make, faster to review">
         <Layer>
           <p className="gc-jump">
-            <span>{typed(b, 'DNS stands for', since(b, 0, 0.9))}</span>{' '}
+            <span>{typedText(b, 'DNS stands for', since(b, 0, 0.9))}</span>{' '}
             <span className="gc-jump__blank" style={{ ...pop(b, since(b, blank - 0.03, 0.5), 0.6), borderBottomColor: fillP > 0 ? 'var(--accent)' : undefined }}>
-              {fillP > 0 ? typed(b, 'Domain Name System', fillP) : ' '}
+              {fillP > 0 ? typedText(b, 'Domain Name System', fillP) : ' '}
             </span>
           </p>
           <div className="kit-tags">
@@ -842,7 +841,7 @@ function Rules(props: SceneProps) {
           <CardView beat={b} chrome="plain" text="Carbs give your body {{quick energy}}." shown={1} />
           <div className="gc-check__row" style={rise(b, since(b, same - 0.08, 0.6))}>
             <span className="gc-check__who">You said</span>
-            <span className="gc-check__said">{typed(b, 'fast fuel', since(b, same - 0.05, 0.8))}</span>
+            <span className="gc-check__said">{typedText(b, 'fast fuel', since(b, same - 0.05, 0.8))}</span>
             <span className="kit-chip" style={pop(b, since(b, counts, 0.5))}>
               ✓ Same meaning: counts
             </span>
@@ -875,7 +874,7 @@ function Naming(props: SceneProps) {
   const not = cue(b, 1, 0.598)
   const strike = since(b, 0.16, 0.5)
   const retype = since(b, 0.3, 0.9)
-  const title = retype > 0 ? typed(b, 'Sleep debt', retype) : 'From the podcast, part 3'
+  const title = retype > 0 ? typedText(b, 'Sleep debt', retype) : 'From the podcast, part 3'
   return (
     <Stage beat={b} label="Name each card after the idea, not after where you found it">
       <Layer>

@@ -3,42 +3,6 @@
  * spoken quote and the tree of cards. App tokens, but for the terminal (dark in both themes, as a terminal is).
  */
 
-/* THE HEAD IN PROFILE */
-.kit-head {
-  display: block;
-  width: min(40cqw, 46cqh, 15em);
-  overflow: visible;
-}
-.kit-head__outline {
-  fill: color-mix(in srgb, var(--fg) 4%, transparent);
-  stroke: var(--fg-muted);
-  stroke-width: 2.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.kit-head__glow {
-  fill: var(--accent);
-}
-.kit-head__dot--accent {
-  fill: var(--accent);
-}
-.kit-head__dot--fg {
-  fill: var(--fg);
-}
-.kit-head__dot--grey {
-  fill: color-mix(in srgb, var(--fg-muted) 55%, transparent);
-}
-.kit-head__ring {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 1.5;
-}
-.kit-head__noise {
-  stroke: color-mix(in srgb, var(--fg-muted) 60%, transparent);
-  stroke-width: 1.6;
-  stroke-linecap: round;
-}
-
 /* THE AGENT'S WINDOW */
 .kit-term {
   box-sizing: border-box;
@@ -96,6 +60,11 @@
 .kit-term__line--ok b,
 .kit-term__line--ok {
   color: #7ed3a2;
+}
+.kit-term__line--head {
+  margin-top: 0.4em;
+  color: #ffffff;
+  font-weight: 700;
 }
 .kit-term__line--dim {
   color: #7c838d;

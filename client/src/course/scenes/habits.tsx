@@ -13,7 +13,7 @@ import { HabitGlyph, Habits } from './kit/HabitIcons'
 import { AgentChat } from './kit/AgentChat'
 import { Crowd, GuessBars } from './kit/Crowd'
 import { ClockArc, Gauge } from './kit/Dials'
-import { Profile } from './kit/Garden'
+import { Head } from './kit/Head'
 import { Web, type WebEdge, type WebNode } from './kit/Web'
 import type { ChapterScenes } from './registry'
 import './later.css'
@@ -105,7 +105,7 @@ function TrustSchedule(props: SceneProps) {
       <Layer style={{ opacity: thought }}>
         <div className="kit-row">
           <div className="later-gut">
-            <Profile beat={b} p={thought} />
+            <Head beat={b} p={thought} />
             <span className="later-bubble" style={pop(b, since(b, gut + 0.04, 0.5), 0.7)}>
               I’m sure that worked.
             </span>

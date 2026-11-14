@@ -15,9 +15,10 @@ import {
   CardEditKeyRow,
   CardView,
   Caret,
-  ChatPreview,
+  AgentChat,
   EmbedView,
   Fit,
+  glowStyle,
   Layer,
   LinkPill,
   MenuPreview,
@@ -62,8 +63,6 @@ const rows = (active: string, glow: Readonly<Record<string, number>> = {}): Side
   { name: 'Projects', kind: 'folder' },
 ]
 
-const glowStyle = (g: number): CSSProperties | undefined => (g > 0 ? { boxShadow: `0 0 0 ${(2.5 * clamp(g)).toFixed(2)}px var(--accent), 0 0 ${(18 * clamp(g)).toFixed(1)}px color-mix(in srgb, var(--accent) 40%, transparent)`, borderRadius: 8 } : undefined)
-
 /** A tab of the app: the tab bar with its name, then the content. */
 function Tab({ name, children }: { name: string; children: ReactNode }) {
   return (
@@ -81,7 +80,7 @@ function CardFile({ beat, glow = 0, footer, menu }: { beat: Beat; glow?: number;
   return (
     <div className="kit-where__file">
       <p className="kit-app__bigtitle">{CARD.title}</p>
-      <div style={glowStyle(glow)}>
+      <div style={{ ...glowStyle(glow), borderRadius: 8 }}>
         <CardView beat={beat} text={CARD.text} id={CARD.id} chrome="block" shown={1} />
       </div>
       {footer}
@@ -460,11 +459,11 @@ function Embedded(props: SceneProps) {
             </AppWindow>
             {chat !== null && (
               <div className="kit-embedscene__chat">
-                <ChatPreview
+                <AgentChat
                   beat={b}
-                  messages={[
-                    { from: 'you', text: 'Embed my protein card in the Food basics page.', p: chat.you },
-                    { from: 'agent', text: 'Done: it is embedded after the first paragraph.', p: chat.agent, step: 'Edited Food basics' },
+                  lines={[
+                    { who: 'you', text: 'Embed my protein card in the Food basics page.', p: chat.you },
+                    { who: 'agent', text: 'Done: it is embedded after the first paragraph.', p: chat.agent, step: 'Edited Food basics' },
                   ]}
                 />
               </div>

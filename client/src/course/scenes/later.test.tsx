@@ -198,16 +198,19 @@ describe('the end screen (YAZ-5121, the host of YAZ-5124)', () => {
     expect(whenBack(new Date(2027, 3, 26, 9).getTime(), NOW)).toBe('On 26 April')
   })
 
-  it('shows under the finale, at the end of the last clip, with the host’s cards', () => {
+  it('is not in the finale (YAZ-5128): the finale ends on the head alone, and the caption says the last line', () => {
     const host = hostWith({ folder: '/demo/course-cards', cards: [{ path: 'a', title: 'My first card', due: null }] })
     const { clock, at } = testClock(8)
     const scene = mountScene(courseScenes('c12-15'), chapter('where-things-are'), { clock, done: () => undefined, host })
     scene.render(chapter('where-things-are').clips.find((c) => c.id === 'c12-15')!)
     at(0.5, true)
-    expect(scene.el.querySelector('.later-end')).toBeNull()
+    expect(scene.el.querySelectorAll('.later-tile')).toHaveLength(4)
+    expect(scene.el.querySelector('.kit-head')).toBeNull()
     at(1, true)
-    expect(scene.el.querySelector('.later-end__title')?.textContent).toBe('My first card')
-    expect(scene.el.querySelector('.later-end__last')?.textContent).toBe(LAST_LINE)
+    expect(scene.el.querySelector('.later-tile')).toBeNull()
+    expect(scene.el.querySelector('.kit-head__light')).not.toBeNull()
+    expect(scene.el.querySelector('.later-end')).toBeNull()
+    expect(scene.el.textContent).not.toContain(LAST_LINE)
     scene.unmount()
   })
 })

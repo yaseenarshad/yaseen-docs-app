@@ -13,7 +13,7 @@ import { showOnlyHost } from '../courseHost'
 import { SHOW_ONLY } from '../courseCards'
 import { CHAPTER_SCENES } from '.'
 import { COMPOUND_FACTS } from './compound'
-import { beatAt, CardEditKeyRow, ChatPreview, EmbedView, InboxView, JournalCover, LinkPill, PageText, PageView, ReviewsLine, Silhouette, litFocus, type Beat } from './kit'
+import { AgentChat, beatAt, CardEditKeyRow, EmbedView, InboxView, JournalCover, LinkPill, PageText, PageView, ReviewsLine, Head, litFocus, type Beat } from './kit'
 import { mountScene, testClock } from './testing'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -63,9 +63,9 @@ const pieces: [string, (b: Beat) => ReactElement][] = [
       </PageView>
     ),
   ],
-  ['ChatPreview', (b) => <ChatPreview beat={b} messages={[{ from: 'you', text: 'Embed my card.', p: b.progress }, { from: 'agent', text: 'Done.', p: b.progress, step: 'Edited Food basics' }]} />],
+  ['AgentChat', (b) => <AgentChat beat={b} lines={[{ who: 'you', text: 'Embed my card.', p: b.progress }, { who: 'agent', text: 'Done.', p: b.progress, step: 'Edited Food basics' }]} />],
   ['JournalCover', (b) => <JournalCover beat={b} issue={{ journal: 'Science', year: 2008 }} p={b.progress} out={b.progress / 2} />],
-  ['Silhouette', (b) => <Silhouette beat={b} draw={b.progress} arrive={b.progress} warm={b.progress} others={b.progress} />],
+  ['Head', (b) => <Head beat={b} p={b.progress} light={{ arrive: b.progress }} glow={b.progress} dots={[{ x: 0.5, y: 0.5, p: b.progress }]} noise={b.progress} />],
 ]
 
 describe('the kit pieces of chapters 3 to 5 (YAZ-5121)', () => {
@@ -85,10 +85,10 @@ describe('the kit pieces of chapters 3 to 5 (YAZ-5121)', () => {
     })
   }
 
-  it('the Silhouette light does not travel with reduced motion: it is at its place from the start', () => {
-    const at = (reduced: boolean) => draw(<Silhouette beat={beatAt(0.3, 6, [], reduced)} draw={1} arrive={0.3} />).querySelector('.kit-person__light')!.getAttribute('cy')
-    expect(at(true)).toBe('112')
-    expect(at(false)).not.toBe('112')
+  it('the head\'s light does not travel with reduced motion: it is at its place from the start', () => {
+    const at = (reduced: boolean) => draw(<Head beat={beatAt(0.3, 6, [], reduced)} light={{ arrive: 0.3 }} />).querySelector('.kit-head__light')!.getAttribute('cy')
+    expect(at(true)).toBe('157')
+    expect(at(false)).not.toBe('157')
   })
 
   it("writes Edit card's keys in the app's words (fix of the review: no key symbols)", () => {

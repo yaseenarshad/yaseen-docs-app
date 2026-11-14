@@ -84,5 +84,8 @@ export function pop(b: Beat, p: number, from = 0.6): { opacity: number; transfor
   return { opacity: clamp(q * 2.5), transform: `scale(${lerp(from, 1, ease.back(q)).toFixed(4)})` }
 }
 
+/** Part of a text, typed so far at `p` (with reduced motion: all of it once it starts). */
+export const typedText = (b: Beat, text: string, p: number): string => (b.reduced ? (p > 0 ? text : '') : text.slice(0, Math.round(text.length * clamp(p))))
+
 /** In from `inP`, out from `outP`: the opacity of a thing that shows for a while (both 0..1). */
 export const showFor = (inP: number, outP: number): number => clamp(inP) * (1 - clamp(outP))

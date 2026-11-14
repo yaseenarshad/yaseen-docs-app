@@ -1,22 +1,23 @@
 /**
- * THE AGENT'S WINDOW (YAZ-5121, chapters 7 and 8): a terminal with the person's own AI agent in it, as a drawing. The
- * app runs no agent; this is only a picture of the one the person uses, so it names no product. Each line types in
- * from its own progress `p`, so the window is a pure function of its beat (pause stops the typing, a seek redraws it).
+ * THE TERMINAL (YAZ-5121; the kit's one terminal, YAZ-5128): a terminal window as a drawing, with the person's own AI
+ * agent in it (chapters 7 and 8) or a shell command (chapter 12). The app runs no agent; this is only a picture of the
+ * one the person uses, so it names no product. Each line types in from its own progress `p`, so the window is a pure
+ * function of its beat (pause stops the typing, a seek redraws it).
  *
- * - `kind`: `in` (what the person types, after "›"), `out` (the agent's words), `file` (a file it reads or writes),
- *   `ok` (done), `dim`.
+ * - `kind`: `in` (what the person types to the agent, after "›"), `cmd` (a shell command, after "$"), `out` (words
+ *   printed), `head` (a heading printed), `file` (a file it reads or writes), `ok` (done), `dim`, `warn`.
  * - Reduced motion: a line shows whole once it starts.
  * - Dark in both themes, as a terminal is; its colours are its own.
  */
 import type { CSSProperties } from 'react'
-import { clamp, type Beat } from './beat'
+import { typedText, type Beat } from './beat'
 import './kit68.css'
 
 export interface TermLine {
   text: string
   /** 0..1: how much of the line is typed. */
   p: number
-  kind?: 'in' | 'out' | 'file' | 'ok' | 'dim' | 'warn'
+  kind?: 'in' | 'cmd' | 'out' | 'head' | 'file' | 'ok' | 'dim' | 'warn'
 }
 
 export function AgentTerminal({ beat, lines, title = 'your agent', caret = true, style, className }: { beat: Beat; lines: readonly TermLine[]; title?: string; caret?: boolean; style?: CSSProperties; className?: string }) {
@@ -32,10 +33,11 @@ export function AgentTerminal({ beat, lines, title = 'your agent', caret = true,
       </div>
       <div className="kit-term__body" aria-hidden="true">
         {started.map((line, i) => {
-          const text = beat.reduced ? line.text : line.text.slice(0, Math.round(line.text.length * clamp(line.p)))
+          const text = typedText(beat, line.text, line.p)
           return (
             <p key={i} className={`kit-term__line kit-term__line--${line.kind ?? 'out'}`}>
               {line.kind === 'in' && <b>› </b>}
+              {line.kind === 'cmd' && <b>$ </b>}
               {line.kind === 'file' && <b>⎘ </b>}
               {line.kind === 'ok' && <b>✓ </b>}
               {text}

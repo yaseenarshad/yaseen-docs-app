@@ -70,7 +70,6 @@
 .kit-web,
 .kit-garden,
 .kit-seedling,
-.kit-profile,
 .kit-crowd,
 .kit-guess,
 .kit-folders {
@@ -155,9 +154,8 @@
   font-weight: 650;
 }
 
-/* THE AGENT'S CHAT, AND THE TERMINAL */
-.kit-chat,
-.kit-term {
+/* THE AGENT'S CHAT */
+.kit-chat {
   box-sizing: border-box;
   width: min(92cqw, 34em);
   overflow: hidden;
@@ -221,6 +219,16 @@
 .kit-chat__line--agent .kit-chat__text {
   color: var(--fg);
 }
+.kit-chat__step {
+  display: block;
+  margin-top: 0.25em;
+  color: var(--fg-muted);
+  font-size: 0.8em;
+}
+.kit-chat__step::before {
+  content: '✓ ';
+  color: var(--ok);
+}
 .kit-chat__ask {
   display: flex;
   flex: 1 0 100%;
@@ -264,29 +272,6 @@
   color: var(--fg);
   background: var(--bg-hover);
 }
-.kit-term {
-  background: color-mix(in srgb, var(--fg) 4%, var(--bg));
-}
-.kit-term__body {
-  padding: 14px 16px 16px;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: clamp(11px, 2.4cqmin, 14px);
-  line-height: 1.5;
-}
-.kit-term__body p {
-  margin: 0;
-}
-.kit-term__dollar {
-  color: var(--accent);
-}
-.kit-term__head {
-  margin-top: 8px !important;
-  font-weight: 700;
-}
-.kit-term__out {
-  color: var(--fg-muted);
-}
-
 /* MORE OF THE APP */
 .kit-picker.wikilink-picker {
   position: relative;
@@ -533,23 +518,6 @@
   stroke: color-mix(in srgb, var(--ok) 80%, var(--fg));
   stroke-width: 1.5;
 }
-.kit-profile__head {
-  fill: color-mix(in srgb, var(--fg) 5%, var(--bg));
-}
-.kit-profile__line {
-  fill: none;
-  stroke: color-mix(in srgb, var(--fg) 40%, transparent);
-  stroke-width: 2;
-}
-.kit-profile__glow-in {
-  stop-color: var(--accent);
-  stop-opacity: 0.55;
-}
-.kit-profile__glow-out {
-  stop-color: var(--accent);
-  stop-opacity: 0;
-}
-
 /* THE CROWD, AND GUESS AGAINST FACT */
 .kit-crowd__head,
 .kit-crowd__body {

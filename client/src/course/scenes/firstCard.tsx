@@ -43,6 +43,7 @@ import {
   rise,
   showFor,
   since,
+  typedText,
   useBeat,
   type Answer,
   type Beat,
@@ -51,7 +52,6 @@ import {
 import type { ChapterScenes } from './registry'
 
 /** Part of a text, typed so far: `p` 0..1 of its letters (with reduced motion, all of it once it starts). */
-const typed = (b: Beat, text: string, p: number): string => (b.reduced ? (p > 0 ? text : '') : text.slice(0, Math.round(text.length * clamp(p))))
 
 const HUB = hub(['what it is', 'how it works', 'an example', 'a hook', 'links'], { r: 110 })
 
@@ -82,7 +82,7 @@ function PaperToHub(props: SceneProps) {
       </Layer>
       <Layer>
         <IndexCard
-          lines={line > 0 ? [typed(b, 'Mitochondria: the powerhouse of the cell', line)] : []}
+          lines={line > 0 ? [typedText(b, 'Mitochondria: the powerhouse of the cell', line)] : []}
           style={{
             opacity: clamp(since(b, 0, 0.5) * 2) * card,
             transform: b.reduced ? undefined : `scale(${lerp(1, 0.08, shrink).toFixed(3)})`,
@@ -672,7 +672,7 @@ function InTheApp(props: SceneProps) {
       ? b.progress >= 0.66
         ? WALK_NEW_TITLE
         : b.progress >= 0.49
-        ? typed(b, WALK_NEW_TITLE, between(b, 0.5, 0.66))
+        ? typedText(b, WALK_NEW_TITLE, between(b, 0.5, 0.66))
         : WALK_TITLE
       : step > order.indexOf('c2-14')
       ? WALK_NEW_TITLE
@@ -691,7 +691,7 @@ function InTheApp(props: SceneProps) {
             name: '',
             kind: 'card' as const,
             depth: 1,
-            typing: typed(b, WALK_TITLE, between(b, 0.54, 0.66)),
+            typing: typedText(b, WALK_TITLE, between(b, 0.54, 0.66)),
           },
         ]
       : []),
@@ -712,15 +712,15 @@ function InTheApp(props: SceneProps) {
 
   // The editor: what is in the card so far.
   const editing = created && !at('c2-20') ? true : id === 'c2-20' ? b.progress < 0.43 : false
-  const frontTyped = id === 'c2-15' ? '' : id === 'c2-16' ? typed(b, `${WALK_FRONT} ${WALK_WORD}.`, between(b, 0.0, 0.15)) : `${WALK_FRONT} ${WALK_WORD}.`
+  const frontTyped = id === 'c2-15' ? '' : id === 'c2-16' ? typedText(b, `${WALK_FRONT} ${WALK_WORD}.`, between(b, 0.0, 0.15)) : `${WALK_FRONT} ${WALK_WORD}.`
   const selected = id === 'c2-16' && b.progress >= 0.16 && b.progress < 0.38
   const hidden = at('c2-16') && !(id === 'c2-16' && b.progress < 0.38)
   const sideBreak = at('c2-17') && !(id === 'c2-17' && b.progress < 0.47)
-  const backTyped = !at('c2-17') ? '' : id === 'c2-17' ? typed(b, WALK_BACK, between(b, 0.5, 0.64)) : WALK_BACK
-  const stars = id === 'c2-29' ? (b.progress < 0.25 ? '' : b.progress < 0.49 ? typed(b, '***', between(b, 0.25, 0.3)) : null) : at('c2-20') ? null : ''
+  const backTyped = !at('c2-17') ? '' : id === 'c2-17' ? typedText(b, WALK_BACK, between(b, 0.5, 0.64)) : WALK_BACK
+  const stars = id === 'c2-29' ? (b.progress < 0.25 ? '' : b.progress < 0.49 ? typedText(b, '***', between(b, 0.25, 0.3)) : null) : at('c2-20') ? null : ''
   const section = at('c2-29') && stars === null
-  const sectionTyped = id === 'c2-29' ? typed(b, 'EXAMPLE', between(b, 0.53, 0.6)) : at('c2-20') ? 'EXAMPLE' : ''
-  const sectionLine = id === 'c2-29' ? typed(b, WALK_SECTION, between(b, 0.62, 0.78)) : at('c2-20') ? WALK_SECTION : ''
+  const sectionTyped = id === 'c2-29' ? typedText(b, 'EXAMPLE', between(b, 0.53, 0.6)) : at('c2-20') ? 'EXAMPLE' : ''
+  const sectionLine = id === 'c2-29' ? typedText(b, WALK_SECTION, between(b, 0.62, 0.78)) : at('c2-20') ? WALK_SECTION : ''
 
   // The pointer: where it goes in each clip ([x, y] in % of the window).
   let pointer: {

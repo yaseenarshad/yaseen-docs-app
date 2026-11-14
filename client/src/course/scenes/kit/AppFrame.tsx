@@ -82,7 +82,8 @@ export function SidebarPreview({ rows, inbox, inboxGlow = 0 }: { rows: readonly 
   )
 }
 
-const glowStyle = (g: number): CSSProperties => (g > 0 ? { boxShadow: `0 0 0 ${(2 * clamp(g)).toFixed(2)}px var(--accent), 0 0 ${(18 * clamp(g)).toFixed(1)}px color-mix(in srgb, var(--accent) 45%, transparent)` } : {})
+/** The lit look of a control the voice names: an accent ring and a soft glow, `g` 0..1. */
+export const glowStyle = (g: number): CSSProperties => (g > 0 ? { boxShadow: `0 0 0 ${(2 * clamp(g)).toFixed(2)}px var(--accent), 0 0 ${(18 * clamp(g)).toFixed(1)}px color-mix(in srgb, var(--accent) 45%, transparent)` } : {})
 
 export interface MenuItem {
   label: string

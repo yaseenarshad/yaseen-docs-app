@@ -11,9 +11,12 @@ import { beatAt, type Beat } from './beat'
 import { Habits } from './HabitIcons'
 import { Web, webDistances, scatterWeb, type WebEdge, type WebNode } from './Web'
 import { Folder } from './Folder'
-import { AgentChat, typedText } from './AgentChat'
-import { CardPill, FilterMenu, LinkPicker, LinkedMentions, ReviewsStrip, Terminal } from './AppPanels'
-import { Garden, Profile, Seedling, type PlantSpec } from './Garden'
+import { AgentChat } from './AgentChat'
+import { typedText } from './beat'
+import { CardPill, FilterMenu, LinkPicker, LinkedMentions, ReviewsStrip } from './AppPanels'
+import { AgentTerminal } from './AgentTerminal'
+import { Garden, Seedling, type PlantSpec } from './Garden'
+import { Head } from './Head'
 import { Crowd, GuessBars } from './Crowd'
 import { ClockArc, Gauge } from './Dials'
 
@@ -54,10 +57,10 @@ const pieces = (b: Beat, p: number): ReactElement[] => [
   <LinkedMentions key="m" beat={b} count={3} rows={[{ label: 'Protein', p }]} p={p} />,
   <FilterMenu key="fm" beat={b} p={p} counts={{ all: '1', next: '0', due: '1', new: '10 / 48', archived: '0' }} adding={{ n: 10, p }} enter={p} />,
   <ReviewsStrip key="r" beat={b} open={p} rows={[{ when: '1 Nov', answer: 'forgot', gone: p }, { when: '3 Nov', answer: 'remembered' }]} />,
-  <Terminal key="t" beat={b} lines={[{ kind: 'cmd', text: 'yaseendocs card guide', p }, { kind: 'out', text: 'Start here', p }]} />,
+  <AgentTerminal key="t" beat={b} lines={[{ kind: 'cmd', text: 'yaseendocs card guide', p }, { kind: 'out', text: 'Start here', p }]} />,
   <Garden key="g" beat={b} plants={[PLANT, { ...PLANT, x: 500 }]} grow={[p, p]} weeds={1 - p} prune={{ plant: 0, branch: 1, p }} links={[{ a: [0, 0], b: [1, 0], p, cut: p / 2 }]} />,
   <Seedling key="s" beat={b} grow={p} />,
-  <Profile key="pr" beat={b} glow={p} />,
+  <Head key="pr" beat={b} glow={p} />,
   <Crowd key="cr" beat={b} appear={p} won={9} wonP={p} doubt={7} doubtP={p} doubtText="I think it lost" wonText="Spacing won" wonTextP={p} />,
   <GuessBars key="gb" beat={b} guess={50} guessLabel="About half" guessP={p} bars={[{ label: 'A', value: 80, text: '80%', p }]} missP={p} />,
   <Gauge key="ga" beat={b} p={p} value={0.1} swing={p} label="Kept" />,

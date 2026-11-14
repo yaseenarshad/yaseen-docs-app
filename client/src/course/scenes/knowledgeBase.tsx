@@ -7,14 +7,13 @@
  */
 import type { CSSProperties } from 'react'
 import type { SceneProps } from '../scene'
-import { AppWindow, CardView, Fit, Layer, Paper, Cite, SidebarPreview, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat, type Beat } from './kit'
-import { HeadProfile, type HeadDot } from './kit/HeadProfile'
+import { AppWindow, CardView, Fit, Layer, Paper, Cite, SidebarPreview, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, typedText, useBeat, type Beat } from './kit'
+import { Head, type HeadDot } from './kit/Head'
 import { PAPERS } from './papers'
 import type { ChapterScenes } from './registry'
 import './knowledgeBase.css'
 
 /** Part of a text, typed so far (reduced motion: all of it once it starts). */
-const typed = (b: Beat, text: string, p: number): string => (b.reduced ? (p > 0 ? text : '') : text.slice(0, Math.round(text.length * clamp(p))))
 
 /**
  * THE MAP: 24 cards in four topics, as points in 0..1. The card base draws them as small cards; the head draws the same
@@ -110,7 +109,7 @@ function BaseAndHead(props: SceneProps) {
             =
           </span>
           <div className="kb-match__side" style={rise(b, since(b, 0.02, 0.6))}>
-            <HeadProfile beat={b} p={since(b, 0.02, 1.1)} dots={headDots(dot, undefined, () => showFor(lit, since(b, picture + 0.15, 0.6)))} glow={lit} label="A head in profile, with the same map inside" />
+            <Head beat={b} p={since(b, 0.02, 1.1)} dots={headDots(dot, undefined, () => showFor(lit, since(b, picture + 0.15, 0.6)))} glow={lit} label="A head in profile, with the same map inside" />
             <Words size="label" style={rise(b, eq)}>
               Knowledge base
             </Words>
@@ -285,9 +284,9 @@ function Digestion(props: SceneProps) {
       <Stage beat={b} label="To digest is to think it through, until you can say it simply">
         <Layer>
           <div className="kit-row kb-say">
-            <HeadProfile beat={b} p={since(b, 0, 0.9)} dots={[...thoughts, { x: 0.52, y: 0.5, p: say, tone: 'accent', ring: say }]} glow={swirl * 0.6 + say * 0.4} />
+            <Head beat={b} p={since(b, 0, 0.9)} dots={[...thoughts, { x: 0.52, y: 0.5, p: say, tone: 'accent', ring: say }]} glow={swirl * 0.6 + say * 0.4} />
             <div className="kb-bubble" style={rise(b, say, 12)}>
-              {typed(b, 'Sleep you miss adds up.', since(b, simply, 1.1))}
+              {typedText(b, 'Sleep you miss adds up.', since(b, simply, 1.1))}
             </div>
           </div>
         </Layer>
@@ -442,7 +441,7 @@ function CaptureLater(props: SceneProps) {
       <span className="kb-phone__time">9:41</span>
       <span className="kb-phone__head">Quick capture</span>
       <span className="kb-phone__line">
-        {typed(b, CAPTURE, line)}
+        {typedText(b, CAPTURE, line)}
         {line > 0 && line < 1 && !b.reduced && <span className="kit-caret" />}
       </span>
     </div>
@@ -624,7 +623,7 @@ function MentalMap(props: SceneProps) {
         <Layer>
           <div className="kit-row kb-match">
             <div className="kb-match__side" style={rise(b, since(b, picture - 0.05, 0.8))}>
-              <HeadProfile beat={b} p={since(b, picture - 0.05, 1)} dots={headDots((i) => since(b, at(i) + 0.03, 0.4), undefined, (i) => showFor(since(b, at(i) + 0.03, 0.2), since(b, at(i) + 0.1, 0.4)))} glow={since(b, each + 0.1, 0.8) * 0.6} />
+              <Head beat={b} p={since(b, picture - 0.05, 1)} dots={headDots((i) => since(b, at(i) + 0.03, 0.4), undefined, (i) => showFor(since(b, at(i) + 0.03, 0.2), since(b, at(i) + 0.1, 0.4)))} glow={since(b, each + 0.1, 0.8) * 0.6} />
             </div>
             <div className="kb-match__side">
               <BaseMap beat={b} show={() => 1} tone={(i) => (b.progress >= at(i) ? 'accent' : 'grey')} />
@@ -650,7 +649,7 @@ function MentalMap(props: SceneProps) {
             =
           </span>
           <div className="kb-match__side">
-            <HeadProfile beat={b} dots={headDots(() => 1)} glow={since(b, yours, 0.6)} />
+            <Head beat={b} dots={headDots(() => 1)} glow={since(b, yours, 0.6)} />
           </div>
         </div>
         <Words size="title" tone="accent" style={rise(b, since(b, yours, 0.6))}>

@@ -154,29 +154,3 @@ export function Seedling({ beat, grow, soil = 1 }: { beat: Beat; grow: number; s
     </svg>
   )
 }
-
-/** A head in profile, facing right, in the 600 × 340 view. The mind's web (chapter 10) and the end's card go inside. */
-export const PROFILE_PATH =
-  'M232 336 C232 300 214 276 204 246 C184 194 190 124 242 88 C292 52 372 58 402 104 C416 126 418 142 420 162 L442 196 C440 202 432 204 426 206 C430 216 430 224 423 232 C430 240 426 252 410 258 C394 263 380 262 372 268 L370 336 Z'
-
-/** The profile: its outline, its inside lit by `glow` (0..1), and what goes inside (`children`, in the same view). */
-export function Profile({ beat, p = 1, glow = 0, children }: { beat: Beat; p?: number; glow?: number; children?: ReactNode }) {
-  const g = clamp(glow)
-  return (
-    <svg className="kit-profile" viewBox="0 0 600 340" preserveAspectRatio="xMidYMid meet" aria-hidden="true" style={{ opacity: clamp(p * 1.5) }}>
-      <defs>
-        <clipPath id="kit-profile-clip">
-          <path d={PROFILE_PATH} />
-        </clipPath>
-        <radialGradient id="kit-profile-glow" cx="0.5" cy="0.5" r="0.5">
-          <stop offset="0" className="kit-profile__glow-in" />
-          <stop offset="1" className="kit-profile__glow-out" />
-        </radialGradient>
-      </defs>
-      <path className="kit-profile__head" d={PROFILE_PATH} />
-      {g > 0 && <circle cx={312} cy={160} r={lerp(30, 120, beat.reduced ? 1 : ease.out(g))} fill="url(#kit-profile-glow)" opacity={g} clipPath="url(#kit-profile-clip)" />}
-      <g clipPath="url(#kit-profile-clip)">{children}</g>
-      <path className="kit-profile__line" d={PROFILE_PATH} />
-    </svg>
-  )
-}

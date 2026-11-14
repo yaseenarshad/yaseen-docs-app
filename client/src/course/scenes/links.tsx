@@ -11,13 +11,14 @@ import { useUnit } from '../../vault/unitWord'
 import type { SceneProps } from '../scene'
 import { PAPERS } from './papers'
 import { MUSCLE, PROTEIN_BRANCH, UMBRELLA, sampleId } from './cards'
-import { AppWindow, Caret, CardView, Cite, Fit, Keys, Layer, Paper, Pointer, SidebarPreview, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat, type Beat } from './kit'
+import { AppWindow, Caret, CardView, Cite, Fit, Keys, Layer, Paper, Pointer, SidebarPreview, Stage, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, typedText, useBeat, type Beat } from './kit'
 import { Habits } from './kit/HabitIcons'
 import { Web, scatterWeb, type WebEdge, type WebNode } from './kit/Web'
 import { Folder, cardTop } from './kit/Folder'
-import { AgentChat, typedText } from './kit/AgentChat'
+import { AgentChat } from './kit/AgentChat'
 import { CardPill, LinkPicker, LinkedMentions } from './kit/AppPanels'
-import { Garden, Profile, type PlantSpec } from './kit/Garden'
+import { Garden, type PlantSpec } from './kit/Garden'
+import { Head } from './kit/Head'
 import type { ChapterScenes } from './registry'
 import './later.css'
 
@@ -224,14 +225,14 @@ function MindWeb(props: SceneProps) {
       {id === 'c10-06' && (
         <>
           <Layer>
-            <Profile beat={b} p={head}>
+            <Head beat={b} p={head} className="kit-head--large">
               <g opacity={boxes}>
                 {[0, 1, 2, 3].map((i) => (
                   <rect key={i} className="later-headbox" x={240 + (i % 2) * 64} y={100 + Math.floor(i / 2) * 56} width={52} height={40} rx={4} />
                 ))}
                 <line className="later-strike" x1={230} y1={210} x2={370} y2={92} opacity={since(b, cue(b, 0, 0.21), 0.4)} />
               </g>
-            </Profile>
+            </Head>
           </Layer>
           <Layer>
             <Web beat={b} nodes={HEAD_WEB.nodes} edges={HEAD_WEB.edges} all={between(b, assoc - 0.04, assoc + 0.12)} lit={{ m0: callsUp, m2: another, m5: since(b, cue(b, 3, 0.78) + 0.08, 0.5) }} />

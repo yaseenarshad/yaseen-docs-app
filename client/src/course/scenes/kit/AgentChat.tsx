@@ -1,5 +1,5 @@
 /**
- * THE AGENT'S CHAT (YAZ-5121, chapters 9 to 11): the person's own AI agent, in its own window (not the app: the app
+ * THE AGENT'S CHAT (YAZ-5121, chapters 4 and 9 to 11; the kit's one chat): the person's own AI agent, in its own window (not the app: the app
  * has no AI inside). The person's lines and the agent's come in as they are typed. A PROPOSAL is the handmade part:
  * the agent shows one change with its reason, a highlighter sweeps it as the person reads, and the person says Yes or
  * Skip. Nothing changes until then. Made-up words only; no product's name or look.
@@ -8,7 +8,7 @@
  * - `ask`: a proposal under the line: `title`, `reason`, `read` (the sweep), `answer` ('yes' | 'skip') and `answerP`.
  */
 import type { CSSProperties } from 'react'
-import { clamp, ease, rise, type Beat } from './beat'
+import { clamp, ease, rise, typedText, type Beat } from './beat'
 import './kitMore.css'
 
 export interface ChatAsk {
@@ -27,10 +27,9 @@ export interface ChatLine {
   text: string
   p: number
   ask?: ChatAsk
+  /** A quiet step line under an agent line ("Edited Food basics"). */
+  step?: string
 }
-
-/** Part of a text, typed so far (with reduced motion: all of it once it starts). */
-export const typedText = (b: Beat, text: string, p: number): string => (b.reduced ? (p > 0 ? text : '') : text.slice(0, Math.round(text.length * clamp(p))))
 
 export function AgentChat({ beat, lines, title = 'Your agent', when, style }: { beat: Beat; lines: readonly ChatLine[]; title?: string; when?: string; style?: CSSProperties }) {
   return (
@@ -53,6 +52,7 @@ export function AgentChat({ beat, lines, title = 'Your agent', when, style }: { 
                 {line.who === 'you' ? typedText(beat, line.text, line.p) : line.text}
                 {typing && <span className="kit-caret" />}
               </span>
+              {line.step !== undefined && <span className="kit-chat__step">{line.step}</span>}
               {line.ask !== undefined && <Proposal beat={beat} ask={line.ask} />}
             </div>
           )
