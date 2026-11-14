@@ -253,7 +253,11 @@ async function readGroupGist(api: GistsApi, group: string, etag: string | null =
 }
 
 /** The login and the name behind a pointer (from the numbers it names), or null when it is not a pointer. */
-async function whoIs(api: GistsApi, pointer: string): Promise<{ login: string; name: string } | 'not-found' | 'not-a-pointer' | 'newer-app'> {
+/**
+ * YAZ-5239: the login is the OWNER of the pointer gist, as GitHub gives it, never the `login` that the person wrote in
+ * their numbers. With no owner in GitHub's answer the request is `unverified`. The name is for the screen only.
+ */
+async function whoIs(api: GistsApi, pointer: string): Promise<{ login: string; name: string } | 'not-found' | 'not-a-pointer' | 'newer-app' | 'unverified'> {
   let gist: GistDoc | 'unchanged'
   try {
     gist = await api.read(pointer)
@@ -265,14 +269,16 @@ async function whoIs(api: GistsApi, pointer: string): Promise<{ login: string; n
   const p = readPointerFile(fileText(gist, POINTER_FILE))
   if (p.kind === 'newer') return 'newer-app'
   if (p.kind !== 'ok') return 'not-a-pointer'
+  const login = typeof gist.owner === 'string' && gist.owner !== '' ? gist.owner.slice(0, SHOWN_MAX) : null
+  if (login === null) return 'unverified'
   try {
     const numbers = await api.read(p.value.stats)
-    if (numbers === 'unchanged') return { login: '', name: 'Friend' }
+    if (numbers === 'unchanged') return { login, name: login }
     const s = readStatsFile(fileText(numbers, NUMBERS_FILE))
-    if (s.kind !== 'ok') return { login: '', name: 'Friend' }
-    return { login: s.value.login, name: s.value.name.trim() || s.value.login || 'Friend' }
+    if (s.kind !== 'ok') return { login, name: login }
+    return { login, name: s.value.name.trim() || login }
   } catch (err) {
-    if (gistErrorCode(err) === 'NOT_FOUND') return { login: '', name: 'Friend' }
+    if (gistErrorCode(err) === 'NOT_FOUND') return { login, name: login }
     throw err
   }
 }
@@ -393,8 +399,13 @@ export function joinMessage(result: JoinResult): string {
 // The admin: who asks to join, add, remove.
 
 export type JoinRequest =
+  /** `login` is the GitHub owner of the request (YAZ-5239); `name` is what they call themselves, for the screen only. */
   | { kind: 'request'; group: string; groupName: string; pointer: string; login: string; name: string }
   | { kind: 'already-member'; name: string }
+  /** YAZ-5239: this GitHub login is already in the group (a member or the admin): refused, nobody is replaced. */
+  | { kind: 'duplicate'; login: string; name: string }
+  /** YAZ-5239: GitHub's answer gave no owner, so the request cannot be trusted: refused. */
+  | { kind: 'unverified' }
   | { kind: 'not-your-group' }
   | { kind: 'not-a-join-link' }
   | { kind: 'not-found' }
@@ -418,7 +429,11 @@ export async function readJoinRequest(api: GistsApi, handle: IndexHandle, text: 
     if (who === 'not-found') return { kind: 'not-found' }
     if (who === 'newer-app') return { kind: 'newer-app' }
     if (who === 'not-a-pointer') return { kind: 'not-a-join-link' }
+    if (who === 'unverified') return { kind: 'unverified' }
     if (file.value.members.some((m) => m.pointer === link.pointer)) return { kind: 'already-member', name: who.name }
+    // A login that is already in the group (a member, or the admin): a duplicate, never a replace.
+    if (file.value.members.some((m) => m.login.toLowerCase() === who.login.toLowerCase()) || file.value.admin.toLowerCase() === who.login.toLowerCase())
+      return { kind: 'duplicate', login: who.login, name: who.name }
     return { kind: 'request', group: link.group, groupName: file.value.name, pointer: link.pointer, login: who.login, name: who.name }
   } catch (err) {
     const f = failure(err)
@@ -428,6 +443,8 @@ export async function readJoinRequest(api: GistsApi, handle: IndexHandle, text: 
 
 export type GroupChange =
   | { kind: 'done'; file: GroupFile }
+  | { kind: 'duplicate'; login: string }
+  | { kind: 'unverified' }
   | { kind: 'not-admin' }
   | { kind: 'not-found' }
   | { kind: 'not-a-member' }
@@ -457,10 +474,14 @@ export async function addMember(api: GistsApi, handle: IndexHandle, group: strin
     if (who === 'not-found') return { kind: 'not-found' }
     if (who === 'newer-app') return { kind: 'newer-app' }
     if (who === 'not-a-pointer') return { kind: 'not-a-join-link' }
+    if (who === 'unverified') return { kind: 'unverified' }
     const current = await adminFile(api, handle, group)
     if ('kind' in current) return current
-    const others = current.file.members.filter((m) => m.pointer !== link.pointer && (who.login === '' || m.login !== who.login))
-    const file: GroupFile = { ...current.file, members: [...others, { login: who.login, pointer: link.pointer }] }
+    if (current.file.members.some((m) => m.pointer === link.pointer)) return { kind: 'done', file: current.file }
+    // YAZ-5239: a login already in the group (a member, or the admin) is never replaced: a duplicate is refused.
+    const same = (l: string) => l.toLowerCase() === who.login.toLowerCase()
+    if (current.file.members.some((m) => same(m.login)) || same(current.file.admin)) return { kind: 'duplicate', login: who.login }
+    const file: GroupFile = { ...current.file, members: [...current.file.members, { login: who.login, pointer: link.pointer }] }
     await api.update(group, { [GROUP_FILE]: groupFileText(file, current.raw) })
     void opts
     return { kind: 'done', file }

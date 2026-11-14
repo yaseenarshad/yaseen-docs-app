@@ -394,6 +394,56 @@ describe('YAZ-5238: the sweep deletes only what is provably an orphan, by GitHub
   })
 })
 
+describe('YAZ-5239: the login of a join request is the one GitHub vouches for', () => {
+  it('a join request whose numbers claim the login of a member does not push that member out', async () => {
+    const w = people(['ali', 'bea', 'eve'])
+    const c = await club(w, ['bea'])
+    const eve = await person(w, 'eve') // then: her numbers say login "bea"
+    w.setFiles(eve.handle.index.stats!, { [NUMBERS_FILE]: JSON.stringify(stats('bea')) })
+    const joined = await joinGroup(eve.api, eve.handle, c.link, opts(w))
+    if (joined.kind !== 'joined') throw new Error(joined.kind)
+    await addMember(c.ali.api, await fresh(c.ali.api, w), c.group, joined.sendToAdmin, opts(w))
+    const members = JSON.parse(w.text(c.group, GROUP_FILE)!).members.map((m: { pointer: string }) => m.pointer)
+    expect(members).toContain(c.members.bea.pointer) // now: Bea's entry is gone
+  })
+
+  it('the request shows the gist owner`s login; a claim of the admin`s login cannot replace the admin; a second request of a member is a refused duplicate', async () => {
+    const w = people(['ali', 'bea', 'eve'])
+    const c = await club(w, ['bea'])
+    const eve = await person(w, 'eve')
+    w.setFiles(eve.handle.index.stats!, { [NUMBERS_FILE]: JSON.stringify(stats('ali')) })
+    const joined = await joinGroup(eve.api, eve.handle, c.link, opts(w))
+    if (joined.kind !== 'joined') throw new Error(joined.kind)
+    const aliH = await fresh(c.ali.api, w)
+    expect(await readJoinRequest(c.ali.api, aliH, joined.sendToAdmin)).toMatchObject({ kind: 'request', login: 'eve' })
+    expect(await addMember(c.ali.api, aliH, c.group, joined.sendToAdmin, opts(w))).toMatchObject({ kind: 'done' })
+    expect(await readGroup(c.ali.api, aliH, c.group, newListCache(), w.now())).toMatchObject({ kind: 'ok', iAmAdmin: true })
+    const file = JSON.parse(w.text(c.group, GROUP_FILE)!)
+    expect(file.members.map((m: { login: string }) => m.login)).toEqual(['ali', 'bea', 'eve'])
+
+    // Bea asks again with a new pointer: a duplicate of a member, refused; nobody is replaced.
+    const again = await makePointer(c.members.bea.api, c.members.bea.handle.index.stats!, opts(w))
+    expect(await readJoinRequest(c.ali.api, aliH, joinLink(c.group, again))).toMatchObject({ kind: 'duplicate', login: 'bea' })
+    expect(await addMember(c.ali.api, aliH, c.group, joinLink(c.group, again), opts(w))).toMatchObject({ kind: 'duplicate', login: 'bea' })
+    expect(JSON.parse(w.text(c.group, GROUP_FILE)!).members).toEqual(file.members)
+  })
+
+  it('with no owner in GitHub`s answer (an adapter that does not give it), a request is "unverified" and Add refuses it', async () => {
+    const w = people(['ali', 'bea'])
+    const c = await club(w, [])
+    const bea = await person(w, 'bea')
+    const joined = await joinGroup(bea.api, bea.handle, c.link, opts(w))
+    if (joined.kind !== 'joined') throw new Error(joined.kind)
+    const blind: GistsApi = { ...c.ali.api, read: async (id, etag) => {
+      const g = await c.ali.api.read(id, etag)
+      return g === 'unchanged' ? g : { ...g, owner: undefined }
+    } }
+    const aliH = await fresh(c.ali.api, w)
+    expect(await readJoinRequest(blind, aliH, joined.sendToAdmin)).toEqual({ kind: 'unverified' })
+    expect(await addMember(blind, aliH, c.group, joined.sendToAdmin, opts(w))).toEqual({ kind: 'unverified' })
+  })
+})
+
 describe('reading a group (decisions 23 and 25; round 10, addition 13)', () => {
   it('50 members: one read of the group file and two of each member; the next read is all free 304s', async () => {
     const names = Array.from({ length: 50 }, (_, i) => `m${i}`)

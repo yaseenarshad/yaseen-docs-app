@@ -14,6 +14,7 @@ const MAX_PAGES = 10
 
 interface RawGist {
   id: string
+  owner?: { login?: unknown } | null
   description: string | null
   created_at: string
   updated_at: string
@@ -26,6 +27,8 @@ function toDoc(data: unknown, etag: string | null): GistDoc {
   const g = data as RawGist
   return {
     id: g.id,
+    // YAZ-5239: GitHub's own owner of the gist; the only login the groups trust.
+    owner: typeof g.owner?.login === 'string' ? g.owner.login : null,
     description: g.description ?? '',
     createdAt: g.created_at,
     updatedAt: g.updated_at,

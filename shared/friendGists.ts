@@ -70,6 +70,11 @@ export interface GistDoc {
   createdAt: string
   updatedAt: string
   etag: string | null
+  /**
+   * YAZ-5239: the login of the gist's owner, as GitHub gives it (`owner.login`): the only login the app trusts for a
+   * person. Optional: undefined when the adapter does not give it.
+   */
+  owner?: string | null
 }
 
 export interface GistListItem {

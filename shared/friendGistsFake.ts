@@ -322,6 +322,7 @@ function memoryApi(world: FakeGistWorld, token: string): GistsApi {
 
 interface RawGist {
   id: string
+  owner?: { login?: string }
   description: string | null
   created_at: string
   updated_at: string
@@ -330,6 +331,7 @@ interface RawGist {
 const listItem = (g: RawGist): GistListItem => ({ id: g.id, description: g.description ?? '', files: Object.keys(g.files), createdAt: g.created_at, updatedAt: g.updated_at })
 const doc = (g: RawGist, etag: string | null): GistDoc => ({
   id: g.id,
+  owner: g.owner?.login ?? null,
   description: g.description ?? '',
   createdAt: g.created_at,
   updatedAt: g.updated_at,
