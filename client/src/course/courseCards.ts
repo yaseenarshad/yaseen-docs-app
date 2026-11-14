@@ -67,7 +67,7 @@ export const SHOW_ONLY = {
 
 /** The AI step's lines that are not in the script. */
 export const AGENT_LINES = {
-  noText: 'Paste some text you have digested, or use the example.',
+  noText: 'Paste some text you have chewed on, or use the example.',
   noCopy: "Can't copy the prompt. Select it, and copy it by hand.",
 } as const
 
@@ -80,7 +80,7 @@ const TITLE_MAX = 60
 // ---------------------------------------------------------------------------------------------------------------
 // The words the course writes (made up; an adult who learns for themself, not a student)
 
-/** "Use the example": a short text the person could have digested. */
+/** "Use the example": a short text the person could have chewed on. */
 export const EXAMPLE_TEXT = [
   'What I took from a weekend bread class.',
   '',

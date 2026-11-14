@@ -2,7 +2,8 @@
  * CHAPTER 8, "Make cards with your AI, without vibe writing" (YAZ-5121): the power tool and its danger. Cards are plain
  * Markdown files (the real file, from the app's own writer); an agent reads and writes files; the app has no AI and
  * sends nothing. THE WARNING: the screen goes quiet for "Do not vibe write your cards."; the flood of grey cards; the
- * Inbox goes dark; two paths; Ryan Holiday's line. Then the hands-on step with the person's own agent: the real
+ * Inbox goes dark; two paths; Ryan Holiday's line. Then the hands-on step with the person's own agent (YAZ-5327: it
+ * drafts the cards in the chat; the person reads each one and says yes; only approved cards are saved): the real
  * `AgentStepPanel` (YAZ-5124) with the parts of each clip, and `done()` on the event each clip waits for (`text`,
  * `copied`, `arrived`; and `read`, `made` on the clips that show them). `text` comes from a paste or "Use the example",
  * never from typing (YAZ-5270). The scene writes no file: the host does.
@@ -12,9 +13,9 @@ import { cardFileContent, cardFileName } from '@shared/cardFileFormat'
 import type { SceneProps } from '../scene'
 import { AgentStepPanel, type AgentStepEvent, type AgentStepPart } from '../AgentStepPanel'
 import { NO_CARDS_YET } from '../prompt'
+import { EXAMPLE_CARDS } from '../courseCards'
 import { CARD_SKILL_MENU } from '../../sidebar/menuSections'
-import { InboxIcon } from '../../views/view/icons'
-import { AppWindow, CardView, cardSkillMenuItems, Layer, MenuPreview, MiniCard, Pointer, SidebarPreview, Stage, Tally, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat, type Beat, AgentTerminal, type TermLine, Head, QuoteCard } from './kit'
+import { AppWindow, CardView, cardSkillMenuItems, Layer, MenuPreview, MiniCard, Pointer, SidebarPreview, Stage, Tally, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat, type Beat, AgentTerminal, type TermLine, Head, QuoteCard, Habits } from './kit'
 import { QUOTES } from './papers'
 import { sampleId } from './cards'
 import type { ChapterScenes } from './registry'
@@ -52,7 +53,7 @@ function ToolAndApp(props: SceneProps) {
         </div>
         <div className="kit-tags">
           <span className="kit-chip" style={pop(b, since(b, cue(b, 0, 0.219), 0.5))}>
-            A good card starts with digestion
+            A good card starts with chewing
           </span>
           <span className="kit-chip ai-chip--bad" style={pop(b, warn)}>
             ⚠ Fast is the danger
@@ -287,15 +288,15 @@ function Flood(props: SceneProps) {
   )
 }
 
-/** c8-08: two paths from one fork: "Vibe write" leads down; "Digest, then make" leads up, and compounds. */
+/** c8-08: two paths from one fork: "Vibe write" leads down; "Chew, then create" leads up, and compounds. */
 function TwoPaths(props: SceneProps) {
   const b = useBeat(props)
   const fail = since(b, cue(b, 0, 0.233) - 0.04, 1.2)
   const up = since(b, cue(b, 1, 0.775) - 0.12, 1.4)
   return (
-    <Stage beat={b} label="Two paths: vibe write and the system fails; digest, then make, and what you know compounds">
+    <Stage beat={b} label="Two paths: vibe write and the system fails; chew, then create, and what you know compounds">
       <Layer>
-        <svg className="ai-paths" viewBox="0 0 400 240" role="img" aria-label="Vibe write leads down; digest, then make leads up">
+        <svg className="ai-paths" viewBox="0 0 400 240" role="img" aria-label="Vibe write leads down; chew, then create leads up">
           <circle className="ai-paths__fork" cx={40} cy={120} r={7} opacity={since(b, 0, 0.5)} />
           <path className="ai-paths__down" d="M 40 120 C 140 120, 200 150, 360 220" pathLength={1} strokeDasharray={1} strokeDashoffset={(1 - moved(b, fail, ease.out)).toFixed(4)} />
           <path className="ai-paths__up" d="M 40 120 C 160 120, 260 110, 360 20" pathLength={1} strokeDasharray={1} strokeDashoffset={(1 - moved(b, up, ease.inOut)).toFixed(4)} />
@@ -303,7 +304,7 @@ function TwoPaths(props: SceneProps) {
             Vibe write
           </text>
           <text className="kit-svg-label kit-svg-label--accent" x={330} y={14} textAnchor="end" opacity={clamp(up * 2)}>
-            Digest, then make
+            Chew, then create
           </text>
         </svg>
       </Layer>
@@ -330,15 +331,15 @@ function Holiday(props: SceneProps) {
   )
 }
 
-/** c8-10: the right way: digested ideas go in; the agent shapes them into cards; you read each one. */
+/** c8-10: the right way: ideas you have chewed on go in; the agent drafts the cards in the chat; you read each one there. */
 function RightWay(props: SceneProps) {
   const b = useBeat(props)
   const bring = cue(b, 0, 0.168)
-  const shapes = cue(b, 1, 0.543)
+  const drafts = cue(b, 1, 0.543)
   const read = cue(b, 2, 0.819)
   const station = (p: number): CSSProperties => rise(b, p, 12)
   return (
-    <Stage beat={b} label="The right way: bring ideas you have digested; the agent shapes them into cards; you read each one">
+    <Stage beat={b} label="The right way: bring ideas you have chewed on; your agent drafts the cards in the chat; you read each one there">
       <Layer>
         <div className="ai-flow">
           <div className="ai-flow__station" style={station(since(b, bring, 0.6))}>
@@ -347,14 +348,14 @@ function RightWay(props: SceneProps) {
               <i />
               <i />
             </span>
-            <Words size="page">Digested by you</Words>
+            <Words size="page">Chewed on by you</Words>
           </div>
-          <span className="ai-flow__arrow" style={{ opacity: since(b, shapes - 0.06, 0.5) }} aria-hidden="true">
+          <span className="ai-flow__arrow" style={{ opacity: since(b, drafts - 0.06, 0.5) }} aria-hidden="true">
             →
           </span>
-          <div className="ai-flow__station" style={station(since(b, shapes - 0.04, 0.6))}>
-            <AgentTerminal beat={b} className="ai-term ai-term--mini" caret={false} lines={[{ text: 'Shaping 3 cards…', p: since(b, shapes, 0.8), kind: 'out' }]} />
-            <Words size="page">Shaped by the agent</Words>
+          <div className="ai-flow__station" style={station(since(b, drafts - 0.04, 0.6))}>
+            <AgentTerminal beat={b} className="ai-term ai-term--mini" caret={false} title="the chat" lines={[{ text: 'Draft 1 of 3…', p: since(b, drafts, 0.8), kind: 'out' }]} />
+            <Words size="page">Drafted in the chat</Words>
           </div>
           <span className="ai-flow__arrow" style={{ opacity: since(b, read - 0.1, 0.5) }} aria-hidden="true">
             →
@@ -369,7 +370,7 @@ function RightWay(props: SceneProps) {
                 </span>
               ))}
             </span>
-            <Words size="page">Read by you</Words>
+            <Words size="page">Read by you, there</Words>
           </div>
         </div>
       </Layer>
@@ -397,6 +398,11 @@ function partsOf(id: string, copied: boolean): readonly AgentStepPart[] {
   if (copied || id === 'c8-11' || id === 'c8-16') return parts
   return [...new Set<AgentStepPart>(['text', 'prompt', ...parts])]
 }
+
+/** The example's first card (`EXAMPLE_CARDS`): what the agent drafts in the chat. */
+const BREAD = EXAMPLE_CARDS[0].title
+/** What chewing is in the AI step (c8-15). */
+const CHEWING = ['Read the drafts', 'Think about them', 'Say yes'] as const
 
 const STEP_KICKER: Readonly<Record<string, string>> = {
   'c8-11': 'Step 1 · Something you have chewed on',
@@ -453,12 +459,35 @@ function AgentStep(props: SceneProps) {
             <AgentTerminal
               beat={b}
               className="ai-term ai-term--wide"
+              title="your agent's chat"
               lines={[
-                { text: 'Paste the prompt here', p: since(b, cue(b, 0, 0.216) - 0.05, 0.8), kind: 'in' },
-                { text: 'Draft 1 · How bread rises', p: since(b, cue(b, 1, 0.433), 0.6), kind: 'out' },
-                { text: 'Yes, save it', p: since(b, cue(b, 2, 0.7), 0.6), kind: 'in' },
+                { text: 'Paste the prompt here', p: since(b, cue(b, 0, 0.149) - 0.05, 0.8), kind: 'in' },
+                { text: `Draft 1 · ${BREAD}: “Bread rises because yeast eats the sugars…”`, p: since(b, cue(b, 1, 0.401), 0.6), kind: 'out' },
+                { text: 'Make the clue a little shorter.', p: since(b, 0.66, 0.6), kind: 'in' },
+                { text: 'Draft 1, changed. Save it?', p: since(b, 0.76, 0.5), kind: 'out' },
+                { text: 'Yes, save it', p: since(b, cue(b, 2, 0.841), 0.5), kind: 'in' },
               ]}
             />
+          )}
+          {id === 'c8-20' && (
+            <>
+              <AgentTerminal
+                beat={b}
+                className="ai-term ai-term--wide"
+                title="your agent's chat"
+                caret={false}
+                lines={[
+                  { text: 'Yes, save it', p: 1, kind: 'in' },
+                  { text: `Wrote ${BREAD}.md`, p: since(b, cue(b, 0, 0.221), 0.5), kind: 'file' },
+                  { text: 'Draft 2 · A slow rise tastes better', p: since(b, cue(b, 0, 0.221) + 0.08, 0.5), kind: 'out' },
+                  { text: 'Not this one.', p: since(b, cue(b, 1, 0.392), 0.5), kind: 'in' },
+                  { text: 'Draft 2 is not saved.', p: since(b, cue(b, 1, 0.392) + 0.08, 0.5), kind: 'dim' },
+                ]}
+              />
+              <span className="kit-chip" style={pop(b, since(b, cue(b, 2, 0.726) - 0.2, 0.5))}>
+                ↓ Saved cards show up here
+              </span>
+            </>
           )}
           {quietDemo && (
             <div className="ai-minute" style={rise(b, since(b, 0.05, 0.6))}>
@@ -476,18 +505,19 @@ function AgentStep(props: SceneProps) {
           )}
           {id === 'c8-15' && (
             <>
-              <Words size="title" tone="accent" style={pop(b, since(b, cue(b, 1, 0.387), 0.6), 0.8)}>
+              <Words size="title" tone={since(b, cue(b, 3, 0.86), 0.3) > 0.5 ? undefined : 'accent'} style={pop(b, since(b, cue(b, 0, 0.08), 0.6), 0.8)}>
                 Handmade
               </Words>
-              <span className="ai-flow__cards" aria-hidden="true">
-                {[0, 1, 2].map((k) => (
-                  <span key={k} className="ai-flow__card" style={rise(b, since(b, cue(b, 0, 0.059) + k * 0.04, 0.5), 8)}>
-                    <span className="ai-flow__tick" style={pop(b, since(b, cue(b, 2, 0.609) + k * 0.06, 0.4))}>
-                      ✓
-                    </span>
+              <div className="kit-tags">
+                {CHEWING.map((part, k) => (
+                  <span key={part} className="kit-chip" style={pop(b, since(b, [cue(b, 1, 0.279), 0.45, cue(b, 2, 0.657)][k], 0.4))}>
+                    ✓ {part}
                   </span>
                 ))}
-              </span>
+              </div>
+              <Words size="title" tone="accent" style={rise(b, since(b, cue(b, 3, 0.86), 0.5))}>
+                That is chewing.
+              </Words>
             </>
           )}
           <div className="ai-panel">
@@ -581,11 +611,11 @@ function RightClick(props: SceneProps) {
   )
 }
 
-/** c8-19: the loop (you digest, the agent shapes, you decide); then the three habits: make, review, tend. */
+/** c8-19: the loop (you chew, the agent drafts, you decide); then the four steps: capture, create, review, improve. */
 function Loop(props: SceneProps) {
   const b = useBeat(props)
   const decide = cue(b, 0, 0.128)
-  const shapes = cue(b, 1, 0.464)
+  const drafts = cue(b, 1, 0.405)
   const habits = cue(b, 2, 0.681)
   const out = since(b, 0.53, 0.6)
   const turn = b.reduced ? 0 : b.t * 24
@@ -598,30 +628,19 @@ function Loop(props: SceneProps) {
     )
   }
   return (
-    <Stage beat={b} label="You digest and decide; your agent only shapes. Next: three habits, make, review, tend">
+    <Stage beat={b} label="You chew and decide; your agent only drafts. Next: four steps, capture, create, review, improve">
       <Layer style={{ opacity: 1 - out }}>
         <div className="ai-loop">
           <svg viewBox="-60 -60 120 120" aria-hidden="true">
             <circle className="ai-loop__ring" r={34} strokeDasharray="6 5" transform={`rotate(${turn.toFixed(1)})`} />
           </svg>
-          {node('You digest', -90, since(b, 0.02, 0.5))}
-          {node('Your agent shapes', 30, since(b, shapes - 0.12, 0.5), true)}
+          {node('You chew', -90, since(b, 0.02, 0.5))}
+          {node('Your agent drafts', 30, since(b, drafts - 0.12, 0.5), true)}
           {node('You decide', 150, since(b, decide, 0.5))}
         </div>
       </Layer>
       <Layer style={{ opacity: out }}>
-        <div className="ai-habits">
-          {[
-            { icon: <span aria-hidden="true">✎</span>, label: 'Make' },
-            { icon: <InboxIcon className="ai-habits__inbox" />, label: 'Review' },
-            { icon: <span aria-hidden="true">✂</span>, label: 'Tend' },
-          ].map((h, k) => (
-            <div key={h.label} className="ai-habits__item" style={pop(b, since(b, habits + k * 0.05, 0.5), 0.6)}>
-              <span className="ai-habits__icon">{h.icon}</span>
-              <Words size="label">{h.label}</Words>
-            </div>
-          ))}
-        </div>
+        <Habits beat={b} show={[0, 1, 2, 3].map((k) => since(b, habits + k * 0.04, 0.5))} />
       </Layer>
     </Stage>
   )

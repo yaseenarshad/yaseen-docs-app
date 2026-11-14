@@ -36,7 +36,7 @@ const flush = () => act(() => Promise.resolve())
 describe('AgentStepPanel', () => {
   it('walks the step: the example, the prompt and Copy, the cards as they come, Read ticks; one event each', async () => {
     act(() => root.render(<AgentStepPanel host={host} onStep={(e) => events.push(e)} />))
-    expect(el.textContent).toContain('Paste something you have digested')
+    expect(el.textContent).toContain('Paste something you have chewed on')
     act(() => button('Use the example').click())
     await flush()
     expect(el.querySelector('pre')?.textContent).toContain('Example text')

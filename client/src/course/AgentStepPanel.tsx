@@ -3,7 +3,7 @@
  * `c8-16`. It is a view over `host.agentStep`, whose state lives in the host, so each clip can mount it again and find
  * the text, the copied prompt and the Read ticks as they were.
  *
- * 1. `text`: a box for the person's own digested text, and "Use the example". Typing never ends the step: the person
+ * 1. `text`: a box for the person's own text, one they have chewed on, and "Use the example". Typing never ends the step: the person
  *    gives the text with a paste or "Use the example" (YAZ-5270), or presses the course's Next.
  * 2. `prompt`: the prompt for the person's own agent, and Copy. Its first sentence is `AGENT_PROMPT` with the path of
  *    the card skill this vault uses; then 3 cards as card files in "Course Cards"; then the text.
@@ -124,7 +124,7 @@ export function AgentStepPanel({ host, parts = ALL_PARTS, onStep }: AgentStepPan
       {shows('text') && (
         <section className="agent-step__part" aria-label="Your text">
           <label className="agent-step__label" htmlFor="agent-step-text">
-            Paste something you have digested
+            Paste something you have chewed on
           </label>
           <textarea
             id="agent-step-text"

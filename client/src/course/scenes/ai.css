@@ -377,31 +377,6 @@
   font-size: max(var(--kit-min-text), 0.85em);
   font-weight: 500;
 }
-.ai-habits {
-  display: flex;
-  gap: clamp(14px, 6cqmin, 48px);
-}
-.ai-habits__item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5em;
-}
-.ai-habits__icon {
-  display: grid;
-  place-items: center;
-  width: 2.6em;
-  height: 2.6em;
-  border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: clamp(18px, 5cqmin, 32px);
-}
-.ai-habits__inbox {
-  width: 1em;
-  height: 1em;
-}
-
 /* A card in a box of this chapter takes the box's width. */
 .ai-decide__card .kit-cardview {
   min-width: 0;
