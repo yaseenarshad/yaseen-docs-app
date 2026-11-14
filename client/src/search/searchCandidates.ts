@@ -22,7 +22,7 @@ import { kebabTitle } from '@shared/pageName'
 import type { IndexRecord } from '@shared/types'
 import { basename, relTo } from '../lib/paths'
 import { matchLinkCandidates } from '../links/completion'
-import { foldersByDir } from '../links/shortcuts'
+import { foldersByDir } from '../links/folderTitle'
 
 /** One search row: what the query matches, what it reads as, what activating it targets. */
 export interface SearchCandidate {

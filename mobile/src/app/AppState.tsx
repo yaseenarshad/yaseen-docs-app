@@ -4,6 +4,7 @@ import type { SignInInput } from '../auth/check'
 import { chooseFriendsVault, loadFriendsAccount, type FriendsAccount } from '../auth/friends'
 import { forgetVaultAndToken, signIn, signInAgain, signOutAndErase, startState, type SignInOutcome } from '../auth/signIn'
 import type { FetchLike } from '../github/client'
+import type { PageMedia } from '../page/media'
 import type { Scanner } from '../scan/scanner'
 import { loadVaultList, openVault, openVaultOf, saveVaultList, vaultId, type KeepStorage, type PhoneVault, type TokenStore, type VaultList, type VaultStore } from '../store'
 import type { FriendsPort, FriendsSettings } from './friendsPort'
@@ -24,6 +25,11 @@ export interface AppServices {
   /** 4E's Friends, or `localFriends(store)` until it lands. */
   friends: FriendsPort
   scanner: Scanner
+  /**
+   * 4C (YAZ-5079): one file's bytes for the reader (a picture, a sound, a PDF). 3D's `MediaAhead` (`mobile/src/media`)
+   * when it is wired; absent, the reader reads the store only (`storedMedia`).
+   */
+  media?: PageMedia
   /** The GitHub calls of the sign-in check. Default: the browser's `fetch`. Tests pass `fakeGithub(…).fetch`. */
   fetch?: FetchLike
   now?: () => number
@@ -72,6 +78,18 @@ export interface AppModel {
 }
 
 const AppContext = createContext<AppModel | null>(null)
+
+/** How long a removal waits for a running pass to end. The store refuses that pass's later writes anyway (YAZ-5175),
+ *  so the wait only keeps the screen honest; a stuck download must not hold the erase. */
+export const STOP_WAIT_MS = 3_000
+
+/** Closes the vault in the sync, then waits (at most `STOP_WAIT_MS`) for its pass to end (YAZ-5175). */
+async function stopSync(sync: ShellSync): Promise<void> {
+  await sync.open(null)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([sync.idle(), new Promise<void>((r) => (timer = setTimeout(r, STOP_WAIT_MS)))])
+  clearTimeout(timer)
+}
 
 /** The app's state, for any screen under `AppProvider`. */
 export function useApp(): AppModel {
@@ -208,7 +226,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   const removeVault = useCallback(
     async (vault: string) => {
       const wasOpen = openKey.current === vault
-      if (wasOpen) await sync.open(null)
+      if (wasOpen) await stopSync(sync)
       await forgetVaultAndToken(store, tokens, await loadVaultList(store), vault)
       const next = await load(wasOpen)
       if (next.phase !== 'ready') setNav({ tab: 'review', stack: [] })
@@ -219,7 +237,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   const resetCopy = useCallback(
     async (vault: string) => {
       const wasOpen = openKey.current === vault
-      if (wasOpen) await sync.open(null)
+      if (wasOpen) await stopSync(sync)
       await store.resetCopy(vault)
       await load(wasOpen)
       if (wasOpen) setNav((n) => navigate(n, { type: 'home' }))
@@ -228,7 +246,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   )
 
   const eraseAll = useCallback(async () => {
-    await sync.open(null)
+    await stopSync(sync)
     await signOutAndErase(store, tokens)
     await load(false)
     setNav({ tab: 'review', stack: [] })

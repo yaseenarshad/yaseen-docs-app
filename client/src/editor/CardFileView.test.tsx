@@ -158,13 +158,13 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     expect(el.textContent).not.toContain('Open page')
   })
 
-  it('⋯: Put at top of Inbox, Archive card, Title on the front, Copy card ID, Copy card link — no Open page, no Open as page; Copy card link copies [[ID]]', async () => {
+  it('⋯: Put at top of Inbox, Archive card, Fix later, Title on the front, Copy card ID, Copy card link — no Open page, no Open as page; Copy card link copies [[ID]]', async () => {
     const writeText = vi.fn(async () => undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     await mount(FILE)
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('New'))
     const rows = await menu()
-    expect(rows).toEqual(['Put at top of Inbox', 'Archive card', 'Title on the front', 'Copy card ID', 'Copy card link', 'Turn into a page'])
+    expect(rows).toEqual(['Put at top of Inbox', 'Archive card', 'Fix later', 'Title on the front', 'Copy card ID', 'Copy card link', 'Turn into a page'])
     pick('Copy card link')
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('[[WIKI-9]]'))
   })
@@ -175,6 +175,18 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     pick('Archive card')
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('<!-- card: WIKI-9 -->', '<!-- card: WIKI-9, off -->')))
     await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('Archived'))
+  })
+
+  it('YAZ-5097: Fix later writes `fix` on the card line; the head then says "To fix"; Remove Fix later takes it off', async () => {
+    await mount(FILE)
+    await menu()
+    pick('Fix later')
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('<!-- card: WIKI-9 -->', '<!-- card: WIKI-9, fix -->')))
+    await vi.waitFor(() => expect(el.querySelector('.card-file__facts .card__fix')?.textContent).toBe('To fix'))
+    expect(await menu()).toContain('Remove Fix later')
+    pick('Remove Fix later')
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE))
+    await vi.waitFor(() => expect(el.querySelector('.card-file__facts .card__fix')).toBeNull())
   })
 
   it('with the vault`s Review off nothing asks you to review it: no due state, no Inbox row, no Reviews', async () => {
@@ -283,6 +295,22 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
     await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('Paris\n```', 'Paris (Seine)\n```')))
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
     await vi.waitFor(() => expect(el.querySelector('.card-screen')?.textContent).toContain('Paris (Seine)'))
+  })
+
+  it('YAZ-5097: Done on an edited card marked Fix later takes the mark off in the same write; Done with no change keeps it', async () => {
+    const marked = FILE.replace('<!-- card: WIKI-9 -->', '<!-- card: WIKI-9, fix -->')
+    await mount(marked)
+    act(() => editButton()!.click())
+    let dom = await cardEditor()
+    key(dom, { key: 'Enter', metaKey: true })
+    await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
+    expect(disk.files.get(PATH)).toBe(marked)
+    act(() => editButton()!.click())
+    dom = await cardEditor()
+    const view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
+    act(() => view.dispatch(view.state.tr.insertText(' (Seine)', view.state.doc.content.size - 1)))
+    key(dom, { key: 'Enter', metaKey: true })
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE.replace('Paris\n```', 'Paris (Seine)\n```')))
   })
 
   it('an outside change to the same card while you edit: the editor stays; Done writes your text by the card`s ID on the NEWEST bytes (the card window`s rule: the outside change to the rest of the file stays, yours wins in the card)', async () => {

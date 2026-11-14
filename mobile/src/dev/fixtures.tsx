@@ -5,6 +5,7 @@ import { saveAccount, type VaultAccount } from '../auth/account'
 import type { FetchLike } from '../github/client'
 import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn, vaultId, type PhoneVault } from '../store'
 import { fakeFriends, fakeScanner, fakeSync } from './fakes'
+import { isReaderFixture, mountReaderFixture } from './readerFixtures'
 
 /**
  * The screen fixtures: each screen of 4A with made-up data, for the screenshots (`#fixture=settings`). Only a
@@ -35,6 +36,8 @@ const fill = (name: string, value: string) => {
 
 export async function mountFixture(root: Root, hash: string): Promise<void> {
   const name = /fixture=([\w-]+)/.exec(hash)?.[1] ?? 'sign-in'
+  // 4C (YAZ-5079): Search, a page and a card, on a made-up vault (`readerFixtures.tsx`).
+  if (isReaderFixture(name)) return mountReaderFixture(root, name)
   const backend = memoryBackend()
   const store = await openVaultStore(backend)
   const tokens = tokenStoreOn(backend)

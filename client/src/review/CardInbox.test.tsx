@@ -47,7 +47,7 @@ let review: CardReviewApi
 let props: CardInboxProps
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], size: 12, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, lastAdd: null, archived: [], ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], size: 12, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, lastAdd: null, archived: [], toFix: [], ...over }
 }
 
 function render() {
@@ -72,6 +72,7 @@ function mount(text: string | null, settings: ReviewSettings = DEFAULT_REVIEW_SE
     close: vi.fn(),
     deleteReview: vi.fn(async () => {}),
     setNext: vi.fn(async () => {}),
+    setFix: vi.fn(async () => {}),
     move: vi.fn(),
     turnOff: vi.fn(async () => {}),
     unarchive: vi.fn(async () => {}),
@@ -582,6 +583,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
       ['Undo last review', true],
       ['Archive card', false],
       ['Put at top of Inbox', false],
+      ['Fix later', false],
       ['Open card', false],
     ])
     expect(actions().every((b) => b.querySelector('svg') !== null)).toBe(true)
@@ -600,6 +602,8 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.turnOff).toHaveBeenCalledOnce()
     run('Put at top of Inbox')
     expect(review.setNext).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', true)
+    run('Fix later')
+    expect(review.setFix).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', true)
     run('Open card')
     expect(props.openCard).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', 0, false)
     expect(actions()).toEqual([])
@@ -622,6 +626,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
       ['Up next0', 'false'],
       ['Due today9', 'false'],
       ['New cards3', 'false'],
+      ['To fix0', 'false'],
       ['Archived0', 'false'],
     ])
     // The menu is open: the Inbox's keys are not taken (a menu owns them).
@@ -645,7 +650,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     render()
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
     const rows = () => [...document.querySelectorAll<HTMLButtonElement>('.card-inbox__filter-item')]
-    expect(rows().map((r) => r.textContent)).toEqual(['All cards12', 'Up next2', 'Due today9', 'New cards3', 'Archived0'])
+    expect(rows().map((r) => r.textContent)).toEqual(['All cards12', 'Up next2', 'Due today9', 'New cards3', 'To fix0', 'Archived0'])
     const count = rows()[1].querySelector('.card-inbox__count')!
     expect([count.getAttribute('data-filter'), count.hasAttribute('data-empty')]).toEqual(['next', false])
     act(() => rows()[1].click())
@@ -1340,14 +1345,14 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     session = { ...session, ...WAITING }
     render()
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
-    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2 / 5', 'Due today10', 'New cards10 / 48', 'Archived0'])
+    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2 / 5', 'Due today10', 'New cards10 / 48', 'To fix0', 'Archived0'])
     // The total is every card of the kind: nothing waits, it is today's count.
     session = { ...session, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 } }
     render()
-    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2 / 2', 'Due today10', 'New cards10 / 10', 'Archived0'])
+    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2 / 2', 'Due today10', 'New cards10 / 10', 'To fix0', 'Archived0'])
     session = { ...session, limited: { new: false, next: false } }
     render()
-    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2', 'Due today10', 'New cards10', 'Archived0'])
+    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2', 'Due today10', 'New cards10', 'To fix0', 'Archived0'])
   })
 
   it('round 2: a click on the count turns the row into "Add [10] more new cards" (the Settings number, selected); Enter adds the typed number and the menu stays open; Esc goes back; the keys stay in the field', () => {
@@ -1368,7 +1373,7 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     key(field()!, 'Enter')
     expect(review.addCards).toHaveBeenCalledExactlyOnceWith('new', 12)
     // The menu stays open, the row back to its count.
-    expect(rows()).toHaveLength(5)
+    expect(rows()).toHaveLength(6)
     expect(field()).toBeNull()
     // Up next: its own field, at its own number; Esc goes back and the menu stays.
     act(() => rows()[1].querySelector<HTMLElement>('.card-inbox__count')!.click())
@@ -1378,7 +1383,7 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     expect(field()?.value).toBe('3')
     key(field()!, 'Escape')
     expect(field()).toBeNull()
-    expect(rows()).toHaveLength(5)
+    expect(rows()).toHaveLength(6)
     expect(review.addCards).toHaveBeenCalledTimes(1)
     // Empty: Enter adds nothing.
     act(() => rows()[3].querySelector<HTMLElement>('.card-inbox__count')!.click())
@@ -1397,11 +1402,11 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     session = { ...session, ...WAITING, counts: { all: 34, next: 2, due: 10, new: 22 }, more: { new: 26, next: 3 }, canReset: { new: true, next: false } }
     render()
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
-    expect(rows().map((r) => r.textContent)).toEqual(['All cards34', 'Up next2 / 5', 'Due today10', 'New cards22 / 48Reset', 'Archived0'])
+    expect(rows().map((r) => r.textContent)).toEqual(['All cards34', 'Up next2 / 5', 'Due today10', 'New cards22 / 48Reset', 'To fix0', 'Archived0'])
     act(() => rows()[3].querySelector<HTMLButtonElement>('.card-inbox__reset')!.click())
     expect(review.resetCards).toHaveBeenCalledExactlyOnceWith('new')
     expect(review.setFilter).not.toHaveBeenCalled()
-    expect(rows()).toHaveLength(5)
+    expect(rows()).toHaveLength(6)
   })
 
   it('the line under the answer buttons says the add, and its Undo is the hook\'s undo; Cmd + Z undoes it too', () => {
@@ -1494,10 +1499,10 @@ describe('YAZ-5046: archived cards in the Inbox, to look at (not to review)', ()
     session = { ...session, archived: ARCHIVED }
     render()
     openMenu()
-    expect(items().map((r) => r.textContent)).toEqual(['All cards12', 'Up next0', 'Due today9', 'New cards3', 'Archived2'])
-    // The line sits right before Archived.
-    expect(document.querySelector('.card-inbox__filter-sep + .card-inbox__filter-row [data-filter="archived"]')).not.toBeNull()
-    act(() => items()[4].click())
+    expect(items().map((r) => r.textContent)).toEqual(['All cards12', 'Up next0', 'Due today9', 'New cards3', 'To fix0', 'Archived2'])
+    // The line sits right before the two lists, To fix (YAZ-5097) and Archived.
+    expect(document.querySelector('.card-inbox__filter-sep + .card-inbox__filter-row [data-filter="fix"]')).not.toBeNull()
+    act(() => items()[5].click())
     expect(review.setFilter).toHaveBeenCalledExactlyOnceWith('archived')
   })
 
@@ -1527,6 +1532,67 @@ describe('YAZ-5046: archived cards in the Inbox, to look at (not to review)', ()
     expect(el.querySelector('.card-inbox__archived-empty')?.textContent).toBe('No archived cards.')
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done-more')!.click())
     expect(review.setFilter).toHaveBeenLastCalledWith('all')
+  })
+})
+
+describe('YAZ-5097: Fix later in the Inbox, and the To fix list', () => {
+  const TO_FIX = [
+    { path: '/v/a.md', index: 2, id: 'WIKI-4', title: 'Typo in carf' },
+    { path: '/v/b.md', index: 0, id: 'WIKI-8' },
+  ]
+  const openMenu = () => act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
+  const items = () => [...document.querySelectorAll<HTMLButtonElement>('.card-inbox__filter-item')]
+  const listRows = () => [...el.querySelectorAll<HTMLElement>('.card-inbox__archived-row')]
+
+  it('the cards menu has a To fix row with its count, after the rows that review; a pick sets the filter', () => {
+    mount(TWO_SIDES)
+    session = { ...session, toFix: TO_FIX }
+    render()
+    openMenu()
+    expect(items().map((r) => r.textContent)).toEqual(['All cards12', 'Up next0', 'Due today9', 'New cards3', 'To fix2', 'Archived0'])
+    act(() => items()[4].click())
+    expect(review.setFilter).toHaveBeenCalledExactlyOnceWith('fix')
+  })
+
+  it('To fix lists the cards: each its title and its page; a click opens the card window in Edit card; Fixed takes the mark off; no answer buttons, no "3 of 12"', () => {
+    mount(TWO_SIDES)
+    session = { ...session, filter: 'fix', card: null, toFix: TO_FIX }
+    render()
+    expect(el.querySelector('.card-inbox__filter')?.textContent).toBe('To fix')
+    expect(el.querySelector('.card-inbox__archived')?.getAttribute('aria-label')).toBe('Cards to fix')
+    expect(listRows().map((r) => [r.querySelector('.card-inbox__archived-title')?.textContent, r.querySelector('.card-inbox__archived-page')?.textContent])).toEqual([
+      ['Typo in carf', 'Cards'],
+      ['New card', 'Cards'],
+    ])
+    expect(buttons()).toEqual([])
+    expect(el.querySelector('.card-inbox__place')).toBeNull()
+    act(() => listRows()[0].querySelector<HTMLButtonElement>('.card-inbox__archived-open')!.click())
+    expect(props.openCard).toHaveBeenCalledExactlyOnceWith('/v/a.md', 'WIKI-4', 2, true)
+    const fixed = listRows()[1].querySelector<HTMLButtonElement>('.card-inbox__archived-unarchive')!
+    expect(fixed.textContent).toBe('Fixed')
+    expect(fixed.getAttribute('aria-label')).toBe('Remove Fix later')
+    act(() => fixed.click())
+    expect(review.setFix).toHaveBeenCalledExactlyOnceWith('/v/b.md', 'WIKI-8', false)
+  })
+
+  it('none to fix: one quiet line, and the way back to All cards', () => {
+    mount(TWO_SIDES)
+    session = { ...session, filter: 'fix', card: null, toFix: [] }
+    render()
+    expect(el.querySelector('.card-inbox__archived-empty')?.textContent).toBe('No cards to fix.')
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done-more')!.click())
+    expect(review.setFilter).toHaveBeenLastCalledWith('all')
+  })
+
+  it('a marked card shows a quiet "To fix" in its head, and ⋯ says Remove Fix later', () => {
+    mount(TWO_SIDES)
+    expect(el.querySelector('.card-inbox__head .card__fix')).toBeNull()
+    session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, fix: true } } }
+    render()
+    expect(el.querySelector('.card-inbox__head .card__fix')?.textContent).toBe('To fix')
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
+    act(() => [...el.querySelectorAll<HTMLButtonElement>('.card-inbox__more-action')].find((b) => b.getAttribute('aria-label') === 'Remove Fix later')!.click())
+    expect(review.setFix).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', false)
   })
 })
 

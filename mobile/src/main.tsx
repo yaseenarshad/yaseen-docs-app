@@ -24,7 +24,8 @@ async function start(root: Root) {
   }
   const { store, tokens } = storage
   // 3B's engine (YAZ-5072), loaded when a vault opens. WIRE 4E (YAZ-5081): replace `localFriends(store)` with
-  // Friends' own `FriendsPort`.
+  // Friends' own `FriendsPort`. WIRE 3D (YAZ-5074): pass its `MediaAhead` as `media` (the reader's `PageMedia`); until
+  // then the reader shows only the pictures and files that are on the phone (`storedMedia`).
   const services = { store, tokens, sync: lazySync(store, tokens), friends: localFriends(store), scanner: cameraScanner() }
   root.render(
     <StrictMode>

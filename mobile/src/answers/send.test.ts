@@ -5,6 +5,7 @@ import { GithubError, githubClient, type FetchLike } from '../github/client'
 import { memoryBackend, openVaultStore } from '../store'
 import { githubRemote } from '../sync/githubRemote'
 import { syncPass } from '../sync/pass'
+import { INDEX_STATE, type PhoneIndex } from '../sync/phoneIndex'
 import { BRANCH, REPO, TOKEN, VAULT, card, cardFileText, pageText, syncSetup, type SyncSetup } from '../sync/testing'
 import type { CardOp } from './ops'
 import { openOutbox, type Outbox } from './outbox'
@@ -335,3 +336,25 @@ describe('sendOutbox: many answers, two phones', () => {
     expect(p.box.waiting()).toEqual([])
   })
 })
+
+describe('YAZ-5073 checker gap 6: an action the file does not hold after all', () => {
+  it('the index names a.md for a card that a.md does not hold: the action is LOST (kept for Discard), never dropped silently', async () => {
+    const t = await setup(FILES)
+    const p = await phone(t.s)
+    await p.add(answer('NC-9', 1), answer('NC-2', 2))
+    // A pass whose index says a.md holds NC-9 (as a stale or wrong record would).
+    const pass = async () => {
+      await syncPass({ remote: p.remote, store: p.store, vault: VAULT, yieldToUi: quiet })
+      const index = (await p.store.getState<PhoneIndex>(VAULT, INDEX_STATE))!
+      const a = index.records['a.md']
+      index.records['a.md'] = { ...a, cards: [...(a.cards ?? []), { id: 'NC-9', off: false, next: false, reviews: [] }] }
+      await p.store.setState(VAULT, INDEX_STATE, index)
+    }
+    const report = await sendOutbox({ remote: p.remote, store: p.store, vault: VAULT, outbox: p.box, pass })
+    expect(report).toMatchObject({ result: 'sent', sent: 1, lost: 1 })
+    expect(p.box.lost().map((l) => l.op)).toEqual([answer('NC-9', 1)])
+    expect(p.box.waiting()).toEqual([])
+    expect(await t.reviewsOf('a.md', 'NC-2')).toEqual([at(2)])
+  })
+})
+

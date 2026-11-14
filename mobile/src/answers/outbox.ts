@@ -22,6 +22,11 @@ export interface WaitingAnswer {
   title: string
   /** When the person acted (ms since 1970). */
   madeAt: number
+  /**
+   * A send put this action in a commit (YAZ-5180). From then on GitHub MAY hold it: the reply can be lost, or the ref
+   * move can still be on its way. Such an action is never removed by Undo; Undo adds an `unreview` instead.
+   */
+  tried?: true
 }
 
 /** An action whose card was gone at the send (round 12 item 9): never sent again, kept until the person discards it. */
@@ -48,8 +53,16 @@ export interface Outbox {
   lost(): readonly LostAnswer[]
   /** One person action (one or more actions): kept, then resolves with its group number. */
   add(entries: readonly { op: CardOp; path: string; title: string }[], now: number): Promise<number>
-  /** Undo of an unsent action: its group leaves the list. Resolves with what left (empty: nothing waited). */
+  /**
+   * Undo of an unsent action: its group leaves the list. Resolves with what left. Empty: the group is not there, or a
+   * send has TRIED it (GitHub may hold it): then the caller adds `unreview` (YAZ-5180).
+   */
   removeGroup(group: number): Promise<WaitingAnswer[]>
+  /**
+   * Just before a commit: marks these actions as tried. Resolves with the ones it marked; one that Undo removed
+   * meanwhile is not there, and the send must plan again (YAZ-5180).
+   */
+  markTried(seqs: readonly number[]): Promise<number[]>
   /** After a send: the actions `done` (GitHub has them) leave; the actions `lost` move to the lost list. */
   settle(done: readonly number[], lost: readonly number[], now: number): Promise<void>
   /** The person tapped Discard on a lost action. False when it was not there. */
@@ -60,6 +73,24 @@ export interface Outbox {
 
 const EMPTY: AnswerBook = { v: 1, next: 1, waiting: [], lost: [] }
 
+/**
+ * Each change of a vault's list runs alone, in every tab (YAZ-5182): the read of the stored list and its write are held
+ * together by the Web Lock `notecards-answers:<vault>`. Where Web Locks are missing, one queue for each vault in this
+ * page does it (two lists of one vault in one page, and the tests).
+ */
+const pageQueues = new Map<string, Promise<unknown>>()
+function listLock<T>(vault: string, fn: () => Promise<T>): Promise<T> {
+  const locks = (globalThis as { navigator?: { locks?: { request(name: string, fn: () => Promise<T>): Promise<T> } } }).navigator?.locks
+  if (locks !== undefined) return locks.request(`notecards-answers:${vault}`, fn)
+  const run = (pageQueues.get(vault) ?? Promise.resolve()).then(fn, fn)
+  const settled = run.catch(() => undefined)
+  pageQueues.set(vault, settled)
+  void settled.then(() => {
+    if (pageQueues.get(vault) === settled) pageQueues.delete(vault)
+  })
+  return run
+}
+
 /** The answer list of vault `vault`, read from the store. */
 export async function openOutbox(store: VaultStore, vault: string): Promise<Outbox> {
   const saved = await store.getState<AnswerBook>(vault, ANSWERS_STATE)
@@ -68,11 +99,10 @@ export async function openOutbox(store: VaultStore, vault: string): Promise<Outb
     const stored = await store.getState<AnswerBook>(vault, ANSWERS_STATE)
     book = stored?.v === 1 ? stored : EMPTY
   }
-  // One write at a time, in order. Each one starts from the STORED list, so a second tab's change is kept (P4). A write
-  // that fails (a full phone) leaves the list in memory as it was.
-  let chain: Promise<unknown> = Promise.resolve()
-  const change = <T>(edit: (book: AnswerBook) => { next: AnswerBook; out: T } | null, fallback: T): Promise<T> => {
-    const run = chain.then(async () => {
+  // One change at a time, in every tab (`listLock`). Each one starts from the STORED list, so another tab's change is
+  // kept (P4). A write that fails (a full phone) leaves the stored list as it was.
+  const change = <T>(edit: (book: AnswerBook) => { next: AnswerBook; out: T } | null, fallback: T): Promise<T> =>
+    listLock(vault, async () => {
       await reread()
       const made = edit(book)
       if (made === null) return fallback
@@ -80,9 +110,6 @@ export async function openOutbox(store: VaultStore, vault: string): Promise<Outb
       book = made.next
       return made.out
     })
-    chain = run.catch(() => undefined)
-    return run
-  }
   return {
     waiting: () => book.waiting,
     lost: () => book.lost,
@@ -96,8 +123,17 @@ export async function openOutbox(store: VaultStore, vault: string): Promise<Outb
     removeGroup(group) {
       return change((b) => {
         const gone = b.waiting.filter((w) => w.group === group)
-        return gone.length === 0 ? null : { next: { ...b, waiting: b.waiting.filter((w) => w.group !== group) }, out: gone }
+        if (gone.length === 0 || gone.some((w) => w.tried === true)) return null
+        return { next: { ...b, waiting: b.waiting.filter((w) => w.group !== group) }, out: gone }
       }, [] as WaitingAnswer[])
+    },
+    markTried(seqs) {
+      return change((b) => {
+        const want = new Set(seqs)
+        const marked = b.waiting.filter((w) => want.has(w.seq)).map((w) => w.seq)
+        if (marked.length === 0) return { next: b, out: marked }
+        return { next: { ...b, waiting: b.waiting.map((w) => (want.has(w.seq) ? { ...w, tried: true as const } : w)) }, out: marked }
+      }, [] as number[])
     },
     settle(done, lost, now) {
       return change((b) => {
@@ -108,11 +144,7 @@ export async function openOutbox(store: VaultStore, vault: string): Promise<Outb
         return { next: { ...b, waiting: b.waiting.filter((w) => !leave.has(w.seq)), lost: [...b.lost, ...newlyLost] }, out: undefined }
       }, undefined)
     },
-    refresh() {
-      const run = chain.then(reread)
-      chain = run.catch(() => undefined)
-      return run
-    },
+    refresh: () => listLock(vault, reread),
     discard(seq) {
       return change((b) => (b.lost.some((l) => l.seq === seq) ? { next: { ...b, lost: b.lost.filter((l) => l.seq !== seq) }, out: true } : null), false)
     },

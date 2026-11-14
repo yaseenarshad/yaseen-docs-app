@@ -75,6 +75,9 @@
  *    button; nothing waiting, the screen is as before. The cards menu has the same Add (`CardInboxBar`). The add's
  *    line takes the last answer's line, "+ Added 10 new cards for today · Undo ⌘Z": its Undo, and ⌘Z, take the add
  *    back while it is the last thing done (the hook's own undo).
+ *  - TO FIX (YAZ-5097, "Fix later"): the ⋯ row's Fix later / Remove Fix later writes the line's `fix`; the card stays in
+ *    review, and its head says "To fix", quietly. The cards menu's To fix row lists the scope's marked cards as Archived
+ *    does: a click opens the card window in Edit card (the job is the fix), and "Fixed" takes the mark off.
  *  - ARCHIVED (YAZ-5046, Yaseen: "We need a way to be able to then have a toggle"): the cards menu's last row lists the
  *    scope's archived cards in the card's place, to look at, not to review: each its title and its page; a click opens
  *    the card window (as ⋯ › Open card), and "Unarchive" brings it back to review, its history kept. No answer buttons.
@@ -86,7 +89,8 @@ import { recordAt } from '../editor/card/embedCard'
 import type { GestureAction } from '@shared/keys'
 import type { CardRating } from '@shared/cardLine'
 import type { ExploreVault } from '../explore/ExplorePage'
-import type { CardReviewApi, CardReviewSession } from './useCardReview'
+import { isListFilter, type CardReviewApi, type CardReviewSession } from './useCardReview'
+import { FIX_PATH } from './cardInboxIcons'
 import { CardBody, CardId, CardNextChip, CardReviews, cardWait } from './cardParts'
 import { cardInboxHints, cardInboxKey } from './cardInboxKeys'
 import { CARD_MEDIA, CARD_OPENS, stopCardAudio, textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
@@ -161,6 +165,7 @@ const ICON_UNDO = icon('M6 4 3 7l3 3M3 7h7a3 3 0 0 1 0 6H8')
 const ICON_OFF = icon('M2.5 3.5h11v3h-11zM3.5 6.5v6h9v-6M6.5 9h3')
 const ICON_TOP = icon('M3 2.5h10M8 13.5V5.5M5 8.5l3-3 3 3')
 const ICON_CARD = icon('M2.5 3.5h11v9h-11zM2.5 6.5h11')
+const ICON_FIX = icon(FIX_PATH)
 
 /** The last answer's line (YAZ-5025 round 2): its words, its answer, and the session's answer count with it. */
 interface AnswerLine {
@@ -183,14 +188,15 @@ export const addedLine = (kind: AddKind, n: number): string => `Added ${n} ${kin
 export const resetLine = (kind: AddKind): string => `Reset today's ${kind === 'new' ? 'new cards' : 'Up next'}`
 
 /**
- * The Archived list (YAZ-5046): the scope's archived cards, to look at. Each row: its title (a click opens the card
- * window), its page, quiet, and Unarchive. None: one quiet line and the way back to All cards.
+ * A list of cards to look at, not to review: the Archived list (YAZ-5046) and the To fix list (YAZ-5097), one look.
+ * Each row: its title (a click opens the card window: to look at it, or in Edit card to fix it), its page, quiet, and
+ * its one action (Unarchive, Fixed). None: one quiet line and the way back to All cards.
  */
-function ArchivedList({ session, nameOf, openCard, unarchive, backToAll }: { session: CardReviewSession; nameOf: (path: string) => string; openCard: CardInboxProps['openCard']; unarchive: CardReviewApi['unarchive']; backToAll: () => void }) {
-  if (session.archived.length === 0)
+function CardList({ cards, label, empty, edit, action, session, nameOf, openCard, backToAll }: { cards: CardReviewSession['archived']; label: string; empty: string; edit: boolean; action: { text: string; label?: string; run: (path: string, id: string) => void }; session: CardReviewSession; nameOf: (path: string) => string; openCard: CardInboxProps['openCard']; backToAll: () => void }) {
+  if (cards.length === 0)
     return (
       <div className="card-inbox__done" role="status">
-        <p className="card-inbox__done-line card-inbox__archived-empty">No archived cards.</p>
+        <p className="card-inbox__done-line card-inbox__archived-empty">{empty}</p>
         {session.counts.all > 0 && (
           <button type="button" className="card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={backToAll}>
             {session.counts.all} more in {CARD_FILTERS[0].label}
@@ -199,15 +205,15 @@ function ArchivedList({ session, nameOf, openCard, unarchive, backToAll }: { ses
       </div>
     )
   return (
-    <ul className="card-inbox__archived" aria-label="Archived cards">
-      {session.archived.map((c) => (
+    <ul className="card-inbox__archived" aria-label={label}>
+      {cards.map((c) => (
         <li key={`${c.path}\n${c.id}`} className="card-inbox__archived-row">
-          <button type="button" className="card-inbox__archived-open" onMouseDown={(e) => e.preventDefault()} onClick={() => openCard(c.path, c.id, c.index, false)}>
+          <button type="button" className="card-inbox__archived-open" onMouseDown={(e) => e.preventDefault()} onClick={() => openCard(c.path, c.id, c.index, edit)}>
             <span className={`card-inbox__archived-title${c.title === undefined ? ' card__title--empty' : ''}`}>{c.title ?? 'New card'}</span>
             <span className="card-inbox__archived-page">{nameOf(c.path)}</span>
           </button>
-          <button type="button" className="explore__button card-inbox__archived-unarchive" onMouseDown={(e) => e.preventDefault()} onClick={() => void unarchive(c.path, c.id)}>
-            Unarchive
+          <button type="button" className="explore__button card-inbox__archived-unarchive" aria-label={action.label} onMouseDown={(e) => e.preventDefault()} onClick={() => void action.run(c.path, c.id)}>
+            {action.text}
           </button>
         </li>
       ))}
@@ -425,6 +431,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
           card.page?.next === true
             ? { id: 'next', label: 'Remove from top of Inbox', icon: ICON_TOP, disabled: false, run: () => void review.setNext(card.path, card.id, false) }
             : { id: 'next', label: 'Put at top of Inbox', icon: ICON_TOP, disabled: card.page === null, run: () => void review.setNext(card.path, card.id, true) },
+          // YAZ-5097: Fix later (round 10, decision 11's ⋯: Archive card, Up next, Fix later, Open card).
+          card.page?.fix === true
+            ? { id: 'fix', label: 'Remove Fix later', icon: ICON_FIX, disabled: false, run: () => void review.setFix(card.path, card.id, false) }
+            : { id: 'fix', label: 'Fix later', icon: ICON_FIX, disabled: card.page === null, run: () => void review.setFix(card.path, card.id, true) },
           { id: 'card', label: 'Open card', icon: ICON_CARD, disabled: false, run: () => openCard(card.path, card.id, card.index, false) },
         ]
 
@@ -457,6 +467,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                 )}
                 <CardId id={card.id} onNotice={onNotice} />
                 {card.page?.next === true && <CardNextChip onRemove={() => void review.setNext(card.path, card.id, false)} />}
+                {card.page?.fix === true && <span className="card__state card__fix">To fix</span>}
               </span>
             </>
           )}
@@ -469,7 +480,9 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
           <div className="card-inbox__edge" data-side="right" role="separator" aria-orientation="vertical" aria-label="Card width" onPointerDown={startDrag(1)} />
           <div ref={bodyRef} className="card-inbox__body">
             {session.filter === 'archived' ? (
-              <ArchivedList session={session} nameOf={nameOf} openCard={openCard} unarchive={review.unarchive} backToAll={() => review.setFilter('all')} />
+              <CardList cards={session.archived} label="Archived cards" empty="No archived cards." edit={false} action={{ text: 'Unarchive', run: review.unarchive }} session={session} nameOf={nameOf} openCard={openCard} backToAll={() => review.setFilter('all')} />
+            ) : session.filter === 'fix' ? (
+              <CardList cards={session.toFix} label="Cards to fix" empty="No cards to fix." edit action={{ text: 'Fixed', label: 'Remove Fix later', run: (path, id) => void review.setFix(path, id, false) }} session={session} nameOf={nameOf} openCard={openCard} backToAll={() => review.setFilter('all')} />
             ) : card === null ? (
               <div className="card-inbox__done" role="status">
                 {/* YAZ-5033: today's work across the vault, under whatever the screen says. */}
@@ -522,7 +535,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
         {/* YAZ-5105 round 2: the Reviews strip, as Mochi's, under the card and outside its frame; round 3: as soon as the
             last side shows, its hidden words shown or not; closed again for each card. The buttons' band stays at the
             bottom of the view over it. */}
-        {card?.page != null && session.filter !== 'archived' && onLastSide && card.page.reviews.length > 0 && <CardReviews key={cardKey} reviews={card.page.reviews} settings={review.settings} />}
+        {card?.page != null && !isListFilter(session.filter) && onLastSide && card.page.reviews.length > 0 && <CardReviews key={cardKey} reviews={card.page.reviews} settings={review.settings} />}
         {/* Under the card, outside its frame, as in Mochi (YAZ-5002): the answer buttons, then the keys. No "Press Space"
             line between them (YAZ-5021): the key row at the bottom already says Space. */}
         {/* YAZ-5049 round 2: the buttons and their line stay at the bottom of the view while a long card scrolls under them. */}
