@@ -435,19 +435,28 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.start).toHaveBeenCalledExactlyOnceWith({})
   })
 
-  it('YAZ-5105: a card with reviews shows its Reviews strip (the card window\'s own `CardReviews`) under the card, outside its frame, only once the last side is fully shown; never on the front or an earlier side', async () => {
+  it('YAZ-5105: a card with reviews shows its Reviews strip (the card window\'s own `CardReviews`) under the card, outside its frame, as soon as the last side shows (round 3: its hidden words shown or not); never on the front or an earlier side', async () => {
     mount(TWO_SIDES)
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }, { at: '2026-11-13T09:00Z', rating: 'again' }] } } }
     render()
     await flush()
     const reviews = () => el.querySelector('.card-reviews')
-    // The front, its word, the second side and its first word: hidden all along.
-    for (let step = 0; step < 4; step++) {
+    // The front and its word (side 1 of 2): no strip.
+    for (let step = 0; step < 2; step++) {
       expect(reviews(), `step ${step}`).toBeNull()
       press(' ')
     }
     await flush()
+    // Round 3 (Yaseen: "just show on the last side … regardless of it hidden words are all revealed or not"): the
+    // last side shows, its two hidden words still hidden, and the strip is there.
+    expect(blanks()).toBe(2)
+    expect(reviews()).not.toBeNull()
+    // It stays while the last side's words show.
+    press(' ')
+    press(' ')
+    await flush()
     expect(blanks()).toBe(0)
+    expect(reviews()).not.toBeNull()
     // Round 2 (as Mochi): fully shown, the Reviews strip sits OUTSIDE the card's frame, right under it, before the
     // buttons' band; the buttons stay in their band.
     const column = el.querySelector('.card-inbox__column')!
@@ -483,6 +492,22 @@ describe('the Inbox screen (YAZ-4962)', () => {
     press(' ')
     await flush()
     expect(el.querySelector('.card-reviews__toggle')?.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('YAZ-5105 round 3: a one-side card (its front is its last side) shows the strip after its first Space, never before; with no hidden word it is fully shown at once, and so is the strip', async () => {
+    mount('One {{a}} and {{b}}')
+    session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, reviews: [{ at: AT, rating: 'good' }] } } }
+    render()
+    await flush()
+    expect(el.querySelector('.card-reviews'), 'the front: nothing shown yet').toBeNull()
+    press(' ')
+    await flush()
+    expect(blanks()).toBe(1)
+    expect(el.querySelector('.card-reviews')).not.toBeNull()
+    session = { ...session, position: 4, card: { ...session.card!, id: 'WIKI-10', page: { ...session.card!.page!, id: 'WIKI-10', text: 'Nothing hidden', reviews: [{ at: AT, rating: 'good' }] } } }
+    render()
+    await flush()
+    expect(el.querySelector('.card-reviews')).not.toBeNull()
   })
 
   it('YAZ-5002: the buttons sit under the card, outside its panel; the key row is last; YAZ-5021: no "Press Space" line over the buttons at any step (the key row says Space)', async () => {
