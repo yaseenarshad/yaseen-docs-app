@@ -16,6 +16,7 @@ import { registerClipboardIpc } from './main/ipc/clipboard'
 import { registerUpdateIpc } from './main/ipc/update'
 import { registerMemoryIpc } from './main/ipc/memory'
 import { registerSpellerIpc } from './main/ipc/speller'
+import { registerCourseAudioIpc } from './main/ipc/courseAudio'
 import { LIBRARY_MARKER_FILE } from './main/library/copyLibrary'
 import { createStore } from './main/store'
 import type { WindowManagerIpc } from './main/windows'
@@ -52,7 +53,8 @@ afterAll(async () => {
 })
 
 it('main handles every invoke exactly once and listens on exactly the send channels', () => {
-  // The four registrations `main/index.ts` makes on `ready`.
+  // The five registrations `main/index.ts` makes on `ready`, besides `registerIpc`. The course sound (YAZ-5159) fetches nothing here.
+  registerCourseAudioIpc({ userData: dir, isPackaged: true, fetchImpl: vi.fn() })
   registerMemoryIpc({ report: vi.fn() })
   registerSpellerIpc({ guesses: vi.fn() })
   registerUpdateIpc({ state: () => ({ kind: 'idle' }), notes: async () => ({ current: '1.0.13', checks: true, releases: [] }), check: async () => ({ kind: 'idle' }), checks: true }, { openExternal: vi.fn(), restartToUpdate: vi.fn() })
