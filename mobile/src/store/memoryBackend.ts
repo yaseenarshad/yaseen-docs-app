@@ -1,4 +1,4 @@
-import { TABLES, compareKeys, type Backend, type Key, type Op, type Table } from './backend'
+import { StaleWriteError, TABLES, compareKeys, type Backend, type Key, type Op, type Table } from './backend'
 
 /** The "disk" of a memory backend: a new backend on the same disk sees the same rows, as the next app start does. */
 export type MemoryDisk = Map<Table, Map<string, { key: Key; value: unknown }>>
@@ -30,7 +30,9 @@ export function memoryBackend(disk: MemoryDisk = newMemoryDisk()): Backend {
     async apply(ops: readonly Op[]) {
       // Clone first: a value that cannot be cloned fails the batch before any row changes.
       const ready = ops.map((op) => ('put' in op ? { ...op, value: structuredClone(op.value) } : op))
+      for (const op of ready) if ('check' in op && table(op.check).get(id(op.key))?.value !== op.value) throw new StaleWriteError()
       for (const op of ready) {
+        if ('check' in op) continue
         if ('put' in op) table(op.put).set(id(op.key), { key: op.key, value: op.value })
         else if ('del' in op) table(op.del).delete(id(op.key))
         else if (op.scope === undefined) table(op.clear).clear()

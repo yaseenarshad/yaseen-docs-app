@@ -278,9 +278,11 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     } else await loadIndex(id, gen) // another tab may have synced this vault (P4)
   }
 
-  const passOptions = (open: PhoneVault, id: string, token: string, gen: number) => ({
+  // `session`: the store bound to the vault's generation at the start of the work (YAZ-5193): after a clear of the
+  // vault (in any tab), every write of this pass is refused, so it can never mark a file done for the next open.
+  const passOptions = (open: PhoneVault, id: string, token: string, gen: number, session: VaultStore) => ({
     remote: remoteOf(open, token),
-    store,
+    store: session,
     vault: id,
     now: clock.now,
     yieldToUi: options.yieldToUi ?? defaultYield,
@@ -296,6 +298,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     lastAnswer = clock.now()
     try {
       // Inside the `try` (YAZ-5170): a failed read of the token store (iOS: "connection lost") is a status, not a stop.
+      const session = await store.session(id)
       const token = await tokens.read(id)
       if (gen !== generation) return
       if (token === null) {
@@ -303,7 +306,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
         return
       }
       setState({ status: 'syncing', progress: null })
-      const result = await exclusive(id, () => lock(lockName(id), () => syncPass(passOptions(open, id, token, gen))))
+      const result = await exclusive(id, () => lock(lockName(id), () => syncPass(passOptions(open, id, token, gen, session))))
       if (gen !== generation) return
       await adopt(id, gen, result)
       slowedInRow = 0
@@ -397,6 +400,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       if (vault === null) return null
       const open = vault
       const id = vaultId(open)
+      const session = await store.session(id)
       const stored = await store.read(id, path)
       if (stored !== null) return stored
       // An eager file that is not stored is over the size limit (F7): metadata only, as on the Mac.
@@ -413,7 +417,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
         const bytes = await remote.blob(sha)
         const kept = await lock(lockName(id), async () => {
           if ((await store.checkpoint(id))?.shas[path] !== sha) return false
-          await store.write(id, path, bytes)
+          await session.write(id, path, bytes)
           return true
         })
         if (kept) return store.read(id, path)
@@ -428,8 +432,9 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       await this.idle()
       const token = await tokens.read(id)
       if (token === null) throw new GithubError('UNAUTHORIZED', null, 'This vault has no token')
+      const session = await store.session(id)
       const pass = async () => {
-        const result = await syncPass(passOptions(open, id, token, gen))
+        const result = await syncPass(passOptions(open, id, token, gen, session))
         await adopt(id, gen, result)
         if (gen === generation) {
           slowedInRow = 0
