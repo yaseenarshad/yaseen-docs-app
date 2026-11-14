@@ -22,6 +22,23 @@ export type Op =
   | { del: Table; key: Key }
   /** Every row of the table, or only the rows whose key is `[scope, …]`. */
   | { clear: Table; scope?: string }
+  /**
+   * A condition, not a write: the batch lands only when the row at `key` holds `value` now (`undefined`: no row). Else
+   * no op of the batch lands and `apply` rejects with `StaleWriteError`. Checked inside the same transaction as the
+   * writes, so a change by another tab cannot slip in between (YAZ-5193, YAZ-5194).
+   */
+  | { check: Table; key: Key; value: unknown }
+
+/** A batch whose `check` failed: the rows it checked changed meanwhile (a clear of the vault, in any tab). */
+export class StaleWriteError extends Error {
+  constructor() {
+    super('The stored generation changed: this write belongs to an older open of the vault')
+    this.name = 'StaleWriteError'
+  }
+}
+
+/** The table an op touches. */
+export const tableOf = (op: Op): Table => ('put' in op ? op.put : 'del' in op ? op.del : 'check' in op ? op.check : op.clear)
 
 export interface Backend {
   /** The value at `key`, a copy; `undefined` when there is none. */

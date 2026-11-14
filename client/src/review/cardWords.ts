@@ -4,7 +4,7 @@
  * (`cardParts.tsx`, which gives out the same names) and the phone's Review screen (4B) say the same words.
  */
 import type { CardReview } from '@shared/cardLine'
-import { cardState, cardStateWithout, dayCount, recallChance } from '@shared/cardSchedule'
+import { cardState, cardStateWithout, dayCount, recallChance, type AddKind } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 
 /** A date as the card screens say it: "Nov 21", with the year when it is not this year's. */
@@ -93,3 +93,16 @@ export function cardRemoveOutcome(reviews: readonly CardReview[], review: CardRe
   if (from === to) return `The due date stays ${to}.`
   return `The due date moves from ${from} to ${to}${will.date === null ? '' : ` (${will.when})`}.`
 }
+
+/** What waits past today's number (YAZ-5042), as the done screen says it: "38 new cards and 3 Up next cards wait for another day." */
+export function waitingLine(more: Record<AddKind, number>, kinds: readonly AddKind[]): string {
+  const parts = kinds.map((k) => `${more[k]} ${k === 'new' ? 'new' : 'Up next'} card${more[k] === 1 ? '' : 's'}`)
+  const one = kinds.length === 1 && more[kinds[0]] === 1
+  return `${parts.join(' and ')} ${one ? 'waits' : 'wait'} for another day.`
+}
+
+/** The add's line (YAZ-5042), after its "+": "Added 10 new cards for today". */
+export const addedLine = (kind: AddKind, n: number): string => `Added ${n} ${kind === 'new' ? 'new' : 'Up next'} card${n === 1 ? '' : 's'} for today`
+
+/** A Reset's line (YAZ-5042 round 2), after its "↺": "Reset today's new cards" (back to the Settings number). */
+export const resetLine = (kind: AddKind): string => `Reset today's ${kind === 'new' ? 'new cards' : 'Up next'}`

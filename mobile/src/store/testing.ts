@@ -27,7 +27,7 @@ export function limitedBackend(inner: Backend, limit: number | (() => number)): 
       for (const op of ops) {
         if ('put' in op) next.set(id(op.put, op.key), sizeOf(op.put, op.value))
         else if ('del' in op) next.delete(id(op.del, op.key))
-        else {
+        else if ('clear' in op) {
           const prefix = op.scope === undefined ? `${op.clear}\u0000` : `${op.clear}\u0000${JSON.stringify([op.scope]).slice(0, -1)},`
           for (const k of [...next.keys()]) if (k.startsWith(prefix)) next.delete(k)
         }

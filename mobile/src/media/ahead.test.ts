@@ -103,11 +103,21 @@ async function setup(files: Record<string, string | Uint8Array>, options: Option
   const lock = memoryLock()
   const log: string[] = []
   const blobsInFlight = { now: 0, max: 0 }
-  const checkpointOf = store.setCheckpoint.bind(store)
-  store.setCheckpoint = async (vault, cp) => {
-    log.push(`checkpoint ${vault}`)
-    await checkpointOf(vault, cp)
-    options.onCheckpoint?.(vault)
+  // The pass writes through a store session (YAZ-5193): the hook goes on the plain store and on each session.
+  const hookCheckpoint = (on: VaultStore) => {
+    const checkpointOf = on.setCheckpoint.bind(on)
+    on.setCheckpoint = async (vault, cp) => {
+      log.push(`checkpoint ${vault}`)
+      await checkpointOf(vault, cp)
+      options.onCheckpoint?.(vault)
+    }
+  }
+  hookCheckpoint(store)
+  const sessionOf = store.session.bind(store)
+  store.session = async (scope) => {
+    const session = await sessionOf(scope)
+    hookCheckpoint(session)
+    return session
   }
   const eagerShas = () => {
     const out = new Set<string>()
@@ -384,7 +394,9 @@ describe('3D: media ahead of time (decision 6)', () => {
     const t2 = await setup({ ...base, 'b.md': page('B', [], 'x'.repeat(60)) }, { store: s2 })
     await t2.open()
     expect(dropped).not.toContain('w1.png') // before the fix: ['w1.png', …]
-    expect(dropped).toContain('u.png')
+    // The room came from u.png (the media no window card needs), by whichever write of the pass needed it first.
+    expect(await s2.read(VAULT, 'u.png')).toBeNull()
+    expect(await s2.read(VAULT, 'w1.png')).not.toBeNull()
   })
 
   // The checker's mutation (YAZ-5074 verdict): without the SHA check before a write, no test turned red.
