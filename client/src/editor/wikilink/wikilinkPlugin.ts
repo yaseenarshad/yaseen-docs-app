@@ -64,9 +64,11 @@ import { fileLabel, pageLabel, pathTitles, type PathTitles } from '../../lib/pag
 import { boardEmbedName, boardEmbedTarget, isIdTarget } from '../drawing/boardEmbedText'
 import { headKey, headSpan, pathInfo, pillIconPlace, pillParts, pillsNeedInfo, tailKey, tailSpan, type PillMeta } from './linkPillLook'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
+import { WIKILINK_CLASS, cardPillSpan } from './cardPill'
 import './wikilink.css'
 
-export const WIKILINK_CLASS = 'wikilink'
+// The card pill moved to its own file (YAZ-5067), so the card drawing loads without this plugin; its names stay here too.
+export { WIKILINK_CARD_CLASS, WIKILINK_CARD_ID_CLASS, WIKILINK_CLASS, cardPillSpan } from './cardPill'
 export const WIKILINK_UNRESOLVED_CLASS = 'wikilink--unresolved'
 export const WIKILINK_SYNTAX_CLASS = 'wikilink__syntax'
 export const WIKILINK_SUB_CLASS = 'wikilink__sub'
@@ -400,25 +402,6 @@ function titleSpan(cls: string, title: string, icon?: Record<string, string>): H
   span.className = icon === undefined ? cls : `${cls} ${icon.class}`
   span.spellcheck = false
   span.textContent = title
-  return span
-}
-
-/** The class of a card link's pill (YAZ-5030): its card icon, and the ID after the title. */
-export const WIKILINK_CARD_CLASS = 'wikilink--card'
-export const WIKILINK_CARD_ID_CLASS = 'wikilink__card-id'
-
-/**
- * The DOM a card link draws (YAZ-5030): the card's title and, small and grey after it, its ID, in ONE pill with the card
- * icon on its `::before` (`wikilink.css`). The look of an ID link's title (`titleSpan`), so a card pill sits among them.
- */
-export function cardPillSpan(title: string, id: string): HTMLElement {
-  const span = document.createElement('span')
-  span.className = `${WIKILINK_CLASS} ${WIKILINK_CARD_CLASS}`
-  span.spellcheck = false
-  const idSpan = document.createElement('span')
-  idSpan.className = WIKILINK_CARD_ID_CLASS
-  idSpan.textContent = id
-  span.append(title, idSpan)
   return span
 }
 

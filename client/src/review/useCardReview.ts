@@ -5,14 +5,13 @@ import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { folderTitle } from '../links/shortcuts'
-import { storage } from '../lib/storage'
-import { changeCardLine, deleteCardReview, isCardGone, readCard, restoreCardReview, undoCardAnswer, writeCardAnswer, type CardOnPage } from './cardFile'
-import { setUpNextTaken, subscribeUpNextTaken, upNextTakenToday } from './upNextTaken'
-import { cardsAddedToday, setCardsAdded, subscribeCardsAdded } from './cardsAdded'
+import { isCardGone, type CardOnPage } from './cardFile'
+import { desktopReviewHost, type ReviewHost } from './reviewHost'
 
 /**
  * Card review as App sees it (YAZ-4967): how many cards are due, and the one review
- * session a vault can have open. The queue comes from the index (`cardQueue`) and is taken ONCE, at start; a card is
+ * session a vault can have open. The hook holds the review rules only; it reads and writes through its `host`
+ * (YAZ-5067, `reviewHost.ts`): the desktop's files and app state by default, the phone's own store on the phone. The queue comes from the index (`cardQueue`) and is taken ONCE, at start; a card is
  * checked against the live index only when its turn comes, and read from its page when it shows (the index holds no
  * text, D4). A card whose page or ID is gone is passed over.
  *
@@ -511,7 +510,7 @@ export function cardPlace(root: string, vault: string, folders: readonly IndexRe
   return records.find((r) => r.path === path)?.kind === 'card' ? top : [...top, { kind: 'page', label: titleOf(records, path), path }]
 }
 
-export function useCardReview(root: string | null, source: IndexSource, settings: ReviewSettings, onNotice: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void, vaultName?: string | null): CardReviewApi {
+export function useCardReview(root: string | null, source: IndexSource, settings: ReviewSettings, onNotice: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void, vaultName?: string | null, host: ReviewHost = desktopReviewHost): CardReviewApi {
   const records = useSyncExternalStore(source.subscribe, () => source.records)
   const [session, setSession] = useState<Session | null>(null)
   // The card showing, read from its page, and its fixed answers: each for one turn (`turnKey`).
@@ -530,9 +529,9 @@ export function useCardReview(root: string | null, source: IndexSource, settings
   // The replay of each card is cached by its log (`cardDueAt`), so a new snapshot costs a join per reviewed card.
   const letters = source.letters
   // YAZ-5028: today's taken Up next places, from the app state; one array while it holds still.
-  const taken = useSyncExternalStore(subscribeUpNextTaken, () => (root === null ? NO_TAKEN : upNextTakenToday(root)))
+  const taken = useSyncExternalStore(host.subscribeUpNextTaken, () => (root === null ? NO_TAKEN : host.upNextTakenToday(root)))
   // YAZ-5042: today's added numbers, from the app state; none on another day (`day` re-renders at midnight).
-  const added = useSyncExternalStore(subscribeCardsAdded, () => (root === null ? NO_ADDED : cardsAddedToday(root)))
+  const added = useSyncExternalStore(host.subscribeCardsAdded, () => (root === null ? NO_ADDED : host.cardsAddedToday(root)))
   const vaultPlan = useMemo(() => cardPlan(records, settings, Date.now(), '', undefined, letters, taken, added), [records, settings, day, letters, taken, added])
   const vaultQueue = vaultPlan.queue
   const dueCount = vaultQueue.length
@@ -580,7 +579,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     async (card: DueCard): Promise<CardOnPage | null> => {
       const from = epoch.current.get(card.path) ?? 0
       const mtime = mtimeOf(card.path)
-      const page = await readCard(card.path, card.id)
+      const page = await host.readCard(card.path, card.id)
       const key = cardKey(card)
       if (page !== null && (epoch.current.get(card.path) ?? 0) === from) {
         cache.current.delete(key)
@@ -589,7 +588,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       }
       return page
     },
-    [mtimeOf],
+    [mtimeOf, host],
   )
   /** A write of `path` here: its cached cards go, and reads of it already begun are not kept. */
   const forget = useCallback((path: string) => {
@@ -670,7 +669,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     (scope: CardReviewScope = {}, resume: CardReviewResume = {}) => {
       const { records, settings } = live.current
       if (!settings.enabled) return
-      const queue = cardPlan(records, settings, Date.now(), scope.folder, scope.page, source.letters, root === null ? NO_TAKEN : upNextTakenToday(root), root === null ? NO_ADDED : cardsAddedToday(root)).queue
+      const queue = cardPlan(records, settings, Date.now(), scope.folder, scope.page, source.letters, root === null ? NO_TAKEN : host.upNextTakenToday(root), root === null ? NO_ADDED : host.cardsAddedToday(root)).queue
       const label = scope.page !== undefined ? titleOf(records, scope.page) : scope.folder ? folderTitle(source.folders, `${root}/${scope.folder}`) : 'Inbox'
       const { due, new: fresh, next } = countOf(queue)
       // A new scope starts on All cards (YAZ-5017), with an empty bar (YAZ-5020); a moved Inbox on its filter, at its
@@ -679,7 +678,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       const at = resume.card === undefined ? -1 : queue.findIndex((c) => c.path === resume.card?.path && c.id === resume.card.id)
       setSession((s) => fitted({ id: (s?.id ?? 0) + 1, label, scope, queue, at: Math.max(at, 0), total: queue.length, turn: (s?.turn ?? 0) + 1, undo: [], filter, totals: { due, new: fresh, next }, answered: [], marks: markedIn(queue) }))
     },
-    [root, source],
+    [root, source, host],
   )
 
   /** The fixed answers of the card showing: fixed now when not yet (D13). */
@@ -709,7 +708,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       const chosen = isCardSeconds(seconds) ? { ...fixedAnswer, review: { ...fixedAnswer.review, seconds } } : fixedAnswer
       busy.current = true
       forget(card.path)
-      const written = await writeCardAnswer(card.path, card.id, chosen.review).then(
+      const written = await host.writeCardAnswer(card.path, card.id, chosen.review).then(
         (next) => ({ next }),
         (err: unknown) => {
           if (isCardGone(err)) return 'gone' as const
@@ -722,7 +721,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       if (written === 'failed') return
       // YAZ-5028: the answer took the mark off a card of today's Up next: one of the day's places is used. A marked
       // card past the day's places (`card.next` false) loses its mark too, but it held no place.
-      if (written !== 'gone' && written.next >= 0 && card.next && root !== null) setUpNextTaken(root, card.id, true)
+      if (written !== 'gone' && written.next >= 0 && card.next && root !== null) host.setUpNextTaken(root, card.id, true)
       setSession((s) => {
         if (s === null || !showing(s, card)) return s
         // Still in its steps (YAZ-5020): back at the end of this session, no longer new or up next.
@@ -739,28 +738,28 @@ export function useCardReview(root: string | null, source: IndexSource, settings
         return fitted({ ...s, queue, at: after.length > 0 ? s.at : 0, total: s.total + (repeat ? 1 : 0), totals, turn: s.turn + 1, undo, answered })
       })
     },
-    [fixAnswers, onNotice, settle, forget, root],
+    [fixAnswers, onNotice, settle, forget, root, host],
   )
 
   /** The add's undo (YAZ-5042): today's number goes down by what the add grew it; its cards not answered yet leave. */
   const undoAdd = useCallback(
     (step: AddStep) => {
       if (root !== null) {
-        const now = cardsAddedToday(root)
-        setCardsAdded(root, step.what === 'new' ? { ...now, newCards: now.newCards - step.delta } : { ...now, upNext: now.upNext - step.delta })
+        const now = host.cardsAddedToday(root)
+        host.setCardsAdded(root, step.what === 'new' ? { ...now, newCards: now.newCards - step.delta } : { ...now, upNext: now.upNext - step.delta })
       }
       setSession((s) => (s === null || s.undo.at(-1) !== step ? s : withoutAdded(s, step)))
     },
-    [root],
+    [root, host],
   )
 
   /** A Reset's undo (YAZ-5042 round 2): today's number goes back up; its cards join the session again, as an add's do. */
   const undoReset = useCallback(
     (step: ResetStep) => {
       if (root === null) return
-      const now = cardsAddedToday(root)
+      const now = host.cardsAddedToday(root)
       const next = step.what === 'new' ? { ...now, newCards: now.newCards + step.delta } : { ...now, upNext: now.upNext + step.delta }
-      setCardsAdded(root, next)
+      host.setCardsAdded(root, next)
       live.current.added = next
       const { records, settings, taken } = live.current
       setSession((s) => {
@@ -771,7 +770,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
         return back === before ? before : { ...back, undo: before.undo }
       })
     },
-    [root, source],
+    [root, source, host],
   )
 
   const undo = useCallback(async () => {
@@ -781,7 +780,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     if (last.kind === 'reset') return undoReset(last)
     busy.current = true
     forget(last.card.path)
-    const undone = await undoCardAnswer(last.card.path, last.card.id, last.review.at, last.next).then(
+    const undone = await host.undoCardAnswer(last.card.path, last.card.id, last.review.at, last.next).then(
       () => true,
       (err: unknown) => {
         onNotice(`Can't undo the answer: ${reason(err)}`, 'error')
@@ -790,7 +789,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     )
     busy.current = false
     forget(last.card.path)
-    if (undone && last.next >= 0 && last.card.next && root !== null) setUpNextTaken(root, last.card.id, false)
+    if (undone && last.next >= 0 && last.card.next && root !== null) host.setUpNextTaken(root, last.card.id, false)
     // The card back at its place (YAZ-5020), its repeat out of the queue and the session one smaller again; it shows
     // also under a filter that would hide it: then All cards (YAZ-5017). Its answer leaves the bar (YAZ-5020).
     if (undone)
@@ -806,7 +805,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
         const filter = matchesFilter(card, s.filter) ? s.filter : 'all'
         return { ...s, queue: [...rest.slice(0, at), card, ...rest.slice(at)], at, total: s.total - (last.repeat ? 1 : 0), totals, turn: s.turn + 1, undo: s.undo.slice(0, -1), filter, answered: s.answered.slice(0, -1) }
       })
-  }, [onNotice, forget, root, undoAdd, undoReset])
+  }, [onNotice, forget, root, undoAdd, undoReset, host])
 
   const close = useCallback(() => setSession(null), [])
 
@@ -820,7 +819,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
 
   const deleteReview = useCallback(
     async (path: string, id: string, review: CardReview) => {
-      const removed = await deleteCardReview(path, id, review.at).then(
+      const removed = await host.deleteCardReview(path, id, review.at).then(
         (index) => index,
         (err: unknown) => {
           onNotice(`Can't delete the review: ${reason(err)}`, 'error')
@@ -831,18 +830,18 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       readAgain(path, id)
       // Back in its own place, not after the last review: the file is the same bytes again (YAZ-4964).
       const restore = () =>
-        void restoreCardReview(path, id, review, removed).then(
+        void host.restoreCardReview(path, id, review, removed).then(
           () => readAgain(path, id),
           (err: unknown) => onNotice(`Can't put the review back: ${reason(err)}`, 'error'),
         )
       onNotice('Review deleted', 'info', 'undo', { label: 'Undo', run: restore, fades: true })
     },
-    [onNotice, readAgain],
+    [onNotice, readAgain, host],
   )
 
   const setNext = useCallback(
     async (path: string, id: string, on: boolean) => {
-      const written = await changeCardLine(path, id, (l) => withCardNext(l, on)).then(
+      const written = await host.changeCardLine(path, id, (l) => withCardNext(l, on)).then(
         () => true,
         (err: unknown) => {
           onNotice(`Can't change the card: ${reason(err)}`, 'error')
@@ -851,7 +850,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       )
       if (written) readAgain(path, id)
     },
-    [onNotice, readAgain],
+    [onNotice, readAgain, host],
   )
 
   const move = useCallback((delta: -1 | 1) => {
@@ -877,12 +876,12 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       const delta = plan.grow(kind, n)
       if (n === 0 || delta <= 0) return
       const next = kind === 'new' ? { ...added, newCards: added.newCards + delta } : { ...added, upNext: added.upNext + delta }
-      setCardsAdded(root, next)
+      host.setCardsAdded(root, next)
       live.current.added = next
       const queue = cardPlan(records, settings, now, s0.scope.folder, s0.scope.page, source.letters, taken, next).queue
       setSession((s) => (s === null || s.id !== s0.id ? s : withAdded(s, kind, queue, delta)))
     },
-    [root, source],
+    [root, source, host],
   )
 
   const resetCards = useCallback(
@@ -895,24 +894,24 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       const delta = had - plan.floor[kind]
       if (delta <= 0) return
       const next = kind === 'new' ? { ...added, newCards: plan.floor.new } : { ...added, upNext: plan.floor.next }
-      setCardsAdded(root, next)
+      host.setCardsAdded(root, next)
       live.current.added = next
       const queue = cardPlan(records, settings, now, s0.scope.folder, s0.scope.page, source.letters, taken, next).queue
       setSession((s) => (s === null || s.id !== s0.id ? s : withReset(s, kind, queue, delta)))
     },
-    [root, source],
+    [root, source, host],
   )
 
   const unarchive = useCallback(
     async (path: string, id: string) => {
       forget(path)
-      await changeCardLine(path, id, (l) => withCardOff(l, false)).then(
+      await host.changeCardLine(path, id, (l) => withCardOff(l, false)).then(
         () => undefined,
         (err: unknown) => onNotice(`Can't change the card: ${reason(err)}`, 'error'),
       )
       forget(path)
     },
-    [onNotice, forget],
+    [onNotice, forget, host],
   )
 
   const turnOff = useCallback(async () => {
@@ -920,7 +919,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     const card = s0?.queue[s0.at]
     if (card === undefined) return
     forget(card.path)
-    const written = await changeCardLine(card.path, card.id, (l) => withCardOff(l, true)).then(
+    const written = await host.changeCardLine(card.path, card.id, (l) => withCardOff(l, true)).then(
       () => true,
       (err: unknown) => {
         onNotice(`Can't change the card: ${reason(err)}`, 'error')
@@ -929,7 +928,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     )
     forget(card.path)
     if (written) setSession((s) => (s === null || !showing(s, card) ? s : without(s, s.at)))
-  }, [onNotice, forget])
+  }, [onNotice, forget, host])
 
   const folders = source.folders
   // YAZ-5042: the open scope's plan, for what waits past today's number (the vault's is `vaultPlan`).
@@ -955,7 +954,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     // "3 of 12" under the filter (YAZ-5017): its cards at start, those gone since, and the place among those left.
     const total = filter === 'all' ? totals.due + totals.new : filter === 'archived' ? archived.length : totals[filter]
     const before = queue.slice(0, session.at).filter((c) => matchesFilter(c, filter)).length
-    const vault = vaultName ?? (root === null ? 'Inbox' : storage.vaultName(root))
+    const vault = vaultName ?? (root === null ? 'Inbox' : host.vaultName(root))
     const from = scope.page !== undefined ? [session.label] : scope.folder ? scope.folder.split('/').filter(Boolean) : [vault]
     return {
       label: session.label,
@@ -984,7 +983,7 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       lastAdd: lastStep?.kind === 'add' ? { kind: lastStep.what, count: lastStep.count, reset: false } : lastStep?.kind === 'reset' ? { kind: lastStep.what, count: lastStep.count, reset: true } : null,
     }
     // `records`: a cached page is good only at its page's mtime.
-  }, [session, loaded, fixed, turnKey, root, vaultName, cached, records, folders, today, scopePlan, settings, archived, added])
+  }, [session, loaded, fixed, turnKey, root, vaultName, host, cached, records, folders, today, scopePlan, settings, archived, added])
 
   return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, move, turnOff, unarchive, setFilter, addCards, resetCards }
 }
