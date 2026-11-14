@@ -50,6 +50,10 @@ const SKIP = [
   /^tools\/perf\/runs\//,
   /^tools\/perf\/(budget|baseline)\.json$/,
   /^tools\/rename-note-to-page(\.test)?\.mjs$/,
+  // The vault's word choice "Note" stays. These files opt out with the skip-file marker too, but an old branch's copy
+  // has no marker yet, and the run would change the choice "Note" to "page" there.
+  /^client\/src\/vault\/unitWord(\.test)?\.tsx?$/,
+  /^client\/src\/settings\/UnitWordControl(\.test)?\.tsx$/,
   /(^|\/)package(-lock)?\.json$/,
   /(^|\/)LICENSE[^/]*$/,
   /(^|\/)CHANGELOG\.md$/,
@@ -109,8 +113,9 @@ const KEEP = [
   /\bupdater?\.notes\b/g,
   /\bnotes(?=: async \(\) => \(\{ current:)/g,
   /whats-new__notes/g,
-  // The small help line under a control (a BEM element called "note").
-  /[a-z][a-z-]*__(?:[a-z-]*-)?notes?\b(?<!(?:backlinks|quicklook)__notes?)/g,
+  // The small help line under a control (a BEM element called "note"). Not a modifier: `explore__layer--note` is a
+  // layer of the kind page, so its element may hold single hyphens only.
+  /[a-z][a-z-]*__(?:[a-z]+(?:-[a-z]+)*-)?notes?\b(?<!(?:backlinks|quicklook)__notes?)/g,
   // The Bases namespace as a keyword of a view's formula (`note.status`, `note["my prop"]`; see BASES for the keys).
   /['"]note['"](?= \| ['"]formula['"])/g,
   /(?<=(?:case|ns ===|name ===) )['"]note['"]/g,

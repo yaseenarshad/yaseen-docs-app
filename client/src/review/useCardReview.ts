@@ -131,7 +131,7 @@ export interface CardReviewSession {
   archived: ArchivedCard[]
   /** Where the cards come from (YAZ-5017): the vault's name; the folder's parts; the page's name. Shown by the filter ("· in …"). */
   from: string[]
-  /** The card showing's place (YAZ-5017 round 2): vault › folders › page, each with what a click opens. Empty with no card. */
+  /** The card showing's place (YAZ-5017 round 2, YAZ-5132): vault › folders › page (a card file: its folders), each with what a click opens. Empty with no card. */
   place: CardPlacePart[]
   /** Each answer of the session, in order (YAZ-5020): a Forgot ('again') or a Remembered (any other). */
   answered: CardRating[]
@@ -495,16 +495,20 @@ const cardKey = (card: DueCard): string => `${card.path}\n${card.id}`
 const titleOf = (records: readonly IndexRecord[], path: string): string => records.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '')
 
 /**
- * The place of the page at `path` (YAZ-5017 round 2): the vault, then each folder down to the page's (by its title). No
- * page part (Yaseen: "isnt this redundant?"): the card's head shows the page's name.
+ * The place of the card at `path`, where it LIVES (YAZ-5017 round 2; YAZ-5132, Yaseen: "we should just have the
+ * breadcrumb at the top"): the vault, each folder down to the file, then the page by its title — the ONE breadcrumb;
+ * the head has no "in <page>". A CARD FILE (YAZ-5037) ends at its folder: its name is its title, which the head shows
+ * (and keeps back while `notitle` hides it). An embed never shows here: the queue is the cards of each page's own
+ * text (`cardRecords`), never a page's `![[…]]`.
  */
-export function cardPlace(root: string, vault: string, folders: readonly IndexRecord[], _records: readonly IndexRecord[], path: string): CardPlacePart[] {
+export function cardPlace(root: string, vault: string, folders: readonly IndexRecord[], records: readonly IndexRecord[], path: string): CardPlacePart[] {
   const dirs = (path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path).split('/').slice(0, -1)
   const inside = dirs.map((_, i): CardPlacePart => {
     const dir = `${root}/${dirs.slice(0, i + 1).join('/')}`
     return { kind: 'folder', label: folderTitle(folders, dir), path: dir }
   })
-  return [{ kind: 'vault', label: vault, path: root }, ...inside]
+  const top: CardPlacePart[] = [{ kind: 'vault', label: vault, path: root }, ...inside]
+  return records.find((r) => r.path === path)?.kind === 'card' ? top : [...top, { kind: 'page', label: titleOf(records, path), path }]
 }
 
 export function useCardReview(root: string | null, source: IndexSource, settings: ReviewSettings, onNotice: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void, vaultName?: string | null): CardReviewApi {

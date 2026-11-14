@@ -16,6 +16,7 @@
  */
 import { cardBlock, cardIdOf, findCards, type CardBlock, type CardLine } from './cardLine'
 import { buildFrontmatter, parseFrontmatter, splitFrontmatter } from './frontmatter'
+import { withLf } from './lineEnds'
 import { TITLE_KEY, pageFileName } from './pageName'
 
 /** The property key that marks a card file. Hidden in the properties panel when it holds `card`. */
@@ -64,17 +65,19 @@ export interface CardFileShape {
 export function cardFileShape(body: string): CardFileShape {
   const cards = findCards(body)
   const lines = body.split('\n')
-  if (cards.length === 0) return { cards, before: body.trim(), after: '', problem: 'none' }
+  if (cards.length === 0) return { cards, before: withLf(body).trim(), after: '', problem: 'none' }
   const inCard = new Set<number>()
   for (const c of cards) for (let i = c.open; i <= (c.lineAt ?? c.close); i++) inCard.add(i)
   const first = cards[0]
   const end = first.lineAt ?? first.close
+  // With `\n` alone, as a card's text is (YAZ-5146).
   const outside = (from: number, to: number): string =>
-    lines
-      .slice(from, to)
-      .filter((_, i) => !inCard.has(from + i))
-      .join('\n')
-      .trim()
+    withLf(
+      lines
+        .slice(from, to)
+        .filter((_, i) => !inCard.has(from + i))
+        .join('\n'),
+    ).trim()
   const before = outside(0, first.open)
   const after = outside(end + 1, lines.length)
   const problem = cards.length > 1 ? 'many' : before !== '' || after !== '' ? 'outside' : 'ok'
@@ -106,12 +109,12 @@ export function cardFileContent(title: string, text: string, line: CardLine, ext
 
 /**
  * The content of a new card file holding a card block AS IT IS, byte for byte (`block`: the card's lines from its opening
- * fence to its card line, with the indent they had taken off, `unindentBlock`). Move to its own file and Split then move
- * the title out (`cardFileTitleMoved`, `shared/cardConvert.ts`).
+ * fence to its card line, with the indent they had taken off, `unindentBlock`), but for its line ends: a new card file
+ * has `\n` (YAZ-5146). Move to its own file and Split then move the title out (`cardFileTitleMoved`, `shared/cardConvert.ts`).
  */
 export function cardFileWithBlock(block: string, extra: Record<string, unknown> = {}): string {
   const properties = { [CARD_KIND_KEY]: CARD_KIND, ...Object.fromEntries(Object.entries(extra).filter(([k]) => k !== CARD_KIND_KEY)) }
-  return `${buildFrontmatter(properties)}${block.replace(/\n+$/, '')}\n`
+  return `${buildFrontmatter(properties)}${withLf(block).replace(/\n+$/, '')}\n`
 }
 
 /**

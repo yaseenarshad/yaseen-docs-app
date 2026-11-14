@@ -90,32 +90,89 @@
   color: var(--warn);
 }
 
-/* "4 Reviews" (YAZ-5032, as Mochi's tab): a ✓ and the count, a soft fill while open; then the table. */
+/* THE REVIEWS STRIP (YAZ-5032; YAZ-5105 rounds 2 and 4), as Mochi's bottom strip: ONE look wherever a card's reviews
+   show — the Inbox, the card file tab, the card window, a card in a page and a card embed (`CardReviews`). A slim band
+   tucked under the card's text: its top hidden under the text's lower edge, its own lower corners round; "✓ 4 Reviews"
+   on its left (a page's card and an embed add the card's facts on its right); the table opens inside it.
+   Round 4 (Yaseen: "it just seems to merge … i dont want to make it too much stand out but a bit"): one step darker
+   than what it sits on, in light and dark — a tint of the text colour over the side colour, and a hairline edge. */
 .card-reviews {
-  margin-top: 16px;
+  --strip-fill: color-mix(in srgb, var(--fg) 6%, var(--bg-side));
+  --strip-edge: color-mix(in srgb, var(--fg) 16%, var(--bg));
 }
-/* YAZ-5105 round 2, as Mochi's bottom strip: a slim, quiet band tucked under the card box above it (outside it), its
-   top hidden under the card's lower edge, its own lower corners round; the table opens inside it. The card box sits
-   over it. Its tint is the side colour mixed toward the text, so it reads as part of the card, not of the page. */
 .card-reviews--strip {
   position: relative;
   margin: -12px 0 0;
   padding: 12px 8px 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--strip-edge);
   border-top: 0;
   border-radius: 0 0 12px 12px;
-  background: color-mix(in srgb, var(--fg) 2%, var(--bg-side));
+  background: var(--strip-fill);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  user-select: none;
 }
+/* What the strip tucks under sits over it: the Inbox's card, the card file tab's and the card window's card. */
 :is(.card-inbox__panel, .card-screen, .explore-card__edit):has(+ .card-reviews--strip) {
   position: relative;
   z-index: 1;
 }
-.card-reviews--strip .card-reviews__bar {
+/* In a page's card and an embed the card's frame is the strip's frame: the strip fills its bottom, and the card's text
+   is the box it tucks under — the same rounded lower edge and hairline as the Inbox's card over it. */
+.card > .card__reviews {
+  display: contents;
+}
+.card > .card__reviews > .card-reviews--strip {
+  margin: -12px 0 0;
+  padding: 12px 8px 0;
+  border: 0;
+  border-radius: 0 0 7px 7px;
+  box-shadow: none;
+}
+.card > .card__body:has(+ .card__reviews) {
+  position: relative;
+  z-index: 1;
+  border-radius: 0 0 12px 12px;
+  background: var(--bg);
+  box-shadow: 0 1px 0 var(--strip-edge, color-mix(in srgb, var(--fg) 16%, var(--bg))), 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+.card--editing .card-reviews {
+  display: none;
+}
+.card-reviews__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
   min-height: 36px;
 }
-.card-reviews--strip .card-reviews__toggle {
+.card-reviews .card-reviews__toggle {
+  flex: none;
+  width: auto;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
   font-size: 12.5px;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.card-reviews .card-reviews__toggle:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.card-reviews .card-reviews__toggle[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
+}
+.card-reviews__toggle .backlinks__title {
+  font-weight: 500;
+}
+/* The card's facts on the strip's right (a page's card, an embed): when they do not fit beside "4 Reviews", they take
+   their own line under it, on the right, so their parts never break in the middle. */
+.card-reviews__bar .card-reviews__facts {
+  margin: 0 4px 0 auto;
 }
 .card-reviews--strip .card-reviews__scroll {
   padding: 2px 4px 12px;
@@ -248,12 +305,6 @@
     margin-right: 0;
   }
 }
-/* The page's Reviews row (round 2): when the strip does not fit beside "4 Reviews", it takes its own line under it,
-   on the right, so its parts never break in the middle. */
-.card .card-reviews__bar {
-  flex-wrap: wrap;
-  row-gap: 2px;
-}
 .card-strip__line > * {
   white-space: nowrap;
 }
@@ -352,8 +403,8 @@
 .card-inbox__from-sep {
   opacity: 0.6;
 }
-/* The card's place (YAZ-5017 round 2): vault › folder › page, each a quiet link; the middle parts give way first ("…"),
-   the page keeps its name. */
+/* The card's place (YAZ-5017 round 2; YAZ-5132 the Inbox's one breadcrumb): vault › folder › page, each a quiet link
+   with its icon; the middle parts give way first ("…"), the page keeps its name. */
 .card-inbox__path {
   flex: 0 1 auto;
   display: inline-flex;
@@ -370,16 +421,27 @@
 }
 .card-inbox__path-part {
   flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
   min-width: 1.8em;
   padding: 2px 4px;
   overflow: hidden;
-  text-overflow: ellipsis;
   border: 0;
   border-radius: 5px;
   background: none;
   color: inherit;
   font: inherit;
   cursor: pointer;
+}
+/* YAZ-5132: each part's icon (the tree's own, `FileIcon`), then its name, which ends in "…" when room runs out. */
+.card-inbox__path-part > .file-icon {
+  display: inline-flex;
+  flex: none;
+}
+.card-inbox__path-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .card-inbox__path-part[data-kind='vault'] {
   flex-shrink: 0.4;
@@ -630,16 +692,6 @@
 .card-inbox__dot {
   flex: none;
   color: var(--fg-muted);
-}
-/* "in <page>" (YAZ-5044): quiet, after the ID; the page name is the link and gives way before the title. */
-.card-inbox__in {
-  display: inline-flex;
-  flex: 0 2 auto;
-  align-items: center;
-  min-width: 0;
-  margin-left: 4px;
-  color: var(--fg-muted);
-  white-space: pre;
 }
 .card-inbox__panel {
   position: relative;
@@ -1093,15 +1145,6 @@ body.card-inbox--sizing {
 }
 .card-inbox__archived-unarchive:hover {
   background: var(--bg-hover);
-}
-/* The page of a card in a page (YAZ-5044 "in <page>"): a long name ends in "…" before the ID gives way (the ID is
-   `flex: none`). YAZ-5051: in the row above the card, quiet, so the card is the first thing you read. */
-.card-inbox__page {
-  flex: 0 1 auto;
-  max-width: none;
-  padding: 0 2px;
-  color: var(--fg-muted);
-  font-size: 12px;
 }
 /* ONE line at any width (YAZ-5024): no wrap; a key that does not fit folds (`CardInboxHints`), laid out off the
    row so it can still be measured. */

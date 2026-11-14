@@ -297,23 +297,41 @@ export function CardFacts({ reviews, settings, now = Date.now() }: { reviews: re
   )
 }
 
+/** The strip's own props (YAZ-5105 round 4): the table's, and where it is open, and its extras. */
+export interface CardReviewsStripProps extends CardReviewsProps {
+  /** Open or closed, held by the caller (a page's card keeps it when the page draws again). Absent: the strip holds it. */
+  open?: boolean
+  /** A click on "✓ 4 Reviews", with `open`. */
+  onToggle?: () => void
+  /** The card's facts on the strip's right, "Due in 3 days · 92% chance you remember it": where they show today (a page's card, an embed). */
+  facts?: boolean
+}
+
 /**
- * "4 Reviews" (D3, D13, YAZ-5032): a toggle with a ✓, as Mochi's, CLOSED until asked for: the strip above it says the
- * state. Open, the full table (`CardReviewsTable`). The page's card block draws the same toggle and mounts the same
- * table when opened (`cardBlockView.ts`, YAZ-5000).
+ * THE REVIEWS STRIP (D3, D13, YAZ-5032; YAZ-5105): "✓ 4 Reviews", a toggle as Mochi's, CLOSED until asked for. Open,
+ * the full table (`CardReviewsTable`) inside it.
  * YAZ-5105 round 2 (Yaseen: "this clean slip that shows up at the bottom", as Mochi's): a slim strip tucked under the
- * card box, outside it, Reviews its one item for now; a click opens the table in it, another closes it. The card file
- * tab and the card window put it right under the card; the Inbox under the last side, once the card is fully shown.
+ * card box. Round 4 (Yaseen: "should be the same in the card page, and on inbox and in embeds and in cards that are on
+ * pages"): this ONE component everywhere a card's reviews show — the Inbox's last side, the card file tab and the card
+ * window, and, mounted by `editor/card/reviewsStrip.ts`, a card in a page and a card embed. A page's card and an embed
+ * add the card's facts on the strip's right (`facts`); the look is `cardScreens.css`'s one strip, a step darker than
+ * what it sits on.
  */
-export function CardReviews({ reviews, settings, onDelete, now }: CardReviewsProps) {
-  const [open, setOpen] = useState(false)
+export function CardReviews({ reviews, settings, onDelete, now, open: held, onToggle, facts = false }: CardReviewsStripProps) {
+  const [own, setOwn] = useState(false)
+  const open = held ?? own
   return (
     <section className="card-reviews card-reviews--strip">
       <div className="card-reviews__bar">
-        <button type="button" className="backlinks__header card-reviews__toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)} onMouseDown={(e) => e.preventDefault()}>
+        <button type="button" className="backlinks__header card-reviews__toggle" aria-expanded={open} onClick={() => (onToggle ?? (() => setOwn((o) => !o)))()} onMouseDown={(e) => e.preventDefault()}>
           <ReviewsIcon />
           <span className="backlinks__title">{reviewsTitle(reviews.length)}</span>
         </button>
+        {facts && (
+          <span className="card-strip card-reviews__facts">
+            <CardFacts reviews={reviews} settings={settings} now={now} />
+          </span>
+        )}
       </div>
       {open && <CardReviewsTable reviews={reviews} settings={settings} onDelete={onDelete} now={now} />}
     </section>

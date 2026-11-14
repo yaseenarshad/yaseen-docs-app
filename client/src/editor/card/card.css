@@ -443,6 +443,33 @@
   max-width: 100%;
   border-radius: 4px;
 }
+/* A table (YAZ-5136, Yaseen: "our design could look so much better based on how our tables look in the editor"): the
+   page's look. Its border, header row, Align and the line under the header are `table.css`'s rules, which name a card's
+   cells beside a page's. Here only what a page table has from Crepe and ProseMirror: collapsed borders, top-aligned
+   cells, Crepe's 4px 16px padding (with the card's space between blocks, as a page cell's paragraph has), a header
+   cell at the start unless its column says. A wide table scrolls in its box (`.card__table`), not the view. */
+.card__sides .card__table {
+  max-width: 100%;
+  margin: var(--card-gap) 0;
+  overflow-x: auto;
+}
+.card__sides .card__side table {
+  width: 100%;
+  margin: 0;
+  table-layout: auto;
+  border-collapse: collapse;
+  overflow: visible;
+}
+.card__sides .card__side :is(th, td) {
+  padding: calc(4px + var(--card-gap)) 16px;
+  vertical-align: top;
+  /* Words stay whole in a cell: a table too wide for the card scrolls, as a page table's columns keep their words. */
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.card__sides .card__side th:not([align]) {
+  text-align: start;
+}
 .card__body pre {
   overflow-x: auto;
 }
@@ -642,64 +669,4 @@
 /* A pill in a card opens on a click (idea 6): the hand, not the text caret of a pill in the page. */
 .card [data-card-link] {
   cursor: pointer;
-}
-
-/* The Reviews toggle (YAZ-5032, as Mochi's tab), the page's and the card window's: here, so the page draws it before
-   the card window's styles load. */
-.card-reviews__bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.card-reviews .card-reviews__toggle {
-  flex: none;
-  width: auto;
-  gap: 6px;
-  padding: 3px 9px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  color: var(--fg-muted);
-  cursor: pointer;
-}
-.card-reviews .card-reviews__toggle:hover {
-  background: var(--bg-hover);
-  color: var(--fg);
-}
-.card-reviews .card-reviews__toggle[aria-expanded='true'] {
-  background: color-mix(in srgb, var(--fg) 8%, transparent);
-  color: var(--fg);
-}
-.card-reviews__toggle .backlinks__title {
-  font-weight: 500;
-}
-
-/* "✓ 4 Reviews" at the bottom of a card with reviews (YAZ-5000, YAZ-5032): the card window's toggle and, on the same
-   row, its strip of glyphs (`review/cardScreens.css`), so the facts show while closed; the table opens under it,
-   with room inside the card. Hidden while the card is edited. */
-.card .card-reviews {
-  margin: 0;
-  padding: 4px 8px;
-  border-top: 1px solid var(--border);
-  user-select: none;
-}
-.card .card-reviews__bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 26px;
-}
-.card .card-reviews .card-reviews__toggle {
-  font-size: 12px;
-}
-.card .card-reviews__facts {
-  margin: 0 4px 0 auto;
-}
-.card .card-reviews .card-reviews__table {
-  margin: 4px 0 6px;
-}
-.card--editing .card-reviews {
-  display: none;
 }

@@ -123,6 +123,13 @@ const inField = (target: EventTarget | null): boolean => target instanceof Eleme
 /** What Tab can reach: the trail's chips and the front layer (round 6). */
 const TABBABLE = 'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"]), [contenteditable="true"]'
 
+/** A card file's view in an edit layer (YAZ-5143): its body takes the keyboard, as the page's open document does. */
+function focusCardFile(layer: HTMLElement): boolean {
+  const body = layer.querySelector<HTMLElement>('.explore__body--edit [data-card-file-body]')
+  body?.focus({ preventScroll: true })
+  return body !== null && document.activeElement === body
+}
+
 export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf }: ExploreStackProps) {
   const [layers, setLayers] = useState<readonly ExploreLayer[]>([])
   const layersRef = useRef(layers)
@@ -478,10 +485,13 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     const el = rootRef.current?.querySelector<HTMLElement>(`[data-layer="${top.id}"]`)
     if (el === null || el === undefined) return
     if (top.kind === 'page' && top.mode === 'edit') {
-      // The editor mounts its document a tick later: ask until it is there, a few frames at most.
+      // The editor mounts its document a tick later: ask until it is there, a few frames at most. A card file's editor
+      // is the card file view (YAZ-5143): no open document until Edit card, so its body takes the keyboard. Else the
+      // keyboard stays on the reading body, which loses its tabindex here: the browser drops it to `document.body`,
+      // out of the stack, and Esc and ⌘↵ are never heard.
       let tries = 0
       const tick = () => {
-        if (focusOpenDocument(el) || ++tries > 20) return
+        if (focusOpenDocument(el) || focusCardFile(el) || ++tries > 20) return
         timer = setTimeout(tick, 16)
         timers.current.add(timer)
       }

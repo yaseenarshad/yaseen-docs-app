@@ -697,10 +697,33 @@ describe('storage', () => {
 
   it('a failed bridge write is logged once and the optimistic cache value stays', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    b.bridge.state.setSettings.mockRejectedValueOnce({ code: 'BAD_REQUEST', message: 'nope' })
-    storage.setSettings({ ...DEFAULT_SETTINGS, blockGap: 2 })
+    b.bridge.window.setIdentity.mockRejectedValueOnce({ code: 'BAD_REQUEST', message: 'nope' })
+    storage.setSidebarCollapsed(true)
     await flushMicrotasks()
     expect(error).toHaveBeenCalledTimes(1)
-    expect(storage.getSettings().blockGap).toBe(2)
+    expect(storage.getSidebarCollapsed()).toBe(true)
+  })
+
+  it('YAZ-5053 round 4: a settings save that main refuses goes back to main\'s settings, and the listeners wake, so no row shows a choice that was not saved', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const seen = vi.fn()
+    storage.subscribe(seen)
+    b.bridge.state.setSettings.mockRejectedValueOnce({ code: 'BAD_REQUEST', message: "'settings' must be a complete SettingsState" })
+    storage.setSettings({ ...DEFAULT_SETTINGS, markNextHidden: false })
+    expect(storage.getSettings().markNextHidden).toBe(false)
+    await flushMicrotasks()
+    expect(storage.getSettings().markNextHidden).toBe(true)
+    expect(seen).toHaveBeenCalled()
+  })
+
+  it('YAZ-5053 round 4: settings from a main process older than a field (the app not restarted) read that field\'s default, so its row shows the choice in use', async () => {
+    const { markNextHidden: _gone, cardSpacing: _gone2, ...older } = DEFAULT_SETTINGS
+    b = installBridge({ ...defaultAppState(), settings: { ...older, shownHiddenWords: 'box' } as typeof DEFAULT_SETTINGS }, { id: 'w1', root: null, file: null, tabs: [], sidebarCollapsed: false })
+    await storage.init()
+    expect(storage.getSettings()).toEqual({ ...DEFAULT_SETTINGS, shownHiddenWords: 'box' })
+    // The same at a broadcast: main drops a field it does not know, and the row shows the default again.
+    b.emit({ ...defaultAppState(), settings: older as typeof DEFAULT_SETTINGS })
+    expect(storage.getSettings().markNextHidden).toBe(DEFAULT_SETTINGS.markNextHidden)
+    expect(storage.getSettings().cardSpacing).toBe(DEFAULT_SETTINGS.cardSpacing)
   })
 })

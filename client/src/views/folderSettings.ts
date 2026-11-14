@@ -15,7 +15,7 @@ import { isRecord } from '@shared/guards'
 // The one reserved key this module owns, and where links live inside it (YAZ-864): both are in
 // `@shared/folderSettingsLinks`, so the main process's ID rewrite walks the same leaves (YAZ-2677).
 import { FOLDER_SETTINGS_KEY, OTHER_FILES_KEEP_PAGES_KEY, OTHER_FILES_KEY } from '@shared/folderSettingsLinks'
-import { OTHER_FILES_KEEP_KEY_MOVE, movedView } from '@shared/legacyNames'
+import { OTHER_FILES_KEEP_KEY_MOVE, movedFormulas, movedView } from '@shared/legacyNames'
 import type { ViewDef } from './viewSchema'
 import { PAGE_VIEW_TYPE } from './pageView'
 import { transformFile, writeProperty } from './writeProperty'
@@ -190,7 +190,7 @@ function readViews(raw: unknown, problems: string[], ids: boolean): ViewDef[] {
     let read: Record<string, unknown> = movedView(view)
     if (view.outline !== undefined && typeof view.outline !== 'string') {
       problems.push(`${FOLDER_SETTINGS_KEY}.views[${i}].outline must be one markdown bullet list — ignoring it`)
-      const { outline: _dropped, ...rest } = view
+      const { outline: _dropped, ...rest } = read
       read = rest
     }
     // A stored Outline is the Page tab (YAZ-4584 D38); its old `outline` string rides along until it is moved by hand (D39).
@@ -290,7 +290,8 @@ export function folderSettings(record: IndexRecord | undefined, ids: boolean): F
   return {
     columns: readColumns(raw.columns, problems),
     defaultView: readDefaultView(raw.defaultView, problems),
-    formulas: readFormulas(raw.formulas, problems),
+    // YAZ-5036: a Type test on `note` in a formula tests `page`, as the views' filters do (`movedView`).
+    formulas: readFormulas(movedFormulas(raw.formulas), problems),
     properties: readProperties(raw.properties, problems),
     views: readViews(raw.views, problems, ids),
     otherFiles: readOtherFiles(raw[OTHER_FILES_KEY], problems),
