@@ -288,3 +288,23 @@
 .fr-line.fr-cheer {
   color: var(--accent);
 }
+
+/* YAZ-5261: who each column is, under its avatar. A long name ends with "…" in its own column (320 px). */
+.fr-vs__col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.fr-vs__who {
+  max-width: 100%;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  unicode-bidi: isolate;
+}

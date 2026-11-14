@@ -486,6 +486,15 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
     expect(plain(h.host.querySelector('.topbar__title')?.textContent)).not.toBe('Sam')
   })
 
+  it('YAZ-5261: "You vs" says which column is you', async () => {
+    ;({ h } = await open(demoBoard(NOW)))
+    await tap(h, /^Number 1, Sam/)
+    await until(h, '.fr-week')
+    const heads = [...h.host.querySelectorAll('.fr-vs__who')].map((e) => plain(e.textContent))
+    expect(heads).toEqual(['You', 'Sam'])
+    expect(plain(h.host.querySelector('.fr-vs--who')?.getAttribute('aria-label'))).toBe('You vs Sam')
+  })
+
   it('Cheer: one tap, one send (a double tap sends once), then an honest "sent"', async () => {
     let release!: () => void
     let s: FakeService

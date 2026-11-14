@@ -84,10 +84,19 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
         </p>
       )}
       {friend !== null && friend.state !== 'ok' && friend.label !== null && <p className="fr-line">{friend.label}</p>}
-      <div className="fr-vs" style={{ margin: '6px 0 10px' }}>
-        <Avatar name={ok.me.name} url={ok.me.avatar} big />
-        <span className="fr-vs__label">vs</span>
-        <Avatar name={name} url={friend?.avatar ?? null} big />
+      {/* YAZ-5261: the two columns say who they are: "You" at the left, the friend at the right. */}
+      <div className="fr-vs fr-vs--who" role="group" aria-label={`You vs ${name}`} style={{ margin: '6px 0 10px' }}>
+        <span className="fr-vs__col" aria-hidden="true">
+          <Avatar name={ok.me.name} url={ok.me.avatar} big />
+          <span className="fr-vs__who">You</span>
+        </span>
+        <span className="fr-vs__label" aria-hidden="true">
+          vs
+        </span>
+        <span className="fr-vs__col" aria-hidden="true">
+          <Avatar name={name} url={friend?.avatar ?? null} big />
+          <span className="fr-vs__who">{name}</span>
+        </span>
       </div>
       <p className="fr-line" style={{ textAlign: 'center' }}>
         {name}: updated {updatedLabel(updatedAt, now)}
