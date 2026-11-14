@@ -328,11 +328,17 @@
 .review-host {
   display: flex;
   flex-direction: column;
+}
+
+/* YAZ-5267: the chain fills the screen by flex, never by a percent of a parent with no set height, so the answer
+   buttons sit at the bottom on a short card as on a long one. `.screen` is a flex item of a set height. */
+.review-slot {
   min-height: 100%;
 }
 
+.review-host,
 .review-host > .review {
-  flex: 1;
+  flex: 1 0 auto;
 }
 
 /* For VoiceOver only (YAZ-5229). */

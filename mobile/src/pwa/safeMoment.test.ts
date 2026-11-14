@@ -16,6 +16,16 @@ describe('what holds the update back', () => {
   })
   it('answers that wait to be sent', () => expect(holdsOf({ ...calm, answersWaiting: 2 })).toEqual(['answers']))
   it('the Review tab (a review can be in its middle)', () => expect(holdsOf({ ...calm, tab: 'review' })).toEqual(['review']))
+  it('YAZ-5269: a review in progress behind Friends or Search holds too; a resume after 5 minutes does not swap', () => {
+    for (const tab of ['friends', 'search'] as const) {
+      const holds = holdsOf({ ...calm, tab, reviewInProgress: true })
+      expect(holds).toEqual(['review'])
+      expect(swapNow({ ready: true, trigger: 'resume', holds, hiddenMs: RESUME_AFTER_MS + 1 })).toBe(false)
+      // The person's own tap on Restart still takes it.
+      expect(swapNow({ ready: true, trigger: 'tap', holds, hiddenMs: 0 })).toBe(true)
+    }
+    expect(holdsOf({ ...calm, tab: 'friends', reviewInProgress: false })).toEqual([])
+  })
   it('a screen over the tabs (a form: typed text is lost on a reload)', () => expect(holdsOf({ ...calm, routeOpen: true })).toEqual(['screen']))
   it('the first download', () => expect(holdsOf({ ...calm, downloading: true })).toEqual(['download']))
   it('the sign-in form and the start', () => {

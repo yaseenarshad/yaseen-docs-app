@@ -133,6 +133,20 @@ describe('Review: Undo after a send tried the answer (YAZ-5180)', () => {
 })
 
 describe('Review: a lost answer (round 12, item 9)', () => {
+  it('the checker\'s M6: Undo of a lost answer takes it out of the list (as Discard); the line says so; nothing waits', async () => {
+    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...newCards(2)) })
+    await h.click('Remembered')
+    await h.s.git.push({ 'p.md': page('P', newCards(2)[1]) })
+    await h.wait(5_000)
+    expect(h.answers.state().lost.length).toBeGreaterThan(0)
+    await h.click('Undo')
+    expect(h.answers.state().lost).toEqual([])
+    expect(h.answers.waiting()).toEqual([])
+    expect(h.text()).not.toContain('could not be saved')
+    expect(h.last()).toBe('Answer removed')
+    expect(h.host.querySelector('.review__notice')).toBeNull()
+  })
+
   it('the card was deleted on GitHub before the send: the amber line, the card and the answer, and Discard', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...newCards(2)) })
     await h.click('Remembered')

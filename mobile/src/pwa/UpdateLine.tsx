@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { openOutbox } from '../answers/outbox'
 import { useApp } from '../app/AppState'
+import { reviewInProgress, subscribeReviewInProgress } from '../review/inProgress'
 import { holdsOf, lineFor, swapNow, type AppMoment, type Trigger } from './safeMoment'
 import type { Updates } from './updates'
 import './update.css'
@@ -12,12 +13,14 @@ import './update.css'
  */
 export function UpdateLine({ updates }: { updates: Updates }) {
   const app = useApp()
+  const reviewing = useSyncExternalStore(subscribeReviewInProgress, reviewInProgress, reviewInProgress)
   const moment: AppMoment = {
     phase: app.phase,
     routeOpen: app.nav.stack.length > 0,
     tab: app.nav.tab,
     downloading: app.sync.vault === app.vaultKey && !app.sync.ready,
     answersWaiting: 0,
+    reviewInProgress: reviewing,
   }
   const vault = app.vaultKey
   const store = app.services.store

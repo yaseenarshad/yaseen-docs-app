@@ -58,4 +58,19 @@ describe('the Review tab styles', () => {
     for (const name of ['--bg-hover', '--next-hidden', '--mark-bg']) expect([name, light[name]]).toEqual([name, macLight[name]])
     for (const name of ['--bg-hover', '--next-hidden']) expect([name, dark[name]]).toEqual([name, macDark[name]])
   })
+
+  it('YAZ-5231: at 320 px the row fits: the answers can shrink, lose their icons, and ⋯ is 44 pt', () => {
+    expect(css).toMatch(/\.review__answer \{\s*min-width: 0;\s*\}/)
+    const narrow = css.slice(css.indexOf('@media (max-width: 374px)'))
+    expect(narrow).toMatch(/\.review__answer svg \{\s*display: none;/)
+    expect(narrow).toMatch(/\.review__more \{\s*min-width: var\(--tap\);/)
+  })
+
+  it('YAZ-5267: the kept box fills the screen by flex (no percent of a parent with no height): the buttons sit at the bottom', () => {
+    expect(css).toMatch(/\.review-slot,\s*\.review-host \{[^}]*display: flex;[^}]*flex-direction: column;/)
+    expect(css).toMatch(/\.review-slot \{\s*min-height: 100%;/)
+    expect(css).toMatch(/\.review-host,\s*\.review-host > \.review \{\s*flex: 1 0 auto;/)
+    expect(css).not.toMatch(/\.review-host \{[^}]*min-height: 100%/)
+    expect(css).toMatch(/\.review__dock \{[^}]*margin: auto -16px -24px;/)
+  })
 })

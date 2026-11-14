@@ -19,7 +19,7 @@ const waiting = (
 const ReviewTab = lazyScreen<ReviewTabProps>(() => import('../review/ReviewTab').then((m) => ({ default: m.ReviewTab })), { waiting })
 
 /** The same link while its parts are the same: a new object would start a new session (YAZ-5224). */
-const sameLink = (a: ReviewLink | null, b: ReviewLink | null) => a === b || (a !== null && b !== null && a.engine === b.engine && a.answers === b.answers && a.store === b.store && a.media === b.media)
+export const sameLink = (a: ReviewLink | null, b: ReviewLink | null) => a === b || (a !== null && b !== null && a.engine === b.engine && a.answers === b.answers && a.store === b.store && a.media === b.media)
 
 /**
  * The Review tab (4B, YAZ-5078). The shell keeps it mounted once opened (`Shell.tsx`, YAZ-5224), so a look at a page,
