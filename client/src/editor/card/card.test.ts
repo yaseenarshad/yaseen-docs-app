@@ -412,7 +412,7 @@ describe('the card in the page', () => {
     expect(getMarkdownForSave(crepe)).toContain('<!-- card: WIKI-7, 2026-11-12T14:05Z good -->')
   })
 
-  it('Edit card is Crepe\'s code editor (made only then); YAZ-5001: ⌘↵ there is Done, while ⌘↵ in another code block still adds a line; the head says "Done esc ⌘↵"', async () => {
+  it('Edit card is Crepe\'s code editor (made only then); YAZ-5001: ⌘↵ there is Done, while ⌘↵ in another code block still adds a line; the head says "Done (Esc / Cmd+Enter)"', async () => {
     // The raw-text fallback (YAZ-5026: `setCardEditorKind('code')`); the page's editor is `cardEditor.test.ts`.
     setCardEditorKind('code')
     const { root, view } = await mount(`${CARD}<!-- card: WIKI-8 -->\n\n\`\`\`js\nx\n\`\`\`\n`, { cards: { path: '/v/Page.md' } })
@@ -421,8 +421,9 @@ describe('the card in the page', () => {
     edit()
     const cm = card.querySelector<HTMLElement>('.cm-content')!
     expect(cm.textContent).toContain('What is the capital of {{France}}?')
-    expect([...card.querySelectorAll('.card__edit kbd')].map((k) => k.textContent)).toEqual(['Esc', 'Cmd', 'Enter'])
-    expect(card.querySelector('.card__edit')?.textContent).toBe('DoneEscCmd + Enter')
+    // The app's hotkey label (YAZ-5332): the action, then its keys in brackets, quieter.
+    expect(card.querySelector('.card__edit')?.textContent).toBe('Done (Esc / Cmd+Enter)')
+    expect(card.querySelector('.card__edit .key-label')?.textContent).toBe('(Esc / Cmd+Enter)')
     // The card language: Markdown with spell check (idea 8), once the language loads.
     await vi.waitFor(() => expect(cm.getAttribute('spellcheck')).toBe('true'))
     const opened: CardOpenRequest[] = []

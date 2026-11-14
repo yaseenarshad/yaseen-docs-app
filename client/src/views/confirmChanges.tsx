@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { KeyLabel } from '../keys/KeyLabel'
 
 /** A write's rejection when its ask was cancelled: the cell drops what it showed, and no error is shown. */
 export const CHANGE_CANCELLED = new Error('The change was cancelled')
@@ -223,10 +224,10 @@ function ChangeAskCard({ ask, onChange, onCancel, onPause, onTurnOff }: { ask: C
         )}
         <div className="change-ask__actions">
           <button type="button" className="change-ask__cancel" onClick={onCancel}>
-            Cancel<kbd>esc</kbd>
+            <KeyLabel action="Cancel" keys="esc" />
           </button>
           <button type="button" className="change-ask__go" onClick={onChange}>
-            {ask.action ?? 'Change'}<kbd>↵</kbd>
+            <KeyLabel action={ask.action ?? 'Change'} keys="↵" />
           </button>
         </div>
       </div>

@@ -2199,7 +2199,7 @@ describe('the page settings cog (YAZ-2643)', () => {
       expect(setAllDocumentFolds).toHaveBeenLastCalledWith(true)
       expect(foldAll.command).toHaveBeenLastCalledWith(view.state, view.dispatch)
       expect(focusEditor).toHaveBeenCalledTimes(1)
-      expect(button.getAttribute('aria-label')).toBe('Collapse all (⌘⇧U)')
+      expect(button.getAttribute('aria-label')).toBe('Collapse all (Cmd+Shift+U)')
       foldAll.next = 'expand'
       await act(async () => button.click())
       expect(setAllDocumentFolds).toHaveBeenLastCalledWith(false)
@@ -3129,8 +3129,8 @@ describe('Read only for the whole vault, with a timed "Allow edits" (YAZ-4939)',
     const lockAgain = () => (createCrepeMock.mock.calls.at(-1)![0] as unknown as CreateCrepeOptions).lockAgain!()
     expect(lockAgain()).toBe(false) // locked: nothing to lock
     await allow(el, '10 minutes')
-    expect(chipButton(el)?.title).toBe('Edits are allowed for now. Click for another time. ⌘↵ or Esc locks it again.')
-    expect(lockNow(el)?.title).toBe('Lock this page again now (⌘↵ or Esc)')
+    expect(chipButton(el)?.title).toBe('Edits are allowed for now. Click for another time. Lock again (Esc / Cmd+Enter).')
+    expect(lockNow(el)?.title).toBe('Lock this page again now (Esc / Cmd+Enter)')
     type('# Hello\n\nquick\n')
     let locked = false
     await act(async () => {

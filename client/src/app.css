@@ -2655,11 +2655,17 @@ body.drag-held iframe {
   color: var(--fg-muted);
 }
 
+/* ONE hotkey label (YAZ-5332, `KeyLabel`): "Done (Esc / Cmd+Enter)", the keys quieter than the action. Opacity, not a
+   colour: quiet on any button, the accent one too. */
+.key-label {
+  font-weight: 400;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
 /* The way out of the Search tab (YAZ-2638 D2): a keycap that names the key, and is the key on a
-   click — back to the lens the window last showed. Always in the bar. The keys that the empty
-   Search tab lists wear the same keycap (YAZ-2662 D10), in the font of the bar: a `kbd` has its own. */
-.sidebar__search-back,
-.sidebar__keys kbd {
+   click — back to the lens the window last showed. Always in the bar. */
+.sidebar__search-back {
   flex: none;
   padding: 0 5px;
   border: 1px solid var(--border);
@@ -2704,22 +2710,14 @@ body.drag-held iframe {
 /* The keys of the search, below the line of the empty Search tab (YAZ-2662 D10): quiet, in two
    columns — the keycaps of a row, and what they do. */
 .sidebar__keys {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: baseline;
-  gap: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   margin: 0 14px;
+  padding: 0;
+  list-style: none;
   font-size: 11px;
   color: var(--fg-muted);
-}
-
-.sidebar__keys dt {
-  display: flex;
-  gap: 3px;
-}
-
-.sidebar__keys dd {
-  margin: 0;
 }
 
 /* The flat result list (YAZ-803) — a ranked list whose rows borrow the tree row's metrics and
@@ -5878,21 +5876,13 @@ body.drag-held iframe {
 }
 .key-sheet__rows {
   margin: 0;
+  padding: 0;
+  list-style: none;
 }
+/* Each row the app's hotkey label (YAZ-5332): "Duplicate (Option+Cmd+D)". */
 .key-sheet__row {
-  display: grid;
-  grid-template-columns: 9em 1fr;
-  gap: 8px;
   padding: 2px 0;
   font-size: 13px;
-}
-.key-sheet__keys {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12px;
-  color: var(--fg-muted);
-}
-.key-sheet__label {
-  margin: 0;
 }
 
 /* The app's own hover box (YAZ-4772, `components/HoverTip.tsx`): fixed on the page, so a clipping cell can not cut it. */

@@ -42,6 +42,7 @@ import { UNTITLED_CARD } from '../editor/card/cardTitle'
 import type { CardPlace } from '../editor/card/cardOpen'
 import { CardPane, cardMenuSections, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
 import { HoverTip } from '../components/HoverTip'
+import { withKeys } from '@shared/keyLabel'
 import { CardFacts, CardId, CardNextChip } from '../review/cardParts'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { keepFocus, type ExploreVault } from './ExplorePage'
@@ -179,7 +180,7 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
         {card?.notitle === true && <span className="card__state card__notitle">Hidden in review</span>}
         {/* ↗ folds into ⋯ in a narrow layer (YAZ-4986); the card ID, the title and × stay. */}
         <span className="explore__fold">
-          <HoverTip text="Open page in a new tab (⌘↵)" data-fold-part="open">
+          <HoverTip text={withKeys(unit('Open page in a new tab'), '⌘↵')} data-fold-part="open">
             <button type="button" className="explore__button" onMouseDown={keepFocus} onClick={onOpenInTab} aria-label={unit('Open page in a new tab')}>
               ↗
             </button>
