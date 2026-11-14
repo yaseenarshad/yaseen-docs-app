@@ -44,7 +44,7 @@ export function CardPreview({ card, vault, settings, doors, onNotice, onClose }:
   // One preview is one card: a new ask (another card) starts at its front.
   const cardKey = `${card.path}\n${card.id ?? ''}\n${card.text}`
   const steps = useCardSteps(text, cardKey, rootRef)
-  useStepScroll(steps, true, bodyRef, rootRef)
+  useStepScroll(steps, true, rootRef)
   const live = useRef({ steps, onClose })
   live.current = { steps, onClose }
 
