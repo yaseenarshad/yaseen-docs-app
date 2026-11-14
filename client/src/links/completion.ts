@@ -333,6 +333,9 @@ export function cardLinkCandidates(records: readonly IndexRecord[]): LinkCandida
   return rows
 }
 
+/** A card file whose card has an ID (YAZ-5037): `cardLinkCandidates` lists it as that card. */
+const isCardFileCard = (r: IndexRecord): boolean => r.kind === 'card' && (r.cards?.[0]?.id ?? null) !== null
+
 /**
  * Candidates for one index snapshot, in records order (i.e. path-sorted): per record its name —
  * the title when this record is what the bare title resolves to (unique, or the shallowest
@@ -340,6 +343,9 @@ export function cardLinkCandidates(records: readonly IndexRecord[]): LinkCandida
  * `folder/title`, inserting the root-relative `folder/basename` — followed by one alias row per
  * frontmatter alias, inserting the piped form; every row of a record with an `id` inserts that id
  * instead (module doc).
+ * `cards`: the picker also lists the cards (`cardLinkCandidates`, a vault with IDs). A CARD FILE whose card has an ID
+ * (YAZ-5134) then gets no row here: its card's row is its one row — the card icon, the card's ID — never a page row of
+ * the same file beside it. It still counts below as a title a duplicate is told apart from: the resolver sees it.
  * Duplicate detection is case-insensitive, like resolution. Two alias rows are
  * SKIPPED (GRO-2197): an alias equal to the chosen name (case-insensitively) would only add a
  * degenerate `[[X|X]]` next to the plain `[[X]]` row, and an alias containing `[` or `]` would
@@ -347,7 +353,7 @@ export function cardLinkCandidates(records: readonly IndexRecord[]): LinkCandida
  * `[^[\]]+`) re-parses as a DIFFERENT link — breaking the every-insert-links-to-its-record
  * invariant above.
  */
-export function linkCandidates(records: readonly IndexRecord[]): LinkCandidate[] {
+export function linkCandidates(records: readonly IndexRecord[], cards = false): LinkCandidate[] {
   const shallowest = new Map<string, { index: number; depth: number }>()
   records.forEach((r, index) => {
     const key = r.title.toLowerCase()
@@ -356,6 +362,7 @@ export function linkCandidates(records: readonly IndexRecord[]): LinkCandidate[]
     if (prev === undefined || depth < prev.depth) shallowest.set(key, { index, depth })
   })
   return records.flatMap((r, index) => {
+    if (cards && isCardFileCard(r)) return []
     const bare = shallowest.get(r.title.toLowerCase())?.index === index || r.folder === ''
     const name = bare ? r.title : `${r.folder}/${r.title}`
     // What links to it with no id: the title while it resolves here, else the path, which no title joins.
