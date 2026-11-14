@@ -79,14 +79,33 @@ describe('no layout jump when the words change', () => {
     expect(r).toMatch(/white-space: nowrap/)
     expect(r).toMatch(/flex: none/)
     expect(r).toMatch(/min-width: [\d.]+em/)
-    expect(r).toMatch(/max-width: [\d.]+%/)
     expect(r).toMatch(/min-height: var\(--tap\)/)
     expect(r).toMatch(/font-variant-numeric: tabular-nums/)
-    expect(rule('.sync-status__words')).toMatch(/text-overflow: ellipsis/)
   })
 
   it('the dot has a fixed size and never shrinks', () => {
     expect(rule('.sync-dot')).toMatch(/width: 10px;\s*height: 10px;[\s\S]*flex: none/)
+  })
+})
+
+describe('YAZ-5216: the words are never cut', () => {
+  it('no ellipsis and no cap on the box: the vault name gives room, never the words', () => {
+    expect(rule('.sync-status')).not.toMatch(/max-width/)
+    expect(css).not.toMatch(/\.sync-status__words[^{]*\{[^}]*text-overflow/)
+  })
+
+  it('under 380 px the short form shows, at 380 px and more the words of decision 12', () => {
+    expect(rule('.sync-status__words--short')).toMatch(/display: none/)
+    const narrow = block(css, '@media (max-width: 379px)')
+    expect(narrow).toMatch(/\.sync-status__words--full \{\s*display: none;/)
+    expect(narrow).toMatch(/\.sync-status__words--short \{\s*display: inline;/)
+  })
+
+  it('at 320 px the longest short form fits beside a vault name of 4 letters and the gear', () => {
+    // The top bar at 320 px: 320 - 16 - 8 (its padding) - 44 (the gear) - 2 × 8 (gaps) = 236 px. 13 px text is about 7 px a letter.
+    const box = (letters: number) => 6 + 10 + 6 + letters * 7 + 6
+    expect(box(20) + 4 * 10).toBeLessThanOrEqual(236)
+    expect(rule('.topbar__title')).toMatch(/min-width: 4em/)
   })
 })
 
